@@ -2626,7 +2626,7 @@ mod expm_debug_tests {
             // Scale down so ||A*t/2^s|| < 0.5
             let norm1 = matrix_norm_1(&at);
             let s = if norm1 > 0.5 {
-                (norm1.log2().ceil() as usize).max(0)
+                norm1.log2().ceil() as usize
             } else {
                 0
             };
@@ -2991,7 +2991,7 @@ mod expm_debug_tests {
         let pade = matrix_exponential_old_pade(&a, 3600.0);
 
         // Check eigenvalues
-        let a_inv = matrix_inverse(&a).unwrap();
+        let _a_inv = matrix_inverse(&a).unwrap();
         eprintln!("DC gain = D - C * A_inv * B (exterior→int)");
         let u_bare = 1.0
             / layers
@@ -3766,7 +3766,6 @@ mod debug_new_expm_tests {
     //   Thickness: 5 mm – 1 m (thin boards to thick walls).
     fn any_ctf_material_params() -> impl proptest::strategy::Strategy<Value = (f64, f64, f64, f64)>
     {
-        use proptest::prelude::*;
         // (thickness, k, density, specific_heat)
         (
             0.005_f64..1.0,
@@ -3903,7 +3902,7 @@ mod debug_new_expm_tests {
 
                 let nodes_per_layer = compute_nodes_per_layer(&[layer.clone()], timestep);
                 let n: usize = nodes_per_layer.iter().sum();
-                if !(n > 0) {
+                if n <= 0 {
                     return Ok(());
                 }
 
@@ -3954,7 +3953,7 @@ mod debug_new_expm_tests {
 
                 let nodes_per_layer = compute_nodes_per_layer(&[layer.clone()], timestep);
                 let n: usize = nodes_per_layer.iter().sum();
-                if !(n > 0) {
+                if n <= 0 {
                     return Ok(());
                 }
 
@@ -3964,7 +3963,7 @@ mod debug_new_expm_tests {
                     layer.thickness
                 };
                 let mass_interior = layer.density * layer.specific_heat * dx;
-                let mass_boundary = 1.5 * mass_interior;
+                let _mass_boundary = 1.5 * mass_interior;
 
                 // E+ lumped boundary scheme total:
                 // n >= 2: (n-2)*rho*cp*dx + 2*1.5*rho*cp*dx = (n+1)*rho*cp*dx = (n+1)/n * rho*cp*L

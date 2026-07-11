@@ -246,9 +246,7 @@ impl HeatConductionSolver for FiveR1CSolver {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::physics::units::{
-        FromF64, HeatFlux, HeatTransferCoefficient, Temperature, Time, ToF64,
-    };
+    use crate::physics::units::{FromF64, HeatTransferCoefficient, Temperature, Time, ToF64};
     use crate::physics::wall_spec::WallSpec;
     use fluxion_core::assembly::{AssemblyBuilder, ConcreteMaterial};
 

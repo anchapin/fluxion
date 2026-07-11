@@ -190,21 +190,63 @@ impl PhysicsScratch9r4c {
     }
 
     // --- read-back intermediate slice accessors (slot k occupies [k*n..(k+1)*n]) ---
-    #[inline] fn t_sol_air(&self) -> &[f64] { &self.inter[0..self.n] }
-    #[inline] fn pg_wall(&self) -> &[f64] { &self.inter[(1 * self.n)..(2 * self.n)] }
-    #[inline] fn pg_roof(&self) -> &[f64] { &self.inter[(2 * self.n)..(3 * self.n)] }
-    #[inline] fn pg_floor(&self) -> &[f64] { &self.inter[(3 * self.n)..(4 * self.n)] }
-    #[inline] fn pm_wall(&self) -> &[f64] { &self.inter[(4 * self.n)..(5 * self.n)] }
-    #[inline] fn pm_roof(&self) -> &[f64] { &self.inter[(5 * self.n)..(6 * self.n)] }
-    #[inline] fn pm_floor(&self) -> &[f64] { &self.inter[(6 * self.n)..(7 * self.n)] }
+    #[inline]
+    fn t_sol_air(&self) -> &[f64] {
+        &self.inter[0..self.n]
+    }
+    #[inline]
+    fn pg_wall(&self) -> &[f64] {
+        &self.inter[self.n..(2 * self.n)]
+    }
+    #[inline]
+    fn pg_roof(&self) -> &[f64] {
+        &self.inter[(2 * self.n)..(3 * self.n)]
+    }
+    #[inline]
+    fn pg_floor(&self) -> &[f64] {
+        &self.inter[(3 * self.n)..(4 * self.n)]
+    }
+    #[inline]
+    fn pm_wall(&self) -> &[f64] {
+        &self.inter[(4 * self.n)..(5 * self.n)]
+    }
+    #[inline]
+    fn pm_roof(&self) -> &[f64] {
+        &self.inter[(5 * self.n)..(6 * self.n)]
+    }
+    #[inline]
+    fn pm_floor(&self) -> &[f64] {
+        &self.inter[(6 * self.n)..(7 * self.n)]
+    }
 
-    #[inline] fn t_sol_air_mut(&mut self) -> &mut [f64] { &mut self.inter[0..self.n] }
-    #[inline] fn pg_wall_mut(&mut self) -> &mut [f64] { &mut self.inter[(1 * self.n)..(2 * self.n)] }
-    #[inline] fn pg_roof_mut(&mut self) -> &mut [f64] { &mut self.inter[(2 * self.n)..(3 * self.n)] }
-    #[inline] fn pg_floor_mut(&mut self) -> &mut [f64] { &mut self.inter[(3 * self.n)..(4 * self.n)] }
-    #[inline] fn pm_wall_mut(&mut self) -> &mut [f64] { &mut self.inter[(4 * self.n)..(5 * self.n)] }
-    #[inline] fn pm_roof_mut(&mut self) -> &mut [f64] { &mut self.inter[(5 * self.n)..(6 * self.n)] }
-    #[inline] fn pm_floor_mut(&mut self) -> &mut [f64] { &mut self.inter[(6 * self.n)..(7 * self.n)] }
+    #[inline]
+    fn t_sol_air_mut(&mut self) -> &mut [f64] {
+        &mut self.inter[0..self.n]
+    }
+    #[inline]
+    fn pg_wall_mut(&mut self) -> &mut [f64] {
+        &mut self.inter[self.n..(2 * self.n)]
+    }
+    #[inline]
+    fn pg_roof_mut(&mut self) -> &mut [f64] {
+        &mut self.inter[(2 * self.n)..(3 * self.n)]
+    }
+    #[inline]
+    fn pg_floor_mut(&mut self) -> &mut [f64] {
+        &mut self.inter[(3 * self.n)..(4 * self.n)]
+    }
+    #[inline]
+    fn pm_wall_mut(&mut self) -> &mut [f64] {
+        &mut self.inter[(4 * self.n)..(5 * self.n)]
+    }
+    #[inline]
+    fn pm_roof_mut(&mut self) -> &mut [f64] {
+        &mut self.inter[(5 * self.n)..(6 * self.n)]
+    }
+    #[inline]
+    fn pm_floor_mut(&mut self) -> &mut [f64] {
+        &mut self.inter[(6 * self.n)..(7 * self.n)]
+    }
 }
 
 impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>> ThermalModel<T> {
@@ -1118,8 +1160,7 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         }
 
         // Update the mass temperatures with new values (convert Vec to T type)
-        self.0.mass_temperatures =
-            VectorField::new(std::mem::take(&mut scratch.new_mass)).into();
+        self.0.mass_temperatures = VectorField::new(std::mem::take(&mut scratch.new_mass)).into();
 
         // Plan 03-04: Update previous mass temperature for tracking (kept for diagnostic output)
         // Mass energy change tracking removed - Ti_free already includes thermal mass effects
@@ -1293,7 +1334,8 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
             let d = h_ms_me_is_prod_ref[i] + (h_sum_ref[i] * h_total_with_iz_ref[i]) + g;
             scratch.den[i] = d;
         }
-        let ground_coeff_6r2c = T::from(VectorField::new(std::mem::take(&mut scratch.ground_coeff)));
+        let ground_coeff_6r2c =
+            T::from(VectorField::new(std::mem::take(&mut scratch.ground_coeff)));
         den = T::from(VectorField::new(std::mem::take(&mut scratch.den)));
 
         // Use envelope mass temperature instead of single mass temperature
@@ -1763,8 +1805,7 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         // Note: env_mass_temps_for_int is no longer needed as a clone
         // We will borrow from new_env_mass_temperatures before moving it
 
-        self.0.envelope_mass_temperatures =
-            VectorField::new(scratch.new_env.clone()).into();
+        self.0.envelope_mass_temperatures = VectorField::new(scratch.new_env.clone()).into();
 
         let env_mass_temps_for_int = std::mem::take(&mut scratch.new_env);
 
@@ -2622,21 +2663,9 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                 continue;
             }
             let solver = &mut self.0.multi_node_solvers[zone_idx];
-            let mass_temp_wall_pre = scratch
-                .pg_wall()
-                .get(zone_idx)
-                .copied()
-                .unwrap_or(20.0);
-            let mass_temp_roof_pre = scratch
-                .pg_roof()
-                .get(zone_idx)
-                .copied()
-                .unwrap_or(20.0);
-            let mass_temp_floor_pre = scratch
-                .pg_floor()
-                .get(zone_idx)
-                .copied()
-                .unwrap_or(20.0);
+            let mass_temp_wall_pre = scratch.pg_wall().get(zone_idx).copied().unwrap_or(20.0);
+            let mass_temp_roof_pre = scratch.pg_roof().get(zone_idx).copied().unwrap_or(20.0);
+            let mass_temp_floor_pre = scratch.pg_floor().get(zone_idx).copied().unwrap_or(20.0);
             let phi_m_wall = scratch.pm_wall().get(zone_idx).copied().unwrap_or(0.0);
             let phi_m_roof = scratch.pm_roof().get(zone_idx).copied().unwrap_or(0.0);
             let phi_m_floor = scratch.pm_floor().get(zone_idx).copied().unwrap_or(0.0);
