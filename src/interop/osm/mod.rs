@@ -41,6 +41,10 @@
 //! - `geometry.floor_height` (computed from `total_volume / total_floor_area`)
 //! - `constructions.{wall,roof,floor}.layers[*]`
 //!   (`.name`, `.thickness`, `.conductivity`, `.density`, `.specific_heat`)
+//! - `controls.zone_control.heating_setpoint`
+//!   (via `OS:Thermostat.Heating Setpoint Temperature`, one per zone)
+//! - `controls.zone_control.cooling_setpoint`
+//!   (via `OS:Thermostat.Cooling Setpoint Temperature`, one per zone)
 //! - `weather` for the `TmyLocation` variant (lat/lon pair, within tolerance)
 //!
 //! ## Known lossy fields
@@ -50,8 +54,6 @@
 //!
 //! - `metadata.description`, `.author`, `.created_at`
 //! - `schedules.*` (writer does not yet emit `OS:Schedule:*`)
-//! - `controls.{heating,cooling}_setpoint` (no `OS:Thermostat` emission;
-//!   reader falls back to 20 °C / 24 °C)
 //! - `constructions.{wall,roof,floor}.window`
 //!   (no `OS:SubSurface` emission in the supported subset)
 //! - `constructions.interzone` (not emitted)
