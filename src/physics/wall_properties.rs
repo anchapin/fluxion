@@ -162,7 +162,13 @@ mod tests {
     }
 
     impl CustomMaterial {
-        fn new(name: &str, thickness: f64, conductivity: f64, density: f64, specific_heat: f64) -> Self {
+        fn new(
+            name: &str,
+            thickness: f64,
+            conductivity: f64,
+            density: f64,
+            specific_heat: f64,
+        ) -> Self {
             Self {
                 name: name.to_string(),
                 thickness,
@@ -214,7 +220,11 @@ mod tests {
                 "Concrete", 0.150, 1.4, 2300.0, 880.0,
             )))
             .add_layer(Box::new(CustomMaterial::new(
-                "Insulation", 0.050, 0.04, 50.0, 840.0,
+                "Insulation",
+                0.050,
+                0.04,
+                50.0,
+                840.0,
             )))
             // exterior cladding
             .add_layer(Box::new(CustomMaterial::new(
@@ -236,7 +246,11 @@ mod tests {
                 "Concrete", 0.150, 1.4, 2300.0, 840.0, // legacy Cp=840
             )))
             .add_layer(Box::new(CustomMaterial::new(
-                "Insulation", 0.050, 0.04, 50.0, 840.0,
+                "Insulation",
+                0.050,
+                0.04,
+                50.0,
+                840.0,
             )))
             .add_layer(Box::new(CustomMaterial::new(
                 "Brick", 0.100, 0.81, 1920.0, 840.0, // legacy generic brick
@@ -552,7 +566,10 @@ mod tests {
         // Layer order is identical — both walls are the same 4-layer stack.
         assert_eq!(legacy.layers.len(), ashrae.layers.len());
         for (a, b) in legacy.layers.iter().zip(ashrae.layers.iter()) {
-            assert_eq!(a.name, b.name, "layer order must match between legacy and ASHRAE walls");
+            assert_eq!(
+                a.name, b.name,
+                "layer order must match between legacy and ASHRAE walls"
+            );
         }
 
         // Concrete-layer Cp drift: 880/840 − 1 = +4.7619 %.
@@ -586,9 +603,9 @@ mod tests {
         // Total Cm — ASHRAE wall must exceed legacy by ~1 % (concrete Cp
         // drift is partly offset by brick Cp dropping 840→790 and gypsum
         // density dropping 960→800).
-        let total_drift_pct =
-            100.0 * (ashrae.total_thermal_mass_kj_m2 - legacy.total_thermal_mass_kj_m2)
-                / legacy.total_thermal_mass_kj_m2;
+        let total_drift_pct = 100.0
+            * (ashrae.total_thermal_mass_kj_m2 - legacy.total_thermal_mass_kj_m2)
+            / legacy.total_thermal_mass_kj_m2;
         assert!(
             total_drift_pct > 0.5 && total_drift_pct < 2.0,
             "Total wall Cm drift = {total_drift_pct:.4} % must lie in [0.5, 2.0] % \
