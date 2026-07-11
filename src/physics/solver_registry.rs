@@ -64,7 +64,10 @@ impl SolverRegistry {
     /// `Box<dyn HeatConductionSolver>` can be wrapped in a
     /// `PhysicsSurfaceFluxProvider::add_surface` (Issue #1409 wiring)
     /// the same way `FiveR1CSolver` is wrapped today.
-    pub fn construct(key: &str, wall: &WallSpec) -> Result<Box<dyn HeatConductionSolver>, SolverError> {
+    pub fn construct(
+        key: &str,
+        wall: &WallSpec,
+    ) -> Result<Box<dyn HeatConductionSolver>, SolverError> {
         match key {
             registry_keys::FIVE_R1C => {
                 let mut solver = FiveR1CSolver::new();
@@ -239,7 +242,10 @@ mod tests {
             SolverRegistry::construct(registry_keys::MULTINODE_9R4C, &wall)
                 .expect("multinode_9r4c key must construct a solver");
         assert_eq!(solver.name(), "MultiNode9R4C");
-        assert!(solver.is_valid(), "constructed MultiNodeSolver must be valid");
+        assert!(
+            solver.is_valid(),
+            "constructed MultiNodeSolver must be valid"
+        );
     }
 
     #[test]
@@ -345,9 +351,14 @@ mod tests {
         let wall = wall_200mm_concrete();
 
         // Build via the canonical mode-aware constructor, then box it.
-        let solver =
-            MultiNodeSolver::from_wall_spec_with_mode(&wall, MassAirCouplingMode::ParallelResistance);
-        assert_eq!(solver.coupling_mode, MassAirCouplingMode::ParallelResistance);
+        let solver = MultiNodeSolver::from_wall_spec_with_mode(
+            &wall,
+            MassAirCouplingMode::ParallelResistance,
+        );
+        assert_eq!(
+            solver.coupling_mode,
+            MassAirCouplingMode::ParallelResistance
+        );
 
         // The boxed trait object must still step and produce a finite flux,
         // proving the coupling mode survives the trait boundary.

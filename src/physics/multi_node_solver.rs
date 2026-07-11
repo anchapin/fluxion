@@ -1370,10 +1370,9 @@ impl HeatConductionSolver for MultiNodeSolver {
         // 5R1C lumped-mass midpoint (assuming symmetric R_si = R_se in the
         // partition used by `initialize`), giving q = (T_ext − T_int) / (2 R).
         // This matches what 5R1C returns on step ≥ 2 (after the pre-step seed).
-        let t_mass_avg = (self.mass.wall.temperature
-            + self.mass.roof.temperature
-            + self.mass.floor.temperature)
-            / 3.0;
+        let t_mass_avg =
+            (self.mass.wall.temperature + self.mass.roof.temperature + self.mass.floor.temperature)
+                / 3.0;
         let q = (t_mass_avg - t_int) / self.r_total;
         Ok(HeatFlux::from_value(q))
     }
@@ -1424,8 +1423,7 @@ impl HeatConductionSolver for MultiNodeSolver {
                 self.r_total
             )));
         }
-        let q_ss =
-            (T_exterior.to_value() - T_interior.to_value()) / self.r_total;
+        let q_ss = (T_exterior.to_value() - T_interior.to_value()) / self.r_total;
         Ok(HeatFlux::from_value(q_ss))
     }
 
