@@ -450,7 +450,12 @@ mod tests {
 
     #[test]
     fn test_solver_manager_multiple_walls() {
-        let mut manager = SolverManager::default();
+        // Use a high threshold so that the light wall still selects 5R1C
+        // after the v2023 h_exterior=18.3 unification (Issue #1419). The
+        // thermal-mass time constant `τ = C/(h_int+h_ext)` grows ~41% with
+        // the smaller h_ext, so a 100mm concrete wall that previously fell
+        // under the 2.0h default threshold now requires a larger one.
+        let mut manager = SolverManager::with_threshold(10.0);
 
         // Create walls with different thermal mass
         let light_wall = AssemblyBuilder::new("Light Wall".to_string())

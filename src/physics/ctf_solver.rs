@@ -41,6 +41,7 @@
 //! let q_flux = solver.step(t_interior, t_exterior);
 //! ```
 
+use crate::physics::constants::thermal::ashrae_140::EXTERIOR_FILM_COEFF;
 use crate::physics::ctf_coefficients::CTFCoefficients;
 use std::fmt;
 
@@ -68,8 +69,8 @@ impl CTFSolverConfig {
             timestep,
             history_size,
             surface_area: 1.0,
-            h_interior: 8.29, // ASHRAE 140 Section 5.2
-            h_exterior: 29.3, // ASHRAE 140 Section 5.2 at 6.7 m/s wind speed
+            h_interior: 8.29,                // ASHRAE 140 Section 5.2
+            h_exterior: EXTERIOR_FILM_COEFF, // ASHRAE 140 Section 5.2 (Issue #1419, v2023)
             alpha_solar: 0.7,
         }
     }
@@ -81,7 +82,7 @@ impl CTFSolverConfig {
             history_size: 50,
             surface_area: 63.6, // m² (corrected: 2(8+6)×2.7 - 12m² window = 63.6, was 97.2)
             h_interior: 8.29,   // ASHRAE 140 Section 5.2
-            h_exterior: 29.3,   // ASHRAE 140 Section 5.2 at 6.7 m/s wind speed
+            h_exterior: EXTERIOR_FILM_COEFF, // ASHRAE 140 Section 5.2 (Issue #1419, v2023)
             alpha_solar: 0.7,
         }
     }
@@ -510,7 +511,7 @@ mod tests {
         assert_eq!(config.history_size, 50);
         assert!((config.surface_area - 63.6).abs() < 0.1);
         assert_eq!(config.h_interior, 8.29);
-        assert_eq!(config.h_exterior, 29.3);
+        assert_eq!(config.h_exterior, EXTERIOR_FILM_COEFF);
     }
 
     #[test]
@@ -681,7 +682,7 @@ mod tests {
         assert_eq!(cloned.history_size, 50);
         assert_eq!(cloned.surface_area, 1.0);
         assert_eq!(cloned.h_interior, 8.29);
-        assert_eq!(cloned.h_exterior, 29.3);
+        assert_eq!(cloned.h_exterior, EXTERIOR_FILM_COEFF);
     }
 
     #[test]

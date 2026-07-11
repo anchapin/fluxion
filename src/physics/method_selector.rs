@@ -33,6 +33,13 @@
 use fluxion_core::assembly::BuildingAssembly;
 use log::{info, warn};
 
+// Issue #1419: unified source of truth for the ASHRAE 140 exterior film
+// coefficient (18.3 W/m²K v2023, corrected from legacy 29.3 W/m²K per #1140).
+// Keeps the per-surface method-selection path in lock-step with the
+// zone-level solver that already references this constant
+// (`src/sim/thermal_model_core.rs:156`, `src/sim/construction.rs:415`).
+use crate::physics::constants::thermal::ashrae_140::EXTERIOR_FILM_COEFF;
+
 /// Available thermal solution methods.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ThermalMethod {
@@ -194,7 +201,7 @@ impl SolverSelectionResult {
 /// * `override_method` - Manual override (None = auto, Some = force method)
 /// * `enable_fallback` - Enable CTF → FD fallback (default: true)
 /// * `h_interior` - Interior convective coefficient [W/m²·K] (default: 8.29 per ASHRAE 140 Sec. 5.2)
-/// * `h_exterior` - Exterior convective coefficient [W/m²·K] (default: 29.3 per ASHRAE 140 Sec. 5.2)
+/// * `h_exterior` - Exterior convective coefficient [W/m²·K] (default: `EXTERIOR_FILM_COEFF` per ASHRAE 140 Sec. 5.2, v2023)
 #[derive(Debug, Clone)]
 pub struct ThermalMethodSelector {
     /// Selection threshold: τ > threshold → CTF/FD (default: 2.0 hours)
@@ -223,8 +230,8 @@ impl ThermalMethodSelector {
             threshold_hours: config.threshold_hours,
             override_method: config.override_method,
             enable_fallback: config.enable_fallback,
-            h_interior: 8.29, // ASHRAE 140 Section 5.2
-            h_exterior: 29.3, // ASHRAE 140 Section 5.2 at 6.7 m/s wind speed
+            h_interior: 8.29,                // ASHRAE 140 Section 5.2
+            h_exterior: EXTERIOR_FILM_COEFF, // ASHRAE 140 Section 5.2 (Issue #1419, v2023)
             selection_config: if config.per_surface_selection {
                 SolverSelectionConfig::PerSurface(vec![])
             } else if config.enable_automatic_selection {
@@ -567,7 +574,7 @@ impl Default for ThermalMethodSelector {
             override_method: None,
             enable_fallback: true,
             h_interior: 8.29, // ASHRAE 140 Section 5.2: h_int = 8.29 W/m²K
-            h_exterior: 29.3, // ASHRAE 140 Section 5.2: h_ext = 29.3 W/m²K at 6.7 m/s wind speed
+            h_exterior: EXTERIOR_FILM_COEFF, // ASHRAE 140 Section 5.2 (Issue #1419, v2023)
             selection_config: SolverSelectionConfig::Automatic,
         }
     }
@@ -754,7 +761,7 @@ mod tests {
         assert!(selector.override_method.is_none());
         assert!(selector.enable_fallback);
         assert_eq!(selector.h_interior, 8.29);
-        assert_eq!(selector.h_exterior, 29.3);
+        assert_eq!(selector.h_exterior, EXTERIOR_FILM_COEFF);
     }
 
     #[test]
