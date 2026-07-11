@@ -48,6 +48,12 @@
 // re-export shim in `src/sim/assembly.rs` for callers that haven't migrated.
 use fluxion_core::assembly::BuildingAssembly;
 
+// Issue #1419: unified source of truth for the ASHRAE 140 exterior film
+// coefficient. `EXTERIOR_FILM_COEFF` resolves to 18.3 W/m²K (v2023, vertical
+// surface, ~3.4 m/s wind) — corrected from the legacy 29.3 W/m²K (6.7 m/s) in
+// Issue #1140. See `src/physics/constants/thermal/ashrae_140/v2023.rs:12`.
+use crate::physics::constants::thermal::ashrae_140::EXTERIOR_FILM_COEFF;
+
 /// Layer properties needed by thermal solvers.
 ///
 /// This is a flat, owned struct with no internal structure —
@@ -111,8 +117,11 @@ impl WallProperties {
 
     /// Surface resistance for exterior per ASHRAE 140 Section 5.2 [m²K/W]
     ///
-    /// h_ext = 29.3 W/m²K at 6.7 m/s wind speed → R = 1/29.3 ≈ 0.03413 m²K/W
-    pub const R_EXT: f64 = 1.0 / 29.3; // ASHRAE 140 Section 5.2: h_ext = 29.3 W/m²K
+    /// h_ext = `EXTERIOR_FILM_COEFF` W/m²K (~3.4 m/s wind) → R = 1/h_ext m²K/W.
+    /// Uses the v2023 unified constant (Issue #1419) so the per-surface
+    /// conduction path agrees with the zone-level solver
+    /// (`src/sim/thermal_model_core.rs:156`, `src/sim/construction.rs:415`).
+    pub const R_EXT: f64 = 1.0 / EXTERIOR_FILM_COEFF;
 
     /// Create wall properties from a building assembly.
     ///
@@ -177,7 +186,7 @@ mod tests {
         assert_eq!(props.layers.len(), 1);
         assert_eq!(props.layers[0].name, "Concrete");
         assert!((props.surface_resistance_inside - 1.0 / 8.29).abs() < 1e-10);
-        assert!((props.surface_resistance_outside - 1.0 / 29.3).abs() < 1e-10);
+        assert!((props.surface_resistance_outside - 1.0 / EXTERIOR_FILM_COEFF).abs() < 1e-10);
 
         let expected_total: f64 = props.layers.iter().map(|l| l.thermal_mass_kj_m2).sum();
         assert!((props.total_thermal_mass_kj_m2 - expected_total).abs() < 0.01);
@@ -213,7 +222,7 @@ mod tests {
         let props = WallProperties::from_assembly(&assembly);
 
         assert!((props.surface_resistance_inside - 1.0 / 8.29).abs() < 1e-10);
-        assert!((props.surface_resistance_outside - 1.0 / 29.3).abs() < 1e-10);
+        assert!((props.surface_resistance_outside - 1.0 / EXTERIOR_FILM_COEFF).abs() < 1e-10);
     }
 
     #[test]

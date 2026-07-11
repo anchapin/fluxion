@@ -27,6 +27,7 @@
 //! assert!((spec.thermal_capacity() - 2243.0 * 837.0 * 0.2).abs() < 1.0);
 //! ```
 
+use crate::physics::constants::thermal::ashrae_140::EXTERIOR_FILM_COEFF;
 use crate::physics::ctf_coefficients::CTFMaterial;
 use crate::physics::fd_discretization::MaterialLayer;
 use crate::physics::wall_properties::{LayerProperties, WallProperties};
@@ -233,7 +234,7 @@ impl WallSpec {
             layers,
             total_thermal_mass_kj_m2,
             surface_resistance_inside: 1.0 / 8.29,
-            surface_resistance_outside: 1.0 / 29.3,
+            surface_resistance_outside: 1.0 / EXTERIOR_FILM_COEFF,
         }
     }
 }
