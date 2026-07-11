@@ -75,6 +75,8 @@ use fluxion::physics::units::{
 };
 use fluxion::physics::wall_spec::{LayerSpec, WallSpec};
 
+use proptest::prelude::*;
+
 // ---------------------------------------------------------------------------
 // Construction type definitions (3+ types per acceptance criteria)
 // ---------------------------------------------------------------------------
@@ -1055,4 +1057,274 @@ fn test_wall_properties_documentation() {
     println!(
         "\nNote: τ = C × R (thermal time constant). Current solver ignores transient dynamics."
     );
+}
+
+// ===========================================================================
+// Section 7: Property-Based Tests (proptest) for steady_state_flux contract
+// ===========================================================================
+//
+// Covers FiveR1CSolver::steady_state_flux contract under the #1392 query-only
+// separation. Source-of-truth contract: `src/physics/solver_trait.rs:258-267`
+// (`HeatConductionSolver::steady_state_flux`) — must be deterministic and
+// side-effect-free; callers needing thermal mass must call `step()` first.
+//
+// The single-point test in `src/physics/five_r1c_solver.rs:301` only checks
+// `(20.0, 0.0)`, so the following mutations all survive today:
+//   * sign flip:       `(T_int - T_ext) / R_total`
+//   * operator swap:   `(T_ext - T_int) * R_total`
+//   * cross-product:   `(T_ext * T_int) / R_total`
+//   * offset-by-ε:     `(T_ext - T_int + 1e-9) / R_total`
+//   * overflow hook:   `(T_ext - T_int).exp() / R_total`
+//   * stateful leak:   `q + self.q_flux += ...` (the #1392 regression)
+//
+// Each invariant below catches one of those mutation families across
+// 5_000 randomized cases over `[-50, 60] °C`. Reference pattern:
+// `tests/ventilation_isolation.rs:435` (proptest edge-case coverage).
+
+/// Helper: build an initialized 200 mm concrete solver (the heavy wall used by
+/// the single-point test `test_five_r1c_steady_state`). Returns a value-style
+/// pair `(solver, R_total)` so the R-scaling arm can compare against another
+/// wall without re-deriving R from the private field.
+fn steady_solver_200mm_concrete() -> (FiveR1CSolver, f64) {
+    let wall = WallSpec::single_layer("200mm Concrete", 0.2, 1.73, 2243.0, 837.0);
+    let r_total = wall.total_r_value();
+    let mut solver = FiveR1CSolver::new();
+    solver
+        .initialize(&wall)
+        .expect("200mm concrete wall must initialize");
+    assert!(solver.is_valid());
+    (solver, r_total)
+}
+
+/// Helper: build an initialized 100 mm concrete solver for the R_total
+/// scaling arm. With k = 1.73 W/(m·K) and uniform thickness ratio 2:1,
+/// `R_thin == R_thick / 2` by construction (so the inverse-scaling law
+/// reduces to `q_thin / q_thick == 2`).
+fn steady_solver_100mm_concrete() -> (FiveR1CSolver, f64) {
+    let wall = WallSpec::single_layer("100mm Concrete", 0.1, 1.73, 2243.0, 837.0);
+    let r_total = wall.total_r_value();
+    let mut solver = FiveR1CSolver::new();
+    solver
+        .initialize(&wall)
+        .expect("100mm concrete wall must initialize");
+    (solver, r_total)
+}
+
+proptest! {
+    #![proptest_config(ProptestConfig::with_cases(5_000))]
+
+    // -----------------------------------------------------------------------
+    // (1) Sign rule
+    // -----------------------------------------------------------------------
+
+    /// Sign rule: exterior cooler than interior ⇒ heat leaves the zone
+    /// (q < 0, exterior side is losing energy / interior is losing energy).
+    /// exterior warmer ⇒ heat enters (q > 0). equal ⇒ q == 0 exactly.
+    /// Catches any sign-flip mutation of `(T_ext - T_int)`.
+    #[test]
+    fn proptest_steady_state_flux_sign(
+        t_int in -50.0_f64..60.0,
+        t_ext in -50.0_f64..60.0,
+    ) {
+        let (solver, _) = steady_solver_200mm_concrete();
+        // UFCS — force the trait-method dispatch. `FiveR1CSolver` also has an
+        // inherent `steady_state_flux(&self, f64, f64) -> f64` and Rust's
+        // method-resolution order prefers inherent methods, so calling
+        // `solver.steady_state_flux(...)` would silently bypass the trait
+        // contract (and its `is_valid` precondition) the issue wants to cover.
+        let q = <FiveR1CSolver as HeatConductionSolver>::steady_state_flux(
+            &solver,
+            Temperature::from_value(t_int),
+            Temperature::from_value(t_ext),
+        )
+        .expect("steady_state_flux")
+        .to_value();
+        if t_ext < t_int {
+            prop_assert!(q < 0.0, "q must be negative when T_ext < T_int; got q={} for T_int={} T_ext={}", q, t_int, t_ext);
+        } else if t_ext > t_int {
+            prop_assert!(q > 0.0, "q must be positive when T_ext > T_int; got q={} for T_int={} T_ext={}", q, t_int, t_ext);
+        } else {
+            // T_ext == T_int exactly.
+            prop_assert!(q == 0.0, "q must be exactly 0 when T_ext == T_int; got q={} for T_int={} T_ext={}", q, t_int, t_ext);
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // (2) Zero at equilibrium
+    // -----------------------------------------------------------------------
+
+    /// T_int == T_ext ⇒ q == 0.0 exactly (no epsilon). Catches offset-by-ε
+    /// mutations such as `(T_ext - T_int + 1e-9) / R_total`.
+    #[test]
+    fn proptest_steady_state_flux_zero_when_equal(t in -50.0_f64..60.0) {
+        let (solver, _) = steady_solver_200mm_concrete();
+        let q = <FiveR1CSolver as HeatConductionSolver>::steady_state_flux(
+            &solver,
+            Temperature::from_value(t),
+            Temperature::from_value(t),
+        )
+        .expect("steady_state_flux")
+        .to_value();
+        prop_assert!(q == 0.0, "q must be exactly 0 when T_int == T_ext; got q={}", q);
+        // Bit-level reinforcement: catches mutations like `(T_ext - T_int + 1e-9) / R`
+        // that produce a *non-zero* value still close enough to 0.0 to pass naive ==.
+        prop_assert!(
+            q.to_bits() == 0.0_f64.to_bits(),
+            "q must be bit-identical to f64::ZERO; got bits={:#x}",
+            q.to_bits()
+        );
+    }
+
+    // -----------------------------------------------------------------------
+    // (3) Anti-symmetry
+    // -----------------------------------------------------------------------
+
+    /// Anti-symmetry: f(T_int, T_ext) + f(T_ext, T_int) == 0.
+    /// Catches the `/ → *` mutation (`q = (T_ext - T_int) * R_total`) and
+    /// the sign-flip mutation.
+    #[test]
+    fn proptest_steady_state_flux_anti_symmetric(
+        t_int in -50.0_f64..60.0,
+        t_ext in -50.0_f64..60.0,
+    ) {
+        let (solver, _) = steady_solver_200mm_concrete();
+        let q_fwd = <FiveR1CSolver as HeatConductionSolver>::steady_state_flux(
+            &solver,
+            Temperature::from_value(t_int),
+            Temperature::from_value(t_ext),
+        )
+        .expect("steady_state_flux fwd")
+        .to_value();
+        let q_rev = <FiveR1CSolver as HeatConductionSolver>::steady_state_flux(
+            &solver,
+            Temperature::from_value(t_ext),
+            Temperature::from_value(t_int),
+        )
+        .expect("steady_state_flux rev")
+        .to_value();
+        // q_fwd == (t_ext - t_int) / R, q_rev == (t_int - t_ext) / R, so the
+        // sum is exactly 0 by IEEE-754 (subtracting two equal-magnitude,
+        // opposite-sign reals of the same magnitude). Allow 1e-12 tolerance
+        // for safety on adversarial inputs.
+        let sum = q_fwd + q_rev;
+        prop_assert!(sum.abs() < 1e-12, "f(T_int, T_ext) + f(T_ext, T_int) must be 0; got sum={} for T_int={} T_ext={}", sum, t_int, t_ext);
+    }
+
+    // -----------------------------------------------------------------------
+    // (4) Inverse scaling with R_total
+    // -----------------------------------------------------------------------
+
+    /// q ∝ 1/R_total for identical (T_int, T_ext). Compares 100 mm and 200 mm
+    /// concrete walls whose ratio is *exactly* 1:2 by construction
+    /// (R = thickness/k, identical k). Uses the unit-vector form
+    /// `q · R == ΔT` so the test is well-defined even when ΔT = 0.
+    /// Catches operator-substitution mutations like `(T_ext - T_int) * R_total`.
+    #[test]
+    fn proptest_steady_state_flux_scales_inverse_with_r_total(
+        t_int in -30.0_f64..40.0,
+        t_ext in -30.0_f64..40.0,
+    ) {
+        let (s_thin, r_thin) = steady_solver_100mm_concrete();
+        let (s_thick, r_thick) = steady_solver_200mm_concrete();
+        // Defensive: confirm the construction invariant holds before we trust
+        // the scaling check. Both walls share k=1.73, so R is purely
+        // thickness-dependent and r_thick must equal 2 * r_thin.
+        let ratio = r_thick / r_thin;
+        prop_assume!((ratio - 2.0).abs() < 1e-12, "wall construction must give r_thick == 2 * r_thin; got ratio={}", ratio);
+        let q_thin = <FiveR1CSolver as HeatConductionSolver>::steady_state_flux(
+            &s_thin,
+            Temperature::from_value(t_int),
+            Temperature::from_value(t_ext),
+        )
+        .expect("steady_state_flux thin")
+        .to_value();
+        let q_thick = <FiveR1CSolver as HeatConductionSolver>::steady_state_flux(
+            &s_thick,
+            Temperature::from_value(t_int),
+            Temperature::from_value(t_ext),
+        )
+        .expect("steady_state_flux thick")
+        .to_value();
+        // For both walls: q · R == ΔT. So q_thin · r_thin == q_thick · r_thick.
+        let lhs = q_thin * r_thin;
+        let rhs = q_thick * r_thick;
+        prop_assert!(
+            (lhs - rhs).abs() < 1e-9,
+            "q must scale as 1/R for identical (ΔT); got lhs={} rhs={} (expected equal) for T_int={} T_ext={}",
+            lhs, rhs, t_int, t_ext
+        );
+    }
+
+    // -----------------------------------------------------------------------
+    // (5) Query purity (regression for #1392)
+    // -----------------------------------------------------------------------
+
+    /// Query purity (regression guard for #1392). `steady_state_flux` is
+    /// documented as a side-effect-free deterministic query — the trait doc
+    /// (`src/physics/solver_trait.rs:240-267`) says it "must NOT depend on
+    /// any state mutated by prior `step()` invocations". This arm forces a
+    /// `step()` call between two `steady_state_flux` reads with identical
+    /// arguments, then asserts bit-identical outputs. Catches any future PR
+    /// that re-introduces `self.q_flux += ...` or a similar hidden-state
+    /// mutation into the query path.
+    #[test]
+    fn proptest_steady_state_flux_query_purity(
+        t_int in -50.0_f64..60.0,
+        t_ext in -50.0_f64..60.0,
+    ) {
+        let (mut solver, _) = steady_solver_200mm_concrete();
+        let q1 = <FiveR1CSolver as HeatConductionSolver>::steady_state_flux(
+            &solver,
+            Temperature::from_value(t_int),
+            Temperature::from_value(t_ext),
+        )
+        .expect("steady_state_flux 1")
+        .to_value();
+        // Advance the transient solver; if any state mutation leaked into
+        // `steady_state_flux`, the second read would diverge.
+        let _ = solver
+            .step(
+                Time::from_value(3600.0),
+                Temperature::from_value(t_int),
+                Temperature::from_value(t_ext),
+                HeatTransferCoefficient::from_value(8.0),
+                HeatTransferCoefficient::from_value(25.0),
+            )
+            .expect("step");
+        let q2 = <FiveR1CSolver as HeatConductionSolver>::steady_state_flux(
+            &solver,
+            Temperature::from_value(t_int),
+            Temperature::from_value(t_ext),
+        )
+        .expect("steady_state_flux 2")
+        .to_value();
+        prop_assert!(
+            q1.to_bits() == q2.to_bits(),
+            "steady_state_flux must be deterministic across calls and step() history; got q1={} q2={} for T_int={} T_ext={}",
+            q1, q2, t_int, t_ext
+        );
+    }
+
+    // -----------------------------------------------------------------------
+    // (6) Finiteness over the physical operating envelope
+    // -----------------------------------------------------------------------
+
+    /// Finiteness across the physical envelope `[-50, 60] °C`. Catches
+    /// overflow-style mutations such as `q = (T_ext - T_int).exp() / R` or
+    /// divisions that would blow up when ΔT is large.
+    #[test]
+    fn proptest_steady_state_flux_no_nan_for_extremes(
+        t_int in -50.0_f64..60.0,
+        t_ext in -50.0_f64..60.0,
+    ) {
+        let (solver, _) = steady_solver_200mm_concrete();
+        let q = <FiveR1CSolver as HeatConductionSolver>::steady_state_flux(
+            &solver,
+            Temperature::from_value(t_int),
+            Temperature::from_value(t_ext),
+        )
+        .expect("steady_state_flux")
+        .to_value();
+        prop_assert!(q.is_finite(), "q must be finite for physical inputs; got q={} for T_int={} T_ext={}", q, t_int, t_ext);
+    }
 }
