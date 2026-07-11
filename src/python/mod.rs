@@ -4,9 +4,13 @@
 pub mod bindings;
 #[cfg(feature = "python-bindings")]
 pub mod hvac_bindings;
+#[cfg(feature = "python-bindings")]
+pub mod osm_bindings;
 
 #[cfg(feature = "python-bindings")]
 pub use hvac_bindings::*;
+#[cfg(feature = "python-bindings")]
+pub use osm_bindings::*;
 
 #[cfg(feature = "python-bindings")]
 pub use bindings::*;
@@ -31,6 +35,11 @@ pub fn fluxion_python(_py: Python, m: &Bound<'_, PyModule>) -> PyResult<()> {
         hvac_bindings::create_zone_setpoints,
         m
     )?)?;
+
+    m.add_class::<osm_bindings::PyOsmReader>()?;
+    m.add_class::<osm_bindings::PyOsmWriter>()?;
+    m.add_function(pyo3::wrap_pyfunction!(osm_bindings::import_osm, m)?)?;
+    m.add_function(pyo3::wrap_pyfunction!(osm_bindings::export_osm, m)?)?;
 
     Ok(())
 }

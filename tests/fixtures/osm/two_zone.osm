@@ -1,0 +1,224 @@
+OS:Version,
+  {version}, !- Handle
+  3.6.0; !- Version Identifier
+
+OS:Site,
+  {site-1}, !- Handle
+  Two Zone Fixture, !- Name
+  40.0, !- Latitude
+  -105.0, !- Longitude
+  1609; !- Elevation {m}
+
+OS:Building,
+  {bldg-1}, !- Handle
+  Two Zone Fixture, !- Name
+  , !- Building Story Names
+  , !- Thermal Zone Names
+  125.0, !- Floor Area {m2}
+  1, !- Number of Floors
+  2.7; !- Floor Height {m}
+
+OS:Material,
+  {mat-w0}, !- Handle
+  Plasterboard, !- Name
+  MediumRough, !- Roughness
+  0.012, !- Thickness {m}
+  0.16, !- Conductivity {W/m-K}
+  950.0, !- Density {kg/m3}
+  840.0, !- Specific Heat {J/kg-K}
+  0.9; !- Emissivity
+
+OS:Material,
+  {mat-w1}, !- Handle
+  Fiberglass, !- Name
+  MediumRough, !- Roughness
+  0.066, !- Thickness {m}
+  0.04, !- Conductivity {W/m-K}
+  12.0, !- Density {kg/m3}
+  840.0, !- Specific Heat {J/kg-K}
+  0.9; !- Emissivity
+
+OS:Material,
+  {mat-w2}, !- Handle
+  Wood siding, !- Name
+  MediumRough, !- Roughness
+  0.009, !- Thickness {m}
+  0.14, !- Conductivity {W/m-K}
+  500.0, !- Density {kg/m3}
+  1300.0, !- Specific Heat {J/kg-K}
+  0.9; !- Emissivity
+
+OS:Material,
+  {mat-r0}, !- Handle
+  Roof membrane, !- Name
+  MediumRough, !- Roughness
+  0.010, !- Thickness {m}
+  0.20, !- Conductivity {W/m-K}
+  1100.0, !- Density {kg/m3}
+  900.0, !- Specific Heat {J/kg-K}
+  0.9; !- Emissivity
+
+OS:Material,
+  {mat-r1}, !- Handle
+  Roof insulation, !- Name
+  MediumRough, !- Roughness
+  0.120, !- Thickness {m}
+  0.035, !- Conductivity {W/m-K}
+  30.0, !- Density {kg/m3}
+  1400.0, !- Specific Heat {J/kg-K}
+  0.9; !- Emissivity
+
+OS:Material,
+  {mat-r2}, !- Handle
+  Gypsum ceiling, !- Name
+  MediumRough, !- Roughness
+  0.013, !- Thickness {m}
+  0.16, !- Conductivity {W/m-K}
+  800.0, !- Density {kg/m3}
+  1090.0, !- Specific Heat {J/kg-K}
+  0.9; !- Emissivity
+
+OS:Material,
+  {mat-f0}, !- Handle
+  Concrete slab, !- Name
+  MediumRough, !- Roughness
+  0.100, !- Thickness {m}
+  1.40, !- Conductivity {W/m-K}
+  2200.0, !- Density {kg/m3}
+  840.0, !- Specific Heat {J/kg-K}
+  0.9; !- Emissivity
+
+OS:Material,
+  {mat-f1}, !- Handle
+  Floor insulation, !- Name
+  MediumRough, !- Roughness
+  0.080, !- Thickness {m}
+  0.04, !- Conductivity {W/m-K}
+  25.0, !- Density {kg/m3}
+  1400.0, !- Specific Heat {J/kg-K}
+  0.9; !- Emissivity
+
+OS:Material,
+  {mat-f2}, !- Handle
+  Floor finish, !- Name
+  MediumRough, !- Roughness
+  0.015, !- Thickness {m}
+  0.17, !- Conductivity {W/m-K}
+  650.0, !- Density {kg/m3}
+  1200.0, !- Specific Heat {J/kg-K}
+  0.9; !- Emissivity
+
+OS:Construction,
+  {cons-w0}, !- Handle
+  ExtWall, !- Name
+  {mat-w0}, !- Layer 1
+  {mat-w1}, !- Layer 2
+  {mat-w2}; !- Layer 3
+
+OS:Construction,
+  {cons-r0}, !- Handle
+  Roof, !- Name
+  {mat-r0}, !- Layer 1
+  {mat-r1}, !- Layer 2
+  {mat-r2}; !- Layer 3
+
+OS:Construction,
+  {cons-f0}, !- Handle
+  Floor, !- Name
+  {mat-f0}, !- Layer 1
+  {mat-f1}, !- Layer 2
+  {mat-f2}; !- Layer 3
+
+OS:ThermalZone,
+  {zone-0}, !- Handle
+  Zone A, !- Name
+  , !- Thermostat Handle
+  1; !- Multiplier
+
+OS:ThermalZone,
+  {zone-1}, !- Handle
+  Zone B, !- Name
+  , !- Thermostat Handle
+  1; !- Multiplier
+
+OS:Space,
+  {space-0}, !- Handle
+  Zone A, !- Name
+  {zone-0}, !- Zone Handle
+  , !- Building Story Handle
+  50.0, !- Floor Area {m2}
+  135.0, !- Volume {m3}
+  0, !- X Origin {m}
+  0, !- Y Origin {m}
+  0; !- Z Origin {m}
+
+OS:Space,
+  {space-1}, !- Handle
+  Zone B, !- Name
+  {zone-1}, !- Zone Handle
+  , !- Building Story Handle
+  75.0, !- Floor Area {m2}
+  202.5, !- Volume {m3}
+  0, !- X Origin {m}
+  0, !- Y Origin {m}
+  0; !- Z Origin {m}
+
+OS:Surface,
+  {surf-w0}, !- Handle
+  West Wall, !- Name
+  Wall, !- Surface Type
+  {cons-w0}, !- Construction Handle
+  , !- Building Boundary Type
+  Outdoors, !- Outside Boundary Condition
+  , !- Sun Exposure
+  ; !- Wind Exposure
+
+OS:Surface,
+  {surf-w1}, !- Handle
+  North Wall, !- Name
+  Wall, !- Surface Type
+  {cons-w0}, !- Construction Handle
+  , !- Building Boundary Type
+  Outdoors, !- Outside Boundary Condition
+  , !- Sun Exposure
+  ; !- Wind Exposure
+
+OS:Surface,
+  {surf-w2}, !- Handle
+  East Wall, !- Name
+  Wall, !- Surface Type
+  {cons-w0}, !- Construction Handle
+  , !- Building Boundary Type
+  Outdoors, !- Outside Boundary Condition
+  , !- Sun Exposure
+  ; !- Wind Exposure
+
+OS:Surface,
+  {surf-w3}, !- Handle
+  South Wall, !- Name
+  Wall, !- Surface Type
+  {cons-w0}, !- Construction Handle
+  , !- Building Boundary Type
+  Outdoors, !- Outside Boundary Condition
+  , !- Sun Exposure
+  ; !- Wind Exposure
+
+OS:Surface,
+  {surf-r0}, !- Handle
+  Roof, !- Name
+  RoofCeiling, !- Surface Type
+  {cons-r0}, !- Construction Handle
+  , !- Building Boundary Type
+  Outdoors, !- Outside Boundary Condition
+  , !- Sun Exposure
+  ; !- Wind Exposure
+
+OS:Surface,
+  {surf-f0}, !- Handle
+  Floor, !- Name
+  Floor, !- Surface Type
+  {cons-f0}, !- Construction Handle
+  , !- Building Boundary Type
+  Ground, !- Outside Boundary Condition
+  NoSun, !- Sun Exposure
+  NoWind; !- Wind Exposure

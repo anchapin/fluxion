@@ -79,6 +79,15 @@ module-name = "fluxion"
 | `WallSurface` | `fluxion.WallSurface` | Wall surface with orientation |
 | `GeometryTensor` | `fluxion.GeometryTensor` | Zone geometry as matrices |
 
+### OSM Bindings
+
+| Rust Type | Python Class | Purpose |
+|----------|-------------|---------|
+| `OsmReader` | `fluxion.OsmReader` | Import OpenStudio OSM files into schema dictionaries |
+| `OsmWriter` | `fluxion.OsmWriter` | Export schema dictionaries to OpenStudio OSM files |
+| `import_osm` | `fluxion.import_osm` | One-shot OSM import helper |
+| `export_osm` | `fluxion.export_osm` | One-shot OSM export helper |
+
 ### HVAC Bindings
 
 | Rust Type | Python Class | Purpose |
