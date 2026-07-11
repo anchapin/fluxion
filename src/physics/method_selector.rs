@@ -230,7 +230,7 @@ impl ThermalMethodSelector {
             threshold_hours: config.threshold_hours,
             override_method: config.override_method,
             enable_fallback: config.enable_fallback,
-            h_interior: 8.29, // ASHRAE 140 Section 5.2
+            h_interior: 8.29,                // ASHRAE 140 Section 5.2
             h_exterior: EXTERIOR_FILM_COEFF, // ASHRAE 140 Section 5.2 (Issue #1419, v2023)
             selection_config: if config.per_surface_selection {
                 SolverSelectionConfig::PerSurface(vec![])

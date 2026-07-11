@@ -41,8 +41,8 @@
 //! let q_flux = solver.step(t_interior, t_exterior);
 //! ```
 
-use crate::physics::ctf_coefficients::CTFCoefficients;
 use crate::physics::constants::thermal::ashrae_140::EXTERIOR_FILM_COEFF;
+use crate::physics::ctf_coefficients::CTFCoefficients;
 use std::fmt;
 
 /// CTF solver configuration.
@@ -69,7 +69,7 @@ impl CTFSolverConfig {
             timestep,
             history_size,
             surface_area: 1.0,
-            h_interior: 8.29, // ASHRAE 140 Section 5.2
+            h_interior: 8.29,                // ASHRAE 140 Section 5.2
             h_exterior: EXTERIOR_FILM_COEFF, // ASHRAE 140 Section 5.2 (Issue #1419, v2023)
             alpha_solar: 0.7,
         }
