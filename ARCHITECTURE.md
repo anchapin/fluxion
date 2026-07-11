@@ -715,6 +715,7 @@ These traits support the main physics pipeline and should also be documented:
 | `Equipment` | `src/sim/equipment.rs` | HVAC equipment trait |
 | `VariableCapacityEquipment` | `src/sim/hvac/equipment.rs` | Variable-speed equipment |
 | `GroundTemperature` | `src/sim/boundary.rs` | Ground temp boundary condition |
+| `BatchOrchestrator` | `src/sim/orchestrator.rs` | Per-population CPU surrogate compute scheduling (rayon `par_chunks`, #1439) |
 
 ### Surface Heat Flux Trait Hierarchy
 
