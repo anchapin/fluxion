@@ -49,9 +49,7 @@ use std::path::Path;
 
 use fluxion::physics::ctf_solver_wrapper::CTFSolverWrapper;
 use fluxion::physics::solver_trait::HeatConductionSolver;
-use fluxion::physics::units::{
-    FromF64, HeatTransferCoefficient, Temperature, Time, ToF64,
-};
+use fluxion::physics::units::{FromF64, HeatTransferCoefficient, Temperature, Time, ToF64};
 use fluxion::physics::wall_spec::WallSpec;
 
 /// Reference data row from the EnergyPlus CSV output (supports both
@@ -183,10 +181,7 @@ fn load_reference_data(construction_name: &str) -> Vec<ReferenceRow> {
 /// Aggregate 15-min rows to hourly by taking every Nth row (i.e., the
 /// snapshot at the top of each hour group).
 fn aggregate_hourly(rows: &[ReferenceRow]) -> Vec<ReferenceRow> {
-    rows.iter()
-        .step_by(ROWS_PER_HOUR)
-        .cloned()
-        .collect()
+    rows.iter().step_by(ROWS_PER_HOUR).cloned().collect()
 }
 
 /// Test result for a single CTF-vs-E+ comparison run.
@@ -292,7 +287,10 @@ fn report(result: &CtfTestResult) {
         result.total_post_warmup,
         MIN_Q_REF_FOR_REL,
     );
-    eprintln!("Tolerance (p95 rel error): {:.2}%", result.tolerance * 100.0);
+    eprintln!(
+        "Tolerance (p95 rel error): {:.2}%",
+        result.tolerance * 100.0
+    );
     eprintln!("Max absolute error: {:.4} W/m²", result.max_absolute_error);
     eprintln!(
         "Max relative error:  {:.2}%",
@@ -320,7 +318,12 @@ fn test_ctf_solver_concrete_200mm() {
     );
     let ref_data = load_reference_data("200mm_concrete");
 
-    let result = run_ctf_step_response(&spec, &ref_data, "200mm Concrete", CTF_TOLERANCE_REL_CONCRETE);
+    let result = run_ctf_step_response(
+        &spec,
+        &ref_data,
+        "200mm Concrete",
+        CTF_TOLERANCE_REL_CONCRETE,
+    );
     report(&result);
 
     assert!(
@@ -346,19 +349,36 @@ fn test_ctf_solver_composite_wall() {
         "Composite Concrete",
         vec![
             fluxion::physics::wall_spec::LayerSpec::new(
-                "Concrete Inner", 0.100, 1.13, 1400.0, 1000.0,
+                "Concrete Inner",
+                0.100,
+                1.13,
+                1400.0,
+                1000.0,
             ),
             fluxion::physics::wall_spec::LayerSpec::new(
-                "Foam Insulation", 0.0615, 0.04, 14.0, 1400.0,
+                "Foam Insulation",
+                0.0615,
+                0.04,
+                14.0,
+                1400.0,
             ),
             fluxion::physics::wall_spec::LayerSpec::new(
-                "Concrete Block", 0.100, 0.51, 1400.0, 840.0,
+                "Concrete Block",
+                0.100,
+                0.51,
+                1400.0,
+                840.0,
             ),
         ],
     );
     let ref_data = load_reference_data("composite");
 
-    let result = run_ctf_step_response(&spec, &ref_data, "Composite Wall", CTF_TOLERANCE_REL_COMPOSITE);
+    let result = run_ctf_step_response(
+        &spec,
+        &ref_data,
+        "Composite Wall",
+        CTF_TOLERANCE_REL_COMPOSITE,
+    );
     report(&result);
 
     assert!(
@@ -390,13 +410,25 @@ fn test_ctf_solver_summary() {
                 "Composite Concrete",
                 vec![
                     fluxion::physics::wall_spec::LayerSpec::new(
-                        "Concrete Inner", 0.100, 1.13, 1400.0, 1000.0,
+                        "Concrete Inner",
+                        0.100,
+                        1.13,
+                        1400.0,
+                        1000.0,
                     ),
                     fluxion::physics::wall_spec::LayerSpec::new(
-                        "Foam Insulation", 0.0615, 0.04, 14.0, 1400.0,
+                        "Foam Insulation",
+                        0.0615,
+                        0.04,
+                        14.0,
+                        1400.0,
                     ),
                     fluxion::physics::wall_spec::LayerSpec::new(
-                        "Concrete Block", 0.100, 0.51, 1400.0, 840.0,
+                        "Concrete Block",
+                        0.100,
+                        0.51,
+                        1400.0,
+                        840.0,
                     ),
                 ],
             ),
