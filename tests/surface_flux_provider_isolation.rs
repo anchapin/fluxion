@@ -27,8 +27,11 @@
 //! - [x] Trait object safety verified
 //! - [x] Test runs in <500ms
 
+use fluxion::physics::ctf_solver_wrapper::CTFSolverWrapper;
+use fluxion::physics::fd_solver_wrapper::FDSolverWrapper;
 use fluxion::physics::five_r1c_solver::FiveR1CSolver;
 use fluxion::physics::solver_trait::HeatConductionSolver;
+use fluxion::physics::units::{FromF64, ToF64};
 use fluxion::physics::wall_spec::{LayerSpec, WallSpec};
 use fluxion::sim::surface_flux_provider::{
     MockSurfaceHeatFluxProvider, PhysicsSurfaceFluxProvider, SurfaceHeatFluxProvider,
@@ -792,4 +795,212 @@ fn test_parity_physical_meaning_preserved() {
         mock_flux,
         rel_error * 100.0
     );
+}
+
+// ===========================================================================
+// Section 8: CTF/FD steady_state_flux overrides (Issue #1418)
+// ===========================================================================
+//
+// Before #1418, CTFSolverWrapper and FDSolverWrapper inherited the default
+// `steady_state_flux` which returned `Err(InvalidConfig)`. The production
+// `surface_heat_flux` impl caught that error and fell back to `0.0`
+// (`unwrap_or(0.0)`), silently zeroing conduction flux for every CTF/FD-routed
+// wall. These tests verify the overrides return finite, meaningful values.
+
+#[test]
+fn test_ctf_wrapper_steady_state_flux_nonzero() {
+    let wall = heavyweight_wall();
+    let mut ctf = CTFSolverWrapper::new();
+    ctf.initialize(&wall).expect("CTF init");
+
+    let t_int = 20.0;
+    let t_ext = 5.0;
+    let flux = ctf
+        .steady_state_flux(
+            fluxion::physics::units::Temperature::from_value(t_int),
+            fluxion::physics::units::Temperature::from_value(t_ext),
+        )
+        .expect("CTF steady_state_flux should succeed");
+
+    assert!(flux.to_value().is_finite(), "flux must be finite");
+    assert!(
+        flux.to_value().abs() > 1.0,
+        "CTF steady_state_flux should be non-zero for ΔT≠0, got {:.4}",
+        flux.to_value()
+    );
+    // Sign: (T_ext − T_int) < 0 → heat loss → negative (positive = into zone)
+    assert!(
+        flux.to_value() < 0.0,
+        "CTF steady_state_flux sign: T_ext < T_int → negative, got {:.4}",
+        flux.to_value()
+    );
+}
+
+#[test]
+fn test_ctf_wrapper_steady_state_flux_zero_delta_t() {
+    let wall = heavyweight_wall();
+    let mut ctf = CTFSolverWrapper::new();
+    ctf.initialize(&wall).expect("CTF init");
+
+    let flux = ctf
+        .steady_state_flux(
+            fluxion::physics::units::Temperature::from_value(20.0),
+            fluxion::physics::units::Temperature::from_value(20.0),
+        )
+        .expect("CTF steady_state_flux at ΔT=0");
+
+    assert!(
+        flux.to_value().abs() < 1e-10,
+        "Zero ΔT → zero flux, got {:.2e}",
+        flux.to_value()
+    );
+}
+
+#[test]
+fn test_ctf_wrapper_steady_state_flux_uninitialized() {
+    let ctf = CTFSolverWrapper::new();
+    let result = ctf.steady_state_flux(
+        fluxion::physics::units::Temperature::from_value(20.0),
+        fluxion::physics::units::Temperature::from_value(5.0),
+    );
+    assert!(result.is_err(), "Uninitialized CTF should error");
+}
+
+#[test]
+fn test_fd_wrapper_steady_state_flux_returns_cached_q() {
+    use fluxion::physics::units::{HeatTransferCoefficient, Temperature, Time};
+
+    let wall = heavyweight_wall();
+    let mut fd = FDSolverWrapper::new();
+    fd.initialize(&wall).expect("FD init");
+
+    // Before step: q_flux = 0.0 (initial value)
+    let flux_before = fd
+        .steady_state_flux(Temperature::from_value(20.0), Temperature::from_value(5.0))
+        .expect("FD steady_state_flux before step");
+    assert!(
+        flux_before.to_value().abs() < 1e-10,
+        "FD q_flux before step should be 0.0, got {:.4}",
+        flux_before.to_value()
+    );
+
+    // Step to populate q_flux
+    let stepped = fd
+        .step(
+            Time::from_value(3600.0),
+            Temperature::from_value(20.0),
+            Temperature::from_value(5.0),
+            HeatTransferCoefficient::from_value(8.0),
+            HeatTransferCoefficient::from_value(25.0),
+        )
+        .expect("FD step");
+
+    // After step: steady_state_flux returns the cached q_flux
+    let flux_after = fd
+        .steady_state_flux(Temperature::from_value(20.0), Temperature::from_value(5.0))
+        .expect("FD steady_state_flux after step");
+
+    assert!(
+        (flux_after.to_value() - stepped.to_value()).abs() < 1e-10,
+        "FD steady_state_flux ({}) should match last step return ({})",
+        flux_after.to_value(),
+        stepped.to_value()
+    );
+}
+
+#[test]
+fn test_fd_wrapper_steady_state_flux_uninitialized() {
+    let fd = FDSolverWrapper::new();
+    let result = fd.steady_state_flux(
+        fluxion::physics::units::Temperature::from_value(20.0),
+        fluxion::physics::units::Temperature::from_value(5.0),
+    );
+    assert!(result.is_err(), "Uninitialized FD should error");
+}
+
+/// Issue #1418 regression test: `surface_heat_flux` returns the post-step flux
+/// (not 0.0) for CTF and FD solvers after `step_all`.
+///
+/// Before the fix, both CTFSolverWrapper and FDSolverWrapper inherited the
+/// default `steady_state_flux` which returned `Err`, causing the cold-start
+/// path in `surface_heat_flux` to fall back to `0.0`. After `step_all`, the
+/// cached post-step flux is returned — but before #1418, the `step_all` path
+/// was the ONLY way to get a non-zero CTF/FD flux through the provider.
+/// With the `steady_state_flux` overrides, even the cold-start path returns
+/// meaningful values for CTF (ΣX × ΔT).
+#[test]
+fn test_physics_provider_nonzero_for_ctf_and_fd_solvers() {
+    let wall = heavyweight_wall();
+
+    // CTF solver
+    let mut ctf = CTFSolverWrapper::new();
+    ctf.initialize(&wall).expect("CTF init");
+
+    // FD solver
+    let mut fd = FDSolverWrapper::new();
+    fd.initialize(&wall).expect("FD init");
+
+    // Provider with two surfaces: CTF (idx 0), FD (idx 1)
+    let mut provider = PhysicsSurfaceFluxProvider::new()
+        .add_surface(ctf, 10.0, 0.0)
+        .add_surface(fd, 10.0, 0.0);
+
+    let t_zone = 20.0;
+    let t_out = 5.0;
+    let dt = 3600.0;
+
+    // Cold-start: CTF surface should return non-zero (steady_state_flux override)
+    let ctf_cold = provider.surface_heat_flux(0, t_zone, t_out, dt);
+    assert!(
+        ctf_cold.abs() > 1.0,
+        "CTF cold-start flux should be non-zero (steady_state_flux override), got {:.4}",
+        ctf_cold
+    );
+
+    // FD cold-start: q_flux = 0.0 before any step (expected)
+    let fd_cold = provider.surface_heat_flux(1, t_zone, t_out, dt);
+    assert!(
+        fd_cold.abs() < 1e-10,
+        "FD cold-start flux should be 0.0 (q_flux not yet set), got {:.4}",
+        fd_cold
+    );
+
+    // Drive one step
+    let fluxes = provider.step_all(dt, t_zone, t_out).expect("step_all");
+
+    // After step_all: both surfaces return the cached post-step flux
+    let ctf_flux = provider.surface_heat_flux(0, t_zone, t_out, dt);
+    let fd_flux = provider.surface_heat_flux(1, t_zone, t_out, dt);
+
+    // CTF post-step flux must be non-zero
+    assert!(
+        ctf_flux.abs() > 1.0,
+        "CTF post-step flux should be non-zero, got {:.4}",
+        ctf_flux
+    );
+
+    // FD post-step flux must be non-zero (was 0.0 before #1418 override + step_all)
+    assert!(
+        fd_flux.abs() > 1.0,
+        "FD post-step flux should be non-zero (was 0.0 before #1418), got {:.4}",
+        fd_flux
+    );
+
+    // Verify the provider returned the same values that step_all computed
+    assert!(
+        (ctf_flux - fluxes[0]).abs() < 1e-10,
+        "CTF surface_heat_flux ({}) should match step_all return ({})",
+        ctf_flux,
+        fluxes[0]
+    );
+    assert!(
+        (fd_flux - fluxes[1]).abs() < 1e-10,
+        "FD surface_heat_flux ({}) should match step_all return ({})",
+        fd_flux,
+        fluxes[1]
+    );
+
+    // Verify has_stepped is true for both surfaces
+    assert!(provider.has_stepped(0), "CTF surface should report stepped");
+    assert!(provider.has_stepped(1), "FD surface should report stepped");
 }
