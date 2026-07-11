@@ -128,6 +128,7 @@ def check_drift() -> list[str]:
         "CrossValidationAdapter",  # validation infra, not physics
         "FromF64",  # internal unit conversion trait
         "ToF64",  # internal unit conversion trait
+        "BatchOrchestrator",  # perf infra (rayon chunks), not a physics trait
     }
 
     # These are structs mentioned in ARCHITECTURE.md that get false-positived
