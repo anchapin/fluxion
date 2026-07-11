@@ -40,6 +40,15 @@ mod issue_1457_case_600_series_tracking {
         let weather =
             fluxion::weather::epw::EpwWeatherSource::from_file("assets/weather/WD600.epw")
                 .expect("Failed to load EPW weather data");
+        // 14-day warm-up (matches the post-#1457 fix in tests/ashrae_140_case_600_series.rs):
+        // lets the 5R1C mass node settle from the 20°C default into the seasonal cycle
+        // before we start collecting annual metrics, eliminating phantom first-year energy.
+        const WARMUP_STEPS: usize = 14 * 24;
+        for step in 0..WARMUP_STEPS {
+            let w = weather.get_hourly_data(step).unwrap();
+            model.weather = Some(w.clone());
+            let _ = model.step_physics(step, w.dry_bulb_temp, 3600.0);
+        }
         let (mut th, mut tc, mut ph, mut pc) = (0.0_f64, 0.0_f64, 0.0_f64, 0.0_f64);
         for step in 0..8760 {
             let w = weather.get_hourly_data(step).unwrap();
