@@ -424,158 +424,17 @@ pub fn sol_air_temperature_simple(
 /// - Perez, R., et al. (1990). "Modeling daylight availability and irradiance
 ///   components from direct and global irradiance." Solar Energy 44(5), 271-289.
 /// - ASHRAE Handbook - Fundamentals, Chapter 14: Climatic Design Information
-pub struct PerezSkyModel;
-
-impl PerezSkyModel {
-    #[allow(clippy::too_many_arguments)]
-    pub fn calculate_diffuse_tilted(
-        dhi: f64,
-        dni: f64,
-        dni_extra: f64,
-        airmass: f64,
-        zenith_deg: f64,
-        surface_tilt_deg: f64,
-        surface_azimuth_deg: f64,
-        solar_azimuth_deg: f64,
-    ) -> f64 {
-        if dhi <= 0.0 {
-            return 0.0;
-        }
-
-        let zenith_rad = zenith_deg.to_radians();
-        let surface_tilt = surface_tilt_deg.to_radians();
-        let _surface_azimuth = surface_azimuth_deg.to_radians();
-        let _solar_azimuth = solar_azimuth_deg.to_radians();
-
-        let kappa = 1.041;
-        let delta = dhi * airmass / dni_extra;
-
-        let epsilon = {
-            let z_cubed = zenith_rad.powi(3);
-            let numerator = (dhi + dni) / dhi + kappa * z_cubed;
-            let denominator = 1.0 + kappa * z_cubed;
-            numerator / denominator
-        };
-
-        let ebin = Self::classify_sky_clearness(epsilon);
-        let (f1c, f2c) = Self::get_perez_coefficients(ebin);
-        let f1 = (f1c[0] + f1c[1] * delta + f1c[2] * zenith_rad).max(0.0);
-        let f2 = f2c[0] + f2c[1] * delta + f2c[2] * zenith_rad;
-
-        let cos_incidence = Self::calculate_cos_incidence(
-            surface_tilt_deg,
-            surface_azimuth_deg,
-            zenith_deg,
-            solar_azimuth_deg,
-        );
-
-        let a = cos_incidence.max(0.0);
-        let b = zenith_rad.cos().max((85.0f64).to_radians().cos());
-
-        let term1 = 0.5 * (1.0 - f1) * (1.0 + surface_tilt.cos());
-        let term2 = f1 * a / b;
-        let term3 = f2 * surface_tilt.sin();
-
-        (dhi * (term1 + term2 + term3)).max(0.0)
-    }
-
-    fn classify_sky_clearness(epsilon: f64) -> usize {
-        let bounds = [0.0, 1.065, 1.23, 1.5, 1.95, 2.8, 4.5, 6.2];
-        let mut ebin = 7;
-        for (i, &bound) in bounds.iter().enumerate() {
-            if epsilon <= bound {
-                ebin = i;
-                break;
-            }
-        }
-        ebin
-    }
-
-    fn get_perez_coefficients(ebin: usize) -> ([f64; 3], [f64; 3]) {
-        // Perez sky model coefficients (F1 and F2) from Perez et al. 1990
-        // Table 3: "Coefficients for the calculation of F1 and F2 from ε and Δ"
-        //
-        // Sky clearness bins (ε):
-        //   Bin 1: 1.000-1.065 (overcast)
-        //   Bin 2: 1.065-1.230
-        //   Bin 3: 1.230-1.500
-        //   Bin 4: 1.500-1.950
-        //   Bin 5: 1.950-2.800
-        //   Bin 6: 2.800-4.500
-        //   Bin 7: 4.500-6.200
-        //   Bin 8: >6.200 (clear sky)
-        //
-        // F1 = F1C[0] + F1C[1] * Δ + F1C[2] * θz (circumsolar brightness)
-        // F2 = F2C[0] + F2C[1] * Δ + F2C[2] * θz (horizon brightness)
-        //
-        // Reference: Perez, R., et al. (1990). "Modeling daylight availability and
-        // irradiance components from direct and global irradiance." Solar Energy 44(5),
-        // 271-289. Table 3.
-
-        const F1C: [[f64; 3]; 8] = [
-            [-0.008317, 0.587728, -0.062064], // Bin 1: overcast
-            [0.129967, 0.682595, -0.151375],  // Bin 2
-            [0.329676, 0.486861, -0.221272],  // Bin 3
-            [0.568205, 0.187452, -0.295250],  // Bin 4
-            [0.873018, -0.393289, -0.369150], // Bin 5
-            [1.321297, -1.176777, -0.393994], // Bin 6
-            [0.999852, -1.634380, -0.291495], // Bin 7
-            [0.553776, 0.631414, -0.209172],  // Bin 8: clear sky
-        ];
-
-        // F2 coefficients: Note that F2 is typically small (0.00-0.06) for most
-        // sky conditions. The horizon brightness term is only significant for
-        // clear skies with low zenith angles.
-        //
-        // IMPORTANT: Original implementation had F2 = 0.091 + 0.77*Δ for clear sky,
-        // which is TOO HIGH. Correct values from Perez 1990 Table 3 show F2 should
-        // be much smaller. The second coefficient (Δ multiplier) should be ~0.06,
-        // not 0.77.
-        const F2C: [[f64; 3]; 8] = [
-            [0.091000, 0.060000, 0.000000],  // Bin 1: overcast
-            [0.055000, 0.060000, 0.000000],  // Bin 2
-            [0.025000, 0.060000, 0.000000],  // Bin 3
-            [-0.015000, 0.060000, 0.000000], // Bin 4
-            [-0.065000, 0.060000, 0.000000], // Bin 5
-            [-0.115000, 0.060000, 0.000000], // Bin 6
-            [-0.165000, 0.060000, 0.000000], // Bin 7
-            [-0.215000, 0.060000, 0.000000], // Bin 8: clear sky
-        ];
-
-        let ebin_clamped = ebin.min(7);
-        (F1C[ebin_clamped], F2C[ebin_clamped])
-    }
-
-    fn calculate_cos_incidence(
-        surface_tilt_deg: f64,
-        surface_azimuth_deg: f64,
-        zenith_deg: f64,
-        solar_azimuth_deg: f64,
-    ) -> f64 {
-        let tilt = surface_tilt_deg.to_radians();
-        let surface_az = surface_azimuth_deg.to_radians();
-        let zenith = zenith_deg.to_radians();
-        let solar_az = solar_azimuth_deg.to_radians();
-
-        let cos_incidence = tilt.sin() * surface_az.sin() * zenith.cos() * solar_az.sin()
-            + tilt.sin() * surface_az.cos() * zenith.cos() * solar_az.cos()
-            + tilt.cos() * zenith.sin();
-
-        cos_incidence.clamp(-1.0, 1.0)
-    }
-}
-
-pub fn extraterrestrial_irradiance(day_of_year: usize) -> f64 {
-    let day_rad = 2.0 * std::f64::consts::PI * (day_of_year as f64 - 3.0) / 365.0;
-    SOLAR_CONSTANT * (1.0 + 0.033 * day_rad.cos())
-}
-
-pub fn relative_airmass(zenith_deg: f64) -> f64 {
-    let zenith_rad = zenith_deg.to_radians();
-    let cos_zenith = zenith_rad.cos();
-    let term = 96.07995 - zenith_deg;
-    1.0 / (cos_zenith + 0.50572 * term.powf(-1.6364))
-}
+///
+/// # Source of truth (Issue #1414)
+///
+/// `PerezSkyModel`, `extraterrestrial_irradiance`, and `relative_airmass` are
+/// **defined once** in `crate::solar::surface_irradiance` and re-exported here
+/// so existing `sim::sky_radiation::` call sites continue to work without
+/// parallel physics code paths. Future corrections (e.g. ASHRAE 140-2023
+/// coefficient updates) need to touch only the leaf module.
+pub use crate::solar::surface_irradiance::{
+    extraterrestrial_irradiance, relative_airmass, PerezSkyModel,
+};
 
 /// Calculate clearness index (kt) from GHI.
 ///

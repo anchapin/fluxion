@@ -223,12 +223,15 @@ pub fn calculate_surface_irradiance(
 // ============================================================================
 
 /// Perez sky model for diffuse irradiance on tilted surfaces.
-struct PerezSkyModel;
+///
+/// Single source of truth — see `sim::sky_radiation` re-exports.
+/// Issue #1414: dedup target.
+pub struct PerezSkyModel;
 
 impl PerezSkyModel {
     /// Calculate diffuse irradiance on a tilted surface.
     #[allow(clippy::too_many_arguments)]
-    fn calculate_diffuse_tilted(
+    pub fn calculate_diffuse_tilted(
         dhi: f64,
         dni: f64,
         dni_extra: f64,
@@ -277,7 +280,7 @@ impl PerezSkyModel {
         (dhi * (term1 + term2 + term3)).max(0.0)
     }
 
-    fn classify_sky_clearness(epsilon: f64) -> usize {
+    pub(crate) fn classify_sky_clearness(epsilon: f64) -> usize {
         let bounds = [0.0, 1.065, 1.23, 1.5, 1.95, 2.8, 4.5, 6.2];
         let mut ebin = 7;
         for (i, &bound) in bounds.iter().enumerate() {
@@ -290,7 +293,7 @@ impl PerezSkyModel {
     }
 
     /// Perez model F1 and F2 coefficients from Table 3 of Perez et al. (1990).
-    fn get_perez_coefficients(ebin: usize) -> ([f64; 3], [f64; 3]) {
+    pub(crate) fn get_perez_coefficients(ebin: usize) -> ([f64; 3], [f64; 3]) {
         const F1C: [[f64; 3]; 8] = [
             [-0.008317, 0.587728, -0.062064],
             [0.129967, 0.682595, -0.151375],
@@ -316,7 +319,7 @@ impl PerezSkyModel {
         (F1C[ebin_clamped], F2C[ebin_clamped])
     }
 
-    fn calculate_cos_incidence(
+    pub(crate) fn calculate_cos_incidence(
         surface_tilt_deg: f64,
         surface_azimuth_deg: f64,
         zenith_deg: f64,
@@ -341,7 +344,10 @@ impl PerezSkyModel {
 /// I₀ = G_sc × (1 + 0.033 × cos(360° × (n-3)/365))
 ///
 /// Reference: ASHRAE Fundamentals, Chapter 14, Eq. 3.
-fn extraterrestrial_irradiance(day_of_year: usize) -> f64 {
+///
+/// Single source of truth — see `sim::sky_radiation` re-exports.
+/// Issue #1414: dedup target.
+pub fn extraterrestrial_irradiance(day_of_year: usize) -> f64 {
     let day_rad = 2.0 * std::f64::consts::PI * (day_of_year as f64 - 3.0) / 365.0;
     SOLAR_CONSTANT * (1.0 + 0.033 * day_rad.cos())
 }
@@ -351,7 +357,10 @@ fn extraterrestrial_irradiance(day_of_year: usize) -> f64 {
 /// AM = 1 / [cos(θ_z) + 0.50572 × (96.07995 - θ_z)^(-1.6364)]
 ///
 /// Valid for zenith angles up to ~90°.
-fn relative_airmass(zenith_deg: f64) -> f64 {
+///
+/// Single source of truth — see `sim::sky_radiation` re-exports.
+/// Issue #1414: dedup target.
+pub fn relative_airmass(zenith_deg: f64) -> f64 {
     let zenith_rad = zenith_deg.to_radians();
     let cos_zenith = zenith_rad.cos();
     let term = 96.07995 - zenith_deg;

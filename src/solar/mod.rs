@@ -19,5 +19,6 @@ pub mod surface_irradiance;
 // Re-export primary types and functions for convenient access
 pub use solar_position::{calculate_day_of_year, calculate_solar_position, SolarPosition};
 pub use surface_irradiance::{
-    calculate_surface_irradiance, orientation_to_angles, SurfaceIrradiance,
+    calculate_surface_irradiance, extraterrestrial_irradiance, orientation_to_angles,
+    relative_airmass, PerezSkyModel, SurfaceIrradiance,
 };
