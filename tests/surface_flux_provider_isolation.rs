@@ -27,9 +27,9 @@
 //! - [x] Trait object safety verified
 //! - [x] Test runs in <500ms
 
-use fluxion::physics::five_r1c_solver::FiveR1CSolver;
 use fluxion::physics::ctf_solver_wrapper::CTFSolverWrapper;
 use fluxion::physics::fd_solver_wrapper::FDSolverWrapper;
+use fluxion::physics::five_r1c_solver::FiveR1CSolver;
 use fluxion::physics::solver_trait::HeatConductionSolver;
 use fluxion::physics::units::{FromF64, ToF64};
 use fluxion::physics::wall_spec::{LayerSpec, WallSpec};
@@ -868,9 +868,7 @@ fn test_ctf_wrapper_steady_state_flux_uninitialized() {
 
 #[test]
 fn test_fd_wrapper_steady_state_flux_returns_cached_q() {
-    use fluxion::physics::units::{
-        HeatTransferCoefficient, Temperature, Time,
-    };
+    use fluxion::physics::units::{HeatTransferCoefficient, Temperature, Time};
 
     let wall = heavyweight_wall();
     let mut fd = FDSolverWrapper::new();
@@ -878,10 +876,7 @@ fn test_fd_wrapper_steady_state_flux_returns_cached_q() {
 
     // Before step: q_flux = 0.0 (initial value)
     let flux_before = fd
-        .steady_state_flux(
-            Temperature::from_value(20.0),
-            Temperature::from_value(5.0),
-        )
+        .steady_state_flux(Temperature::from_value(20.0), Temperature::from_value(5.0))
         .expect("FD steady_state_flux before step");
     assert!(
         flux_before.to_value().abs() < 1e-10,
@@ -902,10 +897,7 @@ fn test_fd_wrapper_steady_state_flux_returns_cached_q() {
 
     // After step: steady_state_flux returns the cached q_flux
     let flux_after = fd
-        .steady_state_flux(
-            Temperature::from_value(20.0),
-            Temperature::from_value(5.0),
-        )
+        .steady_state_flux(Temperature::from_value(20.0), Temperature::from_value(5.0))
         .expect("FD steady_state_flux after step");
 
     assert!(
