@@ -264,12 +264,36 @@ impl TryFrom<IdfFile> for SimulationSchema {
 
 ## 10. Out of Scope (Future Work)
 
-- Full IDD (Input Data Dictionary) support for validation
-- HVAC system objects import
-- Schedule import (Schedule:* objects)
-- Window/Door objects (FenestrationSurface:Detailed)
-- Zone equipment import
-- IDF export (only import for MVP)
+Resolved in #1435 (`TryFrom<IdfFile> for SimulationSchemaV1`, design §4.3):
+
+- ~~Full IDD (Input Data Dictionary) support for validation~~ — relaxed
+  version validation (allow-list `24-2`, `25-1`, `25-2`) lives in
+  `src/io/idf/convert.rs::SUPPORTED_VERSIONS`.
+- ~~`TryFrom<IdfFile> for SimulationSchema` conversion (design §4.3)~~
+  — landed in `src/io/idf/convert.rs`.
+
+Still out of scope (each is a follow-up issue):
+
+- **Schedule:* object import** — `Schedule:Compact`, `ScheduleTypeLimits`,
+  `ZoneControl:Thermostat`, `ThermostatSetpoint:DualSetpoint`. The
+  ASHRAE 140 acceptance test in `tests/idf_ashrae_140_acceptance.rs`
+  reads these directly from the `IdfFile` (bypassing `SimulationSchemaV1`)
+  via the `case_spec_from_idf` helper, but they are not yet typed
+  accessors on the schema.
+- **FenestrationSurface:Detailed import** — windows / doors. Same as
+  schedules: read on demand by `case_spec_from_idf`, not yet first-class
+  on `SimulationSchemaV1`.
+- **IDF export** — only import is in the MVP; export (e.g. round-trip
+  `SimulationSchemaV1 → IDF` for debugging or downstream tooling) is
+  deferred.
+
+Other follow-ups not addressed by #1435:
+
+- Full IDD (Input Data Dictionary) support for full per-field validation.
+- HVAC system objects import (`ZoneHVAC:*`, `Boiler:*`, `Chiller:*`, …).
+- Zone equipment import (`ZoneHVAC:EquipmentConnections`,
+  `ZoneHVAC:IdealLoadsAirSystem`).
+- epJSON parsing (design §4.2).
 
 ## 11. References
 
