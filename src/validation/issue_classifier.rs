@@ -247,7 +247,9 @@ mod tests {
         for c in &["600", "610", "620", "630", "640", "650", "600FF", "650FF"] {
             assert_eq!(case_mass(c), CaseMass::LowMass, "case {}", c);
         }
-        for c in &["900", "910", "920", "930", "940", "950", "960", "900FF", "950FF"] {
+        for c in &[
+            "900", "910", "920", "930", "940", "950", "960", "900FF", "950FF",
+        ] {
             assert_eq!(case_mass(c), CaseMass::HighMass, "case {}", c);
         }
         assert_eq!(case_mass("XXX"), CaseMass::Special);
@@ -256,12 +258,30 @@ mod tests {
 
     #[test]
     fn test_metric_axis_mapping() {
-        assert_eq!(metric_axis(&MetricType::AnnualHeating), Some(MetricAxis::Energy));
-        assert_eq!(metric_axis(&MetricType::AnnualCooling), Some(MetricAxis::Energy));
-        assert_eq!(metric_axis(&MetricType::PeakHeating), Some(MetricAxis::Peak));
-        assert_eq!(metric_axis(&MetricType::PeakCooling), Some(MetricAxis::Peak));
-        assert_eq!(metric_axis(&MetricType::MinFreeFloat), Some(MetricAxis::FreeFloat));
-        assert_eq!(metric_axis(&MetricType::MaxFreeFloat), Some(MetricAxis::FreeFloat));
+        assert_eq!(
+            metric_axis(&MetricType::AnnualHeating),
+            Some(MetricAxis::Energy)
+        );
+        assert_eq!(
+            metric_axis(&MetricType::AnnualCooling),
+            Some(MetricAxis::Energy)
+        );
+        assert_eq!(
+            metric_axis(&MetricType::PeakHeating),
+            Some(MetricAxis::Peak)
+        );
+        assert_eq!(
+            metric_axis(&MetricType::PeakCooling),
+            Some(MetricAxis::Peak)
+        );
+        assert_eq!(
+            metric_axis(&MetricType::MinFreeFloat),
+            Some(MetricAxis::FreeFloat)
+        );
+        assert_eq!(
+            metric_axis(&MetricType::MaxFreeFloat),
+            Some(MetricAxis::FreeFloat)
+        );
         assert_eq!(
             metric_axis(&MetricType::IncidentSolar {
                 surface_id: "roof".into(),
@@ -305,12 +325,7 @@ mod tests {
     fn test_rule2_highmass_energy_over_model_limitation() {
         for c in &["900", "910", "920", "930", "940", "950", "900FF", "950FF"] {
             let r = failed(c, MetricType::AnnualHeating, 5.0, 1.17, 2.04);
-            assert_eq!(
-                classify(&r),
-                SystematicIssue::ModelLimitation,
-                "case {}",
-                c
-            );
+            assert_eq!(classify(&r), SystematicIssue::ModelLimitation, "case {}", c);
         }
     }
 

@@ -40,7 +40,8 @@ const REL_TOL: f64 = 0.02;
 /// only the load source differs — apples-to-apples comparison.
 fn physics_eui_case600(surrogates: &SurrogateManager) -> f64 {
     let spec = ASHRAE140Case::Case600.spec();
-    let mut physics = HybridThermalModel::from_spec_with_routing(&spec, HybridRouting::all_physics());
+    let mut physics =
+        HybridThermalModel::from_spec_with_routing(&spec, HybridRouting::all_physics());
     physics.solve_timesteps(STEPS, surrogates, false)
 }
 

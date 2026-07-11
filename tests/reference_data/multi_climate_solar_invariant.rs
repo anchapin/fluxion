@@ -99,7 +99,11 @@ fn epw_hour_to_date(epw_hour_1: i32, year: i32) -> (i32, u32, u32, f64) {
     let leap = (year % 4 == 0 && year % 100 != 0) || (year % 400 == 0);
     let mut month = 1u32;
     for m in 1..=12u32 {
-        let dim = if m == 2 && leap { 29 } else { DAY_OF_YEAR_NONLEAP[(m - 1) as usize] };
+        let dim = if m == 2 && leap {
+            29
+        } else {
+            DAY_OF_YEAR_NONLEAP[(m - 1) as usize]
+        };
         if remaining as u32 <= dim {
             month = m;
             break;
@@ -135,8 +139,8 @@ struct WeatherRow {
 
 fn load_position_csv(key: &str) -> Vec<PositionRow> {
     let path = format!("tests/reference_data/solar/solar_position_{}.csv", key);
-    let csv = std::fs::read_to_string(&path)
-        .unwrap_or_else(|e| panic!("Failed to read {}: {}", path, e));
+    let csv =
+        std::fs::read_to_string(&path).unwrap_or_else(|e| panic!("Failed to read {}: {}", path, e));
     csv.lines()
         .filter(|l| !l.starts_with('#') && !l.trim().is_empty() && !l.starts_with("hour"))
         .map(|l| {
@@ -156,8 +160,8 @@ fn load_irradiance_csv(key: &str) -> Vec<IrradianceRow> {
         "tests/reference_data/solar/surface_irradiance_south_{}.csv",
         key
     );
-    let csv = std::fs::read_to_string(&path)
-        .unwrap_or_else(|e| panic!("Failed to read {}: {}", path, e));
+    let csv =
+        std::fs::read_to_string(&path).unwrap_or_else(|e| panic!("Failed to read {}: {}", path, e));
     csv.lines()
         .filter(|l| !l.starts_with('#') && !l.trim().is_empty() && !l.starts_with("hour"))
         .map(|l| {
@@ -173,8 +177,8 @@ fn load_irradiance_csv(key: &str) -> Vec<IrradianceRow> {
 
 fn load_weather_csv(key: &str) -> Vec<WeatherRow> {
     let path = format!("tests/reference_data/weather/{}_tmy3_reference.csv", key);
-    let csv = std::fs::read_to_string(&path)
-        .unwrap_or_else(|e| panic!("Failed to read {}: {}", path, e));
+    let csv =
+        std::fs::read_to_string(&path).unwrap_or_else(|e| panic!("Failed to read {}: {}", path, e));
     csv.lines()
         .filter(|l| !l.starts_with('#') && !l.trim().is_empty() && !l.starts_with("hour"))
         .map(|l| {
@@ -236,8 +240,7 @@ fn test_solar_position_round_trip_all_climates() {
         let mut max_az_err = 0.0_f64;
         let mut max_zen_err = 0.0_f64;
         for row in &reference {
-            let (year, month, day, hour) =
-                epw_hour_to_date(row.hour as i32, spec.epw_year);
+            let (year, month, day, hour) = epw_hour_to_date(row.hour as i32, spec.epw_year);
             let sun = calculate_solar_position(
                 spec.latitude_deg,
                 spec.longitude_deg,
@@ -338,7 +341,8 @@ fn test_surface_irradiance_round_trip_all_climates() {
                 doy,
             );
             max_beam_err = max_beam_err.max((irr.beam_wm2 - irr_row.beam).abs());
-            max_ground_err = max_ground_err.max((irr.ground_reflected_wm2 - irr_row.ground_diffuse).abs());
+            max_ground_err =
+                max_ground_err.max((irr.ground_reflected_wm2 - irr_row.ground_diffuse).abs());
         }
         println!(
             "{}: beam max err {:.5} W/m², ground max err {:.5} W/m²",
@@ -456,10 +460,20 @@ fn test_ventilation_csvs_load_and_have_climate_band_signature() {
             n += 1;
         }
         let mean_q = sum_q / n as f64;
-        println!("{}: mean Q_vent = {:.1} W (must be {} {} 0)",
-            key, mean_q,
-            if *expected_min_mean_qvent > 0.0 { ">" } else { "<" },
-            if *expected_min_mean_qvent > 0.0 { *expected_min_mean_qvent } else { -(*expected_min_mean_qvent) }
+        println!(
+            "{}: mean Q_vent = {:.1} W (must be {} {} 0)",
+            key,
+            mean_q,
+            if *expected_min_mean_qvent > 0.0 {
+                ">"
+            } else {
+                "<"
+            },
+            if *expected_min_mean_qvent > 0.0 {
+                *expected_min_mean_qvent
+            } else {
+                -(*expected_min_mean_qvent)
+            }
         );
         if *expected_min_mean_qvent > 0.0 {
             assert!(

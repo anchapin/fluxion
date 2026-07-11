@@ -223,14 +223,16 @@ mod reporter_unit_tests {
         // --- Cases 600-650: annual energy + peak cooling ---------------------
         for case in &["600", "610", "620", "630", "640", "650"] {
             report.add_result_simple(case, MetricType::AnnualCooling, 3.0, 5.0, 7.0); // under -> SolarGains
-            report.add_result_simple(case, MetricType::PeakCooling, 3.0, 5.0, 7.0); // under -> SolarGains
+            report.add_result_simple(case, MetricType::PeakCooling, 3.0, 5.0, 7.0);
+            // under -> SolarGains
         }
 
         // --- 900-series: annual energy + peak loads --------------------------
         for case in &["900", "910", "920", "930", "940", "950"] {
             report.add_result_simple(case, MetricType::AnnualHeating, 5.0, 1.17, 2.04); // over >=30% -> ModelLimitation
             report.add_result_simple(case, MetricType::PeakCooling, 9.0, 5.0, 7.0); // over high-mass -> ThermalMass
-            report.add_result_simple(case, MetricType::PeakHeating, 9.0, 5.0, 7.0); // high-mass -> ThermalMass
+            report.add_result_simple(case, MetricType::PeakHeating, 9.0, 5.0, 7.0);
+            // high-mass -> ThermalMass
         }
 
         // --- Case 960 --------------------------------------------------------
@@ -249,7 +251,10 @@ mod reporter_unit_tests {
         assert!(!map_a.is_empty(), "expected classified failures");
 
         // --- Stability: Unknown bucket must be small (<=8) -------------------
-        let unknown_count = map_a.values().filter(|v| **v == SystematicIssue::Unknown).count();
+        let unknown_count = map_a
+            .values()
+            .filter(|v| **v == SystematicIssue::Unknown)
+            .count();
         let total = map_a.len();
         assert!(
             unknown_count <= 8,
@@ -261,10 +266,22 @@ mod reporter_unit_tests {
         // --- Category coverage: each branch of the tree fires at least once --
         use std::collections::HashSet;
         let seen: HashSet<_> = map_a.values().collect();
-        assert!(seen.contains(&SystematicIssue::InterZoneTransfer), "missing InterZoneTransfer");
-        assert!(seen.contains(&SystematicIssue::ModelLimitation), "missing ModelLimitation");
-        assert!(seen.contains(&SystematicIssue::SolarGains), "missing SolarGains");
-        assert!(seen.contains(&SystematicIssue::ThermalMass), "missing ThermalMass");
+        assert!(
+            seen.contains(&SystematicIssue::InterZoneTransfer),
+            "missing InterZoneTransfer"
+        );
+        assert!(
+            seen.contains(&SystematicIssue::ModelLimitation),
+            "missing ModelLimitation"
+        );
+        assert!(
+            seen.contains(&SystematicIssue::SolarGains),
+            "missing SolarGains"
+        );
+        assert!(
+            seen.contains(&SystematicIssue::ThermalMass),
+            "missing ThermalMass"
+        );
 
         // --- Every failed metric received a Known-or-Unknown entry -----------
         let failed_count = report.results.iter().filter(|r| r.failed()).count();

@@ -1227,9 +1227,7 @@ impl BatchOracle {
                 // `par_chunks` so each rayon worker runs all 8 760
                 // timesteps for its slice of configs locally, removing
                 // the per-timestep coordinator bottleneck entirely.
-                use crate::sim::orchestrator::{
-                    BatchOrchestrator, RayonChunksOrchestrator,
-                };
+                use crate::sim::orchestrator::{BatchOrchestrator, RayonChunksOrchestrator};
 
                 let orchestrator = RayonChunksOrchestrator::for_population(valid_configs.len());
                 let final_worker_data =
@@ -1456,8 +1454,7 @@ impl BatchOracle {
             use crate::sim::orchestrator::{BatchOrchestrator, RayonChunksOrchestrator};
 
             let orchestrator = RayonChunksOrchestrator::for_population(valid_configs.len());
-            let final_worker_data =
-                orchestrator.run_cpu_surrogate(valid_configs, &self.surrogates);
+            let final_worker_data = orchestrator.run_cpu_surrogate(valid_configs, &self.surrogates);
 
             for (idx, eui) in final_worker_data {
                 results[idx] = eui;
