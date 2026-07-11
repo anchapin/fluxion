@@ -2073,7 +2073,7 @@ fn test_case_950_weather_dependent_ventilation_coupling() {
     // cooling_setpoint, temp_benefit = 1.0 → combined = (1.0 + wind_benefit) / 2.
     // For low wind (1 m/s), wind_benefit is small (~0.01), so combined
     // ≈ 0.5. Therefore ACH at full_open_temp must be > min_ach + 0.5 *
-// (max_ach - min_ach) = 0.5 + 0.5 * 4.5 = 2.75. This is the
+    // (max_ach - min_ach) = 0.5 + 0.5 * 4.5 = 2.75. This is the
     // "approaches max_ach" AC: at least 50% of the way to max.
     let ach_at_full_open = vent.get_ach(22, 23.0, 27.0, 1.0, 129.6);
     assert!(
