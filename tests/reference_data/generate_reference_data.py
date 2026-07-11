@@ -18,6 +18,11 @@ Prerequisites:
 
 Usage:
   python generate_reference_data.py
+  python generate_reference_data.py --weather /path/to/other.epw
+  python generate_reference_data.py --weather /path/to/other.epw --out-suffix mycity
+
+For multi-climate reference data (Miami, Phoenix, Chicago-as-6A-proxy)
+see generate_multi_climate_reference.py (Issue #1427).
 """
 
 import csv
@@ -1467,17 +1472,60 @@ For this model: C_vent = 0.5 × 129.6 × 1.2 × 1000 / 3600 = **21.6 W/K**
 
 
 if __name__ == "__main__":
+    import argparse
+
+    parser = argparse.ArgumentParser(
+        description=(
+            "Generate EnergyPlus CSV reference data for Fluxion module "
+            "validation. Supports the legacy Denver-only flow (default) and "
+            "a --weather flag for swapping in alternative EPWs. For "
+            "multi-climate reference data generation across several EPWs "
+            "in one run, use generate_multi_climate_reference.py instead "
+            "(Issue #1427)."
+        )
+    )
+    parser.add_argument(
+        "--weather",
+        type=Path,
+        default=None,
+        help=(
+            "Path to an alternative EPW file. When provided, the legacy "
+            "Denver CSVs (solar_position_denver.csv, "
+            "surface_irradiance_south.csv, infiltration_denver.csv) are "
+            "regenerated against this EPW. The output filenames are NOT "
+            "changed — callers should rename or copy as needed."
+        ),
+    )
+    parser.add_argument(
+        "--skip-conduction",
+        action="store_true",
+        help=(
+            "Skip the 72-hour conduction step-response models (2-6). "
+            "Useful when only the annual solar+ventilation model is needed."
+        ),
+    )
+    args = parser.parse_args()
+
     print("Fluxion Reference Data Generator")
     print(f"EnergyPlus: {EPLUS}")
-    print(f"EPW: {EPW}")
+    if args.weather is not None:
+        if not args.weather.exists():
+            sys.exit(f"ERROR: --weather EPW does not exist: {args.weather}")
+        # Replace the module-level EPW constant in this scope only.
+        import generate_reference_data as _self  # noqa: PLC0415
+        _self.EPW = args.weather
+        print(f"EPW (override): {args.weather}")
+    else:
+        print(f"EPW: {EPW}")
     print(f"Output: {SCRIPT_DIR}")
 
     generate_model_1()
-    generate_model_2()
-    generate_model_3()
-    generate_model_4()
-    generate_model_5()
-    generate_model_6()
+    if not args.skip_conduction:
+        generate_model_2()
+        generate_model_3()
+        generate_model_4()
+        generate_model_5()
+        generate_model_6()
     update_readme()
 
     print("\n✓ All reference data generated successfully.")

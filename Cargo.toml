@@ -425,3 +425,12 @@ harness = true
 name = "multi_zone_n_zone_network"
 path = "tests/multi_zone_n_zone_network.rs"
 harness = true
+
+# Issue #1427 — Multi-climate solar + ventilation reference data
+# (Miami 1A / Phoenix 2B / Chicago 5A-as-6A-proxy). Pinned under
+# tests/reference_data/ to live alongside the CSVs it validates.
+# `cargo test -p fluxion multi_climate_solar_invariant` runs this target.
+[[test]]
+name = "multi_climate_solar_invariant"
+path = "tests/reference_data/multi_climate_solar_invariant.rs"
+harness = true
