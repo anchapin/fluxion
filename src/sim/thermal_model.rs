@@ -5,6 +5,7 @@
 
 use crate::ai::surrogate::SurrogateManager;
 use crate::physics::cta::{ContinuousTensor, VectorField};
+use crate::sim::thermal_model_core::get_daily_cycle;
 use std::error::Error;
 
 /// Result type for thermal model operations
@@ -252,6 +253,110 @@ impl SurrogateThermalModel {
     }
 }
 
+struct SurrogateThermalLoadAdapter {
+    fallback_to_physics: bool,
+}
+
+impl SurrogateThermalLoadAdapter {
+    fn new(fallback_to_physics: bool) -> Self {
+        Self {
+            fallback_to_physics,
+        }
+    }
+
+    fn solve_timesteps(
+        &self,
+        model: &mut crate::sim::engine::ThermalModel<VectorField>,
+        steps: usize,
+        surrogates: &SurrogateManager,
+    ) -> f64 {
+        let dt_seconds = model.calculate_timestep_seconds();
+        model.hourly_temperatures = Some(vec![Vec::with_capacity(steps); model.num_zones]);
+        let cycle = get_daily_cycle();
+        let total_energy_kwh: f64 = (0..steps)
+            .map(|t| {
+                let hour_of_day = t % 24;
+                let outdoor_temp = 10.0 + 10.0 * cycle[hour_of_day];
+                let input = self.input(model, t, outdoor_temp);
+                let loads = match self.predict(surrogates, &input) {
+                    Ok(predicted) => Self::loads_for_zones(predicted, model.num_zones),
+                    Err(err) => {
+                        log::error!("Surrogate thermal load prediction failed: {}", err);
+                        if self.fallback_to_physics {
+                            model.calculate_analytical_loads(outdoor_temp, hour_of_day)
+                        } else {
+                            vec![0.0; model.num_zones]
+                        }
+                    }
+                };
+                model.set_loads(&loads);
+                let energy = model.step_physics(t, outdoor_temp, dt_seconds);
+                let temps = model.temperatures.as_ref().to_vec();
+                if let Some(ref mut hourly) = model.hourly_temperatures {
+                    for (zone_idx, &temp) in temps.iter().enumerate() {
+                        hourly[zone_idx].push(temp);
+                    }
+                }
+                energy
+            })
+            .sum();
+        let total_area = model.zone_area.integrate();
+        if total_area > 0.0 {
+            total_energy_kwh / total_area
+        } else {
+            0.0
+        }
+    }
+
+    fn input(
+        &self,
+        model: &crate::sim::engine::ThermalModel<VectorField>,
+        timestep: usize,
+        outdoor_temp: f64,
+    ) -> Vec<f64> {
+        let zone_temp = model.temperatures.as_ref().first().copied().unwrap_or(20.0);
+        let solar_gain = model.solar_gains.as_ref().first().copied().unwrap_or(0.0);
+        let humidity = model.weather.as_ref().map(|w| w.humidity).unwrap_or(50.0);
+        let occupancy = 0.1;
+        let hour = (timestep % 24) as f64;
+        vec![
+            outdoor_temp,
+            zone_temp,
+            solar_gain,
+            humidity,
+            occupancy,
+            hour,
+        ]
+    }
+
+    fn predict(&self, surrogates: &SurrogateManager, input: &[f64]) -> Result<Vec<f64>, String> {
+        if self.fallback_to_physics {
+            surrogates.predict_loads_with_fallback(input)
+        } else {
+            surrogates.predict_loads_onnx(input)
+        }
+    }
+
+    fn loads_for_zones(loads: Vec<f64>, num_zones: usize) -> Vec<f64> {
+        if num_zones == 0 {
+            return Vec::new();
+        }
+        if loads.len() == num_zones {
+            return loads;
+        }
+        if loads.is_empty() {
+            return vec![0.0; num_zones];
+        }
+        if loads.len() > num_zones {
+            return loads.into_iter().take(num_zones).collect();
+        }
+        let last = *loads.last().unwrap_or(&0.0);
+        let mut out = loads;
+        out.resize(num_zones, last);
+        out
+    }
+}
+
 impl ThermalModelTrait for SurrogateThermalModel {
     fn num_zones(&self) -> usize {
         self.inner.num_zones
@@ -279,9 +384,11 @@ impl ThermalModelTrait for SurrogateThermalModel {
         surrogates: &SurrogateManager,
         _use_surrogates: bool,
     ) -> f64 {
-        // Always use surrogates for this model type
-        self.inner
-            .solve_timesteps(steps, surrogates, true, None, None, None)
+        SurrogateThermalLoadAdapter::new(self.fallback_to_physics).solve_timesteps(
+            &mut self.inner,
+            steps,
+            surrogates,
+        )
     }
 
     fn apply_parameters(&mut self, params: &[f64]) {
@@ -961,5 +1068,40 @@ mod tests {
     #[test]
     fn test_thermal_model_type_default() {
         assert_eq!(ThermalModelType::default(), ThermalModelType::LowMass5R1C);
+    }
+
+    #[test]
+    fn surrogate_thermal_model_adapter_builds_onnx_width_input() {
+        let model = SurrogateThermalModel::new(1);
+        let adapter = SurrogateThermalLoadAdapter::new(true);
+        let input = adapter.input(&model.inner, 7, 12.5);
+        assert_eq!(input.len(), 6);
+        assert_eq!(input[0], 12.5);
+        assert_eq!(input[5], 7.0);
+    }
+
+    #[test]
+    fn surrogate_thermal_model_solve_uses_fallback_adapter() {
+        let mut model = SurrogateThermalModel::new(1);
+        let surrogates = SurrogateManager::new().expect("SurrogateManager::new");
+        let eui = model.solve_timesteps(4, &surrogates, true);
+        assert!(eui.is_finite());
+        assert_eq!(surrogates.inference_metrics().num_inferences, 0);
+        let hourly = model.inner.get_hourly_temperatures().expect("hourly temps");
+        assert_eq!(hourly[0].len(), 4);
+    }
+
+    #[cfg(feature = "ort")]
+    #[test]
+    fn surrogate_thermal_model_runs_onnx_once_per_timestep() {
+        let path = "assets/dummy_surrogate.onnx";
+        if !std::path::Path::new(path).exists() {
+            return;
+        }
+        let surrogates = SurrogateManager::load_onnx(path).expect("load dummy ONNX");
+        let mut model = SurrogateThermalModel::new(1);
+        let eui = model.solve_timesteps(24, &surrogates, true);
+        assert!(eui.is_finite());
+        assert_eq!(surrogates.inference_metrics().num_inferences, 24);
     }
 }
