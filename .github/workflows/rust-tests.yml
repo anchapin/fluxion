@@ -79,6 +79,7 @@ jobs:
         run: |
           cargo test --lib --verbose ${{ matrix.feature_set.flags }}
           cargo test --test surface_flux_provider_isolation --verbose ${{ matrix.feature_set.flags }}
+          cargo test --test regression_exterior_film_unification --verbose ${{ matrix.feature_set.flags }}
         env:
           PYO3_PYTHON: /usr/bin/python3
 
@@ -168,7 +169,9 @@ jobs:
           restore-keys: |
             ort-binaries-aarch64-apple-darwin-
       - name: Run tests
-        run: cargo test --lib --verbose --no-default-features
+        run: |
+          cargo test --lib --verbose --no-default-features
+          cargo test --test regression_exterior_film_unification --verbose --no-default-features
         env:
           PYO3_PYTHON: /usr/bin/python3
 
