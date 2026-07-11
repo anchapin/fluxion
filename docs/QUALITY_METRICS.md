@@ -1,20 +1,20 @@
 # Quality Metrics Tracker
 
-*Generated: 2026-06-24 00:54 UTC
+*Generated: 2026-07-11 06:25 UTC
 
 ## Current Status
 
-- **Pass Rate:** 0.0% (0 / 18 cases)
-- **MAE:** 37.59%
-- **Max Deviation:** 100.00%
+- **Pass Rate:** 5.6% (1 / 18 cases)
+- **MAE:** 114.17%
+- **Max Deviation:** 1431.40%
 
 ### Status Breakdown
 
 | Status | Count | Percentage |
 |--------|-------|------------|
-| WARN | 2 | 3.1% |
-| FAIL | 50 | 78.1% |
-| PASS | 12 | 18.8% |
+| WARN | 7 | 10.9% |
+| PASS | 15 | 23.4% |
+| FAIL | 42 | 65.6% |
 
 ## Phase Progression
 
@@ -25,42 +25,42 @@
 | Phase 2 | 35% | 38.5% | 250% | Thermal mass |
 | Phase 3 | 42% | 32.1% | 200% | Solar improvements |
 | Phase 4 | 47% | 28.4% | 180% | Multi-zone correct |
-| Current (Phase 5) | 0.0% | 37.6% | 100% | Diagnostics |
+| Current (Phase 5) | 5.6% | 114.2% | 1431% | Diagnostics |
 
 ## Metric Deviations
 
 | Case | Metric | Actual | Ref Range | Error | Issue |
 |------|--------|--------|-----------|-------|-------|
-| 900FF | Minimum Free-Floating Temperature (°C) | -13.01 | -6.40--1.60 | 225.3% | ThermalMass |
-| 950 | Annual Heating Energy (kWh) | 0.00 | N/A | 100.0% | ModelLimitation |
-| 950 | Peak Heating Load (kW) | 0.00 | N/A | 100.0% | Unknown |
-| 960 | Annual Cooling Energy (kWh) | 0.11 | 1.55-2.78 | 98.3% | InterZoneTransfer |
-| 960 | Peak Cooling Load (kW) | 0.51 | 0.00-4.00 | 92.4% | Unknown |
-| 960 | Peak Heating Load (kW) | 1.05 | 2.00-8.00 | 87.7% | Unknown |
-| 940 | Annual Heating Energy (kWh) | 1.19 | 0.79-1.41 | 81.4% | ModelLimitation |
-| 930 | Annual Cooling Energy (kWh) | 1.00 | 1.04-2.24 | 79.0% | ModelLimitation |
-| 930 | Peak Cooling Load (kW) | 1.05 | 1.10-1.50 | 77.8% | Unknown |
-| 940 | Peak Heating Load (kW) | 1.77 | 1.90-2.50 | 74.2% | Unknown |
-| 950 | Annual Cooling Energy (kWh) | 1.76 | 0.39-0.92 | 68.9% | ModelLimitation |
-| 950 | Peak Cooling Load (kW) | 1.88 | 0.70-0.90 | 68.9% | Unknown |
-| 930 | Peak Heating Load (kW) | 1.53 | 2.30-3.00 | 67.6% | Unknown |
-| 920 | Peak Cooling Load (kW) | 1.28 | 1.40-1.90 | 66.2% | Unknown |
-| 920 | Annual Cooling Energy (kWh) | 1.28 | 1.84-3.31 | 66.1% | ModelLimitation |
-| 940 | Peak Cooling Load (kW) | 1.93 | 1.70-2.30 | 64.6% | Unknown |
-| 600 | Annual Cooling Energy (kWh) | 3.12 | 8.00-10.50 | 63.3% | Unknown |
-| 940 | Annual Cooling Energy (kWh) | 2.02 | 2.08-3.55 | 60.2% | ModelLimitation |
-| 920 | Peak Heating Load (kW) | 1.53 | 2.10-2.80 | 59.5% | Unknown |
-| 620 | Annual Cooling Energy (kWh) | 1.79 | 3.20-5.00 | 56.4% | Unknown |
-| 640 | Annual Cooling Energy (kWh) | 3.08 | 5.95-8.10 | 56.2% | Unknown |
-| 630 | Annual Cooling Energy (kWh) | 1.29 | 2.13-3.70 | 55.6% | Unknown |
-| 930 | Annual Heating Energy (kWh) | 2.19 | 4.14-5.34 | 53.8% | ModelLimitation |
-| 630 | Peak Heating Load (kW) | 2.59 | 4.70-6.10 | 52.0% | Unknown |
-| 650 | Annual Cooling Energy (kWh) | 2.88 | 4.82-7.06 | 51.6% | Unknown |
-| 610 | Annual Cooling Energy (kWh) | 2.55 | 3.92-6.14 | 49.2% | Unknown |
-| 640 | Peak Heating Load (kW) | 2.62 | 4.30-5.70 | 47.6% | Unknown |
-| 610 | Peak Heating Load (kW) | 2.63 | 4.30-5.70 | 47.5% | Unknown |
-| 920 | Annual Heating Energy (kWh) | 2.14 | 3.26-4.30 | 43.4% | ModelLimitation |
-| 600 | Peak Cooling Load (kW) | 3.09 | 4.80-6.20 | 41.6% | SolarGains |
+| 950 | Annual Cooling Energy (kWh) | 86.91 | 0.39-0.92 | 1431.4% | ModelLimitation |
+| 950 | Peak Cooling Load (kW) | 66.53 | 0.70-0.90 | 999.7% | Unknown |
+| 910 | Annual Cooling Energy (kWh) | 9.99 | 0.82-1.88 | 640.1% | ModelLimitation |
+| 950 | Annual Heating Energy (kWh) | 32.21 | N/A | 403.4% | ModelLimitation |
+| 900 | Annual Heating Energy (kWh) | 7.75 | 1.17-2.04 | 382.8% | ModelLimitation |
+| 910 | Annual Heating Energy (kWh) | 8.97 | 1.51-2.28 | 373.5% | ModelLimitation |
+| 950 | Peak Heating Load (kW) | 29.82 | N/A | 305.7% | Unknown |
+| 900 | Annual Cooling Energy (kWh) | 9.64 | 2.13-3.67 | 232.5% | ModelLimitation |
+| 910 | Peak Cooling Load (kW) | 4.37 | 1.20-1.60 | 212.4% | Unknown |
+| 900FF | Minimum Free-Floating Temperature (°C) | -12.43 | -6.40--1.60 | 210.8% | ThermalMass |
+| 940 | Annual Cooling Energy (kWh) | 15.51 | 2.08-3.55 | 205.7% | ModelLimitation |
+| 900 | Peak Heating Load (kW) | 4.27 | 1.80-2.40 | 167.0% | Unknown |
+| 650 | Peak Cooling Load (kW) | 4.88 | 1.90-2.50 | 122.0% | SolarGains |
+| 195 | Peak Heating Load (kW) | 3.98 | 1.40-2.20 | 120.8% | Unknown |
+| 920 | Annual Heating Energy (kWh) | 8.29 | 3.26-4.30 | 119.3% | ModelLimitation |
+| 920 | Annual Cooling Energy (kWh) | 7.89 | 1.84-3.31 | 108.7% | ModelLimitation |
+| 910 | Peak Heating Load (kW) | 4.30 | 1.90-2.50 | 95.5% | Unknown |
+| 930 | Annual Heating Energy (kWh) | 9.01 | 4.14-5.34 | 90.1% | ModelLimitation |
+| 940 | Annual Heating Energy (kWh) | 11.44 | 0.79-1.41 | 79.4% | ModelLimitation |
+| 930 | Annual Cooling Energy (kWh) | 8.12 | 1.04-2.24 | 71.2% | ModelLimitation |
+| 610 | Peak Cooling Load (kW) | 4.36 | 2.20-2.90 | 70.9% | SolarGains |
+| 940 | Peak Cooling Load (kW) | 9.21 | 1.70-2.30 | 68.9% | Unknown |
+| 900 | Peak Cooling Load (kW) | 4.57 | 1.60-2.10 | 63.4% | Unknown |
+| 195 | Annual Heating Energy (kWh) | 7.66 | 3.50-6.00 | 61.2% | Unknown |
+| 960 | Annual Cooling Energy (kWh) | 9.66 | 1.55-2.78 | 54.6% | InterZoneTransfer |
+| 640 | Peak Cooling Load (kW) | 4.95 | 2.80-3.70 | 52.2% | SolarGains |
+| 960 | Peak Heating Load (kW) | 4.27 | 2.00-8.00 | 49.7% | Unknown |
+| 600 | Annual Cooling Energy (kWh) | 5.34 | 3.92-6.14 | 37.2% | Unknown |
+| 940 | Peak Heating Load (kW) | 9.33 | 1.90-2.50 | 36.2% | Unknown |
+| 630 | Peak Cooling Load (kW) | 2.85 | 1.80-2.40 | 35.5% | SolarGains |
 
 ## Problematic Cases
 
@@ -68,16 +68,16 @@ Cases with the highest number of failing metrics:
 
 | Case | Failing Metrics | Total Error |
 |------|-----------------|-------------|
-| 950 | 4 | 337.8% |
-| 960 | 4 | 307.5% |
-| 940 | 4 | 280.4% |
-| 930 | 4 | 278.2% |
-| 900FF | 2 | 235.8% |
-| 920 | 4 | 235.2% |
-| 600 | 4 | 168.1% |
-| 630 | 4 | 157.2% |
-| 620 | 4 | 139.5% |
-| 640 | 3 | 138.4% |
+| 950 | 4 | 3140.2% |
+| 910 | 4 | 1321.5% |
+| 900 | 4 | 845.7% |
+| 940 | 4 | 390.2% |
+| 920 | 4 | 258.9% |
+| 900FF | 2 | 231.3% |
+| 195 | 2 | 182.1% |
+| 930 | 3 | 171.4% |
+| 960 | 3 | 136.9% |
+| 650 | 1 | 122.0% |
 
 ---
 *Note: MAE = Mean Absolute Error of percent deviation from reference midpoints.*

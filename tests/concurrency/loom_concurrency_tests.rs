@@ -581,31 +581,13 @@ mod loom_tests {
             let s_add_a = StdArc::clone(&solver);
             let adder_a = thread::spawn(move || {
                 let mut s = s_add_a.lock().unwrap();
-                s.add_surface_from_params(
-                    100,
-                    SurfaceKind::Roof,
-                    8.0,
-                    0.3,
-                    22.0,
-                    4.0,
-                    3.0,
-                    1.5,
-                );
+                s.add_surface_from_params(100, SurfaceKind::Roof, 8.0, 0.3, 22.0, 4.0, 3.0, 1.5);
             });
 
             let s_add_b = StdArc::clone(&solver);
             let adder_b = thread::spawn(move || {
                 let mut s = s_add_b.lock().unwrap();
-                s.add_surface_from_params(
-                    200,
-                    SurfaceKind::Floor,
-                    6.0,
-                    0.4,
-                    18.0,
-                    3.5,
-                    2.5,
-                    1.0,
-                );
+                s.add_surface_from_params(200, SurfaceKind::Floor, 6.0, 0.4, 18.0, 3.5, 2.5, 1.0);
             });
 
             let s_step = StdArc::clone(&solver);
@@ -740,11 +722,33 @@ mod loom_tests {
         {
             let mut s = solver.lock().unwrap();
             s.add_surface_with_mass(
-                SurfaceNode::new(0, SurfaceKind::Wall, 10.0, 0.5, 20.0, 50_000.0, 5.0, 4.0, 2.0, 20.0),
+                SurfaceNode::new(
+                    0,
+                    SurfaceKind::Wall,
+                    10.0,
+                    0.5,
+                    20.0,
+                    50_000.0,
+                    5.0,
+                    4.0,
+                    2.0,
+                    20.0,
+                ),
                 MassNode::new(0, 20.0, 50_000.0, 5.0, 4.0),
             );
             s.add_surface_with_mass(
-                SurfaceNode::new(1, SurfaceKind::Roof, 8.0, 0.3, 22.0, 40_000.0, 4.0, 3.0, 1.5, 22.0),
+                SurfaceNode::new(
+                    1,
+                    SurfaceKind::Roof,
+                    8.0,
+                    0.3,
+                    22.0,
+                    40_000.0,
+                    4.0,
+                    3.0,
+                    1.5,
+                    22.0,
+                ),
                 MassNode::new(1, 22.0, 40_000.0, 4.0, 3.0),
             );
         }
@@ -1570,11 +1574,33 @@ fn test_per_surface_solver_mass_node_evolution_race_baseline() {
     {
         let mut s = solver.lock().unwrap();
         s.add_surface_with_mass(
-            SurfaceNode::new(0, SurfaceKind::Wall, 10.0, 0.5, 20.0, 50_000.0, 5.0, 4.0, 2.0, 20.0),
+            SurfaceNode::new(
+                0,
+                SurfaceKind::Wall,
+                10.0,
+                0.5,
+                20.0,
+                50_000.0,
+                5.0,
+                4.0,
+                2.0,
+                20.0,
+            ),
             MassNode::new(0, 20.0, 50_000.0, 5.0, 4.0),
         );
         s.add_surface_with_mass(
-            SurfaceNode::new(1, SurfaceKind::Roof, 8.0, 0.3, 22.0, 40_000.0, 4.0, 3.0, 1.5, 22.0),
+            SurfaceNode::new(
+                1,
+                SurfaceKind::Roof,
+                8.0,
+                0.3,
+                22.0,
+                40_000.0,
+                4.0,
+                3.0,
+                1.5,
+                22.0,
+            ),
             MassNode::new(1, 22.0, 40_000.0, 4.0, 3.0),
         );
     }
