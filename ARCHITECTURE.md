@@ -733,10 +733,15 @@ pub trait SurfaceHeatFluxProvider: Send + Sync {
     fn surface_heat_flux(&self, surface_idx: usize, T_zone: f64, T_outdoor: f64, dt_seconds: f64) -> f64;
     fn num_surfaces(&self) -> usize;
     fn name(&self) -> &str;
+    // Issue #1430: per-timestep film-coefficient mutator so the engine
+    // can push h_int / h_ext into any `Box<dyn SurfaceHeatFluxProvider>`
+    // without rebuilding it. Mock providers no-op; Physics persists to
+    // its per-surface vectors for the next step_all.
+    fn set_film_coefficients(&mut self, surface_idx: usize, h_int: f64, h_ext: f64);
 }
 ```
 
-`PhysicsSurfaceFluxProvider` accepts per-surface solar gain (`solar_gain_wm2`) and per-surface film coefficients (`h_int`, `h_ext`) via `add_surface` / `add_surface_with_film_coefficients`, matching the per-surface boundary condition work in #1119.
+`PhysicsSurfaceFluxProvider` accepts per-surface solar gain (`solar_gain_wm2`) and per-surface film coefficients (`h_int`, `h_ext`) via `add_surface` / `add_surface_with_film_coefficients`, matching the per-surface boundary condition work in #1119. The trait also exposes `set_film_coefficients` (#1430) so the zone engine can push hourly-varying h values (still-air vs forced convection, ASHRAE Fundamentals wind correlation `h_o = 4 + 4·v`) without rebuilding the provider — preserving the swap-point contract for future `MlSurfaceFluxProvider` implementations.
 
 ### Thermal Model Trait Hierarchy
 

@@ -793,3 +793,135 @@ fn test_parity_physical_meaning_preserved() {
         rel_error * 100.0
     );
 }
+
+// ===========================================================================
+// Section 4: set_film_coefficients trait method (Issue #1430)
+// ===========================================================================
+
+/// Issue #1430 acceptance: the trait exposes a mutable mutator for film
+/// coefficients so the engine can push per-timestep updates into a
+/// `Box<dyn SurfaceHeatFluxProvider>` without rebuilding it. The Mock
+/// implementation must be a no-op (it owns no per-surface h state) and
+/// must still satisfy the trait so the swap point stays
+/// dyn-compatible. The Physics implementation must store the new
+/// coefficients so subsequent `step_all` calls honor them (a future
+/// solver that consumes the per-timestep h values — e.g. FD's boundary
+/// BCs — observes the change). This test exercises both via trait
+/// dispatch, then asserts the FD-backed provider observes a flux change
+/// when film coefficients move from a forced-convection pair to the
+/// still-air, low-wind pair called out in the issue.
+#[test]
+fn test_set_film_coefficients_changes_flux() {
+    use fluxion::physics::fd_solver_wrapper::FDSolverWrapper;
+    use fluxion::physics::solver_trait::HeatConductionSolver;
+
+    // --- 1. Trait dispatch on MockSurfaceHeatFluxProvider (no-op path) ---
+    let mut mock: Box<dyn SurfaceHeatFluxProvider> =
+        Box::new(MockSurfaceHeatFluxProvider::new(vec![15.0]));
+    // Must compile and not panic. The mock returns its fixed value
+    // regardless of state — we just verify the call is legal through
+    // the trait object.
+    mock.set_film_coefficients(0, 3.45, 4.0);
+    assert_eq!(mock.surface_heat_flux(0, 20.0, 5.0, 3600.0), 15.0);
+
+    // --- 2. Physics path with FD solver (h-aware step) ---
+    let wall = heavyweight_wall();
+    let mut fd = FDSolverWrapper::new();
+    fd.initialize(&wall)
+        .expect("FD solver initialization should succeed");
+
+    // 200mm concrete wall, default FD film coefficients are h_int=8.0
+    // and h_ext=25.0 (per issue: the "forced convection, moderate wind"
+    // starting condition).
+    let mut physics = PhysicsSurfaceFluxProvider::new()
+        .add_surface_with_film_coefficients(fd, 10.0, 0.0, 8.0, 25.0);
+
+    // Step once with the default h-values to get a post-step flux
+    // (steady-state seed for the first call; subsequent calls would
+    // observe the evolved thermal-mass response).
+    let t_zone = 20.0;
+    let t_outdoor = 5.0;
+    let dt = 3600.0;
+    let _ = physics
+        .step_all(dt, t_zone, t_outdoor)
+        .expect("first step_all");
+    let q_old = physics.surface_heat_flux(0, t_zone, t_outdoor, dt);
+    assert!(q_old.is_finite(), "q_old must be finite: {}", q_old);
+
+    // Push the ASHRAE-recommended still-air / low-wind pair through
+    // the trait mutator. This is the production call shape: the
+    // engine holds `Box<dyn SurfaceHeatFluxProvider>` and calls
+    // `set_film_coefficients` per timestep.
+    physics.set_film_coefficients(0, 3.45, 4.0);
+
+    // Advance the solver again so the new h-values flow into the FD
+    // boundary condition (FD's step() honors h_interior / h_exterior).
+    let _ = physics
+        .step_all(dt, t_zone, t_outdoor)
+        .expect("second step_all");
+    let q_new = physics.surface_heat_flux(0, t_zone, t_outdoor, dt);
+    assert!(q_new.is_finite(), "q_new must be finite: {}", q_new);
+
+    // The flux must respond to the film-coefficient change. If two
+    // solver implementations — same wall, same temperatures, same dt —
+    // produce the SAME flux before and after a 4.55 / 21.0 W/m²·K
+    // shift in film coefficients, one of two things is wrong:
+    //   (a) the mutator didn't persist, or
+    //   (b) the solver ignored h on the second step.
+    // Either failure breaks the engine-wiring contract.
+    assert!(
+        (q_new - q_old).abs() > 1e-6,
+        "flux did not change after set_film_coefficients: q_old={}, q_new={}",
+        q_old,
+        q_new
+    );
+    // Issue acceptance: flux responds to film-coefficient changes
+    // (the ASHRAE delta would be a fraction of the post-step flux,
+    // not infinite — we only require the response to exist).
+    let relative_delta = (q_new - q_old).abs() / q_old.abs().max(1e-9);
+    assert!(
+        relative_delta < 0.5,
+        "flux swung more than 50% between film-coefficient sets — sanity check failed: q_old={}, q_new={}, rel_delta={}",
+        q_old, q_new, relative_delta
+    );
+}
+
+/// Issue #1430 parity acceptance: existing swap-point parity tests
+/// (Issues #1285 / #1287) must continue to pass after the trait gains
+/// a mutating method. This test asserts that the dyn-safety of the
+/// swap point is preserved — a `Box<dyn SurfaceHeatFluxProvider>` is
+/// still constructible, still queryable, and now also mutatable
+/// through the new method.
+#[test]
+fn test_swap_point_set_film_coefficients_via_dyn() {
+    use fluxion::physics::fd_solver_wrapper::FDSolverWrapper;
+
+    let wall = heavyweight_wall();
+    let mut fd = FDSolverWrapper::new();
+    fd.initialize(&wall).expect("FD init");
+
+    // Trait object holding the physics impl, allocated as dyn — this
+    // is the production shape the engine consumes (Issue #1285).
+    let mut providers: Vec<Box<dyn SurfaceHeatFluxProvider>> = vec![
+        Box::new(MockSurfaceHeatFluxProvider::uniform(1, 12.0)),
+        Box::new(
+            PhysicsSurfaceFluxProvider::new().add_surface_with_film_coefficients(fd, 10.0, 0.0, 8.0, 25.0),
+        ),
+    ];
+
+    for (i, p) in providers.iter_mut().enumerate() {
+        // Per-surface, per-timestep mutator call through the trait
+        // object. Issue #1430 acceptance: no provider rebuild
+        // required.
+        p.set_film_coefficients(0, 3.45, 4.0);
+        let q = p.surface_heat_flux(0, 20.0, 5.0, 3600.0);
+        assert!(
+            q.is_finite(),
+            "provider[{}] {:?} returned non-finite flux after set_film_coefficients: {}",
+            i,
+            p.name(),
+            q
+        );
+        assert_eq!(p.num_surfaces(), 1, "provider[{}] wrong surface count", i);
+    }
+}
