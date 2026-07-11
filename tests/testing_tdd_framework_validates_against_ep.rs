@@ -14,8 +14,8 @@
 //! - [x] Deleting/mutating CSV data causes test failures (non-tautological)
 //! - [x] Test completes in < 30 s
 
-use fluxion::testing::tdd_framework::{PhysicsDomain, TDDFramework, TestStatus};
 use fluxion::testing::reference_data;
+use fluxion::testing::tdd_framework::{PhysicsDomain, TDDFramework, TestStatus};
 
 /// Domains that MUST have passing E+ CSV-backed tests.
 const EP_BACKED_DOMAINS: [PhysicsDomain; 7] = [
@@ -48,11 +48,7 @@ fn run_all_domains_against_ep() {
         let summary = suite.summary();
         println!(
             "Domain {:?}: total={} passed={} failed={} skipped={}",
-            summary.domain,
-            summary.total,
-            summary.passed,
-            summary.failed,
-            summary.skipped
+            summary.domain, summary.total, summary.passed, summary.failed, summary.skipped
         );
 
         // Print any failed test details
@@ -137,8 +133,8 @@ fn reference_data_loaders_are_populated() {
         .expect("surface_irradiance_south.csv must exist");
     assert_eq!(solar.len(), 8760, "solar CSV should have 8760 rows");
 
-    let vent = reference_data::load_infiltration_denver()
-        .expect("infiltration_denver.csv must exist");
+    let vent =
+        reference_data::load_infiltration_denver().expect("infiltration_denver.csv must exist");
     assert_eq!(vent.len(), 8760, "ventilation CSV should have 8760 rows");
 
     let case600 = reference_data::load_zone_balance_case("600")

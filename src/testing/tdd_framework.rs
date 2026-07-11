@@ -691,7 +691,8 @@ impl TDDFramework {
         // The point of the test is that the CSV value must match the
         // conductance implied by the surface temperatures — deleting or
         // altering the row breaks the relationship.
-        let concrete = match super::reference_data::load_conduction_step_response("200mm_concrete") {
+        let concrete = match super::reference_data::load_conduction_step_response("200mm_concrete")
+        {
             Ok(d) => d,
             Err(e) => {
                 suite.add_result(TestCaseResult::skipped(
@@ -741,8 +742,7 @@ impl TDDFramework {
             "rows",
         );
         result.tolerance = tol;
-        result.relative_error =
-            (concrete.rows.len() as f64 - 288.0).abs() / 288.0;
+        result.relative_error = (concrete.rows.len() as f64 - 288.0).abs() / 288.0;
         result.check_pass(tol);
         suite.add_result(result);
 
@@ -776,12 +776,8 @@ impl TDDFramework {
             .sum::<f64>()
             / fixed.rows.len() as f64;
         let q_ss_computed = mean_dt / r_total; // W/m²
-        let q_csv_mean: f64 = fixed
-            .rows
-            .iter()
-            .map(|r| r.q_inside_wm2)
-            .sum::<f64>()
-            / fixed.rows.len() as f64;
+        let q_csv_mean: f64 =
+            fixed.rows.iter().map(|r| r.q_inside_wm2).sum::<f64>() / fixed.rows.len() as f64;
 
         // Transient flux is ~56 % of steady-state for 200 mm concrete at 72 h.
         // We compare the CSV mean flux magnitude against q_ss and use a wide
@@ -902,7 +898,7 @@ impl TDDFramework {
         // C = ρ · cp · d  (J/m²·K).  E+ CSV parameters: k=1.73, ρ=2300,
         // cp=840, d=0.200 m.  Fluxion's WallSpec would compute the same.
         let c_fluxion = 2300.0 * 840.0 * 0.200; // 386 400 J/m²K
-        // The E+ CSV documents cp=840 in its comment header.
+                                                // The E+ CSV documents cp=840 in its comment header.
         let c_ep = 2300.0 * 840.0 * 0.200; // same formula — but read from CSV params
         let mut result = TestCaseResult::pass(
             "TM-001",
@@ -1159,12 +1155,8 @@ impl TDDFramework {
         // The E+ CSV for the floor slab shows T_surface_outside pinned to
         // the constant ground temperature (18 °C per the model parameters).
         // Fluxion's boundary module uses the same 18 °C constant.
-        let mean_t_so: f64 = floor
-            .rows
-            .iter()
-            .map(|r| r.t_surface_outside)
-            .sum::<f64>()
-            / floor.rows.len() as f64;
+        let mean_t_so: f64 =
+            floor.rows.iter().map(|r| r.t_surface_outside).sum::<f64>() / floor.rows.len() as f64;
         let mut result = TestCaseResult::pass(
             "GC-001",
             "Floor slab outside-face temperature (ground boundary)",

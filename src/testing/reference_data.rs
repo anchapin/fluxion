@@ -143,9 +143,10 @@ fn parse_step_response(name: &str, content: &str) -> Result<StepResponseRef, Str
         let parts: Vec<&str> = line.split(',').collect();
         if seven_col && parts.len() >= 7 {
             rows.push(StepResponseRow {
-                hour: parts[0].trim().parse().map_err(|e| {
-                    format!("bad hour in row {:?}: {}", parts, e)
-                })?,
+                hour: parts[0]
+                    .trim()
+                    .parse()
+                    .map_err(|e| format!("bad hour in row {:?}: {}", parts, e))?,
                 t_outdoor: parts[1].trim().parse().unwrap_or(0.0),
                 t_zone: parts[2].trim().parse().unwrap_or(0.0),
                 t_surface_inside: parts[3].trim().parse().unwrap_or(0.0),
@@ -155,9 +156,10 @@ fn parse_step_response(name: &str, content: &str) -> Result<StepResponseRef, Str
             });
         } else if six_col && parts.len() >= 6 {
             rows.push(StepResponseRow {
-                hour: parts[0].trim().parse().map_err(|e| {
-                    format!("bad hour in row {:?}: {}", parts, e)
-                })?,
+                hour: parts[0]
+                    .trim()
+                    .parse()
+                    .map_err(|e| format!("bad hour in row {:?}: {}", parts, e))?,
                 t_outdoor: parts[1].trim().parse().unwrap_or(0.0),
                 t_zone: 0.0, // not recorded in the 6-column format
                 t_surface_inside: parts[2].trim().parse().unwrap_or(0.0),
@@ -169,10 +171,7 @@ fn parse_step_response(name: &str, content: &str) -> Result<StepResponseRef, Str
     }
 
     if rows.is_empty() {
-        return Err(format!(
-            "no data rows found in step_response_{}.csv",
-            name
-        ));
+        return Err(format!("no data rows found in step_response_{}.csv", name));
     }
 
     Ok(StepResponseRef {
@@ -215,22 +214,30 @@ impl ZoneBalanceRef {
 
     /// Annual heating in MWh (midpoint), or `0.0` if missing.
     pub fn annual_heating_mwh(&self) -> f64 {
-        self.get("annual_heating").map(|m| m.ref_midpoint).unwrap_or(0.0)
+        self.get("annual_heating")
+            .map(|m| m.ref_midpoint)
+            .unwrap_or(0.0)
     }
 
     /// Annual cooling in MWh (midpoint), or `0.0` if missing.
     pub fn annual_cooling_mwh(&self) -> f64 {
-        self.get("annual_cooling").map(|m| m.ref_midpoint).unwrap_or(0.0)
+        self.get("annual_cooling")
+            .map(|m| m.ref_midpoint)
+            .unwrap_or(0.0)
     }
 
     /// Peak heating in kW (midpoint), or `0.0` if missing.
     pub fn peak_heating_kw(&self) -> f64 {
-        self.get("peak_heating").map(|m| m.ref_midpoint).unwrap_or(0.0)
+        self.get("peak_heating")
+            .map(|m| m.ref_midpoint)
+            .unwrap_or(0.0)
     }
 
     /// Peak cooling in kW (midpoint), or `0.0` if missing.
     pub fn peak_cooling_kw(&self) -> f64 {
-        self.get("peak_cooling").map(|m| m.ref_midpoint).unwrap_or(0.0)
+        self.get("peak_cooling")
+            .map(|m| m.ref_midpoint)
+            .unwrap_or(0.0)
     }
 }
 
