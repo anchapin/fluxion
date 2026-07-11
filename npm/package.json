@@ -5,24 +5,21 @@
   "main": "index.js",
   "types": "index.d.ts",
   "napi": {
-    "name": "fluxion",
-    "triples": {
-      "defaults": true,
-      "additional": [
-        "x86_64-pc-windows-msvc",
-        "aarch64-pc-windows-msvc",
-        "x86_64-apple-darwin",
-        "aarch64-apple-darwin",
-        "x86_64-unknown-linux-gnu"
-      ]
-    }
+    "binaryName": "fluxion",
+    "targets": [
+      "x86_64-pc-windows-msvc",
+      "aarch64-pc-windows-msvc",
+      "x86_64-apple-darwin",
+      "aarch64-apple-darwin",
+      "x86_64-unknown-linux-gnu"
+    ]
   },
   "scripts": {
     "artifacts": "napi artifacts",
-    "build": "napi build --platform --release",
-    "build:debug": "napi build --platform",
+    "build": "node build.js --release",
+    "build:debug": "node build.js",
     "prepublishOnly": "napi prepublish",
-    "test": "node --test",
+    "test": "node --test test.js test_interop.js",
     "universal": "napi universal",
     "version": "napi version"
   },

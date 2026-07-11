@@ -38,6 +38,11 @@ module.exports = {
   // Main classes
   BatchOracle: native.BatchOracle,
   BuildingParameters: native.BuildingParameters,
+  StateExtractor: native.StateExtractor,
+  StateMatrices: native.StateMatrices,
+  OsmExporter: native.OsmExporter,
+  GbXmlExporter: native.GbXmlExporter,
+  FmiExporter: native.FmiExporter,
 
   // Error classes
   FluxionError: native.FluxionError,
