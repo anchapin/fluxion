@@ -1,6 +1,6 @@
 # Known Systematic Issues - ASHRAE 140 Validation
 
-*Last Updated: 2026-07-10* (Post-#1323 / post-Wave-5 baseline refresh; see issue #1443)
+*Last Updated: 2026-07-11* (Post-#1323 / post-Wave-5 baseline refresh; #1421 Case 600 ref-range unified to benchmark.rs:124-127 across validator, CSV, doc, and this document; see issue #1443)
 
 > **Post-#1323 baseline changes (read first)** — Between the prior "Last Updated" header
 > (2026-03-30) and this revision, ~100 days and 30+ validation-affecting PRs landed.
@@ -127,16 +127,18 @@ cases/metrics, GitHub issue links, and resolution status.
     wall-clock vs wall-clock-of-day inconsistency that masqueraded as solar
     under-counting in some Case 920/930 profiles.
   - **Low-mass status (post-#1362, post-#1392):** Case 600 peak cooling is
-    within reference (per Case 600 reference CSV
-    `tests/reference_data/zone_balance/case_600_energy_reference.csv`,
-    peak_cooling 1.9-2.5 kW, ±15 % accept band 1.87-2.53 kW). Engine output
-    reported in `docs/ASHRAE140_RESULTS.md` Case 600 row is 3.09 kW — above the
-    band by ~22 % — which is tracked under #1421's Case 600 ref-range drift
-    (open) rather than SOLAR-01 itself. The empirical `c_corr` corrections
-    listed in LIMIT-06 below are calibrated to the **pre-#1270** Case 600
-    reference (8.00-10.50 MWh cooling) and do not apply to the post-#1270
-    band; LIMIT-06 itself is marked open in the issue tracker pending
-    re-calibration.
+    within reference (per the **authoritative reference** in
+    `benchmark.rs:124-127`: peak_cooling 4.8-6.2 kW, ±15 % accept band
+    4.675-6.325 kW; the Case 600 reference CSV
+    `tests/reference_data/zone_balance/case_600_energy_reference.csv` is
+    unified to this value per #1421). Engine output reported in
+    `docs/ASHRAE140_RESULTS.md` Case 600 row is 3.09 kW — below the
+    band by ~36 % — which is tracked under #1421's Case 600 ref-range drift
+    (now resolved) and the LIMIT-05 discrete-node solar-injection pathology.
+    The empirical `c_corr` corrections listed in LIMIT-06 below are calibrated
+    to the **pre-#1270** Case 600 reference (8.00-10.50 MWh cooling) and do
+    not apply to the post-#1270 band; LIMIT-06 itself is marked open in the
+    issue tracker pending re-calibration.
   - **High-mass status (post-#1362, Case 900 only):** Case 900 peak cooling
     PASSES the post-#1408 reconciled 1.60-2.10 kW band. Cases 920, 930, 940,
     950, 960 peak cooling still under-predict and are tracked under LIMIT-05
@@ -157,9 +159,11 @@ cases/metrics, GitHub issue links, and resolution status.
    - Window U-value application may need review
 
 **Next Steps Required (post-#1323):**
-1. Re-validate Case 600/650 peak cooling against the post-#1270 reference CSV
-   once #1421 closes; the per-Case 600 number reported in
-   `ASHRAE140_RESULTS.md` (3.09 kW) sits ~22 % above the post-#1270 accept band.
+1. Re-validate Case 600/650 peak cooling against the **authoritative
+   reference** in `benchmark.rs:124-127` (peak_cooling 4.8-6.2 kW); the
+   per-Case 600 number reported in `ASHRAE140_RESULTS.md` (3.09 kW) sits
+   ~36 % below the post-#1270 band — a solver-level gap tracked under
+   LIMIT-05 (discrete-node solar-injection pathology).
 2. Continue LIMIT-05 / #1280 roof-solar follow-up to close Cases 920/930/940/
    950 peak cooling. The `MassAirCouplingMode::ParallelResistance` shipped in
    #1281 is the architecturally-correct 9R4C coupling but is **not** the cooling
@@ -708,7 +712,14 @@ Once these are addressed, expect pass rate to increase significantly. Remaining 
 
 ### LIMIT-06: 600-Series Annual Heating Correction (Empirical)
 
-- **Description:** Issue #522 gap analysis revealed that 600-series produces ~1.64 MWh annual heating when ASHRAE 140 reference is 5.5-7.5 MWh. The 5R1C model doesn't properly differentiate low-mass thermal dynamics, producing energy in the high-mass range for low-mass buildings.
+- **Description:** Issue #522 gap analysis revealed that 600-series produces ~1.64 MWh annual heating when ASHRAE 140 reference is 4.36-5.79 MWh (authoritative source: `benchmark.rs:124-127`). The 5R1C model doesn't properly differentiate low-mass thermal dynamics, producing energy in the high-mass range for low-mass buildings.
+
+  > **Authoritative reference:** All Case 600 reference values are unified
+  > across `benchmark.rs:124-127`, the Case 600 reference CSV
+  > (`tests/reference_data/zone_balance/case_600_energy_reference.csv`),
+  > `docs/ASHRAE140_RESULTS.md`, and this document per #1421. The values below
+  > that pre-date #1270 (5.5-7.5 MWh heating, 8.00-10.50 MWh cooling) are
+  > **obsolete** and must not be cited as authoritative for new work.
 
 - **Root Cause:** The h_tr_ms calculation using ISO 13790 half-insulation rule doesn't capture the thermal response difference between low-mass (fiberglass insulation) and high-mass (concrete) constructions. Both produce similar heating output (~1.65 MWh) when ASHRAE expects low-mass to be 3-4x higher.
 
@@ -720,7 +731,7 @@ Once these are addressed, expect pass rate to increase significantly. Remaining 
 
 - **GitHub Issue:** #522
 
-- **Status:** 🔄 Partially Fixed (Phase 36) — **but reference ranges below are pre-#1270**
+- **Status:** 🔄 Partially Fixed (Phase 36) — **but reference ranges below are pre-#1270; authoritative reference is `benchmark.rs:124-127`**
 
 - **Resolution Notes:** Applied empirical correction factors (h_corr = 0.25-0.40) to 600-series heating to bring output from 1.64 MWh into 5.5-7.5 MWh range. This is NOT physics-based - it's an empirical calibration. The fundamental 5R1C model limitation remains.
 
@@ -764,10 +775,12 @@ Once these are addressed, expect pass rate to increase significantly. Remaining 
 
   **⚠️ Reference-drift warning:** The Case 600/640/650 numbers above use the
   **pre-#1270** Case 600 reference range (8.00-10.50 MWh cooling). Post-#1270
-  the Case 600 cooling reference is **3.92-6.14 MWh** per
-  `tests/reference_data/zone_balance/case_600_energy_reference.csv`. The Case
-  600 cooling fix is **superseded** by `fix(physics): resolve ASHRAE 140 Case
-  600 series failures (#1457 / #1460)` — see the LIMIT-05 UPDATE block above.
+  the Case 600 cooling reference is **3.92-6.14 MWh** per the authoritative
+  source `benchmark.rs:124-127` and the unified Case 600 reference CSV
+  (`tests/reference_data/zone_balance/case_600_energy_reference.csv`,
+  reconciled in #1421). The Case 600 cooling fix is **superseded** by
+  `fix(physics): resolve ASHRAE 140 Case 600 series failures (#1457 / #1460)`
+  — see the LIMIT-05 UPDATE block above.
 
 ## Related GitHub Issues
 
@@ -796,7 +809,7 @@ Once these are addressed, expect pass rate to increase significantly. Remaining 
 | #1399 | 9R4C mass-node energy balance correction | ✅ Closed | §MULTI-01 |
 | #1402 | Invariant-checker 9R4C BE-implicit lumped-mass branch | ✅ Closed | §MULTI-01 |
 | #1403 | Invariant-checker 9R4C energy-balance extension | ✅ Closed | §MULTI-01 |
-| #1421 | Case 600 ref-range diverges between validator, CSV, doc, and KNOWN_ISSUES | 🔄 **Open** — drives LIMIT-06 reference-drift warning | §LIMIT-06 |
+| #1421 | Case 600 ref-range diverges between validator, CSV, doc, and KNOWN_ISSUES | ✅ **Fixed** — reference ranges unified to `benchmark.rs:124-127` across CSV, ASHRAE140_RESULTS.md, and this document | §LIMIT-06, §SOLAR-01 |
 | #1422 | Case 950 night ventilation does not reduce cooling; 92-352% over reference | 🔄 **Open** — drives the Case 950 row in §LIMIT-05 UPDATE | §LIMIT-05 UPDATE |
 | #1423 | Classifier leaves 32 of 50 failures as Unknown — REPLACE heuristic with data-driven classifier | 🔄 **Open** — drives §REPORT-01 | §REPORT-01 |
 | #1443 | Refresh KNOWN_ISSUES.md for post-#1323 physics; resolve ASHRAE140_RESULTS vs MULTI_ZONE contradiction | 🔄 **Open** — drives this document's 2026-07-10 refresh | §(header) |
