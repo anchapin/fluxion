@@ -1093,6 +1093,90 @@ mod tests {
         assert!(data.max_free_float_max != 0.0);
     }
 
+    /// Issue #1421: Assert that the Case 600 reference range is consistent
+    /// across `benchmark.rs::get_all_benchmark_data()` (the authoritative
+    /// source) and the CSV at
+    /// `tests/reference_data/zone_balance/case_600_energy_reference.csv`.
+    ///
+    /// All four metrics (annual_heating, annual_cooling, peak_heating,
+    /// peak_cooling) must agree within 1e-6 between the two sources. This
+    /// guards against the pre-#1270 values creeping back into the CSV or
+    /// the validator.
+    #[test]
+    fn test_case_600_ref_source_consistent_in_repo() {
+        let benchmark_data = get_benchmark_data("600").expect("Case 600 must exist");
+
+        let csv_path =
+            "tests/reference_data/zone_balance/case_600_energy_reference.csv";
+        let csv_content = std::fs::read_to_string(csv_path)
+            .unwrap_or_else(|e| panic!("Failed to read {}: {}", csv_path, e));
+
+        // Parse the CSV: skip comment lines (#) and the header row
+        let mut csv_values: std::collections::HashMap<String, (f64, f64)> =
+            std::collections::HashMap::new();
+        for line in csv_content.lines() {
+            if line.starts_with('#') || line.starts_with("metric,") {
+                continue;
+            }
+            let fields: Vec<&str> = line.split(',').collect();
+            if fields.len() < 4 {
+                continue;
+            }
+            let metric = fields[0].to_string();
+            let ref_min: f64 = fields[2].parse().unwrap_or_else(|e| {
+                panic!("Failed to parse ref_min for {}: {}", metric, e)
+            });
+            let ref_max: f64 = fields[3].parse().unwrap_or_else(|e| {
+                panic!("Failed to parse ref_max for {}: {}", metric, e)
+            });
+            csv_values.insert(metric, (ref_min, ref_max));
+        }
+
+        // Assert each metric matches benchmark.rs within 1e-6
+        let checks = [
+            (
+                "annual_heating",
+                benchmark_data.annual_heating_min,
+                benchmark_data.annual_heating_max,
+            ),
+            (
+                "annual_cooling",
+                benchmark_data.annual_cooling_min,
+                benchmark_data.annual_cooling_max,
+            ),
+            (
+                "peak_heating",
+                benchmark_data.peak_heating_min,
+                benchmark_data.peak_heating_max,
+            ),
+            (
+                "peak_cooling",
+                benchmark_data.peak_cooling_min,
+                benchmark_data.peak_cooling_max,
+            ),
+        ];
+
+        for (metric, bench_min, bench_max) in &checks {
+            let (csv_min, csv_max) = csv_values
+                .get(*metric)
+                .unwrap_or_else(|| panic!("Metric {} missing from CSV", metric));
+            assert!(
+                (bench_min - csv_min).abs() < 1e-6,
+                "Metric {}: benchmark.rs min {} != CSV min {}",
+                metric,
+                bench_min,
+                csv_min
+            );
+            assert!(
+                (bench_max - csv_max).abs() < 1e-6,
+                "Metric {}: benchmark.rs max {} != CSV max {}",
+                metric,
+                bench_max,
+                csv_max
+            );
+        }
+    }
+
     #[test]
     fn test_get_all_benchmark_data_blind() {
         let data = get_all_benchmark_data_blind();
