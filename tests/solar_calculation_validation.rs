@@ -44,7 +44,7 @@ fn test_hourly_solar_irradiance_for_orientations() {
     let mut irradiance_values = Vec::new();
 
     for orientation in &orientations {
-        let sun_pos = calculate_solar_position(39.7, -104.9, 2024, 6, 21, 12.0);
+        let sun_pos = calculate_solar_position(39.7, -104.9, 2024, 6, 21, 12.0, None);
 
         // Sample irradiance for noon on summer solstice
         let irradiance = calculate_surface_irradiance(
@@ -155,7 +155,7 @@ fn test_window_normal_transmittance_ashrae_140_cases() {
 #[test]
 fn test_shgc_applied_in_solar_gains() {
     let window = WindowProperties::double_clear(12.0);
-    let sun_pos = calculate_solar_position(39.7, -104.9, 2024, 6, 21, 12.0);
+    let sun_pos = calculate_solar_position(39.7, -104.9, 2024, 6, 21, 12.0, None);
 
     // High irradiance at noon
     let irradiance = calculate_surface_irradiance(
@@ -200,7 +200,7 @@ fn test_shgc_applied_in_solar_gains() {
 #[test]
 fn test_solar_position_accuracy() {
     // Summer solstice (June 21) at solar noon
-    let sun_pos_summer = calculate_solar_position(39.7, -104.9, 2024, 6, 21, 12.0);
+    let sun_pos_summer = calculate_solar_position(39.7, -104.9, 2024, 6, 21, 12.0, None);
     assert!(
         sun_pos_summer.altitude_deg > 70.0,
         "Summer solstice altitude should be > 70°, got {}",
@@ -213,7 +213,7 @@ fn test_solar_position_accuracy() {
     );
 
     // Winter solstice (December 21) at solar noon
-    let sun_pos_winter = calculate_solar_position(39.7, -104.9, 2024, 12, 21, 12.0);
+    let sun_pos_winter = calculate_solar_position(39.7, -104.9, 2024, 12, 21, 12.0, None);
     assert!(
         sun_pos_winter.altitude_deg > 20.0,
         "Winter solstice altitude should be > 20°, got {}",
@@ -226,7 +226,7 @@ fn test_solar_position_accuracy() {
     );
 
     // Equinox (March 21) at solar noon
-    let sun_pos_equinox = calculate_solar_position(39.7, -104.9, 2024, 3, 21, 12.0);
+    let sun_pos_equinox = calculate_solar_position(39.7, -104.9, 2024, 3, 21, 12.0, None);
     let expected_altitude = 90.0 - 39.7; // 90° - latitude
     assert!(
         (sun_pos_equinox.altitude_deg - expected_altitude).abs() < 2.0,
@@ -242,7 +242,7 @@ fn test_solar_position_accuracy() {
 /// for different surface orientations.
 #[test]
 fn test_incidence_angle_calculation() {
-    let sun_pos = calculate_solar_position(39.7, -104.9, 2024, 6, 21, 12.0);
+    let sun_pos = calculate_solar_position(39.7, -104.9, 2024, 6, 21, 12.0, None);
 
     // South-facing vertical surface at solar noon: sun is due south (az ≈ 180°),
     // incidence angle = altitude (sun is nearly overhead, hits wall at steep angle).
@@ -294,6 +294,7 @@ fn test_hourly_solar_full_day() {
             &[],
             Orientation::South,
             None,
+            None,
         );
 
         total_gain += gain.total_gain_w;
@@ -339,6 +340,7 @@ fn test_solar_gain_at_night() {
         None,
         &[],
         Orientation::South,
+        None,
         None,
     );
 

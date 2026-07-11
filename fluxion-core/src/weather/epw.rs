@@ -294,10 +294,39 @@ pub fn detect_epw_version<R: Read>(reader: &mut R) -> Result<EpwVersion, Weather
 ///     .expect("Failed to get weather data");
 /// println!("Temperature: {}°C", data.dry_bulb_temp);
 /// ```
+/// Structured EPW LOCATION header (Issue #1416).
+///
+/// Returned by [`EpwWeatherSource::parse_location`]. Carries both the human-
+/// readable `city_state` string (e.g. `"Denver, CO"`) and the explicit UTC time-
+/// zone offset from EPW LOCATION column 9. The offset is positive east of
+/// Greenwich (matching the longitude convention used by the rest of the solar
+/// pipeline) — EPW files emitted by EnergyPlus follow the sign convention
+/// `Local = UTC + offset`, so Denver is `-7.0`, New Delhi is `+5.5`, and
+/// St. John's NL is `-3.5`.
+#[derive(Debug, Clone, PartialEq)]
+pub struct EpwLocation {
+    /// "City, State" string from EPW LOCATION columns 2-3.
+    pub city_state: String,
+    /// UTC offset in decimal hours from EPW LOCATION column 9 (the
+    /// `TimeZone` field). `None` if column 9 is missing or unparseable.
+    pub utc_offset_hours: Option<f64>,
+}
+
+impl EpwLocation {
+    /// Returns the human-readable "City, State" string.
+    pub fn city_state(&self) -> &str {
+        &self.city_state
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct EpwWeatherSource {
-    /// Location extracted from EPW header (e.g., "Denver, CO")
-    location: Option<String>,
+    /// Structured location extracted from EPW header. Issue #1416 carries both
+    /// the human-readable `city_state` and the UTC offset (EPW LOCATION column
+    /// 9). The UTC offset is what callers should forward to
+    /// `crate::solar::solar_position::calculate_solar_position` so half-hour
+    /// time zones and 7.5°-offset longitudes are handled correctly.
+    location: Option<EpwLocation>,
     /// Vector of hourly weather data (8760 entries)
     hourly_data: Vec<HourlyWeatherData>,
 }
@@ -413,15 +442,21 @@ impl EpwWeatherSource {
     /// The location line has the format:
     /// `LOCATION,City,StateProv,Country,DataSource,WMO,Latitude,Longitude,TimeZone,Elevation,DataPeriod`
     ///
+    /// Column 9 (`TimeZone`) holds the UTC offset in decimal hours; this is now
+    /// surfaced on the returned [`EpwLocation`] (Issue #1416) so callers can pass
+    /// the explicit value to [`EpwWeatherSource::utc_offset_hours`] and from there
+    /// to the solar-position calculator, instead of letting it infer a meridian
+    /// from longitude alone.
+    ///
     /// # Arguments
     ///
     /// * `line` - The location header line
     ///
     /// # Returns
     ///
-    /// * `Some(String)` - Location string in "City, State" format
-    /// * `None` - If location cannot be parsed
-    fn parse_location(line: &str) -> Result<Option<String>, WeatherError> {
+    /// * `Some(EpwLocation)` - Structured location metadata (city + UTC offset)
+    /// * `None` - If both city and state are missing
+    fn parse_location(line: &str) -> Result<Option<EpwLocation>, WeatherError> {
         let parts: Vec<&str> = line.split(',').collect();
 
         if parts.len() < 3 {
@@ -431,11 +466,25 @@ impl EpwWeatherSource {
         let city = parts[1].trim();
         let state = parts[2].trim();
 
+        // Issue #1416: column 9 (index 9 because column 10 is "Latitude" 0-indexed
+        // at position 6, no — LOCATION layout is:
+        //   [0] LOCATION   [1] City   [2] StateProv   [3] Country   [4] DataSource
+        //   [5] WMO   [6] Latitude   [7] Longitude   [8] TimeZone   [9] Elevation
+        //   [10] DataPeriod
+        // So TimeZone is at split index 8.
+        let utc_offset_hours = parts
+            .get(8)
+            .map(|s| s.trim().parse::<f64>().ok())
+            .unwrap_or(None);
+
         if city.is_empty() && state.is_empty() {
             return Ok(None);
         }
 
-        Ok(Some(format!("{}, {}", city, state)))
+        Ok(Some(EpwLocation {
+            city_state: format!("{}, {}", city, state),
+            utc_offset_hours,
+        }))
     }
 
     /// Parse EPW v3 (sub-hourly) file.
@@ -873,7 +922,7 @@ impl EpwWeatherSource {
 
 impl WeatherSource for EpwWeatherSource {
     fn location(&self) -> Option<String> {
-        self.location.clone()
+        self.location.as_ref().map(|loc| loc.city_state.clone())
     }
 
     fn get_hourly_data(&self, hour: usize) -> Result<HourlyWeatherData, WeatherError> {
@@ -882,6 +931,25 @@ impl WeatherSource for EpwWeatherSource {
         }
 
         Ok(self.hourly_data[hour].clone())
+    }
+}
+
+impl EpwWeatherSource {
+    /// Returns the UTC time-zone offset (decimal hours) from EPW LOCATION
+    /// column 9 (Issue #1416).
+    ///
+    /// Sign convention matches the longitude convention used by
+    /// `crate::solar::solar_position::calculate_solar_position`: positive for
+    /// east of Greenwich, negative for west. For Denver (`LOCATION,...,-7.0,...`)
+    /// this returns `Some(-7.0)`; for New Delhi (`LOCATION,...,5.5,...`) it
+    /// returns `Some(5.5)`. `None` if the EPW header has no parseable offset.
+    pub fn utc_offset_hours(&self) -> Option<f64> {
+        self.location.as_ref().and_then(|loc| loc.utc_offset_hours)
+    }
+
+    /// Returns the structured EPW LOCATION metadata.
+    pub fn location_struct(&self) -> Option<&EpwLocation> {
+        self.location.as_ref()
     }
 }
 
@@ -934,7 +1002,11 @@ mod tests {
             "LOCATION,Denver,CO,USA,TMY3,724690,39.83,-104.65,-7.0,1655.0,1991-2005";
 
         let result = EpwWeatherSource::parse_location(location_line).unwrap();
-        assert_eq!(result, Some("Denver, CO".to_string()));
+        let expected = EpwLocation {
+            city_state: "Denver, CO".to_string(),
+            utc_offset_hours: Some(-7.0),
+        };
+        assert_eq!(result, Some(expected));
     }
 
     #[test]
@@ -1385,7 +1457,13 @@ mod tests {
     fn test_parse_location_with_empty_city() {
         let line = "LOCATION,,CA,USA,TMY3,000000";
         let result = EpwWeatherSource::parse_location(line).unwrap();
-        assert_eq!(result, Some(", CA".to_string()));
+        // City empty but state present → returns Some with empty city.
+        // No TimeZone column present in this 6-field line, so utc_offset_hours is None.
+        let expected = EpwLocation {
+            city_state: ", CA".to_string(),
+            utc_offset_hours: None,
+        };
+        assert_eq!(result, Some(expected));
     }
 
     #[test]
@@ -1532,7 +1610,10 @@ mod tests {
     #[test]
     fn test_statistics_empty() {
         let source = EpwWeatherSource {
-            location: Some("Test".to_string()),
+            location: Some(EpwLocation {
+                city_state: "Test".to_string(),
+                utc_offset_hours: Some(0.0),
+            }),
             hourly_data: vec![],
         };
         assert_eq!(source.record_count(), 0);
@@ -1544,7 +1625,10 @@ mod tests {
     fn test_statistics_single_record() {
         let weather = HourlyWeatherData::new(25.0, 800.0, 100.0, 900.0, 3.0, 50.0, 0);
         let source = EpwWeatherSource {
-            location: Some("Test".to_string()),
+            location: Some(EpwLocation {
+                city_state: "Test".to_string(),
+                utc_offset_hours: Some(0.0),
+            }),
             hourly_data: vec![weather],
         };
         assert_eq!(source.record_count(), 1);
@@ -1560,7 +1644,10 @@ mod tests {
         let weather2 = HourlyWeatherData::new(20.0, 500.0, 100.0, 600.0, 3.0, 50.0, 1);
         let weather3 = HourlyWeatherData::new(30.0, 800.0, 150.0, 950.0, 4.0, 40.0, 2);
         let source = EpwWeatherSource {
-            location: Some("Test".to_string()),
+            location: Some(EpwLocation {
+                city_state: "Test".to_string(),
+                utc_offset_hours: Some(0.0),
+            }),
             hourly_data: vec![weather1, weather2, weather3],
         };
         assert_eq!(source.record_count(), 3);
@@ -1574,7 +1661,10 @@ mod tests {
     fn test_weather_source_trait_get_hourly_data_boundary() {
         let weather = HourlyWeatherData::new(20.0, 0.0, 0.0, 0.0, 2.0, 50.0, 0);
         let source = EpwWeatherSource {
-            location: Some("Test".to_string()),
+            location: Some(EpwLocation {
+                city_state: "Test".to_string(),
+                utc_offset_hours: Some(0.0),
+            }),
             hourly_data: vec![weather],
         };
         let result = source.get_hourly_data(0);

@@ -218,7 +218,7 @@ fn test_solar_position_vs_energyplus() {
 
     for row in &reference {
         let (year, month, day, hour) = epw_hour_to_date(row.hour);
-        let sun = calculate_solar_position(DENVER_LAT, DENVER_LON, year, month, day, hour);
+        let sun = calculate_solar_position(DENVER_LAT, DENVER_LON, year, month, day, hour, None);
 
         let alt_err = (sun.altitude_deg - row.altitude).abs();
         let az_err = azimuth_error(sun.azimuth_deg, row.azimuth).abs();
@@ -302,7 +302,7 @@ fn test_beam_irradiance_vs_energyplus() {
 
     for row in &irradiance {
         let (year, month, day, hour) = epw_hour_to_date(row.hour);
-        let sun = calculate_solar_position(DENVER_LAT, DENVER_LON, year, month, day, hour);
+        let sun = calculate_solar_position(DENVER_LAT, DENVER_LON, year, month, day, hour, None);
         let doy = calculate_day_of_year(year, month, day);
         let w = &weather[row.hour - 1];
 
@@ -377,7 +377,7 @@ fn test_ground_reflected_irradiance_vs_energyplus() {
             continue;
         }
         let (year, month, day, hour) = epw_hour_to_date(row.hour);
-        let sun = calculate_solar_position(DENVER_LAT, DENVER_LON, year, month, day, hour);
+        let sun = calculate_solar_position(DENVER_LAT, DENVER_LON, year, month, day, hour, None);
         let doy = calculate_day_of_year(year, month, day);
         let w = &weather[row.hour - 1];
 
@@ -485,7 +485,7 @@ fn test_sol_air_from_real_weather_conditions() {
     for row in &irradiance {
         let w = &weather[row.hour - 1];
         let (year, month, day, hour) = epw_hour_to_date(row.hour);
-        let sun = calculate_solar_position(DENVER_LAT, DENVER_LON, year, month, day, hour);
+        let sun = calculate_solar_position(DENVER_LAT, DENVER_LON, year, month, day, hour, None);
         let doy = calculate_day_of_year(year, month, day);
         let irr = calculate_surface_irradiance(
             &sun,
@@ -593,7 +593,7 @@ fn test_horizontal_incident_solar() {
         // computing the date from the 1-indexed hour.
         let epw_hour = i + 1;
         let (year, month, day, hour) = epw_hour_to_date(epw_hour);
-        let sun = calculate_solar_position(DENVER_LAT, DENVER_LON, year, month, day, hour);
+        let sun = calculate_solar_position(DENVER_LAT, DENVER_LON, year, month, day, hour, None);
         let doy = calculate_day_of_year(year, month, day);
 
         let irr = calculate_surface_irradiance(
@@ -722,7 +722,8 @@ fn test_per_tilt_sweep() {
         for (i, row) in weather.iter().enumerate() {
             let epw_hour = i + 1;
             let (year, month, day, hour) = epw_hour_to_date(epw_hour);
-            let sun = calculate_solar_position(DENVER_LAT, DENVER_LON, year, month, day, hour);
+            let sun =
+                calculate_solar_position(DENVER_LAT, DENVER_LON, year, month, day, hour, None);
             let doy = calculate_day_of_year(year, month, day);
 
             // For tilt=180° (down-facing) Orientation::Down is the natural
@@ -912,7 +913,7 @@ fn test_horizontal_ground_reflected() {
     for (i, row) in weather.iter().enumerate() {
         let epw_hour = i + 1;
         let (year, month, day, hour) = epw_hour_to_date(epw_hour);
-        let sun = calculate_solar_position(DENVER_LAT, DENVER_LON, year, month, day, hour);
+        let sun = calculate_solar_position(DENVER_LAT, DENVER_LON, year, month, day, hour, None);
         let doy = calculate_day_of_year(year, month, day);
 
         if !sun.is_above_horizon() {
@@ -1163,7 +1164,8 @@ fn test_per_tilt_sweep_ground_reflected() {
         for (i, row) in weather.iter().enumerate() {
             let epw_hour = i + 1;
             let (year, month, day, hour) = epw_hour_to_date(epw_hour);
-            let sun = calculate_solar_position(DENVER_LAT, DENVER_LON, year, month, day, hour);
+            let sun =
+                calculate_solar_position(DENVER_LAT, DENVER_LON, year, month, day, hour, None);
             let doy = calculate_day_of_year(year, month, day);
 
             if !sun.is_above_horizon() {

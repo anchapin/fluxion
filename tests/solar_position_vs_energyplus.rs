@@ -119,7 +119,7 @@ fn test_solar_altitude_vs_energyplus() {
     for (hour, ref_alt, _, _) in &reference {
         let (year, month, day, hour_of_day) = epw_hour_to_date(*hour);
         let our_pos =
-            calculate_solar_position(DENVER_LAT, DENVER_LON, year, month, day, hour_of_day);
+            calculate_solar_position(DENVER_LAT, DENVER_LON, year, month, day, hour_of_day, None);
         let err = (our_pos.altitude_deg - ref_alt).abs();
         sum_error += err;
         if err > max_error {
@@ -163,7 +163,7 @@ fn test_solar_azimuth_vs_energyplus() {
     for (hour, _, ref_az, _) in &reference {
         let (year, month, day, hour_of_day) = epw_hour_to_date(*hour);
         let our_pos =
-            calculate_solar_position(DENVER_LAT, DENVER_LON, year, month, day, hour_of_day);
+            calculate_solar_position(DENVER_LAT, DENVER_LON, year, month, day, hour_of_day, None);
         let err = azimuth_error(our_pos.azimuth_deg, *ref_az).abs();
         sum_error += err;
         if err > max_error {
@@ -207,7 +207,7 @@ fn test_solar_zenith_vs_energyplus() {
     for (hour, _, _, ref_zen) in &reference {
         let (year, month, day, hour_of_day) = epw_hour_to_date(*hour);
         let our_pos =
-            calculate_solar_position(DENVER_LAT, DENVER_LON, year, month, day, hour_of_day);
+            calculate_solar_position(DENVER_LAT, DENVER_LON, year, month, day, hour_of_day, None);
         let err = (our_pos.zenith_deg - ref_zen).abs();
         sum_error += err;
         if err > max_error {

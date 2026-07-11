@@ -533,7 +533,7 @@ mod tests {
         let lon = -104.9;
 
         // Solar noon on Mar 21 (equinox)
-        let sun_pos = crate::sim::solar::calculate_solar_position(lat, lon, 2024, 3, 21, 12.0);
+        let sun_pos = crate::sim::solar::calculate_solar_position(lat, lon, 2024, 3, 21, 12.0, None);
 
         assert!(sun_pos.is_above_horizon());
         assert!(
@@ -562,7 +562,7 @@ mod tests {
         let lon = -104.9;
 
         // Solar noon on Jun 21
-        let sun_pos = crate::sim::solar::calculate_solar_position(lat, lon, 2024, 6, 21, 12.0);
+        let sun_pos = crate::sim::solar::calculate_solar_position(lat, lon, 2024, 6, 21, 12.0, None);
 
         assert!(sun_pos.is_above_horizon());
 
@@ -589,7 +589,7 @@ mod tests {
         let lon = -104.9;
 
         // Solar noon on Dec 21
-        let sun_pos = crate::sim::solar::calculate_solar_position(lat, lon, 2024, 12, 21, 12.0);
+        let sun_pos = crate::sim::solar::calculate_solar_position(lat, lon, 2024, 12, 21, 12.0, None);
 
         assert!(
             sun_pos.is_above_horizon(),
@@ -609,7 +609,7 @@ mod tests {
 
     #[test]
     fn test_distribution_factors_sum_to_one() {
-        let sun_pos = crate::sim::solar::calculate_solar_position(39.7, -104.9, 2024, 6, 21, 12.0);
+        let sun_pos = crate::sim::solar::calculate_solar_position(39.7, -104.9, 2024, 6, 21, 12.0, None);
 
         let factors = calculate_solar_distribution_factors(
             &sun_pos, 100.0, // wall_area
@@ -629,7 +629,7 @@ mod tests {
 
     #[test]
     fn test_distribution_factors_zero_area() {
-        let sun_pos = crate::sim::solar::calculate_solar_position(39.7, -104.9, 2024, 6, 21, 12.0);
+        let sun_pos = crate::sim::solar::calculate_solar_position(39.7, -104.9, 2024, 6, 21, 12.0, None);
 
         let factors = calculate_solar_distribution_factors(&sun_pos, 0.0, 0.0, 0.0, 180.0);
 
@@ -642,7 +642,7 @@ mod tests {
 
     #[test]
     fn test_sol_air_roof_higher_than_outdoor() {
-        let sun_pos = crate::sim::solar::calculate_solar_position(39.7, -104.9, 2024, 6, 21, 12.0);
+        let sun_pos = crate::sim::solar::calculate_solar_position(39.7, -104.9, 2024, 6, 21, 12.0, None);
         let per_surf = calculate_per_surface_irradiance(&sun_pos, 800.0, 200.0, 0.2, 180.0);
         let sol_air = calculate_per_surface_sol_air(30.0, &per_surf, -10.0);
 
@@ -665,7 +665,7 @@ mod tests {
 
     #[test]
     fn test_sol_air_wall_nonzero() {
-        let sun_pos = crate::sim::solar::calculate_solar_position(39.7, -104.9, 2024, 6, 21, 12.0);
+        let sun_pos = crate::sim::solar::calculate_solar_position(39.7, -104.9, 2024, 6, 21, 12.0, None);
         let per_surf = calculate_per_surface_irradiance(&sun_pos, 800.0, 200.0, 0.2, 180.0);
         let sol_air = calculate_per_surface_sol_air(30.0, &per_surf, -10.0);
 
@@ -804,7 +804,7 @@ mod tests {
 
     #[test]
     fn test_per_surface_irradiance_sums() {
-        let sun_pos = crate::sim::solar::calculate_solar_position(39.7, -104.9, 2024, 6, 21, 12.0);
+        let sun_pos = crate::sim::solar::calculate_solar_position(39.7, -104.9, 2024, 6, 21, 12.0, None);
         let per_surf = calculate_per_surface_irradiance(&sun_pos, 800.0, 200.0, 0.2, 180.0);
 
         // Total should be sum of all three surfaces
@@ -820,7 +820,7 @@ mod tests {
     #[test]
     fn test_solar_at_night_is_zero() {
         // Midnight — sun is below horizon
-        let sun_pos = crate::sim::solar::calculate_solar_position(39.7, -104.9, 2024, 12, 21, 0.0);
+        let sun_pos = crate::sim::solar::calculate_solar_position(39.7, -104.9, 2024, 12, 21, 0.0, None);
 
         assert!(
             !sun_pos.is_above_horizon(),

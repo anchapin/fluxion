@@ -81,8 +81,10 @@ fn test_beam_irradiance_south_surface_pattern() {
     // South-facing vertical wall should peak around solar noon in winter (low sun angle)
     // and have lower beam in summer (high sun angle = large incidence angle)
 
-    let winter_solstice_noon = calculate_solar_position(DENVER_LAT, DENVER_LON, 2023, 12, 21, 12.0);
-    let summer_solstice_noon = calculate_solar_position(DENVER_LAT, DENVER_LON, 2023, 6, 21, 12.0);
+    let winter_solstice_noon =
+        calculate_solar_position(DENVER_LAT, DENVER_LON, 2023, 12, 21, 12.0, None);
+    let summer_solstice_noon =
+        calculate_solar_position(DENVER_LAT, DENVER_LON, 2023, 6, 21, 12.0, None);
 
     let doy_winter = calculate_day_of_year(2023, 12, 21);
     let doy_summer = calculate_day_of_year(2023, 6, 21);
@@ -137,7 +139,7 @@ fn test_beam_irradiance_south_surface_pattern() {
 fn test_beam_irradiance_physics_constraints() {
     // Beam irradiance on a vertical surface cannot exceed DNI
     // (cos(incidence) <= 1 for any surface)
-    let sun_pos = calculate_solar_position(DENVER_LAT, DENVER_LON, 2023, 3, 21, 12.0);
+    let sun_pos = calculate_solar_position(DENVER_LAT, DENVER_LON, 2023, 3, 21, 12.0, None);
     let doy = calculate_day_of_year(2023, 3, 21);
     let dni = 900.0;
     let dhi = 150.0;
@@ -179,7 +181,8 @@ fn test_nighttime_zero_irradiance() {
     let night_hours = [1, 2, 3, 23, 24];
     for &epw_hour in &night_hours {
         let (year, month, day, hour) = epw_hour_to_local_std(epw_hour);
-        let sun_pos = calculate_solar_position(DENVER_LAT, DENVER_LON, year, month, day, hour);
+        let sun_pos =
+            calculate_solar_position(DENVER_LAT, DENVER_LON, year, month, day, hour, None);
 
         if !sun_pos.is_above_horizon() {
             let doy = calculate_day_of_year(year, month, day);
@@ -278,7 +281,7 @@ fn test_beam_irradiance_vs_energyplus() {
         let weather = &weather_records[*hour - 1];
 
         let sun_pos =
-            calculate_solar_position(DENVER_LAT, DENVER_LON, year, month, day, hour_of_day);
+            calculate_solar_position(DENVER_LAT, DENVER_LON, year, month, day, hour_of_day, None);
         let doy = calculate_day_of_year(year, month, day);
 
         let irr = calculate_surface_irradiance(
@@ -368,7 +371,7 @@ fn test_ground_diffuse_vs_energyplus() {
         let weather = &weather_records[*hour - 1];
 
         let sun_pos =
-            calculate_solar_position(DENVER_LAT, DENVER_LON, year, month, day, hour_of_day);
+            calculate_solar_position(DENVER_LAT, DENVER_LON, year, month, day, hour_of_day, None);
         let doy = calculate_day_of_year(year, month, day);
 
         let irr = calculate_surface_irradiance(
