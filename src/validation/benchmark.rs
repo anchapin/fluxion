@@ -1106,8 +1106,7 @@ mod tests {
     fn test_case_600_ref_source_consistent_in_repo() {
         let benchmark_data = get_benchmark_data("600").expect("Case 600 must exist");
 
-        let csv_path =
-            "tests/reference_data/zone_balance/case_600_energy_reference.csv";
+        let csv_path = "tests/reference_data/zone_balance/case_600_energy_reference.csv";
         let csv_content = std::fs::read_to_string(csv_path)
             .unwrap_or_else(|e| panic!("Failed to read {}: {}", csv_path, e));
 
@@ -1123,12 +1122,12 @@ mod tests {
                 continue;
             }
             let metric = fields[0].to_string();
-            let ref_min: f64 = fields[2].parse().unwrap_or_else(|e| {
-                panic!("Failed to parse ref_min for {}: {}", metric, e)
-            });
-            let ref_max: f64 = fields[3].parse().unwrap_or_else(|e| {
-                panic!("Failed to parse ref_max for {}: {}", metric, e)
-            });
+            let ref_min: f64 = fields[2]
+                .parse()
+                .unwrap_or_else(|e| panic!("Failed to parse ref_min for {}: {}", metric, e));
+            let ref_max: f64 = fields[3]
+                .parse()
+                .unwrap_or_else(|e| panic!("Failed to parse ref_max for {}: {}", metric, e));
             csv_values.insert(metric, (ref_min, ref_max));
         }
 
