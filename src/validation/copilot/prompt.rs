@@ -166,7 +166,6 @@ Flag any suspicious patterns and suggest corrections."#,
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::validation::copilot::types::BemIssueSeverity;
 
     #[test]
     fn test_build_analysis_prompt() {

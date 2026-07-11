@@ -117,9 +117,10 @@ fn idf_case_600_simulation_runs_and_reports_energy() {
     let idf = IdfParser::from_path(Path::new(CASE_600_IDF)).expect("IDF parses");
     let spec = case_spec_from_idf(&idf, "IDF:case_600").expect("CaseSpec builds from IDF");
 
-    let mut model = fluxion::sim::engine::ThermalModel::<fluxion::physics::cta::VectorField>::from_spec(&spec);
-    let weather =
-        fluxion::weather::epw::EpwWeatherSource::from_file(EPW_PATH).expect("Failed to load EPW weather data");
+    let mut model =
+        fluxion::sim::engine::ThermalModel::<fluxion::physics::cta::VectorField>::from_spec(&spec);
+    let weather = fluxion::weather::epw::EpwWeatherSource::from_file(EPW_PATH)
+        .expect("Failed to load EPW weather data");
 
     let mut total_heating_j = 0.0_f64;
     let mut total_cooling_j = 0.0_f64;
@@ -159,9 +160,10 @@ fn idf_case_600_annual_heating_within_15_percent_strict() {
     let idf = IdfParser::from_path(Path::new(CASE_600_IDF)).expect("IDF parses");
     let spec = case_spec_from_idf(&idf, "IDF:case_600").expect("CaseSpec builds from IDF");
 
-    let mut model = fluxion::sim::engine::ThermalModel::<fluxion::physics::cta::VectorField>::from_spec(&spec);
-    let weather =
-        fluxion::weather::epw::EpwWeatherSource::from_file(EPW_PATH).expect("Failed to load EPW weather data");
+    let mut model =
+        fluxion::sim::engine::ThermalModel::<fluxion::physics::cta::VectorField>::from_spec(&spec);
+    let weather = fluxion::weather::epw::EpwWeatherSource::from_file(EPW_PATH)
+        .expect("Failed to load EPW weather data");
 
     let mut total_heating_j = 0.0_f64;
     for step in 0..8760 {

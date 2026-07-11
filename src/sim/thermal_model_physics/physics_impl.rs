@@ -63,6 +63,192 @@ fn h_tr_is_ach_multiplier(ach: f64) -> f64 {
 // submodules in `thermal_model_physics/` (see Issue #902). Methods that
 // are still in this file retain the same `impl<T: ...> ThermalModel<T>`
 // bound so they continue to merge with the others.
+
+// ============================================================================
+// Issue #1524 / docs/PROFILING_v1.3.md §3 Target 1 — per-timestep scratch
+// ----------------------------------------------------------------------------
+// The 5R1C/6R2C/8R3C/9R4C step functions previously opened each timestep with
+// 6–14 standalone `Vec::with_capacity(num_zones)` allocations. These structs
+// consolidate that scratch into a single local per call. Two design points
+// resolve the borrow-checker conflict that sank the #1436 WIP:
+//
+// 1. The scratch is a *local variable*, not a field on `self`. `&mut
+//    scratch.field` is therefore disjoint from the `&self` borrow taken by
+//    helpers such as `compute_hvac_coefficient` (`hvac.rs`), so the two
+//    coexist without `split_at_mut` gymnastics. (#1436 had placed the scratch
+//    on `self`, which forced `&mut self.scratch` to conflict with
+//    `self.compute_hvac_coefficient(i)` borrowing all of `self`.)
+//
+// 2. Fields are zero-initialised (`vec![0.0; num_zones]`) and written by
+//    index, replacing `push()`. Output buffers are moved into `T` /
+//    `VectorField` via `mem::take`; read-back intermediates are read by index.
+//
+// The 9R4C variant additionally collapses its seven *read-back* intermediates
+// (sol-air + three pre-gain mass temps + three per-surface phi_m) into one
+// flat backing buffer — a 7→1 allocation reduction on the 9R4C hot path.
+//
+// `Hoist-ready`: a follow-up that adds a `scratch` field to
+// `ThermalModelData` (outside this file's scope) can reuse the same
+// allocation across timesteps — the remaining step to clear the <25 ms
+// single-zone budget of PROFILING §5.3.
+// ============================================================================
+
+/// Per-timestep scratch for `step_physics_5r1c` (also reused by the 8R3C
+/// path, which delegates to 5R1C). Six owned output buffers.
+struct PhysicsScratch5r1c {
+    phi_ia: Vec<f64>,
+    phi_st: Vec<f64>,
+    phi_m: Vec<f64>,
+    t_i_act: Vec<f64>,
+    t_s_act: Vec<f64>,
+    new_mass: Vec<f64>,
+}
+
+impl PhysicsScratch5r1c {
+    #[inline]
+    fn new(num_zones: usize) -> Self {
+        Self {
+            phi_ia: vec![0.0; num_zones],
+            phi_st: vec![0.0; num_zones],
+            phi_m: vec![0.0; num_zones],
+            t_i_act: vec![0.0; num_zones],
+            t_s_act: vec![0.0; num_zones],
+            new_mass: vec![0.0; num_zones],
+        }
+    }
+}
+
+/// Per-timestep scratch for `step_physics_6r2c`. Eleven owned buffers; the
+/// `t_s` field is reused across the three mutually-exclusive CTF/non-CTF
+/// surface-temperature branches (only one executes per call).
+struct PhysicsScratch6r2c {
+    phi_ia: Vec<f64>,
+    phi_st: Vec<f64>,
+    phi_m_env: Vec<f64>,
+    phi_m_int: Vec<f64>,
+    ground_coeff: Vec<f64>,
+    den: Vec<f64>,
+    num_rest: Vec<f64>,
+    t_i_act: Vec<f64>,
+    t_s: Vec<f64>,
+    new_env: Vec<f64>,
+    new_int: Vec<f64>,
+}
+
+impl PhysicsScratch6r2c {
+    #[inline]
+    fn new(num_zones: usize) -> Self {
+        Self {
+            phi_ia: vec![0.0; num_zones],
+            phi_st: vec![0.0; num_zones],
+            phi_m_env: vec![0.0; num_zones],
+            phi_m_int: vec![0.0; num_zones],
+            ground_coeff: vec![0.0; num_zones],
+            den: vec![0.0; num_zones],
+            num_rest: vec![0.0; num_zones],
+            t_i_act: vec![0.0; num_zones],
+            t_s: vec![0.0; num_zones],
+            new_env: vec![0.0; num_zones],
+            new_int: vec![0.0; num_zones],
+        }
+    }
+}
+
+/// Per-timestep scratch for `step_physics_9r4c`. Seven owned output buffers
+/// plus a single flat backing buffer (`inter`) that stores the seven
+/// read-back intermediate vectors contiguously — one allocation instead of
+/// seven. Slot layout (each `num_zones` wide):
+///   `[ t_sol_air | pg_wall | pg_roof | pg_floor | pm_wall | pm_roof | pm_floor ]`
+struct PhysicsScratch9r4c {
+    n: usize,
+    inter: Vec<f64>,
+    phi_ia: Vec<f64>,
+    phi_st: Vec<f64>,
+    phi_m: Vec<f64>,
+    t_i_free: Vec<f64>,
+    hvac: Vec<f64>,
+    t_i_act: Vec<f64>,
+    new_mass: Vec<f64>,
+}
+
+impl PhysicsScratch9r4c {
+    const NSLOTS: usize = 7;
+
+    #[inline]
+    fn new(num_zones: usize) -> Self {
+        Self {
+            n: num_zones,
+            inter: vec![0.0; num_zones * Self::NSLOTS],
+            phi_ia: vec![0.0; num_zones],
+            phi_st: vec![0.0; num_zones],
+            phi_m: vec![0.0; num_zones],
+            t_i_free: vec![0.0; num_zones],
+            hvac: vec![0.0; num_zones],
+            t_i_act: vec![0.0; num_zones],
+            new_mass: vec![0.0; num_zones],
+        }
+    }
+
+    // --- read-back intermediate slice accessors (slot k occupies [k*n..(k+1)*n]) ---
+    #[inline]
+    fn t_sol_air(&self) -> &[f64] {
+        &self.inter[0..self.n]
+    }
+    #[inline]
+    fn pg_wall(&self) -> &[f64] {
+        &self.inter[self.n..(2 * self.n)]
+    }
+    #[inline]
+    fn pg_roof(&self) -> &[f64] {
+        &self.inter[(2 * self.n)..(3 * self.n)]
+    }
+    #[inline]
+    fn pg_floor(&self) -> &[f64] {
+        &self.inter[(3 * self.n)..(4 * self.n)]
+    }
+    #[inline]
+    fn pm_wall(&self) -> &[f64] {
+        &self.inter[(4 * self.n)..(5 * self.n)]
+    }
+    #[inline]
+    fn pm_roof(&self) -> &[f64] {
+        &self.inter[(5 * self.n)..(6 * self.n)]
+    }
+    #[inline]
+    fn pm_floor(&self) -> &[f64] {
+        &self.inter[(6 * self.n)..(7 * self.n)]
+    }
+
+    #[inline]
+    fn t_sol_air_mut(&mut self) -> &mut [f64] {
+        &mut self.inter[0..self.n]
+    }
+    #[inline]
+    fn pg_wall_mut(&mut self) -> &mut [f64] {
+        &mut self.inter[self.n..(2 * self.n)]
+    }
+    #[inline]
+    fn pg_roof_mut(&mut self) -> &mut [f64] {
+        &mut self.inter[(2 * self.n)..(3 * self.n)]
+    }
+    #[inline]
+    fn pg_floor_mut(&mut self) -> &mut [f64] {
+        &mut self.inter[(3 * self.n)..(4 * self.n)]
+    }
+    #[inline]
+    fn pm_wall_mut(&mut self) -> &mut [f64] {
+        &mut self.inter[(4 * self.n)..(5 * self.n)]
+    }
+    #[inline]
+    fn pm_roof_mut(&mut self) -> &mut [f64] {
+        &mut self.inter[(5 * self.n)..(6 * self.n)]
+    }
+    #[inline]
+    fn pm_floor_mut(&mut self) -> &mut [f64] {
+        &mut self.inter[(6 * self.n)..(7 * self.n)]
+    }
+}
+
 impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>> ThermalModel<T> {
     /// Solve physics for one timestep using the 5R1C (single mass node) model.
     ///
@@ -125,9 +311,9 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         let opaque_solar_ref = self.0.opaque_solar_gains.as_ref();
         let area_ref = self.0.zone_area.as_ref();
 
-        let mut phi_ia_data = Vec::with_capacity(self.0.num_zones);
-        let mut phi_st_data = Vec::with_capacity(self.0.num_zones);
-        let mut phi_m_data = Vec::with_capacity(self.0.num_zones);
+        // Issue #1524: consolidated per-timestep scratch (replaces the six
+        // standalone `Vec::with_capacity(num_zones)` allocations below).
+        let mut scratch = PhysicsScratch5r1c::new(self.0.num_zones);
 
         for i in 0..self.0.num_zones {
             let load_w = loads_ref[i] * area_ref[i];
@@ -138,14 +324,14 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
             // Solar distribution must conserve energy (sum to 1.0)
             let sol_to_air = sol_w * self.0.solar_distribution_to_air;
             let remaining_sol = sol_w - sol_to_air;
-            phi_ia_data.push(load_w * conv_frac + sol_to_air);
-            phi_st_data.push(load_w * st_int_frac + remaining_sol * st_sol_frac);
-            phi_m_data.push(load_w * m_air_frac + remaining_sol * m_sol_frac + opaque_sol_w);
+            scratch.phi_ia[i] = load_w * conv_frac + sol_to_air;
+            scratch.phi_st[i] = load_w * st_int_frac + remaining_sol * st_sol_frac;
+            scratch.phi_m[i] = load_w * m_air_frac + remaining_sol * m_sol_frac + opaque_sol_w;
         }
 
-        let phi_ia = T::from(VectorField::new(phi_ia_data));
-        let phi_st = T::from(VectorField::new(phi_st_data));
-        let phi_m = T::from(VectorField::new(phi_m_data));
+        let phi_ia = T::from(VectorField::new(std::mem::take(&mut scratch.phi_ia)));
+        let phi_st = T::from(VectorField::new(std::mem::take(&mut scratch.phi_st)));
+        let phi_m = T::from(VectorField::new(std::mem::take(&mut scratch.phi_m)));
 
         // PR #821 / Issue #825 — record zone-0 heat-balance terms for the
         // `pr821-diag` hourly CSV. Zero overhead when the feature is disabled
@@ -752,16 +938,15 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         let h_tr_is_vec = self.0.h_tr_is.as_ref();
         let t_free = t_i_free.as_ref();
         let hvac = hvac_for_temp_calc.as_ref();
-        let mut t_i_act_data = Vec::with_capacity(self.0.num_zones);
         for i in 0..self.0.num_zones {
             let h_is = h_tr_is_vec[i];
             if h_is > 0.0 && hvac[i].abs() > 1e-6 {
-                t_i_act_data.push(t_free[i] + hvac[i] / h_is);
+                scratch.t_i_act[i] = t_free[i] + hvac[i] / h_is;
             } else {
-                t_i_act_data.push(t_free[i]);
+                scratch.t_i_act[i] = t_free[i];
             }
         }
-        let t_i_act = T::from(VectorField::new(t_i_act_data));
+        let t_i_act = T::from(VectorField::new(std::mem::take(&mut scratch.t_i_act)));
 
         // Use hvac_for_temp_calc for energy (matches what was used for temperature update)
         // This ensures energy calculation is consistent with temperature physics
@@ -836,7 +1021,6 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         // Calculate actual surface temperature for mass update (including HVAC effect)
         // ts_num_act = h_tr_ms * mass_temp + h_tr_is * t_i_act + phi_st
         // Optimized: avoid intermediate allocations by manually iterating over the vectors
-        let mut t_s_act_vec = Vec::with_capacity(self.0.num_zones);
         let h_tr_ms_ref = self.0.h_tr_ms.as_ref();
         let mass_temps_ref = self.0.mass_temperatures.as_ref();
         let h_tr_is_ref = self.0.h_tr_is.as_ref();
@@ -848,13 +1032,12 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
             let ts_num = h_tr_ms_ref[i] * mass_temps_ref[i]
                 + h_tr_is_ref[i] * t_i_act_ref[i]
                 + phi_st_ref[i];
-            t_s_act_vec.push(ts_num / term_rest_1_ref[i]);
+            scratch.t_s_act[i] = ts_num / term_rest_1_ref[i];
         }
-        let t_s_act = T::from(VectorField::new(t_s_act_vec));
+        let t_s_act = T::from(VectorField::new(std::mem::take(&mut scratch.t_s_act)));
 
         // Update mass temperatures using implicit integration for high thermal capacitance
         // This addresses instability with explicit Euler for Cm > 500 J/K
-        let mut new_mass_temperatures = Vec::with_capacity(self.0.num_zones);
         let mass_temps_ref = self.0.mass_temperatures.as_ref();
         let thermal_cap_ref = self.0.thermal_capacitance.as_ref();
         // Mode-specific fields removed - use physics-based h_tr_em and h_tr_ms
@@ -973,11 +1156,11 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                 }
             };
 
-            new_mass_temperatures.push(tm_new);
+            scratch.new_mass[i] = tm_new;
         }
 
         // Update the mass temperatures with new values (convert Vec to T type)
-        self.0.mass_temperatures = VectorField::new(new_mass_temperatures).into();
+        self.0.mass_temperatures = VectorField::new(std::mem::take(&mut scratch.new_mass)).into();
 
         // Plan 03-04: Update previous mass temperature for tracking (kept for diagnostic output)
         // Mass energy change tracking removed - Ti_free already includes thermal mass effects
@@ -1073,10 +1256,9 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         let opaque_solar_ref = self.0.opaque_solar_gains.as_ref();
         let area_ref = self.0.zone_area.as_ref();
 
-        let mut phi_ia_data = Vec::with_capacity(self.0.num_zones);
-        let mut phi_st_data = Vec::with_capacity(self.0.num_zones);
-        let mut phi_m_env_data = Vec::with_capacity(self.0.num_zones);
-        let mut phi_m_int_data = Vec::with_capacity(self.0.num_zones);
+        // Issue #1524: consolidated per-timestep scratch (replaces the eleven
+        // standalone `Vec::with_capacity(num_zones)` allocations in 6R2C).
+        let mut scratch = PhysicsScratch6r2c::new(self.0.num_zones);
 
         for i in 0..self.0.num_zones {
             let load_w = loads_ref[i] * area_ref[i];
@@ -1085,19 +1267,19 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
 
             // SESSION 76 FIX: Include solar_distribution_to_air in 6R2C (was missing!)
             // This sends a fraction of solar directly to zone air (immediate heating/cooling)
-            phi_ia_data.push(load_w * conv_frac + sol_w * sol_to_air_frac);
-            phi_st_data.push(load_w * st_int_frac + sol_w * st_sol_frac);
+            scratch.phi_ia[i] = load_w * conv_frac + sol_w * sol_to_air_frac;
+            scratch.phi_st[i] = load_w * st_int_frac + sol_w * st_sol_frac;
             // LEAKY BUCKET FIX: Add opaque solar gains to envelope mass node
             // Opaque surfaces (walls, roof, floor) absorb solar radiation and transfer
             // it to the thermal mass. Without this, solar heat bypasses thermal mass.
-            phi_m_env_data.push(load_w * m_air_frac + sol_w * m_env_sol_frac + opaque_sol_w);
-            phi_m_int_data.push(sol_w * m_int_sol_frac);
+            scratch.phi_m_env[i] = load_w * m_air_frac + sol_w * m_env_sol_frac + opaque_sol_w;
+            scratch.phi_m_int[i] = sol_w * m_int_sol_frac;
         }
 
-        let phi_ia = T::from(VectorField::new(phi_ia_data));
-        let phi_st = T::from(VectorField::new(phi_st_data));
-        let phi_m_env = T::from(VectorField::new(phi_m_env_data));
-        let phi_m_int = T::from(VectorField::new(phi_m_int_data));
+        let phi_ia = T::from(VectorField::new(std::mem::take(&mut scratch.phi_ia)));
+        let phi_st = T::from(VectorField::new(std::mem::take(&mut scratch.phi_st)));
+        let phi_m_env = T::from(VectorField::new(std::mem::take(&mut scratch.phi_m_env)));
+        let phi_m_int = T::from(VectorField::new(std::mem::take(&mut scratch.phi_m_int)));
 
         // Use pre-computed cached values
         let h_ext_base = &self.0.derived_h_ext;
@@ -1141,8 +1323,6 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
 
         // Issue 693 fix: ground coupling coefficient in 6R2C den
         // Optimized: avoid intermediate vector allocations using explicit loop
-        let mut ground_coeff_vec = Vec::with_capacity(self.0.num_zones);
-        let mut den_vec = Vec::with_capacity(self.0.num_zones);
         let h_sum_ref = h_sum.as_ref();
         let h_tr_floor_ref = self.0.h_tr_floor.as_ref();
         let h_ms_me_is_prod_ref = h_ms_me_is_prod.as_ref();
@@ -1150,12 +1330,13 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
 
         for i in 0..self.0.num_zones {
             let g = h_sum_ref[i] * h_tr_floor_ref[i];
-            ground_coeff_vec.push(g);
+            scratch.ground_coeff[i] = g;
             let d = h_ms_me_is_prod_ref[i] + (h_sum_ref[i] * h_total_with_iz_ref[i]) + g;
-            den_vec.push(d);
+            scratch.den[i] = d;
         }
-        let ground_coeff_6r2c = T::from(VectorField::new(ground_coeff_vec));
-        den = T::from(VectorField::new(den_vec));
+        let ground_coeff_6r2c =
+            T::from(VectorField::new(std::mem::take(&mut scratch.ground_coeff)));
+        den = T::from(VectorField::new(std::mem::take(&mut scratch.den)));
 
         // Use envelope mass temperature instead of single mass temperature
         // Optimized: use zip_with to avoid double clones
@@ -1254,15 +1435,14 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         }
 
         // Optimized: replace clone and mul_assign with explicit loop
-        let mut num_rest_vec = Vec::with_capacity(self.0.num_zones);
         let sum_term_ref = sum_term.as_ref();
         let term_rest_1_ref = term_rest_1.as_ref();
         let ground_coeff = ground_coeff_6r2c.as_ref();
 
         for i in 0..self.0.num_zones {
-            num_rest_vec.push(sum_term_ref[i] * term_rest_1_ref[i] + ground_coeff[i] * t_g);
+            scratch.num_rest[i] = sum_term_ref[i] * term_rest_1_ref[i] + ground_coeff[i] * t_g;
         }
-        let num_rest_with_iz = T::from(VectorField::new(num_rest_vec));
+        let num_rest_with_iz = T::from(VectorField::new(std::mem::take(&mut scratch.num_rest)));
 
         // DEBUG: Save values for 900FF before they're consumed
         let debug_900ff = if self.0.case_id == "900FF" && timestep.is_multiple_of(24) {
@@ -1441,16 +1621,15 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         let h_tr_is_vec = self.0.h_tr_is.as_ref();
         let t_free = t_i_free.as_ref();
         let hvac = hvac_output_raw.as_ref();
-        let mut t_i_act_data = Vec::with_capacity(self.0.num_zones);
         for i in 0..self.0.num_zones {
             let h_is = h_tr_is_vec[i];
             if h_is > 0.0 && hvac[i].abs() > 1e-6 {
-                t_i_act_data.push(t_free[i] + hvac[i] / h_is);
+                scratch.t_i_act[i] = t_free[i] + hvac[i] / h_is;
             } else {
-                t_i_act_data.push(t_free[i]);
+                scratch.t_i_act[i] = t_free[i];
             }
         }
-        let t_i_act = T::from(VectorField::new(t_i_act_data));
+        let t_i_act = T::from(VectorField::new(std::mem::take(&mut scratch.t_i_act)));
 
         // Calculate surface temperature for mass update (including HVAC effect)
         // === 6R2C: Update two mass nodes ===
@@ -1464,7 +1643,6 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
             // The CTF T_si was computed at t_i_free; adjust for actual t_i_act via linear correction:
             // T_si_adjusted ≈ T_si_ctf + (h_tr_is / (h_tr_is + Z₀)) * (t_i_act - t_i_free)
             if let Some(ref ctf_temps) = ctf_surface_temps {
-                let mut t_s_data = Vec::with_capacity(self.0.num_zones);
                 let t_i_free_ref = t_i_free.as_ref();
                 let t_i_act_ref = t_i_act.as_ref();
                 for i in 0..self.0.num_zones {
@@ -1473,9 +1651,9 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                         - t_i_free_ref.get(i).copied().unwrap_or(0.0);
                     // Approximate: surface follows zone air with ~h_tr_is/(h_tr_is+Z₀) coupling
                     // Use conservative 0.5 factor for stability
-                    t_s_data.push(t_si_ctf + 0.5 * delta_t_i);
+                    scratch.t_s[i] = t_si_ctf + 0.5 * delta_t_i;
                 }
-                T::from(VectorField::new(t_s_data))
+                T::from(VectorField::new(std::mem::take(&mut scratch.t_s)))
             } else {
                 // PHASE 36-04 FIX: 6R2C surface temperature with h_tr_me * Tm_int coupling
                 // T_s = (h_tr_is*T_i + h_tr_ms*Tm_env + h_tr_me*Tm_int + phi_st) / (h_tr_is + h_tr_ms + h_tr_me)
@@ -1485,16 +1663,15 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                 let phi_st_data = phi_st.as_ref();
                 let env_mass_data = self.0.envelope_mass_temperatures.as_ref();
                 let term_rest_data = term_rest_1.as_ref();
-                let mut t_s_data = Vec::with_capacity(self.0.num_zones);
                 for i in 0..self.0.num_zones {
                     let numerator = h_tr_ms_data[i] * env_mass_data[i]
                         + h_tr_is_data[i] * t_i_act_data[i]
                         + phi_st_data[i]
                         + h_tr_me_ref[i] * int_mass_temps_ref[i];
                     let denominator = term_rest_data[i] + h_tr_me_ref[i];
-                    t_s_data.push(numerator / denominator);
+                    scratch.t_s[i] = numerator / denominator;
                 }
-                T::from(VectorField::new(t_s_data))
+                T::from(VectorField::new(std::mem::take(&mut scratch.t_s)))
             }
         } else {
             // PHASE 36-04 FIX: 6R2C surface temperature with h_tr_me * Tm_int coupling
@@ -1505,16 +1682,15 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
             let phi_st_data = phi_st.as_ref();
             let env_mass_data = self.0.envelope_mass_temperatures.as_ref();
             let term_rest_data = term_rest_1.as_ref();
-            let mut t_s_data = Vec::with_capacity(self.0.num_zones);
             for i in 0..self.0.num_zones {
                 let numerator = h_tr_ms_data[i] * env_mass_data[i]
                     + h_tr_is_data[i] * t_i_act_data[i]
                     + phi_st_data[i]
                     + h_tr_me_ref[i] * int_mass_temps_ref[i];
                 let denominator = term_rest_data[i] + h_tr_me_ref[i];
-                t_s_data.push(numerator / denominator);
+                scratch.t_s[i] = numerator / denominator;
             }
-            T::from(VectorField::new(t_s_data))
+            T::from(VectorField::new(std::mem::take(&mut scratch.t_s)))
         };
 
         // === 6R2C: Update two mass nodes with implicit integration ===
@@ -1522,7 +1698,6 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         let old_env_mass_temperatures = self.0.envelope_mass_temperatures.clone();
 
         // Update envelope mass temperatures using implicit integration for high thermal capacitance
-        let mut new_env_mass_temperatures = Vec::with_capacity(self.0.num_zones);
         let env_mass_temps_ref = self.0.envelope_mass_temperatures.as_ref();
         let env_thermal_cap_ref = self.0.envelope_thermal_capacitance.as_ref();
         // Mode-specific fields removed - use physics-based h_tr_em and h_tr_ms
@@ -1624,22 +1799,20 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                 }
             };
 
-            new_env_mass_temperatures.push(tm_env_new);
+            scratch.new_env[i] = tm_env_new;
         }
 
         // Note: env_mass_temps_for_int is no longer needed as a clone
         // We will borrow from new_env_mass_temperatures before moving it
 
-        self.0.envelope_mass_temperatures =
-            VectorField::new(new_env_mass_temperatures.clone()).into();
+        self.0.envelope_mass_temperatures = VectorField::new(scratch.new_env.clone()).into();
 
-        let env_mass_temps_for_int = new_env_mass_temperatures;
+        let env_mass_temps_for_int = std::mem::take(&mut scratch.new_env);
 
         // Internal mass: receives heat from envelope mass and direct gains
         let old_int_mass_temperatures = self.0.internal_mass_temperatures.clone();
 
         // Update internal mass temperatures using implicit integration for high thermal capacitance
-        let mut new_int_mass_temperatures = Vec::with_capacity(self.0.num_zones);
         let int_thermal_cap_ref = self.0.internal_thermal_capacitance.as_ref();
         let phi_m_int_ref = phi_m_int.as_ref();
 
@@ -1683,10 +1856,11 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                 }
             };
 
-            new_int_mass_temperatures.push(tm_int_new);
+            scratch.new_int[i] = tm_int_new;
         }
 
-        self.0.internal_mass_temperatures = VectorField::new(new_int_mass_temperatures).into();
+        self.0.internal_mass_temperatures =
+            VectorField::new(std::mem::take(&mut scratch.new_int)).into();
 
         // Issue #272, #274, #275: Calculate thermal mass energy change for 6R2C
         // For 6R2C, we track energy changes in both envelope and internal masses
@@ -1928,9 +2102,10 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         let opaque_solar_ref = self.0.opaque_solar_gains.as_ref();
         let area_ref = self.0.zone_area.as_ref();
 
-        let mut phi_ia_data = Vec::with_capacity(self.0.num_zones);
-        let mut phi_st_data = Vec::with_capacity(self.0.num_zones);
-        let mut phi_m_data = Vec::with_capacity(self.0.num_zones);
+        // Issue #1524: consolidated per-timestep scratch (replaces the fourteen
+        // standalone `Vec::with_capacity(num_zones)` allocations in 9R4C; the
+        // seven read-back intermediates share one flat buffer).
+        let mut scratch = PhysicsScratch9r4c::new(self.0.num_zones);
 
         for i in 0..self.0.num_zones {
             let load_w = loads_ref[i] * area_ref[i];
@@ -1939,18 +2114,18 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
 
             let sol_to_air = sol_w * self.0.solar_distribution_to_air;
             let remaining_sol = sol_w - sol_to_air;
-            phi_ia_data.push(load_w * conv_frac + sol_to_air);
-            phi_st_data.push(load_w * st_int_frac + remaining_sol * st_sol_frac);
-            phi_m_data.push(load_w * m_air_frac + remaining_sol * m_sol_frac + opaque_sol_w);
+            scratch.phi_ia[i] = load_w * conv_frac + sol_to_air;
+            scratch.phi_st[i] = load_w * st_int_frac + remaining_sol * st_sol_frac;
+            scratch.phi_m[i] = load_w * m_air_frac + remaining_sol * m_sol_frac + opaque_sol_w;
         }
 
         // (#872) Save raw gain data for multi-node solver before moving into tensors.
         // Used for internal radiative gain injection via step_with_gains().
-        let _phi_ia_data_for_solver = phi_ia_data.clone();
+        let _phi_ia_data_for_solver = scratch.phi_ia.clone();
 
-        let phi_ia = T::from(VectorField::new(phi_ia_data));
-        let phi_st = T::from(VectorField::new(phi_st_data));
-        let phi_m = T::from(VectorField::new(phi_m_data));
+        let phi_ia = T::from(VectorField::new(std::mem::take(&mut scratch.phi_ia)));
+        let phi_st = T::from(VectorField::new(std::mem::take(&mut scratch.phi_st)));
+        let phi_m = T::from(VectorField::new(std::mem::take(&mut scratch.phi_m)));
 
         // Issue #863: Compute per-surface sol-air temperature for walls.
         // The CTF/FD flux calculations use t_sol_air_data as the exterior boundary
@@ -1996,9 +2171,8 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
             outdoor_temp
         };
 
-        let mut t_sol_air_data = Vec::with_capacity(self.0.num_zones);
-        for _ in 0..self.0.num_zones {
-            t_sol_air_data.push(t_sol_air_wall);
+        for i in 0..self.0.num_zones {
+            scratch.t_sol_air_mut()[i] = t_sol_air_wall;
         }
 
         // Use 5R1C network for free-floating temperature
@@ -2104,7 +2278,7 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                 if i < slice.len() {
                     let area = self.0.zone_area.as_ref().get(i).copied().unwrap_or(1.0);
                     let q_ctf = q_flux * area;
-                    let t_sol_air_i = t_sol_air_data.get(i).copied().unwrap_or(outdoor_temp);
+                    let t_sol_air_i = scratch.t_sol_air().get(i).copied().unwrap_or(outdoor_temp);
                     let t_mass = self
                         .0
                         .mass_temperatures
@@ -2127,7 +2301,7 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                 if i < slice.len() {
                     let area = self.0.zone_area.as_ref().get(i).copied().unwrap_or(1.0);
                     let q_fd = q_flux * area;
-                    let t_sol_air_i = t_sol_air_data.get(i).copied().unwrap_or(outdoor_temp);
+                    let t_sol_air_i = scratch.t_sol_air().get(i).copied().unwrap_or(outdoor_temp);
                     let t_mass = self
                         .0
                         .mass_temperatures
@@ -2159,7 +2333,7 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
             .zip(h_ext_for_free_float.as_ref().iter())
             .enumerate()
         {
-            let t_sol_air_i = t_sol_air_data.get(i).copied().unwrap_or(outdoor_temp);
+            let t_sol_air_i = scratch.t_sol_air().get(i).copied().unwrap_or(outdoor_temp);
             *n += h * t_sol_air_i;
         }
         num_rest_with_iz.mul_assign(term_rest_1);
@@ -2197,12 +2371,8 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         // Issue #864: Store pre-gain mass temperatures and per-surface gains for
         // step_per_surface(). Using pre-gain temperatures avoids double-counting
         // gains that are added in SurfaceNode::update()'s backward Euler.
-        let mut pre_gain_mass_temps_wall = Vec::with_capacity(self.0.num_zones);
-        let mut pre_gain_mass_temps_roof = Vec::with_capacity(self.0.num_zones);
-        let mut pre_gain_mass_temps_floor = Vec::with_capacity(self.0.num_zones);
-        let mut phi_m_surface_wall = Vec::with_capacity(self.0.num_zones);
-        let mut phi_m_surface_roof = Vec::with_capacity(self.0.num_zones);
-        let mut phi_m_surface_floor = Vec::with_capacity(self.0.num_zones);
+        // (Issue #1524: these six read-back intermediates share the flat
+        // `scratch.inter` backing buffer — 6 allocations collapsed to 0 here.)
 
         #[allow(clippy::needless_range_loop)]
         for zone_idx in 0..self.0.num_zones {
@@ -2235,7 +2405,8 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
             // zone air temperature from the multi-node balance.
             let t_zone_prev = self.0.temperatures.as_ref()[zone_idx];
             #[allow(unused_variables)]
-            let t_ext = t_sol_air_data
+            let t_ext = scratch
+                .t_sol_air()
                 .get(zone_idx)
                 .copied()
                 .unwrap_or(outdoor_temp);
@@ -2354,12 +2525,12 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                 floor_irr_val,
             );
 
-            pre_gain_mass_temps_wall.push(mass_temp_wall_pre);
-            pre_gain_mass_temps_roof.push(mass_temp_roof_pre);
-            pre_gain_mass_temps_floor.push(mass_temp_floor_pre);
-            phi_m_surface_wall.push(solar_gains.phi_m_wall);
-            phi_m_surface_roof.push(solar_gains.phi_m_roof);
-            phi_m_surface_floor.push(solar_gains.phi_m_floor);
+            scratch.pg_wall_mut()[zone_idx] = mass_temp_wall_pre;
+            scratch.pg_roof_mut()[zone_idx] = mass_temp_roof_pre;
+            scratch.pg_floor_mut()[zone_idx] = mass_temp_floor_pre;
+            scratch.pm_wall_mut()[zone_idx] = solar_gains.phi_m_wall;
+            scratch.pm_roof_mut()[zone_idx] = solar_gains.phi_m_roof;
+            scratch.pm_floor_mut()[zone_idx] = solar_gains.phi_m_floor;
 
             // Issue #1279: Boost h_tr_is for forced convection during night ventilation.
             // Use ACH-dependent multiplier (ASHRAE/EnergyPlus correlation) instead of
@@ -2407,7 +2578,6 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         // For HVAC mode, the temperature update is self-consistent: t_act = T_setpoint
         // regardless of which t_free estimate we use, because the HVAC coefficient
         // cancels the free-floating temperature error.
-        let mut t_i_free_data = Vec::with_capacity(self.0.num_zones);
         for zone_idx in 0..self.0.num_zones {
             if zone_idx < self.0.multi_node_solvers.len() {
                 let solver = &self.0.multi_node_solvers[zone_idx];
@@ -2433,12 +2603,12 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                 );
                 // Use multi-node temperature — it provides the correct air balance
                 // from mass node temperatures stepped by the backward Euler.
-                t_i_free_data.push(t_air_mn);
+                scratch.t_i_free[zone_idx] = t_air_mn;
             } else {
-                t_i_free_data.push(t_i_free.as_ref()[zone_idx]);
+                scratch.t_i_free[zone_idx] = t_i_free.as_ref()[zone_idx];
             }
         }
-        let t_i_free_mn = T::from(VectorField::new(t_i_free_data));
+        let t_i_free_mn = T::from(VectorField::new(std::mem::take(&mut scratch.t_i_free)));
 
         // Issue #1279: Restore h_tr_is to original value after computing zone air temperature.
         if night_vent_active_now {
@@ -2493,21 +2663,12 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                 continue;
             }
             let solver = &mut self.0.multi_node_solvers[zone_idx];
-            let mass_temp_wall_pre = pre_gain_mass_temps_wall
-                .get(zone_idx)
-                .copied()
-                .unwrap_or(20.0);
-            let mass_temp_roof_pre = pre_gain_mass_temps_roof
-                .get(zone_idx)
-                .copied()
-                .unwrap_or(20.0);
-            let mass_temp_floor_pre = pre_gain_mass_temps_floor
-                .get(zone_idx)
-                .copied()
-                .unwrap_or(20.0);
-            let phi_m_wall = phi_m_surface_wall.get(zone_idx).copied().unwrap_or(0.0);
-            let phi_m_roof = phi_m_surface_roof.get(zone_idx).copied().unwrap_or(0.0);
-            let phi_m_floor = phi_m_surface_floor.get(zone_idx).copied().unwrap_or(0.0);
+            let mass_temp_wall_pre = scratch.pg_wall().get(zone_idx).copied().unwrap_or(20.0);
+            let mass_temp_roof_pre = scratch.pg_roof().get(zone_idx).copied().unwrap_or(20.0);
+            let mass_temp_floor_pre = scratch.pg_floor().get(zone_idx).copied().unwrap_or(20.0);
+            let phi_m_wall = scratch.pm_wall().get(zone_idx).copied().unwrap_or(0.0);
+            let phi_m_roof = scratch.pm_roof().get(zone_idx).copied().unwrap_or(0.0);
+            let phi_m_floor = scratch.pm_floor().get(zone_idx).copied().unwrap_or(0.0);
             solver.step_per_surface(
                 dt,
                 (mass_temp_wall_pre, mass_temp_roof_pre, mass_temp_floor_pre),
@@ -2568,8 +2729,10 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
             // HVAC mode: use multi-node t_air (from _t_i_free_mn) when available
             let heat_cap = self.0.hvac_heating_capacity;
             let cool_cap = self.0.hvac_cooling_capacity;
-            let mut hvac_data = Vec::with_capacity(self.0.num_zones);
-            let mut t_i_act_data = Vec::with_capacity(self.0.num_zones);
+            // Issue #1524: hvac/t_i_act live in the local `scratch` struct, so
+            // `scratch.hvac[i]` / `scratch.t_i_act[i]` (mutable borrows of a
+            // local) coexist freely with `self.compute_hvac_coefficient(i)`
+            // (an `&self` borrow) — the exact conflict that sank #1436.
             for i in 0..self.0.num_zones {
                 // Issue #860: Prefer multi-node t_air over 5R1C t_free for HVAC demand
                 let t_free_val =
@@ -2683,7 +2846,7 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                 };
 
                 let q_clamped = q.clamp(-cool_cap, heat_cap);
-                hvac_data.push(q_clamped);
+                scratch.hvac[i] = q_clamped;
 
                 // Self-consistent: t_act = t_free + Q / h_coeff = T_setpoint (when not clamped)
                 //
@@ -2697,14 +2860,14 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                 // (see #917, #924) and is accepted as a tractable
                 // approximation here.
                 if h_coeff > 0.0 && q_clamped.abs() > 1e-6 {
-                    t_i_act_data.push(t_free_val + q_clamped / h_coeff);
+                    scratch.t_i_act[i] = t_free_val + q_clamped / h_coeff;
                 } else {
-                    t_i_act_data.push(t_free_val);
+                    scratch.t_i_act[i] = t_free_val;
                 }
             }
             (
-                T::from(VectorField::new(hvac_data)),
-                T::from(VectorField::new(t_i_act_data)),
+                T::from(VectorField::new(std::mem::take(&mut scratch.hvac))),
+                T::from(VectorField::new(std::mem::take(&mut scratch.t_i_act))),
             )
         };
 
@@ -2810,7 +2973,6 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
             let h_tr_em_ref = self.0.h_tr_em.as_ref();
             let h_tr_ms_ref = self.0.h_tr_ms.as_ref();
 
-            let mut new_mass_temperatures = Vec::with_capacity(self.0.num_zones);
             for i in 0..self.0.num_zones {
                 let tm_old = mass_temps_ref[i];
                 let cm = thermal_cap_ref[i];
@@ -2819,7 +2981,7 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                 let h_tr_ms = h_tr_ms_ref[i];
                 let h_tr_is_zone = self.0.h_tr_is.as_ref()[i];
                 let h_tr_me_zone = self.0.h_tr_me.as_ref()[i];
-                let t_ext = t_sol_air_data.get(i).copied().unwrap_or(outdoor_temp);
+                let t_ext = scratch.t_sol_air().get(i).copied().unwrap_or(outdoor_temp);
 
                 let t_i_blended = t_i; // Use full t_i for surface temperature
 
@@ -2860,9 +3022,10 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                     tm_old
                 };
 
-                new_mass_temperatures.push(tm_new);
+                scratch.new_mass[i] = tm_new;
             }
-            self.0.mass_temperatures = VectorField::new(new_mass_temperatures).into();
+            self.0.mass_temperatures =
+                VectorField::new(std::mem::take(&mut scratch.new_mass)).into();
             self.0.previous_mass_temperatures = old_mass_temperatures;
         }
 

@@ -52,8 +52,8 @@
 use std::convert::TryFrom;
 
 use crate::api::schema::{
-    ConstructionSet, Geometry, SchemaMetadata, SchemaVersion, SimulationSchemaV1, SurfaceConstruction,
-    WindowSpec, ZoneGeometry,
+    ConstructionSet, Geometry, SchemaMetadata, SchemaVersion, SimulationSchemaV1,
+    SurfaceConstruction, WindowSpec, ZoneGeometry,
 };
 use crate::ashrae_cases::Orientation;
 use crate::sim::boundary::{GroundTemperature, MonthlyGroundTemperature};
@@ -121,9 +121,7 @@ impl Default for GroundTempMeta {
     fn default() -> Self {
         Self {
             // ASHRAE 140-2023 Annex B §B3.3: 9.4 °C for slab-on-grade.
-            monthly: [
-                9.4, 9.4, 9.4, 9.4, 9.4, 9.4, 9.4, 9.4, 9.4, 9.4, 9.4, 9.4,
-            ],
+            monthly: [9.4, 9.4, 9.4, 9.4, 9.4, 9.4, 9.4, 9.4, 9.4, 9.4, 9.4, 9.4],
         }
     }
 }
@@ -172,8 +170,13 @@ impl TryFrom<IdfFile> for SimulationSchemaV1 {
         let mut metadata = metadata;
         metadata.description = format!(
             "{}; run_period={:02}/{:02}–{:02}/{:02}, {} timesteps/h, ground={:.1}°C",
-            metadata.description, run_period.begin_month, run_period.begin_day, run_period.end_month,
-            run_period.end_day, run_period.timesteps_per_hour, ground_temp.monthly[0],
+            metadata.description,
+            run_period.begin_month,
+            run_period.begin_day,
+            run_period.end_month,
+            run_period.end_day,
+            run_period.timesteps_per_hour,
+            ground_temp.monthly[0],
         );
 
         Ok(SimulationSchemaV1 {
@@ -249,7 +252,10 @@ fn build_run_period(idf: &IdfFile) -> RunPeriodMeta {
 
 fn build_ground_temperature(idf: &IdfFile) -> Result<GroundTempMeta, IdfError> {
     for obj in &idf.objects {
-        if obj.object_type.eq_ignore_ascii_case("Site:GroundTemperature:BuildingSurface") {
+        if obj
+            .object_type
+            .eq_ignore_ascii_case("Site:GroundTemperature:BuildingSurface")
+        {
             let mut monthly = [18.0_f64; 12];
             for (i, slot) in monthly.iter_mut().enumerate() {
                 if let Some(v) = field_real(obj, i) {
@@ -281,8 +287,7 @@ fn build_geometry(idf: &IdfFile) -> Result<Geometry, IdfError> {
         floor_z: Option<f64>,
         ceiling_z: Option<f64>,
     }
-    let mut zone_acc: std::collections::HashMap<String, ZoneAcc> =
-        std::collections::HashMap::new();
+    let mut zone_acc: std::collections::HashMap<String, ZoneAcc> = std::collections::HashMap::new();
 
     for surf in idf.building_surfaces() {
         let zone_name = match surf.fields.get(3).and_then(|v| v.to_display_string()) {
@@ -428,7 +433,13 @@ fn build_constructions(idf: &IdfFile) -> Result<ConstructionSet, IdfError> {
         if name.is_empty() || thickness <= 0.0 || conductivity <= 0.0 {
             continue;
         }
-        let layer = ConstructionLayer::new(name.clone(), conductivity, density, specific_heat, thickness);
+        let layer = ConstructionLayer::new(
+            name.clone(),
+            conductivity,
+            density,
+            specific_heat,
+            thickness,
+        );
         materials.insert(name, layer);
     }
 
@@ -498,8 +509,12 @@ fn build_constructions(idf: &IdfFile) -> Result<ConstructionSet, IdfError> {
     let wall = by_surface_type
         .remove("wall")
         .unwrap_or_else(default_surface);
-    let roof = by_surface_type.remove("roof").unwrap_or_else(default_surface);
-    let floor = by_surface_type.remove("floor").unwrap_or_else(default_surface);
+    let roof = by_surface_type
+        .remove("roof")
+        .unwrap_or_else(default_surface);
+    let floor = by_surface_type
+        .remove("floor")
+        .unwrap_or_else(default_surface);
 
     Ok(ConstructionSet {
         wall,
@@ -548,9 +563,7 @@ fn parse_surface_polygon(surf: &IdfObject) -> Result<Vec<(f64, f64, f64)>, IdfEr
         }
     }
     let (n, vertex_start) = chosen.ok_or_else(|| {
-        IdfError::conversion_error(
-            "Surface object has no parseable Number-of-Vertices field",
-        )
+        IdfError::conversion_error("Surface object has no parseable Number-of-Vertices field")
     })?;
     let mut pts = Vec::with_capacity(n);
     for i in 0..n {
@@ -632,114 +645,6 @@ fn field_uint(obj: &IdfObject, idx: usize) -> Option<u32> {
         IdfValue::Integer(i) if *i >= 0 => Some(*i as u32),
         IdfValue::Real(f) if *f >= 0.0 => Some(*f as u32),
         _ => None,
-    }
-}
-
-// -----------------------------------------------------------------------------
-// Tests
-// -----------------------------------------------------------------------------
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::io::idf::parser::IdfParser;
-
-    #[test]
-    fn parses_version_25_2() {
-        // Include a minimal Building + Zone + Material + Construction +
-        // Site:GroundTemperature so the converter has all the required
-        // MVP fields to populate the schema.
-        let src = "\
-Version, 25.2;\n\
-Building, TestBldg, 0.0, City, 0.04, 0.4, FullExterior, 25;\n\
-Zone, Z1, 0, 0, 0, 0, 1, 2.7, , , , ;\n\
-Material, Mat1, MediumRough, 0.1, 1.0, 2000, 800;\n\
-Construction, Wall1, Mat1;\n\
-Site:GroundTemperature:BuildingSurface, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10;\n";
-        let idf = IdfParser::from_str(src).unwrap();
-        let schema = SimulationSchemaV1::try_from(idf).unwrap();
-        assert_eq!(schema.version, SchemaVersion::V1);
-        assert_eq!(schema.metadata.name, "TestBldg");
-    }
-
-    #[test]
-    fn rejects_unsupported_version() {
-        let src = "Version, 99.9;\n";
-        let idf = IdfParser::from_str(src).unwrap();
-        let err = SimulationSchemaV1::try_from(idf).unwrap_err();
-        match err {
-            IdfError::UnsupportedVersion(v) => assert_eq!(v, "99.9"),
-            other => panic!("expected UnsupportedVersion, got {other:?}"),
-        }
-    }
-
-    #[test]
-    fn accepts_all_supported_versions() {
-        for v in SUPPORTED_VERSIONS {
-            let src = format!(
-                "\
-Version, {v};\n\
-Building, TestBldg, 0.0, City, 0.04, 0.4, FullExterior, 25;\n\
-Zone, Z1, 0, 0, 0, 0, 1, 2.7, , , , ;\n\
-Material, Mat1, MediumRough, 0.1, 1.0, 2000, 800;\n\
-Construction, Wall1, Mat1;\n\
-Site:GroundTemperature:BuildingSurface, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10;\n"
-            );
-            let idf = IdfParser::from_str(&src).unwrap();
-            SimulationSchemaV1::try_from(idf).unwrap();
-        }
-    }
-
-    #[test]
-    fn accepts_version_with_patch_suffix() {
-        let src = "Version, 25.2.0;\n";
-        let idf = IdfParser::from_str(src).unwrap();
-        // Should not error on UnsupportedVersion.
-        let err = SimulationSchemaV1::try_from(idf);
-        assert!(
-            !matches!(err, Err(IdfError::UnsupportedVersion(_))),
-            "25.2.0 should normalize to 25-2 and be accepted, got {err:?}"
-        );
-    }
-
-    #[test]
-    fn rejects_missing_version() {
-        let src = "Timestep, 1;\n";
-        let idf = IdfParser::from_str(src).unwrap();
-        assert!(SimulationSchemaV1::try_from(idf).is_err());
-    }
-
-    #[test]
-    fn shoelace_square_area() {
-        let pts = vec![(0.0, 0.0), (6.0, 0.0), (6.0, 8.0), (0.0, 8.0)];
-        assert!((shoelace_area(&pts) - 48.0).abs() < 1e-9);
-    }
-
-    #[test]
-    fn shoelace_clockwise_returns_same_area() {
-        // Reverse winding — area must still be positive.
-        let cw = vec![(0.0, 0.0), (6.0, 0.0), (6.0, 8.0), (0.0, 8.0)];
-        let ccw: Vec<_> = cw.iter().rev().copied().collect();
-        assert!((shoelace_area(&cw) - shoelace_area(&ccw)).abs() < 1e-9);
-    }
-
-    #[test]
-    fn polygon_area_handles_3d_input() {
-        // A 6x8 m floor at z=0, polygon 0,0,0 → 6,0,0 → 6,8,0 → 0,8,0.
-        let pts = vec![(0.0, 0.0, 0.0), (6.0, 0.0, 0.0), (6.0, 8.0, 0.0), (0.0, 8.0, 0.0)];
-        assert!((polygon_area(&pts) - 48.0).abs() < 1e-9);
-    }
-
-    #[test]
-    fn polygon_area_handles_vertical_walls() {
-        // A 6x2.7 m south wall at y=0, polygon 0,0,2.7 → 6,0,2.7 → 6,0,0 → 0,0,0.
-        let pts = vec![
-            (0.0, 0.0, 2.7),
-            (6.0, 0.0, 2.7),
-            (6.0, 0.0, 0.0),
-            (0.0, 0.0, 0.0),
-        ];
-        assert!((polygon_area(&pts) - 16.2).abs() < 1e-9);
     }
 }
 
@@ -837,7 +742,10 @@ fn extract_setpoints(idf: &IdfFile, zone_name: &str) -> Option<(f64, f64)> {
     // 1. Find the ZoneControl:Thermostat that references this zone.
     let mut dualsp: Option<String> = None;
     for obj in &idf.objects {
-        if !obj.object_type.eq_ignore_ascii_case("ZoneControl:Thermostat") {
+        if !obj
+            .object_type
+            .eq_ignore_ascii_case("ZoneControl:Thermostat")
+        {
             continue;
         }
         if obj
@@ -891,25 +799,17 @@ fn extract_setpoints(idf: &IdfFile, zone_name: &str) -> Option<(f64, f64)> {
             .and_then(|v| v.to_display_string())
             .unwrap_or_default();
         if name == heat_name {
-            heat_val = obj
-                .fields
-                .iter()
-                .rev()
-                .find_map(|v| match v {
-                    IdfValue::Real(f) => Some(*f),
-                    IdfValue::Integer(i) => Some(*i as f64),
-                    _ => None,
-                });
+            heat_val = obj.fields.iter().rev().find_map(|v| match v {
+                IdfValue::Real(f) => Some(*f),
+                IdfValue::Integer(i) => Some(*i as f64),
+                _ => None,
+            });
         } else if name == cool_name {
-            cool_val = obj
-                .fields
-                .iter()
-                .rev()
-                .find_map(|v| match v {
-                    IdfValue::Real(f) => Some(*f),
-                    IdfValue::Integer(i) => Some(*i as f64),
-                    _ => None,
-                });
+            cool_val = obj.fields.iter().rev().find_map(|v| match v {
+                IdfValue::Real(f) => Some(*f),
+                IdfValue::Integer(i) => Some(*i as f64),
+                _ => None,
+            });
         }
     }
     Some((heat_val?, cool_val?))
@@ -979,7 +879,10 @@ fn extract_window(idf: &IdfFile, zone_name: &str) -> Option<(f64, Orientation, f
         parent_orientation.insert(name, orientation);
     }
     for obj in &idf.objects {
-        if !obj.object_type.eq_ignore_ascii_case("FenestrationSurface:Detailed") {
+        if !obj
+            .object_type
+            .eq_ignore_ascii_case("FenestrationSurface:Detailed")
+        {
             continue;
         }
         // 0: name, 1: surface_type, 2: construction_name, 3: building_surface_name, ...
@@ -1014,10 +917,7 @@ fn extract_window(idf: &IdfFile, zone_name: &str) -> Option<(f64, Orientation, f
             .iter()
             .map(|p| p.2)
             .fold(f64::NEG_INFINITY, f64::max)
-            - polygon
-                .iter()
-                .map(|p| p.2)
-                .fold(f64::INFINITY, f64::min);
+            - polygon.iter().map(|p| p.2).fold(f64::INFINITY, f64::min);
         let width = (area / height).max(0.0);
         match best {
             Some((a, _, _, _)) if a >= area => {}
@@ -1177,5 +1077,118 @@ fn clone_idf(idf: &IdfFile) -> IdfFile {
     IdfFile {
         version: idf.version.clone(),
         objects: idf.objects.clone(),
+    }
+}
+
+// -----------------------------------------------------------------------------
+// Tests
+// -----------------------------------------------------------------------------
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::io::idf::parser::IdfParser;
+
+    #[test]
+    fn parses_version_25_2() {
+        // Include a minimal Building + Zone + Material + Construction +
+        // Site:GroundTemperature so the converter has all the required
+        // MVP fields to populate the schema.
+        let src = "\
+Version, 25.2;\n\
+Building, TestBldg, 0.0, City, 0.04, 0.4, FullExterior, 25;\n\
+Zone, Z1, 0, 0, 0, 0, 1, 2.7, , , , ;\n\
+Material, Mat1, MediumRough, 0.1, 1.0, 2000, 800;\n\
+Construction, Wall1, Mat1;\n\
+Site:GroundTemperature:BuildingSurface, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10;\n";
+        let idf = IdfParser::from_str(src).unwrap();
+        let schema = SimulationSchemaV1::try_from(idf).unwrap();
+        assert_eq!(schema.version, SchemaVersion::V1);
+        assert_eq!(schema.metadata.name, "TestBldg");
+    }
+
+    #[test]
+    fn rejects_unsupported_version() {
+        let src = "Version, 99.9;\n";
+        let idf = IdfParser::from_str(src).unwrap();
+        let err = SimulationSchemaV1::try_from(idf).unwrap_err();
+        match err {
+            IdfError::UnsupportedVersion(v) => assert_eq!(v, "99.9"),
+            other => panic!("expected UnsupportedVersion, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn accepts_all_supported_versions() {
+        for v in SUPPORTED_VERSIONS {
+            let src = format!(
+                "\
+Version, {v};\n\
+Building, TestBldg, 0.0, City, 0.04, 0.4, FullExterior, 25;\n\
+Zone, Z1, 0, 0, 0, 0, 1, 2.7, , , , ;\n\
+Material, Mat1, MediumRough, 0.1, 1.0, 2000, 800;\n\
+Construction, Wall1, Mat1;\n\
+Site:GroundTemperature:BuildingSurface, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10;\n"
+            );
+            let idf = IdfParser::from_str(&src).unwrap();
+            SimulationSchemaV1::try_from(idf).unwrap();
+        }
+    }
+
+    #[test]
+    fn accepts_version_with_patch_suffix() {
+        let src = "Version, 25.2.0;\n";
+        let idf = IdfParser::from_str(src).unwrap();
+        // Should not error on UnsupportedVersion.
+        let err = SimulationSchemaV1::try_from(idf);
+        assert!(
+            !matches!(err, Err(IdfError::UnsupportedVersion(_))),
+            "25.2.0 should normalize to 25-2 and be accepted, got {err:?}"
+        );
+    }
+
+    #[test]
+    fn rejects_missing_version() {
+        let src = "Timestep, 1;\n";
+        let idf = IdfParser::from_str(src).unwrap();
+        assert!(SimulationSchemaV1::try_from(idf).is_err());
+    }
+
+    #[test]
+    fn shoelace_square_area() {
+        let pts = vec![(0.0, 0.0), (6.0, 0.0), (6.0, 8.0), (0.0, 8.0)];
+        assert!((shoelace_area(&pts) - 48.0).abs() < 1e-9);
+    }
+
+    #[test]
+    fn shoelace_clockwise_returns_same_area() {
+        // Reverse winding — area must still be positive.
+        let cw = vec![(0.0, 0.0), (6.0, 0.0), (6.0, 8.0), (0.0, 8.0)];
+        let ccw: Vec<_> = cw.iter().rev().copied().collect();
+        assert!((shoelace_area(&cw) - shoelace_area(&ccw)).abs() < 1e-9);
+    }
+
+    #[test]
+    fn polygon_area_handles_3d_input() {
+        // A 6x8 m floor at z=0, polygon 0,0,0 → 6,0,0 → 6,8,0 → 0,8,0.
+        let pts = vec![
+            (0.0, 0.0, 0.0),
+            (6.0, 0.0, 0.0),
+            (6.0, 8.0, 0.0),
+            (0.0, 8.0, 0.0),
+        ];
+        assert!((polygon_area(&pts) - 48.0).abs() < 1e-9);
+    }
+
+    #[test]
+    fn polygon_area_handles_vertical_walls() {
+        // A 6x2.7 m south wall at y=0, polygon 0,0,2.7 → 6,0,2.7 → 6,0,0 → 0,0,0.
+        let pts = vec![
+            (0.0, 0.0, 2.7),
+            (6.0, 0.0, 2.7),
+            (6.0, 0.0, 0.0),
+            (0.0, 0.0, 0.0),
+        ];
+        assert!((polygon_area(&pts) - 16.2).abs() < 1e-9);
     }
 }

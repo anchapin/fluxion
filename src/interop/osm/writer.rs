@@ -334,24 +334,15 @@ impl OsmWriter {
         let csp = schema.controls.zone_control.cooling_setpoint;
 
         for (i, zone) in schema.geometry.zones.iter().enumerate() {
-            writeln!(writer, "OS:Thermostat,")
-                .map_err(|e| OsmError::ExportError(e.to_string()))?;
+            writeln!(writer, "OS:Thermostat,").map_err(|e| OsmError::ExportError(e.to_string()))?;
             writeln!(writer, "  {{thermostat-{}}}, !- Handle", i)
                 .map_err(|e| OsmError::ExportError(e.to_string()))?;
             writeln!(writer, "  {}, !- Name", zone.name)
                 .map_err(|e| OsmError::ExportError(e.to_string()))?;
-            writeln!(
-                writer,
-                "  {}, !- Heating Setpoint Temperature {{C}}",
-                hsp
-            )
-            .map_err(|e| OsmError::ExportError(e.to_string()))?;
-            writeln!(
-                writer,
-                "  {}; !- Cooling Setpoint Temperature {{C}}",
-                csp
-            )
-            .map_err(|e| OsmError::ExportError(e.to_string()))?;
+            writeln!(writer, "  {}, !- Heating Setpoint Temperature {{C}}", hsp)
+                .map_err(|e| OsmError::ExportError(e.to_string()))?;
+            writeln!(writer, "  {}; !- Cooling Setpoint Temperature {{C}}", csp)
+                .map_err(|e| OsmError::ExportError(e.to_string()))?;
             writeln!(writer).map_err(|e| OsmError::ExportError(e.to_string()))?;
         }
         Ok(())
@@ -479,7 +470,7 @@ mod tests {
     use super::*;
     use crate::api::schema::{
         ConstructionSet, ControlSet, Geometry, SchemaMetadata, SchemaVersion, SimulationOutput,
-        SimulationSchemaV1, SurfaceConstruction, WeatherData, ZoneGeometry,
+        SimulationSchemaV1, WeatherData, ZoneGeometry,
     };
     use crate::interop::osm::reader::OsmReader;
 

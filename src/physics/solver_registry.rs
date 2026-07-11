@@ -269,9 +269,9 @@ mod tests {
 
         // Construct BOTH solvers via the registry so the trait's
         // `steady_state_flux` (Quantity-typed) is called consistently.
-        let mut r1c: Box<dyn HeatConductionSolver> =
+        let r1c: Box<dyn HeatConductionSolver> =
             SolverRegistry::construct(registry_keys::FIVE_R1C, &wall).expect("5r1c construct");
-        let mut multi: Box<dyn HeatConductionSolver> =
+        let multi: Box<dyn HeatConductionSolver> =
             SolverRegistry::construct(registry_keys::MULTINODE_9R4C, &wall)
                 .expect("multinode construct");
 
@@ -301,7 +301,7 @@ mod tests {
 
         let wall = wall_200mm_concrete();
 
-        let mut r1c: Box<dyn HeatConductionSolver> =
+        let r1c: Box<dyn HeatConductionSolver> =
             SolverRegistry::construct(registry_keys::FIVE_R1C, &wall).expect("5r1c construct");
         let mut multi: Box<dyn HeatConductionSolver> =
             SolverRegistry::construct(registry_keys::MULTINODE_9R4C, &wall)
