@@ -46,6 +46,12 @@ mod building_parameters;
 #[cfg(all(feature = "napi-bindings", not(target_arch = "wasm32")))]
 mod error;
 #[cfg(all(feature = "napi-bindings", not(target_arch = "wasm32")))]
+mod fmi_exporter;
+#[cfg(all(feature = "napi-bindings", not(target_arch = "wasm32")))]
+mod gbxml_exporter;
+#[cfg(all(feature = "napi-bindings", not(target_arch = "wasm32")))]
+mod osm_exporter;
+#[cfg(all(feature = "napi-bindings", not(target_arch = "wasm32")))]
 mod state_extractor;
 
 #[cfg(all(feature = "napi-bindings", not(target_arch = "wasm32")))]
@@ -54,6 +60,12 @@ pub use batch_oracle::BatchOracle;
 pub use building_parameters::BuildingParameters;
 #[cfg(all(feature = "napi-bindings", not(target_arch = "wasm32")))]
 pub use error::{FluxionError, SimulationError, SurrogateError, ValidationError};
+#[cfg(all(feature = "napi-bindings", not(target_arch = "wasm32")))]
+pub use fmi_exporter::FmiExporter;
+#[cfg(all(feature = "napi-bindings", not(target_arch = "wasm32")))]
+pub use gbxml_exporter::GbXmlExporter;
+#[cfg(all(feature = "napi-bindings", not(target_arch = "wasm32")))]
+pub use osm_exporter::OsmExporter;
 #[cfg(all(feature = "napi-bindings", not(target_arch = "wasm32")))]
 pub use state_extractor::{StateExtractor, StateMatrices};
 

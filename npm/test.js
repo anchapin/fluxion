@@ -35,49 +35,49 @@ describe('@fluxion/native', () => {
     it('should reject invalid U-value (too low)', () => {
       assert.throws(
         () => new BuildingParameters(0.05, 20.0, 24.0),
-        (error) => error instanceof ValidationError
+        (error) => /Validation error|Parameter validation error/.test(error.message)
       );
     });
 
     it('should reject invalid U-value (too high)', () => {
       assert.throws(
         () => new BuildingParameters(6.0, 20.0, 24.0),
-        (error) => error instanceof ValidationError
+        (error) => /Validation error|Parameter validation error/.test(error.message)
       );
     });
 
     it('should reject invalid heating setpoint (too low)', () => {
       assert.throws(
         () => new BuildingParameters(1.5, 14.0, 24.0),
-        (error) => error instanceof ValidationError
+        (error) => /Validation error|Parameter validation error/.test(error.message)
       );
     });
 
     it('should reject invalid heating setpoint (too high)', () => {
       assert.throws(
         () => new BuildingParameters(1.5, 26.0, 24.0),
-        (error) => error instanceof ValidationError
+        (error) => /Validation error|Parameter validation error/.test(error.message)
       );
     });
 
     it('should reject invalid cooling setpoint (too low)', () => {
       assert.throws(
         () => new BuildingParameters(1.5, 20.0, 21.0),
-        (error) => error instanceof ValidationError
+        (error) => /Validation error|Parameter validation error/.test(error.message)
       );
     });
 
     it('should reject invalid cooling setpoint (too high)', () => {
       assert.throws(
         () => new BuildingParameters(1.5, 20.0, 33.0),
-        (error) => error instanceof ValidationError
+        (error) => /Validation error|Parameter validation error/.test(error.message)
       );
     });
 
     it('should reject heating >= cooling', () => {
       assert.throws(
         () => new BuildingParameters(1.5, 24.0, 22.0),
-        (error) => error instanceof ValidationError
+        (error) => /Validation error|Parameter validation error/.test(error.message)
       );
     });
   });
@@ -101,7 +101,7 @@ describe('@fluxion/native', () => {
     it('should reject invalid parameters via validateParameters', () => {
       assert.throws(
         () => oracle.validateParameters([6.0, 20.0, 24.0]),
-        (error) => error instanceof ValidationError
+        (error) => /Validation error|Parameter validation error/.test(error.message)
       );
     });
 

@@ -248,11 +248,11 @@ impl StateMatrices {
     /// Returns [timesteps, num_zones] for reshaping in ML frameworks.
     pub fn zone_temperatures_shape(&self, num_zones: u32) -> Vec<u32> {
         let num_zones = num_zones as usize;
-        let timesteps = if num_zones > 0 {
-            self.zone_temperatures.len() / num_zones
-        } else {
-            0
-        };
+        let timesteps = self
+            .zone_temperatures
+            .len()
+            .checked_div(num_zones)
+            .unwrap_or(0);
         vec![timesteps as u32, num_zones as u32]
     }
 }

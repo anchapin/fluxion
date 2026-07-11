@@ -28,13 +28,26 @@ try {
 
   // Build the native module
   console.log('Building native module with napi-rs...');
-  const buildArgs = ['build', '--platform'];
+  const buildArgs = [
+    'build',
+    '--manifest-path', '../Cargo.toml',
+    '--package-json-path', 'package.json',
+    '--output-dir', '.',
+    '--features', 'napi-bindings',
+    '--dts', 'index.d.ts',
+  ];
 
-  if (process.env.NODE_ENV === 'production') {
+  if (process.argv.includes('--release') || process.env.NODE_ENV === 'production') {
     buildArgs.push('--release');
   }
 
-  execSync(`napi ${buildArgs.join(' ')}`, { stdio: 'inherit' });
+  execSync(`napi ${buildArgs.join(' ')}`, {
+    stdio: 'inherit',
+    env: {
+      ...process.env,
+      RUST_MIN_STACK: process.env.RUST_MIN_STACK || '16777216',
+    },
+  });
 
   // Verify the build output
   const nativeModulePath = path.join(__dirname, 'fluxion.node');
