@@ -291,6 +291,11 @@ pub fn calculate_window_solar_gain_with_diagnostics(
     (solar_gain, diagnostic)
 }
 
+/// Issue #1416 — explicit EPW LOCATION time-zone offset. Pass through to the
+/// underlying NOAA solar-position algorithm so non-Denver weather files (half-
+/// hour zones, 7.5°-offset longitudes) produce correct solar positions. `None`
+/// preserves the legacy longitude-inferred fallback for callers that haven't
+/// been migrated yet.
 #[allow(clippy::too_many_arguments)]
 pub fn calculate_hourly_solar(
     latitude_deg: f64,
@@ -307,8 +312,17 @@ pub fn calculate_hourly_solar(
     fins: &[ShadeFin],
     orientation: Orientation,
     ground_reflectance: Option<f64>,
+    utc_offset_hours: Option<f64>,
 ) -> (SolarPosition, SurfaceIrradiance, SolarGain) {
-    let sun_pos = calculate_solar_position(latitude_deg, longitude_deg, year, month, day, hour);
+    let sun_pos = calculate_solar_position(
+        latitude_deg,
+        longitude_deg,
+        year,
+        month,
+        day,
+        hour,
+        utc_offset_hours,
+    );
     let day_of_year = calculate_day_of_year(year, month, day);
     let irradiance = calculate_surface_irradiance(
         &sun_pos,
@@ -385,13 +399,13 @@ mod tests {
 
     #[test]
     fn test_solar_position_winter_morning() {
-        let sun_pos = calculate_solar_position(39.7, -105.0, 2024, 12, 21, 8.0);
+        let sun_pos = calculate_solar_position(39.7, -105.0, 2024, 12, 21, 8.0, None);
         assert!(sun_pos.altitude_deg > 0.0);
     }
 
     #[test]
     fn test_solar_position_summer_evening() {
-        let sun_pos = calculate_solar_position(39.7, -105.0, 2024, 6, 21, 18.0);
+        let sun_pos = calculate_solar_position(39.7, -105.0, 2024, 6, 21, 18.0, None);
         if sun_pos.is_above_horizon() {
             assert!(sun_pos.azimuth_deg >= 0.0 && sun_pos.azimuth_deg < 360.0);
         }
@@ -425,7 +439,7 @@ mod tests {
 
         #[test]
         fn test_solar_position_summer_solstice_noon() {
-            let sun_pos = calculate_solar_position(DENVER_LAT, DENVER_LON, 2024, 6, 21, 12.0);
+            let sun_pos = calculate_solar_position(DENVER_LAT, DENVER_LON, 2024, 6, 21, 12.0, None);
             assert!(sun_pos.altitude_deg > 70.0 && sun_pos.altitude_deg < 77.0);
             assert!(sun_pos.is_above_horizon());
             assert!(sun_pos.azimuth_deg > 175.0 && sun_pos.azimuth_deg < 185.0);
@@ -433,14 +447,15 @@ mod tests {
 
         #[test]
         fn test_solar_position_winter_solstice_noon() {
-            let sun_pos = calculate_solar_position(DENVER_LAT, DENVER_LON, 2024, 12, 21, 12.0);
+            let sun_pos =
+                calculate_solar_position(DENVER_LAT, DENVER_LON, 2024, 12, 21, 12.0, None);
             assert!(sun_pos.altitude_deg > 24.0 && sun_pos.altitude_deg < 30.0);
             assert!(sun_pos.is_above_horizon());
         }
 
         #[test]
         fn test_solar_position_equinox_noon() {
-            let sun_pos = calculate_solar_position(DENVER_LAT, DENVER_LON, 2024, 3, 21, 12.0);
+            let sun_pos = calculate_solar_position(DENVER_LAT, DENVER_LON, 2024, 3, 21, 12.0, None);
             assert!(sun_pos.altitude_deg > 48.0 && sun_pos.altitude_deg < 52.0);
         }
 
@@ -525,7 +540,7 @@ mod tests {
             ];
             for (_, year, month, day, hour, dni, dhi) in test_cases {
                 let sun_pos =
-                    calculate_solar_position(DENVER_LAT, DENVER_LON, year, month, day, hour);
+                    calculate_solar_position(DENVER_LAT, DENVER_LON, year, month, day, hour, None);
                 let doy = calculate_day_of_year(year, month, day);
                 let irr = calculate_surface_irradiance(
                     &sun_pos,
@@ -724,6 +739,7 @@ mod tests {
             &[],
             Orientation::South,
             Some(0.2),
+            None,
         );
         assert!(sun_pos.altitude_deg > 0.0);
         assert!(irr.total_wm2 > 0.0);
@@ -774,6 +790,7 @@ mod tests {
                 &[],
                 orientation,
                 GROUND_REFLECTANCE,
+                None,
             );
 
             // New path: caller pre-computes sun_pos once and reuses it for each

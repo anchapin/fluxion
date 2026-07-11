@@ -336,6 +336,7 @@ impl InvariantChecker {
             month,
             day.min(28),
             hour,
+            None,
         );
 
         let ground_reflectance = 0.2;

@@ -340,6 +340,7 @@ where
             month,
             day,
             hour,
+            self.0.utc_offset_hours,
         );
         self.0.sun_pos_cache.insert(key, sun_pos);
         sun_pos
@@ -2579,6 +2580,12 @@ impl ThermalModel<VectorField> {
             // Location for solar position calculation (Issue #278)
             latitude_deg: 39.83,    // Default: Denver, CO
             longitude_deg: -104.65, // Default: Denver, CO
+
+            // Issue #1416: explicit EPW LOCATION time-zone offset. None
+            // preserves the legacy longitude-inferred fallback (the ASHRAE-140
+            // baseline stays bit-identical). Callers that load an EPW file
+            // should populate this from `EpwWeatherSource::utc_offset_hours()`.
+            utc_offset_hours: None,
 
             // Window properties for solar gain calculation (Issue #278)
             window_properties: Vec::new(),

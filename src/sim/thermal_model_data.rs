@@ -167,6 +167,12 @@ pub struct ThermalModelData<T: ContinuousTensor<f64> + Clone> {
     pub weather: Option<HourlyWeatherData>,
     pub latitude_deg: f64,
     pub longitude_deg: f64,
+    /// Issue #1416: explicit EPW LOCATION time-zone offset (decimal hours).
+    /// When `Some`, forwarded to `calculate_solar_position` so half-hour zones
+    /// and 7.5°-offset longitudes produce correct solar positions. `None`
+    /// preserves the legacy longitude-inferred fallback (the original
+    /// ASHRAE-140 baseline).
+    pub utc_offset_hours: Option<f64>,
     pub window_properties: Vec<WindowProperties>,
     pub window_orientations: Vec<Vec<Orientation>>,
     pub door_geometry: DoorGeometry,
@@ -332,6 +338,7 @@ impl<T: ContinuousTensor<f64> + Clone> Clone for ThermalModelData<T> {
             weather: self.weather.clone(),
             latitude_deg: self.latitude_deg,
             longitude_deg: self.longitude_deg,
+            utc_offset_hours: self.utc_offset_hours,
             window_properties: self.window_properties.clone(),
             window_orientations: self.window_orientations.clone(),
             door_geometry: self.door_geometry,

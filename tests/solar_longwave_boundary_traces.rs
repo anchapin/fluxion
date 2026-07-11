@@ -105,6 +105,7 @@ fn generate_solar_trace(
             &[],
             orientation,
             Some(GROUND_REFLECTANCE),
+            None,
         );
 
         let sky_temp = SkyRadiationExchange::sky_temperature_from_emissivity(25.0, 0.8);
@@ -440,7 +441,7 @@ mod peak_solar_timing {
 
     #[test]
     fn test_solar_position_noon_summer() {
-        let sun_pos = calculate_solar_position(DENVER_LAT, DENVER_LON, 2024, 6, 21, 12.0);
+        let sun_pos = calculate_solar_position(DENVER_LAT, DENVER_LON, 2024, 6, 21, 12.0, None);
 
         assert!(
             (70.0..=77.0).contains(&sun_pos.altitude_deg),
@@ -457,7 +458,7 @@ mod peak_solar_timing {
 
     #[test]
     fn test_solar_position_noon_winter() {
-        let sun_pos = calculate_solar_position(DENVER_LAT, DENVER_LON, 2024, 12, 21, 12.0);
+        let sun_pos = calculate_solar_position(DENVER_LAT, DENVER_LON, 2024, 12, 21, 12.0, None);
 
         assert!(
             (24.0..=30.0).contains(&sun_pos.altitude_deg),
@@ -468,7 +469,7 @@ mod peak_solar_timing {
 
     #[test]
     fn test_solar_position_noon_equinox() {
-        let sun_pos = calculate_solar_position(DENVER_LAT, DENVER_LON, 2024, 3, 21, 12.0);
+        let sun_pos = calculate_solar_position(DENVER_LAT, DENVER_LON, 2024, 3, 21, 12.0, None);
         let expected_alt = 90.0 - DENVER_LAT;
 
         assert!(
@@ -854,7 +855,7 @@ mod window_solar_gain_traces {
         let peak_point = &trace.points[peak_idx];
 
         let sun_pos =
-            calculate_solar_position(DENVER_LAT, DENVER_LON, 2024, 6, 21, peak_point.hour);
+            calculate_solar_position(DENVER_LAT, DENVER_LON, 2024, 6, 21, peak_point.hour, None);
         let cos_incidence = sun_pos.incidence_cosine(90.0, 180.0);
 
         assert!(

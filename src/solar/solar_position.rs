@@ -88,14 +88,30 @@ pub fn calculate_day_of_year(year: i32, month: u32, day: u32) -> usize {
 /// * `month` - Month (1-12)
 /// * `day` - Day of month
 /// * `hour` - Local standard time as fractional hour (e.g., 12.5 = 12:30)
+/// * `utc_offset_hours` - Optional explicit UTC offset of the local time zone in
+///   hours (EPW LOCATION column 10 sign convention: negative for west of
+///   Greenwich, positive for east). When `Some`, this overrides the
+///   longitude-inferred time-zone meridian used for the solar-time correction.
+///   When `None`, the meridian is inferred from longitude as
+///   `round(longitude / 15) * 15` degrees (legacy behaviour, preserved for
+///   backward compatibility with ASHRAE 140 baselines).
 ///
 /// # Physics
 /// The equation of time corrects for the eccentricity of Earth's orbit and the
-/// obliquity of the ecliptic. The longitude is used to convert local standard time
-/// to solar time via the time zone meridian offset.
+/// obliquity of the ecliptic. The time-zone meridian converts local standard
+/// time to solar time via the `(longitude - time_zone_meridian) × 4 min/deg`
+/// correction.
 ///
-/// For Denver (UTC-7): time zone meridian = -105°, so solar time correction =
-/// (longitude - time_zone_meridian) × 4 min/deg.
+/// For Denver (UTC-7, longitude -105°): time zone meridian = -105°, so solar
+/// time correction = (longitude - time_zone_meridian) × 4 min/deg.
+///
+/// # Issue #1416
+/// Callers should pass the explicit EPW LOCATION time-zone offset
+/// (`utc_offset_hours: Some(-7.0)` for Denver) for non-Denver weather files.
+/// Half-hour time zones (India UTC+5:30, Iran UTC+3:30, Newfoundland UTC-3:30)
+/// and locations at longitudes offset by exactly 7.5° from a 15°-multiple cannot
+/// be represented by `(longitude / 15).round() * 15`; only the explicit offset
+/// produces the correct solar time.
 pub fn calculate_solar_position(
     latitude_deg: f64,
     longitude_deg: f64,
@@ -103,6 +119,7 @@ pub fn calculate_solar_position(
     month: u32,
     day: u32,
     hour: f64,
+    utc_offset_hours: Option<f64>,
 ) -> SolarPosition {
     let is_leap_year = (year % 4 == 0 && year % 100 != 0) || (year % 400 == 0);
     static MONTH_DAYS_ACCUM: [i32; 12] = [0, 31, 59, 90, 120, 151, 181, 212, 243, 273, 304, 334];
@@ -133,10 +150,18 @@ pub fn calculate_solar_position(
         - 0.002697 * (3.0 * gamma).cos()
         + 0.00148 * (3.0 * gamma).sin();
 
-    // Time zone meridian: round longitude to nearest 15° multiple
-    // This converts local standard time to solar time.
+    // Time zone meridian: either the explicit EPW LOCATION offset (when
+    // provided) or round longitude to nearest 15° multiple.
     // For Denver (-104.99°): time zone = -105° (MST = UTC-7)
-    let time_zone_meridian = (longitude_deg / 15.0).round() * 15.0;
+    let time_zone_meridian = match utc_offset_hours {
+        // Issue #1416: prefer the explicit EPW LOCATION offset when known.
+        // Sign convention matches the rest of the formula (positive east):
+        // UTC-7 → -105°, UTC+5:30 → +82.5°, UTC-3:30 → -52.5°.
+        Some(offset_hours) => offset_hours * 15.0,
+        // Legacy fallback: infer from longitude (matches original behaviour
+        // exactly, so existing ASHRAE 140 baselines are unchanged).
+        None => (longitude_deg / 15.0).round() * 15.0,
+    };
 
     // Solar time offset (minutes): correction for longitude vs time zone meridian
     let time_offset_minutes = eqtime_minutes + 4.0 * (longitude_deg - time_zone_meridian);
@@ -203,13 +228,13 @@ mod tests {
 
     #[test]
     fn test_solar_position_winter_morning() {
-        let sun_pos = calculate_solar_position(39.7, -105.0, 2024, 12, 21, 8.0);
+        let sun_pos = calculate_solar_position(39.7, -105.0, 2024, 12, 21, 8.0, None);
         assert!(sun_pos.altitude_deg > 0.0);
     }
 
     #[test]
     fn test_solar_position_summer_evening() {
-        let sun_pos = calculate_solar_position(39.7, -105.0, 2024, 6, 21, 18.0);
+        let sun_pos = calculate_solar_position(39.7, -105.0, 2024, 6, 21, 18.0, None);
         if sun_pos.is_above_horizon() {
             assert!(sun_pos.azimuth_deg >= 0.0 && sun_pos.azimuth_deg < 360.0);
         }
@@ -237,7 +262,7 @@ mod tests {
     fn test_solar_position_summer_solstice_noon() {
         // At solar noon on summer solstice at 39.74°N:
         // Declination ≈ 23.45° → altitude ≈ 90 - (39.74 - 23.45) = 73.71°
-        let sun_pos = calculate_solar_position(39.7392, -105.0, 2024, 6, 21, 12.0);
+        let sun_pos = calculate_solar_position(39.7392, -105.0, 2024, 6, 21, 12.0, None);
         assert!(sun_pos.altitude_deg > 70.0 && sun_pos.altitude_deg < 77.0);
         assert!(sun_pos.is_above_horizon());
         // Azimuth near 180° (South) at solar noon
@@ -246,7 +271,7 @@ mod tests {
 
     #[test]
     fn test_solar_position_winter_solstice_noon() {
-        let sun_pos = calculate_solar_position(39.7392, -105.0, 2024, 12, 21, 12.0);
+        let sun_pos = calculate_solar_position(39.7392, -105.0, 2024, 12, 21, 12.0, None);
         // Altitude ≈ 90 - (39.74 + 23.45) = 26.81°
         assert!(sun_pos.altitude_deg > 24.0 && sun_pos.altitude_deg < 30.0);
         assert!(sun_pos.is_above_horizon());
@@ -295,7 +320,7 @@ mod tests {
             longitude in -180.0_f64..180.0,
             hour in 0.0_f64..24.0,
         ) {
-            let pos = calculate_solar_position(latitude, longitude, 2024, 6, 21, hour);
+            let pos = calculate_solar_position(latitude, longitude, 2024, 6, 21, hour, None);
             prop_assert!(pos.azimuth_deg >= 0.0 && pos.azimuth_deg < 360.0,
                 "Azimuth {} out of range [0, 360)", pos.azimuth_deg);
         }
@@ -306,7 +331,7 @@ mod tests {
             longitude in -180.0_f64..180.0,
             hour in 0.0_f64..24.0,
         ) {
-            let pos = calculate_solar_position(latitude, longitude, 2024, 6, 21, hour);
+            let pos = calculate_solar_position(latitude, longitude, 2024, 6, 21, hour, None);
             let sum = pos.altitude_deg + pos.zenith_deg;
             prop_assert!((sum - 90.0).abs() < 1e-10,
                 "Altitude {} + Zenith {} should equal 90", pos.altitude_deg, pos.zenith_deg);
@@ -317,7 +342,7 @@ mod tests {
             latitude in -90.0_f64..90.0,
             longitude in -180.0_f64..180.0,
         ) {
-            let pos = calculate_solar_position(latitude, longitude, 2024, 12, 21, 12.0);
+            let pos = calculate_solar_position(latitude, longitude, 2024, 12, 21, 12.0, None);
             prop_assert!(pos.altitude_deg >= -90.0 && pos.altitude_deg <= 90.0,
                 "Altitude {} outside physical range [-90, 90]", pos.altitude_deg);
         }
@@ -327,7 +352,7 @@ mod tests {
             latitude in -90.0_f64..90.0,
             longitude in -180.0_f64..180.0,
         ) {
-            let pos = calculate_solar_position(latitude, longitude, 2024, 6, 21, 12.0);
+            let pos = calculate_solar_position(latitude, longitude, 2024, 6, 21, 12.0, None);
             let expected = pos.altitude_deg > 0.0;
             prop_assert_eq!(pos.is_above_horizon(), expected,
                 "is_above_horizon inconsistent with altitude {}", pos.altitude_deg);
@@ -340,7 +365,7 @@ mod tests {
             surface_tilt in 0.0_f64..90.0,
             surface_azimuth in 0.0_f64..360.0,
         ) {
-            let pos = calculate_solar_position(latitude, longitude, 2024, 6, 21, 12.0);
+            let pos = calculate_solar_position(latitude, longitude, 2024, 6, 21, 12.0, None);
             let cos_i = pos.incidence_cosine(surface_tilt, surface_azimuth);
             prop_assert!(cos_i >= 0.0 && cos_i <= 1.0,
                 "Incidence cosine {} outside [0, 1]", cos_i);
