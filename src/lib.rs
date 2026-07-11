@@ -1220,67 +1220,23 @@ impl BatchOracle {
                     results[idx] = eui.max(0.0);
                 }
             } else {
-                // CPU path: Coordinator-Worker pattern with Channels
-                let n_workers = valid_configs.len();
-                let mut coord_txs = Vec::with_capacity(n_workers);
-                let mut coord_rxs = Vec::with_capacity(n_workers);
-                let mut worker_channels = Vec::with_capacity(n_workers);
+                // CPU path (Issue #1439): the previous implementation
+                // spawned N rayon tasks + 2N crossbeam channels + a
+                // single coordinator thread that did O(N) round-trips
+                // per timestep. We now use `BatchOrchestrator` with
+                // `par_chunks` so each rayon worker runs all 8 760
+                // timesteps for its slice of configs locally, removing
+                // the per-timestep coordinator bottleneck entirely.
+                use crate::sim::orchestrator::{
+                    BatchOrchestrator, RayonChunksOrchestrator,
+                };
 
-                for _ in 0..n_workers {
-                    let (tx_to_coord, rx_from_worker) = crossbeam::channel::unbounded();
-                    let (tx_to_worker, rx_from_coord) = crossbeam::channel::unbounded();
-                    coord_rxs.push(rx_from_worker);
-                    coord_txs.push(tx_to_worker);
-                    worker_channels.push((tx_to_coord, rx_from_coord));
-                }
+                let orchestrator = RayonChunksOrchestrator::for_population(valid_configs.len());
+                let final_worker_data =
+                    orchestrator.run_cpu_surrogate(valid_configs, &self.surrogates);
 
-                let final_worker_data = rayon::scope(|s| {
-                    let (result_tx, result_rx) = crossbeam::channel::unbounded();
-
-                    // Move models and channels into workers
-                    for ((idx, mut model), (tx, rx)) in
-                        valid_configs.drain(..).zip(worker_channels.into_iter())
-                    {
-                        let res_tx = result_tx.clone();
-                        s.spawn(move |_| {
-                            let energy = model.solve_timesteps_batched(8760, tx, rx);
-                            let _ = res_tx.send((idx, model, energy));
-                        });
-                    }
-                    drop(result_tx);
-
-                    // Coordinator loop
-                    for _t in 0..8760 {
-                        // 1. Collect temperatures from all workers
-                        let mut batch_temps = Vec::with_capacity(n_workers);
-                        for rx in &coord_rxs {
-                            batch_temps.push(rx.recv().expect("Worker disconnected unexpectedly"));
-                        }
-
-                        // 2. Batched inference
-                        let batch_loads = self.surrogates.predict_loads_batched(&batch_temps);
-
-                        // 3. Send loads back to workers
-                        for (tx, loads) in coord_txs.iter().zip(batch_loads) {
-                            tx.send(loads).expect("Failed to send loads to worker");
-                        }
-                    }
-
-                    let mut final_data = Vec::with_capacity(n_workers);
-                    while let Ok(data) = result_rx.recv() {
-                        final_data.push(data);
-                    }
-                    final_data
-                });
-
-                for (idx, model, energy) in final_worker_data {
-                    let total_area = model.zone_area.integrate();
-                    let eui = if total_area > 0.0 {
-                        energy / total_area
-                    } else {
-                        0.0
-                    };
-                    results[idx] = eui.max(0.0);
+                for (idx, eui) in final_worker_data {
+                    results[idx] = eui;
                 }
             }
         } else if !valid_configs.is_empty() {
@@ -1497,62 +1453,17 @@ impl BatchOracle {
         let mut results = vec![f64::NAN; n_candidates];
 
         if use_surrogates && !valid_configs.is_empty() {
-            // Coordinator-Worker pattern with Channels
-            let n_workers = valid_configs.len();
-            let mut coord_txs = Vec::with_capacity(n_workers);
-            let mut coord_rxs = Vec::with_capacity(n_workers);
-            let mut worker_channels = Vec::with_capacity(n_workers);
+            // CPU path (Issue #1439): replaced coordinator-worker
+            // channel pattern with `BatchOrchestrator::par_chunks`.
+            // See `evaluate_population` for the rationale.
+            use crate::sim::orchestrator::{BatchOrchestrator, RayonChunksOrchestrator};
 
-            for _ in 0..n_workers {
-                let (tx_to_coord, rx_from_worker) = crossbeam::channel::unbounded();
-                let (tx_to_worker, rx_from_coord) = crossbeam::channel::unbounded();
-                coord_rxs.push(rx_from_worker);
-                coord_txs.push(tx_to_worker);
-                worker_channels.push((tx_to_coord, rx_from_coord));
-            }
+            let orchestrator = RayonChunksOrchestrator::for_population(valid_configs.len());
+            let final_worker_data =
+                orchestrator.run_cpu_surrogate(valid_configs, &self.surrogates);
 
-            let final_worker_data = rayon::scope(|s| {
-                let (result_tx, result_rx) = crossbeam::channel::unbounded();
-
-                for ((idx, mut model), (tx, rx)) in
-                    valid_configs.drain(..).zip(worker_channels.into_iter())
-                {
-                    let res_tx = result_tx.clone();
-                    s.spawn(move |_| {
-                        let energy = model.solve_timesteps_batched(8760, tx, rx);
-                        let _ = res_tx.send((idx, model, energy));
-                    });
-                }
-                drop(result_tx);
-
-                for _t in 0..8760 {
-                    let mut batch_temps = Vec::with_capacity(n_workers);
-                    for rx in &coord_rxs {
-                        batch_temps.push(rx.recv().expect("Worker disconnected unexpectedly"));
-                    }
-
-                    let batch_loads = self.surrogates.predict_loads_batched(&batch_temps);
-
-                    for (tx, loads) in coord_txs.iter().zip(batch_loads) {
-                        tx.send(loads).expect("Failed to send loads to worker");
-                    }
-                }
-
-                let mut final_data = Vec::with_capacity(n_workers);
-                while let Ok(data) = result_rx.recv() {
-                    final_data.push(data);
-                }
-                final_data
-            });
-
-            for (idx, model, energy) in final_worker_data {
-                let total_area = model.zone_area.integrate();
-                let eui = if total_area > 0.0 {
-                    energy / total_area
-                } else {
-                    0.0
-                };
-                results[idx] = eui.max(0.0);
+            for (idx, eui) in final_worker_data {
+                results[idx] = eui;
             }
         } else if !valid_configs.is_empty() {
             // Analytical path - fully parallel

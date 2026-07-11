@@ -221,6 +221,10 @@ name = "batch_oracle_bench"
 harness = false
 
 [[bench]]
+name = "rayon_chunks_bench"
+harness = false
+
+[[bench]]
 name = "benchmark_8760_timesteps"
 harness = false
 
