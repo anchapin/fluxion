@@ -562,64 +562,27 @@ impl ValidationReportGenerator {
 pub type SystematicIssueMap = HashMap<String, SystematicIssue>;
 
 impl ValidationReportGenerator {
-    /// Classifies systematic issues from a benchmark report based on heuristics.
+    /// Classifies systematic issues from a benchmark report.
     ///
-    /// This function analyzes failure patterns and assigns known issue categories.
-    /// The mapping is based on current known issues from validation results.
+    /// Delegates each failed result to the data-driven classifier in
+    /// [`crate::validation::issue_classifier::classify`], which replaces the
+    /// former hardcoded `(case_id, metric)` heuristic (issue #1423). The
+    /// classifier is a pure decision tree over four objective features
+    /// (`case_mass`, `metric_axis`, `deviation_direction`, `deviation_magnitude`)
+    /// and contains no tuned parameters.
     pub fn classify_systematic_issues(report: &BenchmarkReport) -> SystematicIssueMap {
         let mut map = SystematicIssueMap::new();
 
         for result in &report.results {
             if result.failed() {
                 let key = format!("{} - {}", result.case_id, result.metric);
-                let issue = classify_issue(result.case_id.as_str(), result.metric.clone());
+                let issue = crate::validation::issue_classifier::classify(result);
                 map.insert(key, issue);
             }
         }
 
         map
     }
-}
-
-/// Classifies a single failed metric to a systematic issue category.
-fn classify_issue(case_id: &str, metric: MetricType) -> SystematicIssue {
-    // Known issue: Case 960 annual cooling over-prediction (issue #273)
-    if case_id == "960" && metric == MetricType::AnnualCooling {
-        return SystematicIssue::InterZoneTransfer;
-    }
-
-    // Known issue: Case 960 peak cooling within ref but high error? Already classified as InterZoneTransfer if failed
-
-    // High-mass building annual energy over-prediction (900 series) - 5R1C model limitation
-    if (case_id == "900"
-        || case_id == "910"
-        || case_id == "920"
-        || case_id == "930"
-        || case_id == "940"
-        || case_id == "950"
-        || case_id == "900FF"
-        || case_id == "950FF")
-        && (metric == MetricType::AnnualHeating || metric == MetricType::AnnualCooling)
-    {
-        return SystematicIssue::ModelLimitation;
-    }
-
-    // Low-mass cases peak cooling under-prediction (600-650 series) - likely solar gains
-    if (case_id.starts_with('6') && case_id != "600FF" && case_id != "650FF")
-        && metric == MetricType::PeakCooling
-    {
-        return SystematicIssue::SolarGains;
-    }
-
-    // Free-floating temperature failures in high-mass could be thermal mass dynamics
-    if (case_id == "900FF" || case_id == "950FF")
-        && (metric == MetricType::MinFreeFloat || metric == MetricType::MaxFreeFloat)
-    {
-        return SystematicIssue::ThermalMass;
-    }
-
-    // Default to unknown for unclassified failures
-    SystematicIssue::Unknown
 }
 
 /// Displays a human-readable name for a systematic issue.
@@ -1673,23 +1636,28 @@ mod tests {
 
     #[test]
     fn test_classify_issue_960_cooling() {
-        let issue = classify_issue("960", MetricType::AnnualCooling);
-        assert_eq!(issue, SystematicIssue::InterZoneTransfer);
+        // Rule 1: case 960 energy -> InterZoneTransfer.
+        let r = ValidationResult::new("960", MetricType::AnnualCooling, 5.0, 1.6, 2.8);
+        assert_eq!(
+            crate::validation::issue_classifier::classify(&r),
+            SystematicIssue::InterZoneTransfer
+        );
     }
 
     #[test]
     fn test_classify_issue_900_series_annual() {
+        // Rule 2: high-mass energy over-prediction >= 30% -> ModelLimitation.
         for case in &["900", "910", "920", "930", "940", "950", "900FF", "950FF"] {
-            let issue = classify_issue(case, MetricType::AnnualHeating);
+            let r = ValidationResult::new(case, MetricType::AnnualHeating, 5.0, 1.17, 2.04);
             assert_eq!(
-                issue,
+                crate::validation::issue_classifier::classify(&r),
                 SystematicIssue::ModelLimitation,
                 "Failed for {}",
                 case
             );
-            let issue = classify_issue(case, MetricType::AnnualCooling);
+            let r = ValidationResult::new(case, MetricType::AnnualCooling, 5.0, 1.17, 2.04);
             assert_eq!(
-                issue,
+                crate::validation::issue_classifier::classify(&r),
                 SystematicIssue::ModelLimitation,
                 "Failed for {}",
                 case
@@ -1699,32 +1667,59 @@ mod tests {
 
     #[test]
     fn test_classify_issue_low_mass_peak_cooling() {
+        // Rule 4: peak cooling under-prediction -> SolarGains.
         for case in &["600", "610", "620", "630", "640", "650"] {
-            let issue = classify_issue(case, MetricType::PeakCooling);
-            assert_eq!(issue, SystematicIssue::SolarGains, "Failed for {}", case);
+            let r = ValidationResult::new(case, MetricType::PeakCooling, 3.0, 5.0, 7.0);
+            assert_eq!(
+                crate::validation::issue_classifier::classify(&r),
+                SystematicIssue::SolarGains,
+                "Failed for {}",
+                case
+            );
         }
     }
 
     #[test]
     fn test_classify_issue_free_float_high_mass() {
-        let issue = classify_issue("900FF", MetricType::MinFreeFloat);
-        assert_eq!(issue, SystematicIssue::ThermalMass);
-        let issue = classify_issue("950FF", MetricType::MaxFreeFloat);
-        assert_eq!(issue, SystematicIssue::ThermalMass);
+        // Rule 6: free-float high-mass -> ThermalMass.
+        let r = ValidationResult::new("900FF", MetricType::MinFreeFloat, 30.0, 40.0, 50.0);
+        assert_eq!(
+            crate::validation::issue_classifier::classify(&r),
+            SystematicIssue::ThermalMass
+        );
+        let r = ValidationResult::new("950FF", MetricType::MaxFreeFloat, 60.0, 40.0, 50.0);
+        assert_eq!(
+            crate::validation::issue_classifier::classify(&r),
+            SystematicIssue::ThermalMass
+        );
     }
 
     #[test]
     fn test_classify_issue_unknown() {
-        let issue = classify_issue("XXX", MetricType::PeakHeating);
-        assert_eq!(issue, SystematicIssue::Unknown);
+        // Unrecognised case + PeakHeating: no rule matches -> Unknown.
+        let r = ValidationResult::new("XXX", MetricType::PeakHeating, 9.0, 5.0, 7.0);
+        assert_eq!(
+            crate::validation::issue_classifier::classify(&r),
+            SystematicIssue::Unknown
+        );
     }
 
     #[test]
-    fn test_classify_issue_low_mass_ff_excluded() {
-        let issue = classify_issue("600FF", MetricType::PeakCooling);
-        assert_eq!(issue, SystematicIssue::Unknown);
-        let issue = classify_issue("650FF", MetricType::PeakCooling);
-        assert_eq!(issue, SystematicIssue::Unknown);
+    fn test_classify_issue_low_mass_ff_now_classified() {
+        // Behaviour change (issue #1423): the data-driven tree no longer
+        // special-cases free-float low-mass cases into Unknown. A peak-cooling
+        // under-prediction for 600FF/650FF is now routed to SolarGains, matching
+        // the physical interpretation shared with the non-FF 600-series.
+        let r = ValidationResult::new("600FF", MetricType::PeakCooling, 3.0, 5.0, 7.0);
+        assert_eq!(
+            crate::validation::issue_classifier::classify(&r),
+            SystematicIssue::SolarGains
+        );
+        let r = ValidationResult::new("650FF", MetricType::PeakCooling, 3.0, 5.0, 7.0);
+        assert_eq!(
+            crate::validation::issue_classifier::classify(&r),
+            SystematicIssue::SolarGains
+        );
     }
 
     #[test]

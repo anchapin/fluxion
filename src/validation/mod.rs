@@ -18,6 +18,7 @@ pub mod export;
 pub mod fdd;
 pub mod guardrails;
 pub mod hvac_bestest;
+pub mod issue_classifier;
 pub mod multi_reference;
 pub mod performance;
 pub mod reference;

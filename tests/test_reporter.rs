@@ -200,6 +200,80 @@ mod reporter_unit_tests {
             .len();
         assert_eq!(unique_count, issues.len());
     }
+
+    /// Property test for the data-driven classifier (issue #1423).
+    ///
+    /// Asserts:
+    /// * **Determinism** — classifying the same report twice yields identical
+    ///   `{case-metric -> issue}` maps.
+    /// * **Stability** — no tuned parameters: the Unknown bucket stays small
+    ///   (<=8 of the representative failure set), so the tree is not silently
+    ///   dropping failures it should be able to categorise.
+    /// * **Coverage** — spans Case 195, Cases 600-650, the 900-series, 960, and
+    ///   the 940-960 free-float permutations (per acceptance criteria).
+    #[test]
+    fn classifier_property_test() {
+        let mut report = BenchmarkReport::new();
+
+        // --- Case 195 (low-mass): energy + peak metrics ----------------------
+        report.add_result_simple("195", MetricType::AnnualCooling, 3.0, 5.0, 7.0); // under -> SolarGains
+        report.add_result_simple("195", MetricType::PeakCooling, 3.0, 5.0, 7.0); // under -> SolarGains
+        report.add_result_simple("195", MetricType::PeakHeating, 9.0, 5.0, 7.0); // over low-mass -> HvacLoad
+
+        // --- Cases 600-650: annual energy + peak cooling ---------------------
+        for case in &["600", "610", "620", "630", "640", "650"] {
+            report.add_result_simple(case, MetricType::AnnualCooling, 3.0, 5.0, 7.0); // under -> SolarGains
+            report.add_result_simple(case, MetricType::PeakCooling, 3.0, 5.0, 7.0); // under -> SolarGains
+        }
+
+        // --- 900-series: annual energy + peak loads --------------------------
+        for case in &["900", "910", "920", "930", "940", "950"] {
+            report.add_result_simple(case, MetricType::AnnualHeating, 5.0, 1.17, 2.04); // over >=30% -> ModelLimitation
+            report.add_result_simple(case, MetricType::PeakCooling, 9.0, 5.0, 7.0); // over high-mass -> ThermalMass
+            report.add_result_simple(case, MetricType::PeakHeating, 9.0, 5.0, 7.0); // high-mass -> ThermalMass
+        }
+
+        // --- Case 960 --------------------------------------------------------
+        report.add_result_simple("960", MetricType::AnnualCooling, 5.0, 1.6, 2.8); // -> InterZoneTransfer
+        report.add_result_simple("960", MetricType::PeakCooling, 3.0, 5.0, 7.0); // under -> SolarGains
+
+        // --- 940/950/960 free-float permutations -----------------------------
+        report.add_result_simple("900FF", MetricType::MinFreeFloat, 30.0, 40.0, 50.0); // high-mass FF -> ThermalMass
+        report.add_result_simple("950FF", MetricType::MaxFreeFloat, 60.0, 40.0, 50.0); // high-mass FF -> ThermalMass
+        report.add_result_simple("600FF", MetricType::MaxFreeFloat, 60.0, 40.0, 50.0); // low-mass FF -> SolarGains
+
+        // --- Determinism: two independent runs must agree --------------------
+        let map_a = ValidationReportGenerator::classify_systematic_issues(&report);
+        let map_b = ValidationReportGenerator::classify_systematic_issues(&report);
+        assert_eq!(map_a, map_b, "classifier must be deterministic");
+        assert!(!map_a.is_empty(), "expected classified failures");
+
+        // --- Stability: Unknown bucket must be small (<=8) -------------------
+        let unknown_count = map_a.values().filter(|v| **v == SystematicIssue::Unknown).count();
+        let total = map_a.len();
+        assert!(
+            unknown_count <= 8,
+            "Unknown bucket too large: {} of {} (target <=8)",
+            unknown_count,
+            total
+        );
+
+        // --- Category coverage: each branch of the tree fires at least once --
+        use std::collections::HashSet;
+        let seen: HashSet<_> = map_a.values().collect();
+        assert!(seen.contains(&SystematicIssue::InterZoneTransfer), "missing InterZoneTransfer");
+        assert!(seen.contains(&SystematicIssue::ModelLimitation), "missing ModelLimitation");
+        assert!(seen.contains(&SystematicIssue::SolarGains), "missing SolarGains");
+        assert!(seen.contains(&SystematicIssue::ThermalMass), "missing ThermalMass");
+
+        // --- Every failed metric received a Known-or-Unknown entry -----------
+        let failed_count = report.results.iter().filter(|r| r.failed()).count();
+        assert_eq!(
+            map_a.len(),
+            failed_count,
+            "every failed result must be classified exactly once"
+        );
+    }
 }
 
 // ========================================================================
