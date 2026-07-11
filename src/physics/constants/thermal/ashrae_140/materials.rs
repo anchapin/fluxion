@@ -145,7 +145,7 @@ mod tests {
     #[test]
     fn test_film_resistances() {
         assert!((ASHRAE140_R_INT - 1.0 / 8.29).abs() < 1e-6);
-        assert!((ASHRAE140_R_EXT - 1.0 / 29.3).abs() < 1e-6);
+        assert!((ASHRAE140_R_EXT - 1.0 / ASHRAE140_H_EXT).abs() < 1e-6);
     }
 
     #[test]
