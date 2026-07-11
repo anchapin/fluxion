@@ -430,8 +430,9 @@ mod tests {
         assert_eq!(props.layers[2].name, "Insulation");
         assert_eq!(props.layers[3].name, "Brick");
 
-        // Surface film resistances per ASHRAE 140 Section 5.2.
-        // h_int = 8.29 W/m²K, h_ext = 29.3 W/m²K.
+        // Surface film resistances per ASHRAE 140 Section 5.2 (v2023).
+        // h_int = 8.29 W/m²K, h_ext = EXTERIOR_FILM_COEFF (18.3 W/m²K per #1419).
+        // Previous draft used legacy 29.3 which broke after the v2023 unification.
         assert!(
             (props.surface_resistance_inside - 1.0 / 8.29).abs() < 1e-10,
             "surface_resistance_inside = {:.6} should equal 1/8.29 = {:.6}",
@@ -439,10 +440,10 @@ mod tests {
             1.0 / 8.29
         );
         assert!(
-            (props.surface_resistance_outside - 1.0 / 29.3).abs() < 1e-10,
-            "surface_resistance_outside = {:.6} should equal 1/29.3 = {:.6}",
+            (props.surface_resistance_outside - 1.0 / EXTERIOR_FILM_COEFF).abs() < 1e-10,
+            "surface_resistance_outside = {:.6} should equal 1/EXTERIOR_FILM_COEFF = {:.6}",
             props.surface_resistance_outside,
-            1.0 / 29.3
+            1.0 / EXTERIOR_FILM_COEFF
         );
 
         // Per-layer Cm sanity (each layer independently pinned).
