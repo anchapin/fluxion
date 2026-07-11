@@ -63,11 +63,7 @@ fn test_leaf_and_sim_perez_identical() {
             surface_azimuth_deg,
             solar_azimuth_deg,
         );
-        assert_bit_identical(
-            &format!("diffuse_tilted[{i}]"),
-            leaf_diffuse,
-            sim_diffuse,
-        );
+        assert_bit_identical(&format!("diffuse_tilted[{i}]"), leaf_diffuse, sim_diffuse);
 
         // extraterrestrial_irradiance varies only by day_of_year.
         let day_of_year: usize = rng.gen_range(1..=365);
