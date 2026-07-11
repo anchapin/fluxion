@@ -330,6 +330,8 @@ The standard formula's endpoint limits (0 at β=0 and ρ·GHI at β=180) are inv
 | Exterior h coefficient | `f64` [W/m2K] | Sky radiation |
 | Timestep | `f64` [s] | Engine |
 
+> **Canonical exterior film coefficient** (`h_exterior` / `EXTERIOR_FILM_COEFF`): The v2023 ASHRAE 140 value is **18.3 W/m²K** (vertical surfaces, ~3.4 m/s wind), defined as `pub const EXTERIOR_FILM_COEFF: f64 = 18.3` in `src/physics/constants/thermal/ashrae_140/v2023.rs`. This replaced the legacy 29.3 W/m²K (6.7 m/s wind) per #1140 / #1419 / #1489. All production paths (`method_selector`, `ctf_solver`, `wall_properties`, `sky_radiation`, `construction`) read from `EXTERIOR_FILM_COEFF` — the literal `1.0 / 29.3` must not appear in any `src/` computation path (enforced by `tests/architecture_drift_check.rs`).
+
 | Output | Type | Consumer |
 |--------|------|----------|
 | Heat flux (inward) | `f64` [W/m2] | Zone balance |
@@ -368,7 +370,16 @@ pub trait HeatConductionSolver: Send + Sync {
 > >
 > > Regression: `tests/conduction_solver_manager_production_wiring.rs`.
 
-**Implementations**: `FiveR1CSolver` (struct, `physics/five_r1c_solver.rs`), `CTFSolverWrapper`, `FDSolverWrapper`, `MultiNodeSolver` (9R4C four-node envelope solver, `physics/multi_node_solver.rs` — registered as `Box<dyn HeatConductionSolver>` via `SolverRegistry::construct("multinode_9r4c", &wall)` per Issue #1429 / ADR-002)
+**Implementations & `SolverRegistry`**: Four `HeatConductionSolver` implementations are available through the registry / manager system:
+
+| Solver | Construction | Location |
+|--------|-------------|----------|
+| `FiveR1CSolver` | `SolverRegistry::construct("5r1c", &wall)` — key `registry_keys::FIVE_R1C` | `physics/five_r1c_solver.rs` |
+| `CTFSolverWrapper` | `SolverManager::select` (CTF method, auto-selected for low-mass) | `physics/ctf_solver_wrapper.rs` |
+| `FDSolverWrapper` | `SolverManager::select` (FD method / CTF fallback) | `physics/fd_solver_wrapper.rs` |
+| `MultiNodeSolver` (9R4C) | `SolverRegistry::construct("multinode_9r4c", &wall)` — key `registry_keys::MULTINODE_9R4C` (PR #1491 / commit 82f76b2, Issue #1429 / ADR-002) | `physics/multi_node_solver.rs` |
+
+`SolverRegistry` (`physics/solver_registry.rs`) owns the constructor dispatch: callers pass a string key + `&WallSpec` and receive a `Box<dyn HeatConductionSolver>`. `SolverManager` wraps the registry and auto-selects between 5R1C / CTF / FD based on thermal mass; `MultiNodeSolver` is selected explicitly for high-mass constructions per ADR-002. The drift-check test (`tests/architecture_drift_check.rs`) verifies ≥ 3 solver constructors are exported.
 **Selector**: `SolverManager` auto-selects based on thermal mass.
 **Per-surface solver**: `sim/per_surface_conduction.rs` provides independent backward-Euler per-surface solving for the multi-node thermal model (#857/#856).
 
@@ -461,6 +472,21 @@ pub trait ThermalModelTrait: Send + Sync {
 ```
 
 **ML Surrogate Path**: `SurrogateThermalModel` implements `ThermalModelTrait` — the zone solver doesn't know whether physics or ML is computing the result. v3.0 surrogate training and ONNX export landed in #1139 (`src/ai/surrogate.rs`, `src/ai/modular_surrogate.rs`).
+
+**Hybrid mode — `HybridRouting` (PR #1498 / Issue #1431)**: Per-component dispatch between physics and surrogate is governed by the `HybridRouting` struct (`sim/thermal_model.rs`):
+
+```rust
+pub struct HybridRouting {
+    /// Route conduction (5R1C / 9R4C thermal network solve) to the surrogate.
+    pub use_surrogate_conduction: bool,
+    /// Route ventilation heat transfer (h_ve) to the surrogate.
+    pub use_surrogate_ventilation: bool,
+    /// Route internal/external load prediction to the surrogate.
+    pub use_surrogate_loads: bool,
+}
+```
+
+Each flag independently routes one subsystem to the surrogate path (`true`) or the analytical/physics path (`false`). `HybridRouting::all_physics()` sets every flag to `false` (equivalent to `ThermalModelMode::Physics`); the `Default` routes **loads → surrogate, conduction + ventilation → physics** — the highest-value + lowest-risk split from Issue #1431's acceptance criteria. The `HybridThermalModel` struct holds the routing policy alongside the inner `ThermalModel` and applies per-timestep dispatch with instrumentation (`surrogate_load_calls` / `physics_step_calls` counters for test verification). The routing can be changed at runtime via `set_routing()`. Regression: `tests/surrogate_models/test_hybrid_mode_dispatch.rs`.
 
 **Multi-node HVAC & free-float (ADR-002 selection rule)**: The zone-level thermal network has two solver paths, selected by construction type in `thermal_model_core.rs::from_spec`:
 
@@ -918,6 +944,19 @@ tests/reference_data/
 ```
 
 Each CSV column must match a function output exactly so tests can loop row-by-row. Reference CSVs are regenerated from the IDF models in `energyplus_models/` using EnergyPlus 25.2.0 against the Golden-NREL TMY3 EPW (station mismatch fixed in #1142).
+
+**Climate zone coverage (PR #1497 — Issue #1427)**: Reference data now spans **6 of 8** primary ASHRAE 169 climate-designation zones, extended from the original 3 (2A, 4A, 5B) by adding 1A, 2B, and 6A:
+
+| Zone | Station | Reference CSVs | Climate designation |
+|------|---------|----------------|---------------------|
+| **1A** | Miami, FL | `weather/miami_tmy3_reference.csv`, `solar/solar_position_miami.csv`, `ventilation/infiltration_miami_05ach.csv` | Very Hot-Humid |
+| **2A** | Tampa, FL | `ventilation/infiltration_tampa_05ach.csv` | Hot-Humid |
+| **2B** | Phoenix, AZ | `weather/phoenix_tmy3_reference.csv`, `solar/solar_position_phoenix.csv`, `ventilation/infiltration_phoenix_05ach.csv` | Hot-Dry |
+| **4A** | Dulles, VA | `ventilation/infiltration_dulles_05ach.csv` | Mixed-Humid |
+| **5B** | Denver/Golden, CO | `weather/denver_tmy3_reference.csv`, `solar/solar_position_denver.csv`, `ventilation/infiltration_denver_*.csv` | Cool-Dry |
+| **6A** | Minneapolis, MN | `weather/minneapolis_tmy3_reference.csv`, `solar/solar_position_minneapolis.csv`, `ventilation/infiltration_minneapolis_05ach.csv` | Cold-Humid |
+
+Cross-zone solar physics consistency is validated by `tests/multi_climate_solar_invariant.rs`; the generation script is `tests/reference_data/generate_multi_climate_reference.py`.
 
 ---
 
