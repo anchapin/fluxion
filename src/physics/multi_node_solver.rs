@@ -34,6 +34,9 @@
 //! Each envelope node (wall, roof, floor) has its own h_tr_em path to exterior.
 //! All envelope nodes share the same surface node T_s via their respective h_tr_ms paths.
 
+use crate::physics::solver_trait::{HeatConductionSolver, SolverError};
+use crate::physics::units::{FromF64, HeatFlux, HeatTransferCoefficient, Temperature, Time, ToF64};
+use crate::physics::wall_spec::WallSpec;
 use crate::sim::per_surface_conduction::{PerSurfaceConductionSolver, SurfaceKind};
 // Issue #1349 (Phase 2 crate split): multi-node thermal mass types moved to `fluxion_core::multi_node`.
 use fluxion_core::multi_node::{MassAirCouplingMode, MultiNodeThermalMass, ThermalMassNode};
@@ -129,6 +132,25 @@ pub struct MultiNodeSolver {
     /// `MassAirCouplingMode::ParallelResistance` to use the per-surface
     /// series-path formulation described in `MassAirCouplingMode`'s docs.
     pub coupling_mode: MassAirCouplingMode,
+    /// Issue #1429: cached total wall-layer resistance [m²·K/W]. Set by
+    /// `initialize(&WallSpec)` so the trait's `steady_state_flux` query can
+    /// return the closed-form `q_ss = (T_ext − T_int) / R_total` matching the
+    /// `FiveR1CSolver` default semantics (no thermal mass effect).
+    pub r_total: f64,
+    /// Issue #1429: true once `initialize(&WallSpec)` has configured the four
+    /// mass nodes from a layer stack. Required for `is_valid()` and gates
+    /// `step()` and `steady_state_flux()` so the trait contract holds even
+    /// when callers forget to initialize.
+    pub initialized: bool,
+    /// Issue #1429: cached `(T_wall, T_roof, T_floor, T_internal)` BEFORE the
+    /// most recent `step_backward_euler` update. Lets `energy_storage_rate()`
+    /// compute `Σ C_k × (T_k_new − T_k_old) / dt` (positive = wall charging).
+    /// `None` until the first `step()` invocation.
+    pub last_temps: Option<(f64, f64, f64, f64)>,
+    /// Issue #1429: timestep used in the most recent `step_backward_euler`
+    /// update. Required to convert the J-scale stored-energy delta into
+    /// the W/m² rate expected by the trait.
+    pub last_dt: f64,
 }
 
 impl MultiNodeSolver {
@@ -148,6 +170,11 @@ impl MultiNodeSolver {
             exterior_temperatures: SurfaceExteriorTemperatures::uniform(10.0),
             timestep_seconds: 3600.0,
             coupling_mode: MassAirCouplingMode::default(),
+            // Issue #1429 — trait state defaults (see struct docs).
+            r_total: 0.0,
+            initialized: false,
+            last_temps: None,
+            last_dt: 0.0,
         }
     }
 
@@ -1167,6 +1194,249 @@ impl MultiNodeSolver {
         let h_eff = self.h_tr_is + h_tr_ms_total / 3.0;
 
         c_total / h_eff
+    }
+
+    // ── Issue #1429 — `HeatConductionSolver` trait drop-in for `SolverRegistry` ──
+    //
+    // Per ARCHITECTURE.md §Module 3, `HeatConductionSolver` is the per-surface
+    // conduction swap-point. The 9R4C envelope solver was previously a
+    // zone-level-only path (`step_physics_9r4c`); exposing it as
+    // `Box<dyn HeatConductionSolver>` unlocks (a) per-surface ML surrogate
+    // training on 9R4C envelope mass nodes and (b) evaluation of
+    // `MassAirCouplingMode::ParallelResistance` (#1281) at the trait boundary.
+
+    /// Build a 9R4C `MultiNodeSolver` from a single `WallSpec`.
+    ///
+    /// The layer stack is treated as a representative envelope surface;
+    /// the four 9R4C mass nodes are partitioned as follows:
+    ///
+    /// | Node | Capacitance fraction | Conductances |
+    /// |------|----------------------|--------------|
+    /// | wall | 45% of `C_total`    | `h_tr_ms` = 1 / (R_total/2 + R_si), `h_tr_em` = 1 / (R_total/2 + R_se) |
+    /// | roof | 30% of `C_total`    | same partition |
+    /// | floor | 18% of `C_total`   | same partition |
+    /// | internal | 10% of `C_total` | `h_tr_me` = 100 W/m²·K (large coupling to envelope) |
+    ///
+    /// The default coupling mode is `AdditiveSum` (backward-compatible);
+    /// callers can switch to `ParallelResistance` via `with_coupling_mode`
+    /// before calling `initialize`/`step`.
+    pub fn from_wall_spec(wall: &WallSpec) -> Self {
+        let r_total = wall.total_r_value();
+        let c_total = wall.thermal_capacity();
+
+        // Symmetric centroid partition: half of the layer R sits between the
+        // mass node and each film. R_si = 1/8 m²K/W, R_se = 1/25 m²K/W.
+        let r_si = 1.0 / 8.0;
+        let r_se = 1.0 / 25.0;
+        let h_tr_ms = 1.0 / (r_total / 2.0 + r_si);
+        let h_tr_em = 1.0 / (r_total / 2.0 + r_se);
+        let h_tr_is = 1.0 / r_si;
+
+        let wall_node = ThermalMassNode::new(20.0, 0.45 * c_total, h_tr_ms, h_tr_em);
+        let roof_node = ThermalMassNode::new(20.0, 0.30 * c_total, h_tr_ms, h_tr_em);
+        let floor_node = ThermalMassNode::new(20.0, 0.18 * c_total, h_tr_ms, h_tr_em);
+        let internal_node =
+            ThermalMassNode::new(20.0, 0.10 * c_total, h_tr_ms, h_tr_em).with_h_tr_me(100.0);
+
+        let mut solver = Self::new(h_tr_is, wall_node, roof_node, floor_node, internal_node);
+        solver.r_total = r_total;
+        solver.initialized = true;
+        // Seed zone / surface / exterior at 20 °C so a single-step call from
+        // a different interior/exterior BC produces a meaningful surface flux
+        // (rather than starting at zero on a 0 K surface).
+        solver.initialize_temperatures(20.0);
+        solver
+    }
+
+    /// Convenience constructor that combines `from_wall_spec` with
+    /// `with_coupling_mode` — the canonical entry point for tests and
+    /// ML-surrogate wiring that needs `ParallelResistance` (#1281) end-to-end.
+    pub fn from_wall_spec_with_mode(wall: &WallSpec, mode: MassAirCouplingMode) -> Self {
+        Self::from_wall_spec(wall).with_coupling_mode(mode)
+    }
+
+    /// Build a `Box<dyn HeatConductionSolver>` directly from a `WallSpec`.
+    ///
+    /// Used by `SolverRegistry::construct("multinode_9r4c", wall)` and by
+    /// `PhysicsSurfaceFluxProvider::add_surface` callers that want a high-mass
+    /// surface behind the same trait object as `FiveR1CSolver`.
+    pub fn boxed_from_wall_spec(wall: &WallSpec) -> Box<dyn HeatConductionSolver> {
+        Box::new(Self::from_wall_spec(wall))
+    }
+}
+
+impl HeatConductionSolver for MultiNodeSolver {
+    fn name(&self) -> &str {
+        "MultiNode9R4C"
+    }
+
+    fn initialize(&mut self, wall: &WallSpec) -> Result<(), SolverError> {
+        let r_total = wall.total_r_value();
+        if !r_total.is_finite() || r_total <= 0.0 {
+            return Err(SolverError::ConstructionError(format!(
+                "Invalid wall resistance from WallSpec '{wall_name}': R_total = {r_total} (must be positive and finite)",
+                wall_name = wall.name,
+            )));
+        }
+        let c_total = wall.thermal_capacity();
+        if !c_total.is_finite() || c_total <= 0.0 {
+            return Err(SolverError::ConstructionError(format!(
+                "Invalid wall capacitance from WallSpec '{wall_name}': C_total = {c_total} (must be positive and finite)",
+                wall_name = wall.name,
+            )));
+        }
+
+        // Symmetric centroid partition of layer R (see `from_wall_spec`).
+        let r_si = 1.0 / 8.0;
+        let r_se = 1.0 / 25.0;
+        let h_tr_ms = 1.0 / (r_total / 2.0 + r_si);
+        let h_tr_em = 1.0 / (r_total / 2.0 + r_se);
+        let h_tr_is = 1.0 / r_si;
+
+        self.mass.wall = ThermalMassNode::new(20.0, 0.45 * c_total, h_tr_ms, h_tr_em);
+        self.mass.roof = ThermalMassNode::new(20.0, 0.30 * c_total, h_tr_ms, h_tr_em);
+        self.mass.floor = ThermalMassNode::new(20.0, 0.18 * c_total, h_tr_ms, h_tr_em);
+        self.mass.internal =
+            ThermalMassNode::new(20.0, 0.10 * c_total, h_tr_ms, h_tr_em).with_h_tr_me(100.0);
+        self.h_tr_is = h_tr_is;
+        self.zone_temperature = 20.0;
+        self.surface_temperature = 20.0;
+        self.exterior_temperature = 20.0;
+        self.exterior_temperatures = SurfaceExteriorTemperatures::uniform(20.0);
+        self.timestep_seconds = 3600.0;
+        self.r_total = r_total;
+        self.last_temps = None;
+        self.last_dt = 0.0;
+        self.initialized = true;
+        Ok(())
+    }
+
+    fn step(
+        &mut self,
+        timestep: Time,
+        T_interior: Temperature,
+        T_exterior: Temperature,
+        _h_interior: HeatTransferCoefficient,
+        _h_exterior: HeatTransferCoefficient,
+    ) -> Result<HeatFlux, SolverError> {
+        if !self.initialized {
+            return Err(SolverError::InvalidConfig(
+                "Solver not initialized. Call initialize() first.".to_string(),
+            ));
+        }
+        if !self.r_total.is_finite() || self.r_total <= 0.0 {
+            return Err(SolverError::ConstructionError(format!(
+                "Invalid cached R_total = {} (must be positive and finite)",
+                self.r_total
+            )));
+        }
+
+        let t_int = T_interior.to_value();
+        let t_ext = T_exterior.to_value();
+        let dt = timestep.to_value();
+        if !dt.is_finite() || dt <= 0.0 {
+            return Err(SolverError::InvalidConfig(format!(
+                "Invalid timestep dt = {dt} (must be positive and finite)"
+            )));
+        }
+
+        // Push boundary conditions into the multi-node state. The envelope
+        // mass nodes share a single exterior BC under the trait's scalar
+        // (T_ext, h_ext) interface; per-surface sol-air differences are the
+        // caller's responsibility (Issue #863 surface_flux_provider path).
+        self.zone_temperature = t_int;
+        self.exterior_temperature = t_ext;
+        self.exterior_temperatures = SurfaceExteriorTemperatures::uniform(t_ext);
+
+        // Capture pre-step temps so `energy_storage_rate` can compute
+        // Σ C_k · (T_k_new − T_k_old) / dt after the BE update.
+        self.last_temps = Some((
+            self.mass.wall.temperature,
+            self.mass.roof.temperature,
+            self.mass.floor.temperature,
+            self.mass.internal.temperature,
+        ));
+        self.last_dt = dt;
+        self.timestep_seconds = dt;
+
+        // Evolve mass node temperatures via the configured coupling mode
+        // (`AdditiveSum` default or `ParallelResistance` from #1281).
+        self.step_backward_euler();
+
+        // Returned flux — drop-in parity with `FiveR1CSolver::step()`:
+        // q = (T_mass_avg − T_int) / R_total, where T_mass_avg is the simple
+        // envelope (wall+roof+floor) average. At steady state with all three
+        // envelope nodes at the same temperature, T_mass_avg reduces to the
+        // 5R1C lumped-mass midpoint (assuming symmetric R_si = R_se in the
+        // partition used by `initialize`), giving q = (T_ext − T_int) / (2 R).
+        // This matches what 5R1C returns on step ≥ 2 (after the pre-step seed).
+        let t_mass_avg = (self.mass.wall.temperature
+            + self.mass.roof.temperature
+            + self.mass.floor.temperature)
+            / 3.0;
+        let q = (t_mass_avg - t_int) / self.r_total;
+        Ok(HeatFlux::from_value(q))
+    }
+
+    fn energy_storage_rate(&self) -> f64 {
+        // Σ C_k · (T_k_new − T_k_old) / dt  [W/m²]
+        // Positive = wall charging (gaining enthalpy), negative = discharging.
+        let Some((t_wall_old, t_roof_old, t_floor_old, t_internal_old)) = self.last_temps else {
+            return 0.0;
+        };
+        if self.last_dt <= 0.0 {
+            return 0.0;
+        }
+
+        let c_wall = self.mass.wall.capacitance;
+        let c_roof = self.mass.roof.capacitance;
+        let c_floor = self.mass.floor.capacitance;
+        let c_internal = self.mass.internal.capacitance;
+
+        let storage_rate = (c_wall * (self.mass.wall.temperature - t_wall_old)
+            + c_roof * (self.mass.roof.temperature - t_roof_old)
+            + c_floor * (self.mass.floor.temperature - t_floor_old)
+            + c_internal * (self.mass.internal.temperature - t_internal_old))
+            / self.last_dt;
+
+        // Convert J/(m²·K) · K / s = W/m² → return as-is.
+        storage_rate
+    }
+
+    fn steady_state_flux(
+        &self,
+        T_interior: Temperature,
+        T_exterior: Temperature,
+    ) -> Result<HeatFlux, SolverError> {
+        // Closed-form q_ss = (T_ext − T_int) / R_total — matches the
+        // `FiveR1CSolver` default semantics (no thermal mass effect, just
+        // Fourier's law across the layer R). This is the deterministic
+        // query surface that ML-surrogate swap-points (`SurfaceHeatFluxProvider`)
+        // call for parity checks.
+        if !self.initialized {
+            return Err(SolverError::InvalidConfig(
+                "Solver not initialized. Call initialize() first.".to_string(),
+            ));
+        }
+        if !self.r_total.is_finite() || self.r_total <= 0.0 {
+            return Err(SolverError::ConstructionError(format!(
+                "Invalid cached R_total = {} (must be positive and finite)",
+                self.r_total
+            )));
+        }
+        let q_ss =
+            (T_exterior.to_value() - T_interior.to_value()) / self.r_total;
+        Ok(HeatFlux::from_value(q_ss))
+    }
+
+    fn is_valid(&self) -> bool {
+        self.initialized
+            && self.r_total.is_finite()
+            && self.r_total > 0.0
+            && self.mass.wall.capacitance > 0.0
+            && self.mass.wall.h_tr_ms > 0.0
+            && self.mass.wall.h_tr_em > 0.0
+            && self.h_tr_is > 0.0
     }
 }
 

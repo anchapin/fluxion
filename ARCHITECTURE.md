@@ -368,7 +368,7 @@ pub trait HeatConductionSolver: Send + Sync {
 > >
 > > Regression: `tests/conduction_solver_manager_production_wiring.rs`.
 
-**Implementations**: `FiveR1CSolver` (struct, `physics/five_r1c_solver.rs`), `CTFSolverWrapper`, `FDSolverWrapper`
+**Implementations**: `FiveR1CSolver` (struct, `physics/five_r1c_solver.rs`), `CTFSolverWrapper`, `FDSolverWrapper`, `MultiNodeSolver` (9R4C four-node envelope solver, `physics/multi_node_solver.rs` — registered as `Box<dyn HeatConductionSolver>` via `SolverRegistry::construct("multinode_9r4c", &wall)` per Issue #1429 / ADR-002)
 **Selector**: `SolverManager` auto-selects based on thermal mass.
 **Per-surface solver**: `sim/per_surface_conduction.rs` provides independent backward-Euler per-surface solving for the multi-node thermal model (#857/#856).
 
