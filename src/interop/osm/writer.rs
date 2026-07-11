@@ -65,6 +65,7 @@ impl OsmWriter {
         self.write_materials(&mut writer, schema)?;
         self.write_constructions(&mut writer, schema)?;
         self.write_thermal_zones(&mut writer, schema)?;
+        self.write_thermostats(&mut writer, schema)?;
         self.write_spaces(&mut writer, schema)?;
         self.write_surfaces(&mut writer, schema)?;
 
@@ -298,10 +299,59 @@ impl OsmWriter {
                 .map_err(|e| OsmError::ExportError(e.to_string()))?;
             writeln!(writer, "  {}, !- Name", zone.name)
                 .map_err(|e| OsmError::ExportError(e.to_string()))?;
-            writeln!(writer, "  , !- Thermostat Handle")
+            // Reference the matching OS:Thermostat emitted by `write_thermostats`
+            // so reader can resolve the heating/cooling setpoints back into
+            // `controls.zone_control`. Handle mirrors the zone index — round-trip
+            // is lossless for `controls.zone_control.{heating,cooling}_setpoint`
+            // (issue #1432).
+            writeln!(writer, "  {{thermostat-{}}}, !- Thermostat Handle", i)
                 .map_err(|e| OsmError::ExportError(e.to_string()))?;
             writeln!(writer, "  1; !- Multiplier")
                 .map_err(|e| OsmError::ExportError(e.to_string()))?;
+            writeln!(writer).map_err(|e| OsmError::ExportError(e.to_string()))?;
+        }
+        Ok(())
+    }
+
+    /// Emit one `OS:Thermostat` per thermal zone, carrying the heating/cooling
+    /// setpoints from `schema.controls.zone_control`. Each thermostat's handle
+    /// (`{thermostat-N}`) is referenced from the matching `OS:ThermalZone`
+    /// so the reader can resolve it during `extract_controls`.
+    ///
+    /// Handle scheme mirrors `write_thermal_zones` (zone-index based) — the
+    /// handle prefix `thermostat-` does not collide with any other emitted
+    /// handle family (`site-`, `bldg-`, `zone-`, `space-`, `surf-`,
+    /// `mat-{w,r,f}-`, `cons-{w,r,f}-`, `version`).
+    ///
+    /// This makes the writer→reader round-trip lossless for
+    /// `controls.zone_control.{heating,cooling}_setpoint` (issue #1432).
+    fn write_thermostats(
+        &mut self,
+        writer: &mut dyn Write,
+        schema: &SimulationSchemaV1,
+    ) -> Result<(), OsmError> {
+        let hsp = schema.controls.zone_control.heating_setpoint;
+        let csp = schema.controls.zone_control.cooling_setpoint;
+
+        for (i, zone) in schema.geometry.zones.iter().enumerate() {
+            writeln!(writer, "OS:Thermostat,")
+                .map_err(|e| OsmError::ExportError(e.to_string()))?;
+            writeln!(writer, "  {{thermostat-{}}}, !- Handle", i)
+                .map_err(|e| OsmError::ExportError(e.to_string()))?;
+            writeln!(writer, "  {}, !- Name", zone.name)
+                .map_err(|e| OsmError::ExportError(e.to_string()))?;
+            writeln!(
+                writer,
+                "  {}, !- Heating Setpoint Temperature {{C}}",
+                hsp
+            )
+            .map_err(|e| OsmError::ExportError(e.to_string()))?;
+            writeln!(
+                writer,
+                "  {}; !- Cooling Setpoint Temperature {{C}}",
+                csp
+            )
+            .map_err(|e| OsmError::ExportError(e.to_string()))?;
             writeln!(writer).map_err(|e| OsmError::ExportError(e.to_string()))?;
         }
         Ok(())
@@ -506,7 +556,7 @@ mod tests {
     // per-field diff so OSM Measure authors can debug exactly which
     // field mismatched (and not just see a generic boolean failure).
     //
-    // Lossless fields (issue #1340 contract):
+    // Lossless fields (issue #1340 contract, extended by issue #1432):
     //   - metadata.name                  (via OS:Building.Name)
     //   - geometry.zones[*].name         (via OS:ThermalZone.Name)
     //   - geometry.zones[*].floor_area   (via OS:Space.Floor Area)
@@ -518,13 +568,17 @@ mod tests {
     //   - constructions.{wall,roof,floor}.layers[*]
     //         name, thickness, conductivity, density, specific_heat
     //   - weather (TmyLocation only)     (via OS:Site.Latitude/Longitude)
+    //   - controls.zone_control.heating_setpoint
+    //                                    (via OS:Thermostat.Heating Setpoint
+    //                                     Temperature — one per zone)
+    //   - controls.zone_control.cooling_setpoint
+    //                                    (via OS:Thermostat.Cooling Setpoint
+    //                                     Temperature — one per zone)
     //
     // Known lossy fields (documented; intentionally NOT asserted):
     //   - metadata.description, metadata.author, metadata.created_at
     //     (OS:Building/Description is not emitted by the writer)
     //   - schedules (no OS:Schedule emission in writer; reader falls back to defaults)
-    //   - controls.{heating,cooling}_setpoint
-    //     (no OS:Thermostat emission; reader falls back to defaults 20/24)
     //   - constructions.window            (no OS:SubSurface or window construction
     //                                      emission in the supported subset)
     //   - constructions.interzone         (not emitted)
@@ -726,6 +780,25 @@ mod tests {
             _ => mismatches.push("weather variant mismatch".to_string()),
         }
 
+        // controls.zone_control.{heating,cooling}_setpoint (issue #1432) —
+        // the writer emits one OS:Thermostat per zone carrying these values,
+        // and the reader folds them back into a single ControlConfig in
+        // `extract_controls`. Round-trip is lossless within 1e-6.
+        let oh = original.controls.zone_control.heating_setpoint;
+        let oc = original.controls.zone_control.cooling_setpoint;
+        let nh = re_parsed.controls.zone_control.heating_setpoint;
+        let nc = re_parsed.controls.zone_control.cooling_setpoint;
+        if !approx_eq(oh, nh) {
+            mismatches.push(format!(
+                "controls.zone_control.heating_setpoint: {oh} -> {nh}"
+            ));
+        }
+        if !approx_eq(oc, nc) {
+            mismatches.push(format!(
+                "controls.zone_control.cooling_setpoint: {oc} -> {nc}"
+            ));
+        }
+
         mismatches
     }
 
@@ -760,10 +833,13 @@ mod tests {
         );
     }
 
-    /// Two-zone round-trip — exercises per-zone handle assignment and zone
-    /// geometry aggregation.
+    /// Two-zone round-trip — exercises per-zone handle assignment, zone
+    /// geometry aggregation, and (since issue #1432) thermostat preservation
+    /// for non-default setpoints.
     #[test]
     fn test_roundtrip_two_zones() {
+        use crate::api::schema::{ControlConfig, ControlSet};
+
         let mut schema = create_test_schema();
         schema.geometry.zones = vec![
             ZoneGeometry {
@@ -782,6 +858,17 @@ mod tests {
         schema.geometry.total_floor_area = 125.0;
         schema.geometry.total_volume = 337.5;
 
+        // Non-default setpoints (issue #1432). Pre-#1432 these would
+        // silently regress to the reader's 20 °C / 24 °C fallback.
+        schema.controls = ControlSet {
+            zone_control: ControlConfig {
+                heating_setpoint: 18.5,
+                cooling_setpoint: 25.5,
+                ..ControlConfig::default()
+            },
+            global_control: None,
+        };
+
         let re_parsed = roundtrip_schema(&schema);
 
         let diffs = diff_schemas(&schema, &re_parsed);
@@ -789,6 +876,108 @@ mod tests {
             diffs.is_empty(),
             "round-trip mismatch for two-zone schema:\n  - {}\n",
             diffs.join("\n  - ")
+        );
+
+        // Belt-and-braces: assert thermostat setpoints directly within 1e-6,
+        // matching the (18.5, 25.5) °C contract from issue #1432.
+        assert!(
+            (re_parsed.controls.zone_control.heating_setpoint - 18.5).abs() < 1e-6,
+            "heating_setpoint regressed: {}",
+            re_parsed.controls.zone_control.heating_setpoint
+        );
+        assert!(
+            (re_parsed.controls.zone_control.cooling_setpoint - 25.5).abs() < 1e-6,
+            "cooling_setpoint regressed: {}",
+            re_parsed.controls.zone_control.cooling_setpoint
+        );
+    }
+
+    /// Issue #1432 — 2-zone schema with non-default setpoints (18.5 / 25.5) °C
+    /// must round-trip through OsmWriter → OsmReader without regressing to the
+    /// reader's 20 / 24 defaults. Asserts the explicit numeric contract from
+    /// the issue body.
+    #[test]
+    fn test_roundtrip_thermostat_preserves_setpoints() {
+        use crate::api::schema::{ControlConfig, ControlSet};
+
+        let mut schema = create_test_schema();
+        schema.geometry.zones = vec![
+            ZoneGeometry {
+                name: "Zone A".to_string(),
+                floor_area: 50.0,
+                volume: 135.0,
+                height: 2.7,
+            },
+            ZoneGeometry {
+                name: "Zone B".to_string(),
+                floor_area: 75.0,
+                volume: 202.5,
+                height: 2.7,
+            },
+        ];
+        schema.geometry.total_floor_area = 125.0;
+        schema.geometry.total_volume = 337.5;
+        schema.controls = ControlSet {
+            zone_control: ControlConfig {
+                heating_setpoint: 18.5,
+                cooling_setpoint: 25.5,
+                ..ControlConfig::default()
+            },
+            global_control: None,
+        };
+
+        // Spot-check the exported OSM contains the per-zone OS:Thermostat
+        // references and the dual-setpoint values.
+        use tempfile::TempDir;
+        let temp_dir = TempDir::new().expect("Failed to create temp dir");
+        let path = temp_dir.path().join("thermostat.osm");
+        let mut writer = OsmWriter::new();
+        writer
+            .export_osm(&schema, &path)
+            .expect("writer: should export thermostat schema");
+        let exported = std::fs::read_to_string(&path).expect("read exported OSM");
+        assert!(
+            exported.contains("OS:Thermostat"),
+            "writer should emit OS:Thermostat objects (issue #1432)"
+        );
+        assert!(
+            exported.contains("{thermostat-0}") && exported.contains("{thermostat-1}"),
+            "writer should emit one OS:Thermostat per zone with stable handles"
+        );
+        assert!(
+            exported.contains("18.5, !- Heating Setpoint Temperature"),
+            "writer should emit the heating setpoint value"
+        );
+        assert!(
+            exported.contains("25.5; !- Cooling Setpoint Temperature"),
+            "writer should emit the cooling setpoint value"
+        );
+
+        // Round-trip and assert within 1e-6 per the issue acceptance criteria.
+        let re_parsed = roundtrip_schema(&schema);
+
+        let original_h = schema.controls.zone_control.heating_setpoint;
+        let original_c = schema.controls.zone_control.cooling_setpoint;
+        let parsed_h = re_parsed.controls.zone_control.heating_setpoint;
+        let parsed_c = re_parsed.controls.zone_control.cooling_setpoint;
+
+        assert!(
+            (original_h - parsed_h).abs() < 1e-6,
+            "heating_setpoint round-trip regression: {original_h} -> {parsed_h} \
+             (issue #1432 acceptance criterion violated)"
+        );
+        assert!(
+            (original_c - parsed_c).abs() < 1e-6,
+            "cooling_setpoint round-trip regression: {original_c} -> {parsed_c} \
+             (issue #1432 acceptance criterion violated)"
+        );
+        assert_eq!(
+            original_h, 18.5,
+            "test invariant: heating_setpoint is exactly 18.5"
+        );
+        assert_eq!(
+            original_c, 25.5,
+            "test invariant: cooling_setpoint is exactly 25.5"
         );
     }
 

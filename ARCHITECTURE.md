@@ -851,13 +851,14 @@ The OSM writer→reader round-trip is **stable** for single- and multi-zone sche
 | `constructions.{wall,roof,floor}.layers[*].conductivity` | `OS:Material.Conductivity` |
 | `constructions.{wall,roof,floor}.layers[*].density` | `OS:Material.Density` |
 | `constructions.{wall,roof,floor}.layers[*].specific_heat` | `OS:Material.Specific Heat` |
+| `controls.zone_control.heating_setpoint` | `OS:Thermostat.Heating Setpoint Temperature` (one per zone, issue #1432) |
+| `controls.zone_control.cooling_setpoint` | `OS:Thermostat.Cooling Setpoint Temperature` (one per zone, issue #1432) |
 | `weather` (`TmyLocation` variant only) | `OS:Site.Latitude`, `OS:Site.Longitude` (lat/lon f64 pair, within tolerance) |
 
 **Known lossy fields** (fall back to `Default` on read; out of scope for issue #1340):
 
 - `metadata.description`, `.author`, `.created_at`
 - `schedules.*` (no `OS:Schedule:*` emission)
-- `controls.{heating,cooling}_setpoint` (no `OS:Thermostat` emission; reader falls back to 20 °C / 24 °C)
 - `constructions.{wall,roof,floor}.window` (no `OS:SubSurface` emission)
 - `constructions.interzone`
 - `weather` for `EpwFile` and `Inline` variants
