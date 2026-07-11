@@ -35,6 +35,12 @@ pub enum IdfError {
     /// `UnsupportedObject` is currently only constructed by tests.
     #[error("Unsupported IDF object type: {0}")]
     UnsupportedObject(String),
+
+    /// Reserved for EnergyPlus `Version` values outside the allow-list
+    /// (`24-2`, `25-1`, `25-2`) per `docs/idf-import-design.md` §4.3.
+    /// Introduced in issue #1435.
+    #[error("Unsupported EnergyPlus version: {0} (allowed: 24-2, 25-1, 25-2)")]
+    UnsupportedVersion(String),
 }
 
 impl IdfError {
@@ -55,5 +61,10 @@ impl IdfError {
     /// Convenience constructor for unsupported-object errors.
     pub fn unsupported_object(object_type: impl Into<String>) -> Self {
         IdfError::UnsupportedObject(object_type.into())
+    }
+
+    /// Convenience constructor for unsupported-version errors.
+    pub fn unsupported_version(version: impl Into<String>) -> Self {
+        IdfError::UnsupportedVersion(version.into())
     }
 }

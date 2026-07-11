@@ -346,6 +346,74 @@ impl GroundTemperature for DynamicGroundTemperature {
     }
 }
 
+/// Monthly ground temperature model — Issue #1435 (IDF import support).
+///
+/// Holds 12 monthly ground temperature values (°C) as used by EnergyPlus'
+/// `Site:GroundTemperature:BuildingSurface` object. The ground temperature
+/// at hour `h` of the year is the value for the corresponding month
+/// (interpolated as a step function between the 1st of each month).
+///
+/// `monthly[0]` is January, `monthly[11]` is December. Leap years are
+/// treated as 365-day years for the lookup.
+#[derive(Debug, Clone)]
+pub struct MonthlyGroundTemperature {
+    monthly: [f64; 12],
+}
+
+impl MonthlyGroundTemperature {
+    /// Build a new monthly ground temperature model. The slice must contain
+    /// exactly 12 entries (Jan…Dec); values are stored verbatim.
+    ///
+    /// # Panics
+    /// Panics if `monthly.len() != 12`.
+    pub fn new(monthly: [f64; 12]) -> Self {
+        Self { monthly }
+    }
+
+    /// Try to build from a slice of any length. Returns `None` if the
+    /// length is not 12.
+    pub fn from_slice(monthly: &[f64]) -> Option<Self> {
+        if monthly.len() != 12 {
+            return None;
+        }
+        let mut arr = [0.0_f64; 12];
+        arr.copy_from_slice(monthly);
+        Some(Self { monthly: arr })
+    }
+
+    /// Monthly ground temperature values, January → December.
+    pub fn monthly(&self) -> &[f64; 12] {
+        &self.monthly
+    }
+
+    /// First hour of each month in a non-leap year (Jan=0, Feb=744,
+    /// Mar=1416, …, Dec=8016). Used to map `hour_of_year` to the
+    /// appropriate monthly value.
+    const MONTH_START_HOURS: [usize; 12] = [
+        0, 744, 1416, 2160, 2880, 3624, 4344, 5088, 5832, 6552, 7296, 8016,
+    ];
+}
+
+impl GroundTemperature for MonthlyGroundTemperature {
+    fn clone_box(&self) -> Box<dyn GroundTemperature> {
+        Box::new(self.clone())
+    }
+
+    fn ground_temperature(&self, hour_of_year: usize) -> f64 {
+        // Find the most recent month start ≤ hour_of_year.
+        let h = hour_of_year.min(Self::MONTH_START_HOURS[11]);
+        let mut month = 0_usize;
+        for (idx, start) in Self::MONTH_START_HOURS.iter().enumerate() {
+            if *start <= h {
+                month = idx;
+            } else {
+                break;
+            }
+        }
+        self.monthly[month]
+    }
+}
+
 // === Issue #864: Per-surface solar and internal gain distribution ===
 
 /// Per-surface solar gain distribution result (Issue #864).
@@ -597,6 +665,34 @@ mod tests {
 
         // Within 0.1°C
         assert!((temp_end - temp_start).abs() < 0.1);
+    }
+
+    // === Issue #1435: MonthlyGroundTemperature ===
+
+    #[test]
+    fn test_monthly_ground_temperature_lookup() {
+        let monthly = [
+            1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0, 11.0, 12.0,
+        ];
+        let ground = MonthlyGroundTemperature::new(monthly);
+        // January
+        assert_eq!(ground.ground_temperature(0), 1.0);
+        assert_eq!(ground.ground_temperature(743), 1.0);
+        // February (starts at hour 744)
+        assert_eq!(ground.ground_temperature(744), 2.0);
+        // June (starts at hour 3624)
+        assert_eq!(ground.ground_temperature(3624), 6.0);
+        // December (starts at hour 8016)
+        assert_eq!(ground.ground_temperature(8016), 12.0);
+        assert_eq!(ground.ground_temperature(8759), 12.0);
+    }
+
+    #[test]
+    fn test_monthly_ground_temperature_from_slice_wrong_length() {
+        assert!(MonthlyGroundTemperature::from_slice(&[1.0; 11]).is_none());
+        assert!(MonthlyGroundTemperature::from_slice(&[1.0; 13]).is_none());
+        let ok = MonthlyGroundTemperature::from_slice(&[1.0; 12]).unwrap();
+        assert_eq!(ok.monthly()[0], 1.0);
     }
 
     #[test]
