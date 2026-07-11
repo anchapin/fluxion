@@ -1769,6 +1769,11 @@ fn fluxion(_py: Python, m: &Bound<'_, PyModule>) -> PyResult<()> {
         m
     )?)?;
 
+    m.add_class::<python::osm_bindings::PyOsmReader>()?;
+    m.add_class::<python::osm_bindings::PyOsmWriter>()?;
+    m.add_function(pyo3::wrap_pyfunction!(python::osm_bindings::import_osm, m)?)?;
+    m.add_function(pyo3::wrap_pyfunction!(python::osm_bindings::export_osm, m)?)?;
+
     Ok(())
 }
 

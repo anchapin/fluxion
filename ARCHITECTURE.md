@@ -820,7 +820,7 @@ Import/export bridges live under `src/interop/`. Each is gated behind the module
 
 | Binding | Path | Feature Flag | Status |
 |---------|------|--------------|
-| Python (PyO3) | `src/python/` | `python-bindings` | Implemented (#1123); multi-zone + HVAC bindings |
+| Python (PyO3) | `src/python/` | `python-bindings` | Implemented (#1123); multi-zone + HVAC bindings; OSM round-trip exposed via PyO3 |
 | Node.js (NAPI) | `src/napi/` | `napi-bindings` | Implemented; coexists with Python bindings |
 
 ### OSM Round-Trip Lossless Contract (issue #1340)
