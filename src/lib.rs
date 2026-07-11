@@ -109,8 +109,8 @@ pub use sim::surface_flux_provider::{
     MockSurfaceHeatFluxProvider, PhysicsSurfaceFluxProvider, SurfaceHeatFluxProvider,
 };
 pub use sim::thermal_model::{
-    PhysicsThermalModel, SurrogateThermalModel, ThermalModelBuilder, ThermalModelMode,
-    ThermalModelTrait, UnifiedThermalModel,
+    HybridRouting, HybridThermalModel, PhysicsThermalModel, SurrogateThermalModel,
+    ThermalModelBuilder, ThermalModelMode, ThermalModelTrait, UnifiedThermalModel,
 };
 pub use sim::thermal_model_mock::MockThermalModel;
 

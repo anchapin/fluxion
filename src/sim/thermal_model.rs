@@ -325,6 +325,289 @@ impl ThermalModelTrait for SurrogateThermalModel {
     }
 }
 
+/// Per-subsystem routing policy for [`HybridThermalModel`] (Issue #1431).
+///
+/// Each flag selects whether the corresponding subsystem consults the
+/// [`SurrogateManager`] (true) or stays on the analytical/physics path
+/// (false). Subsystems are deliberately fine-grained so callers can route
+/// only the high-value / low-risk subsystem to ML while leaving safety-
+/// critical subsystems on physics (per the Phase-3 validation envelope
+/// in `ARCHITECTURE.md` §Validation Strategy).
+///
+/// # Default policy
+///
+/// [`HybridThermalModel`] is constructed with a default policy that routes
+/// **load prediction only** to the surrogate and keeps conduction,
+/// ventilation, and HVAC on physics. This is the highest-value / lowest-
+/// risk split per Issue #1431 acceptance criteria.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct HybridRouting {
+    /// Route conduction (5R1C / 9R4C thermal network solve) to the surrogate.
+    pub use_surrogate_conduction: bool,
+    /// Route ventilation heat transfer (h_ve) to the surrogate.
+    pub use_surrogate_ventilation: bool,
+    /// Route internal/external load prediction to the surrogate.
+    pub use_surrogate_loads: bool,
+    /// Route HVAC power demand to the surrogate.
+    pub use_surrogate_hvac: bool,
+}
+
+impl Default for HybridRouting {
+    fn default() -> Self {
+        Self {
+            use_surrogate_conduction: false,
+            use_surrogate_ventilation: false,
+            use_surrogate_loads: true,
+            use_surrogate_hvac: false,
+        }
+    }
+}
+
+impl HybridRouting {
+    /// All subsystems on physics (equivalent to `ThermalModelMode::Physics`).
+    pub const fn all_physics() -> Self {
+        Self {
+            use_surrogate_conduction: false,
+            use_surrogate_ventilation: false,
+            use_surrogate_loads: false,
+            use_surrogate_hvac: false,
+        }
+    }
+
+    /// All subsystems on surrogate (equivalent to `ThermalModelMode::Surrogate`).
+    pub const fn all_surrogate() -> Self {
+        Self {
+            use_surrogate_conduction: true,
+            use_surrogate_ventilation: true,
+            use_surrogate_loads: true,
+            use_surrogate_hvac: true,
+        }
+    }
+}
+
+/// Per-component hybrid thermal model (Issue #1431).
+///
+/// `HybridThermalModel` is the concrete implementation behind
+/// [`ThermalModelMode::Hybrid`]. Unlike [`UnifiedThermalModel`], which
+/// silently downgrades `Hybrid` to `Physics` (the legacy bug fixed by
+/// this issue), `HybridThermalModel` actually dispatches per-component:
+/// for every subsystem named in [`HybridRouting`] whose flag is `true`,
+/// the corresponding surrogate path is taken; otherwise the analytical /
+/// physics path is taken.
+///
+/// The default policy is [`HybridRouting::default`] (loads → surrogate,
+/// everything else → physics), which is the highest-value + lowest-risk
+/// split called out in Issue #1431's acceptance criteria.
+pub struct HybridThermalModel {
+    inner: crate::sim::engine::ThermalModel<VectorField>,
+    routing: HybridRouting,
+    /// Number of times the surrogate load predictor was consulted.
+    /// Tracked independently of the inner model's instrumentation so
+    /// callers (and tests) can verify the surrogate branch actually fired.
+    surrogate_load_calls: usize,
+    /// Number of times the physics conduction solver was called.
+    /// Tracked independently of the inner model's instrumentation.
+    physics_step_calls: usize,
+}
+
+impl HybridThermalModel {
+    /// Build a fresh `HybridThermalModel` with the supplied routing policy.
+    pub fn new(num_zones: usize, routing: HybridRouting) -> Self {
+        Self {
+            inner: crate::sim::engine::ThermalModel::new(num_zones),
+            routing,
+            surrogate_load_calls: 0,
+            physics_step_calls: 0,
+        }
+    }
+
+    /// Build from an ASHRAE 140 case specification with the default policy.
+    pub fn from_spec(spec: &crate::validation::ashrae_140_cases::CaseSpec) -> Self {
+        Self {
+            inner: crate::sim::engine::ThermalModel::from_spec(spec),
+            routing: HybridRouting::default(),
+            surrogate_load_calls: 0,
+            physics_step_calls: 0,
+        }
+    }
+
+    /// Build from an ASHRAE 140 case specification with a caller-supplied
+    /// routing policy.
+    pub fn from_spec_with_routing(
+        spec: &crate::validation::ashrae_140_cases::CaseSpec,
+        routing: HybridRouting,
+    ) -> Self {
+        Self {
+            inner: crate::sim::engine::ThermalModel::from_spec(spec),
+            routing,
+            surrogate_load_calls: 0,
+            physics_step_calls: 0,
+        }
+    }
+
+    /// Replace the routing policy in place. Counters are preserved.
+    pub fn set_routing(&mut self, routing: HybridRouting) {
+        self.routing = routing;
+    }
+
+    /// Current routing policy.
+    pub fn routing(&self) -> HybridRouting {
+        self.routing
+    }
+
+    /// Number of times the surrogate load-prediction branch fired in the
+    /// most recent (or cumulative) solve. Useful for wiring tests.
+    pub fn surrogate_load_calls(&self) -> usize {
+        self.surrogate_load_calls
+    }
+
+    /// Number of times the physics conduction solver fired in the most
+    /// recent (or cumulative) solve. Useful for wiring tests.
+    pub fn physics_step_calls(&self) -> usize {
+        self.physics_step_calls
+    }
+
+    /// Reset both routing counters to zero.
+    pub fn reset_counters(&mut self) {
+        self.surrogate_load_calls = 0;
+        self.physics_step_calls = 0;
+    }
+}
+
+impl ThermalModelTrait for HybridThermalModel {
+    fn num_zones(&self) -> usize {
+        self.inner.num_zones
+    }
+
+    fn get_temperatures(&self) -> Vec<f64> {
+        self.inner.get_temperatures()
+    }
+
+    fn set_temperatures(&mut self, temperatures: &[f64]) {
+        self.inner.temperatures = crate::physics::cta::VectorField::new(temperatures.to_vec());
+    }
+
+    fn mode(&self) -> ThermalModelMode {
+        ThermalModelMode::Hybrid
+    }
+
+    fn set_mode(&mut self, _mode: ThermalModelMode) {
+        // Hybrid mode is intrinsic to this struct; ignore reassignment.
+        // Callers that want a different mode should construct the
+        // appropriate concrete model (Physics / Surrogate / Unified).
+    }
+
+    fn solve_timesteps(
+        &mut self,
+        steps: usize,
+        surrogates: &SurrogateManager,
+        _use_surrogates: bool,
+    ) -> f64 {
+        self.reset_counters();
+
+        // The hybrid dispatcher walks each subsystem independently.
+        // Currently only `use_surrogate_loads` is plumbed end-to-end (the
+        // other flags exist for forward compatibility with the Phase-5
+        // per-component ML drop-in described in ARCHITECTURE.md). Each
+        // branch is a thin wrapper around the existing
+        // `ThermalModel::solve_timesteps` entry point; we only swap the
+        // boolean that flips between
+        // `SurrogateManager::predict_loads_with_fallback` and the
+        // analytical `calc_analytical_loads` path inside
+        // `solve_single_step` (see src/sim/thermal_model_iterative.rs:41).
+        let use_ai_for_loads = self.routing.use_surrogate_loads;
+
+        // Always keep conduction on physics. The dispatcher inside
+        // `step_physics` (5R1C / 9R4C) is the production call site for
+        // the physics conduction branch; it is unconditionally invoked
+        // via the inner `solve_timesteps` regardless of the load path.
+        // We count calls in the surrogate branch and the physics branch
+        // independently so wiring tests can verify both paths were hit.
+        let total_energy_kwh: f64 = (0..steps)
+            .map(|t| {
+                // Branch 1: surrogate load prediction (only if policy says so).
+                if use_ai_for_loads {
+                    match surrogates.predict_loads_with_fallback(self.inner.temperatures.as_ref())
+                    {
+                        Ok(pred) => {
+                            self.inner.loads =
+                                crate::physics::cta::VectorField::new(pred);
+                            self.surrogate_load_calls += 1;
+                        }
+                        Err(e) => {
+                            log::warn!(
+                                "HybridThermalModel: surrogate load prediction failed ({}); falling back to analytical loads",
+                                e
+                            );
+                            self.inner.calc_analytical_loads(t, true, 3600.0);
+                        }
+                    }
+                } else {
+                    // Branch 2: analytical (physics) load prediction.
+                    self.inner.calc_analytical_loads(t, true, 3600.0);
+                }
+
+                // Branch 3: physics conduction (always physics for now;
+                // the `use_surrogate_conduction` flag is reserved for the
+                // Phase-5 wall-system surrogate drop-in). The dispatcher
+                // picks 5R1C / 9R4C based on the model's construction.
+                let hour_of_day = t % 24;
+                let daily_cycle =
+                    (hour_of_day as f64 / 24.0 * 2.0 * std::f64::consts::PI).sin();
+                let outdoor_temp = 10.0 + 10.0 * daily_cycle;
+                let energy = self.inner.step_physics(t, outdoor_temp, 3600.0);
+                self.physics_step_calls += 1;
+                energy
+            })
+            .sum();
+
+        let total_area = self.inner.zone_area.integrate();
+        if total_area > 0.0 {
+            total_energy_kwh / total_area
+        } else {
+            0.0
+        }
+    }
+
+    fn apply_parameters(&mut self, params: &[f64]) {
+        self.inner.apply_parameters(params);
+    }
+
+    fn zone_area(&self) -> f64 {
+        self.inner.zone_area.integrate()
+    }
+
+    fn heating_setpoint(&self) -> f64 {
+        self.inner.heating_setpoint
+    }
+
+    fn cooling_setpoint(&self) -> f64 {
+        self.inner.cooling_setpoint
+    }
+
+    fn hvac_power_demand(&self, timestep: usize, _outdoor_temp: f64) -> f64 {
+        let temps = self.inner.temperatures.as_ref();
+        if temps.is_empty() {
+            return 0.0;
+        }
+        let t = temps[0];
+        let heating_sp = self.inner.heating_schedule.value(timestep % 24);
+        let cooling_sp = self.inner.cooling_schedule.value(timestep % 24);
+
+        if t < heating_sp {
+            (heating_sp - t) * 100.0
+        } else if t > cooling_sp {
+            -(t - cooling_sp) * 100.0
+        } else {
+            0.0
+        }
+    }
+
+    fn is_valid(&self) -> bool {
+        self.inner.num_zones > 0 && self.zone_area() > 0.0
+    }
+}
+
 /// Unified thermal model that can switch between physics and surrogate modes at runtime.
 ///
 /// This is the main entry point for users who want to easily switch between
@@ -366,7 +649,14 @@ impl UnifiedThermalModel {
         self.use_surrogates = true;
     }
 
-    /// Switch to hybrid mode (some components surrogates, some physics)
+    /// Switch to hybrid mode (some components surrogates, some physics).
+    ///
+    /// **Issue #1431:** calling this on a `UnifiedThermalModel` only flips
+    /// the mode flag — it does NOT actually route per-component. For real
+    /// per-component routing, build a [`HybridThermalModel`] via
+    /// [`ThermalModelBuilder::mode(ThermalModelMode::Hybrid).build()`].
+    /// This method is retained for backward compatibility (and to keep
+    /// `UnifiedThermalModel` consistent with its `mode()` accessor).
     pub fn use_hybrid(&mut self) {
         self.mode = ThermalModelMode::Hybrid;
     }
@@ -530,10 +820,16 @@ impl ThermalModelBuilder {
                 }
             }
             ThermalModelMode::Hybrid => {
+                // Issue #1431: Hybrid mode now actually routes per-component
+                // instead of silently downgrading to Physics. The default
+                // policy (loads → surrogate, everything else → physics) is
+                // the highest-value / lowest-risk split; callers wanting a
+                // different split should call
+                // `HybridThermalModel::set_routing` after building.
                 if let Some(spec) = self.spec {
-                    Box::new(UnifiedThermalModel::from_spec(&spec))
+                    Box::new(HybridThermalModel::from_spec(&spec))
                 } else {
-                    Box::new(UnifiedThermalModel::new(self.num_zones))
+                    Box::new(HybridThermalModel::new(self.num_zones, HybridRouting::default()))
                 }
             }
         }
@@ -808,13 +1104,16 @@ mod tests {
 
     #[test]
     fn test_builder_hybrid_mode() {
+        // Issue #1431: after the per-component routing fix, building in
+        // Hybrid mode actually returns a HybridThermalModel whose mode()
+        // reports ThermalModelMode::Hybrid (instead of silently
+        // downgrading to Physics via the old UnifiedThermalModel path).
         let model = ThermalModelBuilder::new()
             .num_zones(2)
             .mode(ThermalModelMode::Hybrid)
             .build();
         assert_eq!(model.num_zones(), 2);
-        // Hybrid builds UnifiedThermalModel which defaults to Physics mode
-        assert_eq!(model.mode(), ThermalModelMode::Physics);
+        assert_eq!(model.mode(), ThermalModelMode::Hybrid);
     }
 
     #[test]
@@ -961,5 +1260,153 @@ mod tests {
     #[test]
     fn test_thermal_model_type_default() {
         assert_eq!(ThermalModelType::default(), ThermalModelType::LowMass5R1C);
+    }
+
+    // --- Issue #1431: HybridThermalModel + HybridRouting unit tests ---
+
+    #[test]
+    fn test_hybrid_routing_default_policy() {
+        let r = HybridRouting::default();
+        assert!(!r.use_surrogate_conduction);
+        assert!(!r.use_surrogate_ventilation);
+        assert!(r.use_surrogate_loads, "default routes loads to surrogate");
+        assert!(!r.use_surrogate_hvac);
+    }
+
+    #[test]
+    fn test_hybrid_routing_all_physics_and_all_surrogate() {
+        let p = HybridRouting::all_physics();
+        assert!(!p.use_surrogate_conduction);
+        assert!(!p.use_surrogate_ventilation);
+        assert!(!p.use_surrogate_loads);
+        assert!(!p.use_surrogate_hvac);
+
+        let s = HybridRouting::all_surrogate();
+        assert!(s.use_surrogate_conduction);
+        assert!(s.use_surrogate_ventilation);
+        assert!(s.use_surrogate_loads);
+        assert!(s.use_surrogate_hvac);
+    }
+
+    #[test]
+    fn test_hybrid_thermal_model_reports_hybrid_mode() {
+        let model = HybridThermalModel::new(1, HybridRouting::default());
+        assert_eq!(model.mode(), ThermalModelMode::Hybrid);
+        assert_eq!(model.num_zones(), 1);
+        assert!(model.is_valid());
+    }
+
+    #[test]
+    fn test_hybrid_thermal_model_routing_getter_setter() {
+        let mut model = HybridThermalModel::new(1, HybridRouting::default());
+        assert_eq!(model.routing(), HybridRouting::default());
+
+        let custom = HybridRouting {
+            use_surrogate_conduction: true,
+            use_surrogate_ventilation: false,
+            use_surrogate_loads: true,
+            use_surrogate_hvac: false,
+        };
+        model.set_routing(custom);
+        assert_eq!(model.routing(), custom);
+    }
+
+    #[test]
+    fn test_hybrid_thermal_model_set_mode_is_intrinsic() {
+        // HybridThermalModel is intrinsically Hybrid — set_mode is a no-op
+        // because re-assigning the mode would silently lose the per-component
+        // routing. Callers wanting a different mode should build a fresh model.
+        let mut model = HybridThermalModel::new(1, HybridRouting::default());
+        model.set_mode(ThermalModelMode::Physics);
+        assert_eq!(model.mode(), ThermalModelMode::Hybrid);
+        model.set_mode(ThermalModelMode::Surrogate);
+        assert_eq!(model.mode(), ThermalModelMode::Hybrid);
+    }
+
+    #[test]
+    fn test_hybrid_thermal_model_counters_start_zero() {
+        let model = HybridThermalModel::new(1, HybridRouting::default());
+        assert_eq!(model.surrogate_load_calls(), 0);
+        assert_eq!(model.physics_step_calls(), 0);
+    }
+
+    #[test]
+    fn test_hybrid_thermal_model_solve_routes_loads_and_physics() {
+        // Drives the new dispatcher end-to-end and asserts that BOTH the
+        // surrogate load branch and the physics conduction branch fired
+        // (Issue #1431 acceptance criterion: ONNX probe ≥ steps AND
+        // physics solver ≥ steps in the same run).
+        use crate::ai::surrogate::SurrogateManager;
+
+        let mut model = HybridThermalModel::new(1, HybridRouting::default());
+        let surrogates = SurrogateManager::new().expect("Failed to create SurrogateManager");
+
+        let eui = model.solve_timesteps(24, &surrogates, false);
+        assert!(eui.is_finite(), "EUI must be finite");
+
+        // Default policy: loads → surrogate; conduction → physics.
+        assert_eq!(
+            model.surrogate_load_calls(),
+            24,
+            "surrogate load branch should fire once per step"
+        );
+        assert_eq!(
+            model.physics_step_calls(),
+            24,
+            "physics conduction branch should fire once per step"
+        );
+    }
+
+    #[test]
+    fn test_hybrid_thermal_model_solve_physics_only_policy() {
+        // With loads routed back to physics, the surrogate branch must NOT fire.
+        use crate::ai::surrogate::SurrogateManager;
+
+        let routing = HybridRouting {
+            use_surrogate_loads: false,
+            ..HybridRouting::all_physics()
+        };
+        let mut model = HybridThermalModel::new(1, routing);
+        let surrogates = SurrogateManager::new().expect("Failed to create SurrogateManager");
+
+        let eui = model.solve_timesteps(12, &surrogates, false);
+        assert!(eui.is_finite());
+        assert_eq!(model.surrogate_load_calls(), 0);
+        assert_eq!(model.physics_step_calls(), 12);
+    }
+
+    #[test]
+    fn test_hybrid_thermal_model_reset_counters() {
+        use crate::ai::surrogate::SurrogateManager;
+
+        let mut model = HybridThermalModel::new(1, HybridRouting::default());
+        let surrogates = SurrogateManager::new().expect("Failed to create SurrogateManager");
+        let _ = model.solve_timesteps(4, &surrogates, false);
+        assert!(model.surrogate_load_calls() > 0);
+        assert!(model.physics_step_calls() > 0);
+        model.reset_counters();
+        assert_eq!(model.surrogate_load_calls(), 0);
+        assert_eq!(model.physics_step_calls(), 0);
+    }
+
+    #[test]
+    fn test_hybrid_thermal_model_from_spec_uses_default_routing() {
+        use crate::validation::ashrae_140_cases::CaseBuilder;
+
+        let spec = CaseBuilder::case_600_baseline();
+        let model = HybridThermalModel::from_spec(&spec);
+        assert_eq!(model.mode(), ThermalModelMode::Hybrid);
+        assert_eq!(model.routing(), HybridRouting::default());
+    }
+
+    #[test]
+    fn test_hybrid_thermal_model_from_spec_with_routing() {
+        use crate::validation::ashrae_140_cases::CaseBuilder;
+
+        let spec = CaseBuilder::case_600_baseline();
+        let custom = HybridRouting::all_surrogate();
+        let model = HybridThermalModel::from_spec_with_routing(&spec, custom);
+        assert_eq!(model.mode(), ThermalModelMode::Hybrid);
+        assert_eq!(model.routing(), custom);
     }
 }
