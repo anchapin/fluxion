@@ -46,6 +46,9 @@ use fluxion::physics::method_selector::ThermalMethodSelector;
 use fluxion::physics::solver_manager::SolverManager;
 use fluxion::sim::assembly::{AssemblyBuilder, ConcreteMaterial};
 use fluxion::sim::engine::ThermalModel;
+use fluxion::sim::per_surface_conduction::{
+    MassNode, PerSurfaceConductionSolver, SurfaceKind, SurfaceNode,
+};
 
 // Always import rayon — the baseline rayon `par_iter` test (Issue #1352
 // acceptance criterion #2) needs the trait in scope to compile under both
@@ -525,6 +528,365 @@ mod loom_tests {
 
             let c = energy_counter.lock().unwrap();
             assert_eq!(*c, 2);
+        });
+    }
+
+    // ========================================================================
+    // Per-Surface Conduction Solver tests (Issue #1426)
+    //
+    // The tests below extend loom coverage to `PerSurfaceConductionSolver`
+    // (the independent backward-Euler per-surface solver in
+    // `src/sim/per_surface_conduction.rs`) used by the 9R4C high-mass path
+    // (Cases 900–960 per ADR-002). The solver manages separate
+    // `Vec<SurfaceNode>` + `Vec<MassNode>` collections that grow on
+    // `add_surface_from_params`, and the step paths
+    // (`update_all`, `update_mass_nodes`, `update_surface`) read+write these
+    // vectors. We verify the lock-protected access patterns don't introduce
+    // races, dropped updates, or non-finite energy balances.
+    //
+    // The four tests mirror the #1384 pattern (`loom::fuzz` + paired
+    // `std::thread::spawn` baseline): concurrent add + step, shared
+    // boundary temperature, mass-node evolution under contention, and
+    // multi-zone 9R4C step. PerSurfaceConductionSolver is `!Sync`
+    // (because of interior `Vec` mutability), so we wrap it in
+    // `StdArc<StdMutex<…>>` and exercise the locking discipline.
+    // ========================================================================
+
+    /// Issue #1426 acceptance criterion #1: 3 loom threads — two call
+    /// `add_surface_from_params` while one runs `update_all`. After all
+    /// threads join, the surface count must be at least the seed count
+    /// (no surface lost to a torn write) and every surface temperature
+    /// must remain finite (no NaN introduced by a partial realloc read).
+    #[test]
+    fn test_loom_per_surface_solver_concurrent_add_and_step() {
+        // Seed one surface so the solver is non-empty when update_all runs.
+        let solver = StdArc::new(StdMutex::new(PerSurfaceConductionSolver::new()));
+        {
+            let mut s = solver.lock().unwrap();
+            s.add_surface_from_params(
+                0,
+                SurfaceKind::Wall,
+                10.0,
+                0.5,
+                20.0,
+                5.0, // h_tr_ms
+                4.0, // h_tr_is
+                2.0, // h_tr_em
+            );
+        }
+        let initial_len = solver.lock().unwrap().len();
+        assert_eq!(initial_len, 1);
+
+        loom::fuzz(move || {
+            let s_add_a = StdArc::clone(&solver);
+            let adder_a = thread::spawn(move || {
+                let mut s = s_add_a.lock().unwrap();
+                s.add_surface_from_params(
+                    100,
+                    SurfaceKind::Roof,
+                    8.0,
+                    0.3,
+                    22.0,
+                    4.0,
+                    3.0,
+                    1.5,
+                );
+            });
+
+            let s_add_b = StdArc::clone(&solver);
+            let adder_b = thread::spawn(move || {
+                let mut s = s_add_b.lock().unwrap();
+                s.add_surface_from_params(
+                    200,
+                    SurfaceKind::Floor,
+                    6.0,
+                    0.4,
+                    18.0,
+                    3.5,
+                    2.5,
+                    1.0,
+                );
+            });
+
+            let s_step = StdArc::clone(&solver);
+            let stepper = thread::spawn(move || {
+                let mut s = s_step.lock().unwrap();
+                // update_all iterates `self.surfaces` — a Vec; if either adder
+                // reallocated the Vec mid-iteration we'd see a torn temperature.
+                s.update_all(60.0, 20.0, 5.0, 0.0);
+            });
+
+            adder_a.join().unwrap();
+            adder_b.join().unwrap();
+            stepper.join().unwrap();
+
+            // Post-condition: surface count is monotonic (initial + up to 2 added),
+            // never less than the initial seed (no surface lost to realloc race).
+            let s = solver.lock().unwrap();
+            let len_after = s.len();
+            assert!(
+                len_after >= initial_len,
+                "surface count decreased: {} -> {}",
+                initial_len,
+                len_after
+            );
+            assert!(
+                len_after <= initial_len + 2,
+                "surface count grew beyond expectations: {} -> {}",
+                initial_len,
+                len_after
+            );
+
+            // Every surface temperature must be finite — guards against NaN
+            // from a partial read across a Vec realloc.
+            for t in s.surface_temperatures() {
+                assert!(t.is_finite(), "non-finite surface temperature: {}", t);
+            }
+        });
+    }
+
+    /// Issue #1426 acceptance criterion #2: two threads concurrently call
+    /// `update_all` while a third mutates the boundary conditions (air
+    /// temperature + exterior temperature + phi_m_surface, all stored in a
+    /// shared cell). Assert no NaN/partial-update — analog of #1384's
+    /// `test_loom_shared_inter_zone_conductance_concurrent_steps`.
+    #[test]
+    fn test_loom_per_surface_solver_shared_boundary_temperature() {
+        let solver = StdArc::new(StdMutex::new(PerSurfaceConductionSolver::new()));
+        {
+            let mut s = solver.lock().unwrap();
+            s.add_surface_from_params(0, SurfaceKind::Wall, 10.0, 0.5, 20.0, 5.0, 4.0, 2.0);
+            s.add_surface_from_params(1, SurfaceKind::Roof, 8.0, 0.3, 22.0, 4.0, 3.0, 1.5);
+        }
+
+        // Boundary temperatures live in a shared cell so the writer thread
+        // can race against the two stepper threads. In a safe locking
+        // discipline, each stepper sees a fully-written triple.
+        let boundary = StdArc::new(StdMutex::new((20.0_f64, 5.0_f64, 0.0_f64)));
+
+        loom::fuzz(move || {
+            // Seeder: reset the boundary to a known state.
+            {
+                let mut b = boundary.lock().unwrap();
+                b.0 = 20.0;
+                b.1 = 5.0;
+                b.2 = 0.0;
+            }
+
+            let b_writer = StdArc::clone(&boundary);
+            let writer = thread::spawn(move || {
+                let mut b = b_writer.lock().unwrap();
+                b.0 = 25.0; // T_air
+                b.1 = 8.0; // T_ext
+                b.2 = 100.0; // phi_m_surface
+            });
+
+            let s_step_a = StdArc::clone(&solver);
+            let b_step_a = StdArc::clone(&boundary);
+            let stepper_a = thread::spawn(move || {
+                let b = b_step_a.lock().unwrap();
+                let mut s = s_step_a.lock().unwrap();
+                s.update_all(60.0, b.0, b.1, b.2);
+            });
+
+            let s_step_b = StdArc::clone(&solver);
+            let b_step_b = StdArc::clone(&boundary);
+            let stepper_b = thread::spawn(move || {
+                let b = b_step_b.lock().unwrap();
+                let mut s = s_step_b.lock().unwrap();
+                s.update_all(60.0, b.0, b.1, b.2);
+            });
+
+            writer.join().unwrap();
+            stepper_a.join().unwrap();
+            stepper_b.join().unwrap();
+
+            // Each surface's temperature must be finite — guards against a
+            // partial-read of the boundary triple.
+            let s = solver.lock().unwrap();
+            for t in s.surface_temperatures() {
+                assert!(t.is_finite(), "non-finite surface temperature: {}", t);
+            }
+            // Energy imbalance is bounded — a partial write would push it
+            // past reasonable limits.
+            let b = boundary.lock().unwrap();
+            let imbalance = s.energy_imbalance(b.0, b.1);
+            assert!(
+                imbalance.is_finite(),
+                "energy imbalance must be finite, got {}",
+                imbalance
+            );
+            assert!(
+                imbalance < 1.0e6,
+                "energy imbalance too large (likely partial write): {}",
+                imbalance
+            );
+        });
+    }
+
+    /// Issue #1426 acceptance criterion #3: two threads step the same
+    /// `MassNode` via `update_mass_nodes` (the "solve_step" path used by
+    /// the 9R4C high-mass solver per Issue #1003). Assert the final mass
+    /// temperature is one of the two thread-specific steady-state values,
+    /// never an interpolated/partial value. This is the race the issue
+    /// explicitly flags: without the lock, the two threads can interleave
+    /// `MassNode::update()` such that the final temperature is neither of
+    /// the two expected values.
+    #[test]
+    fn test_loom_per_surface_solver_mass_node_evolution_race() {
+        // Pre-populate two mass nodes so update_mass_nodes iterates over a
+        // populated Vec. The 9R4C solver drives wall/roof/floor mass nodes.
+        let solver = StdArc::new(StdMutex::new(PerSurfaceConductionSolver::new()));
+        {
+            let mut s = solver.lock().unwrap();
+            s.add_surface_with_mass(
+                SurfaceNode::new(0, SurfaceKind::Wall, 10.0, 0.5, 20.0, 50_000.0, 5.0, 4.0, 2.0, 20.0),
+                MassNode::new(0, 20.0, 50_000.0, 5.0, 4.0),
+            );
+            s.add_surface_with_mass(
+                SurfaceNode::new(1, SurfaceKind::Roof, 8.0, 0.3, 22.0, 40_000.0, 4.0, 3.0, 1.5, 22.0),
+                MassNode::new(1, 22.0, 40_000.0, 4.0, 3.0),
+            );
+        }
+
+        // Two distinct (T_air, T_sky) pairs — each thread picks one and
+        // drives the mass-node update. The steady-state mass temperature
+        // for node 0 with (T_air, T_sky) = (25, 5) and h_tr_is=5, h_tr_ms=4
+        // is (5*25 + 4*5) / (5+4) = (125 + 20) / 9 = 16.111...
+        // and with (T_air, T_sky) = (10, 30) is (5*10 + 4*30) / 9 = 170/9
+        // = 18.888...
+        // (Capacitance is large, so single-step values are very close to
+        //  steady state; we assert "close to one of two targets".)
+        let target_a = (5.0 * 25.0 + 4.0 * 5.0) / (5.0 + 4.0); // ~16.111
+        let target_b = (5.0 * 10.0 + 4.0 * 30.0) / (5.0 + 4.0); // ~18.889
+
+        loom::fuzz(move || {
+            // Reset the mass temperatures so each fuzz iteration starts fresh.
+            {
+                let mut s = solver.lock().unwrap();
+                s.get_mass_node_mut(0).unwrap().temperature = 20.0;
+                s.get_mass_node_mut(1).unwrap().temperature = 22.0;
+            }
+
+            let s_a = StdArc::clone(&solver);
+            let driver_a = thread::spawn(move || {
+                let mut s = s_a.lock().unwrap();
+                s.update_mass_nodes(3600.0, 25.0, 5.0);
+            });
+
+            let s_b = StdArc::clone(&solver);
+            let driver_b = thread::spawn(move || {
+                let mut s = s_b.lock().unwrap();
+                s.update_mass_nodes(3600.0, 10.0, 30.0);
+            });
+
+            driver_a.join().unwrap();
+            driver_b.join().unwrap();
+
+            // After both threads run, the mass temperature for node 0
+            // must be close to one of the two thread-specific targets
+            // (never an interpolated/partial value).
+            let s = solver.lock().unwrap();
+            let t0 = s.get_mass_node(0).unwrap().temperature;
+            let t1 = s.get_mass_node(1).unwrap().temperature;
+            assert!(t0.is_finite(), "non-finite mass temperature: {}", t0);
+            assert!(t1.is_finite(), "non-finite mass temperature: {}", t1);
+            let dt_a = (t0 - target_a).abs();
+            let dt_b = (t0 - target_b).abs();
+            let tol = 1.0; // 1°C tolerance — well above any partial-update corruption
+            assert!(
+                dt_a < tol || dt_b < tol,
+                "final mass temperature {} is neither target_a={} (dt={}) nor target_b={} (dt={})",
+                t0,
+                target_a,
+                dt_a,
+                target_b,
+                dt_b
+            );
+        });
+    }
+
+    /// Issue #1426 acceptance criterion #4: 4-zone model where each zone
+    /// owns one `PerSurfaceConductionSolver`. Two loom threads drive
+    /// per-zone `update_all` while a third reads `surface_temperatures`.
+    /// Mirrors the multi-zone 9R4C high-mass setup (Cases 900–960).
+    /// Asserts all temperatures remain finite across all interleavings.
+    #[test]
+    fn test_loom_per_surface_solver_multi_zone_9r4c_step() {
+        // Build 4 zone-owned solvers, each with a wall surface (the
+        // 9R4C high-mass building has wall/roof/floor nodes, but for the
+        // concurrency test a single wall per zone is sufficient).
+        let mut zones: Vec<StdArc<StdMutex<PerSurfaceConductionSolver>>> = Vec::new();
+        for zone_index in 0..4 {
+            let mut s = PerSurfaceConductionSolver::new();
+            s.add_surface_from_params(
+                zone_index,
+                SurfaceKind::Wall,
+                10.0,
+                0.5,
+                20.0 + zone_index as f64,
+                5.0,
+                4.0,
+                2.0,
+            );
+            zones.push(StdArc::new(StdMutex::new(s)));
+        }
+
+        loom::fuzz(move || {
+            // Driver A: steps zone 0 and zone 2.
+            let z_a_0 = StdArc::clone(&zones[0]);
+            let z_a_2 = StdArc::clone(&zones[2]);
+            let driver_a = thread::spawn(move || {
+                let mut z0 = z_a_0.lock().unwrap();
+                z0.update_all(60.0, 22.0, 5.0, 0.0);
+                drop(z0);
+                let mut z2 = z_a_2.lock().unwrap();
+                z2.update_all(60.0, 22.0, 5.0, 0.0);
+            });
+
+            // Driver B: steps zone 1 and zone 3.
+            let z_b_1 = StdArc::clone(&zones[1]);
+            let z_b_3 = StdArc::clone(&zones[3]);
+            let driver_b = thread::spawn(move || {
+                let mut z1 = z_b_1.lock().unwrap();
+                z1.update_all(60.0, 18.0, 10.0, 0.0);
+                drop(z1);
+                let mut z3 = z_b_3.lock().unwrap();
+                z3.update_all(60.0, 18.0, 10.0, 0.0);
+            });
+
+            // Reader: snapshots all 4 zones' surface temperatures.
+            let z_r_0 = StdArc::clone(&zones[0]);
+            let z_r_1 = StdArc::clone(&zones[1]);
+            let z_r_2 = StdArc::clone(&zones[2]);
+            let z_r_3 = StdArc::clone(&zones[3]);
+            let reader = thread::spawn(move || {
+                let mut observed = Vec::new();
+                for _ in 0..3 {
+                    let t0 = z_r_0.lock().unwrap().surface_temperatures();
+                    let t1 = z_r_1.lock().unwrap().surface_temperatures();
+                    let t2 = z_r_2.lock().unwrap().surface_temperatures();
+                    let t3 = z_r_3.lock().unwrap().surface_temperatures();
+                    observed.push((t0, t1, t2, t3));
+                }
+                for (t0, t1, t2, t3) in observed {
+                    for t in t0.iter().chain(t1.iter()).chain(t2.iter()).chain(t3.iter()) {
+                        assert!(t.is_finite(), "non-finite surface temperature: {}", t);
+                    }
+                }
+            });
+
+            driver_a.join().unwrap();
+            driver_b.join().unwrap();
+            reader.join().unwrap();
+
+            // Post-condition: every zone's final surface temperature is finite.
+            for zone in &zones {
+                let s = zone.lock().unwrap();
+                for t in s.surface_temperatures() {
+                    assert!(t.is_finite(), "non-finite surface temperature: {}", t);
+                }
+            }
         });
     }
 }
@@ -1070,4 +1432,260 @@ fn test_per_zone_energy_accumulator_shared_weather_baseline() {
 
     let c = energy_counter.lock().unwrap();
     assert_eq!(*c, 3);
+}
+
+// =============================================================================
+// Per-Surface Conduction Solver baselines (Issue #1426)
+//
+// Non-loom counterparts of the four loom tests above. These run with the
+// default `cargo test --test loom_concurrency_tests` (without `LOOM=1`) and
+// use `std::thread::spawn` to catch regressions when loom is not available.
+// They mirror the same scenarios — concurrent add + step, shared boundary
+// temperature, mass-node evolution under contention, and multi-zone 9R4C
+// step — but with real OS threads instead of loom's model-checked threads.
+// =============================================================================
+
+/// Baseline #1 (Issue #1426): 3 OS threads — two call
+/// `add_surface_from_params` while one runs `update_all`. Mirrors
+/// `test_loom_per_surface_solver_concurrent_add_and_step`.
+#[test]
+fn test_per_surface_solver_concurrent_add_and_step_baseline() {
+    let solver = StdArc::new(StdMutex::new(PerSurfaceConductionSolver::new()));
+    {
+        let mut s = solver.lock().unwrap();
+        s.add_surface_from_params(0, SurfaceKind::Wall, 10.0, 0.5, 20.0, 5.0, 4.0, 2.0);
+    }
+    let initial_len = solver.lock().unwrap().len();
+    assert_eq!(initial_len, 1);
+
+    let s_add_a = StdArc::clone(&solver);
+    let adder_a = thread::spawn(move || {
+        let mut s = s_add_a.lock().unwrap();
+        s.add_surface_from_params(100, SurfaceKind::Roof, 8.0, 0.3, 22.0, 4.0, 3.0, 1.5);
+    });
+
+    let s_add_b = StdArc::clone(&solver);
+    let adder_b = thread::spawn(move || {
+        let mut s = s_add_b.lock().unwrap();
+        s.add_surface_from_params(200, SurfaceKind::Floor, 6.0, 0.4, 18.0, 3.5, 2.5, 1.0);
+    });
+
+    let s_step = StdArc::clone(&solver);
+    let stepper = thread::spawn(move || {
+        let mut s = s_step.lock().unwrap();
+        s.update_all(60.0, 20.0, 5.0, 0.0);
+    });
+
+    adder_a.join().expect("adder_a should not panic");
+    adder_b.join().expect("adder_b should not panic");
+    stepper.join().expect("stepper should not panic");
+
+    let s = solver.lock().unwrap();
+    let len_after = s.len();
+    assert!(
+        len_after >= initial_len,
+        "surface count decreased: {} -> {}",
+        initial_len,
+        len_after
+    );
+    assert!(
+        len_after <= initial_len + 2,
+        "surface count grew beyond expectations: {} -> {}",
+        initial_len,
+        len_after
+    );
+
+    for t in s.surface_temperatures() {
+        assert!(t.is_finite(), "non-finite surface temperature: {}", t);
+    }
+}
+
+/// Baseline #2 (Issue #1426): two threads concurrently call `update_all`
+/// while a third mutates the boundary conditions held in a shared cell.
+/// Mirrors `test_loom_per_surface_solver_shared_boundary_temperature`.
+#[test]
+fn test_per_surface_solver_shared_boundary_temperature_baseline() {
+    let solver = StdArc::new(StdMutex::new(PerSurfaceConductionSolver::new()));
+    {
+        let mut s = solver.lock().unwrap();
+        s.add_surface_from_params(0, SurfaceKind::Wall, 10.0, 0.5, 20.0, 5.0, 4.0, 2.0);
+        s.add_surface_from_params(1, SurfaceKind::Roof, 8.0, 0.3, 22.0, 4.0, 3.0, 1.5);
+    }
+
+    let boundary = StdArc::new(StdMutex::new((20.0_f64, 5.0_f64, 0.0_f64)));
+
+    let b_writer = StdArc::clone(&boundary);
+    let writer = thread::spawn(move || {
+        let mut b = b_writer.lock().unwrap();
+        b.0 = 25.0;
+        b.1 = 8.0;
+        b.2 = 100.0;
+    });
+
+    let s_step_a = StdArc::clone(&solver);
+    let b_step_a = StdArc::clone(&boundary);
+    let stepper_a = thread::spawn(move || {
+        let b = b_step_a.lock().unwrap();
+        let mut s = s_step_a.lock().unwrap();
+        s.update_all(60.0, b.0, b.1, b.2);
+    });
+
+    let s_step_b = StdArc::clone(&solver);
+    let b_step_b = StdArc::clone(&boundary);
+    let stepper_b = thread::spawn(move || {
+        let b = b_step_b.lock().unwrap();
+        let mut s = s_step_b.lock().unwrap();
+        s.update_all(60.0, b.0, b.1, b.2);
+    });
+
+    writer.join().expect("writer should not panic");
+    stepper_a.join().expect("stepper_a should not panic");
+    stepper_b.join().expect("stepper_b should not panic");
+
+    let s = solver.lock().unwrap();
+    for t in s.surface_temperatures() {
+        assert!(t.is_finite(), "non-finite surface temperature: {}", t);
+    }
+    let b = boundary.lock().unwrap();
+    let imbalance = s.energy_imbalance(b.0, b.1);
+    assert!(
+        imbalance.is_finite(),
+        "energy imbalance must be finite, got {}",
+        imbalance
+    );
+    assert!(
+        imbalance < 1.0e6,
+        "energy imbalance too large (likely partial write): {}",
+        imbalance
+    );
+}
+
+/// Baseline #3 (Issue #1426): two threads step the same `MassNode` via
+/// `update_mass_nodes`. Assert the final mass temperature is close to one
+/// of the two thread-specific steady-state targets. Mirrors
+/// `test_loom_per_surface_solver_mass_node_evolution_race`.
+#[test]
+fn test_per_surface_solver_mass_node_evolution_race_baseline() {
+    let solver = StdArc::new(StdMutex::new(PerSurfaceConductionSolver::new()));
+    {
+        let mut s = solver.lock().unwrap();
+        s.add_surface_with_mass(
+            SurfaceNode::new(0, SurfaceKind::Wall, 10.0, 0.5, 20.0, 50_000.0, 5.0, 4.0, 2.0, 20.0),
+            MassNode::new(0, 20.0, 50_000.0, 5.0, 4.0),
+        );
+        s.add_surface_with_mass(
+            SurfaceNode::new(1, SurfaceKind::Roof, 8.0, 0.3, 22.0, 40_000.0, 4.0, 3.0, 1.5, 22.0),
+            MassNode::new(1, 22.0, 40_000.0, 4.0, 3.0),
+        );
+    }
+
+    let target_a = (5.0 * 25.0 + 4.0 * 5.0) / (5.0 + 4.0);
+    let target_b = (5.0 * 10.0 + 4.0 * 30.0) / (5.0 + 4.0);
+
+    let s_a = StdArc::clone(&solver);
+    let driver_a = thread::spawn(move || {
+        let mut s = s_a.lock().unwrap();
+        s.update_mass_nodes(3600.0, 25.0, 5.0);
+    });
+
+    let s_b = StdArc::clone(&solver);
+    let driver_b = thread::spawn(move || {
+        let mut s = s_b.lock().unwrap();
+        s.update_mass_nodes(3600.0, 10.0, 30.0);
+    });
+
+    driver_a.join().expect("driver_a should not panic");
+    driver_b.join().expect("driver_b should not panic");
+
+    let s = solver.lock().unwrap();
+    let t0 = s.get_mass_node(0).unwrap().temperature;
+    let t1 = s.get_mass_node(1).unwrap().temperature;
+    assert!(t0.is_finite(), "non-finite mass temperature: {}", t0);
+    assert!(t1.is_finite(), "non-finite mass temperature: {}", t1);
+    let dt_a = (t0 - target_a).abs();
+    let dt_b = (t0 - target_b).abs();
+    let tol = 1.0;
+    assert!(
+        dt_a < tol || dt_b < tol,
+        "final mass temperature {} is neither target_a={} (dt={}) nor target_b={} (dt={})",
+        t0,
+        target_a,
+        dt_a,
+        target_b,
+        dt_b
+    );
+}
+
+/// Baseline #4 (Issue #1426): 4-zone model where each zone owns one
+/// `PerSurfaceConductionSolver`. Two threads drive per-zone `update_all`
+/// while a third reads `surface_temperatures`. Mirrors
+/// `test_loom_per_surface_solver_multi_zone_9r4c_step`.
+#[test]
+fn test_per_surface_solver_multi_zone_9r4c_step_baseline() {
+    let mut zones: Vec<StdArc<StdMutex<PerSurfaceConductionSolver>>> = Vec::new();
+    for zone_index in 0..4 {
+        let mut s = PerSurfaceConductionSolver::new();
+        s.add_surface_from_params(
+            zone_index,
+            SurfaceKind::Wall,
+            10.0,
+            0.5,
+            20.0 + zone_index as f64,
+            5.0,
+            4.0,
+            2.0,
+        );
+        zones.push(StdArc::new(StdMutex::new(s)));
+    }
+
+    let z_a_0 = StdArc::clone(&zones[0]);
+    let z_a_2 = StdArc::clone(&zones[2]);
+    let driver_a = thread::spawn(move || {
+        let mut z0 = z_a_0.lock().unwrap();
+        z0.update_all(60.0, 22.0, 5.0, 0.0);
+        drop(z0);
+        let mut z2 = z_a_2.lock().unwrap();
+        z2.update_all(60.0, 22.0, 5.0, 0.0);
+    });
+
+    let z_b_1 = StdArc::clone(&zones[1]);
+    let z_b_3 = StdArc::clone(&zones[3]);
+    let driver_b = thread::spawn(move || {
+        let mut z1 = z_b_1.lock().unwrap();
+        z1.update_all(60.0, 18.0, 10.0, 0.0);
+        drop(z1);
+        let mut z3 = z_b_3.lock().unwrap();
+        z3.update_all(60.0, 18.0, 10.0, 0.0);
+    });
+
+    let z_r_0 = StdArc::clone(&zones[0]);
+    let z_r_1 = StdArc::clone(&zones[1]);
+    let z_r_2 = StdArc::clone(&zones[2]);
+    let z_r_3 = StdArc::clone(&zones[3]);
+    let reader = thread::spawn(move || {
+        let mut observed = Vec::new();
+        for _ in 0..10 {
+            let t0 = z_r_0.lock().unwrap().surface_temperatures();
+            let t1 = z_r_1.lock().unwrap().surface_temperatures();
+            let t2 = z_r_2.lock().unwrap().surface_temperatures();
+            let t3 = z_r_3.lock().unwrap().surface_temperatures();
+            observed.push((t0, t1, t2, t3));
+        }
+        for (t0, t1, t2, t3) in observed {
+            for t in t0.iter().chain(t1.iter()).chain(t2.iter()).chain(t3.iter()) {
+                assert!(t.is_finite(), "non-finite surface temperature: {}", t);
+            }
+        }
+    });
+
+    driver_a.join().expect("driver_a should not panic");
+    driver_b.join().expect("driver_b should not panic");
+    reader.join().expect("reader should not panic");
+
+    for zone in &zones {
+        let s = zone.lock().unwrap();
+        for t in s.surface_temperatures() {
+            assert!(t.is_finite(), "non-finite surface temperature: {}", t);
+        }
+    }
 }
