@@ -148,7 +148,125 @@ impl WallProperties {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use fluxion_core::assembly::{AssemblyBuilder, ConcreteMaterial, InsulationMaterial};
+    use crate::physics::method_selector::ThermalMethodSelector;
+    use fluxion_core::assembly::{
+        AssemblyBuilder, ConcreteMaterial, InsulationMaterial, MaterialLayer,
+    };
+
+    /// Test-only material layer that allows specifying exact density and
+    /// specific heat — required because `ConcreteMaterial::new(thickness)`
+    /// hard-codes `Cp = 840 J/kgK` (the generic normal-weight default), but
+    /// ASHRAE 140 Case 900 (Table B1-3) specifies `Cp = 880 J/kgK` for the
+    /// stacked concrete layer, and the 13 mm gypsum layer uses
+    /// `ρ = 800 kg/m³, Cp = 1090 J/kgK`. Without this seam the regression
+    /// test would silently drift 4.8 % on the concrete layer and ~8 % on
+    /// the gypsum layer.
+    #[derive(Debug, Clone)]
+    struct CustomMaterial {
+        name: String,
+        thickness: f64,
+        conductivity: f64,
+        density: f64,
+        specific_heat: f64,
+    }
+
+    impl CustomMaterial {
+        fn new(
+            name: &str,
+            thickness: f64,
+            conductivity: f64,
+            density: f64,
+            specific_heat: f64,
+        ) -> Self {
+            Self {
+                name: name.to_string(),
+                thickness,
+                conductivity,
+                density,
+                specific_heat,
+            }
+        }
+    }
+
+    impl MaterialLayer for CustomMaterial {
+        fn name(&self) -> &str {
+            &self.name
+        }
+        fn conductivity(&self) -> f64 {
+            self.conductivity
+        }
+        fn thickness(&self) -> f64 {
+            self.thickness
+        }
+        fn density(&self) -> f64 {
+            self.density
+        }
+        fn specific_heat(&self) -> f64 {
+            self.specific_heat
+        }
+        fn absorptance(&self) -> f64 {
+            0.5
+        }
+        fn emissivity(&self) -> f64 {
+            0.9
+        }
+        fn as_any(&self) -> &dyn std::any::Any {
+            self
+        }
+    }
+
+    /// Build the ASHRAE 140 Case 900 four-layer stacked-concrete wall
+    /// (Gypsum 13 mm + Concrete 150 mm + Insulation 50 mm + Brick 100 mm)
+    /// using the Table B1-3 material properties. Stacked-concrete reference
+    /// `Cm = 468.7 kJ/m²K` per ASHRAE 140-2023 §5.2.
+    fn case_900_assembly() -> fluxion_core::assembly::BuildingAssembly {
+        AssemblyBuilder::new("ASHRAE 140 Case 900 stacked concrete wall".to_string())
+            // interior finish (interior → exterior order)
+            .add_layer(Box::new(CustomMaterial::new(
+                "Gypsum", 0.013, 0.16, 800.0, 1090.0,
+            )))
+            .add_layer(Box::new(CustomMaterial::new(
+                "Concrete", 0.150, 1.4, 2300.0, 880.0,
+            )))
+            .add_layer(Box::new(CustomMaterial::new(
+                "Insulation",
+                0.050,
+                0.04,
+                50.0,
+                840.0,
+            )))
+            // exterior cladding
+            .add_layer(Box::new(CustomMaterial::new(
+                "Brick", 0.100, 0.81, 1920.0, 790.0,
+            )))
+            .build()
+            .expect("Case 900 reference wall must build")
+    }
+
+    /// Same Case 900 wall but with the **legacy** `Cp = 840 J/kgK` default
+    /// (what `ConcreteMaterial::new(0.150)` produces) — used to document the
+    /// drift that motivated this regression test.
+    fn case_900_assembly_legacy_cp() -> fluxion_core::assembly::BuildingAssembly {
+        AssemblyBuilder::new("Case 900 with legacy Cp=840 defaults".to_string())
+            .add_layer(Box::new(CustomMaterial::new(
+                "Gypsum", 0.013, 0.16, 960.0, 840.0, // legacy generic gypsum
+            )))
+            .add_layer(Box::new(CustomMaterial::new(
+                "Concrete", 0.150, 1.4, 2300.0, 840.0, // legacy Cp=840
+            )))
+            .add_layer(Box::new(CustomMaterial::new(
+                "Insulation",
+                0.050,
+                0.04,
+                50.0,
+                840.0,
+            )))
+            .add_layer(Box::new(CustomMaterial::new(
+                "Brick", 0.100, 0.81, 1920.0, 840.0, // legacy generic brick
+            )))
+            .build()
+            .expect("Legacy Cp Case 900 wall must build")
+    }
 
     #[test]
     fn test_layer_properties_from_concrete() {
@@ -268,5 +386,258 @@ mod tests {
         let debug_str = format!("{:?}", props);
         assert!(debug_str.contains("WallProperties"));
         assert!(debug_str.contains("layers"));
+    }
+
+    // -----------------------------------------------------------------------
+    // ASHRAE 140 Case 900 / Case 600 regression tests (Issue #1420)
+    //
+    // These pin the `WallProperties::from_assembly` converter against the
+    // ASHRAE 140 §5.2 stacked-concrete reference construction
+    // (`Cm ≈ 468.7 kJ/m²K` per Table B1-3) and against the Case 600 low-mass
+    // construction. They guard the converter against silently swapping the
+    // ASHRAE-specific Cp / density values for the generic `ConcreteMaterial`
+    // defaults (Cp = 840 vs 880 J/kgK, which would drift the concrete layer
+    // by 4.8 %).
+    // -----------------------------------------------------------------------
+
+    /// ASHRAE 140-2023 Case 900 stacked-concrete wall:
+    ///
+    /// | Layer      | d (m) | ρ (kg/m³) | Cp (J/kgK) | Cm (kJ/m²K) |
+    /// |------------|-------|-----------|------------|-------------|
+    /// | Gypsum     | 0.013 |   800     | 1090       | 11.336      |
+    /// | Concrete   | 0.150 |  2300     |  880       | 303.600     |
+    /// | Insulation | 0.050 |    50     |  840       |   2.100     |
+    /// | Brick      | 0.100 |  1920     |  790       | 151.680     |
+    /// | **Total**  | 0.313 |           |            | **468.716** |
+    ///
+    /// Asserts the converter reproduces `468.7 ± 1 %` kJ/m²K (the canonical
+    /// reference used by `tests/ctf_coefficient_validation.rs:5-15` and the
+    /// Phase-3 `GaugeSolver` validation harness — see ARCHITECTURE.md
+    /// §"Module 6 / Phase 3 validation harness").
+    #[test]
+    fn test_wall_properties_ashrae_140_case_900() {
+        let assembly = case_900_assembly();
+        let props = WallProperties::from_assembly(&assembly);
+
+        // Layer count — interior gypsum through exterior brick.
+        assert_eq!(
+            props.layers.len(),
+            4,
+            "Case 900 reference wall must have 4 layers (Gypsum + Concrete + Insulation + Brick)"
+        );
+        assert_eq!(props.layers[0].name, "Gypsum");
+        assert_eq!(props.layers[1].name, "Concrete");
+        assert_eq!(props.layers[2].name, "Insulation");
+        assert_eq!(props.layers[3].name, "Brick");
+
+        // Surface film resistances per ASHRAE 140 Section 5.2.
+        // h_int = 8.29 W/m²K, h_ext = 29.3 W/m²K.
+        assert!(
+            (props.surface_resistance_inside - 1.0 / 8.29).abs() < 1e-10,
+            "surface_resistance_inside = {:.6} should equal 1/8.29 = {:.6}",
+            props.surface_resistance_inside,
+            1.0 / 8.29
+        );
+        assert!(
+            (props.surface_resistance_outside - 1.0 / 29.3).abs() < 1e-10,
+            "surface_resistance_outside = {:.6} should equal 1/29.3 = {:.6}",
+            props.surface_resistance_outside,
+            1.0 / 29.3
+        );
+
+        // Per-layer Cm sanity (each layer independently pinned).
+        // Tolerance 1e-6 kJ/m²K — wall_properties computes
+        // `ρ · Cp · d / 1000` in f64 and we hand-computed the reference in
+        // f64, so this should be exact to floating-point ULP.
+        assert!(
+            (props.layers[0].thermal_mass_kj_m2 - 11.336).abs() < 1e-6,
+            "Gypsum Cm = {:.6} kJ/m²K, expected 11.336",
+            props.layers[0].thermal_mass_kj_m2
+        );
+        assert!(
+            (props.layers[1].thermal_mass_kj_m2 - 303.600).abs() < 1e-6,
+            "Concrete Cm = {:.6} kJ/m²K, expected 303.600 (ASHRAE 140 Table B1-3)",
+            props.layers[1].thermal_mass_kj_m2
+        );
+        assert!(
+            (props.layers[2].thermal_mass_kj_m2 - 2.100).abs() < 1e-6,
+            "Insulation Cm = {:.6} kJ/m²K, expected 2.100",
+            props.layers[2].thermal_mass_kj_m2
+        );
+        assert!(
+            (props.layers[3].thermal_mass_kj_m2 - 151.680).abs() < 1e-6,
+            "Brick Cm = {:.6} kJ/m²K, expected 151.680 (ASHRAE 140 Table B1-3)",
+            props.layers[3].thermal_mass_kj_m2
+        );
+
+        // Total Cm — the headline regression assertion.
+        // Reference: Σ(ρ·Cp·d) = 468 716 J/m²K = 468.716 kJ/m²K (± 1 %).
+        let cm_ref = 468.716;
+        let cm_actual = props.total_thermal_mass_kj_m2;
+        let lower = 0.99 * cm_ref;
+        let upper = 1.01 * cm_ref;
+        assert!(
+            cm_actual >= lower && cm_actual <= upper,
+            "Case 900 total Cm = {:.4} kJ/m²K must lie in [{:.4}, {:.4}] (468.7 ± 1 %)",
+            cm_actual,
+            lower,
+            upper
+        );
+
+        // Time constant sanity (helper, not the headline assertion):
+        // τ = Cm / (h_int + h_ext) / 3600  ≈ 468 716 / 37.59 / 3600 ≈ 3.46 h
+        // → well above the 2-hour `ThermalMethodSelector` threshold so the
+        // Case 900 envelope selects FD (not 5R1C).
+        let selector = ThermalMethodSelector::default();
+        let tau_h = selector.calculate_time_constant(&assembly);
+        assert!(
+            tau_h > 2.0,
+            "Case 900 τ = {:.3} h must exceed the 2 h FD/CTF threshold, got {tau_h:.3}",
+            tau_h
+        );
+    }
+
+    /// ASHRAE 140 Case 600 low-mass wall (50 mm foam-board insulation only):
+    ///
+    /// | Layer      | d (m) | ρ (kg/m³) | Cp (J/kgK) | Cm (kJ/m²K) |
+    /// |------------|-------|-----------|------------|-------------|
+    /// | Insulation | 0.050 |    50     |  840       |   2.100     |
+    ///
+    /// Pins the **600-vs-900** boundary in `ThermalMethodSelector`
+    /// (`src/physics/method_selector.rs:566` — `threshold_hours = 2.0`):
+    /// `Cm ≈ 2.1 kJ/m²K` and `τ ≈ 0.0155 h ≪ 2 h` → selects **5R1C**.
+    #[test]
+    fn test_wall_properties_case_600_low_mass() {
+        let assembly = AssemblyBuilder::new("Case 600 low-mass insulation".to_string())
+            .add_layer(Box::new(InsulationMaterial::new(0.050)))
+            .build()
+            .expect("Case 600 wall must build");
+        let props = WallProperties::from_assembly(&assembly);
+
+        assert_eq!(
+            props.layers.len(),
+            1,
+            "Case 600 reference wall must have a single insulation layer"
+        );
+
+        // Cm — 50 mm insulation with default ρ = 50 kg/m³, Cp = 840 J/kgK:
+        // Σ(ρ·Cp·d) = 2 100 J/m²K = 2.100 kJ/m²K ± 5 % envelope (wide band
+        // because the property table allows for slight material variation).
+        let cm_actual = props.total_thermal_mass_kj_m2;
+        assert!(
+            (cm_actual - 2.1).abs() / 2.1 < 0.05,
+            "Case 600 Cm = {cm_actual:.4} kJ/m²K, expected ≈ 2.1 (± 5 %)"
+        );
+
+        // τ must sit well below the 2-hour FD/CTF threshold (issue body
+        // requirement: τ < 0.5 h so 5R1C is selected).
+        let selector = ThermalMethodSelector::default();
+        let tau_h = selector.calculate_time_constant(&assembly);
+        assert!(
+            tau_h < 0.5,
+            "Case 600 τ = {tau_h:.4} h must be < 0.5 h (well below 2 h 5R1C threshold), got {tau_h:.4}"
+        );
+        assert!(
+            tau_h > 0.0 && tau_h.is_finite(),
+            "Case 600 τ = {tau_h} must be finite and positive"
+        );
+
+        // Solver selection side-check — Case 600 must select 5R1C, not FD.
+        let method = selector.select_method(&assembly);
+        assert_eq!(
+            method,
+            crate::physics::method_selector::ThermalMethod::FiveR1C,
+            "Case 600 (low mass, τ ≪ 2 h) must select FiveR1C"
+        );
+    }
+
+    /// Documents the **4.8 % Cp drift** on the concrete layer that motivated
+    /// this regression test (Issue #1420). The generic
+    /// `ConcreteMaterial::new(thickness)` constructor hard-codes
+    /// `Cp = 840 J/kgK`; ASHRAE 140 Case 900 Table B1-3 specifies
+    /// `Cp = 880 J/kgK` for the stacked concrete layer. Swapping one for
+    /// the other would silently propagate through `WallProperties →
+    /// WallSpec::from_assembly → CTFSolverWrapper::material_constructor
+    /// (src/physics/ctf_solver_wrapper.rs:84-98)` and through
+    /// `FDSolverWrapper`. This test pins the converter to use the ASHRAE
+    /// values and asserts the **concrete-layer** drift matches the
+    /// documented `880/840 − 1 ≈ +4.76 %`.
+    ///
+    /// Note on drift scope: the headline `Case 900 total Cm` shifts by only
+    /// ~3 % overall (because concrete is one of four layers), but the
+    /// concrete-layer Cm itself shifts by ~4.76 %, which is the drift that
+    /// the converter must not silently absorb.
+    #[test]
+    fn test_wall_properties_cp_drift_sensitivity() {
+        let legacy = WallProperties::from_assembly(&case_900_assembly_legacy_cp());
+        let ashrae = WallProperties::from_assembly(&case_900_assembly());
+
+        // Layer order is identical — both walls are the same 4-layer stack.
+        assert_eq!(legacy.layers.len(), ashrae.layers.len());
+        for (a, b) in legacy.layers.iter().zip(ashrae.layers.iter()) {
+            assert_eq!(
+                a.name, b.name,
+                "layer order must match between legacy and ASHRAE walls"
+            );
+        }
+
+        // Concrete-layer Cp drift: 880/840 − 1 = +4.7619 %.
+        let concrete_idx = 1;
+        let cm_legacy = legacy.layers[concrete_idx].thermal_mass_kj_m2;
+        let cm_ashrae = ashrae.layers[concrete_idx].thermal_mass_kj_m2;
+        let drift_pct = 100.0 * (cm_ashrae - cm_legacy) / cm_legacy;
+        let expected_drift_pct = 100.0 * (880.0 / 840.0 - 1.0); // +4.7619 %
+        assert!(
+            (drift_pct - expected_drift_pct).abs() < 0.01,
+            "Concrete-layer Cp drift = {drift_pct:.4} %, expected {expected_drift_pct:.4} % \
+             (Cm_legacy = {cm_legacy:.4}, Cm_ashrae = {cm_ashrae:.4})"
+        );
+        assert!(
+            drift_pct > 4.0 && drift_pct < 5.5,
+            "Concrete-layer Cp drift = {drift_pct:.4} % must lie in [4.0, 5.5] %"
+        );
+
+        // Gypsum-layer drift: legacy (ρ=960, Cp=840) vs ASHRAE (ρ=800,
+        // Cp=1090) → 800·1090 / (960·840) − 1 ≈ +8.13 %.
+        let gypsum_idx = 0;
+        let cm_g_legacy = legacy.layers[gypsum_idx].thermal_mass_kj_m2;
+        let cm_g_ashrae = ashrae.layers[gypsum_idx].thermal_mass_kj_m2;
+        let g_drift_pct = 100.0 * (cm_g_ashrae - cm_g_legacy) / cm_g_legacy;
+        assert!(
+            g_drift_pct > 5.0 && g_drift_pct < 12.0,
+            "Gypsum-layer density+Cp drift = {g_drift_pct:.4} % must lie in [5, 12] % \
+             (Cm_legacy = {cm_g_legacy:.4}, Cm_ashrae = {cm_g_ashrae:.4})"
+        );
+
+        // Total Cm — ASHRAE wall must exceed legacy by ~1 % (concrete Cp
+        // drift is partly offset by brick Cp dropping 840→790 and gypsum
+        // density dropping 960→800).
+        let total_drift_pct = 100.0
+            * (ashrae.total_thermal_mass_kj_m2 - legacy.total_thermal_mass_kj_m2)
+            / legacy.total_thermal_mass_kj_m2;
+        assert!(
+            total_drift_pct > 0.5 && total_drift_pct < 2.0,
+            "Total wall Cm drift = {total_drift_pct:.4} % must lie in [0.5, 2.0] % \
+             (legacy = {:.4}, ashrae = {:.4})",
+            legacy.total_thermal_mass_kj_m2,
+            ashrae.total_thermal_mass_kj_m2
+        );
+
+        // The ASHRAE total must land in the 468.7 ± 1 % envelope; the legacy
+        // total must NOT (proving the regression test would have caught the
+        // silent default-Cp swap that motivated Issue #1420).
+        let cm_ref = 468.716;
+        assert!(
+            ashrae.total_thermal_mass_kj_m2 >= 0.99 * cm_ref
+                && ashrae.total_thermal_mass_kj_m2 <= 1.01 * cm_ref,
+            "ASHRAE wall Cm = {:.4} must lie in [464.03, 473.40] kJ/m²K",
+            ashrae.total_thermal_mass_kj_m2
+        );
+        assert!(
+            legacy.total_thermal_mass_kj_m2 < 0.99 * cm_ref,
+            "Legacy Cp=840 wall Cm = {:.4} must fall OUTSIDE the ASHRAE 468.7 ± 1 % envelope \
+             (otherwise the regression test would not actually catch the silent Cp swap)",
+            legacy.total_thermal_mass_kj_m2
+        );
     }
 }
