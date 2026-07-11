@@ -394,6 +394,10 @@ pub trait HeatConductionSolver: Send + Sync {
 
 **Validation target**: Inside surface heat flux within 1% of E+ for step-change temperature test on 200mm concrete wall.
 
+#### `h_exterior` canonical constant (Issue #1419 / #1504)
+
+All conduction paths in Module 3 use a single source of truth for the exterior film coefficient: `EXTERIOR_FILM_COEFF = 18.3 W/m²K`, defined in `src/physics/constants/thermal/ashrae_140/v2023.rs` and re-exported at `fluxion::physics::constants::EXTERIOR_FILM_COEFF`. The value matches ASHRAE 140 v2023 Section 5.2 for vertical surfaces at the ~3.4 m/s design wind. Any code path that needs the surface resistance must derive it as `1.0 / EXTERIOR_FILM_COEFF` — never as a bare numeric literal. The legacy 6.7 m/s design-wind value (`h_ext = 29.3 W/m²K`) is preserved only at `src/physics/constants/thermal/ashrae_140/materials.rs` as the named constant `ASHRAE140_H_EXT` for backward compatibility with legacy ASHRAE 140 design-wind scenarios; even there, the reciprocal must be derived via `1.0 / ASHRAE140_H_EXT`, never the bare literal `1.0 / 29.3`. The regression guard `tests/regression_exterior_film_unification.rs` pins `EXTERIOR_FILM_COEFF == 18.3` and fails CI if any `.rs` file under `src/` contains the bare arithmetic `1.0 / 29.3` (or whitespace-equivalent forms), with a clear error pointing to the file and line. This guard was added in response to issue #1504 after PR #1420/#1490 re-introduced the legacy literal in an ASHRAE 140 Case 900 test assertion and silently broke CI across 8+ concurrent PRs rebased onto the post-#1419 main.
+
 ---
 
 ### Module 4: Infiltration & Ventilation
