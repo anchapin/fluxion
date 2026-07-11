@@ -6,8 +6,12 @@
 //! # Modules
 //!
 //! - `integration`: Integration testing infrastructure with wiring tracing
+//! - `reference_data`: Typed loaders for EnergyPlus reference CSVs
+//! - `tdd`: TDD helper functions (blind simulation, test climate, assertions)
 //! - `tdd_framework`: Test-Driven Development framework for physics accuracy
-//!   validation against EnergyPlus and analytical references
+//!   validation against EnergyPlus reference CSVs
 
 pub mod integration;
+pub mod reference_data;
+pub mod tdd;
 pub mod tdd_framework;
