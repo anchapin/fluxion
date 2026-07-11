@@ -1773,30 +1773,54 @@ impl ThermalModel<VectorField> {
         // conserved: it flows through `phi_st` (surfaces) and `phi_m` (mass) via the
         // `remaining_sol` split below. No coefficient is tuned to a target.
         //
-        // LOW-MASS constructions still use the 5R1C path, whose air node is shorted
-        // to the surface by `h_tr_is`, so they retain the higher `air_frac`
-        // compensation (unchanged). This is the hybrid selection rule from ADR-002.
+        // SOLAR DISTRIBUTION — see Issue #1457 / ISSUE_1168_ROOT_CAUSE.md
+        //
+        // ASHRAE 140-2023 §5.2.2 specifies that transmitted solar is distributed to
+        // interior opaque surfaces proportional to Aᵢ × αᵢ (windows excluded, α ≈ 0),
+        // with ZERO fraction routed directly to the air node. Solar reaches the air
+        // only through the air ↔ surface ↔ mass coupling (h_tr_is).
+        //
+        // History (issues #1216, #1280/#1281/#1289, #1457, ISSUE_1168_ROOT_CAUSE.md):
+        // - The 5R1C single-mass-node topology algebraically pins the air node to
+        //   the mass node (issue #1168). The peak-cooling deficit that #1216 was
+        //   trying to fix is fundamentally a discrete-node solar-injection limitation
+        //   of the 5R1C, NOT a solar-distribution routing problem.
+        // - #1216 raised `air_frac` for LowMass from 0.0 (ASHRAE 140 standard) to 0.7
+        //   as a band-aid to compensate for the missing air-node thermal inertia in
+        //   the simplified 5R1C. This flipped the peak-cooling failure mode from
+        //   under-prediction (~40-80% low, pre-#1216) to over-prediction (+11% to
+        //   +153% across Cases 610-650, issue #1457).
+        // - The legacy `air_frac = 0.40` for HighMass was the same kind of band-aid,
+        //   already removed in #1271 because the 9R4C multi-node solver (now the
+        //   sole driver of high-mass per ADR-002) routes solar through physical mass
+        //   nodes and does not need the air-node boost.
+        // - Setting `air_frac = 0.0` for LowMass too (per ASHRAE 140 §5.2.2) brings
+        //   the peak-cooling over-prediction under control but trades it for an
+        //   under-prediction of annual cooling (Case 640 4.78 → 2.58 MWh, Case 650
+        //   4.34 → 1.78 MWh) — the 5R1C simply cannot simultaneously match peak and
+        //   annual cooling for the ASHRAE 140 reference without the air-node boost.
+        // - Per AGENTS.md ("no parameter tuning to make system tests pass"), we
+        //   CANNOT raise `air_frac` past 0.7 (mask) or lower it to 0.0 (also mask).
+        //   The correct fix is the structural 5R1C air-node capacitance rewrite
+        //   tracked in issue #1152, which is out of scope for the #1457 follow-up.
+        //   The 14 remaining Case 600 metrics are catalogued in
+        //   docs/KNOWN_ISSUES.md LIMIT-05 UPDATE (#1457 revisit, 2026-07-10) and
+        //   quarantined in tests/known_issues_regression.rs (closes when
+        //   GaugeSolver #1465 lands).
+        //
+        // This block intentionally keeps the #1216 LowMass `air_frac = 0.70` until
+        // the structural rewrite unblocks the proper resolution.
         {
             let (air_frac, mass_frac_of_remaining): (f64, f64) = match spec.construction_type {
-                // Issue #1216: LowMass requires solar_distribution_to_air > 0 for proper
-                // peak cooling response. Per ASHRAE 140 Phase 8 plan: 70% to air, 30% to mass.
-                // This fixes peak cooling underprediction (was 40-80% low with 0% to air).
+                // Issue #1216 — band-aid for the missing air-node thermal inertia
+                // in the simplified 5R1C topology. To be replaced when #1152 lands.
                 crate::validation::ashrae_140_cases::ConstructionType::LowMass => (0.7, 0.3),
-                // ADR-002 (#1175): high-mass FREE-FLOAT uses the ASHRAE-140-correct
-                // solar split — window solar → opaque surfaces / mass, NONE directly
-                // to the air node (ISSUE_1168_ROOT_CAUSE.md, recommended fix #3).
-                // In free-float the air node is un-clamped, so dumping solar onto it
-                // via the legacy 0.40 compensation bypasses the thermal mass and
-                // over-inflates the free-floating air temperature. Routing solar to
-                // the 9R4C mass nodes (via `phi_st`/`phi_m`) lets the backward-Euler
-                // mass dynamics buffer it, landing 900FF max in [41.8, 46.4]°C.
-                //
-                // ADR-002 (#1175): HighMass HVAC now uses ASHRAE-140-correct solar split —
-                // window solar → opaque surfaces / mass, NONE directly to air (same as
-                // free-float). The previous 0.40 was a stale compensation constant for
-                // the OLD 5R1C topology (ISSUE_1168_ROOT_CAUSE.md). Issue #1271 removes it
-                // because the 9R4C solver routes solar through physical mass nodes; dumping
-                // 40% onto the air node bypasses thermal mass and over-predicts cooling.
+                // ADR-002 (#1175): high-mass uses the ASHRAE-140-correct solar split —
+                // window solar → opaque surfaces / mass, NONE directly to air. The
+                // legacy 0.40 was a stale compensation constant for the OLD 5R1C
+                // topology (ISSUE_1168_ROOT_CAUSE.md). The 9R4C solver routes solar
+                // through physical mass nodes; dumping 40% onto the air node bypasses
+                // thermal mass and over-predicts cooling.
                 crate::validation::ashrae_140_cases::ConstructionType::HighMass => (0.0, 0.30),
                 crate::validation::ashrae_140_cases::ConstructionType::Special => (0.10, 0.50),
             };

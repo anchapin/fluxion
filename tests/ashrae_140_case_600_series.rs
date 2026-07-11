@@ -155,6 +155,24 @@ fn run_annual_simulation(case_enum: ASHRAE140Case) -> (f64, f64, f64, f64) {
     let weather = fluxion::weather::epw::EpwWeatherSource::from_file("assets/weather/WD600.epw")
         .expect("Failed to load EPW weather data");
 
+    // ASHRAE 140 §B2 specifies a warm-up period before collecting annual metrics
+    // (typically a full year repeat of the weather). The previous implementation
+    // ran a single 8760-hour pass from default initial conditions, which produced
+    // spurious "phantom" energy in the first year — the mass node started at 20°C
+    // regardless of season and absorbed/released heat until it converged. The
+    // warm-up below drops that phantom energy without changing the steady-state
+    // physics, and aligns the test methodology with `case_900_multinode_validation`.
+    //
+    // Issue #1457 investigation: the warm-up also smooths the peak-load metric,
+    // which had a single-timestep spike at hour 0 from the mass starting 20°C
+    // above the winter outdoor temperature.
+    const WARMUP_STEPS: usize = 14 * 24; // 14-day warm-up, matches Case 900 test
+    for step in 0..WARMUP_STEPS {
+        let weather_data = weather.get_hourly_data(step).unwrap();
+        model.weather = Some(weather_data.clone());
+        let _ = model.step_physics(step, weather_data.dry_bulb_temp, 3600.0);
+    }
+
     let mut total_heating = 0.0_f64;
     let mut total_cooling = 0.0_f64;
     let mut peak_heating = 0.0_f64;
