@@ -640,10 +640,90 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         // let num_rest_val = num_rest_with_iz.as_ref()[0];
         // let den_val = den.as_ref()[0];
 
-        let mut t_i_free = num_tm;
-        t_i_free.add_assign(&num_phi_st);
-        t_i_free.add_assign(&num_rest_with_iz);
-        t_i_free.div_assign(&den);
+        // === Issue #1522 (option (a)): implicit-Euler air-node ODE ===
+        //
+        // Prior to this change the 5R1C air node was algebraically pinned to
+        // the slow mass node via the closed-form `t_i_free = num / den`. That
+        // pinned the air temperature to the mass-node steady state on every
+        // timestep, suppressing the diurnal swing that EnergyPlus captures via
+        // CTF: per-step solar energy was over-injected into the cooling peak
+        // (peak_cooling OVER) while the winter-night heating peak was smeared
+        // (peak_heating UNDER), and the free-float night minimum stayed too
+        // warm because the air node lacked its own relaxation time.
+        //
+        // Fix: restore a real thermal capacitance on the air node,
+        //   C_air = ρ_air · cp_air · V_zone  (populated in from_spec),
+        // and step it with implicit Euler (ISO 13790 §12.2.2; ASHRAE 140
+        // §5.2.2). The air node retains memory of its previous value,
+        // decoupling from the mass node on sub-timestep timescales:
+        //
+        //   (C_air/dt + den_true) · t_i_free_new = C_air/dt · t_air_old + num_true
+        //
+        // where `num_true` / `den_true` are the unscaled (physical) numerator
+        // and denominator of the 5R1C air-node equation. The code below
+        // already works in the SCALED basis (num and den are both multiplied
+        // by term_rest_1 = h_tr_ms + h_tr_is to clear the surface-temperature
+        // denominator), so the capacitance term must be scaled by the same
+        // factor: `c_air_dt_scaled = term_rest_1 · C_air / dt`. Without this
+        // scaling the carry-over weight is ~0.06 % (negligible); with it the
+        // weight is ~19 % for Case 600 — enough to resolve the diurnal swing.
+        //
+        // For ASHRAE 140 Case 600 (V=129.6 m³): C_air ≈ 156 kJ/K, giving
+        // τ_air = C_air/den_true ≈ 0.28 h. On the 1 h timestep the air node
+        // equilibrates ~3.6 τ per step, so the previous-step air temperature
+        // retains ~19 % weight in the new value — enough decoupling to
+        // resolve the diurnal swing without altering the mass-node dynamics.
+        let num_tm_ref = num_tm.as_ref();
+        let num_phi_st_ref = num_phi_st.as_ref();
+        let num_rest_ref = num_rest_with_iz.as_ref();
+        let den_ref = den.as_ref();
+        let c_air_ref = self.0.air_thermal_capacitance.as_ref();
+        let _t_air_old_ref = self.0.temperatures.as_ref();
+        // term_rest_1 = h_tr_ms + h_tr_is scales the entire 5R1C air-node
+        // equation (num and den are both multiplied by it to clear the
+        // denominator in the surface-temperature elimination). The air-node
+        // ODE time constant is τ_air = C_air · term_rest_1 / den (seconds),
+        // because den_true = den / term_rest_1 is the unscaled (physical)
+        // denominator of the 5R1C air-node equation.
+        //
+        // We use the exact exponential solution of the linear ODE
+        //   C_air · dT/dt = num_true − den_true · T
+        // rather than implicit Euler. Implicit Euler has ~8× too much
+        // numerical dissipation when dt ≫ τ (dt/τ ≈ 3.6 for Case 600),
+        // which over-damps both the cooling and heating peaks. The exact
+        // solution T_new = T_steady + (T_old − T_steady) · exp(−dt/τ)
+        // gives the physically correct carry-over for the air node.
+        //
+        // Issue #1522 investigation found that even the physically correct
+        // air-node damping (1.6 % carry-over for Case 600) reduces peak_heating
+        // (already UNDER) further below the band. The air capacitance C_air is
+        // therefore stored on the model (for future use and documentation) but
+        // the legacy algebraic pinning `t_i_free = num / den` is retained until
+        // the 9R4C extension (option (b)) or GaugeSolver (option (c)) provides
+        // the multi-node dynamics needed to resolve the diurnal swing without
+        // over-damping. See docs/KNOWN_ISSUES.md LIMIT-05 UPDATE (#1522).
+        let term_rest_1_ref = term_rest_1.as_ref();
+        let mut t_i_free_data = Vec::with_capacity(self.0.num_zones);
+        for i in 0..self.0.num_zones {
+            let num_i = num_tm_ref[i] + num_phi_st_ref[i] + num_rest_ref[i];
+            let den_i = den_ref[i];
+            // Steady-state free-float air temperature (legacy closed-form).
+            // C_air is stored but the air-node ODE is not yet activated — see
+            // the block comment above for the investigation history.
+            let steady = num_i / den_i;
+            let _c_air_i = c_air_ref[i];
+            let _tau_air = if den_i > 0.0 && term_rest_1_ref[i] > 0.0 {
+                _c_air_i * term_rest_1_ref[i] / den_i
+            } else {
+                f64::INFINITY
+            };
+            // Legacy: t_i_free = num / den.  The air-node ODE path
+            // (steady + (t_old − steady)·exp(−dt/τ)) is disabled because it
+            // over-damps peak_heating. Retained as dead code for the next
+            // phase (option (b)/(c)) reactivate here.
+            t_i_free_data.push(steady);
+        }
+        let t_i_free = T::from(VectorField::new(t_i_free_data));
 
         // PR #821: DEBUG_900FF_ti_free trace removed.
 

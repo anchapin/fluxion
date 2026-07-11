@@ -625,6 +625,72 @@ The fundamental issue is that h_ms_total is computed as an additive sum of wall/
   GaugeSolver (#1465) brings the 14 metrics into band, giving CI a concrete
   close-out signal for #1457.
 
+### LIMIT-05 UPDATE (#1522 investigation, 2026-07-11): option (a) air-node capacitance — INFEASIBLE at 1 h timestep
+
+**Issue #1522** tasked a structural fix for the 14 remaining Case 600 metrics
+via option (a): "restore a real capacitance on the air node so it can
+decouple from the mass node on sub-timestep timescales."
+
+**Structural improvements shipped** (this PR):
+
+1. **`air_thermal_capacitance` field added** to `ThermalModelData`
+   (`thermal_model_data.rs`). Populated per-zone in `from_spec` as
+   `C_air = ρ_air · cp_air · V_zone` (≈156 kJ/K for Case 600). This field is
+   the physically correct air-node capacitance and is stored for future use
+   by the air-node ODE.
+
+2. **`air_cap` removed from the slow mass-node capacitance `Cm`**
+   (`thermal_model_core.rs`). Previously `Cm = wall_cap + roof_cap +
+   floor_cap + air_cap` lumped the air capacitance onto the slow mass node —
+   the structural error that over-damped the mass response. Now
+   `Cm = wall_cap + roof_cap + floor_cap` (envelope mass only); the air
+   capacitance lives on `air_thermal_capacitance`. This flips Case 620
+   `annual_cooling` from 3.18 MWh (just below the 3.20 floor) into band,
+   giving **14 pass / 13 fail** (was 13/14).
+
+**Why option (a) air-node ODE is disabled** (investigation findings):
+
+The air-node ODE time constant for Case 600 is
+`τ_air = C_air / den_true ≈ 156 kJ/K / 165 W/K ≈ 0.28 h`. On the ASHRAE 140
+1-hour simulation timestep this gives `dt/τ ≈ 3.6`, so the air node is
+**~98 % equilibrated** within each step. Three integration methods were
+tested:
+
+| Method | Carry-over weight | Peak_cooling | Peak_heating | Net result |
+|--------|-------------------|--------------|--------------|------------|
+| Legacy (no C_air) | 0 % | 4.30 kW (OVER +48 %) | 3.26 kW (UNDER −24 %) | 13/14 |
+| Exact exponential `e^{−dt/τ}` | 1.6 % | 4.14 kW (OVER +18 %) | 3.14 kW (UNDER −27 %) | 12/15 |
+| Implicit Euler `1/(1+dt/τ)` | 22 % | 3.41 kW (OVER +18 %) | 2.58 kW (UNDER −40 %) | 9/18 |
+
+**Root cause of the failure**: peak_cooling OVER and peak_heating UNDER point
+in **opposite directions** — no single air-node damping can reduce the
+cooling peak while increasing the heating peak. The damping reduces BOTH
+peaks equally because it smooths the air-temperature swing symmetrically.
+
+The deeper root cause is the **`solar_distribution_to_air = 0.7`** for
+LowMass constructions (issue #1216 band-aid), which sends 70 % of window
+solar directly to the air node. This produces a free-float peak temperature
+of ~62 °C (vs EnergyPlus ~50 °C via CTF + detailed surface distribution),
+driving peak_cooling 48 % over band. Setting `air_frac = 0.0` (ASHRAE 140
+§5.2.2 standard) brings peak_cooling into band but pushes annual_cooling
+further UNDER — a trade-off the issue explicitly identifies as
+"parameter tuning" (forbidden by AGENTS.md).
+
+**Option (b) probe — also INFEASIBLE**: temporarily routing Case 600
+(LowMass) to the 9R4C solver produced **11 pass / 16 fail** — worse than
+baseline. The 9R4C solver is calibrated for HighMass constructions; with
+LowMass parameters it produces 82 °C free-float maxima and under-predicts
+annual heating by 25-35 %.
+
+**Recommendation**: the 14 remaining Case 600 metrics require either
+**(c) GaugeSolver revival** (which treats solar as geometric curvature
+rather than per-timestep energy injection, natively preventing the
+over-injection), or **sub-hour air-node sub-stepping** within the 1-hour
+weather timestep (which would give `dt/τ ≈ 1` and meaningful air-node
+dynamics). Both are out of scope for this PR. The structural improvements
+above (air_thermal_capacitance field + Cm correction) are retained as
+they are physically correct and flip one marginal test.
+
 - **Incidental finding — Case 610 spurious west window (SPEC discrepancy, NOT a
   fix for the above):** `CaseBuilder::case_610_south_shading()` adds
   `.with_window(3.0, Orientation::West)`, giving Case 610 a 15 m² glazing area.
