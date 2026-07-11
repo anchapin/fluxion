@@ -251,12 +251,7 @@ impl PhysicsSurfaceFluxProvider {
     /// * `surface_idx` - Zero-based surface index
     /// * `h_int` - Interior film coefficient [W/m²·K]
     /// * `h_ext` - Exterior film coefficient [W/m²·K]
-    pub fn set_film_coefficients(
-        &mut self,
-        surface_idx: usize,
-        h_int: f64,
-        h_ext: f64,
-    ) {
+    pub fn set_film_coefficients(&mut self, surface_idx: usize, h_int: f64, h_ext: f64) {
         if surface_idx < self.h_int.len() {
             self.h_int[surface_idx] = h_int;
         }
@@ -621,9 +616,8 @@ mod tests {
     #[test]
     fn test_set_film_coefficients_trait_method() {
         // Mock impl: must be a legal trait-object call and a no-op.
-        let mut providers: Vec<Box<dyn SurfaceHeatFluxProvider>> = vec![
-            Box::new(MockSurfaceHeatFluxProvider::uniform(1, 12.0)),
-        ];
+        let mut providers: Vec<Box<dyn SurfaceHeatFluxProvider>> =
+            vec![Box::new(MockSurfaceHeatFluxProvider::uniform(1, 12.0))];
         for p in &mut providers {
             p.set_film_coefficients(0, 3.45, 4.0); // must not panic
             let q = p.surface_heat_flux(0, 20.0, 5.0, 3600.0);
@@ -633,7 +627,11 @@ mod tests {
         // Physics impl: trait dispatch should reach the per-vector
         // mutator without changing the public API of either impl.
         let wall = crate::physics::wall_spec::WallSpec::single_layer(
-            "200mm Concrete", 0.2, 1.73, 2243.0, 837.0,
+            "200mm Concrete",
+            0.2,
+            1.73,
+            2243.0,
+            837.0,
         );
         let mut solver = crate::physics::five_r1c_solver::FiveR1CSolver::new();
         solver.initialize(&wall).expect("5R1C init");
@@ -643,11 +641,13 @@ mod tests {
 
         // Trait-object dispatch path.
         let mut physics_dyn: Box<dyn SurfaceHeatFluxProvider> = Box::new(
-            PhysicsSurfaceFluxProvider::new()
-                .add_surface_with_film_coefficients(
-                    crate::physics::five_r1c_solver::FiveR1CSolver::new(),
-                    10.0, 0.0, 8.0, 25.0,
-                ),
+            PhysicsSurfaceFluxProvider::new().add_surface_with_film_coefficients(
+                crate::physics::five_r1c_solver::FiveR1CSolver::new(),
+                10.0,
+                0.0,
+                8.0,
+                25.0,
+            ),
         );
         physics_dyn.set_film_coefficients(0, 3.45, 4.0);
         assert_eq!(physics_dyn.num_surfaces(), 1);

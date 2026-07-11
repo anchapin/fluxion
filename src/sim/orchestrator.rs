@@ -175,12 +175,10 @@ impl BatchOrchestrator for RayonChunksOrchestrator {
                     let mut energy_kwh = 0.0_f64;
                     for t in 0..8760 {
                         let hour_of_day = t % 24;
-                        let daily_cycle = ((hour_of_day as f64 / 24.0)
-                            * 2.0
-                            * std::f64::consts::PI
-                            - std::f64::consts::PI
-                            / 2.0)
-                            .sin();
+                        let daily_cycle =
+                            ((hour_of_day as f64 / 24.0) * 2.0 * std::f64::consts::PI
+                                - std::f64::consts::PI / 2.0)
+                                .sin();
                         let outdoor_temp = 10.0 + 10.0 * daily_cycle;
 
                         let temps = model.get_temperatures();

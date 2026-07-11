@@ -829,7 +829,10 @@ impl ThermalModelBuilder {
                 if let Some(spec) = self.spec {
                     Box::new(HybridThermalModel::from_spec(&spec))
                 } else {
-                    Box::new(HybridThermalModel::new(self.num_zones, HybridRouting::default()))
+                    Box::new(HybridThermalModel::new(
+                        self.num_zones,
+                        HybridRouting::default(),
+                    ))
                 }
             }
         }

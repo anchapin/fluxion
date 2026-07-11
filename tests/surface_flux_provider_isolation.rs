@@ -1115,7 +1115,8 @@ fn test_swap_point_set_film_coefficients_via_dyn() {
     let mut providers: Vec<Box<dyn SurfaceHeatFluxProvider>> = vec![
         Box::new(MockSurfaceHeatFluxProvider::uniform(1, 12.0)),
         Box::new(
-            PhysicsSurfaceFluxProvider::new().add_surface_with_film_coefficients(fd, 10.0, 0.0, 8.0, 25.0),
+            PhysicsSurfaceFluxProvider::new()
+                .add_surface_with_film_coefficients(fd, 10.0, 0.0, 8.0, 25.0),
         ),
     ];
 
