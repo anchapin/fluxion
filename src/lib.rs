@@ -1285,27 +1285,24 @@ impl BatchOracle {
             }
         } else if !valid_configs.is_empty() {
             // Analytical path - fully parallel
-            // Note: StepParameters is !Sync (Box<dyn Equipment>), so it cannot be moved
-            // into the rayon for_each closure. We construct a per-step instance inside
-            // the inner loop and pass by & reference (Issue #901).
+            // Note: StepParameters is !Sync (Box<dyn Equipment>), so a single
+            // instance cannot be shared across rayon workers. We construct
+            // one StepParameters per worker work-item and reuse it for every
+            // one of the 8 760 inner timesteps (Issue #1437 hoists the
+            // construction out of the per-timestep inner loop, which
+            // previously ran `surrogates.clone()` once per timestep per
+            // config — the leading 5R1C allocation-pressure cost).
             let mut energies = vec![0.0; valid_configs.len()];
             valid_configs
                 .par_iter_mut()
                 .zip(energies.par_iter_mut())
                 .for_each(|((_, model), energy)| {
+                    let step_params = StepParameters::build_analytical(&self.surrogates);
                     for t in 0..8760 {
                         let hour_of_day = t % 24;
                         let daily_cycle =
                             (hour_of_day as f64 / 24.0 * 2.0 * std::f64::consts::PI).sin();
                         let outdoor_temp = 10.0 + 10.0 * daily_cycle;
-                        let step_params = StepParameters {
-                            use_ai: false,
-                            surrogates: self.surrogates.clone(),
-                            use_analytical_gains: true,
-                            lighting: None,
-                            equipment: None,
-                            occupancy: None,
-                        };
                         *energy += model.solve_single_step(t, outdoor_temp, &step_params, 3600.0);
                     }
                 });
@@ -1556,27 +1553,24 @@ impl BatchOracle {
             }
         } else if !valid_configs.is_empty() {
             // Analytical path - fully parallel
-            // Note: StepParameters is !Sync (Box<dyn Equipment>), so it cannot be moved
-            // into the rayon for_each closure. We construct a per-step instance inside
-            // the inner loop and pass by & reference (Issue #901).
+            // Note: StepParameters is !Sync (Box<dyn Equipment>), so a single
+            // instance cannot be shared across rayon workers. We construct
+            // one StepParameters per worker work-item and reuse it for every
+            // one of the 8 760 inner timesteps (Issue #1437 hoists the
+            // construction out of the per-timestep inner loop, which
+            // previously ran `surrogates.clone()` once per timestep per
+            // config — the leading 5R1C allocation-pressure cost).
             let mut energies = vec![0.0; valid_configs.len()];
             valid_configs
                 .par_iter_mut()
                 .zip(energies.par_iter_mut())
                 .for_each(|((_, model), energy)| {
+                    let step_params = StepParameters::build_analytical(&self.surrogates);
                     for t in 0..8760 {
                         let hour_of_day = t % 24;
                         let daily_cycle =
                             (hour_of_day as f64 / 24.0 * 2.0 * std::f64::consts::PI).sin();
                         let outdoor_temp = 10.0 + 10.0 * daily_cycle;
-                        let step_params = StepParameters {
-                            use_ai: false,
-                            surrogates: self.surrogates.clone(),
-                            use_analytical_gains: true,
-                            lighting: None,
-                            equipment: None,
-                            occupancy: None,
-                        };
                         *energy += model.solve_single_step(t, outdoor_temp, &step_params, 3600.0);
                     }
                 });
