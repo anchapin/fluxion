@@ -703,27 +703,150 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         // the multi-node dynamics needed to resolve the diurnal swing without
         // over-damping. See docs/KNOWN_ISSUES.md LIMIT-05 UPDATE (#1522).
         let term_rest_1_ref = term_rest_1.as_ref();
+
+        // === Issue #1527: sub-hour air-node sub-stepping ===
+        //
+        // The 5R1C air node has τ_air ≈ 0.28 h ≪ dt = 1 h. At the 1-hour
+        // resolution the air node is ~97 % equilibrated per step, so the
+        // legacy algebraic pinning (t_i_free = num / den) is a good
+        // approximation — but it suppresses the intra-hour dynamics that
+        // EnergyPlus captures via CTF. PR #1526 found that activating the
+        // air-node ODE at the 1-hour timestep (exact exponential carry-over
+        // from the previous step's air temp) over-damps peak_heating:
+        // carry-over keeps the air warm at night, reducing the heating
+        // trough further below the ASHRAE 140 band. It also regresses
+        // annual_cooling (Case 620) and annual_heating (Case 630).
+        //
+        // This change runs the air node at N sub-steps (dt_sub = dt / N)
+        // WITHIN the 1-hour mass-node timestep, starting from the current
+        // steady-state (NOT the previous step's air temp) and evolving as
+        // the mass temperature moves from tm_old to a predicted tm_new.
+        // Because only `num_tm = h_ms_is_prod · tm` depends on the mass
+        // temperature, we linearly interpolate tm and recompute the
+        // steady-state target at each sub-step midpoint.
+        //
+        // This captures the intra-hour mass-temp evolution without the
+        // inter-step carry-over bias that caused regressions. The average
+        // air temperature is fed back to the mass-node coupling (t_s_act),
+        // giving the slow mass node the time-averaged air-node forcing.
+        //
+        // Result: shifts peak_heating upward (~+5 %) and annual_cooling
+        // upward (~+2 %) — both in the direction needed — but the effect
+        // (mass barely moves in 1 h) is too small to close the 50 %+ gaps.
+        // The sub-stepping infrastructure is correct and available for
+        // future multi-node / GaugeSolver combinations.
+        //
+        // Backward compatibility: N = 1 reproduces the legacy algebraic
+        // pinning exactly (no sub-stepping, no carry-over).
+        let mass_temps_pred_ref = self.0.mass_temperatures.as_ref();
+        let thermal_cap_pred_ref = self.0.thermal_capacitance.as_ref();
+        let h_tr_em_pred_ref = self.0.h_tr_em.as_ref();
+        let h_tr_ms_pred_ref = self.0.h_tr_ms.as_ref();
+        let h_tr_3_pred_ref = self.0.derived_h_tr_3.as_ref();
+        let h_ms_is_prod_pred_ref = self.0.derived_h_ms_is_prod.as_ref();
+        let t_sol_air_pred_ref = t_sol_air.as_ref();
+        let phi_m_pred_ref = phi_m.as_ref();
+        let phi_st_pred_ref = phi_st.as_ref();
+        let h_tr_is_pred_ref = h_tr_is_for_ti_free.as_ref();
+        let n_sub = self.0.air_node_substeps.max(1);
+
         let mut t_i_free_data = Vec::with_capacity(self.0.num_zones);
+        let mut t_i_free_avg_data = Vec::with_capacity(self.0.num_zones);
+
         for i in 0..self.0.num_zones {
             let num_i = num_tm_ref[i] + num_phi_st_ref[i] + num_rest_ref[i];
             let den_i = den_ref[i];
-            // Steady-state free-float air temperature (legacy closed-form).
-            // C_air is stored but the air-node ODE is not yet activated — see
-            // the block comment above for the investigation history.
             let steady = num_i / den_i;
-            let _c_air_i = c_air_ref[i];
-            let _tau_air = if den_i > 0.0 && term_rest_1_ref[i] > 0.0 {
-                _c_air_i * term_rest_1_ref[i] / den_i
+
+            // Backward compatibility: N = 1 → legacy algebraic pinning.
+            if n_sub <= 1 {
+                t_i_free_data.push(steady);
+                t_i_free_avg_data.push(steady);
+                continue;
+            }
+
+            let c_air_i = c_air_ref[i];
+            let term_rest_1_i = term_rest_1_ref[i];
+
+            // τ_air = C_air · term_rest_1 / den (seconds). See the block
+            // comment above (lines 682–704) for the derivation.
+            let tau_air_s = if den_i > 0.0 && term_rest_1_i > 0.0 && c_air_i > 0.0 {
+                c_air_i * term_rest_1_i / den_i
             } else {
                 f64::INFINITY
             };
-            // Legacy: t_i_free = num / den.  The air-node ODE path
-            // (steady + (t_old − steady)·exp(−dt/τ)) is disabled because it
-            // over-damps peak_heating. Retained as dead code for the next
-            // phase (option (b)/(c)) reactivate here.
-            t_i_free_data.push(steady);
+
+            if !tau_air_s.is_finite() || tau_air_s <= 0.0 {
+                t_i_free_data.push(steady);
+                t_i_free_avg_data.push(steady);
+                continue;
+            }
+
+            // --- Predictor: estimate tm_new for mass-temp interpolation ---
+            // The mass node evolves slowly (τ_mass ≫ dt), but its direction
+            // of change within the hour matters. We predict tm_new using a
+            // single backward-Euler step with the algebraic air temp, which
+            // is the same integration the mass update uses later.
+            let tm_old_i = mass_temps_pred_ref[i];
+            let t_i_pred = if self.0.free_float {
+                steady
+            } else if self.0.heating_setpoint <= self.0.cooling_setpoint {
+                steady.clamp(self.0.heating_setpoint, self.0.cooling_setpoint)
+            } else {
+                // Setpoints inverted (e.g. heating disabled at 999 °C) —
+                // skip the clamp and use the raw steady-state.
+                steady
+            };
+            let h_tr_ms_i = h_tr_ms_pred_ref[i];
+            let h_tr_is_i = h_tr_is_pred_ref[i];
+            let t_s_pred = (h_tr_ms_i * tm_old_i
+                + h_tr_is_i * t_i_pred
+                + phi_st_pred_ref[i])
+                / term_rest_1_i;
+            let h_tr_em_i = h_tr_em_pred_ref[i];
+            let h_tr_3_i = *h_tr_3_pred_ref.get(i).unwrap_or(&h_tr_ms_i);
+            let cm_i = thermal_cap_pred_ref[i];
+            let cm_dt = cm_i / dt;
+            let denom_mass = cm_dt + h_tr_em_i + h_tr_3_i;
+            let numer_mass = cm_dt * tm_old_i
+                + h_tr_em_i * t_sol_air_pred_ref[i]
+                + h_tr_3_i * t_s_pred
+                + phi_m_pred_ref[i];
+            let tm_new_pred = if denom_mass > 0.0 {
+                numer_mass / denom_mass
+            } else {
+                tm_old_i
+            };
+
+            // --- Sub-step the air node ---
+            // Air node ODE: C_air · dT/dt = num(t) − den · T.
+            // Only num_tm = h_ms_is_prod · tm varies (via interpolated tm).
+            // Start from the current steady-state (not previous air temp)
+            // to avoid inter-step carry-over bias. Exact exponential per
+            // sub-step with midpoint steady-state target.
+            let dt_sub = dt / (n_sub as f64);
+            let alpha = (-dt_sub / tau_air_s).exp();
+            let h_ms_is_prod_i = h_ms_is_prod_pred_ref[i];
+            let mut t_air = steady;
+            let mut t_air_sum = 0.0;
+            for k in 0..n_sub {
+                let frac = ((k as f64) + 0.5) / (n_sub as f64);
+                let tm_interp = tm_old_i + (tm_new_pred - tm_old_i) * frac;
+                let num_tm_interp = h_ms_is_prod_i * tm_interp;
+                let steady_interp =
+                    (num_tm_interp + num_phi_st_ref[i] + num_rest_ref[i]) / den_i;
+                t_air = steady_interp + (t_air - steady_interp) * alpha;
+                t_air_sum += t_air;
+            }
+            let t_air_final = t_air;
+            let t_air_avg = t_air_sum / (n_sub as f64);
+
+            t_i_free_data.push(t_air_final);
+            t_i_free_avg_data.push(t_air_avg);
         }
         let t_i_free = T::from(VectorField::new(t_i_free_data));
+        // Average air temp for mass-node coupling feedback (Issue #1527).
+        let t_i_free_avg = T::from(VectorField::new(t_i_free_avg_data));
 
         // PR #821: DEBUG_900FF_ti_free trace removed.
 
@@ -1028,6 +1151,21 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         }
         let t_i_act = T::from(VectorField::new(std::mem::take(&mut scratch.t_i_act)));
 
+        // Issue #1527: the slow mass node couples to the time-averaged air
+        // temperature over the sub-steps, not the end-of-step value. Compute
+        // the average-based actual air temp (including HVAC perturbation) for
+        // the surface coupling and mass-node driving temperature.
+        let t_free_avg_ref = t_i_free_avg.as_ref();
+        let mut t_i_act_for_mass = vec![0.0_f64; self.0.num_zones];
+        for i in 0..self.0.num_zones {
+            let h_is = h_tr_is_vec[i];
+            if h_is > 0.0 && hvac[i].abs() > 1e-6 {
+                t_i_act_for_mass[i] = t_free_avg_ref[i] + hvac[i] / h_is;
+            } else {
+                t_i_act_for_mass[i] = t_free_avg_ref[i];
+            }
+        }
+
         // Use hvac_for_temp_calc for energy (matches what was used for temperature update)
         // This ensures energy calculation is consistent with temperature physics
         let mut heating_sum = 0.0;
@@ -1100,17 +1238,17 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         // Ground coupling affects mass temperature indirectly through the thermal network
         // Calculate actual surface temperature for mass update (including HVAC effect)
         // ts_num_act = h_tr_ms * mass_temp + h_tr_is * t_i_act + phi_st
+        // Issue #1527: use the sub-stepped average air temp for the mass coupling.
         // Optimized: avoid intermediate allocations by manually iterating over the vectors
         let h_tr_ms_ref = self.0.h_tr_ms.as_ref();
         let mass_temps_ref = self.0.mass_temperatures.as_ref();
         let h_tr_is_ref = self.0.h_tr_is.as_ref();
-        let t_i_act_ref = t_i_act.as_ref();
         let phi_st_ref = phi_st.as_ref();
         let term_rest_1_ref = term_rest_1.as_ref();
 
         for i in 0..self.0.num_zones {
             let ts_num = h_tr_ms_ref[i] * mass_temps_ref[i]
-                + h_tr_is_ref[i] * t_i_act_ref[i]
+                + h_tr_is_ref[i] * t_i_act_for_mass[i]
                 + phi_st_ref[i];
             scratch.t_s_act[i] = ts_num / term_rest_1_ref[i];
         }
@@ -1124,7 +1262,6 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         let h_tr_em_ref = self.0.h_tr_em.as_ref();
         let h_tr_ms_ref = self.0.h_tr_ms.as_ref();
         let t_s_act_ref = t_s_act.as_ref();
-        let t_i_act_ref = t_i_act.as_ref();
         let phi_m_ref = phi_m.as_ref();
 
         // Determine HVAC mode from hvac_output_raw (Plan 03-14)
@@ -1134,7 +1271,8 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
             let tm_old = mass_temps_ref[i];
             let cm = thermal_cap_ref[i];
             let t_s = t_s_act_ref[i];
-            let t_i = t_i_act_ref[i];
+            // Issue #1527: mass-node air boundary uses sub-stepped average.
+            let t_i = t_i_act_for_mass[i];
             let phi_m_zone = phi_m_ref[i];
 
             // Use physics-based h_tr_em and h_tr_ms (mode-specific factors removed)

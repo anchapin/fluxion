@@ -1643,6 +1643,10 @@ impl ThermalModel<VectorField> {
         // step_physics_5r1c can apply the implicit-Euler air-node ODE.
         model.air_thermal_capacitance = VectorField::new(air_thermal_cap_vec);
 
+        // Issue #1527: activate sub-hour air-node sub-stepping for the 5R1C
+        // path. N=6 gives dt_sub ≈ 10 min (dt_sub/τ_air ≈ 0.6 for Case 600).
+        model.air_node_substeps = 6;
+
         // === Issue #894 FIX: Compute derived_h_tr_3 (ISO 13790 air-to-mass conductance) ===
         //
         // The thermal mass in the 6R2C model receives heat from the AIR node through H_tr_3,
@@ -2535,6 +2539,10 @@ impl ThermalModel<VectorField> {
             // so any code that constructs a ThermalModel without from_spec
             // (mostly unit tests) keeps its historical behaviour.
             air_thermal_capacitance: VectorField::from_scalar(0.0, num_zones),
+
+            // Issue #1527: air-node sub-step count. 1 = legacy algebraic
+            // pinning (backward-compatible for unit tests). from_spec sets 6.
+            air_node_substeps: 1,
 
             // 6R2C model fields (initialized for 5R1C compatibility)
             envelope_mass_temperatures: VectorField::from_scalar(20.0, num_zones),

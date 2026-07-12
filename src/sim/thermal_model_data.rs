@@ -104,6 +104,11 @@ pub struct ThermalModelData<T: ContinuousTensor<f64> + Clone> {
     /// (`step_physics_9r4c`) and 6R2C paths maintain their own air-node
     /// handling.
     pub air_thermal_capacitance: T,
+    /// Issue #1527: number of sub-steps for the air-node ODE within each
+    /// 1-hour mass-node timestep. Default 6 (dt_sub ≈ 10 min). When 1, the
+    /// air node uses the legacy algebraic pinning (backward-compatible).
+    /// Used in `step_physics_5r1c` only.
+    pub air_node_substeps: usize,
     pub envelope_mass_temperatures: T,
     pub internal_mass_temperatures: T,
     pub envelope_thermal_capacitance: T,
@@ -285,6 +290,7 @@ impl<T: ContinuousTensor<f64> + Clone> Clone for ThermalModelData<T> {
             mass_temperatures: self.mass_temperatures.clone(),
             thermal_capacitance: self.thermal_capacitance.clone(),
             air_thermal_capacitance: self.air_thermal_capacitance.clone(),
+            air_node_substeps: self.air_node_substeps,
             envelope_mass_temperatures: self.envelope_mass_temperatures.clone(),
             internal_mass_temperatures: self.internal_mass_temperatures.clone(),
             envelope_thermal_capacitance: self.envelope_thermal_capacitance.clone(),
