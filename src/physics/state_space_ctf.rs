@@ -195,34 +195,39 @@ pub fn compute_state_space_ctf(layers: &[CTFMaterial], timestep: f64) -> CTFCoef
         layers, &a_exp, &a_inv, &b_mat, &c_mat, &d_mat, &gamma1, &gamma2, n, timestep,
     );
 
-    // Step 7: Apply film resistance scaling
-    // Convert bare-wall CTFs to filmed CTFs analytically.
+    // Step 7: Apply film resistance scaling (corrected)
+    //
     // The bare-wall CTFs relate surface temperatures to conduction flux.
-    // With films: T_surf = T_air - q·R_film.
+    // To convert to filmed coefficients (air-to-air), we scale X, Y, Z by
+    // the standard series-resistance factor:
     //
-    // After uniform scaling by 1/denom, the DC gain becomes:
-    //   DC_f = (ΣX/denom) / (1 + ΣΦ/denom) = ΣX / (denom + ΣΦ)
+    //   denom = 1 + U_bare × (R_SI + R_SE)
+    //   X_filmed[i] = X_bare[i] / denom
+    //   Y_filmed[i] = Y_bare[i] / denom
+    //   Z_filmed[i] = Z_bare[i] / denom
+    //   Φ_filmed[i] = Φ_bare[i]  ← UNCHANGED (preserves eigenvalues)
     //
-    // We want DC_f = U_filmed = 1/(R_wall + R_SE + R_SI), so:
-    //   denom = ΣX / U_filmed - ΣΦ
-    let x_sum_bare: f64 = coeffs.x.iter().sum();
-    let phi_sum_bare: f64 = coeffs.phi.iter().sum();
+    // DC gain proof:
+    //   DC_filmed = (ΣX_bare/denom) / (1 + ΣΦ_bare)
+    //             = [U_bare·(1+ΣΦ_bare)/denom] / (1+ΣΦ_bare)
+    //             = U_bare / denom
+    //             = 1 / (R_wall + R_SI + R_SE)
+    //             = U_filmed ✓
     let r_wall: f64 = layers.iter().map(|l| l.resistance()).sum();
     let u_bare = 1.0 / r_wall;
     let u_filmed = 1.0 / (R_SI + r_wall + R_SE);
-    let denom = x_sum_bare / u_filmed - phi_sum_bare;
+    let denom = 1.0 + u_bare * (R_SI + R_SE);
 
     eprintln!(
-        "  Bare-wall: ΣX = {:.6}, U_bare = {:.6}",
-        x_sum_bare, u_bare
+        "  Bare-wall: U_bare = {:.6}, R_wall = {:.6}",
+        u_bare, r_wall
     );
     eprintln!(
         "  Film scaling: denom = {:.6}, U_filmed = {:.6}",
-        denom,
-        u_bare / (1.0 + u_bare * (R_SE + R_SI))
+        denom, u_filmed
     );
 
-    // Scale all CTF coefficients by the film factor
+    // Scale ONLY X, Y, Z — leave Φ untouched to preserve eigenvalue structure
     for x in &mut coeffs.x {
         *x /= denom;
     }
@@ -232,9 +237,8 @@ pub fn compute_state_space_ctf(layers: &[CTFMaterial], timestep: f64) -> CTFCoef
     for z in &mut coeffs.z {
         *z /= denom;
     }
-    for phi in &mut coeffs.phi {
-        *phi /= denom;
-    }
+    // Φ coefficients are NOT scaled — they encode the wall's dynamic response
+    // (eigenvalues/poles) and must remain at bare-wall values.
 
     // Final verification
     let x_sum: f64 = coeffs.x.iter().sum();
@@ -302,23 +306,6 @@ pub fn build_state_space_matrices(
     let mut d_mat = vec![vec![0.0; 2]; 2];
 
     // Compute dx (node spacing) for each layer.
-    //
-    // FIXED: Phase 2 of Issue #951 — switch from half-cell scheme to E+'s
-    // lumped-mass boundary scheme. This matches EnergyPlus Construction.cc
-    // v25.2.0 exactly:
-    //
-    //   - dx = L/N (E+ uses N cells; with N nodes spaced at x=dx/2, 3dx/2, ...,
-    //     the surface-to-first-node distance is dx/2)
-    //   - Boundary nodes use `cap = 1.5 * rho * cp * dx` (lumped mass including
-    //     the half-cell beyond the surface)
-    //   - A[0,0] = -2*k*dxtmp = -(4/3)*alpha_node (vs old -3*alpha_node)
-    //   - B[0,0] = +k*dxtmp   = +(2/3)*alpha_node (vs old 2*alpha_node)
-    //   - C[0,0] = -k/dx/(N-1), D[0,0] = +k/dx/(N-1) (with (N-1) divisor
-    //     matching E+'s surface-flux scaling)
-    //
-    // Reference: EnergyPlus Construction.cc v25.2.0
-    //   calculateExponentialMatrix() — sets up A, B matrices
-    //   calculateFinalCoefficients() — sets up C, D, s0, s coefficients
     let dx: Vec<f64> = layers
         .iter()
         .zip(nodes_per_layer.iter())
@@ -326,126 +313,98 @@ pub fn build_state_space_matrices(
             if nn > 1 {
                 l.thickness / nn as f64
             } else {
-                // Single node: full thickness (half-cell each side)
                 l.thickness
             }
         })
         .collect();
 
-    // Build A and B matrices
+    // Build per-node capacitance array and layer assignment.
+    // Boundary nodes (first of layer 0, last of final layer) get 1.5× lumping.
+    let mut caps = vec![0.0f64; n];
+    let mut node_layer = vec![0usize; n];
     let mut global_node = 0;
-
     for (layer_idx, layer) in layers.iter().enumerate() {
         let nn = nodes_per_layer[layer_idx];
         let dx_l = dx[layer_idx];
-        let k = layer.conductivity;
-        let rho = layer.density;
-        let cp = layer.specific_heat;
-
-        // Interior node dxtmp = 1 / (rho * cp * dx^2) (no lumping)
-        let cap_interior = rho * cp * dx_l;
-        let dxtmp_interior = 1.0 / dx_l / cap_interior;
-        // Boundary node dxtmp with lumped mass cap = 1.5 * rho * cp * dx
-        let cap_boundary = 1.5 * cap_interior;
-        let dxtmp_boundary = 1.0 / dx_l / cap_boundary;
-
         for local_node in 0..nn {
             let i = global_node + local_node;
-
-            let is_exterior_boundary = layer_idx == 0 && local_node == 0;
-            let is_interior_boundary = layer_idx == layers.len() - 1 && local_node == nn - 1;
-
-            if is_exterior_boundary {
-                // E+ lumped-mass boundary scheme (Construction.cc):
-                //   cap = 1.5 * rho * cp * dx; dxtmp = 1/(dx*cap)
-                //   dT0/dt = -2*k*dxtmp*T0 + k*dxtmp*T1 + k*dxtmp*T_ext_surf
-                a_mat[i][i] = -2.0 * k * dxtmp_boundary;
-                if i + 1 < n {
-                    a_mat[i][i + 1] = k * dxtmp_boundary;
-                }
-                b_mat[i][0] = k * dxtmp_boundary;
-                b_mat[i][1] = 0.0;
-            } else if is_interior_boundary {
-                // E+ lumped-mass boundary scheme (interior side):
-                //   dT_{N-1}/dt = k*dxtmp*T_{N-2} - 2*k*dxtmp*T_{N-1}
-                //                  + k*dxtmp*T_int_surf
-                a_mat[i][i] = -2.0 * k * dxtmp_boundary;
-                if i > 0 {
-                    a_mat[i][i - 1] = k * dxtmp_boundary;
-                }
-                b_mat[i][0] = 0.0;
-                b_mat[i][1] = k * dxtmp_boundary;
-            } else {
-                // Interior node — check for layer interface
-                let (is_interface, next_layer_idx) =
-                    if local_node == nn - 1 && layer_idx < layers.len() - 1 {
-                        (true, layer_idx + 1)
-                    } else {
-                        (false, 0)
-                    };
-
-                if is_interface {
-                    // Interface node: average properties from adjacent layers.
-                    // E+ uses `amatx = rk/dx/capavg` with `capavg = (cap_left + cap_right) / 2`.
-                    let next_layer = &layers[next_layer_idx];
-                    let dx_next = dx[next_layer_idx];
-                    let capavg = 0.5
-                        * (cap_interior + next_layer.density * next_layer.specific_heat * dx_next);
-                    let alpha_left = k / (capavg * dx_l);
-                    let alpha_right = next_layer.conductivity / (capavg * dx_next);
-
-                    a_mat[i][i] = -alpha_left - alpha_right;
-                    if i > 0 {
-                        a_mat[i][i - 1] = alpha_left;
-                    }
-                    if i + 1 < n {
-                        a_mat[i][i + 1] = alpha_right;
-                    }
-                } else {
-                    // Standard interior node (E+ scheme):
-                    //   dxtmp = 1/(rho*cp*dx)  (no 1.5x mass lumping)
-                    //   A[i][i] = -2*k*dxtmp = -2*alpha_node
-                    a_mat[i][i] = -2.0 * k * dxtmp_interior;
-                    if i > 0 {
-                        a_mat[i][i - 1] = k * dxtmp_interior;
-                    }
-                    if i + 1 < n {
-                        a_mat[i][i + 1] = k * dxtmp_interior;
-                    }
-                }
-                b_mat[i][0] = 0.0;
-                b_mat[i][1] = 0.0;
-            }
+            node_layer[i] = layer_idx;
+            let is_boundary = (layer_idx == 0 && local_node == 0)
+                || (layer_idx == layers.len() - 1 && local_node == nn - 1);
+            let mult = if is_boundary { 1.5 } else { 1.0 };
+            caps[i] = mult * layer.density * layer.specific_heat * dx_l;
         }
         global_node += nn;
     }
 
-    // C matrix (2×n): conduction fluxes at surfaces
-    // D matrix (2×2): direct throughput from input temps
+    // Build A and B matrices using a symmetric conductance matrix K.
     //
-    // E+ Construction.cc uses CMat = k*(N+1)/(N*dx) for the surface-to-node
-    // conductance. This scaling makes the continuous-time DC gain exactly U_bare.
+    // The 1D heat equation discretized with node-centered finite differences
+    // gives: dT_i/dt = (1/cap_i) * Σ_j G_ij * (T_j - T_i)
     //
-    // Issue #951 FIX: The previous s0 formula used per-surface C-value selection
-    // instead of the full C-matrix multiply. This caused sign inversion on s0[1][0].
-    // The fix is in compute_ctf_from_state_space (s0 = C·Γ₂ + D), not in C/D scaling.
+    // where G_ij is the conductance between nodes i and j. For reciprocity:
+    //   G_ij must be the SAME in both directions (symmetric K matrix).
+    //
+    // For nodes in the SAME layer: G = k / dx
+    // For nodes at a LAYER INTERFACE: G = 1 / (dx_left/(2*k_left) + dx_right/(2*k_right))
+    //
+    // Surface conductance (boundary to exterior/interior): G_surf = 2*k/dx (half-cell)
+
+    // --- Interior node-to-node conductances ---
+    for i in 0..n.saturating_sub(1) {
+        let li = node_layer[i];
+        let lj = node_layer[i + 1];
+        let g = if li == lj {
+            // Same layer: k/dx
+            layers[li].conductivity / dx[li]
+        } else {
+            // Cross-layer interface: harmonic mean of half-cell resistances
+            let r_half_left = dx[li] / (2.0 * layers[li].conductivity);
+            let r_half_right = dx[lj] / (2.0 * layers[lj].conductivity);
+            1.0 / (r_half_left + r_half_right)
+        };
+        // A[i,i+1] = G / cap_i, A[i+1,i] = G / cap_{i+1} (symmetric in K)
+        a_mat[i][i + 1] = g / caps[i];
+        a_mat[i + 1][i] = g / caps[i + 1];
+        a_mat[i][i] -= g / caps[i];
+        a_mat[i + 1][i + 1] -= g / caps[i + 1];
+    }
+
+    // --- Surface conductances (B and C/D entries) ---
+    // Exterior surface: G_surf_ext = 2*k_ext/dx_ext (half-cell distance)
     let k_ext = layers.first().map(|l| l.conductivity).unwrap_or(1.0);
-    let dx_ext = dx.first().unwrap_or(&1.0);
-    let n_ext = nodes_per_layer.first().unwrap_or(&1);
-    let h_surf_ext = k_ext * (*n_ext as f64 + 1.0) / (*n_ext as f64 * dx_ext);
+    let dx_ext = dx.first().copied().unwrap_or(1.0);
+    let g_surf_ext = 2.0 * k_ext / dx_ext;
 
+    // Interior surface: G_surf_int = 2*k_int/dx_int
     let k_int = layers.last().map(|l| l.conductivity).unwrap_or(1.0);
-    let dx_int = dx.last().unwrap_or(&1.0);
-    let n_int = nodes_per_layer.last().unwrap_or(&1);
-    let h_surf_int = k_int * (*n_int as f64 + 1.0) / (*n_int as f64 * dx_int);
+    let dx_int = dx.last().copied().unwrap_or(1.0);
+    let g_surf_int = 2.0 * k_int / dx_int;
 
-    c_mat[0][0] = -h_surf_ext;
-    d_mat[0][0] = h_surf_ext;
+    // Exterior boundary (node 0)
+    if n > 0 {
+        a_mat[0][0] -= g_surf_ext / caps[0];
+        b_mat[0][0] = g_surf_ext / caps[0];
+        b_mat[0][1] = 0.0;
+    }
+
+    // Interior boundary (node n-1)
+    if n > 0 {
+        a_mat[n - 1][n - 1] -= g_surf_int / caps[n - 1];
+        b_mat[n - 1][0] = 0.0;
+        b_mat[n - 1][1] = g_surf_int / caps[n - 1];
+    }
+
+    // C and D: surface flux extraction
+    // q_ext = G_surf_ext * (T_surf_ext - T_node0) = -G_surf_ext * T[0] + G_surf_ext * T_ext
+    // q_int = G_surf_int * (T_nodeN - T_surf_int) = G_surf_int * T[n-1] - G_surf_int * T_int
+    c_mat[0][0] = -g_surf_ext;
+    d_mat[0][0] = g_surf_ext;
     d_mat[0][1] = 0.0;
 
-    c_mat[1][n - 1] = h_surf_int;
+    c_mat[1][n - 1] = g_surf_int;
     d_mat[1][0] = 0.0;
-    d_mat[1][1] = -h_surf_int;
+    d_mat[1][1] = -g_surf_int;
 
     (a_mat, b_mat, c_mat, d_mat)
 }
@@ -615,26 +574,14 @@ fn compute_ctf_from_state_space(
         // 2. S-TAIL CHECK (fallback): For thick walls with monotonic decay, the
         //    individual s terms become tiny. Stop when max|s_tail| / U_bare < CONVRG_LIM.
         //
-        // Either criterion is sufficient to stop. Cayley-Hamilton guarantees
-        // R(n)=0 so extraction is exact after n iterations minimum.
-        if inum >= MIN_CTF_TERMS.max(n) {
-            // Criterion 1: partial sum convergence
-            let x_partial: f64 = s0[1][0] + (0..inum).map(|j| s[1][0][j]).sum::<f64>();
-            let x_residual_rel = (x_partial - u_bare).abs() / u_bare.max(1e-10);
-
-            // Criterion 2: s-tail magnitude (fallback for monotonic-decay walls)
-            let max_s_tail = s[0]
-                .iter()
-                .chain(s[1].iter())
-                .map(|v| v[inum - 1].abs())
-                .fold(0.0f64, f64::max);
-            let s_tail_rel = max_s_tail / u_bare.max(1e-10);
-
-            if x_residual_rel < CONVRG_LIM || s_tail_rel < CONVRG_LIM {
-                num_ctf_terms = inum;
-                converged = true;
-                break;
-            }
+        // Cayley-Hamilton Convergence: R(n)=0 guarantees exact extraction after
+        // n iterations. Running beyond n introduces numerical-noise Φ coefficients
+        // from the non-zero R residual, which add spurious unstable poles to the
+        // CTF feedback loop. Stop at exactly n terms.
+        if inum >= n {
+            num_ctf_terms = inum;
+            converged = true;
+            break;
         }
 
         num_ctf_terms = inum;

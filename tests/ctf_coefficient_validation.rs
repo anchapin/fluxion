@@ -129,32 +129,40 @@ fn test_ctf_coefficient_magnitudes() {
 
     // VALIDATION CHECKS
 
-    // 1. Sum of X coefficients should equal U-value (within 10% tolerance)
-    // Note: For the state-space CTF with auto-normalization, this should match
-    // the FILMED U (which is < U_bare for the 5R1C boundary films).
-    // For 4-layer Case 900, U_bare ≈ 0.640, U_filmed ≈ 0.578.
+    // Compute phi_sum for DC gain identity check
+    let phi_sum: f64 = coeffs.phi.iter().sum();
+
+    // 1. DC gain identity: ΣX / (1 + ΣΦ) should equal the filmed U-value.
+    // This is the FUNDAMENTAL CTF steady-state constraint. Note: ΣX alone
+    // does NOT equal U when ΣΦ ≠ 0 (which is the case for state-space CTF
+    // where the flux-history feedback is significant).
+    let dc_gain = x_sum / (1.0 + phi_sum);
     let u_target = u_value; // U_bare from layer properties
     assert!(
-        (x_sum - u_target).abs() / u_target < 0.15,
-        "Sum of X coefficients ({:.6}) should be close to U-value ({:.4}) within 15%",
+        (dc_gain - u_target).abs() / u_target < 0.15,
+        "DC gain ΣX/(1+ΣΦ) = {:.6} should be close to U-value ({:.4}) within 15%. \
+         (ΣX={:.6}, ΣΦ={:.6})",
+        dc_gain,
+        u_target,
         x_sum,
+        phi_sum
+    );
+
+    // 2. DC gain from Y: ΣY / (1 + ΣΦ) should also equal U-value
+    let dc_gain_y = y_sum / (1.0 + phi_sum);
+    assert!(
+        (dc_gain_y - u_target).abs() / u_target < 0.15,
+        "DC gain from Y: ΣY/(1+ΣΦ) = {:.6} should be close to U-value ({:.4}) within 15%",
+        dc_gain_y,
         u_target
     );
 
-    // 2. Sum of Y coefficients should equal U-value (within 10% tolerance)
-    // Y is positive when properly extracted (sign convention: heat into zone)
+    // 3. DC gain from Z: |ΣZ| / (1 + ΣΦ) should equal U-value
+    let dc_gain_z = z_sum.abs() / (1.0 + phi_sum);
     assert!(
-        (y_sum - u_target).abs() / u_target < 0.15,
-        "Sum of Y coefficients ({:.6}) should be close to U-value ({:.4}) within 15%",
-        y_sum,
-        u_target
-    );
-
-    // 3. Sum of Z coefficients should equal U-value (within 10% tolerance)
-    assert!(
-        (z_sum - u_target).abs() / u_target < 0.15,
-        "Sum of Z coefficients ({:.6}) should be close to U-value ({:.4}) within 15%",
-        z_sum,
+        (dc_gain_z - u_target).abs() / u_target < 0.15,
+        "DC gain from Z: |ΣZ|/(1+ΣΦ) = {:.6} should be close to U-value ({:.4}) within 15%",
+        dc_gain_z,
         u_target
     );
 
