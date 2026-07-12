@@ -16,6 +16,7 @@
 //! ```
 
 use crate::physics::five_r1c_solver::FiveR1CSolver;
+use crate::physics::gauge_solver::GaugeSolver;
 use crate::physics::multi_node_solver::MultiNodeSolver;
 use crate::physics::solver_trait::{HeatConductionSolver, SolverError};
 use crate::physics::wall_spec::WallSpec;
@@ -41,6 +42,11 @@ pub mod registry_keys {
     /// 9R4C four-node envelope solver (default for high-mass Case 900+,
     /// per ADR-002 and Issue #1429).
     pub const MULTINODE_9R4C: &str = "multinode_9r4c";
+    /// Gauge-theory per-wall conduction solver (Phase 1b, #1462 / #1527).
+    /// Implements `HeatConductionSolver` via sol-air temperature boundary
+    /// translation. Runs in shadow mode through `PhysicsAdapter`; available
+    /// here for direct construction and future zone-level integration.
+    pub const GAUGE: &str = "gauge";
 }
 
 impl SolverRegistry {
@@ -59,6 +65,8 @@ impl SolverRegistry {
     /// - `"5r1c"` → `FiveR1CSolver` initialized on `wall`
     /// - `"multinode_9r4c"` → `MultiNodeSolver::from_wall_spec(wall)`,
     ///   the 9R4C four-node envelope solver (Issue #1429 drop-in)
+    /// - `"gauge"` → `GaugeSolver` initialized on `wall` (Phase 1b, #1462/#1527),
+    ///   the per-wall gauge-theory solver with sol-air boundary translation
     ///
     /// Unknown keys return `SolverError::InvalidConfig`. The returned
     /// `Box<dyn HeatConductionSolver>` can be wrapped in a
@@ -75,11 +83,17 @@ impl SolverRegistry {
                 Ok(Box::new(solver))
             }
             registry_keys::MULTINODE_9R4C => Ok(MultiNodeSolver::boxed_from_wall_spec(wall)),
+            registry_keys::GAUGE => {
+                let mut solver = GaugeSolver::default();
+                solver.initialize(wall)?;
+                Ok(Box::new(solver))
+            }
             other => Err(SolverError::InvalidConfig(format!(
                 "SolverRegistry::construct: unknown solver key '{other}'. \
-                 Supported keys: '{}', '{}'.",
+                 Supported keys: '{}', '{}', '{}'.",
                 registry_keys::FIVE_R1C,
-                registry_keys::MULTINODE_9R4C
+                registry_keys::MULTINODE_9R4C,
+                registry_keys::GAUGE
             ))),
         }
     }
@@ -259,6 +273,38 @@ mod tests {
             ),
             Ok(_) => panic!("unknown solver key must return Err"),
         }
+    }
+
+    /// Issue #1527 — the GaugeSolver must be constructible via the registry
+    /// using the `"gauge"` key, producing a valid, initialized solver whose
+    /// steady-state flux matches the closed-form `(T_ext - T_int) / R_total`.
+    #[test]
+    fn test_issue_1527_construct_gauge_solver() {
+        use crate::physics::units::{FromF64, Temperature, ToF64};
+
+        let wall = wall_200mm_concrete();
+
+        let gauge: Box<dyn HeatConductionSolver> =
+            SolverRegistry::construct(registry_keys::GAUGE, &wall).expect("gauge construct");
+        assert!(
+            gauge.is_valid(),
+            "constructed GaugeSolver must be valid"
+        );
+        assert_eq!(gauge.name(), "Gauge");
+
+        // Steady-state flux must match closed form.
+        let t_int = Temperature::from_value(22.0);
+        let t_ext = Temperature::from_value(5.0);
+        let q = gauge
+            .steady_state_flux(t_int, t_ext)
+            .expect("gauge steady_state_flux")
+            .to_value();
+        let q_expected = (5.0 - 22.0) / wall.total_r_value();
+        let rel_err = (q - q_expected).abs() / q_expected.abs().max(1e-9);
+        assert!(
+            rel_err < 1e-9,
+            "GaugeSolver steady-state flux {q:.6} ≠ expected {q_expected:.6}"
+        );
     }
 
     #[test]
