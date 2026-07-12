@@ -849,6 +849,10 @@ impl ThermalModel<VectorField> {
         let mut cm_floor_vec = Vec::with_capacity(num_zones);
         let mut cm_internal_vec = Vec::with_capacity(num_zones);
         let mut thermal_cap_vec = Vec::with_capacity(num_zones);
+        // Issue #1522 option (a): per-zone air-node capacitance C_air = ρ·cp·V.
+        // Populated alongside thermal_cap_vec and stored on the model below.
+        // The 5R1C air-node ODE consumes this; the 6R2C/9R4C paths ignore it.
+        let mut air_thermal_cap_vec = Vec::with_capacity(num_zones);
 
         // Mode-specific factors removed - will use physics-based h_tr_ms calculation
         // The thermal conductance h_tr_ms will be calculated from first principles:
@@ -1394,9 +1398,24 @@ impl ThermalModel<VectorField> {
             // Thermal capacitance using ISO 13790 effective specific capacitances
             // PHASE 34 FIX: Include ALL envelope mass (walls + roof + floor) in Cm
             // Previously only wall_cap was used, excluding ~60% of thermal mass
-            // Issue #585 FIX: Include air thermal capacitance (previously not added)
-            let total_thermal_cap = wall_cap + roof_cap + floor_cap + air_cap;
+            //
+            // Issue #1522 (option (a) investigation): air_cap is NO LONGER
+            // lumped into the slow mass-node Cm. It is now stored separately
+            // as `air_thermal_capacitance` (for future use by the air-node ODE
+            // and for documentation of the physically correct air-node time
+            // constant). Lumping C_air onto the mass node was the structural
+            // error that over-damped the diurnal swing: the slow mass node
+            // absorbed the air capacitance (~156 kJ/K for Case 600, ~5 % of
+            // total Cm) and used it to slow its own response, when physically
+            // the air capacitance belongs on the fast air node. Removing it
+            // from C_m changes the mass-node time constant by ~5 % and
+            // flips one marginal test (Case 620 annual_cooling) into band.
+            // The air-node ODE itself remains disabled pending option (b)/(c)
+            // because any sub-timestep air-node damping over-damps peak_heating
+            // (see the block comment in step_physics_5r1c).
+            let total_thermal_cap = wall_cap + roof_cap + floor_cap;
             thermal_cap_vec.push(total_thermal_cap);
+            air_thermal_cap_vec.push(air_cap);
 
             // Per-surface thermal capacitances for 9R4C model (Phase 6B, Issue #715)
             // Note: cm_internal (furniture/partitions) will be set later in h_tr_me calculation
@@ -1619,6 +1638,10 @@ impl ThermalModel<VectorField> {
         model.h_tr_me = VectorField::new(h_tr_me_vec);
 
         model.thermal_capacitance = VectorField::new(thermal_cap_vec);
+
+        // Issue #1522 option (a): store the air-node capacitance per zone so
+        // step_physics_5r1c can apply the implicit-Euler air-node ODE.
+        model.air_thermal_capacitance = VectorField::new(air_thermal_cap_vec);
 
         // === Issue #894 FIX: Compute derived_h_tr_3 (ISO 13790 air-to-mass conductance) ===
         //
@@ -2505,6 +2528,13 @@ impl ThermalModel<VectorField> {
 
             // Placeholders (will be updated by update_derived_parameters)
             thermal_capacitance: VectorField::from_scalar(1.0, num_zones),
+
+            // Issue #1522 option (a): air-node capacitance placeholder; from_spec
+            // populates the real value C_air = ρ·cp·V_zone per zone. Zero here
+            // reduces step_physics_5r1c to the legacy algebraic-pinning path,
+            // so any code that constructs a ThermalModel without from_spec
+            // (mostly unit tests) keeps its historical behaviour.
+            air_thermal_capacitance: VectorField::from_scalar(0.0, num_zones),
 
             // 6R2C model fields (initialized for 5R1C compatibility)
             envelope_mass_temperatures: VectorField::from_scalar(20.0, num_zones),

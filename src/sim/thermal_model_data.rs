@@ -91,6 +91,19 @@ pub struct ThermalModelData<T: ContinuousTensor<f64> + Clone> {
     pub timestep_mode: TimestepMode,
     pub mass_temperatures: T,
     pub thermal_capacitance: T,
+    /// Air-node thermal capacitance C_air = ρ_air · cp_air · V_zone  [J/K].
+    ///
+    /// Issue #1522 (option (a)): restores a real capacitance on the 5R1C air
+    /// node so it decouples from the slow mass node on sub-timestep
+    /// timescales. Closes the algebraic pinning that drove peak_cooling OVER,
+    /// peak_heating UNDER, annual_cooling UNDER, and free-float min too warm
+    /// for ASHRAE 140 Case 600 series. Per ISO 13790 §12.2.2 and ASHRAE 140
+    /// §5.2.2, the air node is a true ODE state with relaxation time
+    /// τ_air = C_air / den (≈0.28 h for Case 600), not algebraically pinned
+    /// to the mass node. Used in `step_physics_5r1c` only; the 9R4C
+    /// (`step_physics_9r4c`) and 6R2C paths maintain their own air-node
+    /// handling.
+    pub air_thermal_capacitance: T,
     pub envelope_mass_temperatures: T,
     pub internal_mass_temperatures: T,
     pub envelope_thermal_capacitance: T,
@@ -271,6 +284,7 @@ impl<T: ContinuousTensor<f64> + Clone> Clone for ThermalModelData<T> {
             timestep_mode: self.timestep_mode.clone(),
             mass_temperatures: self.mass_temperatures.clone(),
             thermal_capacitance: self.thermal_capacitance.clone(),
+            air_thermal_capacitance: self.air_thermal_capacitance.clone(),
             envelope_mass_temperatures: self.envelope_mass_temperatures.clone(),
             internal_mass_temperatures: self.internal_mass_temperatures.clone(),
             envelope_thermal_capacitance: self.envelope_thermal_capacitance.clone(),
