@@ -96,17 +96,17 @@ pub struct CTFSolver {
     /// Solver configuration.
     pub config: CTFSolverConfig,
     /// Interior temperature history [T_t, T_t-1, T_t-2, ...].
-    t_interior_history: Vec<f64>,
+    pub(crate) t_interior_history: Vec<f64>,
     /// Exterior temperature history [T_t, T_t-1, T_t-2, ...].
-    t_exterior_history: Vec<f64>,
+    pub(crate) t_exterior_history: Vec<f64>,
     /// Interior heat flux history [q_t, q_t-1, q_t-2, ...].
-    q_interior_history: Vec<f64>,
+    pub(crate) q_interior_history: Vec<f64>,
     /// Exterior heat flux history [q_t, q_t-1, q_t-2, ...].
-    q_exterior_history: Vec<f64>,
+    pub(crate) q_exterior_history: Vec<f64>,
     /// Current interior surface temperature [°C].
-    t_interior_surface: f64,
+    pub(crate) t_interior_surface: f64,
     /// Current exterior surface temperature [°C].
-    t_exterior_surface: f64,
+    pub(crate) t_exterior_surface: f64,
 }
 
 impl CTFSolver {
@@ -211,6 +211,15 @@ impl CTFSolver {
     ///
     /// Interior surface heat flux [W/m²] (positive = into zone).
     pub fn step(&mut self, t_interior: f64, t_exterior: f64) -> f64 {
+        if self.coefficients.total_state_nodes == 0 {
+            self.t_interior_surface = t_interior;
+            self.t_exterior_surface = t_exterior;
+            let u_filmed = self.coefficients.x.first().copied().unwrap_or(0.0);
+            let q_interior = u_filmed * (t_exterior - t_interior);
+            self.q_interior_history[0] = q_interior;
+            return q_interior;
+        }
+
         // Update surface temperatures
         self.t_interior_surface = t_interior;
         self.t_exterior_surface = t_exterior;

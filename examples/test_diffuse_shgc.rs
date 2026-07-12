@@ -20,7 +20,6 @@ fn main() {
         azimuth_deg: 180.0,
         altitude_deg: 30.0,
         zenith_deg: 60.0,
-        incidence_deg: 0.0,
     };
 
     // Calculate solar gain

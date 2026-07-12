@@ -711,6 +711,7 @@ mod tests {
             phi: vec![0.1, 0.05, 0.025],
             timestep: 3600.0,
             num_coeffs: 3,
+            total_state_nodes: 3,
         };
         assert!(ThermalMethodSelector::validate_ctf_coefficients(
             &valid_coeffs
@@ -724,6 +725,7 @@ mod tests {
             phi: vec![0.1, 0.05, 0.025],
             timestep: 3600.0,
             num_coeffs: 3,
+            total_state_nodes: 3,
         };
         assert!(!ThermalMethodSelector::validate_ctf_coefficients(
             &invalid_coeffs

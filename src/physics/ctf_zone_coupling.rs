@@ -158,6 +158,26 @@ impl CtfZoneCouplingSolver {
         t_sol_air: f64,
         solar_absorbed_interior: f64,
     ) -> CtfZoneCouplingResult {
+        if solver.coefficients.total_state_nodes == 0 {
+            let u_filmed = solver.coefficients.x.first().copied().unwrap_or(0.0);
+            let q_ctf = u_filmed * (t_sol_air - t_zone);
+            let h_i = self.coefficients.h_i;
+            let t_si = (self.coefficients.h_ci * t_zone + self.coefficients.h_ri * t_mass
+                + solar_absorbed_interior - q_ctf) / h_i;
+
+            solver.t_interior_surface = t_si;
+            solver.t_exterior_surface = t_sol_air;
+            solver.q_interior_history[0] = q_ctf;
+
+            return CtfZoneCouplingResult {
+                t_surface_interior: t_si,
+                q_ctf_interior: q_ctf,
+                q_convective: self.coefficients.h_ci * (t_zone - t_si),
+                iterations: 0,
+                converged: true,
+            };
+        }
+
         // Initial guess: surface at zone air temperature
         let mut t_si = t_zone;
         let mut converged = false;

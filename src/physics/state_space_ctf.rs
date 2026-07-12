@@ -85,7 +85,16 @@ pub fn compute_state_space_ctf(layers: &[CTFMaterial], timestep: f64) -> CTFCoef
     let total_nodes: usize = nodes_per_layer.iter().sum();
 
     if total_nodes == 0 {
-        return CTFCoefficients::new(timestep, 1);
+        let mut coeffs = CTFCoefficients::new(timestep, 1);
+        coeffs.num_coeffs = 1;
+        coeffs.total_state_nodes = 0;
+        let total_r_wall: f64 = layers.iter().map(|l| l.resistance()).sum();
+        let u_filmed = 1.0 / (R_SI + total_r_wall + R_SE);
+        coeffs.x[0] = u_filmed;
+        coeffs.y[0] = u_filmed;
+        coeffs.z[0] = u_filmed;
+        coeffs.phi[0] = 0.0;
+        return coeffs;
     }
 
     // Step 2: Build BARE-WALL state-space matrices (no films)
@@ -259,6 +268,16 @@ pub fn compute_state_space_ctf(layers: &[CTFMaterial], timestep: f64) -> CTFCoef
 /// Uses the E+ criterion: dxn = sqrt(2·α·Δt) for stability,
 /// then N = thickness/dxn, clamped to [MIN_NODES, MAX_NODES].
 fn compute_nodes_per_layer(layers: &[CTFMaterial], timestep: f64) -> Vec<usize> {
+    let all_lightweight = layers.iter().all(|layer| {
+        let alpha = layer.diffusivity();
+        let fo = alpha * timestep / (layer.thickness * layer.thickness);
+        fo > 2.5
+    });
+
+    if all_lightweight {
+        return vec![0; layers.len()];
+    }
+
     layers
         .iter()
         .map(|layer| {
@@ -691,6 +710,7 @@ fn compute_ctf_from_state_space(
     let num = num_ctf_terms + 1; // +1 for the j=0 term
     let mut coeffs = CTFCoefficients::new(timestep, num);
     coeffs.num_coeffs = num;
+    coeffs.total_state_nodes = n;
 
     // j=0 terms
     coeffs.x[0] = s0[1][0]; // Exterior temp → interior flux

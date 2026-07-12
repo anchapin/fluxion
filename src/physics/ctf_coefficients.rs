@@ -100,6 +100,8 @@ pub struct CTFCoefficients {
     pub timestep: f64,
     /// Number of coefficients retained.
     pub num_coeffs: usize,
+    /// Total state nodes in discretized construction (0 for pure resistance).
+    pub total_state_nodes: usize,
 }
 
 impl CTFCoefficients {
@@ -112,6 +114,7 @@ impl CTFCoefficients {
             phi: vec![0.0; num_coeffs],
             timestep,
             num_coeffs,
+            total_state_nodes: 1,
         }
     }
 

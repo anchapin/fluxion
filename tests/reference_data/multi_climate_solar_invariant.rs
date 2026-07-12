@@ -248,6 +248,7 @@ fn test_solar_position_round_trip_all_climates() {
                 month,
                 day,
                 hour,
+                None,
             );
             max_alt_err = max_alt_err.max((sun.altitude_deg - row.altitude).abs());
             max_zen_err = max_zen_err.max((sun.zenith_deg - row.zenith).abs());
