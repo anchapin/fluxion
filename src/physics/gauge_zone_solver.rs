@@ -29,9 +29,9 @@
 
 use crate::physics::gauge_solver::{GaugeBoundaryConditions, GaugeSolver};
 use crate::physics::solver_trait::{HeatConductionSolver, SolverError};
-use crate::physics::units::FromF64;
 use crate::physics::units::{HeatFlux, HeatTransferCoefficient, Temperature, Time, ToF64};
 use crate::physics::wall_spec::WallSpec;
+use crate::physics::units::FromF64;
 
 /// Surface classification for zone modeling.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -55,7 +55,7 @@ impl SurfaceType {
     /// Windows receive solar; opaque surfaces conduct it away.
     pub fn solar_fraction(&self) -> f64 {
         match self {
-            SurfaceType::Window => 1.0, // Windows absorb and conduct solar
+            SurfaceType::Window => 1.0,  // Windows absorb and conduct solar
             SurfaceType::Wall => 0.0,   // Walls receive sol-air via film coefficient
             SurfaceType::Roof => 0.0,
             SurfaceType::Floor => 0.0,
@@ -67,7 +67,7 @@ impl SurfaceType {
 
 /// Per-surface gauge solver with geometric and type metadata.
 #[derive(Debug, Clone)]
-pub(crate) struct SurfaceGaugeSolver {
+struct SurfaceGaugeSolver {
     /// The 1D gauge solver for this surface
     gauge: GaugeSolver,
     /// Surface area in m²
@@ -75,9 +75,9 @@ pub(crate) struct SurfaceGaugeSolver {
     /// Surface type for solar distribution
     surface_type: SurfaceType,
     /// Surface azimuth (degrees, 0=South, 90=West, -90=East)
-    _azimuth_deg: f64,
+    azimuth_deg: f64,
     /// Surface tilt from horizontal (degrees, 90=vertical wall, 0=roof)
-    _tilt_deg: f64,
+    tilt_deg: f64,
     /// Wall spec for initialization (stored for re-initialization if needed)
     wall_spec: Option<WallSpec>,
 }
@@ -95,8 +95,8 @@ impl SurfaceGaugeSolver {
             gauge,
             area_m2,
             surface_type,
-            _azimuth_deg: azimuth_deg,
-            _tilt_deg: tilt_deg,
+            azimuth_deg,
+            tilt_deg,
             wall_spec: None,
         }
     }
@@ -111,8 +111,7 @@ impl SurfaceGaugeSolver {
         solar_irradiance_wm2: f64,
     ) -> Result<HeatFlux, SolverError> {
         let boundary = GaugeBoundaryConditions::new(solar_irradiance_wm2, T_exterior.to_value());
-        self.gauge
-            .step_with_boundary_conditions(timestep, T_interior, h_exterior, boundary)
+        self.gauge.step_with_boundary_conditions(timestep, T_interior, h_exterior, boundary)
     }
 }
 
@@ -129,6 +128,8 @@ pub struct GaugeZoneSolver {
     C_air: f64,
     /// Current zone air temperature (°C)
     T_air: f64,
+    /// Zone volume (m³)
+    zone_volume: f64,
     /// Floor area (m²)
     floor_area: f64,
     /// Number of surfaces
@@ -139,6 +140,8 @@ pub struct GaugeZoneSolver {
 
 /// Physical constants for air
 mod air_constants {
+    use crate::physics::units::FromF64;
+
     /// Air density at standard conditions (kg/m³)
     pub const RHO_AIR: f64 = 1.2;
 
@@ -155,12 +158,14 @@ mod air_constants {
 impl GaugeZoneSolver {
     /// Create a new GaugeZoneSolver with the given zone geometry.
     pub fn new(floor_area: f64, ceiling_height: f64) -> Self {
+        let zone_volume = floor_area * ceiling_height;
         let C_air = air_constants::zone_air_capacitance(floor_area, ceiling_height);
 
         Self {
             surfaces: Vec::new(),
             C_air,
-            T_air: 20.0, // Default initial temperature (°C)
+            T_air: 20.0,  // Default initial temperature (°C)
+            zone_volume,
             floor_area,
             num_surfaces: 0,
             initialized: false,
@@ -198,8 +203,13 @@ impl GaugeZoneSolver {
         let mut gauge = GaugeSolver::default();
         gauge.initialize(wall)?;
 
-        let mut surface =
-            SurfaceGaugeSolver::new(gauge, area_m2, surface_type, azimuth_deg, tilt_deg);
+        let mut surface = SurfaceGaugeSolver::new(
+            gauge,
+            area_m2,
+            surface_type,
+            azimuth_deg,
+            tilt_deg,
+        );
         surface.wall_spec = Some(wall.clone());
 
         self.surfaces.push(surface);
@@ -241,11 +251,7 @@ impl GaugeZoneSolver {
     }
 
     /// Compute steady-state heat flux (no thermal mass).
-    pub fn steady_state_flux(
-        &self,
-        T_interior: Temperature,
-        T_exterior: Temperature,
-    ) -> Result<HeatFlux, SolverError> {
+    pub fn steady_state_flux(&self, T_interior: Temperature, T_exterior: Temperature) -> Result<HeatFlux, SolverError> {
         if !self.is_initialized() {
             return Err(SolverError::InvalidConfig(
                 "GaugeZoneSolver not initialized".to_string(),
@@ -281,6 +287,7 @@ impl GaugeZoneSolver {
     /// Net zone load in kWh (positive = heating needed, negative = cooling needed)
     pub fn step(
         &mut self,
+        _timestep: usize,
         dt_seconds: f64,
         T_exterior: Temperature,
         h_exterior: HeatTransferCoefficient,
@@ -328,8 +335,7 @@ impl GaugeZoneSolver {
     }
 
     /// Access the per-surface solvers (for diagnostics).
-    #[allow(dead_code)]
-    pub(crate) fn surfaces(&self) -> &[SurfaceGaugeSolver] {
+    pub fn surfaces(&self) -> &[SurfaceGaugeSolver] {
         &self.surfaces
     }
 }
@@ -339,8 +345,8 @@ impl GaugeZoneSolver {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::physics::units::FromF64;
     use crate::physics::wall_spec::WallSpec;
+    use crate::physics::units::FromF64;
 
     fn case600_wall() -> WallSpec {
         // ASHRAE 140 Case 600 low-mass wall
@@ -365,20 +371,16 @@ mod tests {
         // Case 600 dimensions: 8m x 6m x 2.7m
         // Wall heights are 2.7m
         let south_area = 8.0 * 2.7; // 21.6 m²
-        let east_area = 6.0 * 2.7; // 16.2 m²
+        let east_area = 6.0 * 2.7;  // 16.2 m²
 
         // South wall (faces equator, gets most solar)
-        zone.add_opaque_surface(&wall, south_area, SurfaceType::Wall, 0.0, 90.0)
-            .unwrap();
+        zone.add_opaque_surface(&wall, south_area, SurfaceType::Wall, 0.0, 90.0).unwrap();
         // North wall
-        zone.add_opaque_surface(&wall, south_area, SurfaceType::Wall, 180.0, 90.0)
-            .unwrap();
+        zone.add_opaque_surface(&wall, south_area, SurfaceType::Wall, 180.0, 90.0).unwrap();
         // East wall
-        zone.add_opaque_surface(&wall, east_area, SurfaceType::Wall, 90.0, 90.0)
-            .unwrap();
+        zone.add_opaque_surface(&wall, east_area, SurfaceType::Wall, 90.0, 90.0).unwrap();
         // West wall
-        zone.add_opaque_surface(&wall, east_area, SurfaceType::Wall, -90.0, 90.0)
-            .unwrap();
+        zone.add_opaque_surface(&wall, east_area, SurfaceType::Wall, -90.0, 90.0).unwrap();
 
         zone.initialize().unwrap();
 
@@ -388,10 +390,7 @@ mod tests {
 
         let flux = zone.steady_state_flux(T_int, T_ext).unwrap();
         // Net flux should be negative (heat leaving zone)
-        assert!(
-            flux.to_value() < 0.0,
-            "Heat should flow from warm interior to cold exterior"
-        );
+        assert!(flux.to_value() < 0.0, "Heat should flow from warm interior to cold exterior");
     }
 
     #[test]
@@ -403,10 +402,8 @@ mod tests {
 
         // Add 2 identical walls
         let wall_area = 10.0; // 10 m² each
-        zone.add_opaque_surface(&wall, wall_area, SurfaceType::Wall, 0.0, 90.0)
-            .unwrap();
-        zone.add_opaque_surface(&wall, wall_area, SurfaceType::Wall, 180.0, 90.0)
-            .unwrap();
+        zone.add_opaque_surface(&wall, wall_area, SurfaceType::Wall, 0.0, 90.0).unwrap();
+        zone.add_opaque_surface(&wall, wall_area, SurfaceType::Wall, 180.0, 90.0).unwrap();
 
         zone.initialize().unwrap();
 
@@ -419,8 +416,7 @@ mod tests {
         let flux_2walls = zone.steady_state_flux(T_int, T_ext).unwrap();
 
         // Now add a 3rd identical wall
-        zone.add_opaque_surface(&wall, wall_area, SurfaceType::Wall, 90.0, 90.0)
-            .unwrap();
+        zone.add_opaque_surface(&wall, wall_area, SurfaceType::Wall, 90.0, 90.0).unwrap();
         // Re-initialize since we added a surface
         zone.initialize().unwrap();
 
@@ -440,8 +436,7 @@ mod tests {
         let mut zone = GaugeZoneSolver::new(48.0, 2.7);
 
         let wall = case600_wall();
-        zone.add_opaque_surface(&wall, 48.0, SurfaceType::Wall, 0.0, 90.0)
-            .unwrap();
+        zone.add_opaque_surface(&wall, 48.0, SurfaceType::Wall, 0.0, 90.0).unwrap();
 
         zone.initialize().unwrap();
 
@@ -453,16 +448,15 @@ mod tests {
         let h_ext = HeatTransferCoefficient::from_value(25.0);
 
         // One hour timestep
-        let energy = zone
-            .step(
-                3600.0, // dt = 1 hour
-                T_ext,
-                h_ext,
-                0.0, // no solar
-                0.0, // no internal gains
-                0.0, // no infiltration
-            )
-            .unwrap();
+        let energy = zone.step(
+            0,          // timestep
+            3600.0,     // dt = 1 hour
+            T_ext,
+            h_ext,
+            0.0,        // no solar
+            0.0,        // no internal gains
+            0.0,        // no infiltration
+        ).unwrap();
 
         let T_after = zone.T_air();
 
