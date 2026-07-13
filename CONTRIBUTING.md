@@ -1,5 +1,12 @@
 # Contributing to Fluxion
 
+Contribution guide for the Fluxion building energy modeling engine.
+Read this before submitting PRs or branching strategies.
+Covers: PR workflow, hotfix process, merge strategy, branch conventions.
+Companion to RULES.md (coding rules) and CODEBASE_MAP.md (code navigation).
+Status: Active — follows --no-ff merge policy and expedited hotfix process.
+Action: Use `gh pr create` for all changes; never push directly to main.
+
 ## Quick Rules
 
 1. **Never force-push `main`**

@@ -1,5 +1,12 @@
 # ASHRAE Standard 140 Validation Results
 
+ASHRAE 140 validation results snapshot — 64 test cases comparing Fluxion to EnergyPlus reference.
+Engineering team and CI — check this for pass/fail status; updated per PR and on merge to main.
+Covers: 600/900 series baseline and high-mass cases, peak heating/cooling, annual energy metrics.
+Related to: docs/KNOWN_ISSUES.md (known failures), FIX.md (placeholder fixes), ARCHITECTURE.md (module status).
+Status: Stale — Generated 2026-04-14; many fixes landed post-#1323 that are not reflected here.
+Action: Regenerate via `cargo test --test ashrae140 -- --nocapture` to get current validation numbers.
+
 *Generated: 2026-04-14 17:28 UTC*
 
 ## Summary

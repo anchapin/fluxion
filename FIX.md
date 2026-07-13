@@ -1,5 +1,12 @@
 # Fix for Issue #1245: ASHRAE 140 validation failing on all PRs and main (pre-existing)
 
+Placeholder for ASHRAE 140 CI gate workflow fixes — implement actual fix before merging.
+Affected: All PRs and main branch; workflow references non-existent test targets.
+Covers: Root cause analysis, available test targets, required fixes for CI validation gate.
+Related to: validation_report.md (validation results), KNOWN_ISSUES.md (systematic issues).
+Status: Placeholder — fix implementation incomplete; do not merge as-is.
+Action: Verify test target names in crate, update workflow file with correct targets.
+
 ## Issue Summary
 This is a placeholder fix file - implement actual fix before merging
 

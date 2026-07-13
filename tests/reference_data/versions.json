@@ -1,0 +1,21 @@
+{
+  "year": "2026",
+  "updated_at": "2026-07-13T09:02:36-04:00",
+  "sources": {
+    "energyplus": {
+      "organization": "NREL",
+      "url": "https://energyplus.net/downloads",
+      "version": "latest"
+    },
+    "esp_r": {
+      "organization": "University of Strathclyde",
+      "url": "https://www.esru.strath.ac.uk/ESP-r",
+      "version": "latest"
+    },
+    "trnsys": {
+      "organization": "TESS",
+      "url": "https://www.trnsys.com",
+      "version": "latest"
+    }
+  }
+}
