@@ -1,135 +1,154 @@
 # Agent Workflow
 
-> **TL;DR**: Standard four-phase workflow for all agent coding sessions.
-> **Phases**: Research → Plan → Implement → Wrap-up
-> **Owned by**: All contributors
+> **TL;DR**: Standard 4-phase workflow for implementing issues with cross-agent review and validation gates.
+> **Key decisions**: Research before planning | Plan before implement | Validate after implement
+> **Owned by**: Wave orchestrator
 > **Reviewed**: 2026-07-13
 
 ## Overview
 
-Every agent session follows this four-phase structure. Tag `@/docs/agent-workflow.md` at session start.
-
-```
-Phase 1: Research    → Understand the issue
-Phase 2: Plan        → Write plan to docs/worksheets/
-Phase 3: Implement   → Code + tests in lockstep
-Phase 4: Wrap-up     → Review, test, commit
-```
-
----
+Every issue follows a 4-phase workflow. Each phase has explicit entry/exit criteria and checklist items.
 
 ## Phase 1 — Research
 
 Understand the issue before writing any code.
 
+### Entry Criteria
+- Issue is assigned and triaged
+- Branch created from `main`
+
 ### Checklist
+- [ ] Read `ARCHITECTURE.md` — understand module boundaries and data flow
+- [ ] Run affected code paths — trace inputs/outputs manually
+- [ ] Read existing tests for the module — understand test patterns
+- [ ] Identify all files that will be modified
+- [ ] Note any physics/math that needs verification (use Python to verify, not mental math)
 
-- [ ] Read the full issue description and comments
-- [ ] Read `ARCHITECTURE.md` for relevant module boundaries and contracts
-- [ ] Read the affected source files — understand the current implementation
-- [ ] Run the affected code paths (e.g., `cargo test --lib`, integration runs)
-- [ ] Read the existing tests for the affected module
-- [ ] Check `docs/KNOWN_ISSUES.md` for related known issues
-- [ ] Check recent commits on the relevant module for context
-
-### Exit criterion
-
-You can explain the issue in your own words and know which files need to change.
+### Exit Criteria
+- You can explain what the code does and why it needs to change
+- You know where the relevant tests live
 
 ---
 
 ## Phase 2 — Plan
 
-Write the plan before writing code.
+Write a concrete plan before touching production code.
+
+### Entry Criteria
+- Phase 1 complete
 
 ### Checklist
+- [ ] Write plan to `docs/worksheets/issue-{N}-plan.md`
+- [ ] Tag related documentation in `docs/doc-inventory.md`
+- [ ] Request cross-agent review (Physics Auditor for physics code, Security Engineer for auth/infrastructure)
+- [ ] Address review feedback before proceeding
 
-- [ ] Create `docs/worksheets/issue-{N}-plan.md` (see worksheet format below)
-- [ ] Tag related docs in the plan (e.g., `ARCHITECTURE.md §3`, `tests/README.md`)
-- [ ] Identify all files that need to change
-- [ ] Identify test files that need new or updated tests
-- [ ] Get cross-agent review of the plan before implementing (optional but recommended for large changes)
-- [ ] Ensure the plan respects the validation strategy: **no parameter tuning to make tests pass — fix the underlying math**
-
-### Worksheet format
-
+### Plan Template
 ```markdown
-# Issue {N} — Plan
+# Issue {N} Plan
 
-## Issue
-Brief description of the issue.
+## Problem
+{One paragraph description of the issue}
 
-## Root Cause
-What's actually wrong?
+## Approach
+{Step-by-step approach}
 
-## Files to Change
-- `src/path/file.rs` — reason
-- `tests/path/test.rs` — reason
-
-## Implementation Steps
-1. Step description
-2. Step description
+## Files to Modify
+- `src/...`
+- `tests/...`
 
 ## Validation
 - [ ] Unit tests pass
-- [ ] Reference data comparison (if applicable)
-- [ ] No regression in related modules
+- [ ] Reference tests pass
+- [ ] No regression in system tests
 ```
+
+### Cross-Agent Review Routing
+| Issue Type | Reviewer |
+|------------|----------|
+| Physics/math | `bem-engineer` |
+| Security/CVE | `agency-security-engineer` |
+| Performance | `agency-performance-benchmarker` |
+| API/endpoint | `oma-backend` |
+| Frontend/UI | `oma-frontend` |
 
 ---
 
 ## Phase 3 — Implement
 
-Write code and tests together.
+Write code and tests in lockstep.
+
+### Entry Criteria
+- Plan approved via cross-agent review
 
 ### Checklist
+- [ ] Write minimal code to pass the first test
+- [ ] Write test covering the fix
+- [ ] Run app on every significant change
+- [ ] Run affected unit tests after each logical unit of work
+- [ ] Keep commits atomic (one logical change per commit)
 
-- [ ] Write tests **before** or **in parallel** with implementation (TDD for bug fixes)
-- [ ] Use reference data CSVs for EnergyPlus parity checks
-- [ ] Name tests descriptively: `fn solar_altitude_40N_summer_solstice_matches_epplus()`
-- [ ] Run the app on every significant change (`cargo build`, `cargo test`)
-- [ ] For physics/math: use `ctx_execute` with Python to verify calculations — never mental math
-- [ ] Follow existing code style and conventions in the module
-- [ ] Update ARCHITECTURE.md if the code changes the documented interfaces
-
-### Validation targets
-
-- Each physics module must match EnergyPlus within **1% tolerance** on isolated scenarios
+### Rules
 - **No ASHRAE 140 system-level testing** until individual modules pass E+ reference tests
 - **No parameter tuning** to make system tests pass — fix the underlying math
+- Physics modules must match EnergyPlus within 1% tolerance on isolated scenarios
+- Run `npm run lint` / `npm run typecheck` before committing
 
 ---
 
 ## Phase 4 — Wrap-up
 
-Final review, testing, and commit.
+Finalize and prepare for merge.
+
+### Entry Criteria
+- All tests pass
+- Code reviewed and approved
 
 ### Checklist
+- [ ] Cross-agent review completed and approved
+- [ ] Full test suite passes (`npm test` / `cargo test`)
+- [ ] Write end-of-session worksheet to `docs/worksheets/issue-{N}-wrap-up.md`
+- [ ] Update `docs/doc-inventory.md` 7-line summaries for modified modules
+- [ ] Commit with git tag: `git tag -a issue-{N} -m "Issue {N} complete: {one-line summary}"`
+- [ ] Push branch: `git push -u origin fix/issue-{N}-{slug}`
+- [ ] Create PR with clear description linking to issue
 
-- [ ] **Cross-agent review**: have another agent or model review the changes
-- [ ] Run the **full test suite**: `make test-fast` or `cargo test`
-- [ ] Run linting: `make lint` or `cargo fmt --check && cargo clippy`
-- [ ] Write end-of-session worksheet: `docs/worksheets/issue-{N}-wrapup.md`
-- [ ] Commit with a **git tag** indicating the phase/state: `git tag -a issue-{N}-done -m "Issue {N} resolved"`
-- [ ] Push branch and open PR with reference to the issue
+### PR Description Template
+```markdown
+## Summary
+{What this PR does}
 
-### Cross-agent review notes
+## Testing
+- [ ] Unit tests pass
+- [ ] Reference data tests pass
+- [ ] No ASHRAE 140 regressions (if applicable)
 
-- Use the `pr-review-merge` skill or request a peer review
-- Review checks: correctness, security, performance, test coverage, documentation drift
-- If the change affects physics: verify math with Python against reference data
-
-### Worksheet index
-
-Worksheets are stored in `docs/worksheets/`. Each worksheet is named:
-- `issue-{N}-plan.md` — Phase 2 plan
-- `issue-{N}-wrapup.md` — Phase 4 wrap-up
+## Checklist
+- [ ] Cross-agent review: {reviewer}
+- [ ] Documentation updated
+- [ ] No debug code or TODO comments left
+```
 
 ---
 
-## References
+## Wave 2 Specific Additions
 
-- `ARCHITECTURE.md` — Module boundaries, I/O contracts, physics diagrams
-- `docs/AI_CODING_STRATEGY_ADOPTION_PLAN.md` §2 — Origin of this document
-- `docs/worksheets/` — Worksheet storage directory
-- `AGENTS.md` — Context-mode routing rules, tool hierarchy
+### Worktree Management
+```bash
+# Create worktree
+git worktree add ../worktrees/issue-{N}-{slug} -b fix/issue-{N}-{slug} main
+
+# Sync before starting
+git pull origin main
+
+# Commit and push
+git add . && git commit -m "docs: resolve #{N} — {title}"
+git push -u origin fix/issue-{N}-{slug}
+```
+
+### Wave 2 Issue List
+| Issue | Title | Priority |
+|-------|-------|----------|
+| 1531 | agent-workflow.md | high |
+| 1533 | agent-conventions.md | high |
+| 1534 | scripts/README.md | medium |
