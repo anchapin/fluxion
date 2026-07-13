@@ -456,9 +456,7 @@ mod tests {
         let energy = zone
             .step(
                 3600.0, // dt = 1 hour
-                T_ext,
-                h_ext,
-                0.0, // no solar
+                T_ext, h_ext, 0.0, // no solar
                 0.0, // no internal gains
                 0.0, // no infiltration
             )
