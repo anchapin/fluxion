@@ -552,9 +552,31 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
             let slice = phi_ia_with_iz.as_mut();
             for (i, &q_flux) in ctf_fluxes.iter().enumerate() {
                 if i < slice.len() {
-                    // Convert flux [W/m²] to power [W] by multiplying by zone area
-                    let area = self.0.zone_area.as_ref().get(i).copied().unwrap_or(1.0);
-                    let q_ctf = q_flux * area;
+                    // Issue #1152 follow-up: Use actual opaque wall surface area (not floor area)
+                    // to convert CTF flux [W/m²] to power [W]. The CTF flux is per m² of wall
+                    // surface, so we must use the actual opaque wall area for correct conversion.
+                    // This fixes area mismatch where floor area (48 m²) was incorrectly used instead
+                    // of actual vertical wall area (~68 m² for Case 600).
+                    let opaque_wall_area: f64 = self
+                        .0
+                        .surfaces
+                        .get(i)
+                        .map(|zone_surfaces| {
+                            zone_surfaces
+                                .iter()
+                                .filter(|s| {
+                                    // Only vertical walls (S, W, N, E) - exclude roof/floor
+                                    !matches!(
+                                        s.orientation,
+                                        crate::validation::ashrae_140_cases::Orientation::Up
+                                            | crate::validation::ashrae_140_cases::Orientation::Down
+                                    )
+                                })
+                                .map(|s| s.area - s.window_area)
+                                .sum()
+                        })
+                        .unwrap_or(1.0);
+                    let q_ctf = q_flux * opaque_wall_area;
                     // Subtract standard 5R1C envelope conduction to avoid double-counting
                     // Q_5r1c = h_tr_em * (T_sol_air - T_mass)
                     let t_sol_air_i = t_sol_air.as_ref().get(i).copied().unwrap_or(outdoor_temp);
@@ -582,9 +604,27 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
             let slice = phi_ia_with_iz.as_mut();
             for (i, &q_flux) in fd_fluxes.iter().enumerate() {
                 if i < slice.len() {
-                    // Convert flux [W/m²] to power [W] by multiplying by zone area
-                    let area = self.0.zone_area.as_ref().get(i).copied().unwrap_or(1.0);
-                    let q_fd = q_flux * area;
+                    // Issue #1152 follow-up: Use actual opaque wall surface area (not floor area)
+                    // to convert FD flux [W/m²] to power [W]. Same fix as CTF above.
+                    let opaque_wall_area: f64 = self
+                        .0
+                        .surfaces
+                        .get(i)
+                        .map(|zone_surfaces| {
+                            zone_surfaces
+                                .iter()
+                                .filter(|s| {
+                                    !matches!(
+                                        s.orientation,
+                                        crate::validation::ashrae_140_cases::Orientation::Up
+                                            | crate::validation::ashrae_140_cases::Orientation::Down
+                                    )
+                                })
+                                .map(|s| s.area - s.window_area)
+                                .sum()
+                        })
+                        .unwrap_or(1.0);
+                    let q_fd = q_flux * opaque_wall_area;
 
                     // Subtract standard 5R1C envelope conduction to avoid double-counting
                     // Q_5r1c = h_tr_em * (T_sol_air - T_mass)
