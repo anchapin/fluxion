@@ -1,0 +1,19 @@
+# Visual Regression Tests - Golden Images
+
+This directory stores reference images for visual regression testing.
+
+## Files
+
+Golden images are named by their test function:
+- `validation_header.png` — Validation report header
+- `benchmark_comparison.png` — Module benchmark comparison chart
+- `thermal_distribution.png` — Zone temperature histogram
+- `error_convergence.png` — Solver convergence plot
+
+## Updating Golden Images
+
+When intentionally changing visualization output:
+1. Make the code change
+2. Run `pytest tests/visual/ --generate-golden`
+3. Review the generated images in `golden/`
+4. Commit the updated images with the code change
