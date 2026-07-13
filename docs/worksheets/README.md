@@ -6,6 +6,7 @@ Index of all worksheets organized by issue/tag.
 
 | Issue | Worksheet | Description |
 |-------|-----------|-------------|
+| #1532 | [issue-template.md](./issue-template.md) | Session template for agent worksheets |
 | #1541 | doc-inventory | This inventory — self-healing docs catalog with 7-line summary convention |
 
 ## By Tag
@@ -20,3 +21,17 @@ Index of all worksheets organized by issue/tag.
 | codebase | [CODEBASE_MAP.md](../../CODEBASE_MAP.md) |
 | issues | [docs/KNOWN_ISSUES.md](../../docs/KNOWN_ISSUES.md) |
 | fix | [FIX.md](../../FIX.md) |
+| process | [issue-template.md](./issue-template.md) |
+
+## Git Tagging Convention
+
+Tag worksheets when a phase completes:
+
+```bash
+git tag -a issue-{N} -m "Issue #{N} - {title}"
+```
+
+Example:
+```bash
+git tag -a issue-703 -m "Issue #703 - 900-Series Peak Cooling Root Cause"
+```
