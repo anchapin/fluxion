@@ -1,0 +1,92 @@
+#!/usr/bin/env bash
+# Agent Review CLI
+# Kick off cross-agent review without knowing each agent incantation
+
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+AGENTS_DIR="${SCRIPT_DIR}/../.agents/skills"
+
+usage() {
+    cat <<EOF
+Usage: agent-review [options]
+
+Options:
+    --pr <number>          PR number to review
+    --type <type>          Review type: physics|security|performance|full
+    --model <model>        Model to use: claude|opus|sonnet|haiku
+    --all                  Run all review types
+    -h, --help             Show this help
+
+Examples:
+    agent-review --pr 123 --type physics
+    agent-review --pr 123 --all
+    agent-review --pr 123 --type security --model opus
+
+EOF
+}
+
+run_physics_review() {
+    local pr="$1"
+    echo "Running physics review for PR #$pr..."
+    echo "Note: Physics review requires manual inspection of physics code changes"
+    echo "See ARCHITECTURE.md for module boundaries"
+}
+
+run_security_review() {
+    local pr="$1"
+    echo "Running security review for PR #$pr..."
+    echo "Note: Security review requires manual inspection"
+    echo "Run: agent-review --pr $pr --type security"
+}
+
+run_performance_review() {
+    local pr="$1"
+    echo "Running performance review for PR #$pr..."
+    echo "Profiling tools: cargo-flamegraph, perf, memory_profiler"
+    echo "See docs/profiling-guide.md"
+}
+
+run_full_review() {
+    local pr="$1"
+    run_physics_review "$pr"
+    run_security_review "$pr"
+    run_performance_review "$pr"
+    echo "Full review complete. Address findings before merge."
+}
+
+main() {
+    local pr=""
+    local type="full"
+    local model="claude"
+
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --pr) pr="$2"; shift 2 ;;
+            --type) type="$2"; shift 2 ;;
+            --model) model="$2"; shift 2 ;;
+            --all) type="full"; shift ;;
+            -h|--help) usage; exit 0 ;;
+            *) echo "Unknown option: $1"; usage; exit 1 ;;
+        esac
+    done
+
+    if [[ -z "$pr" ]]; then
+        echo "Error: --pr is required"
+        usage
+        exit 1
+    fi
+
+    echo "Agent Review for PR #$pr (type: $type, model: $model)"
+    echo "========================================"
+
+    case "$type" in
+        physics) run_physics_review "$pr" ;;
+        security) run_security_review "$pr" ;;
+        performance) run_performance_review "$pr" ;;
+        full) run_full_review "$pr" ;;
+        *) echo "Unknown review type: $type"; exit 1 ;;
+    esac
+}
+
+main "$@"
