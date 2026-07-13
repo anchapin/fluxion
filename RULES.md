@@ -1,5 +1,12 @@
 # Rules
 
+Coding rules, hard constraints, and must-always/must-never boundaries for all contributors.
+Read this before modifying any physics code or validation logic.
+Covers: numerical reasoning via code, energy balance, ASHRAE 140 compliance, code quality.
+Companion to CONTRIBUTING.md (workflow) and ARCHITECTURE.md (module contracts).
+Status: Active — all rules are enforced by CI and code review.
+Action: Run `cargo clippy --all` and ASHRAE validation before committing physics changes.
+
 ## Hard Constraints
 
 ### Must-Always

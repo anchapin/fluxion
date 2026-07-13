@@ -1,5 +1,12 @@
 # Fluxion Codebase Map
 
+Code navigation guide for the Fluxion BEM engine — Rust core with Python/JS bindings.
+MANDATORY READING at start of every session; establishes cross-language context.
+Covers: module dependency graph, physics modules, ONNX surrogates, multi-language bindings.
+Companion to ARCHITECTURE.md (physics contracts) and RULES.md (coding constraints).
+Status: Current — reflects crate-split layout (#1255, #1349, #1441) and Neuro-Symbolic architecture.
+Action: Run `cargo build` and `python -c "import fluxion"` to verify setup before exploring.
+
 > **MANDATORY READING** — Read this file at the start of every session to establish cross-language context.
 
 ## Project Overview

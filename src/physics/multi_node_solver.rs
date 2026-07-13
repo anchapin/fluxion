@@ -810,24 +810,77 @@ impl MultiNodeSolver {
         gains_internal: f64,
     ) -> &MultiNodeThermalMass {
         self.timestep_seconds = dt;
-        match self.coupling_mode {
-            MassAirCouplingMode::AdditiveSum => {
-                self.step_backward_euler_with_gains(
-                    gains_wall,
-                    gains_roof,
-                    gains_floor,
-                    gains_internal,
-                );
-            }
-            MassAirCouplingMode::ParallelResistance => {
-                self.step_backward_euler_with_gains_parallel_resistance(
-                    gains_wall,
-                    gains_roof,
-                    gains_floor,
-                    gains_internal,
-                );
+
+        // Adaptive sub-stepping for low-capacitance (high-stiffness) nodes.
+        // When the timestep dt exceeds a node's thermal time constant τ = C/h,
+        // backward Euler produces inaccurate results. We detect this and sub-step
+        // with smaller timesteps to maintain accuracy.
+        //
+        // τ_node = C_node / (h_em + h_ms) — time constant for envelope nodes
+        // If dt > STIFFNESS_FACTOR * τ_node, we need sub-stepping
+        const STIFFNESS_FACTOR: f64 = 4.0; // Sub-step when dt > 4 × τ
+        const MIN_SUB_STEPS: u32 = 1;
+        const MAX_SUB_STEPS: u32 = 12; // Cap at 5-min sub-steps (12 × 5min = 60min)
+
+        // Compute minimum time constant across all envelope nodes
+        let m = &self.mass;
+        let wall_tau = if m.wall.capacitance > 0.0 && m.wall.h_tr_em + m.wall.h_tr_ms > 0.0 {
+            m.wall.capacitance / (m.wall.h_tr_em + m.wall.h_tr_ms)
+        } else {
+            f64::INFINITY
+        };
+        let roof_tau = if m.roof.capacitance > 0.0 && m.roof.h_tr_em + m.roof.h_tr_ms > 0.0 {
+            m.roof.capacitance / (m.roof.h_tr_em + m.roof.h_tr_ms)
+        } else {
+            f64::INFINITY
+        };
+        let floor_tau = if m.floor.capacitance > 0.0 && m.floor.h_tr_em + m.floor.h_tr_ms > 0.0 {
+            m.floor.capacitance / (m.floor.h_tr_em + m.floor.h_tr_ms)
+        } else {
+            f64::INFINITY
+        };
+        let min_tau = wall_tau.min(roof_tau).min(floor_tau);
+
+        // Determine number of sub-steps needed
+        let num_sub_steps =
+            if min_tau.is_finite() && min_tau > 0.0 && dt > min_tau * STIFFNESS_FACTOR {
+                let required = (dt / (min_tau * STIFFNESS_FACTOR)).ceil() as u32;
+                required.clamp(MIN_SUB_STEPS, MAX_SUB_STEPS)
+            } else {
+                MIN_SUB_STEPS
+            };
+
+        let sub_dt = dt / num_sub_steps as f64;
+
+        // Perform sub-stepping loop
+        // Note: Gains are in W (power, not energy), so they stay the same across sub-steps.
+        // Each sub-step uses the same power rate, but for a shorter time (sub_dt).
+        // The backward Euler formula naturally accounts for this via the C/dt term.
+
+        for _step in 0..num_sub_steps {
+            self.timestep_seconds = sub_dt;
+            match self.coupling_mode {
+                MassAirCouplingMode::AdditiveSum => {
+                    self.step_backward_euler_with_gains(
+                        gains_wall,
+                        gains_roof,
+                        gains_floor,
+                        gains_internal,
+                    );
+                }
+                MassAirCouplingMode::ParallelResistance => {
+                    self.step_backward_euler_with_gains_parallel_resistance(
+                        gains_wall,
+                        gains_roof,
+                        gains_floor,
+                        gains_internal,
+                    );
+                }
             }
         }
+
+        // Restore original timestep
+        self.timestep_seconds = dt;
         &self.mass
     }
 

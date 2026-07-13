@@ -6,13 +6,39 @@ use crate::physics::wall_spec::WallSpec;
 pub use crate::thermal::thermal_model::ThermalModel;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum PrimarySolver {
+    #[default]
+    Baseline,
+    Gauge,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct PhysicsAdapterConfig {
+    pub primary_solver: PrimarySolver,
+    /// When true, gauge solver runs in shadow mode (records but doesn't affect output)
     pub gauge_shadow_mode: bool,
 }
 
 impl PhysicsAdapterConfig {
+    pub fn baseline_only() -> Self {
+        Self {
+            primary_solver: PrimarySolver::Baseline,
+            gauge_shadow_mode: false,
+        }
+    }
+
+    pub fn gauge_primary() -> Self {
+        Self {
+            primary_solver: PrimarySolver::Gauge,
+            gauge_shadow_mode: false,
+        }
+    }
+
+    /// Deprecated: gauge shadow mode. Use `baseline_only()` or `gauge_primary()`.
+    #[deprecated(since = "0.2.0", note = "Use baseline_only() or gauge_primary()")]
     pub fn gauge_shadow() -> Self {
         Self {
+            primary_solver: PrimarySolver::Baseline,
             gauge_shadow_mode: true,
         }
     }
@@ -31,6 +57,7 @@ pub struct PhysicsAdapter {
     baseline_solver: Box<dyn HeatConductionSolver>,
     gauge_solver: Option<GaugeSolver>,
     shadow_records: Vec<GaugeShadowRecord>,
+    config: PhysicsAdapterConfig,
 }
 
 impl PhysicsAdapter {
@@ -42,17 +69,24 @@ impl PhysicsAdapter {
         baseline_solver: Box<dyn HeatConductionSolver>,
         config: PhysicsAdapterConfig,
     ) -> Self {
-        let gauge_solver = if config.gauge_shadow_mode {
-            Some(GaugeSolver::default())
-        } else {
-            None
-        };
+        let gauge_solver =
+            if config.gauge_shadow_mode || config.primary_solver == PrimarySolver::Gauge {
+                Some(GaugeSolver::default())
+            } else {
+                None
+            };
 
         Self {
             baseline_solver,
             gauge_solver,
             shadow_records: Vec::new(),
+            config,
         }
+    }
+
+    /// Returns which solver is currently acting as primary.
+    pub fn primary_solver(&self) -> PrimarySolver {
+        self.config.primary_solver
     }
 
     pub fn initialize(&mut self, wall: &WallSpec) -> Result<(), SolverError> {
@@ -76,16 +110,19 @@ impl PhysicsAdapter {
             .baseline_solver
             .step(timestep, T_interior, T_exterior, h_interior, h_exterior)?;
 
+        let boundary = GaugeBoundaryConditions::new(solar_irradiance_wm2, T_exterior.to_value());
+        let mut gauge_flux_result: Result<HeatFlux, SolverError> = Err(SolverError::InvalidConfig(
+            "Gauge solver not available".to_string(),
+        ));
+
         if let Some(gauge_solver) = &mut self.gauge_solver {
-            let boundary =
-                GaugeBoundaryConditions::new(solar_irradiance_wm2, T_exterior.to_value());
             let gauge_connection = GaugeSolver::translate_boundary_conditions(boundary)
                 .as_slice()
                 .to_vec();
-            let gauge_result = gauge_solver
+            gauge_flux_result = gauge_solver
                 .step_with_boundary_conditions(timestep, T_interior, h_exterior, boundary);
             let baseline_flux_wm2 = baseline_flux.to_value();
-            let record = match gauge_result {
+            let record = match gauge_flux_result {
                 Ok(gauge_flux) => {
                     let gauge_flux_wm2 = gauge_flux.to_value();
                     GaugeShadowRecord {
@@ -96,7 +133,7 @@ impl PhysicsAdapter {
                         error: None,
                     }
                 }
-                Err(error) => GaugeShadowRecord {
+                Err(ref error) => GaugeShadowRecord {
                     baseline_flux_wm2,
                     gauge_flux_wm2: None,
                     delta_wm2: None,
@@ -107,7 +144,12 @@ impl PhysicsAdapter {
             self.shadow_records.push(record);
         }
 
-        Ok(baseline_flux)
+        // Return gauge flux if it's the primary solver, otherwise baseline
+        if self.primary_solver() == PrimarySolver::Gauge {
+            gauge_flux_result
+        } else {
+            Ok(baseline_flux)
+        }
     }
 
     pub fn shadow_records(&self) -> &[GaugeShadowRecord] {
