@@ -67,7 +67,7 @@ impl SurfaceType {
 
 /// Per-surface gauge solver with geometric and type metadata.
 #[derive(Debug, Clone)]
-struct SurfaceGaugeSolver {
+pub(crate) struct SurfaceGaugeSolver {
     /// The 1D gauge solver for this surface
     gauge: GaugeSolver,
     /// Surface area in m²
@@ -75,9 +75,9 @@ struct SurfaceGaugeSolver {
     /// Surface type for solar distribution
     surface_type: SurfaceType,
     /// Surface azimuth (degrees, 0=South, 90=West, -90=East)
-    azimuth_deg: f64,
+    _azimuth_deg: f64,
     /// Surface tilt from horizontal (degrees, 90=vertical wall, 0=roof)
-    tilt_deg: f64,
+    _tilt_deg: f64,
     /// Wall spec for initialization (stored for re-initialization if needed)
     wall_spec: Option<WallSpec>,
 }
@@ -95,8 +95,8 @@ impl SurfaceGaugeSolver {
             gauge,
             area_m2,
             surface_type,
-            azimuth_deg,
-            tilt_deg,
+            _azimuth_deg: azimuth_deg,
+            _tilt_deg: tilt_deg,
             wall_spec: None,
         }
     }
@@ -129,8 +129,6 @@ pub struct GaugeZoneSolver {
     C_air: f64,
     /// Current zone air temperature (°C)
     T_air: f64,
-    /// Zone volume (m³)
-    zone_volume: f64,
     /// Floor area (m²)
     floor_area: f64,
     /// Number of surfaces
@@ -141,8 +139,6 @@ pub struct GaugeZoneSolver {
 
 /// Physical constants for air
 mod air_constants {
-    use crate::physics::units::FromF64;
-
     /// Air density at standard conditions (kg/m³)
     pub const RHO_AIR: f64 = 1.2;
 
@@ -159,14 +155,12 @@ mod air_constants {
 impl GaugeZoneSolver {
     /// Create a new GaugeZoneSolver with the given zone geometry.
     pub fn new(floor_area: f64, ceiling_height: f64) -> Self {
-        let zone_volume = floor_area * ceiling_height;
         let C_air = air_constants::zone_air_capacitance(floor_area, ceiling_height);
 
         Self {
             surfaces: Vec::new(),
             C_air,
             T_air: 20.0, // Default initial temperature (°C)
-            zone_volume,
             floor_area,
             num_surfaces: 0,
             initialized: false,
@@ -287,7 +281,6 @@ impl GaugeZoneSolver {
     /// Net zone load in kWh (positive = heating needed, negative = cooling needed)
     pub fn step(
         &mut self,
-        _timestep: usize,
         dt_seconds: f64,
         T_exterior: Temperature,
         h_exterior: HeatTransferCoefficient,
@@ -335,7 +328,8 @@ impl GaugeZoneSolver {
     }
 
     /// Access the per-surface solvers (for diagnostics).
-    pub fn surfaces(&self) -> &[SurfaceGaugeSolver] {
+    #[allow(dead_code)]
+    pub(crate) fn surfaces(&self) -> &[SurfaceGaugeSolver] {
         &self.surfaces
     }
 }
@@ -461,9 +455,10 @@ mod tests {
         // One hour timestep
         let energy = zone
             .step(
-                0,      // timestep
                 3600.0, // dt = 1 hour
-                T_ext, h_ext, 0.0, // no solar
+                T_ext,
+                h_ext,
+                0.0, // no solar
                 0.0, // no internal gains
                 0.0, // no infiltration
             )
