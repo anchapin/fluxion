@@ -67,7 +67,7 @@ impl SurfaceType {
 
 /// Per-surface gauge solver with geometric and type metadata.
 #[derive(Debug, Clone)]
-struct SurfaceGaugeSolver {
+pub(crate) struct SurfaceGaugeSolver {
     /// The 1D gauge solver for this surface
     gauge: GaugeSolver,
     /// Surface area in m²
@@ -75,9 +75,9 @@ struct SurfaceGaugeSolver {
     /// Surface type for solar distribution
     surface_type: SurfaceType,
     /// Surface azimuth (degrees, 0=South, 90=West, -90=East)
-    azimuth_deg: f64,
+    _azimuth_deg: f64,
     /// Surface tilt from horizontal (degrees, 90=vertical wall, 0=roof)
-    tilt_deg: f64,
+    _tilt_deg: f64,
     /// Wall spec for initialization (stored for re-initialization if needed)
     wall_spec: Option<WallSpec>,
 }
@@ -88,15 +88,15 @@ impl SurfaceGaugeSolver {
         gauge: GaugeSolver,
         area_m2: f64,
         surface_type: SurfaceType,
-        azimuth_deg: f64,
-        tilt_deg: f64,
+        _azimuth_deg: f64,
+        _tilt_deg: f64,
     ) -> Self {
         Self {
             gauge,
             area_m2,
             surface_type,
-            azimuth_deg,
-            tilt_deg,
+            _azimuth_deg,
+            _tilt_deg,
             wall_spec: None,
         }
     }
@@ -129,6 +129,7 @@ pub struct GaugeZoneSolver {
     /// Current zone air temperature (°C)
     T_air: f64,
     /// Zone volume (m³)
+    #[allow(dead_code)]
     zone_volume: f64,
     /// Floor area (m²)
     floor_area: f64,
@@ -140,8 +141,6 @@ pub struct GaugeZoneSolver {
 
 /// Physical constants for air
 mod air_constants {
-    use crate::physics::units::FromF64;
-
     /// Air density at standard conditions (kg/m³)
     pub const RHO_AIR: f64 = 1.2;
 
@@ -285,6 +284,7 @@ impl GaugeZoneSolver {
     ///
     /// # Returns
     /// Net zone load in kWh (positive = heating needed, negative = cooling needed)
+    #[allow(clippy::too_many_arguments)]
     pub fn step(
         &mut self,
         _timestep: usize,
@@ -335,6 +335,7 @@ impl GaugeZoneSolver {
     }
 
     /// Access the per-surface solvers (for diagnostics).
+    #[allow(private_interfaces)]
     pub fn surfaces(&self) -> &[SurfaceGaugeSolver] {
         &self.surfaces
     }
@@ -346,7 +347,6 @@ impl GaugeZoneSolver {
 mod tests {
     use super::*;
     use crate::physics::wall_spec::WallSpec;
-    use crate::physics::units::FromF64;
 
     fn case600_wall() -> WallSpec {
         // ASHRAE 140 Case 600 low-mass wall
