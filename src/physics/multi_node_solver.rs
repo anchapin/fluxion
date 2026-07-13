@@ -842,12 +842,13 @@ impl MultiNodeSolver {
         let min_tau = wall_tau.min(roof_tau).min(floor_tau);
 
         // Determine number of sub-steps needed
-        let num_sub_steps = if min_tau.is_finite() && min_tau > 0.0 && dt > min_tau * STIFFNESS_FACTOR {
-            let required = (dt / (min_tau * STIFFNESS_FACTOR)).ceil() as u32;
-            required.clamp(MIN_SUB_STEPS, MAX_SUB_STEPS)
-        } else {
-            MIN_SUB_STEPS
-        };
+        let num_sub_steps =
+            if min_tau.is_finite() && min_tau > 0.0 && dt > min_tau * STIFFNESS_FACTOR {
+                let required = (dt / (min_tau * STIFFNESS_FACTOR)).ceil() as u32;
+                required.clamp(MIN_SUB_STEPS, MAX_SUB_STEPS)
+            } else {
+                MIN_SUB_STEPS
+            };
 
         let sub_dt = dt / num_sub_steps as f64;
 

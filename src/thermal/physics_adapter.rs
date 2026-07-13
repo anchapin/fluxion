@@ -69,11 +69,12 @@ impl PhysicsAdapter {
         baseline_solver: Box<dyn HeatConductionSolver>,
         config: PhysicsAdapterConfig,
     ) -> Self {
-        let gauge_solver = if config.gauge_shadow_mode || config.primary_solver == PrimarySolver::Gauge {
-            Some(GaugeSolver::default())
-        } else {
-            None
-        };
+        let gauge_solver =
+            if config.gauge_shadow_mode || config.primary_solver == PrimarySolver::Gauge {
+                Some(GaugeSolver::default())
+            } else {
+                None
+            };
 
         Self {
             baseline_solver,
@@ -115,10 +116,11 @@ impl PhysicsAdapter {
         ));
 
         if let Some(gauge_solver) = &mut self.gauge_solver {
-            let gauge_connection =
-                GaugeSolver::translate_boundary_conditions(boundary).as_slice().to_vec();
-            gauge_flux_result =
-                gauge_solver.step_with_boundary_conditions(timestep, T_interior, h_exterior, boundary);
+            let gauge_connection = GaugeSolver::translate_boundary_conditions(boundary)
+                .as_slice()
+                .to_vec();
+            gauge_flux_result = gauge_solver
+                .step_with_boundary_conditions(timestep, T_interior, h_exterior, boundary);
             let baseline_flux_wm2 = baseline_flux.to_value();
             let record = match gauge_flux_result {
                 Ok(gauge_flux) => {
