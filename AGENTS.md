@@ -140,3 +140,54 @@ Search results can flood context. Use `context-mode_ctx_execute(language: "shell
 | `ctx stats` | Call the `stats` MCP tool and display the full output verbatim |
 | `ctx doctor` | Call the `doctor` MCP tool, run the returned shell command, display as checklist |
 | `ctx upgrade` | Call the `upgrade` MCP tool, run the returned shell command, display as checklist |
+
+---
+
+## Skill Routing Table
+
+Use this table to route issues to the correct skill and documentation.
+
+| Issue Type | Skills | Docs |
+|------------|--------|------|
+| Physics/math bug | `bem-engineer`, `tdd` | `ARCHITECTURE.md` §Module N |
+| Test failure | `oma-qa`, `oma-debug` | `tests/README.md` |
+| Security/CVE | `agency-security-engineer` | `SECURITY.md` |
+| Performance regression | `agency-performance-benchmarker` | `docs/profiling-guide.md` |
+| New module | `oma-architecture`, `plan` | `ARCHITECTURE.md` |
+| API/endpoint | `oma-backend` | `API_REFERENCE.md` |
+| Database/query | `oma-db` | `docs/...` |
+| Frontend/UI | `oma-frontend` | `docs/...` |
+| Documentation | `agency-technical-writer` | `CONTRIBUTING.md` |
+| Multi-model PR review | `pr-review-merge` | `docs/agent-review-guide.md` |
+
+## Standard Workflow
+
+Start sessions with `@/AGENT_WORKFLOW.md` for the standard workflow tag.
+
+## 7-Line Summary Convention
+
+All system docs must have a **7-line summary** at the top (lines 2–8):
+
+```markdown
+> **TL;DR**: One sentence on what this doc is.
+> **Key decisions**: Bullet 1 | Bullet 2 | Bullet 3
+> **Owned by**: Module N owner
+> **Reviewed**: YYYY-MM-DD
+```
+
+After modifying any module, update the 7-line summary of the relevant doc in `docs/doc-inventory.md`.
+
+## Cross-Agent Review
+
+For multi-model PR review, use the `pr-review-merge` skill:
+```
+Load: pr-review-merge
+```
+
+See `docs/agent-workflow.md` for per-phase review routing (Physics Auditor → Safety Engineer → etc.).
+
+## Related Documentation
+
+- Standard workflow: `@/docs/agent-workflow.md`
+- Agent review guide: `@/docs/agent-review-guide.md`
+- Doc inventory: `@/docs/doc-inventory.md`

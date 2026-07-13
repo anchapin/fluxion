@@ -162,8 +162,11 @@ impl CtfZoneCouplingSolver {
             let u_filmed = solver.coefficients.x.first().copied().unwrap_or(0.0);
             let q_ctf = u_filmed * (t_sol_air - t_zone);
             let h_i = self.coefficients.h_i;
-            let t_si = (self.coefficients.h_ci * t_zone + self.coefficients.h_ri * t_mass
-                + solar_absorbed_interior - q_ctf) / h_i;
+            let t_si = (self.coefficients.h_ci * t_zone
+                + self.coefficients.h_ri * t_mass
+                + solar_absorbed_interior
+                - q_ctf)
+                / h_i;
 
             solver.t_interior_surface = t_si;
             solver.t_exterior_surface = t_sol_air;

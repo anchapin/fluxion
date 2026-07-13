@@ -252,7 +252,11 @@ where
                 let t_mass = ext_temps.get(i).copied().unwrap_or(20.0);
 
                 if let Some(ref coupling_solver) = self.0.ctf_zone_coupling_solver {
-                    let solar_absorbed_interior = solar_ref.get(i).copied().unwrap_or(0.0) * 0.3;
+                    // Issue #1152 follow-up: Route 80% of shortwave solar to interior surfaces
+                    // via CTF zone coupling (matching the physically accurate split).
+                    // The remaining 20% is implicitly handled through the 5R1C network
+                    // via the existing solar_distribution_to_air mechanism.
+                    let solar_absorbed_interior = solar_ref.get(i).copied().unwrap_or(0.0) * 0.8;
                     let result = coupling_solver.solve(
                         solver,
                         t_zone,

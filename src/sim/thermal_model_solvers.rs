@@ -293,9 +293,31 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         let mut solvers = Vec::with_capacity(self.0.num_zones);
         for i in 0..self.0.num_zones {
             let mut config = CTFSolverConfig::new(timestep, history_size);
-            // Set surface area based on zone geometry
-            let zone_areas: &[f64] = self.0.zone_area.as_ref();
-            config.surface_area = zone_areas.get(i).copied().unwrap_or(20.0);
+
+            // Issue #1152: Calculate the actual opaque wall surface area for this zone.
+            // The CTF flux is per m² of this surface, so it must be the actual opaque
+            // wall area (not floor area). Each zone has 6 surfaces (S, W, N, E, Up, Down).
+            let opaque_wall_area: f64 = self
+                .0
+                .surfaces
+                .get(i)
+                .map(|zone_surfaces| {
+                    zone_surfaces
+                        .iter()
+                        .filter(|s| {
+                            // Only vertical walls (S, W, N, E) - exclude roof/floor
+                            !matches!(
+                                s.orientation,
+                                crate::validation::ashrae_140_cases::Orientation::Up
+                                    | crate::validation::ashrae_140_cases::Orientation::Down
+                            )
+                        })
+                        .map(|s| s.area - s.window_area)
+                        .sum()
+                })
+                .unwrap_or(20.0);
+
+            config.surface_area = opaque_wall_area;
             config.h_interior = INTERIOR_FILM_COEFF;
             config.h_exterior =
                 crate::physics::constants::thermal::ashrae_140::v2023::EXTERIOR_FILM_COEFF;
