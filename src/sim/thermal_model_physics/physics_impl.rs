@@ -364,10 +364,8 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         // The sol-air formula: T_sol_air = T_out + α*I_opaque/h_ext - ε*σ*(T_out-T_sky)^4/h_ext
         let sol_air_calc = SolAirTemperature::ashrae_140_default();
         let mut t_sol_air_vec = Vec::with_capacity(self.0.num_zones);
-        for i in 0..self.0.num_zones {
-            // opaque_solar_ref[i] is the effective opaque irradiance on exterior surfaces (W/m²)
-            // This is the combined wall + roof irradiance for the zone
-            let t_sol_air_i = sol_air_calc.for_roof(outdoor_temp, opaque_solar_ref[i], sky_temp);
+        for opaque_solar in opaque_solar_ref.iter().take(self.0.num_zones) {
+            let t_sol_air_i = sol_air_calc.for_roof(outdoor_temp, *opaque_solar, sky_temp);
             t_sol_air_vec.push(t_sol_air_i);
         }
         let t_sol_air = VectorField::new(t_sol_air_vec);
