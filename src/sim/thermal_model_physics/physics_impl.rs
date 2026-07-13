@@ -318,7 +318,8 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         for i in 0..self.0.num_zones {
             let load_w = loads_ref[i] * area_ref[i];
             let sol_w = solar_ref[i] * area_ref[i];
-            let opaque_sol_w = opaque_solar_ref[i] * area_ref[i];
+            // opaque_sol_w: kept for potential debugging; it's included via t_sol_air now
+            let _opaque_sol_w = opaque_solar_ref[i] * area_ref[i];
 
             // Internal gains: convective to air, radiative split between surface and mass
             // Solar distribution must conserve energy (sum to 1.0)
@@ -326,7 +327,13 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
             let remaining_sol = sol_w - sol_to_air;
             scratch.phi_ia[i] = load_w * conv_frac + sol_to_air;
             scratch.phi_st[i] = load_w * st_int_frac + remaining_sol * st_sol_frac;
-            scratch.phi_m[i] = load_w * m_air_frac + remaining_sol * m_sol_frac + opaque_sol_w;
+            // Issue #1527 fix: opaque solar gains are now included via the proper
+            // sol-air temperature pathway (h_tr_em * (t_sol_air - T_mass)).
+            // Previously opaque_sol_w was added directly to phi_m here, bypassing
+            // the thermal lag through the envelope conductance — causing peak cooling
+            // over-prediction (Case 610) and peak heating under-prediction (Case 640).
+            // Remove it here; the envelope pathway will handle it correctly.
+            scratch.phi_m[i] = load_w * m_air_frac + remaining_sol * m_sol_frac;
         }
 
         let phi_ia = T::from(VectorField::new(std::mem::take(&mut scratch.phi_ia)));
@@ -345,10 +352,23 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
             self.0.last_phi_m = phi_m.as_ref().first().copied().unwrap_or(0.0);
         }
 
-        // Use outdoor_temp directly. Solar gains on opaque surfaces are already included in phi_m.
-        // Issue #901 perf: build the VectorField once, then read via as_ref() at use-sites
-        // (previously this cloned the Vec a second time into `t_sol_air`).
-        let t_sol_air = VectorField::from_scalar(outdoor_temp, self.0.num_zones);
+        // Issue #1527 fix: Compute proper sol-air temperature using opaque surface irradiance.
+        // The previous code used outdoor_temp directly (ignoring solar), while opaque_sol_w
+        // was added directly to phi_m (bypassing thermal lag through envelope).
+        // This caused peak cooling over-prediction (Case 610) and peak heating under-
+        // prediction (Case 640) because solar gains didn't go through the proper
+        // conductance pathway (h_tr_em * (t_sol_air - T_mass)).
+        //
+        // Now: t_sol_air includes solar via the sol-air formula using opaque irradiance.
+        // opaque_sol_w has been removed from phi_m to avoid double-counting.
+        // The sol-air formula: T_sol_air = T_out + α*I_opaque/h_ext - ε*σ*(T_out-T_sky)^4/h_ext
+        let sol_air_calc = SolAirTemperature::ashrae_140_default();
+        let mut t_sol_air_vec = Vec::with_capacity(self.0.num_zones);
+        for opaque_solar in opaque_solar_ref.iter().take(self.0.num_zones) {
+            let t_sol_air_i = sol_air_calc.for_roof(outdoor_temp, *opaque_solar, sky_temp);
+            t_sol_air_vec.push(t_sol_air_i);
+        }
+        let t_sol_air = VectorField::new(t_sol_air_vec);
 
         // Simplified 5R1C calculation using CTA
         // Include ground coupling through floor
