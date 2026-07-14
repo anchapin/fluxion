@@ -88,15 +88,15 @@ impl SurfaceGaugeSolver {
         gauge: GaugeSolver,
         area_m2: f64,
         surface_type: SurfaceType,
-        azimuth_deg: f64,
-        tilt_deg: f64,
+        _azimuth_deg: f64,
+        _tilt_deg: f64,
     ) -> Self {
         Self {
             gauge,
             area_m2,
             surface_type,
-            _azimuth_deg: azimuth_deg,
-            _tilt_deg: tilt_deg,
+            _azimuth_deg,
+            _tilt_deg,
             wall_spec: None,
         }
     }
@@ -129,6 +129,9 @@ pub struct GaugeZoneSolver {
     C_air: f64,
     /// Current zone air temperature (°C)
     T_air: f64,
+    /// Zone volume (m³)
+    #[allow(dead_code)]
+    zone_volume: f64,
     /// Floor area (m²)
     floor_area: f64,
     /// Number of surfaces
@@ -155,12 +158,14 @@ mod air_constants {
 impl GaugeZoneSolver {
     /// Create a new GaugeZoneSolver with the given zone geometry.
     pub fn new(floor_area: f64, ceiling_height: f64) -> Self {
+        let zone_volume = floor_area * ceiling_height;
         let C_air = air_constants::zone_air_capacitance(floor_area, ceiling_height);
 
         Self {
             surfaces: Vec::new(),
             C_air,
             T_air: 20.0, // Default initial temperature (°C)
+            zone_volume,
             floor_area,
             num_surfaces: 0,
             initialized: false,
@@ -279,8 +284,10 @@ impl GaugeZoneSolver {
     ///
     /// # Returns
     /// Net zone load in kWh (positive = heating needed, negative = cooling needed)
+    #[allow(clippy::too_many_arguments)]
     pub fn step(
         &mut self,
+        _timestep: usize,
         dt_seconds: f64,
         T_exterior: Temperature,
         h_exterior: HeatTransferCoefficient,
@@ -328,8 +335,8 @@ impl GaugeZoneSolver {
     }
 
     /// Access the per-surface solvers (for diagnostics).
-    #[allow(dead_code)]
-    pub(crate) fn surfaces(&self) -> &[SurfaceGaugeSolver] {
+    #[allow(private_interfaces)]
+    pub fn surfaces(&self) -> &[SurfaceGaugeSolver] {
         &self.surfaces
     }
 }
@@ -339,7 +346,6 @@ impl GaugeZoneSolver {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::physics::units::FromF64;
     use crate::physics::wall_spec::WallSpec;
 
     fn case600_wall() -> WallSpec {
@@ -455,10 +461,9 @@ mod tests {
         // One hour timestep
         let energy = zone
             .step(
+                0,      // timestep
                 3600.0, // dt = 1 hour
-                T_ext,
-                h_ext,
-                0.0, // no solar
+                T_ext, h_ext, 0.0, // no solar
                 0.0, // no internal gains
                 0.0, // no infiltration
             )

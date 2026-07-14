@@ -1,86 +1,135 @@
 # Agent Workflow
 
-> **TL;DR**: Standard 4-phase workflow for resolving issues with research, planning, implementation, and wrap-up.
-> **Key decisions**: Always read ARCHITECTURE.md first | Use ctx tools for GATHER/FOLLOW-UP | Write worksheet for complex issues
-> **Owned by**: All agents
+> **TL;DR**: Standard four-phase workflow for all agent coding sessions.
+> **Phases**: Research → Plan → Implement → Wrap-up
+> **Owned by**: All contributors
 > **Reviewed**: 2026-07-13
 
-## 4-Phase Workflow
+## Overview
 
-### Phase 1 — Research
+Every agent session follows this four-phase structure. Tag `@/docs/agent-workflow.md` at session start.
 
-Understand the issue. Read `ARCHITECTURE.md`. Run affected code paths. Read tests.
+```
+Phase 1: Research    → Understand the issue
+Phase 2: Plan        → Write plan to docs/worksheets/
+Phase 3: Implement   → Code + tests in lockstep
+Phase 4: Wrap-up     → Review, test, commit
+```
 
-- Read `ARCHITECTURE.md` for module boundaries and I/O contracts
-- Read relevant test files to understand expected behavior
-- Run the affected code path to observe the issue
-- Document findings in `docs/worksheets/issue-{N}-plan.md`
+---
 
-### Phase 2 — Plan
+## Phase 1 — Research
 
-Write the plan to `docs/worksheets/issue-{N}-plan.md`. Tag related docs. Get cross-agent review.
+Understand the issue before writing any code.
 
-- Create worksheet at `docs/worksheets/issue-{N}-{slug}.md`
-- Tag related architecture docs
-- Get cross-agent review from relevant personas
-- Get explicit approval before implementing
+### Checklist
 
-### Phase 3 — Implement
+- [ ] Read the full issue description and comments
+- [ ] Read `ARCHITECTURE.md` for relevant module boundaries and contracts
+- [ ] Read the affected source files — understand the current implementation
+- [ ] Run the affected code paths (e.g., `cargo test --lib`, integration runs)
+- [ ] Read the existing tests for the affected module
+- [ ] Check `docs/KNOWN_ISSUES.md` for related known issues
+- [ ] Check recent commits on the relevant module for context
 
-Write code + tests in lockstep. Run app on every significant change.
+### Exit criterion
 
-- Write the minimal viable change
-- Add/update tests alongside implementation
-- Run tests on every significant change
-- Use Python for mathematical verification
+You can explain the issue in your own words and know which files need to change.
 
-### Phase 4 — Wrap-up
+---
 
-Cross-agent review. Run full test suite. Write end-of-session worksheet. Commit with git tag.
+## Phase 2 — Plan
 
-- Run `pr-review-merge` for multi-model review
-- Run full test suite
-- Update worksheet to "complete"
-- Commit with git tag: `git tag -a issue-{N} -m "Issue #{N} — {title}"`
+Write the plan before writing code.
 
-## Per-Phase Checklist
+### Checklist
 
-### Phase 1 Checklist
-- [ ] Read `ARCHITECTURE.md`
-- [ ] Read relevant test files
-- [ ] Ran affected code path
-- [ ] Identified root cause
-- [ ] Created worksheet
+- [ ] Create `docs/worksheets/issue-{N}-plan.md` (see worksheet format below)
+- [ ] Tag related docs in the plan (e.g., `ARCHITECTURE.md §3`, `tests/README.md`)
+- [ ] Identify all files that need to change
+- [ ] Identify test files that need new or updated tests
+- [ ] Get cross-agent review of the plan before implementing (optional but recommended for large changes)
+- [ ] Ensure the plan respects the validation strategy: **no parameter tuning to make tests pass — fix the underlying math**
 
-### Phase 2 Checklist
-- [ ] Plan written in worksheet
-- [ ] Related docs tagged
-- [ ] Cross-agent review obtained
-- [ ] Approval received
+### Worksheet format
 
-### Phase 3 Checklist
-- [ ] Code written
-- [ ] Tests added/updated
-- [ ] Tests passing
-- [ ] Mathematical verification done
+```markdown
+# Issue {N} — Plan
 
-### Phase 4 Checklist
-- [ ] Cross-agent review done
-- [ ] Full test suite passing
-- [ ] Worksheet updated
-- [ ] Git tag applied
+## Issue
+Brief description of the issue.
 
-## Cross-Agent Review Routing
+## Root Cause
+What's actually wrong?
 
-| Milestone | Reviewer Persona | Scope |
-|-----------|-----------------|-------|
-| Research | BEM Domain Expert | Issue understanding, ARCHITECTURE.md alignment |
-| Plan | Physics Auditor + Integration Reviewer | Plan soundness, module boundaries |
-| Implementation | Code Quality Auditor + ML Surrogate Reviewer | Code correctness, contract adherence |
-| Wrap-up | Safety Engineer + Performance Reviewer | Full validation, no regressions |
+## Files to Change
+- `src/path/file.rs` — reason
+- `tests/path/test.rs` — reason
 
-## Related Docs
+## Implementation Steps
+1. Step description
+2. Step description
 
-- Worksheet template: `@/docs/worksheets/issue-template.md`
-- Cross-agent review guide: `@/docs/agent-review-guide.md`
-- Coding conventions: `@/docs/agent-conventions.md`
+## Validation
+- [ ] Unit tests pass
+- [ ] Reference data comparison (if applicable)
+- [ ] No regression in related modules
+```
+
+---
+
+## Phase 3 — Implement
+
+Write code and tests together.
+
+### Checklist
+
+- [ ] Write tests **before** or **in parallel** with implementation (TDD for bug fixes)
+- [ ] Use reference data CSVs for EnergyPlus parity checks
+- [ ] Name tests descriptively: `fn solar_altitude_40N_summer_solstice_matches_epplus()`
+- [ ] Run the app on every significant change (`cargo build`, `cargo test`)
+- [ ] For physics/math: use `ctx_execute` with Python to verify calculations — never mental math
+- [ ] Follow existing code style and conventions in the module
+- [ ] Update ARCHITECTURE.md if the code changes the documented interfaces
+
+### Validation targets
+
+- Each physics module must match EnergyPlus within **1% tolerance** on isolated scenarios
+- **No ASHRAE 140 system-level testing** until individual modules pass E+ reference tests
+- **No parameter tuning** to make system tests pass — fix the underlying math
+
+---
+
+## Phase 4 — Wrap-up
+
+Final review, testing, and commit.
+
+### Checklist
+
+- [ ] **Cross-agent review**: have another agent or model review the changes
+- [ ] Run the **full test suite**: `make test-fast` or `cargo test`
+- [ ] Run linting: `make lint` or `cargo fmt --check && cargo clippy`
+- [ ] Write end-of-session worksheet: `docs/worksheets/issue-{N}-wrapup.md`
+- [ ] Commit with a **git tag** indicating the phase/state: `git tag -a issue-{N}-done -m "Issue {N} resolved"`
+- [ ] Push branch and open PR with reference to the issue
+
+### Cross-agent review notes
+
+- Use the `pr-review-merge` skill or request a peer review
+- Review checks: correctness, security, performance, test coverage, documentation drift
+- If the change affects physics: verify math with Python against reference data
+
+### Worksheet index
+
+Worksheets are stored in `docs/worksheets/`. Each worksheet is named:
+- `issue-{N}-plan.md` — Phase 2 plan
+- `issue-{N}-wrapup.md` — Phase 4 wrap-up
+
+---
+
+## References
+
+- `ARCHITECTURE.md` — Module boundaries, I/O contracts, physics diagrams
+- `docs/AI_CODING_STRATEGY_ADOPTION_PLAN.md` §2 — Origin of this document
+- `docs/worksheets/` — Worksheet storage directory
+- `AGENTS.md` — Context-mode routing rules, tool hierarchy
