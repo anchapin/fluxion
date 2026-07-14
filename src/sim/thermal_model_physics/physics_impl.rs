@@ -786,7 +786,10 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         // Issue #1585: step the air-node ODE state forward for the next
         // timestep.  t_i_free (the new zone-air temperature) becomes
         // t_air_old on the next call to step_physics_5r1c.
-        self.0.air_temperatures.as_mut().copy_from_slice(&t_i_free_data);
+        self.0
+            .air_temperatures
+            .as_mut()
+            .copy_from_slice(&t_i_free_data);
 
         // PR #821: DEBUG_900FF_ti_free trace removed.
 
