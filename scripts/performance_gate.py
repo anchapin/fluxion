@@ -11,6 +11,7 @@ import json
 import os
 import sys
 import re
+import argparse
 from pathlib import Path
 from typing import Dict, List, Tuple
 
@@ -55,7 +56,7 @@ def get_main_branch_baseline() -> Dict[str, float]:
         with open(BASELINE_FILE) as f:
             main_baseline = json.load(f)
     finally:
-        run_command(["git", "checkout", "-")
+        run_command(["git", "checkout", "-"])
         run_command(["git", "stash", "pop"])
 
     return main_baseline
@@ -127,13 +128,21 @@ def save_baseline(benchmarks: Dict[str, float]):
 
 
 def main():
+    parser = argparse.ArgumentParser(description="Fluxion Performance Gate")
+    parser.add_argument(
+        "--check",
+        action="store_true",
+        help="Run benchmark check against baseline and exit with appropriate code"
+    )
+    args = parser.parse_args()
+
     print("=== Performance Gate ===")
     print(f"Threshold: {BENCHMARK_THRESHOLD*100}% max regression")
 
     branch = get_git_branch()
     is_main = branch == "main"
 
-    if is_main:
+    if is_main and not args.check:
         print("Running on main branch — saving baseline")
         benchmarks = run_benchmarks()
         if benchmarks:
@@ -144,7 +153,11 @@ def main():
             sys.exit(1)
         sys.exit(0)
 
-    print(f"Running on branch '{branch}' — checking against baseline")
+    if args.check:
+        print(f"Running in check mode — comparing against baseline")
+    else:
+        print(f"Running on branch '{branch}' — checking against baseline")
+
     baseline = get_main_branch_baseline()
     if not baseline:
         print("No baseline found — run on main first to establish baseline")
