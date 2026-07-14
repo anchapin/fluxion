@@ -1533,6 +1533,7 @@ impl HeatConductionSolver for MultiNodeSolver {
 mod tests {
     use super::*;
     use fluxion_core::multi_node::ThermalMassNode;
+    use std::panic::catch_unwind;
 
     fn create_test_solver() -> MultiNodeSolver {
         let wall = ThermalMassNode::new(20.0, 5e6, 50.0, 20.0);
