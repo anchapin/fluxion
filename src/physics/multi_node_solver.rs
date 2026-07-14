@@ -137,6 +137,10 @@ pub struct MultiNodeSolver {
     /// return the closed-form `q_ss = (T_ext − T_int) / R_total` matching the
     /// `FiveR1CSolver` default semantics (no thermal mass effect).
     pub r_total: f64,
+    /// Issue #1589: exterior surface film resistance [m²·K/W]. Set alongside
+    /// `r_total` so that `step()` can compute the full series resistance
+    /// `R_se + R_total + R_si` for the correct steady-state flux.
+    pub r_se: f64,
     /// Issue #1429: true once `initialize(&WallSpec)` has configured the four
     /// mass nodes from a layer stack. Required for `is_valid()` and gates
     /// `step()` and `steady_state_flux()` so the trait contract holds even
@@ -172,6 +176,7 @@ impl MultiNodeSolver {
             coupling_mode: MassAirCouplingMode::default(),
             // Issue #1429 — trait state defaults (see struct docs).
             r_total: 0.0,
+            r_se: 0.0,
             initialized: false,
             last_temps: None,
             last_dt: 0.0,
@@ -1293,6 +1298,7 @@ impl MultiNodeSolver {
 
         let mut solver = Self::new(h_tr_is, wall_node, roof_node, floor_node, internal_node);
         solver.r_total = r_total;
+        solver.r_se = r_se;
         solver.initialized = true;
         // Seed zone / surface / exterior at 20 °C so a single-step call from
         // a different interior/exterior BC produces a meaningful surface flux
@@ -1358,6 +1364,7 @@ impl HeatConductionSolver for MultiNodeSolver {
         self.exterior_temperatures = SurfaceExteriorTemperatures::uniform(20.0);
         self.timestep_seconds = 3600.0;
         self.r_total = r_total;
+        self.r_se = r_se;
         self.last_temps = None;
         self.last_dt = 0.0;
         self.initialized = true;
@@ -1418,11 +1425,14 @@ impl HeatConductionSolver for MultiNodeSolver {
 
         // Returned flux — drop-in parity with `FiveR1CSolver::step()`:
         // q = (T_mass_avg − T_int) / R_total, where T_mass_avg is the simple
-        // envelope (wall+roof+floor) average. At steady state with all three
-        // envelope nodes at the same temperature, T_mass_avg reduces to the
-        // 5R1C lumped-mass midpoint (assuming symmetric R_si = R_se in the
-        // partition used by `initialize`), giving q = (T_ext − T_int) / (2 R).
-        // This matches what 5R1C returns on step ≥ 2 (after the pre-step seed).
+        // envelope (wall+roof+floor) average.  The denominator R_total is the
+        // wall-only resistance from WallSpec::total_r_value(); surface film
+        // coefficients (R_si = 1/8, R_se = 1/25) are intentionally excluded so
+        // that this value matches the closed-form `steady_state_flux` query
+        // (q_ss = (T_ext − T_int) / R_total), which is the parity target for
+        // the ML-surrogate swap-point.  The comment claiming this reduces to
+        // (T_ext − T_int) / (2R) at steady state was incorrect — there is no
+        // such general simplification.
         let t_mass_avg =
             (self.mass.wall.temperature + self.mass.roof.temperature + self.mass.floor.temperature)
                 / 3.0;
