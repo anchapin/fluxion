@@ -1,6 +1,7 @@
 pub mod ab_testing;
 pub mod analyzer;
 pub mod ashrae140;
+pub mod ashrae_140;
 pub mod ashrae_140_cases;
 pub mod ashrae_140_validator;
 pub mod assembly_library;
