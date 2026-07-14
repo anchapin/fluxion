@@ -700,7 +700,7 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         // let num_rest_val = num_rest_with_iz.as_ref()[0];
         // let den_val = den.as_ref()[0];
 
-        // === Issue #1522 (option (a)): implicit-Euler air-node ODE ===
+        // === Issue #1585: exact-exponential air-node ODE ===
         //
         // Prior to this change the 5R1C air node was algebraically pinned to
         // the slow mass node via the closed-form `t_i_free = num / den`. That
@@ -713,11 +713,9 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         //
         // Fix: restore a real thermal capacitance on the air node,
         //   C_air = ρ_air · cp_air · V_zone  (populated in from_spec),
-        // and step it with implicit Euler (ISO 13790 §12.2.2; ASHRAE 140
-        // §5.2.2). The air node retains memory of its previous value,
+        // and step it with the exact exponential solution of the linear ODE.
+        // The air node retains memory of its previous value,
         // decoupling from the mass node on sub-timestep timescales:
-        //
-        //   (C_air/dt + den_true) · t_i_free_new = C_air/dt · t_air_old + num_true
         //
         // where `num_true` / `den_true` are the unscaled (physical) numerator
         // and denominator of the 5R1C air-node equation. The code below
@@ -738,7 +736,7 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         let num_rest_ref = num_rest_with_iz.as_ref();
         let den_ref = den.as_ref();
         let c_air_ref = self.0.air_thermal_capacitance.as_ref();
-        let _t_air_old_ref = self.0.temperatures.as_ref();
+        let t_air_old_ref = self.0.air_temperatures.as_ref();
         // term_rest_1 = h_tr_ms + h_tr_is scales the entire 5R1C air-node
         // equation (num and den are both multiplied by it to clear the
         // denominator in the surface-temperature elimination). The air-node
@@ -748,42 +746,50 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         //
         // We use the exact exponential solution of the linear ODE
         //   C_air · dT/dt = num_true − den_true · T
-        // rather than implicit Euler. Implicit Euler has ~8× too much
-        // numerical dissipation when dt ≫ τ (dt/τ ≈ 3.6 for Case 600),
-        // which over-damps both the cooling and heating peaks. The exact
-        // solution T_new = T_steady + (T_old − T_steady) · exp(−dt/τ)
+        // rather than implicit Euler. The exact solution
+        // T_new = T_steady + (T_old − T_steady) · exp(−dt/τ)
         // gives the physically correct carry-over for the air node.
         //
-        // Issue #1522 investigation found that even the physically correct
-        // air-node damping (1.6 % carry-over for Case 600) reduces peak_heating
-        // (already UNDER) further below the band. The air capacitance C_air is
-        // therefore stored on the model (for future use and documentation) but
-        // the legacy algebraic pinning `t_i_free = num / den` is retained until
-        // the 9R4C extension (option (b)) or GaugeSolver (option (c)) provides
-        // the multi-node dynamics needed to resolve the diurnal swing without
-        // over-damping. See docs/KNOWN_ISSUES.md LIMIT-05 UPDATE (#1522).
+        // Issue #1585: the exact exponential ODE is now activated when
+        // C_air > 0 (populated by from_spec as ρ_air·cp_air·V_zone).
+        // The fallback (C_air == 0, e.g. unit tests that skip from_spec)
+        // remains algebraic pinning to preserve historical behaviour.
         let term_rest_1_ref = term_rest_1.as_ref();
         let mut t_i_free_data = Vec::with_capacity(self.0.num_zones);
         for i in 0..self.0.num_zones {
             let num_i = num_tm_ref[i] + num_phi_st_ref[i] + num_rest_ref[i];
             let den_i = den_ref[i];
-            // Steady-state free-float air temperature (legacy closed-form).
-            // C_air is stored but the air-node ODE is not yet activated — see
-            // the block comment above for the investigation history.
+            // Steady-state free-float air temperature (used as the asymptotic
+            // target for the air-node exponential relaxation).
             let steady = num_i / den_i;
-            let _c_air_i = c_air_ref[i];
-            let _tau_air = if den_i > 0.0 && term_rest_1_ref[i] > 0.0 {
-                _c_air_i * term_rest_1_ref[i] / den_i
+            // Issue #1585: activate exact exponential air-node ODE when C_air > 0.
+            // Falls back to the legacy algebraic pinning (steady = num/den) when
+            // C_air is zero, preserving historical behaviour for unit tests that
+            // construct ThermalModelCore without calling from_spec.
+            let c_air_i = c_air_ref[i];
+            let t_air_old_i = t_air_old_ref[i];
+            let tau_air = if den_i > 0.0 && term_rest_1_ref[i] > 0.0 {
+                c_air_i * term_rest_1_ref[i] / den_i
             } else {
                 f64::INFINITY
             };
-            // Legacy: t_i_free = num / den.  The air-node ODE path
-            // (steady + (t_old − steady)·exp(−dt/τ)) is disabled because it
-            // over-damps peak_heating. Retained as dead code for the next
-            // phase (option (b)/(c)) reactivate here.
-            t_i_free_data.push(steady);
+            let t_i_free_i = if c_air_i > 0.0 && tau_air.is_finite() && dt > 0.0 {
+                let exponent = -dt / tau_air;
+                steady + (t_air_old_i - steady) * exponent.exp()
+            } else {
+                steady
+            };
+            t_i_free_data.push(t_i_free_i);
         }
-        let t_i_free = T::from(VectorField::new(t_i_free_data));
+        let t_i_free = T::from(VectorField::new(t_i_free_data.clone()));
+
+        // Issue #1585: step the air-node ODE state forward for the next
+        // timestep.  t_i_free (the new zone-air temperature) becomes
+        // t_air_old on the next call to step_physics_5r1c.
+        self.0
+            .air_temperatures
+            .as_mut()
+            .copy_from_slice(&t_i_free_data);
 
         // PR #821: DEBUG_900FF_ti_free trace removed.
 

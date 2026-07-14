@@ -104,6 +104,19 @@ pub struct ThermalModelData<T: ContinuousTensor<f64> + Clone> {
     /// (`step_physics_9r4c`) and 6R2C paths maintain their own air-node
     /// handling.
     pub air_thermal_capacitance: T,
+    /// Independent air-node temperature state for the 5R1C model.
+    ///
+    /// This field stores the free-floating air temperature (pre-HVAC) from the
+    /// previous timestep, used as the ODE state `t_air_old` in the exact
+    /// exponential solution of the air-node energy balance:
+    ///   t_air_new = steady + (t_air_old - steady) * exp(-dt / τ_air)
+    /// where τ_air = C_air · term_rest_1 / den.
+    ///
+    /// This replaces the legacy algebraic pinning `t_i_free = num / den` that
+    /// prevented the air node from decoupling on sub-timestep timescales.
+    /// Used in `step_physics_5r1c` only; the 9R4C and 6R2C paths
+    /// maintain their own air-node temperature handling.
+    pub air_temperatures: T,
     pub envelope_mass_temperatures: T,
     pub internal_mass_temperatures: T,
     pub envelope_thermal_capacitance: T,
@@ -285,6 +298,7 @@ impl<T: ContinuousTensor<f64> + Clone> Clone for ThermalModelData<T> {
             mass_temperatures: self.mass_temperatures.clone(),
             thermal_capacitance: self.thermal_capacitance.clone(),
             air_thermal_capacitance: self.air_thermal_capacitance.clone(),
+            air_temperatures: self.air_temperatures.clone(),
             envelope_mass_temperatures: self.envelope_mass_temperatures.clone(),
             internal_mass_temperatures: self.internal_mass_temperatures.clone(),
             envelope_thermal_capacitance: self.envelope_thermal_capacitance.clone(),
