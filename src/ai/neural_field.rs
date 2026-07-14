@@ -1,4 +1,4 @@
-use crate::physics::continuous::ContinuousField;
+use fluxion_core::tensor::ContinuousField;
 use ndarray::ArrayD;
 use num_traits::Zero;
 #[cfg(feature = "ort")]

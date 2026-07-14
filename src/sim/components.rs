@@ -1,5 +1,5 @@
-use crate::physics::continuous::ContinuousField;
 use crate::sim::shading::{Overhang, ShadeFin};
+use fluxion_core::tensor::ContinuousField;
 use num_traits::Zero;
 use std::ops::{Add, AddAssign, Mul};
 
@@ -62,7 +62,7 @@ impl WallSurface {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::physics::continuous::ConstantField;
+    use fluxion_core::tensor::ConstantField;
 
     #[test]
     fn test_heat_gain_constant() {

@@ -1075,6 +1075,7 @@ dependencies = [
  "directories",
  "log",
  "mockito",
+ "num-traits",
  "proptest",
  "reqwest",
  "serde",

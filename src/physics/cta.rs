@@ -1,8 +1,7 @@
 use std::convert::AsMut;
 use std::ops::{Add, AddAssign, Div, Index, Mul, Sub};
 
-#[cfg(feature = "python-bindings")]
-use numpy::{PyArray1, PyArrayMethods};
+use fluxion_core::tensor::ContinuousField;
 
 #[cfg(feature = "python-bindings")]
 use pyo3::{pymethods, Bound, IntoPy, PyAny, PyObject, PyResult, Python};
@@ -394,6 +393,23 @@ impl AsRef<[f64]> for VectorField {
     }
 }
 
+impl ContinuousField<f64> for VectorField {
+    fn at(&self, u: f64, v: f64) -> f64 {
+        let n = (self.data.len() as f64).sqrt() as usize;
+        if n == 0 {
+            return 0.0;
+        }
+        let total = n * n;
+        if self.data.len() != total {
+            return 0.0;
+        }
+        let u_idx = (u * (n - 1) as f64).round() as usize;
+        let v_idx = (v * (n - 1) as f64).round() as usize;
+        let idx = v_idx * n + u_idx;
+        self.data.get(idx).copied().unwrap_or(0.0)
+    }
+}
+
 #[cfg(feature = "python-bindings")]
 #[allow(unexpected_cfgs)]
 impl VectorField {
@@ -486,7 +502,7 @@ mod tests {
     #[test]
     fn test_integrate() {
         let v = VectorField::new(vec![1.0, 2.0, 3.0, 4.0]);
-        assert_eq!(v.integrate(), 10.0);
+        assert_eq!(ContinuousTensor::integrate(&v), 10.0);
     }
 
     #[test]
@@ -775,14 +791,14 @@ mod tests {
     #[test]
     fn test_integrate_constant() {
         let v = VectorField::new(vec![3.0; 5]);
-        let integral = v.integrate();
+        let integral = ContinuousTensor::integrate(&v);
         assert_eq!(integral, 15.0); // 3.0 * 5 = sum
     }
 
     #[test]
     fn test_integrate_linear() {
         let v = VectorField::new(vec![0.0, 1.0, 2.0, 3.0]);
-        let integral = v.integrate();
+        let integral = ContinuousTensor::integrate(&v);
         // Integration is just sum for 1D
         assert_eq!(integral, 6.0); // 0 + 1 + 2 + 3
     }
@@ -790,14 +806,14 @@ mod tests {
     #[test]
     fn test_integrate_single() {
         let v = VectorField::new(vec![5.0]);
-        let integral = v.integrate();
+        let integral = ContinuousTensor::integrate(&v);
         assert_eq!(integral, 5.0);
     }
 
     #[test]
     fn test_integrate_empty() {
         let v = VectorField::new(vec![]);
-        let integral = v.integrate();
+        let integral = ContinuousTensor::integrate(&v);
         assert_eq!(integral, 0.0);
     }
 
