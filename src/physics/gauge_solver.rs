@@ -132,9 +132,9 @@ impl GaugeSolver {
 
         let solar_irradiance_wm2 = gauge_connection[GAUGE_CONNECTION_SOLAR_INDEX];
         let outside_air_temp_c = gauge_connection[GAUGE_CONNECTION_OUTDOOR_TEMP_INDEX];
-        if solar_irradiance_wm2 != 0.0 && (h_exterior <= 0.0 || !h_exterior.is_finite()) {
+        if h_exterior <= 0.0 || !h_exterior.is_finite() {
             return Err(SolverError::InvalidConfig(
-                "h_exterior must be positive and finite when solar forcing is present".to_string(),
+                "h_exterior must be positive and finite".to_string(),
             ));
         }
 
