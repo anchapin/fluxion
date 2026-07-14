@@ -109,6 +109,27 @@ All system docs must have a **7-line summary** at the top (lines 2–8):
 
 After modifying any module, update the 7-line summary of the relevant doc in `docs/doc-inventory.md`.
 
+## Cross-Agent Review
+
+For multi-model PR review, use the `pr-review-merge` skill:
+```
+Load: pr-review-merge
+```
+
+See `docs/agent-workflow.md` for per-phase review routing (Physics Auditor → Safety Engineer → etc.).
+
+## Branch Convention
+
+**All agent work must use `develop` as the base branch, never `main`.**
+
+| Action | Base branch |
+|--------|-------------|
+| Create worktree / feature branch | `develop` |
+| Open PR | `--base develop` |
+| Rebase during conflict resolution | `origin/develop` |
+| Fetch before worktree creation | `git fetch origin develop` |
+
+**Why `develop`?** The `develop` branch is the main integration branch. `main` is reserved for releases. All wave orchestrator work, hotfixes, and agent-generated changes target `develop`.
 ## Related Documentation
 
 - Standard workflow: `@/docs/agent-workflow.md`
