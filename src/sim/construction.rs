@@ -18,9 +18,9 @@
 //! - **Area Multipliers**: Each mass class has an associated effective mass area
 //!   multiplier (A_m factor) used in 5R1C thermal network calculations.
 
-use crate::physics::continuous::ContinuousField;
 use crate::sim::shading::{Overhang, ShadeFin};
 use fluxion_core::ashrae_cases::Orientation;
+use fluxion_core::tensor::ContinuousField;
 use num_traits::Zero;
 use serde::{Deserialize, Serialize};
 use std::ops::{Add, AddAssign, Mul};
@@ -2201,8 +2201,9 @@ mod tests {
 
     #[test]
     fn test_wall_surface_heat_gain() {
+        use fluxion_core::tensor::ConstantField;
         let surface = WallSurface::new(10.0, 0.5, Orientation::South);
-        let field = crate::physics::continuous::ConstantField { value: 2.0 };
+        let field = ConstantField { value: 2.0 };
         let heat_gain = surface.calculate_heat_gain(&field);
         assert!((heat_gain - 20.0).abs() < 1e-6);
     }
