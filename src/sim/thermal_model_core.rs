@@ -2535,10 +2535,14 @@ impl ThermalModel<VectorField> {
 
             // Issue #1522 option (a): air-node capacitance placeholder; from_spec
             // populates the real value C_air = ρ·cp·V_zone per zone. Zero here
-            // reduces step_physics_5r1c to the legacy algebraic-pinning path,
-            // so any code that constructs a ThermalModel without from_spec
-            // (mostly unit tests) keeps its historical behaviour.
+            // would reduce step_physics_5r1c to the legacy algebraic-pinning path,
+            // but the air_temperatures field enables the ODE path unconditionally.
             air_thermal_capacitance: VectorField::from_scalar(0.0, num_zones),
+
+            // Issue #1585: independent air-node ODE state. Initialized to 20°C
+            // (matching the initial zone temperature); stepped each call to
+            // step_physics_5r1c via the exact exponential solution.
+            air_temperatures: VectorField::from_scalar(20.0, num_zones),
 
             // 6R2C model fields (initialized for 5R1C compatibility)
             envelope_mass_temperatures: VectorField::from_scalar(20.0, num_zones),
