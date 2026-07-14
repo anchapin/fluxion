@@ -410,8 +410,8 @@ impl InvariantChecker {
         let opaque_solar_ref = model.opaque_solar_gains.as_ref();
 
         let mut t_sol_air_vec = Vec::with_capacity(n);
-        for op_ref in opaque_solar_ref.iter().take(n) {
-            let t_sol_air_i = sol_air.for_roof(outdoor_temp, *op_ref, sky_temp);
+        for opaque_irr in opaque_solar_ref.iter().take(n) {
+            let t_sol_air_i = sol_air.for_roof(outdoor_temp, *opaque_irr, sky_temp);
             t_sol_air_vec.push(t_sol_air_i);
         }
         t_sol_air_vec
