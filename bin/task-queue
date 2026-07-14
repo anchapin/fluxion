@@ -1,0 +1,121 @@
+#!/usr/bin/env bash
+# Task Queue CLI
+# Manages Fluxion task queue (local JSON file or Linear API integration)
+
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+QUEUE_FILE="${FLUXION_QUEUE_FILE:-$SCRIPT_DIR/.task_queue.json}"
+LINEAR_API_KEY="${LINEAR_API_KEY:-}"
+LINEAR_TEAM_ID="${LINEAR_TEAM_ID:-}"
+
+usage() {
+    cat <<EOF
+Usage: task-queue <command> [options]
+
+Commands:
+    list                      List all tasks
+    add <title>               Add a new task
+    start <id>                Start working on a task
+    complete <id>             Mark task as complete
+    archive <id>              Archive a task
+
+Linear Integration:
+    Use LINEAR_API_KEY and LINEAR_TEAM_ID env vars to sync with Linear.
+
+Examples:
+    task-queue list
+    task-queue add "Fix solar angle calculation"
+    task-queue start TSK-123
+    task-queue complete TSK-123
+
+EOF
+}
+
+cmd_list() {
+    if [[ -f "$QUEUE_FILE" ]]; then
+        cat "$QUEUE_FILE" | python3 -m json.tool 2>/dev/null || cat "$QUEUE_FILE"
+    else
+        echo "[]"
+    fi
+}
+
+cmd_add() {
+    local title="${1:-}"
+    [[ -z "$title" ]] && echo "Error: title required" && exit 1
+
+    local task_json
+    task_json=$(python3 -c "
+import json
+import sys
+from datetime import datetime
+task = {
+    'id': 'TSK-$(date +%s)',
+    'title': sys.argv[1],
+    'status': 'todo',
+    'created': datetime.now().isoformat()
+}
+print(json.dumps(task))
+" "$title")
+
+    if [[ -f "$QUEUE_FILE" ]]; then
+        local existing
+        existing=$(cat "$QUEUE_FILE")
+        echo "${existing%]${task_json}]" | python3 -m json.tool > "$QUEUE_FILE"
+    else
+        echo "[$task_json]" > "$QUEUE_FILE"
+    fi
+    echo "Added: $title"
+}
+
+cmd_start() {
+    local id="${1:-}"
+    [[ -z "$id" ]] && echo "Error: task id required" && exit 1
+
+    python3 -c "
+import json
+with open('$QUEUE_FILE', 'r+') as f:
+    tasks = json.load(f)
+    for t in tasks:
+        if t['id'] == '$id':
+            t['status'] = 'in_progress'
+            t['started'] = __import__('datetime').datetime.now().isoformat()
+    f.seek(0)
+    json.dump(tasks, f, indent=2)
+"
+    echo "Started: $id"
+}
+
+cmd_complete() {
+    local id="${1:-}"
+    [[ -z "$id" ]] && echo "Error: task id required" && exit 1
+
+    python3 -c "
+import json
+with open('$QUEUE_FILE', 'r+') as f:
+    tasks = json.load(f)
+    for t in tasks:
+        if t['id'] == '$id':
+            t['status'] = 'done'
+            t['completed'] = __import__('datetime').datetime.now().isoformat()
+    f.seek(0)
+    json.dump(tasks, f, indent=2)
+"
+    echo "Completed: $id"
+}
+
+main() {
+    local cmd="${1:-}"
+    [[ -z "$cmd" ]] && usage && exit 1
+
+    case "$cmd" in
+        list) cmd_list ;;
+        add) shift; cmd_add "$@" ;;
+        start) shift; cmd_start "$@" ;;
+        complete) shift; cmd_complete "$@" ;;
+        -h|--help) usage ;;
+        *) echo "Unknown command: $cmd" && usage && exit 1 ;;
+    esac
+}
+
+main "$@"

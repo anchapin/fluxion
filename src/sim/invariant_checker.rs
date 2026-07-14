@@ -152,29 +152,35 @@ impl InvariantChecker {
         let opaque_solar_gains = model.opaque_solar_gains.as_ref();
         let area = model.zone_area.as_ref();
 
-        // Per-zone sol-air temperature (uniform across zones for the 9R4C path
-        // because `step_physics_9r4c` builds a single South-wall value per
-        // timestep — physics_impl.rs:1977-2020). Computed once here and passed
-        // to `zone_balance_for` to mirror the integrator's `t_sol_air_data`
-        // exactly.
-        let t_sol_air_data = self.compute_9r4c_t_sol_air(model, outdoor_temp);
+        // Per-zone sol-air temperature computed per thermal model path:
+        // - 9R4C: South-wall sol-air via Perez model (physics_impl.rs:1977-2020)
+        // - 5R1C: Roof sol-air via for_roof with opaque irradiance (physics_impl.rs:365-373)
+        let t_sol_air_9r4c = self.compute_9r4c_t_sol_air(model, outdoor_temp);
+        let t_sol_air_5r1c = self.compute_5r1c_t_sol_air(model, outdoor_temp);
 
         let mut total_balance = 0.0;
         let mut imbalances = Vec::with_capacity(num_zones);
 
         for i in 0..num_zones {
+            // Select the correct sol-air temperature based on the active thermal model.
+            // Issue #1580: previously only 9R4C had a non-uniform t_sol_air;
+            // the 5R1C branch was hardcoded to outdoor_temp (causing the
+            // 168-violation energy-balance regression).
+            let t_sol_air_zone = match model.thermal_model_type {
+                ThermalModelType::NineRFourC => t_sol_air_9r4c[i],
+                _ => t_sol_air_5r1c[i],
+            };
             let zone_balance = self.zone_balance_for(
                 model,
                 i,
                 dt_seconds,
-                outdoor_temp,
                 temps[i],
                 mass_temps[i],
                 prev_mass_temps[i],
                 loads[i] * area[i],
                 solar_gains[i] * area[i],
                 opaque_solar_gains[i] * area[i],
-                t_sol_air_data[i],
+                t_sol_air_zone,
             );
 
             total_balance += zone_balance;
@@ -198,7 +204,6 @@ impl InvariantChecker {
         model: &ThermalModel<T>,
         i: usize,
         dt_seconds: f64,
-        outdoor_temp: f64,
         t_air: f64,
         t_mass: f64,
         t_mass_prev: f64,
@@ -229,7 +234,17 @@ impl InvariantChecker {
 
         let sol_to_air = solar_w * sol_dist_to_air;
         let remaining_sol = solar_w - sol_to_air;
-        let phi_m = load_w * m_air_frac + remaining_sol * m_sol_frac + opaque_sol_w;
+        // Issue #1580 / #1527 fix: opaque_sol_w is only added to phi_m for 9R4C.
+        // For 5R1C, the WIP zone model removed opaque_sol_w from phi_m and instead
+        // includes it via the proper sol-air temperature pathway
+        // (h_tr_em * (t_sol_air - T_mass_avg)). The InvariantChecker must mirror
+        // this distinction exactly.
+        let phi_m = match model.thermal_model_type {
+            ThermalModelType::NineRFourC => {
+                load_w * m_air_frac + remaining_sol * m_sol_frac + opaque_sol_w
+            }
+            _ => load_w * m_air_frac + remaining_sol * m_sol_frac,
+        };
 
         let storage = cm * (t_mass - t_mass_prev) / dt_seconds;
 
@@ -264,11 +279,13 @@ impl InvariantChecker {
                 denom * t_mass - numer
             }
             _ => {
-                // 5R1C Crank-Nicolson: matches `crank_nicolson_iso13790`
-                // (physics_impl.rs:963-973) used by step_physics_5r1c with
-                // t_sol_air = uniform outdoor_temp (physics_impl.rs:165).
+                // 5R1C Crank-Nicolson: matches `step_physics_5r1c`
+                // (physics_impl.rs:318-373) which uses
+                // SolAirTemperature::for_roof(outdoor_temp, opaque_solar_ref[i], sky_temp)
+                // per zone (Issue #1527 fix).
                 let t_m_avg = 0.5 * (t_mass + t_mass_prev);
-                storage - (phi_m + h_tr_3 * (t_air - t_m_avg) + h_tr_em * (outdoor_temp - t_m_avg))
+                storage
+                    - (phi_m + h_tr_3 * (t_air - t_m_avg) + h_tr_em * (t_sol_air_zone - t_m_avg))
             }
         }
     }
@@ -360,6 +377,48 @@ impl InvariantChecker {
         vec![t_sol_air_zone; n]
     }
 
+    /// Compute the roof sol-air temperature for the 5R1C path, matching
+    /// `step_physics_5r1c` (physics_impl.rs:365-373).
+    ///
+    /// Issue #1527 / #1580 — the WIP 5R1C zone model computes
+    /// `t_sol_air = SolAirTemperature::ashrae_140_default().for_roof(
+    ///     outdoor_temp, opaque_solar_ref[i], sky_temp)` per zone.
+    /// This helper replicates that calculation so the InvariantChecker
+    /// can use the same value in its 5R1C energy balance.
+    ///
+    /// Falls back to `outdoor_temp` (uniform across zones) when weather
+    /// is unavailable, so the invariant check remains well-defined for
+    /// callers that don't drive per-timestep weather.
+    fn compute_5r1c_t_sol_air<T>(&self, model: &ThermalModel<T>, outdoor_temp: f64) -> Vec<f64>
+    where
+        T: ContinuousTensor<f64>
+            + From<VectorField>
+            + AsRef<[f64]>
+            + AsMut<[f64]>
+            + Index<usize, Output = f64>,
+    {
+        let n = model.num_zones;
+        let fallback = vec![outdoor_temp; n];
+
+        let weather = match model.weather.as_ref() {
+            Some(w) => w,
+            None => return fallback,
+        };
+
+        let sky_temp = weather.sky_temperature();
+        let sol_air = SolAirTemperature::ashrae_140_default();
+        let opaque_solar_ref = model.opaque_solar_gains.as_ref();
+
+        let mut t_sol_air_vec = Vec::with_capacity(n);
+        for opaque_solar in opaque_solar_ref.iter().take(n) {
+            // opaque_solar is the effective opaque irradiance (W/m²)
+            // on exterior surfaces for the zone, set by distribute_opaque_solar_gains.
+            let t_sol_air_i = sol_air.for_roof(outdoor_temp, *opaque_solar, sky_temp);
+            t_sol_air_vec.push(t_sol_air_i);
+        }
+        t_sol_air_vec
+    }
+
     fn calculate_energy_imbalance<T>(
         &self,
         model: &ThermalModel<T>,
@@ -425,26 +484,30 @@ impl InvariantChecker {
         let solar_gains = model.solar_gains.as_ref();
         let opaque_solar_gains = model.opaque_solar_gains.as_ref();
 
-        // Sol-air per zone (Issue #1402 — 9R4C needs the integrator's
-        // South-wall sol-air value, not raw outdoor_temp).
-        let t_sol_air_data = self.compute_9r4c_t_sol_air(model, outdoor_temp);
+        // Sol-air per zone — both paths (Issue #1580: 5R1C was hardcoded
+        // to outdoor_temp, causing the energy-balance regression).
+        let t_sol_air_9r4c = self.compute_9r4c_t_sol_air(model, outdoor_temp);
+        let t_sol_air_5r1c = self.compute_5r1c_t_sol_air(model, outdoor_temp);
 
         let mut total_balance = 0.0;
         let mut zone_imbalances = Vec::with_capacity(num_zones);
 
         for i in 0..num_zones {
+            let t_sol_air_zone = match model.thermal_model_type {
+                ThermalModelType::NineRFourC => t_sol_air_9r4c[i],
+                _ => t_sol_air_5r1c[i],
+            };
             let zone_balance = self.zone_balance_for(
                 model,
                 i,
                 dt_seconds,
-                outdoor_temp,
                 temps[i],
                 mass_temps[i],
                 prev_mass_temps[i],
                 modified_loads[i] * area[i],
                 solar_gains[i] * area[i],
                 opaque_solar_gains[i] * area[i],
-                t_sol_air_data[i],
+                t_sol_air_zone,
             );
 
             total_balance += zone_balance;

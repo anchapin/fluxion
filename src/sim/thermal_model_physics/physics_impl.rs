@@ -365,6 +365,8 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         let sol_air_calc = SolAirTemperature::ashrae_140_default();
         let mut t_sol_air_vec = Vec::with_capacity(self.0.num_zones);
         for opaque_solar in opaque_solar_ref.iter().take(self.0.num_zones) {
+            // opaque_solar is the effective opaque irradiance on exterior surfaces (W/m²)
+            // This is the combined wall + roof irradiance for the zone
             let t_sol_air_i = sol_air_calc.for_roof(outdoor_temp, *opaque_solar, sky_temp);
             t_sol_air_vec.push(t_sol_air_i);
         }
