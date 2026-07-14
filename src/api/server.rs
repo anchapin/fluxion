@@ -60,6 +60,7 @@ use crate::ai::surrogate::SurrogateManager;
 use crate::api::metrics::{self, metrics_handler};
 use crate::api::schema::{SimulationOutput, SimulationSchema, SimulationSchemaV1};
 use crate::interop::{gbxml, osm};
+use crate::io::idf::{IdfFile, IdfParser};
 use crate::physics::cta::VectorField;
 use crate::sim::engine::ThermalModel;
 
@@ -392,7 +393,13 @@ async fn import_format(
             gbxml::import_gbxml(&tmp).map_err(|e| ApiError::ImportFailed(e.to_string()))?
         }
         "idf" => {
-            return Err(ApiError::IdfNotImplemented);
+            let body_str = std::str::from_utf8(&body)
+                .map_err(|e| ApiError::ImportFailed(format!("invalid UTF-8 in IDF body: {e}")))?;
+            let idf: IdfFile = IdfParser::from_str(body_str)
+                .map_err(|e| ApiError::ImportFailed(format!("IDF parse error: {e}")))?;
+            let schema = SimulationSchemaV1::try_from(idf)
+                .map_err(|e| ApiError::ImportFailed(format!("IDF conversion error: {e}")))?;
+            schema
         }
         other => return Err(ApiError::UnsupportedFormat(other.to_string())),
     };

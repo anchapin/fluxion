@@ -41,6 +41,7 @@
 //! ```
 
 pub mod convert;
+pub mod epjson;
 pub mod error;
 pub mod lexer;
 pub mod parser;
