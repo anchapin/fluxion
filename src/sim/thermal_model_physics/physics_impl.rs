@@ -3073,7 +3073,7 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                 // equipment). Apply the predictive controller's modulation factor
                 // (previously discarded at the call site above) so the equipment
                 // PLR tracks predictive intent.
-                let load_magnitude = match hvac_mode {
+                let load_magnitude: f64 = match hvac_mode {
                     EquipmentHVACMode::Heating => total_demand.max(0.0) * modulation,
                     EquipmentHVACMode::Cooling => {
                         (total_demand.abs() + free_cooling_capacity_w) * modulation
