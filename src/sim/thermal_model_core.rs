@@ -810,15 +810,29 @@ impl ThermalModel<VectorField> {
                             });
                         }
                         ShadingType::Fins | ShadingType::OverhangAndFins if win_area > 0.0 => {
+                            // Fin height: from mounting_height to window top
+                            // fin_height = (sill_height + window_height) - mounting_height
+                            // When mounting_height = 0, fin extends from floor to window top
+                            // Get window geometry from spec.windows for this zone and orientation
+                            let win_geom = spec.windows.get(zone_idx).and_then(|zone_wins| {
+                                zone_wins.iter().find(|w| w.orientation == orientation)
+                            });
+                            let (win_sill, win_height) = win_geom
+                                .map(|w| (w.sill_height, w.height))
+                                .unwrap_or((0.2, 3.0)); // Default values if not found
+                            let window_top = win_sill + win_height;
+                            let fin_height = (window_top - shading.mounting_height).max(0.0);
                             surface.fins.push(ShadeFin {
                                 depth: shading.fin_width,
                                 distance_from_edge: 0.0,
                                 side: Side::Left,
+                                height: fin_height,
                             });
                             surface.fins.push(ShadeFin {
                                 depth: shading.fin_width,
                                 distance_from_edge: 0.0,
                                 side: Side::Right,
+                                height: fin_height,
                             });
                         }
                         _ => {}

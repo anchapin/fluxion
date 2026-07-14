@@ -40,7 +40,6 @@ use crate::physics::wall_spec::WallSpec;
 use crate::sim::per_surface_conduction::{PerSurfaceConductionSolver, SurfaceKind};
 // Issue #1349 (Phase 2 crate split): multi-node thermal mass types moved to `fluxion_core::multi_node`.
 use fluxion_core::multi_node::{MassAirCouplingMode, MultiNodeThermalMass, ThermalMassNode};
-use std::panic::catch_unwind;
 
 /// Series combination of two conductances (Issue #1281, parallel-resistance
 /// coupling network for 9R4C).
@@ -1534,6 +1533,7 @@ impl HeatConductionSolver for MultiNodeSolver {
 mod tests {
     use super::*;
     use fluxion_core::multi_node::ThermalMassNode;
+    use std::panic::catch_unwind;
 
     fn create_test_solver() -> MultiNodeSolver {
         let wall = ThermalMassNode::new(20.0, 5e6, 50.0, 20.0);

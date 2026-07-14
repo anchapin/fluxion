@@ -410,10 +410,10 @@ impl InvariantChecker {
         let opaque_solar_ref = model.opaque_solar_gains.as_ref();
 
         let mut t_sol_air_vec = Vec::with_capacity(n);
-        for opaque_solar in opaque_solar_ref.iter().take(n) {
-            // opaque_solar is the effective opaque irradiance (W/m²)
+        for opaque_ref in opaque_solar_ref.iter().take(n) {
+            // opaque_ref is the effective opaque irradiance (W/m²)
             // on exterior surfaces for the zone, set by distribute_opaque_solar_gains.
-            let t_sol_air_i = sol_air.for_roof(outdoor_temp, *opaque_solar, sky_temp);
+            let t_sol_air_i = sol_air.for_roof(outdoor_temp, *opaque_ref, sky_temp);
             t_sol_air_vec.push(t_sol_air_i);
         }
         t_sol_air_vec

@@ -51,6 +51,7 @@ mod basic_functionality {
             depth: 0.0,
             distance_from_edge: 0.0,
             side: Side::Left,
+            height: window.height, // Bounded by mounting_height
         }];
         let solar = LocalSolarPosition {
             altitude: PI / 4.0,
@@ -178,11 +179,13 @@ mod edge_cases {
             depth: 1.0,
             distance_from_edge: 0.0,
             side: Side::Left,
+            height: window.height, // Bounded by mounting_height
         };
         let fin_far = ShadeFin {
             depth: 1.0,
             distance_from_edge: 0.5,
             side: Side::Left,
+            height: window.height, // Bounded by mounting_height
         };
         let solar = LocalSolarPosition {
             altitude: PI / 4.0,
@@ -219,6 +222,7 @@ mod interactions {
             depth: 1.0,
             distance_from_edge: 0.2,
             side: Side::Left,
+            height: window.height, // Bounded by mounting_height
         }];
         let solar = LocalSolarPosition {
             altitude: PI / 4.0,

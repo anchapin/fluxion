@@ -52,6 +52,7 @@ fn standard_fin_right() -> ShadeFin {
         depth: 1.0,
         distance_from_edge: 0.0,
         side: Side::Right,
+        height: 2.0, // Standard window height; bounded by mounting_height
     }
 }
 
@@ -60,6 +61,7 @@ fn standard_fin_left() -> ShadeFin {
         depth: 1.0,
         distance_from_edge: 0.0,
         side: Side::Left,
+        height: 2.0, // Standard window height; bounded by mounting_height
     }
 }
 
@@ -623,6 +625,7 @@ fn test_zero_depth_fin() {
         depth: 0.0,
         distance_from_edge: 0.0,
         side: Side::Right,
+        height: window.height, // Bounded by mounting_height
     };
 
     let solar = LocalSolarPosition {

@@ -2242,6 +2242,7 @@ mod tests {
             depth: 0.5,
             distance_from_edge: 0.0,
             side: crate::sim::shading::Side::Left,
+            height: 3.0, // Default height
         };
         let surface = WallSurface::new(12.0, 0.9, Orientation::West).with_fin(fin);
         assert_eq!(surface.fins.len(), 1);
@@ -2254,11 +2255,13 @@ mod tests {
             depth: 0.3,
             distance_from_edge: 0.0,
             side: crate::sim::shading::Side::Left,
+            height: 3.0, // Default height
         };
         let fin2 = ShadeFin {
             depth: 0.6,
             distance_from_edge: 1.0,
             side: crate::sim::shading::Side::Right,
+            height: 3.0, // Default height
         };
         let surface = WallSurface::new(10.0, 1.0, Orientation::South)
             .with_fin(fin1)
@@ -2277,6 +2280,7 @@ mod tests {
             depth: 0.8,
             distance_from_edge: 0.5,
             side: crate::sim::shading::Side::Left,
+            height: 3.0, // Default height
         };
         let surface = WallSurface::new(30.0, 2.0, Orientation::North)
             .with_window(8.0)
