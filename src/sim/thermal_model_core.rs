@@ -2060,8 +2060,7 @@ impl ThermalModel<VectorField> {
                 // For conductance (Q/ΔT): Cd × A × H^0.5 × ΔT^0.5 / ΔT = Cd × A × H^0.5 / ΔT^0.5
                 // Using representative ΔT = 10 K for typical sunspace conditions
                 const REPRESENTATIVE_DELTA_T: f64 = 10.0;
-                let convective_coupling =
-                    DISCHARGE_COEFFICIENT * door_area * door_height.sqrt()
+                let convective_coupling = DISCHARGE_COEFFICIENT * door_area * door_height.sqrt()
                     / REPRESENTATIVE_DELTA_T.sqrt();
 
                 // Door conduction (wooden door, U ≈ 2.0 W/m²K per ASHRAE 90.1 Table 5.5.4)
