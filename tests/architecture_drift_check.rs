@@ -57,16 +57,17 @@ fn no_legacy_29_3_literal_in_src() {
 #[test]
 fn solver_registry_exports_at_least_3_constructors() {
     let wall = WallSpec::single_layer("drift-check-wall", 0.20, 0.51, 1400.0, 840.0);
+    let floor_area = 54.0; // Typical office floor area (m²)
 
     let mut solvers: Vec<Box<dyn HeatConductionSolver>> = Vec::new();
 
     // 1. 5R1C via SolverRegistry::construct
-    if let Ok(s) = SolverRegistry::construct(registry_keys::FIVE_R1C, &wall) {
+    if let Ok(s) = SolverRegistry::construct(registry_keys::FIVE_R1C, &wall, floor_area) {
         solvers.push(s);
     }
 
     // 2. MultiNodeSolver (9R4C) via SolverRegistry::construct (PR #1491)
-    if let Ok(s) = SolverRegistry::construct(registry_keys::MULTINODE_9R4C, &wall) {
+    if let Ok(s) = SolverRegistry::construct(registry_keys::MULTINODE_9R4C, &wall, floor_area) {
         solvers.push(s);
     }
 

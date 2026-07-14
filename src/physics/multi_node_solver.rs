@@ -1268,12 +1268,19 @@ impl MultiNodeSolver {
     /// | wall | 45% of `C_total`    | `h_tr_ms` = 1 / (R_total/2 + R_si), `h_tr_em` = 1 / (R_total/2 + R_se) |
     /// | roof | 30% of `C_total`    | same partition |
     /// | floor | 18% of `C_total`   | same partition |
-    /// | internal | 10% of `C_total` | `h_tr_me` = 100 W/m²·K (large coupling to envelope) |
+    /// | internal | 10% of `C_total` | `h_tr_me` = physics-based (Issue #1593) |
+    ///
+    /// The internal node's `h_tr_me` is computed using the ISO 13790 lumped-mass
+    /// coupling: `h_tr_me = h_ms * a_int` where:
+    /// - `h_ms = 9.1 W/(m²·K)` is the furniture/partitions coupling coefficient
+    /// - `a_int = furniture_factor * floor_area` is the internal surface area
+    ///
+    /// This replaces the previously hardcoded `h_tr_me = 100.0` value.
     ///
     /// The default coupling mode is `AdditiveSum` (backward-compatible);
     /// callers can switch to `ParallelResistance` via `with_coupling_mode`
     /// before calling `initialize`/`step`.
-    pub fn from_wall_spec(wall: &WallSpec) -> Self {
+    pub fn from_wall_spec(wall: &WallSpec, floor_area: f64) -> Self {
         let r_total = wall.total_r_value();
         let c_total = wall.thermal_capacity();
 
@@ -1285,11 +1292,19 @@ impl MultiNodeSolver {
         let h_tr_em = 1.0 / (r_total / 2.0 + r_se);
         let h_tr_is = 1.0 / r_si;
 
+        // Issue #1593: Physics-based h_tr_me calculation (matches thermal_model_core.rs)
+        // h_ms = 9.1 W/(m²·K) per ISO 13790 furniture coupling coefficient
+        // a_int = furniture_factor * floor_area (furniture_factor = 0.5 per ISO 13790)
+        let h_ms = 9.1;
+        let furniture_factor = 0.5;
+        let a_int = furniture_factor * floor_area;
+        let h_tr_me = h_ms * a_int;
+
         let wall_node = ThermalMassNode::new(20.0, 0.45 * c_total, h_tr_ms, h_tr_em);
         let roof_node = ThermalMassNode::new(20.0, 0.30 * c_total, h_tr_ms, h_tr_em);
         let floor_node = ThermalMassNode::new(20.0, 0.18 * c_total, h_tr_ms, h_tr_em);
         let internal_node =
-            ThermalMassNode::new(20.0, 0.10 * c_total, h_tr_ms, h_tr_em).with_h_tr_me(100.0);
+            ThermalMassNode::new(20.0, 0.10 * c_total, h_tr_ms, h_tr_em).with_h_tr_me(h_tr_me);
 
         let mut solver = Self::new(h_tr_is, wall_node, roof_node, floor_node, internal_node);
         solver.r_total = r_total;
@@ -1304,17 +1319,21 @@ impl MultiNodeSolver {
     /// Convenience constructor that combines `from_wall_spec` with
     /// `with_coupling_mode` — the canonical entry point for tests and
     /// ML-surrogate wiring that needs `ParallelResistance` (#1281) end-to-end.
-    pub fn from_wall_spec_with_mode(wall: &WallSpec, mode: MassAirCouplingMode) -> Self {
-        Self::from_wall_spec(wall).with_coupling_mode(mode)
+    pub fn from_wall_spec_with_mode(
+        wall: &WallSpec,
+        floor_area: f64,
+        mode: MassAirCouplingMode,
+    ) -> Self {
+        Self::from_wall_spec(wall, floor_area).with_coupling_mode(mode)
     }
 
     /// Build a `Box<dyn HeatConductionSolver>` directly from a `WallSpec`.
     ///
-    /// Used by `SolverRegistry::construct("multinode_9r4c", wall)` and by
+    /// Used by `SolverRegistry::construct("multinode_9r4c", wall, floor_area)` and by
     /// `PhysicsSurfaceFluxProvider::add_surface` callers that want a high-mass
     /// surface behind the same trait object as `FiveR1CSolver`.
-    pub fn boxed_from_wall_spec(wall: &WallSpec) -> Box<dyn HeatConductionSolver> {
-        Box::new(Self::from_wall_spec(wall))
+    pub fn boxed_from_wall_spec(wall: &WallSpec, floor_area: f64) -> Box<dyn HeatConductionSolver> {
+        Box::new(Self::from_wall_spec(wall, floor_area))
     }
 }
 
