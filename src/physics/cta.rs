@@ -9,6 +9,9 @@ use pyo3::{pymethods, Bound, IntoPy, PyAny, PyObject, PyResult, Python};
 #[cfg(feature = "python-bindings")]
 use pyo3::types::PyAnyMethods;
 
+#[cfg(feature = "python-bindings")]
+use numpy::{PyArray1, PyArrayMethods};
+
 /// Trait for continuous tensor operations.
 ///
 /// Defines common operations for continuous field representations.
