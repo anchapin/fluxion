@@ -19,8 +19,8 @@
 //!   multiplier (A_m factor) used in 5R1C thermal network calculations.
 
 use crate::sim::shading::{Overhang, ShadeFin};
-use fluxion_core::tensor::ContinuousField;
 use fluxion_core::ashrae_cases::Orientation;
+use fluxion_core::tensor::ContinuousField;
 use num_traits::Zero;
 use serde::{Deserialize, Serialize};
 use std::ops::{Add, AddAssign, Mul};
