@@ -2559,11 +2559,60 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                 .copied()
                 .unwrap_or(outdoor_temp);
 
-            // Surface temperature: use previous zone temp as initial guess.
-            // After stepping, we'll update to conductance-weighted mass temps.
-            let t_surface = t_zone_prev - 0.5;
+            // Surface temperature: compute from CURRENT (pre-step) conductance-weighted
+            // mass node temperatures instead of lagged t_zone_prev - 0.5 approximation.
+            // This ensures the mass update sees the actual surface temperature.
+            let h_ms_w = solver.mass.wall.h_tr_ms;
+            let h_ms_r = solver.mass.roof.h_tr_ms;
+            let h_ms_f = solver.mass.floor.h_tr_ms;
+            let h_ms_total = h_ms_w + h_ms_r + h_ms_f;
+            let t_surface = if h_ms_total > 0.0 {
+                (h_ms_w * solver.mass.wall.temperature
+                    + h_ms_r * solver.mass.roof.temperature
+                    + h_ms_f * solver.mass.floor.temperature)
+                    / h_ms_total
+            } else {
+                t_zone_prev - 0.5
+            };
 
-            solver.set_zone_temperature(t_zone_prev);
+            // Issue #1615: Compute CURRENT multi-node air temperature BEFORE step_with_gains
+            // so the mass node update uses the actual air temp that includes night
+            // ventilation effect (h_ve_night), not the lagged t_zone_prev.
+            // This fixes Case 950 night ventilation over-prediction where the mass was
+            // not properly cooled by night vent until the next timestep.
+            let h_ve_val = self.0.h_ve.as_ref()[zone_idx];
+            let h_ve_night_zone = if night_vent_active_now && zone_idx == 0 {
+                h_ve_night
+            } else {
+                0.0
+            };
+            let phi_ia_val = phi_ia_with_iz.as_ref()[zone_idx];
+
+            // Issue #1279: Temporarily boost h_tr_is for compute_zone_air_temperature
+            // during night ventilation (same boost used for step_with_gains).
+            // This ensures t_air_mn_pre uses the ASHRAE/EnergyPlus forced convection
+            // correlation, consistent with how step_with_gains and compute_zone_air_temperature
+            // are called after the main loop.
+            let h_tr_is_multiplier_pre = if night_vent_active_now {
+                h_tr_is_ach_multiplier(ach_night_vent)
+            } else {
+                1.0
+            };
+            if h_tr_is_multiplier_pre != 1.0 {
+                solver.h_tr_is *= h_tr_is_multiplier_pre;
+            }
+            let t_air_mn_pre = solver.compute_zone_air_temperature(
+                outdoor_temp,
+                h_ve_val,
+                h_ve_night_zone,
+                phi_ia_val,
+            );
+            // Restore h_tr_is - the main boost/restore block at lines ~2720 will handle it for step_with_gains
+            if h_tr_is_multiplier_pre != 1.0 {
+                solver.h_tr_is /= h_tr_is_multiplier_pre;
+            }
+
+            solver.set_zone_temperature(t_air_mn_pre);
             solver.set_surface_temperature(t_surface);
 
             let (surface_ext_temps, wall_irr_val, roof_irr_val) =

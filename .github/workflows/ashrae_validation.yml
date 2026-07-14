@@ -83,6 +83,14 @@ on:
     workflows: ["Cross-Platform Determinism CI"]
     types: [completed]
 
+  # Issue #1618: mirror the Performance Dashboard conclusion into this
+  # workflow as a single non-matrix "Fluxion Performance Gate" check
+  # that branch protection can reference. The listener only fires for the
+  # same SHA on the same branch.
+  workflow_run:
+    workflows: ["Performance Dashboard"]
+    types: [completed]
+
 concurrency:
   group: ashrae-ci-gate-${{ github.ref }}
   cancel-in-progress: true
@@ -863,4 +871,88 @@ jobs:
         if: github.event.workflow_run.conclusion == 'failure' || github.event.workflow_run.conclusion == 'cancelled' || github.event.workflow_run.conclusion == 'timed_out'
         run: |
           echo "::error::Determinism gate hard fail — see upstream run ${{ github.event.workflow_run.html_url }}"
+          exit 1
+
+  # =====================================================================
+  # Issue #1618 — Cross-workflow performance regression gate listener
+  # =====================================================================
+  # This job fires after the `Performance Dashboard` workflow completes
+  # for the same SHA. It exists so branch protection can name a single,
+  # non-matrix required check (`Fluxion Performance Gate`) and the PR can
+  # be blocked at the gate if a performance regression is detected.
+  #
+  # The listener is intentionally minimal: it does NOT re-run benchmarks —
+  # it just observes the upstream `conclusion` and surfaces a clear PR
+  # comment + branch-protection check name.
+  # =====================================================================
+  fluxion-performance-gate:
+    name: "Fluxion Performance Gate (Issue #1618)"
+    runs-on: ubuntu-latest
+    if: github.event.workflow_run.event == 'pull_request'
+    permissions:
+      contents: read
+      checks: read
+      pull-requests: write
+      actions: read
+    steps:
+      - name: Verify upstream conclusion and post PR comment
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          UPSTREAM_CONCLUSION: ${{ github.event.workflow_run.conclusion }}
+          UPSTREAM_RUN_ID: ${{ github.event.workflow_run.id }}
+          UPSTREAM_RUN_URL: ${{ github.event.workflow_run.html_url }}
+          UPSTREAM_HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
+          UPSTREAM_HEAD_REF: ${{ github.event.workflow_run.head_branch }}
+          UPSTREAM_NAME: ${{ github.event.workflow_run.name }}
+        run: |
+          set -euo pipefail
+          echo "Upstream workflow: ${UPSTREAM_NAME}"
+          echo "Upstream run ID:   ${UPSTREAM_RUN_ID}"
+          echo "Upstream head SHA: ${UPSTREAM_HEAD_SHA}"
+          echo "Upstream head ref: ${UPSTREAM_HEAD_REF}"
+          echo "Upstream conclusion: ${UPSTREAM_CONCLUSION}"
+
+          PR_NUMBER="$(gh pr list --state open --head "${UPSTREAM_HEAD_REF}" --json number --jq '.[0].number // empty' || true)"
+
+          case "${UPSTREAM_CONCLUSION}" in
+            success)
+              echo "::notice::Performance gate PASSED — upstream workflow succeeded."
+              exit 0
+              ;;
+            failure|cancelled|timed_out)
+              echo "::error::Performance gate FAILED — upstream workflow concluded '${UPSTREAM_CONCLUSION}'."
+              echo "::error::See upstream run: ${UPSTREAM_RUN_URL}"
+              if [ -n "${PR_NUMBER:-}" ]; then
+                COMMENT_FILE="$(mktemp -t performance-gate-comment.XXXXXX.md)"
+                cat > "${COMMENT_FILE}" << 'COMMENTEOF'
+## Performance Regression Detected ⚠️
+
+The **Fluxion Performance Gate** has failed. Upstream benchmarks show a performance regression exceeding the 10% threshold.
+
+### Action Required
+Please investigate the performance regression and either:
+- Fix the regression before merging, OR
+- Establish a new baseline on `main` if the regression is intentional
+
+### Details
+See the upstream Performance Dashboard run for detailed benchmark results.
+COMMENTEOF
+                gh pr comment "${PR_NUMBER}" --body-file "${COMMENT_FILE}" \
+                  || echo "::warning::Failed to post PR comment for PR #${PR_NUMBER}"
+                rm -f "${COMMENT_FILE}"
+              else
+                echo "::warning::No open PR found for ref ${UPSTREAM_HEAD_REF}; skipping PR comment."
+              fi
+              exit 1
+              ;;
+            *)
+              echo "::notice::Upstream performance workflow concluded '${UPSTREAM_CONCLUSION}' — not blocking the gate."
+              exit 0
+              ;;
+          esac
+
+      - name: Hard fail on upstream non-success
+        if: github.event.workflow_run.conclusion == 'failure' || github.event.workflow_run.conclusion == 'cancelled' || github.event.workflow_run.conclusion == 'timed_out'
+        run: |
+          echo "::error::Performance gate hard fail — see upstream run ${{ github.event.workflow_run.html_url }}"
           exit 1

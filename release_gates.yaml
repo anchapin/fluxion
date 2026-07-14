@@ -205,6 +205,14 @@ ci:
     # determinism failure to slip through with a green `validate` job.
     - "Fluxion Determinism Gate (Issue #1351)"
 
+    # Issue #1618: performance regression gate wired as a required check.
+    # The listener job is defined in `.github/workflows/ashrae_validation.yml`
+    # under the `fluxion-performance-gate` id and is triggered by the
+    # `Performance Dashboard` workflow_run completion. It exits non-zero on
+    # `failure` / `cancelled` / `timed_out` upstream conclusions and posts
+    # a PR comment linking the upstream run URL.
+    - "Fluxion Performance Gate (Issue #1618)"
+
   # Job-to-workflow map (informational; branch-protection reads job
   # names directly). Used by `scripts/release_gate_checker.py` to verify
   # the required_checks list is in sync with the workflows directory.
@@ -223,3 +231,12 @@ ci:
       issue: 1351
       depends_on: 1297
       triggered_by: "workflow_run on Cross-Platform Determinism CI completion"
+
+    - job: "Fluxion Performance Gate (Issue #1618)"
+      # The listener job is defined in `ashrae_validation.yml`; it
+      # observes completion of the upstream workflow named below.
+      workflow: ".github/workflows/ashrae_validation.yml"
+      observes_workflow: "Performance Dashboard"
+      observes_workflow_file: ".github/workflows/performance_dashboard.yml"
+      issue: 1618
+      triggered_by: "workflow_run on Performance Dashboard completion"
