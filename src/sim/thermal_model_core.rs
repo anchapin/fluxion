@@ -2045,19 +2045,27 @@ impl ThermalModel<VectorField> {
             if spec.case_id == "960" {
                 // Case 960: Common wall has a door opening, not full wall conductance
                 // Inter-zone coupling is primarily through:
-                // 1. Door opening (natural convection)
-                // 2. Radiative exchange through door window
-                // 3. Conduction through door itself
+                // 1. Door opening (natural convection via stack effect)
+                // 2. Conduction through door itself
+                // 3. Radiative exchange through door window (neglected - windows face same direction)
 
-                // Door opening area from spec (Case 960: height=2.0m, area=1.5 m²)
-                let door_area = spec.door_area.unwrap_or(4.0);
+                // Door parameters from Case 960 spec: height=2.0m, area=1.5 m²
+                let door_area = spec.door_area.unwrap_or(1.5);
+                let door_height = spec.door_height.unwrap_or(2.0);
 
-                // Natural convection through door opening
-                // Reference values: 1.65-2.45 MWh heating
-                let convective_coupling = door_area * 0.5; // 0.75 W/K
+                // Stack effect convective coupling via ASHRAE Handbook Ch. 15:
+                // Q = Cd × A × H^0.5 × ΔT^0.5
+                // Where Cd = 0.65 (discharge coefficient for door opening)
+                const DISCHARGE_COEFFICIENT: f64 = 0.65;
+                // For conductance (Q/ΔT): Cd × A × H^0.5 × ΔT^0.5 / ΔT = Cd × A × H^0.5 / ΔT^0.5
+                // Using representative ΔT = 10 K for typical sunspace conditions
+                const REPRESENTATIVE_DELTA_T: f64 = 10.0;
+                let convective_coupling = DISCHARGE_COEFFICIENT * door_area * door_height.sqrt()
+                    / REPRESENTATIVE_DELTA_T.sqrt();
 
-                // Door conduction (wooden door, U ≈ 2.0 W/m²K)
-                let door_conduction = door_area * 0.5; // 0.75 W/K
+                // Door conduction (wooden door, U ≈ 2.0 W/m²K per ASHRAE 90.1 Table 5.5.4)
+                const U_DOOR: f64 = 2.0; // W/m²K for solid wood door
+                let door_conduction = U_DOOR * door_area;
 
                 total_conductance = convective_coupling + door_conduction;
 
@@ -2068,14 +2076,17 @@ impl ThermalModel<VectorField> {
                 radiative_conductance = 0.0;
 
                 println!(
-                    "Issue #348: Inter-zone coupling for Case 960: {:.2} W/K",
+                    "Issue #1616: Inter-zone coupling for Case 960: {:.2} W/K",
                     total_conductance
                 );
                 println!(
-                    "  - Convective (door opening): {:.2} W/K",
-                    convective_coupling
+                    "  - Convective (stack effect, Cd={:.2}, ΔT={:.0}K): {:.2} W/K",
+                    DISCHARGE_COEFFICIENT, REPRESENTATIVE_DELTA_T, convective_coupling
                 );
-                println!("  - Conductive (door): {:.2} W/K", door_conduction);
+                println!(
+                    "  - Conductive (U={:.1} W/m²K, A={:.1} m²): {:.2} W/K",
+                    U_DOOR, door_area, door_conduction
+                );
                 println!(
                     "  - Radiative (window): {:.2} W/K (windows face same direction - no exchange)",
                     radiative_conductance
