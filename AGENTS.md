@@ -52,6 +52,12 @@ pre-commit run --all-files
 
 **Required command order**: `cargo fmt` → `cargo clippy` → `cargo test`
 
+## Branch & PR Conventions
+
+- **`develop`** — default branch for all PRs. Create feature branches from `develop`.
+- **`main`** — only for releases (merge `develop` → `main`). No direct PRs to `main` except for release merges.
+- **Always use `--base develop`** when creating PRs via CLI (e.g., `gh pr create --base develop`). Defaulting to `main` is a mistake — always verify the base.
+
 ## Workspace Structure
 
 - Root `fluxion` package: main engine (`src/`, physics, sim, AI, validation)
