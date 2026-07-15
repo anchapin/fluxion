@@ -1538,7 +1538,11 @@ mod tests {
                     assert!(
                         gamma_ijk.abs() <= tol,
                         "Christoffel symbol Γ[{},{},{}] = {:.3e} exceeds tolerance {} for 5R1C",
-                        i, j, k, gamma_ijk, tol
+                        i,
+                        j,
+                        k,
+                        gamma_ijk,
+                        tol
                     );
                 }
             }
@@ -1564,7 +1568,11 @@ mod tests {
                     assert!(
                         gamma_ijk.abs() <= tol,
                         "Christoffel symbol Γ[{},{},{}] = {:.3e} exceeds tolerance {} for 9R4C",
-                        i, j, k, gamma_ijk, tol
+                        i,
+                        j,
+                        k,
+                        gamma_ijk,
+                        tol
                     );
                 }
             }
@@ -1618,7 +1626,9 @@ mod tests {
                 (covariant[i] - forward_euler[i]).abs() < 1e-10,
                 "covariant transport must reduce to forward-Euler when Γ=0 at index {}: \
                  covariant={:.6e}, forward_euler={:.6e}",
-                i, covariant[i], forward_euler[i]
+                i,
+                covariant[i],
+                forward_euler[i]
             );
         }
     }
@@ -1639,7 +1649,10 @@ mod tests {
                     assert!(
                         gamma_ijk.abs() <= tol,
                         "Christoffel symbol Γ[{},{},{}] = {:.3e} should be ~0 for identity metric",
-                        i, j, k, gamma_ijk
+                        i,
+                        j,
+                        k,
+                        gamma_ijk
                     );
                 }
             }
