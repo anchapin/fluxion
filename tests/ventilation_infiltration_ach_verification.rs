@@ -26,11 +26,11 @@
 //!
 //! Command: cargo test -p fluxion ventilation_infiltration_ach_verification
 
-use proptest::prelude::*;
 use fluxion::sim::ventilation::{
     calculate_combined_infiltration_ach, calculate_stack_infiltration_ach,
     calculate_wind_infiltration_ach, STACK_COEFFICIENT,
 };
+use proptest::prelude::*;
 
 /// ASHRAE 140-2023 §5.5.3.6 reference conditions for infiltration verification.
 mod ref_conditions {
