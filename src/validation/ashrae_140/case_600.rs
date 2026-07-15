@@ -112,9 +112,9 @@ impl Case600Model {
         let floor_assembly = Assemblies::insulated_floor();
 
         // Calculate U-values with default wind speed (25 m/s → ~21 W/m²K film coefficient)
-        let _u_wall = wall_assembly.u_value(None);
-        let u_roof = roof_assembly.u_value(None);
-        let _u_floor = floor_assembly.u_value(None);
+        let _u_wall = wall_assembly.u_value(None, None);
+        let u_roof = roof_assembly.u_value(None, None);
+        let _u_floor = floor_assembly.u_value(None, None);
 
         // Update 5R1C conductances based on construction U-values
         // h_tr_em: Exterior → Mass (roof)
@@ -219,22 +219,23 @@ impl Case600Model {
                 &[],  // No fins
                 window_orientation,
                 Some(0.2), // Ground reflectance (typical grass)
+                None,      // UTC offset (use default)
             );
 
             // Calculate total internal loads (W)
             // Internal gains: 200W continuous (60% radiative, 40% convective)
             let internal_gains = 200.0;
-            let total_loads = internal_gains + solar_gain_watts;
+            let total_loads = internal_gains + solar_gain_watts.total_gain_w;
 
             // Store solar gain for analysis
-            hourly_solar.push(solar_gain_watts);
+            hourly_solar.push(solar_gain_watts.total_gain_w);
 
             // Set loads for this timestep (W/m²)
             let load_per_area = total_loads / 48.0; // 48 m² floor area
             self.model.set_loads(&[load_per_area]);
 
             // Solve physics for this hour
-            let hvac_kwh = self.model.step_physics(step, dry_bulb);
+            let hvac_kwh = self.model.step_physics(step, dry_bulb, 3600.0);
 
             // Positive = heating (energy added to building), negative = cooling (energy removed)
             // hvac_kwh is the HVAC energy for 1 hour timestep.

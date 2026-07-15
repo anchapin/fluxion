@@ -3922,7 +3922,7 @@ mod debug_new_expm_tests {
 
                 let nodes_per_layer = compute_nodes_per_layer(&[layer.clone()], timestep);
                 let n: usize = nodes_per_layer.iter().sum();
-                if n <= 0 {
+                if n == 0 {
                     return Ok(());
                 }
 
@@ -3973,7 +3973,7 @@ mod debug_new_expm_tests {
 
                 let nodes_per_layer = compute_nodes_per_layer(&[layer.clone()], timestep);
                 let n: usize = nodes_per_layer.iter().sum();
-                if n <= 0 {
+                if n == 0 {
                     return Ok(());
                 }
 

@@ -231,15 +231,24 @@ async fn simulate_invalid_schema_returns_400() {
 }
 
 #[tokio::test]
-async fn import_idf_returns_501() {
+async fn import_idf_returns_200_with_valid_idf() {
     let (base, _state, _shutdown) = start_server().await;
+    let idf_body = r#"
+Version, 25.2;
+Building, TestBuilding, 0.0, Suburbs, 0.04, 0.4, FullExterior, 25;
+Zone, Zone1, 0.0, 0.0, 0.0, 0.0;
+Material, GypsumBoard, MediumSmooth, 0.0127, 0.16, 800, 1090;
+Construction, ExtWall, GypsumBoard;
+BuildingSurface:Detailed, Wall-South, Wall, ExtWall, Zone1, , Outdoors, SunExposed, WindExposed, , 4, 0.0, 0.0, 2.7, 6.0, 0.0, 2.7, 6.0, 0.0, 0.0, 0.0, 0.0, 0.0;
+"#
+    .trim();
     let resp = http_client()
         .post(format!("{base}/v1/import/idf"))
-        .body("Version,9.0;")
+        .body(idf_body)
         .send()
         .await
         .unwrap();
-    assert_eq!(resp.status(), 501);
+    assert_eq!(resp.status(), 200, "valid IDF should return 200");
 }
 
 #[tokio::test]
