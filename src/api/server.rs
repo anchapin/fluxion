@@ -577,7 +577,7 @@ async fn simulate_stream(
 /// Batch simulation handler for `POST /v1/batch`. Runs multiple simulations
 /// concurrently using rayon and returns all results.
 async fn batch_simulate(
-    State(_): State<AppState>,
+    State(_state): State<AppState>,
     Json(req): Json<BatchRequest>,
 ) -> Result<Json<BatchResponse>, ApiError> {
     if req.simulations.is_empty() {

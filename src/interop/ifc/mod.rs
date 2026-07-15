@@ -59,5 +59,8 @@ pub mod step_lexer;
 pub use error::IfcError;
 pub use geometry::IfcGeometryParser;
 pub use mapping::{import_ifc, IfcToSchema};
-pub use parser::{IfcBuilding, IfcBuildingStorey, IfcModel, IfcParser, IfcRoof, IfcSlab, IfcSpace, IfcWall, MaterialLayerSpec};
+pub use parser::{
+    IfcBuilding, IfcBuildingStorey, IfcModel, IfcParser, IfcRoof, IfcSlab, IfcSpace, IfcWall,
+    MaterialLayerSpec,
+};
 pub use step_lexer::{tokenize, RawEntity};

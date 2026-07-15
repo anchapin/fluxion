@@ -40,9 +40,7 @@
 use std::collections::{HashMap, HashSet};
 
 use crate::api::schema::ZoneGeometry;
-use crate::interop::ifc::parser::{
-    IfcBuilding, IfcBuildingStorey, IfcModel, IfcSpace,
-};
+use crate::interop::ifc::parser::{IfcBuilding, IfcBuildingStorey, IfcModel, IfcSpace};
 
 const DEFAULT_ZONE_FLOOR_AREA_M2: f64 = 24.0;
 const DEFAULT_ZONE_HEIGHT_M: f64 = 2.7;
@@ -309,15 +307,17 @@ mod tests {
     #[test]
     fn parses_building_and_storey_from_sample() {
         let src = std::fs::read_to_string(
-            std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-                .join("tests/fixtures/ifc/sample.ifc"),
+            std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/ifc/sample.ifc"),
         )
         .unwrap();
         let model = IfcParser::from_str(&src).expect("parses");
         let geometry = IfcGeometryParser::parse_model(&model);
 
         assert!(!geometry.buildings.is_empty(), "should have a building");
-        assert!(!geometry.storeys.is_empty(), "should have at least one storey");
+        assert!(
+            !geometry.storeys.is_empty(),
+            "should have at least one storey"
+        );
         assert_eq!(
             geometry.zones.len(),
             model.spaces.len(),
@@ -328,8 +328,7 @@ mod tests {
     #[test]
     fn zones_have_valid_floor_area() {
         let src = std::fs::read_to_string(
-            std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-                .join("tests/fixtures/ifc/sample.ifc"),
+            std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/ifc/sample.ifc"),
         )
         .unwrap();
         let model = IfcParser::from_str(&src).expect("parses");
@@ -345,8 +344,7 @@ mod tests {
     #[test]
     fn zone_elements_derived_from_contained_in_spatial() {
         let src = std::fs::read_to_string(
-            std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-                .join("tests/fixtures/ifc/sample.ifc"),
+            std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/ifc/sample.ifc"),
         )
         .unwrap();
         let model = IfcParser::from_str(&src).expect("parses");
@@ -364,8 +362,7 @@ mod tests {
     #[test]
     fn zone_names_match_space_names() {
         let src = std::fs::read_to_string(
-            std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-                .join("tests/fixtures/ifc/sample.ifc"),
+            std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/ifc/sample.ifc"),
         )
         .unwrap();
         let model = IfcParser::from_str(&src).expect("parses");
