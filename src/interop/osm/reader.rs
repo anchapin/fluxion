@@ -749,11 +749,10 @@ impl OsmReader {
         for (key, val) in &obj.fields {
             match key.as_str() {
                 "sunday_handle" | "monday_handle" | "tuesday_handle" | "wednesday_handle"
-                | "thursday_handle" | "friday_handle" | "saturday_handle" => {
-                    if !val.is_empty() {
+                | "thursday_handle" | "friday_handle" | "saturday_handle"
+                    if !val.is_empty() => {
                         day_schedule_handles.push(val.clone());
                     }
-                }
                 _ => {}
             }
         }
