@@ -72,10 +72,8 @@ impl IdfParser {
 
                 let obj = parse_epjson_object(object_type, instance_name, field_map)?;
 
-                if obj.object_type.eq_ignore_ascii_case("Version") {
-                    if idf.version.is_none() {
-                        idf.version = obj.fields.first().and_then(|v| v.to_display_string());
-                    }
+                if obj.object_type.eq_ignore_ascii_case("Version") && idf.version.is_none() {
+                    idf.version = obj.fields.first().and_then(|v| v.to_display_string());
                 }
                 idf.objects.push(obj);
             }
