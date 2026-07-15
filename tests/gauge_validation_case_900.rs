@@ -695,10 +695,14 @@ fn test_case_900_gauge_fiver1c_diurnal_parity() {
 
     // Both solvers share the same wall and initial conditions.
     let mut gauge_solver = GaugeSolver::default();
-    gauge_solver.initialize(&wall).expect("GaugeSolver::initialize");
+    gauge_solver
+        .initialize(&wall)
+        .expect("GaugeSolver::initialize");
 
     let mut fiver1c_solver = FiveR1CSolver::new();
-    fiver1c_solver.initialize(&wall).expect("FiveR1C::initialize");
+    fiver1c_solver
+        .initialize(&wall)
+        .expect("FiveR1C::initialize");
 
     let t_int = Temperature::from_value(T_INDOOR_HVAC_SETPOINT_C);
     let h_ext = HeatTransferCoefficient::from_value(CASE_900_H_EXT);
