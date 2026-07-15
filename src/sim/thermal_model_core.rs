@@ -2649,6 +2649,9 @@ impl ThermalModel<VectorField> {
             // Per-zone peak power tracking (Issue #1289)
             zone_peak_heating_kw: VectorField::from_scalar(0.0, num_zones),
             zone_peak_cooling_kw: VectorField::from_scalar(0.0, num_zones),
+            // Issue #1628: per-zone peak timestep tracking
+            zone_peak_heating_timestep: vec![0usize; num_zones],
+            zone_peak_cooling_timestep: vec![0usize; num_zones],
 
             // Separate heating and cooling energy tracking (Plan 03-08d: Diagnostic)
             annual_heating_energy: 0.0, // Cumulative heating energy in kWh
@@ -2857,6 +2860,16 @@ impl ThermalModel<VectorField> {
     /// Get per-zone peak cooling power in kW (Issue #1289)
     pub fn get_zone_peak_cooling_kw(&self) -> Vec<f64> {
         self.0.zone_peak_cooling_kw.as_slice().to_vec()
+    }
+
+    /// Get per-zone peak heating timestep index (Issue #1628)
+    pub fn get_zone_peak_heating_timestep(&self) -> Vec<usize> {
+        self.0.zone_peak_heating_timestep.clone()
+    }
+
+    /// Get per-zone peak cooling timestep index (Issue #1628)
+    pub fn get_zone_peak_cooling_timestep(&self) -> Vec<usize> {
+        self.0.zone_peak_cooling_timestep.clone()
     }
 }
 

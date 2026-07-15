@@ -201,6 +201,87 @@ impl PyMultiZoneThermalModel {
         Ok(result)
     }
 
+    /// Get peak load metrics for a specific zone (Issue #1628)
+    ///
+    /// Accepts a zone identifier as either:
+    /// - An integer index (e.g., 0, 1, 2)
+    /// - A string zone name (e.g., "Zone1", "Zone 1", "zone_1")
+    ///
+    /// Returns a dictionary with:
+    /// - "heating_mw": Peak heating power in MW
+    /// - "cooling_mw": Peak cooling power in MW
+    /// - "heating_timestep": Timestep index when peak heating occurred
+    /// - "cooling_timestep": Timestep index when peak cooling occurred
+    pub fn get_zone_peaks(
+        &self,
+        zone_identifier: &Bound<'_, PyAny>,
+    ) -> PyResult<HashMap<String, PyObject>> {
+        let zone_idx = if let Ok(idx) = zone_identifier.extract::<usize>() {
+            idx
+        } else if let Ok(name) = zone_identifier.extract::<String>() {
+            let normalized = name.trim().to_lowercase();
+            if let Some(stripped) = normalized.strip_prefix("zone") {
+                let num_str = stripped.trim().replace('_', "-").replace(' ', "-");
+                if let Ok(num) = num_str.parse::<usize>() {
+                    if num == 0 {
+                        return Err(pyo3::exceptions::PyValueError::new_err(
+                            "Zone indices are 0-based. Use 0 for Zone 1.",
+                        ));
+                    }
+                    num - 1
+                } else {
+                    return Err(pyo3::exceptions::PyValueError::new_err(format!(
+                        "Invalid zone name {:?}. Expected format: Zone1, Zone 1, or integer index.",
+                        name
+                    )));
+                }
+            } else {
+                return Err(pyo3::exceptions::PyValueError::new_err(format!(
+                    "Invalid zone identifier {:?}. Expected format: Zone1, Zone 1, or integer index.",
+                    name
+                )));
+            }
+        } else {
+            return Err(pyo3::exceptions::PyTypeError::new_err(
+                "Zone identifier must be an integer index or string like Zone1",
+            ));
+        };
+
+        if zone_idx >= self.inner.num_zones {
+            return Err(pyo3::exceptions::PyValueError::new_err(format!(
+                "Zone index {} out of range (0-{})",
+                zone_idx,
+                self.inner.num_zones - 1
+            )));
+        }
+
+        let heating_kw = self.inner.get_zone_peak_heating_kw();
+        let cooling_kw = self.inner.get_zone_peak_cooling_kw();
+        let heating_timesteps = self.inner.get_zone_peak_heating_timestep();
+        let cooling_timesteps = self.inner.get_zone_peak_cooling_timestep();
+
+        Python::with_gil(|py| {
+            let mut result = HashMap::new();
+            result.insert(
+                "heating_mw".to_string(),
+                (heating_kw[zone_idx] / 1000.0).to_object(py),
+            );
+            result.insert(
+                "cooling_mw".to_string(),
+                (cooling_kw[zone_idx] / 1000.0).to_object(py),
+            );
+            result.insert(
+                "heating_timestep".to_string(),
+                heating_timesteps[zone_idx].to_object(py),
+            );
+            result.insert(
+                "cooling_timestep".to_string(),
+                cooling_timesteps[zone_idx].to_object(py),
+            );
+            Ok(result)
+        })
+    }
+
     /// Export zone temperatures as Python dictionary
     pub fn export_zone_temperatures(&self) -> PyResult<Py<PyDict>> {
         Python::with_gil(|py| {

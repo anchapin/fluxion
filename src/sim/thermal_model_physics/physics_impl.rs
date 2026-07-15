@@ -917,17 +917,20 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                 hvac_output_sum += val;
 
                 // Issue #1289: Track per-zone peaks
+                // Issue #1628: Also track timestep when peak occurred
                 if val > 0.0 {
                     // Heating mode for this zone
                     let val_kw = val / 1000.0;
                     if val_kw > self.0.zone_peak_heating_kw.as_mut()[i] {
                         self.0.zone_peak_heating_kw.as_mut()[i] = val_kw;
+                        self.0.zone_peak_heating_timestep[i] = timestep;
                     }
                 } else if val < 0.0 {
                     // Cooling mode for this zone
                     let val_kw = -val / 1000.0;
                     if val_kw > self.0.zone_peak_cooling_kw.as_mut()[i] {
                         self.0.zone_peak_cooling_kw.as_mut()[i] = val_kw;
+                        self.0.zone_peak_cooling_timestep[i] = timestep;
                     }
                 }
             }
@@ -972,15 +975,18 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                 hvac_power_watts_sum += val;
 
                 // Issue #1289: Track per-zone peaks
+                // Issue #1628: Also track timestep when peak occurred
                 if val > 0.0 {
                     let val_kw = val / 1000.0;
                     if val_kw > self.0.zone_peak_heating_kw.as_mut()[i] {
                         self.0.zone_peak_heating_kw.as_mut()[i] = val_kw;
+                        self.0.zone_peak_heating_timestep[i] = timestep;
                     }
                 } else if val < 0.0 {
                     let val_kw = -val / 1000.0;
                     if val_kw > self.0.zone_peak_cooling_kw.as_mut()[i] {
                         self.0.zone_peak_cooling_kw.as_mut()[i] = val_kw;
+                        self.0.zone_peak_cooling_timestep[i] = timestep;
                     }
                 }
             }
@@ -1673,16 +1679,20 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
             if val > 0.0 {
                 heating_sum += val;
                 // Issue #1289: Track per-zone peaks
+                // Issue #1628: Also track timestep when peak occurred
                 let val_kw = val / 1000.0;
                 if val_kw > self.0.zone_peak_heating_kw.as_mut()[i] {
                     self.0.zone_peak_heating_kw.as_mut()[i] = val_kw;
+                    self.0.zone_peak_heating_timestep[i] = timestep;
                 }
             } else {
                 cooling_sum += -val;
                 // Issue #1289: Track per-zone peaks
+                // Issue #1628: Also track timestep when peak occurred
                 let val_kw = -val / 1000.0;
                 if val_kw > self.0.zone_peak_cooling_kw.as_mut()[i] {
                     self.0.zone_peak_cooling_kw.as_mut()[i] = val_kw;
+                    self.0.zone_peak_cooling_timestep[i] = timestep;
                 }
             }
         }
@@ -3208,16 +3218,20 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                 if val > 0.0 {
                     heating_sum += val;
                     // Issue #1289: Track per-zone peaks
+                    // Issue #1628: Also track timestep when peak occurred
                     let val_kw = val / 1000.0;
                     if val_kw > self.0.zone_peak_heating_kw.as_mut()[i] {
                         self.0.zone_peak_heating_kw.as_mut()[i] = val_kw;
+                        self.0.zone_peak_heating_timestep[i] = timestep;
                     }
                 } else if val < 0.0 {
                     cooling_sum += -val;
                     // Issue #1289: Track per-zone peaks
+                    // Issue #1628: Also track timestep when peak occurred
                     let val_kw = -val / 1000.0;
                     if val_kw > self.0.zone_peak_cooling_kw.as_mut()[i] {
                         self.0.zone_peak_cooling_kw.as_mut()[i] = val_kw;
+                        self.0.zone_peak_cooling_timestep[i] = timestep;
                     }
                 }
             }
