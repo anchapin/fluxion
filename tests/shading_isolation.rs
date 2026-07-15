@@ -776,7 +776,8 @@ fn test_ew_shading_low_angle_issue_1617() {
         relative_azimuth: 10.0_f64.to_radians(),
     };
 
-    let shaded = calculate_shaded_fraction(&window, Some(&overhang), &[fin_right, fin_left], &solar);
+    let shaded =
+        calculate_shaded_fraction(&window, Some(&overhang), &[fin_right, fin_left], &solar);
 
     // The shaded fraction should be significantly higher than the buggy version
     // that used window.height=3.0m for infinite fin assumption.
@@ -792,11 +793,7 @@ fn test_ew_shading_low_angle_issue_1617() {
     );
 
     // Also verify the fraction is in valid range
-    assert!(
-        shaded <= 1.0,
-        "Shaded fraction {:.4} exceeds 1.0",
-        shaded
-    );
+    assert!(shaded <= 1.0, "Shaded fraction {:.4} exceeds 1.0", shaded);
 }
 
 /// Test that fin height is properly bounded by mounting_height (Issue #1617).
