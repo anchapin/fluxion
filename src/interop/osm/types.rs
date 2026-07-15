@@ -187,6 +187,34 @@ pub struct Schedule {
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct ScheduleCompact {
+    pub handle: String,
+    pub name: String,
+    pub schedule_type: String,
+    pub through_values: Vec<ScheduleThroughValue>,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct ScheduleThroughValue {
+    pub through: String,
+    pub value: f64,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct ScheduleDay {
+    pub handle: String,
+    pub name: String,
+    pub values: Vec<f64>,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct ScheduleWeek {
+    pub handle: String,
+    pub name: String,
+    pub day_schedule_handles: Vec<String>,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct Thermostat {
     pub handle: String,
     pub name: String,
@@ -227,6 +255,15 @@ pub struct ElectricEquipment {
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct ZoneInfiltration {
+    pub handle: String,
+    pub name: String,
+    pub zone_handle: Option<String>,
+    pub design_flow_rate: Option<f64>,
+    pub schedule_handle: Option<String>,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct ZoneHVACEquipment {
     pub handle: String,
     pub name: String,
@@ -253,10 +290,14 @@ pub struct OsmContext {
     pub surfaces: HashMap<String, Surface>,
     pub sub_surfaces: HashMap<String, SubSurface>,
     pub schedules: HashMap<String, Schedule>,
+    pub schedule_compact: HashMap<String, ScheduleCompact>,
+    pub schedule_days: HashMap<String, ScheduleDay>,
+    pub schedule_weeks: HashMap<String, ScheduleWeek>,
     pub thermostats: HashMap<String, Thermostat>,
     pub people: HashMap<String, People>,
     pub lights: HashMap<String, Lights>,
     pub electric_equipment: HashMap<String, ElectricEquipment>,
+    pub zone_infiltration: HashMap<String, ZoneInfiltration>,
     pub site: Option<Site>,
     pub building: Option<Building>,
 }
@@ -273,10 +314,14 @@ impl Default for OsmContext {
             surfaces: HashMap::new(),
             sub_surfaces: HashMap::new(),
             schedules: HashMap::new(),
+            schedule_compact: HashMap::new(),
+            schedule_days: HashMap::new(),
+            schedule_weeks: HashMap::new(),
             thermostats: HashMap::new(),
             people: HashMap::new(),
             lights: HashMap::new(),
             electric_equipment: HashMap::new(),
+            zone_infiltration: HashMap::new(),
             site: None,
             building: None,
         }
