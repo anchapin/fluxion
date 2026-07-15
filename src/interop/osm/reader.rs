@@ -296,6 +296,10 @@ impl OsmReader {
                 1 => "name".to_string(),
                 2 => "zone_handle".to_string(),
                 3 => "design_level".to_string(),
+                4 => "watts_per_zone_floor_area".to_string(),
+                5 => "fraction_radiant".to_string(),
+                6 => "fraction_visible".to_string(),
+                7 => "schedule_handle".to_string(),
                 _ => "extra".to_string(),
             },
             "OS:ElectricEquipment" => match field_idx {
@@ -303,6 +307,9 @@ impl OsmReader {
                 1 => "name".to_string(),
                 2 => "zone_handle".to_string(),
                 3 => "design_level".to_string(),
+                4 => "watts_per_zone_floor_area".to_string(),
+                5 => "fraction_radiant".to_string(),
+                6 => "schedule_handle".to_string(),
                 _ => "extra".to_string(),
             },
             "OS:People" => match field_idx {
@@ -310,6 +317,9 @@ impl OsmReader {
                 1 => "name".to_string(),
                 2 => "zone_handle".to_string(),
                 3 => "number_of_people".to_string(),
+                4 => "people_per_area".to_string(),
+                5 => "fraction_radiant".to_string(),
+                6 => "schedule_handle".to_string(),
                 _ => "extra".to_string(),
             },
             "OS:Schedule:Constant" => match field_idx {
@@ -317,6 +327,40 @@ impl OsmReader {
                 1 => "name".to_string(),
                 2 => "schedule_type".to_string(),
                 3 => "value".to_string(),
+                _ => "extra".to_string(),
+            },
+            "OS:Schedule:Compact" => match field_idx {
+                0 => "handle".to_string(),
+                1 => "name".to_string(),
+                2 => "schedule_type".to_string(),
+                _ => format!("field_{}", field_idx - 3),
+            },
+            "OS:ZoneInfiltration:DesignFlowRate" => match field_idx {
+                0 => "handle".to_string(),
+                1 => "name".to_string(),
+                2 => "zone_handle".to_string(),
+                3 => "design_flow_rate".to_string(),
+                4 => "flow_per_zone_floor_area".to_string(),
+                5 => "air_changes_per_hour".to_string(),
+                6 => "schedule_handle".to_string(),
+                _ => "extra".to_string(),
+            },
+            "OS:Schedule:Day" => match field_idx {
+                0 => "handle".to_string(),
+                1 => "name".to_string(),
+                2 => "schedule_type".to_string(),
+                _ => format!("hour_{}", field_idx - 3),
+            },
+            "OS:Schedule:Week" => match field_idx {
+                0 => "handle".to_string(),
+                1 => "name".to_string(),
+                2 => "sunday_handle".to_string(),
+                3 => "monday_handle".to_string(),
+                4 => "tuesday_handle".to_string(),
+                5 => "wednesday_handle".to_string(),
+                6 => "thursday_handle".to_string(),
+                7 => "friday_handle".to_string(),
+                8 => "saturday_handle".to_string(),
                 _ => "extra".to_string(),
             },
             "OS:Version" => match field_idx {
@@ -408,6 +452,32 @@ impl OsmReader {
                     let sched = self.parse_schedule(&obj);
                     if !sched.handle.is_empty() {
                         self.ctx.schedules.insert(sched.handle.clone(), sched);
+                    }
+                }
+                "OS:Schedule:Compact" => {
+                    let sched = self.parse_schedule_compact(&obj);
+                    if !sched.handle.is_empty() {
+                        self.ctx
+                            .schedule_compact
+                            .insert(sched.handle.clone(), sched);
+                    }
+                }
+                "OS:ZoneInfiltration:DesignFlowRate" => {
+                    let inf = self.parse_zone_infiltration(&obj);
+                    if !inf.handle.is_empty() {
+                        self.ctx.zone_infiltration.insert(inf.handle.clone(), inf);
+                    }
+                }
+                "OS:Schedule:Day" => {
+                    let day = self.parse_schedule_day(&obj);
+                    if !day.handle.is_empty() {
+                        self.ctx.schedule_days.insert(day.handle.clone(), day);
+                    }
+                }
+                "OS:Schedule:Week" => {
+                    let week = self.parse_schedule_week(&obj);
+                    if !week.handle.is_empty() {
+                        self.ctx.schedule_weeks.insert(week.handle.clone(), week);
                     }
                 }
                 _ => {}
@@ -579,7 +649,7 @@ impl OsmReader {
             watts_per_zone_floor_area: self.parse_f64(obj.fields.get("watts_per_zone_floor_area")),
             fraction_radiant: self.parse_f64(obj.fields.get("fraction_radiant")),
             fraction_visible: self.parse_f64(obj.fields.get("fraction_visible")),
-            schedule_handle: None,
+            schedule_handle: obj.fields.get("schedule_handle").cloned(),
         }
     }
 
@@ -590,7 +660,7 @@ impl OsmReader {
             zone_handle: obj.fields.get("zone_handle").cloned(),
             watts_per_zone_floor_area: self.parse_f64(obj.fields.get("watts_per_zone_floor_area")),
             fraction_radiant: self.parse_f64(obj.fields.get("fraction_radiant")),
-            schedule_handle: None,
+            schedule_handle: obj.fields.get("schedule_handle").cloned(),
         }
     }
 
@@ -602,7 +672,7 @@ impl OsmReader {
             number_of_people: self.parse_f64(obj.fields.get("number_of_people")),
             people_per_area: self.parse_f64(obj.fields.get("people_per_area")),
             fraction_radiant: self.parse_f64(obj.fields.get("fraction_radiant")),
-            schedule_handle: None,
+            schedule_handle: obj.fields.get("schedule_handle").cloned(),
         }
     }
 
@@ -618,6 +688,79 @@ impl OsmReader {
             name: obj.fields.get("name").cloned().unwrap_or_default(),
             schedule_type: obj.fields.get("schedule_type").cloned().unwrap_or_default(),
             values: vec![value],
+        }
+    }
+
+    fn parse_schedule_compact(&self, obj: &OsmObject) -> ScheduleCompact {
+        let mut through_values: Vec<ScheduleThroughValue> = Vec::new();
+        let mut current_through: Option<String> = None;
+
+        for (key, val) in &obj.fields {
+            if key.starts_with("field_") {
+                let trimmed = val.trim();
+                if trimmed.starts_with("Through:") {
+                    current_through = Some(trimmed.to_string());
+                } else if trimmed.starts_with("Value") {
+                    let value_str = trimmed.strip_prefix("Value").unwrap_or(trimmed).trim();
+                    if let Ok(value) = value_str.parse::<f64>() {
+                        let through = current_through.take().unwrap_or_default();
+                        through_values.push(ScheduleThroughValue { through, value });
+                    }
+                }
+            }
+        }
+
+        ScheduleCompact {
+            handle: obj.fields.get("handle").cloned().unwrap_or_default(),
+            name: obj.fields.get("name").cloned().unwrap_or_default(),
+            schedule_type: obj.fields.get("schedule_type").cloned().unwrap_or_default(),
+            through_values,
+        }
+    }
+
+    fn parse_zone_infiltration(&self, obj: &OsmObject) -> ZoneInfiltration {
+        ZoneInfiltration {
+            handle: obj.fields.get("handle").cloned().unwrap_or_default(),
+            name: obj.fields.get("name").cloned().unwrap_or_default(),
+            zone_handle: obj.fields.get("zone_handle").cloned(),
+            design_flow_rate: self.parse_f64(obj.fields.get("design_flow_rate")),
+            schedule_handle: obj.fields.get("schedule_handle").cloned(),
+        }
+    }
+
+    fn parse_schedule_day(&self, obj: &OsmObject) -> ScheduleDay {
+        let mut values: Vec<f64> = Vec::new();
+        for (key, val) in &obj.fields {
+            if key.starts_with("hour_") {
+                if let Ok(v) = val.parse::<f64>() {
+                    values.push(v);
+                }
+            }
+        }
+        ScheduleDay {
+            handle: obj.fields.get("handle").cloned().unwrap_or_default(),
+            name: obj.fields.get("name").cloned().unwrap_or_default(),
+            values,
+        }
+    }
+
+    fn parse_schedule_week(&self, obj: &OsmObject) -> ScheduleWeek {
+        let mut day_schedule_handles: Vec<String> = Vec::new();
+        for (key, val) in &obj.fields {
+            match key.as_str() {
+                "sunday_handle" | "monday_handle" | "tuesday_handle" | "wednesday_handle"
+                | "thursday_handle" | "friday_handle" | "saturday_handle" => {
+                    if !val.is_empty() {
+                        day_schedule_handles.push(val.clone());
+                    }
+                }
+                _ => {}
+            }
+        }
+        ScheduleWeek {
+            handle: obj.fields.get("handle").cloned().unwrap_or_default(),
+            name: obj.fields.get("name").cloned().unwrap_or_default(),
+            day_schedule_handles,
         }
     }
 
@@ -969,5 +1112,152 @@ OS:Surface,
             }
             _ => panic!("Expected TmyLocation"),
         }
+    }
+
+    const SCHEDULE_OSM: &str = r#"
+! Sample OSM with Schedule:Compact, ZoneInfiltration, and internal gains
+OS:Version,
+  {abc123},!- Handle
+  3.2.0; !- Version Identifier
+
+OS:Site,
+  {site1}, !- Handle
+  Denver CO, !- Name
+  39.739, !- Latitude
+  -104.984, !- Longitude
+  1609; !- Elevation
+
+OS:Building,
+  {bldg1}, !- Handle
+  Small Office, !- Name
+  , !- Building Story Names
+  , !- Thermal Zone Names
+  1393.5, !- Floor Area {m2}
+  1, !- Number of Floors
+  3.0; !- Floor Height {m}
+
+OS:ThermalZone,
+  {zone1}, !- Handle
+  Zone 1, !- Name
+  , !- Thermostat Handle
+  1; !- Multiplier
+
+OS:Space,
+  {space1}, !- Handle
+  Zone 1 Space, !- Name
+  {zone1}, !- Zone Handle
+  , !- Building Story Handle
+  0, !- X Origin {m}
+  0, !- Y Origin {m}
+  0; !- Z Origin {m}
+
+OS:Schedule:Compact,
+  {sched1}, !- Handle
+  Office Occupancy, !- Name
+  Fraction, !- Schedule Type Limits Name
+  Through: 1/1, !- Field
+  Through: 1/31, !- Field
+  Value 0.0, !- Field
+  Through: 2/1, !- Field
+  Through: 2/28, !- Field
+  Value 1.0, !- Field
+  Through: 12/31, !- Field
+  Value 0.0; !- Field
+
+OS:Schedule:Constant,
+  {sched2}, !- Handle
+  Always On, !- Name
+  Fraction, !- Schedule Type Limits Name
+  1.0; !- Value
+
+OS:ZoneInfiltration:DesignFlowRate,
+  {inf1}, !- Handle
+  Zone 1 Infiltration, !- Name
+  {zone1}, !- Zone Name
+  0.5, !- Design Flow Rate {m3/s}
+  , !- Flow per Zone Floor Area {m3/s-m2}
+  , !- Air Changes per Hour {1/hr}
+  {sched2}; !- Schedule Name
+
+OS:People,
+  {people1}, !- Handle
+  Zone 1 People, !- Name
+  {zone1}, !- Zone Name
+  5, !- Number of People {people}
+  , !- People per Zone Floor Area {people/m2}
+  , !- Fraction Radiant
+  {sched1}; !- Number of People Schedule Name
+
+OS:Lights,
+  {lights1}, !- Handle
+  Zone 1 Lights, !- Name
+  {zone1}, !- Zone Name
+  , !- Lighting Level {W}
+  10.0, !- Watts per Zone Floor Area {W/m2}
+  , !- Fraction Radiant
+  , !- Fraction Visible
+  {sched1}; !- Schedule Name
+
+OS:ElectricEquipment,
+  {elec1}, !- Handle
+  Zone 1 Equipment, !- Name
+  {zone1}, !- Zone Name
+  , !- Electric Equipment Level {W}
+  5.0, !- Watts per Zone Floor Area {W/m2}
+  , !- Fraction Radiant
+  {sched1}; !- Schedule Name
+"#;
+
+    #[test]
+    fn test_parse_schedule_compact() {
+        let mut reader = OsmReader::new();
+        let result = reader.parse(SCHEDULE_OSM);
+        assert!(result.is_ok(), "Should parse OSM with Schedule:Compact");
+        let schema = result.unwrap();
+        assert_eq!(schema.metadata.name, "Small Office");
+    }
+
+    #[test]
+    fn test_parse_zone_infiltration() {
+        let mut reader = OsmReader::new();
+        let result = reader.parse(SCHEDULE_OSM);
+        assert!(result.is_ok(), "Should parse OSM with ZoneInfiltration");
+        assert!(
+            !reader.ctx.zone_infiltration.is_empty(),
+            "Should have parsed ZoneInfiltration"
+        );
+        let infiltration = reader.ctx.zone_infiltration.values().next().unwrap();
+        assert_eq!(infiltration.name, "Zone 1 Infiltration");
+        assert!(infiltration.design_flow_rate.is_some());
+    }
+
+    #[test]
+    fn test_parse_internal_gains_with_schedules() {
+        let mut reader = OsmReader::new();
+        let result = reader.parse(SCHEDULE_OSM);
+        assert!(result.is_ok(), "Should parse OSM with internal gains");
+
+        let people = reader.ctx.people.values().next().unwrap();
+        assert_eq!(people.name, "Zone 1 People");
+        assert!(people.schedule_handle.is_some());
+
+        let lights = reader.ctx.lights.values().next().unwrap();
+        assert_eq!(lights.name, "Zone 1 Lights");
+        assert!(lights.schedule_handle.is_some());
+
+        let elec = reader.ctx.electric_equipment.values().next().unwrap();
+        assert_eq!(elec.name, "Zone 1 Equipment");
+        assert!(elec.schedule_handle.is_some());
+    }
+
+    #[test]
+    fn test_parse_schedule_constant() {
+        let mut reader = OsmReader::new();
+        let result = reader.parse(SCHEDULE_OSM);
+        assert!(result.is_ok(), "Should parse OSM with Schedule:Constant");
+        assert!(
+            !reader.ctx.schedules.is_empty(),
+            "Should have parsed Schedule:Constant"
+        );
     }
 }
