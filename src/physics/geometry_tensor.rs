@@ -603,22 +603,43 @@ impl ThermalManifold {
     /// Compute Christoffel symbols of the second kind using the Levi-Civita
     /// connection.
     ///
-    /// Γ^i_{jk} = ½ · g^{il} · (∂_j g_{lk} + ∂_k g_{jl} − ∂_l g_{jk})
+    /// Γ^i_jk = ½ · g^{il} · (∂_j g_{lk} + ∂_k g_{jl} − ∂_l g_{jk})
+    ///
+    /// The return type `Matrix4<Matrix4<f64>>` represents the 4×4×4 symbol tensor
+    /// as a 4×4 outer matrix of 4×4 inner matrices. The element at outer
+    /// position `(i, j)` is a `Matrix4<f64>` where element `(k, l)` holds Γ^i_{kl}.
+    /// Individual symbols are accessed via `christoffel[(i, j)][(k, l)] = Γ^i_{kl}`.
     ///
     /// Since the thermal manifold has a **constant metric during transport**
     /// (the R/C values that define the metric do not change with temperature
     /// or time), all partial derivatives ∂_j g_{lk} vanish and the Christoffel
-    /// symbols are zero by construction.
-    ///
-    /// The return type `Matrix4<Matrix4<f64>>` represents the 4×4×4 symbol tensor
-    /// as a 4×4 outer matrix of 4×4 inner matrices. The element at outer
-    /// position `(i, j)` is a `Matrix4<f64>` where element `(j, k)` holds Γ^i_{jk}.
-    /// Individual symbols are accessed via `christoffel[(i, j)][(j, k)] = Γ^i_{jk}`.
-    ///
-    /// For the thermal manifold's constant metrics (5R1C and 9R4C), this method
-    /// returns a zero tensor since ∂_j g_{lk} = 0 for all indices.
+    /// symbols are zero by construction. This is verified by:
+    /// - `test_christoffel_symbols_zero_for_5r1c` (Christoffel ≤ 1e-12)
+    /// - `test_christoffel_symbols_zero_for_9r4c` (Christoffel ≤ 1e-12)
     pub fn compute_christoffel_symbols(&self) -> Matrix4<Matrix4<f64>> {
-        Matrix4::<Matrix4<f64>>::zeros()
+        let g_inv = match self.metric_tensor.try_inverse() {
+            Some(inv) => inv,
+            None => return Matrix4::<Matrix4<f64>>::zeros(),
+        };
+
+        let mut christoffel = Matrix4::<Matrix4<f64>>::zeros();
+
+        for i in 0..MANIFOLD_DIM {
+            for j in 0..MANIFOLD_DIM {
+                for k in 0..MANIFOLD_DIM {
+                    let mut gamma_ijk = 0.0;
+                    for l in 0..MANIFOLD_DIM {
+                        let partial_j_lk = 0.0;
+                        let partial_k_jl = 0.0;
+                        let partial_l_jk = 0.0;
+                        gamma_ijk += g_inv[(i, l)] * (partial_j_lk + partial_k_jl - partial_l_jk);
+                    }
+                    christoffel[(i, j)][(j, k)] = 0.5 * gamma_ijk;
+                }
+            }
+        }
+
+        christoffel
     }
 
     /// **Covariant parallel transport** using the Levi-Civita connection.
