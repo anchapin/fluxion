@@ -682,7 +682,379 @@ fn test_negative_altitude_full_shading() {
 }
 
 // ---------------------------------------------------------------------------
-// Section 7: Performance
+// Section 7: Case 610 and 910 Shading Isolation Tests (Issue #1629)
+// ---------------------------------------------------------------------------
+
+/// Case 610 - Low mass with south shading (ASHRAE 140).
+///
+/// Configuration:
+/// - Window: 12m² south-facing (6m wide × 2m high, sill=0.2m)
+/// - Overhang: 1.0m depth, 2.7m above window top
+///
+/// This test verifies the summer noon shading at high sun angle.
+/// Summer noon (Jun 21) at ~45°N: altitude ≈ 73.5°, azimuth ≈ 0°.
+///
+/// Hand calculation:
+/// - tan_profile = tan(73.5°) / cos(0°) ≈ 3.37
+/// - shadow_y = 1.0 * 3.37 = 3.37m
+/// - shadow_top_on_window = max(0, 3.37 - 2.7) = 0.67m
+/// - shaded_height = min(0.67, 2.0) = 0.67m
+/// - shaded_fraction = (0.67 * 6.0) / 12.0 ≈ 0.335
+#[test]
+fn test_case_610_summer_noon_shading() {
+    let window = WindowArea::with_dimensions(12.0, Orientation::South, 2.0, 6.0, 0.2, 0.5);
+    let overhang = Overhang {
+        depth: 1.0,
+        distance_above: 2.7,
+        extension: 10.0,
+    };
+
+    // Summer noon at 45°N latitude (ASHRAE 140 reference)
+    let solar = LocalSolarPosition {
+        altitude: 73.5_f64.to_radians(),
+        relative_azimuth: 0.0,
+    };
+
+    let shaded = calculate_shaded_fraction(&window, Some(&overhang), &[], &solar);
+
+    // Expected: shadow_y = 3.37m, shadow_top_on_window = 0.67m
+    // shaded_fraction ≈ 0.335
+    let expected = 0.335;
+    let rel_error = (shaded - expected).abs() / expected;
+
+    assert!(
+        rel_error < 0.01,
+        "Case 610 summer noon: expected {:.4}, got {:.4}, rel_error={:.2}%",
+        expected,
+        shaded,
+        rel_error * 100.0
+    );
+}
+
+/// Case 610 - Winter noon minimal shading verification.
+///
+/// Winter noon (Dec 21) at ~45°N: altitude ≈ 26.5°, azimuth ≈ 0°.
+///
+/// The 2.7m distance_above is critical here - the low winter sun
+/// should produce minimal or zero shading because the shadow falls
+/// above the window top.
+///
+/// Hand calculation:
+/// - tan_profile = tan(26.5°) / cos(0°) ≈ 0.498
+/// - shadow_y = 1.0 * 0.498 = 0.498m
+/// - shadow_top_on_window = max(0, 0.498 - 2.7) = 0
+/// - shaded_fraction = 0
+#[test]
+fn test_case_610_winter_noon_minimal_shading() {
+    let window = WindowArea::with_dimensions(12.0, Orientation::South, 2.0, 6.0, 0.2, 0.5);
+    let overhang = Overhang {
+        depth: 1.0,
+        distance_above: 2.7,
+        extension: 10.0,
+    };
+
+    let winter_solar = LocalSolarPosition {
+        altitude: 26.5_f64.to_radians(),
+        relative_azimuth: 0.0,
+    };
+
+    let shaded = calculate_shaded_fraction(&window, Some(&overhang), &[], &winter_solar);
+
+    // Winter sun at 26.5° should NOT reach the window
+    // shadow_y = 0.498m < distance_above = 2.7m
+    assert!(
+        shaded < 0.05,
+        "Case 610 winter noon: expected <0.05, got {:.4}",
+        shaded
+    );
+}
+
+/// Case 610 - Equinox noon (intermediate shading).
+///
+/// Equinox (Mar/Sept 21) at ~45°N: altitude ≈ 45°, azimuth ≈ 0°.
+///
+/// Hand calculation:
+/// - tan_profile = tan(45°) / cos(0°) = 1.0
+/// - shadow_y = 1.0 * 1.0 = 1.0m
+/// - shadow_top_on_window = max(0, 1.0 - 2.7) = 0 (shadow above window!)
+/// - shaded_fraction = 0
+///
+/// Even at 45° altitude, the 2.7m distance prevents shading.
+#[test]
+fn test_case_610_equinox_noon_no_shading() {
+    let window = WindowArea::with_dimensions(12.0, Orientation::South, 2.0, 6.0, 0.2, 0.5);
+    let overhang = Overhang {
+        depth: 1.0,
+        distance_above: 2.7,
+        extension: 10.0,
+    };
+
+    let equinox_solar = LocalSolarPosition {
+        altitude: 45.0_f64.to_radians(),
+        relative_azimuth: 0.0,
+    };
+
+    let shaded = calculate_shaded_fraction(&window, Some(&overhang), &[], &equinox_solar);
+
+    // Even at 45° altitude, shadow_y = 1.0m < distance_above = 2.7m
+    assert!(
+        shaded < 0.01,
+        "Case 610 equinox noon: expected ~0, got {:.4}",
+        shaded
+    );
+}
+
+/// Case 610 - High summer sun with azimuth (afternoon).
+///
+/// Summer afternoon at ~45°N: altitude ≈ 50°, azimuth ≈ 45° (west).
+///
+/// The combined altitude and azimuth effect:
+/// - tan_profile = tan(50°) / cos(45°) ≈ 1.192 / 0.707 ≈ 1.686
+/// - shadow_y = 1.0 * 1.686 = 1.686m
+/// - shadow_top_on_window = max(0, 1.686 - 2.7) = 0
+/// - Still no shading due to high distance_above
+#[test]
+fn test_case_610_summer_afternoon_with_azimuth() {
+    let window = WindowArea::with_dimensions(12.0, Orientation::South, 2.0, 6.0, 0.2, 0.5);
+    let overhang = Overhang {
+        depth: 1.0,
+        distance_above: 2.7,
+        extension: 10.0,
+    };
+
+    let summer_afternoon = LocalSolarPosition {
+        altitude: 50.0_f64.to_radians(),
+        relative_azimuth: 45.0_f64.to_radians(),
+    };
+
+    let shaded = calculate_shaded_fraction(&window, Some(&overhang), &[], &summer_afternoon);
+
+    // With azimuth, tan_profile increases but still shadow_y < distance_above
+    assert!(
+        shaded < 0.05,
+        "Case 610 summer afternoon: expected <0.05, got {:.4}",
+        shaded
+    );
+}
+
+/// Case 910 - High mass with south shading (ASHRAE 140).
+///
+/// Case 910 has IDENTICAL shading geometry to Case 610:
+/// - Window: 12m² south-facing (6m wide × 2m high, sill=0.2m)
+/// - Overhang: 1.0m depth, 2.7m above window top
+///
+/// The difference is construction type (high vs low mass), which
+/// does NOT affect shading calculations.
+///
+/// This test verifies Case 910 produces the same shading as Case 610.
+#[test]
+fn test_case_910_matches_case_610_shading() {
+    let window = WindowArea::with_dimensions(12.0, Orientation::South, 2.0, 6.0, 0.2, 0.5);
+    let overhang = Overhang {
+        depth: 1.0,
+        distance_above: 2.7,
+        extension: 10.0,
+    };
+
+    let test_positions = vec![
+        (73.5_f64.to_radians(), 0.0, "summer noon"),
+        (26.5_f64.to_radians(), 0.0, "winter noon"),
+        (
+            50.0_f64.to_radians(),
+            30.0_f64.to_radians(),
+            "summer morning",
+        ),
+    ];
+
+    for (alt, az, label) in test_positions {
+        let solar = LocalSolarPosition {
+            altitude: alt,
+            relative_azimuth: az,
+        };
+
+        let shaded = calculate_shaded_fraction(&window, Some(&overhang), &[], &solar);
+
+        // Case 910 shading must match Case 610 (same geometry)
+        // Re-use expected values from Case 610 tests
+        let expected = match label {
+            "summer noon" => 0.335,
+            "winter noon" => 0.0,
+            "summer morning" => 0.0,
+            _ => 0.0,
+        };
+
+        let rel_error = if expected > 0.0 {
+            (shaded - expected).abs() / expected
+        } else {
+            shaded
+        };
+
+        assert!(
+            rel_error < 0.01,
+            "Case 910 {}: expected {:.4}, got {:.4}, rel_error={:.2}%",
+            label,
+            expected,
+            shaded,
+            rel_error * 100.0
+        );
+    }
+}
+
+/// Case 910 - Summer noon high sun angle shading.
+///
+/// Identical to Case 610 test - same geometry, same expected result.
+/// This explicitly documents the ASHRAE 140 Case 910 behavior.
+#[test]
+fn test_case_910_summer_noon_shading() {
+    let window = WindowArea::with_dimensions(12.0, Orientation::South, 2.0, 6.0, 0.2, 0.5);
+    let overhang = Overhang {
+        depth: 1.0,
+        distance_above: 2.7,
+        extension: 10.0,
+    };
+
+    let solar = LocalSolarPosition {
+        altitude: 73.5_f64.to_radians(),
+        relative_azimuth: 0.0,
+    };
+
+    let shaded = calculate_shaded_fraction(&window, Some(&overhang), &[], &solar);
+
+    // Same as Case 610: shadow_y = 3.37m, shadow_top_on_window = 0.67m
+    let expected = 0.335;
+    let rel_error = (shaded - expected).abs() / expected;
+
+    assert!(
+        rel_error < 0.01,
+        "Case 910 summer noon: expected {:.4}, got {:.4}, rel_error={:.2}%",
+        expected,
+        shaded,
+        rel_error * 100.0
+    );
+}
+
+/// Case 910 - Winter noon minimal shading.
+///
+/// Identical to Case 610 test - same geometry, same expected result.
+#[test]
+fn test_case_910_winter_noon_minimal_shading() {
+    let window = WindowArea::with_dimensions(12.0, Orientation::South, 2.0, 6.0, 0.2, 0.5);
+    let overhang = Overhang {
+        depth: 1.0,
+        distance_above: 2.7,
+        extension: 10.0,
+    };
+
+    let solar = LocalSolarPosition {
+        altitude: 26.5_f64.to_radians(),
+        relative_azimuth: 0.0,
+    };
+
+    let shaded = calculate_shaded_fraction(&window, Some(&overhang), &[], &solar);
+
+    assert!(
+        shaded < 0.05,
+        "Case 910 winter noon: expected <0.05, got {:.4}",
+        shaded
+    );
+}
+
+/// Combined Case 610/910 - Overhang + fins interaction (Issue #747).
+///
+/// Cases 610 and 910 only have overhangs (no fins), but we test the
+/// overhang+fin interaction for completeness since the underlying
+/// geometry engine is shared.
+///
+/// At high sun angles (summer), overhang + right fin both contribute:
+#[test]
+fn test_case_610_combined_overhang_fin_summer() {
+    let window = WindowArea::with_dimensions(12.0, Orientation::South, 2.0, 6.0, 0.2, 0.5);
+    let overhang = Overhang {
+        depth: 1.0,
+        distance_above: 2.7,
+        extension: 10.0,
+    };
+    let fin_right = ShadeFin {
+        depth: 1.0,
+        distance_from_edge: 0.0,
+        side: Side::Right,
+        height: 2.0,
+    };
+
+    // Summer morning: sun to east (negative azimuth) - right fin shades
+    let solar = LocalSolarPosition {
+        altitude: 50.0_f64.to_radians(),
+        relative_azimuth: -45.0_f64.to_radians(),
+    };
+
+    let shaded = calculate_shaded_fraction(&window, Some(&overhang), &[fin_right], &solar);
+
+    // Overhang: shadow_y = 1.0 * tan(50°)/cos(-45°) ≈ 1.686m
+    // shadow_top_on_window = max(0, 1.686 - 2.7) = 0
+    // Overhang shades: 0
+    // Right fin (sun to left): should NOT shade
+    // Combined: 0
+    assert!(
+        shaded < 0.01,
+        "Case 610+fin summer morning (east sun): expected ~0, got {:.4}",
+        shaded
+    );
+}
+
+/// Case 610/910 critical verification - shading reduction factor bounds.
+///
+/// This test ensures the shading reduction factor (1 - shaded_fraction)
+/// stays within [0, 1] and matches theoretical expectations for the
+/// specific sun positions defined in ASHRAE 140.
+#[test]
+fn test_case_610_reduction_factor_bounds() {
+    let window = WindowArea::with_dimensions(12.0, Orientation::South, 2.0, 6.0, 0.2, 0.5);
+    let overhang = Overhang {
+        depth: 1.0,
+        distance_above: 2.7,
+        extension: 10.0,
+    };
+
+    // ASHRAE 140 reference sun positions
+    let test_cases = vec![
+        (73.5_f64.to_radians(), 0.0, 0.665, "summer noon"),
+        (26.5_f64.to_radians(), 0.0, 1.0, "winter noon"),
+        (
+            45.0_f64.to_radians(),
+            30.0_f64.to_radians(),
+            1.0,
+            "equinox AM",
+        ),
+    ];
+
+    for (alt, az, expected_min_reduction, label) in test_cases {
+        let solar = LocalSolarPosition {
+            altitude: alt,
+            relative_azimuth: az,
+        };
+
+        let shaded = calculate_shaded_fraction(&window, Some(&overhang), &[], &solar);
+        let reduction = 1.0 - shaded;
+
+        assert!(
+            (0.0..=1.0).contains(&reduction),
+            "Reduction factor {} outside [0,1] for {}",
+            reduction,
+            label
+        );
+
+        assert!(
+            reduction >= expected_min_reduction - 0.01,
+            "Reduction factor {:.4} below expected {:.4} for {}",
+            reduction,
+            expected_min_reduction,
+            label
+        );
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Section 8: Performance
 // ---------------------------------------------------------------------------
 
 /// Shading calculation must complete in <100ms.
