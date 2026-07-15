@@ -30,34 +30,7 @@ use crate::sim::thermal_integration::{
     ThermalIntegrationMethod,
 };
 use crate::sim::thermal_model_core::ThermalModel;
-
-/// Computes the forced-convection multiplier for h_tr_is based on ACH.
-///
-/// Uses the ASHRAE/EnergyPlus empirical correlation for interior forced convection:
-/// `h_c = h_c_still + 0.84 * ACH^0.8` [W/m²K]
-///
-/// Where:
-/// - `h_c_still = 3.45 W/m²K` (ASHRAE 140 simplified 5R1C still-air value)
-/// - ACH is in air changes per hour
-///
-/// This gives approximately:
-/// - ACH=0.5: ratio ≈ 1.14× (daytime baseline)
-/// - ACH=3:   ratio ≈ 1.59× (Case 950 night vent)
-/// - ACH=13:  ratio ≈ 2.84× (Case 650/950 spec night vent ACH=13.14)
-/// - ACH=40:  ratio ≈ 5.66× (theoretical high-ACH night vent)
-///
-/// Reference: ASHRAE Handbook — Fundamentals (ch. 4), EnergyPlus Engineering Reference.
-/// Issue #1279.
-fn h_tr_is_ach_multiplier(ach: f64) -> f64 {
-    const H_C_STILL: f64 = 3.45; // W/m²K - ASHRAE 140 simplified still-air value
-    if ach <= 0.0 {
-        1.0
-    } else {
-        // h_c_forced = h_c_still + 0.84 * ACH^0.8
-        let h_c_forced = H_C_STILL + 0.84 * ach.powf(0.8);
-        h_c_forced / H_C_STILL
-    }
-}
+use crate::sim::ventilation::h_tr_is_ach_multiplier;
 
 // Methods in this file are being incrementally migrated to the sibling
 // submodules in `thermal_model_physics/` (see Issue #902). Methods that
