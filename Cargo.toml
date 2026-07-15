@@ -440,3 +440,11 @@ harness = true
 name = "multi_climate_solar_invariant"
 path = "tests/reference_data/multi_climate_solar_invariant.rs"
 harness = true
+
+# Issue #1603 — GPU smoke test for InferenceBackend::CUDA.
+# Compiles under --features cuda and skips gracefully on CPU-only runners.
+# GPU runner executes the test with CUDA EP and verifies output matches CPU within 0.1%.
+[[test]]
+name = "surrogate_cuda_smoke"
+path = "tests/surrogate_cuda_smoke_test.rs"
+harness = true
