@@ -219,7 +219,7 @@ impl Case600Model {
                 &[],  // No fins
                 window_orientation,
                 Some(0.2), // Ground reflectance (typical grass)
-                None, // UTC offset (use default)
+                None,      // UTC offset (use default)
             );
 
             // Calculate total internal loads (W)
