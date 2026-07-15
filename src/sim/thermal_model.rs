@@ -7,6 +7,7 @@ use crate::ai::surrogate::SurrogateManager;
 use crate::physics::cta::{ContinuousTensor, VectorField};
 use crate::sim::thermal_model_core::get_daily_cycle;
 use std::error::Error;
+use tracing::info;
 
 /// Result type for thermal model operations
 pub type ThermalModelResult<T> = Result<T, Box<dyn Error + Send + Sync>>;
@@ -492,6 +493,31 @@ impl HybridRouting {
     }
 }
 
+/// Structured snapshot of [`HybridThermalModel`] dispatch counters (Issue #1608).
+///
+/// Returned by [`HybridThermalModel::metrics`]. Callers can inspect the
+/// counters and routing configuration without accessing the inner model.
+#[derive(Clone, Debug, Default)]
+pub struct MetricsSnapshot {
+    /// Number of times the surrogate load-prediction branch fired.
+    pub surrogate_load_calls: usize,
+    /// Number of times the physics conduction solver was called.
+    pub physics_step_calls: usize,
+    /// Current execution mode.
+    pub mode: ThermalModelMode,
+    /// Number of thermal zones.
+    pub num_zones: usize,
+    /// Active routing policy.
+    pub routing: HybridRouting,
+}
+
+impl MetricsSnapshot {
+    /// Returns `true` when no dispatch branch has fired yet.
+    pub fn is_zero(&self) -> bool {
+        self.surrogate_load_calls == 0 && self.physics_step_calls == 0
+    }
+}
+
 /// Per-component hybrid thermal model (Issue #1431).
 ///
 /// `HybridThermalModel` is the concrete implementation behind
@@ -579,6 +605,18 @@ impl HybridThermalModel {
         self.surrogate_load_calls = 0;
         self.physics_step_calls = 0;
     }
+
+    /// Returns a structured snapshot of the current dispatch counters,
+    /// routing mode, and zone count (Issue #1608).
+    pub fn metrics(&self) -> MetricsSnapshot {
+        MetricsSnapshot {
+            surrogate_load_calls: self.surrogate_load_calls,
+            physics_step_calls: self.physics_step_calls,
+            mode: ThermalModelMode::Hybrid,
+            num_zones: self.inner.num_zones,
+            routing: self.routing,
+        }
+    }
 }
 
 impl ThermalModelTrait for HybridThermalModel {
@@ -640,6 +678,11 @@ impl ThermalModelTrait for HybridThermalModel {
                             self.inner.loads =
                                 crate::physics::cta::VectorField::new(pred);
                             self.surrogate_load_calls += 1;
+                            info!(
+                                hybrid.surrogate_load_calls = self.surrogate_load_calls,
+                                hybrid.timestep = t,
+                                "surrogate load branch fired"
+                            );
                         }
                         Err(e) => {
                             log::warn!(
@@ -664,6 +707,11 @@ impl ThermalModelTrait for HybridThermalModel {
                 let outdoor_temp = 10.0 + 10.0 * daily_cycle;
                 let energy = self.inner.step_physics(t, outdoor_temp, 3600.0);
                 self.physics_step_calls += 1;
+                info!(
+                    hybrid.physics_step_calls = self.physics_step_calls,
+                    hybrid.timestep = t,
+                    "physics step branch fired"
+                );
                 energy
             })
             .sum();
@@ -1518,6 +1566,32 @@ mod tests {
         let model = HybridThermalModel::from_spec_with_routing(&spec, custom);
         assert_eq!(model.mode(), ThermalModelMode::Hybrid);
         assert_eq!(model.routing(), custom);
+    }
+
+    #[test]
+    fn hybrid_thermal_model_dispatch_instruments() {
+        use crate::ai::surrogate::SurrogateManager;
+
+        let mut model = HybridThermalModel::new(1, HybridRouting::default());
+        let surrogates = SurrogateManager::new().expect("SurrogateManager::new");
+
+        // Acceptance criterion: After 100 hybrid steps, counters >= 100
+        let eui = model.solve_timesteps(100, &surrogates, false);
+        assert!(eui.is_finite(), "EUI must be finite after 100 steps");
+
+        let snap = model.metrics();
+        assert_eq!(
+            snap.surrogate_load_calls, 100,
+            "surrogate_load_calls must be 100 after 100 steps"
+        );
+        assert_eq!(
+            snap.physics_step_calls, 100,
+            "physics_step_calls must be 100 after 100 steps"
+        );
+        assert_eq!(snap.mode, ThermalModelMode::Hybrid);
+        assert_eq!(snap.num_zones, 1);
+        assert_eq!(snap.routing, HybridRouting::default());
+        assert!(!snap.is_zero());
     }
 
     #[test]
