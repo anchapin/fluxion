@@ -77,6 +77,11 @@ pr821-diag = []
 # Feature flag for loom concurrency testing (Issue #1065)
 # Run with: LOOM=1 cargo test --features loom --test loom_concurrency_tests
 loom = []
+# Feature flag for D-Wave quantum annealer integration (Phase 2c — issue #1609).
+# Requires DWAVE_API_TOKEN environment variable at runtime.
+# Uses the D-Wave SAPI REST API (the same API underlying the Python dimod library).
+# Run with: cargo test --features dwave -p fluxion quantum::dwave_client
+dwave = []
 
 [lints.rust]
 unexpected_cfgs = { level = "allow", check-cfg = ["cfg(docsrs,test)", "cfg(gil_refs)"] }
