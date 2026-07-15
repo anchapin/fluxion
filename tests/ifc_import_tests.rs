@@ -261,6 +261,142 @@ END-ISO-10303-21;
 // IfcModel struct sanity (re-exported from mapping.rs consumers).
 // ---------------------------------------------------------------------------
 
+// ---------------------------------------------------------------------------
+// Residential IFC reference file tests (issue #1612 acceptance)
+// ---------------------------------------------------------------------------
+
+#[test]
+fn parses_residential_ifc_file() {
+    let path = fixtures_dir().join("residential.ifc");
+    let model = IfcParser::from_path(&path).expect("parses residential.ifc");
+    assert_eq!(model.schema.as_deref(), Some("IFC4"));
+    assert_eq!(model.buildings.len(), 1);
+    assert_eq!(model.storeys.len(), 1);
+    // 2 zones: Living + Bedroom
+    assert_eq!(
+        model.spaces.len(),
+        2,
+        "expected 2 IfcSpace entities (Living, Bedroom)"
+    );
+}
+
+#[test]
+fn residential_has_correct_zone_count() {
+    let path = fixtures_dir().join("residential.ifc");
+    let schema = import_ifc(&path).expect("imports residential.ifc");
+    assert_eq!(
+        schema.geometry.zones.len(),
+        2,
+        "residential should have 2 thermal zones"
+    );
+    let zone_names: Vec<_> = schema
+        .geometry
+        .zones
+        .iter()
+        .map(|z| z.name.as_str())
+        .collect();
+    assert!(zone_names.contains(&"Living"), "should have Living zone");
+    assert!(zone_names.contains(&"Bedroom"), "should have Bedroom zone");
+}
+
+#[test]
+fn residential_round_trip_via_gbxml() {
+    let path = fixtures_dir().join("residential.ifc");
+    let schema = import_ifc(&path).expect("imports");
+    let rt = round_trip_via_gbxml(&schema).expect("round-trip");
+
+    assert_eq!(
+        rt.geometry.zones.len(),
+        schema.geometry.zones.len(),
+        "zone count must survive round-trip"
+    );
+
+    let area_diff = (rt.geometry.total_floor_area - schema.geometry.total_floor_area).abs();
+    let area_ref = schema.geometry.total_floor_area.max(1.0);
+    let rel_diff = area_diff / area_ref;
+    assert!(
+        rel_diff <= 0.005,
+        "floor area must round-trip within 0.5 % (got |ΔA|/A = {:.4})",
+        rel_diff
+    );
+}
+
+// ---------------------------------------------------------------------------
+// Commercial IFC reference file tests (issue #1612 acceptance)
+// ---------------------------------------------------------------------------
+
+#[test]
+fn parses_commercial_ifc_file() {
+    let path = fixtures_dir().join("commercial.ifc");
+    let model = IfcParser::from_path(&path).expect("parses commercial.ifc");
+    assert_eq!(model.schema.as_deref(), Some("IFC4"));
+    assert_eq!(model.buildings.len(), 1);
+    assert_eq!(
+        model.storeys.len(),
+        2,
+        "expected 2 storeys (GroundFloor, FirstFloor)"
+    );
+    // 5 zones: Reception, Office1, Office2, Conference, Executive
+    assert_eq!(model.spaces.len(), 5, "expected 5 IfcSpace entities");
+}
+
+#[test]
+fn commercial_has_correct_zone_count() {
+    let path = fixtures_dir().join("commercial.ifc");
+    let schema = import_ifc(&path).expect("imports commercial.ifc");
+    assert_eq!(
+        schema.geometry.zones.len(),
+        5,
+        "commercial should have 5 thermal zones"
+    );
+    let zone_names: Vec<_> = schema
+        .geometry
+        .zones
+        .iter()
+        .map(|z| z.name.as_str())
+        .collect();
+    assert!(
+        zone_names.contains(&"Reception"),
+        "should have Reception zone"
+    );
+    assert!(zone_names.contains(&"Office1"), "should have Office1 zone");
+    assert!(zone_names.contains(&"Office2"), "should have Office2 zone");
+    assert!(
+        zone_names.contains(&"Conference"),
+        "should have Conference zone"
+    );
+    assert!(
+        zone_names.contains(&"Executive"),
+        "should have Executive zone"
+    );
+}
+
+#[test]
+fn commercial_round_trip_via_gbxml() {
+    let path = fixtures_dir().join("commercial.ifc");
+    let schema = import_ifc(&path).expect("imports");
+    let rt = round_trip_via_gbxml(&schema).expect("round-trip");
+
+    assert_eq!(
+        rt.geometry.zones.len(),
+        schema.geometry.zones.len(),
+        "zone count must survive round-trip"
+    );
+
+    let area_diff = (rt.geometry.total_floor_area - schema.geometry.total_floor_area).abs();
+    let area_ref = schema.geometry.total_floor_area.max(1.0);
+    let rel_diff = area_diff / area_ref;
+    assert!(
+        rel_diff <= 0.005,
+        "floor area must round-trip within 0.5 % (got |ΔA|/A = {:.4})",
+        rel_diff
+    );
+}
+
+// ---------------------------------------------------------------------------
+// IfcModel struct sanity (re-exported from mapping.rs consumers).
+// ---------------------------------------------------------------------------
+
 #[test]
 fn ifc_model_default_is_empty() {
     let m = IfcModel::default();
