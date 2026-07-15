@@ -51,5 +51,5 @@ pub mod osm;
 
 pub use fmi::{FmiConfig, FmiExporter, FmiMode, ZoneVariables};
 pub use gbxml::{export_gbxml, import_gbxml, GbXmlError, GbXmlReader, GbXmlWriter};
-pub use ifc::{import_ifc, IfcError, IfcModel, IfcParser, IfcToSchema};
+pub use ifc::{import_ifc, IfcError, IfcGeometryParser, IfcModel, IfcParser, IfcToSchema};
 pub use osm::{export_osm, import_osm, OsmError, OsmReader, OsmWriter};
