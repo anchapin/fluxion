@@ -379,3 +379,317 @@ fn assert_relative_eq(actual: f64, expected: f64, rel_tol: f64) {
         );
     }
 }
+
+// ---------------------------------------------------------------------------
+// Issue #1613 — streaming, batch, and async status endpoint tests
+// ---------------------------------------------------------------------------
+
+#[tokio::test]
+async fn simulate_stream_returns_sse_with_timestep_events() {
+    let (base, _state, _shutdown) = start_server().await;
+
+    let body = json!({
+        "version": "V1",
+        "metadata": SchemaMetadata::default(),
+        "geometry": Geometry::default(),
+        "constructions": ConstructionSet::default(),
+        "schedules": ScheduleSet::default(),
+        "weather": WeatherData::default(),
+        "controls": ControlSet::default(),
+        "output": SimulationOutput::default(),
+        "options": { "years": 1, "use_surrogates": false }
+    });
+
+    let resp = http_client()
+        .post(format!("{base}/v1/simulate/stream"))
+        .json(&body)
+        .send()
+        .await
+        .unwrap();
+
+    assert_eq!(resp.status(), 200, "expected 200, got {}", resp.status());
+    assert!(
+        resp.headers()
+            .get("content-type")
+            .map(|v| v.to_str().ok().unwrap_or(""))
+            .unwrap_or("")
+            .starts_with("text/event-stream"),
+        "expected text/event-stream content-type"
+    );
+
+    let body_bytes = resp.bytes().await.unwrap();
+    let body_str = String::from_utf8(body_bytes.to_vec()).unwrap();
+
+    assert!(
+        body_str.contains("data:"),
+        "SSE body should contain 'data:' events, got: {body_str}"
+    );
+    assert!(
+        body_str.contains("timestep"),
+        "SSE body should contain 'timestep' field, got: {body_str}"
+    );
+    assert!(
+        body_str.contains("zone_temperatures"),
+        "SSE body should contain 'zone_temperatures' field, got: {body_str}"
+    );
+}
+
+#[tokio::test]
+async fn batch_simulate_returns_results_for_multiple_schemas() {
+    let (base, _state, _shutdown) = start_server().await;
+
+    let sim_body = json!({
+        "version": "V1",
+        "metadata": SchemaMetadata::default(),
+        "geometry": Geometry::default(),
+        "constructions": ConstructionSet::default(),
+        "schedules": ScheduleSet::default(),
+        "weather": WeatherData::default(),
+        "controls": ControlSet::default(),
+        "output": SimulationOutput::default(),
+        "options": { "years": 1, "use_surrogates": false }
+    });
+
+    let batch_body = json!({
+        "simulations": [sim_body.clone(), sim_body.clone()]
+    });
+
+    let resp = http_client()
+        .post(format!("{base}/v1/batch"))
+        .json(&batch_body)
+        .send()
+        .await
+        .unwrap();
+
+    assert_eq!(resp.status(), 200, "expected 200, got {}", resp.status());
+    let v: serde_json::Value = resp.json().await.unwrap();
+    let results = v["results"].as_array().unwrap();
+    assert_eq!(
+        results.len(),
+        2,
+        "expected 2 results, got {}",
+        results.len()
+    );
+
+    for result in results {
+        assert!(
+            result["Ok"].is_object(),
+            "each result should be wrapped in Ok: {result}"
+        );
+        assert!(
+            result["Ok"]["output"]["heating_energy"].is_number(),
+            "output should contain heating_energy: {result}"
+        );
+    }
+}
+
+#[tokio::test]
+async fn batch_simulate_empty_request_returns_400() {
+    let (base, _state, _shutdown) = start_server().await;
+
+    let batch_body = json!({ "simulations": [] });
+
+    let resp = http_client()
+        .post(format!("{base}/v1/batch"))
+        .json(&batch_body)
+        .send()
+        .await
+        .unwrap();
+
+    assert_eq!(
+        resp.status(),
+        400,
+        "expected 400 for empty batch, got {}",
+        resp.status()
+    );
+}
+
+#[tokio::test]
+async fn batch_simulate_partial_failure_contains_error_strings() {
+    let (base, _state, _shutdown) = start_server().await;
+
+    let good_body = json!({
+        "version": "V1",
+        "metadata": SchemaMetadata::default(),
+        "geometry": Geometry::default(),
+        "constructions": ConstructionSet::default(),
+        "schedules": ScheduleSet::default(),
+        "weather": WeatherData::default(),
+        "controls": ControlSet::default(),
+        "output": SimulationOutput::default(),
+        "options": { "years": 1, "use_surrogates": false }
+    });
+
+    let bad_body = json!({
+        "version": "V1",
+        "metadata": SchemaMetadata::default(),
+        "geometry": Geometry::default(),
+        "constructions": ConstructionSet::default(),
+        "schedules": ScheduleSet::default(),
+        "weather": WeatherData::default(),
+        "controls": {
+            "zone_control": {
+                "heating_setpoint": 25.0,
+                "cooling_setpoint": 24.0,
+                "deadband_tolerance": 0.5,
+                "heating_capacity": 100000.0,
+                "cooling_capacity": 100000.0
+            }
+        },
+        "output": SimulationOutput::default(),
+        "options": { "years": 1, "use_surrogates": false }
+    });
+
+    let batch_body = json!({
+        "simulations": [good_body, bad_body]
+    });
+
+    let resp = http_client()
+        .post(format!("{base}/v1/batch"))
+        .json(&batch_body)
+        .send()
+        .await
+        .unwrap();
+
+    assert_eq!(
+        resp.status(),
+        200,
+        "batch should return 200 even with failures"
+    );
+    let v: serde_json::Value = resp.json().await.unwrap();
+    let results = v["results"].as_array().unwrap();
+    assert_eq!(results.len(), 2);
+
+    assert!(
+        results[0]["Ok"].is_object(),
+        "first (good) result should be wrapped in Ok: {}",
+        results[0]
+    );
+    assert!(
+        results[1]["Err"].is_string(),
+        "second (bad) result should be wrapped in Err: {}",
+        results[1]
+    );
+}
+
+#[tokio::test]
+async fn simulation_status_returns_404_for_unknown_id() {
+    let (base, _state, _shutdown) = start_server().await;
+
+    let resp = http_client()
+        .get(format!("{base}/v1/simulation/sim-does-not-exist/status"))
+        .send()
+        .await
+        .unwrap();
+
+    assert_eq!(
+        resp.status(),
+        404,
+        "expected 404 for unknown simulation, got {}",
+        resp.status()
+    );
+}
+
+#[tokio::test]
+async fn simulation_status_returns_pending_for_new_simulation() {
+    use fluxion::api::server::SimulationState;
+
+    let (base, state, _shutdown) = start_server().await;
+
+    let id = state.register_simulation().await;
+    state.update_simulation(&id, SimulationState::Pending).await;
+
+    let resp = http_client()
+        .get(format!("{base}/v1/simulation/{id}/status"))
+        .send()
+        .await
+        .unwrap();
+
+    assert_eq!(resp.status(), 200, "expected 200, got {}", resp.status());
+    let v: serde_json::Value = resp.json().await.unwrap();
+    assert_eq!(v["id"], id);
+    assert_eq!(v["state"]["state"], "pending");
+}
+
+#[tokio::test]
+async fn simulation_status_returns_completed_state() {
+    use fluxion::api::server::SimulationState;
+
+    let (base, state, _shutdown) = start_server().await;
+
+    let id = state.register_simulation().await;
+    state
+        .update_simulation(
+            &id,
+            SimulationState::Completed {
+                result: SimulationOutput::default(),
+            },
+        )
+        .await;
+
+    let resp = http_client()
+        .get(format!("{base}/v1/simulation/{id}/status"))
+        .send()
+        .await
+        .unwrap();
+
+    assert_eq!(resp.status(), 200, "expected 200, got {}", resp.status());
+    let v: serde_json::Value = resp.json().await.unwrap();
+    assert_eq!(v["id"], id);
+    assert_eq!(v["state"]["state"], "completed");
+    assert_eq!(v["progress"], 1.0);
+}
+
+#[tokio::test]
+async fn simulation_status_returns_running_state_with_progress() {
+    use fluxion::api::server::SimulationState;
+
+    let (base, state, _shutdown) = start_server().await;
+
+    let id = state.register_simulation().await;
+    state
+        .update_simulation(&id, SimulationState::Running { progress: 0.5 })
+        .await;
+
+    let resp = http_client()
+        .get(format!("{base}/v1/simulation/{id}/status"))
+        .send()
+        .await
+        .unwrap();
+
+    assert_eq!(resp.status(), 200, "expected 200, got {}", resp.status());
+    let v: serde_json::Value = resp.json().await.unwrap();
+    assert_eq!(v["id"], id);
+    assert_eq!(v["state"]["state"], "running");
+    assert_eq!(v["state"]["progress"], 0.5);
+    assert_eq!(v["progress"], 0.5);
+}
+
+#[tokio::test]
+async fn simulation_status_returns_failed_state_with_error() {
+    use fluxion::api::server::SimulationState;
+
+    let (base, state, _shutdown) = start_server().await;
+
+    let id = state.register_simulation().await;
+    state
+        .update_simulation(
+            &id,
+            SimulationState::Failed {
+                error: "simulation diverged".to_string(),
+            },
+        )
+        .await;
+
+    let resp = http_client()
+        .get(format!("{base}/v1/simulation/{id}/status"))
+        .send()
+        .await
+        .unwrap();
+
+    assert_eq!(resp.status(), 200, "expected 200, got {}", resp.status());
+    let v: serde_json::Value = resp.json().await.unwrap();
+    assert_eq!(v["id"], id);
+    assert_eq!(v["state"]["state"], "failed");
+    assert_eq!(v["state"]["error"], "simulation diverged");
+}
