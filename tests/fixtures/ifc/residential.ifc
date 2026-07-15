@@ -1,0 +1,118 @@
+ISO-10303-21;
+HEADER;
+FILE_DESCRIPTION(('ViewDefinition [CoordinationView]','Fluxion residential IFC4 test fixture'),'2;1');
+FILE_NAME('residential.ifc','2026-06-27',('Fluxion'),('Fluxion'),'fluxion','fluxion','IFC4 STEP residential reference file');
+FILE_SCHEMA(('IFC4'));
+ENDSEC;
+DATA;
+/* Owner history --------------------------------------------------------- */
+#1=IFCPERSON('unknown','unknown',$,$,$,$,$,$);
+#2=IFCORGANIZATION($,'Fluxion',$,$,$);
+#3=IFCPERSONANDORGANIZATION(#1,#2,$);
+#4=IFCAPPLICATION(#2,'0.0','fluxion','fluxion');
+#5=IFCOWNERHISTORY(#3,#4,.READWRITE.,.ADDED.,1735689600,$,$,1735689600);
+
+/* Project & units ------------------------------------------------------- */
+#10=IFCCARTESIANPOINT((0.,0.,0.));
+#11=IFCAXIS2PLACEMENT3D(#10,$,$);
+#12=IFCDIRECTION((0.,0.,1.));
+#13=IFCDIRECTION((1.,0.,0.));
+#14=IFCDIMENSIONALEXPONENTS(1,0,0,0,0,0,0);
+#15=IFCSIUNIT(*,.LENGTHUNIT.,$,.METRE.);
+#16=IFCSIUNIT(*,.AREAUNIT.,$,.SQUARE_METRE.);
+#17=IFCSIUNIT(*,.VOLUMEUNIT.,$,.CUBIC_METRE.);
+#18=IFCUNITASSIGNMENT((#15,#16,#17));
+#19=IFCGEOMETRICREPRESENTATIONCONTEXT('3D','Model',3,1.0E-05,#11,#12);
+#20=IFCPROJECT('0R3s1d3nt1a1Pr0j0000',#5,'ResidentialProject',$,$,$,$,(#19),#18);
+
+/* Site / Building / Storey --------------------------------------------- */
+#21=IFCLOCALPLACEMENT($,#11);
+#22=IFCSITE('0R3s1d3nt1a1S1t3Gu1d0',#5,'Site',$,$,#21,$,$,.ELEMENT.,$,$,$,$,$);
+#23=IFCRELAGGREGATES('0R3s1d3nt1a1R3lGu1d0',#5,$,$,#20,(#22));
+#24=IFCLOCALPLACEMENT(#21,#11);
+#25=IFCBUILDING('0R3s1d3nt1a1Bu1ld1ng',#5,'ResidentialBuilding',$,$,#24,$,$,.ELEMENT.,$,$,$);
+#26=IFCRELAGGREGATES('0R3s1d3nt1a1R3lBg1d0',#5,$,$,#22,(#25));
+#27=IFCLOCALPLACEMENT(#24,#11);
+#28=IFCBUILDINGSTOREY('0R3s1d3nt1a1St0r3y0',#5,'GroundFloor',$,$,#27,$,$,.ELEMENT.,0.);
+#29=IFCRELAGGREGATES('0R3s1d3nt1a1R3lSg1d0',#5,$,$,#25,(#28));
+
+/* Zone 1: Living Room -------------------------------------------------- */
+#30=IFCLOCALPLACEMENT(#27,#11);
+#31=IFCSPACE('0L1v1ngR00mZ0n3Gu1d0',#5,'Living',$,$,#30,$,$,.ELEMENT.,.INTERNAL.,$);
+#32=IFCRELAGGREGATES('0R3s1d3nt1a1R3lL1d0',#5,$,$,#28,(#31));
+
+/* Zone 2: Bedroom ------------------------------------------------------ */
+#40=IFCLOCALPLACEMENT(#27,#11);
+#41=IFCSPACE('0B3dr00mZ0n3Gu1d0000',#5,'Bedroom',$,$,#40,$,$,.ELEMENT.,.INTERNAL.,$);
+#42=IFCRELAGGREGATES('0R3s1d3nt1a1R3lB1d0',#5,$,$,#28,(#41));
+
+/* Materials ------------------------------------------------------------ */
+#50=IFCMATERIAL('Concrete',$,'Concrete');
+#51=IFCMATERIAL('Insulation',$,'Insulation');
+#52=IFCMATERIAL('Plaster',$,'Plaster');
+#53=IFCMATERIAL('Wood',$,'Wood');
+
+/* Wall layer set: plaster (12mm) + insulation (100mm) + plaster (12mm) */
+#60=IFCMATERIALLAYER(#52,0.012,$,'PlasterLayer',$,$,$);
+#61=IFCMATERIALLAYER(#51,0.100,$,'InsulationLayer',$,$,$);
+#62=IFCMATERIALLAYER(#52,0.012,$,'PlasterLayer2',$,$,$);
+#63=IFCMATERIALLAYERSET((#60,#61,#62),'WallLayers',$);
+#64=IFCMATERIALLAYERSETUSAGE(#63,.AXIS2.,.POSITIVE.,-0.062,$);
+
+/* Floor layer set: wood (20mm) + concrete (100mm) */
+#70=IFCMATERIALLAYER(#53,0.020,$,'WoodFloor',$,$,$);
+#71=IFCMATERIALLAYER(#50,0.100,$,'ConcreteSlab',$,$,$);
+#72=IFCMATERIALLAYERSET((#70,#71),'FloorLayers',$);
+#73=IFCMATERIALLAYERSETUSAGE(#72,.AXIS3.,.POSITIVE.,0.,$);
+
+/* Roof layer set: insulation (150mm) */
+#80=IFCMATERIALLAYER(#51,0.150,$,'RoofInsulation',$,$,$);
+#81=IFCMATERIALLAYERSET((#80),'RoofLayers',$);
+#82=IFCMATERIALLAYERSETUSAGE(#81,.AXIS3.,.POSITIVE.,0.,$);
+
+/* Wall placements ------------------------------------------------------ */
+#90=IFCCARTESIANPOINT((0.,0.,0.));
+#91=IFCAXIS2PLACEMENT3D(#90,#12,#13);
+#92=IFCLOCALPLACEMENT(#30,#91);
+
+/* Walls for Living Room ------------------------------------------------ */
+/* Ext wall - North */
+#100=IFCWALL('0W4LL1vN0rthGu1d00000',#5,'Wall-North','North wall',$,#92,$,$,.NOTDEFINED.);
+/* Ext wall - East */
+#101=IFCWALL('0W4LL1v34stGu1d00000',#5,'Wall-East','East wall',$,#92,$,$,.NOTDEFINED.);
+/* Ext wall - South (with window opening placeholder - modeled as wall) */
+#102=IFCWALL('0W4LL1vS0uthGu1d00000',#5,'Wall-South','South wall',$,#92,$,$,.NOTDEFINED.);
+/* Ext wall - West */
+#103=IFCWALL('0W4LL1vW3stGu1d00000',#5,'Wall-West','West wall',$,#92,$,$,.NOTDEFINED.);
+
+/* Walls for Bedroom ---------------------------------------------------- */
+/* Shared wall with Living Room (interzone) */
+#110=IFCWALL('0W4BB3dSh4r3dGu1d0000',#5,'Wall-Shared','Shared wall',$,#92,$,$,.NOTDEFINED.);
+/* Ext wall - North */
+#111=IFCWALL('0W4BB3dN0rthGu1d00000',#5,'Wall-Bed-North','Bedroom north wall',$,#92,$,$,.NOTDEFINED.);
+/* Ext wall - East */
+#112=IFCWALL('0W4BB3d34stGu1d00000',#5,'Wall-Bed-East','Bedroom east wall',$,#92,$,$,.NOTDEFINED.);
+/* Ext wall - South */
+#113=IFCWALL('0W4BB3dS0uthGu1d00000',#5,'Wall-Bed-South','Bedroom south wall',$,#92,$,$,.NOTDEFINED.);
+
+/* Floor ---------------------------------------------------------------- */
+#120=IFCSLAB('0S1bL1v1ngGu1d000000',#5,'Slab-Living','Living room floor',$,#92,$,$,.FLOOR.);
+#121=IFCSLAB('0S1bB3dGu1d000000000',#5,'Slab-Bedroom','Bedroom floor',$,#92,$,$,.FLOOR.);
+
+/* Roof ----------------------------------------------------------------- */
+#130=IFCROOF('0R00fR3s1dGu1d0000000',#5,'Roof','Roof',$,#92,$,$,.NOTDEFINED.);
+
+/* Material associations ------------------------------------------------- */
+#200=IFCRELASSOCIATESMATERIAL('0R3lAssW0Gu1d00000000',#5,'LivingWalls',$,(#100,#101,#102,#103),#64);
+#201=IFCRELASSOCIATESMATERIAL('0R3lAssW1Gu1d00000000',#5,'BedroomWalls',$,(#110,#111,#112,#113),#64);
+#202=IFCRELASSOCIATESMATERIAL('0R3lAssS0Gu1d00000000',#5,'Floors',$,(#120,#121),#73);
+#203=IFCRELASSOCIATESMATERIAL('0R3lAssR0Gu1d00000000',#5,'Roof',$,(#130),#82);
+
+/* Containment in spaces ------------------------------------------------ */
+#300=IFCRELCONTAINEDINSPATIALSTRUCTURE('0R3lC0ntL1vGu1d000000',#5,$,$,(#100,#101,#102,#103,#120),#31);
+#301=IFCRELCONTAINEDINSPATIALSTRUCTURE('0R3lC0ntB3dGu1d000000',#5,$,$,(#110,#111,#112,#113,#121),#41);
+
+/* Roof covers both spaces --------------------------------------------- */
+#302=IFCRELCONTAINEDINSPATIALSTRUCTURE('0R3lC0ntR00fGu1d000000',#5,$,$,(#130),#31);
+ENDSEC;
+END-ISO-10303-21;
