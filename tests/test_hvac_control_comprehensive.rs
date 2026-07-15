@@ -15,7 +15,7 @@ mod mode_determination {
 
     #[test]
     fn test_heating_mode_clearly_below_setpoint() {
-        let mut controller = PredictiveController::new(20.0, 27.0);
+        let mut controller = PredictiveController::with_tuning(20.0, 27.0, 0.1, 0.01);
 
         // Zone temp well below heating setpoint
         let (mode, modulation) = controller.calculate_modulation(15.0, 18.0, 0.0);
@@ -29,7 +29,7 @@ mod mode_determination {
 
     #[test]
     fn test_cooling_mode_clearly_above_setpoint() {
-        let mut controller = PredictiveController::new(20.0, 27.0);
+        let mut controller = PredictiveController::with_tuning(20.0, 27.0, 0.1, 0.01);
 
         // Zone temp well above cooling setpoint
         let (mode, modulation) = controller.calculate_modulation(30.0, 28.0, 0.0);
@@ -43,7 +43,7 @@ mod mode_determination {
 
     #[test]
     fn test_off_mode_at_setpoint() {
-        let mut controller = PredictiveController::new(20.0, 27.0);
+        let mut controller = PredictiveController::with_tuning(20.0, 27.0, 0.1, 0.01);
 
         // Zone temp at heating setpoint (within deadband)
         let (mode, modulation) = controller.calculate_modulation(20.0, 20.0, 0.0);
@@ -54,7 +54,7 @@ mod mode_determination {
 
     #[test]
     fn test_off_mode_in_deadband() {
-        let mut controller = PredictiveController::new(20.0, 27.0);
+        let mut controller = PredictiveController::with_tuning(20.0, 27.0, 0.1, 0.01);
 
         // Zone temp in middle of deadband (23.5°C)
         let (mode, modulation) = controller.calculate_modulation(23.5, 23.0, 0.0);
@@ -65,7 +65,7 @@ mod mode_determination {
 
     #[test]
     fn test_heating_mode_just_below_deadband() {
-        let mut controller = PredictiveController::new(20.0, 27.0);
+        let mut controller = PredictiveController::with_tuning(20.0, 27.0, 0.1, 0.01);
 
         // Just below heating threshold (heating_sp - deadband = 19.5)
         let (mode, modulation) = controller.calculate_modulation(19.0, 19.0, 0.0);
@@ -76,7 +76,7 @@ mod mode_determination {
 
     #[test]
     fn test_cooling_mode_just_above_deadband() {
-        let mut controller = PredictiveController::new(20.0, 27.0);
+        let mut controller = PredictiveController::with_tuning(20.0, 27.0, 0.1, 0.01);
 
         // Just above cooling threshold (cooling_sp + deadband = 27.5)
         let (mode, modulation) = controller.calculate_modulation(28.0, 28.0, 0.0);
@@ -95,7 +95,7 @@ mod modulation_tests {
 
     #[test]
     fn test_modulation_increases_with_temperature_error() {
-        let mut controller = PredictiveController::new(20.0, 27.0);
+        let mut controller = PredictiveController::with_tuning(20.0, 27.0, 0.1, 0.01);
 
         // Small error: zone at 19.9°C (0.1°C below heating setpoint)
         let (_, mod_small) = controller.calculate_modulation(19.9, 20.0, 0.0);
@@ -113,7 +113,7 @@ mod modulation_tests {
 
     #[test]
     fn test_modulation_bounded_zero_to_one() {
-        let mut controller = PredictiveController::new(20.0, 27.0);
+        let mut controller = PredictiveController::with_tuning(20.0, 27.0, 0.1, 0.01);
 
         // Very large heating error
         let (_, mod_heating) = controller.calculate_modulation(-10.0, 0.0, -0.1);
@@ -133,7 +133,7 @@ mod modulation_tests {
 
     #[test]
     fn test_modulation_increases_with_larger_error() {
-        let mut controller = PredictiveController::new(20.0, 27.0);
+        let mut controller = PredictiveController::with_tuning(20.0, 27.0, 0.1, 0.01);
 
         // Test that larger temperature error produces higher modulation
         let (_, mod_small) = controller.calculate_modulation(19.5, 19.5, 0.0); // Small error
@@ -156,7 +156,7 @@ mod thermal_inertia_tests {
 
     #[test]
     fn test_inertia_anticipates_cooling_when_mass_cooler() {
-        let mut controller = PredictiveController::new(20.0, 27.0);
+        let mut controller = PredictiveController::with_tuning(20.0, 27.0, 0.1, 0.01);
 
         // Zone at 26°C, mass at 18°C (mass is 8°C cooler)
         // Inertia factor adjusts setpoint - but 26°C is within deadband (19.5-27.5)
@@ -169,7 +169,7 @@ mod thermal_inertia_tests {
 
     #[test]
     fn test_inertia_anticipates_heating_when_mass_warmer() {
-        let mut controller = PredictiveController::new(20.0, 27.0);
+        let mut controller = PredictiveController::with_tuning(20.0, 27.0, 0.1, 0.01);
 
         // Zone at 21°C, mass at 25°C (mass is 4°C warmer)
         // The inertia factor should push effective setpoint down, anticipating heating
@@ -273,7 +273,7 @@ mod dynamic_setpoint_tests {
 
     #[test]
     fn test_dynamic_setpoints_heating_setback() {
-        let mut controller = PredictiveController::new(20.0, 27.0);
+        let mut controller = PredictiveController::with_tuning(20.0, 27.0, 0.1, 0.01);
 
         // During setback: heating setpoint = 15°C, zone = 16°C
         // With fixed setpoints, this would be off (16 > 19.5)
@@ -287,7 +287,7 @@ mod dynamic_setpoint_tests {
 
     #[test]
     fn test_dynamic_setpoints_heating_recovery() {
-        let mut controller = PredictiveController::new(20.0, 27.0);
+        let mut controller = PredictiveController::with_tuning(20.0, 27.0, 0.1, 0.01);
 
         // During recovery: heating setpoint = 20°C, zone = 17°C
         let (mode, modulation) =
@@ -299,7 +299,7 @@ mod dynamic_setpoint_tests {
 
     #[test]
     fn test_dynamic_setpoints_cooling_setback() {
-        let mut controller = PredictiveController::new(20.0, 27.0);
+        let mut controller = PredictiveController::with_tuning(20.0, 27.0, 0.1, 0.01);
 
         // During cooling setback: cooling setpoint = 30°C, zone = 28°C
         let (mode, modulation) =
@@ -311,7 +311,7 @@ mod dynamic_setpoint_tests {
 
     #[test]
     fn test_dynamic_setpoints_vs_fixed_setpoints() {
-        let mut controller = PredictiveController::new(20.0, 27.0);
+        let mut controller = PredictiveController::with_tuning(20.0, 27.0, 0.1, 0.01);
 
         // Zone at 18°C
         // With fixed setpoints (20°C heating), this triggers heating
@@ -335,7 +335,7 @@ mod state_tests {
 
     #[test]
     fn test_controller_remembers_previous_temperature() {
-        let mut controller = PredictiveController::new(20.0, 27.0);
+        let mut controller = PredictiveController::with_tuning(20.0, 27.0, 0.1, 0.01);
 
         // First call
         controller.calculate_modulation(22.0, 21.0, 0.0);
@@ -352,7 +352,7 @@ mod state_tests {
 
     #[test]
     fn test_controller_reset_clears_state() {
-        let mut controller = PredictiveController::new(20.0, 27.0);
+        let mut controller = PredictiveController::with_tuning(20.0, 27.0, 0.1, 0.01);
 
         // Run some timesteps
         controller.calculate_modulation(25.0, 24.0, 0.001);
@@ -370,7 +370,7 @@ mod state_tests {
 
     #[test]
     fn test_controller_state_persists_across_mode_changes() {
-        let mut controller = PredictiveController::new(20.0, 27.0);
+        let mut controller = PredictiveController::with_tuning(20.0, 27.0, 0.1, 0.01);
 
         // Heating mode
         let (mode1, _) = controller.calculate_modulation(15.0, 16.0, -0.001);
@@ -442,7 +442,7 @@ mod edge_cases {
 
     #[test]
     fn test_extreme_cold_temperature() {
-        let mut controller = PredictiveController::new(20.0, 27.0);
+        let mut controller = PredictiveController::with_tuning(20.0, 27.0, 0.1, 0.01);
 
         let (mode, modulation) = controller.calculate_modulation(-40.0, -35.0, -0.1);
 
@@ -455,7 +455,7 @@ mod edge_cases {
 
     #[test]
     fn test_extreme_hot_temperature() {
-        let mut controller = PredictiveController::new(20.0, 27.0);
+        let mut controller = PredictiveController::with_tuning(20.0, 27.0, 0.1, 0.01);
 
         let (mode, modulation) = controller.calculate_modulation(60.0, 55.0, 0.1);
 
@@ -468,7 +468,7 @@ mod edge_cases {
 
     #[test]
     fn test_zone_equals_mass_temperature() {
-        let mut controller = PredictiveController::new(20.0, 27.0);
+        let mut controller = PredictiveController::with_tuning(20.0, 27.0, 0.1, 0.01);
 
         // Zone and mass at same temperature
         let (mode, _) = controller.calculate_modulation(22.0, 22.0, 0.0);
@@ -479,7 +479,7 @@ mod edge_cases {
 
     #[test]
     fn test_large_mass_zone_offset() {
-        let mut controller = PredictiveController::new(20.0, 27.0);
+        let mut controller = PredictiveController::with_tuning(20.0, 27.0, 0.1, 0.01);
 
         // Large offset between zone and mass
         let (mode, _) = controller.calculate_modulation(21.0, 35.0, 0.0);
@@ -490,7 +490,7 @@ mod edge_cases {
 
     #[test]
     fn test_rapid_temperature_change() {
-        let mut controller = PredictiveController::new(20.0, 27.0);
+        let mut controller = PredictiveController::with_tuning(20.0, 27.0, 0.1, 0.01);
 
         // Zone at 28°C (above cooling threshold) with very rapid rise
         let (mode, modulation) = controller.calculate_modulation(28.0, 28.0, 0.1);
@@ -505,7 +505,7 @@ mod edge_cases {
 
     #[test]
     fn test_nan_handling() {
-        let mut controller = PredictiveController::new(20.0, 27.0);
+        let mut controller = PredictiveController::with_tuning(20.0, 27.0, 0.1, 0.01);
 
         // NaN inputs should not crash (behavior may vary)
         let (mode, modulation) = controller.calculate_modulation(f64::NAN, 20.0, 0.0);
@@ -517,7 +517,7 @@ mod edge_cases {
 
     #[test]
     fn test_infinity_handling() {
-        let mut controller = PredictiveController::new(20.0, 27.0);
+        let mut controller = PredictiveController::with_tuning(20.0, 27.0, 0.1, 0.01);
 
         // Infinity inputs - should not panic, return safe defaults
         let (mode, modulation) = controller.calculate_modulation(f64::INFINITY, 20.0, 0.0);
@@ -537,7 +537,7 @@ mod deadband_tests {
 
     #[test]
     fn test_deadband_center_off() {
-        let mut controller = PredictiveController::new(20.0, 27.0);
+        let mut controller = PredictiveController::with_tuning(20.0, 27.0, 0.1, 0.01);
 
         // Deadband is 20-27°C (with 0.5°C tolerance on each end: 19.5-27.5°C)
         // Zone at 23.5°C should be off
@@ -549,7 +549,7 @@ mod deadband_tests {
 
     #[test]
     fn test_deadband_lower_edge() {
-        let mut controller = PredictiveController::new(20.0, 27.0);
+        let mut controller = PredictiveController::with_tuning(20.0, 27.0, 0.1, 0.01);
 
         // At heating threshold (20 - 0.5 = 19.5)
         let (mode, modulation) = controller.calculate_modulation(19.5, 19.5, 0.0);
@@ -561,7 +561,7 @@ mod deadband_tests {
 
     #[test]
     fn test_deadband_upper_edge() {
-        let mut controller = PredictiveController::new(20.0, 27.0);
+        let mut controller = PredictiveController::with_tuning(20.0, 27.0, 0.1, 0.01);
 
         // At cooling threshold (27 + 0.5 = 27.5)
         let (mode, modulation) = controller.calculate_modulation(27.5, 27.5, 0.0);
@@ -573,7 +573,7 @@ mod deadband_tests {
 
     #[test]
     fn test_just_outside_deadband_lower() {
-        let mut controller = PredictiveController::new(20.0, 27.0);
+        let mut controller = PredictiveController::with_tuning(20.0, 27.0, 0.1, 0.01);
 
         // Just below heating threshold
         let (mode, modulation) = controller.calculate_modulation(19.4, 19.4, 0.0);
@@ -584,7 +584,7 @@ mod deadband_tests {
 
     #[test]
     fn test_just_outside_deadband_upper() {
-        let mut controller = PredictiveController::new(20.0, 27.0);
+        let mut controller = PredictiveController::with_tuning(20.0, 27.0, 0.1, 0.01);
 
         // Just above cooling threshold
         let (mode, modulation) = controller.calculate_modulation(27.6, 27.6, 0.0);
@@ -603,7 +603,7 @@ mod integration_scenarios {
 
     #[test]
     fn test_morning_warmup_sequence() {
-        let mut controller = PredictiveController::new(20.0, 27.0);
+        let mut controller = PredictiveController::with_tuning(20.0, 27.0, 0.1, 0.01);
 
         // Simulate morning warmup: zone starts cold, mass is cold
         let mut zone_temp = 15.0;
@@ -629,7 +629,7 @@ mod integration_scenarios {
 
     #[test]
     fn test_afternoon_cooling_sequence() {
-        let mut controller = PredictiveController::new(20.0, 27.0);
+        let mut controller = PredictiveController::with_tuning(20.0, 27.0, 0.1, 0.01);
 
         // Simulate afternoon: zone starts warm, mass is warm
         let mut zone_temp = 28.0;
@@ -649,7 +649,7 @@ mod integration_scenarios {
 
     #[test]
     fn test_setback_recovery_sequence() {
-        let mut controller = PredictiveController::new(20.0, 27.0);
+        let mut controller = PredictiveController::with_tuning(20.0, 27.0, 0.1, 0.01);
 
         // Night setback: zone at 16°C, setpoint 15°C
         let (mode, _) = controller.calculate_modulation_with_setpoints(16.0, 16.0, 0.0, 15.0, 27.0);

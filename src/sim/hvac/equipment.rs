@@ -1093,7 +1093,8 @@ mod tests {
     #[test]
     fn test_predictive_modulation_in_unit_interval() {
         use crate::sim::hvac::modes::PredictiveController;
-        let mut controller = PredictiveController::new(20.0, 27.0);
+        // Use with_tuning for backward compatibility in existing test
+        let mut controller = PredictiveController::with_tuning(20.0, 27.0, 0.1, 0.01);
 
         // Sweep conditions that exercise heating, cooling, and off modes.
         let cases: &[(f64, f64, f64)] = &[
