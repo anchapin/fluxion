@@ -184,6 +184,10 @@ pub struct ThermalModelData<T: ContinuousTensor<f64> + Clone> {
     pub zone_peak_heating_kw: T,
     /// Issue #1289 — per-zone peak cooling power in kW
     pub zone_peak_cooling_kw: T,
+    /// Issue #1628 — timestep index when peak heating occurred for each zone
+    pub zone_peak_heating_timestep: Vec<usize>,
+    /// Issue #1628 — timestep index when peak cooling occurred for each zone
+    pub zone_peak_cooling_timestep: Vec<usize>,
     pub annual_heating_energy: f64,
     pub annual_cooling_energy: f64,
     pub annual_electrical_energy: f64,
@@ -358,6 +362,8 @@ impl<T: ContinuousTensor<f64> + Clone> Clone for ThermalModelData<T> {
             peak_power_cooling: self.peak_power_cooling,
             zone_peak_heating_kw: self.zone_peak_heating_kw.clone(),
             zone_peak_cooling_kw: self.zone_peak_cooling_kw.clone(),
+            zone_peak_heating_timestep: self.zone_peak_heating_timestep.clone(),
+            zone_peak_cooling_timestep: self.zone_peak_cooling_timestep.clone(),
             annual_heating_energy: self.annual_heating_energy,
             annual_cooling_energy: self.annual_cooling_energy,
             annual_electrical_energy: self.annual_electrical_energy,
