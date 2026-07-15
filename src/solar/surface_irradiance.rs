@@ -333,6 +333,14 @@ impl PerezSkyModel {
         zenith_deg: f64,
         solar_azimuth_deg: f64,
     ) -> f64 {
+        // For horizontal surfaces (tilt ≈ 0), the incidence angle equals the
+        // zenith angle and cos(θ_i) = cos(zenith). The general formula below
+        // incorrectly gives zenith.sin() for tilt = 0, so we special-case it.
+        // See Issue #1622 / #1323 — horizontal surface beam under-counting.
+        if surface_tilt_deg.abs() < 1e-9 {
+            return zenith_deg.to_radians().cos();
+        }
+
         let tilt = surface_tilt_deg.to_radians();
         let surface_az = surface_azimuth_deg.to_radians();
         let zenith = zenith_deg.to_radians();
