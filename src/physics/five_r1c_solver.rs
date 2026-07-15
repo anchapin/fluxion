@@ -558,10 +558,10 @@ mod tests {
             .unwrap();
         let spec = WallSpec::from_assembly(&wall);
 
-        let r_total = spec.total_r_value();    // wall-only, ≈ 0.1429 m²·K/W
+        let r_total = spec.total_r_value(); // wall-only, ≈ 0.1429 m²·K/W
         let c_total = spec.thermal_capacity(); // ≈ 386 400 J/(m²·K)
-        let h_tr_ms = 1.0 / r_total;          // = 1/R_total = 7.0 W/(m²·K)
-        let tau = c_total / h_tr_ms;          // = C_m / H_tr_ms = C_total * R_total  [s]
+        let h_tr_ms = 1.0 / r_total; // = 1/R_total = 7.0 W/(m²·K)
+        let tau = c_total / h_tr_ms; // = C_m / H_tr_ms = C_total * R_total  [s]
 
         // --- Boundary conditions ---
         let t_int = 20.0_f64;
@@ -575,9 +575,7 @@ mod tests {
         let q0 = (t_mass_init - t_int) / r_total;
 
         // Analytical reference: q(t) = q_ss + (q0 − q_ss) · exp(−t/τ)
-        let q_analytical = |t_s: f64| -> f64 {
-            q_ss + (q0 - q_ss) * (-t_s / tau).exp()
-        };
+        let q_analytical = |t_s: f64| -> f64 { q_ss + (q0 - q_ss) * (-t_s / tau).exp() };
 
         // --- Solver setup ---
         // dt = 300 s: per-step fraction = dt/tau ≈ 0.0054
@@ -623,7 +621,9 @@ mod tests {
         assert!(
             rel_err_1h < 0.001,
             "t=1h: q_sim={:.10e}, q_ref={:.10e}, rel_err={:.6e} (limit 1e-3)",
-            q_1h_sim, q_1h_ref, rel_err_1h
+            q_1h_sim,
+            q_1h_ref,
+            rel_err_1h
         );
 
         // ---- Checkpoint 2: t = 6 h (= 72 steps × 300 s) ----
@@ -634,7 +634,9 @@ mod tests {
         assert!(
             rel_err_6h < 0.001,
             "t=6h: q_sim={:.10e}, q_ref={:.10e}, rel_err={:.6e} (limit 1e-3)",
-            q_6h_sim, q_6h_ref, rel_err_6h
+            q_6h_sim,
+            q_6h_ref,
+            rel_err_6h
         );
 
         // ---- Checkpoint 3: t = 24 h (= 288 steps × 300 s) ----
@@ -645,7 +647,9 @@ mod tests {
         assert!(
             rel_err_24h < 0.001,
             "t=24h: q_sim={:.10e}, q_ref={:.10e}, rel_err={:.6e} (limit 1e-3)",
-            q_24h_sim, q_24h_ref, rel_err_24h
+            q_24h_sim,
+            q_24h_ref,
+            rel_err_24h
         );
     }
 
@@ -678,7 +682,9 @@ mod tests {
             "tau = C_m / H_tr_ms should equal C_m · R_total: \
              tau_analytical = {:.6e}, tau_from_H_tr_ms = {:.6e}, \
              rel_diff = {:.6e}",
-            tau_analytical, tau_from_h_tr_ms, rel_diff
+            tau_analytical,
+            tau_from_h_tr_ms,
+            rel_diff
         );
 
         // Also verify tau is in the expected physical range for 200 mm concrete.
