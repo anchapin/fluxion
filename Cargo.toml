@@ -166,6 +166,8 @@ quick-xml = "0.41"
 axum = { version = "0.7", default-features = false, features = ["http1", "json", "tokio", "query", "matched-path"] }
 tower = { version = "0.5", features = ["util"] }
 http-body-util = "0.1"
+futures = "0.3"
+async-stream = "0.3"
 
 # Observability for fluxion-rest (Issue #1447):
 #   - `tower-http` brings `TraceLayer` and `RequestId`/`PropagateRequestId`
