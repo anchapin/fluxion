@@ -8,7 +8,7 @@
 //!
 //! - `POST /v1/simulate` — run a simulation against a schema
 //! - `GET /v1/schema/{id}` — fetch a previously imported/used schema
-//! - `POST /v1/import/{osm|gbxml|idf}` — convert an external model file into
+//! - `POST /v1/import/{osm|gbxml|ifc|idf}` — convert an external model file into
 //!   a `SimulationSchemaV1` and store it
 //! - `GET /v1/healthz` — liveness probe
 //! - `GET /v1/openapi.json` — embedded OpenAPI 3.1 document
@@ -61,7 +61,7 @@ use tracing::Level;
 use crate::ai::surrogate::SurrogateManager;
 use crate::api::metrics::{self, metrics_handler};
 use crate::api::schema::{SimulationOutput, SimulationSchema, SimulationSchemaV1};
-use crate::interop::{gbxml, osm};
+use crate::interop::{gbxml, ifc, osm};
 use crate::io::idf::{IdfFile, IdfParser};
 use crate::physics::cta::VectorField;
 use crate::sim::engine::ThermalModel;
@@ -577,7 +577,7 @@ async fn simulate_stream(
 /// Batch simulation handler for `POST /v1/batch`. Runs multiple simulations
 /// concurrently using rayon and returns all results.
 async fn batch_simulate(
-    State(_): State<AppState>,
+    State(_state): State<AppState>,
     Json(req): Json<BatchRequest>,
 ) -> Result<Json<BatchResponse>, ApiError> {
     if req.simulations.is_empty() {
@@ -647,6 +647,10 @@ async fn import_format(
             let schema = SimulationSchemaV1::try_from(idf)
                 .map_err(|e| ApiError::ImportFailed(format!("IDF conversion error: {e}")))?;
             schema
+        }
+        "ifc" => {
+            let tmp = tempfile_for_bytes(&body, "ifc")?;
+            ifc::import_ifc(&tmp).map_err(|e| ApiError::ImportFailed(e.to_string()))?
         }
         other => return Err(ApiError::UnsupportedFormat(other.to_string())),
     };
