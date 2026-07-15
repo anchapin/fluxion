@@ -187,3 +187,33 @@ jobs:
         with:
           python-version: '3.10'
       - run: cargo build --release --verbose
+
+  # -- Issue #1603: GPU smoke test for InferenceBackend::CUDA -------------
+  # Runs on every PR and main push. On CPU-only runners the test skips
+  # gracefully (cuda_ep_available() returns false at runtime). On GPU runners
+  # (self-hosted with NVIDIA GPU) the test executes fully and verifies
+  # CUDA-vs-CPU numerical parity within 0.1%.
+  # Compiling with --features cuda ensures the CUDA EP gate in the source
+  # is exercised even when no physical GPU is present.
+
+  cuda-smoke:
+    name: CUDA Smoke Test (Issue #1603)
+    runs-on: ${{ vars.FLUXION_LINUX_RUNNER || 'ubuntu-latest' }}
+    if: |
+      github.event_name == 'pull_request' ||
+      (github.event_name == 'push' && github.ref == 'refs/heads/main')
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install system dependencies (Linux)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libssl-dev pkg-config libfontconfig1-dev
+      - uses: ./.github/actions/setup-rust-python-env
+        with:
+          python-version: '3.10'
+      - name: Build with CUDA support
+        run: cargo build --features cuda --verbose
+      - name: Run CUDA smoke test
+        run: cargo test --test surrogate_cuda_smoke --features cuda --verbose
+        env:
+          PYO3_PYTHON: /usr/bin/python3
