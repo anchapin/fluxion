@@ -38,6 +38,7 @@ use std::path::PathBuf;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 
+use async_stream::stream;
 use axum::{
     extract::{Path, State},
     http::StatusCode,
@@ -46,8 +47,7 @@ use axum::{
     routing::{get, post},
     Json, Router,
 };
-use async_stream::stream;
-use rayon::iter::{IntoParallelIterator, IndexedParallelIterator, ParallelIterator};
+use rayon::iter::{IndexedParallelIterator, IntoParallelIterator, ParallelIterator};
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 use tokio::sync::{mpsc, Mutex};
@@ -159,15 +159,21 @@ impl AppState {
         self.simulations.lock().await.get(id).map(|state| {
             let (state_enum, progress) = match state {
                 SimulationState::Pending => (SimulationStateEnum::Pending, None),
-                SimulationState::Running { progress } => {
-                    (SimulationStateEnum::Running { progress: *progress }, Some(*progress))
-                }
+                SimulationState::Running { progress } => (
+                    SimulationStateEnum::Running {
+                        progress: *progress,
+                    },
+                    Some(*progress),
+                ),
                 SimulationState::Completed { result: _ } => {
                     (SimulationStateEnum::Completed, Some(1.0))
                 }
-                SimulationState::Failed { error } => {
-                    (SimulationStateEnum::Failed { error: error.clone() }, None)
-                }
+                SimulationState::Failed { error } => (
+                    SimulationStateEnum::Failed {
+                        error: error.clone(),
+                    },
+                    None,
+                ),
             };
             SimulationStatus {
                 id: id.to_string(),
