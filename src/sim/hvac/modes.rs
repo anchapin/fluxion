@@ -54,6 +54,7 @@ impl PredictiveController {
     /// * `rho` - Material density (kg/m³)
     /// * `cp` - Specific heat capacity (J/kg·K)
     /// * `l` - Characteristic length/thickness (m)
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         heating_setpoint: f64,
         cooling_setpoint: f64,
