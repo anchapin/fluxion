@@ -212,7 +212,10 @@ impl PyMultiZoneThermalModel {
     /// - "cooling_mw": Peak cooling power in MW
     /// - "heating_timestep": Timestep index when peak heating occurred
     /// - "cooling_timestep": Timestep index when peak cooling occurred
-    pub fn get_zone_peaks(&self, zone_identifier: &Bound<'_, PyAny>) -> PyResult<HashMap<String, PyObject>> {
+    pub fn get_zone_peaks(
+        &self,
+        zone_identifier: &Bound<'_, PyAny>,
+    ) -> PyResult<HashMap<String, PyObject>> {
         let zone_idx = if let Ok(idx) = zone_identifier.extract::<usize>() {
             idx
         } else if let Ok(name) = zone_identifier.extract::<String>() {
@@ -259,10 +262,22 @@ impl PyMultiZoneThermalModel {
 
         Python::with_gil(|py| {
             let mut result = HashMap::new();
-            result.insert("heating_mw".to_string(), (heating_kw[zone_idx] / 1000.0).to_object(py));
-            result.insert("cooling_mw".to_string(), (cooling_kw[zone_idx] / 1000.0).to_object(py));
-            result.insert("heating_timestep".to_string(), heating_timesteps[zone_idx].to_object(py));
-            result.insert("cooling_timestep".to_string(), cooling_timesteps[zone_idx].to_object(py));
+            result.insert(
+                "heating_mw".to_string(),
+                (heating_kw[zone_idx] / 1000.0).to_object(py),
+            );
+            result.insert(
+                "cooling_mw".to_string(),
+                (cooling_kw[zone_idx] / 1000.0).to_object(py),
+            );
+            result.insert(
+                "heating_timestep".to_string(),
+                heating_timesteps[zone_idx].to_object(py),
+            );
+            result.insert(
+                "cooling_timestep".to_string(),
+                cooling_timesteps[zone_idx].to_object(py),
+            );
             Ok(result)
         })
     }
