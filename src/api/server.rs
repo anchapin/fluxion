@@ -61,11 +61,7 @@ use tracing::Level;
 use crate::ai::surrogate::SurrogateManager;
 use crate::api::metrics::{self, metrics_handler};
 use crate::api::schema::{SimulationOutput, SimulationSchema, SimulationSchemaV1};
-<<<<<<< HEAD
 use crate::interop::{gbxml, osm};
-=======
-use crate::interop::{gbxml, osm};
->>>>>>> e6a134f (feat: implement IDF epJSON parsing and wire REST API /v1/import/idf (#1610))
 use crate::io::idf::{IdfFile, IdfParser};
 use crate::physics::cta::VectorField;
 use crate::sim::engine::ThermalModel;
