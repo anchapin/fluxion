@@ -134,6 +134,34 @@ pub trait VentilationSchedule: Debug + Send + Sync {
     fn clone_box(&self) -> Box<dyn VentilationSchedule>;
 }
 
+/// Computes the forced-convection multiplier for h_tr_is based on ACH.
+///
+/// Uses the ASHRAE/EnergyPlus empirical correlation for interior forced convection:
+/// `h_c = h_c_still + 0.84 * ACH^0.8` [W/m²K]
+///
+/// Where:
+/// - `h_c_still = 3.45 W/m²K` (ASHRAE 140 simplified 5R1C still-air value)
+/// - ACH is in air changes per hour
+///
+/// This gives approximately:
+/// - ACH=0.5: ratio ≈ 1.14× (daytime baseline)
+/// - ACH=3:   ratio ≈ 1.59× (Case 950 night vent threshold)
+/// - ACH=13.14: ratio ≈ 2.91× (Case 650/950 spec night vent ACH=13.14)
+/// - ACH=40:  ratio ≈ 5.66× (theoretical high-ACH night vent)
+///
+/// Reference: ASHRAE Handbook — Fundamentals (ch. 4), EnergyPlus Engineering Reference.
+/// Issue #1279, Issue #1624.
+pub fn h_tr_is_ach_multiplier(ach: f64) -> f64 {
+    const H_C_STILL: f64 = 3.45; // W/m²K - ASHRAE 140 simplified still-air value
+    if ach <= 0.0 {
+        1.0
+    } else {
+        // h_c_forced = h_c_still + 0.84 * ACH^0.8
+        let h_c_forced = H_C_STILL + 0.84 * ach.powf(0.8);
+        h_c_forced / H_C_STILL
+    }
+}
+
 /// A constant ventilation schedule.
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 pub struct ConstantVentilation {
@@ -591,5 +619,71 @@ mod tests {
     fn test_weather_dependent_ventilation_fallback_full_open() {
         let vent = WeatherDependentVentilation::new(0.3, 0.3, 2.0, 26.0, 18.0);
         assert_eq!(vent.full_open_temp, 31.0);
+    }
+
+    // =============================================================================
+    // Issue #1624: Forced-convection h_tr_is boost during high ACH night flush
+    // =============================================================================
+
+    #[test]
+    fn test_h_tr_is_ach_multiplier_zero_ach() {
+        // Zero or negative ACH should return 1.0 (no boost)
+        assert_eq!(h_tr_is_ach_multiplier(0.0), 1.0);
+        assert_eq!(h_tr_is_ach_multiplier(-1.0), 1.0);
+    }
+
+    #[test]
+    fn test_h_tr_is_ach_multiplier_baseline() {
+        // ACH=0.5: ratio ≈ 1.14× (daytime baseline, below night flush threshold)
+        let multiplier = h_tr_is_ach_multiplier(0.5);
+        assert!((multiplier - 1.14).abs() < 0.01);
+    }
+
+    #[test]
+    fn test_h_tr_is_ach_multiplier_night_flush_threshold() {
+        // ACH=3.0: ratio ≈ 1.59× (Case 950 night vent threshold)
+        let multiplier = h_tr_is_ach_multiplier(3.0);
+        assert!((multiplier - 1.59).abs() < 0.01);
+    }
+
+    #[test]
+    fn test_h_tr_is_ach_multiplier_high_ach() {
+        // ACH=13.14: ratio ≈ 2.91× (Case 650/950 spec night vent ACH=13.14)
+        let multiplier = h_tr_is_ach_multiplier(13.14);
+        assert!((multiplier - 2.91).abs() < 0.02);
+    }
+
+    #[test]
+    fn test_h_tr_is_ach_multiplier_very_high_ach() {
+        // ACH=40: ratio ≈ 5.66× (theoretical high-ACH night vent)
+        let multiplier = h_tr_is_ach_multiplier(40.0);
+        assert!((multiplier - 5.66).abs() < 0.02);
+    }
+
+    #[test]
+    fn test_h_tr_is_ach_multiplier_monotonic_increase() {
+        // Multiplier should increase monotonically with ACH
+        let m1 = h_tr_is_ach_multiplier(1.0);
+        let m2 = h_tr_is_ach_multiplier(5.0);
+        let m3 = h_tr_is_ach_multiplier(10.0);
+        let m4 = h_tr_is_ach_multiplier(20.0);
+        assert!(m1 < m2);
+        assert!(m2 < m3);
+        assert!(m3 < m4);
+    }
+
+    #[test]
+    fn test_h_tr_is_ach_multiplier_ach_3_threshold_boost() {
+        // Verify boost activates at ACH >= 3.0 (night flush threshold)
+        let multiplier_below = h_tr_is_ach_multiplier(2.9);
+        let multiplier_at = h_tr_is_ach_multiplier(3.0);
+        let multiplier_above = h_tr_is_ach_multiplier(4.0);
+
+        // Below threshold: multiplier < 1.59
+        assert!(multiplier_below < 1.59);
+        // At threshold: multiplier ≈ 1.59
+        assert!((multiplier_at - 1.59).abs() < 0.01);
+        // Above threshold: multiplier > 1.59
+        assert!(multiplier_above > 1.59);
     }
 }
