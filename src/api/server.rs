@@ -46,9 +46,11 @@ use axum::{
     routing::{get, post},
     Json, Router,
 };
+use async_stream::stream;
+use rayon::iter::{IntoParallelIterator, IndexedParallelIterator, ParallelIterator};
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
-use tokio::sync::Mutex;
+use tokio::sync::{mpsc, Mutex};
 use tower::ServiceBuilder;
 use tower_http::{
     request_id::{MakeRequestUuid, PropagateRequestIdLayer, SetRequestIdLayer},
@@ -66,6 +68,9 @@ use crate::sim::engine::ThermalModel;
 /// Identifier prefix for schemas persisted by the in-memory store.
 const SCHEMA_ID_PREFIX: &str = "sch-";
 
+/// Identifier prefix for simulations tracked for async status.
+const SIM_ID_PREFIX: &str = "sim-";
+
 /// Shared application state — held inside an [`axum::extract::State`] so every
 /// handler can mutate the same schema store. The store is process-local (in
 /// scope per #1342) and is intentionally behind a `tokio::sync::Mutex` to
@@ -73,7 +78,40 @@ const SCHEMA_ID_PREFIX: &str = "sch-";
 #[derive(Clone, Default)]
 pub struct AppState {
     schemas: Arc<Mutex<HashMap<String, SimulationSchemaV1>>>,
+    simulations: Arc<Mutex<HashMap<String, SimulationState>>>,
     next_id: Arc<AtomicU64>,
+}
+
+/// Simulation status for async polling via `GET /v1/simulation/:id/status`.
+#[derive(Debug, Clone, Serialize)]
+pub struct SimulationStatus {
+    pub id: String,
+    pub state: SimulationStateEnum,
+    pub progress: Option<f32>,
+    pub result: Option<SimulateResponse>,
+}
+
+/// State machine for async simulations.
+#[derive(Debug, Clone, Serialize)]
+#[serde(tag = "state")]
+pub enum SimulationStateEnum {
+    #[serde(rename = "pending")]
+    Pending,
+    #[serde(rename = "running")]
+    Running { progress: f32 },
+    #[serde(rename = "completed")]
+    Completed,
+    #[serde(rename = "failed")]
+    Failed { error: String },
+}
+
+/// Internal simulation state with result container.
+#[derive(Debug, Clone)]
+pub enum SimulationState {
+    Pending,
+    Running { progress: f32 },
+    Completed { result: SimulationOutput },
+    Failed { error: String },
 }
 
 impl AppState {
@@ -81,6 +119,12 @@ impl AppState {
     fn next_id(&self) -> String {
         let n = self.next_id.fetch_add(1, Ordering::Relaxed);
         format!("{}{}", SCHEMA_ID_PREFIX, n)
+    }
+
+    /// Allocate a new monotonically-increasing simulation id.
+    fn next_sim_id(&self) -> String {
+        let n = self.next_id.fetch_add(1, Ordering::Relaxed);
+        format!("{}{}", SIM_ID_PREFIX, n)
     }
 
     /// Store a schema and return its assigned id.
@@ -93,6 +137,45 @@ impl AppState {
     /// Look up a previously-stored schema by id.
     pub async fn get(&self, id: &str) -> Option<SimulationSchemaV1> {
         self.schemas.lock().await.get(id).cloned()
+    }
+
+    /// Register a new simulation and return its id.
+    pub async fn register_simulation(&self) -> String {
+        let id = self.next_sim_id();
+        self.simulations
+            .lock()
+            .await
+            .insert(id.clone(), SimulationState::Pending);
+        id
+    }
+
+    /// Update simulation state.
+    pub async fn update_simulation(&self, id: &str, state: SimulationState) {
+        self.simulations.lock().await.insert(id.to_string(), state);
+    }
+
+    /// Get simulation status for polling.
+    pub async fn get_simulation_status(&self, id: &str) -> Option<SimulationStatus> {
+        self.simulations.lock().await.get(id).map(|state| {
+            let (state_enum, progress) = match state {
+                SimulationState::Pending => (SimulationStateEnum::Pending, None),
+                SimulationState::Running { progress } => {
+                    (SimulationStateEnum::Running { progress: *progress }, Some(*progress))
+                }
+                SimulationState::Completed { result: _ } => {
+                    (SimulationStateEnum::Completed, Some(1.0))
+                }
+                SimulationState::Failed { error } => {
+                    (SimulationStateEnum::Failed { error: error.clone() }, None)
+                }
+            };
+            SimulationStatus {
+                id: id.to_string(),
+                state: state_enum,
+                progress,
+                result: None,
+            }
+        })
     }
 
     /// Number of stored schemas (for tests / diagnostics).
@@ -184,6 +267,25 @@ pub struct ImportResponse {
     pub schema: SimulationSchemaV1,
 }
 
+/// Request body for `POST /v1/batch`.
+#[derive(Debug, Clone, Deserialize)]
+pub struct BatchRequest {
+    pub simulations: Vec<SimulateRequest>,
+}
+
+/// Response body for `POST /v1/batch`.
+#[derive(Debug, Clone, Serialize)]
+pub struct BatchResponse {
+    pub results: Vec<Result<SimulateResponse, String>>,
+}
+
+/// SSE event payload for per-timestep zone temperatures.
+#[derive(Debug, Clone, Serialize)]
+pub struct TimestepEvent {
+    pub timestep: usize,
+    pub zone_temperatures: Vec<f64>,
+}
+
 /// Errors that handlers convert to HTTP responses. Kept inside the module so
 /// the public `AppState` / `router` API stays small.
 #[derive(Debug, Error)]
@@ -192,6 +294,8 @@ pub enum ApiError {
     InvalidSchema(String),
     #[error("schema id not found: {0}")]
     SchemaNotFound(String),
+    #[error("simulation id not found: {0}")]
+    SimulationNotFound(String),
     #[error("format '{0}' is not supported by this endpoint")]
     UnsupportedFormat(String),
     #[error("idf import is not yet implemented")]
@@ -200,6 +304,8 @@ pub enum ApiError {
     ImportFailed(String),
     #[error("simulation failed: {0}")]
     SimulationFailed(String),
+    #[error("batch request is empty")]
+    EmptyBatch,
 }
 
 impl IntoResponse for ApiError {
@@ -207,12 +313,14 @@ impl IntoResponse for ApiError {
         let (status, kind) = match &self {
             ApiError::InvalidSchema(_) => (StatusCode::BAD_REQUEST, "invalid_schema"),
             ApiError::SchemaNotFound(_) => (StatusCode::NOT_FOUND, "schema_not_found"),
+            ApiError::SimulationNotFound(_) => (StatusCode::NOT_FOUND, "simulation_not_found"),
             ApiError::UnsupportedFormat(_) => (StatusCode::BAD_REQUEST, "unsupported_format"),
             ApiError::IdfNotImplemented => (StatusCode::NOT_IMPLEMENTED, "not_implemented"),
             ApiError::ImportFailed(_) => (StatusCode::UNPROCESSABLE_ENTITY, "import_failed"),
             ApiError::SimulationFailed(_) => {
                 (StatusCode::INTERNAL_SERVER_ERROR, "simulation_failed")
             }
+            ApiError::EmptyBatch => (StatusCode::BAD_REQUEST, "empty_batch"),
         };
         let body = Json(serde_json::json!({
             "error": {
@@ -371,6 +479,139 @@ async fn simulate(
     Ok(Json(SimulateResponse { schema_id, output }))
 }
 
+/// SSE streaming handler for `POST /v1/simulate/stream`. Emits one SSE event
+/// per timestep with the current zone temperatures.
+async fn simulate_stream(
+    State(state): State<AppState>,
+    Json(req): Json<SimulateRequest>,
+) -> Result<Response, ApiError> {
+    let schema = req.schema.into_v1();
+    let options = req.options;
+    let num_zones = schema.geometry.zones.len().max(1);
+
+    let heating = schema.controls.zone_control.heating_setpoint;
+    let cooling = schema.controls.zone_control.cooling_setpoint;
+    if heating >= cooling {
+        return Err(ApiError::InvalidSchema(format!(
+            "heating_setpoint ({heating}) must be < cooling_setpoint ({cooling})"
+        )));
+    }
+    if schema.geometry.zones.is_empty() {
+        return Err(ApiError::InvalidSchema(
+            "geometry.zones must contain at least one zone".to_string(),
+        ));
+    }
+
+    let steps = options.years as usize * 8760;
+    let surrogates = SurrogateManager::new().map_err(|e| {
+        ApiError::SimulationFailed(format!("failed to create SurrogateManager: {e}"))
+    })?;
+
+    let (tx, rx) = mpsc::channel::<Result<TimestepEvent, ApiError>>(100);
+
+    tokio::spawn(async move {
+        let mut model = ThermalModel::<VectorField>::new(num_zones);
+        for zone_idx in 0..model.num_zones {
+            model.heating_setpoints.as_mut_slice()[zone_idx] = heating;
+            model.cooling_setpoints.as_mut_slice()[zone_idx] = cooling;
+        }
+
+        let dt_seconds = model.calculate_timestep_seconds();
+        let _ = model.solve_timesteps_with_dt(
+            steps,
+            &surrogates,
+            options.use_surrogates,
+            None,
+            None,
+            None,
+            dt_seconds,
+        );
+
+        if let Some(hourly_temps) = model.get_hourly_temperatures() {
+            for (timestep, zone_temps) in hourly_temps.iter().enumerate() {
+                let event = TimestepEvent {
+                    timestep,
+                    zone_temperatures: zone_temps.clone(),
+                };
+                if tx.send(Ok(event)).await.is_err() {
+                    break;
+                }
+            }
+        }
+    });
+
+    let stream = stream! {
+        let mut rx = rx;
+        while let Some(item) = rx.recv().await {
+            match item {
+                Ok(event) => {
+                    yield Ok::<_, std::convert::Infallible>(format!("data: {}\n\n", serde_json::to_string(&event).unwrap()));
+                }
+                Err(e) => {
+                    yield Ok::<_, std::convert::Infallible>(format!("data: {{\"error\": \"{}\"}}\n\n", e));
+                }
+            }
+        }
+    };
+
+    let _ = state.store(schema).await;
+
+    let response = Response::builder()
+        .status(StatusCode::OK)
+        .header("Content-Type", "text/event-stream")
+        .header("Cache-Control", "no-cache")
+        .header("Connection", "keep-alive")
+        .body(axum::body::Body::from_stream(stream))
+        .unwrap();
+
+    Ok(response)
+}
+
+/// Batch simulation handler for `POST /v1/batch`. Runs multiple simulations
+/// concurrently using rayon and returns all results.
+async fn batch_simulate(
+    State(state): State<AppState>,
+    Json(req): Json<BatchRequest>,
+) -> Result<Json<BatchResponse>, ApiError> {
+    if req.simulations.is_empty() {
+        return Err(ApiError::EmptyBatch);
+    }
+
+    let schemas: Vec<_> = req
+        .simulations
+        .iter()
+        .map(|r| r.schema.clone().into_v1())
+        .collect();
+    let opts: Vec<_> = req.simulations.iter().map(|r| r.options.clone()).collect();
+
+    let results = schemas
+        .into_par_iter()
+        .zip(opts.into_par_iter())
+        .map(|(schema, options)| {
+            run_simulation(&schema, options.years, options.use_surrogates)
+                .map(|output| SimulateResponse {
+                    schema_id: None,
+                    output,
+                })
+                .map_err(|e| e.to_string())
+        })
+        .collect();
+
+    Ok(Json(BatchResponse { results }))
+}
+
+/// Get simulation status for async polling via `GET /v1/simulation/:id/status`.
+async fn get_simulation_status(
+    State(state): State<AppState>,
+    Path(id): Path<String>,
+) -> Result<Json<SimulationStatus>, ApiError> {
+    state
+        .get_simulation_status(&id)
+        .await
+        .map(Json)
+        .ok_or(ApiError::SimulationNotFound(id))
+}
+
 /// Import a file from one of the supported external formats. The body is the
 /// raw file bytes; the path parameter selects the decoder.
 async fn import_format(
@@ -479,6 +720,9 @@ pub fn router(state: AppState) -> Router {
         .route("/v1/openapi.json", get(openapi_json))
         .route("/v1/openapi.yaml", get(openapi_yaml))
         .route("/v1/simulate", post(simulate))
+        .route("/v1/simulate/stream", post(simulate_stream))
+        .route("/v1/batch", post(batch_simulate))
+        .route("/v1/simulation/:id/status", get(get_simulation_status))
         .route("/v1/schema/:id", get(get_schema))
         .route("/v1/import/:fmt", post(import_format))
         .with_state(state)
@@ -625,6 +869,9 @@ mod tests {
             "/v1/openapi.json",
             "/v1/openapi.yaml",
             "/v1/simulate",
+            "/v1/simulate/stream",
+            "/v1/batch",
+            "/v1/simulation/:id/status",
             "/v1/schema/:id",
             "/v1/import/:fmt",
         ];
