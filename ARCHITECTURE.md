@@ -651,8 +651,8 @@ The Phase 3 harness ships the **geometric** validation surface that future `Gaug
 
 ### Module 7: Quantum Annealing Bridge (Phase 2b — #1464)
 
-**Source**: `src/quantum/qubo_mapping.rs` (new top-level `src/quantum/` module, registered in `src/lib.rs`).
-**Purpose**: Map the continuous `ThermalManifold` tensors into a Quadratic Unconstrained Binary Optimization (QUBO) matrix `Q` suitable for submission to a quantum annealer (D-Wave Advantage and successors). No production annealer SDK is wired up — this is the **mathematical scaffolding** for Phase 2c; the actual annealer call is the planned follow-up.
+**Source**: `src/quantum/qubo_mapping.rs`, `src/quantum/dwave_client.rs` (top-level `src/quantum/` module, registered in `src/lib.rs`).
+**Purpose**: Map the continuous `ThermalManifold` tensors into a Quadratic Unconstrained Binary Optimization (QUBO) matrix `Q` suitable for submission to a quantum annealer (D-Wave Advantage and successors), via the `DwaveClient` trait. The `DwaveClient` trait is object-safe and mockable, enabling tests without a live QPU.
 
 | Input | Type | Source |
 |-------|------|--------|
@@ -746,6 +746,7 @@ These traits support the main physics pipeline and should also be documented:
 | `VariableCapacityEquipment` | `src/sim/hvac/equipment.rs` | Variable-speed equipment |
 | `GroundTemperature` | `src/sim/boundary.rs` | Ground temp boundary condition |
 | `BatchOrchestrator` | `src/sim/orchestrator.rs` | Per-population CPU surrogate compute scheduling (rayon `par_chunks`, #1439) |
+| `DwaveClient` | `src/quantum/dwave_client.rs` | Object-safe trait for submitting Ising problems to a D-Wave sampler (QPU or hybrid); mockable for tests |
 
 ### Surface Heat Flux Trait Hierarchy
 

@@ -35,3 +35,6 @@
 // and flat manifold scenes — see `tests.rs` for the round-trip assertion.
 
 pub mod qubo_mapping;
+
+#[cfg(feature = "dwave")]
+pub mod dwave_client;
