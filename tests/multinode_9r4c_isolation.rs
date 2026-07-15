@@ -43,9 +43,7 @@
 use fluxion::physics::multi_node_solver::MultiNodeSolver;
 use fluxion::physics::solver_registry::{registry_keys, SolverRegistry};
 use fluxion::physics::solver_trait::HeatConductionSolver;
-use fluxion::physics::units::{
-    FromF64, HeatTransferCoefficient, Temperature, Time, ToF64,
-};
+use fluxion::physics::units::{FromF64, HeatTransferCoefficient, Temperature, Time, ToF64};
 use fluxion::physics::wall_spec::{LayerSpec, WallSpec};
 
 // ---------------------------------------------------------------------------
@@ -137,7 +135,10 @@ fn test_steady_state_flux_analytical_200mm_concrete() {
     let expected_flux = (t_ext - t_int) / r_total;
 
     let actual_flux = solver
-        .steady_state_flux(Temperature::from_value(t_int), Temperature::from_value(t_ext))
+        .steady_state_flux(
+            Temperature::from_value(t_int),
+            Temperature::from_value(t_ext),
+        )
         .expect("steady_state_flux must succeed")
         .to_value();
 
@@ -162,7 +163,10 @@ fn test_steady_state_flux_analytical_lightweight() {
     let expected_flux = (t_ext - t_int) / r_total;
 
     let actual_flux = solver
-        .steady_state_flux(Temperature::from_value(t_int), Temperature::from_value(t_ext))
+        .steady_state_flux(
+            Temperature::from_value(t_int),
+            Temperature::from_value(t_ext),
+        )
         .expect("steady_state_flux must succeed")
         .to_value();
 
@@ -187,7 +191,10 @@ fn test_steady_state_flux_analytical_insulated() {
     let expected_flux = (t_ext - t_int) / r_total;
 
     let actual_flux = solver
-        .steady_state_flux(Temperature::from_value(t_int), Temperature::from_value(t_ext))
+        .steady_state_flux(
+            Temperature::from_value(t_int),
+            Temperature::from_value(t_ext),
+        )
         .expect("steady_state_flux must succeed")
         .to_value();
 
@@ -671,10 +678,7 @@ fn test_trait_lifecycle() {
         HeatTransferCoefficient::from_value(25.0),
     )
     .expect("step should succeed");
-    assert!(
-        flux.to_value().is_finite(),
-        "Flux should be finite"
-    );
+    assert!(flux.to_value().is_finite(), "Flux should be finite");
 }
 
 /// Step before initialization should return InvalidConfig error.
@@ -785,12 +789,8 @@ fn test_wall_properties_documentation() {
     println!(
         "\n┌─────────────────────┬──────────────┬──────────────┬──────────────┬──────────────┐"
     );
-    println!(
-        "│ Wall Type           │ R [m²·K/W]  │ C [kJ/m²·K] │ τ [hours]   │ h_tr_is     │"
-    );
-    println!(
-        "├─────────────────────┼──────────────┼──────────────┼──────────────┼──────────────┤"
-    );
+    println!("│ Wall Type           │ R [m²·K/W]  │ C [kJ/m²·K] │ τ [hours]   │ h_tr_is     │");
+    println!("├─────────────────────┼──────────────┼──────────────┼──────────────┼──────────────┤");
 
     for (name, wall) in &walls {
         let r = wall.total_r_value();
@@ -804,7 +804,5 @@ fn test_wall_properties_documentation() {
         );
     }
 
-    println!(
-        "└─────────────────────┴──────────────┴──────────────┴──────────────┴──────────────┘"
-    );
+    println!("└─────────────────────┴──────────────┴──────────────┴──────────────┴──────────────┘");
 }
