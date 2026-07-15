@@ -252,8 +252,8 @@ fn test_inertia_factor_sign_parity() {
     let c_sp = 27.0_f64;
 
     for &(zone_temp, mass_temp, temp_rate) in cases {
-        let mut static_ctrl = PredictiveController::new(h_sp, c_sp);
-        let mut dynamic_ctrl = PredictiveController::new(h_sp, c_sp);
+        let mut static_ctrl = PredictiveController::with_tuning(h_sp, c_sp, 0.1, 0.01);
+        let mut dynamic_ctrl = PredictiveController::with_tuning(h_sp, c_sp, 0.1, 0.01);
 
         let (mode_static, mod_static) =
             static_ctrl.calculate_modulation(zone_temp, mass_temp, temp_rate);
@@ -307,7 +307,7 @@ fn test_inertia_factor_physical_direction() {
     // Mass cooler than zone: inertia_factor = α·(zone−mass) > 0.
     // Correct behavior: lower the effective heating setpoint so heating
     // starts at a HIGHER zone temperature (anticipates further cooling).
-    let mut ctrl = PredictiveController::new(20.0, 27.0);
+    let mut ctrl = PredictiveController::with_tuning(20.0, 27.0, 0.1, 0.01);
     // Pick inputs where the mass is 4 °C cooler than the zone. Inertia
     // = 0.1 · 4 = 0.4. We pick a zone_temp just barely above the
     // setpoint-adjusted threshold so the inertia term is the deciding
@@ -340,7 +340,7 @@ fn test_inertia_factor_physical_direction() {
     // controller should anticipate warming and raise the effective
     // heating setpoint, so the zone has to fall further to trigger
     // heating.
-    let mut ctrl2 = PredictiveController::new(20.0, 27.0);
+    let mut ctrl2 = PredictiveController::with_tuning(20.0, 27.0, 0.1, 0.01);
     let (mode2, _) = ctrl2.calculate_modulation(19.3, 23.3, 0.0); // mass 4°C warmer
                                                                   // inertia = 0.1·(19.3−23.3) = −0.4
                                                                   // h_eff = 20.0 − (−0.4) = 20.4, threshold 19.9

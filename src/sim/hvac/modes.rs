@@ -12,7 +12,9 @@ use serde::{Deserialize, Serialize};
 /// to smooth response and prevent oscillation, more realistic than simple
 /// setpoint hysteresis for high-thermal-mass buildings.
 ///
-/// TODO: Implement full predictive control logic in Plan 15-04
+/// Physics-based gain derivation (Issue #1614):
+/// - α = 1 - exp(-dt/τ) where τ = Cm / h_ms (first-order thermal response)
+/// - β = dt · α_diff where α_diff = k / (ρ · cp · L²) (thermal diffusion timescale)
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PredictiveController {
     /// Heating setpoint (°C)
@@ -21,38 +23,111 @@ pub struct PredictiveController {
     pub cooling_setpoint: f64,
     /// Deadband tolerance (°C) - prevents rapid cycling near setpoints
     pub deadband_tolerance: f64,
-    /// Thermal inertia gain factor (α) - tuning parameter
+    /// Thermal inertia gain factor (α) - derived from τ = Cm/h_ms
     pub thermal_inertia_gain: f64,
-    /// Temperature rate gain factor (β) - tuning parameter
+    /// Temperature rate gain factor (β) - derived from thermal diffusion
     pub temp_rate_gain: f64,
     /// Previous zone temperature (for calculating dT/dt)
     pub previous_zone_temp: f64,
+    /// Thermal capacitance (J/K) - used for gain derivation
+    pub cm: f64,
+    /// Mass-to-surface heat transfer coefficient (W/K) - used for gain derivation
+    pub h_ms: f64,
+    /// Timestep (seconds) - used for gain derivation
+    pub dt: f64,
 }
 
 impl PredictiveController {
-    /// Create a new predictive controller with default tuning.
+    /// Create a new predictive controller with physics-based gains (Issue #1614).
     ///
-    /// Default tuning values:
-    /// - thermal_inertia_gain: 0.1 (moderate thermal inertia influence)
-    /// - temp_rate_gain: 0.01 (small rate influence to prevent overshoot)
-    pub fn new(heating_setpoint: f64, cooling_setpoint: f64) -> Self {
+    /// Gains are derived from thermal parameters rather than empirical tuning:
+    /// - α = 1 - exp(-dt/τ) where τ = Cm / h_ms (first-order thermal response)
+    /// - β = dt · k / (ρ · cp · L²) (thermal diffusion timescale)
+    ///
+    /// # Arguments
+    /// * `heating_setpoint` - Heating setpoint (°C)
+    /// * `cooling_setpoint` - Cooling setpoint (°C)
+    /// * `cm` - Thermal capacitance (J/K)
+    /// * `h_ms` - Mass-to-surface heat transfer coefficient (W/K)
+    /// * `dt` - Timestep (seconds)
+    /// * `k` - Thermal conductivity (W/m·K)
+    /// * `rho` - Material density (kg/m³)
+    /// * `cp` - Specific heat capacity (J/kg·K)
+    /// * `l` - Characteristic length/thickness (m)
+    pub fn new(
+        heating_setpoint: f64,
+        cooling_setpoint: f64,
+        cm: f64,
+        h_ms: f64,
+        dt: f64,
+        k: f64,
+        rho: f64,
+        cp: f64,
+        l: f64,
+    ) -> Self {
+        let (alpha, beta) = Self::compute_gains(cm, h_ms, dt, k, rho, cp, l);
         Self {
             heating_setpoint,
             cooling_setpoint,
             deadband_tolerance: 0.5,
-            thermal_inertia_gain: 0.1, // Tuned against ASHRAE 800-810
-            temp_rate_gain: 0.01,      // Tuned against ASHRAE Guideline 14
-            previous_zone_temp: 20.0,  // Initialize at comfortable temp
+            thermal_inertia_gain: alpha,
+            temp_rate_gain: beta,
+            previous_zone_temp: 20.0,
+            cm,
+            h_ms,
+            dt,
         }
     }
 
-    /// Create a predictive controller with custom tuning parameters.
+    /// Compute physics-based gain factors from thermal parameters.
+    ///
+    /// α = 1 - exp(-dt/τ) where τ = Cm / h_ms is the thermal time constant.
+    /// β = dt · α_diff where α_diff = k / (ρ · cp · L²) is the thermal diffusion rate.
+    ///
+    /// # Arguments
+    /// * `cm` - Thermal capacitance (J/K)
+    /// * `h_ms` - Mass-to-surface heat transfer coefficient (W/K)
+    /// * `dt` - Timestep (seconds)
+    /// * `k` - Thermal conductivity (W/m·K)
+    /// * `rho` - Material density (kg/m³)
+    /// * `cp` - Specific heat capacity (J/kg·K)
+    /// * `l` - Characteristic length (m)
+    ///
+    /// # Returns
+    /// Tuple of (α, β) gain factors
+    fn compute_gains(cm: f64, h_ms: f64, dt: f64, k: f64, rho: f64, cp: f64, l: f64) -> (f64, f64) {
+        // Thermal time constant τ = Cm / h_ms (seconds)
+        // For first-order system response over timestep dt:
+        // α = 1 - exp(-dt/τ) (discrete-time first-order lag)
+        let tau = if h_ms > 0.0 { cm / h_ms } else { f64::INFINITY };
+        let alpha = if tau.is_infinite() || tau <= 0.0 {
+            0.0
+        } else {
+            1.0_f64 - (-dt / tau).exp()
+        };
+
+        // Thermal diffusion rate α_diff = k / (ρ · cp · L²) [1/s]
+        // This represents how quickly heat diffuses through the material.
+        // When Cm = 0 or h_ms = 0, there's no thermal coupling, so both gains are zero.
+        let alpha_diff = if cm <= 0.0 || h_ms <= 0.0 || rho <= 0.0 || cp <= 0.0 || l <= 0.0 {
+            0.0
+        } else {
+            k / (rho * cp * l * l)
+        };
+        // β = dt · α_diff (dimensionless rate gain)
+        let beta = dt * alpha_diff;
+
+        (alpha, beta)
+    }
+
+    /// Create a predictive controller with custom tuning parameters (backward compatibility).
     ///
     /// # Arguments
     /// * `heating_setpoint` - Heating setpoint (°C)
     /// * `cooling_setpoint` - Cooling setpoint (°C)
     /// * `thermal_inertia_gain` - Thermal inertia gain factor (α)
     /// * `temp_rate_gain` - Temperature rate gain factor (β)
+    #[allow(dead_code)]
     pub fn with_tuning(
         heating_setpoint: f64,
         cooling_setpoint: f64,
@@ -66,6 +141,9 @@ impl PredictiveController {
             thermal_inertia_gain,
             temp_rate_gain,
             previous_zone_temp: 20.0,
+            cm: 0.0,
+            h_ms: 0.0,
+            dt: 3600.0,
         }
     }
 
@@ -242,9 +320,123 @@ impl PredictiveController {
 mod tests {
     use super::*;
 
+    // =============================================================================
+    // Physics-based gain derivation tests (Issue #1614)
+    // =============================================================================
+
+    #[test]
+    fn test_physics_rc_circuit_tau_1h() {
+        // Issue #1614: RC circuit test for τ=1h, R=100 K/W, C=36 kJ/K
+        // τ = R × C = 100 × 36000 = 3,600,000 s = 1000 h
+        // But the issue says τ=1h, so we use Cm/h_ms to get τ=1h directly
+        //
+        // For τ=1h = 3600s with dt=1h = 3600s:
+        // α = 1 - exp(-dt/τ) = 1 - exp(-1) ≈ 0.632
+        let dt = 3600.0; // 1 hour in seconds
+        let tau = 3600.0; // 1 hour in seconds
+
+        // Compute gains using physics formulas
+        let cm = 36000.0; // 36 kJ/K = 36000 J/K
+        let h_ms = cm / tau; // h_ms = Cm/τ = 10 W/K
+
+        // Concrete properties for β calculation
+        let k = 1.7; // W/m·K (concrete thermal conductivity)
+        let rho = 2300.0; // kg/m³ (concrete density)
+        let cp = 1000.0; // J/kg·K (concrete specific heat)
+        let l = 0.2; // m (characteristic length)
+
+        let (alpha, beta) = PredictiveController::compute_gains(cm, h_ms, dt, k, rho, cp, l);
+
+        // α = 1 - exp(-dt/τ) = 1 - exp(-1) ≈ 0.632
+        let expected_alpha = 1.0_f64 - (-1.0_f64).exp();
+        assert!(
+            (alpha - expected_alpha).abs() < 0.001,
+            "α = {} expected ≈ {}",
+            alpha,
+            expected_alpha
+        );
+
+        // Verify the controller produces correct anticipation factor
+        let controller = PredictiveController::new(20.0, 27.0, cm, h_ms, dt, k, rho, cp, l);
+        assert!((controller.thermal_inertia_gain - expected_alpha).abs() < 0.001);
+    }
+
+    #[test]
+    fn test_physics_thermal_diffusion_timescale() {
+        // Issue #1614: Thermal diffusion timescale test
+        // α_diff = k / (ρ · cp · L²)
+        // For concrete: α_diff = 1.7 / (2300 × 1000 × 0.2²) ≈ 1.85e-5 s⁻¹
+        let k = 1.7; // W/m·K
+        let rho = 2300.0; // kg/m³
+        let cp = 1000.0; // J/kg·K
+        let l = 0.2; // m
+        let dt = 3600.0; // 1 hour
+
+        let alpha_diff_expected = k / (rho * cp * l * l);
+        let beta_expected = dt * alpha_diff_expected;
+
+        let cm = 36000.0; // 36 kJ/K
+        let h_ms = cm / 3600.0; // 10 W/K for τ=1h
+
+        let (_alpha, beta) = PredictiveController::compute_gains(cm, h_ms, dt, k, rho, cp, l);
+
+        // Verify thermal diffusion coefficient
+        let alpha_diff_actual = beta / dt;
+        assert!(
+            (alpha_diff_actual - alpha_diff_expected).abs() < 1e-10,
+            "α_diff = {} expected ≈ {}",
+            alpha_diff_actual,
+            alpha_diff_expected
+        );
+
+        // Verify β = dt × α_diff
+        assert!(
+            (beta - beta_expected).abs() < 1e-10,
+            "β = {} expected ≈ {}",
+            beta,
+            beta_expected
+        );
+    }
+
+    #[test]
+    fn test_physics_gain_derivation_known_rc() {
+        // Test with known RC parameters: τ=2h, R=50 K/W, C=72 kJ/K
+        // τ = R × C = 50 × 72000 = 3,600,000 s = 1000 h (still doesn't match)
+        // Let me use direct τ computation instead
+
+        let dt = 3600.0; // 1 hour
+        let tau = 7200.0; // 2 hours
+
+        // For τ = Cm/h_ms, if we want τ=2h:
+        let cm = 72000.0; // 72 kJ/K
+        let h_ms = cm / tau; // h_ms = 10 W/K
+
+        // Concrete properties
+        let k = 1.7;
+        let rho = 2300.0;
+        let cp = 1000.0;
+        let l = 0.2;
+
+        let (alpha, _) = PredictiveController::compute_gains(cm, h_ms, dt, k, rho, cp, l);
+
+        // α = 1 - exp(-dt/τ) = 1 - exp(-0.5) ≈ 0.393
+        let expected_alpha = 1.0_f64 - (-0.5_f64).exp();
+        assert!(
+            (alpha - expected_alpha).abs() < 0.001,
+            "α = {} expected ≈ {}",
+            alpha,
+            expected_alpha
+        );
+    }
+
+    // =============================================================================
+    // Backward compatibility tests (using with_tuning)
+    // =============================================================================
+
     #[test]
     fn test_predictive_control() {
-        let mut controller = PredictiveController::new(20.0, 27.0);
+        // Use with_tuning for backward compatibility (no thermal params needed)
+        let mut controller = PredictiveController::with_tuning(20.0, 27.0, 0.1, 0.01);
 
         // Test heating mode
         let (mode, modulation) = controller.calculate_modulation(18.0, 19.0, -0.001);
@@ -271,7 +463,7 @@ mod tests {
 
     #[test]
     fn test_thermal_inertia() {
-        let mut controller = PredictiveController::new(20.0, 27.0);
+        let mut controller = PredictiveController::with_tuning(20.0, 27.0, 0.1, 0.01);
 
         // Test with thermal inertia (mass temp cooler than zone temp)
         // This should anticipate cooling and adjust setpoint upward
@@ -286,7 +478,7 @@ mod tests {
 
     #[test]
     fn test_temperature_rate_prediction() {
-        let mut controller = PredictiveController::new(20.0, 27.0);
+        let mut controller = PredictiveController::with_tuning(20.0, 27.0, 0.1, 0.01);
 
         // Test with rising temperature (anticipate overshoot)
         // This should reduce modulation to prevent overshoot
@@ -301,7 +493,7 @@ mod tests {
 
     #[test]
     fn test_deadband_tolerance() {
-        let mut controller = PredictiveController::new(20.0, 27.0);
+        let mut controller = PredictiveController::with_tuning(20.0, 27.0, 0.1, 0.01);
 
         // At heating setpoint (within deadband)
         let (mode, modulation) = controller.calculate_modulation(20.0, 20.0, 0.0);
@@ -326,7 +518,7 @@ mod tests {
 
     #[test]
     fn test_controller_reset() {
-        let mut controller = PredictiveController::new(20.0, 27.0);
+        let mut controller = PredictiveController::with_tuning(20.0, 27.0, 0.1, 0.01);
 
         // Run a few timesteps
         controller.calculate_modulation(22.0, 21.0, 0.001);
@@ -352,7 +544,7 @@ mod tests {
 
     #[test]
     fn test_inertia_factor_calculation() {
-        let controller = PredictiveController::new(20.0, 27.0);
+        let controller = PredictiveController::with_tuning(20.0, 27.0, 0.1, 0.01);
 
         let zone_temp = 22.0;
         let mass_temp = 18.0; // 4°C cooler
@@ -365,7 +557,7 @@ mod tests {
 
     #[test]
     fn test_predictive_factor_calculation() {
-        let controller = PredictiveController::new(20.0, 27.0);
+        let controller = PredictiveController::with_tuning(20.0, 27.0, 0.1, 0.01);
 
         let temp_rate = 0.01; // Rising at 0.01°C/s
 
@@ -377,7 +569,7 @@ mod tests {
 
     #[test]
     fn test_calculate_modulation_with_setpoints() {
-        let mut controller = PredictiveController::new(20.0, 27.0);
+        let mut controller = PredictiveController::with_tuning(20.0, 27.0, 0.1, 0.01);
 
         // Test with dynamic setpoints (e.g. night setback)
         let (mode, modulation) =
@@ -396,5 +588,64 @@ mod tests {
             controller.calculate_modulation_with_setpoints(14.0, 14.0, 0.0, 15.0, 30.0);
         assert_eq!(mode2, HVACMode::Heating);
         assert!(modulation2 > 0.0);
+    }
+
+    #[test]
+    fn test_physics_alpha_with_different_timestep() {
+        // Test that α varies correctly with timestep
+        let cm = 36000.0; // 36 kJ/K
+        let h_ms = 10.0; // gives τ = 3600s = 1h
+        let k = 1.7;
+        let rho = 2300.0;
+        let cp = 1000.0;
+        let l = 0.2;
+
+        // dt = 30 minutes = 1800s, τ = 3600s
+        let (alpha_30min, _) = PredictiveController::compute_gains(cm, h_ms, 1800.0, k, rho, cp, l);
+        // α = 1 - exp(-0.5) ≈ 0.393
+        let expected_30min = 1.0_f64 - (-0.5_f64).exp();
+        assert!((alpha_30min - expected_30min).abs() < 0.001);
+
+        // dt = 1 hour = 3600s, τ = 3600s
+        let (alpha_1h, _) = PredictiveController::compute_gains(cm, h_ms, 3600.0, k, rho, cp, l);
+        // α = 1 - exp(-1) ≈ 0.632
+        let expected_1h = 1.0_f64 - (-1.0_f64).exp();
+        assert!((alpha_1h - expected_1h).abs() < 0.001);
+
+        // dt = 2 hours = 7200s, τ = 3600s
+        let (alpha_2h, _) = PredictiveController::compute_gains(cm, h_ms, 7200.0, k, rho, cp, l);
+        // α = 1 - exp(-2) ≈ 0.865
+        let expected_2h = 1.0_f64 - (-2.0_f64).exp();
+        assert!((alpha_2h - expected_2h).abs() < 0.001);
+
+        // Verify α increases with larger dt relative to τ
+        assert!(alpha_30min < alpha_1h);
+        assert!(alpha_1h < alpha_2h);
+    }
+
+    #[test]
+    fn test_physics_degenerate_cases() {
+        // Test handling of degenerate cases
+        let k = 1.7;
+        let rho = 2300.0;
+        let cp = 1000.0;
+        let l = 0.2;
+
+        // h_ms = 0 (infinite time constant)
+        let (alpha, beta) =
+            PredictiveController::compute_gains(36000.0, 0.0, 3600.0, k, rho, cp, l);
+        assert_eq!(alpha, 0.0); // No thermal response
+        assert_eq!(beta, 0.0);
+
+        // Cm = 0 (instantaneous thermal response)
+        let (alpha, beta) = PredictiveController::compute_gains(0.0, 10.0, 3600.0, k, rho, cp, l);
+        assert_eq!(alpha, 0.0); // Instant response
+        assert_eq!(beta, 0.0);
+
+        // Negative h_ms (physically impossible)
+        let (alpha, beta) =
+            PredictiveController::compute_gains(36000.0, -10.0, 3600.0, k, rho, cp, l);
+        assert_eq!(alpha, 0.0);
+        assert_eq!(beta, 0.0);
     }
 }

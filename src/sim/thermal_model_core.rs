@@ -2682,7 +2682,11 @@ impl ThermalModel<VectorField> {
             hvac_controller: IdealHVACController::new(20.0, 27.0),
 
             // Predictive HVAC controller with thermal inertia (Plan 15-04)
-            predictive_controller: PredictiveController::new(20.0, 27.0),
+            // Note: physics-based gains require thermal parameters (Cm, h_ms, etc.)
+            // which are not available at construction time. Using with_tuning()
+            // with default values; gains should be updated via set_physics_gains()
+            // when thermal parameters become available.
+            predictive_controller: PredictiveController::with_tuning(20.0, 27.0, 0.1, 0.01),
 
             // Cycling loss tracker for equipment (Plan 15-03, 15-04)
             cycling_tracker: CyclingTracker::new(),
