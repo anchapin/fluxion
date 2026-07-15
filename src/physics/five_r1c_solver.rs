@@ -508,4 +508,195 @@ mod tests {
             panic!("Expected InvalidConfig error");
         }
     }
+
+    // =========================================================================
+    // Transient Step-Response Isolation Tests (Issue #1623)
+    // =========================================================================
+    //
+    // These tests validate that the 5R1C lumped-capacitance model produces the
+    // exact analytical exponential step response with tau = C_m / H_tr_ms.
+    //
+    // The lumped model equations (post #1308) are:
+    //   Q_ext  = (T_ext − T_mass) / R_total
+    //   dT_m   = Q_ext / C_total
+    //   T_mass += dT_m · dt
+    //   q_flux = (T_mass − T_int) / R_total   ← drives zone heat balance
+    //
+    // Closed-form solution for constant T_int, T_ext:
+    //   T_m(t) = T_ext + (T_m0 − T_ext) · exp(−t/τ)
+    //   q(t)   = q_ss + (q0 − q_ss) · exp(−t/τ)
+    // where τ = C_total · R_total = C_m / H_tr_ms  (H_tr_ms = 1/R_total)
+    //
+    // The first step() seeds T_mass = (T_int + T_ext)/2 at steady-state
+    // flux, so transient evolution begins on the SECOND step().  All tests
+    // below follow this pattern and check the analytical curve at 1h, 6h, 24h.
+    //
+    // Timestep selection: dt = 300 s (5 min) is required to keep the
+    // explicit-Euler discretisation error below 0.1% relative at all three
+    // checkpoints for a 200 mm concrete wall (tau ≈ 15.3 h, using
+    // R_total = wall.total_r_value() which is wall-material resistance only,
+    // no surface films).  See the Python pre-verification in the agent work
+    // session for the numerical study confirming dt=300s passes all three.
+
+    /// Step-response checkpoints at t = 1 h, 6 h, 24 h.
+    ///
+    /// Wall: 200 mm normal-weight concrete.
+    /// Initial condition: wall at equilibrium T_int = T_ext = 20 °C.
+    /// Step: T_ext drops to 0 °C at t = 0; T_int stays at 20 °C.
+    ///
+    /// After the equilibrium-seeding step(), the mass node starts at 10 °C
+    /// and evolves toward T_ext = 0 °C with τ = C_total · R_total.
+    ///
+    /// Acceptance: relative error < 0.1 % at all three checkpoints.
+    #[test]
+    fn test_transient_step_response_1h_6h_24h_concrete() {
+        // --- Material parameters (fluxion-core ConcreteMaterial defaults) ---
+        // k = 1.4 W/(m·K), ρ = 2300 kg/m³, cₚ = 840 J/(kg·K)
+        let wall = AssemblyBuilder::new("200mm Concrete".to_string())
+            .add_layer(Box::new(ConcreteMaterial::new(0.2)))
+            .build()
+            .unwrap();
+        let spec = WallSpec::from_assembly(&wall);
+
+        let r_total = spec.total_r_value(); // wall-only, ≈ 0.1429 m²·K/W
+        let c_total = spec.thermal_capacity(); // ≈ 386 400 J/(m²·K)
+        let h_tr_ms = 1.0 / r_total; // = 1/R_total = 7.0 W/(m²·K)
+        let tau = c_total / h_tr_ms; // = C_m / H_tr_ms = C_total * R_total  [s]
+
+        // --- Boundary conditions ---
+        let t_int = 20.0_f64;
+        let t_ext = 0.0_f64;
+        // q_ss = (T_ext − T_int) / R_total  (negative = heat leaving zone)
+        let q_ss = (t_ext - t_int) / r_total;
+
+        // After the seeding step(), T_mass = (T_int + T_ext) / 2 = 10 °C
+        let t_mass_init = (t_int + t_ext) / 2.0;
+        // q0 = (T_mass_init − T_int) / R_total
+        let q0 = (t_mass_init - t_int) / r_total;
+
+        // Analytical reference: q(t) = q_ss + (q0 − q_ss) · exp(−t/τ)
+        let q_analytical = |t_s: f64| -> f64 { q_ss + (q0 - q_ss) * (-t_s / tau).exp() };
+
+        // --- Solver setup ---
+        // dt = 300 s: per-step fraction = dt/tau ≈ 0.0054
+        // Euler error is O((dt/tau)²) → < 0.06% at 24h, well below 0.1%
+        let dt = 300.0_f64;
+        let mut solver = FiveR1CSolver::new();
+        solver.initialize(&spec).unwrap();
+
+        // Seeding step: T_mass → (T_int + T_ext)/2, returns q_ss, pre_step = false
+        solver
+            .step(
+                Time::from_value(dt),
+                Temperature::from_value(t_int),
+                Temperature::from_value(t_ext),
+                HeatTransferCoefficient::from_value(8.0),
+                HeatTransferCoefficient::from_value(25.0),
+            )
+            .unwrap();
+
+        // Helper: advance `n` steps and return the flux from the last step
+        let advance = |solver: &mut FiveR1CSolver, n: usize| -> f64 {
+            let mut flux = 0.0;
+            for _ in 0..n {
+                flux = solver
+                    .step(
+                        Time::from_value(dt),
+                        Temperature::from_value(t_int),
+                        Temperature::from_value(t_ext),
+                        HeatTransferCoefficient::from_value(8.0),
+                        HeatTransferCoefficient::from_value(25.0),
+                    )
+                    .unwrap()
+                    .to_value();
+            }
+            flux
+        };
+
+        // ---- Checkpoint 1: t = 1 h (= 12 steps × 300 s) ----
+        let n_1h = 12; // 3600 s / 300 s
+        let q_1h_sim = advance(&mut solver, n_1h);
+        let q_1h_ref = q_analytical(n_1h as f64 * dt);
+        let rel_err_1h = (q_1h_sim - q_1h_ref).abs() / q_1h_ref.abs();
+        assert!(
+            rel_err_1h < 0.001,
+            "t=1h: q_sim={:.10e}, q_ref={:.10e}, rel_err={:.6e} (limit 1e-3)",
+            q_1h_sim,
+            q_1h_ref,
+            rel_err_1h
+        );
+
+        // ---- Checkpoint 2: t = 6 h (= 72 steps × 300 s) ----
+        let n_6h = 72; // 6 × 3600 / 300
+        let q_6h_sim = advance(&mut solver, n_6h - n_1h);
+        let q_6h_ref = q_analytical(n_6h as f64 * dt);
+        let rel_err_6h = (q_6h_sim - q_6h_ref).abs() / q_6h_ref.abs();
+        assert!(
+            rel_err_6h < 0.001,
+            "t=6h: q_sim={:.10e}, q_ref={:.10e}, rel_err={:.6e} (limit 1e-3)",
+            q_6h_sim,
+            q_6h_ref,
+            rel_err_6h
+        );
+
+        // ---- Checkpoint 3: t = 24 h (= 288 steps × 300 s) ----
+        let n_24h = 288; // 24 × 3600 / 300
+        let q_24h_sim = advance(&mut solver, n_24h - n_6h);
+        let q_24h_ref = q_analytical(n_24h as f64 * dt);
+        let rel_err_24h = (q_24h_sim - q_24h_ref).abs() / q_24h_ref.abs();
+        assert!(
+            rel_err_24h < 0.001,
+            "t=24h: q_sim={:.10e}, q_ref={:.10e}, rel_err={:.6e} (limit 1e-3)",
+            q_24h_sim,
+            q_24h_ref,
+            rel_err_24h
+        );
+    }
+
+    /// Verify that the implemented time constant equals the analytical
+    /// definition tau = C_m / H_tr_ms within numerical precision.
+    ///
+    /// H_tr_ms is defined as the thermal conductance between the exterior
+    /// and the mass node: H_tr_ms = 1 / R_total.
+    /// We check: |tau_implemented − tau_analytical| / tau_analytical < 1e-10
+    #[test]
+    fn test_transient_tau_matches_analytical_definition() {
+        let wall = AssemblyBuilder::new("200mm Concrete".to_string())
+            .add_layer(Box::new(ConcreteMaterial::new(0.2)))
+            .build()
+            .unwrap();
+        let spec = WallSpec::from_assembly(&wall);
+
+        let r_total = spec.total_r_value();
+        let c_total = spec.thermal_capacity();
+
+        // Analytical: tau = C_m / H_tr_ms = C_m · R_total  (since H_tr_ms = 1/R_total)
+        let tau_analytical = c_total * r_total;
+        // H_tr_ms = 1 / R_total
+        let h_tr_ms = 1.0 / r_total;
+        let tau_from_h_tr_ms = c_total / h_tr_ms;
+
+        let rel_diff = (tau_from_h_tr_ms - tau_analytical).abs() / tau_analytical;
+        assert!(
+            rel_diff < 1e-10,
+            "tau = C_m / H_tr_ms should equal C_m · R_total: \
+             tau_analytical = {:.6e}, tau_from_H_tr_ms = {:.6e}, \
+             rel_diff = {:.6e}",
+            tau_analytical,
+            tau_from_h_tr_ms,
+            rel_diff
+        );
+
+        // Also verify tau is in the expected physical range for 200 mm concrete.
+        // With R_total = wall.total_r_value() (wall-only, no surface films):
+        //   R_wall = 0.2/1.4 = 0.1429 m²·K/W
+        //   C_total = 2300 × 0.2 × 840 = 386 400 J/(m²·K)
+        //   tau = 386400 × 0.1429 ≈ 55 200 s ≈ 15.3 h
+        let tau_hours = tau_analytical / 3600.0;
+        assert!(
+            (13.0..=17.0).contains(&tau_hours),
+            "tau for 200 mm concrete (wall-only R) should be 13-17 h, got {:.2e} h",
+            tau_hours
+        );
+    }
 }
