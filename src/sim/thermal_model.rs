@@ -1,7 +1,55 @@
-//! Thermal Model Trait - Modular architecture for swapping physics/surrogate models.
+//! Thermal Model Trait — modular architecture for swapping physics / surrogate models.
 //!
-//! This module defines the core trait interface for thermal modeling, allowing
-//! easy swapping between traditional physics-based approaches and AI surrogate models.
+//! This module defines the core trait interface for building-energy thermal modeling,
+//! allowing different implementations (physics-based, surrogate-based, or hybrid) to be
+//! swapped at runtime without changing calling code.
+//!
+//! # Trait Hierarchy
+//!
+//! [`ThermalModelTrait`] is the top-level trait. Three [`ThermalModelMode`] variants
+//! select the execution strategy:
+//!
+//! | Variant | Behavior |
+//! |---------|----------|
+//! | [`ThermalModelMode::Physics`][pm] | Full analytical 5R1C / 9R4C thermal network. Default. |
+//! | [`ThermalModelMode::Surrogate`][sm] | Neural-network inference via [`SurrogateManager`]. |
+//! | [`ThermalModelMode::Hybrid`][hm] | Per-subsystem routing via [`HybridRouting`]; the default policy routes loads to the surrogate and keeps conduction / ventilation / HVAC on physics. |
+//!
+//! [pm]: ThermalModelMode::Physics
+//! [sm]: ThermalModelMode::Surrogate
+//! [hm]: ThermalModelMode::Hybrid
+//!
+//! # [`HybridRouting`] Flags
+//!
+//! When [`ThermalModelMode::Hybrid`][hm] is selected, a [`HybridRouting`] value
+//! determines which subsystems consult the [`SurrogateManager`]:
+//!
+//! - **`use_surrogate_conduction`** — 5R1C / 9R4C thermal network solve
+//! - **`use_surrogate_ventilation`** — ventilation heat transfer coefficient `h_ve`
+//! - **`use_surrogate_loads`** — internal / external load prediction  *(default: `true`)*
+//! - **`use_surrogate_hvac`** — HVAC power demand
+//!
+//! The default policy is the highest-value / lowest-risk split: only load
+//! prediction runs on the surrogate; all other subsystems remain on the analytical
+//! physics path. See Issue #1431.
+//!
+//! # Concrete Implementations
+//!
+//! | Type | Mode | Notes |
+//! |------|------|-------|
+//! | [`PhysicsThermalModel`] | [`ThermalModelMode::Physics`][pm] | Default; analytical 5R1C / 9R4C |
+//! | [`SurrogateThermalModel`] | [`ThermalModelMode::Surrogate`][sm] | ONNX inference with optional physics fallback |
+//! | [`HybridThermalModel`] | [`ThermalModelMode::Hybrid`][hm] | Per-component routing; default policy via [`HybridRouting::default`] |
+//! | [`UnifiedThermalModel`] | Any | Runtime-switchable; thin wrapper over the above |
+//!
+//! Use [`ThermalModelBuilder`] to construct the desired concrete type from a
+//! fluent configuration DSL.
+//!
+//! # Design Philosophy
+//!
+//! - Easy addition of new surrogate models (ONNX-based)
+//! - Fallback from surrogate to physics-based when needed
+//! - Hybrid mode where some components use surrogates, others use physics
 
 use crate::ai::surrogate::SurrogateManager;
 use crate::physics::cta::{ContinuousTensor, VectorField};

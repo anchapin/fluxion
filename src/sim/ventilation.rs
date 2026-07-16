@@ -8,6 +8,25 @@
 //! - **Constant**: Fixed ACH regardless of conditions
 //! - **Scheduled**: Time-based ACH changes (e.g., night ventilation)
 //! - **Weather-Responsive**: ACH varies with outdoor temperature and wind speed
+//!
+//! # `ach_to_conductance` Formula
+//!
+//! The [`ach_to_conductance`] function converts an air change rate (ACH) to a
+//! thermal conductance `h_ve` [W/K] representing ventilation heat transfer:
+//!
+//! ```text
+//! h_ve = (ACH × V × ρ × c_p) / 3600
+//! ```
+//!
+//! Where:
+//! - `ACH` — air changes per hour [1/h]
+//! - `V`   — zone volume [m³]
+//! - `ρ`   — air density [kg/m³] (standard: 1.2)
+//! - `c_p` — specific heat of air [J/kg·K] (standard: 1005)
+//! - `3600` — seconds per hour conversion factor
+//!
+//! **Validation**: For `ACH=0.5`, `V=129.6 m³`, `ρ=1.2`, `c_p=1005`:
+//! Fluxion ≈ 21.71 W/K vs EnergyPlus ≈ 21.6 W/K (Δ < 0.5%). See Issue #918.
 
 use crate::physics::units::{FromF64, ThermalConductance};
 use serde::{Deserialize, Serialize};
@@ -112,16 +131,24 @@ pub fn calculate_combined_infiltration_ach(
 /// Trait for defining air change rate (ACH) schedules.
 ///
 /// All implementations should return weather-dependent ACH when applicable,
-/// using the provided weather parameters.
+/// using the provided weather parameters. The returned ACH is multiplied by
+/// zone volume and air properties in [`ach_to_conductance`] to produce the
+/// ventilation heat transfer coefficient `h_ve` [W/K] used in the zone energy
+/// balance.
 pub trait VentilationSchedule: Debug + Send + Sync {
     /// Returns the air change rate (ACH) for a given hour.
     ///
     /// # Arguments
-    /// * `hour` - Hour of day (0-23)
-    /// * `T_outdoor` - Outdoor temperature [C]
-    /// * `T_indoor` - Indoor temperature [C]
-    /// * `wind_speed` - Wind speed [m/s]
-    /// * `volume` - Zone volume [m³]
+    /// * `hour` — Hour of day (0–23)
+    /// * `T_outdoor` — Outdoor dry-bulb temperature [°C]
+    /// * `T_indoor` — Indoor air temperature [°C]
+    /// * `wind_speed` — Wind speed at building height [m/s]
+    /// * `volume` — Zone volume [m³]
+    ///
+    /// # Returns
+    /// Air change rate [1/h]. Implementations may ignore weather arguments
+    /// (e.g. [`ConstantVentilation`]) or use them to modulate the rate
+    /// (e.g. [`WeatherDependentVentilation`]).
     fn get_ach(
         &self,
         hour: usize,
@@ -130,6 +157,7 @@ pub trait VentilationSchedule: Debug + Send + Sync {
         wind_speed: f64,
         volume: f64,
     ) -> f64;
+
     /// Clones the schedule into a boxed trait object.
     fn clone_box(&self) -> Box<dyn VentilationSchedule>;
 }
