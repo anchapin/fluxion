@@ -61,7 +61,7 @@ use tracing::Level;
 use crate::ai::surrogate::SurrogateManager;
 use crate::api::metrics::{self, metrics_handler};
 use crate::api::schema::{SimulationOutput, SimulationSchema, SimulationSchemaV1};
-use crate::interop::{gbxml, osm};
+use crate::interop::{gbxml, ifc, osm};
 use crate::io::idf::{IdfFile, IdfParser};
 use crate::physics::cta::VectorField;
 use crate::sim::engine::ThermalModel;
@@ -659,6 +659,10 @@ async fn import_format(
             let schema = SimulationSchemaV1::try_from(idf)
                 .map_err(|e| ApiError::ImportFailed(format!("IDF conversion error: {e}")))?;
             schema
+        }
+        "ifc" => {
+            let tmp = tempfile_for_bytes(&body, "ifc")?;
+            ifc::import_ifc(&tmp).map_err(|e| ApiError::ImportFailed(e.to_string()))?
         }
         other => return Err(ApiError::UnsupportedFormat(other.to_string())),
     };

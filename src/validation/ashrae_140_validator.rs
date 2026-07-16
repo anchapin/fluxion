@@ -998,17 +998,17 @@ impl ASHRAE140Validator {
     /// # Errors
     /// Returns error if case simulation fails or benchmark data not found.
     ///
-/// # Example
-/// ```rust,no_run
-/// use fluxion::validation::ashrae_140_cases::ASHRAE140Case;
-/// use fluxion::validation::ashrae_140_validator::ASHRAE140Validator;
-///
-/// let mut validator = ASHRAE140Validator::new();
-/// let (report, _diagnostics) = validator.validate_single_case_with_diagnostics(
-///     ASHRAE140Case::Case600
-/// );
-/// report.print_summary();
-/// ```
+    /// # Example
+    /// ```rust,no_run
+    /// use fluxion::validation::ashrae_140_cases::ASHRAE140Case;
+    /// use fluxion::validation::ashrae_140_validator::ASHRAE140Validator;
+    ///
+    /// let mut validator = ASHRAE140Validator::new();
+    /// let (report, _diagnostics) = validator.validate_single_case_with_diagnostics(
+    ///     ASHRAE140Case::Case600
+    /// );
+    /// report.print_summary();
+    /// ```
     pub fn validate_single_case_with_diagnostics(
         &mut self,
         case: ASHRAE140Case,
