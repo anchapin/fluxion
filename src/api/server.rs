@@ -313,6 +313,8 @@ pub enum ApiError {
     SimulationFailed(String),
     #[error("batch request is empty")]
     EmptyBatch,
+    #[error("serialization failed: {0}")]
+    SerializationFailed(String),
 }
 
 impl IntoResponse for ApiError {
@@ -328,6 +330,9 @@ impl IntoResponse for ApiError {
                 (StatusCode::INTERNAL_SERVER_ERROR, "simulation_failed")
             }
             ApiError::EmptyBatch => (StatusCode::BAD_REQUEST, "empty_batch"),
+            ApiError::SerializationFailed(_) => {
+                (StatusCode::INTERNAL_SERVER_ERROR, "serialization_failed")
+            }
         };
         let body = Json(serde_json::json!({
             "error": {
@@ -552,7 +557,14 @@ async fn simulate_stream(
         while let Some(item) = rx.recv().await {
             match item {
                 Ok(event) => {
-                    yield Ok::<_, std::convert::Infallible>(format!("data: {}\n\n", serde_json::to_string(&event).unwrap()));
+                    match serde_json::to_string(&event) {
+                        Ok(json) => {
+                            yield Ok::<_, std::convert::Infallible>(format!("data: {}\n\n", json));
+                        }
+                        Err(e) => {
+                            yield Ok::<_, std::convert::Infallible>(format!("data: {{\"error\": \"{}\"}}\n\n", ApiError::SerializationFailed(e.to_string())));
+                        }
+                    }
                 }
                 Err(e) => {
                     yield Ok::<_, std::convert::Infallible>(format!("data: {{\"error\": \"{}\"}}\n\n", e));
