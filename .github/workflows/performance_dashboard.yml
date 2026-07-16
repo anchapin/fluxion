@@ -12,6 +12,16 @@ on:
         required: false
         default: 'false'
         type: boolean
+      compare_sha1:
+        description: 'First SHA for manual comparison (leave empty to use current)'
+        required: false
+        default: ''
+        type: string
+      compare_sha2:
+        description: 'Second SHA for manual comparison (leave empty to use current)'
+        required: false
+        default: ''
+        type: string
 
 concurrency:
   group: perf-dashboard-${{ github.ref }}
@@ -164,14 +174,14 @@ jobs:
           retention-days: 30
 
   # ===========================================================================
-  # Regression Check (runs on PR merge to main)
+  # Regression Check (runs on PR + push to main)
   # ===========================================================================
   regression-check:
     name: Regression Check
     runs-on: ubuntu-latest
     timeout-minutes: 30
     needs: benchmark
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    if: github.event_name == 'pull_request' || (github.event_name == 'push' && github.ref == 'refs/heads/main')
 
     steps:
       - uses: actions/checkout@v4
@@ -187,6 +197,7 @@ jobs:
           workflow: performance_dashboard.yml
           name: benchmark-results
           path: previous_results
+          workflow_conclusion_filter: success
         continue-on-error: true
 
       - name: Install Rust
@@ -267,6 +278,8 @@ jobs:
           # Load previous results if available
           previous = {}
           prev_path = 'previous_results/benchmark_summary.json'
+          skip_check = False
+
           if os.path.exists(prev_path):
               with open(prev_path, 'r') as f:
                   prev_data = json.load(f)
@@ -275,10 +288,22 @@ jobs:
                           previous[b['name']] = b['value']
               print(f"Previous: {len(previous)} benchmarks")
           else:
-              print("No previous results found - skipping regression check")
-              # Create empty previous to allow pass
-              for name in current:
-                  previous[name] = current[name]
+              print("⚠️  No previous benchmark results found on main branch.")
+              print("   This is expected for the first PR to a new branch.")
+              print("   Skipping regression check with exit 0.")
+              skip_check = True
+
+          # If skipping, write empty result and exit 0
+          if skip_check:
+              result = {
+                  "timestamp": os.environ.get('GITHUB_RUN_ID', 'local'),
+                  "commit": os.environ.get('GITHUB_SHA', 'unknown')[:8],
+                  "skipped": True,
+                  "reason": "no_main_branch_baseline",
+              }
+              with open('regression_check.json', 'w') as f:
+                  json.dump(result, f, indent=2)
+              sys.exit(0)
 
           # Check for regressions (5% threshold)
           REGRESSION_THRESHOLD = 5.0  # percentage

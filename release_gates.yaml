@@ -239,4 +239,4 @@ ci:
       observes_workflow: "Performance Dashboard"
       observes_workflow_file: ".github/workflows/performance_dashboard.yml"
       issue: 1618
-      triggered_by: "workflow_run on Performance Dashboard completion"
+      triggered_by: "workflow_run on Performance Dashboard completion + PR trigger"
