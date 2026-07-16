@@ -5,15 +5,15 @@ Self-healing inventory of all documentation in the Fluxion repository. Each doc 
 | Doc | Purpose | Status |
 |-----|---------|--------|
 | [ARCHITECTURE.md](../../ARCHITECTURE.md) | Physics module boundaries, I/O contracts, Mermaid diagram | ✅ Has summary |
-| [RULES.md](../../RULES.md) | Coding rules, hard constraints, must-always rules | 📝 Needs summary |
-| [CONTRIBUTING.md](../../CONTRIBUTING.md) | Contribution guide, PR workflow, hotfix process | 📝 Needs summary |
-| [CODEBASE_MAP.md](../../CODEBASE_MAP.md) | Code navigation, module dependency graph, Rust/Python/JS overview | 📝 Needs summary |
-| [FIX.md](../../FIX.md) | Known bugs placeholder, ASHRAE 140 CI gate fixes | 📝 Needs summary |
-| [docs/KNOWN_ISSUES.md](../../docs/KNOWN_ISSUES.md) | Known systematic issues, ASHRAE 140 validation issues | 📝 Needs summary |
-| [documentation/performance_guide.md](../../documentation/performance_guide.md) | Performance validation user guide, CLI usage | 📝 Needs summary |
-| [documentation/performance.md](../../documentation/performance.md) | Performance benchmarks, optimization, validation targets | 📝 Needs summary |
-| [validation_report.md](../../validation_report.md) | ASHRAE 140 validation results, pass/fail rates | 📝 Needs summary |
-| [docs/worksheets/README.md](./README.md) | Index of worksheets by issue/tag | 🆕 New |
+| [RULES.md](../../RULES.md) | Coding rules, hard constraints, must-always rules | ✅ Has summary |
+| [CONTRIBUTING.md](../../CONTRIBUTING.md) | Contribution guide, PR workflow, hotfix process | ✅ Has summary |
+| [CODEBASE_MAP.md](../../CODEBASE_MAP.md) | Code navigation, module dependency graph, Rust/Python/JS overview | ✅ Has summary |
+| [FIX.md](../../FIX.md) | Known bugs placeholder, ASHRAE 140 CI gate fixes | ✅ Has summary |
+| [docs/KNOWN_ISSUES.md](../../docs/KNOWN_ISSUES.md) | Known systematic issues, ASHRAE 140 validation issues | ✅ Has summary |
+| [documentation/performance_guide.md](../../documentation/performance_guide.md) | Performance validation user guide, CLI usage | ✅ Has summary |
+| [documentation/performance.md](../../documentation/performance.md) | Performance benchmarks, optimization, validation targets | ✅ Has summary |
+| [validation_report.md](../../validation_report.md) | ASHRAE 140 validation results, pass/fail rates | ✅ Has summary |
+| [docs/worksheets/README.md](../../docs/worksheets/README.md) | Index of worksheets by issue/tag | 🆕 New |
 
 ## 7-Line Summary Convention
 
