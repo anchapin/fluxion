@@ -134,11 +134,7 @@ fn test_roof_surface_irradiance_matches_energyplus() {
         8760,
         "roof reference CSV should have 8760 rows"
     );
-    assert_eq!(
-        weather.len(),
-        8760,
-        "weather CSV should have 8760 rows"
-    );
+    assert_eq!(weather.len(), 8760, "weather CSV should have 8760 rows");
 
     let mut annual_beam_calc = 0.0;
     let mut annual_beam_ref = 0.0;
@@ -180,8 +176,7 @@ fn test_roof_surface_irradiance_matches_energyplus() {
         (annual_diffuse_calc - annual_diffuse_ref).abs() / annual_diffuse_ref.max(1.0) * 100.0;
     let ground_err_pct =
         (annual_ground_calc - annual_ground_ref).abs() / annual_ground_ref.max(1.0) * 100.0;
-    let total_err_pct =
-        (annual_total_calc - annual_total_ref).abs() / annual_total_ref * 100.0;
+    let total_err_pct = (annual_total_calc - annual_total_ref).abs() / annual_total_ref * 100.0;
 
     println!("=== Roof (Horizontal) Irradiance vs E+ (annual energy) ===");
     println!(
@@ -240,9 +235,7 @@ fn test_roof_surface_irradiance_matches_energyplus() {
     println!(
         "NOTE: Ground-reflected gap is EXPECTED — E+ uses view-factor formula (=0 for horizontal),"
     );
-    println!(
-        "      Fluxion uses Issue #1326 physics (=ρ·GHI for horizontal up-facing surfaces)."
-    );
+    println!("      Fluxion uses Issue #1326 physics (=ρ·GHI for horizontal up-facing surfaces).");
     println!(
         "      This causes {:.1}% gap in total irradiance (ground contribution: {:.1} kWh/m²/yr).",
         total_err_pct,
@@ -295,15 +288,24 @@ fn test_roof_solar_gain_ratio_to_vertical() {
 
     println!("=== Roof vs South-Vertical Irradiance Ratio (Summer Solstice Noon) ===");
     println!("Date: {:?}/{:?}/{} {:02.1}:00 MDT", month, day, year, hour);
-    println!("Solar position: altitude={:.1}°, azimuth={:.1}°",
-             sun.altitude_deg, sun.azimuth_deg);
+    println!(
+        "Solar position: altitude={:.1}°, azimuth={:.1}°",
+        sun.altitude_deg, sun.azimuth_deg
+    );
     println!();
     println!("Roof (horizontal):");
-    println!("  beam={:.1} W/m²  diffuse={:.1} W/m²  ground={:.1} W/m²  total={:.1} W/m²",
-             irr_roof.beam_wm2, irr_roof.diffuse_wm2, irr_roof.ground_reflected_wm2, irr_roof.total_wm2);
+    println!(
+        "  beam={:.1} W/m²  diffuse={:.1} W/m²  ground={:.1} W/m²  total={:.1} W/m²",
+        irr_roof.beam_wm2, irr_roof.diffuse_wm2, irr_roof.ground_reflected_wm2, irr_roof.total_wm2
+    );
     println!("South-vertical:");
-    println!("  beam={:.1} W/m²  diffuse={:.1} W/m²  ground={:.1} W/m²  total={:.1} W/m²",
-             irr_south.beam_wm2, irr_south.diffuse_wm2, irr_south.ground_reflected_wm2, irr_south.total_wm2);
+    println!(
+        "  beam={:.1} W/m²  diffuse={:.1} W/m²  ground={:.1} W/m²  total={:.1} W/m²",
+        irr_south.beam_wm2,
+        irr_south.diffuse_wm2,
+        irr_south.ground_reflected_wm2,
+        irr_south.total_wm2
+    );
     println!();
     println!("Ratio (roof/south-vertical): {:.2}x", ratio);
     println!();
@@ -354,10 +356,14 @@ fn test_roof_summer_noon_spot_check() {
     );
 
     println!("=== Roof Irradiance Spot-Check: Summer Noon (DOY 172, 12:00 MDT) ===");
-    println!("E+ Reference: beam={:.1}  sky_diffuse={:.1}  ground_diffuse={:.1}  total={:.1}",
-             row.beam, row.sky_diffuse, row.ground_diffuse, row.total);
-    println!("Fluxion:      beam={:.1}  diffuse={:.1}  ground={:.1}  total={:.1}",
-             irr.beam_wm2, irr.diffuse_wm2, irr.ground_reflected_wm2, irr.total_wm2);
+    println!(
+        "E+ Reference: beam={:.1}  sky_diffuse={:.1}  ground_diffuse={:.1}  total={:.1}",
+        row.beam, row.sky_diffuse, row.ground_diffuse, row.total
+    );
+    println!(
+        "Fluxion:      beam={:.1}  diffuse={:.1}  ground={:.1}  total={:.1}",
+        irr.beam_wm2, irr.diffuse_wm2, irr.ground_reflected_wm2, irr.total_wm2
+    );
 
     let total_err_pct = (irr.total_wm2 - row.total).abs() / row.total.max(1.0) * 100.0;
     println!("Total error vs E+: {:.2}%", total_err_pct);
