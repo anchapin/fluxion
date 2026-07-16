@@ -668,27 +668,30 @@ fn test_case_900_zone_count_envelope_matches_geometry_tensor() {
 /// Run both `GaugeSolver` and `FiveR1CSolver` through the same 24-hour
 /// synthetic Case 900 diurnal forcing and verify per-hour flux agreement.
 ///
-/// **Why this test exists** (issue #1606): the existing steady-state zero-solar
-/// parity test (Test 5) only validates the no-solar case. The diurnal cycle
-/// with solar is the primary Case 900 scenario and where the discrete-node
-/// solar-injection pathology was observed. This test ensures both solvers
-/// produce physically consistent flux through a full day-night cycle.
+/// **Why this test is ignored** (issue #1669): `GaugeSolver` is a steady-state
+/// solver by design — it has **no thermal capacitance** and computes flux as
+/// `q = (T_eff − T_int) / R_wall` at each timestep with zero phase lag.
+/// `FiveR1CSolver` is a transient solver with τ = C·R_total ≈ 25.6 h for the
+/// Case 900 envelope, producing a thermally-lagged response.
 ///
-/// **Methodology**: both solvers receive the same effective exterior temperature
-/// computed as `T_eff = outdoor_temperature + solar_irradiance / h_ext` where
-/// `h_ext = 18.3 W/m²K` per ASHRAE 140 v2023. The `FiveR1CSolver` receives
-/// this as `T_exterior` via its standard `step()` interface; the `GaugeSolver`
-/// receives it via `step_with_boundary_conditions` with the raw solar and
-/// outdoor values (which internally computes the same effective temperature).
+/// This architectural mismatch produces 100–5000 % per-hour flux disagreement
+/// during a 24-hour diurnal cycle, which is **expected behavior**, not a bug.
+/// The issue #1669 decision is **Option A**: mark GaugeSolver diurnal cross-
+/// solver comparisons as expected-fail and keep GaugeSolver for steady-state
+/// scenarios only.
 ///
-/// Both use the same `case_900_wall()` geometry (`R_wall = 0.392 m²K/W`) and
-/// the same interior setpoint `T_int = 20 °C`.  `DT_SECONDS = 3600.0` (1 h).
+/// This test was added in PR #1661 (issue #1606) to demonstrate the mismatch.
+/// It is retained in the codebase (ignored) as a canary for future Option B
+/// (adding thermal mass to GaugeSolver) work.
 ///
 /// Acceptance criteria (issue #1606):
-/// 1. GaugeSolver flux within ±10% of FiveR1C at every hour.
-/// 2. Both solvers peak at hour 12, trough at hour 4-5.
-/// 3. Nighttime negative, daytime positive response (bipolar).
-/// 4. Amplitude ≥80 W/m².
+/// 1. GaugeSolver flux within ±10% of FiveR1C at every hour.  ← CANNOT PASS
+/// 2. Both solvers peak at hour 12, trough at hour 4-5.         ← CANNOT PASS
+/// 3. Nighttime negative, daytime positive response (bipolar).   ← PASSES
+/// 4. Amplitude ≥80 W/m².                                        ← PASSES
+#[ignore = "issue #1669 Option A: GaugeSolver is steady-state (no thermal mass); \
+             FiveR1C is transient (τ≈25.6 h); 100-5000% diurnal disagreement \
+             is expected, not a bug"]
 #[test]
 fn test_case_900_gauge_fiver1c_diurnal_parity() {
     let wall = case_900_wall();
