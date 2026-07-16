@@ -85,9 +85,8 @@ mod issue_1457_case_600_series_tracking {
     }
 
     /// One quarantined guard covering all 14 currently-failing #1457 metrics.
-    /// Assert-in-band on purpose: when #1465 lands, un-ignoring this proves closure.
+    /// GaugeSolver Phase 3 (#1465) is complete — un-ignoring to verify closure.
     #[test]
-    #[ignore = "#1457: 14 Case 600-series metrics await GaugeSolver #1465 (discrete-node solar injection)"]
     fn test_issue1457_remaining_600_series_metrics() {
         // (case, metric, band_lo, band_hi)
         let mut failures: Vec<String> = Vec::new();
