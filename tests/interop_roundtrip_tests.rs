@@ -24,7 +24,9 @@
 //!
 //! See Issue #1709
 
-use fluxion::api::schema::{ConstructionSet, Geometry, SchemaMetadata, SimulationSchemaV1, SchemaVersion, ZoneGeometry};
+use fluxion::api::schema::{
+    ConstructionSet, Geometry, SchemaMetadata, SchemaVersion, SimulationSchemaV1, ZoneGeometry,
+};
 use fluxion::interop::fmi::{FmiExporter, ZoneVariables};
 use fluxion::interop::gbxml::{export_gbxml, import_gbxml};
 
@@ -162,8 +164,7 @@ fn test_gbxml_roundtrip_geometry_total_floor_area() {
         "total_floor_area should be preserved within 0.01 m²"
     );
     assert_eq!(
-        original.geometry.number_of_floors,
-        imported.geometry.number_of_floors,
+        original.geometry.number_of_floors, imported.geometry.number_of_floors,
         "number_of_floors should be preserved"
     );
 
@@ -183,8 +184,7 @@ fn test_gbxml_roundtrip_lossless_claim() {
     let original_zone = &original.geometry.zones[0];
     let imported_zone = &imported.geometry.zones[0];
 
-    let floor_area_ok =
-        (original_zone.floor_area - imported_zone.floor_area).abs() < 0.01;
+    let floor_area_ok = (original_zone.floor_area - imported_zone.floor_area).abs() < 0.01;
     let volume_ok = (original_zone.volume - imported_zone.volume).abs() < 0.01;
 
     assert!(
@@ -219,11 +219,12 @@ fn test_fmi_3zone_export_roundtrip() {
     let temp_dir = std::env::temp_dir();
     let fmu_path = temp_dir.join("fluxion_3zone_roundtrip.fmu");
 
-    exporter.export_fmu(&fmu_path).expect("FMU export should succeed");
+    exporter
+        .export_fmu(&fmu_path)
+        .expect("FMU export should succeed");
 
-    let xml_content =
-        FmiExporter::read_model_description_from_fmu(&fmu_path)
-            .expect("Should be able to read back modelDescription.xml");
+    let xml_content = FmiExporter::read_model_description_from_fmu(&fmu_path)
+        .expect("Should be able to read back modelDescription.xml");
 
     assert!(
         xml_content.contains("FluxionBuilding"),
@@ -324,11 +325,7 @@ fn test_fmi_roundtrip_3zone_fmu_contains_correct_variables() {
         .filter(|(name, _)| name.starts_with("Kitchen_"))
         .collect();
 
-    assert_eq!(
-        living_vars.len(),
-        7,
-        "Living zone should have 7 variables"
-    );
+    assert_eq!(living_vars.len(), 7, "Living zone should have 7 variables");
     assert_eq!(
         bedroom_vars.len(),
         7,
