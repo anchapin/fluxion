@@ -28,9 +28,11 @@ use uom::si::thermal_conductance::watt_per_kelvin;
 
 use fluxion::sim::ventilation::{
     ach_to_conductance, calculate_combined_infiltration_ach, calculate_stack_infiltration_ach,
-    calculate_wind_infiltration_ach, AIR_DENSITY, AIR_SPECIFIC_HEAT,
+    calculate_wind_infiltration_ach, h_tr_is_ach_multiplier, AIR_DENSITY, AIR_SPECIFIC_HEAT,
 };
-use fluxion::sim::ventilation::{VentilationSchedule, WeatherDependentVentilation};
+use fluxion::sim::ventilation::{
+    ScheduledVentilation, VentilationSchedule, WeatherDependentVentilation,
+};
 
 use proptest::prelude::*;
 
@@ -400,6 +402,172 @@ fn test_ashrae_140_get_ach_weather_direct_matches_trait_dispatch() {
          max diff = {} at hour {}",
         max_abs_diff,
         worst_hour,
+    );
+}
+
+// ============================================================================
+// Night ventilation effectiveness — Issue #1680 / SOLAR-04
+// ============================================================================
+
+/// Case 650/950 night flush delivers meaningfully higher ventilation heat
+/// transfer than 24h baseline infiltration.
+///
+/// Case 650 spec: base_ach=0.5 ACH, night_ach=13.14 ACH (22:00–06:00).
+///
+/// This test validates the MECHANISM of night cooling — that night flush
+/// ACH (13.64 total = base + fan) produces a dramatically higher ventilation
+/// heat transfer coefficient than 24h at 0.5 ACH. The resulting ~27× higher
+/// h_ve means substantially greater heat removal per degree ΔT at night,
+/// which is the physics that drives the morning temperature reduction shown
+/// in the EnergyPlus reference.
+///
+/// Without a full thermal zone simulation we cannot compute the absolute
+/// morning temperature delta, but we can verify the cooling mechanism is
+/// present: the night-flush heat transfer rate is >> the baseline rate.
+///
+/// Reference: KNOWN_ISSUES.md SOLAR-04, Case 650/950 ASHRAE 140 spec.
+#[test]
+fn test_night_ventilation_delivers_cooling_benefit() {
+    let start = Instant::now();
+
+    // Case 650/950 spec: base_ach=0.5, night flush fan_ach=13.14 (22:00–06:00)
+    let base_ach: f64 = 0.5;
+    let night_fan_ach: f64 = 13.14;
+    let night_flush = ScheduledVentilation::night_ventilation(base_ach, night_fan_ach, 22, 6);
+
+    // Case 900 zone geometry (shared with existing tests)
+    let volume = CASE_900_VOLUME_M3; // 129.6 m³
+    let rho = AIR_DENSITY; // 1.2 kg/m³
+    let cp = AIR_SPECIFIC_HEAT; // 1000 J/kg·K
+
+    // --- Baseline: 24h at base_ach=0.5 ---
+    let baseline_ach = base_ach;
+    let baseline_h_ve = (baseline_ach * volume * rho * cp) / 3600.0;
+
+    // --- Night flush hours (22, 23, 0, 1, 2, 3, 4, 5) ---
+    let night_hours = [22usize, 23, 0, 1, 2, 3, 4, 5];
+    let night_total_ach = base_ach + night_fan_ach; // 13.64 ACH
+
+    let mut night_ach_values = Vec::new();
+    for &h in &night_hours {
+        let ach = night_flush.get_ach(h, 15.0, 25.0, 0.0, volume);
+        night_ach_values.push(ach);
+        assert_eq!(
+            ach, night_total_ach,
+            "Night flush ACH at hour {} must be {} (base {} + fan {}); got {}",
+            h, night_total_ach, base_ach, night_fan_ach, ach
+        );
+    }
+
+    // All night hours must return the full flush ACH
+    assert_eq!(
+        night_ach_values.len(),
+        8,
+        "Night flush must cover 8 hours (22–06)"
+    );
+
+    // --- Daytime hours: should return baseline ACH ---
+    for day_hour in [6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21] {
+        let ach = night_flush.get_ach(day_hour, 15.0, 25.0, 0.0, volume);
+        assert_eq!(
+            ach, baseline_ach,
+            "Daytime ACH at hour {} must be baseline {}; got {}",
+            day_hour, baseline_ach, ach
+        );
+    }
+
+    // --- Ventilation heat transfer comparison ---
+    let night_h_ve = (night_total_ach * volume * rho * cp) / 3600.0;
+    let heat_transfer_ratio = night_h_ve / baseline_h_ve;
+
+    eprintln!("\n=== Night ventilation cooling benefit (Issue #1680 / SOLAR-04) ===");
+    eprintln!("Case 650/950 spec:");
+    eprintln!("  base_ach                   : {}", base_ach);
+    eprintln!("  night_fan_ach (22:00–06:00): {}", night_fan_ach);
+    eprintln!(
+        "  night_total_ach            : {} (base + fan)",
+        night_total_ach
+    );
+    eprintln!("Volume                      : {} m³", volume);
+    eprintln!("Baseline h_ve (0.5 ACH)     : {:.2} W/K", baseline_h_ve);
+    eprintln!("Night flush h_ve            : {:.2} W/K", night_h_ve);
+    eprintln!("Heat transfer ratio (N/B)   : {:.1}×", heat_transfer_ratio);
+    eprintln!("ARCHITECTURE.md Module 4     : night flush must be >> baseline");
+    eprintln!("Elapsed                     : {:.2?}", start.elapsed());
+
+    // Night flush h_ve must be at least 10× baseline (physically meaningful)
+    assert!(
+        heat_transfer_ratio > 10.0,
+        "Night flush heat transfer ratio ({:.1}×) must be > 10× baseline \
+         to deliver meaningful cooling; got {:.1}×",
+        heat_transfer_ratio,
+        heat_transfer_ratio
+    );
+
+    // Night flush must be dramatically higher than baseline (27× for these numbers)
+    assert!(
+        night_h_ve > baseline_h_ve * 20.0,
+        "Night flush h_ve ({:.2} W/K) must be > 20× baseline ({:.2} W/K); got {:.1}×",
+        night_h_ve,
+        baseline_h_ve,
+        heat_transfer_ratio
+    );
+}
+
+/// Case 650/950 spec: ACH=13.14 (night flush fan) → h_tr_is multiplier ≈ 2.91×.
+///
+/// The forced-convection interior surface heat transfer correlation:
+///   h_c = h_c_still + 0.84 × ACH^0.8   [W/m²K]
+/// gives ~10.0 W/m²K at ACH=13.14, vs 3.45 W/m²K still air.
+/// Ratio = 10.0 / 3.45 ≈ 2.91×.
+///
+/// This multiplier boosts the interior surface heat transfer coefficient during
+/// night flush, increasing heat loss from the zone mass at night — part of the
+/// mechanism that delivers the morning cooling benefit validated above.
+///
+/// Reference: ASHRAE Handbook — Fundamentals ch. 4, EnergyPlus Engineering Reference.
+#[test]
+fn test_h_tr_is_ach_multiplier_night_flush() {
+    let start = Instant::now();
+
+    // Case 650/950 spec night flush ACH
+    let night_flush_ach: f64 = 13.14;
+    let expected_multiplier: f64 = 2.91;
+    let tolerance: f64 = 0.02;
+
+    let multiplier = h_tr_is_ach_multiplier(night_flush_ach);
+    let drift = (multiplier - expected_multiplier).abs();
+
+    eprintln!("\n=== h_tr_is_ach_multiplier night flush (Issue #1680 / SOLAR-04) ===");
+    eprintln!("Night flush ACH             : {}", night_flush_ach);
+    eprintln!("Expected multiplier          : {:.2}", expected_multiplier);
+    eprintln!("Actual multiplier           : {:.6}", multiplier);
+    eprintln!("Drift                      : {:.6}", drift);
+    eprintln!("Tolerance                  : ±{:.2}", tolerance);
+    eprintln!(
+        "h_c_forced                  : {:.2} W/m²K (vs still 3.45 W/m²K)",
+        3.45 * multiplier
+    );
+    eprintln!("Elapsed                     : {:.2?}", start.elapsed());
+
+    assert!(
+        drift < tolerance,
+        "h_tr_is_ach_multiplier({:.2}) must be {:.2} ± {:.2}; got {:.6} (drift {:.6})",
+        night_flush_ach,
+        expected_multiplier,
+        tolerance,
+        multiplier,
+        drift
+    );
+
+    // Also verify it's substantially above baseline (1.14× at ACH=0.5)
+    let baseline_multiplier = h_tr_is_ach_multiplier(0.5);
+    assert!(
+        multiplier > baseline_multiplier * 2.0,
+        "Night flush multiplier ({:.2}) must be > 2× baseline ({:.2}); got {:.2}",
+        multiplier,
+        baseline_multiplier,
+        multiplier / baseline_multiplier
     );
 }
 
