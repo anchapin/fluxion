@@ -362,6 +362,55 @@ impl SurrogateDomain {
             && occupancy_valid
             && climate_valid
     }
+
+    /// Compute per-sample energy balance residual for PINN physics constraints.
+    ///
+    /// Implements the envelope-only energy balance constraint:
+    /// `L_physics = ||Q_loads - Q_conduction - Q_solar - Q_internal||^2`
+    ///
+    /// Where:
+    /// - `Q_loads` is the predicted thermal load
+    /// - `Q_conduction = U * A * (T_exterior - T_zone)` — conductive heat transfer
+    /// - `Q_solar = alpha * solar_rad * A` — solar gains (alpha = 0.85 solar transmissivity)
+    /// - `Q_internal = beta * occupancy * A` — internal gains (beta = 100 W/person)
+    ///
+    /// Default thermal properties for residential envelope:
+    /// - U = 0.5 W/m²K (overall heat transfer coefficient)
+    /// - A = 100 m² (typical zone surface area)
+    /// - Ventilation rate = 0.5 ACH (air changes per hour)
+    ///
+    /// Returns the squared residual `||Q_loads - Q_expected||^2` for each sample.
+    ///
+    /// Issue #1706: PINN physics constraints for CompositeSurrogate training.
+    pub fn energy_balance_residual(
+        &self,
+        inputs: &[SurrogateInputs],
+        predicted_loads: &[f64],
+    ) -> Vec<f64> {
+        const U_WALL: f64 = 0.5;
+        const A_ZONE: f64 = 100.0;
+        const ALPHA_SOLAR: f64 = 0.85;
+        const BETA_INTERNAL: f64 = 100.0;
+        const C_AIR: f64 = 1260.0;
+        const V_VENT: f64 = 300.0;
+        const ACH_VENT: f64 = 0.5;
+
+        inputs
+            .iter()
+            .zip(predicted_loads.iter())
+            .map(|(inp, &q_loads)| {
+                let delta_t = inp.exterior_temp - inp.zone_temp;
+                let q_conduction = U_WALL * A_ZONE * delta_t;
+                let q_solar = ALPHA_SOLAR * inp.solar_rad * A_ZONE * 0.001;
+                let q_internal = BETA_INTERNAL * inp.occupancy;
+                let q_ventilation =
+                    C_AIR * ACH_VENT * V_VENT * delta_t / 3600.0 / 1000.0;
+                let q_expected = q_conduction + q_solar + q_internal + q_ventilation;
+                let residual = q_loads - q_expected;
+                residual * residual
+            })
+            .collect()
+    }
 }
 
 #[derive(Clone, Debug, Copy, PartialEq, Eq)]
@@ -2029,6 +2078,34 @@ mod tests {
             climate_zone: "4A".to_string(),
         };
         assert!(!domain.is_valid(&invalid_inputs));
+    }
+
+    #[test]
+    fn test_energy_balance_residual() {
+        let domain = SurrogateDomain::default_residential();
+        let inputs = vec![
+            SurrogateInputs::from_physics(10.0, 20.0, 500.0, 50.0, 0.1, "4A"),
+            SurrogateInputs::from_physics(20.0, 22.0, 800.0, 50.0, 0.3, "4A"),
+        ];
+        let predicted_loads = vec![1000.0, 1500.0];
+        let residuals = domain.energy_balance_residual(&inputs, &predicted_loads);
+        assert_eq!(residuals.len(), 2);
+        for r in residuals {
+            assert!(r >= 0.0, "energy balance residual must be non-negative");
+        }
+    }
+
+    #[test]
+    fn test_energy_balance_residual_zero_when_balanced() {
+        let domain = SurrogateDomain::default_residential();
+        let inputs = vec![SurrogateInputs::from_physics(20.0, 20.0, 0.0, 50.0, 0.0, "4A")];
+        let predicted_loads = vec![0.0];
+        let residuals = domain.energy_balance_residual(&inputs, &predicted_loads);
+        assert_eq!(residuals.len(), 1);
+        assert!(
+            residuals[0] < 1e-6,
+            "when exterior=zone and no solar/internal gains, residual should be ~0"
+        );
     }
 
     #[test]

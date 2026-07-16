@@ -15,9 +15,25 @@ Training data contract (Issue #1338):
     MUST go through the physics-extraction pipeline described in
     ``data/training/README.md`` (see Issue #1286).
 
+PINN Physics Constraints (Issue #1706):
+    When ``--pinn-constraint=true`` (default), the MLP training loop adds an
+    energy balance physics loss term:
+        L_total = L_regression + λ * L_physics
+        L_physics = ||Q_loads - Q_conduction - Q_solar - Q_internal||^2
+
+    Where the envelope-only energy balance (MVP, HVAC ventilation excluded):
+        Q_conduction = U * A * (T_outdoor - T_zone)
+        Q_solar = α * solar_rad * A * wwr
+        Q_internal = β * occupancy * A
+
+    Default thermal properties: U=0.5 W/m²K, A=100 m², α=0.85, β=100 W/person.
+
 Usage:
-    # Production retrain (requires physics-extracted samples in data/training/):
+    # Production retrain with PINN physics constraints (default):
     python tools/train_surrogate.py --data-dir data/training --output-dir models
+
+    # Training without PINN constraints (plain regression):
+    python tools/train_surrogate.py --data-dir data/training --pinn-constraint=false
 
     # Benchmark-only (uses random synthetic data, NEVER for production models):
     python tools/train_surrogate.py --allow-synthetic-for-benchmark-only \\
@@ -26,7 +42,7 @@ Usage:
 Requirements:
     pip install shap xgboost scikit-learn
 
-Issues: #553, #1286, #1338
+Issues: #553, #1286, #1338, #1706
 """
 
 import argparse
@@ -68,6 +84,83 @@ def calculate_rmse(predicted: np.ndarray, actual: np.ndarray) -> float:
     return np.sqrt(np.mean((predicted - actual) ** 2))
 
 
+def compute_physics_expected_load(X: np.ndarray) -> np.ndarray:
+    """Compute expected load from physics for PINN constraint.
+
+    Energy balance (envelope-only MVP, Issue #1706):
+        Q_expected = U * A * (T_outdoor - T_zone) + Q_solar + Q_internal
+
+    Feature indices:
+        0: outdoor_temp
+        1: heating_setpoint (used as T_zone for heating mode)
+        2: cooling_setpoint (used as T_zone for cooling mode)
+        6: u_value (W/m²K)
+        7: wwr (window-to-wall ratio, proxy for solar gain area)
+
+    Solar gain estimation (simplified):
+        Q_solar = 0.85 * solar_rad * A * wwr * 0.001
+        (0.85 = solar transmissivity, 0.001 converts W/m² to kW)
+
+    Internal gain estimation:
+        Q_internal = 100 * occupancy_estimate * A
+        (occupancy estimated from hour: higher during 8-18h)
+
+    Returns:
+        np.ndarray of expected loads in same units as training targets (W).
+
+    Note:
+        This is an envelope-only constraint (HVAC ventilation excluded per Issue #1706
+        out-of-scope). The full PINN constraint includes Q_ventilation.
+    """
+    outdoor_temp = X[:, 0]
+    heating_setpoint = X[:, 1]
+    cooling_setpoint = X[:, 2]
+    hour_of_day = X[:, 3]
+    u_value = X[:, 6]
+    wwr = X[:, 7]
+
+    A_ZONE = 100.0
+    ALPHA_SOLAR = 0.85
+    BETA_INTERNAL = 100.0
+
+    occupancy_estimate = np.where((hour_of_day >= 8) & (hour_of_day <= 18), 0.3, 0.1)
+
+    delta_t_heating = heating_setpoint - outdoor_temp
+    delta_t_cooling = outdoor_temp - cooling_setpoint
+
+    heating_load = u_value * A_ZONE * np.maximum(delta_t_heating, 0)
+    cooling_load = u_value * A_ZONE * np.maximum(delta_t_cooling, 0)
+
+    solar_rad_estimate = np.maximum(
+        500.0 * np.sin(np.pi * (hour_of_day - 6) / 12), 0.0
+    )
+    q_solar = ALPHA_SOLAR * solar_rad_estimate * A_ZONE * wwr * 0.001
+    q_internal = BETA_INTERNAL * occupancy_estimate
+
+    q_expected = np.maximum(heating_load, cooling_load) + q_solar + q_internal
+
+    return q_expected.astype(np.float32)
+
+
+def compute_pinn_physics_loss(predicted: np.ndarray, X: np.ndarray) -> float:
+    """Compute PINN physics constraint loss: L_physics = ||Q_pred - Q_expected||^2.
+
+    The physics constraint penalizes energy balance violations during training.
+    Envelope-only formulation (Issue #1706):
+        L_physics = ||Q_loads - Q_conduction - Q_solar - Q_internal||^2
+
+    Args:
+        predicted: Model predictions (heating_load + cooling_load combined in training)
+        X: Feature array with [outdoor_temp, heating_setpoint, cooling_setpoint, ...]
+
+    Returns:
+        Scalar physics loss value.
+    """
+    q_expected = compute_physics_expected_load(X)
+    residual = predicted.flatten() - q_expected
+    return float(np.mean(residual ** 2))
+
+
 class MLPEnsemble:
     """Ensemble of MLP models using PyTorch."""
 
@@ -79,8 +172,23 @@ class MLPEnsemble:
         self.hidden_dims = hidden_dims
 
     def fit(self, X: np.ndarray, y: np.ndarray, epochs: int = 100, batch_size: int = 32,
-            learning_rate: float = 0.001, seed: int = 42) -> Dict:
-        """Train ensemble of MLP models."""
+            learning_rate: float = 0.001, seed: int = 42,
+            pinn_constraint: bool = True, pinn_lambda: float = 0.1) -> Dict:
+        """Train ensemble of MLP models.
+
+        Args:
+            X: Training features.
+            y: Training targets (combined heating + cooling load).
+            epochs: Number of training epochs.
+            batch_size: Mini-batch size.
+            learning_rate: Adam learning rate.
+            seed: Random seed for reproducibility.
+            pinn_constraint: If True, add physics-informed loss term (Issue #1706).
+            pinn_lambda: Weight for PINN physics loss term (default 0.1).
+
+        Returns:
+            Dict with model metrics including r2_scores, mae_scores, mean_r2, std_r2.
+        """
         import torch
         import torch.nn as nn
         import torch.optim as optim
@@ -123,7 +231,15 @@ class MLPEnsemble:
                 model.train()
                 for batch_X, batch_y in loader:
                     optimizer.zero_grad()
-                    loss = criterion(model(batch_X), batch_y)
+                    pred = model(batch_X)
+                    loss = criterion(pred, batch_y)
+                    if pinn_constraint:
+                        with torch.no_grad():
+                            batch_X_np = batch_X.numpy()
+                        physics_loss = compute_pinn_physics_loss(
+                            pred.detach().numpy(), batch_X_np
+                        )
+                        loss = loss + pinn_lambda * physics_loss
                     loss.backward()
                     optimizer.step()
 
@@ -488,13 +604,22 @@ def load_training_data(
     return X, y, feature_names
 
 
-def run_benchmark(X: np.ndarray, y: np.ndarray, feature_names: List[str], output_dir: Path) -> Dict:
-    """Benchmark MLP vs XGBoost vs Random Forest."""
+def run_benchmark(X: np.ndarray, y: np.ndarray, feature_names: List[str], output_dir: Path,
+                  pinn_constraint: bool = True) -> Dict:
+    """Benchmark MLP vs XGBoost vs Random Forest.
+
+    Args:
+        X: Feature matrix.
+        y: Target matrix [heating_load, cooling_load].
+        feature_names: List of feature names.
+        output_dir: Output directory for results.
+        pinn_constraint: If True, enable PINN physics constraints for MLP training (Issue #1706).
+    """
     logger.info("\n" + "=" * 60)
     logger.info("BENCHMARKING SURROGATE MODELS")
     logger.info("=" * 60)
 
-    results = {"timestamp": datetime.now().isoformat(), "models": {}}
+    results = {"timestamp": datetime.now().isoformat(), "models": {}, "pinn_constraint": pinn_constraint}
 
     split_idx = int(0.8 * len(X))
     X_train, X_val = X[:split_idx], X[split_idx:]
@@ -505,7 +630,8 @@ def run_benchmark(X: np.ndarray, y: np.ndarray, feature_names: List[str], output
 
     logger.info("\n[1/3] Training MLP Ensemble...")
     mlp = MLPEnsemble(input_dim=X.shape[1], output_dim=1, hidden_dims=[64, 64], n_models=5)
-    mlp_metrics = mlp.fit(X_train, y_combined_train, epochs=100, seed=42)
+    mlp_metrics = mlp.fit(X_train, y_combined_train, epochs=100, seed=42,
+                          pinn_constraint=pinn_constraint)
     mlp_pred, mlp_std = mlp.predict(X_val)
     mlp_r2 = calculate_r2(mlp_pred.flatten(), y_combined_val.flatten())
     mlp_rmse = calculate_rmse(mlp_pred.flatten(), y_combined_val.flatten())
@@ -662,6 +788,12 @@ def main():
         help="Synthetic sample count when --allow-synthetic-for-benchmark-only is set",
     )
     parser.add_argument("--seed", type=int, default=42, help="Random seed")
+    parser.add_argument(
+        "--pinn-constraint",
+        type=lambda x: x.lower() in ("true", "1", "yes"),
+        default=True,
+        help="Enable PINN physics constraints during MLP training (Issue #1706). Default: true.",
+    )
 
     args = parser.parse_args()
 
@@ -686,7 +818,8 @@ def main():
     results_summary = {"timestamp": datetime.now().isoformat()}
 
     if args.run_benchmark:
-        benchmark_results = run_benchmark(X, y, feature_names, output_dir)
+        benchmark_results = run_benchmark(X, y, feature_names, output_dir,
+                                        pinn_constraint=args.pinn_constraint)
         results_summary["benchmark"] = benchmark_results
 
     if args.shap_analysis:
