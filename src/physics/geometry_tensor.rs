@@ -648,12 +648,13 @@ impl ThermalManifold {
     /// Christoffel-symbol transport formula:
     ///
     /// ```text
-    ///   dT^i/dt = M·T + A  −  Γ^i_{jk} · T^j · T^k
+    ///   dT^i/dt = M·T + A  −  Γ^i_{jk} · T^j · g^k
     ///   T_new   = T  +  dt · (dT/dt)
     /// ```
     ///
     /// The first term `M·T` is the linear metric evolution; the second term
-    /// is the **geodesic deviation** due to curvature (Christoffel symbols).
+    /// is the **geodesic deviation** due to curvature (Christoffel symbols),
+    /// contracted with the gauge connection `g^k = gauge_connection[k]`.
     /// Since the thermal manifold has a constant metric during transport
     /// (∂_j g_{lk} = 0), the Christoffel symbols vanish and this reduces
     /// exactly to the forward-Euler `M·T + A` from the Phase 1a stub.
@@ -675,7 +676,7 @@ impl ThermalManifold {
             for j in 0..MANIFOLD_DIM {
                 for k in 0..MANIFOLD_DIM {
                     let gamma_ijk = christoffel[(i, j)][(j, k)];
-                    deviation[i] -= gamma_ijk * self.scalar_field[j] * self.scalar_field[k];
+                    deviation[i] -= gamma_ijk * self.scalar_field[j] * self.gauge_connection[k];
                 }
             }
         }
