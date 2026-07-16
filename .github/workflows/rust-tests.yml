@@ -203,6 +203,20 @@ jobs:
           python-version: '3.10'
       - run: cargo build --release --verbose
 
+  ashrae-cases-cycle:
+    name: Ashrae Cases Cycle Check (Issue #1441)
+    runs-on: ubuntu-latest
+    if: |
+      github.event_name == 'pull_request' ||
+      (github.event_name == 'push' && github.ref == 'refs/heads/main')
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/setup-rust-python-env
+        with:
+          python-version: '3.10'
+      - name: Run cycle check
+        run: python3 scripts/check_ashrae_cases_cycle.py
+
   # -- Issue #1603: GPU smoke test for InferenceBackend::CUDA -------------
   # Runs on every PR and main push. On CPU-only runners the test skips
   # gracefully (cuda_ep_available() returns false at runtime). On GPU runners
