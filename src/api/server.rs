@@ -644,7 +644,7 @@ async fn import_format(
                 .map_err(|e| ApiError::ImportFailed(format!("invalid UTF-8 in IDF body: {e}")))?;
             let idf: IdfFile = IdfParser::from_str(body_str)
                 .map_err(|e| ApiError::ImportFailed(format!("IDF parse error: {e}")))?;
-            let schema = SimulationSchemaV1::try_from(idf)
+            let schema = SimulationSchemaV1::try_from(&idf)
                 .map_err(|e| ApiError::ImportFailed(format!("IDF conversion error: {e}")))?;
             schema
         }
