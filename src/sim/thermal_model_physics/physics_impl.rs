@@ -2309,18 +2309,45 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         // Use 5R1C network for free-floating temperature
         let term_rest_1 = &self.0.derived_term_rest_1;
 
-        // Use the cached derived_h_ext without modification. Night ventilation
-        // is a separate cooling term in the zone energy balance (applied via
-        // compute_zone_air_temperature with h_ve_night parameter), NOT a
-        // modification to the exterior film coefficient. Adding h_ve_night to
-        // h_ext incorrectly inflates the envelope conductance, biasing the
-        // free-float temperature warm and preventing proper night-vent cooling.
-        // See Issue #1615 root cause analysis.
-        let h_ext_for_free_float: T = self.0.derived_h_ext.clone();
-        // Use cached derived_den — night ventilation does NOT modify the
-        // envelope conductance denominator; it is applied as a separate term
-        // in compute_zone_air_temperature via the h_ve_night parameter.
-        let den: T = self.0.derived_den.clone();
+        // Issue #1712 fix: Apply h_ve_night to h_ext and den when night ventilation
+        // is active, matching the 5R1C path (lines 421-471). This ensures the
+        // mass coupling pathway properly accounts for night vent cooling.
+        //
+        // The prior code cloned derived_h_ext without h_ve_night, and used the
+        // cached derived_den without recalculating. This caused the 9R4C mass coupling
+        // to not properly respond to night ventilation, making night vent less effective
+        // than in the 5R1C path.
+        let h_ext_for_free_float: T = if night_vent_active_now {
+            let base = self.0.derived_h_ext.as_ref();
+            let mut v = Vec::with_capacity(base.len());
+            for (i, &b) in base.iter().enumerate() {
+                let night_add = if i == 0 { h_ve_night } else { 0.0 };
+                v.push(b + night_add);
+            }
+            T::from(VectorField::new(v))
+        } else {
+            self.0.derived_h_ext.clone()
+        };
+        let den: T = if night_vent_active_now {
+            let h_ms_is_prod = self.0.derived_h_ms_is_prod.as_ref();
+            let term_rest_1_slice = term_rest_1.as_ref();
+            let ground_coeff = self.0.derived_ground_coeff.as_ref();
+            let h_iz = self.0.h_tr_iz.as_ref();
+            let h_iz_rad = self.0.h_tr_iz_rad.as_ref();
+            let h_ext_slice = h_ext_for_free_float.as_ref();
+            let mut v = Vec::with_capacity(h_ext_slice.len());
+            for i in 0..h_ext_slice.len() {
+                let h_total = if self.0.num_zones > 1 {
+                    h_ext_slice[i] + h_iz[i] + h_iz_rad[i]
+                } else {
+                    h_ext_slice[i]
+                };
+                v.push(h_ms_is_prod[i] + term_rest_1_slice[i] * h_total + ground_coeff[i]);
+            }
+            T::from(VectorField::new(v))
+        } else {
+            self.0.derived_den.clone()
+        };
         // (#872: sensitivity variable removed — HVAC demand now uses h_loss × ΔT formula)
 
         let num_tm = self
