@@ -288,3 +288,54 @@ fn parses_ashrae_140_case_600_with_exact_object_counts() {
     // Version string is captured on the file.
     assert_eq!(idf.version.as_deref(), Some("25.2"));
 }
+
+// ---------------------------------------------------------------------------
+// IDF → SimulationSchemaV1 round-trip (issue #1679)
+// ---------------------------------------------------------------------------
+
+#[test]
+fn test_idf_roundtrip_case900() {
+    use fluxion::api::schema::SimulationSchemaV1;
+    use std::convert::TryFrom;
+
+    let path = reference_dir().join("ashrae_140_case_900.idf");
+    assert!(
+        path.exists(),
+        "ASHRAE 140 Case 900 IDF missing at {}",
+        path.display()
+    );
+
+    let idf = IdfParser::from_path(&path).expect("parses ASHRAE 140 Case 900 IDF");
+
+    // Convert to SimulationSchemaV1 via TryFrom<&IdfFile>.
+    let schema = SimulationSchemaV1::try_from(&idf).expect("converts IDF to SimulationSchemaV1");
+
+    // Case 900 has the same geometry as Case 600: 6m × 8m × 2.7m = 48 m² floor area.
+    assert_eq!(
+        schema.geometry.zones.len(),
+        1,
+        "Case 900 is a single-zone model"
+    );
+    let zone = &schema.geometry.zones[0];
+    assert_eq!(zone.name, "ZONE1");
+    // Floor area should be 48 m² (6 × 8).
+    assert!(
+        (zone.floor_area - 48.0).abs() < 1e-6,
+        "floor_area = {} m², expected 48.0 m²",
+        zone.floor_area
+    );
+    // Volume should be 129.6 m³ (48 × 2.7).
+    assert!(
+        (zone.volume - 129.6).abs() < 1e-6,
+        "volume = {} m³, expected 129.6 m³",
+        zone.volume
+    );
+    // Height should be derived from surface vertices (2.7 m).
+    assert!(
+        (zone.height - 2.7).abs() < 1e-6,
+        "height = {} m, expected 2.7 m",
+        zone.height
+    );
+    // Schema version must be V1.
+    assert_eq!(schema.version, fluxion::api::schema::SchemaVersion::V1);
+}
