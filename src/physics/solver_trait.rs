@@ -161,11 +161,34 @@ pub type PhysicsResult<T> = Result<T, PhysicsError>;
 /// This trait defines the interface for calculating heat transfer through
 /// building envelope constructions (walls, roofs, floors).
 ///
+/// # Query vs State-Advancing Separation
+///
+/// The trait provides two complementary operational modes:
+///
+/// - **`step()`** — Advances the solver's internal thermal-mass state by one
+///   timestep `dt`. The return value is the heat flux that flowed through the
+///   surface *during that transition*; the solver's node temperatures are
+///   mutated in place. Successive calls accumulate the transient response.
+///   Do **not** call this method when you only need a steady-state value —
+///   use `steady_state_flux()` instead.
+///
+/// - **`steady_state_flux()`** — A *pure query* that returns the closed-form
+///   steady-state heat flux for the given boundary temperatures. This method
+///   does **not** mutate solver state and may be called an arbitrary number of
+///   times without side effects. ML-surrogate swap-points (e.g.
+///   `SurfaceHeatFluxProvider`) rely on this contract for parity checks against
+///   the physics path.
+///
+/// Calling `step()` changes the solver's internal state; calling
+/// `steady_state_flux()` never does. For the same `(T_interior, T_exterior)`
+/// inputs, `steady_state_flux()` returns a deterministic value independent of
+/// prior `step()` invocations.
+///
 /// # Lifecycle
 ///
 /// 1. Create solver instance
 /// 2. Call `initialize()` with wall construction
-/// 3. Call `step()` at each timestep
+/// 3. Call `step()` at each timestep (or `steady_state_flux()` for queries)
 /// 4. Query results via `energy_storage_rate()`
 ///
 /// # Example
