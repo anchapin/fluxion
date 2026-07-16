@@ -1,0 +1,14 @@
+{
+  "Version": {
+    "Version 1": {
+      "version_identifier": "25.2"
+    }
+  },
+  "Building": {
+    "MainBuilding": {
+      "name": "RefBox",
+      "north_axis": 0.0,
+      "terrain": "Suburbs"
+    }
+  }
+}
