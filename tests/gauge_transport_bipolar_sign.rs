@@ -38,8 +38,7 @@ const CASE_900_HW_CONCRETE_CP_J_KGK: f64 = 840.0;
 
 /// 5R1C equivalent resistance for a 200 mm HW concrete wall.
 /// R = thickness / (k · A) = 0.2 / (0.51 · 1) ≈ 0.392 Ω·m²/K
-const R_EQ_M2K_W: f64 =
-    CASE_900_HW_CONCRETE_THICKNESS_M / (CASE_900_HW_CONCRETE_K_W_MK * 1.0);
+const R_EQ_M2K_W: f64 = CASE_900_HW_CONCRETE_THICKNESS_M / (CASE_900_HW_CONCRETE_K_W_MK * 1.0);
 
 /// Air node capacitance for a typical zone: C = ρ·V·c_p / A
 /// ≈ (1.2 kg/m³ · 2.5 m ceiling · 1 m² · 1006 J/kgK) = ~3018 J/m²K
@@ -47,8 +46,9 @@ const C_AIR_J_M2K: f64 = 1.2 * 2.5 * 1006.0;
 
 /// Wall mass capacitance: C = ρ·V·c_p / A
 /// = (1400 kg/m³ · 0.2 m · 1 m² · 840 J/kgK) = 235,200 J/m²K
-const C_MASS_J_M2K: f64 =
-    CASE_900_HW_CONCRETE_RHO_KG_M3 * CASE_900_HW_CONCRETE_THICKNESS_M * CASE_900_HW_CONCRETE_CP_J_KGK;
+const C_MASS_J_M2K: f64 = CASE_900_HW_CONCRETE_RHO_KG_M3
+    * CASE_900_HW_CONCRETE_THICKNESS_M
+    * CASE_900_HW_CONCRETE_CP_J_KGK;
 
 /// Timestep: 1 hour = 3600 s
 const DT_SECONDS: f64 = 3600.0;
@@ -65,7 +65,8 @@ fn make_5r1c_manifold(t_air: f64, t_mass: f64) -> ThermalManifold {
 /// This gives the heat flux at the air node due to gauge transport.
 fn transport_flux_wm2(manifold: &ThermalManifold, dt: f64) -> f64 {
     let transported = manifold.compute_parallel_transport(dt);
-    let d_t_air = transported[ManifoldIndex::Air as usize] - manifold.scalar_field[ManifoldIndex::Air as usize];
+    let d_t_air = transported[ManifoldIndex::Air as usize]
+        - manifold.scalar_field[ManifoldIndex::Air as usize];
     // Q = C · dT/dt  →  W/m² = J/m²K · K/s
     let q_wm2 = C_AIR_J_M2K * d_t_air / dt;
     q_wm2
@@ -185,7 +186,9 @@ fn test_parallel_transport_is_not_fixed_point() {
     );
 
     // The air slot (which couples to the zone) should change
-    let d_t_air = (transported[ManifoldIndex::Air as usize] - manifold.scalar_field[ManifoldIndex::Air as usize]).abs();
+    let d_t_air = (transported[ManifoldIndex::Air as usize]
+        - manifold.scalar_field[ManifoldIndex::Air as usize])
+        .abs();
     assert!(
         d_t_air > 1e-10,
         "Air node temperature should evolve under non-zero solar forcing",
