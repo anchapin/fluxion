@@ -339,3 +339,44 @@ fn test_idf_roundtrip_case900() {
     // Schema version must be V1.
     assert_eq!(schema.version, fluxion::api::schema::SchemaVersion::V1);
 }
+
+// epJSON parsing (issue #1676)
+// ---------------------------------------------------------------------------
+
+#[test]
+fn test_parse_epjson_basic() {
+    let path = reference_dir().join("case900.epJSON");
+    assert!(
+        path.exists(),
+        "epJSON fixture missing at {}",
+        path.display()
+    );
+
+    let idf = IdfParser::from_epjson_path(&path).expect("parses epJSON fixture");
+
+    assert_eq!(idf.version.as_deref(), Some("25.2"));
+    assert_eq!(idf.objects.len(), 2);
+
+    let building = idf
+        .objects
+        .iter()
+        .find(|o| o.object_type.eq_ignore_ascii_case("Building"))
+        .expect("Building object present");
+    assert_eq!(building.name.as_deref(), Some("MainBuilding"));
+}
+
+#[test]
+fn test_parse_epjson_from_str() {
+    let src = r#"{
+      "Version": {
+        "Version 1": { "version_identifier": "25.2" }
+      },
+      "Zone": {
+        "Zone 1": { "name": "Zone1", "direction_of_relative_north": 0.0 }
+      }
+    }"#;
+    let idf = IdfParser::from_epjson_str(src).expect("parses epJSON string");
+    assert_eq!(idf.version.as_deref(), Some("25.2"));
+    assert_eq!(idf.objects.len(), 2);
+}
+}

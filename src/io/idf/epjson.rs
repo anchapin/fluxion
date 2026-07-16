@@ -45,7 +45,7 @@ impl IdfParser {
     ///
     /// Returns [`IdfError::Parse`] if the JSON is malformed or cannot be
     /// interpreted as epJSON.
-    pub fn from_epjson(input: &str) -> Result<IdfFile, IdfError> {
+    pub fn from_epjson_str(input: &str) -> Result<IdfFile, IdfError> {
         let json: Value = serde_json::from_str(input).map_err(|e| IdfError::Parse {
             line: 1,
             message: format!("invalid JSON: {e}"),
@@ -85,7 +85,7 @@ impl IdfParser {
     /// Parse an epJSON document from a filesystem path.
     pub fn from_epjson_path(path: &std::path::Path) -> Result<IdfFile, IdfError> {
         let content = std::fs::read_to_string(path)?;
-        Self::from_epjson(&content)
+        Self::from_epjson_str(&content)
     }
 }
 
@@ -166,7 +166,7 @@ mod tests {
             }
           }
         }"#;
-        let idf = IdfParser::from_epjson(src).unwrap();
+        let idf = IdfParser::from_epjson_str(src).unwrap();
         assert_eq!(idf.version.as_deref(), Some("25.2"));
         assert_eq!(idf.objects.len(), 1);
         let obj = &idf.objects[0];
@@ -189,7 +189,7 @@ mod tests {
             }
           }
         }"#;
-        let idf = IdfParser::from_epjson(src).unwrap();
+        let idf = IdfParser::from_epjson_str(src).unwrap();
         assert_eq!(idf.objects.len(), 1);
         let obj = &idf.objects[0];
         assert_eq!(obj.object_type, "Building");
@@ -203,7 +203,7 @@ mod tests {
             "Version 1": { "version_identifier": "25.2" }
           }
         }"#;
-        let idf_lower = IdfParser::from_epjson(src_lower).unwrap();
+        let idf_lower = IdfParser::from_epjson_str(src_lower).unwrap();
         assert!(idf_lower.versions().next().is_some());
 
         let src_upper = r#"{
@@ -211,7 +211,7 @@ mod tests {
             "Version 1": { "version_identifier": "25.2" }
           }
         }"#;
-        let idf_upper = IdfParser::from_epjson(src_upper).unwrap();
+        let idf_upper = IdfParser::from_epjson_str(src_upper).unwrap();
         assert!(idf_upper.versions().next().is_some());
     }
 
@@ -228,7 +228,7 @@ mod tests {
             }
           }
         }"#;
-        let idf = IdfParser::from_epjson(src).unwrap();
+        let idf = IdfParser::from_epjson_str(src).unwrap();
         assert_eq!(idf.objects.len(), 1);
         let obj = &idf.objects[0];
         let empty_count = obj.fields.iter().filter(|f| *f == &IdfValue::Empty).count();
@@ -244,7 +244,7 @@ mod tests {
             }
           }
         }"#;
-        let idf = IdfParser::from_epjson(src).unwrap();
+        let idf = IdfParser::from_epjson_str(src).unwrap();
         assert_eq!(idf.objects.len(), 1);
         assert_eq!(idf.objects[0].object_type, "TotallyMadeUpObject");
     }
@@ -267,7 +267,7 @@ mod tests {
             }
           }
         }"#;
-        let idf = IdfParser::from_epjson(src).unwrap();
+        let idf = IdfParser::from_epjson_str(src).unwrap();
         assert_eq!(idf.objects.len(), 2);
         assert_eq!(idf.materials().count(), 2);
     }
@@ -275,7 +275,7 @@ mod tests {
     #[test]
     fn invalid_json_returns_error() {
         let src = "not valid json at all";
-        let result = IdfParser::from_epjson(src);
+        let result = IdfParser::from_epjson_str(src);
         assert!(result.is_err());
     }
 }
