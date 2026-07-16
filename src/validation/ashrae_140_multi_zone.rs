@@ -876,15 +876,21 @@ mod tests {
 
         // (1) The validator must take substantially longer than the
         //     <1ms the stub took. A 8760-step physics simulation takes
-        //     many milliseconds even on a fast machine, so 100ms is a
+        //     many milliseconds even on a fast machine, so 200ms is a
         //     very conservative floor that the stub would never reach.
+        //
+        //     NOTE: This threshold was raised from 100ms to 200ms to handle
+        //     loaded CI runners where 38ms < 100ms was observed (#1714).
+        //     The real fix (verifying computed load is non-zero) is tracked
+        //     separately. This threshold is a proxy; the real execution is
+        //     independently proven by steps (2)-(4) below.
         let started = Instant::now();
         let result = validator.validate_case_960(&model, &reference);
         let elapsed_ms = started.elapsed().as_secs_f64() * 1000.0;
 
         assert!(
-            elapsed_ms > 100.0,
-            "Validator should take > 100ms (real physics); took {:.1}ms — \
+            elapsed_ms > 200.0,
+            "Validator should take > 200ms (real physics); took {:.1}ms — \
              likely still the stub.",
             elapsed_ms
         );
