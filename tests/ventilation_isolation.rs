@@ -363,8 +363,14 @@ fn test_ach_to_conductance_matches_energyplus() {
     eprintln!("cp                                     : {cp} J/kg·K");
     eprintln!("Fluxion h_ve                           : {result_wk:.6} W/K");
     eprintln!("EnergyPlus reference h_ve              : {expected} W/K");
-    eprintln!("Relative error                         : {:.4}%", ((result_wk - expected) / expected).abs() * 100.0);
-    eprintln!("Tolerance                              : {:.1}%", tolerance * 100.0);
+    eprintln!(
+        "Relative error                         : {:.4}%",
+        ((result_wk - expected) / expected).abs() * 100.0
+    );
+    eprintln!(
+        "Tolerance                              : {:.1}%",
+        tolerance * 100.0
+    );
     eprintln!("Elapsed                                : {elapsed:.2?}");
 
     assert!(
