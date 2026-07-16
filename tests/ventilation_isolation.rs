@@ -328,6 +328,55 @@ fn test_ashrae_140_ventilation_conductance_matches_analytical() {
 }
 
 // ============================================================================
+// Issue #1674 — ACH→conductance isolation test against EnergyPlus reference
+// ============================================================================
+
+/// Validates `ach_to_conductance()` against EnergyPlus reference data.
+///
+/// Case 900 parameters: ACH=0.5, volume=129.6 m³, ρ=1.2 kg/m³, cp=1005 J/kg·K
+/// Expected: ~21.7 W/K (EnergyPlus reference: 21.6 W/K)
+///
+/// The conductance is computed as: h_ve = ACH × V × ρ × cp / 3600
+/// This test passes cp=1005 (standard air specific heat at ~20°C) to match
+/// the typical EnergyPlus formulation, and validates the result against the
+/// 21.6 W/K reference from `infiltration_denver_05ach.csv`.
+#[test]
+fn test_ach_to_conductance_matches_energyplus() {
+    let start = Instant::now();
+
+    // Case 900 parameters (cp=1005 per EnergyPlus convention)
+    let ach = 0.5;
+    let volume_m3 = 129.6;
+    let rho = 1.2; // kg/m³
+    let cp = 1005.0; // J/kg·K
+
+    let result_wk = ach_to_conductance(ach, volume_m3, rho, cp).get::<watt_per_kelvin>();
+    let expected = 21.6; // W/K (EnergyPlus reference, constant across all 8760 hours)
+    let tolerance = 0.01; // 1%
+
+    let elapsed = start.elapsed();
+
+    eprintln!("\n=== ACH→conductance vs EnergyPlus (Issue #1674) ===");
+    eprintln!("ACH                                    : {ach}");
+    eprintln!("Volume                                 : {volume_m3} m³");
+    eprintln!("ρ                                      : {rho} kg/m³");
+    eprintln!("cp                                     : {cp} J/kg·K");
+    eprintln!("Fluxion h_ve                           : {result_wk:.6} W/K");
+    eprintln!("EnergyPlus reference h_ve              : {expected} W/K");
+    eprintln!("Relative error                         : {:.4}%", ((result_wk - expected) / expected).abs() * 100.0);
+    eprintln!("Tolerance                              : {:.1}%", tolerance * 100.0);
+    eprintln!("Elapsed                                : {elapsed:.2?}");
+
+    assert!(
+        (result_wk - expected).abs() / expected <= tolerance,
+        "ach_to_conductance(0.5, 129.6, 1.2, 1005) must be within 1% of EnergyPlus \
+         reference {} W/K; got {} W/K",
+        expected,
+        result_wk,
+    );
+}
+
+// ============================================================================
 // Companion regression — the spec value is preserved under default weather
 // ============================================================================
 
