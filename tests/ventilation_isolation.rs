@@ -186,6 +186,82 @@ fn test_ashrae_140_0p5_ach_default() {
 }
 
 // ============================================================================
+// Acceptance criterion 1b — ASHRAE 0.5 ACH exact lock-in (± 1e-6)
+// ============================================================================
+
+/// ASHRAE 140-2023 §5.5.3.6 default-infiltration lock-in — exact form.
+///
+/// With `min_ach == max_ach == 0.5` the `get_ach_weather` formula reduces
+/// deterministically to `min_ach` regardless of temperature or wind:
+///
+/// ```ignore
+/// (min + (max - min) * combined).max(min) = (0.5 + 0.0 * combined).max(0.5) = 0.5
+/// ```
+///
+/// This test asserts the lock-in holds to ± 1e-6 ACH for every of the 8760
+/// hours, guarding against any future numeric drift in the blending math.
+///
+/// References: Issue #1675 (this test), Issue #1674 (ventilation isolation suite)
+#[test]
+fn test_ashrae_140_0p5_ach_default_lock_in() {
+    let start = Instant::now();
+    let rows = load_reference_rows();
+
+    let vent = WeatherDependentVentilation::new(
+        ASHRAE_140_DEFAULT_ACH, // base_ach
+        ASHRAE_140_DEFAULT_ACH, // min_ach
+        ASHRAE_140_DEFAULT_ACH, // max_ach
+        18.0,                   // start_temp
+        26.0,                   // full_open_temp
+    );
+
+    let mut max_drift = 0.0_f64;
+    let mut worst_hour = 0usize;
+    let mut hours_out_of_tolerance = 0usize;
+    const LOCK_IN_TOLERANCE: f64 = 1e-6;
+
+    for row in &rows {
+        let ach = vent.get_ach(
+            row.hour - 1,
+            row.outdoor_temp_c,
+            T_INDOOR_C,
+            row.wind_speed_ms,
+            CASE_900_VOLUME_M3,
+        );
+
+        let drift = (ach - ASHRAE_140_DEFAULT_ACH).abs();
+        if drift > max_drift {
+            max_drift = drift;
+            worst_hour = row.hour;
+        }
+        if drift > LOCK_IN_TOLERANCE {
+            hours_out_of_tolerance += 1;
+            if hours_out_of_tolerance <= 3 {
+                eprintln!(
+                    "Hour {}: ACH = {:.10}, drift = {:.6e} > tolerance {}",
+                    row.hour, ach, drift, LOCK_IN_TOLERANCE
+                );
+            }
+        }
+    }
+
+    let elapsed = start.elapsed();
+
+    eprintln!("\n=== ASHRAE 140-2023 §5.5.3.6 exact lock-in (#1675) ===");
+    eprintln!("Hours checked:          {hours}", hours = rows.len());
+    eprintln!("Target ACH:             {ASHRAE_140_DEFAULT_ACH} ± {LOCK_IN_TOLERANCE:.6e}");
+    eprintln!("Max drift from target:  {max_drift:.6e} (at hour {worst_hour})");
+    eprintln!("Hours out of tolerance: {hours_out_of_tolerance}/8760");
+    eprintln!("Elapsed:                {elapsed:.2?}");
+
+    assert_eq!(
+        hours_out_of_tolerance, 0,
+        "WeatherDependentVentilation::get_ach(hour) must return 0.5 ± 1e-6 ACH for \
+         all 8760 hours with ASHRAE 140 Case 900 spec inputs (ASHRAE 140-2023 §5.5.3.6)."
+    );
+}
+
+// ============================================================================
 // Acceptance criterion 2 — combined infiltration = wind + stack within 1%
 // ============================================================================
 
