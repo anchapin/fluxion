@@ -1,6 +1,10 @@
 // Multi-zone Python bindings for Fluxion
 // This module extends the existing Python API with multi-zone functionality
 
+use crate::api::error::FluxionError;
+use crate::api::schema::{SimulationSchema, SimulationSchemaV1};
+use crate::interop::gbxml::{export_gbxml as export_gbxml_file, GbXmlError};
+use crate::interop::osm::{export_osm as export_osm_file, OsmError};
 use crate::physics::cta::VectorField;
 use crate::sim::engine::ThermalModel;
 use crate::sim::invariant_checker::InvariantChecker;
@@ -8,7 +12,7 @@ use crate::validation::ashrae_140_cases::ASHRAE140Case;
 use crate::weather::denver::DenverTmyWeather;
 use crate::weather::WeatherSource;
 use pyo3::prelude::*;
-use pyo3::types::PyDict;
+use pyo3::types::{PyDict, PyModule};
 use std::collections::HashMap;
 
 /// Default tolerance for energy balance validation (0.1%).
@@ -737,8 +741,52 @@ pub fn multi_zone(_py: Python, m: &Bound<'_, PyModule>) -> PyResult<()> {
         create_multi_zone_model_from_schema_dict,
         m
     )?)?;
+    m.add_function(wrap_pyfunction!(export_osm, m)?)?;
+    m.add_function(wrap_pyfunction!(export_gbxml, m)?)?;
 
     Ok(())
+}
+
+fn validation_error(message: impl Into<String>) -> PyErr {
+    FluxionError::Validation(message.into()).into()
+}
+
+fn osm_error(error: OsmError) -> PyErr {
+    FluxionError::Simulation(format!("OSM interoperability error: {}", error)).into()
+}
+
+fn gbxml_error(error: GbXmlError) -> PyErr {
+    FluxionError::Simulation(format!("gbXML interoperability error: {}", error)).into()
+}
+
+fn schema_from_json(content: &str) -> PyResult<SimulationSchemaV1> {
+    if let Ok(schema) = serde_json::from_str::<SimulationSchemaV1>(content) {
+        return Ok(schema);
+    }
+
+    let schema: SimulationSchema = serde_json::from_str(content)
+        .map_err(|error| validation_error(format!("Failed to parse schema JSON: {}", error)))?;
+    let SimulationSchema::V1(schema) = schema;
+    Ok(schema)
+}
+
+fn schema_from_dict(schema: &Bound<'_, PyDict>) -> PyResult<SimulationSchemaV1> {
+    let py = schema.py();
+    let json = PyModule::import_bound(py, "json")?;
+    let content: String = json.call_method1("dumps", (schema,))?.extract()?;
+    schema_from_json(&content)
+}
+
+#[pyfunction]
+pub fn export_osm(schema: &Bound<'_, PyDict>, path: &str) -> PyResult<()> {
+    let schema = schema_from_dict(schema)?;
+    export_osm_file(&schema, path).map_err(osm_error)
+}
+
+#[pyfunction]
+pub fn export_gbxml(schema: &Bound<'_, PyDict>, path: &str) -> PyResult<()> {
+    let schema = schema_from_dict(schema)?;
+    export_gbxml_file(&schema, path).map_err(gbxml_error)
 }
 
 /// Register HVAC module in main bindings
