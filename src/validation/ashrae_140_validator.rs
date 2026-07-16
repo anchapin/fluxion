@@ -74,8 +74,11 @@ pub struct FreeFloatValidationResult {
 /// use fluxion::validation::ashrae_140_validator::ASHRAE140Validator;
 ///
 /// let validator = ASHRAE140Validator::new();
-/// let results = validator.validate_case("600")?;
-/// validator.print_results(&results);
+/// let result = validator.validate_case("600");
+/// match result {
+///     Ok(r) => println!("Case 600 validation: in_range={}, error_pct={:.2}%", r.in_range, r.error_pct),
+///     Err(e) => eprintln!("Validation failed: {}", e),
+/// }
 /// ```
 ///
 /// # Output
@@ -123,10 +126,10 @@ impl Default for ASHRAE140Validator {
 ///
 /// # Example
 /// ```rust
-/// use fluxion::validation::ashrae_140_cases::case_900ff;
+/// use fluxion::validation::ashrae_140_cases::CaseBuilder;
 /// use fluxion::validation::ashrae_140_validator::validate_ashrae_140;
 ///
-/// let case = case_900ff();
+/// let case = CaseBuilder::case_900ff();
 /// let result = validate_ashrae_140(&case);
 /// println!("Min temp: {:.2}°C, Max temp: {:.2}°C",
 ///          result.free_float_min_temp, result.free_float_max_temp);
@@ -995,13 +998,17 @@ impl ASHRAE140Validator {
     /// # Errors
     /// Returns error if case simulation fails or benchmark data not found.
     ///
-    /// # Example
-    /// ```rust,no_run
-    /// let (report, diagnostics) = validator.validate_single_case_with_diagnostics(
-    ///     ASHRAE140Case::Case600
-    /// )?;
-    /// validator.print_results(&report);
-    /// ```
+/// # Example
+/// ```rust,no_run
+/// use fluxion::validation::ashrae_140_cases::ASHRAE140Case;
+/// use fluxion::validation::ashrae_140_validator::ASHRAE140Validator;
+///
+/// let mut validator = ASHRAE140Validator::new();
+/// let (report, _diagnostics) = validator.validate_single_case_with_diagnostics(
+///     ASHRAE140Case::Case600
+/// );
+/// report.print_summary();
+/// ```
     pub fn validate_single_case_with_diagnostics(
         &mut self,
         case: ASHRAE140Case,
@@ -2391,10 +2398,10 @@ impl ASHRAE140Validator {
     ///
     /// # Example
     /// ```rust
-    /// use fluxion::validation::ashrae_140_cases::case_900ff;
+    /// use fluxion::validation::ashrae_140_cases::CaseBuilder;
     /// use fluxion::validation::ashrae_140_validator::validate_ashrae_140;
     ///
-    /// let case = case_900ff();
+    /// let case = CaseBuilder::case_900ff();
     /// let result = validate_ashrae_140(&case);
     /// println!("Min temp: {:.2}°C, Max temp: {:.2}°C",
     ///          result.free_float_min_temp, result.free_float_max_temp);
