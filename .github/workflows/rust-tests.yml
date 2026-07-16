@@ -134,6 +134,21 @@ jobs:
           python-version: '3.10'
       - run: cargo clippy --lib -- -D warnings
 
+  # -- Issue #1723: KNOWN_ISSUES.md stale check -----------------------------
+  # Runs on every PR and main push. Fails if the Last Updated date in
+  # docs/KNOWN_ISSUES.md is older than 60 days.
+
+  known-issues-stale:
+    name: Known Issues Stale Check (Issue #1723)
+    runs-on: ubuntu-latest
+    if: |
+      github.event_name == 'pull_request' ||
+      (github.event_name == 'push' && github.ref == 'refs/heads/main')
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run stale check
+        run: python3 scripts/check_known_issues_stale.py
+
   # -- Main only: cross-platform matrix --------------------------------------
   # Validates that nothing is accidentally Linux/x86-specific before changes
   # land on main. Linux slot uses FLUXION_LINUX_RUNNER if set (self-hosted
