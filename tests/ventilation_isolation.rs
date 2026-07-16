@@ -247,19 +247,11 @@ fn test_ashrae_140_0p5_ach_default_lock_in() {
 
     let elapsed = start.elapsed();
 
-    eprintln!(
-        "\n=== ASHRAE 140-2023 §5.5.3.6 exact lock-in (#1675) ==="
-    );
+    eprintln!("\n=== ASHRAE 140-2023 §5.5.3.6 exact lock-in (#1675) ===");
     eprintln!("Hours checked:          {hours}", hours = rows.len());
-    eprintln!(
-        "Target ACH:             {ASHRAE_140_DEFAULT_ACH} ± {LOCK_IN_TOLERANCE:.6e}"
-    );
-    eprintln!(
-        "Max drift from target:  {max_drift:.6e} (at hour {worst_hour})"
-    );
-    eprintln!(
-        "Hours out of tolerance: {hours_out_of_tolerance}/8760"
-    );
+    eprintln!("Target ACH:             {ASHRAE_140_DEFAULT_ACH} ± {LOCK_IN_TOLERANCE:.6e}");
+    eprintln!("Max drift from target:  {max_drift:.6e} (at hour {worst_hour})");
+    eprintln!("Hours out of tolerance: {hours_out_of_tolerance}/8760");
     eprintln!("Elapsed:                {elapsed:.2?}");
 
     assert_eq!(
