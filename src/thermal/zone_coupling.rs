@@ -4,7 +4,7 @@
 //! for improved performance in multi-zone thermal simulations.
 
 use crate::validation::performance::optimization;
-use ndarray::Array2;
+use ndarray::{Array2, ShapeError};
 use once_cell::sync::Lazy;
 use std::collections::HashMap;
 
@@ -45,9 +45,10 @@ impl ZoneCouplingOptimized {
     }
 
     /// Set temperature vector.
-    pub fn set_temperature_vector(&mut self, temperatures: Vec<f64>) {
+    pub fn set_temperature_vector(&mut self, temperatures: Vec<f64>) -> Result<(), ShapeError> {
         self.temperature_vector =
-            Array2::from_shape_vec((self.num_zones, 1), temperatures).unwrap();
+            Array2::from_shape_vec((self.num_zones, 1), temperatures)?;
+        Ok(())
     }
 
     /// Calculate heat flow using vectorized operations.
@@ -188,7 +189,7 @@ mod tests {
         coupling.conductance_matrix = Array2::from_shape_vec((2, 2), conductance_data).unwrap();
 
         // Set temperatures
-        coupling.set_temperature_vector(vec![25.0, 20.0]);
+        coupling.set_temperature_vector(vec![25.0, 20.0]).expect("temperature vector length must match num_zones");
 
         // Calculate heat flow
         let heat_flow = coupling.calculate_heat_flow();
