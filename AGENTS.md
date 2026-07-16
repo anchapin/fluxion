@@ -24,9 +24,9 @@ cargo test --test ashrae_140_validation       # ASHRAE 140 validation suite
 LOOM=1 cargo test --features loom             # loom concurrency tests
 
 # Code quality (required order)
-cargo fmt
+cargo fmt -- --check  # --check for CI; omit --check for auto-fix
 cargo clippy --all-targets
-cargo audit
+cargo audit            # runs via pre-commit hook; also available manually
 
 # Python bindings (requires Python 3.10+)
 maturin develop       # local dev install
