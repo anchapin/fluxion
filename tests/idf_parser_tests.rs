@@ -379,4 +379,3 @@ fn test_parse_epjson_from_str() {
     assert_eq!(idf.version.as_deref(), Some("25.2"));
     assert_eq!(idf.objects.len(), 2);
 }
-}
