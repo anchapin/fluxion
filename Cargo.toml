@@ -173,6 +173,7 @@ tower = { version = "0.5", features = ["util"] }
 http-body-util = "0.1"
 futures = "0.3"
 async-stream = "0.3"
+async-trait = "0.1"
 
 # Observability for fluxion-rest (Issue #1447):
 #   - `tower-http` brings `TraceLayer` and `RequestId`/`PropagateRequestId`
