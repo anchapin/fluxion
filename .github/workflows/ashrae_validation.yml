@@ -761,6 +761,63 @@ jobs:
       - name: Run Zone Balance Isolation Tests
         run: cargo test --test zone_balance_eplus_isolation --release
 
+  # Python verification scripts — Issue #1699
+  # These scripts validate QUBO math (issue-1464) and diurnal parity (issue-1465).
+  # They are not built into the Rust binary; they run as standalone Python scripts
+  # and must execute without crashing for CI to pass.
+  quantum-python-verification:
+    name: Quantum Python Verification
+    runs-on: ubuntu-latest
+    needs: compare-hashes
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libssl-dev pkg-config libfontconfig1-dev python3
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+      - name: Cache cargo dependencies
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-
+      - name: Run Quantum Python Verification
+        run: cargo test --test quantum_python_verification --release
+
+  gauge-python-diagnostic:
+    name: Gauge Python Diagnostic
+    runs-on: ubuntu-latest
+    needs: compare-hashes
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libssl-dev pkg-config libfontconfig1-dev python3
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+      - name: Cache cargo dependencies
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-
+      - name: Run Gauge Python Diagnostic
+        run: cargo test --test gauge_python_diagnostic --release
+
+
   # =====================================================================
   # Issue #1351 — Cross-workflow determinism gate listener
   # =====================================================================
