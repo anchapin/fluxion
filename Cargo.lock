@@ -1058,6 +1058,7 @@ dependencies = [
  "anyhow",
  "approx",
  "async-stream",
+ "async-trait",
  "axum",
  "chrono",
  "clap",
