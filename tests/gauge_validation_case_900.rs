@@ -339,9 +339,10 @@ fn test_thermal_capacity_matches_ashrae_140_reference() {
     // layers. 468.7 kJ/m²K is the canonical envelope-level thermal mass metric.
     let cm_stacked_kj_m2k = 2.0 * cm_per_layer_kj_m2k;
 
-    let drift_pct =
-        ((cm_stacked_kj_m2k - CASE_900_CM_KJ_M2K_DOCUMENTED) / CASE_900_CM_KJ_M2K_DOCUMENTED * 100.0)
-            .abs();
+    let drift_pct = ((cm_stacked_kj_m2k - CASE_900_CM_KJ_M2K_DOCUMENTED)
+        / CASE_900_CM_KJ_M2K_DOCUMENTED
+        * 100.0)
+        .abs();
 
     // 1 % tolerance per AGENTS.md Phase 1 module isolation rule.
     assert!(
