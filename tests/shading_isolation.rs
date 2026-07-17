@@ -1091,7 +1091,196 @@ fn test_performance_under_100ms() {
 }
 
 // ---------------------------------------------------------------------------
-// Section 8: Issue #1617 - E/W Shading at Low Solar Angles
+// Section 8: Issue #1694 - E/W Shading Fin Isolation at Solar Altitude <20°
+// ---------------------------------------------------------------------------
+
+/// Test E/W fin isolation at low solar angle - EAST (Issue #1694).
+///
+/// Case 930 geometry: 6 m² east-facing window (3.0m wide × 2.0m tall).
+/// Solar: altitude=15°, relative_azimuth=10° (morning sun on east facade).
+///
+/// Fin geometry:
+/// - fin_depth=1.0m, mounting_height=2.7m
+/// - fin_height = (sill + window_height) - mounting_height
+///              = (0.8 + 2.0) - 2.7 = 0.1m (bounded by mounting_height)
+///
+/// At 15° altitude, fin shadow width = 1.0 * tan(10°) ≈ 0.176m
+/// Fin shades: 0.176m * 0.1m ≈ 0.0176 m² → fraction ≈ 0.0029
+///
+/// With overhang (depth=1.0m, distance_above=0):
+/// - shadow_y = 1.0 * tan(15°)/cos(10°) ≈ 0.269m
+/// - shaded_height = min(0.269, 2.0) = 0.269m
+/// - overhang_area = 0.269 * 3.0 = 0.807 m²
+/// - combined fraction ≈ (0.807 + 0.0029) / 6.0 ≈ 0.135
+///
+/// Acceptance: shaded_fraction > 0.10
+#[test]
+fn test_ew_fins_low_angle_east() {
+    let window = WindowArea::with_dimensions(6.0, Orientation::East, 2.0, 3.0, 0.8, 0.0);
+
+    let mounting_height = 2.7;
+    let fin_height = (window.sill_height + window.height - mounting_height).max(0.0);
+
+    let fin_left = ShadeFin {
+        depth: 1.0,
+        distance_from_edge: 0.0,
+        side: Side::Left,
+        height: fin_height,
+    };
+    let fin_right = ShadeFin {
+        depth: 1.0,
+        distance_from_edge: 0.0,
+        side: Side::Right,
+        height: fin_height,
+    };
+
+    let overhang = Overhang {
+        depth: 1.0,
+        distance_above: 0.0,
+        extension: 10.0,
+    };
+
+    let solar = LocalSolarPosition {
+        altitude: 15.0_f64.to_radians(),
+        relative_azimuth: 10.0_f64.to_radians(),
+    };
+
+    let shaded = calculate_shaded_fraction(
+        &window,
+        Some(&overhang),
+        &[fin_left, fin_right],
+        &solar,
+    );
+
+    assert!(
+        shaded > 0.10,
+        "E/W fin low angle (east): expected >0.10, got {:.4}",
+        shaded
+    );
+}
+
+/// Test E/W fin isolation at low solar angle - WEST (Issue #1694).
+///
+/// Case 930 geometry: 6 m² west-facing window (3.0m wide × 2.0m tall).
+/// Solar: altitude=15°, relative_azimuth=-10° (afternoon sun on west facade).
+///
+/// Fin geometry:
+/// - fin_depth=1.0m, mounting_height=2.7m
+/// - fin_height = (sill + window_height) - mounting_height
+///              = (0.8 + 2.0) - 2.7 = 0.1m (bounded by mounting_height)
+///
+/// West fin shades when relative_azimuth < 0 (sun to the left of surface).
+///
+/// Acceptance: shaded_fraction > 0.10
+#[test]
+fn test_ew_fins_low_angle_west() {
+    let window = WindowArea::with_dimensions(6.0, Orientation::West, 2.0, 3.0, 0.8, 0.0);
+
+    let mounting_height = 2.7;
+    let fin_height = (window.sill_height + window.height - mounting_height).max(0.0);
+
+    let fin_left = ShadeFin {
+        depth: 1.0,
+        distance_from_edge: 0.0,
+        side: Side::Left,
+        height: fin_height,
+    };
+    let fin_right = ShadeFin {
+        depth: 1.0,
+        distance_from_edge: 0.0,
+        side: Side::Right,
+        height: fin_height,
+    };
+
+    let overhang = Overhang {
+        depth: 1.0,
+        distance_above: 0.0,
+        extension: 10.0,
+    };
+
+    let solar = LocalSolarPosition {
+        altitude: 15.0_f64.to_radians(),
+        relative_azimuth: -10.0_f64.to_radians(),
+    };
+
+    let shaded = calculate_shaded_fraction(
+        &window,
+        Some(&overhang),
+        &[fin_left, fin_right],
+        &solar,
+    );
+
+    assert!(
+        shaded > 0.10,
+        "E/W fin low angle (west): expected >0.10, got {:.4}",
+        shaded
+    );
+}
+
+/// Test E/W fin isolation WITHOUT overhang to isolate fin geometry (Issue #1694).
+///
+/// This test verifies fin behavior in isolation at low solar angle.
+/// Fins alone at 15° altitude, 10° azimuth should produce minimal shading
+/// because fin_height is only 0.1m (bounded by mounting_height).
+#[test]
+fn test_ew_fins_low_angle_east_fin_only() {
+    let window = WindowArea::with_dimensions(6.0, Orientation::East, 2.0, 3.0, 0.8, 0.0);
+
+    let mounting_height = 2.7;
+    let fin_height = (window.sill_height + window.height - mounting_height).max(0.0);
+
+    let fin_right = ShadeFin {
+        depth: 1.0,
+        distance_from_edge: 0.0,
+        side: Side::Right,
+        height: fin_height,
+    };
+
+    let solar = LocalSolarPosition {
+        altitude: 15.0_f64.to_radians(),
+        relative_azimuth: 10.0_f64.to_radians(),
+    };
+
+    let shaded = calculate_shaded_fraction(&window, None, &[fin_right], &solar);
+
+    assert!(
+        shaded < 0.01,
+        "Fin-only at low angle should produce minimal shading, got {:.4}",
+        shaded
+    );
+}
+
+/// Test E/W fin isolation WITHOUT overhang - WEST (Issue #1694).
+#[test]
+fn test_ew_fins_low_angle_west_fin_only() {
+    let window = WindowArea::with_dimensions(6.0, Orientation::West, 2.0, 3.0, 0.8, 0.0);
+
+    let mounting_height = 2.7;
+    let fin_height = (window.sill_height + window.height - mounting_height).max(0.0);
+
+    let fin_left = ShadeFin {
+        depth: 1.0,
+        distance_from_edge: 0.0,
+        side: Side::Left,
+        height: fin_height,
+    };
+
+    let solar = LocalSolarPosition {
+        altitude: 15.0_f64.to_radians(),
+        relative_azimuth: -10.0_f64.to_radians(),
+    };
+
+    let shaded = calculate_shaded_fraction(&window, None, &[fin_left], &solar);
+
+    assert!(
+        shaded < 0.01,
+        "Fin-only at low angle (west) should produce minimal shading, got {:.4}",
+        shaded
+    );
+}
+
+// ---------------------------------------------------------------------------
+// Section 9: Issue #1617 - E/W Shading at Low Solar Angles
 // ---------------------------------------------------------------------------
 
 /// Test E/W shading at low solar angles (Issue #1617).
