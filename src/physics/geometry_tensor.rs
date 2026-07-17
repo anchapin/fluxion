@@ -1621,7 +1621,11 @@ mod tests {
                     assert!(
                         gamma_ijk.abs() <= tol,
                         "5R1C Christoffel symbol Γ[{},{},{}] = {:.3e} exceeds {}",
-                        i, j, k, gamma_ijk, tol
+                        i,
+                        j,
+                        k,
+                        gamma_ijk,
+                        tol
                     );
                 }
             }
@@ -1639,7 +1643,11 @@ mod tests {
                     assert!(
                         gamma_ijk.abs() <= tol,
                         "9R4C Christoffel symbol Γ[{},{},{}] = {:.3e} exceeds {}",
-                        i, j, k, gamma_ijk, tol
+                        i,
+                        j,
+                        k,
+                        gamma_ijk,
+                        tol
                     );
                 }
             }
