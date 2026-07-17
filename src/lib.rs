@@ -1676,6 +1676,13 @@ fn fluxion(_py: Python, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(pyo3::wrap_pyfunction!(python::osm_bindings::import_osm, m)?)?;
     m.add_function(pyo3::wrap_pyfunction!(python::osm_bindings::export_osm, m)?)?;
 
+    // Register 9R4C Multi-Node Solver classes
+    m.add_class::<python::multi_node_bindings::PyThermalMassNode>()?;
+    m.add_class::<python::multi_node_bindings::PyMultiNodeThermalMass>()?;
+    m.add_class::<python::multi_node_bindings::PyMassAirCouplingMode>()?;
+    m.add_class::<python::multi_node_bindings::PySurfaceExteriorTemperatures>()?;
+    m.add_class::<python::multi_node_bindings::PyMultiNodeSolver>()?;
+
     Ok(())
 }
 

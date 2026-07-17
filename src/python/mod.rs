@@ -5,10 +5,14 @@ pub mod bindings;
 #[cfg(feature = "python-bindings")]
 pub mod hvac_bindings;
 #[cfg(feature = "python-bindings")]
+pub mod multi_node_bindings;
+#[cfg(feature = "python-bindings")]
 pub mod osm_bindings;
 
 #[cfg(feature = "python-bindings")]
 pub use hvac_bindings::*;
+#[cfg(feature = "python-bindings")]
+pub use multi_node_bindings::*;
 #[cfg(feature = "python-bindings")]
 pub use osm_bindings::*;
 
@@ -40,6 +44,13 @@ pub fn fluxion_python(_py: Python, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<osm_bindings::PyOsmWriter>()?;
     m.add_function(pyo3::wrap_pyfunction!(osm_bindings::import_osm, m)?)?;
     m.add_function(pyo3::wrap_pyfunction!(osm_bindings::export_osm, m)?)?;
+
+    // Register 9R4C Multi-Node Solver classes
+    m.add_class::<multi_node_bindings::PyThermalMassNode>()?;
+    m.add_class::<multi_node_bindings::PyMultiNodeThermalMass>()?;
+    m.add_class::<multi_node_bindings::PyMassAirCouplingMode>()?;
+    m.add_class::<multi_node_bindings::PySurfaceExteriorTemperatures>()?;
+    m.add_class::<multi_node_bindings::PyMultiNodeSolver>()?;
 
     Ok(())
 }
