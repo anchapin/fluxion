@@ -725,7 +725,9 @@ mod tests {
                 assert!(
                     jij.abs() <= 2.0 + 1e-9,
                     "5R1C: |J[{},{}]| = {} exceeds 2.0",
-                    i, j, jij.abs()
+                    i,
+                    j,
+                    jij.abs()
                 );
             }
         }
@@ -745,7 +747,9 @@ mod tests {
                 assert!(
                     jij.abs() <= 2.0 + 1e-9,
                     "9R4C: |J[{},{}]| = {} exceeds 2.0",
-                    i, j, jij.abs()
+                    i,
+                    j,
+                    jij.abs()
                 );
             }
         }
@@ -761,7 +765,10 @@ mod tests {
         let qp = manifold_to_qubo(&m, cfg).expect("manifold_to_qubo failed");
         let q_orig = qp.q_matrix();
         let max_abs = qp.max_abs();
-        assert!(max_abs > 0.0, "max_abs should be > 0 for non-trivial manifold");
+        assert!(
+            max_abs > 0.0,
+            "max_abs should be > 0 for non-trivial manifold"
+        );
         let q_norm = qp.to_dwave_normalized();
 
         for i in 0..q_orig.len() {
@@ -771,7 +778,9 @@ mod tests {
                 assert!(
                     (ratio - expected).abs() < 1e-9,
                     "Index {}: ratio {} != expected {}",
-                    i, ratio, expected
+                    i,
+                    ratio,
+                    expected
                 );
             }
         }
