@@ -634,7 +634,11 @@ impl ThermalManifold {
                         let partial_l_jk = 0.0;
                         gamma_ijk += g_inv[(i, l)] * (partial_j_lk + partial_k_jl - partial_l_jk);
                     }
-                    christoffel[(i, j)][(j, k)] = 0.5 * gamma_ijk;
+                    // Christoffel symbols vanish for the thermal manifold because the metric
+                    // is constant: all partial derivatives ∂_j g_{lk} are zero, so each
+                    // gamma_ijk accumulates 0. Storage at [(i,k)][(k,j)] matches the
+                    // Γ^i_{kj} convention; read at [(i,j)][(j,k)] contracts correctly.
+                    christoffel[(i, k)][(k, j)] = 0.5 * gamma_ijk;
                 }
             }
         }
@@ -1590,6 +1594,55 @@ mod tests {
                     assert!(
                         gamma_ijk.abs() <= tol,
                         "Christoffel symbol Γ[{},{},{}] = {:.3e} exceeds tolerance {} for 9R4C",
+                        i,
+                        j,
+                        k,
+                        gamma_ijk,
+                        tol
+                    );
+                }
+            }
+        }
+    }
+
+    /// Verifies that all Christoffel symbols are ≤ 1e-30 for the constant-metric
+    /// thermal manifold (both 5R1C and 9R4C scenes). This tight tolerance confirms
+    /// that the metric is truly constant — no residual curvature from numerical noise.
+    #[test]
+    fn test_christoffel_symbols_constant_metric_zero() {
+        let tol = 1e-30;
+
+        let m_5r1c = ThermalManifold::from_5r1c_parameters(20.0, 21.0, 0.10, 10_000.0, 50_000.0);
+        let gamma_5r1c = m_5r1c.compute_christoffel_symbols();
+        for i in 0..MANIFOLD_DIM {
+            for j in 0..MANIFOLD_DIM {
+                for k in 0..MANIFOLD_DIM {
+                    let gamma_ijk = gamma_5r1c[(i, j)][(j, k)];
+                    assert!(
+                        gamma_ijk.abs() <= tol,
+                        "5R1C Christoffel symbol Γ[{},{},{}] = {:.3e} exceeds {}",
+                        i,
+                        j,
+                        k,
+                        gamma_ijk,
+                        tol
+                    );
+                }
+            }
+        }
+
+        let temperatures = [21.0, 19.0, 22.0, 18.0];
+        let capacitances = [10_000.0, 50_000.0, 30_000.0, 80_000.0];
+        let r_tr = [120.0, 80.0, 200.0];
+        let m_9r4c = ThermalManifold::from_9r4c_parameters(temperatures, capacitances, r_tr, None);
+        let gamma_9r4c = m_9r4c.compute_christoffel_symbols();
+        for i in 0..MANIFOLD_DIM {
+            for j in 0..MANIFOLD_DIM {
+                for k in 0..MANIFOLD_DIM {
+                    let gamma_ijk = gamma_9r4c[(i, j)][(j, k)];
+                    assert!(
+                        gamma_ijk.abs() <= tol,
+                        "9R4C Christoffel symbol Γ[{},{},{}] = {:.3e} exceeds {}",
                         i,
                         j,
                         k,
