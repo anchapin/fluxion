@@ -674,10 +674,6 @@ async fn import_format(
                 .map_err(|e| ApiError::ImportFailed(format!("IDF conversion error: {e}")))?;
             schema
         }
-        "ifc" => {
-            let tmp = tempfile_for_bytes(&body, "ifc")?;
-            ifc::import_ifc(&tmp).map_err(|e| ApiError::ImportFailed(e.to_string()))?
-        }
         other => return Err(ApiError::UnsupportedFormat(other.to_string())),
     };
 
