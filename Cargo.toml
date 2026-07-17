@@ -211,6 +211,10 @@ mockito = "1.7"
 # Run with: LOOM=1 cargo test --features loom --test loom_concurrency_tests
 loom = "0.1"
 
+# SQLite for reproducer tests (Issue #1790)
+# Demonstrates the "database is locked" race condition in distributed array jobs
+rusqlite = { version = "0.31", features = ["bundled"] }
+
 [[bench]]
 name = "cta_bench"
 harness = false
@@ -423,6 +427,14 @@ harness = true
 [[test]]
 name = "loom_concurrency_tests"
 path = "tests/concurrency/loom_concurrency_tests.rs"
+harness = true
+
+# Issue #1790 — SQLite "database is locked" race reproducer for distributed array jobs.
+# Reproduces the SQLITE_BUSY error that occurs when multiple concurrent workers
+# attempt to write to the same SQLite database without proper locking.
+[[test]]
+name = "sqlite_lock_race_reproducer"
+path = "tests/concurrency/sqlite_lock_race_reproducer.rs"
 harness = true
 
 [[test]]
