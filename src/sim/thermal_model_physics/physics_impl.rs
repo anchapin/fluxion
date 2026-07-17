@@ -1212,7 +1212,11 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
             // The air-side ventilation increase under night-vent is still routed
             // through `phi_m_with_vent`/`phi_ia_with_vent` further down (where the
             // outdoor-air enthalpy difference is applied via `h_ve` × ΔT).
-            let h_vent_mass_zone = if night_vent_active_now { h_ve_night } else { 0.0 };
+            let h_vent_mass_zone = if night_vent_active_now {
+                h_ve_night
+            } else {
+                0.0
+            };
 
             let tm_new = match method {
                 ThermalIntegrationMethod::BackwardEuler => {
@@ -1260,7 +1264,9 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                     // Issue #1693: Add night ventilation (h_vent_mass_zone) to the mass balance.
                     // Adding it to h_tr_3 approximates night vent as an additional conductance
                     // from mass to zone air, which captures the cooling effect.
-                    let h_tr_3_with_vent = *self.0.derived_h_tr_3.as_ref().get(i).unwrap_or(&h_tr_ms) + h_vent_mass_zone;
+                    let h_tr_3_with_vent =
+                        *self.0.derived_h_tr_3.as_ref().get(i).unwrap_or(&h_tr_ms)
+                            + h_vent_mass_zone;
                     crank_nicolson_iso13790(
                         tm_old,
                         dt,
