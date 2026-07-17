@@ -42,6 +42,11 @@ except ImportError:
     boto3 = None
     ClientError = Exception
 
+try:
+    import zstandard as zstd
+except ImportError:
+    zstd = None
+
 
 TRACE_BASE = Path(".sdd/traces/diagnostic")
 CARGO_TEST_CMD = ["cargo", "test", "--test=ashrae_140_validation", "--", "--nocapture"]
@@ -222,13 +227,22 @@ def parse_s3_uri(uri: str) -> tuple[str, str]:
 def push_result_to_s3(result: WorkUnitResult | KPIResult, s3_prefix: str, clients: dict) -> str:
     """Push work unit result or KPI result directly to S3. Returns the S3 URI."""
     bucket, prefix = parse_s3_uri(s3_prefix)
-    result_key = f"{prefix}/results/{result.work_unit_id}.json"
+    result_key = f"{prefix}/results/{result.work_unit_id}.json.zst"
+
+    json_body = json.dumps(asdict(result), indent=2)
+
+    if zstd is not None:
+        body = zstd.compress(json_body.encode("utf-8"))
+        content_type = "application/zstd"
+    else:
+        body = json_body.encode("utf-8")
+        content_type = "application/json"
 
     clients["s3"].put_object(
         Bucket=bucket,
         Key=result_key,
-        Body=json.dumps(asdict(result), indent=2),
-        ContentType="application/json",
+        Body=body,
+        ContentType=content_type,
     )
 
     return f"s3://{bucket}/{result_key}"
