@@ -50,6 +50,8 @@ mod fmi_exporter;
 #[cfg(all(feature = "napi-bindings", not(target_arch = "wasm32")))]
 mod gbxml_exporter;
 #[cfg(all(feature = "napi-bindings", not(target_arch = "wasm32")))]
+mod nine_r4c_config;
+#[cfg(all(feature = "napi-bindings", not(target_arch = "wasm32")))]
 mod osm_exporter;
 #[cfg(all(feature = "napi-bindings", not(target_arch = "wasm32")))]
 mod state_extractor;
@@ -64,6 +66,8 @@ pub use error::{FluxionError, SimulationError, SurrogateError, ValidationError};
 pub use fmi_exporter::FmiExporter;
 #[cfg(all(feature = "napi-bindings", not(target_arch = "wasm32")))]
 pub use gbxml_exporter::GbXmlExporter;
+#[cfg(all(feature = "napi-bindings", not(target_arch = "wasm32")))]
+pub use nine_r4c_config::NineR4CConfig;
 #[cfg(all(feature = "napi-bindings", not(target_arch = "wasm32")))]
 pub use osm_exporter::OsmExporter;
 #[cfg(all(feature = "napi-bindings", not(target_arch = "wasm32")))]
