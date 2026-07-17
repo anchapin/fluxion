@@ -389,6 +389,7 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         // actually active. The common (no-night-vent) path now reuses the cached
         // static vector without re-zeroing a per-step scratch buffer.
         let mut night_vent_active_now = false;
+        let mut h_ve_night: f64 = 0.0;
         let h_ve_night_zone: Option<Vec<f64>> =
             if let Some(ref night_vent) = self.0.night_ventilation {
                 if night_vent.is_active_at_hour(hour_of_day) {
@@ -404,7 +405,7 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                         .first()
                         .copied()
                         .unwrap_or(1005.0);
-                    let h_ve_night = night_vent.fan_capacity * rho * cp / 3600.0;
+                    h_ve_night = night_vent.fan_capacity * rho * cp / 3600.0;
                     let mut v = vec![0.0_f64; self.0.num_zones];
                     v[0] = h_ve_night;
                     Some(v)
@@ -1211,39 +1212,25 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
             // The air-side ventilation increase under night-vent is still routed
             // through `phi_m_with_vent`/`phi_ia_with_vent` further down (where the
             // outdoor-air enthalpy difference is applied via `h_ve` × ΔT).
-            let h_vent_mass_zone = if let Some(ref night_vent) = self.0.night_ventilation {
-                if night_vent.is_active_at_hour(hour_of_day) {
-                    let _ = night_vent.fan_capacity; // kept for future air-side wiring
-                    0.0
-                } else {
-                    0.0
-                }
-            } else {
-                0.0
-            };
+            let h_vent_mass_zone = if night_vent_active_now { h_ve_night } else { 0.0 };
 
             let tm_new = match method {
                 ThermalIntegrationMethod::BackwardEuler => {
                     // Use implicit backward Euler for high thermal mass
                     // FIX D1: Use sol-air temperature (T_sol-air) instead of outdoor_temp
                     // SESSION 72: Include ventilation-to-mass cooling
-                    let effective_h_tr_em = h_tr_em + h_vent_mass_zone;
                     // Issue #896 FIX: Use h_tr_3 instead of h_tr_ms for the air-to-mass bottleneck.
                     // See detailed comment in the CrankNicolson branch below.
                     let h_tr_3_zone = *self.0.derived_h_tr_3.as_ref().get(i).unwrap_or(&h_tr_ms);
-                    let t_ext_eff = if h_vent_mass_zone > 0.0 {
-                        (h_tr_em * t_sol_air[i] + h_vent_mass_zone * outdoor_temp)
-                            / effective_h_tr_em
-                    } else {
-                        t_sol_air[i]
-                    };
-                    // Backward Euler with h_tr_3:
-                    // (Cm/dt + h_tr_em + h_tr_3) * Tm_new = Cm/dt * Tm_old + h_tr_em * t_ext + h_tr_3 * t_s + phi_m
+                    // Backward Euler with h_tr_3 and night ventilation:
+                    // (Cm/dt + h_tr_em + h_tr_3 + h_vent_mass_zone) * Tm_new =
+                    //     Cm/dt * Tm_old + h_tr_em * t_sol_air + h_tr_3 * t_s + h_vent_mass_zone * t_outdoor + phi_m
                     let cm_dt = cm / dt;
-                    let denom = cm_dt + effective_h_tr_em + h_tr_3_zone;
+                    let denom = cm_dt + h_tr_em + h_tr_3_zone + h_vent_mass_zone;
                     let numer = cm_dt * tm_old
-                        + effective_h_tr_em * t_ext_eff
+                        + h_tr_em * t_sol_air[i]
                         + h_tr_3_zone * t_s
+                        + h_vent_mass_zone * outdoor_temp
                         + phi_m_zone;
                     numer / denom
                 }
@@ -1270,11 +1257,15 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                     //   artificial self-coupling loop. t_i is the correct upstream boundary.
                     // - t_ext = sol-air temperature (opaque envelope driving temp for h_tr_em)
                     // - t_sup = zone air temperature (air-side network driving temp for h_tr_3)
+                    // Issue #1693: Add night ventilation (h_vent_mass_zone) to the mass balance.
+                    // Adding it to h_tr_3 approximates night vent as an additional conductance
+                    // from mass to zone air, which captures the cooling effect.
+                    let h_tr_3_with_vent = *self.0.derived_h_tr_3.as_ref().get(i).unwrap_or(&h_tr_ms) + h_vent_mass_zone;
                     crank_nicolson_iso13790(
                         tm_old,
                         dt,
                         cm,
-                        *self.0.derived_h_tr_3.as_ref().get(i).unwrap_or(&h_tr_ms),
+                        h_tr_3_with_vent,
                         h_tr_em,
                         t_sol_air[i],
                         t_i,
