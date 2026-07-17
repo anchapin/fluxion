@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Generate `tests/surrogate_models/golden/golden_v3_1_0.json`.
+"""Generate `tests/surrogate_models/golden/golden_v{version}.json`.
 
 This script reproduces the deterministic analytical fallback from
 `src/ai/surrogate.rs::SurrogateManager::deterministic_analytical_loads`:
@@ -11,10 +11,12 @@ deterministic helper. See ADR-0004 (docs/adr/0004-onnx-model-versioning.md)
 for the re-baseline policy.
 
 Usage:
-    python3 scripts/gen_golden_outputs.py > tests/surrogate_models/golden/golden_v3_1_0.json
+    python3 scripts/gen_golden_outputs.py --version 3.2.0 > tests/surrogate_models/golden/golden_v3_2_0.json
+    python3 scripts/gen_golden_outputs.py --version 3.1.0 > tests/surrogate_models/golden/golden_v3_1_0.json
 """
 from __future__ import annotations
 
+import argparse
 import json
 import math
 import os
@@ -22,7 +24,6 @@ import sys
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
-TARGET = REPO_ROOT / "tests" / "surrogate_models" / "golden" / "golden_v3_1_0.json"
 
 
 def build_inputs(n: int = 100) -> list[dict]:
@@ -51,17 +52,34 @@ def compute_outputs(inputs: list[dict]) -> list[float]:
 
 
 def main() -> int:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument(
+        "--version",
+        default="3.1.0",
+        help="Golden file version (e.g. 3.1.0, 3.2.0)",
+    )
+    args = parser.parse_args()
+
+    version_underscored = args.version.replace(".", "_")
+    target = (
+        REPO_ROOT
+        / "tests"
+        / "surrogate_models"
+        / "golden"
+        / f"golden_v{version_underscored}.json"
+    )
+
     inputs = build_inputs(100)
     outputs = compute_outputs(inputs)
     golden = {
         "_meta": {
             "schema": "fluxion-golden-output/v1",
-            "version": "3.1.0",
+            "version": args.version,
             "description": (
-                "100 fixed inputs through "
+                f"100 fixed inputs through "
                 "SurrogateManager::deterministic_analytical_loads. "
                 "Regenerate with: python3 scripts/gen_golden_outputs.py "
-                "(see ADR-0004)."
+                f"--version {args.version} (see ADR-0004)."
             ),
             "tolerance_rel": 1e-6,
             "tolerance_abs": 1e-9,
@@ -72,9 +90,9 @@ def main() -> int:
     json_str = json.dumps(golden, indent=2, sort_keys=False)
 
     if "--write" in sys.argv:
-        TARGET.parent.mkdir(parents=True, exist_ok=True)
-        TARGET.write_text(json_str + "\n")
-        print(f"wrote {TARGET}", file=sys.stderr)
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text(json_str + "\n")
+        print(f"wrote {target}", file=sys.stderr)
         return 0
 
     print(json_str)
