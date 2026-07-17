@@ -656,7 +656,10 @@ mod tests {
             assert!(
                 f1c_curr[0] <= f1c_next[0],
                 "F1[0] at bin {} ({}) should be <= F1[0] at bin {} ({})",
-                ebin, f1c_curr[0], ebin + 1, f1c_next[0]
+                ebin,
+                f1c_curr[0],
+                ebin + 1,
+                f1c_next[0]
             );
         }
     }
@@ -670,7 +673,10 @@ mod tests {
             assert!(
                 f2c_curr[0] >= f2c_next[0],
                 "F2[0] at bin {} ({}) should be >= F2[0] at bin {} ({})",
-                ebin, f2c_curr[0], ebin + 1, f2c_next[0]
+                ebin,
+                f2c_curr[0],
+                ebin + 1,
+                f2c_next[0]
             );
         }
     }
@@ -684,14 +690,18 @@ mod tests {
                 assert!(
                     f1.is_finite(),
                     "F1[{}] at bin {} should not be NaN/Inf, got {}",
-                    i, ebin, f1
+                    i,
+                    ebin,
+                    f1
                 );
             }
             for (i, &f2) in f2c.iter().enumerate() {
                 assert!(
                     f2.is_finite(),
                     "F2[{}] at bin {} should not be NaN/Inf, got {}",
-                    i, ebin, f2
+                    i,
+                    ebin,
+                    f2
                 );
             }
         }
@@ -761,7 +771,11 @@ mod tests {
                 f1c_above[0] >= f1c_below[0],
                 "F1[0] should be non-decreasing across transition at epsilon={}: \
                  bin {} (F1={}) -> bin {} (F1={})",
-                eps_above, bin_below, f1c_below[0], bin_above, f1c_above[0]
+                eps_above,
+                bin_below,
+                f1c_below[0],
+                bin_above,
+                f1c_above[0]
             );
         }
     }
@@ -789,7 +803,11 @@ mod tests {
                 f2c_above[0] <= f2c_below[0],
                 "F2[0] should be non-increasing across transition at epsilon={}: \
                  bin {} (F2={}) -> bin {} (F2={})",
-                eps_above, bin_below, f2c_below[0], bin_above, f2c_above[0]
+                eps_above,
+                bin_below,
+                f2c_below[0],
+                bin_above,
+                f2c_above[0]
             );
         }
     }
