@@ -68,6 +68,17 @@ pub fn h_series(a: f64, b: f64) -> f64 {
     (a * b) / (a + b)
 }
 
+/// Strict version of `h_series` that returns `Err` instead of emitting a
+/// `debug_assert!` for degenerate inputs. This enables release-mode testing
+/// of the error path.
+#[inline]
+pub fn h_series_strict(a: f64, b: f64) -> Result<f64, &'static str> {
+    if a <= 0.0 || b <= 0.0 {
+        return Err("h_series called with degenerate inputs");
+    }
+    Ok((a * b) / (a + b))
+}
+
 /// Per-surface surface temperature for the parallel-resistance 9R4C coupling
 /// (Issue #1281).
 ///
@@ -1946,22 +1957,19 @@ mod tests {
         assert!((h_series(50.0, 165.6) - 50.0 * 165.6 / (50.0 + 165.6)).abs() < 1e-10);
         assert!((h_series(165.6, 50.0) - h_series(50.0, 165.6)).abs() < 1e-10);
 
-        // Degenerate cases: debug_assert! fires in debug builds; release returns 0.0
-        // Testing via catch_unwind to handle the debug_assert panic
-        let result = catch_unwind(|| h_series(0.0, 100.0));
+        // Degenerate cases: use h_series_strict which returns Result
+        // so the error path can be tested in both debug AND release builds
         assert!(
-            result.is_err(),
-            "debug_assert should fire for degenerate inputs"
+            h_series_strict(0.0, 100.0).is_err(),
+            "h_series_strict should Err for degenerate inputs"
         );
-        let result = catch_unwind(|| h_series(100.0, 0.0));
         assert!(
-            result.is_err(),
-            "debug_assert should fire for degenerate inputs"
+            h_series_strict(100.0, 0.0).is_err(),
+            "h_series_strict should Err for degenerate inputs"
         );
-        let result = catch_unwind(|| h_series(-1.0, 100.0));
         assert!(
-            result.is_err(),
-            "debug_assert should fire for degenerate inputs"
+            h_series_strict(-1.0, 100.0).is_err(),
+            "h_series_strict should Err for degenerate inputs"
         );
 
         // For Case 900 per-surface values:

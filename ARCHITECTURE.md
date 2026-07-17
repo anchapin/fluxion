@@ -477,6 +477,22 @@ pub trait ThermalModelTrait: Send + Sync {
 
 **ML Surrogate Path**: `SurrogateThermalModel` implements `ThermalModelTrait` — the zone solver doesn't know whether physics or ML is computing the result. v3.0 surrogate training and ONNX export landed in #1139 (`src/ai/surrogate.rs`, `src/ai/modular_surrogate.rs`).
 
+**PINN Physics Constraints (Issue #1706)**: The `CompositeSurrogate` (weighted ensemble, `src/ai/modular_surrogate.rs:51-170`) is trained with a physics-informed loss term. The PINN constraint enforces the envelope-only energy balance:
+
+```
+L_total = L_regression + λ · L_physics
+L_physics = ||Q_loads − Q_conduction − Q_solar − Q_internal||²
+```
+
+Where (envelope-only MVP, ventilation excluded):
+- `Q_conduction = U · A · (T_outdoor − T_zone)` — conductive heat transfer
+- `Q_solar = α · solar_rad · A · wwr` — solar gains (α = 0.85 transmissivity)
+- `Q_internal = β · occupancy · A` — internal gains (β = 100 W/person)
+
+Thermal properties: `U = 0.5 W/m²K`, `A = 100 m²`.
+
+The `SurrogateDomain::energy_balance_residual` method (`src/ai/surrogate.rs`) computes the per-sample residual `||Q_loads − Q_expected||²` from `SurrogateInputs` + predicted loads for use in the training loop (`tools/train_surrogate.py`). The `--pinn-constraint` flag (default `true`) toggles the physics loss on/off.
+
 **Hybrid mode — `HybridRouting` (PR #1498 / Issue #1431)**: Per-component dispatch between physics and surrogate is governed by the `HybridRouting` struct (`sim/thermal_model.rs`):
 
 ```rust

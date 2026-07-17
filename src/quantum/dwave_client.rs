@@ -660,4 +660,129 @@ mod tests {
         // The energies should be different (not a coincidence).
         assert_ne!(e1, e2);
     }
+
+    #[test]
+    fn test_dwave_normalized_h_within_hardware_range() {
+        // D-Wave AdvantageSystem6.4: h ∈ [-4, +4].
+        // After QUBO → to_dwave_normalized() → Ising conversion:
+        // h_i = 0.5 * Σ_k Q_norm[i,k]
+        // Verify |h_i| ≤ 4.0 for 5R1C (K=8, N=32) and 9R4C (K=12, N=48).
+        let cfg = QuboConfig::default();
+
+        // 5R1C manifold.
+        let m5 = ThermalManifold::from_5r1c_parameters(21.0, 22.0, 0.1, 1000.0, 5000.0);
+        let qp5 = manifold_to_qubo(&m5, cfg).expect("manifold_to_qubo failed");
+        let q_norm5 = qp5.to_dwave_normalized();
+        let n5 = qp5.num_variables();
+        for i in 0..n5 {
+            let row_sum: f64 = q_norm5[i * n5..(i + 1) * n5].iter().sum();
+            let hi = 0.5 * row_sum;
+            assert!(
+                hi.abs() <= 4.0 + 1e-9,
+                "5R1C: |h[{}]| = {} exceeds 4.0",
+                i,
+                hi.abs()
+            );
+        }
+
+        // 9R4C manifold.
+        let m9 = ThermalManifold::from_9r4c_parameters(
+            [21.0, 22.0, 23.0, 24.0],
+            [1000.0, 2000.0, 1500.0, 1800.0],
+            [0.1, 0.12, 0.08],
+            None,
+        );
+        let qp9 = manifold_to_qubo(&m9, cfg).expect("manifold_to_qubo failed");
+        let q_norm9 = qp9.to_dwave_normalized();
+        let n9 = qp9.num_variables();
+        for i in 0..n9 {
+            let row_sum: f64 = q_norm9[i * n9..(i + 1) * n9].iter().sum();
+            let hi = 0.5 * row_sum;
+            assert!(
+                hi.abs() <= 4.0 + 1e-9,
+                "9R4C: |h[{}]| = {} exceeds 4.0",
+                i,
+                hi.abs()
+            );
+        }
+    }
+
+    #[test]
+    fn test_dwave_normalized_j_within_hardware_range() {
+        // D-Wave AdvantageSystem6.4: J ∈ [-2, +1].
+        // After QUBO → to_dwave_normalized() → Ising conversion:
+        // J_ij = 0.25 * Q_norm[i,j] (for i ≠ j)
+        // Verify |J_ij| ≤ 2.0 for 5R1C and 9R4C manifolds.
+        let cfg = QuboConfig::default();
+
+        let m5 = ThermalManifold::from_5r1c_parameters(21.0, 22.0, 0.1, 1000.0, 5000.0);
+        let qp5 = manifold_to_qubo(&m5, cfg).expect("manifold_to_qubo failed");
+        let q_norm5 = qp5.to_dwave_normalized();
+        let n5 = qp5.num_variables();
+        for i in 0..n5 {
+            for j in (i + 1)..n5 {
+                let jij = 0.25 * q_norm5[i * n5 + j];
+                assert!(
+                    jij.abs() <= 2.0 + 1e-9,
+                    "5R1C: |J[{},{}]| = {} exceeds 2.0",
+                    i,
+                    j,
+                    jij.abs()
+                );
+            }
+        }
+
+        let m9 = ThermalManifold::from_9r4c_parameters(
+            [21.0, 22.0, 23.0, 24.0],
+            [1000.0, 2000.0, 1500.0, 1800.0],
+            [0.1, 0.12, 0.08],
+            None,
+        );
+        let qp9 = manifold_to_qubo(&m9, cfg).expect("manifold_to_qubo failed");
+        let q_norm9 = qp9.to_dwave_normalized();
+        let n9 = qp9.num_variables();
+        for i in 0..n9 {
+            for j in (i + 1)..n9 {
+                let jij = 0.25 * q_norm9[i * n9 + j];
+                assert!(
+                    jij.abs() <= 2.0 + 1e-9,
+                    "9R4C: |J[{},{}]| = {} exceeds 2.0",
+                    i,
+                    j,
+                    jij.abs()
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn test_normalized_qubo_preserves_relative_scales() {
+        // Normalization divides by max_abs, so every entry is scaled by the
+        // same factor. Verify the ratio of any two non-zero entries is
+        // preserved after to_dwave_normalized().
+        let m = ThermalManifold::from_5r1c_parameters(21.0, 22.0, 0.1, 1000.0, 5000.0);
+        let cfg = QuboConfig::default();
+        let qp = manifold_to_qubo(&m, cfg).expect("manifold_to_qubo failed");
+        let q_orig = qp.q_matrix();
+        let max_abs = qp.max_abs();
+        assert!(
+            max_abs > 0.0,
+            "max_abs should be > 0 for non-trivial manifold"
+        );
+        let q_norm = qp.to_dwave_normalized();
+
+        for i in 0..q_orig.len() {
+            if q_orig[i].abs() > 1e-12 {
+                let ratio = q_norm[i] / q_orig[i];
+                let expected = 1.0 / max_abs;
+                assert!(
+                    (ratio - expected).abs() < 1e-9,
+                    "Index {}: ratio {} != expected {}",
+                    i,
+                    ratio,
+                    expected
+                );
+            }
+        }
+    }
 }

@@ -23,7 +23,15 @@
       "trained_on": "2026-07-14",
       "training_data_summary": "ASHRAE 140 cases 600-960 + Denver TMY3 with horizontal tilt (roof=0 degree) solar gains coverage post roof-solar fix (#1323). Retrained surrogate models for v3.2.",
       "expected_accuracy": 0.0,
-      "model_path": "models/surrogate_v3.2.0.onnx"
+      "model_path": "models/surrogate_v3.2.0.onnx",
+      "training_data_provenance": {
+        "trained_by": "CI pipeline (see .github/workflows/train_surrogate.yml)",
+        "training_script": "scripts/train_surrogate.py",
+        "source_physics_cases": "ASHRAE 140 cases 600-960 post-#1323 roof-solar fix + Denver TMY3 weather data",
+        "timestamp": "2026-07-14T00:00:00Z",
+        "training_data_hash_source": "SHA-256 of data/synthetic/v2.1 directory (exact source not independently verified in this audit)",
+        "audit_note": "expected_accuracy is 0.0 because no held-out test set was used during training. TODO: run validate_surrogate.py to establish a real accuracy baseline."
+      }
     }
   ]
 }

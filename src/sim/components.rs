@@ -3,7 +3,7 @@ use fluxion_core::tensor::ContinuousField;
 use num_traits::Zero;
 use std::ops::{Add, AddAssign, Mul};
 
-use crate::validation::ashrae_140_cases::Orientation;
+use fluxion_core::ashrae_cases::Orientation;
 
 /// Represents a wall surface in a thermal zone.
 #[derive(Clone, Debug)]
