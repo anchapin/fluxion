@@ -403,8 +403,7 @@ impl SurrogateDomain {
                 let q_conduction = U_WALL * A_ZONE * delta_t;
                 let q_solar = ALPHA_SOLAR * inp.solar_rad * A_ZONE * 0.001;
                 let q_internal = BETA_INTERNAL * inp.occupancy;
-                let q_ventilation =
-                    C_AIR * ACH_VENT * V_VENT * delta_t / 3600.0 / 1000.0;
+                let q_ventilation = C_AIR * ACH_VENT * V_VENT * delta_t / 3600.0 / 1000.0;
                 let q_expected = q_conduction + q_solar + q_internal + q_ventilation;
                 let residual = q_loads - q_expected;
                 residual * residual
@@ -2098,7 +2097,9 @@ mod tests {
     #[test]
     fn test_energy_balance_residual_zero_when_balanced() {
         let domain = SurrogateDomain::default_residential();
-        let inputs = vec![SurrogateInputs::from_physics(20.0, 20.0, 0.0, 50.0, 0.0, "4A")];
+        let inputs = vec![SurrogateInputs::from_physics(
+            20.0, 20.0, 0.0, 50.0, 0.0, "4A",
+        )];
         let predicted_loads = vec![0.0];
         let residuals = domain.energy_balance_residual(&inputs, &predicted_loads);
         assert_eq!(residuals.len(), 1);
