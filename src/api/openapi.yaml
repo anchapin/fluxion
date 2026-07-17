@@ -380,8 +380,9 @@ paths:
         - `osm` — OpenStudio Model (delegates to `crate::interop::osm::import_osm`)
         - `gbxml` — gbXML (delegates to `crate::interop::gbxml::import_gbxml`)
         - `ifc` — IFC4 STEP physical file (delegates to `crate::interop::ifc::import_ifc`)
-        - `idf` — EnergyPlus IDF — **returns 501 Not Implemented**; no IDF
-          reader exists in `src/interop/*` yet (out of scope for #1342).
+        - `idf` — EnergyPlus IDF text (delegates to `crate::io::idf::IdfParser::from_str`)
+        - `epjson` — EnergyPlus epJSON (JSON representation of IDF; delegates to
+          `crate::io::idf::IdfParser::from_epjson_str`)
 
         On success, the schema is stored under an auto-generated id and the
         id + schema are returned. Callers can fetch the schema later via
@@ -391,10 +392,10 @@ paths:
         - name: fmt
           in: path
           required: true
-          description: Source format (`osm`, `gbxml`, `ifc`, or `idf`)
+          description: Source format (`osm`, `gbxml`, `ifc`, `idf`, or `epjson`)
           schema:
             type: string
-            enum: [osm, gbxml, ifc, idf]
+            enum: [osm, gbxml, ifc, idf, epjson]
       requestBody:
         required: true
         content:

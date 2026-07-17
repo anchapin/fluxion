@@ -252,6 +252,32 @@ BuildingSurface:Detailed, Wall-South, Wall, ExtWall, Zone1, , Outdoors, SunExpos
 }
 
 #[tokio::test]
+async fn import_epjson_returns_200_with_valid_epjson() {
+    let (base, _state, _shutdown) = start_server().await;
+    let epjson_body = r#"{
+  "Version": {
+    "Version 1": {
+      "version_identifier": "25.2"
+    }
+  },
+  "Building": {
+    "TestBuilding": {
+      "name": "TestBuilding",
+      "north_axis": 0.0,
+      "terrain": "Suburbs"
+    }
+  }
+}"#;
+    let resp = http_client()
+        .post(format!("{base}/v1/import/epjson"))
+        .body(epjson_body)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 200, "valid epJSON should return 200");
+}
+
+#[tokio::test]
 async fn import_unknown_format_returns_400() {
     let (base, _state, _shutdown) = start_server().await;
     let resp = http_client()

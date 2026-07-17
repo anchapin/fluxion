@@ -664,6 +664,16 @@ async fn import_format(
             let tmp = tempfile_for_bytes(&body, "ifc")?;
             ifc::import_ifc(&tmp).map_err(|e| ApiError::ImportFailed(e.to_string()))?
         }
+        "epjson" => {
+            let body_str = std::str::from_utf8(&body).map_err(|e| {
+                ApiError::ImportFailed(format!("invalid UTF-8 in epJSON body: {e}"))
+            })?;
+            let idf: IdfFile = IdfParser::from_epjson_str(body_str)
+                .map_err(|e| ApiError::ImportFailed(format!("epJSON parse error: {e}")))?;
+            let schema = SimulationSchemaV1::try_from(&idf)
+                .map_err(|e| ApiError::ImportFailed(format!("IDF conversion error: {e}")))?;
+            schema
+        }
         other => return Err(ApiError::UnsupportedFormat(other.to_string())),
     };
 
