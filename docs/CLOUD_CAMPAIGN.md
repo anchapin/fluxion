@@ -20,7 +20,7 @@ This cloud-hosted system decouples campaign execution from local machines by:
 │ Cloud Campaign   │────▶│  S3 Bucket  │◀────│  S3 Worker      │
 │ Manager          │     │             │     │  (Remote VM/EC2)│
 └──────────────────┘     │  work-units │     └─────────────────┘
-       │                 │  results/   │              │
+       │                 │  kpi-results/│              │
        │                 │  state.json  │              │
        │                 └─────────────┘              │
        ▼                                                │
@@ -29,6 +29,10 @@ This cloud-hosted system decouples campaign execution from local machines by:
 │ (Email/SMS)     │         (on completion)
 └──────────────────┘
 ```
+
+**Worker-side KPI Aggregation (T8.3):** Workers compute and emit only aggregated KPIs
+before S3 sync, cutting transfer volume. Raw results are included only when
+`--emit-raw` is specified.
 
 ## Quick Start
 
@@ -153,6 +157,47 @@ aws s3api put-bucket-versioning \
   --bucket your-bucket-name \
   --versioning-configuration Status=Enabled
 ```
+
+## KPI Schema
+
+Worker-side aggregation emits `KPIResult` JSON files with the following structure:
+
+```json
+{
+  "work_unit_id": "wu-0001",
+  "campaign_id": "fluxion-abc123",
+  "run_id": "a1b2c3d4",
+  "case_id": "600",
+  "parameters": {"R_value": 2.5, "wall_thickness": 0.15},
+  "num_runs": 5,
+  "timestamp": "2026-07-17T12:00:00Z",
+
+  "heating_mae_mean": 5.2,
+  "heating_mae_std": 0.8,
+  "heating_mae_min": 4.1,
+  "heating_mae_max": 6.3,
+  "cooling_mae_mean": 4.8,
+  "cooling_mae_std": 0.6,
+  "cooling_mae_min": 3.9,
+  "cooling_mae_max": 5.7,
+
+  "peak_heating_mae_mean": 8.2,
+  "peak_cooling_mae_mean": 7.1,
+  "temperature_mae_mean": 3.4,
+
+  "overall_pass_rate": 0.8,
+  "duration_ms_mean": 45200,
+
+  "error_message": null,
+  "raw_results": null
+}
+```
+
+**Fields:**
+- All MAE values are percentages (%)
+- `num_runs` indicates how many simulation runs were aggregated
+- `raw_results` is only populated when `--emit-raw` is specified
+- `overall_pass_rate` is the fraction of runs that passed (0.0 to 1.0)
 
 ### SNS Topic
 
