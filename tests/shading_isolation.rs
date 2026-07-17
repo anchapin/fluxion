@@ -1145,12 +1145,8 @@ fn test_ew_fins_low_angle_east() {
         relative_azimuth: 10.0_f64.to_radians(),
     };
 
-    let shaded = calculate_shaded_fraction(
-        &window,
-        Some(&overhang),
-        &[fin_left, fin_right],
-        &solar,
-    );
+    let shaded =
+        calculate_shaded_fraction(&window, Some(&overhang), &[fin_left, fin_right], &solar);
 
     assert!(
         shaded > 0.10,
@@ -1203,12 +1199,8 @@ fn test_ew_fins_low_angle_west() {
         relative_azimuth: -10.0_f64.to_radians(),
     };
 
-    let shaded = calculate_shaded_fraction(
-        &window,
-        Some(&overhang),
-        &[fin_left, fin_right],
-        &solar,
-    );
+    let shaded =
+        calculate_shaded_fraction(&window, Some(&overhang), &[fin_left, fin_right], &solar);
 
     assert!(
         shaded > 0.10,
