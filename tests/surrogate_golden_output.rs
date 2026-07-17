@@ -393,7 +393,10 @@ fn golden_outputs_match_onnx_inference_v3_2_0() {
         Ok(m) => m,
         Err(e) => {
             if e.contains("mismatch") {
-                eprintln!("Skipping: model SHA-256 mismatch (registry out of sync): {}", e);
+                eprintln!(
+                    "Skipping: model SHA-256 mismatch (registry out of sync): {}",
+                    e
+                );
             } else {
                 eprintln!("Skipping: failed to load v3.2.0 model: {}", e);
             }
@@ -413,7 +416,11 @@ fn golden_outputs_match_onnx_inference_v3_2_0() {
         let loads = manager
             .predict_loads_with_fallback(inp)
             .expect("ONNX inference should not error on valid input");
-        assert_eq!(loads.len(), 1, "ONNX model returns one scalar load per input");
+        assert_eq!(
+            loads.len(),
+            1,
+            "ONNX model returns one scalar load per input"
+        );
         actual_outputs.push(loads[0]);
     }
 
@@ -436,10 +443,7 @@ fn onnx_inference_is_deterministic_across_runs() {
 
     let model_path = PathBuf::from(&model_entry.model_path);
     if !model_path.exists() {
-        eprintln!(
-            "Skipping: ONNX model {} not present",
-            model_path.display()
-        );
+        eprintln!("Skipping: ONNX model {} not present", model_path.display());
         return;
     }
 
@@ -467,10 +471,7 @@ fn onnx_inference_is_deterministic_across_runs() {
         .map(|inp| manager.predict_loads_with_fallback(inp).unwrap()[0])
         .collect();
 
-    assert_eq!(
-        first, second,
-        "ONNX inference output must be deterministic"
-    );
+    assert_eq!(first, second, "ONNX inference output must be deterministic");
 }
 
 fn tempdir_path(name: &str) -> PathBuf {
