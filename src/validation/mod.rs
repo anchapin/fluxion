@@ -19,6 +19,7 @@ pub mod export;
 pub mod fdd;
 pub mod guardrails;
 pub mod hvac_bestest;
+pub mod interior_sensors;
 pub mod issue_classifier;
 pub mod multi_reference;
 pub mod performance;
@@ -216,6 +217,12 @@ pub use empirical::{
     EmpiricalStatistics, EmpiricalValidationConfig, EmpiricalValidationReport,
     EmpiricalValidationResult, EmpiricalValidationStatus, MonitoredBuildingDatabase,
     MonitoredDataPoint, MonitoredDataSource,
+};
+
+// Interior sensor pipeline re-exports
+pub use interior_sensors::{
+    InteriorSensorDataset, InteriorSensorLoader, InteriorSensorMeta, InteriorSensorReading,
+    SensorPlacement,
 };
 
 #[cfg(test)]
