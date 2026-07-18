@@ -697,3 +697,51 @@ def test_resolve_state_store_auto_redis_when_redis_url(monkeypatch):
     # catches that and returns None — both outcomes prove the code path.
     assert ccm._resolve_state_store("auto") is None or \
         ccm._resolve_state_store("auto").__class__.__name__ == "RedisStateStore"
+
+
+# ---------------------------------------------------------------------------
+# Issue #1791 — T8.1 reproducer no longer triggers the lock
+# ---------------------------------------------------------------------------
+
+def test_concurrent_workers_complete_without_lock_issue_1791():
+    """The T8.1 sqlite_lock_race_reproducer documented SQLite SQLITE_BUSY under
+    high writer contention. After the T7.3 / #1791 migration to the
+    ``StateStore`` abstraction, the same fan-out completes without any
+    "database is locked" error.
+
+    16 workers × 50 writes each (= 800 publishes) through the in-memory
+    state-store must succeed and the aggregated progress must equal 800/800.
+    """
+    import threading
+    from state_store import InMemoryStateStore, TaskState, TaskStatus
+
+    store = InMemoryStateStore()
+    errors: list[BaseException] = []
+    workers = 16
+    writes_per_worker = 50
+    campaign_id = "issue-1791-concurrency"
+
+    def worker(worker_id: int) -> None:
+        try:
+            for i in range(writes_per_worker):
+                work_unit_id = f"w{worker_id:02d}-t{i:03d}"
+                store.set_state(
+                    TaskState.now(
+                        campaign_id=campaign_id,
+                        work_unit_id=work_unit_id,
+                        status=TaskStatus.COMPLETED,
+                    )
+                )
+        except BaseException as exc:  # pragma: no cover - threaded
+            errors.append(exc)
+
+    threads = [threading.Thread(target=worker, args=(i,)) for i in range(workers)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+
+    assert errors == [], f"Concurrent state-store writes raised: {errors!r}"
+    states = store.list_states(campaign_id)
+    assert len(states) == workers * writes_per_worker
+    assert all(s.status == TaskStatus.COMPLETED for s in states)
