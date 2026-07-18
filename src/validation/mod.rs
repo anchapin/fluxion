@@ -16,6 +16,7 @@ pub mod diagnostic;
 pub mod diagnostics;
 pub mod ep_oracle;
 pub mod export;
+pub mod flexlab_weather;
 pub mod fdd;
 pub mod guardrails;
 pub mod hvac_bestest;

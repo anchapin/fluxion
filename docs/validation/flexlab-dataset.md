@@ -183,3 +183,166 @@ building types for broader validation coverage.
   without weather file translation.
 - The Phase II dataset adds furniture, radiant systems, and mixed-mode
   scenarios beyond the baseline empty-cell Phase I data.
+
+## FLEXLAB Site Weather Data
+
+This section describes the measured outdoor weather data used for FLEXLAB empirical validation.
+The data originates from the FLEXLAB outdoor weather station at Lawrence Berkeley National Lab.
+It provides hourly measurements of dry-bulb temperature, humidity, solar irradiance, and wind.
+Each observation carries a quality flag: Valid, Missing, Suspect, or Interpolated.
+Gap detection is applied during loading to flag missing or suspect readings.
+Single-hour gaps are linearly interpolated and flagged; multi-hour outages stay Missing.
+This dataset supports the empirical validation pipeline defined in `src/validation/empirical.rs`.
+
+---
+
+### Overview
+
+The FLEXLAB (Facility for Low Energy Experiments in Buildings) test cell at Lawrence Berkeley
+National Lab (Berkeley, CA) has a dedicated outdoor weather station recording hourly site
+conditions. This data is used to drive empirical comparisons between measured and simulated
+thermal performance.
+
+### Data Location
+
+| Item | Path |
+|------|------|
+| **CSV file** | `data/flexlab/site_weather/site_weather_hourly.csv` |
+| **Loader module** | `src/validation/flexlab_weather.rs` |
+| **Loader function** | `load_flexlab_weather(&FlexlabWeatherConfig)` |
+| **Documentation** | `docs/validation/flexlab-dataset.md` (this file) |
+
+The CSV path is configurable via `FlexlabWeatherConfig::csv_path`. The default is shown above,
+relative to the repository root.
+
+### CSV Format
+
+The CSV file must contain a header row with at minimum these columns:
+
+| Column | Unit | Required | Description |
+|--------|------|----------|-------------|
+| `year` | — | Yes | Calendar year |
+| `month` | 1–12 | Yes | Month of year |
+| `day` | 1–31 | Yes | Day of month |
+| `hour` | 0–23 | Yes | Hour of day (0 = midnight) |
+| `dry_bulb_temp` | °C | Yes | Outdoor dry-bulb temperature |
+| `relative_humidity` | % | Yes | Relative humidity |
+| `ghi` | W/m² | Yes | Global horizontal irradiance |
+| `dni` | W/m² | No | Direct normal irradiance (defaults to 0) |
+| `dhi` | W/m² | No | Diffuse horizontal irradiance (defaults to 0) |
+| `wind_speed` | m/s | No | Wind speed (defaults to 0) |
+
+### Column Aliases
+
+The loader accepts several column name variants (case-insensitive):
+
+- Temperature: `dry_bulb_temp`, `outdoor_temp_c`, `temp_c`, `temperature`
+- Humidity: `relative_humidity`, `rh_pct`, `humidity`
+- Solar: `ghi`, `global_horizontal_irradiance`, `ghi_wm2`; `dni`, `direct_normal_irradiance`, `dni_wm2`; `dhi`, `diffuse_horizontal_irradiance`, `dhi_wm2`
+- Wind: `wind_speed`, `wind_speed_ms`, `wind`
+
+Lines beginning with `#` or `!` are treated as comments and skipped.
+
+### Quality Flags
+
+Every observation carries a [`QualityFlag`](#qualityflag) for each field:
+
+| Flag | Meaning |
+|------|---------|
+| `Valid` | Measurement present and within physical bounds |
+| `Missing` | Sensor outage or missing record in the CSV |
+| `Suspect` | Value present but outside expected range for the season/location |
+| `Interpolated` | Gap-filled from neighbouring observations (single-hour linear interpolation) |
+
+### Seasonal Bounds (Berkeley, CA)
+
+The loader applies loose seasonal bounds to flag suspect dry-bulb temperatures:
+
+| Month | Min (°C) | Max (°C) |
+|-------|-----------|-----------|
+| Jan | 0 | 17 |
+| Feb | 1 | 19 |
+| Mar | 2 | 22 |
+| Apr | 4 | 25 |
+| May | 7 | 28 |
+| Jun | 10 | 32 |
+| Jul | 11 | 33 |
+| Aug | 11 | 33 |
+| Sep | 10 | 32 |
+| Oct | 7 | 28 |
+| Nov | 3 | 21 |
+| Dec | 0 | 17 |
+
+A `±10°C` buffer is applied before flagging. Values outside `FlexlabWeatherConfig` absolute
+bounds (`min_temp_c` / `max_temp_c`) are flagged `Suspect` regardless of season.
+
+### Gap-Filling
+
+Single-hour `Missing` gaps in dry-bulb temperature are linearly interpolated from the nearest
+valid neighbours on each side. Multi-hour outages (≥2 consecutive missing hours) are **not**
+interpolated and remain `Missing`. Only dry-bulb temperature is gap-filled; other fields
+retain their original `Missing` flag.
+
+### Summary Statistics
+
+`FlexlabWeatherSummary` provides aggregate metrics:
+
+```rust
+use fluxion::validation::flexlab_weather::{load_flexlab_weather, FlexlabWeatherConfig};
+
+let config = FlexlabWeatherConfig::default();
+let (records, summary) = load_flexlab_weather(&config)?;
+
+println!("Records: {}", summary.total_records);
+println!("Data availability: {:.1}%", summary.data_availability() * 100.0);
+println!("Mean temp: {:.1}°C", summary.mean_temp_c);
+```
+
+### Integration with Empirical Validation
+
+The loader produces `FlexlabWeatherRecord` entries that map to the
+[`MonitoredDataPoint`](../src/validation/empirical.rs) interface used by the empirical
+validation pipeline. See `empirical.rs` for registration of data sources and comparison
+against simulation outputs.
+
+### Provenance
+
+| Field | Value |
+|-------|-------|
+| Site | FLEXLAB, Lawrence Berkeley National Lab |
+| Location | Berkeley, CA (37.87°N, 122.27°W) |
+| Elevation | ~80 m |
+| Timezone | America/Los_Angeles (UTC−8/−7) |
+| Station type | Outdoor weather station (test cell exterior) |
+| Temporal resolution | Hourly |
+| Expected coverage | 1 year (8760 hours) |
+
+### Usage
+
+```rust
+use fluxion::validation::flexlab_weather::{
+    load_flexlab_weather, FlexlabWeatherConfig, QualityFlag,
+};
+
+fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let config = FlexlabWeatherConfig::default();
+    let (records, summary) = load_flexlab_weather(&config)?;
+
+    // Filter to only Valid temperature records
+    let valid: Vec<_> = records
+        .iter()
+        .filter(|r| r.dry_bulb_flag == QualityFlag::Valid)
+        .collect();
+
+    println!("Loaded {} records, {} valid", summary.total_records, valid.len());
+
+    // Find all gaps
+    let gaps: Vec<_> = records
+        .iter()
+        .filter(|r| r.dry_bulb_flag == QualityFlag::Missing)
+        .collect();
+    println!("Missing temperature records: {}", gaps.len());
+
+    Ok(())
+}
+```
