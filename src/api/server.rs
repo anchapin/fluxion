@@ -477,8 +477,7 @@ impl<S: SimulationStateStore> AppState<S> {
                 CampaignState::Completed { results, .. } => Some(CampaignResult {
                     outputs: results
                         .iter()
-                        .enumerate()
-                        .map(|(_i, r)| match r {
+                        .map(|r| match r {
                             Ok(output) => CampaignSimulationResult {
                                 schema_id: None,
                                 output: Some(output.clone()),
