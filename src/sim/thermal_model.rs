@@ -188,6 +188,14 @@ impl PhysicsThermalModel {
             mode: ThermalModelMode::Physics,
         }
     }
+
+    /// Get the full hourly zone temperature profiles from the last simulation.
+    ///
+    /// Must be called after `solve_timesteps`. Returns `None` if the simulation
+    /// has not been run or if the model type does not capture hourly temperatures.
+    pub fn get_hourly_temperatures(&self) -> Option<Vec<Vec<f64>>> {
+        self.inner.get_hourly_temperatures()
+    }
 }
 
 impl ThermalModelTrait for PhysicsThermalModel {
@@ -299,6 +307,14 @@ impl SurrogateThermalModel {
     pub fn with_fallback(mut self, fallback: bool) -> Self {
         self.fallback_to_physics = fallback;
         self
+    }
+
+    /// Get the full hourly zone temperature profiles from the last simulation.
+    ///
+    /// Must be called after `solve_timesteps`. The surrogate model captures
+    /// temperatures during the simulation loop.
+    pub fn get_hourly_temperatures(&self) -> Option<Vec<Vec<f64>>> {
+        self.inner.get_hourly_temperatures()
     }
 }
 
