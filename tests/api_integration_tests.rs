@@ -719,3 +719,176 @@ async fn simulation_status_returns_failed_state_with_error() {
     assert_eq!(v["state"]["state"], "failed");
     assert_eq!(v["state"]["error"], "simulation diverged");
 }
+
+// ---------------------------------------------------------------------------
+// Issue #1786 — fire-and-forget Cloud Coordinator campaign tests
+// ---------------------------------------------------------------------------
+
+#[tokio::test]
+async fn campaign_returns_campaign_id_immediately() {
+    let (base, _state, _shutdown) = start_server().await;
+
+    let body = json!({
+        "name": "Test Campaign",
+        "description": "A test campaign",
+        "simulations": [
+            {
+                "version": "V1",
+                "metadata": SchemaMetadata::default(),
+                "geometry": Geometry::default(),
+                "constructions": ConstructionSet::default(),
+                "schedules": ScheduleSet::default(),
+                "weather": WeatherData::default(),
+                "controls": ControlSet::default(),
+                "output": SimulationOutput::default(),
+                "options": { "years": 1, "use_surrogates": false }
+            }
+        ]
+    });
+
+    let start = Instant::now();
+    let resp = http_client()
+        .post(format!("{base}/v1/campaigns"))
+        .json(&body)
+        .send()
+        .await
+        .unwrap();
+    let elapsed = start.elapsed();
+
+    assert_eq!(resp.status(), 200, "expected 200, got {}", resp.status());
+    let v: serde_json::Value = resp.json().await.unwrap();
+    assert!(v["campaign_id"].is_string(), "campaign_id missing: {v}");
+    assert!(
+        v["campaign_id"].as_str().unwrap().starts_with("camp-"),
+        "campaign_id should start with 'camp-': {}",
+        v["campaign_id"]
+    );
+
+    assert!(
+        elapsed < Duration::from_secs(2),
+        "campaign submission should return immediately, took {elapsed:?}"
+    );
+}
+
+#[tokio::test]
+async fn campaign_empty_simulations_returns_400() {
+    let (base, _state, _shutdown) = start_server().await;
+
+    let body = json!({
+        "name": "Empty Campaign",
+        "simulations": []
+    });
+
+    let resp = http_client()
+        .post(format!("{base}/v1/campaigns"))
+        .json(&body)
+        .send()
+        .await
+        .unwrap();
+
+    assert_eq!(
+        resp.status(),
+        400,
+        "expected 400 for empty campaign, got {}",
+        resp.status()
+    );
+}
+
+#[tokio::test]
+async fn campaign_status_returns_pending_for_new_campaign() {
+    use fluxion::api::server::CampaignSpec;
+
+    let (base, state, _shutdown) = start_server().await;
+
+    let spec = CampaignSpec {
+        name: Some("Test Campaign".to_string()),
+        description: None,
+        simulations: vec![fluxion::api::server::SimulateRequest {
+            schema: fluxion::api::server::SimulationSchemaBody::V1(default_schema_v1()),
+            options: fluxion::api::server::SimulateOptions::default(),
+        }],
+    };
+    let id = state.register_campaign(spec).await;
+
+    let resp = http_client()
+        .get(format!("{base}/v1/campaigns/{id}/status"))
+        .send()
+        .await
+        .unwrap();
+
+    assert_eq!(resp.status(), 200, "expected 200, got {}", resp.status());
+    let v: serde_json::Value = resp.json().await.unwrap();
+    assert_eq!(v["id"], id);
+    assert_eq!(v["state"]["state"], "pending");
+    assert_eq!(v["name"], "Test Campaign");
+    assert_eq!(v["total_simulations"], 1);
+    assert_eq!(v["completed_simulations"], 0);
+}
+
+#[tokio::test]
+async fn campaign_status_returns_404_for_unknown_campaign() {
+    let (base, _state, _shutdown) = start_server().await;
+
+    let resp = http_client()
+        .get(format!("{base}/v1/campaigns/camp-does-not-exist/status"))
+        .send()
+        .await
+        .unwrap();
+
+    assert_eq!(
+        resp.status(),
+        404,
+        "expected 404 for unknown campaign, got {}",
+        resp.status()
+    );
+}
+
+#[tokio::test]
+async fn campaign_runs_to_completion_and_returns_results() {
+    let (base, _state, _shutdown) = start_server().await;
+
+    let body = json!({
+        "name": "Completion Test Campaign",
+        "simulations": [
+            {
+                "version": "V1",
+                "metadata": SchemaMetadata::default(),
+                "geometry": Geometry::default(),
+                "constructions": ConstructionSet::default(),
+                "schedules": ScheduleSet::default(),
+                "weather": WeatherData::default(),
+                "controls": ControlSet::default(),
+                "output": SimulationOutput::default(),
+                "options": { "years": 1, "use_surrogates": false }
+            }
+        ]
+    });
+
+    let resp = http_client()
+        .post(format!("{base}/v1/campaigns"))
+        .json(&body)
+        .send()
+        .await
+        .unwrap();
+
+    assert_eq!(resp.status(), 200, "expected 200, got {}", resp.status());
+    let v: serde_json::Value = resp.json().await.unwrap();
+    let campaign_id = v["campaign_id"].as_str().unwrap();
+
+    tokio::time::sleep(Duration::from_secs(5)).await;
+
+    let resp = http_client()
+        .get(format!("{base}/v1/campaigns/{campaign_id}/status"))
+        .send()
+        .await
+        .unwrap();
+
+    assert_eq!(resp.status(), 200, "expected 200, got {}", resp.status());
+    let status: serde_json::Value = resp.json().await.unwrap();
+    assert_eq!(status["id"], campaign_id);
+    assert!(
+        status["state"]["state"] == "completed" || status["state"]["state"] == "running",
+        "expected completed or running, got {}",
+        status["state"]
+    );
+}
