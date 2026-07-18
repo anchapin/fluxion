@@ -192,6 +192,13 @@ metrics-exporter-prometheus = { version = "0.18", default-features = false }
 # ZIP archive writer for FMI 2.0 FMU packaging (#1339)
 zip = { version = "0.6", default-features = false, features = ["deflate"] }
 
+# JSON Patch (RFC 6902) — Issue #1811 / Phase 1 (Declarative Deltas)
+# of the Hybrid Measure Approach. Used by `fluxion::measures::json_patch`
+# to apply declarative Deltas to a `FluxionModel` without invoking Python.
+# `default-features = false` drops the `diff` feature (we don't generate
+# patches, only consume them). License: MIT/Apache-2.0.
+json-patch = { version = "4.2", default-features = false }
+
 [build-dependencies]
 pyo3-build-config = { version = "0.22", optional = true }
 napi-build = { version = "2", optional = true }
