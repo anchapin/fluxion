@@ -438,6 +438,17 @@ name = "validation_flexlab_test_cell"
 path = "tests/validation/flexlab_test_cell.rs"
 harness = true
 
+# Issue #1810 / Plan T10.8 — ASHRAE Guideline 14 statistical reporting
+# (CVRMSE + NMBE) for the FLEXLAB empirical chain. Produces a Markdown
+# validation artifact at tests/validation/artifacts/guideline14_flexlab_x3a.md
+# that is committed alongside the source so reviewers can inspect the
+# headline metrics without re-running the suite.
+# `cargo test -p fluxion validation_empirical_guideline14` runs this target.
+[[test]]
+name = "validation_empirical_guideline14"
+path = "tests/validation/empirical_guideline14.rs"
+harness = true
+
 [[test]]
 name = "weather_epw_fields"
 path = "tests/weather_epw_fields.rs"
