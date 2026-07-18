@@ -80,6 +80,8 @@ jobs:
           cargo test --lib --verbose ${{ matrix.feature_set.flags }}
           cargo test --test surface_flux_provider_isolation --verbose ${{ matrix.feature_set.flags }}
           cargo test --test regression_exterior_film_unification --verbose ${{ matrix.feature_set.flags }}
+          # Issue #1803 / Plan T10.1 — empirical validation harness skeleton.
+          cargo test --test validation_empirical_harness --verbose ${{ matrix.feature_set.flags }}
         env:
           PYO3_PYTHON: /usr/bin/python3
 
@@ -187,6 +189,8 @@ jobs:
         run: |
           cargo test --lib --verbose --no-default-features
           cargo test --test regression_exterior_film_unification --verbose --no-default-features
+          # Issue #1803 / Plan T10.1 — empirical validation harness skeleton.
+          cargo test --test validation_empirical_harness --verbose --no-default-features
         env:
           PYO3_PYTHON: /usr/bin/python3
 

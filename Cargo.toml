@@ -414,6 +414,15 @@ name = "validation_empirical"
 path = "tests/validation/empirical_validation_test.rs"
 harness = true
 
+# Issue #1803 / Plan T10.1 — empirical-case registration + reporting
+# harness skeleton for the FLEXLAB empirical validation chain
+# (T10.2..T10.8). Initially no-op / green.
+# `cargo test -p fluxion validation_empirical_harness` runs this target.
+[[test]]
+name = "validation_empirical_harness"
+path = "tests/validation/empirical.rs"
+harness = true
+
 [[test]]
 name = "weather_epw_fields"
 path = "tests/weather_epw_fields.rs"
