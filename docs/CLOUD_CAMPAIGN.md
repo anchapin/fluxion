@@ -13,6 +13,61 @@ This cloud-hosted system decouples campaign execution from local machines by:
 3. **Cloud Aggregator** — Merges S3 result files into a final dataset
 4. **SNS Notifications** — Email/SMS notification upon campaign completion
 
+## State Store (T7.3 — Issue #1787)
+
+Workers publish per-task completion to a **state store** (DynamoDB or Redis)
+instead of relying solely on result-file presence in S3. The coordinator then
+**aggregates** state-store entries to compute overall campaign progress.
+The state-store path is the authoritative one; the S3 listing in
+`check_campaign_progress` remains as a fallback for pre-T7.3 deployments.
+
+### Backends
+
+| Backend | Use case                                    | Configuration                                  |
+|---------|---------------------------------------------|------------------------------------------------|
+| DynamoDB| Serverless-native, no extra infra           | `FLUXION_STATE_STORE=dynamodb` + `FLUXION_CAMPAIGN_TABLE` (or `boto3` env) |
+| Redis   | Sub-second polling for very large campaigns | `FLUXION_STATE_STORE=redis` + `FLUXION_REDIS_URL` |
+| Memory  | Local-dev / tests                           | `FLUXION_STATE_STORE=memory`                   |
+
+### Schema
+
+- **DynamoDB**
+  - Partition key: `campaign_id` (S)
+  - Sort key:     `work_unit_id` (S)
+  - Attributes:   `status` (S), `timestamp` (S), `error_message` (S, optional),
+    `metrics` (M, optional).
+- **Redis**
+  - Hash per task:   `fluxion:campaign:{campaign_id}:task:{work_unit_id}`
+  - Sorted set per campaign: `fluxion:campaign:{campaign_id}:tasks`
+    (member = `work_unit_id`, score = epoch-ms of last update).
+
+### Aggregation
+
+`StateStore.aggregate_progress(campaign_id, total)` returns a
+`CampaignProgress` snapshot with `pending`, `running`, `completed`, `failed`,
+`progress_pct`, and `is_complete`. The coordinator uses this to update the
+campaign state on every poll without ever listing S3.
+
+### CLI
+
+```bash
+# Use DynamoDB explicitly
+python scripts/cloud_campaign_manager.py --action status \
+    --campaign-id fluxion-abc --state-store dynamodb
+
+# Use Redis explicitly
+python scripts/cloud_campaign_manager.py --action status \
+    --campaign-id fluxion-abc --state-store redis
+
+# Memory (local dev)
+python scripts/cloud_campaign_manager.py --action status \
+    --campaign-id fluxion-abc --state-store memory
+
+# Auto (consults FLUXION_STATE_STORE, then falls back to legacy S3 listing)
+python scripts/cloud_campaign_manager.py --action status \
+    --campaign-id fluxion-abc --state-store auto
+```
+
 ## Architecture
 
 ```

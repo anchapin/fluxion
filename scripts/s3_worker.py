@@ -47,6 +47,20 @@ try:
 except ImportError:
     zstd = None
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+try:
+    from state_store import (  # type: ignore[import-not-found]
+        InMemoryStateStore,
+        StateStore,
+        TaskState,
+        TaskStatus,
+    )
+except ImportError:  # pragma: no cover - defensive
+    InMemoryStateStore = None  # type: ignore[assignment]
+    StateStore = None  # type: ignore[assignment]
+    TaskState = None  # type: ignore[assignment]
+    TaskStatus = None  # type: ignore[assignment]
+
 
 TRACE_BASE = Path(".sdd/traces/diagnostic")
 CARGO_TEST_CMD = ["cargo", "test", "--test=ashrae_140_validation", "--", "--nocapture"]
@@ -273,9 +287,90 @@ def push_result_to_s3(result: WorkUnitResult | KPIResult, s3_prefix: str, client
 
 
 def update_campaign_progress(
-    campaign_id: str, work_unit_id: str, status: str, clients: dict
+    campaign_id: str,
+    work_unit_id: str,
+    status: str,
+    clients: dict,
+    *,
+    store: Optional["StateStore"] = None,
+    metrics: Optional[dict[str, float]] = None,
+    error_message: Optional[str] = None,
 ) -> None:
-    """Update campaign progress in DynamoDB or S3."""
+    """Update campaign progress in the configured state store.
+
+    Resolution order:
+      1. Explicit ``store`` argument (preferred for tests and the local
+         pipeline that wires a concrete backend).
+      2. ``FLUXION_STATE_STORE`` environment variable — ``dynamodb`` or
+         ``redis`` select the cloud backends; ``memory`` selects the
+         process-local :class:`InMemoryStateStore`.
+      3. Legacy S3 fallback (``FLUXION_CAMPAIGN_STATE_PREFIX``) for
+         pre-T7.3 deployments; writes a per-task JSON marker that the
+         coordinator's S3-listing path understands.
+
+    The worker always writes the full task state (status + timestamp +
+    optional metrics / error message) so the coordinator can derive a
+    campaign-wide progress snapshot directly from the state store.
+    """
+    if store is not None and TaskState is not None:
+        state = TaskState.now(
+            campaign_id=campaign_id,
+            work_unit_id=work_unit_id,
+            status=status,
+            metrics=metrics,
+            error_message=error_message,
+        )
+        try:
+            store.set_state(state)
+            return
+        except Exception as exc:  # pragma: no cover - transport errors
+            print(f"[WARN] StateStore write failed: {exc}", file=sys.stderr)
+            return
+
+    backend = (os.environ.get("FLUXION_STATE_STORE") or "").strip().lower()
+    if backend == "dynamodb" and StateStore is not None:
+        try:
+            store = StateStore.create("dynamodb", dynamodb_client=clients["dynamodb"])
+        except Exception as exc:  # pragma: no cover - transport errors
+            print(f"[WARN] Could not build DynamoDB store: {exc}", file=sys.stderr)
+            return
+        if store is not None and TaskState is not None:
+            try:
+                store.set_state(
+                    TaskState.now(
+                        campaign_id=campaign_id,
+                        work_unit_id=work_unit_id,
+                        status=status,
+                        metrics=metrics,
+                        error_message=error_message,
+                    )
+                )
+                return
+            except Exception as exc:  # pragma: no cover - transport errors
+                print(f"[WARN] DynamoDB write failed: {exc}", file=sys.stderr)
+                return
+    if backend == "redis" and StateStore is not None:
+        try:
+            store = StateStore.create("redis")
+        except Exception as exc:  # pragma: no cover - transport errors
+            print(f"[WARN] Could not build Redis store: {exc}", file=sys.stderr)
+            return
+        if store is not None and TaskState is not None:
+            try:
+                store.set_state(
+                    TaskState.now(
+                        campaign_id=campaign_id,
+                        work_unit_id=work_unit_id,
+                        status=status,
+                        metrics=metrics,
+                        error_message=error_message,
+                    )
+                )
+                return
+            except Exception as exc:  # pragma: no cover - transport errors
+                print(f"[WARN] Redis write failed: {exc}", file=sys.stderr)
+                return
+
     table_name = os.environ.get("FLUXION_CAMPAIGN_TABLE")
     if table_name:
         dynamodb = clients["dynamodb"]
@@ -290,25 +385,29 @@ def update_campaign_progress(
                     ":now": {"S": datetime.now(timezone.utc).isoformat()},
                 },
             )
+            return
         except ClientError as e:
             print(f"[WARN] Failed to update DynamoDB: {e}", file=sys.stderr)
-    else:
-        s3_state_prefix = os.environ.get("FLUXION_CAMPAIGN_STATE_PREFIX", "")
-        if s3_state_prefix:
-            bucket, prefix = parse_s3_uri(s3_state_prefix)
-            state_key = f"{prefix}/{campaign_id}/progress/{work_unit_id}.json"
-            clients["s3"].put_object(
-                Bucket=bucket,
-                Key=state_key,
-                Body=json.dumps(
-                    {
-                        "work_unit_id": work_unit_id,
-                        "status": status,
-                        "timestamp": datetime.now(timezone.utc).isoformat(),
-                    }
-                ),
-                ContentType="application/json",
-            )
+            return
+
+    s3_state_prefix = os.environ.get("FLUXION_CAMPAIGN_STATE_PREFIX", "")
+    if s3_state_prefix:
+        bucket, prefix = parse_s3_uri(s3_state_prefix)
+        state_key = f"{prefix}/{campaign_id}/progress/{work_unit_id}.json"
+        clients["s3"].put_object(
+            Bucket=bucket,
+            Key=state_key,
+            Body=json.dumps(
+                {
+                    "work_unit_id": work_unit_id,
+                    "status": status,
+                    "timestamp": datetime.now(timezone.utc).isoformat(),
+                    "error_message": error_message,
+                    "metrics": metrics,
+                }
+            ),
+            ContentType="application/json",
+        )
 
 
 def run_simulation(work_unit: WorkUnit) -> tuple[dict[str, Any], str]:
@@ -396,7 +495,13 @@ def compute_kpi_stats(values: list[float]) -> tuple[float, float, float, float]:
     return mean_val, std_val, min(values), max(values)
 
 
-def run_worker(work_unit: WorkUnit, emit_raw: bool = False, num_runs: int = 1) -> KPIResult:
+def run_worker(
+    work_unit: WorkUnit,
+    emit_raw: bool = False,
+    num_runs: int = 1,
+    *,
+    state_store: Optional["StateStore"] = None,
+) -> KPIResult:
     """
     Execute a work unit and emit aggregated KPIs to S3.
 
@@ -408,6 +513,8 @@ def run_worker(work_unit: WorkUnit, emit_raw: bool = False, num_runs: int = 1) -
         If True, include individual run results in output.
     num_runs : int
         Number of simulation runs to aggregate (default 1).
+    state_store : StateStore, optional
+        Backend state store (DynamoDB/Redis/in-memory) for progress tracking.
 
     Returns
     -------
@@ -423,7 +530,11 @@ def run_worker(work_unit: WorkUnit, emit_raw: bool = False, num_runs: int = 1) -
     print(f"[*] Running {num_runs} simulation(s) for aggregation")
 
     update_campaign_progress(
-        work_unit.campaign_id, work_unit.work_unit_id, "running", clients
+        work_unit.campaign_id,
+        work_unit.work_unit_id,
+        "running",
+        clients,
+        store=state_store,
     )
 
     raw_results: list[WorkUnitResult] = []
@@ -490,6 +601,20 @@ def run_worker(work_unit: WorkUnit, emit_raw: bool = False, num_runs: int = 1) -
                 timestamp=datetime.now(timezone.utc).isoformat(),
             ))
 
+        # Push per-run progress to state store
+        update_campaign_progress(
+            work_unit.campaign_id,
+            work_unit.work_unit_id,
+            "running",
+            clients,
+            store=state_store,
+            metrics={
+                "run_idx": run_idx,
+                "num_runs": num_runs,
+                "duration_ms": duration_ms,
+            },
+        )
+
     # Compute aggregated KPIs
     h_mean, h_std, h_min, h_max = compute_kpi_stats(heating_maes)
     c_mean, c_std, c_min, c_max = compute_kpi_stats(cooling_maes)
@@ -529,17 +654,38 @@ def run_worker(work_unit: WorkUnit, emit_raw: bool = False, num_runs: int = 1) -
         raw_results=raw_results if emit_raw else None,
     )
 
+    # Push aggregated completion status to state store
+    update_campaign_progress(
+        work_unit.campaign_id,
+        work_unit.work_unit_id,
+        "completed" if error_msg is None else "failed",
+        clients,
+        store=state_store,
+        metrics={
+            "heating_mae_mean": h_mean,
+            "cooling_mae_mean": c_mean,
+            "peak_heating_mae_mean": ph_mean,
+            "peak_cooling_mae_mean": pc_mean,
+            "temperature_mae_mean": t_mean,
+            "overall_pass_rate": pass_rate,
+            "duration_ms_mean": dur_mean,
+        },
+        error_message=error_msg,
+    )
+
     result_uri = push_result_to_s3(result, work_unit.s3_result_prefix, clients)
     print(f"[*] KPI result pushed to: {result_uri}")
-
-    update_campaign_progress(
-        work_unit.campaign_id, work_unit.work_unit_id, "completed", clients
-    )
 
     return result
 
 
-def run_sqs_worker(queue_url: str, emit_raw: bool = False, num_runs: int = 1) -> None:
+def run_sqs_worker(
+    queue_url: str,
+    emit_raw: bool = False,
+    num_runs: int = 1,
+    *,
+    state_store: Optional["StateStore"] = None,
+) -> None:
     """Long-running SQS worker that processes messages from a queue."""
     clients = get_aws_clients()
     sqs = clients["sqs"] if "sqs" in clients else boto3.client("sqs")
@@ -561,7 +707,7 @@ def run_sqs_worker(queue_url: str, emit_raw: bool = False, num_runs: int = 1) ->
                 work_unit = download_work_unit(body["param_file"], clients)
 
                 try:
-                    run_worker(work_unit, emit_raw=emit_raw, num_runs=num_runs)
+                    run_worker(work_unit, emit_raw=emit_raw, num_runs=num_runs, state_store=state_store)
                     sqs.delete_message(
                         QueueUrl=queue_url, ReceiptHandle=message["ReceiptHandle"]
                     )
@@ -570,8 +716,10 @@ def run_sqs_worker(queue_url: str, emit_raw: bool = False, num_runs: int = 1) ->
                     update_campaign_progress(
                         work_unit.campaign_id,
                         work_unit.work_unit_id,
-                        f"failed: {e}",
+                        "failed",
                         clients,
+                        store=state_store,
+                        error_message=str(e),
                     )
 
         except KeyboardInterrupt:
