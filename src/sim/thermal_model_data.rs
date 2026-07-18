@@ -249,6 +249,16 @@ pub struct ThermalModelData<T: ContinuousTensor<f64> + Clone> {
     /// Issue #763 — full hourly zone temperature profiles for post-processing and reporting.
     /// Format: [num_zones][8760] hourly temperatures in °C.
     pub hourly_temperatures: Option<Vec<Vec<f64>>>,
+    /// Issue #1799 — sub-hourly 9R4C node temperatures per zone (diagnostics + ML features).
+    ///
+    /// `nodal_temperatures[zone][node][timestep]` where `node` follows the
+    /// canonical `MultiNodeSolver::NODE_NAMES` ordering:
+    /// `0=wall, 1=roof, 2=floor, 3=internal`.
+    ///
+    /// Only populated when the model carries at least one `MultiNodeSolver`
+    /// (i.e. 9R4C / heavy-mass construction like ASHRAE 140 Case 900+).
+    /// `None` for low-mass models or before a simulation has been run.
+    pub nodal_temperatures: Option<Vec<Vec<Vec<f64>>>>,
     /// Issue #762 — per-surface incident solar radiation tracking for ASHRAE 140-2023 Section 8.2.3.
     /// Key: surface identifier (e.g., "wall_N", "window_S", "roof").
     /// BTreeMap for deterministic iteration order across platforms (Issue #1297)
@@ -405,6 +415,7 @@ impl<T: ContinuousTensor<f64> + Clone> Clone for ThermalModelData<T> {
             #[cfg(feature = "pr821-diag")]
             last_phi_m: self.last_phi_m,
             hourly_temperatures: None,
+            nodal_temperatures: None,
             incident_solar_per_surface: self.incident_solar_per_surface.clone(),
             sun_pos_cache: self.sun_pos_cache.clone(),
         }

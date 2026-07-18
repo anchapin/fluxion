@@ -1188,6 +1188,28 @@ impl MultiNodeSolver {
             / 3.0
     }
 
+    /// Snapshot the four 9R4C node temperatures as a fixed-size array
+    /// (Issue #1799 — sub-hourly nodal temperature export for Python).
+    ///
+    /// Order: `[wall, roof, floor, internal]`. This is the canonical node index
+    /// ordering used throughout the rest of the engine (see `MultiNodeThermalMass`
+    /// field order in `fluxion_core::multi_node`). Callers wanting a per-node
+    /// name label should map index → name with the same convention.
+    pub fn snapshot_temperatures(&self) -> [f64; 4] {
+        [
+            self.mass.wall.temperature,
+            self.mass.roof.temperature,
+            self.mass.floor.temperature,
+            self.mass.internal.temperature,
+        ]
+    }
+
+    /// Number of nodes in this solver (always 4 for the 9R4C network).
+    pub const NUM_NODES: usize = 4;
+
+    /// Canonical node names in the same order as `snapshot_temperatures()`.
+    pub const NODE_NAMES: [&'static str; Self::NUM_NODES] = ["wall", "roof", "floor", "internal"];
+
     pub fn set_zone_temperature(&mut self, t: f64) {
         self.zone_temperature = t;
     }
