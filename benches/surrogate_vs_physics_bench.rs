@@ -16,6 +16,7 @@ use criterion::{black_box, criterion_group, criterion_main, Criterion, Throughpu
 use fluxion::ai::surrogate::SurrogateManager;
 use fluxion::sim::thermal_model::{HybridRouting, HybridThermalModel, ThermalModelTrait};
 use fluxion::validation::ashrae_140_cases::ASHRAE140Case;
+use std::time::Instant;
 
 const DUMMY_ONNX_MODEL: &str = "assets/dummy_surrogate.onnx";
 
@@ -288,6 +289,60 @@ fn bench_analytical_loads_timing(c: &mut Criterion) {
     group.finish();
 }
 
+/// Benchmark: ms/timestep execution-time reporting for T6.3.
+/// Runs both physics-only and hybrid paths on Case 900 for a year, and emits
+/// `MS_PER_TIMESTEP: {"physics": X, "hybrid": Y, "ratio": Z}` to stderr so CI
+/// can parse it and track the speedup ratio across runs.
+fn bench_ms_per_timestep_8760(c: &mut Criterion) {
+    let surrogates = build_surrogate_manager();
+    let spec = case900_spec();
+    let timesteps = ANNUAL_TIMESTEPS;
+
+    let mut group = c.benchmark_group("head_to_head/case900/ms_per_timestep");
+    group.sample_size(10);
+    group.throughput(Throughput::Elements(timesteps as u64));
+
+    group.bench_function("speedup_ratio_ms_per_timestep", |b| {
+        b.iter_custom(|n_iter| {
+            let mut total_physics_ns: u128 = 0;
+            let mut total_hybrid_ns: u128 = 0;
+
+            for _ in 0..n_iter {
+                let mut physics_model =
+                    HybridThermalModel::from_spec_with_routing(&spec, HybridRouting::all_physics());
+                let start = Instant::now();
+                let _ = physics_model.solve_timesteps(black_box(timesteps), &surrogates, false);
+                total_physics_ns += start.elapsed().as_nanos();
+
+                let mut hybrid_model = HybridThermalModel::from_spec(&spec);
+                let start = Instant::now();
+                let _ = hybrid_model.solve_timesteps(black_box(timesteps), &surrogates, false);
+                total_hybrid_ns += start.elapsed().as_nanos();
+            }
+
+            let avg_physics_ns = total_physics_ns as f64 / n_iter as f64;
+            let avg_hybrid_ns = total_hybrid_ns as f64 / n_iter as f64;
+            let physics_ms_per_ts = avg_physics_ns / 1_000_000.0 / timesteps as f64;
+            let hybrid_ms_per_ts = avg_hybrid_ns / 1_000_000.0 / timesteps as f64;
+            let ratio = if avg_hybrid_ns > 0.0 {
+                avg_physics_ns / avg_hybrid_ns
+            } else {
+                0.0
+            };
+
+            eprintln!(
+                "MS_PER_TIMESTEP: {{\"physics\": {:.6}, \"hybrid\": {:.6}, \"ratio\": {:.6}}}",
+                physics_ms_per_ts, hybrid_ms_per_ts, ratio
+            );
+
+            // Return the physics time as the criterion timing for this benchmark
+            std::time::Duration::from_nanos((avg_physics_ns / 2.0) as u64)
+        })
+    });
+
+    group.finish();
+}
+
 criterion_group!(
     benches,
     // Head-to-head Case 900 (high-mass, 9R4C) — primary benchmarks for T6.1
@@ -303,6 +358,8 @@ criterion_group!(
     // Micro-benchmarks
     bench_surrogate_onnx_single_inference,
     bench_surrogate_onnx_batched_inference,
-    bench_analytical_loads_timing
+    bench_analytical_loads_timing,
+    // ms/timestep execution-time reporting (T6.3)
+    bench_ms_per_timestep_8760
 );
 criterion_main!(benches);
