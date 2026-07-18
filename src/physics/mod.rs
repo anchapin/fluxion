@@ -58,6 +58,7 @@ pub mod state_space_ctf;
 pub mod thermal_mass;
 
 pub mod multi_node_solver;
+pub mod nine_r4c_nodal_trace;
 pub mod solver_manager;
 pub mod solver_registry;
 pub mod solver_trait;

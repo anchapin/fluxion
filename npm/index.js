@@ -44,6 +44,9 @@ module.exports = {
   GbXmlExporter: native.GbXmlExporter,
   FmiExporter: native.FmiExporter,
 
+  // Issue #1800 (T9.6): sub-hourly 9R4C nodal temperature trace
+  NineR4CNodalTracer: native.NineR4CNodalTracer,
+
   // Error classes
   FluxionError: native.FluxionError,
   ValidationError: native.ValidationError,
@@ -84,3 +87,25 @@ module.exports.createBatchOracle = () => new native.BatchOracle();
  */
 module.exports.createBuildingParameters = (windowUValue, heatingSetpoint, coolingSetpoint) =>
   new native.BuildingParameters(windowUValue, heatingSetpoint, coolingSetpoint);
+
+/**
+ * Create a NineR4CNodalTracer with default 9R4C parameters (issue #1800).
+ *
+ * Use this to extract sub-hourly nodal temperature traces from the
+ * 9R4C multi-node solver. The returned trace agrees bit-for-bit with
+ * the canonical solver trace used by the Python binding (T9.5).
+ *
+ * @function createNineR4CNodalTracer
+ * @returns {NineR4CNodalTracer} A new tracer instance
+ * @example
+ * ```javascript
+ * const tracer = createNineR4CNodalTracer();
+ * const trace = tracer.runSubHourlyTrace({
+ *   dtSeconds: 300.0,
+ *   timesteps: 288,
+ *   couplingMode: 'additive_sum',
+ * });
+ * console.log(`Wall[0] = ${trace.wall[0]} °C`);
+ * ```
+ */
+module.exports.createNineR4CNodalTracer = () => new native.NineR4CNodalTracer();
