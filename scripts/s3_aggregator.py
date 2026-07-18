@@ -37,6 +37,11 @@ except ImportError:
     boto3 = None
     ClientError = Exception
 
+try:
+    import zstandard as zstd
+except ImportError:
+    zstd = None
+
 
 @dataclass
 class AggregatedResult:
@@ -103,7 +108,17 @@ def collect_results_from_s3(s3_client, bucket: str, results_prefix: str) -> list
         for page in paginator.paginate(Bucket=bucket, Prefix=f"{results_prefix}/"):
             for obj in page.get("Contents", []):
                 key = obj["Key"]
-                if key.endswith(".json") and not key.endswith("_placeholder"):
+                if key.endswith(".json.zst") and not key.endswith("_placeholder"):
+                    try:
+                        response = s3_client.get_object(Bucket=bucket, Key=key)
+                        body_bytes = response["Body"].read()
+                        if zstd is not None:
+                            body_bytes = zstd.decompress(body_bytes)
+                        data = json.loads(body_bytes.decode("utf-8"))
+                        results.append(AggregatedResult(**data))
+                    except (json.JSONDecodeError, TypeError) as e:
+                        print(f"[WARN] Failed to parse {key}: {e}", file=sys.stderr)
+                elif key.endswith(".json") and not key.endswith("_placeholder"):
                     try:
                         response = s3_client.get_object(Bucket=bucket, Key=key)
                         data = json.loads(response["Body"].read().decode("utf-8"))

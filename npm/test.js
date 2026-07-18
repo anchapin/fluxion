@@ -8,13 +8,14 @@ const assert = require('node:assert');
 // Run: npm run build before running tests
 
 describe('@fluxion/native', () => {
-  let BatchOracle, BuildingParameters, ValidationError;
+  let BatchOracle, BuildingParameters, NineR4CConfig, ValidationError;
 
   before(() => {
     // Load the module
     const fluxion = require('./index.js');
     BatchOracle = fluxion.BatchOracle;
     BuildingParameters = fluxion.BuildingParameters;
+    NineR4CConfig = fluxion.NineR4CConfig;
     ValidationError = fluxion.ValidationError;
   });
 
@@ -213,6 +214,139 @@ describe('@fluxion/native', () => {
       assert.ok(isFinite(results[0]));  // Valid
       assert.ok(isNaN(results[1]));     // Invalid -> NaN
       assert.ok(isFinite(results[2]));  // Valid
+    });
+  });
+
+  describe('NineR4CConfig', () => {
+    it('should create with default constructor', () => {
+      const config = new NineR4CConfig();
+      assert.strictEqual(config.hTrIs, 10.0);
+      assert.strictEqual(config.zoneTemperature, 20.0);
+      assert.strictEqual(config.surfaceTemperature, 20.0);
+      assert.strictEqual(config.exteriorTemperature, 10.0);
+      assert.strictEqual(config.couplingMode, 'additive_sum');
+      assert.strictEqual(config.wall.temperature, 20.0);
+      assert.strictEqual(config.roof.temperature, 20.0);
+      assert.strictEqual(config.floor.temperature, 20.0);
+      assert.strictEqual(config.internal.temperature, 20.0);
+    });
+
+    it('should round-trip a 9R4C config object', () => {
+      // Create a custom config
+      const config = new NineR4CConfig({
+        hTrIs: 15.0,
+        wall: { temperature: 22.0, capacitance: 5e6, hTrMs: 50.0, hTrEm: 20.0 },
+        roof: { temperature: 22.0, capacitance: 3e6, hTrMs: 30.0, hTrEm: 15.0 },
+        floor: { temperature: 20.0, capacitance: 2e6, hTrMs: 20.0, hTrEm: 10.0 },
+        internal: { temperature: 21.0, capacitance: 1e6, hTrMs: 0.0, hTrEm: 0.0, hTrMe: 100.0 },
+        couplingMode: 'parallel_resistance',
+      });
+
+      // Verify parameters round-trip correctly
+      assert.strictEqual(config.hTrIs, 15.0);
+      assert.strictEqual(config.couplingMode, 'parallel_resistance');
+      assert.strictEqual(config.wall.temperature, 22.0);
+      assert.strictEqual(config.wall.capacitance, 5e6);
+      assert.strictEqual(config.wall.hTrMs, 50.0);
+      assert.strictEqual(config.wall.hTrEm, 20.0);
+      assert.strictEqual(config.roof.temperature, 22.0);
+      assert.strictEqual(config.roof.capacitance, 3e6);
+      assert.strictEqual(config.roof.hTrMs, 30.0);
+      assert.strictEqual(config.roof.hTrEm, 15.0);
+      assert.strictEqual(config.floor.temperature, 20.0);
+      assert.strictEqual(config.floor.capacitance, 2e6);
+      assert.strictEqual(config.floor.hTrMs, 20.0);
+      assert.strictEqual(config.floor.hTrEm, 10.0);
+      assert.strictEqual(config.internal.temperature, 21.0);
+      assert.strictEqual(config.internal.capacitance, 1e6);
+      assert.strictEqual(config.internal.hTrMe, 100.0);
+    });
+
+    it('should step forward in time and update temperatures', () => {
+      const config = new NineR4CConfig();
+      config.zoneTemperature = 25.0;
+      config.exteriorTemperature = 5.0;
+      config.surfaceTemperature = 18.0;
+
+      const wallTempBefore = config.wallTemperature;
+      config.step(3600.0);
+      const wallTempAfter = config.wall.temperature;
+
+      // Wall should cool toward exterior temperature
+      assert.ok(config.wallTemperature < wallTempBefore,
+        `Wall temperature (${config.wallTemperature}) should decrease from ${wallTempBefore}`);
+      assert.ok(config.wallTemperature > 5.0,
+        `Wall temperature (${config.wallTemperature}) should stay above exterior (5.0)`);
+    });
+
+    it('should set and get per-surface exterior temperatures', () => {
+      const config = new NineR4CConfig();
+      config.setSurfaceExteriorTemperatures(30.0, 35.0, 15.0);
+
+      assert.strictEqual(config.tExtWall, 30.0);
+      assert.strictEqual(config.tExtRoof, 35.0);
+      assert.strictEqual(config.tExtFloor, 15.0);
+    });
+
+    it('should compute zone air temperature', () => {
+      const config = new NineR4CConfig();
+      // All nodes at 20°C, outdoor at 20°C -> T_air ≈ 20°C
+      const tAir = config.computeZoneAirTemperature(20.0, 5.0, 0.0, 0.0);
+      assert.ok(Math.abs(tAir - 20.0) < 1.0,
+        `Zone air temperature (${tAir}) should be near 20°C`);
+    });
+
+    it('should compute HVAC demand', () => {
+      const config = new NineR4CConfig();
+      // T_air_free < heating setpoint -> positive Q (heating needed)
+      const q = config.computeHvacDemand(15.0, 20.0, 26.0);
+      assert.ok(q > 0.0, `Heating demand should be positive, got ${q}`);
+      // Q = h_tr_is * (20 - 15) = 10 * 5 = 50 W
+      assert.ok(Math.abs(q - 50.0) < 1.0, `Expected ~50W, got ${q}`);
+    });
+
+    it('should update conductances via setters', () => {
+      const config = new NineR4CConfig();
+      config.setWallConductances(25.0, 55.0);
+      assert.strictEqual(config.wall.hTrEm, 25.0);
+      assert.strictEqual(config.wall.hTrMs, 55.0);
+
+      config.setInternalConductance(150.0);
+      assert.strictEqual(config.internal.hTrMe, 150.0);
+    });
+
+    it('should update capacitances via setters', () => {
+      const config = new NineR4CConfig();
+      config.setWallCapacitance(1e7);
+      config.setRoofCapacitance(2e7);
+      config.setFloorCapacitance(3e7);
+      config.setInternalCapacitance(4e6);
+
+      assert.strictEqual(config.wall.capacitance, 1e7);
+      assert.strictEqual(config.roof.capacitance, 2e7);
+      assert.strictEqual(config.floor.capacitance, 3e7);
+      assert.strictEqual(config.internal.capacitance, 4e6);
+    });
+
+    it('should step with gains', () => {
+      const config = new NineR4CConfig();
+      config.zoneTemperature = 20.0;
+      config.exteriorTemperature = 10.0;
+      config.surfaceTemperature = 18.0;
+
+      const wallTempBefore = config.wallTemperature;
+      config.stepWithGains(3600.0, 1000.0, 500.0, 0.0, 0.0);
+
+      // Wall with gains should be hotter than without
+      assert.ok(config.wallTemperature > wallTempBefore,
+        `Wall with gains (${config.wallTemperature}) should be hotter than without (${wallTempBefore})`);
+    });
+
+    it('should expose effective time constant', () => {
+      const config = new NineR4CConfig();
+      const tau = config.effectiveTimeConstant;
+      assert.ok(tau > 0.0, `Time constant (${tau}) should be positive`);
+      assert.ok(tau < 1e8, `Time constant (${tau}) should be finite`);
     });
   });
 });

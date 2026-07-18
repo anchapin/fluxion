@@ -22,7 +22,10 @@ pub use schema::{
     WindowSpec, ZoneGeometry,
 };
 // Re-export REST server entrypoints (Issue #1342)
-pub use server::{run_simulation, AppState};
+pub use server::{
+    run_simulation, AppState, CampaignSpec, CampaignState, CampaignStatus,
+    InMemorySimulationStateStore, SimulationStateStore,
+};
 
 #[cfg(feature = "python-bindings")]
 pub use error::{FluxionErrorPy, SimulationError, SurrogateError, ValidationError};
