@@ -763,6 +763,7 @@ These traits support the main physics pipeline and should also be documented:
 | `GroundTemperature` | `src/sim/boundary.rs` | Ground temp boundary condition |
 | `BatchOrchestrator` | `src/sim/orchestrator.rs` | Per-population CPU surrogate compute scheduling (rayon `par_chunks`, #1439) |
 | `DwaveClient` | `src/quantum/dwave_client.rs` | Object-safe trait for submitting Ising problems to a D-Wave sampler (QPU or hybrid); mockable for tests |
+| `EmailTransport` | `src/api/email_notification.rs` | Abstraction for sending email notifications (campaign completion fallback); mockable for tests |
 | `SimulationStateStore` | `src/api/server.rs` | Simulation state persistence trait (in-memory or cloud-backed); enables stateless API servers |
 
 ### Surface Heat Flux Trait Hierarchy
