@@ -434,6 +434,11 @@ path = "tests/validation/empirical.rs"
 harness = true
 
 [[test]]
+name = "validation_flexlab_test_cell"
+path = "tests/validation/flexlab_test_cell.rs"
+harness = true
+
+[[test]]
 name = "weather_epw_fields"
 path = "tests/weather_epw_fields.rs"
 harness = true

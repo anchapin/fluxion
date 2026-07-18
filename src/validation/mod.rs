@@ -18,6 +18,7 @@ pub mod ep_oracle;
 pub mod export;
 pub mod flexlab_weather;
 pub mod fdd;
+pub mod flexlab_test_cell;
 pub mod guardrails;
 pub mod hvac_bestest;
 pub mod interior_sensors;
