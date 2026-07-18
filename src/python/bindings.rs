@@ -286,7 +286,7 @@ impl PyMultiZoneThermalModel {
         } else if let Ok(name) = zone_identifier.extract::<String>() {
             let normalized = name.trim().to_lowercase();
             if let Some(stripped) = normalized.strip_prefix("zone") {
-                let num_str = stripped.trim().replace('_', "-").replace(' ', "-");
+                let num_str = stripped.trim().replace(['_', ' '], "-");
                 if let Ok(num) = num_str.parse::<usize>() {
                     if num == 0 {
                         return Err(pyo3::exceptions::PyValueError::new_err(
