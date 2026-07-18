@@ -349,4 +349,110 @@ describe('@fluxion/native', () => {
       assert.ok(tau < 1e8, `Time constant (${tau}) should be finite`);
     });
   });
+
+  // Issue #1800 (T9.6): Node parity with T9.5 — sub-hourly nodal
+  // temperature trace for the 9R4C multi-node solver.
+  describe('NineR4CNodalTracer (issue #1800)', () => {
+    let NineR4CNodalTracer;
+    before(() => {
+      NineR4CNodalTracer = fluxion.NineR4CNodalTracer;
+    });
+
+    it('should expose the tracer constructor', () => {
+      assert.strictEqual(typeof NineR4CNodalTracer, 'function',
+        'NineR4CNodalTracer should be exported');
+      const tracer = new NineR4CNodalTracer();
+      assert.ok(tracer);
+      assert.strictEqual(typeof tracer.runSubHourlyTrace, 'function');
+    });
+
+    it('should return five Float64Array series of equal length', () => {
+      const tracer = new NineR4CNodalTracer();
+      const trace = tracer.runSubHourlyTrace({
+        dtSeconds: 300.0,
+        timesteps: 48,
+        couplingMode: 'additive_sum',
+        initialZoneTemperature: 20.0,
+        surfaceExteriorTemperatures: {
+          tExtWall: 5.0,
+          tExtRoof: 5.0,
+          tExtFloor: 5.0,
+        },
+        hTrIs: 10.0,
+        gains: Array.from({ length: 48 }, () => [0.0, 0.0, 0.0, 0.0]),
+      });
+
+      assert.strictEqual(trace.timesteps, 48);
+      assert.strictEqual(trace.dtSeconds, 300.0);
+      assert.strictEqual(trace.couplingMode, 'additive_sum');
+      assert.strictEqual(trace.wall.length, 48);
+      assert.strictEqual(trace.roof.length, 48);
+      assert.strictEqual(trace.floor.length, 48);
+      assert.strictEqual(trace.internal.length, 48);
+      assert.strictEqual(trace.zone.length, 48);
+      for (let i = 0; i < 48; i++) {
+        assert.ok(Number.isFinite(trace.wall[i]), `wall[${i}] must be finite`);
+        assert.ok(Number.isFinite(trace.zone[i]), `zone[${i}] must be finite`);
+      }
+    });
+
+    it('should be deterministic across repeated runs', () => {
+      const tracer = new NineR4CNodalTracer();
+      const params = {
+        dtSeconds: 60.0,
+        timesteps: 10,
+        couplingMode: 'additive_sum',
+        initialZoneTemperature: 22.0,
+        surfaceExteriorTemperatures: {
+          tExtWall: 0.0, tExtRoof: 0.0, tExtFloor: 0.0,
+        },
+        hTrIs: 10.0,
+      };
+      const a = tracer.runSubHourlyTrace(params);
+      const b = tracer.runSubHourlyTrace(params);
+      for (let i = 0; i < 10; i++) {
+        assert.strictEqual(a.wall[i], b.wall[i]);
+        assert.strictEqual(a.zone[i], b.zone[i]);
+      }
+    });
+
+    it('should reject non-positive dtSeconds', () => {
+      const tracer = new NineR4CNodalTracer();
+      assert.throws(
+        () => tracer.runSubHourlyTrace({
+          dtSeconds: 0.0,
+          timesteps: 4,
+        }),
+        /dt_seconds/,
+      );
+    });
+
+    it('should reject mismatched gains length', () => {
+      const tracer = new NineR4CNodalTracer();
+      assert.throws(
+        () => tracer.runSubHourlyTrace({
+          dtSeconds: 60.0,
+          timesteps: 10,
+          gains: [[0, 0, 0, 0], [0, 0, 0, 0]], // length 2, expected 10
+        }),
+        /gains vector length/,
+      );
+    });
+
+    it('should accept parallel-resistance coupling mode', () => {
+      const tracer = new NineR4CNodalTracer();
+      const trace = tracer.runSubHourlyTrace({
+        dtSeconds: 60.0,
+        timesteps: 5,
+        couplingMode: 'parallel_resistance',
+        initialZoneTemperature: 20.0,
+        surfaceExteriorTemperatures: {
+          tExtWall: 0.0, tExtRoof: 0.0, tExtFloor: 0.0,
+        },
+        hTrIs: 10.0,
+      });
+      assert.strictEqual(trace.couplingMode, 'parallel_resistance');
+      assert.strictEqual(trace.zone.length, 5);
+    });
+  });
 });

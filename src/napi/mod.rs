@@ -52,6 +52,8 @@ mod gbxml_exporter;
 #[cfg(all(feature = "napi-bindings", not(target_arch = "wasm32")))]
 mod nine_r4c_config;
 #[cfg(all(feature = "napi-bindings", not(target_arch = "wasm32")))]
+mod nine_r4c_nodal_trace;
+#[cfg(all(feature = "napi-bindings", not(target_arch = "wasm32")))]
 mod osm_exporter;
 #[cfg(all(feature = "napi-bindings", not(target_arch = "wasm32")))]
 mod state_extractor;
@@ -68,6 +70,10 @@ pub use fmi_exporter::FmiExporter;
 pub use gbxml_exporter::GbXmlExporter;
 #[cfg(all(feature = "napi-bindings", not(target_arch = "wasm32")))]
 pub use nine_r4c_config::NineR4CConfig;
+#[cfg(all(feature = "napi-bindings", not(target_arch = "wasm32")))]
+pub use nine_r4c_nodal_trace::{
+    ExteriorTemperatureSet, NineR4CNodalTrace, NineR4CNodalTracer, NineR4CTraceParams,
+};
 #[cfg(all(feature = "napi-bindings", not(target_arch = "wasm32")))]
 pub use osm_exporter::OsmExporter;
 #[cfg(all(feature = "napi-bindings", not(target_arch = "wasm32")))]

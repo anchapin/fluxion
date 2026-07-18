@@ -363,4 +363,118 @@ export declare class ValidationError {
   get message(): string
 }
 
+/**
+ * JavaScript-accessible 9R4C sub-hourly nodal temperature tracer.
+ *
+ * Steps the 9R4C multi-node solver forward at sub-hourly resolution
+ * (e.g. 5- or 15-minute sub-steps) and returns per-node temperature
+ * series as typed arrays. Issue #1800 (T9.6): Node parity with T9.5.
+ *
+ * # TypeScript Example
+ * ```typescript
+ * import { NineR4CNodalTracer } from '@fluxion/native';
+ *
+ * const tracer = new NineR4CNodalTracer();
+ * const trace = tracer.runSubHourlyTrace({
+ *   dtSeconds: 300.0,
+ *   timesteps: 288,
+ *   couplingMode: 'additive_sum',
+ *   initialZoneTemperature: 20.0,
+ *   surfaceExteriorTemperatures: {
+ *     tExtWall: 0.0,
+ *     tExtRoof: 0.0,
+ *     tExtFloor: 0.0,
+ *   },
+ *   hTrIs: 10.0,
+ * });
+ *
+ * console.log(`Wall[0]   = ${trace.wall[0].toFixed(2)} °C`);
+ * console.log(`Zone[287] = ${trace.zone[287].toFixed(2)} °C`);
+ * ```
+ */
+export declare class NineR4CNodalTracer {
+  /** Create a tracer with documented 9R4C defaults. */
+  constructor()
+  /**
+   * Replace the per-node thermal mass parameters and conductances.
+   * Mirrors the layout of the T9.2 `NineR4CConfig::from_surface_parameters`.
+   */
+  configureNodes(
+    wallCm: number,
+    wallHTrMs: number,
+    wallHTrEm: number,
+    wallHTrMe: number,
+    roofCm: number,
+    roofHTrMs: number,
+    roofHTrEm: number,
+    roofHTrMe: number,
+    floorCm: number,
+    floorHTrMs: number,
+    floorHTrEm: number,
+    floorHTrMe: number,
+    internalCm: number,
+    internalHTrMs: number,
+    internalHTrEm: number,
+    internalHTrMe: number,
+  ): void
+  /**
+   * Run the sub-hourly nodal temperature trace and return the
+   * per-node temperature series.
+   *
+   * @throws Error if `dtSeconds` is non-positive, `timesteps` is zero,
+   * or `gains.length !== timesteps`.
+   */
+  runSubHourlyTrace(params: NineR4CTraceParams): NineR4CNodalTrace
+}
+
+/** Per-surface exterior boundary temperatures used by the 9R4C solver. */
+export interface ExteriorTemperatureSet {
+  /** Wall sol-air / exterior temperature [°C]. */
+  tExtWall: number
+  /** Roof sol-air / exterior temperature [°C]. */
+  tExtRoof: number
+  /** Floor ground / exterior temperature [°C]. */
+  tExtFloor: number
+}
+
+/** Sub-hourly trace parameters accepted by {@link NineR4CNodalTracer.runSubHourlyTrace}. */
+export interface NineR4CTraceParams {
+  /** Sub-step duration in seconds. Must be positive and finite. */
+  dtSeconds: number
+  /** Number of sub-steps to record. Must be non-zero. */
+  timesteps: number
+  /** Coupling mode: `"additive_sum"` (default) or `"parallel_resistance"`. */
+  couplingMode?: string
+  /** Initial zone air temperature [°C]. Defaults to `20.0`. */
+  initialZoneTemperature?: number
+  /** Optional `[wall, roof, floor, internal]` seed vector [°C]. */
+  initialNodeTemperature?: Array<number>
+  /** Per-surface exterior boundary temperatures [°C]. */
+  surfaceExteriorTemperatures?: ExteriorTemperatureSet
+  /** Zone-air-to-surface conductance [W/K]. Defaults to `10.0`. */
+  hTrIs?: number
+  /** Optional array of per-timestep gain vectors `[gw, gr, gf, gi]` in watts. */
+  gains?: Array<Array<number>>
+}
+
+/** Sub-hourly nodal temperature trace returned by {@link NineR4CNodalTracer.runSubHourlyTrace}. */
+export declare class NineR4CNodalTrace {
+  /** Number of sub-steps recorded (length of each series). */
+  timesteps: number
+  /** Sub-step duration in seconds. */
+  dtSeconds: number
+  /** Coupling mode used for this trace. */
+  couplingMode: string
+  /** Wall mass-node temperatures after each sub-step [°C]. */
+  wall: Array<number>
+  /** Roof mass-node temperatures after each sub-step [°C]. */
+  roof: Array<number>
+  /** Floor mass-node temperatures after each sub-step [°C]. */
+  floor: Array<number>
+  /** Internal mass-node temperatures after each sub-step [°C]. */
+  internal: Array<number>
+  /** Zone air temperature after each sub-step [°C]. */
+  zone: Array<number>
+}
+
 export declare function register(): void
