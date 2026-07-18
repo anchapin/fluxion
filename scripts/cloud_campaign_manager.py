@@ -7,7 +7,7 @@ Removes the "Local Tether" bottleneck by:
 1. Storing campaign state in S3 (not local disk)
 2. Workers push results directly to S3
 3. Aggregator merges S3 results
-4. SNS notification on completion
+4. SNS and/or webhook notification on completion
 
 Usage
 -----
@@ -39,6 +39,8 @@ import os
 import random
 import sys
 import time
+import urllib.error
+import urllib.request
 import uuid
 from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
@@ -128,6 +130,8 @@ class CampaignState:
     results_uri: Optional[str] = None
     notification_sent: bool = False
     error_message: Optional[str] = None
+    webhook_url: Optional[str] = None
+    sns_topic_arn: Optional[str] = None
 
 
 def get_aws_clients():
@@ -247,6 +251,7 @@ def create_campaign(
     s3_bucket: str,
     s3_prefix: str,
     sns_topic_arn: Optional[str] = None,
+    webhook_url: Optional[str] = None,
 ) -> CampaignState:
     """Create a new campaign and upload initial state to S3."""
     clients = get_aws_clients()
@@ -288,7 +293,7 @@ def create_campaign(
         clients["s3"].put_object(
             Bucket=s3_bucket,
             Key=unit_key,
-            Body=json.dumps(work_unit, indent=2),
+            Body=json.dumps(asdict(work_unit), indent=2, default=str),
             ContentType="application/json",
         )
 
@@ -317,13 +322,15 @@ def create_campaign(
         work_units=work_units,
         status="created",
         start_time=datetime.now(timezone.utc).isoformat(),
+        webhook_url=webhook_url,
+        sns_topic_arn=sns_topic_arn,
     )
 
     state_uri = f"s3://{s3_bucket}/{s3_prefix}/campaigns/{campaign_id}/state.json"
     clients["s3"].put_object(
         Bucket=s3_bucket,
         Key=f"{s3_prefix}/campaigns/{campaign_id}/state.json",
-        Body=json.dumps(asdict(state), indent=2),
+        Body=json.dumps(asdict(state), indent=2, default=str),
         ContentType="application/json",
     )
 
@@ -332,6 +339,8 @@ def create_campaign(
 
     if sns_topic_arn:
         print(f"[*] SNS notifications will be sent to: {sns_topic_arn}")
+    if webhook_url:
+        print(f"[*] Webhook notifications will be sent to: {webhook_url}")
 
     return state
 
@@ -484,21 +493,21 @@ def wait_for_completion(
         time.sleep(poll_interval)
 
 
-def send_completion_notification(
-    state: CampaignState, s3_bucket: str, s3_prefix: str, sns_topic_arn: str
-) -> None:
-    """Send SNS notification with campaign results."""
-    if state.notification_sent:
-        print("[*] Notification already sent, skipping")
-        return
+def build_completion_payload(
+    state: CampaignState, s3_bucket: str, s3_prefix: str
+) -> dict[str, Any]:
+    """Build the JSON payload sent on completion (webhook + SNS body).
 
-    clients = get_aws_clients()
-
-    account_id = clients["sts"].get_caller_identity()["Account"]
+    Includes the campaign ID and the result location so downstream
+    consumers (CI bots, dashboards, email fallback T7.5) can fetch the
+    aggregated output without inspecting S3 directly.
+    """
     region = os.environ.get("AWS_REGION", "us-east-1")
-    results_uri = f"https://{s3_bucket}.s3.{region}.amazonaws.com/{s3_prefix}/campaigns/{state.campaign_id}/results/"
-
-    message = {
+    results_uri = (
+        f"https://{s3_bucket}.s3.{region}.amazonaws.com/"
+        f"{s3_prefix}/campaigns/{state.campaign_id}/results/"
+    )
+    return {
         "campaign_id": state.campaign_id,
         "status": state.status,
         "start_time": state.start_time,
@@ -511,16 +520,106 @@ def send_completion_notification(
         "results_uri": results_uri,
     }
 
-    clients["sns"].publish(
-        TopicArn=sns_topic_arn,
-        Subject=f"Fluxion Campaign {state.campaign_id} {'Completed' if state.status == 'completed' else 'Failed'}",
-        Message=json.dumps(message, indent=2),
+
+def send_webhook_notification(
+    state: CampaignState,
+    s3_bucket: str,
+    s3_prefix: str,
+    webhook_url: str,
+    *,
+    timeout: float = 10.0,
+) -> bool:
+    """POST the completion payload to ``webhook_url``.
+
+    Returns ``True`` if the webhook returned a 2xx status, ``False`` on
+    transport / non-2xx errors. Failures are logged but never raised —
+    notification problems must not abort the coordinator's post-completion
+    bookkeeping (state persistence, aggregator handoff, etc.).
+    """
+    payload = build_completion_payload(state, s3_bucket, s3_prefix)
+    body = json.dumps(payload).encode("utf-8")
+    request = urllib.request.Request(
+        webhook_url,
+        data=body,
+        method="POST",
+        headers={
+            "Content-Type": "application/json",
+            "User-Agent": "fluxion-cloud-campaign/1.0",
+        },
     )
+    try:
+        with urllib.request.urlopen(request, timeout=timeout) as response:  # noqa: S310
+            status_code = response.getcode()
+            if 200 <= status_code < 300:
+                print(
+                    f"[*] Webhook delivered: {webhook_url} (HTTP {status_code})"
+                )
+                return True
+            print(
+                f"[WARN] Webhook returned non-2xx status {status_code}: {webhook_url}",
+                file=sys.stderr,
+            )
+            return False
+    except (urllib.error.URLError, urllib.error.HTTPError, TimeoutError, OSError) as exc:
+        print(
+            f"[WARN] Webhook delivery failed for {webhook_url}: {exc}",
+            file=sys.stderr,
+        )
+        return False
 
-    state.notification_sent = True
+
+def send_completion_notification(
+    state: CampaignState,
+    s3_bucket: str,
+    s3_prefix: str,
+    sns_topic_arn: Optional[str] = None,
+    webhook_url: Optional[str] = None,
+) -> None:
+    """Send completion notification via SNS and/or webhook.
+
+    At least one channel (sns_topic_arn or webhook_url) must be configured.
+    The function is idempotent — repeated calls are no-ops once
+    ``state.notification_sent`` is set.
+    """
+    if state.notification_sent:
+        print("[*] Notification already sent, skipping")
+        return
+
+    if not sns_topic_arn and not webhook_url:
+        print(
+            "[WARN] No notification channel configured "
+            "(set --sns-topic or --webhook-url)",
+            file=sys.stderr,
+        )
+        return
+
+    webhook_delivered = True
+    if webhook_url:
+        webhook_delivered = send_webhook_notification(
+            state, s3_bucket, s3_prefix, webhook_url
+        )
+
+    if sns_topic_arn:
+        try:
+            clients = get_aws_clients()
+            payload = build_completion_payload(state, s3_bucket, s3_prefix)
+            clients["sns"].publish(
+                TopicArn=sns_topic_arn,
+                Subject=(
+                    f"Fluxion Campaign {state.campaign_id} "
+                    f"{'Completed' if state.status == 'completed' else 'Failed'}"
+                ),
+                Message=json.dumps(payload, indent=2),
+            )
+            print(f"[*] SNS notification sent to: {sns_topic_arn}")
+        except Exception as exc:  # pragma: no cover - transport errors
+            print(f"[WARN] SNS publish failed: {exc}", file=sys.stderr)
+
+    # Mark notification as attempted once both configured channels have
+    # been tried. SNS failures are best-effort; webhook failure leaves
+    # notification_sent False so a follow-up ``--action notify`` retries.
+    state.notification_sent = webhook_delivered
     update_campaign_state(state, s3_bucket, s3_prefix)
-
-    print(f"[*] Notification sent to: {sns_topic_arn}")
 
 
 def trigger_aggregator(
@@ -637,6 +736,15 @@ def main() -> int:
         help="SNS topic ARN for notifications",
     )
     parser.add_argument(
+        "--webhook-url",
+        type=str,
+        default=os.environ.get("FLUXION_WEBHOOK_URL"),
+        help=(
+            "Webhook URL POSTed on 100%% campaign completion. Payload "
+            "includes campaign_id and result location (Issue #1788 / T7.4)."
+        ),
+    )
+    parser.add_argument(
         "--aggregator-function",
         type=str,
         help="Lambda function name for aggregation",
@@ -691,7 +799,13 @@ def main() -> int:
             samples_per_param=args.samples,
         )
 
-        state = create_campaign(config, s3_bucket, s3_prefix, args.sns_topic)
+        state = create_campaign(
+            config,
+            s3_bucket,
+            s3_prefix,
+            sns_topic_arn=args.sns_topic,
+            webhook_url=args.webhook_url,
+        )
 
         print(f"[*] Campaign created: {state.campaign_id}")
         print(f"[*] Work units: {len(state.work_units)}")
@@ -794,8 +908,17 @@ def main() -> int:
         print(f"    Completed: {state.completed_units}")
         print(f"    Failed: {state.failed_units}")
 
-        if args.sns_topic and state.status == "completed":
-            send_completion_notification(state, s3_bucket, s3_prefix, args.sns_topic)
+        if state.status in ("completed", "failed"):
+            notify_sns = args.sns_topic or state.sns_topic_arn
+            notify_webhook = args.webhook_url or state.webhook_url
+            if notify_sns or notify_webhook:
+                send_completion_notification(
+                    state,
+                    s3_bucket,
+                    s3_prefix,
+                    sns_topic_arn=notify_sns,
+                    webhook_url=notify_webhook,
+                )
 
         return 0
 
@@ -816,15 +939,28 @@ def main() -> int:
             parser.error("--campaign-id is required for notify action")
         if not s3_bucket:
             parser.error("--s3-bucket is required (or set FLUXION_S3_BUCKET env var)")
-        if not args.sns_topic:
-            parser.error("--sns-topic is required for notify action")
 
         state = get_campaign_state(args.campaign_id, s3_bucket, s3_prefix)
         if state is None:
             print(f"[ERROR] Campaign {args.campaign_id} not found")
             return 1
 
-        send_completion_notification(state, s3_bucket, s3_prefix, args.sns_topic)
+        notify_sns = args.sns_topic or state.sns_topic_arn
+        notify_webhook = args.webhook_url or state.webhook_url
+        if not notify_sns and not notify_webhook:
+            parser.error(
+                "At least one notification channel is required: "
+                "pass --sns-topic or --webhook-url, or persist them in "
+                "the campaign state at creation time."
+            )
+
+        send_completion_notification(
+            state,
+            s3_bucket,
+            s3_prefix,
+            sns_topic_arn=notify_sns,
+            webhook_url=notify_webhook,
+        )
 
         return 0
 
