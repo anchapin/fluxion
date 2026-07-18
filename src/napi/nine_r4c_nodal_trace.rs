@@ -11,6 +11,7 @@
 //! asserts that the NAPI-returned trace is bit-identical to a direct
 //! call into the canonical function for the same configuration.
 
+use crate::napi::zero_copy_matrix::into_zero_copy_float64_array;
 use crate::physics::multi_node_solver::SurfaceExteriorTemperatures;
 use crate::physics::nine_r4c_nodal_trace::{
     run_sub_hourly_nodal_trace as run_canonical_trace, NineR4CTraceConfig, NineR4CTraceError,
@@ -229,11 +230,11 @@ impl NineR4CNodalTracer {
             timesteps: trace.timesteps as u32,
             dt_seconds: trace.dt_seconds,
             coupling_mode: coupling_mode_str(trace.coupling_mode).to_string(),
-            wall: Float64Array::from(trace.wall),
-            roof: Float64Array::from(trace.roof),
-            floor: Float64Array::from(trace.floor),
-            internal: Float64Array::from(trace.internal),
-            zone: Float64Array::from(trace.zone),
+            wall: into_zero_copy_float64_array(trace.wall),
+            roof: into_zero_copy_float64_array(trace.roof),
+            floor: into_zero_copy_float64_array(trace.floor),
+            internal: into_zero_copy_float64_array(trace.internal),
+            zone: into_zero_copy_float64_array(trace.zone),
         })
     }
 }

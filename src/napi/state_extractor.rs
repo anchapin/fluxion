@@ -15,6 +15,7 @@
 //! - **TypeScript Support**: Full type definitions auto-generated via napi-rs
 
 use crate::ai::surrogate::SurrogateManager;
+use crate::napi::zero_copy_matrix::into_zero_copy_float64_array;
 use crate::physics::cta::VectorField;
 use crate::sim::engine::ThermalModel;
 use napi::bindgen_prelude::Float64Array;
@@ -157,11 +158,11 @@ impl StateExtractor {
         }
 
         Ok(StateMatrices {
-            zone_temperatures: Float64Array::from(zone_temperatures),
-            mass_temperatures: Float64Array::from(mass_flat),
-            heating_loads: Float64Array::from(vec![0.0; steps]),
-            cooling_loads: Float64Array::from(vec![0.0; steps]),
-            solar_gains: Float64Array::from(vec![0.0; steps * self.num_zones]),
+            zone_temperatures: into_zero_copy_float64_array(zone_temperatures),
+            mass_temperatures: into_zero_copy_float64_array(mass_flat),
+            heating_loads: into_zero_copy_float64_array(vec![0.0; steps]),
+            cooling_loads: into_zero_copy_float64_array(vec![0.0; steps]),
+            solar_gains: into_zero_copy_float64_array(vec![0.0; steps * self.num_zones]),
         })
     }
 
@@ -208,9 +209,12 @@ impl StateExtractor {
                         }
                     }
                 }
-                Ok(Float64Array::from(flat))
+                Ok(into_zero_copy_float64_array(flat))
             }
-            None => Ok(Float64Array::from(vec![20.0; steps * self.num_zones])),
+            None => Ok(into_zero_copy_float64_array(vec![
+                20.0;
+                steps * self.num_zones
+            ])),
         }
     }
 }

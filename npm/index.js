@@ -43,6 +43,8 @@ module.exports = {
   OsmExporter: native.OsmExporter,
   GbXmlExporter: native.GbXmlExporter,
   FmiExporter: native.FmiExporter,
+  NineR4CConfig: native.NineR4CConfig,
+  transferMatrix: native.transferMatrix,
 
   // Issue #1800 (T9.6): sub-hourly 9R4C nodal temperature trace
   NineR4CNodalTracer: native.NineR4CNodalTracer,
