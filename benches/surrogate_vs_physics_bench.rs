@@ -6,13 +6,47 @@
 //! Run with: cargo bench --release --bench surrogate_vs_physics
 //!
 //! Issue #720: Formal benchmarking of surrogate speedup
+//! Issue #1782: Track RSS memory in the surrogate-vs-physics benchmark CI
 
 use criterion::{black_box, criterion_group, criterion_main, Criterion, Throughput};
 use fluxion::ai::surrogate::SurrogateManager;
 use fluxion::physics::cta::VectorField;
 use fluxion::sim::engine::ThermalModel;
+use std::sync::atomic::{AtomicU64, Ordering};
 
 const DUMMY_ONNX_MODEL: &str = "assets/dummy_surrogate.onnx";
+
+static PEAK_RSS_PHYSICS: AtomicU64 = AtomicU64::new(0);
+static PEAK_RSS_HYBRID: AtomicU64 = AtomicU64::new(0);
+
+#[cfg(target_os = "linux")]
+fn get_current_rss_kb() -> u64 {
+    std::fs::read_to_string("/proc/self/status")
+        .ok()
+        .and_then(|content| {
+            content
+                .lines()
+                .find(|l| l.starts_with("VmRSS:"))
+                .and_then(|l| {
+                    l.split_whitespace()
+                        .nth(1)
+                        .and_then(|v| v.parse::<u64>().ok())
+                })
+        })
+        .unwrap_or(0)
+}
+
+#[cfg(not(target_os = "linux"))]
+fn get_current_rss_kb() -> u64 {
+    0
+}
+
+fn update_peak_rss(peak_store: &AtomicU64) {
+    let current = get_current_rss_kb();
+    if current > 0 {
+        peak_store.fetch_max(current, Ordering::Relaxed);
+    }
+}
 
 fn bench_surrogate_onnx_single_inference(c: &mut Criterion) {
     let surrogate = match SurrogateManager::load_onnx(DUMMY_ONNX_MODEL) {
@@ -111,6 +145,7 @@ fn bench_comparison_8760_timesteps(c: &mut Criterion) {
 
     group.bench_function("physics_analytical_10zones_8760", |b| {
         b.iter(|| {
+            update_peak_rss(&PEAK_RSS_PHYSICS);
             let mut model = ThermalModel::<VectorField>::new(zones);
             model.solve_timesteps(
                 black_box(timesteps),
@@ -120,11 +155,13 @@ fn bench_comparison_8760_timesteps(c: &mut Criterion) {
                 None,
                 None,
             );
+            update_peak_rss(&PEAK_RSS_PHYSICS);
         })
     });
 
     group.bench_function("physics_with_surrogate_10zones_8760", |b| {
         b.iter(|| {
+            update_peak_rss(&PEAK_RSS_HYBRID);
             let mut model = ThermalModel::<VectorField>::new(zones);
             model.solve_timesteps(
                 black_box(timesteps),
@@ -134,10 +171,17 @@ fn bench_comparison_8760_timesteps(c: &mut Criterion) {
                 None,
                 None,
             );
+            update_peak_rss(&PEAK_RSS_HYBRID);
         })
     });
 
     group.finish();
+
+    eprintln!(
+        "\n=== RSS Report ===\nphysics_only_peak_rss_kb: {}\nhybrid_peak_rss_kb: {}",
+        PEAK_RSS_PHYSICS.load(Ordering::Relaxed),
+        PEAK_RSS_HYBRID.load(Ordering::Relaxed)
+    );
 }
 
 fn bench_surrogate_inference_timing(c: &mut Criterion) {
