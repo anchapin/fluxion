@@ -8,11 +8,11 @@ const assert = require('node:assert');
 // Run: npm run build before running tests
 
 describe('@fluxion/native', () => {
-  let BatchOracle, BuildingParameters, NineR4CConfig, ValidationError;
+  let fluxion, BatchOracle, BuildingParameters, NineR4CConfig, ValidationError;
 
   before(() => {
     // Load the module
-    const fluxion = require('./index.js');
+    fluxion = require('./index.js');
     BatchOracle = fluxion.BatchOracle;
     BuildingParameters = fluxion.BuildingParameters;
     NineR4CConfig = fluxion.NineR4CConfig;
@@ -453,6 +453,33 @@ describe('@fluxion/native', () => {
       });
       assert.strictEqual(trace.couplingMode, 'parallel_resistance');
       assert.strictEqual(trace.zone.length, 5);
+    });
+  });
+
+  describe('zero-copy matrix transfer (issue #1802)', () => {
+    it('should expose transferMatrix', () => {
+      assert.strictEqual(typeof fluxion.transferMatrix, 'function');
+    });
+
+    it('should preserve the typed array and backing buffer', () => {
+      const matrix = new Float64Array([1.0, 2.0, 3.0, 4.0]);
+      const transferred = fluxion.transferMatrix(matrix);
+
+      assert.strictEqual(transferred, matrix);
+      assert.strictEqual(transferred.buffer, matrix.buffer);
+      assert.strictEqual(transferred.byteOffset, matrix.byteOffset);
+      assert.strictEqual(transferred.byteLength, matrix.byteLength);
+    });
+
+    it('should preserve subarray offsets without copying', () => {
+      const allocation = new Float64Array([0.0, 1.0, 2.0, 3.0, 4.0]);
+      const matrix = allocation.subarray(1, 4);
+      const transferred = fluxion.transferMatrix(matrix);
+
+      assert.strictEqual(transferred, matrix);
+      assert.strictEqual(transferred.buffer, allocation.buffer);
+      assert.strictEqual(transferred.byteOffset, Float64Array.BYTES_PER_ELEMENT);
+      assert.deepStrictEqual(Array.from(transferred), [1.0, 2.0, 3.0]);
     });
   });
 });

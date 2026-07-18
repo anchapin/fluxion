@@ -56,7 +56,7 @@ impl NineR4CConfig {
     /// * `surface_temperature` - Initial surface temperature [°C]
     /// * `exterior_temperature` - Initial exterior air temperature [°C]
     /// * `coupling_mode` - Air-mass coupling mode: "additive_sum" or "parallel_resistance"
-    #[napi(constructor)]
+    #[napi(factory)]
     pub fn from_surface_parameters(
         h_tr_is: f64,
         wall_cm: f64,

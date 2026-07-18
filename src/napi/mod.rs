@@ -57,6 +57,8 @@ mod nine_r4c_nodal_trace;
 mod osm_exporter;
 #[cfg(all(feature = "napi-bindings", not(target_arch = "wasm32")))]
 mod state_extractor;
+#[cfg(all(feature = "napi-bindings", not(target_arch = "wasm32")))]
+mod zero_copy_matrix;
 
 #[cfg(all(feature = "napi-bindings", not(target_arch = "wasm32")))]
 pub use batch_oracle::BatchOracle;
@@ -78,6 +80,8 @@ pub use nine_r4c_nodal_trace::{
 pub use osm_exporter::OsmExporter;
 #[cfg(all(feature = "napi-bindings", not(target_arch = "wasm32")))]
 pub use state_extractor::{StateExtractor, StateMatrices};
+#[cfg(all(feature = "napi-bindings", not(target_arch = "wasm32")))]
+pub use zero_copy_matrix::transfer_matrix;
 
 #[cfg(all(feature = "napi-bindings", not(target_arch = "wasm32")))]
 #[napi_derive::napi]
