@@ -40,6 +40,7 @@ pub mod ashrae_140_multi_zone;
 pub mod case_195_calibration;
 pub mod case_960;
 pub mod empirical;
+pub mod empirical_hybrid;
 pub mod energy_balance;
 pub mod guideline14;
 pub mod high_mass;

@@ -452,7 +452,7 @@ name = "validation_flexlab_test_cell"
 path = "tests/validation/flexlab_test_cell.rs"
 harness = true
 
-# Issue #1810 / Plan T10.8 — ASHRAE Guideline 14 statistical reporting
+<# Issue #1810 / Plan T10.8 — ASHRAE Guideline 14 statistical reporting
 # (CVRMSE + NMBE) for the FLEXLAB empirical chain. Produces a Markdown
 # validation artifact at tests/validation/artifacts/guideline14_flexlab_x3a.md
 # that is committed alongside the source so reviewers can inspect the
@@ -461,6 +461,13 @@ harness = true
 [[test]]
 name = "validation_empirical_guideline14"
 path = "tests/validation/empirical_guideline14.rs"
+harness = true
+
+# Issue #1846 — Hybrid Physics+ML surrogate empirical MAE report vs FLEXLAB.
+# `cargo test -p fluxion validation_hybrid_empirical_test` runs this target.
+[[test]]
+name = "validation_hybrid_empirical_test"
+path = "tests/validation/hybrid_empirical_test.rs"
 harness = true
 
 [[test]]

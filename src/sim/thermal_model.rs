@@ -602,6 +602,13 @@ impl MetricsSnapshot {
 /// The default policy is [`HybridRouting::default`] (loads → surrogate,
 /// everything else → physics), which is the highest-value + lowest-risk
 /// split called out in Issue #1431's acceptance criteria.
+///
+/// `HybridThermalModel` is `Clone`-by-design (AGENTS.md, "Module
+/// Boundaries") so report generators such as the
+/// `validation::empirical_hybrid` harness (Issue #1846) can run a fresh
+/// hybrid solve on a cloned model without disturbing the caller's
+/// instance.
+#[derive(Clone)]
 pub struct HybridThermalModel {
     inner: crate::sim::engine::ThermalModel<VectorField>,
     routing: HybridRouting,
@@ -705,6 +712,20 @@ impl HybridThermalModel {
         self.surrogate_ventilation_calls = 0;
     }
 
+    /// Get the full hourly zone temperature profiles from the last simulation.
+    ///
+    /// Must be called after `solve_timesteps`. Returns `None` if the
+    /// simulation has not been run or if the inner model did not capture
+    /// hourly temperatures (e.g. zero-step solve).
+    ///
+    /// Mirrors [`PhysicsThermalModel::get_hourly_temperatures`] so the
+    /// hybrid report (`validation::empirical_hybrid`, Issue #1846) can
+    /// compare hybrid temperatures against FLEXLAB measurements on the
+    /// same per-timestep grid as the physics model.
+    pub fn get_hourly_temperatures(&self) -> Option<Vec<Vec<f64>>> {
+        self.inner.get_hourly_temperatures()
+    }
+
     /// Returns a structured snapshot of the current dispatch counters,
     /// routing mode, and zone count (Issue #1608).
     pub fn metrics(&self) -> MetricsSnapshot {
@@ -761,6 +782,15 @@ impl ThermalModelTrait for HybridThermalModel {
         let use_surrogate_loads = self.routing.use_surrogate_loads;
         let use_surrogate_conduction = self.routing.use_surrogate_conduction;
         let use_surrogate_ventilation = self.routing.use_surrogate_ventilation;
+
+        // Issue #1846 — initialize hourly zone temperature storage before
+        // the timestep loop. Mirrors the physics-model behaviour in
+        // `thermal_model_physics::solver_core::solve_timesteps` so
+        // `get_hourly_temperatures()` returns the same shape for hybrid
+        // and physics models, enabling apples-to-apples MAE comparison
+        // in the empirical_hybrid harness.
+        self.inner.hourly_temperatures =
+            Some(vec![Vec::with_capacity(steps); self.inner.num_zones]);
 
         // Issue #1702: `use_surrogate_conduction` and `use_surrogate_ventilation`
         // are now wired. When `true`, the corresponding surrogate branch counter
@@ -832,6 +862,24 @@ impl ThermalModelTrait for HybridThermalModel {
                 let outdoor_temp = 10.0 + 10.0 * daily_cycle;
                 let energy = self.inner.step_physics(t, outdoor_temp, 3600.0);
                 self.physics_step_calls += 1;
+
+                // Issue #1846 — capture zone temperatures after each timestep
+                // so `get_hourly_temperatures()` returns the full per-timestep
+                // profile for the empirical_hybrid harness (FLEXLAB MAE report).
+                // Snapshot temperatures to break the borrow conflict between
+                // `self.inner.temperatures` (read) and `hourly_temperatures`
+                // (write) — both live on `self.inner`.
+                let temps_snapshot: Vec<f64> = self
+                    .inner
+                    .temperatures
+                    .as_ref()
+                    .to_vec();
+                if let Some(ref mut hourly) = self.inner.hourly_temperatures {
+                    for (zone_idx, temp) in temps_snapshot.iter().enumerate() {
+                        hourly[zone_idx].push(*temp);
+                    }
+                }
+
                 info!(
                     hybrid.physics_step_calls = self.physics_step_calls,
                     hybrid.timestep = t,
