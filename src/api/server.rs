@@ -61,7 +61,7 @@ use tracing::Level;
 use crate::ai::surrogate::SurrogateManager;
 use crate::api::metrics::{self, metrics_handler};
 use crate::api::schema::{SimulationOutput, SimulationSchema, SimulationSchemaV1};
-use crate::interop::{gbxml, ifc, osm};
+use crate::interop::{gbxml, osm};
 use crate::io::idf::{IdfFile, IdfParser};
 use crate::physics::cta::VectorField;
 use crate::sim::engine::ThermalModel;
@@ -477,8 +477,7 @@ impl<S: SimulationStateStore> AppState<S> {
                 CampaignState::Completed { results, .. } => Some(CampaignResult {
                     outputs: results
                         .iter()
-                        .enumerate()
-                        .map(|(_i, r)| match r {
+                        .map(|r| match r {
                             Ok(output) => CampaignSimulationResult {
                                 schema_id: None,
                                 output: Some(output.clone()),
@@ -1067,10 +1066,6 @@ async fn import_format(
             let schema = SimulationSchemaV1::try_from(&idf)
                 .map_err(|e| ApiError::ImportFailed(format!("IDF conversion error: {e}")))?;
             schema
-        }
-        "ifc" => {
-            let tmp = tempfile_for_bytes(&body, "ifc")?;
-            ifc::import_ifc(&tmp).map_err(|e| ApiError::ImportFailed(e.to_string()))?
         }
         "epjson" => {
             let body_str = std::str::from_utf8(&body).map_err(|e| {
