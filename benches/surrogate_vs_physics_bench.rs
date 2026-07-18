@@ -8,6 +8,7 @@
 //!
 //! # Issue
 //! Issue #1781: Implement benches/surrogate_vs_physics_bench.rs harness
+//! Issue #1782: Track RSS memory in the surrogate-vs-physics benchmark CI
 //!
 //! Run with: cargo bench --release --bench surrogate_vs_physics
 
