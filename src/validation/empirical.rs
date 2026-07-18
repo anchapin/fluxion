@@ -653,6 +653,33 @@ pub fn get_ashrae_rp_sources() -> MonitoredBuildingDatabase {
         num_data_points: 8760,
     });
 
+    // LBNL FLEXLAB ASHRAE 140 Empirical Validation Dataset
+    // Primary dataset for Fluxion empirical validation (T10.2-T10.5)
+    // Data: https://github.com/LBNL-ETA/FLEXLAB-ASHRAE140
+    // License: US Government work (public domain)
+    // Citation: Haves et al. (2020), DOI 10.20357/B7H88D
+    db.register(MonitoredDataSource {
+        id: "lbnl_flexlab_ashrae140".to_string(),
+        name: "LBNL FLEXLAB ASHRAE 140 Empirical Validation".to_string(),
+        source: "LBNL FLEXLAB-ASHRAE140 (DOE Lab RFP-2019)".to_string(),
+        building_type: BuildingType::Office,
+        climate_zone: "3C".to_string(),
+        location: "Berkeley, CA".to_string(),
+        latitude: 37.87,
+        longitude: -122.27,
+        floor_area: 27.0, // Single test cell ~4.5m x 6m
+        num_floors: 1,
+        zone_volume: 72.9, // ~4.5m x 6m x 2.7m
+        u_wall: 0.35,      // Varies by test case; representative
+        u_roof: 0.25,
+        u_window: 2.8,
+        wwr: 0.20,
+        infiltration_ach: 0.5,
+        internal_gains_density: 15.0,
+        time_resolution_hours: 1.0,
+        num_data_points: 8760,
+    });
+
     db
 }
 
