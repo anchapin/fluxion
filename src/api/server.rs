@@ -660,10 +660,6 @@ async fn import_format(
                 .map_err(|e| ApiError::ImportFailed(format!("IDF conversion error: {e}")))?;
             schema
         }
-        "ifc" => {
-            let tmp = tempfile_for_bytes(&body, "ifc")?;
-            ifc::import_ifc(&tmp).map_err(|e| ApiError::ImportFailed(e.to_string()))?
-        }
         "epjson" => {
             let body_str = std::str::from_utf8(&body).map_err(|e| {
                 ApiError::ImportFailed(format!("invalid UTF-8 in epJSON body: {e}"))
