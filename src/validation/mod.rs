@@ -45,6 +45,7 @@ pub mod high_mass;
 pub mod statistical;
 pub mod thermal_mass;
 pub mod thermal_mass_energy_accounting;
+pub mod timestamp_alignment;
 
 // Re-export common types
 pub use ab_testing::{ABTestRunner, ComparisonReport, TestResults, ThermalNetworkVariant};
@@ -225,6 +226,12 @@ pub use empirical::{
 pub use interior_sensors::{
     InteriorSensorDataset, InteriorSensorLoader, InteriorSensorMeta, InteriorSensorReading,
     SensorPlacement,
+};
+
+// Timestamp alignment re-exports
+pub use timestamp_alignment::{
+    align_timestamps, AlignedPair, AlignmentConfig, AlignmentDiagnostics, DstStrategy,
+    InterpolationMethod, TimestampedSample,
 };
 
 #[cfg(test)]
