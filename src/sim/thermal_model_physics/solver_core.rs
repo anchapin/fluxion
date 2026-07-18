@@ -272,7 +272,11 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
             const NODES: usize = 4; // wall, roof, floor, internal (see MultiNodeSolver::NODE_NAMES)
             self.0.nodal_temperatures = Some(
                 (0..self.0.num_zones)
-                    .map(|_| (0..NODES).map(|_| Vec::with_capacity(steps)).collect::<Vec<_>>())
+                    .map(|_| {
+                        (0..NODES)
+                            .map(|_| Vec::with_capacity(steps))
+                            .collect::<Vec<_>>()
+                    })
                     .collect(),
             );
         } else {
@@ -390,11 +394,7 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                     debug_assert_eq!(nodal.len(), self.0.num_zones);
                     debug_assert!(nodal.iter().all(|n| n.len() == 4));
                     let n_solvers = self.0.multi_node_solvers.len().min(self.0.num_zones);
-                    for (zone_idx, zone_nodes) in nodal
-                        .iter_mut()
-                        .enumerate()
-                        .take(n_solvers)
-                    {
+                    for (zone_idx, zone_nodes) in nodal.iter_mut().enumerate().take(n_solvers) {
                         let snapshot = self.0.multi_node_solvers[zone_idx].snapshot_temperatures();
                         for (node_idx, temp) in snapshot.iter().enumerate() {
                             zone_nodes[node_idx].push(*temp);
