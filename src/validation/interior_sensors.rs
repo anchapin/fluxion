@@ -263,10 +263,7 @@ impl InteriorSensorLoader {
                 .map(|s| SensorPlacement::from_str_loose(s))
                 .unwrap_or(SensorPlacement::FreeAir);
 
-            let model = row
-                .get("model")
-                .map_or("", |v| v)
-                .to_string();
+            let model = row.get("model").map_or("", |v| v).to_string();
 
             let accuracy_c = row
                 .get("accuracy_c")
@@ -288,15 +285,9 @@ impl InteriorSensorLoader {
                 .and_then(|s| s.parse::<u64>().ok())
                 .unwrap_or(300);
 
-            let calibration_date = row
-                .get("calibration_date")
-                .map_or("", |v| v)
-                .to_string();
+            let calibration_date = row.get("calibration_date").map_or("", |v| v).to_string();
 
-            let notes = row
-                .get("notes")
-                .map_or("", |v| v)
-                .to_string();
+            let notes = row.get("notes").map_or("", |v| v).to_string();
 
             sensors.push(InteriorSensorMeta {
                 sensor_id,
@@ -436,13 +427,19 @@ impl InteriorSensorLoader {
     /// Build a `MonitoredBuildingDatabase` entry from a sensor dataset,
     /// using the mean interior temperature as the zone temperature
     /// and averaging the per-sensor metadata into a single source record.
-    pub fn dataset_to_source(dataset: &InteriorSensorDataset) -> Option<crate::validation::empirical::MonitoredDataSource> {
+    pub fn dataset_to_source(
+        dataset: &InteriorSensorDataset,
+    ) -> Option<crate::validation::empirical::MonitoredDataSource> {
         if dataset.sensors.is_empty() {
             return None;
         }
 
         // Collect zone ids
-        let _zone_ids: Vec<&str> = dataset.sensors.values().map(|s| s.zone_id.as_str()).collect();
+        let _zone_ids: Vec<&str> = dataset
+            .sensors
+            .values()
+            .map(|s| s.zone_id.as_str())
+            .collect();
 
         // Average configured interval
         let avg_interval_s: f64 = dataset
@@ -555,7 +552,11 @@ fn parse_iso8601_approx(s: &str) -> Option<f64> {
         };
     }
     for m in 1..month {
-        let days = if m == 2 && leap { 29 } else { days_in_month[m as usize] };
+        let days = if m == 2 && leap {
+            29
+        } else {
+            days_in_month[m as usize]
+        };
         total_seconds += days as f64 * 86400.0;
     }
     total_seconds += (day - 1) as f64 * 86400.0;
@@ -601,10 +602,22 @@ mod tests {
 
     #[test]
     fn test_sensor_placement_from_str() {
-        assert_eq!(SensorPlacement::from_str_loose("Interior Wall"), SensorPlacement::InteriorWall);
-        assert_eq!(SensorPlacement::from_str_loose("free air"), SensorPlacement::FreeAir);
-        assert_eq!(SensorPlacement::from_str_loose("ceiling"), SensorPlacement::Ceiling);
-        assert_eq!(SensorPlacement::from_str_loose("floor level"), SensorPlacement::FloorLevel);
+        assert_eq!(
+            SensorPlacement::from_str_loose("Interior Wall"),
+            SensorPlacement::InteriorWall
+        );
+        assert_eq!(
+            SensorPlacement::from_str_loose("free air"),
+            SensorPlacement::FreeAir
+        );
+        assert_eq!(
+            SensorPlacement::from_str_loose("ceiling"),
+            SensorPlacement::Ceiling
+        );
+        assert_eq!(
+            SensorPlacement::from_str_loose("floor level"),
+            SensorPlacement::FloorLevel
+        );
         assert_eq!(
             SensorPlacement::from_str_loose("Exterior Wall Interior"),
             SensorPlacement::ExteriorWallInterior
@@ -618,9 +631,24 @@ mod tests {
         ds.register_sensor(InteriorSensorMeta::new("S2", "Z1"));
 
         let readings = vec![
-            InteriorSensorReading { timestamp: 0.0, sensor_id: "S1".into(), temperature_c: 21.0, relative_humidity_pct: None },
-            InteriorSensorReading { timestamp: 0.0, sensor_id: "S2".into(), temperature_c: 22.0, relative_humidity_pct: None },
-            InteriorSensorReading { timestamp: 300.0, sensor_id: "S1".into(), temperature_c: 21.5, relative_humidity_pct: None },
+            InteriorSensorReading {
+                timestamp: 0.0,
+                sensor_id: "S1".into(),
+                temperature_c: 21.0,
+                relative_humidity_pct: None,
+            },
+            InteriorSensorReading {
+                timestamp: 0.0,
+                sensor_id: "S2".into(),
+                temperature_c: 22.0,
+                relative_humidity_pct: None,
+            },
+            InteriorSensorReading {
+                timestamp: 300.0,
+                sensor_id: "S1".into(),
+                temperature_c: 21.5,
+                relative_humidity_pct: None,
+            },
         ];
 
         let accepted = ds.add_readings(readings);
@@ -633,9 +661,12 @@ mod tests {
         let mut ds = InteriorSensorDataset::new("test", "unit_test");
         ds.register_sensor(InteriorSensorMeta::new("S1", "Z1"));
 
-        let readings = vec![
-            InteriorSensorReading { timestamp: 0.0, sensor_id: "UNKNOWN".into(), temperature_c: 21.0, relative_humidity_pct: None },
-        ];
+        let readings = vec![InteriorSensorReading {
+            timestamp: 0.0,
+            sensor_id: "UNKNOWN".into(),
+            temperature_c: 21.0,
+            relative_humidity_pct: None,
+        }];
 
         let accepted = ds.add_readings(readings);
         assert_eq!(accepted, 0);
@@ -649,10 +680,30 @@ mod tests {
         ds.register_sensor(InteriorSensorMeta::new("S2", "Z1"));
 
         let readings = vec![
-            InteriorSensorReading { timestamp: 0.0, sensor_id: "S1".into(), temperature_c: 20.0, relative_humidity_pct: None },
-            InteriorSensorReading { timestamp: 0.0, sensor_id: "S2".into(), temperature_c: 22.0, relative_humidity_pct: None },
-            InteriorSensorReading { timestamp: 300.0, sensor_id: "S1".into(), temperature_c: 22.0, relative_humidity_pct: None },
-            InteriorSensorReading { timestamp: 300.0, sensor_id: "S2".into(), temperature_c: 24.0, relative_humidity_pct: None },
+            InteriorSensorReading {
+                timestamp: 0.0,
+                sensor_id: "S1".into(),
+                temperature_c: 20.0,
+                relative_humidity_pct: None,
+            },
+            InteriorSensorReading {
+                timestamp: 0.0,
+                sensor_id: "S2".into(),
+                temperature_c: 22.0,
+                relative_humidity_pct: None,
+            },
+            InteriorSensorReading {
+                timestamp: 300.0,
+                sensor_id: "S1".into(),
+                temperature_c: 22.0,
+                relative_humidity_pct: None,
+            },
+            InteriorSensorReading {
+                timestamp: 300.0,
+                sensor_id: "S2".into(),
+                temperature_c: 24.0,
+                relative_humidity_pct: None,
+            },
         ];
 
         ds.add_readings(readings);
@@ -668,8 +719,18 @@ mod tests {
         ds.register_sensor(InteriorSensorMeta::new("S1", "Z1"));
 
         let readings = vec![
-            InteriorSensorReading { timestamp: 0.0, sensor_id: "S1".into(), temperature_c: 20.0, relative_humidity_pct: None },
-            InteriorSensorReading { timestamp: 1.0, sensor_id: "S1".into(), temperature_c: 24.0, relative_humidity_pct: None },
+            InteriorSensorReading {
+                timestamp: 0.0,
+                sensor_id: "S1".into(),
+                temperature_c: 20.0,
+                relative_humidity_pct: None,
+            },
+            InteriorSensorReading {
+                timestamp: 1.0,
+                sensor_id: "S1".into(),
+                temperature_c: 24.0,
+                relative_humidity_pct: None,
+            },
         ];
 
         ds.add_readings(readings);
@@ -730,10 +791,30 @@ timestamp,sensor_id,temperature_c
         ds.register_sensor(InteriorSensorMeta::new("S2", "Z1"));
 
         let readings = vec![
-            InteriorSensorReading { timestamp: 0.0, sensor_id: "S1".into(), temperature_c: 20.0, relative_humidity_pct: None },
-            InteriorSensorReading { timestamp: 0.0, sensor_id: "S2".into(), temperature_c: 22.0, relative_humidity_pct: None },
-            InteriorSensorReading { timestamp: 300.0, sensor_id: "S1".into(), temperature_c: 21.0, relative_humidity_pct: None },
-            InteriorSensorReading { timestamp: 300.0, sensor_id: "S2".into(), temperature_c: 23.0, relative_humidity_pct: None },
+            InteriorSensorReading {
+                timestamp: 0.0,
+                sensor_id: "S1".into(),
+                temperature_c: 20.0,
+                relative_humidity_pct: None,
+            },
+            InteriorSensorReading {
+                timestamp: 0.0,
+                sensor_id: "S2".into(),
+                temperature_c: 22.0,
+                relative_humidity_pct: None,
+            },
+            InteriorSensorReading {
+                timestamp: 300.0,
+                sensor_id: "S1".into(),
+                temperature_c: 21.0,
+                relative_humidity_pct: None,
+            },
+            InteriorSensorReading {
+                timestamp: 300.0,
+                sensor_id: "S2".into(),
+                temperature_c: 23.0,
+                relative_humidity_pct: None,
+            },
         ];
         ds.add_readings(readings);
 
