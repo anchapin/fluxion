@@ -66,7 +66,7 @@ fn fixtures_dir() -> PathBuf {
 fn convert_fixture(name: &str) -> Result<SimulationSchemaV1, IdfError> {
     let path = fixtures_dir().join(name);
     let idf = IdfParser::from_path(&path).expect("IDF parses");
-    SimulationSchemaV1::try_from(idf)
+    SimulationSchemaV1::try_from(&idf)
 }
 
 /// Attempt to parse and convert every fixture, returning a list of
@@ -171,7 +171,7 @@ fn case_900_high_mass_detection() {
 fn unsupported_version_is_rejected() {
     // Synthesize an IDF with an unsupported version.
     let idf = IdfParser::from_str("Version, 99.9;\n").unwrap();
-    match SimulationSchemaV1::try_from(idf) {
+    match SimulationSchemaV1::try_from(&idf) {
         Err(IdfError::UnsupportedVersion(v)) => assert_eq!(v, "99.9"),
         other => panic!("expected UnsupportedVersion, got {other:?}"),
     }
@@ -180,7 +180,7 @@ fn unsupported_version_is_rejected() {
 #[test]
 fn missing_version_is_rejected() {
     let idf: IdfFile = IdfParser::from_str("Timestep, 1;\n").unwrap();
-    let err = SimulationSchemaV1::try_from(idf).unwrap_err();
+    let err = SimulationSchemaV1::try_from(&idf).unwrap_err();
     match err {
         IdfError::Conversion(_) => {}
         other => panic!("expected Conversion error, got {other:?}"),
