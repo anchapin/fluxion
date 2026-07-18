@@ -69,6 +69,7 @@ pub mod api;
 pub mod cli;
 pub mod interop;
 pub mod io;
+pub mod measures;
 pub mod napi;
 pub mod orchestration;
 pub mod performance;
