@@ -271,6 +271,11 @@ name = "shared_batch_service"
 path = "benches/shared_batch_service_bench.rs"
 harness = false
 
+[[bench]]
+name = "zero_copy_matrix_bench"
+path = "benches/zero_copy_matrix_bench.rs"
+harness = false
+
 [[bin]]
 name = "fluxion-delta"
 path = "tools/fluxion_delta.rs"
