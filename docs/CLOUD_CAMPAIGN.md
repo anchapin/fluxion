@@ -13,6 +13,51 @@ This cloud-hosted system decouples campaign execution from local machines by:
 3. **Cloud Aggregator** — Merges S3 result files into a final dataset
 4. **SNS Notifications** — Email/SMS notification upon campaign completion
 
+## Webhook Notification (T7.4 — Issue #1788)
+
+On 100% completion, the coordinator fans a notification out to **both**
+user-configured channels (each optional, both default-on-if-supplied):
+
+| Channel | CLI flag | Env var |
+|---------|----------|---------|
+| SNS     | `--sns-topic`   | `FLUXION_SNS_TOPIC_ARN` |
+| Webhook | `--webhook-url` | `FLUXION_WEBHOOK_URL`   |
+
+The webhook is POSTed as JSON with the following payload (mirrors the
+SNS message body so T7.5 email-fallback consumers can rely on a single
+schema):
+
+```json
+{
+  "campaign_id": "fluxion-abc123",
+  "status": "completed",
+  "start_time": "2026-07-18T00:00:00+00:00",
+  "end_time":   "2026-07-18T01:00:00+00:00",
+  "total_runs": 50,
+  "completed_runs": 48,
+  "failed_runs": 2,
+  "best_mae": 4.7,
+  "best_parameters": {"R_value": 1.5, "wall_thickness": 0.15},
+  "results_uri": "https://bucket.s3.us-east-1.amazonaws.com/fluxion-campaigns/campaigns/fluxion-abc123/results/"
+}
+```
+
+Notification config (`webhook_url`, `sns_topic_arn`) is persisted on the
+campaign's `state.json`, so a coordinator restart can still fire the
+configured channels without the user re-supplying CLI flags.
+
+```bash
+# Create campaign with both channels configured
+python scripts/cloud_campaign_manager.py --action create \
+    --case 600 --params R_value,wall_thickness --sweep-type random --samples 50 \
+    --sns-topic arn:aws:sns:us-east-1:000:topic \
+    --webhook-url https://hooks.example.com/fluxion-campaign
+
+# Wait action fires both channels at 100% completion
+python scripts/cloud_campaign_manager.py --action wait \
+    --campaign-id fluxion-abc123def456
+```
+
 ## State Store (T7.3 — Issue #1787)
 
 Workers publish per-task completion to a **state store** (DynamoDB or Redis)
