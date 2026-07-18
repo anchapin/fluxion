@@ -1516,14 +1516,12 @@ impl HeatConductionSolver for MultiNodeSolver {
         let c_floor = self.mass.floor.capacitance;
         let c_internal = self.mass.internal.capacitance;
 
-        let storage_rate = (c_wall * (self.mass.wall.temperature - t_wall_old)
+        // Convert J/(m²·K) · K / s = W/m² → return as-is.
+        (c_wall * (self.mass.wall.temperature - t_wall_old)
             + c_roof * (self.mass.roof.temperature - t_roof_old)
             + c_floor * (self.mass.floor.temperature - t_floor_old)
             + c_internal * (self.mass.internal.temperature - t_internal_old))
-            / self.last_dt;
-
-        // Convert J/(m²·K) · K / s = W/m² → return as-is.
-        storage_rate
+            / self.last_dt
     }
 
     fn steady_state_flux(
