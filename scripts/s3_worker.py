@@ -224,6 +224,30 @@ def parse_s3_uri(uri: str) -> tuple[str, str]:
     return parts[0], parts[1] if len(parts) > 1 else ""
 
 
+def sync_to_s3(local_path: str, s3_uri: str, exclude_patterns: list[str] | None = None) -> subprocess.CompletedProcess:
+    """Sync a local directory to S3 using aws s3 sync with exclude patterns.
+
+    Args:
+        local_path: Local directory path to sync
+        s3_uri: S3 destination URI (s3://bucket/prefix)
+        exclude_patterns: List of exclude patterns (e.g. ["*.sql.tmp", "*.tmp"])
+
+    Returns:
+        CompletedProcess result
+    """
+    if exclude_patterns is None:
+        exclude_patterns = ["*.sql.tmp"]
+
+    bucket, prefix = parse_s3_uri(s3_uri)
+    s3_dest = f"s3://{bucket}/{prefix}"
+
+    cmd = ["aws", "s3", "sync", local_path, s3_dest]
+    for pattern in exclude_patterns:
+        cmd.extend(["--exclude", pattern])
+
+    return subprocess.run(cmd, capture_output=True, text=True)
+
+
 def push_result_to_s3(result: WorkUnitResult | KPIResult, s3_prefix: str, clients: dict) -> str:
     """Push work unit result or KPI result directly to S3. Returns the S3 URI."""
     bucket, prefix = parse_s3_uri(s3_prefix)
