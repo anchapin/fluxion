@@ -56,6 +56,7 @@ pub mod method_selector;
 pub mod nd_array;
 pub mod state_space_ctf;
 pub mod thermal_mass;
+pub mod zero_copy_matrix;
 
 pub mod multi_node_solver;
 pub mod nine_r4c_nodal_trace;
