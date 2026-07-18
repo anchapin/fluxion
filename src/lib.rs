@@ -588,6 +588,86 @@ impl Model {
     fn ground_temperature_at(&self, timestep: usize) -> f64 {
         self.inner.ground_temperature_at(timestep)
     }
+
+    /// Return a Python list of [`crate::python::model_bindings::PyZone`] snapshots,
+    /// one per zone in the model.
+    ///
+    /// Each returned `Zone` is an **owned snapshot** of the current zone state
+    /// (temperature, area, surfaces, HVAC setpoints). The snapshot does **not**
+    /// borrow from this model — Python garbage collection of any returned
+    /// `Zone` cannot invalidate this model, and conversely this model may be
+    /// mutated or re-simulated while Python still holds references to
+    /// previously returned zones. See `docs/bindings.md` for the full
+    /// lifetime story.
+    ///
+    /// Iteration works out of the box via the standard Python list iterator
+    /// protocol:
+    /// ```python,ignore
+    /// model = fluxion.Model(num_zones=3)
+    /// for z in model.zones():
+    ///     print(z.index, z.temperature, z.area)
+    /// ```
+    fn zones(&self) -> Vec<crate::python::model_bindings::PyZone> {
+        crate::python::model_bindings::all_zones_from_model(&self.inner)
+    }
+
+    /// Return a flat Python list of [`crate::python::model_bindings::PySurface`]
+    /// snapshots, one for every surface in every zone.
+    ///
+    /// Like [`Self::zones`], each surface is an owned snapshot. Mutating a
+    /// snapshot via `surface.append_shading(...)` only mutates the Python
+    /// object — to push the change back into the model, use
+    /// [`Self::set_surfaces`].
+    ///
+    /// # Example: find all south-facing surfaces
+    /// ```python,ignore
+    /// model = fluxion.Model(num_zones=2)
+    /// south = [s for s in model.surfaces() if s.orientation == fluxion.Orientation.South]
+    /// for s in south:
+    ///     s.add_overhang(depth=1.0, height=2.5)
+    /// model.set_surfaces(south + [s for s in model.surfaces() if s.orientation != fluxion.Orientation.South])
+    /// ```
+    fn surfaces(&self) -> Vec<crate::python::model_bindings::PySurface> {
+        crate::python::model_bindings::all_surfaces_from_model(&self.inner)
+    }
+
+    /// Push a flat list of [`crate::python::model_bindings::PySurface`]
+    /// snapshots back into the model. Surfaces are reshaped per-zone (4 per
+    /// zone by default; this matches the ASHRAE 140 case-default wall
+    /// configuration).
+    ///
+    /// The number of zones in the model does not change — only the surface
+    /// data inside each zone is replaced. This is the round-trip companion
+    /// to [`Self::surfaces`].
+    ///
+    /// # Arguments
+    /// * `surfaces` - flat list of [`crate::python::model_bindings::PySurface`]
+    ///   values; the list length must be a multiple of `surfaces_per_zone`,
+    ///   otherwise the trailing surfaces are truncated.
+    fn set_surfaces(&mut self, surfaces: Vec<crate::python::model_bindings::PySurface>) {
+        self.inner.surfaces =
+            crate::python::model_bindings::reshape_surfaces_for_model(&self.inner, surfaces);
+    }
+
+    /// Return an [`crate::python::model_bindings::PyHVACSystem`] snapshot of
+    /// the model's current heating and cooling plant configuration.
+    ///
+    /// The snapshot is an owned value (no borrow back into the model). To
+    /// push changes back, use [`Self::set_hvac_system`].
+    fn hvac_system(&self) -> crate::python::model_bindings::PyHVACSystem {
+        crate::python::model_bindings::hvac_system_from_model(&self.inner)
+    }
+
+    /// Apply a [`crate::python::model_bindings::PyHVACSystem`] snapshot's
+    /// heating/cooling capacity to the model. Used together with
+    /// [`Self::hvac_system`] for snapshot-then-commit mutation patterns.
+    ///
+    /// Only heating/cooling capacity is propagated back; other HVACSystem
+    /// fields (COP, stages, etc.) are advisory and not stored on
+    /// `ThermalModelData`.
+    fn set_hvac_system(&mut self, hvac: crate::python::model_bindings::PyHVACSystem) {
+        crate::python::model_bindings::apply_hvac_system_to_model(&mut self.inner, &hvac);
+    }
 }
 
 /// VectorField wrapper for Python with optimized numpy support.
@@ -1682,6 +1762,15 @@ fn fluxion(_py: Python, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<python::multi_node_bindings::PyMassAirCouplingMode>()?;
     m.add_class::<python::multi_node_bindings::PySurfaceExteriorTemperatures>()?;
     m.add_class::<python::multi_node_bindings::PyMultiNodeSolver>()?;
+
+    // Register FluxionModel interior struct bindings (Issue #1812).
+    m.add_class::<python::model_bindings::PyOrientation>()?;
+    m.add_class::<python::model_bindings::PyShadingType>()?;
+    m.add_class::<python::model_bindings::PyShadingDevice>()?;
+    m.add_class::<python::model_bindings::PyMaterial>()?;
+    m.add_class::<python::model_bindings::PySurface>()?;
+    m.add_class::<python::model_bindings::PyZone>()?;
+    m.add_class::<python::model_bindings::PyHVACSystem>()?;
 
     Ok(())
 }

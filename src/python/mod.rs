@@ -5,12 +5,16 @@ pub mod bindings;
 #[cfg(feature = "python-bindings")]
 pub mod hvac_bindings;
 #[cfg(feature = "python-bindings")]
+pub mod model_bindings;
+#[cfg(feature = "python-bindings")]
 pub mod multi_node_bindings;
 #[cfg(feature = "python-bindings")]
 pub mod osm_bindings;
 
 #[cfg(feature = "python-bindings")]
 pub use hvac_bindings::*;
+#[cfg(feature = "python-bindings")]
+pub use model_bindings::*;
 #[cfg(feature = "python-bindings")]
 pub use multi_node_bindings::*;
 #[cfg(feature = "python-bindings")]
@@ -51,6 +55,15 @@ pub fn fluxion_python(_py: Python, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<multi_node_bindings::PyMassAirCouplingMode>()?;
     m.add_class::<multi_node_bindings::PySurfaceExteriorTemperatures>()?;
     m.add_class::<multi_node_bindings::PyMultiNodeSolver>()?;
+
+    // Register FluxionModel interior struct bindings (Issue #1812).
+    m.add_class::<model_bindings::PyOrientation>()?;
+    m.add_class::<model_bindings::PyShadingType>()?;
+    m.add_class::<model_bindings::PyShadingDevice>()?;
+    m.add_class::<model_bindings::PyMaterial>()?;
+    m.add_class::<model_bindings::PySurface>()?;
+    m.add_class::<model_bindings::PyZone>()?;
+    m.add_class::<model_bindings::PyHVACSystem>()?;
 
     Ok(())
 }
