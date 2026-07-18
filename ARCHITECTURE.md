@@ -757,6 +757,20 @@ These traits support the main physics pipeline and should also be documented:
 | `SurfaceHeatFluxProvider` | `src/sim/surface_flux_provider.rs` | Surface-level heat flux abstraction (conduction + solar combined) |
 | `WeatherSource` | `fluxion-core/src/weather/mod.rs` | Weather data access abstraction |
 | `PsychrometricCalculations` | `fluxion-core/src/weather/psychrometrics.rs` | Moist air property calculations |
+
+**Psychrometrics library** (#1760): `fluxion-core/src/weather/psychrometrics.rs` is the dependency-light, cycle-safe psychrometrics library that all airside HVAC equipment depends on. It implements ASHRAE Handbook of Fundamentals, Chapter 1 formulas in SI units:
+
+| Function | ASHRAE HoF Ch.1 ref | Signature |
+|----------|--------------------|-----------|
+| `saturation_vapor_pressure(t_c)` → Pa | Eq. 5 (Magnus-Tetens ≥ 0 °C) + Eq. 6 (Hyland-Wexler ice < 0 °C) | `fn(f64) -> f64` |
+| `calculate_humidity_ratio(t_c, rh_%, p_pa)` → kg/kg | Eq. 22 | `fn(f64, f64, f64) -> f64` |
+| `calculate_enthalpy(t_c, rh_%, p_pa)` → kJ/kg | Eq. 32 | `fn(f64, f64, f64) -> f64` |
+| `calculate_dew_point(t_c, rh_%, p_pa)` → °C | Inversion of Eq. 5/6 (Newton-Raphson) | `fn(f64, f64, f64) -> f64` |
+| `calculate_wet_bulb(t_c, rh_%, p_pa)` → °C | Psychrometric equation inversion | `fn(f64, f64, f64) -> f64` |
+| `partial_vapor_pressure(w, p_pa)` → Pa | Inverse of Eq. 22 | `fn(f64, f64) -> f64` |
+| `moist_air_density(t_c, w, p_pa)` → kg/m³ | Eq. 28 | `fn(f64, f64, f64) -> f64` |
+
+All functions take SI units (Pa, K/°C, kg/kg). Module is in `fluxion-core` to respect the cycle-breaking rule (#1255, #1349, #1441) — no `sim`, `physics`, `ai`, or `validation` deps. Round-trip and ASHRAE-reference unit tests verify accuracy at 1 % tolerance against ASHRAE HoF 2021 Ch.1 Tables 1 & 2.
 | `MaterialLayer` | `src/sim/assembly.rs` | Building material layer interface |
 | `Equipment` | `src/sim/equipment.rs` | HVAC equipment trait |
 | `VariableCapacityEquipment` | `src/sim/hvac/equipment.rs` | Variable-speed equipment |
