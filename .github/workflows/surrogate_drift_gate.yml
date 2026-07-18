@@ -1,0 +1,161 @@
+# Surrogate Drift Tolerance Gate (Issue #1784 — T6.4)
+#
+# CI gate that asserts surrogate output does not drift >1% from the 9R4C
+# physics baseline on the benchmark building (Case 900 high-mass).
+#
+# What it runs
+# ------------
+# Two tests that run the Case 900 (high-mass) benchmark building through
+# both the physics-based 9R4C model and the surrogate model, then compare
+# per-timestep zone temperatures:
+#
+#   1. test_surrogate_drift_gate_case_900_9r4c  (surrogate_drift_gate)
+#      filter: _surrogate_drift_gate_case_900_9r4c
+#      168-timestep (1-week) simulation to verify drift tracking
+#
+#   2. test_surrogate_drift_gate_annual_simulation  (surrogate_drift_gate)
+#      filter: _surrogate_drift_gate_annual_simulation
+#      8760-timestep (annual) simulation for full-year drift gate
+#
+# Drift metric defined as:
+#   drift_pct = |T_surrogate - T_physics| / max(|T_physics|, ε) × 100
+# Where ε = 0.1°C prevents division by zero.
+#
+# The gate fails if any timestep exceeds 1% drift, with a message showing
+# the offending timesteps (zone index, step, physics temp, surrogate temp, drift).
+#
+# Why --release
+# --------------
+# Release mode matches the production binary and avoids debug-mode overhead.
+# Same reasoning as other strict gates in the CI pipeline.
+#
+# Why --features ort
+# ------------------
+# The 9R4C thermal network lives behind the `ort` feature gate (per issue #1294).
+# Without `--features ort`, Case 900 would compile without the multi-node solver
+# and the gate would not exercise the correct physics baseline.
+#
+# Status check name
+# -----------------
+# Job id is `surrogate-drift-gate`; the human-readable name is
+# "Surrogate Drift Tolerance Gate (Issue #1784)". Add this job name to the
+# branch protection "Required status checks" list.
+
+name: Surrogate Drift Tolerance Gate
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main, develop]
+  workflow_dispatch:
+
+concurrency:
+  group: surrogate-drift-gate-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  pull-requests: read
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: 1
+
+jobs:
+  surrogate-drift-gate:
+    name: Surrogate Drift Tolerance Gate (Issue #1784)
+    runs-on: ${{ vars.FLUXION_LINUX_RUNNER || 'ubuntu-latest' }}
+    timeout-minutes: 45
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install system dependencies (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libssl-dev pkg-config libfontconfig1-dev
+
+      - uses: ./.github/actions/setup-rust-python-env
+        with:
+          python-version: '3.10'
+
+      - name: Cache cargo registry + build artifacts
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: surrogate-drift-gate-${{ runner.os }}-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            surrogate-drift-gate-${{ runner.os }}-
+
+      - name: Case 900 9R4C 1-week drift check
+        # Test 1/2: 168-timestep (1-week) drift gate
+        # Filter `_surrogate_drift_gate_case_900_9r4c` is precise — no other
+        # test in the workspace shares this suffix.
+        run: |
+          cargo test --release --features ort --verbose \
+            --test surrogate_drift_gate \
+            _surrogate_drift_gate_case_900_9r4c \
+            2>&1 | tee -a /tmp/surrogate_drift_output.txt
+          echo "---"
+          echo "exit_code=$?"
+
+      - name: Case 900 Annual simulation drift check
+        # Test 2/2: 8760-timestep (annual) drift gate
+        run: |
+          cargo test --release --features ort --verbose \
+            --test surrogate_drift_gate \
+            _surrogate_drift_gate_annual_simulation \
+            2>&1 | tee -a /tmp/surrogate_drift_output.txt
+          echo "---"
+          echo "exit_code=$?"
+
+      - name: Verify gate coverage and extract results
+        run: |
+          echo "=== Surrogate drift gate coverage check ==="
+          for t in \
+            test_surrogate_drift_gate_case_900_9r4c \
+            test_surrogate_drift_gate_annual_simulation ; do
+            if grep -qE "^test $t \\.\\.\\. (ok|ignored|FAILED)" /tmp/surrogate_drift_output.txt; then
+              echo "  COVERED: $t"
+            else
+              echo "  DROPPED FROM GATE: $t"
+              echo "  This test name is no longer matched by the cargo filter."
+              echo "  Either the test was renamed/removed, or the workflow"
+              echo "  filter needs updating. Failing the build."
+              exit 1
+            fi
+          done
+
+          echo
+          echo "=== Surrogate drift gate result extraction ==="
+          sed -i 's/\x1b\[[0-9;]*m//g' /tmp/surrogate_drift_output.txt
+
+          FAILED=$(grep -cE '^test .* \\.\\.\\. FAILED$' /tmp/surrogate_drift_output.txt || true)
+          PANICS=$(grep -cE 'panicked at' /tmp/surrogate_drift_output.txt || true)
+          PASSED=$(grep -cE '^test test_surrogate_drift_gate.* \\.\\.\\. ok$' /tmp/surrogate_drift_output.txt || true)
+
+          echo "  Passed   : $PASSED"
+          echo "  Failed   : $FAILED"
+          echo "  Panics   : $PANICS"
+
+          if [ "$FAILED" -gt 0 ] || [ "$PANICS" -gt 0 ]; then
+            echo
+            echo "::error::Surrogate drift tolerance gate FAILED — surrogate drifted >1% from 9R4C baseline."
+            echo "See /tmp/surrogate_drift_output.txt for the failing assertion messages."
+            echo "Per Issue #1784: the surrogate must be retrained or the drift tolerance adjusted."
+            exit 1
+          fi
+          echo "PASS: Surrogate drift tolerance gate holds (<1% drift from 9R4C baseline)."
+
+      - name: Upload drift-gate log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: surrogate-drift-gate
+          path: /tmp/surrogate_drift_output.txt
+          retention-days: 14
