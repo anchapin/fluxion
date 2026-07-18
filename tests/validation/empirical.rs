@@ -104,7 +104,10 @@ impl EmpiricalCaseRegistry {
     }
 
     pub fn record(&mut self, report: EmpiricalCaseReport) {
-        self.reports.entry(report.id.clone()).or_default().push(report);
+        self.reports
+            .entry(report.id.clone())
+            .or_default()
+            .push(report);
     }
 
     pub fn cases(&self) -> &[EmpiricalCase] {
@@ -190,7 +193,9 @@ mod tests {
         assert_eq!(s.failed, 0);
         assert_eq!(s.pending, 0);
 
-        let reports = r.reports_for("T10.2").expect("T10.2 report must be present");
+        let reports = r
+            .reports_for("T10.2")
+            .expect("T10.2 report must be present");
         assert_eq!(reports.len(), 1);
         assert_eq!(reports[0].status, EmpiricalCaseStatus::Skipped);
     }
