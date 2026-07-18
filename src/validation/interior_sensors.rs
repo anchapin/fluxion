@@ -16,7 +16,7 @@
 //! Optional columns: `zone_id`, `relative_humidity_pct`.
 
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 use std::path::Path;
 
 /// Physical mounting location of the sensor inside the building
@@ -480,14 +480,16 @@ impl InteriorSensorLoader {
     pub fn dataset_to_data_points(
         dataset: &InteriorSensorDataset,
     ) -> Vec<crate::validation::empirical::MonitoredDataPoint> {
-        // Group readings by timestamp
-        let mut by_ts: HashMap<u64, Vec<&InteriorSensorReading>> = HashMap::new();
+        // Group readings by timestamp. BTreeMap is used instead of HashMap
+        // so iteration order is deterministic (sorted by timestamp) and
+        // the returned `MonitoredDataPoint`s are stable across runs.
+        let mut by_ts: BTreeMap<u64, Vec<&InteriorSensorReading>> = BTreeMap::new();
         for r in &dataset.readings {
             let ts_key = r.timestamp as u64;
             by_ts.entry(ts_key).or_default().push(r);
         }
 
-        let mut points: Vec<crate::validation::empirical::MonitoredDataPoint> = by_ts
+        by_ts
             .into_iter()
             .enumerate()
             .map(|(idx, (_ts, mut readings_at_ts))| {
@@ -511,10 +513,7 @@ impl InteriorSensorLoader {
                     Q_conduction: 0.0,
                 }
             })
-            .collect();
-
-        points.sort_by_key(|p| p.hour);
-        points
+            .collect()
     }
 }
 
