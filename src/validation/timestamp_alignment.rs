@@ -266,16 +266,16 @@ fn fill_gap(pairs: &mut [AlignedPair], start: usize, method: InterpolationMethod
                 let y0 = pairs[pi].sensor_value;
                 let y1 = pairs[ni].sensor_value;
                 let span = (ni - pi) as f64;
-                for i in (pi + 1)..ni {
-                    let t = (i - pi) as f64 / span;
-                    pairs[i].sensor_value = y0 + t * (y1 - y0);
+                for (offset, pair) in pairs[pi + 1..ni].iter_mut().enumerate() {
+                    let t = (offset + 1) as f64 / span;
+                    pair.sensor_value = y0 + t * (y1 - y0);
                 }
             } else if let Some(pi) = prev_idx {
                 // Forward-fill fallback when there is no next neighbour.
                 let y0 = pairs[pi].sensor_value;
-                for i in pi..len {
-                    if pairs[i].sensor_value.is_nan() {
-                        pairs[i].sensor_value = y0;
+                for pair in pairs[pi..len].iter_mut() {
+                    if pair.sensor_value.is_nan() {
+                        pair.sensor_value = y0;
                     }
                 }
             }
@@ -286,11 +286,11 @@ fn fill_gap(pairs: &mut [AlignedPair], start: usize, method: InterpolationMethod
             } else {
                 return;
             };
-            for i in start..len {
-                if pairs[i].sensor_value.is_nan() {
-                    pairs[i].sensor_value = last_val;
+            for pair in pairs[start..len].iter_mut() {
+                if pair.sensor_value.is_nan() {
+                    pair.sensor_value = last_val;
                 } else {
-                    last_val = pairs[i].sensor_value;
+                    last_val = pair.sensor_value;
                 }
             }
         }
