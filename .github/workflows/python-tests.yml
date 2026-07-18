@@ -1,0 +1,132 @@
+name: Python Tests (OSimFlow)
+
+# OSimFlow Python orchestration test suite (Issue #1847).
+#
+# Runs the pytest suite under `scripts/ci/` over a Python 3.10/3.11/3.12/3.13
+# matrix.  All AWS / D-Wave / Redis / Kubernetes integrations are mocked via
+# fixtures in `scripts/conftest.py` — this workflow requires **no** cloud
+# credentials.
+#
+# Triggers:
+#   * pull_request: fast gate on every PR
+#   * push to develop: integration check before the next release
+
+on:
+  push:
+    branches: [develop, main]
+  pull_request:
+    branches: [develop, main]
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  pytest-osimflow:
+    name: OSimFlow pytest (py ${{ matrix.python-version }})
+    runs-on: ${{ vars.FLUXION_LINUX_RUNNER || 'ubuntu-latest' }}
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ['3.10', '3.11', '3.12', '3.13']
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Cache pip
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pip
+          key: pip-osimflow-${{ runner.os }}-${{ matrix.python-version }}-${{ hashFiles('requirements-dev.txt', 'scripts/requirements-test.txt') }}
+          restore-keys: |
+            pip-osimflow-${{ runner.os }}-${{ matrix.python-version }}-
+            pip-osimflow-${{ runner.os }}-
+
+      - name: Install test dependencies
+        # Boto3/botocore are pulled in as optional deps so the conditional
+        # `import boto3` in cloud_campaign_manager.py resolves to a real
+        # module we can mock, instead of the `None` fallback path.
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pip install --upgrade pip
+          # requirements-dev.txt already lists pytest; install once and dedupe.
+          pip install -r requirements-dev.txt
+          pip install -r scripts/requirements-test.txt
+
+      - name: Run pytest scripts/ci/ with coverage
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Explicitly forbid any cloud credentials from leaking in.
+          unset DWAVE_API_TOKEN AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY \
+                AWS_SESSION_TOKEN FLUXION_REDIS_URL FLUXION_CAMPAIGN_TABLE
+          cd "$GITHUB_WORKSPACE"
+          pytest scripts/ci/ -c scripts/pytest.ini \
+            --cov-report=term-missing \
+            --cov-report=xml:scripts/ci/coverage.xml \
+            --junitxml=scripts/ci/junit.xml
+
+      - name: Enforce per-file coverage thresholds
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          """Fail the job if any of the three OSimFlow files drops below 60%."""
+          import xml.etree.ElementTree as ET
+
+          targets = {
+              "scripts/cloud_campaign_manager.py": 60.0,
+              "scripts/autonomous_parameter_sweep.py": 60.0,
+              "scripts/ashrae_benchmark_harness.py": 60.0,
+          }
+          root = ET.parse("scripts/ci/coverage.xml").getroot()
+
+          line_totals: dict[str, tuple[int, int]] = {}
+          for cls in root.findall(".//class"):
+              filename = cls.get("filename", "")
+              base = filename.split("site-packages/")[-1]
+              line_rate = float(cls.get("line-rate", "0"))
+              lines_valid = int(cls.get("lines-valid", "0"))
+              lines_covered = int(cls.get("lines-covered", "0"))
+              if base in targets:
+                  cur = line_totals.get(base, (0, 0))
+                  line_totals[base] = (cur[0] + lines_valid, cur[1] + lines_covered)
+
+          failures = []
+          for path, threshold in targets.items():
+              valid, covered = line_totals.get(path, (0, 0))
+              if valid == 0:
+                  failures.append((path, 0.0, threshold, "no coverage data"))
+                  continue
+              pct = (covered / valid) * 100
+              if pct < threshold:
+                  failures.append((path, pct, threshold, "below threshold"))
+              print(f"[coverage] {path}: {pct:.2f}% (threshold {threshold:.0f}%)")
+
+          if failures:
+              print("\n::error::OSimFlow coverage threshold failures:")
+              for path, pct, threshold, reason in failures:
+                  print(f"::error::  {path}: {pct:.2f}% < {threshold}% — {reason}")
+              raise SystemExit(1)
+          PY
+
+      - name: Upload coverage artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: osimflow-coverage-${{ matrix.python-version }}
+          path: |
+            scripts/ci/coverage.xml
+            scripts/ci/junit.xml
+            .agents/coverage/python-osimflow
+          retention-days: 14
+          if-no-files-found: ignore
