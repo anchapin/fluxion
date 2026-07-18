@@ -41,6 +41,7 @@ pub mod case_195_calibration;
 pub mod case_960;
 pub mod empirical;
 pub mod energy_balance;
+pub mod guideline14;
 pub mod high_mass;
 pub mod statistical;
 pub mod thermal_mass;
@@ -220,6 +221,13 @@ pub use empirical::{
     EmpiricalStatistics, EmpiricalValidationConfig, EmpiricalValidationReport,
     EmpiricalValidationResult, EmpiricalValidationStatus, MonitoredBuildingDatabase,
     MonitoredDataPoint, MonitoredDataSource,
+};
+
+// ASHRAE Guideline 14 statistical-reporting re-exports (Issue #1810 / T10.8)
+pub use guideline14::{
+    compute_guideline14, render_markdown as render_guideline14_markdown,
+    write_report as write_guideline14_report, Guideline14Report, Guideline14Source,
+    Guideline14Status, ReportingResolution,
 };
 
 // Interior sensor pipeline re-exports
