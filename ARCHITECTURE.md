@@ -757,6 +757,14 @@ These traits support the main physics pipeline and should also be documented:
 | `SurfaceHeatFluxProvider` | `src/sim/surface_flux_provider.rs` | Surface-level heat flux abstraction (conduction + solar combined) |
 | `WeatherSource` | `fluxion-core/src/weather/mod.rs` | Weather data access abstraction |
 | `PsychrometricCalculations` | `fluxion-core/src/weather/psychrometrics.rs` | Moist air property calculations |
+| `MaterialLayer` | `src/sim/assembly.rs` | Building material layer interface |
+| `Equipment` | `src/sim/equipment.rs` | HVAC equipment trait |
+| `VariableCapacityEquipment` | `src/sim/hvac/equipment.rs` | Variable-speed equipment |
+| `GroundTemperature` | `src/sim/boundary.rs` | Ground temp boundary condition |
+| `BatchOrchestrator` | `src/sim/orchestrator.rs` | Per-population CPU surrogate compute scheduling (rayon `par_chunks`, #1439) |
+| `DwaveClient` | `src/quantum/dwave_client.rs` | Object-safe trait for submitting Ising problems to a D-Wave sampler (QPU or hybrid); mockable for tests |
+| `EmailTransport` | `src/api/email_notification.rs` | Abstraction for sending email notifications (campaign completion fallback); mockable for tests |
+| `SimulationStateStore` | `src/api/server.rs` | Simulation state persistence trait (in-memory or cloud-backed); enables stateless API servers |
 
 **Psychrometrics library** (#1760): `fluxion-core/src/weather/psychrometrics.rs` is the dependency-light, cycle-safe psychrometrics library that all airside HVAC equipment depends on. It implements ASHRAE Handbook of Fundamentals, Chapter 1 formulas in SI units:
 
@@ -771,14 +779,10 @@ These traits support the main physics pipeline and should also be documented:
 | `moist_air_density(t_c, w, p_pa)` → kg/m³ | Eq. 28 | `fn(f64, f64, f64) -> f64` |
 
 All functions take SI units (Pa, K/°C, kg/kg). Module is in `fluxion-core` to respect the cycle-breaking rule (#1255, #1349, #1441) — no `sim`, `physics`, `ai`, or `validation` deps. Round-trip and ASHRAE-reference unit tests verify accuracy at 1 % tolerance against ASHRAE HoF 2021 Ch.1 Tables 1 & 2.
-| `MaterialLayer` | `src/sim/assembly.rs` | Building material layer interface |
-| `Equipment` | `src/sim/equipment.rs` | HVAC equipment trait |
-| `VariableCapacityEquipment` | `src/sim/hvac/equipment.rs` | Variable-speed equipment |
-| `GroundTemperature` | `src/sim/boundary.rs` | Ground temp boundary condition |
-| `BatchOrchestrator` | `src/sim/orchestrator.rs` | Per-population CPU surrogate compute scheduling (rayon `par_chunks`, #1439) |
-| `DwaveClient` | `src/quantum/dwave_client.rs` | Object-safe trait for submitting Ising problems to a D-Wave sampler (QPU or hybrid); mockable for tests |
-| `EmailTransport` | `src/api/email_notification.rs` | Abstraction for sending email notifications (campaign completion fallback); mockable for tests |
-| `SimulationStateStore` | `src/api/server.rs` | Simulation state persistence trait (in-memory or cloud-backed); enables stateless API servers |
+
+**Airside/9R4C coupling** (#1767): `src/sim/hvac/airside_state.rs` defines validated `MoistAirState` and `AirsideFlow` values; `src/sim/hvac/airside_coupling.rs` owns the transactional `AirsideEnvelopeCoupler`. The airside component boundary is supply dry-bulb, relative humidity, pressure, and volume flow, so VAV/DOAS implementations can plug in without the coupling layer inventing fan or coil correlations.
+
+The coupled step uses a sequential implicit operator split: backward-Euler 9R4C half-step → implicit algebraic zone-air solve → backward-Euler half-step → implicit air projection, followed by a backward-Euler humidity-ratio balance. Supply sensible conductance is `H_sa = m_da × 1000 × (1.006 + 1.86 W_sa)` [W/K], and the air solve enforces `Q_env + H_ve(T_out − T_z) + H_sa(T_sa − T_z) + φ_ia = 0`. Sensible and latent supply heat reconstruct the ASHRAE Ch.1 moist-air enthalpy flow exactly; the per-step interface residual must remain below `1e-7 W`. The accepted timestep domain is `0 < dt ≤ 360 s`; non-finite inputs, supersaturated post-mixing states, and larger timesteps return typed errors without committing partial state. The coupling is opt-in and does not modify `ThermalModel::step_physics_9r4c`, preserving existing ASHRAE 140 envelope outputs. Regression: `tests/hvac_airside_9r4c_integration.rs`.
 
 ### Surface Heat Flux Trait Hierarchy
 

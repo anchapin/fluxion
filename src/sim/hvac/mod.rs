@@ -3,6 +3,8 @@
 //! This module provides advanced HVAC system modeling capabilities including
 //! Variable Air Volume (VAV), Constant Air Volume (CAV), and heat pump systems.
 
+pub mod airside_coupling;
+pub mod airside_state;
 pub mod cycling;
 pub mod economizer;
 pub mod efficiency_curves;
@@ -12,6 +14,11 @@ pub mod modes;
 pub mod zones;
 
 // Re-export common types for convenience
+pub use airside_coupling::{AirsideEnvelopeCoupler, CoupledStepForcing, CoupledStepResult};
+pub use airside_state::{
+    AirsideCouplingError, AirsideFlow, MoistAirState, DEFAULT_ENERGY_BALANCE_TOLERANCE_W,
+    MAX_VALIDATED_TIMESTEP_SECONDS,
+};
 pub use cycling::CyclingTracker;
 pub use economizer::{calculate_free_cooling_capacity, is_economizer_active, EconomizerMode};
 pub use efficiency_curves::{
