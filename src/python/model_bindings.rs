@@ -663,6 +663,10 @@ impl PyHVACSystem {
         economizer_enabled=false,
         supply_air_temp=13.0,
     ))]
+    // PyO3 `#[new]` constructors must accept a flat argument list (Python doesn't
+    // expose keyword-only args for `__init__` ergonomically), so the 10-arg signature
+    // is intentional and required by the bindings API contract.
+    #[allow(clippy::too_many_arguments)]
     fn new(
         heating_capacity: f64,
         cooling_capacity: f64,

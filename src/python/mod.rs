@@ -1,6 +1,22 @@
 // Python module exports for Fluxion
 // This module re-exports all Python bindings including multi-zone functionality
 
+// `osm_bindings` and `bindings` both define a top-level `export_osm` helper that
+// wraps the same underlying `interop::osm` function (different Python-facing
+// variants). Glob-re-exporting both is intentional and the dupe is benign —
+// at the Python layer only `osm_bindings::export_osm` is registered (see
+// `add_function!(osm_bindings::export_osm, m)` below). To avoid splitting the
+// glob re-exports into per-item aliases (a much larger refactor with no
+// behaviour change) we silence `ambiguous_glob_reexports` for the two
+// conflicting imports and document the intent here.
+#[allow(ambiguous_glob_reexports)]
+#[cfg(feature = "python-bindings")]
+pub use bindings::*;
+
+#[allow(ambiguous_glob_reexports)]
+#[cfg(feature = "python-bindings")]
+pub use osm_bindings::*;
+
 pub mod bindings;
 #[cfg(feature = "python-bindings")]
 pub mod hvac_bindings;
@@ -17,11 +33,6 @@ pub use hvac_bindings::*;
 pub use model_bindings::*;
 #[cfg(feature = "python-bindings")]
 pub use multi_node_bindings::*;
-#[cfg(feature = "python-bindings")]
-pub use osm_bindings::*;
-
-#[cfg(feature = "python-bindings")]
-pub use bindings::*;
 
 #[cfg(feature = "python-bindings")]
 use pyo3::prelude::*;
