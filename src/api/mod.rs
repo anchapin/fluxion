@@ -7,6 +7,7 @@
 //! including parameter types, error definitions, and the unified
 //! simulation schema.
 
+pub mod email_notification;
 pub mod error;
 pub mod metrics;
 pub mod parameters;
