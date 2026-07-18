@@ -144,7 +144,11 @@ pub enum FlexlabWeatherError {
     /// A required column is missing from the CSV header.
     MissingColumn(String),
     /// A numeric field could not be parsed.
-    ParseError { line: usize, field: String, value: String },
+    ParseError {
+        line: usize,
+        field: String,
+        value: String,
+    },
     /// The file contains zero valid records.
     NoData,
 }
@@ -271,7 +275,8 @@ fn parse_record(
     let hoy = hour_of_year(month, day, hour);
 
     // ── temperature ──────────────────────────────────────────────────────
-    let temp_idx = cols.get("dry_bulb_temp")
+    let temp_idx = cols
+        .get("dry_bulb_temp")
         .or_else(|| cols.get("outdoor_temp_c"))
         .or_else(|| cols.get("temp_c"))
         .or_else(|| cols.get("temperature"))
@@ -282,7 +287,8 @@ fn parse_record(
     };
 
     // ── humidity ─────────────────────────────────────────────────────────
-    let hum_idx = cols.get("relative_humidity")
+    let hum_idx = cols
+        .get("relative_humidity")
         .or_else(|| cols.get("rh_pct"))
         .or_else(|| cols.get("humidity"))
         .copied();
@@ -292,7 +298,8 @@ fn parse_record(
     };
 
     // ── solar: GHI ───────────────────────────────────────────────────────
-    let ghi_idx = cols.get("ghi")
+    let ghi_idx = cols
+        .get("ghi")
         .or_else(|| cols.get("global_horizontal_irradiance"))
         .or_else(|| cols.get("ghi_wm2"))
         .copied();
@@ -302,7 +309,8 @@ fn parse_record(
     };
 
     // ── solar: DNI ───────────────────────────────────────────────────────
-    let dni_idx = cols.get("dni")
+    let dni_idx = cols
+        .get("dni")
         .or_else(|| cols.get("direct_normal_irradiance"))
         .or_else(|| cols.get("dni_wm2"))
         .copied();
@@ -312,7 +320,8 @@ fn parse_record(
     };
 
     // ── solar: DHI ───────────────────────────────────────────────────────
-    let dhi_idx = cols.get("dhi")
+    let dhi_idx = cols
+        .get("dhi")
         .or_else(|| cols.get("diffuse_horizontal_irradiance"))
         .or_else(|| cols.get("dhi_wm2"))
         .copied();
@@ -322,7 +331,8 @@ fn parse_record(
     };
 
     // ── wind speed ───────────────────────────────────────────────────────
-    let wind_idx = cols.get("wind_speed")
+    let wind_idx = cols
+        .get("wind_speed")
         .or_else(|| cols.get("wind_speed_ms"))
         .or_else(|| cols.get("wind"))
         .copied();
@@ -515,8 +525,9 @@ impl FlexlabWeatherSummary {
 pub fn load_flexlab_weather(
     config: &FlexlabWeatherConfig,
 ) -> Result<(Vec<FlexlabWeatherRecord>, FlexlabWeatherSummary), FlexlabWeatherError> {
-    let content = std::fs::read_to_string(&config.csv_path)
-        .map_err(|e| FlexlabWeatherError::FileNotFound(format!("{}: {}", config.csv_path.display(), e)))?;
+    let content = std::fs::read_to_string(&config.csv_path).map_err(|e| {
+        FlexlabWeatherError::FileNotFound(format!("{}: {}", config.csv_path.display(), e))
+    })?;
 
     let mut records = Vec::new();
     let mut header_map: Option<ColumnMap> = None;
@@ -538,7 +549,11 @@ pub fn load_flexlab_weather(
         match parse_record(&fields, cols, line_idx, config) {
             Ok(record) => records.push(record),
             Err(e) => {
-                eprintln!("FLEXLAB weather loader warning at line {}: {}", line_idx + 1, e);
+                eprintln!(
+                    "FLEXLAB weather loader warning at line {}: {}",
+                    line_idx + 1,
+                    e
+                );
             }
         }
     }
@@ -702,33 +717,60 @@ mod tests {
         let records = vec![
             FlexlabWeatherRecord {
                 hour_of_year: 0,
-                year: 2023, month: 1, day: 1, hour: 0,
-                dry_bulb_temp: 10.0, dry_bulb_flag: QualityFlag::Valid,
-                relative_humidity: 50.0, humidity_flag: QualityFlag::Valid,
-                ghi: 100.0, ghi_flag: QualityFlag::Valid,
-                dni: 50.0, dni_flag: QualityFlag::Valid,
-                dhi: 50.0, dhi_flag: QualityFlag::Valid,
-                wind_speed: 3.0, wind_flag: QualityFlag::Valid,
+                year: 2023,
+                month: 1,
+                day: 1,
+                hour: 0,
+                dry_bulb_temp: 10.0,
+                dry_bulb_flag: QualityFlag::Valid,
+                relative_humidity: 50.0,
+                humidity_flag: QualityFlag::Valid,
+                ghi: 100.0,
+                ghi_flag: QualityFlag::Valid,
+                dni: 50.0,
+                dni_flag: QualityFlag::Valid,
+                dhi: 50.0,
+                dhi_flag: QualityFlag::Valid,
+                wind_speed: 3.0,
+                wind_flag: QualityFlag::Valid,
             },
             FlexlabWeatherRecord {
                 hour_of_year: 1,
-                year: 2023, month: 1, day: 1, hour: 1,
-                dry_bulb_temp: f64::NAN, dry_bulb_flag: QualityFlag::Missing,
-                relative_humidity: f64::NAN, humidity_flag: QualityFlag::Missing,
-                ghi: 0.0, ghi_flag: QualityFlag::Valid,
-                dni: 0.0, dni_flag: QualityFlag::Valid,
-                dhi: 0.0, dhi_flag: QualityFlag::Valid,
-                wind_speed: 0.0, wind_flag: QualityFlag::Valid,
+                year: 2023,
+                month: 1,
+                day: 1,
+                hour: 1,
+                dry_bulb_temp: f64::NAN,
+                dry_bulb_flag: QualityFlag::Missing,
+                relative_humidity: f64::NAN,
+                humidity_flag: QualityFlag::Missing,
+                ghi: 0.0,
+                ghi_flag: QualityFlag::Valid,
+                dni: 0.0,
+                dni_flag: QualityFlag::Valid,
+                dhi: 0.0,
+                dhi_flag: QualityFlag::Valid,
+                wind_speed: 0.0,
+                wind_flag: QualityFlag::Valid,
             },
             FlexlabWeatherRecord {
                 hour_of_year: 2,
-                year: 2023, month: 1, day: 1, hour: 2,
-                dry_bulb_temp: 12.0, dry_bulb_flag: QualityFlag::Valid,
-                relative_humidity: 60.0, humidity_flag: QualityFlag::Valid,
-                ghi: 0.0, ghi_flag: QualityFlag::Valid,
-                dni: 0.0, dni_flag: QualityFlag::Valid,
-                dhi: 0.0, dhi_flag: QualityFlag::Valid,
-                wind_speed: 2.0, wind_flag: QualityFlag::Valid,
+                year: 2023,
+                month: 1,
+                day: 1,
+                hour: 2,
+                dry_bulb_temp: 12.0,
+                dry_bulb_flag: QualityFlag::Valid,
+                relative_humidity: 60.0,
+                humidity_flag: QualityFlag::Valid,
+                ghi: 0.0,
+                ghi_flag: QualityFlag::Valid,
+                dni: 0.0,
+                dni_flag: QualityFlag::Valid,
+                dhi: 0.0,
+                dhi_flag: QualityFlag::Valid,
+                wind_speed: 2.0,
+                wind_flag: QualityFlag::Valid,
             },
         ];
 
