@@ -667,10 +667,10 @@ pub fn get_ashrae_rp_sources() -> MonitoredBuildingDatabase {
         location: "Berkeley, CA".to_string(),
         latitude: 37.87,
         longitude: -122.27,
-        floor_area: 27.0,   // Single test cell ~4.5m x 6m
+        floor_area: 27.0, // Single test cell ~4.5m x 6m
         num_floors: 1,
-        zone_volume: 72.9,  // ~4.5m x 6m x 2.7m
-        u_wall: 0.35,       // Varies by test case; representative
+        zone_volume: 72.9, // ~4.5m x 6m x 2.7m
+        u_wall: 0.35,      // Varies by test case; representative
         u_roof: 0.25,
         u_window: 2.8,
         wwr: 0.20,
