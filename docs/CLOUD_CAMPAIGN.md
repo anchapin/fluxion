@@ -11,7 +11,7 @@ This cloud-hosted system decouples campaign execution from local machines by:
 1. **Campaign State in S3** — All campaign state is stored in S3, not local disk
 2. **Workers Push to S3** — Individual simulation workers push KPIs directly to S3
 3. **Cloud Aggregator** — Merges S3 result files into a final dataset
-4. **SNS Notifications** — Email/SMS notification upon campaign completion
+4. **SNS / Email Notifications** — Configurable channels (webhook, SNS, email) on completion
 
 ## Webhook Notification (T7.4 — Issue #1788)
 
@@ -220,6 +220,70 @@ python scripts/cloud_campaign_manager.py \
   --campaign-id fluxion-abc123def456 \
   --sns-topic arn:aws:sns:region:account:topic
 ```
+
+## Email Notification (T7.5 — Issue #1789)
+
+Not every user runs a webhook listener — most want a plain email when their
+campaign finishes. The **email channel** is the universal fallback:
+
+| Field | CLI flag | Env var |
+|-------|----------|---------|
+| Sender | `--email-from` | `FLUXION_EMAIL_FROM` |
+| Recipients | `--email-to` (comma-separated) | `FLUXION_EMAIL_TO` |
+| CC | `--email-cc` (comma-separated) | `FLUXION_EMAIL_CC` |
+| API endpoint | `--email-api-endpoint` | `FLUXION_EMAIL_API_ENDPOINT` |
+| API auth header | `--email-api-auth` | `FLUXION_EMAIL_API_AUTH` |
+| Pre-signed URL | `--email-download-url` | `FLUXION_EMAIL_DOWNLOAD_URL` |
+
+The email body is a plain-text template with placeholders that mirror the
+JSON payload shape used by the webhook / SNS channels:
+
+```
+Fluxion campaign {campaign_id} is {status_display}.
+
+Started:  {start_time}
+Finished: {end_time}
+
+Total runs:     {total_runs}
+Completed runs: {completed_runs}
+Failed runs:    {failed_runs}
+Best MAE:       {best_mae:.2}%
+
+Best parameters:
+{best_parameters_block}
+
+Download aggregated results:
+{download_url}
+
+—
+Fluxion cloud coordinator (OSimFlow)
+```
+
+The Rust implementation in `src/api/email_notification.rs` is the canonical
+renderer; the Python side mirrors it so producers and consumers agree on
+shape. The HTTP transport (`HttpEmailTransport`) POSTs a JSON envelope to
+the configured `api_endpoint` — provider-agnostic (SendGrid, Mailgun,
+Postmark, SES v2 all accept this shape).
+
+```bash
+# Create a campaign with email fallback configured (universal recipient)
+python scripts/cloud_campaign_manager.py --action create \
+  --case 600 --params R_value,wall_thickness --sweep-type random --samples 50 \
+  --sns-topic arn:aws:sns:us-east-1:000:topic \
+  --email-from fluxion-noreply@fluxion.example \
+  --email-to user@fluxion.example,team@fluxion.example \
+  --email-api-endpoint https://api.sendgrid.com/v3/mail/send \
+  --email-api-auth "Bearer SG.xxxxxxxxxxxx"
+
+# Wait action fires both channels at 100% completion
+python scripts/cloud_campaign_manager.py --action wait \
+  --campaign-id fluxion-abc123def456
+```
+
+Email preferences are persisted on `state.json` (field `email_config`) so a
+coordinator restart can still send without the user re-supplying CLI flags.
+Idempotency is enforced via a `completion_hash` (FNV-1a over the
+completion payload) carried as the `X-Fluxion-Completion-Hash` header.
 
 ## Workflow Components
 

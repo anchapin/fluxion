@@ -7,7 +7,7 @@ Removes the "Local Tether" bottleneck by:
 1. Storing campaign state in S3 (not local disk)
 2. Workers push results directly to S3
 3. Aggregator merges S3 results
-4. SNS and/or webhook notification on completion
+4. SNS, webhook, and/or email notification on completion
 
 Usage
 -----
@@ -132,6 +132,7 @@ class CampaignState:
     error_message: Optional[str] = None
     webhook_url: Optional[str] = None
     sns_topic_arn: Optional[str] = None
+    email_config: Optional[dict] = None
 
 
 def get_aws_clients():
@@ -151,6 +152,76 @@ def get_aws_clients():
         "dynamodb": session.client("dynamodb"),
         "sts": session.client("sts"),
     }
+
+
+def parse_email_recipients(raw: str) -> list[str]:
+    """Parse a comma- or semicolon-separated recipient list (Issue #1789)."""
+    if not raw:
+        return []
+    parts = [p.strip() for p in raw.replace(";", ",").split(",")]
+    return [p for p in parts if p]
+
+
+def build_completion_payload(
+    state: CampaignState, s3_bucket: str, s3_prefix: str
+) -> dict[str, Any]:
+    """Build the JSON payload sent on completion (webhook + SNS + email body).
+
+    Mirrors the Rust `CampaignCompletion` struct (see
+    `src/api/email_notification.rs`, Issue #1789) so every notification
+    channel sees the same shape.
+    """
+    region = os.environ.get("AWS_REGION", "us-east-1")
+    results_uri = (
+        f"https://{s3_bucket}.s3.{region}.amazonaws.com/"
+        f"{s3_prefix}/campaigns/{state.campaign_id}/results/"
+    )
+    return {
+        "campaign_id": state.campaign_id,
+        "status": state.status,
+        "start_time": state.start_time,
+        "end_time": datetime.now(timezone.utc).isoformat(),
+        "total_runs": len(state.work_units),
+        "completed_runs": state.completed_units,
+        "failed_runs": state.failed_units,
+        "best_mae": state.best_mae,
+        "best_parameters": state.best_parameters,
+        "results_uri": results_uri,
+    }
+
+
+def render_email_body(payload: dict[str, Any], download_url: Optional[str] = None) -> str:
+    """Render the plain-text email body for a completion event (T7.5)."""
+    download = download_url or payload["results_uri"]
+    best_params = payload.get("best_parameters") or {}
+    if best_params:
+        params_block = "\n".join(
+            f"  {k} = {v}" for k, v in sorted(best_params.items())
+        )
+    else:
+        params_block = "  (none)"
+    status_display = "completed" if payload["status"] != "failed" else "failed"
+    return (
+        f"Fluxion campaign {payload['campaign_id']} is {status_display}.\n\n"
+        f"Started:  {payload['start_time']}\n"
+        f"Finished: {payload['end_time']}\n\n"
+        f"Total runs:     {payload['total_runs']}\n"
+        f"Completed runs: {payload['completed_runs']}\n"
+        f"Failed runs:    {payload['failed_runs']}\n"
+        f"Best MAE:       {payload['best_mae']:.2f}%\n\n"
+        f"Best parameters:\n{params_block}\n\n"
+        f"Download aggregated results:\n{download}\n\n"
+        f"—\nFluxion cloud coordinator (OSimFlow)\n"
+    )
+
+
+def render_email_subject(payload: dict[str, Any]) -> str:
+    """Render the subject line for a completion email (T7.5)."""
+    status_display = "completed" if payload["status"] != "failed" else "failed"
+    return (
+        f"Fluxion campaign {payload['campaign_id']} {status_display} — "
+        f"results ready"
+    )
 
 
 def parse_s3_uri(uri: str) -> tuple[str, str]:
@@ -251,7 +322,11 @@ def create_campaign(
     s3_bucket: str,
     s3_prefix: str,
     sns_topic_arn: Optional[str] = None,
+<<<<<<< HEAD
     webhook_url: Optional[str] = None,
+=======
+    email_config: Optional[dict] = None,
+>>>>>>> 1d0e1c8 (feat: resolve #1789 — email notification fallback for campaign completion)
 ) -> CampaignState:
     """Create a new campaign and upload initial state to S3."""
     clients = get_aws_clients()
@@ -322,8 +397,12 @@ def create_campaign(
         work_units=work_units,
         status="created",
         start_time=datetime.now(timezone.utc).isoformat(),
+<<<<<<< HEAD
         webhook_url=webhook_url,
         sns_topic_arn=sns_topic_arn,
+=======
+        email_config=email_config,
+>>>>>>> 1d0e1c8 (feat: resolve #1789 — email notification fallback for campaign completion)
     )
 
     state_uri = f"s3://{s3_bucket}/{s3_prefix}/campaigns/{campaign_id}/state.json"
@@ -339,8 +418,14 @@ def create_campaign(
 
     if sns_topic_arn:
         print(f"[*] SNS notifications will be sent to: {sns_topic_arn}")
+<<<<<<< HEAD
     if webhook_url:
         print(f"[*] Webhook notifications will be sent to: {webhook_url}")
+=======
+    if email_config and email_config.get("to"):
+        recipients = ", ".join(email_config["to"])
+        print(f"[*] Email notifications will be sent to: {recipients}")
+>>>>>>> 1d0e1c8 (feat: resolve #1789 — email notification fallback for campaign completion)
 
     return state
 
@@ -493,6 +578,7 @@ def wait_for_completion(
         time.sleep(poll_interval)
 
 
+<<<<<<< HEAD
 def build_completion_payload(
     state: CampaignState, s3_bucket: str, s3_prefix: str
 ) -> dict[str, Any]:
@@ -566,6 +652,120 @@ def send_webhook_notification(
             file=sys.stderr,
         )
         return False
+=======
+def send_email_notification(
+    state: CampaignState,
+    s3_bucket: str,
+    s3_prefix: str,
+    email_config: dict,
+    *,
+    timeout: float = 10.0,
+) -> bool:
+    """POST a plain-text completion email through the configured API.
+
+    ``email_config`` mirrors the Rust ``EmailConfig`` (Issue #1789):
+
+    - ``from`` — sender address
+    - ``to``   — list of recipient addresses
+    - ``cc``   — optional carbon-copy list
+    - ``api_endpoint`` — HTTP API for the transactional email provider
+    - ``api_auth_header`` — optional ``Authorization`` header value
+    - ``download_url_override`` — optional pre-signed URL replacing the
+      default ``results_uri`` in the body (useful for private S3 buckets)
+
+    Returns ``True`` if the provider returned a 2xx response, ``False`` on
+    any transport / non-2xx failure. Failures are logged but never raised.
+    """
+    try:
+        import urllib.error
+        import urllib.request
+
+        payload = build_completion_payload(state, s3_bucket, s3_prefix)
+        subject = render_email_subject(payload)
+        body = render_email_body(payload, email_config.get("download_url_override"))
+        envelope = {
+            "from": email_config["from"],
+            "to": email_config["to"],
+            "cc": email_config.get("cc", []),
+            "subject": subject,
+            "body_text": body,
+            "download_url": email_config.get("download_url_override") or payload["results_uri"],
+            "campaign": payload,
+        }
+        body_bytes = json.dumps(envelope).encode("utf-8")
+        request = urllib.request.Request(
+            email_config["api_endpoint"],
+            data=body_bytes,
+            method="POST",
+            headers={
+                "Content-Type": "application/json",
+                "User-Agent": "fluxion-cloud-campaign/1.0",
+                "X-Fluxion-Campaign-Id": state.campaign_id,
+            },
+        )
+        if email_config.get("api_auth_header"):
+            request.add_header("Authorization", email_config["api_auth_header"])
+        with urllib.request.urlopen(request, timeout=timeout) as response:  # noqa: S310
+            status_code = response.getcode()
+            if 200 <= status_code < 300:
+                print(f"[*] Email delivered: {len(email_config['to'])} recipient(s)")
+                return True
+            print(
+                f"[WARN] Email provider returned non-2xx status {status_code}",
+                file=sys.stderr,
+            )
+            return False
+    except (urllib.error.URLError, urllib.error.HTTPError, TimeoutError, OSError, KeyError, ValueError) as exc:
+        print(f"[WARN] Email delivery failed: {exc}", file=sys.stderr)
+        return False
+
+
+def send_completion_notification(
+    state: CampaignState,
+    s3_bucket: str,
+    s3_prefix: str,
+    sns_topic_arn: Optional[str] = None,
+    email_config: Optional[dict] = None,
+) -> None:
+    """Send completion notification via SNS and/or email.
+
+    Both channels are optional; at least one must be configured. The function
+    is idempotent — repeated calls are no-ops once ``state.notification_sent``
+    is set, mirroring the Rust coordinator (see
+    ``src/api/email_notification.rs`` and Issue #1788 / T7.4 + #1789 / T7.5).
+    """
+    if state.notification_sent:
+        print("[*] Notification already sent, skipping")
+        return
+
+    if not sns_topic_arn and not email_config:
+        print(
+            "[WARN] No notification channel configured "
+            "(set --sns-topic or --email-to)",
+            file=sys.stderr,
+        )
+        return
+
+    payload = build_completion_payload(state, s3_bucket, s3_prefix)
+
+    if email_config:
+        send_email_notification(state, s3_bucket, s3_prefix, email_config)
+
+    if sns_topic_arn:
+        try:
+            clients = get_aws_clients()
+            clients["sns"].publish(
+                TopicArn=sns_topic_arn,
+                Subject=(
+                    f"Fluxion Campaign {state.campaign_id} "
+                    f"{'Completed' if state.status == 'completed' else 'Failed'}"
+                ),
+                Message=json.dumps(payload, indent=2),
+            )
+            print(f"[*] SNS notification sent to: {sns_topic_arn}")
+        except Exception as exc:  # pragma: no cover - transport errors
+            print(f"[WARN] SNS publish failed: {exc}", file=sys.stderr)
+>>>>>>> 1d0e1c8 (feat: resolve #1789 — email notification fallback for campaign completion)
 
 
 def send_completion_notification(
@@ -648,6 +848,30 @@ def trigger_aggregator(
         print(f"[*] Results URI: {results_uri}")
 
     return results_uri
+
+
+def build_email_config_from_args(args) -> Optional[dict]:
+    """Build an email channel config from CLI args / env vars (Issue #1789).
+
+    Returns ``None`` when no recipients are configured — callers should treat
+    that as "no email channel" rather than an error.
+    """
+    recipients = parse_email_recipients(args.email_to or "")
+    if not recipients:
+        return None
+    cc = parse_email_recipients(args.email_cc or "")
+    config = {
+        "from": args.email_from or "fluxion-noreply@fluxion.example",
+        "to": recipients,
+        "cc": cc,
+    }
+    if args.email_api_endpoint:
+        config["api_endpoint"] = args.email_api_endpoint
+    if args.email_api_auth:
+        config["api_auth_header"] = args.email_api_auth
+    if args.email_download_url:
+        config["download_url_override"] = args.email_download_url
+    return config
 
 
 def build_default_params() -> dict[str, ParameterSpec]:
@@ -756,6 +980,7 @@ def main() -> int:
         help="Poll interval in seconds for wait action",
     )
     parser.add_argument(
+<<<<<<< HEAD
         "--state-store",
         type=str,
         choices=["dynamodb", "redis", "memory", "auto"],
@@ -764,6 +989,51 @@ def main() -> int:
             "State-store backend for per-task progress (T7.3). "
             "'auto' uses FLUXION_STATE_STORE when set, otherwise falls "
             "back to legacy S3 listing."
+=======
+        "--email-from",
+        type=str,
+        default=os.environ.get("FLUXION_EMAIL_FROM"),
+        help="Sender address for email completion notifications (Issue #1789)",
+    )
+    parser.add_argument(
+        "--email-to",
+        type=str,
+        default=os.environ.get("FLUXION_EMAIL_TO"),
+        help=(
+            "Comma-separated recipient list for email completion notifications. "
+            "When set, the email channel becomes the universal fallback for "
+            "users without a webhook endpoint."
+        ),
+    )
+    parser.add_argument(
+        "--email-cc",
+        type=str,
+        default=os.environ.get("FLUXION_EMAIL_CC"),
+        help="Comma-separated CC list for email completion notifications",
+    )
+    parser.add_argument(
+        "--email-api-endpoint",
+        type=str,
+        default=os.environ.get("FLUXION_EMAIL_API_ENDPOINT"),
+        help=(
+            "HTTP API endpoint for the transactional email provider. When "
+            "omitted, emails are rendered but not sent (preview mode)."
+        ),
+    )
+    parser.add_argument(
+        "--email-api-auth",
+        type=str,
+        default=os.environ.get("FLUXION_EMAIL_API_AUTH"),
+        help="Optional `Authorization` header value (e.g. `Bearer SG.xxx`).",
+    )
+    parser.add_argument(
+        "--email-download-url",
+        type=str,
+        default=os.environ.get("FLUXION_EMAIL_DOWNLOAD_URL"),
+        help=(
+            "Optional pre-signed download URL that overrides the default "
+            "S3 results URI in the email body. Useful for private buckets."
+>>>>>>> 1d0e1c8 (feat: resolve #1789 — email notification fallback for campaign completion)
         ),
     )
     args = parser.parse_args()
@@ -799,12 +1069,20 @@ def main() -> int:
             samples_per_param=args.samples,
         )
 
+<<<<<<< HEAD
+=======
+        email_config = build_email_config_from_args(args)
+>>>>>>> 1d0e1c8 (feat: resolve #1789 — email notification fallback for campaign completion)
         state = create_campaign(
             config,
             s3_bucket,
             s3_prefix,
             sns_topic_arn=args.sns_topic,
+<<<<<<< HEAD
             webhook_url=args.webhook_url,
+=======
+            email_config=email_config,
+>>>>>>> 1d0e1c8 (feat: resolve #1789 — email notification fallback for campaign completion)
         )
 
         print(f"[*] Campaign created: {state.campaign_id}")
@@ -909,15 +1187,27 @@ def main() -> int:
         print(f"    Failed: {state.failed_units}")
 
         if state.status in ("completed", "failed"):
+<<<<<<< HEAD
             notify_sns = args.sns_topic or state.sns_topic_arn
             notify_webhook = args.webhook_url or state.webhook_url
             if notify_sns or notify_webhook:
+=======
+            email_config = build_email_config_from_args(args) or state.email_config
+            if (args.sns_topic or state.notification_sent is False) and (
+                args.sns_topic or email_config
+            ):
+>>>>>>> 1d0e1c8 (feat: resolve #1789 — email notification fallback for campaign completion)
                 send_completion_notification(
                     state,
                     s3_bucket,
                     s3_prefix,
+<<<<<<< HEAD
                     sns_topic_arn=notify_sns,
                     webhook_url=notify_webhook,
+=======
+                    sns_topic_arn=args.sns_topic,
+                    email_config=email_config,
+>>>>>>> 1d0e1c8 (feat: resolve #1789 — email notification fallback for campaign completion)
                 )
 
         return 0
@@ -945,12 +1235,20 @@ def main() -> int:
             print(f"[ERROR] Campaign {args.campaign_id} not found")
             return 1
 
+<<<<<<< HEAD
         notify_sns = args.sns_topic or state.sns_topic_arn
         notify_webhook = args.webhook_url or state.webhook_url
         if not notify_sns and not notify_webhook:
             parser.error(
                 "At least one notification channel is required: "
                 "pass --sns-topic or --webhook-url, or persist them in "
+=======
+        email_config = build_email_config_from_args(args) or state.email_config
+        if not args.sns_topic and not email_config:
+            parser.error(
+                "At least one notification channel is required: "
+                "pass --sns-topic or --email-to, or persist them in "
+>>>>>>> 1d0e1c8 (feat: resolve #1789 — email notification fallback for campaign completion)
                 "the campaign state at creation time."
             )
 
@@ -958,8 +1256,13 @@ def main() -> int:
             state,
             s3_bucket,
             s3_prefix,
+<<<<<<< HEAD
             sns_topic_arn=notify_sns,
             webhook_url=notify_webhook,
+=======
+            sns_topic_arn=args.sns_topic,
+            email_config=email_config,
+>>>>>>> 1d0e1c8 (feat: resolve #1789 — email notification fallback for campaign completion)
         )
 
         return 0
