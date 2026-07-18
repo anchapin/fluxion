@@ -2757,6 +2757,9 @@ impl ThermalModel<VectorField> {
             // Issue #763 — hourly zone temperature profiles
             hourly_temperatures: None,
 
+            // Issue #1799 — sub-hourly 9R4C node temperature profiles
+            nodal_temperatures: None,
+
             // Issue #762 — per-surface incident solar tracking
             // BTreeMap for deterministic iteration order across platforms (Issue #1297)
             incident_solar_per_surface: std::collections::BTreeMap::new(),
