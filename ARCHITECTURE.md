@@ -1011,6 +1011,15 @@ Each module tested independently against E+ reference data:
 Reconnect modules, run ASHRAE 140 system tests. Multi-node HVAC validation (Case 900) is in place; free-floating calibration landed in #1154 (CTF stability, EPW weather, ISO 13790 thermal mass). Empirical corrections removed in #1138.
 If a system test fails, the individual module tests pinpoint which module is wrong.
 
+#### HVAC BESTEST validation scaffold (#1754)
+
+`tests/validation/hvac_bestest/mod.rs` is the integration-test root for the
+RP-865-derived HVAC BESTEST track. It keeps analytical cases, comparative cases,
+and reference-data loading in separate test-only modules. The initial target is
+intentionally empty and runs with `cargo test --test hvac_bestest`; follow-on issues
+own all case definitions, reference bounds, and acceptance tolerances. This scaffold
+does not alter the production validation module or any physics dependency edge.
+
 ### Phase 3: ML Surrogate Drop-In
 Once physics is validated, train ML surrogates on physics outputs.
 Surrogates must match physics within 2% on held-out data. v3.0 surrogate training and ONNX export landed in #1139.

@@ -52,6 +52,7 @@ cargo build --release                       # primary build (lto="thin", opt-lev
 cargo test                                  # all unit tests
 cargo test -p fluxion <test_name>           # single test (e.g. multi_zone_n_zone_network)
 cargo test --test ashrae_140_validation     # ASHRAE 140 validation suite
+cargo test --test hvac_bestest               # HVAC BESTEST RP-865 scaffold/suite
 cargo test --profile ci                     # FAST CI build (opt-level=1, codegen-units=256) — use for iteration
 LOOM=1 cargo test --features loom           # concurrency/race-condition tests (needs ~32GB; issue #1065)
 cargo test --features cuda --test surrogate_cuda_smoke  # GPU smoke (skips on CPU-only)

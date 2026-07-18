@@ -419,6 +419,13 @@ name = "validation_night_ventilation_air_side"
 path = "tests/validation/night_ventilation_air_side.rs"
 harness = true
 
+# Issue #1754 / Plan T1.1 — HVAC BESTEST RP-865 validation scaffold.
+# Follow-on issues add analytical and comparative cases to this target.
+[[test]]
+name = "hvac_bestest"
+path = "tests/validation/hvac_bestest/mod.rs"
+harness = true
+
 [[test]]
 name = "validation_empirical"
 path = "tests/validation/empirical_validation_test.rs"
