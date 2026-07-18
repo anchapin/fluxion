@@ -53,6 +53,20 @@ except ImportError:
     boto3 = None
     ClientError = Exception
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+try:
+    from state_store import (  # type: ignore[import-not-found]
+        CampaignProgress,
+        StateStore,
+        TaskState,
+        TaskStatus,
+    )
+except ImportError:  # pragma: no cover - defensive
+    CampaignProgress = None  # type: ignore[assignment]
+    StateStore = None  # type: ignore[assignment]
+    TaskState = None  # type: ignore[assignment]
+    TaskStatus = None  # type: ignore[assignment]
+
 
 TRACE_BASE = Path(".sdd/traces/diagnostic")
 
@@ -149,6 +163,44 @@ def get_required_env(var: str) -> str:
     if not value:
         raise ValueError(f"Required environment variable not set: {var}")
     return value
+
+
+def _resolve_state_store(selection: str) -> Optional["StateStore"]:
+    """Translate the ``--state-store`` CLI flag into a concrete store.
+
+    ``auto`` consults ``FLUXION_STATE_STORE`` (with backward-compatible
+    fall-through to ``FLUXION_CAMPAIGN_TABLE`` for pre-T7.3 deployments
+    that only configured the legacy DynamoDB table name).
+    ``memory`` returns an :class:`InMemoryStateStore` (handy for tests
+    and smoke checks that should not touch AWS).
+    """
+    if StateStore is None:
+        return None
+    selection = (selection or "auto").strip().lower()
+    if selection == "auto":
+        env = (os.environ.get("FLUXION_STATE_STORE") or "").strip().lower()
+        if env:
+            selection = env
+        elif os.environ.get("FLUXION_CAMPAIGN_TABLE") or os.environ.get("FLUXION_REDIS_URL"):
+            selection = (
+                "dynamodb"
+                if os.environ.get("FLUXION_CAMPAIGN_TABLE")
+                else "redis"
+            )
+        else:
+            return None
+    if selection in ("memory", "inmemory"):
+        return StateStore.create("memory")
+    if selection in ("dynamodb", "redis"):
+        try:
+            return StateStore.create(selection)
+        except Exception as exc:  # pragma: no cover - transport errors
+            print(
+                f"[WARN] Could not build {selection} state store: {exc}",
+                file=sys.stderr,
+            )
+            return None
+    return None
 
 
 def ensure_s3_prefix(s3_client, bucket: str, prefix: str) -> None:
@@ -312,8 +364,62 @@ def update_campaign_state(state: CampaignState, s3_bucket: str, s3_prefix: str) 
     )
 
 
-def check_campaign_progress(state: CampaignState, s3_bucket: str, s3_prefix: str) -> CampaignState:
-    """Check progress by counting completed work units in S3."""
+def check_campaign_progress(
+    state: CampaignState,
+    s3_bucket: str,
+    s3_prefix: str,
+    *,
+    state_store: Optional["StateStore"] = None,
+) -> CampaignState:
+    """Check progress by aggregating worker state-store entries.
+
+    Resolution order
+    ----------------
+    1. ``state_store`` argument (preferred — tests / local pipeline).
+    2. ``FLUXION_STATE_STORE`` env (``dynamodb`` or ``redis``).
+    3. Legacy S3 listing — counts ``results/*.json`` blobs produced by
+       older worker versions that predate the state-store refactor.
+
+    The state-store aggregation is authoritative when available because
+    workers now publish per-task completion directly to it, including
+    metrics and error_message that the S3-listing path cannot recover.
+    """
+    progress: Optional[CampaignProgress] = None
+    if state_store is not None and CampaignProgress is not None:
+        progress = state_store.aggregate_progress(
+            state.campaign_id, total=len(state.work_units)
+        )
+    elif StateStore is not None:
+        backend = (os.environ.get("FLUXION_STATE_STORE") or "").strip().lower()
+        if backend in ("dynamodb", "redis"):
+            try:
+                store = StateStore.from_env()
+                progress = store.aggregate_progress(
+                    state.campaign_id, total=len(state.work_units)
+                )
+            except Exception as exc:  # pragma: no cover - transport errors
+                print(
+                    f"[WARN] StateStore aggregate failed: {exc}",
+                    file=sys.stderr,
+                )
+
+    if progress is not None:
+        state.completed_units = progress.completed
+        state.failed_units = progress.failed
+        total = len(state.work_units)
+        if state.status == "created" and progress.in_flight > 0:
+            state.status = "running"
+        if progress.is_complete and total > 0:
+            state.status = "completed"
+        print(
+            f"[*] Campaign {state.campaign_id} (state-store): "
+            f"{progress.completed}/{total} completed, "
+            f"{progress.failed} failed, {progress.in_flight} in-flight "
+            f"({progress.progress_pct:.1f}%)"
+        )
+        return state
+
+    # --- Legacy S3 listing fallback -----------------------------------
     clients = get_aws_clients()
 
     completed = 0
@@ -338,9 +444,9 @@ def check_campaign_progress(state: CampaignState, s3_bucket: str, s3_prefix: str
     state.failed_units = failed
 
     total = len(state.work_units)
-    progress = (completed + failed) / total * 100 if total > 0 else 0
+    progress_pct = (completed + failed) / total * 100 if total > 0 else 0
 
-    print(f"[*] Campaign {state.campaign_id}: {completed}/{total} completed, {failed} failed ({progress:.1f}%)")
+    print(f"[*] Campaign {state.campaign_id}: {completed}/{total} completed, {failed} failed ({progress_pct:.1f}%)")
 
     if state.status == "created" and (completed + failed) > 0:
         state.status = "running"
@@ -351,7 +457,12 @@ def check_campaign_progress(state: CampaignState, s3_bucket: str, s3_prefix: str
 
 
 def wait_for_completion(
-    campaign_id: str, s3_bucket: str, s3_prefix: str, poll_interval: int = 30
+    campaign_id: str,
+    s3_bucket: str,
+    s3_prefix: str,
+    poll_interval: int = 30,
+    *,
+    state_store: Optional["StateStore"] = None,
 ) -> CampaignState:
     """Poll until campaign is complete."""
     print(f"[*] Waiting for campaign {campaign_id} to complete...")
@@ -362,7 +473,9 @@ def wait_for_completion(
             print(f"[ERROR] Campaign {campaign_id} not found")
             sys.exit(1)
 
-        state = check_campaign_progress(state, s3_bucket, s3_prefix)
+        state = check_campaign_progress(
+            state, s3_bucket, s3_prefix, state_store=state_store
+        )
         update_campaign_state(state, s3_bucket, s3_prefix)
 
         if state.status in ("completed", "failed"):
@@ -534,7 +647,20 @@ def main() -> int:
         default=30,
         help="Poll interval in seconds for wait action",
     )
+    parser.add_argument(
+        "--state-store",
+        type=str,
+        choices=["dynamodb", "redis", "memory", "auto"],
+        default="auto",
+        help=(
+            "State-store backend for per-task progress (T7.3). "
+            "'auto' uses FLUXION_STATE_STORE when set, otherwise falls "
+            "back to legacy S3 listing."
+        ),
+    )
     args = parser.parse_args()
+
+    state_store = _resolve_state_store(args.state_store)
 
     s3_bucket = args.s3_bucket
     s3_prefix = args.s3_prefix.rstrip("/")
@@ -577,20 +703,41 @@ def main() -> int:
     if args.action == "status":
         if not args.campaign_id:
             parser.error("--campaign-id is required for status action")
-        if not s3_bucket:
-            parser.error("--s3-bucket is required (or set FLUXION_S3_BUCKET env var)")
+        if not s3_bucket and state_store is None:
+            parser.error(
+                "--s3-bucket is required (or set FLUXION_S3_BUCKET env var) "
+                "or pass --state-store"
+            )
 
-        state = get_campaign_state(args.campaign_id, s3_bucket, s3_prefix)
-        if state is None:
-            print(f"[ERROR] Campaign {args.campaign_id} not found")
-            return 1
+        if state_store is None:
+            state = get_campaign_state(args.campaign_id, s3_bucket, s3_prefix)
+        else:
+            # State-store-only mode: synthesize a minimal CampaignState
+            # from the campaign definition stored in S3 (if any) or just
+            # use the live aggregate.
+            state = (
+                get_campaign_state(args.campaign_id, s3_bucket, s3_prefix)
+                if s3_bucket
+                else CampaignState(
+                    campaign_id=args.campaign_id,
+                    config={},
+                    work_units=[],
+                    status="created",
+                    start_time=datetime.now(timezone.utc).isoformat(),
+                )
+            )
+            if state is None:
+                print(f"[ERROR] Campaign {args.campaign_id} not found")
+                return 1
 
-        state = check_campaign_progress(state, s3_bucket, s3_prefix)
+        state = check_campaign_progress(
+            state, s3_bucket, s3_prefix, state_store=state_store
+        )
 
         print(f"\nCampaign: {state.campaign_id}")
         print(f"Status: {state.status}")
         print(f"Start: {state.start_time}")
-        print(f"Completed: {state.completed_units}/{len(state.work_units)}")
+        print(f"Completed: {state.completed_units}/{len(state.work_units) or '?'}")
         print(f"Failed: {state.failed_units}")
         print(f"Best MAE: {state.best_mae:.2f}%")
 
@@ -599,10 +746,49 @@ def main() -> int:
     if args.action == "wait":
         if not args.campaign_id:
             parser.error("--campaign-id is required for wait action")
-        if not s3_bucket:
-            parser.error("--s3-bucket is required (or set FLUXION_S3_BUCKET env var)")
+        if not s3_bucket and state_store is None:
+            parser.error(
+                "--s3-bucket is required (or set FLUXION_S3_BUCKET env var) "
+                "or pass --state-store"
+            )
 
-        state = wait_for_completion(args.campaign_id, s3_bucket, s3_prefix, args.poll_interval)
+        if s3_bucket:
+            state = wait_for_completion(
+                args.campaign_id,
+                s3_bucket,
+                s3_prefix,
+                args.poll_interval,
+                state_store=state_store,
+            )
+        else:
+            # State-store-only wait loop
+            print(f"[*] Waiting for campaign {args.campaign_id} to complete...")
+            while True:
+                progress = (
+                    state_store.aggregate_progress(args.campaign_id, total=0)
+                    if state_store is not None
+                    else None
+                )
+                if progress is None:
+                    print("[ERROR] No state store available")
+                    return 1
+                print(
+                    f"[*] {progress.completed} completed, "
+                    f"{progress.failed} failed, "
+                    f"{progress.in_flight} in-flight"
+                )
+                if progress.is_complete:
+                    state = CampaignState(
+                        campaign_id=args.campaign_id,
+                        config={},
+                        work_units=[],
+                        status="completed",
+                        start_time=datetime.now(timezone.utc).isoformat(),
+                        completed_units=progress.completed,
+                        failed_units=progress.failed,
+                    )
+                    break
+                time.sleep(args.poll_interval)
 
         print(f"\n[*] Campaign {args.campaign_id} is now: {state.status}")
         print(f"    Completed: {state.completed_units}")
