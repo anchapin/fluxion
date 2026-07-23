@@ -1502,8 +1502,11 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         let h_iz_vec = self.0.h_tr_iz.as_ref();
         let h_iz_rad_vec = self.0.h_tr_iz_rad.as_ref();
 
+        // Store phi_ia[0] for debugging before we consume it
+        let phi_ia_0 = phi_ia.as_ref().first().copied().unwrap_or(0.0);
+
         // Compute inter-zone heat transfer directly into phi_ia_with_iz to avoid Vec allocation
-        let mut phi_ia_with_iz = phi_ia.clone();
+        let mut phi_ia_with_iz = phi_ia;
 
         if num_zones > 1
             && (!h_iz_vec.is_empty() && h_iz_vec[0] > 0.0
@@ -1595,11 +1598,10 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
             let h_sum_vals = h_sum.as_ref();
             let sum_term_vals = sum_term.as_ref();
             let h_ext_debug = h_ext.as_ref();
-            let phi_ia_debug = phi_ia.as_ref();
             let solar_debug = self.0.solar_gains.as_ref();
             let loads_debug = self.0.loads.as_ref();
             let area_debug = self.0.zone_area.as_ref();
-            eprintln!("DEBUG_900FF_PREPARE: t={}, phi_ia[0]={:.2}, solar[0]={:.2}, loads[0]={:.2}, area[0]={:.1}", timestep, phi_ia_debug[0], solar_debug[0], loads_debug[0], area_debug[0]);
+            eprintln!("DEBUG_900FF_PREPARE: t={}, phi_ia[0]={:.2}, solar[0]={:.2}, loads[0]={:.2}, area[0]={:.1}", timestep, phi_ia_0, solar_debug[0], loads_debug[0], area_debug[0]);
             Some((
                 den_vals[0],
                 _num_tm_vals[0],
@@ -1608,7 +1610,7 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                 h_sum_vals[0],
                 sum_term_vals[0],
                 h_ext_debug[0],
-                phi_ia_debug[0],
+                phi_ia_0,
                 solar_debug[0],
                 loads_debug[0],
                 area_debug[0],
@@ -2382,7 +2384,7 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
             .zip_with(&self.0.mass_temperatures, |a, b| a * b);
         let num_phi_st = self.0.h_tr_is.zip_with(&phi_st, |a, b| a * b);
 
-        let mut phi_ia_with_iz = phi_ia.clone();
+        let mut phi_ia_with_iz = phi_ia;
 
         // Inter-zone heat transfer (if multi-zone) — #1391 Bug 1 fix.
         //

@@ -49,3 +49,7 @@
 ## 2026-07-18 - Fused loop for energy accummulation in physics_impl
 **Learning:** Fusing `for` loops inside `step_physics_5r1c`, `step_physics_6r2c` and `hvac_power_demand` that iterate over identical indices (e.g., `for &val in hvac_for_temp_calc.as_ref()` right before `for i in 0..self.0.num_zones`) removes redundant iterations over vector references and simplifies accumulation code.
 **Action:** Whenever iterating over vectors more than once within the same function block, evaluate if loops can be merged to single loops updating multiple state variables.
+
+## 2026-07-23 - Avoided unnecessary VectorField cloning for debugging in step_physics_6r2c
+**Learning:** In hot loops like `step_physics_6r2c`, cloning `VectorField`s (like `phi_ia`) just to access a single value (e.g., `phi_ia[0]`) for conditional debugging causes measurable performance degradation by forcing unnecessary heap allocations.
+**Action:** Instead of cloning the whole vector buffer to preserve it for later debugging, read and store the specific scalar values (e.g., `let phi_ia_0 = phi_ia.as_ref()[0]`) BEFORE moving/consuming the original `VectorField`. This eliminates the need for the `.clone()` entirely while maintaining diagnostic output.
