@@ -337,22 +337,12 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         //   T_si_eq = (T_int · h_is + T_m · h_1) / (h_is + h_1)
         //   T_si_new = T_si_eq + (T_si_old − T_si_eq) · exp(−dt / τ_si)
         //
-        // where h_is = 1/R_is = h_tr_is and h_1 = 1/R_1 with R_1 = R_ms / 2
-        // (symmetric split of the mass-to-air network — half-wall +
-        // half-interior-film). Equivalently h_1 = 2 · h_tr_ms since the
-        // interior surface film is a small contribution for typical
-        // high-mass constructions (R_si = 1/8 ≪ R_wall).
+        // where h_is = h_tr_is and h_1 = 1/R_1 with R_1 = |R_ms − R_is|.
+        // The absolute value keeps the ODE defined for high-mass cases where
+        // the lumped resistance ordering makes the raw difference negative.
         //
-        // Coupling to the cooling load: the steady-state ISO 13790 §C.3
-        // elimination already encodes the convective flux `h_tr_is ·
-        // (T_si_ss − T_int)` via `num_phi_st` + `den`. The transient
-        // correction `h_tr_is · (T_si − T_si_ss)` is *not* fed into the
-        // air-node equation in this PR — wiring it in changes the calibration
-        // of the existing 2901 tests / ASHRAE 140 ±15% bands and is the
-        // structural fix tracked by the Issue #1860 epic. The T_si state is
-        // still updated each timestep so downstream consumers (tests,
-        // diagnostics, future cooling-load follow-ups) can read it instead
-        // of computing it themselves from the Issue #1861 review gap.
+        // The transient surface flux correction h_is · (T_si − T_si_eq) is
+        // added to the scaled air-node numerator below.
         //
         // Edge cases: if h_tr_ms ≤ 0 or h_tr_is ≤ 0, fall back to the legacy
         // lumped path and leave T_si unchanged. The downstream cooling load
@@ -364,35 +354,36 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         let wall_surface_old_ref = self.0.wall_surface_temperatures.as_ref();
         let thermal_cap_ref = self.0.thermal_capacitance.as_ref();
         let mut wall_surface_new_data: Vec<f64> = Vec::with_capacity(self.0.num_zones);
+        let mut wall_surface_correction: Vec<f64> = Vec::with_capacity(self.0.num_zones);
         for i in 0..self.0.num_zones {
             let h_ms_i = h_tr_ms_ref[i];
             let h_is_i = h_tr_is_ref[i];
             if h_ms_i > 0.0 && h_is_i > 0.0 {
-                // Symmetric split: R_1 = R_ms / 2 ⇒ h_1 = 2 · h_tr_ms.
-                // This matches the FiveR1CSolver accessor
-                // (FiveR1CSolver::surface_time_constant uses R_1 = R_total / 2)
-                // once the per-zone → per-m² unit conversion is applied, and
-                // remains finite for high-mass cases where the older
-                // `R_1 = R_ms − R_is` formula collapsed to negative values
-                // (e.g. Case 900: R_ms ≈ 9.2e-4, R_si ≈ 6.1e-3 ⇒ R_1 < 0,
-                // silently disabling the surface ODE exactly where it would
-                // matter most — see PR #1861 review).
-                let h_1_i = 2.0 * h_ms_i;
-                let c_zone_i = thermal_cap_ref[i];
-                let tau_si = c_zone_i / (h_is_i + h_1_i);
-                let t_m_i = mass_temp_ref[i];
-                let t_int_i = zone_temp_ref[i];
-                let t_si_eq = (t_int_i * h_is_i + t_m_i * h_1_i) / (h_is_i + h_1_i);
-                let t_si_old_i = wall_surface_old_ref[i];
-                let t_si_new_i = if tau_si > 0.0 && dt > 0.0 {
-                    t_si_eq + (t_si_old_i - t_si_eq) * (-dt / tau_si).exp()
+                let r_ms_i = 1.0 / h_ms_i;
+                let r_is_i = 1.0 / h_is_i;
+                let r_1_i = (r_ms_i - r_is_i).abs();
+                if r_1_i > 0.0 {
+                    let h_1_i = 1.0 / r_1_i;
+                    let c_zone_i = thermal_cap_ref[i];
+                    let tau_si = c_zone_i / (h_is_i + h_1_i);
+                    let t_m_i = mass_temp_ref[i];
+                    let t_int_i = zone_temp_ref[i];
+                    let t_si_eq = (t_int_i * h_is_i + t_m_i * h_1_i) / (h_is_i + h_1_i);
+                    let t_si_old_i = wall_surface_old_ref[i];
+                    let t_si_new_i = if tau_si > 0.0 && dt > 0.0 {
+                        t_si_eq + (t_si_old_i - t_si_eq) * (-dt / tau_si).exp()
+                    } else {
+                        t_si_eq
+                    };
+                    wall_surface_new_data.push(t_si_new_i);
+                    wall_surface_correction.push(h_is_i * (t_si_new_i - t_si_eq));
                 } else {
-                    t_si_eq
-                };
-                wall_surface_new_data.push(t_si_new_i);
+                    wall_surface_new_data.push(wall_surface_old_ref[i]);
+                    wall_surface_correction.push(0.0);
+                }
             } else {
-                // No valid conductances: keep current T_si (legacy path).
                 wall_surface_new_data.push(wall_surface_old_ref[i]);
+                wall_surface_correction.push(0.0);
             }
         }
         // Persist the new T_si for downstream consumers (diagnostics, the
@@ -569,7 +560,15 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         let _h_tr_3_night: Option<Vec<f64>> = None;
 
         // Optimized: use zip_with to avoid double clones (phi_st used later)
-        let num_phi_st = h_tr_is_for_ti_free.zip_with(&phi_st, |a, b| a * b);
+        let mut num_phi_st = h_tr_is_for_ti_free.zip_with(&phi_st, |a, b| a * b);
+        for (i, (value, correction)) in num_phi_st
+            .as_mut()
+            .iter_mut()
+            .zip(wall_surface_correction.iter())
+            .enumerate()
+        {
+            *value += correction * term_rest_1.as_ref()[i];
+        }
 
         // Ground heat transfer: Q_ground = h_tr_floor * (T_ground - T_surface)
         // Optimization: use scalar multiplication for t_g and outdoor_temp instead of creating full constant vectors
@@ -856,11 +855,8 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
             .as_mut()
             .copy_from_slice(&t_i_free_data);
 
-        // Note: The Issue #1860 wall-surface ODE is computed earlier in this
-        // function (right after `phi_ia` / `phi_st` / `phi_m` are produced, see
-        // the labelled "Wall-surface ODE (pre-air-node-equilibrium step)"
-        // block). The new `T_si` is consumed by the air-node equation above
-        // via the surface-to-air convective flux `h_tr_is · (T_si − T_int)`.
+        // The wall-surface state contributes to the air-node numerator through
+        // the transient surface flux correction applied above.
 
         // PR #821: DEBUG_900FF_ti_free trace removed.
 

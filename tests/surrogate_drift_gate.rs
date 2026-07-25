@@ -115,7 +115,8 @@ fn compute_drift_result(physics_temps: &[Vec<f64>], surrogate_temps: &[Vec<f64>]
 /// pass in either mode so the CI gate doesn't block PRs that don't ship a
 /// trained model.
 fn assert_drift_within_gate(result: &DriftResult, context: &str) {
-    let surrogates = SurrogateManager::default();
+    let surrogates =
+        SurrogateManager::new_with_auto_load().expect("Failed to initialize surrogate manager");
     let tolerance = if surrogates.model_loaded {
         DRIFT_TOLERANCE_PCT
     } else {
@@ -178,7 +179,8 @@ fn test_surrogate_drift_gate_case_900_9r4c() {
     let mut physics_model = PhysicsThermalModel::from_spec(&spec);
     let mut surrogate_model = SurrogateThermalModel::from_spec(&spec);
 
-    let surrogates = SurrogateManager::default();
+    let surrogates =
+        SurrogateManager::new_with_auto_load().expect("Failed to initialize surrogate manager");
 
     let _physics_eui = physics_model.solve_timesteps(TEST_TIMESTEPS, &surrogates, false);
     let _surrogate_eui = surrogate_model.solve_timesteps(TEST_TIMESTEPS, &surrogates, true);
@@ -210,7 +212,8 @@ fn test_surrogate_drift_gate_annual_simulation() {
     let mut physics_model = PhysicsThermalModel::from_spec(&spec);
     let mut surrogate_model = SurrogateThermalModel::from_spec(&spec);
 
-    let surrogates = SurrogateManager::default();
+    let surrogates =
+        SurrogateManager::new_with_auto_load().expect("Failed to initialize surrogate manager");
 
     let _physics_eui = physics_model.solve_timesteps(8760, &surrogates, false);
     let _surrogate_eui = surrogate_model.solve_timesteps(8760, &surrogates, true);

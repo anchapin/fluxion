@@ -277,9 +277,9 @@ fn test_thermal_model_surface_ode_relaxes_to_t_si_eq() {
             "Case 600 zone {i}: h_tr_ms/h_tr_is must be positive"
         );
 
-        // Symmetric-split R_1 = R_ms / 2 ⇒ h_1 = 2 · h_tr_ms — the same
-        // formula the physics_impl ODE uses (PR #1861 review fix).
-        let h_1_i = 2.0 * h_ms_i;
+        let r_1_i = (1.0 / h_ms_i - 1.0 / h_is_i).abs();
+        assert!(r_1_i > 0.0, "Case 600 zone {i}: R_1 must be positive");
+        let h_1_i = 1.0 / r_1_i;
         let t_si_eq = (t_int[i] * h_is_i + t_mass[i] * h_1_i) / (h_is_i + h_1_i);
         let t_si_actual = t_si[i];
 
