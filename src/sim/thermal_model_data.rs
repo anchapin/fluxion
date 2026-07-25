@@ -117,6 +117,29 @@ pub struct ThermalModelData<T: ContinuousTensor<f64> + Clone> {
     /// Used in `step_physics_5r1c` only; the 9R4C and 6R2C paths
     /// maintain their own air-node temperature handling.
     pub air_temperatures: T,
+    /// Independent interior wall-surface temperature state for the 5R1C model.
+    ///
+    /// Tracks the temperature at the interior wall surface `T_si` for each
+    /// zone, evolved via the exact exponential solution of the surface-node
+    /// ODE:
+    ///
+    /// ```text
+    /// T_si_new = T_si_eq + (T_si_old - T_si_eq) · exp(-dt / τ_si)
+    /// τ_si = C_m · (R_1 ∥ R_si) = C_m · R_1·R_si / (R_1 + R_si)
+    /// T_si_eq = (T_m / R_1 + T_int / R_si) / (1/R_1 + 1/R_si)
+    /// ```
+    ///
+    /// The flux to the zone air is then `q = (T_si - T_int) / R_si`, which
+    /// replaces the legacy lumped approximation `q = (T_m - T_int) / R_total`
+    /// that suppresses the diurnal swing on ASHRAE 140 Cases 600/650/950
+    /// (Issue #1860). The legacy path is preserved as a fallback by setting
+    /// `use_wall_surface_state = false` at runtime.
+    ///
+    /// Issue #1860 — time-constant-aware 5R1C variant: tracks the wall's
+    /// interior surface temperature as an ODE state so the cooling load
+    /// calculation reflects the actual transient response of the wall to
+    /// solar / outdoor temperature changes.
+    pub wall_surface_temperatures: T,
     pub envelope_mass_temperatures: T,
     pub internal_mass_temperatures: T,
     pub envelope_thermal_capacitance: T,
@@ -313,6 +336,7 @@ impl<T: ContinuousTensor<f64> + Clone> Clone for ThermalModelData<T> {
             thermal_capacitance: self.thermal_capacitance.clone(),
             air_thermal_capacitance: self.air_thermal_capacitance.clone(),
             air_temperatures: self.air_temperatures.clone(),
+            wall_surface_temperatures: self.wall_surface_temperatures.clone(),
             envelope_mass_temperatures: self.envelope_mass_temperatures.clone(),
             internal_mass_temperatures: self.internal_mass_temperatures.clone(),
             envelope_thermal_capacitance: self.envelope_thermal_capacitance.clone(),

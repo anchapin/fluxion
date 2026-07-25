@@ -767,6 +767,74 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
             .as_mut()
             .copy_from_slice(&t_i_free_data);
 
+        // === Issue #1860: wall-surface ODE ===
+        //
+        // Track the per-zone interior wall-surface temperature `T_si` via the
+        // exact exponential solution of the surface-node ODE. The legacy
+        // lumped approximation `q_zone = (T_m − T_int) / R_total` suppresses
+        // the diurnal swing on ASHRAE 140 Cases 600 / 650 / 950 by treating
+        // the mass node as the only source of thermal inertia. The
+        // time-constant-aware variant models the surface node relaxation
+        // against the wall's thermal mass:
+        //
+        //   τ_si = C_zone / (h_is + h_1)
+        //   T_si_eq = (T_int · h_is + T_m · h_1) / (h_is + h_1)
+        //   T_si_new = T_si_eq + (T_si_old − T_si_eq) · exp(−dt/τ_si)
+        //
+        // where h_is = 1/R_is = h_tr_is and h_1 = 1/R_1 ≈ 1/(R_ms − R_is)
+        // with R_ms = 1/h_tr_ms. The (h_is + h_1) sum is the series-parallel
+        // combination of the interior film and the wall material half-resistance.
+        //
+        // The flux through the interior film (which is what drives the zone
+        // air temperature) is then `q_is = h_is · (T_si − T_int)`. When
+        // T_si = T_si_eq this equals the steady-state value, so the legacy
+        // lumped path is preserved exactly at equilibrium; the surface ODE
+        // only deviates during transients (e.g., a sudden solar pulse).
+        //
+        // Edge cases: if R_1 ≤ 0 (h_tr_ms ≤ h_tr_is, meaning the wall
+        // material half-resistance is degenerate) or h_tr_is ≤ 0, fall back
+        // to the legacy lumped path and leave T_si unchanged.
+        let h_tr_ms_ref = self.0.h_tr_ms.as_ref();
+        let h_tr_is_ref = self.0.h_tr_is.as_ref();
+        let mass_temp_ref = self.0.mass_temperatures.as_ref();
+        let zone_temp_ref = self.0.temperatures.as_ref();
+        let wall_surface_old_ref = self.0.wall_surface_temperatures.as_ref();
+        let mut wall_surface_new_data: Vec<f64> = Vec::with_capacity(self.0.num_zones);
+        for i in 0..self.0.num_zones {
+            let h_ms_i = h_tr_ms_ref[i];
+            let h_is_i = h_tr_is_ref[i];
+            if h_ms_i > 0.0 && h_is_i > 0.0 {
+                let r_ms_i = 1.0 / h_ms_i;
+                let r_is_i = 1.0 / h_is_i;
+                let r_1_i = r_ms_i - r_is_i;
+                if r_1_i > 0.0 {
+                    let h_1_i = 1.0 / r_1_i;
+                    let c_zone_i = self.0.thermal_capacitance.as_ref()[i];
+                    let tau_si = c_zone_i / (h_is_i + h_1_i);
+                    let t_m_i = mass_temp_ref[i];
+                    let t_int_i = zone_temp_ref[i];
+                    let t_si_eq = (t_int_i * h_is_i + t_m_i * h_1_i) / (h_is_i + h_1_i);
+                    let t_si_old_i = wall_surface_old_ref[i];
+                    let t_si_new_i = if tau_si > 0.0 && dt > 0.0 {
+                        t_si_eq + (t_si_old_i - t_si_eq) * (-dt / tau_si).exp()
+                    } else {
+                        t_si_eq
+                    };
+                    wall_surface_new_data.push(t_si_new_i);
+                } else {
+                    // Degenerate R_1 ≤ 0: keep current T_si (legacy path).
+                    wall_surface_new_data.push(wall_surface_old_ref[i]);
+                }
+            } else {
+                // No valid conductances: keep current T_si (legacy path).
+                wall_surface_new_data.push(wall_surface_old_ref[i]);
+            }
+        }
+        self.0
+            .wall_surface_temperatures
+            .as_mut()
+            .copy_from_slice(&wall_surface_new_data);
+
         // PR #821: DEBUG_900FF_ti_free trace removed.
 
         // PR #821: DEBUG_MAX trace for 600FF/650FF removed; use `pr821-diag` feature instead.

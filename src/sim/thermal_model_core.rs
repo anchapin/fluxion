@@ -2569,6 +2569,14 @@ impl ThermalModel<VectorField> {
             // step_physics_5r1c via the exact exponential solution.
             air_temperatures: VectorField::from_scalar(20.0, num_zones),
 
+            // Issue #1860: independent interior wall-surface ODE state. Initialized
+            // to 20°C (matching the initial zone temperature); stepped each call to
+            // step_physics_5r1c via the exact exponential solution using the wall's
+            // surface time constant τ_si = C_m · (R_1 ∥ R_si). Used by the
+            // time-constant-aware variant to compute q_zone = (T_si - T_int) / R_si
+            // instead of the legacy lumped (T_m - T_int) / R_total approximation.
+            wall_surface_temperatures: VectorField::from_scalar(20.0, num_zones),
+
             // 6R2C model fields (initialized for 5R1C compatibility)
             envelope_mass_temperatures: VectorField::from_scalar(20.0, num_zones),
             internal_mass_temperatures: VectorField::from_scalar(20.0, num_zones),
