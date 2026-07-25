@@ -132,8 +132,10 @@ pub struct ThermalModelData<T: ContinuousTensor<f64> + Clone> {
     /// The flux to the zone air is then `q = (T_si - T_int) / R_si`, which
     /// replaces the legacy lumped approximation `q = (T_m - T_int) / R_total`
     /// that suppresses the diurnal swing on ASHRAE 140 Cases 600/650/950
-    /// (Issue #1860). The legacy path is preserved as a fallback by setting
-    /// `use_wall_surface_state = false` at runtime.
+    /// (Issue #1860). The legacy lumped path is preserved as a fallback when
+    /// the surface-ODE inputs are degenerate (e.g. `h_tr_ms <= 0`,
+    /// `h_tr_is <= 0`, or the symmetric-split `R_1` collapses to zero);
+    /// see `physics_impl.rs::step_physics_5r1c` for the fallback condition.
     ///
     /// Issue #1860 — time-constant-aware 5R1C variant: tracks the wall's
     /// interior surface temperature as an ODE state so the cooling load
