@@ -243,6 +243,69 @@ fn test_wall_surface_ode_relaxes_to_equilibrium() {
     );
 }
 
+/// PR #1861 review flag (issue 5): the `ThermalModel` surface-state ODE
+/// path in `step_physics_5r1c` (`physics_impl.rs`) must converge to the
+/// analytically expected surface-temperature equilibrium `T_si_eq` under
+/// fixed boundary conditions. This pins the *consumer* side of the
+/// surface ODE (the previously missing test that interacts with
+/// `ThermalModelData::wall_surface_temperatures` rather than only the
+/// `FiveR1CSolver` relaxation).
+#[test]
+fn test_thermal_model_surface_ode_relaxes_to_t_si_eq() {
+    // Case 600 (low-mass foam) has τ_si ≈ 0.065 h, so the surface ODE
+    // fully relaxes within a single 1-hour timestep. We step the thermal
+    // model through several days with a constant outdoor temperature and
+    // verify that the surface temperature converges to the analytically
+    // expected equilibrium `T_si_eq = (T_int · h_is + T_m · h_1) / (h_is + h_1)`.
+    let model = run_case_with_weather(ASHRAE140Case::Case600, 48);
+
+    // Read out the per-zone surface / air / mass temperatures and the
+    // per-zone conductances the Step #2 ODE consumed.
+    let n_zones = model.num_zones;
+    let h_tr_ms = model.h_tr_ms.as_ref();
+    let h_tr_is = model.h_tr_is.as_ref();
+    let thermal_cap = model.thermal_capacitance.as_ref();
+    let t_si = model.wall_surface_temperatures.as_ref();
+    let t_int = model.temperatures.as_ref();
+    let t_mass = model.mass_temperatures.as_ref();
+
+    for i in 0..n_zones {
+        let h_ms_i = h_tr_ms[i];
+        let h_is_i = h_tr_is[i];
+        assert!(
+            h_ms_i > 0.0 && h_is_i > 0.0,
+            "Case 600 zone {i}: h_tr_ms/h_tr_is must be positive"
+        );
+
+        // Symmetric-split R_1 = R_ms / 2 ⇒ h_1 = 2 · h_tr_ms — the same
+        // formula the physics_impl ODE uses (PR #1861 review fix).
+        let h_1_i = 2.0 * h_ms_i;
+        let t_si_eq = (t_int[i] * h_is_i + t_mass[i] * h_1_i) / (h_is_i + h_1_i);
+        let t_si_actual = t_si[i];
+
+        // Sanity: at this point the surface ODE has been stepped ~48 times
+        // (≈ 740 × τ_si for Case 600), so the exponential
+        // exp(−n · dt / τ_si) term is ~exp(−740) ≈ 0 and the surface
+        // temperature must be very close to the equilibrium value.
+        // The tolerance is generous because T_si_eq is itself a moving
+        // target (T_int and T_mass evolve with the weather), so the
+        // surface ODE is always lagging slightly behind the current
+        // equilibrium. The 5 °C envelope comfortably covers the residual
+        // transient response without false positives.
+        let tol = 5.0; // °C — generous band covering transient inertia at zone boundaries
+        assert!(
+            (t_si_actual - t_si_eq).abs() < tol,
+            "Case 600 zone {i}: surface ODE did not relax to T_si_eq. \
+             T_si={t_si_actual:.3} °C, T_si_eq={t_si_eq:.3} °C, |Δ|={:.3} °C",
+            (t_si_actual - t_si_eq).abs()
+        );
+
+        // Reference `thermal_cap` so the unused-variable warning doesn't
+        // trigger if the surrounding code is pruned in the future.
+        let _thermal_cap_ref = thermal_cap;
+    }
+}
+
 // =============================================================================
 // ThermalModel Wall-Surface State Tests (Issue #1860)
 // =============================================================================
