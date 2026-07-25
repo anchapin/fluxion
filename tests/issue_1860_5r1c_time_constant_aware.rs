@@ -37,7 +37,7 @@ use fluxion::physics::cta::VectorField;
 use fluxion::physics::five_r1c_solver::FiveR1CSolver;
 use fluxion::physics::solver_trait::HeatConductionSolver;
 use fluxion::physics::units::{FromF64, HeatTransferCoefficient, Temperature, Time};
-use fluxion::physics::wall_spec::WallSpec;
+use fluxion::physics::wall_spec::{lightweight_wall_spec, WallSpec};
 use fluxion::sim::engine::ThermalModel;
 use fluxion::validation::ashrae_140_cases::ASHRAE140Case;
 use fluxion::weather::denver::DenverTmyWeather;
@@ -107,31 +107,26 @@ fn test_solver_time_constant_matches_analytical_definition() {
     );
 }
 
-/// Verify `surface_time_constant()` returns `C·(R_1‖R_si)` for a 200 mm
-/// concrete wall, where `R_1 = R_total` is the wall-only mass-to-surface
-/// resistance and `R_si = 1/8` is the separate interior film resistance.
+/// Verify `surface_time_constant()` returns `C·(R_ms‖R_si)` for a
+/// multi-layer wall, where `R_ms` follows the ISO 13790 half-insulation
+/// rule and `R_si = 1/8` is the separate interior film resistance.
 #[test]
 fn test_solver_surface_time_constant_matches_parallel_resistance() {
-    let wall = AssemblyBuilder::new("200mm Concrete".to_string())
-        .add_layer(Box::new(ConcreteMaterial::new(0.2)))
-        .build()
-        .unwrap();
-    let spec = WallSpec::from_assembly(&wall);
-
+    let spec = lightweight_wall_spec();
     let mut solver = FiveR1CSolver::new();
     solver.initialize(&spec).unwrap();
 
-    let r_total = spec.total_r_value();
-    let r_1 = r_total;
+    let r_ms = spec.layers[2].r_value() + spec.layers[1].r_value() / 2.0;
     let r_si = 1.0 / 8.0;
-    let r_parallel = r_1 * r_si / (r_1 + r_si);
+    let r_parallel = r_ms * r_si / (r_ms + r_si);
     let tau_si_analytical = spec.thermal_capacity() * r_parallel;
 
+    assert!((solver.r_1() - r_ms).abs() / r_ms < 1e-12);
     let tau_si_solver = solver.surface_time_constant();
     let rel_diff = (tau_si_solver - tau_si_analytical).abs() / tau_si_analytical;
     assert!(
         rel_diff < 1e-12,
-        "surface_time_constant() must equal C·(R_1‖R_si): \
+        "surface_time_constant() must equal C·(R_ms‖R_si): \
          solver={tau_si_solver:.6e}, analytical={tau_si_analytical:.6e}, rel_diff={rel_diff:.6e}"
     );
 }
@@ -232,7 +227,7 @@ fn test_wall_surface_ode_relaxes_to_equilibrium() {
 
     // At equilibrium, the returned flux should match
     // q_ss = (T_ext − T_int) / R_total.
-    let q_ss = (t_ext - t_int) / solver.r_1();
+    let q_ss = (t_ext - t_int) / spec.total_r_value();
     let q_final = solver.current_flux();
     let rel_err = (q_final - q_ss).abs() / q_ss.abs();
     assert!(

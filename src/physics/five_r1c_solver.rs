@@ -38,6 +38,8 @@ use crate::physics::wall_spec::WallSpec;
 pub struct FiveR1CSolver {
     /// Total thermal resistance [m²·K/W]
     R_total: f64,
+    /// Material resistance from the mass node to the interior surface [m²·K/W]
+    R_ms: f64,
     /// Total thermal capacitance [J/m²·K]
     C_total: f64,
     /// Interior surface resistance [m²·K/W]
@@ -63,6 +65,7 @@ impl FiveR1CSolver {
     pub fn new() -> Self {
         Self {
             R_total: 0.0,
+            R_ms: 0.0,
             C_total: 0.0,
             R_si: 1.0 / 8.0,  // Default interior film coefficient
             R_se: 1.0 / 25.0, // Default exterior film coefficient
@@ -114,21 +117,17 @@ impl FiveR1CSolver {
         self.C_total * self.R_total
     }
 
-    /// Return the surface-to-air time constant τ_si = C·R_1·R_si / (R_1 + R_si),
-    /// where R_1 = R_total is the material resistance from the mass node to
-    /// the interior surface and R_si is the separate interior film resistance.
+    /// Return the surface-to-air time constant τ_si = C·R_ms·R_si / (R_ms + R_si).
     ///
-    /// This is the relaxation time of the interior surface node `T_si` when
-    /// the air or mass-node temperature changes. The wall specification's
-    /// `R_total` excludes surface films, matching the `h_tr_ms = 1 / R_ms`
-    /// contract used by the zone-level 5R1C model.
+    /// `R_ms` is the material resistance from the lumped mass node to the
+    /// interior surface under the ISO 13790 half-insulation rule. `R_si` is
+    /// the separate interior film resistance.
     pub fn surface_time_constant(&self) -> f64 {
-        if !self.initialized || self.R_total <= 0.0 || self.C_total <= 0.0 {
+        if !self.initialized || self.R_ms <= 0.0 || self.C_total <= 0.0 {
             return 0.0;
         }
-        let r_1 = self.R_total;
         let r_si = self.R_si;
-        let r_parallel = r_1 * r_si / (r_1 + r_si);
+        let r_parallel = self.R_ms * r_si / (self.R_ms + r_si);
         self.C_total * r_parallel
     }
 
@@ -137,9 +136,9 @@ impl FiveR1CSolver {
         self.R_si
     }
 
-    /// Return the mass-to-interior-surface resistance R_1 = R_total [m²·K/W].
+    /// Return the mass-to-interior-surface resistance R_ms [m²·K/W].
     pub fn r_1(&self) -> f64 {
-        self.R_total
+        self.R_ms
     }
 
     /// Return the current mass-node temperature [°C].
@@ -167,6 +166,7 @@ impl HeatConductionSolver for FiveR1CSolver {
     fn initialize(&mut self, wall: &WallSpec) -> Result<(), SolverError> {
         // Calculate total thermal resistance [m²·K/W]
         self.R_total = wall.total_r_value();
+        self.R_ms = wall.mass_to_interior_surface_r_value();
 
         // Calculate total thermal capacitance [J/m²·K]
         // WallSpec::thermal_capacity() returns J/(m²·K) directly
@@ -190,6 +190,11 @@ impl HeatConductionSolver for FiveR1CSolver {
         if self.R_total <= 0.0 || !self.R_total.is_finite() {
             return Err(SolverError::ConstructionError(
                 "Invalid wall resistance (must be positive and finite)".to_string(),
+            ));
+        }
+        if self.R_ms <= 0.0 || !self.R_ms.is_finite() {
+            return Err(SolverError::ConstructionError(
+                "Invalid mass-to-surface resistance (must be positive and finite)".to_string(),
             ));
         }
 
@@ -320,7 +325,7 @@ impl HeatConductionSolver for FiveR1CSolver {
 mod tests {
     use super::*;
     use crate::physics::units::{FromF64, HeatTransferCoefficient, Temperature, Time, ToF64};
-    use crate::physics::wall_spec::WallSpec;
+    use crate::physics::wall_spec::{lightweight_wall_spec, WallSpec};
     use fluxion_core::assembly::{AssemblyBuilder, ConcreteMaterial};
 
     #[test]
@@ -395,6 +400,7 @@ mod tests {
         let solver = FiveR1CSolver::new();
         assert!(!solver.initialized);
         assert_eq!(solver.R_total, 0.0);
+        assert_eq!(solver.R_ms, 0.0);
         assert_eq!(solver.C_total, 0.0);
         assert_eq!(solver.T_mass, 20.0);
         assert_eq!(solver.q_flux, 0.0);
@@ -407,6 +413,7 @@ mod tests {
         let solver = FiveR1CSolver::default();
         assert!(!solver.initialized);
         assert_eq!(solver.R_total, 0.0);
+        assert_eq!(solver.R_ms, 0.0);
         assert_eq!(solver.C_total, 0.0);
         assert_eq!(solver.T_mass, 20.0);
         assert_eq!(solver.q_flux, 0.0);
@@ -820,40 +827,24 @@ mod tests {
         );
     }
 
-    /// Surface-node time constant τ_si must equal C·(R_1‖R_si) where
-    /// R_1 = R_total and R_si = 1/8 (interior film). This is the
-    /// relaxation time the Issue #1860 fix uses to evolve the interior
-    /// surface temperature `T_si` via exponential ODE.
+    /// Surface-node time constant τ_si must equal C·(R_ms‖R_si), with R_ms
+    /// derived independently from the ISO 13790 half-insulation rule.
     #[test]
     fn test_surface_time_constant_matches_parallel_resistance() {
-        let wall = AssemblyBuilder::new("200mm Concrete".to_string())
-            .add_layer(Box::new(ConcreteMaterial::new(0.2)))
-            .build()
-            .unwrap();
-        let spec = WallSpec::from_assembly(&wall);
-
+        let spec = lightweight_wall_spec();
         let mut solver = FiveR1CSolver::new();
         solver.initialize(&spec).unwrap();
 
-        let c = spec.thermal_capacity();
-        let r_total = spec.total_r_value();
-        let r_1 = r_total;
+        let r_ms = spec.layers[2].r_value() + spec.layers[1].r_value() / 2.0;
         let r_si = 1.0 / 8.0;
-        let r_parallel = r_1 * r_si / (r_1 + r_si);
-        let expected = c * r_parallel;
+        let r_parallel = r_ms * r_si / (r_ms + r_si);
+        let expected = spec.thermal_capacity() * r_parallel;
 
+        assert!((solver.r_1() - r_ms).abs() / r_ms < 1e-12);
         let tau_si = solver.surface_time_constant();
         assert!(
             (tau_si - expected).abs() / expected < 1e-12,
-            "τ_si must equal C·(R_1‖R_si): τ_si={tau_si:.6e}, expected={expected:.6e}"
-        );
-
-        // For 200 mm concrete, τ_si is about 7.2 h with the wall-only
-        // mass-to-surface resistance and separate interior film.
-        let tau_si_h = tau_si / 3600.0;
-        assert!(
-            (6.0..=9.0).contains(&tau_si_h),
-            "200 mm concrete surface τ_si should be 6-9 h, got {tau_si_h:.3} h"
+            "τ_si must equal C·(R_ms‖R_si): τ_si={tau_si:.6e}, expected={expected:.6e}"
         );
     }
 
