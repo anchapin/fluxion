@@ -129,8 +129,8 @@ pub struct ThermalModelData<T: ContinuousTensor<f64> + Clone> {
     /// T_si_eq = (T_m / R_1 + T_int / R_si) / (1/R_1 + 1/R_si)
     /// ```
     ///
-    /// Here `R_1 = |R_ms − R_is|`, which remains positive for high-mass
-    /// constructions where the raw lumped resistance difference is negative.
+    /// Here `R_1 = R_ms = 1 / h_tr_ms`; `h_tr_ms` excludes the interior film,
+    /// which is represented separately by `R_si = 1 / h_tr_is`.
     /// The flux to the zone air is coupled into the 5R1C air-node numerator.
     pub wall_surface_temperatures: T,
     pub envelope_mass_temperatures: T,

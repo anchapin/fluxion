@@ -108,8 +108,8 @@ fn test_solver_time_constant_matches_analytical_definition() {
 }
 
 /// Verify `surface_time_constant()` returns `C·(R_1‖R_si)` for a 200 mm
-/// concrete wall, where `R_1 = R_total/2` (symmetric wall split) and
-/// `R_si = 1/8` (interior film coefficient h_is = 8 W/m²K).
+/// concrete wall, where `R_1 = R_total` is the wall-only mass-to-surface
+/// resistance and `R_si = 1/8` is the separate interior film resistance.
 #[test]
 fn test_solver_surface_time_constant_matches_parallel_resistance() {
     let wall = AssemblyBuilder::new("200mm Concrete".to_string())
@@ -122,7 +122,7 @@ fn test_solver_surface_time_constant_matches_parallel_resistance() {
     solver.initialize(&spec).unwrap();
 
     let r_total = spec.total_r_value();
-    let r_1 = r_total / 2.0;
+    let r_1 = r_total;
     let r_si = 1.0 / 8.0;
     let r_parallel = r_1 * r_si / (r_1 + r_si);
     let tau_si_analytical = spec.thermal_capacity() * r_parallel;
@@ -230,11 +230,9 @@ fn test_wall_surface_ode_relaxes_to_equilibrium() {
             .unwrap();
     }
 
-    // At equilibrium, T_m should sit at the steady-state midpoint
-    // (T_int + T_ext)/2 (symmetric R split), and the returned flux should
-    // match q_ss = (T_ext − T_int) / R_total.
-    // R_total = 2 × R_1 (symmetric split), so q_ss = (T_ext − T_int) / (2 · R_1).
-    let q_ss = (t_ext - t_int) / (solver.r_1() * 2.0);
+    // At equilibrium, the returned flux should match
+    // q_ss = (T_ext − T_int) / R_total.
+    let q_ss = (t_ext - t_int) / solver.r_1();
     let q_final = solver.current_flux();
     let rel_err = (q_final - q_ss).abs() / q_ss.abs();
     assert!(
@@ -243,66 +241,50 @@ fn test_wall_surface_ode_relaxes_to_equilibrium() {
     );
 }
 
-/// PR #1861 review flag (issue 5): the `ThermalModel` surface-state ODE
-/// path in `step_physics_5r1c` (`physics_impl.rs`) must converge to the
-/// analytically expected surface-temperature equilibrium `T_si_eq` under
-/// fixed boundary conditions. This pins the *consumer* side of the
-/// surface ODE (the previously missing test that interacts with
-/// `ThermalModelData::wall_surface_temperatures` rather than only the
-/// `FiveR1CSolver` relaxation).
+/// The `ThermalModel` surface-state ODE must converge to the HAC equilibrium
+/// defined by the independent mass-to-surface and interior-film conductances.
 #[test]
 fn test_thermal_model_surface_ode_relaxes_to_t_si_eq() {
-    // Case 600 (low-mass foam) has τ_si ≈ 0.065 h, so the surface ODE
-    // fully relaxes within a single 1-hour timestep. We step the thermal
-    // model through several days with a constant outdoor temperature and
-    // verify that the surface temperature converges to the analytically
-    // expected equilibrium `T_si_eq = (T_int · h_is + T_m · h_1) / (h_is + h_1)`.
-    let model = run_case_with_weather(ASHRAE140Case::Case600, 48);
-
-    // Read out the per-zone surface / air / mass temperatures and the
-    // per-zone conductances the Step #2 ODE consumed.
+    let mut model = ThermalModel::<VectorField>::from_spec(&ASHRAE140Case::Case600.spec());
+    let dt = 3600.0;
+    let t_int = 20.0;
+    let t_mass = 30.0;
+    let t_si_initial = -10.0;
     let n_zones = model.num_zones;
-    let h_tr_ms = model.h_tr_ms.as_ref();
-    let h_tr_is = model.h_tr_is.as_ref();
-    let thermal_cap = model.thermal_capacitance.as_ref();
-    let t_si = model.wall_surface_temperatures.as_ref();
-    let t_int = model.temperatures.as_ref();
-    let t_mass = model.mass_temperatures.as_ref();
+
+    let max_tau_si = (0..n_zones)
+        .map(|i| {
+            let h_ms = model.h_tr_ms.as_ref()[i];
+            let h_is = model.h_tr_is.as_ref()[i];
+            model.thermal_capacitance.as_ref()[i] / (h_ms + h_is)
+        })
+        .fold(0.0_f64, f64::max);
+    let n_steps = ((12.0 * max_tau_si / dt).ceil() as usize).max(1);
+
+    model.wall_surface_temperatures.as_mut().fill(t_si_initial);
+    for _ in 0..n_steps {
+        model.temperatures.as_mut().fill(t_int);
+        model.air_temperatures.as_mut().fill(t_int);
+        model.mass_temperatures.as_mut().fill(t_mass);
+        model.step_physics(0, t_int, dt);
+    }
 
     for i in 0..n_zones {
-        let h_ms_i = h_tr_ms[i];
-        let h_is_i = h_tr_is[i];
+        let h_ms = model.h_tr_ms.as_ref()[i];
+        let h_is = model.h_tr_is.as_ref()[i];
         assert!(
-            h_ms_i > 0.0 && h_is_i > 0.0,
+            h_ms > 0.0 && h_is > 0.0,
             "Case 600 zone {i}: h_tr_ms/h_tr_is must be positive"
         );
 
-        let r_1_i = (1.0 / h_ms_i - 1.0 / h_is_i).abs();
-        assert!(r_1_i > 0.0, "Case 600 zone {i}: R_1 must be positive");
-        let h_1_i = 1.0 / r_1_i;
-        let t_si_eq = (t_int[i] * h_is_i + t_mass[i] * h_1_i) / (h_is_i + h_1_i);
-        let t_si_actual = t_si[i];
-
-        // Sanity: at this point the surface ODE has been stepped ~48 times
-        // (≈ 740 × τ_si for Case 600), so the exponential
-        // exp(−n · dt / τ_si) term is ~exp(−740) ≈ 0 and the surface
-        // temperature must be very close to the equilibrium value.
-        // The tolerance is generous because T_si_eq is itself a moving
-        // target (T_int and T_mass evolve with the weather), so the
-        // surface ODE is always lagging slightly behind the current
-        // equilibrium. The 5 °C envelope comfortably covers the residual
-        // transient response without false positives.
-        let tol = 5.0; // °C — generous band covering transient inertia at zone boundaries
+        let t_si_eq = (t_int * h_is + t_mass * h_ms) / (h_is + h_ms);
+        let t_si_actual = model.wall_surface_temperatures.as_ref()[i];
+        let error = (t_si_actual - t_si_eq).abs();
         assert!(
-            (t_si_actual - t_si_eq).abs() < tol,
-            "Case 600 zone {i}: surface ODE did not relax to T_si_eq. \
-             T_si={t_si_actual:.3} °C, T_si_eq={t_si_eq:.3} °C, |Δ|={:.3} °C",
-            (t_si_actual - t_si_eq).abs()
+            error < 0.01,
+            "Case 600 zone {i}: T_si must converge to the HAC equilibrium. \
+             T_si={t_si_actual:.6} °C, T_si_eq={t_si_eq:.6} °C, |Δ|={error:.6} °C"
         );
-
-        // Reference `thermal_cap` so the unused-variable warning doesn't
-        // trigger if the surrounding code is pruned in the future.
-        let _thermal_cap_ref = thermal_cap;
     }
 }
 

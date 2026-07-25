@@ -337,9 +337,8 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         //   T_si_eq = (T_int · h_is + T_m · h_1) / (h_is + h_1)
         //   T_si_new = T_si_eq + (T_si_old − T_si_eq) · exp(−dt / τ_si)
         //
-        // where h_is = h_tr_is and h_1 = 1/R_1 with R_1 = |R_ms − R_is|.
-        // The absolute value keeps the ODE defined for high-mass cases where
-        // the lumped resistance ordering makes the raw difference negative.
+        // where h_is = h_tr_is and h_1 = h_tr_ms because h_tr_ms already
+        // represents the conductance from the mass node to the interior surface.
         //
         // The transient surface flux correction h_is · (T_si − T_si_eq) is
         // added to the scaled air-node numerator below.
@@ -359,28 +358,20 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
             let h_ms_i = h_tr_ms_ref[i];
             let h_is_i = h_tr_is_ref[i];
             if h_ms_i > 0.0 && h_is_i > 0.0 {
-                let r_ms_i = 1.0 / h_ms_i;
-                let r_is_i = 1.0 / h_is_i;
-                let r_1_i = (r_ms_i - r_is_i).abs();
-                if r_1_i > 0.0 {
-                    let h_1_i = 1.0 / r_1_i;
-                    let c_zone_i = thermal_cap_ref[i];
-                    let tau_si = c_zone_i / (h_is_i + h_1_i);
-                    let t_m_i = mass_temp_ref[i];
-                    let t_int_i = zone_temp_ref[i];
-                    let t_si_eq = (t_int_i * h_is_i + t_m_i * h_1_i) / (h_is_i + h_1_i);
-                    let t_si_old_i = wall_surface_old_ref[i];
-                    let t_si_new_i = if tau_si > 0.0 && dt > 0.0 {
-                        t_si_eq + (t_si_old_i - t_si_eq) * (-dt / tau_si).exp()
-                    } else {
-                        t_si_eq
-                    };
-                    wall_surface_new_data.push(t_si_new_i);
-                    wall_surface_correction.push(h_is_i * (t_si_new_i - t_si_eq));
+                let h_1_i = h_ms_i;
+                let c_zone_i = thermal_cap_ref[i];
+                let tau_si = c_zone_i / (h_is_i + h_1_i);
+                let t_m_i = mass_temp_ref[i];
+                let t_int_i = zone_temp_ref[i];
+                let t_si_eq = (t_int_i * h_is_i + t_m_i * h_1_i) / (h_is_i + h_1_i);
+                let t_si_old_i = wall_surface_old_ref[i];
+                let t_si_new_i = if tau_si > 0.0 && dt > 0.0 {
+                    t_si_eq + (t_si_old_i - t_si_eq) * (-dt / tau_si).exp()
                 } else {
-                    wall_surface_new_data.push(wall_surface_old_ref[i]);
-                    wall_surface_correction.push(0.0);
-                }
+                    t_si_eq
+                };
+                wall_surface_new_data.push(t_si_new_i);
+                wall_surface_correction.push(h_is_i * (t_si_new_i - t_si_eq));
             } else {
                 wall_surface_new_data.push(wall_surface_old_ref[i]);
                 wall_surface_correction.push(0.0);

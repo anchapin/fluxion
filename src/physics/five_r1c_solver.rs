@@ -114,47 +114,19 @@ impl FiveR1CSolver {
         self.C_total * self.R_total
     }
 
-    /// Return the surface-to-air time constant τ_si = C·R_1·R_si / (R_1 + R_si)
-    /// where the wall material is symmetrically split: R_1 = R_2 = R_total/2.
+    /// Return the surface-to-air time constant τ_si = C·R_1·R_si / (R_1 + R_si),
+    /// where R_1 = R_total is the material resistance from the mass node to
+    /// the interior surface and R_si is the separate interior film resistance.
     ///
-    /// This is the relaxation time of the **interior surface node** `T_si`
-    /// when the wall is subjected to a step change in either the air
-    /// temperature or the mass node. It governs how quickly the wall's
-    /// interior surface temperature (and therefore the heat flux
-    /// delivered to the zone air through R_si) responds to disturbances.
-    ///
-    /// For ASHRAE 140 Case 600 (50 mm foam board, R_total ≈ 2.0 m²·K/W,
-    /// C_total ≈ 2 100 J/m²K):
-    ///
-    /// ```text
-    /// R_1   = R_total / 2                  ≈ 1.0 m²·K/W
-    /// R_si  = 1 / 8                        ≈ 0.125 m²·K/W
-    /// R_1·R_si / (R_1 + R_si)              ≈ 0.111 m²·K/W
-    /// τ_si  = C · R_1·R_si / (R_1 + R_si)  ≈ 233 s  ≈ 3.9 min
-    /// ```
-    ///
-    /// For ASHRAE 140 Case 900 (200 mm concrete, R_total ≈ 0.143 m²·K/W,
-    /// C_total ≈ 386 400 J/m²K):
-    ///
-    /// ```text
-    /// R_1   = R_total / 2                  ≈ 0.071 m²·K/W
-    /// R_si  = 1 / 8                        ≈ 0.125 m²·K/W
-    /// τ_si  = C · R_1·R_si / (R_1 + R_si)  ≈ 17 600 s  ≈ 4.9 h
-    /// ```
-    ///
-    /// The Case 900 surface-time-constant is roughly the order of the
-    /// 9R4C time constants — large enough to delay heat release into the
-    /// evening and shape the diurnal cooling-load curve. The Case 600
-    /// surface time-constant is small enough that the wall acts like a
-    /// quasi-steady-state conductor at the 1-hour timestep, which is why
-    /// the 9R4C path is required for high-mass cases but the 5R1C
-    /// lumped approximation is acceptable for low-mass cases **once the
-    /// surface ODE is wired** (Issue #1860).
+    /// This is the relaxation time of the interior surface node `T_si` when
+    /// the air or mass-node temperature changes. The wall specification's
+    /// `R_total` excludes surface films, matching the `h_tr_ms = 1 / R_ms`
+    /// contract used by the zone-level 5R1C model.
     pub fn surface_time_constant(&self) -> f64 {
         if !self.initialized || self.R_total <= 0.0 || self.C_total <= 0.0 {
             return 0.0;
         }
-        let r_1 = self.R_total / 2.0;
+        let r_1 = self.R_total;
         let r_si = self.R_si;
         let r_parallel = r_1 * r_si / (r_1 + r_si);
         self.C_total * r_parallel
@@ -165,9 +137,9 @@ impl FiveR1CSolver {
         self.R_si
     }
 
-    /// Return the half-wall resistance R_1 = R_total / 2 [m²·K/W].
+    /// Return the mass-to-interior-surface resistance R_1 = R_total [m²·K/W].
     pub fn r_1(&self) -> f64 {
-        self.R_total / 2.0
+        self.R_total
     }
 
     /// Return the current mass-node temperature [°C].
@@ -849,7 +821,7 @@ mod tests {
     }
 
     /// Surface-node time constant τ_si must equal C·(R_1‖R_si) where
-    /// R_1 = R_total/2 and R_si = 1/8 (interior film). This is the
+    /// R_1 = R_total and R_si = 1/8 (interior film). This is the
     /// relaxation time the Issue #1860 fix uses to evolve the interior
     /// surface temperature `T_si` via exponential ODE.
     #[test]
@@ -865,7 +837,7 @@ mod tests {
 
         let c = spec.thermal_capacity();
         let r_total = spec.total_r_value();
-        let r_1 = r_total / 2.0;
+        let r_1 = r_total;
         let r_si = 1.0 / 8.0;
         let r_parallel = r_1 * r_si / (r_1 + r_si);
         let expected = c * r_parallel;
@@ -876,11 +848,12 @@ mod tests {
             "τ_si must equal C·(R_1‖R_si): τ_si={tau_si:.6e}, expected={expected:.6e}"
         );
 
-        // For Case 900 (200 mm concrete): τ_si ≈ 4.9 h (Issue #1860 reference).
+        // For 200 mm concrete, τ_si is about 7.2 h with the wall-only
+        // mass-to-surface resistance and separate interior film.
         let tau_si_h = tau_si / 3600.0;
         assert!(
-            (3.0..=7.0).contains(&tau_si_h),
-            "Case 900 surface τ_si should be 3-7 h, got {tau_si_h:.3} h"
+            (6.0..=9.0).contains(&tau_si_h),
+            "200 mm concrete surface τ_si should be 6-9 h, got {tau_si_h:.3} h"
         );
     }
 
