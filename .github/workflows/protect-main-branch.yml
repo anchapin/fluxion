@@ -1,0 +1,36 @@
+# Protect main branch — only accept PRs from develop
+#
+# This workflow enforces the repository policy that PRs targeting `main`
+# may only come from the `develop` branch. Feature branches must target
+# `develop`; releases are cut by merging `develop` → `main`.
+#
+# See AGENTS.md → "Branch & PR Conventions" for the full policy.
+
+name: Protect Main Branch
+
+on:
+  pull_request:
+    branches:
+      - main
+
+permissions:
+  contents: read
+  pull-requests: read
+
+jobs:
+  enforce-develop-only:
+    name: Verify PR is from develop
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check head branch
+        if: github.head_ref != 'develop'
+        run: |
+          echo "::error::PRs targeting 'main' are only permitted from the 'develop' branch."
+          echo "::error::Head branch is '${{ github.head_ref }}'."
+          echo "::error::Please target 'develop' instead, or merge your changes into 'develop' first."
+          exit 1
+
+      - name: Pass
+        if: github.head_ref == 'develop'
+        run: |
+          echo "✓ PR is from 'develop' — proceeding."

@@ -11,7 +11,7 @@ projects:
     sessionPrefix: flu
     repo: anchapin/fluxion
     path: /home/alex/Projects/fluxion
-    defaultBranch: main
+    defaultBranch: develop
     agentRules: |-
       Always run tests before pushing.
       Use conventional commits (feat:, fix:, chore:, docs:, refactor:, test:).

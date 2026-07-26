@@ -164,11 +164,17 @@ Heavy Linux jobs honour `vars.FLUXION_LINUX_RUNNER` (self-hosted Hetzner fallbac
 
 ## Branch & PR Conventions
 
-- **`develop`** is the default integration branch. All PRs target it (`gh pr create --base develop`).
-- **`main`** is release-only — no direct PRs except release merges.
+- **`develop`** is the default branch and integration branch.
+  - All new feature branches must be created from `develop`: `git checkout develop && git pull && git checkout -b fix/issue-123`.
+  - All PRs must target `develop`: `gh pr create --base develop`.
+  - Direct pushes to `develop` are prohibited — all changes go through PR review.
+- **`main`** is release-only.
+  - No direct pushes to `main` — branch protection enforces PR-only flow.
+  - PRs targeting `main` are **only permitted from the `develop` branch** (enforced by the `protect-main-branch.yml` workflow). Hotfixes targeting `main` directly from a feature branch will be automatically rejected by CI.
+  - Releases are cut by merging `develop` → `main` via a release PR.
 - `--no-ff` merges preserve history (CONTRIBUTING.md).
 - Conventional commit messages: `fix(scope): …`, `feat(scope): …`, `refactor(scope): …`, `perf(scope): …`, `test(scope): …`, `docs(scope): …`.
-- Never force-push `main`. Hotfixes still go through PR review.
+- Never force-push `main` or `develop`. Hotfixes still go through PR review.
 
 ## Key Files
 
