@@ -1,26 +1,30 @@
 name: Mutation Testing
 
-# Mutation testing (issues #1255, #1260, #1440).
+# Diff-scoped advisory mutation testing (Issue #1891, Solution B).
 #
-# The workspace was split into `fluxion` + `fluxion-core` so that cargo-mutants can
-# target only the main `fluxion` crate while `fluxion-core` is built once and cached.
+# This workflow runs cargo-mutants ONLY on the Rust source files (and
+# specifically the changed *lines*) modified in the current PR, using
+# `cargo mutants --in-diff`.  Because the mutation set is tiny compared to a
+# full-workspace run, it completes in minutes on a standard 32 GB runner and
+# restores a mutation signal on PRs — something that was previously zero
+# because the full suite OOMs even on 32 GB machines.
 #
-# IMPORTANT: src/physics/**, src/ai/**, and src/validation/** are EXCLUDED from
-# mutation analysis in .cargo/mutants.toml (the CANONICAL config — there is no
-# longer a root-level mutants.toml) because those modules have complex generic
-# types (CTF solvers, multi-node solvers, ONNX type hierarchies) that cause OOM
-# during cargo-mutants discovery even on 32 GB runners. The long-term fix (moving
-# physics to fluxion-core) is in docs/mutation_testing_crate_split.md Phase 2.
+# This check is **advisory** (non-blocking): the final step never calls
+# `exit 1` on missed mutants.  Results are posted as a PR comment and uploaded
+# as an artifact so reviewers can judge the mutation score.
+#
+# The comprehensive full-workspace run lives in `mutation-nightly.yml`, which
+# executes the entire suite against `develop` on a 32 GB runner overnight.
 #
 # Run locally (requires 32 GB+ machine):
 #   cargo mutants --config .cargo/mutants.toml -p fluxion --jobs 2 --baseline skip
 #
-# See docs/mutation_testing_crate_split.md for the phased plan to reach the <4GB
-# target (Phase 3 gates `ort`/ONNX behind a feature flag).
+# See docs/mutation_testing_crate_split.md for the phased plan to reach the
+# <4 GB target (Phase 3 gates `ort`/ONNX behind a feature flag).
 
 on:
   push:
-    branches: [main]
+    branches: [main, develop]
   pull_request:
     types: [opened, synchronize, reopened]
     paths:
@@ -30,6 +34,7 @@ on:
       - '.cargo/mutants.toml'
       - '.cargo/config.toml'
       - '.github/workflows/mutation-testing.yml'
+      - 'scripts/mutants_diff_files.sh'
   workflow_dispatch:
     inputs:
       toolchain:
@@ -37,6 +42,11 @@ on:
         required: false
         default: 'stable'
         type: string
+      full_suite:
+        description: 'Run full suite (ignore diff scope)'
+        required: false
+        default: false
+        type: boolean
 
 concurrency:
   group: mutation-testing-${{ github.ref }}
@@ -53,13 +63,15 @@ env:
 
 jobs:
   mutation-testing:
-    name: Mutation Testing
-    # Targets the main `fluxion` crate only; `fluxion-core` is built once and cached
-    # by cargo-mutants, which is what makes this feasible on a 16GB runner.
-    # (Full <4GB support arrives once `ort` is feature-gated — Phase 3.)
-    runs-on: ubuntu-latest-8-cores  # 32GB RAM machine for mutation testing
+    name: Mutation Testing (diff-scoped)
+    # 32 GB runner — still needed because the per-mutant recompile of the main
+    # crate pulls in `ort` (ONNX) types until Phase 3 gates them.  The runner
+    # pool `ubuntu-latest-8-cores` provides 32 GB.
+    runs-on: ubuntu-latest-8-cores
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # full history so the PR diff is resolvable
 
       - name: Install system dependencies
         run: |
@@ -72,28 +84,56 @@ jobs:
       - name: Install cargo-mutants
         run: cargo install cargo-mutants --locked
 
-      - name: Run mutation testing
+      # ── Diff scope (Solution B) ──────────────────────────────────────────
+      # Generate a unified diff of changed .rs files and pass it to
+      # `cargo mutants --in-diff`.  Only mutants inside the changed hunks are
+      # generated, keeping the per-PR runtime to minutes.
+      - name: Generate PR diff scope
+        id: diffscope
+        run: |
+          # For push events (main/develop) there is no PR base — run the full
+          # suite instead of diff-scoping.
+          if [[ "${{ github.event_name }}" != "pull_request" && "${{ inputs.full_suite }}" != "true" ]]; then
+            # On push to main/develop, skip diff-scoped run (the nightly job
+            # handles full coverage).  Set changed=0 so the job skips cleanly.
+            echo "changed=0" >> $GITHUB_OUTPUT
+            echo "info: push event — deferring to nightly full run" >&2
+            exit 0
+          fi
+
+          BASE_REF="${{ github.event.pull_request.base.ref || 'develop' }}"
+          CHANGED=$(bash scripts/mutants_diff_files.sh "origin/$BASE_REF" mutants_diff.patch)
+          echo "changed=$CHANGED" >> $GITHUB_OUTPUT
+          echo "info: $CHANGED changed .rs file(s) in diff scope" >&2
+
+      - name: Run mutation testing (diff-scoped)
         id: mutants
+        if: steps.diffscope.outputs.changed != '0' || inputs.full_suite == true
         env:
           CARGO_INCREMENTAL: "0"
         run: |
-          # --config: explicitly load .cargo/mutants.toml (the canonical config).
-          # --jobs 2: cap parallelism to bound peak RSS to what the 32 GB runner allows.
+          # --config: explicitly load .cargo/mutants.toml (canonical config).
+          # --jobs 2: cap parallelism to bound peak RSS.
           # -p fluxion: mutate only the main crate; fluxion-core is a cached dep.
           # --baseline skip: skip the no-mutant baseline run to save time + memory.
-          # --features ort: opt in to the ONNX runtime so src/ai/** (issue #1294) is
-          #           included in mutation analysis instead of excluded from
-          #           .cargo/mutants.toml. Without `--features ort`, the build
-          #           excludes `ort` entirely (issue #1294) and src/ai/surrogate
-          #           would fail to compile. The default feature set remains []
-          #           so non-AI builds stay slim — see Cargo.toml.
-          # -o mutation_testing_results: write outcomes to the artifact directory.
+          # --features ort: opt in to ONNX so src/ai/** is included (#1294).
+          # --in-diff: restrict mutants to PR-changed lines (Solution B).
           #
-          # NOTE: cargo-mutants returns non-zero exit when any mutant is missed.
-          # We capture the result so the comment + artifact steps always run.
+          # The job is ADVISORY: we capture the exit code and never fail the
+          # workflow on missed mutants (#1891 recommendation — characterize
+          # flake rate before making this blocking).
           set +e
+
+          EXTRA_ARGS=""
+          if [[ "${{ inputs.full_suite }}" == "true" ]]; then
+            echo "info: full_suite input — ignoring diff scope"
+          elif [[ -s mutants_diff.patch ]]; then
+            EXTRA_ARGS="--in-diff mutants_diff.patch"
+          fi
+
           cargo mutants --config .cargo/mutants.toml -p fluxion --jobs 2 \
             --baseline skip --features ort \
+            $EXTRA_ARGS \
             -o mutation_testing_results \
             -- --test-threads=2
           MUTANTS_EXIT=$?
@@ -102,7 +142,7 @@ jobs:
 
       - name: Parse mutation results
         id: results
-        if: always()
+        if: always() && steps.mutants.outcome != 'skipped'
         run: |
           OUTCOMES="mutation_testing_results/outcomes.json"
           if [ ! -f "$OUTCOMES" ]; then
@@ -146,7 +186,7 @@ jobs:
           PYEOF
 
       - name: Generate HTML report
-        if: always()
+        if: always() && steps.mutants.outcome != 'skipped'
         run: |
           mkdir -p mutation_testing_results/reports
           if [ -f mutation_testing_results/outcomes.json ]; then
@@ -154,7 +194,7 @@ jobs:
           fi
 
       - name: Upload mutation test results
-        if: always()
+        if: always() && steps.mutants.outcome != 'skipped'
         uses: actions/upload-artifact@v4
         with:
           name: mutation-results
@@ -163,7 +203,7 @@ jobs:
           retention-days: 30
 
       - name: Post PR comment with mutation summary
-        if: always() && github.event_name == 'pull_request'
+        if: always() && github.event_name == 'pull_request' && steps.mutants.outcome != 'skipped'
         uses: actions/github-script@v7
         env:
           MUTANTS_EXIT: ${{ steps.mutants.outputs.mutants_exit }}
@@ -173,6 +213,7 @@ jobs:
           UNVIABLE: ${{ steps.results.outputs.unviable }}
           TOTAL: ${{ steps.results.outputs.total }}
           HAS_RESULTS: ${{ steps.results.outputs.has_results }}
+          CHANGED: ${{ steps.diffscope.outputs.changed }}
         with:
           script: |
             const caught   = parseInt(process.env.CAUGHT   || '0', 10);
@@ -182,16 +223,19 @@ jobs:
             const total    = parseInt(process.env.TOTAL    || '0', 10);
             const hasResults = process.env.HAS_RESULTS === 'true';
             const mutantsExit = parseInt(process.env.MUTANTS_EXIT || '1', 10);
+            const changedFiles = parseInt(process.env.CHANGED || '0', 10);
 
             const allPassing = mutantsExit === 0 && missed === 0;
 
-            let body = '## Mutation Testing Results\n\n';
+            let body = '## Mutation Testing Results (diff-scoped, advisory)\n\n';
+            body += `> Scoped to ${changedFiles} changed .rs file(s) in this PR (\`cargo mutants --in-diff\`). `;
+            body += `Full-workspace coverage runs nightly on \`develop\`. See \`docs/mutation_testing_crate_split.md\`.\n\n`;
 
             if (!hasResults) {
               body += 'No mutation results were produced (the run may have failed before analysis).\n\n';
               body += '**Artifact**: `mutation-results` (30-day retention)';
             } else {
-              const emoji = allPassing ? 'PASS' : 'FAIL';
+              const emoji = allPassing ? 'PASS' : 'ADVISORY';
               body += `| Metric | Value |\n`;
               body += `|--------|-------|\n`;
               body += `| Caught (killed) | ${caught} |\n`;
@@ -199,10 +243,10 @@ jobs:
               body += `| Timeout | ${timeout} |\n`;
               body += `| Unviable | ${unviable} |\n`;
               body += `| Mutation score | ${total > 0 ? Math.round((caught / total) * 100) : 0}% |\n`;
-              body += `| Status | ${emoji} |\n\n`;
+              body += `| Status | ${emoji} (non-blocking) |\n\n`;
 
               if (missed > 0) {
-                body += `**${missed} mutant(s) survived testing.** Review the artifact for details.\n\n`;
+                body += `**${missed} mutant(s) survived testing** — review the artifact, but this is **advisory** and will not block the PR.\n\n`;
               } else if (allPassing) {
                 body += 'All mutants were caught. ';
               }
@@ -219,8 +263,6 @@ jobs:
               body: body
             });
 
-      - name: Fail job on missed mutants
-        if: always() && steps.mutants.outputs.mutants_exit != '0'
-        run: |
-          echo "::error::cargo-mutants exited with ${{ steps.mutants.outputs.mutants_exit }} (missed or timed-out mutants detected)"
-          exit 1
+      # NOTE: Intentionally NO "fail on missed mutants" step.
+      # This check is advisory (#1891). The job succeeds regardless of the
+      # mutation score so it can be added as a non-blocking status check.

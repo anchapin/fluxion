@@ -1,13 +1,22 @@
 # cargo-mutants configuration for fluxion
 # See https://mutants.rs/config.html
 #
-# Issue #1244: Mutation testing is DISABLED on CI due to cargo-mutants OOM.
-# cargo-mutants 27.x requires ~28GB RAM to analyze fluxion's type hierarchies.
-# Standard CI runners have 7GB RAM. See workflow file for details.
+# Issue #1891: Mutation testing uses a DUAL-PIPELINE strategy:
+#   1. PR check (mutation-testing.yml) — diff-scoped via `cargo mutants --in-diff`,
+#      advisory (non-blocking), runs only on changed lines.
+#   2. Nightly full suite (mutation-nightly.yml) — runs this config in full
+#      against `develop` on a 32 GB runner.
 #
-# To run mutation testing manually (requires 32GB+ RAM machine):
+# Issue #1244: The full-workspace suite requires ~28 GB RAM (cargo-mutants 27.x
+# analyzing fluxion's type hierarchies). The diff-scoped PR check sidesteps
+# this by mutating only changed lines, keeping per-PR runtime to minutes.
+#
+# To run mutation testing manually (requires 32GB+ RAM for full suite):
 #   cargo install cargo-mutants --locked
 #   cargo mutants
+# Diff-scoped (any machine):
+#   scripts/mutants_diff_files.sh origin/develop mutants_diff.patch
+#   cargo mutants --config .cargo/mutants.toml -p fluxion --in-diff mutants_diff.patch
 
 # Skip common allocator-sizes patterns that don't represent real bugs
 skip_calls = ["with_capacity", "new", "default"]

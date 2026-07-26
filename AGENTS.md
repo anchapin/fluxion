@@ -133,6 +133,7 @@ ML-surrogate swap-point traits:
 - `Fluxion Determinism Gate (Issue #1351)` — listener on Cross-Platform Determinism CI workflow
 - `Fluxion Performance Gate (Issue #1618)` — listener on Performance Dashboard workflow
 - `Architecture Drift Detection` (nightly + on `src/**/*.rs` / `ARCHITECTURE.md` changes) — `scripts/check_architecture_drift.py`
+- `Mutation Testing (advisory)` (Issue #1891) — diff-scoped `cargo mutants --in-diff` PR check; non-blocking. `Mutation Testing (nightly)` runs the full suite against `develop`.
 
 Heavy Linux jobs honour `vars.FLUXION_LINUX_RUNNER` (self-hosted Hetzner fallback; see `docs/self-hosted-runners.md`).
 
@@ -149,7 +150,7 @@ Heavy Linux jobs honour `vars.FLUXION_LINUX_RUNNER` (self-hosted Hetzner fallbac
 ## Toolchain Quirks
 
 - **`rust-toolchain.toml`** pins **stable** + rustfmt + clippy. `.rustfmt.toml` sets `edition = "2021"` — without it rustfmt falls back to 2015 and breaks on `?`/`async`. Stable rustfmt does NOT support `exclude`; auto-generated fixture data must use `#[rustfmt::skip]` per-item (see `tests/per_tilt_per_azimuth_fixture_data.rs`).
-- **Mutation testing (`cargo mutants`)**: requires **32 GB+ RAM**. `.cargo/mutants.toml` excludes combinatorial physics files (`state_space_ctf`, `multi_node_solver`, `ctf_coefficients`, `fd_*`, `ctf_*`, `geometry_tensor`, `cta`, `thermal_mass/**`) and the entire `src/validation/**` tree. Run manually: `cargo mutants --config .cargo/mutants.toml -p fluxion --jobs 2 --baseline skip`.
+- **Mutation testing (`cargo mutants`)**: requires **32 GB+ RAM** for the full suite. `.cargo/mutants.toml` excludes combinatorial physics files (`state_space_ctf`, `multi_node_solver`, `ctf_coefficients`, `fd_*`, `ctf_*`, `geometry_tensor`, `cta`, `thermal_mass/**`) and the entire `src/validation/**` tree. **Dual-pipeline** (Issue #1891): (1) *Diff-scoped advisory PR check* — `mutation-testing.yml` runs `cargo mutants --in-diff` on only the changed lines, completing in minutes on a standard 32 GB runner (non-blocking). (2) *Nightly full suite* — `mutation-nightly.yml` runs the entire workspace against `develop` at 07:00 UTC on a 32 GB runner (self-hosted Hetzner when `vars.FLUXION_LINUX_RUNNER` is set). Run manually: `cargo mutants --config .cargo/mutants.toml -p fluxion --jobs 2 --baseline skip`. See `docs/mutation_testing_crate_split.md` for the Phase 3/4 root-cause fix (gate `ort`/ONNX → <4 GB target).
 - **Feature flags** (default = none): `python-bindings`, `napi-bindings`, `ort` (alias `onnx`), `cuda`, `wiring-tracing`, `multi-zone`, `ashrae_140_v2021`, `pr821-diag`, `loom`, `dwave`. Default builds skip the ONNX runtime — opt in via `--features ort` for AI surrogate / mutation tests.
 - **Crate size**: `Cargo.toml` `exclude` + `.cargoignore` strip `refdata/`, `data/`, `models/`, `assets/`, `tests/`, `docs/`, `target/`, `Cargo.lock`, etc. Published crate must stay under 10 MB.
 - **Two CONTRIBUTING.md files** (root + `docs/CONTRIBUTING.md`) — root is the active short form; `docs/CONTRIBUTING.md` has the long-form guide.
@@ -199,3 +200,6 @@ Heavy Linux jobs honour `vars.FLUXION_LINUX_RUNNER` (self-hosted Hetzner fallbac
 | `scripts/check_architecture_drift.py` | ARCHITECTURE.md vs source-code drift |
 | `scripts/check_ashrae_cases_cycle.py` | `sim ↔ validation` cycle regression guard |
 | `scripts/release_gate_checker.py` | Validates `release_gates.yaml` gates against current results |
+| `scripts/mutants_diff_files.sh` | Extracts changed `.rs` files for diff-scoped mutation testing (`--in-diff`) |
+| `.github/workflows/mutation-testing.yml` | Advisory diff-scoped mutation PR check (Issue #1891) |
+| `.github/workflows/mutation-nightly.yml` | Nightly full-workspace mutation suite against `develop` (Issue #1891) |
