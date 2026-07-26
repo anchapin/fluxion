@@ -104,12 +104,15 @@ jobs:
         # `HybridThermalModel` + `HybridRouting` path against synthetic
         # FLEXLAB-style measurements and asserts the hybrid MAE stays
         # within 10% of the physics-only MAE (ASHRAE Guideline 14 NMBE).
-        # Filter `_hybrid_empirical` is precise — no other test in the
-        # workspace shares this suffix.
+        # No name filter — `--test` already scopes to this one binary,
+        # and the coverage check below verifies all 5 expected test
+        # names are present. The old `_hybrid_empirical` filter excluded
+        # `test_hybrid_all_physics_matches_physics_baseline` and
+        # `test_routing_summary_is_stable` which don't contain that
+        # substring (fixes CI coverage-check failure).
         run: |
           cargo test --release --verbose \
             --test validation_hybrid_empirical_test \
-            _hybrid_empirical \
             2>&1 | tee -a /tmp/hybrid_empirical_output.txt
           echo "---"
           echo "exit_code=$?"
