@@ -18,6 +18,11 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Install system dependencies
+        uses: ./.github/actions/install-system-deps
+        with:
+          packages: libssl-dev,pkg-config,libfontconfig1-dev,fontconfig
+
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
         with:
