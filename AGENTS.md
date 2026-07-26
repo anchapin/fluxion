@@ -41,7 +41,9 @@ fluxion-core/                 # workspace member (leaf modules, no sim/physics/a
 fluxion-mcp/                  # STANDALONE crate (NOT in workspace) — Model Context Protocol server
 ```
 
-**Cycle-breaking rule**: `fluxion-core/src/**/*.rs` must NOT import `crate::sim_*`, `crate::physics_*`, `crate::ai_*`, or `crate::validation_*`. CI enforces this via `scripts/check_ashrae_cases_cycle.py` (#1441). The `sim::assembly` and `sim::multi_node_thermal` paths in `src/sim/` are now thin re-export shims — keep them that way.
+**Cycle-breaking rule** (enforced by CI via `scripts/check_ashrae_cases_cycle.py`, #1441): `fluxion-core/src/**/*.rs` must NOT import `crate::sim_*`, `crate::physics_*`, `crate::ai_*`, or `crate::validation_*`. The `sim::assembly` and `sim::multi_node_thermal` paths in `src/sim/` are thin re-export shims — keep them that way.
+
+**`fluxion-mcp`** is a standalone crate (NOT in the cargo workspace) but depends on `fluxion` from the parent path. It is built/tested separately from the main crate.
 
 Re-export paths preserved across the crate split: `crate::weather::*`, `crate::assembly::*`, `crate::multi_node::*`, `crate::ashrae_cases::*`, `crate::sim::assembly::*`, `crate::sim::multi_node_thermal::*`, `crate::validation::ashrae_140_cases::Orientation`.
 
