@@ -707,3 +707,162 @@ def _import_example(class_name: str):
     finally:
         if added:
             sys.path.remove(measures_path)
+
+
+# ---------------------------------------------------------------------------
+# Provenance — AppliedDelta tracking (Issue #1816)
+# ---------------------------------------------------------------------------
+
+
+class TestAppliedDeltasProvenance:
+    """Issue #1816 — the AOT runner records a provenance chain.
+
+    These tests exercise the pure-Python provenance surface
+    (:func:`make_applied_delta`, :func:`digest_of_json_payload`, the
+    ``applied_deltas`` out-param on :func:`apply_measures`, and the
+    ``applied_deltas`` embedding in :func:`model_to_dict` / :func:`save_model`).
+    They do not require the native bindings unless they touch a real
+    ``fluxion.Model``.
+    """
+
+    def test_make_applied_delta_shape(self):
+        from fluxion.measures import (
+            SOURCE_PYTHON_MEASURE,
+            make_applied_delta,
+        )
+
+        entry = make_applied_delta(SOURCE_PYTHON_MEASURE, "AddOverhang")
+        assert entry["source"] == "python_measure"
+        assert entry["name"] == "AddOverhang"
+        assert "timestamp" in entry and entry["timestamp"]
+        # digest is optional and omitted when None.
+        assert "digest" not in entry
+
+        entry2 = make_applied_delta(
+            "json_patch", "p.json", digest="abc123", timestamp="2026-01-01T00:00:00+00:00"
+        )
+        assert entry2["source"] == "json_patch"
+        assert entry2["digest"] == "abc123"
+        assert entry2["timestamp"] == "2026-01-01T00:00:00+00:00"
+
+    def test_digest_of_json_payload_is_stable(self):
+        from fluxion.measures import digest_of_json_payload
+
+        a = digest_of_json_payload({"b": 1, "a": 2})
+        b = digest_of_json_payload({"a": 2, "b": 1})
+        assert a == b, "key order must not affect the digest"
+        assert len(a) == 64, "SHA-256 hex"
+        assert a != digest_of_json_payload({"a": 2, "b": 3})
+
+    def test_apply_measures_appends_applied_deltas(self):
+        from fluxion import FluxionMeasure
+        from fluxion.measures import (
+            SOURCE_PYTHON_MEASURE,
+            apply_measures,
+        )
+
+        order: list[str] = []
+
+        class A(FluxionMeasure):
+            def apply(self, model, arguments):
+                order.append("A")
+
+        class B(FluxionMeasure):
+            def apply(self, model, arguments):
+                order.append("B")
+
+        m = _StubModel()
+        chain: list[dict] = []
+        applied = apply_measures(m, [A, B], applied_deltas=chain)
+
+        # Return value is unchanged (backward compatible).
+        assert applied == ["A", "B"]
+        assert order == ["A", "B"]
+        # Provenance chain has one entry per measure, in order.
+        assert len(chain) == 2
+        assert [e["name"] for e in chain] == ["A", "B"]
+        assert all(e["source"] == SOURCE_PYTHON_MEASURE for e in chain)
+        # Timestamps are populated and monotonic (ISO-8601 sorts correctly).
+        assert chain[0]["timestamp"] <= chain[1]["timestamp"]
+
+    def test_apply_measures_without_chain_is_backward_compatible(self):
+        from fluxion import FluxionMeasure
+        from fluxion.measures import apply_measures
+
+        class M(FluxionMeasure):
+            def apply(self, model, arguments):
+                pass
+
+        m = _StubModel()
+        # No applied_deltas kwarg -> behaves exactly as before.
+        applied = apply_measures(m, [M])
+        assert applied == ["M"]
+
+    @requires_fluxion
+    def test_save_model_embeds_applied_deltas(self, tmp_path):
+        from fluxion.measures import make_applied_delta, save_model
+
+        fluxion_mod = importlib.import_module("fluxion")
+        model = fluxion_mod.Model(num_zones=1)
+        chain = [
+            make_applied_delta("json_patch", "volume.json", digest="deadbeef"),
+            make_applied_delta("python_measure", "AddSouthOverhang"),
+        ]
+        out_path = tmp_path / "results.json"
+        save_model(model, out_path, applied_deltas=chain)
+
+        payload = json.loads(out_path.read_text())
+        assert "applied_deltas" in payload
+        embedded = payload["applied_deltas"]
+        assert [e["name"] for e in embedded] == ["volume.json", "AddSouthOverhang"]
+        assert embedded[0]["source"] == "json_patch"
+        assert embedded[1]["source"] == "python_measure"
+
+    @requires_fluxion
+    def test_cli_output_contains_applied_deltas(self, tmp_path):
+        fluxion_mod = importlib.import_module("fluxion")
+        from fluxion.measures import save_model
+
+        base = fluxion_mod.Model(num_zones=1)
+        base_path = tmp_path / "base.json"
+        save_model(base, base_path)
+
+        out_path = tmp_path / "results.json"
+        result = _run_fluxion_cli(
+            "apply-measures",
+            "--model", str(base_path),
+            "--measures", str(MEASURES_DIR),
+            "--output", str(out_path),
+        )
+        assert result.returncode == 0, result.stderr
+
+        payload = json.loads(out_path.read_text())
+        # The payload carries the chain at the top level...
+        assert "applied_deltas" in payload
+        names = [e["name"] for e in payload["applied_deltas"]]
+        assert "AddSouthOverhang" in names
+        assert "SetHVACCOP" in names
+        assert all(e["source"] == "python_measure" for e in payload["applied_deltas"])
+        # ...and the _fluxion_run summary echoes it too.
+        assert "applied_deltas" in payload["_fluxion_run"]
+        assert len(payload["_fluxion_run"]["applied_deltas"]) == len(names)
+
+
+class _StubModel:
+    """Minimal stand-in for ``fluxion.Model`` for pure-Python tests.
+
+    ``apply_measures`` only calls ``instance.apply(model, args)`` and the
+    runtime guard; it never introspects the model, so a bare object suffices
+    for provenance-ordering tests that don't need the native bindings.
+    """
+
+
+def _run_fluxion_cli(*args: str) -> subprocess.CompletedProcess:
+    """Invoke ``python -m fluxion.cli`` from the repo root."""
+    return subprocess.run(
+        [sys.executable, "-m", "fluxion.cli", *args],
+        capture_output=True,
+        text=True,
+        cwd=str(REPO_ROOT),
+    )
+

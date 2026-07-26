@@ -39,6 +39,8 @@ See :mod:`fluxion.cli` for the ``fluxion apply-measures`` entrypoint.
 
 from __future__ import annotations
 
+import datetime as _dt
+import hashlib
 import importlib.util
 import inspect
 import json
@@ -273,6 +275,73 @@ _SENTINEL: Any = object()
 
 
 # =============================================================================
+# Provenance — AppliedDelta tracking (Issue #1816)
+# =============================================================================
+#
+# Every mutation applied to a model (a JSON Patch from Issue #1811 or a Python
+# Measure from Issue #1814) is recorded as an ``AppliedDelta`` dict so the final
+# ``results.json`` / serialized output can reconstruct the provenance chain.
+# The schema mirrors the Rust ``fluxion::measures::provenance::AppliedDelta``
+# struct exactly (``source`` / ``name`` / ``timestamp`` / ``digest``).
+
+#: Stable source tags — must match the Rust ``DeltaSource`` snake_case serde tags.
+SOURCE_JSON_PATCH = "json_patch"
+SOURCE_PYTHON_MEASURE = "python_measure"
+
+
+def _now_iso8601() -> str:
+    """Return the current UTC instant as an ISO-8601 string.
+
+    The Python AOT runner is *not* subject to the Rust determinism gate
+    (Issue #1351), so a real wall-clock timestamp is appropriate here. The
+    pure-Rust ``apply_delta`` path uses a deterministic logical sequence
+    instead (see ``src/measures/provenance.rs``).
+    """
+    return _dt.datetime.now(_dt.timezone.utc).isoformat(timespec="seconds")
+
+
+def make_applied_delta(
+    source: str,
+    name: str,
+    digest: str | None = None,
+    *,
+    timestamp: str | None = None,
+) -> dict[str, Any]:
+    """Build a single ``AppliedDelta`` provenance entry.
+
+    Parameters
+    ----------
+    source : str
+        One of :data:`SOURCE_JSON_PATCH` / :data:`SOURCE_PYTHON_MEASURE`.
+    name : str
+        Identifier of the patch file or measure class.
+    digest : str, optional
+        SHA-256 (hex) of the patch payload, or ``None`` when there is no
+        deterministic payload to hash.
+    timestamp : str, optional
+        ISO-8601 wall-clock instant. Defaults to the current UTC time.
+    """
+    entry: dict[str, Any] = {
+        "source": source,
+        "name": name,
+        "timestamp": timestamp if timestamp is not None else _now_iso8601(),
+    }
+    if digest is not None:
+        entry["digest"] = digest
+    return entry
+
+
+def digest_of_json_payload(payload: Any) -> str:
+    """Compute a stable SHA-256 hex digest of a JSON-serialisable payload.
+
+    The payload is serialised with ``sort_keys=True`` so two semantically
+    equal payloads with different key insertion order hash identically.
+    """
+    blob = json.dumps(payload, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    return hashlib.sha256(blob).hexdigest()
+
+
+# =============================================================================
 # Model serialization (AOT file format)
 # =============================================================================
 
@@ -281,18 +350,26 @@ _SENTINEL: Any = object()
 SCHEMA_VERSION = "1.0.0"
 
 
-def model_to_dict(model: Any) -> dict[str, Any]:
+def model_to_dict(
+    model: Any,
+    applied_deltas: list[dict[str, Any]] | None = None,
+) -> dict[str, Any]:
     """Serialize a ``fluxion.Model`` to a JSON-compatible dict.
 
     Uses the snapshot API (``model.zones()``, ``model.surfaces()``,
     ``model.hvac_system()``) so the output is consistent with the
     PyO3 ownership contract described in ``docs/bindings.md``.
 
-    The schema is intentionally minimal and versioned — see
-    :data:`SCHEMA_VERSION`. The Rust runtime today does not yet consume this
-    format directly; the serialized file is meant for round-tripping through
-    :func:`dict_to_model` and for CI smoke tests that verify a measure chain
-    is idempotent.
+    Parameters
+    ----------
+    model : fluxion.Model
+        The model to snapshot.
+    applied_deltas : list of dict, optional
+        Provenance chain (Issue #1816). Each entry is an ``AppliedDelta`` dict
+        built by :func:`make_applied_delta`. When provided, it is embedded in
+        the output under the ``applied_deltas`` key so downstream consumers can
+        reconstruct the provenance chain. Omitted from the output when ``None``
+        or empty.
     """
     zones = [
         {
@@ -308,7 +385,7 @@ def model_to_dict(model: Any) -> dict[str, Any]:
     ]
     flat_surfaces = [_surface_to_dict(s) for s in model.surfaces()]
     hvac = model.hvac_system()
-    return {
+    payload: dict[str, Any] = {
         "schema_version": SCHEMA_VERSION,
         "num_zones": model.num_zones(),
         "temperatures": list(model.get_temperatures()),
@@ -327,6 +404,9 @@ def model_to_dict(model: Any) -> dict[str, Any]:
             "supply_air_temp": hvac.supply_air_temp,
         },
     }
+    if applied_deltas:
+        payload["applied_deltas"] = applied_deltas
+    return payload
 
 
 def dict_to_model(payload: dict[str, Any]) -> Any:
@@ -457,14 +537,25 @@ def _dict_to_hvac(d: dict[str, Any]) -> Any:
     )
 
 
-def save_model(model: Any, path: str | os.PathLike[str]) -> None:
+def save_model(
+    model: Any,
+    path: str | os.PathLike[str],
+    applied_deltas: list[dict[str, Any]] | None = None,
+) -> None:
     """Write a model to disk as JSON (or msgpack if ``msgpack`` is installed).
 
     The output format is selected by file extension: ``.json`` -> JSON,
     ``.msgpack`` -> msgpack (if available; falls back to JSON if msgpack is
     not importable). All other extensions default to JSON for safety.
+
+    Parameters
+    ----------
+    applied_deltas : list of dict, optional
+        Provenance chain (Issue #1816). Embedded under ``applied_deltas`` in
+        the serialized payload when non-empty, so downstream consumers can
+        reconstruct which Deltas/Measures produced the model.
     """
-    payload = model_to_dict(model)
+    payload = model_to_dict(model, applied_deltas=applied_deltas)
     target = Path(path)
     suffix = target.suffix.lower()
     if suffix == ".msgpack":
@@ -608,6 +699,7 @@ def apply_measures(
     model: Any,
     measures: Iterable[type[FluxionMeasure] | FluxionMeasure],
     measure_args: dict[str, dict[str, Any]] | None = None,
+    applied_deltas: list[dict[str, Any]] | None = None,
 ) -> list[str]:
     """Apply each measure in sequence to ``model``, mutating it in place.
 
@@ -627,6 +719,11 @@ def apply_measures(
         Mapping of ``measure.name`` -> parsed arguments dict. Measures not
         present in the mapping receive an empty dict (which is then merged
         with declared defaults via :meth:`FluxionMeasure.parse_arguments`).
+    applied_deltas : list, optional
+        Provenance accumulator (Issue #1816). When provided, a
+        :func:`make_applied_delta` entry is appended for each measure *after*
+        it runs successfully, so the caller can embed the chain in
+        ``results.json`` via :func:`save_model`. The list is mutated in place.
     """
     measure_args = measure_args or {}
     applied: list[str] = []
@@ -642,17 +739,28 @@ def apply_measures(
         raw = measure_args.get(instance.name, {}) or {}
         args = instance.parse_arguments(raw)
         instance.apply(model, args)
-        applied.append(instance.name or instance.__class__.__name__)
+        measure_name = instance.name or instance.__class__.__name__
+        applied.append(measure_name)
+        # Record provenance (Issue #1816): a Python measure has no
+        # deterministic patch payload to hash, so digest is None.
+        if applied_deltas is not None:
+            applied_deltas.append(
+                make_applied_delta(SOURCE_PYTHON_MEASURE, measure_name)
+            )
     return applied
 
 
 __all__ = [
     "FluxionMeasure",
     "SCHEMA_VERSION",
+    "SOURCE_JSON_PATCH",
+    "SOURCE_PYTHON_MEASURE",
     "apply_measures",
+    "digest_of_json_payload",
     "discover_measures",
     "dict_to_model",
     "load_model",
+    "make_applied_delta",
     "model_to_dict",
     "save_model",
 ]

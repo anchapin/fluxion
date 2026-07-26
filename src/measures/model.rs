@@ -66,6 +66,8 @@
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
+use crate::measures::provenance::{digest_of_patch, AppliedDelta, DeltaSource};
+
 /// Marker for the measures schema format.
 ///
 /// Bumping this string is a breaking change for any persisted Delta / model
@@ -188,6 +190,17 @@ pub struct FluxionModel {
     /// Assemblies keyed by stable identifier (e.g. `"wall_1"`).
     #[serde(default)]
     pub assemblies: BTreeMap<String, AssemblySpec>,
+
+    /// Provenance chain — every Delta (JSON Patch or Python Measure) applied
+    /// to this model, in application order (Issue #1816).
+    ///
+    /// Empty for a freshly-constructed model. Each successful
+    /// [`crate::measures::json_patch::apply_delta`] call appends one entry;
+    /// Python Measures append via [`FluxionModel::record_python_measure`].
+    /// The field is omitted from serialized JSON when empty, so existing
+    /// serialized models round-trip unchanged.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub applied_deltas: Vec<AppliedDelta>,
 }
 
 fn default_schema_version() -> String {
@@ -204,6 +217,7 @@ impl Default for FluxionModel {
             zones: BTreeMap::new(),
             constructions: BTreeMap::new(),
             assemblies: BTreeMap::new(),
+            applied_deltas: Vec::new(),
         }
     }
 }
@@ -299,6 +313,7 @@ impl FluxionModel {
             zones,
             constructions,
             assemblies,
+            applied_deltas: Vec::new(),
         }
     }
 
@@ -354,6 +369,7 @@ impl FluxionModel {
             zones,
             constructions: BTreeMap::new(),
             assemblies,
+            applied_deltas: Vec::new(),
         }
     }
 
@@ -372,6 +388,71 @@ impl FluxionModel {
         self.assemblies
             .get(assembly)
             .map(AssemblySpec::total_r_value)
+    }
+
+    // ------------------------------------------------------------------
+    // Provenance (Issue #1816)
+    // ------------------------------------------------------------------
+
+    /// The provenance chain — every Delta applied to this model, in order.
+    ///
+    /// This is a borrowed view over [`FluxionModel::applied_deltas`]; use the
+    /// `record_*` methods to append entries.
+    pub fn applied_deltas(&self) -> &[AppliedDelta] {
+        &self.applied_deltas
+    }
+
+    /// Append a fully-constructed [`AppliedDelta`] entry.
+    ///
+    /// Low-level escape hatch; prefer [`Self::record_json_patch`] or
+    /// [`Self::record_python_measure`] which assign a deterministic logical
+    /// timestamp automatically.
+    pub fn push_applied_delta(&mut self, entry: AppliedDelta) {
+        self.applied_deltas.push(entry);
+    }
+
+    /// Record a JSON Patch mutation (Issue #1811) in the provenance chain.
+    ///
+    /// `name` is a caller-supplied identifier (e.g. the patch file path); the
+    /// SHA-256 `digest` of the patch payload is computed automatically when the
+    /// [`json_patch::Patch`] is supplied. When the caller only has a name (no
+    /// payload), pass `record_json_patch_named(name, None)`.
+    pub fn record_json_patch(&mut self, name: &str, patch: &json_patch::Patch) {
+        let digest = digest_of_patch(patch);
+        let seq = self.applied_deltas.len();
+        self.applied_deltas
+            .push(AppliedDelta::new_json_patch(name, digest, seq));
+    }
+
+    /// Record a JSON Patch mutation with an explicit (or absent) digest.
+    ///
+    /// Use this when the digest is already known (e.g. computed upstream) or
+    /// when there is no patch payload to hash.
+    pub fn record_json_patch_named(&mut self, name: &str, digest: Option<String>) {
+        let seq = self.applied_deltas.len();
+        self.applied_deltas
+            .push(AppliedDelta::new_json_patch(name, digest, seq));
+    }
+
+    /// Record a Python Measure mutation (Issue #1814) in the provenance chain.
+    ///
+    /// Python measures mutate the PyO3 model via the snapshot API, so there is
+    /// no deterministic patch payload — `digest` is usually `None`.
+    pub fn record_python_measure(&mut self, name: &str, digest: Option<String>) {
+        let seq = self.applied_deltas.len();
+        self.applied_deltas
+            .push(AppliedDelta::new_python_measure(name, digest, seq));
+    }
+
+    /// Remove all provenance entries. Rarely needed — useful for tests that
+    /// need a model with a clean chain after mutating it.
+    pub fn clear_applied_deltas(&mut self) {
+        self.applied_deltas.clear();
+    }
+
+    /// Returns `true` if any entry in the chain has the given source.
+    pub fn has_delta_source(&self, source: DeltaSource) -> bool {
+        self.applied_deltas.iter().any(|d| d.source == source)
     }
 }
 
@@ -443,5 +524,72 @@ mod tests {
     fn missing_assembly_returns_none() {
         let model = FluxionModel::default();
         assert!(model.assembly_total_r_value("nonexistent").is_none());
+    }
+
+    // ------------------------------------------------------------------
+    // Provenance (Issue #1816)
+    // ------------------------------------------------------------------
+
+    #[test]
+    fn fresh_model_has_empty_applied_deltas() {
+        let model = FluxionModel::ashrae_140_case_600();
+        assert!(model.applied_deltas().is_empty());
+        // Serialized form omits the empty field.
+        let v: serde_json::Value = serde_json::to_value(&model).unwrap();
+        assert!(v.get("applied_deltas").is_none());
+    }
+
+    #[test]
+    fn record_methods_append_in_order() {
+        let mut model = FluxionModel::default();
+        model.record_json_patch_named("patch_a", Some("deadbeef".to_string()));
+        model.record_python_measure("AddOverhang", None);
+        model.record_json_patch_named("patch_b", None);
+
+        let chain = model.applied_deltas();
+        assert_eq!(chain.len(), 3);
+        assert_eq!(chain[0].name, "patch_a");
+        assert_eq!(chain[0].source, super::DeltaSource::JsonPatch);
+        assert_eq!(chain[1].name, "AddOverhang");
+        assert_eq!(chain[1].source, super::DeltaSource::PythonMeasure);
+        assert_eq!(chain[2].name, "patch_b");
+    }
+
+    #[test]
+    fn logical_timestamps_are_monotonic() {
+        let mut model = FluxionModel::default();
+        model.record_python_measure("a", None);
+        model.record_python_measure("b", None);
+        let chain = model.applied_deltas();
+        assert!(chain[0].timestamp < chain[1].timestamp);
+    }
+
+    #[test]
+    fn applied_deltas_round_trip_through_json() {
+        let mut model = FluxionModel::ashrae_140_case_900();
+        model.record_json_patch_named("insulation_r_value", Some("abc123".to_string()));
+        model.record_python_measure("AddSouthOverhang", None);
+
+        let json = serde_json::to_string(&model).unwrap();
+        let parsed: FluxionModel = serde_json::from_str(&json).unwrap();
+        assert_eq!(model, parsed);
+        assert_eq!(parsed.applied_deltas().len(), 2);
+    }
+
+    #[test]
+    fn has_delta_source_filters() {
+        let mut model = FluxionModel::default();
+        model.record_python_measure("M", None);
+        assert!(model.has_delta_source(super::DeltaSource::PythonMeasure));
+        assert!(!model.has_delta_source(super::DeltaSource::JsonPatch));
+    }
+
+    #[test]
+    fn clear_applied_deltas_empties_chain() {
+        let mut model = FluxionModel::default();
+        model.record_python_measure("M", None);
+        assert_eq!(model.applied_deltas().len(), 1);
+        model.clear_applied_deltas();
+        assert!(model.applied_deltas().is_empty());
     }
 }
