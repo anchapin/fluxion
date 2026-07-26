@@ -811,4 +811,389 @@ mod tests {
             }
         }
     }
+
+    // -------------------------------------------------------------------------
+    // Mock annealer for round-trip fidelity tests (Issue #1774)
+    // -------------------------------------------------------------------------
+
+    /// Mock annealer that returns the exact canonical solution for the Ising
+    /// problem it was created with. The canonical solution is the one encoded
+    /// from the manifold's `scalar_field` via fixed-point binary expansion —
+    /// it exactly represents the original continuous temperature vector.
+    ///
+    /// This mock is CI-safe (no live hardware required) and deterministic
+    /// (always returns the same solution for the same problem). It exercises
+    /// the full encode → submit → decode round-trip without fidelity loss.
+    #[derive(Debug, Clone)]
+    struct MockAnnealer {
+        expected_solution: SpinVector,
+        name: String,
+    }
+
+    impl MockAnnealer {
+        fn new(ising: &IsingProblem, canonical_solution: &[u8]) -> Self {
+            let s: SpinVector = canonical_solution
+                .iter()
+                .map(|&b| if b == 0 { -1 } else { 1 })
+                .collect();
+            Self {
+                expected_solution: s,
+                name: "MockAnnealer (canonical)".to_string(),
+            }
+        }
+    }
+
+    impl DwaveClient for MockAnnealer {
+        fn submit_ising(&self, _ising: &IsingProblem) -> DwaveResult<SpinVector> {
+            Ok(self.expected_solution.clone())
+        }
+
+        fn evaluate_ising(&self, ising: &IsingProblem, spin: &SpinVector) -> DwaveResult<f64> {
+            Ok(ising.evaluate(spin))
+        }
+
+        fn sampler_name(&self) -> DwaveResult<String> {
+            Ok(self.name.clone())
+        }
+
+        fn is_connected(&self) -> bool {
+            true
+        }
+    }
+
+    /// Greedy mock annealer that finds a local optimum via single-bit flips.
+    /// Starts from all-zeros spin vector and iteratively flips each bit if it
+    /// improves the energy. Runs until a full pass with no improvement.
+    ///
+    /// This is more realistic than returning the exact optimum — it finds a
+    /// local optimum that may differ from the canonical solution, allowing us
+    /// to verify the decoded energy is still close to the true minimum.
+    #[derive(Debug, Clone)]
+    struct GreedyAnnealer {
+        solution: SpinVector,
+        energy: f64,
+        name: String,
+    }
+
+    impl GreedyAnnealer {
+        fn new(ising: &IsingProblem) -> Self {
+            let n = ising.num_variables;
+            let mut spin = vec![-1_i8; n];
+            let mut energy = ising.evaluate(&spin);
+
+            let mut improved = true;
+            while improved {
+                improved = false;
+                for i in 0..n {
+                    spin[i] *= -1;
+                    let new_energy = ising.evaluate(&spin);
+                    if new_energy < energy {
+                        energy = new_energy;
+                        improved = true;
+                    } else {
+                        spin[i] *= -1;
+                    }
+                }
+            }
+
+            Self {
+                solution: spin,
+                energy,
+                name: "GreedyAnnealer (local optimum)".to_string(),
+            }
+        }
+    }
+
+    impl DwaveClient for GreedyAnnealer {
+        fn submit_ising(&self, _ising: &IsingProblem) -> DwaveResult<SpinVector> {
+            Ok(self.solution.clone())
+        }
+
+        fn evaluate_ising(&self, ising: &IsingProblem, spin: &SpinVector) -> DwaveResult<f64> {
+            Ok(ising.evaluate(spin))
+        }
+
+        fn sampler_name(&self) -> DwaveResult<String> {
+            Ok(self.name.clone())
+        }
+
+        fn is_connected(&self) -> bool {
+            true
+        }
+    }
+
+    /// Full QUBO → annealer → decode round-trip fidelity test for 5R1C.
+    ///
+    /// Verifies that a known manifold (with known `scalar_field`) can be:
+    ///   1. Encoded into a QUBO problem
+    ///   2. Submitted to a mock annealer
+    ///   3. Decoded back to temperatures
+    ///   4. Verified to match the original within ±0.5 LSB (quantization error)
+    ///
+    /// The mock annealer returns the exact canonical solution, so the decoded
+    /// temperatures must equal the original manifold's scalar_field exactly
+    /// (within floating-point rounding).
+    #[test]
+    fn test_qubo_annealer_fidelity_5r1c() {
+        use crate::physics::geometry_tensor::MANIFOLD_DIM;
+        use crate::quantum::qubo_mapping::{
+            decode_temperatures, encode_temperatures, lsb_resolution_celsius, manifold_to_qubo,
+            QuboConfig,
+        };
+
+        // 5R1C manifold with known temperatures.
+        let t_air = 21.0;
+        let t_zone = 22.0;
+        let m = ThermalManifold::from_5r1c_parameters(t_air, t_zone, 0.1, 1000.0, 5000.0);
+
+        // Build QUBO without gauge bias (cleaner energy landscape).
+        let cfg = QuboConfig {
+            include_gauge_bias: false,
+            ..QuboConfig::default()
+        };
+        let qp = manifold_to_qubo(&m, cfg.clone()).expect("manifold_to_qubo failed");
+        let ising = qp.to_ising();
+
+        // Canonical solution encodes the manifold's scalar_field.
+        let x_canon = qp.encode_manifold_solution();
+        assert_eq!(x_canon.len(), qp.num_variables());
+
+        // Create mock annealer that returns the exact canonical solution.
+        let annealer = MockAnnealer::new(&ising, &x_canon);
+        let client: &dyn DwaveClient = &annealer;
+
+        // Submit to mock annealer — get back spins.
+        let spin = client.submit_ising(&ising).expect("submit failed");
+        assert_eq!(spin.len(), ising.num_variables);
+        for &s in &spin {
+            assert!(s == 1 || s == -1, "spin {} is not ±1", s);
+        }
+
+        // Convert spins to binary (s = 2x - 1 ⇒ x = (s + 1) / 2).
+        let x_decoded: Vec<u8> = spin.iter().map(|&b| if b > 0 { 1 } else { 0 }).collect();
+
+        // Decode binary to temperature vector.
+        let decoded_temps = decode_temperatures(&x_decoded, &cfg);
+
+        // Verify decoded temperatures match original within ±0.5 LSB.
+        let lsb = lsb_resolution_celsius(&cfg);
+        for i in 0..MANIFOLD_DIM {
+            let err = (decoded_temps[i] - m.scalar_field[i]).abs();
+            assert!(
+                err <= lsb / 2.0 + 1e-9,
+                "T[{}]: original = {:.6}, decoded = {:.6}, error = {:.6} (lsb/2 = {:.6})",
+                i,
+                m.scalar_field[i],
+                decoded_temps[i],
+                err,
+                lsb / 2.0
+            );
+        }
+
+        // Verify the decoded binary equals the canonical binary.
+        assert_eq!(
+            x_decoded, x_canon,
+            "Decoded binary differs from canonical encoding"
+        );
+
+        // Verify decoded energy matches QUBO energy.
+        let e_qubo = qp.evaluate(&x_decoded);
+        let e_decoded = qp.decoded_energy_density(&x_decoded);
+        let rel_err = ((e_qubo - e_decoded) / e_decoded.abs().max(1e-12)).abs();
+        assert!(
+            rel_err <= 1e-9,
+            "QUBO energy {} vs decoded density {} (rel err {})",
+            e_qubo,
+            e_decoded,
+            rel_err
+        );
+    }
+
+    /// Round-trip fidelity test for 9R4C manifold with non-zero gauge bias.
+    ///
+    /// The gauge bias adds a linear term to the QUBO energy, shifting the
+    /// true optimum away from the canonical solution. The greedy mock annealer
+    /// finds a local optimum (which may be the global optimum for this problem
+    /// size). We verify the decoded energy is close to the QUBO energy and
+    /// the solution is physically reasonable (all temperatures in [0, scale_max]).
+    #[test]
+    fn test_qubo_annealer_fidelity_9r4c_with_gauge() {
+        use crate::physics::geometry_tensor::MANIFOLD_DIM;
+        use crate::quantum::qubo_mapping::{
+            decode_temperatures, lsb_resolution_celsius, manifold_to_qubo, QuboConfig,
+        };
+
+        let temps = [22.0_f64, 20.0, 23.0, 18.0];
+        let caps = [1000.0, 5000.0, 3000.0, 8000.0];
+        let r_tr = [50.0, 30.0, 20.0];
+        let r_cross = Some([5.0, 3.0, 2.0]);
+        let mut m = ThermalManifold::from_9r4c_parameters(temps, caps, r_tr, r_cross);
+        m.gauge_connection[0] = 100.0;
+        m.gauge_connection[1] = 200.0;
+        m.gauge_connection[2] = 50.0;
+        m.gauge_connection[3] = 30.0;
+
+        let cfg = QuboConfig::default();
+        let qp = manifold_to_qubo(&m, cfg.clone()).expect("manifold_to_qubo failed");
+        let ising = qp.to_ising();
+
+        // Use greedy annealer to find a local optimum (more realistic than exact).
+        let annealer = GreedyAnnealer::new(&ising);
+        let client: &dyn DwaveClient = &annealer;
+
+        let spin = client.submit_ising(&ising).expect("submit failed");
+        let x: Vec<u8> = spin.iter().map(|&b| if b > 0 { 1 } else { 0 }).collect();
+
+        // Decode and verify all temperatures are in valid range.
+        let decoded = decode_temperatures(&x, &cfg);
+        for i in 0..MANIFOLD_DIM {
+            assert!(
+                decoded[i] >= 0.0 - 1e-9,
+                "T[{}] = {} is below 0",
+                i,
+                decoded[i]
+            );
+            assert!(
+                decoded[i] <= cfg.scale_max_celsius + 1e-9,
+                "T[{}] = {} exceeds scale max {}",
+                i,
+                decoded[i],
+                cfg.scale_max_celsius
+            );
+        }
+
+        // Verify QUBO energy matches decoded full energy.
+        let e_qubo = qp.evaluate(&x);
+        let e_decoded = qp.decoded_full_energy(&x);
+        let rel_err = ((e_qubo - e_decoded) / e_decoded.abs().max(1e-12)).abs();
+        assert!(
+            rel_err <= 1e-9,
+            "9R4C QUBO energy {} vs decoded full {} (rel err {})",
+            e_qubo,
+            e_decoded,
+            rel_err
+        );
+
+        // Verify energy is finite.
+        assert!(e_qubo.is_finite(), "QUBO energy {} is not finite", e_qubo);
+    }
+
+    /// Verify that a small perturbation in the annealer solution still decodes
+    /// to a physically reasonable temperature vector. This tests robustness
+    /// against the stochastic nature of real annealers.
+    #[test]
+    fn test_qubo_annealer_fidelity_with_perturbation() {
+        use crate::physics::geometry_tensor::MANIFOLD_DIM;
+        use crate::quantum::qubo_mapping::{
+            decode_temperatures, encode_temperatures, lsb_resolution_celsius, manifold_to_qubo,
+            QuboConfig,
+        };
+
+        let m = ThermalManifold::from_5r1c_parameters(21.0, 22.0, 0.1, 1000.0, 5000.0);
+        let cfg = QuboConfig {
+            include_gauge_bias: false,
+            ..QuboConfig::default()
+        };
+        let qp = manifold_to_qubo(&m, cfg.clone()).expect("manifold_to_qubo failed");
+        let ising = qp.to_ising();
+
+        let x_canon = qp.encode_manifold_solution();
+
+        // Perturb: flip the lowest-order bit of each temperature node.
+        let mut x_perturbed = x_canon.clone();
+        let k = cfg.bits_per_node;
+        for node in 0..MANIFOLD_DIM {
+            // Flip bit 0 (LSB) of each node — ±1 LSB perturbation.
+            x_perturbed[node * k] ^= 1;
+        }
+
+        // Evaluate energies.
+        let e_canon = qp.evaluate(&x_canon);
+        let e_perturbed = qp.evaluate(&x_perturbed);
+
+        // Perturbation should increase energy (canonical is optimal for no-gauge case).
+        assert!(
+            e_perturbed >= e_canon,
+            "Perturbed energy {} should be >= canonical {}",
+            e_perturbed,
+            e_canon
+        );
+
+        // Decode perturbed solution and verify temperatures are still in range.
+        let decoded = decode_temperatures(&x_perturbed, &cfg);
+        let lsb = lsb_resolution_celsius(&cfg);
+        for i in 0..MANIFOLD_DIM {
+            let err = (decoded[i] - m.scalar_field[i]).abs();
+            // Perturbed error should be at most ~2 LSB:
+            // 1 LSB from the bit-flip perturbation, plus up to 0.5 LSB from the
+            // rounding in the encode → round → decode cycle.
+            assert!(
+                err <= 2.0 * lsb + 1e-6,
+                "Perturbed T[{}]: original = {:.6}, decoded = {:.6}, err = {:.6}",
+                i,
+                m.scalar_field[i],
+                decoded[i],
+                err
+            );
+            assert!(
+                decoded[i] >= 0.0 - 1e-9,
+                "Perturbed T[{}] = {} below 0",
+                i,
+                decoded[i]
+            );
+            assert!(
+                decoded[i] <= cfg.scale_max_celsius + 1e-9,
+                "Perturbed T[{}] = {} exceeds max {}",
+                i,
+                decoded[i],
+                cfg.scale_max_celsius
+            );
+        }
+    }
+
+    /// Verify the trait-object dispatch path (submit via `&dyn DwaveClient`) works
+    /// correctly with the mock annealer. This is the actual runtime dispatch path
+    /// used by production code.
+    #[test]
+    fn test_qubo_annealer_trait_object_dispatch() {
+        use crate::physics::geometry_tensor::MANIFOLD_DIM;
+        use crate::quantum::qubo_mapping::{
+            decode_temperatures, lsb_resolution_celsius, manifold_to_qubo, QuboConfig,
+        };
+
+        let m = ThermalManifold::from_5r1c_parameters(21.0, 22.0, 0.1, 1000.0, 5000.0);
+        let cfg = QuboConfig {
+            include_gauge_bias: false,
+            ..QuboConfig::default()
+        };
+        let qp = manifold_to_qubo(&m, cfg.clone()).expect("manifold_to_qubo failed");
+        let ising = qp.to_ising();
+
+        let x_canon = qp.encode_manifold_solution();
+        let annealer = MockAnnealer::new(&ising, &x_canon);
+
+        // Trait object dispatch.
+        let client: &dyn DwaveClient = &annealer;
+        assert!(client.is_connected());
+        assert_eq!(client.sampler_name().unwrap(), "MockAnnealer (canonical)");
+
+        let spin = client.submit_ising(&ising).unwrap();
+        let e = client.evaluate_ising(&ising, &spin).unwrap();
+        assert!(e.is_finite());
+
+        // Decode via trait object.
+        let x: Vec<u8> = spin.iter().map(|&b| if b > 0 { 1 } else { 0 }).collect();
+        let decoded = decode_temperatures(&x, &cfg);
+        let lsb = lsb_resolution_celsius(&cfg);
+        for i in 0..MANIFOLD_DIM {
+            let err = (decoded[i] - m.scalar_field[i]).abs();
+            assert!(
+                err <= lsb / 2.0 + 1e-9,
+                "Trait-object dispatch T[{}]: original = {:.6}, decoded = {:.6}",
+                i,
+                m.scalar_field[i],
+                decoded[i]
+            );
+        }
+    }
 }
