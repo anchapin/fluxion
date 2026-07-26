@@ -46,11 +46,13 @@
 pub mod error;
 pub mod json_patch;
 pub mod model;
+pub mod provenance;
 
 // Convenience re-exports so callers can write
 // `use fluxion::measures::{FluxionModel, apply_delta, DeltaError};`
 pub use error::DeltaError;
-pub use json_patch::apply_delta;
+pub use json_patch::{apply_delta, apply_delta_with_name};
 pub use model::{
     AssemblySpec, ConstructionSpec, FluxionModel, MaterialLayer, ZoneSpec, MEASURES_SCHEMA_VERSION,
 };
+pub use provenance::{digest_of_patch, logical_timestamp, AppliedDelta, DeltaSource};

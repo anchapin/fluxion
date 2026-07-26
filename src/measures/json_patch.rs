@@ -65,6 +65,7 @@ use serde_json::Value;
 
 use crate::measures::error::DeltaError;
 use crate::measures::model::FluxionModel;
+use crate::measures::provenance::digest_of_patch;
 
 /// Apply a JSON Patch (RFC 6902) to a [`FluxionModel`] in place.
 ///
@@ -122,6 +123,53 @@ pub fn apply_delta(model: &mut FluxionModel, patch: &Patch) -> Result<(), DeltaE
 
     // Commit.
     *model = patched;
+
+    // Step 4 (Issue #1816): record provenance. The patch payload is hashed
+    // so downstream consumers can deduplicate / feature-hash identical
+    // permutations. The default name is derived from the digest so the
+    // chain is self-describing even when no file path is available.
+    let digest = digest_of_patch(patch);
+    let name = match &digest {
+        Some(d) if d.len() >= 16 => format!("json_patch:{}", &d[..16]),
+        Some(d) => format!("json_patch:{}", d),
+        None => "json_patch".to_string(),
+    };
+    model.record_json_patch_named(&name, digest);
+    Ok(())
+}
+
+/// Apply a JSON Patch to a [`FluxionModel`] and record provenance under an
+/// explicit `name` (e.g. the patch file path or measure id).
+///
+/// This is the traced variant of [`apply_delta`]: the mutation is identical,
+/// but the appended [`crate::measures::provenance::AppliedDelta`] entry carries
+/// `name` instead of an auto-derived `json_patch:<digest>` label. Use it when
+/// the caller knows the originating file or measure identifier — it makes the
+/// provenance chain readable for ML feature tracking and debugging.
+///
+/// # Errors
+///
+/// Same failure modes as [`apply_delta`]; on error `model` is unchanged **and**
+/// no provenance entry is appended.
+pub fn apply_delta_with_name(
+    model: &mut FluxionModel,
+    patch: &Patch,
+    name: &str,
+) -> Result<(), DeltaError> {
+    // Step 1–3: identical round-trip semantics to `apply_delta`.
+    let mut doc: Value =
+        serde_json::to_value(&*model).map_err(|e| DeltaError::Serialize(e.to_string()))?;
+
+    apply_json_patch(&mut doc, patch).map_err(map_patch_error)?;
+
+    let patched: FluxionModel =
+        serde_json::from_value(doc).map_err(|e| classify_deserialize_error(&e))?;
+
+    *model = patched;
+
+    // Step 4: record provenance with the caller-supplied name.
+    let digest = digest_of_patch(patch);
+    model.record_json_patch_named(name, digest);
     Ok(())
 }
 
@@ -550,5 +598,167 @@ mod tests {
             absorptance: 0.5,
         };
         assert!((layer.r_value() - 1.65).abs() < 1e-9);
+    }
+
+    // ------------------------------------------------------------------
+    // Provenance tracking (Issue #1816)
+    // ------------------------------------------------------------------
+
+    #[test]
+    fn apply_delta_records_json_patch_provenance() {
+        // Acceptance test: every JSON patch applied via apply_delta appends an
+        // AppliedDelta entry with source = JsonPatch.
+        let mut model = FluxionModel::ashrae_140_case_600();
+        let p = patch_from_value(json!([
+            { "op": "replace", "path": "/zones/zone_1/volume", "value": 200.0 }
+        ]));
+        assert!(model.applied_deltas().is_empty());
+
+        apply_delta(&mut model, &p).unwrap();
+
+        let chain = model.applied_deltas();
+        assert_eq!(chain.len(), 1, "exactly one entry per patch");
+        assert_eq!(
+            chain[0].source,
+            crate::measures::provenance::DeltaSource::JsonPatch
+        );
+        assert!(
+            chain[0].name.starts_with("json_patch:"),
+            "default name should be derived from the digest, got {}",
+            chain[0].name
+        );
+        assert!(chain[0].digest.is_some(), "digest must be populated");
+        assert!(
+            chain[0].digest.as_ref().unwrap().len() >= 16,
+            "digest is a SHA-256 hex string"
+        );
+    }
+
+    #[test]
+    fn apply_delta_with_name_records_explicit_name() {
+        let mut model = FluxionModel::ashrae_140_case_600();
+        let p = patch_from_value(json!([
+            { "op": "replace", "path": "/zones/zone_1/volume", "value": 200.0 }
+        ]));
+        apply_delta_with_name(&mut model, &p, "patches/volume_increase.json").unwrap();
+
+        let chain = model.applied_deltas();
+        assert_eq!(chain.len(), 1);
+        assert_eq!(chain[0].name, "patches/volume_increase.json");
+        assert!(chain[0].digest.is_some());
+    }
+
+    #[test]
+    fn failed_patch_records_no_provenance() {
+        // A patch that fails must NOT append a provenance entry.
+        let mut model = FluxionModel::ashrae_140_case_600();
+        let p = patch_from_value(json!([
+            { "op": "replace", "path": "/zones/zone_does_not_exist/volume", "value": 999.0 }
+        ]));
+        let _ = apply_delta(&mut model, &p);
+        assert!(
+            model.applied_deltas().is_empty(),
+            "failed patch must not record provenance"
+        );
+    }
+
+    #[test]
+    fn multiple_patches_accumulate_in_order() {
+        let mut model = FluxionModel::ashrae_140_case_900();
+        let p1 = patch_from_value(json!([
+            { "op": "replace", "path": "/zones/zone_1/volume", "value": 200.0 }
+        ]));
+        let p2 = patch_from_value(json!([
+            { "op": "replace", "path": "/assemblies/wall_1/layers/1/conductivity", "value": 0.03 }
+        ]));
+        apply_delta(&mut model, &p1).unwrap();
+        apply_delta(&mut model, &p2).unwrap();
+
+        let chain = model.applied_deltas();
+        assert_eq!(chain.len(), 2);
+        // Timestamps are monotonic logical sequences.
+        assert!(chain[0].timestamp < chain[1].timestamp);
+        // Different patches → different digests.
+        assert_ne!(chain[0].digest, chain[1].digest);
+    }
+
+    #[test]
+    fn identical_patches_produce_identical_digests() {
+        let mut a = FluxionModel::ashrae_140_case_600();
+        let mut b = FluxionModel::ashrae_140_case_600();
+        let p = patch_from_value(json!([
+            { "op": "replace", "path": "/zones/zone_1/volume", "value": 200.0 }
+        ]));
+        apply_delta(&mut a, &p).unwrap();
+        apply_delta(&mut b, &p).unwrap();
+        assert_eq!(a.applied_deltas()[0].digest, b.applied_deltas()[0].digest);
+    }
+
+    #[test]
+    fn provenance_preserved_through_round_trip() {
+        // Determinism: two models patched with the same patch must serialize
+        // identically, INCLUDING the applied_deltas chain. This guards the
+        // Fluxion determinism gate (Issue #1351).
+        let mut original = FluxionModel::ashrae_140_case_900();
+        let mut copy: FluxionModel =
+            serde_json::from_str(&serde_json::to_string(&original).unwrap()).unwrap();
+
+        let p = patch_from_value(json!([
+            { "op": "replace", "path": "/assemblies/wall_1/layers/1/conductivity", "value": 0.0333 }
+        ]));
+
+        apply_delta(&mut original, &p).unwrap();
+        apply_delta(&mut copy, &p).unwrap();
+
+        let original_json = serde_json::to_string(&original).unwrap();
+        let copy_json = serde_json::to_string(&copy).unwrap();
+        assert_eq!(
+            original_json, copy_json,
+            "provenance recording must not break determinism"
+        );
+    }
+
+    #[test]
+    fn round_trip_patch_then_measure_contains_both_in_order() {
+        // Issue #1816 acceptance test: a model run through a #1811 patch AND
+        // a #1814 measure → the provenance chain contains both entries in
+        // application order.
+        let mut model = FluxionModel::ashrae_140_case_900();
+
+        // 1. Apply a JSON Patch (Issue #1811) — records a JsonPatch entry.
+        let p = patch_from_value(json!([
+            { "op": "replace", "path": "/assemblies/wall_1/layers/1/conductivity", "value": 0.03 }
+        ]));
+        apply_delta(&mut model, &p).unwrap();
+
+        // 2. Apply a Python Measure (Issue #1814) — records a PythonMeasure
+        //    entry. In the pure-Rust path this is modelled via the recorder;
+        //    the Python AOT runner appends the same shape via make_applied_delta.
+        model.record_python_measure("AddSouthOverhang", None);
+
+        // 3. Serialize to "results.json" and verify the chain.
+        let json = serde_json::to_string_pretty(&model).unwrap();
+        let v: serde_json::Value = serde_json::from_str(&json).unwrap();
+        let chain = v["applied_deltas"]
+            .as_array()
+            .expect("applied_deltas present");
+
+        assert_eq!(chain.len(), 2, "both entries must be present");
+        assert_eq!(chain[0]["source"], "json_patch");
+        assert!(
+            chain[0]["name"]
+                .as_str()
+                .unwrap()
+                .starts_with("json_patch:"),
+            "patch entry name is derived from the digest"
+        );
+        assert!(
+            chain[0]["digest"].is_string(),
+            "patch entry carries a digest"
+        );
+        assert_eq!(chain[1]["source"], "python_measure");
+        assert_eq!(chain[1]["name"], "AddSouthOverhang");
+        // Application order: patch before measure.
+        assert!(chain[0]["timestamp"].as_str().unwrap() < chain[1]["timestamp"].as_str().unwrap());
     }
 }

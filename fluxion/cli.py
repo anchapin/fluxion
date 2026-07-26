@@ -185,18 +185,22 @@ def _handle_apply_measures(args: argparse.Namespace) -> int:
         logger.error("Failed to load model: %s", e)
         return 1
 
-    # Apply each measure in order.
+    # Apply each measure in order. Build the provenance chain (Issue #1816)
+    # so the serialized output can reconstruct which measures ran.
+    applied_deltas: list[dict[str, Any]] = []
     try:
-        applied = apply_measures(model, measure_classes, measure_args)
+        applied = apply_measures(
+            model, measure_classes, measure_args, applied_deltas=applied_deltas
+        )
     except Exception as e:
         logger.error("Measure execution failed: %s", e)
         return 1
 
-    # Serialize the result.
+    # Serialize the result (embed the provenance chain in the payload).
     logger.info("Writing mutated model to %s", args.output)
     args.output.parent.mkdir(parents=True, exist_ok=True)
     try:
-        save_model(model, args.output)
+        save_model(model, args.output, applied_deltas=applied_deltas)
     except Exception as e:
         logger.error("Failed to write model: %s", e)
         return 1
@@ -205,6 +209,7 @@ def _handle_apply_measures(args: argparse.Namespace) -> int:
     # tooling can introspect what happened without re-running.
     summary = {
         "applied": applied,
+        "applied_deltas": applied_deltas,
         "output": str(args.output),
         "model": {
             "num_zones": model.num_zones(),

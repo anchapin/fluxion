@@ -4,9 +4,10 @@
 <!-- 1: This document describes the FluxionMeasure Python base class and AOT runner. -->
 <!-- 2: Read it before writing a custom measure or modifying the measures subsystem. -->
 <!-- 3: Key concepts: AOT-only rule, GIL/rayon rationale, snapshot/owned-value lifecycle. -->
-<!-- 4: Companion to docs/bindings.md (memory safety) and ARCHITECTURE.md (module boundaries). -->
-<!-- 5: Stable as of issue #1814 — measures API is feature-frozen pending OSM integration. -->
-<!-- 6: After changes, run `maturin develop` then `pytest tests/python/test_apply_measures_cli.py`. -->
+<!-- 4: Also covers the AppliedDelta provenance chain (Issue #1816) and its schema. -->
+<!-- 5: Companion to docs/bindings.md (memory safety) and ARCHITECTURE.md (module boundaries). -->
+<!-- 6: Stable as of issue #1816 — measures API + provenance contract are feature-frozen pending OSM integration. -->
+<!-- 7: After changes, run `maturin develop` then `pytest tests/python/test_apply_measures_cli.py`. -->
 
 ## TL;DR
 
@@ -137,3 +138,92 @@ south = [s for s in data['surfaces'] if s['orientation'] == 'South']
 print('south surfaces with overhang:', sum(1 for s in south if s['overhang_depth']))
 "
 ```
+
+## Provenance — the `AppliedDelta` chain (Issue #1816)
+
+When a building model is altered by either a JSON Patch (#1811) or a Python
+Measure (#1814), the resulting output dataset must be able to answer *"why did
+this model change?"*. This is critical for ML feature tracking, debugging, and
+reproducibility — ML data engineers need to know exactly which parametric
+permutations produced a given energy-use number.
+
+### The contract
+
+Every successful mutation appends an **`AppliedDelta`** entry to the model's
+provenance chain, in application order. The chain travels with the serialized
+model / `results.json` so downstream consumers can reconstruct the full
+mutation history without re-running.
+
+- **JSON Patches** applied via `fluxion::measures::json_patch::apply_delta`
+  (Rust) append an entry automatically, with a SHA-256 `digest` of the patch
+  payload.
+- **Python Measures** executed via `apply_measures` (the AOT runner) append an
+  entry per measure when the caller passes an `applied_deltas` accumulator.
+
+### The `AppliedDelta` schema
+
+```json
+{
+  "source": "json_patch",
+  "name": "json_patch:a1b2c3d4e5f60718",
+  "timestamp": "0000000000000000",
+  "digest": "a1b2c3d4e5f60718..."
+}
+```
+
+| Field | Type | Meaning |
+|-------|------|---------|
+| `source` | `"json_patch"` \| `"python_measure"` | Which subsystem produced the mutation. |
+| `name` | string | Identifier of the patch file or measure class. For auto-recorded JSON patches this defaults to `json_patch:<short-digest>`; use `apply_delta_with_name(model, patch, name)` (Rust) for a human-readable label. |
+| `timestamp` | string | **Logical sequence** (zero-padded, pure-Rust path) or an ISO-8601 wall-clock instant (Python AOT-runner path). See *Determinism* below. |
+| `digest` | string \| `null` | SHA-256 (hex) of the patch payload. `null` when there is no deterministic payload to hash (e.g. a Python measure that mutates via the snapshot API). |
+
+The Rust source of truth is `src/measures/provenance.rs`
+(`AppliedDelta` / `DeltaSource`); the Python mirror is
+`fluxion.measures.make_applied_delta`. The two are kept byte-compatible.
+
+### Determinism
+
+The `timestamp` field is a **monotonic logical clock** (a zero-padded sequence
+index assigned from `applied_deltas.len()`) on the pure-Rust path, **not** a
+wall-clock instant. This is deliberate: the Fluxion determinism gate
+(Issue #1351) requires that two byte-identical inputs produce byte-identical
+serialized output, and `SystemTime::now()` would violate that contract. The
+Python AOT runner — which is not subject to the determinism gate — overwrites
+`timestamp` with a real ISO-8601 instant at the application layer.
+
+### Round-trip example
+
+A model run through a JSON patch **and** a Python measure produces a chain with
+both entries, in application order:
+
+```python
+from fluxion.measures import make_applied_delta, save_model
+
+# ... after apply_delta (Rust) and apply_measures (Python) ...
+chain = [
+    make_applied_delta("json_patch", "patches/insulation.json", digest="abc..."),
+    make_applied_delta("python_measure", "AddSouthOverhang"),
+]
+save_model(model, "results.json", applied_deltas=chain)
+```
+
+`results.json` now carries:
+
+```json
+{
+  "schema_version": "1.0.0",
+  "...": "...",
+  "applied_deltas": [
+    { "source": "json_patch",      "name": "patches/insulation.json", "timestamp": "...", "digest": "abc..." },
+    { "source": "python_measure",  "name": "AddSouthOverhang",         "timestamp": "..." }
+  ],
+  "_fluxion_run": {
+    "applied": ["AddSouthOverhang"],
+    "applied_deltas": [ /* same chain, echoed for convenience */ ]
+  }
+}
+```
+
+ML pipelines (cf. #1337) consume `applied_deltas` to reconstruct the provenance
+chain and feature-hash identical permutations via the `digest`.

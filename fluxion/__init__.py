@@ -31,9 +31,11 @@ else:
 from fluxion.measures import (  # noqa: E402
     FluxionMeasure,
     apply_measures,
+    digest_of_json_payload,
     discover_measures,
     dict_to_model,
     load_model,
+    make_applied_delta,
     model_to_dict,
     save_model,
 )
@@ -41,9 +43,11 @@ from fluxion.measures import (  # noqa: E402
 __all__ = [
     "FluxionMeasure",
     "apply_measures",
+    "digest_of_json_payload",
     "discover_measures",
     "dict_to_model",
     "load_model",
+    "make_applied_delta",
     "model_to_dict",
     "save_model",
 ]
