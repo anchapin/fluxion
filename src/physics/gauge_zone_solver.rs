@@ -458,6 +458,11 @@ impl GaugeZoneSolver {
         Temperature::from_value(self.T_air)
     }
 
+    /// Set zone air temperature (for test initialization).
+    pub fn set_T_air(&mut self, temp: f64) {
+        self.T_air = temp;
+    }
+
     /// Get zone air thermal capacitance.
     pub fn C_air(&self) -> f64 {
         self.C_air
@@ -912,11 +917,11 @@ impl MultiZoneGaugeSolver {
                 .unwrap_or_default();
 
             // Add coupling contributions to boundary conditions
+            // NOTE: inter-zone coupling is applied via adjacent_temps in step_with_coupling.
+            // Zero bc.inter_zone_heat to avoid double-counting: the coupling vector
+            // contribution is already accounted for through the adjacent_temps path.
             let mut bc_with_coupling = bc.clone();
-            if let Some(coupling) = coupling_vectors.get(&zone_id) {
-                let total_coupling: f64 = coupling.values().sum();
-                bc_with_coupling.inter_zone_heat = total_coupling;
-            }
+            bc_with_coupling.inter_zone_heat = 0.0;
 
             // Get adjacent temperatures for inter-zone surfaces
             let adjacent_temps: HashMap<usize, Temperature> = zone
