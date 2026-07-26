@@ -121,7 +121,7 @@ fn test_solver_surface_time_constant_matches_parallel_resistance() {
     let r_parallel = r_ms * r_si / (r_ms + r_si);
     let tau_si_analytical = spec.thermal_capacity() * r_parallel;
 
-    assert!((solver.r_1() - r_ms).abs() / r_ms < 1e-12);
+    assert!((solver.r_ms() - r_ms).abs() / r_ms < 1e-12);
     let tau_si_solver = solver.surface_time_constant();
     let rel_diff = (tau_si_solver - tau_si_analytical).abs() / tau_si_analytical;
     assert!(

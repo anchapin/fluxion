@@ -60,6 +60,26 @@ pub struct FiveR1CSolver {
     pre_step: bool,
 }
 
+/// Compute the surface-node time constant τ_si = C / (h_ms + h_is) [seconds]
+/// from per-zone conductances and capacitance.
+///
+/// This is the same quantity as `FiveR1CSolver::surface_time_constant` but
+/// expressed in the per-zone conductance basis (`h_tr_ms`, `h_tr_is`) that
+/// `step_physics_5r1c` already has on hand, so the physics consumer can call
+/// it without converting through R_ms / R_si. The solver accessor delegates
+/// here after converting from its resistance-based state, keeping the
+/// formula in one place.
+///
+/// Returns `0.0` for degenerate inputs (`c <= 0.0` or `h_ms + h_is <= 0.0`)
+/// to match the solver's `0.0` sentinel for uninitialised / degenerate walls.
+pub fn surface_time_constant_from_conductances(c: f64, h_ms: f64, h_is: f64) -> f64 {
+    let h_total = h_ms + h_is;
+    if c <= 0.0 || h_total <= 0.0 {
+        return 0.0;
+    }
+    c / h_total
+}
+
 impl FiveR1CSolver {
     /// Create a new 5R1C solver (uninitialized).
     pub fn new() -> Self {
@@ -123,12 +143,15 @@ impl FiveR1CSolver {
     /// interior surface under the ISO 13790 half-insulation rule. `R_si` is
     /// the separate interior film resistance.
     pub fn surface_time_constant(&self) -> f64 {
-        if !self.initialized || self.R_ms <= 0.0 || self.C_total <= 0.0 {
+        if !self.initialized || self.R_ms <= 0.0 || self.R_si <= 0.0 || self.C_total <= 0.0 {
             return 0.0;
         }
-        let r_si = self.R_si;
-        let r_parallel = self.R_ms * r_si / (self.R_ms + r_si);
-        self.C_total * r_parallel
+        // Convert the solver's resistance-based state to the
+        // conductance-based free function so the math lives in exactly
+        // one place (see [`surface_time_constant_from_conductances`]).
+        let h_ms = 1.0 / self.R_ms;
+        let h_is = 1.0 / self.R_si;
+        surface_time_constant_from_conductances(self.C_total, h_ms, h_is)
     }
 
     /// Return the interior surface-film resistance R_si [m²·K/W].
@@ -137,7 +160,7 @@ impl FiveR1CSolver {
     }
 
     /// Return the mass-to-interior-surface resistance R_ms [m²·K/W].
-    pub fn r_1(&self) -> f64 {
+    pub fn r_ms(&self) -> f64 {
         self.R_ms
     }
 
@@ -840,7 +863,7 @@ mod tests {
         let r_parallel = r_ms * r_si / (r_ms + r_si);
         let expected = spec.thermal_capacity() * r_parallel;
 
-        assert!((solver.r_1() - r_ms).abs() / r_ms < 1e-12);
+        assert!((solver.r_ms() - r_ms).abs() / r_ms < 1e-12);
         let tau_si = solver.surface_time_constant();
         assert!(
             (tau_si - expected).abs() / expected < 1e-12,

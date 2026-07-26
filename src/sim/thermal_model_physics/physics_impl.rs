@@ -14,6 +14,7 @@
 //! dispatcher in [`super::step_dispatcher`] routes to the right one.
 
 use crate::physics::cta::{ContinuousTensor, VectorField};
+use crate::physics::five_r1c_solver::surface_time_constant_from_conductances;
 use crate::physics::multi_node_solver::SurfaceExteriorTemperatures;
 use crate::sim::boundary::distribute_opaque_solar_gains;
 use crate::sim::hvac::{HVACMode as EquipmentHVACMode, VariableCapacityEquipment};
@@ -67,7 +68,7 @@ use crate::sim::ventilation::h_tr_is_ach_multiplier;
 // ============================================================================
 
 /// Per-timestep scratch for `step_physics_5r1c` (also reused by the 8R3C
-/// path, which delegates to 5R1C). Six owned output buffers.
+/// path, which delegates to 5R1C). Eight owned output buffers.
 struct PhysicsScratch5r1c {
     phi_ia: Vec<f64>,
     phi_st: Vec<f64>,
@@ -75,6 +76,15 @@ struct PhysicsScratch5r1c {
     t_i_act: Vec<f64>,
     t_s_act: Vec<f64>,
     new_mass: Vec<f64>,
+    /// Per-zone new interior wall-surface temperature `T_si` from the
+    /// Issue #1860 surface-node ODE step. Persisted to
+    /// `self.0.wall_surface_temperatures` once the step completes.
+    wall_surface_new: Vec<f64>,
+    /// Per-zone transient surface-flux correction `h_is · (T_si − T_si_eq)`,
+    /// folded into the scaled air-node numerator in
+    /// `step_physics_5r1c` so downstream consumers can read the surface
+    /// state without recomputing it.
+    wall_surface_correction: Vec<f64>,
 }
 
 impl PhysicsScratch5r1c {
@@ -87,6 +97,8 @@ impl PhysicsScratch5r1c {
             t_i_act: vec![0.0; num_zones],
             t_s_act: vec![0.0; num_zones],
             new_mass: vec![0.0; num_zones],
+            wall_surface_new: vec![0.0; num_zones],
+            wall_surface_correction: vec![0.0; num_zones],
         }
     }
 }
@@ -222,6 +234,85 @@ impl PhysicsScratch9r4c {
     }
 }
 
+/// Evolve the per-zone interior wall-surface temperature `T_si` via the
+/// exact exponential solution of the surface-node ODE (Issue #1860
+/// time-constant-aware 5R1C variant).
+///
+/// Equations:
+///
+/// ```text
+///   τ_si   = C_zone / (h_is + h_1)              (h_1 = h_tr_ms)
+///   T_si_eq = (T_int · h_is + T_m · h_1) / (h_is + h_1)
+///   T_si_new = T_si_eq + (T_si_old − T_si_eq) · exp(−dt / τ_si)
+/// ```
+///
+/// Results are written to `scratch.wall_surface_new` (the per-zone
+/// `T_si` state) and `scratch.wall_surface_correction` (the
+/// transient surface-flux term `h_is · (T_si − T_si_eq)` that the caller
+/// folds into the scaled air-node numerator). All inputs are
+/// read-only slices — no allocations are performed in the hot path; the
+/// scratch fields replace the per-call `Vec::with_capacity(num_zones)`
+/// pair that earlier landed inside `step_physics_5r1c` and bypassed the
+/// `PhysicsScratch5r1c` scratch convention introduced for Issue #1524.
+///
+/// On degenerate `h_tr_ms <= 0.0` or `h_tr_is <= 0.0` the legacy lumped
+/// path is preserved exactly: `T_si` is left at its previous value and
+/// the correction is zero. `dt <= 0.0` short-circuits to the steady-state
+/// value `T_si_eq` for the same reason.
+#[allow(clippy::too_many_arguments)]
+fn step_wall_surface_ode(
+    dt: f64,
+    h_tr_ms: &[f64],
+    h_tr_is: &[f64],
+    mass_temps: &[f64],
+    zone_temps: &[f64],
+    wall_surface_old: &[f64],
+    thermal_cap: &[f64],
+    scratch: &mut PhysicsScratch5r1c,
+) {
+    // Size the loop from the input slices, not from a scratch field —
+    // by the time the caller invokes this helper, `phi_ia`/`phi_st`/`phi_m`
+    // have already been moved out of the scratch via `mem::take`, so any
+    // scratch-backed length probe would report zero. The caller guarantees
+    // every input slice has the same length (`self.0.num_zones`).
+    let n = wall_surface_old.len();
+    debug_assert_eq!(h_tr_ms.len(), n);
+    debug_assert_eq!(h_tr_is.len(), n);
+    debug_assert_eq!(mass_temps.len(), n);
+    debug_assert_eq!(zone_temps.len(), n);
+    debug_assert_eq!(thermal_cap.len(), n);
+    debug_assert_eq!(scratch.wall_surface_new.len(), n);
+    debug_assert_eq!(scratch.wall_surface_correction.len(), n);
+
+    let wall_surface_new = &mut scratch.wall_surface_new;
+    let wall_surface_correction = &mut scratch.wall_surface_correction;
+    for i in 0..n {
+        let h_ms_i = h_tr_ms[i];
+        let h_is_i = h_tr_is[i];
+        if h_ms_i > 0.0 && h_is_i > 0.0 {
+            // τ_si is the same quantity `FiveR1CSolver::surface_time_constant`
+            // exposes, just expressed in the per-zone conductance basis the
+            // physics consumer already has on hand. Delegates to the shared
+            // free function so the formula lives in exactly one place.
+            let tau_si = surface_time_constant_from_conductances(thermal_cap[i], h_ms_i, h_is_i);
+            let t_m_i = mass_temps[i];
+            let t_int_i = zone_temps[i];
+            let t_si_eq = (t_int_i * h_is_i + t_m_i * h_ms_i) / (h_is_i + h_ms_i);
+            let t_si_old_i = wall_surface_old[i];
+            let t_si_new_i = if tau_si > 0.0 && dt > 0.0 {
+                t_si_eq + (t_si_old_i - t_si_eq) * (-dt / tau_si).exp()
+            } else {
+                t_si_eq
+            };
+            wall_surface_new[i] = t_si_new_i;
+            wall_surface_correction[i] = h_is_i * (t_si_new_i - t_si_eq);
+        } else {
+            wall_surface_new[i] = wall_surface_old[i];
+            wall_surface_correction[i] = 0.0;
+        }
+    }
+}
+
 impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>> ThermalModel<T> {
     /// Solve physics for one timestep using the 5R1C (single mass node) model.
     ///
@@ -331,59 +422,31 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         // exact exponential solution of the surface-node ODE BEFORE the air-node
         // equation so the result is available for downstream consumers (the
         // air-node equation, diagnostics, and the regression tests in
-        // `tests/issue_1860_5r1c_time_constant_aware.rs`). Equations:
-        //
-        //   τ_si = C_zone / (h_is + h_1)
-        //   T_si_eq = (T_int · h_is + T_m · h_1) / (h_is + h_1)
-        //   T_si_new = T_si_eq + (T_si_old − T_si_eq) · exp(−dt / τ_si)
-        //
-        // where h_is = h_tr_is and h_1 = h_tr_ms because h_tr_ms already
-        // represents the conductance from the mass node to the interior surface.
-        //
-        // The transient surface flux correction h_is · (T_si − T_si_eq) is
-        // added to the scaled air-node numerator below.
-        //
-        // Edge cases: if h_tr_ms ≤ 0 or h_tr_is ≤ 0, fall back to the legacy
-        // lumped path and leave T_si unchanged. The downstream cooling load
-        // is unaffected and the legacy behaviour is preserved exactly.
-        let h_tr_ms_ref = self.0.h_tr_ms.as_ref();
-        let h_tr_is_ref = self.0.h_tr_is.as_ref();
-        let mass_temp_ref = self.0.mass_temperatures.as_ref();
-        let zone_temp_ref = self.0.temperatures.as_ref();
-        let wall_surface_old_ref = self.0.wall_surface_temperatures.as_ref();
-        let thermal_cap_ref = self.0.thermal_capacitance.as_ref();
-        let mut wall_surface_new_data: Vec<f64> = Vec::with_capacity(self.0.num_zones);
-        let mut wall_surface_correction: Vec<f64> = Vec::with_capacity(self.0.num_zones);
-        for i in 0..self.0.num_zones {
-            let h_ms_i = h_tr_ms_ref[i];
-            let h_is_i = h_tr_is_ref[i];
-            if h_ms_i > 0.0 && h_is_i > 0.0 {
-                let h_1_i = h_ms_i;
-                let c_zone_i = thermal_cap_ref[i];
-                let tau_si = c_zone_i / (h_is_i + h_1_i);
-                let t_m_i = mass_temp_ref[i];
-                let t_int_i = zone_temp_ref[i];
-                let t_si_eq = (t_int_i * h_is_i + t_m_i * h_1_i) / (h_is_i + h_1_i);
-                let t_si_old_i = wall_surface_old_ref[i];
-                let t_si_new_i = if tau_si > 0.0 && dt > 0.0 {
-                    t_si_eq + (t_si_old_i - t_si_eq) * (-dt / tau_si).exp()
-                } else {
-                    t_si_eq
-                };
-                wall_surface_new_data.push(t_si_new_i);
-                wall_surface_correction.push(h_is_i * (t_si_new_i - t_si_eq));
-            } else {
-                wall_surface_new_data.push(wall_surface_old_ref[i]);
-                wall_surface_correction.push(0.0);
-            }
-        }
+        // `tests/issue_1860_5r1c_time_constant_aware.rs`). The math lives in
+        // `step_wall_surface_ode` (extracted so the 1175-line
+        // `step_physics_5r1c` reads as `precompute → scratch → air-node
+        // equation` rather than a 60-line inline block); the
+        // per-call `Vec::with_capacity(num_zones)` pair that earlier
+        // bypassed the `PhysicsScratch5r1c` scratch convention (see
+        // Issue #1524) is replaced by the `wall_surface_new` and
+        // `wall_surface_correction` fields on the scratch struct.
+        step_wall_surface_ode(
+            dt,
+            self.0.h_tr_ms.as_ref(),
+            self.0.h_tr_is.as_ref(),
+            self.0.mass_temperatures.as_ref(),
+            self.0.temperatures.as_ref(),
+            self.0.wall_surface_temperatures.as_ref(),
+            self.0.thermal_capacitance.as_ref(),
+            &mut scratch,
+        );
         // Persist the new T_si for downstream consumers (diagnostics, the
         // regression test suite, and the future cooling-load coupling that
         // the Issue #1860 epic tracks).
         self.0
             .wall_surface_temperatures
             .as_mut()
-            .copy_from_slice(&wall_surface_new_data);
+            .copy_from_slice(&scratch.wall_surface_new);
 
         // Issue #1527 fix: Compute proper sol-air temperature using opaque surface irradiance.
         // The previous code used outdoor_temp directly (ignoring solar), while opaque_sol_w
@@ -555,7 +618,7 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         for (i, (value, correction)) in num_phi_st
             .as_mut()
             .iter_mut()
-            .zip(wall_surface_correction.iter())
+            .zip(scratch.wall_surface_correction.iter())
             .enumerate()
         {
             *value += correction * term_rest_1.as_ref()[i];
