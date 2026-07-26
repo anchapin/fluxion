@@ -1,0 +1,47 @@
+{
+  "schema_version": 1,
+  "description": "File-level provenance for HVAC BESTEST (RP-865) comparative reference bounds. Each entry binds a data file to its primary publication, the reference programs that generated the bounds, and the units the values are recorded in. Tabular rows in each CSV carry their own per-record provenance; this manifest records the document-level authority.",
+  "publications": {
+    "nrel_rp865": {
+      "citation": "Neymark, J.; Judkoff, R.; Knabe, G.; Le, H. \"Airside HVAC BESTEST: Adaptation of ASHRAE RP 865 Airside HVAC Equipment Modeling Test Cases for ASHRAE Standard 140, Volume 1: Cases AE101-AE445.\" NREL/TP-5500-66000, National Renewable Energy Laboratory, Golden, CO (2016).",
+      "doi": "10.2172/1244668",
+      "case_family": "AE101-AE445",
+      "method": "comparative"
+    },
+    "iea_task22_e100": {
+      "citation": "IEA SHC Task 22. \"HVAC BESTEST, Volume 1: Cases E100-E200, Unitary Space Cooling Equipment.\" Building Energy Analysis Tools, International Energy Agency Solar Heating and Cooling Programme.",
+      "case_family": "E100-E200",
+      "method": "analytical_and_comparative"
+    }
+  },
+  "reference_programs": {
+    "energyplus": { "organization": "NREL", "version": "9.4.0", "url": "https://energyplus.net/downloads" },
+    "doe2": { "organization": "LBNL / JCI", "version": "DOE-2.1E" },
+    "trace700": { "organization": "Trane", "version": "TRACE 700" }
+  },
+  "files": [
+    {
+      "filename": "comparative_bounds_e100_e200.csv",
+      "case_family": "E100-E200",
+      "publication_key": "iea_task22_e100",
+      "recorded_energy_unit": "MWh",
+      "recorded_power_unit": "kW",
+      "recorded_temp_unit": "C",
+      "notes": "Unitary space-cooling equipment comparative bounds. E100-E140 dry-coil, E150-E200 wet-coil. Values are the qualified-program ensemble (min/max) ranges reported in the source."
+    },
+    {
+      "filename": "comparative_bounds_ae101_ae445.csv",
+      "case_family": "AE101-AE445",
+      "publication_key": "nrel_rp865",
+      "recorded_energy_unit": "MWh",
+      "recorded_power_unit": "kW",
+      "recorded_temp_unit": "C",
+      "notes": "RP-865 airside HVAC equipment comparative bounds. Values are the qualified-program ensemble (min/max) ranges reported in NREL/TP-5500-66000."
+    }
+  ],
+  "status_legend": {
+    "published": "Value taken directly from the cited publication's tabulated results.",
+    "transcribed": "Value transcribed from the cited publication; flagged for independent re-verification against the primary PDF.",
+    "interim": "Derived value pending replacement by a direct reference-program run; methodology documented in the source."
+  }
+}
