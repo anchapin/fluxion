@@ -249,3 +249,37 @@ fn test_surrogate_drift_metric_definition() {
         "Large drift expected when physics temp is near zero and surrogate differs by 1°C"
     );
 }
+
+/// Issue #1865 — lock the lenient-fallback contract.
+///
+/// When no trained ONNX model is loaded, the gate must degrade to the lenient
+/// ≤100% ceiling so PRs that don't ship a model are not blocked by the large
+/// drift the analytical fallback naturally produces. This constructs a
+/// synthetic drift result that breaches the strict 1% tolerance but stays
+/// within the lenient ceiling, and asserts the gate does not panic in
+/// fallback mode. It is skipped (not FAILED) when a real ONNX model is
+/// resolvable, since the strict gate would (correctly) reject 50% drift.
+#[test]
+fn test_surrogate_drift_gate_lenient_fallback_contract() {
+    let manager =
+        SurrogateManager::new_with_auto_load().expect("Failed to initialize surrogate manager");
+    if manager.model_loaded {
+        eprintln!(
+            "Skipping lenient-fallback contract test: a trained ONNX model is loaded at {:?}, \
+             so the strict 1% gate is active and 50% drift would (correctly) fail.",
+            manager.model_path
+        );
+        return;
+    }
+
+    // 50% drift: breaches the strict 1% tolerance but is well within the
+    // lenient 100% fallback ceiling.
+    let result = DriftResult {
+        max_drift_pct: 50.0,
+        offending_timesteps: vec![(0, 0, 20.0, 30.0, 50.0)],
+    };
+
+    // Must not panic — this is the contract that keeps the gate green on PRs
+    // that don't ship a trained model (Issue #1865).
+    assert_drift_within_gate(&result, "Issue #1865 lenient-fallback contract");
+}
