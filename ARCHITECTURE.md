@@ -762,6 +762,7 @@ These traits support the main physics pipeline and should also be documented:
 | `VariableCapacityEquipment` | `src/sim/hvac/equipment.rs` | Variable-speed equipment |
 | `Fan` | `src/sim/hvac/fan.rs` | Fan component performance (affinity laws, density correction) |
 | `CoolingCoilBehavior` | `src/sim/hvac/cooling_coil.rs` | Cooling coil component (bypass-factor model, SHR, condensate) |
+| `HeatingCoil` | `src/sim/hvac/heating_coil.rs` | Heating coil component (sensible heating, part-load control) |
 | `GroundTemperature` | `src/sim/boundary.rs` | Ground temp boundary condition |
 | `BatchOrchestrator` | `src/sim/orchestrator.rs` | Per-population CPU surrogate compute scheduling (rayon `par_chunks`, #1439) |
 | `DwaveClient` | `src/quantum/dwave_client.rs` | Object-safe trait for submitting Ising problems to a D-Wave sampler (QPU or hybrid); mockable for tests |
