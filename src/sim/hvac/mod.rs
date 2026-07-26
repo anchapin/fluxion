@@ -5,6 +5,7 @@
 
 pub mod airside_coupling;
 pub mod airside_state;
+pub mod cooling_coil;
 pub mod cycling;
 pub mod economizer;
 pub mod efficiency_curves;
@@ -20,6 +21,7 @@ pub use airside_state::{
     AirsideCouplingError, AirsideFlow, MoistAirState, DEFAULT_ENERGY_BALANCE_TOLERANCE_W,
     MAX_VALIDATED_TIMESTEP_SECONDS,
 };
+pub use cooling_coil::{CoilPerformance, CoolingCoil, CoolingCoilBehavior};
 pub use cycling::CyclingTracker;
 pub use economizer::{calculate_free_cooling_capacity, is_economizer_active, EconomizerMode};
 pub use efficiency_curves::{
