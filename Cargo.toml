@@ -137,6 +137,9 @@ plotters = "0.3.5"
 rand = "0.8"
 rand_distr = "0.4"
 
+# Mathematical special functions (erf) for inverse CDF computation
+libm = "0.2"
+
 # Statistical computing for validation metrics
 statrs = "0.18.0"
 
