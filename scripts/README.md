@@ -11,6 +11,7 @@ scripts/
 ├── cloud_campaign_manager.py        # AWS/Nomad campaign manager (Issue #1192)
 ├── autonomous_parameter_sweep.py    # Local MAE-divergence sweep (Issue #1450)
 ├── ashrae_benchmark_harness.py      # ASHRAE 140 benchmark harness (Issue #1488)
+├── check_osimflow_coverage.py       # Per-file coverage gate (Issue #1864)
 ├── state_store.py                   # DynamoDB/Redis/in-memory backend (T7.3)
 ├── conftest.py                      # Shared pytest fixtures (see below)
 ├── pytest.ini                       # Pytest config scoped to this directory
@@ -19,7 +20,8 @@ scripts/
     ├── __init__.py                  # Marker for the test package
     ├── test_cloud_campaign_manager.py
     ├── test_autonomous_parameter_sweep.py
-    └── test_ashrae_benchmark_harness.py
+    ├── test_ashrae_benchmark_harness.py
+    └── test_check_osimflow_coverage.py
 ```
 
 ## Running the tests
@@ -67,6 +69,27 @@ Coverage targets (Issue #1847 acceptance criteria):
 `.github/workflows/python-tests.yml` runs the suite on Ubuntu for
 Python 3.10 / 3.11 / 3.12 / 3.13, requires no cloud credentials, no
 D-Wave token, no Redis, and no Kubernetes context.
+
+## Per-file coverage gate
+
+`scripts/check_osimflow_coverage.py` enforces the ≥ 60 % line-coverage
+threshold on each target file from the Cobertura XML produced by the
+pytest run. It is invoked by the workflow's `Enforce per-file coverage
+thresholds` step:
+
+```bash
+pytest scripts/ci/ -c scripts/pytest.ini \
+  --cov-report=xml:scripts/ci/coverage.xml
+python scripts/check_osimflow_coverage.py scripts/ci/coverage.xml
+```
+
+The checker normalizes the `filename` attribute emitted by coverage.py
+(which is relative to `--cov=scripts`, e.g. `cloud_campaign_manager.py`)
+onto the canonical `scripts/<name>` keys, and counts lines from both the
+Cobertura summary attributes and the per-line `<line hits>` records that
+coverage.py >= 6 emits. Tests live in `scripts/ci/test_check_osimflow_coverage.py`
+(Issue #1864 — the previous inline-YAML gate mismatched paths and read
+absent summary attributes, turning every OSimFlow pytest job red).
 
 ## Conventions
 
