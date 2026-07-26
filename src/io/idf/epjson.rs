@@ -278,4 +278,89 @@ mod tests {
         let result = IdfParser::from_epjson_str(src);
         assert!(result.is_err());
     }
+
+    /// Issue #1707 acceptance criterion #2 (unit-level): parse epJSON,
+    /// serialize the resulting [`IdfFile`] back to IDF text, re-parse the
+    /// IDF text, and verify object-level consistency.
+    #[test]
+    fn epjson_idf_round_trip_preserves_object_count() {
+        let src = r#"{
+          "Version": {
+            "Version 1": { "version_identifier": "25.2" }
+          },
+          "Building": {
+            "MainBuilding": {
+              "name": "RefBox",
+              "north_axis": 0.0,
+              "terrain": "Suburbs"
+            }
+          },
+          "Zone": {
+            "Zone1": {
+              "name": "Zone1",
+              "direction_of_relative_north": 0.0,
+              "x_origin": 0.0,
+              "y_origin": 0.0,
+              "z_origin": 0.0
+            }
+          },
+          "Material": {
+            "GypsumBoard": {
+              "name": "GypsumBoard",
+              "roughness": "MediumSmooth",
+              "thickness": 0.0127,
+              "conductivity": 0.16,
+              "density": 800,
+              "specific_heat": 1090
+            }
+          }
+        }"#;
+
+        let idf_a = IdfParser::from_epjson_str(src).expect("parses epJSON");
+
+        // Serialize IdfFile back to IDF text.
+        let mut idf_text = String::new();
+        for obj in &idf_a.objects {
+            idf_text.push_str(&obj.object_type);
+            for field in &obj.fields {
+                idf_text.push_str(", ");
+                match field {
+                    IdfValue::String(s) => {
+                        idf_text.push('"');
+                        idf_text.push_str(s);
+                        idf_text.push('"');
+                    }
+                    IdfValue::Real(f) => idf_text.push_str(&f.to_string()),
+                    IdfValue::Integer(i) => idf_text.push_str(&i.to_string()),
+                    IdfValue::Empty => {}
+                }
+            }
+            idf_text.push_str(";\n");
+        }
+
+        // Re-parse the IDF text.
+        let idf_b = IdfParser::from_str(&idf_text).expect("re-parses IDF text");
+
+        // Object count and types must match.
+        assert_eq!(
+            idf_a.objects.len(),
+            idf_b.objects.len(),
+            "object count should match after round-trip"
+        );
+        for (a, b) in idf_a.objects.iter().zip(idf_b.objects.iter()) {
+            assert_eq!(
+                a.object_type, b.object_type,
+                "object_type mismatch after round-trip"
+            );
+            assert_eq!(
+                a.fields.len(),
+                b.fields.len(),
+                "field count mismatch for {} after round-trip",
+                a.object_type
+            );
+        }
+
+        // Version must survive the round-trip.
+        assert_eq!(idf_a.version, idf_b.version);
+    }
 }

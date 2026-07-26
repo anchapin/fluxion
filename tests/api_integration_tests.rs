@@ -17,6 +17,7 @@ use fluxion::api::schema::{
     SimulationOutput, SimulationSchemaV1, WeatherData,
 };
 use fluxion::api::server::{router, run_simulation, AppState};
+use fluxion::io::idf::{IdfFile, IdfParser, IdfValue};
 use serde_json::json;
 use tokio::net::TcpListener;
 use tokio::sync::oneshot;
@@ -275,6 +276,207 @@ async fn import_epjson_returns_200_with_valid_epjson() {
         .await
         .unwrap();
     assert_eq!(resp.status(), 200, "valid epJSON should return 200");
+}
+
+/// Serialize an [`IdfFile`] back to IDF text so we can round-trip through
+/// the IDF import endpoint. This is a test-only helper — production IDF
+/// export is out of scope (design §10).
+fn idf_file_to_text(idf: &IdfFile) -> String {
+    let mut out = String::new();
+    for obj in &idf.objects {
+        out.push_str(&obj.object_type);
+        for field in &obj.fields {
+            out.push_str(", ");
+            match field {
+                IdfValue::String(s) => {
+                    out.push('"');
+                    out.push_str(s);
+                    out.push('"');
+                }
+                IdfValue::Real(f) => out.push_str(&f.to_string()),
+                IdfValue::Integer(i) => out.push_str(&i.to_string()),
+                IdfValue::Empty => {}
+            }
+        }
+        out.push_str(";\n");
+    }
+    out
+}
+
+/// Acceptance criterion #2 (issue #1707): epJSON round-trip — import
+/// epJSON, serialize the resulting [`IdfFile`] to IDF text, re-import the
+/// IDF text, and verify both paths produce the same `SimulationSchemaV1`
+/// within float tolerance.
+#[tokio::test]
+async fn import_epjson_round_trip_matches_idf_import() {
+    let (base, _state, _shutdown) = start_server().await;
+
+    let epjson_body = r#"{
+  "Version": {
+    "Version 1": {
+      "version_identifier": "25.2"
+    }
+  },
+  "Building": {
+    "TestBuilding": {
+      "name": "TestBuilding",
+      "north_axis": 0.0,
+      "terrain": "Suburbs",
+      "loads_convergence_tolerance_value": 0.04,
+      "temperature_convergence_tolerance_value": 0.4,
+      "solar_distribution": "FullExterior",
+      "maximum_number_of_warmup_days": 25
+    }
+  },
+  "Zone": {
+    "Zone1": {
+      "name": "Zone1",
+      "direction_of_relative_north": 0.0,
+      "x_origin": 0.0,
+      "y_origin": 0.0,
+      "z_origin": 0.0
+    }
+  },
+  "Material": {
+    "GypsumBoard": {
+      "name": "GypsumBoard",
+      "roughness": "MediumSmooth",
+      "thickness": 0.0127,
+      "conductivity": 0.16,
+      "density": 800,
+      "specific_heat": 1090
+    }
+  },
+  "Construction": {
+    "ExtWall": {
+      "name": "ExtWall",
+      "outside_layer": "GypsumBoard"
+    }
+  },
+  "BuildingSurface:Detailed": {
+    "Wall-South": {
+      "name": "Wall-South",
+      "surface_type": "Wall",
+      "construction_name": "ExtWall",
+      "zone_name": "Zone1",
+      "outside_boundary_condition_object": "",
+      "outside_boundary_condition": "Outdoors",
+      "sun_exposure": "SunExposed",
+      "wind_exposure": "WindExposed",
+      "view_factor_to_ground": "",
+      "number_of_vertices": 4,
+      "vertex_1_x": 0.0,
+      "vertex_1_y": 0.0,
+      "vertex_1_z": 2.7,
+      "vertex_2_x": 6.0,
+      "vertex_2_y": 0.0,
+      "vertex_2_z": 2.7,
+      "vertex_3_x": 6.0,
+      "vertex_3_y": 0.0,
+      "vertex_3_z": 0.0,
+      "vertex_4_x": 0.0,
+      "vertex_4_y": 0.0,
+      "vertex_4_z": 0.0
+    }
+  },
+  "Site:GroundTemperature:BuildingSurface": {
+    "Ground Temps": {
+      "january": 19.5,
+      "february": 19.5,
+      "march": 19.5,
+      "april": 19.5,
+      "may": 19.5,
+      "june": 19.5,
+      "july": 19.5,
+      "august": 19.5,
+      "september": 19.5,
+      "october": 19.5,
+      "november": 19.5,
+      "december": 19.5
+    }
+  }
+}"#;
+
+    // 1. Import epJSON via REST.
+    let resp_epjson = http_client()
+        .post(format!("{base}/v1/import/epjson"))
+        .body(epjson_body)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(
+        resp_epjson.status(),
+        200,
+        "epJSON import should return 200, got {}",
+        resp_epjson.status()
+    );
+    let schema_epjson: serde_json::Value = resp_epjson.json().await.unwrap();
+
+    // 2. Serialize the parsed IdfFile to IDF text.
+    let idf_file = IdfParser::from_epjson_str(epjson_body).expect("parses epJSON");
+    let idf_text = idf_file_to_text(&idf_file);
+
+    // 3. Re-import the IDF text via REST.
+    let resp_idf = http_client()
+        .post(format!("{base}/v1/import/idf"))
+        .body(idf_text)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(
+        resp_idf.status(),
+        200,
+        "IDF re-import should return 200, got {}",
+        resp_idf.status()
+    );
+    let schema_idf: serde_json::Value = resp_idf.json().await.unwrap();
+
+    // 4. Compare schemas within float tolerance.
+    let s_ep = &schema_epjson["schema"];
+    let s_idf = &schema_idf["schema"];
+
+    // Metadata name must match exactly.
+    assert_eq!(
+        s_ep["metadata"]["name"], s_idf["metadata"]["name"],
+        "metadata.name should match after round-trip"
+    );
+
+    // Geometry zone count must match.
+    let zones_ep = s_ep["geometry"]["zones"].as_array().unwrap().len();
+    let zones_idf = s_idf["geometry"]["zones"].as_array().unwrap().len();
+    assert_eq!(
+        zones_ep, zones_idf,
+        "zone count should match after round-trip"
+    );
+
+    // Floor area and volume within 1e-6 tolerance.
+    let area_ep = s_ep["geometry"]["total_floor_area"].as_f64().unwrap();
+    let area_idf = s_idf["geometry"]["total_floor_area"].as_f64().unwrap();
+    assert!(
+        (area_ep - area_idf).abs() < 1e-6,
+        "total_floor_area mismatch: epJSON={area_ep}, IDF={area_idf}"
+    );
+
+    let vol_ep = s_ep["geometry"]["total_volume"].as_f64().unwrap();
+    let vol_idf = s_idf["geometry"]["total_volume"].as_f64().unwrap();
+    assert!(
+        (vol_ep - vol_idf).abs() < 1e-6,
+        "total_volume mismatch: epJSON={vol_ep}, IDF={vol_idf}"
+    );
+
+    // Construction material count must match.
+    let mats_ep = s_ep["constructions"]["materials"]
+        .as_array()
+        .map(|a| a.len())
+        .unwrap_or(0);
+    let mats_idf = s_idf["constructions"]["materials"]
+        .as_array()
+        .map(|a| a.len())
+        .unwrap_or(0);
+    assert_eq!(
+        mats_ep, mats_idf,
+        "material count should match after round-trip"
+    );
 }
 
 #[tokio::test]
