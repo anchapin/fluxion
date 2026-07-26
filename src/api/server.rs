@@ -1270,6 +1270,7 @@ mod tests {
             ("GET", "/v1/openapi.yaml"),
             ("POST", "/v1/simulate"),
             ("POST", "/v1/import/osm"),
+            ("POST", "/v1/import/epjson"),
         ];
         for (method, path) in probes {
             let url = format!("http://{addr}{path}");
