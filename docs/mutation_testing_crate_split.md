@@ -156,15 +156,51 @@ cargo build -p fluxion-core
 # Mutation testing targets only fluxion (fluxion-core is a cached dep).
 # Always pass --config .cargo/mutants.toml so the canonical config is loaded
 # explicitly (issue #1440 — the root-level mutants.toml has been removed):
-cargo mutants --config .cargo/mutants.toml -p fluxion --list
+
+# Full suite (requires 32 GB+):
 cargo mutants --config .cargo/mutants.toml -p fluxion --baseline skip
+
+# Diff-scoped (mirrors the PR CI check — any machine):
+scripts/mutants_diff_files.sh origin/develop mutants_diff.patch
+cargo mutants --config .cargo/mutants.toml -p fluxion \
+  --baseline skip --in-diff mutants_diff.patch
 ```
 
 ## Summary
 
-| Phase | Status | Effect on cargo-mutants memory |
-|-------|--------|--------------------------------|
-| 1. Workspace + move `weather` to `fluxion-core` | ✅ Done (this PR) | Establishes the seam; `weather` no longer recompiled per mutant |
-| 2. Move shared domain types → `fluxion-core`, then `physics` | ⏳ Planned | Removes physics type hierarchy from per-mutant compile |
-| 3. `SurrogateProvider` trait + gate `ort` | ⏳ Planned | **Removes `ort` from per-mutant compile — reaches < 4 GB target** |
-| 4. Move `validation` | ⏳ Planned | Completeness |
+| 1. Workspace + move `weather` to `fluxion-core` | ✅ Done (#1255) | Establishes the seam; `weather` no longer recompiled per mutant |
+| 2. Move shared domain types → `fluxion-core`, then `physics` | ✅ Done (#1349) | Removes physics type hierarchy from per-mutant compile |
+| 3. `SurrogateProvider` trait + gate `ort` | ⏳ Tracked epic | **Removes `ort` from per-mutant compile — reaches < 4 GB target** |
+| 4. Move `validation` | ⏳ Tracked epic | Completeness |
+
+## Dual-Pipeline CI Strategy (#1891)
+
+While Phases 3 & 4 remain as medium-term architectural fixes, Issue #1891
+researched and selected a hybrid strategy to restore CI mutation coverage
+**immediately** without the large refactor effort:
+
+### Pipeline 1 — Diff-Scoped Advisory PR Check (`mutation-testing.yml`)
+
+Runs on every PR that touches `src/**`. Uses `cargo mutants --in-diff` to
+generate mutants **only in the changed lines** of the PR diff (produced by
+`scripts/mutants_diff_files.sh`). Because only a handful of mutants are
+generated per PR, the run completes in minutes on a standard 32 GB runner
+(`ubuntu-latest-8-cores`).
+
+**Advisory** (non-blocking): the job never fails on missed mutants. Results are
+posted as a PR comment and uploaded as an artifact. The advisory status will be
+revisited once flake rate is characterised (see Issue #1891, Section 6).
+
+### Pipeline 2 — Nightly Full Suite (`mutation-nightly.yml`)
+
+Runs the entire mutation suite (this config, no `--in-diff`) against `develop`
+at 07:00 UTC on a 32 GB runner. Catches indirect mutations that diff-scoping
+misses (e.g. a trait change rippling into an untouched solver). Prefers
+self-hosted Hetzner runners when `vars.FLUXION_LINUX_RUNNER` is set.
+
+### Why both
+
+Diff-scoping is fast and cheap but can miss indirect mutations. The nightly full
+run closes that gap at the cost of delayed feedback (overnight). Phase 3 (gate
+`ort`) remains the durable root-cause fix: once per-mutant memory drops below
+4 GB, the full suite can run on cheaper runners and eventually on PRs too.

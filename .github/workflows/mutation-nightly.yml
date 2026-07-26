@@ -1,0 +1,183 @@
+name: Mutation Testing (Nightly Full Suite)
+
+# Comprehensive full-workspace mutation testing (Issue #1891, Solution C).
+#
+# The diff-scoped PR check (`mutation-testing.yml`) only mutates changed lines.
+# Indirect mutations — e.g. a trait change that ripples into an untouched solver
+# — are invisible to that scope.  This nightly job closes the gap by running the
+# *entire* mutation suite against `develop` on a 32 GB runner.
+#
+# Results are uploaded as an artifact and summarised in a tracking issue
+# comment (or repository dispatch) rather than gating PRs.
+#
+# Runner selection:
+#   ubuntu-latest-8-cores provides 32 GB RAM, which is sufficient for the
+#   current exclude set in .cargo/mutants.toml.  If `vars.FLUXION_LINUX_RUNNER`
+#   is set (self-hosted Hetzner), the job prefers that runner to avoid the
+#   hosted-runner availability limits documented in docs/self-hosted-runners.md.
+
+on:
+  schedule:
+    # 07:00 UTC daily (off-peak for US/EU contributors).
+    - cron: '0 7 * * *'
+  workflow_dispatch: {}  # manual trigger for on-demand full runs
+
+permissions:
+  contents: read
+  issues: write          # post summary comment on the tracking issue
+  pull-requests: read
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: 1
+
+jobs:
+  mutation-nightly:
+    name: Nightly Full Mutation Suite
+    runs-on: ${{ vars.FLUXION_LINUX_RUNNER || 'ubuntu-latest-8-cores' }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: develop
+          fetch-depth: 0
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libssl-dev pkg-config libfontconfig1-dev
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install cargo-mutants
+        run: cargo install cargo-mutants --locked
+
+      - name: Run full mutation suite
+        id: mutants
+        env:
+          CARGO_INCREMENTAL: "0"
+        run: |
+          # Full-workspace run — NO --in-diff.  The exclude set in
+          # .cargo/mutants.toml keeps the combinatorial physics files out.
+          set +e
+          cargo mutants --config .cargo/mutants.toml -p fluxion --jobs 2 \
+            --baseline skip --features ort \
+            -o mutation_testing_results \
+            -- --test-threads=2
+          MUTANTS_EXIT=$?
+          echo "mutants_exit=$MUTANTS_EXIT" >> $GITHUB_OUTPUT
+          exit 0
+
+      - name: Parse mutation results
+        id: results
+        if: always()
+        run: |
+          OUTCOMES="mutation_testing_results/outcomes.json"
+          if [ ! -f "$OUTCOMES" ]; then
+            echo "caught=0" >> $GITHUB_OUTPUT
+            echo "missed=0" >> $GITHUB_OUTPUT
+            echo "timeout=0" >> $GITHUB_OUTPUT
+            echo "unviable=0" >> $GITHUB_OUTPUT
+            echo "total=0" >> $GITHUB_OUTPUT
+            echo "has_results=false" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+
+          python3 << 'PYEOF'
+          import json, os
+
+          with open("mutation_testing_results/outcomes.json") as f:
+            outcomes = json.load(f)
+
+          caught = missed = timeout = unviable = 0
+          for item in outcomes:
+              outcome = item.get("outcome", "")
+              if outcome == "caught":
+                  caught += 1
+              elif outcome == "missed":
+                  missed += 1
+              elif outcome == "timeout":
+                  timeout += 1
+              elif outcome == "unviable":
+                  unviable += 1
+
+          total = caught + missed
+          with open(os.environ["GITHUB_OUTPUT"], "a") as f:
+              f.write(f"caught={caught}\n")
+              f.write(f"missed={missed}\n")
+              f.write(f"timeout={timeout}\n")
+              f.write(f"unviable={unviable}\n")
+              f.write(f"total={total}\n")
+              f.write("has_results=true\n")
+          PYEOF
+
+      - name: Generate HTML report
+        if: always()
+        run: |
+          mkdir -p mutation_testing_results/reports
+          if [ -f mutation_testing_results/outcomes.json ]; then
+            cargo mutants show -o mutation_testing_results --format html > mutation_testing_results/reports/index.html 2>&1 || true
+          fi
+
+      - name: Upload mutation test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mutation-nightly-results
+          path: |
+            mutation_testing_results/
+          retention-days: 90
+
+      - name: Post nightly summary comment
+        if: always() && steps.results.outputs.has_results == 'true'
+        uses: actions/github-script@v7
+        env:
+          MUTANTS_EXIT: ${{ steps.mutants.outputs.mutants_exit }}
+          CAUGHT: ${{ steps.results.outputs.caught }}
+          MISSED: ${{ steps.results.outputs.missed }}
+          TIMEOUT: ${{ steps.results.outputs.timeout }}
+          UNVIABLE: ${{ steps.results.outputs.unviable }}
+          TOTAL: ${{ steps.results.outputs.total }}
+        with:
+          script: |
+            const caught   = parseInt(process.env.CAUGHT   || '0', 10);
+            const missed   = parseInt(process.env.MISSED   || '0', 10);
+            const timeout  = parseInt(process.env.TIMEOUT  || '0', 10);
+            const unviable = parseInt(process.env.UNVIABLE || '0', 10);
+            const total    = parseInt(process.env.TOTAL    || '0', 10);
+            const mutantsExit = parseInt(process.env.MUTANTS_EXIT || '1', 10);
+            const allPassing = mutantsExit === 0 && missed === 0;
+
+            const now = new Date().toISOString().slice(0, 10);
+
+            let body = `## Nightly Mutation Suite — ${now}\n\n`;
+            body += `> Full-workspace run against \`develop\`. `;
+            body += `Diff-scoped PR check: \`mutation-testing.yml\`.\n\n`;
+
+            const emoji = allPassing ? 'PASS' : 'FAIL';
+            body += `| Metric | Value |\n`;
+            body += `|--------|-------|\n`;
+            body += `| Caught (killed) | ${caught} |\n`;
+            body += `| Missed (survived) | ${missed} |\n`;
+            body += `| Timeout | ${timeout} |\n`;
+            body += `| Unviable | ${unviable} |\n`;
+            body += `| Mutation score | ${total > 0 ? Math.round((caught / total) * 100) : 0}% |\n`;
+            body += `| Status | ${emoji} |\n\n`;
+
+            if (missed > 0) {
+              body += `**${missed} mutant(s) survived.** Review the artifact and consider tightening tests.\n\n`;
+            } else if (allPassing) {
+              body += 'All mutants were caught overnight.\n\n';
+            }
+            if (timeout > 0) {
+              body += `**${timeout} mutant(s) timed out.**\n\n`;
+            }
+            body += `**Artifact**: \`mutation-nightly-results\` (90-day retention)\n`;
+
+            // Post to the mutation-testing tracking issue (#1891) for visibility.
+            github.rest.issues.createComment({
+              issue_number: 1891,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: body
+            });
