@@ -30,7 +30,7 @@ GaugeSolver Phase 1/2/3 issues) just because the PR body mentions
 `Closes #N` line.
 
 ```bash
-gh pr create --base main \
+gh pr create --base develop \
   --title "fix: resolve #N — <title>" \
   --body "$(cat <<'EOF'
 Closes #N

@@ -15,7 +15,7 @@ Understand the issue before writing any code.
 
 ### Entry Criteria
 - Issue is assigned and triaged
-- Branch created from `main`
+- Branch created from `develop`
 
 ### Checklist
 - [ ] Read `ARCHITECTURE.md` — understand module boundaries and data flow
@@ -136,10 +136,10 @@ Finalize and prepare for merge.
 ### Worktree Management
 ```bash
 # Create worktree
-git worktree add ../worktrees/issue-{N}-{slug} -b fix/issue-{N}-{slug} main
+git worktree add ../worktrees/issue-{N}-{slug} -b fix/issue-{N}-{slug} develop
 
 # Sync before starting
-git pull origin main
+git pull origin develop
 
 # Commit and push
 git add . && git commit -m "docs: resolve #{N} — {title}"
