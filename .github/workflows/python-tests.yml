@@ -77,48 +77,14 @@ jobs:
             --junitxml=scripts/ci/junit.xml
 
       - name: Enforce per-file coverage thresholds
+        # Path normalization lives in scripts/check_osimflow_coverage.py so it
+        # can be unit-tested. See Issue #1864 — the previous inline Python
+        # matched bare ``cloud_campaign_manager.py`` against canonical
+        # ``scripts/...`` keys and reported every target as "no coverage data".
         shell: bash
         run: |
           set -euo pipefail
-          python - <<'PY'
-          """Fail the job if any of the three OSimFlow files drops below 60%."""
-          import xml.etree.ElementTree as ET
-
-          targets = {
-              "scripts/cloud_campaign_manager.py": 60.0,
-              "scripts/autonomous_parameter_sweep.py": 60.0,
-              "scripts/ashrae_benchmark_harness.py": 60.0,
-          }
-          root = ET.parse("scripts/ci/coverage.xml").getroot()
-
-          line_totals: dict[str, tuple[int, int]] = {}
-          for cls in root.findall(".//class"):
-              filename = cls.get("filename", "")
-              base = filename.split("site-packages/")[-1]
-              line_rate = float(cls.get("line-rate", "0"))
-              lines_valid = int(cls.get("lines-valid", "0"))
-              lines_covered = int(cls.get("lines-covered", "0"))
-              if base in targets:
-                  cur = line_totals.get(base, (0, 0))
-                  line_totals[base] = (cur[0] + lines_valid, cur[1] + lines_covered)
-
-          failures = []
-          for path, threshold in targets.items():
-              valid, covered = line_totals.get(path, (0, 0))
-              if valid == 0:
-                  failures.append((path, 0.0, threshold, "no coverage data"))
-                  continue
-              pct = (covered / valid) * 100
-              if pct < threshold:
-                  failures.append((path, pct, threshold, "below threshold"))
-              print(f"[coverage] {path}: {pct:.2f}% (threshold {threshold:.0f}%)")
-
-          if failures:
-              print("\n::error::OSimFlow coverage threshold failures:")
-              for path, pct, threshold, reason in failures:
-                  print(f"::error::  {path}: {pct:.2f}% < {threshold}% — {reason}")
-              raise SystemExit(1)
-          PY
+          python scripts/check_osimflow_coverage.py scripts/ci/coverage.xml
 
       - name: Upload coverage artifacts
         if: always()
