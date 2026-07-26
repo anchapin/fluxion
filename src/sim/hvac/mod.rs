@@ -7,6 +7,7 @@ pub mod airside_coupling;
 pub mod airside_state;
 pub mod cooling_coil;
 pub mod cycling;
+pub mod doas;
 pub mod economizer;
 pub mod efficiency_curves;
 pub mod equipment;
@@ -26,6 +27,7 @@ pub use airside_state::{
 };
 pub use cooling_coil::{CoilPerformance, CoolingCoil, CoolingCoilBehavior};
 pub use cycling::CyclingTracker;
+pub use doas::{Doas, DoasControl, DoasMode, DoasPerformance, DoasUnit};
 pub use economizer::{calculate_free_cooling_capacity, is_economizer_active, EconomizerMode};
 pub use efficiency_curves::{
     default_ahri_coefficients, CurveCoefficients, EfficiencyCurve, EfficiencyCurveConfig,
