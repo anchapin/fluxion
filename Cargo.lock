@@ -1074,6 +1074,7 @@ dependencies = [
  "http-body-util",
  "json-patch",
  "lazy_static",
+ "libm",
  "log",
  "loom 0.1.1",
  "metrics",
