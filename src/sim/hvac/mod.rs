@@ -9,6 +9,7 @@ pub mod cycling;
 pub mod economizer;
 pub mod efficiency_curves;
 pub mod equipment;
+pub mod fan;
 pub mod ideal_loads;
 pub mod modes;
 pub mod zones;
@@ -25,6 +26,7 @@ pub use efficiency_curves::{
     default_ahri_coefficients, CurveCoefficients, EfficiencyCurve, EfficiencyCurveConfig,
 };
 pub use equipment::{AnyEquipment, Boiler, Chiller, HVACMode, VariableCapacityEquipment};
+pub use fan::{Fan, FanComponent, STANDARD_AIR_DENSITY_KG_PER_M3};
 pub use ideal_loads::IdealLoadsSystem;
 pub use modes::PredictiveController;
 
