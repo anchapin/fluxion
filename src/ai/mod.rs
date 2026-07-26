@@ -1,4 +1,5 @@
 pub mod batch_inference;
+pub mod batch_runner;
 pub mod context_aware;
 pub mod distributed;
 pub mod ensemble;
