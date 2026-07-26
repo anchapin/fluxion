@@ -12,7 +12,7 @@ Before any non-trivial change, read these in order:
 Companion docs (read when relevant):
 - `RULES.md` — hard constraints (numerical-reasoning-via-code, energy balance, ASHRAE 140)
 - `CONTRIBUTING.md` — workflow / PR / branch policy
-- `KNOWN_ISSUES.md` — open physics limitations; CI fails if its `Last Updated` is >60 days old (issue #1723)
+- `docs/KNOWN_ISSUES.md` — open physics limitations; CI gate `scripts/check_known_issues_stale.py` (issue #1723) fails if the `*Last Updated: YYYY-MM-DD*` line is >60 days old. The gate **skips (passes)** if the file is absent, so a missing file does not itself fail CI.
 - `docs/ASHRAE140_RESULTS.md` and `docs/ASHRAE140_RESULTS_v0.8.0.md` — current validation pass rates
 
 ## Workspace Structure
@@ -37,6 +37,7 @@ fluxion-core/                 # workspace member (leaf modules, no sim/physics/a
   src/assembly.rs             # BuildingAssembly, AssemblyBuilder, MaterialLayer
   src/multi_node.rs           # ThermalMassNode, MultiNodeThermalMass
   src/ashrae_cases.rs         # Orientation, WindowArea, ConstructionType, … (pure data)
+  src/tensor.rs               # geometry tensor types
 fluxion-mcp/                  # STANDALONE crate (NOT in workspace) — Model Context Protocol server
 ```
 
@@ -158,7 +159,7 @@ Heavy Linux jobs honour `vars.FLUXION_LINUX_RUNNER` (self-hosted Hetzner fallbac
 
 ## Repository Hygiene
 
-- **Only `README.md` belongs in repo root** as a `.md` file. Other root-level `.md` files (analyses, summaries, plans) should be deleted or moved to `tmp/`/`docs/` before commit. CI and `copilot-instructions.md` enforce this.
+- **Root `.md` policy**: standing docs (`README.md`, `ARCHITECTURE.md`, `CODEBASE_MAP.md`, `CONTRIBUTING.md`, `RULES.md`, `CHANGELOG.md`, `AGENTS.md`) are the only root `.md` files that belong in a commit. Transient artifacts (analyses, session summaries, plans, `CASE_*.md`, `BATCH_*.md`, `*_REPORT.md`) must move to `tmp/` or `docs/` before commit — CI and `copilot-instructions.md` enforce this.
 - All system docs in `docs/` must have a **7-line summary** at the top (lines 2–8). See `docs/doc-inventory.md`. AGENTS.md itself is exempt.
 - Issue triage labels: see `docs/agents/triage-labels.md`. GitHub issue workflow: `gh issue create --title "..." --body "..." --label "..."` (per `docs/agents/issue-tracker.md`).
 
