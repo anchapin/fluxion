@@ -14,6 +14,7 @@ pub mod fan;
 pub mod heating_coil;
 pub mod ideal_loads;
 pub mod modes;
+pub mod vav_terminal;
 pub mod zones;
 
 // Re-export common types for convenience
@@ -33,6 +34,9 @@ pub use fan::{Fan, FanComponent, STANDARD_AIR_DENSITY_KG_PER_M3};
 pub use heating_coil::{HeatingCoil, HeatingCoilComponent, HeatingCoilControl, HeatingCoilResult};
 pub use ideal_loads::IdealLoadsSystem;
 pub use modes::PredictiveController;
+pub use vav_terminal::{
+    VavOperatingMode, VavTerminal, VavTerminalControl, VavTerminalPerformance, VavTerminalUnit,
+};
 
 use serde::{Deserialize, Serialize};
 
