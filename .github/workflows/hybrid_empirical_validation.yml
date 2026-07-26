@@ -1,0 +1,179 @@
+# Hybrid Empirical MAE Validation Gate (Issue #1846)
+#
+# CI gate that asserts the HybridThermalModel+HybridRouting path stays
+# within 10% of the physics-only baseline MAE when validated against
+# FLEXLAB-measured reality. Closes the blind spot identified in Issue
+# #1846: the existing surrogate_drift_gate compares the surrogate to
+# the physics engine — not to measured reality. If both drift away from
+# physical reality in the same direction, the drift gate stays green
+# while the hybrid output is wrong.
+#
+# What it runs
+# ------------
+# Single integration test in `tests/validation/hybrid_empirical_test.rs`
+# (`cargo test --test validation_hybrid_empirical_test`) that:
+#
+#   1. Builds the FLEXLAB X3A spec (Issue #1807) and a
+#      `HybridThermalModel` with `HybridRouting::default()` (loads →
+#      surrogate, rest → physics; the highest-value / lowest-risk split
+#      per Issue #1431).
+#   2. Synthesizes FLEXLAB-style measurements with σ = 0.1 °C sensor
+#      noise (ASHRAE Guideline 14 convention: σ = accuracy/2 for
+#      accuracy = ±0.2 °C).
+#   3. Generates the `HybridEmpiricalReport` via
+#      `validation::empirical_hybrid::generate_hybrid_empirical_report`.
+#   4. Asserts `hybrid_mae ≤ physics_mae × 1.10` (ASHRAE Guideline 14
+#      NMBE threshold; see `MAE_TOLERANCE_MULTIPLIER` in
+#      `src/validation/empirical_hybrid.rs`).
+#
+# Tolerance derivation
+# --------------------
+# The 10% tolerance equals the ASHRAE Guideline 14-2014 monthly NMBE
+# threshold (Table 8-1). It is NOT tuned to pass tests — see the
+# doc-comment on `MAE_TOLERANCE_MULTIPLIER`. In fallback mode the
+# hybrid path is operationally equivalent to the physics path, so any
+# deviation >10% indicates a real surrogate-path divergence that must
+# be investigated.
+#
+# Triggers
+# --------
+# - push to main / develop (gate against regressions)
+# - PRs targeting main / develop
+# - changes to src/ai/**, src/sim/thermal_model.rs, or
+#   tests/validation/** (auto-trigger on logic changes)
+# - manual dispatch
+#
+# Why --release
+# -------------
+# Release mode matches the production binary and avoids debug-mode
+# overhead. Same reasoning as other strict gates in the CI pipeline.
+
+name: Hybrid Empirical MAE Validation Gate
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main, develop]
+  workflow_dispatch:
+
+concurrency:
+  group: hybrid-empirical-validation-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  pull-requests: read
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: 1
+
+jobs:
+  hybrid-empirical-validation:
+    name: Hybrid Empirical MAE Validation Gate (Issue #1846)
+    runs-on: ${{ vars.FLUXION_LINUX_RUNNER || 'ubuntu-latest' }}
+    timeout-minutes: 30
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install system dependencies (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libssl-dev pkg-config libfontconfig1-dev
+
+      - uses: ./.github/actions/setup-rust-python-env
+        with:
+          python-version: '3.10'
+
+      - name: Cache cargo registry + build artifacts
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: hybrid-empirical-validation-${{ runner.os }}-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            hybrid-empirical-validation-${{ runner.os }}-
+
+      - name: Run hybrid empirical MAE gate
+        # Single test target (Issue #1846 Task 3). The test runs the
+        # `HybridThermalModel` + `HybridRouting` path against synthetic
+        # FLEXLAB-style measurements and asserts the hybrid MAE stays
+        # within 10% of the physics-only MAE (ASHRAE Guideline 14 NMBE).
+        # No name filter — `--test` already scopes to this one binary,
+        # and the coverage check below verifies all 5 expected test
+        # names are present. The old `_hybrid_empirical` filter excluded
+        # `test_hybrid_all_physics_matches_physics_baseline` and
+        # `test_routing_summary_is_stable` which don't contain that
+        # substring (fixes CI coverage-check failure).
+        run: |
+          cargo test --release --verbose \
+            --test validation_hybrid_empirical_test \
+            2>&1 | tee -a /tmp/hybrid_empirical_output.txt
+          echo "---"
+          echo "exit_code=$?"
+
+      - name: Run hybrid empirical unit tests
+        # Unit tests in `src/validation/empirical_hybrid.rs` covering
+        # the MAE tolerance constant, routing summary strings, registry,
+        # and helper functions.
+        run: |
+          cargo test --release --verbose \
+            --lib \
+            validation::empirical_hybrid \
+            2>&1 | tee -a /tmp/hybrid_empirical_output.txt
+          echo "---"
+          echo "exit_code=$?"
+
+      - name: Verify gate coverage and extract results
+        run: |
+          echo "=== Hybrid empirical MAE gate coverage check ==="
+          for t in \
+            test_hybrid_empirical_mae_within_10pct_of_physics \
+            test_hybrid_empirical_report_handles_empty_measurements \
+            test_hybrid_empirical_report_json_round_trip \
+            test_hybrid_all_physics_matches_physics_baseline \
+            test_routing_summary_is_stable ; do
+            if grep -qE "^test $t \\.\\.\\. (ok|ignored|FAILED)" /tmp/hybrid_empirical_output.txt; then
+              echo "  COVERED: $t"
+            else
+              echo "  DROPPED FROM GATE: $t"
+              echo "  This test name is no longer matched by the cargo filter."
+              echo "  Either the test was renamed/removed, or the workflow"
+              echo "  filter needs updating. Failing the build."
+              exit 1
+            fi
+          done
+
+          echo
+          echo "=== Hybrid empirical MAE gate result extraction ==="
+          sed -i 's/\x1b\[[0-9;]*m//g' /tmp/hybrid_empirical_output.txt
+
+          FAILED=$(grep -cE '^test .* \\.\\.\\. FAILED$' /tmp/hybrid_empirical_output.txt || true)
+          PANICS=$(grep -cE 'panicked at' /tmp/hybrid_empirical_output.txt || true)
+          PASSED=$(grep -cE '^test test_hybrid.* \\.\\.\\. ok$|^test test_routing.* \\.\\.\\. ok$' /tmp/hybrid_empirical_output.txt || true)
+
+          echo "  Passed   : $PASSED"
+          echo "  Failed   : $FAILED"
+          echo "  Panics   : $PANICS"
+
+          if [ "$FAILED" -gt 0 ] || [ "$PANICS" -gt 0 ]; then
+            echo
+            echo "::error::Hybrid empirical MAE gate FAILED — hybrid surrogate MAE exceeded 10% of physics-only MAE."
+            echo "See /tmp/hybrid_empirical_output.txt for the failing assertion messages."
+            echo "Per Issue #1846: investigate the surrogate-vs-physics delta before loosening the tolerance."
+            exit 1
+          fi
+          echo "PASS: Hybrid empirical MAE gate holds (hybrid MAE <= physics MAE * 1.10)."
+
+      - name: Upload hybrid-empirical log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: hybrid-empirical-validation
+          path: /tmp/hybrid_empirical_output.txt
+          retention-days: 14

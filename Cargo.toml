@@ -463,6 +463,13 @@ name = "validation_empirical_guideline14"
 path = "tests/validation/empirical_guideline14.rs"
 harness = true
 
+# Issue #1846 — Hybrid Physics+ML surrogate empirical MAE report vs FLEXLAB.
+# `cargo test -p fluxion validation_hybrid_empirical_test` runs this target.
+[[test]]
+name = "validation_hybrid_empirical_test"
+path = "tests/validation/hybrid_empirical_test.rs"
+harness = true
+
 [[test]]
 name = "weather_epw_fields"
 path = "tests/weather_epw_fields.rs"
