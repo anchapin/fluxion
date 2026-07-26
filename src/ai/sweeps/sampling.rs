@@ -21,9 +21,10 @@ use rand::rngs::StdRng;
 use rand::seq::SliceRandom;
 use rand::Rng;
 use rand::SeedableRng;
+use serde::{Deserialize, Serialize};
 
 /// Sampling strategy enum.
-#[derive(Clone, Debug, Copy, PartialEq, Eq)]
+#[derive(Clone, Debug, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum SamplingStrategy {
     /// Independent random Monte Carlo draws.
     RandomMonteCarlo,

@@ -38,11 +38,13 @@ pub mod config;
 pub mod distributions;
 pub mod manifest;
 pub mod sampling;
+pub mod weather;
 
 pub use config::{
-    BuildingGeometryParams, InsulationParams, OccupancyParams, SweepConfig, SweepConfigBuilder,
+    BuildingGeometryParams, InsulationParams, SweepConfig, SweepConfigBuilder,
     WeatherSamplingParams, NUM_CONTINUOUS_DIMENSIONS,
 };
 pub use distributions::{Choice, ParameterDistribution};
 pub use manifest::{generate_samples, ParameterManifest, SweepResult, SweepSample};
 pub use sampling::{generate_unit_samples, SamplingStrategy};
+pub use weather::{WeatherFileEntry, WeatherFileRegistry};
