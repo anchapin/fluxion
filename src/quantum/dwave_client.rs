@@ -67,6 +67,12 @@ pub trait DwaveClient: Send + Sync {
 
     /// Return `true` if the token is set and the sampler is reachable.
     fn is_connected(&self) -> bool;
+
+    /// Return the maximum number of variables supported by this sampler.
+    fn max_variables(&self) -> usize;
+
+    /// Return the hardware constraints for this sampler (bias and coupling ranges).
+    fn hardware_constraints(&self) -> crate::quantum::qubo_scaling::DwaveHardwareConstraints;
 }
 
 /// Error types returned by the D-Wave client.
@@ -366,6 +372,12 @@ mod ocean {
                 }
             }
 
+            // Check hardware constraint ranges (h ∈ [−4,+4], J ∈ [−2,+1]).
+            let constraints = self.hardware_constraints();
+            if let Err(violation) = constraints.validate_ising(ising) {
+                return Err(DwaveError::InvalidIsing(violation.to_string()));
+            }
+
             // Build the SAPI request.
             // SAPI accepts: biases (h), couplers (J entries as [i, j, J_ij]), num_reads.
             let mut couplers: Vec<[f64; 3]> = Vec::new();
@@ -496,6 +508,14 @@ mod ocean {
         fn is_connected(&self) -> bool {
             std::env::var("DWAVE_API_TOKEN").is_ok()
         }
+
+        fn max_variables(&self) -> usize {
+            self.max_variables
+        }
+
+        fn hardware_constraints(&self) -> crate::quantum::qubo_scaling::DwaveHardwareConstraints {
+            crate::quantum::qubo_scaling::DwaveHardwareConstraints::advantage_system64()
+        }
     }
 }
 
@@ -514,6 +534,12 @@ impl DwaveClient for () {
     }
     fn is_connected(&self) -> bool {
         false
+    }
+    fn max_variables(&self) -> usize {
+        0
+    }
+    fn hardware_constraints(&self) -> crate::quantum::qubo_scaling::DwaveHardwareConstraints {
+        crate::quantum::qubo_scaling::DwaveHardwareConstraints::advantage_system64()
     }
 }
 

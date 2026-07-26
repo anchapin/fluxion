@@ -38,3 +38,5 @@ pub mod qubo_mapping;
 
 #[cfg(feature = "dwave")]
 pub mod dwave_client;
+
+pub mod qubo_scaling;
