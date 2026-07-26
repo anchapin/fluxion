@@ -16,13 +16,14 @@ use crate::ai::sweeps::distributions::ParameterDistribution;
 use crate::ai::sweeps::sampling::generate_unit_samples;
 use rand::rngs::StdRng;
 use rand::SeedableRng;
+use serde::{Deserialize, Serialize};
 
 /// A single realised parameter set from a sweep.
 ///
 /// Each field corresponds to a physical quantity.  The struct can be
 /// converted into [`SurrogateInputs`] (for the weather/occupancy portion)
 /// and into a wall-insulation specification (for the envelope portion).
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct SweepSample {
     // --- Building geometry ---
     /// Conditioned floor area [m²].
@@ -55,6 +56,11 @@ pub struct SweepSample {
     pub wind_speed: f64,
     /// Climate zone label (e.g. "4A").
     pub climate_zone: String,
+    /// Representative weather (EPW) file resolved for `climate_zone` via the
+    /// sweep's [`WeatherFileRegistry`](super::weather::WeatherFileRegistry).
+    /// Empty when the zone was not in the registry.
+    #[serde(default)]
+    pub weather_file: String,
 
     // --- Occupancy / internal gains ---
     /// Occupant density [fraction, 0–1].
@@ -103,8 +109,9 @@ impl SweepSample {
 /// Reproducible manifest for a completed sweep run.
 ///
 /// Contains all information needed to re-generate the exact same set of
-/// [`SweepSample`]s.
-#[derive(Clone, Debug)]
+/// [`SweepSample`]s.  The manifest is serializable (serde) so it can be
+/// **emitted** to JSON alongside the generated dataset (Issue #1776 AC3).
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct ParameterManifest {
     /// Random seed used by the sampling strategy.
     pub seed: u64,
@@ -114,22 +121,21 @@ pub struct ParameterManifest {
     pub num_samples: usize,
     /// Number of continuous dimensions.
     pub num_dimensions: usize,
-    /// ISO-8601-ish timestamp of when the manifest was created.
+    /// ISO-8601 timestamp of when the manifest was created.
     pub created_at: String,
     /// Short description of the sweep (human-readable).
     pub description: String,
+    /// Snapshot of the full [`SweepConfig`] used, so the run is exactly
+    /// reproducible from the manifest alone (distribution bounds, weather
+    /// registry, occupancy params, etc.).
+    #[serde(default)]
+    pub config: Option<SweepConfig>,
 }
 
 impl ParameterManifest {
+    /// Current UTC time as a real ISO-8601 string (RFC 3339).
     fn now_iso8601() -> String {
-        let secs = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .map(|d| d.as_secs())
-            .unwrap_or(0);
-        let days = secs / 86400;
-        let year = 1970 + (days / 365);
-        let day_of_year = days % 365;
-        format!("{year}-{:03}T{}Z", day_of_year, secs % 86400)
+        chrono::Utc::now().to_rfc3339()
     }
 
     /// Create a manifest from a config.
@@ -146,12 +152,27 @@ impl ParameterManifest {
                 config.strategy.name(),
                 config.seed
             ),
+            config: Some(config.clone()),
         }
+    }
+
+    /// Serialize the manifest to a pretty-printed JSON string.
+    ///
+    /// This is how the manifest is "emitted" for reproducibility — the JSON
+    /// can be written to disk alongside the generated dataset and later
+    /// deserialized to regenerate the exact same samples.
+    pub fn to_json(&self) -> Result<String, serde_json::Error> {
+        serde_json::to_string_pretty(self)
+    }
+
+    /// Deserialize a manifest from a JSON string.
+    pub fn from_json(json: &str) -> Result<Self, serde_json::Error> {
+        serde_json::from_str(json)
     }
 }
 
 /// Result of a sweep generation: the samples + a reproducible manifest.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct SweepResult {
     /// Generated parameter samples.
     pub samples: Vec<SweepSample>,
@@ -176,6 +197,11 @@ impl SweepResult {
             .iter()
             .map(|s| s.to_surrogate_inputs())
             .collect()
+    }
+
+    /// Serialize the manifest (not the samples) to pretty JSON for emission.
+    pub fn manifest_to_json(&self) -> Result<String, serde_json::Error> {
+        self.manifest.to_json()
     }
 }
 
@@ -252,6 +278,15 @@ pub fn generate_samples(config: &SweepConfig) -> SweepResult {
             .sample(&mut discrete_rng)
             .to_string();
 
+        // Resolve the representative weather file for this climate zone
+        // (Issue #1776 AC1: "weather files (multi-climate)").
+        let weather_file = config
+            .weather_registry
+            .lookup(&climate_zone)
+            .or_else(|| config.weather_registry.lookup_or_default(&climate_zone))
+            .map(|e| e.epw_filename.clone())
+            .unwrap_or_default();
+
         let humidity = vals[10].clamp(0.0, 100.0);
         let window_to_wall_ratio = vals[2].clamp(0.0, 1.0);
         let occupancy = vals[12].clamp(0.0, 1.0);
@@ -270,6 +305,7 @@ pub fn generate_samples(config: &SweepConfig) -> SweepResult {
             humidity,
             wind_speed: vals[11],
             climate_zone,
+            weather_file,
             occupancy,
             zone_temp: vals[13],
             internal_gain_density: vals[14],
@@ -534,5 +570,205 @@ mod tests {
         for s in &result.samples {
             assert!(s.envelope_area() > 0.0);
         }
+    }
+
+    // ---- Issue #1776 AC1: weather files (multi-climate) ----
+
+    #[test]
+    fn test_samples_resolve_weather_file() {
+        // Every sample's climate zone must resolve to a representative EPW
+        // weather file via the standard registry.
+        let domain = SurrogateDomain::default_residential();
+        let config = SweepConfig::from_domain(&domain);
+        let result = generate_samples(&config);
+
+        for s in &result.samples {
+            assert!(
+                !s.weather_file.is_empty(),
+                "climate zone {} has no weather file",
+                s.climate_zone
+            );
+            assert!(
+                s.weather_file.ends_with(".epw"),
+                "bad weather filename: {}",
+                s.weather_file
+            );
+        }
+    }
+
+    #[test]
+    fn test_weather_file_matches_climate_zone() {
+        // The weather file must be consistent with the climate zone label.
+        let domain = SurrogateDomain::default_residential();
+        let config = SweepConfig::from_domain(&domain);
+        let result = generate_samples(&config);
+
+        let reg = crate::ai::sweeps::weather::WeatherFileRegistry::standard();
+        for s in &result.samples {
+            let entry = reg.lookup(&s.climate_zone).expect("zone in registry");
+            assert_eq!(s.weather_file, entry.epw_filename);
+        }
+    }
+
+    #[test]
+    fn test_multi_climate_coverage() {
+        // With a broad climate-zone set, the sweep must sample multiple
+        // distinct weather files (multi-climate coverage, AC1).
+        let mut domain = SurrogateDomain::default_residential();
+        domain.climate_zones = vec![
+            "1A".into(),
+            "3A".into(),
+            "4A".into(),
+            "5A".into(),
+            "6A".into(),
+            "7".into(),
+        ];
+        let mut config = SweepConfig::from_domain(&domain);
+        config.num_samples = 500;
+        let result = generate_samples(&config);
+
+        let distinct_files: std::collections::HashSet<_> = result
+            .samples
+            .iter()
+            .map(|s| s.weather_file.as_str())
+            .collect();
+        // At least 4 distinct weather files should appear in 500 samples.
+        assert!(
+            distinct_files.len() >= 4,
+            "expected multi-climate coverage, got {} distinct weather files",
+            distinct_files.len()
+        );
+    }
+
+    #[test]
+    fn test_weather_file_empty_for_unknown_zone_without_fallback() {
+        // A climate zone absent from the registry and with no other entries
+        // resolves to an empty weather-file string.
+        let mut domain = SurrogateDomain::default_residential();
+        domain.climate_zones = vec!["ZZ_UNKNOWN".into()];
+        let mut config = SweepConfig::from_domain(&domain);
+        config.weather_registry = crate::ai::sweeps::weather::WeatherFileRegistry::new(); // empty
+        config.num_samples = 10;
+        let result = generate_samples(&config);
+        for s in &result.samples {
+            assert!(s.weather_file.is_empty());
+        }
+    }
+
+    #[test]
+    fn test_weather_registry_fallback_for_unknown_zone() {
+        // When the sampled zone is unknown but the registry has entries,
+        // lookup_or_default resolves deterministically.
+        let mut domain = SurrogateDomain::default_residential();
+        domain.climate_zones = vec!["ZZ_UNKNOWN".into()];
+        let mut config = SweepConfig::from_domain(&domain);
+        config.num_samples = 5;
+        let result = generate_samples(&config);
+        // Every sample gets the deterministic fallback weather file.
+        let first = result.samples[0].weather_file.clone();
+        assert!(!first.is_empty());
+        for s in &result.samples {
+            assert_eq!(s.weather_file, first);
+        }
+    }
+
+    // ---- Issue #1776 AC3: reproducible (seeded) manifest emitted ----
+
+    #[test]
+    fn test_manifest_to_json_roundtrip() {
+        let domain = SurrogateDomain::default_residential();
+        let config = SweepConfig::from_domain(&domain);
+        let result = generate_samples(&config);
+
+        let json = result.manifest_to_json().expect("serialize");
+        assert!(!json.is_empty());
+        assert!(json.contains("\"seed\": 42"));
+        assert!(json.contains("\"strategy\": \"latin_hypercube\""));
+
+        // Round-trip: deserialize and verify key fields.
+        let restored = ParameterManifest::from_json(&json).expect("deserialize");
+        assert_eq!(restored.seed, result.manifest.seed);
+        assert_eq!(restored.strategy, result.manifest.strategy);
+        assert_eq!(restored.num_samples, result.manifest.num_samples);
+    }
+
+    #[test]
+    fn test_manifest_timestamp_is_iso8601() {
+        // created_at must be a real RFC 3339 timestamp, parseable by chrono.
+        let domain = SurrogateDomain::default_residential();
+        let config = SweepConfig::from_domain(&domain);
+        let manifest = ParameterManifest::from_config(&config);
+        chrono::DateTime::parse_from_rfc3339(&manifest.created_at)
+            .expect("created_at must be valid RFC 3339");
+    }
+
+    #[test]
+    fn test_manifest_captures_full_config() {
+        // The manifest must embed the full config so the run is exactly
+        // reproducible from the manifest alone.
+        let mut domain = SurrogateDomain::default_residential();
+        domain.temp_bounds = (-25.0, 45.0);
+        let config = SweepConfig::from_domain(&domain);
+        let manifest = ParameterManifest::from_config(&config);
+
+        let cfg = manifest.config.expect("config snapshot present");
+        match &cfg.weather.exterior_temp {
+            ParameterDistribution::Uniform { min, max } => {
+                assert_eq!(*min, -25.0);
+                assert_eq!(*max, 45.0);
+            }
+            _ => panic!("expected uniform"),
+        }
+        assert_eq!(cfg.seed, config.seed);
+        assert_eq!(cfg.num_samples, config.num_samples);
+    }
+
+    #[test]
+    fn test_manifest_reproducibility_via_json() {
+        // Regenerating samples from a config reconstructed via the emitted
+        // manifest must produce identical samples (true reproducibility).
+        let domain = SurrogateDomain::default_residential();
+        let config = SweepConfig::from_domain(&domain);
+        let result1 = generate_samples(&config);
+
+        let json = result1.manifest_to_json().unwrap();
+        let restored_manifest = ParameterManifest::from_json(&json).unwrap();
+        let restored_config = restored_manifest.config.unwrap();
+
+        let result2 = generate_samples(&restored_config);
+        assert_eq!(result1.len(), result2.len());
+        for (a, b) in result1.samples.iter().zip(result2.samples.iter()) {
+            assert!((a.floor_area - b.floor_area).abs() < 1e-10);
+            assert_eq!(a.climate_zone, b.climate_zone);
+            assert_eq!(a.weather_file, b.weather_file);
+        }
+    }
+
+    #[test]
+    fn test_sweep_result_serializable() {
+        let domain = SurrogateDomain::default_residential();
+        let mut config = SweepConfig::from_domain(&domain);
+        config.num_samples = 5;
+        let result = generate_samples(&config);
+
+        let json = serde_json::to_string(&result).expect("serialize result");
+        let restored: SweepResult = serde_json::from_str(&json).expect("deserialize result");
+        assert_eq!(restored.len(), 5);
+        assert_eq!(restored.samples[0].floor_area, result.samples[0].floor_area);
+    }
+
+    #[test]
+    fn test_sweep_config_json_roundtrip() {
+        // SweepConfig itself must round-trip through JSON so the registry
+        // and all distributions are preserved.
+        let domain = SurrogateDomain::default_residential();
+        let config = SweepConfig::from_domain(&domain);
+        let json = serde_json::to_string_pretty(&config).unwrap();
+        let restored: SweepConfig = serde_json::from_str(&json).unwrap();
+        assert_eq!(restored.seed, config.seed);
+        assert_eq!(restored.num_samples, config.num_samples);
+        assert_eq!(restored.strategy, config.strategy);
+        // Registry preserved
+        assert!(restored.weather_registry.lookup("4A").is_some());
     }
 }

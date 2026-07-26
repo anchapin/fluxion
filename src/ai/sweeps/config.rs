@@ -24,12 +24,14 @@ use crate::ai::surrogate::SurrogateDomain;
 use crate::ai::sweeps::distributions::Choice;
 use crate::ai::sweeps::distributions::ParameterDistribution;
 use crate::ai::sweeps::sampling::SamplingStrategy;
+use crate::ai::sweeps::weather::WeatherFileRegistry;
+use serde::{Deserialize, Serialize};
 
 /// Building-geometry parameter distributions.
 ///
 /// These describe the physical shape of the zone being simulated.  All
 /// values use standard SI units.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct BuildingGeometryParams {
     /// Conditioned floor area [m²].
     pub floor_area: ParameterDistribution,
@@ -57,7 +59,7 @@ impl Default for BuildingGeometryParams {
 /// These describe the thermal resistance and mass of the building envelope,
 /// enabling sweeps over insulation levels from minimally-code-compliant to
 /// super-insulated.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct InsulationParams {
     /// Overall wall U-value [W/m²K] (lower = better insulated).
     pub wall_u_value: ParameterDistribution,
@@ -87,7 +89,7 @@ impl Default for InsulationParams {
 /// The continuous distributions (temp, solar, humidity, wind) inherit
 /// their bounds from [`SurrogateDomain`].  Climate zones and building
 /// types are discrete and sampled from the domain's lists.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct WeatherSamplingParams {
     /// Exterior dry-bulb temperature [°C].
     pub exterior_temp: ParameterDistribution,
@@ -104,7 +106,7 @@ pub struct WeatherSamplingParams {
 }
 
 /// Occupancy and internal-gain distributions.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct OccupancyParams {
     /// Occupant density [fraction, 0–1].
     pub occupancy: ParameterDistribution,
@@ -127,7 +129,7 @@ impl Default for OccupancyParams {
 /// Master configuration for a Monte Carlo parameter sweep.
 ///
 /// Construct via [`SweepConfig::from_domain`] or [`SweepConfig::builder`].
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct SweepConfig {
     /// Building geometry distributions.
     pub geometry: BuildingGeometryParams,
@@ -143,6 +145,10 @@ pub struct SweepConfig {
     pub num_samples: usize,
     /// Random seed for reproducibility.
     pub seed: u64,
+    /// Registry mapping climate-zone labels to representative weather files
+    /// (multi-climate coverage, per Issue #1776 AC1).
+    #[serde(default = "WeatherFileRegistry::standard")]
+    pub weather_registry: WeatherFileRegistry,
 }
 
 /// Number of continuous dimensions swept by a [`SweepConfig`].
@@ -196,6 +202,7 @@ impl SweepConfig {
             strategy: SamplingStrategy::LatinHypercube,
             num_samples: 1000,
             seed: 42,
+            weather_registry: WeatherFileRegistry::standard(),
         }
     }
 
@@ -300,6 +307,7 @@ pub struct SweepConfigBuilder {
     strategy: Option<SamplingStrategy>,
     num_samples: Option<usize>,
     seed: Option<u64>,
+    weather_registry: Option<WeatherFileRegistry>,
 }
 
 impl SweepConfigBuilder {
@@ -338,6 +346,12 @@ impl SweepConfigBuilder {
         self
     }
 
+    /// Override the default standard weather-file registry.
+    pub fn weather_registry(mut self, registry: WeatherFileRegistry) -> Self {
+        self.weather_registry = Some(registry);
+        self
+    }
+
     /// Build the config, filling in defaults from `SurrogateDomain::default_residential()`.
     pub fn build(self) -> SweepConfig {
         let domain = SurrogateDomain::default_residential();
@@ -350,6 +364,7 @@ impl SweepConfigBuilder {
             strategy: self.strategy.unwrap_or(base.strategy),
             num_samples: self.num_samples.unwrap_or(base.num_samples),
             seed: self.seed.unwrap_or(base.seed),
+            weather_registry: self.weather_registry.unwrap_or(base.weather_registry),
         }
     }
 }
@@ -430,5 +445,49 @@ mod tests {
         //   occupancy: occupancy, zone_temp, internal_gain_density = 3
         // Total = 4 + 4 + 4 + 3 = 15
         assert_eq!(NUM_CONTINUOUS_DIMENSIONS, 15);
+    }
+
+    #[test]
+    fn test_from_domain_includes_standard_weather_registry() {
+        // Issue #1776 AC1: from_domain must ship with the standard weather
+        // registry so climate zones resolve to weather files.
+        let domain = SurrogateDomain::default_residential();
+        let config = SweepConfig::from_domain(&domain);
+        for z in &["4A", "5A", "6A"] {
+            assert!(
+                config.weather_registry.lookup(z).is_some(),
+                "standard registry missing {z}"
+            );
+        }
+        assert!(!config.weather_registry.is_empty());
+    }
+
+    #[test]
+    fn test_builder_custom_weather_registry() {
+        use crate::ai::sweeps::weather::{WeatherFileEntry, WeatherFileRegistry};
+        let custom = WeatherFileRegistry::with_entries([WeatherFileEntry::new(
+            "9Z",
+            "Custom City",
+            1.0,
+            2.0,
+            "custom.epw",
+        )]);
+        let config = SweepConfig::builder()
+            .weather_registry(custom)
+            .num_samples(10)
+            .build();
+        assert!(config.weather_registry.lookup("9Z").is_some());
+        assert!(config.weather_registry.lookup("4A").is_none());
+    }
+
+    #[test]
+    fn test_config_serde_roundtrip() {
+        let domain = SurrogateDomain::default_residential();
+        let config = SweepConfig::from_domain(&domain);
+        let json = serde_json::to_string(&config).expect("serialize");
+        let restored: SweepConfig = serde_json::from_str(&json).expect("deserialize");
+        assert_eq!(restored.seed, config.seed);
+        assert_eq!(restored.num_samples, config.num_samples);
+        assert!(restored.validate().is_ok());
     }
 }

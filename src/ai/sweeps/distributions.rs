@@ -22,12 +22,13 @@ use rand::Rng;
 use rand_distr::LogNormal as LogNormalDist;
 use rand_distr::Normal as NormalDist;
 use rand_distr::NormalError;
+use serde::{Deserialize, Serialize};
 
 /// Statistical distribution for a continuous parameter.
 ///
 /// Used by [`crate::ai::sweeps::config::SweepConfig`] to describe the range
 /// and shape of every swept building/environmental parameter.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub enum ParameterDistribution {
     /// Uniform distribution over `[min, max)`.
     Uniform { min: f64, max: f64 },
@@ -146,7 +147,7 @@ impl ParameterDistribution {
 
 /// Discrete distribution for categorical parameters (e.g. climate zone labels,
 /// building types).
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Choice {
     /// The possible values, each sampled with equal probability.
     pub values: Vec<String>,
