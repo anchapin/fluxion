@@ -787,10 +787,11 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         // retains ~19 % weight in the new value — enough decoupling to
         // resolve the diurnal swing without altering the mass-node dynamics.
         let num_tm_ref = num_tm.as_ref();
-        let num_phi_st_ref = num_phi_st.as_ref();
+        let _num_phi_st_ref = num_phi_st.as_ref();
         let num_rest_ref = num_rest_with_iz.as_ref();
         let den_ref = den.as_ref();
         let c_air_ref = self.0.air_thermal_capacitance.as_ref();
+        let cm_ref = self.0.thermal_capacitance.as_ref();
         let t_air_old_ref = self.0.air_temperatures.as_ref();
         // term_rest_1 = h_tr_ms + h_tr_is scales the entire 5R1C air-node
         // equation (num and den are both multiplied by it to clear the
@@ -812,7 +813,13 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         let term_rest_1_ref = term_rest_1.as_ref();
         let mut t_i_free_data = Vec::with_capacity(self.0.num_zones);
         for i in 0..self.0.num_zones {
-            let num_i = num_tm_ref[i] + num_phi_st_ref[i] + num_rest_ref[i];
+            // Issue #1860: remove num_phi_st (immediate surface solar) from
+            // the steady-state computation. The surface-solar contribution is
+            // instead applied through the solar-lag filter below, which
+            // releases it over τ_lag ≈ 1–3 h instead of instantaneously.
+            // This prevents double-counting: the lag term replaces the
+            // algebraic surface contribution, not adds to it.
+            let num_i = num_tm_ref[i] + num_rest_ref[i]; // num_phi_st removed
             let den_i = den_ref[i];
             // Steady-state free-float air temperature (used as the asymptotic
             // target for the air-node exponential relaxation).
@@ -836,7 +843,91 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
             };
             t_i_free_data.push(t_i_free_i);
         }
-        let t_i_free = T::from(VectorField::new(t_i_free_data.clone()));
+
+        // === Issue #1860: Solar-lag correction (multi-timescale wall response) ===
+        //
+        // The 5R1C model lumps ALL wall mass into one node with τ_mass ≈ 12 h
+        // for low-mass buildings. In reality, near-surface layers (gypsum board,
+        // furniture, internal partitions) absorb solar radiation and re-release
+        // it over 1–3 h — a timescale between the air node (τ_air ≈ 0.17 h,
+        // instantaneous) and the mass node (τ_mass ≈ 12 h, very slow).
+        //
+        // The solar-lag term replaces the immediate surface-solar contribution
+        // (num_phi_st, which was removed from the steady computation above) with
+        // a first-order low-pass-filtered version using:
+        //
+        //   τ_lag = √(τ_air × τ_mass)  (geometric mean of the two timescales)
+        //
+        // The filter input is h_tr_is × phi_st / term_rest_1 (the same value
+        // that num_phi_st/den would contribute in steady state), ensuring
+        // energy conservation: the same amount of solar reaches the air, but
+        // spread over τ_lag instead of instantaneously. This smooths peaks
+        // (less immediate solar) and extends tails (sustained release),
+        // increasing annual cooling while reducing peak cooling.
+        //
+        // Only phi_st (surface solar) is filtered — phi_m (mass solar) is
+        // already handled by the CrankNicolson mass-node integration.
+        let phi_st_ref = phi_st.as_ref();
+        let h_tr_is_for_lag_ref = h_tr_is_for_ti_free.as_ref();
+        let solar_lag_old: Vec<f64> = self.0.solar_lag.as_ref().to_vec();
+        let mut corrected_t_i_free = t_i_free_data.clone();
+
+        for i in 0..self.0.num_zones {
+            let den_i = den_ref[i];
+            let cm_i = cm_ref[i];
+            let c_air_i = c_air_ref[i];
+            let term_rest_1_i = term_rest_1_ref[i];
+
+            // Compute time constants
+            let den_true_i = if term_rest_1_i > 0.0 {
+                den_i / term_rest_1_i
+            } else {
+                den_i
+            };
+            let h_tr_3_i = self.0.derived_h_tr_3.as_ref()[i];
+
+            let tau_air_i = if den_true_i > 0.0 && c_air_i > 0.0 {
+                c_air_i / den_true_i
+            } else {
+                600.0 // fallback: 10 min
+            };
+            let tau_mass_i = if h_tr_3_i > 0.0 && cm_i > 0.0 {
+                cm_i / h_tr_3_i
+            } else {
+                44000.0 // fallback: ~12 h
+            };
+
+            // Geometric mean of air and mass timescales — the characteristic
+            // intermediate timescale of the two-node system.
+            let tau_lag = (tau_air_i * tau_mass_i).sqrt();
+            let decay = if tau_lag > 0.0 && dt > 0.0 {
+                (-dt / tau_lag).exp()
+            } else {
+                0.0
+            };
+
+            // Filter input: scaled to match num_phi_st/den steady-state
+            // contribution. h_tr_is × phi_st / term_rest_1 gives the
+            // equivalent steady-state temperature contribution.
+            let lag_input = if term_rest_1_i > 0.0 {
+                h_tr_is_for_lag_ref[i] * phi_st_ref[i] / term_rest_1_i
+            } else {
+                0.0
+            };
+
+            // Update solar-lag state: low-pass filter
+            let new_solar_lag = solar_lag_old[i] * decay + lag_input * (1.0 - decay);
+
+            // Add lagged contribution to t_i_free (replaces num_phi_st)
+            if den_true_i > 0.0 {
+                corrected_t_i_free[i] += new_solar_lag / den_true_i;
+            }
+
+            // Store updated solar-lag state
+            self.0.solar_lag.as_mut()[i] = new_solar_lag;
+        }
+
+        let t_i_free = T::from(VectorField::new(corrected_t_i_free));
 
         // Issue #1585: step the air-node ODE state forward for the next
         // timestep.  t_i_free (the new zone-air temperature) becomes
@@ -1222,23 +1313,79 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         // Save old mass temperature before updating
         let old_mass_temperatures = self.0.mass_temperatures.clone();
 
-        // Mass temperature update: includes heat transfer from exterior and from surface
-        // Ground coupling affects mass temperature indirectly through the thermal network
-        // Calculate actual surface temperature for mass update (including HVAC effect)
-        // ts_num_act = h_tr_ms * mass_temp + h_tr_is * t_i_act + phi_st
-        // Optimized: avoid intermediate allocations by manually iterating over the vectors
+        // === Issue #1860: Time-constant-aware mass-node surface temperature ===
+        //
+        // Root cause of the ~38–90% cooling-load underestimation on low-mass
+        // ASHRAE 140 cases: the surface temperature that drives the mass-node
+        // integration was computed algebraically from the HVAC-controlled zone
+        // air temperature (`t_i_act`). This propagates 100% of the HVAC cooling
+        // (or heating) effect to the thermal mass within a single timestep,
+        // even though the mass time constant τ_mass = Cm / H_tr,3 is typically
+        // 10–60 h for low-mass constructions.
+        //
+        // For Case 600 (τ_mass ≈ 12.4 h on a 1-hour timestep), only ~7.8% of
+        // the HVAC effect should reach the mass per step. The algebraic coupling
+        // artificially cooled the mass during cooling periods, which suppressed
+        // `num_tm = h_ms_is_prod × T_mass`, lowered `T_free`, and reduced the
+        // sustained cooling demand — yielding annual cooling ~38% below the
+        // ASHRAE 140 reference band.
+        //
+        // Fix: compute two surface temperatures — one from the free-floating
+        // air temperature (`t_i_free`, what the zone WOULD be without HVAC)
+        // and one from the HVAC-controlled temperature (`t_i_act`). Blend them
+        // using the exact-exponential mass-response fraction:
+        //
+        //   α = 1 − exp(−dt / τ_mass),    τ_mass = Cm / H_tr,3
+        //   T_s = (1 − α) × T_s_free + α × T_s_act
+        //
+        // For short τ_mass (fast-responding mass): α → 1, mass sees HVAC
+        //   effect fully (correct: mass tracks the controlled air temperature).
+        // For long τ_mass (slow-responding mass): α → 0, mass sees the
+        //   free-floating temperature (correct: mass retains heat, driving
+        //   sustained cooling demand through T_free on subsequent steps).
+        //
+        // This is NOT a case-specific correction factor — α is derived from
+        // the building's physical properties (Cm, H_tr,3) and the timestep.
+        // It applies uniformly to all construction types and all ASHRAE 140
+        // cases. The free-float path (hvac_output == 0 → t_i_act == t_i_free)
+        // is unaffected because T_s_free == T_s_act when T_free == T_act.
         let h_tr_ms_ref = self.0.h_tr_ms.as_ref();
         let mass_temps_ref = self.0.mass_temperatures.as_ref();
         let h_tr_is_ref = self.0.h_tr_is.as_ref();
         let t_i_act_ref = t_i_act.as_ref();
+        let t_i_free_ref = t_i_free.as_ref();
         let phi_st_ref = phi_st.as_ref();
         let term_rest_1_ref = term_rest_1.as_ref();
+        let h_tr_3_ref = self.0.derived_h_tr_3.as_ref();
 
         for i in 0..self.0.num_zones {
-            let ts_num = h_tr_ms_ref[i] * mass_temps_ref[i]
+            let cm_i = self.0.thermal_capacitance.as_ref()[i];
+            let h_tr_3_i = h_tr_3_ref[i];
+
+            // HVAC-controlled surface temperature (full HVAC coupling).
+            let ts_act_num = h_tr_ms_ref[i] * mass_temps_ref[i]
                 + h_tr_is_ref[i] * t_i_act_ref[i]
                 + phi_st_ref[i];
-            scratch.t_s_act[i] = ts_num / term_rest_1_ref[i];
+            let t_s_act_i = ts_act_num / term_rest_1_ref[i];
+
+            // Free-floating surface temperature (no HVAC coupling).
+            let ts_free_num = h_tr_ms_ref[i] * mass_temps_ref[i]
+                + h_tr_is_ref[i] * t_i_free_ref[i]
+                + phi_st_ref[i];
+            let t_s_free_i = ts_free_num / term_rest_1_ref[i];
+
+            // Time-constant-aware blend: fraction of HVAC effect that
+            // physically reaches the mass within one timestep.
+            let t_s_blended = if h_tr_3_i > 0.0 && cm_i > 0.0 && dt > 0.0 {
+                let tau_mass = cm_i / h_tr_3_i;
+                let alpha = 1.0 - (-dt / tau_mass).exp();
+                (1.0 - alpha) * t_s_free_i + alpha * t_s_act_i
+            } else {
+                // Fallback: full HVAC coupling (legacy behaviour).
+                t_s_act_i
+            };
+
+            scratch.t_s_act[i] = t_s_blended;
         }
         let t_s_act = T::from(VectorField::new(std::mem::take(&mut scratch.t_s_act)));
 
@@ -1252,6 +1399,7 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         let t_s_act_ref = t_s_act.as_ref();
         let t_i_act_ref = t_i_act.as_ref();
         let phi_m_ref = phi_m.as_ref();
+        let h_tr_3_ref_2 = self.0.derived_h_tr_3.as_ref();
 
         // Determine HVAC mode from hvac_output_raw (Plan 03-14)
         // Use separate heating/cooling coupling parameters based on mode
@@ -1260,7 +1408,22 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
             let tm_old = mass_temps_ref[i];
             let cm = thermal_cap_ref[i];
             let t_s = t_s_act_ref[i];
-            let t_i = t_i_act_ref[i];
+            // Issue #1860: blend the air temperature used for mass coupling
+            // between the free-floating and HVAC-controlled values, using the
+            // same time-constant fraction α = 1 − exp(−dt/τ_mass) as the
+            // surface-temperature blend above. This ensures the CrankNicolson
+            // path (which takes t_i directly, not t_s) also sees the
+            // time-constant-aware mass coupling.
+            let t_i = {
+                let h_tr_3_i = h_tr_3_ref_2[i];
+                if h_tr_3_i > 0.0 && cm > 0.0 && dt > 0.0 {
+                    let tau_mass = cm / h_tr_3_i;
+                    let alpha = 1.0 - (-dt / tau_mass).exp();
+                    (1.0 - alpha) * t_i_free_ref[i] + alpha * t_i_act_ref[i]
+                } else {
+                    t_i_act_ref[i]
+                }
+            };
             let phi_m_zone = phi_m_ref[i];
 
             // Use physics-based h_tr_em and h_tr_ms (mode-specific factors removed)
