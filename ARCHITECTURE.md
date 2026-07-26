@@ -192,7 +192,7 @@ graph TD
     subgraph Interop ["Ecosystem Interop (src/interop/)"]
         OSM["OSM Reader/Writer<br/>(interop/osm/)"]
         GBX["gbXML Reader/Writer<br/>(interop/gbxml/)"]
-        FMU["FMI Co-Sim Export<br/>(interop/fmi/)"]
+        FMU["FMI Co-Sim Export/Import<br/>(interop/fmi/)"]
         IDFD["IDF/epJSON Import<br/>(scaffold landed — src/io/idf/)"]
     end
 
@@ -885,7 +885,7 @@ Import/export bridges live under `src/interop/`. Each is gated behind the module
 |--------|------|--------|-------|
 | OpenStudio OSM | `interop/osm/` | Implemented + round-trip stable (#1130, #1340) | Reader (884 LoC) + Writer (505 LoC) + types; `import_osm` / `export_osm`. Writer→reader round-trip is **stable** for single- and multi-zone schemas within the supported subset — see `src/interop/osm/mod.rs` for the lossless-field list and round-trip test entry points. |
 | gbXML | `interop/gbxml/` | Implemented (#1126) | Reader + Writer + types; `import_gbxml` / `export_gbxml`; BIM integration |
-| FMI Co-Simulation | `interop/fmi/` | Implemented — spike (#1125) | FMU export, single-zone, fixed 1h timestep; `FmiExporter`, `FmiConfig` |
+| FMI Co-Simulation | `interop/fmi/` | Implemented — export (#1125, #1339) + import (#1708) | `FmiExporter` writes `.fmu` (multi-zone, configurable timestep); `FmiImporter` / `import_fmu` re-import an exported `.fmu`, parsing `modelDescription.xml` with `quick-xml` and rebuilding a `ThermalModel`; `FmuCoSimulationMaster::do_step` is the `fmi2DoStep` wrapper calling `ThermalModel::step_physics` |
 | EnergyPlus IDF/epJSON | `docs/idf-import-design.md` | **Scaffold landed** (#1341) | `src/io/idf/` (lexer + parser for the 10 MVP objects from design §4.1); `IdfFile` → `SimulationSchema` conversion pending (design §4.3 follow-up) |
 | IFC/BIM geometry | `interop/ifc/` | **Scaffold landed** (#1343) | IFC4 STEP lexer + parser + mapping for `IfcWall` / `IfcSlab` / `IfcRoof` / `IfcSpace` → `SimulationSchemaV1`; full IFC2X3 deferred; IFC export still design-only (#1121) |
 
