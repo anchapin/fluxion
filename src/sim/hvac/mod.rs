@@ -15,6 +15,7 @@ pub mod heating_coil;
 pub mod ideal_loads;
 pub mod modes;
 pub mod vav_terminal;
+pub mod part_load_curves;
 pub mod zones;
 
 // Re-export common types for convenience
@@ -36,6 +37,12 @@ pub use ideal_loads::IdealLoadsSystem;
 pub use modes::PredictiveController;
 pub use vav_terminal::{
     VavOperatingMode, VavTerminal, VavTerminalControl, VavTerminalPerformance, VavTerminalUnit,
+};
+pub use part_load_curves::{
+    boiler_part_load_coeffs, chiller_part_load_coeffs, vav_fan_power_coeffs,
+    vav_fan_power_with_spr_coeffs, AshrStdCoeffs, BiquadraticCoeffs, BoilerPartLoadCurve,
+    ChillerPartLoadCurve, CurveType, FanPowerCurve, PartLoadCurve, QuadraticCoeffs,
+};
 };
 
 use serde::{Deserialize, Serialize};

@@ -764,6 +764,7 @@ These traits support the main physics pipeline and should also be documented:
 | `CoolingCoilBehavior` | `src/sim/hvac/cooling_coil.rs` | Cooling coil component (bypass-factor model, SHR, condensate) |
 | `HeatingCoil` | `src/sim/hvac/heating_coil.rs` | Heating coil component (sensible heating, part-load control) |
 | `VavTerminal` | `src/sim/hvac/vav_terminal.rs` | VAV terminal unit composing Fan + CoolingCoil + HeatingCoil (damper-modulated mass flow, reheat control) |
+| `PartLoadCurve` | `src/sim/hvac/part_load_curves.rs` | ASHRAE/E+ biquadratic part-load curves for fan, chiller, boiler |
 | `GroundTemperature` | `src/sim/boundary.rs` | Ground temp boundary condition |
 | `BatchOrchestrator` | `src/sim/orchestrator.rs` | Per-population CPU surrogate compute scheduling (rayon `par_chunks`, #1439) |
 | `DwaveClient` | `src/quantum/dwave_client.rs` | Object-safe trait for submitting Ising problems to a D-Wave sampler (QPU or hybrid); mockable for tests |
@@ -789,6 +790,46 @@ All functions take SI units (Pa, K/°C, kg/kg). Module is in `fluxion-core` to r
 **VAV terminal unit** (#1764): `src/sim/hvac/vav_terminal.rs` composes `FanComponent` (#1761), `CoolingCoil` (#1762), and `HeatingCoilComponent` (#1763) into a [`VavTerminalUnit`] with damper-modulated mass flow. The [`VavTerminal`] trait exposes a stateless `compute_terminal_performance` that translates a [`VavTerminalControl`] (damper position, cooling-active flag, optional reheat setpoint) into a [`VavTerminalPerformance`] carrying the supply-air state, all component capacities, fan power, and condensate rate. The damper position maps linearly to a fan speed fraction bounded by the minimum airflow ratio, so airflow modulates between `r_min · Q̇_max` and `Q̇_max`. Fan shaft power is dissipated into the airstream as fan heat between the fan and the coils.
 
 The coupled step uses a sequential implicit operator split: backward-Euler 9R4C half-step → implicit algebraic zone-air solve → backward-Euler half-step → implicit air projection, followed by a backward-Euler humidity-ratio balance. Supply sensible conductance is `H_sa = m_da × 1000 × (1.006 + 1.86 W_sa)` [W/K], and the air solve enforces `Q_env + H_ve(T_out − T_z) + H_sa(T_sa − T_z) + φ_ia = 0`. Sensible and latent supply heat reconstruct the ASHRAE Ch.1 moist-air enthalpy flow exactly; the per-step interface residual must remain below `1e-7 W`. The accepted timestep domain is `0 < dt ≤ 360 s`; non-finite inputs, supersaturated post-mixing states, and larger timesteps return typed errors without committing partial state. The coupling is opt-in and does not modify `ThermalModel::step_physics_9r4c`, preserving existing ASHRAE 140 envelope outputs. Regression: `tests/hvac_airside_9r4c_integration.rs`.
+
+### Part-Load Performance Curves (#1766)
+
+**Source**: `src/sim/hvac/part_load_curves.rs`
+**Purpose**: ASHRAE/EnergyPlus standard part-load performance curves for fans, chillers, and boilers, providing efficiency degradation as a function of part-load ratio (PLR) and operating temperature.
+
+| Input | Type | Source |
+|-------|------|--------|
+| Part-load ratio (PLR) | `f64` (0.0–1.0) | Equipment controller |
+| Outdoor dry-bulb temperature | `f64` [°C] | Weather |
+| Entering water temperature | `f64` [°C] | Equipment inlet sensor |
+
+| Output | Type | Consumer |
+|--------|------|---------|
+| Efficiency multiplier | `f64` (COP for chillers, efficiency for boilers) | Equipment power calculation |
+| Fan power ratio | `f64` | Fan energy calculation |
+
+**Key trait**: `PartLoadCurve` in `src/sim/hvac/part_load_curves.rs`
+
+```rust
+pub trait PartLoadCurve: Send + Sync {
+    fn curve_type(&self) -> CurveType;
+    fn evaluate(&self, plr: f64, temperature: f64) -> f64;
+    fn validate_at_load_points(&self) -> bool;
+    fn reference_value(&self) -> f64;
+}
+```
+
+**Curve types** (all in `src/sim/hvac/part_load_curves.rs`):
+
+| Equipment | Curve form | Equation | Coefficients source |
+|----------|-----------|---------|---------------------|
+| Chiller | Biquadratic | `EER = a + b*PLR + c*PLR² + d*T_db + e*T_db² + f*PLR*T_db` | AHRI 550/590 + EnergyPlus Curve:Biquadratic |
+| Boiler | Biquadratic | `η = a + b*PLR + c*PLR² + d*T_db + e*T_db² + f*PLR*T_db` | ASHRAE HoF + EnergyPlus Curve:Biquadratic |
+| VAV Fan | Quadratic | `P_ratio = a + b*φ + c*φ²` (φ = flow ratio) | Fan affinity laws (P ∝ φ³) |
+
+**Implemented structs**: `ChillerPartLoadCurve`, `BoilerPartLoadCurve`, `FanPowerCurve`
+**Coefficient accessors**: `chiller_part_load_coeffs()`, `boiler_part_load_coeffs()`, `vav_fan_power_coeffs()`, `vav_fan_power_with_spr_coeffs()`
+
+**Validation**: Each curve is validated at 25%, 50%, 75%, and 100% PLR to ensure physical behavior (positive efficiency, monotonic degradation at reduced load, COP > 0).
 
 ### Surface Heat Flux Trait Hierarchy
 
