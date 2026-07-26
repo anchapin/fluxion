@@ -2265,8 +2265,6 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
 
         // (#872) Save raw gain data for multi-node solver before moving into tensors.
         // Used for internal radiative gain injection via step_with_gains().
-        let _phi_ia_data_for_solver = scratch.phi_ia.clone();
-
         let phi_ia = T::from(VectorField::new(std::mem::take(&mut scratch.phi_ia)));
         let phi_st = T::from(VectorField::new(std::mem::take(&mut scratch.phi_st)));
         let phi_m = T::from(VectorField::new(std::mem::take(&mut scratch.phi_m)));
