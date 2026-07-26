@@ -64,6 +64,59 @@
 use crate::physics::geometry_tensor::{ThermalManifold, MANIFOLD_DIM};
 use nalgebra::{Matrix4, Vector4};
 
+/// Power iteration to find the eigenvalue with the largest absolute magnitude.
+///
+/// Runs at most `max_iter` iterations with convergence tolerance `tol` on the
+/// change in eigenvalue estimate. Returns `None` if the matrix is zero or if
+/// convergence is not reached. The matrix is interpreted as row-major `n×n`.
+///
+/// After L2-normalizing v each step (v := Av/||Av||), the eigenvalue estimate
+/// is the Rayleigh quotient λ = v^T A v / v^T v. With ||v|| = 1, this is
+/// simply v^T A v = v · w where w = A v.  The first iteration uses λ = 0 as
+/// the prior estimate, so the convergence check is skipped until the second
+/// iteration (when we have a meaningful prior).
+fn power_iteration_max(a: &[f64], n: usize, max_iter: usize, tol: f64) -> Option<f64> {
+    if n == 0 {
+        return None;
+    }
+    let mut v = vec![1.0_f64; n];
+    let mut lambda = 0.0_f64;
+
+    for _ in 0..max_iter {
+        let mut w = vec![0.0_f64; n];
+        for i in 0..n {
+            let mut row_acc = 0.0_f64;
+            for j in 0..n {
+                row_acc += a[i * n + j] * v[j];
+            }
+            w[i] = row_acc;
+        }
+
+        let w_norm_sq: f64 = w.iter().map(|&x| x * x).sum();
+        let w_norm = w_norm_sq.sqrt();
+        if w_norm < 1e-20 {
+            return Some(0.0);
+        }
+
+        // Rayleigh quotient λ = v^T A v / v^T v for the current (normalized) v.
+        // With v L2-normalized each iteration, v^T v = 1, so λ = v^T A v = v · w.
+        let v_dot_w: f64 = v.iter().zip(w.iter()).map(|(vi, wi)| vi * wi).sum();
+        let lambda_new = v_dot_w;
+
+        // Converged if change is below tolerance AND we have a prior estimate.
+        if lambda != 0.0 && (lambda_new - lambda).abs() < tol {
+            return Some(lambda_new);
+        }
+
+        for j in 0..n {
+            v[j] = w[j] / w_norm;
+        }
+        lambda = lambda_new;
+    }
+
+    Some(lambda)
+}
+
 /// Configuration for the QUBO encoding. The defaults match typical ASHRAE 140
 /// zone temperatures (0..50 °C) at ~0.2 °C LSB resolution with K=8 bits/node.
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -142,17 +195,17 @@ impl QuboConfig {
 #[derive(Debug, Clone)]
 pub struct QuboProblem {
     /// Symmetric `N × N` QUBO matrix in row-major order. `N = MANIFOLD_DIM * K`.
-    q_matrix: Vec<f64>,
+    pub q_matrix: Vec<f64>,
     /// Number of binary variables (= side length of `q_matrix`).
-    num_variables: usize,
+    pub num_variables: usize,
     /// Config used to build this QUBO. Retained for round-tripping.
-    config: QuboConfig,
+    pub config: QuboConfig,
     /// Source manifold's metric tensor (cached for diagnostic / verification).
-    source_metric: Matrix4<f64>,
+    pub source_metric: Matrix4<f64>,
     /// Source manifold's scalar field.
-    source_field: Vector4<f64>,
+    pub source_field: Vector4<f64>,
     /// Source manifold's gauge connection.
-    source_gauge: Vector4<f64>,
+    pub source_gauge: Vector4<f64>,
 }
 
 impl QuboProblem {
@@ -198,6 +251,133 @@ impl QuboProblem {
             return self.q_matrix.clone();
         }
         self.q_matrix.iter().map(|&v| v / m).collect()
+    }
+
+    /// Estimate the condition number of the QUBO matrix using power iteration.
+    ///
+    /// Returns `(sigma_max, sigma_min, condition_number)` where `sigma_max` is the
+    /// largest singular value, `sigma_min` is the smallest, and `condition_number`
+    /// is their ratio. For a symmetric QUBO matrix, singular values equal absolute
+    /// eigenvalues, so we use eigenvalue estimation instead of the more expensive SVD.
+    ///
+    /// The algorithm runs power iteration for the largest eigenvalue magnitude and
+    /// inverse power iteration for the smallest, each with up to 100 iterations and
+    /// `1e-10` convergence tolerance. For the 32×32 QUBO (K=8) this is O(N²)
+    /// per iteration and converges in < 20 iterations for well-conditioned matrices.
+    ///
+    /// # Numerical safety
+    ///
+    /// If any eigenvalue is non-finite (NaN/Inf) or exactly zero, returns
+    /// `Err(QuboError::SingularMatrix)` or `Err(QuboError::NumericalOverflow)`.
+    pub fn condition_number_estimate(&self) -> Result<(f64, f64, f64), QuboError> {
+        let n = self.num_variables;
+        if n == 0 {
+            return Err(QuboError::SingularMatrix);
+        }
+
+        // Power iteration for largest eigenvalue magnitude.
+        let lambda_max =
+            power_iteration_max(&self.q_matrix, n, 100, 1e-10).ok_or(QuboError::SingularMatrix)?;
+
+        if !lambda_max.is_finite() || lambda_max.abs() < 1e-20 {
+            return Err(QuboError::SingularMatrix);
+        }
+        if lambda_max.abs() > OVERFLOW_THRESHOLD {
+            return Err(QuboError::NumericalOverflow {
+                max_entry: lambda_max.abs(),
+            });
+        }
+
+        // Inverse power iteration for smallest eigenvalue magnitude.
+        // Shift the matrix by lambda_max so eigenvalues {λ_i} become {λ_i - λ_max},
+        // then the largest of those (in magnitude) is |λ_min - λ_max|.
+        let mut shifted = vec![0.0_f64; n * n];
+        for i in 0..n {
+            for j in 0..n {
+                shifted[i * n + j] = self.q_matrix[i * n + j];
+            }
+            shifted[i * n + i] -= lambda_max;
+        }
+
+        let delta_min =
+            power_iteration_max(&shifted, n, 100, 1e-10).ok_or(QuboError::SingularMatrix)?;
+
+        // λ_min = λ_max - delta_min (where delta_min ≈ |λ_min - λ_max|)
+        // delta_min ≈ 0 (within numerical noise) with a non-zero shifted matrix
+        // means the starting vector landed in the null space of the shifted matrix
+        // — i.e. λ_min = λ_max, which only occurs when the original matrix is
+        // singular.
+        let shifted_has_nonzero = shifted.iter().any(|&x| x != 0.0);
+        if delta_min.abs() < 1e-12 && shifted_has_nonzero {
+            return Err(QuboError::SingularMatrix);
+        }
+
+        let lambda_min = (lambda_max - delta_min).abs();
+
+        if !lambda_min.is_finite() {
+            return Err(QuboError::NumericalOverflow {
+                max_entry: lambda_max.abs(),
+            });
+        }
+
+        let condition_number = if lambda_min.abs() < 1e-20 {
+            return Err(QuboError::SingularMatrix);
+        } else {
+            lambda_max.abs() / lambda_min.abs()
+        };
+
+        Ok((lambda_max.abs(), lambda_min.abs(), condition_number))
+    }
+
+    /// Apply Tikhonov regularization to produce a well-conditioned QUBO matrix.
+    ///
+    /// Adds `alpha * I` to the diagonal of `Q`, raising every eigenvalue by `alpha`.
+    /// This reduces the condition number from `λ_max / λ_min` to approximately
+    /// `λ_max / (λ_min + alpha)`.
+    ///
+    /// # Arguments
+    ///
+    /// * `alpha` — regularization strength. Must be `> 0`. If `None`, uses
+    ///   [`DEFAULT_REGULARIZATION_ALPHA`] (`10^-4`).
+    ///
+    /// # Returns
+    ///
+    /// A new `QuboProblem` with the same geometry as `self` but a regularized
+    /// `q_matrix`. The original is unchanged.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// # use fluxion::quantum::qubo_mapping::{QuboProblem, QuboError, manifold_to_qubo, QuboConfig};
+    /// # use fluxion::physics::geometry_tensor::ThermalManifold;
+    /// let m = ThermalManifold::from_5r1c_parameters(21.0, 22.0, 0.1, 1000.0, 5000.0);
+    /// let qp = manifold_to_qubo(&m, QuboConfig::default()).unwrap();
+    /// let regularized = qp.regularize(None).unwrap();
+    /// let (max, min, cn) = regularized.condition_number_estimate().unwrap();
+    /// assert!(cn < 1e6, "condition number {} still too large after regularization", cn);
+    /// ```
+    pub fn regularize(&self, alpha: Option<f64>) -> Result<QuboProblem, QuboError> {
+        let alpha = alpha.unwrap_or(DEFAULT_REGULARIZATION_ALPHA);
+        if alpha <= 0.0 {
+            return Err(QuboError::InvalidEncoding(
+                "regularization alpha must be > 0".to_string(),
+            ));
+        }
+
+        let n = self.num_variables;
+        let mut q_reg = self.q_matrix.clone();
+        for i in 0..n {
+            q_reg[i * n + i] += alpha;
+        }
+
+        Ok(QuboProblem {
+            q_matrix: q_reg,
+            num_variables: n,
+            config: self.config,
+            source_metric: self.source_metric,
+            source_field: self.source_field,
+            source_gauge: self.source_gauge,
+        })
     }
 
     /// Convert the QUBO to its Ising form `(h, J, c)` for direct submission
@@ -357,6 +537,25 @@ impl IsingProblem {
     }
 }
 
+/// Threshold above which a QUBO matrix is considered ill-conditioned.
+/// Condition number > `ILL_CONDITIONED_THRESHOLD` triggers `IllConditioned` error.
+/// Chosen to catch real thermal manifolds that approach singularity while
+/// leaving well-conditioned 5R1C / 9R4C matrices untouched.
+pub const ILL_CONDITIONED_THRESHOLD: f64 = 1e6;
+
+/// Threshold below which a QUBO entry is considered numerical overflow for
+/// D-Wave submission. Entries with absolute value > `OVERFLOW_THRESHOLD`
+/// cannot be safely normalized to the D-Wave `h ∈ [-4,4]`, `J ∈ [-2,+1]`
+/// hardware range without catastrophic cancellation.
+pub const OVERFLOW_THRESHOLD: f64 = 1e10;
+
+/// Default Tikhonov regularization parameter. Applied to the diagonal of a
+/// QUBO matrix when it is detected as ill-conditioned, producing a new
+/// well-conditioned matrix `Q' = Q + α·I` where `α` is the `regularization_alpha`.
+/// This raises the smallest eigenvalue by `α`, reducing the condition number
+/// to approximately `λ_max / (λ_min + α)`.
+pub const DEFAULT_REGULARIZATION_ALPHA: f64 = 1e-4;
+
 /// Errors that can arise during QUBO construction.
 #[derive(Debug, Clone, PartialEq)]
 pub enum QuboError {
@@ -369,6 +568,25 @@ pub enum QuboError {
     NonPositiveScale { value: f64 },
     /// The source manifold failed its own `validate()` (NaN/Inf in tensors).
     InvalidManifold(String),
+    /// One of the QUBO encoding parameters is invalid (e.g., negative
+    /// regularization alpha).
+    InvalidEncoding(String),
+    /// The QUBO matrix is ill-conditioned (condition number > `10^6`).
+    /// This usually means the metric tensor is near-singular — e.g. two
+    /// thermal nodes with nearly identical coupling resistances. Annealer
+    /// results are unreliable for such matrices.
+    IllConditioned {
+        /// Estimated condition number (ratio of largest to smallest singular value).
+        condition_number: f64,
+        /// Ratio of largest to smallest eigenvalue magnitude.
+        eigenvalue_ratio: f64,
+    },
+    /// A QUBO matrix entry exceeds the D-Wave hardware range (`±1e10`),
+    /// making safe normalization impossible without catastrophic cancellation.
+    NumericalOverflow { max_entry: f64 },
+    /// The QUBO matrix is exactly singular (zero eigenvalues). No amount of
+    /// regularization can fix this without changing the problem structure.
+    SingularMatrix,
 }
 
 impl std::fmt::Display for QuboError {
@@ -382,6 +600,29 @@ impl std::fmt::Display for QuboError {
                 write!(f, "scale_max_celsius = {value} must be > 0")
             }
             Self::InvalidManifold(msg) => write!(f, "invalid manifold: {msg}"),
+            Self::InvalidEncoding(msg) => write!(f, "invalid encoding: {msg}"),
+            Self::IllConditioned {
+                condition_number,
+                eigenvalue_ratio,
+            } => {
+                write!(
+                    f,
+                    "QUBO matrix is ill-conditioned: condition_number={:.1e}, eigenvalue_ratio={:.1e} (threshold={:.0e}); apply regularize() before submission",
+                    condition_number, eigenvalue_ratio, ILL_CONDITIONED_THRESHOLD
+                )
+            }
+            Self::NumericalOverflow { max_entry } => {
+                write!(
+                    f,
+                    "QUBO entry magnitude {max_entry:.1e} exceeds overflow threshold {OVERFLOW_THRESHOLD:.0e}; normalization would lose precision",
+                )
+            }
+            Self::SingularMatrix => {
+                write!(
+                    f,
+                    "QUBO matrix is singular (zero eigenvalue); regularize() cannot fix this"
+                )
+            }
         }
     }
 }
@@ -396,6 +637,16 @@ impl std::error::Error for QuboError {}
 /// # Errors
 /// Returns [`QuboError::InvalidManifold`] if the manifold fails `validate()`,
 /// or any [`QuboConfig::validate`] failure.
+///
+/// Returns [`QuboError::IllConditioned`] if the QUBO condition number exceeds
+/// `10^6` (detected before submission so the caller can apply
+/// [`QuboProblem::regularize`] as a fallback).
+///
+/// Returns [`QuboError::NumericalOverflow`] if any QUBO entry exceeds `10^10`
+/// in magnitude (normalization to D-Wave hardware range would lose precision).
+///
+/// Use [`QuboProblem::condition_number_estimate`] to diagnose the matrix, and
+/// [`QuboProblem::regularize`] to obtain a well-conditioned fallback.
 pub fn manifold_to_qubo(
     manifold: &ThermalManifold,
     config: QuboConfig,
@@ -451,14 +702,32 @@ pub fn manifold_to_qubo(
         }
     }
 
-    Ok(QuboProblem {
+    let qp = QuboProblem {
         q_matrix: q,
         num_variables: n,
         config,
         source_metric: manifold.metric_tensor,
         source_field: manifold.scalar_field,
         source_gauge: manifold.gauge_connection,
-    })
+    };
+
+    // Check for numerical overflow in QUBO entries.
+    let max_entry = qp.max_abs();
+    if max_entry > OVERFLOW_THRESHOLD {
+        return Err(QuboError::NumericalOverflow { max_entry });
+    }
+
+    // Check condition number — ill-conditioned matrices degrade annealer quality.
+    if let Ok((_, eigenvalue_ratio, cond)) = qp.condition_number_estimate() {
+        if cond > ILL_CONDITIONED_THRESHOLD {
+            return Err(QuboError::IllConditioned {
+                condition_number: cond,
+                eigenvalue_ratio,
+            });
+        }
+    }
+
+    Ok(qp)
 }
 
 /// Encode a temperature vector into the canonical binary solution vector.
