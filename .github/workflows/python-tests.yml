@@ -58,8 +58,9 @@ jobs:
         run: |
           set -euo pipefail
           python -m pip install --upgrade pip
-          # requirements-dev.txt already lists pytest; install once and dedupe.
-          pip install -r requirements-dev.txt
+          # Install only the hermetic OSimFlow dependencies. The full
+          # requirements-dev.txt includes native ML packages that are not
+          # needed by this mocked suite and do not support every matrix Python.
           pip install -r scripts/requirements-test.txt
 
       - name: Run pytest scripts/ci/ with coverage
