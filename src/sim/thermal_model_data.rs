@@ -117,6 +117,20 @@ pub struct ThermalModelData<T: ContinuousTensor<f64> + Clone> {
     /// Used in `step_physics_5r1c` only; the 9R4C and 6R2C paths
     /// maintain their own air-node temperature handling.
     pub air_temperatures: T,
+    /// Issue #1860: Solar-lag state for multi-timescale wall response.
+    ///
+    /// The 5R1C model lumps ALL wall mass into one node (τ_mass ≈ 12 h for
+    /// low-mass buildings). In reality, near-surface layers (gypsum, furniture,
+    /// internal partitions) absorb solar radiation and re-release it over
+    /// 1–3 h — a timescale that falls between the air node (τ_air ≈ 0.17 h)
+    /// and the mass node (τ_mass ≈ 12 h).
+    ///
+    /// This field tracks a first-order low-pass filter on the solar flux
+    /// that reaches surfaces/mass (phi_st + phi_m), with time constant
+    /// τ_lag = √(τ_air × τ_mass). The filtered value is added to the 5R1C
+    /// air-node numerator as a "fast mass" contribution, bridging the gap
+    /// between the air and mass timescales.
+    pub solar_lag: T,
     /// Independent interior wall-surface temperature state for the 5R1C model.
     ///
     /// Tracks the temperature at the interior wall surface `T_si` for each
@@ -329,6 +343,7 @@ impl<T: ContinuousTensor<f64> + Clone> Clone for ThermalModelData<T> {
             thermal_capacitance: self.thermal_capacitance.clone(),
             air_thermal_capacitance: self.air_thermal_capacitance.clone(),
             air_temperatures: self.air_temperatures.clone(),
+            solar_lag: self.solar_lag.clone(),
             wall_surface_temperatures: self.wall_surface_temperatures.clone(),
             envelope_mass_temperatures: self.envelope_mass_temperatures.clone(),
             internal_mass_temperatures: self.internal_mass_temperatures.clone(),

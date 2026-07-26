@@ -453,3 +453,62 @@ fn test_case_950_annual_cooling_within_ashrae140_band() {
         "Case 950 annual cooling must be finite and positive, got {c_mwh}"
     );
 }
+
+// =============================================================================
+// Solar-Lag Correction Tests (Issue #1860)
+// =============================================================================
+
+/// Solar-lag state must be initialised to zero (no solar history at t=0).
+#[test]
+fn test_solar_lag_initialised_to_zero() {
+    let model = ThermalModel::<VectorField>::from_spec(&ASHRAE140Case::Case600.spec());
+    for i in 0..model.num_zones {
+        let lag = model.solar_lag.as_ref()[i];
+        assert!(
+            lag == 0.0,
+            "solar_lag[{i}] must be initialised to zero, got {lag}"
+        );
+    }
+}
+
+/// Solar-lag state must be finite and non-negative after 24 h of simulation.
+#[test]
+fn test_solar_lag_finite_and_nonnegative_after_simulation() {
+    let model = run_case_with_weather(ASHRAE140Case::Case600, 24);
+    for i in 0..model.num_zones {
+        let lag = model.solar_lag.as_ref()[i];
+        assert!(lag.is_finite(), "solar_lag[{i}] must be finite, got {lag}");
+        assert!(lag >= 0.0, "solar_lag[{i}] must be non-negative, got {lag}");
+    }
+}
+
+/// The solar-lag correction must improve Case 650 annual cooling relative to
+/// the pre-fix baseline (~3.0 MWh).
+#[test]
+fn test_case_650_solar_lag_improves_annual_cooling() {
+    let model = run_case_with_weather(ASHRAE140Case::Case650, 8760);
+    let c_mwh = model.get_cooling_energy_kwh() / 1000.0;
+    let pre_fix_baseline = 3.0;
+    assert!(
+        c_mwh > pre_fix_baseline * 1.10,
+        "Case 650 annual cooling {c_mwh:.3} MWh should be ≥ 10% above pre-fix baseline \
+         ({pre_fix_baseline:.1} MWh)"
+    );
+}
+
+/// Alpha-blend mass-node coupling must produce finite mass temperatures.
+#[test]
+fn test_case_600_alpha_blend_finite_mass_temps() {
+    let model = run_case_with_weather(ASHRAE140Case::Case600, 8760);
+    for i in 0..model.num_zones {
+        let t_mass = model.mass_temperatures.as_ref()[i];
+        assert!(
+            t_mass.is_finite(),
+            "T_mass[{i}] must be finite, got {t_mass}"
+        );
+        assert!(
+            t_mass > -30.0 && t_mass < 80.0,
+            "T_mass[{i}] = {t_mass:.1}°C outside physical envelope [-30, 80]°C"
+        );
+    }
+}

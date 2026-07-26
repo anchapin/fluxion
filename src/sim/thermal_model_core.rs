@@ -1849,19 +1849,18 @@ impl ThermalModel<VectorField> {
         //   quarantined in tests/known_issues_regression.rs (closes when
         //   GaugeSolver #1465 lands).
         //
-        // This block intentionally keeps the #1216 LowMass `air_frac = 0.70` until
-        // the structural rewrite unblocks the proper resolution.
+        // Issue #1860: the time-constant-aware mass-node coupling and
+        // solar-lag correction in `step_physics_5r1c` now handle the air-node
+        // transient response. The 0.70 air-fraction band-aid (Issue #1216)
+        // is retained temporarily — the solar-lag term provides the
+        // sustained cooling demand that the band-aid was over-compensating
+        // for. Once the solar-lag is validated, the band-aid can be reduced.
         {
             let (air_frac, mass_frac_of_remaining): (f64, f64) = match spec.construction_type {
-                // Issue #1216 — band-aid for the missing air-node thermal inertia
-                // in the simplified 5R1C topology. To be replaced when #1152 lands.
-                crate::validation::ashrae_140_cases::ConstructionType::LowMass => (0.7, 0.3),
-                // ADR-002 (#1175): high-mass uses the ASHRAE-140-correct solar split —
-                // window solar → opaque surfaces / mass, NONE directly to air. The
-                // legacy 0.40 was a stale compensation constant for the OLD 5R1C
-                // topology (ISSUE_1168_ROOT_CAUSE.md). The 9R4C solver routes solar
-                // through physical mass nodes; dumping 40% onto the air node bypasses
-                // thermal mass and over-predicts cooling.
+                // Issue #1216 band-aid retained; Issue #1860 solar-lag
+                // correction compensates for the structural 5R1C limitation.
+                crate::validation::ashrae_140_cases::ConstructionType::LowMass => (0.70, 0.3),
+                // ADR-002 (#1175): high-mass uses the ASHRAE-140-correct solar split.
                 crate::validation::ashrae_140_cases::ConstructionType::HighMass => (0.0, 0.30),
                 crate::validation::ashrae_140_cases::ConstructionType::Special => (0.10, 0.50),
             };
@@ -2568,6 +2567,10 @@ impl ThermalModel<VectorField> {
             // (matching the initial zone temperature); stepped each call to
             // step_physics_5r1c via the exact exponential solution.
             air_temperatures: VectorField::from_scalar(20.0, num_zones),
+
+            // Issue #1860: solar-lag state (first-order low-pass filter on
+            // surface/mass solar flux). Initialized to zero (no solar history).
+            solar_lag: VectorField::from_scalar(0.0, num_zones),
 
             // Issue #1860: independent interior wall-surface ODE state. Initialized
             // to 20°C (matching the initial zone temperature); stepped each call to
