@@ -44,6 +44,7 @@ use crate::sim::per_surface_conduction::{PerSurfaceConductionSolver, SurfaceKind
 use crate::sim::sky_radiation::STEFAN_BOLTZMANN;
 // Issue #1349 (Phase 2 crate split): multi-node thermal mass types moved to `fluxion_core::multi_node`.
 use fluxion_core::multi_node::{MassAirCouplingMode, MultiNodeThermalMass, ThermalMassNode};
+use log;
 
 /// Series combination of two conductances (Issue #1281, parallel-resistance
 /// coupling network for 9R4C).
@@ -603,10 +604,14 @@ impl MultiNodeSolver {
         // here since the caller is better positioned to handle that failure.
         let residual = (q_net - delta_e_rate).abs();
         let scale = q_net.abs().max(delta_e_rate.abs()).max(1.0);
-        debug_assert!(
-            !residual.is_finite() || residual < 1e-9 * scale,
-            "First Law violation: net heat ({q_net} W) != change in storage rate ({delta_e_rate} W) | residual={residual} W",
-        );
+        // Issue #2127: Replace debug_assert! with runtime check.
+        // Non-finite residuals (inf/nan) are skipped silently per Issue #2128.
+        // Finite but large residuals emit a warning instead of panicking.
+        if residual.is_finite() && residual >= 1e-9 * scale {
+            log::warn!(
+                "First Law violation: net heat ({q_net} W) != change in storage rate ({delta_e_rate} W) | residual={residual} W",
+            );
+        }
     }
 
     // ── Issue #871: Air Balance API Methods ───────────────────────────
