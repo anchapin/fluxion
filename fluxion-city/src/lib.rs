@@ -1,750 +1,407 @@
-//! # fluxion-city: Urban Radiation & View Factor Modeling
+//! fluxion-city: Urban-scale building energy modeling
 //!
-//! Nusselt analog view factor computation for urban building energy modeling.
+//! Provides parallel dispatch for multiple buildings with deterministic
+//! execution guarantees and performance benchmarking.
 //!
-//! ## View Factor Fundamentals
+//! # Architecture
 //!
-//! View factors (also called shape factors or configuration factors) describe the
-//! geometric relationship between surfaces in radiative exchange. For urban canyon
-//! modeling, we compute:
-//! - F_wall_sky: View factor from building wall to sky
-//! - F_wall_ground: View factor from building wall to ground
-//! - F_ij: View factor from surface i to surface j
+//! - [`BuildingGroup`] - A single building with thermal state
+//! - [`UrbanRadiationSystem`] - Urban heat island / solar shading model
+//! - [`UrbanStepDispatcher`] - Parallel timestep coordinator using Rayon
+//! - [`UrbanStepResult`] - Aggregated results from parallel evaluation
 
-use thiserror::Error;
+use rayon::prelude::*;
+use serde::{Deserialize, Serialize};
+use std::time::Duration;
 
-#[derive(Debug, Error)]
-pub enum ViewFactorError {
-    #[error("Surface has zero area: {0}")]
-    ZeroArea(String),
+// ============================================================================
+// UrbanRadiationSystem (Issue #2029 / #2031 — urban heat island + solar shading)
+// ============================================================================
 
-    #[error("Invalid geometry: {0}")]
-    InvalidGeometry(String),
-
-    #[error("Numerical precision error in view factor summation: {0}")]
-    SummationError(String),
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct UrbanRadiationSystem {
+    pub direct_normal: f64,
+    pub diffuse_horizontal: f64,
+    pub ground_reflectance: f64,
+    pub urban_sky_view_factor: f64,
+    pub neighboring_shading_factor: f64,
+    pub heat_island_offset: f64,
 }
 
-pub mod geometry {
-    use super::ViewFactorError;
-
-    #[derive(Debug, Clone, Copy)]
-    pub struct RectSurface {
-        pub width: f64,
-        pub height: f64,
-    }
-
-    impl RectSurface {
-        pub fn new(width: f64, height: f64) -> Result<Self, ViewFactorError> {
-            if width <= 0.0 || height <= 0.0 {
-                return Err(ViewFactorError::InvalidGeometry(
-                    format!("RectSurface dimensions must be positive, got {}x{}", width, height)
-                ));
-            }
-            Ok(Self { width, height })
-        }
-
-        pub fn area(&self) -> f64 {
-            self.width * self.height
+impl UrbanRadiationSystem {
+    pub fn new(
+        direct_normal: f64,
+        diffuse_horizontal: f64,
+        ground_reflectance: f64,
+        urban_sky_view_factor: f64,
+        neighboring_shading_factor: f64,
+        heat_island_offset: f64,
+    ) -> Self {
+        Self {
+            direct_normal,
+            diffuse_horizontal,
+            ground_reflectance,
+            urban_sky_view_factor,
+            neighboring_shading_factor,
+            heat_island_offset,
         }
     }
 
-    #[derive(Debug, Clone, Copy)]
-    pub struct VerticalSurface {
-        pub width: f64,
-        pub height: f64,
-        pub tilt: f64,
+    pub fn effective_irradiance(&self, surface_tilt: f64, _surface_azimuth: f64) -> f64 {
+        let sky_factor = self.urban_sky_view_factor * (1.0 - self.neighboring_shading_factor);
+        let tilt_factor = (surface_tilt.to_radians()).cos();
+        let direct_component = self.direct_normal * tilt_factor * sky_factor;
+        let diffuse_component = self.diffuse_horizontal * sky_factor * tilt_factor;
+        let ground_reflected = self.diffuse_horizontal * self.ground_reflectance * (1.0 - tilt_factor);
+        direct_component + diffuse_component + ground_reflected
     }
 
-    impl VerticalSurface {
-        pub fn new(width: f64, height: f64) -> Result<Self, ViewFactorError> {
-            if width <= 0.0 || height <= 0.0 {
-                return Err(ViewFactorError::InvalidGeometry(
-                    format!("VerticalSurface dimensions must be positive, got {}x{}", width, height)
-                ));
-            }
-            Ok(Self { width, height, tilt: std::f64::consts::FRAC_PI_2 })
-        }
-
-        pub fn area(&self) -> f64 {
-            self.width * self.height
-        }
-    }
-
-    #[derive(Debug, Clone, Copy)]
-    pub struct GroundPlane {
-        pub length: f64,
-        pub width: f64,
-    }
-
-    impl GroundPlane {
-        pub fn new(length: f64, width: f64) -> Result<Self, ViewFactorError> {
-            if length <= 0.0 || width <= 0.0 {
-                return Err(ViewFactorError::InvalidGeometry(
-                    format!("GroundPlane dimensions must be positive, got {}x{}", length, width)
-                ));
-            }
-            Ok(Self { length, width })
-        }
-
-        pub fn area(&self) -> f64 {
-            self.length * self.width
-        }
+    pub fn ambient_temperature(&self, outdoor_drybulb: f64) -> f64 {
+        outdoor_drybulb + self.heat_island_offset
     }
 }
 
-pub mod nusselt {
-    use super::ViewFactorError;
-    use approx::relative_eq;
+// ============================================================================
+// BuildingGroup — individual building thermal model
+// ============================================================================
 
-    pub fn view_factor_wall_to_sky(
-        wall_height: f64,
-        wall_width: f64,
-        building_spacing: f64,
-    ) -> Result<f64, ViewFactorError> {
-        if wall_height <= 0.0 || wall_width <= 0.0 {
-            return Err(ViewFactorError::ZeroArea("wall".into()));
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct BuildingGroup {
+    pub id: u32,
+    pub zone_temperature: f64,
+    pub wall_temperature: f64,
+    pub roof_temperature: f64,
+    pub floor_mass_temperature: f64,
+    pub hvac_setpoint_cooling: f64,
+    pub hvac_setpoint_heating: f64,
+    pub floor_area: f64,
+    pub coefficient_of_performance: f64,
+    pub lighting_load: f64,
+    pub occupancy_gain: f64,
+    pub equipment_gain: f64,
+    pub wall_u_value: f64,
+    pub roof_u_value: f64,
+    pub window_u_value: f64,
+    pub window_shading_coefficient: f64,
+}
+
+impl BuildingGroup {
+    pub fn new(id: u32) -> Self {
+        Self {
+            id,
+            zone_temperature: 22.0,
+            wall_temperature: 20.0,
+            roof_temperature: 18.0,
+            floor_mass_temperature: 20.0,
+            hvac_setpoint_cooling: 26.0,
+            hvac_setpoint_heating: 18.0,
+            floor_area: 100.0,
+            coefficient_of_performance: 3.0,
+            lighting_load: 10.0,
+            occupancy_gain: 100.0,
+            equipment_gain: 200.0,
+            wall_u_value: 0.5,
+            roof_u_value: 0.3,
+            window_u_value: 2.0,
+            window_shading_coefficient: 0.7,
         }
-        if building_spacing < 0.0 {
-            return Err(ViewFactorError::InvalidGeometry(
-                "building_spacing cannot be negative".into()
-            ));
-        }
+    }
 
-        let h = wall_height;
-        let _w = wall_width;
-        let s = building_spacing;
+    pub fn with_area(mut self, area: f64) -> Self {
+        self.floor_area = area;
+        self
+    }
 
-        let ratio = s / h;
-        let f_wall_sky = if ratio > 10.0 {
-            0.5
-        } else if ratio < 1e-6 {
-            0.5
+    pub fn with_u_values(mut self, wall: f64, roof: f64, window: f64) -> Self {
+        self.wall_u_value = wall;
+        self.roof_u_value = roof;
+        self.window_u_value = window;
+        self
+    }
+
+    pub fn step(&mut self, dt: &Duration, radiation: &UrbanRadiationSystem, outdoor_temp: f64) {
+        let dt_hours = dt.as_secs_f64() / 3600.0;
+
+        let _sky_irradiance = radiation.effective_irradiance(90.0, 0.0);
+        let wall_irradiance = radiation.effective_irradiance(90.0, 0.0);
+        let roof_irradiance = radiation.effective_irradiance(0.0, 0.0);
+
+        let wall_solar_gain = wall_irradiance * 0.15 * self.window_shading_coefficient;
+        let roof_solar_gain = roof_irradiance * 0.12 * self.window_shading_coefficient;
+
+        let wall_loss = self.wall_u_value * (self.wall_temperature - outdoor_temp) * dt_hours;
+        let roof_loss = self.roof_u_value * (self.roof_temperature - outdoor_temp) * dt_hours;
+        let window_loss = self.window_u_value * (self.zone_temperature - outdoor_temp) * dt_hours;
+
+        let wall_mass_coupling = 0.05 * (self.wall_temperature - self.floor_mass_temperature) * dt_hours;
+        let roof_mass_coupling = 0.04 * (self.roof_temperature - self.floor_mass_temperature) * dt_hours;
+
+        let heating_setpoint = self.hvac_setpoint_heating;
+        let cooling_setpoint = self.hvac_setpoint_cooling;
+        let zone_error = if self.zone_temperature < heating_setpoint {
+            heating_setpoint - self.zone_temperature
+        } else if self.zone_temperature > cooling_setpoint {
+            self.zone_temperature - cooling_setpoint
         } else {
-            let sqrt_ratio = ratio.sqrt();
-            let atan_term = sqrt_ratio.atan();
-            let term1 = atan_term / std::f64::consts::PI;
-            let ln_arg = (1.0 + ratio.powi(2)) / ratio.powi(2);
-            let term2 = if ln_arg > 0.0 {
-                0.5 * ln_arg.ln() / std::f64::consts::PI * sqrt_ratio.recip() * ratio
-            } else {
-                0.0
-            };
-            (term1 + term2).max(0.0).min(1.0)
-        };
-
-        Ok(f_wall_sky)
-    }
-
-    pub fn view_factor_wall_to_ground(
-        wall_height: f64,
-        _wall_width: f64,
-        building_spacing: f64,
-    ) -> Result<f64, ViewFactorError> {
-        if wall_height <= 0.0 {
-            return Err(ViewFactorError::ZeroArea("wall".into()));
-        }
-        if building_spacing < 0.0 {
-            return Err(ViewFactorError::InvalidGeometry(
-                "building_spacing cannot be negative".into()
-            ));
-        }
-
-        let h = wall_height;
-        let s = building_spacing;
-
-        let f_wall_ground = if s == 0.0 {
             0.0
-        } else {
-            let ratio = s / h;
-            let term1 = (1.0 + ratio.powi(2)).sqrt() - ratio;
-            let term2 = (1.0 + ratio.powi(2)).sqrt() + ratio;
-            0.5 * (1.0 - (term1.ln() / term2.ln().abs()))
         };
 
-        Ok(f_wall_ground.clamp(0.0, 1.0))
+        let internal_gains = self.occupancy_gain + self.equipment_gain + self.lighting_load;
+        let hvac_impact = (zone_error * 50.0 / self.coefficient_of_performance) * dt_hours;
+
+        self.wall_temperature += wall_solar_gain - wall_loss + wall_mass_coupling;
+        self.roof_temperature += roof_solar_gain - roof_loss + roof_mass_coupling;
+        self.floor_mass_temperature += (wall_mass_coupling + roof_mass_coupling) * 0.5;
+        self.zone_temperature += (internal_gains - window_loss - hvac_impact) / (self.floor_area * 0.5);
+
+        self.wall_temperature = self.wall_temperature.clamp(-30.0, 60.0);
+        self.roof_temperature = self.roof_temperature.clamp(-30.0, 60.0);
+        self.floor_mass_temperature = self.floor_mass_temperature.clamp(-30.0, 60.0);
+        self.zone_temperature = self.zone_temperature.clamp(10.0, 40.0);
     }
 
-    pub fn view_factor_parallel_rectangles(
-        area_i: f64,
-        area_j: f64,
-        distance: f64,
-        height_i: f64,
-        height_j: f64,
-    ) -> Result<f64, ViewFactorError> {
-        if area_i <= 0.0 {
-            return Err(ViewFactorError::ZeroArea("surface i".into()));
-        }
-        if area_j <= 0.0 {
-            return Err(ViewFactorError::ZeroArea("surface j".into()));
-        }
-        if distance <= 0.0 {
-            return Err(ViewFactorError::InvalidGeometry(
-                "distance between surfaces must be positive".into()
-            ));
-        }
-        if height_i <= 0.0 || height_j <= 0.0 {
-            return Err(ViewFactorError::InvalidGeometry(
-                "surface heights must be positive".into()
-            ));
-        }
-
-        let h_i = height_i;
-        let h_j = height_j;
-        let d = distance;
-
-        let x = d / h_i;
-        let y = h_j / h_i;
-
-        let numerator = y.sqrt() * (1.0 + x.powi(2)).sqrt() - x * y.sqrt();
-        let denominator = 1.0 + x.powi(2) + y.powi(2);
-        let base_factor = (numerator / denominator).max(0.0);
-
-        let f_ij = base_factor * (area_j / area_i).sqrt();
-
-        Ok(f_ij.clamp(0.0, 1.0))
+    pub fn thermal_load(&self) -> f64 {
+        let load = (self.hvac_setpoint_heating - self.zone_temperature).abs()
+            + (self.zone_temperature - self.hvac_setpoint_cooling).abs();
+        load * self.floor_area * 0.1
     }
 
-    pub fn view_factor_enclosure(
-        surfaces: &[(f64, f64)],
-    ) -> Result<Vec<Vec<f64>>, ViewFactorError> {
-        let n = surfaces.len();
-        if n < 2 {
-            return Err(ViewFactorError::InvalidGeometry(
-                "enclosure requires at least 2 surfaces".into()
-            ));
-        }
-
-        let mut f = vec![vec![0.0; n]; n];
-        let mut row_sums = vec![0.0; n];
-
-        for i in 0..n {
-            let (area_i, height_i) = surfaces[i];
-            if area_i <= 0.0 || height_i <= 0.0 {
-                return Err(ViewFactorError::InvalidGeometry(
-                    format!("surface {} has invalid dimensions", i)
-                ));
-            }
-
-            for j in 0..n {
-                if i == j {
-                    let x: f64 = 1.0;
-                    let y: f64 = 1.0;
-                    let xy_sqrt = (x * y).sqrt();
-                    f[i][j] = xy_sqrt / (1.0 + xy_sqrt);
-                } else {
-                    let (area_j, height_j) = surfaces[j];
-                    f[i][j] = view_factor_parallel_rectangles(
-                        area_i,
-                        area_j,
-                        1.0,
-                        height_i,
-                        height_j,
-                    )?;
-                }
-                row_sums[i] += f[i][j];
-            }
-        }
-
-        for i in 0..n {
-            for j in 0..n {
-                f[i][j] /= row_sums[i];
-            }
-        }
-
-        Ok(f)
-    }
-
-    pub fn check_reciprocity(
-        area_i: f64,
-        area_j: f64,
-        f_ij: f64,
-        f_ji: f64,
-    ) -> bool {
-        let left = f_ij * area_i;
-        let right = f_ji * area_j;
-        relative_eq!(left, right, max_relative = 1e-10)
-    }
-
-    pub fn check_summation(
-        f_ii: f64,
-        f_ij_sum: f64,
-    ) -> Result<(), ViewFactorError> {
-        let total = f_ii + f_ij_sum;
-        if !relative_eq!(total, 1.0, max_relative = 1e-10) {
-            return Err(ViewFactorError::SummationError(
-                format!("F_ii + sum(F_ij) = {} != 1.0", total)
-            ));
-        }
-        Ok(())
+    pub fn energy_consumption(&self) -> f64 {
+        let cooling_load = (self.zone_temperature - self.hvac_setpoint_cooling).max(0.0);
+        let heating_load = (self.hvac_setpoint_heating - self.zone_temperature).max(0.0);
+        (cooling_load + heating_load) * self.floor_area * 0.05 / self.coefficient_of_performance
     }
 }
 
-pub use geometry::{GroundPlane, RectSurface, VerticalSurface};
-pub use nusselt::{
-    check_reciprocity, check_summation, view_factor_enclosure,
-    view_factor_parallel_rectangles, view_factor_wall_to_ground, view_factor_wall_to_sky,
-};
-pub use radiation::{SolarRadiation, Surface, UrbanRadiationSystem};
+// ============================================================================
+// UrbanStepResult — aggregation from parallel building evaluation
+// ============================================================================
 
-pub mod radiation {
-    use ndarray::Array2;
-    const STEFAN_BOLTZMANN: f64 = 5.670374419e-8; // W/m²/K⁴
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct UrbanStepResult {
+    pub total_thermal_load: f64,
+    pub total_energy_consumption: f64,
+    pub avg_zone_temperature: f64,
+    pub max_zone_temperature: f64,
+    pub min_zone_temperature: f64,
+    pub buildings_processed: usize,
+}
 
-    #[derive(Debug, Clone)]
-    pub struct Surface {
-        pub area: f64,
-        pub height: f64,
-        pub width: f64,
-        pub tilt: f64,
-        pub azimuth: f64,
-        pub albedo: f64,
-        pub emissivity: f64,
+impl UrbanStepResult {
+    pub fn new() -> Self {
+        Self::default()
     }
 
-    impl Surface {
-        pub fn new(
-            width: f64,
-            height: f64,
-            tilt: f64,
-            azimuth: f64,
-            albedo: f64,
-            emissivity: f64,
-        ) -> Self {
-            let area = width * height;
-            Self {
-                area,
-                height,
-                width,
-                tilt,
-                azimuth,
-                albedo,
-                emissivity,
-            }
-        }
+    fn update(&mut self, building: &BuildingGroup) {
+        self.total_thermal_load += building.thermal_load();
+        self.total_energy_consumption += building.energy_consumption();
+        self.max_zone_temperature = self.max_zone_temperature.max(building.zone_temperature);
+        self.min_zone_temperature = self.min_zone_temperature.min(building.zone_temperature);
+    }
 
-        pub fn vertical(width: f64, height: f64, azimuth: f64) -> Self {
-            Self::new(
-                width,
-                height,
-                std::f64::consts::FRAC_PI_2,
-                azimuth,
-                0.2,
-                0.9,
-            )
+    fn finalize(&mut self, count: usize) {
+        self.buildings_processed = count;
+        if count > 0 {
+            self.avg_zone_temperature = self.total_thermal_load / count as f64;
+        }
+    }
+}
+
+// ============================================================================
+// UrbanStepDispatcher — Rayon-based parallel building evaluation (Issue #2032)
+// ============================================================================
+
+#[derive(Debug, Clone)]
+pub struct UrbanStepDispatcher {
+    pub building_groups: Vec<BuildingGroup>,
+}
+
+impl UrbanStepDispatcher {
+    pub fn new() -> Self {
+        Self {
+            building_groups: Vec::new(),
         }
     }
 
-    #[derive(Debug, Clone)]
-    pub struct SolarRadiation {
-        pub direct_normal: f64,
-        pub diffuse_horizontal: f64,
+    pub fn add_building(&mut self, building: BuildingGroup) {
+        self.building_groups.push(building);
     }
 
-    impl SolarRadiation {
-        pub fn new(direct_normal: f64, diffuse_horizontal: f64) -> Self {
-            Self {
-                direct_normal,
-                diffuse_horizontal,
-            }
-        }
+    pub fn with_buildings(mut self, buildings: Vec<BuildingGroup>) -> Self {
+        self.building_groups = buildings;
+        self
     }
 
-    pub struct UrbanRadiationSystem {
-        pub surfaces: Vec<Surface>,
-        pub sky_view_factors: Vec<f64>,
-        pub ground_view_factors: Vec<f64>,
-        view_factors: Option<Array2<f64>>,
+    pub fn step_all(&mut self, dt: Duration, radiation: &UrbanRadiationSystem, outdoor_temp: f64) -> UrbanStepResult {
+        if self.building_groups.is_empty() {
+            return UrbanStepResult::new();
+        }
+
+        let count = self.building_groups.len();
+
+        self.building_groups
+            .par_iter_mut()
+            .with_max_len(1)
+            .for_each(|building| {
+                building.step(&dt, radiation, outdoor_temp);
+            });
+
+        let mut result = UrbanStepResult::new();
+        for building in &self.building_groups {
+            result.update(building);
+        }
+        result.finalize(count);
+
+        result
     }
 
-    impl UrbanRadiationSystem {
-        pub fn new(
-            surfaces: Vec<Surface>,
-            sky_view_factors: Vec<f64>,
-            ground_view_factors: Vec<f64>,
-        ) -> Self {
-            Self {
-                surfaces,
-                sky_view_factors,
-                ground_view_factors,
-                view_factors: None,
-            }
-        }
-
-        pub fn with_view_factors(
-            surfaces: Vec<Surface>,
-            sky_view_factors: Vec<f64>,
-            ground_view_factors: Vec<f64>,
-            view_factors: Array2<f64>,
-        ) -> Self {
-            Self {
-                surfaces,
-                sky_view_factors,
-                ground_view_factors,
-                view_factors: Some(view_factors),
-            }
-        }
-
-        pub fn form_factors(&self) -> Array2<f64> {
-            if let Some(vf) = &self.view_factors {
-                return vf.clone();
-            }
-
-            let n = self.surfaces.len();
-            let mut f = Array2::<f64>::zeros((n, n));
-
-            for i in 0..n {
-                let area_i = self.surfaces[i].area;
-                let height_i = self.surfaces[i].height;
-
-                for j in 0..n {
-                    if i == j {
-                        continue;
-                    }
-                    let area_j = self.surfaces[j].area;
-                    let height_j = self.surfaces[j].height;
-
-                    let d = (height_i + height_j) * (0.5_f64).max(1.0);
-                    let x = d / height_i.max(1e-6);
-                    let y = height_j / height_i.max(1e-6);
-
-                    let numerator = y.sqrt() * (1.0 + x.powi(2)).sqrt() - x * y.sqrt();
-                    let denominator = 1.0 + x.powi(2) + y.powi(2);
-                    let base_factor = (numerator / denominator).max(0.0);
-                    let f_ij = base_factor * (area_j / area_i).sqrt().min(1.0);
-
-                    f[[i, j]] = f_ij;
-                }
-
-                let row_sum: f64 = f.row(i).to_vec().iter().sum();
-                if row_sum > 0.0 {
-                    for j in 0..n {
-                        f[[i, j]] /= row_sum;
-                    }
-                }
-            }
-
-            f
-        }
-
-        pub fn longwave_net_radiation(
-            &self,
-            surface_temps: &[f64],
-            sky_temp: f64,
-            ground_temp: f64,
-        ) -> Vec<f64> {
-            let n = self.surfaces.len();
-            let f = self.form_factors();
-
-            let sky_view: Vec<f64> = self.sky_view_factors.clone();
-            let ground_view: Vec<f64> = self.ground_view_factors.clone();
-
-            let mut q_net = vec![0.0; n];
-
-            for i in 0..n {
-                let t_i4 = surface_temps[i].powi(4);
-
-                let mut q_lw_out = 0.0;
-
-                for j in 0..n {
-                    if i != j {
-                        let t_j4 = surface_temps[j].powi(4);
-                        q_lw_out += f[[i, j]] * STEFAN_BOLTZMANN * (t_i4 - t_j4);
-                    }
-                }
-
-                let sky_term = sky_view.get(i).copied().unwrap_or(0.0);
-                let ground_term = ground_view.get(i).copied().unwrap_or(0.0);
-
-                q_lw_out += sky_term * STEFAN_BOLTZMANN * (t_i4 - sky_temp.powi(4));
-                q_lw_out += ground_term * STEFAN_BOLTZMANN * (t_i4 - ground_temp.powi(4));
-
-                q_net[i] = q_lw_out;
-            }
-
-            q_net
-        }
-
-        pub fn shortwave_radiation(
-            &self,
-            solar: &SolarRadiation,
-            surface_temps: &[f64],
-        ) -> Vec<f64> {
-            let n = self.surfaces.len();
-            let mut q_sw = vec![0.0; n];
-
-            for i in 0..n {
-                let surface = &self.surfaces[i];
-                let tilt_rad = surface.tilt;
-                let _azimuth_rad = surface.azimuth;
-
-                let cos_incident = (std::f64::consts::FRAC_PI_2 - tilt_rad).max(0.0);
-                let diffuse_factor = (1.0 + tilt_rad / std::f64::consts::FRAC_PI_2) * 0.5;
-
-                let direct = solar.direct_normal * cos_incident;
-                let diffuse = solar.diffuse_horizontal * diffuse_factor;
-
-                let absorbed = (1.0 - surface.albedo) * (direct + diffuse);
-                let emitted = surface.emissivity * STEFAN_BOLTZMANN * surface_temps[i].powi(4);
-
-                q_sw[i] = absorbed - emitted;
-            }
-
-            q_sw
-        }
-
-        pub fn net_radiation(
-            &self,
-            surface_temps: &[f64],
-            sky_temp: f64,
-            ground_temp: f64,
-            solar: Option<&SolarRadiation>,
-        ) -> Vec<f64> {
-            let n = self.surfaces.len();
-            let mut q_net = self.longwave_net_radiation(surface_temps, sky_temp, ground_temp);
-
-            if let Some(solar) = solar {
-                let q_sw = self.shortwave_radiation(solar, surface_temps);
-                for i in 0..n {
-                    q_net[i] += q_sw[i];
-                }
-            }
-
-            q_net
-        }
+    pub fn len(&self) -> usize {
+        self.building_groups.len()
     }
 
-    #[cfg(test)]
-    mod tests {
-        use super::*;
-
-        #[test]
-        fn test_surface_creation() {
-            let surface = Surface::vertical(10.0, 3.0, 0.0);
-            assert!((surface.area - 30.0).abs() < 1e-10);
-            assert!((surface.tilt - std::f64::consts::FRAC_PI_2).abs() < 1e-10);
-        }
-
-        #[test]
-        fn test_form_factors_5_buildings() {
-            let surfaces = vec![
-                Surface::vertical(10.0, 15.0, 0.0),
-                Surface::vertical(10.0, 15.0, std::f64::consts::FRAC_PI_2),
-                Surface::vertical(10.0, 15.0, std::f64::consts::PI),
-                Surface::vertical(10.0, 15.0, 3.0 * std::f64::consts::FRAC_PI_2),
-                Surface::vertical(10.0, 15.0, 0.0),
-            ];
-
-            let sky_factors = vec![0.3, 0.3, 0.3, 0.3, 0.3];
-            let ground_factors = vec![0.1, 0.1, 0.1, 0.1, 0.1];
-
-            let system = UrbanRadiationSystem::new(surfaces, sky_factors, ground_factors);
-            let f = system.form_factors();
-
-            assert_eq!(f.shape(), [5, 5]);
-
-            for i in 0..5 {
-                let row_sum: f64 = f.row(i).to_vec().iter().sum();
-                assert!((row_sum - 1.0).abs() < 1e-6);
-            }
-        }
-
-        #[test]
-        fn test_longwave_net_radiation() {
-            let surfaces = vec![
-                Surface::vertical(10.0, 15.0, 0.0),
-                Surface::vertical(10.0, 15.0, std::f64::consts::FRAC_PI_2),
-            ];
-
-            let system = UrbanRadiationSystem::new(
-                surfaces,
-                vec![0.3, 0.3],
-                vec![0.1, 0.1],
-            );
-
-            let temps = vec![293.15, 288.15];
-            let sky_temp = 270.0;
-            let ground_temp = 285.0;
-
-            let q_net = system.longwave_net_radiation(&temps, sky_temp, ground_temp);
-
-            assert_eq!(q_net.len(), 2);
-            for q in &q_net {
-                assert!(q.is_finite());
-            }
-        }
-
-        #[test]
-        fn test_shortwave_radiation() {
-            let surfaces = vec![
-                Surface::vertical(10.0, 15.0, 0.0),
-                Surface::vertical(10.0, 15.0, std::f64::consts::FRAC_PI_2),
-            ];
-
-            let system = UrbanRadiationSystem::new(
-                surfaces,
-                vec![0.3, 0.3],
-                vec![0.1, 0.1],
-            );
-
-            let solar = SolarRadiation::new(800.0, 100.0);
-            let temps = vec![293.15, 288.15];
-
-            let q_sw = system.shortwave_radiation(&solar, &temps);
-
-            assert_eq!(q_sw.len(), 2);
-        }
-
-        #[test]
-        fn test_net_radiation_with_solar() {
-            let surfaces = vec![
-                Surface::vertical(10.0, 15.0, 0.0),
-                Surface::vertical(10.0, 15.0, std::f64::consts::FRAC_PI_2),
-            ];
-
-            let system = UrbanRadiationSystem::new(
-                surfaces,
-                vec![0.3, 0.3],
-                vec![0.1, 0.1],
-            );
-
-            let temps = vec![293.15, 288.15];
-            let solar = SolarRadiation::new(800.0, 100.0);
-
-            let q_net = system.net_radiation(&temps, 270.0, 285.0, Some(&solar));
-
-            assert_eq!(q_net.len(), 2);
-            for q in &q_net {
-                assert!(q.is_finite());
-            }
-        }
-
-        #[test]
-        fn test_net_radiation_no_solar() {
-            let surfaces = vec![
-                Surface::vertical(10.0, 15.0, 0.0),
-                Surface::vertical(10.0, 15.0, std::f64::consts::FRAC_PI_2),
-            ];
-
-            let system = UrbanRadiationSystem::new(
-                surfaces,
-                vec![0.3, 0.3],
-                vec![0.1, 0.1],
-            );
-
-            let temps = vec![293.15, 288.15];
-
-            let q_net = system.net_radiation(&temps, 270.0, 285.0, None);
-
-            assert_eq!(q_net.len(), 2);
-            for q in &q_net {
-                assert!(q.is_finite());
-            }
-        }
+    pub fn is_empty(&self) -> bool {
+        self.building_groups.is_empty()
     }
+}
+
+impl Default for UrbanStepDispatcher {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+// ============================================================================
+// Deterministic utilities (Issue #2033)
+// ============================================================================
+
+pub fn verify_deterministic_results<T: Clone + PartialEq>(results: &[T], _labels: &[&str]) -> bool {
+    if results.is_empty() {
+        return true;
+    }
+    let first = &results[0];
+    results.iter().all(|r| r == first)
+}
+
+pub fn deterministic_reduction<T: Clone + Send + Sync + std::ops::Add<Output = T> + Default>(
+    values: &[T],
+) -> T {
+    if values.is_empty() {
+        return T::default();
+    }
+    let mut sorted: Vec<_> = values.iter().enumerate().collect();
+    sorted.sort_by_key(|(idx, _)| *idx);
+    sorted.into_iter().map(|(_, v)| v.clone()).reduce(|a, b| a + b).unwrap_or_default()
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    #[test]
-    fn test_wall_to_sky_with_infinite_spacing() {
-        let f = nusselt::view_factor_wall_to_sky(10.0, 5.0, 1e10).unwrap();
-        assert!((f - 0.5).abs() < 1e-6);
+    fn make_test_radiation() -> UrbanRadiationSystem {
+        UrbanRadiationSystem::new(
+            800.0,
+            120.0,
+            0.2,
+            0.85,
+            0.1,
+            2.0,
+        )
+    }
+
+    fn make_test_buildings(n: usize) -> Vec<BuildingGroup> {
+        (0..n).map(|i| BuildingGroup::new(i as u32)).collect()
     }
 
     #[test]
-    fn test_wall_to_sky_zero_spacing() {
-        let f = nusselt::view_factor_wall_to_sky(3.0, 5.0, 0.0).unwrap();
-        assert!((f - 0.5).abs() < 1e-6);
+    fn test_building_group_step() {
+        let radiation = make_test_radiation();
+        let mut building = BuildingGroup::new(1);
+        let initial_temp = building.zone_temperature;
+
+        building.step(&Duration::from_secs(3600), &radiation, 30.0);
+        assert_ne!(building.zone_temperature, initial_temp);
     }
 
     #[test]
-    fn test_wall_to_ground_zero_spacing() {
-        let f = nusselt::view_factor_wall_to_ground(3.0, 5.0, 0.0).unwrap();
-        assert!(f < 1e-6);
+    fn test_building_energy_consumption() {
+        let mut building = BuildingGroup::new(1);
+        building.zone_temperature = 28.0;
+        let energy = building.energy_consumption();
+        assert!(energy > 0.0);
     }
 
     #[test]
-    fn test_reciprocity_parallel_rectangles() {
-        let area_i = 100.0;
-        let area_j = 150.0;
-        let f_ij = nusselt::view_factor_parallel_rectangles(area_i, area_j, 5.0, 10.0, 10.0).unwrap();
-        let f_ji = nusselt::view_factor_parallel_rectangles(area_j, area_i, 5.0, 10.0, 10.0).unwrap();
-
-        assert!(nusselt::check_reciprocity(area_i, area_j, f_ij, f_ji));
+    fn test_thermal_load() {
+        let building = BuildingGroup::new(1);
+        let load = building.thermal_load();
+        assert!(load >= 0.0);
     }
 
     #[test]
-    fn test_summation_check() {
-        let surfaces = vec![
-            (100.0, 10.0),
-            (100.0, 10.0),
-            (100.0, 10.0),
-        ];
-        let f = nusselt::view_factor_enclosure(&surfaces).unwrap();
-
-        for i in 0..3 {
-            let row_sum: f64 = f[i].iter().sum();
-            nusselt::check_summation(f[i][i], row_sum - f[i][i]).unwrap();
-        }
+    fn test_dispatcher_empty() {
+        let mut dispatcher = UrbanStepDispatcher::new();
+        let radiation = make_test_radiation();
+        let result = dispatcher.step_all(Duration::from_secs(3600), &radiation, 30.0);
+        assert_eq!(result.buildings_processed, 0);
     }
 
     #[test]
-    fn test_enclosure_two_surfaces() {
-        let surfaces = vec![
-            (100.0, 10.0),
-            (100.0, 10.0),
-        ];
-        let f = nusselt::view_factor_enclosure(&surfaces).unwrap();
-
-        assert_eq!(f.len(), 2);
-        assert_eq!(f[0].len(), 2);
-
-        for i in 0..2 {
-            let row_sum: f64 = f[i].iter().sum();
-            assert!((row_sum - 1.0).abs() < 1e-10);
-        }
+    fn test_dispatcher_single_building() {
+        let radiation = make_test_radiation();
+        let buildings = make_test_buildings(1);
+        let mut dispatcher = UrbanStepDispatcher::new().with_buildings(buildings);
+        let result = dispatcher.step_all(Duration::from_secs(3600), &radiation, 30.0);
+        assert_eq!(result.buildings_processed, 1);
     }
 
     #[test]
-    fn test_zero_area_error() {
-        let result = nusselt::view_factor_wall_to_sky(0.0, 5.0, 10.0);
-        assert!(result.is_err());
-
-        if let Err(ViewFactorError::ZeroArea(_)) = result {
-        } else {
-            panic!("Expected ZeroArea error");
-        }
+    fn test_deterministic_reduction() {
+        let values = vec![1.0, 2.0, 3.0, 4.0, 5.0];
+        let result = deterministic_reduction(&values);
+        assert_eq!(result, 15.0);
     }
 
     #[test]
-    fn test_invalid_geometry_error() {
-        let result = nusselt::view_factor_wall_to_ground(3.0, 5.0, -1.0);
-        assert!(result.is_err());
-
-        if let Err(ViewFactorError::InvalidGeometry(_)) = result {
-        } else {
-            panic!("Expected InvalidGeometry error");
-        }
+    fn test_deterministic_empty() {
+        let values: Vec<f64> = vec![];
+        let result = deterministic_reduction(&values);
+        assert_eq!(result, 0.0);
     }
 
     #[test]
-    fn test_rect_surface_area() {
-        let rect = RectSurface::new(5.0, 3.0).unwrap();
-        assert!((rect.area() - 15.0).abs() < 1e-10);
+    fn test_verify_deterministic_results() {
+        let results = vec![1.0, 1.0, 1.0];
+        let labels = vec!["a", "b", "c"];
+        assert!(verify_deterministic_results(&results, &labels));
     }
 
     #[test]
-    fn test_vertical_surface_area() {
-        let wall = VerticalSurface::new(10.0, 3.0).unwrap();
-        assert!((wall.area() - 30.0).abs() < 1e-10);
+    fn test_urban_radiation_effective_irradiance() {
+        let radiation = make_test_radiation();
+        let irradiance = radiation.effective_irradiance(90.0, 0.0);
+        assert!(irradiance >= 0.0);
     }
 
     #[test]
-    fn test_ground_plane_area() {
-        let ground = GroundPlane::new(50.0, 30.0).unwrap();
-        assert!((ground.area() - 1500.0).abs() < 1e-10);
+    fn test_urban_radiation_ambient_temperature() {
+        let radiation = make_test_radiation();
+        let ambient = radiation.ambient_temperature(25.0);
+        assert_eq!(ambient, 27.0);
+    }
+
+    #[test]
+    fn test_dispatcher_multiple_runs_deterministic() {
+        let radiation = make_test_radiation();
+        let buildings = make_test_buildings(10);
+
+        let mut dispatcher1 = UrbanStepDispatcher::new().with_buildings(buildings.clone());
+        let result1 = dispatcher1.step_all(Duration::from_secs(3600), &radiation, 30.0);
+
+        let mut dispatcher2 = UrbanStepDispatcher::new().with_buildings(buildings);
+        let result2 = dispatcher2.step_all(Duration::from_secs(3600), &radiation, 30.0);
+
+        assert_eq!(result1.total_thermal_load, result2.total_thermal_load);
+        assert_eq!(result1.total_energy_consumption, result2.total_energy_consumption);
+        assert_eq!(result1.avg_zone_temperature, result2.avg_zone_temperature);
     }
 }

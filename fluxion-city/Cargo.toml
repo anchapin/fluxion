@@ -1,17 +1,25 @@
 [package]
 name = "fluxion-city"
-version = "0.1.0"
+version = "1.0.0"
 edition = "2021"
 authors = ["Dr. Aris Thorne <aris.thorne@fluxion.org>"]
-description = "Urban radiation modeling with Nusselt analog view factor computation for building energy modeling"
+description = "Urban-scale building energy modeling with parallel dispatch and deterministic execution for the Fluxion BEM engine."
 repository = "https://github.com/anchapin/fluxion"
 license = "Apache-2.0"
 
+[lib]
+name = "fluxion_city"
+path = "src/lib.rs"
+
 [dependencies]
-thiserror = "1.0"
+rayon = "1.10"
 serde = { version = "1.0", features = ["derive"] }
-approx = "0.5"
-ndarray = "0.16"
 
 [dev-dependencies]
-approx = "0.5"
+criterion = "0.5"
+[[bench]]
+name = "parallel_harness"
+harness = false
+
+[features]
+default = []
