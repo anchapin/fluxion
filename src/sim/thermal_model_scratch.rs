@@ -285,6 +285,7 @@ pub(crate) struct PhysicsScratchPool {
 }
 
 impl PhysicsScratchPool {
+    #[allow(dead_code)]
     pub fn new() -> Self {
         Self {
             r5r1c: None,
