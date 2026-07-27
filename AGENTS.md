@@ -133,6 +133,7 @@ ML-surrogate swap-point traits:
 - `Fluxion Determinism Gate (Issue #1351)` — listener on Cross-Platform Determinism CI workflow
 - `Fluxion Performance Gate (Issue #1618)` — listener on Performance Dashboard workflow
 - `Architecture Drift Detection` (nightly + on `src/**/*.rs` / `ARCHITECTURE.md` changes) — `scripts/check_architecture_drift.py`
+- `Code Coverage Gate (Issue #1932)` — `cargo llvm-cov` + per-critical-path ratchet (baseline in `validation/coverage_baseline.json`; starts unenforced)
 - `Mutation Testing (advisory)` (Issue #1891) — diff-scoped `cargo mutants --in-diff` PR check; non-blocking. `Mutation Testing (nightly)` runs the full suite against `develop`.
 
 Heavy Linux jobs honour `vars.FLUXION_LINUX_RUNNER` (self-hosted Hetzner fallback; see `docs/self-hosted-runners.md`).
@@ -199,6 +200,9 @@ Heavy Linux jobs honour `vars.FLUXION_LINUX_RUNNER` (self-hosted Hetzner fallbac
 | `release_gates.yaml` | Required branch-protection checks + thresholds |
 | `scripts/check_architecture_drift.py` | ARCHITECTURE.md vs source-code drift |
 | `scripts/check_ashrae_cases_cycle.py` | `sim ↔ validation` cycle regression guard |
+| `scripts/coverage_critical_paths.py` | Per-critical-path coverage analysis + ratchet gate (#1932) |
+| `scripts/coverage_baseline.py` | Record/refresh the coverage ratchet baseline (#1932) |
+| `validation/coverage_baseline.json` | Committed coverage baseline (0.0 = unenforced) |
 | `scripts/release_gate_checker.py` | Validates `release_gates.yaml` gates against current results |
 | `scripts/mutants_diff_files.sh` | Extracts changed `.rs` files for diff-scoped mutation testing (`--in-diff`) |
 | `.github/workflows/mutation-testing.yml` | Advisory diff-scoped mutation PR check (Issue #1891) |
