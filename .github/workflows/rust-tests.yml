@@ -300,3 +300,24 @@ jobs:
           # for future artifact upload once #1285 is resolved.
           echo "CUDA parity test completed — see workflow logs for details"
           echo "Per-timestep CSV upload requires issue #1285 (committed ONNX model)"
+
+  # -- Issue #2075: TOON roundtrip integration test -------------------------
+  # Runs on every PR and main push. Validates that TOON serialization /
+  # deserialization preserves data correctly (6 scenarios, zero numerical drift).
+  # Blocked by issue #2071 (test implementation).
+
+  toon-roundtrip:
+    name: TOON Roundtrip Integration (Issue #2075)
+    runs-on: ubuntu-latest
+    if: |
+      github.event_name == 'pull_request' ||
+      (github.event_name == 'push' && github.ref == 'refs/heads/main')
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/setup-rust-python-env
+        with:
+          python-version: '3.10'
+      - name: Run TOON roundtrip integration test
+        run: cargo test --test toon_roundtrip_integration -- --test-threads=1
+        env:
+          PYO3_PYTHON: /usr/bin/python3
