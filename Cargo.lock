@@ -1138,6 +1138,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "fluxion-grid"
+version = "1.0.0"
+dependencies = [
+ "serde",
+ "thiserror 1.0.69",
+]
+
+[[package]]
 name = "fnv"
 version = "1.0.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
