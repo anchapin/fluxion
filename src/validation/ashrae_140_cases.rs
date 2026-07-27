@@ -269,6 +269,12 @@ pub enum ASHRAE140Case {
     /// moderate loads (lighting 8 W/m², equipment 15 W/m², occupancy 0.2 people/m²).
     /// Validates school load patterns and thermal mass effects.
     School,
+    /// Warehouse - Warehouse / light-commercial building
+    ///
+    /// Tests warehouse building with medium-mass construction, wide thermostat dead-band (16-30 °C),
+    /// 1 ACH infiltration, and minimal internal loads (~3 W/m² lighting only).
+    /// Validates large-volume low-load commercial building behavior (ASHRAE 90.1 prototype).
+    Warehouse,
 
     // HVAC Equipment cases (800-810 series)
     /// Case 800 - Heat pump (single-stage, basic control)
@@ -441,6 +447,7 @@ impl ASHRAE140Case {
             ASHRAE140Case::Office => "OFFICE".to_string(),
             ASHRAE140Case::Retail => "RETAIL".to_string(),
             ASHRAE140Case::School => "SCHOOL".to_string(),
+            ASHRAE140Case::Warehouse => "WAREHOUSE".to_string(),
             ASHRAE140Case::Case800 => "800".to_string(),
             ASHRAE140Case::Case801 => "801".to_string(),
             ASHRAE140Case::Case802 => "802".to_string(),
@@ -528,6 +535,7 @@ impl ASHRAE140Case {
             "OFFICE" => Some(ASHRAE140Case::Office),
             "RETAIL" => Some(ASHRAE140Case::Retail),
             "SCHOOL" => Some(ASHRAE140Case::School),
+            "WAREHOUSE" => Some(ASHRAE140Case::Warehouse),
             "800" => Some(ASHRAE140Case::Case800),
             "801" => Some(ASHRAE140Case::Case801),
             "802" => Some(ASHRAE140Case::Case802),
@@ -667,6 +675,9 @@ impl ASHRAE140Case {
                 "School building - high-mass concrete, 8am-3pm schedule, 8 W/m² lighting + 15 W/m² equipment + 0.2 people/m²"
                     .to_string()
             }
+            ASHRAE140Case::Warehouse => {
+                "Warehouse building - medium-mass, 16-30°C dead-band, 1 ACH, ~3 W/m² lighting".to_string()
+            }
             ASHRAE140Case::Case800 => "Heat pump (single-stage, basic control)".to_string(),
             ASHRAE140Case::Case801 => "Heat pump (two-stage, intermediate control)".to_string(),
             ASHRAE140Case::Case802 => "Heat pump (variable-speed, advanced control)".to_string(),
@@ -737,6 +748,7 @@ impl ASHRAE140Case {
             | ASHRAE140Case::Case400
             | ASHRAE140Case::Office
             | ASHRAE140Case::Retail
+            | ASHRAE140Case::Warehouse
             // Expanded validation coverage (500-699 series - all low mass)
             | ASHRAE140Case::Case500
             | ASHRAE140Case::Case501
@@ -825,6 +837,7 @@ impl ASHRAE140Case {
             ASHRAE140Case::Office => CaseBuilder::office_building(),
             ASHRAE140Case::Retail => CaseBuilder::retail_building(),
             ASHRAE140Case::School => CaseBuilder::school_building(),
+            ASHRAE140Case::Warehouse => CaseBuilder::warehouse_building(),
             ASHRAE140Case::Case800 => CaseBuilder::case_800_heat_pump_single_stage(),
             ASHRAE140Case::Case801 => CaseBuilder::case_801_heat_pump_two_stage(),
             ASHRAE140Case::Case802 => CaseBuilder::case_802_heat_pump_variable_speed(),
@@ -2948,6 +2961,34 @@ impl CaseBuilder {
             .with_num_zones(1)
             .build()
             .expect("School building should validate")
+    }
+
+    /// Warehouse building - light-commercial warehouse
+    ///
+    /// Tests warehouse building with medium-mass construction, wide thermostat dead-band (16-30 °C),
+    /// 1 ACH infiltration, and minimal internal loads (~3 W/m² lighting only, no occupants/equipment).
+    /// Per ASHRAE 90.1 warehouse prototype: 8m × 6m × 6m high, 50% window-to-wall ratio.
+    pub fn warehouse_building() -> CaseSpec {
+        // Dimensions: 8.0 × 6.0 × 6.0 m = 48 m² floor area, 6m height (large volume)
+        // Windows: ~10 m² total (south 5m², north 5m²), 50% WWR
+        // Internal loads: ~3 W/m² lighting × 48 = 144 W (minimal - no occupants/equipment)
+        Self::new()
+            .with_case_id("WAREHOUSE".to_string())
+            .with_description(
+                "Warehouse building - medium-mass, 16-30°C dead-band, 1 ACH, ~3 W/m² lighting"
+                    .to_string(),
+            )
+            .with_dimensions(8.0, 6.0, 6.0)
+            .low_mass_construction()
+            .with_window(5.0, Orientation::South)
+            .with_window(5.0, Orientation::North)
+            .with_window_properties(WindowSpec::double_clear_glass())
+            .with_internal_loads(InternalLoads::new(144.0, 0.6, 0.4)) // 144 W total
+            .with_hvac(HvacSchedule::constant(16.0, 30.0)) // Wide dead-band
+            .with_infiltration(1.0) // 1 ACH
+            .with_num_zones(1)
+            .build()
+            .expect("Warehouse building should validate")
     }
 
     // HVAC equipment case methods (800-810)

@@ -1509,6 +1509,7 @@ impl ThermalModel<VectorField> {
             crate::validation::ashrae_140_cases::BuildingType::Residential => 0.3,
             crate::validation::ashrae_140_cases::BuildingType::Commercial => 0.5,
             crate::validation::ashrae_140_cases::BuildingType::Institutional => 0.5,
+            crate::validation::ashrae_140_cases::BuildingType::Warehouse => 0.5,
         };
         let h_tr_me_vec: Vec<f64> = (0..num_zones)
             .map(|zone_idx| {
