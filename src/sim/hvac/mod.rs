@@ -17,6 +17,7 @@ pub mod ideal_loads;
 pub mod modes;
 pub mod part_load_curves;
 pub mod vav_terminal;
+pub mod zone_equipment;
 pub mod zones;
 
 // Re-export common types for convenience
@@ -44,6 +45,11 @@ pub use part_load_curves::{
 };
 pub use vav_terminal::{
     VavOperatingMode, VavTerminal, VavTerminalControl, VavTerminalPerformance, VavTerminalUnit,
+};
+pub use zone_equipment::{
+    AnyZoneEquipment, BaseboardHeater, FourPipeFanCoil, HotWaterBaseboard,
+    LowTemperatureRadiantSurface, PackagedTerminalAC, PackagedTerminalHeatPump, RadiantSurfaceType,
+    ZoneEquipment, ZoneEquipmentMode, ZoneEquipmentSetpoints, ZoneHeatInjection,
 };
 
 use serde::{Deserialize, Serialize};
