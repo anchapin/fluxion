@@ -331,9 +331,9 @@ where
         day: u32,
         hour: f64,
     ) -> SolarPosition {
-        let hour_slot = (hour * 2.0).round() as i32;
-        let key = (timestep, hour_slot);
-        if let Some(cached) = self.0.sun_pos_cache.get(&key).copied() {
+        let hour_slot = (hour * 2.0).round() as usize;
+        let slot_idx = hour_slot % 2; // 0 = integer-hour (5R1C), 1 = mid-hour (9R4C)
+        if let Some(cached) = self.0.sun_pos_cache[timestep][slot_idx] {
             return cached;
         }
 
@@ -346,7 +346,7 @@ where
             hour,
             self.0.utc_offset_hours,
         );
-        self.0.sun_pos_cache.insert(key, sun_pos);
+        self.0.sun_pos_cache[timestep][slot_idx] = Some(sun_pos);
         sun_pos
     }
 
@@ -2781,9 +2781,10 @@ impl ThermalModel<VectorField> {
             // BTreeMap for deterministic iteration order across platforms (Issue #1297)
             incident_solar_per_surface: std::collections::BTreeMap::new(),
 
-            // Issue #1212 — solar position cache keyed by `(timestep, hour_slot)`.
-            // 2 slots per timestep (integer-hour for 5R1C, mid-hour for 9R4C).
-            sun_pos_cache: std::collections::HashMap::new(),
+            // Issue #1212/#1969 — bounded solar position cache.
+            // 2 slots per hour (integer-hour for 5R1C, mid-hour for 9R4C).
+            // Lazy initialization: slots are `None` until first access.
+            sun_pos_cache: vec![[None, None]; 8760],
         });
 
         model.update_derived_parameters();
