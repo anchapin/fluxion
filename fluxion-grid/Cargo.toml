@@ -2,6 +2,7 @@
 name = "fluxion-grid"
 version = "0.1.0"
 edition = "2021"
+<<<<<<< HEAD
 authors = ["Dr. Aris Thorne <aris.thorne@fluxion.org>"]
 description = "Grid-edge components for Fluxion: BatteryStorageNode and related electrical network models."
 repository = "https://github.com/anchapin/fluxion"
@@ -10,6 +11,16 @@ license = "Apache-2.0"
 [lib]
 name = "fluxion_grid"
 path = "src/lib.rs"
+=======
+description = "Electrical grid modeling with bus node types for power flow analysis."
+repository = "https://github.com/anchapin/fluxion"
+license = "Apache-2.0"
+
+[dependencies]
+serde = { version = "1.0", features = ["derive"] }
+thiserror = "1.0"
+nalgebra = "0.33"
+>>>>>>> 8004218 (feat(grid): JointConvergenceSolver - thermal-electrical coupling (fixes #2041))
 
 [dependencies]
 uuid = { version = "1.0", features = ["serde", "v4"] }
