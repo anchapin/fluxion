@@ -70,7 +70,10 @@ pub struct HourlyDelta {
     pub difference: f64,
 }
 
-/// Internal simulation output structure.
+/// Simulation output structure (annual/peak metrics + optional hourly data).
+///
+/// Public so the Monte Carlo sweep engine (`crate::analysis::monte_carlo`) can reuse
+/// the same simulation runner instead of duplicating the 8760-step physics loop.
 #[derive(Debug, Clone)]
 pub struct SimulationResult {
     pub annual_heating_mwh: f64,
@@ -226,7 +229,10 @@ pub fn generate_sweep_combinations(
 ///
 /// Uses convergence-based warm-up per Issue #744: runs `warm_up_years` full-year
 /// iterations before collecting results, ensuring periodic steady-state.
-fn run_simulation(
+///
+/// Public so the Monte Carlo sweep engine can drive the identical physics loop
+/// for each sampled parameter set (Issue #1813).
+pub fn run_simulation(
     spec: &CaseSpec,
     collect_hourly: bool,
     warm_up_years: u32,
