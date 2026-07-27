@@ -2401,16 +2401,25 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         // In a full implementation, these would be coupled with Ti_free calculation
         let t_i = self.0.temperatures.clone();
 
-        // Unwrap 8R3C fields (panic if not initialized) after step_physics_5r1c
-        let ceiling_mass = self.0.ceiling_mass_temperatures.as_mut().unwrap();
-        let floor_mass = self.0.floor_mass_temperatures.as_mut().unwrap();
-        let partition_mass = self.0.partition_mass_temperatures.as_mut().unwrap();
-        let ceiling_cap = self.0.ceiling_thermal_capacitance.as_ref().unwrap();
-        let floor_cap = self.0.floor_thermal_capacitance.as_ref().unwrap();
-        let partition_cap = self.0.partition_thermal_capacitance.as_ref().unwrap();
-        let h_tr_ceiling = self.0.h_tr_ceiling.as_ref().unwrap();
-        let h_tr_floor_mass = self.0.h_tr_floor_mass.as_ref().unwrap();
-        let h_tr_partition = self.0.h_tr_partition.as_ref().unwrap();
+        // Validate 8R3C fields are initialized (precondition for 8R3C physics step)
+        let ceiling_mass = self.0.ceiling_mass_temperatures.as_mut()
+            .expect("ceiling_mass_temperatures must be initialized for 8R3C model");
+        let floor_mass = self.0.floor_mass_temperatures.as_mut()
+            .expect("floor_mass_temperatures must be initialized for 8R3C model");
+        let partition_mass = self.0.partition_mass_temperatures.as_mut()
+            .expect("partition_mass_temperatures must be initialized for 8R3C model");
+        let ceiling_cap = self.0.ceiling_thermal_capacitance.as_ref()
+            .expect("ceiling_thermal_capacitance must be initialized for 8R3C model");
+        let floor_cap = self.0.floor_thermal_capacitance.as_ref()
+            .expect("floor_thermal_capacitance must be initialized for 8R3C model");
+        let partition_cap = self.0.partition_thermal_capacitance.as_ref()
+            .expect("partition_thermal_capacitance must be initialized for 8R3C model");
+        let h_tr_ceiling = self.0.h_tr_ceiling.as_ref()
+            .expect("h_tr_ceiling must be initialized for 8R3C model");
+        let h_tr_floor_mass = self.0.h_tr_floor_mass.as_ref()
+            .expect("h_tr_floor_mass must be initialized for 8R3C model");
+        let h_tr_partition = self.0.h_tr_partition.as_ref()
+            .expect("h_tr_partition must be initialized for 8R3C model");
 
         // Update ceiling mass temperature
         for i in 0..self.0.num_zones {
