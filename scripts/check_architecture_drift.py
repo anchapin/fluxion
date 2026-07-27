@@ -129,6 +129,7 @@ def check_drift() -> list[str]:
         "FromF64",  # internal unit conversion trait
         "ToF64",  # internal unit conversion trait
         "BatchOrchestrator",  # perf infra (rayon chunks), not a physics trait
+        "ZoneEquipment",  # zone-level HVAC equipment trait (src/sim/hvac/zone_equipment.rs)
     }
 
     # These are structs mentioned in ARCHITECTURE.md that get false-positived
