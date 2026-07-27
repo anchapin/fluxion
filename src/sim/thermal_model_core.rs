@@ -2784,6 +2784,10 @@ impl ThermalModel<VectorField> {
             // Issue #1212 — solar position cache keyed by `(timestep, hour_slot)`.
             // 2 slots per timestep (integer-hour for 5R1C, mid-hour for 9R4C).
             sun_pos_cache: std::collections::HashMap::new(),
+
+            // Issue #1968 — cached zero vector to eliminate per-timestep
+            // `vec![0.0; num_zones]` allocations in hot loops.
+            zero_vector: VectorField::from_scalar(0.0, num_zones),
         });
 
         model.update_derived_parameters();
