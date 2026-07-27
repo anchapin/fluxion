@@ -13,6 +13,10 @@ name: Mutation Testing
 # `exit 1` on missed mutants.  Results are posted as a PR comment and uploaded
 # as an artifact so reviewers can judge the mutation score.
 #
+# RAM Detection (#2130): The workflow checks available RAM before running.
+# If <16 GB is available, mutation testing is skipped with a clear PR comment.
+# This handles fork PRs that run on smaller GitHub-hosted runners.
+#
 # The comprehensive full-workspace run lives in `mutation-nightly.yml`, which
 # executes the entire suite against `develop` on a 32 GB runner overnight.
 #
@@ -47,6 +51,10 @@ on:
         required: false
         default: false
         type: boolean
+  workflow_run:
+    workflow: ripr Mutation Pre-Filter
+    types: [completed]
+    branches: [main, develop]
 
 concurrency:
   group: mutation-testing-${{ github.ref }}
@@ -68,20 +76,56 @@ jobs:
     # crate pulls in `ort` (ONNX) types until Phase 3 gates them.  The runner
     # pool `ubuntu-latest-8-cores` provides 32 GB.
     runs-on: ubuntu-latest-8-cores
+    outputs:
+      skip_reason: ${{ steps.ram-check.outputs.skip_reason }}
+      ram_available_gb: ${{ steps.ram-check.outputs.ram_available_gb }}
     steps:
+      - name: Check available RAM
+        id: ram-check
+        run: |
+          RAM_KB=$(grep MemAvailable /proc/meminfo | awk '{print $2}')
+          RAM_GB=$(python3 -c "print(round($RAM_KB / 1024 / 1024, 1))")
+          echo "ram_available_gb=$RAM_GB" >> $GITHUB_OUTPUT
+          echo "Available RAM: ${RAM_GB} GB"
+
+          # Allow manual override via workflow_dispatch
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" && "${{ inputs.full_suite }}" == "true" ]]; then
+            echo "Manual full_suite run — skipping RAM check" >&2
+            echo "skip_reason=" >> $GITHUB_OUTPUT
+            echo "skip=false" >> $GITHUB_OUTPUT
+          elif (( $(python3 -c "print($RAM_GB < 16)") )); then
+            echo "skip_reason=insufficient_ram" >> $GITHUB_OUTPUT
+            echo "::notice::Skipping mutation testing: only ${RAM_GB} GB RAM available, 16 GB required. See Issue #2130."
+            echo "skip=true" >> $GITHUB_OUTPUT
+          else
+            echo "skip_reason=" >> $GITHUB_OUTPUT
+            echo "skip=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Skip due to insufficient RAM
+        if: steps.ram-check.outputs.skip == 'true'
+        run: |
+          echo "Skipping mutation testing: insufficient RAM (${{{ steps.ram-check.outputs.ram_available_gb }}} GB < 16 GB)"
+          echo "This is advisory — mutation testing requires 32 GB for the full workspace."
+          echo "The nightly full-suite run (mutation-nightly.yml) handles comprehensive coverage."
+
       - uses: actions/checkout@v4
+        if: steps.ram-check.outputs.skip != 'true'
         with:
           fetch-depth: 0  # full history so the PR diff is resolvable
 
       - name: Install system dependencies
+        if: steps.ram-check.outputs.skip != 'true'
         run: |
           sudo apt-get update
           sudo apt-get install -y libssl-dev pkg-config libfontconfig1-dev
 
       - name: Install Rust
+        if: steps.ram-check.outputs.skip != 'true'
         uses: dtolnay/rust-toolchain@stable
 
       - name: Install cargo-mutants
+        if: steps.ram-check.outputs.skip != 'true'
         run: cargo install cargo-mutants --locked
 
       # ── Diff scope (Solution B) ──────────────────────────────────────────
@@ -90,6 +134,7 @@ jobs:
       # generated, keeping the per-PR runtime to minutes.
       - name: Generate PR diff scope
         id: diffscope
+        if: steps.ram-check.outputs.skip != 'true'
         run: |
           # For push events (main/develop) there is no PR base — run the full
           # suite instead of diff-scoping.
@@ -108,7 +153,7 @@ jobs:
 
       - name: Run mutation testing (diff-scoped)
         id: mutants
-        if: steps.diffscope.outputs.changed != '0' || inputs.full_suite == true
+        if: steps.ram-check.outputs.skip != 'true' && (steps.diffscope.outputs.changed != '0' || inputs.full_suite == true)
         env:
           CARGO_INCREMENTAL: "0"
         run: |
@@ -201,6 +246,29 @@ jobs:
           path: |
             mutation_testing_results/
           retention-days: 30
+
+      - name: Post RAM skip comment
+        if: always() && github.event_name == 'pull_request' && steps.ram-check.outputs.skip == 'true'
+        uses: actions/github-script@v7
+        env:
+          RAM_GB: ${{ steps.ram-check.outputs.ram_available_gb }}
+        with:
+          script: |
+            const ramGb = process.env.RAM_GB || 'unknown';
+            const body = `## Mutation Testing Results (diff-scoped, advisory)\n\n`;
+            body += `> Skipped due to insufficient RAM: ${ramGb} GB available, 16 GB required.\n\n`;
+            body += `This is an **advisory** check that requires a 32 GB runner.\n`;
+            body += `The nightly full-suite run (\`mutation-nightly.yml\`) handles comprehensive coverage on \`develop\`.\n`;
+            body += `\n**Note**: Fork PRs from public repos run on smaller runners and may not have enough RAM.\n`;
+            body += `See Issue #2130 for context.\n`;
+            body += `\nTo run mutation testing locally: \`cargo mutants --config .cargo/mutants.toml -p fluxion --jobs 2 --baseline skip\``;
+
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: body
+            });
 
       - name: Post PR comment with mutation summary
         if: always() && github.event_name == 'pull_request' && steps.mutants.outcome != 'skipped'
