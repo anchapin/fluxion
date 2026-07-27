@@ -1,15 +1,15 @@
-//! # fluxion-grid
-//!
-//! Grid-edge electrical network components for Fluxion building energy modeling.
-//!
-//! This crate provides battery storage node models with state-of-charge (SoC) tracking
-//! and electrical characteristics for integration with building energy simulations.
-//!
-//! ## Contents
-//!
-//! | Module | Description |
-//! |--------|-------------|
-//! | `battery_storage_node` | `BatteryStorageNode` — single-cell battery model with SoC, terminal voltage, and C-rate dynamics |
+// # fluxion-grid
+//
+// Grid-edge electrical network components for Fluxion building energy modeling.
+//
+// This crate provides battery storage node models with state-of-charge (SoC) tracking
+// and electrical characteristics for integration with building energy simulations.
+//
+// ## Contents
+//
+// | Module | Description |
+// |--------|-------------|
+// | `battery_storage_node` | `BatteryStorageNode` — single-cell battery model with SoC, terminal voltage, and C-rate dynamics |
 
 #![allow(nonstandard_style)]
 #![allow(clippy::all)]
@@ -18,14 +18,24 @@ pub mod battery_storage_node;
 
 pub use battery_storage_node::BatteryStorageNode;
 
+// === Heat Pump Voltage Model ===
+pub mod error;
+pub mod thermal_electrical_coupler;
+pub mod heat_pump_voltage_model;
+
+pub use error::GridModelError;
+pub use thermal_electrical_coupler::VoltageCoupler;
+pub use heat_pump_voltage_model::HeatPumpVoltageModel;
+
+
 // === Joint Thermal-Electrical Convergence Solver ===
-//! fluxion-grid: Electrical grid modeling with bus node types for power flow analysis.
-//!
-//! This crate provides foundational types for electrical bus modeling including:
-//! - Bus node types (Slack, PV, PQ)
-//! - Electrical bus structures with voltage, angle, and power attributes
-//! - Battery bus with State of Charge (SoC) tracking
-//! - Joint thermal-electrical convergence solver for grid-interactive buildings
+// fluxion-grid: Electrical grid modeling with bus node types for power flow analysis.
+//
+// This crate provides foundational types for electrical bus modeling including:
+// - Bus node types (Slack, PV, PQ)
+// - Electrical bus structures with voltage, angle, and power attributes
+// - Battery bus with State of Charge (SoC) tracking
+// - Joint thermal-electrical convergence solver for grid-interactive buildings
 
 pub mod bus;
 pub mod battery;
@@ -36,6 +46,8 @@ pub use battery::BatteryBus;
 pub use power_flow::PowerFlowState;
 
 use nalgebra::DMatrix;
+use serde::{Serialize, Deserialize};
+pub type VoltagePu = f64;
 
 /// Result of the joint convergence solve.
 #[derive(Debug, Clone)]

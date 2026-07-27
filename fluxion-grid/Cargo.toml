@@ -3,7 +3,7 @@ name = "fluxion-grid"
 version = "0.1.0"
 edition = "2021"
 authors = ["Dr. Aris Thorne <aris.thorne@fluxion.org>"]
-description = "Grid-edge components for Fluxion: BatteryStorageNode and related electrical network models."
+description = "Grid-edge electrical network components for Fluxion: battery storage, bus nodes, power flow, and joint thermal-electrical convergence."
 repository = "https://github.com/anchapin/fluxion"
 license = "Apache-2.0"
 
@@ -18,4 +18,5 @@ thiserror = "1.0"
 nalgebra = "0.33"
 
 [dev-dependencies]
+approx = "0.5"
 proptest = "1.5"
