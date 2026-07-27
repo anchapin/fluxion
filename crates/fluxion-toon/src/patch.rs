@@ -25,7 +25,7 @@ pub fn parse_toon_patch(_input: &str) -> Result<String, ToonError> {
     // - Plain TOON without codeblocks
     // - Markdown frontmatter
     Err(ToonError::PatchError(
-        "patch parser not yet implemented (issue #2069)".to_string()
+        "patch parser not yet implemented (issue #2069)".to_string(),
     ))
 }
 

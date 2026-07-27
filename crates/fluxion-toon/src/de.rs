@@ -10,7 +10,7 @@ pub fn deserialize_from_str<T: serde::de::DeserializeOwned>(_s: &str) -> Result<
     // Uses winnow for streaming parsing
     // Validates length headers match actual value counts
     Err(ToonError::Deserialization(
-        "deserializer not yet implemented (issue #2068)".to_string()
+        "deserializer not yet implemented (issue #2068)".to_string(),
     ))
 }
 

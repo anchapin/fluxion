@@ -50,11 +50,11 @@
 #![deny(missing_docs)]
 #![deny(rustdoc::broken_intra_doc_links)]
 
-pub mod error;
-pub mod ser;
 pub mod de;
+pub mod error;
 pub mod patch;
+pub mod ser;
 
+pub use de::deserialize_from_str as from_str;
 pub use error::ToonError;
 pub use ser::serialize_to_string as to_string;
-pub use de::deserialize_from_str as from_str;
