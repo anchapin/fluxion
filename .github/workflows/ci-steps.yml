@@ -86,7 +86,7 @@ jobs:
           key: >-
             ort-binaries-aarch64-apple-darwin
             ${{ inputs.cache-key-suffix }}
-           -${{ hashFiles('**/Cargo.lock') }}
+            -${{ hashFiles('**/Cargo.lock') }}
           restore-keys: |
             ort-binaries-aarch64-apple-darwin-
             ${{ inputs.cache-key-suffix }}-
