@@ -17,6 +17,7 @@
 
 pub mod ddy;
 pub mod denver;
+pub mod design_day_selector;
 pub mod epw;
 pub mod interpolation;
 pub mod psychrometrics;
@@ -24,6 +25,7 @@ pub mod tmy3;
 
 pub use self::psychrometrics::*;
 pub use ddy::{generate_design_day_hours, DesignDaySource, DesignDaySpec};
+pub use design_day_selector::{DailySummary, DesignDaySelector};
 pub use interpolation::{interpolate_weather, select_method_for_field, InterpolationMethod};
 pub use tmy3::{load_weather_locations, Tmy3Cache, WeatherLocation};
 

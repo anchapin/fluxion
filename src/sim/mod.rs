@@ -10,6 +10,7 @@ pub mod equipment;
 pub mod holiday;
 pub mod hvac;
 pub mod hvac_controller;
+pub mod hvac_sizing;
 pub mod interzone;
 pub mod interzone_radiation;
 pub mod invariant_checker;
