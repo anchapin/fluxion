@@ -15,7 +15,7 @@ license = "Apache-2.0"
 # that cargo-mutants can build once and cache while mutating only `fluxion`.
 [workspace]
 resolver = "2"
-members = ["fluxion-core", "fluxion-city", "fluxion-fluid", "fluxion-grid", "fluxion-behavior", "fluxion-mcp"]
+members = ["fluxion-core", "fluxion-city", "fluxion-fluid", "fluxion-grid", "fluxion-behavior", "fluxion-mcp", "crates/fluxion-toon"]
 # Default to the root package so bare `cargo build`/`cargo test` build `fluxion`.
 default-members = ["."]
 
