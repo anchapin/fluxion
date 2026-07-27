@@ -4,8 +4,8 @@
 //! of validation cases.
 
 use crate::validation::ashrae140::ASHRAE140Case;
-use crate::validation::performance::metrics::PerformanceMetrics;
 use crate::validation::ashrae_140_validator::ASHRAE140Validator;
+use crate::validation::performance::metrics::PerformanceMetrics;
 use std::time::{Duration, Instant};
 
 #[cfg(target_os = "linux")]
@@ -131,14 +131,21 @@ pub fn analyze_bottlenecks(metrics: &[PerformanceMetrics]) -> serde_json::Value 
         });
     }
 
-    let avg_cpu: f32 = metrics.iter().map(|m| m.cpu_utilization).sum::<f32>() / metrics.len() as f32;
+    let avg_cpu: f32 =
+        metrics.iter().map(|m| m.cpu_utilization).sum::<f32>() / metrics.len() as f32;
     let avg_memory: usize = metrics.iter().map(|m| m.memory_usage).sum::<usize>() / metrics.len();
-    let avg_duration_ms: f64 = metrics.iter().map(|m| m.timestep_duration.as_secs_f64() * 1000.0).sum::<f64>() / metrics.len() as f64;
-    let avg_throughput: f32 = metrics.iter().map(|m| m.throughput_tps).sum::<f32>() / metrics.len() as f32;
+    let avg_duration_ms: f64 = metrics
+        .iter()
+        .map(|m| m.timestep_duration.as_secs_f64() * 1000.0)
+        .sum::<f64>()
+        / metrics.len() as f64;
+    let avg_throughput: f32 =
+        metrics.iter().map(|m| m.throughput_tps).sum::<f32>() / metrics.len() as f32;
 
     if avg_cpu > 80.0 {
         bottlenecks.push("High CPU utilization detected");
-        recommendations.push("Consider optimizing solver iterations or enabling parallel execution");
+        recommendations
+            .push("Consider optimizing solver iterations or enabling parallel execution");
     }
 
     if avg_memory > 100 * 1024 * 1024 {
@@ -153,11 +160,18 @@ pub fn analyze_bottlenecks(metrics: &[PerformanceMetrics]) -> serde_json::Value 
 
     if avg_throughput < 1.0 && !metrics.is_empty() {
         bottlenecks.push("Low throughput detected");
-        recommendations.push("Consider using a more efficient solver or reducing timestep frequency");
+        recommendations
+            .push("Consider using a more efficient solver or reducing timestep frequency");
     }
 
     let coupling_ratio: f64 = if avg_duration_ms > 0.0 {
-        metrics.iter().map(|m| m.zone_coupling_time.as_secs_f64() * 1000.0 / m.timestep_duration.as_secs_f64()).sum::<f64>() / metrics.len() as f64
+        metrics
+            .iter()
+            .map(|m| {
+                m.zone_coupling_time.as_secs_f64() * 1000.0 / m.timestep_duration.as_secs_f64()
+            })
+            .sum::<f64>()
+            / metrics.len() as f64
     } else {
         0.0
     };

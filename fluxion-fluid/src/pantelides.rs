@@ -18,8 +18,8 @@
 //! - Pantelides, C.C. (1988). "The Consistent Initialization of Differential-Algebraic Systems"
 //! - Ascher & Petzold (1998). "Computer Methods for Ordinary Differential Equations and Differential-Algebraic Equations"
 
-use thiserror::Error;
 use std::collections::BTreeSet;
+use thiserror::Error;
 
 #[derive(Debug, Clone, Error)]
 pub enum PantelidesError {
@@ -80,9 +80,7 @@ impl Equation {
             Equation::Differential { lhs_coeffs, .. } => {
                 lhs_coeffs.iter().map(|(v, _)| *v).collect()
             }
-            Equation::Algebraic { lhs_coeffs, .. } => {
-                lhs_coeffs.iter().map(|(v, _)| *v).collect()
-            }
+            Equation::Algebraic { lhs_coeffs, .. } => lhs_coeffs.iter().map(|(v, _)| *v).collect(),
             Equation::Differentiated { lhs_coeffs, .. } => {
                 lhs_coeffs.iter().map(|(v, _)| *v).collect()
             }
@@ -183,7 +181,8 @@ fn augment(
         }
         visited[vi] = true;
 
-        if match_v[vi].is_none() || augment(matrix, match_v[vi].unwrap().index(), visited, match_v) {
+        if match_v[vi].is_none() || augment(matrix, match_v[vi].unwrap().index(), visited, match_v)
+        {
             match_v[vi] = Some(*var);
             return true;
         }
@@ -202,7 +201,9 @@ pub struct PantelidesOutput {
 
 pub fn pantelides_reduce(equations: &[Equation]) -> PantelidesResult<PantelidesOutput> {
     if equations.is_empty() {
-        return Err(PantelidesError::InvalidSystem("Empty equation system".to_string()));
+        return Err(PantelidesError::InvalidSystem(
+            "Empty equation system".to_string(),
+        ));
     }
 
     let mut working_eqs = equations.to_vec();
@@ -222,15 +223,10 @@ pub fn pantelides_reduce(equations: &[Equation]) -> PantelidesResult<PantelidesO
         let matrix = IncidenceMatrix::from_equations(&working_eqs);
         let matching = bipartite_match(&matrix);
 
-        let matched_vars: BTreeSet<VarIndex> = matching
-            .iter()
-            .filter_map(|opt| *opt)
-            .collect();
+        let matched_vars: BTreeSet<VarIndex> = matching.iter().filter_map(|opt| *opt).collect();
 
-        let all_vars: BTreeSet<VarIndex> = working_eqs
-            .iter()
-            .flat_map(|eq| eq.variables())
-            .collect();
+        let all_vars: BTreeSet<VarIndex> =
+            working_eqs.iter().flat_map(|eq| eq.variables()).collect();
 
         let unmatched: Vec<VarIndex> = all_vars
             .iter()
@@ -483,7 +479,11 @@ mod tests {
     #[test]
     fn test_incidence_matrix_add_equation() {
         let mut matrix = IncidenceMatrix::new(0, 5);
-        let eq_idx = matrix.add_equation(vec![VarIndex::new(0), VarIndex::new(2)].into_iter().collect());
+        let eq_idx = matrix.add_equation(
+            vec![VarIndex::new(0), VarIndex::new(2)]
+                .into_iter()
+                .collect(),
+        );
         assert_eq!(eq_idx.index(), 0);
         assert_eq!(matrix.n_equations(), 1);
         assert!(matrix.row(eq_idx).contains(&VarIndex::new(0)));

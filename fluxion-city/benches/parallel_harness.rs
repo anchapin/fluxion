@@ -3,22 +3,13 @@
 //! Measures throughput (buildings/sec), compares sequential vs parallel,
 //! and reports speedup ratio using the criterion crate.
 
-use criterion::{black_box, criterion_group, criterion_main, Criterion, BenchmarkId};
+use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion};
 use std::time::{Duration, Instant};
 
-use fluxion_city::{
-    BuildingGroup, UrbanRadiationSystem, UrbanStepDispatcher,
-};
+use fluxion_city::{BuildingGroup, UrbanRadiationSystem, UrbanStepDispatcher};
 
 fn make_radiation() -> UrbanRadiationSystem {
-    UrbanRadiationSystem::new(
-        800.0,
-        120.0,
-        0.2,
-        0.85,
-        0.1,
-        2.0,
-    )
+    UrbanRadiationSystem::new(800.0, 120.0, 0.2, 0.85, 0.1, 2.0)
 }
 
 fn make_buildings(n: usize) -> Vec<BuildingGroup> {
