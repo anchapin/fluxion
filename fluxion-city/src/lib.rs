@@ -1,507 +1,407 @@
-//! Urban energy modeling and city-scale radiation tests for Fluxion.
+//! fluxion-city: Urban-scale building energy modeling
 //!
-//! This crate provides:
-//! - 5-building test configuration for energy conservation verification
-//! - Longwave radiative equilibrium tests
-//! - Surface radiation balance tests
+//! Provides parallel dispatch for multiple buildings with deterministic
+//! execution guarantees and performance benchmarking.
 //!
-//! # Energy Conservation Principle
+//! # Architecture
 //!
-//! For any enclosed surface in radiative equilibrium:
-//! `Q_absorbed = Q_emitted + Q_transmitted`
-//!
-//! The net radiation `Q_net = Q_absorbed - Q_emitted - Q_transmitted` must be zero
-//! (within numerical tolerance of 1e-6 W).
+//! - [`BuildingGroup`] - A single building with thermal state
+//! - [`UrbanRadiationSystem`] - Urban heat island / solar shading model
+//! - [`UrbanStepDispatcher`] - Parallel timestep coordinator using Rayon
+//! - [`UrbanStepResult`] - Aggregated results from parallel evaluation
 
+use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
+use std::time::Duration;
 
-const STEFAN_BOLTZMANN: f64 = 5.67e-8;
+// ============================================================================
+// UrbanRadiationSystem (Issue #2029 / #2031 — urban heat island + solar shading)
+// ============================================================================
 
-#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
-pub struct BuildingConfig {
-    pub length: f64,
-    pub width: f64,
-    pub height: f64,
-    pub emissivity: f64,
-    pub absorptivity: f64,
-    pub thermal_conductance: f64,
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct UrbanRadiationSystem {
+    pub direct_normal: f64,
+    pub diffuse_horizontal: f64,
+    pub ground_reflectance: f64,
+    pub urban_sky_view_factor: f64,
+    pub neighboring_shading_factor: f64,
+    pub heat_island_offset: f64,
 }
 
-impl BuildingConfig {
+impl UrbanRadiationSystem {
     pub fn new(
-        length: f64,
-        width: f64,
-        height: f64,
-        emissivity: f64,
-        absorptivity: f64,
-        thermal_conductance: f64,
+        direct_normal: f64,
+        diffuse_horizontal: f64,
+        ground_reflectance: f64,
+        urban_sky_view_factor: f64,
+        neighboring_shading_factor: f64,
+        heat_island_offset: f64,
     ) -> Self {
         Self {
-            length,
-            width,
-            height,
-            emissivity,
-            absorptivity,
-            thermal_conductance,
+            direct_normal,
+            diffuse_horizontal,
+            ground_reflectance,
+            urban_sky_view_factor,
+            neighboring_shading_factor,
+            heat_island_offset,
         }
     }
 
-    pub fn surface_area(&self) -> f64 {
-        2.0 * (self.length * self.width + self.length * self.height + self.width * self.height)
+    pub fn effective_irradiance(&self, surface_tilt: f64, _surface_azimuth: f64) -> f64 {
+        let sky_factor = self.urban_sky_view_factor * (1.0 - self.neighboring_shading_factor);
+        let tilt_factor = (surface_tilt.to_radians()).cos();
+        let direct_component = self.direct_normal * tilt_factor * sky_factor;
+        let diffuse_component = self.diffuse_horizontal * sky_factor * tilt_factor;
+        let ground_reflected = self.diffuse_horizontal * self.ground_reflectance * (1.0 - tilt_factor);
+        direct_component + diffuse_component + ground_reflected
     }
 
-    pub fn wall_area(&self) -> f64 {
-        2.0 * (self.length * self.height + self.width * self.height)
-    }
-
-    pub fn roof_area(&self) -> f64 {
-        self.length * self.width
-    }
-
-    pub fn floor_area(&self) -> f64 {
-        self.length * self.width
+    pub fn ambient_temperature(&self, outdoor_drybulb: f64) -> f64 {
+        outdoor_drybulb + self.heat_island_offset
     }
 }
 
-impl Default for BuildingConfig {
-    fn default() -> Self {
+// ============================================================================
+// BuildingGroup — individual building thermal model
+// ============================================================================
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct BuildingGroup {
+    pub id: u32,
+    pub zone_temperature: f64,
+    pub wall_temperature: f64,
+    pub roof_temperature: f64,
+    pub floor_mass_temperature: f64,
+    pub hvac_setpoint_cooling: f64,
+    pub hvac_setpoint_heating: f64,
+    pub floor_area: f64,
+    pub coefficient_of_performance: f64,
+    pub lighting_load: f64,
+    pub occupancy_gain: f64,
+    pub equipment_gain: f64,
+    pub wall_u_value: f64,
+    pub roof_u_value: f64,
+    pub window_u_value: f64,
+    pub window_shading_coefficient: f64,
+}
+
+impl BuildingGroup {
+    pub fn new(id: u32) -> Self {
         Self {
-            length: 10.0,
-            width: 10.0,
-            height: 3.0,
-            emissivity: 0.9,
-            absorptivity: 0.7,
-            thermal_conductance: 0.45,
-        }
-    }
-}
-
-#[derive(Debug, Clone)]
-pub struct SurfaceRadiation {
-    pub absorbed: f64,
-    pub emitted: f64,
-    pub transmitted: f64,
-    pub reflected: f64,
-}
-
-impl SurfaceRadiation {
-    pub fn new(absorbed: f64, emitted: f64, transmitted: f64, reflected: f64) -> Self {
-        Self {
-            absorbed,
-            emitted,
-            transmitted,
-            reflected,
+            id,
+            zone_temperature: 22.0,
+            wall_temperature: 20.0,
+            roof_temperature: 18.0,
+            floor_mass_temperature: 20.0,
+            hvac_setpoint_cooling: 26.0,
+            hvac_setpoint_heating: 18.0,
+            floor_area: 100.0,
+            coefficient_of_performance: 3.0,
+            lighting_load: 10.0,
+            occupancy_gain: 100.0,
+            equipment_gain: 200.0,
+            wall_u_value: 0.5,
+            roof_u_value: 0.3,
+            window_u_value: 2.0,
+            window_shading_coefficient: 0.7,
         }
     }
 
-    pub fn net_radiation(&self) -> f64 {
-        self.absorbed - self.emitted - self.transmitted - self.reflected
+    pub fn with_area(mut self, area: f64) -> Self {
+        self.floor_area = area;
+        self
     }
 
-    pub fn is_conserved(&self, tolerance: f64) -> bool {
-        self.net_radiation().abs() < tolerance
+    pub fn with_u_values(mut self, wall: f64, roof: f64, window: f64) -> Self {
+        self.wall_u_value = wall;
+        self.roof_u_value = roof;
+        self.window_u_value = window;
+        self
+    }
+
+    pub fn step(&mut self, dt: &Duration, radiation: &UrbanRadiationSystem, outdoor_temp: f64) {
+        let dt_hours = dt.as_secs_f64() / 3600.0;
+
+        let _sky_irradiance = radiation.effective_irradiance(90.0, 0.0);
+        let wall_irradiance = radiation.effective_irradiance(90.0, 0.0);
+        let roof_irradiance = radiation.effective_irradiance(0.0, 0.0);
+
+        let wall_solar_gain = wall_irradiance * 0.15 * self.window_shading_coefficient;
+        let roof_solar_gain = roof_irradiance * 0.12 * self.window_shading_coefficient;
+
+        let wall_loss = self.wall_u_value * (self.wall_temperature - outdoor_temp) * dt_hours;
+        let roof_loss = self.roof_u_value * (self.roof_temperature - outdoor_temp) * dt_hours;
+        let window_loss = self.window_u_value * (self.zone_temperature - outdoor_temp) * dt_hours;
+
+        let wall_mass_coupling = 0.05 * (self.wall_temperature - self.floor_mass_temperature) * dt_hours;
+        let roof_mass_coupling = 0.04 * (self.roof_temperature - self.floor_mass_temperature) * dt_hours;
+
+        let heating_setpoint = self.hvac_setpoint_heating;
+        let cooling_setpoint = self.hvac_setpoint_cooling;
+        let zone_error = if self.zone_temperature < heating_setpoint {
+            heating_setpoint - self.zone_temperature
+        } else if self.zone_temperature > cooling_setpoint {
+            self.zone_temperature - cooling_setpoint
+        } else {
+            0.0
+        };
+
+        let internal_gains = self.occupancy_gain + self.equipment_gain + self.lighting_load;
+        let hvac_impact = (zone_error * 50.0 / self.coefficient_of_performance) * dt_hours;
+
+        self.wall_temperature += wall_solar_gain - wall_loss + wall_mass_coupling;
+        self.roof_temperature += roof_solar_gain - roof_loss + roof_mass_coupling;
+        self.floor_mass_temperature += (wall_mass_coupling + roof_mass_coupling) * 0.5;
+        self.zone_temperature += (internal_gains - window_loss - hvac_impact) / (self.floor_area * 0.5);
+
+        self.wall_temperature = self.wall_temperature.clamp(-30.0, 60.0);
+        self.roof_temperature = self.roof_temperature.clamp(-30.0, 60.0);
+        self.floor_mass_temperature = self.floor_mass_temperature.clamp(-30.0, 60.0);
+        self.zone_temperature = self.zone_temperature.clamp(10.0, 40.0);
+    }
+
+    pub fn thermal_load(&self) -> f64 {
+        let load = (self.hvac_setpoint_heating - self.zone_temperature).abs()
+            + (self.zone_temperature - self.hvac_setpoint_cooling).abs();
+        load * self.floor_area * 0.1
+    }
+
+    pub fn energy_consumption(&self) -> f64 {
+        let cooling_load = (self.zone_temperature - self.hvac_setpoint_cooling).max(0.0);
+        let heating_load = (self.hvac_setpoint_heating - self.zone_temperature).max(0.0);
+        (cooling_load + heating_load) * self.floor_area * 0.05 / self.coefficient_of_performance
     }
 }
 
-pub struct EnergyConservationTest {
-    pub buildings: Vec<BuildingConfig>,
-    pub ambient_temperature: f64,
-    pub solar_irradiance: f64,
-    pub sky_temperature: f64,
+// ============================================================================
+// UrbanStepResult — aggregation from parallel building evaluation
+// ============================================================================
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct UrbanStepResult {
+    pub total_thermal_load: f64,
+    pub total_energy_consumption: f64,
+    pub avg_zone_temperature: f64,
+    pub max_zone_temperature: f64,
+    pub min_zone_temperature: f64,
+    pub buildings_processed: usize,
 }
 
-impl Default for EnergyConservationTest {
-    fn default() -> Self {
-        Self {
-            buildings: Vec::new(),
-            ambient_temperature: 293.15,
-            solar_irradiance: 0.0,
-            sky_temperature: 270.0,
-        }
-    }
-}
-
-impl EnergyConservationTest {
+impl UrbanStepResult {
     pub fn new() -> Self {
         Self::default()
     }
 
-    pub fn with_buildings(mut self, buildings: Vec<BuildingConfig>) -> Self {
-        self.buildings = buildings;
-        self
+    fn update(&mut self, building: &BuildingGroup) {
+        self.total_thermal_load += building.thermal_load();
+        self.total_energy_consumption += building.energy_consumption();
+        self.max_zone_temperature = self.max_zone_temperature.max(building.zone_temperature);
+        self.min_zone_temperature = self.min_zone_temperature.min(building.zone_temperature);
     }
 
-    pub fn with_ambient_temperature(mut self, temperature: f64) -> Self {
-        self.ambient_temperature = temperature;
-        self
+    fn finalize(&mut self, count: usize) {
+        self.buildings_processed = count;
+        if count > 0 {
+            self.avg_zone_temperature = self.total_thermal_load / count as f64;
+        }
     }
+}
 
-    pub fn with_solar_irradiance(mut self, irradiance: f64) -> Self {
-        self.solar_irradiance = irradiance;
-        self
-    }
+// ============================================================================
+// UrbanStepDispatcher — Rayon-based parallel building evaluation (Issue #2032)
+// ============================================================================
 
-    pub fn with_sky_temperature(mut self, temperature: f64) -> Self {
-        self.sky_temperature = temperature;
-        self
-    }
+#[derive(Debug, Clone)]
+pub struct UrbanStepDispatcher {
+    pub building_groups: Vec<BuildingGroup>,
+}
 
-    pub fn create_5_building_config() -> Self {
-        let building1 = BuildingConfig {
-            length: 10.0,
-            width: 10.0,
-            height: 3.0,
-            emissivity: 0.9,
-            absorptivity: 0.7,
-            thermal_conductance: 0.45,
-        };
-        let building2 = BuildingConfig {
-            length: 8.0,
-            width: 8.0,
-            height: 4.0,
-            emissivity: 0.85,
-            absorptivity: 0.6,
-            thermal_conductance: 0.40,
-        };
-        let building3 = BuildingConfig {
-            length: 12.0,
-            width: 6.0,
-            height: 3.5,
-            emissivity: 0.9,
-            absorptivity: 0.75,
-            thermal_conductance: 0.50,
-        };
-        let building4 = BuildingConfig {
-            length: 7.0,
-            width: 7.0,
-            height: 5.0,
-            emissivity: 0.88,
-            absorptivity: 0.65,
-            thermal_conductance: 0.42,
-        };
-        let building5 = BuildingConfig {
-            length: 9.0,
-            width: 11.0,
-            height: 3.0,
-            emissivity: 0.92,
-            absorptivity: 0.70,
-            thermal_conductance: 0.48,
-        };
-
+impl UrbanStepDispatcher {
+    pub fn new() -> Self {
         Self {
-            buildings: vec![building1, building2, building3, building4, building5],
-            ambient_temperature: 293.15,
-            solar_irradiance: 500.0,
-            sky_temperature: 270.0,
+            building_groups: Vec::new(),
         }
     }
 
-    fn net_balance_at_temperature(&self, building: &BuildingConfig, t_surface: f64) -> f64 {
-        let wall_area = building.wall_area();
-        let roof_area = building.roof_area();
-        let total_area = building.surface_area();
-
-        let absorbed_solar = building.absorptivity * self.solar_irradiance * (wall_area + roof_area);
-
-        let emitted = building.emissivity * STEFAN_BOLTZMANN * total_area * t_surface.powi(4);
-
-        let transmitted = building.thermal_conductance * total_area * (t_surface - self.ambient_temperature);
-
-        let sky_radiation = building.emissivity
-            * STEFAN_BOLTZMANN
-            * total_area
-            * (t_surface.powi(4) - self.sky_temperature.powi(4));
-
-        absorbed_solar - emitted - transmitted - sky_radiation
+    pub fn add_building(&mut self, building: BuildingGroup) {
+        self.building_groups.push(building);
     }
 
-    fn find_equilibrium_temperature(&self, building: &BuildingConfig) -> f64 {
-        let t_min = 200.0;
-        let t_max = 400.0;
-        let balance_tolerance = 1e-12;
-        let t_tolerance = 1e-14;
-        let max_iterations = 500;
+    pub fn with_buildings(mut self, buildings: Vec<BuildingGroup>) -> Self {
+        self.building_groups = buildings;
+        self
+    }
 
-        let mut t_low = t_min;
-        let mut t_high = t_max;
-        let mut balance_low = self.net_balance_at_temperature(building, t_low);
-        let balance_high = self.net_balance_at_temperature(building, t_high);
-
-        if balance_low * balance_high > 0.0 {
-            if balance_low > 0.0 {
-                return t_min;
-            } else {
-                return t_max;
-            }
+    pub fn step_all(&mut self, dt: Duration, radiation: &UrbanRadiationSystem, outdoor_temp: f64) -> UrbanStepResult {
+        if self.building_groups.is_empty() {
+            return UrbanStepResult::new();
         }
 
-        for _ in 0..max_iterations {
-            let t_mid = (t_low + t_high) / 2.0;
-            let balance_mid = self.net_balance_at_temperature(building, t_mid);
+        let count = self.building_groups.len();
 
-            if balance_mid.abs() < balance_tolerance {
-                return t_mid;
-            }
+        self.building_groups
+            .par_iter_mut()
+            .with_max_len(1)
+            .for_each(|building| {
+                building.step(&dt, radiation, outdoor_temp);
+            });
 
-            if (t_high - t_low) < t_tolerance * t_low {
-                return t_mid;
-            }
-
-            if balance_low * balance_mid <= 0.0 {
-                t_high = t_mid;
-            } else {
-                t_low = t_mid;
-                balance_low = balance_mid;
-            }
+        let mut result = UrbanStepResult::new();
+        for building in &self.building_groups {
+            result.update(building);
         }
+        result.finalize(count);
 
-        (t_low + t_high) / 2.0
+        result
     }
 
-    pub fn surface_radiation_balance(&self, building_index: usize) -> Option<SurfaceRadiation> {
-        let building = self.buildings.get(building_index)?;
-
-        let wall_area = building.wall_area();
-        let roof_area = building.roof_area();
-        let total_area = building.surface_area();
-
-        let absorbed_solar = building.absorptivity * self.solar_irradiance * (wall_area + roof_area);
-
-        let t_eq = self.find_equilibrium_temperature(building);
-
-        let emitted = building.emissivity * STEFAN_BOLTZMANN * total_area * t_eq.powi(4);
-
-        let transmitted = building.thermal_conductance * total_area * (t_eq - self.ambient_temperature);
-
-        let sky_radiation = building.emissivity
-            * STEFAN_BOLTZMANN
-            * total_area
-            * (t_eq.powi(4) - self.sky_temperature.powi(4));
-
-        Some(SurfaceRadiation::new(
-            absorbed_solar,
-            emitted + sky_radiation,
-            transmitted,
-            0.0,
-        ))
+    pub fn len(&self) -> usize {
+        self.building_groups.len()
     }
 
-    pub fn verify_conservation(&self) -> bool {
-        let imbalance = self.max_imbalance();
-        imbalance < 1e-6
+    pub fn is_empty(&self) -> bool {
+        self.building_groups.is_empty()
     }
+}
 
-    pub fn max_imbalance(&self) -> f64 {
-        let mut max_imbalance = 0.0f64;
-
-        for building in &self.buildings {
-            if let Some(radiation) = self.surface_radiation_balance_for_building(building) {
-                let imbalance = radiation.net_radiation().abs();
-                if imbalance > max_imbalance {
-                    max_imbalance = imbalance;
-                }
-            }
-        }
-
-        max_imbalance
+impl Default for UrbanStepDispatcher {
+    fn default() -> Self {
+        Self::new()
     }
+}
 
-    pub fn all_surfaces_balanced(&self, tolerance: f64) -> bool {
-        for (i, _) in self.buildings.iter().enumerate() {
-            if let Some(radiation) = self.surface_radiation_balance(i) {
-                if !radiation.is_conserved(tolerance) {
-                    return false;
-                }
-            }
-        }
-        true
+// ============================================================================
+// Deterministic utilities (Issue #2033)
+// ============================================================================
+
+pub fn verify_deterministic_results<T: Clone + PartialEq>(results: &[T], _labels: &[&str]) -> bool {
+    if results.is_empty() {
+        return true;
     }
+    let first = &results[0];
+    results.iter().all(|r| r == first)
+}
 
-    pub fn net_radiation_for_enclosed_surfaces(&self) -> f64 {
-        let mut total_net = 0.0;
-
-        for building in &self.buildings {
-            if let Some(radiation) = self.surface_radiation_balance_for_building(building) {
-                total_net += radiation.net_radiation();
-            }
-        }
-
-        total_net
+pub fn deterministic_reduction<T: Clone + Send + Sync + std::ops::Add<Output = T> + Default>(
+    values: &[T],
+) -> T {
+    if values.is_empty() {
+        return T::default();
     }
-
-    fn surface_radiation_balance_for_building(&self, building: &BuildingConfig) -> Option<SurfaceRadiation> {
-        let wall_area = building.wall_area();
-        let roof_area = building.roof_area();
-        let total_area = building.surface_area();
-
-        let absorbed_solar = building.absorptivity * self.solar_irradiance * (wall_area + roof_area);
-
-        let t_eq = self.find_equilibrium_temperature(building);
-
-        let emitted = building.emissivity * STEFAN_BOLTZMANN * total_area * t_eq.powi(4);
-
-        let transmitted = building.thermal_conductance * total_area * (t_eq - self.ambient_temperature);
-
-        let sky_radiation = building.emissivity
-            * STEFAN_BOLTZMANN
-            * total_area
-            * (t_eq.powi(4) - self.sky_temperature.powi(4));
-
-        Some(SurfaceRadiation::new(
-            absorbed_solar,
-            emitted + sky_radiation,
-            transmitted,
-            0.0,
-        ))
-    }
+    let mut sorted: Vec<_> = values.iter().enumerate().collect();
+    sorted.sort_by_key(|(idx, _)| *idx);
+    sorted.into_iter().map(|(_, v)| v.clone()).reduce(|a, b| a + b).unwrap_or_default()
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    #[test]
-    fn test_5_building_energy_conservation() {
-        let test = EnergyConservationTest::create_5_building_config();
-        let imbalance = test.max_imbalance();
-        assert!(
-            imbalance < 1e-6,
-            "Energy imbalance {} exceeds tolerance 1e-6 W",
-            imbalance
-        );
+    fn make_test_radiation() -> UrbanRadiationSystem {
+        UrbanRadiationSystem::new(
+            800.0,
+            120.0,
+            0.2,
+            0.85,
+            0.1,
+            2.0,
+        )
+    }
+
+    fn make_test_buildings(n: usize) -> Vec<BuildingGroup> {
+        (0..n).map(|i| BuildingGroup::new(i as u32)).collect()
     }
 
     #[test]
-    fn test_energy_conservation_verify() {
-        let test = EnergyConservationTest::create_5_building_config();
-        assert!(
-            test.verify_conservation(),
-            "Energy conservation verification failed"
-        );
+    fn test_building_group_step() {
+        let radiation = make_test_radiation();
+        let mut building = BuildingGroup::new(1);
+        let initial_temp = building.zone_temperature;
+
+        building.step(&Duration::from_secs(3600), &radiation, 30.0);
+        assert_ne!(building.zone_temperature, initial_temp);
     }
 
     #[test]
-    fn test_surface_radiation_balance() {
-        let test = EnergyConservationTest::create_5_building_config();
-        let balance = test.surface_radiation_balance(0);
-        assert!(
-            balance.is_some(),
-            "Should get radiation balance for building 0"
-        );
-        let balance = balance.unwrap();
-        assert!(
-            balance.net_radiation().abs() < 1e-6,
-            "Net radiation {} should be near zero",
-            balance.net_radiation()
-        );
+    fn test_building_energy_consumption() {
+        let mut building = BuildingGroup::new(1);
+        building.zone_temperature = 28.0;
+        let energy = building.energy_consumption();
+        assert!(energy > 0.0);
     }
 
     #[test]
-    fn test_all_surfaces_balanced() {
-        let test = EnergyConservationTest::create_5_building_config();
-        assert!(
-            test.all_surfaces_balanced(1e-6),
-            "All surfaces should be balanced within tolerance"
-        );
+    fn test_thermal_load() {
+        let building = BuildingGroup::new(1);
+        let load = building.thermal_load();
+        assert!(load >= 0.0);
     }
 
     #[test]
-    fn test_building_surface_area() {
-        let building = BuildingConfig::default();
-        let expected_area = 2.0 * (100.0 + 30.0 + 30.0);
-        assert!((building.surface_area() - expected_area).abs() < 1e-10);
+    fn test_dispatcher_empty() {
+        let mut dispatcher = UrbanStepDispatcher::new();
+        let radiation = make_test_radiation();
+        let result = dispatcher.step_all(Duration::from_secs(3600), &radiation, 30.0);
+        assert_eq!(result.buildings_processed, 0);
     }
 
     #[test]
-    fn test_building_wall_area() {
-        let building = BuildingConfig::default();
-        let expected_wall = 2.0 * (10.0 * 3.0 + 10.0 * 3.0);
-        assert!((building.wall_area() - expected_wall).abs() < 1e-10);
+    fn test_dispatcher_single_building() {
+        let radiation = make_test_radiation();
+        let buildings = make_test_buildings(1);
+        let mut dispatcher = UrbanStepDispatcher::new().with_buildings(buildings);
+        let result = dispatcher.step_all(Duration::from_secs(3600), &radiation, 30.0);
+        assert_eq!(result.buildings_processed, 1);
     }
 
     #[test]
-    fn test_building_roof_area() {
-        let building = BuildingConfig::default();
-        let expected_roof = 100.0;
-        assert!((building.roof_area() - expected_roof).abs() < 1e-10);
+    fn test_deterministic_reduction() {
+        let values = vec![1.0, 2.0, 3.0, 4.0, 5.0];
+        let result = deterministic_reduction(&values);
+        assert_eq!(result, 15.0);
     }
 
     #[test]
-    fn test_single_building_conservation() {
-        let building = BuildingConfig::default();
-        let test = EnergyConservationTest::new()
-            .with_buildings(vec![building])
-            .with_ambient_temperature(293.15)
-            .with_solar_irradiance(500.0)
-            .with_sky_temperature(270.0);
-
-        assert!(
-            test.verify_conservation(),
-            "Single building should satisfy energy conservation"
-        );
+    fn test_deterministic_empty() {
+        let values: Vec<f64> = vec![];
+        let result = deterministic_reduction(&values);
+        assert_eq!(result, 0.0);
     }
 
     #[test]
-    fn test_zero_solar_irradiance() {
-        let test = EnergyConservationTest::create_5_building_config()
-            .with_solar_irradiance(0.0);
-
-        assert!(
-            test.verify_conservation(),
-            "Should still conserve energy with zero solar"
-        );
+    fn test_verify_deterministic_results() {
+        let results = vec![1.0, 1.0, 1.0];
+        let labels = vec!["a", "b", "c"];
+        assert!(verify_deterministic_results(&results, &labels));
     }
 
     #[test]
-    fn test_longwave_equilibrium() {
-        let test = EnergyConservationTest::create_5_building_config();
-
-        for (i, building) in test.buildings.iter().enumerate() {
-            let radiation = test.surface_radiation_balance(i);
-            assert!(
-                radiation.is_some(),
-                "Building {} should have radiation balance",
-                i
-            );
-
-            let rad = radiation.unwrap();
-            let imbalance = (rad.absorbed - rad.emitted - rad.transmitted).abs();
-            assert!(
-                imbalance < 1e-6,
-                "Building {} longwave equilibrium imbalance: {}",
-                i,
-                imbalance
-            );
-        }
+    fn test_urban_radiation_effective_irradiance() {
+        let radiation = make_test_radiation();
+        let irradiance = radiation.effective_irradiance(90.0, 0.0);
+        assert!(irradiance >= 0.0);
     }
 
     #[test]
-    fn test_enclosed_surfaces_net_zero() {
-        let test = EnergyConservationTest::create_5_building_config();
-
-        for (i, _) in test.buildings.iter().enumerate() {
-            let radiation = test.surface_radiation_balance(i);
-            assert!(radiation.is_some());
-
-            let rad = radiation.unwrap();
-            let net = rad.net_radiation();
-            assert!(
-                net.abs() < 1e-6,
-                "Building {} net radiation {} should be zero",
-                i,
-                net
-            );
-        }
+    fn test_urban_radiation_ambient_temperature() {
+        let radiation = make_test_radiation();
+        let ambient = radiation.ambient_temperature(25.0);
+        assert_eq!(ambient, 27.0);
     }
 
     #[test]
-    fn test_net_radiation_for_enclosed_surfaces() {
-        let test = EnergyConservationTest::create_5_building_config();
-        let total_net = test.net_radiation_for_enclosed_surfaces();
-        assert!(
-            total_net.abs() < 1e-6,
-            "Total net radiation {} should be zero for enclosed surfaces",
-            total_net
-        );
+    fn test_dispatcher_multiple_runs_deterministic() {
+        let radiation = make_test_radiation();
+        let buildings = make_test_buildings(10);
+
+        let mut dispatcher1 = UrbanStepDispatcher::new().with_buildings(buildings.clone());
+        let result1 = dispatcher1.step_all(Duration::from_secs(3600), &radiation, 30.0);
+
+        let mut dispatcher2 = UrbanStepDispatcher::new().with_buildings(buildings);
+        let result2 = dispatcher2.step_all(Duration::from_secs(3600), &radiation, 30.0);
+
+        assert_eq!(result1.total_thermal_load, result2.total_thermal_load);
+        assert_eq!(result1.total_energy_consumption, result2.total_energy_consumption);
+        assert_eq!(result1.avg_zone_temperature, result2.avg_zone_temperature);
     }
 }

@@ -3,7 +3,7 @@ name = "fluxion-city"
 version = "1.0.0"
 edition = "2021"
 authors = ["Dr. Aris Thorne <aris.thorne@fluxion.org>"]
-description = "Urban energy modeling and city-scale radiation tests for Fluxion."
+description = "Urban-scale building energy modeling with parallel dispatch and deterministic execution for the Fluxion BEM engine."
 repository = "https://github.com/anchapin/fluxion"
 license = "Apache-2.0"
 
@@ -12,9 +12,14 @@ name = "fluxion_city"
 path = "src/lib.rs"
 
 [dependencies]
+rayon = "1.10"
 serde = { version = "1.0", features = ["derive"] }
-serde_json = "1.0"
-thiserror = "1.0"
 
 [dev-dependencies]
-proptest = "1.5"
+criterion = "0.5"
+[[bench]]
+name = "parallel_harness"
+harness = false
+
+[features]
+default = []
