@@ -8,4 +8,5 @@ pub mod neural_field;
 pub mod shared_batch_service;
 pub mod surrogate;
 pub mod sweeps;
+pub mod synthetic_data_quality;
 pub mod xdt_export;
