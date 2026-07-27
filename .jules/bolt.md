@@ -53,3 +53,6 @@
 ## 2026-07-23 - Avoided unnecessary VectorField cloning for debugging in step_physics_6r2c
 **Learning:** In hot loops like `step_physics_6r2c`, cloning `VectorField`s (like `phi_ia`) just to access a single value (e.g., `phi_ia[0]`) for conditional debugging causes measurable performance degradation by forcing unnecessary heap allocations.
 **Action:** Instead of cloning the whole vector buffer to preserve it for later debugging, read and store the specific scalar values (e.g., `let phi_ia_0 = phi_ia.as_ref()[0]`) BEFORE moving/consuming the original `VectorField`. This eliminates the need for the `.clone()` entirely while maintaining diagnostic output.
+## 2026-07-27 - Used std::mem::replace to avoid tensor clones in physics loops
+**Learning:** Found multiple instances where large `VectorField` arrays (like `mass_temperatures`) were being cloned at the start of a simulation timestep solely to preserve the "old" state for tracking. By using `std::mem::replace`, the tensor allocation can be avoided entirely.
+**Action:** Always favor `std::mem::replace` when needing to store an older version of a state variable being mutated, instead of using `.clone()`.
