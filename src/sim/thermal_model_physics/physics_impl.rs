@@ -1628,7 +1628,7 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         let h_iz_rad_vec = self.0.h_tr_iz_rad.as_ref();
 
         // Store phi_ia[0] for debugging before we consume it
-        let phi_ia_0 = phi_ia.as_ref().first().copied().unwrap_or(0.0);
+        let _phi_ia_0 = phi_ia.as_ref().first().copied().unwrap_or(0.0);
 
         // Compute inter-zone heat transfer directly into phi_ia_with_iz to avoid Vec allocation
         let mut phi_ia_with_iz = phi_ia;
