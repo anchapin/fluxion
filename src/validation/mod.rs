@@ -26,6 +26,7 @@ pub mod issue_classifier;
 pub mod multi_reference;
 pub mod performance;
 pub mod reference;
+pub mod reference_catalog;
 pub mod reference_data;
 pub mod reference_loader;
 pub mod reporting;
@@ -126,6 +127,10 @@ pub use physics_validator::{
 pub use reference::{
     load_reference_data, load_series_195_reference, load_series_800_reference, HourlyDataPoint,
     ReferenceDataError, ReferenceDataset,
+};
+pub use reference_catalog::{
+    CoverageReport, ReferenceCatalog, ReferenceCategory, ReferenceEntry, ReferenceSource,
+    REFERENCE_DATA_ROOT,
 };
 pub use reference_data::{
     calculate_mbe, calculate_percentage_difference, calculate_rmse, load_case_960_reference,

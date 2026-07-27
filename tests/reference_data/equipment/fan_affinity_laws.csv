@@ -1,0 +1,20 @@
+# Analytical Reference: Centrifugal fan affinity laws + constant-speed VIV baseline (Issue #1933)
+# Source: ASHRAE Handbook — Fundamentals, Ch. 21 (Fans); ASHRAE Standard 90.1-2022 §6.5.3.1
+# Derivation: For variable-speed drive (VSD), Q/Qf=N/Nf, P/Pf=(N/Nf)^2, W/Wf=(N/Nf)^3.
+#            Variable-inlet-vane (VIV, constant speed) normalized power is a typical quadratic
+#            fit (0.13 + 0.35*N + 0.52*N^2) representative of a 60% efficient baseline fan.
+# Columns: speed_ratio (N/Nf), flow_ratio (Q/Qf), pressure_ratio (P/Pf),
+#         power_ratio_vsd (W/Wf, cubic), power_ratio_viv (constant-speed VIV)
+# Status: ANALYTICAL — derived from published fan laws, not EnergyPlus output.
+speed_ratio,flow_ratio,pressure_ratio,power_ratio_vsd,power_ratio_viv
+0.00,0.0000,0.0000,0.0000,0.1300
+0.10,0.1000,0.0100,0.0010,0.1702
+0.20,0.2000,0.0400,0.0080,0.2208
+0.30,0.3000,0.0900,0.0270,0.2818
+0.40,0.4000,0.1600,0.0640,0.3532
+0.50,0.5000,0.2500,0.1250,0.4350
+0.60,0.6000,0.3600,0.2160,0.5272
+0.70,0.7000,0.4900,0.3430,0.6298
+0.80,0.8000,0.6400,0.5120,0.7428
+0.90,0.9000,0.8100,0.7290,0.8662
+1.00,1.0000,1.0000,1.0000,1.0000
