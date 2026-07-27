@@ -452,7 +452,7 @@ impl<T: ContinuousTensor<f64> + Clone> Clone for ThermalModelData<T> {
             hourly_temperatures: None,
             nodal_temperatures: None,
             incident_solar_per_surface: self.incident_solar_per_surface.clone(),
-            sun_pos_cache: self.sun_pos_cache.clone(),
+            sun_pos_cache: Default::default(), // Issue #1970
             zero_vector: self.zero_vector.clone(),
         }
     }
