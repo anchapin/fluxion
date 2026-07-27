@@ -41,7 +41,7 @@ impl HeatPumpVoltageModel {
             return Err(GridModelError::NegativeAdjustment { factor });
         }
         coupler.current_voltage_pu = voltage_pu;
-        coupler.current_cop *= factor;
+        coupler.current_cop = (coupler.current_cop * factor).max(1.0);
         Ok(())
     }
 }
