@@ -2,6 +2,7 @@
 // This module provides the main CLI interface and subcommand structure
 
 pub mod hvac_commands;
+pub mod monte_carlo;
 pub mod multi_zone;
 pub mod performance;
 pub mod validation;
@@ -17,7 +18,7 @@ use clap::{Parser, Subcommand};
 #[command(name = "fluxion")]
 #[command(about = "Fluxion Building Energy Modeling CLI", long_about = None)]
 #[command(
-    after_help = "Examples:\n  fluxion validation run 800\n  fluxion validation run-series 800-810\n  fluxion validation cross-validate 800 --tool energyplus --reference-file results/case_800.csv"
+    after_help = "Examples:\n  fluxion validation run 800\n  fluxion validation run-series 800-810\n  fluxion validation cross-validate 800 --tool energyplus --reference-file results/case_800.csv\n  fluxion monte-carlo sweep --base-model base.yaml --delta-file delta.yaml --output ./mc_out"
 )]
 pub struct Cli {
     #[command(subcommand)]
@@ -38,6 +39,10 @@ pub enum Commands {
     /// Performance testing and validation commands
     #[command(subcommand)]
     Performance(performance::PerformanceCommand),
+
+    /// Monte Carlo parameter sweeps via declarative deltas (Issue #1813).
+    #[command(subcommand)]
+    MonteCarlo(monte_carlo::MonteCarloCommand),
 }
 
 /// Parse and execute CLI commands
@@ -57,6 +62,10 @@ pub fn run_cli() -> Result<(), anyhow::Error> {
         }
         Commands::Performance(cmd) => {
             performance::handle_performance_command(&cmd).map_err(|e| anyhow::anyhow!(e))?;
+            Ok(())
+        }
+        Commands::MonteCarlo(cmd) => {
+            monte_carlo::handle_monte_carlo_command(&cmd)?;
             Ok(())
         }
     }
