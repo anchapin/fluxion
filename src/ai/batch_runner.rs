@@ -420,6 +420,8 @@ impl BatchRunner {
             inference_metrics: std::sync::Arc::new(parking_lot::Mutex::new(
                 crate::ai::surrogate::InferenceMetrics::default(),
             )),
+            input_bounds: None,
+            ood_count: std::sync::Arc::new(parking_lot::Mutex::new(0)),
         };
 
         let total_energy_kwh = model.solve_timesteps(8760, &surrogates, false, None, None, None);
