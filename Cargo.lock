@@ -1138,13 +1138,11 @@ dependencies = [
 ]
 
 [[package]]
-name = "fluxion-fluid"
+name = "fluxion-grid"
 version = "1.0.0"
 dependencies = [
- "approx",
- "num-traits",
+ "serde",
  "thiserror 1.0.69",
- "uom",
 ]
 
 [[package]]
