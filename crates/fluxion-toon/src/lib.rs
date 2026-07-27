@@ -42,8 +42,8 @@
 pub mod error;
 
 // Re-export types
-pub use error::ToonError;
 pub use error::Result;
+pub use error::ToonError;
 
 /// Serialize a value to TOON format string.
 /// TOON format is: "toon:v1\n<json>\n"

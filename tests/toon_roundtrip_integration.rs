@@ -78,7 +78,10 @@ fn test_roundtrip_f64_scalar() {
     let value = 3.14159265359f64;
     let toon = to_string(&value).expect("serialization should succeed");
     let parsed: f64 = from_str(&toon).expect("deserialization should succeed");
-    assert!((value - parsed).abs() < 1e-10, "f64 should round-trip losslessly");
+    assert!(
+        (value - parsed).abs() < 1e-10,
+        "f64 should round-trip losslessly"
+    );
 }
 
 #[test]
@@ -94,7 +97,10 @@ fn test_roundtrip_simple_struct() {
     let wrapper = ScalarWrapper { value: 100 };
     let toon = to_string(&wrapper).expect("serialization should succeed");
     let parsed: ScalarWrapper = from_str(&toon).expect("deserialization should succeed");
-    assert_eq!(wrapper, parsed, "Simple struct should round-trip losslessly");
+    assert_eq!(
+        wrapper, parsed,
+        "Simple struct should round-trip losslessly"
+    );
 }
 
 // ============================================================================
@@ -249,9 +255,18 @@ fn test_roundtrip_large_values() {
     };
     let toon = to_string(&energy).expect("serialization should succeed");
     let parsed: EnergyReading = from_str(&toon).expect("deserialization should succeed");
-    assert!((energy.heating - parsed.heating).abs() < 1.0, "Large heating value should be preserved");
-    assert!((energy.cooling - parsed.cooling).abs() < 0.1, "Large cooling value should be preserved");
-    assert!((energy.internal_gains - parsed.internal_gains).abs() < 0.01, "Large internal_gains value should be preserved");
+    assert!(
+        (energy.heating - parsed.heating).abs() < 1.0,
+        "Large heating value should be preserved"
+    );
+    assert!(
+        (energy.cooling - parsed.cooling).abs() < 0.1,
+        "Large cooling value should be preserved"
+    );
+    assert!(
+        (energy.internal_gains - parsed.internal_gains).abs() < 0.01,
+        "Large internal_gains value should be preserved"
+    );
 }
 
 #[test]
@@ -259,5 +274,8 @@ fn test_roundtrip_negative_values() {
     let temperature = -5.5f64;
     let toon = to_string(&temperature).expect("serialization should succeed");
     let parsed: f64 = from_str(&toon).expect("deserialization should succeed");
-    assert!((temperature - parsed).abs() < 1e-10, "Negative temperature should round-trip");
+    assert!(
+        (temperature - parsed).abs() < 1e-10,
+        "Negative temperature should round-trip"
+    );
 }
