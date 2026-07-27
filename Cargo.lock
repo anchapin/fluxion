@@ -1139,11 +1139,12 @@ dependencies = [
 
 [[package]]
 name = "fluxion-fluid"
-version = "0.1.0"
+version = "1.0.0"
 dependencies = [
+ "approx",
  "num-traits",
- "proptest",
  "thiserror 1.0.69",
+ "uom",
 ]
 
 [[package]]
