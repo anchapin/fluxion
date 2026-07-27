@@ -611,3 +611,156 @@ export interface NineR4CTraceParams {
 export declare function register(): void
 
 export declare function transferMatrix(matrix: Float64Array): Float64Array
+
+/**
+ * Variable Air Volume (VAV) terminal unit configuration (issue #1798).
+ */
+export declare class HvacVavTerminal {
+  constructor(id: string, zoneId: number, maxAirflow: number)
+  get id(): string
+  get zoneId(): number
+  get maxAirflow(): number
+  get minAirflow(): number
+  set minAirflow(value: number)
+  get reheatCapacity(): number
+  set reheatCapacity(value: number)
+  get airflowSetpoint(): number
+  set airflowSetpoint(value: number)
+  reheatDemand(supplyTemp: number, zoneTemp: number): number
+}
+
+/**
+ * Constant Air Volume (CAV) system configuration (issue #1798).
+ */
+export declare class HvacCavSystem {
+  constructor(id: string, designAirflow: number)
+  get id(): string
+  get designAirflow(): number
+  get fanPower(): number
+  set fanPower(value: number)
+  get fanEfficiency(): number
+  set fanEfficiency(value: number)
+  get heatingCapacity(): number
+  set heatingCapacity(value: number)
+  get coolingCapacity(): number
+  set coolingCapacity(value: number)
+  fanPowerConsumption(): number
+}
+
+/**
+ * Heat pump system with temperature-dependent COP curves (issue #1798).
+ */
+export declare class HvacHeatPump {
+  constructor(
+    id: string,
+    heatingCapacity: number,
+    coolingCapacity: number,
+    heatingCop: number,
+    coolingCop: number
+  )
+  get id(): string
+  get heatingCapacity(): number
+  get coolingCapacity(): number
+  get heatingCop(): number
+  get coolingCop(): number
+  get mode(): string
+  heatingCopAtTemperature(outdoorTemp: number): number
+  coolingCopAtTemperature(outdoorTemp: number): number
+  heatingPower(outdoorTemp: number): number
+  coolingPower(outdoorTemp: number): number
+  setMode(zoneTemp: number, heatingSetpoint: number, coolingSetpoint: number): void
+}
+
+/**
+ * Variable-capacity chiller with polynomial part-load efficiency curves (issue #1798).
+ */
+export declare class HvacChiller {
+  constructor(id: string, coolingCapacity: number, coolingCop: number, designTemp: number)
+  get id(): string
+  get coolingCapacity(): number
+  get coolingCop(): number
+  get designTemp(): number
+  ratedCapacity(): number
+  calculateCapacity(plr: number, outdoorTemp: number): number
+  calculatePower(load: number, outdoorTemp: number, mode: string): number
+}
+
+/**
+ * Variable-capacity boiler with polynomial part-load efficiency curves (issue #1798).
+ */
+export declare class HvacBoiler {
+  constructor(id: string, heatingCapacity: number, efficiency: number, designTemp: number)
+  get id(): string
+  get heatingCapacity(): number
+  get efficiency(): number
+  get designTemp(): number
+  ratedCapacity(): number
+  calculateCapacity(plr: number, outdoorTemp: number): number
+  calculatePower(load: number, outdoorTemp: number, mode: string): number
+}
+
+/**
+ * Per-zone heating/cooling setpoints and deadband configuration (issue #1798).
+ */
+export declare class ZoneSetpoints {
+  constructor(numZones: number)
+  get numZones(): number
+  setHeatingSetpoint(zoneId: number, temp: number): void
+  setCoolingSetpoint(zoneId: number, temp: number): void
+  setDeadband(zoneId: number, deadband: number): void
+  getHeatingSetpoint(zoneId: number): number
+  getCoolingSetpoint(zoneId: number): number
+  getDeadband(zoneId: number): number
+  validate(): void
+}
+
+/**
+ * Hourly daily schedule (24 values) driving setpoint profiles (issue #1798).
+ */
+export declare class HvacDailySchedule {
+  constructor(name: string, scheduleType: string)
+  get name(): string
+  get scheduleType(): string
+  static constant(value: number): HvacDailySchedule
+  setHour(hour: number, value: number): void
+  fillRange(startHour: number, endHour: number, value: number): void
+  value(hour: number): number
+}
+
+/**
+ * Composite heating + cooling schedule pair (issue #1798).
+ */
+export declare class HvacSchedule {
+  constructor()
+  static constantSchedule(heatingSp: number, coolingSp: number): HvacSchedule
+  static setbackSchedule(
+    dayHeat: number,
+    nightHeat: number,
+    coolSp: number,
+    nightStart: number,
+    nightEnd: number
+  ): HvacSchedule
+  static withOperatingHours(
+    heatingSp: number,
+    coolingSp: number,
+    startHour: number,
+    endHour: number
+  ): HvacSchedule
+  static freeFloating(): HvacSchedule
+  isFreeFloating(): boolean
+  heatingSetpoint(hour: number): number
+  coolingSetpoint(hour: number): number
+  getHeatingSchedule(): HvacDailySchedule
+  getCoolingSchedule(): HvacDailySchedule
+}
+
+/**
+ * Zone-level HVAC controller with selectable control strategies (issue #1798).
+ */
+export declare class ZoneController {
+  constructor(numZones: number)
+  setZoneStrategy(zoneId: number, strategy: string): void
+  getZoneStrategy(zoneId: number): string | null
+  updateControls(temperatures: Array<number>): Array<number>
+  getZoneStatus(zoneId: number): string
+}

@@ -482,4 +482,138 @@ describe('@fluxion/native', () => {
       assert.deepStrictEqual(Array.from(transferred), [1.0, 2.0, 3.0]);
     });
   });
+
+  describe('HVAC configuration (issue #1798)', () => {
+    let HvacVavTerminal, HvacCavSystem, HvacHeatPump, HvacChiller, HvacBoiler;
+    let ZoneSetpoints, HvacDailySchedule, HvacSchedule, ZoneController;
+
+    before(() => {
+      HvacVavTerminal = fluxion.HvacVavTerminal;
+      HvacCavSystem = fluxion.HvacCavSystem;
+      HvacHeatPump = fluxion.HvacHeatPump;
+      HvacChiller = fluxion.HvacChiller;
+      HvacBoiler = fluxion.HvacBoiler;
+      ZoneSetpoints = fluxion.ZoneSetpoints;
+      HvacDailySchedule = fluxion.HvacDailySchedule;
+      HvacSchedule = fluxion.HvacSchedule;
+      ZoneController = fluxion.ZoneController;
+    });
+
+    it('should round-trip a VAV terminal system from Node', () => {
+      // Acceptance criterion: build a VAV system from Node and round-trip it.
+      const vav = new HvacVavTerminal('VAV-1', 0, 0.5);
+      assert.strictEqual(vav.id, 'VAV-1');
+      assert.strictEqual(vav.zoneId, 0);
+      assert.strictEqual(vav.maxAirflow, 0.5);
+      // min defaults to 30% of max
+      assert.ok(Math.abs(vav.minAirflow - 0.15) < 1e-9);
+      assert.ok(Math.abs(vav.reheatCapacity - 5000.0) < 1e-9);
+
+      vav.reheatCapacity = 7500.0;
+      vav.airflowSetpoint = 0.4;
+      assert.ok(Math.abs(vav.reheatCapacity - 7500.0) < 1e-9);
+      assert.ok(Math.abs(vav.airflowSetpoint - 0.4) < 1e-9);
+
+      // Reheat delivered when zone is below comfort threshold.
+      const demand = vav.reheatDemand(20.0, 18.0);
+      assert.ok(demand > 0.0);
+      assert.strictEqual(vav.reheatDemand(20.0, 22.0), 0.0);
+    });
+
+    it('should configure a CAV system', () => {
+      const cav = new HvacCavSystem('CAV-1', 1.0);
+      assert.strictEqual(cav.id, 'CAV-1');
+      assert.strictEqual(cav.designAirflow, 1.0);
+      cav.fanEfficiency = 0.8;
+      assert.ok(Math.abs(cav.fanPowerConsumption() - 500.0 / 0.8) < 1e-6);
+    });
+
+    it('should configure a heat pump with mode selection', () => {
+      const hp = new HvacHeatPump('HP-1', 12000.0, 10000.0, 3.5, 3.0);
+      assert.strictEqual(hp.mode, 'off');
+      // COP at design temp ~ rated
+      assert.ok(Math.abs(hp.heatingCopAtTemperature(-5.0) - 3.5) < 0.1);
+      hp.setMode(18.0, 20.0, 27.0);
+      assert.strictEqual(hp.mode, 'heating');
+      assert.ok(hp.heatingPower(-5.0) > 0.0);
+      hp.setMode(28.0, 20.0, 27.0);
+      assert.strictEqual(hp.mode, 'cooling');
+      assert.ok(hp.coolingPower(35.0) > 0.0);
+    });
+
+    it('should expose chiller and boiler capacity curves', () => {
+      const chiller = new HvacChiller('CH-1', 50000.0, 4.0, 35.0);
+      assert.ok(Math.abs(chiller.ratedCapacity() - 50000.0) < 1e-9);
+      const cap = chiller.calculateCapacity(1.0, 35.0);
+      assert.ok(cap > 0.0);
+      assert.ok(chiller.calculatePower(cap, 35.0, 'cooling') > 0.0);
+
+      const boiler = new HvacBoiler('BL-1', 40000.0, 0.9, -5.0);
+      assert.ok(Math.abs(boiler.ratedCapacity() - 40000.0) < 1e-9);
+      // Boilers only heat: cooling mode => no power
+      assert.strictEqual(boiler.calculatePower(boiler.calculateCapacity(1.0, -5.0), -5.0, 'cooling'), 0.0);
+    });
+
+    it('should manage zone setpoints and deadband', () => {
+      const sp = new ZoneSetpoints(2);
+      assert.strictEqual(sp.numZones, 2);
+      sp.setHeatingSetpoint(0, 21.0);
+      sp.setCoolingSetpoint(0, 25.0);
+      assert.ok(Math.abs(sp.getHeatingSetpoint(0) - 21.0) < 1e-9);
+      assert.ok(Math.abs(sp.getCoolingSetpoint(0) - 25.0) < 1e-9);
+      assert.doesNotThrow(() => sp.validate());
+      // Out-of-range temperature rejected
+      assert.throws(() => sp.setHeatingSetpoint(0, 5.0));
+      // Bad zone rejected
+      assert.throws(() => sp.getDeadband(9));
+      assert.throws(() => new ZoneSetpoints(0));
+    });
+
+    it('should build daily and HVAC schedules', () => {
+      const ds = new HvacDailySchedule('occ', 'DailyCycle');
+      ds.fillRange(8, 18, 21.0);
+      assert.ok(Math.abs(ds.value(12) - 21.0) < 1e-9);
+      assert.strictEqual(ds.value(2), 0.0);
+      assert.strictEqual(ds.name, 'occ');
+      assert.strictEqual(ds.scheduleType, 'DailyCycle');
+
+      const constant = HvacDailySchedule.constant(24.0);
+      assert.ok(Math.abs(constant.value(0) - 24.0) < 1e-9);
+
+      assert.throws(() => new HvacDailySchedule('x', 'Bogus'));
+
+      const sched = HvacSchedule.constantSchedule(20.0, 24.0);
+      assert.strictEqual(sched.isFreeFloating(), false);
+      assert.ok(Math.abs(sched.heatingSetpoint(5) - 20.0) < 1e-9);
+
+      const setback = HvacSchedule.setbackSchedule(20.0, 15.0, 25.0, 22, 6);
+      assert.ok(Math.abs(setback.heatingSetpoint(2) - 15.0) < 1e-9);
+      assert.ok(Math.abs(setback.heatingSetpoint(10) - 20.0) < 1e-9);
+
+      const occ = HvacSchedule.withOperatingHours(20.0, 24.0, 8, 18);
+      assert.ok(Math.abs(occ.heatingSetpoint(2) - (-100.0)) < 1e-9);
+
+      assert.strictEqual(HvacSchedule.freeFloating().isFreeFloating(), true);
+
+      const heat = sched.getHeatingSchedule();
+      assert.ok(Math.abs(heat.value(0) - 20.0) < 1e-9);
+    });
+
+    it('should select control strategies and report HVAC status', () => {
+      const ctrl = new ZoneController(2);
+      assert.strictEqual(ctrl.getZoneStrategy(0), 'ideal_loads');
+      ctrl.setZoneStrategy(0, 'staged_equipment');
+      assert.strictEqual(ctrl.getZoneStrategy(0), 'staged_equipment');
+      ctrl.setZoneStrategy(0, 'schedule_aware');
+      assert.strictEqual(ctrl.getZoneStrategy(0), 'schedule_aware');
+      assert.throws(() => ctrl.setZoneStrategy(0, 'bogus'));
+
+      const energy = ctrl.updateControls([15.0, 30.0]);
+      assert.strictEqual(energy.length, 2);
+      assert.strictEqual(ctrl.getZoneStatus(0), 'heating');
+      assert.strictEqual(ctrl.getZoneStatus(1), 'cooling');
+
+      assert.throws(() => new ZoneController(0));
+    });
+  });
 });
