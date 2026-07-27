@@ -79,6 +79,47 @@ pub fn h_series_strict(a: f64, b: f64) -> Result<f64, &'static str> {
     Ok((a * b) / (a + b))
 }
 
+/// Compute the conductance-weighted envelope temperature for internal node coupling
+/// (Issue #1859).
+///
+/// ISO 13790 §C.3 specifies that the internal mass couples to the envelope
+/// surfaces through the series combination of (surface-to-mass, mass-to-internal):
+/// `h_me_k = h_series(h_tr_ms_k, h_tr_me)` per surface k.
+///
+/// The effective envelope temperature driving heat flow into the internal node is
+/// the h_me-weighted average of the three envelope mass temperatures:
+/// `t_env_avg = Σ(h_me_k × T_m_k) / Σ(h_me_k)` for k ∈ {wall, roof, floor}.
+///
+/// This replaces the unweighted arithmetic mean `(T_wall + T_roof + T_floor) / 3.0`
+/// which over-weights whichever envelope happens to be hotter, suppressing the
+/// internal node's damping effect on diurnal air temperature swing.
+///
+/// Degenerate cases (h_tr_me <= 0 or all h_series ~ 0) fall back to the simple
+/// arithmetic mean.
+#[inline]
+fn internal_node_envelope_temperature(
+    t_wall: f64,
+    t_roof: f64,
+    t_floor: f64,
+    h_ms_wall: f64,
+    h_ms_roof: f64,
+    h_ms_floor: f64,
+    h_tr_me: f64,
+) -> f64 {
+    if h_tr_me <= 0.0 {
+        return (t_wall + t_roof + t_floor) / 3.0;
+    }
+    let h_me_w = h_series(h_ms_wall, h_tr_me);
+    let h_me_r = h_series(h_ms_roof, h_tr_me);
+    let h_me_f = h_series(h_ms_floor, h_tr_me);
+    let h_me_sum = h_me_w + h_me_r + h_me_f;
+    if h_me_sum > 1e-6 {
+        (h_me_w * t_wall + h_me_r * t_roof + h_me_f * t_floor) / h_me_sum
+    } else {
+        (t_wall + t_roof + t_floor) / 3.0
+    }
+}
+
 /// Per-surface surface temperature for the parallel-resistance 9R4C coupling
 /// (Issue #1281).
 ///
@@ -311,8 +352,16 @@ impl MultiNodeSolver {
         // Update internal node
         {
             let node = &mut m.internal;
-            let t_env_avg = (m.wall.temperature + m.roof.temperature + m.floor.temperature) / 3.0;
             let h_me = node.h_tr_me;
+            let t_env_avg = internal_node_envelope_temperature(
+                m.wall.temperature,
+                m.roof.temperature,
+                m.floor.temperature,
+                m.wall.h_tr_ms,
+                m.roof.h_tr_ms,
+                m.floor.h_tr_ms,
+                h_me,
+            );
 
             let denom = node.capacitance / dt + h_is + h_me;
             let numer = node.capacitance / dt * node.temperature + h_is * t_i + h_me * t_env_avg;
@@ -412,11 +461,19 @@ impl MultiNodeSolver {
             }
         }
 
-        // Update internal node (unchanged from additive — internal mass uses h_is directly)
+        // Update internal node
         {
             let node = &mut m.internal;
-            let t_env_avg = (m.wall.temperature + m.roof.temperature + m.floor.temperature) / 3.0;
             let h_me = node.h_tr_me;
+            let t_env_avg = internal_node_envelope_temperature(
+                m.wall.temperature,
+                m.roof.temperature,
+                m.floor.temperature,
+                m.wall.h_tr_ms,
+                m.roof.h_tr_ms,
+                m.floor.h_tr_ms,
+                h_me,
+            );
 
             let denom = node.capacitance / dt + h_is + h_me;
             let numer = node.capacitance / dt * node.temperature + h_is * t_i + h_me * t_env_avg;
@@ -988,8 +1045,16 @@ impl MultiNodeSolver {
         // Update internal node — with gains
         {
             let node = &mut m.internal;
-            let t_env_avg = (m.wall.temperature + m.roof.temperature + m.floor.temperature) / 3.0;
             let h_me = node.h_tr_me;
+            let t_env_avg = internal_node_envelope_temperature(
+                m.wall.temperature,
+                m.roof.temperature,
+                m.floor.temperature,
+                m.wall.h_tr_ms,
+                m.roof.h_tr_ms,
+                m.floor.h_tr_ms,
+                h_me,
+            );
 
             let denom = node.capacitance / dt + h_is + h_me;
             if denom > 1e-10 {
@@ -1105,8 +1170,16 @@ impl MultiNodeSolver {
         // Internal node — unchanged (uses h_is directly to air)
         {
             let node = &mut m.internal;
-            let t_env_avg = (m.wall.temperature + m.roof.temperature + m.floor.temperature) / 3.0;
             let h_me = node.h_tr_me;
+            let t_env_avg = internal_node_envelope_temperature(
+                m.wall.temperature,
+                m.roof.temperature,
+                m.floor.temperature,
+                m.wall.h_tr_ms,
+                m.roof.h_tr_ms,
+                m.floor.h_tr_ms,
+                h_me,
+            );
 
             let denom = node.capacitance / dt + h_is + h_me;
             if denom > 1e-10 {
