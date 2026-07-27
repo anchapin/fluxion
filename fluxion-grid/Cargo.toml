@@ -1,0 +1,19 @@
+[package]
+name = "fluxion-grid"
+version = "0.1.0"
+edition = "2021"
+authors = ["Dr. Aris Thorne <aris.thorne@fluxion.org>"]
+description = "Grid-coupled thermal modeling for Fluxion — voltage feedback models for heat pump COP and thermal-electrical coupling."
+repository = "https://github.com/anchapin/fluxion"
+license = "Apache-2.0"
+
+[lib]
+name = "fluxion_grid"
+path = "src/lib.rs"
+
+[dependencies]
+serde = { version = "1.0", features = ["derive"] }
+thiserror = "1.0"
+
+[dev-dependencies]
+approx = "0.5"
