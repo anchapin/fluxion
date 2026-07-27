@@ -877,7 +877,7 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         // 3. HVAC Calculation
         // Compute ideal loads for equipment modulation BEFORE mutable borrow of hvac_equipment
         let ideal_loads_for_equipment: T = if self.0.free_float {
-            T::from(VectorField::new(vec![0.0; self.0.num_zones]))
+            T::from(self.0.zero_vector.clone())
         } else {
             // Issue #1163: symmetric ideal-HVAC formula uses t_i_free as the
             // driving temperature for both heating and cooling (mass
@@ -896,7 +896,7 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         // properly set for all code paths. Free-float cases (900FF, etc.) should
         // have zero HVAC output regardless of other settings.
         let hvac_output_raw = if self.0.free_float {
-            T::from(VectorField::new(vec![0.0; self.0.num_zones]))
+            T::from(self.0.zero_vector.clone())
         } else if let Some(ref mut equipment) = self.0.hvac_equipment {
             // Use scalar setpoints instead of hourly schedules (Issue #???: HVAC schedule fix)
             // This ensures per-hour setpoint changes from validation loop are respected
@@ -1094,7 +1094,7 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         //
         // Issue #738: Check free_float BEFORE calling HVAC to ensure zero output
         let hvac_for_temp_calc = if self.0.free_float {
-            T::from(VectorField::new(vec![0.0; self.0.num_zones]))
+            T::from(self.0.zero_vector.clone())
         } else {
             // Issue #1163: symmetric ideal-HVAC formula (mass heat-release is
             // already embedded in t_i_free via num_tm).
@@ -1434,7 +1434,6 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
 
         // Store previous temperatures for dT/dt calculation (Plan 15-04, 15-06)
         self.0.previous_temperatures = VectorField::new(self.0.temperatures.as_ref().to_vec());
-
         self.0.temperatures = t_i_act;
 
         // Return HVAC energy (Plan 03-04: Use hvac_energy_for_step directly)
@@ -3053,7 +3052,7 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
             // Low-mass behaviour is unchanged (low-mass has no MultiNodeSolver, so
             // `t_i_free_mn` equals `t_i_free_5r1c` and the commit is a no-op change).
             (
-                T::from(VectorField::new(vec![0.0; self.0.num_zones])),
+                T::from(self.0.zero_vector.clone()),
                 t_i_free_5r1c.clone(),
             )
         } else {

@@ -298,6 +298,9 @@ pub struct ThermalModelData<T: ContinuousTensor<f64> + Clone> {
     /// the 5R1C caller from overwriting the 9R4C caller's value (see
     /// `cached_solar_position` in `thermal_model_core.rs`).
     pub sun_pos_cache: std::collections::HashMap<(usize, i32), SolarPosition>,
+    /// Issue #1968 — cached zero vector to eliminate per-timestep `vec![0.0; num_zones]`
+    /// allocations in hot loops. Cloned (not borrowed) to avoid borrow conflicts.
+    pub zero_vector: VectorField,
 }
 
 impl<T: ContinuousTensor<f64> + Clone> Clone for ThermalModelData<T> {
@@ -449,7 +452,8 @@ impl<T: ContinuousTensor<f64> + Clone> Clone for ThermalModelData<T> {
             hourly_temperatures: None,
             nodal_temperatures: None,
             incident_solar_per_surface: self.incident_solar_per_surface.clone(),
-            sun_pos_cache: Default::default(), // Issue #1970: don't clone cache; clone starts fresh
+            sun_pos_cache: self.sun_pos_cache.clone(),
+            zero_vector: self.zero_vector.clone(),
         }
     }
 }
