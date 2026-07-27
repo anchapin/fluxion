@@ -213,6 +213,16 @@ ci:
     # a PR comment linking the upstream run URL.
     - "Fluxion Performance Gate (Issue #1618)"
 
+    # Issue #1932: per-critical-path coverage ratchet gate.  Runs
+    # cargo-llvm-cov, buckets results by the four ARCHITECTURE.md critical
+    # physics paths (Weather→Solar, Weather→Ventilation, Conduction→Zone
+    # Balance, HVAC→Zone Balance), and fails the build when any path whose
+    # baseline has been set (validation/coverage_baseline.json) regresses by
+    # more than 1% relative.  Paths with a 0.0 baseline are unenforced
+    # (collection pending) and never trip the gate — see the KNOWN_ISSUES.md
+    # entry titled "Code coverage gate (issue #1932)".
+    - "Code Coverage Gate (Issue #1932)"
+
   # Job-to-workflow map (informational; branch-protection reads job
   # names directly). Used by `scripts/release_gate_checker.py` to verify
   # the required_checks list is in sync with the workflows directory.
@@ -240,3 +250,8 @@ ci:
       observes_workflow_file: ".github/workflows/performance_dashboard.yml"
       issue: 1618
       triggered_by: "workflow_run on Performance Dashboard completion + PR trigger"
+
+    - job: "Code Coverage Gate (Issue #1932)"
+      workflow: ".github/workflows/code-coverage.yml"
+      issue: 1932
+      triggered_by: "PR + push to develop"

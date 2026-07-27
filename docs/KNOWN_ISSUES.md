@@ -7,7 +7,7 @@ Related to: validation_report.md (results), FIX.md (placeholder fixes), ARCHITEC
 Status: Post-#1323 baseline refresh — pre-#1323 numbers are obsolete per ARCHITECTURE.md §Current Module Status.
 Action: Check this document before attributing validation failures to new issues; many may be known.
 
-*Last Updated: 2026-07-16* (Post-#1323 / post-Wave-5 baseline refresh; #1421 Case 600 ref-range unified to benchmark.rs:124-127 across validator, CSV, doc, and this document; see issue #1443)
+*Last Updated: 2026-07-26* (Post-#1323 / post-Wave-5 baseline refresh; #1421 Case 600 ref-range unified to benchmark.rs:124-127 across validator, CSV, doc, and this document; see issue #1443. CI-01 code-coverage gate #1932 added.)
 
 > **Post-#1323 baseline changes (read first)** — Between the prior "Last Updated" header
 > (2026-03-30) and this revision, ~100 days and 30+ validation-affecting PRs landed.
@@ -751,6 +751,21 @@ they are physically correct and flip one marginal test.
 - **Status:** 🔄 Open (05-04 will enhance)
 - **Phase Addressed:** Phase 5
 - **Resolution Notes:** Will add phase comparison section to ASHRAE140_RESULTS.md.
+
+### CI-01: Code coverage gate (issue #1932) — thresholds not yet enforced
+
+- **Affected:** CI quality gate, not physics output.
+- **Status:** 🔄 Infrastructure shipped; enforcement pending baseline collection.
+- **Details:** The Code Coverage Gate (`Code Coverage Gate (Issue #1932)` in
+  `release_gates.yaml`) runs `cargo-llvm-cov` on every PR and `develop` push,
+  buckets results by the four ARCHITECTURE.md critical paths, and enforces a
+  1% relative-drop ratchet. The committed baseline
+  (`validation/coverage_baseline.json`) starts with all values at `0.0`,
+  which means *unenforced* — the gate passes regardless until a maintainer
+  records real numbers via `scripts/coverage_baseline.py --update`.
+- **Resolution:** After a green `develop` CI run, run
+  `python3 scripts/coverage_baseline.py --update --lcov target/llvm-cov/lcov.info`
+  and commit the updated baseline. See `docs/coverage.md` for the full workflow.
 
 ## Summary
 

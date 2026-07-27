@@ -1,6 +1,35 @@
+# Code Coverage Gate (Issue #1932)
+#
+# Runs cargo-llvm-cov on every PR and on every push to `develop`, then:
+#   1. Uploads an LCOV trace to Codecov for trend tracking + PR comments.
+#   2. Buckets coverage by the four ARCHITECTURE.md critical physics paths
+#      (Weather→Solar, Weather→Ventilation, Conduction→Zone Balance,
+#      HVAC→Zone Balance) and publishes a per-path table to the run summary.
+#   3. Enforces a one-way ratchet gate: any critical path whose committed
+#      baseline (validation/coverage_baseline.json) has been set will fail
+#      the build if line coverage regresses by more than 1% relative.
+#      Paths with a 0.0 baseline are unenforced (collection pending).
+#
+# Tool choice
+# -----------
+# cargo-llvm-cov replaces cargo-tarpaulin.  The docs already documented
+# llvm-cov (`docs/CONTRIBUTING.md` "Coverage Measurement" section) so this
+# brings CI in sync with the documented workflow, and llvm-cov is the only
+# Rust coverage tool that emits native branch coverage.  Unlike tarpaulin,
+# llvm-cov is compatible with sccache, so the wrapper is re-enabled here.
+#
+# Branch-protection
+# -----------------
+# The job is named `Code Coverage Gate (Issue #1932)` and is registered as
+# a required check in release_gates.yaml (mirrors the #1333 / #1351 / #1618
+# gate-naming pattern).
+
 name: Code Coverage
 
-on: [pull_request]
+on:
+  pull_request:
+  push:
+    branches: [develop]
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -8,141 +37,93 @@ concurrency:
 
 jobs:
   coverage:
-    name: Code Coverage
+    name: Code Coverage Gate (Issue #1932)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: ./.github/actions/setup-rust-env
         with:
-          # sccache sets RUSTC_WRAPPER=sccache which intercepts the compiler
-          # and breaks tarpaulin's instrumentation. Disable it for coverage runs.
-          sccache: 'false'
+          # llvm-cov instruments at the LLVM level and is fully compatible
+          # with sccache (unlike tarpaulin, which intercepted the compiler
+          # frontend).  Keep sccache on for faster incremental builds.
+          sccache: 'true'
+          components: 'llvm-tools'
 
-      - name: Install tarpaulin
-        uses: baptiste0928/cargo-install@v3
+      - name: Install cargo-llvm-cov
+        uses: taiki-e/install-action@v2
         with:
-          crate: cargo-tarpaulin
+          tool: cargo-llvm-cov
 
-      - name: Generate coverage
+      - name: Generate coverage (cargo llvm-cov)
         env:
-          RUSTFLAGS: "-C target-cpu=x86-64"
           RUST_MIN_STACK: 16777216
           RUST_LOG: debug
-        shell: bash
         run: |
           set -o pipefail
+          mkdir -p target/llvm-cov
 
-          echo "=== DEBUG INFO ==="
-          cargo tarpaulin --version 2>&1 || echo "tarpaulin not installed yet"
+          echo "=== Toolchain ==="
+          cargo llvm-cov --version
           rustc --version
           cargo --version
-          echo "Starting tarpaulin at $(date -Iseconds)"
-          echo "===================="
 
-          # Run tarpaulin over the library crate to measure coverage of
-          # src/physics/ and other source modules.
-          # NOTE: We use --lib (inline #[test] functions) rather than an
-          # integration test binary name because integration test names can
-          # change during refactors.  If a named binary is needed in future,
-          # verify it exists in Cargo.toml [[test]] before adding --test.
-          cargo tarpaulin \
-            --timeout 600 \
+          # Run library tests with LLVM source-based coverage, emitting LCOV.
+          # --lib matches the previous tarpaulin scope (inline #[test]
+          # functions).  --features wiring-tracing matches the test matrix.
+          # Excludes tests/, benches/, and target/ from the report so the
+          # per-path numbers reflect production code only.
+          cargo llvm-cov \
             --lib \
-            --out Xml \
-            --output-dir ./ \
-            --ignore-panics \
             --features wiring-tracing \
-            2>&1 | tee tarpaulin.log
-          TARPAULIN_EXIT=${PIPESTATUS[0]}
+            --lcov \
+            --output-path target/llvm-cov/lcov.info \
+            --ignore-filename-pattern '/tests/|/benches/|/target/|/fluxion-mcp/' \
+            2>&1 | tee target/llvm-cov/llvm-cov.log
+          COV_EXIT=${PIPESTATUS[0]}
 
           echo ""
-          echo "=== tarpaulin finished at $(date -Iseconds) with exit code $TARPAULIN_EXIT ==="
+          echo "=== llvm-cov finished with exit code $COV_EXIT ==="
+          ls -la target/llvm-cov/
 
-          echo ""
-          echo "=== Files in current directory ==="
-          ls -la *.xml *.log 2>/dev/null || echo "No xml/log files found"
-
-          if [ $TARPAULIN_EXIT -ne 0 ]; then
-            echo "::error::cargo-tarpaulin failed with exit code $TARPAULIN_EXIT"
-            echo "=== Last 50 lines of tarpaulin.log ==="
-            tail -50 tarpaulin.log
-            exit $TARPAULIN_EXIT
+          if [ $COV_EXIT -ne 0 ]; then
+            echo "::error::cargo-llvm-cov failed with exit code $COV_EXIT"
+            tail -50 target/llvm-cov/llvm-cov.log
+            exit $COV_EXIT
           fi
 
-      - name: Extract Physics Coverage
-        if: success()
-        run: |
-          python3 << 'EOF'
-          import xml.etree.ElementTree as ET
-          import os
-
-          tree = ET.parse('cobertura.xml')
-          root = tree.getroot()
-
-          physics_files = []
-          total_lines = 0
-          covered_lines = 0
-
-          for cls in root.findall('.//class'):
-              filename = cls.get('filename', '')
-              if 'src/physics/' in filename:
-                  physics_files.append(filename)
-                  line_rate = float(cls.get('line-rate', '0'))
-                  lines_valid = int(cls.get('lines-valid', '0'))
-                  lines_covered = int(cls.get('lines-covered', '0'))
-                  total_lines += lines_valid
-                  covered_lines += lines_covered
-
-          if total_lines > 0:
-              physics_coverage = (covered_lines / total_lines) * 100
-              print(f"Physics coverage: {physics_coverage:.2f}%")
-              print(f"Physics files analyzed: {len(physics_files)}")
-              with open(os.environ['GITHUB_ENV'], 'a') as f:
-                  f.write(f"PHYSICS_COVERAGE={physics_coverage:.2f}\n")
-                  f.write(f"PHYSICS_FILE_COUNT={len(physics_files)}\n")
-          else:
-              print("Warning: No physics files found matching src/physics/ in coverage report")
-              with open(os.environ['GITHUB_ENV'], 'a') as f:
-                  f.write("PHYSICS_COVERAGE=0.00\n")
-                  f.write("PHYSICS_FILE_COUNT=0\n")
-
-          print("")
-          print("Physics files covered:")
-          for f in physics_files:
-              print(f"  - {f}")
-          EOF
-
-      - name: Check Physics Coverage Threshold
-        if: success()
-        run: |
-          # TODO: Re-enable the 70% threshold once baseline coverage is
-          # established.  For now, threshold is 0 (never fail) so we can
-          # measure without blocking PRs.
-          THRESHOLD=0
-          echo "Checking physics coverage threshold (target: ${THRESHOLD}%)"
-
-          if (( $(echo "$PHYSICS_COVERAGE < $THRESHOLD" | bc -l) )); then
-            echo "::error::Physics coverage ${PHYSICS_COVERAGE}% is below ${THRESHOLD}% threshold"
+          if [ ! -s target/llvm-cov/lcov.info ]; then
+            echo "::error::lcov.info is empty or missing"
             exit 1
-          else
-            echo "::notice::Physics coverage ${PHYSICS_COVERAGE}% meets ${THRESHOLD}% threshold"
           fi
 
-      - name: Generate Physics Coverage Summary
-        if: success()
+      - name: Critical-path coverage analysis + ratchet gate
         run: |
-          echo "## Physics Coverage Summary" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "- **Coverage**: ${PHYSICS_COVERAGE}% (Target: 70% — currently unenforced)" >> $GITHUB_STEP_SUMMARY
-          echo "- **Status**: $(if (( $(echo \"$PHYSICS_COVERAGE >= 70\" | bc -l) )); then echo \"✅ PASS\"; else echo \"⚠️  Below 70% target\"; fi)" >> $GITHUB_STEP_SUMMARY
-          echo "- **Files Analyzed**: ${PHYSICS_FILE_COUNT}" >> $GITHUB_STEP_SUMMARY
+          # Always publish the per-path summary table, even if an earlier
+          # step failed, so contributors can see the numbers.  The --gate
+          # flag is what makes the job fail on regression.
+          python3 scripts/coverage_critical_paths.py \
+            --lcov target/llvm-cov/lcov.info \
+            --baseline validation/coverage_baseline.json \
+            --summary-file "$GITHUB_STEP_SUMMARY" \
+            --gate
 
       - name: Upload to codecov
         if: success() && !env.ACT
         uses: codecov/codecov-action@v4
         with:
-          files: ./cobertura.xml
+          files: target/llvm-cov/lcov.info
           fail_ci_if_error: false
-          flags: unit_tests,physics
+          flags: weather_solar,weather_ventilation,conduction_zone,hvac_zone
           name: codecov-fluxion
           verbose: true
+
+      - name: Upload coverage artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-report
+          path: |
+            target/llvm-cov/lcov.info
+            target/llvm-cov/llvm-cov.log
+          if-no-files-found: warn
+          retention-days: 14
