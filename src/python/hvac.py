@@ -1,4 +1,38 @@
 # HVAC module - re-export classes from main fluxion module
-from fluxion import ZoneControl, ZoneSetpoints, create_zone_setpoints
+from fluxion import (
+    CAVSystem,
+    Chiller,
+    Boiler,
+    HeatPump,
+    HeatPumpMode,
+    HVACMode,
+    HVACSystemType,
+    VAVTerminal,
+    VavOperatingMode,
+    VavTerminalControl,
+    VavTerminalPerformance,
+    VavTerminalUnit,
+    ZoneControl,
+    ZoneSetpoints,
+    compute_vav_terminal_performance,
+    create_zone_setpoints,
+)
 
-__all__ = ["ZoneSetpoints", "ZoneControl", "create_zone_setpoints"]
+__all__ = [
+    "Boiler",
+    "CAVSystem",
+    "Chiller",
+    "HeatPump",
+    "HeatPumpMode",
+    "HVACMode",
+    "HVACSystemType",
+    "VAVTerminal",
+    "VavOperatingMode",
+    "VavTerminalControl",
+    "VavTerminalPerformance",
+    "VavTerminalUnit",
+    "ZoneControl",
+    "ZoneSetpoints",
+    "compute_vav_terminal_performance",
+    "create_zone_setpoints",
+]
