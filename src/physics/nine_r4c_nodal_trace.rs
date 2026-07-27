@@ -246,7 +246,15 @@ pub fn run_sub_hourly_nodal_trace(
     // the trace identical to a hand-stepped trace at the bit level.
     for t in 0..n {
         let (gw, gr, gf, gi) = config.gains.get(t).copied().unwrap_or((0.0, 0.0, 0.0, 0.0));
-        solver.step_with_gains(config.dt_seconds, gw, gr, gf, gi);
+        solver.step_with_gains(
+            config.dt_seconds,
+            gw,
+            gr,
+            gf,
+            gi,
+            0.0,
+            solver.exterior_temperature,
+        );
 
         let t_zone = solver.compute_zone_air_temperature(
             solver.exterior_temperature,
@@ -517,7 +525,7 @@ mod tests {
         let mut expected_zone = Vec::with_capacity(n);
 
         for _ in 0..n {
-            solver.step_with_gains(dt, 0.0, 0.0, 0.0, 0.0);
+            solver.step_with_gains(dt, 0.0, 0.0, 0.0, 0.0, 0.0, solver.exterior_temperature);
             let tz =
                 solver.compute_zone_air_temperature(solver.exterior_temperature, 0.0, 0.0, 0.0);
             solver.zone_temperature = tz;

@@ -369,9 +369,18 @@ impl NineR4CConfig {
         gains_roof: f64,
         gains_floor: f64,
         gains_internal: f64,
+        #[napi(default)] h_ve_night: f64,
+        #[napi(default)] outdoor_temp: f64,
     ) {
-        self.inner
-            .step_with_gains(dt, gains_wall, gains_roof, gains_floor, gains_internal);
+        self.inner.step_with_gains(
+            dt,
+            gains_wall,
+            gains_roof,
+            gains_floor,
+            gains_internal,
+            h_ve_night,
+            outdoor_temp,
+        );
     }
 
     #[napi]

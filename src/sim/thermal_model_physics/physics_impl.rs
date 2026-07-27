@@ -3015,7 +3015,17 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
             } else {
                 None
             };
-            solver.step_with_gains(dt, gains_wall, gains_roof, gains_floor, gains_internal);
+            // Issue #1898: Pass night ventilation parameters to step_with_gains so the
+            // 9R4C mass nodes are cooled by night ventilation (not just the air node).
+            solver.step_with_gains(
+                dt,
+                gains_wall,
+                gains_roof,
+                gains_floor,
+                gains_internal,
+                h_ve_night_zone,
+                outdoor_temp,
+            );
             if let Some((original, _)) = original_h_tr_is {
                 solver.h_tr_is = original;
             }

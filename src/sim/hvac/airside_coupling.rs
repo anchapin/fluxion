@@ -148,6 +148,8 @@ impl AirsideEnvelopeCoupler {
                 forcing.envelope_gains_w[1],
                 forcing.envelope_gains_w[2],
                 forcing.envelope_gains_w[3],
+                0.0,
+                forcing.outdoor_air.dry_bulb_c,
             );
             validate_envelope(&envelope)?;
             zone_temperature_c = solve_air_node_temperature(
