@@ -15,7 +15,7 @@ license = "Apache-2.0"
 # that cargo-mutants can build once and cache while mutating only `fluxion`.
 [workspace]
 resolver = "2"
-members = ["fluxion-core"]
+members = ["fluxion-core", "fluxion-grid"]
 # Default to the root package so bare `cargo build`/`cargo test` build `fluxion`.
 default-members = ["."]
 
@@ -31,6 +31,7 @@ repository = "https://github.com/anchapin/fluxion"
 # This reduces package from 79MB to ~4MB (well under 10MB crates.io limit)
 exclude = [
     "fluxion-core/",
+    "fluxion-grid/",
     "refdata/",
     "assets/",
     "tests/",
