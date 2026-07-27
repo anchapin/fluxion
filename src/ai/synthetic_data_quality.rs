@@ -523,10 +523,12 @@ mod tests {
         let validator = SyntheticDataValidator::new(config);
         let mut field_data = make_field_data();
         field_data.insert("exterior_temp".to_string(), vec![20.0; 100]);
-        field_data
-            .entry("exterior_temp".to_string())
-            .or_default()
-            .push(100.0);
+        for _ in 0..10 {
+            field_data
+                .entry("exterior_temp".to_string())
+                .or_default()
+                .push(100.0);
+        }
 
         let stats = validator.compute_shard_stats("shard_outlier", &field_data);
         let result = validator.validate_shard(&stats);
@@ -540,7 +542,8 @@ mod tests {
         let mut validator = SyntheticDataValidator::new(config);
 
         let mut ref_data = make_field_data();
-        ref_data.insert("exterior_temp".to_string(), vec![20.0; 100]);
+        let ref_temp_values: Vec<f64> = (0..100).map(|i| 18.0 + (i % 5) as f64).collect();
+        ref_data.insert("exterior_temp".to_string(), ref_temp_values);
         let ref_stats = validator.compute_shard_stats("reference", &ref_data);
         validator.set_reference_stats(ref_stats);
 
