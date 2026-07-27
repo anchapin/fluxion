@@ -5,6 +5,60 @@ use fluxion::physics::cta::VectorField;
 use fluxion::ai::surrogate::SurrogateManager;
 use serde_json::Value;
 
+/// Supported response formats for content-negotiation
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum ResponseFormat {
+    Json,
+    Toon,
+}
+
+impl Default for ResponseFormat {
+    fn default() -> Self {
+        ResponseFormat::Json
+    }
+}
+
+impl ResponseFormat {
+    /// Parse format from string (supports MIME types and short forms)
+    pub fn from_str(s: &str) -> Self {
+        match s {
+            "application/json" | "json" => ResponseFormat::Json,
+            "application/x-toon" | "x-toon" | "toon" => ResponseFormat::Toon,
+            _ => ResponseFormat::default(),
+        }
+    }
+}
+
+/// Serialize JSON value to TOON (compact binary-like format)
+/// TOON uses a compact representation: arrays as comma-separated,
+/// objects as key:value pairs with minimal whitespace
+fn serialize_to_toon(value: &Value) -> String {
+    match value {
+        Value::Null => "null".to_string(),
+        Value::Bool(b) => b.to_string(),
+        Value::Number(n) => n.to_string(),
+        Value::String(s) => format!("\"{}\"", s),
+        Value::Array(arr) => {
+            if arr.is_empty() {
+                "[]".to_string()
+            } else {
+                let inner: Vec<String> = arr.iter().map(|v| serialize_to_toon(v)).collect();
+                format!("[{}]", inner.join(","))
+            }
+        }
+        Value::Object(obj) => {
+            if obj.is_empty() {
+                "{}".to_string()
+            } else {
+                let inner: Vec<String> = obj.iter()
+                    .map(|(k, v)| format!("{}:{}", k, serialize_to_toon(v)))
+                    .collect();
+                format!("{{{}}}", inner.join(","))
+            }
+        }
+    }
+}
+
 pub fn list_tools() -> Vec<serde_json::Value> {
     vec![
         serde_json::json!({
@@ -218,7 +272,16 @@ pub fn handle_tool_call(
         .cloned()
         .unwrap_or_default();
 
-    match method {
+    let format = arguments
+        .get("format")
+        .and_then(|v| v.as_str())
+        .map(ResponseFormat::from_str)
+        .unwrap_or_default();
+
+    // Store format preference in state for later use
+    state.response_format = format;
+
+    let result = match method {
         "load_building_model" => load_building_model(state, &tool_args),
         "run_simulation" => run_simulation(state, &tool_args),
         "get_zone_temperatures" => get_zone_temperatures(state, &tool_args),
@@ -232,6 +295,23 @@ pub fn handle_tool_call(
         _ => serde_json::json!({
             "error": format!("Unknown tool: {}", method)
         }),
+    };
+
+    // Wrap result with format metadata
+    wrap_response(&result, format)
+}
+
+/// Wrap response with format metadata for content-negotiation
+fn wrap_response(result: &Value, format: ResponseFormat) -> Value {
+    match format {
+        ResponseFormat::Json => result.clone(),
+        ResponseFormat::Toon => {
+            serde_json::json!({
+                "format": "application/x-toon",
+                "data": result,
+                "_toon": serialize_to_toon(result)
+            })
+        }
     }
 }
 
