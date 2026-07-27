@@ -293,11 +293,11 @@ pub struct ThermalModelData<T: ContinuousTensor<f64> + Clone> {
     /// Key: surface identifier (e.g., "wall_N", "window_S", "roof").
     /// BTreeMap for deterministic iteration order across platforms (Issue #1297)
     pub incident_solar_per_surface: BTreeMap<String, IncidentSolarAccumulator>,
-    /// Issue #1212 — solar position cache keyed by `(timestep, hour_slot)`.
-    /// 2 slots per timestep (integer-hour for 5R1C, mid-hour for 9R4C) prevent
-    /// the 5R1C caller from overwriting the 9R4C caller's value (see
-    /// `cached_solar_position` in `thermal_model_core.rs`).
-    pub sun_pos_cache: std::collections::HashMap<(usize, i32), SolarPosition>,
+    /// Issue #1969 — bounded solar position cache.
+    /// Vec of 8760 hours × 2 slots per hour (integer-hour for 5R1C, mid-hour for 9R4C).
+    /// Each slot is `None` until first access, then cached permanently.
+    /// This replaces the unbounded `HashMap<(usize, i32), SolarPosition>`.
+    pub sun_pos_cache: Vec<[Option<SolarPosition>; 2]>,
 }
 
 impl<T: ContinuousTensor<f64> + Clone> Clone for ThermalModelData<T> {
@@ -449,7 +449,7 @@ impl<T: ContinuousTensor<f64> + Clone> Clone for ThermalModelData<T> {
             hourly_temperatures: None,
             nodal_temperatures: None,
             incident_solar_per_surface: self.incident_solar_per_surface.clone(),
-            sun_pos_cache: self.sun_pos_cache.clone(),
+            sun_pos_cache: self.sun_pos_cache.clone(), // Vec<[Option<SolarPosition>; 2]> — cheap clone of fixed-size array
         }
     }
 }
