@@ -10,4 +10,5 @@ pub mod shared_batch_service;
 pub mod surrogate;
 pub mod sweeps;
 pub mod synthetic_data_quality;
+pub mod tensor_dataset;
 pub mod xdt_export;
