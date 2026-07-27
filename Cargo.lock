@@ -1136,19 +1136,30 @@ dependencies = [
 ]
 
 [[package]]
+name = "fluxion-behavior"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "criterion",
+ "ndarray 0.17.2",
+ "ort",
+ "rand 0.8.5",
+ "rand_distr 0.4.3",
+ "serde",
+ "thiserror 1.0.69",
+ "tracing",
+]
+
+[[package]]
 name = "fluxion-city"
 version = "0.1.0"
 dependencies = [
  "approx",
-<<<<<<< HEAD
- "ndarray 0.16.1",
-=======
  "criterion",
  "faer",
  "num-traits",
  "rand 0.8.5",
  "rayon",
->>>>>>> bc386fb (feat(city): Implement view factor tests, benchmarks, and faer sparse integration)
  "serde",
  "thiserror 1.0.69",
 ]
@@ -1171,11 +1182,24 @@ dependencies = [
 ]
 
 [[package]]
-name = "fluxion-grid"
+name = "fluxion-fluid"
 version = "1.0.0"
 dependencies = [
+ "approx",
+ "num-traits",
+ "thiserror 1.0.69",
+ "uom",
+]
+
+[[package]]
+name = "fluxion-grid"
+version = "0.1.0"
+dependencies = [
+ "nalgebra",
+ "proptest",
  "serde",
  "thiserror 1.0.69",
+ "uuid",
 ]
 
 [[package]]
@@ -2559,6 +2583,7 @@ dependencies = [
  "portable-atomic",
  "portable-atomic-util",
  "rawpointer",
+ "serde",
 ]
 
 [[package]]
@@ -4470,6 +4495,7 @@ checksum = "bf80a72845275afea99e7f2b434723d3bc7e38470fcd1c7ed39a599c73319a53"
 dependencies = [
  "getrandom 0.4.2",
  "js-sys",
+ "serde_core",
  "wasm-bindgen",
 ]
 
