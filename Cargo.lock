@@ -1121,6 +1121,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "fluxion-city"
+version = "0.1.0"
+dependencies = [
+ "approx",
+ "ndarray 0.16.1",
+ "serde",
+ "thiserror 1.0.69",
+]
+
+[[package]]
 name = "fluxion-core"
 version = "1.0.0"
 dependencies = [
