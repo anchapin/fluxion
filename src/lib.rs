@@ -1752,6 +1752,25 @@ fn fluxion(_py: Python, m: &Bound<'_, PyModule>) -> PyResult<()> {
         m
     )?)?;
 
+    // Deep HVAC configuration (Issue #1797): system-type / mode enums,
+    // equipment types, and the detailed airside VAV terminal unit.
+    m.add_class::<python::hvac_bindings::PyHVACSystemType>()?;
+    m.add_class::<python::hvac_bindings::PyHVACMode>()?;
+    m.add_class::<python::hvac_bindings::PyHeatPumpMode>()?;
+    m.add_class::<python::hvac_bindings::PyVavOperatingMode>()?;
+    m.add_class::<python::hvac_bindings::PyChiller>()?;
+    m.add_class::<python::hvac_bindings::PyBoiler>()?;
+    m.add_class::<python::hvac_bindings::PyHeatPump>()?;
+    m.add_class::<python::hvac_bindings::PyVAVTerminal>()?;
+    m.add_class::<python::hvac_bindings::PyCAVSystem>()?;
+    m.add_class::<python::hvac_bindings::PyVavTerminalUnit>()?;
+    m.add_class::<python::hvac_bindings::PyVavTerminalControl>()?;
+    m.add_class::<python::hvac_bindings::PyVavTerminalPerformance>()?;
+    m.add_function(pyo3::wrap_pyfunction!(
+        python::hvac_bindings::compute_vav_terminal_performance,
+        m
+    )?)?;
+
     m.add_class::<python::osm_bindings::PyOsmReader>()?;
     m.add_class::<python::osm_bindings::PyOsmWriter>()?;
     m.add_function(pyo3::wrap_pyfunction!(python::osm_bindings::import_osm, m)?)?;
