@@ -1,37 +1,30 @@
-//! Error types for TOON serialization/deserialization
+//! Error types for TOON serialization/deserialization.
 
 use thiserror::Error;
 
-/// Errors that can occur during TOON processing
+/// Errors that can occur during TOON serialization or deserialization.
 #[derive(Debug, Error)]
 pub enum ToonError {
-    /// Serialization failed
-    #[error("serialization error: {0}")]
-    Serialization(String),
+    /// Unexpected end of input.
+    #[error("unexpected end of input")]
+    Eof,
 
-    /// Deserialization failed
-    #[error("deserialization error: {0}")]
-    Deserialization(String),
+    /// Invalid header format.
+    #[error("invalid header: expected 'toon:v1', got '{0}'")]
+    InvalidHeader(String),
 
-    /// Length mismatch between header count and actual values
-    #[error("length mismatch: header declares {expected} values, found {actual}")]
-    LengthMismatch {
-        /// Expected number of values from header
-        expected: usize,
-        /// Actual number of values found
-        actual: usize,
-    },
+    /// Custom error message.
+    #[error("{0}")]
+    Custom(String),
 
-    /// Invalid TOON syntax
-    #[error("invalid syntax at line {line}: {message}")]
-    InvalidSyntax {
-        /// Line number where error occurred
-        line: usize,
-        /// Error message
-        message: String,
-    },
+    /// I/O error.
+    #[error("I/O error: {0}")]
+    Io(#[from] std::io::Error),
 
-    /// Patch parsing error (LLM response)
-    #[error("patch parsing error: {0}")]
-    PatchError(String),
+    /// JSON error.
+    #[error("JSON error: {0}")]
+    Json(#[from] serde_json::Error),
 }
+
+/// Result type alias for TOON operations.
+pub type Result<T> = std::result::Result<T, ToonError>;

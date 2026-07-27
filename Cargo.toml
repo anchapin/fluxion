@@ -217,6 +217,9 @@ dhat = "0.3"
 proptest = "1.5"
 noisy_float = "0.2"
 
+# TOON serialization for round-trip testing (Issue #2071)
+fluxion-toon = { path = "crates/fluxion-toon" }
+
 # Mock HTTP server for tests
 mockito = "1.7"
 

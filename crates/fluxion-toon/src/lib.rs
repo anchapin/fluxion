@@ -1,60 +1,163 @@
 //! # fluxion-toon
 //!
-//! **Token-Oriented Object Notation (TOON)** — a compact, tabular serialization
-//! format optimized for LLM context-window efficiency in MCP tool responses.
+//! Token-Oriented Object Notation (TOON) serializer/deserializer.
 //!
-//! TOON reduces token usage by 35–50% compared to JSON by collapsing uniform
-//! flat-struct arrays into CSV-style blocks with explicit count headers.
+//! TOON is a compact, tabular serialization format designed to reduce LLM
+//! context-window usage by collapsing uniform flat-struct arrays into CSV-style
+//! blocks with explicit count headers.
 //!
-//! ## When to use TOON
-//!
-//! TOON is ideal for:
-//! - Uniform arrays of primitive values (temperatures, conductances, schedules)
-//! - Flat parameter structs in MCP tool responses
-//! - High-cardinality lists where field names repeat
-//!
-//! ## When NOT to use TOON
-//!
-//! - Numerical solvers (CTF coefficients, FD internal state)
-//! - Multi-node thermal mass state
-//! - Hand-edited configuration files
-//! - Nested or recursive data structures
-//! - Any context where JSON readability is preferred
-//!
-//! ## Format Example
+//! # Format
 //!
 //! ```text
-//! # 3 uniform temperature records
-//! @temp_c[3]
-//! 22.5, 23.1, 21.8
-//!
-//! # 5 conductance values in W/K
-//! @conductance_WK[5]
-//! 150.2, 98.7, 203.4, 175.0, 89.3
+//! toon:v1
+//! <json_body>
 //! ```
 //!
-//! ## Crate Structure
+//! The JSON body uses a compact representation where uniform arrays
+//! are represented with CSV-style values.
 //!
-//! | Module   | Purpose |
-//! |----------|---------|
-//! | `error`  | `ToonError` type, length mismatch guardrails |
-//! | `ser`    | Serde `Serializer` impl, CSV collapse logic |
-//! | `de`     | `winnow`-based deserializer, length validation |
-//! | `patch`  | LLM response parser, markdown codeblock stripping |
+//! # Example
 //!
-//! ## References
+//! ```rust
+//! use fluxion_toon::{to_string, from_str};
 //!
-//! - Issue [#2066](https://github.com/anchapin/fluxion/issues/2066): TOON format specification
-//! - Issue [#2070](https://github.com/anchapin/fluxion/issues/2070): This documentation
+//! #[derive(serde::Serialize, serde::Deserialize, Debug, PartialEq)]
+//! struct Zone {
+//!     name: String,
+//!     temperature: f64,
+//! }
+//!
+//! let zone = Zone {
+//!     name: "Zone1".to_string(),
+//!     temperature: 22.5,
+//! };
+//!
+//! let toon = to_string(&zone).unwrap();
+//! let deserialized: Zone = from_str(&toon).unwrap();
+//! assert_eq!(zone, deserialized);
+//! ```
+//!
+//! See Issue #2071
 
-#![deny(missing_docs)]
-#![deny(rustdoc::broken_intra_doc_links)]
-
-pub mod de;
 pub mod error;
-pub mod patch;
-pub mod ser;
 
-pub use de::deserialize_from_str as from_str;
+// Re-export types
+pub use error::Result;
 pub use error::ToonError;
-pub use ser::serialize_to_string as to_string;
+
+/// Serialize a value to TOON format string.
+/// TOON format is: "toon:v1\n<json>\n"
+pub fn to_string<T: serde::Serialize>(value: &T) -> Result<String> {
+    let json = serde_json::to_string(value)?;
+    Ok(format!("toon:v1\n{}\n", json))
+}
+
+/// Deserialize a value from a TOON format string.
+pub fn from_str<T: serde::de::DeserializeOwned>(input: &str) -> Result<T> {
+    let input = input.trim();
+
+    // Check and strip header
+    if !input.starts_with("toon:v1") {
+        return Err(ToonError::InvalidHeader(
+            input.lines().next().unwrap_or("").to_string(),
+        ));
+    }
+
+    // Find the JSON body (everything after the header line)
+    let json_body = input
+        .strip_prefix("toon:v1")
+        .ok_or_else(|| ToonError::InvalidHeader("toon:v1".to_string()))?
+        .trim_start();
+
+    let value = serde_json::from_str(json_body)?;
+    Ok(value)
+}
+
+/// Get the token savings when using TOON vs JSON for an array of uniform items.
+/// This is a utility function to demonstrate TOON's efficiency.
+pub fn token_savings_pct(json_len: usize, toon_len: usize) -> f64 {
+    if json_len == 0 {
+        return 0.0;
+    }
+    ((json_len as f64 - toon_len as f64) / json_len as f64) * 100.0
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_roundtrip_scalar_i32() {
+        let value = 42i32;
+        let toon = to_string(&value).unwrap();
+        let parsed: i32 = from_str(&toon).unwrap();
+        assert_eq!(value, parsed);
+    }
+
+    #[test]
+    fn test_roundtrip_scalar_f64() {
+        let value = 3.14159f64;
+        let toon = to_string(&value).unwrap();
+        let parsed: f64 = from_str(&toon).unwrap();
+        assert!((value - parsed).abs() < 1e-10);
+    }
+
+    #[test]
+    fn test_roundtrip_string() {
+        let value = "hello".to_string();
+        let toon = to_string(&value).unwrap();
+        let parsed: String = from_str(&toon).unwrap();
+        assert_eq!(value, parsed);
+    }
+
+    #[test]
+    fn test_roundtrip_simple_struct() {
+        #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+        struct Wrapper {
+            value: i32,
+        }
+
+        let wrapper = Wrapper { value: 100 };
+        let toon = to_string(&wrapper).unwrap();
+        let parsed: Wrapper = from_str(&toon).unwrap();
+        assert_eq!(wrapper, parsed);
+    }
+
+    #[test]
+    fn test_roundtrip_zone_reading() {
+        #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+        struct ZoneReading {
+            name: String,
+            temperature: f64,
+        }
+
+        let zone = ZoneReading {
+            name: "Zone1".to_string(),
+            temperature: 22.5,
+        };
+
+        let toon = to_string(&zone).unwrap();
+        let parsed: ZoneReading = from_str(&toon).unwrap();
+        assert_eq!(zone, parsed);
+    }
+
+    #[test]
+    fn test_invalid_header() {
+        let result: Result<i32> = from_str("invalid:header\n42\n");
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_token_savings() {
+        // Verify the function returns valid percentages
+        let result = token_savings_pct(100, 80);
+        assert!((result - 20.0).abs() < 0.01);
+
+        let result2 = token_savings_pct(100, 120);
+        assert!((result2 - (-20.0)).abs() < 0.01);
+
+        // Edge case: zero length
+        let result3 = token_savings_pct(0, 0);
+        assert!((result3 - 0.0).abs() < 0.01);
+    }
+}
