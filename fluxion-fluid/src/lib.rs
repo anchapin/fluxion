@@ -1,36 +1,33 @@
-//! # fluxion-fluid
+//! fluxion-fluid: Compile-time strongly typed fluid port traits for DAE systems
 //!
-//! Compile-time strongly typed fluid port traits for Fluxion HVAC modeling.
+//! This crate provides:
+//! - [`mediums`] - Physical medium types (Air, Water, Refrigerant, Steam)
+//! - [`ports`] - FluidPort trait and concrete port implementations
+//! - [`pantelides`] - Pantelides symbolic index reduction for DAE systems
 //!
-//! This crate provides the foundation for acausal HVAC port connections with
-//! compile-time type safety. Ports are typed by their medium (Water, Air, Refrigerant)
-//! at build time, eliminating runtime type erasure.
+//! # Port Type Safety
 //!
-//! ## Design Principles
+//! The crate uses Rust's type system to enforce compile-time compatibility between
+//! fluid ports. Connecting mismatched ports (e.g., hydronic water to air duct) is
+//! a **compile error**, not a runtime crash.
 //!
-//! - **No runtime type erasure**: Use generics and enums, not `dyn Trait`
-//! - **Compile-time type safety**: Port types are verified at compile time
-//! - **Trait-based abstraction**: `FluidMedium` for thermophysical properties,
-//!   `FluidPort` for inlet/outlet port connections
+//! # DAE Index Reduction
 //!
-//! ## Core Traits
-//!
-//! - [`FluidMedium`] — Thermophysical properties of working fluids
-//! - [`FluidPort`] — Typed inlet/outlet ports with medium, temperature, pressure,
-//!   mass flow rate
+//! The Pantelides algorithm reduces high-index DAE systems to index-1 form,
+//! making them suitable for BDF timestepping.
 
-#![deny(clippy::all)]
-#![warn(clippy::nursery, clippy::pedantic)]
-#![allow(
-    clippy::missing_errors_doc,
-    clippy::suboptimal_flops,
-    clippy::missing_const_for_fn
-)]
+pub mod mediums;
+pub mod ports;
+pub mod pantelides;
 
-pub mod medium;
-pub mod port;
-pub mod properties;
-
-pub use medium::Medium;
-pub use port::{FluidPort, PortDirection, PortSide};
-pub use properties::FluidProperties;
+pub use mediums::{
+    Air, CompatibleWith, Medium, Water,
+};
+pub use ports::{
+    AirPort, BoundaryConditions, EquationSystem, HydronicPort, PortError, PortResult,
+    RefrigerantPort, SteamPort,
+};
+pub use pantelides::{
+    EqIndex, Equation, IncidenceMatrix, PantelidesError, PantelidesOutput,
+    PantelidesResult, VarIndex, pantelides_reduce,
+};

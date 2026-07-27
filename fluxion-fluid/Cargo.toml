@@ -1,19 +1,20 @@
 [package]
 name = "fluxion-fluid"
-version = "0.1.0"
+version = "1.0.0"
 edition = "2021"
 authors = ["Dr. Aris Thorne <aris.thorne@fluxion.org>"]
-description = "Compile-time strongly typed fluid port traits for Fluxion HVAC modeling (issue #1981)."
+description = "Compile-time strongly typed fluid port traits for fluxion DAE systems"
 repository = "https://github.com/anchapin/fluxion"
 license = "Apache-2.0"
 
-[lib]
-name = "fluxion_fluid"
-path = "src/lib.rs"
-
 [dependencies]
-num-traits = "0.2"
 thiserror = "1.0"
+num-traits = "0.2"
+uom = { version = "0.35", features = ["f32"] }
 
 [dev-dependencies]
-proptest = "1.5"
+approx = "0.5"
+
+[lib]
+name = "fluxion_fluid"
+crate-type = ["lib"]
