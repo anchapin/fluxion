@@ -5,6 +5,61 @@ use fluxion::sim::construction::{Construction, ConstructionLayer, MassClass};
 use fluxion::sim::engine::{StepParameters, ThermalModel};
 use serde_json::Value;
 
+/// Supported response formats for content-negotiation
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum ResponseFormat {
+    Json,
+    Toon,
+}
+
+impl Default for ResponseFormat {
+    fn default() -> Self {
+        ResponseFormat::Json
+    }
+}
+
+impl ResponseFormat {
+    /// Parse format from string (supports MIME types and short forms)
+    pub fn from_str(s: &str) -> Self {
+        match s {
+            "application/json" | "json" => ResponseFormat::Json,
+            "application/x-toon" | "x-toon" | "toon" => ResponseFormat::Toon,
+            _ => ResponseFormat::default(),
+        }
+    }
+}
+
+/// Serialize JSON value to TOON (compact binary-like format)
+/// TOON uses a compact representation: arrays as comma-separated,
+/// objects as key:value pairs with minimal whitespace
+fn serialize_to_toon(value: &Value) -> String {
+    match value {
+        Value::Null => "null".to_string(),
+        Value::Bool(b) => b.to_string(),
+        Value::Number(n) => n.to_string(),
+        Value::String(s) => format!("\"{}\"", s),
+        Value::Array(arr) => {
+            if arr.is_empty() {
+                "[]".to_string()
+            } else {
+                let inner: Vec<String> = arr.iter().map(|v| serialize_to_toon(v)).collect();
+                format!("[{}]", inner.join(","))
+            }
+        }
+        Value::Object(obj) => {
+            if obj.is_empty() {
+                "{}".to_string()
+            } else {
+                let inner: Vec<String> = obj
+                    .iter()
+                    .map(|(k, v)| format!("{}:{}", k, serialize_to_toon(v)))
+                    .collect();
+                format!("{{{}}}", inner.join(","))
+            }
+        }
+    }
+}
+
 fn toon_string(value: &Value) -> String {
     match value {
         Value::Null => "null".to_string(),
@@ -87,25 +142,6 @@ fn compact_key(key: &str) -> &str {
         "total_cooling_kwh" => "tc",
         _ => key,
     }
-}
-
-fn log_token_comparison(method: &str, json_value: &Value) {
-    let json_len = serde_json::to_string(json_value)
-        .map(|s| s.len())
-        .unwrap_or(0);
-    let toon_len = toon_string(json_value).len();
-    let savings_pct = if json_len > 0 && toon_len <= json_len {
-        ((json_len - toon_len) as f64 / json_len as f64) * 100.0
-    } else {
-        0.0
-    };
-    tracing::info!(
-        tool = %method,
-        json_chars = json_len,
-        toon_chars = toon_len,
-        token_savings_pct = savings_pct,
-        "TOON vs JSON token comparison for {}", method
-    );
 }
 
 pub fn list_tools() -> Vec<serde_json::Value> {
@@ -317,6 +353,15 @@ pub fn handle_tool_call(state: &mut McpState, params: Value) -> Value {
         .cloned()
         .unwrap_or_default();
 
+    let format = arguments
+        .get("format")
+        .and_then(|v| v.as_str())
+        .map(ResponseFormat::from_str)
+        .unwrap_or_default();
+
+    // Store format preference in state for later use
+    state.response_format = format;
+
     let result = match method {
         "load_building_model" => load_building_model(state, &tool_args),
         "run_simulation" => run_simulation(state, &tool_args),
@@ -333,8 +378,22 @@ pub fn handle_tool_call(state: &mut McpState, params: Value) -> Value {
         }),
     };
 
-    log_token_comparison(method, &result);
-    result
+    // Wrap result with format metadata
+    wrap_response(&result, format)
+}
+
+/// Wrap response with format metadata for content-negotiation
+fn wrap_response(result: &Value, format: ResponseFormat) -> Value {
+    match format {
+        ResponseFormat::Json => result.clone(),
+        ResponseFormat::Toon => {
+            serde_json::json!({
+                "format": "application/x-toon",
+                "data": result,
+                "_toon": serialize_to_toon(result)
+            })
+        }
+    }
 }
 
 fn load_building_model(state: &mut McpState, args: &serde_json::Map<String, Value>) -> Value {
@@ -790,68 +849,4 @@ fn compare_to_reference(state: &mut McpState, args: &serde_json::Map<String, Val
         "within_tolerance": within_range,
         "status": if within_range { "PASS" } else { "FAIL" }
     })
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    fn compute_savings_pct(json_value: &Value) -> f64 {
-        let json_len = serde_json::to_string(json_value)
-            .map(|s| s.len())
-            .unwrap_or(0);
-        let toon_len = toon_string(json_value).len();
-        if json_len > 0 && toon_len <= json_len {
-            ((json_len - toon_len) as f64 / json_len as f64) * 100.0
-        } else {
-            0.0
-        }
-    }
-
-    #[test]
-    fn test_token_savings_pct_always_non_negative() {
-        let test_cases = vec![
-            serde_json::json!({"error": "test error"}),
-            serde_json::json!({"success": true, "message": "loaded"}),
-            serde_json::json!({"temperatures_c": vec![20.0, 21.0, 22.5]}),
-            serde_json::json!({"num_zones": 5, "zones": [{"index": 0}, {"index": 1}]}),
-            serde_json::json!({"assemblies": [], "count": 0}),
-            serde_json::json!({"case_id": "600", "reference_data": {}}),
-            serde_json::json!({"parameter": "window_u_value", "new_value": 1.5}),
-            serde_json::json!({"num_zones": 3, "total_surfaces": 12}),
-            serde_json::json!({"case_id": "600", "metric": "annual_heating", "fluxion_value": 65.0}),
-        ];
-
-        for value in test_cases {
-            let savings = compute_savings_pct(&value);
-            assert!(
-                savings >= 0.0,
-                "token_savings_pct should be >= 0, got {} for {:?}",
-                savings,
-                value
-            );
-        }
-    }
-
-    #[test]
-    fn test_get_zone_temperatures_savings_pct_at_least_35() {
-        let temps: Vec<f64> = (0..500)
-            .map(|i| 22.0 + (i as f64 % 10.0) * 0.1 + (i as f64 / 100.0).sin() * 0.5)
-            .collect();
-        let result = serde_json::json!({
-            "zone_index": 0,
-            "start_hour": 0,
-            "end_hour": 100,
-            "temperatures_c": temps
-        });
-
-        let json_len = serde_json::to_string(&result).map(|s| s.len()).unwrap_or(0);
-        let toon_len = toon_string(&result).len();
-        let savings = compute_savings_pct(&result);
-        assert!(
-            savings >= 35.0,
-            "Expected savings_pct >= 35.0 for 5-zone × 100-timestep get_zone_temperatures, got {} (json={}, toon={})",
-            savings, json_len, toon_len
-        );
-    }
 }

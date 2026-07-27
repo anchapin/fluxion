@@ -2,11 +2,14 @@ use fluxion::physics::cta::VectorField;
 use fluxion::sim::engine::ThermalModel;
 use std::collections::HashMap;
 
+use crate::tools::ResponseFormat;
+
 #[derive(Default)]
 pub struct McpState {
     pub model: Option<ThermalModel<VectorField>>,
     pub simulation_results: Option<SimulationResults>,
     pub parameters: HashMap<String, f64>,
+    pub response_format: ResponseFormat,
 }
 
 pub struct SimulationResults {
