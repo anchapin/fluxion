@@ -254,3 +254,49 @@ jobs:
         run: cargo test --test surrogate_cuda_smoke --features cuda --verbose
         env:
           PYO3_PYTHON: /usr/bin/python3
+
+  # -- Issue #1895: CPU/CUDA inference parity test on GPU hardware ---------
+  # Runs on every PR and main push. Executes the #[ignore]'d CUDA parity
+  # test from tests/surrogate_backend_parity.rs on a GPU-enabled runner.
+  #
+  # The test (test_cpu_vs_cuda_parity_within_tolerance) verifies CUDA EP
+  # wiring + session-pool construction; it skips gracefully when no GPU is
+  # present at runtime. With --features ort the ONNX Runtime CUDA EP is
+  # compiled in and can be exercised on real hardware.
+  #
+  # Advisory only (non-blocking): the CPU-vs-CUDA parity assertion is
+  # informational until a real ONNX model is committed (issue #1285).
+  # The job uses continue-on-error so a missing GPU runner does not fail CI.
+
+  cuda-parity:
+    name: CUDA Parity (Issue #1895)
+    runs-on: ${{ vars.FLUXION_LINUX_RUNNER || 'ubuntu-latest' }}
+    continue-on-error: true
+    if: |
+      github.event_name == 'pull_request' ||
+      (github.event_name == 'push' && github.ref == 'refs/heads/main')
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install system dependencies (Linux)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libssl-dev pkg-config libfontconfig1-dev
+      - uses: ./.github/actions/setup-rust-python-env
+        with:
+          python-version: '3.10'
+      - name: Build with CUDA + ONNX Runtime
+        run: cargo build --features cuda --features ort --verbose
+      - name: Run CUDA parity test
+        run: cargo test --test surrogate_backend_parity --features cuda --features ort -- --ignored
+        env:
+          PYO3_PYTHON: /usr/bin/python3
+      - name: Upload parity test results
+        if: always()
+        run: |
+          # Collect any test output logs for artifact upload.
+          # The parity test skips gracefully when no GPU is present, so
+          # there is no per-timestep CSV to upload (issue #1285: no
+          # committed ONNX model yet). This step is a no-op placeholder
+          # for future artifact upload once #1285 is resolved.
+          echo "CUDA parity test completed — see workflow logs for details"
+          echo "Per-timestep CSV upload requires issue #1285 (committed ONNX model)"
