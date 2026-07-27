@@ -285,6 +285,364 @@ pub use nusselt::{
     check_reciprocity, check_summation, view_factor_enclosure,
     view_factor_parallel_rectangles, view_factor_wall_to_ground, view_factor_wall_to_sky,
 };
+pub use radiation::{SolarRadiation, Surface, UrbanRadiationSystem};
+
+pub mod radiation {
+    use ndarray::Array2;
+    const STEFAN_BOLTZMANN: f64 = 5.670374419e-8; // W/m²/K⁴
+
+    #[derive(Debug, Clone)]
+    pub struct Surface {
+        pub area: f64,
+        pub height: f64,
+        pub width: f64,
+        pub tilt: f64,
+        pub azimuth: f64,
+        pub albedo: f64,
+        pub emissivity: f64,
+    }
+
+    impl Surface {
+        pub fn new(
+            width: f64,
+            height: f64,
+            tilt: f64,
+            azimuth: f64,
+            albedo: f64,
+            emissivity: f64,
+        ) -> Self {
+            let area = width * height;
+            Self {
+                area,
+                height,
+                width,
+                tilt,
+                azimuth,
+                albedo,
+                emissivity,
+            }
+        }
+
+        pub fn vertical(width: f64, height: f64, azimuth: f64) -> Self {
+            Self::new(
+                width,
+                height,
+                std::f64::consts::FRAC_PI_2,
+                azimuth,
+                0.2,
+                0.9,
+            )
+        }
+    }
+
+    #[derive(Debug, Clone)]
+    pub struct SolarRadiation {
+        pub direct_normal: f64,
+        pub diffuse_horizontal: f64,
+    }
+
+    impl SolarRadiation {
+        pub fn new(direct_normal: f64, diffuse_horizontal: f64) -> Self {
+            Self {
+                direct_normal,
+                diffuse_horizontal,
+            }
+        }
+    }
+
+    pub struct UrbanRadiationSystem {
+        pub surfaces: Vec<Surface>,
+        pub sky_view_factors: Vec<f64>,
+        pub ground_view_factors: Vec<f64>,
+        view_factors: Option<Array2<f64>>,
+    }
+
+    impl UrbanRadiationSystem {
+        pub fn new(
+            surfaces: Vec<Surface>,
+            sky_view_factors: Vec<f64>,
+            ground_view_factors: Vec<f64>,
+        ) -> Self {
+            Self {
+                surfaces,
+                sky_view_factors,
+                ground_view_factors,
+                view_factors: None,
+            }
+        }
+
+        pub fn with_view_factors(
+            surfaces: Vec<Surface>,
+            sky_view_factors: Vec<f64>,
+            ground_view_factors: Vec<f64>,
+            view_factors: Array2<f64>,
+        ) -> Self {
+            Self {
+                surfaces,
+                sky_view_factors,
+                ground_view_factors,
+                view_factors: Some(view_factors),
+            }
+        }
+
+        pub fn form_factors(&self) -> Array2<f64> {
+            if let Some(vf) = &self.view_factors {
+                return vf.clone();
+            }
+
+            let n = self.surfaces.len();
+            let mut f = Array2::<f64>::zeros((n, n));
+
+            for i in 0..n {
+                let area_i = self.surfaces[i].area;
+                let height_i = self.surfaces[i].height;
+
+                for j in 0..n {
+                    if i == j {
+                        continue;
+                    }
+                    let area_j = self.surfaces[j].area;
+                    let height_j = self.surfaces[j].height;
+
+                    let d = (height_i + height_j) * (0.5_f64).max(1.0);
+                    let x = d / height_i.max(1e-6);
+                    let y = height_j / height_i.max(1e-6);
+
+                    let numerator = y.sqrt() * (1.0 + x.powi(2)).sqrt() - x * y.sqrt();
+                    let denominator = 1.0 + x.powi(2) + y.powi(2);
+                    let base_factor = (numerator / denominator).max(0.0);
+                    let f_ij = base_factor * (area_j / area_i).sqrt().min(1.0);
+
+                    f[[i, j]] = f_ij;
+                }
+
+                let row_sum: f64 = f.row(i).to_vec().iter().sum();
+                if row_sum > 0.0 {
+                    for j in 0..n {
+                        f[[i, j]] /= row_sum;
+                    }
+                }
+            }
+
+            f
+        }
+
+        pub fn longwave_net_radiation(
+            &self,
+            surface_temps: &[f64],
+            sky_temp: f64,
+            ground_temp: f64,
+        ) -> Vec<f64> {
+            let n = self.surfaces.len();
+            let f = self.form_factors();
+
+            let sky_view: Vec<f64> = self.sky_view_factors.clone();
+            let ground_view: Vec<f64> = self.ground_view_factors.clone();
+
+            let mut q_net = vec![0.0; n];
+
+            for i in 0..n {
+                let t_i4 = surface_temps[i].powi(4);
+
+                let mut q_lw_out = 0.0;
+
+                for j in 0..n {
+                    if i != j {
+                        let t_j4 = surface_temps[j].powi(4);
+                        q_lw_out += f[[i, j]] * STEFAN_BOLTZMANN * (t_i4 - t_j4);
+                    }
+                }
+
+                let sky_term = sky_view.get(i).copied().unwrap_or(0.0);
+                let ground_term = ground_view.get(i).copied().unwrap_or(0.0);
+
+                q_lw_out += sky_term * STEFAN_BOLTZMANN * (t_i4 - sky_temp.powi(4));
+                q_lw_out += ground_term * STEFAN_BOLTZMANN * (t_i4 - ground_temp.powi(4));
+
+                q_net[i] = q_lw_out;
+            }
+
+            q_net
+        }
+
+        pub fn shortwave_radiation(
+            &self,
+            solar: &SolarRadiation,
+            surface_temps: &[f64],
+        ) -> Vec<f64> {
+            let n = self.surfaces.len();
+            let mut q_sw = vec![0.0; n];
+
+            for i in 0..n {
+                let surface = &self.surfaces[i];
+                let tilt_rad = surface.tilt;
+                let _azimuth_rad = surface.azimuth;
+
+                let cos_incident = (std::f64::consts::FRAC_PI_2 - tilt_rad).max(0.0);
+                let diffuse_factor = (1.0 + tilt_rad / std::f64::consts::FRAC_PI_2) * 0.5;
+
+                let direct = solar.direct_normal * cos_incident;
+                let diffuse = solar.diffuse_horizontal * diffuse_factor;
+
+                let absorbed = (1.0 - surface.albedo) * (direct + diffuse);
+                let emitted = surface.emissivity * STEFAN_BOLTZMANN * surface_temps[i].powi(4);
+
+                q_sw[i] = absorbed - emitted;
+            }
+
+            q_sw
+        }
+
+        pub fn net_radiation(
+            &self,
+            surface_temps: &[f64],
+            sky_temp: f64,
+            ground_temp: f64,
+            solar: Option<&SolarRadiation>,
+        ) -> Vec<f64> {
+            let n = self.surfaces.len();
+            let mut q_net = self.longwave_net_radiation(surface_temps, sky_temp, ground_temp);
+
+            if let Some(solar) = solar {
+                let q_sw = self.shortwave_radiation(solar, surface_temps);
+                for i in 0..n {
+                    q_net[i] += q_sw[i];
+                }
+            }
+
+            q_net
+        }
+    }
+
+    #[cfg(test)]
+    mod tests {
+        use super::*;
+
+        #[test]
+        fn test_surface_creation() {
+            let surface = Surface::vertical(10.0, 3.0, 0.0);
+            assert!((surface.area - 30.0).abs() < 1e-10);
+            assert!((surface.tilt - std::f64::consts::FRAC_PI_2).abs() < 1e-10);
+        }
+
+        #[test]
+        fn test_form_factors_5_buildings() {
+            let surfaces = vec![
+                Surface::vertical(10.0, 15.0, 0.0),
+                Surface::vertical(10.0, 15.0, std::f64::consts::FRAC_PI_2),
+                Surface::vertical(10.0, 15.0, std::f64::consts::PI),
+                Surface::vertical(10.0, 15.0, 3.0 * std::f64::consts::FRAC_PI_2),
+                Surface::vertical(10.0, 15.0, 0.0),
+            ];
+
+            let sky_factors = vec![0.3, 0.3, 0.3, 0.3, 0.3];
+            let ground_factors = vec![0.1, 0.1, 0.1, 0.1, 0.1];
+
+            let system = UrbanRadiationSystem::new(surfaces, sky_factors, ground_factors);
+            let f = system.form_factors();
+
+            assert_eq!(f.shape(), [5, 5]);
+
+            for i in 0..5 {
+                let row_sum: f64 = f.row(i).to_vec().iter().sum();
+                assert!((row_sum - 1.0).abs() < 1e-6);
+            }
+        }
+
+        #[test]
+        fn test_longwave_net_radiation() {
+            let surfaces = vec![
+                Surface::vertical(10.0, 15.0, 0.0),
+                Surface::vertical(10.0, 15.0, std::f64::consts::FRAC_PI_2),
+            ];
+
+            let system = UrbanRadiationSystem::new(
+                surfaces,
+                vec![0.3, 0.3],
+                vec![0.1, 0.1],
+            );
+
+            let temps = vec![293.15, 288.15];
+            let sky_temp = 270.0;
+            let ground_temp = 285.0;
+
+            let q_net = system.longwave_net_radiation(&temps, sky_temp, ground_temp);
+
+            assert_eq!(q_net.len(), 2);
+            for q in &q_net {
+                assert!(q.is_finite());
+            }
+        }
+
+        #[test]
+        fn test_shortwave_radiation() {
+            let surfaces = vec![
+                Surface::vertical(10.0, 15.0, 0.0),
+                Surface::vertical(10.0, 15.0, std::f64::consts::FRAC_PI_2),
+            ];
+
+            let system = UrbanRadiationSystem::new(
+                surfaces,
+                vec![0.3, 0.3],
+                vec![0.1, 0.1],
+            );
+
+            let solar = SolarRadiation::new(800.0, 100.0);
+            let temps = vec![293.15, 288.15];
+
+            let q_sw = system.shortwave_radiation(&solar, &temps);
+
+            assert_eq!(q_sw.len(), 2);
+        }
+
+        #[test]
+        fn test_net_radiation_with_solar() {
+            let surfaces = vec![
+                Surface::vertical(10.0, 15.0, 0.0),
+                Surface::vertical(10.0, 15.0, std::f64::consts::FRAC_PI_2),
+            ];
+
+            let system = UrbanRadiationSystem::new(
+                surfaces,
+                vec![0.3, 0.3],
+                vec![0.1, 0.1],
+            );
+
+            let temps = vec![293.15, 288.15];
+            let solar = SolarRadiation::new(800.0, 100.0);
+
+            let q_net = system.net_radiation(&temps, 270.0, 285.0, Some(&solar));
+
+            assert_eq!(q_net.len(), 2);
+            for q in &q_net {
+                assert!(q.is_finite());
+            }
+        }
+
+        #[test]
+        fn test_net_radiation_no_solar() {
+            let surfaces = vec![
+                Surface::vertical(10.0, 15.0, 0.0),
+                Surface::vertical(10.0, 15.0, std::f64::consts::FRAC_PI_2),
+            ];
+
+            let system = UrbanRadiationSystem::new(
+                surfaces,
+                vec![0.3, 0.3],
+                vec![0.1, 0.1],
+            );
+
+            let temps = vec![293.15, 288.15];
+
+            let q_net = system.net_radiation(&temps, 270.0, 285.0, None);
+
+            assert_eq!(q_net.len(), 2);
+            for q in &q_net {
+                assert!(q.is_finite());
+            }
+        }
+    }
+}
 
 #[cfg(test)]
 mod tests {
