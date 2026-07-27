@@ -1710,11 +1710,13 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         let phi_m_int = T::from(VectorField::new(std::mem::take(&mut scratch.phi_m_int)));
 
         // Use pre-computed cached values
+        #[cfg(feature = "debug-physics")]
         let h_ext_base = &self.0.derived_h_ext;
         let term_rest_1 = &self.0.derived_term_rest_1;
 
         // Night ventilation no longer modifies h_ext (same fix as 5R1C path).
         let modified_h_ext: Option<T> = None;
+        #[cfg(feature = "debug-physics")]
         let h_ext = h_ext_base;
 
         // 6R2C specific terms
@@ -1873,6 +1875,7 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         let num_rest_with_iz = T::from(VectorField::new(std::mem::take(&mut scratch.num_rest)));
 
         // DEBUG: Save values for 900FF before they're consumed
+        #[cfg(feature = "debug-physics")]
         let debug_900ff = if self.0.case_id == "900FF" && timestep.is_multiple_of(24) {
             let den_vals = den.as_ref();
             let _num_tm_vals = num_tm.as_ref();
@@ -1902,6 +1905,9 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         } else {
             None
         };
+        #[cfg(not(feature = "debug-physics"))]
+        #[allow(unused_variables, clippy::type_complexity)]
+        let _debug_900ff: Option<(f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32)> = None;
 
         // Calculate free-floating indoor temperature using standard 6R2C heat balance
         // (thermal mass buffering is critical for preventing temperature overshoot)
@@ -1911,6 +1917,7 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         t_i_free.div_assign(&den);
 
         // DEBUG: Print key values for 900FF after calculation
+        #[cfg(feature = "debug-physics")]
         if let Some((
             den_val,
             _,
@@ -3229,6 +3236,7 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                 // For the 5R1C path or when multi-node is unavailable, fall
                 // back to the 5R1C lumped mass temperature. The hvac module
                 // applies the same sanity guard (-20..=80°C) on its own.
+                #[cfg(feature = "debug-physics")]
                 let t_mass_mn = if i < self.0.multi_node_solvers.len() {
                     let solver = &self.0.multi_node_solvers[i];
                     // Conductance-weighted envelope temperature (wall/roof/floor).
@@ -3249,6 +3257,7 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                 };
 
                 // DEBUG: Print h_coeff breakdown on first HVAC step after warmup
+                #[cfg(feature = "debug-physics")]
                 if timestep == 337 && i == 0 && !self.0.free_float {
                     let h_tr_is = self.0.h_tr_is.as_ref()[i];
                     let h_tr_ms = self.0.h_tr_ms.as_ref()[i];
