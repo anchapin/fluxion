@@ -52,7 +52,7 @@ impl PmvComfort {
             + 0.00028 * (tr * 9.0 / 5.0 + 32.0 - 65.0)
             - clothing_level * 0.5;
 
-        pmv.max(-4.0).min(4.0)
+        pmv.clamp(-4.0, 4.0)
     }
 
     pub fn calculate_ppd(&self, pmv: f64) -> f64 {
@@ -66,11 +66,11 @@ impl PmvComfort {
             PmvComfortStatus::Comfortable
         } else if pmv > 0.5 && pmv <= 1.0 {
             PmvComfortStatus::SlightlyWarm
-        } else if pmv >= -1.0 && pmv < -0.5 {
+        } else if (-1.0..-0.5).contains(&pmv) {
             PmvComfortStatus::SlightlyCool
-        } else if pmv > 1.0 && pmv <= 2.0 {
+        } else if (1.0..=2.0).contains(&pmv) {
             PmvComfortStatus::Warm
-        } else if pmv >= -2.0 && pmv <= -1.0 {
+        } else if (-2.0..=-1.0).contains(&pmv) {
             PmvComfortStatus::Cool
         } else if pmv > 2.0 {
             PmvComfortStatus::Hot
@@ -121,8 +121,8 @@ impl AdaptiveComfort {
         }
         let n = daily_temps.len();
         let mut rtm = daily_temps[0];
-        for i in 1..n.min(7) {
-            rtm = alpha * daily_temps[i] + (1.0 - alpha) * rtm;
+        for temp in daily_temps.iter().take(n.min(7)).skip(1) {
+            rtm = alpha * temp + (1.0 - alpha) * rtm;
         }
         rtm
     }

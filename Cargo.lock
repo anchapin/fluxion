@@ -1121,6 +1121,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "fluxion-behavior"
+version = "0.1.0"
+dependencies = [
+ "rand 0.8.5",
+ "serde",
+]
+
+[[package]]
 name = "fluxion-core"
 version = "1.0.0"
 dependencies = [

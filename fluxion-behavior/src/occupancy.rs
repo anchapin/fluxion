@@ -1,7 +1,8 @@
 use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, Default, Serialize, Deserialize)]
 pub enum OccupancyType {
+    #[default]
     Unoccupied,
     Occupied,
     Standby,
@@ -35,11 +36,5 @@ impl OccupancySchedule {
             OccupancyType::Standby => base_count * 0.3,
             OccupancyType::Unoccupied => 0.0,
         }
-    }
-}
-
-impl Default for OccupancyType {
-    fn default() -> Self {
-        OccupancyType::Unoccupied
     }
 }

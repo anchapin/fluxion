@@ -107,6 +107,7 @@ impl OccupantComfortTriggers {
         Self::new(OccupantComfortTriggersConfig::new())
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub fn evaluate_pmv(
         &self,
         zone_id: &str,
@@ -191,6 +192,7 @@ impl OccupantComfortTriggers {
         }
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub fn evaluate_all(
         &self,
         zone_id: &str,

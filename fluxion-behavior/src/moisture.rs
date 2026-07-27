@@ -1,19 +1,14 @@
 use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, Default, Serialize, Deserialize)]
 pub enum ActivityLevel {
     Sleeping,
+    #[default]
     SeatedQuiet,
     OfficeWork,
     LightActivity,
     Standing,
     Walking,
-}
-
-impl Default for ActivityLevel {
-    fn default() -> Self {
-        ActivityLevel::SeatedQuiet
-    }
 }
 
 impl ActivityLevel {
@@ -75,7 +70,6 @@ impl MoistureGeneration {
     }
 
     pub fn moisture_generation_rate(&self, occupants: f64) -> f64 {
-        let sensible_heat = self.metabolic_rate_w * (1.0 - self.latent_heat_fraction());
         let latent_heat_fraction = self.latent_heat_fraction();
 
         if latent_heat_fraction <= 0.0 {

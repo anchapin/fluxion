@@ -1,8 +1,9 @@
 use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, Default, Serialize, Deserialize)]
 pub enum MetabolicRate {
     Sleeping,
+    #[default]
     SeatedQuiet,
     OfficeWork,
     LightActivity,
@@ -64,11 +65,5 @@ impl Co2Generation {
             MetabolicRate::Walking => 2.0,
         };
         occupant_count * self.co2_generation_rate_per_person * activity_factor
-    }
-}
-
-impl Default for MetabolicRate {
-    fn default() -> Self {
-        MetabolicRate::SeatedQuiet
     }
 }

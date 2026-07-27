@@ -1,16 +1,11 @@
 use rand::Rng;
 use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 pub enum OccupancyState {
+    #[default]
     Vacant,
     Occupied,
-}
-
-impl Default for OccupancyState {
-    fn default() -> Self {
-        OccupancyState::Vacant
-    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -79,7 +74,7 @@ impl MarkovOccupancyGenerator {
                 return Err(format!("Row {} sums to {}, not 1.0", i, sum));
             }
             for &p in row {
-                if p < 0.0 || p > 1.0 {
+                if !(0.0..=1.0).contains(&p) {
                     return Err(format!("Probability {} out of [0,1] range", p));
                 }
             }
