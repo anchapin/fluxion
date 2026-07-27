@@ -506,6 +506,16 @@ impl ThermalModelTrait for SurrogateThermalModel {
 /// critical subsystems on physics (per the Phase-3 validation envelope
 /// in `ARCHITECTURE.md` §Validation Strategy).
 ///
+/// # OOD-aware routing (Issue #1892)
+///
+/// When `use_ood_fallback` is `true`, the hybrid model performs an OOD
+/// check before each surrogate inference call. If the input vector falls
+/// outside the stored training bounds, the model transparently reroutes
+/// to the analytical physics solver and emits an `OodInputWarning` for
+/// each out-of-bounds feature. This prevents the surrogate from silently
+/// extrapolating on inputs it was never trained on (e.g. extreme weather
+/// from untrusted EPW data or unphysical internal gains).
+///
 /// # Default policy
 ///
 /// [`HybridThermalModel`] is constructed with a default policy that routes
@@ -522,6 +532,10 @@ pub struct HybridRouting {
     pub use_surrogate_loads: bool,
     /// Route HVAC power demand to the surrogate.
     pub use_surrogate_hvac: bool,
+    /// When `true`, check inputs against training bounds before surrogate
+    /// inference and fall back to the physics solver when OOD is detected
+    /// (Issue #1892). When `false` (default), no OOD check is performed.
+    pub use_ood_fallback: bool,
 }
 
 impl Default for HybridRouting {
@@ -531,6 +545,7 @@ impl Default for HybridRouting {
             use_surrogate_ventilation: false,
             use_surrogate_loads: true,
             use_surrogate_hvac: false,
+            use_ood_fallback: false,
         }
     }
 }
@@ -543,6 +558,7 @@ impl HybridRouting {
             use_surrogate_ventilation: false,
             use_surrogate_loads: false,
             use_surrogate_hvac: false,
+            use_ood_fallback: false,
         }
     }
 
@@ -553,6 +569,21 @@ impl HybridRouting {
             use_surrogate_ventilation: true,
             use_surrogate_loads: true,
             use_surrogate_hvac: true,
+            use_ood_fallback: false,
+        }
+    }
+
+    /// OOD-aware routing: surrogate load prediction with automatic physics
+    /// fallback when inputs fall outside training bounds (Issue #1892).
+    /// All other subsystems remain on physics. Use this for safety-critical
+    /// deployments where the surrogate may receive untrusted EPW data.
+    pub const fn ood_fallback() -> Self {
+        Self {
+            use_surrogate_conduction: false,
+            use_surrogate_ventilation: false,
+            use_surrogate_loads: true,
+            use_surrogate_hvac: false,
+            use_ood_fallback: true,
         }
     }
 }
@@ -782,6 +813,7 @@ impl ThermalModelTrait for HybridThermalModel {
         let use_surrogate_loads = self.routing.use_surrogate_loads;
         let use_surrogate_conduction = self.routing.use_surrogate_conduction;
         let use_surrogate_ventilation = self.routing.use_surrogate_ventilation;
+        let use_ood_fallback = self.routing.use_ood_fallback;
 
         // Issue #1846 — initialize hourly zone temperature storage before
         // the timestep loop. Mirrors the physics-model behaviour in
@@ -801,24 +833,65 @@ impl ThermalModelTrait for HybridThermalModel {
             .map(|t| {
                 // Branch 1: surrogate load prediction (only if policy says so).
                 if use_surrogate_loads {
-                    match surrogates.predict_loads_with_fallback(self.inner.temperatures.as_ref())
-                    {
-                        Ok(pred) => {
-                            self.inner.loads =
-                                crate::physics::cta::VectorField::new(pred);
-                            self.surrogate_load_calls += 1;
-                            info!(
-                                hybrid.surrogate_load_calls = self.surrogate_load_calls,
-                                hybrid.timestep = t,
-                                "surrogate load branch fired"
-                            );
-                        }
-                        Err(e) => {
+                    // Issue #1892: OOD-aware routing — check bounds before surrogate inference.
+                    if use_ood_fallback {
+                        let ood_result =
+                            surrogates.validate_input_bounds(self.inner.temperatures.as_ref());
+                        if ood_result.is_ood {
+                            // OOD detected — emit warnings and reroute to physics solver.
+                            ood_result.log_warnings();
                             log::warn!(
-                                "HybridThermalModel: surrogate load prediction failed ({}); falling back to analytical loads",
-                                e
+                                "HybridThermalModel[OOD]: timestep {} input vector is out-of-distribution; rerouting to analytical physics solver",
+                                t
                             );
                             self.inner.calc_analytical_loads(t, true, 3600.0);
+                            // Do NOT increment surrogate_load_calls — this was a physics call.
+                        } else {
+                            // In-distribution — proceed with surrogate inference.
+                            match surrogates
+                                .predict_loads_with_fallback(self.inner.temperatures.as_ref())
+                            {
+                                Ok(pred) => {
+                                    self.inner.loads =
+                                        crate::physics::cta::VectorField::new(pred);
+                                    self.surrogate_load_calls += 1;
+                                    info!(
+                                        hybrid.surrogate_load_calls = self.surrogate_load_calls,
+                                        hybrid.timestep = t,
+                                        "surrogate load branch fired"
+                                    );
+                                }
+                                Err(e) => {
+                                    log::warn!(
+                                        "HybridThermalModel: surrogate inference failed ({}) at timestep {}; falling back to analytical loads",
+                                        e, t
+                                    );
+                                    self.inner.calc_analytical_loads(t, true, 3600.0);
+                                }
+                            }
+                        }
+                    } else {
+                        // Standard path: no OOD check, direct surrogate call.
+                        match surrogates
+                            .predict_loads_with_fallback(self.inner.temperatures.as_ref())
+                        {
+                            Ok(pred) => {
+                                self.inner.loads =
+                                    crate::physics::cta::VectorField::new(pred);
+                                self.surrogate_load_calls += 1;
+                                info!(
+                                    hybrid.surrogate_load_calls = self.surrogate_load_calls,
+                                    hybrid.timestep = t,
+                                    "surrogate load branch fired"
+                                );
+                            }
+                            Err(e) => {
+                                log::warn!(
+                                    "HybridThermalModel: surrogate load prediction failed ({}); falling back to analytical loads",
+                                    e
+                                );
+                                self.inner.calc_analytical_loads(t, true, 3600.0);
+                            }
                         }
                     }
                 } else {

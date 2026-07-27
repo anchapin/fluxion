@@ -316,6 +316,152 @@ impl SurrogateInputs {
     }
 }
 
+/// Per-feature min/max bounds extracted from training data.
+///
+/// Used by OOD detection to determine whether an inference input vector
+/// falls inside the convex hull of the training distribution (Issue #1892).
+/// The bounds correspond to the numeric features of [`SurrogateInputs`]:
+/// index 0 = exterior_temp, 1 = zone_temp, 2 = solar_rad,
+/// 3 = humidity, 4 = occupancy.
+#[derive(Clone, Debug)]
+pub struct InputBounds {
+    pub exterior_temp: (f64, f64),
+    pub zone_temp: (f64, f64),
+    pub solar_rad: (f64, f64),
+    pub humidity: (f64, f64),
+    pub occupancy: (f64, f64),
+    pub valid_climate_zones: Vec<String>,
+}
+
+impl Default for InputBounds {
+    fn default() -> Self {
+        Self::strict_residential()
+    }
+}
+
+impl InputBounds {
+    pub fn strict_residential() -> Self {
+        Self {
+            exterior_temp: (-50.0, 60.0),
+            zone_temp: (10.0, 40.0),
+            solar_rad: (0.0, 1200.0),
+            humidity: (0.0, 100.0),
+            occupancy: (0.0, 10.0),
+            valid_climate_zones: vec!["4A".to_string(), "5A".to_string(), "6A".to_string()],
+        }
+    }
+
+    pub fn from_training_data(samples: &[SurrogateInputs]) -> Self {
+        if samples.is_empty() {
+            return Self::default();
+        }
+        let mut ext_min = f64::MAX;
+        let mut ext_max = f64::MIN;
+        let mut zone_min = f64::MAX;
+        let mut zone_max = f64::MIN;
+        let mut solar_min = f64::MAX;
+        let mut solar_max = f64::MIN;
+        let mut hum_min = f64::MAX;
+        let mut hum_max = f64::MIN;
+        let mut occ_min = f64::MAX;
+        let mut occ_max = f64::MIN;
+        let mut climate_zones: std::collections::HashSet<String> = std::collections::HashSet::new();
+
+        for s in samples {
+            ext_min = ext_min.min(s.exterior_temp);
+            ext_max = ext_max.max(s.exterior_temp);
+            zone_min = zone_min.min(s.zone_temp);
+            zone_max = zone_max.max(s.zone_temp);
+            solar_min = solar_min.min(s.solar_rad);
+            solar_max = solar_max.max(s.solar_rad);
+            hum_min = hum_min.min(s.humidity);
+            hum_max = hum_max.max(s.humidity);
+            occ_min = occ_min.min(s.occupancy);
+            occ_max = occ_max.max(s.occupancy);
+            climate_zones.insert(s.climate_zone.clone());
+        }
+
+        Self {
+            exterior_temp: (ext_min, ext_max),
+            zone_temp: (zone_min, zone_max),
+            solar_rad: (solar_min, solar_max),
+            humidity: (hum_min, hum_max),
+            occupancy: (occ_min, occ_max),
+            valid_climate_zones: climate_zones.into_iter().collect(),
+        }
+    }
+}
+
+/// Structured warning emitted when an inference input vector is detected
+/// as out-of-distribution (OOD) — i.e. at least one feature falls outside
+/// the stored training bounds.
+///
+/// The surrogate MUST NOT panic or return NaN when OOD is detected.
+/// Instead it must fall back to the physics solver (Issue #1892).
+#[derive(Clone, Debug)]
+pub struct OodInputWarning {
+    pub feature_name: &'static str,
+    pub feature_index: usize,
+    pub actual_value: f64,
+    pub min_bound: f64,
+    pub max_bound: f64,
+}
+
+impl OodInputWarning {
+    pub fn new(
+        feature_name: &'static str,
+        feature_index: usize,
+        actual_value: f64,
+        min_bound: f64,
+        max_bound: f64,
+    ) -> Self {
+        Self {
+            feature_name,
+            feature_index,
+            actual_value,
+            min_bound,
+            max_bound,
+        }
+    }
+
+    pub fn log_warning(&self) {
+        warn!(
+            "OOD detected: feature '{}' (index {}) = {:.2} is outside training bounds [{:.2}, {:.2}]",
+            self.feature_name, self.feature_index, self.actual_value, self.min_bound, self.max_bound
+        );
+    }
+}
+
+/// Result of OOD input validation. Contains the input vector and
+/// any OOD warnings detected during validation.
+#[derive(Clone, Debug)]
+pub struct OodValidationResult {
+    pub is_ood: bool,
+    pub warnings: Vec<OodInputWarning>,
+}
+
+impl OodValidationResult {
+    pub fn clean() -> Self {
+        Self {
+            is_ood: false,
+            warnings: Vec::new(),
+        }
+    }
+
+    pub fn with_warning(warning: OodInputWarning) -> Self {
+        Self {
+            is_ood: true,
+            warnings: vec![warning],
+        }
+    }
+
+    pub fn log_warnings(&self) {
+        for w in &self.warnings {
+            w.log_warning();
+        }
+    }
+}
+
 #[derive(Clone, Debug, Default)]
 pub struct SurrogateDomain {
     pub temp_bounds: (f64, f64),
@@ -719,6 +865,8 @@ pub struct ModelMetadata {
     /// Strict semver version (default `"0.0.0"` for unconfigured models).
     pub model_version: String,
     pub domain: SurrogateDomain,
+    /// Per-feature training bounds for OOD detection (Issue #1892).
+    pub input_bounds: Option<InputBounds>,
     pub onnx_version: Option<String>,
     /// ONNX opset version the model was exported with (1..=17).
     pub onnx_opset_version: Option<u32>,
@@ -738,6 +886,7 @@ impl Default for ModelMetadata {
         ModelMetadata {
             model_version: "0.0.0".to_string(),
             domain: SurrogateDomain::default_residential(),
+            input_bounds: None,
             onnx_version: None,
             onnx_opset_version: None,
             model_sha256: None,
@@ -795,6 +944,11 @@ pub struct SurrogateManager {
     /// Wrapped in an Arc so the manager remains `Clone` (callers throughout
     /// the codebase clone `SurrogateManager`).
     pub inference_metrics: Arc<parking_lot::Mutex<InferenceMetrics>>,
+    /// Per-feature training bounds for OOD detection (Issue #1892).
+    pub input_bounds: Option<InputBounds>,
+    /// Counter for how many times OOD input was detected.
+    /// Incremented by `validate_input_bounds` each time an OOD input is flagged.
+    pub ood_count: Arc<parking_lot::Mutex<usize>>,
 }
 
 impl Default for SurrogateManager {
@@ -1159,6 +1313,8 @@ impl SurrogateManager {
             device_id: 0,
             composite: None,
             inference_metrics: Arc::new(parking_lot::Mutex::new(InferenceMetrics::default())),
+            input_bounds: None,
+            ood_count: Arc::new(parking_lot::Mutex::new(0)),
         })
     }
 
@@ -1198,6 +1354,8 @@ impl SurrogateManager {
             device_id: 0,
             composite: None,
             inference_metrics: Arc::new(parking_lot::Mutex::new(InferenceMetrics::default())),
+            input_bounds: None,
+            ood_count: Arc::new(parking_lot::Mutex::new(0)),
         })
     }
 
@@ -1260,6 +1418,192 @@ impl SurrogateManager {
     /// Returns a snapshot of the current inference metrics.
     pub fn inference_metrics(&self) -> InferenceMetrics {
         self.inference_metrics.lock().clone()
+    }
+
+    /// Set the per-feature training bounds for OOD detection.
+    ///
+    /// Should be called after loading a model, using bounds extracted from
+    /// the training dataset during model training (Issue #1892).
+    pub fn set_input_bounds(&mut self, bounds: InputBounds) {
+        self.input_bounds = Some(bounds);
+    }
+
+    /// Get a reference to the currently configured input bounds, if any.
+    pub fn get_input_bounds(&self) -> Option<&InputBounds> {
+        self.input_bounds.as_ref()
+    }
+
+    /// Get the number of times OOD input has been detected.
+    pub fn ood_count(&self) -> usize {
+        *self.ood_count.lock()
+    }
+
+    /// Reset the OOD detection counter.
+    pub fn reset_ood_count(&mut self) {
+        *self.ood_count.lock() = 0;
+    }
+
+    /// Validate an inference input vector against the stored training bounds.
+    ///
+    /// Returns `OodValidationResult` indicating whether the input is OOD
+    /// and a list of warnings for each out-of-bounds feature.
+    ///
+    /// When `is_ood` is `true`, callers MUST fall back to the physics
+    /// solver instead of running the surrogate — the surrogate is not
+    /// validated for inputs outside its training distribution (Issue #1892).
+    ///
+    /// If no `InputBounds` have been configured (default state), this
+    /// method always returns `OodValidationResult::clean()` (no OOD,
+    /// no warnings) so that missing bounds never block inference.
+    ///
+    /// NOTE: This method validates a raw `&[f64]` temperature vector using
+    /// the same feature indexing as [`SurrogateInputs`]: index 0 = exterior_temp,
+    /// 1 = zone_temp, 2 = solar_rad, 3 = humidity, 4 = occupancy.
+    /// Callers using [`SurrogateInputs`] should call
+    /// [`validate_inputs_struct`] instead.
+    pub fn validate_input_bounds(&self, inputs: &[f64]) -> OodValidationResult {
+        let Some(bounds) = &self.input_bounds else {
+            return OodValidationResult::clean();
+        };
+
+        let mut warnings = Vec::new();
+        let checks: [(usize, f64, (f64, f64), &'static str); 5] = [
+            (
+                0,
+                inputs.get(0).copied().unwrap_or(20.0),
+                bounds.exterior_temp,
+                "exterior_temp",
+            ),
+            (
+                1,
+                inputs.get(1).copied().unwrap_or(22.0),
+                bounds.zone_temp,
+                "zone_temp",
+            ),
+            (
+                2,
+                inputs.get(2).copied().unwrap_or(0.0),
+                bounds.solar_rad,
+                "solar_rad",
+            ),
+            (
+                3,
+                inputs.get(3).copied().unwrap_or(50.0),
+                bounds.humidity,
+                "humidity",
+            ),
+            (
+                4,
+                inputs.get(4).copied().unwrap_or(0.1),
+                bounds.occupancy,
+                "occupancy",
+            ),
+        ];
+
+        for (idx, val, (min, max), name) in checks {
+            if val < min || val > max {
+                warnings.push(OodInputWarning::new(name, idx, val, min, max));
+            }
+        }
+
+        if warnings.is_empty() {
+            OodValidationResult::clean()
+        } else {
+            for w in &warnings {
+                w.log_warning();
+            }
+            *self.ood_count.lock() += 1;
+            OodValidationResult {
+                is_ood: true,
+                warnings,
+            }
+        }
+    }
+
+    /// Validate a [`SurrogateInputs`] struct against the stored training bounds.
+    ///
+    /// This is the structured-input variant of [`validate_input_bounds`].
+    /// Returns `OodValidationResult` with per-feature OOD warnings.
+    pub fn validate_inputs_struct(&self, inputs: &SurrogateInputs) -> OodValidationResult {
+        let Some(bounds) = &self.input_bounds else {
+            return OodValidationResult::clean();
+        };
+
+        let mut warnings = Vec::new();
+
+        if inputs.exterior_temp < bounds.exterior_temp.0
+            || inputs.exterior_temp > bounds.exterior_temp.1
+        {
+            warnings.push(OodInputWarning::new(
+                "exterior_temp",
+                0,
+                inputs.exterior_temp,
+                bounds.exterior_temp.0,
+                bounds.exterior_temp.1,
+            ));
+        }
+
+        if inputs.zone_temp < bounds.zone_temp.0 || inputs.zone_temp > bounds.zone_temp.1 {
+            warnings.push(OodInputWarning::new(
+                "zone_temp",
+                1,
+                inputs.zone_temp,
+                bounds.zone_temp.0,
+                bounds.zone_temp.1,
+            ));
+        }
+
+        if inputs.solar_rad < bounds.solar_rad.0 || inputs.solar_rad > bounds.solar_rad.1 {
+            warnings.push(OodInputWarning::new(
+                "solar_rad",
+                2,
+                inputs.solar_rad,
+                bounds.solar_rad.0,
+                bounds.solar_rad.1,
+            ));
+        }
+
+        if inputs.humidity < bounds.humidity.0 || inputs.humidity > bounds.humidity.1 {
+            warnings.push(OodInputWarning::new(
+                "humidity",
+                3,
+                inputs.humidity,
+                bounds.humidity.0,
+                bounds.humidity.1,
+            ));
+        }
+
+        if inputs.occupancy < bounds.occupancy.0 || inputs.occupancy > bounds.occupancy.1 {
+            warnings.push(OodInputWarning::new(
+                "occupancy",
+                4,
+                inputs.occupancy,
+                bounds.occupancy.0,
+                bounds.occupancy.1,
+            ));
+        }
+
+        if !bounds.valid_climate_zones.contains(&inputs.climate_zone) {
+            warn!(
+                "OOD detected: climate_zone '{}' is not in training zones {:?}",
+                inputs.climate_zone, bounds.valid_climate_zones
+            );
+            warnings.push(OodInputWarning::new("climate_zone", 5, 0.0, 0.0, 0.0));
+            *self.ood_count.lock() += 1;
+        }
+
+        if warnings.is_empty() {
+            OodValidationResult::clean()
+        } else {
+            for w in &warnings {
+                w.log_warning();
+            }
+            *self.ood_count.lock() += 1;
+            OodValidationResult {
+                is_ood: true,
+                warnings,
+            }
+        }
     }
 
     /// Predict thermal loads, preferring real ONNX inference when a model
@@ -1495,6 +1839,8 @@ impl SurrogateManager {
             device_id,
             composite: None,
             inference_metrics: Arc::new(parking_lot::Mutex::new(InferenceMetrics::default())),
+            input_bounds: None,
+            ood_count: Arc::new(parking_lot::Mutex::new(0)),
         })
     }
 
@@ -1538,6 +1884,8 @@ impl SurrogateManager {
                     inference_metrics: Arc::new(parking_lot::Mutex::new(
                         InferenceMetrics::default(),
                     )),
+                    input_bounds: None,
+                    ood_count: Arc::new(parking_lot::Mutex::new(0)),
                 })
             }
             Err(e) => {
@@ -1584,6 +1932,8 @@ impl SurrogateManager {
             device_id: 0,
             composite: Some(composite),
             inference_metrics: Arc::new(parking_lot::Mutex::new(InferenceMetrics::default())),
+            input_bounds: None,
+            ood_count: Arc::new(parking_lot::Mutex::new(0)),
         })
     }
 
