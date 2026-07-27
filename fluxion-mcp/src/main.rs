@@ -1,5 +1,5 @@
-mod tools;
 mod state;
+mod tools;
 
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -71,7 +71,8 @@ fn main() -> anyhow::Result<()> {
 
         let response_json = serde_json::to_string(&response).unwrap_or_else(|e| {
             tracing::error!("Failed to serialize response: {}", e);
-            r#"{"jsonrpc":"2.0","id":null,"error":{"code":-32603,"message":"Internal error"}}"#.to_string()
+            r#"{"jsonrpc":"2.0","id":null,"error":{"code":-32603,"message":"Internal error"}}"#
+                .to_string()
         });
 
         println!("{}", response_json);

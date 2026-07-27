@@ -39,14 +39,34 @@ mod climate {
 
     impl ClimateZone {
         pub const fn new(zone: &'static str, name: &'static str, epw_path: &'static str) -> Self {
-            Self { zone, name, epw_path }
+            Self {
+                zone,
+                name,
+                epw_path,
+            }
         }
     }
 
-    pub const MIAMI_1A: ClimateZone = ClimateZone::new("1A", "Miami, FL", "assets/weather/USA_FL_Miami.Intl.AP.722020_TMY3.epw");
-    pub const SAN_FRANCISCO_3B: ClimateZone = ClimateZone::new("3B", "San Francisco, CA", "assets/weather/USA_CA_San.Francisco.Intl.AP.724940_TMY3.epw");
-    pub const CHICAGO_4A: ClimateZone = ClimateZone::new("4A", "Chicago, IL", "assets/weather/USA_IL_Chicago-OHare.Intl.AP.725300_TMY3.epw");
-    pub const GOLDEN_5B: ClimateZone = ClimateZone::new("5B", "Golden, CO", "assets/weather/USA_CO_Golden-NREL.724666_TMY3.epw");
+    pub const MIAMI_1A: ClimateZone = ClimateZone::new(
+        "1A",
+        "Miami, FL",
+        "assets/weather/USA_FL_Miami.Intl.AP.722020_TMY3.epw",
+    );
+    pub const SAN_FRANCISCO_3B: ClimateZone = ClimateZone::new(
+        "3B",
+        "San Francisco, CA",
+        "assets/weather/USA_CA_San.Francisco.Intl.AP.724940_TMY3.epw",
+    );
+    pub const CHICAGO_4A: ClimateZone = ClimateZone::new(
+        "4A",
+        "Chicago, IL",
+        "assets/weather/USA_IL_Chicago-OHare.Intl.AP.725300_TMY3.epw",
+    );
+    pub const GOLDEN_5B: ClimateZone = ClimateZone::new(
+        "5B",
+        "Golden, CO",
+        "assets/weather/USA_CO_Golden-NREL.724666_TMY3.epw",
+    );
 
     pub const ALL: [ClimateZone; 4] = [MIAMI_1A, SAN_FRANCISCO_3B, CHICAGO_4A, GOLDEN_5B];
 }
@@ -63,8 +83,8 @@ fn simulate_case_with_weather(
     epw_path: &str,
 ) -> SimulationOutput {
     let mut model = ThermalModel::<VectorField>::from_spec(case_spec);
-    let weather = EpwWeatherSource::from_file(epw_path)
-        .expect(&format!("Failed to load EPW: {}", epw_path));
+    let weather =
+        EpwWeatherSource::from_file(epw_path).expect(&format!("Failed to load EPW: {}", epw_path));
 
     let mut free_float_min = f64::INFINITY;
     let mut free_float_max = f64::NEG_INFINITY;
@@ -100,9 +120,7 @@ fn heating_monotonicity_check(results: &[(climate::ClimateZone, f64)]) {
         let delta_heating = heating_colder - heating_warmer;
         println!(
             "  {} → {}: Δheating = {:+.1} kWh",
-            warmer.name,
-            colder.name,
-            delta_heating
+            warmer.name, colder.name, delta_heating
         );
     }
 }
@@ -119,9 +137,7 @@ fn cooling_monotonicity_check(results: &[(climate::ClimateZone, f64)]) {
         let delta_cooling = cooling_hotter - cooling_cooler;
         println!(
             "  {} → {}: Δcooling = {:+.1} kWh",
-            cooler.name,
-            hotter.name,
-            delta_cooling
+            cooler.name, hotter.name, delta_cooling
         );
     }
 }
@@ -137,10 +153,7 @@ fn test_multi_climate_heating_monotonicity_case600() {
         let out = simulate_case_with_weather(&spec, climate.epw_path);
         println!(
             "{} ({}): heating={:.1} kWh, cooling={:.1} kWh",
-            climate.name,
-            climate.zone,
-            out.annual_heating_kwh,
-            out.annual_cooling_kwh
+            climate.name, climate.zone, out.annual_heating_kwh, out.annual_cooling_kwh
         );
         results.push((climate, out.annual_heating_kwh));
     }
@@ -160,10 +173,7 @@ fn test_multi_climate_cooling_monotonicity_case600() {
         let out = simulate_case_with_weather(&spec, climate.epw_path);
         println!(
             "{} ({}): heating={:.1} kWh, cooling={:.1} kWh",
-            climate.name,
-            climate.zone,
-            out.annual_heating_kwh,
-            out.annual_cooling_kwh
+            climate.name, climate.zone, out.annual_heating_kwh, out.annual_cooling_kwh
         );
         results.push((climate, out.annual_cooling_kwh));
     }
@@ -183,10 +193,7 @@ fn test_multi_climate_heating_monotonicity_case900() {
         let out = simulate_case_with_weather(&spec, climate.epw_path);
         println!(
             "{} ({}): heating={:.1} kWh, cooling={:.1} kWh",
-            climate.name,
-            climate.zone,
-            out.annual_heating_kwh,
-            out.annual_cooling_kwh
+            climate.name, climate.zone, out.annual_heating_kwh, out.annual_cooling_kwh
         );
         results.push((climate, out.annual_heating_kwh));
     }
@@ -206,10 +213,7 @@ fn test_multi_climate_cooling_monotonicity_case900() {
         let out = simulate_case_with_weather(&spec, climate.epw_path);
         println!(
             "{} ({}): heating={:.1} kWh, cooling={:.1} kWh",
-            climate.name,
-            climate.zone,
-            out.annual_heating_kwh,
-            out.annual_cooling_kwh
+            climate.name, climate.zone, out.annual_heating_kwh, out.annual_cooling_kwh
         );
         results.push((climate, out.annual_cooling_kwh));
     }
@@ -344,10 +348,7 @@ fn test_climate_energy_balance_case600() {
 
         println!(
             "{}: HVAC={:.2} kWh, Net gain={:.2} kWh, Ratio={:.2}",
-            climate.name,
-            annual_hvac,
-            net_gain,
-            ratio
+            climate.name, annual_hvac, net_gain, ratio
         );
 
         assert!(

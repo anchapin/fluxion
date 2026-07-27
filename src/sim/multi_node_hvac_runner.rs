@@ -366,7 +366,7 @@ impl MultiNodeHvacRunner {
         let g_floor = 0.1 * solar_gain;
         let g_internal = 0.5 * internal_gain;
         self.solver
-            .step_with_gains(dt, g_wall, g_roof, g_floor, g_internal);
+            .step_with_gains(dt, g_wall, g_roof, g_floor, g_internal, 0.0, outdoor_temp);
 
         // === Step 4: Compute HVAC power using the air node energy balance ===
         // Per Issue #858 air node balance (simplified to single h_tr_is for
@@ -548,7 +548,7 @@ impl MultiNodeHvacRunner {
 
         // === Step the multi-node solver with per-surface gains ===
         self.solver
-            .step_with_gains(dt, g_wall, g_roof, g_floor, g_internal);
+            .step_with_gains(dt, g_wall, g_roof, g_floor, g_internal, 0.0, t_out_avg);
 
         // === Compute HVAC power using air node energy balance ===
         let h_tr_is = self.solver.h_tr_is;

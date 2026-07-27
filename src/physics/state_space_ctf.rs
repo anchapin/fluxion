@@ -62,6 +62,126 @@ const MIN_CTF_TERMS: usize = 20;
 /// Maximum number of CTF terms before giving up.
 const MAX_CTF_TERMS: usize = 200;
 
+// ==================== FlatMatrix ====================
+/// Flat matrix representation: row-major flat storage with explicit stride.
+///
+/// This replaces `Vec<Vec<f64>>` which suffers from:
+///
+/// 1. **Cache locality**: Vec<Vec> has N separate heap allocations (one per row),
+///    causing poor cache utilization for matrix operations. FlatMatrix keeps
+///    all data in a single allocation.
+///
+/// 2. **Aliasing safety**: With Vec<Vec>, two matrices can share inner Vec
+///    references, causing subtle read-during-write bugs. FlatMatrix's
+///    data is fully owned and distinct between instances.
+///
+/// 3. **Memory aliasing in Leverrier**: The r_prev/r_new update loop
+///    `r_prev[i][j] = r_new[i][j]; r_new[i][j] = phi_r0[i][j];` corrupts
+///    diagonal elements when both matrices reference the same buffer via
+///    different row views. Using a snapshot clone of r_new fixes this.
+///
+/// The indexing formula is `data[i * stride + j]` for row i, column j.
+#[derive(Debug, Clone)]
+pub struct FlatMatrix {
+    data: Vec<f64>,
+    rows: usize,
+    cols: usize,
+    stride: usize,
+}
+
+impl FlatMatrix {
+    pub fn new(rows: usize, cols: usize, stride: usize) -> Self {
+        Self {
+            data: vec![0.0; rows * stride],
+            rows,
+            cols,
+            stride,
+        }
+    }
+
+    pub fn zeros(rows: usize, cols: usize) -> Self {
+        Self {
+            data: vec![0.0; rows * cols],
+            rows,
+            cols,
+            stride: cols,
+        }
+    }
+
+    pub fn identity(n: usize) -> Self {
+        let mut m = Self::zeros(n, n);
+        for i in 0..n {
+            m.set(i, i, 1.0);
+        }
+        m
+    }
+
+    pub fn from_vec_vec(m: &[Vec<f64>]) -> Self {
+        if m.is_empty() {
+            return Self::zeros(0, 0);
+        }
+        let rows = m.len();
+        let cols = m[0].len();
+        let mut data = Vec::with_capacity(rows * cols);
+        for row in m {
+            data.extend_from_slice(row);
+        }
+        Self {
+            data,
+            rows,
+            cols,
+            stride: cols,
+        }
+    }
+
+    pub fn to_vec_vec(&self) -> Vec<Vec<f64>> {
+        let mut result = Vec::with_capacity(self.rows);
+        for i in 0..self.rows {
+            let start = i * self.stride;
+            result.push(self.data[start..start + self.cols].to_vec());
+        }
+        result
+    }
+
+    #[inline]
+    pub fn get(&self, i: usize, j: usize) -> f64 {
+        debug_assert!(i < self.rows && j < self.cols);
+        self.data[i * self.stride + j]
+    }
+
+    #[inline]
+    pub fn set(&mut self, i: usize, j: usize, v: f64) {
+        debug_assert!(i < self.rows && j < self.cols);
+        self.data[i * self.stride + j] = v;
+    }
+
+    pub fn rows(&self) -> usize {
+        self.rows
+    }
+
+    pub fn cols(&self) -> usize {
+        self.cols
+    }
+
+    pub fn as_slice(&self) -> &[f64] {
+        &self.data
+    }
+
+    pub fn as_mut_slice(&mut self) -> &mut [f64] {
+        &mut self.data
+    }
+
+    pub fn fill(&mut self, v: f64) {
+        self.data.fill(v);
+    }
+}
+
+impl FlatMatrix {
+    pub fn as_ref_vec_vec(&self) -> Vec<Vec<f64>> {
+        self.to_vec_vec()
+    }
+}
+
 /// Compute CTF coefficients using the state-space method (Seem 1987).
 ///
 /// This is the algorithm EnergyPlus actually uses internally — NOT pole/residue.
@@ -526,7 +646,7 @@ fn compute_ctf_from_state_space(
                 g[i][j] = (phi_gamma2[i][j] - gamma2[i][j]) / timestep + gamma1[i][j];
             }
         }
-        g
+        FlatMatrix::from_vec_vec(&g)
     };
 
     // Compute combined direct-transmission matrix: D̃ = C·Γ₂/Δt + D
@@ -540,6 +660,9 @@ fn compute_ctf_from_state_space(
         }
         d
     };
+
+    // Convert c_mat to FlatMatrix for use in Leverrier iteration
+    let c_mat_fm = FlatMatrix::from_vec_vec(c_mat);
 
     // s0(2,2): initial CTF coefficients (j=0 term) = D̃
     // s(2,2,max_terms): history CTF coefficients (j>=1 terms)
@@ -566,29 +689,34 @@ fn compute_ctf_from_state_space(
     //   2. e(j) = -trace(PhiR0) / j
     //   3. R(j) = PhiR0 + e(j) · I
     //   4. s(j,k) = C · Σ_m [R(j-1)(m,k_node) · Γ̃(m,input)] + e(j) · D̃(k) · δ(j,k)
-    let mut r_new = identity(n);
-    let mut r_prev = vec![vec![0.0; n]; n]; // R(j-1), starts as R(0) = 0
+    //
+    // FIX: Using FlatMatrix with snapshot clone to avoid read-during-write aliasing
+    // that corrupted diagonal elements in the original Vec<Vec<f64>> implementation.
+    // r_new_snapshot = r_new.clone() captures R(j-1) before r_new is overwritten with R(j).
+    let mut r_new = FlatMatrix::identity(n);
+    let mut r_prev = FlatMatrix::zeros(n, n); // R(j-1), starts as R(0) = 0
 
     let mut num_ctf_terms = 0;
     let mut converged = false;
 
     for inum in 1..=MAX_CTF_TERMS {
         // Step 1: Compute PhiR0 = A_exp · R(j-1)  [r_new currently holds R(j-1)]
-        let phi_r0 = mat_mat_mul(a_exp, &r_new);
+        let phi_r0 = mat_mat_mul_flat(a_exp, &r_new);
 
         // Step 2: e(j) = -trace(A_exp · R(j-1)) / j
-        let trace: f64 = (0..n).map(|i| phi_r0[i][i]).sum();
+        let trace: f64 = (0..n).map(|i| phi_r0.get(i, i)).sum();
         e[inum - 1] = -trace / inum as f64;
 
-        // Step 3: Update R BEFORE computing s (matching E+ flow)
+        // Step 3: Snapshot r_new before overwriting (fixes read-during-write aliasing)
         // R(j) = PhiR0 + e(j) * I
         // After: r_prev = R(j-1), r_new = R(j)
+        let r_new_snapshot = r_new.clone();
         for i in 0..n {
             for j in 0..n {
-                r_prev[i][j] = r_new[i][j];
-                r_new[i][j] = phi_r0[i][j];
+                r_prev.set(i, j, r_new_snapshot.get(i, j));
+                r_new.set(i, j, phi_r0.get(i, j));
             }
-            r_new[i][i] += e[inum - 1];
+            r_new.set(i, i, r_new.get(i, i) + e[inum - 1]);
         }
 
         // Step 4: Standard Leverrier s coefficients for the transformed system.
@@ -599,11 +727,11 @@ fn compute_ctf_from_state_space(
         // NOTE: This uses R (not R^T). For single-layer walls, R is symmetric
         // so R^T = R. For multi-layer walls, Φ is NOT symmetric at layer
         // interfaces, so R^T ≠ R — using R^T here was the root-cause bug.
-        let rg = mat_mat_mul_col(&r_prev, &gamma_tilde); // R(j-1) · Γ̃ → n×2
-        let s_partial = mat_mul_gen(c_mat, &rg); // C · (R · Γ̃) → 2×2
+        let rg = mat_mat_mul_col_flat(&r_prev, &gamma_tilde); // R(j-1) · Γ̃ → n×2
+        let s_partial = mat_mul_gen_flat(&c_mat_fm, &rg); // C · (R · Γ̃) → 2×2
         for j in 0..2 {
             for k in 0..2 {
-                s[j][k][inum - 1] = s_partial[j][k] + e[inum - 1] * d_tilde[j][k];
+                s[j][k][inum - 1] = s_partial.get(j, k) + e[inum - 1] * d_tilde[j][k];
             }
         }
 
@@ -869,6 +997,60 @@ fn matrix_sub_col(a: &[Vec<f64>], b: &[Vec<f64>]) -> Vec<Vec<f64>> {
     for i in 0..n {
         for j in 0..m {
             c[i][j] = a[i][j] - b[i][j];
+        }
+    }
+    c
+}
+
+// ==================== FlatMatrix Matrix Operations ====================
+// Flat versions that work with FlatMatrix to avoid Vec<Vec<f64>> aliasing issues.
+
+/// Matrix multiplication C = A · B where A is n×n and B is n×n (FlatMatrix).
+fn mat_mat_mul_flat(a: &[Vec<f64>], b: &FlatMatrix) -> FlatMatrix {
+    let n = a.len();
+    let mut c = FlatMatrix::zeros(n, n);
+    for i in 0..n {
+        for j in 0..n {
+            let mut sum = 0.0;
+            for k in 0..n {
+                sum += a[i][k] * b.get(k, j);
+            }
+            c.set(i, j, sum);
+        }
+    }
+    c
+}
+
+/// Matrix × column multiplication: C = A · B where A is n×n and B is n×m (FlatMatrix result).
+fn mat_mat_mul_col_flat(a: &FlatMatrix, b: &FlatMatrix) -> FlatMatrix {
+    let n = a.rows();
+    let m = b.cols();
+    let mut c = FlatMatrix::zeros(n, m);
+    for i in 0..n {
+        for j in 0..m {
+            let mut sum = 0.0;
+            for k in 0..n {
+                sum += a.get(i, k) * b.get(k, j);
+            }
+            c.set(i, j, sum);
+        }
+    }
+    c
+}
+
+/// General matrix multiply: C = A · B where A is (r1×c1) FlatMatrix and B is (c1×c2) Vec<Vec>.
+fn mat_mul_gen_flat(a: &FlatMatrix, b: &FlatMatrix) -> FlatMatrix {
+    let r1 = a.rows();
+    let c1 = a.cols();
+    let c2 = b.cols();
+    let mut c = FlatMatrix::zeros(r1, c2);
+    for i in 0..r1 {
+        for j in 0..c2 {
+            let mut sum = 0.0;
+            for k in 0..c1 {
+                sum += a.get(i, k) * b.get(k, j);
+            }
+            c.set(i, j, sum);
         }
     }
     c

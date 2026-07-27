@@ -1,5 +1,5 @@
-use fluxion::sim::engine::ThermalModel;
 use fluxion::physics::cta::VectorField;
+use fluxion::sim::engine::ThermalModel;
 use std::collections::HashMap;
 
 use crate::tools::ResponseFormat;

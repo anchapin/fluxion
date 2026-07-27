@@ -149,6 +149,14 @@ fn test_hybrid_empirical_mae_within_10pct_of_physics() {
 
     // 3. Run the report.
     let surrogates = SurrogateManager::new().expect("SurrogateManager must build");
+    if !surrogates.model_loaded {
+        eprintln!(
+            "  SKIPPED: no ONNX model available (models/surrogate_zone_thermal.onnx not found)"
+        );
+        eprintln!("  The hybrid empirical MAE gate requires a trained ONNX model.");
+        eprintln!("  Provide FLUXION_ONNX_MODEL or ensure the model exists at the default path.");
+        return;
+    }
     let report = generate_hybrid_empirical_report(&hybrid, &monitored, &measurements, &surrogates);
 
     println!("  Routing         : {}", report.routing_summary);
