@@ -45,9 +45,10 @@ pub mod geometry {
     impl RectSurface {
         pub fn new(width: f64, height: f64) -> Result<Self, ViewFactorError> {
             if width <= 0.0 || height <= 0.0 {
-                return Err(ViewFactorError::InvalidGeometry(
-                    format!("RectSurface dimensions must be positive, got {}x{}", width, height)
-                ));
+                return Err(ViewFactorError::InvalidGeometry(format!(
+                    "RectSurface dimensions must be positive, got {}x{}",
+                    width, height
+                )));
             }
             Ok(Self { width, height })
         }
@@ -67,11 +68,16 @@ pub mod geometry {
     impl VerticalSurface {
         pub fn new(width: f64, height: f64) -> Result<Self, ViewFactorError> {
             if width <= 0.0 || height <= 0.0 {
-                return Err(ViewFactorError::InvalidGeometry(
-                    format!("VerticalSurface dimensions must be positive, got {}x{}", width, height)
-                ));
+                return Err(ViewFactorError::InvalidGeometry(format!(
+                    "VerticalSurface dimensions must be positive, got {}x{}",
+                    width, height
+                )));
             }
-            Ok(Self { width, height, tilt: std::f64::consts::FRAC_PI_2 })
+            Ok(Self {
+                width,
+                height,
+                tilt: std::f64::consts::FRAC_PI_2,
+            })
         }
 
         pub fn area(&self) -> f64 {
@@ -88,9 +94,10 @@ pub mod geometry {
     impl GroundPlane {
         pub fn new(length: f64, width: f64) -> Result<Self, ViewFactorError> {
             if length <= 0.0 || width <= 0.0 {
-                return Err(ViewFactorError::InvalidGeometry(
-                    format!("GroundPlane dimensions must be positive, got {}x{}", length, width)
-                ));
+                return Err(ViewFactorError::InvalidGeometry(format!(
+                    "GroundPlane dimensions must be positive, got {}x{}",
+                    length, width
+                )));
             }
             Ok(Self { length, width })
         }
@@ -147,7 +154,10 @@ pub mod geometry {
 }
 
 pub mod nusselt {
-    use super::{ViewFactorError, geometry::{UrbanCanopySurface, SurfaceType}};
+    use super::{
+        geometry::{SurfaceType, UrbanCanopySurface},
+        ViewFactorError,
+    };
     use approx::relative_eq;
 
     pub fn view_factor_wall_to_sky(
@@ -160,7 +170,7 @@ pub mod nusselt {
         }
         if building_spacing < 0.0 {
             return Err(ViewFactorError::InvalidGeometry(
-                "building_spacing cannot be negative".into()
+                "building_spacing cannot be negative".into(),
             ));
         }
 
@@ -197,7 +207,7 @@ pub mod nusselt {
         }
         if building_spacing < 0.0 {
             return Err(ViewFactorError::InvalidGeometry(
-                "building_spacing cannot be negative".into()
+                "building_spacing cannot be negative".into(),
             ));
         }
 
@@ -231,12 +241,12 @@ pub mod nusselt {
         }
         if distance <= 0.0 {
             return Err(ViewFactorError::InvalidGeometry(
-                "distance between surfaces must be positive".into()
+                "distance between surfaces must be positive".into(),
             ));
         }
         if height_i <= 0.0 || height_j <= 0.0 {
             return Err(ViewFactorError::InvalidGeometry(
-                "surface heights must be positive".into()
+                "surface heights must be positive".into(),
             ));
         }
 
@@ -262,7 +272,7 @@ pub mod nusselt {
         let n = surfaces.len();
         if n < 2 {
             return Err(ViewFactorError::InvalidGeometry(
-                "enclosure requires at least 2 surfaces".into()
+                "enclosure requires at least 2 surfaces".into(),
             ));
         }
 
@@ -272,9 +282,10 @@ pub mod nusselt {
         for i in 0..n {
             let (area_i, height_i) = surfaces[i];
             if area_i <= 0.0 {
-                return Err(ViewFactorError::InvalidGeometry(
-                    format!("surface {} has invalid dimensions", i)
-                ));
+                return Err(ViewFactorError::InvalidGeometry(format!(
+                    "surface {} has invalid dimensions",
+                    i
+                )));
             }
 
             for j in 0..n {
@@ -291,13 +302,7 @@ pub mod nusselt {
                     let (area_j, height_j) = surfaces[j];
                     let h_i = if height_i <= 0.0 { 1.0 } else { height_i };
                     let h_j = if height_j <= 0.0 { 1.0 } else { height_j };
-                    f[i][j] = view_factor_parallel_rectangles(
-                        area_i,
-                        area_j,
-                        1.0,
-                        h_i,
-                        h_j,
-                    )?;
+                    f[i][j] = view_factor_parallel_rectangles(area_i, area_j, 1.0, h_i, h_j)?;
                 }
                 row_sums[i] += f[i][j];
             }
@@ -339,15 +344,13 @@ pub mod nusselt {
                 }
             }
             (SurfaceType::Sky, _) => Ok(1.0),
-            (SurfaceType::Ground, SurfaceType::Ground) => {
-                Ok(1.0)
-            }
-            (SurfaceType::Ground, SurfaceType::Wall) => {
-                Ok(0.0)
-            }
-            (SurfaceType::Wall, SurfaceType::Ground) => {
-                view_factor_wall_to_ground(surface_i.height, surface_i.area.sqrt(), surface_i.distance_to_target)
-            }
+            (SurfaceType::Ground, SurfaceType::Ground) => Ok(1.0),
+            (SurfaceType::Ground, SurfaceType::Wall) => Ok(0.0),
+            (SurfaceType::Wall, SurfaceType::Ground) => view_factor_wall_to_ground(
+                surface_i.height,
+                surface_i.area.sqrt(),
+                surface_i.distance_to_target,
+            ),
             (SurfaceType::Wall, SurfaceType::Wall) => {
                 let dist = surface_i.distance_to_target.max(0.001);
                 view_factor_parallel_rectangles(
@@ -392,18 +395,26 @@ pub mod nusselt {
 
         let ground_idx = n;
         for i in 0..n {
-            let f_i_ground = view_factor_wall_to_ground(wall_heights[i], wall_areas[i].sqrt(), 0.0)?;
+            let f_i_ground =
+                view_factor_wall_to_ground(wall_heights[i], wall_areas[i].sqrt(), 0.0)?;
             matrix.set(i, ground_idx, f_i_ground);
 
-            let f_i_sky = 1.0 - f_i_ground - (0..n).filter(|&j| j != i).map(|j| matrix.get(i, j)).sum::<f64>();
+            let f_i_sky = 1.0
+                - f_i_ground
+                - (0..n)
+                    .filter(|&j| j != i)
+                    .map(|j| matrix.get(i, j))
+                    .sum::<f64>();
             if f_i_sky < 0.0 {
                 matrix.set(i, ground_idx, matrix.get(i, ground_idx) + f_i_sky);
             }
         }
 
         for j in 0..n {
-            let f_ground_j = view_factor_wall_to_ground(wall_heights[j], wall_areas[j].sqrt(), 0.0)?
-                * wall_areas[j] / ground_area;
+            let f_ground_j =
+                view_factor_wall_to_ground(wall_heights[j], wall_areas[j].sqrt(), 0.0)?
+                    * wall_areas[j]
+                    / ground_area;
             matrix.set(ground_idx, j, f_ground_j);
         }
         matrix.set(ground_idx, ground_idx, 1.0);
@@ -422,26 +433,19 @@ pub mod nusselt {
         Ok(matrix)
     }
 
-    pub fn check_reciprocity(
-        area_i: f64,
-        area_j: f64,
-        f_ij: f64,
-        f_ji: f64,
-    ) -> bool {
+    pub fn check_reciprocity(area_i: f64, area_j: f64, f_ij: f64, f_ji: f64) -> bool {
         let left = f_ij * area_i;
         let right = f_ji * area_j;
         relative_eq!(left, right, max_relative = 1e-6)
     }
 
-    pub fn check_summation(
-        f_ii: f64,
-        f_ij_sum: f64,
-    ) -> Result<(), ViewFactorError> {
+    pub fn check_summation(f_ii: f64, f_ij_sum: f64) -> Result<(), ViewFactorError> {
         let total = f_ii + f_ij_sum;
         if !relative_eq!(total, 1.0, max_relative = 1e-6) {
-            return Err(ViewFactorError::SummationError(
-                format!("F_ii + sum(F_ij) = {} != 1.0", total)
-            ));
+            return Err(ViewFactorError::SummationError(format!(
+                "F_ii + sum(F_ij) = {} != 1.0",
+                total
+            )));
         }
         Ok(())
     }
@@ -491,7 +495,9 @@ pub mod nusselt {
         }
 
         pub fn row_sum(&self, i: usize) -> T
-        where T: std::ops::Add<Output = T> + Clone {
+        where
+            T: std::ops::Add<Output = T> + Clone,
+        {
             let mut sum = T::from(0.0);
             for j in 0..self.ncols {
                 sum = sum + self.get(i, j);
@@ -500,7 +506,9 @@ pub mod nusselt {
         }
 
         pub fn normalize_by_row(&mut self)
-        where T: std::ops::Div<Output = T> + std::ops::Add<Output = T> + Clone {
+        where
+            T: std::ops::Div<Output = T> + std::ops::Add<Output = T> + Clone,
+        {
             for i in 0..self.nrows {
                 let sum: f64 = (0..self.ncols).map(|j| self.get(i, j).into()).sum();
                 if sum > 0.0 {
@@ -513,7 +521,9 @@ pub mod nusselt {
         }
 
         pub fn to_vec_vec(&self) -> Vec<Vec<T>>
-        where T: Clone {
+        where
+            T: Clone,
+        {
             let mut result = Vec::with_capacity(self.nrows);
             for i in 0..self.nrows {
                 let mut row = Vec::with_capacity(self.ncols);
@@ -544,9 +554,7 @@ pub mod nusselt {
             let mut results = Vec::new();
             for i in 0..self.nrows {
                 let f_ii = self.get(i, i);
-                let row_sum: f64 = (0..self.ncols)
-                    .map(|j| self.get(i, j))
-                    .sum();
+                let row_sum: f64 = (0..self.ncols).map(|j| self.get(i, j)).sum();
                 let f_ij_sum = row_sum - f_ii;
                 let total = f_ii + f_ij_sum;
                 let is_valid = relative_eq!(total, 1.0, max_relative = 1e-6);
@@ -558,7 +566,7 @@ pub mod nusselt {
 }
 
 pub mod sparse {
-    use super::{ViewFactorError, nusselt::ViewFactorMatrix};
+    use super::{nusselt::ViewFactorMatrix, ViewFactorError};
     use std::collections::HashMap;
 
     pub struct SparseViewFactorMatrix {
@@ -676,7 +684,11 @@ pub mod sparse {
     }
 
     impl UrbanRadiationSolver {
-        pub fn new(view_factors: SparseViewFactorMatrix, areas: Vec<f64>, emissivities: Vec<f64>) -> Self {
+        pub fn new(
+            view_factors: SparseViewFactorMatrix,
+            areas: Vec<f64>,
+            emissivities: Vec<f64>,
+        ) -> Self {
             Self {
                 view_factors,
                 areas,
@@ -691,7 +703,7 @@ pub mod sparse {
         ) -> Result<Self, ViewFactorError> {
             if areas.len() != matrix.nrows() {
                 return Err(ViewFactorError::InvalidGeometry(
-                    "Number of areas must match matrix dimensions".into()
+                    "Number of areas must match matrix dimensions".into(),
                 ));
             }
             let sparse = SparseViewFactorMatrix::from_dense(matrix);
@@ -736,7 +748,7 @@ pub mod sparse {
 }
 
 pub mod ashrae140 {
-    use super::{ViewFactorError, nusselt::ViewFactorMatrix};
+    use super::{nusselt::ViewFactorMatrix, ViewFactorError};
 
     #[derive(Debug, Clone)]
     pub struct Ashrae140Case {
@@ -746,11 +758,7 @@ pub mod ashrae140 {
         pub tolerance: f64,
     }
 
-    pub fn create_rectangular_enclosure(
-        width: f64,
-        height: f64,
-        depth: f64,
-    ) -> Vec<(f64, f64)> {
+    pub fn create_rectangular_enclosure(width: f64, height: f64, depth: f64) -> Vec<(f64, f64)> {
         let floor_area = width * depth;
         let ceiling_area = width * depth;
         let wall1_area = height * depth;
@@ -839,21 +847,23 @@ pub mod ashrae140 {
         reference_configurations()
     }
 
-    pub fn verify_ashrae_case(case: &Ashrae140Case) -> Result<ViewFactorMatrix<f64>, ViewFactorError> {
+    pub fn verify_ashrae_case(
+        case: &Ashrae140Case,
+    ) -> Result<ViewFactorMatrix<f64>, ViewFactorError> {
         use super::nusselt::view_factor_enclosure;
         let dense = view_factor_enclosure(&case.surfaces)?;
         Ok(ViewFactorMatrix::from_dense(dense))
     }
 }
 
-pub use geometry::{GroundPlane, RectSurface, UrbanCanopySurface, VerticalSurface, SurfaceType};
-pub use nusselt::{
-    check_reciprocity, check_summation, view_factor_enclosure,
-    view_factor_parallel_rectangles, view_factor_wall_to_ground, view_factor_wall_to_sky,
-    compute_urban_canyon_view_factors, ViewFactorMatrix,
-};
-pub use sparse::{SparseViewFactorMatrix, UrbanRadiationSolver, create_sparse_from_urban_canyon};
 pub use ashrae140::{ashrae140, verify_ashrae_case};
+pub use geometry::{GroundPlane, RectSurface, SurfaceType, UrbanCanopySurface, VerticalSurface};
+pub use nusselt::{
+    check_reciprocity, check_summation, compute_urban_canyon_view_factors, view_factor_enclosure,
+    view_factor_parallel_rectangles, view_factor_wall_to_ground, view_factor_wall_to_sky,
+    ViewFactorMatrix,
+};
+pub use sparse::{create_sparse_from_urban_canyon, SparseViewFactorMatrix, UrbanRadiationSolver};
 
 #[cfg(test)]
 mod tests {
@@ -879,11 +889,7 @@ mod tests {
 
     #[test]
     fn test_summation_check() {
-        let surfaces = vec![
-            (100.0, 10.0),
-            (100.0, 10.0),
-            (100.0, 10.0),
-        ];
+        let surfaces = vec![(100.0, 10.0), (100.0, 10.0), (100.0, 10.0)];
         let f = nusselt::view_factor_enclosure(&surfaces).unwrap();
 
         for i in 0..3 {
@@ -894,10 +900,7 @@ mod tests {
 
     #[test]
     fn test_enclosure_two_surfaces() {
-        let surfaces = vec![
-            (100.0, 10.0),
-            (100.0, 10.0),
-        ];
+        let surfaces = vec![(100.0, 10.0), (100.0, 10.0)];
         let f = nusselt::view_factor_enclosure(&surfaces).unwrap();
 
         assert_eq!(f.len(), 2);
@@ -951,10 +954,7 @@ mod tests {
 
     #[test]
     fn test_urban_canyon_view_factors() {
-        let walls = vec![
-            (30.0, 10.0, 0.0),
-            (30.0, 10.0, 5.0),
-        ];
+        let walls = vec![(30.0, 10.0, 0.0), (30.0, 10.0, 5.0)];
         let ground_area = 50.0;
 
         let matrix = nusselt::compute_urban_canyon_view_factors(&walls, ground_area).unwrap();
@@ -962,18 +962,18 @@ mod tests {
 
         for i in 0..dense.len() {
             let row_sum: f64 = dense[i].iter().sum();
-            assert!((row_sum - 1.0).abs() < 1e-10,
-                "Urban canyon row {} sum = {}, expected 1.0", i, row_sum);
+            assert!(
+                (row_sum - 1.0).abs() < 1e-10,
+                "Urban canyon row {} sum = {}, expected 1.0",
+                i,
+                row_sum
+            );
         }
     }
 
     #[test]
     fn test_sparse_matrix_from_dense() {
-        let surfaces = vec![
-            (100.0, 10.0),
-            (100.0, 10.0),
-            (100.0, 10.0),
-        ];
+        let surfaces = vec![(100.0, 10.0), (100.0, 10.0), (100.0, 10.0)];
 
         let dense = nusselt::view_factor_enclosure(&surfaces).unwrap();
         let dense_matrix = ViewFactorMatrix::from_dense(dense);
@@ -1012,11 +1012,7 @@ mod tests {
 
     #[test]
     fn test_sparse_matrix_multiplication() {
-        let walls = vec![
-            (30.0, 10.0, 0.0),
-            (30.0, 10.0, 5.0),
-            (25.0, 8.0, 2.5),
-        ];
+        let walls = vec![(30.0, 10.0, 0.0), (30.0, 10.0, 5.0), (25.0, 8.0, 2.5)];
         let ground_area = 50.0;
 
         let dense = nusselt::compute_urban_canyon_view_factors(&walls, ground_area).unwrap();
@@ -1027,17 +1023,18 @@ mod tests {
 
         assert_eq!(result.len(), 4);
         for (i, &val) in result.iter().enumerate() {
-            assert!((val - 1.0).abs() < 1e-10,
-                "Row {} of view factor matrix should sum to 1.0, got {}", i, val);
+            assert!(
+                (val - 1.0).abs() < 1e-10,
+                "Row {} of view factor matrix should sum to 1.0, got {}",
+                i,
+                val
+            );
         }
     }
 
     #[test]
     fn test_create_sparse_from_urban_canyon() {
-        let walls = vec![
-            (30.0, 10.0, 0.0),
-            (30.0, 10.0, 5.0),
-        ];
+        let walls = vec![(30.0, 10.0, 0.0), (30.0, 10.0, 5.0)];
         let ground_area = 50.0;
 
         let sparse = create_sparse_from_urban_canyon(&walls, ground_area).unwrap();
@@ -1072,8 +1069,7 @@ mod tests {
                 assert!(
                     is_valid,
                     "ASHRAE case {} surface {} failed summation check",
-                    case.name,
-                    i
+                    case.name, i
                 );
             }
         }
@@ -1081,11 +1077,7 @@ mod tests {
 
     #[test]
     fn test_view_factor_matrix_row_sum() {
-        let surfaces = vec![
-            (100.0, 10.0),
-            (100.0, 10.0),
-            (100.0, 10.0),
-        ];
+        let surfaces = vec![(100.0, 10.0), (100.0, 10.0), (100.0, 10.0)];
 
         let dense = nusselt::view_factor_enclosure(&surfaces).unwrap();
         let matrix = ViewFactorMatrix::from_dense(dense);
@@ -1096,7 +1088,6 @@ mod tests {
         }
     }
 }
-
 
 // === Energy Conservation Tests (from #2031) ===
 const STEFAN_BOLTZMANN: f64 = 5.67e-8;
@@ -1285,11 +1276,13 @@ impl EnergyConservationTest {
         let roof_area = building.roof_area();
         let total_area = building.surface_area();
 
-        let absorbed_solar = building.absorptivity * self.solar_irradiance * (wall_area + roof_area);
+        let absorbed_solar =
+            building.absorptivity * self.solar_irradiance * (wall_area + roof_area);
 
         let emitted = building.emissivity * STEFAN_BOLTZMANN * total_area * t_surface.powi(4);
 
-        let transmitted = building.thermal_conductance * total_area * (t_surface - self.ambient_temperature);
+        let transmitted =
+            building.thermal_conductance * total_area * (t_surface - self.ambient_temperature);
 
         let sky_radiation = building.emissivity
             * STEFAN_BOLTZMANN
@@ -1349,13 +1342,15 @@ impl EnergyConservationTest {
         let roof_area = building.roof_area();
         let total_area = building.surface_area();
 
-        let absorbed_solar = building.absorptivity * self.solar_irradiance * (wall_area + roof_area);
+        let absorbed_solar =
+            building.absorptivity * self.solar_irradiance * (wall_area + roof_area);
 
         let t_eq = self.find_equilibrium_temperature(building);
 
         let emitted = building.emissivity * STEFAN_BOLTZMANN * total_area * t_eq.powi(4);
 
-        let transmitted = building.thermal_conductance * total_area * (t_eq - self.ambient_temperature);
+        let transmitted =
+            building.thermal_conductance * total_area * (t_eq - self.ambient_temperature);
 
         let sky_radiation = building.emissivity
             * STEFAN_BOLTZMANN
@@ -1413,18 +1408,23 @@ impl EnergyConservationTest {
         total_net
     }
 
-    fn surface_radiation_balance_for_building(&self, building: &BuildingConfig) -> Option<SurfaceRadiation> {
+    fn surface_radiation_balance_for_building(
+        &self,
+        building: &BuildingConfig,
+    ) -> Option<SurfaceRadiation> {
         let wall_area = building.wall_area();
         let roof_area = building.roof_area();
         let total_area = building.surface_area();
 
-        let absorbed_solar = building.absorptivity * self.solar_irradiance * (wall_area + roof_area);
+        let absorbed_solar =
+            building.absorptivity * self.solar_irradiance * (wall_area + roof_area);
 
         let t_eq = self.find_equilibrium_temperature(building);
 
         let emitted = building.emissivity * STEFAN_BOLTZMANN * total_area * t_eq.powi(4);
 
-        let transmitted = building.thermal_conductance * total_area * (t_eq - self.ambient_temperature);
+        let transmitted =
+            building.thermal_conductance * total_area * (t_eq - self.ambient_temperature);
 
         let sky_radiation = building.emissivity
             * STEFAN_BOLTZMANN
@@ -1527,8 +1527,7 @@ mod tests {
 
     #[test]
     fn test_zero_solar_irradiance() {
-        let test = EnergyConservationTest::create_5_building_config()
-            .with_solar_irradiance(0.0);
+        let test = EnergyConservationTest::create_5_building_config().with_solar_irradiance(0.0);
 
         assert!(
             test.verify_conservation(),

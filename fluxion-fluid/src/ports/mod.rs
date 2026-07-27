@@ -311,7 +311,10 @@ mod tests {
     #[test]
     fn test_refrigerant_port_creation() {
         let port = RefrigerantPort::new();
-        assert!(matches!(port.potential_vars(), RefrigerantPotentialVars { .. }));
+        assert!(matches!(
+            port.potential_vars(),
+            RefrigerantPotentialVars { .. }
+        ));
     }
 
     #[test]

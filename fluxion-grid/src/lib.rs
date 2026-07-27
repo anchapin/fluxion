@@ -20,13 +20,12 @@ pub use battery_storage_node::BatteryStorageNode;
 
 // === Heat Pump Voltage Model ===
 pub mod error;
-pub mod thermal_electrical_coupler;
 pub mod heat_pump_voltage_model;
+pub mod thermal_electrical_coupler;
 
 pub use error::GridModelError;
-pub use thermal_electrical_coupler::VoltageCoupler;
 pub use heat_pump_voltage_model::HeatPumpVoltageModel;
-
+pub use thermal_electrical_coupler::VoltageCoupler;
 
 // === Joint Thermal-Electrical Convergence Solver ===
 // fluxion-grid: Electrical grid modeling with bus node types for power flow analysis.
@@ -37,12 +36,12 @@ pub use heat_pump_voltage_model::HeatPumpVoltageModel;
 // - Battery bus with State of Charge (SoC) tracking
 // - Joint thermal-electrical convergence solver for grid-interactive buildings
 
-pub mod bus;
 pub mod battery;
+pub mod bus;
 pub mod power_flow;
 
-pub use bus::{BusNodeType, ElectricalBus};
 pub use battery::BatteryBus;
+pub use bus::{BusNodeType, ElectricalBus};
 pub use power_flow::PowerFlowState;
 
 use nalgebra::DMatrix;
@@ -130,7 +129,8 @@ impl ThermalModel {
         let mut total_change = 0.0;
         for i in 0..self.num_zones {
             // Net heat = HVAC + inter-zone + envelope losses
-            let envelope_loss = self.envelope_conductance[i] * (self.temperatures[i] - self.ambient_temperature);
+            let envelope_loss =
+                self.envelope_conductance[i] * (self.temperatures[i] - self.ambient_temperature);
             let net_heat = self.hvac_loads[i] - envelope_loss
                 + inter_zone_heat_contribution(i, &self.inter_zone_conductance, &self.temperatures);
             let temp_change = (net_heat / self.capacitances[i]).abs();
@@ -142,7 +142,8 @@ impl ThermalModel {
     /// Solve thermal system for one iteration.
     pub fn solve_step(&mut self, dt: f64) {
         for i in 0..self.num_zones {
-            let envelope_loss = self.envelope_conductance[i] * (self.temperatures[i] - self.ambient_temperature);
+            let envelope_loss =
+                self.envelope_conductance[i] * (self.temperatures[i] - self.ambient_temperature);
             let net_heat = self.hvac_loads[i] - envelope_loss
                 + inter_zone_heat_contribution(i, &self.inter_zone_conductance, &self.temperatures);
             self.temperatures[i] += (net_heat / self.capacitances[i]) * dt;
@@ -491,8 +492,11 @@ mod tests {
         let mut solver = JointConvergenceSolver::new(100, 1e-3);
         let result = solver.solve(&mut thermal, &mut electrical, &mut coupler);
 
-        assert!(result.converged, "Solver should converge, got iterations={}, thermal_res={}, elec_mis={}",
-            result.iterations, result.thermal_residual, result.electrical_mismatch);
+        assert!(
+            result.converged,
+            "Solver should converge, got iterations={}, thermal_res={}, elec_mis={}",
+            result.iterations, result.thermal_residual, result.electrical_mismatch
+        );
         assert!(result.iterations < 100);
     }
 
@@ -514,8 +518,11 @@ mod tests {
         let result = solver.solve(&mut thermal_copy, &mut electrical.clone(), &mut coupler);
 
         // Thermal should converge even if electrical doesn't fully converge
-        assert!(result.thermal_residual < 1e-2,
-            "Thermal residual should be small, got {}", result.thermal_residual);
+        assert!(
+            result.thermal_residual < 1e-2,
+            "Thermal residual should be small, got {}",
+            result.thermal_residual
+        );
         assert!(result.iterations > 0, "Iterations should be reported");
     }
 
@@ -536,9 +543,11 @@ mod tests {
         let result = solver.solve(&mut thermal_copy, &mut electrical.clone(), &mut coupler);
 
         // Thermal should converge
-        assert!(result.thermal_residual < 1e-3,
+        assert!(
+            result.thermal_residual < 1e-3,
             "Thermal should converge for building + heat pump case, got {}",
-            result.thermal_residual);
+            result.thermal_residual
+        );
         assert!(result.iterations > 0);
         assert!(coupler.cop > 1.0);
     }
@@ -592,7 +601,10 @@ mod tests {
 
         let mismatch = electrical.calculate_mismatch();
         // For 1 bus (reference bus), mismatch should be 0
-        assert_eq!(mismatch, 0.0, "Mismatch with only reference bus should be 0");
+        assert_eq!(
+            mismatch, 0.0,
+            "Mismatch with only reference bus should be 0"
+        );
     }
 
     #[test]

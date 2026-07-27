@@ -17,17 +17,15 @@
 //! making them suitable for BDF timestepping.
 
 pub mod mediums;
-pub mod ports;
 pub mod pantelides;
+pub mod ports;
 
-pub use mediums::{
-    Air, CompatibleWith, Medium, Water,
+pub use mediums::{Air, CompatibleWith, Medium, Water};
+pub use pantelides::{
+    pantelides_reduce, EqIndex, Equation, IncidenceMatrix, PantelidesError, PantelidesOutput,
+    PantelidesResult, VarIndex,
 };
 pub use ports::{
     AirPort, BoundaryConditions, EquationSystem, HydronicPort, PortError, PortResult,
     RefrigerantPort, SteamPort,
-};
-pub use pantelides::{
-    EqIndex, Equation, IncidenceMatrix, PantelidesError, PantelidesOutput,
-    PantelidesResult, VarIndex, pantelides_reduce,
 };

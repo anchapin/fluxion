@@ -71,14 +71,7 @@ mod tests {
     #[test]
     fn test_1c_discharge_1_hour() {
         let bus_id = Uuid::new_v4();
-        let mut battery = BatteryStorageNode::new(
-            bus_id,
-            1.0,
-            1.0,
-            100.0,
-            0.01,
-            400.0,
-        );
+        let mut battery = BatteryStorageNode::new(bus_id, 1.0, 1.0, 100.0, 0.01, 400.0);
 
         let dt = Duration::from_secs(3600);
         let current = 100.0;
@@ -95,14 +88,7 @@ mod tests {
     #[test]
     fn test_soc_bounds() {
         let bus_id = Uuid::new_v4();
-        let mut battery = BatteryStorageNode::new(
-            bus_id,
-            0.5,
-            1.0,
-            100.0,
-            0.01,
-            400.0,
-        );
+        let mut battery = BatteryStorageNode::new(bus_id, 0.5, 1.0, 100.0, 0.01, 400.0);
 
         let dt = Duration::from_secs(3600 * 10);
         battery.step(dt, 1000.0);
@@ -114,14 +100,7 @@ mod tests {
     #[test]
     fn test_terminal_voltage_drop() {
         let bus_id = Uuid::new_v4();
-        let battery = BatteryStorageNode::new(
-            bus_id,
-            1.0,
-            1.0,
-            100.0,
-            0.01,
-            400.0,
-        );
+        let battery = BatteryStorageNode::new(bus_id, 1.0, 1.0, 100.0, 0.01, 400.0);
 
         let v_no_load = battery.terminal_voltage(0.0);
         let v_with_load = battery.terminal_voltage(100.0);

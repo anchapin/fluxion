@@ -55,7 +55,11 @@ pub struct BatteryStorageNode {
 
 impl BatteryStorageNode {
     /// Create a new battery storage node with thermal properties.
-    pub fn new(internal_resistance_ohms: f64, thermal_mass_j_per_k: f64, ambient_temperature_k: f64) -> Self {
+    pub fn new(
+        internal_resistance_ohms: f64,
+        thermal_mass_j_per_k: f64,
+        ambient_temperature_k: f64,
+    ) -> Self {
         Self {
             internal_resistance_ohms,
             thermal_mass_j_per_k,
@@ -143,7 +147,11 @@ impl BatteryDegradation {
     /// * `fade_rate_per_cycle` - Capacity loss per full cycle (e.g., 0.0001 for 0.01%)
     /// * `calendar_fade_rate` - Annual capacity loss at reference temperature
     /// * `reference_temperature_k` - Reference temperature for Arrhenius model (default 298.15 K / 25°C)
-    pub fn new(fade_rate_per_cycle: f64, calendar_fade_rate: f64, reference_temperature_k: f64) -> Self {
+    pub fn new(
+        fade_rate_per_cycle: f64,
+        calendar_fade_rate: f64,
+        reference_temperature_k: f64,
+    ) -> Self {
         Self {
             fade_rate_per_cycle,
             calendar_fade_rate,
@@ -245,12 +253,7 @@ pub struct BatteryBus {
 
 impl BatteryBus {
     /// Create a new battery bus as a PV node (grid-following).
-    pub fn new_pv(
-        id: u32,
-        capacity: f64,
-        max_power: f64,
-        initial_soc: f64,
-    ) -> Self {
+    pub fn new_pv(id: u32, capacity: f64, max_power: f64, initial_soc: f64) -> Self {
         Self {
             bus: ElectricalBus::new_pv(id, 0.0, 1.0),
             state_of_charge: initial_soc.clamp(0.0, 1.0),
@@ -264,12 +267,7 @@ impl BatteryBus {
     }
 
     /// Create a new battery bus as a PQ node (load-type).
-    pub fn new_pq(
-        id: u32,
-        capacity: f64,
-        max_power: f64,
-        initial_soc: f64,
-    ) -> Self {
+    pub fn new_pq(id: u32, capacity: f64, max_power: f64, initial_soc: f64) -> Self {
         Self {
             bus: ElectricalBus::new_pq(id, 0.0, 0.0),
             state_of_charge: initial_soc.clamp(0.0, 1.0),

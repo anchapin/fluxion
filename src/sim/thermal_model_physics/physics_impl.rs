@@ -70,8 +70,6 @@ use crate::sim::ventilation::h_tr_is_ach_multiplier;
 // single-zone budget of PROFILING §5.3.
 // ============================================================================
 
-
-
 /// Evolve the per-zone interior wall-surface temperature `T_si` via the
 /// exact exponential solution of the surface-node ODE (Issue #1860
 /// time-constant-aware 5R1C variant).
@@ -2246,23 +2244,50 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         let t_i = self.0.temperatures.clone();
 
         // Validate 8R3C fields are initialized (precondition for 8R3C physics step)
-        let ceiling_mass = self.0.ceiling_mass_temperatures.as_mut()
+        let ceiling_mass = self
+            .0
+            .ceiling_mass_temperatures
+            .as_mut()
             .expect("ceiling_mass_temperatures must be initialized for 8R3C model");
-        let floor_mass = self.0.floor_mass_temperatures.as_mut()
+        let floor_mass = self
+            .0
+            .floor_mass_temperatures
+            .as_mut()
             .expect("floor_mass_temperatures must be initialized for 8R3C model");
-        let partition_mass = self.0.partition_mass_temperatures.as_mut()
+        let partition_mass = self
+            .0
+            .partition_mass_temperatures
+            .as_mut()
             .expect("partition_mass_temperatures must be initialized for 8R3C model");
-        let ceiling_cap = self.0.ceiling_thermal_capacitance.as_ref()
+        let ceiling_cap = self
+            .0
+            .ceiling_thermal_capacitance
+            .as_ref()
             .expect("ceiling_thermal_capacitance must be initialized for 8R3C model");
-        let floor_cap = self.0.floor_thermal_capacitance.as_ref()
+        let floor_cap = self
+            .0
+            .floor_thermal_capacitance
+            .as_ref()
             .expect("floor_thermal_capacitance must be initialized for 8R3C model");
-        let partition_cap = self.0.partition_thermal_capacitance.as_ref()
+        let partition_cap = self
+            .0
+            .partition_thermal_capacitance
+            .as_ref()
             .expect("partition_thermal_capacitance must be initialized for 8R3C model");
-        let h_tr_ceiling = self.0.h_tr_ceiling.as_ref()
+        let h_tr_ceiling = self
+            .0
+            .h_tr_ceiling
+            .as_ref()
             .expect("h_tr_ceiling must be initialized for 8R3C model");
-        let h_tr_floor_mass = self.0.h_tr_floor_mass.as_ref()
+        let h_tr_floor_mass = self
+            .0
+            .h_tr_floor_mass
+            .as_ref()
             .expect("h_tr_floor_mass must be initialized for 8R3C model");
-        let h_tr_partition = self.0.h_tr_partition.as_ref()
+        let h_tr_partition = self
+            .0
+            .h_tr_partition
+            .as_ref()
             .expect("h_tr_partition must be initialized for 8R3C model");
 
         // Update ceiling mass temperature
@@ -3051,10 +3076,7 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
             // 5R1C dynamics (it no longer drives the high-mass air temperature).
             // Low-mass behaviour is unchanged (low-mass has no MultiNodeSolver, so
             // `t_i_free_mn` equals `t_i_free_5r1c` and the commit is a no-op change).
-            (
-                T::from(self.0.zero_vector.clone()),
-                t_i_free_5r1c.clone(),
-            )
+            (T::from(self.0.zero_vector.clone()), t_i_free_5r1c.clone())
         } else {
             // HVAC mode: use multi-node t_air (from _t_i_free_mn) when available
             let heat_cap = self.0.hvac_heating_capacity;

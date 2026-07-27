@@ -81,12 +81,7 @@ pub mod coefficients {
 
     pub static BDF3: BdfCoefficients = BdfCoefficients {
         k: 3,
-        alpha: &[
-            1.0 / 6.0,
-            -18.0 / 6.0,
-            36.0 / 6.0,
-            -11.0 / 6.0,
-        ],
+        alpha: &[1.0 / 6.0, -18.0 / 6.0, 36.0 / 6.0, -11.0 / 6.0],
         beta: 3.0 / 11.0,
         gamma: 6.0 / 11.0,
     };
@@ -133,9 +128,8 @@ pub mod coefficients {
         gamma: 60.0 / 147.0,
     };
 
-    pub static ALL_BDF_COEFFICIENTS: [&BdfCoefficients; 6] = [
-        &BDF1, &BDF2, &BDF3, &BDF4, &BDF5, &BDF6,
-    ];
+    pub static ALL_BDF_COEFFICIENTS: [&BdfCoefficients; 6] =
+        [&BDF1, &BDF2, &BDF3, &BDF4, &BDF5, &BDF6];
 
     pub fn get_coefficients(order: usize) -> BdfResult<&'static BdfCoefficients> {
         if order < 1 || order > 6 {
@@ -198,11 +192,7 @@ pub mod newton_raphson {
             Self::new(NewtonRaphsonConfig::default())
         }
 
-        pub fn solve<R>(
-            &self,
-            x0: &[f64],
-            func: &R,
-        ) -> BdfResult<(Vec<f64>, NewtonRaphsonStats)>
+        pub fn solve<R>(&self, x0: &[f64], func: &R) -> BdfResult<(Vec<f64>, NewtonRaphsonStats)>
         where
             R: ResidualFunction<f64>,
         {
@@ -263,12 +253,8 @@ pub mod newton_raphson {
         v.iter().map(|&x| x * x).sum::<f64>().sqrt()
     }
 
-    fn compute_numerical_jacobian<R>(
-        x: &[f64],
-        residual: &[f64],
-        func: &R,
-        jac: &mut [f64],
-    ) where
+    fn compute_numerical_jacobian<R>(x: &[f64], residual: &[f64], func: &R, jac: &mut [f64])
+    where
         R: ResidualFunction<f64>,
     {
         let n = x.len();
@@ -479,8 +465,7 @@ pub mod adaptive_step {
                 .map(|(i, _)| i)
                 .unwrap_or(0);
 
-            let suggested_order =
-                (self.config.min_order + min_err_idx).min(self.config.max_order);
+            let suggested_order = (self.config.min_order + min_err_idx).min(self.config.max_order);
             suggested_order.max(self.config.min_order)
         }
     }
@@ -706,8 +691,7 @@ pub mod time_stepping {
                 *yp_item /= self.dt * self.coeff.beta;
             }
 
-            self.system
-                .residual(self.t_new, y, &yp, residual);
+            self.system.residual(self.t_new, y, &yp, residual);
 
             for (i, res_item) in residual.iter_mut().enumerate().take(self.n) {
                 *res_item = sum * y[i] / (self.dt * self.coeff.beta);
@@ -752,7 +736,9 @@ pub mod time_stepping {
     }
 }
 
-pub use coefficients::{get_coefficients, BdfCoefficients, BDF1, BDF2, BDF3, BDF4, BDF5, BDF6};
-pub use newton_raphson::{NewtonRaphsonConfig, NewtonRaphsonSolver, NewtonRaphsonStats, ResidualFunction};
 pub use adaptive_step::{AdaptiveStepConfig, AdaptiveStepController, StepSize};
-pub use time_stepping::{DaeSystem, BdfTimeStepper, TimeSteppingConfig, TimeSteppingStats};
+pub use coefficients::{get_coefficients, BdfCoefficients, BDF1, BDF2, BDF3, BDF4, BDF5, BDF6};
+pub use newton_raphson::{
+    NewtonRaphsonConfig, NewtonRaphsonSolver, NewtonRaphsonStats, ResidualFunction,
+};
+pub use time_stepping::{BdfTimeStepper, DaeSystem, TimeSteppingConfig, TimeSteppingStats};

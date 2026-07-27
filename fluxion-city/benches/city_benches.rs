@@ -1,8 +1,8 @@
-use criterion::{black_box, criterion_group, criterion_main, Criterion, BenchmarkId};
+use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion};
 use fluxion_city::{
-    nusselt::{self, ViewFactorMatrix},
-    sparse::{SparseViewFactorMatrix, create_sparse_from_urban_canyon, UrbanRadiationSolver},
     ashrae140,
+    nusselt::{self, ViewFactorMatrix},
+    sparse::{create_sparse_from_urban_canyon, SparseViewFactorMatrix, UrbanRadiationSolver},
 };
 
 fn create_urban_canyon_surfaces(n_buildings: usize) -> (Vec<(f64, f64, f64)>, f64) {
@@ -34,9 +34,7 @@ fn benchmark_view_factor_enclosure(c: &mut Criterion) {
         let surfaces = create_rectangular_enclosure(*n);
 
         group.bench_with_input(BenchmarkId::from_parameter(n), n, |b, &n| {
-            b.iter(|| {
-                nusselt::view_factor_enclosure(black_box(&surfaces)).unwrap()
-            });
+            b.iter(|| nusselt::view_factor_enclosure(black_box(&surfaces)).unwrap());
         });
     }
 
@@ -51,7 +49,11 @@ fn benchmark_urban_canyon_view_factors(c: &mut Criterion) {
 
         group.bench_with_input(BenchmarkId::from_parameter(n), n, |b, &n| {
             b.iter(|| {
-                nusselt::compute_urban_canyon_view_factors(black_box(&walls), black_box(ground_area)).unwrap()
+                nusselt::compute_urban_canyon_view_factors(
+                    black_box(&walls),
+                    black_box(ground_area),
+                )
+                .unwrap()
             });
         });
     }
@@ -84,9 +86,7 @@ fn benchmark_sparse_matrix_multiplication(c: &mut Criterion) {
         let vec: Vec<f64> = vec![1.0; n + 1];
 
         group.bench_with_input(BenchmarkId::from_parameter(n), n, |b, &n| {
-            b.iter(|| {
-                sparse.multiply_dense(black_box(&vec))
-            });
+            b.iter(|| sparse.multiply_dense(black_box(&vec)));
         });
     }
 
@@ -107,13 +107,13 @@ fn benchmark_radiation_solver(c: &mut Criterion) {
         all_areas.push(ground_area);
 
         let emissivities = vec![0.9; walls.len() + 1];
-        let solver = UrbanRadiationSolver::from_dense_enclosure(&dense, all_areas.clone(), emissivities).unwrap();
+        let solver =
+            UrbanRadiationSolver::from_dense_enclosure(&dense, all_areas.clone(), emissivities)
+                .unwrap();
         let temperatures: Vec<f64> = vec![293.15; walls.len() + 1];
 
         group.bench_with_input(BenchmarkId::from_parameter(n), n, |b, &n| {
-            b.iter(|| {
-                solver.compute_radiation_exchange(black_box(&temperatures))
-            });
+            b.iter(|| solver.compute_radiation_exchange(black_box(&temperatures)));
         });
     }
 
@@ -130,9 +130,7 @@ fn benchmark_reciprocity_verification(c: &mut Criterion) {
         let areas: Vec<f64> = surfaces.iter().map(|(a, _)| *a).collect();
 
         group.bench_with_input(BenchmarkId::from_parameter(n), n, |b, &n| {
-            b.iter(|| {
-                matrix.verify_reciprocity(black_box(&areas))
-            });
+            b.iter(|| matrix.verify_reciprocity(black_box(&areas)));
         });
     }
 
@@ -148,9 +146,7 @@ fn benchmark_summation_verification(c: &mut Criterion) {
         let matrix = ViewFactorMatrix::from_dense(f);
 
         group.bench_with_input(BenchmarkId::from_parameter(n), n, |b, &n| {
-            b.iter(|| {
-                matrix.verify_summation()
-            });
+            b.iter(|| matrix.verify_summation());
         });
     }
 
@@ -164,9 +160,7 @@ fn benchmark_ashrae140_cases(c: &mut Criterion) {
 
     for case in cases {
         group.bench_function(case.name.clone(), |b| {
-            b.iter(|| {
-                fluxion_city::verify_ashrae_case(black_box(&case)).unwrap()
-            });
+            b.iter(|| fluxion_city::verify_ashrae_case(black_box(&case)).unwrap());
         });
     }
 
@@ -181,7 +175,8 @@ fn benchmark_100_surface_urban_canopy(c: &mut Criterion) {
 
     group.bench_function("full_pipeline", |b| {
         b.iter(|| {
-            let sparse = create_sparse_from_urban_canyon(black_box(&walls), black_box(ground_area)).unwrap();
+            let sparse =
+                create_sparse_from_urban_canyon(black_box(&walls), black_box(ground_area)).unwrap();
             let vec: Vec<f64> = vec![1.0; n + 1];
             sparse.multiply_dense(black_box(&vec))
         });
@@ -189,7 +184,8 @@ fn benchmark_100_surface_urban_canopy(c: &mut Criterion) {
 
     group.bench_function("view_factors_only", |b| {
         b.iter(|| {
-            nusselt::compute_urban_canyon_view_factors(black_box(&walls), black_box(ground_area)).unwrap()
+            nusselt::compute_urban_canyon_view_factors(black_box(&walls), black_box(ground_area))
+                .unwrap()
         });
     });
 

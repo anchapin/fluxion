@@ -158,7 +158,10 @@ impl FluidGraph {
         self.edges.insert(id, edge.clone());
 
         self.adjacency.entry(from_node).or_default().insert(id);
-        self.reverse_adjacency.entry(to_node).or_default().insert(id);
+        self.reverse_adjacency
+            .entry(to_node)
+            .or_default()
+            .insert(id);
 
         Some(id)
     }
@@ -302,13 +305,7 @@ impl FluidGraph {
                     let succ_idx = indices.get(&successor).copied();
                     if succ_idx.is_none() {
                         self.tarjan_scc(
-                            successor,
-                            index,
-                            stack,
-                            indices,
-                            low_links,
-                            on_stack,
-                            sccs,
+                            successor, index, stack, indices, low_links, on_stack, sccs,
                         );
                         let successor_low = *low_links.get(&successor).unwrap_or(&0);
                         let node_low = *low_links.get(&node_id).unwrap_or(&0);
@@ -501,10 +498,22 @@ mod tests {
         let sorted = graph.topological_sort().expect("Should be acyclic");
         assert_eq!(sorted.len(), 4);
 
-        let source_idx = sorted.iter().position(|&n| graph.node(n).unwrap().name == "Boiler").unwrap();
-        let pump_idx = sorted.iter().position(|&n| graph.node(n).unwrap().name == "Pump").unwrap();
-        let hx_idx = sorted.iter().position(|&n| graph.node(n).unwrap().name == "HX").unwrap();
-        let sink_idx = sorted.iter().position(|&n| graph.node(n).unwrap().name == "Sink").unwrap();
+        let source_idx = sorted
+            .iter()
+            .position(|&n| graph.node(n).unwrap().name == "Boiler")
+            .unwrap();
+        let pump_idx = sorted
+            .iter()
+            .position(|&n| graph.node(n).unwrap().name == "Pump")
+            .unwrap();
+        let hx_idx = sorted
+            .iter()
+            .position(|&n| graph.node(n).unwrap().name == "HX")
+            .unwrap();
+        let sink_idx = sorted
+            .iter()
+            .position(|&n| graph.node(n).unwrap().name == "Sink")
+            .unwrap();
 
         assert!(source_idx < pump_idx);
         assert!(pump_idx < hx_idx);
