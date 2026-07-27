@@ -32,6 +32,7 @@ pub mod thermal_model_5r1c;
 pub mod thermal_model_core;
 pub mod thermal_model_data;
 pub mod thermal_model_hvac;
+pub mod thermal_model_scratch;
 pub mod thermal_model_iterative;
 pub mod thermal_model_mock;
 pub mod thermal_model_network;
