@@ -1121,6 +1121,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "fluxion-city"
+version = "1.0.0"
+dependencies = [
+ "proptest",
+ "serde",
+ "serde_json",
+ "thiserror 1.0.69",
+]
+
+[[package]]
 name = "fluxion-core"
 version = "1.0.0"
 dependencies = [
