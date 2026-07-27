@@ -82,6 +82,8 @@ loom = []
 # Uses the D-Wave SAPI REST API (the same API underlying the Python dimod library).
 # Run with: cargo test --features dwave -p fluxion quantum::dwave_client
 dwave = []
+# Feature flag to gate unconditional debug eprintln! calls in physics hot loops (issue #1967)
+debug-physics = []
 
 [lints.rust]
 unexpected_cfgs = { level = "allow", check-cfg = ["cfg(docsrs,test)", "cfg(gil_refs)"] }
