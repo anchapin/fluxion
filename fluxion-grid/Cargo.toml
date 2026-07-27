@@ -1,15 +1,19 @@
 [package]
 name = "fluxion-grid"
-version = "1.0.0"
+version = "0.1.0"
 edition = "2021"
 authors = ["Dr. Aris Thorne <aris.thorne@fluxion.org>"]
-description = "Electrical grid modeling with bus node types for power flow analysis."
+description = "Grid-edge components for Fluxion: BatteryStorageNode and related electrical network models."
 repository = "https://github.com/anchapin/fluxion"
 license = "Apache-2.0"
 
-[dependencies]
-serde = { version = "1.0", features = ["derive"] }
-thiserror = "1.0"
+[lib]
+name = "fluxion_grid"
+path = "src/lib.rs"
 
-[lints.rust]
-unexpected_cfgs = { level = "allow", check-cfg = ["cfg(docsrs,test)", "cfg(gil_refs)"] }
+[dependencies]
+uuid = { version = "1.0", features = ["serde", "v4"] }
+serde = { version = "1.0", features = ["derive"] }
+
+[dev-dependencies]
+proptest = "1.5"
