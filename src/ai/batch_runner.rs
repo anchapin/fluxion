@@ -422,6 +422,8 @@ impl BatchRunner {
             )),
             input_bounds: None,
             ood_count: std::sync::Arc::new(parking_lot::Mutex::new(0)),
+            residual_tau: crate::ai::surrogate::DEFAULT_RESIDUAL_TAU,
+            residual_reroute_count: std::sync::Arc::new(parking_lot::Mutex::new(0)),
         };
 
         let total_energy_kwh = model.solve_timesteps(8760, &surrogates, false, None, None, None);
