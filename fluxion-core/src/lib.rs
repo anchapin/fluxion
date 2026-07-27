@@ -68,6 +68,7 @@
 
 pub mod ashrae_cases;
 pub mod assembly;
+pub mod fluid;
 pub mod multi_node;
 pub mod tensor;
 pub mod weather;
