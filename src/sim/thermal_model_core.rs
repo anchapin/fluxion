@@ -1640,12 +1640,17 @@ impl ThermalModel<VectorField> {
                 )
                 .with_h_tr_me(h_tr_me_zone);
 
-                let mut solver = crate::physics::multi_node_solver::MultiNodeSolver::new(
+                // Issue #1859: Use ParallelResistance coupling mode as default for 9R4C
+                // to eliminate the ~32.7% mass-to-air coupling overcount that occurs
+                // with AdditiveSum mode. This restores the proper thermal mass damping
+                // effect, reducing diurnal air temperature swing.
+                let mut solver = crate::physics::multi_node_solver::MultiNodeSolver::new_with_mode(
                     h_tr_is,
                     wall_node,
                     roof_node,
                     floor_node,
                     internal_node,
+                    fluxion_core::multi_node::MassAirCouplingMode::ParallelResistance,
                 );
                 solver.initialize_temperatures(20.0);
                 solvers.push(solver);
