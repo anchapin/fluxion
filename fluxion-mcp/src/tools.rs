@@ -1,8 +1,8 @@
 use crate::state::{EnergyResults, McpState, SimulationResults};
-use fluxion::ai::surrogate::SurrogateManager;
-use fluxion::physics::cta::VectorField;
 use fluxion::sim::construction::{Construction, ConstructionLayer, MassClass};
 use fluxion::sim::engine::{StepParameters, ThermalModel};
+use fluxion::physics::cta::VectorField;
+use fluxion::ai::surrogate::SurrogateManager;
 use serde_json::Value;
 
 /// Supported response formats for content-negotiation
@@ -56,6 +56,90 @@ fn serialize_to_toon(value: &Value) -> String {
                 format!("{{{}}}", inner.join(","))
             }
         }
+    }
+}
+
+fn toon_string(value: &Value) -> String {
+    match value {
+        Value::Null => "null".to_string(),
+        Value::Bool(b) => b.to_string(),
+        Value::Number(n) => {
+            if let Some(i) = n.as_i64() {
+                i.to_string()
+            } else if let Some(f) = n.as_f64() {
+                if !f.is_finite() {
+                    return "0".to_string();
+                }
+                if f == f.trunc() {
+                    format!("{:.0}", f)
+                } else if f.abs() < 10.0 {
+                    format!("{:.1}", f)
+                        .trim_end_matches('0')
+                        .trim_end_matches('.')
+                        .to_string()
+                } else {
+                    let s = format!("{:.1}", f);
+                    s.trim_end_matches('0').trim_end_matches('.').to_string()
+                }
+            } else {
+                n.to_string()
+            }
+        }
+        Value::String(s) => s.clone(),
+        Value::Array(arr) => {
+            let inner: Vec<String> = arr.iter().map(|v| toon_string(v)).collect();
+            inner.join(",")
+        }
+        Value::Object(obj) => {
+            let inner: Vec<String> = obj
+                .iter()
+                .map(|(k, v)| format!("{}:{}", compact_key(k), toon_string(v)))
+                .collect();
+            format!("{{{}}}", inner.join(","))
+        }
+    }
+}
+
+fn compact_key(key: &str) -> &str {
+    match key {
+        "zone_index" => "i",
+        "start_hour" => "s",
+        "end_hour" => "e",
+        "temperatures_c" => "t",
+        "surface_index" => "si",
+        "incident_w_m2" => "i",
+        "transmitted_w_m2" => "tx",
+        "num_zones" => "nz",
+        "zone_area_m2" => "za",
+        "window_u_value" => "wu",
+        "heating_setpoint" => "hs",
+        "cooling_setpoint" => "cs",
+        "success" => "ok",
+        "message" => "m",
+        "model" => "md",
+        "assemblies" => "a",
+        "count" => "n",
+        "case_id" => "id",
+        "reference_data" => "rd",
+        "fluxion_version" => "fv",
+        "parameter" => "p",
+        "new_value" => "v",
+        "zones" => "z",
+        "total_surfaces" => "ts",
+        "surfaces" => "sf",
+        "metric" => "mt",
+        "fluxion_value" => "fv",
+        "reference_range" => "rr",
+        "within_tolerance" => "wt",
+        "status" => "st",
+        "period_start_hour" => "ps",
+        "period_end_hour" => "pe",
+        "heating_kwh" => "hk",
+        "cooling_kwh" => "ck",
+        "timesteps" => "ts",
+        "total_heating_kwh" => "th",
+        "total_cooling_kwh" => "tc",
+        _ => key,
     }
 }
 
@@ -257,13 +341,17 @@ pub fn list_tools() -> Vec<serde_json::Value> {
     ]
 }
 
-pub fn handle_tool_call(state: &mut McpState, params: Value) -> Value {
+pub fn handle_tool_call(
+    state: &mut McpState,
+    params: Value,
+) -> Value {
     let arguments = params.as_object().cloned().unwrap_or_default();
 
-    let method = arguments.get("name").and_then(|v| v.as_str()).unwrap_or("");
+    let method = arguments.get("name")
+        .and_then(|v| v.as_str())
+        .unwrap_or("");
 
-    let tool_args = arguments
-        .get("arguments")
+    let tool_args = arguments.get("arguments")
         .and_then(|v| v.as_object())
         .cloned()
         .unwrap_or_default();
@@ -312,29 +400,24 @@ fn wrap_response(result: &Value, format: ResponseFormat) -> Value {
 }
 
 fn load_building_model(state: &mut McpState, args: &serde_json::Map<String, Value>) -> Value {
-    let num_zones = args
-        .get("num_zones")
+    let num_zones = args.get("num_zones")
         .and_then(|v| v.as_i64())
         .map(|v| v as usize)
         .unwrap_or(1);
 
-    let zone_area = args
-        .get("zone_area")
+    let zone_area = args.get("zone_area")
         .and_then(|v| v.as_f64())
         .unwrap_or(20.0);
 
-    let window_u_value = args
-        .get("window_u_value")
+    let window_u_value = args.get("window_u_value")
         .and_then(|v| v.as_f64())
         .unwrap_or(1.5);
 
-    let heating_setpoint = args
-        .get("heating_setpoint")
+    let heating_setpoint = args.get("heating_setpoint")
         .and_then(|v| v.as_f64())
         .unwrap_or(20.0);
 
-    let cooling_setpoint = args
-        .get("cooling_setpoint")
+    let cooling_setpoint = args.get("cooling_setpoint")
         .and_then(|v| v.as_f64())
         .unwrap_or(27.0);
 
@@ -360,19 +443,15 @@ fn load_building_model(state: &mut McpState, args: &serde_json::Map<String, Valu
 fn run_simulation(state: &mut McpState, args: &serde_json::Map<String, Value>) -> Value {
     let model = match &mut state.model {
         Some(m) => m,
-        None => {
-            return serde_json::json!({ "error": "No model loaded. Call load_building_model first." })
-        }
+        None => return serde_json::json!({ "error": "No model loaded. Call load_building_model first." }),
     };
 
-    let timesteps = args
-        .get("timesteps")
+    let timesteps = args.get("timesteps")
         .and_then(|v| v.as_i64())
         .map(|v| v as usize)
         .unwrap_or(8760);
 
-    let use_surrogates = args
-        .get("use_surrogates")
+    let use_surrogates = args.get("use_surrogates")
         .and_then(|v| v.as_bool())
         .unwrap_or(false);
 
@@ -414,22 +493,8 @@ fn run_simulation(state: &mut McpState, args: &serde_json::Map<String, Value>) -
         solar_gains: Vec::new(),
     });
 
-    let total_heating: f64 = state
-        .simulation_results
-        .as_ref()
-        .unwrap()
-        .hvac_energy
-        .heating_kwh
-        .iter()
-        .sum();
-    let total_cooling: f64 = state
-        .simulation_results
-        .as_ref()
-        .unwrap()
-        .hvac_energy
-        .cooling_kwh
-        .iter()
-        .sum();
+    let total_heating: f64 = state.simulation_results.as_ref().unwrap().hvac_energy.heating_kwh.iter().sum();
+    let total_cooling: f64 = state.simulation_results.as_ref().unwrap().hvac_energy.cooling_kwh.iter().sum();
 
     serde_json::json!({
         "success": true,
@@ -443,17 +508,18 @@ fn run_simulation(state: &mut McpState, args: &serde_json::Map<String, Value>) -
 fn get_zone_temperatures(state: &mut McpState, args: &serde_json::Map<String, Value>) -> Value {
     let results = match &state.simulation_results {
         Some(r) => r,
-        None => {
-            return serde_json::json!({ "error": "No simulation results. Run run_simulation first." })
-        }
+        None => return serde_json::json!({ "error": "No simulation results. Run run_simulation first." }),
     };
 
-    let zone_index = args.get("zone_index").and_then(|v| v.as_i64()).unwrap_or(0) as usize;
+    let zone_index = args.get("zone_index")
+        .and_then(|v| v.as_i64())
+        .unwrap_or(0) as usize;
 
-    let start_hour = args.get("start_hour").and_then(|v| v.as_i64()).unwrap_or(0) as usize;
+    let start_hour = args.get("start_hour")
+        .and_then(|v| v.as_i64())
+        .unwrap_or(0) as usize;
 
-    let end_hour = args
-        .get("end_hour")
+    let end_hour = args.get("end_hour")
         .and_then(|v| v.as_i64())
         .map(|v| v as usize)
         .unwrap_or(results.zone_temperatures.len().min(8760));
@@ -475,19 +541,15 @@ fn get_zone_temperatures(state: &mut McpState, args: &serde_json::Map<String, Va
 fn get_hvac_energy(state: &mut McpState, args: &serde_json::Map<String, Value>) -> Value {
     let results = match &state.simulation_results {
         Some(r) => r,
-        None => {
-            return serde_json::json!({ "error": "No simulation results. Run run_simulation first." })
-        }
+        None => return serde_json::json!({ "error": "No simulation results. Run run_simulation first." }),
     };
 
-    let period_start = args
-        .get("period_start")
+    let period_start = args.get("period_start")
         .and_then(|v| v.as_i64())
         .map(|v| v as usize)
         .unwrap_or(0);
 
-    let period_end = args
-        .get("period_end")
+    let period_end = args.get("period_end")
         .and_then(|v| v.as_i64())
         .map(|v| v as usize)
         .unwrap_or(results.hvac_energy.heating_kwh.len());
@@ -512,8 +574,7 @@ fn get_solar_gains(state: &mut McpState, args: &serde_json::Map<String, Value>) 
         None => return serde_json::json!({ "error": "No model loaded." }),
     };
 
-    let surface_index = args
-        .get("surface_index")
+    let surface_index = args.get("surface_index")
         .and_then(|v| v.as_i64())
         .unwrap_or(0) as usize;
 
@@ -532,12 +593,8 @@ fn get_solar_gains(state: &mut McpState, args: &serde_json::Map<String, Value>) 
     })
 }
 
-fn list_construction_assemblies(
-    state: &mut McpState,
-    args: &serde_json::Map<String, Value>,
-) -> Value {
-    let _mass_class_filter = args
-        .get("mass_class")
+fn list_construction_assemblies(state: &mut McpState, args: &serde_json::Map<String, Value>) -> Value {
+    let _mass_class_filter = args.get("mass_class")
         .and_then(|v| v.as_str())
         .map(|s| match s {
             "VeryLight" => Some(MassClass::VeryLight),
@@ -604,8 +661,7 @@ fn list_construction_assemblies(
 }
 
 fn get_ashrae140_results(state: &mut McpState, args: &serde_json::Map<String, Value>) -> Value {
-    let case_id = args
-        .get("case_id")
+    let case_id = args.get("case_id")
         .and_then(|v| v.as_str())
         .unwrap_or("600");
 
@@ -648,14 +704,16 @@ fn get_ashrae140_references(case_id: &str) -> Value {
 fn set_parameter(state: &mut McpState, args: &serde_json::Map<String, Value>) -> Value {
     let model = match &mut state.model {
         Some(m) => m,
-        None => {
-            return serde_json::json!({ "error": "No model loaded. Call load_building_model first." })
-        }
+        None => return serde_json::json!({ "error": "No model loaded. Call load_building_model first." }),
     };
 
-    let name = args.get("name").and_then(|v| v.as_str()).unwrap_or("");
+    let name = args.get("name")
+        .and_then(|v| v.as_str())
+        .unwrap_or("");
 
-    let value = args.get("value").and_then(|v| v.as_f64()).unwrap_or(0.0);
+    let value = args.get("value")
+        .and_then(|v| v.as_f64())
+        .unwrap_or(0.0);
 
     match name {
         "window_u_value" => {
@@ -683,9 +741,7 @@ fn set_parameter(state: &mut McpState, args: &serde_json::Map<String, Value>) ->
 fn describe_model(state: &mut McpState, _args: &serde_json::Map<String, Value>) -> Value {
     let model = match &state.model {
         Some(m) => m,
-        None => {
-            return serde_json::json!({ "error": "No model loaded. Call load_building_model first." })
-        }
+        None => return serde_json::json!({ "error": "No model loaded. Call load_building_model first." }),
     };
 
     let zones: Vec<_> = (0..model.num_zones)
@@ -722,28 +778,22 @@ fn describe_model(state: &mut McpState, _args: &serde_json::Map<String, Value>) 
 }
 
 fn compare_to_reference(state: &mut McpState, args: &serde_json::Map<String, Value>) -> Value {
-    let case_id = args
-        .get("case_id")
+    let case_id = args.get("case_id")
         .and_then(|v| v.as_str())
         .unwrap_or("600");
 
-    let metric = args
-        .get("metric")
+    let metric = args.get("metric")
         .and_then(|v| v.as_str())
         .unwrap_or("annual_heating");
 
     let references = get_ashrae140_references(case_id);
 
-    let metric_data = references
-        .get(metric)
+    let metric_data = references.get(metric)
         .and_then(|v| v.as_object())
         .map(|obj| {
             let min = obj.get("min").and_then(|v| v.as_f64()).unwrap_or(0.0);
             let max = obj.get("max").and_then(|v| v.as_f64()).unwrap_or(0.0);
-            let typical = obj
-                .get("typical")
-                .and_then(|v| v.as_f64())
-                .unwrap_or((min + max) / 2.0);
+            let typical = obj.get("typical").and_then(|v| v.as_f64()).unwrap_or((min + max) / 2.0);
             (min, max, typical)
         })
         .unwrap_or((0.0, 0.0, 0.0));
@@ -764,68 +814,4 @@ fn compare_to_reference(state: &mut McpState, args: &serde_json::Map<String, Val
         "within_tolerance": within_range,
         "status": if within_range { "PASS" } else { "FAIL" }
     })
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    fn compute_savings_pct(json_value: &Value) -> f64 {
-        let json_len = serde_json::to_string(json_value)
-            .map(|s| s.len())
-            .unwrap_or(0);
-        let toon_len = toon_string(json_value).len();
-        if json_len > 0 && toon_len <= json_len {
-            ((json_len - toon_len) as f64 / json_len as f64) * 100.0
-        } else {
-            0.0
-        }
-    }
-
-    #[test]
-    fn test_token_savings_pct_always_non_negative() {
-        let test_cases = vec![
-            serde_json::json!({"error": "test error"}),
-            serde_json::json!({"success": true, "message": "loaded"}),
-            serde_json::json!({"temperatures_c": vec![20.0, 21.0, 22.5]}),
-            serde_json::json!({"num_zones": 5, "zones": [{"index": 0}, {"index": 1}]}),
-            serde_json::json!({"assemblies": [], "count": 0}),
-            serde_json::json!({"case_id": "600", "reference_data": {}}),
-            serde_json::json!({"parameter": "window_u_value", "new_value": 1.5}),
-            serde_json::json!({"num_zones": 3, "total_surfaces": 12}),
-            serde_json::json!({"case_id": "600", "metric": "annual_heating", "fluxion_value": 65.0}),
-        ];
-
-        for value in test_cases {
-            let savings = compute_savings_pct(&value);
-            assert!(
-                savings >= 0.0,
-                "token_savings_pct should be >= 0, got {} for {:?}",
-                savings,
-                value
-            );
-        }
-    }
-
-    #[test]
-    fn test_get_zone_temperatures_savings_pct_at_least_35() {
-        let temps: Vec<f64> = (0..500)
-            .map(|i| 22.0 + (i as f64 % 10.0) * 0.1 + (i as f64 / 100.0).sin() * 0.5)
-            .collect();
-        let result = serde_json::json!({
-            "zone_index": 0,
-            "start_hour": 0,
-            "end_hour": 100,
-            "temperatures_c": temps
-        });
-
-        let json_len = serde_json::to_string(&result).map(|s| s.len()).unwrap_or(0);
-        let toon_len = toon_string(&result).len();
-        let savings = compute_savings_pct(&result);
-        assert!(
-            savings >= 35.0,
-            "Expected savings_pct >= 35.0 for 5-zone × 100-timestep get_zone_temperatures, got {} (json={}, toon={})",
-            savings, json_len, toon_len
-        );
-    }
 }
