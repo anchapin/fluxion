@@ -1,0 +1,15 @@
+[package]
+name = "fluxion-behavior"
+version = "0.1.0"
+edition = "2021"
+description = "Occupancy behavior modeling with Markov chains and ASHRAE 90.1 data"
+license = "Apache-2.0"
+
+[dependencies]
+rand = { version = "0.8", features = ["small_rng"] }
+rand_distr = "0.4"
+serde = { version = "1.0", features = ["derive"] }
+thiserror = "1.0"
+
+[dev-dependencies]
+approx = "0.5"
