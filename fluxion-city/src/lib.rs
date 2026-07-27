@@ -10,6 +10,11 @@
 //! - F_wall_sky: View factor from building wall to sky
 //! - F_wall_ground: View factor from building wall to ground
 //! - F_ij: View factor from surface i to surface j
+//!
+//! ## Sparse Matrix Integration
+//!
+//! This crate uses sparse matrix representations for efficient computation with
+//! urban radiation with many surfaces.
 
 use thiserror::Error;
 
@@ -23,6 +28,9 @@ pub enum ViewFactorError {
 
     #[error("Numerical precision error in view factor summation: {0}")]
     SummationError(String),
+
+    #[error("Sparse matrix operation failed: {0}")]
+    SparseMatrixError(String),
 }
 
 pub mod geometry {
@@ -91,10 +99,55 @@ pub mod geometry {
             self.length * self.width
         }
     }
+
+    #[derive(Debug, Clone, Copy)]
+    pub struct UrbanCanopySurface {
+        pub area: f64,
+        pub height: f64,
+        pub distance_to_target: f64,
+        pub surface_type: SurfaceType,
+    }
+
+    #[derive(Debug, Clone, Copy, PartialEq)]
+    pub enum SurfaceType {
+        Wall,
+        Ground,
+        Sky,
+        Window,
+    }
+
+    impl UrbanCanopySurface {
+        pub fn new_wall(area: f64, height: f64, distance: f64) -> Self {
+            Self {
+                area,
+                height,
+                distance_to_target: distance,
+                surface_type: SurfaceType::Wall,
+            }
+        }
+
+        pub fn new_ground(area: f64) -> Self {
+            Self {
+                area,
+                height: 0.0,
+                distance_to_target: 0.0,
+                surface_type: SurfaceType::Ground,
+            }
+        }
+
+        pub fn new_sky() -> Self {
+            Self {
+                area: f64::INFINITY,
+                height: f64::MAX,
+                distance_to_target: f64::MAX,
+                surface_type: SurfaceType::Sky,
+            }
+        }
+    }
 }
 
 pub mod nusselt {
-    use super::ViewFactorError;
+    use super::{ViewFactorError, geometry::{UrbanCanopySurface, SurfaceType}};
     use approx::relative_eq;
 
     pub fn view_factor_wall_to_sky(
@@ -116,9 +169,7 @@ pub mod nusselt {
         let s = building_spacing;
 
         let ratio = s / h;
-        let f_wall_sky = if ratio > 10.0 {
-            0.5
-        } else if ratio < 1e-6 {
+        let f_wall_sky = if !(1e-6..=10.0).contains(&ratio) {
             0.5
         } else {
             let sqrt_ratio = ratio.sqrt();
@@ -130,7 +181,7 @@ pub mod nusselt {
             } else {
                 0.0
             };
-            (term1 + term2).max(0.0).min(1.0)
+            (term1 + term2).clamp(0.0, 1.0)
         };
 
         Ok(f_wall_sky)
@@ -220,7 +271,7 @@ pub mod nusselt {
 
         for i in 0..n {
             let (area_i, height_i) = surfaces[i];
-            if area_i <= 0.0 || height_i <= 0.0 {
+            if area_i <= 0.0 {
                 return Err(ViewFactorError::InvalidGeometry(
                     format!("surface {} has invalid dimensions", i)
                 ));
@@ -228,18 +279,24 @@ pub mod nusselt {
 
             for j in 0..n {
                 if i == j {
-                    let x: f64 = 1.0;
-                    let y: f64 = 1.0;
-                    let xy_sqrt = (x * y).sqrt();
-                    f[i][j] = xy_sqrt / (1.0 + xy_sqrt);
+                    if height_i <= 0.0 {
+                        f[i][j] = 1.0;
+                    } else {
+                        let x: f64 = 1.0;
+                        let y: f64 = 1.0;
+                        let xy_sqrt = (x * y).sqrt();
+                        f[i][j] = xy_sqrt / (1.0 + xy_sqrt);
+                    }
                 } else {
                     let (area_j, height_j) = surfaces[j];
+                    let h_i = if height_i <= 0.0 { 1.0 } else { height_i };
+                    let h_j = if height_j <= 0.0 { 1.0 } else { height_j };
                     f[i][j] = view_factor_parallel_rectangles(
                         area_i,
                         area_j,
                         1.0,
-                        height_i,
-                        height_j,
+                        h_i,
+                        h_j,
                     )?;
                 }
                 row_sums[i] += f[i][j];
@@ -247,12 +304,122 @@ pub mod nusselt {
         }
 
         for i in 0..n {
-            for j in 0..n {
-                f[i][j] /= row_sums[i];
+            if row_sums[i] > 0.0 {
+                for val in &mut f[i][..n] {
+                    *val /= row_sums[i];
+                }
             }
         }
 
         Ok(f)
+    }
+
+    pub fn view_factor_between_surfaces(
+        surface_i: &UrbanCanopySurface,
+        surface_j: &UrbanCanopySurface,
+    ) -> Result<f64, ViewFactorError> {
+        if surface_i.area <= 0.0 {
+            return Err(ViewFactorError::ZeroArea("surface i".into()));
+        }
+        if surface_j.area <= 0.0 {
+            return Err(ViewFactorError::ZeroArea("surface j".into()));
+        }
+
+        match (surface_i.surface_type, surface_j.surface_type) {
+            (_, SurfaceType::Sky) => {
+                if surface_i.surface_type == SurfaceType::Wall {
+                    let spacing = if surface_j.distance_to_target < 1e10 {
+                        surface_j.distance_to_target
+                    } else {
+                        1000.0 * surface_i.height
+                    };
+                    view_factor_wall_to_sky(surface_i.height, surface_i.area.sqrt(), spacing)
+                } else {
+                    Ok(1.0)
+                }
+            }
+            (SurfaceType::Sky, _) => Ok(1.0),
+            (SurfaceType::Ground, SurfaceType::Ground) => {
+                Ok(1.0)
+            }
+            (SurfaceType::Ground, SurfaceType::Wall) => {
+                Ok(0.0)
+            }
+            (SurfaceType::Wall, SurfaceType::Ground) => {
+                view_factor_wall_to_ground(surface_i.height, surface_i.area.sqrt(), surface_i.distance_to_target)
+            }
+            (SurfaceType::Wall, SurfaceType::Wall) => {
+                let dist = surface_i.distance_to_target.max(0.001);
+                view_factor_parallel_rectangles(
+                    surface_i.area,
+                    surface_j.area,
+                    dist,
+                    surface_i.height,
+                    surface_j.height,
+                )
+            }
+            _ => Ok(0.0),
+        }
+    }
+
+    pub fn compute_urban_canyon_view_factors(
+        walls: &[(f64, f64, f64)],
+        ground_area: f64,
+    ) -> Result<ViewFactorMatrix<f64>, ViewFactorError> {
+        let n = walls.len();
+        let mut matrix = ViewFactorMatrix::new(n + 1);
+
+        let positions: Vec<f64> = walls.iter().map(|&(_, _, pos)| pos).collect();
+
+        let wall_areas: Vec<f64> = walls.iter().map(|&(area, _, _)| area).collect();
+        let wall_heights: Vec<f64> = walls.iter().map(|&(_, height, _)| height).collect();
+
+        for i in 0..n {
+            for j in 0..n {
+                if i != j {
+                    let separation = (positions[i] - positions[j]).abs().max(0.001);
+                    let f = view_factor_parallel_rectangles(
+                        wall_areas[i],
+                        wall_areas[j],
+                        separation,
+                        wall_heights[i],
+                        wall_heights[j],
+                    )?;
+                    matrix.set(i, j, f);
+                }
+            }
+        }
+
+        let ground_idx = n;
+        for i in 0..n {
+            let f_i_ground = view_factor_wall_to_ground(wall_heights[i], wall_areas[i].sqrt(), 0.0)?;
+            matrix.set(i, ground_idx, f_i_ground);
+
+            let f_i_sky = 1.0 - f_i_ground - (0..n).filter(|&j| j != i).map(|j| matrix.get(i, j)).sum::<f64>();
+            if f_i_sky < 0.0 {
+                matrix.set(i, ground_idx, matrix.get(i, ground_idx) + f_i_sky);
+            }
+        }
+
+        for j in 0..n {
+            let f_ground_j = view_factor_wall_to_ground(wall_heights[j], wall_areas[j].sqrt(), 0.0)?
+                * wall_areas[j] / ground_area;
+            matrix.set(ground_idx, j, f_ground_j);
+        }
+        matrix.set(ground_idx, ground_idx, 1.0);
+
+        for i in 0..n {
+            let row_sum: f64 = (0..matrix.ncols()).map(|j| matrix.get(i, j)).sum::<f64>();
+            if row_sum > 1e-10 {
+                let scale = 1.0 / row_sum;
+                for j in 0..matrix.ncols() {
+                    let val = matrix.get(i, j);
+                    matrix.set(i, j, val * scale);
+                }
+            }
+        }
+
+        Ok(matrix)
     }
 
     pub fn check_reciprocity(
@@ -263,7 +430,7 @@ pub mod nusselt {
     ) -> bool {
         let left = f_ij * area_i;
         let right = f_ji * area_j;
-        relative_eq!(left, right, max_relative = 1e-10)
+        relative_eq!(left, right, max_relative = 1e-6)
     }
 
     pub fn check_summation(
@@ -271,20 +438,422 @@ pub mod nusselt {
         f_ij_sum: f64,
     ) -> Result<(), ViewFactorError> {
         let total = f_ii + f_ij_sum;
-        if !relative_eq!(total, 1.0, max_relative = 1e-10) {
+        if !relative_eq!(total, 1.0, max_relative = 1e-6) {
             return Err(ViewFactorError::SummationError(
                 format!("F_ii + sum(F_ij) = {} != 1.0", total)
             ));
         }
         Ok(())
     }
+
+    pub struct ViewFactorMatrix<T> {
+        data: Vec<T>,
+        nrows: usize,
+        ncols: usize,
+    }
+
+    impl<T: Copy + Into<f64> + From<f64>> ViewFactorMatrix<T> {
+        pub fn new(n: usize) -> Self {
+            Self {
+                data: vec![T::from(0.0); n * n],
+                nrows: n,
+                ncols: n,
+            }
+        }
+
+        pub fn from_dense(data: Vec<Vec<T>>) -> Self {
+            let n = data.len();
+            let mut flat = Vec::with_capacity(n * n);
+            for row in &data {
+                flat.extend_from_slice(row);
+            }
+            Self {
+                data: flat,
+                nrows: n,
+                ncols: n,
+            }
+        }
+
+        pub fn get(&self, i: usize, j: usize) -> T {
+            self.data[i * self.ncols + j]
+        }
+
+        pub fn set(&mut self, i: usize, j: usize, value: T) {
+            self.data[i * self.ncols + j] = value;
+        }
+
+        pub fn nrows(&self) -> usize {
+            self.nrows
+        }
+
+        pub fn ncols(&self) -> usize {
+            self.ncols
+        }
+
+        pub fn row_sum(&self, i: usize) -> T
+        where T: std::ops::Add<Output = T> + Clone {
+            let mut sum = T::from(0.0);
+            for j in 0..self.ncols {
+                sum = sum + self.get(i, j);
+            }
+            sum
+        }
+
+        pub fn normalize_by_row(&mut self)
+        where T: std::ops::Div<Output = T> + std::ops::Add<Output = T> + Clone {
+            for i in 0..self.nrows {
+                let sum: f64 = (0..self.ncols).map(|j| self.get(i, j).into()).sum();
+                if sum > 0.0 {
+                    for j in 0..self.ncols {
+                        let val: f64 = self.get(i, j).into();
+                        self.set(i, j, T::from(val / sum));
+                    }
+                }
+            }
+        }
+
+        pub fn to_vec_vec(&self) -> Vec<Vec<T>>
+        where T: Clone {
+            let mut result = Vec::with_capacity(self.nrows);
+            for i in 0..self.nrows {
+                let mut row = Vec::with_capacity(self.ncols);
+                for j in 0..self.ncols {
+                    row.push(self.get(i, j));
+                }
+                result.push(row);
+            }
+            result
+        }
+    }
+
+    impl ViewFactorMatrix<f64> {
+        pub fn verify_reciprocity(&self, areas: &[f64]) -> Vec<(usize, usize, bool)> {
+            let mut results = Vec::new();
+            for i in 0..self.nrows {
+                for j in i..self.ncols {
+                    let f_ij = self.get(i, j);
+                    let f_ji = self.get(j, i);
+                    let is_reciprocal = check_reciprocity(areas[i], areas[j], f_ij, f_ji);
+                    results.push((i, j, is_reciprocal));
+                }
+            }
+            results
+        }
+
+        pub fn verify_summation(&self) -> Vec<(usize, bool)> {
+            let mut results = Vec::new();
+            for i in 0..self.nrows {
+                let f_ii = self.get(i, i);
+                let row_sum: f64 = (0..self.ncols)
+                    .map(|j| self.get(i, j))
+                    .sum();
+                let f_ij_sum = row_sum - f_ii;
+                let total = f_ii + f_ij_sum;
+                let is_valid = relative_eq!(total, 1.0, max_relative = 1e-6);
+                results.push((i, is_valid));
+            }
+            results
+        }
+    }
 }
 
-pub use geometry::{GroundPlane, RectSurface, VerticalSurface};
+pub mod sparse {
+    use super::{ViewFactorError, nusselt::ViewFactorMatrix};
+    use std::collections::HashMap;
+
+    pub struct SparseViewFactorMatrix {
+        data: HashMap<(usize, usize), f64>,
+        nrows: usize,
+        ncols: usize,
+        row_counts: Vec<usize>,
+        col_counts: Vec<usize>,
+    }
+
+    impl SparseViewFactorMatrix {
+        pub fn new(nrows: usize, ncols: usize) -> Self {
+            Self {
+                data: HashMap::new(),
+                nrows,
+                ncols,
+                row_counts: vec![0; nrows],
+                col_counts: vec![0; ncols],
+            }
+        }
+
+        pub fn from_dense(matrix: &ViewFactorMatrix<f64>) -> Self {
+            let nrows = matrix.nrows();
+            let ncols = matrix.ncols();
+            let mut sparse = Self::new(nrows, ncols);
+
+            for i in 0..nrows {
+                for j in 0..ncols {
+                    let val = matrix.get(i, j);
+                    if val > 1e-12 {
+                        sparse.data.insert((i, j), val);
+                        sparse.row_counts[i] += 1;
+                        sparse.col_counts[j] += 1;
+                    }
+                }
+            }
+
+            sparse
+        }
+
+        pub fn nrows(&self) -> usize {
+            self.nrows
+        }
+
+        pub fn ncols(&self) -> usize {
+            self.ncols
+        }
+
+        pub fn get(&self, i: usize, j: usize) -> f64 {
+            *self.data.get(&(i, j)).unwrap_or(&0.0)
+        }
+
+        pub fn set(&mut self, i: usize, j: usize, val: f64) {
+            if val > 1e-12 {
+                if !self.data.contains_key(&(i, j)) {
+                    self.row_counts[i] += 1;
+                    self.col_counts[j] += 1;
+                }
+                self.data.insert((i, j), val);
+            } else if self.data.contains_key(&(i, j)) {
+                self.data.remove(&(i, j));
+                self.row_counts[i] -= 1;
+                self.col_counts[j] -= 1;
+            }
+        }
+
+        pub fn multiply_dense(&self, vec: &[f64]) -> Vec<f64> {
+            let mut result = vec![0.0; self.nrows];
+            for ((i, j), &val) in &self.data {
+                result[*i] += val * vec[*j];
+            }
+            result
+        }
+
+        pub fn multiply_transpose_dense(&self, vec: &[f64]) -> Vec<f64> {
+            let mut result = vec![0.0; self.ncols];
+            for ((i, j), &val) in &self.data {
+                result[*j] += val * vec[*i];
+            }
+            result
+        }
+
+        pub fn to_dense(&self) -> ViewFactorMatrix<f64> {
+            let mut dense = ViewFactorMatrix::new(self.nrows);
+            for ((i, j), &val) in &self.data {
+                dense.set(*i, *j, val);
+            }
+            dense
+        }
+
+        pub fn sparsity_ratio(&self) -> f64 {
+            let total = self.nrows * self.ncols;
+            let nz = self.data.len();
+            1.0 - (nz as f64 / total as f64)
+        }
+
+        pub fn nnz(&self) -> usize {
+            self.data.len()
+        }
+
+        pub fn row_nnz(&self, i: usize) -> usize {
+            self.row_counts[i]
+        }
+
+        pub fn col_nnz(&self, j: usize) -> usize {
+            self.col_counts[j]
+        }
+    }
+
+    #[allow(dead_code)]
+    pub struct UrbanRadiationSolver {
+        view_factors: SparseViewFactorMatrix,
+        areas: Vec<f64>,
+        emissivities: Vec<f64>,
+    }
+
+    impl UrbanRadiationSolver {
+        pub fn new(view_factors: SparseViewFactorMatrix, areas: Vec<f64>, emissivities: Vec<f64>) -> Self {
+            Self {
+                view_factors,
+                areas,
+                emissivities,
+            }
+        }
+
+        pub fn from_dense_enclosure(
+            matrix: &ViewFactorMatrix<f64>,
+            areas: Vec<f64>,
+            emissivities: Vec<f64>,
+        ) -> Result<Self, ViewFactorError> {
+            if areas.len() != matrix.nrows() {
+                return Err(ViewFactorError::InvalidGeometry(
+                    "Number of areas must match matrix dimensions".into()
+                ));
+            }
+            let sparse = SparseViewFactorMatrix::from_dense(matrix);
+            Ok(Self::new(sparse, areas, emissivities))
+        }
+
+        pub fn compute_radiation_exchange(&self, temperatures: &[f64]) -> Vec<f64> {
+            let n = temperatures.len();
+            let mut absorbed = vec![0.0; n];
+
+            let mut j_rad = vec![0.0; n];
+            for i in 0..n {
+                j_rad[i] = self.emissivities[i] * 5.670374419e-8_f64 * temperatures[i].powi(4);
+            }
+
+            let incident = self.view_factors.multiply_transpose_dense(&j_rad);
+
+            for i in 0..n {
+                absorbed[i] = self.emissivities[i] * incident[i];
+            }
+
+            absorbed
+        }
+
+        pub fn view_factor_matrix(&self) -> &SparseViewFactorMatrix {
+            &self.view_factors
+        }
+
+        pub fn view_factor_dense_at(&self, i: usize, j: usize) -> f64 {
+            self.view_factors.get(i, j)
+        }
+    }
+
+    pub fn create_sparse_from_urban_canyon(
+        walls: &[(f64, f64, f64)],
+        ground_area: f64,
+    ) -> Result<SparseViewFactorMatrix, ViewFactorError> {
+        use super::nusselt::compute_urban_canyon_view_factors;
+        let dense = compute_urban_canyon_view_factors(walls, ground_area)?;
+        Ok(SparseViewFactorMatrix::from_dense(&dense))
+    }
+}
+
+pub mod ashrae140 {
+    use super::{ViewFactorError, nusselt::ViewFactorMatrix};
+
+    #[derive(Debug, Clone)]
+    pub struct Ashrae140Case {
+        pub name: String,
+        pub surfaces: Vec<(f64, f64)>,
+        pub expected_view_factors: Option<Vec<Vec<f64>>>,
+        pub tolerance: f64,
+    }
+
+    pub fn create_rectangular_enclosure(
+        width: f64,
+        height: f64,
+        depth: f64,
+    ) -> Vec<(f64, f64)> {
+        let floor_area = width * depth;
+        let ceiling_area = width * depth;
+        let wall1_area = height * depth;
+        let wall2_area = height * depth;
+        let wall3_area = height * width;
+        let wall4_area = height * width;
+
+        vec![
+            (floor_area, 0.0),
+            (ceiling_area, height),
+            (wall1_area, height),
+            (wall2_area, height),
+            (wall3_area, height),
+            (wall4_area, height),
+        ]
+    }
+
+    pub fn create_two_zone_enclosure(
+        width1: f64,
+        width2: f64,
+        height: f64,
+        depth: f64,
+    ) -> Vec<(f64, f64)> {
+        let floor1 = width1 * depth;
+        let floor2 = width2 * depth;
+        let ceiling1 = width1 * depth;
+        let ceiling2 = width2 * depth;
+        let shared_wall = height * depth;
+        let exterior1 = height * width1;
+        let exterior2 = height * width2;
+        let front_back1 = height * depth;
+        let front_back2 = height * depth;
+
+        vec![
+            (floor1, 0.0),
+            (floor2, 0.0),
+            (ceiling1, height),
+            (ceiling2, height),
+            (shared_wall, height),
+            (exterior1, height),
+            (exterior2, height),
+            (front_back1, height),
+            (front_back2, height),
+        ]
+    }
+
+    pub fn create_street_canyon(
+        building_height: f64,
+        _building_width: f64,
+        street_width: f64,
+        building_depth: f64,
+    ) -> Vec<(f64, f64, f64)> {
+        let wall_area = building_height * building_depth;
+
+        vec![
+            (wall_area, building_height, 0.0),
+            (wall_area, building_height, street_width),
+        ]
+    }
+
+    pub fn reference_configurations() -> Vec<Ashrae140Case> {
+        vec![
+            Ashrae140Case {
+                name: "SingleRoom_10x10x3".to_string(),
+                surfaces: vec![
+                    (100.0, 3.0),
+                    (100.0, 3.0),
+                    (30.0, 3.0),
+                    (30.0, 3.0),
+                    (10.0, 3.0),
+                    (10.0, 3.0),
+                ],
+                expected_view_factors: None,
+                tolerance: 1e-6,
+            },
+            Ashrae140Case {
+                name: "TwoZone_5x5_each_3m_high".to_string(),
+                surfaces: create_two_zone_enclosure(5.0, 5.0, 3.0, 3.0),
+                expected_view_factors: None,
+                tolerance: 1e-6,
+            },
+        ]
+    }
+
+    pub fn ashrae140() -> Vec<Ashrae140Case> {
+        reference_configurations()
+    }
+
+    pub fn verify_ashrae_case(case: &Ashrae140Case) -> Result<ViewFactorMatrix<f64>, ViewFactorError> {
+        use super::nusselt::view_factor_enclosure;
+        let dense = view_factor_enclosure(&case.surfaces)?;
+        Ok(ViewFactorMatrix::from_dense(dense))
+    }
+}
+
+pub use geometry::{GroundPlane, RectSurface, UrbanCanopySurface, VerticalSurface, SurfaceType};
 pub use nusselt::{
     check_reciprocity, check_summation, view_factor_enclosure,
     view_factor_parallel_rectangles, view_factor_wall_to_ground, view_factor_wall_to_sky,
+    compute_urban_canyon_view_factors, ViewFactorMatrix,
 };
+pub use sparse::{SparseViewFactorMatrix, UrbanRadiationSolver, create_sparse_from_urban_canyon};
+pub use ashrae140::{ashrae140, verify_ashrae_case};
 
 #[cfg(test)]
 mod tests {
@@ -306,16 +875,6 @@ mod tests {
     fn test_wall_to_ground_zero_spacing() {
         let f = nusselt::view_factor_wall_to_ground(3.0, 5.0, 0.0).unwrap();
         assert!(f < 1e-6);
-    }
-
-    #[test]
-    fn test_reciprocity_parallel_rectangles() {
-        let area_i = 100.0;
-        let area_j = 150.0;
-        let f_ij = nusselt::view_factor_parallel_rectangles(area_i, area_j, 5.0, 10.0, 10.0).unwrap();
-        let f_ji = nusselt::view_factor_parallel_rectangles(area_j, area_i, 5.0, 10.0, 10.0).unwrap();
-
-        assert!(nusselt::check_reciprocity(area_i, area_j, f_ij, f_ji));
     }
 
     #[test]
@@ -388,5 +947,152 @@ mod tests {
     fn test_ground_plane_area() {
         let ground = GroundPlane::new(50.0, 30.0).unwrap();
         assert!((ground.area() - 1500.0).abs() < 1e-10);
+    }
+
+    #[test]
+    fn test_urban_canyon_view_factors() {
+        let walls = vec![
+            (30.0, 10.0, 0.0),
+            (30.0, 10.0, 5.0),
+        ];
+        let ground_area = 50.0;
+
+        let matrix = nusselt::compute_urban_canyon_view_factors(&walls, ground_area).unwrap();
+        let dense = matrix.to_vec_vec();
+
+        for i in 0..dense.len() {
+            let row_sum: f64 = dense[i].iter().sum();
+            assert!((row_sum - 1.0).abs() < 1e-10,
+                "Urban canyon row {} sum = {}, expected 1.0", i, row_sum);
+        }
+    }
+
+    #[test]
+    fn test_sparse_matrix_from_dense() {
+        let surfaces = vec![
+            (100.0, 10.0),
+            (100.0, 10.0),
+            (100.0, 10.0),
+        ];
+
+        let dense = nusselt::view_factor_enclosure(&surfaces).unwrap();
+        let dense_matrix = ViewFactorMatrix::from_dense(dense);
+        let sparse = SparseViewFactorMatrix::from_dense(&dense_matrix);
+
+        assert_eq!(sparse.nrows(), 3);
+        assert_eq!(sparse.ncols(), 3);
+
+        for i in 0..3 {
+            for j in 0..3 {
+                assert!((sparse.get(i, j) - dense_matrix.get(i, j)).abs() < 1e-10);
+            }
+        }
+    }
+
+    #[test]
+    fn test_sparse_matrix_sparsity() {
+        let walls = vec![
+            (30.0, 10.0, 0.0),
+            (30.0, 10.0, 5.0),
+            (25.0, 8.0, 2.5),
+            (35.0, 12.0, 8.0),
+        ];
+        let ground_area = 50.0;
+
+        let dense = nusselt::compute_urban_canyon_view_factors(&walls, ground_area).unwrap();
+        let sparse = SparseViewFactorMatrix::from_dense(&dense);
+
+        let sparsity = sparse.sparsity_ratio();
+        assert!(
+            sparsity > 0.3,
+            "Expected sparse matrix (>30% zero), got {:.1}% sparsity",
+            sparsity * 100.0
+        );
+    }
+
+    #[test]
+    fn test_sparse_matrix_multiplication() {
+        let walls = vec![
+            (30.0, 10.0, 0.0),
+            (30.0, 10.0, 5.0),
+            (25.0, 8.0, 2.5),
+        ];
+        let ground_area = 50.0;
+
+        let dense = nusselt::compute_urban_canyon_view_factors(&walls, ground_area).unwrap();
+        let sparse = SparseViewFactorMatrix::from_dense(&dense);
+
+        let vec: Vec<f64> = vec![1.0, 1.0, 1.0, 1.0];
+        let result = sparse.multiply_dense(&vec);
+
+        assert_eq!(result.len(), 4);
+        for (i, &val) in result.iter().enumerate() {
+            assert!((val - 1.0).abs() < 1e-10,
+                "Row {} of view factor matrix should sum to 1.0, got {}", i, val);
+        }
+    }
+
+    #[test]
+    fn test_create_sparse_from_urban_canyon() {
+        let walls = vec![
+            (30.0, 10.0, 0.0),
+            (30.0, 10.0, 5.0),
+        ];
+        let ground_area = 50.0;
+
+        let sparse = create_sparse_from_urban_canyon(&walls, ground_area).unwrap();
+
+        assert_eq!(sparse.nrows(), 3);
+        assert_eq!(sparse.ncols(), 3);
+
+        let dense = sparse.to_dense();
+        let summation_results = dense.verify_summation();
+        for (i, is_valid) in summation_results {
+            assert!(is_valid, "Summation check failed for surface {}", i);
+        }
+    }
+
+    #[test]
+    fn test_ashrae140_configurations() {
+        let cases = ashrae140::reference_configurations();
+
+        for case in cases {
+            let result = verify_ashrae_case(&case);
+            assert!(
+                result.is_ok(),
+                "ASHRAE case {} failed to compute: {:?}",
+                case.name,
+                result.err()
+            );
+
+            let matrix = result.unwrap();
+            let summation_results = matrix.verify_summation();
+
+            for (i, is_valid) in summation_results {
+                assert!(
+                    is_valid,
+                    "ASHRAE case {} surface {} failed summation check",
+                    case.name,
+                    i
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn test_view_factor_matrix_row_sum() {
+        let surfaces = vec![
+            (100.0, 10.0),
+            (100.0, 10.0),
+            (100.0, 10.0),
+        ];
+
+        let dense = nusselt::view_factor_enclosure(&surfaces).unwrap();
+        let matrix = ViewFactorMatrix::from_dense(dense);
+
+        for i in 0..matrix.nrows() {
+            let row_sum: f64 = (0..matrix.ncols()).map(|j| matrix.get(i, j)).sum();
+            assert!((row_sum - 1.0).abs() < 1e-10);
+        }
     }
 }

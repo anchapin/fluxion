@@ -11,5 +11,14 @@ license = "Apache-2.0"
 thiserror = "1.0"
 serde = { version = "1.0", features = ["derive"] }
 approx = "0.5"
+faer = "0.23"
+num-traits = "0.2"
+rayon = { version = "1.8", optional = true }
+
+[features]
+default = []
+parallel = ["rayon"]
 
 [dev-dependencies]
+criterion = "0.5"
+rand = "0.8"
