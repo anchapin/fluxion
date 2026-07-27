@@ -7,6 +7,10 @@ pub mod multi_zone;
 pub mod performance;
 pub mod validation;
 
+mod commands {
+    pub mod import;
+}
+
 pub use multi_zone::*;
 pub use performance::PerformanceCommand;
 pub use validation::ValidationSubcommand;
@@ -43,6 +47,9 @@ pub enum Commands {
     /// Monte Carlo parameter sweeps via declarative deltas (Issue #1813).
     #[command(subcommand)]
     MonteCarlo(monte_carlo::MonteCarloCommand),
+
+    /// Import EnergyPlus IDF or epJSON models into SimulationSchemaV1 (Issue #1900).
+    Import(commands::import::ImportCommand),
 }
 
 /// Parse and execute CLI commands
@@ -66,6 +73,10 @@ pub fn run_cli() -> Result<(), anyhow::Error> {
         }
         Commands::MonteCarlo(cmd) => {
             monte_carlo::handle_monte_carlo_command(&cmd)?;
+            Ok(())
+        }
+        Commands::Import(cmd) => {
+            commands::import::execute_import(&cmd).map_err(|e| anyhow::anyhow!("{e}"))?;
             Ok(())
         }
     }
