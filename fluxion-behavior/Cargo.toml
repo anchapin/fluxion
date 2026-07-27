@@ -1,0 +1,17 @@
+[package]
+name = "fluxion-behavior"
+version = "0.1.0"
+edition = "2021"
+description = "Occupant behavior modeling, comfort triggers, and adaptive actions for Fluxion"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/anomalyco/fluxion"
+keywords = ["building-energy", "occupant-behavior", "thermal-comfort", "ashrae-55"]
+categories = ["simulation", "physics", "no-std"]
+
+[features]
+default = []
+std = []
+
+[dependencies]
+serde = { version = "1.0", features = ["derive"] }
+rand = "0.8"
