@@ -96,10 +96,7 @@ impl WindowOpticalProperties {
 
     /// Default double-clear ASHRAE 140 window.
     pub fn double_clear() -> Self {
-        Self::from_layers(&[
-            WindowLayer::clear_glass(),
-            WindowLayer::clear_glass(),
-        ])
+        Self::from_layers(&[WindowLayer::clear_glass(), WindowLayer::clear_glass()])
     }
 }
 
@@ -626,8 +623,7 @@ impl LightingSystem {
             }
 
             let avg_dimming = total_dimming / self.daylight_zones.len() as f64;
-            let avg_illuminance =
-                total_illuminance / self.daylight_zones.len() as f64;
+            let avg_illuminance = total_illuminance / self.daylight_zones.len() as f64;
 
             let effective_power = base_power * avg_dimming;
             let convective = effective_power * self.schedule.convective_fraction;
@@ -757,6 +753,12 @@ pub struct BlindControl {
     pub max_altitude_threshold_deg: f64,
     /// Maximum rate of slat angle change per minute (deg/min).
     pub slew_rate_deg_per_min: f64,
+}
+
+impl Default for BlindControl {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl BlindControl {

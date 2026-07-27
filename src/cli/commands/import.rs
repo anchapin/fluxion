@@ -49,7 +49,10 @@ impl std::fmt::Display for ImportError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             ImportError::UnsupportedFormat(ext) => {
-                write!(f, "unsupported file extension '{ext}': expected .idf or .epjson/.epJSON")
+                write!(
+                    f,
+                    "unsupported file extension '{ext}': expected .idf or .epjson/.epJSON"
+                )
             }
             ImportError::Idf(e) => write!(f, "{e}"),
             ImportError::Serialize(e) => write!(f, "JSON serialization failed: {e}"),
@@ -229,10 +232,7 @@ mod tests {
         })
         .unwrap_err();
         assert!(
-            matches!(
-                err,
-                ImportError::Idf(IdfError::UnsupportedVersion(_))
-            ),
+            matches!(err, ImportError::Idf(IdfError::UnsupportedVersion(_))),
             "expected UnsupportedVersion, got: {err}"
         );
     }
