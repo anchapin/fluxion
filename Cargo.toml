@@ -286,6 +286,16 @@ name = "zero_copy_matrix_bench"
 path = "benches/zero_copy_matrix_bench.rs"
 harness = false
 
+[[bench]]
+name = "solar_kernel_bench"
+path = "benches/solar_kernel_bench.rs"
+harness = false
+
+[[bench]]
+name = "ctf_solver_bench"
+path = "benches/ctf_solver_bench.rs"
+harness = false
+
 [[bin]]
 name = "fluxion-delta"
 path = "tools/fluxion_delta.rs"
