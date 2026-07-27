@@ -1374,7 +1374,6 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         // HVAC energy currently includes energy stored in thermal mass, which should be subtracted
         // Mass energy change = Cm × (Tm_new - Tm_old)
         // Save old mass temperature before updating
-        let old_mass_temperatures = self.0.mass_temperatures.clone();
 
         // === Issue #1860: Time-constant-aware mass-node surface temperature ===
         //
@@ -1588,11 +1587,12 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         }
 
         // Update the mass temperatures with new values (convert Vec to T type)
-        self.0.mass_temperatures = VectorField::new(std::mem::take(&mut scratch.new_mass)).into();
+        let new_mass_temps_vf: T = VectorField::new(std::mem::take(&mut scratch.new_mass)).into();
 
         // Plan 03-04: Update previous mass temperature for tracking (kept for diagnostic output)
         // Mass energy change tracking removed - Ti_free already includes thermal mass effects
-        self.0.previous_mass_temperatures = old_mass_temperatures;
+        self.0.previous_mass_temperatures =
+            std::mem::replace(&mut self.0.mass_temperatures, new_mass_temps_vf);
 
         // Store previous temperatures for dT/dt calculation (Plan 15-04, 15-06)
         self.0.previous_temperatures = VectorField::new(self.0.temperatures.as_ref().to_vec());
@@ -1607,7 +1607,7 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         // Diagnostics recording (if enabled)
         if self.0.diagnostics.is_some() {
             // Store current HVAC output for this timestep (per zone, Watts)
-            self.0.current_hvac_output = Some(hvac_output_raw.clone());
+            self.0.current_hvac_output = Some(hvac_output_raw);
             // Temporarily take diagnostics out to avoid borrow conflicts
             let mut diag = self.0.diagnostics.take().unwrap();
             diag.record_timestep(timestep, self, outdoor_temp, t_g);
@@ -1788,8 +1788,11 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         let h_iz_vec = self.0.h_tr_iz.as_ref();
         let h_iz_rad_vec = self.0.h_tr_iz_rad.as_ref();
 
+        // Store phi_ia[0] for debugging before we consume it
+        let phi_ia_0 = phi_ia.as_ref().first().copied().unwrap_or(0.0);
+
         // Compute inter-zone heat transfer directly into phi_ia_with_iz to avoid Vec allocation
-        let mut phi_ia_with_iz = phi_ia.clone();
+        let mut phi_ia_with_iz = phi_ia;
 
         if num_zones > 1
             && (!h_iz_vec.is_empty() && h_iz_vec[0] > 0.0
@@ -1881,11 +1884,10 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
             let h_sum_vals = h_sum.as_ref();
             let sum_term_vals = sum_term.as_ref();
             let h_ext_debug = h_ext.as_ref();
-            let phi_ia_debug = phi_ia.as_ref();
             let solar_debug = self.0.solar_gains.as_ref();
             let loads_debug = self.0.loads.as_ref();
             let area_debug = self.0.zone_area.as_ref();
-            eprintln!("DEBUG_900FF_PREPARE: t={}, phi_ia[0]={:.2}, solar[0]={:.2}, loads[0]={:.2}, area[0]={:.1}", timestep, phi_ia_debug[0], solar_debug[0], loads_debug[0], area_debug[0]);
+            eprintln!("DEBUG_900FF_PREPARE: t={}, phi_ia[0]={:.2}, solar[0]={:.2}, loads[0]={:.2}, area[0]={:.1}", timestep, phi_ia_0, solar_debug[0], loads_debug[0], area_debug[0]);
             Some((
                 den_vals[0],
                 _num_tm_vals[0],
@@ -1894,7 +1896,7 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                 h_sum_vals[0],
                 sum_term_vals[0],
                 h_ext_debug[0],
-                phi_ia_debug[0],
+                phi_ia_0,
                 solar_debug[0],
                 loads_debug[0],
                 area_debug[0],
@@ -2127,7 +2129,6 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
 
         // === 6R2C: Update two mass nodes with implicit integration ===
         // Envelope mass: receives heat from exterior (sol-air), surface, and internal mass
-        let old_env_mass_temperatures = self.0.envelope_mass_temperatures.clone();
 
         // Update envelope mass temperatures using implicit integration for high thermal capacitance
         let env_mass_temps_ref = self.0.envelope_mass_temperatures.as_ref();
@@ -2237,12 +2238,9 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         // Note: env_mass_temps_for_int is no longer needed as a clone
         // We will borrow from new_env_mass_temperatures before moving it
 
-        self.0.envelope_mass_temperatures = VectorField::new(scratch.new_env.clone()).into();
-
-        let env_mass_temps_for_int = std::mem::take(&mut scratch.new_env);
+        let env_mass_temps_for_int = &scratch.new_env;
 
         // Internal mass: receives heat from envelope mass and direct gains
-        let old_int_mass_temperatures = self.0.internal_mass_temperatures.clone();
 
         // Update internal mass temperatures using implicit integration for high thermal capacitance
         let int_thermal_cap_ref = self.0.internal_thermal_capacitance.as_ref();
@@ -2291,8 +2289,13 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
             scratch.new_int[i] = tm_int_new;
         }
 
-        self.0.internal_mass_temperatures =
-            VectorField::new(std::mem::take(&mut scratch.new_int)).into();
+        let new_env_temps_vf: T = VectorField::new(std::mem::take(&mut scratch.new_env)).into();
+        let old_env_mass_temperatures =
+            std::mem::replace(&mut self.0.envelope_mass_temperatures, new_env_temps_vf);
+
+        let new_int_temps_vf: T = VectorField::new(std::mem::take(&mut scratch.new_int)).into();
+        let old_int_mass_temperatures =
+            std::mem::replace(&mut self.0.internal_mass_temperatures, new_int_temps_vf);
 
         // Issue #272, #274, #275: Calculate thermal mass energy change for 6R2C
         // For 6R2C, we track energy changes in both envelope and internal masses
@@ -2350,7 +2353,7 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         // Diagnostics recording (if enabled)
         if self.0.diagnostics.is_some() {
             // Store current HVAC output for this timestep (per zone, Watts)
-            self.0.current_hvac_output = Some(hvac_output_raw.clone());
+            self.0.current_hvac_output = Some(hvac_output_raw);
             // Temporarily take diagnostics out to avoid borrow conflicts
             let mut diag = self.0.diagnostics.take().unwrap();
             diag.record_timestep(timestep, self, outdoor_temp, t_g);
@@ -2655,7 +2658,7 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
             .zip_with(&self.0.mass_temperatures, |a, b| a * b);
         let num_phi_st = self.0.h_tr_is.zip_with(&phi_st, |a, b| a * b);
 
-        let mut phi_ia_with_iz = phi_ia.clone();
+        let mut phi_ia_with_iz = phi_ia;
 
         // Inter-zone heat transfer (if multi-zone) — #1391 Bug 1 fix.
         //
@@ -3431,7 +3434,6 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         // Without this blend, the mass converges in ~17 hours (wrong). With it, the
         // mass converges in ~500 hours (~21 days), matching the ISO 13790's dynamics.
         {
-            let old_mass_temperatures = self.0.mass_temperatures.clone();
             let mass_temps_ref = self.0.mass_temperatures.as_ref();
             let thermal_cap_ref = self.0.thermal_capacitance.as_ref();
             let h_tr_em_ref = self.0.h_tr_em.as_ref();
@@ -3488,9 +3490,10 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
 
                 scratch.new_mass[i] = tm_new;
             }
-            self.0.mass_temperatures =
+            let new_mass_temps_vf: T =
                 VectorField::new(std::mem::take(&mut scratch.new_mass)).into();
-            self.0.previous_mass_temperatures = old_mass_temperatures;
+            self.0.previous_mass_temperatures =
+                std::mem::replace(&mut self.0.mass_temperatures, new_mass_temps_vf);
         }
 
         // Issue #738 / ADR-002 (#1175): Free-float mode disables HVAC output.
@@ -3597,7 +3600,7 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
 
         // Diagnostics recording (if enabled)
         if self.0.diagnostics.is_some() {
-            self.0.current_hvac_output = Some(hvac_output.clone());
+            self.0.current_hvac_output = Some(hvac_output);
             let mut diag = self.0.diagnostics.take().unwrap();
             diag.record_timestep(timestep, self, outdoor_temp, t_g);
             self.0.diagnostics = Some(diag);
