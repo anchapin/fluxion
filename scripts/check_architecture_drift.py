@@ -130,6 +130,8 @@ def check_drift() -> list[str]:
         "ToF64",  # internal unit conversion trait
         "BatchOrchestrator",  # perf infra (rayon chunks), not a physics trait
         "ZoneEquipment",  # zone-level HVAC equipment trait (src/sim/hvac/zone_equipment.rs)
+        "DaeSystem",  # BDF ODE system trait in bdf_engine.rs (#2074)
+        "ResidualFunction",  # BDF residual trait in bdf_engine.rs (#2074)
     }
 
     # These are structs mentioned in ARCHITECTURE.md that get false-positived
