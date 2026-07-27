@@ -36,6 +36,12 @@ WORKDIR /build
 # layer when only the source changes.
 COPY Cargo.toml Cargo.lock ./
 COPY fluxion-core/ ./fluxion-core/
+COPY fluxion-city/ ./fluxion-city/
+COPY fluxion-fluid/ ./fluxion-fluid/
+COPY fluxion-grid/ ./fluxion-grid/
+COPY fluxion-behavior/ ./fluxion-behavior/
+COPY fluxion-mcp/ ./fluxion-mcp/
+COPY crates/fluxion-toon/ ./crates/fluxion-toon/
 COPY src/ ./src/
 # `Cargo.toml` references a few bench harnesses; copy them so the
 # manifest parses even when we are only building the `fluxion-rest`
