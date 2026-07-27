@@ -77,7 +77,7 @@ jobs:
             --features wiring-tracing \
             --lcov \
             --output-path target/llvm-cov/lcov.info \
-            --ignore-filename-pattern '/tests/|/benches/|/target/|/fluxion-mcp/' \
+            --ignore-filename-regex '/tests/|/benches/|/target/|/fluxion-mcp/' \
             2>&1 | tee target/llvm-cov/llvm-cov.log
           COV_EXIT=${PIPESTATUS[0]}
 
