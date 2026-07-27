@@ -131,6 +131,73 @@ Three cx22 nodes run in parallel for ~€12/month total.
 
 ---
 
+## GPU Runners (CUDA / ONNX Runtime)
+
+The `cuda-parity` CI job (issue #1895) requires a runner with an NVIDIA GPU
+to execute the live CPU-vs-CUDA parity tests in
+`tests/surrogate_backend_parity.rs`. Without a GPU the job continues on
+error (advisory, non-blocking) because the test self-skips when CUDA EP
+is unavailable.
+
+### Requirements
+
+| Component | Minimum version | Notes |
+|---|---|---|
+| NVIDIA GPU | Kepler-era or newer | Pascal (P100) or newer recommended for good performance |
+| Driver | CUDA 11.8 / driver 515+ | Must support the CUDA toolkit version below |
+| CUDA Toolkit | 11.8 | Match the ONNX Runtime CUDA EP build |
+| cuDNN | 8.x | Required by ONNX Runtime CUDA EP |
+| ONNX Runtime | Built with CUDA EP | Enable via `--features cuda --features ort` at build time |
+
+### Verifying GPU availability on the runner
+
+```bash
+nvidia-smi
+# Expected output: GPU list with model name, driver version, CUDA version
+
+# Check available GPU memory
+nvidia-smi --query-gpu=memory.free,memory.total --format=csv
+```
+
+### Runner labels for GPU jobs
+
+GPU jobs use the same `FLUXION_LINUX_RUNNER` pool. If your runner has an
+NVIDIA GPU, it can run both CPU and GPU CI jobs. The `cuda-parity` job
+automatically skips when no GPU is detected (via `cuda_ep_available()` in
+the test), so a heterogeneous pool works correctly.
+
+To provision a GPU-enabled runner, run the standard provisioning script on
+a machine with an NVIDIA GPU (bare metal or GPU cloud instance):
+
+```bash
+REG_TOKEN=$(gh api -X POST \
+  repos/anchapin/fluxion/actions/runners/registration-token --jq .token)
+
+# Provision on a GPU node (cx42-flex or similar Hetzner GPU instance)
+# Note: Hetzner's cloud does NOT offer GPU instances — use a dedicated
+# GPU cloud provider (e.g., Lambda Labs, AWS p3/p4, GCP T4/A100) or a
+# bare-metal GPU machine. The labels remain the same.
+scripts/provision-hetzner-runner.sh \
+  --github-repo    anchapin/fluxion \
+  --github-token   "$REG_TOKEN" \
+  --hcloud-ssh-key my-key \
+  --runner-name    "fluxion-runner-gpu-1" \
+  --runner-labels  "self-hosted,linux,x86_64,fluxion-ci,gpu"
+```
+
+The runner will automatically handle both CPU-only and GPU CI jobs. GPU
+jobs that cannot acquire a GPU will continue on error rather than fail.
+
+### ONNX Runtime CUDA EP notes
+
+- ONNX Runtime must be compiled with CUDA EP support (`--features ort,cuda`)
+- The CUDA EP requires matching CUDA toolkit + driver versions
+- Issue #1285: a committed ONNX surrogate model is needed for full
+  per-timestep CSV parity artifact upload. Until then, the parity test
+  validates wiring and error-path semantics only.
+
+---
+
 ## Fallback behaviour
 
 The `FLUXION_LINUX_RUNNER` variable controls routing for all heavy Linux jobs:
