@@ -36,6 +36,7 @@
 // Future solvers should be added ONLY if a validation case demonstrates
 // that the existing solvers cannot meet accuracy requirements.
 
+pub mod bdf_engine;
 pub mod constants;
 pub mod continuous;
 
