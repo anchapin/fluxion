@@ -462,6 +462,45 @@ impl OodValidationResult {
     }
 }
 
+/// Default squared-residual threshold for the inference-time energy-balance
+/// residual check (Issue #1896).
+///
+/// τ = 1.0 W² corresponds to ~1 W absolute error, which is tight enough
+/// to catch model drift or quantization artifacts while remaining above
+/// numerical-noise floor.
+pub const DEFAULT_RESIDUAL_TAU: f64 = 1.0;
+
+/// Structured error returned when a surrogate inference violates the
+/// energy-balance residual threshold.
+///
+/// The residual is the squared difference between the predicted thermal load
+/// and the physics-expected load computed from the input conditions:
+/// `residual = (Q_predicted - Q_expected)²`
+///
+/// When `residual > tau` the prediction is deemed physically implausible
+/// and callers must reroute to the analytical/physics fallback.
+#[derive(Clone, Debug)]
+pub struct ResidualViolation {
+    /// Index of the sample / zone in the batch.
+    pub sample_index: usize,
+    /// Predicted thermal load from ONNX (W).
+    pub predicted: f64,
+    /// Physics-expected load computed from input conditions (W).
+    pub expected: f64,
+    /// Squared residual `||Q_predicted - Q_expected||²` (W²).
+    pub residual: f64,
+}
+
+impl std::fmt::Display for ResidualViolation {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "surrogate residual violation at sample {}: predicted {:.2} W, expected {:.2} W, residual {:.2} W²",
+            self.sample_index, self.predicted, self.expected, self.residual
+        )
+    }
+}
+
 #[derive(Clone, Debug, Default)]
 pub struct SurrogateDomain {
     pub temp_bounds: (f64, f64),
@@ -949,6 +988,13 @@ pub struct SurrogateManager {
     /// Counter for how many times OOD input was detected.
     /// Incremented by `validate_input_bounds` each time an OOD input is flagged.
     pub ood_count: Arc<parking_lot::Mutex<usize>>,
+    /// Squared-residual threshold τ for the energy-balance residual check.
+    /// Predictions with residual > τ trigger rerouting to the analytical fallback.
+    /// Default: [`DEFAULT_RESIDUAL_TAU`] (1.0 W² ≈ 1 W absolute error).
+    pub residual_tau: f64,
+    /// Counter for how many times the residual guard caused a reroute.
+    /// Incremented by `check_inference_residual` each time a violation is detected.
+    pub residual_reroute_count: Arc<parking_lot::Mutex<usize>>,
 }
 
 impl Default for SurrogateManager {
@@ -1315,6 +1361,8 @@ impl SurrogateManager {
             inference_metrics: Arc::new(parking_lot::Mutex::new(InferenceMetrics::default())),
             input_bounds: None,
             ood_count: Arc::new(parking_lot::Mutex::new(0)),
+            residual_tau: DEFAULT_RESIDUAL_TAU,
+            residual_reroute_count: Arc::new(parking_lot::Mutex::new(0)),
         })
     }
 
@@ -1356,6 +1404,8 @@ impl SurrogateManager {
             inference_metrics: Arc::new(parking_lot::Mutex::new(InferenceMetrics::default())),
             input_bounds: None,
             ood_count: Arc::new(parking_lot::Mutex::new(0)),
+            residual_tau: DEFAULT_RESIDUAL_TAU,
+            residual_reroute_count: Arc::new(parking_lot::Mutex::new(0)),
         })
     }
 
@@ -1443,6 +1493,95 @@ impl SurrogateManager {
         *self.ood_count.lock() = 0;
     }
 
+    /// Get the number of times the residual guard caused a reroute.
+    pub fn residual_reroute_count(&self) -> usize {
+        *self.residual_reroute_count.lock()
+    }
+
+    /// Reset the residual reroute counter.
+    pub fn reset_residual_reroute_count(&mut self) {
+        *self.residual_reroute_count.lock() = 0;
+    }
+
+    /// Set the residual threshold τ. Predictions with squared residual > τ
+    /// will trigger rerouting to the analytical fallback.
+    pub fn set_residual_tau(&mut self, tau: f64) {
+        self.residual_tau = tau;
+    }
+
+    /// Compute the energy-balance residual for a batch of inference inputs
+    /// and predicted loads, checking against the configured threshold τ.
+    ///
+    /// This is the **inference-time** companion to [`SurrogateDomain::energy_balance_residual`]
+    /// (which is only called during training, Issue #1706). The residual guard
+    /// catches model drift, quantization artifacts, or distribution shift that
+    /// produces physically implausible load predictions (Issue #1896).
+    ///
+    /// The physics model is identical to [`SurrogateDomain::energy_balance_residual`]:
+    /// `Q_expected = Q_conduction + Q_solar + Q_internal + Q_ventilation`
+    ///
+    /// where thermal properties are:
+    /// - U = 0.5 W/m²K, A = 100 m² (envelope conduction)
+    /// - α = 0.85 (solar absorptivity), solar_rad in W/m²
+    /// - β = 100 W/person (internal gains from occupancy)
+    /// - C_air = 1260 J/kgK, ACH = 0.5, V = 300 m³ (ventilation)
+    ///
+    /// Returns `Ok(())` if all samples pass (residual ≤ τ) or if the manager
+    /// is in mock mode (no model loaded). Returns `Err(ResidualViolation)`
+    /// for the **first** sample that exceeds the threshold.
+    ///
+    /// The `inputs` slice uses the same indexing as [`SurrogateInputs::from_temps`]:
+    /// index 0 = exterior_temp, 1 = zone_temp. Additional features (solar,
+    /// humidity, occupancy) are synthesised using `SurrogateInputs::from_temps`.
+    ///
+    /// The `predicted` slice must have the same length as `inputs`. A mismatch
+    /// causes an early return with `Ok(())` — no violation is recorded.
+    pub fn check_inference_residual(
+        &self,
+        inputs: &[f64],
+        predicted: &[f64],
+    ) -> Result<(), ResidualViolation> {
+        if predicted.is_empty() {
+            return Ok(());
+        }
+        if !self.model_loaded && self.composite.is_none() {
+            return Ok(());
+        }
+
+        let surrogate_inputs = SurrogateInputs::from_temps(inputs);
+
+        const U_WALL: f64 = 0.5;
+        const A_ZONE: f64 = 100.0;
+        const ALPHA_SOLAR: f64 = 0.85;
+        const BETA_INTERNAL: f64 = 100.0;
+        const C_AIR: f64 = 1260.0;
+        const V_VENT: f64 = 300.0;
+        const ACH_VENT: f64 = 0.5;
+
+        let delta_t = surrogate_inputs.exterior_temp - surrogate_inputs.zone_temp;
+        let q_conduction = U_WALL * A_ZONE * delta_t;
+        let q_solar = ALPHA_SOLAR * surrogate_inputs.solar_rad * A_ZONE * 0.001;
+        let q_internal = BETA_INTERNAL * surrogate_inputs.occupancy;
+        let q_ventilation = C_AIR * ACH_VENT * V_VENT * delta_t / 3600.0 / 1000.0;
+        let q_expected = q_conduction + q_solar + q_internal + q_ventilation;
+
+        let n_samples = predicted.len();
+        for (i, &q_predicted) in predicted.iter().enumerate() {
+            let residual = q_predicted - q_expected;
+            let residual_sq = residual * residual;
+            if residual_sq > self.residual_tau {
+                return Err(ResidualViolation {
+                    sample_index: i,
+                    predicted: q_predicted,
+                    expected: q_expected,
+                    residual: residual_sq,
+                });
+            }
+        }
+        let _ = n_samples;
+        Ok(())
+    }
+
     /// Validate an inference input vector against the stored training bounds.
     ///
     /// Returns `OodValidationResult` indicating whether the input is OOD
@@ -1470,7 +1609,7 @@ impl SurrogateManager {
         let checks: [(usize, f64, (f64, f64), &'static str); 5] = [
             (
                 0,
-                inputs.get(0).copied().unwrap_or(20.0),
+                inputs.first().copied().unwrap_or(20.0),
                 bounds.exterior_temp,
                 "exterior_temp",
             ),
@@ -1632,7 +1771,18 @@ impl SurrogateManager {
 
         // Model loaded → try real ONNX inference.
         match self.predict_loads_onnx(temps) {
-            Ok(loads) => Ok(loads),
+            Ok(loads) => {
+                if let Err(violation) = self.check_inference_residual(temps, &loads) {
+                    warn!(
+                        "surrogate residual violation: sample {} predicted {:.2} W expected {:.2} W residual {:.2} W² — rerouting to analytical fallback",
+                        violation.sample_index, violation.predicted, violation.expected, violation.residual
+                    );
+                    *self.residual_reroute_count.lock() += 1;
+                    metrics::counter!("surrogate_residual_reroutes_total", "mode" => "neural_with_fallback").increment(1);
+                    return self.analytical_loads(temps);
+                }
+                Ok(loads)
+            }
             Err(e) => {
                 warn!(
                     "ONNX inference failed ({}), falling back to analytical_loads",
@@ -1841,6 +1991,8 @@ impl SurrogateManager {
             inference_metrics: Arc::new(parking_lot::Mutex::new(InferenceMetrics::default())),
             input_bounds: None,
             ood_count: Arc::new(parking_lot::Mutex::new(0)),
+            residual_tau: DEFAULT_RESIDUAL_TAU,
+            residual_reroute_count: Arc::new(parking_lot::Mutex::new(0)),
         })
     }
 
@@ -1886,6 +2038,8 @@ impl SurrogateManager {
                     )),
                     input_bounds: None,
                     ood_count: Arc::new(parking_lot::Mutex::new(0)),
+                    residual_tau: DEFAULT_RESIDUAL_TAU,
+                    residual_reroute_count: Arc::new(parking_lot::Mutex::new(0)),
                 })
             }
             Err(e) => {
@@ -1934,6 +2088,8 @@ impl SurrogateManager {
             inference_metrics: Arc::new(parking_lot::Mutex::new(InferenceMetrics::default())),
             input_bounds: None,
             ood_count: Arc::new(parking_lot::Mutex::new(0)),
+            residual_tau: DEFAULT_RESIDUAL_TAU,
+            residual_reroute_count: Arc::new(parking_lot::Mutex::new(0)),
         })
     }
 

@@ -1710,6 +1710,7 @@ mod tests {
             use_surrogate_ventilation: false,
             use_surrogate_loads: true,
             use_surrogate_hvac: false,
+            use_ood_fallback: false,
         };
         model.set_routing(custom);
         assert_eq!(model.routing(), custom);
@@ -1854,6 +1855,7 @@ mod tests {
             use_surrogate_ventilation: false,
             use_surrogate_loads: false,
             use_surrogate_hvac: false,
+            use_ood_fallback: false,
         };
         let mut model = HybridThermalModel::new(1, routing);
         let surrogates = SurrogateManager::new().expect("SurrogateManager::new");
@@ -1884,6 +1886,7 @@ mod tests {
             use_surrogate_ventilation: true,
             use_surrogate_loads: false,
             use_surrogate_hvac: false,
+            use_ood_fallback: false,
         };
         let mut model = HybridThermalModel::new(1, routing);
         let surrogates = SurrogateManager::new().expect("SurrogateManager::new");
