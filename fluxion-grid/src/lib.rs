@@ -1,31 +1,19 @@
-//! fluxion-grid: Electrical grid modeling with bus node types for power flow analysis.
+//! # fluxion-grid
 //!
-//! This crate provides foundational types for electrical bus modeling including:
-//! - Bus node types (Slack, PV, PQ)
-//! - Electrical bus structures with voltage, angle, and power attributes
-//! - Battery bus with State of Charge (SoC) tracking
-//! - Thermal-electrical coupler for heat pump modeling
+//! Grid-edge electrical network components for Fluxion building energy modeling.
 //!
-//! # Example
+//! This crate provides battery storage node models with state-of-charge (SoC) tracking
+//! and electrical characteristics for integration with building energy simulations.
 //!
-//! ```
-//! use fluxion_grid::{BusNodeType, ElectricalBus, BatteryBus, ThermalElectricalCoupler};
+//! ## Contents
 //!
-//! // Create a PQ bus
-//! let bus = ElectricalBus::new_pq(1, 0.5, 0.2);
-//! assert!(matches!(bus.node_type, BusNodeType::PQ));
-//!
-//! // Create a thermal-electrical coupler for heat pump modeling
-//! let coupler = ThermalElectricalCoupler::new(3.0, 280.15, 293.15);
-//! assert!((coupler.cop() - 3.0).abs() < 0.01);
-//! ```
+//! | Module | Description |
+//! |--------|-------------|
+//! | `battery_storage_node` | `BatteryStorageNode` — single-cell battery model with SoC, terminal voltage, and C-rate dynamics |
 
-pub mod bus;
-pub mod battery;
-pub mod power_flow;
-pub mod thermal_electrical_coupler;
+#![allow(nonstandard_style)]
+#![allow(clippy::all)]
 
-pub use bus::{BusNodeType, ElectricalBus};
-pub use battery::BatteryBus;
-pub use power_flow::PowerFlowState;
-pub use thermal_electrical_coupler::ThermalElectricalCoupler;
+pub mod battery_storage_node;
+
+pub use battery_storage_node::BatteryStorageNode;
