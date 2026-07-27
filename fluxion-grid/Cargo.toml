@@ -1,0 +1,13 @@
+[package]
+name = "fluxion-grid"
+version = "1.0.0"
+edition = "2021"
+description = "Joint thermal-electrical convergence solver for grid-interactive building models"
+repository = "https://github.com/anchapin/fluxion"
+license = "Apache-2.0"
+
+[dependencies]
+nalgebra = "0.33"
+
+[dev-dependencies]
+approx = "0.5"
