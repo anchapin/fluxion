@@ -11,5 +11,7 @@ license = "Apache-2.0"
 thiserror = "1.0"
 serde = { version = "1.0", features = ["derive"] }
 approx = "0.5"
+ndarray = "0.16"
 
 [dev-dependencies]
+approx = "0.5"
