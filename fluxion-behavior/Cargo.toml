@@ -2,14 +2,24 @@
 name = "fluxion-behavior"
 version = "0.1.0"
 edition = "2021"
-description = "Occupancy behavior modeling with Markov chains and ASHRAE 90.1 data"
+description = "Behavioral inference engine for fluxion — ONNX runtime, mock plug loads, and INT8 quantization"
 license = "Apache-2.0"
+authors = ["Dr. Aris Thorne <aris.thorne@fluxion.org>"]
+repository = "https://github.com/anchapin/fluxion"
 
 [dependencies]
-rand = { version = "0.8", features = ["small_rng"] }
+ort = { version = "2.0.0-rc.10", features = ["download-binaries"], optional = true }
+rand = "0.8"
 rand_distr = "0.4"
-serde = { version = "1.0", features = ["derive"] }
 thiserror = "1.0"
+anyhow = "1.0"
+tracing = "0.1"
+serde = { version = "1.0", features = ["derive"] }
+ndarray = { version = "0.17", default-features = false, features = ["std", "serde"] }
+
+[features]
+default = ["ort"]
+ort = ["dep:ort"]
 
 [dev-dependencies]
-approx = "0.5"
+criterion = "0.5"

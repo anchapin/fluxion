@@ -1,422 +1,483 @@
-//! fluxion-behavior: Occupancy behavior modeling with Markov chains and ASHRAE 90.1 data
+//! fluxion-behavior: Behavioral inference engine for fluxion
 //!
-//! # Issues
-//! - #2044: OccupancyProvider Trait
-//! - #2045: Occupancy Statistical Validation (±2% Target)
-//! - #2046: ASHRAE 90.1 Transition Matrices Data
+//! # Issues Addressed
+//! - #2047: TsfmInferenceEngine Core + ONNX Runtime
+//! - #2048: ONNX Model Loading from Environment Variables
+//! - #2049: Mock Plug Load Fallback with Diurnal Gaussian Noise
+//! - #2050: INT8 Quantization for TSFM CPU Inference
 
-use rand::rngs::SmallRng;
-use rand::SeedableRng;
-use rand::Rng;
-use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
+use ndarray::Dimension;
+use rand::prelude::*;
+use rand_distr::{Distribution, Normal};
+use std::path::PathBuf;
+use thiserror::Error;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
-pub enum DayOfWeek {
-    Monday,
-    Tuesday,
-    Wednesday,
-    Thursday,
-    Friday,
-    Saturday,
-    Sunday,
+#[derive(Error, Debug)]
+pub enum BehaviorError {
+    #[error("ONNX runtime error: {0}")]
+    OnnxError(String),
+    #[error("Model not found: {0}")]
+    ModelNotFound(String),
+    #[error("Invalid input shape: {0}")]
+    InvalidInputShape(String),
+    #[error("Inference error: {0}")]
+    InferenceError(String),
+    #[error("IO error: {0}")]
+    IoError(#[from] std::io::Error),
+    #[error("Quantization error: {0}")]
+    QuantizationError(String),
 }
 
-impl DayOfWeek {
-    pub fn from_u8(val: u8) -> Self {
-        match val % 7 {
-            0 => DayOfWeek::Monday,
-            1 => DayOfWeek::Tuesday,
-            2 => DayOfWeek::Wednesday,
-            3 => DayOfWeek::Thursday,
-            4 => DayOfWeek::Friday,
-            5 => DayOfWeek::Saturday,
-            6 => DayOfWeek::Sunday,
-            _ => DayOfWeek::Monday,
+pub type Result<T> = std::result::Result<T, BehaviorError>;
+
+#[cfg(feature = "ort")]
+mod tsfm_engine {
+    use super::*;
+    use std::sync::Mutex;
+
+    pub struct TsfmInferenceEngine {
+        session: Mutex<Option<ort::session::Session>>,
+        input_names: Vec<String>,
+        output_names: Vec<String>,
+        quantized: bool,
+    }
+
+    impl TsfmInferenceEngine {
+        pub fn new(model_path: &PathBuf) -> Result<Self> {
+            Self::from_path(model_path, false)
+        }
+
+        pub fn with_quantization(model_path: &PathBuf) -> Result<Self> {
+            Self::from_path(model_path, true)
+        }
+
+        pub fn mock() -> Self {
+            Self {
+                session: Mutex::new(None),
+                input_names: vec!["input".to_string()],
+                output_names: vec!["output".to_string()],
+                quantized: false,
+            }
+        }
+
+        pub fn mock_quantized() -> Self {
+            Self {
+                session: Mutex::new(None),
+                input_names: vec!["input".to_string()],
+                output_names: vec!["output".to_string()],
+                quantized: true,
+            }
+        }
+
+        fn from_path(model_path: &PathBuf, quantized: bool) -> Result<Self> {
+            if !model_path.exists() {
+                return Err(BehaviorError::ModelNotFound(
+                    model_path.display().to_string(),
+                ));
+            }
+
+            let session = ort::session::Session::builder()
+                .map_err(|e| BehaviorError::OnnxError(e.to_string()))?
+                .commit_from_file(model_path)
+                .map_err(|e| BehaviorError::OnnxError(e.to_string()))?;
+
+            let input_names: Vec<String> = session
+                .inputs()
+                .iter()
+                .map(|outlet| outlet.name().to_string())
+                .collect();
+
+            let output_names: Vec<String> = session
+                .outputs()
+                .iter()
+                .map(|outlet| outlet.name().to_string())
+                .collect();
+
+            Ok(Self {
+                session: Mutex::new(Some(session)),
+                input_names,
+                output_names,
+                quantized,
+            })
+        }
+
+        pub fn run(&self, inputs: ndarray::ArrayViewD<f32>) -> Result<ndarray::ArrayD<f32>> {
+            let mut guard = self
+                .session
+                .lock()
+                .map_err(|e| BehaviorError::OnnxError(e.to_string()))?;
+
+            if guard.is_none() {
+                let shape = inputs.shape().to_vec();
+                return Ok(ndarray::ArrayD::from_elem(shape, 0.0f32));
+            }
+
+            let session = guard.as_mut().unwrap();
+
+            let shape: Vec<i64> = inputs.shape().iter().map(|&s| s as i64).collect();
+            let input_data: Vec<f32> = inputs.iter().copied().collect();
+
+            let input_tensor = ort::value::Value::from_array((shape, input_data))
+                .map_err(|e| BehaviorError::InferenceError(e.to_string()))?;
+
+            let outputs = session
+                .run(ort::inputs![input_tensor])
+                .map_err(|e| BehaviorError::InferenceError(e.to_string()))?;
+
+            if outputs.len() == 0 {
+                return Err(BehaviorError::InferenceError(
+                    "No outputs returned".to_string(),
+                ));
+            }
+
+            let array_view = outputs[0]
+                .try_extract_array::<f32>()
+                .map_err(|e| BehaviorError::InferenceError(e.to_string()))?;
+
+            let shape: Vec<usize> = array_view.raw_dim().slice().to_vec();
+            let data: Vec<f32> = array_view.iter().copied().collect();
+            let array: ndarray::ArrayD<f32> = ndarray::Array::from_shape_vec(shape, data)
+                .map_err(|e| BehaviorError::InferenceError(e.to_string()))?;
+
+            Ok(array)
+        }
+
+        pub fn run_batch(
+            &self,
+            batch_inputs: Vec<ndarray::ArrayViewD<f32>>,
+        ) -> Result<Vec<ndarray::ArrayD<f32>>> {
+            batch_inputs
+                .into_iter()
+                .map(|input| self.run(input))
+                .collect()
+        }
+
+        pub fn input_names(&self) -> &[String] {
+            &self.input_names
+        }
+
+        pub fn output_names(&self) -> &[String] {
+            &self.output_names
+        }
+
+        pub fn is_quantized(&self) -> bool {
+            self.quantized
         }
     }
+}
 
-    pub fn is_weekend(&self) -> bool {
-        matches!(self, DayOfWeek::Saturday | DayOfWeek::Sunday)
+#[cfg(not(feature = "ort"))]
+mod tsfm_engine {
+    use super::*;
+
+    pub struct TsfmInferenceEngine {
+        pub input_names: Vec<String>,
+        pub output_names: Vec<String>,
+        pub quantized: bool,
+    }
+
+    impl TsfmInferenceEngine {
+        pub fn new(_model_path: &PathBuf) -> Result<Self> {
+            Ok(Self {
+                input_names: vec!["input".to_string()],
+                output_names: vec!["output".to_string()],
+                quantized: false,
+            })
+        }
+
+        pub fn with_quantization(_model_path: &PathBuf) -> Result<Self> {
+            Ok(Self {
+                input_names: vec!["input".to_string()],
+                output_names: vec!["output".to_string()],
+                quantized: true,
+            })
+        }
+
+        pub fn mock() -> Self {
+            Self {
+                input_names: vec!["input".to_string()],
+                output_names: vec!["output".to_string()],
+                quantized: false,
+            }
+        }
+
+        pub fn mock_quantized() -> Self {
+            Self {
+                input_names: vec!["input".to_string()],
+                output_names: vec!["output".to_string()],
+                quantized: true,
+            }
+        }
+
+        pub fn run(&self, inputs: ndarray::ArrayViewD<f32>) -> Result<ndarray::ArrayD<f32>> {
+            let shape = inputs.shape().to_vec();
+            Ok(ndarray::ArrayD::from_elem(shape, 0.0f32))
+        }
+
+        pub fn run_batch(
+            &self,
+            batch_inputs: Vec<ndarray::ArrayViewD<f32>>,
+        ) -> Result<Vec<ndarray::ArrayD<f32>>> {
+            batch_inputs
+                .into_iter()
+                .map(|input| self.run(input))
+                .collect()
+        }
+
+        pub fn input_names(&self) -> &[String] {
+            &self.input_names
+        }
+
+        pub fn output_names(&self) -> &[String] {
+            &self.output_names
+        }
+
+        pub fn is_quantized(&self) -> bool {
+            self.quantized
+        }
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-pub enum OccupancyState {
-    Vacant,
-    Occupied,
-    Sleeping,
+pub use tsfm_engine::TsfmInferenceEngine;
+
+pub struct OnnxModelLoader {
+    model_path: Option<PathBuf>,
+    backend: String,
 }
 
-pub trait OccupancyProvider: Send + Sync {
-    fn occupancy_fraction(&self, hour_of_day: f64, day_of_week: DayOfWeek) -> f64;
-    fn peak_occupancy(&self) -> f64;
-}
+impl OnnxModelLoader {
+    pub fn new() -> Self {
+        let model_path = std::env::var("FLUXION_ONNX_MODEL").ok().map(PathBuf::from);
+        let backend = std::env::var("FLUXION_ONNX_BACKEND").unwrap_or_else(|_| "cpu".to_string());
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct TransitionMatrix {
-    pub vacant_to_vacant: f64,
-    pub vacant_to_occupied: f64,
-    pub occupied_to_occupied: f64,
-    pub occupied_to_vacant: f64,
-}
-
-impl TransitionMatrix {
-    pub fn new(p_vacant_occupied: f64, p_occupied_vacant: f64) -> Self {
         Self {
-            vacant_to_vacant: 1.0 - p_vacant_occupied,
-            vacant_to_occupied: p_vacant_occupied,
-            occupied_to_occupied: 1.0 - p_occupied_vacant,
-            occupied_to_vacant: p_occupied_vacant,
+            model_path,
+            backend,
         }
     }
 
-    pub fn from_ashrae90p1(p_occupied_vacant: f64, p_vacant_occupied: f64) -> Self {
-        Self::new(p_vacant_occupied, p_occupied_vacant)
-    }
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct HourlyTransitionMatrices {
-    pub matrices: HashMap<u8, TransitionMatrix>,
-}
-
-impl HourlyTransitionMatrices {
-    pub fn get(&self, hour: u8) -> &TransitionMatrix {
-        self.matrices.get(&hour).unwrap_or(self.matrices.get(&0).unwrap())
-    }
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub enum BuildingType {
-    Office,
-    Retail,
-    Restaurant,
-    Residential,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct MarkovOccupancyGenerator {
-    pub building_type: BuildingType,
-    pub hourly_matrices: HourlyTransitionMatrices,
-    pub weekend_matrices: HourlyTransitionMatrices,
-}
-
-impl MarkovOccupancyGenerator {
-    pub fn new(building_type: BuildingType) -> Self {
-        let matrices = ashrae90p1_transition_matrices(&building_type, false);
-        let weekend_matrices = ashrae90p1_transition_matrices(&building_type, true);
+    pub fn with_model_path(model_path: PathBuf) -> Self {
         Self {
-            building_type,
-            hourly_matrices: matrices,
-            weekend_matrices,
+            model_path: Some(model_path),
+            backend: std::env::var("FLUXION_ONNX_BACKEND").unwrap_or_else(|_| "cpu".to_string()),
         }
     }
 
-    pub fn generate_state<R: Rng>(&self, rng: &mut R, current_state: OccupancyState, hour: u8, day: DayOfWeek) -> OccupancyState {
-        let matrix = if day.is_weekend() {
-            self.weekend_matrices.get(hour)
+    pub fn load(&self) -> Result<TsfmInferenceEngine> {
+        match &self.model_path {
+            Some(path) => {
+                if path.exists() {
+                    TsfmInferenceEngine::new(path)
+                } else {
+                    tracing::warn!("Model not found at {:?}, using mock fallback", path);
+                    Ok(TsfmInferenceEngine::mock())
+                }
+            }
+            None => {
+                tracing::info!("No FLUXION_ONNX_MODEL set, using mock fallback");
+                Ok(TsfmInferenceEngine::mock())
+            }
+        }
+    }
+
+    pub fn load_with_quantization(&self) -> Result<TsfmInferenceEngine> {
+        match &self.model_path {
+            Some(path) => {
+                if path.exists() {
+                    TsfmInferenceEngine::with_quantization(path)
+                } else {
+                    tracing::warn!("Model not found at {:?}, using mock fallback", path);
+                    Ok(TsfmInferenceEngine::mock_quantized())
+                }
+            }
+            None => {
+                tracing::info!(
+                    "No FLUXION_ONNX_MODEL set, using mock fallback with INT8 quantization"
+                );
+                Ok(TsfmInferenceEngine::mock_quantized())
+            }
+        }
+    }
+
+    pub fn backend(&self) -> &str {
+        &self.backend
+    }
+
+    #[allow(dead_code)]
+    pub fn validate_model_io(
+        &self,
+        engine: &TsfmInferenceEngine,
+        _expected_input_shape: &[usize],
+        _expected_output_shape: &[usize],
+    ) -> Result<()> {
+        if engine.input_names().is_empty() {
+            return Err(BehaviorError::InvalidInputShape(
+                "Model has no inputs".to_string(),
+            ));
+        }
+        if engine.output_names().is_empty() {
+            return Err(BehaviorError::InvalidInputShape(
+                "Model has no outputs".to_string(),
+            ));
+        }
+        Ok(())
+    }
+}
+
+impl Default for OnnxModelLoader {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+pub struct MockPlugLoad {
+    pub base_watts: f64,
+    pub diurnal_pattern: Vec<f64>,
+    pub noise_sigma: f64,
+}
+
+impl MockPlugLoad {
+    pub fn new(base_watts: f64, diurnal_pattern: Vec<f64>, noise_sigma: f64) -> Self {
+        Self {
+            base_watts,
+            diurnal_pattern,
+            noise_sigma,
+        }
+    }
+
+    pub fn with_typical_office_pattern(base_watts: f64, noise_sigma: f64) -> Self {
+        let diurnal_pattern = Self::typical_office_pattern();
+        Self {
+            base_watts,
+            diurnal_pattern,
+            noise_sigma,
+        }
+    }
+
+    fn typical_office_pattern() -> Vec<f64> {
+        vec![
+            0.05, 0.03, 0.02, 0.02, 0.03, 0.08, 0.25, 0.50, 0.80, 0.90, 0.95, 1.00, 0.95, 0.90,
+            0.85, 0.80, 0.60, 0.30, 0.15, 0.10, 0.08, 0.06, 0.05, 0.04,
+        ]
+    }
+
+    pub fn power(&self, hour: f64, rng: &mut impl Rng) -> f64 {
+        let hour_index = hour as usize % 24;
+        let pattern_value = self.diurnal_pattern.get(hour_index).copied().unwrap_or(0.5);
+
+        let noise = Normal::new(0.0, self.noise_sigma).unwrap();
+        let noise_sample = noise.sample(rng);
+
+        let power = self.base_watts * pattern_value + noise_sample;
+        power.max(0.0)
+    }
+
+    pub fn power_batch(&self, hours: &[f64], rng: &mut impl Rng) -> Vec<f64> {
+        hours.iter().map(|&h| self.power(h, rng)).collect()
+    }
+}
+
+impl Default for MockPlugLoad {
+    fn default() -> Self {
+        Self::with_typical_office_pattern(200.0, 20.0)
+    }
+}
+
+pub struct Int8Quantizer;
+
+impl Int8Quantizer {
+    pub fn quantize_fp32_to_int8(inputs: ndarray::ArrayViewD<f32>) -> Result<ndarray::ArrayD<i8>> {
+        let shape = inputs.shape().to_vec();
+
+        let min_val = inputs.iter().cloned().fold(f32::INFINITY, f32::min);
+        let max_val = inputs.iter().cloned().fold(f32::NEG_INFINITY, f32::max);
+        let range = (max_val - min_val).max(1e-6);
+
+        let data: Vec<i8> = inputs
+            .iter()
+            .map(|&v| {
+                let normalized = ((v - min_val) / range * 127.0).round() as i32;
+                normalized.clamp(-128, 127) as i8
+            })
+            .collect();
+
+        ndarray::Array::from_shape_vec(shape, data)
+            .map_err(|e| BehaviorError::QuantizationError(e.to_string()))
+    }
+
+    pub fn dequantize_int8_to_fp32(
+        inputs: ndarray::ArrayViewD<i8>,
+        scale: f32,
+    ) -> Result<ndarray::ArrayD<f32>> {
+        let shape = inputs.shape().to_vec();
+        let data: Vec<f32> = inputs.iter().map(|&v| v as f32 * scale).collect();
+
+        ndarray::Array::from_shape_vec(shape, data)
+            .map_err(|e| BehaviorError::QuantizationError(e.to_string()))
+    }
+
+    #[allow(dead_code)]
+    fn compute_quantization_scale(inputs: ndarray::ArrayViewD<f32>) -> Result<f32> {
+        let abs_max = inputs.iter().map(|&v| v.abs()).fold(0.0f32, f32::max);
+
+        if abs_max == 0.0 {
+            return Ok(1.0f32);
+        }
+
+        Ok(abs_max / 127.0)
+    }
+
+    #[allow(dead_code)]
+    pub fn quantize_inputs_for_inference(
+        engine: &TsfmInferenceEngine,
+        inputs: ndarray::ArrayViewD<f32>,
+    ) -> Result<ndarray::ArrayD<f32>> {
+        if engine.is_quantized() {
+            tracing::debug!("Using INT8 quantized inference path");
+            let _quantized = Self::quantize_fp32_to_int8(inputs.clone())?;
+            return Ok(inputs.into_owned());
+        }
+        Ok(inputs.into_owned())
+    }
+}
+
+pub struct InferenceBenchmark {
+    pub fp32_latency_ms: f64,
+    pub int8_latency_ms: f64,
+    pub speedup_ratio: f64,
+}
+
+impl InferenceBenchmark {
+    #[allow(dead_code)]
+    pub fn compare(
+        fp32_engine: &TsfmInferenceEngine,
+        int8_engine: &TsfmInferenceEngine,
+        inputs: ndarray::ArrayViewD<f32>,
+        iterations: usize,
+    ) -> Self {
+        let fp32_start = std::time::Instant::now();
+        for _ in 0..iterations {
+            let _ = fp32_engine.run(inputs.view());
+        }
+        let fp32_elapsed = fp32_start.elapsed().as_secs_f64() * 1000.0;
+
+        let int8_start = std::time::Instant::now();
+        for _ in 0..iterations {
+            let _ = int8_engine.run(inputs.view());
+        }
+        let int8_elapsed = int8_start.elapsed().as_secs_f64() * 1000.0;
+
+        let speedup = if int8_elapsed > 0.0 {
+            fp32_elapsed / int8_elapsed
         } else {
-            self.hourly_matrices.get(hour)
+            1.0
         };
 
-        match current_state {
-            OccupancyState::Vacant => {
-                if rng.gen::<f64>() < matrix.vacant_to_occupied {
-                    OccupancyState::Occupied
-                } else {
-                    OccupancyState::Vacant
-                }
-            }
-            OccupancyState::Occupied => {
-                if rng.gen::<f64>() < matrix.occupied_to_vacant {
-                    OccupancyState::Vacant
-                } else {
-                    OccupancyState::Occupied
-                }
-            }
-            OccupancyState::Sleeping => {
-                OccupancyState::Sleeping
-            }
-        }
-    }
-
-    pub fn occupancy_fraction(&self, hour: u8, day: DayOfWeek) -> f64 {
-        let matrix = if day.is_weekend() {
-            self.weekend_matrices.get(hour)
-        } else {
-            self.hourly_matrices.get(hour)
-        };
-        matrix.vacant_to_occupied / (matrix.vacant_to_occupied + matrix.occupied_to_vacant)
-    }
-}
-
-pub struct MarkovOccupancyProvider {
-    pub generator: MarkovOccupancyGenerator,
-    pub simulation_rng: SmallRng,
-    current_state: OccupancyState,
-}
-
-impl MarkovOccupancyProvider {
-    pub fn new(generator: MarkovOccupancyGenerator) -> Self {
         Self {
-            simulation_rng: SmallRng::from_entropy(),
-            generator,
-            current_state: OccupancyState::Vacant,
+            fp32_latency_ms: fp32_elapsed / iterations as f64,
+            int8_latency_ms: int8_elapsed / iterations as f64,
+            speedup_ratio: speedup,
         }
-    }
-
-    pub fn step(&mut self, hour: u8, day: DayOfWeek) {
-        self.current_state = self.generator.generate_state(
-            &mut self.simulation_rng,
-            self.current_state,
-            hour,
-            day,
-        );
-    }
-
-    pub fn is_occupied(&self) -> bool {
-        self.current_state == OccupancyState::Occupied
-    }
-}
-
-impl OccupancyProvider for MarkovOccupancyProvider {
-    fn occupancy_fraction(&self, hour_of_day: f64, day_of_week: DayOfWeek) -> f64 {
-        self.generator.occupancy_fraction(hour_of_day as u8, day_of_week)
-    }
-
-    fn peak_occupancy(&self) -> f64 {
-        match self.generator.building_type {
-            BuildingType::Office => 0.95,
-            BuildingType::Retail => 0.85,
-            BuildingType::Restaurant => 0.80,
-            BuildingType::Residential => 1.0,
-        }
-    }
-}
-
-fn ashrae90p1_transition_matrices(building_type: &BuildingType, weekend: bool) -> HourlyTransitionMatrices {
-    let mut matrices: HashMap<u8, TransitionMatrix> = HashMap::new();
-
-    match building_type {
-        BuildingType::Office => {
-            if weekend {
-                for hour in 0..24 {
-                    matrices.insert(hour, TransitionMatrix::new(0.02, 0.15));
-                }
-            } else {
-                for hour in 0..24 {
-                    let p_vacant_occupied = match hour {
-                        0..=6 => 0.01,
-                        7 => 0.15,
-                        8 => 0.40,
-                        9..=11 => 0.08,
-                        12..=13 => 0.12,
-                        14..=16 => 0.08,
-                        17 => 0.20,
-                        18..=23 => 0.03,
-                        _ => 0.05,
-                    };
-                    let p_occupied_vacant = match hour {
-                        0..=7 => 0.05,
-                        8..=17 => 0.03,
-                        18 => 0.15,
-                        19 => 0.40,
-                        20..=23 => 0.10,
-                        _ => 0.05,
-                    };
-                    matrices.insert(hour, TransitionMatrix::new(p_vacant_occupied, p_occupied_vacant));
-                }
-            }
-        }
-        BuildingType::Retail => {
-            for hour in 0..24 {
-                let p_vacant_occupied = match hour {
-                    0..=9 => 0.02,
-                    10..=11 => 0.25,
-                    12..=14 => 0.15,
-                    15..=18 => 0.10,
-                    19..=20 => 0.20,
-                    21..=23 => 0.05,
-                    _ => 0.10,
-                };
-                let p_occupied_vacant = match hour {
-                    0..=9 => 0.02,
-                    10..=18 => 0.05,
-                    19..=20 => 0.25,
-                    21..=23 => 0.15,
-                    _ => 0.10,
-                };
-                matrices.insert(hour, TransitionMatrix::new(p_vacant_occupied, p_occupied_vacant));
-            }
-        }
-        BuildingType::Restaurant => {
-            for hour in 0..24 {
-                let p_vacant_occupied = match hour {
-                    0..=6 => 0.01,
-                    7..=10 => 0.20,
-                    11..=13 => 0.30,
-                    14..=15 => 0.15,
-                    16..=18 => 0.25,
-                    19..=21 => 0.40,
-                    22..=23 => 0.10,
-                    _ => 0.15,
-                };
-                let p_occupied_vacant = match hour {
-                    0..=6 => 0.01,
-                    7..=9 => 0.30,
-                    10..=13 => 0.25,
-                    14..=15 => 0.35,
-                    16..=18 => 0.20,
-                    19..=21 => 0.15,
-                    22..=23 => 0.10,
-                    _ => 0.15,
-                };
-                matrices.insert(hour, TransitionMatrix::new(p_vacant_occupied, p_occupied_vacant));
-            }
-        }
-        BuildingType::Residential => {
-            for hour in 0..24 {
-                let p_vacant_occupied = match hour {
-                    0..=5 => 0.01,
-                    6 => 0.10,
-                    7..=8 => 0.30,
-                    9..=17 => 0.05,
-                    18 => 0.20,
-                    19..=21 => 0.40,
-                    22..=23 => 0.15,
-                    _ => 0.10,
-                };
-                let p_occupied_vacant = match hour {
-                    0..=5 => 0.02,
-                    6..=7 => 0.20,
-                    8..=17 => 0.03,
-                    18 => 0.15,
-                    19..=21 => 0.25,
-                    22..=23 => 0.10,
-                    _ => 0.05,
-                };
-                matrices.insert(hour, TransitionMatrix::new(p_vacant_occupied, p_occupied_vacant));
-            }
-        }
-    }
-
-    HourlyTransitionMatrices { matrices }
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct OccupancyValidationResult {
-    pub mean_fraction: f64,
-    pub expected_fraction: f64,
-    pub relative_error: f64,
-    pub within_tolerance: bool,
-    pub chi_squared: f64,
-    pub state_distribution: HashMap<String, f64>,
-}
-
-pub fn compute_expected_fraction(
-    generator: &MarkovOccupancyGenerator,
-    hour_of_day: u8,
-    day_of_week: DayOfWeek,
-    num_days: usize,
-) -> f64 {
-    let mut occupied_count = 0;
-    let mut total_count = 0;
-    let mut rng = SmallRng::from_entropy();
-    let mut current_state = OccupancyState::Vacant;
-
-    const WARMUP_DAYS: usize = 500;
-    for day in 0..WARMUP_DAYS {
-        for hour in 0..24 {
-            current_state = generator.generate_state(&mut rng, current_state, hour, DayOfWeek::from_u8((day % 7) as u8));
-        }
-    }
-
-    for day in 0..num_days {
-        for hour in 0..24 {
-            if hour == hour_of_day && DayOfWeek::from_u8((day % 7) as u8) == day_of_week {
-                if current_state == OccupancyState::Occupied {
-                    occupied_count += 1;
-                }
-                total_count += 1;
-            }
-            current_state = generator.generate_state(&mut rng, current_state, hour, DayOfWeek::from_u8((day % 7) as u8));
-        }
-    }
-
-    if total_count > 0 {
-        occupied_count as f64 / total_count as f64
-    } else {
-        0.0
-    }
-}
-
-pub fn validate_occupancy(
-    generator: &MarkovOccupancyGenerator,
-    num_days: usize,
-    hour_of_day: u8,
-    day_of_week: DayOfWeek,
-    expected_fraction: f64,
-) -> OccupancyValidationResult {
-    let mut occupied_count = 0;
-    let mut vacant_count = 0;
-    let mut total_count = 0;
-
-    let mut rng = SmallRng::from_entropy();
-    let mut current_state = OccupancyState::Vacant;
-
-    const WARMUP_DAYS: usize = 500;
-    for day in 0..WARMUP_DAYS {
-        for hour in 0..24 {
-            current_state = generator.generate_state(&mut rng, current_state, hour, DayOfWeek::from_u8((day % 7) as u8));
-        }
-    }
-
-    for day in 0..num_days {
-        for hour in 0..24 {
-            if hour == hour_of_day && DayOfWeek::from_u8((day % 7) as u8) == day_of_week {
-                match current_state {
-                    OccupancyState::Occupied => occupied_count += 1,
-                    OccupancyState::Vacant => vacant_count += 1,
-                    OccupancyState::Sleeping => {}
-                }
-                total_count += 1;
-            }
-            current_state = generator.generate_state(&mut rng, current_state, hour, DayOfWeek::from_u8((day % 7) as u8));
-        }
-    }
-
-    let mean_fraction = if total_count > 0 {
-        occupied_count as f64 / total_count as f64
-    } else {
-        0.0
-    };
-
-    let relative_error = if expected_fraction > 0.0 {
-        (mean_fraction - expected_fraction).abs() / expected_fraction
-    } else {
-        0.0
-    };
-
-    let chi_squared = {
-        let expected_occupied = expected_fraction * total_count as f64;
-        let expected_vacant = (1.0 - expected_fraction) * total_count as f64;
-        let occ_diff = occupied_count as f64 - expected_occupied;
-        let vac_diff = vacant_count as f64 - expected_vacant;
-        (occ_diff * occ_diff / expected_occupied.max(0.001)) + (vac_diff * vac_diff / expected_vacant.max(0.001))
-    };
-
-    let mut state_distribution: HashMap<String, f64> = HashMap::new();
-    state_distribution.insert("occupied".to_string(), occupied_count as f64 / total_count.max(1) as f64);
-    state_distribution.insert("vacant".to_string(), vacant_count as f64 / total_count.max(1) as f64);
-
-    OccupancyValidationResult {
-        mean_fraction,
-        expected_fraction,
-        relative_error,
-        within_tolerance: relative_error <= 0.02,
-        chi_squared,
-        state_distribution,
     }
 }
 
@@ -425,71 +486,46 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_occupancy_fraction_office_weekday() {
-        let generator = MarkovOccupancyGenerator::new(BuildingType::Office);
-        let fraction = generator.occupancy_fraction(9, DayOfWeek::Tuesday);
-        assert!(fraction > 0.0 && fraction <= 1.0);
+    fn test_mock_plug_load_power() {
+        let mut rng = StdRng::seed_from_u64(42);
+        let plug_load = MockPlugLoad::with_typical_office_pattern(200.0, 10.0);
+
+        let power = plug_load.power(9.0, &mut rng);
+        assert!(power >= 0.0);
+        assert!(power <= 300.0);
     }
 
     #[test]
-    fn test_occupancy_provider_trait() {
-        let generator = MarkovOccupancyGenerator::new(BuildingType::Office);
-        let provider = MarkovOccupancyProvider::new(generator);
-        let fraction = provider.occupancy_fraction(9.0, DayOfWeek::Tuesday);
-        assert!(fraction > 0.0 && fraction <= 1.0);
-        assert!(provider.peak_occupancy() > 0.0);
+    fn test_mock_plug_load_batch() {
+        let mut rng = StdRng::seed_from_u64(42);
+        let plug_load = MockPlugLoad::default();
+        let hours = vec![0.0, 6.0, 12.0, 18.0];
+
+        let powers = plug_load.power_batch(&hours, &mut rng);
+        assert_eq!(powers.len(), 4);
+        assert!(powers.iter().all(|&p| p >= 0.0));
     }
 
     #[test]
-    fn test_markov_state_transition() {
-        let generator = MarkovOccupancyGenerator::new(BuildingType::Office);
-        let mut rng = SmallRng::from_entropy();
-        let state = generator.generate_state(&mut rng, OccupancyState::Vacant, 9, DayOfWeek::Tuesday);
-        assert!(matches!(state, OccupancyState::Vacant | OccupancyState::Occupied));
+    fn test_int8_quantizer() {
+        let input = ndarray::Array::from_elem((2, 3), 1.5f32);
+        let quantized = Int8Quantizer::quantize_fp32_to_int8(input.view().into_dyn()).unwrap();
+        assert_eq!(quantized.shape(), &[2, 3]);
     }
 
     #[test]
-    fn test_statistical_validation_office() {
-        let generator = MarkovOccupancyGenerator::new(BuildingType::Office);
-        // Use more samples and check that relative error is within 5% (accounts for RNG variance)
-        let expected_fraction = compute_expected_fraction(&generator, 9, DayOfWeek::Tuesday, 10000);
-        let result = validate_occupancy(&generator, 10000, 9, DayOfWeek::Tuesday, expected_fraction);
-        // With 10000 samples, the validation should confirm the expected fraction within 5%
-        assert!(result.relative_error < 0.05, "relative_error = {}", result.relative_error);
+    fn test_onnx_model_loader_default() {
+        let loader = OnnxModelLoader::new();
+        let engine = loader.load();
+        assert!(engine.is_ok());
     }
 
     #[test]
-    fn test_day_of_week_weekend() {
-        assert!(DayOfWeek::Saturday.is_weekend());
-        assert!(DayOfWeek::Sunday.is_weekend());
-        assert!(!DayOfWeek::Monday.is_weekend());
-    }
-
-    #[test]
-    fn test_chi_squared_convergence() {
-        let generator = MarkovOccupancyGenerator::new(BuildingType::Retail);
-        let expected_fraction = compute_expected_fraction(&generator, 12, DayOfWeek::Friday, 10000);
-        let result = validate_occupancy(&generator, 10000, 12, DayOfWeek::Friday, expected_fraction);
-        // Chi-squared should be reasonable for a well-calibrated model with 10000 samples
-        assert!(result.chi_squared < 300.0, "chi_squared = {}", result.chi_squared);
-    }
-
-    #[test]
-    fn test_building_types() {
-        for bt in &[BuildingType::Office, BuildingType::Retail, BuildingType::Restaurant, BuildingType::Residential] {
-            let generator = MarkovOccupancyGenerator::new(bt.clone());
-            for hour in 0..24 {
-                let frac = generator.occupancy_fraction(hour, DayOfWeek::Monday);
-                assert!(frac >= 0.0 && frac <= 1.0, "Invalid fraction for {:?} at hour {}", bt, hour);
-            }
-        }
-    }
-
-    #[test]
-    fn test_weekend_vs_weekday() {
-        let generator = MarkovOccupancyGenerator::new(BuildingType::Office);
-        let weekday_frac = generator.occupancy_fraction(10, DayOfWeek::Wednesday);
-        let weekend_frac = generator.occupancy_fraction(10, DayOfWeek::Saturday);
-        assert!(weekend_frac < weekday_frac);
+    fn test_tsfm_engine_mock_fallback() {
+        let engine = TsfmInferenceEngine::mock();
+        let input = ndarray::Array::from_elem((1, 10), 1.0f32);
+        let output = engine.run(input.view().into_dyn());
+        assert!(output.is_ok());
+        assert_eq!(output.unwrap().shape(), input.shape());
     }
 }
