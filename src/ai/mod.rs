@@ -12,4 +12,5 @@ pub mod surrogate;
 pub mod sweeps;
 pub mod synthetic_data_quality;
 pub mod tensor_dataset;
+pub mod ukf;
 pub mod xdt_export;
