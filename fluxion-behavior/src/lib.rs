@@ -6,14 +6,22 @@
 //! - #2048: ONNX Model Loading from Environment Variables
 //! - #2049: Mock Plug Load Fallback with Diurnal Gaussian Noise
 //! - #2050: INT8 Quantization for TSFM CPU Inference
+//! - #2051: DynamicInternalGainAdapter Core
 
 pub mod comfort;
+pub mod internal_gains;
+pub mod lighting;
 pub mod triggers;
 
 pub use comfort::{
     AdaptiveComfort, AdaptiveComfortStatus, ComfortError, ComfortMetrics, PmvComfort,
     PmvComfortStatus, TriggerType,
 };
+pub use internal_gains::{
+    ConstantPlugLoadProvider, DynamicInternalGainAdapter, InternalGains, OccupancyProvider,
+    PlugLoadProvider, ScheduleOccupancyProvider,
+};
+pub use lighting::OccupantState;
 pub use triggers::{ComfortTrigger, OccupantComfortTriggers, OccupantComfortTriggersConfig};
 
 use ndarray::Dimension;

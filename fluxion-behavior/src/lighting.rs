@@ -1,4 +1,4 @@
-use chrono::{DateTime, Datelike};
+use chrono::{DateTime, Datelike, Timelike};
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
@@ -188,8 +188,8 @@ impl ScheduleLightingModel {
 
     fn default_schedule() -> Vec<f64> {
         vec![
-            0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.1, 0.3, 0.8, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0,
-            0.8, 0.5, 0.2, 0.1, 0.0, 0.0, 0.0, 0.0,
+            0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.1, 0.3, 0.8, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 0.8,
+            0.5, 0.2, 0.1, 0.0, 0.0, 0.0, 0.0,
         ]
     }
 
@@ -203,17 +203,11 @@ impl ScheduleLightingModel {
         self
     }
 
-    pub fn lighting_power(
-        &self,
-        hour: f64,
-        zone_area: f64,
-        daylight_illuminance: f64,
-    ) -> f64 {
+    pub fn lighting_power(&self, hour: f64, zone_area: f64, daylight_illuminance: f64) -> f64 {
         let schedule_fraction = self.schedule_fraction(hour);
         let base_power = self.power_density * zone_area;
 
-        let daylight_reduction =
-            (daylight_illuminance / 1000.0).min(1.0) * self.daylighting_factor;
+        let daylight_reduction = (daylight_illuminance / 1000.0).min(1.0) * self.daylighting_factor;
 
         base_power * schedule_fraction * (1.0 - daylight_reduction)
     }
@@ -231,21 +225,11 @@ impl ScheduleLightingModel {
         0.3
     }
 
-    pub fn radiative_gain(
-        &self,
-        hour: f64,
-        zone_area: f64,
-        daylight_illuminance: f64,
-    ) -> f64 {
+    pub fn radiative_gain(&self, hour: f64, zone_area: f64, daylight_illuminance: f64) -> f64 {
         self.lighting_power(hour, zone_area, daylight_illuminance) * self.radiative_fraction()
     }
 
-    pub fn convective_gain(
-        &self,
-        hour: f64,
-        zone_area: f64,
-        daylight_illuminance: f64,
-    ) -> f64 {
+    pub fn convective_gain(&self, hour: f64, zone_area: f64, daylight_illuminance: f64) -> f64 {
         self.lighting_power(hour, zone_area, daylight_illuminance) * self.convective_fraction()
     }
 }
