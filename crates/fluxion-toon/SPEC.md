@@ -1,79 +1,158 @@
 # TOON Format Specification
 
-**Token-Oriented Object Notation (TOON)**
-
-Version 1.0
+**Token-Oriented Object Notation (TOON)** — Version 1.0
 
 ## Overview
 
-TOON is a compact, tabular serialization format designed to reduce LLM context-window usage by collapsing uniform flat-struct arrays into CSV-style blocks with explicit count headers.
+TOON is a compact, tabular serialization format that reduces LLM context-window usage by 35–50% compared to JSON for uniform building-energy model state vectors (zone temperatures, surface fluxes, HVAC energy arrays).
 
-## Format Structure
+## Syntax Summary
 
-### Header
+### Scalar
 ```
-toon:v1
-count:<N>
-```
-
-### Scalar Fields
-```
-key=value
+setpoint: 22.0
 ```
 
-### Array Fields (Uniform Flat-Structs)
+### Uniform Object Array
+Header declares count + field list, then CSV-style rows follow:
 ```
-array:<FIELD_NAME>:<COUNT>
-<FIELD_NAME>_0,<FIELD_NAME>_1,...<FIELD_NAME>_<COUNT-1>
+zone_temps[3]{id,temp_c,humidity_rh}:
+  z0, 21.4, 45.0
+  z1, 22.1, 44.2
+  z2, 20.8, 46.1
 ```
 
-### Example
+### Nested Block
+```
+model{model_id,num_zones,window_u_value}:
+  mid0, 3, 1.5
+```
 
-**JSON Input:**
+## Primitive Type Encodings
+
+| Type     | Syntax Example         | Notes                              |
+|----------|------------------------|------------------------------------|
+| `f64`    | `22.0`, `-1.5e-3`      | Decimal or scientific notation      |
+| `i64`    | `42`, `-7`             | No decimal point                   |
+| `bool`   | `true`, `false`        | Lowercase                          |
+| `string` | `zone_a`, `"Hello World"` | Unquoted unless contains `:`,`,`,`\n` |
+
+## Uniform Array Collapse Rules
+
+The `[N]{fields}:` syntax applies **only** when:
+1. All elements are flat objects (no nested structures)
+2. All objects share the **exact same set of fields** (same names, same types)
+3. The array length is explicit (`[N]`)
+
+If any element is non-uniform or nested, fall back to per-element JSON representation.
+
+### Examples
+
+**Collapse (uniform):**
+```
+zone_temps[3]{id,temp_c}:
+  z0, 21.4
+  z1, 22.1
+  z2, 20.8
+```
+
+**No collapse (mixed types in field):**
+```
+readings[2]:
+  {"id": "r0", "value": 22.4}
+  {"id": "r1", "value": "error"}
+```
+
+## Newline / Indentation Semantics
+
+- Indentation uses **2 spaces** for nested blocks
+- Rows under a uniform array header are indented by 2 spaces
+- Blank lines are **not allowed** within uniform array blocks
+- Trailing whitespace is ignored
+
+## Error Handling Contract
+
+A parse error occurs when:
+- Header count (`[N]`) does not match the number of following rows
+- Field count in header does not match comma-separated values in a row
+- Unrecognized or malformed type literal
+- Missing required rows for a declared array
+
+### Error Variants
+
+| Variant           | Condition                                           |
+|-------------------|-----------------------------------------------------|
+| `LengthMismatch`  | Row count differs from declared `[N]`               |
+| `InvalidSyntax`   | Malformed header or type literal                    |
+| `MalformedRow`    | Comma-separated values don't match field count      |
+
+## Explicit Length Header Semantics
+
+The `zone_temps[3]` syntax encodes the array length as a hallucination guardrail:
+- Parser **must** verify the number of rows equals `3`
+- Mismatch raises `LengthMismatch`
+- This prevents LLM models from omitting or inventing array elements
+
+## What Constitutes a "Uniform" Struct
+
+A struct is uniform for TOON collapse if and only if:
+1. It is **flat** — no nested objects or arrays as field values
+2. All fields have **primitive types** (`f64`, `i64`, `bool`, `string`)
+3. All instances in the array have **identical field names** in the same order
+
+Example **uniform** struct:
+```rust
+struct ZoneTemp {
+    id: String,
+    temp_c: f64,
+    humidity_rh: f64,
+}
+```
+
+Example **non-uniform** (cannot collapse):
+```rust
+struct Reading {
+    id: String,
+    value: serde_json::Value,  // mixed types
+}
+```
+
+## Limitations
+
+TOON is **NOT** suitable for:
+- Internal numerical solver state (CTF/FD thermal networks)
+- Multi-node thermal mass configurations with deep nesting
+- Non-uniform or deeply nested data structures
+- Hand-edited configuration files (use JSON/YAML instead)
+
+## Example Transformations
+
+### JSON → TOON
+
+**JSON input:**
 ```json
 {
-  "zone_count": 3,
-  "zones": [
-    {"name": "Zone1", "temperature": 22.5},
-    {"name": "Zone2", "temperature": 23.0},
-    {"name": "Zone3", "temperature": 21.8}
+  "zone_temps": [
+    {"id": "z0", "temp_c": 21.4, "humidity_rh": 45.0},
+    {"id": "z1", "temp_c": 22.1, "humidity_rh": 44.2},
+    {"id": "z2", "temp_c": 20.8, "humidity_rh": 46.1}
   ]
 }
 ```
 
-**TOON Output:**
+**TOON output:**
 ```
-toon:v1
-count=3
-zones:3
-name_0,name_1,name_2
-Zone1,Zone2,Zone3
-temperature_0,temperature_1,temperature_2
-22.5,23.0,21.8
+zone_temps[3]{id,temp_c,humidity_rh}:
+  z0, 21.4, 45.0
+  z1, 22.1, 44.2
+  z2, 20.8, 46.1
 ```
-
-## Design Principles
-
-1. **Explicit Count Headers**: Every array field is preceded by its count, enabling length validation.
-2. **CSV-Style Arrays**: Uniform flat-struct arrays are collapsed into rows for token efficiency.
-3. **Dot-Separated Field Names**: Array elements use underscore indexing (`temperature_0`) for unambiguous field binding.
-4. **No Nested Structures**: TOON is designed for flat, uniform data structures only.
-
-## Token Reduction
-
-Compared to JSON, TOON typically achieves 35-50% token reduction for uniform array data by:
-- Eliminating repetitive field names within arrays
-- Using compact CSV rows instead of repeated object literals
-- Reducing syntactic overhead (brackets, quotes, commas)
-
-## Limitations
-
-TOON is NOT suitable for:
-- Numerical solvers (internal CTF/FD state)
-- Multi-node thermal mass configurations
-- Non-uniform or deeply nested data structures
-- Hand-edited configuration files
 
 ## Implementation
 
 See `fluxion-toon` crate documentation for serializer/deserializer implementation details.
+
+## References
+
+- Issue #2066: Define TOON Format Specification and Create Scaffold Crate
+- Issue #2071: Implement TOON serializer (follow-up)

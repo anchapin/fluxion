@@ -9,6 +9,22 @@ pub enum ToonError {
     #[error("unexpected end of input")]
     Eof,
 
+    /// Row count differs from declared length in header.
+    #[error("length mismatch: declared {declared} but found {found} rows")]
+    LengthMismatch { declared: usize, found: usize },
+
+    /// Malformed header or type literal.
+    #[error("invalid syntax: {0}")]
+    InvalidSyntax(String),
+
+    /// Comma-separated values don't match field count in header.
+    #[error("malformed row at line {line}: expected {expected} fields but found {found}")]
+    MalformedRow {
+        line: usize,
+        expected: usize,
+        found: usize,
+    },
+
     /// Invalid header format.
     #[error("invalid header: expected 'toon:v1', got '{0}'")]
     InvalidHeader(String),
