@@ -1743,7 +1743,6 @@ mod tests {
         }
     }
 
-
     #[test]
     fn test_5_building_energy_conservation() {
         let test = EnergyConservationTest::create_5_building_config();

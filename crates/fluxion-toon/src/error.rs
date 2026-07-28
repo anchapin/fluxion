@@ -11,17 +11,11 @@ pub enum ToonError {
 
     /// Row count differs from declared length in header.
     #[error("length mismatch: declared {declared} but found {found} rows")]
-    LengthMismatch {
-        declared: usize,
-        found: usize,
-    },
+    LengthMismatch { declared: usize, found: usize },
 
     /// Invalid syntax (line, message) or malformed header/type literal.
     #[error("invalid syntax{line}: {message}")]
-    InvalidSyntax {
-        line: usize,
-        message: String,
-    },
+    InvalidSyntax { line: usize, message: String },
 
     /// Comma-separated values don't match field count in header.
     #[error("malformed row at line {line}: expected {expected} fields but found {found}")]
