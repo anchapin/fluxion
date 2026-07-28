@@ -88,6 +88,9 @@ debug-physics = []
 # Enables rdkafka-based Kafka consumer for enterprise-scale telemetry ingestion.
 # Run with: cargo test --features kafka -p fluxion twin::kafka_telemetry_consumer
 kafka = ["dep:rdkafka"]
+# Feature flag for acausal HVAC / fluid network modeling (Issue #1980 / ADR-005).
+# Gates the `fluxion-fluid` crate which provides port-based fluid circuit traits.
+fluid = ["dep:fluxion-fluid"]
 
 [lints.rust]
 unexpected_cfgs = { level = "allow", check-cfg = ["cfg(docsrs,test)", "cfg(gil_refs)"] }
@@ -95,6 +98,10 @@ unexpected_cfgs = { level = "allow", check-cfg = ["cfg(docsrs,test)", "cfg(gil_r
 [dependencies]
 # Workspace sibling crate (#1255): leaf modules built once & cached by cargo-mutants.
 fluxion-core = { path = "fluxion-core", version = "1.0.0" }
+
+# Optional acausal HVAC / fluid network crate (Issue #1980 / ADR-005).
+# Compile with --features fluid to enable fluid port types and network topology.
+fluxion-fluid = { path = "fluxion-fluid", version = "1.0.0", optional = true }
 
 # Core Logic
 serde = { version = "1.0", features = ["derive"] }
@@ -236,9 +243,6 @@ rstest = "0.25"
 dhat = "0.3"
 proptest = "1.5"
 noisy_float = "0.2"
-
-# fluxion-fluid for integration tests (Issue #2005)
-fluxion-fluid = { path = "fluxion-fluid" }
 
 # TOON serialization for round-trip testing (Issue #2071)
 fluxion-toon = { path = "crates/fluxion-toon" }
