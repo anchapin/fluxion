@@ -277,51 +277,48 @@ impl PhysicsScratch9r4c {
         &mut self.inter[(6 * self.n)..(7 * self.n)]
     }
 }
-
-use std::cell::RefCell;
-
 #[allow(dead_code)]
 pub(crate) struct PhysicsScratchPool {
     #[allow(dead_code)]
-    pub r5r1c: RefCell<Option<PhysicsScratch5r1c>>,
+    pub r5r1c: Option<PhysicsScratch5r1c>,
     #[allow(dead_code)]
-    pub r6r2c: RefCell<Option<PhysicsScratch6r2c>>,
+    pub r6r2c: Option<PhysicsScratch6r2c>,
     #[allow(dead_code)]
-    pub r9r4c: RefCell<Option<PhysicsScratch9r4c>>,
+    pub r9r4c: Option<PhysicsScratch9r4c>,
 }
 
 impl PhysicsScratchPool {
     #[allow(dead_code)]
     pub fn new() -> Self {
         Self {
-            r5r1c: RefCell::new(None),
-            r6r2c: RefCell::new(None),
-            r9r4c: RefCell::new(None),
+            r5r1c: None,
+            r6r2c: None,
+            r9r4c: None,
         }
     }
 
     #[allow(dead_code)]
-    pub fn get_5r1c(&self, num_zones: usize) -> RefMut<'_, PhysicsScratch5r1c> {
-        if self.r5r1c.borrow().is_none() {
-            *self.r5r1c.borrow_mut() = Some(PhysicsScratch5r1c::new(num_zones));
+    pub fn get_5r1c(&mut self, num_zones: usize) -> &mut PhysicsScratch5r1c {
+        if self.r5r1c.is_none() {
+            self.r5r1c = Some(PhysicsScratch5r1c::new(num_zones));
         }
-        RefCell::borrow_mut(&self.r5r1c)
+        self.r5r1c.as_mut().unwrap()
     }
 
     #[allow(dead_code)]
-    pub fn get_6r2c(&self, num_zones: usize) -> RefMut<'_, PhysicsScratch6r2c> {
-        if self.r6r2c.borrow().is_none() {
-            *self.r6r2c.borrow_mut() = Some(PhysicsScratch6r2c::new(num_zones));
+    pub fn get_6r2c(&mut self, num_zones: usize) -> &mut PhysicsScratch6r2c {
+        if self.r6r2c.is_none() {
+            self.r6r2c = Some(PhysicsScratch6r2c::new(num_zones));
         }
-        RefCell::borrow_mut(&self.r6r2c)
+        self.r6r2c.as_mut().unwrap()
     }
 
     #[allow(dead_code)]
-    pub fn get_9r4c(&self, num_zones: usize) -> RefMut<'_, PhysicsScratch9r4c> {
-        if self.r9r4c.borrow().is_none() {
-            *self.r9r4c.borrow_mut() = Some(PhysicsScratch9r4c::new(num_zones));
+    pub fn get_9r4c(&mut self, num_zones: usize) -> &mut PhysicsScratch9r4c {
+        if self.r9r4c.is_none() {
+            self.r9r4c = Some(PhysicsScratch9r4c::new(num_zones));
         }
-        RefCell::borrow_mut(&self.r9r4c)
+        self.r9r4c.as_mut().unwrap()
     }
 }
 

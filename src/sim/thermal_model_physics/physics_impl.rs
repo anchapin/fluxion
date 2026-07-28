@@ -201,15 +201,20 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         // st_sol_frac: Solar gains to surface (fraction of solar that goes to surface)
         // m_sol_frac: Solar gains to mass (fraction of solar that goes to mass)
         // Note: solar_distribution_to_air controls how much solar goes directly to zone air
-        let st_int_frac = rad_frac * (1.0 - self.0.solar_distribution_to_air);
-        let m_air_frac = rad_frac * self.0.solar_distribution_to_air;
-        let st_sol_frac = 1.0 - self.0.solar_beam_to_mass_fraction;
-        let m_sol_frac = self.0.solar_beam_to_mass_fraction;
+        let st_int_frac = rad_frac * (1.0 - solar_distribution_to_air);
+        let m_air_frac = rad_frac * solar_distribution_to_air;
+        let st_sol_frac = 1.0 - solar_beam_to_mass_fraction;
+        let m_sol_frac = solar_beam_to_mass_fraction;
 
         let loads_ref = self.0.loads.as_ref();
         let solar_ref = self.0.solar_gains.as_ref();
         let opaque_solar_ref = self.0.opaque_solar_gains.as_ref();
         let area_ref = self.0.zone_area.as_ref();
+
+        let heating_setpoint = self.0.heating_setpoint;
+        let cooling_setpoint = self.0.cooling_setpoint;
+        let solar_distribution_to_air = self.0.solar_distribution_to_air;
+        let solar_beam_to_mass_fraction = self.0.solar_beam_to_mass_fraction;
 
         // Issue #1524: consolidated per-timestep scratch (replaces the six
         // standalone `Vec::with_capacity(num_zones)` allocations below).
@@ -225,7 +230,7 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
 
             // Internal gains: convective to air, radiative split between surface and mass
             // Solar distribution must conserve energy (sum to 1.0)
-            let sol_to_air = sol_w * self.0.solar_distribution_to_air;
+            let sol_to_air = sol_w * solar_distribution_to_air;
             let remaining_sol = sol_w - sol_to_air;
             scratch.phi_ia[i] = load_w * conv_frac + sol_to_air;
             scratch.phi_st[i] = load_w * st_int_frac + remaining_sol * st_sol_frac;
@@ -884,8 +889,8 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
             // heat-release is already embedded in t_i_free via num_tm).
             self.compute_zone_hvac_load(
                 t_i_free.as_ref(),
-                self.0.heating_setpoint,
-                self.0.cooling_setpoint,
+                heating_setpoint,
+                cooling_setpoint,
             )
         };
 
@@ -1026,8 +1031,8 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
             // already embedded in t_i_free via num_tm).
             let hvac_output_raw = self.compute_zone_hvac_load(
                 t_i_free.as_ref(),
-                self.0.heating_setpoint,
-                self.0.cooling_setpoint,
+                heating_setpoint,
+                cooling_setpoint,
             );
 
             // Root Cause Fix: Use hvac_output_raw for peak tracking (consistent with energy calc)
@@ -1100,8 +1105,8 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
             // already embedded in t_i_free via num_tm).
             self.compute_zone_hvac_load(
                 t_i_free.as_ref(),
-                self.0.heating_setpoint,
-                self.0.cooling_setpoint,
+                heating_setpoint,
+                cooling_setpoint,
             )
         };
 
@@ -1525,6 +1530,9 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         let opaque_solar_ref = self.0.opaque_solar_gains.as_ref();
         let area_ref = self.0.zone_area.as_ref();
 
+        let heating_setpoint = self.0.heating_setpoint;
+        let cooling_setpoint = self.0.cooling_setpoint;
+
         // Issue #1524: consolidated per-timestep scratch (replaces the eleven
         // standalone `Vec::with_capacity(num_zones)` allocations in 6R2C).
         // Issue #1966: scratch is now pooled in ThermalModelData::scratch_pool
@@ -1796,8 +1804,8 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         // already embedded in t_i_free via num_tm).
         let hvac_output_raw = self.compute_zone_hvac_load(
             t_i_free.as_ref(),
-            self.0.heating_setpoint,
-            self.0.cooling_setpoint,
+            heating_setpoint,
+            cooling_setpoint,
         );
         // Fix: Use actual HVAC demand instead of steady-state approximation (Plan 03-03 Task 2)
         // hvac_output_raw already includes thermal mass buffering (calculated from t_i_free)
@@ -2430,6 +2438,11 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         let solar_data = self.0.solar_gains.as_ref().to_vec();
         let opaque_solar_data = self.0.opaque_solar_gains.as_ref().to_vec();
         let area_data = self.0.zone_area.as_ref().to_vec();
+        let heating_setpoint = self.0.heating_setpoint;
+        let cooling_setpoint = self.0.cooling_setpoint;
+        let temps = self.0.temperatures.as_ref().to_vec();
+        let prev_temps = self.0.previous_temperatures.as_ref().to_vec();
+        let mass_temps = self.0.mass_temperatures.as_ref().to_vec();
 
         // Issue #1524: consolidated per-timestep scratch (replaces the fourteen
         // standalone `Vec::with_capacity(num_zones)` allocations in 9R4C; the
@@ -2443,7 +2456,7 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
             let sol_w = solar_data[i] * area_data[i];
             let opaque_sol_w = opaque_solar_data[i] * area_data[i];
 
-            let sol_to_air = sol_w * self.0.solar_distribution_to_air;
+            let sol_to_air = sol_w * solar_dist_to_air;
             let remaining_sol = sol_w - sol_to_air;
             scratch.phi_ia[i] = load_w * conv_frac + sol_to_air;
             scratch.phi_st[i] = load_w * st_int_frac + remaining_sol * st_sol_frac;
@@ -3059,14 +3072,14 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         // continuous modulation once the controller's curve is softened in Plan 15-04).
         let _hour_of_day_idx = timestep % 24;
         let temp_rate = if timestep > 0 {
-            (self.0.temperatures.as_ref()[0] - self.0.previous_temperatures.as_ref()[0]) / dt
+            (temps[0] - prev_temps[0]) / dt
         } else {
             0.0
         };
 
         let (hvac_mode, modulation) = self.0.predictive_controller.calculate_modulation(
-            self.0.temperatures.as_ref()[0],
-            self.0.mass_temperatures.as_ref()[0],
+            temps[0],
+            mass_temps[0],
             temp_rate,
         );
         let hvac_mode: EquipmentHVACMode = hvac_mode;
@@ -3205,13 +3218,13 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                 // - Using t_mass gives ~162 W demand instead of ~730 W (4.5× underestimate)
                 //
                 // Sign convention: Q > 0 = heating, Q < 0 = cooling.
-                let q = if t_free_val < self.0.heating_setpoint {
+                let q = if t_free_val < heating_setpoint {
                     // Heating: Q = h_coeff × (T_heat_sp − T_free) > 0
-                    h_coeff * (self.0.heating_setpoint - t_free_val)
-                } else if t_free_val > self.0.cooling_setpoint {
+                    h_coeff * (heating_setpoint - t_free_val)
+                } else if t_free_val > cooling_setpoint {
                     // Cooling: Q = h_coeff × (T_cool_sp − T_free) = −h_coeff × (T_free − T_cool_sp) < 0
                     // Driving temperature is t_free (zone air), NOT t_mass_mn
-                    -h_coeff * (t_free_val - self.0.cooling_setpoint)
+                    -h_coeff * (t_free_val - cooling_setpoint)
                 } else {
                     // Zone air is within deadband: no HVAC demand
                     0.0
