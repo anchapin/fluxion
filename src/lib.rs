@@ -81,6 +81,7 @@ pub mod sim;
 pub mod solar;
 pub mod testing;
 pub mod thermal;
+pub mod twin;
 pub mod validation;
 // #1255: `weather` now lives in the `fluxion-core` workspace crate (a dependency
 // leaf). Re-export it so all existing `crate::weather::...` paths resolve unchanged.

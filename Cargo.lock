@@ -1133,6 +1133,7 @@ dependencies = [
  "tracing",
  "tracing-subscriber",
  "uom",
+ "uuid",
  "zip",
 ]
 
