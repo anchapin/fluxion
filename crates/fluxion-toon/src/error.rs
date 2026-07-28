@@ -13,6 +13,10 @@ pub enum ToonError {
     #[error("invalid header: expected 'toon:v1', got '{0}'")]
     InvalidHeader(String),
 
+    /// Malformed patch string.
+    #[error("malformed patch: {0}")]
+    MalformedPatch(String),
+
     /// Custom error message.
     #[error("{0}")]
     Custom(String),
