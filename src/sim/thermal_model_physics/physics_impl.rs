@@ -32,7 +32,7 @@ use crate::sim::thermal_integration::{
 };
 use crate::sim::thermal_model_core::ThermalModel;
 use crate::sim::thermal_model_scratch::{
-    PhysicsScratch5r1c, PhysicsScratch6r2c, PhysicsScratch9r4c,
+    PhysicsScratch5r1c, PhysicsScratch6r2c, PhysicsScratch9r4c, PhysicsScratchPool,
 };
 use crate::sim::ventilation::h_tr_is_ach_multiplier;
 
@@ -213,7 +213,9 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
 
         // Issue #1524: consolidated per-timestep scratch (replaces the six
         // standalone `Vec::with_capacity(num_zones)` allocations below).
-        let mut scratch = PhysicsScratch5r1c::new(self.0.num_zones);
+        // Issue #1966: scratch is now pooled in ThermalModelData::scratch_pool
+        // and reused across timesteps via fill_zero() at end of step.
+        let scratch = self.0.scratch_pool.get_5r1c(self.0.num_zones);
 
         for i in 0..self.0.num_zones {
             let load_w = loads_ref[i] * area_ref[i];
@@ -1451,6 +1453,10 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
             self.0.current_hvac_output = None;
         }
 
+        // Issue #1966: restore pooled scratch buffers for next timestep
+        // (phi_ia, phi_st, phi_m were moved out via mem::take above)
+        self.0.scratch_pool.get_5r1c(self.0.num_zones).fill_zero();
+
         net_hvac_energy_for_step / 3.6e6 // Return kWh
     }
 
@@ -1521,7 +1527,9 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
 
         // Issue #1524: consolidated per-timestep scratch (replaces the eleven
         // standalone `Vec::with_capacity(num_zones)` allocations in 6R2C).
-        let mut scratch = PhysicsScratch6r2c::new(self.0.num_zones);
+        // Issue #1966: scratch is now pooled in ThermalModelData::scratch_pool
+        // and reused across timesteps via fill_zero() at end of step.
+        let scratch = self.0.scratch_pool.get_6r2c(self.0.num_zones);
 
         for i in 0..self.0.num_zones {
             let load_w = loads_ref[i] * area_ref[i];
@@ -2311,6 +2319,10 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
             partition_mass.as_mut()[i] += dtm_partition;
         }
 
+        // Issue #1966: restore pooled scratch buffers for next timestep
+        // (phi_ia, phi_st, phi_m_env, phi_m_int were moved out via mem::take above)
+        self.0.scratch_pool.get_6r2c(self.0.num_zones).fill_zero();
+
         energy
     }
 
@@ -2418,7 +2430,9 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         // Issue #1524: consolidated per-timestep scratch (replaces the fourteen
         // standalone `Vec::with_capacity(num_zones)` allocations in 9R4C; the
         // seven read-back intermediates share one flat buffer).
-        let mut scratch = PhysicsScratch9r4c::new(self.0.num_zones);
+        // Issue #1966: scratch is now pooled in ThermalModelData::scratch_pool
+        // and reused across timesteps via fill_zero() at end of step.
+        let scratch = self.0.scratch_pool.get_9r4c(self.0.num_zones);
 
         for i in 0..self.0.num_zones {
             let load_w = loads_ref[i] * area_ref[i];
@@ -3493,6 +3507,10 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
             self.0.diagnostics = Some(diag);
             self.0.current_hvac_output = None;
         }
+
+        // Issue #1966: restore pooled scratch buffers for next timestep
+        // (phi_ia, phi_st, phi_m were moved out via mem::take above)
+        self.0.scratch_pool.get_9r4c(self.0.num_zones).fill_zero();
 
         // Return kWh
         hvac_power_watts * dt / 3.6e6
