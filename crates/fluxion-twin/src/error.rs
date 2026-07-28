@@ -1,27 +1,27 @@
+//! Error types for the Unscented Kalman Filter.
+
 use thiserror::Error;
 
-#[derive(Debug, Error)]
+#[derive(Debug, Clone, PartialEq, Error)]
 pub enum KalmanError {
-    #[error("Covariance matrix is not positive semi-definite: {0}")]
-    NotPositiveSemiDefinite(String),
+    #[error("dimension mismatch: expected {expected}, got {got}")]
+    DimensionMismatch { expected: usize, got: usize },
 
-    #[error("Covariance matrix is symmetric: {0}")]
-    NotSymmetric(String),
+    #[error("matrix is not positive semi-definite")]
+    NonPositiveDefiniteMatrix,
 
-    #[error("Matrix inversion failed: {0}")]
-    MatrixInversionFailed(String),
-
-    #[error("Dimension mismatch: expected {expected}, got {actual}")]
-    DimensionMismatch { expected: usize, actual: usize },
-
-    #[error("Singular matrix encountered during computation")]
+    #[error("matrix is singular or near-singular (determinant = 0)")]
     SingularMatrix,
 
-    #[error("Numerical instability: values diverged to NaN or Inf")]
-    NumericalInstability,
+    #[error("Cholesky decomposition failed")]
+    CholeskyFailed,
 
-    #[error("Sigma point generation failed: {0}")]
-    SigmaPointGenerationFailed(String),
+    #[error("sigma point generation failed")]
+    SigmaPointGenerationFailed,
+
+    #[error("prediction step failed")]
+    PredictionFailed,
+
+    #[error("update step failed")]
+    UpdateFailed,
 }
-
-pub type KalmanResult<T> = Result<T, KalmanError>;
