@@ -217,6 +217,9 @@ dhat = "0.3"
 proptest = "1.5"
 noisy_float = "0.2"
 
+# fluxion-fluid for integration tests (Issue #2005)
+fluxion-fluid = { path = "fluxion-fluid" }
+
 # TOON serialization for round-trip testing (Issue #2071)
 fluxion-toon = { path = "crates/fluxion-toon" }
 
@@ -412,6 +415,12 @@ harness = true
 [[test]]
 name = "integration-fmi-cosimulation"
 path = "tests/integration/test_fmi_cosimulation.rs"
+harness = true
+
+# Issue #2005: Energy conservation CI gate for fluxion-fluid
+[[test]]
+name = "integration-fluid-energy-conservation"
+path = "tests/integration/test_fluid_energy_conservation.rs"
 harness = true
 
 [[test]]

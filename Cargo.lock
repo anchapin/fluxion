@@ -1085,6 +1085,7 @@ dependencies = [
  "env_logger",
  "faer",
  "fluxion-core",
+ "fluxion-fluid",
  "fluxion-toon",
  "futures",
  "http-body-util",
