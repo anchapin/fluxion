@@ -832,16 +832,18 @@ impl ParallelLoopDispatcher {
         R: Send,
     {
         use rayon::iter::ParallelIterator;
+        use std::sync::{Arc, Mutex};
+
+        let f = Arc::new(Mutex::new(f));
 
         let parallel_results: Vec<Result<R, DispatchError>> = self
             .subgraphs
-            .to_vec()
-            .into_par_iter()
+            .par_iter()
             .map(|subgraph| {
                 if subgraph.has_feedback {
                     Err(DispatchError::FeedbackLoop(subgraph.id))
                 } else {
-                    f(&subgraph)
+                    f.lock().unwrap()(subgraph)
                 }
             })
             .collect();
