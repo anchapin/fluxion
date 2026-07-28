@@ -110,12 +110,11 @@ tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }
 chrono = { version = "0.4", features = ["serde"] }
 
 # UUID generation for LiveTwin (Issue #2025)
-uuid = { version = "1.0", features = ["serde", "v4"] }
+uuid = { version = "1.10", features = ["serde", "v4"] }
 
 # HTTP client and caching for weather downloads
 directories = "5.0"
 sha2 = "0.10"
-uuid = { version = "1.10", features = ["v4"] }
 
 # Numerical & Math
 faer = { version = "0.23.2", default-features = false, features = ["std"] }

@@ -17,15 +17,14 @@ pub use connection_pool::{
     DEFAULT_MAX_CONNECTIONS, DEFAULT_STALE_TIMEOUT,
 };
 
-//! LiveTwin WebSocket state broadcaster (Issue #2025).
-//!
-//! Streams physical state vectors to visualization engines via WebSockets
-//! with MessagePack binary serialization for ~2x bandwidth savings vs JSON.
-//!
-//! # Memory Leak Testing
-//! Issue #2064 requires a memory leak test that broadcasts 1000 sequential
-//! states at 60 FPS without memory growth exceeding 1MB RSS.
-
+/// LiveTwin WebSocket state broadcaster (Issue #2025).
+///
+/// Streams physical state vectors to visualization engines via WebSockets
+/// with MessagePack binary serialization for ~2x bandwidth savings vs JSON.
+///
+/// # Memory Leak Testing
+/// Issue #2064 requires a memory leak test that broadcasts 1000 sequential
+/// states at 60 FPS without memory growth exceeding 1MB RSS.
 use std::collections::HashMap;
 use std::sync::Arc;
 
