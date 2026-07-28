@@ -2099,6 +2099,52 @@ impl SurrogateManager {
         Err("Modular ONNX surrogates require the `ort` feature".to_string())
     }
 
+    /// Load a pre-quantized INT8 ONNX model for accelerated CPU inference.
+    ///
+    /// Quantized models typically achieve 2-4x speedup on CPU with <1% accuracy loss.
+    /// Use [`tools/quantize_model.py`] to produce quantized models from FP32 ONNX files.
+    ///
+    /// # Arguments
+    /// * `path` - Path to a quantized INT8 ONNX model
+    ///
+    /// # Example
+    /// ```rust,ignore
+    /// let manager = SurrogateManager::load_quantized_onnx("model_int8.onnx")?;
+    /// let loads = manager.predict_loads(&[21.0, 22.0]);
+    /// ```
+    #[cfg(feature = "ort")]
+    pub fn load_quantized_onnx(path: &str) -> Result<Self, String> {
+        use std::path::Path;
+        if !Path::new(path).exists() {
+            return Err(format!("Quantized ONNX model file not found: {}", path));
+        }
+        info!("Loading quantized INT8 model: {} (CPU inference)", path);
+        let session = SessionPool::create_session(path, InferenceBackend::CPU, 0)?;
+        let pool = SessionPool::new(path.to_string(), InferenceBackend::CPU, 0, session);
+        Ok(SurrogateManager {
+            model_loaded: true,
+            model_path: Some(path.to_string()),
+            session_pool: Some(Arc::new(pool)),
+            backend: InferenceBackend::CPU,
+            device_id: 0,
+            composite: None,
+            inference_metrics: Arc::new(parking_lot::Mutex::new(InferenceMetrics::default())),
+            input_bounds: None,
+            ood_count: Arc::new(parking_lot::Mutex::new(0)),
+            residual_tau: DEFAULT_RESIDUAL_TAU,
+            residual_reroute_count: Arc::new(parking_lot::Mutex::new(0)),
+        })
+    }
+
+    /// Stub for non-`ort` builds (issue #1294).
+    #[cfg(not(feature = "ort"))]
+    pub fn load_quantized_onnx(_path: &str) -> Result<Self, String> {
+        Err(
+            "Loading quantized ONNX models requires the `ort` feature (build with --features ort)"
+                .to_string(),
+        )
+    }
+
     pub fn predict_loads(&self, current_temps: &[f64]) -> Vec<f64> {
         if let Some(ref comp) = self.composite {
             return comp.predict_loads(current_temps);

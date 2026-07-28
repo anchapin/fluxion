@@ -182,6 +182,240 @@ mod tsfm_engine {
             self.quantized
         }
     }
+
+    /// Quantized TSFm model for accelerated INT8 inference.
+    ///
+    /// Wraps a quantized ONNX session with scale and zero_point for
+    /// dequantization/quantization during inference.
+    ///
+    /// # Quantization Approach
+    ///
+    /// This struct supports two quantization workflows:
+    ///
+    /// 1. **Pre-quantized models**: Load a model that has been quantized
+    ///    using ONNX Runtime's quantization tools (e.g., `tools/quantize_model.py`).
+    ///    ONNX Runtime handles the INT8 computation automatically.
+    ///
+    /// 2. **Dynamic quantization**: Apply scale/zero_point transformation
+    ///    at runtime using the `run_quantized` method.
+    ///
+    /// # Example
+    ///
+    /// ```rust,ignore
+    /// // Load a pre-quantized model
+    /// let qmodel = QuantizedTsfmModel::from_quantized_path(
+    ///     "model_int8.onnx",
+    ///     0.1,   // scale
+    ///     128,   // zero_point (int8 center)
+    /// )?;
+    ///
+    /// // Run quantized inference
+    /// let input: Vec<f32> = vec![21.0, 22.0];
+    /// let output = qmodel.run_quantized(&input)?;
+    /// ```
+    pub struct QuantizedTsfmModel {
+        session: Mutex<Option<ort::session::Session>>,
+        input_names: Vec<String>,
+        output_names: Vec<String>,
+        scale: f32,
+        zero_point: i32,
+    }
+
+    impl QuantizedTsfmModel {
+        /// Load a pre-quantized INT8 model.
+        ///
+        /// The model should be quantized using `tools/quantize_model.py` or
+        /// similar ONNX Runtime quantization tools.
+        ///
+        /// # Arguments
+        /// * `model_path` - Path to quantized INT8 ONNX model
+        /// * `scale` - Quantization scale factor
+        /// * `zero_point` - Quantization zero point (center of quantized range)
+        pub fn from_quantized_path(
+            model_path: &PathBuf,
+            scale: f32,
+            zero_point: i32,
+        ) -> Result<Self> {
+            if !model_path.exists() {
+                return Err(BehaviorError::ModelNotFound(
+                    model_path.display().to_string(),
+                ));
+            }
+
+            let session = ort::session::Session::builder()
+                .map_err(|e| BehaviorError::OnnxError(e.to_string()))?
+                .commit_from_file(model_path)
+                .map_err(|e| BehaviorError::OnnxError(e.to_string()))?;
+
+            let input_names: Vec<String> = session
+                .inputs()
+                .iter()
+                .map(|outlet| outlet.name().to_string())
+                .collect();
+
+            let output_names: Vec<String> = session
+                .outputs()
+                .iter()
+                .map(|outlet| outlet.name().to_string())
+                .collect();
+
+            Ok(Self {
+                session: Mutex::new(Some(session)),
+                input_names,
+                output_names,
+                scale,
+                zero_point,
+            })
+        }
+
+        /// Create a mock quantized model for testing.
+        pub fn mock_quantized(scale: f32, zero_point: i32) -> Self {
+            Self {
+                session: Mutex::new(None),
+                input_names: vec!["input".to_string()],
+                output_names: vec!["output".to_string()],
+                scale,
+                zero_point,
+            }
+        }
+
+        /// Quantize an FP32 model to INT8.
+        ///
+        /// Note: This is a placeholder implementation. For production use,
+        /// quantize models using `tools/quantize_model.py` which uses
+        /// ONNX Runtime's quantization APIs.
+        ///
+        /// # Arguments
+        /// * `fp32_model` - The FP32 TsfmInferenceEngine to quantize
+        /// * `scale` - Quantization scale factor
+        /// * `zero_point` - Quantization zero point
+        ///
+        /// # Returns
+        /// A `QuantizedTsfmModel` that can be used for quantized inference
+        pub fn quantize(fp32_model: &TsfmInferenceEngine, scale: f32, zero_point: i32) -> Self {
+            Self {
+                session: fp32_model.session.lock().unwrap().clone(),
+                input_names: fp32_model.input_names.clone(),
+                output_names: fp32_model.output_names.clone(),
+                scale,
+                zero_point,
+            }
+        }
+
+        /// Run quantized inference with dequantization/requantization.
+        ///
+        /// This method:
+        /// 1. Dequantizes the input from INT8 to FP32
+        /// 2. Runs FP32 inference
+        /// 3. Quantizes the output back to INT8
+        ///
+        /// For actual INT8 acceleration, use a pre-quantized model and
+        /// the `run` method instead, which lets ONNX Runtime handle
+        /// the quantization automatically.
+        pub fn run_quantized(&self, input: &[f32]) -> Result<Vec<f32>> {
+            let mut guard = self
+                .session
+                .lock()
+                .map_err(|e| BehaviorError::OnnxError(e.to_string()))?;
+
+            if guard.is_none() {
+                return Ok(vec![0.0f32; input.len()]);
+            }
+
+            let session = guard.as_mut().unwrap();
+
+            let dequantized: Vec<f32> = input
+                .iter()
+                .map(|&x| (x - self.zero_point as f32) * self.scale)
+                .collect();
+
+            let shape = [1_i64, dequantized.len() as i64];
+            let input_tensor = ort::value::Value::from_array((shape, dequantized))
+                .map_err(|e| BehaviorError::InferenceError(e.to_string()))?;
+
+            let outputs = session
+                .run(ort::inputs![input_tensor])
+                .map_err(|e| BehaviorError::InferenceError(e.to_string()))?;
+
+            if outputs.len() == 0 {
+                return Err(BehaviorError::InferenceError(
+                    "No outputs returned".to_string(),
+                ));
+            }
+
+            let array_view = outputs[0]
+                .try_extract_array::<f32>()
+                .map_err(|e| BehaviorError::InferenceError(e.to_string()))?;
+
+            let quantized: Vec<f32> = array_view
+                .iter()
+                .map(|&x| x / self.scale + self.zero_point as f32)
+                .collect();
+
+            Ok(quantized)
+        }
+
+        /// Run inference directly on a pre-quantized model.
+        ///
+        /// Use this for pre-quantized models where ONNX Runtime
+        /// handles the INT8 computation automatically.
+        pub fn run(&self, inputs: ndarray::ArrayViewD<f32>) -> Result<ndarray::ArrayD<f32>> {
+            let mut guard = self
+                .session
+                .lock()
+                .map_err(|e| BehaviorError::OnnxError(e.to_string()))?;
+
+            if guard.is_none() {
+                let shape = inputs.shape().to_vec();
+                return Ok(ndarray::ArrayD::from_elem(shape, 0.0f32));
+            }
+
+            let session = guard.as_mut().unwrap();
+
+            let shape: Vec<i64> = inputs.shape().iter().map(|&s| s as i64).collect();
+            let input_data: Vec<f32> = inputs.iter().copied().collect();
+
+            let input_tensor = ort::value::Value::from_array((shape, input_data))
+                .map_err(|e| BehaviorError::InferenceError(e.to_string()))?;
+
+            let outputs = session
+                .run(ort::inputs![input_tensor])
+                .map_err(|e| BehaviorError::InferenceError(e.to_string()))?;
+
+            if outputs.len() == 0 {
+                return Err(BehaviorError::InferenceError(
+                    "No outputs returned".to_string(),
+                ));
+            }
+
+            let array_view = outputs[0]
+                .try_extract_array::<f32>()
+                .map_err(|e| BehaviorError::InferenceError(e.to_string()))?;
+
+            let shape: Vec<usize> = array_view.raw_dim().slice().to_vec();
+            let data: Vec<f32> = array_view.iter().copied().collect();
+            let array: ndarray::ArrayD<f32> = ndarray::Array::from_shape_vec(shape, data)
+                .map_err(|e| BehaviorError::InferenceError(e.to_string()))?;
+
+            Ok(array)
+        }
+
+        pub fn input_names(&self) -> &[String] {
+            &self.input_names
+        }
+
+        pub fn output_names(&self) -> &[String] {
+            &self.output_names
+        }
+
+        pub fn scale(&self) -> f32 {
+            self.scale
+        }
+
+        pub fn zero_point(&self) -> i32 {
+            self.zero_point
+        }
+    }
 }
 
 #[cfg(not(feature = "ort"))]
@@ -253,10 +487,70 @@ mod tsfm_engine {
         pub fn is_quantized(&self) -> bool {
             self.quantized
         }
+
+        pub fn quantize(
+            fp32_model: &TsfmInferenceEngine,
+            scale: f32,
+            zero_point: i32,
+        ) -> QuantizedTsfmModel {
+            QuantizedTsfmModel::mock_quantized(scale, zero_point)
+        }
+    }
+
+    #[derive(Clone, Debug)]
+    pub struct QuantizedTsfmModel {
+        pub scale: f32,
+        pub zero_point: i32,
+        pub input_names: Vec<String>,
+        pub output_names: Vec<String>,
+    }
+
+    impl QuantizedTsfmModel {
+        pub fn mock_quantized(scale: f32, zero_point: i32) -> Self {
+            Self {
+                scale,
+                zero_point,
+                input_names: vec!["input".to_string()],
+                output_names: vec!["output".to_string()],
+            }
+        }
+
+        pub fn from_quantized_path(
+            _model_path: &PathBuf,
+            scale: f32,
+            zero_point: i32,
+        ) -> Result<Self> {
+            Ok(Self::mock_quantized(scale, zero_point))
+        }
+
+        pub fn run_quantized(&self, input: &[f32]) -> Result<Vec<f32>> {
+            Ok(vec![0.0f32; input.len()])
+        }
+
+        pub fn run(&self, inputs: ndarray::ArrayViewD<f32>) -> Result<ndarray::ArrayD<f32>> {
+            let shape = inputs.shape().to_vec();
+            Ok(ndarray::ArrayD::from_elem(shape, 0.0f32))
+        }
+
+        pub fn input_names(&self) -> &[String] {
+            &self.input_names
+        }
+
+        pub fn output_names(&self) -> &[String] {
+            &self.output_names
+        }
+
+        pub fn scale(&self) -> f32 {
+            self.scale
+        }
+
+        pub fn zero_point(&self) -> i32 {
+            self.zero_point
+        }
     }
 }
 
-pub use tsfm_engine::TsfmInferenceEngine;
+pub use tsfm_engine::{QuantizedTsfmModel, TsfmInferenceEngine};
 
 mod plug_loads;
 pub use plug_loads::MockPlugLoadGenerator;
