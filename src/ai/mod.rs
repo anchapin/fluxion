@@ -4,6 +4,7 @@ pub mod batch_runner_9r4c;
 pub mod context_aware;
 pub mod distributed;
 pub mod ensemble;
+pub mod equipment_surrogate;
 pub mod modular_surrogate;
 pub mod neural_field;
 pub mod s3_upload;
