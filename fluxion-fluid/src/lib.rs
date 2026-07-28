@@ -4,6 +4,7 @@
 //! - [`mediums`] - Physical medium types (Air, Water, Refrigerant, Steam)
 //! - [`ports`] - FluidPort trait and concrete port implementations
 //! - [`pantelides`] - Pantelides symbolic index reduction for DAE systems
+//! - [`energy`] - Energy conservation verification for fluid networks
 //!
 //! # Port Type Safety
 //!
@@ -15,11 +16,21 @@
 //!
 //! The Pantelides algorithm reduces high-index DAE systems to index-1 form,
 //! making them suitable for BDF timestepping.
+//!
+//! # Energy Conservation
+//!
+//! The [`energy`] module provides [`EnergyConservationVerifier`] which verifies that
+//! fluid networks conserve energy according to the first law of thermodynamics.
 
+pub mod energy;
 pub mod mediums;
 pub mod pantelides;
 pub mod ports;
 
+pub use energy::{
+    ConservationNode, EnergyConservationError, EnergyConservationResult,
+    EnergyConservationVerifier, EnthalpyFlow, FluidNetworkGraph, SimulationResults,
+};
 pub use mediums::{Air, CompatibleWith, Medium, Water};
 pub use pantelides::{
     pantelides_reduce, EqIndex, Equation, IncidenceMatrix, PantelidesError, PantelidesOutput,
