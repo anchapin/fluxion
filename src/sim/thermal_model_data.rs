@@ -21,6 +21,7 @@ use crate::sim::occupancy::BuildingType;
 use crate::sim::schedule::DailySchedule;
 use crate::sim::solar::{SolarPosition, WindowProperties};
 use crate::sim::thermal_model_core::DoorGeometry;
+use crate::sim::thermal_model_scratch::PhysicsScratchPool;
 use crate::testing::integration::wiring::WiringTracer;
 use crate::validation::diagnostics::SimulationDiagnostics;
 use crate::weather::HourlyWeatherData;
@@ -301,6 +302,12 @@ pub struct ThermalModelData<T: ContinuousTensor<f64> + Clone> {
     /// Issue #1968 — cached zero vector to eliminate per-timestep `vec![0.0; num_zones]`
     /// allocations in hot loops. Cloned (not borrowed) to avoid borrow conflicts.
     pub zero_vector: VectorField,
+    /// Issue #1966 — pooled physics scratch buffers for per-timestep solvers.
+    ///
+    /// Lazily initialized on first use by `step_physics_*`. The pool is NOT
+    /// cloned on `ThermalModelData::clone()` (clone gets a fresh empty pool);
+    /// cloning is a cold-path operation that does not need pooled scratch reuse.
+    pub scratch_pool: PhysicsScratchPool,
 }
 
 impl<T: ContinuousTensor<f64> + Clone> Clone for ThermalModelData<T> {
@@ -454,6 +461,7 @@ impl<T: ContinuousTensor<f64> + Clone> Clone for ThermalModelData<T> {
             incident_solar_per_surface: self.incident_solar_per_surface.clone(),
             sun_pos_cache: Default::default(), // Issue #1970
             zero_vector: self.zero_vector.clone(),
+            scratch_pool: PhysicsScratchPool::new(), // Fresh pool on clone; scratch is not deep-cloned
         }
     }
 }

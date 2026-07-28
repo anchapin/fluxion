@@ -6,6 +6,7 @@
 //! capacity and just zero-fills in-place.
 
 pub(crate) struct PhysicsScratch5r1c {
+    pub num_zones: usize,
     pub phi_ia: Vec<f64>,
     pub phi_st: Vec<f64>,
     pub phi_m: Vec<f64>,
@@ -19,6 +20,7 @@ pub(crate) struct PhysicsScratch5r1c {
 impl PhysicsScratch5r1c {
     pub fn new(num_zones: usize) -> Self {
         Self {
+            num_zones,
             phi_ia: vec![0.0; num_zones],
             phi_st: vec![0.0; num_zones],
             phi_m: vec![0.0; num_zones],
@@ -32,7 +34,7 @@ impl PhysicsScratch5r1c {
 
     #[allow(dead_code)]
     pub fn fill_zero(&mut self) {
-        let n = self.phi_ia.len();
+        let n = self.num_zones;
         self.phi_ia.resize(n, 0.0);
         self.phi_st.resize(n, 0.0);
         self.phi_m.resize(n, 0.0);
@@ -69,6 +71,7 @@ impl PhysicsScratch5r1c {
 }
 
 pub(crate) struct PhysicsScratch6r2c {
+    pub num_zones: usize,
     pub phi_ia: Vec<f64>,
     pub phi_st: Vec<f64>,
     pub phi_m_env: Vec<f64>,
@@ -85,6 +88,7 @@ pub(crate) struct PhysicsScratch6r2c {
 impl PhysicsScratch6r2c {
     pub fn new(num_zones: usize) -> Self {
         Self {
+            num_zones,
             phi_ia: vec![0.0; num_zones],
             phi_st: vec![0.0; num_zones],
             phi_m_env: vec![0.0; num_zones],
@@ -101,7 +105,7 @@ impl PhysicsScratch6r2c {
 
     #[allow(dead_code)]
     pub fn fill_zero(&mut self) {
-        let n = self.phi_ia.len();
+        let n = self.num_zones;
         self.phi_ia.resize(n, 0.0);
         self.phi_st.resize(n, 0.0);
         self.phi_m_env.resize(n, 0.0);
