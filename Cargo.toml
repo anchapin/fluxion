@@ -112,6 +112,7 @@ chrono = { version = "0.4", features = ["serde"] }
 # HTTP client and caching for weather downloads
 directories = "5.0"
 sha2 = "0.10"
+uuid = { version = "1.10", features = ["v4"] }
 
 # Numerical & Math
 faer = { version = "0.23.2", default-features = false, features = ["std"] }
