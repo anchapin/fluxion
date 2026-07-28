@@ -2417,15 +2417,19 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         // Eq. C.6 (radiative-to-air): phi_ia gets the radiative portion via solar_distribution_to_air
         //   m_air_frac = rad_frac * solar_distribution_to_air = rad_frac * F_m
         //
-        let st_int_frac = rad_frac * (1.0 - self.0.solar_distribution_to_air);
-        let m_air_frac = rad_frac * self.0.solar_distribution_to_air;
-        let st_sol_frac = 1.0 - self.0.solar_beam_to_mass_fraction;
-        let m_sol_frac = self.0.solar_beam_to_mass_fraction;
+        let solar_dist_to_air = self.0.solar_distribution_to_air;
+        let st_int_frac = rad_frac * (1.0 - solar_dist_to_air);
+        let m_air_frac = rad_frac * solar_dist_to_air;
+        let solar_beam_to_mass = self.0.solar_beam_to_mass_fraction;
+        let st_sol_frac = 1.0 - solar_beam_to_mass;
+        let m_sol_frac = solar_beam_to_mass;
 
-        let loads_ref = self.0.loads.as_ref();
-        let solar_ref = self.0.solar_gains.as_ref();
-        let opaque_solar_ref = self.0.opaque_solar_gains.as_ref();
-        let area_ref = self.0.zone_area.as_ref();
+        // Extract all needed data from self.0 BEFORE acquiring scratch pool borrow
+        // to avoid borrow conflicts (scratch_pool requires &mut self.0).
+        let loads_data = self.0.loads.as_ref().to_vec();
+        let solar_data = self.0.solar_gains.as_ref().to_vec();
+        let opaque_solar_data = self.0.opaque_solar_gains.as_ref().to_vec();
+        let area_data = self.0.zone_area.as_ref().to_vec();
 
         // Issue #1524: consolidated per-timestep scratch (replaces the fourteen
         // standalone `Vec::with_capacity(num_zones)` allocations in 9R4C; the
@@ -2435,9 +2439,9 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         let mut scratch = self.0.scratch_pool.get_9r4c(self.0.num_zones);
 
         for i in 0..self.0.num_zones {
-            let load_w = loads_ref[i] * area_ref[i];
-            let sol_w = solar_ref[i] * area_ref[i];
-            let opaque_sol_w = opaque_solar_ref[i] * area_ref[i];
+            let load_w = loads_data[i] * area_data[i];
+            let sol_w = solar_data[i] * area_data[i];
+            let opaque_sol_w = opaque_solar_data[i] * area_data[i];
 
             let sol_to_air = sol_w * self.0.solar_distribution_to_air;
             let remaining_sol = sol_w - sol_to_air;
