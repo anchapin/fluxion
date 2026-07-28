@@ -1,0 +1,22 @@
+[package]
+name = "fluxion-twin"
+version = "0.1.0"
+edition = "2021"
+description = "Digital Twin core with Unscented Kalman Filter for state estimation in non-linear thermal systems"
+license = "Apache-2.0"
+repository = "https://github.com/anchapin/fluxion"
+authors = ["Dr. Aris Thorne <aris.thorne@fluxion.org>"]
+
+[dependencies]
+thiserror = "1.0"
+serde = { version = "1.0", features = ["derive"] }
+faer = { version = "0.23.2", default-features = false, features = ["std"] }
+rand = "0.8"
+rand_distr = "0.4"
+
+[dev-dependencies]
+paste = "1.0"
+
+[features]
+default = []
+std = ["faer/std"]
