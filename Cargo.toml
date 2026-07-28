@@ -184,7 +184,9 @@ axum = { version = "0.7", default-features = false, features = ["http1", "json",
 tower = { version = "0.5", features = ["util"] }
 http-body-util = "0.1"
 futures = "0.3"
+futures-util = "0.3"
 async-stream = "0.3"
+native-tls = "0.2"
 async-trait = "0.1"
 
 # Observability for fluxion-rest (Issue #1447):
