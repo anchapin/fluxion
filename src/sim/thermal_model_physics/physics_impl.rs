@@ -215,7 +215,7 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         // standalone `Vec::with_capacity(num_zones)` allocations below).
         // Issue #1966: scratch is now pooled in ThermalModelData::scratch_pool
         // and reused across timesteps via fill_zero() at end of step.
-        let scratch = self.0.scratch_pool.get_5r1c(self.0.num_zones);
+        let mut scratch = self.0.scratch_pool.get_5r1c(self.0.num_zones);
 
         for i in 0..self.0.num_zones {
             let load_w = loads_ref[i] * area_ref[i];
@@ -1529,7 +1529,7 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         // standalone `Vec::with_capacity(num_zones)` allocations in 6R2C).
         // Issue #1966: scratch is now pooled in ThermalModelData::scratch_pool
         // and reused across timesteps via fill_zero() at end of step.
-        let scratch = self.0.scratch_pool.get_6r2c(self.0.num_zones);
+        let mut scratch = self.0.scratch_pool.get_6r2c(self.0.num_zones);
 
         for i in 0..self.0.num_zones {
             let load_w = loads_ref[i] * area_ref[i];
@@ -2432,7 +2432,7 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         // seven read-back intermediates share one flat buffer).
         // Issue #1966: scratch is now pooled in ThermalModelData::scratch_pool
         // and reused across timesteps via fill_zero() at end of step.
-        let scratch = self.0.scratch_pool.get_9r4c(self.0.num_zones);
+        let mut scratch = self.0.scratch_pool.get_9r4c(self.0.num_zones);
 
         for i in 0..self.0.num_zones {
             let load_w = loads_ref[i] * area_ref[i];
