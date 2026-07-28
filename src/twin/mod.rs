@@ -139,6 +139,18 @@ pub use kafka_telemetry_consumer::{
     KafkaConsumerError, KafkaTelemetryConsumer, TelemetryMsg, DEFAULT_CHANNEL_CAPACITY,
 };
 
+//! Digital twin state estimation for thermal systems (Issue #2059).
+//!
+//! This module provides digital twin capabilities for building thermal systems,
+//! using Unscented Kalman Filtering (UKF) for state estimation with 9R4C
+//! thermal models.
+
+pub mod thermal_state_observer;
+pub mod ukf;
+
+pub use thermal_state_observer::{ThermalMeasurement, ThermalState, ThermalStateObserver};
+pub use ukf::UnscentedKalmanFilter;
+
 #[cfg(test)]
 mod tests {
     use super::*;
