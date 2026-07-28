@@ -66,6 +66,18 @@ impl DynamicInternalGainAdapter {
         self.occupancy.initial_state = state;
     }
 
+    pub fn compute_latent_gain(&self, n_occupants: usize, met_rate: f64) -> f64 {
+        let wme_factor = match met_rate {
+            m if m < 60.0 => 0.8,
+            m if m < 100.0 => 1.0,
+            _ => 1.2,
+        };
+
+        let moisture_kg_s = (n_occupants as f64) * 30.0 * wme_factor / 3_600_000.0;
+        let latent_w = moisture_kg_s * 2_454_000.0;
+        latent_w
+    }
+
     pub fn gains_for_hour(
         &self,
         hour: f64,
@@ -127,5 +139,31 @@ mod tests {
         let mut adapter = DynamicInternalGainAdapter::default();
         adapter.update_occupancy(OccupancyState::Occupied);
         assert_eq!(adapter.occupancy.initial_state, OccupancyState::Occupied);
+    }
+
+    #[test]
+    fn test_compute_latent_gain_one_occupant_rest() {
+        let adapter = DynamicInternalGainAdapter::default();
+        let latent = adapter.compute_latent_gain(1, 50.0);
+        assert!(latent > 15.0 && latent < 30.0, "latent gain should be ~20-25W for 1 occupant at rest, got {latent}");
+    }
+
+    #[test]
+    fn test_compute_latent_gain_activity_factor() {
+        let adapter = DynamicInternalGainAdapter::default();
+        let latent_sedentary = adapter.compute_latent_gain(1, 50.0);
+        let latent_light = adapter.compute_latent_gain(1, 80.0);
+        let latent_moderate = adapter.compute_latent_gain(1, 120.0);
+        assert!(latent_sedentary < latent_light, "sedentary should produce less latent heat than light activity");
+        assert!(latent_light < latent_moderate, "light activity should produce less latent heat than moderate");
+    }
+
+    #[test]
+    fn test_compute_latent_gain_scales_with_occupants() {
+        let adapter = DynamicInternalGainAdapter::default();
+        let latent_1 = adapter.compute_latent_gain(1, 80.0);
+        let latent_5 = adapter.compute_latent_gain(5, 80.0);
+        let ratio = latent_5 / latent_1;
+        assert!((ratio - 5.0).abs() < 0.001, "latent gain should scale linearly with occupant count, got ratio {ratio}");
     }
 }
