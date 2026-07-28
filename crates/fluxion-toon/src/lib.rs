@@ -39,7 +39,9 @@
 //!
 //! See Issue #2071
 
+pub mod de;
 pub mod error;
+pub mod parse;
 pub mod ser;
 
 // Re-export types
@@ -64,7 +66,15 @@ pub fn from_str<T: serde::de::DeserializeOwned>(input: &str) -> Result<T> {
         ));
     }
 
-    // Find the JSON body (everything after the header line)
+    // Try new TOON deserializer first (with length guardrails)
+    if let Ok(doc) = parse::ToonDocument::parse(input) {
+        if !doc.arrays.is_empty() {
+            let json = doc.to_json();
+            return T::deserialize(json).map_err(|e| ToonError::Deserialization(e.to_string()));
+        }
+    }
+
+    // Fallback to JSON body for backward compatibility
     let json_body = input
         .strip_prefix("toon:v1")
         .ok_or_else(|| ToonError::InvalidHeader("toon:v1".to_string()))?
@@ -97,7 +107,7 @@ mod tests {
 
     #[test]
     fn test_roundtrip_scalar_f64() {
-        let value = 3.14159f64;
+        let value = std::f64::consts::PI;
         let toon = to_string(&value).unwrap();
         let parsed: f64 = from_str(&toon).unwrap();
         assert!((value - parsed).abs() < 1e-10);
