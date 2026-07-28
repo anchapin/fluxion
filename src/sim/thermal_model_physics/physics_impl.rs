@@ -1156,7 +1156,6 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         // HVAC energy currently includes energy stored in thermal mass, which should be subtracted
         // Mass energy change = Cm × (Tm_new - Tm_old)
         // Save old mass temperature before updating
-        let old_mass_temperatures = self.0.mass_temperatures.clone();
 
         // Mass temperature update: includes heat transfer from exterior and from surface
         // Ground coupling affects mass temperature indirectly through the thermal network
@@ -1302,11 +1301,12 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         }
 
         // Update the mass temperatures with new values (convert Vec to T type)
-        self.0.mass_temperatures = VectorField::new(std::mem::take(&mut scratch.new_mass)).into();
-
         // Plan 03-04: Update previous mass temperature for tracking (kept for diagnostic output)
         // Mass energy change tracking removed - Ti_free already includes thermal mass effects
-        self.0.previous_mass_temperatures = old_mass_temperatures;
+        self.0.previous_mass_temperatures = std::mem::replace(
+            &mut self.0.mass_temperatures,
+            VectorField::new(std::mem::take(&mut scratch.new_mass)).into(),
+        );
 
         // Store previous temperatures for dT/dt calculation (Plan 15-04, 15-06)
         self.0.previous_temperatures = VectorField::new(self.0.temperatures.as_ref().to_vec());
@@ -1839,7 +1839,6 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
 
         // === 6R2C: Update two mass nodes with implicit integration ===
         // Envelope mass: receives heat from exterior (sol-air), surface, and internal mass
-        let old_env_mass_temperatures = self.0.envelope_mass_temperatures.clone();
 
         // Update envelope mass temperatures using implicit integration for high thermal capacitance
         let env_mass_temps_ref = self.0.envelope_mass_temperatures.as_ref();
@@ -1949,12 +1948,14 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         // Note: env_mass_temps_for_int is no longer needed as a clone
         // We will borrow from new_env_mass_temperatures before moving it
 
-        self.0.envelope_mass_temperatures = VectorField::new(scratch.new_env.clone()).into();
+        let old_env_mass_temperatures = std::mem::replace(
+            &mut self.0.envelope_mass_temperatures,
+            VectorField::new(std::mem::take(&mut scratch.new_env)).into(),
+        );
 
-        let env_mass_temps_for_int = std::mem::take(&mut scratch.new_env);
+        let env_mass_temps_for_int = self.0.envelope_mass_temperatures.as_ref();
 
         // Internal mass: receives heat from envelope mass and direct gains
-        let old_int_mass_temperatures = self.0.internal_mass_temperatures.clone();
 
         // Update internal mass temperatures using implicit integration for high thermal capacitance
         let int_thermal_cap_ref = self.0.internal_thermal_capacitance.as_ref();
@@ -2003,8 +2004,10 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
             scratch.new_int[i] = tm_int_new;
         }
 
-        self.0.internal_mass_temperatures =
-            VectorField::new(std::mem::take(&mut scratch.new_int)).into();
+        let old_int_mass_temperatures = std::mem::replace(
+            &mut self.0.internal_mass_temperatures,
+            VectorField::new(std::mem::take(&mut scratch.new_int)).into(),
+        );
 
         // Issue #272, #274, #275: Calculate thermal mass energy change for 6R2C
         // For 6R2C, we track energy changes in both envelope and internal masses
@@ -3158,7 +3161,6 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         // Without this blend, the mass converges in ~17 hours (wrong). With it, the
         // mass converges in ~500 hours (~21 days), matching the ISO 13790's dynamics.
         {
-            let old_mass_temperatures = self.0.mass_temperatures.clone();
             let mass_temps_ref = self.0.mass_temperatures.as_ref();
             let thermal_cap_ref = self.0.thermal_capacitance.as_ref();
             let h_tr_em_ref = self.0.h_tr_em.as_ref();
@@ -3215,9 +3217,10 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
 
                 scratch.new_mass[i] = tm_new;
             }
-            self.0.mass_temperatures =
-                VectorField::new(std::mem::take(&mut scratch.new_mass)).into();
-            self.0.previous_mass_temperatures = old_mass_temperatures;
+            self.0.previous_mass_temperatures = std::mem::replace(
+                &mut self.0.mass_temperatures,
+                VectorField::new(std::mem::take(&mut scratch.new_mass)).into(),
+            );
         }
 
         // Issue #738 / ADR-002 (#1175): Free-float mode disables HVAC output.
