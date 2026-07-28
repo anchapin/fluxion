@@ -2,8 +2,42 @@
 //!
 //! This module provides ZoneSetpoints struct for managing heating/cooling
 //! setpoints and deadband configuration for multiple thermal zones.
+//!
+//! Supports occupancy-based setpoint scheduling where different setpoints
+//! are applied based on occupancy state (occupied vs unoccupied).
 
 use crate::physics::cta::VectorField;
+
+#[cfg(feature = "fluxion-behavior")]
+pub use crate::sim::hvac::zones::OccupancyStateFromBehavior;
+
+#[cfg(feature = "fluxion-behavior")]
+pub struct OccupancyStateFromBehavior<'a> {
+    pub occupancy: &'a crate::fluxion_behavior::OccupancyType,
+}
+
+#[cfg(feature = "fluxion-behavior")]
+impl<'a> OccupancyStateFromBehavior<'a> {
+    pub fn is_occupied(&self) -> bool {
+        matches!(
+            self.occupancy,
+            crate::fluxion_behavior::OccupancyType::Occupied
+        )
+    }
+}
+
+/// Represents the occupancy state for setpoint scheduling.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum OccupancyMode {
+    Occupied,
+    Unoccupied,
+}
+
+impl OccupancyMode {
+    pub fn is_occupied(&self) -> bool {
+        matches!(self, OccupancyMode::Occupied)
+    }
+}
 
 /// Zone-specific HVAC setpoints and deadband configuration.
 #[derive(Debug, Clone)]
@@ -11,14 +45,23 @@ pub struct ZoneSetpoints {
     /// Number of thermal zones
     num_zones: usize,
 
-    /// Heating setpoints for each zone (°C)
+    /// Heating setpoints for each zone (°C) - used when occupied
     heating_setpoints: VectorField,
 
-    /// Cooling setpoints for each zone (°C)
+    /// Cooling setpoints for each zone (°C) - used when occupied
     cooling_setpoints: VectorField,
 
     /// Deadband values for each zone (°C)
     deadbands: VectorField,
+
+    /// Unoccupied (setback) heating setpoints for each zone (°C)
+    unoccupied_heating_setpoints: VectorField,
+
+    /// Unoccupied (setback) cooling setpoints for each zone (°C)
+    unoccupied_cooling_setpoints: VectorField,
+
+    /// Whether occupancy-based setpoints are enabled
+    occupancy_scheduling_enabled: bool,
 }
 
 impl ZoneSetpoints {
@@ -35,7 +78,49 @@ impl ZoneSetpoints {
             heating_setpoints: VectorField::from_scalar(20.0, num_zones),
             cooling_setpoints: VectorField::from_scalar(24.0, num_zones),
             deadbands: VectorField::from_scalar(2.0, num_zones),
+            unoccupied_heating_setpoints: VectorField::from_scalar(18.0, num_zones),
+            unoccupied_cooling_setpoints: VectorField::from_scalar(28.0, num_zones),
+            occupancy_scheduling_enabled: false,
         }
+    }
+
+    /// Create ZoneSetpoints with occupancy-based setpoint scheduling.
+    ///
+    /// # Arguments
+    /// * `num_zones` - Number of thermal zones
+    /// * `occupied_heating` - Heating setpoint when occupied (°C)
+    /// * `occupied_cooling` - Cooling setpoint when occupied (°C)
+    /// * `unoccupied_heating` - Heating setpoint when unoccupied (°C)
+    /// * `unoccupied_cooling` - Cooling setpoint when unoccupied (°C)
+    ///
+    /// # Returns
+    /// A new ZoneSetpoints instance with occupancy-based scheduling enabled
+    pub fn with_occupancy_setpoints(
+        num_zones: usize,
+        occupied_heating: f64,
+        occupied_cooling: f64,
+        unoccupied_heating: f64,
+        unoccupied_cooling: f64,
+    ) -> Self {
+        ZoneSetpoints {
+            num_zones,
+            heating_setpoints: VectorField::from_scalar(occupied_heating, num_zones),
+            cooling_setpoints: VectorField::from_scalar(occupied_cooling, num_zones),
+            deadbands: VectorField::from_scalar(2.0, num_zones),
+            unoccupied_heating_setpoints: VectorField::from_scalar(unoccupied_heating, num_zones),
+            unoccupied_cooling_setpoints: VectorField::from_scalar(unoccupied_cooling, num_zones),
+            occupancy_scheduling_enabled: true,
+        }
+    }
+
+    /// Enable or disable occupancy-based setpoint scheduling.
+    pub fn set_occupancy_scheduling(&mut self, enabled: bool) {
+        self.occupancy_scheduling_enabled = enabled;
+    }
+
+    /// Check if occupancy-based scheduling is enabled.
+    pub fn is_occupancy_scheduling_enabled(&self) -> bool {
+        self.occupancy_scheduling_enabled
     }
 
     /// Set heating setpoint for a specific zone.
@@ -116,6 +201,80 @@ impl ZoneSetpoints {
         self.deadbands.as_slice()[zone_id]
     }
 
+    /// Get effective heating setpoint based on occupancy state.
+    ///
+    /// # Arguments
+    /// * `zone_id` - Zone index (0-based)
+    /// * `occupancy` - Current occupancy mode
+    ///
+    /// # Returns
+    /// Effective heating setpoint (°C)
+    pub fn get_heating_setpoint_for_occupancy(
+        &self,
+        zone_id: usize,
+        occupancy: &OccupancyMode,
+    ) -> f64 {
+        if self.occupancy_scheduling_enabled && !occupancy.is_occupied() {
+            self.unoccupied_heating_setpoints.as_slice()[zone_id]
+        } else {
+            self.heating_setpoints.as_slice()[zone_id]
+        }
+    }
+
+    /// Get effective cooling setpoint based on occupancy state.
+    ///
+    /// # Arguments
+    /// * `zone_id` - Zone index (0-based)
+    /// * `occupancy` - Current occupancy mode
+    ///
+    /// # Returns
+    /// Effective cooling setpoint (°C)
+    pub fn get_cooling_setpoint_for_occupancy(
+        &self,
+        zone_id: usize,
+        occupancy: &OccupancyMode,
+    ) -> f64 {
+        if self.occupancy_scheduling_enabled && !occupancy.is_occupied() {
+            self.unoccupied_cooling_setpoints.as_slice()[zone_id]
+        } else {
+            self.cooling_setpoints.as_slice()[zone_id]
+        }
+    }
+
+    /// Set unoccupied heating setpoint for a specific zone.
+    pub fn set_unoccupied_heating_setpoint(
+        &mut self,
+        zone_id: usize,
+        temperature: f64,
+    ) -> Result<(), String> {
+        self.validate_zone_id(zone_id)?;
+        self.validate_temperature(temperature)?;
+        self.unoccupied_heating_setpoints.as_mut_slice()[zone_id] = temperature;
+        Ok(())
+    }
+
+    /// Set unoccupied cooling setpoint for a specific zone.
+    pub fn set_unoccupied_cooling_setpoint(
+        &mut self,
+        zone_id: usize,
+        temperature: f64,
+    ) -> Result<(), String> {
+        self.validate_zone_id(zone_id)?;
+        self.validate_temperature(temperature)?;
+        self.unoccupied_cooling_setpoints.as_mut_slice()[zone_id] = temperature;
+        Ok(())
+    }
+
+    /// Get unoccupied heating setpoint for a specific zone.
+    pub fn get_unoccupied_heating_setpoint(&self, zone_id: usize) -> f64 {
+        self.unoccupied_heating_setpoints.as_slice()[zone_id]
+    }
+
+    /// Get unoccupied cooling setpoint for a specific zone.
+    pub fn get_unoccupied_cooling_setpoint(&self, zone_id: usize) -> f64 {
+        self.unoccupied_cooling_setpoints.as_slice()[zone_id]
+    }
+
     /// Validate all setpoints and deadbands.
     ///
     /// # Returns
@@ -145,6 +304,22 @@ impl ZoneSetpoints {
                     "Zone {}: Deadband ({}°C) cannot be larger than setpoint difference ({}°C)",
                     zone_id, deadband, setpoint_diff
                 ));
+            }
+
+            // Validate unoccupied setpoints if occupancy scheduling is enabled
+            if self.occupancy_scheduling_enabled {
+                let unoccupied_heating = self.get_unoccupied_heating_setpoint(zone_id);
+                let unoccupied_cooling = self.get_unoccupied_cooling_setpoint(zone_id);
+
+                self.validate_temperature(unoccupied_heating)?;
+                self.validate_temperature(unoccupied_cooling)?;
+
+                if unoccupied_heating >= unoccupied_cooling {
+                    return Err(format!(
+                        "Zone {}: Unoccupied heating setpoint ({}°C) must be below unoccupied cooling setpoint ({}°C)",
+                        zone_id, unoccupied_heating, unoccupied_cooling
+                    ));
+                }
             }
         }
         Ok(())
@@ -268,5 +443,84 @@ mod tests {
         setpoints.set_cooling_setpoint(0, 24.0).unwrap();
         setpoints.set_deadband(0, 5.0).unwrap();
         assert!(setpoints.validate_setpoints().is_err());
+    }
+
+    #[test]
+    fn test_occupancy_setpoints_default_disabled() {
+        let setpoints = ZoneSetpoints::new(1);
+        assert!(!setpoints.is_occupancy_scheduling_enabled());
+    }
+
+    #[test]
+    fn test_occupancy_setpoints_with_factory() {
+        let setpoints = ZoneSetpoints::with_occupancy_setpoints(2, 20.0, 24.0, 18.0, 28.0);
+        assert!(setpoints.is_occupancy_scheduling_enabled());
+        assert_eq!(setpoints.get_heating_setpoint(0), 20.0);
+        assert_eq!(setpoints.get_cooling_setpoint(0), 24.0);
+        assert_eq!(setpoints.get_unoccupied_heating_setpoint(0), 18.0);
+        assert_eq!(setpoints.get_unoccupied_cooling_setpoint(0), 28.0);
+    }
+
+    #[test]
+    fn test_get_setpoint_for_occupancy_occupied() {
+        let setpoints = ZoneSetpoints::with_occupancy_setpoints(1, 20.0, 24.0, 18.0, 28.0);
+        let occupancy = OccupancyMode::Occupied;
+        assert_eq!(
+            setpoints.get_heating_setpoint_for_occupancy(0, &occupancy),
+            20.0
+        );
+        assert_eq!(
+            setpoints.get_cooling_setpoint_for_occupancy(0, &occupancy),
+            24.0
+        );
+    }
+
+    #[test]
+    fn test_get_setpoint_for_occupancy_unoccupied() {
+        let setpoints = ZoneSetpoints::with_occupancy_setpoints(1, 20.0, 24.0, 18.0, 28.0);
+        let occupancy = OccupancyMode::Unoccupied;
+        assert_eq!(
+            setpoints.get_heating_setpoint_for_occupancy(0, &occupancy),
+            18.0
+        );
+        assert_eq!(
+            setpoints.get_cooling_setpoint_for_occupancy(0, &occupancy),
+            28.0
+        );
+    }
+
+    #[test]
+    fn test_occupancy_setpoint_disabled_returns_occupied() {
+        let mut setpoints = ZoneSetpoints::with_occupancy_setpoints(1, 20.0, 24.0, 18.0, 28.0);
+        setpoints.set_occupancy_scheduling(false);
+        let occupancy = OccupancyMode::Unoccupied;
+        // Should return occupied setpoints when scheduling is disabled
+        assert_eq!(
+            setpoints.get_heating_setpoint_for_occupancy(0, &occupancy),
+            20.0
+        );
+        assert_eq!(
+            setpoints.get_cooling_setpoint_for_occupancy(0, &occupancy),
+            24.0
+        );
+    }
+
+    #[test]
+    fn test_validate_unoccupied_setpoints() {
+        let mut setpoints = ZoneSetpoints::with_occupancy_setpoints(1, 20.0, 24.0, 18.0, 28.0);
+        // Set invalid unoccupied setpoints (heating >= cooling)
+        setpoints.set_unoccupied_heating_setpoint(0, 30.0).unwrap();
+        setpoints.set_unoccupied_cooling_setpoint(0, 25.0).unwrap();
+        assert!(setpoints.validate_setpoints().is_err());
+    }
+
+    #[test]
+    fn test_set_unoccupied_setpoints() {
+        let mut setpoints = ZoneSetpoints::new(1);
+        setpoints.set_occupancy_scheduling(true);
+        assert!(setpoints.set_unoccupied_heating_setpoint(0, 16.0).is_ok());
+        assert!(setpoints.set_unoccupied_cooling_setpoint(0, 30.0).is_ok());
+        assert_eq!(setpoints.get_unoccupied_heating_setpoint(0), 16.0);
+        assert_eq!(setpoints.get_unoccupied_cooling_setpoint(0), 30.0);
     }
 }
