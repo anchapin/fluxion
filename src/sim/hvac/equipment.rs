@@ -398,7 +398,9 @@ impl VariableCapacityEquipment for Boiler {
                         }
                     };
                     if plr > 0.0 {
-                        load * self.electrical_power_factor + self.standby_power
+                        // Return heating fuel power = load / efficiency + fan power
+                        // This is the total energy input rate (W) to the boiler
+                        load / self.efficiency + load * self.electrical_power_factor
                     } else {
                         0.0
                     }
