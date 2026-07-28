@@ -5,6 +5,7 @@
 //! - [`ports`] - FluidPort trait and concrete port implementations
 //! - [`pantelides`] - Pantelides symbolic index reduction for DAE systems
 //! - [`energy`] - Energy conservation verification for fluid networks
+//! - [`autodiff`] - Analytical Jacobian traits for HVAC MPC control
 //!
 //! # Port Type Safety
 //!
@@ -21,12 +22,23 @@
 //!
 //! The [`energy`] module provides [`EnergyConservationVerifier`] which verifies that
 //! fluid networks conserve energy according to the first law of thermodynamics.
+//!
+//! # Automatic Differentiation
+//!
+//! The [`autodiff`] module provides [`DifferentiableComponent`] for exposing exact
+//! analytical Jacobian matrices from HVAC equipment, enabling reverse-mode automatic
+//! differentiation for Model Predictive Control (MPC) and setpoint optimization.
 
+pub mod autodiff;
 pub mod energy;
 pub mod mediums;
 pub mod pantelides;
 pub mod ports;
 
+pub use autodiff::{
+    finite_diff_epsilon, finite_diff_jacobian, optimize_with_gradient_descent, relative_diff,
+    relative_error, verify_jacobian_entries, DifferentiableComponent, GradientDescentOptimizer,
+};
 pub use energy::{
     ConservationNode, EnergyConservationError, EnergyConservationResult,
     EnergyConservationVerifier, EnthalpyFlow, FluidNetworkGraph, SimulationResults,

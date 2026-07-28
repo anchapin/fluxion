@@ -1291,6 +1291,7 @@ dependencies = [
  "approx",
  "criterion",
  "hecs",
+ "nalgebra",
  "num-traits",
  "shipyard",
  "thiserror 1.0.69",
