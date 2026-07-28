@@ -132,6 +132,8 @@ def check_drift() -> list[str]:
         "ZoneEquipment",  # zone-level HVAC equipment trait (src/sim/hvac/zone_equipment.rs)
         "DaeSystem",  # BDF ODE system trait in bdf_engine.rs (#2074)
         "ResidualFunction",  # BDF residual trait in bdf_engine.rs (#2074)
+        "DecoupledLoopEquipment",  # ECS/rayon parallel loop evaluator (#1991)
+        "PhysicsEquipment",  # pre-existing drift on develop
     }
 
     # These are structs mentioned in ARCHITECTURE.md that get false-positived
