@@ -1356,6 +1356,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "fluxion-wasm"
+version = "1.0.0"
+dependencies = [
+ "fluxion-core",
+ "fluxion-fluid",
+ "serde",
+ "serde_json",
+ "serde_yaml",
+ "wasm-bindgen",
+]
+
+[[package]]
 name = "fnv"
 version = "1.0.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
