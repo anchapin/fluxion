@@ -77,7 +77,10 @@ jobs:
             --features wiring-tracing \
             --lcov \
             --output-path target/llvm-cov/lcov.info \
-            --ignore-file .github/workflows/coverage-ignore.txt \
+            --ignore-filename-regex 'tests/' \
+            --ignore-filename-regex 'benches/' \
+            --ignore-filename-regex 'target/' \
+            --ignore-filename-regex 'fluxion-mcp/' \
             2>&1 | tee target/llvm-cov/llvm-cov.log
           COV_EXIT=${PIPESTATUS[0]}
 
