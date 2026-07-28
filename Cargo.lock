@@ -1091,6 +1091,7 @@ dependencies = [
  "env_logger",
  "faer",
  "fluxion-core",
+ "fluxion-fluid",
  "fluxion-toon",
  "futures",
  "futures-util",
