@@ -291,11 +291,7 @@ impl<E: DecoupledLoopEquipment + Clone> DecoupledLoopEvaluator<E> {
             .into_par_iter()
             .map(|mut group_data| {
                 let id = group_data.id;
-                evaluate_loop_group_from_data(
-                    &mut group_data,
-                    params.get(&id),
-                    tolerance,
-                )
+                evaluate_loop_group_from_data(&mut group_data, params.get(&id), tolerance)
             })
             .collect();
 
@@ -1033,7 +1029,8 @@ mod tests {
 
     #[test]
     fn test_empty_evaluator() {
-        let mut evaluator: DecoupledLoopEvaluator<MockEquipment> = DecoupledLoopEvaluator::default();
+        let mut evaluator: DecoupledLoopEvaluator<MockEquipment> =
+            DecoupledLoopEvaluator::default();
         let results = evaluator.evaluate_parallel(&HashMap::new());
         assert!(results.is_empty());
     }
