@@ -27,9 +27,7 @@ pub mod component;
 pub mod validation;
 
 pub use component::{
-    DifferentiableComponent, GradientDescentOptimizer, finite_diff_jacobian,
-    optimize_with_gradient_descent, relative_diff,
+    finite_diff_jacobian, optimize_with_gradient_descent, relative_diff, DifferentiableComponent,
+    GradientDescentOptimizer,
 };
-pub use validation::{
-    finite_diff_epsilon, relative_error, verify_jacobian_entries,
-};
+pub use validation::{finite_diff_epsilon, relative_error, verify_jacobian_entries};

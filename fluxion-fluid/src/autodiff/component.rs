@@ -122,7 +122,13 @@ impl GradientDescentOptimizer {
         }
     }
 
-    pub fn optimize<C>(&self, component: &C, target: &[f64], input: &mut [f64], state: &[f64]) -> usize
+    pub fn optimize<C>(
+        &self,
+        component: &C,
+        target: &[f64],
+        input: &mut [f64],
+        state: &[f64],
+    ) -> usize
     where
         C: DifferentiableComponent<Input = Vec<f64>, Output = Vec<f64>, State = Vec<f64>>,
     {
@@ -135,7 +141,11 @@ impl GradientDescentOptimizer {
             let output = component.evaluate(&input_vec, &state_vec);
 
             // Compute error vector
-            let error: Vec<f64> = output.iter().zip(target.iter()).map(|(o, t)| o - t).collect();
+            let error: Vec<f64> = output
+                .iter()
+                .zip(target.iter())
+                .map(|(o, t)| o - t)
+                .collect();
 
             // Compute gradient using Jacobian for squared error:
             // E = 0.5 * sum(error_i^2), dE/dx = sum(error_i * d(error_i)/dx) = J^T * error
@@ -241,9 +251,15 @@ mod tests {
                 DMatrix::zeros(1, 0)
             }
 
-            fn num_inputs(&self) -> usize { 1 }
-            fn num_outputs(&self) -> usize { 1 }
-            fn num_states(&self) -> usize { 0 }
+            fn num_inputs(&self) -> usize {
+                1
+            }
+            fn num_outputs(&self) -> usize {
+                1
+            }
+            fn num_states(&self) -> usize {
+                0
+            }
         }
 
         let component = LinearSystem;
@@ -252,10 +268,16 @@ mod tests {
         let state = vec![];
 
         // With lr=0.1 and 25 iterations, should converge to error < 1e-3
-        let iterations = optimize_with_gradient_descent(&component, &target, &mut input, &state, 0.1, 1e-3, 25);
+        let iterations =
+            optimize_with_gradient_descent(&component, &target, &mut input, &state, 0.1, 1e-3, 25);
 
         let error_norm = (2.0 * input[0]).abs();
         assert!(iterations < 25, "took {} iterations", iterations);
-        assert!(error_norm < 1e-3, "error_norm = {} after {} iterations", error_norm, iterations);
+        assert!(
+            error_norm < 1e-3,
+            "error_norm = {} after {} iterations",
+            error_norm,
+            iterations
+        );
     }
 }

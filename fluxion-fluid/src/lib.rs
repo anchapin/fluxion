@@ -35,6 +35,10 @@ pub mod mediums;
 pub mod pantelides;
 pub mod ports;
 
+pub use autodiff::{
+    finite_diff_epsilon, finite_diff_jacobian, optimize_with_gradient_descent, relative_diff,
+    relative_error, verify_jacobian_entries, DifferentiableComponent, GradientDescentOptimizer,
+};
 pub use energy::{
     ConservationNode, EnergyConservationError, EnergyConservationResult,
     EnergyConservationVerifier, EnthalpyFlow, FluidNetworkGraph, SimulationResults,
@@ -47,8 +51,4 @@ pub use pantelides::{
 pub use ports::{
     AirPort, BoundaryConditions, EquationSystem, HydronicPort, PortError, PortResult,
     RefrigerantPort, SteamPort,
-};
-pub use autodiff::{
-    DifferentiableComponent, GradientDescentOptimizer, finite_diff_epsilon, finite_diff_jacobian,
-    optimize_with_gradient_descent, relative_diff, relative_error, verify_jacobian_entries,
 };
