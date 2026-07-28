@@ -567,3 +567,9 @@ harness = true
 name = "surrogate_cuda_smoke"
 path = "tests/surrogate_cuda_smoke_test.rs"
 harness = true
+
+# Patch rustls-webpki to address RUSTSEC-2026-0049 and RUSTSEC-2026-0104
+# (CRL parsing vulnerabilities fixed in >= 0.103.13).
+# Patches rumqttc from our fork to use the safe rustls-webpki version.
+[patch.crates-io]
+rumqttc = { git = "https://github.com/anchapin/rumqtt", branch = "fix/rustsec-2026-webpki" }
