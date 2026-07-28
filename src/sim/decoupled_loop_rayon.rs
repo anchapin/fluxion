@@ -841,7 +841,7 @@ impl ParallelLoopDispatcher {
                 if subgraph.has_feedback {
                     Err(DispatchError::FeedbackLoop(subgraph.id))
                 } else {
-                    f(subgraph)
+                    f(&subgraph)
                 }
             })
             .collect();
