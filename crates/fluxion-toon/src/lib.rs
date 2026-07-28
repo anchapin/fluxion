@@ -40,6 +40,7 @@
 //! See Issue #2071
 
 pub mod error;
+pub mod ser;
 
 // Re-export types
 pub use error::Result;
