@@ -290,9 +290,10 @@ impl<E: DecoupledLoopEquipment + Clone> DecoupledLoopEvaluator<E> {
         let results: Vec<LoopStepResult> = group_data_list
             .into_par_iter()
             .map(|mut group_data| {
+                let id = group_data.id;
                 evaluate_loop_group_from_data(
                     &mut group_data,
-                    params.get(&group_data.id),
+                    params.get(&id),
                     tolerance,
                 )
             })
@@ -838,7 +839,8 @@ impl ParallelLoopDispatcher {
 
         let parallel_results: Vec<Result<R, DispatchError>> = self
             .subgraphs
-            .par_iter()
+            .to_vec()
+            .into_par_iter()
             .map(|subgraph| {
                 if subgraph.has_feedback {
                     Err(DispatchError::FeedbackLoop(subgraph.id))
@@ -1031,7 +1033,7 @@ mod tests {
 
     #[test]
     fn test_empty_evaluator() {
-        let evaluator: DecoupledLoopEvaluator<MockEquipment> = DecoupledLoopEvaluator::default();
+        let mut evaluator: DecoupledLoopEvaluator<MockEquipment> = DecoupledLoopEvaluator::default();
         let results = evaluator.evaluate_parallel(&HashMap::new());
         assert!(results.is_empty());
     }
@@ -1594,7 +1596,7 @@ mod tests {
         // Run multiple evaluations to verify determinism
         let results: Vec<_> = (0..5)
             .map(|_| {
-                let evaluator = DecoupledLoopEvaluator::new(groups.clone());
+                let mut evaluator = DecoupledLoopEvaluator::new(groups.clone());
                 evaluator.evaluate_parallel(&params)
             })
             .collect();
