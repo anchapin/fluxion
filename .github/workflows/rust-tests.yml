@@ -27,7 +27,12 @@ env:
 # FLUXION_LINUX_RUNNER repo variable controls where heavy Linux jobs run.
 # Set to "fluxion-ci" to use self-hosted Hetzner runners; leave unset to
 # use GitHub-hosted ubuntu-latest (free for public repos).
-# macOS and Windows jobs always use GitHub-hosted runners.
+#
+# Hetzner overflow pool (issue #2133): When GH-hosted runners are saturated
+# (queued >5 min), jobs automatically fall back to the on-demand Hetzner
+# overflow pool (labels: self-hosted,fluxion-overflow) via the probe pattern.
+# The static FLUXION_LINUX_RUNNER pool continues to operate independently.
+#
 # See docs/self-hosted-runners.md for provisioning instructions.
 # ---------------------------------------------------------------------------
 
@@ -87,8 +92,38 @@ jobs:
         env:
           PYO3_PYTHON: /usr/bin/python3
 
-  energy-conservation:
-    name: Energy Conservation (Issue #1295)
+  # ---------------------------------------------------------------------------
+  # Issue #2133: Hetzner autoscaling overflow
+  #
+  # Probe pattern: a lightweight job tries to grab a GH runner with a 5-minute
+  # timeout.  If GH runners are saturated, the probe is cancelled after 5 min
+  # and the overflow path (ci-on-hetzner) runs on the Hetzner autoscaling pool.
+  #
+  # Jobs below follow this pattern.  Each group has:
+  #   <job>-gh-probe  — lightweight GH availability probe (5-min timeout)
+  #   <job>-gh        — CI on GH-hosted runner (runs if probe succeeds)
+  #   <job>-hz        — CI on Hetzner overflow (runs if probe fails/cancelled)
+  #
+  # The FLUXION_LINUX_RUNNER || ubuntu-latest jobs (test-full, build-release,
+  # cuda-smoke, cuda-parity) are unaffected — they already route to the static
+  # self-hosted pool as primary with GH as fallback.
+  # ---------------------------------------------------------------------------
+
+  # -- Energy Conservation (Issue #1295) ---------------------------------------
+
+  energy-conservation-gh-probe:
+    name: "EC Probe"
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    if: |
+      github.event_name == 'pull_request' ||
+      (github.event_name == 'push' && github.ref == 'refs/heads/main')
+    steps:
+      - run: echo "GH runner acquired"
+
+  energy-conservation-gh:
+    name: "Energy Conservation (GH)"
+    needs: energy-conservation-gh-probe
     runs-on: ubuntu-latest
     if: |
       github.event_name == 'pull_request' ||
@@ -115,8 +150,50 @@ jobs:
           fi
           echo "PASS: No energy conservation violations"
 
-  fmt:
-    name: Rustfmt
+  energy-conservation-hz:
+    name: "Energy Conservation (Hetzner Overflow)"
+    needs: energy-conservation-gh-probe
+    runs-on: [self-hosted,fluxion-overflow]
+    # Only run if GH probe timed out (GH runners saturated) or was cancelled
+    if: |
+      (github.event_name == 'pull_request' ||
+       (github.event_name == 'push' && github.ref == 'refs/heads/main'))
+      && (needs.energy-conservation-gh-probe.result == 'failure'
+          || needs.energy-conservation-gh-probe.result == 'cancelled')
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/setup-rust-python-env
+        with:
+          python-version: '3.10'
+      - name: Run energy conservation tests
+        run: |
+          cargo test --test test_energy_conservation --verbose 2>&1 | tee /tmp/energy_test_output.txt
+          cargo test --test zone_balance_eplus_isolation --verbose 2>&1 | tee /tmp/zone_balance_test_output.txt
+      - name: Extract violation counts
+        run: |
+          echo "=== Energy Conservation Test Results ==="
+          echo "Checking for energy conservation violations..."
+          ENERGY_VIOLATIONS=$(grep -c "violated energy conservation" /tmp/energy_test_output.txt /tmp/zone_balance_test_output.txt 2>/dev/null || echo "0")
+          echo "Total violations found: $ENERGY_VIOLATIONS"
+          if [ "$ENERGY_VIOLATIONS" -gt "0" ]; then
+            echo "FAIL: Energy conservation violations detected"
+            grep -A2 "violated energy conservation" /tmp/energy_test_output.txt /tmp/zone_balance_test_output.txt
+            exit 1
+          fi
+          echo "PASS: No energy conservation violations"
+
+  # -- Rustfmt ----------------------------------------------------------------
+
+  fmt-gh-probe:
+    name: "Fmt Probe"
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - run: echo "GH runner acquired"
+
+  fmt-gh:
+    name: Rustfmt (GH)
+    needs: fmt-gh-probe
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -125,8 +202,34 @@ jobs:
           components: rustfmt
       - run: cargo fmt -- --check
 
-  clippy:
-    name: Clippy
+  fmt-hz:
+    name: Rustfmt (Hetzner Overflow)
+    needs: fmt-gh-probe
+    runs-on: [self-hosted,fluxion-overflow]
+    if: |
+      needs.fmt-gh-probe.result == 'failure'
+      || needs.fmt-gh-probe.result == 'cancelled'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/setup-rust-env
+        with:
+          components: rustfmt
+      - run: cargo fmt -- --check
+
+  # -- Clippy -----------------------------------------------------------------
+
+  clippy-gh-probe:
+    name: "Clippy Probe"
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      CARGO_BUILD_JOBS: 1
+    steps:
+      - run: echo "GH runner acquired"
+
+  clippy-gh:
+    name: Clippy (GH)
+    needs: clippy-gh-probe
     runs-on: ubuntu-latest
     env:
       CARGO_BUILD_JOBS: 1
@@ -138,16 +241,56 @@ jobs:
           python-version: '3.10'
       - run: cargo clippy --lib -- -D warnings
 
-  # -- Issue #1723: KNOWN_ISSUES.md stale check -----------------------------
-  # Runs on every PR and main push. Fails if the Last Updated date in
-  # docs/KNOWN_ISSUES.md is older than 60 days.
+  clippy-hz:
+    name: Clippy (Hetzner Overflow)
+    needs: clippy-gh-probe
+    runs-on: [self-hosted,fluxion-overflow]
+    env:
+      CARGO_BUILD_JOBS: 1
+    if: |
+      needs.clippy-gh-probe.result == 'failure'
+      || needs.clippy-gh-probe.result == 'cancelled'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/setup-rust-python-env
+        with:
+          rust-components: clippy
+          python-version: '3.10'
+      - run: cargo clippy --lib -- -D warnings
 
-  known-issues-stale:
-    name: Known Issues Stale Check (Issue #1723)
+  # -- Issue #1723: KNOWN_ISSUES.md stale check --------------------------------
+
+  known-issues-stale-gh-probe:
+    name: "KI Probe"
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    if: |
+      github.event_name == 'pull_request' ||
+      (github.event_name == 'push' && github.ref == 'refs/heads/main')
+    steps:
+      - run: echo "GH runner acquired"
+
+  known-issues-stale-gh:
+    name: "Known Issues Stale Check (GH)"
+    needs: known-issues-stale-gh-probe
     runs-on: ubuntu-latest
     if: |
       github.event_name == 'pull_request' ||
       (github.event_name == 'push' && github.ref == 'refs/heads/main')
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run stale check
+        run: python3 scripts/check_known_issues_stale.py
+
+  known-issues-stale-hz:
+    name: "Known Issues Stale Check (Hetzner Overflow)"
+    needs: known-issues-stale-gh-probe
+    runs-on: [self-hosted,fluxion-overflow]
+    if: |
+      (github.event_name == 'pull_request' ||
+       (github.event_name == 'push' && github.ref == 'refs/heads/main'))
+      && (needs.known-issues-stale-gh-probe.result == 'failure'
+          || needs.known-issues-stale-gh-probe.result == 'cancelled')
     steps:
       - uses: actions/checkout@v4
       - name: Run stale check
@@ -211,12 +354,42 @@ jobs:
           python-version: '3.10'
       - run: cargo build --release --verbose
 
-  ashrae-cases-cycle:
-    name: Ashrae Cases Cycle Check (Issue #1441)
+  # -- ASHRAE Cases Cycle Check -----------------------------------------------
+
+  ashrae-cases-cycle-gh-probe:
+    name: "ACC Probe"
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    if: |
+      github.event_name == 'pull_request' ||
+      (github.event_name == 'push' && github.ref == 'refs/heads/main')
+    steps:
+      - run: echo "GH runner acquired"
+
+  ashrae-cases-cycle-gh:
+    name: "Ashrae Cases Cycle Check (GH)"
+    needs: ashrae-cases-cycle-gh-probe
     runs-on: ubuntu-latest
     if: |
       github.event_name == 'pull_request' ||
       (github.event_name == 'push' && github.ref == 'refs/heads/main')
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/setup-rust-python-env
+        with:
+          python-version: '3.10'
+      - name: Run cycle check
+        run: python3 scripts/check_ashrae_cases_cycle.py
+
+  ashrae-cases-cycle-hz:
+    name: "Ashrae Cases Cycle Check (Hetzner Overflow)"
+    needs: ashrae-cases-cycle-gh-probe
+    runs-on: [self-hosted,fluxion-overflow]
+    if: |
+      (github.event_name == 'pull_request' ||
+       (github.event_name == 'push' && github.ref == 'refs/heads/main'))
+      && (needs.ashrae-cases-cycle-gh-probe.result == 'failure'
+          || needs.ashrae-cases-cycle-gh-probe.result == 'cancelled')
     steps:
       - uses: actions/checkout@v4
       - uses: ./.github/actions/setup-rust-python-env
@@ -300,5 +473,3 @@ jobs:
           # for future artifact upload once #1285 is resolved.
           echo "CUDA parity test completed — see workflow logs for details"
           echo "Per-timestep CSV upload requires issue #1285 (committed ONNX model)"
-
-

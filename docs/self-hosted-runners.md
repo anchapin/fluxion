@@ -295,3 +295,168 @@ hcloud server delete <RUNNER_NAME>
 # 4. If this was your last runner, clear the repo variable
 gh variable delete FLUXION_LINUX_RUNNER --repo anchapin/fluxion
 ```
+
+---
+
+## Hetzner Overflow Pool (Autoscaling — Issue #2133)
+
+The **overflow pool** is a separate autoscaling system that activates when
+GitHub-hosted runners are saturated (job queue wait >5 minutes).  It is
+**independent** from the static `fluxion-ci` runner pool provisioned above.
+
+### How it works: the probe job pattern
+
+GitHub Actions has no native "fallback runner" concept.  The workaround is a
+**probe job pattern**:
+
+1. A lightweight **probe job** starts on `ubuntu-latest` with a 5-minute
+   `timeout-minutes`.  It immediately succeeds (acquires a GH runner or fails
+   fast).
+2. If a GH runner is available, the probe finishes in seconds → the primary
+   CI job runs on GH-hosted runners.
+3. If GH runners are saturated, the probe waits in queue.  After 5 minutes
+   without a runner, GitHub cancels it (result = `cancelled`) → the overflow
+   CI job runs on the Hetzner autoscaling pool (`self-hosted,fluxion-overflow`).
+4. Only **one** of the two paths runs per workflow run — never both.
+
+```
+ubuntu-latest ──(probe succeeds)──▶  CI on GH-hosted
+    │
+    └──(probe times out/cancelled)──▶  CI on self-hosted,fluxion-overflow
+```
+
+### Overflow vs. static pool
+
+| Pool | Labels | Purpose | Routing |
+|---|---|---|---|
+| Static `fluxion-ci` | `self-hosted,fluxion-ci` | Primary for main-merge jobs | `FLUXION_LINUX_RUNNER \|\| ubuntu-latest` |
+| Overflow (autoscaling) | `self-hosted,fluxion-overflow` | Fallback when GH runners saturated | Probe pattern (GH primary, Hetzner fallback) |
+
+The two pools are independent and coexist.  Static runners continue to operate
+as before.  The overflow pool only spins up when GH runners are saturated.
+
+### Deploying the autoscaling service
+
+The overflow pool is managed by
+[testflows/github-hetzner-runners](https://github.com/testflows/TestFlows-GitHub-Hetzner-Runners),
+a Python service that polls GitHub Actions API and creates/deletes Hetzner VMs
+on demand.
+
+#### 1. Install
+
+```bash
+pip3 install testflows.github.hetzner.runners
+```
+
+#### 2. Set environment variables
+
+```bash
+export GITHUB_TOKEN=ghp_...        # Classic token with workflow scope
+export GITHUB_REPOSITORY=anchapin/fluxion
+export HETZNER_TOKEN=...           # From console.hetzner.cloud
+```
+
+#### 3. Deploy (always-on)
+
+```bash
+github-hetzner-runners cloud deploy
+```
+
+#### 4. Configure via `~/.config/github-hetzner-runners/config.yml`
+
+```yaml
+max-runners: 4                     # maximum concurrent runners
+labels: self-hosted,fluxion-overflow  # must match workflow job `runs-on`
+runner-server-type: cx22           # CX23 for heavy builds (~€0.0096/hr)
+recycle-without-rebuild: on        # powered-off servers are reused
+```
+
+> **Note:** `scale-up-delay` is NOT needed — the 5-minute probe timeout
+> handles routing; VMs are created on demand for jobs that reach the overflow
+> pool.
+
+#### Cost
+
+| Runner | Specs | Price |
+|---|---|---|
+| GitHub-hosted | 2-core Linux | $0.006/min (free for public repos) |
+| Hetzner CX22 overflow | 2 vCPU, 4 GB | ~€0.006/hr (~$0.0001/min) |
+
+Typical 15-minute job:
+- GH-hosted (free tier): **$0.00**
+- Hetzner overflow: ~€0.0015 (1 hr minimum billing)
+
+Since GH-hosted is free, overflow only runs when GH is saturated — cost is
+minimal.  Monitor spend via the github-hetzner-runners embedded dashboard.
+
+### Repository variables
+
+No new repository variables are required for the overflow pool.  The probe
+pattern is self-contained in the workflow files and routes based on probe
+results, not on variables.
+
+### Updating existing workflows
+
+The reusable workflow `.github/workflows/ci-steps.yml` contains the common CI
+steps and accepts a `runner-label` input.  Caller workflows use the probe
+pattern:
+
+```yaml
+jobs:
+  # Probe: Try GH runner, timeout after 5 min
+  my-job-gh-probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - run: echo "GH runner acquired"
+
+  # If probe succeeds → run CI on GH
+  my-job-gh:
+    needs: my-job-gh-probe
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: echo "CI on GH"
+
+  # If probe fails (timeout/cancelled) → run CI on Hetzner overflow
+  my-job-hz:
+    needs: my-job-gh-probe
+    runs-on: [self-hosted,fluxion-overflow]
+    if: |
+      needs.my-job-gh-probe.result == 'failure'
+      || needs.my-job-gh-probe.result == 'cancelled'
+    steps:
+      - uses: actions/checkout@v4
+      - run: echo "CI on Hetzner overflow"
+```
+
+The following workflows use the probe pattern:
+
+| Workflow | Jobs |
+|---|---|
+| `rust-tests.yml` | `energy-conservation-*`, `fmt-*`, `clippy-*`, `known-issues-stale-*`, `ashrae-cases-cycle-*` |
+| `ci.yml` | `python-examples-*`, `integration-tests-*` |
+
+Jobs using `FLUXION_LINUX_RUNNER || ubuntu-latest` (e.g., `test-full`,
+`build-release`, `cuda-smoke`, `cuda-parity`) are unaffected — they already
+route to the static self-hosted pool as primary with GH as fallback.
+
+### Verification
+
+After deploying github-hetzner-runners, verify runners appear in GitHub:
+
+```
+https://github.com/anchapin/fluxion/settings/actions/runners
+```
+
+Look for runners with labels `self-hosted,fluxion-overflow`.  They will
+auto-register when the overflow pool creates a VM and deregister when the VM
+is destroyed.
+
+### Cost controls
+
+- `max-runners: 4` — prevents runaway parallelism on the overflow pool
+- `recycle-without-rebuild: on` — powered-off VMs are reused (no rebuild cost)
+- The static `fluxion-ci` pool continues to handle the majority of main-merge
+  jobs; overflow only activates when GH runners are saturated
+
