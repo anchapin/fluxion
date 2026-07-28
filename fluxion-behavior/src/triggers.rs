@@ -1,5 +1,29 @@
-use crate::comfort::{AdaptiveComfort, AdaptiveComfortStatus, PmvComfort, PmvComfortStatus};
+use crate::comfort::{
+    AdaptiveComfort, AdaptiveComfortStatus, ComfortMetrics, PmvComfort, PmvComfortStatus,
+    TriggerType,
+};
+use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
+use uuid::Uuid;
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ComfortTrigger {
+    pub timestamp: DateTime<Utc>,
+    pub zone_id: Uuid,
+    pub trigger_type: TriggerType,
+    pub metrics: ComfortMetrics,
+}
+
+impl ComfortTrigger {
+    pub fn new(zone_id: Uuid, metrics: ComfortMetrics) -> Self {
+        Self {
+            timestamp: Utc::now(),
+            zone_id,
+            trigger_type: metrics.trigger_type(),
+            metrics,
+        }
+    }
+}
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum ComfortViolationType {
@@ -158,16 +182,15 @@ impl OccupantComfortTriggers {
             AdaptiveComfortStatus::Comfortable => None,
             _ => {
                 let severity = match status {
-                    AdaptiveComfortStatus::SlightlyWarm | AdaptiveComfortStatus::SlightlyCool => 0.3,
+                    AdaptiveComfortStatus::SlightlyWarm | AdaptiveComfortStatus::SlightlyCool => {
+                        0.3
+                    }
                     AdaptiveComfortStatus::Warm | AdaptiveComfortStatus::Cool => 0.6,
                     AdaptiveComfortStatus::NoAssignmentPossible => 0.5,
                     _ => 0.0,
                 };
                 Some(ComfortViolation::new_adaptive(
-                    zone_id,
-                    timestep,
-                    status,
-                    severity,
+                    zone_id, timestep, status, severity,
                 ))
             }
         }
@@ -220,7 +243,8 @@ impl OccupantComfortTriggers {
             violations.push(v);
         }
 
-        if let Some(v) = self.evaluate_adaptive(zone_id, timestep, operative_temp, running_mean_temp)
+        if let Some(v) =
+            self.evaluate_adaptive(zone_id, timestep, operative_temp, running_mean_temp)
         {
             violations.push(v);
         }

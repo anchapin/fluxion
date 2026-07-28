@@ -1,10 +1,20 @@
-//! fluxion-behavior: Behavioral inference engine for fluxion
+//! fluxion-behavior: Behavioral and thermal comfort models for fluxion
 //!
 //! # Issues Addressed
+//! - #2018: Initialize Crate & Occupant Comfort Triggers
 //! - #2047: TsfmInferenceEngine Core + ONNX Runtime
 //! - #2048: ONNX Model Loading from Environment Variables
 //! - #2049: Mock Plug Load Fallback with Diurnal Gaussian Noise
 //! - #2050: INT8 Quantization for TSFM CPU Inference
+
+pub mod comfort;
+pub mod triggers;
+
+pub use comfort::{
+    AdaptiveComfort, AdaptiveComfortStatus, ComfortError, ComfortMetrics, PmvComfort,
+    PmvComfortStatus, TriggerType,
+};
+pub use triggers::{ComfortTrigger, OccupantComfortTriggers, OccupantComfortTriggersConfig};
 
 use ndarray::Dimension;
 use rand::prelude::*;
