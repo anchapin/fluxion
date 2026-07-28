@@ -240,6 +240,9 @@ mod tsfm_engine {
 
 pub use tsfm_engine::TsfmInferenceEngine;
 
+mod plug_loads;
+pub use plug_loads::MockPlugLoadGenerator;
+
 pub struct OnnxModelLoader {
     model_path: Option<PathBuf>,
     backend: String,
