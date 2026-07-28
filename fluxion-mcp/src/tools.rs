@@ -34,7 +34,9 @@ impl ResponseFormat {
 /// Falls back to JSON on serialization error.
 fn format_response<T: serde::Serialize>(value: &T, format: &str) -> String {
     match format {
-        "toon" => fluxion_toon::to_string(value).unwrap_or_else(|_| serde_json::to_string(value).unwrap()),
+        "toon" => {
+            fluxion_toon::to_string(value).unwrap_or_else(|_| serde_json::to_string(value).unwrap())
+        }
         _ => serde_json::to_string(value).unwrap(),
     }
 }
@@ -396,9 +398,7 @@ pub fn handle_tool_call(state: &mut McpState, params: Value) -> String {
 fn wrap_response(result: &Value, format: ResponseFormat) -> String {
     match format {
         ResponseFormat::Json => serde_json::to_string(result).unwrap(),
-        ResponseFormat::Toon => {
-            format_response(result, "toon")
-        }
+        ResponseFormat::Toon => format_response(result, "toon"),
     }
 }
 

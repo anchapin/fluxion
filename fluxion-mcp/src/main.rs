@@ -119,9 +119,8 @@ fn process_request(request: JsonRpcRequest, state: &RefCell<McpState>) -> JsonRp
                 serde_json::json!({ "_toon": result_str })
             } else {
                 // Parse JSON string back to Value for consistent structure
-                serde_json::from_str(&result_str).unwrap_or_else(|_| {
-                    serde_json::json!({ "raw": result_str })
-                })
+                serde_json::from_str(&result_str)
+                    .unwrap_or_else(|_| serde_json::json!({ "raw": result_str }))
             };
             JsonRpcResponse {
                 jsonrpc: "2.0".into(),
