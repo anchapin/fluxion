@@ -29,6 +29,18 @@ impl ResponseFormat {
     }
 }
 
+/// Format a serializable value to the specified format string.
+/// TOON format uses `fluxion_toon::to_string()` for compact LLM-friendly output.
+/// Falls back to JSON on serialization error.
+fn format_response<T: serde::Serialize>(value: &T, format: &str) -> String {
+    match format {
+        "toon" => {
+            fluxion_toon::to_string(value).unwrap_or_else(|_| serde_json::to_string(value).unwrap())
+        }
+        _ => serde_json::to_string(value).unwrap(),
+    }
+}
+
 /// Serialize JSON value to TOON (compact binary-like format)
 /// TOON uses a compact representation: arrays as comma-separated,
 /// objects as key:value pairs with minimal whitespace
@@ -342,7 +354,7 @@ pub fn list_tools() -> Vec<serde_json::Value> {
     ]
 }
 
-pub fn handle_tool_call(state: &mut McpState, params: Value) -> Value {
+pub fn handle_tool_call(state: &mut McpState, params: Value) -> String {
     let arguments = params.as_object().cloned().unwrap_or_default();
 
     let method = arguments.get("name").and_then(|v| v.as_str()).unwrap_or("");
@@ -383,16 +395,10 @@ pub fn handle_tool_call(state: &mut McpState, params: Value) -> Value {
 }
 
 /// Wrap response with format metadata for content-negotiation
-fn wrap_response(result: &Value, format: ResponseFormat) -> Value {
+fn wrap_response(result: &Value, format: ResponseFormat) -> String {
     match format {
-        ResponseFormat::Json => result.clone(),
-        ResponseFormat::Toon => {
-            serde_json::json!({
-                "format": "application/x-toon",
-                "data": result,
-                "_toon": serialize_to_toon(result)
-            })
-        }
+        ResponseFormat::Json => serde_json::to_string(result).unwrap(),
+        ResponseFormat::Toon => format_response(result, "toon"),
     }
 }
 
