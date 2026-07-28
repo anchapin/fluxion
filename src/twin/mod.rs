@@ -14,7 +14,6 @@
 //! # Modules
 //!
 //! - [`connection_pool`] - Thread-safe connection pool with heartbeat
-
 pub mod connection_pool;
 
 pub use connection_pool::{
@@ -139,11 +138,10 @@ pub use kafka_telemetry_consumer::{
     KafkaConsumerError, KafkaTelemetryConsumer, TelemetryMsg, DEFAULT_CHANNEL_CAPACITY,
 };
 
-//! Digital twin state estimation for thermal systems (Issue #2059).
-//!
-//! This module provides digital twin capabilities for building thermal systems,
-//! using Unscented Kalman Filtering (UKF) for state estimation with 9R4C
-//! thermal models.
+// Digital twin state estimation for thermal systems (Issue #2059).
+// This module provides digital twin capabilities for building thermal systems,
+// using Unscented Kalman Filtering (UKF) for state estimation with 9R4C
+// thermal models.
 
 pub mod thermal_state_observer;
 pub mod ukf;
