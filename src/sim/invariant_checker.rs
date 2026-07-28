@@ -278,11 +278,40 @@ impl InvariantChecker {
 
                 denom * t_mass - numer
             }
-            _ => {
+            ThermalModelType::FiveROneC => {
                 // 5R1C Crank-Nicolson: matches `step_physics_5r1c`
                 // (physics_impl.rs:318-373) which uses
                 // SolAirTemperature::for_roof(outdoor_temp, opaque_solar_ref[i], sky_temp)
                 // per zone (Issue #1527 fix).
+                //
+                // Issue #2128 fix: use the algebraic CN invariant form matching
+                // thermal_integration.rs::crank_nicolson_iso13790.
+                // The CN invariant is: denom * t_mass - numer = 0 where
+                // denom = cm_dt + 0.5*(h_tr_3 + h_tr_em)
+                // numer = tm_prev * (cm_dt - 0.5*(h_tr_3 + h_tr_em)) + h_tr_em * t_sol_air + h_tr_3 * t_i + phi_m
+                //
+                // t_i is the blended air temperature used in the CN update:
+                // t_i = (1-alpha) * t_i_free + alpha * t_air
+                // where t_i_free is stored in air_temperatures.
+                let t_i_free = model.air_temperatures.as_ref()[i];
+                let cm_dt = cm / dt_seconds;
+                let half_cond = 0.5 * (h_tr_3 + h_tr_em);
+                let alpha = if cm > 0.0 && h_tr_3 > 0.0 && dt_seconds > 0.0 {
+                    let tau_mass = cm / h_tr_3;
+                    1.0 - (-dt_seconds / tau_mass).exp()
+                } else {
+                    1.0
+                };
+                let t_i = (1.0 - alpha) * t_i_free + alpha * t_air;
+                let denom = cm_dt + half_cond;
+                let numer = t_mass_prev * (cm_dt - half_cond)
+                    + h_tr_em * t_sol_air_zone
+                    + h_tr_3 * t_i
+                    + phi_m;
+                denom * t_mass - numer
+            }
+            _ => {
+                // 6R2C, 8R3C: use original integrated flux form
                 let t_m_avg = 0.5 * (t_mass + t_mass_prev);
                 storage
                     - (phi_m + h_tr_3 * (t_air - t_m_avg) + h_tr_em * (t_sol_air_zone - t_m_avg))
