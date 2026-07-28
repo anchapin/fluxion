@@ -19,7 +19,7 @@ use thiserror::Error;
 use tokio::sync::mpsc;
 
 #[derive(Error, Debug)]
-pub enum TelemetryError {
+pub enum MqttTelemetryError {
     #[error("MQTT connection error: {0}")]
     Connection(#[from] rumqttc::ConnectionError),
     #[error("MQTT client error: {0}")]
@@ -31,14 +31,14 @@ pub enum TelemetryError {
 }
 
 #[derive(Debug, Clone)]
-pub struct TelemetryMessage {
+pub struct MqttTelemetryMessage {
     pub zone_id: String,
     pub t_air: f64,
     pub rh: f64,
 }
 
-impl TryFrom<&[u8]> for TelemetryMessage {
-    type Error = TelemetryError;
+impl TryFrom<&[u8]> for MqttTelemetryMessage {
+    type Error = MqttTelemetryError;
 
     fn try_from(bytes: &[u8]) -> Result<Self, Self::Error> {
         #[derive(Deserialize)]
@@ -48,7 +48,7 @@ impl TryFrom<&[u8]> for TelemetryMessage {
             rh: f64,
         }
         let raw: RawMessage = serde_json::from_slice(bytes)?;
-        Ok(TelemetryMessage {
+        Ok(MqttTelemetryMessage {
             zone_id: raw.zone_id,
             t_air: raw.t_air,
             rh: raw.rh,
@@ -64,7 +64,7 @@ pub struct MqttTelemetryConsumer {
 }
 
 impl MqttTelemetryConsumer {
-    pub async fn connect(broker: &str, topic: &str) -> Result<Self, TelemetryError> {
+    pub async fn connect(broker: &str, topic: &str) -> Result<Self, MqttTelemetryError> {
         let mut mqttoptions = MqttOptions::new("fluxion-twin-consumer", broker, 1883);
         mqttoptions.set_keep_alive(Duration::from_secs(5));
 
@@ -78,12 +78,16 @@ impl MqttTelemetryConsumer {
         })
     }
 
-    pub async fn start(mut self, tx: mpsc::Sender<TelemetryMessage>) -> Result<(), TelemetryError> {
+    #[allow(clippy::type_complexity)]
+    pub async fn start(
+        mut self,
+        tx: mpsc::Sender<MqttTelemetryMessage>,
+    ) -> Result<(), MqttTelemetryError> {
         loop {
             match self.eventloop.poll().await {
                 Ok(Event::Incoming(Packet::Publish(publish))) => {
                     if publish.topic == self.topic {
-                        if let Ok(msg) = TelemetryMessage::try_from(publish.payload.as_ref()) {
+                        if let Ok(msg) = MqttTelemetryMessage::try_from(publish.payload.as_ref()) {
                             if tx.send(msg).await.is_err() {
                                 break;
                             }
@@ -92,7 +96,7 @@ impl MqttTelemetryConsumer {
                 }
                 Ok(_) => {}
                 Err(e) => {
-                    return Err(TelemetryError::Connection(e));
+                    return Err(MqttTelemetryError::Connection(e));
                 }
             }
         }
@@ -107,7 +111,7 @@ mod tests {
     #[test]
     fn test_telemetry_message_try_from_valid_json() {
         let json = br#"{"zone_id": "test-123", "t_air": 22.5, "rh": 0.5}"#;
-        let msg = TelemetryMessage::try_from(json.as_slice()).unwrap();
+        let msg = MqttTelemetryMessage::try_from(json.as_slice()).unwrap();
         assert_eq!(msg.zone_id, "test-123");
         assert!((msg.t_air - 22.5).abs() < 1e-6);
         assert!((msg.rh - 0.5).abs() < 1e-6);
@@ -116,14 +120,14 @@ mod tests {
     #[test]
     fn test_telemetry_message_try_from_invalid_json() {
         let json = b"not valid json";
-        let result = TelemetryMessage::try_from(json.as_slice());
+        let result = MqttTelemetryMessage::try_from(json.as_slice());
         assert!(result.is_err());
     }
 
     #[test]
     fn test_telemetry_message_try_from_missing_fields() {
         let json = br#"{"zone_id": "test-123"}"#;
-        let result = TelemetryMessage::try_from(json.as_slice());
+        let result = MqttTelemetryMessage::try_from(json.as_slice());
         assert!(result.is_err());
     }
 

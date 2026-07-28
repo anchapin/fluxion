@@ -25,7 +25,10 @@ use std::vec::Vec;
 pub mod error;
 pub mod telemetry;
 pub use error::KalmanError;
-pub use telemetry::{MqttTelemetryConsumer, TelemetryError, TelemetryMessage};
+pub use telemetry::{
+    MqttTelemetryConsumer, MqttTelemetryError, MqttTelemetryMessage, Sender, TelemetryConsumer,
+    TelemetryError, TelemetryMsg,
+};
 
 pub trait StateVector: Clone {
     fn zeros() -> Self;
@@ -95,6 +98,7 @@ impl MeasurementVector for Vec<f64> {
     }
 }
 
+#[allow(clippy::type_complexity)]
 pub struct UnscentedKalmanFilter<S, M>
 where
     S: StateVector + Send + Sync,
@@ -234,6 +238,7 @@ where
         Ok(l)
     }
 
+    #[allow(clippy::type_complexity)]
     fn generate_sigma_points(&self) -> Result<(Vec<S>, Vec<f64>, Vec<f64>), KalmanError> {
         let n = self.n as f64;
         let lambda = self.lambda();
