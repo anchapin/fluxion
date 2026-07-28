@@ -44,6 +44,7 @@ pub mod warmup;
 pub mod thermal_integration;
 pub mod ventilation;
 pub mod view_factors;
+pub mod zonenet_hvac_bridge;
 
 #[cfg(feature = "pr821-diag")]
 pub mod pr821_diag;
