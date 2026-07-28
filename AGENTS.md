@@ -32,18 +32,27 @@ fluxion/                      # main engine crate (src/, benches/, tests/)
     interop/                  # OSM, gbXML, IFC, FMI 2.0 bridges
     cli/                      # fluxion-delta, validation, multi-zone
     bin/                      # fluxion-rest, fluxion, parallel-issue-workflow, …
-fluxion-core/                 # workspace member (leaf modules, no sim/physics/ai/validation deps)
-  src/weather/                # EPW/TMY3 parsing, psychrometrics, design-day, interpolation
-  src/assembly.rs             # BuildingAssembly, AssemblyBuilder, MaterialLayer
-  src/multi_node.rs           # ThermalMassNode, MultiNodeThermalMass
-  src/ashrae_cases.rs         # Orientation, WindowArea, ConstructionType, … (pure data)
-  src/tensor.rs               # geometry tensor types
-fluxion-mcp/                  # STANDALONE crate (NOT in workspace) — Model Context Protocol server
+fluxion-core/                 # leaf modules (no sim/physics/ai/validation deps; built once & cached by cargo-mutants)
+  src/
+    weather/                  # EPW/TMY3 parsing, psychrometrics, design-day, interpolation
+    assembly.rs               # BuildingAssembly, AssemblyBuilder, MaterialLayer
+    multi_node.rs             # ThermalMassNode, MultiNodeThermalMass
+    ashrae_cases.rs           # Orientation, WindowArea, ConstructionType, … (pure data)
+    tensor.rs                 # geometry tensor types
+    fluid/                    # graph-based strongly-typed fluid port traits
+fluxion-mcp/                  # MCP server (workspace member; built/tested separately)
+fluxion-city/                 # urban radiation modeling (Nusselt analog view factors)
+fluxion-grid/                 # grid-edge electrical network (battery, bus nodes, power flow)
+fluxion-behavior/             # thermal comfort models (Fanger PMV/PPD, adaptive comfort)
+fluxion-fluid/                # compile-time strongly typed fluid port traits for DAE systems
+crates/
+  fluxion-toon/               # Token-Oriented Object Notation serializer (LLM-friendly)
+  fluxion-twin/               # Digital twin core (Unscented Kalman Filter for thermal systems)
 ```
 
 **Cycle-breaking rule** (enforced by CI via `scripts/check_ashrae_cases_cycle.py`, #1441): `fluxion-core/src/**/*.rs` must NOT import `crate::sim_*`, `crate::physics_*`, `crate::ai_*`, or `crate::validation_*`. The `sim::assembly` and `sim::multi_node_thermal` paths in `src/sim/` are thin re-export shims — keep them that way.
 
-**`fluxion-mcp`** is a standalone crate (NOT in the cargo workspace) but depends on `fluxion` from the parent path. It is built/tested separately from the main crate.
+**`fluxion-mcp`** is a workspace member that depends on `fluxion` from the parent path. It is built/tested separately from the main crate.
 
 Re-export paths preserved across the crate split: `crate::weather::*`, `crate::assembly::*`, `crate::multi_node::*`, `crate::ashrae_cases::*`, `crate::sim::assembly::*`, `crate::sim::multi_node_thermal::*`, `crate::validation::ashrae_140_cases::Orientation`.
 
