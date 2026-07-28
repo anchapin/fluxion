@@ -11,11 +11,17 @@ pub enum ToonError {
 
     /// Row count differs from declared length in header.
     #[error("length mismatch: declared {declared} but found {found} rows")]
-    LengthMismatch { declared: usize, found: usize },
+    LengthMismatch {
+        declared: usize,
+        found: usize,
+    },
 
-    /// Malformed header or type literal.
-    #[error("invalid syntax: {0}")]
-    InvalidSyntax(String),
+    /// Invalid syntax (line, message) or malformed header/type literal.
+    #[error("invalid syntax{line}: {message}")]
+    InvalidSyntax {
+        line: usize,
+        message: String,
+    },
 
     /// Comma-separated values don't match field count in header.
     #[error("malformed row at line {line}: expected {expected} fields but found {found}")]
@@ -32,14 +38,6 @@ pub enum ToonError {
     /// Malformed patch string.
     #[error("malformed patch: {0}")]
     MalformedPatch(String),
-
-    /// Length mismatch: declared count differs from actual row counts.
-    #[error("length mismatch: declared {declared} rows, found {found}")]
-    LengthMismatch { declared: usize, found: usize },
-
-    /// Invalid syntax on a specific line.
-    #[error("invalid syntax at line {line}: {message}")]
-    InvalidSyntax { line: usize, message: String },
 
     /// Custom error message.
     #[error("{0}")]

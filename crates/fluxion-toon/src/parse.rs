@@ -239,10 +239,10 @@ pub fn parse_line(input: &str) -> Result<ParsedScalar> {
     let input = input.trim();
     let parts: Vec<&str> = input.splitn(2, ':').collect();
     if parts.len() != 2 {
-        return Err(ToonError::InvalidSyntax(format!(
-            "expected 'name: value' format, got '{}'",
-            input
-        )));
+        return Err(ToonError::InvalidSyntax {
+            line: 0,
+            message: format!("expected 'name: value' format, got '{}'", input),
+        });
     }
     let name = parts[0].trim().to_string();
     let value = parts[1].trim().to_string();
@@ -253,18 +253,27 @@ pub fn parse_line(input: &str) -> Result<ParsedScalar> {
 pub fn parse_uniform_array_header(input: &str) -> Result<ParsedArrayHeader> {
     let input = input.trim().trim_end_matches(':');
     let (name_part, rest) = input.split_once('[').ok_or_else(|| {
-        ToonError::InvalidSyntax(format!("missing '[' in array header: {}", input))
+        ToonError::InvalidSyntax {
+            line: 0,
+            message: format!("missing '[' in array header: {}", input),
+        }
     })?;
 
     let name = name_part.trim().to_string();
 
     let (count_part, fields_part) = rest.split_once("]{").ok_or_else(|| {
-        ToonError::InvalidSyntax(format!("missing ']{{' in array header: {}", input))
+        ToonError::InvalidSyntax {
+            line: 0,
+            message: format!("missing ']{{' in array header: {}", input),
+        }
     })?;
 
     let count = count_part
         .parse::<usize>()
-        .map_err(|_| ToonError::InvalidSyntax(format!("invalid count: {}", count_part)))?;
+        .map_err(|_| ToonError::InvalidSyntax {
+            line: 0,
+            message: format!("invalid count: {}", count_part),
+        })?;
 
     let fields: Vec<String> = fields_part
         .trim_end_matches('}')
