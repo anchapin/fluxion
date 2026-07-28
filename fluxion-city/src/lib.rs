@@ -15,6 +15,12 @@
 //!
 //! This crate uses sparse matrix representations for efficient computation with
 //! urban radiation with many surfaces.
+//!
+//! ## UrbanGraph Spatial Topology
+//!
+//! The `UrbanGraph` module provides spatial graph representation for city-scale
+//! building energy modeling where nodes represent building envelopes and edges
+//! represent spatial adjacency.
 
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
@@ -857,6 +863,295 @@ pub mod ashrae140 {
     }
 }
 
+pub mod urban_graph {
+    use petgraph::Graph;
+    use petgraph::Undirected;
+    use serde::{Deserialize, Serialize};
+    use uuid::Uuid;
+
+    #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+    pub enum AdjacencyType {
+        WindowToWindow,
+        WallToWall,
+        WallToWindow,
+        RoofToRoof,
+    }
+
+    #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+    pub struct BoundingBox3D {
+        pub min_x: f64,
+        pub min_y: f64,
+        pub min_z: f64,
+        pub max_x: f64,
+        pub max_y: f64,
+        pub max_z: f64,
+    }
+
+    impl BoundingBox3D {
+        pub fn new(min_x: f64, min_y: f64, min_z: f64, max_x: f64, max_y: f64, max_z: f64) -> Self {
+            Self {
+                min_x,
+                min_y,
+                min_z,
+                max_x,
+                max_y,
+                max_z,
+            }
+        }
+
+        pub fn center(&self) -> (f64, f64, f64) {
+            (
+                (self.min_x + self.max_x) / 2.0,
+                (self.min_y + self.max_y) / 2.0,
+                (self.min_z + self.max_z) / 2.0,
+            )
+        }
+
+        pub fn distance_to(&self, other: &BoundingBox3D) -> f64 {
+            let (cx1, cy1, cz1) = self.center();
+            let (cx2, cy2, cz2) = other.center();
+            ((cx2 - cx1).powi(2) + (cy2 - cy1).powi(2) + (cz2 - cz1).powi(2)).sqrt()
+        }
+    }
+
+    #[derive(Debug, Clone, Serialize, Deserialize)]
+    pub struct BuildingNode {
+        pub id: Uuid,
+        pub envelope: (),
+        pub bounding_box: BoundingBox3D,
+    }
+
+    impl BuildingNode {
+        pub fn new(id: Uuid, bounding_box: BoundingBox3D) -> Self {
+            Self {
+                id,
+                envelope: (),
+                bounding_box,
+            }
+        }
+    }
+
+    #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+    pub struct SpatialEdge {
+        pub distance_m: f64,
+        pub adjacency_type: AdjacencyType,
+    }
+
+    impl SpatialEdge {
+        pub fn new(distance_m: f64, adjacency_type: AdjacencyType) -> Self {
+            Self {
+                distance_m,
+                adjacency_type,
+            }
+        }
+    }
+
+    #[derive(Debug, Clone, Serialize, Deserialize)]
+    pub struct UrbanGraph<N, E> {
+        graph: Graph<N, E, Undirected>,
+        node_ids: Vec<Uuid>,
+    }
+
+    impl<N, E> UrbanGraph<N, E> {
+        pub fn new() -> Self {
+            Self {
+                graph: Graph::new_undirected(),
+                node_ids: Vec::new(),
+            }
+        }
+
+        pub fn node_count(&self) -> usize {
+            self.graph.node_count()
+        }
+
+        pub fn edge_count(&self) -> usize {
+            self.graph.edge_count()
+        }
+
+        pub fn contains_node(&self, id: Uuid) -> bool {
+            self.node_ids.contains(&id)
+        }
+
+        fn node_index(&self, id: Uuid) -> Option<petgraph::graph::NodeIndex> {
+            self.node_ids
+                .iter()
+                .position(|&node_id| node_id == id)
+                .map(petgraph::graph::NodeIndex::new)
+        }
+
+        pub fn node(&self, id: Uuid) -> Option<&N> {
+            self.node_index(id)
+                .and_then(|idx| self.graph.node_weight(idx))
+        }
+
+        pub fn nodes(&self) -> impl Iterator<Item = &N> {
+            self.graph.node_weights()
+        }
+
+        pub fn edges(&self) -> impl Iterator<Item = &E> {
+            self.graph.edge_weights()
+        }
+    }
+
+    impl<N, E> Default for UrbanGraph<N, E> {
+        fn default() -> Self {
+            Self::new()
+        }
+    }
+
+    impl UrbanGraph<BuildingNode, SpatialEdge> {
+        pub fn add_building(&mut self, node: BuildingNode) -> Uuid {
+            let id = node.id;
+            self.graph.add_node(node);
+            self.node_ids.push(id);
+            id
+        }
+
+        pub fn add_spatial_edge(
+            &mut self,
+            source_id: Uuid,
+            target_id: Uuid,
+            edge: SpatialEdge,
+        ) -> Option<petgraph::graph::EdgeIndex> {
+            let source_idx = self.node_index(source_id)?;
+            let target_idx = self.node_index(target_id)?;
+            Some(self.graph.add_edge(source_idx, target_idx, edge))
+        }
+
+        pub fn nearest_neighbors(&self, node_id: Uuid, radius_m: f64) -> Vec<Uuid> {
+            let source_idx = match self.node_index(node_id) {
+                Some(idx) => idx,
+                None => return Vec::new(),
+            };
+
+            let source_node = match self.graph.node_weight(source_idx) {
+                Some(node) => node,
+                None => return Vec::new(),
+            };
+
+            let mut neighbors = Vec::new();
+
+            for (target_idx, target_node) in
+                self.graph.node_indices().zip(self.graph.node_weights())
+            {
+                if target_idx == source_idx {
+                    continue;
+                }
+
+                let distance = source_node
+                    .bounding_box
+                    .distance_to(&target_node.bounding_box);
+
+                if distance <= radius_m {
+                    neighbors.push(target_node.id);
+                }
+            }
+
+            neighbors
+        }
+    }
+
+    #[cfg(test)]
+    mod tests {
+        use super::*;
+
+        fn create_test_buildings() -> (BoundingBox3D, BoundingBox3D, BoundingBox3D) {
+            let building_a = BoundingBox3D::new(0.0, 0.0, 0.0, 10.0, 10.0, 30.0);
+            let building_b = BoundingBox3D::new(15.0, 5.0, 0.0, 25.0, 15.0, 30.0);
+            let building_c = BoundingBox3D::new(100.0, 100.0, 0.0, 110.0, 110.0, 30.0);
+            (building_a, building_b, building_c)
+        }
+
+        #[test]
+        fn test_bounding_box_distance() {
+            let bb1 = BoundingBox3D::new(0.0, 0.0, 0.0, 10.0, 10.0, 10.0);
+            let bb2 = BoundingBox3D::new(20.0, 0.0, 0.0, 30.0, 10.0, 10.0);
+            let distance = bb1.distance_to(&bb2);
+            assert!((distance - 20.0).abs() < 1e-6);
+        }
+
+        #[test]
+        fn test_3_building_graph_nearest_neighbors() {
+            let (building_a, building_b, building_c) = create_test_buildings();
+
+            let id_a = Uuid::new_v4();
+            let id_b = Uuid::new_v4();
+            let id_c = Uuid::new_v4();
+
+            let mut graph: UrbanGraph<BuildingNode, SpatialEdge> = UrbanGraph::new();
+
+            graph.add_building(BuildingNode::new(id_a, building_a));
+            graph.add_building(BuildingNode::new(id_b, building_b));
+            graph.add_building(BuildingNode::new(id_c, building_c));
+
+            let neighbors_a = graph.nearest_neighbors(id_a, 50.0);
+            assert_eq!(neighbors_a.len(), 1);
+            assert!(neighbors_a.contains(&id_b));
+            assert!(!neighbors_a.contains(&id_c));
+
+            let neighbors_b = graph.nearest_neighbors(id_b, 50.0);
+            assert_eq!(neighbors_b.len(), 1);
+            assert!(neighbors_b.contains(&id_a));
+            assert!(!neighbors_b.contains(&id_c));
+
+            let neighbors_c = graph.nearest_neighbors(id_c, 50.0);
+            assert!(neighbors_c.is_empty());
+
+            let neighbors_c_200 = graph.nearest_neighbors(id_c, 200.0);
+            assert_eq!(neighbors_c_200.len(), 2);
+            assert!(neighbors_c_200.contains(&id_a));
+            assert!(neighbors_c_200.contains(&id_b));
+        }
+
+        #[test]
+        fn test_urban_graph_add_edge() {
+            let (building_a, building_b, _) = create_test_buildings();
+
+            let id_a = Uuid::new_v4();
+            let id_b = Uuid::new_v4();
+
+            let mut graph: UrbanGraph<BuildingNode, SpatialEdge> = UrbanGraph::new();
+            graph.add_building(BuildingNode::new(id_a, building_a));
+            graph.add_building(BuildingNode::new(id_b, building_b));
+
+            let edge = SpatialEdge::new(15.0, AdjacencyType::WallToWall);
+            let edge_idx = graph.add_spatial_edge(id_a, id_b, edge);
+
+            assert!(edge_idx.is_some());
+            assert_eq!(graph.edge_count(), 1);
+        }
+
+        #[test]
+        fn test_urban_graph_node_lookup() {
+            let building = BoundingBox3D::new(0.0, 0.0, 0.0, 10.0, 10.0, 30.0);
+            let id = Uuid::new_v4();
+
+            let mut graph: UrbanGraph<BuildingNode, SpatialEdge> = UrbanGraph::new();
+            assert!(!graph.contains_node(id));
+
+            graph.add_building(BuildingNode::new(id, building));
+            assert!(graph.contains_node(id));
+            assert_eq!(graph.node_count(), 1);
+        }
+
+        #[test]
+        fn test_urban_graph_default() {
+            let graph: UrbanGraph<BuildingNode, SpatialEdge> = UrbanGraph::default();
+            assert_eq!(graph.node_count(), 0);
+            assert_eq!(graph.edge_count(), 0);
+        }
+
+        #[test]
+        fn test_bounding_box_center() {
+            let bb = BoundingBox3D::new(0.0, 0.0, 0.0, 10.0, 20.0, 30.0);
+            let (cx, cy, cz) = bb.center();
+            assert!((cx - 5.0).abs() < 1e-6);
+            assert!((cy - 10.0).abs() < 1e-6);
+            assert!((cz - 15.0).abs() < 1e-6);
+        }
+    }
+}
+
 pub use ashrae140::{ashrae140, verify_ashrae_case};
 pub use geometry::{GroundPlane, RectSurface, SurfaceType, UrbanCanopySurface, VerticalSurface};
 pub use nusselt::{
@@ -865,6 +1160,7 @@ pub use nusselt::{
     ViewFactorMatrix,
 };
 pub use sparse::{create_sparse_from_urban_canyon, SparseViewFactorMatrix, UrbanRadiationSolver};
+pub use urban_graph::{AdjacencyType, BoundingBox3D, BuildingNode, SpatialEdge, UrbanGraph};
 
 #[cfg(feature = "parallel")]
 pub mod parallel {
@@ -1542,7 +1838,7 @@ mod tests {
     fn test_longwave_equilibrium() {
         let test = EnergyConservationTest::create_5_building_config();
 
-        for (i, building) in test.buildings.iter().enumerate() {
+        for (i, _building) in test.buildings.iter().enumerate() {
             let radiation = test.surface_radiation_balance(i);
             assert!(
                 radiation.is_some(),
