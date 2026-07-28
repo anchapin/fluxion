@@ -1,3 +1,8 @@
+//! Twin module for digital twin telemetry integration.
+//!
+//! This module provides components for building energy modeling digital twins,
+//! including Kafka-based telemetry ingestion for enterprise-scale deployments.
+
 // Copyright 2026 Fluxion. All rights reserved.
 // SPDX-License-Identifier: MIT
 
@@ -126,6 +131,13 @@ pub fn create_test_payload(index: usize) -> LiveTwinPayload {
         }],
     }
 }
+
+// Kafka telemetry consumer for enterprise-scale telemetry ingestion (issue #2056).
+pub mod kafka_telemetry_consumer;
+
+pub use kafka_telemetry_consumer::{
+    KafkaConsumerError, KafkaTelemetryConsumer, TelemetryMsg, DEFAULT_CHANNEL_CAPACITY,
+};
 
 #[cfg(test)]
 mod tests {
