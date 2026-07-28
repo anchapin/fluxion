@@ -718,11 +718,11 @@ mod tests {
         assert!(eff_cold < eff_design); // Slight degradation at cold temp
 
         // Test power calculation
-        // For a gas boiler, electrical power = thermal_output * electrical_power_factor + standby
-        // At PLR=0.5 (50kW load / 100kW capacity), electrical power should be ~500W
-        // This represents fans, pumps, and controls - NOT fuel input
+        // For a gas boiler, total heating fuel power = thermal_load / efficiency + fan power
+        // At PLR=0.5 (50kW load / 100kW capacity), fuel power = 50000/0.85 + 50000*0.01 ≈ 59324W
+        // This is the total energy input rate (fuel + parasitic electrical)
         let power = boiler.calculate_power(50000.0, -5.0, HVACMode::Heating);
-        assert!(power > 400.0 && power < 700.0); // ~500W for 50kW thermal output
+        assert!(power > 59000.0 && power < 60000.0); // ~59324W for 50kW thermal output at 85% efficiency
 
         // Test PLR tracking
         let mut boiler_mut = boiler.clone();
