@@ -1312,6 +1312,9 @@ version = "0.1.0"
 dependencies = [
  "approx",
  "bytes",
+ "chrono",
+ "crossbeam-channel",
+ "log",
  "mockito",
  "nalgebra",
  "rand 0.8.5",
@@ -1321,6 +1324,7 @@ dependencies = [
  "serde_json",
  "thiserror 1.0.69",
  "tokio",
+ "uuid",
 ]
 
 [[package]]

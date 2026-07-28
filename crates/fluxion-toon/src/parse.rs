@@ -252,21 +252,21 @@ pub fn parse_line(input: &str) -> Result<ParsedScalar> {
 /// Parse a uniform array header: `name[N]{field1,field2,...}:`
 pub fn parse_uniform_array_header(input: &str) -> Result<ParsedArrayHeader> {
     let input = input.trim().trim_end_matches(':');
-    let (name_part, rest) = input.split_once('[').ok_or_else(|| {
-        ToonError::InvalidSyntax {
+    let (name_part, rest) = input
+        .split_once('[')
+        .ok_or_else(|| ToonError::InvalidSyntax {
             line: 0,
             message: format!("missing '[' in array header: {}", input),
-        }
-    })?;
+        })?;
 
     let name = name_part.trim().to_string();
 
-    let (count_part, fields_part) = rest.split_once("]{").ok_or_else(|| {
-        ToonError::InvalidSyntax {
-            line: 0,
-            message: format!("missing ']{{' in array header: {}", input),
-        }
-    })?;
+    let (count_part, fields_part) =
+        rest.split_once("]{")
+            .ok_or_else(|| ToonError::InvalidSyntax {
+                line: 0,
+                message: format!("missing ']{{' in array header: {}", input),
+            })?;
 
     let count = count_part
         .parse::<usize>()
