@@ -1245,12 +1245,13 @@ dependencies = [
 name = "fluxion-twin"
 version = "0.1.0"
 dependencies = [
- "faer",
- "paste",
+ "approx",
+ "nalgebra",
  "rand 0.8.5",
  "rand_distr 0.4.3",
  "serde",
  "thiserror 1.0.69",
+ "tokio",
 ]
 
 [[package]]
@@ -2465,6 +2466,7 @@ dependencies = [
  "num-traits",
  "rand 0.8.5",
  "rand_distr 0.4.3",
+ "serde",
  "simba",
  "typenum",
 ]
