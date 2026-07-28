@@ -23,7 +23,9 @@ use nalgebra::DVector;
 use std::vec::Vec;
 
 pub mod error;
+pub mod telemetry;
 pub use error::KalmanError;
+pub use telemetry::{MqttTelemetryConsumer, TelemetryError, TelemetryMessage};
 
 pub trait StateVector: Clone {
     fn zeros() -> Self;
