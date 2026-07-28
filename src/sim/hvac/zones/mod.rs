@@ -11,3 +11,5 @@ pub use schedule::{DailySchedule, DayType, HVACSchedule, ScheduleType, ScheduleV
 pub use zone_control::{
     ControlStrategy, HVACStatus, LayeredController, LayeredControllerConfig, ZoneControl,
 };
+
+pub use zone_setpoints::OccupancyMode;
