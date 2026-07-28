@@ -22,3 +22,4 @@ parallel = ["rayon"]
 [dev-dependencies]
 criterion = "0.5"
 rand = "0.8"
+sysinfo = "0.30"

@@ -16,6 +16,7 @@
 //! This crate uses sparse matrix representations for efficient computation with
 //! urban radiation with many surfaces.
 
+use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
 #[derive(Debug, Error)]
@@ -865,6 +866,13 @@ pub use nusselt::{
 };
 pub use sparse::{create_sparse_from_urban_canyon, SparseViewFactorMatrix, UrbanRadiationSolver};
 
+#[cfg(feature = "parallel")]
+pub mod parallel {
+    pub mod harness;
+}
+#[cfg(feature = "parallel")]
+pub use parallel::harness::{BuildingGroup, UrbanRadiationSystem, UrbanStepDispatcher};
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1087,7 +1095,7 @@ mod tests {
             assert!((row_sum - 1.0).abs() < 1e-10);
         }
     }
-}
+
 
 // === Energy Conservation Tests (from #2031) ===
 const STEFAN_BOLTZMANN: f64 = 5.67e-8;
@@ -1440,9 +1448,6 @@ impl EnergyConservationTest {
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
 
     #[test]
     fn test_5_building_energy_conservation() {

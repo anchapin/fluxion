@@ -121,8 +121,7 @@ fn run_throughput_benchmark(c: &mut Criterion, building_counts: &[usize]) {
                     total_ms += start.elapsed().as_millis();
                 }
                 let avg_ms = total_ms as f64 / iters as f64;
-                let buildings_per_sec = (n as f64 / avg_ms) * 1000.0;
-                black_box(buildings_per_sec)
+                Duration::from_millis(avg_ms as u64)
             });
         });
     }
@@ -141,7 +140,6 @@ fn run_speedup_benchmark(c: &mut Criterion, building_counts: &[usize]) {
 
     for &n in building_counts {
         group.bench_with_input(BenchmarkId::from_parameter(n), &n, |b, &n| {
-            let mut buildings_seq = make_buildings(n);
             let buildings_par = make_buildings(n);
             let mut dispatcher = UrbanStepDispatcher::with_buildings(buildings_par);
 
