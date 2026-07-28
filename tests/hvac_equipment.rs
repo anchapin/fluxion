@@ -118,13 +118,12 @@ fn test_boiler_variable_capacity() {
     );
 
     // Test power calculation
-    // For a gas boiler, electrical power is much lower than fuel power.
-    // Electrical power = thermal_output * electrical_power_factor + standby
-    // = 50000 * 0.01 + 5 = 505W (approximately)
+    // For a gas boiler, total heating fuel power = thermal_load / efficiency + fan power
+    // = 50000 / 0.85 + 50000 * 0.01 ≈ 59324W (total energy input rate)
     let power = boiler.calculate_power(50000.0, -5.0, HVACMode::Heating);
     assert!(
-        power > 400.0 && power < 700.0,
-        "Boiler electrical power should be ~500W, got {:.0}W",
+        power > 59000.0 && power < 60000.0,
+        "Boiler heating fuel power should be ~59324W, got {:.0}W",
         power
     );
 
