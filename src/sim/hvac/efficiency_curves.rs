@@ -102,7 +102,7 @@ pub fn default_ahri_coefficients() -> EfficiencyCurveConfig {
             design_temp: 35.0,
         },
         chiller: CurveCoefficients {
-            plr: [4.5, -0.6, 0.4, -0.15],
+            plr: [1.978571, 1.738095, 3.428571, -2.666667],
             temp_coefficient: 0.005,
             design_temp: 35.0,
         },
