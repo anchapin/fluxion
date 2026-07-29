@@ -215,9 +215,10 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         // standalone `Vec::with_capacity(num_zones)` allocations below).
         // Issue #1966: scratch is now pooled in ThermalModelData::scratch_pool
         // and reused across timesteps via fill_zero() at end of step.
-        let scratch = self.0.scratch_pool.get_5r1c(self.0.num_zones);
+        let num_zones = self.0.num_zones;
+        let scratch = self.0.scratch_pool.get_5r1c(num_zones);
 
-        for i in 0..self.0.num_zones {
+        for i in 0..num_zones {
             let load_w = loads_ref[i] * area_ref[i];
             let sol_w = solar_ref[i] * area_ref[i];
             // opaque_sol_w: kept for potential debugging; it's included via t_sol_air now
@@ -297,8 +298,8 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         // opaque_sol_w has been removed from phi_m to avoid double-counting.
         // The sol-air formula: T_sol_air = T_out + α*I_opaque/h_ext - ε*σ*(T_out-T_sky)^4/h_ext
         let sol_air_calc = SolAirTemperature::ashrae_140_default();
-        let mut t_sol_air_vec = Vec::with_capacity(self.0.num_zones);
-        for opaque_solar in opaque_solar_ref.iter().take(self.0.num_zones) {
+        let mut t_sol_air_vec = Vec::with_capacity(num_zones);
+        for opaque_solar in opaque_solar_ref.iter().take(num_zones) {
             // opaque_solar is the effective opaque irradiance on exterior surfaces (W/m²)
             // This is the combined wall + roof irradiance for the zone
             let t_sol_air_i = sol_air_calc.for_roof(outdoor_temp, *opaque_solar, sky_temp);
@@ -1529,9 +1530,10 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         // standalone `Vec::with_capacity(num_zones)` allocations in 6R2C).
         // Issue #1966: scratch is now pooled in ThermalModelData::scratch_pool
         // and reused across timesteps via fill_zero() at end of step.
-        let scratch = self.0.scratch_pool.get_6r2c(self.0.num_zones);
+        let num_zones = self.0.num_zones;
+        let scratch = self.0.scratch_pool.get_6r2c(num_zones);
 
-        for i in 0..self.0.num_zones {
+        for i in 0..num_zones {
             let load_w = loads_ref[i] * area_ref[i];
             let sol_w = solar_ref[i] * area_ref[i];
             let opaque_sol_w = opaque_solar_ref[i] * area_ref[i];
@@ -2432,9 +2434,10 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         // seven read-back intermediates share one flat buffer).
         // Issue #1966: scratch is now pooled in ThermalModelData::scratch_pool
         // and reused across timesteps via fill_zero() at end of step.
-        let scratch = self.0.scratch_pool.get_9r4c(self.0.num_zones);
+        let num_zones = self.0.num_zones;
+        let scratch = self.0.scratch_pool.get_9r4c(num_zones);
 
-        for i in 0..self.0.num_zones {
+        for i in 0..num_zones {
             let load_w = loads_ref[i] * area_ref[i];
             let sol_w = solar_ref[i] * area_ref[i];
             let opaque_sol_w = opaque_solar_ref[i] * area_ref[i];
