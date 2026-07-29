@@ -19,6 +19,7 @@ use crate::sim::sky_radiation::SolAirTemperature;
 use crate::sim::solar::{SolarPosition, WindowProperties};
 use crate::sim::thermal_model::ThermalModelType as RoutingThermalModelType;
 use crate::sim::thermal_model_data::{IncidentSolarAccumulator, ThermalModelData};
+use crate::sim::thermal_model_scratch::PhysicsScratchPool;
 use crate::sim::view_factors;
 use crate::validation::ashrae_140_cases::CaseSpec;
 use crate::validation::config::{validate_assembly, validate_constants};
@@ -2788,6 +2789,7 @@ impl ThermalModel<VectorField> {
             // Issue #1968 — cached zero vector to eliminate per-timestep
             // `vec![0.0; num_zones]` allocations in hot loops.
             zero_vector: VectorField::from_scalar(0.0, num_zones),
+            scratch_pool: PhysicsScratchPool::new(),
         });
 
         model.update_derived_parameters();
