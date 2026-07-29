@@ -31,12 +31,24 @@
 //! println!("Passed: {}, Failed: {}, Mean Error: {:.2}%", passed, failed, mean_error);
 //! ```
 
+pub mod analytical_free_float;
 pub mod cases;
+pub mod reporting;
 pub mod runner;
 
+pub use analytical_free_float::{
+    get_free_float_cases as get_free_float_analytical_cases, run_free_float_analytical,
+    validate_free_float, FreeFloatAnalyticalRunner, FreeFloatCaseDefinition, FreeFloatCaseId,
+    FreeFloatResult,
+};
 pub use cases::{
     get_bestest_cases, get_reference_data, EquipmentType, HVACBestestCase,
     HVACBestestCaseDefinition, HVACBestestReferenceData, OperatingMode,
+};
+pub use reporting::{
+    assert_within_bounds, assert_within_bounds_full, check_within_bounds, BoundStatus,
+    CaseMetricReport, HvacBestestReport, HvacBestestToleranceConfig, ReportSummary, ToleranceCheck,
+    REFERENCE_ZERO_EPSILON,
 };
 pub use runner::{run_hvac_bestest, validate_results, HVACBestestResult, HVACBestestRunner};
 

@@ -84,6 +84,13 @@ cargo test test_critical_paths
 cargo test test_coverage_enhancement
 ```
 
+The CI [Code Coverage Gate (#1932)](../../docs/coverage.md) buckets the
+coverage of these critical paths (Weather→Solar, Weather→Ventilation,
+Conduction→Zone Balance, HVAC→Zone Balance) and enforces a one-way ratchet
+against `validation/coverage_baseline.json`. Run the gate locally with
+`python3 scripts/coverage_critical_paths.py --gate` after generating an
+LCOV trace (see `docs/coverage.md`).
+
 ### With Performance Metrics
 ```bash
 # Run tests with timing information

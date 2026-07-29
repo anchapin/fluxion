@@ -166,6 +166,7 @@ fn test_ashrae_rp_sources() {
     assert!(db.get("iea_ebc_annex60_office").is_some());
     assert!(db.get("nrel_cbm_small_office").is_some());
     assert!(db.get("nrel_cbm_medium_office").is_some());
+    assert!(db.get("lbnl_flexlab_ashrae140").is_some());
 
     // Check building types
     let office = db.get("ashrae_rp1055_office").unwrap();
@@ -173,6 +174,13 @@ fn test_ashrae_rp_sources() {
 
     let commercial = db.get("ashrae_rp1256_commercial").unwrap();
     assert_eq!(commercial.building_type, BuildingType::Commercial);
+
+    // FLEXLAB dataset validation
+    let flexlab = db.get("lbnl_flexlab_ashrae140").unwrap();
+    assert_eq!(flexlab.climate_zone, "3C");
+    assert_eq!(flexlab.location, "Berkeley, CA");
+    assert!(flexlab.floor_area > 0.0);
+    assert!(flexlab.zone_volume > 0.0);
 }
 
 #[test]
@@ -191,6 +199,12 @@ fn test_ashrae_rp_sources_metadata() {
     assert!(nrel.source.contains("NREL"));
     assert_eq!(nrel.building_type, BuildingType::Office);
     assert!(nrel.wwr > 0.0 && nrel.wwr < 1.0); // Valid WWR
+
+    // LBNL FLEXLAB ASHRAE 140
+    let flexlab = db.get("lbnl_flexlab_ashrae140").unwrap();
+    assert!(flexlab.source.contains("FLEXLAB"));
+    assert_eq!(flexlab.climate_zone, "3C");
+    assert!(flexlab.floor_area > 0.0);
 }
 
 #[test]

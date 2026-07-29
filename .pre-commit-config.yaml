@@ -90,6 +90,13 @@ repos:
         pass_filenames: false
         stages: [manual]
 
+      - id: doc-inventory-check
+        name: "Doc Inventory Check"
+        entry: python3 scripts/doc_inventory_check.py
+        language: system
+        pass_filenames: false
+        stages: [manual]
+
 # Fluxion Pre-Commit Hooks Configuration
 #
 # Installation:

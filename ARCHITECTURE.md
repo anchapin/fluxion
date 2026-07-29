@@ -192,7 +192,7 @@ graph TD
     subgraph Interop ["Ecosystem Interop (src/interop/)"]
         OSM["OSM Reader/Writer<br/>(interop/osm/)"]
         GBX["gbXML Reader/Writer<br/>(interop/gbxml/)"]
-        FMU["FMI Co-Sim Export<br/>(interop/fmi/)"]
+        FMU["FMI Co-Sim Export/Import<br/>(interop/fmi/)"]
         IDFD["IDF/epJSON Import<br/>(scaffold landed — src/io/idf/)"]
     end
 
@@ -477,6 +477,22 @@ pub trait ThermalModelTrait: Send + Sync {
 
 **ML Surrogate Path**: `SurrogateThermalModel` implements `ThermalModelTrait` — the zone solver doesn't know whether physics or ML is computing the result. v3.0 surrogate training and ONNX export landed in #1139 (`src/ai/surrogate.rs`, `src/ai/modular_surrogate.rs`).
 
+**PINN Physics Constraints (Issue #1706)**: The `CompositeSurrogate` (weighted ensemble, `src/ai/modular_surrogate.rs:51-170`) is trained with a physics-informed loss term. The PINN constraint enforces the envelope-only energy balance:
+
+```
+L_total = L_regression + λ · L_physics
+L_physics = ||Q_loads − Q_conduction − Q_solar − Q_internal||²
+```
+
+Where (envelope-only MVP, ventilation excluded):
+- `Q_conduction = U · A · (T_outdoor − T_zone)` — conductive heat transfer
+- `Q_solar = α · solar_rad · A · wwr` — solar gains (α = 0.85 transmissivity)
+- `Q_internal = β · occupancy · A` — internal gains (β = 100 W/person)
+
+Thermal properties: `U = 0.5 W/m²K`, `A = 100 m²`.
+
+The `SurrogateDomain::energy_balance_residual` method (`src/ai/surrogate.rs`) computes the per-sample residual `||Q_loads − Q_expected||²` from `SurrogateInputs` + predicted loads for use in the training loop (`tools/train_surrogate.py`). The `--pinn-constraint` flag (default `true`) toggles the physics loss on/off.
+
 **Hybrid mode — `HybridRouting` (PR #1498 / Issue #1431)**: Per-component dispatch between physics and surrogate is governed by the `HybridRouting` struct (`sim/thermal_model.rs`):
 
 ```rust
@@ -651,8 +667,8 @@ The Phase 3 harness ships the **geometric** validation surface that future `Gaug
 
 ### Module 7: Quantum Annealing Bridge (Phase 2b — #1464)
 
-**Source**: `src/quantum/qubo_mapping.rs` (new top-level `src/quantum/` module, registered in `src/lib.rs`).
-**Purpose**: Map the continuous `ThermalManifold` tensors into a Quadratic Unconstrained Binary Optimization (QUBO) matrix `Q` suitable for submission to a quantum annealer (D-Wave Advantage and successors). No production annealer SDK is wired up — this is the **mathematical scaffolding** for Phase 2c; the actual annealer call is the planned follow-up.
+**Source**: `src/quantum/qubo_mapping.rs`, `src/quantum/dwave_client.rs` (top-level `src/quantum/` module, registered in `src/lib.rs`).
+**Purpose**: Map the continuous `ThermalManifold` tensors into a Quadratic Unconstrained Binary Optimization (QUBO) matrix `Q` suitable for submission to a quantum annealer (D-Wave Advantage and successors), via the `DwaveClient` trait. The `DwaveClient` trait is object-safe and mockable, enabling tests without a live QPU.
 
 | Input | Type | Source |
 |-------|------|--------|
@@ -744,8 +760,82 @@ These traits support the main physics pipeline and should also be documented:
 | `MaterialLayer` | `src/sim/assembly.rs` | Building material layer interface |
 | `Equipment` | `src/sim/equipment.rs` | HVAC equipment trait |
 | `VariableCapacityEquipment` | `src/sim/hvac/equipment.rs` | Variable-speed equipment |
+| `Fan` | `src/sim/hvac/fan.rs` | Fan component performance (affinity laws, density correction) |
+| `CoolingCoilBehavior` | `src/sim/hvac/cooling_coil.rs` | Cooling coil component (bypass-factor model, SHR, condensate) |
+| `HeatingCoil` | `src/sim/hvac/heating_coil.rs` | Heating coil component (sensible heating, part-load control) |
+| `VavTerminal` | `src/sim/hvac/vav_terminal.rs` | VAV terminal unit composing Fan + CoolingCoil + HeatingCoil (damper-modulated mass flow, reheat control) |
+| `Doas` | `src/sim/hvac/doas.rs` | Dedicated Outdoor Air System composing Fan + CoolingCoil + HeatingCoil (constant-volume, dew-point-targeted dehumidification, neutral-supply reheat) |
+| `PartLoadCurve` | `src/sim/hvac/part_load_curves.rs` | ASHRAE/E+ biquadratic part-load curves for fan, chiller, boiler |
+| `PlantComponent` | `src/sim/hvac/plant/plant_component.rs` | Plant loop equipment trait (chiller, boiler, cooling tower, pump, heat exchanger) |
+| `Pump` | `src/sim/hvac/plant/pump.rs` | Plant-loop pump trait with affinity laws (constant/variable speed) |
 | `GroundTemperature` | `src/sim/boundary.rs` | Ground temp boundary condition |
 | `BatchOrchestrator` | `src/sim/orchestrator.rs` | Per-population CPU surrogate compute scheduling (rayon `par_chunks`, #1439) |
+| `DwaveClient` | `src/quantum/dwave_client.rs` | Object-safe trait for submitting Ising problems to a D-Wave sampler (QPU or hybrid); mockable for tests |
+| `S3Transport` | `src/ai/s3_upload.rs` | S3 HTTP operations abstraction (put, head, multipart upload); enables mock testing without real S3 |
+| `EmailTransport` | `src/api/email_notification.rs` | Abstraction for sending email notifications (campaign completion fallback); mockable for tests |
+| `SimulationStateStore` | `src/api/server.rs` | Simulation state persistence trait (in-memory or cloud-backed); enables stateless API servers |
+
+**Psychrometrics library** (#1760): `fluxion-core/src/weather/psychrometrics.rs` is the dependency-light, cycle-safe psychrometrics library that all airside HVAC equipment depends on. It implements ASHRAE Handbook of Fundamentals, Chapter 1 formulas in SI units:
+
+| Function | ASHRAE HoF Ch.1 ref | Signature |
+|----------|--------------------|-----------|
+| `saturation_vapor_pressure(t_c)` → Pa | Eq. 5 (Magnus-Tetens ≥ 0 °C) + Eq. 6 (Hyland-Wexler ice < 0 °C) | `fn(f64) -> f64` |
+| `calculate_humidity_ratio(t_c, rh_%, p_pa)` → kg/kg | Eq. 22 | `fn(f64, f64, f64) -> f64` |
+| `calculate_enthalpy(t_c, rh_%, p_pa)` → kJ/kg | Eq. 32 | `fn(f64, f64, f64) -> f64` |
+| `calculate_dew_point(t_c, rh_%, p_pa)` → °C | Inversion of Eq. 5/6 (Newton-Raphson) | `fn(f64, f64, f64) -> f64` |
+| `calculate_wet_bulb(t_c, rh_%, p_pa)` → °C | Psychrometric equation inversion | `fn(f64, f64, f64) -> f64` |
+| `partial_vapor_pressure(w, p_pa)` → Pa | Inverse of Eq. 22 | `fn(f64, f64) -> f64` |
+| `moist_air_density(t_c, w, p_pa)` → kg/m³ | Eq. 28 | `fn(f64, f64, f64) -> f64` |
+
+All functions take SI units (Pa, K/°C, kg/kg). Module is in `fluxion-core` to respect the cycle-breaking rule (#1255, #1349, #1441) — no `sim`, `physics`, `ai`, or `validation` deps. Round-trip and ASHRAE-reference unit tests verify accuracy at 1 % tolerance against ASHRAE HoF 2021 Ch.1 Tables 1 & 2.
+
+**Airside/9R4C coupling** (#1767): `src/sim/hvac/airside_state.rs` defines validated `MoistAirState` and `AirsideFlow` values; `src/sim/hvac/airside_coupling.rs` owns the transactional `AirsideEnvelopeCoupler`. The airside component boundary is supply dry-bulb, relative humidity, pressure, and volume flow, so VAV/DOAS implementations can plug in without the coupling layer inventing fan or coil correlations.
+
+**VAV terminal unit** (#1764): `src/sim/hvac/vav_terminal.rs` composes `FanComponent` (#1761), `CoolingCoil` (#1762), and `HeatingCoilComponent` (#1763) into a [`VavTerminalUnit`] with damper-modulated mass flow. The [`VavTerminal`] trait exposes a stateless `compute_terminal_performance` that translates a [`VavTerminalControl`] (damper position, cooling-active flag, optional reheat setpoint) into a [`VavTerminalPerformance`] carrying the supply-air state, all component capacities, fan power, and condensate rate. The damper position maps linearly to a fan speed fraction bounded by the minimum airflow ratio, so airflow modulates between `r_min · Q̇_max` and `Q̇_max`. Fan shaft power is dissipated into the airstream as fan heat between the fan and the coils.
+
+The coupled step uses a sequential implicit operator split: backward-Euler 9R4C half-step → implicit algebraic zone-air solve → backward-Euler half-step → implicit air projection, followed by a backward-Euler humidity-ratio balance. Supply sensible conductance is `H_sa = m_da × 1000 × (1.006 + 1.86 W_sa)` [W/K], and the air solve enforces `Q_env + H_ve(T_out − T_z) + H_sa(T_sa − T_z) + φ_ia = 0`. Sensible and latent supply heat reconstruct the ASHRAE Ch.1 moist-air enthalpy flow exactly; the per-step interface residual must remain below `1e-7 W`. The accepted timestep domain is `0 < dt ≤ 360 s`; non-finite inputs, supersaturated post-mixing states, and larger timesteps return typed errors without committing partial state. The coupling is opt-in and does not modify `ThermalModel::step_physics_9r4c`, preserving existing ASHRAE 140 envelope outputs. Regression: `tests/hvac_airside_9r4c_integration.rs`.
+
+**Dedicated Outdoor Air System (DOAS)** (#1765): `src/sim/hvac/doas.rs` composes `FanComponent` (#1761), `CoolingCoil` (#1762), and `HeatingCoilComponent` (#1763) into a [`DoasUnit`] that conditions **100 % outdoor air** at constant volume to a fixed dew-point target and a neutral supply dry-bulb, delivering decoupled ventilation. The [`Doas`] trait exposes a stateless `compute_doas_performance` that translates a [`DoasControl`] (active flag, outdoor-air state, target dew-point, neutral supply dry-bulb) into a [`DoasPerformance`] carrying the supply-air `MoistAirState`, operating mode (`CoolingDehumidification`, `HeatingOnly`, `SensibleCooling`, `Ventilation`, `Off`), component capacities, fan power, and condensate rate. The cooling/dehumidification path drives the leaving state toward saturation at the target dew-point so that `w_target = w_sat(T_dp,target)`, making the leaving dew-point equal the target regardless of entering-air humidity (the decoupling guarantee), provided rated cooling capacity is not exceeded; when it is, the leaving state is interpolated along the psychrometric line by `f = rated / required`. A sensible-only reheat coil then raises the dry-bulb to the neutral supply setpoint at constant humidity ratio. No winter humidification stage is modeled (out of scope).
+
+### Part-Load Performance Curves (#1766)
+
+**Source**: `src/sim/hvac/part_load_curves.rs`
+**Purpose**: ASHRAE/EnergyPlus standard part-load performance curves for fans, chillers, and boilers, providing efficiency degradation as a function of part-load ratio (PLR) and operating temperature.
+
+| Input | Type | Source |
+|-------|------|--------|
+| Part-load ratio (PLR) | `f64` (0.0–1.0) | Equipment controller |
+| Outdoor dry-bulb temperature | `f64` [°C] | Weather |
+| Entering water temperature | `f64` [°C] | Equipment inlet sensor |
+
+| Output | Type | Consumer |
+|--------|------|---------|
+| Efficiency multiplier | `f64` (COP for chillers, efficiency for boilers) | Equipment power calculation |
+| Fan power ratio | `f64` | Fan energy calculation |
+
+**Key trait**: `PartLoadCurve` in `src/sim/hvac/part_load_curves.rs`
+
+```rust
+pub trait PartLoadCurve: Send + Sync {
+    fn curve_type(&self) -> CurveType;
+    fn evaluate(&self, plr: f64, temperature: f64) -> f64;
+    fn validate_at_load_points(&self) -> bool;
+    fn reference_value(&self) -> f64;
+}
+```
+
+**Curve types** (all in `src/sim/hvac/part_load_curves.rs`):
+
+| Equipment | Curve form | Equation | Coefficients source |
+|----------|-----------|---------|---------------------|
+| Chiller | Biquadratic | `EER = a + b*PLR + c*PLR² + d*T_db + e*T_db² + f*PLR*T_db` | AHRI 550/590 + EnergyPlus Curve:Biquadratic |
+| Boiler | Biquadratic | `η = a + b*PLR + c*PLR² + d*T_db + e*T_db² + f*PLR*T_db` | ASHRAE HoF + EnergyPlus Curve:Biquadratic |
+| VAV Fan | Quadratic | `P_ratio = a + b*φ + c*φ²` (φ = flow ratio) | Fan affinity laws (P ∝ φ³) |
+
+**Implemented structs**: `ChillerPartLoadCurve`, `BoilerPartLoadCurve`, `FanPowerCurve`
+**Coefficient accessors**: `chiller_part_load_coeffs()`, `boiler_part_load_coeffs()`, `vav_fan_power_coeffs()`, `vav_fan_power_with_spr_coeffs()`
+
+**Validation**: Each curve is validated at 25%, 50%, 75%, and 100% PLR to ensure physical behavior (positive efficiency, monotonic degradation at reduced load, COP > 0).
 
 ### Surface Heat Flux Trait Hierarchy
 
@@ -848,7 +938,7 @@ Import/export bridges live under `src/interop/`. Each is gated behind the module
 |--------|------|--------|-------|
 | OpenStudio OSM | `interop/osm/` | Implemented + round-trip stable (#1130, #1340) | Reader (884 LoC) + Writer (505 LoC) + types; `import_osm` / `export_osm`. Writer→reader round-trip is **stable** for single- and multi-zone schemas within the supported subset — see `src/interop/osm/mod.rs` for the lossless-field list and round-trip test entry points. |
 | gbXML | `interop/gbxml/` | Implemented (#1126) | Reader + Writer + types; `import_gbxml` / `export_gbxml`; BIM integration |
-| FMI Co-Simulation | `interop/fmi/` | Implemented — spike (#1125) | FMU export, single-zone, fixed 1h timestep; `FmiExporter`, `FmiConfig` |
+| FMI Co-Simulation | `interop/fmi/` | Implemented — export (#1125, #1339) + import (#1708) | `FmiExporter` writes `.fmu` (multi-zone, configurable timestep); `FmiImporter` / `import_fmu` re-import an exported `.fmu`, parsing `modelDescription.xml` with `quick-xml` and rebuilding a `ThermalModel`; `FmuCoSimulationMaster::do_step` is the `fmi2DoStep` wrapper calling `ThermalModel::step_physics` |
 | EnergyPlus IDF/epJSON | `docs/idf-import-design.md` | **Scaffold landed** (#1341) | `src/io/idf/` (lexer + parser for the 10 MVP objects from design §4.1); `IdfFile` → `SimulationSchema` conversion pending (design §4.3 follow-up) |
 | IFC/BIM geometry | `interop/ifc/` | **Scaffold landed** (#1343) | IFC4 STEP lexer + parser + mapping for `IfcWall` / `IfcSlab` / `IfcRoof` / `IfcSpace` → `SimulationSchemaV1`; full IFC2X3 deferred; IFC export still design-only (#1121) |
 
@@ -977,6 +1067,15 @@ Each module tested independently against E+ reference data:
 ### Phase 2: Integration
 Reconnect modules, run ASHRAE 140 system tests. Multi-node HVAC validation (Case 900) is in place; free-floating calibration landed in #1154 (CTF stability, EPW weather, ISO 13790 thermal mass). Empirical corrections removed in #1138.
 If a system test fails, the individual module tests pinpoint which module is wrong.
+
+#### HVAC BESTEST validation scaffold (#1754)
+
+`tests/validation/hvac_bestest/mod.rs` is the integration-test root for the
+RP-865-derived HVAC BESTEST track. It keeps analytical cases, comparative cases,
+and reference-data loading in separate test-only modules. The initial target is
+intentionally empty and runs with `cargo test --test hvac_bestest`; follow-on issues
+own all case definitions, reference bounds, and acceptance tolerances. This scaffold
+does not alter the production validation module or any physics dependency edge.
 
 ### Phase 3: ML Surrogate Drop-In
 Once physics is validated, train ML surrogates on physics outputs.

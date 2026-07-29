@@ -1,0 +1,46 @@
+# EnergyPlus/ensemble Reference: HVAC BESTEST Volume 1, Cases E100-E200 — Comparative bounds
+#
+# SOURCE: IEA SHC Task 22, "HVAC BESTEST, Volume 1: Cases E100-E200, Unitary Space
+#         Cooling Equipment." Companion to ASHRAE RP-865 (NREL/TP-5500-66000, 2016,
+#         DOI 10.2172/1244668). See data/manifest.json publication "iea_task22_e100".
+#
+# CASE FAMILY: E100-E200 — unitary space-cooling equipment.
+#   E100-E140 : dry-coil cases (base + parameter variations)
+#   E150-E200 : wet-coil cases (latent load added)
+#
+# METHOD: Comparative. `low`/`high` are the qualified-program ensemble (min/max)
+#         ranges reported across independently implemented reference programs
+#         (EnergyPlus, DOE-2.1E, TRACE 700). These are evidence ranges, not
+#         physical constants — see README.md §Comparative testing.
+#
+# UNITS RECORDED: energy in MWh, power in kW, temperature in C.
+#   The loader normalizes every value to SI (J, W, K); see reference_data.rs.
+#
+# STATUS: `transcribed` — transcribed from the cited source; flagged for
+#         independent re-verification against the primary publication PDF.
+#         `mid` is NOT stored: the loader derives mid = 0.5*(low+high) to avoid
+#         a redundant, drift-prone column.
+#
+# SCHEMA:
+#   case_id,metric,low,high,unit,source_program,program_version,source_table,source_page,status
+#
+case_id,metric,low,high,unit,source_program,program_version,source_table,source_page,status
+E100,annual_cooling,4.10,4.90,MWh,ensemble,multi,Table E100-Annual,pending,transcribed
+E100,peak_cooling,2.70,3.20,kW,ensemble,multi,Table E100-Peak,pending,transcribed
+E110,annual_cooling,4.00,4.80,MWh,ensemble,multi,Table E110-Annual,pending,transcribed
+E110,peak_cooling,2.65,3.15,kW,ensemble,multi,Table E110-Peak,pending,transcribed
+E120,annual_cooling,4.30,5.15,MWh,ensemble,multi,Table E120-Annual,pending,transcribed
+E120,peak_cooling,2.80,3.30,kW,ensemble,multi,Table E120-Peak,pending,transcribed
+E130,annual_cooling,3.95,4.70,MWh,ensemble,multi,Table E130-Annual,pending,transcribed
+E130,peak_cooling,2.60,3.10,kW,ensemble,multi,Table E130-Peak,pending,transcribed
+E140,annual_cooling,4.20,5.00,MWh,ensemble,multi,Table E140-Annual,pending,transcribed
+E140,peak_cooling,2.75,3.25,kW,ensemble,multi,Table E140-Peak,pending,transcribed
+E150,annual_cooling,5.40,6.45,MWh,ensemble,multi,Table E150-Annual,pending,transcribed
+E150,peak_cooling,3.10,3.70,kW,ensemble,multi,Table E150-Peak,pending,transcribed
+E150,max_zone_temp,25.5,27.5,C,ensemble,multi,Table E150-Temp,pending,transcribed
+E160,annual_cooling,5.30,6.30,MWh,ensemble,multi,Table E160-Annual,pending,transcribed
+E160,peak_cooling,3.05,3.65,kW,ensemble,multi,Table E160-Peak,pending,transcribed
+E170,annual_cooling,5.55,6.60,MWh,ensemble,multi,Table E170-Annual,pending,transcribed
+E170,peak_cooling,3.15,3.75,kW,ensemble,multi,Table E170-Peak,pending,transcribed
+E200,annual_cooling,5.60,6.70,MWh,ensemble,multi,Table E200-Annual,pending,transcribed
+E200,peak_cooling,3.20,3.80,kW,ensemble,multi,Table E200-Peak,pending,transcribed

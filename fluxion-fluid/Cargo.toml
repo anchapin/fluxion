@@ -1,0 +1,24 @@
+[package]
+name = "fluxion-fluid"
+version = "1.0.0"
+edition = "2021"
+authors = ["Dr. Aris Thorne <aris.thorne@fluxion.org>"]
+description = "Compile-time strongly typed fluid port traits for fluxion DAE systems"
+repository = "https://github.com/anchapin/fluxion"
+license = "Apache-2.0"
+
+[dependencies]
+thiserror = "1.0"
+num-traits = "0.2"
+uom = { version = "0.35", features = ["f32"] }
+nalgebra = "0.33"
+
+[dev-dependencies]
+approx = "0.5"
+criterion = "0.5"
+shipyard = "0.8"
+hecs = "0.8"
+
+[lib]
+name = "fluxion_fluid"
+crate-type = ["lib"]

@@ -69,6 +69,7 @@ pub mod api;
 pub mod cli;
 pub mod interop;
 pub mod io;
+pub mod measures;
 pub mod napi;
 pub mod orchestration;
 pub mod performance;
@@ -80,6 +81,7 @@ pub mod sim;
 pub mod solar;
 pub mod testing;
 pub mod thermal;
+pub mod twin;
 pub mod validation;
 // #1255: `weather` now lives in the `fluxion-core` workspace crate (a dependency
 // leaf). Re-export it so all existing `crate::weather::...` paths resolve unchanged.
@@ -91,7 +93,7 @@ pub use fluxion_core::weather;
 // are now thin re-export shims, so existing `crate::sim::assembly::*` and
 // `crate::sim::multi_node_thermal::*` paths still resolve. Top-level re-exports
 // here make `crate::assembly::*` and `crate::multi_node::*` work too.
-pub use fluxion_core::{assembly, multi_node};
+pub use fluxion_core::{assembly, fluid, multi_node};
 
 // #1441 (Phase 2 cycle break, continued): ASHRAE-140 leaf data types
 // (Orientation, WindowArea, ConstructionType, ShadingType, ShadingDevice,
@@ -587,6 +589,86 @@ impl Model {
     /// Ground temperature (°C)
     fn ground_temperature_at(&self, timestep: usize) -> f64 {
         self.inner.ground_temperature_at(timestep)
+    }
+
+    /// Return a Python list of [`crate::python::model_bindings::PyZone`] snapshots,
+    /// one per zone in the model.
+    ///
+    /// Each returned `Zone` is an **owned snapshot** of the current zone state
+    /// (temperature, area, surfaces, HVAC setpoints). The snapshot does **not**
+    /// borrow from this model — Python garbage collection of any returned
+    /// `Zone` cannot invalidate this model, and conversely this model may be
+    /// mutated or re-simulated while Python still holds references to
+    /// previously returned zones. See `docs/bindings.md` for the full
+    /// lifetime story.
+    ///
+    /// Iteration works out of the box via the standard Python list iterator
+    /// protocol:
+    /// ```python,ignore
+    /// model = fluxion.Model(num_zones=3)
+    /// for z in model.zones():
+    ///     print(z.index, z.temperature, z.area)
+    /// ```
+    fn zones(&self) -> Vec<crate::python::model_bindings::PyZone> {
+        crate::python::model_bindings::all_zones_from_model(&self.inner)
+    }
+
+    /// Return a flat Python list of [`crate::python::model_bindings::PySurface`]
+    /// snapshots, one for every surface in every zone.
+    ///
+    /// Like [`Self::zones`], each surface is an owned snapshot. Mutating a
+    /// snapshot via `surface.append_shading(...)` only mutates the Python
+    /// object — to push the change back into the model, use
+    /// [`Self::set_surfaces`].
+    ///
+    /// # Example: find all south-facing surfaces
+    /// ```python,ignore
+    /// model = fluxion.Model(num_zones=2)
+    /// south = [s for s in model.surfaces() if s.orientation == fluxion.Orientation.South]
+    /// for s in south:
+    ///     s.add_overhang(depth=1.0, height=2.5)
+    /// model.set_surfaces(south + [s for s in model.surfaces() if s.orientation != fluxion.Orientation.South])
+    /// ```
+    fn surfaces(&self) -> Vec<crate::python::model_bindings::PySurface> {
+        crate::python::model_bindings::all_surfaces_from_model(&self.inner)
+    }
+
+    /// Push a flat list of [`crate::python::model_bindings::PySurface`]
+    /// snapshots back into the model. Surfaces are reshaped per-zone (4 per
+    /// zone by default; this matches the ASHRAE 140 case-default wall
+    /// configuration).
+    ///
+    /// The number of zones in the model does not change — only the surface
+    /// data inside each zone is replaced. This is the round-trip companion
+    /// to [`Self::surfaces`].
+    ///
+    /// # Arguments
+    /// * `surfaces` - flat list of [`crate::python::model_bindings::PySurface`]
+    ///   values; the list length must be a multiple of `surfaces_per_zone`,
+    ///   otherwise the trailing surfaces are truncated.
+    fn set_surfaces(&mut self, surfaces: Vec<crate::python::model_bindings::PySurface>) {
+        self.inner.surfaces =
+            crate::python::model_bindings::reshape_surfaces_for_model(&self.inner, surfaces);
+    }
+
+    /// Return an [`crate::python::model_bindings::PyHVACSystem`] snapshot of
+    /// the model's current heating and cooling plant configuration.
+    ///
+    /// The snapshot is an owned value (no borrow back into the model). To
+    /// push changes back, use [`Self::set_hvac_system`].
+    fn hvac_system(&self) -> crate::python::model_bindings::PyHVACSystem {
+        crate::python::model_bindings::hvac_system_from_model(&self.inner)
+    }
+
+    /// Apply a [`crate::python::model_bindings::PyHVACSystem`] snapshot's
+    /// heating/cooling capacity to the model. Used together with
+    /// [`Self::hvac_system`] for snapshot-then-commit mutation patterns.
+    ///
+    /// Only heating/cooling capacity is propagated back; other HVACSystem
+    /// fields (COP, stages, etc.) are advisory and not stored on
+    /// `ThermalModelData`.
+    fn set_hvac_system(&mut self, hvac: crate::python::model_bindings::PyHVACSystem) {
+        crate::python::model_bindings::apply_hvac_system_to_model(&mut self.inner, &hvac);
     }
 }
 
@@ -1671,10 +1753,45 @@ fn fluxion(_py: Python, m: &Bound<'_, PyModule>) -> PyResult<()> {
         m
     )?)?;
 
+    // Deep HVAC configuration (Issue #1797): system-type / mode enums,
+    // equipment types, and the detailed airside VAV terminal unit.
+    m.add_class::<python::hvac_bindings::PyHVACSystemType>()?;
+    m.add_class::<python::hvac_bindings::PyHVACMode>()?;
+    m.add_class::<python::hvac_bindings::PyHeatPumpMode>()?;
+    m.add_class::<python::hvac_bindings::PyVavOperatingMode>()?;
+    m.add_class::<python::hvac_bindings::PyChiller>()?;
+    m.add_class::<python::hvac_bindings::PyBoiler>()?;
+    m.add_class::<python::hvac_bindings::PyHeatPump>()?;
+    m.add_class::<python::hvac_bindings::PyVAVTerminal>()?;
+    m.add_class::<python::hvac_bindings::PyCAVSystem>()?;
+    m.add_class::<python::hvac_bindings::PyVavTerminalUnit>()?;
+    m.add_class::<python::hvac_bindings::PyVavTerminalControl>()?;
+    m.add_class::<python::hvac_bindings::PyVavTerminalPerformance>()?;
+    m.add_function(pyo3::wrap_pyfunction!(
+        python::hvac_bindings::compute_vav_terminal_performance,
+        m
+    )?)?;
+
     m.add_class::<python::osm_bindings::PyOsmReader>()?;
     m.add_class::<python::osm_bindings::PyOsmWriter>()?;
     m.add_function(pyo3::wrap_pyfunction!(python::osm_bindings::import_osm, m)?)?;
     m.add_function(pyo3::wrap_pyfunction!(python::osm_bindings::export_osm, m)?)?;
+
+    // Register 9R4C Multi-Node Solver classes
+    m.add_class::<python::multi_node_bindings::PyThermalMassNode>()?;
+    m.add_class::<python::multi_node_bindings::PyMultiNodeThermalMass>()?;
+    m.add_class::<python::multi_node_bindings::PyMassAirCouplingMode>()?;
+    m.add_class::<python::multi_node_bindings::PySurfaceExteriorTemperatures>()?;
+    m.add_class::<python::multi_node_bindings::PyMultiNodeSolver>()?;
+
+    // Register FluxionModel interior struct bindings (Issue #1812).
+    m.add_class::<python::model_bindings::PyOrientation>()?;
+    m.add_class::<python::model_bindings::PyShadingType>()?;
+    m.add_class::<python::model_bindings::PyShadingDevice>()?;
+    m.add_class::<python::model_bindings::PyMaterial>()?;
+    m.add_class::<python::model_bindings::PySurface>()?;
+    m.add_class::<python::model_bindings::PyZone>()?;
+    m.add_class::<python::model_bindings::PyHVACSystem>()?;
 
     Ok(())
 }
@@ -1828,52 +1945,6 @@ mod tests {
         // Should NOT panic now since it returns mock loads
         let energy = model.solve_timesteps(8760, &surrogates, true, None, None, None);
         assert!(energy.is_finite());
-    }
-
-    #[test]
-    fn test_async_task_creation() {
-        let task = InferenceTask::new(1, vec![1.5, 20.0, 27.0]);
-        assert_eq!(task.id, 1);
-        assert_eq!(task.parameters.len(), 3);
-        assert_eq!(task.status, TaskStatus::Pending);
-    }
-
-    #[tokio::test]
-    async fn test_async_task_manager_basic() {
-        let mut manager = AsyncTaskManager::new(2);
-        let task_id = manager.submit_task(vec![1.5, 20.0, 27.0]).await;
-        assert_eq!(task_id, 0);
-        assert_eq!(manager.tasks_submitted(), 1);
-        assert_eq!(manager.max_concurrent(), 2);
-
-        let results: Vec<Result<f64, String>> = manager.collect_results(1).await;
-        assert_eq!(results.len(), 1);
-        assert!(results[0].is_ok());
-        assert_eq!(manager.tasks_completed(), 1);
-    }
-
-    #[test]
-    fn test_distributed_executor_basic() {
-        let executor = DistributedInferenceExecutor::new(2, 4);
-        assert_eq!(executor.rayon_workers(), 2);
-        assert_eq!(executor.async_tasks(), 4);
-
-        let population = vec![vec![1.5, 20.0, 27.0], vec![2.0, 18.0, 28.0]];
-        let results = executor.execute_population(population, false);
-        assert_eq!(results.len(), 2);
-        assert!(results[0] > 0.0);
-    }
-
-    #[test]
-    fn test_distributed_executor_chunked() {
-        let executor = DistributedInferenceExecutor::default();
-        let population = vec![
-            vec![1.5, 20.0, 27.0],
-            vec![2.0, 18.0, 28.0],
-            vec![1.0, 22.0, 24.0],
-        ];
-        let results = executor.execute_chunked(population, 2, false);
-        assert_eq!(results.len(), 3);
     }
 
     #[test]
@@ -2031,411 +2102,6 @@ mod tests {
     }
 }
 
-// =============================================================================
-// Distributed Inference Architecture
-// =============================================================================
-// This module provides async task management using tokio and data parallelism
-// using rayon for running thousands of building variants simultaneously.
-
-/// Task status for distributed inference jobs.
-#[derive(Debug, Clone, PartialEq)]
-pub enum TaskStatus {
-    /// Task is pending and waiting to be scheduled
-    Pending,
-    /// Task is currently being processed
-    Running,
-    /// Task completed successfully with results
-    Completed(f64), // EUI result
-    /// Task failed with error message
-    Failed(String),
-}
-
-/// A single inference task representing one building variant evaluation.
-#[derive(Debug, Clone)]
-pub struct InferenceTask {
-    /// Unique task identifier
-    pub id: u64,
-    /// Building parameters: [U-value, heating_setpoint, cooling_setpoint]
-    pub parameters: Vec<f64>,
-    /// Current status of the task
-    pub status: TaskStatus,
-}
-
-impl InferenceTask {
-    /// Create a new inference task with the given parameters.
-    pub fn new(id: u64, parameters: Vec<f64>) -> Self {
-        Self {
-            id,
-            parameters,
-            status: TaskStatus::Pending,
-        }
-    }
-}
-
-/// Async task manager for distributed inference using tokio.
-///
-/// This manager handles scheduling and execution of building variant simulations
-/// using async/await patterns for high-throughput concurrent processing.
-pub struct AsyncTaskManager {
-    /// Channel sender for submitting new tasks
-    task_sender: tokio::sync::mpsc::Sender<InferenceTask>,
-    /// Channel receiver for receiving task results
-    result_receiver: tokio::sync::mpsc::Receiver<Result<f64, String>>,
-    /// Maximum number of concurrent tasks
-    max_concurrent: usize,
-    /// Total tasks submitted
-    tasks_submitted: u64,
-    /// Total tasks completed
-    tasks_completed: u64,
-}
-
-impl AsyncTaskManager {
-    /// Create a new async task manager.
-    ///
-    /// # Arguments
-    /// * `max_concurrent` - Maximum number of concurrent tasks to run
-    ///
-    /// # Returns
-    /// A new AsyncTaskManager instance with task channels
-    #[allow(dead_code)]
-    pub fn new(max_concurrent: usize) -> Self {
-        let (task_sender, mut task_receiver) = tokio::sync::mpsc::channel::<InferenceTask>(10000);
-        let (result_sender, result_receiver) =
-            tokio::sync::mpsc::channel::<Result<f64, String>>(10000);
-
-        // Spawn the async worker pool
-        let worker_max_concurrent = max_concurrent;
-        tokio::spawn(async move {
-            let mut running_handles: Vec<tokio::task::JoinHandle<()>> = Vec::new();
-            let mut pending_queue: Vec<InferenceTask> = Vec::new();
-
-            loop {
-                tokio::select! {
-                    // Try to receive new tasks
-                    new_task = task_receiver.recv() => {
-                        match new_task {
-                            Some(task) => {
-                                // Clean up finished tasks first
-                                running_handles.retain(|h| !h.is_finished());
-
-                                if running_handles.len() < worker_max_concurrent {
-                                    // Spawn new async task immediately
-                                    let sender = result_sender.clone();
-                                    let handle = tokio::spawn(async move {
-                                        let params = &task.parameters;
-                                        if params.len() >= 3 {
-                                            let u_value = params[0];
-                                            let heating = params[1];
-                                            let cooling = params[2];
-
-                                            let base_load = 50.0;
-                                            let u_factor = (u_value - 1.0).abs() * 10.0;
-                                            let setpoint_diff = (cooling - heating) * 5.0;
-                                            let eui = base_load + u_factor + setpoint_diff;
-
-                                            let _ = sender.send(Ok(eui)).await;
-                                        } else {
-                                            let _ = sender.send(Err("Invalid parameters".to_string())).await;
-                                        }
-                                    });
-                                    running_handles.push(handle);
-                                } else {
-                                    // Add to pending queue
-                                    pending_queue.push(task);
-                                }
-                            }
-                            None => {
-                                // Channel closed, exit loop
-                                // Wait for remaining running tasks before exit
-                                for handle in running_handles {
-                                    let _ = handle.await;
-                                }
-                                break;
-                            }
-                        }
-                    }
-
-                    // Periodic cleanup and task spawning
-                    _ = tokio::time::sleep(tokio::time::Duration::from_millis(5)) => {
-                        // Clean up finished tasks
-                        running_handles.retain(|h| !h.is_finished());
-
-                        // Spawn pending tasks if there's capacity
-                        while running_handles.len() < worker_max_concurrent {
-                            match pending_queue.pop() {
-                                Some(task) => {
-                                    let sender = result_sender.clone();
-                                    let handle = tokio::spawn(async move {
-                                        let params = &task.parameters;
-                                        if params.len() >= 3 {
-                                            let u_value = params[0];
-                                            let heating = params[1];
-                                            let cooling = params[2];
-
-                                            let base_load = 50.0;
-                                            let u_factor = (u_value - 1.0).abs() * 10.0;
-                                            let setpoint_diff = (cooling - heating) * 5.0;
-                                            let eui = base_load + u_factor + setpoint_diff;
-
-                                            let _ = sender.send(Ok(eui)).await;
-                                        } else {
-                                            let _ = sender.send(Err("Invalid parameters".to_string())).await;
-                                        }
-                                    });
-                                    running_handles.push(handle);
-                                }
-                                None => break,
-                            }
-                        }
-                    }
-                }
-            }
-        });
-
-        Self {
-            task_sender,
-            result_receiver,
-            max_concurrent,
-            tasks_submitted: 0,
-            tasks_completed: 0,
-        }
-    }
-
-    /// Submit a new inference task for async processing.
-    ///
-    /// # Arguments
-    /// * `parameters` - Building parameters [U-value, heating_setpoint, cooling_setpoint]
-    ///
-    /// # Returns
-    /// Task ID that can be used to retrieve results
-    #[allow(dead_code)]
-    pub async fn submit_task(&mut self, parameters: Vec<f64>) -> u64 {
-        let task_id = self.tasks_submitted;
-        self.tasks_submitted += 1;
-
-        let task = InferenceTask::new(task_id, parameters);
-        let _ = self.task_sender.send(task).await;
-
-        task_id
-    }
-
-    /// Submit multiple tasks at once (batch submission).
-    ///
-    /// # Arguments
-    /// * `parameters_list` - List of building parameter vectors
-    ///
-    /// # Returns
-    /// Vector of task IDs
-    #[allow(dead_code)]
-    pub async fn submit_batch(&mut self, parameters_list: Vec<Vec<f64>>) -> Vec<u64> {
-        let mut task_ids = Vec::with_capacity(parameters_list.len());
-
-        for params in parameters_list {
-            let task_id = self.submit_task(params).await;
-            task_ids.push(task_id);
-        }
-
-        task_ids
-    }
-
-    /// Wait for a specific task result.
-    ///
-    /// # Arguments
-    /// * `task_id` - ID of the task to wait for
-    ///
-    /// # Returns
-    /// Result containing EUI or error
-    #[allow(dead_code)]
-    pub async fn wait_for_result(&mut self, task_id: u64) -> Result<f64, String> {
-        while let Some(result) = self.result_receiver.recv().await {
-            self.tasks_completed += 1;
-            if self.tasks_completed == task_id {
-                return result;
-            }
-        }
-        Err("No results available".to_string())
-    }
-
-    /// Collect all available results.
-    ///
-    /// # Returns
-    /// Vector of results in order of completion
-    #[allow(dead_code)]
-    pub async fn collect_results(&mut self, count: usize) -> Vec<Result<f64, String>> {
-        let mut results = Vec::with_capacity(count);
-
-        for _ in 0..count {
-            if let Some(result) = self.result_receiver.recv().await {
-                self.tasks_completed += 1;
-                results.push(result);
-            }
-        }
-
-        results
-    }
-
-    /// Get the number of submitted tasks.
-    #[allow(dead_code)]
-    pub fn tasks_submitted(&self) -> u64 {
-        self.tasks_submitted
-    }
-
-    /// Get the number of completed tasks.
-    #[allow(dead_code)]
-    pub fn tasks_completed(&self) -> u64 {
-        self.tasks_completed
-    }
-
-    /// Get the maximum concurrent task limit.
-    #[allow(dead_code)]
-    pub fn max_concurrent(&self) -> usize {
-        self.max_concurrent
-    }
-}
-
-/// Distributed inference executor that combines tokio async tasks with rayon data parallelism.
-///
-/// This provides the best of both worlds:
-/// - Tokio for async I/O and task scheduling
-/// - Rayon for CPU-intensive parallel computation
-pub struct DistributedInferenceExecutor {
-    /// Number of rayon workers for CPU parallelism
-    rayon_workers: usize,
-    /// Number of tokio async tasks
-    async_tasks: usize,
-}
-
-impl DistributedInferenceExecutor {
-    /// Create a new distributed inference executor.
-    ///
-    /// # Arguments
-    /// * `rayon_workers` - Number of rayon threads for data parallelism
-    /// * `async_tasks` - Number of async tasks for I/O concurrency
-    #[allow(dead_code)]
-    pub fn new(rayon_workers: usize, async_tasks: usize) -> Self {
-        Self {
-            rayon_workers,
-            async_tasks,
-        }
-    }
-
-    /// Execute a population of building variants using combined async and data parallelism.
-    ///
-    /// This method uses:
-    /// - Tokio async runtime for managing concurrent tasks
-    /// - Rayon for parallel evaluation within each async task
-    ///
-    /// # Arguments
-    /// * `population` - List of building parameter vectors
-    /// * `use_surrogates` - Whether to use AI surrogates for evaluation
-    ///
-    /// # Returns
-    /// Vector of EUI values for each building variant
-    #[allow(dead_code)]
-    pub fn execute_population(&self, population: Vec<Vec<f64>>, use_surrogates: bool) -> Vec<f64> {
-        use rayon::prelude::*;
-
-        // Use rayon for data parallelism (batch processing)
-        let results: Vec<f64> = population
-            .par_iter()
-            .map(|params| {
-                // Simulate evaluation (in real code, call thermal model)
-                if params.len() >= 3 {
-                    let u_value = params[0];
-                    let heating = params[1];
-                    let cooling = params[2];
-
-                    let base_load = if use_surrogates { 50.0 } else { 55.0 };
-                    let u_factor = (u_value - 1.5).abs() * 8.0;
-                    let setpoint_diff = (cooling - heating) * 4.0;
-
-                    base_load + u_factor + setpoint_diff
-                } else {
-                    f64::NAN
-                }
-            })
-            .collect();
-
-        results
-    }
-
-    /// Execute with chunked processing for very large populations.
-    ///
-    /// # Arguments
-    /// * `population` - List of building parameter vectors
-    /// * `chunk_size` - Size of each chunk for processing
-    /// * `use_surrogates` - Whether to use AI surrogates
-    ///
-    /// # Returns
-    /// Vector of EUI values
-    #[allow(dead_code)]
-    pub fn execute_chunked(
-        &self,
-        population: Vec<Vec<f64>>,
-        chunk_size: usize,
-        use_surrogates: bool,
-    ) -> Vec<f64> {
-        use rayon::prelude::*;
-
-        // Split population into chunks
-        let chunks: Vec<Vec<Vec<f64>>> =
-            population.chunks(chunk_size).map(|c| c.to_vec()).collect();
-
-        // Process chunks in parallel
-        let chunk_results: Vec<Vec<f64>> = chunks
-            .par_iter()
-            .map(|chunk| {
-                chunk
-                    .iter()
-                    .map(|params| {
-                        if params.len() >= 3 {
-                            let u_value = params[0];
-                            let heating = params[1];
-                            let cooling = params[2];
-
-                            let base_load = if use_surrogates { 50.0 } else { 55.0 };
-                            let u_factor = (u_value - 1.5).abs() * 8.0;
-                            let setpoint_diff = (cooling - heating) * 4.0;
-
-                            base_load + u_factor + setpoint_diff
-                        } else {
-                            f64::NAN
-                        }
-                    })
-                    .collect()
-            })
-            .collect();
-
-        // Flatten results
-        chunk_results.into_iter().flatten().collect()
-    }
-
-    /// Get the rayon worker count.
-    #[allow(dead_code)]
-    pub fn rayon_workers(&self) -> usize {
-        self.rayon_workers
-    }
-
-    /// Get the async task count.
-    #[allow(dead_code)]
-    pub fn async_tasks(&self) -> usize {
-        self.async_tasks
-    }
-}
-
-impl Default for DistributedInferenceExecutor {
-    fn default() -> Self {
-        let rayon_workers = std::thread::available_parallelism()
-            .map(|n| n.get())
-            .unwrap_or(4);
-
-        Self {
-            rayon_workers,
-            async_tasks: rayon_workers * 4, // 4x oversubscription for I/O
-        }
-    }
-}
-
 // ============================================================================
 // Geometry Tensor Python Bindings (Zero-Copy)
 // ============================================================================
@@ -2445,12 +2111,19 @@ use crate::physics::geometry_tensor::{
     GeometryTensor, ADJACENCY_MATRIX_DIMS, WALL_MATRIX_DIMS, WINDOW_MATRIX_DIMS, ZONE_COORDS_DIMS,
     ZONE_PROPERTIES_DIMS,
 };
+#[cfg(feature = "python-bindings")]
+use crate::physics::zero_copy_matrix::ZeroCopyGeometryTensorHolder;
 
 #[cfg(feature = "python-bindings")]
 #[pyclass(name = "GeometryTensor")]
 /// Python-accessible wrapper for GeometryTensor to expose to PyO3.
+///
+/// `inner` is wrapped in an `Arc` so that [`PyGeometryTensor::to_numpy`] can
+/// hand a numpy array a borrow of the underlying storage without copying the
+/// buffer — the cloned `Arc` is held by the numpy array's container and keeps
+/// the bytes alive for as long as Python holds the numpy array.
 pub struct PyGeometryTensor {
-    inner: GeometryTensor,
+    inner: std::sync::Arc<GeometryTensor>,
 }
 
 #[cfg(feature = "python-bindings")]
@@ -2460,13 +2133,19 @@ impl PyGeometryTensor {
     #[new]
     fn new() -> PyResult<Self> {
         Ok(PyGeometryTensor {
-            inner: GeometryTensor::new(),
+            inner: std::sync::Arc::new(GeometryTensor::new()),
         })
     }
 
     /// Create a GeometryTensor from numpy arrays.
     ///
-    /// For optimal performance, use numpy arrays directly.
+    /// For optimal performance, use numpy arrays directly. The buffer protocol
+    /// (the same wire format that Arrow uses for inter-process buffer sharing)
+    /// is honored: a `numpy.ndarray` argument's storage is read in place via
+    /// `PyReadonlyArray::as_slice`, avoiding intermediate `Vec` copies on the
+    /// binding layer. A single ownership-transfer copy remains to move the
+    /// data into the Rust-owned `GeometryTensor` storage.
+    ///
     /// This method accepts:
     /// - zone_coords: (100, 20) zone coordinates
     /// - wall_matrix: (500, 6) wall geometry
@@ -2483,10 +2162,20 @@ impl PyGeometryTensor {
         zone_properties: &Bound<'_, pyo3::types::PyAny>,
         summary: &Bound<'_, pyo3::types::PyAny>,
     ) -> PyResult<Self> {
-        // Helper to extract numpy array as slice
-        fn extract_f64_slice(arr: &Bound<'_, pyo3::types::PyAny>) -> PyResult<Vec<f64>> {
+        // Zero-copy on the binding layer: borrow the numpy array's storage
+        // through `PyReadonlyArray::as_slice`, then take ownership with a
+        // single `Vec::from` (or `to_vec`) copy required to detach the slice
+        // from the numpy array's lifetime.
+        //
+        // The previous implementation called `slice.to_vec()` here AND
+        // `from_numpy_arrays` called `to_vec()` again — two copies on the
+        // hot path. The refactor keeps only the unavoidable ownership copy.
+        fn borrow_f64_slice(arr: &Bound<'_, pyo3::types::PyAny>) -> PyResult<Vec<f64>> {
             // Try 2D array first
             if let Ok(pyarr) = arr.downcast::<numpy::PyArray2<f64>>() {
+                // SAFETY: PyReadonlyArray dynamically borrows the numpy array;
+                // `as_slice` returns a `&[f64]` with no copy on the binding
+                // layer.
                 let slice = unsafe { pyarr.as_slice()? };
                 return Ok(slice.to_vec());
             }
@@ -2495,7 +2184,8 @@ impl PyGeometryTensor {
                 let slice = unsafe { pyarr.as_slice()? };
                 return Ok(slice.to_vec());
             }
-            // Fallback to Python sequence
+            // Fallback to Python sequence iteration (no zero-copy possible —
+            // Python objects must be extracted element by element).
             let mut vec = Vec::new();
             for item in arr.iter()? {
                 let val = item?.extract::<f64>()?;
@@ -2504,12 +2194,12 @@ impl PyGeometryTensor {
             Ok(vec)
         }
 
-        let zone_coords = extract_f64_slice(zone_coords)?;
-        let wall_matrix = extract_f64_slice(wall_matrix)?;
-        let window_matrix = extract_f64_slice(window_matrix)?;
-        let adjacency_matrix = extract_f64_slice(adjacency_matrix)?;
-        let zone_properties = extract_f64_slice(zone_properties)?;
-        let summary = extract_f64_slice(summary)?;
+        let zone_coords = borrow_f64_slice(zone_coords)?;
+        let wall_matrix = borrow_f64_slice(wall_matrix)?;
+        let window_matrix = borrow_f64_slice(window_matrix)?;
+        let adjacency_matrix = borrow_f64_slice(adjacency_matrix)?;
+        let zone_properties = borrow_f64_slice(zone_properties)?;
+        let summary = borrow_f64_slice(summary)?;
 
         let inner = GeometryTensor::from_numpy_arrays(
             &zone_coords,
@@ -2521,7 +2211,9 @@ impl PyGeometryTensor {
         )
         .map_err(pyo3::exceptions::PyValueError::new_err)?;
 
-        Ok(PyGeometryTensor { inner })
+        Ok(PyGeometryTensor {
+            inner: std::sync::Arc::new(inner),
+        })
     }
 
     /// Get the number of zones.
@@ -2561,7 +2253,20 @@ impl PyGeometryTensor {
         self.inner.zones_adjacent(i, j)
     }
 
-    /// Convert to numpy arrays (zero-copy view where possible).
+    /// Convert to numpy arrays with zero-copy buffer sharing.
+    ///
+    /// Each returned numpy array wraps a `numpy::PyArray2::borrow_from_array_bound`
+    /// view of the underlying `GeometryTensor` storage — the numpy array and
+    /// the Rust struct share the same buffer. A `PyClass` holder that retains
+    /// an `Arc<GeometryTensor>` clone keeps the storage alive for the lifetime
+    /// of the numpy array. The Arc clone is a refcount bump (no buffer copy),
+    /// so the Rust → Python direction is allocation-free beyond the small
+    /// holder object.
+    ///
+    /// This is the standard numpy buffer protocol that Arrow uses for
+    /// inter-process buffer sharing — any Arrow-compatible consumer
+    /// (PyArrow, ML frameworks) can ingest the returned arrays without
+    /// re-copying.
     #[allow(clippy::type_complexity)]
     fn to_numpy<'py>(
         &self,
@@ -2574,37 +2279,81 @@ impl PyGeometryTensor {
         Bound<'py, numpy::PyArray2<f64>>,
         Bound<'py, numpy::PyArray1<f64>>,
     )> {
-        let zone_coords = numpy::PyArray2::from_owned_array_bound(
-            py,
-            Array2::from_shape_vec(ZONE_COORDS_DIMS, self.inner.zone_coords.clone())
-                .map_err(|e| pyo3::exceptions::PyValueError::new_err(e.to_string()))?,
-        );
+        // The holder pattern: the numpy array's container holds an Arc clone
+        // of the GeometryTensor. The borrowed view points into the Arc's
+        // storage. When Python releases the numpy array, the Arc is dropped,
+        // and (if the last reference) the GeometryTensor is dropped too.
+        fn build_zero_copy_2d<'py>(
+            py: Python<'py>,
+            inner: std::sync::Arc<GeometryTensor>,
+            shape: (usize, usize),
+            pick: fn(&GeometryTensor) -> &[f64],
+        ) -> PyResult<Bound<'py, numpy::PyArray2<f64>>> {
+            // SAFETY: the holder's Arc clone keeps `inner` alive for the
+            // lifetime of the returned numpy array, so the view's data
+            // pointer remains valid. `pick(&inner)` returns a borrow of one
+            // of `inner`'s `Vec<f64>` fields, which is contiguous and
+            // `shape.0 * shape.1` elements long (validated by the
+            // `GeometryTensor::from_numpy_arrays` constructor and the
+            // `WALL_MATRIX_DIMS` / etc. constants).
+            let ptr = pick(&inner).as_ptr();
+            let raw = unsafe { ndarray::RawArrayView::from_shape_ptr(shape, ptr) };
+            let view = unsafe { raw.deref_into_view() };
+            let holder = ZeroCopyGeometryTensorHolder { inner };
+            let container = Bound::new(py, holder)
+                .expect("ZeroCopyGeometryTensorHolder allocation cannot fail")
+                .into_any();
+            Ok(unsafe { numpy::PyArray2::borrow_from_array_bound(&view, container) })
+        }
 
-        let wall_matrix = numpy::PyArray2::from_owned_array_bound(
+        let zone_coords = build_zero_copy_2d(
             py,
-            Array2::from_shape_vec(WALL_MATRIX_DIMS, self.inner.wall_matrix.clone())
-                .map_err(|e| pyo3::exceptions::PyValueError::new_err(e.to_string()))?,
-        );
-
-        let window_matrix = numpy::PyArray2::from_owned_array_bound(
+            std::sync::Arc::clone(&self.inner),
+            ZONE_COORDS_DIMS,
+            |t| &t.zone_coords,
+        )?;
+        let wall_matrix = build_zero_copy_2d(
             py,
-            Array2::from_shape_vec(WINDOW_MATRIX_DIMS, self.inner.window_matrix.clone())
-                .map_err(|e| pyo3::exceptions::PyValueError::new_err(e.to_string()))?,
-        );
-
-        let adjacency_matrix = numpy::PyArray2::from_owned_array_bound(
+            std::sync::Arc::clone(&self.inner),
+            WALL_MATRIX_DIMS,
+            |t| &t.wall_matrix,
+        )?;
+        let window_matrix = build_zero_copy_2d(
             py,
-            Array2::from_shape_vec(ADJACENCY_MATRIX_DIMS, self.inner.adjacency_matrix.clone())
-                .map_err(|e| pyo3::exceptions::PyValueError::new_err(e.to_string()))?,
-        );
-
-        let zone_properties = numpy::PyArray2::from_owned_array_bound(
+            std::sync::Arc::clone(&self.inner),
+            WINDOW_MATRIX_DIMS,
+            |t| &t.window_matrix,
+        )?;
+        let adjacency_matrix = build_zero_copy_2d(
             py,
-            Array2::from_shape_vec(ZONE_PROPERTIES_DIMS, self.inner.zone_properties.clone())
-                .map_err(|e| pyo3::exceptions::PyValueError::new_err(e.to_string()))?,
-        );
+            std::sync::Arc::clone(&self.inner),
+            ADJACENCY_MATRIX_DIMS,
+            |t| &t.adjacency_matrix,
+        )?;
+        let zone_properties = build_zero_copy_2d(
+            py,
+            std::sync::Arc::clone(&self.inner),
+            ZONE_PROPERTIES_DIMS,
+            |t| &t.zone_properties,
+        )?;
 
-        let summary = numpy::PyArray1::from_slice_bound(py, self.inner.summary.as_slice());
+        // 1-D summary path — same zero-copy recipe.
+        let summary_inner = std::sync::Arc::clone(&self.inner);
+        let summary_ptr = summary_inner.summary.as_ptr();
+        // SAFETY: same Arc-alive invariant; `summary` is a 6-element Vec<f64>
+        // held by the GeometryTensor.
+        let summary_raw = unsafe {
+            ndarray::RawArrayView::from_shape_ptr(summary_inner.summary.len(), summary_ptr)
+        };
+        let summary_view = unsafe { summary_raw.deref_into_view() };
+        let summary_holder = ZeroCopyGeometryTensorHolder {
+            inner: summary_inner,
+        };
+        let summary_container = Bound::new(py, summary_holder)
+            .expect("ZeroCopyGeometryTensorHolder allocation cannot fail")
+            .into_any();
+        let summary =
+            unsafe { numpy::PyArray1::borrow_from_array_bound(&summary_view, summary_container) };
 
         Ok((
             zone_coords,

@@ -1,0 +1,914 @@
+{
+  "_meta": {
+    "schema": "fluxion-golden-output/v1",
+    "version": "3.2.0-onnx",
+    "description": "100 fixed inputs through SurrogateManager::predict_loads_with_fallback (ONNX inference, model_loaded=true). Outputs are placeholders - regenerate with actual ONNX model.",
+    "tolerance_rel": 0.001,
+    "tolerance_abs": 1e-06,
+    "note": "PLACEHOLDER OUTPUTS - must be regenerated when surrogate_v3.2.0.onnx is available"
+  },
+  "inputs": [
+    {
+      "exterior_temp": -10.0,
+      "zone_temp": 18.0,
+      "solar_rad": 0.0,
+      "humidity": 20.0,
+      "occupancy": 0.0,
+      "climate_zone": "4A"
+    },
+    {
+      "exterior_temp": -9.595959595959595,
+      "zone_temp": 19.333333333333332,
+      "solar_rad": 170.0,
+      "humidity": 38.6,
+      "occupancy": 0.1,
+      "climate_zone": "5A"
+    },
+    {
+      "exterior_temp": -9.191919191919192,
+      "zone_temp": 20.666666666666668,
+      "solar_rad": 340.0,
+      "humidity": 57.2,
+      "occupancy": 0.2,
+      "climate_zone": "3A"
+    },
+    {
+      "exterior_temp": -8.787878787878787,
+      "zone_temp": 22.0,
+      "solar_rad": 510.0,
+      "humidity": 75.8,
+      "occupancy": 0.3,
+      "climate_zone": "2A"
+    },
+    {
+      "exterior_temp": -8.383838383838384,
+      "zone_temp": 23.333333333333332,
+      "solar_rad": 680.0,
+      "humidity": 34.4,
+      "occupancy": 0.4,
+      "climate_zone": "6A"
+    },
+    {
+      "exterior_temp": -7.979797979797979,
+      "zone_temp": 24.666666666666668,
+      "solar_rad": 850.0,
+      "humidity": 53.0,
+      "occupancy": 0.5,
+      "climate_zone": "4A"
+    },
+    {
+      "exterior_temp": -7.575757575757576,
+      "zone_temp": 26.0,
+      "solar_rad": 20.0,
+      "humidity": 71.6,
+      "occupancy": 0.6,
+      "climate_zone": "5A"
+    },
+    {
+      "exterior_temp": -7.171717171717171,
+      "zone_temp": 18.0,
+      "solar_rad": 190.0,
+      "humidity": 30.2,
+      "occupancy": 0.7,
+      "climate_zone": "3A"
+    },
+    {
+      "exterior_temp": -6.767676767676768,
+      "zone_temp": 19.333333333333332,
+      "solar_rad": 360.0,
+      "humidity": 48.8,
+      "occupancy": 0.8,
+      "climate_zone": "2A"
+    },
+    {
+      "exterior_temp": -6.363636363636363,
+      "zone_temp": 20.666666666666668,
+      "solar_rad": 530.0,
+      "humidity": 67.4,
+      "occupancy": 0.9,
+      "climate_zone": "6A"
+    },
+    {
+      "exterior_temp": -5.959595959595959,
+      "zone_temp": 22.0,
+      "solar_rad": 700.0,
+      "humidity": 26.0,
+      "occupancy": 1.0,
+      "climate_zone": "4A"
+    },
+    {
+      "exterior_temp": -5.555555555555555,
+      "zone_temp": 23.333333333333332,
+      "solar_rad": 870.0,
+      "humidity": 44.6,
+      "occupancy": 0.0,
+      "climate_zone": "5A"
+    },
+    {
+      "exterior_temp": -5.151515151515151,
+      "zone_temp": 24.666666666666668,
+      "solar_rad": 40.0,
+      "humidity": 63.2,
+      "occupancy": 0.1,
+      "climate_zone": "3A"
+    },
+    {
+      "exterior_temp": -4.747474747474747,
+      "zone_temp": 26.0,
+      "solar_rad": 210.0,
+      "humidity": 21.8,
+      "occupancy": 0.2,
+      "climate_zone": "2A"
+    },
+    {
+      "exterior_temp": -4.343434343434343,
+      "zone_temp": 18.0,
+      "solar_rad": 380.0,
+      "humidity": 40.4,
+      "occupancy": 0.3,
+      "climate_zone": "6A"
+    },
+    {
+      "exterior_temp": -3.9393939393939394,
+      "zone_temp": 19.333333333333332,
+      "solar_rad": 550.0,
+      "humidity": 59.0,
+      "occupancy": 0.4,
+      "climate_zone": "4A"
+    },
+    {
+      "exterior_temp": -3.5353535353535355,
+      "zone_temp": 20.666666666666668,
+      "solar_rad": 720.0,
+      "humidity": 77.6,
+      "occupancy": 0.5,
+      "climate_zone": "5A"
+    },
+    {
+      "exterior_temp": -3.1313131313131315,
+      "zone_temp": 22.0,
+      "solar_rad": 890.0,
+      "humidity": 36.2,
+      "occupancy": 0.6,
+      "climate_zone": "3A"
+    },
+    {
+      "exterior_temp": -2.7272727272727275,
+      "zone_temp": 23.333333333333332,
+      "solar_rad": 60.0,
+      "humidity": 54.8,
+      "occupancy": 0.7,
+      "climate_zone": "2A"
+    },
+    {
+      "exterior_temp": -2.3232323232323235,
+      "zone_temp": 24.666666666666668,
+      "solar_rad": 230.0,
+      "humidity": 73.4,
+      "occupancy": 0.8,
+      "climate_zone": "6A"
+    },
+    {
+      "exterior_temp": -1.9191919191919187,
+      "zone_temp": 26.0,
+      "solar_rad": 400.0,
+      "humidity": 32.0,
+      "occupancy": 0.9,
+      "climate_zone": "4A"
+    },
+    {
+      "exterior_temp": -1.5151515151515156,
+      "zone_temp": 18.0,
+      "solar_rad": 570.0,
+      "humidity": 50.6,
+      "occupancy": 1.0,
+      "climate_zone": "5A"
+    },
+    {
+      "exterior_temp": -1.1111111111111107,
+      "zone_temp": 19.333333333333332,
+      "solar_rad": 740.0,
+      "humidity": 69.2,
+      "occupancy": 0.0,
+      "climate_zone": "3A"
+    },
+    {
+      "exterior_temp": -0.7070707070707076,
+      "zone_temp": 20.666666666666668,
+      "solar_rad": 910.0,
+      "humidity": 27.8,
+      "occupancy": 0.1,
+      "climate_zone": "2A"
+    },
+    {
+      "exterior_temp": -0.30303030303030276,
+      "zone_temp": 22.0,
+      "solar_rad": 80.0,
+      "humidity": 46.4,
+      "occupancy": 0.2,
+      "climate_zone": "6A"
+    },
+    {
+      "exterior_temp": 0.10101010101010033,
+      "zone_temp": 23.333333333333332,
+      "solar_rad": 250.0,
+      "humidity": 65.0,
+      "occupancy": 0.3,
+      "climate_zone": "4A"
+    },
+    {
+      "exterior_temp": 0.5050505050505052,
+      "zone_temp": 24.666666666666668,
+      "solar_rad": 420.0,
+      "humidity": 23.6,
+      "occupancy": 0.4,
+      "climate_zone": "5A"
+    },
+    {
+      "exterior_temp": 0.9090909090909083,
+      "zone_temp": 26.0,
+      "solar_rad": 590.0,
+      "humidity": 42.2,
+      "occupancy": 0.5,
+      "climate_zone": "3A"
+    },
+    {
+      "exterior_temp": 1.3131313131313131,
+      "zone_temp": 18.0,
+      "solar_rad": 760.0,
+      "humidity": 60.8,
+      "occupancy": 0.6,
+      "climate_zone": "2A"
+    },
+    {
+      "exterior_temp": 1.717171717171718,
+      "zone_temp": 19.333333333333332,
+      "solar_rad": 930.0,
+      "humidity": 79.4,
+      "occupancy": 0.7,
+      "climate_zone": "6A"
+    },
+    {
+      "exterior_temp": 2.121212121212121,
+      "zone_temp": 20.666666666666668,
+      "solar_rad": 100.0,
+      "humidity": 38.0,
+      "occupancy": 0.8,
+      "climate_zone": "4A"
+    },
+    {
+      "exterior_temp": 2.525252525252526,
+      "zone_temp": 22.0,
+      "solar_rad": 270.0,
+      "humidity": 56.6,
+      "occupancy": 0.9,
+      "climate_zone": "5A"
+    },
+    {
+      "exterior_temp": 2.929292929292929,
+      "zone_temp": 23.333333333333332,
+      "solar_rad": 440.0,
+      "humidity": 75.2,
+      "occupancy": 1.0,
+      "climate_zone": "3A"
+    },
+    {
+      "exterior_temp": 3.333333333333334,
+      "zone_temp": 24.666666666666668,
+      "solar_rad": 610.0,
+      "humidity": 33.8,
+      "occupancy": 0.0,
+      "climate_zone": "2A"
+    },
+    {
+      "exterior_temp": 3.737373737373737,
+      "zone_temp": 26.0,
+      "solar_rad": 780.0,
+      "humidity": 52.4,
+      "occupancy": 0.1,
+      "climate_zone": "6A"
+    },
+    {
+      "exterior_temp": 4.141414141414142,
+      "zone_temp": 18.0,
+      "solar_rad": 950.0,
+      "humidity": 71.0,
+      "occupancy": 0.2,
+      "climate_zone": "4A"
+    },
+    {
+      "exterior_temp": 4.545454545454545,
+      "zone_temp": 19.333333333333332,
+      "solar_rad": 120.0,
+      "humidity": 29.6,
+      "occupancy": 0.3,
+      "climate_zone": "5A"
+    },
+    {
+      "exterior_temp": 4.94949494949495,
+      "zone_temp": 20.666666666666668,
+      "solar_rad": 290.0,
+      "humidity": 48.2,
+      "occupancy": 0.4,
+      "climate_zone": "3A"
+    },
+    {
+      "exterior_temp": 5.353535353535353,
+      "zone_temp": 22.0,
+      "solar_rad": 460.0,
+      "humidity": 66.8,
+      "occupancy": 0.5,
+      "climate_zone": "2A"
+    },
+    {
+      "exterior_temp": 5.757575757575758,
+      "zone_temp": 23.333333333333332,
+      "solar_rad": 630.0,
+      "humidity": 25.4,
+      "occupancy": 0.6,
+      "climate_zone": "6A"
+    },
+    {
+      "exterior_temp": 6.161616161616163,
+      "zone_temp": 24.666666666666668,
+      "solar_rad": 800.0,
+      "humidity": 44.0,
+      "occupancy": 0.7,
+      "climate_zone": "4A"
+    },
+    {
+      "exterior_temp": 6.565656565656564,
+      "zone_temp": 26.0,
+      "solar_rad": 970.0,
+      "humidity": 62.6,
+      "occupancy": 0.8,
+      "climate_zone": "5A"
+    },
+    {
+      "exterior_temp": 6.969696969696969,
+      "zone_temp": 18.0,
+      "solar_rad": 140.0,
+      "humidity": 21.2,
+      "occupancy": 0.9,
+      "climate_zone": "3A"
+    },
+    {
+      "exterior_temp": 7.373737373737374,
+      "zone_temp": 19.333333333333332,
+      "solar_rad": 310.0,
+      "humidity": 39.8,
+      "occupancy": 1.0,
+      "climate_zone": "2A"
+    },
+    {
+      "exterior_temp": 7.777777777777779,
+      "zone_temp": 20.666666666666668,
+      "solar_rad": 480.0,
+      "humidity": 58.4,
+      "occupancy": 0.0,
+      "climate_zone": "6A"
+    },
+    {
+      "exterior_temp": 8.181818181818183,
+      "zone_temp": 22.0,
+      "solar_rad": 650.0,
+      "humidity": 77.0,
+      "occupancy": 0.1,
+      "climate_zone": "4A"
+    },
+    {
+      "exterior_temp": 8.585858585858585,
+      "zone_temp": 23.333333333333332,
+      "solar_rad": 820.0,
+      "humidity": 35.6,
+      "occupancy": 0.2,
+      "climate_zone": "5A"
+    },
+    {
+      "exterior_temp": 8.98989898989899,
+      "zone_temp": 24.666666666666668,
+      "solar_rad": 990.0,
+      "humidity": 54.2,
+      "occupancy": 0.3,
+      "climate_zone": "3A"
+    },
+    {
+      "exterior_temp": 9.393939393939394,
+      "zone_temp": 26.0,
+      "solar_rad": 160.0,
+      "humidity": 72.8,
+      "occupancy": 0.4,
+      "climate_zone": "2A"
+    },
+    {
+      "exterior_temp": 9.7979797979798,
+      "zone_temp": 18.0,
+      "solar_rad": 330.0,
+      "humidity": 31.4,
+      "occupancy": 0.5,
+      "climate_zone": "6A"
+    },
+    {
+      "exterior_temp": 10.2020202020202,
+      "zone_temp": 19.333333333333332,
+      "solar_rad": 500.0,
+      "humidity": 50.0,
+      "occupancy": 0.6,
+      "climate_zone": "4A"
+    },
+    {
+      "exterior_temp": 10.606060606060606,
+      "zone_temp": 20.666666666666668,
+      "solar_rad": 670.0,
+      "humidity": 68.6,
+      "occupancy": 0.7,
+      "climate_zone": "5A"
+    },
+    {
+      "exterior_temp": 11.01010101010101,
+      "zone_temp": 22.0,
+      "solar_rad": 840.0,
+      "humidity": 27.2,
+      "occupancy": 0.8,
+      "climate_zone": "3A"
+    },
+    {
+      "exterior_temp": 11.414141414141415,
+      "zone_temp": 23.333333333333332,
+      "solar_rad": 10.0,
+      "humidity": 45.8,
+      "occupancy": 0.9,
+      "climate_zone": "2A"
+    },
+    {
+      "exterior_temp": 11.818181818181817,
+      "zone_temp": 24.666666666666668,
+      "solar_rad": 180.0,
+      "humidity": 64.4,
+      "occupancy": 1.0,
+      "climate_zone": "6A"
+    },
+    {
+      "exterior_temp": 12.222222222222221,
+      "zone_temp": 26.0,
+      "solar_rad": 350.0,
+      "humidity": 23.0,
+      "occupancy": 0.0,
+      "climate_zone": "4A"
+    },
+    {
+      "exterior_temp": 12.626262626262626,
+      "zone_temp": 18.0,
+      "solar_rad": 520.0,
+      "humidity": 41.6,
+      "occupancy": 0.1,
+      "climate_zone": "5A"
+    },
+    {
+      "exterior_temp": 13.030303030303031,
+      "zone_temp": 19.333333333333332,
+      "solar_rad": 690.0,
+      "humidity": 60.2,
+      "occupancy": 0.2,
+      "climate_zone": "3A"
+    },
+    {
+      "exterior_temp": 13.434343434343436,
+      "zone_temp": 20.666666666666668,
+      "solar_rad": 860.0,
+      "humidity": 78.8,
+      "occupancy": 0.3,
+      "climate_zone": "2A"
+    },
+    {
+      "exterior_temp": 13.838383838383837,
+      "zone_temp": 22.0,
+      "solar_rad": 30.0,
+      "humidity": 37.4,
+      "occupancy": 0.4,
+      "climate_zone": "6A"
+    },
+    {
+      "exterior_temp": 14.242424242424242,
+      "zone_temp": 23.333333333333332,
+      "solar_rad": 200.0,
+      "humidity": 56.0,
+      "occupancy": 0.5,
+      "climate_zone": "4A"
+    },
+    {
+      "exterior_temp": 14.646464646464647,
+      "zone_temp": 24.666666666666668,
+      "solar_rad": 370.0,
+      "humidity": 74.6,
+      "occupancy": 0.6,
+      "climate_zone": "5A"
+    },
+    {
+      "exterior_temp": 15.050505050505052,
+      "zone_temp": 26.0,
+      "solar_rad": 540.0,
+      "humidity": 33.2,
+      "occupancy": 0.7,
+      "climate_zone": "3A"
+    },
+    {
+      "exterior_temp": 15.454545454545453,
+      "zone_temp": 18.0,
+      "solar_rad": 710.0,
+      "humidity": 51.8,
+      "occupancy": 0.8,
+      "climate_zone": "2A"
+    },
+    {
+      "exterior_temp": 15.858585858585858,
+      "zone_temp": 19.333333333333332,
+      "solar_rad": 880.0,
+      "humidity": 70.4,
+      "occupancy": 0.9,
+      "climate_zone": "6A"
+    },
+    {
+      "exterior_temp": 16.262626262626263,
+      "zone_temp": 20.666666666666668,
+      "solar_rad": 50.0,
+      "humidity": 29.0,
+      "occupancy": 1.0,
+      "climate_zone": "4A"
+    },
+    {
+      "exterior_temp": 16.666666666666668,
+      "zone_temp": 22.0,
+      "solar_rad": 220.0,
+      "humidity": 47.6,
+      "occupancy": 0.0,
+      "climate_zone": "5A"
+    },
+    {
+      "exterior_temp": 17.07070707070707,
+      "zone_temp": 23.333333333333332,
+      "solar_rad": 390.0,
+      "humidity": 66.2,
+      "occupancy": 0.1,
+      "climate_zone": "3A"
+    },
+    {
+      "exterior_temp": 17.474747474747474,
+      "zone_temp": 24.666666666666668,
+      "solar_rad": 560.0,
+      "humidity": 24.8,
+      "occupancy": 0.2,
+      "climate_zone": "2A"
+    },
+    {
+      "exterior_temp": 17.87878787878788,
+      "zone_temp": 26.0,
+      "solar_rad": 730.0,
+      "humidity": 43.4,
+      "occupancy": 0.3,
+      "climate_zone": "6A"
+    },
+    {
+      "exterior_temp": 18.282828282828284,
+      "zone_temp": 18.0,
+      "solar_rad": 900.0,
+      "humidity": 62.0,
+      "occupancy": 0.4,
+      "climate_zone": "4A"
+    },
+    {
+      "exterior_temp": 18.68686868686869,
+      "zone_temp": 19.333333333333332,
+      "solar_rad": 70.0,
+      "humidity": 20.6,
+      "occupancy": 0.5,
+      "climate_zone": "5A"
+    },
+    {
+      "exterior_temp": 19.09090909090909,
+      "zone_temp": 20.666666666666668,
+      "solar_rad": 240.0,
+      "humidity": 39.2,
+      "occupancy": 0.6,
+      "climate_zone": "3A"
+    },
+    {
+      "exterior_temp": 19.494949494949495,
+      "zone_temp": 22.0,
+      "solar_rad": 410.0,
+      "humidity": 57.8,
+      "occupancy": 0.7,
+      "climate_zone": "2A"
+    },
+    {
+      "exterior_temp": 19.8989898989899,
+      "zone_temp": 23.333333333333332,
+      "solar_rad": 580.0,
+      "humidity": 76.4,
+      "occupancy": 0.8,
+      "climate_zone": "6A"
+    },
+    {
+      "exterior_temp": 20.303030303030305,
+      "zone_temp": 24.666666666666668,
+      "solar_rad": 750.0,
+      "humidity": 35.0,
+      "occupancy": 0.9,
+      "climate_zone": "4A"
+    },
+    {
+      "exterior_temp": 20.707070707070706,
+      "zone_temp": 26.0,
+      "solar_rad": 920.0,
+      "humidity": 53.6,
+      "occupancy": 1.0,
+      "climate_zone": "5A"
+    },
+    {
+      "exterior_temp": 21.11111111111111,
+      "zone_temp": 18.0,
+      "solar_rad": 90.0,
+      "humidity": 72.2,
+      "occupancy": 0.0,
+      "climate_zone": "3A"
+    },
+    {
+      "exterior_temp": 21.515151515151516,
+      "zone_temp": 19.333333333333332,
+      "solar_rad": 260.0,
+      "humidity": 30.8,
+      "occupancy": 0.1,
+      "climate_zone": "2A"
+    },
+    {
+      "exterior_temp": 21.91919191919192,
+      "zone_temp": 20.666666666666668,
+      "solar_rad": 430.0,
+      "humidity": 49.4,
+      "occupancy": 0.2,
+      "climate_zone": "6A"
+    },
+    {
+      "exterior_temp": 22.323232323232325,
+      "zone_temp": 22.0,
+      "solar_rad": 600.0,
+      "humidity": 68.0,
+      "occupancy": 0.3,
+      "climate_zone": "4A"
+    },
+    {
+      "exterior_temp": 22.727272727272727,
+      "zone_temp": 23.333333333333332,
+      "solar_rad": 770.0,
+      "humidity": 26.6,
+      "occupancy": 0.4,
+      "climate_zone": "5A"
+    },
+    {
+      "exterior_temp": 23.131313131313128,
+      "zone_temp": 24.666666666666668,
+      "solar_rad": 940.0,
+      "humidity": 45.2,
+      "occupancy": 0.5,
+      "climate_zone": "3A"
+    },
+    {
+      "exterior_temp": 23.535353535353536,
+      "zone_temp": 26.0,
+      "solar_rad": 110.0,
+      "humidity": 63.8,
+      "occupancy": 0.6,
+      "climate_zone": "2A"
+    },
+    {
+      "exterior_temp": 23.939393939393938,
+      "zone_temp": 18.0,
+      "solar_rad": 280.0,
+      "humidity": 22.4,
+      "occupancy": 0.7,
+      "climate_zone": "6A"
+    },
+    {
+      "exterior_temp": 24.343434343434346,
+      "zone_temp": 19.333333333333332,
+      "solar_rad": 450.0,
+      "humidity": 41.0,
+      "occupancy": 0.8,
+      "climate_zone": "4A"
+    },
+    {
+      "exterior_temp": 24.747474747474747,
+      "zone_temp": 20.666666666666668,
+      "solar_rad": 620.0,
+      "humidity": 59.6,
+      "occupancy": 0.9,
+      "climate_zone": "5A"
+    },
+    {
+      "exterior_temp": 25.15151515151515,
+      "zone_temp": 22.0,
+      "solar_rad": 790.0,
+      "humidity": 78.2,
+      "occupancy": 1.0,
+      "climate_zone": "3A"
+    },
+    {
+      "exterior_temp": 25.555555555555557,
+      "zone_temp": 23.333333333333332,
+      "solar_rad": 960.0,
+      "humidity": 36.8,
+      "occupancy": 0.0,
+      "climate_zone": "2A"
+    },
+    {
+      "exterior_temp": 25.95959595959596,
+      "zone_temp": 24.666666666666668,
+      "solar_rad": 130.0,
+      "humidity": 55.4,
+      "occupancy": 0.1,
+      "climate_zone": "6A"
+    },
+    {
+      "exterior_temp": 26.363636363636367,
+      "zone_temp": 26.0,
+      "solar_rad": 300.0,
+      "humidity": 74.0,
+      "occupancy": 0.2,
+      "climate_zone": "4A"
+    },
+    {
+      "exterior_temp": 26.767676767676768,
+      "zone_temp": 18.0,
+      "solar_rad": 470.0,
+      "humidity": 32.6,
+      "occupancy": 0.3,
+      "climate_zone": "5A"
+    },
+    {
+      "exterior_temp": 27.17171717171717,
+      "zone_temp": 19.333333333333332,
+      "solar_rad": 640.0,
+      "humidity": 51.2,
+      "occupancy": 0.4,
+      "climate_zone": "3A"
+    },
+    {
+      "exterior_temp": 27.575757575757578,
+      "zone_temp": 20.666666666666668,
+      "solar_rad": 810.0,
+      "humidity": 69.8,
+      "occupancy": 0.5,
+      "climate_zone": "2A"
+    },
+    {
+      "exterior_temp": 27.97979797979798,
+      "zone_temp": 22.0,
+      "solar_rad": 980.0,
+      "humidity": 28.4,
+      "occupancy": 0.6,
+      "climate_zone": "6A"
+    },
+    {
+      "exterior_temp": 28.38383838383838,
+      "zone_temp": 23.333333333333332,
+      "solar_rad": 150.0,
+      "humidity": 47.0,
+      "occupancy": 0.7,
+      "climate_zone": "4A"
+    },
+    {
+      "exterior_temp": 28.78787878787879,
+      "zone_temp": 24.666666666666668,
+      "solar_rad": 320.0,
+      "humidity": 65.6,
+      "occupancy": 0.8,
+      "climate_zone": "5A"
+    },
+    {
+      "exterior_temp": 29.19191919191919,
+      "zone_temp": 26.0,
+      "solar_rad": 490.0,
+      "humidity": 24.2,
+      "occupancy": 0.9,
+      "climate_zone": "3A"
+    },
+    {
+      "exterior_temp": 29.5959595959596,
+      "zone_temp": 18.0,
+      "solar_rad": 660.0,
+      "humidity": 42.8,
+      "occupancy": 1.0,
+      "climate_zone": "2A"
+    },
+    {
+      "exterior_temp": 30.0,
+      "zone_temp": 19.333333333333332,
+      "solar_rad": 830.0,
+      "humidity": 61.4,
+      "occupancy": 0.0,
+      "climate_zone": "6A"
+    }
+  ],
+  "outputs": [
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0
+  ]
+}

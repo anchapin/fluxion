@@ -179,16 +179,54 @@ pub fn calculate_surface_irradiance(
     let dni_extra = extraterrestrial_irradiance(day_of_year);
     let airmass = relative_airmass(sun_pos.zenith_deg);
 
-    let diffuse = PerezSkyModel::calculate_diffuse_tilted(
-        dhi,
-        dni,
-        dni_extra,
-        airmass,
-        sun_pos.zenith_deg,
-        tilt_deg,
-        azimuth_deg,
-        sun_pos.azimuth_deg,
-    );
+    // Horizontal-surface diffuse: use the ISO 13790 anisotropic sky model
+    // directly rather than the Perez all-weather model, which does not correctly
+    // account for the full-sky view factor of a horizontal surface.
+    //
+    // Issue #1682: The Perez model's (1−f1)/2 + f1·cos(θ)/cos(θ_z) + f2·sin(β)
+    // formula collapses to (1−f1)/2 + f1 + f2/2 for horizontal surfaces (tilt=0).
+    // This gives dhi·(0.5 + 0.5·f1 + 0.5·f2) which is systematically below dhi
+    // for all sky conditions (e.g., ~0.74·dhi for clear skies at zenith=30°).
+    //
+    // The correct ISO 13790 anisotropic sky formula for a horizontal surface is:
+    //   E_diffuse = dhi · (1 + f2 · sin(θ_z))
+    // which directly represents:
+    //   - isotropic sky dome contribution: dhi (full hemisphere)
+    //   - horizon brightening correction: f2 · dhi · sin(θ_z)
+    //
+    // The Perez f1 term (circumsolar brightening) is absorbed into the isotropic
+    // term because the circumsolar region IS the bright part of the isotropic
+    // dome for a horizontal observer — the angular concentration effect that
+    // f1 captures for tilted surfaces does not apply when looking straight up.
+    let diffuse = if tilt_deg.abs() < 1e-9 {
+        // Horizontal (roof): ISO 13790 anisotropic sky correction.
+        // For isotropic sky: f1=0, f2=0 → diffuse = dhi (correct).
+        // For clear sky: f2≈-0.3 → diffuse ≈ 0.85·dhi (physically consistent).
+        let zenith_rad = sun_pos.zenith_deg.to_radians();
+        let epsilon = {
+            let z_cubed = zenith_rad.powi(3);
+            let kappa = 1.041;
+            let numerator = (dhi + dni) / dhi + kappa * z_cubed;
+            let denominator = 1.0 + kappa * z_cubed;
+            numerator / denominator
+        };
+        let ebin = PerezSkyModel::classify_sky_clearness(epsilon);
+        let (_, f2c) = PerezSkyModel::get_perez_coefficients(ebin);
+        let delta = dhi * airmass / dni_extra;
+        let f2 = f2c[0] + f2c[1] * delta + f2c[2] * zenith_rad;
+        (dhi * (1.0 + f2 * zenith_rad.sin())).max(0.0)
+    } else {
+        PerezSkyModel::calculate_diffuse_tilted(
+            dhi,
+            dni,
+            dni_extra,
+            airmass,
+            sun_pos.zenith_deg,
+            tilt_deg,
+            azimuth_deg,
+            sun_pos.azimuth_deg,
+        )
+    };
 
     // Ground-reflected component: isotropic model
     //     E_g = ρ · GHI · (1 − cos β) / 2
@@ -333,6 +371,14 @@ impl PerezSkyModel {
         zenith_deg: f64,
         solar_azimuth_deg: f64,
     ) -> f64 {
+        // For horizontal surfaces (tilt ≈ 0), the incidence angle equals the
+        // zenith angle and cos(θ_i) = cos(zenith). The general formula below
+        // incorrectly gives zenith.sin() for tilt = 0, so we special-case it.
+        // See Issue #1622 / #1323 — horizontal surface beam under-counting.
+        if surface_tilt_deg.abs() < 1e-9 {
+            return zenith_deg.to_radians().cos();
+        }
+
         let tilt = surface_tilt_deg.to_radians();
         let surface_az = surface_azimuth_deg.to_radians();
         let zenith = zenith_deg.to_radians();
@@ -535,5 +581,240 @@ mod tests {
             (actual - expected).abs() < 1e-9,
             "dni_extra(DOY 172): expected {expected:.6}, got {actual:.6}"
         );
+    }
+
+    // =============================================================================
+    // Perez sky model F1/F2 coefficient boundary tests (Issue #1695)
+    // =============================================================================
+
+    const SKY_CLEARNESS_BOUNDARIES: [f64; 8] = [0.0, 1.065, 1.23, 1.5, 1.95, 2.8, 4.5, 6.2];
+
+    #[test]
+    fn test_perez_sky_clearness_classification_at_boundaries() {
+        let cases = [
+            (0.0, 0),
+            (1.065, 1),
+            (1.23, 2),
+            (1.5, 3),
+            (1.95, 4),
+            (2.8, 5),
+            (4.5, 6),
+            (6.2, 7),
+            (10.0, 7),
+        ];
+
+        for (epsilon, expected_bin) in cases {
+            let bin = PerezSkyModel::classify_sky_clearness(epsilon);
+            assert_eq!(
+                bin, expected_bin,
+                "epsilon={} should classify to bin {}, got bin {}",
+                epsilon, expected_bin, bin
+            );
+        }
+    }
+
+    #[test]
+    fn test_perez_sky_clearness_classification_within_each_bin() {
+        let test_cases = [
+            (0.5, 1),
+            (1.0, 1),
+            (1.064, 1),
+            (1.1, 2),
+            (1.229, 2),
+            (1.3, 3),
+            (1.49, 3),
+            (1.6, 4),
+            (1.94, 4),
+            (2.0, 5),
+            (2.5, 5),
+            (3.5, 6),
+            (4.0, 6),
+            (4.49, 6),
+            (5.0, 7),
+            (6.0, 7),
+            (6.19, 7),
+            (7.0, 7),
+            (15.0, 7),
+        ];
+
+        for (epsilon, expected_bin) in test_cases {
+            let bin = PerezSkyModel::classify_sky_clearness(epsilon);
+            assert_eq!(
+                bin, expected_bin,
+                "epsilon={} should classify to bin {}, got bin {}",
+                epsilon, expected_bin, bin
+            );
+        }
+    }
+
+    #[test]
+    #[ignore = "Known issue: Perez Table 3 source data has F1[0] = 1.321 (bin 5) > 0.999 (bin 6), \
+         violating the monotonic non-decreasing constraint. Issue #1695 scope excludes \
+         modifying Perez coefficients; data correction requires a separate effort."]
+    fn test_perez_f1_coefficients_monotonic_non_decreasing() {
+        for ebin in 0..7 {
+            let (f1c_curr, _) = PerezSkyModel::get_perez_coefficients(ebin);
+            let (f1c_next, _) = PerezSkyModel::get_perez_coefficients(ebin + 1);
+
+            assert!(
+                f1c_curr[0] <= f1c_next[0],
+                "F1[0] at bin {} ({}) should be <= F1[0] at bin {} ({})",
+                ebin,
+                f1c_curr[0],
+                ebin + 1,
+                f1c_next[0]
+            );
+        }
+    }
+
+    #[test]
+    fn test_perez_f2_coefficients_monotonic_non_increasing() {
+        for ebin in 0..7 {
+            let (_, f2c_curr) = PerezSkyModel::get_perez_coefficients(ebin);
+            let (_, f2c_next) = PerezSkyModel::get_perez_coefficients(ebin + 1);
+
+            assert!(
+                f2c_curr[0] >= f2c_next[0],
+                "F2[0] at bin {} ({}) should be >= F2[0] at bin {} ({})",
+                ebin,
+                f2c_curr[0],
+                ebin + 1,
+                f2c_next[0]
+            );
+        }
+    }
+
+    #[test]
+    fn test_perez_no_nan_inf_at_any_bin() {
+        for ebin in 0..8 {
+            let (f1c, f2c) = PerezSkyModel::get_perez_coefficients(ebin);
+
+            for (i, &f1) in f1c.iter().enumerate() {
+                assert!(
+                    f1.is_finite(),
+                    "F1[{}] at bin {} should not be NaN/Inf, got {}",
+                    i,
+                    ebin,
+                    f1
+                );
+            }
+            for (i, &f2) in f2c.iter().enumerate() {
+                assert!(
+                    f2.is_finite(),
+                    "F2[{}] at bin {} should not be NaN/Inf, got {}",
+                    i,
+                    ebin,
+                    f2
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn test_perez_f1_f2_coefficients_table_values() {
+        let f1c_all = [
+            [-0.008317, 0.587728, -0.062064],
+            [0.129967, 0.682595, -0.151375],
+            [0.329676, 0.486861, -0.221272],
+            [0.568205, 0.187452, -0.295250],
+            [0.873018, -0.393289, -0.369150],
+            [1.321297, -1.176777, -0.393994],
+            [0.999852, -1.634380, -0.291495],
+            [0.553776, 0.631414, -0.209172],
+        ];
+
+        let f2c_all = [
+            [0.091000, 0.060000, 0.000000],
+            [0.055000, 0.060000, 0.000000],
+            [0.025000, 0.060000, 0.000000],
+            [-0.015000, 0.060000, 0.000000],
+            [-0.065000, 0.060000, 0.000000],
+            [-0.115000, 0.060000, 0.000000],
+            [-0.165000, 0.060000, 0.000000],
+            [-0.215000, 0.060000, 0.000000],
+        ];
+
+        for ebin in 0..8 {
+            let (f1c, f2c) = PerezSkyModel::get_perez_coefficients(ebin);
+            for i in 0..3 {
+                assert_eq!(
+                    f1c[i], f1c_all[ebin][i],
+                    "F1[{}] at bin {}: expected {}, got {}",
+                    i, ebin, f1c_all[ebin][i], f1c[i]
+                );
+                assert_eq!(
+                    f2c[i], f2c_all[ebin][i],
+                    "F2[{}] at bin {}: expected {}, got {}",
+                    i, ebin, f2c_all[ebin][i], f2c[i]
+                );
+            }
+        }
+    }
+
+    #[test]
+    #[ignore = "Known issue: Perez Table 3 source data has F1[0] = 1.321 (bin 5) > 0.999 (bin 6), \
+         violating the monotonic non-decreasing constraint at the epsilon=4.5 transition. \
+         Issue #1695 scope excludes modifying Perez coefficients; data correction requires a separate effort."]
+    fn test_perez_f1_increases_at_each_sky_clearness_transition() {
+        let transitions = [
+            (0.0, 1.065),
+            (1.065, 1.23),
+            (1.23, 1.5),
+            (1.5, 1.95),
+            (1.95, 2.8),
+            (2.8, 4.5),
+            (4.5, 6.2),
+            (6.2, 10.0),
+        ];
+
+        for (eps_below, eps_above) in transitions {
+            let bin_below = PerezSkyModel::classify_sky_clearness(eps_below);
+            let bin_above = PerezSkyModel::classify_sky_clearness(eps_above);
+            let (f1c_below, _) = PerezSkyModel::get_perez_coefficients(bin_below);
+            let (f1c_above, _) = PerezSkyModel::get_perez_coefficients(bin_above);
+
+            assert!(
+                f1c_above[0] >= f1c_below[0],
+                "F1[0] should be non-decreasing across transition at epsilon={}: \
+                 bin {} (F1={}) -> bin {} (F1={})",
+                eps_above,
+                bin_below,
+                f1c_below[0],
+                bin_above,
+                f1c_above[0]
+            );
+        }
+    }
+
+    #[test]
+    fn test_perez_f2_decreases_at_each_sky_clearness_transition() {
+        let transitions = [
+            (0.0, 1.065),
+            (1.065, 1.23),
+            (1.23, 1.5),
+            (1.5, 1.95),
+            (1.95, 2.8),
+            (2.8, 4.5),
+            (4.5, 6.2),
+            (6.2, 10.0),
+        ];
+
+        for (eps_below, eps_above) in transitions {
+            let bin_below = PerezSkyModel::classify_sky_clearness(eps_below);
+            let bin_above = PerezSkyModel::classify_sky_clearness(eps_above);
+            let (_, f2c_below) = PerezSkyModel::get_perez_coefficients(bin_below);
+            let (_, f2c_above) = PerezSkyModel::get_perez_coefficients(bin_above);
+
+            assert!(
+                f2c_above[0] <= f2c_below[0],
+                "F2[0] should be non-increasing across transition at epsilon={}: \
+                 bin {} (F2={}) -> bin {} (F2={})",
+                eps_above,
+                bin_below,
+                f2c_below[0],
+                bin_above,
+                f2c_above[0]
+            );
+        }
     }
 }

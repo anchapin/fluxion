@@ -1,0 +1,62 @@
+//! Error types for TOON serialization/deserialization.
+
+use thiserror::Error;
+
+/// Errors that can occur during TOON serialization or deserialization.
+#[derive(Debug, Error)]
+pub enum ToonError {
+    /// Unexpected end of input.
+    #[error("unexpected end of input")]
+    Eof,
+
+    /// Row count differs from declared length in header.
+    #[error("length mismatch: declared {declared} but found {found} rows")]
+    LengthMismatch { declared: usize, found: usize },
+
+    /// Invalid syntax (line, message) or malformed header/type literal.
+    #[error("invalid syntax{line}: {message}")]
+    InvalidSyntax { line: usize, message: String },
+
+    /// Comma-separated values don't match field count in header.
+    #[error("malformed row at line {line}: expected {expected} fields but found {found}")]
+    MalformedRow {
+        line: usize,
+        expected: usize,
+        found: usize,
+    },
+
+    /// Invalid header format.
+    #[error("invalid header: expected 'toon:v1', got '{0}'")]
+    InvalidHeader(String),
+
+    /// Malformed patch string.
+    #[error("malformed patch: {0}")]
+    MalformedPatch(String),
+
+    /// Custom error message.
+    #[error("{0}")]
+    Custom(String),
+
+    /// Deserialization error.
+    #[error("deserialization error: {0}")]
+    Deserialization(String),
+
+    /// Serialization error.
+    #[error("serialization error: {0}")]
+    Serialization(String),
+
+    /// Patch error.
+    #[error("patch error: {0}")]
+    PatchError(String),
+
+    /// I/O error.
+    #[error("I/O error: {0}")]
+    Io(#[from] std::io::Error),
+
+    /// JSON error.
+    #[error("JSON error: {0}")]
+    Json(#[from] serde_json::Error),
+}
+
+/// Result type alias for TOON operations.
+pub type Result<T> = std::result::Result<T, ToonError>;

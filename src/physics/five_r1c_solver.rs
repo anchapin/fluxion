@@ -38,6 +38,8 @@ use crate::physics::wall_spec::WallSpec;
 pub struct FiveR1CSolver {
     /// Total thermal resistance [m²·K/W]
     R_total: f64,
+    /// Material resistance from the mass node to the interior surface [m²·K/W]
+    R_ms: f64,
     /// Total thermal capacitance [J/m²·K]
     C_total: f64,
     /// Interior surface resistance [m²·K/W]
@@ -58,11 +60,32 @@ pub struct FiveR1CSolver {
     pre_step: bool,
 }
 
+/// Compute the surface-node time constant τ_si = C / (h_ms + h_is) [seconds]
+/// from per-zone conductances and capacitance.
+///
+/// This is the same quantity as `FiveR1CSolver::surface_time_constant` but
+/// expressed in the per-zone conductance basis (`h_tr_ms`, `h_tr_is`) that
+/// `step_physics_5r1c` already has on hand, so the physics consumer can call
+/// it without converting through R_ms / R_si. The solver accessor delegates
+/// here after converting from its resistance-based state, keeping the
+/// formula in one place.
+///
+/// Returns `0.0` for degenerate inputs (`c <= 0.0` or `h_ms + h_is <= 0.0`)
+/// to match the solver's `0.0` sentinel for uninitialised / degenerate walls.
+pub fn surface_time_constant_from_conductances(c: f64, h_ms: f64, h_is: f64) -> f64 {
+    let h_total = h_ms + h_is;
+    if c <= 0.0 || h_total <= 0.0 {
+        return 0.0;
+    }
+    c / h_total
+}
+
 impl FiveR1CSolver {
     /// Create a new 5R1C solver (uninitialized).
     pub fn new() -> Self {
         Self {
             R_total: 0.0,
+            R_ms: 0.0,
             C_total: 0.0,
             R_si: 1.0 / 8.0,  // Default interior film coefficient
             R_se: 1.0 / 25.0, // Default exterior film coefficient
@@ -77,6 +100,78 @@ impl FiveR1CSolver {
     /// Calculate steady-state heat flux (no mass effect).
     pub fn steady_state_flux(&self, T_int: f64, T_ext: f64) -> f64 {
         (T_ext - T_int) / self.R_total
+    }
+
+    /// Return the solver's lumped-capacitance time constant τ = C·R [seconds].
+    ///
+    /// This is the wall's first-order relaxation time when the boundary
+    /// temperatures are fixed. It quantifies how quickly the mass node
+    /// responds to a step change in `T_ext` (or, equivalently, the time it
+    /// takes for the heat flux to relax to its new steady-state value).
+    ///
+    /// Returns 0.0 when the solver is uninitialised or when either
+    /// `R_total` or `C_total` is non-positive (degenerate wall).
+    ///
+    /// # Usage for the Issue #1860 time-constant-aware variant
+    ///
+    /// Callers that need a per-zone surface-temperature ODE for low-mass
+    /// constructions (ASHRAE 140 Cases 600 / 650 / 950) can use this
+    /// accessor to drive the exponential relaxation of the interior wall
+    /// surface temperature `T_si`:
+    ///
+    /// ```text
+    /// T_si_new = T_si_eq + (T_si_old − T_si_eq) · exp(−dt / τ)
+    /// ```
+    ///
+    /// where `T_si_eq = (T_m / R_1 + T_int / R_si) / (1/R_1 + 1/R_si)` is
+    /// the steady-state interior-surface temperature and `τ` is the
+    /// surface-node time constant. The cooling load calculation then uses
+    /// `(T_si − T_int) / R_si` instead of the legacy lumped
+    /// `(T_m − T_int) / R_total` approximation, restoring the peak-cooling
+    /// response that is currently suppressed on low-mass cases (see
+    /// `docs/epic-672-v13-assessment.md:257-265`).
+    pub fn time_constant(&self) -> f64 {
+        if !self.initialized || self.R_total <= 0.0 || self.C_total <= 0.0 {
+            return 0.0;
+        }
+        self.C_total * self.R_total
+    }
+
+    /// Return the surface-to-air time constant τ_si = C·R_ms·R_si / (R_ms + R_si).
+    ///
+    /// `R_ms` is the material resistance from the lumped mass node to the
+    /// interior surface under the ISO 13790 half-insulation rule. `R_si` is
+    /// the separate interior film resistance.
+    pub fn surface_time_constant(&self) -> f64 {
+        if !self.initialized || self.R_ms <= 0.0 || self.R_si <= 0.0 || self.C_total <= 0.0 {
+            return 0.0;
+        }
+        // Convert the solver's resistance-based state to the
+        // conductance-based free function so the math lives in exactly
+        // one place (see [`surface_time_constant_from_conductances`]).
+        let h_ms = 1.0 / self.R_ms;
+        let h_is = 1.0 / self.R_si;
+        surface_time_constant_from_conductances(self.C_total, h_ms, h_is)
+    }
+
+    /// Return the interior surface-film resistance R_si [m²·K/W].
+    pub fn r_si(&self) -> f64 {
+        self.R_si
+    }
+
+    /// Return the mass-to-interior-surface resistance R_ms [m²·K/W].
+    pub fn r_ms(&self) -> f64 {
+        self.R_ms
+    }
+
+    /// Return the current mass-node temperature [°C].
+    pub fn mass_temperature(&self) -> f64 {
+        self.T_mass
+    }
+
+    /// Return the current heat flux [W/m²] (positive = heat into zone).
+    pub fn current_flux(&self) -> f64 {
+        self.q_flux
     }
 }
 
@@ -94,6 +189,7 @@ impl HeatConductionSolver for FiveR1CSolver {
     fn initialize(&mut self, wall: &WallSpec) -> Result<(), SolverError> {
         // Calculate total thermal resistance [m²·K/W]
         self.R_total = wall.total_r_value();
+        self.R_ms = wall.mass_to_interior_surface_r_value();
 
         // Calculate total thermal capacitance [J/m²·K]
         // WallSpec::thermal_capacity() returns J/(m²·K) directly
@@ -117,6 +213,11 @@ impl HeatConductionSolver for FiveR1CSolver {
         if self.R_total <= 0.0 || !self.R_total.is_finite() {
             return Err(SolverError::ConstructionError(
                 "Invalid wall resistance (must be positive and finite)".to_string(),
+            ));
+        }
+        if self.R_ms <= 0.0 || !self.R_ms.is_finite() {
+            return Err(SolverError::ConstructionError(
+                "Invalid mass-to-surface resistance (must be positive and finite)".to_string(),
             ));
         }
 
@@ -247,7 +348,7 @@ impl HeatConductionSolver for FiveR1CSolver {
 mod tests {
     use super::*;
     use crate::physics::units::{FromF64, HeatTransferCoefficient, Temperature, Time, ToF64};
-    use crate::physics::wall_spec::WallSpec;
+    use crate::physics::wall_spec::{lightweight_wall_spec, WallSpec};
     use fluxion_core::assembly::{AssemblyBuilder, ConcreteMaterial};
 
     #[test]
@@ -322,6 +423,7 @@ mod tests {
         let solver = FiveR1CSolver::new();
         assert!(!solver.initialized);
         assert_eq!(solver.R_total, 0.0);
+        assert_eq!(solver.R_ms, 0.0);
         assert_eq!(solver.C_total, 0.0);
         assert_eq!(solver.T_mass, 20.0);
         assert_eq!(solver.q_flux, 0.0);
@@ -334,6 +436,7 @@ mod tests {
         let solver = FiveR1CSolver::default();
         assert!(!solver.initialized);
         assert_eq!(solver.R_total, 0.0);
+        assert_eq!(solver.R_ms, 0.0);
         assert_eq!(solver.C_total, 0.0);
         assert_eq!(solver.T_mass, 20.0);
         assert_eq!(solver.q_flux, 0.0);
@@ -507,5 +610,344 @@ mod tests {
         } else {
             panic!("Expected InvalidConfig error");
         }
+    }
+
+    // =========================================================================
+    // Transient Step-Response Isolation Tests (Issue #1623)
+    // =========================================================================
+    //
+    // These tests validate that the 5R1C lumped-capacitance model produces the
+    // exact analytical exponential step response with tau = C_m / H_tr_ms.
+    //
+    // The lumped model equations (post #1308) are:
+    //   Q_ext  = (T_ext − T_mass) / R_total
+    //   dT_m   = Q_ext / C_total
+    //   T_mass += dT_m · dt
+    //   q_flux = (T_mass − T_int) / R_total   ← drives zone heat balance
+    //
+    // Closed-form solution for constant T_int, T_ext:
+    //   T_m(t) = T_ext + (T_m0 − T_ext) · exp(−t/τ)
+    //   q(t)   = q_ss + (q0 − q_ss) · exp(−t/τ)
+    // where τ = C_total · R_total = C_m / H_tr_ms  (H_tr_ms = 1/R_total)
+    //
+    // The first step() seeds T_mass = (T_int + T_ext)/2 at steady-state
+    // flux, so transient evolution begins on the SECOND step().  All tests
+    // below follow this pattern and check the analytical curve at 1h, 6h, 24h.
+    //
+    // Timestep selection: dt = 300 s (5 min) is required to keep the
+    // explicit-Euler discretisation error below 0.1% relative at all three
+    // checkpoints for a 200 mm concrete wall (tau ≈ 15.3 h, using
+    // R_total = wall.total_r_value() which is wall-material resistance only,
+    // no surface films).  See the Python pre-verification in the agent work
+    // session for the numerical study confirming dt=300s passes all three.
+
+    /// Step-response checkpoints at t = 1 h, 6 h, 24 h.
+    ///
+    /// Wall: 200 mm normal-weight concrete.
+    /// Initial condition: wall at equilibrium T_int = T_ext = 20 °C.
+    /// Step: T_ext drops to 0 °C at t = 0; T_int stays at 20 °C.
+    ///
+    /// After the equilibrium-seeding step(), the mass node starts at 10 °C
+    /// and evolves toward T_ext = 0 °C with τ = C_total · R_total.
+    ///
+    /// Acceptance: relative error < 0.1 % at all three checkpoints.
+    #[test]
+    fn test_transient_step_response_1h_6h_24h_concrete() {
+        // --- Material parameters (fluxion-core ConcreteMaterial defaults) ---
+        // k = 1.4 W/(m·K), ρ = 2300 kg/m³, cₚ = 840 J/(kg·K)
+        let wall = AssemblyBuilder::new("200mm Concrete".to_string())
+            .add_layer(Box::new(ConcreteMaterial::new(0.2)))
+            .build()
+            .unwrap();
+        let spec = WallSpec::from_assembly(&wall);
+
+        let r_total = spec.total_r_value(); // wall-only, ≈ 0.1429 m²·K/W
+        let c_total = spec.thermal_capacity(); // ≈ 386 400 J/(m²·K)
+        let h_tr_ms = 1.0 / r_total; // = 1/R_total = 7.0 W/(m²·K)
+        let tau = c_total / h_tr_ms; // = C_m / H_tr_ms = C_total * R_total  [s]
+
+        // --- Boundary conditions ---
+        let t_int = 20.0_f64;
+        let t_ext = 0.0_f64;
+        // q_ss = (T_ext − T_int) / R_total  (negative = heat leaving zone)
+        let q_ss = (t_ext - t_int) / r_total;
+
+        // After the seeding step(), T_mass = (T_int + T_ext) / 2 = 10 °C
+        let t_mass_init = (t_int + t_ext) / 2.0;
+        // q0 = (T_mass_init − T_int) / R_total
+        let q0 = (t_mass_init - t_int) / r_total;
+
+        // Analytical reference: q(t) = q_ss + (q0 − q_ss) · exp(−t/τ)
+        let q_analytical = |t_s: f64| -> f64 { q_ss + (q0 - q_ss) * (-t_s / tau).exp() };
+
+        // --- Solver setup ---
+        // dt = 300 s: per-step fraction = dt/tau ≈ 0.0054
+        // Euler error is O((dt/tau)²) → < 0.06% at 24h, well below 0.1%
+        let dt = 300.0_f64;
+        let mut solver = FiveR1CSolver::new();
+        solver.initialize(&spec).unwrap();
+
+        // Seeding step: T_mass → (T_int + T_ext)/2, returns q_ss, pre_step = false
+        solver
+            .step(
+                Time::from_value(dt),
+                Temperature::from_value(t_int),
+                Temperature::from_value(t_ext),
+                HeatTransferCoefficient::from_value(8.0),
+                HeatTransferCoefficient::from_value(25.0),
+            )
+            .unwrap();
+
+        // Helper: advance `n` steps and return the flux from the last step
+        let advance = |solver: &mut FiveR1CSolver, n: usize| -> f64 {
+            let mut flux = 0.0;
+            for _ in 0..n {
+                flux = solver
+                    .step(
+                        Time::from_value(dt),
+                        Temperature::from_value(t_int),
+                        Temperature::from_value(t_ext),
+                        HeatTransferCoefficient::from_value(8.0),
+                        HeatTransferCoefficient::from_value(25.0),
+                    )
+                    .unwrap()
+                    .to_value();
+            }
+            flux
+        };
+
+        // ---- Checkpoint 1: t = 1 h (= 12 steps × 300 s) ----
+        let n_1h = 12; // 3600 s / 300 s
+        let q_1h_sim = advance(&mut solver, n_1h);
+        let q_1h_ref = q_analytical(n_1h as f64 * dt);
+        let rel_err_1h = (q_1h_sim - q_1h_ref).abs() / q_1h_ref.abs();
+        assert!(
+            rel_err_1h < 0.001,
+            "t=1h: q_sim={:.10e}, q_ref={:.10e}, rel_err={:.6e} (limit 1e-3)",
+            q_1h_sim,
+            q_1h_ref,
+            rel_err_1h
+        );
+
+        // ---- Checkpoint 2: t = 6 h (= 72 steps × 300 s) ----
+        let n_6h = 72; // 6 × 3600 / 300
+        let q_6h_sim = advance(&mut solver, n_6h - n_1h);
+        let q_6h_ref = q_analytical(n_6h as f64 * dt);
+        let rel_err_6h = (q_6h_sim - q_6h_ref).abs() / q_6h_ref.abs();
+        assert!(
+            rel_err_6h < 0.001,
+            "t=6h: q_sim={:.10e}, q_ref={:.10e}, rel_err={:.6e} (limit 1e-3)",
+            q_6h_sim,
+            q_6h_ref,
+            rel_err_6h
+        );
+
+        // ---- Checkpoint 3: t = 24 h (= 288 steps × 300 s) ----
+        let n_24h = 288; // 24 × 3600 / 300
+        let q_24h_sim = advance(&mut solver, n_24h - n_6h);
+        let q_24h_ref = q_analytical(n_24h as f64 * dt);
+        let rel_err_24h = (q_24h_sim - q_24h_ref).abs() / q_24h_ref.abs();
+        assert!(
+            rel_err_24h < 0.001,
+            "t=24h: q_sim={:.10e}, q_ref={:.10e}, rel_err={:.6e} (limit 1e-3)",
+            q_24h_sim,
+            q_24h_ref,
+            rel_err_24h
+        );
+    }
+
+    /// Verify that the implemented time constant equals the analytical
+    /// definition tau = C_m / H_tr_ms within numerical precision.
+    ///
+    /// H_tr_ms is defined as the thermal conductance between the exterior
+    /// and the mass node: H_tr_ms = 1 / R_total.
+    /// We check: |tau_implemented − tau_analytical| / tau_analytical < 1e-10
+    #[test]
+    fn test_transient_tau_matches_analytical_definition() {
+        let wall = AssemblyBuilder::new("200mm Concrete".to_string())
+            .add_layer(Box::new(ConcreteMaterial::new(0.2)))
+            .build()
+            .unwrap();
+        let spec = WallSpec::from_assembly(&wall);
+
+        let r_total = spec.total_r_value();
+        let c_total = spec.thermal_capacity();
+
+        // Analytical: tau = C_m / H_tr_ms = C_m · R_total  (since H_tr_ms = 1/R_total)
+        let tau_analytical = c_total * r_total;
+        // H_tr_ms = 1 / R_total
+        let h_tr_ms = 1.0 / r_total;
+        let tau_from_h_tr_ms = c_total / h_tr_ms;
+
+        let rel_diff = (tau_from_h_tr_ms - tau_analytical).abs() / tau_analytical;
+        assert!(
+            rel_diff < 1e-10,
+            "tau = C_m / H_tr_ms should equal C_m · R_total: \
+             tau_analytical = {:.6e}, tau_from_H_tr_ms = {:.6e}, \
+             rel_diff = {:.6e}",
+            tau_analytical,
+            tau_from_h_tr_ms,
+            rel_diff
+        );
+
+        // Also verify tau is in the expected physical range for 200 mm concrete.
+        // With R_total = wall.total_r_value() (wall-only, no surface films):
+        //   R_wall = 0.2/1.4 = 0.1429 m²·K/W
+        //   C_total = 2300 × 0.2 × 840 = 386 400 J/(m²·K)
+        //   tau = 386400 × 0.1429 ≈ 55 200 s ≈ 15.3 h
+        let tau_hours = tau_analytical / 3600.0;
+        assert!(
+            (13.0..=17.0).contains(&tau_hours),
+            "tau for 200 mm concrete (wall-only R) should be 13-17 h, got {:.2e} h",
+            tau_hours
+        );
+    }
+
+    // =========================================================================
+    // Time-Constant Accessor Tests (Issue #1860)
+    // =========================================================================
+    //
+    // The Issue #1860 time-constant-aware 5R1C variant requires public
+    // accessors for the wall's first-order time constant τ and the surface
+    // node time constant τ_si. These tests pin the analytical definitions
+    // and verify the per-construction values for the ASHRAE 140 cases
+    // targeted by the issue (600/650/950, all LowMass).
+
+    /// Uninitialised solver must report τ = 0 (no wall, no constant).
+    #[test]
+    fn test_time_constant_uninitialized() {
+        let solver = FiveR1CSolver::new();
+        assert_eq!(solver.time_constant(), 0.0);
+        assert_eq!(solver.surface_time_constant(), 0.0);
+    }
+
+    /// τ = C·R_total for 200 mm concrete — matches the analytical
+    /// expectation τ ≈ 15.3 h (wall-only R, see Issue #1860 reference
+    /// values in the assessment doc).
+    #[test]
+    fn test_time_constant_200mm_concrete() {
+        let wall = AssemblyBuilder::new("200mm Concrete".to_string())
+            .add_layer(Box::new(ConcreteMaterial::new(0.2)))
+            .build()
+            .unwrap();
+        let spec = WallSpec::from_assembly(&wall);
+
+        let mut solver = FiveR1CSolver::new();
+        solver.initialize(&spec).unwrap();
+
+        let tau = solver.time_constant();
+        let expected = spec.thermal_capacity() * spec.total_r_value();
+        assert!(
+            (tau - expected).abs() / expected < 1e-12,
+            "τ must equal C·R_total: τ={tau:.6e}, expected={expected:.6e}"
+        );
+
+        // Sanity: should sit in 13-17 h for 200 mm concrete
+        let tau_h = tau / 3600.0;
+        assert!(
+            (13.0..=17.0).contains(&tau_h),
+            "200 mm concrete τ should be 13-17 h, got {tau_h:.3} h"
+        );
+    }
+
+    /// Surface-node time constant τ_si must equal C·(R_ms‖R_si), with R_ms
+    /// derived independently from the ISO 13790 half-insulation rule.
+    #[test]
+    fn test_surface_time_constant_matches_parallel_resistance() {
+        let spec = lightweight_wall_spec();
+        let mut solver = FiveR1CSolver::new();
+        solver.initialize(&spec).unwrap();
+
+        let r_ms = spec.layers[2].r_value() + spec.layers[1].r_value() / 2.0;
+        let r_si = 1.0 / 8.0;
+        let r_parallel = r_ms * r_si / (r_ms + r_si);
+        let expected = spec.thermal_capacity() * r_parallel;
+
+        assert!((solver.r_ms() - r_ms).abs() / r_ms < 1e-12);
+        let tau_si = solver.surface_time_constant();
+        assert!(
+            (tau_si - expected).abs() / expected < 1e-12,
+            "τ_si must equal C·(R_ms‖R_si): τ_si={tau_si:.6e}, expected={expected:.6e}"
+        );
+    }
+
+    /// For ASHRAE 140 Case 600 low-mass insulation (50 mm foam board,
+    /// R_wall ≈ 1.25 m²·K/W, C_total ≈ 2 100 J/m²K), the solver's lumped
+    /// time constant τ = C·R_wall ≈ 0.73 h.
+    ///
+    /// Note: this is the **lumped wall time constant**, which uses the wall
+    /// material resistance alone. The `ThermalMethodSelector::calculate_
+    /// time_constant` reports a different (much smaller) value because it
+    /// divides by `h_int + h_ext = 33 W/m²·K` (the combined surface-film
+    /// conductances), giving τ ≈ 0.018 h. Both definitions are physically
+    /// meaningful; the Issue #1860 fix uses the solver-level τ because the
+    /// wall's mass node relaxes against the wall material resistance, not
+    /// the surface films.
+    ///
+    /// The fix relies on this being SMALL (< 2 h) so the 5R1C surface ODE
+    /// converges quickly and the cooling load response is not over-damped.
+    /// Pin the value here as a regression guard.
+    #[test]
+    fn test_time_constant_case_600_low_mass() {
+        use fluxion_core::assembly::InsulationMaterial;
+
+        let wall = AssemblyBuilder::new("Case 600 low-mass".to_string())
+            .add_layer(Box::new(InsulationMaterial::new(0.050)))
+            .build()
+            .unwrap();
+        let spec = WallSpec::from_assembly(&wall);
+
+        let mut solver = FiveR1CSolver::new();
+        solver.initialize(&spec).unwrap();
+
+        let tau = solver.time_constant();
+        let tau_h = tau / 3600.0;
+        // Case 600 reference τ ≈ 0.73 h (lumped C·R_wall); accept a
+        // generous band (0 < τ < 2 h) to absorb material-property
+        // variations. The key requirement is that τ < 2 h so 5R1C is the
+        // appropriate solver (ThermalMethodSelector::threshold_hours = 2.0).
+        assert!(
+            tau_h < 2.0,
+            "Case 600 τ = {tau_h:.4} h must be < 2 h (so 5R1C is selected), got {tau_h:.4}"
+        );
+        assert!(
+            tau > 0.0 && tau.is_finite(),
+            "Case 600 τ must be finite and positive, got {tau}"
+        );
+
+        // Sanity check: the surface τ_si must be finite and small
+        // (R_1‖R_si ≈ 0.111 m²·K/W ⇒ τ_si ≈ 230 s ≈ 0.065 h).
+        let tau_si = solver.surface_time_constant();
+        let tau_si_h = tau_si / 3600.0;
+        assert!(
+            tau_si_h < 0.5,
+            "Case 600 surface τ_si = {tau_si_h:.4} h must be < 0.5 h"
+        );
+    }
+
+    /// Surface time constant must always be ≤ lumped time constant,
+    /// because the surface node sits in parallel with the interior film
+    /// (smaller effective resistance ⇒ faster relaxation).
+    #[test]
+    fn test_surface_time_constant_le_lumped_time_constant() {
+        let wall = AssemblyBuilder::new("200mm Concrete".to_string())
+            .add_layer(Box::new(ConcreteMaterial::new(0.2)))
+            .build()
+            .unwrap();
+        let spec = WallSpec::from_assembly(&wall);
+
+        let mut solver = FiveR1CSolver::new();
+        solver.initialize(&spec).unwrap();
+
+        let tau = solver.time_constant();
+        let tau_si = solver.surface_time_constant();
+        assert!(
+            tau_si <= tau,
+            "τ_si ({tau_si:.3e}) must be ≤ τ ({tau:.3e}) because R_1‖R_si ≤ R_total"
+        );
+        assert!(
+            tau_si > 0.0 && tau > 0.0,
+            "Both time constants must be positive (tau_si={tau_si}, tau={tau})"
+        );
     }
 }

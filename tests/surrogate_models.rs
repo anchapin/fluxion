@@ -11,3 +11,6 @@
 
 #[path = "surrogate_models/test_hybrid_mode_dispatch.rs"]
 mod hybrid_mode_dispatch;
+
+#[path = "surrogate_models/test_hybrid_cuda_smoke.rs"]
+mod hybrid_cuda_smoke_test;

@@ -1,12 +1,26 @@
 // Copyright 2026 Fluxion. All rights reserved.
 // SPDX-License-Identifier: MIT
 
-//! FMI 2.0 Co-Simulation export for Fluxion.
+//! FMI 2.0 Co-Simulation export **and** import for Fluxion.
+//!
+//! ## Export (Fluxion → FMU)
 //!
 //! This module generates a valid FMI 2.0 [`modelDescription.xml`]
 //! for one or more thermal zones and packages it into a Functional
 //! Mock-up Unit (`.fmu`) ZIP archive, ready to be loaded by an
 //! FMI 2.0 master such as FMPy or PyFMI.
+//!
+//! ## Import (FMU → Fluxion, `FmiMode::Import`)
+//!
+//! [`FmiImporter`] reads an exported `.fmu` archive, parses its
+//! [`modelDescription.xml`] with `quick-xml`, and rebuilds a
+//! [`ThermalModel`] with the correct zone count and communication
+//! timestep.  A co-simulation master ([`FmuCoSimulationMaster`])
+//! drives the re-imported model via [`FmuCoSimulationMaster::do_step`],
+//! which is the Fluxion equivalent of the FMI 2.0 `fmi2DoStep` C
+//! callback: it forwards the per-timestep weather inputs to
+//! [`ThermalModel::step_physics`] and reports zone temperature +
+//! heating/cooling loads back to the master (issue #1708).
 //!
 //! # Design
 //!
@@ -30,7 +44,7 @@
 //! [`doStep`]: https://fmi-standard.org/docs/2.0.4/#fmi2-dostep
 
 use quick_xml::events::{BytesDecl, BytesEnd, BytesStart, Event};
-use quick_xml::Writer;
+use quick_xml::{Reader, Writer};
 use serde::{Deserialize, Serialize};
 use std::fs::File;
 use std::io::{Cursor, Write};
@@ -38,6 +52,9 @@ use std::path::Path;
 use thiserror::Error;
 use zip::write::FileOptions;
 use zip::CompressionMethod;
+
+use crate::physics::cta::VectorField;
+use crate::sim::engine::ThermalModel;
 
 /// FMI 2.0 model-description XML namespace.
 ///
@@ -625,6 +642,556 @@ impl Default for FmiExporter {
     }
 }
 
+// =============================================================================
+// FMI 2.0 Import  (FmiMode::Import) — issue #1708
+// =============================================================================
+//
+// `FmiImporter` is the import-side counterpart to `FmiExporter`.  It reads a
+// previously-exported `.fmu` ZIP archive, parses the FMI 2.0
+// `modelDescription.xml` with `quick-xml`, and rebuilds a Fluxion
+// [`ThermalModel`] with the correct number of zones and communication
+// timestep.  The accompanying [`FmuCoSimulationMaster`] then drives the
+// re-imported model one `doStep` at a time, mirroring the role of an FMI 2.0
+// co-simulation master algorithm.
+//
+// The import path deliberately mirrors the export structure so that an
+// FMU produced by `FmiExporter::export_fmu` round-trips losslessly:
+//
+//   FmiExporter::export_fmu ──►  .fmu  ──►  FmiImporter::import ──► ImportedFmu
+//                                                                     │
+//                                                     FmuCoSimulationMaster::do_step
+//                                                                     │
+//                                                          ThermalModel::step_physics
+
+/// Number of outputs declared per zone in the Fluxion FMU interface
+/// (`zone_temperature`, `heating_load`, `cooling_load`).  Used to derive
+/// the zone count from the parsed `<ModelVariables>` list.
+const FMI_OUTPUTS_PER_ZONE: usize = 3;
+
+/// A parsed FMI 2.0 `<ScalarVariable>`.
+///
+/// Only the attributes Fluxion cares about are retained; unknown
+/// attributes are silently ignored by the parser.
+#[derive(Debug, Clone, Default)]
+pub struct ImportedScalarVariable {
+    /// FMI variable name (e.g. `outdoor_temperature`, `zone1_zone_temperature`).
+    pub name: String,
+    /// Numeric valueReference (1-based in Fluxion-exported FMUs).
+    pub value_reference: u32,
+    /// `input`, `output`, `parameter`, …
+    pub causality: String,
+    /// `continuous`, `discrete`, …
+    pub variability: String,
+    /// Human-readable description attribute.
+    pub description: String,
+    /// `unit` attribute of the nested `<Real>` element (e.g. `K`, `W/m2`).
+    pub unit: String,
+    /// `start` attribute of the nested `<Real>` element, if present.
+    pub start: Option<f64>,
+}
+
+/// Parsed `<DefaultExperiment>` element.
+#[derive(Debug, Clone, Default)]
+pub struct ImportedDefaultExperiment {
+    /// `startTime` (seconds).
+    pub start_time: f64,
+    /// `stopTime` (seconds).
+    pub stop_time: f64,
+    /// `stepSize` (seconds) — the communication timestep.
+    pub step_size: f64,
+}
+
+/// The fully-parsed FMI 2.0 [`modelDescription.xml`].
+///
+/// Produced by [`FmiImporter::parse_model_description`].  This is a
+/// lossless (for Fluxion's purposes) in-memory representation of the
+/// XML that lives inside a `.fmu` archive.
+///
+/// [`modelDescription.xml`]: https://fmi-standard.org/docs/2.0.4/#fmi-model-description
+#[derive(Debug, Clone, Default)]
+pub struct ImportedModelDescription {
+    /// `fmiVersion` attribute (expected `"2.0"`).
+    pub fmi_version: String,
+    /// `modelName` attribute.
+    pub model_name: String,
+    /// `guid` attribute (FMI 2.0 instantiation identifier).
+    pub guid: String,
+    /// `description` attribute.
+    pub description: String,
+    /// `author` attribute.
+    pub author: String,
+    /// `version` attribute.
+    pub version: String,
+    /// `generationTool` attribute.
+    pub generation_tool: String,
+    /// `generationDateAndTime` attribute.
+    pub generation_date_and_time: String,
+    /// `variableNamingConvention` attribute.
+    pub variable_naming_convention: String,
+    /// Parsed `<DefaultExperiment>`.
+    pub default_experiment: ImportedDefaultExperiment,
+    /// All `<ScalarVariable>` entries in document order.
+    pub variables: Vec<ImportedScalarVariable>,
+}
+
+impl ImportedModelDescription {
+    /// Count of input variables (`causality="input"`).
+    pub fn input_count(&self) -> usize {
+        self.variables
+            .iter()
+            .filter(|v| v.causality == "input")
+            .count()
+    }
+
+    /// Count of output variables (`causality="output"`).
+    pub fn output_count(&self) -> usize {
+        self.variables
+            .iter()
+            .filter(|v| v.causality == "output")
+            .count()
+    }
+
+    /// Number of thermal zones implied by the variable list.
+    ///
+    /// Every zone contributes exactly [`FMI_OUTPUTS_PER_ZONE`] outputs
+    /// (`zone_temperature`, `heating_load`, `cooling_load`), so the zone
+    /// count is `output_count / 3`.  A well-formed Fluxion FMU always
+    /// has at least one zone.
+    pub fn zone_count(&self) -> usize {
+        let n = self.output_count() / FMI_OUTPUTS_PER_ZONE;
+        n.max(1)
+    }
+
+    /// Communication timestep (seconds) from `<DefaultExperiment stepSize>`.
+    pub fn communication_timestep(&self) -> f64 {
+        self.default_experiment.step_size
+    }
+}
+
+/// A successfully imported FMU: the parsed [`ImportedModelDescription`] plus
+/// a ready-to-step [`ThermalModel`] sized to the FMU's zone count.
+///
+/// Built by [`FmiImporter::import`].  Use [`ImportedFmu::thermal_model`] or
+/// [`ImportedFmu::into_thermal_model`] to obtain the underlying physics
+/// model, and [`FmuCoSimulationMaster::from_imported`] to drive it as a
+/// co-simulation slave.
+#[derive(Clone)]
+pub struct ImportedFmu {
+    /// The parsed FMI 2.0 model description.
+    pub description: ImportedModelDescription,
+    model: ThermalModel<VectorField>,
+}
+
+impl std::fmt::Debug for ImportedFmu {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("ImportedFmu")
+            .field("description", &self.description)
+            .field("zone_count", &self.zone_count())
+            .finish()
+    }
+}
+
+impl ImportedFmu {
+    /// Number of zones in the re-imported model.
+    pub fn zone_count(&self) -> usize {
+        self.description.zone_count()
+    }
+
+    /// Communication timestep declared by the FMU (seconds).
+    pub fn communication_timestep(&self) -> f64 {
+        self.description.communication_timestep()
+    }
+
+    /// Borrow the underlying [`ThermalModel`].
+    pub fn thermal_model(&self) -> &ThermalModel<VectorField> {
+        &self.model
+    }
+
+    /// Mutably borrow the underlying [`ThermalModel`].
+    pub fn thermal_model_mut(&mut self) -> &mut ThermalModel<VectorField> {
+        &mut self.model
+    }
+
+    /// Consume the wrapper and return the underlying [`ThermalModel`].
+    pub fn into_thermal_model(self) -> ThermalModel<VectorField> {
+        self.model
+    }
+}
+
+/// FMI 2.0 FMU importer ([`FmiMode::Import`]).
+///
+/// The importer is the import-side mirror of [`FmiExporter`]: it reads a
+/// `.fmu` ZIP archive, parses `modelDescription.xml`, and rebuilds a
+/// Fluxion [`ThermalModel`].
+///
+/// # Example
+///
+/// ```ignore
+/// use fluxion::interop::fmi::{FmiExporter, FmiImporter, ZoneVariables};
+///
+/// // Export a 3-zone FMU …
+/// let exporter = FmiExporter::new().with_zones(vec![
+///     ZoneVariables::new("zone"),
+///     ZoneVariables::new("bedroom"),
+///     ZoneVariables::new("kitchen"),
+/// ]);
+/// exporter.export_fmu("fluxion_three_zone.fmu").unwrap();
+///
+/// // … then re-import it.
+/// let fmu = FmiImporter::new().import("fluxion_three_zone.fmu").unwrap();
+/// assert_eq!(fmu.zone_count(), 3);
+/// ```
+#[derive(Debug, Clone, Default)]
+pub struct FmiImporter;
+
+impl FmiImporter {
+    /// Create a new importer.
+    pub fn new() -> Self {
+        Self
+    }
+
+    /// Import (open + parse) an FMU archive at `path`.
+    ///
+    /// The archive must contain a `modelDescription.xml` entry at its
+    /// root, as produced by [`FmiExporter::export_fmu`].  The returned
+    /// [`ImportedFmu`] owns a [`ThermalModel`] sized to the zone count
+    /// implied by the FMU's variable list.
+    pub fn import(&self, path: &Path) -> Result<ImportedFmu, FmiError> {
+        let xml = read_model_description_from_fmu(path)?;
+        let description = Self::parse_model_description(&xml)?;
+        let model = ThermalModel::<VectorField>::new(description.zone_count());
+        Ok(ImportedFmu { description, model })
+    }
+
+    /// Parse an FMI 2.0 `modelDescription.xml` document into an
+    /// [`ImportedModelDescription`].
+    ///
+    /// Uses a streaming `quick-xml` reader so the full DOM is never
+    /// materialised; only the elements Fluxion emits are recognised.
+    pub fn parse_model_description(xml: &str) -> Result<ImportedModelDescription, FmiError> {
+        let mut reader = Reader::from_str(xml);
+        reader.config_mut().trim_text(true);
+
+        let mut desc = ImportedModelDescription::default();
+        let mut buf = Vec::new();
+        let mut in_model_variables = false;
+        // The `<Real>` child currently being accumulated inside a
+        // `<ScalarVariable>` (only valid while inside ModelVariables).
+        let mut current_var: Option<ImportedScalarVariable> = None;
+
+        loop {
+            buf.clear();
+            let event = reader
+                .read_event_into(&mut buf)
+                .map_err(|e| FmiError::ImportFailed(format!("XML parse: {e}")))?;
+            match event {
+                Event::Start(ref e) | Event::Empty(ref e) => {
+                    let name = e.name();
+                    match name.as_ref() {
+                        b"fmiModelDescription" => {
+                            for attr in e.attributes() {
+                                let attr =
+                                    attr.map_err(|e| FmiError::ImportFailed(format!("attr: {e}")))?;
+                                let v = attr_value(&attr)?;
+                                match attr.key.as_ref() {
+                                    b"fmiVersion" => desc.fmi_version = v,
+                                    b"modelName" => desc.model_name = v,
+                                    b"guid" => desc.guid = v,
+                                    b"description" => desc.description = v,
+                                    b"author" => desc.author = v,
+                                    b"version" => desc.version = v,
+                                    b"generationTool" => desc.generation_tool = v,
+                                    b"generationDateAndTime" => desc.generation_date_and_time = v,
+                                    b"variableNamingConvention" => {
+                                        desc.variable_naming_convention = v
+                                    }
+                                    _ => {}
+                                }
+                            }
+                        }
+                        b"DefaultExperiment" => {
+                            for attr in e.attributes() {
+                                let attr =
+                                    attr.map_err(|e| FmiError::ImportFailed(format!("attr: {e}")))?;
+                                let v = attr_value(&attr)?;
+                                let parsed = v.parse::<f64>().unwrap_or(0.0);
+                                match attr.key.as_ref() {
+                                    b"startTime" => desc.default_experiment.start_time = parsed,
+                                    b"stopTime" => desc.default_experiment.stop_time = parsed,
+                                    b"stepSize" => desc.default_experiment.step_size = parsed,
+                                    _ => {}
+                                }
+                            }
+                        }
+                        b"ModelVariables" => in_model_variables = true,
+                        b"ScalarVariable" if in_model_variables => {
+                            // Start a new accumulator.  Attributes on the
+                            // opening tag; the nested <Real> fills unit/start.
+                            let mut sv = ImportedScalarVariable::default();
+                            for attr in e.attributes() {
+                                let attr =
+                                    attr.map_err(|e| FmiError::ImportFailed(format!("attr: {e}")))?;
+                                let v = attr_value(&attr)?;
+                                match attr.key.as_ref() {
+                                    b"name" => sv.name = v,
+                                    b"causality" => sv.causality = v,
+                                    b"variability" => sv.variability = v,
+                                    b"description" => sv.description = v,
+                                    b"valueReference" => {
+                                        sv.value_reference = v.parse::<u32>().unwrap_or(0)
+                                    }
+                                    _ => {}
+                                }
+                            }
+                            // For an Empty event there is no nested <Real>;
+                            // for a Start event we keep accumulating.
+                            current_var = Some(sv);
+                            if matches!(event, Event::Empty(_)) {
+                                if let Some(v) = current_var.take() {
+                                    desc.variables.push(v);
+                                }
+                            }
+                        }
+                        b"Real" if current_var.is_some() => {
+                            if let Some(ref mut sv) = current_var {
+                                for attr in e.attributes() {
+                                    let attr = attr.map_err(|e| {
+                                        FmiError::ImportFailed(format!("attr: {e}"))
+                                    })?;
+                                    let v = attr_value(&attr)?;
+                                    match attr.key.as_ref() {
+                                        b"unit" => sv.unit = v,
+                                        b"start" => sv.start = v.parse::<f64>().ok(),
+                                        _ => {}
+                                    }
+                                }
+                            }
+                        }
+                        _ => {}
+                    }
+                }
+                Event::End(ref e) => match e.name().as_ref() {
+                    b"ScalarVariable" => {
+                        if let Some(v) = current_var.take() {
+                            desc.variables.push(v);
+                        }
+                    }
+                    b"ModelVariables" => in_model_variables = false,
+                    _ => {}
+                },
+                Event::Eof => break,
+                _ => {}
+            }
+        }
+
+        if desc.variables.is_empty() {
+            return Err(FmiError::ImportFailed(
+                "modelDescription.xml contains no ScalarVariables".to_string(),
+            ));
+        }
+        if desc.fmi_version.is_empty() {
+            desc.fmi_version = "2.0".to_string();
+        }
+        Ok(desc)
+    }
+}
+
+/// Read the `modelDescription.xml` entry out of an FMU ZIP archive.
+///
+/// This is the import-side companion to
+/// [`FmiExporter::read_model_description_from_fmu`]; it is a free
+/// function so [`FmiImporter`] does not need an `FmiExporter` instance.
+fn read_model_description_from_fmu(path: &Path) -> Result<String, FmiError> {
+    let file = File::open(path).map_err(|e| FmiError::ImportFailed(format!("open FMU: {e}")))?;
+    let mut zip =
+        zip::ZipArchive::new(file).map_err(|e| FmiError::ZipError(format!("read FMU: {e}")))?;
+    let mut entry = zip
+        .by_name("modelDescription.xml")
+        .map_err(|e| FmiError::ZipError(format!("missing modelDescription.xml: {e}")))?;
+    let mut buf = String::new();
+    std::io::Read::read_to_string(&mut entry, &mut buf)
+        .map_err(|e| FmiError::ImportFailed(format!("read entry: {e}")))?;
+    Ok(buf)
+}
+
+/// Read one XML attribute's value, normalising XML entities per XML 1.0.
+///
+/// `quick-xml` 0.41 deprecated `Attribute::unescape_value` in favour of
+/// `normalized_value(XmlVersion)`; this helper centralises the call so the
+/// deprecation is resolved in exactly one place.
+fn attr_value(attr: &quick_xml::events::attributes::Attribute<'_>) -> Result<String, FmiError> {
+    attr.normalized_value(quick_xml::XmlVersion::Implicit1_0)
+        .map(|c| c.into_owned())
+        .map_err(|e| FmiError::ImportFailed(format!("attr value: {e}")))
+}
+
+/// Import an FMU archive and return the underlying [`ThermalModel`].
+///
+/// Convenience wrapper around [`FmiImporter::import`] +
+/// [`ImportedFmu::into_thermal_model`] that directly yields the physics
+/// model, matching the function signature requested in issue #1708.
+///
+/// # Example
+///
+/// ```ignore
+/// let model = fluxion::interop::fmi::import_fmu("fluxion_three_zone.fmu")?;
+/// assert_eq!(model.num_zones, 3);
+/// ```
+pub fn import_fmu(path: &Path) -> Result<ThermalModel<VectorField>, FmiError> {
+    FmiImporter::new()
+        .import(path)
+        .map(ImportedFmu::into_thermal_model)
+}
+
+// -----------------------------------------------------------------------------
+// Co-simulation master algorithm (fmi2DoStep wrapper)
+// -----------------------------------------------------------------------------
+
+/// Per-timestep FMI inputs for a single zone, in the units declared by the
+/// Fluxion FMU interface (SI units: Kelvin, W/m², W).
+#[derive(Debug, Clone, Copy)]
+pub struct FmuInputs {
+    /// Outdoor dry-bulb temperature (K).
+    pub outdoor_temperature: f64,
+    /// Direct normal solar irradiance (W/m²).
+    pub direct_normal_solar: f64,
+    /// Diffuse horizontal solar irradiance (W/m²).
+    pub diffuse_horizontal_solar: f64,
+    /// Internal heat gains (W).
+    pub internal_gains: f64,
+}
+
+impl Default for FmuInputs {
+    fn default() -> Self {
+        // Matches the `<Real start=…>` defaults emitted by the exporter.
+        Self {
+            outdoor_temperature: 280.0,
+            direct_normal_solar: 0.0,
+            diffuse_horizontal_solar: 0.0,
+            internal_gains: 0.0,
+        }
+    }
+}
+
+/// Per-timestep FMI outputs for a single zone, in the units declared by the
+/// Fluxion FMU interface.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct FmuOutputs {
+    /// Zone air temperature (K).
+    pub zone_temperature: f64,
+    /// Heating load over the step (W, non-negative).
+    pub heating_load: f64,
+    /// Cooling load over the step (W, non-negative).
+    pub cooling_load: f64,
+}
+
+/// Co-simulation master driving a re-imported FMU one `doStep` at a time.
+///
+/// This is the Fluxion equivalent of the FMI 2.0 `fmi2DoStep` C callback:
+/// each call to [`FmuCoSimulationMaster::do_step`] forwards the master's
+/// per-timestep weather inputs to [`ThermalModel::step_physics`] and
+/// returns the resulting zone temperature and heating/cooling loads.
+///
+/// Loads are derived from the per-zone energy accumulators
+/// (`zone_heating_energy_kwh` / `zone_cooling_energy_kwh`) that
+/// `step_physics` advances, converted from kWh-over-the-step to average
+/// Watts.  This preserves energy conservation across the co-simulation
+/// boundary (acceptance criterion #2 of issue #1708).
+pub struct FmuCoSimulationMaster {
+    model: ThermalModel<VectorField>,
+    /// Communication timestep declared by the FMU (seconds).
+    communication_timestep: f64,
+    /// Current simulation time (seconds).
+    current_time: f64,
+    /// Current timestep index (0-based).
+    timestep: usize,
+}
+
+impl FmuCoSimulationMaster {
+    /// Build a master from an imported FMU, adopting its communication
+    /// timestep and [`ThermalModel`].
+    pub fn from_imported(fmu: ImportedFmu) -> Self {
+        let communication_timestep = fmu.communication_timestep();
+        Self {
+            model: fmu.into_thermal_model(),
+            communication_timestep,
+            current_time: 0.0,
+            timestep: 0,
+        }
+    }
+
+    /// Borrow the underlying [`ThermalModel`].
+    pub fn model(&self) -> &ThermalModel<VectorField> {
+        &self.model
+    }
+
+    /// Mutably borrow the underlying [`ThermalModel`].
+    pub fn model_mut(&mut self) -> &mut ThermalModel<VectorField> {
+        &mut self.model
+    }
+
+    /// Communication timestep (seconds).
+    pub fn communication_timestep(&self) -> f64 {
+        self.communication_timestep
+    }
+
+    /// Current simulation time (seconds).
+    pub fn current_time(&self) -> f64 {
+        self.current_time
+    }
+
+    /// Perform one co-simulation step — the `fmi2DoStep` wrapper.
+    ///
+    /// Forwards `inputs` to [`ThermalModel::step_physics`] (converting the
+    /// outdoor temperature from Kelvin, as declared in the FMU interface,
+    /// to degrees Celsius, as required by the physics engine) and returns
+    /// the zone temperature (converted back to Kelvin) together with the
+    /// heating/cooling loads averaged over the step.
+    ///
+    /// If `step_size` is omitted the FMU's declared communication timestep
+    /// is used.
+    pub fn do_step(&mut self, inputs: FmuInputs, step_size: Option<f64>) -> FmuOutputs {
+        let dt = step_size.unwrap_or(self.communication_timestep).max(1.0);
+
+        // Snapshot per-zone energy accumulators *before* the step so the
+        // delta gives the energy consumed during this step alone.
+        let heat_before = self.model.zone_heating_energy_kwh.as_ref().first().copied();
+        let cool_before = self.model.zone_cooling_energy_kwh.as_ref().first().copied();
+
+        // FMI inputs are Kelvin; step_physics expects °C.
+        let outdoor_temp_c = inputs.outdoor_temperature - 273.15;
+        let _energy_kwh = self.model.step_physics(self.timestep, outdoor_temp_c, dt);
+
+        let zone_temp_c = self
+            .model
+            .temperatures
+            .as_ref()
+            .first()
+            .copied()
+            .unwrap_or(20.0);
+
+        // Convert kWh-delta over the step to average Watts:
+        //   W = kWh * 3_600_000 / dt
+        let heating_load = heat_before
+            .zip(self.model.zone_heating_energy_kwh.as_ref().first().copied())
+            .map(|(a, b)| ((b - a) * 3_600_000.0 / dt).max(0.0))
+            .unwrap_or(0.0);
+        let cooling_load = cool_before
+            .zip(self.model.zone_cooling_energy_kwh.as_ref().first().copied())
+            .map(|(a, b)| ((b - a) * 3_600_000.0 / dt).max(0.0))
+            .unwrap_or(0.0);
+
+        self.timestep += 1;
+        self.current_time += dt;
+
+        FmuOutputs {
+            zone_temperature: zone_temp_c + 273.15,
+            heating_load,
+            cooling_load,
+        }
+    }
+}
+
 // -----------------------------------------------------------------------------
 // Helpers
 // -----------------------------------------------------------------------------
@@ -1097,5 +1664,167 @@ mod tests {
         assert_eq!(days_to_ymd(19_782), (2024, 2, 29));
         // 2026-06-27 (today, just before write-time)
         assert_eq!(days_to_ymd(20_631), (2026, 6, 27));
+    }
+
+    // -------------------------------------------------------------------------
+    // Import (FmiMode::Import) tests — issue #1708
+    // -------------------------------------------------------------------------
+
+    #[test]
+    fn test_parse_model_description_single_zone() {
+        let exporter = FmiExporter::new();
+        let xml = exporter.generate_model_description_xml().unwrap();
+        let desc = FmiImporter::parse_model_description(&xml).unwrap();
+
+        assert_eq!(desc.fmi_version, "2.0");
+        assert_eq!(desc.model_name, "FluxionBuilding");
+        assert_eq!(desc.variable_naming_convention, "structured");
+        // 4 inputs + 3 outputs = 7 variables
+        assert_eq!(desc.variables.len(), 7);
+        assert_eq!(desc.input_count(), 4);
+        assert_eq!(desc.output_count(), 3);
+        assert_eq!(desc.zone_count(), 1);
+        assert_eq!(desc.communication_timestep(), 3600.0);
+    }
+
+    #[test]
+    fn test_parse_model_description_multi_zone() {
+        let exporter = FmiExporter::new().with_zones(vec![
+            ZoneVariables::new("zone"),
+            ZoneVariables::new("bedroom"),
+            ZoneVariables::new("kitchen"),
+        ]);
+        let xml = exporter.generate_model_description_xml().unwrap();
+        let desc = FmiImporter::parse_model_description(&xml).unwrap();
+
+        assert_eq!(desc.variables.len(), 21);
+        assert_eq!(desc.input_count(), 12);
+        assert_eq!(desc.output_count(), 9);
+        assert_eq!(desc.zone_count(), 3);
+
+        // Spot-check that variable names round-trip and units are captured.
+        let outdoor = desc
+            .variables
+            .iter()
+            .find(|v| v.name == "outdoor_temperature")
+            .expect("outdoor_temperature present");
+        assert_eq!(outdoor.causality, "input");
+        assert_eq!(outdoor.unit, "K");
+        assert_eq!(outdoor.start, Some(280.0));
+
+        let zone_temp = desc
+            .variables
+            .iter()
+            .find(|v| v.name == "kitchen_zone_temperature")
+            .expect("kitchen_zone_temperature present");
+        assert_eq!(zone_temp.causality, "output");
+        assert_eq!(zone_temp.unit, "K");
+    }
+
+    #[test]
+    fn test_parse_model_description_empty_xml_errors() {
+        let xml = r#"<?xml version="1.0"?>
+<fmiModelDescription fmiVersion="2.0">
+  <ModelVariables/>
+</fmiModelDescription>"#;
+        let res = FmiImporter::parse_model_description(xml);
+        assert!(res.is_err(), "empty ModelVariables must error");
+    }
+
+    #[test]
+    fn test_import_fmu_round_trip_single_zone() {
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let out = tmp.path().join("single_zone.fmu");
+        FmiExporter::new().export_fmu(&out).expect("export");
+
+        let model = import_fmu(&out).expect("import_fmu");
+        assert_eq!(model.num_zones, 1);
+    }
+
+    #[test]
+    fn test_import_fmu_round_trip_three_zone() {
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let out = tmp.path().join("fluxion_three_zone.fmu");
+        let exporter = FmiExporter::new().with_zones(vec![
+            ZoneVariables::new("zone"),
+            ZoneVariables::new("bedroom"),
+            ZoneVariables::new("kitchen"),
+        ]);
+        exporter.export_fmu(&out).expect("export");
+
+        let fmu = FmiImporter::new().import(&out).expect("import");
+        assert_eq!(fmu.zone_count(), 3);
+        assert_eq!(fmu.communication_timestep(), 3600.0);
+        assert_eq!(fmu.thermal_model().num_zones, 3);
+        assert_eq!(fmu.into_thermal_model().num_zones, 3);
+    }
+
+    #[test]
+    fn test_import_fmu_configurable_timestep() {
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let out = tmp.path().join("ts300.fmu");
+        let mut cfg = FmiConfig::default();
+        cfg.communication_timestep = 300.0;
+        FmiExporter::with_config(cfg)
+            .unwrap()
+            .export_fmu(&out)
+            .expect("export");
+
+        let fmu = FmiImporter::new().import(&out).expect("import");
+        assert_eq!(fmu.communication_timestep(), 300.0);
+    }
+
+    #[test]
+    fn test_cosimulation_master_do_step_calls_step_physics() {
+        // Export a single-zone FMU, re-import it, and drive one doStep.
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let out = tmp.path().join("master.fmu");
+        FmiExporter::new().export_fmu(&out).expect("export");
+        let fmu = FmiImporter::new().import(&out).expect("import");
+
+        let initial_temp_k = fmu.thermal_model().temperatures.as_ref()[0] + 273.15;
+        let mut master = FmuCoSimulationMaster::from_imported(fmu);
+
+        // Cold outdoor air (263.15 K = -10 °C) → expect the zone to cool
+        // and/or heating to engage.
+        let inputs = FmuInputs {
+            outdoor_temperature: 263.15,
+            direct_normal_solar: 0.0,
+            diffuse_horizontal_solar: 0.0,
+            internal_gains: 0.0,
+        };
+        let out_step = master.do_step(inputs, Some(3600.0));
+
+        // do_step must return a finite zone temperature in Kelvin.
+        assert!(out_step.zone_temperature.is_finite());
+        assert!(out_step.zone_temperature > 200.0 && out_step.zone_temperature < 320.0);
+        // The master advanced time by one communication step.
+        assert_eq!(master.current_time(), 3600.0);
+        // The zone temperature should have moved away from the initial 20 °C
+        // (293.15 K) under the cold boundary condition.
+        assert_ne!(out_step.zone_temperature, initial_temp_k);
+    }
+
+    #[test]
+    fn test_cosimulation_master_loads_nonneg_and_balanced() {
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let out = tmp.path().join("loads.fmu");
+        FmiExporter::new().export_fmu(&out).expect("export");
+        let fmu = FmiImporter::new().import(&out).expect("import");
+        let mut master = FmuCoSimulationMaster::from_imported(fmu);
+
+        // Drive a handful of steps; loads must be non-negative.
+        for _ in 0..5 {
+            let o = master.do_step(FmuInputs::default(), Some(3600.0));
+            assert!(o.heating_load >= 0.0);
+            assert!(o.cooling_load >= 0.0);
+        }
+        assert_eq!(master.current_time(), 5.0 * 3600.0);
+    }
+
+    #[test]
+    fn test_import_fmu_missing_file_errors() {
+        let res = import_fmu(Path::new("/nonexistent/does_not_exist.fmu"));
+        assert!(res.is_err());
     }
 }

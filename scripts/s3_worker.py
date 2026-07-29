@@ -42,6 +42,25 @@ except ImportError:
     boto3 = None
     ClientError = Exception
 
+try:
+    import zstandard as zstd
+except ImportError:
+    zstd = None
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+try:
+    from state_store import (  # type: ignore[import-not-found]
+        InMemoryStateStore,
+        StateStore,
+        TaskState,
+        TaskStatus,
+    )
+except ImportError:  # pragma: no cover - defensive
+    InMemoryStateStore = None  # type: ignore[assignment]
+    StateStore = None  # type: ignore[assignment]
+    TaskState = None  # type: ignore[assignment]
+    TaskStatus = None  # type: ignore[assignment]
+
 
 TRACE_BASE = Path(".sdd/traces/diagnostic")
 CARGO_TEST_CMD = ["cargo", "test", "--test=ashrae_140_validation", "--", "--nocapture"]
@@ -73,6 +92,104 @@ class WorkUnitResult:
     duration_ms: int
     timestamp: str
     error_message: Optional[str] = None
+
+
+@dataclass
+class KPIResult:
+    """
+    Aggregated KPI result emitted by workers before S3 sync.
+
+    KPI Schema
+    ----------
+    All MAE (Mean Absolute Error) values are percentages (%).
+    Statistics are computed across multiple runs of the same work unit.
+
+    Fields
+    ------
+    work_unit_id : str
+        Unique work unit identifier.
+    campaign_id : str
+        Campaign this work unit belongs to.
+    run_id : str
+        Execution run identifier.
+    case_id : str
+        ASHRAE 140 case identifier (e.g., "600", "600_00001").
+    parameters : dict[str, float]
+        Input parameters swept for this work unit.
+    num_runs : int
+        Number of simulation runs aggregated into this KPI.
+    timestamp : str
+        ISO 8601 timestamp of result emission.
+
+    Aggregated MAE Statistics
+    -------------------------
+    heating_mae_mean : float
+        Mean heating MAE across runs (%).
+    heating_mae_std : float
+        Standard deviation of heating MAE across runs (%).
+    heating_mae_min : float
+        Minimum heating MAE across runs (%).
+    heating_mae_max : float
+        Maximum heating MAE across runs (%).
+
+    cooling_mae_mean : float
+        Mean cooling MAE across runs (%).
+    cooling_mae_std : float
+        Standard deviation of cooling MAE across runs (%).
+    cooling_mae_min : float
+        Minimum cooling MAE across runs (%).
+    cooling_mae_max : float
+        Maximum cooling MAE across runs (%).
+
+    peak_heating_mae_mean : float
+        Mean peak heating MAE across runs (%).
+    peak_cooling_mae_mean : float
+        Mean peak cooling MAE across runs (%).
+    temperature_mae_mean : float
+        Mean temperature MAE across runs (%).
+
+    Pass Rate
+    ---------
+    overall_pass_rate : float
+        Fraction of runs that passed (0.0 to 1.0).
+
+    Performance
+    -----------
+    duration_ms_mean : float
+        Mean execution duration across runs (ms).
+
+    Error Handling
+    --------------
+    error_message : Optional[str]
+        Error message if all runs failed, None otherwise.
+
+    Raw Results
+    -----------
+    raw_results : Optional[list[WorkUnitResult]]
+        Individual run results if --emit-raw was specified, None otherwise.
+    """
+    work_unit_id: str
+    campaign_id: str
+    run_id: str
+    case_id: str
+    parameters: dict[str, float]
+    num_runs: int
+    timestamp: str
+    heating_mae_mean: float
+    heating_mae_std: float
+    heating_mae_min: float
+    heating_mae_max: float
+    cooling_mae_mean: float
+    cooling_mae_std: float
+    cooling_mae_min: float
+    cooling_mae_max: float
+    peak_heating_mae_mean: float
+    peak_cooling_mae_mean: float
+    temperature_mae_mean: float
+    overall_pass_rate: float
+    duration_ms_mean: float
+    error_message: Optional[str] = None
+    raw_results: Optional[list] = None
 
 
 def get_aws_clients():
@@ -121,25 +238,139 @@ def parse_s3_uri(uri: str) -> tuple[str, str]:
     return parts[0], parts[1] if len(parts) > 1 else ""
 
 
-def push_result_to_s3(result: WorkUnitResult, s3_prefix: str, clients: dict) -> str:
-    """Push work unit result directly to S3. Returns the S3 URI."""
+def sync_to_s3(local_path: str, s3_uri: str, exclude_patterns: list[str] | None = None) -> subprocess.CompletedProcess:
+    """Sync a local directory to S3 using aws s3 sync with exclude patterns.
+
+    Args:
+        local_path: Local directory path to sync
+        s3_uri: S3 destination URI (s3://bucket/prefix)
+        exclude_patterns: List of exclude patterns (e.g. ["*.sql.tmp", "*.tmp"])
+
+    Returns:
+        CompletedProcess result
+    """
+    if exclude_patterns is None:
+        exclude_patterns = ["*.sql.tmp"]
+
+    bucket, prefix = parse_s3_uri(s3_uri)
+    s3_dest = f"s3://{bucket}/{prefix}"
+
+    cmd = ["aws", "s3", "sync", local_path, s3_dest]
+    for pattern in exclude_patterns:
+        cmd.extend(["--exclude", pattern])
+
+    return subprocess.run(cmd, capture_output=True, text=True)
+
+
+def push_result_to_s3(result: WorkUnitResult | KPIResult, s3_prefix: str, clients: dict) -> str:
+    """Push work unit result or KPI result directly to S3. Returns the S3 URI."""
     bucket, prefix = parse_s3_uri(s3_prefix)
-    result_key = f"{prefix}/results/{result.work_unit_id}.json"
+    result_key = f"{prefix}/results/{result.work_unit_id}.json.zst"
+
+    json_body = json.dumps(asdict(result), indent=2)
+
+    if zstd is not None:
+        body = zstd.compress(json_body.encode("utf-8"))
+        content_type = "application/zstd"
+    else:
+        body = json_body.encode("utf-8")
+        content_type = "application/json"
 
     clients["s3"].put_object(
         Bucket=bucket,
         Key=result_key,
-        Body=json.dumps(asdict(result), indent=2),
-        ContentType="application/json",
+        Body=body,
+        ContentType=content_type,
     )
 
     return f"s3://{bucket}/{result_key}"
 
 
 def update_campaign_progress(
-    campaign_id: str, work_unit_id: str, status: str, clients: dict
+    campaign_id: str,
+    work_unit_id: str,
+    status: str,
+    clients: dict,
+    *,
+    store: Optional["StateStore"] = None,
+    metrics: Optional[dict[str, float]] = None,
+    error_message: Optional[str] = None,
 ) -> None:
-    """Update campaign progress in DynamoDB or S3."""
+    """Update campaign progress in the configured state store.
+
+    Resolution order:
+      1. Explicit ``store`` argument (preferred for tests and the local
+         pipeline that wires a concrete backend).
+      2. ``FLUXION_STATE_STORE`` environment variable — ``dynamodb`` or
+         ``redis`` select the cloud backends; ``memory`` selects the
+         process-local :class:`InMemoryStateStore`.
+      3. Legacy S3 fallback (``FLUXION_CAMPAIGN_STATE_PREFIX``) for
+         pre-T7.3 deployments; writes a per-task JSON marker that the
+         coordinator's S3-listing path understands.
+
+    The worker always writes the full task state (status + timestamp +
+    optional metrics / error message) so the coordinator can derive a
+    campaign-wide progress snapshot directly from the state store.
+    """
+    if store is not None and TaskState is not None:
+        state = TaskState.now(
+            campaign_id=campaign_id,
+            work_unit_id=work_unit_id,
+            status=status,
+            metrics=metrics,
+            error_message=error_message,
+        )
+        try:
+            store.set_state(state)
+            return
+        except Exception as exc:  # pragma: no cover - transport errors
+            print(f"[WARN] StateStore write failed: {exc}", file=sys.stderr)
+            return
+
+    backend = (os.environ.get("FLUXION_STATE_STORE") or "").strip().lower()
+    if backend == "dynamodb" and StateStore is not None:
+        try:
+            store = StateStore.create("dynamodb", dynamodb_client=clients["dynamodb"])
+        except Exception as exc:  # pragma: no cover - transport errors
+            print(f"[WARN] Could not build DynamoDB store: {exc}", file=sys.stderr)
+            return
+        if store is not None and TaskState is not None:
+            try:
+                store.set_state(
+                    TaskState.now(
+                        campaign_id=campaign_id,
+                        work_unit_id=work_unit_id,
+                        status=status,
+                        metrics=metrics,
+                        error_message=error_message,
+                    )
+                )
+                return
+            except Exception as exc:  # pragma: no cover - transport errors
+                print(f"[WARN] DynamoDB write failed: {exc}", file=sys.stderr)
+                return
+    if backend == "redis" and StateStore is not None:
+        try:
+            store = StateStore.create("redis")
+        except Exception as exc:  # pragma: no cover - transport errors
+            print(f"[WARN] Could not build Redis store: {exc}", file=sys.stderr)
+            return
+        if store is not None and TaskState is not None:
+            try:
+                store.set_state(
+                    TaskState.now(
+                        campaign_id=campaign_id,
+                        work_unit_id=work_unit_id,
+                        status=status,
+                        metrics=metrics,
+                        error_message=error_message,
+                    )
+                )
+                return
+            except Exception as exc:  # pragma: no cover - transport errors
+                print(f"[WARN] Redis write failed: {exc}", file=sys.stderr)
+                return
+
     table_name = os.environ.get("FLUXION_CAMPAIGN_TABLE")
     if table_name:
         dynamodb = clients["dynamodb"]
@@ -154,25 +385,29 @@ def update_campaign_progress(
                     ":now": {"S": datetime.now(timezone.utc).isoformat()},
                 },
             )
+            return
         except ClientError as e:
             print(f"[WARN] Failed to update DynamoDB: {e}", file=sys.stderr)
-    else:
-        s3_state_prefix = os.environ.get("FLUXION_CAMPAIGN_STATE_PREFIX", "")
-        if s3_state_prefix:
-            bucket, prefix = parse_s3_uri(s3_state_prefix)
-            state_key = f"{prefix}/{campaign_id}/progress/{work_unit_id}.json"
-            clients["s3"].put_object(
-                Bucket=bucket,
-                Key=state_key,
-                Body=json.dumps(
-                    {
-                        "work_unit_id": work_unit_id,
-                        "status": status,
-                        "timestamp": datetime.now(timezone.utc).isoformat(),
-                    }
-                ),
-                ContentType="application/json",
-            )
+            return
+
+    s3_state_prefix = os.environ.get("FLUXION_CAMPAIGN_STATE_PREFIX", "")
+    if s3_state_prefix:
+        bucket, prefix = parse_s3_uri(s3_state_prefix)
+        state_key = f"{prefix}/{campaign_id}/progress/{work_unit_id}.json"
+        clients["s3"].put_object(
+            Bucket=bucket,
+            Key=state_key,
+            Body=json.dumps(
+                {
+                    "work_unit_id": work_unit_id,
+                    "status": status,
+                    "timestamp": datetime.now(timezone.utc).isoformat(),
+                    "error_message": error_message,
+                    "metrics": metrics,
+                }
+            ),
+            ContentType="application/json",
+        )
 
 
 def run_simulation(work_unit: WorkUnit) -> tuple[dict[str, Any], str]:
@@ -251,73 +486,212 @@ def parse_cargo_output(output: str) -> dict[str, Any]:
     return metrics
 
 
-def run_worker(work_unit: WorkUnit) -> WorkUnitResult:
-    """Execute a single work unit and push result to S3."""
+def compute_kpi_stats(values: list[float]) -> tuple[float, float, float, float]:
+    """Compute mean, std, min, max from a list of values."""
+    if not values:
+        return 0.0, 0.0, 0.0, 0.0
+    mean_val = sum(values) / len(values)
+    std_val = (sum((v - mean_val) ** 2 for v in values) / len(values)) ** 0.5 if len(values) > 1 else 0.0
+    return mean_val, std_val, min(values), max(values)
+
+
+def run_worker(
+    work_unit: WorkUnit,
+    emit_raw: bool = False,
+    num_runs: int = 1,
+    *,
+    state_store: Optional["StateStore"] = None,
+) -> KPIResult:
+    """
+    Execute a work unit and emit aggregated KPIs to S3.
+
+    Parameters
+    ----------
+    work_unit : WorkUnit
+        Work unit to execute.
+    emit_raw : bool
+        If True, include individual run results in output.
+    num_runs : int
+        Number of simulation runs to aggregate (default 1).
+    state_store : StateStore, optional
+        Backend state store (DynamoDB/Redis/in-memory) for progress tracking.
+
+    Returns
+    -------
+    KPIResult
+        Aggregated KPI result with statistics.
+    """
     clients = get_aws_clients()
     run_id = str(uuid.uuid4())[:8]
 
     print(f"[*] Starting work unit {work_unit.work_unit_id}")
     print(f"[*] Campaign: {work_unit.campaign_id}")
     print(f"[*] Parameters: {work_unit.parameters}")
+    print(f"[*] Running {num_runs} simulation(s) for aggregation")
 
     update_campaign_progress(
-        work_unit.campaign_id, work_unit.work_unit_id, "running", clients
+        work_unit.campaign_id,
+        work_unit.work_unit_id,
+        "running",
+        clients,
+        store=state_store,
     )
 
-    start = time.time()
-    metrics, raw_output = run_simulation(work_unit)
-    duration_ms = int((time.time() - start) * 1000)
+    raw_results: list[WorkUnitResult] = []
+    heating_maes = []
+    cooling_maes = []
+    peak_heating_maes = []
+    peak_cooling_maes = []
+    temperature_maes = []
+    pass_count = 0
+    durations = []
 
-    if "error" in metrics:
-        result = WorkUnitResult(
-            work_unit_id=work_unit.work_unit_id,
-            campaign_id=work_unit.campaign_id,
-            run_id=run_id,
-            case_id=work_unit.case_id,
-            parameters=work_unit.parameters,
-            heating_mae=999.0,
-            cooling_mae=999.0,
-            peak_heating_mae=999.0,
-            peak_cooling_mae=999.0,
-            temperature_mae=999.0,
-            overall_pass=False,
-            duration_ms=duration_ms,
-            timestamp=datetime.now(timezone.utc).isoformat(),
-            error_message=str(metrics.get("error", "unknown")),
+    for run_idx in range(num_runs):
+        start = time.time()
+        metrics, raw_output = run_simulation(work_unit)
+        duration_ms = int((time.time() - start) * 1000)
+        durations.append(duration_ms)
+
+        if "error" in metrics:
+            raw_results.append(WorkUnitResult(
+                work_unit_id=work_unit.work_unit_id,
+                campaign_id=work_unit.campaign_id,
+                run_id=f"{run_id}-{run_idx}",
+                case_id=work_unit.case_id,
+                parameters=work_unit.parameters,
+                heating_mae=999.0,
+                cooling_mae=999.0,
+                peak_heating_mae=999.0,
+                peak_cooling_mae=999.0,
+                temperature_mae=999.0,
+                overall_pass=False,
+                duration_ms=duration_ms,
+                timestamp=datetime.now(timezone.utc).isoformat(),
+                error_message=str(metrics.get("error", "unknown")),
+            ))
+        else:
+            heating = metrics.get("heating_mae", 999.0)
+            cooling = metrics.get("cooling_mae", 999.0)
+            peak_heat = metrics.get("peak_heating_mae", 999.0)
+            peak_cool = metrics.get("peak_cooling_mae", 999.0)
+            temp = metrics.get("temperature_mae", 999.0)
+            passed = metrics.get("overall_pass", False)
+
+            heating_maes.append(heating)
+            cooling_maes.append(cooling)
+            peak_heating_maes.append(peak_heat)
+            peak_cooling_maes.append(peak_cool)
+            temperature_maes.append(temp)
+            if passed:
+                pass_count += 1
+
+            raw_results.append(WorkUnitResult(
+                work_unit_id=work_unit.work_unit_id,
+                campaign_id=work_unit.campaign_id,
+                run_id=f"{run_id}-{run_idx}",
+                case_id=work_unit.case_id,
+                parameters=work_unit.parameters,
+                heating_mae=heating,
+                cooling_mae=cooling,
+                peak_heating_mae=peak_heat,
+                peak_cooling_mae=peak_cool,
+                temperature_mae=temp,
+                overall_pass=passed,
+                duration_ms=duration_ms,
+                timestamp=datetime.now(timezone.utc).isoformat(),
+            ))
+
+        # Push per-run progress to state store
+        update_campaign_progress(
+            work_unit.campaign_id,
+            work_unit.work_unit_id,
+            "running",
+            clients,
+            store=state_store,
+            metrics={
+                "run_idx": run_idx,
+                "num_runs": num_runs,
+                "duration_ms": duration_ms,
+            },
         )
-    else:
-        result = WorkUnitResult(
-            work_unit_id=work_unit.work_unit_id,
-            campaign_id=work_unit.campaign_id,
-            run_id=run_id,
-            case_id=work_unit.case_id,
-            parameters=work_unit.parameters,
-            heating_mae=metrics.get("heating_mae", 999.0),
-            cooling_mae=metrics.get("cooling_mae", 999.0),
-            peak_heating_mae=metrics.get("peak_heating_mae", 999.0),
-            peak_cooling_mae=metrics.get("peak_cooling_mae", 999.0),
-            temperature_mae=metrics.get("temperature_mae", 999.0),
-            overall_pass=metrics.get("overall_pass", False),
-            duration_ms=duration_ms,
-            timestamp=datetime.now(timezone.utc).isoformat(),
-        )
+
+    # Compute aggregated KPIs
+    h_mean, h_std, h_min, h_max = compute_kpi_stats(heating_maes)
+    c_mean, c_std, c_min, c_max = compute_kpi_stats(cooling_maes)
+    ph_mean, _, _, _ = compute_kpi_stats(peak_heating_maes)
+    pc_mean, _, _, _ = compute_kpi_stats(peak_cooling_maes)
+    t_mean, _, _, _ = compute_kpi_stats(temperature_maes)
+    dur_mean, _, _, _ = compute_kpi_stats(durations)
+    pass_rate = pass_count / num_runs if num_runs > 0 else 0.0
+
+    has_error = any(r.error_message is not None for r in raw_results)
+    error_msg = None
+    if has_error and all(r.error_message is not None for r in raw_results):
+        error_msg = "; ".join(set(r.error_message for r in raw_results if r.error_message))
+
+    result = KPIResult(
+        work_unit_id=work_unit.work_unit_id,
+        campaign_id=work_unit.campaign_id,
+        run_id=run_id,
+        case_id=work_unit.case_id,
+        parameters=work_unit.parameters,
+        num_runs=num_runs,
+        timestamp=datetime.now(timezone.utc).isoformat(),
+        heating_mae_mean=h_mean,
+        heating_mae_std=h_std,
+        heating_mae_min=h_min,
+        heating_mae_max=h_max,
+        cooling_mae_mean=c_mean,
+        cooling_mae_std=c_std,
+        cooling_mae_min=c_min,
+        cooling_mae_max=c_max,
+        peak_heating_mae_mean=ph_mean,
+        peak_cooling_mae_mean=pc_mean,
+        temperature_mae_mean=t_mean,
+        overall_pass_rate=pass_rate,
+        duration_ms_mean=dur_mean,
+        error_message=error_msg,
+        raw_results=raw_results if emit_raw else None,
+    )
+
+    # Push aggregated completion status to state store
+    update_campaign_progress(
+        work_unit.campaign_id,
+        work_unit.work_unit_id,
+        "completed" if error_msg is None else "failed",
+        clients,
+        store=state_store,
+        metrics={
+            "heating_mae_mean": h_mean,
+            "cooling_mae_mean": c_mean,
+            "peak_heating_mae_mean": ph_mean,
+            "peak_cooling_mae_mean": pc_mean,
+            "temperature_mae_mean": t_mean,
+            "overall_pass_rate": pass_rate,
+            "duration_ms_mean": dur_mean,
+        },
+        error_message=error_msg,
+    )
 
     result_uri = push_result_to_s3(result, work_unit.s3_result_prefix, clients)
-    print(f"[*] Result pushed to: {result_uri}")
-
-    update_campaign_progress(
-        work_unit.campaign_id, work_unit.work_unit_id, "completed", clients
-    )
+    print(f"[*] KPI result pushed to: {result_uri}")
 
     return result
 
 
-def run_sqs_worker(queue_url: str) -> None:
+def run_sqs_worker(
+    queue_url: str,
+    emit_raw: bool = False,
+    num_runs: int = 1,
+    *,
+    state_store: Optional["StateStore"] = None,
+) -> None:
     """Long-running SQS worker that processes messages from a queue."""
     clients = get_aws_clients()
     sqs = clients["sqs"] if "sqs" in clients else boto3.client("sqs")
 
     print(f"[*] Listening on SQS queue: {queue_url}")
+    print(f"[*] Aggregation: {num_runs} runs, emit_raw={emit_raw}")
 
     while True:
         try:
@@ -333,7 +707,7 @@ def run_sqs_worker(queue_url: str) -> None:
                 work_unit = download_work_unit(body["param_file"], clients)
 
                 try:
-                    run_worker(work_unit)
+                    run_worker(work_unit, emit_raw=emit_raw, num_runs=num_runs, state_store=state_store)
                     sqs.delete_message(
                         QueueUrl=queue_url, ReceiptHandle=message["ReceiptHandle"]
                     )
@@ -342,8 +716,10 @@ def run_sqs_worker(queue_url: str) -> None:
                     update_campaign_progress(
                         work_unit.campaign_id,
                         work_unit.work_unit_id,
-                        f"failed: {e}",
+                        "failed",
                         clients,
+                        store=state_store,
+                        error_message=str(e),
                     )
 
         except KeyboardInterrupt:
@@ -383,22 +759,36 @@ def main() -> int:
         type=str,
         help="SQS queue URL (for sqs mode)",
     )
+    parser.add_argument(
+        "--emit-raw",
+        action="store_true",
+        help="Include individual run results in output (increases data transfer)",
+    )
+    parser.add_argument(
+        "--num-runs",
+        type=int,
+        default=1,
+        help="Number of simulation runs to aggregate per work unit (default: 1)",
+    )
     args = parser.parse_args()
 
     if args.mode == "sqs":
         if not args.queue_url:
             parser.error("--queue-url is required for sqs mode")
-        run_sqs_worker(args.queue_url)
+        run_sqs_worker(args.queue_url, emit_raw=args.emit_raw, num_runs=args.num_runs)
         return 0
 
     if not args.param_file:
         parser.error("--param-file is required for single mode")
 
     work_unit = download_work_unit(args.param_file, get_aws_clients())
-    result = run_worker(work_unit)
+    result = run_worker(work_unit, emit_raw=args.emit_raw, num_runs=args.num_runs)
 
     print(f"[*] Work unit complete: {result.work_unit_id}")
-    print(f"    MAE: {result.heating_mae:.2f}% heating, {result.cooling_mae:.2f}% cooling")
+    print(f"    Aggregated KPIs over {result.num_runs} run(s):")
+    print(f"    Heating MAE: {result.heating_mae_mean:.2f}% (std: {result.heating_mae_std:.2f}%)")
+    print(f"    Cooling MAE: {result.cooling_mae_mean:.2f}% (std: {result.cooling_mae_std:.2f}%)")
+    print(f"    Pass rate: {result.overall_pass_rate * 100:.1f}%")
 
     return 0 if result.error_message is None else 1
 

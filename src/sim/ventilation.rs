@@ -8,6 +8,25 @@
 //! - **Constant**: Fixed ACH regardless of conditions
 //! - **Scheduled**: Time-based ACH changes (e.g., night ventilation)
 //! - **Weather-Responsive**: ACH varies with outdoor temperature and wind speed
+//!
+//! # `ach_to_conductance` Formula
+//!
+//! The [`ach_to_conductance`] function converts an air change rate (ACH) to a
+//! thermal conductance `h_ve` [W/K] representing ventilation heat transfer:
+//!
+//! ```text
+//! h_ve = (ACH × V × ρ × c_p) / 3600
+//! ```
+//!
+//! Where:
+//! - `ACH` — air changes per hour [1/h]
+//! - `V`   — zone volume [m³]
+//! - `ρ`   — air density [kg/m³] (standard: 1.2)
+//! - `c_p` — specific heat of air [J/kg·K] (standard: 1005)
+//! - `3600` — seconds per hour conversion factor
+//!
+//! **Validation**: For `ACH=0.5`, `V=129.6 m³`, `ρ=1.2`, `c_p=1005`:
+//! Fluxion ≈ 21.71 W/K vs EnergyPlus ≈ 21.6 W/K (Δ < 0.5%). See Issue #918.
 
 use crate::physics::units::{FromF64, ThermalConductance};
 use serde::{Deserialize, Serialize};
@@ -112,16 +131,24 @@ pub fn calculate_combined_infiltration_ach(
 /// Trait for defining air change rate (ACH) schedules.
 ///
 /// All implementations should return weather-dependent ACH when applicable,
-/// using the provided weather parameters.
+/// using the provided weather parameters. The returned ACH is multiplied by
+/// zone volume and air properties in [`ach_to_conductance`] to produce the
+/// ventilation heat transfer coefficient `h_ve` [W/K] used in the zone energy
+/// balance.
 pub trait VentilationSchedule: Debug + Send + Sync {
     /// Returns the air change rate (ACH) for a given hour.
     ///
     /// # Arguments
-    /// * `hour` - Hour of day (0-23)
-    /// * `T_outdoor` - Outdoor temperature [C]
-    /// * `T_indoor` - Indoor temperature [C]
-    /// * `wind_speed` - Wind speed [m/s]
-    /// * `volume` - Zone volume [m³]
+    /// * `hour` — Hour of day (0–23)
+    /// * `T_outdoor` — Outdoor dry-bulb temperature [°C]
+    /// * `T_indoor` — Indoor air temperature [°C]
+    /// * `wind_speed` — Wind speed at building height [m/s]
+    /// * `volume` — Zone volume [m³]
+    ///
+    /// # Returns
+    /// Air change rate [1/h]. Implementations may ignore weather arguments
+    /// (e.g. [`ConstantVentilation`]) or use them to modulate the rate
+    /// (e.g. [`WeatherDependentVentilation`]).
     fn get_ach(
         &self,
         hour: usize,
@@ -130,8 +157,37 @@ pub trait VentilationSchedule: Debug + Send + Sync {
         wind_speed: f64,
         volume: f64,
     ) -> f64;
+
     /// Clones the schedule into a boxed trait object.
     fn clone_box(&self) -> Box<dyn VentilationSchedule>;
+}
+
+/// Computes the forced-convection multiplier for h_tr_is based on ACH.
+///
+/// Uses the ASHRAE/EnergyPlus empirical correlation for interior forced convection:
+/// `h_c = h_c_still + 0.84 * ACH^0.8` [W/m²K]
+///
+/// Where:
+/// - `h_c_still = 3.45 W/m²K` (ASHRAE 140 simplified 5R1C still-air value)
+/// - ACH is in air changes per hour
+///
+/// This gives approximately:
+/// - ACH=0.5: ratio ≈ 1.14× (daytime baseline)
+/// - ACH=3:   ratio ≈ 1.59× (Case 950 night vent threshold)
+/// - ACH=13.14: ratio ≈ 2.91× (Case 650/950 spec night vent ACH=13.14)
+/// - ACH=40:  ratio ≈ 5.66× (theoretical high-ACH night vent)
+///
+/// Reference: ASHRAE Handbook — Fundamentals (ch. 4), EnergyPlus Engineering Reference.
+/// Issue #1279, Issue #1624.
+pub fn h_tr_is_ach_multiplier(ach: f64) -> f64 {
+    const H_C_STILL: f64 = 3.45; // W/m²K - ASHRAE 140 simplified still-air value
+    if ach <= 0.0 {
+        1.0
+    } else {
+        // h_c_forced = h_c_still + 0.84 * ACH^0.8
+        let h_c_forced = H_C_STILL + 0.84 * ach.powf(0.8);
+        h_c_forced / H_C_STILL
+    }
 }
 
 /// A constant ventilation schedule.
@@ -591,5 +647,71 @@ mod tests {
     fn test_weather_dependent_ventilation_fallback_full_open() {
         let vent = WeatherDependentVentilation::new(0.3, 0.3, 2.0, 26.0, 18.0);
         assert_eq!(vent.full_open_temp, 31.0);
+    }
+
+    // =============================================================================
+    // Issue #1624: Forced-convection h_tr_is boost during high ACH night flush
+    // =============================================================================
+
+    #[test]
+    fn test_h_tr_is_ach_multiplier_zero_ach() {
+        // Zero or negative ACH should return 1.0 (no boost)
+        assert_eq!(h_tr_is_ach_multiplier(0.0), 1.0);
+        assert_eq!(h_tr_is_ach_multiplier(-1.0), 1.0);
+    }
+
+    #[test]
+    fn test_h_tr_is_ach_multiplier_baseline() {
+        // ACH=0.5: ratio ≈ 1.14× (daytime baseline, below night flush threshold)
+        let multiplier = h_tr_is_ach_multiplier(0.5);
+        assert!((multiplier - 1.14).abs() < 0.01);
+    }
+
+    #[test]
+    fn test_h_tr_is_ach_multiplier_night_flush_threshold() {
+        // ACH=3.0: ratio ≈ 1.59× (Case 950 night vent threshold)
+        let multiplier = h_tr_is_ach_multiplier(3.0);
+        assert!((multiplier - 1.59).abs() < 0.01);
+    }
+
+    #[test]
+    fn test_h_tr_is_ach_multiplier_high_ach() {
+        // ACH=13.14: ratio ≈ 2.91× (Case 650/950 spec night vent ACH=13.14)
+        let multiplier = h_tr_is_ach_multiplier(13.14);
+        assert!((multiplier - 2.91).abs() < 0.02);
+    }
+
+    #[test]
+    fn test_h_tr_is_ach_multiplier_very_high_ach() {
+        // ACH=40: ratio ≈ 5.66× (theoretical high-ACH night vent)
+        let multiplier = h_tr_is_ach_multiplier(40.0);
+        assert!((multiplier - 5.66).abs() < 0.02);
+    }
+
+    #[test]
+    fn test_h_tr_is_ach_multiplier_monotonic_increase() {
+        // Multiplier should increase monotonically with ACH
+        let m1 = h_tr_is_ach_multiplier(1.0);
+        let m2 = h_tr_is_ach_multiplier(5.0);
+        let m3 = h_tr_is_ach_multiplier(10.0);
+        let m4 = h_tr_is_ach_multiplier(20.0);
+        assert!(m1 < m2);
+        assert!(m2 < m3);
+        assert!(m3 < m4);
+    }
+
+    #[test]
+    fn test_h_tr_is_ach_multiplier_ach_3_threshold_boost() {
+        // Verify boost activates at ACH >= 3.0 (night flush threshold)
+        let multiplier_below = h_tr_is_ach_multiplier(2.9);
+        let multiplier_at = h_tr_is_ach_multiplier(3.0);
+        let multiplier_above = h_tr_is_ach_multiplier(4.0);
+
+        // Below threshold: multiplier < 1.59
+        assert!(multiplier_below < 1.59);
+        // At threshold: multiplier ≈ 1.59
+        assert!((multiplier_at - 1.59).abs() < 0.01);
+        // Above threshold: multiplier > 1.59
+        assert!(multiplier_above > 1.59);
     }
 }

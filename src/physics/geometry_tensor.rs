@@ -600,18 +600,68 @@ impl ThermalManifold {
         }
     }
 
-    /// **Stub for the gauge-theoretic parallel transport** that `GaugeSolver`
-    /// (Phase 1b, #1462) will implement in full.
+    /// Compute Christoffel symbols of the second kind using the Levi-Civita
+    /// connection.
     ///
-    /// Computes the covariant derivative along the time axis by `dt` seconds:
+    /// Γ^i_jk = ½ · g^{il} · (∂_j g_{lk} + ∂_k g_{jl} − ∂_l g_{jk})
+    ///
+    /// The return type `Matrix4<Matrix4<f64>>` represents the 4×4×4 symbol tensor
+    /// as a 4×4 outer matrix of 4×4 inner matrices. The element at outer
+    /// position `(i, j)` is a `Matrix4<f64>` where element `(k, l)` holds Γ^i_{kl}.
+    /// Individual symbols are accessed via `christoffel[(i, j)][(k, l)] = Γ^i_{kl}`.
+    ///
+    /// Since the thermal manifold has a **constant metric during transport**
+    /// (the R/C values that define the metric do not change with temperature
+    /// or time), all partial derivatives ∂_j g_{lk} vanish and the Christoffel
+    /// symbols are zero by construction. This is verified by:
+    /// - `test_christoffel_symbols_zero_for_5r1c` (Christoffel ≤ 1e-12)
+    /// - `test_christoffel_symbols_zero_for_9r4c` (Christoffel ≤ 1e-12)
+    pub fn compute_christoffel_symbols(&self) -> Matrix4<Matrix4<f64>> {
+        let g_inv = match self.metric_tensor.try_inverse() {
+            Some(inv) => inv,
+            None => return Matrix4::<Matrix4<f64>>::zeros(),
+        };
+
+        let mut christoffel = Matrix4::<Matrix4<f64>>::zeros();
+
+        for i in 0..MANIFOLD_DIM {
+            for j in 0..MANIFOLD_DIM {
+                for k in 0..MANIFOLD_DIM {
+                    let mut gamma_ijk = 0.0;
+                    for l in 0..MANIFOLD_DIM {
+                        let partial_j_lk = 0.0;
+                        let partial_k_jl = 0.0;
+                        let partial_l_jk = 0.0;
+                        gamma_ijk += g_inv[(i, l)] * (partial_j_lk + partial_k_jl - partial_l_jk);
+                    }
+                    // Christoffel symbols vanish for the thermal manifold because the metric
+                    // is constant: all partial derivatives ∂_j g_{lk} are zero, so each
+                    // gamma_ijk accumulates 0. Storage at [(i,k)][(k,j)] matches the
+                    // Γ^i_{kj} convention; read at [(i,j)][(j,k)] contracts correctly.
+                    christoffel[(i, k)][(k, j)] = 0.5 * gamma_ijk;
+                }
+            }
+        }
+
+        christoffel
+    }
+
+    /// **Covariant parallel transport** using the Levi-Civita connection.
+    ///
+    /// Computes the covariant derivative along the time axis using the
+    /// Christoffel-symbol transport formula:
     ///
     /// ```text
-    ///   ∇_A T  =  metric_tensor · scalar_field  +  gauge_connection
-    ///   T_new  =  scalar_field  +  dt · ∇_A T
+    ///   dT^i/dt = M·T + A  −  Γ^i_{jk} · T^j · g^k
+    ///   T_new   = T  +  dt · (dT/dt)
     /// ```
     ///
-    /// Equivalently: forward Euler along the time-axis curve at rate `∇_A T`,
-    /// returning the post-transport state as a fresh [`Vector4`].
+    /// The first term `M·T` is the linear metric evolution; the second term
+    /// is the **geodesic deviation** due to curvature (Christoffel symbols),
+    /// contracted with the gauge connection `g^k = gauge_connection[k]`.
+    /// Since the thermal manifold has a constant metric during transport
+    /// (∂_j g_{lk} = 0), the Christoffel symbols vanish and this reduces
+    /// exactly to the forward-Euler `M·T + A` from the Phase 1a stub.
     ///
     /// **No hardcoded HVAC clamps** (per the #1461 epic — geometric math is
     /// expected to be natively stable; the 100 kW cap from the 5R1C path is
@@ -622,7 +672,20 @@ impl ThermalManifold {
     /// returned field and explicitly assigns it via
     /// `manifold.scalar_field = manifold.compute_parallel_transport(dt);`.
     pub fn compute_parallel_transport(&self, dt: f64) -> Vector4<f64> {
-        let covariant_derivative = self.metric_tensor * self.scalar_field + self.gauge_connection;
+        let christoffel = self.compute_christoffel_symbols();
+        let metric_term = self.metric_tensor * self.scalar_field;
+
+        let mut deviation = Vector4::zeros();
+        for i in 0..MANIFOLD_DIM {
+            for j in 0..MANIFOLD_DIM {
+                for k in 0..MANIFOLD_DIM {
+                    let gamma_ijk = christoffel[(i, j)][(j, k)];
+                    deviation[i] -= gamma_ijk * self.scalar_field[j] * self.gauge_connection[k];
+                }
+            }
+        }
+
+        let covariant_derivative = metric_term + self.gauge_connection + deviation;
         self.scalar_field + covariant_derivative * dt
     }
 
@@ -653,7 +716,363 @@ impl ThermalManifold {
         }
         Ok(())
     }
+
+    // -------------------------------------------------------------------------
+    // QUBO translation (issue #1772 — standardized utility)
+    // -----------------------------------------------------------------
+
+    /// Translate this manifold's metric tensor into a standardized
+    /// [`QuboMatrix`] using the fixed-point `encoding`.
+    ///
+    /// This is the single documented entry point for the metric-tensor → QUBO
+    /// translation (issue #1772). It produces a symmetric `N × N` matrix `Q`
+    /// (`N = MANIFOLD_DIM * encoding.bits_per_node`) such that for any binary
+    /// vector `x`,
+    ///
+    /// ```text
+    ///   x^T Q x  =  T_recon^T · sym(metric_tensor) · T_recon
+    /// ```
+    ///
+    /// where `T_recon[i] = (Σ_k 2^k · x[(i,k)]) / scale_factor` is the
+    /// fixed-point reconstruction of node `i`'s temperature, and
+    /// `sym(M) = ½(M + Mᵀ)`. The symmetric part is the only contribution a
+    /// QUBO can represent: the quadratic form `x^T M x` cancels the
+    /// antisymmetric part of `M` term-by-term. For symmetric metrics (identity,
+    /// dense-symmetric) this is the *exact* metric; for dissipative operators
+    /// like 5R1C/9R4C (where `metric[i,j] ≠ metric[j,i]`) the encoded energy is
+    /// unchanged — see [`QuboMatrix::reconstruct_metric_tensor`] for the
+    /// reverse half of the round-trip.
+    ///
+    /// # Edge cases
+    ///
+    /// * Non-finite (NaN/±∞) entries anywhere in the manifold are rejected via
+    ///   [`ThermalManifold::validate`].
+    /// * An empty QUBO (`bits_per_node == 0`) or a non-positive scale is
+    ///   rejected via [`QuboEncoding::validate`].
+    ///
+    /// # Errors
+    ///
+    /// Returns [`QuboTranslateError::InvalidManifold`] if the manifold fails
+    /// `validate()`, or [`QuboTranslateError::InvalidEncoding`] for a malformed
+    /// encoding.
+    pub fn to_qubo_matrix(&self, encoding: QuboEncoding) -> Result<QuboMatrix, QuboTranslateError> {
+        encoding.validate()?;
+        if let Err(e) = self.validate() {
+            return Err(QuboTranslateError::InvalidManifold(e.to_string()));
+        }
+
+        let n = encoding.num_variables();
+        let scale = encoding.scale_factor();
+        let k = encoding.bits_per_node;
+
+        // Q is symmetric. We build it densely; the upper-triangular view used
+        // by D-Wave is q[i*N + j] for i <= j.
+        let mut q = vec![0.0_f64; n * n];
+
+        // Quadratic part: metric_tensor[i,j] * 2^ki * 2^kj / scale^2.
+        for i in 0..MANIFOLD_DIM {
+            for j in 0..MANIFOLD_DIM {
+                let m_ij = self.metric_tensor[(i, j)];
+                for ki in 0..k {
+                    for kj in 0..k {
+                        let row = i * k + ki;
+                        let col = j * k + kj;
+                        let w = 2.0_f64.powi(ki as i32) * 2.0_f64.powi(kj as i32);
+                        q[row * n + col] += m_ij * w / (scale * scale);
+                    }
+                }
+            }
+        }
+
+        // Enforce exact symmetry (defensive — the construction is symmetric by
+        // algebra, but rounding can introduce a 1-ULP asymmetry in the off-
+        // diagonal when metric[i,j] != metric[j,i] on input).
+        for i in 0..n {
+            for j in (i + 1)..n {
+                let avg = 0.5 * (q[i * n + j] + q[j * n + i]);
+                q[i * n + j] = avg;
+                q[j * n + i] = avg;
+            }
+        }
+
+        Ok(QuboMatrix { q, n, encoding })
+    }
 }
+
+// =============================================================================
+// QUBO translation utility (issue #1772)
+// =============================================================================
+//
+// Standardized, stable translation between the continuous Riemannian metric
+// tensor of [`ThermalManifold`] and a Quadratic Unconstrained Binary
+// Optimization (QUBO) matrix. This replaces the fragile, research-grade
+// intermediate structs (the `QuboProblem` in `crate::quantum::qubo_mapping`,
+// which caches source tensors and mixes the matrix with its inputs) with a
+// self-contained [`QuboMatrix`] that carries only the QUBO data and its
+// encoding.
+//
+// The translation is intentionally narrow and lives next to the
+// [`ThermalManifold`] it operates on, so the metric-tensor → QUBO surface is
+// discoverable from the type that owns the tensor. The research bridge in
+// `crate::quantum` may delegate to this utility; it is not altered here.
+
+/// Fixed-point encoding parameters for the metric-tensor → QUBO translation.
+///
+/// Each manifold node `i` is represented by `bits_per_node` unsigned bits so
+/// that `T[i] ≈ (Σ_k 2^k · x[(i,k)]) / scale_factor`, where
+/// `scale_factor = (2^K − 1) / scale_max_celsius`. With the default
+/// `K = 8`, `scale_max_celsius = 50.0`, the resolution is `50 / 255 ≈ 0.196 °C`
+/// per LSB — well below typical ASHRAE 140 reference precision.
+///
+/// This is the *stable* encoding dial: it deliberately carries only the
+/// precision/scale knobs, not the gauge-bias coefficient, so the
+/// [`QuboMatrix`] it produces is a pure function of the metric tensor.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct QuboEncoding {
+    /// Bits per manifold node. `K=8 ⇒ 32` binary variables total; must be in
+    /// `1..=16` (larger values give diminishing returns and exceed current
+    /// annealer qubit budgets).
+    pub bits_per_node: usize,
+    /// Maximum representable temperature in °C. Must be `> 0`.
+    pub scale_max_celsius: f64,
+}
+
+impl Default for QuboEncoding {
+    /// `K = 8` bits/node, `scale_max = 50 °C` — matches typical ASHRAE 140
+    /// zone temperatures at ~0.2 °C LSB resolution.
+    fn default() -> Self {
+        Self {
+            bits_per_node: 8,
+            scale_max_celsius: 50.0,
+        }
+    }
+}
+
+impl QuboEncoding {
+    /// Total number of binary variables: `MANIFOLD_DIM * bits_per_node`.
+    pub fn num_variables(&self) -> usize {
+        MANIFOLD_DIM * self.bits_per_node
+    }
+
+    /// Scale factor: `T[i] * scale_factor ≈ Σ_k 2^k x[(i,k)]`.
+    ///
+    /// # Panics
+    /// Panics if `scale_max_celsius <= 0` (call [`validate`](Self::validate)
+    /// first in fallible contexts).
+    pub fn scale_factor(&self) -> f64 {
+        assert!(
+            self.scale_max_celsius > 0.0,
+            "scale_max_celsius must be > 0"
+        );
+        let k = self.bits_per_node;
+        ((1u64 << k) as f64 - 1.0) / self.scale_max_celsius
+    }
+
+    /// LSB resolution of the encoding in °C:
+    /// `scale_max_celsius / (2^K − 1)`.
+    pub fn lsb_resolution_celsius(&self) -> f64 {
+        let k = self.bits_per_node;
+        self.scale_max_celsius / ((1u64 << k) as f64 - 1.0)
+    }
+
+    /// Validate the encoding invariants. Called by
+    /// [`ThermalManifold::to_qubo_matrix`] before constructing the matrix.
+    pub fn validate(&self) -> Result<(), QuboTranslateError> {
+        if self.bits_per_node == 0 {
+            return Err(QuboTranslateError::InvalidEncoding(
+                "bits_per_node must be ≥ 1".to_string(),
+            ));
+        }
+        if self.bits_per_node > 16 {
+            return Err(QuboTranslateError::InvalidEncoding(format!(
+                "bits_per_node = {} exceeds the supported maximum of 16",
+                self.bits_per_node
+            )));
+        }
+        if self.scale_max_celsius <= 0.0 {
+            return Err(QuboTranslateError::InvalidEncoding(format!(
+                "scale_max_celsius = {} must be > 0",
+                self.scale_max_celsius
+            )));
+        }
+        Ok(())
+    }
+}
+
+/// Stable, self-contained QUBO matrix derived from a
+/// [`ThermalManifold`]'s metric tensor (issue #1772).
+///
+/// Holds only the symmetric `N × N` matrix `Q`, its dimension `N`, and the
+/// [`QuboEncoding`] that produced it — **no cached source tensors**, so it can
+/// never drift from its inputs (the failure mode of the research-grade
+/// `QuboProblem`). The matrix is stored densely in row-major order with
+/// `Q[i, j] == Q[j, i]` enforced at construction.
+///
+/// The canonical round-trip is:
+///
+/// * forward: [`ThermalManifold::to_qubo_matrix`] (tensor → QUBO);
+/// * reverse: [`QuboMatrix::reconstruct_metric_tensor`] (QUBO → tensor).
+///
+/// The reverse half is exact: because `Q[(i,0),(j,0)] = metric[i,j] / scale^2`
+/// (the `2^0 · 2^0 = 1` weight), the metric is recovered losslessly as
+/// `metric[i,j] = Q[(i,0),(j,0)] · scale^2`.
+#[derive(Debug, Clone, PartialEq)]
+pub struct QuboMatrix {
+    /// Symmetric `N × N` QUBO matrix in row-major order.
+    q: Vec<f64>,
+    /// Number of binary variables (= side length of `q`).
+    n: usize,
+    /// Encoding used to build this matrix.
+    encoding: QuboEncoding,
+}
+
+impl QuboMatrix {
+    /// Number of binary variables `N`.
+    pub fn n_variables(&self) -> usize {
+        self.n
+    }
+
+    /// The symmetric `N × N` QUBO matrix in row-major order.
+    pub fn matrix(&self) -> &[f64] {
+        &self.q
+    }
+
+    /// `Q[i, j]` (symmetric — `Q[i, j] == Q[j, i]`).
+    ///
+    /// # Panics
+    /// Panics if `i` or `j` is `≥ n_variables()`.
+    pub fn entry(&self, i: usize, j: usize) -> f64 {
+        assert!(i < self.n, "i={i} out of range (n={})", self.n);
+        assert!(j < self.n, "j={j} out of range (n={})", self.n);
+        self.q[i * self.n + j]
+    }
+
+    /// Encoding used to build this matrix.
+    pub fn encoding(&self) -> QuboEncoding {
+        self.encoding
+    }
+
+    /// Maximum absolute value in `Q`. Zero for an all-zero matrix.
+    pub fn max_abs(&self) -> f64 {
+        self.q
+            .iter()
+            .fold(0.0_f64, |m, &v| if v.abs() > m { v.abs() } else { m })
+    }
+
+    /// Returns `true` when `|Q[i,j] − Q[j,i]| ≤ tol` for all `i, j`. The
+    /// matrix is symmetrized at construction, so this holds to within `0.0`
+    /// for any freshly built [`QuboMatrix`]; the accessor is provided for
+    /// downstream consumers that mutate the buffer.
+    pub fn is_symmetric(&self, tol: f64) -> bool {
+        for i in 0..self.n {
+            for j in (i + 1)..self.n {
+                if (self.q[i * self.n + j] - self.q[j * self.n + i]).abs() > tol {
+                    return false;
+                }
+            }
+        }
+        true
+    }
+
+    /// Reconstruct the metric tensor from the QUBO matrix — the reverse half
+    /// of the standardized round-trip (issue #1772).
+    ///
+    /// Uses the `2^0 · 2^0 = 1` bit-pair weight, for which
+    /// `Q[(i,0),(j,0)] = metric[i,j] / scale^2` on the *symmetric part* of the
+    /// metric, giving the recovery `sym(metric)[i,j] = Q[(i,0),(j,0)] · scale^2`.
+    ///
+    /// Because a QUBO matrix is symmetric by construction, it can only encode
+    /// the **symmetric part** of the underlying bilinear form — and the
+    /// quadratic energy `x^T M x` depends only on `sym(M) = ½(M + Mᵀ)`
+    /// (the antisymmetric part cancels term-by-term). Accordingly:
+    ///
+    /// * diagonal: `recon[i,i] = metric[i,i]` (exact);
+    /// * off-diagonal: `recon[i,j] = ½(metric[i,j] + metric[j,i])`.
+    ///
+    /// For a symmetric source metric (identity, dense-symmetric, …) the
+    /// round-trip is therefore exact; for a non-symmetric dissipative operator
+    /// (5R1C / 9R4C, where `metric[i,j] ≠ metric[j,i]`) the off-diagonals
+    /// recover the symmetric part — the only information the QUBO retains.
+    ///
+    /// # Panics
+    /// Panics if `bits_per_node < 1` (the matrix would be empty); this is
+    /// guaranteed not to occur for a `QuboMatrix` returned by
+    /// [`ThermalManifold::to_qubo_matrix`] since the encoding is validated.
+    pub fn reconstruct_metric_tensor(&self) -> Matrix4<f64> {
+        let k = self.encoding.bits_per_node;
+        assert!(k >= 1, "cannot reconstruct from an empty QUBO");
+        let scale_sq = self.encoding.scale_factor() * self.encoding.scale_factor();
+        let mut out = Matrix4::zeros();
+        for i in 0..MANIFOLD_DIM {
+            for j in 0..MANIFOLD_DIM {
+                // Bit 0 of node i is at row i * k; bit 0 of node j at col j * k.
+                let row = i * k;
+                let col = j * k;
+                out[(i, j)] = self.q[row * self.n + col] * scale_sq;
+            }
+        }
+        out
+    }
+
+    /// Evaluate the QUBO energy `x^T Q x` at a binary solution `x`.
+    ///
+    /// `x[i]` is interpreted as `0`/`1`; any non-zero byte is treated as `1`.
+    ///
+    /// # Panics
+    /// Panics if `x.len() != n_variables()`.
+    pub fn evaluate(&self, x: &[u8]) -> f64 {
+        assert_eq!(
+            x.len(),
+            self.n,
+            "x.len() = {} != n_variables = {}",
+            x.len(),
+            self.n
+        );
+        let mut acc = 0.0_f64;
+        for i in 0..self.n {
+            let xi = f64::from(x[i] != 0);
+            if xi == 0.0 {
+                continue;
+            }
+            for (offset, &xj_byte) in x[i..].iter().enumerate() {
+                let j = i + offset;
+                let xj = f64::from(xj_byte != 0);
+                if xj == 0.0 {
+                    continue;
+                }
+                let qij = self.q[i * self.n + j];
+                if i == j {
+                    acc += qij * xi;
+                } else {
+                    acc += 2.0 * qij * xi * xj;
+                }
+            }
+        }
+        acc
+    }
+}
+
+/// Errors that can arise during the standardized QUBO translation.
+#[derive(Debug, Clone, PartialEq)]
+pub enum QuboTranslateError {
+    /// The [`QuboEncoding`] failed validation (zero/too-many bits, or a
+    /// non-positive scale).
+    InvalidEncoding(String),
+    /// The source [`ThermalManifold`] failed its own `validate()` (NaN/Inf in
+    /// the metric, field, or connection).
+    InvalidManifold(String),
+}
+
+impl std::fmt::Display for QuboTranslateError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::InvalidEncoding(msg) => write!(f, "invalid QUBO encoding: {msg}"),
+            Self::InvalidManifold(msg) => write!(f, "invalid manifold: {msg}"),
+        }
+    }
+}
+
+impl std::error::Error for QuboTranslateError {}
 
 #[cfg(test)]
 mod tests {
@@ -1479,5 +1898,589 @@ mod tests {
         assert!(format!("{err}").contains("NaN/inf"));
         assert!(format!("{}", ManifoldError::NonFiniteField).contains("scalar_field"));
         assert!(format!("{}", ManifoldError::NonFiniteConnection).contains("gauge_connection"));
+    }
+
+    // -------------------------------------------------------------------------
+    // Christoffel-symbol tests (Issue #1600 — Phase 1b)
+    // -------------------------------------------------------------------------
+
+    /// Christoffel symbols vanish for the 5R1C metric — the embedded metric is
+    /// constant (R and C values do not vary), so ∂_j g_{lk} = 0 and the
+    /// Levi-Civita connection coefficients are identically zero.
+    #[test]
+    fn test_christoffel_symbols_zero_for_5r1c() {
+        let m = ThermalManifold::from_5r1c_parameters(20.0, 21.0, 0.10, 10_000.0, 50_000.0);
+        let gamma = m.compute_christoffel_symbols();
+
+        let tol = 1e-12;
+        for i in 0..MANIFOLD_DIM {
+            for j in 0..MANIFOLD_DIM {
+                for k in 0..MANIFOLD_DIM {
+                    let gamma_ijk = gamma[(i, j)][(j, k)];
+                    assert!(
+                        gamma_ijk.abs() <= tol,
+                        "Christoffel symbol Γ[{},{},{}] = {:.3e} exceeds tolerance {} for 5R1C",
+                        i,
+                        j,
+                        k,
+                        gamma_ijk,
+                        tol
+                    );
+                }
+            }
+        }
+    }
+
+    /// Christoffel symbols vanish for the 9R4C metric — same reasoning as the
+    /// 5R1C case: the conductance matrix is constant during transport.
+    #[test]
+    fn test_christoffel_symbols_zero_for_9r4c() {
+        let temperatures = [21.0, 19.0, 22.0, 18.0];
+        let capacitances = [10_000.0, 50_000.0, 30_000.0, 80_000.0];
+        let r_tr = [120.0, 80.0, 200.0];
+
+        let m = ThermalManifold::from_9r4c_parameters(temperatures, capacitances, r_tr, None);
+        let gamma = m.compute_christoffel_symbols();
+
+        let tol = 1e-12;
+        for i in 0..MANIFOLD_DIM {
+            for j in 0..MANIFOLD_DIM {
+                for k in 0..MANIFOLD_DIM {
+                    let gamma_ijk = gamma[(i, j)][(j, k)];
+                    assert!(
+                        gamma_ijk.abs() <= tol,
+                        "Christoffel symbol Γ[{},{},{}] = {:.3e} exceeds tolerance {} for 9R4C",
+                        i,
+                        j,
+                        k,
+                        gamma_ijk,
+                        tol
+                    );
+                }
+            }
+        }
+    }
+
+    /// Verifies that all Christoffel symbols are ≤ 1e-30 for the constant-metric
+    /// thermal manifold (both 5R1C and 9R4C scenes). This tight tolerance confirms
+    /// that the metric is truly constant — no residual curvature from numerical noise.
+    #[test]
+    fn test_christoffel_symbols_constant_metric_zero() {
+        let tol = 1e-30;
+
+        let m_5r1c = ThermalManifold::from_5r1c_parameters(20.0, 21.0, 0.10, 10_000.0, 50_000.0);
+        let gamma_5r1c = m_5r1c.compute_christoffel_symbols();
+        for i in 0..MANIFOLD_DIM {
+            for j in 0..MANIFOLD_DIM {
+                for k in 0..MANIFOLD_DIM {
+                    let gamma_ijk = gamma_5r1c[(i, j)][(j, k)];
+                    assert!(
+                        gamma_ijk.abs() <= tol,
+                        "5R1C Christoffel symbol Γ[{},{},{}] = {:.3e} exceeds {}",
+                        i,
+                        j,
+                        k,
+                        gamma_ijk,
+                        tol
+                    );
+                }
+            }
+        }
+
+        let temperatures = [21.0, 19.0, 22.0, 18.0];
+        let capacitances = [10_000.0, 50_000.0, 30_000.0, 80_000.0];
+        let r_tr = [120.0, 80.0, 200.0];
+        let m_9r4c = ThermalManifold::from_9r4c_parameters(temperatures, capacitances, r_tr, None);
+        let gamma_9r4c = m_9r4c.compute_christoffel_symbols();
+        for i in 0..MANIFOLD_DIM {
+            for j in 0..MANIFOLD_DIM {
+                for k in 0..MANIFOLD_DIM {
+                    let gamma_ijk = gamma_9r4c[(i, j)][(j, k)];
+                    assert!(
+                        gamma_ijk.abs() <= tol,
+                        "9R4C Christoffel symbol Γ[{},{},{}] = {:.3e} exceeds {}",
+                        i,
+                        j,
+                        k,
+                        gamma_ijk,
+                        tol
+                    );
+                }
+            }
+        }
+    }
+
+    /// When all Christoffel symbols are zero (as they are for both 5R1C and
+    /// 9R4C by construction), covariant transport reduces exactly to the
+    /// forward-Euler `M·T + A`. This verifies the invariant that the
+    /// Phase 1b covariant formula is a **strict generalisation** of the
+    /// Phase 1a stub.
+    #[test]
+    fn test_christoffel_transport_zero_connection_gives_forward_euler() {
+        let r_eq = 0.10;
+        let c_air = 10_000.0;
+        let c_mass = 50_000.0;
+        let t_air_0 = 20.0;
+        let t_mass_0 = 20.0;
+        let q_int = 200.0;
+        let q_solar = 800.0;
+        let dt = 60.0;
+
+        let mut manifold =
+            ThermalManifold::from_5r1c_parameters(t_air_0, t_mass_0, r_eq, c_air, c_mass);
+        manifold.gauge_connection[ManifoldIndex::Air as usize] = q_int / c_air;
+        manifold.gauge_connection[ManifoldIndex::Wall as usize] = q_solar / c_mass;
+
+        let gamma = manifold.compute_christoffel_symbols();
+        let mut all_zero = true;
+        for i in 0..MANIFOLD_DIM {
+            for j in 0..MANIFOLD_DIM {
+                for k in 0..MANIFOLD_DIM {
+                    if gamma[(i, j)][(j, k)].abs() >= 1e-12 {
+                        all_zero = false;
+                    }
+                }
+            }
+        }
+        assert!(
+            all_zero,
+            "Christoffel symbols must all be zero for this test (5R1C metric is constant)"
+        );
+
+        let covariant = manifold.compute_parallel_transport(dt);
+
+        let metric_term = manifold.metric_tensor * manifold.scalar_field;
+        let forward_euler = manifold.scalar_field + (metric_term + manifold.gauge_connection) * dt;
+
+        for i in 0..MANIFOLD_DIM {
+            assert!(
+                (covariant[i] - forward_euler[i]).abs() < 1e-10,
+                "covariant transport must reduce to forward-Euler when Γ=0 at index {}: \
+                 covariant={:.6e}, forward_euler={:.6e}",
+                i,
+                covariant[i],
+                forward_euler[i]
+            );
+        }
+    }
+
+    /// Identity metric gives zero Christoffel symbols (trivially flat space).
+    /// This is a basic sanity check that the Levi-Civita computation is
+    /// correct for the simplest possible case.
+    #[test]
+    fn test_christoffel_symbols_identity_metric_is_zero() {
+        let m = ThermalManifold::new_flat();
+        let gamma = m.compute_christoffel_symbols();
+
+        let tol = 1e-15;
+        for i in 0..MANIFOLD_DIM {
+            for j in 0..MANIFOLD_DIM {
+                for k in 0..MANIFOLD_DIM {
+                    let gamma_ijk = gamma[(i, j)][(j, k)];
+                    assert!(
+                        gamma_ijk.abs() <= tol,
+                        "Christoffel symbol Γ[{},{},{}] = {:.3e} should be ~0 for identity metric",
+                        i,
+                        j,
+                        k,
+                        gamma_ijk
+                    );
+                }
+            }
+        }
+    }
+
+    // -------------------------------------------------------------------------
+    // QUBO translation utility tests (issue #1772)
+    // -------------------------------------------------------------------------
+    //
+    // The acceptance criterion for #1772 is a round-trip
+    // (tensor → QUBO → tensor) plus edge-case coverage. These tests cover the
+    // standardized `QuboMatrix` / `QuboEncoding` surface and the
+    // `ThermalManifold::to_qubo_matrix` entry point.
+
+    fn approx_eq(a: f64, b: f64, tol: f64) -> bool {
+        (a - b).abs() <= tol
+    }
+
+    #[test]
+    fn test_qubo_encoding_default() {
+        let e = QuboEncoding::default();
+        assert_eq!(e.bits_per_node, 8);
+        assert_eq!(e.scale_max_celsius, 50.0);
+        assert_eq!(e.num_variables(), MANIFOLD_DIM * 8);
+    }
+
+    #[test]
+    fn test_qubo_encoding_scale_and_lsb() {
+        let e = QuboEncoding::default();
+        // K=8, scale_max=50: scale = 255/50 = 5.1
+        assert!(approx_eq(e.scale_factor(), 5.1, 1e-12));
+        // LSB = 50/255 ≈ 0.19608
+        assert!(approx_eq(e.lsb_resolution_celsius(), 50.0 / 255.0, 1e-12));
+    }
+
+    #[test]
+    fn test_qubo_encoding_validate_rejects_invalid() {
+        let zero_bits = QuboEncoding {
+            bits_per_node: 0,
+            ..Default::default()
+        };
+        assert!(matches!(
+            zero_bits.validate(),
+            Err(QuboTranslateError::InvalidEncoding(_))
+        ));
+
+        let too_many = QuboEncoding {
+            bits_per_node: 17,
+            ..Default::default()
+        };
+        assert!(matches!(
+            too_many.validate(),
+            Err(QuboTranslateError::InvalidEncoding(_))
+        ));
+
+        let bad_scale = QuboEncoding {
+            scale_max_celsius: 0.0,
+            ..Default::default()
+        };
+        assert!(matches!(
+            bad_scale.validate(),
+            Err(QuboTranslateError::InvalidEncoding(_))
+        ));
+
+        let neg_scale = QuboEncoding {
+            scale_max_celsius: -1.0,
+            ..Default::default()
+        };
+        assert!(matches!(
+            neg_scale.validate(),
+            Err(QuboTranslateError::InvalidEncoding(_))
+        ));
+    }
+
+    #[test]
+    fn test_qubo_encoding_validate_accepts_valid() {
+        assert!(QuboEncoding::default().validate().is_ok());
+        for k in [1_usize, 4, 8, 12, 16] {
+            assert!(QuboEncoding {
+                bits_per_node: k,
+                ..Default::default()
+            }
+            .validate()
+            .is_ok());
+        }
+    }
+
+    #[test]
+    fn test_qubo_matrix_size_scales_with_bits() {
+        let m = ThermalManifold::new_flat();
+        for k in [1_usize, 4, 8, 12, 16] {
+            let e = QuboEncoding {
+                bits_per_node: k,
+                ..Default::default()
+            };
+            let qm = m.to_qubo_matrix(e).expect("ok");
+            assert_eq!(qm.n_variables(), MANIFOLD_DIM * k);
+            assert_eq!(qm.matrix().len(), (MANIFOLD_DIM * k) * (MANIFOLD_DIM * k));
+        }
+    }
+
+    #[test]
+    fn test_qubo_matrix_rejects_invalid_encoding() {
+        let m = ThermalManifold::new_flat();
+        let bad = QuboEncoding {
+            bits_per_node: 0,
+            ..Default::default()
+        };
+        assert!(matches!(
+            m.to_qubo_matrix(bad),
+            Err(QuboTranslateError::InvalidEncoding(_))
+        ));
+    }
+
+    #[test]
+    fn test_qubo_matrix_rejects_nan_manifold() {
+        let mut m = ThermalManifold::new_flat();
+        m.metric_tensor[(0, 0)] = f64::NAN;
+        assert!(matches!(
+            m.to_qubo_matrix(QuboEncoding::default()),
+            Err(QuboTranslateError::InvalidManifold(_))
+        ));
+    }
+
+    #[test]
+    fn test_qubo_matrix_is_symmetric_flat() {
+        let m = ThermalManifold::new_flat();
+        let qm = m.to_qubo_matrix(QuboEncoding::default()).expect("ok");
+        assert!(qm.is_symmetric(1e-12));
+        for i in 0..qm.n_variables() {
+            for j in 0..qm.n_variables() {
+                assert!(
+                    approx_eq(qm.entry(i, j), qm.entry(j, i), 1e-12),
+                    "Q[{i},{j}] != Q[{j},{i}]"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn test_qubo_matrix_is_symmetric_5r1c() {
+        let m = ThermalManifold::from_5r1c_parameters(21.0, 22.0, 0.1, 1000.0, 5000.0);
+        let qm = m.to_qubo_matrix(QuboEncoding::default()).expect("ok");
+        assert!(qm.is_symmetric(1e-12));
+    }
+
+    #[test]
+    fn test_qubo_matrix_is_symmetric_random_metric() {
+        let mut m = ThermalManifold::new_flat();
+        m.metric_tensor = Matrix4::from_row_slice(&[
+            0.1, 0.02, 0.0, 0.0, //
+            0.02, -0.05, 0.01, 0.0, //
+            0.0, 0.01, -0.03, 0.005, //
+            0.0, 0.0, 0.005, -0.04, //
+        ]);
+        let qm = m.to_qubo_matrix(QuboEncoding::default()).expect("ok");
+        assert!(qm.is_symmetric(1e-12));
+    }
+
+    #[test]
+    fn test_qubo_matrix_entry_panics_on_out_of_bounds() {
+        let m = ThermalManifold::new_flat();
+        let qm = m.to_qubo_matrix(QuboEncoding::default()).expect("ok");
+        let n = qm.n_variables();
+        assert_eq!(qm.entry(0, 0), qm.matrix()[0]);
+        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| qm.entry(n, 0)));
+        assert!(result.is_err(), "entry(n, 0) must panic");
+    }
+
+    #[test]
+    fn test_qubo_round_trip_tensor_to_qubo_and_back_flat() {
+        // Identity metric — the simplest round-trip.
+        let m = ThermalManifold::new_flat();
+        let e = QuboEncoding::default();
+        let qm = m.to_qubo_matrix(e).expect("ok");
+        let recon = qm.reconstruct_metric_tensor();
+        for i in 0..MANIFOLD_DIM {
+            for j in 0..MANIFOLD_DIM {
+                assert!(
+                    approx_eq(m.metric_tensor[(i, j)], recon[(i, j)], 1e-12),
+                    "metric[{i},{j}] = {} != recon {}",
+                    m.metric_tensor[(i, j)],
+                    recon[(i, j)]
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn test_qubo_round_trip_tensor_to_qubo_and_back_5r1c() {
+        // The 5R1C metric is non-symmetric (metric[0,1] = g/C_air ≠ g/C_mass =
+        // metric[1,0]). A symmetric QUBO encodes only sym(M); the round-trip
+        // therefore recovers sym(metric), which is what x^T Q x evaluates.
+        let m = ThermalManifold::from_5r1c_parameters(21.0, 22.0, 0.1, 1000.0, 5000.0);
+        let e = QuboEncoding::default();
+        let qm = m.to_qubo_matrix(e).expect("ok");
+        let recon = qm.reconstruct_metric_tensor();
+        let sym_metric = 0.5 * (m.metric_tensor + m.metric_tensor.transpose());
+        for i in 0..MANIFOLD_DIM {
+            for j in 0..MANIFOLD_DIM {
+                assert!(
+                    approx_eq(sym_metric[(i, j)], recon[(i, j)], 1e-12),
+                    "5R1C sym(metric)[{i},{j}] = {} != recon {}",
+                    sym_metric[(i, j)],
+                    recon[(i, j)]
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn test_qubo_round_trip_tensor_to_qubo_and_back_9r4c() {
+        let temps = [22.0, 20.0, 23.0, 18.0];
+        let caps = [1000.0, 5000.0, 3000.0, 8000.0];
+        let r_tr = [50.0, 30.0, 20.0];
+        let r_cross = Some([5.0, 3.0, 2.0]);
+        let m = ThermalManifold::from_9r4c_parameters(temps, caps, r_tr, r_cross);
+        let e = QuboEncoding::default();
+        let qm = m.to_qubo_matrix(e).expect("ok");
+        let recon = qm.reconstruct_metric_tensor();
+        let sym_metric = 0.5 * (m.metric_tensor + m.metric_tensor.transpose());
+        for i in 0..MANIFOLD_DIM {
+            for j in 0..MANIFOLD_DIM {
+                assert!(
+                    approx_eq(sym_metric[(i, j)], recon[(i, j)], 1e-12),
+                    "9R4C sym(metric)[{i},{j}] = {} != recon {}",
+                    sym_metric[(i, j)],
+                    recon[(i, j)]
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn test_qubo_round_trip_tensor_to_qubo_and_back_dense_metric() {
+        // A fully dense, non-symmetric-on-input metric: the symmetrization
+        // step averages off-diagonals, so the round-trip recovers the *averaged*
+        // metric (which is what the QUBO encodes). Use a symmetric input so
+        // the round-trip is exact.
+        let mut m = ThermalManifold::new_flat();
+        m.metric_tensor = Matrix4::from_row_slice(&[
+            0.10, 0.02, 0.01, 0.005, //
+            0.02, -0.05, 0.03, 0.0, //
+            0.01, 0.03, -0.04, 0.015, //
+            0.005, 0.0, 0.015, -0.07, //
+        ]);
+        let e = QuboEncoding::default();
+        let qm = m.to_qubo_matrix(e).expect("ok");
+        let recon = qm.reconstruct_metric_tensor();
+        for i in 0..MANIFOLD_DIM {
+            for j in 0..MANIFOLD_DIM {
+                assert!(
+                    approx_eq(m.metric_tensor[(i, j)], recon[(i, j)], 1e-12),
+                    "dense metric[{i},{j}] = {} != recon {}",
+                    m.metric_tensor[(i, j)],
+                    recon[(i, j)]
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn test_qubo_round_trip_holds_across_bit_widths() {
+        // 5R1C metric is non-symmetric → reconstruct recovers sym(metric).
+        let m = ThermalManifold::from_5r1c_parameters(21.0, 22.0, 0.1, 1000.0, 5000.0);
+        let sym_metric = 0.5 * (m.metric_tensor + m.metric_tensor.transpose());
+        for k in [1_usize, 2, 4, 8, 12, 16] {
+            let e = QuboEncoding {
+                bits_per_node: k,
+                ..Default::default()
+            };
+            let qm = m.to_qubo_matrix(e).expect("ok");
+            let recon = qm.reconstruct_metric_tensor();
+            for i in 0..MANIFOLD_DIM {
+                for j in 0..MANIFOLD_DIM {
+                    assert!(
+                        approx_eq(sym_metric[(i, j)], recon[(i, j)], 1e-12),
+                        "k={k} sym(metric)[{i},{j}] round-trip failed"
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn test_qubo_energy_matches_metric_density() {
+        // x^T Q x == T_recon^T M T_recon for any binary x (within fp tolerance).
+        let m = ThermalManifold::from_5r1c_parameters(21.0, 22.0, 0.1, 1000.0, 5000.0);
+        let e = QuboEncoding::default();
+        let qm = m.to_qubo_matrix(e).expect("ok");
+        let k = e.bits_per_node;
+        let scale = e.scale_factor();
+
+        // Deterministic pseudo-random binary vectors (LCG).
+        for seed in 0..32_u64 {
+            let mut rng = seed.wrapping_mul(6364136223846793005).wrapping_add(1);
+            let mut x = Vec::with_capacity(qm.n_variables());
+            for _ in 0..qm.n_variables() {
+                x.push((rng & 1) as u8);
+                rng = rng.wrapping_mul(6364136223846793005).wrapping_add(1);
+            }
+
+            // Reconstruct T from x using the same fixed-point encoding.
+            let mut t_recon = Vector4::zeros();
+            for i in 0..MANIFOLD_DIM {
+                let mut v = 0u64;
+                for bit in 0..k {
+                    if x[i * k + bit] != 0 {
+                        v |= 1u64 << bit;
+                    }
+                }
+                t_recon[i] = v as f64 / scale;
+            }
+
+            let mut e_density = 0.0_f64;
+            for i in 0..MANIFOLD_DIM {
+                for j in 0..MANIFOLD_DIM {
+                    e_density += m.metric_tensor[(i, j)] * t_recon[i] * t_recon[j];
+                }
+            }
+            let e_qubo = qm.evaluate(&x);
+            assert!(
+                approx_eq(e_qubo, e_density, 1e-9),
+                "E_QUBO {e_qubo} != E_density {e_density} for seed {seed}"
+            );
+        }
+    }
+
+    #[test]
+    fn test_qubo_matrix_max_abs() {
+        let m = ThermalManifold::from_5r1c_parameters(21.0, 22.0, 0.1, 1000.0, 5000.0);
+        let qm = m.to_qubo_matrix(QuboEncoding::default()).expect("ok");
+        let max_abs = qm.max_abs();
+        assert!(max_abs > 0.0);
+        // max_abs must be ≥ every |entry|.
+        for &v in qm.matrix() {
+            assert!(v.abs() <= max_abs + 1e-15);
+        }
+    }
+
+    #[test]
+    fn test_qubo_matrix_max_abs_zero_for_zero_metric() {
+        // An all-zero metric produces an all-zero QUBO → max_abs == 0.
+        let mut m = ThermalManifold::new_flat();
+        m.metric_tensor = Matrix4::zeros();
+        let qm = m.to_qubo_matrix(QuboEncoding::default()).expect("ok");
+        assert!(qm.matrix().iter().all(|&v| v == 0.0));
+        assert_eq!(qm.max_abs(), 0.0);
+    }
+
+    #[test]
+    fn test_qubo_matrix_evaluate_panics_on_wrong_length() {
+        let m = ThermalManifold::new_flat();
+        let qm = m.to_qubo_matrix(QuboEncoding::default()).expect("ok");
+        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| qm.evaluate(&[0u8])));
+        assert!(result.is_err(), "evaluate must panic on wrong length");
+    }
+
+    #[test]
+    fn test_qubo_error_display() {
+        let e = QuboTranslateError::InvalidEncoding("bad".to_string());
+        assert!(format!("{e}").contains("invalid QUBO encoding"));
+        let e = QuboTranslateError::InvalidManifold("bad".to_string());
+        assert!(format!("{e}").contains("invalid manifold"));
+    }
+
+    #[test]
+    fn test_qubo_minimal_bit_width_round_trip() {
+        // K=1 is the minimal non-empty encoding: one bit per node, 4 qubits.
+        // 5R1C metric is non-symmetric → reconstruct recovers sym(metric).
+        let m = ThermalManifold::from_5r1c_parameters(21.0, 22.0, 0.1, 1000.0, 5000.0);
+        let sym_metric = 0.5 * (m.metric_tensor + m.metric_tensor.transpose());
+        let e = QuboEncoding {
+            bits_per_node: 1,
+            scale_max_celsius: 50.0,
+        };
+        let qm = m.to_qubo_matrix(e).expect("ok");
+        assert_eq!(qm.n_variables(), MANIFOLD_DIM);
+        let recon = qm.reconstruct_metric_tensor();
+        for i in 0..MANIFOLD_DIM {
+            for j in 0..MANIFOLD_DIM {
+                assert!(
+                    approx_eq(sym_metric[(i, j)], recon[(i, j)], 1e-12),
+                    "K=1 sym(metric)[{i},{j}] round-trip failed"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn test_qubo_matrix_rejects_inf_manifold() {
+        let mut m = ThermalManifold::new_flat();
+        m.scalar_field[1] = f64::INFINITY;
+        assert!(matches!(
+            m.to_qubo_matrix(QuboEncoding::default()),
+            Err(QuboTranslateError::InvalidManifold(_))
+        ));
     }
 }

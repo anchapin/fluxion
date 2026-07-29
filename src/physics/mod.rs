@@ -36,6 +36,7 @@
 // Future solvers should be added ONLY if a validation case demonstrates
 // that the existing solvers cannot meet accuracy requirements.
 
+pub mod bdf_engine;
 pub mod constants;
 pub mod continuous;
 
@@ -56,8 +57,10 @@ pub mod method_selector;
 pub mod nd_array;
 pub mod state_space_ctf;
 pub mod thermal_mass;
+pub mod zero_copy_matrix;
 
 pub mod multi_node_solver;
+pub mod nine_r4c_nodal_trace;
 pub mod solver_manager;
 pub mod solver_registry;
 pub mod solver_trait;

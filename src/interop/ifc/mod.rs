@@ -1,27 +1,23 @@
 // Copyright 2026 Fluxion. All rights reserved.
 // SPDX-License-Identifier: MIT
 
-//! IFC4 STEP geometry import scaffold (issue #1343).
+//! IFC4 STEP geometry import scaffold (issue #1343 + #1612).
 //!
-//! Parses the four IFC4 entity types required by the issue
-//! ([`IfcWall`], [`IfcSlab`], [`IfcRoof`], [`IfcSpace`]) from a STEP
-//! physical file (ISO 10303-21) and maps them onto Fluxion's
-//! [`SimulationSchemaV1`].
+//! Parses the IFC4 entity types from a STEP physical file (ISO 10303-21)
+//! and maps them onto Fluxion's [`SimulationSchemaV1`].
 //!
-//! # Scope (issue #1343 — MVP scaffold)
+//! # Scope (issue #1343 + #1612)
 //!
 //! - IFC4 only — IFC2X3 is **not** supported (deferred).
-//! - Only the four `IfcSharedBldgElements` (wall/slab/roof) and the
-//!   `IfcSpace` (zone) entities are typed; everything else is captured
-//!   generically into [`EntityRecord`] so callers can inspect or forward it.
-//! - Material handling is intentionally minimal: a single
-//!   `IfcMaterialLayerSetUsage` → list of `(material, thickness)` pairs via
-//!   the matching `IfcRelAssociatesMaterial`. No property sets, no
-//!   `IfcMaterialList`, no conditional `IfcMaterialLayerSet` rewrites.
-//! - Geometry is reduced to entity counts and (for `IfcSpace`) footprint
-//!   area; per-wall vertices are not consumed. The per-surface conduction
-//!   solver reads its own geometry, so the scaffold only needs to populate
-//!   the right number of `SurfaceConstruction`s with the right thicknesses.
+//! - Entities typed: [`IfcBuilding`], [`IfcBuildingStorey`],
+//!   [`IfcSpace`], [`IfcWall`], [`IfcSlab`], [`IfcRoof`]
+//!   (issue #1612 extended the initial #1343 scaffold with building/storey).
+//!   Everything else is captured generically into [`GenericEntity`] so callers
+//!   can inspect or forward it.
+//! - Material handling: `IfcMaterialLayerSetUsage` → list of
+//!   `(material, thickness)` pairs via `IfcRelAssociatesMaterial`.
+//! - Zone geometry is extracted via [`IfcGeometryParser`] in [`geometry`]
+//!   using `IfcRelContainedInSpatialStructure` for zone element assignment.
 //!
 //! # Module structure
 //!
@@ -31,8 +27,10 @@
 //!   physical files. Yields [`RawEntity`] records (id + name + raw arg
 //!   body) suitable for the typed parser in [`parser`].
 //! - [`parser`] — Builds an [`IfcModel`] from the lexer's stream and
-//!   extracts the four wall/slab/roof/space entities plus the supporting
-//!   material and relationship records.
+//!   extracts building/storey/wall/slab/roof/space entities plus the
+//!   supporting material and relationship records.
+//! - [`geometry`] — Extracts spatial hierarchy and zone geometry
+//!   (`IfcGeometryParser`).
 //! - [`mapping`] — Converts an [`IfcModel`] into a
 //!   [`SimulationSchemaV1`].
 //!
@@ -53,11 +51,16 @@
 //! ```
 
 pub mod error;
+pub mod geometry;
 pub mod mapping;
 pub mod parser;
 pub mod step_lexer;
 
 pub use error::IfcError;
+pub use geometry::IfcGeometryParser;
 pub use mapping::{import_ifc, IfcToSchema};
-pub use parser::{IfcModel, IfcParser, IfcRoof, IfcSlab, IfcSpace, IfcWall, MaterialLayerSpec};
+pub use parser::{
+    IfcBuilding, IfcBuildingStorey, IfcModel, IfcParser, IfcRoof, IfcSlab, IfcSpace, IfcWall,
+    MaterialLayerSpec,
+};
 pub use step_lexer::{tokenize, RawEntity};

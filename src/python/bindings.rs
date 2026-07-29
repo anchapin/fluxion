@@ -1,6 +1,10 @@
 // Multi-zone Python bindings for Fluxion
 // This module extends the existing Python API with multi-zone functionality
 
+use crate::api::error::FluxionError;
+use crate::api::schema::{SimulationSchema, SimulationSchemaV1};
+use crate::interop::gbxml::{export_gbxml as export_gbxml_file, GbXmlError};
+use crate::interop::osm::{export_osm as export_osm_file, OsmError};
 use crate::physics::cta::VectorField;
 use crate::sim::engine::ThermalModel;
 use crate::sim::invariant_checker::InvariantChecker;
@@ -8,7 +12,7 @@ use crate::validation::ashrae_140_cases::ASHRAE140Case;
 use crate::weather::denver::DenverTmyWeather;
 use crate::weather::WeatherSource;
 use pyo3::prelude::*;
-use pyo3::types::PyDict;
+use pyo3::types::{PyDict, PyModule};
 use std::collections::HashMap;
 
 /// Default tolerance for energy balance validation (0.1%).
@@ -36,6 +40,67 @@ impl PyMultiZoneThermalModel {
 
         Ok(PyMultiZoneThermalModel {
             inner: ThermalModel::<VectorField>::new(num_zones),
+        })
+    }
+
+    /// Construct a MultiZoneThermalModel from an ASHRAE 140 case spec.
+    ///
+    /// Used to obtain high-mass (9R4C) construction models from Python so the
+    /// sub-hourly node temperature API
+    /// ([`get_nodal_temperatures`](Self::get_nodal_temperatures) /
+    /// [`get_nodal_temperatures_numpy`](Self::get_nodal_temperatures_numpy))
+    /// has data to return. Examples: `"Case900"` (high-mass baseline),
+    /// `"Case600"` (low-mass), `"Case970"` (5-zone).
+    ///
+    /// # Arguments
+    /// * `case_id` - ASHRAE 140 case identifier (case-insensitive). Examples:
+    ///   `"Case900"`, `"Case600"`, `"case_900"`.
+    ///
+    /// # Errors
+    /// Raises `ValueError` for unknown case IDs.
+    #[staticmethod]
+    pub fn from_case_spec(case_id: &str) -> PyResult<Self> {
+        let normalized: String = case_id
+            .chars()
+            .filter(|c| !c.is_whitespace() && *c != '_')
+            .collect();
+        let normalized_upper = normalized.to_ascii_uppercase();
+        let case_enum = match normalized_upper.as_str() {
+            "CASE600" => ASHRAE140Case::Case600,
+            "CASE610" => ASHRAE140Case::Case610,
+            "CASE620" => ASHRAE140Case::Case620,
+            "CASE630" => ASHRAE140Case::Case630,
+            "CASE640" => ASHRAE140Case::Case640,
+            "CASE650" => ASHRAE140Case::Case650,
+            "CASE600FF" => ASHRAE140Case::Case600FF,
+            "CASE650FF" => ASHRAE140Case::Case650FF,
+            "CASE900" => ASHRAE140Case::Case900,
+            "CASE910" => ASHRAE140Case::Case910,
+            "CASE920" => ASHRAE140Case::Case920,
+            "CASE930" => ASHRAE140Case::Case930,
+            "CASE940" => ASHRAE140Case::Case940,
+            "CASE950" => ASHRAE140Case::Case950,
+            "CASE900FF" => ASHRAE140Case::Case900FF,
+            "CASE950FF" => ASHRAE140Case::Case950FF,
+            "CASE960" => ASHRAE140Case::Case960,
+            "CASE970" => ASHRAE140Case::Case970,
+            "CASE195" => ASHRAE140Case::Case195,
+            "CASE195HIGHMASS" | "CASE195HM" => ASHRAE140Case::Case195HighMass,
+            "CASE195NOLOAds" | "CASE195NL" => ASHRAE140Case::Case195NoLoads,
+            "CASE195NOSOLAR" | "CASE195NS" => ASHRAE140Case::Case195NoSolar,
+            other => {
+                return Err(pyo3::exceptions::PyValueError::new_err(format!(
+                    "Unknown ASHRAE 140 case '{}'. Known cases: Case195, Case195HighMass, \
+                     Case600, Case610, Case620, Case630, Case640, Case650, Case600FF, Case650FF, \
+                     Case900, Case910, Case920, Case930, Case940, Case950, Case900FF, Case950FF, \
+                     Case960, Case970",
+                    other
+                )));
+            }
+        };
+        let spec = case_enum.spec();
+        Ok(PyMultiZoneThermalModel {
+            inner: ThermalModel::<VectorField>::from_spec(&spec),
         })
     }
 
@@ -201,6 +266,87 @@ impl PyMultiZoneThermalModel {
         Ok(result)
     }
 
+    /// Get peak load metrics for a specific zone (Issue #1628)
+    ///
+    /// Accepts a zone identifier as either:
+    /// - An integer index (e.g., 0, 1, 2)
+    /// - A string zone name (e.g., "Zone1", "Zone 1", "zone_1")
+    ///
+    /// Returns a dictionary with:
+    /// - "heating_mw": Peak heating power in MW
+    /// - "cooling_mw": Peak cooling power in MW
+    /// - "heating_timestep": Timestep index when peak heating occurred
+    /// - "cooling_timestep": Timestep index when peak cooling occurred
+    pub fn get_zone_peaks(
+        &self,
+        zone_identifier: &Bound<'_, PyAny>,
+    ) -> PyResult<HashMap<String, PyObject>> {
+        let zone_idx = if let Ok(idx) = zone_identifier.extract::<usize>() {
+            idx
+        } else if let Ok(name) = zone_identifier.extract::<String>() {
+            let normalized = name.trim().to_lowercase();
+            if let Some(stripped) = normalized.strip_prefix("zone") {
+                let num_str = stripped.trim().replace(['_', ' '], "-");
+                if let Ok(num) = num_str.parse::<usize>() {
+                    if num == 0 {
+                        return Err(pyo3::exceptions::PyValueError::new_err(
+                            "Zone indices are 0-based. Use 0 for Zone 1.",
+                        ));
+                    }
+                    num - 1
+                } else {
+                    return Err(pyo3::exceptions::PyValueError::new_err(format!(
+                        "Invalid zone name {:?}. Expected format: Zone1, Zone 1, or integer index.",
+                        name
+                    )));
+                }
+            } else {
+                return Err(pyo3::exceptions::PyValueError::new_err(format!(
+                    "Invalid zone identifier {:?}. Expected format: Zone1, Zone 1, or integer index.",
+                    name
+                )));
+            }
+        } else {
+            return Err(pyo3::exceptions::PyTypeError::new_err(
+                "Zone identifier must be an integer index or string like Zone1",
+            ));
+        };
+
+        if zone_idx >= self.inner.num_zones {
+            return Err(pyo3::exceptions::PyValueError::new_err(format!(
+                "Zone index {} out of range (0-{})",
+                zone_idx,
+                self.inner.num_zones - 1
+            )));
+        }
+
+        let heating_kw = self.inner.get_zone_peak_heating_kw();
+        let cooling_kw = self.inner.get_zone_peak_cooling_kw();
+        let heating_timesteps = self.inner.get_zone_peak_heating_timestep();
+        let cooling_timesteps = self.inner.get_zone_peak_cooling_timestep();
+
+        Python::with_gil(|py| {
+            let mut result = HashMap::new();
+            result.insert(
+                "heating_mw".to_string(),
+                (heating_kw[zone_idx] / 1000.0).to_object(py),
+            );
+            result.insert(
+                "cooling_mw".to_string(),
+                (cooling_kw[zone_idx] / 1000.0).to_object(py),
+            );
+            result.insert(
+                "heating_timestep".to_string(),
+                heating_timesteps[zone_idx].to_object(py),
+            );
+            result.insert(
+                "cooling_timestep".to_string(),
+                cooling_timesteps[zone_idx].to_object(py),
+            );
+            Ok(result)
+        })
+    }
+
     /// Export zone temperatures as Python dictionary
     pub fn export_zone_temperatures(&self) -> PyResult<Py<PyDict>> {
         Python::with_gil(|py| {
@@ -270,6 +416,105 @@ impl PyMultiZoneThermalModel {
                 "Simulation has not been run yet. Call simulate_multi_zone first.",
             )),
         }
+    }
+
+    /// Get sub-hourly 9R4C node temperature profiles (Issue #1799).
+    ///
+    /// Returns a nested list `[[[wall_t], [roof_t], [floor_t], [internal_t]] * num_zones]`
+    /// where the middle axis follows `MultiNodeSolver::NODE_NAMES` ordering:
+    /// `0=wall, 1=roof, 2=floor, 3=internal`. The inner axis is one entry per
+    /// timestep, time-indexed by `simulate_multi_zone` execution order.
+    ///
+    /// # Returns
+    /// `Some([num_zones][4][num_steps])` for high-mass models (9R4C), or
+    /// `None` for low-mass models or before `simulate_multi_zone` has run.
+    ///
+    /// # Example
+    /// ```python
+    /// import fluxion
+    /// model = fluxion.MultiZoneThermalModel(1)
+    /// # Need high-mass construction for 9R4C — populate per-zone solver manually
+    /// # via the public Python API for testing.
+    /// # model.simulate_multi_zone(1, False)
+    /// nodal = model.get_nodal_temperatures()
+    /// # nodal[zone_idx][node_idx][timestep] is the time-indexed series.
+    /// ```
+    pub fn get_nodal_temperatures(&self) -> Option<Vec<Vec<Vec<f64>>>> {
+        self.inner.get_nodal_temperatures()
+    }
+
+    /// Number of zones carrying a 9R4C `MultiNodeSolver` (Issue #1799).
+    ///
+    /// Returns 0 for low-mass models. Used by Python callers to disambiguate
+    /// `get_nodal_temperatures() is None` between "not a 9R4C model" and
+    /// "simulation not yet run".
+    pub fn num_multinode_solvers(&self) -> usize {
+        self.inner.num_multizone_solvers()
+    }
+
+    /// Canonical 9R4C node names in the same order as `get_nodal_temperatures()`
+    /// (Issue #1799). Useful for labelling plots / ML feature columns.
+    pub fn nodal_temperature_node_names(&self) -> Vec<String> {
+        vec![
+            "wall".to_string(),
+            "roof".to_string(),
+            "floor".to_string(),
+            "internal".to_string(),
+        ]
+    }
+
+    /// Sub-hourly 9R4C node temperatures as a 3D numpy array (Issue #1799).
+    ///
+    /// # Returns
+    /// Tuple of `(array, shape)` where `array` is a numpy `ndarray` with shape
+    /// `[num_zones, 4, num_steps]`, the middle axis matching the canonical node
+    /// ordering (`wall, roof, floor, internal`), and `shape` is the same shape
+    /// vector for convenience.
+    ///
+    /// # Errors
+    /// Raises `ValueError` if the simulation has not been run, or if the model
+    /// carries no `MultiNodeSolver` (i.e. is a low-mass 5R1C model — for which
+    /// there are no 9R4C nodes to export).
+    pub fn get_nodal_temperatures_numpy<'a>(
+        &self,
+        py: Python<'a>,
+    ) -> PyResult<(Bound<'a, numpy::PyArray3<f64>>, Vec<usize>)> {
+        let nodal = self.inner.get_nodal_temperatures();
+        let nodal = match nodal {
+            Some(v) => v,
+            None => {
+                if self.inner.num_multizone_solvers() == 0 {
+                    return Err(pyo3::exceptions::PyValueError::new_err(
+                        "Model has no 9R4C MultiNodeSolver (low-mass construction). \
+                         Sub-hourly nodal temperatures are only available for high-mass \
+                         9R4C models.",
+                    ));
+                }
+                return Err(pyo3::exceptions::PyValueError::new_err(
+                    "Simulation has not been run yet. Call simulate_multi_zone first.",
+                ));
+            }
+        };
+
+        let num_zones = nodal.len();
+        let num_nodes = if num_zones > 0 { nodal[0].len() } else { 0 };
+        let timesteps = if num_zones > 0 && num_nodes > 0 {
+            nodal[0][0].len()
+        } else {
+            0
+        };
+
+        // Flatten into a row-major contiguous buffer of shape [Z, N, T].
+        // numpy::PyArray3::from_vec3_bound expects `&[Vec<Vec<f64>>]` of length Z,
+        // each entry length N, each inner entry length T — exactly our layout.
+        let shape = vec![num_zones, num_nodes, timesteps];
+        let arr = numpy::PyArray3::from_vec3_bound(py, &nodal).map_err(|e| {
+            pyo3::exceptions::PyValueError::new_err(format!(
+                "Failed to create numpy 3D array: {}",
+                e
+            ))
+        })?;
+        Ok((arr, shape))
     }
 
     /// Run energy balance validation for multi-zone model
@@ -656,8 +901,52 @@ pub fn multi_zone(_py: Python, m: &Bound<'_, PyModule>) -> PyResult<()> {
         create_multi_zone_model_from_schema_dict,
         m
     )?)?;
+    m.add_function(wrap_pyfunction!(export_osm, m)?)?;
+    m.add_function(wrap_pyfunction!(export_gbxml, m)?)?;
 
     Ok(())
+}
+
+fn validation_error(message: impl Into<String>) -> PyErr {
+    FluxionError::Validation(message.into()).into()
+}
+
+fn osm_error(error: OsmError) -> PyErr {
+    FluxionError::Simulation(format!("OSM interoperability error: {}", error)).into()
+}
+
+fn gbxml_error(error: GbXmlError) -> PyErr {
+    FluxionError::Simulation(format!("gbXML interoperability error: {}", error)).into()
+}
+
+fn schema_from_json(content: &str) -> PyResult<SimulationSchemaV1> {
+    if let Ok(schema) = serde_json::from_str::<SimulationSchemaV1>(content) {
+        return Ok(schema);
+    }
+
+    let schema: SimulationSchema = serde_json::from_str(content)
+        .map_err(|error| validation_error(format!("Failed to parse schema JSON: {}", error)))?;
+    let SimulationSchema::V1(schema) = schema;
+    Ok(schema)
+}
+
+fn schema_from_dict(schema: &Bound<'_, PyDict>) -> PyResult<SimulationSchemaV1> {
+    let py = schema.py();
+    let json = PyModule::import_bound(py, "json")?;
+    let content: String = json.call_method1("dumps", (schema,))?.extract()?;
+    schema_from_json(&content)
+}
+
+#[pyfunction]
+pub fn export_osm(schema: &Bound<'_, PyDict>, path: &str) -> PyResult<()> {
+    let schema = schema_from_dict(schema)?;
+    export_osm_file(&schema, path).map_err(osm_error)
+}
+
+#[pyfunction]
+pub fn export_gbxml(schema: &Bound<'_, PyDict>, path: &str) -> PyResult<()> {
+    let schema = schema_from_dict(schema)?;
+    export_gbxml_file(&schema, path).map_err(gbxml_error)
 }
 
 /// Register HVAC module in main bindings

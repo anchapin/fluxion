@@ -50,9 +50,17 @@ mod fmi_exporter;
 #[cfg(all(feature = "napi-bindings", not(target_arch = "wasm32")))]
 mod gbxml_exporter;
 #[cfg(all(feature = "napi-bindings", not(target_arch = "wasm32")))]
+mod hvac_config;
+#[cfg(all(feature = "napi-bindings", not(target_arch = "wasm32")))]
+mod nine_r4c_config;
+#[cfg(all(feature = "napi-bindings", not(target_arch = "wasm32")))]
+mod nine_r4c_nodal_trace;
+#[cfg(all(feature = "napi-bindings", not(target_arch = "wasm32")))]
 mod osm_exporter;
 #[cfg(all(feature = "napi-bindings", not(target_arch = "wasm32")))]
 mod state_extractor;
+#[cfg(all(feature = "napi-bindings", not(target_arch = "wasm32")))]
+mod zero_copy_matrix;
 
 #[cfg(all(feature = "napi-bindings", not(target_arch = "wasm32")))]
 pub use batch_oracle::BatchOracle;
@@ -65,9 +73,22 @@ pub use fmi_exporter::FmiExporter;
 #[cfg(all(feature = "napi-bindings", not(target_arch = "wasm32")))]
 pub use gbxml_exporter::GbXmlExporter;
 #[cfg(all(feature = "napi-bindings", not(target_arch = "wasm32")))]
+pub use hvac_config::{
+    HvacBoiler, HvacCavSystem, HvacChiller, HvacDailySchedule, HvacHeatPump, HvacSchedule,
+    HvacVavTerminal, ZoneController, ZoneSetpoints,
+};
+#[cfg(all(feature = "napi-bindings", not(target_arch = "wasm32")))]
+pub use nine_r4c_config::NineR4CConfig;
+#[cfg(all(feature = "napi-bindings", not(target_arch = "wasm32")))]
+pub use nine_r4c_nodal_trace::{
+    ExteriorTemperatureSet, NineR4CNodalTrace, NineR4CNodalTracer, NineR4CTraceParams,
+};
+#[cfg(all(feature = "napi-bindings", not(target_arch = "wasm32")))]
 pub use osm_exporter::OsmExporter;
 #[cfg(all(feature = "napi-bindings", not(target_arch = "wasm32")))]
 pub use state_extractor::{StateExtractor, StateMatrices};
+#[cfg(all(feature = "napi-bindings", not(target_arch = "wasm32")))]
+pub use zero_copy_matrix::transfer_matrix;
 
 #[cfg(all(feature = "napi-bindings", not(target_arch = "wasm32")))]
 #[napi_derive::napi]

@@ -13,6 +13,9 @@ categories = ["simulation", "scientific", "api-bindings"]
 # Fluxion core
 fluxion = { path = "..", features = ["multi-zone"] }
 
+# TOON serialization (Issue #2072)
+fluxion-toon = { path = "../crates/fluxion-toon" }
+
 # Async runtime
 tokio = { version = "1.40", features = ["full"], default-features = false }
 

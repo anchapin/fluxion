@@ -7,7 +7,7 @@ Removes the "Local Tether" bottleneck by:
 1. Storing campaign state in S3 (not local disk)
 2. Workers push results directly to S3
 3. Aggregator merges S3 results
-4. SNS notification on completion
+4. SNS, webhook, and/or email notification on completion
 
 Usage
 -----
@@ -39,6 +39,8 @@ import os
 import random
 import sys
 import time
+import urllib.error
+import urllib.request
 import uuid
 from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
@@ -52,6 +54,20 @@ try:
 except ImportError:
     boto3 = None
     ClientError = Exception
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+try:
+    from state_store import (  # type: ignore[import-not-found]
+        CampaignProgress,
+        StateStore,
+        TaskState,
+        TaskStatus,
+    )
+except ImportError:  # pragma: no cover - defensive
+    CampaignProgress = None  # type: ignore[assignment]
+    StateStore = None  # type: ignore[assignment]
+    TaskState = None  # type: ignore[assignment]
+    TaskStatus = None  # type: ignore[assignment]
 
 
 TRACE_BASE = Path(".sdd/traces/diagnostic")
@@ -114,6 +130,9 @@ class CampaignState:
     results_uri: Optional[str] = None
     notification_sent: bool = False
     error_message: Optional[str] = None
+    webhook_url: Optional[str] = None
+    sns_topic_arn: Optional[str] = None
+    email_config: Optional[dict] = None
 
 
 def get_aws_clients():
@@ -135,6 +154,76 @@ def get_aws_clients():
     }
 
 
+def parse_email_recipients(raw: str) -> list[str]:
+    """Parse a comma- or semicolon-separated recipient list (Issue #1789)."""
+    if not raw:
+        return []
+    parts = [p.strip() for p in raw.replace(";", ",").split(",")]
+    return [p for p in parts if p]
+
+
+def build_completion_payload(
+    state: CampaignState, s3_bucket: str, s3_prefix: str
+) -> dict[str, Any]:
+    """Build the JSON payload sent on completion (webhook + SNS + email body).
+
+    Mirrors the Rust `CampaignCompletion` struct (see
+    `src/api/email_notification.rs`, Issue #1789) so every notification
+    channel sees the same shape.
+    """
+    region = os.environ.get("AWS_REGION", "us-east-1")
+    results_uri = (
+        f"https://{s3_bucket}.s3.{region}.amazonaws.com/"
+        f"{s3_prefix}/campaigns/{state.campaign_id}/results/"
+    )
+    return {
+        "campaign_id": state.campaign_id,
+        "status": state.status,
+        "start_time": state.start_time,
+        "end_time": datetime.now(timezone.utc).isoformat(),
+        "total_runs": len(state.work_units),
+        "completed_runs": state.completed_units,
+        "failed_runs": state.failed_units,
+        "best_mae": state.best_mae,
+        "best_parameters": state.best_parameters,
+        "results_uri": results_uri,
+    }
+
+
+def render_email_body(payload: dict[str, Any], download_url: Optional[str] = None) -> str:
+    """Render the plain-text email body for a completion event (T7.5)."""
+    download = download_url or payload["results_uri"]
+    best_params = payload.get("best_parameters") or {}
+    if best_params:
+        params_block = "\n".join(
+            f"  {k} = {v}" for k, v in sorted(best_params.items())
+        )
+    else:
+        params_block = "  (none)"
+    status_display = "completed" if payload["status"] != "failed" else "failed"
+    return (
+        f"Fluxion campaign {payload['campaign_id']} is {status_display}.\n\n"
+        f"Started:  {payload['start_time']}\n"
+        f"Finished: {payload['end_time']}\n\n"
+        f"Total runs:     {payload['total_runs']}\n"
+        f"Completed runs: {payload['completed_runs']}\n"
+        f"Failed runs:    {payload['failed_runs']}\n"
+        f"Best MAE:       {payload['best_mae']:.2f}%\n\n"
+        f"Best parameters:\n{params_block}\n\n"
+        f"Download aggregated results:\n{download}\n\n"
+        f"—\nFluxion cloud coordinator (OSimFlow)\n"
+    )
+
+
+def render_email_subject(payload: dict[str, Any]) -> str:
+    """Render the subject line for a completion email (T7.5)."""
+    status_display = "completed" if payload["status"] != "failed" else "failed"
+    return (
+        f"Fluxion campaign {payload['campaign_id']} {status_display} — "
+        f"results ready"
+    )
+
+
 def parse_s3_uri(uri: str) -> tuple[str, str]:
     """Parse s3://bucket/key into (bucket, key)."""
     if not uri.startswith("s3://"):
@@ -149,6 +238,44 @@ def get_required_env(var: str) -> str:
     if not value:
         raise ValueError(f"Required environment variable not set: {var}")
     return value
+
+
+def _resolve_state_store(selection: str) -> Optional["StateStore"]:
+    """Translate the ``--state-store`` CLI flag into a concrete store.
+
+    ``auto`` consults ``FLUXION_STATE_STORE`` (with backward-compatible
+    fall-through to ``FLUXION_CAMPAIGN_TABLE`` for pre-T7.3 deployments
+    that only configured the legacy DynamoDB table name).
+    ``memory`` returns an :class:`InMemoryStateStore` (handy for tests
+    and smoke checks that should not touch AWS).
+    """
+    if StateStore is None:
+        return None
+    selection = (selection or "auto").strip().lower()
+    if selection == "auto":
+        env = (os.environ.get("FLUXION_STATE_STORE") or "").strip().lower()
+        if env:
+            selection = env
+        elif os.environ.get("FLUXION_CAMPAIGN_TABLE") or os.environ.get("FLUXION_REDIS_URL"):
+            selection = (
+                "dynamodb"
+                if os.environ.get("FLUXION_CAMPAIGN_TABLE")
+                else "redis"
+            )
+        else:
+            return None
+    if selection in ("memory", "inmemory"):
+        return StateStore.create("memory")
+    if selection in ("dynamodb", "redis"):
+        try:
+            return StateStore.create(selection)
+        except Exception as exc:  # pragma: no cover - transport errors
+            print(
+                f"[WARN] Could not build {selection} state store: {exc}",
+                file=sys.stderr,
+            )
+            return None
+    return None
 
 
 def ensure_s3_prefix(s3_client, bucket: str, prefix: str) -> None:
@@ -195,8 +322,16 @@ def create_campaign(
     s3_bucket: str,
     s3_prefix: str,
     sns_topic_arn: Optional[str] = None,
+    webhook_url: Optional[str] = None,
+    email_config: Optional[dict] = None,
 ) -> CampaignState:
-    """Create a new campaign and upload initial state to S3."""
+    """Create a new campaign and upload initial state to S3.
+
+    Notification channels (any combination, all optional):
+        - ``sns_topic_arn``: AWS SNS topic ARN
+        - ``webhook_url``:   generic webhook endpoint (Issue #1788 / T7.4)
+        - ``email_config``:  transactional email config (Issue #1789 / T7.5)
+    """
     clients = get_aws_clients()
 
     campaign_id = f"fluxion-{uuid.uuid4().hex[:12]}"
@@ -236,7 +371,7 @@ def create_campaign(
         clients["s3"].put_object(
             Bucket=s3_bucket,
             Key=unit_key,
-            Body=json.dumps(work_unit, indent=2),
+            Body=json.dumps(asdict(work_unit), indent=2, default=str),
             ContentType="application/json",
         )
 
@@ -265,13 +400,16 @@ def create_campaign(
         work_units=work_units,
         status="created",
         start_time=datetime.now(timezone.utc).isoformat(),
+        webhook_url=webhook_url,
+        sns_topic_arn=sns_topic_arn,
+        email_config=email_config,
     )
 
     state_uri = f"s3://{s3_bucket}/{s3_prefix}/campaigns/{campaign_id}/state.json"
     clients["s3"].put_object(
         Bucket=s3_bucket,
         Key=f"{s3_prefix}/campaigns/{campaign_id}/state.json",
-        Body=json.dumps(asdict(state), indent=2),
+        Body=json.dumps(asdict(state), indent=2, default=str),
         ContentType="application/json",
     )
 
@@ -280,6 +418,11 @@ def create_campaign(
 
     if sns_topic_arn:
         print(f"[*] SNS notifications will be sent to: {sns_topic_arn}")
+    if webhook_url:
+        print(f"[*] Webhook notifications will be sent to: {webhook_url}")
+    if email_config and email_config.get("to"):
+        recipients = ", ".join(email_config["to"])
+        print(f"[*] Email notifications will be sent to: {recipients}")
 
     return state
 
@@ -312,8 +455,62 @@ def update_campaign_state(state: CampaignState, s3_bucket: str, s3_prefix: str) 
     )
 
 
-def check_campaign_progress(state: CampaignState, s3_bucket: str, s3_prefix: str) -> CampaignState:
-    """Check progress by counting completed work units in S3."""
+def check_campaign_progress(
+    state: CampaignState,
+    s3_bucket: str,
+    s3_prefix: str,
+    *,
+    state_store: Optional["StateStore"] = None,
+) -> CampaignState:
+    """Check progress by aggregating worker state-store entries.
+
+    Resolution order
+    ----------------
+    1. ``state_store`` argument (preferred — tests / local pipeline).
+    2. ``FLUXION_STATE_STORE`` env (``dynamodb`` or ``redis``).
+    3. Legacy S3 listing — counts ``results/*.json`` blobs produced by
+       older worker versions that predate the state-store refactor.
+
+    The state-store aggregation is authoritative when available because
+    workers now publish per-task completion directly to it, including
+    metrics and error_message that the S3-listing path cannot recover.
+    """
+    progress: Optional[CampaignProgress] = None
+    if state_store is not None and CampaignProgress is not None:
+        progress = state_store.aggregate_progress(
+            state.campaign_id, total=len(state.work_units)
+        )
+    elif StateStore is not None:
+        backend = (os.environ.get("FLUXION_STATE_STORE") or "").strip().lower()
+        if backend in ("dynamodb", "redis"):
+            try:
+                store = StateStore.from_env()
+                progress = store.aggregate_progress(
+                    state.campaign_id, total=len(state.work_units)
+                )
+            except Exception as exc:  # pragma: no cover - transport errors
+                print(
+                    f"[WARN] StateStore aggregate failed: {exc}",
+                    file=sys.stderr,
+                )
+
+    if progress is not None:
+        state.completed_units = progress.completed
+        state.failed_units = progress.failed
+        total = len(state.work_units)
+        if state.status == "created" and progress.in_flight > 0:
+            state.status = "running"
+        if progress.is_complete and total > 0:
+            state.status = "completed"
+        print(
+            f"[*] Campaign {state.campaign_id} (state-store): "
+            f"{progress.completed}/{total} completed, "
+            f"{progress.failed} failed, {progress.in_flight} in-flight "
+            f"({progress.progress_pct:.1f}%)"
+        )
+        return state
+
+    # --- Legacy S3 listing fallback -----------------------------------
     clients = get_aws_clients()
 
     completed = 0
@@ -338,9 +535,9 @@ def check_campaign_progress(state: CampaignState, s3_bucket: str, s3_prefix: str
     state.failed_units = failed
 
     total = len(state.work_units)
-    progress = (completed + failed) / total * 100 if total > 0 else 0
+    progress_pct = (completed + failed) / total * 100 if total > 0 else 0
 
-    print(f"[*] Campaign {state.campaign_id}: {completed}/{total} completed, {failed} failed ({progress:.1f}%)")
+    print(f"[*] Campaign {state.campaign_id}: {completed}/{total} completed, {failed} failed ({progress_pct:.1f}%)")
 
     if state.status == "created" and (completed + failed) > 0:
         state.status = "running"
@@ -351,7 +548,12 @@ def check_campaign_progress(state: CampaignState, s3_bucket: str, s3_prefix: str
 
 
 def wait_for_completion(
-    campaign_id: str, s3_bucket: str, s3_prefix: str, poll_interval: int = 30
+    campaign_id: str,
+    s3_bucket: str,
+    s3_prefix: str,
+    poll_interval: int = 30,
+    *,
+    state_store: Optional["StateStore"] = None,
 ) -> CampaignState:
     """Poll until campaign is complete."""
     print(f"[*] Waiting for campaign {campaign_id} to complete...")
@@ -362,7 +564,9 @@ def wait_for_completion(
             print(f"[ERROR] Campaign {campaign_id} not found")
             sys.exit(1)
 
-        state = check_campaign_progress(state, s3_bucket, s3_prefix)
+        state = check_campaign_progress(
+            state, s3_bucket, s3_prefix, state_store=state_store
+        )
         update_campaign_state(state, s3_bucket, s3_prefix)
 
         if state.status in ("completed", "failed"):
@@ -371,43 +575,176 @@ def wait_for_completion(
         time.sleep(poll_interval)
 
 
+def send_webhook_notification(
+    state: CampaignState,
+    s3_bucket: str,
+    s3_prefix: str,
+    webhook_url: str,
+    *,
+    timeout: float = 10.0,
+) -> bool:
+    """POST the completion payload to ``webhook_url``.
+
+    Returns ``True`` if the webhook returned a 2xx status, ``False`` on
+    transport / non-2xx errors. Failures are logged but never raised —
+    notification problems must not abort the coordinator's post-completion
+    bookkeeping (state persistence, aggregator handoff, etc.).
+    """
+    payload = build_completion_payload(state, s3_bucket, s3_prefix)
+    body = json.dumps(payload).encode("utf-8")
+    request = urllib.request.Request(
+        webhook_url,
+        data=body,
+        method="POST",
+        headers={
+            "Content-Type": "application/json",
+            "User-Agent": "fluxion-cloud-campaign/1.0",
+        },
+    )
+    try:
+        with urllib.request.urlopen(request, timeout=timeout) as response:  # noqa: S310
+            status_code = response.getcode()
+            if 200 <= status_code < 300:
+                print(
+                    f"[*] Webhook delivered: {webhook_url} (HTTP {status_code})"
+                )
+                return True
+            print(
+                f"[WARN] Webhook returned non-2xx status {status_code}: {webhook_url}",
+                file=sys.stderr,
+            )
+            return False
+    except (urllib.error.URLError, urllib.error.HTTPError, TimeoutError, OSError) as exc:
+        print(
+            f"[WARN] Webhook delivery failed for {webhook_url}: {exc}",
+            file=sys.stderr,
+        )
+        return False
+
+
+def send_email_notification(
+    state: CampaignState,
+    s3_bucket: str,
+    s3_prefix: str,
+    email_config: dict,
+    *,
+    timeout: float = 10.0,
+) -> bool:
+    """POST a plain-text completion email through the configured API.
+
+    ``email_config`` mirrors the Rust ``EmailConfig`` (Issue #1789):
+
+    - ``from`` — sender address
+    - ``to``   — list of recipient addresses
+    - ``cc``   — optional carbon-copy list
+    - ``api_endpoint`` — HTTP API for the transactional email provider
+    - ``api_auth_header`` — optional ``Authorization`` header value
+    - ``download_url_override`` — optional pre-signed URL replacing the
+      default ``results_uri`` in the body (useful for private S3 buckets)
+
+    Returns ``True`` if the provider returned a 2xx response, ``False`` on
+    any transport / non-2xx failure. Failures are logged but never raised.
+    """
+    try:
+        payload = build_completion_payload(state, s3_bucket, s3_prefix)
+        subject = render_email_subject(payload)
+        body = render_email_body(payload, email_config.get("download_url_override"))
+        envelope = {
+            "from": email_config["from"],
+            "to": email_config["to"],
+            "cc": email_config.get("cc", []),
+            "subject": subject,
+            "body_text": body,
+            "download_url": email_config.get("download_url_override") or payload["results_uri"],
+            "campaign": payload,
+        }
+        body_bytes = json.dumps(envelope).encode("utf-8")
+        request = urllib.request.Request(
+            email_config["api_endpoint"],
+            data=body_bytes,
+            method="POST",
+            headers={
+                "Content-Type": "application/json",
+                "User-Agent": "fluxion-cloud-campaign/1.0",
+                "X-Fluxion-Campaign-Id": state.campaign_id,
+            },
+        )
+        if email_config.get("api_auth_header"):
+            request.add_header("Authorization", email_config["api_auth_header"])
+        with urllib.request.urlopen(request, timeout=timeout) as response:  # noqa: S310
+            status_code = response.getcode()
+            if 200 <= status_code < 300:
+                print(f"[*] Email delivered: {len(email_config['to'])} recipient(s)")
+                return True
+            print(
+                f"[WARN] Email provider returned non-2xx status {status_code}",
+                file=sys.stderr,
+            )
+            return False
+    except (urllib.error.URLError, urllib.error.HTTPError, TimeoutError, OSError, KeyError, ValueError) as exc:
+        print(f"[WARN] Email delivery failed: {exc}", file=sys.stderr)
+        return False
+
+
 def send_completion_notification(
-    state: CampaignState, s3_bucket: str, s3_prefix: str, sns_topic_arn: str
+    state: CampaignState,
+    s3_bucket: str,
+    s3_prefix: str,
+    sns_topic_arn: Optional[str] = None,
+    webhook_url: Optional[str] = None,
+    email_config: Optional[dict] = None,
 ) -> None:
-    """Send SNS notification with campaign results."""
+    """Send completion notification via any combination of SNS, webhook, email.
+
+    All channels are optional; at least one must be configured. The function
+    is idempotent — repeated calls are no-ops once ``state.notification_sent``
+    is set, mirroring the Rust coordinator (see
+    ``src/api/email_notification.rs`` and Issue #1788 / T7.4 + #1789 / T7.5).
+    """
     if state.notification_sent:
         print("[*] Notification already sent, skipping")
         return
 
-    clients = get_aws_clients()
+    if not sns_topic_arn and not webhook_url and not email_config:
+        print(
+            "[WARN] No notification channel configured "
+            "(set --sns-topic, --webhook-url, or --email-to)",
+            file=sys.stderr,
+        )
+        return
 
-    account_id = clients["sts"].get_caller_identity()["Account"]
-    region = os.environ.get("AWS_REGION", "us-east-1")
-    results_uri = f"https://{s3_bucket}.s3.{region}.amazonaws.com/{s3_prefix}/campaigns/{state.campaign_id}/results/"
+    payload = build_completion_payload(state, s3_bucket, s3_prefix)
 
-    message = {
-        "campaign_id": state.campaign_id,
-        "status": state.status,
-        "start_time": state.start_time,
-        "end_time": datetime.now(timezone.utc).isoformat(),
-        "total_runs": len(state.work_units),
-        "completed_runs": state.completed_units,
-        "failed_runs": state.failed_units,
-        "best_mae": state.best_mae,
-        "best_parameters": state.best_parameters,
-        "results_uri": results_uri,
-    }
+    webhook_delivered = True
+    if webhook_url:
+        webhook_delivered = send_webhook_notification(
+            state, s3_bucket, s3_prefix, webhook_url
+        )
 
-    clients["sns"].publish(
-        TopicArn=sns_topic_arn,
-        Subject=f"Fluxion Campaign {state.campaign_id} {'Completed' if state.status == 'completed' else 'Failed'}",
-        Message=json.dumps(message, indent=2),
-    )
+    if email_config:
+        send_email_notification(state, s3_bucket, s3_prefix, email_config)
 
-    state.notification_sent = True
+    if sns_topic_arn:
+        try:
+            clients = get_aws_clients()
+            clients["sns"].publish(
+                TopicArn=sns_topic_arn,
+                Subject=(
+                    f"Fluxion Campaign {state.campaign_id} "
+                    f"{'Completed' if state.status == 'completed' else 'Failed'}"
+                ),
+                Message=json.dumps(payload, indent=2),
+            )
+            print(f"[*] SNS notification sent to: {sns_topic_arn}")
+        except Exception as exc:  # pragma: no cover - transport errors
+            print(f"[WARN] SNS publish failed: {exc}", file=sys.stderr)
+
+    # Mark notification as attempted once all configured channels have
+    # been tried. SNS/email failures are best-effort; webhook failure
+    # leaves notification_sent False so a follow-up ``--action notify``
+    # retries.
+    state.notification_sent = webhook_delivered
     update_campaign_state(state, s3_bucket, s3_prefix)
-
-    print(f"[*] Notification sent to: {sns_topic_arn}")
 
 
 def trigger_aggregator(
@@ -436,6 +773,30 @@ def trigger_aggregator(
         print(f"[*] Results URI: {results_uri}")
 
     return results_uri
+
+
+def build_email_config_from_args(args) -> Optional[dict]:
+    """Build an email channel config from CLI args / env vars (Issue #1789).
+
+    Returns ``None`` when no recipients are configured — callers should treat
+    that as "no email channel" rather than an error.
+    """
+    recipients = parse_email_recipients(args.email_to or "")
+    if not recipients:
+        return None
+    cc = parse_email_recipients(args.email_cc or "")
+    config = {
+        "from": args.email_from or "fluxion-noreply@fluxion.example",
+        "to": recipients,
+        "cc": cc,
+    }
+    if getattr(args, "email_api_endpoint", None):
+        config["api_endpoint"] = args.email_api_endpoint
+    if getattr(args, "email_api_auth", None):
+        config["api_auth_header"] = args.email_api_auth
+    if getattr(args, "email_download_url", None):
+        config["download_url_override"] = args.email_download_url
+    return config
 
 
 def build_default_params() -> dict[str, ParameterSpec]:
@@ -524,6 +885,15 @@ def main() -> int:
         help="SNS topic ARN for notifications",
     )
     parser.add_argument(
+        "--webhook-url",
+        type=str,
+        default=os.environ.get("FLUXION_WEBHOOK_URL"),
+        help=(
+            "Webhook URL POSTed on 100%% campaign completion. Payload "
+            "includes campaign_id and result location (Issue #1788 / T7.4)."
+        ),
+    )
+    parser.add_argument(
         "--aggregator-function",
         type=str,
         help="Lambda function name for aggregation",
@@ -534,7 +904,66 @@ def main() -> int:
         default=30,
         help="Poll interval in seconds for wait action",
     )
+    parser.add_argument(
+        "--state-store",
+        type=str,
+        choices=["dynamodb", "redis", "memory", "auto"],
+        default="auto",
+        help=(
+            "State-store backend for per-task progress (T7.3). "
+            "'auto' uses FLUXION_STATE_STORE when set, otherwise falls "
+            "back to legacy S3 listing."
+        ),
+    )
+    parser.add_argument(
+        "--email-from",
+        type=str,
+        default=os.environ.get("FLUXION_EMAIL_FROM"),
+        help="Sender address for email completion notifications (Issue #1789)",
+    )
+    parser.add_argument(
+        "--email-to",
+        type=str,
+        default=os.environ.get("FLUXION_EMAIL_TO"),
+        help=(
+            "Comma-separated recipient list for email completion notifications. "
+            "When set, the email channel becomes the universal fallback for "
+            "users without a webhook endpoint."
+        ),
+    )
+    parser.add_argument(
+        "--email-cc",
+        type=str,
+        default=os.environ.get("FLUXION_EMAIL_CC"),
+        help="Comma-separated CC list for email completion notifications",
+    )
+    parser.add_argument(
+        "--email-api-endpoint",
+        type=str,
+        default=os.environ.get("FLUXION_EMAIL_API_ENDPOINT"),
+        help=(
+            "HTTP API endpoint for the transactional email provider. When "
+            "omitted, emails are rendered but not sent (preview mode)."
+        ),
+    )
+    parser.add_argument(
+        "--email-api-auth",
+        type=str,
+        default=os.environ.get("FLUXION_EMAIL_API_AUTH"),
+        help="Optional `Authorization` header value (e.g. `Bearer SG.xxx`).",
+    )
+    parser.add_argument(
+        "--email-download-url",
+        type=str,
+        default=os.environ.get("FLUXION_EMAIL_DOWNLOAD_URL"),
+        help=(
+            "Optional pre-signed download URL that overrides the default "
+            "S3 results URI in the email body. Useful for private buckets."
+        ),
+    )
     args = parser.parse_args()
+
+    state_store = _resolve_state_store(args.state_store)
 
     s3_bucket = args.s3_bucket
     s3_prefix = args.s3_prefix.rstrip("/")
@@ -565,7 +994,15 @@ def main() -> int:
             samples_per_param=args.samples,
         )
 
-        state = create_campaign(config, s3_bucket, s3_prefix, args.sns_topic)
+        email_config = build_email_config_from_args(args)
+        state = create_campaign(
+            config,
+            s3_bucket,
+            s3_prefix,
+            sns_topic_arn=args.sns_topic,
+            webhook_url=args.webhook_url,
+            email_config=email_config,
+        )
 
         print(f"[*] Campaign created: {state.campaign_id}")
         print(f"[*] Work units: {len(state.work_units)}")
@@ -577,20 +1014,41 @@ def main() -> int:
     if args.action == "status":
         if not args.campaign_id:
             parser.error("--campaign-id is required for status action")
-        if not s3_bucket:
-            parser.error("--s3-bucket is required (or set FLUXION_S3_BUCKET env var)")
+        if not s3_bucket and state_store is None:
+            parser.error(
+                "--s3-bucket is required (or set FLUXION_S3_BUCKET env var) "
+                "or pass --state-store"
+            )
 
-        state = get_campaign_state(args.campaign_id, s3_bucket, s3_prefix)
-        if state is None:
-            print(f"[ERROR] Campaign {args.campaign_id} not found")
-            return 1
+        if state_store is None:
+            state = get_campaign_state(args.campaign_id, s3_bucket, s3_prefix)
+        else:
+            # State-store-only mode: synthesize a minimal CampaignState
+            # from the campaign definition stored in S3 (if any) or just
+            # use the live aggregate.
+            state = (
+                get_campaign_state(args.campaign_id, s3_bucket, s3_prefix)
+                if s3_bucket
+                else CampaignState(
+                    campaign_id=args.campaign_id,
+                    config={},
+                    work_units=[],
+                    status="created",
+                    start_time=datetime.now(timezone.utc).isoformat(),
+                )
+            )
+            if state is None:
+                print(f"[ERROR] Campaign {args.campaign_id} not found")
+                return 1
 
-        state = check_campaign_progress(state, s3_bucket, s3_prefix)
+        state = check_campaign_progress(
+            state, s3_bucket, s3_prefix, state_store=state_store
+        )
 
         print(f"\nCampaign: {state.campaign_id}")
         print(f"Status: {state.status}")
         print(f"Start: {state.start_time}")
-        print(f"Completed: {state.completed_units}/{len(state.work_units)}")
+        print(f"Completed: {state.completed_units}/{len(state.work_units) or '?'}")
         print(f"Failed: {state.failed_units}")
         print(f"Best MAE: {state.best_mae:.2f}%")
 
@@ -599,17 +1057,67 @@ def main() -> int:
     if args.action == "wait":
         if not args.campaign_id:
             parser.error("--campaign-id is required for wait action")
-        if not s3_bucket:
-            parser.error("--s3-bucket is required (or set FLUXION_S3_BUCKET env var)")
+        if not s3_bucket and state_store is None:
+            parser.error(
+                "--s3-bucket is required (or set FLUXION_S3_BUCKET env var) "
+                "or pass --state-store"
+            )
 
-        state = wait_for_completion(args.campaign_id, s3_bucket, s3_prefix, args.poll_interval)
+        if s3_bucket:
+            state = wait_for_completion(
+                args.campaign_id,
+                s3_bucket,
+                s3_prefix,
+                args.poll_interval,
+                state_store=state_store,
+            )
+        else:
+            # State-store-only wait loop
+            print(f"[*] Waiting for campaign {args.campaign_id} to complete...")
+            while True:
+                progress = (
+                    state_store.aggregate_progress(args.campaign_id, total=0)
+                    if state_store is not None
+                    else None
+                )
+                if progress is None:
+                    print("[ERROR] No state store available")
+                    return 1
+                print(
+                    f"[*] {progress.completed} completed, "
+                    f"{progress.failed} failed, "
+                    f"{progress.in_flight} in-flight"
+                )
+                if progress.is_complete:
+                    state = CampaignState(
+                        campaign_id=args.campaign_id,
+                        config={},
+                        work_units=[],
+                        status="completed",
+                        start_time=datetime.now(timezone.utc).isoformat(),
+                        completed_units=progress.completed,
+                        failed_units=progress.failed,
+                    )
+                    break
+                time.sleep(args.poll_interval)
 
         print(f"\n[*] Campaign {args.campaign_id} is now: {state.status}")
         print(f"    Completed: {state.completed_units}")
         print(f"    Failed: {state.failed_units}")
 
-        if args.sns_topic and state.status == "completed":
-            send_completion_notification(state, s3_bucket, s3_prefix, args.sns_topic)
+        if state.status in ("completed", "failed"):
+            email_config = build_email_config_from_args(args) or state.email_config
+            notify_sns = args.sns_topic or state.sns_topic_arn
+            notify_webhook = args.webhook_url or state.webhook_url
+            if notify_sns or notify_webhook or email_config:
+                send_completion_notification(
+                    state,
+                    s3_bucket,
+                    s3_prefix,
+                    sns_topic_arn=notify_sns,
+                    webhook_url=notify_webhook,
+                    email_config=email_config,
+                )
 
         return 0
 
@@ -630,15 +1138,30 @@ def main() -> int:
             parser.error("--campaign-id is required for notify action")
         if not s3_bucket:
             parser.error("--s3-bucket is required (or set FLUXION_S3_BUCKET env var)")
-        if not args.sns_topic:
-            parser.error("--sns-topic is required for notify action")
 
         state = get_campaign_state(args.campaign_id, s3_bucket, s3_prefix)
         if state is None:
             print(f"[ERROR] Campaign {args.campaign_id} not found")
             return 1
 
-        send_completion_notification(state, s3_bucket, s3_prefix, args.sns_topic)
+        email_config = build_email_config_from_args(args) or state.email_config
+        notify_sns = args.sns_topic or state.sns_topic_arn
+        notify_webhook = args.webhook_url or state.webhook_url
+        if not notify_sns and not notify_webhook and not email_config:
+            parser.error(
+                "At least one notification channel is required: "
+                "pass --sns-topic, --webhook-url, or --email-to, "
+                "or persist them in the campaign state at creation time."
+            )
+
+        send_completion_notification(
+            state,
+            s3_bucket,
+            s3_prefix,
+            sns_topic_arn=notify_sns,
+            webhook_url=notify_webhook,
+            email_config=email_config,
+        )
 
         return 0
 

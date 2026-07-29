@@ -27,6 +27,10 @@ pub struct ShadeFin {
     pub distance_from_edge: f64,
     /// Side of the window the fin is on.
     pub side: Side,
+    /// Height of the fin in meters (m).
+    /// Bounded by mounting_height - the fin extends from mounting_height to window top.
+    /// If mounting_height = 0, the fin extends from floor to window top (infinite height assumption).
+    pub height: f64,
 }
 
 /// Side of a window.
@@ -99,11 +103,11 @@ pub fn calculate_shaded_fraction(
                 .min(window.width);
 
             // Overlap is the intersection of the fin shadow strip and overhang shadow strip
-            // Fin shadow: vertical strip of width fin_width, full window height
+            // Fin shadow: vertical strip of width fin_width, height fin.height
             // Overhang shadow: horizontal strip of height overhang_height, full window width
-            // Intersection: width = fin_width, height = overhang_height
-            // (the fin shadow covers full height, so overlap height is just overhang_height)
-            overlap_area += fin_width * overhang_height;
+            // Intersection: width = fin_width, height = min(fin.height, overhang_height)
+            // (the fin shadow is bounded by fin.height, so overlap is bounded by fin.height)
+            overlap_area += fin_width * fin.height.min(overhang_height);
         }
     }
 
@@ -169,7 +173,8 @@ fn calculate_fin_shadow_area(
     let shadow_width_on_window = (shadow_x - fin.distance_from_edge).max(0.0);
     let shaded_width = shadow_width_on_window.min(window.width);
 
-    shaded_width * window.height
+    // The fin shadows a vertical strip of width shaded_width and height fin.height
+    shaded_width * fin.height
 }
 
 #[cfg(test)]
@@ -208,6 +213,7 @@ mod tests {
             depth: 1.0,
             distance_from_edge: 0.0,
             side: Side::Right,
+            height: window.height, // Bounded by mounting_height; use window.height for infinite assumption
         };
 
         // Sun at 45 deg azimuth to the right, 0 altitude (theoretical)
@@ -237,11 +243,13 @@ mod tests {
             depth: 0.5,
             distance_from_edge: 0.0,
             side: Side::Right,
+            height: window.height, // Bounded by mounting_height; use window.height for infinite assumption
         };
         let fin_left = ShadeFin {
             depth: 0.5,
             distance_from_edge: 0.0,
             side: Side::Left,
+            height: window.height, // Bounded by mounting_height; use window.height for infinite assumption
         };
 
         // Sun at 45° altitude, 30° azimuth to the right (both shading active)

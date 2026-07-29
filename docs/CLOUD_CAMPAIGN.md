@@ -11,7 +11,107 @@ This cloud-hosted system decouples campaign execution from local machines by:
 1. **Campaign State in S3** — All campaign state is stored in S3, not local disk
 2. **Workers Push to S3** — Individual simulation workers push KPIs directly to S3
 3. **Cloud Aggregator** — Merges S3 result files into a final dataset
-4. **SNS Notifications** — Email/SMS notification upon campaign completion
+4. **SNS / Email Notifications** — Configurable channels (webhook, SNS, email) on completion
+
+## Webhook Notification (T7.4 — Issue #1788)
+
+On 100% completion, the coordinator fans a notification out to **both**
+user-configured channels (each optional, both default-on-if-supplied):
+
+| Channel | CLI flag | Env var |
+|---------|----------|---------|
+| SNS     | `--sns-topic`   | `FLUXION_SNS_TOPIC_ARN` |
+| Webhook | `--webhook-url` | `FLUXION_WEBHOOK_URL`   |
+
+The webhook is POSTed as JSON with the following payload (mirrors the
+SNS message body so T7.5 email-fallback consumers can rely on a single
+schema):
+
+```json
+{
+  "campaign_id": "fluxion-abc123",
+  "status": "completed",
+  "start_time": "2026-07-18T00:00:00+00:00",
+  "end_time":   "2026-07-18T01:00:00+00:00",
+  "total_runs": 50,
+  "completed_runs": 48,
+  "failed_runs": 2,
+  "best_mae": 4.7,
+  "best_parameters": {"R_value": 1.5, "wall_thickness": 0.15},
+  "results_uri": "https://bucket.s3.us-east-1.amazonaws.com/fluxion-campaigns/campaigns/fluxion-abc123/results/"
+}
+```
+
+Notification config (`webhook_url`, `sns_topic_arn`) is persisted on the
+campaign's `state.json`, so a coordinator restart can still fire the
+configured channels without the user re-supplying CLI flags.
+
+```bash
+# Create campaign with both channels configured
+python scripts/cloud_campaign_manager.py --action create \
+    --case 600 --params R_value,wall_thickness --sweep-type random --samples 50 \
+    --sns-topic arn:aws:sns:us-east-1:000:topic \
+    --webhook-url https://hooks.example.com/fluxion-campaign
+
+# Wait action fires both channels at 100% completion
+python scripts/cloud_campaign_manager.py --action wait \
+    --campaign-id fluxion-abc123def456
+```
+
+## State Store (T7.3 — Issue #1787)
+
+Workers publish per-task completion to a **state store** (DynamoDB or Redis)
+instead of relying solely on result-file presence in S3. The coordinator then
+**aggregates** state-store entries to compute overall campaign progress.
+The state-store path is the authoritative one; the S3 listing in
+`check_campaign_progress` remains as a fallback for pre-T7.3 deployments.
+
+### Backends
+
+| Backend | Use case                                    | Configuration                                  |
+|---------|---------------------------------------------|------------------------------------------------|
+| DynamoDB| Serverless-native, no extra infra           | `FLUXION_STATE_STORE=dynamodb` + `FLUXION_CAMPAIGN_TABLE` (or `boto3` env) |
+| Redis   | Sub-second polling for very large campaigns | `FLUXION_STATE_STORE=redis` + `FLUXION_REDIS_URL` |
+| Memory  | Local-dev / tests                           | `FLUXION_STATE_STORE=memory`                   |
+
+### Schema
+
+- **DynamoDB**
+  - Partition key: `campaign_id` (S)
+  - Sort key:     `work_unit_id` (S)
+  - Attributes:   `status` (S), `timestamp` (S), `error_message` (S, optional),
+    `metrics` (M, optional).
+- **Redis**
+  - Hash per task:   `fluxion:campaign:{campaign_id}:task:{work_unit_id}`
+  - Sorted set per campaign: `fluxion:campaign:{campaign_id}:tasks`
+    (member = `work_unit_id`, score = epoch-ms of last update).
+
+### Aggregation
+
+`StateStore.aggregate_progress(campaign_id, total)` returns a
+`CampaignProgress` snapshot with `pending`, `running`, `completed`, `failed`,
+`progress_pct`, and `is_complete`. The coordinator uses this to update the
+campaign state on every poll without ever listing S3.
+
+### CLI
+
+```bash
+# Use DynamoDB explicitly
+python scripts/cloud_campaign_manager.py --action status \
+    --campaign-id fluxion-abc --state-store dynamodb
+
+# Use Redis explicitly
+python scripts/cloud_campaign_manager.py --action status \
+    --campaign-id fluxion-abc --state-store redis
+
+# Memory (local dev)
+python scripts/cloud_campaign_manager.py --action status \
+    --campaign-id fluxion-abc --state-store memory
+
+# Auto (consults FLUXION_STATE_STORE, then falls back to legacy S3 listing)
+python scripts/cloud_campaign_manager.py --action status \
+    --campaign-id fluxion-abc --state-store auto
+```
 
 ## Architecture
 
@@ -20,7 +120,7 @@ This cloud-hosted system decouples campaign execution from local machines by:
 │ Cloud Campaign   │────▶│  S3 Bucket  │◀────│  S3 Worker      │
 │ Manager          │     │             │     │  (Remote VM/EC2)│
 └──────────────────┘     │  work-units │     └─────────────────┘
-       │                 │  results/   │              │
+       │                 │  kpi-results/│              │
        │                 │  state.json  │              │
        │                 └─────────────┘              │
        ▼                                                │
@@ -29,6 +129,10 @@ This cloud-hosted system decouples campaign execution from local machines by:
 │ (Email/SMS)     │         (on completion)
 └──────────────────┘
 ```
+
+**Worker-side KPI Aggregation (T8.3):** Workers compute and emit only aggregated KPIs
+before S3 sync, cutting transfer volume. Raw results are included only when
+`--emit-raw` is specified.
 
 ## Quick Start
 
@@ -117,6 +221,70 @@ python scripts/cloud_campaign_manager.py \
   --sns-topic arn:aws:sns:region:account:topic
 ```
 
+## Email Notification (T7.5 — Issue #1789)
+
+Not every user runs a webhook listener — most want a plain email when their
+campaign finishes. The **email channel** is the universal fallback:
+
+| Field | CLI flag | Env var |
+|-------|----------|---------|
+| Sender | `--email-from` | `FLUXION_EMAIL_FROM` |
+| Recipients | `--email-to` (comma-separated) | `FLUXION_EMAIL_TO` |
+| CC | `--email-cc` (comma-separated) | `FLUXION_EMAIL_CC` |
+| API endpoint | `--email-api-endpoint` | `FLUXION_EMAIL_API_ENDPOINT` |
+| API auth header | `--email-api-auth` | `FLUXION_EMAIL_API_AUTH` |
+| Pre-signed URL | `--email-download-url` | `FLUXION_EMAIL_DOWNLOAD_URL` |
+
+The email body is a plain-text template with placeholders that mirror the
+JSON payload shape used by the webhook / SNS channels:
+
+```
+Fluxion campaign {campaign_id} is {status_display}.
+
+Started:  {start_time}
+Finished: {end_time}
+
+Total runs:     {total_runs}
+Completed runs: {completed_runs}
+Failed runs:    {failed_runs}
+Best MAE:       {best_mae:.2}%
+
+Best parameters:
+{best_parameters_block}
+
+Download aggregated results:
+{download_url}
+
+—
+Fluxion cloud coordinator (OSimFlow)
+```
+
+The Rust implementation in `src/api/email_notification.rs` is the canonical
+renderer; the Python side mirrors it so producers and consumers agree on
+shape. The HTTP transport (`HttpEmailTransport`) POSTs a JSON envelope to
+the configured `api_endpoint` — provider-agnostic (SendGrid, Mailgun,
+Postmark, SES v2 all accept this shape).
+
+```bash
+# Create a campaign with email fallback configured (universal recipient)
+python scripts/cloud_campaign_manager.py --action create \
+  --case 600 --params R_value,wall_thickness --sweep-type random --samples 50 \
+  --sns-topic arn:aws:sns:us-east-1:000:topic \
+  --email-from fluxion-noreply@fluxion.example \
+  --email-to user@fluxion.example,team@fluxion.example \
+  --email-api-endpoint https://api.sendgrid.com/v3/mail/send \
+  --email-api-auth "Bearer SG.xxxxxxxxxxxx"
+
+# Wait action fires both channels at 100% completion
+python scripts/cloud_campaign_manager.py --action wait \
+  --campaign-id fluxion-abc123def456
+```
+
+Email preferences are persisted on `state.json` (field `email_config`) so a
+coordinator restart can still send without the user re-supplying CLI flags.
+Idempotency is enforced via a `completion_hash` (FNV-1a over the
+completion payload) carried as the `X-Fluxion-Completion-Hash` header.
+
 ## Workflow Components
 
 ### `cloud_campaign_manager.py`
@@ -153,6 +321,47 @@ aws s3api put-bucket-versioning \
   --bucket your-bucket-name \
   --versioning-configuration Status=Enabled
 ```
+
+## KPI Schema
+
+Worker-side aggregation emits `KPIResult` JSON files with the following structure:
+
+```json
+{
+  "work_unit_id": "wu-0001",
+  "campaign_id": "fluxion-abc123",
+  "run_id": "a1b2c3d4",
+  "case_id": "600",
+  "parameters": {"R_value": 2.5, "wall_thickness": 0.15},
+  "num_runs": 5,
+  "timestamp": "2026-07-17T12:00:00Z",
+
+  "heating_mae_mean": 5.2,
+  "heating_mae_std": 0.8,
+  "heating_mae_min": 4.1,
+  "heating_mae_max": 6.3,
+  "cooling_mae_mean": 4.8,
+  "cooling_mae_std": 0.6,
+  "cooling_mae_min": 3.9,
+  "cooling_mae_max": 5.7,
+
+  "peak_heating_mae_mean": 8.2,
+  "peak_cooling_mae_mean": 7.1,
+  "temperature_mae_mean": 3.4,
+
+  "overall_pass_rate": 0.8,
+  "duration_ms_mean": 45200,
+
+  "error_message": null,
+  "raw_results": null
+}
+```
+
+**Fields:**
+- All MAE values are percentages (%)
+- `num_runs` indicates how many simulation runs were aggregated
+- `raw_results` is only populated when `--emit-raw` is specified
+- `overall_pass_rate` is the fraction of runs that passed (0.0 to 1.0)
 
 ### SNS Topic
 

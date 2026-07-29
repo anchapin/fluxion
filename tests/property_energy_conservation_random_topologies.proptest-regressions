@@ -1,0 +1,7 @@
+# Seeds for failure cases proptest has generated in the past. It is
+# automatically read and these particular cases re-run before any
+# novel cases are generated.
+#
+# It is recommended to check this file in to source control so that
+# everyone who runs the test benefits from these saved cases.
+cc a3eb71106ca0e86ab9241c827ba3cfbc2c8911c9abcc8a1102a265fbec09741f # shrinks to n_zones = 1, h_tr_em_vals = [2.0], h_tr_ms_vals = [100.0], cap_vals = [10000.0], area_vals = [5.0], infiltration_vals = [0.0], init_t_air = [5.0], init_t_mass = [5.0], t_outdoor = 0.0, q_internal = 0.0, solar_per_m2 = 0.0

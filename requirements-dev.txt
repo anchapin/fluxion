@@ -3,7 +3,9 @@
 # Core tools
 maturin>=1.0,<2.0
 patchelf
-pytest
+pytest>=8.0.0
+pytest-asyncio>=0.23.0
+pytest-cov>=4.1.0
 
 # Core ML Framework
 torch>=2.0.0

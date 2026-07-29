@@ -1,0 +1,17 @@
+# Analytical Reference: Air-source heat pump mode transition (Issue #1933)
+# Source: AHRI Standard 210/240 (unitary air-source heat pumps); ISO 13256-2 water-source.
+# Model: COP_heating(T_odb) = a + b*T_odb, clamped to >=0; heating mode active for T_odb < balance_temp.
+# Coefficients: a=2.0, b=0.07; balance_temp=18.0 C; rated COP at 8.33 C (47 F) = 2.5831
+# Columns: T_odb_C (outdoor dry-bulb), cop_heating, mode (heating | heating_off)
+# Status: ANALYTICAL — linearized rating curve, not EnergyPlus output.
+T_odb_C,cop_heating,mode
+-15.00,0.9500,heating
+-10.00,1.3000,heating
+-5.00,1.6500,heating
+0.00,2.0000,heating
+2.00,2.1400,heating
+5.00,2.3500,heating
+8.33,2.5831,heating
+10.00,2.7000,heating
+15.00,3.0500,heating
+20.00,3.4000,heating_off

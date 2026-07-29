@@ -159,6 +159,8 @@ src/
 │   ├── equipment.rs        # HVAC equipment models
 │   ├── boundary.rs         # Boundary conditions
 │   └── hvac/              # HVAC system models
+│       ├── airside_state.rs    # Validated moist-air and supply-flow boundary values
+│       └── airside_coupling.rs # Transactional 6-min operator split with 9R4C
 │
 ├── solar/                  # Solar calculations
 │

@@ -1,0 +1,679 @@
+{
+  "total_issues": 38,
+  "total_waves": 30,
+  "waves": [
+    {
+      "wave": 1,
+      "issues": [
+        {
+          "number": 1866,
+          "title": "enhancement(ci): CI gate coverage checks must use cargo test filters that match ALL expected tests",
+          "labels": [
+            "documentation",
+            "enhancement",
+            "testing"
+          ],
+          "affected_files": [
+            ".github/workflows/hybrid_empirical_validation.yml",
+            ".github/workflows/surrogate_drift_tolerance_gate.yml"
+          ],
+          "has_known_deps": true
+        },
+        {
+          "number": 1864,
+          "title": "bug(ci): OSimFlow pytest failing on all Python versions (pre-existing on develop)",
+          "labels": [
+            "bug",
+            "testing",
+            "python"
+          ],
+          "affected_files": [],
+          "has_known_deps": false
+        },
+        {
+          "number": 1816,
+          "title": "[Measures] Traceability — track applied Deltas and Python Measures on FluxionModel",
+          "labels": [
+            "enhancement",
+            "testing",
+            "architecture",
+            "qa",
+            "measures"
+          ],
+          "affected_files": [
+            "results.json",
+            "docs/measures.md"
+          ],
+          "has_known_deps": true
+        }
+      ]
+    },
+    {
+      "wave": 2,
+      "issues": [
+        {
+          "number": 1865,
+          "title": "bug(ai): Surrogate Drift Tolerance Gate fails — no trained ONNX model loaded in CI",
+          "labels": [
+            "bug",
+            "ai",
+            "high-priority",
+            "validation",
+            "ml"
+          ],
+          "affected_files": [
+            "tests/surrogate_drift_gate.rs",
+            "models/surrogate_zone_thermal.onnx",
+            ".github/workflows/surrogate_drift_tolerance_gate.yml"
+          ],
+          "has_known_deps": true
+        },
+        {
+          "number": 1860,
+          "title": "5R1C: close low-mass cooling-load underestimation with a time-constant-aware solver",
+          "labels": [
+            "bug",
+            "physics",
+            "high-priority",
+            "accuracy",
+            "validation",
+            "ashrae-140"
+          ],
+          "affected_files": [],
+          "has_known_deps": false
+        },
+        {
+          "number": 1815,
+          "title": "[DX] Standard library of baseline Fluxion Python Measures",
+          "labels": [
+            "documentation",
+            "enhancement",
+            "python",
+            "dx",
+            "measures"
+          ],
+          "affected_files": [
+            "README.md",
+            "SetWindowToWallRatio.py",
+            "ReplaceHVACWithVAV.py",
+            "measure.xml",
+            "docs/tutorials/writing_your_first_measure.md"
+          ],
+          "has_known_deps": true
+        }
+      ]
+    },
+    {
+      "wave": 3,
+      "issues": [
+        {
+          "number": 1859,
+          "title": "9R4C: investigate missing thermal-mass swing reduction in backward-Euler coupling",
+          "labels": [
+            "bug",
+            "physics",
+            "testing",
+            "accuracy",
+            "ashrae-140"
+          ],
+          "affected_files": [],
+          "has_known_deps": false
+        },
+        {
+          "number": 1772,
+          "title": "[Quantum] Standardize QUBO translation utility in geometry_tensor.rs",
+          "labels": [
+            "enhancement",
+            "physics",
+            "rust",
+            "phase-6"
+          ],
+          "affected_files": [
+            "src/physics/geometry_tensor.rs"
+          ],
+          "has_known_deps": true
+        },
+        {
+          "number": 1708,
+          "title": "Implement FMI 2.0 FMU import (FmiMode::Import) for co-simulation master",
+          "labels": [
+            "phase-8",
+            "interop"
+          ],
+          "affected_files": [
+            "fmi/mod.rs",
+            "src/interop/fmi/mod.rs",
+            "modelDescription.xml",
+            "tests/fmi_import_tests.rs",
+            "fluxion_three_zone.fmu"
+          ],
+          "has_known_deps": true
+        }
+      ]
+    },
+    {
+      "wave": 4,
+      "issues": [
+        {
+          "number": 1858,
+          "title": "9R4C: add sky-radiative path for air node to close ~0.6°C high-mass night-min residual",
+          "labels": [
+            "enhancement",
+            "physics",
+            "accuracy",
+            "phase-1",
+            "ashrae-140"
+          ],
+          "affected_files": [],
+          "has_known_deps": false
+        },
+        {
+          "number": 1707,
+          "title": "Wire epJSON into REST API POST /v1/import/epjson endpoint",
+          "labels": [
+            "api",
+            "phase-8",
+            "interop"
+          ],
+          "affected_files": [
+            "src/io/idf/epjson.rs",
+            "src/api/server.rs",
+            "src/api/openapi.yaml"
+          ],
+          "has_known_deps": true
+        },
+        {
+          "number": 1696,
+          "title": "CONDUCTION: Multi-solver isolation — CTF and FD vs E+ at 1% tolerance",
+          "labels": [
+            "physics",
+            "accuracy",
+            "phase-1"
+          ],
+          "affected_files": [
+            "conduction_5r1c_isolation.rs",
+            "multinode_9r4c_isolation.rs",
+            "tests/conduction_5r1c_isolation.rs",
+            "tests/conduction_ctf_isolation.rs",
+            "tests/conduction_fd_isolation.rs"
+          ],
+          "has_known_deps": true
+        }
+      ]
+    },
+    {
+      "wave": 5,
+      "issues": [
+        {
+          "number": 1813,
+          "title": "[OSimFlow] Monte Carlo sweeps via Declarative Deltas (base model + delta file)",
+          "labels": [
+            "performance",
+            "data-pipeline",
+            "ml",
+            "measures",
+            "osimflow"
+          ],
+          "affected_files": [],
+          "has_known_deps": false
+        }
+      ]
+    },
+    {
+      "wave": 6,
+      "issues": [
+        {
+          "number": 1798,
+          "title": "[Bindings-Node] Expose deep HVAC configuration to NAPI",
+          "labels": [
+            "enhancement",
+            "api",
+            "rust",
+            "phase-8",
+            "hvac"
+          ],
+          "affected_files": [],
+          "has_known_deps": false
+        }
+      ]
+    },
+    {
+      "wave": 7,
+      "issues": [
+        {
+          "number": 1797,
+          "title": "[Bindings-Py] Expose deep HVAC configuration to PyO3",
+          "labels": [
+            "enhancement",
+            "api",
+            "rust",
+            "python",
+            "phase-8",
+            "hvac"
+          ],
+          "affected_files": [],
+          "has_known_deps": false
+        }
+      ]
+    },
+    {
+      "wave": 8,
+      "issues": [
+        {
+          "number": 1780,
+          "title": "[ML] Synthetic data quality validation",
+          "labels": [
+            "enhancement",
+            "testing",
+            "rust",
+            "data-pipeline",
+            "ml",
+            "surrogate-model"
+          ],
+          "affected_files": [],
+          "has_known_deps": false
+        }
+      ]
+    },
+    {
+      "wave": 9,
+      "issues": [
+        {
+          "number": 1779,
+          "title": "[ML] S3 upload pipeline + provenance metadata",
+          "labels": [
+            "enhancement",
+            "rust",
+            "data-pipeline",
+            "ml",
+            "surrogate-model",
+            "deployment"
+          ],
+          "affected_files": [],
+          "has_known_deps": false
+        }
+      ]
+    },
+    {
+      "wave": 10,
+      "issues": [
+        {
+          "number": 1778,
+          "title": "[ML] Tensor dataset output schema + formatting",
+          "labels": [
+            "enhancement",
+            "rust",
+            "data-pipeline",
+            "ml",
+            "surrogate-model"
+          ],
+          "affected_files": [],
+          "has_known_deps": false
+        }
+      ]
+    },
+    {
+      "wave": 11,
+      "issues": [
+        {
+          "number": 1777,
+          "title": "[ML] Batch job runner harness using the 9R4C physics solver",
+          "labels": [
+            "enhancement",
+            "rust",
+            "data-pipeline",
+            "ml",
+            "surrogate-model"
+          ],
+          "affected_files": [],
+          "has_known_deps": false
+        }
+      ]
+    },
+    {
+      "wave": 12,
+      "issues": [
+        {
+          "number": 1776,
+          "title": "[ML] Configure Monte Carlo parameter sweeps for Phase 2 data generation",
+          "labels": [
+            "enhancement",
+            "high-priority",
+            "rust",
+            "data-pipeline",
+            "ml",
+            "surrogate-model"
+          ],
+          "affected_files": [],
+          "has_known_deps": false
+        }
+      ]
+    },
+    {
+      "wave": 13,
+      "issues": [
+        {
+          "number": 1775,
+          "title": "[Quantum] QUBO error handling for ill-conditioned matrices",
+          "labels": [
+            "enhancement",
+            "physics",
+            "robustness",
+            "rust",
+            "phase-6"
+          ],
+          "affected_files": [],
+          "has_known_deps": false
+        }
+      ]
+    },
+    {
+      "wave": 14,
+      "issues": [
+        {
+          "number": 1774,
+          "title": "[Quantum] QUBO -> annealer round-trip fidelity tests",
+          "labels": [
+            "enhancement",
+            "physics",
+            "testing",
+            "rust",
+            "phase-6"
+          ],
+          "affected_files": [],
+          "has_known_deps": false
+        }
+      ]
+    },
+    {
+      "wave": 15,
+      "issues": [
+        {
+          "number": 1773,
+          "title": "[Quantum] QUBO weight-matrix scaling for D-Wave hardware constraints",
+          "labels": [
+            "enhancement",
+            "physics",
+            "robustness",
+            "rust",
+            "phase-6"
+          ],
+          "affected_files": [],
+          "has_known_deps": false
+        }
+      ]
+    },
+    {
+      "wave": 16,
+      "issues": [
+        {
+          "number": 1771,
+          "title": "[Quantum] GaugeSolver scalability performance characterization",
+          "labels": [
+            "enhancement",
+            "performance",
+            "physics",
+            "rust",
+            "accuracy",
+            "phase-6",
+            "multi-zone"
+          ],
+          "affected_files": [],
+          "has_known_deps": false
+        }
+      ]
+    },
+    {
+      "wave": 17,
+      "issues": [
+        {
+          "number": 1770,
+          "title": "[Quantum] Commercial building-array topology stress test",
+          "labels": [
+            "enhancement",
+            "physics",
+            "testing",
+            "rust",
+            "accuracy",
+            "phase-6",
+            "multi-zone"
+          ],
+          "affected_files": [],
+          "has_known_deps": false
+        }
+      ]
+    },
+    {
+      "wave": 18,
+      "issues": [
+        {
+          "number": 1769,
+          "title": "[Quantum] Energy-conservation isolation tests across shared interior walls",
+          "labels": [
+            "enhancement",
+            "physics",
+            "testing",
+            "rust",
+            "accuracy",
+            "phase-6",
+            "multi-zone"
+          ],
+          "affected_files": [],
+          "has_known_deps": false
+        }
+      ]
+    },
+    {
+      "wave": 19,
+      "issues": [
+        {
+          "number": 1768,
+          "title": "[Quantum] Refactor GaugeZoneSolver for N-zone boundary connections",
+          "labels": [
+            "enhancement",
+            "physics",
+            "rust",
+            "accuracy",
+            "phase-6",
+            "multi-zone"
+          ],
+          "affected_files": [],
+          "has_known_deps": false
+        }
+      ]
+    },
+    {
+      "wave": 20,
+      "issues": [
+        {
+          "number": 1766,
+          "title": "[HVAC] Implement part-load performance curves",
+          "labels": [
+            "enhancement",
+            "rust",
+            "phase-2",
+            "hvac"
+          ],
+          "affected_files": [],
+          "has_known_deps": false
+        }
+      ]
+    },
+    {
+      "wave": 21,
+      "issues": [
+        {
+          "number": 1765,
+          "title": "[HVAC] Implement DOAS (Dedicated Outdoor Air System) model",
+          "labels": [
+            "enhancement",
+            "rust",
+            "phase-2",
+            "hvac"
+          ],
+          "affected_files": [],
+          "has_known_deps": false
+        }
+      ]
+    },
+    {
+      "wave": 22,
+      "issues": [
+        {
+          "number": 1764,
+          "title": "[HVAC] Implement VAV terminal unit model",
+          "labels": [
+            "enhancement",
+            "rust",
+            "phase-2",
+            "hvac"
+          ],
+          "affected_files": [],
+          "has_known_deps": false
+        }
+      ]
+    },
+    {
+      "wave": 23,
+      "issues": [
+        {
+          "number": 1763,
+          "title": "[HVAC] Define HeatingCoil struct + trait",
+          "labels": [
+            "enhancement",
+            "rust",
+            "phase-2",
+            "hvac"
+          ],
+          "affected_files": [],
+          "has_known_deps": false
+        }
+      ]
+    },
+    {
+      "wave": 24,
+      "issues": [
+        {
+          "number": 1762,
+          "title": "[HVAC] Define CoolingCoil struct + trait",
+          "labels": [
+            "enhancement",
+            "rust",
+            "phase-2",
+            "hvac"
+          ],
+          "affected_files": [],
+          "has_known_deps": false
+        }
+      ]
+    },
+    {
+      "wave": 25,
+      "issues": [
+        {
+          "number": 1761,
+          "title": "[HVAC] Define FanComponent struct + trait",
+          "labels": [
+            "enhancement",
+            "rust",
+            "phase-2",
+            "hvac"
+          ],
+          "affected_files": [],
+          "has_known_deps": false
+        }
+      ]
+    },
+    {
+      "wave": 26,
+      "issues": [
+        {
+          "number": 1759,
+          "title": "[HVAC-BESTEST] Tolerance assertions + ASHRAE-compliant reporting",
+          "labels": [
+            "documentation",
+            "testing",
+            "validation",
+            "phase-2",
+            "hvac",
+            "ashrae-140"
+          ],
+          "affected_files": [],
+          "has_known_deps": false
+        }
+      ]
+    },
+    {
+      "wave": 27,
+      "issues": [
+        {
+          "number": 1758,
+          "title": "[HVAC-BESTEST] Implement comparative (equipment) test cases",
+          "labels": [
+            "testing",
+            "validation",
+            "phase-2",
+            "hvac",
+            "ashrae-140"
+          ],
+          "affected_files": [],
+          "has_known_deps": false
+        }
+      ]
+    },
+    {
+      "wave": 28,
+      "issues": [
+        {
+          "number": 1757,
+          "title": "[HVAC-BESTEST] Implement analytical (free-floating) test cases",
+          "labels": [
+            "testing",
+            "validation",
+            "phase-2",
+            "hvac",
+            "ashrae-140"
+          ],
+          "affected_files": [],
+          "has_known_deps": false
+        }
+      ]
+    },
+    {
+      "wave": 29,
+      "issues": [
+        {
+          "number": 1756,
+          "title": "[HVAC-BESTEST] Dummy runner stub establishing the CI HVAC-check pipeline",
+          "labels": [
+            "testing",
+            "validation",
+            "phase-2",
+            "hvac",
+            "ashrae-140"
+          ],
+          "affected_files": [],
+          "has_known_deps": false
+        }
+      ]
+    },
+    {
+      "wave": 30,
+      "issues": [
+        {
+          "number": 1755,
+          "title": "[HVAC-BESTEST] Implement RP-865 reference bounds data loaders",
+          "labels": [
+            "testing",
+            "validation",
+            "phase-2",
+            "hvac",
+            "ashrae-140"
+          ],
+          "affected_files": [],
+          "has_known_deps": false
+        }
+      ]
+    }
+  ]
+}

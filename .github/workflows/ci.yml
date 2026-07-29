@@ -28,16 +28,82 @@ permissions:
 #   gh variable set FLUXION_LINUX_RUNNER --body "fluxion-ci" \
 #     --repo anchapin/fluxion
 # When unset or empty, jobs fall back to GitHub-hosted ubuntu-latest (free).
+#
+# Hetzner overflow pool (issue #2133): When GH-hosted runners are saturated
+# (queued >5 min), jobs automatically fall back to the on-demand Hetzner
+# overflow pool (labels: self-hosted,fluxion-overflow) via the probe pattern.
+# The static FLUXION_LINUX_RUNNER pool continues to operate independently.
+#
 # See docs/self-hosted-runners.md for provisioning instructions.
 # ---------------------------------------------------------------------------
 
 jobs:
+  # ---------------------------------------------------------------------------
+  # Issue #2133: Hetzner autoscaling overflow
+  #
+  # Probe pattern: a lightweight job tries to grab a GH runner with a 5-minute
+  # timeout.  If GH runners are saturated, the probe is cancelled after 5 min
+  # and the overflow path runs on the Hetzner autoscaling pool.
+  #
+  # python-examples and integration-tests both use this pattern:
+  #   <job>-gh-probe  — lightweight GH availability probe (5-min timeout)
+  #   <job>-gh        — CI on GH-hosted runner (runs if probe succeeds)
+  #   <job>-hz        — CI on Hetzner overflow (runs if probe fails/cancelled)
+  #
+  # The static FLUXION_LINUX_RUNNER pool (fluxion-ci) continues to operate
+  # independently — these jobs route there via FLUXION_LINUX_RUNNER || ubuntu.
+  # ---------------------------------------------------------------------------
+
   # Maturin release build + pytest -- takes 5-10 min on a cold cache.
   # Not suitable as a per-commit gate; failures are caught on merge.
-  python-examples:
-    name: Python Bindings & pytest
+
+  python-examples-gh-probe:
+    name: "Python Bindings Probe"
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    runs-on: ${{ vars.FLUXION_LINUX_RUNNER || 'ubuntu-latest' }}
+    steps:
+      - run: echo "GH runner acquired"
+
+  python-examples-gh:
+    name: "Python Bindings & pytest (GH)"
+    needs: python-examples-gh-probe
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/setup-rust-python-env
+        with:
+          python-version: '3.11'
+      - name: Create virtual environment and install deps
+        run: |
+          python -m venv venv
+          source venv/bin/activate
+          python -m pip install --upgrade pip
+          pip install -r requirements-dev.txt
+          pip install maturin
+      - name: Build and install Python bindings
+        env:
+          RUST_MIN_STACK: 33554432
+          CARGO_BUILD_JOBS: 1
+        run: |
+          source venv/bin/activate
+          maturin develop --release --jobs 2
+      - name: Run pytest
+        env:
+          RUST_MIN_STACK: 33554432
+        run: |
+          source venv/bin/activate
+          pytest -q
+
+  python-examples-hz:
+    name: "Python Bindings & pytest (Hetzner Overflow)"
+    needs: python-examples-gh-probe
+    runs-on: [self-hosted,fluxion-overflow]
+    if: |
+      (github.event_name == 'push' && github.ref == 'refs/heads/main')
+      && (needs.python-examples-gh-probe.result == 'failure'
+          || needs.python-examples-gh-probe.result == 'cancelled')
     steps:
       - uses: actions/checkout@v4
       - uses: ./.github/actions/setup-rust-python-env
@@ -66,10 +132,63 @@ jobs:
 
   # Integration test suite (wiring, e2e, batch-oracle, CLI) -- slow compile
   # plus multi-feature builds; only run on main.
-  integration-tests:
-    name: Integration Tests
+
+  integration-tests-gh-probe:
+    name: "Integration Tests Probe"
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    runs-on: ${{ vars.FLUXION_LINUX_RUNNER || 'ubuntu-latest' }}
+    steps:
+      - run: echo "GH runner acquired"
+
+  integration-tests-gh:
+    name: "Integration Tests (GH)"
+    needs: integration-tests-gh-probe
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install system dependencies
+        uses: awalsh128/cache-apt-pkgs-action@latest
+        with:
+          packages: libssl-dev pkg-config libfontconfig1-dev libfreetype6-dev
+          version: 1.0
+          retry: 3
+          retry_wait_seconds: 10
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+      - name: Cache cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry/index
+            ~/.cargo/registry/cache
+            ~/.cargo/git/db
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-
+      - name: Run integration tests
+        run: |
+          cargo test --test integration-wiring --features wiring-tracing
+          cargo test --test integration-e2e-scenarios --features wiring-tracing
+          cargo test --test integration-batch-oracle --features wiring-tracing
+          cargo test --test integration-cli
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: integration-test-results
+          path: target/debug/
+          retention-days: 14
+
+  integration-tests-hz:
+    name: "Integration Tests (Hetzner Overflow)"
+    needs: integration-tests-gh-probe
+    runs-on: [self-hosted,fluxion-overflow]
+    if: |
+      (github.event_name == 'push' && github.ref == 'refs/heads/main')
+      && (needs.integration-tests-gh-probe.result == 'failure'
+          || needs.integration-tests-gh-probe.result == 'cancelled')
     steps:
       - uses: actions/checkout@v4
       - name: Install system dependencies

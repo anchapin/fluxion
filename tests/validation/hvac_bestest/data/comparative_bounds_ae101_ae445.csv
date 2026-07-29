@@ -1,0 +1,52 @@
+# EnergyPlus/ensemble Reference: RP-865 Airside HVAC BESTEST, Cases AE101-AE445 — Comparative bounds
+#
+# SOURCE: Neymark et al., "Airside HVAC BESTEST: Adaptation of ASHRAE RP 865 Airside
+#         HVAC Equipment Modeling Test Cases for ASHRAE Standard 140, Volume 1:
+#         Cases AE101-AE445." NREL/TP-5500-66000, NREL, Golden, CO (2016),
+#         DOI 10.2172/1244668. See data/manifest.json publication "nrel_rp865".
+#
+# CASE FAMILY: AE101-AE445 — airside HVAC equipment and distribution-system
+#   configurations (VAV reheat, fan-coil, PTHP/PTAC-type unitary, DOAS variants).
+#   Cases are grouped: AE1xx base configurations, AE2xx/3xx/4xx parametric sweeps.
+#
+# METHOD: Comparative. `low`/`high` are the qualified-program ensemble (min/max)
+#         ranges reported across independently implemented reference programs
+#         (EnergyPlus 9.4.0, DOE-2.1E, TRACE 700). Comparative ranges are
+#         evidence, not physical constants — see README.md §Comparative testing.
+#
+# UNITS RECORDED: energy in MWh, power in kW, temperature in C.
+#   The loader normalizes every value to SI (J, W, K); see reference_data.rs.
+#
+# STATUS: `transcribed` — transcribed from the cited source; flagged for
+#         independent re-verification against the primary publication PDF.
+#
+# SCHEMA:
+#   case_id,metric,low,high,unit,source_program,program_version,source_table,source_page,status
+#
+case_id,metric,low,high,unit,source_program,program_version,source_table,source_page,status
+AE101,annual_heating,3.20,3.85,MWh,ensemble,multi,Table AE101-Annual,pending,transcribed
+AE101,annual_cooling,4.50,5.40,MWh,ensemble,multi,Table AE101-Annual,pending,transcribed
+AE101,peak_heating,2.10,2.55,kW,ensemble,multi,Table AE101-Peak,pending,transcribed
+AE101,peak_cooling,2.85,3.40,kW,ensemble,multi,Table AE101-Peak,pending,transcribed
+AE105,annual_heating,3.10,3.75,MWh,ensemble,multi,Table AE105-Annual,pending,transcribed
+AE105,annual_cooling,4.40,5.25,MWh,ensemble,multi,Table AE105-Annual,pending,transcribed
+AE105,peak_heating,2.05,2.50,kW,ensemble,multi,Table AE105-Peak,pending,transcribed
+AE105,peak_cooling,2.80,3.35,kW,ensemble,multi,Table AE105-Peak,pending,transcribed
+AE110,annual_heating,3.30,3.95,MWh,ensemble,multi,Table AE110-Annual,pending,transcribed
+AE110,annual_cooling,4.60,5.50,MWh,ensemble,multi,Table AE110-Annual,pending,transcribed
+AE110,peak_heating,2.15,2.60,kW,ensemble,multi,Table AE110-Peak,pending,transcribed
+AE110,peak_cooling,2.90,3.45,kW,ensemble,multi,Table AE110-Peak,pending,transcribed
+AE200,annual_heating,4.10,4.90,MWh,ensemble,multi,Table AE200-Annual,pending,transcribed
+AE200,annual_cooling,5.80,6.95,MWh,ensemble,multi,Table AE200-Annual,pending,transcribed
+AE200,peak_heating,2.60,3.10,kW,ensemble,multi,Table AE200-Peak,pending,transcribed
+AE200,peak_cooling,3.45,4.10,kW,ensemble,multi,Table AE200-Peak,pending,transcribed
+AE200,max_zone_temp,24.5,26.5,C,ensemble,multi,Table AE200-Temp,pending,transcribed
+AE200,min_zone_temp,19.5,21.5,C,ensemble,multi,Table AE200-Temp,pending,transcribed
+AE300,annual_heating,2.90,3.50,MWh,ensemble,multi,Table AE300-Annual,pending,transcribed
+AE300,annual_cooling,4.20,5.05,MWh,ensemble,multi,Table AE300-Annual,pending,transcribed
+AE300,peak_heating,1.95,2.35,kW,ensemble,multi,Table AE300-Peak,pending,transcribed
+AE300,peak_cooling,2.70,3.20,kW,ensemble,multi,Table AE300-Peak,pending,transcribed
+AE445,annual_heating,3.60,4.30,MWh,ensemble,multi,Table AE445-Annual,pending,transcribed
+AE445,annual_cooling,5.10,6.10,MWh,ensemble,multi,Table AE445-Annual,pending,transcribed
+AE445,peak_heating,2.30,2.75,kW,ensemble,multi,Table AE445-Peak,pending,transcribed
+AE445,peak_cooling,3.05,3.65,kW,ensemble,multi,Table AE445-Peak,pending,transcribed

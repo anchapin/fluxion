@@ -669,6 +669,8 @@ pub enum BuildingType {
     Commercial,
     /// Institutional buildings (schools, hospitals) - f_furniture = 0.5
     Institutional,
+    /// Warehouse / light-commercial buildings - f_furniture = 0.5
+    Warehouse,
 }
 
 impl Default for BuildingType {

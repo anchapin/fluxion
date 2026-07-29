@@ -1,0 +1,99 @@
+name: Python Tests (OSimFlow)
+
+# OSimFlow Python orchestration test suite (Issue #1847).
+#
+# Runs the pytest suite under `scripts/ci/` over a Python 3.10/3.11/3.12/3.13
+# matrix.  All AWS / D-Wave / Redis / Kubernetes integrations are mocked via
+# fixtures in `scripts/conftest.py` — this workflow requires **no** cloud
+# credentials.
+#
+# Triggers:
+#   * pull_request: fast gate on every PR
+#   * push to develop: integration check before the next release
+
+on:
+  push:
+    branches: [develop, main]
+  pull_request:
+    branches: [develop, main]
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  pytest-osimflow:
+    name: OSimFlow pytest (py ${{ matrix.python-version }})
+    runs-on: ${{ vars.FLUXION_LINUX_RUNNER || 'ubuntu-latest' }}
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ['3.10', '3.11', '3.12', '3.13']
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Cache pip
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pip
+          key: pip-osimflow-${{ runner.os }}-${{ matrix.python-version }}-${{ hashFiles('requirements-dev.txt', 'scripts/requirements-test.txt') }}
+          restore-keys: |
+            pip-osimflow-${{ runner.os }}-${{ matrix.python-version }}-
+            pip-osimflow-${{ runner.os }}-
+
+      - name: Install test dependencies
+        # Boto3/botocore are pulled in as optional deps so the conditional
+        # `import boto3` in cloud_campaign_manager.py resolves to a real
+        # module we can mock, instead of the `None` fallback path.
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pip install --upgrade pip
+          # Install only the hermetic OSimFlow dependencies. The full
+          # requirements-dev.txt includes native ML packages that are not
+          # needed by this mocked suite and do not support every matrix Python.
+          pip install -r scripts/requirements-test.txt
+
+      - name: Run pytest scripts/ci/ with coverage
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Explicitly forbid any cloud credentials from leaking in.
+          unset DWAVE_API_TOKEN AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY \
+                AWS_SESSION_TOKEN FLUXION_REDIS_URL FLUXION_CAMPAIGN_TABLE
+          cd "$GITHUB_WORKSPACE"
+          pytest scripts/ci/ -c scripts/pytest.ini \
+            --cov-report=term-missing \
+            --cov-report=xml:scripts/ci/coverage.xml \
+            --junitxml=scripts/ci/junit.xml
+
+      - name: Enforce per-file coverage thresholds
+        # Path normalization lives in scripts/check_osimflow_coverage.py so it
+        # can be unit-tested. See Issue #1864 — the previous inline Python
+        # matched bare ``cloud_campaign_manager.py`` against canonical
+        # ``scripts/...`` keys and reported every target as "no coverage data".
+        shell: bash
+        run: |
+          set -euo pipefail
+          python scripts/check_osimflow_coverage.py scripts/ci/coverage.xml
+
+      - name: Upload coverage artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: osimflow-coverage-${{ matrix.python-version }}
+          path: |
+            scripts/ci/coverage.xml
+            scripts/ci/junit.xml
+            .agents/coverage/python-osimflow
+          retention-days: 14
+          if-no-files-found: ignore

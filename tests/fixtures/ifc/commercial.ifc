@@ -1,0 +1,159 @@
+ISO-10303-21;
+HEADER;
+FILE_DESCRIPTION(('ViewDefinition [CoordinationView]','Fluxion commercial IFC4 test fixture'),'2;1');
+FILE_NAME('commercial.ifc','2026-06-27',('Fluxion'),('Fluxion'),'fluxion','fluxion','IFC4 STEP commercial reference file');
+FILE_SCHEMA(('IFC4'));
+ENDSEC;
+DATA;
+/* Owner history --------------------------------------------------------- */
+#1=IFCPERSON('unknown','unknown',$,$,$,$,$,$);
+#2=IFCORGANIZATION($,'Fluxion',$,$,$);
+#3=IFCPERSONANDORGANIZATION(#1,#2,$);
+#4=IFCAPPLICATION(#2,'0.0','fluxion','fluxion');
+#5=IFCOWNERHISTORY(#3,#4,.READWRITE.,.ADDED.,1735689600,$,$,1735689600);
+
+/* Project & units ------------------------------------------------------- */
+#10=IFCCARTESIANPOINT((0.,0.,0.));
+#11=IFCAXIS2PLACEMENT3D(#10,$,$);
+#12=IFCDIRECTION((0.,0.,1.));
+#13=IFCDIRECTION((1.,0.,0.));
+#14=IFCDIMENSIONALEXPONENTS(1,0,0,0,0,0,0);
+#15=IFCSIUNIT(*,.LENGTHUNIT.,$,.METRE.);
+#16=IFCSIUNIT(*,.AREAUNIT.,$,.SQUARE_METRE.);
+#17=IFCSIUNIT(*,.VOLUMEUNIT.,$,.CUBIC_METRE.);
+#18=IFCUNITASSIGNMENT((#15,#16,#17));
+#19=IFCGEOMETRICREPRESENTATIONCONTEXT('3D','Model',3,1.0E-05,#11,#12);
+#20=IFCPROJECT('0C0mm3rc14lPr0j000000',#5,'CommercialProject',$,$,$,$,(#19),#18);
+
+/* Site / Building / Storeys -------------------------------------------- */
+#21=IFCLOCALPLACEMENT($,#11);
+#22=IFCSITE('0C0mm3rc14lS1t3Gu1d00',#5,'Site',$,$,#21,$,$,.ELEMENT.,$,$,$,$,$);
+#23=IFCRELAGGREGATES('0C0mm3rc14lR3lSg1d00',#5,$,$,#20,(#22));
+#24=IFCLOCALPLACEMENT(#21,#11);
+#25=IFCBUILDING('0C0mm3rc14lBu1ld1ng0',#5,'OfficeBuilding',$,$,#24,$,$,.ELEMENT.,$,$,$);
+#26=IFCRELAGGREGATES('0C0mm3rc14lR3lBg1d00',#5,$,$,#22,(#25));
+
+/* Ground Floor ---------------------------------------------------------- */
+#30=IFCLOCALPLACEMENT(#24,#11);
+#31=IFCBUILDINGSTOREY('0C0mm3rc14lSt0r3yG0',#5,'GroundFloor',$,$,#30,$,$,.ELEMENT.,0.);
+#32=IFCRELAGGREGATES('0C0mm3rc14lR3lGf1d00',#5,$,$,#25,(#31));
+
+/* First Floor ---------------------------------------------------------- */
+#40=IFCLOCALPLACEMENT(#24,#11);
+#41=IFCBUILDINGSTOREY('0C0mm3rc14lSt0r3y10',#5,'FirstFloor',$,$,#40,$,$,.ELEMENT.,3.0);
+#42=IFCRELAGGREGATES('0C0mm3rc14lR3lFf1d00',#5,$,$,#25,(#41));
+
+/* Ground Floor Zones --------------------------------------------------- */
+/* Reception Zone */
+#50=IFCLOCALPLACEMENT(#30,#11);
+#51=IFCSPACE('0R3c3pt10nZ0n3Gu1d00',#5,'Reception','Reception area',$,#50,$,$,.ELEMENT.,.INTERNAL.,$);
+#52=IFCRELAGGREGATES('0C0mm3rc14lR3lR31d00',#5,$,$,#31,(#51));
+
+/* Office 1 Zone */
+#60=IFCLOCALPLACEMENT(#30,#11);
+#61=IFCSPACE('0Cff1c310n3Z0n3Gu1d00',#5,'Office1','Open office north',$,#60,$,$,.ELEMENT.,.INTERNAL.,$);
+#62=IFCRELAGGREGATES('0C0mm3rc14lR3lC31d00',#5,$,$,#31,(#61));
+
+/* Office 2 Zone */
+#70=IFCLOCALPLACEMENT(#30,#11);
+#71=IFCSPACE('0Cff1c320n3Z0n3Gu1d00',#5,'Office2','Open office south',$,#70,$,$,.ELEMENT.,.INTERNAL.,$);
+#72=IFCRELAGGREGATES('0C0mm3rc14lR3lC32d00',#5,$,$,#31,(#71));
+
+/* First Floor Zones ---------------------------------------------------- */
+/* Conference Zone */
+#80=IFCLOCALPLACEMENT(#40,#11);
+#81=IFCSPACE('0C0nf3r3nc3Z0n3Gu1d00',#5,'Conference','Conference room',$,#80,$,$,.ELEMENT.,.INTERNAL.,$);
+#82=IFCRELAGGREGATES('0C0mm3rc14lR3lCf1d00',#5,$,$,#41,(#81));
+
+/* Executive Zone */
+#90=IFCLOCALPLACEMENT(#40,#11);
+#91=IFCSPACE('0C3x3cut1v3Z0n3Gu1d00',#5,'Executive','Executive office',$,#90,$,$,.ELEMENT.,.INTERNAL.,$);
+#92=IFCRELAGGREGATES('0C0mm3rc14lR3lC33d00',#5,$,$,#41,(#91));
+
+/* Materials ------------------------------------------------------------ */
+#100=IFCMATERIAL('Concrete',$,'Concrete');
+#101=IFCMATERIAL('Insulation',$,'Insulation');
+#102=IFCMATERIAL('Glass',$,'Glass');
+#103=IFCMATERIAL('Steel',$,'Steel');
+#104=IFCMATERIAL('Gypsum',$,'GypsumBoard');
+
+/* Curtain wall layer set (glass + steel) ------------------------------ */
+#110=IFCMATERIALLAYER(#102,0.006,$,'GlassPane',$,$,$);
+#111=IFCMATERIALLAYER(#103,0.050,$,'SteelFrame',$,$,$);
+#112=IFCMATERIALLAYERSET((#110,#111),'CurtainWallLayers',$);
+#113=IFCMATERIALLAYERSETUSAGE(#112,.AXIS2.,.POSITIVE.,0.,$);
+
+/* Wall layer set (gypsum + insulation + gypsum) ---------------------- */
+#120=IFCMATERIALLAYER(#104,0.013,$,'GypsumBoard',$,$,$);
+#121=IFCMATERIALLAYER(#101,0.100,$,'WallInsulation',$,$,$);
+#122=IFCMATERIALLAYER(#104,0.013,$,'GypsumBoard2',$,$,$);
+#123=IFCMATERIALLAYERSET((#120,#121,#122),'WallLayers',$);
+#124=IFCMATERIALLAYERSETUSAGE(#123,.AXIS2.,.POSITIVE.,-0.063,$);
+
+/* Floor layer set (concrete slab + carpet) ---------------------------- */
+#130=IFCMATERIALLAYER(#104,0.012,$,'Carpet',$,$,$);
+#131=IFCMATERIALLAYER(#100,0.150,$,'ConcreteSlab',$,$,$);
+#132=IFCMATERIALLAYERSET((#130,#131),'FloorLayers',$);
+#133=IFCMATERIALLAYERSETUSAGE(#132,.AXIS3.,.POSITIVE.,0.,$);
+
+/* Roof layer set ------------------------------------------------------ */
+#140=IFCMATERIALLAYER(#101,0.200,$,'RoofInsulation',$,$,$);
+#141=IFCMATERIALLAYERSET((#140),'RoofLayers',$);
+#142=IFCMATERIALLAYERSETUSAGE(#141,.AXIS3.,.POSITIVE.,0.,$);
+
+/* Wall placements ------------------------------------------------------ */
+#200=IFCCARTESIANPOINT((0.,0.,0.));
+#201=IFCAXIS2PLACEMENT3D(#200,#12,#13);
+#202=IFCLOCALPLACEMENT(#30,#201);
+
+/* Ground Floor Curtain Wall (South facade) ---------------------------- */
+#210=IFCWALL('0W4CCwGfS0uthGu1d00000',#5,'CurtainWall-GF-South','Ground floor curtain wall',$,#202,$,$,.NOTDEFINED.);
+
+/* Ground Floor Solid Walls -------------------------------------------- */
+/* North wall */
+#211=IFCWALL('0W4WGfN0rthGu1d000000',#5,'Wall-GF-North','Ground floor north wall',$,#202,$,$,.NOTDEFINED.);
+#212=IFCWALL('0W4WGfW3stGu1d000000',#5,'Wall-GF-West','Ground floor west wall',$,#202,$,$,.NOTDEFINED.);
+#213=IFCWALL('0W4WGf34stGu1d000000',#5,'Wall-GF-East','Ground floor east wall',$,#202,$,$,.NOTDEFINED.);
+/* Interior partition */
+#214=IFCWALL('0W4WGf1nt3r10rGu1d000',#5,'Wall-Partition','Office partition',$,#202,$,$,.NOTDEFINED.);
+
+/* First Floor Walls --------------------------------------------------- */
+#220=IFCLOCALPLACEMENT(#40,#201);
+#221=IFCWALL('0W4CCwFfS0uthGu1d00000',#5,'CurtainWall-FF-South','First floor curtain wall',$,#220,$,$,.NOTDEFINED.);
+#222=IFCWALL('0W4WGfN0rth2Gu1d000000',#5,'Wall-FF-North','First floor north wall',$,#220,$,$,.NOTDEFINED.);
+#223=IFCWALL('0W4WGfW3st2Gu1d000000',#5,'Wall-FF-West','First floor west wall',$,#220,$,$,.NOTDEFINED.);
+#224=IFCWALL('0W4WGf34st2Gu1d000000',#5,'Wall-FF-East','First floor east wall',$,#220,$,$,.NOTDEFINED.);
+#225=IFCWALL('0W4W1nt3r2Gu1d000000',#5,'Wall-FF-Partition','Conference partition',$,#220,$,$,.NOTDEFINED.);
+
+/* Ground Floor Slabs -------------------------------------------------- */
+#230=IFCSLAB('0S1bGfr3c3ptGu1d00000',#5,'Slab-Reception','Reception floor',$,#202,$,$,.FLOOR.);
+#231=IFCSLAB('0S1bGfCff1c3Gu1d00000',#5,'Slab-Office1','Office 1 floor',$,#202,$,$,.FLOOR.);
+#232=IFCSLAB('0S1bGfCff1c3bGu1d00000',#5,'Slab-Office2','Office 2 floor',$,#202,$,$,.FLOOR.);
+
+/* First Floor Slabs --------------------------------------------------- */
+#240=IFCSLAB('0S1bFfC0nf3r3nc3Gu1d00',#5,'Slab-Conference','Conference floor',$,#220,$,$,.FLOOR.);
+#241=IFCSLAB('0S1bFfC3x3cut1v3Gu1d00',#5,'Slab-Executive','Executive floor',$,#220,$,$,.FLOOR.);
+
+/* Roof ---------------------------------------------------------------- */
+#250=IFCLOCALPLACEMENT(#40,#201);
+#251=IFCROOF('0R00fC0mm3rc14lGu1d0000',#5,'Roof','Office building roof',$,#250,$,$,.NOTDEFINED.);
+
+/* Material associations ------------------------------------------------ */
+#300=IFCRELASSOCIATESMATERIAL('0R3lAssCWGu1d00000000',#5,'CurtainWalls',$,(#210,#221),#113);
+#301=IFCRELASSOCIATESMATERIAL('0R3lAssWGGfGu1d000000',#5,'GroundFloorWalls',$,(#211,#212,#213,#214),#124);
+#302=IFCRELASSOCIATESMATERIAL('0R3lAssWG1fGu1d000000',#5,'FirstFloorWalls',$,(#222,#223,#224,#225),#124);
+#303=IFCRELASSOCIATESMATERIAL('0R3lAssSFGu1d00000000',#5,'GroundFloorSlabs',$,(#230,#231,#232),#133);
+#304=IFCRELASSOCIATESMATERIAL('0R3lAssSFFGu1d0000000',#5,'FirstFloorSlabs',$,(#240,#241),#133);
+#305=IFCRELASSOCIATESMATERIAL('0R3lAssR00fGu1d0000000',#5,'Roof',$,(#251),#142);
+
+/* Containment in spaces ----------------------------------------------- */
+#400=IFCRELCONTAINEDINSPATIALSTRUCTURE('0R3lC0ntR3cGu1d000000',#5,$,$,(#210,#211,#212,#230),#51);
+#401=IFCRELCONTAINEDINSPATIALSTRUCTURE('0R3lC0ntCff1Gu1d000000',#5,$,$,(#213,#214,#231),#61);
+#402=IFCRELCONTAINEDINSPATIALSTRUCTURE('0R3lC0ntCff2Gu1d000000',#5,$,$,(#232),#71);
+#403=IFCRELCONTAINEDINSPATIALSTRUCTURE('0R3lC0ntC0nfGu1d000000',#5,$,$,(#221,#222,#223,#240),#81);
+#404=IFCRELCONTAINEDINSPATIALSTRUCTURE('0R3lC0ntC3x3Gu1d000000',#5,$,$,(#224,#225,#241),#91);
+
+/* Roof covers all spaces --------------------------------------------- */
+#405=IFCRELCONTAINEDINSPATIALSTRUCTURE('0R3lC0ntR00fGu1d000000',#5,$,$,(#251),#51);
+ENDSEC;
+END-ISO-10303-21;

@@ -53,12 +53,12 @@ impl SolverRegistry {
     }
 
     /// Issue #1429 — Construct a `Box<dyn HeatConductionSolver>` by registry
-    /// key from a `&WallSpec`.
+    /// key from a `&WallSpec` and `floor_area`.
     ///
     /// Supported keys (see [`registry_keys`]):
     /// - `"5r1c"` → `FiveR1CSolver` initialized on `wall`
-    /// - `"multinode_9r4c"` → `MultiNodeSolver::from_wall_spec(wall)`,
-    ///   the 9R4C four-node envelope solver (Issue #1429 drop-in)
+    /// - `"multinode_9r4c"` → `MultiNodeSolver::from_wall_spec(wall, floor_area)`,
+    ///   the 9R4C four-node envelope solver (Issue #1429 drop-in, Issue #1593 fix)
     ///
     /// Unknown keys return `SolverError::InvalidConfig`. The returned
     /// `Box<dyn HeatConductionSolver>` can be wrapped in a
@@ -67,6 +67,7 @@ impl SolverRegistry {
     pub fn construct(
         key: &str,
         wall: &WallSpec,
+        floor_area: f64,
     ) -> Result<Box<dyn HeatConductionSolver>, SolverError> {
         match key {
             registry_keys::FIVE_R1C => {
@@ -74,7 +75,9 @@ impl SolverRegistry {
                 solver.initialize(wall)?;
                 Ok(Box::new(solver))
             }
-            registry_keys::MULTINODE_9R4C => Ok(MultiNodeSolver::boxed_from_wall_spec(wall)),
+            registry_keys::MULTINODE_9R4C => {
+                Ok(MultiNodeSolver::boxed_from_wall_spec(wall, floor_area))
+            }
             other => Err(SolverError::InvalidConfig(format!(
                 "SolverRegistry::construct: unknown solver key '{other}'. \
                  Supported keys: '{}', '{}'.",
@@ -238,8 +241,9 @@ mod tests {
     #[test]
     fn test_issue_1429_construct_multinode_returns_boxed_solver() {
         let wall = wall_200mm_concrete();
+        let floor_area = 54.0; // Typical office floor area (m²)
         let solver: Box<dyn HeatConductionSolver> =
-            SolverRegistry::construct(registry_keys::MULTINODE_9R4C, &wall)
+            SolverRegistry::construct(registry_keys::MULTINODE_9R4C, &wall, floor_area)
                 .expect("multinode_9r4c key must construct a solver");
         assert_eq!(solver.name(), "MultiNode9R4C");
         assert!(
@@ -251,7 +255,8 @@ mod tests {
     #[test]
     fn test_issue_1429_construct_unknown_key_errors() {
         let wall = wall_200mm_concrete();
-        let err = SolverRegistry::construct("nonexistent_solver", &wall);
+        let floor_area = 54.0;
+        let err = SolverRegistry::construct("nonexistent_solver", &wall, floor_area);
         match err {
             Err(e) => assert!(
                 e.to_string().contains("unknown solver key"),
@@ -266,13 +271,15 @@ mod tests {
         use crate::physics::units::{FromF64, Temperature, ToF64};
 
         let wall = wall_200mm_concrete();
+        let floor_area = 54.0; // Typical office floor area (m²)
 
         // Construct BOTH solvers via the registry so the trait's
         // `steady_state_flux` (Quantity-typed) is called consistently.
         let r1c: Box<dyn HeatConductionSolver> =
-            SolverRegistry::construct(registry_keys::FIVE_R1C, &wall).expect("5r1c construct");
+            SolverRegistry::construct(registry_keys::FIVE_R1C, &wall, floor_area)
+                .expect("5r1c construct");
         let multi: Box<dyn HeatConductionSolver> =
-            SolverRegistry::construct(registry_keys::MULTINODE_9R4C, &wall)
+            SolverRegistry::construct(registry_keys::MULTINODE_9R4C, &wall, floor_area)
                 .expect("multinode construct");
 
         let t_int = Temperature::from_value(22.0);
@@ -300,11 +307,13 @@ mod tests {
         use crate::physics::units::{FromF64, HeatTransferCoefficient, Temperature, Time, ToF64};
 
         let wall = wall_200mm_concrete();
+        let floor_area = 54.0; // Typical office floor area (m²)
 
         let r1c: Box<dyn HeatConductionSolver> =
-            SolverRegistry::construct(registry_keys::FIVE_R1C, &wall).expect("5r1c construct");
+            SolverRegistry::construct(registry_keys::FIVE_R1C, &wall, floor_area)
+                .expect("5r1c construct");
         let mut multi: Box<dyn HeatConductionSolver> =
-            SolverRegistry::construct(registry_keys::MULTINODE_9R4C, &wall)
+            SolverRegistry::construct(registry_keys::MULTINODE_9R4C, &wall, floor_area)
                 .expect("multinode construct");
 
         let dt = Time::from_value(3600.0);
@@ -349,10 +358,12 @@ mod tests {
         use fluxion_core::multi_node::MassAirCouplingMode;
 
         let wall = wall_200mm_concrete();
+        let floor_area = 54.0; // Typical office floor area (m²)
 
         // Build via the canonical mode-aware constructor, then box it.
         let solver = MultiNodeSolver::from_wall_spec_with_mode(
             &wall,
+            floor_area,
             MassAirCouplingMode::ParallelResistance,
         );
         assert_eq!(

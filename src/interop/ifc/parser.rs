@@ -73,6 +73,24 @@ pub struct IfcSlab {
     pub line: usize,
 }
 
+/// A typed `IFCBUILDING` entity (building).
+#[derive(Debug, Clone, PartialEq)]
+pub struct IfcBuilding {
+    pub id: u64,
+    pub global_id: String,
+    pub name: String,
+    pub line: usize,
+}
+
+/// A typed `IFCBUILDINGSTOREY` entity (floor level).
+#[derive(Debug, Clone, PartialEq)]
+pub struct IfcBuildingStorey {
+    pub id: u64,
+    pub global_id: String,
+    pub name: String,
+    pub line: usize,
+}
+
 /// A typed `IFCROOF` entity.
 #[derive(Debug, Clone, PartialEq)]
 pub struct IfcRoof {
@@ -145,6 +163,10 @@ pub struct IfcModel {
     /// not declare a schema (we still attempt to decode entities).
     pub schema: Option<String>,
 
+    /// All buildings discovered in the file.
+    pub buildings: Vec<IfcBuilding>,
+    /// All building storeys discovered in the file.
+    pub storeys: Vec<IfcBuildingStorey>,
     /// All walls discovered in the file.
     pub walls: Vec<IfcWall>,
     /// All slabs discovered in the file.
@@ -250,6 +272,24 @@ impl IfcParser {
                     global_id,
                     name,
                     predefined_type,
+                    line: entity.line,
+                });
+            }
+            "IFCBUILDING" => {
+                let (global_id, name) = parse_root_like(&entity)?;
+                model.buildings.push(IfcBuilding {
+                    id: entity.id,
+                    global_id,
+                    name,
+                    line: entity.line,
+                });
+            }
+            "IFCBUILDINGSTOREY" => {
+                let (global_id, name) = parse_root_like(&entity)?;
+                model.storeys.push(IfcBuildingStorey {
+                    id: entity.id,
+                    global_id,
+                    name,
                     line: entity.line,
                 });
             }

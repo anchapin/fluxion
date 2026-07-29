@@ -232,6 +232,202 @@ export declare class GbXmlExporter {
   exportGbXml(schemaJson: string, path: string): void
 }
 
+/**
+ * JavaScript-accessible 9R4C thermal solver configuration.
+ *
+ * This class exposes all internal configuration parameters of the 9R4C multi-node
+ * thermal solver, enabling Node.js consumers to configure and query the solver
+ * with the same level of control as the Rust core.
+ */
+export declare class NineR4CConfig {
+  /** Create a NineR4CConfig with default parameters. */
+  constructor()
+  /**
+   * Create a NineR4CConfig from individual surface and coupling parameters.
+   *
+   * # Arguments
+   * * `h_tr_is` - Interior surface-to-indoor air conductance [W/K]
+   * * `wall_cm` - Wall node thermal capacitance [J/K]
+   * * `wall_h_tr_ms` - Wall surface-to-mass conductance [W/K]
+   * * `wall_h_tr_em` - Wall exterior-to-mass conductance [W/K]
+   * * `wall_h_tr_me` - Wall mass-to-envelope conductance [W/K]
+   * * `roof_cm` - Roof node thermal capacitance [J/K]
+   * * `roof_h_tr_ms` - Roof surface-to-mass conductance [W/K]
+   * * `roof_h_tr_em` - Roof exterior-to-mass conductance [W/K]
+   * * `roof_h_tr_me` - Roof mass-to-envelope conductance [W/K]
+   * * `floor_cm` - Floor node thermal capacitance [J/K]
+   * * `floor_h_tr_ms` - Floor surface-to-mass conductance [W/K]
+   * * `floor_h_tr_em` - Floor exterior-to-mass conductance [W/K]
+   * * `floor_h_tr_me` - Floor mass-to-envelope conductance [W/K]
+   * * `internal_cm` - Internal node thermal capacitance [J/K]
+   * * `internal_h_tr_me` - Internal mass-to-envelope conductance [W/K]
+   * * `zone_temperature` - Initial zone air temperature [°C]
+   * * `surface_temperature` - Initial surface temperature [°C]
+   * * `exterior_temperature` - Initial exterior air temperature [°C]
+   * * `coupling_mode` - Air-mass coupling mode: "additive_sum" or "parallel_resistance"
+   */
+  static fromSurfaceParameters(hTrIs: number, wallCm: number, wallHTrMs: number, wallHTrEm: number, wallHTrMe: number, roofCm: number, roofHTrMs: number, roofHTrEm: number, roofHTrMe: number, floorCm: number, floorHTrMs: number, floorHTrEm: number, floorHTrMe: number, internalCm: number, internalHTrMe: number, zoneTemperature: number, surfaceTemperature: number, exteriorTemperature: number, couplingMode: string): NineR4CConfig
+  get hTrIs(): number
+  set hTrIs(value: number)
+  get zoneTemperature(): number
+  set zoneTemperature(value: number)
+  get surfaceTemperature(): number
+  set surfaceTemperature(value: number)
+  get exteriorTemperature(): number
+  set exteriorTemperature(value: number)
+  get tExtWall(): number
+  get tExtRoof(): number
+  get tExtFloor(): number
+  setSurfaceExteriorTemperatures(tExtWall: number, tExtRoof: number, tExtFloor: number): void
+  get timestepSeconds(): number
+  set timestepSeconds(value: number)
+  get initialized(): boolean
+  get rTotal(): number
+  get rSe(): number
+  get couplingMode(): string
+  setCouplingMode(mode: string): void
+  get wallTemperature(): number
+  get roofTemperature(): number
+  get floorTemperature(): number
+  get internalTemperature(): number
+  get envelopeTemperature(): number
+  setWallConductances(hTrEm: number, hTrMs: number): void
+  setRoofConductances(hTrEm: number, hTrMs: number): void
+  setFloorConductances(hTrEm: number, hTrMs: number): void
+  setInternalConductance(hTrMe: number): void
+  setWallCapacitance(cm: number): void
+  setRoofCapacitance(cm: number): void
+  setFloorCapacitance(cm: number): void
+  setInternalCapacitance(cm: number): void
+  get wall(): Array<number>
+  get roof(): Array<number>
+  get floor(): Array<number>
+  get internal(): Array<number>
+  initializeTemperatures(tInitial: number): void
+  step(dt: number): void
+  stepWithGains(dt: number, gainsWall: number, gainsRoof: number, gainsFloor: number, gainsInternal: number): void
+  computeZoneAirTemperature(tOutdoor: number, hVe: number, hVeNight: number, phiIa: number): number
+  computeHvacDemand(tAirFree: number, heatingSetpoint: number, coolingSetpoint: number): number
+  get effectiveTimeConstant(): number
+}
+
+/**
+ * Sub-hourly nodal temperature trace returned to JavaScript.
+ *
+ * All five series are returned as `Float64Array` (typed arrays) so
+ * JavaScript can iterate or copy them without an additional JSON
+ * round-trip.
+ */
+export declare class NineR4CNodalTrace {
+  /** Number of sub-steps recorded (length of each series). */
+  timesteps: number
+  /** Sub-step duration in seconds. */
+  dtSeconds: number
+  /** Coupling mode used for this trace. */
+  couplingMode: string
+  /** Wall mass-node temperatures after each sub-step [°C]. */
+  wall: Float64Array
+  /** Roof mass-node temperatures after each sub-step [°C]. */
+  roof: Float64Array
+  /** Floor mass-node temperatures after each sub-step [°C]. */
+  floor: Float64Array
+  /** Internal mass-node temperatures after each sub-step [°C]. */
+  internal: Float64Array
+  /** Zone air temperature after each sub-step [°C]. */
+  zone: Float64Array
+}
+
+/**
+ * JavaScript-accessible 9R4C nodal temperature tracer.
+ *
+ * Mirrors the defaults of the T9.2 [`crate::napi::nine_r4c_config::NineR4CConfig`]
+ * so a Node.js caller that previously configured a `NineR4CConfig` can
+ * obtain the same temperature evolution by constructing a
+ * `NineR4CNodalTracer` and calling [`NineR4CNodalTracer::run_sub_hourly_trace`]
+ * with identical inputs.
+ *
+ * # TypeScript Example
+ * ```typescript
+ * import { NineR4CNodalTracer } from '@fluxion/native';
+ *
+ * const tracer = new NineR4CNodalTracer();
+ * const trace = tracer.runSubHourlyTrace({
+ *   dtSeconds: 300.0,         // 5-minute sub-steps
+ *   timesteps: 288,           // 24 hours
+ *   couplingMode: 'additive_sum',
+ *   initialZoneTemperature: 20.0,
+ *   surfaceExteriorTemperatures: { tExtWall: 0, tExtRoof: 0, tExtFloor: 0 },
+ *   hTrIs: 10.0,
+ *   gains: [],
+ * });
+ *
+ * console.log(`Wall[0]   = ${trace.wall[0].toFixed(2)} °C`);
+ * console.log(`Zone[287] = ${trace.zone[287].toFixed(2)} °C`);
+ * ```
+ */
+export declare class NineR4CNodalTracer {
+  /**
+   * Create a new `NineR4CNodalTracer` with documented 9R4C defaults.
+   *
+   * The defaults match [`NineR4CConfig::defaults`] (in
+   * [`crate::physics::nine_r4c_nodal_trace`]) and the T9.2
+   * `NineR4CConfig::new()` constructor so the resulting trace agrees
+   * bit-for-bit with the equivalent default `NineR4CConfig` driven
+   * via the per-step methods.
+   */
+  constructor()
+  /**
+   * Replace the per-node thermal mass parameters. Mirrors the
+   * constructor arguments of `NineR4CConfig::from_surface_parameters`
+   * from T9.2; both bindings share the same ISO 13790 9R4C layout.
+   *
+   * # Arguments
+   * * `wall_cm`, `roof_cm`, `floor_cm`, `internal_cm` —
+   *   Thermal capacitances per node [J/K].
+   * * `wall_h_tr_ms`, `wall_h_tr_em`, `wall_h_tr_me`,
+   *   `roof_h_tr_ms`, `roof_h_tr_em`, `roof_h_tr_me`,
+   *   `floor_h_tr_ms`, `floor_h_tr_em`, `floor_h_tr_me` —
+   *   Per-surface conductances [W/K].
+   * * `internal_h_tr_me` — Furniture-to-envelope conductance [W/K].
+   */
+  configureNodes(wallCm: number, wallHTrMs: number, wallHTrEm: number, wallHTrMe: number, roofCm: number, roofHTrMs: number, roofHTrEm: number, roofHTrMe: number, floorCm: number, floorHTrMs: number, floorHTrEm: number, floorHTrMe: number, internalCm: number, internalHTrMs: number, internalHTrEm: number, internalHTrMe: number): void
+  /**
+   * Run the sub-hourly nodal temperature trace and return the
+   * per-node temperature series.
+   *
+   * # Arguments
+   * * `params` — Trace parameters:
+   *   - `dtSeconds`: sub-step duration in seconds (must be > 0).
+   *   - `timesteps`: number of sub-steps to record (must be > 0).
+   *   - `couplingMode`: `"additive_sum"` (default) or
+   *     `"parallel_resistance"` (#1281).
+   *   - `initialZoneTemperature`: zone air temperature used to seed
+   *     the four mass nodes [°C].
+   *   - `initialNodeTemperature`: optional `[wall, roof, floor, internal]`
+   *     seed vector; when omitted, all four nodes are seeded at
+   *     `initialZoneTemperature`.
+   *   - `surfaceExteriorTemperatures`: `{ tExtWall, tExtRoof, tExtFloor }`
+   *     [°C]. Defaults to `{0, 0, 0}`.
+   *   - `hTrIs`: zone-air-to-surface conductance [W/K].
+   *   - `gains`: optional array of per-timestep
+   *     `[gainsWall, gainsRoof, gainsFloor, gainsInternal]` gain
+   *     vectors in watts. Length must equal `timesteps` when provided.
+   *
+   * # Returns
+   * A [`NineR4CNodalTrace`] object exposing five typed arrays
+   * (`Float64Array`) of length `timesteps`:
+   *   - `wall`, `roof`, `floor`, `internal`: mass-node temperatures
+   *     [°C].
+   *   - `zone`: zone air temperature computed via the
+   *     same coupling mode used to step the solver [°C].
+   *
+   * # Throws
+   * A `napi::Error` if `dtSeconds` is non-finite or non-positive,
+   * `timesteps` is zero, or `gains.length !== timesteps`.
+   */
+  runSubHourlyTrace(params: NineR4CTraceParams): NineR4CNodalTrace
+}
+
 export declare class OsmExporter {
   constructor()
   exportOsm(schemaJson: string, path: string): void
@@ -325,7 +521,7 @@ export declare class StateExtractor {
    * # Returns
    * Flat array of zone temperatures [timesteps x num_zones]
    */
-  extractZoneTemperatures(years: number, useSurrogates: boolean): Array<number>
+  extractZoneTemperatures(years: number, useSurrogates: boolean): Float64Array
 }
 
 /**
@@ -336,15 +532,15 @@ export declare class StateExtractor {
  */
 export declare class StateMatrices {
   /** Zone air temperatures in °C [timesteps x num_zones] */
-  zoneTemperatures: Array<number>
+  zoneTemperatures: Float64Array
   /** Thermal mass temperatures in °C [timesteps x num_zones] */
-  massTemperatures: Array<number>
+  massTemperatures: Float64Array
   /** Heating energy demand in W [timesteps] */
-  heatingLoads: Array<number>
+  heatingLoads: Float64Array
   /** Cooling energy demand in W [timesteps] */
-  coolingLoads: Array<number>
+  coolingLoads: Float64Array
   /** Solar heat gains in W [timesteps x num_zones] */
-  solarGains: Array<number>
+  solarGains: Float64Array
 }
 
 /** Error thrown when AI surrogate model evaluation fails. */
@@ -363,4 +559,208 @@ export declare class ValidationError {
   get message(): string
 }
 
+/**
+ * Plain-data view of the three per-surface exterior boundary
+ * temperatures.
+ */
+export interface ExteriorTemperatureSet {
+  tExtWall: number
+  tExtRoof: number
+  tExtFloor: number
+}
+
+/**
+ * Plain-data view of the trace parameters. Used as the NAPI argument
+ * for [`NineR4CNodalTracer::run_sub_hourly_trace`].
+ *
+ * Optional fields default to the canonical 9R4C defaults when `None`
+ * or omitted by the JavaScript caller.
+ */
+export interface NineR4CTraceParams {
+  /** Sub-step duration in seconds. Must be positive and finite. */
+  dtSeconds: number
+  /** Number of sub-steps to record. Must be non-zero. */
+  timesteps: number
+  /**
+   * Coupling mode string: `"additive_sum"` (default) or
+   * `"parallel_resistance"`.
+   */
+  couplingMode?: string
+  /** Initial zone air temperature [°C]. Defaults to `20.0`. */
+  initialZoneTemperature?: number
+  /**
+   * Optional `[wall, roof, floor, internal]` seed vector [°C].
+   * Defaults to seeding all four nodes at `initialZoneTemperature`.
+   */
+  initialNodeTemperature?: Array<number>
+  /**
+   * Per-surface exterior boundary temperatures [°C]. Defaults to
+   * `{ tExtWall: 0, tExtRoof: 0, tExtFloor: 0 }`.
+   */
+  surfaceExteriorTemperatures?: ExteriorTemperatureSet
+  /** Zone-air-to-surface conductance [W/K]. Defaults to `10.0`. */
+  hTrIs?: number
+  /**
+   * Optional array of length `timesteps`, each entry being
+   * `[gainsWall, gainsRoof, gainsFloor, gainsInternal]` in watts.
+   * Defaults to zero gains on every step.
+   */
+  gains?: Array<Array<number>>
+}
+
 export declare function register(): void
+
+export declare function transferMatrix(matrix: Float64Array): Float64Array
+
+/**
+ * Variable Air Volume (VAV) terminal unit configuration (issue #1798).
+ */
+export declare class HvacVavTerminal {
+  constructor(id: string, zoneId: number, maxAirflow: number)
+  get id(): string
+  get zoneId(): number
+  get maxAirflow(): number
+  get minAirflow(): number
+  set minAirflow(value: number)
+  get reheatCapacity(): number
+  set reheatCapacity(value: number)
+  get airflowSetpoint(): number
+  set airflowSetpoint(value: number)
+  reheatDemand(supplyTemp: number, zoneTemp: number): number
+}
+
+/**
+ * Constant Air Volume (CAV) system configuration (issue #1798).
+ */
+export declare class HvacCavSystem {
+  constructor(id: string, designAirflow: number)
+  get id(): string
+  get designAirflow(): number
+  get fanPower(): number
+  set fanPower(value: number)
+  get fanEfficiency(): number
+  set fanEfficiency(value: number)
+  get heatingCapacity(): number
+  set heatingCapacity(value: number)
+  get coolingCapacity(): number
+  set coolingCapacity(value: number)
+  fanPowerConsumption(): number
+}
+
+/**
+ * Heat pump system with temperature-dependent COP curves (issue #1798).
+ */
+export declare class HvacHeatPump {
+  constructor(
+    id: string,
+    heatingCapacity: number,
+    coolingCapacity: number,
+    heatingCop: number,
+    coolingCop: number
+  )
+  get id(): string
+  get heatingCapacity(): number
+  get coolingCapacity(): number
+  get heatingCop(): number
+  get coolingCop(): number
+  get mode(): string
+  heatingCopAtTemperature(outdoorTemp: number): number
+  coolingCopAtTemperature(outdoorTemp: number): number
+  heatingPower(outdoorTemp: number): number
+  coolingPower(outdoorTemp: number): number
+  setMode(zoneTemp: number, heatingSetpoint: number, coolingSetpoint: number): void
+}
+
+/**
+ * Variable-capacity chiller with polynomial part-load efficiency curves (issue #1798).
+ */
+export declare class HvacChiller {
+  constructor(id: string, coolingCapacity: number, coolingCop: number, designTemp: number)
+  get id(): string
+  get coolingCapacity(): number
+  get coolingCop(): number
+  get designTemp(): number
+  ratedCapacity(): number
+  calculateCapacity(plr: number, outdoorTemp: number): number
+  calculatePower(load: number, outdoorTemp: number, mode: string): number
+}
+
+/**
+ * Variable-capacity boiler with polynomial part-load efficiency curves (issue #1798).
+ */
+export declare class HvacBoiler {
+  constructor(id: string, heatingCapacity: number, efficiency: number, designTemp: number)
+  get id(): string
+  get heatingCapacity(): number
+  get efficiency(): number
+  get designTemp(): number
+  ratedCapacity(): number
+  calculateCapacity(plr: number, outdoorTemp: number): number
+  calculatePower(load: number, outdoorTemp: number, mode: string): number
+}
+
+/**
+ * Per-zone heating/cooling setpoints and deadband configuration (issue #1798).
+ */
+export declare class ZoneSetpoints {
+  constructor(numZones: number)
+  get numZones(): number
+  setHeatingSetpoint(zoneId: number, temp: number): void
+  setCoolingSetpoint(zoneId: number, temp: number): void
+  setDeadband(zoneId: number, deadband: number): void
+  getHeatingSetpoint(zoneId: number): number
+  getCoolingSetpoint(zoneId: number): number
+  getDeadband(zoneId: number): number
+  validate(): void
+}
+
+/**
+ * Hourly daily schedule (24 values) driving setpoint profiles (issue #1798).
+ */
+export declare class HvacDailySchedule {
+  constructor(name: string, scheduleType: string)
+  get name(): string
+  get scheduleType(): string
+  static constant(value: number): HvacDailySchedule
+  setHour(hour: number, value: number): void
+  fillRange(startHour: number, endHour: number, value: number): void
+  value(hour: number): number
+}
+
+/**
+ * Composite heating + cooling schedule pair (issue #1798).
+ */
+export declare class HvacSchedule {
+  constructor()
+  static constantSchedule(heatingSp: number, coolingSp: number): HvacSchedule
+  static setbackSchedule(
+    dayHeat: number,
+    nightHeat: number,
+    coolSp: number,
+    nightStart: number,
+    nightEnd: number
+  ): HvacSchedule
+  static withOperatingHours(
+    heatingSp: number,
+    coolingSp: number,
+    startHour: number,
+    endHour: number
+  ): HvacSchedule
+  static freeFloating(): HvacSchedule
+  isFreeFloating(): boolean
+  heatingSetpoint(hour: number): number
+  coolingSetpoint(hour: number): number
+  getHeatingSchedule(): HvacDailySchedule
+  getCoolingSchedule(): HvacDailySchedule
+}
+
+/**
+ * Zone-level HVAC controller with selectable control strategies (issue #1798).
+ */
+export declare class ZoneController {
+  constructor(numZones: number)
+  setZoneStrategy(zoneId: number, strategy: string): void
+  getZoneStrategy(zoneId: number): string | null
+  updateControls(temperatures: Array<number>): Array<number>
+  getZoneStatus(zoneId: number): string
+}

@@ -61,6 +61,7 @@ jobs:
         with:
           context: .
           push: false
+          load: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha,scope=build-test-v3
@@ -69,7 +70,8 @@ jobs:
       - name: Run container smoke test
         if: github.event_name != 'pull_request'
         run: |
-          docker run -d --name fluxion-test --pull=never ${{ steps.meta.outputs.tags }} sleep 30
+          IMAGE="${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ steps.meta.outputs.version }}"
+          docker run -d --name fluxion-test --pull=never "$IMAGE" sleep 30
           sleep 5
           docker ps | grep fluxion-test
           docker stop fluxion-test
@@ -78,7 +80,12 @@ jobs:
       - name: Run integration tests
         if: github.event_name != 'pull_request'
         run: |
-          docker run --rm --pull=never ${{ steps.meta.outputs.tags }} python -c "import fluxion; print('Fluxion import successful')"
+          IMAGE="${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ steps.meta.outputs.version }}"
+          docker run -d --name fluxion-int --pull=never -p 8080:8080 "$IMAGE"
+          sleep 5
+          curl -fsS http://localhost:8080/v1/healthz
+          docker stop fluxion-int
+          docker rm fluxion-int
 
   # Per-platform native builds — no QEMU, native runners for each arch
   build-platform:

@@ -398,7 +398,9 @@ impl VariableCapacityEquipment for Boiler {
                         }
                     };
                     if plr > 0.0 {
-                        load * self.electrical_power_factor + self.standby_power
+                        // Return heating fuel power = load / efficiency + fan power
+                        // This is the total energy input rate (W) to the boiler
+                        load / self.efficiency + load * self.electrical_power_factor
                     } else {
                         0.0
                     }
@@ -716,11 +718,11 @@ mod tests {
         assert!(eff_cold < eff_design); // Slight degradation at cold temp
 
         // Test power calculation
-        // For a gas boiler, electrical power = thermal_output * electrical_power_factor + standby
-        // At PLR=0.5 (50kW load / 100kW capacity), electrical power should be ~500W
-        // This represents fans, pumps, and controls - NOT fuel input
+        // For a gas boiler, total heating fuel power = thermal_load / efficiency + fan power
+        // At PLR=0.5 (50kW load / 100kW capacity), fuel power = 50000/0.85 + 50000*0.01 ≈ 59324W
+        // This is the total energy input rate (fuel + parasitic electrical)
         let power = boiler.calculate_power(50000.0, -5.0, HVACMode::Heating);
-        assert!(power > 400.0 && power < 700.0); // ~500W for 50kW thermal output
+        assert!(power > 59000.0 && power < 60000.0); // ~59324W for 50kW thermal output at 85% efficiency
 
         // Test PLR tracking
         let mut boiler_mut = boiler.clone();
@@ -1093,7 +1095,8 @@ mod tests {
     #[test]
     fn test_predictive_modulation_in_unit_interval() {
         use crate::sim::hvac::modes::PredictiveController;
-        let mut controller = PredictiveController::new(20.0, 27.0);
+        // Use with_tuning for backward compatibility in existing test
+        let mut controller = PredictiveController::with_tuning(20.0, 27.0, 0.1, 0.01);
 
         // Sweep conditions that exercise heating, cooling, and off modes.
         let cases: &[(f64, f64, f64)] = &[

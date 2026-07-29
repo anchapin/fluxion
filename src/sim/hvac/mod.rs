@@ -3,23 +3,60 @@
 //! This module provides advanced HVAC system modeling capabilities including
 //! Variable Air Volume (VAV), Constant Air Volume (CAV), and heat pump systems.
 
+pub mod airside_coupling;
+pub mod airside_state;
+pub mod cooling_coil;
 pub mod cycling;
+pub mod doas;
 pub mod economizer;
 pub mod efficiency_curves;
 pub mod equipment;
+pub mod fan;
+pub mod heating_coil;
 pub mod ideal_loads;
 pub mod modes;
+pub mod part_load_curves;
+pub mod plant;
+pub mod vav_terminal;
+pub mod zone_equipment;
 pub mod zones;
 
 // Re-export common types for convenience
+pub use airside_coupling::{AirsideEnvelopeCoupler, CoupledStepForcing, CoupledStepResult};
+pub use airside_state::{
+    AirsideCouplingError, AirsideFlow, MoistAirState, DEFAULT_ENERGY_BALANCE_TOLERANCE_W,
+    MAX_VALIDATED_TIMESTEP_SECONDS,
+};
+pub use cooling_coil::{CoilPerformance, CoolingCoil, CoolingCoilBehavior};
 pub use cycling::CyclingTracker;
+pub use doas::{Doas, DoasControl, DoasMode, DoasPerformance, DoasUnit};
 pub use economizer::{calculate_free_cooling_capacity, is_economizer_active, EconomizerMode};
 pub use efficiency_curves::{
     default_ahri_coefficients, CurveCoefficients, EfficiencyCurve, EfficiencyCurveConfig,
 };
 pub use equipment::{AnyEquipment, Boiler, Chiller, HVACMode, VariableCapacityEquipment};
+pub use fan::{Fan, FanComponent, STANDARD_AIR_DENSITY_KG_PER_M3};
+pub use heating_coil::{HeatingCoil, HeatingCoilComponent, HeatingCoilControl, HeatingCoilResult};
 pub use ideal_loads::IdealLoadsSystem;
 pub use modes::PredictiveController;
+pub use part_load_curves::{
+    boiler_part_load_coeffs, chiller_part_load_coeffs, vav_fan_power_coeffs,
+    vav_fan_power_with_spr_coeffs, AshrStdCoeffs, BiquadraticCoeffs, BoilerPartLoadCurve,
+    ChillerPartLoadCurve, CurveType, FanPowerCurve, PartLoadCurve, QuadraticCoeffs,
+};
+pub use plant::{
+    check_energy_balance, water_cp, water_density, CoolingTowerSingleSpeed, FluidState,
+    PlantComponent, PlantComponentResult, PlantLoop, PlantLoopResult, PlantMode, Pump,
+    PumpConstantSpeed, PumpVariableSpeed, WATER_CP_J_PER_KG_K, WATER_DENSITY_KG_PER_M3,
+};
+pub use vav_terminal::{
+    VavOperatingMode, VavTerminal, VavTerminalControl, VavTerminalPerformance, VavTerminalUnit,
+};
+pub use zone_equipment::{
+    AnyZoneEquipment, BaseboardHeater, FourPipeFanCoil, HotWaterBaseboard,
+    LowTemperatureRadiantSurface, PackagedTerminalAC, PackagedTerminalHeatPump, RadiantSurfaceType,
+    ZoneEquipment, ZoneEquipmentMode, ZoneEquipmentSetpoints, ZoneHeatInjection,
+};
 
 use serde::{Deserialize, Serialize};
 

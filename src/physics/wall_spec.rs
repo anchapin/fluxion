@@ -141,6 +141,38 @@ impl WallSpec {
         self.layers.iter().map(|l| l.r_value()).sum()
     }
 
+    /// Material resistance from the lumped mass node to the interior surface [m²·K/W].
+    ///
+    /// Layers are ordered exterior-to-interior. The dominant insulation layer
+    /// contributes half its resistance, and every layer interior to it
+    /// contributes its full resistance, matching the ISO 13790 half-insulation
+    /// contract used by the zone-level `h_tr_ms` calculation.
+    pub fn mass_to_interior_surface_r_value(&self) -> f64 {
+        let Some((insulation_index, _)) =
+            self.layers.iter().enumerate().max_by(|(_, a), (_, b)| {
+                a.r_value()
+                    .partial_cmp(&b.r_value())
+                    .unwrap_or(std::cmp::Ordering::Equal)
+            })
+        else {
+            return 0.0;
+        };
+
+        self.layers
+            .iter()
+            .enumerate()
+            .filter_map(|(index, layer)| {
+                if index > insulation_index {
+                    Some(layer.r_value())
+                } else if index == insulation_index {
+                    Some(layer.r_value() / 2.0)
+                } else {
+                    None
+                }
+            })
+            .sum()
+    }
+
     /// Total wall thickness [m]
     pub fn total_thickness(&self) -> f64 {
         self.layers.iter().map(|l| l.thickness).sum()
@@ -403,6 +435,21 @@ mod tests {
         let spec = concrete_200mm_spec();
         let expected = 0.2 / 1.73;
         assert!((spec.total_r_value() - expected).abs() < 1e-10);
+    }
+
+    #[test]
+    fn test_wall_spec_mass_to_interior_surface_r_value() {
+        let spec = WallSpec::multi_layer(
+            "Composite Wall",
+            vec![
+                LayerSpec::new("Brick", 0.1, 0.8, 1920.0, 790.0),
+                LayerSpec::new("Insulation", 0.08, 0.04, 50.0, 840.0),
+                LayerSpec::new("Gypsum", 0.012, 0.16, 800.0, 1090.0),
+            ],
+        );
+        let expected = (0.08 / 0.04) / 2.0 + 0.012 / 0.16;
+
+        assert!((spec.mass_to_interior_surface_r_value() - expected).abs() < 1e-12);
     }
 
     #[test]

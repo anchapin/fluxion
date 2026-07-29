@@ -134,13 +134,13 @@ impl GroundTempMeta {
 }
 
 // -----------------------------------------------------------------------------
-// TryFrom<IdfFile> for SimulationSchemaV1
+// TryFrom<&IdfFile> for SimulationSchemaV1
 // -----------------------------------------------------------------------------
 
-impl TryFrom<IdfFile> for SimulationSchemaV1 {
+impl TryFrom<&IdfFile> for SimulationSchemaV1 {
     type Error = IdfError;
 
-    fn try_from(idf: IdfFile) -> Result<Self, Self::Error> {
+    fn try_from(idf: &IdfFile) -> Result<Self, Self::Error> {
         // 1. Validate version (24-2, 25-1, 25-2 only per design §4.3).
         let version_str = idf.version.as_deref().ok_or_else(|| {
             IdfError::conversion_error("Missing Version object at top of IDF file")
@@ -151,15 +151,15 @@ impl TryFrom<IdfFile> for SimulationSchemaV1 {
         }
 
         // 2. Build metadata (Building name + RunPeriod + Timestep).
-        let metadata = build_metadata(&idf)?;
-        let run_period = build_run_period(&idf);
-        let ground_temp = build_ground_temperature(&idf).unwrap_or_default();
+        let metadata = build_metadata(idf)?;
+        let run_period = build_run_period(idf);
+        let ground_temp = build_ground_temperature(idf).unwrap_or_default();
 
         // 3. Build geometry (Zone objects + BuildingSurface:Detailed vertex sums).
-        let geometry = build_geometry(&idf)?;
+        let geometry = build_geometry(idf)?;
 
         // 4. Build constructions (Material + Construction objects).
-        let constructions = build_constructions(&idf)?;
+        let constructions = build_constructions(idf)?;
 
         // 5. Wire metadata.run_period into the metadata struct via the
         //    description field (the schema has no first-class run_period
@@ -1016,8 +1016,8 @@ pub fn case_spec_from_idf(idf: &IdfFile, case_id: &str) -> Result<CaseSpec, IdfE
         }
     }
 
-    // Build the schema via a helper that doesn't consume `idf`.
-    let schema_view = SimulationSchemaV1::try_from(clone_idf(idf))?;
+    // Build the schema via the reference-based TryFrom impl.
+    let schema_view = SimulationSchemaV1::try_from(idf)?;
     let wall = crate::sim::construction::Construction::new(schema_view.constructions.wall.layers);
     let roof = crate::sim::construction::Construction::new(schema_view.constructions.roof.layers);
     let floor = crate::sim::construction::Construction::new(schema_view.constructions.floor.layers);
@@ -1070,16 +1070,8 @@ pub fn case_spec_from_idf(idf: &IdfFile, case_id: &str) -> Result<CaseSpec, IdfE
     })
 }
 
-/// Clone an [`IdfFile`] without taking ownership (used internally by
-/// [`case_spec_from_idf`] to share an `IdfFile` reference between the
-/// `TryFrom` conversion and other readers).
-fn clone_idf(idf: &IdfFile) -> IdfFile {
-    IdfFile {
-        version: idf.version.clone(),
-        objects: idf.objects.clone(),
-    }
-}
-
+// -----------------------------------------------------------------------------
+// Tests
 // -----------------------------------------------------------------------------
 // Tests
 // -----------------------------------------------------------------------------
@@ -1102,7 +1094,7 @@ Material, Mat1, MediumRough, 0.1, 1.0, 2000, 800;\n\
 Construction, Wall1, Mat1;\n\
 Site:GroundTemperature:BuildingSurface, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10;\n";
         let idf = IdfParser::from_str(src).unwrap();
-        let schema = SimulationSchemaV1::try_from(idf).unwrap();
+        let schema = SimulationSchemaV1::try_from(&idf).unwrap();
         assert_eq!(schema.version, SchemaVersion::V1);
         assert_eq!(schema.metadata.name, "TestBldg");
     }
@@ -1111,7 +1103,7 @@ Site:GroundTemperature:BuildingSurface, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 
     fn rejects_unsupported_version() {
         let src = "Version, 99.9;\n";
         let idf = IdfParser::from_str(src).unwrap();
-        let err = SimulationSchemaV1::try_from(idf).unwrap_err();
+        let err = SimulationSchemaV1::try_from(&idf).unwrap_err();
         match err {
             IdfError::UnsupportedVersion(v) => assert_eq!(v, "99.9"),
             other => panic!("expected UnsupportedVersion, got {other:?}"),
@@ -1131,7 +1123,7 @@ Construction, Wall1, Mat1;\n\
 Site:GroundTemperature:BuildingSurface, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10;\n"
             );
             let idf = IdfParser::from_str(&src).unwrap();
-            SimulationSchemaV1::try_from(idf).unwrap();
+            SimulationSchemaV1::try_from(&idf).unwrap();
         }
     }
 
@@ -1140,7 +1132,7 @@ Site:GroundTemperature:BuildingSurface, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 
         let src = "Version, 25.2.0;\n";
         let idf = IdfParser::from_str(src).unwrap();
         // Should not error on UnsupportedVersion.
-        let err = SimulationSchemaV1::try_from(idf);
+        let err = SimulationSchemaV1::try_from(&idf);
         assert!(
             !matches!(err, Err(IdfError::UnsupportedVersion(_))),
             "25.2.0 should normalize to 25-2 and be accepted, got {err:?}"
@@ -1151,7 +1143,7 @@ Site:GroundTemperature:BuildingSurface, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 
     fn rejects_missing_version() {
         let src = "Timestep, 1;\n";
         let idf = IdfParser::from_str(src).unwrap();
-        assert!(SimulationSchemaV1::try_from(idf).is_err());
+        assert!(SimulationSchemaV1::try_from(&idf).is_err());
     }
 
     #[test]

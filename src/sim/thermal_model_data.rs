@@ -21,6 +21,7 @@ use crate::sim::occupancy::BuildingType;
 use crate::sim::schedule::DailySchedule;
 use crate::sim::solar::{SolarPosition, WindowProperties};
 use crate::sim::thermal_model_core::DoorGeometry;
+use crate::sim::thermal_model_scratch::PhysicsScratchPool;
 use crate::testing::integration::wiring::WiringTracer;
 use crate::validation::diagnostics::SimulationDiagnostics;
 use crate::weather::HourlyWeatherData;
@@ -117,6 +118,36 @@ pub struct ThermalModelData<T: ContinuousTensor<f64> + Clone> {
     /// Used in `step_physics_5r1c` only; the 9R4C and 6R2C paths
     /// maintain their own air-node temperature handling.
     pub air_temperatures: T,
+    /// Issue #1860: Solar-lag state for multi-timescale wall response.
+    ///
+    /// The 5R1C model lumps ALL wall mass into one node (τ_mass ≈ 12 h for
+    /// low-mass buildings). In reality, near-surface layers (gypsum, furniture,
+    /// internal partitions) absorb solar radiation and re-release it over
+    /// 1–3 h — a timescale that falls between the air node (τ_air ≈ 0.17 h)
+    /// and the mass node (τ_mass ≈ 12 h).
+    ///
+    /// This field tracks a first-order low-pass filter on the solar flux
+    /// that reaches surfaces/mass (phi_st + phi_m), with time constant
+    /// τ_lag = √(τ_air × τ_mass). The filtered value is added to the 5R1C
+    /// air-node numerator as a "fast mass" contribution, bridging the gap
+    /// between the air and mass timescales.
+    pub solar_lag: T,
+    /// Independent interior wall-surface temperature state for the 5R1C model.
+    ///
+    /// Tracks the temperature at the interior wall surface `T_si` for each
+    /// zone, evolved via the exact exponential solution of the surface-node
+    /// ODE:
+    ///
+    /// ```text
+    /// T_si_new = T_si_eq + (T_si_old - T_si_eq) · exp(-dt / τ_si)
+    /// τ_si = C_m · (R_1 ∥ R_si) = C_m · R_1·R_si / (R_1 + R_si)
+    /// T_si_eq = (T_m / R_1 + T_int / R_si) / (1/R_1 + 1/R_si)
+    /// ```
+    ///
+    /// Here `R_1 = R_ms = 1 / h_tr_ms`; `h_tr_ms` excludes the interior film,
+    /// which is represented separately by `R_si = 1 / h_tr_is`.
+    /// The flux to the zone air is coupled into the 5R1C air-node numerator.
+    pub wall_surface_temperatures: T,
     pub envelope_mass_temperatures: T,
     pub internal_mass_temperatures: T,
     pub envelope_thermal_capacitance: T,
@@ -184,6 +215,10 @@ pub struct ThermalModelData<T: ContinuousTensor<f64> + Clone> {
     pub zone_peak_heating_kw: T,
     /// Issue #1289 — per-zone peak cooling power in kW
     pub zone_peak_cooling_kw: T,
+    /// Issue #1628 — timestep index when peak heating occurred for each zone
+    pub zone_peak_heating_timestep: Vec<usize>,
+    /// Issue #1628 — timestep index when peak cooling occurred for each zone
+    pub zone_peak_cooling_timestep: Vec<usize>,
     pub annual_heating_energy: f64,
     pub annual_cooling_energy: f64,
     pub annual_electrical_energy: f64,
@@ -245,6 +280,16 @@ pub struct ThermalModelData<T: ContinuousTensor<f64> + Clone> {
     /// Issue #763 — full hourly zone temperature profiles for post-processing and reporting.
     /// Format: [num_zones][8760] hourly temperatures in °C.
     pub hourly_temperatures: Option<Vec<Vec<f64>>>,
+    /// Issue #1799 — sub-hourly 9R4C node temperatures per zone (diagnostics + ML features).
+    ///
+    /// `nodal_temperatures[zone][node][timestep]` where `node` follows the
+    /// canonical `MultiNodeSolver::NODE_NAMES` ordering:
+    /// `0=wall, 1=roof, 2=floor, 3=internal`.
+    ///
+    /// Only populated when the model carries at least one `MultiNodeSolver`
+    /// (i.e. 9R4C / heavy-mass construction like ASHRAE 140 Case 900+).
+    /// `None` for low-mass models or before a simulation has been run.
+    pub nodal_temperatures: Option<Vec<Vec<Vec<f64>>>>,
     /// Issue #762 — per-surface incident solar radiation tracking for ASHRAE 140-2023 Section 8.2.3.
     /// Key: surface identifier (e.g., "wall_N", "window_S", "roof").
     /// BTreeMap for deterministic iteration order across platforms (Issue #1297)
@@ -254,6 +299,15 @@ pub struct ThermalModelData<T: ContinuousTensor<f64> + Clone> {
     /// the 5R1C caller from overwriting the 9R4C caller's value (see
     /// `cached_solar_position` in `thermal_model_core.rs`).
     pub sun_pos_cache: std::collections::HashMap<(usize, i32), SolarPosition>,
+    /// Issue #1968 — cached zero vector to eliminate per-timestep `vec![0.0; num_zones]`
+    /// allocations in hot loops. Cloned (not borrowed) to avoid borrow conflicts.
+    pub zero_vector: VectorField,
+    /// Issue #1966 — pooled physics scratch buffers for per-timestep solvers.
+    ///
+    /// Lazily initialized on first use by `step_physics_*`. The pool is NOT
+    /// cloned on `ThermalModelData::clone()` (clone gets a fresh empty pool);
+    /// cloning is a cold-path operation that does not need pooled scratch reuse.
+    pub scratch_pool: PhysicsScratchPool,
 }
 
 impl<T: ContinuousTensor<f64> + Clone> Clone for ThermalModelData<T> {
@@ -299,6 +353,8 @@ impl<T: ContinuousTensor<f64> + Clone> Clone for ThermalModelData<T> {
             thermal_capacitance: self.thermal_capacitance.clone(),
             air_thermal_capacitance: self.air_thermal_capacitance.clone(),
             air_temperatures: self.air_temperatures.clone(),
+            solar_lag: self.solar_lag.clone(),
+            wall_surface_temperatures: self.wall_surface_temperatures.clone(),
             envelope_mass_temperatures: self.envelope_mass_temperatures.clone(),
             internal_mass_temperatures: self.internal_mass_temperatures.clone(),
             envelope_thermal_capacitance: self.envelope_thermal_capacitance.clone(),
@@ -358,6 +414,8 @@ impl<T: ContinuousTensor<f64> + Clone> Clone for ThermalModelData<T> {
             peak_power_cooling: self.peak_power_cooling,
             zone_peak_heating_kw: self.zone_peak_heating_kw.clone(),
             zone_peak_cooling_kw: self.zone_peak_cooling_kw.clone(),
+            zone_peak_heating_timestep: self.zone_peak_heating_timestep.clone(),
+            zone_peak_cooling_timestep: self.zone_peak_cooling_timestep.clone(),
             annual_heating_energy: self.annual_heating_energy,
             annual_cooling_energy: self.annual_cooling_energy,
             annual_electrical_energy: self.annual_electrical_energy,
@@ -399,8 +457,11 @@ impl<T: ContinuousTensor<f64> + Clone> Clone for ThermalModelData<T> {
             #[cfg(feature = "pr821-diag")]
             last_phi_m: self.last_phi_m,
             hourly_temperatures: None,
+            nodal_temperatures: None,
             incident_solar_per_surface: self.incident_solar_per_surface.clone(),
-            sun_pos_cache: self.sun_pos_cache.clone(),
+            sun_pos_cache: Default::default(), // Issue #1970
+            zero_vector: self.zero_vector.clone(),
+            scratch_pool: PhysicsScratchPool::new(), // Fresh pool on clone; scratch is not deep-cloned
         }
     }
 }

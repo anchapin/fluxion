@@ -1,19 +1,38 @@
 // Python module exports for Fluxion
 // This module re-exports all Python bindings including multi-zone functionality
 
+// `osm_bindings` and `bindings` both define a top-level `export_osm` helper that
+// wraps the same underlying `interop::osm` function (different Python-facing
+// variants). Glob-re-exporting both is intentional and the dupe is benign —
+// at the Python layer only `osm_bindings::export_osm` is registered (see
+// `add_function!(osm_bindings::export_osm, m)` below). To avoid splitting the
+// glob re-exports into per-item aliases (a much larger refactor with no
+// behaviour change) we silence `ambiguous_glob_reexports` for the two
+// conflicting imports and document the intent here.
+#[allow(ambiguous_glob_reexports)]
+#[cfg(feature = "python-bindings")]
+pub use bindings::*;
+
+#[allow(ambiguous_glob_reexports)]
+#[cfg(feature = "python-bindings")]
+pub use osm_bindings::*;
+
 pub mod bindings;
 #[cfg(feature = "python-bindings")]
 pub mod hvac_bindings;
+#[cfg(feature = "python-bindings")]
+pub mod model_bindings;
+#[cfg(feature = "python-bindings")]
+pub mod multi_node_bindings;
 #[cfg(feature = "python-bindings")]
 pub mod osm_bindings;
 
 #[cfg(feature = "python-bindings")]
 pub use hvac_bindings::*;
 #[cfg(feature = "python-bindings")]
-pub use osm_bindings::*;
-
+pub use model_bindings::*;
 #[cfg(feature = "python-bindings")]
-pub use bindings::*;
+pub use multi_node_bindings::*;
 
 #[cfg(feature = "python-bindings")]
 use pyo3::prelude::*;
@@ -40,6 +59,22 @@ pub fn fluxion_python(_py: Python, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<osm_bindings::PyOsmWriter>()?;
     m.add_function(pyo3::wrap_pyfunction!(osm_bindings::import_osm, m)?)?;
     m.add_function(pyo3::wrap_pyfunction!(osm_bindings::export_osm, m)?)?;
+
+    // Register 9R4C Multi-Node Solver classes
+    m.add_class::<multi_node_bindings::PyThermalMassNode>()?;
+    m.add_class::<multi_node_bindings::PyMultiNodeThermalMass>()?;
+    m.add_class::<multi_node_bindings::PyMassAirCouplingMode>()?;
+    m.add_class::<multi_node_bindings::PySurfaceExteriorTemperatures>()?;
+    m.add_class::<multi_node_bindings::PyMultiNodeSolver>()?;
+
+    // Register FluxionModel interior struct bindings (Issue #1812).
+    m.add_class::<model_bindings::PyOrientation>()?;
+    m.add_class::<model_bindings::PyShadingType>()?;
+    m.add_class::<model_bindings::PyShadingDevice>()?;
+    m.add_class::<model_bindings::PyMaterial>()?;
+    m.add_class::<model_bindings::PySurface>()?;
+    m.add_class::<model_bindings::PyZone>()?;
+    m.add_class::<model_bindings::PyHVACSystem>()?;
 
     Ok(())
 }

@@ -256,6 +256,93 @@ paths:
         "500":
           $ref: "#/components/responses/SimulationFailed"
 
+  /v1/simulate/stream:
+    post:
+      tags: [simulate]
+      summary: Run a Fluxion simulation with streaming results
+      description: |
+        Accepts a `SimulationSchemaV1` (either bare or wrapped in the
+        versioned `SimulationSchema` envelope) and streams hourly zone
+        temperatures as SSE events as the simulation progresses.
+
+        Each SSE event contains one timestep's zone temperatures.
+        The simulation runs asynchronously and the stream closes when complete.
+      operationId: simulateStream
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SimulateRequest"
+      responses:
+        "200":
+          description: SSE stream of timestep results
+          content:
+            text/event-stream:
+              schema:
+                type: string
+        "400":
+          $ref: "#/components/responses/InvalidSchema"
+        "500":
+          $ref: "#/components/responses/SimulationFailed"
+
+  /v1/batch:
+    post:
+      tags: [simulate]
+      summary: Run multiple Fluxion simulations concurrently
+      description: |
+        Accepts an array of `SimulateRequest` bodies and runs them
+        concurrently using rayon. Returns all results in a single response.
+
+        A batch of 10 simulations should complete within 2x the wall-clock
+        time of a single simulation.
+      operationId: batchSimulate
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/BatchRequest"
+      responses:
+        "200":
+          description: All batch simulations completed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BatchResponse"
+        "400":
+          $ref: "#/components/responses/InvalidSchema"
+        "500":
+          $ref: "#/components/responses/SimulationFailed"
+
+  /v1/simulation/{id}/status:
+    get:
+      tags: [simulate]
+      summary: Poll for async simulation completion
+      description: |
+        Returns the current state of an async simulation identified by `id`.
+        States: `pending`, `running`, `completed`, `failed`.
+
+        Clients should poll this endpoint to check when a streaming simulation
+        has completed. The status is updated within 5 seconds of state changes.
+      operationId: getSimulationStatus
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: Simulation identifier, e.g. `sim-0`, `sim-42`
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Simulation status retrieved
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SimulationStatus"
+        "404":
+          $ref: "#/components/responses/SimulationNotFound"
+
   /v1/schema/{id}:
     get:
       tags: [schema]
@@ -292,8 +379,10 @@ paths:
 
         - `osm` — OpenStudio Model (delegates to `crate::interop::osm::import_osm`)
         - `gbxml` — gbXML (delegates to `crate::interop::gbxml::import_gbxml`)
-        - `idf` — EnergyPlus IDF — **returns 501 Not Implemented**; no IDF
-          reader exists in `src/interop/*` yet (out of scope for #1342).
+        - `ifc` — IFC4 STEP physical file (delegates to `crate::interop::ifc::import_ifc`)
+        - `idf` — EnergyPlus IDF text (delegates to `crate::io::idf::IdfParser::from_str`)
+        - `epjson` — EnergyPlus epJSON (JSON representation of IDF; delegates to
+          `crate::io::idf::IdfParser::from_epjson_str`)
 
         On success, the schema is stored under an auto-generated id and the
         id + schema are returned. Callers can fetch the schema later via
@@ -303,10 +392,10 @@ paths:
         - name: fmt
           in: path
           required: true
-          description: Source format (`osm`, `gbxml`, or `idf`)
+          description: Source format (`osm`, `gbxml`, `ifc`, `idf`, or `epjson`)
           schema:
             type: string
-            enum: [osm, gbxml, idf]
+            enum: [osm, gbxml, ifc, idf, epjson]
       requestBody:
         required: true
         content:
@@ -369,6 +458,12 @@ components:
         application/json:
           schema:
             $ref: "#/components/schemas/ApiError"
+    SimulationNotFound:
+      description: No simulation under the given id
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ApiError"
 
   schemas:
     HealthResponse:
@@ -394,10 +489,12 @@ components:
               enum:
                 - invalid_schema
                 - schema_not_found
+                - simulation_not_found
                 - unsupported_format
                 - not_implemented
                 - import_failed
                 - simulation_failed
+                - empty_batch
             message:
               type: string
 
@@ -467,6 +564,89 @@ components:
           type: string
         schema:
           $ref: "#/components/schemas/SimulationSchemaV1"
+
+    BatchRequest:
+      type: object
+      required: [simulations]
+      properties:
+        simulations:
+          type: array
+          items:
+            $ref: "#/components/schemas/SimulateRequest"
+          minItems: 1
+
+    BatchResponse:
+      type: object
+      required: [results]
+      properties:
+        results:
+          type: array
+          items:
+            oneOf:
+              - $ref: "#/components/schemas/SimulateResponse"
+              - type: object
+                description: Error message for failed simulation
+                required: [error]
+                properties:
+                  error:
+                    type: string
+
+    SimulationStatus:
+      type: object
+      required: [id, state]
+      properties:
+        id:
+          type: string
+        state:
+          oneOf:
+            - type: object
+              required: [state]
+              properties:
+                state:
+                  type: string
+                  enum: [pending]
+            - type: object
+              required: [state, progress]
+              properties:
+                state:
+                  type: string
+                  enum: [running]
+                progress:
+                  type: number
+                  format: float
+            - type: object
+              required: [state]
+              properties:
+                state:
+                  type: string
+                  enum: [completed]
+            - type: object
+              required: [state, error]
+              properties:
+                state:
+                  type: string
+                  enum: [failed]
+                error:
+                  type: string
+        progress:
+          type: number
+          format: float
+        result:
+          oneOf:
+            - $ref: "#/components/schemas/SimulateResponse"
+            - type: "null"
+
+    TimestepEvent:
+      type: object
+      required: [timestep, zone_temperatures]
+      properties:
+        timestep:
+          type: integer
+        zone_temperatures:
+          type: array
+          items:
+            type: number
+            format: double
 
     # -------------------------------------------------------------------
     # Below: schemas are mirrored from `src/api/schema.rs`. They are kept

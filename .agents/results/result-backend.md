@@ -1,137 +1,116 @@
-# Issue #1345 — HVAC predictive controller modulation propagation
+# Backend — Issue #1847 OSimFlow pytest coverage
 
-## Status
-
-- **Status**: COMPLETE
-- **Branch**: `fix/issue-1345-hvac-modulation`
-- **Worktree**: `/home/alex/Projects/worktrees/issue-1345-hvac-modulation`
-- **Base**: `main` @ `1dab4f3`
+**Status:** ✅ Complete
+**Date:** 2026-07-18
+**Branch:** `fix/issue-1847-establish-pytest-coverage`
+**PR (anchapin/fluxion#1847):** see `gh pr view` once the push completes.
 
 ## Summary
 
-The `PredictiveController::calculate_modulation` second tuple element
-(`modulation_factor`) was being discarded at `physics_impl.rs:2478` via
-`let (hvac_mode, _modulation) = ...`. Equipment therefore ran at 100% PLR
-regardless of predictive intent. The fix binds the modulation to a PLR
-update via `VariableCapacityEquipment::update_state` (the
-Chiller/Boiler/HeatPump/CAV/VAV path) in the 9R4C physics step, mirroring
-the wiring that already exists in the 5R1C path. The 24 h horizon constant
-in `thermal_model_core.rs:2295` was also replaced with the RFC-0001
-effective horizon (46 min = 2760 s) for dT/dt rate prediction.
+Established pytest infrastructure for the OSimFlow Python orchestration
+layer (`scripts/`) and added baseline unit tests for the three largest
+shipped-in-untested modules:
 
-## Files changed
+- `scripts/cloud_campaign_manager.py` (1,274 LoC; AWS/Nomad/DynamoDB)
+- `scripts/autonomous_parameter_sweep.py` (653 LoC; ASHRAE 140 divergence harness)
+- `scripts/ashrae_benchmark_harness.py` (551 LoC; benchmark runner + delta reporter)
 
-| File | Lines | Purpose |
-|------|-------|---------|
-| `src/sim/thermal_model_physics/physics_impl.rs` | +93 / -2 | Bind `_modulation` → `modulation`; add `equipment.update_state` block; wire economizer (mirrors 5R1C path) |
-| `src/sim/thermal_model_core.rs` | +11 / -5 | Replace 24 h horizon constant with RFC-0001 / Issue #1182 effective horizon (46 min × 60 s = 2760 s) |
-| `src/sim/hvac/equipment.rs` | +146 / -1 | Add 3 unit tests for modulation propagation (Chiller, AnyEquipment variants, PredictiveController contract) |
-| `tests/hvac_predictive_modulation.rs` | new (141 lines) | Integration test from the issue's verification path: 8760 h Case 800 simulation + 24-step 9R4C propagation check + RFC-0001 source guard |
+## Files Changed
 
-## Acceptance criteria status
-
-- [x] `let (hvac_mode, _modulation) = ...` at `physics_impl.rs:2478` replaced;
-      `_modulation` is now bound to `modulation` and forwarded to
-      `equipment.update_state` (Chiller/Boiler/HeatPump/CAV/VAV path)
-- [x] Effective prediction horizon constant equals 46 × 60 s (2760 s) per
-      RFC-0001; not 86400 s. The tracing span field changed from `24h_fixed`
-      to `rfc0001_46min`.
-- [x] Modulation factor ∈ [0, 1] asserted (lib unit tests + integration
-      test sweep)
-- [ ] Case 800 annual heating energy within ±5% of E+ reference — not
-      measured explicitly (pre-existing 800-series cases already exercise
-      the heat-pump path; the wiring fix is upstream of energy totals)
-- [ ] >5% of hours at PLR < 0.5 — depends on controller curve softening
-      (Plan 15-04 follow-up). Current controller is bang-bang (0 or 1.0
-      in steady state); this issue wires the propagation, not the curve.
-      See `.agents/results/issue-1345-python-verification.py` for the
-      controller behaviour analysis.
-
-## Verification
-
-```text
-$ cargo build --release --features ort
-Finished `release` profile [optimized] target(s) in 1m 03s
-
-$ cargo test --features ort --lib sim::hvac
-cargo test: 126 passed, 2467 filtered out (1 suite, 0.00s)
-  # 123 pre-existing + 3 new (issue-1345 propagation tests)
-
-$ cargo test --features ort --lib sim::thermal_model
-cargo test: 55 passed, 2538 filtered out (1 suite, 0.00s)
-
-$ cargo test --features ort --lib sim
-test result: FAILED. 913 passed; 2 failed; 0 ignored; 0 measured; 1678 filtered out
-  # 2 failures are pre-existing surface_flux_provider tests (verified on
-  # /tmp/fluxion-baseline clone of main, same 2 failures). Not caused by
-  # this fix.
-
-$ cargo test --features ort --test hvac_predictive_modulation
-cargo test: 3 passed (1 suite, 0.03s)
-  # 1. test_predictive_modulation_propagation_case_800
-  # 2. test_predictive_modulation_propagation_in_9r4c_step
-  # 3. test_rfc0001_prediction_horizon_constant
-
-$ cargo test --features ort --test issue_900_cooling_demand
-cargo test: 6 passed (1 suite, 0.13s)
-  # Re-validated after reverting an earlier q-modulation variant that
-  # caused a 1-test regression in the dead-band handling.
-
-$ cargo test --features ort --test test_hvac_load_calculation
-cargo test: 21 passed (1 suite, 0.00s)
-
-$ cargo test --features ort --test test_hvac_control_comprehensive
-cargo test: 41 passed (1 suite, 0.00s)
-
-$ cargo test --features ort --test test_engine_comprehensive
-cargo test: 8 passed (1 suite, 0.00s)
-
-$ cargo test --features ort --test hvac_equipment
-cargo test: 9 passed (1 suite, 0.00s)
-
-$ cargo test --features ort --test ashrae_140_cases_800_810
-test result: FAILED. 15 passed; 2 failed; 0 ignored; 0 measured; 0 filtered out
-  # Same 2 failures on main (test_predictive_controller_integration,
-  # test_ashrae_810). Not caused by this fix.
-
-$ cargo clippy --lib --features ort -- -D warnings
-cargo clippy: No issues found
+```
+A  .github/workflows/python-tests.yml        # CI: py 3.10–3.13 matrix on Ubuntu, no cloud creds
+A  scripts/README.md                         # Documents the scripts/ci layout + fixtures
+A  scripts/ci/__init__.py                    # Test-package marker
+A  scripts/ci/test_ashrae_benchmark_harness.py
+A  scripts/ci/test_autonomous_parameter_sweep.py
+A  scripts/ci/test_cloud_campaign_manager.py
+A  scripts/conftest.py                       # Shared fixtures (fake_aws_clients, populated_state_store,
+                                            # fake_urlopen, fake_subprocess, temp_trace_dir, ...)
+A  scripts/pytest.ini                        # pytest-asyncio auto, coverage reporting, scripts/ci testpaths
+A  scripts/requirements-test.txt             # pytest>=8, pytest-asyncio, pytest-cov, boto3
+M  requirements-dev.txt                      # Added pytest>=8, pytest-asyncio, pytest-cov
+M  scripts/cloud_campaign_manager.py        # Resolved 11 unresolved git-merge-conflict markers
+                                            # (webhook HEAD vs email 1d0e1c8) so the file parses;
+                                            # both implementations now coexist.
 ```
 
-## Test coverage
+## Acceptance Criteria — checklist
 
-The fix is covered by three layers:
+- [x] **Task 1 — Pytest scaffolding**
+  - [x] `scripts/pytest.ini` configuring pytest, pytest-asyncio, pytest-cov
+  - [x] `scripts/conftest.py` with shared fixtures (temp campaign state, sample model spec, mocked subprocess)
+  - [x] `scripts/ci/` directory populated; layout documented in `scripts/README.md`
 
-1. **Lib unit tests** (`src/sim/hvac/equipment.rs` — added 3 tests):
-   - `test_predictive_modulation_propagates_to_update_state` — sweep
-     modulation ∈ {0, 0.25, 0.5, 1.0}; verify `equipment.current_plr()`
-     equals `modulated_load / capacity` for each.
-   - `test_predictive_modulation_propagates_through_any_equipment` —
-     verify the same propagation works through the `AnyEquipment` enum
-     wrapper (the type stored in `ThermalModel::hvac_equipment`) for
-     HeatPump, Boiler, and Chiller.
-   - `test_predictive_modulation_in_unit_interval` — the controller's
-     contract: `(HVACMode, f64)` second element is in `[0, 1]` for any
-     sane input.
+- [x] **Task 2 — Baseline unit tests**
+  - [x] `scripts/ci/test_cloud_campaign_manager.py` (51 tests):
+    - campaign-state serialization round-trip (dataclass + JSON)
+    - sweep-config validation (`generate_grid_points`, `generate_random_points`)
+    - mocked S3 / DynamoDB / Lambda job-spec generation (`create_campaign`, `trigger_aggregator`)
+    - state-store aggregation (`check_campaign_progress`)
+    - notification paths (webhook / email / SNS), idempotency, transport errors
+  - [x] `scripts/ci/test_autonomous_parameter_sweep.py` (23 tests):
+    - parameter-space enumeration (grid + random)
+    - early-termination logic (`tolerance_mae` abort)
+    - result aggregation (JSONL + CSV logs, sweep_state persistence)
+    - subprocess timeout / error handling
+    - divergence-report markdown rendering
+  - [x] `scripts/ci/test_ashrae_benchmark_harness.py` (30 tests):
+    - benchmark-config parsing (regex group: `TestParseValidationOutput`)
+    - **MAE + pass-rate edge cases**: `inf%`, leading whitespace, missing summary
+    - per-case ValidationCase construction (including ref-range `inf`)
+    - report rendering (`print_summary`, `print_delta`)
+    - GitHub-Actions step summary writer
 
-2. **Integration test** (`tests/hvac_predictive_modulation.rs` — new):
-   - `test_predictive_modulation_propagation_case_800` — 8760 h Case 800
-     simulation with heat pump attached; final PLR is in `[0, 1]`.
-   - `test_predictive_modulation_propagation_in_9r4c_step` — Case 900
-     (9R4C model), 24 hourly steps; verify the equipment received an
-     `update_state` call (PLR is bounded; was always 0 before the fix
-     because the 9R4C path never called `update_state`).
-   - `test_rfc0001_prediction_horizon_constant` — source-level guard
-     that the horizon constant is `46.0 * 60.0` (2760 s) and the
-     tracing field is `rfc0001_46min` (not the old `24h_fixed`).
+- [x] **Task 3 — CI wiring**
+  - [x] `.github/workflows/python-tests.yml` on Ubuntu
+  - [x] Python 3.10 / 3.11 / 3.12 / 3.13 matrix
+  - [x] No `DWAVE_API_TOKEN`, no Redis, no Kubernetes, no cloud credentials;
+        the workflow `unset`s them defensively and all externals are mocked via
+        `scripts/conftest.py` fixtures.
+  - [x] Enforces ≥60% line coverage on each of the three target files
+        via inline `coverage.xml` post-check.
 
-## Out-of-scope items (documented for next agent)
+## Coverage Achieved
 
-- The predictive controller's curve is bang-bang (0 or 1.0 in steady
-  state) because the dead-band eats intermediate errors before the
-  sensitivity scaling. The acceptance criterion `>5% of hours at PLR <
-  0.5` requires softening the controller (Plan 15-04 follow-up — see
-  the modes.rs TODO at line 15 and the controller's `calculate_modulation`
-  sensitivity of 10.0). This issue wires the propagation, not the curve.
-- The `hvac::zones::zone_control` controller is a separate staging
-  controller; not touched here.
+```
+scripts/ashrae_benchmark_harness.py       278     45    84%   ✅
+scripts/autonomous_parameter_sweep.py     263     43    84%   ✅
+scripts/cloud_campaign_manager.py         449    144    68%   ✅
+```
+
+All three target files exceed the 60% acceptance threshold.
+
+104 tests pass on Python 3.12 (local), pytest-asyncio in `auto` mode,
+`pytest-cov` configured with `--cov=scripts --cov-report=term-missing`.
+
+## How to run
+
+```bash
+pip install -r requirements-dev.txt -r scripts/requirements-test.txt
+pytest scripts/ci/ -c scripts/pytest.ini
+```
+
+Or directly via the workflow on a PR:
+`.github/workflows/python-tests.yml`.
+
+## Blockers / Notes
+
+- **`scripts/cloud_campaign_manager.py` had 11 unresolved git-merge-conflict
+  markers** (`<<<<<<< HEAD` / `=======` / `>>>>>>> 1d0e1c8`) at the time
+  this branch was created. The file was syntactically broken and could
+  not be imported at all. Resolved by keeping both webhook (HEAD) AND
+  email (1d0e1c8) implementations intact — `send_completion_notification`
+  now handles both channels. The `create_campaign` signature also accepts
+  `webhook_url` and `email_config` simultaneously.
+
+- Coverage on `cloud_campaign_manager.py` lands at 68% — well above the
+  60% requirement — but the `main()` argparse dispatcher (`if args.action
+  == "..."`) is intentionally untested because it requires end-to-end
+  fixture wiring beyond the issue scope. Future test expansions (CLI
+  parametrization, end-to-end flows) could push the file to 80%+ without
+  touching the merge resolution.
+
+- `get_campaign_state` only suppresses `ClientError` when `Error.Code == "404"`
+  (literal string match). Real S3 returns `"NoSuchKey"`. This is a latent bug
+  in the source but was left untouched per issue scope ("Do not modify files
+  outside the scope of this issue"). Tests use a `Code="404"` mock.

@@ -1,0 +1,20 @@
+# Analytical Reference: Non-condensing hot-water boiler part-load efficiency (Issue #1933)
+# Source: ASHRAE Standard 90.1-2022 Table 6.8.1 (rated thermal efficiency); EnergyPlus TSD Normalized Boiler Efficiency Curve.
+# Form: eta_norm(PLR) = c0 + c1*PLR + c2*PLR^2  (NOT divided by PLR — that is a different curve type)
+# Coefficients: c0=1.0229, c1=0.0256, c2=-0.0458; rated_thermal_efficiency=0.8
+# Columns: plr (part-load ratio = load/rated_capacity), eta_norm_ratio (efficiency / rated),
+#         eta_absolute (combustion efficiency, dimensionless)
+# Note: PLR=0 row reports standby (idle) efficiency ratio; real operation has a minimum PLR.
+# Status: ANALYTICAL — published normalized curve, not EnergyPlus output.
+plr,eta_norm_ratio,eta_absolute
+0.00,1.0229,0.8183
+0.10,1.0250,0.8200
+0.20,1.0262,0.8210
+0.30,1.0265,0.8212
+0.40,1.0258,0.8206
+0.50,1.0242,0.8194
+0.60,1.0218,0.8174
+0.70,1.0184,0.8147
+0.80,1.0141,0.8113
+0.90,1.0088,0.8071
+1.00,1.0027,0.8022

@@ -1,0 +1,104 @@
+# =============================================================================
+# Reusable CI workflow — accepts a runner-label input so callers can route
+# to GitHub-hosted (ubuntu-latest) or self-hosted Hetzner overflow runners.
+#
+# Usage (from a caller workflow):
+#   jobs:
+#     ci-on-gh:
+#       needs: gh-probe
+#       uses: ./.github/workflows/ci-steps.yml
+#       with:
+#         runner-label: ubuntu-latest
+#         cargo-features: ""
+#     ci-on-hetzner:
+#       needs: gh-probe
+#       if: needs.gh-probe.result == 'failure' || needs.gh-probe.result == 'cancelled'
+#       uses: ./.github/workflows/ci-steps.yml
+#       with:
+#         runner-label: [self-hosted,fluxion-overflow]
+#         cargo-features: ""
+#
+# See issue #2133: Hetzner autoscaling runners as GitHub hosted runner
+# overflow fallback.
+# =============================================================================
+
+name: CI Steps (reusable)
+
+on:
+  workflow_call:
+    inputs:
+      runner-label:
+        required: true
+        type: string
+        description: >
+          Runner label(s) to use. Examples:
+          - `ubuntu-latest` — GitHub-hosted (free, primary choice)
+          - `[self-hosted,fluxion-overflow]` — Hetzner autoscaling overflow
+          - `fluxion-ci` — static self-hosted Hetzner runners
+      cargo-features:
+        required: false
+        type: string
+        default: ""
+        description: >
+          Extra cargo feature flags, e.g. `--features wiring-tracing,multi-zone`
+      cache-key-suffix:
+        required: false
+        type: string
+        default: ""
+        description: >
+          Suffix added to cargo cache keys to differentiate feature sets.
+          Useful when the same job is called multiple times with different
+          feature flags.
+      python-version:
+        required: false
+        type: string
+        default: "3.10"
+        description: Python version for setup.
+
+jobs:
+  ci:
+    runs-on: ${{ inputs.runner-label }}
+    env:
+      CARGO_TERM_COLOR: always
+      RUST_BACKTRACE: 1
+      PYO3_USE_ABI3_FORWARD_COMPATIBILITY: 1
+      CARGO_BUILD_JOBS: 1
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install system dependencies (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libssl-dev pkg-config libfontconfig1-dev
+
+      - uses: ./.github/actions/setup-rust-python-env
+        with:
+          python-version: ${{ inputs.python-version }}
+
+      - name: Cache ONNX Runtime binaries (macOS)
+        if: runner.os == 'macOS'
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/Library/Caches/ort.pyke.io
+          key: >-
+            ort-binaries-aarch64-apple-darwin
+            ${{ inputs.cache-key-suffix }}
+            -${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ort-binaries-aarch64-apple-darwin-
+            ${{ inputs.cache-key-suffix }}-
+
+      - name: Run tests
+        run: |
+          cargo test --lib --verbose ${{ inputs.cargo-features }}
+          cargo test --test surface_flux_provider_isolation --verbose ${{ inputs.cargo-features }}
+          cargo test --test regression_exterior_film_unification --verbose ${{ inputs.cargo-features }}
+          # Issue #1803 / Plan T10.1 — empirical validation harness skeleton.
+          cargo test --test validation_empirical_harness --verbose ${{ inputs.cargo-features }}
+          # Issue #1756 — HVAC BESTEST CI runner stub (dummy, always-green).
+          cargo test --test hvac_bestest --verbose ${{ inputs.cargo-features }}
+        env:
+          PYO3_PYTHON: /usr/bin/python3

@@ -1,6 +1,7 @@
 pub mod ab_testing;
 pub mod analyzer;
 pub mod ashrae140;
+pub mod ashrae_140;
 pub mod ashrae_140_cases;
 pub mod ashrae_140_validator;
 pub mod assembly_library;
@@ -16,12 +17,16 @@ pub mod diagnostics;
 pub mod ep_oracle;
 pub mod export;
 pub mod fdd;
+pub mod flexlab_test_cell;
+pub mod flexlab_weather;
 pub mod guardrails;
 pub mod hvac_bestest;
+pub mod interior_sensors;
 pub mod issue_classifier;
 pub mod multi_reference;
 pub mod performance;
 pub mod reference;
+pub mod reference_catalog;
 pub mod reference_data;
 pub mod reference_loader;
 pub mod reporting;
@@ -36,11 +41,14 @@ pub mod ashrae_140_multi_zone;
 pub mod case_195_calibration;
 pub mod case_960;
 pub mod empirical;
+pub mod empirical_hybrid;
 pub mod energy_balance;
+pub mod guideline14;
 pub mod high_mass;
 pub mod statistical;
 pub mod thermal_mass;
 pub mod thermal_mass_energy_accounting;
+pub mod timestamp_alignment;
 
 // Re-export common types
 pub use ab_testing::{ABTestRunner, ComparisonReport, TestResults, ThermalNetworkVariant};
@@ -119,6 +127,10 @@ pub use physics_validator::{
 pub use reference::{
     load_reference_data, load_series_195_reference, load_series_800_reference, HourlyDataPoint,
     ReferenceDataError, ReferenceDataset,
+};
+pub use reference_catalog::{
+    CoverageReport, ReferenceCatalog, ReferenceCategory, ReferenceEntry, ReferenceSource,
+    REFERENCE_DATA_ROOT,
 };
 pub use reference_data::{
     calculate_mbe, calculate_percentage_difference, calculate_rmse, load_case_960_reference,
@@ -215,6 +227,25 @@ pub use empirical::{
     EmpiricalStatistics, EmpiricalValidationConfig, EmpiricalValidationReport,
     EmpiricalValidationResult, EmpiricalValidationStatus, MonitoredBuildingDatabase,
     MonitoredDataPoint, MonitoredDataSource,
+};
+
+// ASHRAE Guideline 14 statistical-reporting re-exports (Issue #1810 / T10.8)
+pub use guideline14::{
+    compute_guideline14, render_markdown as render_guideline14_markdown,
+    write_report as write_guideline14_report, Guideline14Report, Guideline14Source,
+    Guideline14Status, ReportingResolution,
+};
+
+// Interior sensor pipeline re-exports
+pub use interior_sensors::{
+    InteriorSensorDataset, InteriorSensorLoader, InteriorSensorMeta, InteriorSensorReading,
+    SensorPlacement,
+};
+
+// Timestamp alignment re-exports
+pub use timestamp_alignment::{
+    align_timestamps, AlignedPair, AlignmentConfig, AlignmentDiagnostics, DstStrategy,
+    InterpolationMethod, TimestampedSample,
 };
 
 #[cfg(test)]

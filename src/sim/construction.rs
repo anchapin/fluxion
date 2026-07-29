@@ -18,9 +18,9 @@
 //! - **Area Multipliers**: Each mass class has an associated effective mass area
 //!   multiplier (A_m factor) used in 5R1C thermal network calculations.
 
-use crate::physics::continuous::ContinuousField;
 use crate::sim::shading::{Overhang, ShadeFin};
 use fluxion_core::ashrae_cases::Orientation;
+use fluxion_core::tensor::ContinuousField;
 use num_traits::Zero;
 use serde::{Deserialize, Serialize};
 use std::ops::{Add, AddAssign, Mul};
@@ -2201,8 +2201,9 @@ mod tests {
 
     #[test]
     fn test_wall_surface_heat_gain() {
+        use fluxion_core::tensor::ConstantField;
         let surface = WallSurface::new(10.0, 0.5, Orientation::South);
-        let field = crate::physics::continuous::ConstantField { value: 2.0 };
+        let field = ConstantField { value: 2.0 };
         let heat_gain = surface.calculate_heat_gain(&field);
         assert!((heat_gain - 20.0).abs() < 1e-6);
     }
@@ -2242,6 +2243,7 @@ mod tests {
             depth: 0.5,
             distance_from_edge: 0.0,
             side: crate::sim::shading::Side::Left,
+            height: 3.0, // Default height
         };
         let surface = WallSurface::new(12.0, 0.9, Orientation::West).with_fin(fin);
         assert_eq!(surface.fins.len(), 1);
@@ -2254,11 +2256,13 @@ mod tests {
             depth: 0.3,
             distance_from_edge: 0.0,
             side: crate::sim::shading::Side::Left,
+            height: 3.0, // Default height
         };
         let fin2 = ShadeFin {
             depth: 0.6,
             distance_from_edge: 1.0,
             side: crate::sim::shading::Side::Right,
+            height: 3.0, // Default height
         };
         let surface = WallSurface::new(10.0, 1.0, Orientation::South)
             .with_fin(fin1)
@@ -2277,6 +2281,7 @@ mod tests {
             depth: 0.8,
             distance_from_edge: 0.5,
             side: crate::sim::shading::Side::Left,
+            height: 3.0, // Default height
         };
         let surface = WallSurface::new(30.0, 2.0, Orientation::North)
             .with_window(8.0)

@@ -1,5 +1,5 @@
-mod tools;
 mod state;
+mod tools;
 
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -71,7 +71,8 @@ fn main() -> anyhow::Result<()> {
 
         let response_json = serde_json::to_string(&response).unwrap_or_else(|e| {
             tracing::error!("Failed to serialize response: {}", e);
-            r#"{"jsonrpc":"2.0","id":null,"error":{"code":-32603,"message":"Internal error"}}"#.to_string()
+            r#"{"jsonrpc":"2.0","id":null,"error":{"code":-32603,"message":"Internal error"}}"#
+                .to_string()
         });
 
         println!("{}", response_json);
@@ -111,11 +112,20 @@ fn process_request(request: JsonRpcRequest, state: &RefCell<McpState>) -> JsonRp
         "tools/call" => {
             let params = request.params.unwrap_or(serde_json::Value::Null);
             let mut state_guard = state.borrow_mut();
-            let result = tools::handle_tool_call(&mut state_guard, params);
+            let result_str = tools::handle_tool_call(&mut state_guard, params);
+            // The result string is already formatted (JSON or TOON)
+            // Wrap it as a JSON Value (String for TOON, Object for JSON parsed back)
+            let result_value: serde_json::Value = if result_str.starts_with("toon:v1") {
+                serde_json::json!({ "_toon": result_str })
+            } else {
+                // Parse JSON string back to Value for consistent structure
+                serde_json::from_str(&result_str)
+                    .unwrap_or_else(|_| serde_json::json!({ "raw": result_str }))
+            };
             JsonRpcResponse {
                 jsonrpc: "2.0".into(),
                 id,
-                result: Some(result),
+                result: Some(result_value),
                 error: None,
             }
         }

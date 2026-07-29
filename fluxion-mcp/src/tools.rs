@@ -1,9 +1,160 @@
 use crate::state::{EnergyResults, McpState, SimulationResults};
+use fluxion::ai::surrogate::SurrogateManager;
+use fluxion::physics::cta::VectorField;
 use fluxion::sim::construction::{Construction, ConstructionLayer, MassClass};
 use fluxion::sim::engine::{StepParameters, ThermalModel};
-use fluxion::physics::cta::VectorField;
-use fluxion::ai::surrogate::SurrogateManager;
 use serde_json::Value;
+
+/// Supported response formats for content-negotiation
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum ResponseFormat {
+    Json,
+    Toon,
+}
+
+impl Default for ResponseFormat {
+    fn default() -> Self {
+        ResponseFormat::Json
+    }
+}
+
+impl ResponseFormat {
+    /// Parse format from string (supports MIME types and short forms)
+    pub fn from_str(s: &str) -> Self {
+        match s {
+            "application/json" | "json" => ResponseFormat::Json,
+            "application/x-toon" | "x-toon" | "toon" => ResponseFormat::Toon,
+            _ => ResponseFormat::default(),
+        }
+    }
+}
+
+/// Format a serializable value to the specified format string.
+/// TOON format uses `fluxion_toon::to_string()` for compact LLM-friendly output.
+/// Falls back to JSON on serialization error.
+fn format_response<T: serde::Serialize>(value: &T, format: &str) -> String {
+    match format {
+        "toon" => {
+            fluxion_toon::to_string(value).unwrap_or_else(|_| serde_json::to_string(value).unwrap())
+        }
+        _ => serde_json::to_string(value).unwrap(),
+    }
+}
+
+/// Serialize JSON value to TOON (compact binary-like format)
+/// TOON uses a compact representation: arrays as comma-separated,
+/// objects as key:value pairs with minimal whitespace
+fn serialize_to_toon(value: &Value) -> String {
+    match value {
+        Value::Null => "null".to_string(),
+        Value::Bool(b) => b.to_string(),
+        Value::Number(n) => n.to_string(),
+        Value::String(s) => format!("\"{}\"", s),
+        Value::Array(arr) => {
+            if arr.is_empty() {
+                "[]".to_string()
+            } else {
+                let inner: Vec<String> = arr.iter().map(|v| serialize_to_toon(v)).collect();
+                format!("[{}]", inner.join(","))
+            }
+        }
+        Value::Object(obj) => {
+            if obj.is_empty() {
+                "{}".to_string()
+            } else {
+                let inner: Vec<String> = obj
+                    .iter()
+                    .map(|(k, v)| format!("{}:{}", k, serialize_to_toon(v)))
+                    .collect();
+                format!("{{{}}}", inner.join(","))
+            }
+        }
+    }
+}
+
+fn toon_string(value: &Value) -> String {
+    match value {
+        Value::Null => "null".to_string(),
+        Value::Bool(b) => b.to_string(),
+        Value::Number(n) => {
+            if let Some(i) = n.as_i64() {
+                i.to_string()
+            } else if let Some(f) = n.as_f64() {
+                if !f.is_finite() {
+                    return "0".to_string();
+                }
+                if f == f.trunc() {
+                    format!("{:.0}", f)
+                } else if f.abs() < 10.0 {
+                    format!("{:.1}", f)
+                        .trim_end_matches('0')
+                        .trim_end_matches('.')
+                        .to_string()
+                } else {
+                    let s = format!("{:.1}", f);
+                    s.trim_end_matches('0').trim_end_matches('.').to_string()
+                }
+            } else {
+                n.to_string()
+            }
+        }
+        Value::String(s) => s.clone(),
+        Value::Array(arr) => {
+            let inner: Vec<String> = arr.iter().map(|v| toon_string(v)).collect();
+            inner.join(",")
+        }
+        Value::Object(obj) => {
+            let inner: Vec<String> = obj
+                .iter()
+                .map(|(k, v)| format!("{}:{}", compact_key(k), toon_string(v)))
+                .collect();
+            format!("{{{}}}", inner.join(","))
+        }
+    }
+}
+
+fn compact_key(key: &str) -> &str {
+    match key {
+        "zone_index" => "i",
+        "start_hour" => "s",
+        "end_hour" => "e",
+        "temperatures_c" => "t",
+        "surface_index" => "si",
+        "incident_w_m2" => "i",
+        "transmitted_w_m2" => "tx",
+        "num_zones" => "nz",
+        "zone_area_m2" => "za",
+        "window_u_value" => "wu",
+        "heating_setpoint" => "hs",
+        "cooling_setpoint" => "cs",
+        "success" => "ok",
+        "message" => "m",
+        "model" => "md",
+        "assemblies" => "a",
+        "count" => "n",
+        "case_id" => "id",
+        "reference_data" => "rd",
+        "fluxion_version" => "fv",
+        "parameter" => "p",
+        "new_value" => "v",
+        "zones" => "z",
+        "total_surfaces" => "ts",
+        "surfaces" => "sf",
+        "metric" => "mt",
+        "fluxion_value" => "fv",
+        "reference_range" => "rr",
+        "within_tolerance" => "wt",
+        "status" => "st",
+        "period_start_hour" => "ps",
+        "period_end_hour" => "pe",
+        "heating_kwh" => "hk",
+        "cooling_kwh" => "ck",
+        "timesteps" => "ts",
+        "total_heating_kwh" => "th",
+        "total_cooling_kwh" => "tc",
+        _ => key,
+    }
+}
 
 pub fn list_tools() -> Vec<serde_json::Value> {
     vec![
@@ -203,22 +354,27 @@ pub fn list_tools() -> Vec<serde_json::Value> {
     ]
 }
 
-pub fn handle_tool_call(
-    state: &mut McpState,
-    params: Value,
-) -> Value {
+pub fn handle_tool_call(state: &mut McpState, params: Value) -> String {
     let arguments = params.as_object().cloned().unwrap_or_default();
 
-    let method = arguments.get("name")
-        .and_then(|v| v.as_str())
-        .unwrap_or("");
+    let method = arguments.get("name").and_then(|v| v.as_str()).unwrap_or("");
 
-    let tool_args = arguments.get("arguments")
+    let tool_args = arguments
+        .get("arguments")
         .and_then(|v| v.as_object())
         .cloned()
         .unwrap_or_default();
 
-    match method {
+    let format = arguments
+        .get("format")
+        .and_then(|v| v.as_str())
+        .map(ResponseFormat::from_str)
+        .unwrap_or_default();
+
+    // Store format preference in state for later use
+    state.response_format = format;
+
+    let result = match method {
         "load_building_model" => load_building_model(state, &tool_args),
         "run_simulation" => run_simulation(state, &tool_args),
         "get_zone_temperatures" => get_zone_temperatures(state, &tool_args),
@@ -232,28 +388,44 @@ pub fn handle_tool_call(
         _ => serde_json::json!({
             "error": format!("Unknown tool: {}", method)
         }),
+    };
+
+    // Wrap result with format metadata
+    wrap_response(&result, format)
+}
+
+/// Wrap response with format metadata for content-negotiation
+fn wrap_response(result: &Value, format: ResponseFormat) -> String {
+    match format {
+        ResponseFormat::Json => serde_json::to_string(result).unwrap(),
+        ResponseFormat::Toon => format_response(result, "toon"),
     }
 }
 
 fn load_building_model(state: &mut McpState, args: &serde_json::Map<String, Value>) -> Value {
-    let num_zones = args.get("num_zones")
+    let num_zones = args
+        .get("num_zones")
         .and_then(|v| v.as_i64())
         .map(|v| v as usize)
         .unwrap_or(1);
 
-    let zone_area = args.get("zone_area")
+    let zone_area = args
+        .get("zone_area")
         .and_then(|v| v.as_f64())
         .unwrap_or(20.0);
 
-    let window_u_value = args.get("window_u_value")
+    let window_u_value = args
+        .get("window_u_value")
         .and_then(|v| v.as_f64())
         .unwrap_or(1.5);
 
-    let heating_setpoint = args.get("heating_setpoint")
+    let heating_setpoint = args
+        .get("heating_setpoint")
         .and_then(|v| v.as_f64())
         .unwrap_or(20.0);
 
-    let cooling_setpoint = args.get("cooling_setpoint")
+    let cooling_setpoint = args
+        .get("cooling_setpoint")
         .and_then(|v| v.as_f64())
         .unwrap_or(27.0);
 
@@ -279,15 +451,19 @@ fn load_building_model(state: &mut McpState, args: &serde_json::Map<String, Valu
 fn run_simulation(state: &mut McpState, args: &serde_json::Map<String, Value>) -> Value {
     let model = match &mut state.model {
         Some(m) => m,
-        None => return serde_json::json!({ "error": "No model loaded. Call load_building_model first." }),
+        None => {
+            return serde_json::json!({ "error": "No model loaded. Call load_building_model first." })
+        }
     };
 
-    let timesteps = args.get("timesteps")
+    let timesteps = args
+        .get("timesteps")
         .and_then(|v| v.as_i64())
         .map(|v| v as usize)
         .unwrap_or(8760);
 
-    let use_surrogates = args.get("use_surrogates")
+    let use_surrogates = args
+        .get("use_surrogates")
         .and_then(|v| v.as_bool())
         .unwrap_or(false);
 
@@ -329,8 +505,22 @@ fn run_simulation(state: &mut McpState, args: &serde_json::Map<String, Value>) -
         solar_gains: Vec::new(),
     });
 
-    let total_heating: f64 = state.simulation_results.as_ref().unwrap().hvac_energy.heating_kwh.iter().sum();
-    let total_cooling: f64 = state.simulation_results.as_ref().unwrap().hvac_energy.cooling_kwh.iter().sum();
+    let total_heating: f64 = state
+        .simulation_results
+        .as_ref()
+        .unwrap()
+        .hvac_energy
+        .heating_kwh
+        .iter()
+        .sum();
+    let total_cooling: f64 = state
+        .simulation_results
+        .as_ref()
+        .unwrap()
+        .hvac_energy
+        .cooling_kwh
+        .iter()
+        .sum();
 
     serde_json::json!({
         "success": true,
@@ -344,18 +534,17 @@ fn run_simulation(state: &mut McpState, args: &serde_json::Map<String, Value>) -
 fn get_zone_temperatures(state: &mut McpState, args: &serde_json::Map<String, Value>) -> Value {
     let results = match &state.simulation_results {
         Some(r) => r,
-        None => return serde_json::json!({ "error": "No simulation results. Run run_simulation first." }),
+        None => {
+            return serde_json::json!({ "error": "No simulation results. Run run_simulation first." })
+        }
     };
 
-    let zone_index = args.get("zone_index")
-        .and_then(|v| v.as_i64())
-        .unwrap_or(0) as usize;
+    let zone_index = args.get("zone_index").and_then(|v| v.as_i64()).unwrap_or(0) as usize;
 
-    let start_hour = args.get("start_hour")
-        .and_then(|v| v.as_i64())
-        .unwrap_or(0) as usize;
+    let start_hour = args.get("start_hour").and_then(|v| v.as_i64()).unwrap_or(0) as usize;
 
-    let end_hour = args.get("end_hour")
+    let end_hour = args
+        .get("end_hour")
         .and_then(|v| v.as_i64())
         .map(|v| v as usize)
         .unwrap_or(results.zone_temperatures.len().min(8760));
@@ -377,15 +566,19 @@ fn get_zone_temperatures(state: &mut McpState, args: &serde_json::Map<String, Va
 fn get_hvac_energy(state: &mut McpState, args: &serde_json::Map<String, Value>) -> Value {
     let results = match &state.simulation_results {
         Some(r) => r,
-        None => return serde_json::json!({ "error": "No simulation results. Run run_simulation first." }),
+        None => {
+            return serde_json::json!({ "error": "No simulation results. Run run_simulation first." })
+        }
     };
 
-    let period_start = args.get("period_start")
+    let period_start = args
+        .get("period_start")
         .and_then(|v| v.as_i64())
         .map(|v| v as usize)
         .unwrap_or(0);
 
-    let period_end = args.get("period_end")
+    let period_end = args
+        .get("period_end")
         .and_then(|v| v.as_i64())
         .map(|v| v as usize)
         .unwrap_or(results.hvac_energy.heating_kwh.len());
@@ -410,7 +603,8 @@ fn get_solar_gains(state: &mut McpState, args: &serde_json::Map<String, Value>) 
         None => return serde_json::json!({ "error": "No model loaded." }),
     };
 
-    let surface_index = args.get("surface_index")
+    let surface_index = args
+        .get("surface_index")
         .and_then(|v| v.as_i64())
         .unwrap_or(0) as usize;
 
@@ -429,8 +623,12 @@ fn get_solar_gains(state: &mut McpState, args: &serde_json::Map<String, Value>) 
     })
 }
 
-fn list_construction_assemblies(state: &mut McpState, args: &serde_json::Map<String, Value>) -> Value {
-    let _mass_class_filter = args.get("mass_class")
+fn list_construction_assemblies(
+    state: &mut McpState,
+    args: &serde_json::Map<String, Value>,
+) -> Value {
+    let _mass_class_filter = args
+        .get("mass_class")
         .and_then(|v| v.as_str())
         .map(|s| match s {
             "VeryLight" => Some(MassClass::VeryLight),
@@ -497,7 +695,8 @@ fn list_construction_assemblies(state: &mut McpState, args: &serde_json::Map<Str
 }
 
 fn get_ashrae140_results(state: &mut McpState, args: &serde_json::Map<String, Value>) -> Value {
-    let case_id = args.get("case_id")
+    let case_id = args
+        .get("case_id")
         .and_then(|v| v.as_str())
         .unwrap_or("600");
 
@@ -540,16 +739,14 @@ fn get_ashrae140_references(case_id: &str) -> Value {
 fn set_parameter(state: &mut McpState, args: &serde_json::Map<String, Value>) -> Value {
     let model = match &mut state.model {
         Some(m) => m,
-        None => return serde_json::json!({ "error": "No model loaded. Call load_building_model first." }),
+        None => {
+            return serde_json::json!({ "error": "No model loaded. Call load_building_model first." })
+        }
     };
 
-    let name = args.get("name")
-        .and_then(|v| v.as_str())
-        .unwrap_or("");
+    let name = args.get("name").and_then(|v| v.as_str()).unwrap_or("");
 
-    let value = args.get("value")
-        .and_then(|v| v.as_f64())
-        .unwrap_or(0.0);
+    let value = args.get("value").and_then(|v| v.as_f64()).unwrap_or(0.0);
 
     match name {
         "window_u_value" => {
@@ -577,7 +774,9 @@ fn set_parameter(state: &mut McpState, args: &serde_json::Map<String, Value>) ->
 fn describe_model(state: &mut McpState, _args: &serde_json::Map<String, Value>) -> Value {
     let model = match &state.model {
         Some(m) => m,
-        None => return serde_json::json!({ "error": "No model loaded. Call load_building_model first." }),
+        None => {
+            return serde_json::json!({ "error": "No model loaded. Call load_building_model first." })
+        }
     };
 
     let zones: Vec<_> = (0..model.num_zones)
@@ -614,22 +813,28 @@ fn describe_model(state: &mut McpState, _args: &serde_json::Map<String, Value>) 
 }
 
 fn compare_to_reference(state: &mut McpState, args: &serde_json::Map<String, Value>) -> Value {
-    let case_id = args.get("case_id")
+    let case_id = args
+        .get("case_id")
         .and_then(|v| v.as_str())
         .unwrap_or("600");
 
-    let metric = args.get("metric")
+    let metric = args
+        .get("metric")
         .and_then(|v| v.as_str())
         .unwrap_or("annual_heating");
 
     let references = get_ashrae140_references(case_id);
 
-    let metric_data = references.get(metric)
+    let metric_data = references
+        .get(metric)
         .and_then(|v| v.as_object())
         .map(|obj| {
             let min = obj.get("min").and_then(|v| v.as_f64()).unwrap_or(0.0);
             let max = obj.get("max").and_then(|v| v.as_f64()).unwrap_or(0.0);
-            let typical = obj.get("typical").and_then(|v| v.as_f64()).unwrap_or((min + max) / 2.0);
+            let typical = obj
+                .get("typical")
+                .and_then(|v| v.as_f64())
+                .unwrap_or((min + max) / 2.0);
             (min, max, typical)
         })
         .unwrap_or((0.0, 0.0, 0.0));

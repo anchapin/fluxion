@@ -316,6 +316,191 @@ impl SurrogateInputs {
     }
 }
 
+/// Per-feature min/max bounds extracted from training data.
+///
+/// Used by OOD detection to determine whether an inference input vector
+/// falls inside the convex hull of the training distribution (Issue #1892).
+/// The bounds correspond to the numeric features of [`SurrogateInputs`]:
+/// index 0 = exterior_temp, 1 = zone_temp, 2 = solar_rad,
+/// 3 = humidity, 4 = occupancy.
+#[derive(Clone, Debug)]
+pub struct InputBounds {
+    pub exterior_temp: (f64, f64),
+    pub zone_temp: (f64, f64),
+    pub solar_rad: (f64, f64),
+    pub humidity: (f64, f64),
+    pub occupancy: (f64, f64),
+    pub valid_climate_zones: Vec<String>,
+}
+
+impl Default for InputBounds {
+    fn default() -> Self {
+        Self::strict_residential()
+    }
+}
+
+impl InputBounds {
+    pub fn strict_residential() -> Self {
+        Self {
+            exterior_temp: (-50.0, 60.0),
+            zone_temp: (10.0, 40.0),
+            solar_rad: (0.0, 1200.0),
+            humidity: (0.0, 100.0),
+            occupancy: (0.0, 10.0),
+            valid_climate_zones: vec!["4A".to_string(), "5A".to_string(), "6A".to_string()],
+        }
+    }
+
+    pub fn from_training_data(samples: &[SurrogateInputs]) -> Self {
+        if samples.is_empty() {
+            return Self::default();
+        }
+        let mut ext_min = f64::MAX;
+        let mut ext_max = f64::MIN;
+        let mut zone_min = f64::MAX;
+        let mut zone_max = f64::MIN;
+        let mut solar_min = f64::MAX;
+        let mut solar_max = f64::MIN;
+        let mut hum_min = f64::MAX;
+        let mut hum_max = f64::MIN;
+        let mut occ_min = f64::MAX;
+        let mut occ_max = f64::MIN;
+        let mut climate_zones: std::collections::HashSet<String> = std::collections::HashSet::new();
+
+        for s in samples {
+            ext_min = ext_min.min(s.exterior_temp);
+            ext_max = ext_max.max(s.exterior_temp);
+            zone_min = zone_min.min(s.zone_temp);
+            zone_max = zone_max.max(s.zone_temp);
+            solar_min = solar_min.min(s.solar_rad);
+            solar_max = solar_max.max(s.solar_rad);
+            hum_min = hum_min.min(s.humidity);
+            hum_max = hum_max.max(s.humidity);
+            occ_min = occ_min.min(s.occupancy);
+            occ_max = occ_max.max(s.occupancy);
+            climate_zones.insert(s.climate_zone.clone());
+        }
+
+        Self {
+            exterior_temp: (ext_min, ext_max),
+            zone_temp: (zone_min, zone_max),
+            solar_rad: (solar_min, solar_max),
+            humidity: (hum_min, hum_max),
+            occupancy: (occ_min, occ_max),
+            valid_climate_zones: climate_zones.into_iter().collect(),
+        }
+    }
+}
+
+/// Structured warning emitted when an inference input vector is detected
+/// as out-of-distribution (OOD) — i.e. at least one feature falls outside
+/// the stored training bounds.
+///
+/// The surrogate MUST NOT panic or return NaN when OOD is detected.
+/// Instead it must fall back to the physics solver (Issue #1892).
+#[derive(Clone, Debug)]
+pub struct OodInputWarning {
+    pub feature_name: &'static str,
+    pub feature_index: usize,
+    pub actual_value: f64,
+    pub min_bound: f64,
+    pub max_bound: f64,
+}
+
+impl OodInputWarning {
+    pub fn new(
+        feature_name: &'static str,
+        feature_index: usize,
+        actual_value: f64,
+        min_bound: f64,
+        max_bound: f64,
+    ) -> Self {
+        Self {
+            feature_name,
+            feature_index,
+            actual_value,
+            min_bound,
+            max_bound,
+        }
+    }
+
+    pub fn log_warning(&self) {
+        warn!(
+            "OOD detected: feature '{}' (index {}) = {:.2} is outside training bounds [{:.2}, {:.2}]",
+            self.feature_name, self.feature_index, self.actual_value, self.min_bound, self.max_bound
+        );
+    }
+}
+
+/// Result of OOD input validation. Contains the input vector and
+/// any OOD warnings detected during validation.
+#[derive(Clone, Debug)]
+pub struct OodValidationResult {
+    pub is_ood: bool,
+    pub warnings: Vec<OodInputWarning>,
+}
+
+impl OodValidationResult {
+    pub fn clean() -> Self {
+        Self {
+            is_ood: false,
+            warnings: Vec::new(),
+        }
+    }
+
+    pub fn with_warning(warning: OodInputWarning) -> Self {
+        Self {
+            is_ood: true,
+            warnings: vec![warning],
+        }
+    }
+
+    pub fn log_warnings(&self) {
+        for w in &self.warnings {
+            w.log_warning();
+        }
+    }
+}
+
+/// Default squared-residual threshold for the inference-time energy-balance
+/// residual check (Issue #1896).
+///
+/// τ = 1.0 W² corresponds to ~1 W absolute error, which is tight enough
+/// to catch model drift or quantization artifacts while remaining above
+/// numerical-noise floor.
+pub const DEFAULT_RESIDUAL_TAU: f64 = 1.0;
+
+/// Structured error returned when a surrogate inference violates the
+/// energy-balance residual threshold.
+///
+/// The residual is the squared difference between the predicted thermal load
+/// and the physics-expected load computed from the input conditions:
+/// `residual = (Q_predicted - Q_expected)²`
+///
+/// When `residual > tau` the prediction is deemed physically implausible
+/// and callers must reroute to the analytical/physics fallback.
+#[derive(Clone, Debug)]
+pub struct ResidualViolation {
+    /// Index of the sample / zone in the batch.
+    pub sample_index: usize,
+    /// Predicted thermal load from ONNX (W).
+    pub predicted: f64,
+    /// Physics-expected load computed from input conditions (W).
+    pub expected: f64,
+    /// Squared residual `||Q_predicted - Q_expected||²` (W²).
+    pub residual: f64,
+}
+
+impl std::fmt::Display for ResidualViolation {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "surrogate residual violation at sample {}: predicted {:.2} W, expected {:.2} W, residual {:.2} W²",
+            self.sample_index, self.predicted, self.expected, self.residual
+        )
+    }
+}
+
 #[derive(Clone, Debug, Default)]
 pub struct SurrogateDomain {
     pub temp_bounds: (f64, f64),
@@ -361,6 +546,54 @@ impl SurrogateDomain {
             && humidity_valid
             && occupancy_valid
             && climate_valid
+    }
+
+    /// Compute per-sample energy balance residual for PINN physics constraints.
+    ///
+    /// Implements the envelope-only energy balance constraint:
+    /// `L_physics = ||Q_loads - Q_conduction - Q_solar - Q_internal||^2`
+    ///
+    /// Where:
+    /// - `Q_loads` is the predicted thermal load
+    /// - `Q_conduction = U * A * (T_exterior - T_zone)` — conductive heat transfer
+    /// - `Q_solar = alpha * solar_rad * A` — solar gains (alpha = 0.85 solar transmissivity)
+    /// - `Q_internal = beta * occupancy * A` — internal gains (beta = 100 W/person)
+    ///
+    /// Default thermal properties for residential envelope:
+    /// - U = 0.5 W/m²K (overall heat transfer coefficient)
+    /// - A = 100 m² (typical zone surface area)
+    /// - Ventilation rate = 0.5 ACH (air changes per hour)
+    ///
+    /// Returns the squared residual `||Q_loads - Q_expected||^2` for each sample.
+    ///
+    /// Issue #1706: PINN physics constraints for CompositeSurrogate training.
+    pub fn energy_balance_residual(
+        &self,
+        inputs: &[SurrogateInputs],
+        predicted_loads: &[f64],
+    ) -> Vec<f64> {
+        const U_WALL: f64 = 0.5;
+        const A_ZONE: f64 = 100.0;
+        const ALPHA_SOLAR: f64 = 0.85;
+        const BETA_INTERNAL: f64 = 100.0;
+        const C_AIR: f64 = 1260.0;
+        const V_VENT: f64 = 300.0;
+        const ACH_VENT: f64 = 0.5;
+
+        inputs
+            .iter()
+            .zip(predicted_loads.iter())
+            .map(|(inp, &q_loads)| {
+                let delta_t = inp.exterior_temp - inp.zone_temp;
+                let q_conduction = U_WALL * A_ZONE * delta_t;
+                let q_solar = ALPHA_SOLAR * inp.solar_rad * A_ZONE * 0.001;
+                let q_internal = BETA_INTERNAL * inp.occupancy;
+                let q_ventilation = C_AIR * ACH_VENT * V_VENT * delta_t / 3600.0 / 1000.0;
+                let q_expected = q_conduction + q_solar + q_internal + q_ventilation;
+                let residual = q_loads - q_expected;
+                residual * residual
+            })
+            .collect()
     }
 }
 
@@ -671,6 +904,8 @@ pub struct ModelMetadata {
     /// Strict semver version (default `"0.0.0"` for unconfigured models).
     pub model_version: String,
     pub domain: SurrogateDomain,
+    /// Per-feature training bounds for OOD detection (Issue #1892).
+    pub input_bounds: Option<InputBounds>,
     pub onnx_version: Option<String>,
     /// ONNX opset version the model was exported with (1..=17).
     pub onnx_opset_version: Option<u32>,
@@ -690,6 +925,7 @@ impl Default for ModelMetadata {
         ModelMetadata {
             model_version: "0.0.0".to_string(),
             domain: SurrogateDomain::default_residential(),
+            input_bounds: None,
             onnx_version: None,
             onnx_opset_version: None,
             model_sha256: None,
@@ -747,6 +983,18 @@ pub struct SurrogateManager {
     /// Wrapped in an Arc so the manager remains `Clone` (callers throughout
     /// the codebase clone `SurrogateManager`).
     pub inference_metrics: Arc<parking_lot::Mutex<InferenceMetrics>>,
+    /// Per-feature training bounds for OOD detection (Issue #1892).
+    pub input_bounds: Option<InputBounds>,
+    /// Counter for how many times OOD input was detected.
+    /// Incremented by `validate_input_bounds` each time an OOD input is flagged.
+    pub ood_count: Arc<parking_lot::Mutex<usize>>,
+    /// Squared-residual threshold τ for the energy-balance residual check.
+    /// Predictions with residual > τ trigger rerouting to the analytical fallback.
+    /// Default: [`DEFAULT_RESIDUAL_TAU`] (1.0 W² ≈ 1 W absolute error).
+    pub residual_tau: f64,
+    /// Counter for how many times the residual guard caused a reroute.
+    /// Incremented by `check_inference_residual` each time a violation is detected.
+    pub residual_reroute_count: Arc<parking_lot::Mutex<usize>>,
 }
 
 impl Default for SurrogateManager {
@@ -1111,6 +1359,10 @@ impl SurrogateManager {
             device_id: 0,
             composite: None,
             inference_metrics: Arc::new(parking_lot::Mutex::new(InferenceMetrics::default())),
+            input_bounds: None,
+            ood_count: Arc::new(parking_lot::Mutex::new(0)),
+            residual_tau: DEFAULT_RESIDUAL_TAU,
+            residual_reroute_count: Arc::new(parking_lot::Mutex::new(0)),
         })
     }
 
@@ -1150,6 +1402,10 @@ impl SurrogateManager {
             device_id: 0,
             composite: None,
             inference_metrics: Arc::new(parking_lot::Mutex::new(InferenceMetrics::default())),
+            input_bounds: None,
+            ood_count: Arc::new(parking_lot::Mutex::new(0)),
+            residual_tau: DEFAULT_RESIDUAL_TAU,
+            residual_reroute_count: Arc::new(parking_lot::Mutex::new(0)),
         })
     }
 
@@ -1214,6 +1470,281 @@ impl SurrogateManager {
         self.inference_metrics.lock().clone()
     }
 
+    /// Set the per-feature training bounds for OOD detection.
+    ///
+    /// Should be called after loading a model, using bounds extracted from
+    /// the training dataset during model training (Issue #1892).
+    pub fn set_input_bounds(&mut self, bounds: InputBounds) {
+        self.input_bounds = Some(bounds);
+    }
+
+    /// Get a reference to the currently configured input bounds, if any.
+    pub fn get_input_bounds(&self) -> Option<&InputBounds> {
+        self.input_bounds.as_ref()
+    }
+
+    /// Get the number of times OOD input has been detected.
+    pub fn ood_count(&self) -> usize {
+        *self.ood_count.lock()
+    }
+
+    /// Reset the OOD detection counter.
+    pub fn reset_ood_count(&mut self) {
+        *self.ood_count.lock() = 0;
+    }
+
+    /// Get the number of times the residual guard caused a reroute.
+    pub fn residual_reroute_count(&self) -> usize {
+        *self.residual_reroute_count.lock()
+    }
+
+    /// Reset the residual reroute counter.
+    pub fn reset_residual_reroute_count(&mut self) {
+        *self.residual_reroute_count.lock() = 0;
+    }
+
+    /// Set the residual threshold τ. Predictions with squared residual > τ
+    /// will trigger rerouting to the analytical fallback.
+    pub fn set_residual_tau(&mut self, tau: f64) {
+        self.residual_tau = tau;
+    }
+
+    /// Compute the energy-balance residual for a batch of inference inputs
+    /// and predicted loads, checking against the configured threshold τ.
+    ///
+    /// This is the **inference-time** companion to [`SurrogateDomain::energy_balance_residual`]
+    /// (which is only called during training, Issue #1706). The residual guard
+    /// catches model drift, quantization artifacts, or distribution shift that
+    /// produces physically implausible load predictions (Issue #1896).
+    ///
+    /// The physics model is identical to [`SurrogateDomain::energy_balance_residual`]:
+    /// `Q_expected = Q_conduction + Q_solar + Q_internal + Q_ventilation`
+    ///
+    /// where thermal properties are:
+    /// - U = 0.5 W/m²K, A = 100 m² (envelope conduction)
+    /// - α = 0.85 (solar absorptivity), solar_rad in W/m²
+    /// - β = 100 W/person (internal gains from occupancy)
+    /// - C_air = 1260 J/kgK, ACH = 0.5, V = 300 m³ (ventilation)
+    ///
+    /// Returns `Ok(())` if all samples pass (residual ≤ τ) or if the manager
+    /// is in mock mode (no model loaded). Returns `Err(ResidualViolation)`
+    /// for the **first** sample that exceeds the threshold.
+    ///
+    /// The `inputs` slice uses the same indexing as [`SurrogateInputs::from_temps`]:
+    /// index 0 = exterior_temp, 1 = zone_temp. Additional features (solar,
+    /// humidity, occupancy) are synthesised using `SurrogateInputs::from_temps`.
+    ///
+    /// The `predicted` slice must have the same length as `inputs`. A mismatch
+    /// causes an early return with `Ok(())` — no violation is recorded.
+    pub fn check_inference_residual(
+        &self,
+        inputs: &[f64],
+        predicted: &[f64],
+    ) -> Result<(), ResidualViolation> {
+        if predicted.is_empty() {
+            return Ok(());
+        }
+        if !self.model_loaded && self.composite.is_none() {
+            return Ok(());
+        }
+
+        let surrogate_inputs = SurrogateInputs::from_temps(inputs);
+
+        const U_WALL: f64 = 0.5;
+        const A_ZONE: f64 = 100.0;
+        const ALPHA_SOLAR: f64 = 0.85;
+        const BETA_INTERNAL: f64 = 100.0;
+        const C_AIR: f64 = 1260.0;
+        const V_VENT: f64 = 300.0;
+        const ACH_VENT: f64 = 0.5;
+
+        let delta_t = surrogate_inputs.exterior_temp - surrogate_inputs.zone_temp;
+        let q_conduction = U_WALL * A_ZONE * delta_t;
+        let q_solar = ALPHA_SOLAR * surrogate_inputs.solar_rad * A_ZONE * 0.001;
+        let q_internal = BETA_INTERNAL * surrogate_inputs.occupancy;
+        let q_ventilation = C_AIR * ACH_VENT * V_VENT * delta_t / 3600.0 / 1000.0;
+        let q_expected = q_conduction + q_solar + q_internal + q_ventilation;
+
+        let n_samples = predicted.len();
+        for (i, &q_predicted) in predicted.iter().enumerate() {
+            let residual = q_predicted - q_expected;
+            let residual_sq = residual * residual;
+            if residual_sq > self.residual_tau {
+                return Err(ResidualViolation {
+                    sample_index: i,
+                    predicted: q_predicted,
+                    expected: q_expected,
+                    residual: residual_sq,
+                });
+            }
+        }
+        let _ = n_samples;
+        Ok(())
+    }
+
+    /// Validate an inference input vector against the stored training bounds.
+    ///
+    /// Returns `OodValidationResult` indicating whether the input is OOD
+    /// and a list of warnings for each out-of-bounds feature.
+    ///
+    /// When `is_ood` is `true`, callers MUST fall back to the physics
+    /// solver instead of running the surrogate — the surrogate is not
+    /// validated for inputs outside its training distribution (Issue #1892).
+    ///
+    /// If no `InputBounds` have been configured (default state), this
+    /// method always returns `OodValidationResult::clean()` (no OOD,
+    /// no warnings) so that missing bounds never block inference.
+    ///
+    /// NOTE: This method validates a raw `&[f64]` temperature vector using
+    /// the same feature indexing as [`SurrogateInputs`]: index 0 = exterior_temp,
+    /// 1 = zone_temp, 2 = solar_rad, 3 = humidity, 4 = occupancy.
+    /// Callers using [`SurrogateInputs`] should call
+    /// [`validate_inputs_struct`] instead.
+    pub fn validate_input_bounds(&self, inputs: &[f64]) -> OodValidationResult {
+        let Some(bounds) = &self.input_bounds else {
+            return OodValidationResult::clean();
+        };
+
+        let mut warnings = Vec::new();
+        let checks: [(usize, f64, (f64, f64), &'static str); 5] = [
+            (
+                0,
+                inputs.first().copied().unwrap_or(20.0),
+                bounds.exterior_temp,
+                "exterior_temp",
+            ),
+            (
+                1,
+                inputs.get(1).copied().unwrap_or(22.0),
+                bounds.zone_temp,
+                "zone_temp",
+            ),
+            (
+                2,
+                inputs.get(2).copied().unwrap_or(0.0),
+                bounds.solar_rad,
+                "solar_rad",
+            ),
+            (
+                3,
+                inputs.get(3).copied().unwrap_or(50.0),
+                bounds.humidity,
+                "humidity",
+            ),
+            (
+                4,
+                inputs.get(4).copied().unwrap_or(0.1),
+                bounds.occupancy,
+                "occupancy",
+            ),
+        ];
+
+        for (idx, val, (min, max), name) in checks {
+            if val < min || val > max {
+                warnings.push(OodInputWarning::new(name, idx, val, min, max));
+            }
+        }
+
+        if warnings.is_empty() {
+            OodValidationResult::clean()
+        } else {
+            for w in &warnings {
+                w.log_warning();
+            }
+            *self.ood_count.lock() += 1;
+            OodValidationResult {
+                is_ood: true,
+                warnings,
+            }
+        }
+    }
+
+    /// Validate a [`SurrogateInputs`] struct against the stored training bounds.
+    ///
+    /// This is the structured-input variant of [`validate_input_bounds`].
+    /// Returns `OodValidationResult` with per-feature OOD warnings.
+    pub fn validate_inputs_struct(&self, inputs: &SurrogateInputs) -> OodValidationResult {
+        let Some(bounds) = &self.input_bounds else {
+            return OodValidationResult::clean();
+        };
+
+        let mut warnings = Vec::new();
+
+        if inputs.exterior_temp < bounds.exterior_temp.0
+            || inputs.exterior_temp > bounds.exterior_temp.1
+        {
+            warnings.push(OodInputWarning::new(
+                "exterior_temp",
+                0,
+                inputs.exterior_temp,
+                bounds.exterior_temp.0,
+                bounds.exterior_temp.1,
+            ));
+        }
+
+        if inputs.zone_temp < bounds.zone_temp.0 || inputs.zone_temp > bounds.zone_temp.1 {
+            warnings.push(OodInputWarning::new(
+                "zone_temp",
+                1,
+                inputs.zone_temp,
+                bounds.zone_temp.0,
+                bounds.zone_temp.1,
+            ));
+        }
+
+        if inputs.solar_rad < bounds.solar_rad.0 || inputs.solar_rad > bounds.solar_rad.1 {
+            warnings.push(OodInputWarning::new(
+                "solar_rad",
+                2,
+                inputs.solar_rad,
+                bounds.solar_rad.0,
+                bounds.solar_rad.1,
+            ));
+        }
+
+        if inputs.humidity < bounds.humidity.0 || inputs.humidity > bounds.humidity.1 {
+            warnings.push(OodInputWarning::new(
+                "humidity",
+                3,
+                inputs.humidity,
+                bounds.humidity.0,
+                bounds.humidity.1,
+            ));
+        }
+
+        if inputs.occupancy < bounds.occupancy.0 || inputs.occupancy > bounds.occupancy.1 {
+            warnings.push(OodInputWarning::new(
+                "occupancy",
+                4,
+                inputs.occupancy,
+                bounds.occupancy.0,
+                bounds.occupancy.1,
+            ));
+        }
+
+        if !bounds.valid_climate_zones.contains(&inputs.climate_zone) {
+            warn!(
+                "OOD detected: climate_zone '{}' is not in training zones {:?}",
+                inputs.climate_zone, bounds.valid_climate_zones
+            );
+            warnings.push(OodInputWarning::new("climate_zone", 5, 0.0, 0.0, 0.0));
+            *self.ood_count.lock() += 1;
+        }
+
+        if warnings.is_empty() {
+            OodValidationResult::clean()
+        } else {
+            for w in &warnings {
+                w.log_warning();
+            }
+            *self.ood_count.lock() += 1;
+            OodValidationResult {
+                is_ood: true,
+                warnings,
+            }
+        }
+    }
+
     /// Predict thermal loads, preferring real ONNX inference when a model
     /// is loaded and falling back to the analytical model otherwise.
     ///
@@ -1240,7 +1771,18 @@ impl SurrogateManager {
 
         // Model loaded → try real ONNX inference.
         match self.predict_loads_onnx(temps) {
-            Ok(loads) => Ok(loads),
+            Ok(loads) => {
+                if let Err(violation) = self.check_inference_residual(temps, &loads) {
+                    warn!(
+                        "surrogate residual violation: sample {} predicted {:.2} W expected {:.2} W residual {:.2} W² — rerouting to analytical fallback",
+                        violation.sample_index, violation.predicted, violation.expected, violation.residual
+                    );
+                    *self.residual_reroute_count.lock() += 1;
+                    metrics::counter!("surrogate_residual_reroutes_total", "mode" => "neural_with_fallback").increment(1);
+                    return self.analytical_loads(temps);
+                }
+                Ok(loads)
+            }
             Err(e) => {
                 warn!(
                     "ONNX inference failed ({}), falling back to analytical_loads",
@@ -1447,6 +1989,10 @@ impl SurrogateManager {
             device_id,
             composite: None,
             inference_metrics: Arc::new(parking_lot::Mutex::new(InferenceMetrics::default())),
+            input_bounds: None,
+            ood_count: Arc::new(parking_lot::Mutex::new(0)),
+            residual_tau: DEFAULT_RESIDUAL_TAU,
+            residual_reroute_count: Arc::new(parking_lot::Mutex::new(0)),
         })
     }
 
@@ -1490,6 +2036,10 @@ impl SurrogateManager {
                     inference_metrics: Arc::new(parking_lot::Mutex::new(
                         InferenceMetrics::default(),
                     )),
+                    input_bounds: None,
+                    ood_count: Arc::new(parking_lot::Mutex::new(0)),
+                    residual_tau: DEFAULT_RESIDUAL_TAU,
+                    residual_reroute_count: Arc::new(parking_lot::Mutex::new(0)),
                 })
             }
             Err(e) => {
@@ -1536,6 +2086,10 @@ impl SurrogateManager {
             device_id: 0,
             composite: Some(composite),
             inference_metrics: Arc::new(parking_lot::Mutex::new(InferenceMetrics::default())),
+            input_bounds: None,
+            ood_count: Arc::new(parking_lot::Mutex::new(0)),
+            residual_tau: DEFAULT_RESIDUAL_TAU,
+            residual_reroute_count: Arc::new(parking_lot::Mutex::new(0)),
         })
     }
 
@@ -1543,6 +2097,52 @@ impl SurrogateManager {
     #[cfg(not(feature = "ort"))]
     pub fn load_modular(_component_configs: &[(&str, InferenceBackend)]) -> Result<Self, String> {
         Err("Modular ONNX surrogates require the `ort` feature".to_string())
+    }
+
+    /// Load a pre-quantized INT8 ONNX model for accelerated CPU inference.
+    ///
+    /// Quantized models typically achieve 2-4x speedup on CPU with <1% accuracy loss.
+    /// Use [`tools/quantize_model.py`] to produce quantized models from FP32 ONNX files.
+    ///
+    /// # Arguments
+    /// * `path` - Path to a quantized INT8 ONNX model
+    ///
+    /// # Example
+    /// ```rust,ignore
+    /// let manager = SurrogateManager::load_quantized_onnx("model_int8.onnx")?;
+    /// let loads = manager.predict_loads(&[21.0, 22.0]);
+    /// ```
+    #[cfg(feature = "ort")]
+    pub fn load_quantized_onnx(path: &str) -> Result<Self, String> {
+        use std::path::Path;
+        if !Path::new(path).exists() {
+            return Err(format!("Quantized ONNX model file not found: {}", path));
+        }
+        info!("Loading quantized INT8 model: {} (CPU inference)", path);
+        let session = SessionPool::create_session(path, InferenceBackend::CPU, 0)?;
+        let pool = SessionPool::new(path.to_string(), InferenceBackend::CPU, 0, session);
+        Ok(SurrogateManager {
+            model_loaded: true,
+            model_path: Some(path.to_string()),
+            session_pool: Some(Arc::new(pool)),
+            backend: InferenceBackend::CPU,
+            device_id: 0,
+            composite: None,
+            inference_metrics: Arc::new(parking_lot::Mutex::new(InferenceMetrics::default())),
+            input_bounds: None,
+            ood_count: Arc::new(parking_lot::Mutex::new(0)),
+            residual_tau: DEFAULT_RESIDUAL_TAU,
+            residual_reroute_count: Arc::new(parking_lot::Mutex::new(0)),
+        })
+    }
+
+    /// Stub for non-`ort` builds (issue #1294).
+    #[cfg(not(feature = "ort"))]
+    pub fn load_quantized_onnx(_path: &str) -> Result<Self, String> {
+        Err(
+            "Loading quantized ONNX models requires the `ort` feature (build with --features ort)"
+                .to_string(),
+        )
     }
 
     pub fn predict_loads(&self, current_temps: &[f64]) -> Vec<f64> {
@@ -2029,6 +2629,36 @@ mod tests {
             climate_zone: "4A".to_string(),
         };
         assert!(!domain.is_valid(&invalid_inputs));
+    }
+
+    #[test]
+    fn test_energy_balance_residual() {
+        let domain = SurrogateDomain::default_residential();
+        let inputs = vec![
+            SurrogateInputs::from_physics(10.0, 20.0, 500.0, 50.0, 0.1, "4A"),
+            SurrogateInputs::from_physics(20.0, 22.0, 800.0, 50.0, 0.3, "4A"),
+        ];
+        let predicted_loads = vec![1000.0, 1500.0];
+        let residuals = domain.energy_balance_residual(&inputs, &predicted_loads);
+        assert_eq!(residuals.len(), 2);
+        for r in residuals {
+            assert!(r >= 0.0, "energy balance residual must be non-negative");
+        }
+    }
+
+    #[test]
+    fn test_energy_balance_residual_zero_when_balanced() {
+        let domain = SurrogateDomain::default_residential();
+        let inputs = vec![SurrogateInputs::from_physics(
+            20.0, 20.0, 0.0, 50.0, 0.0, "4A",
+        )];
+        let predicted_loads = vec![0.0];
+        let residuals = domain.energy_balance_residual(&inputs, &predicted_loads);
+        assert_eq!(residuals.len(), 1);
+        assert!(
+            residuals[0] < 1e-6,
+            "when exterior=zone and no solar/internal gains, residual should be ~0"
+        );
     }
 
     #[test]

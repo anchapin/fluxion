@@ -1,3 +1,10 @@
+# Codecov configuration — aligned to the four ARCHITECTURE.md critical
+# physics paths tracked by the Code Coverage Gate (Issue #1932).
+#
+# Flags map to the per-path buckets computed by
+# scripts/coverage_critical_paths.py.  The `unit_tests` flag is retained
+# for backward compatibility with any existing codecov dashboards.
+
 coverage:
   precision: 2
   round: down
@@ -6,9 +13,13 @@ coverage:
 flag_coverage:
   - unit_tests
   - integration_tests
+  - weather_solar
+  - weather_ventilation
+  - conduction_zone
+  - hvac_zone
 
 comment:
-  layout: "header, diff, files"
+  layout: "header, diff, flags, files"
   behavior: default
   require_changes: false
   require_base: false
@@ -20,6 +31,9 @@ ignore:
   - "docs/"
   - "examples/"
   - "tools/"
+  - "tests/"
+  - "benches/"
+  - "fluxion-mcp/"
 
 codecov:
   require_ci_to_pass: true

@@ -1,9 +1,17 @@
 pub mod batch_inference;
+pub mod batch_runner;
+pub mod batch_runner_9r4c;
 pub mod context_aware;
 pub mod distributed;
 pub mod ensemble;
+pub mod equipment_surrogate;
 pub mod modular_surrogate;
 pub mod neural_field;
+pub mod s3_upload;
 pub mod shared_batch_service;
 pub mod surrogate;
+pub mod sweeps;
+pub mod synthetic_data_quality;
+pub mod tensor_dataset;
+pub mod ukf;
 pub mod xdt_export;

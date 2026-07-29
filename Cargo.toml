@@ -15,7 +15,7 @@ license = "Apache-2.0"
 # that cargo-mutants can build once and cache while mutating only `fluxion`.
 [workspace]
 resolver = "2"
-members = ["fluxion-core"]
+members = ["fluxion-core", "fluxion-city", "fluxion-fluid", "fluxion-grid", "fluxion-behavior", "fluxion-mcp", "fluxion-wasm", "crates/fluxion-toon", "crates/fluxion-twin"]
 # Default to the root package so bare `cargo build`/`cargo test` build `fluxion`.
 default-members = ["."]
 
@@ -77,6 +77,20 @@ pr821-diag = []
 # Feature flag for loom concurrency testing (Issue #1065)
 # Run with: LOOM=1 cargo test --features loom --test loom_concurrency_tests
 loom = []
+# Feature flag for D-Wave quantum annealer integration (Phase 2c — issue #1609).
+# Requires DWAVE_API_TOKEN environment variable at runtime.
+# Uses the D-Wave SAPI REST API (the same API underlying the Python dimod library).
+# Run with: cargo test --features dwave -p fluxion quantum::dwave_client
+dwave = []
+# Feature flag to gate unconditional debug eprintln! calls in physics hot loops (issue #1967)
+debug-physics = []
+# Feature flag for Kafka telemetry consumer (issue #2056).
+# Enables rdkafka-based Kafka consumer for enterprise-scale telemetry ingestion.
+# Run with: cargo test --features kafka -p fluxion twin::kafka_telemetry_consumer
+kafka = ["dep:rdkafka"]
+# Feature flag for acausal HVAC / fluid network modeling (Issue #1980 / ADR-005).
+# Gates the `fluxion-fluid` crate which provides port-based fluid circuit traits.
+fluid = ["dep:fluxion-fluid"]
 
 [lints.rust]
 unexpected_cfgs = { level = "allow", check-cfg = ["cfg(docsrs,test)", "cfg(gil_refs)"] }
@@ -84,6 +98,10 @@ unexpected_cfgs = { level = "allow", check-cfg = ["cfg(docsrs,test)", "cfg(gil_r
 [dependencies]
 # Workspace sibling crate (#1255): leaf modules built once & cached by cargo-mutants.
 fluxion-core = { path = "fluxion-core", version = "1.0.0" }
+
+# Optional acausal HVAC / fluid network crate (Issue #1980 / ADR-005).
+# Compile with --features fluid to enable fluid port types and network topology.
+fluxion-fluid = { path = "fluxion-fluid", version = "1.0.0", optional = true }
 
 # Core Logic
 serde = { version = "1.0", features = ["derive"] }
@@ -101,6 +119,9 @@ tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }
 
 # Date/time handling for reports
 chrono = { version = "0.4", features = ["serde"] }
+
+# UUID generation for LiveTwin (Issue #2025)
+uuid = { version = "1.10", features = ["serde", "v4"] }
 
 # HTTP client and caching for weather downloads
 directories = "5.0"
@@ -131,6 +152,9 @@ plotters = "0.3.5"
 # Random number generation for uncertainty quantification
 rand = "0.8"
 rand_distr = "0.4"
+
+# Mathematical special functions (erf) for inverse CDF computation
+libm = "0.2"
 
 # Statistical computing for validation metrics
 statrs = "0.18.0"
@@ -166,6 +190,11 @@ quick-xml = "0.41"
 axum = { version = "0.7", default-features = false, features = ["http1", "json", "tokio", "query", "matched-path"] }
 tower = { version = "0.5", features = ["util"] }
 http-body-util = "0.1"
+futures = "0.3"
+futures-util = "0.3"
+async-stream = "0.3"
+native-tls = "0.2"
+async-trait = "0.1"
 
 # Observability for fluxion-rest (Issue #1447):
 #   - `tower-http` brings `TraceLayer` and `RequestId`/`PropagateRequestId`
@@ -184,6 +213,24 @@ metrics-exporter-prometheus = { version = "0.18", default-features = false }
 # ZIP archive writer for FMI 2.0 FMU packaging (#1339)
 zip = { version = "0.6", default-features = false, features = ["deflate"] }
 
+# JSON Patch (RFC 6902) — Issue #1811 / Phase 1 (Declarative Deltas)
+# of the Hybrid Measure Approach. Used by `fluxion::measures::json_patch`
+# to apply declarative Deltas to a `FluxionModel` without invoking Python.
+# `default-features = false` drops the `diff` feature (we don't generate
+# patches, only consume them). License: MIT/Apache-2.0.
+json-patch = { version = "4.2", default-features = false }
+
+# WebSocket support for LiveTwin (Issue #2025)
+tokio-tungstenite = { version = "0.26", features = ["native-tls"] }
+tungstenite = "0.26"
+
+# MessagePack binary serialization for LiveTwin (Issue #2025)
+rmp-serde = "1.3"
+
+# Kafka telemetry consumer for enterprise-scale telemetry ingestion (issue #2056).
+# Uses rdkafka with dynamic library linking. Enable the `kafka` feature to compile.
+rdkafka = { version = "0.36", features = ["dynamic-linking"], optional = true }
+
 [build-dependencies]
 pyo3-build-config = { version = "0.22", optional = true }
 napi-build = { version = "2", optional = true }
@@ -197,12 +244,22 @@ dhat = "0.3"
 proptest = "1.5"
 noisy_float = "0.2"
 
+# TOON serialization for round-trip testing (Issue #2071)
+fluxion-toon = { path = "crates/fluxion-toon" }
+
 # Mock HTTP server for tests
 mockito = "1.7"
 
 # Loom for concurrency and race condition testing (Issue #1065)
 # Run with: LOOM=1 cargo test --features loom --test loom_concurrency_tests
 loom = "0.1"
+
+# SQLite for reproducer tests (Issue #1790)
+# Demonstrates the "database is locked" race condition in distributed array jobs
+rusqlite = { version = "0.31", features = ["bundled"] }
+
+# Memory stats for LiveTwin memory leak test (Issue #2064)
+memory-stats = "1.0"
 
 [[bench]]
 name = "cta_bench"
@@ -257,6 +314,21 @@ harness = false
 [[bench]]
 name = "shared_batch_service"
 path = "benches/shared_batch_service_bench.rs"
+harness = false
+
+[[bench]]
+name = "zero_copy_matrix_bench"
+path = "benches/zero_copy_matrix_bench.rs"
+harness = false
+
+[[bench]]
+name = "solar_kernel_bench"
+path = "benches/solar_kernel_bench.rs"
+harness = false
+
+[[bench]]
+name = "ctf_solver_bench"
+path = "benches/ctf_solver_bench.rs"
 harness = false
 
 [[bin]]
@@ -372,6 +444,12 @@ name = "integration-fmi-cosimulation"
 path = "tests/integration/test_fmi_cosimulation.rs"
 harness = true
 
+# Issue #2005: Energy conservation CI gate for fluxion-fluid
+[[test]]
+name = "integration-fluid-energy-conservation"
+path = "tests/integration/test_fluid_energy_conservation.rs"
+harness = true
+
 [[test]]
 name = "solar_gain_unit_tests"
 path = "tests/solar_gain_unit_tests.rs"
@@ -402,9 +480,48 @@ name = "validation_night_ventilation_air_side"
 path = "tests/validation/night_ventilation_air_side.rs"
 harness = true
 
+# Issue #1754 / Plan T1.1 — HVAC BESTEST RP-865 validation scaffold.
+# Follow-on issues add analytical and comparative cases to this target.
+[[test]]
+name = "hvac_bestest"
+path = "tests/validation/hvac_bestest/mod.rs"
+harness = true
+
 [[test]]
 name = "validation_empirical"
 path = "tests/validation/empirical_validation_test.rs"
+harness = true
+
+# Issue #1803 / Plan T10.1 — empirical-case registration + reporting
+# harness skeleton for the FLEXLAB empirical validation chain
+# (T10.2..T10.8). Initially no-op / green.
+# `cargo test -p fluxion validation_empirical_harness` runs this target.
+[[test]]
+name = "validation_empirical_harness"
+path = "tests/validation/empirical.rs"
+harness = true
+
+[[test]]
+name = "validation_flexlab_test_cell"
+path = "tests/validation/flexlab_test_cell.rs"
+harness = true
+
+# Issue #1810 / Plan T10.8 — ASHRAE Guideline 14 statistical reporting
+# (CVRMSE + NMBE) for the FLEXLAB empirical chain. Produces a Markdown
+# validation artifact at tests/validation/artifacts/guideline14_flexlab_x3a.md
+# that is committed alongside the source so reviewers can inspect the
+# headline metrics without re-running the suite.
+# `cargo test -p fluxion validation_empirical_guideline14` runs this target.
+[[test]]
+name = "validation_empirical_guideline14"
+path = "tests/validation/empirical_guideline14.rs"
+harness = true
+
+# Issue #1846 — Hybrid Physics+ML surrogate empirical MAE report vs FLEXLAB.
+# `cargo test -p fluxion validation_hybrid_empirical_test` runs this target.
+[[test]]
+name = "validation_hybrid_empirical_test"
+path = "tests/validation/hybrid_empirical_test.rs"
 harness = true
 
 [[test]]
@@ -416,6 +533,14 @@ harness = true
 [[test]]
 name = "loom_concurrency_tests"
 path = "tests/concurrency/loom_concurrency_tests.rs"
+harness = true
+
+# Issue #1790 — SQLite "database is locked" race reproducer for distributed array jobs.
+# Reproduces the SQLITE_BUSY error that occurs when multiple concurrent workers
+# attempt to write to the same SQLite database without proper locking.
+[[test]]
+name = "sqlite_lock_race_reproducer"
+path = "tests/concurrency/sqlite_lock_race_reproducer.rs"
 harness = true
 
 [[test]]
@@ -438,3 +563,17 @@ harness = true
 name = "multi_climate_solar_invariant"
 path = "tests/reference_data/multi_climate_solar_invariant.rs"
 harness = true
+
+# Issue #1603 — GPU smoke test for InferenceBackend::CUDA.
+# Compiles under --features cuda and skips gracefully on CPU-only runners.
+# GPU runner executes the test with CUDA EP and verifies output matches CPU within 0.1%.
+[[test]]
+name = "surrogate_cuda_smoke"
+path = "tests/surrogate_cuda_smoke_test.rs"
+harness = true
+
+# Patch rustls-webpki to address RUSTSEC-2026-0049 and RUSTSEC-2026-0104
+# (CRL parsing vulnerabilities fixed in >= 0.103.13).
+# Patches rumqttc from our fork to use the safe rustls-webpki version.
+[patch.crates-io]
+rumqttc = { git = "https://github.com/anchapin/rumqtt", branch = "fix/rustsec-2026-webpki" }

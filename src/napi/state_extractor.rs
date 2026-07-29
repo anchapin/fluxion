@@ -15,8 +15,10 @@
 //! - **TypeScript Support**: Full type definitions auto-generated via napi-rs
 
 use crate::ai::surrogate::SurrogateManager;
+use crate::napi::zero_copy_matrix::into_zero_copy_float64_array;
 use crate::physics::cta::VectorField;
 use crate::sim::engine::ThermalModel;
+use napi::bindgen_prelude::Float64Array;
 
 /// JavaScript-accessible StateExtractor for ML training data extraction.
 ///
@@ -156,11 +158,11 @@ impl StateExtractor {
         }
 
         Ok(StateMatrices {
-            zone_temperatures,
-            mass_temperatures: mass_flat,
-            heating_loads: vec![0.0; steps],
-            cooling_loads: vec![0.0; steps],
-            solar_gains: vec![0.0; steps * self.num_zones],
+            zone_temperatures: into_zero_copy_float64_array(zone_temperatures),
+            mass_temperatures: into_zero_copy_float64_array(mass_flat),
+            heating_loads: into_zero_copy_float64_array(vec![0.0; steps]),
+            cooling_loads: into_zero_copy_float64_array(vec![0.0; steps]),
+            solar_gains: into_zero_copy_float64_array(vec![0.0; steps * self.num_zones]),
         })
     }
 
@@ -180,7 +182,7 @@ impl StateExtractor {
         &mut self,
         years: u32,
         use_surrogates: bool,
-    ) -> napi::bindgen_prelude::Result<Vec<f64>> {
+    ) -> napi::bindgen_prelude::Result<Float64Array> {
         let steps = years as usize * 8760;
 
         let surrogates = SurrogateManager::new().map_err(|e| {
@@ -207,9 +209,12 @@ impl StateExtractor {
                         }
                     }
                 }
-                Ok(flat)
+                Ok(into_zero_copy_float64_array(flat))
             }
-            None => Ok(vec![20.0; steps * self.num_zones]),
+            None => Ok(into_zero_copy_float64_array(vec![
+                20.0;
+                steps * self.num_zones
+            ])),
         }
     }
 }
@@ -227,19 +232,19 @@ impl Default for StateExtractor {
 #[napi_derive::napi]
 pub struct StateMatrices {
     /// Zone air temperatures in °C [timesteps x num_zones]
-    pub zone_temperatures: Vec<f64>,
+    pub zone_temperatures: Float64Array,
 
     /// Thermal mass temperatures in °C [timesteps x num_zones]
-    pub mass_temperatures: Vec<f64>,
+    pub mass_temperatures: Float64Array,
 
     /// Heating energy demand in W [timesteps]
-    pub heating_loads: Vec<f64>,
+    pub heating_loads: Float64Array,
 
     /// Cooling energy demand in W [timesteps]
-    pub cooling_loads: Vec<f64>,
+    pub cooling_loads: Float64Array,
 
     /// Solar heat gains in W [timesteps x num_zones]
-    pub solar_gains: Vec<f64>,
+    pub solar_gains: Float64Array,
 }
 
 impl StateMatrices {
