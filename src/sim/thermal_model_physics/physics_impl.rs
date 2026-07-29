@@ -216,7 +216,7 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         // Issue #1966: scratch is now pooled in ThermalModelData::scratch_pool
         // and reused across timesteps via fill_zero() at end of step.
         let num_zones = self.0.num_zones;
-        let scratch = self.0.scratch_pool.get_5r1c(num_zones);
+        let mut scratch = self.0.scratch_pool.get_5r1c(num_zones);
 
         for i in 0..num_zones {
             let load_w = loads_ref[i] * area_ref[i];
@@ -240,7 +240,10 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         }
 
         let phi_ia = T::from(VectorField::new(std::mem::take(&mut scratch.phi_ia)));
-        let phi_st = T::from(VectorField::new(std::mem::take(&mut scratch.phi_st)));
+        // Issue #1992: phi_st provenance tracks back to &mut scratch (line 242).
+        // Clone immediately to sever the scratch_pool borrow chain before phi_st
+        // is used in zip_with (line 461) and self method calls (line 886).
+        let phi_st = T::from(VectorField::new(std::mem::take(&mut scratch.phi_st))).clone();
         let phi_m = T::from(VectorField::new(std::mem::take(&mut scratch.phi_m)));
 
         // PR #821 / Issue #825 — record zone-0 heat-balance terms for the
@@ -277,7 +280,7 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
             self.0.temperatures.as_ref(),
             self.0.wall_surface_temperatures.as_ref(),
             self.0.thermal_capacitance.as_ref(),
-            scratch,
+            &mut scratch,
         );
         // Persist the new T_si for downstream consumers (diagnostics, the
         // regression test suite, and the future cooling-load coupling that
@@ -1550,7 +1553,9 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         }
 
         let phi_ia = T::from(VectorField::new(std::mem::take(&mut scratch.phi_ia)));
-        let phi_st = T::from(VectorField::new(std::mem::take(&mut scratch.phi_st)));
+        // Issue #1992: phi_st provenance tracks back to &mut scratch.
+        // Clone immediately to sever the scratch_pool borrow chain.
+        let phi_st = T::from(VectorField::new(std::mem::take(&mut scratch.phi_st))).clone();
         let phi_m_env = T::from(VectorField::new(std::mem::take(&mut scratch.phi_m_env)));
         let phi_m_int = T::from(VectorField::new(std::mem::take(&mut scratch.phi_m_int)));
 
@@ -2452,7 +2457,9 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         // (#872) Save raw gain data for multi-node solver before moving into tensors.
         // Used for internal radiative gain injection via step_with_gains().
         let phi_ia = T::from(VectorField::new(std::mem::take(&mut scratch.phi_ia)));
-        let phi_st = T::from(VectorField::new(std::mem::take(&mut scratch.phi_st)));
+        // Issue #1992: phi_st provenance tracks back to &mut scratch.
+        // Clone immediately to sever the scratch_pool borrow chain.
+        let phi_st = T::from(VectorField::new(std::mem::take(&mut scratch.phi_st))).clone();
         let phi_m = T::from(VectorField::new(std::mem::take(&mut scratch.phi_m)));
 
         // Issue #863: Compute per-surface sol-air temperature for walls.
