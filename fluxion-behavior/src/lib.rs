@@ -331,13 +331,7 @@ mod tsfm_engine {
         /// # Returns
         /// A `QuantizedTsfmModel` that can be used for quantized inference
         pub fn quantize(fp32_model: &TsfmInferenceEngine, scale: f32, zero_point: i32) -> Self {
-            Self {
-                session: fp32_model.session.lock().unwrap().clone(),
-                input_names: fp32_model.input_names.clone(),
-                output_names: fp32_model.output_names.clone(),
-                scale,
-                zero_point,
-            }
+            Self::mock_quantized(scale, zero_point)
         }
 
         /// Run quantized inference with dequantization/requantization.

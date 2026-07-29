@@ -9,6 +9,7 @@
 //! - #2046: ASHRAE 90.1 Transition Matrices Data
 
 use chrono::{DateTime, Datelike, Timelike, Utc};
+use std::convert::TryFrom;
 use rand::rngs::SmallRng;
 use rand::Rng;
 use rand::SeedableRng;
@@ -431,7 +432,7 @@ pub fn compute_expected_fraction(
                 &mut rng,
                 current_state,
                 hour,
-                DayOfWeek::from_weekday(chrono::Weekday::from_ix(day % 7)),
+                DayOfWeek::from_weekday(chrono::Weekday::try_from((day % 7) as u8).unwrap()),
             );
         }
     }
@@ -439,7 +440,7 @@ pub fn compute_expected_fraction(
     for day in 0..num_days {
         for hour in 0..24 {
             if hour == hour_of_day
-                && DayOfWeek::from_weekday(chrono::Weekday::from_ix(day % 7)) == day_of_week
+                && DayOfWeek::from_weekday(chrono::Weekday::try_from((day % 7) as u8).unwrap()) == day_of_week
             {
                 if current_state == OccupancyState::Occupied {
                     occupied_count += 1;
@@ -450,7 +451,7 @@ pub fn compute_expected_fraction(
                 &mut rng,
                 current_state,
                 hour,
-                DayOfWeek::from_weekday(chrono::Weekday::from_ix(day % 7)),
+                DayOfWeek::from_weekday(chrono::Weekday::try_from((day % 7) as u8).unwrap()),
             );
         }
     }
@@ -484,7 +485,7 @@ pub fn validate_occupancy(
                 &mut rng,
                 current_state,
                 hour,
-                DayOfWeek::from_weekday(chrono::Weekday::from_ix(day % 7)),
+                DayOfWeek::from_weekday(chrono::Weekday::try_from((day % 7) as u8).unwrap()),
             );
         }
     }
@@ -492,7 +493,7 @@ pub fn validate_occupancy(
     for day in 0..num_days {
         for hour in 0..24 {
             if hour == hour_of_day
-                && DayOfWeek::from_weekday(chrono::Weekday::from_ix(day % 7)) == day_of_week
+                && DayOfWeek::from_weekday(chrono::Weekday::try_from((day % 7) as u8).unwrap()) == day_of_week
             {
                 match current_state {
                     OccupancyState::Occupied => occupied_count += 1,
@@ -505,7 +506,7 @@ pub fn validate_occupancy(
                 &mut rng,
                 current_state,
                 hour,
-                DayOfWeek::from_weekday(chrono::Weekday::from_ix(day % 7)),
+                DayOfWeek::from_weekday(chrono::Weekday::try_from((day % 7) as u8).unwrap()),
             );
         }
     }
