@@ -37,7 +37,10 @@ pub mod ports;
 
 pub use autodiff::{
     finite_diff_epsilon, finite_diff_jacobian, optimize_with_gradient_descent, relative_diff,
-    relative_error, verify_jacobian_entries, DifferentiableComponent, GradientDescentOptimizer,
+    relative_error, verify_jacobian_entries, Boiler, BoilerInput, BoilerOutput, BoilerState,
+    Chiller, ChillerInput, ChillerOutput, ChillerState, CoolingCoil, CoolingCoilInput,
+    CoolingCoilOutput, CoolingCoilState, DifferentiableComponent, GradientDescentOptimizer, Pump,
+    PumpInput, PumpOutput, PumpState, VavBox, VavBoxInput, VavBoxOutput, VavBoxState,
 };
 pub use energy::{
     ConservationNode, EnergyConservationError, EnergyConservationResult,
