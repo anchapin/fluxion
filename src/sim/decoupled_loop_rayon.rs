@@ -699,6 +699,7 @@ pub fn decompose_parallel_subgraphs(graph: &FluidNetworkGraph) -> Vec<Subgraph> 
     let mut stack: Vec<GraphNodeId> = Vec::new();
     let mut sccs: Vec<Vec<GraphNodeId>> = Vec::new();
 
+    #[allow(clippy::too_many_arguments)] // Tarjan's SCC algorithm needs 8 params
     fn strong_connect(
         graph: &FluidNetworkGraph,
         node_id: GraphNodeId,
