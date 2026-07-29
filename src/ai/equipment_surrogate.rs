@@ -103,6 +103,7 @@ impl GaussianMixtureModel {
     /// * `data` - Training samples [n_samples x n_features]
     /// * `n_iter` - Maximum EM iterations
     /// * `tol` - Convergence tolerance
+    #[allow(clippy::needless_range_loop)] // GMM EM uses explicit 2D indexing; enumerate refactor would obscure algorithm
     pub fn fit(
         &mut self,
         data: &[Vec<f64>],
