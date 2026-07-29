@@ -890,11 +890,7 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
             // Issue #1163: symmetric ideal-HVAC formula uses t_i_free as the
             // driving temperature for both heating and cooling (mass
             // heat-release is already embedded in t_i_free via num_tm).
-            self.compute_zone_hvac_load(
-                t_i_free.as_ref(),
-                heating_setpoint,
-                cooling_setpoint,
-            )
+            self.compute_zone_hvac_load(t_i_free.as_ref(), heating_setpoint, cooling_setpoint)
         };
 
         let hour_of_day_idx = timestep % 24;
