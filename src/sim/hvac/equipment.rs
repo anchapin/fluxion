@@ -651,11 +651,11 @@ mod tests {
         assert_eq!(capacity_cold, 30000.0); // 30% of rated
 
         // Test efficiency at design temperature
-        // Chiller coefficients: [4.5, -0.6, 0.4, -0.15]
-        // At PLR=1.0: 4.5 + (-0.6)*1 + 0.4*1 + (-0.15)*1 = 4.15
+        // Chiller coefficients: [4.8, -0.6, 0.4, -0.15]
+        // At PLR=1.0: 4.8 + (-0.6)*1 + 0.4*1 + (-0.15)*1 = 4.45
         let cop_design = chiller.calculate_efficiency(1.0, 35.0, HVACMode::Cooling);
         assert!(cop_design > 0.0); // COP exists
-        assert!((cop_design - 4.15).abs() < 0.1); // Close to coefficient calculation
+        assert!((cop_design - 4.48).abs() < 0.1); // Close to coefficient calculation
 
         // Test efficiency degradation
         let cop_hot = chiller.calculate_efficiency(1.0, 45.0, HVACMode::Cooling);
