@@ -888,11 +888,7 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
             // Issue #1163: symmetric ideal-HVAC formula uses t_i_free as the
             // driving temperature for both heating and cooling (mass
             // heat-release is already embedded in t_i_free via num_tm).
-            self.compute_zone_hvac_load(
-                t_i_free.as_ref(),
-                heating_setpoint,
-                cooling_setpoint,
-            )
+            self.compute_zone_hvac_load(t_i_free.as_ref(), heating_setpoint, cooling_setpoint)
         };
 
         let hour_of_day_idx = timestep % 24;
@@ -1030,11 +1026,8 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
             //
             // Issue #1163: symmetric ideal-HVAC formula (mass heat-release is
             // already embedded in t_i_free via num_tm).
-            let hvac_output_raw = self.compute_zone_hvac_load(
-                t_i_free.as_ref(),
-                heating_setpoint,
-                cooling_setpoint,
-            );
+            let hvac_output_raw =
+                self.compute_zone_hvac_load(t_i_free.as_ref(), heating_setpoint, cooling_setpoint);
 
             // Root Cause Fix: Use hvac_output_raw for peak tracking (consistent with energy calc)
             // Issue #901 perf: borrow hvac_output_raw directly instead of cloning for
@@ -1104,11 +1097,7 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         } else {
             // Issue #1163: symmetric ideal-HVAC formula (mass heat-release is
             // already embedded in t_i_free via num_tm).
-            self.compute_zone_hvac_load(
-                t_i_free.as_ref(),
-                heating_setpoint,
-                cooling_setpoint,
-            )
+            self.compute_zone_hvac_load(t_i_free.as_ref(), heating_setpoint, cooling_setpoint)
         };
 
         // Temperature update: t_i_act = t_i_free + hvac_power / h_tr_is
@@ -1815,11 +1804,8 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         //
         // Issue #1163: symmetric ideal-HVAC formula (mass heat-release is
         // already embedded in t_i_free via num_tm).
-        let hvac_output_raw = self.compute_zone_hvac_load(
-            t_i_free.as_ref(),
-            heating_setpoint,
-            cooling_setpoint,
-        );
+        let hvac_output_raw =
+            self.compute_zone_hvac_load(t_i_free.as_ref(), heating_setpoint, cooling_setpoint);
         // Fix: Use actual HVAC demand instead of steady-state approximation (Plan 03-03 Task 2)
         // hvac_output_raw already includes thermal mass buffering (calculated from t_i_free)
         // This is needed for high-mass cases (900 series) that use 6R2C model
@@ -2471,8 +2457,7 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
             .position(|&d| d > day_of_year)
             .unwrap_or(12)
             .saturating_sub(1) as u32;
-        let day =
-            (day_of_year - month_days.get(month as usize).copied().unwrap_or(0)) as u32 + 1;
+        let day = (day_of_year - month_days.get(month as usize).copied().unwrap_or(0)) as u32 + 1;
 
         // Issue #1212: Extract weather data upfront so we don't need &self after scratch borrow
         let (outdoor_temp, dni, dhi, ghi) = if let Some(weather) = &self.0.weather {
@@ -3075,11 +3060,10 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
             0.0
         };
 
-        let (hvac_mode, modulation) = self.0.predictive_controller.calculate_modulation(
-            temps[0],
-            mass_temps[0],
-            temp_rate,
-        );
+        let (hvac_mode, modulation) =
+            self.0
+                .predictive_controller
+                .calculate_modulation(temps[0], mass_temps[0], temp_rate);
         let hvac_mode: EquipmentHVACMode = hvac_mode;
 
         // (#872) Compute HVAC demand BEFORE mass update, so the mass uses CURRENT t_i_act.
