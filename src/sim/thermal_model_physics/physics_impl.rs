@@ -211,6 +211,11 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         let opaque_solar_ref = self.0.opaque_solar_gains.as_ref();
         let area_ref = self.0.zone_area.as_ref();
 
+        // Issue #2188: extract setpoints BEFORE scratch acquisition to avoid E0502
+        // (cannot borrow `*self` as immutable while `scratch` holds mutable borrow)
+        let heating_setpoint = self.0.heating_setpoint;
+        let cooling_setpoint = self.0.cooling_setpoint;
+
         // Issue #1524: consolidated per-timestep scratch (replaces the six
         // standalone `Vec::with_capacity(num_zones)` allocations below).
         // Issue #1966: scratch is now pooled in ThermalModelData::scratch_pool
@@ -884,8 +889,8 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
             // heat-release is already embedded in t_i_free via num_tm).
             self.compute_zone_hvac_load(
                 t_i_free.as_ref(),
-                self.0.heating_setpoint,
-                self.0.cooling_setpoint,
+                heating_setpoint,
+                cooling_setpoint,
             )
         };
 
