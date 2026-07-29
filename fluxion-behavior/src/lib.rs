@@ -2,6 +2,9 @@
 //!
 //! # Issues Addressed
 //! - #2018: Initialize Crate & Occupant Comfort Triggers
+//! - #2044: OccupancyProvider Trait
+//! - #2045: Occupancy Statistical Validation (±2% Target)
+//! - #2046: ASHRAE 90.1 Transition Matrices Data
 //! - #2047: TsfmInferenceEngine Core + ONNX Runtime
 //! - #2048: ONNX Model Loading from Environment Variables
 //! - #2049: Mock Plug Load Fallback with Diurnal Gaussian Noise
@@ -11,6 +14,7 @@
 pub mod comfort;
 pub mod internal_gains;
 pub mod lighting;
+pub mod occupancy;
 pub mod triggers;
 
 pub use comfort::{
@@ -22,6 +26,11 @@ pub use internal_gains::{
     PlugLoadProvider, ScheduleOccupancyProvider,
 };
 pub use lighting::OccupantState;
+pub use occupancy::{
+    compute_expected_fraction, validate_occupancy, BuildingType, DayOfWeek,
+    HourlyTransitionMatrices, MarkovOccupancyGenerator, MarkovOccupancyProvider, OccupancyState,
+    OccupancyValidationResult, TransitionMatrix,
+};
 pub use triggers::{ComfortTrigger, OccupantComfortTriggers, OccupantComfortTriggersConfig};
 
 use ndarray::Dimension;
