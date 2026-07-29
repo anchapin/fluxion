@@ -41,7 +41,9 @@ COPY fluxion-fluid/ ./fluxion-fluid/
 COPY fluxion-grid/ ./fluxion-grid/
 COPY fluxion-behavior/ ./fluxion-behavior/
 COPY fluxion-mcp/ ./fluxion-mcp/
+COPY fluxion-wasm/ ./fluxion-wasm/
 COPY crates/fluxion-toon/ ./crates/fluxion-toon/
+COPY crates/fluxion-twin/ ./crates/fluxion-twin/
 COPY src/ ./src/
 # `Cargo.toml` references a few bench harnesses; copy them so the
 # manifest parses even when we are only building the `fluxion-rest`
