@@ -206,6 +206,9 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         let st_sol_frac = 1.0 - solar_beam_to_mass_fraction;
         let m_sol_frac = solar_beam_to_mass_fraction;
 
+        let solar_distribution_to_air = self.0.solar_distribution_to_air;
+        let solar_beam_to_mass_fraction = self.0.solar_beam_to_mass_fraction;
+
         let loads_ref = self.0.loads.as_ref();
         let solar_ref = self.0.solar_gains.as_ref();
         let opaque_solar_ref = self.0.opaque_solar_gains.as_ref();
@@ -213,8 +216,6 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
 
         let heating_setpoint = self.0.heating_setpoint;
         let cooling_setpoint = self.0.cooling_setpoint;
-        let solar_distribution_to_air = self.0.solar_distribution_to_air;
-        let solar_beam_to_mass_fraction = self.0.solar_beam_to_mass_fraction;
 
         // Issue #1524: consolidated per-timestep scratch (replaces the six
         // standalone `Vec::with_capacity(num_zones)` allocations below).
@@ -1155,6 +1156,10 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         }
         let t_i_act = T::from(VectorField::new(std::mem::take(&mut scratch.t_i_act)));
 
+        // Issue #2185: drop scratch borrow before calling compute_zone_hvac_load
+        // which requires &self (immutable borrow of self.0.hvac_* fields).
+        drop(scratch);
+
         // Use hvac_for_temp_calc for energy (matches what was used for temperature update)
         // This ensures energy calculation is consistent with temperature physics
         let mut heating_sum = 0.0;
@@ -1793,6 +1798,10 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
             eprintln!("DEBUG_900FF t={} t_i_free={:.2} num_rest={:.2} den={:.2} h_sum={:.2} sum_term={:.2} h_ext={:.2} phi_ia={:.2} solar={:.2} loads={:.2} area={:.1}",
                 timestep, t_i_free_val, num_rest_val, den_val, h_sum_val, sum_term_val, h_ext_val, phi_ia_val, solar_val, loads_val, area_val);
         }
+
+        // Issue #2185: drop scratch borrow before self.0 field accesses in HVAC calculation
+        // and energy accumulation that follow. Scratch is no longer needed after t_i_free is computed.
+        drop(scratch);
 
         // HVAC calculation
         let _hour_of_day_idx = timestep % 24;
@@ -2467,7 +2476,7 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
 
         // Issue #1212: Extract weather data upfront so we don't need &self after scratch borrow
         let (outdoor_temp, dni, dhi, ghi) = if let Some(weather) = &self.0.weather {
-            (weather.outdoor_temp, weather.dni, weather.dhi, weather.ghi)
+            (weather.dry_bulb_temp, weather.dni, weather.dhi, weather.ghi)
         } else {
             (20.0_f64, 0.0_f64, 0.0_f64, 0.0_f64)
         };
@@ -2528,7 +2537,7 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         let zone_area = self.0.zone_area.as_ref().to_vec();
         let h_tr_em = self.0.h_tr_em.as_ref().to_vec();
         let h_tr_ms = self.0.h_tr_ms.as_ref().to_vec();
-        let mass_temperatures = self.0.mass_temperatures.as_ref().to_vec();
+        let mass_temperatures = self.0.mass_temperatures.clone();
         let zero_vector = self.0.zero_vector.clone();
         let free_float = self.0.free_float;
         let multi_node_solvers_len = self.0.multi_node_solvers.len();
@@ -2652,7 +2661,7 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
             let t_sol_air_i = t_sol_air_data_revised[i];
             *n += h * t_sol_air_i;
         }
-        num_rest_with_iz.mul_assign(term_rest_1);
+        num_rest_with_iz.mul_assign(&term_rest_1);
         let ground_coeff = self.0.derived_ground_coeff.as_ref();
         for (n, g) in num_rest_with_iz
             .as_mut()
