@@ -5,6 +5,7 @@
 //! - #2045: Occupancy Statistical Validation (±2% Target)
 //! - #2046: ASHRAE 90.1 Transition Matrices Data
 
+use chrono::{DateTime, Datelike, Timelike, Utc};
 use rand::rngs::SmallRng;
 use rand::SeedableRng;
 use rand::Rng;
@@ -48,9 +49,35 @@ pub enum OccupancyState {
     Sleeping,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum OccupantState {
+    Absent,
+    PresentActive,
+    Sleeping,
+}
+
 pub trait OccupancyProvider: Send + Sync {
     fn occupancy_fraction(&self, hour_of_day: f64, day_of_week: DayOfWeek) -> f64;
     fn peak_occupancy(&self) -> f64;
+}
+
+pub trait OccupancyProviderV2: Send + Sync {
+    fn occupant_state(&self, t: DateTime<Utc>) -> OccupantState;
+
+    fn occupant_count(&self, t: DateTime<Utc>) -> usize {
+        match self.occupant_state(t) {
+            OccupantState::Absent => 0,
+            OccupantState::PresentActive => self.typical_count(),
+            OccupantState::Sleeping => self.typical_count(),
+        }
+    }
+
+    fn occupant_density(&self, t: DateTime<Utc>) -> f64 {
+        self.occupant_count(t) as f64 / self.floor_area_m2()
+    }
+
+    fn typical_count(&self) -> usize;
+    fn floor_area_m2(&self) -> f64;
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -100,16 +127,34 @@ pub struct MarkovOccupancyGenerator {
     pub building_type: BuildingType,
     pub hourly_matrices: HourlyTransitionMatrices,
     pub weekend_matrices: HourlyTransitionMatrices,
+    pub typical_count: usize,
+    pub floor_area_m2: f64,
 }
 
 impl MarkovOccupancyGenerator {
-    pub fn new(building_type: BuildingType) -> Self {
+    pub fn new(building_type: BuildingType, typical_count: usize, floor_area_m2: f64) -> Self {
         let matrices = ashrae90p1_transition_matrices(&building_type, false);
         let weekend_matrices = ashrae90p1_transition_matrices(&building_type, true);
         Self {
             building_type,
             hourly_matrices: matrices,
             weekend_matrices,
+            typical_count,
+            floor_area_m2,
+        }
+    }
+
+    pub fn deterministic_state(&self, hour: u8, day: DayOfWeek) -> OccupancyState {
+        let matrix = if day.is_weekend() {
+            self.weekend_matrices.get(hour)
+        } else {
+            self.hourly_matrices.get(hour)
+        };
+        let occupancy_prob = matrix.vacant_to_occupied / (matrix.vacant_to_occupied + matrix.occupied_to_vacant);
+        if occupancy_prob > 0.5 {
+            OccupancyState::Occupied
+        } else {
+            OccupancyState::Vacant
         }
     }
 
@@ -148,6 +193,28 @@ impl MarkovOccupancyGenerator {
             self.hourly_matrices.get(hour)
         };
         matrix.vacant_to_occupied / (matrix.vacant_to_occupied + matrix.occupied_to_vacant)
+    }
+}
+
+impl OccupancyProviderV2 for MarkovOccupancyGenerator {
+    fn occupant_state(&self, t: DateTime<Utc>) -> OccupantState {
+        let hour = t.hour() as u8;
+        let day_num = t.weekday().num_days_from_monday();
+        let day = DayOfWeek::from_u8(day_num);
+        let state = self.deterministic_state(hour, day);
+        match state {
+            OccupancyState::Occupied => OccupantState::PresentActive,
+            OccupancyState::Vacant => OccupantState::Absent,
+            OccupancyState::Sleeping => OccupantState::Sleeping,
+        }
+    }
+
+    fn typical_count(&self) -> usize {
+        self.typical_count
+    }
+
+    fn floor_area_m2(&self) -> f64 {
+        self.floor_area_m2
     }
 }
 
@@ -426,14 +493,14 @@ mod tests {
 
     #[test]
     fn test_occupancy_fraction_office_weekday() {
-        let generator = MarkovOccupancyGenerator::new(BuildingType::Office);
+        let generator = MarkovOccupancyGenerator::new(BuildingType::Office, 10, 100.0);
         let fraction = generator.occupancy_fraction(9, DayOfWeek::Tuesday);
         assert!(fraction > 0.0 && fraction <= 1.0);
     }
 
     #[test]
     fn test_occupancy_provider_trait() {
-        let generator = MarkovOccupancyGenerator::new(BuildingType::Office);
+        let generator = MarkovOccupancyGenerator::new(BuildingType::Office, 10, 100.0);
         let provider = MarkovOccupancyProvider::new(generator);
         let fraction = provider.occupancy_fraction(9.0, DayOfWeek::Tuesday);
         assert!(fraction > 0.0 && fraction <= 1.0);
@@ -442,7 +509,7 @@ mod tests {
 
     #[test]
     fn test_markov_state_transition() {
-        let generator = MarkovOccupancyGenerator::new(BuildingType::Office);
+        let generator = MarkovOccupancyGenerator::new(BuildingType::Office, 10, 100.0);
         let mut rng = SmallRng::from_entropy();
         let state = generator.generate_state(&mut rng, OccupancyState::Vacant, 9, DayOfWeek::Tuesday);
         assert!(matches!(state, OccupancyState::Vacant | OccupancyState::Occupied));
@@ -450,7 +517,7 @@ mod tests {
 
     #[test]
     fn test_statistical_validation_office() {
-        let generator = MarkovOccupancyGenerator::new(BuildingType::Office);
+        let generator = MarkovOccupancyGenerator::new(BuildingType::Office, 10, 100.0);
         // Use more samples and check that relative error is within 5% (accounts for RNG variance)
         let expected_fraction = compute_expected_fraction(&generator, 9, DayOfWeek::Tuesday, 10000);
         let result = validate_occupancy(&generator, 10000, 9, DayOfWeek::Tuesday, expected_fraction);
@@ -467,7 +534,7 @@ mod tests {
 
     #[test]
     fn test_chi_squared_convergence() {
-        let generator = MarkovOccupancyGenerator::new(BuildingType::Retail);
+        let generator = MarkovOccupancyGenerator::new(BuildingType::Retail, 20, 200.0);
         let expected_fraction = compute_expected_fraction(&generator, 12, DayOfWeek::Friday, 10000);
         let result = validate_occupancy(&generator, 10000, 12, DayOfWeek::Friday, expected_fraction);
         // Chi-squared should be reasonable for a well-calibrated model with 10000 samples
@@ -477,7 +544,7 @@ mod tests {
     #[test]
     fn test_building_types() {
         for bt in &[BuildingType::Office, BuildingType::Retail, BuildingType::Restaurant, BuildingType::Residential] {
-            let generator = MarkovOccupancyGenerator::new(bt.clone());
+            let generator = MarkovOccupancyGenerator::new(bt.clone(), 10, 100.0);
             for hour in 0..24 {
                 let frac = generator.occupancy_fraction(hour, DayOfWeek::Monday);
                 assert!(frac >= 0.0 && frac <= 1.0, "Invalid fraction for {:?} at hour {}", bt, hour);
@@ -487,9 +554,42 @@ mod tests {
 
     #[test]
     fn test_weekend_vs_weekday() {
-        let generator = MarkovOccupancyGenerator::new(BuildingType::Office);
+        let generator = MarkovOccupancyGenerator::new(BuildingType::Office, 10, 100.0);
         let weekday_frac = generator.occupancy_fraction(10, DayOfWeek::Wednesday);
         let weekend_frac = generator.occupancy_fraction(10, DayOfWeek::Saturday);
         assert!(weekend_frac < weekday_frac);
+    }
+
+    #[test]
+    fn test_occupancy_provider_v2_trait() {
+        use chrono::TimeZone;
+        let generator = MarkovOccupancyGenerator::new(BuildingType::Office, 10, 100.0);
+        let t = Utc.with_ymd_and_hms(2024, 1, 9, 9, 0, 0).unwrap(); // Tuesday 9am
+        let state = generator.occupant_state(t);
+        assert!(matches!(state, OccupantState::PresentActive | OccupantState::Absent));
+        assert_eq!(generator.typical_count(), 10);
+        assert_eq!(generator.floor_area_m2(), 100.0);
+    }
+
+    #[test]
+    fn test_occupancy_provider_v2_count() {
+        use chrono::TimeZone;
+        let generator = MarkovOccupancyGenerator::new(BuildingType::Office, 10, 100.0);
+        let t_present = Utc.with_ymd_and_hms(2024, 1, 9, 9, 0, 0).unwrap(); // Tuesday 9am - likely present
+        let t_absent = Utc.with_ymd_and_hms(2024, 1, 7, 3, 0, 0).unwrap(); // Sunday 3am - likely absent
+        let present_count = generator.occupant_count(t_present);
+        let absent_count = generator.occupant_count(t_absent);
+        assert!(present_count <= generator.typical_count());
+        assert_eq!(absent_count, 0);
+    }
+
+    #[test]
+    fn test_occupancy_provider_v2_density() {
+        use chrono::TimeZone;
+        let generator = MarkovOccupancyGenerator::new(BuildingType::Office, 10, 100.0);
+        let t = Utc.with_ymd_and_hms(2024, 1, 9, 9, 0, 0).unwrap();
+        let density = generator.occupant_density(t);
+        let expected = generator.occupant_count(t) as f64 / 100.0;
+        assert!((density - expected).abs() < f64::EPSILON);
     }
 }

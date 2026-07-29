@@ -1121,6 +1121,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "fluxion-behavior"
+version = "0.1.0"
+dependencies = [
+ "approx",
+ "chrono",
+ "rand 0.8.5",
+ "rand_distr",
+ "serde",
+ "thiserror 1.0.69",
+]
+
+[[package]]
 name = "fluxion-core"
 version = "1.0.0"
 dependencies = [
