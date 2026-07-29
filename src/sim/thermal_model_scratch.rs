@@ -300,17 +300,23 @@ impl PhysicsScratchPool {
 
     #[allow(dead_code)]
     pub fn get_5r1c(&mut self, num_zones: usize) -> PhysicsScratch5r1c {
-        self.r5r1c.take().unwrap_or_else(|| PhysicsScratch5r1c::new(num_zones))
+        self.r5r1c
+            .take()
+            .unwrap_or_else(|| PhysicsScratch5r1c::new(num_zones))
     }
 
     #[allow(dead_code)]
     pub fn get_6r2c(&mut self, num_zones: usize) -> PhysicsScratch6r2c {
-        self.r6r2c.take().unwrap_or_else(|| PhysicsScratch6r2c::new(num_zones))
+        self.r6r2c
+            .take()
+            .unwrap_or_else(|| PhysicsScratch6r2c::new(num_zones))
     }
 
     #[allow(dead_code)]
     pub fn get_9r4c(&mut self, num_zones: usize) -> PhysicsScratch9r4c {
-        self.r9r4c.take().unwrap_or_else(|| PhysicsScratch9r4c::new(num_zones))
+        self.r9r4c
+            .take()
+            .unwrap_or_else(|| PhysicsScratch9r4c::new(num_zones))
     }
 
     #[allow(dead_code)]
