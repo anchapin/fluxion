@@ -2788,6 +2788,9 @@ impl ThermalModel<VectorField> {
             // Issue #1968 — cached zero vector to eliminate per-timestep
             // `vec![0.0; num_zones]` allocations in hot loops.
             zero_vector: VectorField::from_scalar(0.0, num_zones),
+
+            // Issue #1966: pooled scratch buffers for physics solvers
+            scratch_pool: crate::sim::thermal_model_scratch::PhysicsScratchPool::new(),
         });
 
         model.update_derived_parameters();

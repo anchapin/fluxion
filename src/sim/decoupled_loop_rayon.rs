@@ -638,7 +638,7 @@ impl FluidNetworkGraph {
     pub fn add_node(&mut self, node: FluidGraphNode) {
         let id = node.id;
         self.nodes.push(node);
-        self.adjacency_list.entry(id).or_insert_with(Vec::new);
+        self.adjacency_list.entry(id).or_default();
     }
 
     /// Add an edge to the graph.
@@ -646,7 +646,7 @@ impl FluidNetworkGraph {
         self.edges.push(edge.clone());
         self.adjacency_list
             .entry(edge.from)
-            .or_insert_with(Vec::new)
+            .or_default()
             .push(edge.to);
     }
 
@@ -699,6 +699,7 @@ pub fn decompose_parallel_subgraphs(graph: &FluidNetworkGraph) -> Vec<Subgraph> 
     let mut stack: Vec<GraphNodeId> = Vec::new();
     let mut sccs: Vec<Vec<GraphNodeId>> = Vec::new();
 
+    #[allow(clippy::too_many_arguments)]
     fn strong_connect(
         graph: &FluidNetworkGraph,
         node_id: GraphNodeId,
@@ -826,7 +827,7 @@ impl ParallelLoopDispatcher {
 
     /// Dispatch all subgraphs in parallel using Rayon (non-WASM).
     #[cfg(not(target_arch = "wasm32"))]
-    pub fn step<F, R>(&mut self, _t: f64, _dt: f64, mut f: F) -> Result<(), DispatchError>
+    pub fn step<F, R>(&mut self, _t: f64, _dt: f64, f: F) -> Result<(), DispatchError>
     where
         F: FnMut(&Subgraph) -> Result<R, DispatchError> + Send + Sync,
         R: Send,
