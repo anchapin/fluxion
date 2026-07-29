@@ -215,7 +215,8 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         // standalone `Vec::with_capacity(num_zones)` allocations below).
         // Issue #1966: scratch is now pooled in ThermalModelData::scratch_pool
         // but we create locally to avoid borrow checker conflicts with self borrows
-        let mut scratch = crate::sim::thermal_model_scratch::PhysicsScratch5r1c::new(self.0.num_zones);
+        let mut scratch =
+            crate::sim::thermal_model_scratch::PhysicsScratch5r1c::new(self.0.num_zones);
 
         for i in 0..self.0.num_zones {
             let load_w = loads_ref[i] * area_ref[i];
@@ -1527,7 +1528,8 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         // Issue #1524: consolidated per-timestep scratch (replaces the eleven
         // standalone `Vec::with_capacity(num_zones)` allocations in 6R2C).
         // Issue #1966: scratch is now created locally to avoid borrow conflicts
-        let mut scratch = crate::sim::thermal_model_scratch::PhysicsScratch6r2c::new(self.0.num_zones);
+        let mut scratch =
+            crate::sim::thermal_model_scratch::PhysicsScratch6r2c::new(self.0.num_zones);
 
         for i in 0..self.0.num_zones {
             let load_w = loads_ref[i] * area_ref[i];
@@ -2426,7 +2428,8 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         // standalone `Vec::with_capacity(num_zones)` allocations in 9R4C; the
         // seven read-back intermediates share one flat buffer).
         // Issue #1966: scratch is now created locally to avoid borrow conflicts
-        let mut scratch = crate::sim::thermal_model_scratch::PhysicsScratch9r4c::new(self.0.num_zones);
+        let mut scratch =
+            crate::sim::thermal_model_scratch::PhysicsScratch9r4c::new(self.0.num_zones);
 
         for i in 0..self.0.num_zones {
             let load_w = loads_ref[i] * area_ref[i];
