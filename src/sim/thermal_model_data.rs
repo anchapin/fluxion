@@ -307,7 +307,7 @@ pub struct ThermalModelData<T: ContinuousTensor<f64> + Clone> {
     /// Lazily initialized on first use by `step_physics_*`. The pool is NOT
     /// cloned on `ThermalModelData::clone()` (clone gets a fresh empty pool);
     /// cloning is a cold-path operation that does not need pooled scratch reuse.
-    pub scratch_pool: PhysicsScratchPool,
+    pub(crate) scratch_pool: PhysicsScratchPool,
 }
 
 impl<T: ContinuousTensor<f64> + Clone> Clone for ThermalModelData<T> {
