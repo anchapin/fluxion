@@ -1514,16 +1514,19 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         // The naming reflects ISO 13790 Section C.4:
         //   st_int_frac = fraction of internal radiative gains to SURFACE node (phi_st)
         //   m_air_frac  = fraction of internal radiative gains to AIR node (phi_ia via routing)
-        let st_int_frac = rad_frac * (1.0 - self.0.solar_distribution_to_air);
-        let m_air_frac = rad_frac * self.0.solar_distribution_to_air;
+        // Extract all needed self.0 scalars BEFORE scratch borrow to avoid E0502/E0499
+        let solar_distribution_to_air = self.0.solar_distribution_to_air;
+        let solar_beam_to_mass_fraction = self.0.solar_beam_to_mass_fraction;
+        let st_int_frac = rad_frac * (1.0 - solar_distribution_to_air);
+        let m_air_frac = rad_frac * solar_distribution_to_air;
         // Solar gain distribution for 6R2C model.
         // Energy-conserving split: st + m_env + m_int = 1.0 when sol_to_air = 0.
         // With solar_beam_to_mass_fraction = 0.0: 100% to surface (fast air heating).
         // With solar_beam_to_mass_fraction = 1.0: 70% envelope mass, 30% internal mass.
-        let st_sol_frac = 1.0 - self.0.solar_beam_to_mass_fraction; // Solar to surface
-        let m_env_sol_frac = self.0.solar_beam_to_mass_fraction * 0.7; // Solar to envelope mass
-        let m_int_sol_frac = self.0.solar_beam_to_mass_fraction * 0.3; // Solar to internal mass
-        let sol_to_air_frac = self.0.solar_distribution_to_air;
+        let st_sol_frac = 1.0 - solar_beam_to_mass_fraction; // Solar to surface
+        let m_env_sol_frac = solar_beam_to_mass_fraction * 0.7; // Solar to envelope mass
+        let m_int_sol_frac = solar_beam_to_mass_fraction * 0.3; // Solar to internal mass
+        let sol_to_air_frac = solar_distribution_to_air;
 
         let loads_ref = self.0.loads.as_ref();
         let solar_ref = self.0.solar_gains.as_ref();
@@ -1532,14 +1535,15 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
 
         let heating_setpoint = self.0.heating_setpoint;
         let cooling_setpoint = self.0.cooling_setpoint;
+        let num_zones = self.0.num_zones;
 
         // Issue #1524: consolidated per-timestep scratch (replaces the eleven
         // standalone `Vec::with_capacity(num_zones)` allocations in 6R2C).
         // Issue #1966: scratch is now pooled in ThermalModelData::scratch_pool
         // and reused across timesteps via fill_zero() at end of step.
-        let mut scratch = self.0.scratch_pool.get_6r2c(self.0.num_zones);
+        let mut scratch = self.0.scratch_pool.get_6r2c(num_zones);
 
-        for i in 0..self.0.num_zones {
+        for i in 0..num_zones {
             let load_w = loads_ref[i] * area_ref[i];
             let sol_w = solar_ref[i] * area_ref[i];
             let opaque_sol_w = opaque_solar_ref[i] * area_ref[i];
@@ -2443,15 +2447,60 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         let temps = self.0.temperatures.as_ref().to_vec();
         let prev_temps = self.0.previous_temperatures.as_ref().to_vec();
         let mass_temps = self.0.mass_temperatures.as_ref().to_vec();
+        let num_zones = self.0.num_zones;
+
+        // Issue #863 / #1212: Pre-compute sol-air temperature BEFORE scratch borrow
+        // to avoid E0502 (cannot borrow `*self` as immutable while scratch pool
+        // is mutably borrowed). Extract outdoor_temp, solar position, and wall
+        // irradiance from weather data upfront.
+        let hour_of_year = timestep % 8760;
+        let month_days: [usize; 12] = [0, 31, 59, 90, 120, 151, 181, 212, 243, 273, 304, 334];
+        let day_of_year = hour_of_year / 24;
+        let hour = (hour_of_year % 24) as f64 + 0.5;
+        let month = month_days
+            .iter()
+            .position(|&d| d > day_of_year)
+            .unwrap_or(12)
+            .saturating_sub(1) as u32;
+        let day =
+            (day_of_year - month_days.get(month as usize).copied().unwrap_or(0)) as u32 + 1;
+
+        // Issue #1212: Extract weather data upfront so we don't need &self after scratch borrow
+        let (outdoor_temp, dni, dhi, ghi) = if let Some(weather) = &self.0.weather {
+            (weather.outdoor_temp, weather.dni, weather.dhi, weather.ghi)
+        } else {
+            (20.0_f64, 0.0_f64, 0.0_f64, 0.0_f64)
+        };
+
+        // Issue #1212: Pre-compute solar position to avoid &self borrow during scratch scope
+        let sun_pos = self.cached_solar_position(hour_of_year, 2024, month, day.min(28), hour);
+
+        let ground_reflectance = 0.2;
+        let wall_irr = calculate_surface_irradiance(
+            &sun_pos,
+            dni,
+            dhi,
+            Some(ghi),
+            crate::validation::ashrae_140_cases::Orientation::South,
+            ground_reflectance,
+            day_of_year + 1,
+        );
+
+        let sol_air = SolAirTemperature::ashrae_140_default();
+        let t_sol_air_wall = sol_air.for_wall(
+            outdoor_temp,
+            wall_irr.total_wm2,
+            wall_irr.ground_reflected_wm2,
+        );
 
         // Issue #1524: consolidated per-timestep scratch (replaces the fourteen
         // standalone `Vec::with_capacity(num_zones)` allocations in 9R4C; the
         // seven read-back intermediates share one flat buffer).
         // Issue #1966: scratch is now pooled in ThermalModelData::scratch_pool
         // and reused across timesteps via fill_zero() at end of step.
-        let mut scratch = self.0.scratch_pool.get_9r4c(self.0.num_zones);
+        let mut scratch = self.0.scratch_pool.get_9r4c(num_zones);
 
-        for i in 0..self.0.num_zones {
+        for i in 0..num_zones {
             let load_w = loads_data[i] * area_data[i];
             let sol_w = solar_data[i] * area_data[i];
             let opaque_sol_w = opaque_solar_data[i] * area_data[i];
@@ -2469,67 +2518,34 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         let phi_st = T::from(VectorField::new(std::mem::take(&mut scratch.phi_st)));
         let phi_m = T::from(VectorField::new(std::mem::take(&mut scratch.phi_m)));
 
-        // Issue #863: Compute per-surface sol-air temperature for walls.
-        // The CTF/FD flux calculations use t_sol_air_data as the exterior boundary
-        // temperature. Using outdoor_temp would ignore solar gain on west walls,
-        // causing massive heating energy overcounting (9.45 MWh vs reference 1.17-2.04 MWh).
-        let t_sol_air_wall = if let Some(weather) = &self.0.weather {
-            let hour_of_year = timestep % 8760;
-            let month_days: [usize; 12] = [0, 31, 59, 90, 120, 151, 181, 212, 243, 273, 304, 334];
-            let day_of_year = hour_of_year / 24;
-            let hour = (hour_of_year % 24) as f64 + 0.5;
-            let month = month_days
-                .iter()
-                .position(|&d| d > day_of_year)
-                .unwrap_or(12)
-                .saturating_sub(1) as u32;
-            let day =
-                (day_of_year - month_days.get(month as usize).copied().unwrap_or(0)) as u32 + 1;
+        // Issue #863 / #1966: Pre-extract ALL self.0 fields accessed during and after
+        // scratch scope into local variables. Extract them HERE (while scratch is alive)
+        // so they remain valid after scratch is dropped.
+        let term_rest_1 = self.0.derived_term_rest_1.clone();
+        let derived_ground_coeff = self.0.derived_ground_coeff.clone();
+        let hvac_heating_capacity = self.0.hvac_heating_capacity.clone();
+        let hvac_cooling_capacity = self.0.hvac_cooling_capacity.clone();
+        let zone_area = self.0.zone_area.as_ref().to_vec();
+        let h_tr_em = self.0.h_tr_em.as_ref().to_vec();
+        let h_tr_ms = self.0.h_tr_ms.as_ref().to_vec();
+        let mass_temperatures = self.0.mass_temperatures.as_ref().to_vec();
+        let zero_vector = self.0.zero_vector.clone();
+        let free_float = self.0.free_float;
+        let multi_node_solvers_len = self.0.multi_node_solvers.len();
+        let derived_h_ms_is_prod = self.0.derived_h_ms_is_prod.clone();
+        let derived_h_ext = self.0.derived_h_ext.clone();
+        let derived_den = self.0.derived_den.clone();
 
-            // Issue #1212: Extract weather data before mutably borrowing self for cache
-            let (dni, dhi, ghi) = (weather.dni, weather.dhi, weather.ghi);
+        // Issue #863: t_sol_air_wall pre-computed before scratch borrow (see above).
+        // Write to scratch arrays and immediately extract t_sol_air_data so we can
+        // drop the scratch borrow and avoid E0502 on subsequent self.0 field accesses.
+        let t_sol_air_data_revised: Vec<f64> = (0..num_zones)
+            .map(|i| scratch.t_sol_air().get(i).copied().unwrap_or(outdoor_temp))
+            .collect();
 
-            // Issue #1212: Use cached solar position to eliminate 5x redundant computation
-            let sun_pos = self.cached_solar_position(hour_of_year, 2024, month, day.min(28), hour);
-
-            let ground_reflectance = 0.2;
-            let wall_irr = calculate_surface_irradiance(
-                &sun_pos,
-                dni,
-                dhi,
-                Some(ghi),
-                crate::validation::ashrae_140_cases::Orientation::South,
-                ground_reflectance,
-                day_of_year + 1,
-            );
-
-            let sol_air = SolAirTemperature::ashrae_140_default();
-            sol_air.for_wall(
-                outdoor_temp,
-                wall_irr.total_wm2,
-                wall_irr.ground_reflected_wm2,
-            )
-        } else {
-            outdoor_temp
-        };
-
-        for i in 0..self.0.num_zones {
-            scratch.t_sol_air_mut()[i] = t_sol_air_wall;
-        }
-
-        // Use 5R1C network for free-floating temperature
-        let term_rest_1 = &self.0.derived_term_rest_1;
-
-        // Issue #1712 fix: Apply h_ve_night to h_ext and den when night ventilation
-        // is active, matching the 5R1C path (lines 421-471). This ensures the
-        // mass coupling pathway properly accounts for night vent cooling.
-        //
-        // The prior code cloned derived_h_ext without h_ve_night, and used the
-        // cached derived_den without recalculating. This caused the 9R4C mass coupling
-        // to not properly respond to night ventilation, making night vent less effective
-        // than in the 5R1C path.
+        // Issue #1712: h_ve_night application to h_ext and den
         let h_ext_for_free_float: T = if night_vent_active_now {
-            let base = self.0.derived_h_ext.as_ref();
+            let base = derived_h_ext.as_ref();
             let mut v = Vec::with_capacity(base.len());
             for (i, &b) in base.iter().enumerate() {
                 let night_add = if i == 0 { h_ve_night } else { 0.0 };
@@ -2537,34 +2553,19 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
             }
             T::from(VectorField::new(v))
         } else {
-            self.0.derived_h_ext.clone()
+            derived_h_ext.clone()
         };
-        let den: T = if night_vent_active_now {
-            let h_ms_is_prod = self.0.derived_h_ms_is_prod.as_ref();
-            let term_rest_1_slice = term_rest_1.as_ref();
-            let ground_coeff = self.0.derived_ground_coeff.as_ref();
-            let h_iz = self.0.h_tr_iz.as_ref();
-            let h_iz_rad = self.0.h_tr_iz_rad.as_ref();
-            let h_ext_slice = h_ext_for_free_float.as_ref();
-            let mut v = Vec::with_capacity(h_ext_slice.len());
-            for i in 0..h_ext_slice.len() {
-                let h_total = if self.0.num_zones > 1 {
-                    h_ext_slice[i] + h_iz[i] + h_iz_rad[i]
-                } else {
-                    h_ext_slice[i]
-                };
-                v.push(h_ms_is_prod[i] + term_rest_1_slice[i] * h_total + ground_coeff[i]);
-            }
-            T::from(VectorField::new(v))
-        } else {
-            self.0.derived_den.clone()
-        };
+
+        // DROP scratch borrow to allow subsequent self.0 field accesses.
+        // All post-scratch code uses pre-extracted local copies.
+        drop(scratch);
+
+        // Use 5R1C network for free-floating temperature
+        // Note: term_rest_1, derived_ground_coeff, h_ext_for_free_float,
+        // and den were pre-extracted inside the scratch scope above.
         // (#872: sensitivity variable removed — HVAC demand now uses h_loss × ΔT formula)
 
-        let num_tm = self
-            .0
-            .derived_h_ms_is_prod
-            .zip_with(&self.0.mass_temperatures, |a, b| a * b);
+        let num_tm = derived_h_ms_is_prod.zip_with(&mass_temperatures, |a, b| a * b);
         let num_phi_st = self.0.h_tr_is.zip_with(&phi_st, |a, b| a * b);
 
         let mut phi_ia_with_iz = phi_ia;
@@ -2584,9 +2585,9 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         // the 5R1C iterative path's `solve_coupled_zone_temperatures` formulation
         // and the `MultiZoneAirflowNetwork` convention (test:
         // `multi_zone_network.rs::two_zone_case960_backward_compatible`).
-        if self.0.num_zones > 1 {
+        if num_zones > 1 {
             let slice = phi_ia_with_iz.as_mut();
-            let n = self.0.num_zones;
+            let n = num_zones;
             let temps = self.0.temperatures.as_ref();
             let h_iz_vec = self.0.h_tr_iz.as_ref();
             let sum_t: f64 = temps.iter().sum();
@@ -2603,17 +2604,11 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
             let slice = phi_ia_with_iz.as_mut();
             for (i, &q_flux) in ctf_fluxes.iter().enumerate() {
                 if i < slice.len() {
-                    let area = self.0.zone_area.as_ref().get(i).copied().unwrap_or(1.0);
+                    let area = zone_area[i];
                     let q_ctf = q_flux * area;
-                    let t_sol_air_i = scratch.t_sol_air().get(i).copied().unwrap_or(outdoor_temp);
-                    let t_mass = self
-                        .0
-                        .mass_temperatures
-                        .as_ref()
-                        .get(i)
-                        .copied()
-                        .unwrap_or(20.0);
-                    let h_tr_em_i = self.0.h_tr_em.as_ref().get(i).copied().unwrap_or(0.0);
+                    let t_sol_air_i = t_sol_air_data_revised[i];
+                    let t_mass = mass_temperatures[i];
+                    let h_tr_em_i = h_tr_em[i];
                     let q_5r1c = h_tr_em_i * (t_sol_air_i - t_mass);
                     let net_ctf_flux = q_ctf - q_5r1c;
                     slice[i] += net_ctf_flux;
@@ -2626,17 +2621,11 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
             let slice = phi_ia_with_iz.as_mut();
             for (i, &q_flux) in fd_fluxes.iter().enumerate() {
                 if i < slice.len() {
-                    let area = self.0.zone_area.as_ref().get(i).copied().unwrap_or(1.0);
+                    let area = zone_area[i];
                     let q_fd = q_flux * area;
-                    let t_sol_air_i = scratch.t_sol_air().get(i).copied().unwrap_or(outdoor_temp);
-                    let t_mass = self
-                        .0
-                        .mass_temperatures
-                        .as_ref()
-                        .get(i)
-                        .copied()
-                        .unwrap_or(20.0);
-                    let h_tr_em_i = self.0.h_tr_em.as_ref().get(i).copied().unwrap_or(0.0);
+                    let t_sol_air_i = t_sol_air_data_revised[i];
+                    let t_mass = mass_temperatures[i];
+                    let h_tr_em_i = h_tr_em[i];
                     let q_5r1c = h_tr_em_i * (t_sol_air_i - t_mass);
                     let net_fd_flux = q_fd - q_5r1c;
                     slice[i] += net_fd_flux;
@@ -2660,7 +2649,7 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
             .zip(h_ext_for_free_float.as_ref().iter())
             .enumerate()
         {
-            let t_sol_air_i = scratch.t_sol_air().get(i).copied().unwrap_or(outdoor_temp);
+            let t_sol_air_i = t_sol_air_data_revised[i];
             *n += h * t_sol_air_i;
         }
         num_rest_with_iz.mul_assign(term_rest_1);
@@ -3365,7 +3354,7 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                 let h_tr_ms = h_tr_ms_ref[i];
                 let h_tr_is_zone = self.0.h_tr_is.as_ref()[i];
                 let h_tr_me_zone = self.0.h_tr_me.as_ref()[i];
-                let t_ext = scratch.t_sol_air().get(i).copied().unwrap_or(outdoor_temp);
+                let t_ext = t_sol_air_data_revised[i];
 
                 let t_i_blended = t_i; // Use full t_i for surface temperature
 
