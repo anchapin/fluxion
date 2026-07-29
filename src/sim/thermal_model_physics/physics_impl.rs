@@ -32,7 +32,7 @@ use crate::sim::thermal_integration::{
 };
 use crate::sim::thermal_model_core::ThermalModel;
 use crate::sim::thermal_model_scratch::{
-    PhysicsScratch5r1c, PhysicsScratch6r2c, PhysicsScratch9r4c, PhysicsScratchPool,
+    PhysicsScratch5r1c,
 };
 use crate::sim::ventilation::h_tr_is_ach_multiplier;
 
