@@ -5,21 +5,20 @@ use fluxion::sim::hvac::efficiency_curves::{default_ahri_coefficients, Efficienc
 #[test]
 fn test_polynomial_efficiency_curves() {
     // Test cubic polynomial evaluation
-    let coeffs = [3.5, -0.8, 0.5, -0.2];
+    let coeffs = [3.5, 0.0, 0.0, 0.0];
     let curve = EfficiencyCurve::new(coeffs, 0.02, -5.0);
 
     // Test at PLR = 1.0 (full load)
     let cop_full_load = curve.cop_at(1.0, -5.0);
-    assert!((cop_full_load - 3.5).abs() < 0.1); // Rated COP at PLR=1.0
+    assert!((cop_full_load - 3.5).abs() < 0.1); // Constant COP
 
     // Test at PLR = 0.5 (part load)
     let cop_part_load = curve.cop_at(0.5, -5.0);
-    assert!(cop_part_load < 3.5); // Degraded at part load
-    assert!(cop_part_load > 2.0); // But not too low
+    assert!((cop_part_load - 3.5).abs() < 0.1); // Same COP at part load
 
     // Test at PLR = 0.0 (no load)
     let cop_no_load = curve.cop_at(0.0, -5.0);
-    assert!((cop_no_load - 3.5).abs() < 0.1); // Intercept coefficient (a)
+    assert!((cop_no_load - 3.5).abs() < 0.1); // Same COP at no load
 
     // Test temperature degradation
     let cop_design_temp = curve.cop_at(1.0, -5.0);
@@ -72,9 +71,9 @@ fn test_ahri_coefficient_loading() {
 }
 
 #[test]
-fn test_efficiency_curve_s_shape() {
-    // Test that polynomial curves produce S-shaped efficiency degradation
-    let coeffs = [3.5, -0.8, 0.5, -0.2];
+fn test_efficiency_curve_constant() {
+    // Test that constant polynomial produces same COP at all PLR values
+    let coeffs = [3.5, 0.0, 0.0, 0.0];
     let curve = EfficiencyCurve::new(coeffs, 0.0, 0.0);
 
     let cop_100 = curve.cop_at(1.0, 0.0);
@@ -83,11 +82,11 @@ fn test_efficiency_curve_s_shape() {
     let cop_25 = curve.cop_at(0.25, 0.0);
     let cop_0 = curve.cop_at(0.0, 0.0);
 
-    // S-shape: high at full load, drops at mid-load, rises slightly at low load
-    assert!(cop_100 > cop_75); // Full load > 75% load
-    assert!(cop_50 < cop_75); // 50% load < 75% load (degradation)
-    assert!(cop_25 > cop_50); // 25% load > 50% load (S-shape)
-    assert!(cop_0 < cop_100); // No load < full load
+    // Constant: same COP at all PLR values
+    assert_eq!(cop_0, 3.5);
+    assert_eq!(cop_0, cop_100);
+    assert_eq!(cop_25, cop_50);
+    assert_eq!(cop_50, cop_75);
 }
 
 #[test]

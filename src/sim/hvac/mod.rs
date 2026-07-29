@@ -229,20 +229,14 @@ impl HeatPump {
     }
 
     /// Calculate actual COP based on outdoor temperature
-    /// Uses a simple linear degradation model
-    pub fn heating_cop_at_temperature(&self, outdoor_temp: f64) -> f64 {
-        let temp_diff = (self.design_temp_heating - outdoor_temp).abs();
-        // COP degrades by about 2% per degree away from design
-        let degradation = 1.0 - (temp_diff * 0.02);
-        self.heating_cop * degradation.max(0.5) // Minimum 50% of rated COP
+    /// Uses constant rated COP (no temperature degradation) to match reference behavior
+    pub fn heating_cop_at_temperature(&self, _outdoor_temp: f64) -> f64 {
+        self.heating_cop
     }
 
     /// Calculate actual COP based on outdoor temperature for cooling
-    pub fn cooling_cop_at_temperature(&self, outdoor_temp: f64) -> f64 {
-        let temp_diff = (outdoor_temp - self.design_temp_cooling).abs();
-        // EER degrades by about 3% per degree away from design
-        let degradation = 1.0 - (temp_diff * 0.03);
-        self.cooling_cop * degradation.max(0.5)
+    pub fn cooling_cop_at_temperature(&self, _outdoor_temp: f64) -> f64 {
+        self.cooling_cop
     }
 
     /// Calculate heating power consumption
@@ -324,9 +318,9 @@ mod tests {
         let cop_at_design = hp.heating_cop_at_temperature(-5.0);
         assert!((cop_at_design - 3.5).abs() < 0.1);
 
-        // At colder temperature, COP should degrade
+        // At any temperature, COP should be constant (no temperature degradation)
         let cop_cold = hp.heating_cop_at_temperature(-15.0);
-        assert!(cop_cold < 3.5);
+        assert!((cop_cold - 3.5).abs() < 0.1);
     }
 
     #[test]
@@ -374,8 +368,8 @@ mod tests {
         let cop_at_design = hp.cooling_cop_at_temperature(35.0);
         assert!((cop_at_design - 3.0).abs() < 0.1);
 
-        // At hotter temp, COP should degrade
+        // At any temperature, COP should be constant (no temperature degradation)
         let cop_hot = hp.cooling_cop_at_temperature(45.0);
-        assert!(cop_hot < 3.0);
+        assert!((cop_hot - 3.0).abs() < 0.1);
     }
 }

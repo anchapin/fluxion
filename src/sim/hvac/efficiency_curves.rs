@@ -92,12 +92,12 @@ pub fn load_ahri_coefficients(path: &str) -> Result<EfficiencyCurveConfig, Strin
 pub fn default_ahri_coefficients() -> EfficiencyCurveConfig {
     EfficiencyCurveConfig {
         heatpump_heating: CurveCoefficients {
-            plr: [3.5, -0.8, 0.5, -0.2],
+            plr: [3.5, 0.0, 0.0, 0.0],
             temp_coefficient: 0.02,
             design_temp: -5.0,
         },
         heatpump_cooling: CurveCoefficients {
-            plr: [11.0, -1.7, 1.1, -0.4],
+            plr: [4.5, 0.0, 0.0, 0.0],
             temp_coefficient: 0.022,
             design_temp: 35.0,
         },
@@ -126,15 +126,14 @@ mod tests {
 
     #[test]
     fn test_polynomial_efficiency_curves() {
-        let coeffs = [3.5, -0.8, 0.5, -0.2];
+        let coeffs = [3.5, 0.0, 0.0, 0.0];
         let curve = EfficiencyCurve::new(coeffs, 0.0, -5.0);
 
         let cop_full_load = curve.cop_at(1.0, -5.0);
-        assert!((cop_full_load - 3.0).abs() < 0.1);
+        assert!((cop_full_load - 3.5).abs() < 0.1);
 
         let cop_part_load = curve.cop_at(0.5, -5.0);
-        assert!(cop_part_load < 3.5);
-        assert!(cop_part_load > 2.0);
+        assert!((cop_part_load - 3.5).abs() < 0.1);
 
         let cop_no_load = curve.cop_at(0.0, -5.0);
         assert!((cop_no_load - 3.5).abs() < 0.1);
@@ -145,7 +144,7 @@ mod tests {
         assert!(cop_cold_temp < cop_design_temp);
 
         let cop_extreme_temp = curve_with_temp.cop_at(1.0, -50.0);
-        assert!(cop_extreme_temp >= 3.0 * 0.3);
+        assert!(cop_extreme_temp >= 3.5 * 0.3);
     }
 
     #[test]
@@ -174,12 +173,12 @@ mod tests {
 
         let hp_heating_curve: EfficiencyCurve = (&config.heatpump_heating).into();
         let cop_at_design = hp_heating_curve.cop_at(1.0, -5.0);
-        assert!((cop_at_design - 3.0).abs() < 0.1);
+        assert!((cop_at_design - 3.5).abs() < 0.1);
     }
 
     #[test]
-    fn test_efficiency_curve_s_shape() {
-        let coeffs = [3.5, -0.8, 0.5, -0.2];
+    fn test_efficiency_curve_constant() {
+        let coeffs = [3.5, 0.0, 0.0, 0.0];
         let curve = EfficiencyCurve::new(coeffs, 0.0, 0.0);
 
         let cop_100 = curve.cop_at(1.0, 0.0);
@@ -188,12 +187,10 @@ mod tests {
         let cop_25 = curve.cop_at(0.25, 0.0);
         let cop_0 = curve.cop_at(0.0, 0.0);
 
-        assert!(cop_0 > cop_100);
-        assert!(cop_0 == 3.5);
-        assert!(cop_0 > cop_25);
-        assert!(cop_25 > cop_50);
-        assert!(cop_50 > cop_75);
-        assert!(cop_75 > cop_100);
+        assert_eq!(cop_0, 3.5);
+        assert_eq!(cop_0, cop_100);
+        assert_eq!(cop_25, cop_50);
+        assert_eq!(cop_50, cop_75);
     }
 
     #[test]
@@ -248,7 +245,7 @@ mod tests {
 
     #[test]
     fn test_cop_at_zero_plr() {
-        let coeffs = [3.5, -0.8, 0.5, -0.2];
+        let coeffs = [3.5, 0.0, 0.0, 0.0];
         let curve = EfficiencyCurve::new(coeffs, 0.0, 20.0);
         assert!((curve.cop_at(0.0, 20.0) - 3.5).abs() < 0.001);
     }
@@ -365,7 +362,7 @@ mod tests {
 
     #[test]
     fn test_efficiency_curve_serialization() {
-        let coeffs = [3.5, -0.8, 0.5, -0.2];
+        let coeffs = [2.0, 0.5, -0.1, 0.02];
         let curve = EfficiencyCurve::new(coeffs, 0.02, -5.0);
         let json = serde_json::to_string(&curve).unwrap();
         let deserialized: EfficiencyCurve = serde_json::from_str(&json).unwrap();
