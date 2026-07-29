@@ -48,6 +48,35 @@ pub enum BehaviorError {
 
 pub type Result<T> = std::result::Result<T, BehaviorError>;
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum InferenceBackend {
+    #[default]
+    Cpu,
+    Cuda,
+    CoreMl,
+}
+
+impl InferenceBackend {
+    pub fn from_env() -> Self {
+        match std::env::var("FLUXION_BEHAVIOR_BACKEND")
+            .as_deref()
+            .unwrap_or("cpu")
+        {
+            "cuda" => InferenceBackend::Cuda,
+            "coreml" => InferenceBackend::CoreMl,
+            _ => InferenceBackend::Cpu,
+        }
+    }
+
+    pub fn to_ort_provider(&self) -> &str {
+        match self {
+            InferenceBackend::Cpu => "CPU",
+            InferenceBackend::Cuda => "CUDA",
+            InferenceBackend::CoreMl => "CoreML",
+        }
+    }
+}
+
 #[cfg(feature = "ort")]
 mod tsfm_engine {
     use super::*;
@@ -557,13 +586,15 @@ pub use plug_loads::MockPlugLoadGenerator;
 
 pub struct OnnxModelLoader {
     model_path: Option<PathBuf>,
-    backend: String,
+    backend: InferenceBackend,
 }
 
 impl OnnxModelLoader {
     pub fn new() -> Self {
-        let model_path = std::env::var("FLUXION_ONNX_MODEL").ok().map(PathBuf::from);
-        let backend = std::env::var("FLUXION_ONNX_BACKEND").unwrap_or_else(|_| "cpu".to_string());
+        let model_path = std::env::var("FLUXION_BEHAVIOR_MODEL")
+            .ok()
+            .map(PathBuf::from);
+        let backend = InferenceBackend::from_env();
 
         Self {
             model_path,
@@ -574,7 +605,7 @@ impl OnnxModelLoader {
     pub fn with_model_path(model_path: PathBuf) -> Self {
         Self {
             model_path: Some(model_path),
-            backend: std::env::var("FLUXION_ONNX_BACKEND").unwrap_or_else(|_| "cpu".to_string()),
+            backend: InferenceBackend::from_env(),
         }
     }
 
@@ -584,14 +615,12 @@ impl OnnxModelLoader {
                 if path.exists() {
                     TsfmInferenceEngine::new(path)
                 } else {
-                    tracing::warn!("Model not found at {:?}, using mock fallback", path);
-                    Ok(TsfmInferenceEngine::mock())
+                    Err(BehaviorError::ModelNotFound(path.display().to_string()))
                 }
             }
-            None => {
-                tracing::info!("No FLUXION_ONNX_MODEL set, using mock fallback");
-                Ok(TsfmInferenceEngine::mock())
-            }
+            None => Err(BehaviorError::ModelNotFound(
+                "FLUXION_BEHAVIOR_MODEL not set".to_string(),
+            )),
         }
     }
 
@@ -601,21 +630,17 @@ impl OnnxModelLoader {
                 if path.exists() {
                     TsfmInferenceEngine::with_quantization(path)
                 } else {
-                    tracing::warn!("Model not found at {:?}, using mock fallback", path);
-                    Ok(TsfmInferenceEngine::mock_quantized())
+                    Err(BehaviorError::ModelNotFound(path.display().to_string()))
                 }
             }
-            None => {
-                tracing::info!(
-                    "No FLUXION_ONNX_MODEL set, using mock fallback with INT8 quantization"
-                );
-                Ok(TsfmInferenceEngine::mock_quantized())
-            }
+            None => Err(BehaviorError::ModelNotFound(
+                "FLUXION_BEHAVIOR_MODEL not set".to_string(),
+            )),
         }
     }
 
-    pub fn backend(&self) -> &str {
-        &self.backend
+    pub fn backend(&self) -> InferenceBackend {
+        self.backend
     }
 
     #[allow(dead_code)]
@@ -799,6 +824,7 @@ impl InferenceBenchmark {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use serial_test::serial;
 
     #[test]
     fn test_mock_plug_load_power() {
@@ -829,10 +855,56 @@ mod tests {
     }
 
     #[test]
-    fn test_onnx_model_loader_default() {
+    fn test_onnx_model_loader_missing_model_errors() {
         let loader = OnnxModelLoader::new();
         let engine = loader.load();
-        assert!(engine.is_ok());
+        assert!(engine.is_err());
+        assert!(matches!(
+            engine.unwrap_err(),
+            BehaviorError::ModelNotFound(_)
+        ));
+    }
+
+    #[test]
+    fn test_onnx_model_loader_with_path_errors_on_missing() {
+        let loader = OnnxModelLoader::with_model_path(PathBuf::from("/nonexistent/model.onnx"));
+        let engine = loader.load();
+        assert!(engine.is_err());
+        let err = engine.unwrap_err();
+        assert!(matches!(err, BehaviorError::ModelNotFound(ref s) if s.contains("/nonexistent")));
+    }
+
+    #[test]
+    #[serial]
+    fn test_inference_backend_from_env_default() {
+        std::env::remove_var("FLUXION_BEHAVIOR_BACKEND");
+        let backend = InferenceBackend::from_env();
+        assert_eq!(backend, InferenceBackend::Cpu);
+    }
+
+    #[test]
+    #[serial]
+    fn test_inference_backend_from_env_cuda() {
+        std::env::set_var("FLUXION_BEHAVIOR_BACKEND", "cuda");
+        let backend = InferenceBackend::from_env();
+        std::env::remove_var("FLUXION_BEHAVIOR_BACKEND");
+        assert_eq!(backend, InferenceBackend::Cuda);
+    }
+
+    #[test]
+    #[serial]
+    fn test_inference_backend_from_env_coreml() {
+        std::env::set_var("FLUXION_BEHAVIOR_BACKEND", "coreml");
+        let backend = InferenceBackend::from_env();
+        std::env::remove_var("FLUXION_BEHAVIOR_BACKEND");
+        assert_eq!(backend, InferenceBackend::CoreMl);
+    }
+
+    #[test]
+    fn test_inference_backend_to_ort_provider() {
+        assert_eq!(InferenceBackend::Cpu.to_ort_provider(), "CPU");
+        assert_eq!(InferenceBackend::Cuda.to_ort_provider(), "CUDA");
+        assert_eq!(InferenceBackend::CoreMl.to_ort_provider(), "CoreML");
     }
 
     #[test]
