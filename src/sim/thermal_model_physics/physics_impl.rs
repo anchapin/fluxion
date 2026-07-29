@@ -277,7 +277,7 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
             self.0.temperatures.as_ref(),
             self.0.wall_surface_temperatures.as_ref(),
             self.0.thermal_capacitance.as_ref(),
-            &mut scratch,
+            scratch,
         );
         // Persist the new T_si for downstream consumers (diagnostics, the
         // regression test suite, and the future cooling-load coupling that
