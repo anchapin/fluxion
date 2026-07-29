@@ -449,6 +449,7 @@ harness = true
 name = "integration-fluid-energy-conservation"
 path = "tests/integration/test_fluid_energy_conservation.rs"
 harness = true
+required-features = ["fluid"]
 
 [[test]]
 name = "solar_gain_unit_tests"
