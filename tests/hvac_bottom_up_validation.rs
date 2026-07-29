@@ -936,16 +936,17 @@ fn test_all_equipment_plr_clamping() {
 /// EfficiencyCurve polynomial uses Horner evaluation correctly.
 #[test]
 fn test_efficiency_curve_horner_evaluation() {
-    let coeffs = [3.5, -0.8, 0.5, -0.2];
+    let coeffs = [2.5, 0.0, 3.0, -2.0];
     let curve = EfficiencyCurve::new(coeffs, 0.02, -5.0);
 
     // Evaluate at x=0, 0.25, 0.5, 0.75, 1.0
+    // Polynomial: COP = 2.5 + 0*PLR + 3*PLR^2 - 2*PLR^3
     let cases: [(f64, f64); 5] = [
-        (0.0, 3.5),
-        (0.25, 3.5 + -0.8 * 0.25 + 0.5 * 0.0625 + -0.2 * 0.015625),
-        (0.5, 3.5 + -0.8 * 0.5 + 0.5 * 0.25 + -0.2 * 0.125),
-        (0.75, 3.5 + -0.8 * 0.75 + 0.5 * 0.5625 + -0.2 * 0.421875),
-        (1.0, 3.5 + -0.8 + 0.5 + -0.2),
+        (0.0, 2.5),
+        (0.25, 2.5 + 3.0 * 0.0625 - 2.0 * 0.015625),
+        (0.5, 2.5 + 3.0 * 0.25 - 2.0 * 0.125),
+        (0.75, 2.5 + 3.0 * 0.5625 - 2.0 * 0.421875),
+        (1.0, 2.5 + 3.0 - 2.0),
     ];
 
     for (x, expected) in cases {

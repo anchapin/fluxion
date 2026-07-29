@@ -940,9 +940,10 @@ mod tests {
         assert!(eff_heating.is_finite()); // Must be a valid number
 
         // Test calculate_efficiency for cooling mode
-        // HP cooling uses default chiller coefficients from AHRI configuration
+        // HP cooling uses constant COP = rated COP
         let eff_cooling = hp.calculate_efficiency(0.5, 35.0, HVACMode::Cooling);
         assert!(eff_cooling > 0.0);
+        assert!((eff_cooling - 4.5).abs() < 0.1); // Constant COP at rated
         assert!(eff_cooling.is_finite()); // Must be a valid number
 
         // Test calculate_power for heating

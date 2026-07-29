@@ -1037,8 +1037,8 @@ mod tests {
         // COP at design heating temp ~ rated
         let cop_at_design = hp.heating_cop_at_temperature(-5.0);
         assert!((cop_at_design - 3.5).abs() < 0.1);
-        // Colder => degraded
-        assert!(hp.heating_cop_at_temperature(-15.0) < 3.5);
+        // COP is constant (no temperature degradation)
+        assert!((hp.heating_cop_at_temperature(-15.0) - 3.5).abs() < 0.1);
 
         hp.set_mode(18.0, 20.0, 27.0);
         assert_eq!(hp.mode(), "heating");
