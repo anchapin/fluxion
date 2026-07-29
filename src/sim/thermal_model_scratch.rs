@@ -299,39 +299,27 @@ impl PhysicsScratchPool {
     }
 
     #[allow(dead_code)]
-    pub fn get_5r1c(&mut self, num_zones: usize) -> PhysicsScratch5r1c {
-        self.r5r1c
-            .take()
-            .unwrap_or_else(|| PhysicsScratch5r1c::new(num_zones))
+    pub fn get_5r1c(&mut self, num_zones: usize) -> &mut PhysicsScratch5r1c {
+        if self.r5r1c.is_none() {
+            self.r5r1c = Some(PhysicsScratch5r1c::new(num_zones));
+        }
+        self.r5r1c.as_mut().unwrap()
     }
 
     #[allow(dead_code)]
-    pub fn get_6r2c(&mut self, num_zones: usize) -> PhysicsScratch6r2c {
-        self.r6r2c
-            .take()
-            .unwrap_or_else(|| PhysicsScratch6r2c::new(num_zones))
+    pub fn get_6r2c(&mut self, num_zones: usize) -> &mut PhysicsScratch6r2c {
+        if self.r6r2c.is_none() {
+            self.r6r2c = Some(PhysicsScratch6r2c::new(num_zones));
+        }
+        self.r6r2c.as_mut().unwrap()
     }
 
     #[allow(dead_code)]
-    pub fn get_9r4c(&mut self, num_zones: usize) -> PhysicsScratch9r4c {
-        self.r9r4c
-            .take()
-            .unwrap_or_else(|| PhysicsScratch9r4c::new(num_zones))
-    }
-
-    #[allow(dead_code)]
-    pub fn replace_5r1c(&mut self, s: PhysicsScratch5r1c) {
-        self.r5r1c = Some(s);
-    }
-
-    #[allow(dead_code)]
-    pub fn replace_6r2c(&mut self, s: PhysicsScratch6r2c) {
-        self.r6r2c = Some(s);
-    }
-
-    #[allow(dead_code)]
-    pub fn replace_9r4c(&mut self, s: PhysicsScratch9r4c) {
-        self.r9r4c = Some(s);
+    pub fn get_9r4c(&mut self, num_zones: usize) -> &mut PhysicsScratch9r4c {
+        if self.r9r4c.is_none() {
+            self.r9r4c = Some(PhysicsScratch9r4c::new(num_zones));
+        }
+        self.r9r4c.as_mut().unwrap()
     }
 }
 
