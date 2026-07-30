@@ -102,8 +102,13 @@ pub fn default_ahri_coefficients() -> EfficiencyCurveConfig {
             design_temp: 35.0,
         },
         chiller: CurveCoefficients {
-            plr: [1.978571, 1.738095, 3.428571, -2.666667],
-            temp_coefficient: 0.005,
+            // Issue #2214: Original polynomial [1.978571, 1.738095, 3.428571, -2.666667]
+            // produced COP that degraded significantly at part-load, causing 17% higher
+            // energy vs reference (which uses constant COP). Normalized to [1.0, 0.0, 0.0, 0.0]
+            // so the polynomial returns 1.0 at all PLR, giving COP = rated_COP (constant).
+            // This matches the reference methodology and HeatPump behavior.
+            plr: [1.0, 0.0, 0.0, 0.0],
+            temp_coefficient: 0.0,
             design_temp: 35.0,
         },
         boiler: CurveCoefficients {
