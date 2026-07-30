@@ -52,9 +52,8 @@ on:
         default: false
         type: boolean
   workflow_run:
-    workflow: ripr Mutation Pre-Filter
+    workflows: ["ripr Mutation Pre-Filter"]
     types: [completed]
-    branches: [main, develop]
 
 concurrency:
   group: mutation-testing-${{ github.ref }}
