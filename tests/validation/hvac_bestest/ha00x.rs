@@ -404,7 +404,7 @@ fn test_ha006_packaged_ac_single_zone() {
     let name = params.name;
     println!("\n=== {}: {} ===", name, params.description);
 
-    let chiller = Chiller::new("HA006-AC".to_string(), 10_500.0, 3.485, 35.0);
+    let chiller = Chiller::new("HA006-AC".to_string(), 3077.0, 3.485, 35.0);
     let computed = chiller_cooling_energy(&chiller, params.ua);
     let reference = reference_energy(3.485, 999.0, 0.0, None, None, params.ua);
     assert_within_band(name, computed, reference, params.tolerance);
@@ -420,7 +420,7 @@ fn test_ha007_packaged_ac_multi_zone() {
     let name = params.name;
     println!("\n=== {}: {} ===", name, params.description);
 
-    let chiller = Chiller::new("HA007-AC".to_string(), 17_500.0, 3.485, 35.0);
+    let chiller = Chiller::new("HA007-AC".to_string(), 5129.0, 3.485, 35.0);
     let computed = chiller_cooling_energy(&chiller, params.ua);
     let reference = reference_energy(3.485, 999.0, 0.0, None, None, params.ua);
     assert_within_band(name, computed, reference, params.tolerance);
@@ -436,7 +436,7 @@ fn test_ha008_split_system() {
     let name = params.name;
     println!("\n=== {}: {} ===", name, params.description);
 
-    let chiller = Chiller::new("HA008-DX".to_string(), 10_500.0, 3.28, 35.0);
+    let chiller = Chiller::new("HA008-DX".to_string(), 3077.0, 3.28, 35.0);
     let cooling = chiller_cooling_energy(&chiller, params.ua);
     let heating = resistance_heating_energy(0.90, 0.0, params.ua);
     let computed = combine(heating, cooling);

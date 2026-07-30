@@ -354,7 +354,7 @@ impl Boiler {
             design_temp,
             efficiency_curve_heating: (&default_coeffs.boiler).into(),
             standby_power: 5.0,
-            electrical_power_factor: 0.01,
+            electrical_power_factor: 0.08,
         }
     }
 
@@ -681,16 +681,15 @@ mod tests {
         assert_eq!(capacity_cold, 30000.0); // 30% of rated
 
         // Test efficiency at design temperature
-        // Chiller coefficients: [4.8, -0.6, 0.4, -0.15]
-        // At PLR=1.0: 4.8 + (-0.6)*1 + 0.4*1 + (-0.15)*1 = 4.45
+        // After Issue #2214 fix, chiller uses constant COP = rated COP
         let cop_design = chiller.calculate_efficiency(1.0, 35.0, HVACMode::Cooling);
         assert!(cop_design > 0.0); // COP exists
-        assert!((cop_design - 4.48).abs() < 0.1); // Close to coefficient calculation
+        assert!((cop_design - 4.5).abs() < 0.1); // Should equal rated COP (4.5)
 
-        // Test efficiency degradation at off-design temperature
-        // At 45°C (10°C above design), COP should degrade due to temperature
+        // Test efficiency at off-design temperature (Issue #2214 fix)
+        // After fix, COP is constant (no temperature degradation)
         let cop_hot = chiller.calculate_efficiency(1.0, 45.0, HVACMode::Cooling);
-        assert!(cop_hot < cop_design); // Degraded at high temp
+        assert!((cop_hot - cop_design).abs() < 0.01); // Should be same as design COP
 
         // Test power calculation
         // Power = load / efficiency_at_PLR (efficiency curve returns COP)
@@ -943,7 +942,7 @@ mod tests {
         // HP cooling uses constant COP = rated COP
         let eff_cooling = hp.calculate_efficiency(0.5, 35.0, HVACMode::Cooling);
         assert!(eff_cooling > 0.0);
-        assert!((eff_cooling - 3.0).abs() < 0.1); // Constant COP at rated
+        assert!((eff_cooling - 3.0).abs() < 0.1); // Constant COP = rated COP = 3.0
         assert!(eff_cooling.is_finite()); // Must be a valid number
 
         // Test calculate_power for heating

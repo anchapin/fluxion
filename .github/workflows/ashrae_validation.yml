@@ -83,14 +83,6 @@ on:
     workflows: ["Cross-Platform Determinism CI"]
     types: [completed]
 
-  # Issue #1618: mirror the Performance Dashboard conclusion into this
-  # workflow as a single non-matrix "Fluxion Performance Gate" check
-  # that branch protection can reference. The listener only fires for the
-  # same SHA on the same branch.
-  workflow_run:
-    workflows: ["Performance Dashboard"]
-    types: [completed]
-
 concurrency:
   group: ashrae-ci-gate-${{ github.ref }}
   cancel-in-progress: true
@@ -835,7 +827,7 @@ jobs:
   fluxion-determinism-gate:
     name: "Fluxion Determinism Gate (Issue #1351)"
     runs-on: ubuntu-latest
-    if: github.event.workflow_run.event == 'pull_request'
+    if: github.event.workflow_run.event == 'pull_request' && github.event.workflow_run.name == 'Cross-Platform Determinism CI'
     # Issue #1505: the previous guard `&& conclusion != 'skipped'`
     # suppressed the listener when an upstream benchmark sub-job was
     # skipped (a self-hosted queue-stall leaves the upstream
@@ -945,7 +937,7 @@ jobs:
   fluxion-performance-gate:
     name: "Fluxion Performance Gate (Issue #1618)"
     runs-on: ubuntu-latest
-    if: github.event.workflow_run.event == 'pull_request'
+    if: github.event.workflow_run.event == 'pull_request' && github.event.workflow_run.name == 'Performance Dashboard'
     permissions:
       contents: read
       checks: read
