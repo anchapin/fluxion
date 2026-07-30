@@ -449,9 +449,10 @@ fn test_boiler_efficiency_polynomial_at_design() {
     );
 }
 
-/// Boiler electrical power = load × electrical_power_factor + standby.
+/// Boiler total power = combustion_power + fan_power + standby_power.
+/// Combustion: load / efficiency, Fan: load × electrical_power_factor (Issue #2217)
 #[test]
-fn test_boiler_electrical_power_calculation() {
+fn test_boiler_power_calculation() {
     let start = Instant::now();
     let boiler = Boiler::new(
         "BO-Test".to_string(),
@@ -463,17 +464,23 @@ fn test_boiler_electrical_power_calculation() {
     let load = BOILER_CAPACITY * 0.5; // 50% part-load
     let power = boiler.calculate_power(load, BOILER_DESIGN_TEMP, HVACMode::Heating);
 
-    // Expected: load * electrical_power_factor + standby
-    //        = 50000 * 0.01 + 5 = 505 W
-    let expected_power = load * boiler.electrical_power_factor + boiler.standby_power;
+    // Expected: load/efficiency + load*electrical_power_factor
+    // = 50000/0.85 + 50000*0.08 = 58824 + 4000 = 62824 W (Issue #2217)
+    let expected_power = load / boiler.efficiency + load * boiler.electrical_power_factor;
 
-    eprintln!("\n=== Boiler electrical power = load × factor + standby (Issue #1925) ===");
+    eprintln!("\n=== Boiler total power = combustion + fan + standby (Issue #2217) ===");
     eprintln!("Load:              {:.0} W (50% PLR)", load);
+    eprintln!("efficiency:        {:.2}", boiler.efficiency);
     eprintln!(
-        "electrical_power_factor: {:.3}",
+        "electrical_power_factor: {:.3} (BESTEST reference: 0.08)",
         boiler.electrical_power_factor
     );
     eprintln!("standby_power:     {:.0} W", boiler.standby_power);
+    eprintln!("Combustion power:  {:.0} W", load / boiler.efficiency);
+    eprintln!(
+        "Fan power:         {:.0} W",
+        load * boiler.electrical_power_factor
+    );
     eprintln!("Calculated power:  {:.0} W", power);
     eprintln!("Expected power:    {:.0} W", expected_power);
     eprintln!("Elapsed:           {:.2?}", start.elapsed());
@@ -481,7 +488,7 @@ fn test_boiler_electrical_power_calculation() {
     let rel_err = ((power - expected_power) / expected_power.max(1.0)).abs();
     assert!(
         rel_err <= ONE_PCT,
-        "Boiler electrical power must match load×factor+standby; got {:.0} W",
+        "Boiler total power must match load/efficiency + load×factor; got {:.0} W",
         power
     );
 }

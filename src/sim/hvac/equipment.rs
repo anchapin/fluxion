@@ -354,7 +354,7 @@ impl Boiler {
             design_temp,
             efficiency_curve_heating: (&default_coeffs.boiler).into(),
             standby_power: 5.0,
-            electrical_power_factor: 0.01,
+            electrical_power_factor: 0.08,
         }
     }
 
