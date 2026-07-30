@@ -174,7 +174,9 @@ fn test_chiller_capacity_clamp_at_extreme_temperatures() {
     );
 }
 
-/// Chiller COP at design conditions matches the PLR polynomial evaluated at PLR=1.
+/// Chiller COP at design conditions equals rated COP (Issue #2214).
+/// After the fix for Issue #2214, the polynomial is normalized to return 1.0 at all PLR,
+/// and COP = rated_COP * (polynomial / polynomial_at_rated) = rated_COP.
 #[test]
 fn test_chiller_cop_polynomial_at_design() {
     let start = Instant::now();
@@ -187,31 +189,33 @@ fn test_chiller_cop_polynomial_at_design() {
 
     let cop = chiller.calculate_efficiency(1.0, CHILLER_DESIGN_TEMP, HVACMode::Cooling);
 
-    // Polynomial: COP(1.0) = a + b*1 + c*1 + d*1 = a + b + c + d
-    // Default AHRI chiller coeffs: [4.5, -0.6, 0.4, -0.15]
-    // → 4.5 + (-0.6) + 0.4 + (-0.15) = 4.15
-    let coeffs = chiller.efficiency_curve_cooling.plr_coefficients;
-    let expected_cop = ((coeffs[3] + coeffs[2]) + coeffs[1]) + coeffs[0];
+    // After Issue #2214 fix: polynomial = [1.0, 0.0, 0.0, 0.0] gives poly(1.0) = 1.0
+    // COP = (poly / poly_at_rated) * rated_COP = (1.0 / 1.0) * rated_COP = rated_COP
+    let expected_cop = CHILLER_COP;
 
-    eprintln!("\n=== Chiller COP polynomial at design (Issue #1925) ===");
+    eprintln!("\n=== Chiller COP at design (Issue #2214 fix) ===");
     eprintln!("PLR: 1.0, OAT: {}°C", CHILLER_DESIGN_TEMP);
     eprintln!("Calculated COP:  {:.4}", cop);
-    eprintln!("Expected (polynomial): {:.4}", expected_cop);
+    eprintln!("Expected (rated COP): {:.4}", expected_cop);
     eprintln!(
         "Coefficients:      [{:.2}, {:.2}, {:.2}, {:.2}]",
-        coeffs[0], coeffs[1], coeffs[2], coeffs[3]
+        chiller.efficiency_curve_cooling.plr_coefficients[0],
+        chiller.efficiency_curve_cooling.plr_coefficients[1],
+        chiller.efficiency_curve_cooling.plr_coefficients[2],
+        chiller.efficiency_curve_cooling.plr_coefficients[3]
     );
     eprintln!("Elapsed:           {:.2?}", start.elapsed());
 
     let abs_err = (cop - expected_cop).abs();
     assert!(
         abs_err < POLYNOMIAL_TOL,
-        "COP must match polynomial evaluation exactly; err = {:.6e}",
+        "COP must equal rated COP at design; err = {:.6e}",
         abs_err
     );
 }
 
-/// Chiller COP degrades with temperature above design.
+/// Chiller COP is constant regardless of temperature (Issue #2214 fix).
+/// After the fix, temp_coefficient = 0.0 so COP does not degrade with temperature.
 #[test]
 fn test_chiller_cop_degrades_with_temperature() {
     let start = Instant::now();
@@ -225,7 +229,7 @@ fn test_chiller_cop_degrades_with_temperature() {
     let cop_design = chiller.calculate_efficiency(1.0, CHILLER_DESIGN_TEMP, HVACMode::Cooling);
     let cop_hot = chiller.calculate_efficiency(1.0, CHILLER_DESIGN_TEMP + 10.0, HVACMode::Cooling);
 
-    eprintln!("\n=== Chiller COP temperature degradation (Issue #1925) ===");
+    eprintln!("\n=== Chiller COP temperature (Issue #2214 fix) ===");
     eprintln!("At design {}°C:  {:.4}", CHILLER_DESIGN_TEMP, cop_design);
     eprintln!(
         "At +10K {}°C:    {:.4}",
@@ -238,9 +242,10 @@ fn test_chiller_cop_degrades_with_temperature() {
     );
     eprintln!("Elapsed:          {:.2?}", start.elapsed());
 
+    // After Issue #2214 fix: COP is constant (no temperature degradation)
     assert!(
-        cop_hot < cop_design,
-        "COP must degrade at higher temperature: {} !< {}",
+        (cop_hot - cop_design).abs() < 1e-6,
+        "COP must be constant (no temperature degradation): {} != {}",
         cop_hot,
         cop_design
     );
@@ -444,9 +449,10 @@ fn test_boiler_efficiency_polynomial_at_design() {
     );
 }
 
-/// Boiler electrical power = load × electrical_power_factor + standby.
+/// Boiler total power = combustion_power + fan_power + standby_power.
+/// Combustion: load / efficiency, Fan: load × electrical_power_factor (Issue #2217)
 #[test]
-fn test_boiler_electrical_power_calculation() {
+fn test_boiler_power_calculation() {
     let start = Instant::now();
     let boiler = Boiler::new(
         "BO-Test".to_string(),
@@ -458,17 +464,23 @@ fn test_boiler_electrical_power_calculation() {
     let load = BOILER_CAPACITY * 0.5; // 50% part-load
     let power = boiler.calculate_power(load, BOILER_DESIGN_TEMP, HVACMode::Heating);
 
-    // Expected: load * electrical_power_factor + standby
-    //        = 50000 * 0.01 + 5 = 505 W
-    let expected_power = load * boiler.electrical_power_factor + boiler.standby_power;
+    // Expected: load/efficiency + load*electrical_power_factor
+    // = 50000/0.85 + 50000*0.08 = 58824 + 4000 = 62824 W (Issue #2217)
+    let expected_power = load / boiler.efficiency + load * boiler.electrical_power_factor;
 
-    eprintln!("\n=== Boiler electrical power = load × factor + standby (Issue #1925) ===");
+    eprintln!("\n=== Boiler total power = combustion + fan + standby (Issue #2217) ===");
     eprintln!("Load:              {:.0} W (50% PLR)", load);
+    eprintln!("efficiency:        {:.2}", boiler.efficiency);
     eprintln!(
-        "electrical_power_factor: {:.3}",
+        "electrical_power_factor: {:.3} (BESTEST reference: 0.08)",
         boiler.electrical_power_factor
     );
     eprintln!("standby_power:     {:.0} W", boiler.standby_power);
+    eprintln!("Combustion power:  {:.0} W", load / boiler.efficiency);
+    eprintln!(
+        "Fan power:         {:.0} W",
+        load * boiler.electrical_power_factor
+    );
     eprintln!("Calculated power:  {:.0} W", power);
     eprintln!("Expected power:    {:.0} W", expected_power);
     eprintln!("Elapsed:           {:.2?}", start.elapsed());
@@ -476,7 +488,7 @@ fn test_boiler_electrical_power_calculation() {
     let rel_err = ((power - expected_power) / expected_power.max(1.0)).abs();
     assert!(
         rel_err <= ONE_PCT,
-        "Boiler electrical power must match load×factor+standby; got {:.0} W",
+        "Boiler total power must match load/efficiency + load×factor; got {:.0} W",
         power
     );
 }

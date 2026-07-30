@@ -119,11 +119,11 @@ fn test_boiler_variable_capacity() {
 
     // Test power calculation
     // For a gas boiler, total heating fuel power = thermal_load / efficiency + fan power
-    // = 50000 / 0.85 + 50000 * 0.01 ≈ 59324W (total energy input rate)
+    // = 50000 / 0.85 + 50000 * 0.08 ≈ 62824W (total energy input rate, Issue #2217)
     let power = boiler.calculate_power(50000.0, -5.0, HVACMode::Heating);
     assert!(
-        power > 59000.0 && power < 60000.0,
-        "Boiler heating fuel power should be ~59324W, got {:.0}W",
+        power > 62000.0 && power < 64000.0,
+        "Boiler heating fuel power should be ~62824W, got {:.0}W",
         power
     );
 

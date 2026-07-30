@@ -39,10 +39,9 @@ runs:
       env:
         DEBIAN_FRONTEND: noninteractive
 
-    - name: Install Rust (${{ inputs.toolchain }})
-      uses: dtolnay/rust-toolchain@1.94.0
+    - name: Install Rust
+      uses: dtolnay/rust-toolchain@stable
       with:
-        toolchain: ${{ inputs.toolchain }}
         components: ${{ inputs.components }}
 
     # sccache: content-addressed compiler cache backed by GHA cache API.
