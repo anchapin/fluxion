@@ -749,10 +749,11 @@ mod tests {
 
         // Test power calculation
         // For a gas boiler, total heating fuel power = thermal_load / efficiency + fan power
-        // At PLR=0.5 (50kW load / 100kW capacity), fuel power = 50000/0.85 + 50000*0.01 ≈ 59324W
+        // At PLR=0.5 (50kW load / 100kW capacity), fuel power = 50000/0.85 + 50000*0.08 ≈ 62824W
         // This is the total energy input rate (fuel + parasitic electrical)
+        // Issue #2223: Updated from 0.01 to 0.08 to match BESTEST reference (commit 22029647)
         let power = boiler.calculate_power(50000.0, -5.0, HVACMode::Heating);
-        assert!(power > 59000.0 && power < 60000.0); // ~59324W for 50kW thermal output at 85% efficiency
+        assert!(power > 62000.0 && power < 64000.0); // ~62824W for 50kW thermal output at 85% efficiency with 8% fan power
 
         // Test PLR tracking
         let mut boiler_mut = boiler.clone();
