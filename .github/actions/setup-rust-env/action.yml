@@ -36,7 +36,7 @@ runs:
         DEBIAN_FRONTEND: noninteractive
 
     - name: Install Rust
-      uses: dtolnay/rust-toolchain@stable
+      uses: dtolnay/rust-toolchain@1.85.0
       with:
         toolchain: ${{ inputs.toolchain }}
         components: ${{ inputs.components }}
