@@ -16,6 +16,8 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: ./.github/actions/setup-rust-env
+        with:
+          toolchain: stable
       - uses: Swatinem/rust-cache@v2
       - name: Install cargo-audit
         uses: baptiste0928/cargo-install@v3

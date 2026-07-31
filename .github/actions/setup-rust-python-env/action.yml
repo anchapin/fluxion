@@ -37,6 +37,7 @@ runs:
     - name: Setup Rust environment
       uses: ./.github/actions/setup-rust-env
       with:
+        toolchain: stable
         components: ${{ inputs.rust-components }}
         sccache: ${{ inputs.sccache }}
         extra-apt-packages: python3-dev

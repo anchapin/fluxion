@@ -46,6 +46,7 @@ jobs:
           # llvm-cov instruments at the LLVM level and is fully compatible
           # with sccache (unlike tarpaulin, which intercepted the compiler
           # frontend).  Keep sccache on for faster incremental builds.
+          toolchain: stable
           sccache: 'true'
           components: 'llvm-tools'
 

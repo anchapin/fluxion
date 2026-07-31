@@ -43,6 +43,7 @@ runs:
       uses: dtolnay/rust-toolchain@stable
       with:
         components: ${{ inputs.components }}
+        toolchain: ${{ inputs.toolchain }}
 
     # sccache: content-addressed compiler cache backed by GHA cache API.
     # Caches individual compilation units; no stale-cache issues on Cargo.lock changes.
