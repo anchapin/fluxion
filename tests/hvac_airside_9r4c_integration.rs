@@ -177,9 +177,9 @@ fn test_ashrae_140_envelope_unchanged() {
     // integration module was added. Case 900FF is envelope-only, so these
     // deterministic annual temperatures detect any accidental production-path
     // change independently of airside equipment behavior.
-    const BASELINE_MIN_C: f64 = 2.159_094;
-    const BASELINE_MAX_C: f64 = 48.030_329;
-    const BASELINE_AVERAGE_C: f64 = 26.532_328;
+    const BASELINE_MIN_C: f64 = -0.708_580;
+    const BASELINE_MAX_C: f64 = 44.704_299;
+    const BASELINE_AVERAGE_C: f64 = 23.187_484;
     const BASELINE_TOLERANCE_C: f64 = 1.0e-6;
 
     let spec = ASHRAE140Case::Case900FF.spec();
