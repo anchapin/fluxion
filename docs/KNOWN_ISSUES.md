@@ -7,7 +7,7 @@ Related to: validation_report.md (results), FIX.md (placeholder fixes), ARCHITEC
 Status: Post-#1323 baseline refresh — pre-#1323 numbers are obsolete per ARCHITECTURE.md §Current Module Status.
 Action: Check this document before attributing validation failures to new issues; many may be known.
 
-*Last Updated: 2026-07-31* (Post-#1323 / post-Wave-5 baseline refresh; #1421 Case 600 ref-range unified to benchmark.rs:124-127 across validator, CSV, doc, and this document; see issue #1443. CI-01 code-coverage gate #1932 added. **Cases 600 series energy violations (600, 610, 620, 630, 640, 650) are documented as pre-existing model limitations — see §LIMIT-05 UPDATE (#1457 revisit) and §LIMIT-06.**)
+*Last Updated: 2026-07-31* (Post-#1323 / post-Wave-5 baseline refresh; #1421 Case 600 ref-range unified to benchmark.rs:124-127 across validator, CSV, doc, and this document; see issue #1443. CI-01 code-coverage gate #1932 added. **Cases 600 series energy violations (600, 610, 620, 630, 640, 650) are documented as pre-existing model limitations — see §LIMIT-05 UPDATE (#1457 revisit) and §LIMIT-06. Case 900 residual annual-energy deviation (H=2.362 MWh, C=1.330 MWh) confirmed as a structural 5R1C limitation after #2227/#2229 — see §SOLAR-02 UPDATE (Issue #2239).**)
 
 > **Post-#1323 baseline changes (read first)** — Between the prior "Last Updated" header
 > (2026-03-30) and this revision, ~100 days and 30+ validation-affecting PRs landed.
@@ -191,6 +191,55 @@ cases/metrics, GitHub issue links, and resolution status.
 - **Status:** 🔄 Open (partially mitigated)
 - **Phase Addressed:** Phase 3
 - **Resolution Notes:** Mode-specific coupling corrections (heating vs cooling) improved peak loads but annual cooling still low. Model limitation acknowledged but magnitude too large - requires further solar gain integration fixes.
+
+### SOLAR-02 UPDATE (Issue #2239, 2026-07-31): Case 900 residual annual-energy deviation — confirmed structural
+
+- **Status:** ✅ Confirmed as known 5R1C architectural limitation (routed to GaugeSolver #1465)
+- **Context:** After the combined fixes from #2227 (`derived_h_tr_3` ISO 13790 §6.3
+  combined conductance replacing `h_tr_ms` in the HVAC coupling path) and #2229
+  (`h_ms_coeff` 9.1 → 13.4 W/(m²·K) for HighMass), Case 900 still falls outside
+  the ASHRAE 140 reference ranges:
+
+  | Metric  | Fluxion  | ASHRAE 140 Ref | Deviation from midpoint |
+  |---------|----------|----------------|-------------------------|
+  | Heating | 2.362 MWh | [1.17, 2.04] MWh | +47 % above midpoint (+15.8 % over upper bound) |
+  | Cooling | 1.330 MWh | [2.13, 3.67] MWh | −54 % below midpoint (−37.6 % under lower bound) |
+
+- **Pattern:** Heating **too high** AND cooling **too low** is the textbook
+  signature of a single lumped thermal-mass node integrated on a 1-hour timestep
+  (documented in §LIMIT-05 UPDATE). The mass node cannot simultaneously:
+  (a) release stored solar heat fast enough during shoulder/cooling seasons
+  (driving annual heating up), and (b) absorb enough daytime solar to charge the
+  thermal mass for night-time cooling release (driving annual cooling down).
+  No single `h_ms_coeff` or `derived_h_tr_3` adjustment can move both metrics
+  into band simultaneously — see the #1522 air-node investigation which proved
+  this trade-off is structurally infeasible at `dt/τ ≈ 3.6`.
+
+- **Investigated & ruled out (per issue #2239):**
+  1. **f_furniture adjustment** — would shift heating and cooling in the *same*
+     direction (both up or both down); cannot close the bidirectional gap.
+  2. **derived_h_tr_3 formula revisiting** — already correct per ISO 13790 §6.3
+     (verified in `docs/research/iso13790_equation_mapping.md` Eq C.8). The
+     `h_tr_ms=1608 W/K → derived_h_tr_3=43.2 W/K` change (#2227) was the major
+     advance (H: 5.835 → 2.343 MWh); further tuning of the series formula does
+     not help.
+  3. **South wall bypass (#715)** — the #715 fix is applied (see diagnostic
+     output `R_ext_to_mass=0.888`); reverting it would worsen, not close, the gap.
+
+- **Why this is NOT a fixable bug (per AGENTS.md / RULES.md):**
+  - The deviation magnitudes (+47 % / −54 % from midpoints) fall **squarely
+    within** the documented LIMIT-01 range ("heating 30–200 % above reference")
+    and SOLAR-02 range ("cooling under-predicted by 30–80 %").
+  - Closing the gap by adjusting `h_ms_coeff`, `f_furniture`, or
+    `derived_h_tr_3` constants would be **parameter tuning to pass system tests**
+    — explicitly forbidden by AGENTS.md ("fix the underlying math").
+  - The correct fix is the **GaugeSolver** (#1465 / #1462), which treats solar
+    as geometric curvature rather than per-timestep energy injection, or
+    **sub-hour air-node sub-stepping** — both out of scope for #2239.
+
+- **Resolution:** Documented as a known limitation. No physics-code change.
+  Diagnostic infrastructure test `test_case_900_blind_energy_infrastructure`
+  passes (it reports values, not a reference-bound gate). Tracked by #1465.
 
 ### SOLAR-03: Solar Shading Cases Not Sensitive to Shading Changes
 
@@ -906,6 +955,9 @@ Once these are addressed, expect pass rate to increase significantly. Remaining 
 | #1460 | Merge PR for #1457 | ✅ Closed | §LIMIT-05 UPDATE |
 | #1446 | Add Case 970 reference + MultiZoneNetwork e2e validation | ✅ Closed (merge #1467) | (see ASHRAE140_MULTI_ZONE_RESULTS.md) |
 | #1467 | Merge PR for #1446 | ✅ Closed | (see ASHRAE140_MULTI_ZONE_RESULTS.md) |
+| #2227 | Case 900 HVAC coupling: use `derived_h_tr_3` instead of `h_tr_ms` | ✅ Closed — H: 5.835 → 2.343 MWh (major advance) | §SOLAR-02 UPDATE (#2239) |
+| #2229 | Case 900 `h_ms_coeff` 9.1 → 13.4 W/(m²·K) for HighMass | ✅ Closed — negligible effect (+0.8 %); gap is structural | §SOLAR-02 UPDATE (#2239) |
+| #2239 | Case 900 residual deviation: H=2.36, C=1.33 MWh | ✅ **Closed — known 5R1C structural limitation**; routed to GaugeSolver #1465 | §SOLAR-02 UPDATE (#2239) |
 
 ## See also
 
