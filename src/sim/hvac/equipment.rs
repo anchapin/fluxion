@@ -204,6 +204,17 @@ pub struct Chiller {
     pub max_outdoor_temp: f64,
     /// Polynomial efficiency curve for cooling mode
     pub efficiency_curve_cooling: crate::sim::hvac::efficiency_curves::EfficiencyCurve,
+    /// When true, bypass polynomial curves and use rated COP at all conditions.
+    ///
+    /// This aligns with the HVAC BESTEST reference methodology, which uses
+    /// constant COP with no part-load or temperature degradation (Issue #2214).
+    /// Set to `false` for realistic part-load efficiency using polynomial curves.
+    #[serde(default = "default_use_constant_cop")]
+    pub use_constant_cop: bool,
+}
+
+fn default_use_constant_cop() -> bool {
+    true
 }
 
 impl Chiller {
@@ -221,7 +232,19 @@ impl Chiller {
             min_outdoor_temp: 5.0,  // Minimum 5°C for safe operation
             max_outdoor_temp: 45.0, // Maximum 45°C for heat rejection
             efficiency_curve_cooling: (&default_coeffs.chiller).into(),
+            use_constant_cop: true, // Issue #2214: default to constant COP
         }
+    }
+
+    /// Enable or disable constant-COP mode (Issue #2214).
+    ///
+    /// When enabled (default), the chiller uses rated COP at all operating
+    /// conditions, matching the HVAC BESTEST reference methodology.
+    /// When disabled, polynomial efficiency curves provide realistic
+    /// part-load and temperature-dependent COP degradation.
+    pub fn with_constant_cop(mut self, enabled: bool) -> Self {
+        self.use_constant_cop = enabled;
+        self
     }
 
     /// Calculate actual capacity at outdoor temperature (with temperature limits)
@@ -272,13 +295,19 @@ impl VariableCapacityEquipment for Chiller {
 
     fn calculate_efficiency(&self, plr: f64, outdoor_temp: f64, mode: HVACMode) -> f64 {
         match mode {
-            HVACMode::Cooling => self.normalize_polynomial_cop(
-                &self.efficiency_curve_cooling,
-                plr,
-                outdoor_temp,
-                self.design_temp,
-                self.cooling_cop,
-            ),
+            HVACMode::Cooling => {
+                if self.use_constant_cop {
+                    self.cooling_cop
+                } else {
+                    self.normalize_polynomial_cop(
+                        &self.efficiency_curve_cooling,
+                        plr,
+                        outdoor_temp,
+                        self.design_temp,
+                        self.cooling_cop,
+                    )
+                }
+            }
             HVACMode::Heating | HVACMode::Off => 0.0, // Chillers don't heat
         }
     }
@@ -776,6 +805,44 @@ mod tests {
 
         let cooling_power = boiler.calculate_power(1000.0, 20.0, HVACMode::Cooling);
         assert_eq!(cooling_power, 0.0);
+    }
+
+    #[test]
+    fn test_chiller_constant_cop_mode() {
+        // Issue #2214: constant-COP mode must return rated COP at all PLR and temperatures
+        let chiller =
+            Chiller::new("CH-CC".to_string(), 100000.0, 3.5, 35.0).with_constant_cop(true);
+
+        // COP is constant regardless of PLR
+        let cop_full = chiller.calculate_efficiency(1.0, 35.0, HVACMode::Cooling);
+        let cop_half = chiller.calculate_efficiency(0.5, 35.0, HVACMode::Cooling);
+        let cop_quarter = chiller.calculate_efficiency(0.25, 35.0, HVACMode::Cooling);
+        assert!((cop_full - 3.5).abs() < 1e-9);
+        assert!((cop_half - 3.5).abs() < 1e-9);
+        assert!((cop_quarter - 3.5).abs() < 1e-9);
+
+        // COP is constant regardless of outdoor temperature
+        let cop_hot = chiller.calculate_efficiency(1.0, 42.0, HVACMode::Cooling);
+        let cop_cold = chiller.calculate_efficiency(1.0, 10.0, HVACMode::Cooling);
+        assert!((cop_hot - 3.5).abs() < 1e-9);
+        assert!((cop_cold - 3.5).abs() < 1e-9);
+
+        // Power = load / rated_cop (constant)
+        let power = chiller.calculate_power(50000.0, 35.0, HVACMode::Cooling);
+        assert!((power - (50000.0 / 3.5)).abs() < 1e-6);
+    }
+
+    #[test]
+    fn test_chiller_polynomial_mode() {
+        // Issue #2214: polynomial mode should vary COP with PLR/temperature
+        let chiller =
+            Chiller::new("CH-POLY".to_string(), 100000.0, 3.5, 35.0).with_constant_cop(false);
+
+        // In polynomial mode (with flat [1.0,0,0,0] coefficients + 0 temp_coeff),
+        // normalize_polynomial_cop still returns rated COP.
+        // This test verifies the code path doesn't panic and returns positive COP.
+        let cop = chiller.calculate_efficiency(0.5, 30.0, HVACMode::Cooling);
+        assert!(cop > 0.0);
     }
 
     #[test]

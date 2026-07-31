@@ -418,7 +418,9 @@ fn test_ha004_vav_reheat() {
     let name = params.name;
     println!("\n=== {}: {} ===", name, params.description);
 
-    let chiller = Chiller::new("HA004-CH".to_string(), 175_000.0, 2.9, 35.0);
+    // Issue #2214: use constant-COP mode to match reference methodology
+    let chiller =
+        Chiller::new("HA004-CH".to_string(), 175_000.0, 2.9, 35.0).with_constant_cop(true);
     let cooling = chiller_cooling_energy(&chiller, params.ua);
     let heating = resistance_heating_energy(0.95, 0.12, params.ua);
     let computed = combine(heating, cooling);
@@ -482,7 +484,7 @@ fn test_ha006_packaged_ac_single_zone() {
     let name = params.name;
     println!("\n=== {}: {} ===", name, params.description);
 
-    let chiller = Chiller::new("HA006-AC".to_string(), 3077.0, 3.485, 35.0);
+    let chiller = Chiller::new("HA006-AC".to_string(), 3077.0, 3.485, 35.0).with_constant_cop(true); // Issue #2214
     let computed = chiller_cooling_energy(&chiller, params.ua);
     let reference = reference_energy(3.485, 999.0, 0.0, None, None, params.ua);
     assert_within_band(name, computed, reference, params.tolerance);
@@ -498,7 +500,7 @@ fn test_ha007_packaged_ac_multi_zone() {
     let name = params.name;
     println!("\n=== {}: {} ===", name, params.description);
 
-    let chiller = Chiller::new("HA007-AC".to_string(), 5129.0, 3.485, 35.0);
+    let chiller = Chiller::new("HA007-AC".to_string(), 5129.0, 3.485, 35.0).with_constant_cop(true); // Issue #2214
     let computed = chiller_cooling_energy(&chiller, params.ua);
     let reference = reference_energy(3.485, 999.0, 0.0, None, None, params.ua);
     assert_within_band(name, computed, reference, params.tolerance);
@@ -514,7 +516,7 @@ fn test_ha008_split_system() {
     let name = params.name;
     println!("\n=== {}: {} ===", name, params.description);
 
-    let chiller = Chiller::new("HA008-DX".to_string(), 3077.0, 3.28, 35.0);
+    let chiller = Chiller::new("HA008-DX".to_string(), 3077.0, 3.28, 35.0).with_constant_cop(true); // Issue #2214
     let cooling = chiller_cooling_energy(&chiller, params.ua);
     let heating = resistance_heating_energy(0.90, 0.0, params.ua);
     let computed = combine(heating, cooling);
@@ -535,7 +537,8 @@ fn test_ha010_chiller_boiler_vav() {
         name, params.description
     );
 
-    let chiller = Chiller::new("HA010-CH".to_string(), 175_000.0, 2.9, 35.0);
+    let chiller =
+        Chiller::new("HA010-CH".to_string(), 175_000.0, 2.9, 35.0).with_constant_cop(true); // Issue #2214
     let boiler = Boiler::new("HA010-BLR".to_string(), 200_000.0, 0.88, -5.0);
     let cooling = chiller_cooling_energy(&chiller, params.ua);
     let heating = boiler_heating_energy(&boiler, params.ua);
