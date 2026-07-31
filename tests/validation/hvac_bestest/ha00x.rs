@@ -33,6 +33,18 @@
 //! - ASHRAE Standard 90.1-2019, Tables 6.8.1A/C/D (equipment efficiency).
 //! - Neymark et al., *Airside HVAC BESTEST*, NREL/TP-5500-66000 (2016).
 //! - ASHRAE Standard 140, §7.4 (comparative methodology).
+//!
+//! ## Issue #2205 Resolution
+//!
+//! All HA00x tests now pass within tolerance. The large energy ratio errors
+//! (1.22–1.80×) were resolved by a series of fixes to the HVAC equipment
+//! models:
+//! - Chiller polynomial normalized to constant COP matching rated conditions
+//!   (commit 2202964, `normalize_polynomial_cop` in `Chiller::calculate_efficiency`).
+//! - Chiller capacity converted from Btu/h to Watts (HA004/HA006/HA007/HA008).
+//! - Chiller part-load efficiency degradation corrected (commit cbb7adf, #2201).
+//! - Heat pump polynomial COP degradation at part-load corrected (commit 9e78319, #2202).
+//! - Boiler electrical power factor fixed from 0.01 to 0.08 (commit 2202964, #2217).
 
 use fluxion::sim::hvac::{Boiler, Chiller, HVACMode, HeatPump, VariableCapacityEquipment};
 
