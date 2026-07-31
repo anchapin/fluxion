@@ -832,10 +832,13 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         // Issue #1585: step the air-node ODE state forward for the next
         // timestep.  t_i_free (the new zone-air temperature) becomes
         // t_air_old on the next call to step_physics_5r1c.
+        // t_i_free here is the solar-lag-corrected version (corrected_t_i_free),
+        // which is what the mass-coupling and invariant computations also use.
+        let t_i_free_slice: Vec<f64> = t_i_free.as_ref().to_vec();
         self.0
             .air_temperatures
             .as_mut()
-            .copy_from_slice(&t_i_free_data);
+            .copy_from_slice(&t_i_free_slice);
 
         // The wall-surface state contributes to the air-node numerator through
         // the transient surface flux correction applied above.
@@ -1323,6 +1326,22 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                     t_i_act_ref[i]
                 }
             };
+            if i == 0 && timestep < 3 {
+                let tm = mass_temps_ref[i];
+                let cm_dt = cm / dt;
+                let h_tr_em_i = h_tr_em_ref[i];
+                let h_tr_3_i = h_tr_3_ref_2[i];
+                let half_cond = 0.5 * (h_tr_3_i + h_tr_em_i);
+                let denom = cm_dt + half_cond;
+                let numer = tm * (cm_dt - half_cond)
+                    + h_tr_em_i * t_sol_air[i]
+                    + h_tr_3_i * t_i
+                    + phi_m_ref[i];
+                eprintln!(
+                    "[PHYS] step={} t_i_free={:.4} t_i={:.4} t_i_act={:.4} tm_old={:.4} denom={:.4} numer={:.4} t_sol_air={:.4}",
+                    timestep, t_i_free_ref[i], t_i, t_i_act_ref[i], tm, denom, numer, t_sol_air[i]
+                );
+            }
             let phi_m_zone = phi_m_ref[i];
 
             // Use physics-based h_tr_em and h_tr_ms (mode-specific factors removed)

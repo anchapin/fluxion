@@ -279,20 +279,6 @@ impl InvariantChecker {
                 denom * t_mass - numer
             }
             ThermalModelType::FiveROneC => {
-                // 5R1C Crank-Nicolson: matches `step_physics_5r1c`
-                // (physics_impl.rs:318-373) which uses
-                // SolAirTemperature::for_roof(outdoor_temp, opaque_solar_ref[i], sky_temp)
-                // per zone (Issue #1527 fix).
-                //
-                // Issue #2128 fix: use the algebraic CN invariant form matching
-                // thermal_integration.rs::crank_nicolson_iso13790.
-                // The CN invariant is: denom * t_mass - numer = 0 where
-                // denom = cm_dt + 0.5*(h_tr_3 + h_tr_em)
-                // numer = tm_prev * (cm_dt - 0.5*(h_tr_3 + h_tr_em)) + h_tr_em * t_sol_air + h_tr_3 * t_i + phi_m
-                //
-                // t_i is the blended air temperature used in the CN update:
-                // t_i = (1-alpha) * t_i_free + alpha * t_air
-                // where t_i_free is stored in air_temperatures.
                 let t_i_free = model.air_temperatures.as_ref()[i];
                 let cm_dt = cm / dt_seconds;
                 let half_cond = 0.5 * (h_tr_3 + h_tr_em);
@@ -303,12 +289,20 @@ impl InvariantChecker {
                     1.0
                 };
                 let t_i = (1.0 - alpha) * t_i_free + alpha * t_air;
+                let st_int_frac = rad_frac * (1.0 - sol_dist_to_air);
+                let st_sol_frac = 1.0 - solar_beam_to_mass;
+                let phi_st = load_w * st_int_frac + remaining_sol * st_sol_frac;
                 let denom = cm_dt + half_cond;
                 let numer = t_mass_prev * (cm_dt - half_cond)
                     + h_tr_em * t_sol_air_zone
                     + h_tr_3 * t_i
                     + phi_m;
-                denom * t_mass - numer
+                let residual = denom * t_mass - numer;
+                eprintln!(
+                    "[INV] t_mass={:.4} t_mass_prev={:.4} t_i_free={:.4} t_i={:.4} alpha={:.6} h_tr_3={:.4} h_tr_em={:.4} phi_m={:.4} phi_st={:.4} denom={:.4} numer={:.4} residual={:.6} t_sol_air={:.4}",
+                    t_mass, t_mass_prev, t_i_free, t_i, alpha, h_tr_3, h_tr_em, phi_m, phi_st, denom, numer, residual, t_sol_air_zone
+                );
+                residual
             }
             _ => {
                 // 6R2C, 8R3C: use original integrated flux form
