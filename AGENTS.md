@@ -93,6 +93,14 @@ npm run build                              # node build.js --release
 pip install pre-commit && pre-commit install && pre-commit install --hook-type commit-msg -f
 pre-commit run --all-files                 # manual run (covers ruff, black, isort, fmt, cargo-check,
                                            #   cargo-audit, batch-oracle-pattern, rust-doc-check)
+
+# Local CI verification with act (run GitHub Actions locally)
+# Install: https://github.com/nektos/act#installation
+# On Apple Silicon: act -j <job_id> -W <workflow> --container-architecture linux/arm64 \
+#   -P ubuntu-latest=catthehacker/ubuntu:act-latest
+# Example (coverage job):
+#   act -j coverage -W .github/workflows/code-coverage.yml \
+#     --container-architecture linux/arm64 -P ubuntu-latest=catthehacker/ubuntu:act-latest
 ```
 
 ## Critical Physics Constants
