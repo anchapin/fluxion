@@ -9,10 +9,6 @@ inputs:
     description: 'Rust components to install (e.g., rustfmt,clippy)'
     required: false
     default: ''
-  toolchain:
-    description: 'Rust toolchain version'
-    required: false
-    default: 'stable'
   sccache:
     description: |
       Enable sccache compiler caching via GHA cache backend.
@@ -43,7 +39,7 @@ runs:
       uses: dtolnay/rust-toolchain@stable
       with:
         components: ${{ inputs.components }}
-        toolchain: ${{ inputs.toolchain }}
+        toolchain: stable
 
     # sccache: content-addressed compiler cache backed by GHA cache API.
     # Caches individual compilation units; no stale-cache issues on Cargo.lock changes.

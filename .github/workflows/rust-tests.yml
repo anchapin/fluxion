@@ -199,7 +199,6 @@ jobs:
       - uses: actions/checkout@v4
       - uses: ./.github/actions/setup-rust-env
         with:
-          toolchain: stable
           components: rustfmt
       - run: cargo fmt -- --check
 
@@ -214,7 +213,6 @@ jobs:
       - uses: actions/checkout@v4
       - uses: ./.github/actions/setup-rust-env
         with:
-          toolchain: stable
           components: rustfmt
       - run: cargo fmt -- --check
 

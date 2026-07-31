@@ -13,8 +13,6 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: ./.github/actions/setup-rust-env
-        with:
-          toolchain: stable
 
       - name: Build documentation
         run: cargo doc --no-deps --document-private-items
