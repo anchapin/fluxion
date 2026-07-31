@@ -36,10 +36,9 @@ runs:
         DEBIAN_FRONTEND: noninteractive
 
     - name: Install Rust
-      uses: dtolnay/rust-toolchain@master
+      uses: dtolnay/rust-toolchain@1.85.0
       with:
         components: ${{ inputs.components }}
-        toolchain: stable
 
     # sccache: content-addressed compiler cache backed by GHA cache API.
     # Caches individual compilation units; no stale-cache issues on Cargo.lock changes.
