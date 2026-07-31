@@ -10,7 +10,7 @@
 //! to the unified `ThermalModel<T>` type.
 
 use crate::physics::cta::{ContinuousTensor, VectorField};
-use crate::sim::thermal_model_core::ThermalModel;
+use crate::sim::thermal_model_core::{ThermalModel, ThermalModelType};
 
 impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>> ThermalModel<T> {
     /// Compute the HVAC heat transfer coefficient for the 5R1C/6R2C thermal network.
@@ -60,22 +60,37 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         let h_tr_is = self.0.h_tr_is.as_ref()[zone_idx];
         let h_tr_ms = self.0.h_tr_ms.as_ref()[zone_idx];
         let h_tr_w = self.0.h_tr_w.as_ref()[zone_idx];
+        // Note: h_tr_me (envelope-to-internal-mass coupling) is intentionally NOT used
+        // in this function - it's only used for internal mass dynamics, not for
+        // the building-to-outdoor HVAC coupling.
 
-        // ISO 13790 §C.3 — H_tr,1 is the series combination of the air-to-surface
-        // film (h_tr_is) and the surface-to-mass coupling (h_tr_ms). This represents
-        // the air-to-mass conductance path that bypasses windows and direct
-        // air-to-outdoor ventilation.
-        let h_tr_1 = if h_tr_is + h_tr_ms > 0.0 {
-            h_tr_is * h_tr_ms / (h_tr_is + h_tr_ms)
+        // For 9R4C models (Case 900), the HVAC coupling to zone air uses
+        // derived_h_tr_3 + h_tr_w instead of the 5R1C series formula
+        // h_tr_is * h_tr_ms / (h_tr_is + h_tr_ms).
+        //
+        // Issue #2227: h_tr_me is the coupling between envelope mass and internal mass
+        // (furniture/partitions), NOT the building-to-outdoor coupling. Using h_tr_me
+        // would incorrectly include furniture thermal mass in the HVAC demand calculation.
+        //
+        // The correct formula uses derived_h_tr_3 (ISO 13790 combined air-to-mass conductance
+        // ≈ 42.66 W/K for Case 900) which represents the effective thermal coupling from
+        // zone air to the building's thermal mass (envelope), plus h_tr_w for windows.
+        let hvac_coeff = if self.0.thermal_model_type == ThermalModelType::NineRFourC {
+            // 9R4C: derived_h_tr_3 + h_tr_w is the total HVAC coupling
+            let derived_h_tr_3 = self.0.derived_h_tr_3.as_ref()[zone_idx];
+            derived_h_tr_3 + h_tr_w
         } else {
-            0.0
+            // 5R1C/6R2C: ISO 13790 §C.3 series combination of air-to-surface
+            // film (h_tr_is) and surface-to-mass coupling (h_tr_ms)
+            let h_tr_1 = if h_tr_is + h_tr_ms > 0.0 {
+                h_tr_is * h_tr_ms / (h_tr_is + h_tr_ms)
+            } else {
+                0.0
+            };
+            // ISO 13790 §12.2.1 — h_coeff = H_tr,1 + H_tr,w
+            h_tr_1 + h_tr_w
         };
-
-        // ISO 13790 §12.2.1 — h_coeff = H_tr,1 + H_tr,w (air-to-mass path + direct
-        // window path). This is the canonical simple-hourly HVAC demand coefficient
-        // for ASHRAE 140 monthly/annual energy calculations. Ventilation (h_ve) is
-        // already implicit in T_free via the den denominator.
-        h_tr_1 + h_tr_w
+        hvac_coeff
     }
 
     /// Compute HVAC demand using the symmetric ASHRAE 140 ideal HVAC
