@@ -45,7 +45,7 @@ runs:
     # Caches individual compilation units; no stale-cache issues on Cargo.lock changes.
     - name: Set up sccache
       if: inputs.sccache == 'true'
-      uses: mozilla-actions/sccache-action@v0.0.9
+      uses: mozilla-actions/sccache-action@v0.0.11
 
     - name: Enable sccache as rustc wrapper
       if: inputs.sccache == 'true'
