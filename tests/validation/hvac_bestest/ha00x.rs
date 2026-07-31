@@ -119,6 +119,76 @@ fn chiller_cooling_energy(chiller: &Chiller, ua: f64) -> (f64, f64) {
     (energy_kwh, peak_w)
 }
 
+/// Compute annual energy for a `HeatPump` using temperature-dependent COP.
+///
+/// # Why HA002/HA003 Heat Pump Tests Pass (Issue #2215)
+///
+/// The heat pump tests pass with an **exact energy ratio of 1.000** because
+/// both the model side (this function) and the reference side
+/// ([`reference_energy`]) use the **same COP methodology**: a constant rated COP
+/// with no temperature or part-load degradation.
+///
+/// ## Model side: `HeatPump::heating_cop_at_temperature` / `cooling_cop_at_temperature`
+///
+/// Despite their names, these methods (`src/sim/hvac/mod.rs:233-239`) **ignore**
+/// the `outdoor_temp` parameter (the parameter is named `_outdoor_temp`) and
+/// return `self.heating_cop` / `self.cooling_cop` — the rated constant values
+/// passed to [`HeatPump::new`]. The polynomial efficiency curve stored in
+/// `efficiency_curve_heating` / `efficiency_curve_cooling` is never evaluated
+/// by these methods. As a result, for each temperature bin:
+///
+/// ```text
+/// power = load / rated_cop   (constant)
+/// ```
+///
+/// ## Reference side: `reference_energy`
+///
+/// The reference also uses the rated COP passed in (e.g. 3.2 for heating,
+/// 3.5 for cooling in HA002) with no temperature degradation:
+///
+/// ```text
+/// power = load / rated_cop   (constant, same value)
+/// ```
+///
+/// ## Result: mathematical identity
+///
+/// Since both sides compute `Σ (load_t / rated_cop) × hours_t / 1000` with the
+/// **same** rated COP values and the **same** zone load profile, the model and
+/// reference energies are identical to floating-point precision:
+///
+/// | Case | Model (kWh) | Reference (kWh) | Ratio |
+/// |------|-------------|-----------------|-------|
+/// | HA002 | 5504 | 5504 | 1.000 |
+/// | HA003 | 3966 | 3966 | 1.000 |
+///
+/// This is a **tautological validation**: the test confirms that `load / const
+/// == load / const`, not that the heat pump model captures realistic
+/// temperature-dependent COP behavior. The test passes because the reference is
+/// constructed from the *same constant-COP assumption* as the model, not from
+/// independent physics.
+///
+/// ## Contrast with chiller tests (HA004, HA006-HA008, HA010)
+///
+/// Chillers use [`Chiller::calculate_power`], which computes a PLR-dependent
+/// COP via a normalized polynomial (`curve.cop_at(plr, outdoor_temp)`) and
+/// divides the load by that. When the chiller coefficients contain real
+/// part-load degradation (e.g. the original `[1.978, 1.739, 3.429, -2.667]`),
+/// the model energy diverges from the constant-COP reference by >100%.
+///
+/// After Issue #2214, the chiller polynomial coefficients were normalized to
+/// `[1.0, 0.0, 0.0, 0.0]` with `temp_coefficient = 0.0`, making
+/// `cop_at(plr, t)` always return 1.0 so that after normalization the chiller
+/// COP is also effectively constant — bringing chiller tests back into the
+/// ±5-10% band (though small residual deviations remain from PLR clamping and
+/// the fan-fraction arithmetic in `reference_energy`).
+///
+/// ## Future improvement
+///
+/// To make HA002/HA003 a meaningful physics validation rather than a
+/// tautology, the reference should use an **independent** temperature-dependent
+/// COP model (e.g. from manufacturer AHRI catalog data or the Carnot limit),
+/// and `HeatPump::heating_cop_at_temperature` should implement real
+/// temperature degradation using its stored `EfficiencyCurve`.
 fn heatpump_energy(hp: &HeatPump, fan_frac: f64, ua: f64) -> (f64, f64) {
     let mut energy_kwh = 0.0_f64;
     let mut peak_w = 0.0_f64;
@@ -302,6 +372,11 @@ fn test_ha001_electric_baseboard() {
 // HA002 — Air-Source Heat Pump
 // ---------------------------------------------------------------------------
 
+/// PASSES with exact ratio 1.000 because both the model (`heatpump_energy`,
+/// which calls `hp.heating_cop_at_temperature(t)` → constant rated COP) and the
+/// reference (`reference_energy` with constant COP) use the same constant-COP
+/// assumption. See the doc-comment on `heatpump_energy` for full analysis
+/// (Issue #2215). This is currently a tautological validation.
 #[test]
 fn test_ha002_air_source_heat_pump() {
     let params = CaseParams::HA002;
@@ -318,6 +393,9 @@ fn test_ha002_air_source_heat_pump() {
 // HA003 — Ground-Source Heat Pump (higher COP due to ground heat exchange)
 // ---------------------------------------------------------------------------
 
+/// Same tautological-pass behavior as HA002 (see `heatpump_energy` doc-comment,
+/// Issue #2215). The ground-source COP values (4.5/4.8) are higher but still
+/// constant in both model and reference, so the ratio is exactly 1.000.
 #[test]
 fn test_ha003_ground_source_heat_pump() {
     let params = CaseParams::HA003;
