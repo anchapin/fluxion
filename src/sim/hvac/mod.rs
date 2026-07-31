@@ -276,6 +276,23 @@ impl HeatPump {
             HeatPumpMode::Off
         };
     }
+
+    fn normalize_polynomial_cop(
+        &self,
+        curve: &efficiency_curves::EfficiencyCurve,
+        plr: f64,
+        outdoor_temp: f64,
+        design_temp: f64,
+        rated_cop: f64,
+    ) -> f64 {
+        let poly_cop = curve.cop_at(plr, outdoor_temp);
+        let poly_cop_at_rated = curve.cop_at(1.0, design_temp);
+        if poly_cop_at_rated > 0.0 && rated_cop > 0.0 {
+            (poly_cop / poly_cop_at_rated) * rated_cop
+        } else {
+            poly_cop
+        }
+    }
 }
 
 #[cfg(test)]

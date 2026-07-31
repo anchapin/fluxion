@@ -240,6 +240,28 @@ impl Chiller {
             self.cooling_capacity * capacity_factor.max(0.3)
         }
     }
+
+    /// Normalize polynomial COP to match rated COP at design conditions.
+    ///
+    /// The polynomial curve coefficients give absolute COP values that may not
+    /// match the equipment's rated COP. Normalize so that at rated conditions
+    /// (PLR=1.0, outdoor_temp=design_temp), the efficiency equals rated COP.
+    fn normalize_polynomial_cop(
+        &self,
+        curve: &crate::sim::hvac::efficiency_curves::EfficiencyCurve,
+        plr: f64,
+        outdoor_temp: f64,
+        design_temp: f64,
+        rated_cop: f64,
+    ) -> f64 {
+        let poly_cop = curve.cop_at(plr, outdoor_temp);
+        let poly_cop_at_rated = curve.cop_at(1.0, design_temp);
+        if poly_cop_at_rated > 0.0 && rated_cop > 0.0 {
+            (poly_cop / poly_cop_at_rated) * rated_cop
+        } else {
+            poly_cop
+        }
+    }
 }
 
 impl VariableCapacityEquipment for Chiller {
@@ -250,18 +272,13 @@ impl VariableCapacityEquipment for Chiller {
 
     fn calculate_efficiency(&self, plr: f64, outdoor_temp: f64, mode: HVACMode) -> f64 {
         match mode {
-            HVACMode::Cooling => {
-                // The polynomial curve coefficients give absolute COP values that may not
-                // match the equipment's rated COP. Normalize so that at rated conditions
-                // (PLR=1.0, outdoor_temp=design_temp), the efficiency equals rated COP.
-                let poly_cop = self.efficiency_curve_cooling.cop_at(plr, outdoor_temp);
-                let poly_cop_at_rated = self.efficiency_curve_cooling.cop_at(1.0, self.design_temp);
-                if poly_cop_at_rated > 0.0 && self.cooling_cop > 0.0 {
-                    (poly_cop / poly_cop_at_rated) * self.cooling_cop
-                } else {
-                    poly_cop
-                }
-            }
+            HVACMode::Cooling => self.normalize_polynomial_cop(
+                &self.efficiency_curve_cooling,
+                plr,
+                outdoor_temp,
+                self.design_temp,
+                self.cooling_cop,
+            ),
             HVACMode::Heating | HVACMode::Off => 0.0, // Chillers don't heat
         }
     }
@@ -579,32 +596,21 @@ impl VariableCapacityEquipment for HeatPump {
     }
 
     fn calculate_efficiency(&self, plr: f64, outdoor_temp: f64, mode: HVACMode) -> f64 {
-        // The polynomial curve coefficients give absolute COP values that may not
-        // match the equipment's rated COP. Normalize so that at rated conditions
-        // (PLR=1.0, design_temp), the efficiency equals rated COP.
         match mode {
-            HVACMode::Heating => {
-                let poly_cop = self.efficiency_curve_heating.cop_at(plr, outdoor_temp);
-                let poly_cop_at_rated = self
-                    .efficiency_curve_heating
-                    .cop_at(1.0, self.design_temp_heating);
-                if poly_cop_at_rated > 0.0 && self.heating_cop > 0.0 {
-                    (poly_cop / poly_cop_at_rated) * self.heating_cop
-                } else {
-                    poly_cop
-                }
-            }
-            HVACMode::Cooling => {
-                let poly_cop = self.efficiency_curve_cooling.cop_at(plr, outdoor_temp);
-                let poly_cop_at_rated = self
-                    .efficiency_curve_cooling
-                    .cop_at(1.0, self.design_temp_cooling);
-                if poly_cop_at_rated > 0.0 && self.cooling_cop > 0.0 {
-                    (poly_cop / poly_cop_at_rated) * self.cooling_cop
-                } else {
-                    poly_cop
-                }
-            }
+            HVACMode::Heating => self.normalize_polynomial_cop(
+                &self.efficiency_curve_heating,
+                plr,
+                outdoor_temp,
+                self.design_temp_heating,
+                self.heating_cop,
+            ),
+            HVACMode::Cooling => self.normalize_polynomial_cop(
+                &self.efficiency_curve_cooling,
+                plr,
+                outdoor_temp,
+                self.design_temp_cooling,
+                self.cooling_cop,
+            ),
             HVACMode::Off => 0.0,
         }
     }
