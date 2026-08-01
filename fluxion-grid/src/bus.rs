@@ -35,6 +35,10 @@ pub struct ElectricalBus {
     pub active_power: f64,
     /// Reactive power in per-unit (pu)
     pub reactive_power: f64,
+    /// Shunt susceptance at the bus (pu). Positive values model shunt
+    /// capacitors (which inject reactive power `Q = B·|V|²`); negative values
+    /// model shunt reactors. Folded into the Y-bus diagonal as `+jB`.
+    pub shunt_susceptance_pu: f64,
 }
 
 impl ElectricalBus {
@@ -47,6 +51,7 @@ impl ElectricalBus {
             voltage_angle,
             active_power: 0.0,
             reactive_power: 0.0,
+            shunt_susceptance_pu: 0.0,
         }
     }
 
@@ -59,6 +64,7 @@ impl ElectricalBus {
             voltage_angle: 0.0,
             active_power,
             reactive_power: 0.0,
+            shunt_susceptance_pu: 0.0,
         }
     }
 
@@ -71,7 +77,15 @@ impl ElectricalBus {
             voltage_angle: 0.0,
             active_power,
             reactive_power,
+            shunt_susceptance_pu: 0.0,
         }
+    }
+
+    /// Set the shunt susceptance (pu) and return the modified bus.
+    #[must_use]
+    pub fn with_shunt_susceptance(mut self, shunt_susceptance_pu: f64) -> Self {
+        self.shunt_susceptance_pu = shunt_susceptance_pu;
+        self
     }
 
     /// Update the voltage magnitude and angle (for solution iteration).
