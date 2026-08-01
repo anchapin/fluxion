@@ -19,9 +19,9 @@
 //! in ≤ 10 iterations to tolerance 1e-3 using gradient descent on the
 //! analytical Jacobian.
 
-use nalgebra::{DMatrix, DVector};
+use nalgebra::DMatrix;
 
-use super::{finite_diff_jacobian, optimize_with_gradient_descent, DifferentiableComponent};
+use super::DifferentiableComponent;
 
 const EPSILON: f64 = 1e-10;
 
@@ -29,42 +29,20 @@ const T_EVAP_IDX: usize = 0;
 const T_COND_IDX: usize = 1;
 const M_DOT_REF_IDX: usize = 2;
 
-const Q_EVAP_IDX: usize = 0;
-const COP_IDX: usize = 1;
-const P_COMPRESSOR_IDX: usize = 2;
-
 const T_RETURN_IDX: usize = 0;
 const M_DOT_HOT_IDX: usize = 1;
 const T_ENTER_IDX: usize = 2;
-
-const Q_OUTPUT_IDX: usize = 0;
-const ETA_IDX: usize = 1;
-const FUEL_ENERGY_IDX: usize = 2;
 
 const DAMPER_IDX: usize = 0;
 const STATIC_PRESSURE_IDX: usize = 1;
 const T_INLET_IDX: usize = 2;
 
-const M_DOT_SUPPLY_IDX: usize = 0;
-const T_SUPPLY_IDX: usize = 1;
-const COIL_VALVE_IDX: usize = 2;
-
 const SPEED_IDX: usize = 0;
-const P_INLET_IDX: usize = 1;
 const RHO_IDX: usize = 2;
-
-const M_DOT_IDX: usize = 0;
-const POWER_IDX: usize = 1;
-const P_RISE_IDX: usize = 2;
 
 const T_WB_IDX: usize = 0;
 const M_DOT_AIR_IDX: usize = 1;
-const M_DOT_WATER_IDX: usize = 2;
 const T_WATER_IN_IDX: usize = 3;
-
-const Q_COOLING_IDX: usize = 0;
-const T_AIR_OUT_IDX: usize = 1;
-const EFFECTIVENESS_IDX: usize = 2;
 
 pub struct Chiller {
     pub rated_capacity: f64,
@@ -88,7 +66,7 @@ impl DifferentiableComponent for Chiller {
     fn evaluate(&self, input: &Self::Input, _state: &Self::State) -> Self::Output {
         let t_evap = input[T_EVAP_IDX].clamp(-10.0, 10.0);
         let t_cond = input[T_COND_IDX].clamp(20.0, 50.0);
-        let m_dot_ref = input[M_DOT_REF_IDX].max(0.0);
+        let _m_dot_ref = input[M_DOT_REF_IDX].max(0.0);
 
         let delta_t = t_cond - t_evap;
         let cop = self.rated_cop * (1.0 - 0.05 * delta_t).max(0.1);
@@ -282,7 +260,7 @@ impl DifferentiableComponent for VavBox {
         let pressure = input[STATIC_PRESSURE_IDX].max(0.0);
         let t_inlet = input[T_INLET_IDX];
 
-        let zone_demand = _state.get(0).copied().unwrap_or(self.rated_demand);
+        let zone_demand = _state.first().copied().unwrap_or(self.rated_demand);
 
         let sqrt_2_rho = (2.0 / self.rho).sqrt();
         let k_damper = self.k_factor * damper;
@@ -302,9 +280,9 @@ impl DifferentiableComponent for VavBox {
     fn jacobian_input(&self, input: &Self::Input, state: &Self::State) -> DMatrix<f64> {
         let damper = input[DAMPER_IDX].clamp(0.0, 1.0);
         let pressure = input[STATIC_PRESSURE_IDX].max(0.0);
-        let t_inlet = input[T_INLET_IDX];
+        let _t_inlet = input[T_INLET_IDX];
 
-        let zone_demand = state.get(0).copied().unwrap_or(self.rated_demand);
+        let zone_demand = state.first().copied().unwrap_or(self.rated_demand);
 
         let sqrt_2_rho = (2.0 / self.rho).sqrt();
         let k_damper = self.k_factor * damper;
@@ -349,13 +327,13 @@ impl DifferentiableComponent for VavBox {
         let damper = input[DAMPER_IDX].clamp(0.0, 1.0);
         let pressure = input[STATIC_PRESSURE_IDX].max(0.0);
 
-        let zone_demand = state.get(0).copied().unwrap_or(self.rated_demand);
+        let zone_demand = state.first().copied().unwrap_or(self.rated_demand);
 
         let sqrt_2_rho = (2.0 / self.rho).sqrt();
         let k_damper = self.k_factor * damper;
         let m_dot_supply = k_damper * sqrt_2_rho * pressure.sqrt();
 
-        let reheat = zone_demand.max(0.0) * self.k_valve;
+        let _reheat = zone_demand.max(0.0) * self.k_valve;
         let d_t_supply_d_reheat = -1.0 / (m_dot_supply * 1006.0);
         let d_t_supply_d_demand = d_t_supply_d_reheat * self.k_valve;
 
@@ -424,8 +402,8 @@ impl DifferentiableComponent for Pump {
 
         let speed_ratio = speed / 1750.0;
         let flow_ratio = speed_ratio;
-        let head_ratio = speed_ratio * speed_ratio;
-        let power_ratio = speed_ratio * speed_ratio * speed_ratio;
+        let _head_ratio = speed_ratio * speed_ratio;
+        let _power_ratio = speed_ratio * speed_ratio * speed_ratio;
 
         let d_flow_d_speed = (self.rated_flow * rho / 1000.0) / 1750.0;
         let d_flow_d_rho = (flow_ratio * self.rated_flow) / 1000.0;
@@ -564,6 +542,26 @@ impl DifferentiableComponent for CoolingCoil {
 mod tests {
     use super::*;
     use crate::autodiff::validation::{finite_diff_epsilon, verify_jacobian_entries};
+    use crate::{finite_diff_jacobian, optimize_with_gradient_descent};
+
+    const Q_EVAP_IDX: usize = 0;
+    const COP_IDX: usize = 1;
+    const P_COMPRESSOR_IDX: usize = 2;
+
+    const Q_OUTPUT_IDX: usize = 0;
+    const ETA_IDX: usize = 1;
+    const FUEL_ENERGY_IDX: usize = 2;
+
+    const M_DOT_SUPPLY_IDX: usize = 0;
+    const T_SUPPLY_IDX: usize = 1;
+    const COIL_VALVE_IDX: usize = 2;
+
+    const M_DOT_IDX: usize = 0;
+    const POWER_IDX: usize = 1;
+    const P_RISE_IDX: usize = 2;
+
+    const Q_COOLING_IDX: usize = 0;
+    const EFFECTIVENESS_IDX: usize = 2;
 
     #[test]
     fn test_chiller_jacobian_accuracy() {
@@ -572,10 +570,7 @@ mod tests {
         let state = vec![];
 
         let analytical = chiller.jacobian_input(&input, &state);
-        let f = |x: &[f64]| {
-            let out = chiller.evaluate(x, &state);
-            out
-        };
+        let f = |x: &[f64]| chiller.evaluate(&x.to_vec(), &state);
         let finite_diff = finite_diff_jacobian(f, &input, finite_diff_epsilon());
 
         assert!(
@@ -593,7 +588,7 @@ mod tests {
         let state = vec![];
 
         let analytical = boiler.jacobian_input(&input, &state);
-        let f = |x: &[f64]| boiler.evaluate(x, &state);
+        let f = |x: &[f64]| boiler.evaluate(&x.to_vec(), &state);
         let finite_diff = finite_diff_jacobian(f, &input, finite_diff_epsilon());
 
         assert!(
@@ -611,7 +606,7 @@ mod tests {
         let state = vec![3000.0];
 
         let analytical = vav.jacobian_input(&input, &state);
-        let f = |x: &[f64]| vav.evaluate(x, &state);
+        let f = |x: &[f64]| vav.evaluate(&x.to_vec(), &state);
         let finite_diff = finite_diff_jacobian(f, &input, finite_diff_epsilon());
 
         assert!(
@@ -656,7 +651,7 @@ mod tests {
         let state = vec![];
 
         let analytical = pump.jacobian_input(&input, &state);
-        let f = |x: &[f64]| pump.evaluate(x, &state);
+        let f = |x: &[f64]| pump.evaluate(&x.to_vec(), &state);
         let finite_diff = finite_diff_jacobian(f, &input, finite_diff_epsilon());
 
         assert!(
@@ -674,7 +669,7 @@ mod tests {
         let state = vec![];
 
         let analytical = coil.jacobian_input(&input, &state);
-        let f = |x: &[f64]| coil.evaluate(x, &state);
+        let f = |x: &[f64]| coil.evaluate(&x.to_vec(), &state);
         let finite_diff = finite_diff_jacobian(f, &input, finite_diff_epsilon());
 
         assert!(

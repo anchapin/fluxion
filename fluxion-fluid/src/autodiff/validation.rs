@@ -3,7 +3,7 @@
 //! Provides utilities for verifying analytical Jacobians against finite-difference
 //! approximations and gradient descent optimization tests.
 
-use nalgebra::{DMatrix, DVector};
+use nalgebra::DMatrix;
 
 const FINITE_DIFF_EPSILON: f64 = 1e-6;
 const RELATIVE_TOLERANCE: f64 = 1e-4;
