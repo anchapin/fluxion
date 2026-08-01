@@ -60,7 +60,7 @@ jobs:
           - {name: "wiring-tracing",   flags: "--features wiring-tracing"}
           - {name: "multi-zone",       flags: "--features wiring-tracing,multi-zone"}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4
       - name: Install system dependencies (Linux)
         if: runner.os == 'Linux'
         run: |
@@ -72,7 +72,7 @@ jobs:
 
       - name: Cache ONNX Runtime binaries
         if: runner.os == 'macOS'
-        uses: actions/cache@v4
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830  # v4
         with:
           path: |
             ~/Library/Caches/ort.pyke.io
@@ -129,7 +129,7 @@ jobs:
       github.event_name == 'pull_request' ||
       (github.event_name == 'push' && github.ref == 'refs/heads/main')
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4
       - uses: ./.github/actions/setup-rust-python-env
         with:
           python-version: '3.10'
@@ -161,7 +161,7 @@ jobs:
       && (needs.energy-conservation-gh-probe.result == 'failure'
           || needs.energy-conservation-gh-probe.result == 'cancelled')
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4
       - uses: ./.github/actions/setup-rust-python-env
         with:
           python-version: '3.10'
@@ -196,7 +196,7 @@ jobs:
     needs: fmt-gh-probe
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4
       - uses: ./.github/actions/setup-rust-env
         with:
           components: rustfmt
@@ -210,7 +210,7 @@ jobs:
       needs.fmt-gh-probe.result == 'failure'
       || needs.fmt-gh-probe.result == 'cancelled'
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4
       - uses: ./.github/actions/setup-rust-env
         with:
           components: rustfmt
@@ -234,7 +234,7 @@ jobs:
     env:
       CARGO_BUILD_JOBS: 1
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4
       - uses: ./.github/actions/setup-rust-python-env
         with:
           rust-components: clippy
@@ -251,7 +251,7 @@ jobs:
       needs.clippy-gh-probe.result == 'failure'
       || needs.clippy-gh-probe.result == 'cancelled'
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4
       - uses: ./.github/actions/setup-rust-python-env
         with:
           rust-components: clippy
@@ -278,7 +278,7 @@ jobs:
       github.event_name == 'pull_request' ||
       (github.event_name == 'push' && github.ref == 'refs/heads/main')
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4
       - name: Run stale check
         run: python3 scripts/check_known_issues_stale.py
 
@@ -292,7 +292,7 @@ jobs:
       && (needs.known-issues-stale-gh-probe.result == 'failure'
           || needs.known-issues-stale-gh-probe.result == 'cancelled')
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4
       - name: Run stale check
         run: python3 scripts/check_known_issues_stale.py
 
@@ -312,7 +312,7 @@ jobs:
         os: [ubuntu-latest, macos-latest, windows-latest]
         rust: [stable]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4
       - name: Install system dependencies (Linux)
         if: runner.os == 'Linux'
         run: |
@@ -323,7 +323,7 @@ jobs:
           python-version: '3.10'
       - name: Cache ONNX Runtime binaries
         if: runner.os == 'macOS'
-        uses: actions/cache@v4
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830  # v4
         with:
           path: |
             ~/Library/Caches/ort.pyke.io
@@ -348,7 +348,7 @@ jobs:
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ${{ vars.FLUXION_LINUX_RUNNER || 'ubuntu-latest' }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4
       - uses: ./.github/actions/setup-rust-python-env
         with:
           python-version: '3.10'
@@ -374,7 +374,7 @@ jobs:
       github.event_name == 'pull_request' ||
       (github.event_name == 'push' && github.ref == 'refs/heads/main')
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4
       - uses: ./.github/actions/setup-rust-python-env
         with:
           python-version: '3.10'
@@ -391,7 +391,7 @@ jobs:
       && (needs.ashrae-cases-cycle-gh-probe.result == 'failure'
           || needs.ashrae-cases-cycle-gh-probe.result == 'cancelled')
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4
       - uses: ./.github/actions/setup-rust-python-env
         with:
           python-version: '3.10'
@@ -413,7 +413,7 @@ jobs:
       github.event_name == 'pull_request' ||
       (github.event_name == 'push' && github.ref == 'refs/heads/main')
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4
       - name: Install system dependencies (Linux)
         run: |
           sudo apt-get update
@@ -449,7 +449,7 @@ jobs:
       github.event_name == 'pull_request' ||
       (github.event_name == 'push' && github.ref == 'refs/heads/main')
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4
       - name: Install system dependencies (Linux)
         run: |
           sudo apt-get update

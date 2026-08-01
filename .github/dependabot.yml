@@ -1,0 +1,22 @@
+version: 2
+
+updates:
+  # GitHub Actions — keep third-party actions pinned to latest SHAs.
+  # Grouping reduces PR noise; weekly cadence matches the release rhythm.
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    target-branch: "develop"
+    open-pull-requests-limit: 5
+    groups:
+      github-actions:
+        patterns:
+          - "*"
+    commit-message:
+      prefix: "chore(ci)"
+      include: "scope"
+    labels:
+      - "dependencies"
+      - "github-actions"
