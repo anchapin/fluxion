@@ -98,6 +98,18 @@ mod tsfm_engine {
         quantized: bool,
     }
 
+    // Manual Debug impl (Session does not derive Debug) so that
+    // `Result<TsfmInferenceEngine, _>::unwrap_err()` compiles in tests.
+    impl std::fmt::Debug for TsfmInferenceEngine {
+        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            f.debug_struct("TsfmInferenceEngine")
+                .field("quantized", &self.quantized)
+                .field("input_names", &self.input_names)
+                .field("output_names", &self.output_names)
+                .finish()
+        }
+    }
+
     impl TsfmInferenceEngine {
         pub fn new(model_path: &PathBuf) -> Result<Self> {
             Self::from_path(model_path, false)
