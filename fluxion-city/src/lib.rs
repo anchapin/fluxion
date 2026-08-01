@@ -22,6 +22,7 @@
 //! building energy modeling where nodes represent building envelopes and edges
 //! represent spatial adjacency.
 
+#[cfg(test)]
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
@@ -1161,6 +1162,10 @@ pub use nusselt::{
 };
 pub use sparse::{create_sparse_from_urban_canyon, SparseViewFactorMatrix, UrbanRadiationSolver};
 pub use urban_graph::{AdjacencyType, BoundingBox3D, BuildingNode, SpatialEdge, UrbanGraph};
+
+/// Monte Carlo ray-tracing view factor computation for arbitrary 3D surfaces.
+pub mod ray_tracing;
+pub use ray_tracing::{MonteCarloViewFactor, Surface3D, DEFAULT_NUM_RAYS};
 
 #[cfg(feature = "parallel")]
 pub mod parallel {
