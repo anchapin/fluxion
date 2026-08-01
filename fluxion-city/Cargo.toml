@@ -25,3 +25,8 @@ parallel = ["rayon"]
 criterion = "0.5"
 rand = "0.8"
 sysinfo = "0.30"
+
+[[bench]]
+name = "parallel_harness"
+harness = false
+required-features = ["parallel"]
