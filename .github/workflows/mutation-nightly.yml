@@ -36,7 +36,7 @@ jobs:
     name: Nightly Full Mutation Suite
     runs-on: ${{ vars.FLUXION_LINUX_RUNNER || 'ubuntu-latest-8-cores' }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4
         with:
           ref: develop
           fetch-depth: 0
@@ -47,7 +47,7 @@ jobs:
           sudo apt-get install -y libssl-dev pkg-config libfontconfig1-dev
 
       - name: Install Rust
-        uses: dtolnay/rust-toolchain@stable
+        uses: dtolnay/rust-toolchain@4cda84d5c5c54efe2404f9d843567869ab1699d4  # stable
 
       - name: Install cargo-mutants
         run: cargo install cargo-mutants --locked
@@ -121,7 +121,7 @@ jobs:
 
       - name: Upload mutation test results
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02  # v4
         with:
           name: mutation-nightly-results
           path: |
@@ -130,7 +130,7 @@ jobs:
 
       - name: Post nightly summary comment
         if: always() && steps.results.outputs.has_results == 'true'
-        uses: actions/github-script@v7
+        uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b  # v7
         env:
           MUTANTS_EXIT: ${{ steps.mutants.outputs.mutants_exit }}
           CAUGHT: ${{ steps.results.outputs.caught }}

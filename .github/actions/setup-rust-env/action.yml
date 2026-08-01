@@ -36,7 +36,7 @@ runs:
         DEBIAN_FRONTEND: noninteractive
 
     - name: Install Rust
-      uses: dtolnay/rust-toolchain@1.85.0
+      uses: dtolnay/rust-toolchain@8641a17e25bf5b40c118d48fe0f81e8655731839  # 1.85.0
       with:
         toolchain: ${{ inputs.toolchain }}
         components: ${{ inputs.components }}
@@ -45,7 +45,7 @@ runs:
     # Caches individual compilation units; no stale-cache issues on Cargo.lock changes.
     - name: Set up sccache
       if: inputs.sccache == 'true'
-      uses: mozilla-actions/sccache-action@v0.0.11
+      uses: mozilla-actions/sccache-action@fc920bf0ec8de6ee65d409111f7ec508035751ba  # v0.0.11
 
     - name: Enable sccache as rustc wrapper
       if: inputs.sccache == 'true'
@@ -58,7 +58,7 @@ runs:
     # target/ caching is intentionally omitted when sccache is enabled because
     # sccache replaces it with finer-grained content-addressed caching.
     - name: Cache cargo registry and git
-      uses: actions/cache@v4
+      uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830  # v4
       with:
         path: |
           ~/.cargo/registry/index
@@ -71,7 +71,7 @@ runs:
     # Fallback target/ cache for jobs that disable sccache
     - name: Cache cargo build target
       if: inputs.sccache == 'false'
-      uses: actions/cache@v4
+      uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830  # v4
       with:
         path: target
         key: ${{ runner.os }}-cargo-target-${{ hashFiles('**/Cargo.lock') }}
