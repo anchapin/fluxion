@@ -23,7 +23,7 @@ pub mod error;
 pub mod heat_pump_voltage_model;
 pub mod thermal_electrical_coupler;
 
-pub use error::GridModelError;
+pub use error::{GridModelError, GridSolveError};
 pub use heat_pump_voltage_model::HeatPumpVoltageModel;
 pub use thermal_electrical_coupler::VoltageCoupler;
 
@@ -42,7 +42,10 @@ pub mod power_flow;
 
 pub use battery::BatteryBus;
 pub use bus::{BusNodeType, ElectricalBus};
-pub use power_flow::PowerFlowState;
+pub use power_flow::{
+    bus_uuid, GridConvergenceReport, PowerFlowSolver, PowerFlowState, TransmissionLine,
+    DEFAULT_MAX_ITERATIONS, DEFAULT_TOLERANCE,
+};
 
 use nalgebra::DMatrix;
 
