@@ -41,6 +41,7 @@ pub mod bus;
 pub mod power_flow;
 
 pub use battery::BatteryBus;
+pub use battery::HeatFlowRate; // Re-exported for direct fluxion-core thermal integration (#2036)
 pub use bus::{BusNodeType, ElectricalBus};
 pub use power_flow::{
     bus_uuid, GridConvergenceReport, PowerFlowSolver, PowerFlowState, TransmissionLine,
