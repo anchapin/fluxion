@@ -4,6 +4,7 @@
 //! - State of charge (SoC) tracking: 0.0 (empty) to 1.0 (full)
 //! - C-rate dependent discharge behavior
 //! - Internal resistance for terminal voltage calculation
+//! - Capacity fade / degradation tracking over cycling (#2037)
 //!
 //! ## Physics
 //!
@@ -18,8 +19,35 @@
 //! ```
 //!
 //! Where V_oc (open-circuit voltage) is approximated as V_nominal for the simplified model.
+//!
+//! ## Degradation (#2037)
+//!
+//! Each discharge cycle ages the cell. The per-cycle capacity fade is weighted by
+//! the depth of discharge (DoD), so a shallow cycle damages the cell less than a
+//! deep one:
+//! ```text
+//! fade = DoD * fade_rate_per_dod_cycle
+//! degradation_factor = (degradation_factor - fade).max(END_OF_LIFE_FACTOR)
+//! ```
+//! `degradation_factor` is the capacity-retention fraction in `[0.7, 1.0]`,
+//! where `1.0` is a fresh cell and `0.7` is the end of useful life. The
+//! [`crate::battery::BatteryDegradation`] struct offers a richer Arrhenius /
+//! calendar-aging model; this per-instance tracking is the lightweight runtime
+//! interface consumed by grid-edge simulations.
 
 use uuid::Uuid;
+
+/// Minimum `degradation_factor` before the cell is considered at end of useful
+/// life. A battery that reaches this floor has lost 30 % of its rated capacity.
+pub const END_OF_LIFE_FACTOR: f64 = 0.7;
+
+/// Default per-cycle fade rate weighted by depth of discharge.
+///
+/// Chosen so that 1000 cycles at 80 % DoD produce ≈4 % capacity loss, satisfying
+/// the #2037 acceptance criterion (degradation < 5 %). This is half the naïve
+/// `1e-4`-per-cycle figure, reflecting that partial (sub-full) cycles are less
+/// damaging than the conservative full-cycle estimate.
+pub const DEFAULT_FADE_RATE_PER_DOD_CYCLE: f64 = 0.00005;
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct BatteryStorageNode {
@@ -29,6 +57,20 @@ pub struct BatteryStorageNode {
     pub capacity_ah: f64,
     pub r_internal_ohm: f64,
     pub v_nominal: f64,
+    /// Capacity-retention fraction in `[END_OF_LIFE_FACTOR, 1.0]`.
+    ///
+    /// `1.0` is a fresh cell; it decreases with cycling via
+    /// [`BatteryStorageNode::update_degradation`] and is clamped at
+    /// [`END_OF_LIFE_FACTOR`] (0.7). (#2037)
+    pub degradation_factor: f64,
+    /// Number of discharge cycles recorded via
+    /// [`BatteryStorageNode::update_degradation`]. (#2037)
+    pub cycle_count: u64,
+    /// Capacity fade applied per cycle per unit of depth of discharge.
+    ///
+    /// A full cycle (DoD = 1.0) fades the cell by `fade_rate_per_dod_cycle`;
+    /// a cycle at 80 % DoD fades it by `0.8 * fade_rate_per_dod_cycle`. (#2037)
+    pub fade_rate_per_dod_cycle: f64,
 }
 
 impl BatteryStorageNode {
@@ -47,7 +89,41 @@ impl BatteryStorageNode {
             capacity_ah,
             r_internal_ohm,
             v_nominal,
+            degradation_factor: 1.0,
+            cycle_count: 0,
+            fade_rate_per_dod_cycle: DEFAULT_FADE_RATE_PER_DOD_CYCLE,
         }
+    }
+
+    /// Builder: override the per-DoD-cycle fade rate.
+    ///
+    /// Useful for validating against vendor datasheets or for sensitivity
+    /// studies. See [`DEFAULT_FADE_RATE_PER_DOD_CYCLE`] for the default.
+    pub fn with_fade_rate_per_dod_cycle(mut self, fade_rate: f64) -> Self {
+        self.fade_rate_per_dod_cycle = fade_rate;
+        self
+    }
+
+    /// Builder: seed an initial `degradation_factor` (e.g. for a pre-aged cell).
+    ///
+    /// Values outside `[END_OF_LIFE_FACTOR, 1.0]` are clamped into range.
+    pub fn with_degradation_factor(mut self, degradation_factor: f64) -> Self {
+        self.degradation_factor = degradation_factor.clamp(END_OF_LIFE_FACTOR, 1.0);
+        self
+    }
+
+    /// Builder: derive the runtime fade rate from a [`crate::battery::BatteryDegradation`]
+    /// analytical model.
+    ///
+    /// The analytical model's `fade_rate_per_cycle` is the loss for one
+    /// *full* (DoD = 1.0) cycle, which is exactly this node's
+    /// `fade_rate_per_dod_cycle` semantics. This bridges the projective
+    /// (cycles/years → loss) and the runtime (per-discharge accumulation)
+    /// views of aging so they stay consistent. Calendar (time-only) aging is
+    /// intentionally not accumulated here; it is modeled separately by
+    /// [`crate::battery::BatteryDegradation::capacity_loss`].
+    pub fn with_degradation_model(self, model: &crate::battery::BatteryDegradation) -> Self {
+        self.with_fade_rate_per_dod_cycle(model.fade_rate_per_cycle)
     }
 
     pub fn step(&mut self, dt: std::time::Duration, current_amps: f64) -> (f64, f64) {
@@ -60,6 +136,43 @@ impl BatteryStorageNode {
 
     pub fn terminal_voltage(&self, current: f64) -> f64 {
         self.v_nominal - current * self.r_internal_ohm
+    }
+
+    /// Apply one cycle of capacity fade and increment the cycle counter.
+    ///
+    /// The fade contribution is weighted by the depth of discharge so that
+    /// shallow cycling is less damaging than deep cycling:
+    ///
+    /// ```text
+    /// fade = clamp(DoD, 0, 1) * fade_rate_per_dod_cycle
+    /// degradation_factor = (degradation_factor - fade).max(END_OF_LIFE_FACTOR)
+    /// ```
+    ///
+    /// `depth_of_discharge` is clamped to `[0.0, 1.0]`; passing `0.0` still
+    /// increments `cycle_count` but applies no fade. The factor never drops
+    /// below [`END_OF_LIFE_FACTOR`] (0.7).
+    ///
+    /// # Arguments
+    /// * `depth_of_discharge` - Fraction of rated capacity discharged this
+    ///   cycle, in `[0.0, 1.0]`.
+    pub fn update_degradation(&mut self, depth_of_discharge: f64) {
+        let dod = depth_of_discharge.clamp(0.0, 1.0);
+        let fade = dod * self.fade_rate_per_dod_cycle;
+        self.degradation_factor = (self.degradation_factor - fade).max(END_OF_LIFE_FACTOR);
+        self.cycle_count += 1;
+    }
+
+    /// Rated capacity scaled by the current degradation factor.
+    ///
+    /// ```text
+    /// effective_capacity = capacity_ah * degradation_factor
+    /// ```
+    ///
+    /// As the cell ages, `degradation_factor` decreases toward
+    /// [`END_OF_LIFE_FACTOR`], so a 100 Ah cell at `0.85` retention delivers
+    /// `85 Ah` of usable capacity.
+    pub fn effective_capacity(&self) -> f64 {
+        self.capacity_ah * self.degradation_factor
     }
 }
 
@@ -107,5 +220,179 @@ mod tests {
 
         assert_eq!(v_no_load, 400.0);
         assert_eq!(v_with_load, 399.0);
+    }
+
+    // === Degradation model tests (#2037) ===
+
+    #[test]
+    fn test_degradation_defaults_fresh_cell() {
+        let bus_id = Uuid::new_v4();
+        let battery = BatteryStorageNode::new(bus_id, 1.0, 1.0, 100.0, 0.01, 400.0);
+        assert!(
+            (battery.degradation_factor - 1.0).abs() < f64::EPSILON,
+            "fresh cell should start at full retention (1.0)"
+        );
+        assert_eq!(battery.cycle_count, 0, "fresh cell has no cycles");
+        assert_eq!(
+            battery.fade_rate_per_dod_cycle,
+            DEFAULT_FADE_RATE_PER_DOD_CYCLE
+        );
+    }
+
+    /// Acceptance criterion: 1000 cycles at 80 % DoD -> degradation < 5 %.
+    #[test]
+    fn test_1000_cycles_80pct_dod_under_5pct() {
+        let bus_id = Uuid::new_v4();
+        let mut battery = BatteryStorageNode::new(bus_id, 1.0, 1.0, 100.0, 0.01, 400.0);
+
+        for _ in 0..1000 {
+            battery.update_degradation(0.8);
+        }
+
+        let loss = 1.0 - battery.degradation_factor;
+        assert!(
+            loss < 0.05,
+            "1000 cycles @ 80% DoD must degrade < 5%, got {:.4} ({:.2}%)",
+            loss,
+            loss * 100.0
+        );
+        assert_eq!(battery.cycle_count, 1000);
+
+        // 1000 * 0.8 * 5e-5 = 0.04 -> exactly 4 %.
+        assert!(
+            (battery.degradation_factor - 0.96).abs() < 1e-12,
+            "expected 4% fade -> factor 0.96, got {}",
+            battery.degradation_factor
+        );
+    }
+
+    /// `degradation_factor` must never drop below the end-of-life floor (0.7),
+    /// regardless of how many cycles are applied.
+    #[test]
+    fn test_degradation_factor_floor_enforced() {
+        let bus_id = Uuid::new_v4();
+        let mut battery = BatteryStorageNode::new(bus_id, 1.0, 1.0, 100.0, 0.01, 400.0);
+
+        // Far more cycles than needed to exhaust capacity.
+        for _ in 0..100_000 {
+            battery.update_degradation(1.0);
+        }
+
+        assert!(
+            battery.degradation_factor >= END_OF_LIFE_FACTOR,
+            "degradation_factor must be >= {} (EoL), got {}",
+            END_OF_LIFE_FACTOR,
+            battery.degradation_factor
+        );
+        assert!(
+            (battery.degradation_factor - END_OF_LIFE_FACTOR).abs() < f64::EPSILON,
+            "after heavy cycling the factor should sit exactly on the floor"
+        );
+    }
+
+    /// `effective_capacity` must scale rated capacity by the retention factor.
+    #[test]
+    fn test_effective_capacity_applies_degradation() {
+        let bus_id = Uuid::new_v4();
+        let mut battery = BatteryStorageNode::new(bus_id, 1.0, 1.0, 100.0, 0.01, 400.0);
+
+        // Fresh cell: full capacity available.
+        assert!((battery.effective_capacity() - 100.0).abs() < 1e-12);
+
+        // 500 cycles @ 100 % DoD -> 500 * 1.0 * 5e-5 = 0.025 fade -> factor 0.975.
+        for _ in 0..500 {
+            battery.update_degradation(1.0);
+        }
+        let expected_factor = 1.0 - 500.0 * DEFAULT_FADE_RATE_PER_DOD_CYCLE;
+        assert!((battery.degradation_factor - expected_factor).abs() < 1e-12);
+        assert!(
+            (battery.effective_capacity() - 100.0 * expected_factor).abs() < 1e-9,
+            "effective_capacity should be {:.4}, got {:.4}",
+            100.0 * expected_factor,
+            battery.effective_capacity()
+        );
+
+        // At the EoL floor, effective capacity is 70 % of rated.
+        for _ in 0..100_000 {
+            battery.update_degradation(1.0);
+        }
+        assert!((battery.effective_capacity() - 100.0 * END_OF_LIFE_FACTOR).abs() < 1e-9);
+    }
+
+    /// `cycle_count` increments exactly once per `update_degradation` call,
+    /// including a no-op (DoD = 0) cycle.
+    #[test]
+    fn test_cycle_count_increments() {
+        let bus_id = Uuid::new_v4();
+        let mut battery = BatteryStorageNode::new(bus_id, 1.0, 1.0, 100.0, 0.01, 400.0);
+
+        assert_eq!(battery.cycle_count, 0);
+
+        battery.update_degradation(0.8);
+        assert_eq!(battery.cycle_count, 1);
+
+        battery.update_degradation(0.0); // zero-DoD cycle still counts as a cycle
+        assert_eq!(battery.cycle_count, 2);
+        assert!(
+            (battery.degradation_factor - (1.0 - 0.8 * DEFAULT_FADE_RATE_PER_DOD_CYCLE)).abs()
+                < 1e-12,
+            "zero-DoD cycle must apply no additional fade"
+        );
+
+        for _ in 0..8 {
+            battery.update_degradation(0.5);
+        }
+        assert_eq!(battery.cycle_count, 10);
+    }
+
+    /// DoD is clamped to `[0, 1]`: negative or >1 values must not produce
+    /// unphysical fade.
+    #[test]
+    fn test_update_degradation_clamps_dod() {
+        let bus_id = Uuid::new_v4();
+        let mut battery = BatteryStorageNode::new(bus_id, 1.0, 1.0, 100.0, 0.01, 400.0);
+
+        battery.update_degradation(-0.5); // treated as 0.0
+        assert!(
+            (battery.degradation_factor - 1.0).abs() < 1e-12,
+            "negative DoD must not increase capacity"
+        );
+
+        battery.update_degradation(5.0); // treated as 1.0
+        assert!(
+            (battery.degradation_factor - (1.0 - DEFAULT_FADE_RATE_PER_DOD_CYCLE)).abs() < 1e-12,
+            "DoD > 1 must be clamped to a single full-equivalent cycle"
+        );
+    }
+
+    /// Builder overrides compose correctly.
+    #[test]
+    fn test_with_fade_rate_and_degradation_factor_builders() {
+        let bus_id = Uuid::new_v4();
+        let mut battery = BatteryStorageNode::new(bus_id, 1.0, 1.0, 100.0, 0.01, 400.0)
+            .with_fade_rate_per_dod_cycle(0.0001)
+            .with_degradation_factor(0.9);
+
+        assert!((battery.fade_rate_per_dod_cycle - 0.0001).abs() < f64::EPSILON);
+        assert!((battery.degradation_factor - 0.9).abs() < f64::EPSILON);
+
+        // 100 cycles @ 100% DoD @ 1e-4 -> 0.01 fade -> 0.89
+        for _ in 0..100 {
+            battery.update_degradation(1.0);
+        }
+        assert!((battery.degradation_factor - 0.89).abs() < 1e-12);
+    }
+
+    /// Pre-seeding a degradation factor outside `[0.7, 1.0]` is clamped.
+    #[test]
+    fn test_with_degradation_factor_clamps_out_of_range() {
+        let bus_id = Uuid::new_v4();
+        let over = BatteryStorageNode::new(bus_id, 1.0, 1.0, 100.0, 0.01, 400.0)
+            .with_degradation_factor(1.5);
+        assert!((over.degradation_factor - 1.0).abs() < f64::EPSILON);
+
+        let under = BatteryStorageNode::new(bus_id, 1.0, 1.0, 100.0, 0.01, 400.0)
+            .with_degradation_factor(0.3);
+        assert!((under.degradation_factor - END_OF_LIFE_FACTOR).abs() < f64::EPSILON);
     }
 }
