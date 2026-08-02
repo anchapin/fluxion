@@ -5,6 +5,23 @@ use fluxion_city::{
     sparse::{create_sparse_from_urban_canyon, SparseViewFactorMatrix, UrbanRadiationSolver},
 };
 
+/// Build a sparse banded view-factor graph of `n` surfaces where each surface
+/// sees only its nearest neighbours (≈ 6/n % edge density). This is the
+/// realistic topology for large urban simulations where distant buildings are
+/// occluded (Issue #2030 benchmark scenario).
+fn build_sparse_banded_solver(n: usize) -> UrbanRadiationSolver {
+    let mut vf = SparseViewFactorMatrix::new(n, n);
+    for i in 0..n {
+        let f = 0.3;
+        let next = (i + 1) % n;
+        let prev = if i == 0 { n - 1 } else { i - 1 };
+        vf.set(i, next, f);
+        vf.set(i, prev, f);
+    }
+    let areas = vec![50.0; n];
+    UrbanRadiationSolver::with_uniform_emissivity(vf, areas, 0.9)
+}
+
 fn create_urban_canyon_surfaces(n_buildings: usize) -> (Vec<(f64, f64, f64)>, f64) {
     let mut walls = Vec::with_capacity(n_buildings);
     for i in 0..n_buildings {
@@ -192,6 +209,84 @@ fn benchmark_100_surface_urban_canopy(c: &mut Criterion) {
     group.finish();
 }
 
+/// Issue #2030: faer sparse matvec vs HashMap-based flux computation for a
+/// 100-building urban graph. Measures both the net-flux-per-surface paths and
+/// reports the memory footprint of each representation.
+fn benchmark_faer_sparse_vs_hashmap(c: &mut Criterion) {
+    let mut group = c.benchmark_group("faer_sparse_vs_hashmap_100buildings");
+
+    for n in [20, 50, 100, 200].iter() {
+        let solver = build_sparse_banded_solver(*n);
+        let temps: Vec<f64> = (0..*n).map(|i| 290.0 + (i as f64 % 20.0)).collect();
+
+        // HashMap-based per-pair aggregation (reference path).
+        group.bench_with_input(BenchmarkId::new("hashmap_net_flux", n), n, |b, _| {
+            b.iter(|| solver.compute_net_flux_per_surface(black_box(&temps)));
+        });
+
+        // faer sparse CSC matvec path.
+        group.bench_with_input(BenchmarkId::new("faer_net_flux", n), n, |b, _| {
+            b.iter(|| solver.compute_net_flux_per_surface_faer(black_box(&temps)));
+        });
+    }
+
+    group.finish();
+
+    // Memory comparison report (printed once, not iterated).
+    let n = 100;
+    let solver = build_sparse_banded_solver(n);
+    let vf = solver.view_factor_matrix();
+    let faer_bytes = vf.estimated_faer_csc_bytes();
+    let hashmap_bytes = vf.estimated_hashmap_bytes();
+    let dense_bytes = vf.estimated_dense_bytes();
+    let density = vf.edge_density();
+    eprintln!(
+        "\n[Issue #2030 memory] n={n} edge_density={density:.4} ({:.1}%) | \
+         faer_csc={faer_bytes} B | hashmap={hashmap_bytes} B | dense={dense_bytes} B | \
+         faer/dense={:.1}% | hashmap/dense={:.1}%\n",
+        density * 100.0,
+        faer_bytes as f64 / dense_bytes as f64 * 100.0,
+        hashmap_bytes as f64 / dense_bytes as f64 * 100.0,
+    );
+}
+
+/// Issue #2030: raw sparse matrix-vector product (faer CSC) vs the HashMap
+/// `multiply_dense` for a 100-building graph, isolating the matvec cost from
+/// the Stefan-Boltzmann scaling.
+fn benchmark_faer_sparse_matvec(c: &mut Criterion) {
+    let mut group = c.benchmark_group("faer_sparse_matvec_100buildings");
+
+    for n in [20, 50, 100, 200].iter() {
+        let solver = build_sparse_banded_solver(*n);
+        let vec: Vec<f64> = vec![1.0; *n];
+
+        // HashMap matvec.
+        group.bench_with_input(BenchmarkId::new("hashmap_matvec", n), n, |b, _| {
+            b.iter(|| solver.view_factor_matrix().multiply_dense(black_box(&vec)));
+        });
+
+        // faer sparse matvec via the radiation solver's internal F matrix.
+        group.bench_with_input(BenchmarkId::new("faer_matvec", n), n, |b, _| {
+            b.iter(|| {
+                use faer::{Accum, Mat, Par};
+                let v = Mat::from_fn(*n, 1, |i, _| vec[i]);
+                let mut dst = Mat::<f64>::zeros(*n, 1);
+                faer::sparse::linalg::matmul::sparse_dense_matmul(
+                    dst.as_mut(),
+                    Accum::Replace,
+                    solver.faer_matrix().as_ref(),
+                    v.as_ref(),
+                    1.0,
+                    Par::Seq,
+                );
+                dst
+            });
+        });
+    }
+
+    group.finish();
+}
+
 criterion_group!(
     benches,
     benchmark_view_factor_enclosure,
@@ -203,5 +298,7 @@ criterion_group!(
     benchmark_summation_verification,
     benchmark_ashrae140_cases,
     benchmark_100_surface_urban_canopy,
+    benchmark_faer_sparse_vs_hashmap,
+    benchmark_faer_sparse_matvec,
 );
 criterion_main!(benches);
