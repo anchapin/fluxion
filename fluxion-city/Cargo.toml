@@ -34,3 +34,7 @@ required-features = ["parallel"]
 [[bench]]
 name = "view_factor_perf"
 harness = false
+
+[[bench]]
+name = "city_benches"
+harness = false
