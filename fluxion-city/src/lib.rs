@@ -576,6 +576,62 @@ pub mod nusselt {
 pub mod sparse {
     use super::{nusselt::ViewFactorMatrix, ViewFactorError};
     use std::collections::HashMap;
+    use thiserror::Error;
+
+    /// Stefan-Boltzmann constant, σ = 5.67×10⁻⁸ W·m⁻²·K⁻⁴.
+    ///
+    /// Used for longwave radiative heat exchange between building surfaces.
+    pub const STEFAN_BOLTZMANN: f64 = 5.67e-8;
+
+    /// Default longwave emissivity for typical building envelope surfaces (ε = 0.9).
+    ///
+    /// Most opaque building materials (brick, concrete, stucco, roofing) have a
+    /// longwave emissivity in the 0.85–0.92 range; 0.9 is the canonical default.
+    pub const DEFAULT_EMISSIVITY: f64 = 0.9;
+
+    /// Errors raised during inter-building radiative flux computation.
+    #[derive(Debug, Error, PartialEq)]
+    pub enum RadiationError {
+        #[error(
+            "temperature vector length ({got}) does not match number of surfaces ({expected})"
+        )]
+        DimensionMismatch { expected: usize, got: usize },
+
+        #[error(
+            "emissivities vector length ({got}) does not match number of surfaces ({expected})"
+        )]
+        EmissivityMismatch { expected: usize, got: usize },
+
+        #[error("areas vector length ({got}) does not match number of surfaces ({expected})")]
+        AreaMismatch { expected: usize, got: usize },
+
+        #[error(
+            "surface {index} temperature {value} K is invalid (must be finite and non-negative)"
+        )]
+        InvalidTemperature { index: usize, value: f64 },
+
+        #[error("surface {index} emissivity {value} is out of range [0, 1]")]
+        InvalidEmissivity { index: usize, value: f64 },
+    }
+
+    /// Net radiative heat flow for a single ordered surface pair (i → j).
+    ///
+    /// Computed from the linearised gray-diffuse exchange
+    /// `Q_rad(i→j) = ε_i · σ · F_ij · A_i · (T_i⁴ − T_j⁴)`.
+    ///
+    /// `heat_flow_w` is positive when surface `from` is warmer than surface `to`
+    /// (net radiative transfer from `from` to `to`), and negative otherwise.
+    #[derive(Debug, Clone, Copy, PartialEq)]
+    pub struct SurfacePairFlux {
+        /// Index of the emitting surface (i).
+        pub from: usize,
+        /// Index of the receiving surface (j).
+        pub to: usize,
+        /// View factor F_{i→j} used for this exchange.
+        pub view_factor: f64,
+        /// Net radiative heat flow Q_rad(i→j) in watts.
+        pub heat_flow_w: f64,
+    }
 
     pub struct SparseViewFactorMatrix {
         data: HashMap<(usize, usize), f64>,
@@ -684,7 +740,11 @@ pub mod sparse {
         }
     }
 
-    #[allow(dead_code)]
+    /// Inter-building longwave radiation solver.
+    ///
+    /// Holds the (sparse) view-factor matrix, per-surface areas and emissivities,
+    /// and computes net radiative exchange between surface pairs using the
+    /// Stefan-Boltzmann law.
     pub struct UrbanRadiationSolver {
         view_factors: SparseViewFactorMatrix,
         areas: Vec<f64>,
@@ -718,13 +778,29 @@ pub mod sparse {
             Ok(Self::new(sparse, areas, emissivities))
         }
 
+        /// Build a solver with a uniform emissivity for every surface.
+        ///
+        /// Convenience constructor for the common case where all building
+        /// surfaces share the same longwave emissivity (defaults to
+        /// [`DEFAULT_EMISSIVITY`] = 0.9).
+        pub fn with_uniform_emissivity(
+            view_factors: SparseViewFactorMatrix,
+            areas: Vec<f64>,
+            emissivity: f64,
+        ) -> Self {
+            let emissivities = vec![emissivity; areas.len()];
+            Self::new(view_factors, areas, emissivities)
+        }
+
+        /// Absorbed longwave radiation per surface (W) using the radiosity-style
+        /// matrix-vector product `ε_i · Σ_j F_ji · (ε_j σ T_j⁴)`.
         pub fn compute_radiation_exchange(&self, temperatures: &[f64]) -> Vec<f64> {
             let n = temperatures.len();
             let mut absorbed = vec![0.0; n];
 
             let mut j_rad = vec![0.0; n];
             for i in 0..n {
-                j_rad[i] = self.emissivities[i] * 5.670374419e-8_f64 * temperatures[i].powi(4);
+                j_rad[i] = self.emissivities[i] * STEFAN_BOLTZMANN * temperatures[i].powi(4);
             }
 
             let incident = self.view_factors.multiply_transpose_dense(&j_rad);
@@ -736,12 +812,100 @@ pub mod sparse {
             absorbed
         }
 
+        /// Compute the net radiative heat flow for every non-zero surface pair.
+        ///
+        /// Implements the gray-diffuse net exchange
+        /// `Q_rad(i→j) = ε_i · σ · F_ij · A_i · (T_i⁴ − T_j⁴)`
+        /// (Issue #2029), where `ε_i` is the emissivity of the emitting surface.
+        ///
+        /// Only pairs with a non-zero view factor are returned. Each returned
+        /// [`SurfacePairFlux`] carries the ordered indices `(i, j)`, the view
+        /// factor, and the signed heat flow in watts (positive ⇒ net transfer
+        /// from `i` to `j`, i.e. `i` is warmer).
+        pub fn compute_fluxes(
+            &self,
+            temperatures: &[f64],
+        ) -> Result<Vec<SurfacePairFlux>, RadiationError> {
+            let n = self.areas.len();
+            if temperatures.len() != n {
+                return Err(RadiationError::DimensionMismatch {
+                    expected: n,
+                    got: temperatures.len(),
+                });
+            }
+            if self.emissivities.len() != n {
+                return Err(RadiationError::EmissivityMismatch {
+                    expected: n,
+                    got: self.emissivities.len(),
+                });
+            }
+
+            // Validate inputs (non-negative, finite temperatures; bounded emissivity).
+            for (i, &t) in temperatures.iter().enumerate() {
+                if !t.is_finite() || t < 0.0 {
+                    return Err(RadiationError::InvalidTemperature { index: i, value: t });
+                }
+            }
+            for (i, &e) in self.emissivities.iter().enumerate() {
+                if !(0.0..=1.0).contains(&e) {
+                    return Err(RadiationError::InvalidEmissivity { index: i, value: e });
+                }
+            }
+
+            // Iterate over the stored non-zero view-factor entries directly.
+            // SparseViewFactorMatrix only retains entries above the 1e-12 threshold,
+            // so this visits exactly the radiatively-coupled pairs.
+            let mut fluxes = Vec::with_capacity(self.view_factors.nnz());
+            for (&(i, j), &f_ij) in &self.view_factors.data {
+                let eps_i = self.emissivities[i];
+                let a_i = self.areas[i];
+                let t_i = temperatures[i];
+                let t_j = temperatures[j];
+
+                // Q_rad(i→j) = ε_i σ F_ij A_i (T_i⁴ − T_j⁴)
+                let heat_flow_w =
+                    eps_i * STEFAN_BOLTZMANN * f_ij * a_i * (t_i.powi(4) - t_j.powi(4));
+
+                fluxes.push(SurfacePairFlux {
+                    from: i,
+                    to: j,
+                    view_factor: f_ij,
+                    heat_flow_w,
+                });
+            }
+
+            Ok(fluxes)
+        }
+
+        /// Aggregate net radiative heat flow per surface (W).
+        ///
+        /// For each surface `i` this is `Σ_j Q_rad(i→j)` — the net radiative
+        /// energy *leaving* surface `i` towards all visible surfaces `j`
+        /// (positive ⇒ surface `i` is a net radiator, negative ⇒ net absorber).
+        pub fn compute_net_flux_per_surface(&self, temperatures: &[f64]) -> Vec<f64> {
+            let n = self.areas.len();
+            let mut net = vec![0.0; n];
+
+            if let Ok(fluxes) = self.compute_fluxes(temperatures) {
+                for f in fluxes {
+                    net[f.from] += f.heat_flow_w;
+                }
+            }
+
+            net
+        }
+
         pub fn view_factor_matrix(&self) -> &SparseViewFactorMatrix {
             &self.view_factors
         }
 
         pub fn view_factor_dense_at(&self, i: usize, j: usize) -> f64 {
             self.view_factors.get(i, j)
+        }
+
+        /// Number of surfaces modelled by this solver.
+        pub fn num_surfaces(&self) -> usize {
+            self.areas.len()
         }
     }
 
@@ -1160,7 +1324,10 @@ pub use nusselt::{
     view_factor_parallel_rectangles, view_factor_wall_to_ground, view_factor_wall_to_sky,
     ViewFactorMatrix,
 };
-pub use sparse::{create_sparse_from_urban_canyon, SparseViewFactorMatrix, UrbanRadiationSolver};
+pub use sparse::{
+    create_sparse_from_urban_canyon, RadiationError, SparseViewFactorMatrix, SurfacePairFlux,
+    UrbanRadiationSolver, DEFAULT_EMISSIVITY, STEFAN_BOLTZMANN,
+};
 pub use urban_graph::{AdjacencyType, BoundingBox3D, BuildingNode, SpatialEdge, UrbanGraph};
 
 /// Monte Carlo ray-tracing view factor computation for arbitrary 3D surfaces.
@@ -1890,5 +2057,215 @@ mod tests {
             "Total net radiation {} should be zero for enclosed surfaces",
             total_net
         );
+    }
+
+    // === Issue #2029: UrbanRadiationSolver net radiative flux computation ===
+
+    /// Build a 2-surface solver with a known symmetric view-factor matrix.
+    /// F_12 = F_21 = 0.5, areas = [10, 10] m², emissivity = 0.9.
+    fn two_surface_solver() -> sparse::UrbanRadiationSolver {
+        let mut vf = sparse::SparseViewFactorMatrix::new(2, 2);
+        // Off-diagonal view factors only (no self-viewing).
+        vf.set(0, 1, 0.5);
+        vf.set(1, 0, 0.5);
+        sparse::UrbanRadiationSolver::with_uniform_emissivity(vf, vec![10.0, 10.0], 0.9)
+    }
+
+    #[test]
+    fn test_compute_fluxes_reference_value() {
+        // Q_rad(i→j) = εσF_ij A_i (T_i⁴ − T_j⁴)
+        // ε=0.9, σ=5.67e-8, F=0.5, A=10, T_i=300K, T_j=290K
+        // Python reference: 262.0875285 W
+        let solver = two_surface_solver();
+        let temps = [300.0, 290.0];
+        let fluxes = solver.compute_fluxes(&temps).expect("flux computation");
+
+        let q01 = fluxes
+            .iter()
+            .find(|f| f.from == 0 && f.to == 1)
+            .expect("flux 0->1 present");
+        approx::assert_abs_diff_eq!(q01.heat_flow_w, 262.0875285, epsilon = 1e-4);
+        approx::assert_abs_diff_eq!(q01.view_factor, 0.5, epsilon = 1e-12);
+        assert!(
+            q01.heat_flow_w > 0.0,
+            "net transfer must be from hot to cold"
+        );
+    }
+
+    #[test]
+    fn test_compute_fluxes_zero_at_equal_temperature() {
+        let solver = two_surface_solver();
+        let fluxes = solver
+            .compute_fluxes(&[300.0, 300.0])
+            .expect("flux computation");
+        for f in &fluxes {
+            assert!(
+                f.heat_flow_w.abs() < 1e-9,
+                "flux {}->{} should be zero at equal T, got {}",
+                f.from,
+                f.to,
+                f.heat_flow_w
+            );
+        }
+    }
+
+    #[test]
+    fn test_compute_fluxes_sign_hot_to_cold() {
+        let solver = two_surface_solver();
+        // Surface 0 hot, surface 1 cold => flux 0->1 positive (net loss from 0).
+        let fluxes = solver
+            .compute_fluxes(&[310.0, 280.0])
+            .expect("flux computation");
+        let q01 = fluxes.iter().find(|f| f.from == 0 && f.to == 1).unwrap();
+        assert!(q01.heat_flow_w > 0.0);
+
+        // Swap: surface 0 cold, surface 1 hot => flux 0->1 negative.
+        let fluxes = solver
+            .compute_fluxes(&[280.0, 310.0])
+            .expect("flux computation");
+        let q01 = fluxes.iter().find(|f| f.from == 0 && f.to == 1).unwrap();
+        assert!(q01.heat_flow_w < 0.0);
+    }
+
+    #[test]
+    fn test_compute_fluxes_reciprocity_and_antisymmetry() {
+        // With equal emissivities and reciprocal view factors (A1 F12 = A2 F21),
+        // Q(i→j) must equal −Q(j→i) exactly.
+        let solver = two_surface_solver();
+        let fluxes = solver
+            .compute_fluxes(&[300.0, 290.0])
+            .expect("flux computation");
+
+        let q01 = fluxes.iter().find(|f| f.from == 0 && f.to == 1).unwrap();
+        let q10 = fluxes.iter().find(|f| f.from == 1 && f.to == 0).unwrap();
+
+        approx::assert_abs_diff_eq!(q01.heat_flow_w, -q10.heat_flow_w, epsilon = 1e-6);
+    }
+
+    #[test]
+    fn test_compute_fluxes_energy_balance() {
+        // For an enclosed pair with equal emissivities and reciprocal view
+        // factors, the sum of all pair fluxes must be zero (energy conserved:
+        // what one surface loses the other gains).
+        let solver = two_surface_solver();
+        let fluxes = solver
+            .compute_fluxes(&[300.0, 290.0])
+            .expect("flux computation");
+        let total: f64 = fluxes.iter().map(|f| f.heat_flow_w).sum();
+        assert!(
+            total.abs() < 1e-6,
+            "total pair flux {} should be ~0 (energy balance)",
+            total
+        );
+    }
+
+    #[test]
+    fn test_net_flux_per_surface_balance() {
+        // Net-per-surface must sum to zero for a closed pair with equal ε.
+        let solver = two_surface_solver();
+        let net = solver.compute_net_flux_per_surface(&[300.0, 290.0]);
+        assert_eq!(net.len(), 2);
+        // Surface 0 (hot) is a net radiator => positive; surface 1 a net absorber.
+        assert!(net[0] > 0.0);
+        assert!(net[1] < 0.0);
+        approx::assert_abs_diff_eq!(net[0], -net[1], epsilon = 1e-6);
+        // 262.0875 W leaves surface 0.
+        approx::assert_abs_diff_eq!(net[0], 262.0875285, epsilon = 1e-4);
+    }
+
+    #[test]
+    fn test_compute_fluxes_area_scaling() {
+        // Doubling the area of the emitting surface doubles the flux (linear in A_i).
+        let base = two_surface_solver();
+        let q_base = base
+            .compute_fluxes(&[300.0, 290.0])
+            .unwrap()
+            .into_iter()
+            .find(|f| f.from == 0 && f.to == 1)
+            .unwrap()
+            .heat_flow_w;
+
+        let mut vf = sparse::SparseViewFactorMatrix::new(2, 2);
+        vf.set(0, 1, 0.5);
+        vf.set(1, 0, 0.5);
+        let big = sparse::UrbanRadiationSolver::with_uniform_emissivity(vf, vec![20.0, 10.0], 0.9);
+        let q_big = big
+            .compute_fluxes(&[300.0, 290.0])
+            .unwrap()
+            .into_iter()
+            .find(|f| f.from == 0 && f.to == 1)
+            .unwrap()
+            .heat_flow_w;
+
+        approx::assert_abs_diff_eq!(q_big, 2.0 * q_base, epsilon = 1e-6);
+    }
+
+    #[test]
+    fn test_compute_fluxes_dimension_mismatch() {
+        let solver = two_surface_solver();
+        let err = solver.compute_fluxes(&[300.0]).unwrap_err();
+        match err {
+            sparse::RadiationError::DimensionMismatch { expected, got } => {
+                assert_eq!(expected, 2);
+                assert_eq!(got, 1);
+            }
+            other => panic!("expected DimensionMismatch, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn test_compute_fluxes_invalid_temperature() {
+        let solver = two_surface_solver();
+        assert!(matches!(
+            solver.compute_fluxes(&[-5.0, 290.0]),
+            Err(sparse::RadiationError::InvalidTemperature { index: 0, .. })
+        ));
+        assert!(matches!(
+            solver.compute_fluxes(&[f64::NAN, 290.0]),
+            Err(sparse::RadiationError::InvalidTemperature { index: 0, .. })
+        ));
+    }
+
+    #[test]
+    fn test_compute_fluxes_3_surface_enclosure_balance() {
+        // Three surfaces with a fully reciprocal view-factor set and equal ε.
+        // Total pair flux must sum to zero (closed enclosure).
+        // Areas chosen so that F_ij A_i = F_ji A_j for each pair.
+        // A = [10, 10, 10], symmetric F => reciprocity satisfied trivially.
+        let mut vf = sparse::SparseViewFactorMatrix::new(3, 3);
+        vf.set(0, 1, 0.3);
+        vf.set(1, 0, 0.3);
+        vf.set(0, 2, 0.2);
+        vf.set(2, 0, 0.2);
+        vf.set(1, 2, 0.25);
+        vf.set(2, 1, 0.25);
+        let solver =
+            sparse::UrbanRadiationSolver::with_uniform_emissivity(vf, vec![10.0, 10.0, 10.0], 0.9);
+
+        let fluxes = solver
+            .compute_fluxes(&[305.0, 295.0, 290.0])
+            .expect("flux computation");
+        let total: f64 = fluxes.iter().map(|f| f.heat_flow_w).sum();
+        assert!(
+            total.abs() < 1e-6,
+            "3-surface enclosure total flux {} should be ~0",
+            total
+        );
+
+        // Net per-surface must also sum to zero.
+        let net = solver.compute_net_flux_per_surface(&[305.0, 295.0, 290.0]);
+        let net_total: f64 = net.iter().sum();
+        approx::assert_abs_diff_eq!(net_total, 0.0, epsilon = 1e-6);
+        // Hottest surface (0) is a net radiator.
+        assert!(net[0] > 0.0);
+        // Coldest surface (2) is a net absorber.
+        assert!(net[2] < 0.0);
+    }
+
+    #[test]
+    fn test_constants_match_issue_spec() {
+        // σ = 5.67e-8 W/m²/K⁴, default ε = 0.9 (Issue #2029 acceptance criteria).
+        approx::assert_abs_diff_eq!(sparse::STEFAN_BOLTZMANN, 5.67e-8, epsilon = 0.0);
+        approx::assert_abs_diff_eq!(sparse::DEFAULT_EMISSIVITY, 0.9, epsilon = 0.0);
     }
 }
