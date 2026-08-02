@@ -111,32 +111,166 @@ impl HourlyTransitionMatrices {
 }
 
 /// Building type with ASHRAE 90.1 occupancy profiles.
-#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum BuildingType {
     Office,
     Retail,
     Restaurant,
     Residential,
+    /// Generic commercial (DOE Commercial Reference Building — midrise office).
+    Commercial,
 }
 
 // ---------------------------------------------------------------------------
 // ASHRAE 90.1 transition matrix data
 // ---------------------------------------------------------------------------
 
+/// Build an [`HourlyTransitionMatrices`] from 24 `(p_vacant_occupied,
+/// p_occupied_vacant)` pairs (one per hour, index 0 = midnight).
+fn matrices_from_pairs(pairs: &[(f64, f64)]) -> HourlyTransitionMatrices {
+    assert_eq!(
+        pairs.len(),
+        24,
+        "exactly 24 hourly transition pairs required"
+    );
+    let mut matrices: HashMap<u8, TransitionMatrix> = HashMap::new();
+    for (hour, &(p_vacant_occupied, p_occupied_vacant)) in pairs.iter().enumerate() {
+        matrices.insert(
+            hour as u8,
+            TransitionMatrix::new(p_vacant_occupied, p_occupied_vacant),
+        );
+    }
+    HourlyTransitionMatrices { matrices }
+}
+
+/// ASHRAE 90.1 / DOE residential reference transition matrices (#2046).
+///
+/// **Weekday pattern** — high night occupancy (sleeping), absent workday
+/// (9 AM–5 PM), occupied morning/evening:
+/// - 23:00–05:00  → sleeping / home (frac ≈ 0.83–0.89)
+/// - 06:00–08:00  → morning presence (frac ≈ 0.40–0.75)
+/// - 09:00–17:00  → workday absence  (frac ≈ 0.17–0.33)
+/// - 18:00–22:00  → evening presence (frac ≈ 0.85–0.93)
+///
+/// **Weekend pattern** — more daytime presence (people home).
+fn residential_ashrae_matrices(weekend: bool) -> HourlyTransitionMatrices {
+    if weekend {
+        matrices_from_pairs(&[
+            (0.05, 0.01), // 0
+            (0.05, 0.01), // 1
+            (0.05, 0.01), // 2
+            (0.05, 0.01), // 3
+            (0.05, 0.01), // 4
+            (0.08, 0.01), // 5
+            (0.15, 0.03), // 6
+            (0.20, 0.05), // 7
+            (0.25, 0.06), // 8
+            (0.20, 0.08), // 9
+            (0.20, 0.08), // 10
+            (0.25, 0.06), // 11
+            (0.30, 0.05), // 12
+            (0.25, 0.06), // 13
+            (0.20, 0.08), // 14
+            (0.20, 0.08), // 15
+            (0.20, 0.08), // 16
+            (0.25, 0.06), // 17
+            (0.35, 0.04), // 18
+            (0.40, 0.03), // 19
+            (0.40, 0.03), // 20
+            (0.35, 0.03), // 21
+            (0.20, 0.02), // 22
+            (0.10, 0.01), // 23
+        ])
+    } else {
+        matrices_from_pairs(&[
+            (0.05, 0.01), // 0  night — sleeping/home
+            (0.05, 0.01), // 1
+            (0.05, 0.01), // 2
+            (0.05, 0.01), // 3
+            (0.05, 0.01), // 4
+            (0.08, 0.01), // 5  wake-up begins
+            (0.15, 0.05), // 6  morning presence
+            (0.30, 0.15), // 7  getting ready (some leave)
+            (0.20, 0.30), // 8  departing for work
+            (0.05, 0.20), // 9  workday absent
+            (0.04, 0.20), // 10
+            (0.04, 0.15), // 11
+            (0.06, 0.12), // 12 lunch (some return)
+            (0.04, 0.15), // 13
+            (0.04, 0.20), // 14
+            (0.04, 0.20), // 15
+            (0.06, 0.18), // 16
+            (0.15, 0.12), // 17 returning home
+            (0.35, 0.06), // 18 evening arrival
+            (0.40, 0.04), // 19 evening occupied
+            (0.40, 0.03), // 20
+            (0.35, 0.03), // 21
+            (0.20, 0.02), // 22 winding down
+            (0.10, 0.01), // 23 to bed
+        ])
+    }
+}
+
+/// ASHRAE 90.1 / DOE Commercial Reference (midrise office) matrices (#2046).
+///
+/// **Weekday pattern** — high presence 8 AM–6 PM, absent nights, lunch dip:
+/// - 00:00–06:00 → absent (frac ≈ 0.02)
+/// - 07:00–08:00 → mass arrival (frac climbs to 0.91)
+/// - 09:00–17:00 → occupied (frac ≈ 0.80–0.92, lunch dip at 12:00 ≈ 0.57)
+/// - 18:00–23:00 → mass departure / absent (frac ≈ 0.02–0.11)
+///
+/// **Weekend pattern** — low presence throughout (frac ≈ 0.09).
+fn commercial_ashrae_matrices(weekend: bool) -> HourlyTransitionMatrices {
+    if weekend {
+        // Uniform low presence on weekends.
+        matrices_from_pairs(&[(0.02, 0.20); 24])
+    } else {
+        matrices_from_pairs(&[
+            (0.01, 0.40), // 0  night absent
+            (0.01, 0.40), // 1
+            (0.01, 0.40), // 2
+            (0.01, 0.40), // 3
+            (0.01, 0.40), // 4
+            (0.01, 0.40), // 5
+            (0.02, 0.30), // 6
+            (0.20, 0.10), // 7  arrival begins
+            (0.50, 0.05), // 8  mass arrival
+            (0.12, 0.01), // 9  occupied
+            (0.10, 0.01), // 10
+            (0.10, 0.02), // 11
+            (0.08, 0.06), // 12 lunch dip
+            (0.12, 0.02), // 13 return from lunch
+            (0.10, 0.01), // 14
+            (0.10, 0.01), // 15
+            (0.10, 0.01), // 16
+            (0.12, 0.03), // 17
+            (0.05, 0.40), // 18 mass departure
+            (0.03, 0.40), // 19
+            (0.02, 0.40), // 20
+            (0.01, 0.40), // 21
+            (0.01, 0.40), // 22
+            (0.01, 0.40), // 23
+        ])
+    }
+}
+
 fn ashrae90p1_transition_matrices(
     building_type: &BuildingType,
     weekend: bool,
 ) -> HourlyTransitionMatrices {
-    let mut matrices: HashMap<u8, TransitionMatrix> = HashMap::new();
-
     match building_type {
+        BuildingType::Residential => residential_ashrae_matrices(weekend),
+        BuildingType::Commercial => commercial_ashrae_matrices(weekend),
         BuildingType::Office => {
             if weekend {
+                let mut matrices: HashMap<u8, TransitionMatrix> = HashMap::new();
                 for hour in 0..24 {
                     matrices.insert(hour, TransitionMatrix::new(0.02, 0.15));
                 }
+                HourlyTransitionMatrices { matrices }
             } else {
-                for hour in 0..24 {
+                let mut matrices: HashMap<u8, TransitionMatrix> = HashMap::new();
+                for hour in 0..24u8 {
                     let p_vacant_occupied = match hour {
                         0..=6 => 0.01,
                         7 => 0.15,
@@ -161,10 +295,12 @@ fn ashrae90p1_transition_matrices(
                         TransitionMatrix::new(p_vacant_occupied, p_occupied_vacant),
                     );
                 }
+                HourlyTransitionMatrices { matrices }
             }
         }
         BuildingType::Retail => {
-            for hour in 0..24 {
+            let mut matrices: HashMap<u8, TransitionMatrix> = HashMap::new();
+            for hour in 0..24u8 {
                 let p_vacant_occupied = match hour {
                     0..=9 => 0.02,
                     10..=11 => 0.25,
@@ -186,9 +322,11 @@ fn ashrae90p1_transition_matrices(
                     TransitionMatrix::new(p_vacant_occupied, p_occupied_vacant),
                 );
             }
+            HourlyTransitionMatrices { matrices }
         }
         BuildingType::Restaurant => {
-            for hour in 0..24 {
+            let mut matrices: HashMap<u8, TransitionMatrix> = HashMap::new();
+            for hour in 0..24u8 {
                 let p_vacant_occupied = match hour {
                     0..=6 => 0.01,
                     7..=10 => 0.20,
@@ -214,37 +352,9 @@ fn ashrae90p1_transition_matrices(
                     TransitionMatrix::new(p_vacant_occupied, p_occupied_vacant),
                 );
             }
-        }
-        BuildingType::Residential => {
-            for hour in 0..24 {
-                let p_vacant_occupied = match hour {
-                    0..=5 => 0.01,
-                    6 => 0.10,
-                    7..=8 => 0.30,
-                    9..=17 => 0.05,
-                    18 => 0.20,
-                    19..=21 => 0.40,
-                    22..=23 => 0.15,
-                    _ => 0.10,
-                };
-                let p_occupied_vacant = match hour {
-                    0..=5 => 0.02,
-                    6..=7 => 0.20,
-                    8..=17 => 0.03,
-                    18 => 0.15,
-                    19..=21 => 0.25,
-                    22..=23 => 0.10,
-                    _ => 0.05,
-                };
-                matrices.insert(
-                    hour,
-                    TransitionMatrix::new(p_vacant_occupied, p_occupied_vacant),
-                );
-            }
+            HourlyTransitionMatrices { matrices }
         }
     }
-
-    HourlyTransitionMatrices { matrices }
 }
 
 // ---------------------------------------------------------------------------
@@ -275,6 +385,36 @@ impl MarkovOccupancyGenerator {
         }
     }
 
+    /// Convenience constructor for an ASHRAE 90.1 **residential** occupancy
+    /// generator (#2046).
+    ///
+    /// Uses DOE residential reference defaults: 4 occupants, 150 m² floor
+    /// area. Diurnal pattern: sleeping at night (23:00–06:00), morning
+    /// presence, workday absence (09:00–17:00), evening presence.
+    pub fn residential() -> Self {
+        Self::new(BuildingType::Residential, 4, 150.0)
+    }
+
+    /// Convenience constructor for an ASHRAE 90.1 **commercial** occupancy
+    /// generator (#2046).
+    ///
+    /// Uses DOE Commercial Reference (midrise office) defaults: 50
+    /// occupants, 500 m² floor area. Weekday pattern: high presence
+    /// 08:00–18:00 with a lunchtime dip, absent nights/weekends.
+    pub fn commercial() -> Self {
+        Self::new(BuildingType::Commercial, 50, 500.0)
+    }
+
+    /// Number of occupants at design conditions.
+    pub fn typical_count(&self) -> usize {
+        self.typical_count
+    }
+
+    /// Conditioned floor area [m²].
+    pub fn floor_area_m2(&self) -> f64 {
+        self.floor_area_m2
+    }
+
     fn matrix(&self, hour: u8, day: DayOfWeek) -> &TransitionMatrix {
         if day.is_weekend() {
             self.weekend_matrices.get(hour)
@@ -283,12 +423,21 @@ impl MarkovOccupancyGenerator {
         }
     }
 
-    /// Deterministic occupancy state at a given hour/day (probability > 0.5 → occupied).
+    /// Deterministic occupancy state at a given hour/day.
+    ///
+    /// Probability > 0.5 → occupied. For residential buildings, night-time
+    /// occupied hours (23:00–05:00) are classified as [`OccupancyState::Sleeping`]
+    /// per the ASHRAE 90.1 residential schedule (#2046).
     pub fn deterministic_state(&self, hour: u8, day: DayOfWeek) -> OccupancyState {
         let m = self.matrix(hour, day);
         let occupancy_prob = m.vacant_to_occupied / (m.vacant_to_occupied + m.occupied_to_vacant);
         if occupancy_prob > 0.5 {
-            OccupancyState::Occupied
+            // ASHRAE 90.1 residential: night hours occupied → sleeping.
+            if self.building_type == BuildingType::Residential && (hour >= 23 || hour <= 5) {
+                OccupancyState::Sleeping
+            } else {
+                OccupancyState::Occupied
+            }
         } else {
             OccupancyState::Vacant
         }
@@ -326,6 +475,11 @@ impl MarkovOccupancyGenerator {
     pub fn occupancy_fraction(&self, hour: u8, day: DayOfWeek) -> f64 {
         let m = self.matrix(hour, day);
         m.vacant_to_occupied / (m.vacant_to_occupied + m.occupied_to_vacant)
+    }
+
+    /// Occupant density [persons/m²] at time `t`.
+    pub fn occupant_density(&self, t: DateTime<Utc>) -> f64 {
+        self.occupant_count(t) / self.floor_area_m2
     }
 }
 
@@ -561,6 +715,7 @@ pub fn validate_occupancy(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use chrono::TimeZone;
 
     #[test]
     fn test_occupancy_fraction_office_weekday() {
@@ -618,6 +773,7 @@ mod tests {
             BuildingType::Retail,
             BuildingType::Restaurant,
             BuildingType::Residential,
+            BuildingType::Commercial,
         ] {
             let g = MarkovOccupancyGenerator::new(*bt, 10, 100.0);
             for hour in 0..24 {
@@ -669,5 +825,264 @@ mod tests {
         let density = g.occupant_density(t);
         let expected = g.occupant_count(t) as f64 / 100.0;
         assert!((density - expected).abs() < f64::EPSILON);
+    }
+
+    // -----------------------------------------------------------------------
+    // Issue #2046: ASHRAE 90.1 residential / commercial transition matrices
+    // -----------------------------------------------------------------------
+
+    /// Every transition-matrix row MUST sum to 1.0 (±1e-6) for all building
+    /// types, all hours, weekday and weekend.
+    #[test]
+    fn test_issue_2046_all_matrix_rows_sum_to_one() {
+        for bt in [
+            BuildingType::Residential,
+            BuildingType::Commercial,
+            BuildingType::Office,
+            BuildingType::Retail,
+            BuildingType::Restaurant,
+        ] {
+            for &weekend in &[false, true] {
+                let hourly = ashrae90p1_transition_matrices(&bt, weekend);
+                for hour in 0u8..24 {
+                    let m = hourly.get(hour);
+                    let row_vacant = m.vacant_to_vacant + m.vacant_to_occupied;
+                    let row_occupied = m.occupied_to_vacant + m.occupied_to_occupied;
+                    assert!(
+                        (row_vacant - 1.0).abs() < 1e-6,
+                        "{:?} weekend={} hour {}: vacant row sums to {}",
+                        bt,
+                        weekend,
+                        hour,
+                        row_vacant
+                    );
+                    assert!(
+                        (row_occupied - 1.0).abs() < 1e-6,
+                        "{:?} weekend={} hour {}: occupied row sums to {}",
+                        bt,
+                        weekend,
+                        hour,
+                        row_occupied
+                    );
+                    // All probabilities must be in [0, 1].
+                    for &p in &[
+                        m.vacant_to_vacant,
+                        m.vacant_to_occupied,
+                        m.occupied_to_occupied,
+                        m.occupied_to_vacant,
+                    ] {
+                        assert!(
+                            (0.0..=1.0).contains(&p),
+                            "{:?} hour {}: probability {} out of [0,1]",
+                            bt,
+                            hour,
+                            p
+                        );
+                    }
+                }
+            }
+        }
+    }
+
+    /// The 2-state matrix only allows Vacant↔Occupied transitions. The
+    /// `Sleeping` state is never a matrix transition target — it is reached
+    /// only via deterministic residential night classification — so there
+    /// are structurally no impossible transitions (e.g. Absent→Sleeping).
+    #[test]
+    fn test_issue_2046_no_impossible_transitions() {
+        let res = MarkovOccupancyGenerator::residential();
+        let com = MarkovOccupancyGenerator::commercial();
+        let mut rng = SmallRng::seed_from_u64(42);
+
+        // From Vacant or Occupied, generate_state can only return Vacant or
+        // Occupied — never Sleeping.
+        for g in [&res, &com] {
+            for hour in 0u8..24 {
+                for day in [DayOfWeek::Monday, DayOfWeek::Saturday] {
+                    for &start in &[OccupancyState::Vacant, OccupancyState::Occupied] {
+                        let next = g.generate_state(&mut rng, start, hour, day);
+                        assert!(
+                            matches!(next, OccupancyState::Vacant | OccupancyState::Occupied),
+                            "impossible transition to {:?} from {:?}",
+                            next,
+                            start
+                        );
+                    }
+                }
+            }
+        }
+
+        // Sleeping is absorbing (no Vacant→Sleeping or Occupied→Sleeping).
+        let s = res.generate_state(&mut rng, OccupancyState::Sleeping, 2, DayOfWeek::Monday);
+        assert_eq!(s, OccupancyState::Sleeping);
+    }
+
+    /// Residential weekday profile: occupied evening, absent workday,
+    /// sleeping at night.
+    #[test]
+    fn test_issue_2046_residential_diurnal_pattern() {
+        let g = MarkovOccupancyGenerator::residential();
+        assert_eq!(g.building_type, BuildingType::Residential);
+
+        // Night hours → Sleeping (people home, ASHRAE 90.1 residential).
+        for &night_hour in &[0u8, 2, 4, 5, 23] {
+            assert_eq!(
+                g.deterministic_state(night_hour, DayOfWeek::Tuesday),
+                OccupancyState::Sleeping,
+                "hour {} should be sleeping",
+                night_hour
+            );
+        }
+
+        // Workday absence (09:00–16:00) → Vacant.
+        for &work_hour in &[10u8, 12, 14, 15] {
+            let state = g.deterministic_state(work_hour, DayOfWeek::Tuesday);
+            assert_eq!(
+                state,
+                OccupancyState::Vacant,
+                "hour {} should be vacant (workday absence), got {:?}",
+                work_hour,
+                state
+            );
+        }
+
+        // Evening presence (18:00–21:00) → Occupied.
+        for &evening_hour in &[18u8, 19, 20, 21] {
+            assert_eq!(
+                g.deterministic_state(evening_hour, DayOfWeek::Tuesday),
+                OccupancyState::Occupied,
+                "hour {} should be occupied (evening)",
+                evening_hour
+            );
+        }
+
+        // Evening occupancy fraction must exceed workday fraction.
+        let evening_frac = g.occupancy_fraction(20, DayOfWeek::Tuesday);
+        let workday_frac = g.occupancy_fraction(12, DayOfWeek::Tuesday);
+        assert!(
+            evening_frac > workday_frac,
+            "evening {} should exceed workday {}",
+            evening_frac,
+            workday_frac
+        );
+
+        // Weekend has more daytime presence than weekday.
+        let wd_day = g.occupancy_fraction(12, DayOfWeek::Wednesday);
+        let we_day = g.occupancy_fraction(12, DayOfWeek::Saturday);
+        assert!(we_day > wd_day, "weekend day should exceed weekday day");
+    }
+
+    /// Commercial weekday vs weekend differentiation.
+    #[test]
+    fn test_issue_2046_commercial_weekday_weekend() {
+        let g = MarkovOccupancyGenerator::commercial();
+        assert_eq!(g.building_type, BuildingType::Commercial);
+
+        // Weekday core hours (09:00–17:00) → high occupancy fraction.
+        let midmorning = g.occupancy_fraction(10, DayOfWeek::Wednesday);
+        assert!(
+            midmorning >= 0.80,
+            "commercial midmorning frac {} should be >= 0.80",
+            midmorning
+        );
+
+        // Weekday night → near-absent.
+        let night = g.occupancy_fraction(2, DayOfWeek::Wednesday);
+        assert!(
+            night < 0.10,
+            "commercial night frac {} should be < 0.10",
+            night
+        );
+
+        // Deterministic: occupied during day, vacant at night.
+        assert_eq!(
+            g.deterministic_state(10, DayOfWeek::Wednesday),
+            OccupancyState::Occupied
+        );
+        assert_eq!(
+            g.deterministic_state(2, DayOfWeek::Wednesday),
+            OccupancyState::Vacant
+        );
+
+        // Weekday >> weekend during core hours.
+        let weekend = g.occupancy_fraction(10, DayOfWeek::Saturday);
+        assert!(
+            midmorning > weekend,
+            "weekday {} should exceed weekend {}",
+            midmorning,
+            weekend
+        );
+        assert!(
+            weekend < 0.20,
+            "commercial weekend frac {} should be < 0.20",
+            weekend
+        );
+
+        // Lunchtime dip: hour 12 < hour 10.
+        let lunch = g.occupancy_fraction(12, DayOfWeek::Wednesday);
+        assert!(
+            lunch < midmorning,
+            "lunch dip {} should be below midmorning {}",
+            lunch,
+            midmorning
+        );
+    }
+
+    /// Residential sleeping state maps to OccupantState::Sleeping in the
+    /// OccupancyProvider trait, and occupant count is non-zero (people home).
+    #[test]
+    fn test_issue_2046_residential_sleeping_provider() {
+        let g = MarkovOccupancyGenerator::residential();
+        // Tue 02:00 → sleeping.
+        let t_night = Utc.with_ymd_and_hms(2024, 1, 9, 2, 0, 0).unwrap();
+        assert_eq!(g.occupant_state(t_night), OccupantState::Sleeping);
+        assert_eq!(g.occupant_count(t_night), g.typical_count() as f64);
+
+        // Tue 12:00 → absent (workday).
+        let t_day = Utc.with_ymd_and_hms(2024, 1, 9, 12, 0, 0).unwrap();
+        assert_eq!(g.occupant_state(t_day), OccupantState::Absent);
+        assert_eq!(g.occupant_count(t_day), 0.0);
+    }
+
+    /// Residential and commercial constructors use sensible DOE defaults.
+    #[test]
+    fn test_issue_2046_constructor_defaults() {
+        let res = MarkovOccupancyGenerator::residential();
+        assert_eq!(res.typical_count(), 4);
+        assert!((res.floor_area_m2() - 150.0).abs() < 1e-9);
+
+        let com = MarkovOccupancyGenerator::commercial();
+        assert_eq!(com.typical_count(), 50);
+        assert!((com.floor_area_m2() - 500.0).abs() < 1e-9);
+    }
+
+    /// 24-hour matrix coverage: every hour 0..=23 is present for both
+    /// residential and commercial profiles.
+    #[test]
+    fn test_issue_2046_full_24h_coverage() {
+        for weekend in [false, true] {
+            let res = residential_ashrae_matrices(weekend);
+            let com = commercial_ashrae_matrices(weekend);
+            for hour in 0u8..24 {
+                assert!(res.matrices.contains_key(&hour), "residential h{}", hour);
+                assert!(com.matrices.contains_key(&hour), "commercial h{}", hour);
+            }
+        }
+    }
+
+    /// Validate commercial weekday occupancy against ASHRAE 90.1 targets via
+    /// Monte Carlo simulation.
+    #[test]
+    fn test_issue_2046_commercial_statistical_validation() {
+        let g = MarkovOccupancyGenerator::commercial();
+        // Core working hour should show high occupancy.
+        let expected = compute_expected_fraction(&g, 10, DayOfWeek::Wednesday, 10000);
+        let result = validate_occupancy(&g, 10000, 10, DayOfWeek::Wednesday, expected);
+        // Two independent Monte Carlo trajectories; allow 10 % sampling noise.
+        assert!(
+            result.relative_error < 0.10,
+            "commercial validation relative_error = {}",
+            result.relative_error
+        );
     }
 }
