@@ -12,7 +12,7 @@ thiserror = "1.0"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 nalgebra = { version = "0.33", features = ["serde"] }
-tokio = { version = "1.40", features = ["rt-multi-thread", "sync", "time"] }
+tokio = { version = "1.40", features = ["rt-multi-thread", "sync", "time", "macros"] }
 rumqttc = "0.25"
 bytes = "1.0"
 uuid = { version = "1.0", features = ["serde", "v4"] }
