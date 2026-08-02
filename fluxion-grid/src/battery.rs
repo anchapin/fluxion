@@ -109,6 +109,28 @@ impl BatteryStorageNode {
         HeatFlowRate::from_watts(net_thermal)
     }
 
+    /// Instantaneous cell temperature-rise rate from ohmic heat generation.
+    ///
+    /// Computes `ΔT_rate = Q_gen / (m · c_p)`, where the thermal mass
+    /// `thermal_mass_j_per_k` already encodes the product `m · c_p`
+    /// (total thermal capacitance in J/K).
+    ///
+    /// Units: `(J/s) / (J/K) = K/s` (Kelvin per second).
+    ///
+    /// # Arguments
+    /// * `current_amps` - Current flow in Amperes (sign-agnostic: ohmic
+    ///   heating occurs during both charge and discharge)
+    ///
+    /// # Returns
+    /// Temperature-rise rate in K/s, or `0.0` if thermal mass is non-positive.
+    pub fn temperature_rise_rate(&self, current_amps: f64) -> f64 {
+        let q_gen = self.ohmic_heat_generation(current_amps);
+        if self.thermal_mass_j_per_k <= 0.0 {
+            return 0.0;
+        }
+        q_gen.watts() / self.thermal_mass_j_per_k
+    }
+
     /// Update the surface temperature based on heat flow and time.
     ///
     /// Uses energy balance: ΔT = Q × Δt / C
@@ -442,5 +464,48 @@ mod tests {
         node.update_temperature(heat, Duration::from_secs(10));
         let expected_temp_rise = 100.0 * 10.0 / 1000.0;
         assert!((node.surface_temperature_k - 298.15 - expected_temp_rise).abs() < 1e-9);
+    }
+
+    /// Acceptance criterion #4: ΔT = Q_gen / (m * c_p).
+    /// 100A through 0.01Ω → Q_gen = 100W; thermal_mass = 1000 J/K → 0.1 K/s.
+    #[test]
+    fn test_temperature_rise_rate_100a() {
+        let node = BatteryStorageNode::new(0.01, 1000.0, 298.15);
+        // dT/dt = Q_gen / (m*c_p) = 100 / 1000 = 0.1 K/s
+        assert!((node.temperature_rise_rate(100.0) - 0.1).abs() < 1e-12);
+    }
+
+    /// Ohmic heating is sign-agnostic: charging at -100A produces the same heat
+    /// as discharging at +100A (I² eliminates the sign).
+    #[test]
+    fn test_ohmic_heat_sign_agnostic_charge() {
+        let node = BatteryStorageNode::new(0.01, 1000.0, 298.15);
+        let q_discharge = node.ohmic_heat_generation(100.0);
+        let q_charge = node.ohmic_heat_generation(-100.0);
+        assert_eq!(q_discharge.watts(), 100.0);
+        assert_eq!(q_charge.watts(), 100.0);
+    }
+
+    /// Over a 10s timestep the temperature-rise rate integrates to the same
+    /// ΔT that `update_temperature` produces (energy-balance consistency).
+    #[test]
+    fn test_temperature_rise_rate_matches_update_temperature() {
+        let node = BatteryStorageNode::new(0.01, 1000.0, 298.15);
+        let dt = 10.0_f64;
+        let integrated_dT = node.temperature_rise_rate(100.0) * dt;
+
+        let mut node2 = BatteryStorageNode::new(0.01, 1000.0, 298.15);
+        let q = node2.ohmic_heat_generation(100.0);
+        node2.update_temperature(q, Duration::from_secs_f64(dt));
+        let update_dT = node2.surface_temperature_k - 298.15;
+
+        assert!((integrated_dT - update_dT).abs() < 1e-9);
+    }
+
+    /// Temperature-rise rate is zero for zero thermal mass (guards divide-by-zero).
+    #[test]
+    fn test_temperature_rise_rate_zero_thermal_mass() {
+        let node = BatteryStorageNode::new(0.01, 0.0, 298.15);
+        assert_eq!(node.temperature_rise_rate(100.0), 0.0);
     }
 }
