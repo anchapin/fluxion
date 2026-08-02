@@ -13,6 +13,7 @@ serde = { version = "1.0", features = ["derive"] }
 approx = "0.5"
 faer = "0.23"
 num-traits = "0.2"
+rand = "0.8"
 rayon = { version = "1.8", optional = true }
 petgraph = { version = "0.6", features = ["serde-1"] }
 uuid = { version = "1.0", features = ["v4", "serde"] }
@@ -23,10 +24,13 @@ parallel = ["rayon"]
 
 [dev-dependencies]
 criterion = "0.5"
-rand = "0.8"
 sysinfo = "0.30"
 
 [[bench]]
 name = "parallel_harness"
 harness = false
 required-features = ["parallel"]
+
+[[bench]]
+name = "view_factor_perf"
+harness = false
