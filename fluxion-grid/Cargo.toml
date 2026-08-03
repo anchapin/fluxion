@@ -22,7 +22,7 @@ fluxion = ["dep:fluxion"]
 uuid = { version = "1.0", features = ["serde", "v4"] }
 serde = { version = "1.0", features = ["derive"] }
 thiserror = "1.0"
-nalgebra = "0.33"
+nalgebra = "0.34"
 
 # Optional dependency on the main fluxion crate for ThermalModelTrait integration.
 # Only available when the "fluxion" feature flag is enabled.

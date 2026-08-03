@@ -129,7 +129,7 @@ sha2 = "0.10"
 
 # Numerical & Math
 faer = { version = "0.23.2", default-features = false, features = ["std"] }
-nalgebra = "0.33"  # Linear algebra - matrix operations
+nalgebra = "0.34"  # Linear algebra - matrix operations
 uom = "0.35"  # Units of measurement - dimensional analysis
 # ndarray 0.16 uses pulp 0.21+ which has fixed the size assertion issue with num-complex
 ndarray = { version = "0.16", default-features = false, features = ["std", "serde"] }

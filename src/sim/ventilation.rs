@@ -29,6 +29,7 @@
 //! Fluxion ≈ 21.71 W/K vs EnergyPlus ≈ 21.6 W/K (Δ < 0.5%). See Issue #918.
 
 use crate::physics::units::{FromF64, ThermalConductance};
+use fluxion_core::earth_tube::EarthTube;
 use serde::{Deserialize, Serialize};
 use std::fmt::Debug;
 
@@ -476,9 +477,133 @@ pub fn ach_to_conductance(ach: f64, volume: f64, rho: f64, cp: f64) -> ThermalCo
     ThermalConductance::from_value((ach * volume * rho * cp) / 3600.0)
 }
 
+/// A ventilation schedule decorator that applies earth tube (ground-air heat exchanger)
+/// pre-conditioning to incoming outdoor air.
+///
+/// The earth tube pre-heats winter intake air and pre-cools summer intake air using
+/// the ground's stable thermal mass, reducing HVAC heating and cooling loads.
+///
+/// # Example
+///
+/// ```
+/// use fluxion::sim::ventilation::{ConstantVentilation, EarthTubeVentilation, VentilationSchedule};
+/// use fluxion_core::earth_tube::EarthTube;
+///
+/// // Base ventilation schedule
+/// let base = ConstantVentilation::new(0.5);
+///
+/// // Earth tube with typical parameters
+/// let earth_tube = EarthTube::new()
+///     .soil_temperature_K(285.15)  // ~12°C ground temperature
+///     .flow_rate_m3_s(0.05);
+///
+/// // Decorated schedule with earth tube pre-conditioning
+/// let vent = EarthTubeVentilation::new(base, earth_tube);
+///
+/// // ACH is unchanged from base schedule
+/// let ach = vent.get_ach(12, 30.0, 25.0, 2.0, 100.0);
+/// assert_eq!(ach, 0.5);
+///
+/// // But supply temperature is pre-conditioned
+/// let supply = vent.supply_temperature(35.0);  // Hot summer day
+/// assert!(supply < 35.0);  // Pre-cooled
+/// assert!(supply > 12.0);  // Above ground temperature
+/// ```
+#[derive(Debug)]
+pub struct EarthTubeVentilation<S: VentilationSchedule + Clone> {
+    inner: S,
+    earth_tube: EarthTube,
+}
+
+impl<S: VentilationSchedule + Clone> Clone for EarthTubeVentilation<S> {
+    fn clone(&self) -> Self {
+        Self {
+            inner: self.inner.clone(),
+            earth_tube: self.earth_tube.clone(),
+        }
+    }
+}
+
+impl<S: VentilationSchedule + Clone> EarthTubeVentilation<S> {
+    /// Creates a new earth tube decorated ventilation schedule.
+    pub fn new(inner: S, earth_tube: EarthTube) -> Self {
+        Self { inner, earth_tube }
+    }
+
+    /// Returns the earth tube's supply air temperature after pre-conditioning.
+    ///
+    /// This is the temperature of ventilation air after passing through the earth tube,
+    /// which has been pre-heated (winter) or pre-cooled (summer) by the ground.
+    ///
+    /// # Arguments
+    ///
+    /// * `outdoor_temp_K` - Outdoor air temperature in Kelvin entering the earth tube
+    ///
+    /// # Returns
+    ///
+    /// Supply air temperature after earth tube pre-conditioning (Kelvin)
+    pub fn supply_temperature(&self, outdoor_temp_K: f64) -> f64 {
+        self.earth_tube.supply_temperature(outdoor_temp_K)
+    }
+
+    /// Returns the heat transfer rate through the earth tube (Watts).
+    ///
+    /// Positive = heat gain (pre-heating), Negative = heat loss (pre-cooling).
+    pub fn heat_transfer_rate(&self, outdoor_temp_K: f64) -> f64 {
+        self.earth_tube.heat_transfer_rate(outdoor_temp_K)
+    }
+
+    /// Returns the temperature difference (K) due to earth tube pre-conditioning.
+    ///
+    /// Positive = pre-heating (outdoor colder than ground)
+    /// Negative = pre-cooling (outdoor warmer than ground)
+    pub fn temperature_difference(&self, outdoor_temp_K: f64) -> f64 {
+        self.earth_tube.temperature_difference(outdoor_temp_K)
+    }
+
+    /// Returns a reference to the inner ventilation schedule.
+    pub fn inner(&self) -> &S {
+        &self.inner
+    }
+
+    /// Returns a reference to the earth tube.
+    pub fn earth_tube(&self) -> &EarthTube {
+        &self.earth_tube
+    }
+
+    /// Consumes the decorator and returns the inner ventilation schedule.
+    pub fn into_inner(self) -> S {
+        self.inner
+    }
+}
+
+impl<S: VentilationSchedule + Clone + 'static> VentilationSchedule for EarthTubeVentilation<S> {
+    fn get_ach(
+        &self,
+        hour: usize,
+        T_outdoor: f64,
+        T_indoor: f64,
+        wind_speed: f64,
+        volume: f64,
+    ) -> f64 {
+        self.inner
+            .get_ach(hour, T_outdoor, T_indoor, wind_speed, volume)
+    }
+
+    fn clone_box(&self) -> Box<dyn VentilationSchedule> {
+        Box::new(self.clone())
+    }
+}
+
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::{
+        ach_to_conductance, calculate_combined_infiltration_ach, calculate_stack_infiltration_ach,
+        calculate_wind_infiltration_ach, h_tr_is_ach_multiplier, ConstantVentilation,
+        EarthTubeVentilation, ScheduledVentilation, VentilationSchedule,
+        WeatherDependentVentilation,
+    };
+    use fluxion_core::earth_tube::EarthTube;
 
     #[test]
     fn test_constant_ventilation() {
@@ -713,5 +838,116 @@ mod tests {
         assert!((multiplier_at - 1.59).abs() < 0.01);
         // Above threshold: multiplier > 1.59
         assert!(multiplier_above > 1.59);
+    }
+
+    // =============================================================================
+    // EarthTubeVentilation integration tests (Issue #2276)
+    // =============================================================================
+
+    #[test]
+    fn test_earth_tube_ventilation_winter_preheating() {
+        use super::EarthTubeVentilation;
+
+        let base = ConstantVentilation::new(0.5);
+        let earth_tube = EarthTube::new()
+            .soil_temperature_K(285.15) // ~12°C
+            .flow_rate_m3_s(0.05);
+
+        let vent = EarthTubeVentilation::new(base, earth_tube);
+
+        // ACH is unchanged from base schedule
+        let ach = vent.get_ach(8, -5.0, 20.0, 2.0, 129.6);
+        assert_eq!(ach, 0.5);
+
+        // Supply temperature is pre-heated
+        // Outdoor -5°C (268.15K) → supply should be warmer
+        let supply_K = vent.supply_temperature(268.15);
+        let delta = supply_K - 268.15;
+
+        println!(
+            "Winter: outdoor=-5°C, supply={:.1}°C, preheat={:.1}°C",
+            supply_K - 273.15,
+            delta
+        );
+
+        assert!(
+            delta >= 5.0,
+            "Winter pre-heating should be at least 5°C, got {:.1}°C",
+            delta
+        );
+    }
+
+    #[test]
+    fn test_earth_tube_ventilation_summer_precooling() {
+        use super::EarthTubeVentilation;
+
+        let base = ConstantVentilation::new(0.5);
+        let earth_tube = EarthTube::new()
+            .soil_temperature_K(291.15) // ~18°C
+            .flow_rate_m3_s(0.05);
+
+        let vent = EarthTubeVentilation::new(base, earth_tube);
+
+        // ACH is unchanged
+        let ach = vent.get_ach(14, 35.0, 25.0, 2.0, 129.6);
+        assert_eq!(ach, 0.5);
+
+        // Supply temperature is pre-cooled
+        // Outdoor 35°C (308.15K) → supply should be cooler
+        let supply_K = vent.supply_temperature(308.15);
+        let delta = supply_K - 308.15; // negative
+
+        println!(
+            "Summer: outdoor=35°C, supply={:.1}°C, precool={:.1}°C",
+            supply_K - 273.15,
+            delta
+        );
+
+        assert!(
+            delta <= -5.0,
+            "Summer pre-cooling should be at least 5°C, got {:.1}°C",
+            delta.abs()
+        );
+    }
+
+    #[test]
+    fn test_earth_tube_ventilation_clone_box() {
+        use super::EarthTubeVentilation;
+
+        let base = ConstantVentilation::new(0.5);
+        let earth_tube = EarthTube::new();
+        let vent = EarthTubeVentilation::new(base, earth_tube);
+
+        let cloned = vent.clone_box();
+        let ach = cloned.get_ach(12, 20.0, 25.0, 2.0, 100.0);
+        assert_eq!(ach, 0.5);
+    }
+
+    #[test]
+    fn test_earth_tube_ventilation_heat_transfer_rate() {
+        use super::EarthTubeVentilation;
+
+        let base = ConstantVentilation::new(0.5);
+        let earth_tube = EarthTube::new()
+            .soil_temperature_K(285.15)
+            .flow_rate_m3_s(0.05);
+
+        let vent = EarthTubeVentilation::new(base, earth_tube);
+
+        // Winter: heating mode (positive heat transfer)
+        let Q_winter = vent.heat_transfer_rate(268.15); // -5°C
+        assert!(
+            Q_winter > 0.0,
+            "Winter should have positive heat transfer (pre-heating)"
+        );
+
+        // Summer: cooling mode (negative heat transfer)
+        let Q_summer = vent.heat_transfer_rate(308.15); // 35°C
+        assert!(
+            Q_summer < 0.0,
+            "Summer should have negative heat transfer (pre-cooling)"
+        );
+
+        println!("Q_winter = {:.1} W, Q_summer = {:.1} W", Q_winter, Q_summer);
     }
 }
