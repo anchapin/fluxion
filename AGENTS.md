@@ -43,7 +43,7 @@ fluxion-core/                 # leaf modules (no sim/physics/ai/validation deps;
 fluxion-mcp/                  # MCP server (workspace member; built/tested separately)
 fluxion-city/                 # urban radiation modeling (Nusselt analog view factors); parallel/ submodule
 fluxion-grid/                 # grid-edge electrical network (battery, bus nodes, power flow)
-fluxion-behavior/             # thermal comfort models (Fanger PMV/PPD, adaptive comfort)
+fluxion-behavior/             # thermal comfort models (Fanger PMV/PPD, adaptive comfort); workspace member
 fluxion-fluid/                # compile-time strongly typed fluid port traits for DAE systems
 fluxion-wasm/                 # WebAssembly bindings (lib.rs at crate root)
 crates/
