@@ -70,9 +70,15 @@ fn test_batch_oracle_throughput_characterization() {
     println!("\n========================================");
     println!("BatchOracle Throughput characterization");
     println!("========================================");
-    println!("Release gate threshold: {} configs/sec", RELEASE_GATE_THROUGHPUT);
+    println!(
+        "Release gate threshold: {} configs/sec",
+        RELEASE_GATE_THROUGHPUT
+    );
     println!("========================================");
-    println!("{:<10} {:>15} {:>15} {:>12}", "Size", "Time (s)", "Throughput", "% of Gate");
+    println!(
+        "{:<10} {:>15} {:>15} {:>12}",
+        "Size", "Time (s)", "Throughput", "% of Gate"
+    );
     println!("----------------------------------------");
 
     for &size in &sizes {
@@ -86,7 +92,10 @@ fn test_batch_oracle_throughput_characterization() {
 
         println!(
             "{:<10} {:>15.3} {:>15.2} {:>11.1}%",
-            size, count as f64 / throughput, throughput, pct_of_gate
+            size,
+            count as f64 / throughput,
+            throughput,
+            pct_of_gate
         );
 
         assert_eq!(count, size);
@@ -182,7 +191,9 @@ fn test_batch_oracle_throughput_case_960() {
 
         println!(
             "{:<10} {:>15.3} {:>15.2}",
-            size, count as f64 / throughput, throughput
+            size,
+            count as f64 / throughput,
+            throughput
         );
 
         assert_eq!(count, size);
