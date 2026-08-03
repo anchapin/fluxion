@@ -31,6 +31,7 @@
 
 pub mod autodiff;
 pub mod energy;
+pub mod hvac;
 pub mod mediums;
 pub mod pantelides;
 pub mod ports;
@@ -44,6 +45,7 @@ pub use energy::{
     ConservationNode, EnergyConservationError, EnergyConservationResult,
     EnergyConservationVerifier, EnthalpyFlow, FluidNetworkGraph, SimulationResults,
 };
+pub use hvac::{HvacMode, HvacState};
 pub use mediums::{Air, CompatibleWith, Medium, Water};
 pub use pantelides::{
     pantelides_reduce, EqIndex, Equation, IncidenceMatrix, PantelidesError, PantelidesOutput,

@@ -16,6 +16,7 @@ uuid = { version = "1.0", features = ["serde", "v4"] }
 serde = { version = "1.0", features = ["derive"] }
 thiserror = "1.0"
 nalgebra = "0.34"
+fluxion-fluid = { path = "../fluxion-fluid" }
 
 [dev-dependencies]
 approx = "0.5"
