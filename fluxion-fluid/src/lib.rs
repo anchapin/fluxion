@@ -30,6 +30,7 @@
 //! differentiation for Model Predictive Control (MPC) and setpoint optimization.
 
 pub mod autodiff;
+pub mod ecs;
 pub mod energy;
 pub mod hvac;
 pub mod mediums;
