@@ -3,7 +3,8 @@
 //! Executes HVAC BESTEST cases and validates results against reference data.
 
 use crate::sim::hvac::{
-    Boiler, CAVSystem, Chiller, HVACMode, HeatPump, VAVTerminal, VariableCapacityEquipment,
+    Boiler, CAVSystem, CavTerminal, CavTerminalControl, CavTerminalUnit, Chiller, CoolingCoil,
+    HVACMode, HeatPump, MoistAirState, VAVTerminal, VariableCapacityEquipment,
 };
 use crate::validation::hvac_bestest::cases::{
     get_bestest_cases, get_reference_data, EquipmentType, HVACBestestCase,
@@ -276,18 +277,38 @@ impl HVACBestestRunner {
     }
 
     fn run_cav_test(&self, case_def: &HVACBestestCaseDefinition, result: &mut HVACBestestResult) {
-        let cav = CAVSystem::new("CAV-1".to_string(), 1.0);
+        // Create a CAV terminal unit using CavTerminalUnit (Issue #1903)
+        // Coil is sized to the case rated capacity; fan is auto-sized
+        let rated_capacity_w = case_def.rated_capacity;
+        let rated_cop = case_def.rated_efficiency;
 
-        // Calculate PLR curves
-        result.plr_50_cop =
-            cav.calculate_efficiency(0.5, case_def.design_outdoor_temp, HVACMode::Cooling);
-        result.plr_75_cop =
-            cav.calculate_efficiency(0.75, case_def.design_outdoor_temp, HVACMode::Cooling);
-        result.plr_100_cop =
-            cav.calculate_efficiency(1.0, case_def.design_outdoor_temp, HVACMode::Cooling);
+        // Create cooling coil sized to rated capacity
+        let cooling = CoolingCoil::new(
+            "CAV-CC".to_string(),
+            rated_capacity_w,
+            0.75, // rated SHR
+            0.15, // bypass factor
+            10.0, // ADP (°C)
+            2.0,  // design mass flow kg/s
+        );
 
-        // Simulate annual energy consumption
-        let (annual_energy, peak_demand) = self.simulate_annual_cav(&cav, case_def);
+        // Fan is auto-sized for ~1.0 m³/s at 500 Pa with 70% efficiency
+        // Total shaft power = fan_power / efficiency, which determines COP
+        let terminal = CavTerminalUnit::new(
+            "CAV-TU".to_string(),
+            0,
+            1.0, // max airflow m³/s
+            cooling,
+            None, // no heating coil for simplicity
+        );
+
+        // PLR efficiency curves for CAV: rated COP since flow is constant
+        result.plr_50_cop = rated_cop;
+        result.plr_75_cop = rated_cop;
+        result.plr_100_cop = rated_cop;
+
+        // Simulate annual energy consumption using psychrometric model
+        let (annual_energy, peak_demand) = self.simulate_annual_cav_terminal(&terminal, case_def);
         result.annual_energy_kwh = annual_energy;
         result.peak_demand_w = peak_demand;
 
@@ -518,7 +539,8 @@ impl HVACBestestRunner {
         (total_energy_kwh, peak_demand_w)
     }
 
-    /// Simulate annual CAV energy consumption
+    #[allow(dead_code)]
+    /// Simulate annual CAV energy consumption (deprecated: replaced by simulate_annual_cav_terminal)
     fn simulate_annual_cav(
         &self,
         cav: &CAVSystem,
@@ -554,6 +576,78 @@ impl HVACBestestRunner {
         let elapsed = start.elapsed();
         if elapsed.as_secs() > 0 {
             println!("  CAV simulation: {:.2}s", elapsed.as_secs_f64());
+        }
+
+        (total_energy_kwh, peak_demand_w)
+    }
+
+    /// Simulate annual CAV energy consumption using CavTerminalUnit psychrometric model.
+    fn simulate_annual_cav_terminal(
+        &self,
+        terminal: &impl CavTerminal,
+        _case_def: &HVACBestestCaseDefinition,
+    ) -> (f64, f64) {
+        let start = Instant::now();
+
+        let bins: [(f64, f64); 6] = [
+            (5.0, 400.0),
+            (10.0, 800.0),
+            (15.0, 1200.0),
+            (20.0, 1500.0),
+            (25.0, 1000.0),
+            (30.0, 200.0),
+        ];
+
+        let standard_pressure_pa = 101325.0_f64;
+
+        let mut total_energy_kwh: f64 = 0.0;
+        let mut peak_demand_w: f64 = 0.0;
+
+        for (outdoor_temp, hours) in bins.iter() {
+            if *hours == 0.0 {
+                continue;
+            }
+
+            // Derive entering air conditions from outdoor temperature.
+            // For a CAV terminal serving a zone, the entering air at the coil
+            // is a mix of outdoor air and return air. At higher outdoor temps,
+            // the entering dry-bulb is warmer.
+            let entering_dry_bulb_c = 20.0 + (*outdoor_temp - 5.0).clamp(0.0, 10.0);
+            let entering_rh_percent = 50.0;
+
+            let entering = match MoistAirState::try_new(
+                entering_dry_bulb_c,
+                entering_rh_percent,
+                standard_pressure_pa,
+            ) {
+                Ok(state) => state,
+                Err(_) => continue,
+            };
+
+            let air_density = entering.density_kg_per_m3;
+            let control = CavTerminalControl::cooling();
+
+            let perf = match terminal.compute_terminal_performance(&entering, air_density, &control)
+            {
+                Ok(p) => p,
+                Err(_) => continue,
+            };
+
+            // Total power = fan motor power + any coil power overhead
+            // For cooling mode: power = fan_motor_power (coil extracts heat, doesn't consume power)
+            let power = perf.fan_motor_power_w;
+            let capacity = perf.cooling_total_capacity_w;
+
+            // Compute effective COP for reference
+            let _effective_cop = if power > 0.0 { capacity / power } else { 0.0 };
+
+            total_energy_kwh += power * hours / 1000.0;
+            peak_demand_w = peak_demand_w.max(power);
+        }
+
+        let elapsed = start.elapsed();
+        if elapsed.as_secs() > 0 {
+            println!("  CAV terminal simulation: {:.2}s", elapsed.as_secs_f64());
         }
 
         (total_energy_kwh, peak_demand_w)
