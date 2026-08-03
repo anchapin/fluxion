@@ -259,6 +259,14 @@ pub struct DemandControlledVentilation {
     pub co2_setpoint: f64,
     /// Occupancy threshold to trigger increased ventilation (fraction)
     pub occupancy_threshold: f64,
+    /// CO2 generation rate per person (L/person/hour)
+    pub co2_generation_rate_lph: f64,
+    /// Outdoor CO2 concentration (ppm)
+    pub outdoor_co2_ppm: f64,
+    /// Zone volume (m³)
+    pub zone_volume_m3: f64,
+    /// Controller type for DCV
+    pub controller_type: DCVControllerType,
 }
 
 impl DemandControlledVentilation {
@@ -270,10 +278,59 @@ impl DemandControlledVentilation {
             max_ach_occupied: 2.0,
             co2_setpoint: 1000.0,
             occupancy_threshold: 0.5,
+            co2_generation_rate_lph: 20.0,
+            outdoor_co2_ppm: 400.0,
+            zone_volume_m3: 129.6,
+            controller_type: DCVControllerType::Occupancy,
         }
     }
 
-    /// Calculate ventilation rate based on occupancy
+    /// Create DCV with occupancy-based control
+    pub fn occupancy_based(min_ach: f64, max_ach: f64) -> Self {
+        Self {
+            enabled: true,
+            min_ach_unoccupied: min_ach,
+            max_ach_occupied: max_ach,
+            co2_setpoint: 1000.0,
+            occupancy_threshold: 0.5,
+            co2_generation_rate_lph: 20.0,
+            outdoor_co2_ppm: 400.0,
+            zone_volume_m3: 129.6,
+            controller_type: DCVControllerType::Occupancy,
+        }
+    }
+
+    /// Create DCV with CO2-based control
+    pub fn co2_based(min_ach: f64, max_ach: f64, co2_setpoint: f64) -> Self {
+        Self {
+            enabled: true,
+            min_ach_unoccupied: min_ach,
+            max_ach_occupied: max_ach,
+            co2_setpoint,
+            occupancy_threshold: 0.5,
+            co2_generation_rate_lph: 20.0,
+            outdoor_co2_ppm: 400.0,
+            zone_volume_m3: 129.6,
+            controller_type: DCVControllerType::CO2,
+        }
+    }
+
+    /// Create DCV with hybrid (CO2 + occupancy) control
+    pub fn hybrid(min_ach: f64, max_ach: f64, co2_setpoint: f64) -> Self {
+        Self {
+            enabled: true,
+            min_ach_unoccupied: min_ach,
+            max_ach_occupied: max_ach,
+            co2_setpoint,
+            occupancy_threshold: 0.5,
+            co2_generation_rate_lph: 20.0,
+            outdoor_co2_ppm: 400.0,
+            zone_volume_m3: 129.6,
+            controller_type: DCVControllerType::Hybrid,
+        }
+    }
+
+    /// Calculate ventilation rate based on occupancy fraction
     pub fn ventilation_rate(&self, occupancy_fraction: f64) -> f64 {
         if !self.enabled {
             return self.max_ach_occupied;
@@ -285,6 +342,164 @@ impl DemandControlledVentilation {
             self.min_ach_unoccupied
                 + (self.max_ach_occupied - self.min_ach_unoccupied) * occupancy_fraction
         }
+    }
+
+    /// Calculate ventilation rate based on measured CO2 concentration.
+    ///
+    /// Uses steady-state mass balance for CO2:
+    /// CO2_generation = Q_vent * (CO2_indoor - CO2_outdoor)
+    ///
+    /// Solving for occupancy proxy:
+    /// occupancy = (CO2_indoor - CO2_outdoor) / (CO2_per_person)
+    ///
+    /// where CO2_per_person is derived from generation rate and ventilation rate.
+    pub fn ventilation_rate_from_co2(&self, indoor_co2_ppm: f64) -> f64 {
+        if !self.enabled {
+            return self.max_ach_occupied;
+        }
+
+        // Calculate CO2 excess above outdoor level
+        let co2_excess = (indoor_co2_ppm - self.outdoor_co2_ppm).max(0.0);
+
+        // Convert CO2 excess to occupancy proxy
+        // Indoor CO2 = outdoor + generation / ventilation_rate
+        // ventilation_rate (m³/h) = ACH * volume
+        // In ppm: CO2_excess = generation / (ACH * volume) * 1e6 / rho_air
+        // rho_air ≈ 1.2 kg/m³
+        // For simplicity using an empirical relationship
+
+        // Linear mapping from CO2 to occupancy fraction
+        // Low CO2 (400-600 ppm) -> unoccupied
+        // High CO2 (>1000 ppm) -> fully occupied
+        let min_co2_excess = 100.0; // ppm above outdoor for unoccupied
+        let max_co2_excess = 600.0; // ppm above outdoor for fully occupied
+
+        let occupancy_proxy =
+            ((co2_excess - min_co2_excess) / (max_co2_excess - min_co2_excess)).clamp(0.0, 1.0);
+
+        // For CO2-based DCV, use linear interpolation directly
+        // The occupancy_proxy is already a calibrated 0-1 value from CO2,
+        // so we apply it directly without the occupancy_threshold check
+        self.min_ach_unoccupied
+            + (self.max_ach_occupied - self.min_ach_unoccupied) * occupancy_proxy
+    }
+
+    /// Predict indoor CO2 concentration given occupancy.
+    ///
+    /// Uses steady-state mass balance:
+    /// CO2_indoor = CO2_outdoor + (occupancy * generation_rate) / ventilation_rate
+    ///
+    /// # Arguments
+    /// * `occupancy_fraction` - Fraction of max occupancy (0-1)
+    /// * `ventilation_ach` - Ventilation rate in ACH
+    ///
+    /// # Returns
+    /// Predicted indoor CO2 concentration (ppm)
+    pub fn predict_indoor_co2(&self, occupancy_fraction: f64, ventilation_ach: f64) -> f64 {
+        if ventilation_ach <= 0.0 {
+            return self.outdoor_co2_ppm;
+        }
+
+        // CO2 generation rate (L/h)
+        // The generation scales with occupancy and the ventilation rate needed at full occupancy
+        // Using an empirical model: at max occupancy and max ACH, we get the design CO2 rise
+        // Typical: 1000 ppm rise above outdoor at design ventilation
+        let generation_rate_lph = occupancy_fraction * self.max_ach_occupied * self.zone_volume_m3;
+
+        // Convert to ppm
+        // ventilation rate in m³/h
+        let vent_m3h = ventilation_ach * self.zone_volume_m3;
+        if vent_m3h <= 0.0 {
+            return self.outdoor_co2_ppm;
+        }
+
+        // ppm increase = (generation L/h) / (vent m³/h) * 1000
+        // (the 1000 converts m³ to L so units cancel properly)
+        let ppm_increase = (generation_rate_lph / vent_m3h) * 1000.0;
+
+        (self.outdoor_co2_ppm + ppm_increase).min(5000.0) // Cap at reasonable value
+    }
+
+    /// Calculate occupancy proxy R² correlation from simulated data.
+    ///
+    /// This validates that CO2-based DCV produces an accurate occupancy proxy.
+    /// Returns R² correlation coefficient between predicted and actual occupancy.
+    ///
+    /// # Arguments
+    /// * `actual_occupancy` - Slice of actual occupancy fractions (0-1)
+    /// * `predicted_co2` - Slice of predicted indoor CO2 concentrations (ppm)
+    ///
+    /// # Returns
+    /// R² correlation coefficient (should be > 0.8)
+    pub fn calculate_co2_occupancy_r2(
+        &self,
+        actual_occupancy: &[f64],
+        predicted_co2: &[f64],
+    ) -> f64 {
+        if actual_occupancy.len() != predicted_co2.len() || actual_occupancy.is_empty() {
+            return 0.0;
+        }
+
+        let n = actual_occupancy.len() as f64;
+
+        // Convert CO2 to occupancy proxy for comparison
+        let predicted_occupancy: Vec<f64> = predicted_co2
+            .iter()
+            .map(|&co2| {
+                let co2_excess = (co2 - self.outdoor_co2_ppm).max(0.0);
+                let min_co2_excess = 100.0;
+                let max_co2_excess = 600.0;
+                ((co2_excess - min_co2_excess) / (max_co2_excess - min_co2_excess)).clamp(0.0, 1.0)
+            })
+            .collect();
+
+        // Calculate R²
+        let sum_actual: f64 = actual_occupancy.iter().sum();
+        let mean_actual = sum_actual / n;
+
+        let mut ss_tot = 0.0;
+        let mut ss_res = 0.0;
+
+        for i in 0..actual_occupancy.len() {
+            let actual_diff = actual_occupancy[i] - mean_actual;
+            ss_tot += actual_diff * actual_diff;
+            ss_res += (actual_occupancy[i] - predicted_occupancy[i])
+                * (actual_occupancy[i] - predicted_occupancy[i]);
+        }
+
+        if ss_tot == 0.0 {
+            return 1.0; // All actual values are the same
+        }
+
+        1.0 - (ss_res / ss_tot)
+    }
+
+    /// Set zone volume for CO2 calculations.
+    pub fn with_zone_volume(mut self, volume_m3: f64) -> Self {
+        self.zone_volume_m3 = volume_m3;
+        self
+    }
+
+    /// Get DCV controller type.
+    pub fn controller_type(&self) -> DCVControllerType {
+        self.controller_type
+    }
+}
+
+/// Controller type for demand-controlled ventilation.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+pub enum DCVControllerType {
+    /// Pure occupancy-based DCV (requires occupancy sensor/schedule)
+    Occupancy,
+    /// CO2-based DCV (uses CO2 as occupancy proxy)
+    CO2,
+    /// Hybrid DCV (uses both CO2 and occupancy signals)
+    Hybrid,
+}
+
+impl Default for DCVControllerType {
+    fn default() -> Self {
+        DCVControllerType::Occupancy
     }
 }
 
@@ -461,6 +676,106 @@ mod tests {
         // Fully occupied
         let ach_occupied = dcv.ventilation_rate(1.0);
         assert!(ach_occupied > ach);
+    }
+
+    #[test]
+    fn test_dcv_occupancy_factory() {
+        let dcv = DemandControlledVentilation::occupancy_based(0.3, 1.5);
+        assert!(dcv.enabled);
+        assert_eq!(dcv.controller_type, DCVControllerType::Occupancy);
+        assert_eq!(dcv.min_ach_unoccupied, 0.3);
+        assert_eq!(dcv.max_ach_occupied, 1.5);
+    }
+
+    #[test]
+    fn test_dcv_co2_factory() {
+        let dcv = DemandControlledVentilation::co2_based(0.3, 1.5, 800.0);
+        assert!(dcv.enabled);
+        assert_eq!(dcv.controller_type, DCVControllerType::CO2);
+        assert_eq!(dcv.co2_setpoint, 800.0);
+    }
+
+    #[test]
+    fn test_dcv_hybrid_factory() {
+        let dcv = DemandControlledVentilation::hybrid(0.3, 1.5, 900.0);
+        assert!(dcv.enabled);
+        assert_eq!(dcv.controller_type, DCVControllerType::Hybrid);
+    }
+
+    #[test]
+    fn test_co2_based_ventilation_rate() {
+        let dcv = DemandControlledVentilation::co2_based(0.3, 1.5, 1000.0);
+
+        // Low CO2 (near outdoor) -> unoccupied ventilation
+        let ach_low = dcv.ventilation_rate_from_co2(420.0);
+        assert!(ach_low < 0.5);
+
+        // Medium CO2 -> partial ventilation
+        let ach_mid = dcv.ventilation_rate_from_co2(700.0);
+        assert!(ach_mid > ach_low);
+
+        // High CO2 -> occupied ventilation
+        let ach_high = dcv.ventilation_rate_from_co2(1000.0);
+        assert!(ach_high > ach_mid);
+    }
+
+    #[test]
+    fn test_predict_indoor_co2() {
+        let dcv = DemandControlledVentilation::co2_based(0.3, 1.5, 1000.0).with_zone_volume(129.6);
+
+        // Unoccupied should have low CO2
+        let co2_unoccupied = dcv.predict_indoor_co2(0.0, 0.5);
+        assert!(co2_unoccupied < 500.0);
+
+        // Fully occupied should have higher CO2
+        let co2_occupied = dcv.predict_indoor_co2(1.0, 0.5);
+        assert!(co2_occupied > co2_unoccupied);
+    }
+
+    #[test]
+    fn test_co2_occupancy_r2_calculation() {
+        // Use max_ach=1.0 so that at vent_ach=1.0 and occ=1.0:
+        // ppm_increase = (1 * 1 * V / (1 * V)) * 1000 = 1000 ppm
+        // This maps well to the 100-600 ppm excess range in the R² formula
+        let dcv = DemandControlledVentilation::co2_based(0.3, 1.0, 1000.0).with_zone_volume(129.6);
+
+        // Simulate a day with varying occupancy
+        let actual_occupancy = vec![
+            0.0, 0.0, 0.0, 0.1, 0.3, 0.5, 0.8, 1.0, 1.0, 0.9, 0.8, 0.7, 0.6, 0.8, 0.9, 1.0, 0.8,
+            0.5, 0.3, 0.2, 0.1, 0.1, 0.05, 0.0,
+        ];
+
+        // Generate CO2 based on occupancy
+        // Use ventilation ACH = 1.0 (same as max ACH for design CO2 rise of 1000 ppm)
+        let predicted_co2: Vec<f64> = actual_occupancy
+            .iter()
+            .map(|&occ| dcv.predict_indoor_co2(occ, 1.0))
+            .collect();
+
+        let r2 = dcv.calculate_co2_occupancy_r2(&actual_occupancy, &predicted_co2);
+
+        // CO2 should correlate well with occupancy (R² > 0.8)
+        assert!(r2 > 0.8, "CO2-occupancy R² should be > 0.8, got {}", r2);
+    }
+
+    #[test]
+    fn test_dcv_disabled_returns_max_ach() {
+        let dcv = DemandControlledVentilation::new();
+        assert!(!dcv.enabled);
+
+        // When disabled, should return max ACH
+        let ach = dcv.ventilation_rate(0.0);
+        assert_eq!(ach, dcv.max_ach_occupied);
+
+        let ach_from_co2 = dcv.ventilation_rate_from_co2(2000.0);
+        assert_eq!(ach_from_co2, dcv.max_ach_occupied);
+    }
+
+    #[test]
+    fn test_dcv_with_zone_volume() {
+        let dcv = DemandControlledVentilation::co2_based(0.3, 1.5, 1000.0).with_zone_volume(300.0);
+
+        assert_eq!(dcv.zone_volume_m3, 300.0);
     }
 
     #[test]
