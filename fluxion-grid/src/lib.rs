@@ -23,6 +23,13 @@ pub mod error;
 pub mod heat_pump_voltage_model;
 pub mod thermal_electrical_coupler;
 
+// === Fluxion Integration Bridge ===
+// Only available when the "fluxion" feature flag is enabled.
+#[cfg(feature = "fluxion")]
+pub mod fluxion_bridge;
+#[cfg(feature = "fluxion")]
+pub use fluxion_bridge::ThermalModelTraitBridge;
+
 pub use error::{GridModelError, GridSolveError};
 pub use heat_pump_voltage_model::HeatPumpVoltageModel;
 pub use thermal_electrical_coupler::VoltageCoupler;
