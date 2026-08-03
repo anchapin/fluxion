@@ -1,4 +1,7 @@
-use crate::state::{EnergyResults, McpState, SimulationResults};
+use crate::state::{
+    EnergyResults, FluidLoopConnection, FluidLoopNode, FluidLoopTopology, FluidNetworkState,
+    HvacControlSequence, HvacControlSetpoint, McpState, SimulationResults,
+};
 use fluxion::ai::surrogate::SurrogateManager;
 use fluxion::physics::cta::VectorField;
 use fluxion::sim::construction::{Construction, ConstructionLayer, MassClass};
@@ -351,6 +354,79 @@ pub fn list_tools() -> Vec<serde_json::Value> {
                 "required": ["case_id", "metric"]
             }
         }),
+        serde_json::json!({
+            "name": "inspect_fluid_loop",
+            "description": "Return complete topology of a named plant loop or air handler",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "loop_id": {
+                        "type": "string",
+                        "description": "Unique identifier for the plant loop or air handler (e.g., 'chilled_water_loop', 'hot_water_loop', 'ahu_1')"
+                    }
+                },
+                "required": ["loop_id"]
+            }
+        }),
+        serde_json::json!({
+            "name": "get_hvac_control_sequence",
+            "description": "Return current HVAC control sequence and setpoints for a loop",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "loop_id": {
+                        "type": "string",
+                        "description": "Unique identifier for the plant loop or air handler"
+                    }
+                },
+                "required": ["loop_id"]
+            }
+        }),
+        serde_json::json!({
+            "name": "set_hvac_control_sequence",
+            "description": "Modify HVAC setpoints during simulation. Rate limited to 5 changes per minute. All changes require explicit AI agent confirmation via the confirm parameter.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "loop_id": {
+                        "type": "string",
+                        "description": "Unique identifier for the plant loop or air handler"
+                    },
+                    "changes": {
+                        "type": "object",
+                        "description": "Setpoint changes as key-value pairs",
+                        "properties": {
+                            "heating_setpoint": {
+                                "type": "number",
+                                "description": "Heating setpoint in °C"
+                            },
+                            "cooling_setpoint": {
+                                "type": "number",
+                                "description": "Cooling setpoint in °C"
+                            },
+                            "supply_temperature_setpoint": {
+                                "type": "number",
+                                "description": "Supply air/water temperature setpoint in °C"
+                            },
+                            "mass_flow_setpoint": {
+                                "type": "number",
+                                "description": "Supply air/water mass flow rate setpoint in kg/s"
+                            },
+                            "duct_pressure_setpoint": {
+                                "type": "number",
+                                "description": "Duct static pressure setpoint in Pa"
+                            }
+                        }
+                    },
+                    "confirm": {
+                        "type": "boolean",
+                        "description": "Explicit AI agent confirmation required for control changes",
+                        "default": false
+                    }
+                },
+                "required": ["loop_id", "changes", "confirm"]
+            }
+        }),
     ]
 }
 
@@ -385,6 +461,9 @@ pub fn handle_tool_call(state: &mut McpState, params: Value) -> String {
         "set_parameter" => set_parameter(state, &tool_args),
         "describe_model" => describe_model(state, &tool_args),
         "compare_to_reference" => compare_to_reference(state, &tool_args),
+        "inspect_fluid_loop" => inspect_fluid_loop(state, &tool_args),
+        "get_hvac_control_sequence" => get_hvac_control_sequence(state, &tool_args),
+        "set_hvac_control_sequence" => set_hvac_control_sequence(state, &tool_args),
         _ => serde_json::json!({
             "error": format!("Unknown tool: {}", method)
         }),
@@ -855,4 +934,603 @@ fn compare_to_reference(state: &mut McpState, args: &serde_json::Map<String, Val
         "within_tolerance": within_range,
         "status": if within_range { "PASS" } else { "FAIL" }
     })
+}
+
+fn inspect_fluid_loop(state: &mut McpState, args: &serde_json::Map<String, Value>) -> Value {
+    let loop_id = args.get("loop_id").and_then(|v| v.as_str()).unwrap_or("");
+
+    if loop_id.is_empty() {
+        return serde_json::json!({
+            "error": "loop_id is required"
+        });
+    }
+
+    if let Some(network) = state.get_fluid_network(loop_id) {
+        serde_json::json!({
+            "success": true,
+            "loop_id": loop_id,
+            "topology": {
+                "loop_id": network.topology.loop_id,
+                "loop_name": network.topology.loop_name,
+                "loop_type": network.topology.loop_type,
+                "nodes": network.topology.nodes.iter().map(|n| serde_json::json!({
+                    "id": n.id,
+                    "name": n.name,
+                    "node_type": n.node_type,
+                    "medium": n.medium,
+                    "mass_flow_rate_kg_s": n.mass_flow_rate,
+                    "temperature_c": n.temperature,
+                    "pressure_pa": n.pressure
+                })).collect::<Vec<_>>(),
+                "connections": network.topology.connections.iter().map(|c| serde_json::json!({
+                    "from_node": c.from_node,
+                    "to_node": c.to_node,
+                    "connection_type": c.connection_type
+                })).collect::<Vec<_>>(),
+                "num_nodes": network.topology.nodes.len(),
+                "num_connections": network.topology.connections.len()
+            }
+        })
+    } else {
+        let demo_topology = build_demo_fluid_topology(loop_id);
+        let demo_network = FluidNetworkState {
+            topology: demo_topology.clone(),
+            control_sequence: build_demo_control_sequence(loop_id),
+        };
+        state.register_fluid_network(loop_id.to_string(), demo_network);
+
+        serde_json::json!({
+            "success": true,
+            "loop_id": loop_id,
+            "topology": {
+                "loop_id": demo_topology.loop_id,
+                "loop_name": demo_topology.loop_name,
+                "loop_type": demo_topology.loop_type,
+                "nodes": demo_topology.nodes.iter().map(|n| serde_json::json!({
+                    "id": n.id,
+                    "name": n.name,
+                    "node_type": n.node_type,
+                    "medium": n.medium,
+                    "mass_flow_rate_kg_s": n.mass_flow_rate,
+                    "temperature_c": n.temperature,
+                    "pressure_pa": n.pressure
+                })).collect::<Vec<_>>(),
+                "connections": demo_topology.connections.iter().map(|c| serde_json::json!({
+                    "from_node": c.from_node,
+                    "to_node": c.to_node,
+                    "connection_type": c.connection_type
+                })).collect::<Vec<_>>(),
+                "num_nodes": demo_topology.nodes.len(),
+                "num_connections": demo_topology.connections.len()
+            },
+            "note": "Demo topology returned - no simulation model loaded"
+        })
+    }
+}
+
+fn get_hvac_control_sequence(state: &mut McpState, args: &serde_json::Map<String, Value>) -> Value {
+    let loop_id = args.get("loop_id").and_then(|v| v.as_str()).unwrap_or("");
+
+    if loop_id.is_empty() {
+        return serde_json::json!({
+            "error": "loop_id is required"
+        });
+    }
+
+    if let Some(network) = state.get_fluid_network(loop_id) {
+        let setpoints: Vec<_> = network
+            .control_sequence
+            .setpoints
+            .iter()
+            .map(|s| {
+                serde_json::json!({
+                    "name": s.name,
+                    "value": s.value,
+                    "unit": s.unit,
+                    "min_value": s.min_value,
+                    "max_value": s.max_value
+                })
+            })
+            .collect();
+
+        serde_json::json!({
+            "success": true,
+            "loop_id": loop_id,
+            "control_sequence": {
+                "loop_id": network.control_sequence.loop_id,
+                "loop_type": network.control_sequence.loop_type,
+                "control_mode": network.control_sequence.control_mode,
+                "setpoints": setpoints
+            },
+            "remaining_control_changes": state.remaining_control_changes()
+        })
+    } else {
+        let demo_network = FluidNetworkState {
+            topology: build_demo_fluid_topology(loop_id),
+            control_sequence: build_demo_control_sequence(loop_id),
+        };
+        state.register_fluid_network(loop_id.to_string(), demo_network.clone());
+
+        let setpoints: Vec<_> = demo_network
+            .control_sequence
+            .setpoints
+            .iter()
+            .map(|s| {
+                serde_json::json!({
+                    "name": s.name,
+                    "value": s.value,
+                    "unit": s.unit,
+                    "min_value": s.min_value,
+                    "max_value": s.max_value
+                })
+            })
+            .collect();
+
+        serde_json::json!({
+            "success": true,
+            "loop_id": loop_id,
+            "control_sequence": {
+                "loop_id": demo_network.control_sequence.loop_id,
+                "loop_type": demo_network.control_sequence.loop_type,
+                "control_mode": demo_network.control_sequence.control_mode,
+                "setpoints": setpoints
+            },
+            "remaining_control_changes": state.remaining_control_changes(),
+            "note": "Demo control sequence returned - no simulation model loaded"
+        })
+    }
+}
+
+fn set_hvac_control_sequence(state: &mut McpState, args: &serde_json::Map<String, Value>) -> Value {
+    let loop_id = args.get("loop_id").and_then(|v| v.as_str()).unwrap_or("");
+    let changes = args.get("changes").and_then(|v| v.as_object()).cloned();
+    let confirm = args
+        .get("confirm")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false);
+
+    if loop_id.is_empty() {
+        return serde_json::json!({
+            "error": "loop_id is required"
+        });
+    }
+
+    if changes.is_none() {
+        return serde_json::json!({
+            "error": "changes object is required"
+        });
+    }
+
+    if !confirm {
+        return serde_json::json!({
+            "error": "Explicit AI agent confirmation required. Set confirm: true to apply changes.",
+            "confirm_required": true,
+            "loop_id": loop_id,
+            "pending_changes": changes,
+            "remaining_control_changes": state.remaining_control_changes()
+        });
+    }
+
+    if !state.can_change_control() {
+        return serde_json::json!({
+            "error": "Rate limit exceeded: maximum 5 control changes per minute",
+            "rate_limited": true,
+            "retry_after_seconds": 60,
+            "loop_id": loop_id
+        });
+    }
+
+    let changes = changes.unwrap();
+    let network = state.fluid_networks.get_mut(loop_id);
+
+    if network.is_none() {
+        let demo_network = FluidNetworkState {
+            topology: build_demo_fluid_topology(loop_id),
+            control_sequence: build_demo_control_sequence(loop_id),
+        };
+        state.register_fluid_network(loop_id.to_string(), demo_network);
+    }
+
+    let network = state.fluid_networks.get_mut(loop_id).unwrap();
+    let mut applied_changes = Vec::new();
+    let mut rejected_changes = Vec::new();
+
+    for (key, value) in changes.iter() {
+        let new_value = match value.as_f64() {
+            Some(v) => v,
+            None => {
+                rejected_changes.push(serde_json::json!({
+                    "parameter": key,
+                    "error": "Value must be a number"
+                }));
+                continue;
+            }
+        };
+
+        let setpoint = network
+            .control_sequence
+            .setpoints
+            .iter_mut()
+            .find(|s| s.name == *key);
+
+        match setpoint {
+            Some(sp) => {
+                if new_value < sp.min_value || new_value > sp.max_value {
+                    rejected_changes.push(serde_json::json!({
+                        "parameter": key,
+                        "error": format!(
+                            "Value {} {} is outside physical guardrail range [{:.2}, {:.2}]",
+                            new_value, sp.unit, sp.min_value, sp.max_value
+                        ),
+                        "requested_value": new_value,
+                        "min_allowed": sp.min_value,
+                        "max_allowed": sp.max_value
+                    }));
+                } else {
+                    let old_value = sp.value;
+                    sp.value = new_value;
+                    applied_changes.push(serde_json::json!({
+                        "parameter": key,
+                        "old_value": old_value,
+                        "new_value": new_value,
+                        "unit": sp.unit
+                    }));
+                }
+            }
+            None => {
+                rejected_changes.push(serde_json::json!({
+                    "parameter": key,
+                    "error": format!("Unknown setpoint '{}'. Valid setpoints: heating_setpoint, cooling_setpoint, supply_temperature_setpoint, mass_flow_setpoint, duct_pressure_setpoint", key)
+                }));
+            }
+        }
+    }
+
+    state.record_control_change();
+
+    serde_json::json!({
+        "success": true,
+        "loop_id": loop_id,
+        "applied_changes": applied_changes,
+        "rejected_changes": rejected_changes,
+        "remaining_control_changes": state.remaining_control_changes(),
+        "rate_limit_info": {
+            "max_per_minute": 5,
+            "remaining": state.remaining_control_changes()
+        }
+    })
+}
+
+fn build_demo_fluid_topology(loop_id: &str) -> FluidLoopTopology {
+    match loop_id {
+        "chilled_water_loop" | "chw_loop" => FluidLoopTopology {
+            loop_id: loop_id.to_string(),
+            loop_name: "Chilled Water Loop".to_string(),
+            loop_type: "plant_loop".to_string(),
+            nodes: vec![
+                FluidLoopNode {
+                    id: 0,
+                    name: "Chiller".to_string(),
+                    node_type: "chiller".to_string(),
+                    medium: "Water".to_string(),
+                    mass_flow_rate: Some(10.0),
+                    temperature: Some(6.0),
+                    pressure: Some(400000.0),
+                },
+                FluidLoopNode {
+                    id: 1,
+                    name: "Chilled Water Pump".to_string(),
+                    node_type: "pump".to_string(),
+                    medium: "Water".to_string(),
+                    mass_flow_rate: Some(10.0),
+                    temperature: Some(6.5),
+                    pressure: Some(350000.0),
+                },
+                FluidLoopNode {
+                    id: 2,
+                    name: "AHU-1 Cooling Coil".to_string(),
+                    node_type: "coil".to_string(),
+                    medium: "Water".to_string(),
+                    mass_flow_rate: Some(5.0),
+                    temperature: Some(12.0),
+                    pressure: Some(300000.0),
+                },
+                FluidLoopNode {
+                    id: 3,
+                    name: "AHU-2 Cooling Coil".to_string(),
+                    node_type: "coil".to_string(),
+                    medium: "Water".to_string(),
+                    mass_flow_rate: Some(5.0),
+                    temperature: Some(12.0),
+                    pressure: Some(280000.0),
+                },
+                FluidLoopNode {
+                    id: 4,
+                    name: "Return Header".to_string(),
+                    node_type: "header".to_string(),
+                    medium: "Water".to_string(),
+                    mass_flow_rate: Some(10.0),
+                    temperature: Some(14.0),
+                    pressure: Some(250000.0),
+                },
+            ],
+            connections: vec![
+                FluidLoopConnection {
+                    from_node: 0,
+                    to_node: 1,
+                    connection_type: "supply".to_string(),
+                },
+                FluidLoopConnection {
+                    from_node: 1,
+                    to_node: 2,
+                    connection_type: "supply".to_string(),
+                },
+                FluidLoopConnection {
+                    from_node: 1,
+                    to_node: 3,
+                    connection_type: "supply".to_string(),
+                },
+                FluidLoopConnection {
+                    from_node: 2,
+                    to_node: 4,
+                    connection_type: "return".to_string(),
+                },
+                FluidLoopConnection {
+                    from_node: 3,
+                    to_node: 4,
+                    connection_type: "return".to_string(),
+                },
+                FluidLoopConnection {
+                    from_node: 4,
+                    to_node: 0,
+                    connection_type: "return".to_string(),
+                },
+            ],
+        },
+        "hot_water_loop" | "hw_loop" => FluidLoopTopology {
+            loop_id: loop_id.to_string(),
+            loop_name: "Hot Water Loop".to_string(),
+            loop_type: "plant_loop".to_string(),
+            nodes: vec![
+                FluidLoopNode {
+                    id: 0,
+                    name: "Boiler".to_string(),
+                    node_type: "boiler".to_string(),
+                    medium: "Water".to_string(),
+                    mass_flow_rate: Some(8.0),
+                    temperature: Some(82.0),
+                    pressure: Some(400000.0),
+                },
+                FluidLoopNode {
+                    id: 1,
+                    name: "Hot Water Pump".to_string(),
+                    node_type: "pump".to_string(),
+                    medium: "Water".to_string(),
+                    mass_flow_rate: Some(8.0),
+                    temperature: Some(80.0),
+                    pressure: Some(350000.0),
+                },
+                FluidLoopNode {
+                    id: 2,
+                    name: "AHU-1 Heating Coil".to_string(),
+                    node_type: "coil".to_string(),
+                    medium: "Water".to_string(),
+                    mass_flow_rate: Some(4.0),
+                    temperature: Some(70.0),
+                    pressure: Some(300000.0),
+                },
+                FluidLoopNode {
+                    id: 3,
+                    name: "AHU-2 Heating Coil".to_string(),
+                    node_type: "coil".to_string(),
+                    medium: "Water".to_string(),
+                    mass_flow_rate: Some(4.0),
+                    temperature: Some(70.0),
+                    pressure: Some(280000.0),
+                },
+                FluidLoopNode {
+                    id: 4,
+                    name: "Return Header".to_string(),
+                    node_type: "header".to_string(),
+                    medium: "Water".to_string(),
+                    mass_flow_rate: Some(8.0),
+                    temperature: Some(60.0),
+                    pressure: Some(250000.0),
+                },
+            ],
+            connections: vec![
+                FluidLoopConnection {
+                    from_node: 0,
+                    to_node: 1,
+                    connection_type: "supply".to_string(),
+                },
+                FluidLoopConnection {
+                    from_node: 1,
+                    to_node: 2,
+                    connection_type: "supply".to_string(),
+                },
+                FluidLoopConnection {
+                    from_node: 1,
+                    to_node: 3,
+                    connection_type: "supply".to_string(),
+                },
+                FluidLoopConnection {
+                    from_node: 2,
+                    to_node: 4,
+                    connection_type: "return".to_string(),
+                },
+                FluidLoopConnection {
+                    from_node: 3,
+                    to_node: 4,
+                    connection_type: "return".to_string(),
+                },
+                FluidLoopConnection {
+                    from_node: 4,
+                    to_node: 0,
+                    connection_type: "return".to_string(),
+                },
+            ],
+        },
+        _ => FluidLoopTopology {
+            loop_id: loop_id.to_string(),
+            loop_name: format!("AHU {}", loop_id),
+            loop_type: "air_handler".to_string(),
+            nodes: vec![
+                FluidLoopNode {
+                    id: 0,
+                    name: "Supply Fan".to_string(),
+                    node_type: "fan".to_string(),
+                    medium: "Air".to_string(),
+                    mass_flow_rate: Some(5.0),
+                    temperature: Some(22.0),
+                    pressure: Some(1000.0),
+                },
+                FluidLoopNode {
+                    id: 1,
+                    name: "Heating Coil".to_string(),
+                    node_type: "coil".to_string(),
+                    medium: "Air".to_string(),
+                    mass_flow_rate: Some(5.0),
+                    temperature: Some(24.0),
+                    pressure: Some(800.0),
+                },
+                FluidLoopNode {
+                    id: 2,
+                    name: "Cooling Coil".to_string(),
+                    node_type: "coil".to_string(),
+                    medium: "Air".to_string(),
+                    mass_flow_rate: Some(5.0),
+                    temperature: Some(14.0),
+                    pressure: Some(600.0),
+                },
+                FluidLoopNode {
+                    id: 3,
+                    name: "VAV Box".to_string(),
+                    node_type: "vav".to_string(),
+                    medium: "Air".to_string(),
+                    mass_flow_rate: Some(2.5),
+                    temperature: Some(16.0),
+                    pressure: Some(400.0),
+                },
+                FluidLoopNode {
+                    id: 4,
+                    name: "Zone Terminal".to_string(),
+                    node_type: "terminal".to_string(),
+                    medium: "Air".to_string(),
+                    mass_flow_rate: Some(2.5),
+                    temperature: Some(18.0),
+                    pressure: Some(200.0),
+                },
+            ],
+            connections: vec![
+                FluidLoopConnection {
+                    from_node: 0,
+                    to_node: 1,
+                    connection_type: "supply".to_string(),
+                },
+                FluidLoopConnection {
+                    from_node: 1,
+                    to_node: 2,
+                    connection_type: "supply".to_string(),
+                },
+                FluidLoopConnection {
+                    from_node: 2,
+                    to_node: 3,
+                    connection_type: "supply".to_string(),
+                },
+                FluidLoopConnection {
+                    from_node: 3,
+                    to_node: 4,
+                    connection_type: "supply".to_string(),
+                },
+                FluidLoopConnection {
+                    from_node: 4,
+                    to_node: 0,
+                    connection_type: "return".to_string(),
+                },
+            ],
+        },
+    }
+}
+
+fn build_demo_control_sequence(loop_id: &str) -> HvacControlSequence {
+    match loop_id {
+        "chilled_water_loop" | "chw_loop" => HvacControlSequence {
+            loop_id: loop_id.to_string(),
+            loop_type: "plant_loop".to_string(),
+            control_mode: "constant_flow".to_string(),
+            setpoints: vec![
+                HvacControlSetpoint {
+                    name: "supply_temperature_setpoint".to_string(),
+                    value: 6.0,
+                    unit: "°C".to_string(),
+                    min_value: 4.0,
+                    max_value: 10.0,
+                },
+                HvacControlSetpoint {
+                    name: "mass_flow_setpoint".to_string(),
+                    value: 10.0,
+                    unit: "kg/s".to_string(),
+                    min_value: 0.0,
+                    max_value: 20.0,
+                },
+            ],
+        },
+        "hot_water_loop" | "hw_loop" => HvacControlSequence {
+            loop_id: loop_id.to_string(),
+            loop_type: "plant_loop".to_string(),
+            control_mode: "constant_flow".to_string(),
+            setpoints: vec![
+                HvacControlSetpoint {
+                    name: "supply_temperature_setpoint".to_string(),
+                    value: 82.0,
+                    unit: "°C".to_string(),
+                    min_value: 60.0,
+                    max_value: 95.0,
+                },
+                HvacControlSetpoint {
+                    name: "mass_flow_setpoint".to_string(),
+                    value: 8.0,
+                    unit: "kg/s".to_string(),
+                    min_value: 0.0,
+                    max_value: 15.0,
+                },
+            ],
+        },
+        _ => HvacControlSequence {
+            loop_id: loop_id.to_string(),
+            loop_type: "air_handler".to_string(),
+            control_mode: "dual_setpoint".to_string(),
+            setpoints: vec![
+                HvacControlSetpoint {
+                    name: "heating_setpoint".to_string(),
+                    value: 22.0,
+                    unit: "°C".to_string(),
+                    min_value: 15.0,
+                    max_value: 25.0,
+                },
+                HvacControlSetpoint {
+                    name: "cooling_setpoint".to_string(),
+                    value: 14.0,
+                    unit: "°C".to_string(),
+                    min_value: 10.0,
+                    max_value: 20.0,
+                },
+                HvacControlSetpoint {
+                    name: "duct_pressure_setpoint".to_string(),
+                    value: 400.0,
+                    unit: "Pa".to_string(),
+                    min_value: 100.0,
+                    max_value: 800.0,
+                },
+                HvacControlSetpoint {
+                    name: "mass_flow_setpoint".to_string(),
+                    value: 5.0,
+                    unit: "kg/s".to_string(),
+                    min_value: 0.0,
+                    max_value: 10.0,
+                },
+            ],
+        },
+    }
 }

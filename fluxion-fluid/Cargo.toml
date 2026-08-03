@@ -11,7 +11,8 @@ license = "Apache-2.0"
 thiserror = "1.0"
 num-traits = "0.2"
 uom = { version = "0.35", features = ["f32"] }
-nalgebra = "0.33"
+nalgebra = "0.34"
+uuid = { version = "1.0", features = ["serde"] }
 
 [dev-dependencies]
 approx = "0.5"

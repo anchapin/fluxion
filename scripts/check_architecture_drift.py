@@ -24,7 +24,11 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parent.parent
 ARCH_FILE = REPO_ROOT / "ARCHITECTURE.md"
 # Scan source directories from all workspace members
-SRC_DIRS = [REPO_ROOT / "src", REPO_ROOT / "fluxion-core" / "src"]
+SRC_DIRS = [
+    REPO_ROOT / "src",
+    REPO_ROOT / "fluxion-core" / "src",
+    REPO_ROOT / "fluxion-grid" / "src",
+]
 
 
 def find_rust_traits(src_dirs: list[Path]) -> dict[str, str]:
@@ -144,6 +148,7 @@ def check_drift() -> list[str]:
         "CTFSolverWrapper",  # struct implementing HeatConductionSolver
         "FDSolverWrapper",  # struct implementing HeatConductionSolver
         "MultiNodeSolver",  # struct in physics/multi_node_solver.rs
+        "JointConvergenceSolver",  # struct in fluxion-grid/src/lib.rs
     }
 
     # Traits documented as planned-but-not-yet-implemented in the multi-phase

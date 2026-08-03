@@ -11,11 +11,23 @@ license = "Apache-2.0"
 name = "fluxion_grid"
 path = "src/lib.rs"
 
+[features]
+default = []
+# Enable integration with the main fluxion crate's ThermalModelTrait.
+# When enabled, ThermalElectricalCoupler can hold Arc<dyn ThermalModelTrait>
+# for joint thermal-electrical convergence with the full thermal solver.
+fluxion = ["dep:fluxion"]
+
 [dependencies]
 uuid = { version = "1.0", features = ["serde", "v4"] }
 serde = { version = "1.0", features = ["derive"] }
 thiserror = "1.0"
-nalgebra = "0.33"
+nalgebra = "0.34"
+fluxion-fluid = { path = "../fluxion-fluid" }
+
+# Optional dependency on the main fluxion crate for ThermalModelTrait integration.
+# Only available when the "fluxion" feature flag is enabled.
+fluxion = { path = "..", version = "1.0.0", optional = true }
 
 [dev-dependencies]
 approx = "0.5"

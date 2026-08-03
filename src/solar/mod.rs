@@ -13,10 +13,12 @@
 //! - Solar position: 0.5° tolerance (altitude and azimuth)
 //! - Surface irradiance: 1% tolerance (beam and diffuse)
 
+pub mod pv;
 pub mod solar_position;
 pub mod surface_irradiance;
 
 // Re-export primary types and functions for convenient access
+pub use pv::{PvPanel, PvSystem, SimpleInverter};
 pub use solar_position::{calculate_day_of_year, calculate_solar_position, SolarPosition};
 pub use surface_irradiance::{
     calculate_surface_irradiance, extraterrestrial_irradiance, orientation_to_angles,
