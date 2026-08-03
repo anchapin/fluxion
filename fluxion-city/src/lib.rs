@@ -1338,6 +1338,24 @@ pub mod urban_graph {
         pub fn edges(&self) -> impl Iterator<Item = &E> {
             self.graph.edge_weights()
         }
+
+        /// Returns an iterator over node indices for parallel access.
+        ///
+        /// This enables parallel iteration over buildings using rayon::par_iter
+        /// when combined with node_weights(). This is necessary because
+        /// par_iter requires random-access iteration, which the indices provide.
+        pub fn node_indices(&self) -> impl Iterator<Item = petgraph::graph::NodeIndex> + '_ {
+            self.graph.node_indices()
+        }
+
+        /// Returns a slice of node weights for parallel iteration.
+        ///
+        /// Panics if index is out of bounds.
+        pub fn node_weight(&self, idx: petgraph::graph::NodeIndex) -> &N {
+            self.graph
+                .node_weight(idx)
+                .expect("node index out of bounds")
+        }
     }
 
     impl<N, E> Default for UrbanGraph<N, E> {
@@ -1521,7 +1539,10 @@ pub mod parallel {
     pub mod harness;
 }
 #[cfg(feature = "parallel")]
-pub use parallel::harness::{BuildingGroup, UrbanRadiationSystem, UrbanStepDispatcher};
+pub use parallel::harness::{
+    BuildingGroup, BuildingResult, BuildingThermalData, StepError, UrbanGraphStepDispatcher,
+    UrbanRadiationSystem, UrbanStepDispatcher,
+};
 
 #[cfg(test)]
 mod tests {
