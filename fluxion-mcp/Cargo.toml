@@ -13,6 +13,9 @@ categories = ["simulation", "scientific", "api-bindings"]
 # Fluxion core
 fluxion = { path = "..", features = ["multi-zone"] }
 
+# Fluxion fluid for HVAC fluid network topology
+fluxion-fluid = { path = "../fluxion-fluid", version = "1.0.0" }
+
 # TOON serialization (Issue #2072)
 fluxion-toon = { path = "../crates/fluxion-toon" }
 
