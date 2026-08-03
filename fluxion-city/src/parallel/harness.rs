@@ -2,7 +2,17 @@
 //!
 //! Thread-safe parallel execution of urban radiation/thermal simulations
 //! with configurable worker threads and memory-efficient building management.
+//!
+//! # Determinism Guarantee (Issue #2033)
+//!
+//! The parallel dispatcher produces deterministic results regardless of thread pool
+//! size by:
+//! 1. Pre-sorting nodes by ID before parallel iteration
+//! 2. Using deterministic reduction order (BTreeMap)
+//!
+//! This means `RAYON_NUM_THREADS=1` and `RAYON_NUM_THREADS=8` produce identical results.
 
+use std::collections::BTreeMap;
 use std::time::Duration;
 use thiserror::Error;
 
@@ -429,20 +439,24 @@ impl<'a> UrbanGraphStepDispatcher<'a> {
     /// Iterates over all buildings in the graph in parallel, computes radiation
     /// flux, internal gains, and temperature changes, and returns results.
     ///
+    /// # Determinism (Issue #2033)
+    /// Results are returned in a `BTreeMap<Uuid, BuildingResult>` sorted by building ID,
+    /// ensuring deterministic output regardless of thread pool size or scheduling order.
+    ///
     /// # Arguments
     /// * `dt` - Time step duration
     /// * `radiation` - Solar and atmospheric radiation conditions
     /// * `outdoor_temp` - Ambient outdoor temperature (K)
     ///
     /// # Returns
-    /// * `Ok(Vec<BuildingResult>)` - Per-building results in arbitrary order
+    /// * `Ok(BTreeMap<Uuid, BuildingResult>)` - Per-building results sorted by building ID
     /// * `Err(StepError)` - If the graph is empty or computation fails
     pub fn step_buildings(
         &self,
         dt: Duration,
         radiation: &UrbanRadiationSystem,
         outdoor_temp: f64,
-    ) -> Result<Vec<BuildingResult>, StepError> {
+    ) -> Result<BTreeMap<uuid::Uuid, BuildingResult>, StepError> {
         if self.graph.node_count() == 0 {
             return Err(StepError::EmptyGraph);
         }
@@ -453,15 +467,17 @@ impl<'a> UrbanGraphStepDispatcher<'a> {
             ));
         }
 
-        // Use rayon par_iter over indices for true parallelism
-        let _node_count = self.graph.node_count();
-        let indices: Vec<_> = self.graph.node_indices().collect();
-        let results: Vec<BuildingResult> = indices
+        // Pre-sort nodes by ID for deterministic iteration order (Issue #2033)
+        let mut node_indices: Vec<_> = self.graph.node_indices().collect();
+        node_indices.sort_by_key(|&idx| self.graph.node_weight(idx).id);
+
+        // Use rayon par_iter over sorted indices for true parallelism
+        // Results collected into BTreeMap for deterministic reduction order
+        let results: BTreeMap<uuid::Uuid, BuildingResult> = node_indices
             .par_iter()
             .map(|&idx| {
                 // Get thermal data for this node
                 let node = self.graph.node_weight(idx);
-                let _thermal_idx = idx.index();
 
                 // Find thermal data by matching UUID
                 let thermal = self
@@ -475,7 +491,8 @@ impl<'a> UrbanGraphStepDispatcher<'a> {
 
                 // Compute step - use a local mutable copy
                 let mut local_thermal = thermal;
-                local_thermal.step(&dt, radiation, outdoor_temp)
+                let result = local_thermal.step(&dt, radiation, outdoor_temp);
+                (node.id, result)
             })
             .collect();
 
@@ -483,19 +500,26 @@ impl<'a> UrbanGraphStepDispatcher<'a> {
     }
 
     /// Step all buildings sequentially (for comparison/debugging).
+    ///
+    /// Returns results in sorted order by building ID for deterministic comparison
+    /// with parallel results.
     pub fn step_buildings_sequential(
         &self,
         dt: &Duration,
         radiation: &UrbanRadiationSystem,
         outdoor_temp: f64,
-    ) -> Result<Vec<BuildingResult>, StepError> {
+    ) -> Result<BTreeMap<uuid::Uuid, BuildingResult>, StepError> {
         if self.graph.node_count() == 0 {
             return Err(StepError::EmptyGraph);
         }
 
-        let mut results = Vec::with_capacity(self.graph.node_count());
+        // Pre-sort nodes by ID for deterministic iteration order (Issue #2033)
+        let mut node_indices: Vec<_> = self.graph.node_indices().collect();
+        node_indices.sort_by_key(|&idx| self.graph.node_weight(idx).id);
 
-        for idx in self.graph.node_indices() {
+        let mut results = BTreeMap::new();
+
+        for idx in node_indices {
             let node = self.graph.node_weight(idx);
             let thermal = self
                 .thermal_data
@@ -508,7 +532,7 @@ impl<'a> UrbanGraphStepDispatcher<'a> {
 
             let mut local_thermal = thermal;
             let result = local_thermal.step(dt, radiation, outdoor_temp);
-            results.push(result);
+            results.insert(node.id, result);
         }
 
         Ok(results)
@@ -562,7 +586,7 @@ impl<'a> UrbanGraphStepDispatcher<'a> {
         _dt: Duration,
         _radiation: &UrbanRadiationSystem,
         _outdoor_temp: f64,
-    ) -> Result<Vec<BuildingResult>, StepError> {
+    ) -> Result<BTreeMap<uuid::Uuid, BuildingResult>, StepError> {
         Err(StepError::ComputationError(
             "parallel feature not enabled".into(),
             "Rebuild with --features parallel".into(),
@@ -574,7 +598,7 @@ impl<'a> UrbanGraphStepDispatcher<'a> {
         _dt: &Duration,
         _radiation: &UrbanRadiationSystem,
         _outdoor_temp: f64,
-    ) -> Result<Vec<BuildingResult>, StepError> {
+    ) -> Result<BTreeMap<uuid::Uuid, BuildingResult>, StepError> {
         Err(StepError::ComputationError(
             "parallel feature not enabled".into(),
             "Rebuild with --features parallel".into(),
@@ -740,16 +764,19 @@ mod tests {
         assert_eq!(results_par.len(), 5);
         assert_eq!(results_seq.len(), 5);
 
-        // Results should be in same order (both iterate in index order)
-        for (par, seq) in results_par.iter().zip(results_seq.iter()) {
+        // Results should be identical (both return BTreeMap sorted by ID)
+        for (id, par_result) in results_par.iter() {
+            let seq_result = results_seq
+                .get(id)
+                .expect("building ID should exist in sequential results");
             approx::assert_abs_diff_eq!(
-                par.temperature_change_k,
-                seq.temperature_change_k,
+                par_result.temperature_change_k,
+                seq_result.temperature_change_k,
                 epsilon = 1e-10
             );
             approx::assert_abs_diff_eq!(
-                par.surface_temperature_k,
-                seq.surface_temperature_k,
+                par_result.surface_temperature_k,
+                seq_result.surface_temperature_k,
                 epsilon = 1e-10
             );
         }
@@ -774,7 +801,7 @@ mod tests {
             .expect("step should succeed");
 
         assert_eq!(results.len(), 1);
-        let result = &results[0];
+        let result = results.values().next().expect("should have one result");
         assert!(result.heat_flow_w.is_finite());
         assert!(result.temperature_change_k.is_finite());
         assert!(result.surface_temperature_k > 0.0);
@@ -798,5 +825,274 @@ mod tests {
         let result = dispatcher.step_buildings(dt, &radiation, 300.0);
         assert!(result.is_err());
         assert!(matches!(result.unwrap_err(), StepError::InvalidTimeStep(_)));
+    }
+
+    // =====================================================================
+    // Issue #2033: Determinism Tests
+    // =====================================================================
+
+    #[cfg(feature = "parallel")]
+    #[test]
+    fn test_deterministic_results_with_thread_count_variation() {
+        // Verify that parallel execution produces identical results regardless of thread count
+        // by comparing single-threaded vs multi-threaded execution.
+        use crate::urban_graph::{BoundingBox3D, BuildingNode, UrbanGraph};
+        use rayon::ThreadPool;
+        use std::sync::Arc;
+
+        // Create a graph with multiple buildings
+        let mut graph: UrbanGraph<BuildingNode, SpatialEdge> = UrbanGraph::new();
+        let building_ids: Vec<uuid::Uuid> = (0..20)
+            .map(|i| {
+                let bb = BoundingBox3D::new(
+                    0.0 + i as f64 * 15.0,
+                    0.0,
+                    0.0,
+                    10.0 + i as f64 * 15.0,
+                    10.0,
+                    30.0,
+                );
+                let id = uuid::Uuid::new_v4();
+                graph.add_building(BuildingNode::new(id, bb));
+                id
+            })
+            .collect();
+
+        let radiation = UrbanRadiationSystem::new(500.0, 270.0, 0.9, 0.7, 45.0, 0.0);
+        let dt = Duration::from_secs(3600);
+
+        // Run with thread pool of 1
+        let pool1 = rayon::ThreadPoolBuilder::new()
+            .num_threads(1)
+            .build()
+            .expect("failed to build thread pool with 1 thread");
+        let dispatcher1 = UrbanGraphStepDispatcher::new(&graph);
+        let results1: std::collections::BTreeMap<uuid::Uuid, BuildingResult> =
+            pool1.install(|| {
+                dispatcher1
+                    .step_buildings(dt, &radiation, 300.0)
+                    .expect("step should succeed")
+            });
+
+        // Run with thread pool of 8
+        let pool8 = rayon::ThreadPoolBuilder::new()
+            .num_threads(8)
+            .build()
+            .expect("failed to build thread pool with 8 threads");
+        let dispatcher8 = UrbanGraphStepDispatcher::new(&graph);
+        let results8: std::collections::BTreeMap<uuid::Uuid, BuildingResult> =
+            pool8.install(|| {
+                dispatcher8
+                    .step_buildings(dt, &radiation, 300.0)
+                    .expect("step should succeed")
+            });
+
+        // Verify same keys
+        assert_eq!(results1.len(), results8.len());
+        assert_eq!(
+            results1.keys().copied().collect::<Vec<_>>(),
+            results8.keys().copied().collect::<Vec<_>>()
+        );
+
+        // Verify identical results for each building
+        for id in &building_ids {
+            let r1 = results1.get(id).expect("building should exist");
+            let r8 = results8
+                .get(id)
+                .expect("building should exist in 8-thread results");
+            approx::assert_abs_diff_eq!(r1.heat_flow_w, r8.heat_flow_w, epsilon = 1e-10);
+            approx::assert_abs_diff_eq!(
+                r1.temperature_change_k,
+                r8.temperature_change_k,
+                epsilon = 1e-10
+            );
+            approx::assert_abs_diff_eq!(
+                r1.surface_temperature_k,
+                r8.surface_temperature_k,
+                epsilon = 1e-10
+            );
+            approx::assert_abs_diff_eq!(r1.absorbed_solar_w, r8.absorbed_solar_w, epsilon = 1e-10);
+            approx::assert_abs_diff_eq!(
+                r1.emitted_longwave_w,
+                r8.emitted_longwave_w,
+                epsilon = 1e-10
+            );
+        }
+    }
+
+    #[cfg(feature = "parallel")]
+    #[test]
+    fn test_deterministic_results_multiple_runs() {
+        // Verify that running the same computation multiple times produces identical results
+        use crate::urban_graph::{BoundingBox3D, BuildingNode, UrbanGraph};
+
+        let mut graph: UrbanGraph<BuildingNode, SpatialEdge> = UrbanGraph::new();
+        for i in 0..10 {
+            let bb = BoundingBox3D::new(
+                i as f64 * 10.0,
+                0.0,
+                0.0,
+                10.0 + i as f64 * 10.0,
+                10.0,
+                30.0,
+            );
+            graph.add_building(BuildingNode::new(uuid::Uuid::new_v4(), bb));
+        }
+
+        let radiation = UrbanRadiationSystem::new(500.0, 270.0, 0.9, 0.7, 45.0, 0.0);
+        let dt = Duration::from_secs(3600);
+
+        // Run multiple times
+        let results1 = UrbanGraphStepDispatcher::new(&graph)
+            .step_buildings(dt, &radiation, 300.0)
+            .expect("step should succeed");
+
+        let results2 = UrbanGraphStepDispatcher::new(&graph)
+            .step_buildings(dt, &radiation, 300.0)
+            .expect("step should succeed");
+
+        // Results should be identical
+        assert_eq!(results1.len(), results2.len());
+        for (id, r1) in results1.iter() {
+            let r2 = results2
+                .get(id)
+                .expect("building should exist in second run");
+            approx::assert_abs_diff_eq!(r1.heat_flow_w, r2.heat_flow_w, epsilon = 1e-10);
+            approx::assert_abs_diff_eq!(
+                r1.temperature_change_k,
+                r2.temperature_change_k,
+                epsilon = 1e-10
+            );
+            approx::assert_abs_diff_eq!(
+                r1.surface_temperature_k,
+                r2.surface_temperature_k,
+                epsilon = 1e-10
+            );
+        }
+    }
+
+    #[cfg(feature = "parallel")]
+    #[test]
+    fn test_deterministic_results_sorted_order() {
+        // Verify that results are returned in sorted order by building ID
+        use crate::urban_graph::{BoundingBox3D, BuildingNode, UrbanGraph};
+        use std::collections::BTreeMap;
+
+        let mut graph: UrbanGraph<BuildingNode, SpatialEdge> = UrbanGraph::new();
+        // Add buildings in random order (by using decreasing IDs)
+        let ids: Vec<uuid::Uuid> = (0..5).map(|_| uuid::Uuid::new_v4()).collect();
+        for id in ids.iter().rev() {
+            let bb = BoundingBox3D::new(0.0, 0.0, 0.0, 10.0, 10.0, 30.0);
+            graph.add_building(BuildingNode::new(*id, bb));
+        }
+
+        let radiation = UrbanRadiationSystem::new(500.0, 270.0, 0.9, 0.7, 45.0, 0.0);
+        let dt = Duration::from_secs(3600);
+
+        let results = UrbanGraphStepDispatcher::new(&graph)
+            .step_buildings(dt, &radiation, 300.0)
+            .expect("step should succeed");
+
+        // Verify results are in sorted key order
+        let keys: Vec<_> = results.keys().copied().collect();
+        let mut sorted_keys = keys.clone();
+        sorted_keys.sort();
+
+        assert_eq!(keys, sorted_keys, "results should be sorted by building ID");
+
+        // Verify it's a BTreeMap behavior (sorted)
+        let mut prev_id = uuid::Uuid::nil();
+        for id in results.keys() {
+            assert!(*id > prev_id, "IDs should be strictly increasing");
+            prev_id = *id;
+        }
+    }
+
+    #[cfg(feature = "parallel")]
+    #[test]
+    fn test_deterministic_parallel_vs_sequential_100_iterations() {
+        // Stress test: run parallel vs sequential 100 times to catch any non-determinism
+        use crate::urban_graph::{BoundingBox3D, BuildingNode, UrbanGraph};
+
+        let mut graph: UrbanGraph<BuildingNode, SpatialEdge> = UrbanGraph::new();
+        for i in 0..10 {
+            let bb = BoundingBox3D::new(
+                i as f64 * 12.0,
+                0.0,
+                0.0,
+                10.0 + i as f64 * 12.0,
+                10.0,
+                30.0,
+            );
+            graph.add_building(BuildingNode::new(uuid::Uuid::new_v4(), bb));
+        }
+
+        let radiation = UrbanRadiationSystem::new(500.0, 270.0, 0.9, 0.7, 45.0, 0.0);
+        let dt = Duration::from_secs(3600);
+
+        for iteration in 0..100 {
+            let dispatcher_par = UrbanGraphStepDispatcher::new(&graph);
+            let dispatcher_seq = UrbanGraphStepDispatcher::new(&graph);
+
+            let results_par = dispatcher_par
+                .step_buildings(dt, &radiation, 300.0)
+                .expect("parallel step should succeed");
+            let results_seq = dispatcher_seq
+                .step_buildings_sequential(&dt, &radiation, 300.0)
+                .expect("sequential step should succeed");
+
+            assert_eq!(results_par.len(), results_seq.len());
+
+            for (id, par_result) in results_par.iter() {
+                let seq_result = results_seq.get(id).expect("building should exist");
+                let diff =
+                    (par_result.temperature_change_k - seq_result.temperature_change_k).abs();
+                assert!(
+                    diff < 1e-10,
+                    "iteration {}: temperature_change_k mismatch for building {:?}: diff={}",
+                    iteration,
+                    id,
+                    diff
+                );
+            }
+        }
+    }
+
+    #[cfg(feature = "parallel")]
+    #[test]
+    fn test_deterministic_btreemap_collection() {
+        // Verify that collecting into BTreeMap produces deterministic key ordering
+        use crate::urban_graph::{BoundingBox3D, BuildingNode, UrbanGraph};
+        use std::collections::BTreeMap;
+
+        let mut graph: UrbanGraph<BuildingNode, SpatialEdge> = UrbanGraph::new();
+        // Create explicit UUIDs that will be shuffled
+        let ids: Vec<uuid::Uuid> = (0..20).map(|_| uuid::Uuid::new_v4()).collect();
+
+        // Add in reverse order to test sorting
+        for id in ids.iter().rev() {
+            let bb = BoundingBox3D::new(0.0, 0.0, 0.0, 10.0, 10.0, 30.0);
+            graph.add_building(BuildingNode::new(*id, bb));
+        }
+
+        let radiation = UrbanRadiationSystem::new(500.0, 270.0, 0.9, 0.7, 45.0, 0.0);
+        let dt = Duration::from_secs(3600);
+
+        let results = UrbanGraphStepDispatcher::new(&graph)
+            .step_buildings(dt, &radiation, 300.0)
+            .expect("step should succeed");
+
+        // Verify BTreeMap is sorted
+        let keys: Vec<_> = results.keys().copied().collect();
+        let mut sorted_keys = keys.clone();
+        sorted_keys.sort();
+
+        assert_eq!(
+            keys, sorted_keys,
+            "BTreeMap should maintain sorted key order"
+        );
+
+        // Verify all 20 buildings present
+        assert_eq!(results.len(), 20);
     }
 }
