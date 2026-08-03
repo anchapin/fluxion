@@ -518,7 +518,8 @@ impl HVACBestestRunner {
         (total_energy_kwh, peak_demand_w)
     }
 
-    /// Simulate annual CAV energy consumption
+    #[allow(dead_code)]
+    /// Simulate annual CAV energy consumption (deprecated: replaced by simulate_annual_cav_terminal)
     fn simulate_annual_cav(
         &self,
         cav: &CAVSystem,
