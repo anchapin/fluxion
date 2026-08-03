@@ -161,7 +161,7 @@ fn assert_drift_within_gate(result: &DriftResult, context: &str) {
     }
 
     eprintln!(
-        "[surrogate_drift_gate:{context}] mode={} max_drift={:.4}% tolerance={:.1}%",
+        "\n[surrogate_drift_gate:{context}] mode={} max_drift={:.4}% tolerance={:.1}%",
         if surrogates.model_loaded {
             "onnx"
         } else {
