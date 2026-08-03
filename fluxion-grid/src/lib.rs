@@ -48,6 +48,7 @@ pub use power_flow::{
     DEFAULT_MAX_ITERATIONS, DEFAULT_TOLERANCE,
 };
 
+use fluxion_fluid::hvac::{HvacMode, HvacState};
 use nalgebra::DMatrix;
 
 pub type VoltagePu = f64;
@@ -281,32 +282,6 @@ impl ElectricalNetwork {
 
         self.angles = new_angles;
     }
-}
-
-/// HVAC operational state for a single building.
-///
-/// This represents the thermal demand and operating conditions of an HVAC system
-/// serving a specific building, which can be converted to electrical load via COP.
-#[derive(Debug, Clone)]
-pub struct HvacState {
-    /// Unique identifier of the building this HVAC serves
-    pub building_id: uuid::Uuid,
-    /// Thermal power demand (W) — positive for cooling, negative for heating
-    pub thermal_power_w: f64,
-    /// Indoor air temperature setpoint (°C)
-    pub setpoint_c: f64,
-    /// Ambient outdoor air temperature (°C)
-    pub ambient_temperature_c: f64,
-    /// Operating mode: 0=off, 1=heating, 2=cooling
-    pub mode: HvacMode,
-}
-
-/// Operating mode of the HVAC system.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum HvacMode {
-    Off = 0,
-    Heating = 1,
-    Cooling = 2,
 }
 
 /// Electrical load at a building bus.
