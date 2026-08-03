@@ -6,6 +6,7 @@ pub mod decoupled_loop_rayon;
 pub mod demand_response;
 pub mod diagnostics;
 pub mod distributed_inference;
+pub mod ems;
 pub mod engine;
 pub mod equipment;
 pub mod holiday;
