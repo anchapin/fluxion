@@ -1297,6 +1297,7 @@ dependencies = [
  "shipyard",
  "thiserror 1.0.69",
  "uom",
+ "uuid",
 ]
 
 [[package]]
@@ -1305,6 +1306,7 @@ version = "0.1.0"
 dependencies = [
  "approx",
  "fluxion",
+ "fluxion-fluid",
  "nalgebra 0.34.2",
  "proptest",
  "serde",
