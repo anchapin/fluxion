@@ -169,23 +169,26 @@ impl IdfFile {
 
     /// All `ZoneHVAC:IdealLoadsAirSystem` objects.
     pub fn zone_hvac_ideal_loads(&self) -> impl Iterator<Item = &IdfObject> {
-        self.objects
-            .iter()
-            .filter(|o| o.object_type.eq_ignore_ascii_case("ZoneHVAC:IdealLoadsAirSystem"))
+        self.objects.iter().filter(|o| {
+            o.object_type
+                .eq_ignore_ascii_case("ZoneHVAC:IdealLoadsAirSystem")
+        })
     }
 
     /// All `ZoneHVAC:EquipmentConnections` objects.
     pub fn zone_hvac_equipment_connections(&self) -> impl Iterator<Item = &IdfObject> {
-        self.objects
-            .iter()
-            .filter(|o| o.object_type.eq_ignore_ascii_case("ZoneHVAC:EquipmentConnections"))
+        self.objects.iter().filter(|o| {
+            o.object_type
+                .eq_ignore_ascii_case("ZoneHVAC:EquipmentConnections")
+        })
     }
 
     /// All `ThermostatSetpoint:DualSetpoint` objects.
     pub fn thermostat_setpoint_dual(&self) -> impl Iterator<Item = &IdfObject> {
-        self.objects
-            .iter()
-            .filter(|o| o.object_type.eq_ignore_ascii_case("ThermostatSetpoint:DualSetpoint"))
+        self.objects.iter().filter(|o| {
+            o.object_type
+                .eq_ignore_ascii_case("ThermostatSetpoint:DualSetpoint")
+        })
     }
 
     /// All `ZoneControl:Thermostat` objects.
@@ -204,9 +207,10 @@ impl IdfFile {
 
     /// All `ZoneInfiltration:DesignFlowRate` objects.
     pub fn infiltration(&self) -> impl Iterator<Item = &IdfObject> {
-        self.objects
-            .iter()
-            .filter(|o| o.object_type.eq_ignore_ascii_case("ZoneInfiltration:DesignFlowRate"))
+        self.objects.iter().filter(|o| {
+            o.object_type
+                .eq_ignore_ascii_case("ZoneInfiltration:DesignFlowRate")
+        })
     }
 }
 
