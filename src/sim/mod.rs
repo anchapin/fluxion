@@ -20,6 +20,7 @@ pub mod multi_node_hvac_runner;
 pub mod multi_node_thermal;
 pub mod multi_zone_network;
 pub mod occupancy;
+pub mod optimal_start_stop;
 pub mod orchestrator;
 pub mod per_surface_conduction;
 pub mod profiles;
