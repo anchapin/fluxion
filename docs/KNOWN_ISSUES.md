@@ -681,6 +681,47 @@ The fundamental issue is that h_ms_total is computed as an additive sum of wall/
   GaugeSolver (#1465) brings the 14 metrics into band, giving CI a concrete
   close-out signal for #1457.
 
+### LIMIT-05 UPDATE (Issue #2300 investigation, 2026-08-03): sub-hour air-node sub-stepping — BLOCKED by architectural dependency
+
+**Issue #2300** tasked investigating sub-hour air-node sub-stepping as a fix for
+the Cases 610, 630, 640 peak_heating under-prediction (simultaneous with
+peak_cooling over-prediction — the discrete-node solar-injection pathology).
+
+**Investigation findings (2026-08-03):**
+
+1. **`solar_distribution_to_air = 0.7` verification:** The parameter is correctly
+   applied in `physics_impl.rs:227` — 70% of window solar goes directly to the
+   air node. This is a design band-aid (Issue #1216), not a bug.
+
+2. **Sub-hour air-node sub-stepping:** Would require splitting the 1-hour weather
+   timestep into ~4 × 15-minute sub-steps, running the air-node ODE at each
+   sub-step with `dt/τ_air ≈ 0.9` (meaningful air-node dynamics). The air-node
+   ODE (Issue #1585 exact exponential) already exists and could theoretically be
+   sub-stepped. However, this is a **major architectural change** to the
+   `step_physics_5r1c` call path, touching weather timestep dispatch, scratch
+   buffer management, and HVAC coupling.
+
+3. **Root cause confirmed:** The bidirectional error (peak_cooling OVER +
+   peak_heating UNDER) is the textbook signature of discrete-node solar injection
+   at `dt/τ ≈ 3.6`. The 5R1C model architecture cannot resolve this without
+   either:
+   - **(a) GaugeSolver** — treats solar as geometric curvature, not per-timestep
+     energy injection (tracked in **#1465 / #1462**)
+   - **(b) Sub-hour air-node sub-stepping** — architectural change to weather
+     timestep dispatch
+
+4. **Conclusion:** This issue is **BLOCKED by GaugeSolver work** (#1465/#1462).
+   The architectural fix required for sub-hour sub-stepping is comparable in scope
+   to GaugeSolver and should be handled in the sameEpic. Parameter tuning
+   (`solar_distribution_to_air`) is explicitly forbidden per `AGENTS.md` ("fix
+   the underlying math").
+
+5. **Current state:** The Issue #1522 structural improvements
+   (`air_thermal_capacitance` + Cm correction + Issue #1860 solar-lag) provide
+   marginal improvement over the LIMIT-05 UPDATE baseline but do not resolve the
+   bidirectional error. Cases 610/630/640 peak_heating remains ~10-18% below
+   the pre-1522 LIMIT-05 baseline.
+
 ### LIMIT-05 UPDATE (#1522 investigation, 2026-07-11): option (a) air-node capacitance — INFEASIBLE at 1 h timestep
 
 **Issue #1522** tasked a structural fix for the 14 remaining Case 600 metrics
