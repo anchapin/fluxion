@@ -64,4 +64,11 @@ pub enum GridSolveError {
         /// One-based iteration index.
         iteration: u32,
     },
+
+    /// A building in the HVAC state list has no corresponding bus in the grid.
+    #[error("building {building_id} has no bus in the grid mapping — skipping")]
+    MissingBuildingBus {
+        /// The UUID of the building that was not found.
+        building_id: uuid::Uuid,
+    },
 }
