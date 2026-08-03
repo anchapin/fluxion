@@ -1,18 +1,18 @@
 # Fluxion — Agent Instructions
 
-## Required Reading (MANDATORY)
+## Required Reading
 
-Before any non-trivial change, read these in order:
+Before modifying physics code or cross-module interfaces, read these:
 
-1. **`ARCHITECTURE.md`** (root) — source of truth for module boundaries, trait contracts, data flow. Feed the full file to the model on every new session.
-2. **`CODEBASE_MAP.md`** (root) — MANDATORY for cross-language context (Rust/Python/Node FFI contracts, memory ownership, serialization formats).
+1. **`ARCHITECTURE.md`** (root) — module boundaries, trait contracts, data flow. Source of truth for swap-point traits (`HeatConductionSolver`, `VentilationSchedule`, `ThermalModelTrait`).
+2. **`CODEBASE_MAP.md`** (root) — cross-language context (Rust/Python/Node FFI contracts, memory ownership, serialization formats).
 
-**Rule**: Do NOT modify physics code without checking `ARCHITECTURE.md` first. If the code doesn't match the documented interfaces, update `ARCHITECTURE.md` to reflect reality OR fix the code to match the architecture.
+**Rule**: Do NOT modify physics code without checking `ARCHITECTURE.md` first. If code doesn't match the documented interfaces, update `ARCHITECTURE.md` to reflect reality OR fix the code.
 
 Companion docs (read when relevant):
 - `RULES.md` — hard constraints (numerical-reasoning-via-code, energy balance, ASHRAE 140)
 - `CONTRIBUTING.md` — workflow / PR / branch policy
-- `docs/KNOWN_ISSUES.md` — open physics limitations; CI gate `scripts/check_known_issues_stale.py` (issue #1723) fails if the `*Last Updated: YYYY-MM-DD*` line is >60 days old. The gate **skips (passes)** if the file is absent, so a missing file does not itself fail CI.
+- `docs/KNOWN_ISSUES.md` — open physics limitations. CI gate `scripts/check_known_issues_stale.py` (issue #1723) fails if the `*Last Updated: YYYY-MM-DD*` line is >60 days old. **Skips (passes) if the file is absent** — a missing file does not itself fail CI.
 - `docs/ASHRAE140_RESULTS.md` and `docs/ASHRAE140_RESULTS_v0.8.0.md` — current validation pass rates
 
 ## Workspace Structure
@@ -53,7 +53,7 @@ crates/
 
 **Cycle-breaking rule** (enforced by CI via `scripts/check_ashrae_cases_cycle.py`, #1441): `fluxion-core/src/**/*.rs` must NOT import `crate::sim_*`, `crate::physics_*`, `crate::ai_*`, or `crate::validation_*`. The `sim::assembly` and `sim::multi_node_thermal` paths in `src/sim/` are thin re-export shims — keep them that way.
 
-**`fluxion-mcp`** is a workspace member that depends on `fluxion` from the parent path. It is built/tested separately from the main crate.
+**`fluxion-mcp`** is a workspace member (`cargo build -p fluxion-mcp`; `cargo test -p fluxion-mcp` to run its own suite).
 
 Re-export paths preserved across the crate split: `crate::weather::*`, `crate::assembly::*`, `crate::multi_node::*`, `crate::ashrae_cases::*`, `crate::sim::assembly::*`, `crate::sim::multi_node_thermal::*`, `crate::validation::ashrae_140_cases::Orientation`.
 
