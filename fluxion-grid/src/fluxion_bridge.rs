@@ -32,7 +32,10 @@ pub struct ThermalModelTraitBridge {
 #[cfg(feature = "fluxion")]
 impl ThermalModelTraitBridge {
     /// Create a new bridge with a coupler and thermal model.
-    pub fn new(coupler: crate::ThermalElectricalCoupler, thermal_model: Arc<dyn ThermalModelTrait>) -> Self {
+    pub fn new(
+        coupler: crate::ThermalElectricalCoupler,
+        thermal_model: Arc<dyn ThermalModelTrait>,
+    ) -> Self {
         Self {
             coupler,
             thermal_model,
