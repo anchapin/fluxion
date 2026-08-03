@@ -10,6 +10,7 @@
 //! - #2049: Mock Plug Load Fallback with Diurnal Gaussian Noise
 //! - #2050: INT8 Quantization for TSFM CPU Inference
 //! - #2051: DynamicInternalGainAdapter Core
+//! - #1910: Occupant-dependent internal gains (metabolic rate, equipment diversity, DCV)
 
 pub mod comfort;
 pub mod internal_gains;
@@ -22,8 +23,10 @@ pub use comfort::{
     PmvComfortStatus, TriggerType,
 };
 pub use internal_gains::{
-    ConstantPlugLoadProvider, DynamicInternalGainAdapter, InternalGains, OccupancyProvider,
-    PlugLoadProvider, ScheduleOccupancyProvider,
+    ConstantPlugLoadProvider, DcvParameters, DcvVentilation, DynamicInternalGainAdapter,
+    EquipmentDiversityFactor, InternalGains, MetabolicRate, MetabolicRatePattern,
+    MetabolicRateProvider, OccupancyProvider, OccupantDependentInternalGains,
+    PatternMetabolicRateProvider, PlugLoadProvider, ScheduleOccupancyProvider,
 };
 pub use lighting::OccupantState;
 pub use occupancy::{
