@@ -2,6 +2,9 @@
 #
 # !!! STATUS: SYNTHETIC / ANALYTICAL FIXTURE — NOT a real EnergyPlus run !!!
 #
+# ISSUE #2305: This file should contain EnergyPlus-generated hourly data.
+# See PROVENANCE.md for full documentation. Current values are synthetic.
+#
 # This file is consumed by tests/gauge_validation_case_900.rs as the
 # documented forcing for the diurnal step-response validation. The values
 # below are computed from the EXACT GaugeSolver formula (per
@@ -29,8 +32,16 @@
 #
 # Why synthetic (not from EnergyPlus): the existing Case 900 reference
 # CSV (tests/reference_data/zone_balance/case_900_energy_reference.csv) is
-# annual aggregates only (PROVENANCE.md). When an hourly EnergyPlus output
-# CSV becomes available, replace this fixture in a follow-up issue.
+# annual aggregates only (zone_balance/PROVENANCE.md). When an hourly
+# EnergyPlus output CSV becomes available, replace this fixture in a
+# follow-up issue (see PROVENANCE.md for regeneration instructions).
+#
+# IMPORTANT LIMITATION: GaugeSolver is a steady-state solver with no
+# thermal capacitance. It computes instantaneous flux, not transient
+# response. Even with real E+ data, the diurnal comparison would show
+# fundamental disagreement because E+ captures thermal lag while
+# GaugeSolver does not. See PROVENANCE.md Section "Relationship to
+# Annual Energy Tests" for details.
 #
 # Tolerance: ±1% for algebraic parity (test asserts GaugeSolver reproduces
 # the q_gauge column to within 1% on every hour). ±5% for diurnal amplitude
