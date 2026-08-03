@@ -602,7 +602,7 @@ let electrical_power = bridge.hvac_power_to_electrical(timestep, outdoor_temp);
 | `ashrae140` | `src/lib.rs` (ashrae140 module) | ASHRAE 140 test configurations for view factor validation |
 | `urban_graph` | `src/lib.rs` (urban_graph module) | `UrbanGraph<N,E>` spatial topology using petgraph for city-scale adjacency |
 | `parallel` | `src/parallel/` | Thread-safe parallel execution harness for urban radiation/thermal simulations |
-| `ray_tracing` | `src/ray_tracing.rs` | Monte Carlo view factor computation for complex geometries |
+| `ray_tracing` | `fluxion-city/src/ray_tracing.rs` | Monte Carlo view factor computation for complex geometries |
 
 **Core API** (from `src/lib.rs` re-exports):
 
