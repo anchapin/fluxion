@@ -76,12 +76,12 @@ fn test_population_evaluation_1000() {
     assert_eq!(results.len(), 1000);
     assert!(results.iter().all(|&r| r.is_finite()));
 
-    // Verify throughput >=50 configs/sec (relaxed for CI variability)
+    // Verify throughput >=150 configs/sec (release gate minimum per release_gates.yaml)
     let throughput = 1000.0 / elapsed.as_secs_f64();
     println!("BatchOracle throughput: {:.2} configs/sec", throughput);
     assert!(
-        throughput >= 50.0,
-        "Throughput too low: {:.2} configs/sec",
+        throughput >= 150.0,
+        "Throughput too low: {:.2} configs/sec (release gate: 150 configs/sec)",
         throughput
     );
 }

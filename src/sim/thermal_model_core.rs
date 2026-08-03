@@ -2671,6 +2671,10 @@ impl ThermalModel<VectorField> {
             // Solver manager for unified heat conduction solving (Phase 28)
             solver_manager: None, // Will be initialized when solver method is selected
 
+            // Issue #2304: GaugeZoneSolver for per-surface gauge-theory zone heat balance
+            #[cfg(feature = "gauge-solver")]
+            gauge_zone_solver: None, // Will be initialized when gauge-solver feature is enabled
+
             // Peak power tracking (Issue #272)
             peak_power_heating: 0.0, // Peak heating power in watts
             peak_power_cooling: 0.0, // Peak cooling power in watts
