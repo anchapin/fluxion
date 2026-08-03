@@ -5,6 +5,7 @@
 
 pub mod airside_coupling;
 pub mod airside_state;
+pub mod cav_terminal;
 pub mod cooling_coil;
 pub mod cycling;
 pub mod doas;
@@ -27,6 +28,9 @@ pub use airside_coupling::{AirsideEnvelopeCoupler, CoupledStepForcing, CoupledSt
 pub use airside_state::{
     AirsideCouplingError, AirsideFlow, MoistAirState, DEFAULT_ENERGY_BALANCE_TOLERANCE_W,
     MAX_VALIDATED_TIMESTEP_SECONDS,
+};
+pub use cav_terminal::{
+    CavOperatingMode, CavTerminal, CavTerminalControl, CavTerminalPerformance, CavTerminalUnit,
 };
 pub use cooling_coil::{CoilPerformance, CoolingCoil, CoolingCoilBehavior};
 pub use cycling::CyclingTracker;
