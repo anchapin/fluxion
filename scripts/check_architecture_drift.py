@@ -149,6 +149,7 @@ def check_drift() -> list[str]:
         "FDSolverWrapper",  # struct implementing HeatConductionSolver
         "MultiNodeSolver",  # struct in physics/multi_node_solver.rs
         "JointConvergenceSolver",  # struct in fluxion-grid/src/lib.rs
+        "UrbanRadiationSolver",  # struct in fluxion-city/src/lib.rs (sparse module)
     }
 
     # Traits documented as planned-but-not-yet-implemented in the multi-phase
