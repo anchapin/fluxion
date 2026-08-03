@@ -17,6 +17,7 @@ pub mod ideal_loads;
 pub mod modes;
 pub mod part_load_curves;
 pub mod plant;
+pub mod refrigeration;
 pub mod vav_terminal;
 pub mod zone_equipment;
 pub mod zones;
@@ -48,6 +49,10 @@ pub use plant::{
     check_energy_balance, water_cp, water_density, CoolingTowerSingleSpeed, FluidState,
     PlantComponent, PlantComponentResult, PlantLoop, PlantLoopResult, PlantMode, Pump,
     PumpConstantSpeed, PumpVariableSpeed, WATER_CP_J_PER_KG_K, WATER_DENSITY_KG_PER_M3,
+};
+pub use refrigeration::{
+    AirCooledCondenser, CompressorRack, RefrigerationMode, RefrigerationSystem, WalkInCooler,
+    WalkInFreezer,
 };
 pub use vav_terminal::{
     VavOperatingMode, VavTerminal, VavTerminalControl, VavTerminalPerformance, VavTerminalUnit,
