@@ -10,6 +10,8 @@
 // | Module | Description |
 // |--------|-------------|
 // | `battery_storage_node` | `BatteryStorageNode` — single-cell battery model with SoC, terminal voltage, and C-rate dynamics |
+// | `pv` | `PvPanel`, `SimpleInverter`, `PvSystem` — solar PV and inverter models |
+// | `battery_storage` | `BatteryStorage`, `NetZeroSystem` — building-level battery storage with self-consumption optimization |
 
 #![allow(nonstandard_style)]
 #![allow(clippy::all)]
@@ -44,16 +46,20 @@ pub use thermal_electrical_coupler::VoltageCoupler;
 // - Joint thermal-electrical convergence solver for grid-interactive buildings
 
 pub mod battery;
+pub mod battery_storage;
 pub mod bus;
 pub mod power_flow;
+pub mod pv;
 
 pub use battery::BatteryBus;
 pub use battery::HeatFlowRate; // Re-exported for direct fluxion-core thermal integration (#2036)
+pub use battery_storage::{BatteryStorage, NetZeroSystem};
 pub use bus::{BusNodeType, ElectricalBus};
 pub use power_flow::{
     bus_uuid, GridConvergenceReport, PowerFlowSolver, PowerFlowState, TransmissionLine,
     DEFAULT_MAX_ITERATIONS, DEFAULT_TOLERANCE,
 };
+pub use pv::{PvPanel, PvSystem, SimpleInverter};
 
 use fluxion_fluid::hvac::{HvacMode, HvacState};
 use nalgebra::DMatrix;
@@ -980,7 +986,7 @@ mod tests {
     #[test]
     fn test_thermal_to_electrical_batch_missing_building() {
         let building1 = uuid::Uuid::new_v4();
-        let building2 = uuid::Uuid::new_v4();
+        let _building2 = uuid::Uuid::new_v4();
         let unmapped_building = uuid::Uuid::new_v4();
         let bus1 = uuid::Uuid::new_v4();
 
