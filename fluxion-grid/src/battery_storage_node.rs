@@ -126,6 +126,28 @@ impl BatteryStorageNode {
         self.with_fade_rate_per_dod_cycle(model.fade_rate_per_cycle)
     }
 
+    /// Panasonic NCR18650B battery constructor.
+    ///
+    /// Reference: Panasonic NCR18650B datasheet.
+    /// - Capacity: 3400 mAh (3.4 Ah)
+    /// - Nominal Voltage: 3.6 V
+    /// - Cutoff Voltage: 2.5 V (manufacturer recommended)
+    /// - Internal Resistance: ~0.035 Ω (typical @ 1 kHz, 25°C)
+    ///
+    /// At 1C discharge (3.4 A), the battery reaches the 2.5 V cutoff in
+    /// approximately 1 hour under load. The simplified electrical model uses
+    /// `V_nominal` as the open-circuit voltage approximation.
+    pub fn panasonic_ncr18650b() -> Self {
+        Self::new(
+            Uuid::new_v4(),
+            1.0,   // soc: starts fully charged
+            1.0,   // c_rate: 1C
+            3.4,   // capacity_ah: 3400 mAh
+            0.035, // r_internal_ohm: 35 mΩ typical
+            3.6,   // v_nominal: 3.6 V
+        )
+    }
+
     pub fn step(&mut self, dt: std::time::Duration, current_amps: f64) -> (f64, f64) {
         let dt_hours = dt.as_secs_f64() / 3600.0;
         let d_soc = -(current_amps * dt_hours) / self.capacity_ah;
@@ -394,5 +416,133 @@ mod tests {
         let under = BatteryStorageNode::new(bus_id, 1.0, 1.0, 100.0, 0.01, 400.0)
             .with_degradation_factor(0.3);
         assert!((under.degradation_factor - END_OF_LIFE_FACTOR).abs() < f64::EPSILON);
+    }
+
+    // === Panasonic NCR18650B Validation Tests (#2038) ===
+
+    /// Validate battery model against Panasonic NCR18650B manufacturer discharge curves.
+    ///
+    /// Reference: Panasonic NCR18650B datasheet.
+    /// - Capacity: 3400 mAh (3.4 Ah)
+    /// - Nominal Voltage: 3.6 V
+    /// - Cutoff Voltage: 2.5 V
+    /// - At 1C discharge: ~1 hour to reach cutoff voltage
+    #[test]
+    fn test_panasonic_ncr18650b_discharge_curve() {
+        let mut battery = BatteryStorageNode::panasonic_ncr18650b();
+
+        // Verify initial state: fully charged
+        assert!(
+            (battery.soc - 1.0).abs() < f64::EPSILON,
+            "Battery should start at SoC = 1.0 (fully charged)"
+        );
+        assert!(
+            (battery.capacity_ah - 3.4).abs() < f64::EPSILON,
+            "Capacity should be 3.4 Ah, got {}",
+            battery.capacity_ah
+        );
+        assert!(
+            (battery.v_nominal - 3.6).abs() < f64::EPSILON,
+            "Nominal voltage should be 3.6 V, got {}",
+            battery.v_nominal
+        );
+        assert!(
+            (battery.r_internal_ohm - 0.035).abs() < f64::EPSILON,
+            "Internal resistance should be 0.035 Ω, got {}",
+            battery.r_internal_ohm
+        );
+
+        // Simulate 1C discharge (current = capacity in Ah = 3.4 A)
+        let current_1c = 3.4;
+        let dt = Duration::from_secs(60); // 1 minute steps
+        let mut time_seconds: u64 = 0;
+        let expected_duration = Duration::from_secs(3600); // ~1 hour
+        let tolerance = Duration::from_secs(120); // ±2 minutes tolerance
+
+        // Track voltage and SoC throughout discharge
+        let mut min_voltage = f64::MAX;
+        let mut max_voltage = f64::MIN;
+
+        while battery.soc > 0.0 {
+            let (soc, voltage) = battery.step(dt, current_1c);
+            time_seconds += dt.as_secs();
+
+            min_voltage = min_voltage.min(voltage);
+            max_voltage = max_voltage.max(voltage);
+
+            // Voltage should always be above cutoff threshold (2.5 V)
+            assert!(
+                voltage >= 2.5,
+                "Voltage {} V dropped below cutoff 2.5 V at SoC = {}, time = {}s",
+                voltage,
+                soc,
+                time_seconds
+            );
+
+            // Safety: don't run forever if something goes wrong
+            assert!(
+                time_seconds < 7200,
+                "Discharge took longer than 2 hours, possible infinite loop at SoC = {}",
+                soc
+            );
+        }
+
+        // Should take approximately 1 hour at 1C (±2 minutes tolerance)
+        let actual_duration_secs = time_seconds as i64;
+        let expected_secs = expected_duration.as_secs() as i64;
+        let tolerance_secs = tolerance.as_secs() as i64;
+        let diff = (actual_duration_secs - expected_secs).abs();
+        assert!(
+            diff <= tolerance_secs,
+            "1C discharge took {}s, expected ~{}s (±{}s tolerance). SoC final: {}",
+            time_seconds,
+            expected_secs,
+            tolerance_secs,
+            battery.soc
+        );
+
+        // Voltage should be in expected range throughout discharge
+        // At 1C start: V = 3.6 - 3.4*0.035 = 3.481 V
+        // At 1C end (just before cutoff): V ≥ 2.5 V
+        assert!(
+            min_voltage >= 2.5,
+            "Minimum voltage {} V should be ≥ 2.5 V cutoff",
+            min_voltage
+        );
+        assert!(
+            (max_voltage - 3.481).abs() < 0.1,
+            "Maximum voltage {} V should be close to 3.481 V (3.6 - I*R)",
+            max_voltage
+        );
+    }
+
+    /// Validate SoC vs OCV relationship for Panasonic NCR18650B.
+    ///
+    /// At no-load (I=0), terminal voltage equals V_nominal (3.6 V).
+    /// The simplified model uses V_nominal as open-circuit voltage approximation.
+    #[test]
+    fn test_panasonic_ncr18650b_soc_ocv_relationship() {
+        let battery = BatteryStorageNode::panasonic_ncr18650b();
+
+        // At no load, terminal voltage equals nominal voltage
+        let v_no_load = battery.terminal_voltage(0.0);
+        assert!(
+            (v_no_load - 3.6).abs() < f64::EPSILON,
+            "No-load voltage should be 3.6 V, got {}",
+            v_no_load
+        );
+
+        // At 1C load (3.4 A), voltage drops by I*R
+        let v_1c = battery.terminal_voltage(3.4);
+        let expected_v_1c = 3.6 - 3.4 * 0.035; // 3.481 V
+        assert!(
+            (v_1c - expected_v_1c).abs() < 1e-6,
+            "1C voltage should be {} V, got {}",
+            expected_v_1c,
+            v_1c
+        );
+
+        // SoC is correctly stored
+        assert!((battery.soc - 1.0).abs() < f64::EPSILON);
     }
 }
