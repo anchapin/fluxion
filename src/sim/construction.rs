@@ -798,7 +798,7 @@ impl Construction {
             //
             // For ASHRAE 140 simplified modeling, we use typical values:
             const PSI_EDGE: f64 = 0.15; // W/mK - typical edge linear bridge
-            const PSI_CORNER: f64 = 0.10; // W/mK - typical corner linear bridge
+            const _PSI_CORNER: f64 = 0.10; // W/mK - typical corner linear bridge
             const CHI_POINT: f64 = 0.002; // W/K - typical point bridge
 
             // Perimeter-to-area ratio for typical building

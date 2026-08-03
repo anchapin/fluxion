@@ -1052,7 +1052,7 @@ impl BuildingAssembly {
     /// # Note
     /// When `surface_area > opaque_area`, the difference represents thermal bridge
     /// lengths (for linear bridges) or point bridge counts that add extra heat transfer.
-    pub fn effective_u_with_bridges(&self, opaque_area: f64, surface_area: f64) -> f64 {
+    pub fn effective_u_with_bridges(&self, opaque_area: f64, _surface_area: f64) -> f64 {
         if self.thermal_bridges.is_empty() || opaque_area <= 0.0 {
             return 1.0 / self.total_r_value();
         }
