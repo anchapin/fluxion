@@ -8,6 +8,8 @@ use crate::physics::ctf_coefficients::CTFCoefficients;
 use crate::physics::ctf_solver::CTFSolver;
 use crate::physics::ctf_zone_coupling::CtfZoneCouplingSolver;
 use crate::physics::fd_solver::ImplicitFDSolver;
+#[cfg(feature = "gauge-solver")]
+use crate::physics::gauge_zone_solver::GaugeZoneSolver;
 use crate::physics::multi_node_solver::MultiNodeSolver;
 use crate::physics::solver_manager::SolverManager;
 use crate::sim::adaptive_timestep::TimestepMode;
@@ -202,6 +204,11 @@ pub struct ThermalModelData<T: ContinuousTensor<f64> + Clone> {
     pub fd_timestep: f64,
     pub multi_node_solvers: Vec<MultiNodeSolver>,
     pub solver_manager: Option<SolverManager>,
+    /// Issue #2304 — GaugeZoneSolver for per-surface gauge-theory zone heat balance.
+    /// When the `gauge-solver` feature is enabled, this solver replaces the legacy
+    /// 5R1C/9R4C lumped-capacitance networks for zone-level heat balance.
+    #[cfg(feature = "gauge-solver")]
+    pub gauge_zone_solver: Option<GaugeZoneSolver>,
     pub convective_fraction: f64,
     pub solar_distribution_to_air: f64,
     pub solar_beam_to_mass_fraction: f64,
@@ -404,6 +411,8 @@ impl<T: ContinuousTensor<f64> + Clone> Clone for ThermalModelData<T> {
             fd_timestep: self.fd_timestep,
             multi_node_solvers: vec![],
             solver_manager: None,
+            #[cfg(feature = "gauge-solver")]
+            gauge_zone_solver: self.gauge_zone_solver.clone(),
             convective_fraction: self.convective_fraction,
             solar_distribution_to_air: self.solar_distribution_to_air,
             solar_beam_to_mass_fraction: self.solar_beam_to_mass_fraction,
