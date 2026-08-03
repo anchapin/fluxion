@@ -803,10 +803,22 @@ impl ThermalModel<VectorField> {
                 if let Some(shading) = &spec.shading {
                     match shading.shading_type {
                         ShadingType::Overhang | ShadingType::OverhangAndFins if win_area > 0.0 => {
+                            // Get window geometry to compute distance_above
+                            // distance_above = mounting_height - window_top (positive = gap above window)
+                            let win_geom = spec.windows.get(zone_idx).and_then(|zone_wins| {
+                                zone_wins.iter().find(|w| w.orientation == orientation)
+                            });
+                            let (win_sill, win_height) = win_geom
+                                .map(|w| (w.sill_height, w.height))
+                                .unwrap_or((0.2, 3.0)); // Default values if not found
+                            let window_top = win_sill + win_height;
+                            // distance_above is positive when overhang is above window top (gap)
+                            // mounting_height is the height of the overhang above ground
+                            let distance_above = (shading.mounting_height - window_top).max(0.0);
                             surface.overhang = Some(Overhang {
                                 depth: shading.overhang_depth,
-                                distance_above: 0.0, // Default for ASHRAE 140
-                                extension: 10.0,     // "Infinite"
+                                distance_above,
+                                extension: 10.0, // "Infinite"
                             });
                         }
                         ShadingType::Fins | ShadingType::OverhangAndFins if win_area > 0.0 => {
