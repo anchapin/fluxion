@@ -68,5 +68,5 @@ pub use fmi::{
     FmuOutputs, ImportedFmu, ImportedModelDescription, ImportedScalarVariable, ZoneVariables,
 };
 pub use gbxml::{export_gbxml, import_gbxml, GbXmlError, GbXmlReader, GbXmlWriter};
-pub use ifc::{import_ifc, IfcError, IfcGeometryParser, IfcModel, IfcParser, IfcToSchema};
+pub use ifc::{export_ifc, import_ifc, IfcError, IfcGeometryParser, IfcModel, IfcParser, IfcToSchema, IfcWriter};
 pub use osm::{export_osm, import_osm, OsmError, OsmReader, OsmWriter};

@@ -1,12 +1,13 @@
 // Copyright 2026 Fluxion. All rights reserved.
 // SPDX-License-Identifier: MIT
 
-//! IFC4 STEP geometry import scaffold (issue #1343 + #1612).
+//! IFC4 STEP geometry import and export scaffold (issue #1343 + #1612 + #1908).
 //!
-//! Parses the IFC4 entity types from a STEP physical file (ISO 10303-21)
-//! and maps them onto Fluxion's [`SimulationSchemaV1`].
+//! Parses IFC4 entity types from a STEP physical file (ISO 10303-21)
+//! and maps them onto Fluxion's [`SimulationSchemaV1`]. Also exports
+//! [`SimulationSchemaV1`] back to IFC4 STEP format.
 //!
-//! # Scope (issue #1343 + #1612)
+//! # Scope (issue #1343 + #1612 + #1908)
 //!
 //! - IFC4 only — IFC2X3 is **not** supported (deferred).
 //! - Entities typed: [`IfcBuilding`], [`IfcBuildingStorey`],
@@ -33,6 +34,10 @@
 //!   (`IfcGeometryParser`).
 //! - [`mapping`] — Converts an [`IfcModel`] into a
 //!   [`SimulationSchemaV1`].
+//! - [`writer`] — Exports a [`SimulationSchemaV1`] to an IFC4 STEP
+//!   physical file, including [`IfcBuilding`], [`IfcBuildingStorey`],
+//!   [`IfcSpace`], [`IfcBuildingElementProxy`], and [`IfcMaterialLayer`]
+//!   entities (issue #1908).
 //!
 //! # References
 //!
@@ -41,7 +46,7 @@
 //! - ISO 10303-21 (STEP physical file format):
 //!   <https://en.wikipedia.org/wiki/ISO_10303-21>
 //!
-//! # Example
+//! # Example (import)
 //!
 //! ```ignore
 //! use fluxion::interop::ifc::import_ifc;
@@ -49,12 +54,21 @@
 //! let schema = import_ifc("tests/fixtures/ifc/sample.ifc")?;
 //! assert_eq!(schema.geometry.zones.len(), 1);
 //! ```
+//!
+//! # Example (export)
+//!
+//! ```ignore
+//! use fluxion::interop::ifc::export_ifc;
+//!
+//! export_ifc(&schema, "output.ifc")?;
+//! ```
 
 pub mod error;
 pub mod geometry;
 pub mod mapping;
 pub mod parser;
 pub mod step_lexer;
+pub mod writer;
 
 pub use error::IfcError;
 pub use geometry::IfcGeometryParser;
@@ -64,3 +78,4 @@ pub use parser::{
     MaterialLayerSpec,
 };
 pub use step_lexer::{tokenize, RawEntity};
+pub use writer::{export_ifc, write_ifc_file, IfcWriter};
