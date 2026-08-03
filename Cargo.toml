@@ -91,6 +91,12 @@ kafka = ["dep:rdkafka"]
 # Feature flag for acausal HVAC / fluid network modeling (Issue #1980 / ADR-005).
 # Gates the `fluxion-fluid` crate which provides port-based fluid circuit traits.
 fluid = ["dep:fluxion-fluid"]
+# Feature flag for GaugeSolver as primary zone solver (Issue #2304).
+# When enabled, GaugeZoneSolver replaces the legacy 5R1C/9R4C lumped-capacitance
+# networks for zone-level heat balance. The per-surface gauge theory approach
+# conserves energy more accurately and supports multi-zone coupling.
+# Run with: cargo test --features gauge-solver --test ashrae_140_case_600_series
+gauge-solver = []
 
 [lints.rust]
 unexpected_cfgs = { level = "allow", check-cfg = ["cfg(docsrs,test)", "cfg(gil_refs)"] }

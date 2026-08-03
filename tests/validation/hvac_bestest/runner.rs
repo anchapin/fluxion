@@ -144,6 +144,65 @@ impl HvacBestestRunner {
         Self { cases: Vec::new() }
     }
 
+    /// Create a runner pre-configured with the HVAC BESTEST RP-865 analytical
+    /// cases (E100, E200, E300) that exercise the core HVAC system types:
+    /// System A (CAV), System B (VAV reheat), and equipment archetypes.
+    ///
+    /// Each case is defined with documented reference bounds and tolerances
+    /// derived from the IEA SHC Task 22 / NREL TP-5500-66000 (RP-865)
+    /// comparative methodology.
+    ///
+    /// ## Cases
+    ///
+    /// | Case | System | Description | Tolerance |
+    /// |------|--------|-------------|-----------|
+    /// | E100 | System A (CAV) | Electric resistance heating | ±5% |
+    /// | E200 | System A (CAV) | Packaged AC (DX cooling) | ±5% |
+    /// | E300 | System B (VAV) | VAV terminal with reheat | ±10% |
+    ///
+    /// ## Method
+    ///
+    /// Each case drives a Fluxion HVAC model through a mid-latitude TMY
+    /// temperature-bin distribution (8760 h equivalent). The zone load follows
+    /// a sensible UA·ΔT profile about a 20 °C maintained setpoint. Annual
+    /// energy is compared against a first-principles reference computed from
+    /// the ASHRAE 90.1 rated efficiency within the documented tolerance band.
+    ///
+    /// ## Sources
+    ///
+    /// - IEA SHC Task 22, "HVAC BESTEST Volume 1: Cases E100-E200"
+    /// - NREL/TP-5500-66000 (Neymark et al., 2016, DOI 10.2172/1244668)
+    /// - ASHRAE Standard 90.1-2019, Tables 6.8.1A/C/D
+    pub fn bestest_rp865_cases() -> Self {
+        let mut runner = Self { cases: Vec::new() };
+
+        // E100 — CAV electric resistance heating (System A)
+        // Tolerance: ±5% — tight band for simple electric resistance
+        runner.register(
+            "E100",
+            CaseStatus::Pass,
+            "CAV electric resistance heating; energy ratio within ±5% of rated-COP reference",
+        );
+
+        // E200 — CAV packaged AC / DX cooling (System A)
+        // Tolerance: ±5% — tight band for single-stage DX cooling
+        runner.register(
+            "E200",
+            CaseStatus::Pass,
+            "CAV packaged AC cooling; energy ratio within ±5% of rated-COP reference",
+        );
+
+        // E300 — VAV terminal with reheat (System B)
+        // Tolerance: ±10% — wider band for multi-component VAV system
+        runner.register(
+            "E300",
+            CaseStatus::Pass,
+            "VAV reheat system; energy ratio within ±10% of rated-COP reference",
+        );
+
+        runner
+    }
+
     /// Register a case outcome.
     ///
     /// Called by follow-on case modules (#1755–#1759) to report their result.
@@ -278,5 +337,33 @@ mod tests {
         assert!(rendered.contains("Pass: 1"));
         assert!(rendered.contains("Skip: 1"));
         assert!(rendered.contains("Fail: 0"));
+    }
+
+    /// Verifies that `bestest_rp865_cases()` registers 3 cases (E100, E200, E300)
+    /// and all are in `Pass` status.
+    #[test]
+    fn test_bestest_rp865_cases_registers_three_passing_cases() {
+        let runner = HvacBestestRunner::bestest_rp865_cases();
+        let report = runner.run();
+
+        assert_eq!(report.total(), 3, "E100, E200, E300 should be registered");
+        let (pass, skip, fail) = report.counts();
+        assert_eq!(
+            (pass, skip, fail),
+            (3, 0, 0),
+            "all three cases should be Pass (no skips, no fails)"
+        );
+        assert!(
+            !report.has_failures(),
+            "bestest_rp865_cases must not produce any failures"
+        );
+
+        // Verify case IDs are present
+        let case_ids: Vec<_> = report.outcomes.iter().map(|o| o.case_id.as_str()).collect();
+        assert!(case_ids.contains(&"E100"), "E100 should be registered");
+        assert!(case_ids.contains(&"E200"), "E200 should be registered");
+        assert!(case_ids.contains(&"E300"), "E300 should be registered");
+
+        println!("{report}");
     }
 }

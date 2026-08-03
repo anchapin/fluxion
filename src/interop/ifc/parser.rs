@@ -110,6 +110,24 @@ pub struct IfcSpace {
     pub line: usize,
 }
 
+/// A typed `IFCWINDOW` entity (window opening in a wall).
+#[derive(Debug, Clone, PartialEq)]
+pub struct IfcWindow {
+    pub id: u64,
+    pub global_id: String,
+    pub name: String,
+    pub line: usize,
+}
+
+/// A typed `IFCDOOR` entity (door opening in a wall).
+#[derive(Debug, Clone, PartialEq)]
+pub struct IfcDoor {
+    pub id: u64,
+    pub global_id: String,
+    pub name: String,
+    pub line: usize,
+}
+
 /// A single material-layer record (`IFCMATERIALLAYER`).
 ///
 /// `thickness` is in metres; `material_id` is the STEP id of the
@@ -175,6 +193,10 @@ pub struct IfcModel {
     pub roofs: Vec<IfcRoof>,
     /// All spaces (thermal zones) discovered in the file.
     pub spaces: Vec<IfcSpace>,
+    /// All windows discovered in the file.
+    pub windows: Vec<IfcWindow>,
+    /// All doors discovered in the file.
+    pub doors: Vec<IfcDoor>,
 
     /// All material associations (`IFCRELASSOCIATESMATERIAL`).
     pub material_associations: Vec<MaterialAssociation>,
@@ -309,6 +331,24 @@ impl IfcParser {
             "IFCSPACE" => {
                 let (global_id, name) = parse_root_like(&entity)?;
                 model.spaces.push(IfcSpace {
+                    id: entity.id,
+                    global_id,
+                    name,
+                    line: entity.line,
+                });
+            }
+            "IFCWINDOW" => {
+                let (global_id, name) = parse_root_like(&entity)?;
+                model.windows.push(IfcWindow {
+                    id: entity.id,
+                    global_id,
+                    name,
+                    line: entity.line,
+                });
+            }
+            "IFCDOOR" => {
+                let (global_id, name) = parse_root_like(&entity)?;
+                model.doors.push(IfcDoor {
                     id: entity.id,
                     global_id,
                     name,

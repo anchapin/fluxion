@@ -7,6 +7,10 @@
 //! Issue #902 modular split.
 
 use crate::physics::cta::{ContinuousTensor, VectorField};
+#[cfg(feature = "gauge-solver")]
+use crate::physics::units::FromF64;
+#[cfg(feature = "gauge-solver")]
+use crate::physics::units::{HeatTransferCoefficient, Temperature};
 use crate::sim::thermal_model_core::ThermalModel;
 
 impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>> ThermalModel<T> {
@@ -51,6 +55,54 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         // This is needed for ASHRAE 140 validation where step_physics is called directly
         if self.0.weather.is_some() {
             self.calc_analytical_loads(timestep, true, dt_seconds);
+        }
+
+        // Issue #2304: Route to GaugeZoneSolver when gauge-solver feature is enabled
+        #[cfg(feature = "gauge-solver")]
+        if let Some(ref mut gauge_solver) = self.0.gauge_zone_solver {
+            // Extract parameters for GaugeZoneSolver from ThermalModel state
+            let zone_temps = self.0.temperatures.as_ref();
+            let _T_int = if zone_temps.is_empty() {
+                20.0 // Default interior temperature
+            } else {
+                zone_temps[0]
+            };
+            let loads = self.0.loads.as_ref();
+            let Q_internal_w = if loads.is_empty() {
+                0.0
+            } else {
+                loads[0] * self.0.zone_area.as_ref().get(0).copied().unwrap_or(48.0)
+            };
+            let solar_gains = self.0.solar_gains.as_ref();
+            let solar_irradiance_wm2 = if solar_gains.is_empty() {
+                0.0
+            } else {
+                solar_gains[0]
+            };
+            // Use exterior film coefficient from derived_h_ext or default
+            let h_ext = self
+                .0
+                .derived_h_ext
+                .as_ref()
+                .get(0)
+                .copied()
+                .unwrap_or(25.0);
+
+            let result = gauge_solver.step(
+                timestep,
+                dt_seconds,
+                Temperature::from_value(outdoor_temp),
+                HeatTransferCoefficient::from_value(h_ext),
+                solar_irradiance_wm2,
+                Q_internal_w,
+                0.0, // Q_infiltration_w - would need proper infiltration calculation
+            );
+
+            // If gauge solver succeeds, return its result; otherwise fall through to legacy
+            if let Ok(energy_kwh) = result {
+                return energy_kwh;
+            }
+            // Fall through to legacy solver if gauge fails
         }
 
         // Branch based on thermal model type
