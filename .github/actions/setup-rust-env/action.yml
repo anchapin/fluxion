@@ -5,6 +5,10 @@ description: |
   same install invocation as the base deps (avoids an extra apt-get update).
 
 inputs:
+  toolchain:
+    description: 'Rust toolchain version (e.g., 1.85.0, stable)'
+    required: false
+    default: ''
   components:
     description: 'Rust components to install (e.g., rustfmt,clippy)'
     required: false
@@ -38,7 +42,7 @@ runs:
     - name: Install Rust
       uses: dtolnay/rust-toolchain@8641a17e25bf5b40c118d48fe0f81e8655731839  # 1.85.0
       with:
-        toolchain: ${{ inputs.toolchain }}
+        targets: ${{ inputs.toolchain }}
         components: ${{ inputs.components }}
 
     # sccache: content-addressed compiler cache backed by GHA cache API.
