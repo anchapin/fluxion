@@ -544,6 +544,47 @@ The common-wall limit (separation `< 0.01 m`) is the analytical limit `F_AB = A_
 
 ---
 
+### Module N+1: Grid-Edge Electrical Network (`fluxion-grid`)
+
+**Source**: `fluxion-grid/` (standalone crate, workspace member)
+**Purpose**: Grid-edge electrical network components for joint thermal-electrical convergence: battery storage, bus nodes, power flow analysis, and `ThermalElectricalCoupler` for COP-based thermal-to-electrical conversion.
+
+**Crate independence**: `fluxion-grid` has **no default dependency** on the main `fluxion` crate. It ships with its own simplified `ThermalModel` and `ThermalElectricalCoupler` that operate on scalar HVAC state values (`HvacState`, `ElectricalLoad`). This keeps the crate buildable and testable without pulling in the full thermal solver stack.
+
+**Optional `fluxion` integration (Issue #2275)**: When the `fluxion` feature flag is enabled, `fluxion-grid` gains access to `Arc<dyn ThermalModelTrait>` via an optional dependency on the main `fluxion` crate. The `fluxion_bridge::ThermalModelBridge` struct holds both a `ThermalElectricalCoupler` and an `Arc<dyn ThermalModelTrait>`, enabling joint convergence where the grid-side coupler queries the full thermal solver state directly rather than relying on scalar HVAC values.
+
+| Feature | ThermalElectricalCoupler behavior |
+|---------|----------------------------------|
+| Default (no feature) | Works with scalar `HvacState` values, COP-based conversion |
+| `fluxion` feature | Can additionally hold `Arc<dyn ThermalModelTrait>` via `ThermalModelTraitBridge` |
+
+**Key structs** (always available):
+- `ThermalElectricalCoupler` — COP-based coupler between thermal and electrical systems
+- `HvacState` — HVAC operational state for a single building
+- `ElectricalLoad` — Electrical load at a building bus
+- `ThermalModel` — Simplified thermal model for joint convergence (standalone, not `ThermalModelTrait`)
+- `ElectricalNetwork` — Electrical network with bus voltages and power injections
+- `JointConvergenceSolver` — Iterative solver for coupled thermal-electrical systems
+
+**Key structs** (requires `fluxion` feature):
+- `ThermalModelTraitBridge` — Bridge holding `ThermalElectricalCoupler` + `Arc<dyn ThermalModelTrait>`
+
+**Joint convergence pattern** (with `fluxion` feature):
+
+```rust
+use fluxion_grid::{ThermalElectricalCoupler, ElectricalNetwork};
+use fluxion_grid::fluxion_bridge::ThermalModelTraitBridge;
+
+let coupler = ThermalElectricalCoupler::new(3.0);
+let thermal_model: Arc<dyn ThermalModelTrait> = /* from fluxion */;
+let bridge = ThermalModelTraitBridge::new(coupler, thermal_model);
+
+// Query thermal model directly → convert to electrical
+let electrical_power = bridge.hvac_power_to_electrical(timestep, outdoor_temp);
+```
+
+---
+
 ### Module 6: Gauge-Theory Foundation (Phase 1a — #1461)
 
 **Source**: `src/physics/geometry_tensor.rs` (lives alongside the existing CTA `GeometryTensor` types for the Python↔Rust boundary; the two domains are deliberately kept on different storage representations — `Vec<f64>` for the CTA tensors, `nalgebra::{Matrix4, Vector4}` for the gauge-theory manifold, because their consumers diverge).
