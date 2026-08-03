@@ -12,6 +12,15 @@ pub mod examples;
 /// Report generator
 pub mod generator;
 
+/// Aggregation module for monthly/daily reporting
+pub mod aggregation;
+
 // Re-export key types
 pub use cli::ReportingCommand;
 pub use generator::ValidationReportGenerator;
+
+// Re-export aggregation types
+pub use aggregation::{
+    hourly_to_daily, hourly_to_monthly, verify_monthly_aggregation, CustomReportFilter,
+    DailyAggregation, MonthlyAggregation, SqlReporter,
+};
