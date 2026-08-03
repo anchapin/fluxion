@@ -21,7 +21,7 @@
 use std::path::PathBuf;
 use std::time::Instant;
 
-use fluxion::interop::ifc::mapping::round_trip_via_gbxml;
+use fluxion::interop::ifc::mapping::{round_trip_via_gbxml, round_trip_via_ifc};
 use fluxion::interop::ifc::{import_ifc, IfcModel, IfcParser, IfcToSchema, RawEntity};
 
 fn fixtures_dir() -> PathBuf {
@@ -404,5 +404,114 @@ fn ifc_model_default_is_empty() {
     assert_eq!(m.slabs.len(), 0);
     assert_eq!(m.roofs.len(), 0);
     assert_eq!(m.spaces.len(), 0);
+    assert_eq!(m.windows.len(), 0);
+    assert_eq!(m.doors.len(), 0);
     assert!(m.schema.is_none());
+}
+
+// ---------------------------------------------------------------------------
+// Round-trip IFC tests (issue #2309)
+// ---------------------------------------------------------------------------
+
+#[test]
+fn round_trip_via_ifc_preserves_zone_count() {
+    let path = fixtures_dir().join("sample.ifc");
+    let schema = import_ifc(&path).expect("imports");
+    let rt = round_trip_via_ifc(&schema).expect("round-trip via IFC");
+
+    assert_eq!(
+        rt.geometry.zones.len(),
+        schema.geometry.zones.len(),
+        "zone count must survive round-trip"
+    );
+}
+
+#[test]
+fn round_trip_via_ifc_preserves_floor_area() {
+    let path = fixtures_dir().join("sample.ifc");
+    let schema = import_ifc(&path).expect("imports");
+    let rt = round_trip_via_ifc(&schema).expect("round-trip via IFC");
+
+    let area_diff = (rt.geometry.total_floor_area - schema.geometry.total_floor_area).abs();
+    let area_ref = schema.geometry.total_floor_area.max(1.0);
+    let rel_diff = area_diff / area_ref;
+    assert!(
+        rel_diff <= 0.005,
+        "floor area must round-trip within 0.5 % (got |ΔA|/A = {:.4})",
+        rel_diff
+    );
+}
+
+#[test]
+fn round_trip_via_ifc_preserves_material_layers() {
+    let path = fixtures_dir().join("sample.ifc");
+    let schema = import_ifc(&path).expect("imports");
+    let rt = round_trip_via_ifc(&schema).expect("round-trip via IFC");
+
+    // Wall construction layers must be preserved
+    assert_eq!(
+        rt.constructions.wall.layers.len(),
+        schema.constructions.wall.layers.len(),
+        "wall material layers must survive round-trip"
+    );
+
+    // Floor construction layers must be preserved
+    assert_eq!(
+        rt.constructions.floor.layers.len(),
+        schema.constructions.floor.layers.len(),
+        "floor material layers must survive round-trip"
+    );
+
+    // Roof construction layers must be preserved
+    assert_eq!(
+        rt.constructions.roof.layers.len(),
+        schema.constructions.roof.layers.len(),
+        "roof material layers must survive round-trip"
+    );
+}
+
+#[test]
+fn round_trip_residential_via_ifc_preserves_zones() {
+    let path = fixtures_dir().join("residential.ifc");
+    let schema = import_ifc(&path).expect("imports");
+    let rt = round_trip_via_ifc(&schema).expect("round-trip via IFC");
+
+    assert_eq!(
+        rt.geometry.zones.len(),
+        schema.geometry.zones.len(),
+        "zone count must survive round-trip for residential"
+    );
+}
+
+#[test]
+fn round_trip_commercial_via_ifc_preserves_zones() {
+    let path = fixtures_dir().join("commercial.ifc");
+    let schema = import_ifc(&path).expect("imports");
+    let rt = round_trip_via_ifc(&schema).expect("round-trip via IFC");
+
+    assert_eq!(
+        rt.geometry.zones.len(),
+        schema.geometry.zones.len(),
+        "zone count must survive round-trip for commercial"
+    );
+}
+
+#[test]
+fn parser_recognizes_ifcwindow_and_ifcdoor() {
+    let src = "\
+ISO-10303-21;
+HEADER;
+FILE_SCHEMA(('IFC4'));
+ENDSEC;
+DATA;
+#1=IFCWINDOW('0W1nd0wGu1D0000000000',#2,'Window-1','Test window',$,$,$,$,.NOTDEFINED.);
+#2=IFCDOOR('0D00rGu1D000000000000',#2,'Door-1','Test door',$,$,$,$,.NOTDEFINED.);
+ENDSEC;
+END-ISO-10303-21;
+";
+    let model = IfcParser::from_str(src).expect("parses");
+    assert_eq!(model.windows.len(), 1, "expected 1 IfcWindow");
+    assert_eq!(model.doors.len(), 1, "expected 1 IfcDoor");
+    assert_eq!(model.windows[0].name, "Window-1");
+    assert_eq!(model.doors[0].name, "Door-1");
 }

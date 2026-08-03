@@ -1,24 +1,43 @@
 // Copyright 2026 Fluxion. All rights reserved.
 // SPDX-License-Identifier: MIT
 
-//! IFC4 STEP geometry import and export scaffold (issue #1343 + #1612 + #1908).
+//! IFC4 STEP geometry import and export scaffold (issue #1343 + #1612 + #1908 + #2309).
 //!
 //! Parses IFC4 entity types from a STEP physical file (ISO 10303-21)
 //! and maps them onto Fluxion's [`SimulationSchemaV1`]. Also exports
 //! [`SimulationSchemaV1`] back to IFC4 STEP format.
 //!
-//! # Scope (issue #1343 + #1612 + #1908)
+//! # Scope (issue #1343 + #1612 + #1908 + #2309)
 //!
 //! - IFC4 only — IFC2X3 is **not** supported (deferred).
 //! - Entities typed: [`IfcBuilding`], [`IfcBuildingStorey`],
-//!   [`IfcSpace`], [`IfcWall`], [`IfcSlab`], [`IfcRoof`]
-//!   (issue #1612 extended the initial #1343 scaffold with building/storey).
+//!   [`IfcSpace`], [`IfcWall`], [`IfcSlab`], [`IfcRoof`],
+//!   [`IfcWindow`], [`IfcDoor`]
+//!   (issue #1612 extended the initial #1343 scaffold with building/storey,
+//!   issue #2309 added window/door support).
 //!   Everything else is captured generically into [`GenericEntity`] so callers
 //!   can inspect or forward it.
 //! - Material handling: `IfcMaterialLayerSetUsage` → list of
 //!   `(material, thickness)` pairs via `IfcRelAssociatesMaterial`.
 //! - Zone geometry is extracted via [`IfcGeometryParser`] in [`geometry`]
 //!   using `IfcRelContainedInSpatialStructure` for zone element assignment.
+//!
+//! # Lossless-field contract (issue #2309)
+//!
+//! The IFC import-export round-trip preserves the following fields:
+//!
+//! | Field | Preservation guarantee |
+//! |-------|----------------------|
+//! | Zone count | Exact — one [`ZoneGeometry`] per [`IfcSpace`] |
+//! | Zone names | Exact — `IfcSpace.Name` → `ZoneGeometry.name` |
+//! | Floor area | Within 0.5 % — falls back to 24 m² default when footprint cannot be decoded |
+//! | Material layers | Exact — [`ConstructionLayer`] per [`IfcMaterialLayer`] (thickness, material name) |
+//! | Wall construction | Exact — layers from `IfcMaterialLayerSet` associated with walls |
+//! | Roof construction | Exact — layers from `IfcMaterialLayerSet` associated with roofs |
+//! | Floor construction | Exact — layers from `IfcMaterialLayerSet` associated with slabs of type `.FLOOR.` |
+//!
+//! Round-trip test: `import_ifc` → `export_ifc` → `import_ifc` must preserve
+//! zone count, floor area (within 0.5 %), and material layer counts.
 //!
 //! # Module structure
 //!
@@ -28,7 +47,7 @@
 //!   physical files. Yields [`RawEntity`] records (id + name + raw arg
 //!   body) suitable for the typed parser in [`parser`].
 //! - [`parser`] — Builds an [`IfcModel`] from the lexer's stream and
-//!   extracts building/storey/wall/slab/roof/space entities plus the
+//!   extracts building/storey/wall/slab/roof/window/door/space entities plus the
 //!   supporting material and relationship records.
 //! - [`geometry`] — Extracts spatial hierarchy and zone geometry
 //!   (`IfcGeometryParser`).
@@ -36,8 +55,8 @@
 //!   [`SimulationSchemaV1`].
 //! - [`writer`] — Exports a [`SimulationSchemaV1`] to an IFC4 STEP
 //!   physical file, including [`IfcBuilding`], [`IfcBuildingStorey`],
-//!   [`IfcSpace`], [`IfcBuildingElementProxy`], and [`IfcMaterialLayer`]
-//!   entities (issue #1908).
+//!   [`IfcSpace`], [`IfcBuildingElementProxy`], [`IfcWindow`], [`IfcDoor`],
+//!   and [`IfcMaterialLayer`] entities (issue #1908 + #2309).
 //!
 //! # References
 //!
@@ -74,8 +93,8 @@ pub use error::IfcError;
 pub use geometry::IfcGeometryParser;
 pub use mapping::{import_ifc, IfcToSchema};
 pub use parser::{
-    IfcBuilding, IfcBuildingStorey, IfcModel, IfcParser, IfcRoof, IfcSlab, IfcSpace, IfcWall,
-    MaterialLayerSpec,
+    IfcBuilding, IfcBuildingStorey, IfcDoor, IfcModel, IfcParser, IfcRoof, IfcSlab, IfcSpace,
+    IfcWall, IfcWindow, MaterialLayerSpec,
 };
 pub use step_lexer::{tokenize, RawEntity};
 pub use writer::{export_ifc, write_ifc_file, IfcWriter};

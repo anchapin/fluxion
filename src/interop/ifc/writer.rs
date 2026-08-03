@@ -33,6 +33,9 @@ pub fn export_ifc(schema: &SimulationSchemaV1, path: impl AsRef<Path>) -> Result
         .map_err(|e| IfcError::conversion_error(format!("failed to create IFC file: {}", e)))?;
     let mut writer = BufWriter::new(file);
     write_ifc_file(schema, &mut writer)?;
+    writer
+        .flush()
+        .map_err(|e| IfcError::conversion_error(format!("failed to flush IFC file: {}", e)))?;
     Ok(())
 }
 
@@ -495,9 +498,16 @@ impl<W: Write> IfcWriter<W> {
             for w in 0..num_walls {
                 let wall_id = layer_counter;
                 let wall_name = format!("Wall-{}-{}", idx + 1, (b'A' + w as u8) as char);
-                writeln!(self.output, "#{}=IFCBUILDINGELEMENTPROXY('0Exp0rtW{{}}Gu1D00000000',#{},'{}','{}',$,#{},$,$,.NOTDEFINED.);",
-                    wall_id, wall_id, escape_ifc_string(&wall_name), escape_ifc_string(&wall_name), placement_for_elements)
-                    .map_err(|e| IfcError::conversion_error(e.to_string()))?;
+                writeln!(
+                    self.output,
+                    "#{}=IFCWALL('0Exp0rtW{{}}Gu1D00000000',#{},'{}','{}',$,#{},$,$,.NOTDEFINED.);",
+                    wall_id,
+                    owner_hist_id,
+                    escape_ifc_string(&wall_name),
+                    escape_ifc_string(&wall_name),
+                    placement_for_elements
+                )
+                .map_err(|e| IfcError::conversion_error(e.to_string()))?;
                 wall_ids.push(wall_id);
                 layer_counter += 1;
             }
@@ -506,8 +516,8 @@ impl<W: Write> IfcWriter<W> {
         // Write roof elements
         for (idx, _) in schema.geometry.zones.iter().enumerate() {
             let roof_id = layer_counter;
-            writeln!(self.output, "#{}=IFCBUILDINGELEMENTPROXY('0Exp0rtRf{{}}Gu1D00000000',#{},'Roof-{}','Roof-{}',$,#{},$,$,.NOTDEFINED.);",
-                roof_id, roof_id, idx + 1, idx + 1, placement_for_elements)
+            writeln!(self.output, "#{}=IFCROOF('0Exp0rtRf{{}}Gu1D00000000',#{},'Roof-{}','Roof-{}',$,#{},$,$,.NOTDEFINED.);",
+                roof_id, owner_hist_id, idx + 1, idx + 1, placement_for_elements)
                 .map_err(|e| IfcError::conversion_error(e.to_string()))?;
             roof_ids.push(roof_id);
             layer_counter += 1;
@@ -516,10 +526,43 @@ impl<W: Write> IfcWriter<W> {
         // Write floor/slab elements
         for (idx, _) in schema.geometry.zones.iter().enumerate() {
             let slab_id = layer_counter;
-            writeln!(self.output, "#{}=IFCBUILDINGELEMENTPROXY('0Exp0rtSl{{}}Gu1D00000000',#{},'Slab-{}','Slab-{}',$,#{},$,$,.FLOOR.);",
-                slab_id, slab_id, idx + 1, idx + 1, placement_for_elements)
+            writeln!(self.output, "#{}=IFCSLAB('0Exp0rtSl{{}}Gu1D00000000',#{},'Slab-{}','Slab-{}',$,#{},$,$,.FLOOR.);",
+                slab_id, owner_hist_id, idx + 1, idx + 1, placement_for_elements)
                 .map_err(|e| IfcError::conversion_error(e.to_string()))?;
             slab_ids.push(slab_id);
+            layer_counter += 1;
+        }
+
+        // Write window elements (from wall construction window spec)
+        let mut window_ids: Vec<u64> = Vec::new();
+        if let Some(ref _window_spec) = schema.constructions.wall.window {
+            for (idx, _) in schema.geometry.zones.iter().enumerate() {
+                let window_id = layer_counter;
+                let window_name = format!("Window-{}", idx + 1);
+                writeln!(self.output, "#{}=IFCWINDOW('0Exp0rtWi{{}}Gu1D00000000',#{},'{}','{}',$,#{},$,$,.NOTDEFINED.);",
+                    window_id, owner_hist_id, escape_ifc_string(&window_name), escape_ifc_string(&window_name), placement_for_elements)
+                    .map_err(|e| IfcError::conversion_error(e.to_string()))?;
+                window_ids.push(window_id);
+                layer_counter += 1;
+            }
+        }
+
+        // Write door elements (placeholder - one per zone for now)
+        let mut door_ids: Vec<u64> = Vec::new();
+        for (idx, _) in schema.geometry.zones.iter().enumerate() {
+            let door_id = layer_counter;
+            let door_name = format!("Door-{}", idx + 1);
+            writeln!(
+                self.output,
+                "#{}=IFCDOOR('0Exp0rtDr{{}}Gu1D00000000',#{},'{}','{}',$,#{},$,$,.NOTDEFINED.);",
+                door_id,
+                owner_hist_id,
+                escape_ifc_string(&door_name),
+                escape_ifc_string(&door_name),
+                placement_for_elements
+            )
+            .map_err(|e| IfcError::conversion_error(e.to_string()))?;
+            door_ids.push(door_id);
             layer_counter += 1;
         }
 
@@ -567,6 +610,8 @@ impl<W: Write> IfcWriter<W> {
             .iter()
             .chain(slab_ids.iter())
             .chain(roof_ids.iter())
+            .chain(window_ids.iter())
+            .chain(door_ids.iter())
             .map(|id| format!("#{}", id))
             .collect();
         if !all_element_ids.is_empty() && !space_ids.is_empty() {
@@ -713,7 +758,9 @@ mod tests {
         writer.write_schema(&schema).expect("should export");
 
         let content = String::from_utf8(output).expect("valid UTF-8");
-        assert!(content.contains("IFCBUILDINGELEMENTPROXY"));
+        assert!(content.contains("IFCWALL"));
+        assert!(content.contains("IFCROOF"));
+        assert!(content.contains("IFCSLAB"));
     }
 
     #[test]

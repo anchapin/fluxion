@@ -304,11 +304,46 @@ pub fn round_trip_via_gbxml(schema: &SimulationSchemaV1) -> Result<SimulationSch
     // The gbXML writer is the canonical conversion from SimulationSchema
     // to a textual format. We render to a string buffer (via a temp
     // path) and re-import.
-    let tmp = std::env::temp_dir().join("fluxion_ifc_roundtrip.gbxml");
+    // Use unique temp file to avoid parallel test collisions
+    let tmp = std::env::temp_dir().join(format!(
+        "fluxion_ifc_roundtrip_{}_{}.gbxml",
+        std::process::id(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos()
+    ));
     export_gbxml(schema, &tmp)
         .map_err(|e| IfcError::conversion_error(format!("gbXML export failed: {e}")))?;
     let rt_schema = import_gbxml(&tmp)
         .map_err(|e| IfcError::conversion_error(format!("gbXML re-import failed: {e}")))?;
+    let _ = fs::remove_file(&tmp);
+    Ok(rt_schema)
+}
+
+/// Round-trip helper for IFC: IFC → SimulationSchema → IFC → re-import.
+///
+/// The two schemas must agree on zone count and total floor area
+/// within 0.5 %, and material layers must be preserved.
+///
+/// This lives in `mapping.rs` (and is re-exported via `mod.rs`) so
+/// integration tests can call it without depending on the IFC
+/// writer directly.
+pub fn round_trip_via_ifc(schema: &SimulationSchemaV1) -> Result<SimulationSchemaV1, IfcError> {
+    // Export to IFC format and re-import
+    // Use unique temp file to avoid parallel test collisions
+    let tmp = std::env::temp_dir().join(format!(
+        "fluxion_ifc_roundtrip_{}_{}.ifc",
+        std::process::id(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos()
+    ));
+    super::writer::export_ifc(schema, &tmp)
+        .map_err(|e| IfcError::conversion_error(format!("IFC export failed: {e}")))?;
+    let rt_schema = import_ifc(&tmp)
+        .map_err(|e| IfcError::conversion_error(format!("IFC re-import failed: {e}")))?;
     let _ = fs::remove_file(&tmp);
     Ok(rt_schema)
 }
