@@ -283,6 +283,134 @@ impl ElectricalNetwork {
     }
 }
 
+/// HVAC operational state for a single building.
+///
+/// This represents the thermal demand and operating conditions of an HVAC system
+/// serving a specific building, which can be converted to electrical load via COP.
+#[derive(Debug, Clone)]
+pub struct HvacState {
+    /// Unique identifier of the building this HVAC serves
+    pub building_id: uuid::Uuid,
+    /// Thermal power demand (W) — positive for cooling, negative for heating
+    pub thermal_power_w: f64,
+    /// Indoor air temperature setpoint (°C)
+    pub setpoint_c: f64,
+    /// Ambient outdoor air temperature (°C)
+    pub ambient_temperature_c: f64,
+    /// Operating mode: 0=off, 1=heating, 2=cooling
+    pub mode: HvacMode,
+}
+
+/// Operating mode of the HVAC system.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum HvacMode {
+    Off = 0,
+    Heating = 1,
+    Cooling = 2,
+}
+
+/// Electrical load at a building bus.
+///
+/// This represents the electrical power demand of a building's HVAC system
+/// derived from thermal demand via the heat pump COP.
+#[derive(Debug, Clone)]
+pub struct ElectricalLoad {
+    /// Unique identifier of the building
+    pub building_id: uuid::Uuid,
+    /// Electrical power demand (W)
+    pub power_w: f64,
+    /// Reactive power demand (VAR)
+    pub reactive_power_var: f64,
+    /// Power factor (cosine of phase angle)
+    pub power_factor: f64,
+}
+
+impl Default for ElectricalLoad {
+    fn default() -> Self {
+        Self {
+            building_id: uuid::Uuid::nil(),
+            power_w: 0.0,
+            reactive_power_var: 0.0,
+            power_factor: 1.0,
+        }
+    }
+}
+
+impl ElectricalLoad {
+    /// Create a new electrical load for a building.
+    pub fn new(building_id: uuid::Uuid, power_w: f64) -> Self {
+        Self {
+            building_id,
+            power_w,
+            reactive_power_var: 0.0,
+            power_factor: 1.0,
+        }
+    }
+
+    /// Create an electrical load with reactive power.
+    pub fn with_reactive_power(building_id: uuid::Uuid, power_w: f64, power_factor: f64) -> Self {
+        let reactive_power_var = power_w * (1.0 - power_factor.powi(2)).sqrt();
+        Self {
+            building_id,
+            power_w,
+            reactive_power_var,
+            power_factor,
+        }
+    }
+}
+
+/// Mapping from building IDs to electrical bus IDs.
+#[derive(Debug, Clone)]
+pub struct BuildingBusMapping {
+    /// Map from building UUID to bus UUID
+    mappings: std::collections::HashMap<uuid::Uuid, uuid::Uuid>,
+}
+
+impl BuildingBusMapping {
+    /// Create a new empty building-to-bus mapping.
+    pub fn new() -> Self {
+        Self {
+            mappings: std::collections::HashMap::new(),
+        }
+    }
+
+    /// Add a building-to-bus mapping.
+    pub fn add_mapping(&mut self, building_id: uuid::Uuid, bus_id: uuid::Uuid) {
+        self.mappings.insert(building_id, bus_id);
+    }
+
+    /// Get the bus ID for a building, if mapped.
+    pub fn get_bus_id(&self, building_id: &uuid::Uuid) -> Option<uuid::Uuid> {
+        self.mappings.get(building_id).copied()
+    }
+
+    /// Get all building IDs in the mapping.
+    pub fn building_ids(&self) -> impl Iterator<Item = &uuid::Uuid> {
+        self.mappings.keys()
+    }
+
+    /// Get all bus IDs in the mapping.
+    pub fn bus_ids(&self) -> impl Iterator<Item = &uuid::Uuid> {
+        self.mappings.values()
+    }
+
+    /// Returns the number of mappings.
+    pub fn len(&self) -> usize {
+        self.mappings.len()
+    }
+
+    /// Returns true if the mapping is empty.
+    pub fn is_empty(&self) -> bool {
+        self.mappings.is_empty()
+    }
+}
+
+impl Default for BuildingBusMapping {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 /// Coupler between thermal and electrical systems via heat pump COP.
 ///
 /// The COP (Coefficient of Performance) links electrical power consumption
@@ -297,6 +425,8 @@ pub struct ThermalElectricalCoupler {
     pub source_temperature: f64,
     /// Temperature of heat delivery (°C)
     pub delivery_temperature: f64,
+    /// Building-to-bus mapping for grid integration
+    building_bus_mapping: BuildingBusMapping,
 }
 
 impl ThermalElectricalCoupler {
@@ -307,7 +437,111 @@ impl ThermalElectricalCoupler {
             rated_cop: cop,
             source_temperature: 10.0,
             delivery_temperature: 45.0,
+            building_bus_mapping: BuildingBusMapping::new(),
         }
+    }
+
+    /// Create a coupler with a building-to-bus mapping.
+    pub fn with_mapping(cop: f64, mapping: BuildingBusMapping) -> Self {
+        ThermalElectricalCoupler {
+            cop,
+            rated_cop: cop,
+            source_temperature: 10.0,
+            delivery_temperature: 45.0,
+            building_bus_mapping: mapping,
+        }
+    }
+
+    /// Get a reference to the building-to-bus mapping.
+    pub fn building_bus_mapping(&self) -> &BuildingBusMapping {
+        &self.building_bus_mapping
+    }
+
+    /// Set the building-to-bus mapping.
+    pub fn set_building_bus_mapping(&mut self, mapping: BuildingBusMapping) {
+        self.building_bus_mapping = mapping;
+    }
+
+    /// Add a single building-to-bus mapping.
+    pub fn add_building_bus_mapping(&mut self, building_id: uuid::Uuid, bus_id: uuid::Uuid) {
+        self.building_bus_mapping.add_mapping(building_id, bus_id);
+    }
+
+    /// Convert an HVAC state to electrical load for a specific building.
+    ///
+    /// Uses the current COP to convert thermal power to electrical power.
+    /// For heating mode, electrical = thermal / COP.
+    /// For cooling mode, electrical = thermal / COP.
+    ///
+    /// Returns `None` if the HVAC is off or if thermal power is zero/negative.
+    pub fn hvac_state_to_electrical(&self, state: &HvacState) -> Option<ElectricalLoad> {
+        // Only process active HVAC states with positive thermal demand
+        if state.mode == HvacMode::Off || state.thermal_power_w <= 0.0 {
+            return None;
+        }
+
+        // Compute electrical power from thermal power using COP
+        let electrical_power = state.thermal_power_w / self.cop;
+
+        Some(ElectricalLoad::new(state.building_id, electrical_power))
+    }
+
+    /// Convert a slice of HVAC states to electrical loads, mapped by building ID.
+    ///
+    /// This method processes each HVAC state, converts thermal power to electrical
+    /// power using the current COP, and returns a map of building IDs to electrical
+    /// loads. Buildings without a bus mapping are logged and skipped.
+    ///
+    /// # Errors
+    ///
+    /// Returns a list of building IDs that were not found in the bus mapping.
+    /// Any missing buildings are also logged at the warn level.
+    pub fn thermal_to_electrical(
+        &self,
+        hvac_states: &[HvacState],
+    ) -> (
+        std::collections::HashMap<uuid::Uuid, ElectricalLoad>,
+        Vec<uuid::Uuid>,
+    ) {
+        use std::collections::HashMap;
+
+        let mut loads: HashMap<uuid::Uuid, ElectricalLoad> = HashMap::new();
+        let mut missing_buildings: Vec<uuid::Uuid> = Vec::new();
+
+        for state in hvac_states {
+            // Check if building has a bus mapping
+            if !self
+                .building_bus_mapping
+                .mappings
+                .contains_key(&state.building_id)
+            {
+                missing_buildings.push(state.building_id);
+                continue;
+            }
+
+            // Convert HVAC state to electrical load
+            if let Some(load) = self.hvac_state_to_electrical(state) {
+                loads.insert(state.building_id, load);
+            }
+        }
+
+        // Log missing buildings at warn level
+        for building_id in &missing_buildings {
+            eprintln!(
+                "WARN: building {} has no bus in the grid mapping — skipping",
+                building_id
+            );
+        }
+
+        (loads, missing_buildings)
+    }
+
+    /// Convert thermal power directly to electrical power.
+    ///
+    /// This is the basic COP-based conversion: electrical = thermal / COP.
+    /// Use this when you already have a scalar thermal power value.
+    pub fn thermal_to_electrical_simple(&self, thermal_power: f64) -> f64 {
+        thermal_power / self.cop
     }
 
     /// Calculate COP based on Carnot efficiency and degradation.
@@ -318,30 +552,37 @@ impl ThermalElectricalCoupler {
         let t_cold_k = ambient_temperature.max(-10.0) + 273.15;
 
         // Carnot COP: COP_carnot = T_hot / (T_hot - T_cold)
+        // This is the theoretical maximum COP for a reversible heat pump
         let carnot = t_hot_k / (t_hot_k - t_cold_k);
 
-        // Real heat pumps achieve ~40-60% of Carnot, but the rated COP already
-        // accounts for this, so we use the ratio of actual to reference Carnot
-        // Reference Carnot at 20°C: 293.15 / (293.15 - 283.15) = 29.3
-        let reference_carnot = 293.15 / 10.0;
+        // Reference Carnot COP at 20°C ambient (ASHRAE design condition)
+        // T_hot = 45°C = 318.15 K, T_cold = 20°C = 293.15 K
+        // COP_ref = 318.15 / (318.15 - 293.15) = 318.15 / 25 = 12.726
+        let t_hot_ref_k = 45.0 + 273.15;
+        let t_cold_ref_k = 20.0 + 273.15;
+        let reference_carnot = t_hot_ref_k / (t_hot_ref_k - t_cold_ref_k);
 
-        // COP adjustment based on temperature difference
+        // COP adjustment factor = actual_carnot / reference_carnot
+        // This ratio captures how temperature differences affect real heat pump performance
         let carnot_factor = (carnot / reference_carnot).clamp(0.3, 1.5);
 
         // Actual COP = rated_COP * carnot_factor
-        // The rated COP already includes the efficiency factor
+        // The rated COP already includes the real-world efficiency factor
         self.cop = self.rated_cop * carnot_factor;
         self.cop = self.cop.clamp(1.0, self.rated_cop * 1.5);
-    }
-
-    /// Convert thermal load to electrical power.
-    pub fn thermal_to_electrical(&self, thermal_power: f64) -> f64 {
-        thermal_power / self.cop
     }
 
     /// Convert electrical power to thermal power.
     pub fn electrical_to_thermal(&self, electrical_power: f64) -> f64 {
         electrical_power * self.cop
+    }
+
+    /// Update COP based on ambient temperature from an HVAC state.
+    ///
+    /// This is a convenience method that extracts the ambient temperature
+    /// from the HVAC state and calls `update_cop`.
+    pub fn update_cop_from_hvac_state(&mut self, state: &HvacState) {
+        self.update_cop(state.ambient_temperature_c);
     }
 }
 
@@ -403,7 +644,7 @@ impl JointConvergenceSolver {
 
             // Step 2: Compute heat pump electrical load from thermal load
             let total_thermal_load: f64 = thermal_model.hvac_loads.iter().sum();
-            let electrical_load = coupler.thermal_to_electrical(total_thermal_load);
+            let electrical_load = coupler.thermal_to_electrical_simple(total_thermal_load);
 
             // Step 3: Update electrical network with heat pump load
             let load_per_bus = electrical_load / electrical_model.num_buses as f64;
@@ -477,9 +718,10 @@ mod tests {
     }
 
     #[test]
-    fn test_thermal_to_electrical() {
+    fn test_thermal_to_electrical_simple() {
         let coupler = ThermalElectricalCoupler::new(3.0);
-        let electrical = coupler.thermal_to_electrical(3000.0);
+        let electrical = coupler.thermal_to_electrical_simple(3000.0);
+        // Q / COP = P_electrical: 3000W / 3.0 = 1000W
         assert!((electrical - 1000.0).abs() < 1e-6);
     }
 
@@ -619,5 +861,273 @@ mod tests {
         let mismatch = electrical.calculate_mismatch();
         // With no loads, mismatch should be 0
         assert_eq!(mismatch, 0.0);
+    }
+
+    // === Tests for ThermalElectricalCoupler with HvacState ===
+
+    #[test]
+    fn test_hvac_state_to_electrical_heating() {
+        let coupler = ThermalElectricalCoupler::new(3.0);
+        let building_id = uuid::Uuid::new_v4();
+        let state = HvacState {
+            building_id,
+            thermal_power_w: 3000.0, // 3kW thermal
+            setpoint_c: 20.0,
+            ambient_temperature_c: 10.0,
+            mode: HvacMode::Heating,
+        };
+
+        let load = coupler.hvac_state_to_electrical(&state);
+        assert!(load.is_some());
+        let load = load.unwrap();
+        // Q / COP = P: 3000W / 3.0 = 1000W
+        assert!((load.power_w - 1000.0).abs() < 1e-6);
+        assert_eq!(load.building_id, building_id);
+    }
+
+    #[test]
+    fn test_hvac_state_to_electrical_cooling() {
+        let coupler = ThermalElectricalCoupler::new(4.0);
+        let building_id = uuid::Uuid::new_v4();
+        let state = HvacState {
+            building_id,
+            thermal_power_w: 4000.0, // 4kW thermal cooling
+            setpoint_c: 24.0,
+            ambient_temperature_c: 35.0,
+            mode: HvacMode::Cooling,
+        };
+
+        let load = coupler.hvac_state_to_electrical(&state);
+        assert!(load.is_some());
+        let load = load.unwrap();
+        // Q / COP = P: 4000W / 4.0 = 1000W
+        assert!((load.power_w - 1000.0).abs() < 1e-6);
+    }
+
+    #[test]
+    fn test_hvac_state_to_electrical_off_mode() {
+        let coupler = ThermalElectricalCoupler::new(3.0);
+        let building_id = uuid::Uuid::new_v4();
+        let state = HvacState {
+            building_id,
+            thermal_power_w: 3000.0,
+            setpoint_c: 20.0,
+            ambient_temperature_c: 10.0,
+            mode: HvacMode::Off,
+        };
+
+        let load = coupler.hvac_state_to_electrical(&state);
+        assert!(load.is_none());
+    }
+
+    #[test]
+    fn test_hvac_state_to_electrical_zero_thermal() {
+        let coupler = ThermalElectricalCoupler::new(3.0);
+        let building_id = uuid::Uuid::new_v4();
+        let state = HvacState {
+            building_id,
+            thermal_power_w: 0.0,
+            setpoint_c: 20.0,
+            ambient_temperature_c: 10.0,
+            mode: HvacMode::Heating,
+        };
+
+        let load = coupler.hvac_state_to_electrical(&state);
+        assert!(load.is_none());
+    }
+
+    #[test]
+    fn test_hvac_state_to_electrical_negative_thermal() {
+        let coupler = ThermalElectricalCoupler::new(3.0);
+        let building_id = uuid::Uuid::new_v4();
+        let state = HvacState {
+            building_id,
+            thermal_power_w: -1000.0, // Negative thermal (shouldn't happen in practice)
+            setpoint_c: 20.0,
+            ambient_temperature_c: 10.0,
+            mode: HvacMode::Heating,
+        };
+
+        let load = coupler.hvac_state_to_electrical(&state);
+        assert!(load.is_none());
+    }
+
+    #[test]
+    fn test_thermal_to_electrical_batch_with_mapping() {
+        let building1 = uuid::Uuid::new_v4();
+        let building2 = uuid::Uuid::new_v4();
+        let bus1 = uuid::Uuid::new_v4();
+        let bus2 = uuid::Uuid::new_v4();
+
+        let mut mapping = BuildingBusMapping::new();
+        mapping.add_mapping(building1, bus1);
+        mapping.add_mapping(building2, bus2);
+
+        let coupler = ThermalElectricalCoupler::with_mapping(3.0, mapping);
+
+        let states = vec![
+            HvacState {
+                building_id: building1,
+                thermal_power_w: 3000.0,
+                setpoint_c: 20.0,
+                ambient_temperature_c: 10.0,
+                mode: HvacMode::Heating,
+            },
+            HvacState {
+                building_id: building2,
+                thermal_power_w: 6000.0,
+                setpoint_c: 22.0,
+                ambient_temperature_c: 5.0,
+                mode: HvacMode::Heating,
+            },
+        ];
+
+        let (loads, missing) = coupler.thermal_to_electrical(&states);
+        assert!(missing.is_empty());
+        assert_eq!(loads.len(), 2);
+
+        // Building 1: 3000W / 3.0 = 1000W
+        let load1 = loads.get(&building1).unwrap();
+        assert!((load1.power_w - 1000.0).abs() < 1e-6);
+
+        // Building 2: 6000W / 3.0 = 2000W
+        let load2 = loads.get(&building2).unwrap();
+        assert!((load2.power_w - 2000.0).abs() < 1e-6);
+    }
+
+    #[test]
+    fn test_thermal_to_electrical_batch_missing_building() {
+        let building1 = uuid::Uuid::new_v4();
+        let building2 = uuid::Uuid::new_v4();
+        let unmapped_building = uuid::Uuid::new_v4();
+        let bus1 = uuid::Uuid::new_v4();
+
+        let mut mapping = BuildingBusMapping::new();
+        mapping.add_mapping(building1, bus1);
+        // building2 is NOT mapped
+
+        let coupler = ThermalElectricalCoupler::with_mapping(3.0, mapping);
+
+        let states = vec![
+            HvacState {
+                building_id: building1,
+                thermal_power_w: 3000.0,
+                setpoint_c: 20.0,
+                ambient_temperature_c: 10.0,
+                mode: HvacMode::Heating,
+            },
+            HvacState {
+                building_id: unmapped_building,
+                thermal_power_w: 6000.0,
+                setpoint_c: 22.0,
+                ambient_temperature_c: 5.0,
+                mode: HvacMode::Heating,
+            },
+        ];
+
+        let (loads, missing) = coupler.thermal_to_electrical(&states);
+
+        // Only building1 should have a load
+        assert_eq!(loads.len(), 1);
+        assert!(loads.contains_key(&building1));
+
+        // unmapped_building should be in missing
+        assert_eq!(missing.len(), 1);
+        assert!(missing.contains(&unmapped_building));
+    }
+
+    #[test]
+    fn test_thermal_to_electrical_batch_empty_states() {
+        let coupler = ThermalElectricalCoupler::new(3.0);
+        let states: Vec<HvacState> = vec![];
+
+        let (loads, missing) = coupler.thermal_to_electrical(&states);
+        assert!(loads.is_empty());
+        assert!(missing.is_empty());
+    }
+
+    #[test]
+    fn test_cop_update_various_temperatures() {
+        let mut coupler = ThermalElectricalCoupler::new(3.0);
+
+        // Warm weather: COP should increase
+        coupler.update_cop(20.0);
+        let cop_at_20 = coupler.cop;
+
+        // Cold weather: COP should decrease
+        coupler.update_cop(0.0);
+        let cop_at_0 = coupler.cop;
+
+        // Very cold: COP should decrease further
+        coupler.update_cop(-10.0);
+        let cop_at_minus10 = coupler.cop;
+
+        assert!(cop_at_20 > cop_at_0);
+        assert!(cop_at_0 > cop_at_minus10);
+
+        // All COP values should be positive
+        assert!(cop_at_20 > 0.0);
+        assert!(cop_at_0 > 0.0);
+        assert!(cop_at_minus10 > 0.0);
+
+        // COP should not exceed rated COP by more than 50%
+        assert!(cop_at_20 <= coupler.rated_cop * 1.5);
+    }
+
+    #[test]
+    fn test_electrical_load_default() {
+        let load = ElectricalLoad::default();
+        assert_eq!(load.power_w, 0.0);
+        assert_eq!(load.reactive_power_var, 0.0);
+        assert_eq!(load.power_factor, 1.0);
+    }
+
+    #[test]
+    fn test_electrical_load_with_reactive_power() {
+        let building_id = uuid::Uuid::new_v4();
+        let load = ElectricalLoad::with_reactive_power(building_id, 1000.0, 0.9);
+
+        assert_eq!(load.building_id, building_id);
+        assert!((load.power_w - 1000.0).abs() < 1e-6);
+        assert!((load.power_factor - 0.9).abs() < 1e-6);
+        // Reactive power = P * sqrt(1 - pf^2) = 1000 * sqrt(1 - 0.81) = 1000 * 0.436 = 436 VAR
+        assert!((load.reactive_power_var - 435.89).abs() < 0.1);
+    }
+
+    #[test]
+    fn test_building_bus_mapping() {
+        let mut mapping = BuildingBusMapping::new();
+        let building1 = uuid::Uuid::new_v4();
+        let building2 = uuid::Uuid::new_v4();
+        let bus1 = uuid::Uuid::new_v4();
+        let bus2 = uuid::Uuid::new_v4();
+
+        mapping.add_mapping(building1, bus1);
+        mapping.add_mapping(building2, bus2);
+
+        assert_eq!(mapping.len(), 2);
+        assert!(!mapping.is_empty());
+
+        assert_eq!(mapping.get_bus_id(&building1), Some(bus1));
+        assert_eq!(mapping.get_bus_id(&building2), Some(bus2));
+        assert_eq!(mapping.get_bus_id(&uuid::Uuid::new_v4()), None);
+    }
+
+    #[test]
+    fn test_coupler_with_building_mapping() {
+        let building1 = uuid::Uuid::new_v4();
+        let bus1 = uuid::Uuid::new_v4();
+
+        let mut mapping = BuildingBusMapping::new();
+        mapping.add_mapping(building1, bus1);
+
+        let mut coupler = ThermalElectricalCoupler::with_mapping(3.0, mapping);
+
+        // Add another mapping
+        let building2 = uuid::Uuid::new_v4();
+        let bus2 = uuid::Uuid::new_v4();
+        coupler.add_building_bus_mapping(building2, bus2);
+
+        assert_eq!(coupler.building_bus_mapping().len(), 2);
     }
 }
