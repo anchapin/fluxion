@@ -1990,7 +1990,10 @@ mod tests {
         let h_with_bridge = wall.calc_h_tr_em_with_thermal_bridge(1.5, 48.0, true);
 
         // Verify thermal bridge increases conductance
-        assert!(h_with_bridge > h_no_bridge, "Thermal bridge should increase h_tr_em");
+        assert!(
+            h_with_bridge > h_no_bridge,
+            "Thermal bridge should increase h_tr_em"
+        );
 
         // Calculate expected bridge contribution
         // Linear: PSI_EDGE * (surface_area * 3.0) = 0.15 * (48.0 * 3.0) = 21.6 W/K

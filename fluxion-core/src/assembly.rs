@@ -1709,8 +1709,16 @@ mod tests {
     #[test]
     fn test_thermal_bridges_model() {
         let bridges = ThermalBridges::new()
-            .add_linear(LinearThermalBridge::new(0.15, 10.0, ThermalBridgeLocation::Edge))
-            .add_linear(LinearThermalBridge::new(0.10, 5.0, ThermalBridgeLocation::Corner))
+            .add_linear(LinearThermalBridge::new(
+                0.15,
+                10.0,
+                ThermalBridgeLocation::Edge,
+            ))
+            .add_linear(LinearThermalBridge::new(
+                0.10,
+                5.0,
+                ThermalBridgeLocation::Corner,
+            ))
             .add_point(PointThermalBridge::new(0.002, 20));
 
         assert_eq!(bridges.linear.len(), 2);
