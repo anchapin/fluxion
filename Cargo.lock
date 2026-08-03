@@ -1318,6 +1318,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "fluxion",
+ "fluxion-fluid",
  "fluxion-toon",
  "serde",
  "serde_json",
