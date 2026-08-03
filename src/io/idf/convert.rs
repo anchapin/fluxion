@@ -52,12 +52,13 @@
 use std::convert::TryFrom;
 
 use crate::api::schema::{
-    ConstructionSet, Geometry, SchemaMetadata, SchemaVersion, SimulationSchemaV1,
-    SurfaceConstruction, WindowSpec, ZoneGeometry,
+    ConstructionSet, ControlConfig, ControlSet, Geometry, ScheduleSet, SchemaMetadata,
+    SchemaVersion, SimulationSchemaV1, SurfaceConstruction, WindowSpec, ZoneGeometry,
 };
 use crate::ashrae_cases::Orientation;
 use crate::sim::boundary::{GroundTemperature, MonthlyGroundTemperature};
 use crate::sim::construction::ConstructionLayer;
+use crate::sim::schedule::{DailySchedule, HVACSchedule};
 use crate::validation::ashrae_140_cases::{CaseSpec, ConstructionType, GeometrySpec};
 
 use super::error::IdfError;
@@ -161,7 +162,18 @@ impl TryFrom<&IdfFile> for SimulationSchemaV1 {
         // 4. Build constructions (Material + Construction objects).
         let constructions = build_constructions(idf)?;
 
-        // 5. Wire metadata.run_period into the metadata struct via the
+        // 5. Extract zone name for schedule/control extraction.
+        let zone_name = idf
+            .zones()
+            .next()
+            .and_then(|z| z.fields.first().and_then(|v| v.to_display_string()))
+            .unwrap_or_else(|| "ZONE1".to_string());
+
+        // 6. Build schedules and controls from IDF objects.
+        let schedules = build_schedules(idf, &zone_name);
+        let controls = build_controls(idf, &zone_name);
+
+        // 7. Wire metadata.run_period into the metadata struct via the
         //    description field (the schema has no first-class run_period
         //    field — see `metadata.run_period_extension` below for the
         //    typed value). The full RunPeriodMeta / GroundTempMeta live on
@@ -184,11 +196,9 @@ impl TryFrom<&IdfFile> for SimulationSchemaV1 {
             metadata,
             geometry,
             constructions,
-            // Schedules, weather, controls fall back to schema defaults —
-            // they are not part of the MVP (design §4.3 / §10).
-            schedules: crate::api::schema::ScheduleSet::default(),
+            schedules,
             weather: crate::api::schema::WeatherData::default(),
-            controls: crate::api::schema::ControlSet::default(),
+            controls,
             output: crate::api::schema::SimulationOutput::default(),
         })
     }
@@ -815,6 +825,40 @@ fn extract_setpoints(idf: &IdfFile, zone_name: &str) -> Option<(f64, f64)> {
     Some((heat_val?, cool_val?))
 }
 
+/// Build a `ScheduleSet` from an IDF by extracting schedule objects.
+///
+/// Returns a `ScheduleSet` with HVAC setpoints extracted from
+/// `ZoneControl:Thermostat` + `ThermostatSetpoint:DualSetpoint` +
+/// `Schedule:Compact` objects, or defaults if not found.
+fn build_schedules(idf: &IdfFile, zone_name: &str) -> ScheduleSet {
+    let (heat_sp, cool_sp) = extract_setpoints(idf, zone_name).unwrap_or((20.0, 24.0));
+    ScheduleSet {
+        occupancy: DailySchedule::weekly("Occupancy".to_string()),
+        lighting: DailySchedule::weekly("Lighting".to_string()),
+        hvac: HVACSchedule::constant_schedule(heat_sp, cool_sp),
+        infiltration: None,
+    }
+}
+
+/// Build a `ControlSet` from an IDF by extracting thermostat objects.
+///
+/// Returns a `ControlSet` with zone control setpoints extracted from
+/// `ZoneControl:Thermostat` + `ThermostatSetpoint:DualSetpoint` objects,
+/// or defaults if not found.
+fn build_controls(idf: &IdfFile, zone_name: &str) -> ControlSet {
+    let (heat_sp, cool_sp) = extract_setpoints(idf, zone_name).unwrap_or((20.0, 24.0));
+    ControlSet {
+        zone_control: ControlConfig {
+            heating_setpoint: heat_sp,
+            cooling_setpoint: cool_sp,
+            deadband_tolerance: 0.5,
+            heating_capacity: 100_000.0,
+            cooling_capacity: 100_000.0,
+        },
+        global_control: None,
+    }
+}
+
 /// Extract infiltration ACH from `ZoneInfiltration:DesignFlowRate`.
 ///
 /// Supports the three most common methods:
@@ -1182,5 +1226,94 @@ Site:GroundTemperature:BuildingSurface, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 
             (0.0, 0.0, 0.0),
         ];
         assert!((polygon_area(&pts) - 16.2).abs() < 1e-9);
+    }
+
+    #[test]
+    fn round_trip_preserves_geometry_and_constructions() {
+        let src = "\
+Version, 25.2;\n\
+Building, TestBldg, 0.0, City, 0.04, 0.4, FullExterior, 25;\n\
+Zone, Z1, 0, 0, 0, 0, 1, 2.7, 129.6, 48.0, ;
+\n\
+Material, Mat1, MediumRough, 0.1, 1.0, 2000, 800;\n\
+Material, Mat2, MediumRough, 0.05, 0.04, 30, 840;\n\
+Construction, Wall1, Mat1, Mat2;\n\
+Site:GroundTemperature:BuildingSurface, 18, 18, 18, 18, 18, 18, 18, 18, 18, 18, 18, 18;\n\
+GlobalGeometryRules, UpperLeftCorner, ClockWise, World;\n\
+BuildingSurface:Detailed, SouthWall, Wall, Wall1, Z1, , Outdoors, , SunExposed, WindExposed, ,\n\
+  4,\n\
+  0, 0, 2.7,\n\
+  6, 0, 2.7,\n\
+  6, 0, 0,\n\
+  0, 0, 0;\n\
+BuildingSurface:Detailed, Floor, Floor, Wall1, Z1, , Ground, , NoSun, NoWind, ,\n\
+  4,\n\
+  0, 0, 0,\n\
+  6, 0, 0,\n\
+  6, 8, 0,\n\
+  0, 8, 0;\n";
+        let idf = IdfParser::from_str(src).unwrap();
+        let schema = SimulationSchemaV1::try_from(&idf).expect("IDF converts to schema");
+
+        assert_eq!(schema.geometry.zones.len(), 1);
+        assert!((schema.geometry.zones[0].floor_area - 48.0).abs() < 1e-3);
+        assert!((schema.geometry.zones[0].volume - 129.6).abs() < 1e-3);
+        assert!((schema.geometry.zones[0].height - 2.7).abs() < 1e-3);
+
+        let wall = &schema.constructions.wall;
+        assert_eq!(wall.layers.len(), 2);
+        assert!((wall.layers[0].conductivity - 1.0).abs() < 1e-3);
+        assert!((wall.layers[1].conductivity - 0.04).abs() < 1e-3);
+    }
+
+    #[test]
+    fn schedules_and_controls_extracted_from_real_idf() {
+        let fixtures_dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("tests")
+            .join("reference_data")
+            .join("energyplus_models");
+        let path = fixtures_dir.join("ashrae_140_case_600.idf");
+        let idf = IdfParser::from_path(&path).expect("IDF parses");
+        let schema = SimulationSchemaV1::try_from(&idf).expect("IDF converts to schema");
+
+        assert_eq!(schema.controls.zone_control.heating_setpoint, 20.0);
+        assert_eq!(schema.controls.zone_control.cooling_setpoint, 27.0);
+        assert!((schema.schedules.hvac.heating_setpoint(0) - 20.0).abs() < 1e-3);
+        assert!((schema.schedules.hvac.cooling_setpoint(0) - 27.0).abs() < 1e-3);
+    }
+
+    #[test]
+    fn window_data_extracted_from_fenestration_surface() {
+        let src = "\
+Version, 25.2;\n\
+Building, TestBldg, 0.0, City, 0.04, 0.4, FullExterior, 25;\n\
+Zone, Z1, 0, 0, 0, 0, 1, 2.7, 129.6, 48.0, ;
+\n\
+Material, Mat1, MediumRough, 0.1, 1.0, 2000, 800;\n\
+Construction, Wall1, Mat1;\n\
+WindowMaterial:Glazing, DblClear,\n\
+  SpectralAverage, 0.003, 0.837, 0.075, 0.075, 0.837, 0.075, 0.075, 0.0, 0.84, 0.84, 0.9;\n\
+Construction, DblWin, DblClear;\n\
+Site:GroundTemperature:BuildingSurface, 18, 18, 18, 18, 18, 18, 18, 18, 18, 18, 18, 18;\n\
+GlobalGeometryRules, UpperLeftCorner, ClockWise, World;\n\
+BuildingSurface:Detailed, SouthWall, Wall, Wall1, Z1, , Outdoors, , SunExposed, WindExposed, ,\n\
+  4,\n\
+  0, 0, 2.7,\n\
+  6, 0, 2.7,\n\
+  6, 0, 0,\n\
+  0, 0, 0;\n\
+FenestrationSurface:Detailed, SouthWindow, Window, DblWin, SouthWall, , , 0.0, Outside,\n\
+  4,\n\
+  0.5, 0.0, 2.0,\n\
+  5.5, 0.0, 2.0,\n\
+  5.5, 0.0, 0.0,\n\
+  0.5, 0.0, 0.0;\n";
+        let idf = IdfParser::from_str(src).unwrap();
+        let schema = SimulationSchemaV1::try_from(&idf).expect("IDF converts to schema");
+
+        let window = &schema.constructions.wall.window;
+        assert!(window.is_some());
+        let window = window.as_ref().unwrap();
+        assert!(window.window_area > 0.0);
     }
 }

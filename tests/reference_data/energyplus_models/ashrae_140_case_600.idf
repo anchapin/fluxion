@@ -3,7 +3,7 @@ Version, 25.2;
 ! ── ASHRAE 140 Case 600 — Low-Mass Building with South Window ──────────
 ! Reference: ASHRAE Standard 140-2023 Annex B
 !   - 6m x 8m x 2.7m single-zone box
-!   - Lightweight walls (wood frame + insulation + gypsum)
+!   - Lightweight walls (wood frame + 65mm insulation + gypsum, R=1.79 m²K/W)
 !   - South-facing window (12m², double-pane, SHGC ≈ 0.7)
 !   - Heating setpoint: 20°C, Cooling setpoint: 27°C
 !   - Infiltration: 0.5 ACH constant
@@ -46,16 +46,16 @@ ZoneHVAC:EquipmentConnections,
   ZONE1_Inlet Node, ZONE1_Exhaust Node,
   ZONE1_Zone Air Node, ZONE1_Return Air Node;
 
-! ── Materials — Lightweight ASHRAE 140 Case 600 construction ────────────
+! ── Materials — ASHRAE 140 Case 600 construction (1.79 m²K/W total wall R) ──
 Material,
   OUTR_WOOD,             ! 10mm wood siding
   MediumSmooth,
   0.010, 0.115, 540, 1210;
 
 Material,
-  INSUL_R7,              ! 90mm cavity insulation (R-7 ≈ 0.04 * 0.09 wait — 0.04 W/mK * 0.09 m = R-2.25)
+  INSUL_R7,              ! 65mm cavity insulation — gives 1.79 m²K/W total wall R
   MediumRough,
-  0.090, 0.040, 30, 840;
+  0.065, 0.040, 30, 840;
 
 Material,
   GYP_13,                ! 13mm gypsum

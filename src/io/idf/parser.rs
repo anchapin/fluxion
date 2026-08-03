@@ -151,6 +151,67 @@ impl IdfFile {
                 .eq_ignore_ascii_case("Site:GroundTemperature:BuildingSurface")
         })
     }
+
+    /// All `FenestrationSurface:Detailed` objects (windows and doors).
+    pub fn fenestration_surfaces(&self) -> impl Iterator<Item = &IdfObject> {
+        self.objects.iter().filter(|o| {
+            o.object_type
+                .eq_ignore_ascii_case("FenestrationSurface:Detailed")
+        })
+    }
+
+    /// All `Schedule:Compact` objects.
+    pub fn schedules(&self) -> impl Iterator<Item = &IdfObject> {
+        self.objects
+            .iter()
+            .filter(|o| o.object_type.eq_ignore_ascii_case("Schedule:Compact"))
+    }
+
+    /// All `ZoneHVAC:IdealLoadsAirSystem` objects.
+    pub fn zone_hvac_ideal_loads(&self) -> impl Iterator<Item = &IdfObject> {
+        self.objects.iter().filter(|o| {
+            o.object_type
+                .eq_ignore_ascii_case("ZoneHVAC:IdealLoadsAirSystem")
+        })
+    }
+
+    /// All `ZoneHVAC:EquipmentConnections` objects.
+    pub fn zone_hvac_equipment_connections(&self) -> impl Iterator<Item = &IdfObject> {
+        self.objects.iter().filter(|o| {
+            o.object_type
+                .eq_ignore_ascii_case("ZoneHVAC:EquipmentConnections")
+        })
+    }
+
+    /// All `ThermostatSetpoint:DualSetpoint` objects.
+    pub fn thermostat_setpoint_dual(&self) -> impl Iterator<Item = &IdfObject> {
+        self.objects.iter().filter(|o| {
+            o.object_type
+                .eq_ignore_ascii_case("ThermostatSetpoint:DualSetpoint")
+        })
+    }
+
+    /// All `ZoneControl:Thermostat` objects.
+    pub fn zone_control_thermostat(&self) -> impl Iterator<Item = &IdfObject> {
+        self.objects
+            .iter()
+            .filter(|o| o.object_type.eq_ignore_ascii_case("ZoneControl:Thermostat"))
+    }
+
+    /// All `WindowMaterial:Glazing` objects.
+    pub fn window_materials(&self) -> impl Iterator<Item = &IdfObject> {
+        self.objects
+            .iter()
+            .filter(|o| o.object_type.eq_ignore_ascii_case("WindowMaterial:Glazing"))
+    }
+
+    /// All `ZoneInfiltration:DesignFlowRate` objects.
+    pub fn infiltration(&self) -> impl Iterator<Item = &IdfObject> {
+        self.objects.iter().filter(|o| {
+            o.object_type
+                .eq_ignore_ascii_case("ZoneInfiltration:DesignFlowRate")
+        })
+    }
 }
 
 /// Entry point for parsing IDF documents.
