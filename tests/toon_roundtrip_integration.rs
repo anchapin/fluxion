@@ -75,7 +75,7 @@ fn test_roundtrip_i64_scalar() {
 
 #[test]
 fn test_roundtrip_f64_scalar() {
-    let value = 3.14159265359f64;
+    let value = std::f64::consts::PI;
     let toon = to_string(&value).expect("serialization should succeed");
     let parsed: f64 = from_str(&toon).expect("deserialization should succeed");
     assert!(

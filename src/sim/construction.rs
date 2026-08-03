@@ -773,15 +773,55 @@ impl Construction {
         // Thermal bridges represent additional heat transfer paths through
         // edge conditions, corner effects, and structural connections
         //
-        // When thermal bridge correction is enabled, apply a 10-20% increase
-        // to account for these additional heat transfer paths
+        // Thermal bridges are modeled using ISO 10211 psi/chi values:
+        // - Linear thermal bridges (psi-values): heat flow = psi * length * delta_T
+        // - Point thermal bridges (chi-values): heat flow = chi * count * delta_T
         //
         // Units: W/m²K × m² = W/K
         let base_conductance = self.calc_h_tr_em(window_u_value, surface_area);
 
         if include_thermal_bridge {
-            // Apply 15% thermal bridge correction (typical for light-framed construction)
-            base_conductance * 1.15
+            // Calculate thermal bridge contribution using ISO 10211 psi/chi values
+            //
+            // Typical psi-values (W/mK) per ASHRAE 140 / ISO 10211:
+            // - Wall-floor junction (intermediate floor): 0.10-0.30 W/mK
+            // - Wall-floor junction (ground floor): 0.05-0.20 W/mK
+            // - Wall-roof junction: 0.10-0.30 W/mK
+            // - Wall-window frame: 0.05-0.15 W/mK
+            // - Corner (external): 0.10-0.20 W/mK
+            // - Corner (internal): 0.05-0.10 W/mK
+            //
+            // Typical chi-values (W/K) per ASHRAE 140 / ISO 10211:
+            // - Structural fastener: 0.001-0.005 W/K
+            // - Support bracket: 0.002-0.010 W/K
+            // - Penetration: 0.001-0.003 W/K
+            //
+            // For ASHRAE 140 simplified modeling, we use typical values:
+            const PSI_EDGE: f64 = 0.15; // W/mK - typical edge linear bridge
+            const _PSI_CORNER: f64 = 0.10; // W/mK - typical corner linear bridge
+            const CHI_POINT: f64 = 0.002; // W/K - typical point bridge
+
+            // Perimeter-to-area ratio for typical building
+            // For a rectangular building: P/A = 2*(L+W)/(L*W) = 2*(1/W + 1/L)
+            // With typical aspect ratio 2:1, P/A ≈ 3/L where L is the length
+            // This gives ~3m perimeter per m² of surface area
+            let perimeter_to_area_ratio = 3.0; // m/m² (typical for rectangular buildings)
+
+            // Calculate linear thermal bridge length per surface area
+            let linear_bridge_length = surface_area * perimeter_to_area_ratio;
+
+            // Calculate point thermal bridge count per surface area
+            // Typical: 1 fastener per 0.5 m²
+            let point_bridge_count = (surface_area / 0.5) as usize;
+
+            // Thermal bridge conductance contribution
+            // H_bridge = psi * L + chi * n
+            let linear_conductance = PSI_EDGE * linear_bridge_length;
+            let point_conductance = CHI_POINT * point_bridge_count as f64;
+            let total_bridge_conductance = linear_conductance + point_conductance;
+
+            // Add base conductance and bridge conductance
+            base_conductance + total_bridge_conductance
         } else {
             base_conductance
         }
@@ -1948,8 +1988,25 @@ mod tests {
         let wall = Assemblies::low_mass_wall();
         let h_no_bridge = wall.calc_h_tr_em_with_thermal_bridge(1.5, 48.0, false);
         let h_with_bridge = wall.calc_h_tr_em_with_thermal_bridge(1.5, 48.0, true);
-        assert!(h_with_bridge > h_no_bridge);
-        assert!((h_with_bridge - h_no_bridge * 1.15).abs() < EPSILON);
+
+        // Verify thermal bridge increases conductance
+        assert!(
+            h_with_bridge > h_no_bridge,
+            "Thermal bridge should increase h_tr_em"
+        );
+
+        // Calculate expected bridge contribution
+        // Linear: PSI_EDGE * (surface_area * 3.0) = 0.15 * (48.0 * 3.0) = 21.6 W/K
+        // Point: CHI_POINT * (surface_area / 0.5) = 0.002 * 96 = 0.192 W/K
+        // Total bridge conductance: 21.792 W/K
+        let surface_area = 48.0;
+        let linear_bridge_conductance = 0.15 * surface_area * 3.0;
+        let point_bridge_conductance = 0.002 * (surface_area / 0.5);
+        let expected_bridge_contribution = linear_bridge_conductance + point_bridge_conductance;
+
+        // Verify bridge contribution is correct
+        let actual_bridge_contribution = h_with_bridge - h_no_bridge;
+        assert!((actual_bridge_contribution - expected_bridge_contribution).abs() < EPSILON);
     }
 
     #[test]

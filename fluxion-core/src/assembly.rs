@@ -752,12 +752,207 @@ impl fmt::Display for ThermalMassClassification {
     }
 }
 
+/// Thermal bridge type classification per ISO 10211.
+///
+/// Thermal bridges are classified as either linear (extending in one direction)
+/// or point (occurring at a specific location).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum ThermalBridgeType {
+    /// Linear thermal bridge - extends along a line (e.g., wall-floor junction)
+    Linear,
+    /// Point thermal bridge - occurs at a discrete location (e.g., structural fastener)
+    Point,
+}
+
+/// Location of thermal bridge relative to the assembly surface.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum ThermalBridgeLocation {
+    /// Thermal bridge at the edge of the assembly
+    Edge,
+    /// Thermal bridge at a corner of the assembly
+    Corner,
+    /// Thermal bridge at a generic interior location
+    Interior,
+}
+
+/// Linear thermal bridge with psi-value (W/mK).
+///
+/// Linear thermal bridges occur at the junction between two building elements,
+/// such as wall-floor, wall-roof, or wall-window connections. The heat flow
+/// is calculated as: Q_bridge = psi * L * delta_T
+///
+/// # ISO 10211 Reference
+/// Linear thermal transmitance (psi-value) is determined from 3D or 2D
+/// thermal modeling per ISO 10211.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+pub struct LinearThermalBridge {
+    /// Psi-value (linear thermal transmittance) in W/mK
+    pub psi_value: f64,
+    /// Length of the thermal bridge in meters
+    pub length: f64,
+    /// Location type for classification
+    pub location: ThermalBridgeLocation,
+}
+
+impl LinearThermalBridge {
+    /// Create a new linear thermal bridge.
+    ///
+    /// # Arguments
+    /// * `psi_value` - Linear thermal transmitance in W/mK
+    /// * `length` - Length in meters
+    /// * `location` - Location classification
+    pub fn new(psi_value: f64, length: f64, location: ThermalBridgeLocation) -> Self {
+        Self {
+            psi_value,
+            length,
+            location,
+        }
+    }
+
+    /// Calculate heat flow due to this linear thermal bridge.
+    ///
+    /// # Arguments
+    /// * `delta_t` - Temperature difference across the bridge (K)
+    ///
+    /// # Returns
+    /// Heat flow in watts (W)
+    pub fn heat_flow(&self, delta_t: f64) -> f64 {
+        self.psi_value * self.length * delta_t
+    }
+
+    /// Calculate thermal conductance contribution.
+    ///
+    /// # Returns
+    /// Conductance in W/K (equivalent to psi * length)
+    pub fn conductance(&self) -> f64 {
+        self.psi_value * self.length
+    }
+}
+
+/// Point thermal bridge with chi-value (W/K).
+///
+/// Point thermal bridges occur at discrete locations such as structural
+/// fasteners, support brackets, or penetration points. The heat flow
+/// is calculated as: Q_bridge = chi * n * delta_T
+///
+/// # ISO 10211 Reference
+/// Point thermal transmitance (chi-value) is determined from 3D
+/// thermal modeling per ISO 10211.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+pub struct PointThermalBridge {
+    /// Chi-value (point thermal transmittance) in W/K
+    pub chi_value: f64,
+    /// Number of identical point thermal bridges
+    pub count: usize,
+}
+
+impl PointThermalBridge {
+    /// Create a new point thermal bridge.
+    ///
+    /// # Arguments
+    /// * `chi_value` - Point thermal transmittance in W/K
+    /// * `count` - Number of identical bridges
+    pub fn new(chi_value: f64, count: usize) -> Self {
+        Self { chi_value, count }
+    }
+
+    /// Calculate heat flow due to this point thermal bridge.
+    ///
+    /// # Arguments
+    /// * `delta_t` - Temperature difference across the bridge (K)
+    ///
+    /// # Returns
+    /// Heat flow in watts (W)
+    pub fn heat_flow(&self, delta_t: f64) -> f64 {
+        self.chi_value * self.count as f64 * delta_t
+    }
+
+    /// Calculate thermal conductance contribution.
+    ///
+    /// # Returns
+    /// Conductance in W/K (equivalent to chi * count)
+    pub fn conductance(&self) -> f64 {
+        self.chi_value * self.count as f64
+    }
+}
+
+/// Complete thermal bridge model containing all bridge types.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct ThermalBridges {
+    /// Linear thermal bridges (psi-values)
+    pub linear: Vec<LinearThermalBridge>,
+    /// Point thermal bridges (chi-values)
+    pub point: Vec<PointThermalBridge>,
+}
+
+impl ThermalBridges {
+    /// Create a new empty thermal bridges model.
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Add a linear thermal bridge.
+    pub fn add_linear(mut self, bridge: LinearThermalBridge) -> Self {
+        self.linear.push(bridge);
+        self
+    }
+
+    /// Add a point thermal bridge.
+    pub fn add_point(mut self, bridge: PointThermalBridge) -> Self {
+        self.point.push(bridge);
+        self
+    }
+
+    /// Calculate total heat flow from all thermal bridges.
+    ///
+    /// # Arguments
+    /// * `delta_t` - Temperature difference in K
+    ///
+    /// # Returns
+    /// Total heat flow in watts
+    pub fn total_heat_flow(&self, delta_t: f64) -> f64 {
+        let linear_flow: f64 = self.linear.iter().map(|b| b.heat_flow(delta_t)).sum();
+        let point_flow: f64 = self.point.iter().map(|b| b.heat_flow(delta_t)).sum();
+        linear_flow + point_flow
+    }
+
+    /// Calculate total thermal bridge conductance.
+    ///
+    /// # Returns
+    /// Total conductance in W/K
+    pub fn total_conductance(&self) -> f64 {
+        let linear_conductance: f64 = self.linear.iter().map(|b| b.conductance()).sum();
+        let point_conductance: f64 = self.point.iter().map(|b| b.conductance()).sum();
+        linear_conductance + point_conductance
+    }
+
+    /// Get total linear bridge length.
+    ///
+    /// # Returns
+    /// Sum of all linear bridge lengths in meters
+    pub fn total_linear_length(&self) -> f64 {
+        self.linear.iter().map(|b| b.length).sum()
+    }
+
+    /// Check if thermal bridge model is empty.
+    pub fn is_empty(&self) -> bool {
+        self.linear.is_empty() && self.point.is_empty()
+    }
+
+    /// Number of thermal bridges.
+    pub fn len(&self) -> usize {
+        self.linear.len() + self.point.len()
+    }
+}
+
 /// Building assembly composed of material layers
 pub struct BuildingAssembly {
     /// Assembly name/identifier
     pub name: String,
     /// Material layers in order (exterior to interior)
     pub layers: Vec<Box<dyn MaterialLayer>>,
+    /// Thermal bridge model (psi-values, chi-values)
+    pub thermal_bridges: ThermalBridges,
 }
 
 impl fmt::Debug for BuildingAssembly {
@@ -793,6 +988,7 @@ impl Clone for BuildingAssembly {
                     }
                 })
                 .collect(),
+            thermal_bridges: self.thermal_bridges.clone(),
         }
     }
 }
@@ -840,12 +1036,42 @@ impl BuildingAssembly {
             ThermalMassClassification::VeryHeavy
         }
     }
+
+    /// Calculate thermal bridge conductance contribution.
+    ///
+    /// Adds the total thermal bridge conductance to the opaque assembly U-value
+    /// to produce a combined thermal transmittance that accounts for bridge effects.
+    ///
+    /// # Arguments
+    /// * `opaque_area` - Area of the opaque assembly in m²
+    /// * `surface_area` - Total surface area including thermal bridges in m²
+    ///
+    /// # Returns
+    /// Combined thermal transmitance in W/m²K including bridge effects
+    ///
+    /// # Note
+    /// When `surface_area > opaque_area`, the difference represents thermal bridge
+    /// lengths (for linear bridges) or point bridge counts that add extra heat transfer.
+    pub fn effective_u_with_bridges(&self, opaque_area: f64, _surface_area: f64) -> f64 {
+        if self.thermal_bridges.is_empty() || opaque_area <= 0.0 {
+            return 1.0 / self.total_r_value();
+        }
+
+        let base_u = 1.0 / self.total_r_value();
+        let bridge_conductance = self.thermal_bridges.total_conductance();
+
+        // Add bridge conductance spread over opaque area
+        // This gives the "psi * L / A" contribution per ISO 10211
+        let bridge_delta_u = bridge_conductance / opaque_area;
+        base_u + bridge_delta_u
+    }
 }
 
 /// Builder for constructing building assemblies with validation
 pub struct AssemblyBuilder {
     layers: Vec<Box<dyn MaterialLayer>>,
     name: String,
+    thermal_bridges: ThermalBridges,
 }
 
 impl AssemblyBuilder {
@@ -854,6 +1080,7 @@ impl AssemblyBuilder {
         Self {
             layers: Vec::new(),
             name,
+            thermal_bridges: ThermalBridges::new(),
         }
     }
 
@@ -863,6 +1090,36 @@ impl AssemblyBuilder {
     /// * `layer` - Material layer to add (exterior to interior order)
     pub fn add_layer(mut self, layer: Box<dyn MaterialLayer>) -> Self {
         self.layers.push(layer);
+        self
+    }
+
+    /// Add a linear thermal bridge (psi-value) to the assembly
+    ///
+    /// # Arguments
+    /// * `psi_value` - Linear thermal transmittance in W/mK
+    /// * `length` - Length of the thermal bridge in meters
+    /// * `location` - Location classification
+    pub fn add_linear_bridge(
+        mut self,
+        psi_value: f64,
+        length: f64,
+        location: ThermalBridgeLocation,
+    ) -> Self {
+        self.thermal_bridges
+            .linear
+            .push(LinearThermalBridge::new(psi_value, length, location));
+        self
+    }
+
+    /// Add a point thermal bridge (chi-value) to the assembly
+    ///
+    /// # Arguments
+    /// * `chi_value` - Point thermal transmittance in W/K
+    /// * `count` - Number of identical point bridges
+    pub fn add_point_bridge(mut self, chi_value: f64, count: usize) -> Self {
+        self.thermal_bridges
+            .point
+            .push(PointThermalBridge::new(chi_value, count));
         self
     }
 
@@ -932,6 +1189,7 @@ impl AssemblyBuilder {
         Ok(BuildingAssembly {
             name: self.name,
             layers: self.layers,
+            thermal_bridges: self.thermal_bridges,
         })
     }
 }
@@ -1421,5 +1679,94 @@ mod tests {
         assert!(assemblies.is_ok());
         let assemblies = assemblies.unwrap();
         assert!(!assemblies.is_empty());
+    }
+
+    #[test]
+    fn test_linear_thermal_bridge() {
+        let bridge = LinearThermalBridge::new(0.15, 10.0, ThermalBridgeLocation::Edge);
+        assert_eq!(bridge.psi_value, 0.15);
+        assert_eq!(bridge.length, 10.0);
+        assert_eq!(bridge.location, ThermalBridgeLocation::Edge);
+
+        let delta_t = 20.0;
+        let expected_flow = 0.15 * 10.0 * delta_t;
+        assert!((bridge.heat_flow(delta_t) - expected_flow).abs() < 1e-10);
+        assert!((bridge.conductance() - 1.5).abs() < 1e-10);
+    }
+
+    #[test]
+    fn test_point_thermal_bridge() {
+        let bridge = PointThermalBridge::new(0.002, 10);
+        assert_eq!(bridge.chi_value, 0.002);
+        assert_eq!(bridge.count, 10);
+
+        let delta_t = 20.0;
+        let expected_flow = 0.002 * 10.0 * delta_t;
+        assert!((bridge.heat_flow(delta_t) - expected_flow).abs() < 1e-10);
+        assert!((bridge.conductance() - 0.02).abs() < 1e-10);
+    }
+
+    #[test]
+    fn test_thermal_bridges_model() {
+        let bridges = ThermalBridges::new()
+            .add_linear(LinearThermalBridge::new(
+                0.15,
+                10.0,
+                ThermalBridgeLocation::Edge,
+            ))
+            .add_linear(LinearThermalBridge::new(
+                0.10,
+                5.0,
+                ThermalBridgeLocation::Corner,
+            ))
+            .add_point(PointThermalBridge::new(0.002, 20));
+
+        assert_eq!(bridges.linear.len(), 2);
+        assert_eq!(bridges.point.len(), 1);
+        assert!(!bridges.is_empty());
+        assert_eq!(bridges.len(), 3);
+        assert!((bridges.total_linear_length() - 15.0).abs() < 1e-10);
+
+        let linear_conductance = 0.15 * 10.0 + 0.10 * 5.0;
+        let point_conductance = 0.002 * 20.0;
+        let expected_conductance = linear_conductance + point_conductance;
+        assert!((bridges.total_conductance() - expected_conductance).abs() < 1e-10);
+
+        let delta_t = 20.0;
+        assert!((bridges.total_heat_flow(delta_t) - expected_conductance * delta_t).abs() < 1e-10);
+    }
+
+    #[test]
+    fn test_thermal_bridges_empty() {
+        let bridges = ThermalBridges::new();
+        assert!(bridges.is_empty());
+        assert!((bridges.total_conductance() - 0.0).abs() < 1e-10);
+        assert!((bridges.total_heat_flow(20.0) - 0.0).abs() < 1e-10);
+    }
+
+    #[test]
+    fn test_assembly_with_thermal_bridges() {
+        let assembly = AssemblyBuilder::new("wall_with_bridges".to_string())
+            .add_layer(Box::new(ConcreteMaterial::new(0.1)))
+            .add_layer(Box::new(InsulationMaterial::new(0.05)))
+            .add_layer(Box::new(GypsumMaterial::new(0.012)))
+            .add_linear_bridge(0.15, 10.0, ThermalBridgeLocation::Edge)
+            .add_linear_bridge(0.10, 5.0, ThermalBridgeLocation::Corner)
+            .add_point_bridge(0.002, 20)
+            .build()
+            .unwrap();
+
+        assert_eq!(assembly.thermal_bridges.linear.len(), 2);
+        assert_eq!(assembly.thermal_bridges.point.len(), 1);
+
+        let opaque_area = 10.0;
+        let surface_area = 12.0;
+        let effective_u = assembly.effective_u_with_bridges(opaque_area, surface_area);
+
+        let base_r = 0.1 / 1.4 + 0.05 / 0.04 + 0.012 / 0.17;
+        let base_u = 1.0 / base_r;
+        let bridge_conductance = 0.15 * 10.0 + 0.10 * 5.0 + 0.002 * 20.0;
+        let expected_u = base_u + bridge_conductance / opaque_area;
+        assert!((effective_u - expected_u).abs() < 0.001);
     }
 }

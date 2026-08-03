@@ -586,6 +586,7 @@ mod tests {
         assert!(!feasibility.is_feasible());
     }
 
+    #[allow(clippy::erasing_op)]
     #[test]
     fn test_ising_problem_with_large_coupling_gets_scaled() {
         let c = DwaveHardwareConstraints::advantage_system64();
@@ -620,6 +621,7 @@ mod tests {
         assert!(feasibility.couplings_in_range);
     }
 
+    #[allow(clippy::erasing_op)]
     #[test]
     fn test_scaling_preserves_solution_ranking() {
         // If we scale the Ising, the argmin of the energy landscape is unchanged.
