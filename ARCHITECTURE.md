@@ -585,6 +585,120 @@ let electrical_power = bridge.hvac_power_to_electrical(timestep, outdoor_temp);
 
 ---
 
+### Module N+2: Urban Radiation Modeling (`fluxion-city`)
+
+**Source**: `fluxion-city/` (standalone crate, workspace member)
+**Purpose**: Urban radiation modeling with Nusselt analog view factor computation for building energy modeling. Computes inter-building longwave radiative exchange using geometric view factors and sparse matrix representations for city-scale efficiency.
+
+**Crate independence**: `fluxion-city` has **no dependency** on the main `fluxion` crate. It is a self-contained urban radiation solver that can be used independently for city-scale thermal modeling.
+
+**Key submodules**:
+
+| Submodule | File | Purpose |
+|-----------|------|---------|
+| `geometry` | `src/lib.rs` (geometry module) | Surface types: `RectSurface`, `VerticalSurface`, `GroundPlane`, `UrbanCanopySurface`, `SurfaceType` |
+| `nusselt` | `src/lib.rs` (nusselt module) | Analytical Nusselt analog view factor functions for urban canyons |
+| `sparse` | `src/lib.rs` (sparse module) | `SparseViewFactorMatrix` + `UrbanRadiationSolver` using faer CSC sparse matrices |
+| `ashrae140` | `src/lib.rs` (ashrae140 module) | ASHRAE 140 test configurations for view factor validation |
+| `urban_graph` | `src/lib.rs` (urban_graph module) | `UrbanGraph<N,E>` spatial topology using petgraph for city-scale adjacency |
+| `parallel` | `src/parallel/` | Thread-safe parallel execution harness for urban radiation/thermal simulations |
+| `ray_tracing` | `src/ray_tracing.rs` | Monte Carlo view factor computation for complex geometries |
+
+**Core API** (from `src/lib.rs` re-exports):
+
+```rust
+// Geometry types
+use fluxion_city::{RectSurface, VerticalSurface, GroundPlane, UrbanCanopySurface, SurfaceType};
+
+// Nusselt analog view factors
+use fluxion_city::nusselt::{
+    view_factor_wall_to_sky, view_factor_wall_to_ground,
+    view_factor_parallel_rectangles, view_factor_enclosure,
+    compute_urban_canyon_view_factors, ViewFactorMatrix,
+};
+
+// Sparse radiation solver
+use fluxion_city::sparse::{
+    UrbanRadiationSolver, SparseViewFactorMatrix,
+    SurfacePairFlux, STEFAN_BOLTZMANN, DEFAULT_EMISSIVITY,
+};
+
+// Urban graph topology
+use fluxion_city::urban_graph::{UrbanGraph, BuildingNode, BoundingBox3D, SpatialEdge};
+```
+
+**View factor computation** — Nusselt analog functions:
+
+```rust
+// Wall-to-sky view factor (urban canyon)
+let f_wall_sky = nusselt::view_factor_wall_to_sky(wall_height, wall_width, building_spacing)?;
+
+// Wall-to-ground view factor
+let f_wall_ground = nusselt::view_factor_wall_to_ground(wall_height, wall_width, building_spacing)?;
+
+// Parallel rectangle view factor
+let f_ij = nusselt::view_factor_parallel_rectangles(area_i, area_j, distance, height_i, height_j)?;
+
+// Urban canyon view factor matrix
+let matrix = nusselt::compute_urban_canyon_view_factors(walls, ground_area)?;
+```
+
+**Urban radiation solver** — gray-diffuse longwave exchange:
+
+```rust
+use fluxion_city::sparse::{UrbanRadiationSolver, SparseViewFactorMatrix, STEFAN_BOLTZMANN};
+
+// Build sparse view factor matrix from urban canyon
+let sparse_vf = fluxion_city::sparse::create_sparse_from_urban_canyon(walls, ground_area)?;
+
+// Create solver with per-surface areas and emissivities
+let solver = UrbanRadiationSolver::with_uniform_emissivity(sparse_vf, areas, 0.9);
+
+// Compute net flux per surface (faer SIMD-accelerated)
+let net_flux = solver.compute_net_flux_per_surface_faer(&temperatures);
+
+// Compute per-pair fluxes
+let fluxes = solver.compute_fluxes(&temperatures)?;
+```
+
+**Sparse matrix memory efficiency** (Issue #2030):
+
+At 2% edge density (100-building graph) the faer CSC representation uses ~5% of the memory of a dense matrix and the matvec runs ~3× faster than the HashMap-based per-pair aggregation:
+
+```rust
+let density = sparse_vf.edge_density();      // e.g., 0.02 for 2%
+let nnz = sparse_vf.nnz();                  // non-zero entries
+let hashmap_bytes = sparse_vf.estimated_hashmap_bytes();
+let csc_bytes = sparse_vf.estimated_faer_csc_bytes();
+let dense_bytes = sparse_vf.estimated_dense_bytes();
+```
+
+**Integration path to main Fluxion thermal model**:
+
+The `fluxion-city` module operates at the **urban scale** and is designed to interface with individual building thermal models via surface-level boundary conditions:
+
+1. `UrbanRadiationSolver::compute_net_flux_per_surface_faer()` returns per-surface net radiative heat flow [W]
+2. These fluxes become inputs to `SurfaceHeatFluxProvider` for each building's exterior surfaces
+3. The `fluxion-city/parallel/` module provides `UrbanGraphStepDispatcher` for parallel simulation of multiple buildings
+
+The current integration is **future work** — `fluxion-city` is a standalone crate that has not yet been wired into the main `fluxion` thermal model. The planned integration point is at the zone/building envelope boundary where exterior surface temperatures are affected by radiative exchange with surrounding buildings.
+
+**Validation status**:
+
+- 52 unit tests pass (`cargo test -p fluxion-city`)
+- 60 tests with `parallel` feature enabled
+- ASHRAE 140 enclosure configurations implemented in `ashrae140` module
+- View factor reciprocity and summation verified mathematically
+
+**Feature flags**:
+
+| Feature | Effect |
+|---------|--------|
+| `default` | No additional dependencies |
+| `parallel` | Enables rayon-based parallel execution in `parallel/` module |
+
+---
+
 ### Module 6: Gauge-Theory Foundation (Phase 1a — #1461)
 
 **Source**: `src/physics/geometry_tensor.rs` (lives alongside the existing CTA `GeometryTensor` types for the Python↔Rust boundary; the two domains are deliberately kept on different storage representations — `Vec<f64>` for the CTA tensors, `nalgebra::{Matrix4, Vector4}` for the gauge-theory manifold, because their consumers diverge).
