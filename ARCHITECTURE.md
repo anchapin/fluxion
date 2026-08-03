@@ -804,6 +804,7 @@ These traits support the main physics pipeline and should also be documented:
 | `Fan` | `src/sim/hvac/fan.rs` | Fan component performance (affinity laws, density correction) |
 | `CoolingCoilBehavior` | `src/sim/hvac/cooling_coil.rs` | Cooling coil component (bypass-factor model, SHR, condensate) |
 | `HeatingCoil` | `src/sim/hvac/heating_coil.rs` | Heating coil component (sensible heating, part-load control) |
+| `CavTerminal` | `src/sim/hvac/cav_terminal.rs` | CAV terminal unit composing Fan + CoolingCoil + HeatingCoil (constant volumetric flow,Issue #1903) |
 | `VavTerminal` | `src/sim/hvac/vav_terminal.rs` | VAV terminal unit composing Fan + CoolingCoil + HeatingCoil (damper-modulated mass flow, reheat control) |
 | `Doas` | `src/sim/hvac/doas.rs` | Dedicated Outdoor Air System composing Fan + CoolingCoil + HeatingCoil (constant-volume, dew-point-targeted dehumidification, neutral-supply reheat) |
 | `PartLoadCurve` | `src/sim/hvac/part_load_curves.rs` | ASHRAE/E+ biquadratic part-load curves for fan, chiller, boiler |
