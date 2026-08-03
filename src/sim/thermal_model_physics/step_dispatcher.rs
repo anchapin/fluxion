@@ -8,9 +8,9 @@
 
 use crate::physics::cta::{ContinuousTensor, VectorField};
 #[cfg(feature = "gauge-solver")]
-use crate::physics::units::{HeatTransferCoefficient, Temperature};
-#[cfg(feature = "gauge-solver")]
 use crate::physics::units::FromF64;
+#[cfg(feature = "gauge-solver")]
+use crate::physics::units::{HeatTransferCoefficient, Temperature};
 use crate::sim::thermal_model_core::ThermalModel;
 
 impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>> ThermalModel<T> {
@@ -68,11 +68,25 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                 zone_temps[0]
             };
             let loads = self.0.loads.as_ref();
-            let Q_internal_w = if loads.is_empty() { 0.0 } else { loads[0] * self.0.zone_area.as_ref().get(0).copied().unwrap_or(48.0) };
+            let Q_internal_w = if loads.is_empty() {
+                0.0
+            } else {
+                loads[0] * self.0.zone_area.as_ref().get(0).copied().unwrap_or(48.0)
+            };
             let solar_gains = self.0.solar_gains.as_ref();
-            let solar_irradiance_wm2 = if solar_gains.is_empty() { 0.0 } else { solar_gains[0] };
+            let solar_irradiance_wm2 = if solar_gains.is_empty() {
+                0.0
+            } else {
+                solar_gains[0]
+            };
             // Use exterior film coefficient from derived_h_ext or default
-            let h_ext = self.0.derived_h_ext.as_ref().get(0).copied().unwrap_or(25.0);
+            let h_ext = self
+                .0
+                .derived_h_ext
+                .as_ref()
+                .get(0)
+                .copied()
+                .unwrap_or(25.0);
 
             let result = gauge_solver.step(
                 timestep,
