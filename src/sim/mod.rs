@@ -30,6 +30,7 @@ pub mod per_surface_conduction;
 pub mod profiles;
 pub mod schedule;
 pub mod shading;
+pub mod shared_memory_buffer;
 pub mod sky_radiation;
 pub mod solar;
 pub mod surface_flux_provider;
