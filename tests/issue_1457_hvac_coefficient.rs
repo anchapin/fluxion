@@ -119,7 +119,7 @@ fn test_iso_hvac_coefficient_case_600_is_in_band() {
 
 #[test]
 fn test_iso_hvac_coefficient_case_610_in_band() {
-    // Same check for Case 610 (south shading + west window).
+    // Same check for Case 610 (south shading only — 12 m² south window, no west window).
     let spec = ASHRAE140Case::Case610.spec();
     let model = ThermalModel::<VectorField>::from_spec(&spec);
 
@@ -131,11 +131,11 @@ fn test_iso_hvac_coefficient_case_610_in_band() {
     let h_tr_1 = h_tr_is * h_tr_ms / (h_tr_is + h_tr_ms);
     let h_coeff_iso = h_tr_1 + h_tr_w;
 
-    // Case 610 has 15 m² windows → H_tr,w ≈ 31.5 W/K.
-    // Expected ISO h_coeff total in [115, 150] W/K.
+    // Case 610 has 12 m² south-facing window only → H_tr,w ≈ 25.2 W/K.
+    // Expected ISO h_coeff total in [108, 143] W/K.
     assert!(
-        h_coeff_iso > 115.0 && h_coeff_iso < 150.0,
-        "ISO h_coeff for Case 610 = {h_coeff_iso:.2} W/K outside [115, 150] band \
+        h_coeff_iso > 108.0 && h_coeff_iso < 143.0,
+        "ISO h_coeff for Case 610 = {h_coeff_iso:.2} W/K outside [108, 143] band \
          (h_tr_is={h_tr_is:.2}, h_tr_ms={h_tr_ms:.2}, h_tr_w={h_tr_w:.2})"
     );
 }
