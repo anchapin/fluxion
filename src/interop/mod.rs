@@ -64,8 +64,10 @@ pub mod ifc;
 pub mod osm;
 
 pub use fmi::{
-    import_fmu, FmiConfig, FmiExporter, FmiImporter, FmiMode, FmuCoSimulationMaster, FmuInputs,
-    FmuOutputs, ImportedFmu, ImportedModelDescription, ImportedScalarVariable, ZoneVariables,
+    import_fmu, FfdFmuCApi, FfdFmuConfig, FfdFmuExporter, FfdFmuInputs, FfdFmuOutputs, FfdFmuState,
+    FmiConfig, FmiExporter, FmiImporter, FmiMode, FmuCoSimulationMaster, FmuInputs, FmuOutputs,
+    ImportedFmu, ImportedModelDescription, ImportedScalarVariable, ZoneVariables, FFD_MAX_SURFACES,
+    FFD_STRATIFICATION_LEVELS,
 };
 pub use gbxml::{export_gbxml, import_gbxml, GbXmlError, GbXmlReader, GbXmlWriter};
 pub use ifc::{
