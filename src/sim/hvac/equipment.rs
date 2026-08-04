@@ -109,6 +109,21 @@ impl VariableCapacityEquipment for AnyEquipment {
     }
 }
 
+impl AnyEquipment {
+    /// Returns the ventilation airflow rate in m³/s for economizer free-cooling calculations.
+    /// For CAV systems this is the design airflow; for VAV terminals this is the maximum airflow.
+    /// Equipment types without ventilation (chillers, boilers) return 0.0.
+    pub fn ventilation_airflow_m3_per_s(&self) -> f64 {
+        match self {
+            AnyEquipment::Chiller(_) => 0.0,
+            AnyEquipment::Boiler(_) => 0.0,
+            AnyEquipment::VAVTerminal(e) => e.max_airflow,
+            AnyEquipment::CAVSystem(e) => e.design_airflow,
+            AnyEquipment::HeatPump(_) => 0.0, // HeatPump doesn't have design_airflow
+        }
+    }
+}
+
 /// Trait for variable-capacity HVAC equipment.
 ///
 /// This trait provides a unified interface for HVAC equipment that can

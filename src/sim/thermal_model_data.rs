@@ -187,6 +187,10 @@ pub struct ThermalModelData<T: ContinuousTensor<f64> + Clone> {
     pub hvac_system_mode: HvacSystemMode,
     pub night_ventilation: Option<NightVentilation>,
     pub h_vent_mass: f64,
+    /// Ventilation airflow rate for economizer free-cooling calculations (m³/s).
+    /// Issue #2345: This replaces the hardcoded 10000.0 m³/s placeholder that was
+    /// corrupting free-cooling capacity calculations.
+    pub ventilation_airflow_m3_per_s: f64,
     pub thermal_bridge_coefficient: f64,
     pub ideal_air_loads_mode: bool,
     pub ideal_loads_system: Vec<Option<IdealLoadsSystem>>,
@@ -401,6 +405,7 @@ impl<T: ContinuousTensor<f64> + Clone> Clone for ThermalModelData<T> {
             hvac_system_mode: self.hvac_system_mode,
             night_ventilation: self.night_ventilation,
             h_vent_mass: self.h_vent_mass,
+            ventilation_airflow_m3_per_s: self.ventilation_airflow_m3_per_s,
             thermal_bridge_coefficient: self.thermal_bridge_coefficient,
             ideal_air_loads_mode: self.ideal_air_loads_mode,
             ideal_loads_system: self.ideal_loads_system.clone(),

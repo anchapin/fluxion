@@ -2240,6 +2240,17 @@ impl ThermalModel<VectorField> {
         // This is required for Cases 800-810 (HVAC equipment cases)
         model.hvac_equipment = spec.hvac_equipment.clone();
 
+        // Issue #2345: Compute ventilation airflow for economizer free-cooling calculations.
+        // Priority: 1) HVAC equipment design airflow, 2) night ventilation fan capacity, 3) 0.0
+        model.ventilation_airflow_m3_per_s = if let Some(ref equipment) = model.hvac_equipment {
+            equipment.ventilation_airflow_m3_per_s()
+        } else if let Some(ref night_vent) = spec.night_ventilation {
+            // Convert from standard m³/h to m³/s
+            night_vent.fan_capacity / 3600.0
+        } else {
+            0.0
+        };
+
         // Initialize IdealLoadsSystem with zone properties from geometry (Issue #521, Issue #532)
         // Create one IdealLoadsSystem per zone with that zone's volume
         let zone_vols = model.zone_volume.as_ref();
@@ -2659,6 +2670,7 @@ impl ThermalModel<VectorField> {
             hvac_system_mode: HvacSystemMode::Controlled,
             night_ventilation: None,
             h_vent_mass: 0.0,
+            ventilation_airflow_m3_per_s: 0.0, // Will be set from hvac_equipment or night_ventilation
             thermal_bridge_coefficient: 0.0,
             convective_fraction: 0.4,
             solar_distribution_to_air: 0.1,
