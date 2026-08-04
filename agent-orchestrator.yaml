@@ -17,6 +17,7 @@ projects:
       Use conventional commits (feat:, fix:, chore:, docs:, refactor:, test:).
       Link issue numbers in commit messages.
       Write clear commit messages that explain WHY, not just WHAT.
+      PR bodies MUST include "Closes #{{Number}}" or "Fixes #{{Number}}" — wave orchestration depends on this keyword to auto-close linked issues.
 
       Follow Python best practices:
 

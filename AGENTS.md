@@ -202,8 +202,9 @@ Heavy Linux jobs honour `vars.FLUXION_LINUX_RUNNER` (self-hosted Hetzner fallbac
   - No direct pushes to `main` — branch protection enforces PR-only flow.
   - PRs targeting `main` are **only permitted from the `develop` branch** (enforced by the `protect-main-branch.yml` workflow). Hotfixes targeting `main` directly from a feature branch will be automatically rejected by CI.
   - Releases are cut by merging `develop` → `main` via a release PR.
-- `--no-ff` merges preserve history (CONTRIBUTING.md).
+ - `--no-ff` merges preserve history (CONTRIBUTING.md).
 - Conventional commit messages: `fix(scope): …`, `feat(scope): …`, `refactor(scope): …`, `perf(scope): …`, `test(scope): …`, `docs(scope): …`.
+- **PR body must include `Closes #{{Number}}` or `Fixes #{{Number}}`** — wave orchestration depends on this keyword to auto-close linked issues. PRs without it will fail to close their issues.
 - Never force-push `main` or `develop`. Hotfixes still go through PR review.
 
 ## Key Files
