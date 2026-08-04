@@ -2202,6 +2202,20 @@ impl ThermalModel<VectorField> {
         // Set the ASHRAE 140 case identifier for special handling
         model.case_id = spec.case_id.clone();
 
+        // Issue #2339: Set sub-hour air-node sub-stepping for Case 600 series.
+        // The 600 series (Case 600, 610, 620, 630, 640, 650, 600FF, 650FF) all use
+        // low-mass construction with dt/τ_air ≈ 3.6 on the 1-hour timestep. This exceeds
+        // the stability limit for the explicit forward-Euler air-node update, causing the
+        // discrete-node solar-injection pathology (peak_cooling OVER + peak_heating UNDER).
+        // Sub-stepping with N=3 reduces dt/τ to ~1.2, within stability bounds.
+        let is_600_series = matches!(
+            spec.case_id.as_str(),
+            "600" | "610" | "620" | "630" | "640" | "650" | "600FF" | "650FF"
+        );
+        if is_600_series {
+            model.sub_hour_air_node_steps = 3;
+        }
+
         // Set building type for auto-loading internal load profiles (Plan 17-04)
         model.building_type = OccupancyBuildingType::Office;
 
@@ -2620,6 +2634,10 @@ impl ThermalModel<VectorField> {
             // (matching the initial zone temperature); stepped each call to
             // step_physics_5r1c via the exact exponential solution.
             air_temperatures: VectorField::from_scalar(20.0, num_zones),
+
+            // Issue #2339: sub-hour air-node sub-stepping. Default 1 (no sub-stepping).
+            // Case 600 series (610, 630, 640) use N=3 to resolve LIMIT-05.
+            sub_hour_air_node_steps: 1,
 
             // Issue #1860: solar-lag state (first-order low-pass filter on
             // surface/mass solar flux). Initialized to zero (no solar history).

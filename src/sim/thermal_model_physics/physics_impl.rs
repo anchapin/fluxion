@@ -711,129 +711,114 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         // The fallback (C_air == 0, e.g. unit tests that skip from_spec)
         // remains algebraic pinning to preserve historical behaviour.
         let term_rest_1_ref = term_rest_1.as_ref();
-        let mut t_i_free_data = Vec::with_capacity(self.0.num_zones);
-        for i in 0..self.0.num_zones {
-            // Issue #1860: remove num_phi_st (immediate surface solar) from
-            // the steady-state computation. The surface-solar contribution is
-            // instead applied through the solar-lag filter below, which
-            // releases it over τ_lag ≈ 1–3 h instead of instantaneously.
-            // This prevents double-counting: the lag term replaces the
-            // algebraic surface contribution, not adds to it.
-            let num_i = num_tm_ref[i] + num_rest_ref[i]; // num_phi_st removed
-            let den_i = den_ref[i];
-            // Steady-state free-float air temperature (used as the asymptotic
-            // target for the air-node exponential relaxation).
-            let steady = num_i / den_i;
-            // Issue #1585: activate exact exponential air-node ODE when C_air > 0.
-            // Falls back to the legacy algebraic pinning (steady = num/den) when
-            // C_air is zero, preserving historical behaviour for unit tests that
-            // construct ThermalModelCore without calling from_spec.
-            let c_air_i = c_air_ref[i];
-            let t_air_old_i = t_air_old_ref[i];
-            let tau_air = if den_i > 0.0 && term_rest_1_ref[i] > 0.0 {
-                c_air_i * term_rest_1_ref[i] / den_i
-            } else {
-                f64::INFINITY
-            };
-            let t_i_free_i = if c_air_i > 0.0 && tau_air.is_finite() && dt > 0.0 {
-                let exponent = -dt / tau_air;
-                steady + (t_air_old_i - steady) * exponent.exp()
-            } else {
-                steady
-            };
-            t_i_free_data.push(t_i_free_i);
-        }
-
-        // === Issue #1860: Solar-lag correction (multi-timescale wall response) ===
+        // Issue #2339: Sub-hour air-node sub-stepping for LIMIT-05 fix.
         //
-        // The 5R1C model lumps ALL wall mass into one node with τ_mass ≈ 12 h
-        // for low-mass buildings. In reality, near-surface layers (gypsum board,
-        // furniture, internal partitions) absorb solar radiation and re-release
-        // it over 1–3 h — a timescale between the air node (τ_air ≈ 0.17 h,
-        // instantaneous) and the mass node (τ_mass ≈ 12 h, very slow).
+        // At dt/τ_air ≈ 3.6 on a 1-hour timestep, the explicit forward-Euler
+        // air-node update overshoots/undershoots because the dimensionless Fourier
+        // number exceeds the stability limit. Splitting into N sub-steps of dt/N
+        // reduces dt/τ to ~1.2 for N=3, within stability bounds.
         //
-        // The solar-lag term replaces the immediate surface-solar contribution
-        // (num_phi_st, which was removed from the steady computation above) with
-        // a first-order low-pass-filtered version using:
-        //
-        //   τ_lag = √(τ_air × τ_mass)  (geometric mean of the two timescales)
-        //
-        // The filter input is h_tr_is × phi_st / term_rest_1 (the same value
-        // that num_phi_st/den would contribute in steady state), ensuring
-        // energy conservation: the same amount of solar reaches the air, but
-        // spread over τ_lag instead of instantaneously. This smooths peaks
-        // (less immediate solar) and extends tails (sustained release),
-        // increasing annual cooling while reducing peak cooling.
-        //
-        // Only phi_st (surface solar) is filtered — phi_m (mass solar) is
-        // already handled by the CrankNicolson mass-node integration.
-        let phi_st_ref = phi_st.as_ref();
-        let h_tr_is_for_lag_ref = h_tr_is_for_ti_free.as_ref();
-        let solar_lag_old: Vec<f64> = self.0.solar_lag.as_ref().to_vec();
-        let mut corrected_t_i_free = t_i_free_data.clone();
+        // The sub-stepping loop evolves the air-node ODE and solar-lag state
+        // N times per timestep, using the result of sub-step k as the input
+        // to sub-step k+1. The driving terms (num, den, phi_st) remain constant;
+        // only t_air_old and solar_lag_old change between sub-steps.
+        let steps = self.0.sub_hour_air_node_steps as usize;
+        let dt_sub = dt / steps as f64;
 
-        for i in 0..self.0.num_zones {
-            let den_i = den_ref[i];
-            let cm_i = cm_ref[i];
-            let c_air_i = c_air_ref[i];
-            let term_rest_1_i = term_rest_1_ref[i];
+        // Initialize air-node state from previous timestep
+        let mut t_air_state: Vec<f64> = t_air_old_ref.to_vec();
+        let mut solar_lag_state: Vec<f64> = self.0.solar_lag.as_ref().to_vec();
 
-            // Compute time constants
-            let den_true_i = if term_rest_1_i > 0.0 {
-                den_i / term_rest_1_i
-            } else {
-                den_i
-            };
-            let h_tr_3_i = self.0.derived_h_tr_3.as_ref()[i];
-
-            let tau_air_i = if den_true_i > 0.0 && c_air_i > 0.0 {
-                c_air_i / den_true_i
-            } else {
-                600.0 // fallback: 10 min
-            };
-            let tau_mass_i = if h_tr_3_i > 0.0 && cm_i > 0.0 {
-                cm_i / h_tr_3_i
-            } else {
-                44000.0 // fallback: ~12 h
-            };
-
-            // Geometric mean of air and mass timescales — the characteristic
-            // intermediate timescale of the two-node system.
-            let tau_lag = (tau_air_i * tau_mass_i).sqrt();
-            let decay = if tau_lag > 0.0 && dt > 0.0 {
-                (-dt / tau_lag).exp()
-            } else {
-                0.0
-            };
-
-            // Filter input: scaled to match num_phi_st/den steady-state
-            // contribution. h_tr_is × phi_st / term_rest_1 gives the
-            // equivalent steady-state temperature contribution.
-            let lag_input = if term_rest_1_i > 0.0 {
-                h_tr_is_for_lag_ref[i] * phi_st_ref[i] / term_rest_1_i
-            } else {
-                0.0
-            };
-
-            // Update solar-lag state: low-pass filter
-            let new_solar_lag = solar_lag_old[i] * decay + lag_input * (1.0 - decay);
-
-            // Add lagged contribution to t_i_free (replaces num_phi_st)
-            if den_true_i > 0.0 {
-                corrected_t_i_free[i] += new_solar_lag / den_true_i;
+        for _step in 0..steps {
+            // === Air-node ODE (exact exponential solution) ===
+            let mut t_i_free_data = Vec::with_capacity(self.0.num_zones);
+            for i in 0..self.0.num_zones {
+                let num_i = num_tm_ref[i] + num_rest_ref[i];
+                let den_i = den_ref[i];
+                let steady = num_i / den_i;
+                let c_air_i = c_air_ref[i];
+                let t_air_old_i = t_air_state[i];
+                let tau_air = if den_i > 0.0 && term_rest_1_ref[i] > 0.0 {
+                    c_air_i * term_rest_1_ref[i] / den_i
+                } else {
+                    f64::INFINITY
+                };
+                let t_i_free_i = if c_air_i > 0.0 && tau_air.is_finite() && dt_sub > 0.0 {
+                    let exponent = -dt_sub / tau_air;
+                    steady + (t_air_old_i - steady) * exponent.exp()
+                } else {
+                    steady
+                };
+                t_i_free_data.push(t_i_free_i);
             }
 
-            // Store updated solar-lag state
-            self.0.solar_lag.as_mut()[i] = new_solar_lag;
+            // === Issue #1860: Solar-lag correction ===
+            let phi_st_ref = phi_st.as_ref();
+            let h_tr_is_for_lag_ref = h_tr_is_for_ti_free.as_ref();
+            let mut corrected_t_i_free = t_i_free_data;
+
+            for i in 0..self.0.num_zones {
+                let den_i = den_ref[i];
+                let cm_i = cm_ref[i];
+                let c_air_i = c_air_ref[i];
+                let term_rest_1_i = term_rest_1_ref[i];
+
+                let den_true_i = if term_rest_1_i > 0.0 {
+                    den_i / term_rest_1_i
+                } else {
+                    den_i
+                };
+                let h_tr_3_i = self.0.derived_h_tr_3.as_ref()[i];
+
+                let tau_air_i = if den_true_i > 0.0 && c_air_i > 0.0 {
+                    c_air_i / den_true_i
+                } else {
+                    600.0
+                };
+                let tau_mass_i = if h_tr_3_i > 0.0 && cm_i > 0.0 {
+                    cm_i / h_tr_3_i
+                } else {
+                    44000.0
+                };
+
+                let tau_lag = (tau_air_i * tau_mass_i).sqrt();
+                let decay = if tau_lag > 0.0 && dt_sub > 0.0 {
+                    (-dt_sub / tau_lag).exp()
+                } else {
+                    0.0
+                };
+
+                let lag_input = if term_rest_1_i > 0.0 {
+                    h_tr_is_for_lag_ref[i] * phi_st_ref[i] / term_rest_1_i
+                } else {
+                    0.0
+                };
+
+                let new_solar_lag = solar_lag_state[i] * decay + lag_input * (1.0 - decay);
+
+                if den_true_i > 0.0 {
+                    corrected_t_i_free[i] += new_solar_lag / den_true_i;
+                }
+
+                solar_lag_state[i] = new_solar_lag;
+            }
+
+            // Update t_air_state for next sub-step
+            t_air_state = corrected_t_i_free;
         }
 
-        let t_i_free = T::from(VectorField::new(corrected_t_i_free));
+        // After all sub-steps, t_air_state holds the final air-node temperature
+        // and solar_lag_state holds the final solar-lag state
+        let t_i_free = T::from(VectorField::new(t_air_state));
+
+        // Persist final solar-lag state
+        for i in 0..self.0.num_zones {
+            self.0.solar_lag.as_mut()[i] = solar_lag_state[i];
+        }
 
         // Issue #1585: step the air-node ODE state forward for the next
         // timestep.  t_i_free (the new zone-air temperature) becomes
         // t_air_old on the next call to step_physics_5r1c.
-        // t_i_free here is the solar-lag-corrected version (corrected_t_i_free),
-        // which is what the mass-coupling and invariant computations also use.
         let t_i_free_slice: Vec<f64> = t_i_free.as_ref().to_vec();
         self.0
             .air_temperatures

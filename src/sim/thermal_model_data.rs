@@ -123,6 +123,18 @@ pub struct ThermalModelData<T: ContinuousTensor<f64> + Clone> {
     /// Used in `step_physics_5r1c` only; the 9R4C and 6R2C paths
     /// maintain their own air-node temperature handling.
     pub air_temperatures: T,
+    /// Issue #2339: Number of sub-steps for the air-node ODE update per timestep.
+    ///
+    /// At dt/τ_air ≈ 3.6 on a 1-hour timestep, the explicit forward-Euler
+    /// air-node update overshoots/undershoots because the dimensionless Fourier
+    /// number exceeds the stability limit. Sub-stepping splits each 1-hour
+    /// timestep into N sub-steps (dt/N), reducing dt/τ from ~3.6 to ~1.2
+    /// for N=3, which is within stability bounds.
+    ///
+    /// Default: 1 (no sub-stepping, legacy behavior).
+    /// Case 600 series (610, 630, 640): N=3 to resolve discrete-node solar
+    /// injection pathology (LIMIT-05).
+    pub sub_hour_air_node_steps: u32,
     /// Issue #1860: Solar-lag state for multi-timescale wall response.
     ///
     /// The 5R1C model lumps ALL wall mass into one node (τ_mass ≈ 12 h for
@@ -371,6 +383,7 @@ impl<T: ContinuousTensor<f64> + Clone> Clone for ThermalModelData<T> {
             thermal_capacitance: self.thermal_capacitance.clone(),
             air_thermal_capacitance: self.air_thermal_capacitance.clone(),
             air_temperatures: self.air_temperatures.clone(),
+            sub_hour_air_node_steps: self.sub_hour_air_node_steps,
             solar_lag: self.solar_lag.clone(),
             wall_surface_temperatures: self.wall_surface_temperatures.clone(),
             envelope_mass_temperatures: self.envelope_mass_temperatures.clone(),
