@@ -105,6 +105,10 @@ fluxion-city = ["dep:fluxion-city"]
 # Enables dhat allocation tracking for memory profiling of large simulations.
 # Run with: cargo build --features dhat
 dhat = ["dep:dhat"]
+# Stub feature to allow fluxion-grid to depend on this crate with a fluxion feature.
+# fluxion-grid uses dep:fluxion to reference this crate, and this feature exists
+# to satisfy the feature resolution when --features fluxion is used at workspace level.
+fluxion = []
 
 [lints.rust]
 unexpected_cfgs = { level = "allow", check-cfg = ["cfg(docsrs,test)", "cfg(gil_refs)"] }
