@@ -1170,6 +1170,7 @@ dependencies = [
  "directories",
  "env_logger",
  "faer",
+ "fluxion-city",
  "fluxion-core",
  "fluxion-fluid",
  "fluxion-toon",
