@@ -924,7 +924,7 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                     calculate_free_cooling_capacity(
                         outdoor_temp,
                         self.0.temperatures.as_ref()[0],
-                        10000.0, // TODO: ventilation_airflow from building spec (m³/s)
+                        self.0.ventilation_airflow_m3_per_s, // Issue #2345: was hardcoded 10000.0
                     ) * 1000.0 // Convert kW to W
                 } else {
                     0.0
@@ -3300,7 +3300,7 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                         calculate_free_cooling_capacity(
                             outdoor_temp,
                             self.0.temperatures.as_ref()[0],
-                            10000.0, // TODO: ventilation_airflow from building spec (m³/s)
+                            self.0.ventilation_airflow_m3_per_s, // Issue #2345: was hardcoded 10000.0
                         ) * 1000.0
                     } else {
                         0.0
