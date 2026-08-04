@@ -101,6 +101,10 @@ gauge-solver = []
 # Wires UrbanRadiationSolver into PhysicsSurfaceFluxProvider via
 # FluxionCitySurfaceFluxProvider. Requires fluxion-city crate.
 fluxion-city = ["dep:fluxion-city"]
+# Feature flag for dhat heap profiling (Issue #2384).
+# Enables dhat allocation tracking for memory profiling of large simulations.
+# Run with: cargo build --features dhat
+dhat = ["dep:dhat"]
 
 [lints.rust]
 unexpected_cfgs = { level = "allow", check-cfg = ["cfg(docsrs,test)", "cfg(gil_refs)"] }
@@ -248,6 +252,10 @@ rdkafka = { version = "0.36", features = ["dynamic-linking"], optional = true }
 # SQLite for reporting output (issue #1904)
 rusqlite = { version = "0.31", features = ["bundled"] }
 
+# dhat heap profiler for memory profiling of large simulations (Issue #2384).
+# Enable with --features dhat and use #[global_allocator] = dhat::Allocator.
+dhat = { version = "0.3", optional = true }
+
 [build-dependencies]
 pyo3-build-config = { version = "0.22", optional = true }
 napi-build = { version = "2", optional = true }
@@ -257,7 +265,6 @@ criterion = "0.5"
 tempfile = "3.10"
 approx = "0.5"
 rstest = "0.25"
-dhat = "0.3"
 proptest = "1.5"
 noisy_float = "0.2"
 

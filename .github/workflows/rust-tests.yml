@@ -473,3 +473,66 @@ jobs:
           # for future artifact upload once #1285 is resolved.
           echo "CUDA parity test completed — see workflow logs for details"
           echo "Per-timestep CSV upload requires issue #1285 (committed ONNX model)"
+
+  # -- Issue #2384: Memory budget check for large simulations ---------------
+  # Runs the 10-zone reference simulation and monitors peak RSS.
+  # Warns if peak RSS exceeds 10GB to catch memory regressions early.
+
+  memory-budget:
+    name: "Memory Budget (Issue #2384)"
+    runs-on: ${{ vars.FLUXION_LINUX_RUNNER || 'ubuntu-latest' }}
+    if: |
+      github.event_name == 'pull_request' ||
+      (github.event_name == 'push' && github.ref == 'refs/heads/main')
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4
+      - name: Install system dependencies (Linux)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libssl-dev pkg-config libfontconfig1-dev
+      - uses: ./.github/actions/setup-rust-python-env
+        with:
+          python-version: '3.10'
+      - name: Build
+        run: cargo build --release --features multi-zone
+      - name: Run 10-zone test with memory monitoring
+        run: |
+          # Run the 10-zone test in background while monitoring RSS
+          (
+            cargo test --release --features multi-zone --test multi_zone_n_zone_network -- multi_zone_n_zone_network_10_zone_round_trip --nocapture
+          ) &
+          CARGO_PID=$!
+
+          MAX_RSS_KB=0
+          while kill -0 $CARGO_PID 2>/dev/null; do
+            RSS=$(ps -o rss= -p $CARGO_PID 2>/dev/null || echo 0)
+            if [[ "$RSS" -gt "$MAX_RSS_KB" ]]; then
+              MAX_RSS_KB=$RSS
+            fi
+            sleep 0.5
+          done
+          wait $CARGO_PID
+          TEST_EXIT=$?
+
+          MAX_RSS_GB=$(echo "scale=2; $MAX_RSS_KB / 1024 / 1024" | bc)
+          echo ""
+          echo "=== Memory Budget Check ==="
+          echo "Peak RSS: ${MAX_RSS_GB} GB"
+          echo "Test exit code: $TEST_EXIT"
+
+          WARN_GB=10
+          WARN_KB=$((WARN_GB * 1024 * 1024))
+
+          if [[ "$MAX_RSS_KB" -gt "$WARN_KB" ]]; then
+            echo ""
+            echo "WARNING: Peak RSS ${MAX_RSS_GB} GB exceeds 10 GB budget"
+            echo "This may indicate a memory regression in large simulations."
+            if [[ "$TEST_EXIT" -ne 0 ]]; then
+              echo "Note: Test also failed (exit code $TEST_EXIT)"
+              exit 1
+            fi
+            exit 0
+          else
+            echo "Memory budget check passed (${MAX_RSS_GB} GB < ${WARN_GB} GB)"
+            exit $TEST_EXIT
+          fi

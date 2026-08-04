@@ -7,10 +7,10 @@ use log::{info, warn};
 #[cfg(feature = "ort")]
 #[cfg(feature = "cuda")]
 use ort::execution_providers::CUDAExecutionProvider;
-#[cfg(feature = "ort")]
-use ort::execution_providers::{
-    CoreMLExecutionProvider, DirectMLExecutionProvider, OpenVINOExecutionProvider,
-};
+#[cfg(all(feature = "ort", target_os = "macos"))]
+use ort::execution_providers::CoreMLExecutionProvider;
+#[cfg(all(feature = "ort", target_os = "windows"))]
+use ort::execution_providers::DirectMLExecutionProvider;
 #[allow(unused_imports)]
 use parking_lot::Mutex;
 use rand::rngs::StdRng;
@@ -1254,22 +1254,45 @@ impl SessionPool {
                 }
             }
             InferenceBackend::CoreML => {
-                let ep = CoreMLExecutionProvider::default();
-                builder = builder
-                    .with_execution_providers([ep.build()])
-                    .map_err(|e| format!("Failed to add CoreML execution provider: {}", e))?;
+                #[cfg(target_os = "macos")]
+                {
+                    let ep = CoreMLExecutionProvider::default();
+                    builder = builder
+                        .with_execution_providers([ep.build()])
+                        .map_err(|e| format!("Failed to add CoreML execution provider: {}", e))?;
+                }
+                #[cfg(not(target_os = "macos"))]
+                {
+                    return Err("CoreML backend requested but is only available on macOS; \
+                         set FLUXION_ONNX_BACKEND=cpu or FLUXION_ONNX_BACKEND=cuda"
+                        .to_string());
+                }
             }
             InferenceBackend::DirectML => {
-                let ep = DirectMLExecutionProvider::default().with_device_id(device_id as i32);
-                builder = builder
-                    .with_execution_providers([ep.build()])
-                    .map_err(|e| format!("Failed to add DirectML execution provider: {}", e))?;
+                #[cfg(target_os = "windows")]
+                {
+                    let ep = DirectMLExecutionProvider::default().with_device_id(device_id as i32);
+                    builder = builder
+                        .with_execution_providers([ep.build()])
+                        .map_err(|e| format!("Failed to add DirectML execution provider: {}", e))?;
+                }
+                #[cfg(not(target_os = "windows"))]
+                {
+                    return Err(
+                        "DirectML backend requested but is only available on Windows; \
+                         set FLUXION_ONNX_BACKEND=cpu or FLUXION_ONNX_BACKEND=cuda"
+                            .to_string(),
+                    );
+                }
             }
             InferenceBackend::OpenVINO => {
-                let ep = OpenVINOExecutionProvider::default();
-                builder = builder
-                    .with_execution_providers([ep.build()])
-                    .map_err(|e| format!("Failed to add OpenVINO execution provider: {}", e))?;
+                return Err(
+                    "OpenVINO execution provider is not available in the pre-built \
+                     ort v2.0.0-rc.13 binaries for any platform. \
+                     OpenVINO requires building ONNX Runtime from source with Intel OpenVINO toolkit. \
+                     Use FLUXION_ONNX_BACKEND=cpu or FLUXION_ONNX_BACKEND=cuda instead."
+                        .to_string(),
+                );
             }
             InferenceBackend::CPU => {}
         }
