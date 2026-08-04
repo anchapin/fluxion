@@ -60,6 +60,20 @@ Use conventional commits:
 - Add tests for new functionality
 - Update tests when changing behavior
 
+## Build Notes
+
+### Debug builds on disk-space-constrained systems
+
+Debug builds (`cargo build` without `--release`) of large targets such as
+`fluxion-rest` may crash during linking with a SIGSEGV in rust-lld on systems
+with limited disk space or high memory pressure. This is an environmental issue
+— release builds (`cargo build --release`) work correctly and CI uses release
+builds by default.
+
+If you encounter a linker segfault during a debug build, use release builds
+for local development: `cargo build --release` / `cargo test --release`.
+See also: `docs/KNOWN_ISSUES.md` §CI-02 (issue #2297).
+
 ## Code Style
 
 ### Rust formatting
