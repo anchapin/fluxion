@@ -189,6 +189,12 @@ graph TD
         MSFP["MockSurfaceHeatFluxProvider<br/>(fixed values for testing)"]
     end
 
+    subgraph LooseCoupling ["BES-FFD Loose Coupling (Issue #2390)"]
+        LC["FfdSolver Trait<br/>(sim/loose_coupling.rs)"]
+        B2F["BesToFfdBoundaryConditions<br/>(sim/loose_coupling.rs)"]
+        F2B["FfdToBesResults<br/>(sim/loose_coupling.rs)"]
+    end
+
     subgraph Interop ["Ecosystem Interop (src/interop/)"]
         OSM["OSM Reader/Writer<br/>(interop/osm/)"]
         GBX["gbXML Reader/Writer<br/>(interop/gbxml/)"]
@@ -541,6 +547,47 @@ The 9R4C model (`sim/multi_node_thermal.rs`, `physics/multi_node_solver.rs`) sep
 - `CommonWallGeometry` carries each wall's `(zone_a, zone_b, a_length, a_width, b_length, b_width, separation)`; `area_a()` / `area_b()` return the per-side surface areas used in the reciprocity check.
 
 The common-wall limit (separation `< 0.01 m`) is the analytical limit `F_AB = A_overlap / A_A`; for larger separations the same expression is used as a conservative approximation until the full Hottel crossed-string formula lands (future work, tracked outside #1444).
+
+---
+
+### Module N+2: BES-FFD Loose Coupling (`src/sim/loose_coupling.rs`)
+
+**Source**: `src/sim/loose_coupling.rs`
+**Purpose**: Loose (quasi-dynamic) coupling between the Building Energy Simulation (BES) engine and the Fast Fluid Dynamics (FFD) solver for co-simulation.
+
+**Key trait**: `FfdSolver`
+
+```rust
+pub trait FfdSolver: Send + Sync {
+    fn name(&self) -> &str;
+    fn initialize(
+        &mut self,
+        num_zones: usize,
+        zone_volumes: &[f64],
+        surface_areas: &[f64],
+        num_surfaces: usize,
+    ) -> LooseCouplingResult<()>;
+    fn step_micro(
+        &mut self,
+        bc: &BesToFfdBoundaryConditions,
+        dt: f64,
+    ) -> LooseCouplingResult<FfdMicroResults>;
+    fn recommended_micro_timestep(&self) -> f64;
+    fn is_valid(&self) -> bool;
+}
+```
+
+**Coupling strategy**: Loose (quasi-dynamic) coupling — no iterations within macro step. BES time-steps (typically 15-60 min) are the macro scale; FFD runs micro-steps (typically seconds) internally and returns time-averaged results at the macro step boundary.
+
+**Key structs**:
+- `BesToFfdBoundaryConditions` — boundary conditions passed from BES to FFD at the start of a macro timestep (outdoor temperature, surface temperatures, HVAC supply conditions, wind pressure, internal gains)
+- `FfdToBesResults` — results returned from FFD to BES (convective heat transfer coefficients, zone temperatures, surface heat fluxes, infiltration/mixing flow rates)
+- `FfdMicroResults` — instantaneous results from a single FFD micro step
+- `FfdAccumulator` — accumulates micro-step results over a macro timestep for time-averaging
+
+**Error types**: `LooseCouplingError` enum covers FFD solver errors, invalid timestep configuration, boundary condition errors, and averaging errors.
+
+**References**: Zuo et al. (2016) on BES-CFD coupling strategies; Clarke & Hensen (2017) on co-simulation synchronization.
 
 ---
 
