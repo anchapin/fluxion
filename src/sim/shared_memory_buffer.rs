@@ -31,6 +31,7 @@
 //! After FFD signals completion, BES can write to buffer 1, etc.
 //! This double-buffering eliminates the need for locks on the data path.
 
+use std::cell::RefCell;
 use std::fs::{File, OpenOptions};
 use std::io::{Read, Write};
 use std::path::PathBuf;
@@ -85,29 +86,31 @@ impl From<std::io::Error> for SharedMemoryError {
 pub type SharedMemoryResult<T> = Result<T, SharedMemoryError>;
 
 #[cfg(unix)]
-fn pwrite_all_at(file: &File, buf: &[u8], offset: u64) -> std::io::Result<()> {
+fn pwrite_all_at(file: &RefCell<File>, buf: &[u8], offset: u64) -> std::io::Result<()> {
     use std::os::unix::fs::FileExt;
-    FileExt::write_all_at(file, buf, offset)
+    FileExt::write_all_at(&*file.borrow(), buf, offset)
 }
 
 #[cfg(windows)]
-fn pwrite_all_at(file: &File, buf: &[u8], offset: u64) -> std::io::Result<()> {
+fn pwrite_all_at(file: &RefCell<File>, buf: &[u8], offset: u64) -> std::io::Result<()> {
     use std::io::{Seek, SeekFrom};
-    file.seek(SeekFrom::Start(offset))?;
-    file.write_all(buf)
+    let mut f = file.borrow_mut();
+    f.seek(SeekFrom::Start(offset))?;
+    f.write_all(buf)
 }
 
 #[cfg(unix)]
-fn pread_exact_at(file: &File, buf: &mut [u8], offset: u64) -> std::io::Result<()> {
+fn pread_exact_at(file: &RefCell<File>, buf: &mut [u8], offset: u64) -> std::io::Result<()> {
     use std::os::unix::fs::FileExt;
-    FileExt::read_exact_at(file, buf, offset)
+    FileExt::read_exact_at(&*file.borrow(), buf, offset)
 }
 
 #[cfg(windows)]
-fn pread_exact_at(file: &File, buf: &mut [u8], offset: u64) -> std::io::Result<()> {
+fn pread_exact_at(file: &RefCell<File>, buf: &mut [u8], offset: u64) -> std::io::Result<()> {
     use std::io::{Seek, SeekFrom};
-    file.seek(SeekFrom::Start(offset))?;
-    file.read_exact(buf)
+    let mut f = file.borrow_mut();
+    f.seek(SeekFrom::Start(offset))?;
+    f.read_exact(buf)
 }
 
 /// Version magic to validate shared memory region compatibility.
@@ -182,8 +185,8 @@ impl ShmHeader {
 /// +------------------+
 /// ```
 pub struct SharedMemBuffer {
-    /// File handle for the backing store.
-    file: File,
+    /// File handle for the backing store (interior mutability for Windows seek).
+    file: RefCell<File>,
     /// Path to the shared memory file.
     path: PathBuf,
     /// Size of the mapped region.
@@ -270,7 +273,7 @@ impl SharedMemBuffer {
         file.write_all(header_bytes)?;
 
         Ok(Self {
-            file,
+            file: RefCell::new(file),
             path: shm_path,
             size,
             num_zones,
@@ -303,7 +306,7 @@ impl SharedMemBuffer {
         header.validate()?;
 
         Ok(Self {
-            file,
+            file: RefCell::new(file),
             path: shm_path,
             size,
             num_zones: header.num_zones,
@@ -638,8 +641,9 @@ impl SharedMemBuffer {
     /// Sync the shared memory to disk (for durability).
     ///
     /// This uses fdatasync on POSIX or FlushFileBuffers on Windows.
-    pub fn sync(&mut self) -> SharedMemoryResult<()> {
+    pub fn sync(&self) -> SharedMemoryResult<()> {
         self.file
+            .borrow_mut()
             .sync_all()
             .map_err(|e| SharedMemoryError::SyncFailed(format!("sync_all failed: {}", e)))?;
         Ok(())
@@ -650,9 +654,10 @@ impl SharedMemBuffer {
     /// If this instance is the owner, the underlying shared memory
     /// file will be removed.
     pub fn close(self) -> SharedMemoryResult<()> {
-        drop(self.file);
-        if self.is_owner {
-            std::fs::remove_file(&self.path)?;
+        let Self { file, path, is_owner, .. } = self;
+        let _ = file;
+        if is_owner {
+            std::fs::remove_file(&path)?;
         }
         Ok(())
     }
