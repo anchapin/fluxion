@@ -208,7 +208,9 @@ Heavy Linux jobs honour `vars.FLUXION_LINUX_RUNNER` (self-hosted Hetzner fallbac
 
 ## Repository Hygiene
 
-- **Root `.md` policy**: standing docs (`README.md`, `ARCHITECTURE.md`, `CODEBASE_MAP.md`, `CONTRIBUTING.md`, `RULES.md`, `CHANGELOG.md`, `AGENTS.md`) are the only root `.md` files that belong in a commit. Transient artifacts (analyses, session summaries, plans, `CASE_*.md`, `BATCH_*.md`, `*_REPORT.md`) must move to `tmp/` or `docs/` before commit — CI and `copilot-instructions.md` enforce this.
+- **Root `.md` policy**: Only these belong at root: `README.md`, `ARCHITECTURE.md`, `CODEBASE_MAP.md`, `CONTRIBUTING.md`, `RULES.md`, `CHANGELOG.md`, `AGENTS.md`. Everything else is transient — do not commit it at root. Move transient artifacts (`CASE_*.md`, `BATCH_*.md`, `ISSUE_*.md`, `*_REPORT.md`, session summaries, analysis docs) to `tmp/` or `docs/` before committing.
+  - **Currently violated**: ~26 transient `.md` files exist at root (case analyses, batch session summaries, issue docs, scorecards, etc.). Before committing any new work, move or delete any transient files you introduced at root.
+  - `CLAUDE.md` is auto-generated per-session (Bernstein agent); never commit it.
 - All system docs in `docs/` must have a **7-line summary** at the top (lines 2–8). See `docs/doc-inventory.md`. AGENTS.md itself is exempt.
 - Issue triage labels: see `docs/agents/triage-labels.md`. GitHub issue workflow: `gh issue create --title "..." --body "..." --label "..."` (per `docs/agents/issue-tracker.md`).
 
