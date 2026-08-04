@@ -225,6 +225,7 @@ Heavy Linux jobs honour `vars.FLUXION_LINUX_RUNNER` (self-hosted Hetzner fallbac
  - `--no-ff` merges preserve history (CONTRIBUTING.md).
 - Conventional commit messages: `fix(scope): …`, `feat(scope): …`, `refactor(scope): …`, `perf(scope): …`, `test(scope): …`, `docs(scope): …`.
 - **PR body must include `Closes #{{Number}}` or `Fixes #{{Number}}`** — wave orchestration depends on this keyword to auto-close linked issues. PRs without it will fail to close their issues.
+  - **Wave orchestrator (Phase 3c)**: automatically validates that the PR body contains the required `Closes #N` or `Fixes #N` keyword for the linked issue. If the keyword is missing, the orchestrator auto-fixes by editing the PR body to append it before proceeding to CI monitoring. See `.agents/skills/github-wave-orchestrator/SKILL.md`.
 - Never force-push `main` or `develop`. Hotfixes still go through PR review.
 
 ## Key Files
