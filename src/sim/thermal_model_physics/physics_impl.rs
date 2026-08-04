@@ -2846,7 +2846,9 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
             //   proportional to h_tr_ms (per Issue #873 requirement)
             // - phi_m (solar to mass): goes to internal mass node
             // - phi_ia (convective to air): handled via compute_zone_air_temperature
-            let _zone_area_val = self.0.zone_area.as_ref()[zone_idx];
+            let wall_area_val = self.0.wall_area.as_ref()[zone_idx];
+            let roof_area_val = self.0.roof_area.as_ref()[zone_idx];
+            let floor_area_val = self.0.floor_area.as_ref()[zone_idx];
             let phi_st_zone = phi_st.as_ref()[zone_idx];
             // phi_m contains all solar gains (window + opaque) to mass
             let phi_m_zone = phi_m.as_ref()[zone_idx];
@@ -2875,6 +2877,8 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
             let gains_roof = phi_st_zone * roof_frac;
             let gains_floor = phi_st_zone * floor_frac;
             let gains_internal = phi_m_zone;
+            // Floor gets no direct solar (horizontal down orientation)
+            let floor_irr_val = 0.0;
 
             // Issue #864: Capture pre-gain mass temperatures BEFORE step_with_gains()
             // so step_per_surface can use them to avoid double-counting gains.
@@ -2884,15 +2888,14 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
             let mass_temp_floor_pre = solver.mass.floor.temperature;
 
             // Use opaque solar gain (phi_m_zone) distributed by irradiance × area.
-            // Assume equal per-unit areas (1.0 m²) since actual zone geometry
-            // is not stored in the multi-node solver. Using irradiance ensures
-            // sun-facing surfaces get proportionally more gain.
-            let floor_irr_val = 0.0; // Floor gets no direct solar
+            // Issue #2303 fix: Now uses actual surface areas from thermal model geometry
+            // instead of per-unit areas (1.0). This correctly weights gains by the solar-
+            // absorbing area of each surface.
             let solar_gains = distribute_opaque_solar_gains(
                 phi_m_zone,
-                1.0, // wall_area (per-unit)
-                1.0, // roof_area (per-unit)
-                1.0, // floor_area (per-unit)
+                wall_area_val,
+                roof_area_val,
+                floor_area_val,
                 wall_irr_val,
                 roof_irr_val,
                 floor_irr_val,

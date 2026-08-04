@@ -525,6 +525,7 @@ impl ThermalModel<VectorField> {
         let geometry = &spec.geometry[0];
         let floor_area = geometry.floor_area();
         let wall_area = geometry.wall_area();
+        let roof_area = geometry.roof_area();
         let total_window_area = spec.total_window_area();
 
         model.num_zones = num_zones;
@@ -532,6 +533,10 @@ impl ThermalModel<VectorField> {
         model.ceiling_height = VectorField::from_scalar(geometry.height, num_zones);
         model.window_ratio = VectorField::from_scalar(total_window_area / wall_area, num_zones);
         model.window_u_value = spec.window_properties.u_value;
+        // Issue #2303: Set surface areas from spec geometry for correct gain distribution
+        model.wall_area = VectorField::from_scalar(wall_area, num_zones);
+        model.roof_area = VectorField::from_scalar(roof_area, num_zones);
+        model.floor_area = VectorField::from_scalar(floor_area, num_zones);
 
         // Case 195: Zero windows for steady-state solid conduction (only envelope conduction)
         if spec.case_id == "195" {
@@ -2521,6 +2526,11 @@ impl ThermalModel<VectorField> {
         // Divide by 4 for per-wall properties in surfaces list
         let win_area_per_side = window_area / 4.0;
 
+        // Issue #2303: Calculate surface areas for gain distribution
+        let wall_area_calc = perimeter * ceiling_height;
+        let floor_area_calc = zone_area;
+        let roof_area_calc = floor_area_calc; // Flat roof assumption
+
         // Initialize default surfaces: 4 walls (S, W, N, E)
         let mut surfaces = Vec::with_capacity(num_zones);
         let orientations = [
@@ -2559,6 +2569,9 @@ impl ThermalModel<VectorField> {
 
             // Physical Constants Defaults
             zone_area: VectorField::from_scalar(zone_area, num_zones),
+            wall_area: VectorField::from_scalar(wall_area_calc, num_zones),
+            roof_area: VectorField::from_scalar(roof_area_calc, num_zones),
+            floor_area: VectorField::from_scalar(floor_area_calc, num_zones),
             ceiling_height: VectorField::from_scalar(ceiling_height, num_zones),
             air_density: VectorField::from_scalar(1.2, num_zones),
             heat_capacity: VectorField::from_scalar(1005.0, num_zones),
