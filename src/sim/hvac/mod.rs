@@ -133,6 +133,9 @@ impl VAVTerminal {
     }
 }
 
+/// Outdoor temperature bin with hours (°C, hours)
+pub type TempBin = (f64, f64);
+
 /// Represents a CAV (Constant Air Volume) system
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CAVSystem {
@@ -150,11 +153,33 @@ pub struct CAVSystem {
     pub cooling_capacity: f64,
     /// Current part-load ratio (0.0 to 1.0)
     pub current_plr: f64,
+    /// Terminal unit for psychrometric calculations
+    pub terminal: CavTerminalUnit,
 }
 
 impl CAVSystem {
-    /// Create a new CAV system
+    /// Create a new CAV system with a terminal unit.
+    ///
+    /// The terminal is created with cooling and optional heating coils sized
+    /// to the system's heating/cooling capacities.
     pub fn new(id: String, design_airflow: f64) -> Self {
+        let cooling = CoolingCoil::new(
+            format!("{id}-CC"),
+            10000.0, // rated capacity W
+            0.75,    // rated SHR
+            0.15,    // bypass factor
+            10.0,    // ADP (°C)
+            2.0,     // design mass flow kg/s
+        );
+
+        let heating = HeatingCoilComponent::new(
+            format!("{id}-HC"),
+            10000.0, // rated capacity W
+            2.0,     // design mass flow kg/s
+        );
+
+        let terminal = CavTerminalUnit::new(id.clone(), 0, design_airflow, cooling, Some(heating));
+
         Self {
             id,
             design_airflow,
@@ -163,12 +188,147 @@ impl CAVSystem {
             heating_capacity: 10000.0, // Default 10kW
             cooling_capacity: 10000.0, // Default 10kW
             current_plr: 0.0,
+            terminal,
+        }
+    }
+
+    /// Create a CAV system with custom coil capacities.
+    pub fn with_coils(
+        id: String,
+        design_airflow: f64,
+        cooling_capacity: f64,
+        heating_capacity: f64,
+    ) -> Self {
+        let cooling = CoolingCoil::new(
+            format!("{id}-CC"),
+            cooling_capacity,
+            0.75, // rated SHR
+            0.15, // bypass factor
+            10.0, // ADP (°C)
+            2.0,  // design mass flow kg/s
+        );
+
+        let heating = HeatingCoilComponent::new(
+            format!("{id}-HC"),
+            heating_capacity,
+            2.0, // design mass flow kg/s
+        );
+
+        let terminal = CavTerminalUnit::new(id.clone(), 0, design_airflow, cooling, Some(heating));
+
+        Self {
+            id,
+            design_airflow,
+            fan_power: design_airflow * 500.0,
+            fan_efficiency: 0.7,
+            heating_capacity,
+            cooling_capacity,
+            current_plr: 0.0,
+            terminal,
         }
     }
 
     /// Calculate fan power consumption
     pub fn fan_power_consumption(&self) -> f64 {
         self.fan_power / self.fan_efficiency
+    }
+
+    /// Simulate annual energy consumption using the psychrometric model.
+    ///
+    /// Uses proper mode transitions (Cooling/Heating/Deadband) based on
+    /// zone setpoints and outdoor temperatures.
+    ///
+    /// # Arguments
+    /// * `outdoor_temps_h` - Outdoor temperature bins with hours: `[(temp_c, hours), ...]`
+    /// * `cooling_setpoint` - Zone cooling setpoint (°C)
+    /// * `heating_setpoint` - Zone heating setpoint (°C)
+    /// * `_deadband` - Deadband width (°C) [reserved for future use]
+    ///
+    /// # Returns
+    /// * `(annual_energy_kwh, peak_demand_w)`
+    #[allow(dead_code)]
+    pub fn simulate_annual(
+        &self,
+        outdoor_temps_h: &[(f64, f64)],
+        cooling_setpoint: f64,
+        heating_setpoint: f64,
+        _deadband: f64,
+    ) -> (f64, f64) {
+        let start = std::time::Instant::now();
+        let standard_pressure_pa = 101325.0_f64;
+
+        let mut total_energy_kwh: f64 = 0.0;
+        let mut peak_demand_w: f64 = 0.0;
+
+        for &(outdoor_temp, hours) in outdoor_temps_h {
+            if hours == 0.0 {
+                continue;
+            }
+
+            // Determine operating mode based on outdoor temperature and setpoints
+            // For CAV serving a conditioned zone:
+            // - If outdoor temp > cooling setpoint → Cooling mode
+            // - If outdoor temp < heating setpoint → Heating mode
+            // - Otherwise → Deadband (ventilation only)
+            let control = if outdoor_temp > cooling_setpoint {
+                // Cooling mode: zone needs cooling, terminal cools
+                CavTerminalControl::cooling()
+            } else if outdoor_temp < heating_setpoint {
+                // Heating mode: zone needs heating, terminal heats to maintain
+                // supply air at heating setpoint
+                let supply_setpoint = heating_setpoint + 5.0; // Slightly above zone heating setpoint
+                CavTerminalControl::heating(supply_setpoint)
+            } else {
+                // Deadband: no cooling/heating needed, ventilation only
+                CavTerminalControl::deadband()
+            };
+
+            // Derive entering air conditions from outdoor temperature.
+            // For a CAV terminal serving a zone, the entering air at the coil
+            // is a mix of outdoor air and return air. At higher outdoor temps,
+            // the entering dry-bulb is warmer.
+            let entering_dry_bulb_c = 20.0 + (outdoor_temp - 5.0).clamp(0.0, 10.0);
+            let entering_rh_percent = 50.0;
+
+            let entering = match MoistAirState::try_new(
+                entering_dry_bulb_c,
+                entering_rh_percent,
+                standard_pressure_pa,
+            ) {
+                Ok(state) => state,
+                Err(_) => continue,
+            };
+
+            let air_density = entering.density_kg_per_m3;
+
+            let perf =
+                match self
+                    .terminal
+                    .compute_terminal_performance(&entering, air_density, &control)
+                {
+                    Ok(p) => p,
+                    Err(_) => continue,
+                };
+
+            // Total power = fan motor power + any coil power overhead
+            // For cooling mode: fan motor power
+            // For heating mode: fan motor power + heating coil uses heating plant energy (not counted here)
+            // For deadband: minimum fan power
+            let power = perf.fan_motor_power_w;
+
+            total_energy_kwh += power * hours / 1000.0;
+            peak_demand_w = peak_demand_w.max(power);
+        }
+
+        let elapsed = start.elapsed();
+        if elapsed.as_secs() > 0 {
+            eprintln!(
+                "  CAVSystem::simulate_annual: {:.2}s",
+                elapsed.as_secs_f64()
+            );
+        }
+
+        (total_energy_kwh, peak_demand_w)
     }
 }
 

@@ -3,8 +3,8 @@
 //! Executes HVAC BESTEST cases and validates results against reference data.
 
 use crate::sim::hvac::{
-    Boiler, CAVSystem, CavTerminal, CavTerminalControl, CavTerminalUnit, Chiller, CoolingCoil,
-    HVACMode, HeatPump, MoistAirState, VAVTerminal, VariableCapacityEquipment,
+    Boiler, CAVSystem, CavTerminal, CavTerminalControl, Chiller, HVACMode, HeatPump, MoistAirState,
+    VAVTerminal, VariableCapacityEquipment,
 };
 use crate::validation::hvac_bestest::cases::{
     get_bestest_cases, get_reference_data, EquipmentType, HVACBestestCase,
@@ -277,29 +277,17 @@ impl HVACBestestRunner {
     }
 
     fn run_cav_test(&self, case_def: &HVACBestestCaseDefinition, result: &mut HVACBestestResult) {
-        // Create a CAV terminal unit using CavTerminalUnit (Issue #1903)
+        // Create a CAV system with terminal (Issue #2346)
         // Coil is sized to the case rated capacity; fan is auto-sized
         let rated_capacity_w = case_def.rated_capacity;
         let rated_cop = case_def.rated_efficiency;
 
-        // Create cooling coil sized to rated capacity
-        let cooling = CoolingCoil::new(
-            "CAV-CC".to_string(),
-            rated_capacity_w,
-            0.75, // rated SHR
-            0.15, // bypass factor
-            10.0, // ADP (°C)
-            2.0,  // design mass flow kg/s
-        );
-
-        // Fan is auto-sized for ~1.0 m³/s at 500 Pa with 70% efficiency
-        // Total shaft power = fan_power / efficiency, which determines COP
-        let terminal = CavTerminalUnit::new(
-            "CAV-TU".to_string(),
-            0,
-            1.0, // max airflow m³/s
-            cooling,
-            None, // no heating coil for simplicity
+        // Create CAV system with coils sized to rated capacity
+        let cav = CAVSystem::with_coils(
+            "CAV-1".to_string(),
+            1.0,              // design airflow m³/s
+            rated_capacity_w, // cooling capacity
+            rated_capacity_w, // heating capacity (ASHRAE RP-865 assumes heating coil)
         );
 
         // PLR efficiency curves for CAV: rated COP since flow is constant
@@ -307,8 +295,28 @@ impl HVACBestestRunner {
         result.plr_75_cop = rated_cop;
         result.plr_100_cop = rated_cop;
 
+        // Outdoor temperature bins for annual simulation (HVAC BESTEST climate)
+        let outdoor_temps_h: Vec<(f64, f64)> = vec![
+            (5.0, 400.0),   // 5°C - 400 hours
+            (10.0, 800.0),  // 10°C - 800 hours
+            (15.0, 1200.0), // 15°C - 1200 hours
+            (20.0, 1500.0), // 20°C - 1500 hours
+            (25.0, 1000.0), // 25°C - 1000 hours
+            (30.0, 200.0),  // 30°C - 200 hours
+        ];
+
+        // Zone setpoints for CAV system (ASHRAE RP-865)
+        let cooling_setpoint = 24.0; // °C
+        let heating_setpoint = 20.0; // °C
+        let deadband = 2.0; // °C
+
         // Simulate annual energy consumption using psychrometric model
-        let (annual_energy, peak_demand) = self.simulate_annual_cav_terminal(&terminal, case_def);
+        let (annual_energy, peak_demand) = cav.simulate_annual(
+            &outdoor_temps_h,
+            cooling_setpoint,
+            heating_setpoint,
+            deadband,
+        );
         result.annual_energy_kwh = annual_energy;
         result.peak_demand_w = peak_demand;
 
@@ -582,6 +590,12 @@ impl HVACBestestRunner {
     }
 
     /// Simulate annual CAV energy consumption using CavTerminalUnit psychrometric model.
+    ///
+    /// # Deprecated
+    ///
+    /// This function is deprecated. Use `CAVSystem::simulate_annual` instead.
+    /// It is kept for backward compatibility and testing purposes.
+    #[allow(dead_code)]
     fn simulate_annual_cav_terminal(
         &self,
         terminal: &impl CavTerminal,
@@ -589,14 +603,22 @@ impl HVACBestestRunner {
     ) -> (f64, f64) {
         let start = Instant::now();
 
-        let bins: [(f64, f64); 6] = [
-            (5.0, 400.0),
-            (10.0, 800.0),
-            (15.0, 1200.0),
-            (20.0, 1500.0),
-            (25.0, 1000.0),
-            (30.0, 200.0),
+        // Extended bin analysis with proper mode transitions (Issue #2346)
+        let bins: [(f64, f64); 8] = [
+            (5.0, 500.0),   // 5°C - 500 hours (heating)
+            (10.0, 800.0),  // 10°C - 800 hours (heating)
+            (15.0, 1000.0), // 15°C - 1000 hours (deadband/heating)
+            (20.0, 1200.0), // 20°C - 1200 hours (deadband)
+            (25.0, 1500.0), // 25°C - 1500 hours (cooling)
+            (30.0, 1800.0), // 30°C - 1800 hours (cooling)
+            (35.0, 1200.0), // 35°C - 1200 hours (cooling)
+            (40.0, 500.0),  // 40°C - 500 hours (cooling)
         ];
+
+        // Zone setpoints (ASHRAE RP-865)
+        let cooling_setpoint = 24.0; // °C
+        let heating_setpoint = 20.0; // °C
+        let _deadband = 2.0; // °C [reserved for future use]
 
         let standard_pressure_pa = 101325.0_f64;
 
@@ -607,6 +629,19 @@ impl HVACBestestRunner {
             if *hours == 0.0 {
                 continue;
             }
+
+            // Determine operating mode based on outdoor temperature and setpoints
+            let control = if *outdoor_temp > cooling_setpoint {
+                // Cooling mode
+                CavTerminalControl::cooling()
+            } else if *outdoor_temp < heating_setpoint {
+                // Heating mode
+                let supply_setpoint = heating_setpoint + 5.0;
+                CavTerminalControl::heating(supply_setpoint)
+            } else {
+                // Deadband
+                CavTerminalControl::deadband()
+            };
 
             // Derive entering air conditions from outdoor temperature.
             // For a CAV terminal serving a zone, the entering air at the coil
@@ -625,7 +660,6 @@ impl HVACBestestRunner {
             };
 
             let air_density = entering.density_kg_per_m3;
-            let control = CavTerminalControl::cooling();
 
             let perf = match terminal.compute_terminal_performance(&entering, air_density, &control)
             {
@@ -636,10 +670,6 @@ impl HVACBestestRunner {
             // Total power = fan motor power + any coil power overhead
             // For cooling mode: power = fan_motor_power (coil extracts heat, doesn't consume power)
             let power = perf.fan_motor_power_w;
-            let capacity = perf.cooling_total_capacity_w;
-
-            // Compute effective COP for reference
-            let _effective_cop = if power > 0.0 { capacity / power } else { 0.0 };
 
             total_energy_kwh += power * hours / 1000.0;
             peak_demand_w = peak_demand_w.max(power);
