@@ -38,9 +38,8 @@ use std::sync::{Arc, Mutex};
 use thiserror::Error;
 
 #[cfg(unix)]
+#[allow(unused_imports)]
 use std::os::unix::fs::FileExt;
-#[cfg(windows)]
-use std::os::windows::fs::FileExt;
 
 /// Errors that can occur during shared memory operations.
 #[derive(Debug, Clone, Error)]
@@ -84,6 +83,32 @@ impl From<std::io::Error> for SharedMemoryError {
 
 /// Result type for shared memory operations.
 pub type SharedMemoryResult<T> = Result<T, SharedMemoryError>;
+
+#[cfg(unix)]
+fn pwrite_all_at(file: &File, buf: &[u8], offset: u64) -> std::io::Result<()> {
+    use std::os::unix::fs::FileExt;
+    FileExt::write_all_at(file, buf, offset)
+}
+
+#[cfg(windows)]
+fn pwrite_all_at(file: &File, buf: &[u8], offset: u64) -> std::io::Result<()> {
+    use std::io::{Seek, SeekFrom};
+    file.seek(SeekFrom::Start(offset))?;
+    file.write_all(buf)
+}
+
+#[cfg(unix)]
+fn pread_exact_at(file: &File, buf: &mut [u8], offset: u64) -> std::io::Result<()> {
+    use std::os::unix::fs::FileExt;
+    FileExt::read_exact_at(file, buf, offset)
+}
+
+#[cfg(windows)]
+fn pread_exact_at(file: &File, buf: &mut [u8], offset: u64) -> std::io::Result<()> {
+    use std::io::{Seek, SeekFrom};
+    file.seek(SeekFrom::Start(offset))?;
+    file.read_exact(buf)
+}
 
 /// Version magic to validate shared memory region compatibility.
 const SHM_VERSION_MAGIC: u64 = 0x464C55494F4E5F53; // "FLUXION_S" in ASCII
@@ -306,7 +331,7 @@ impl SharedMemBuffer {
     /// Read the header from the file.
     fn read_header(&self) -> SharedMemoryResult<ShmHeader> {
         let mut header_bytes = vec![0u8; std::mem::size_of::<ShmHeader>()];
-        self.file.read_exact_at(&mut header_bytes, 0)?;
+        pread_exact_at(&self.file, &mut header_bytes, 0)?;
         Ok(unsafe { std::ptr::read_unaligned(header_bytes.as_ptr() as *const ShmHeader) })
     }
 
@@ -318,7 +343,7 @@ impl SharedMemBuffer {
                 std::mem::size_of::<ShmHeader>(),
             )
         };
-        self.file.write_all_at(header_bytes, 0)?;
+        pwrite_all_at(&self.file, header_bytes, 0)?;
         Ok(())
     }
 
@@ -390,7 +415,7 @@ impl SharedMemBuffer {
         // Write to file
         let bytes =
             unsafe { std::slice::from_raw_parts(buffer.as_ptr() as *const u8, buffer.len() * 8) };
-        self.file.write_all_at(bytes, offset as u64)?;
+        pwrite_all_at(&self.file, bytes, offset as u64)?;
 
         Ok(())
     }
@@ -404,7 +429,7 @@ impl SharedMemBuffer {
 
         // Read raw bytes first
         let mut bytes = vec![0u8; self.data_region_size()];
-        self.file.read_exact_at(&mut bytes, offset as u64)?;
+        pread_exact_at(&self.file, &mut bytes, offset as u64)?;
 
         // Reinterpret as f64 array
         let floats_count = bytes.len() / 8;
@@ -502,7 +527,7 @@ impl SharedMemBuffer {
         // Write to file
         let bytes =
             unsafe { std::slice::from_raw_parts(buffer.as_ptr() as *const u8, buffer.len() * 8) };
-        self.file.write_all_at(bytes, offset as u64)?;
+        pwrite_all_at(&self.file, bytes, offset as u64)?;
 
         Ok(())
     }
@@ -514,7 +539,7 @@ impl SharedMemBuffer {
 
         // Read raw bytes first
         let mut bytes = vec![0u8; self.data_region_size()];
-        self.file.read_exact_at(&mut bytes, offset as u64)?;
+        pread_exact_at(&self.file, &mut bytes, offset as u64)?;
 
         // Reinterpret as f64 array
         let floats_count = bytes.len() / 8;
