@@ -899,7 +899,8 @@ they are physically correct and flip one marginal test.
 | Model Limits (LIMIT) | 5 | 0 | 0 | 0 | 5 |
 | Reporting (REPORT) | 4 | 0 | 4 | 0 | 0 |
 | CI/Infrastructure (CI) | 1 | 0 | 1 | 0 | 0 |
-| **Total** | **25** | **10** | **7** | **1** | **5** |
+| fluxion-fluid (FLUID) | 2 | 0 | 2 | 0 | 0 |
+| **Total** | **27** | **10** | **9** | **1** | **5** |
 
 ### Open Issues by Severity
 
@@ -991,6 +992,26 @@ Once these are addressed, expect pass rate to increase significantly. Remaining 
   `fix(physics): resolve ASHRAE 140 Case 600 series failures (#1457 / #1460)`
   — see the LIMIT-05 UPDATE block above.
 
+## fluxion-fluid Autodiff Issues (FLUID)
+
+### FLUID-01: Analytical Jacobian Saturation/Clamping Errors
+
+- **Description:** Analytical Jacobians for Chiller, Boiler, CoolingCoil, Pump, and VavBox do not properly handle non-smooth behavior at clamping/saturation points. When model inputs are clamped to bounds (e.g., COP clamped to minimum 0.1 in `Chiller::evaluate`, efficiency clamped in `Boiler::evaluate`), the analytical derivative formulas continue to compute values for the unsaturated case. This causes the analytical Jacobian to differ significantly from the finite-difference Jacobian, which correctly captures the saturated behavior (zero derivative at clamp points).
+- **Affected Tests:** `fluxion-fluid` — `test_chiller_jacobian_accuracy`, `test_boiler_jacobian_accuracy`, `test_cooling_coil_jacobian_accuracy`, `test_pump_jacobian_accuracy`, `test_vav_box_jacobian_accuracy`
+- **Affected Metrics:** N/A (unit tests only)
+- **Severity:** Medium
+- **GitHub Issue:** #2330
+- **Status:** 🔄 **Known Limitation** — Analytical Jacobians compute derivatives assuming smooth functions, but `max()`/`clamp()` in `evaluate` create non-smooth points. Fixing would require subgradient or automatic differentiation support.
+
+### FLUID-02: VAV Box Gradient Descent Test Input Size Mismatch
+
+- **Description:** The `test_vav_box_gradient_descent_convergence` test passes `damper = vec![0.5]` (1 element) to `optimize_with_gradient_descent`, but `VavBox::evaluate` expects 3 inputs `[damper, static_pressure, t_inlet]`. The optimizer calls `jacobian_input` which accesses `input[STATIC_PRESSURE_IDX]` (index 1), causing an "index out of bounds" panic. This is a test design bug: the test intended to optimize only the damper but the API requires all inputs.
+- **Affected Tests:** `fluxion-fluid` — `test_vav_box_gradient_descent_convergence`
+- **Affected Metrics:** N/A (unit test only)
+- **Severity:** Low
+- **GitHub Issue:** #2330
+- **Status:** 🔄 **Known Limitation** — Test would require redesign to either pass all 3 inputs or support partial-input optimization.
+
 ## Related GitHub Issues
 
 | Issue | Title | Status | In this doc |
@@ -1031,6 +1052,7 @@ Once these are addressed, expect pass rate to increase significantly. Remaining 
 | #2229 | Case 900 `h_ms_coeff` 9.1 → 13.4 W/(m²·K) for HighMass | ✅ Closed — negligible effect (+0.8 %); gap is structural | §SOLAR-02 UPDATE (#2239) |
 | #2239 | Case 900 residual deviation: H=2.36, C=1.33 MWh | ✅ **Closed — known 5R1C structural limitation**; routed to GaugeSolver #1465 | §SOLAR-02 UPDATE (#2239) |
 | #2297 | Debug build linking crashes with rust-lld segfault | 🔄 **Open** — known environmental issue on disk-space-constrained systems; workaround: use `--release` | §CI-02 |
+| #2330 | Pre-existing Jacobian accuracy test failures in fluxion-fluid | 🔄 **Open** — documented as known limitations FLUID-01, FLUID-02 | §FLUID-01, §FLUID-02 |
 
 ## See also
 
