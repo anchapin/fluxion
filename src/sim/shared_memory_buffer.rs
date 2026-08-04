@@ -654,7 +654,12 @@ impl SharedMemBuffer {
     /// If this instance is the owner, the underlying shared memory
     /// file will be removed.
     pub fn close(self) -> SharedMemoryResult<()> {
-        let Self { file, path, is_owner, .. } = self;
+        let Self {
+            file,
+            path,
+            is_owner,
+            ..
+        } = self;
         let _ = file;
         if is_owner {
             std::fs::remove_file(&path)?;
