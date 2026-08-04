@@ -138,11 +138,12 @@ impl SurfaceHeatFluxProvider for MockSurfaceHeatFluxProvider {
     }
 }
 
-/// Physics-based flux provider combining conduction solver + solar gain.
+/// Physics-based flux provider combining conduction solver + solar gain + urban longwave.
 ///
 /// This provider wraps a `HeatConductionSolver` per surface and combines:
 /// - Conduction flux from the solver (W/m²)
 /// - Solar gain per surface (W/m²)
+/// - Exterior longwave flux from urban context (W/m²) — issue #2344
 ///
 /// # Example
 ///
@@ -180,6 +181,10 @@ pub struct PhysicsSurfaceFluxProvider {
     /// `surface_heat_flux` returns this when set; otherwise it falls back
     /// to the deterministic `steady_state_flux` query (the original contract).
     stepped_fluxes: Vec<Option<f64>>,
+    /// Issue #2344: Exterior longwave flux per surface from urban radiative
+    /// exchange (W/m²). Positive = net gain from surroundings into surface.
+    /// Set via `set_exterior_longwave_flux` by `FluxionCitySurfaceFluxProvider`.
+    exterior_longwave_flux_wm2: Vec<f64>,
 }
 
 impl PhysicsSurfaceFluxProvider {
@@ -192,6 +197,7 @@ impl PhysicsSurfaceFluxProvider {
             h_int: Vec::new(),
             h_ext: Vec::new(),
             stepped_fluxes: Vec::new(),
+            exterior_longwave_flux_wm2: Vec::new(),
         }
     }
 
@@ -213,6 +219,7 @@ impl PhysicsSurfaceFluxProvider {
         self.h_int.push(8.0); // Default interior h
         self.h_ext.push(25.0); // Default exterior h
         self.stepped_fluxes.push(None);
+        self.exterior_longwave_flux_wm2.push(0.0); // Default: no urban longwave
         self
     }
 
@@ -231,6 +238,7 @@ impl PhysicsSurfaceFluxProvider {
         self.h_int.push(h_int);
         self.h_ext.push(h_ext);
         self.stepped_fluxes.push(None);
+        self.exterior_longwave_flux_wm2.push(0.0); // Default: no urban longwave
         self
     }
 
@@ -238,6 +246,23 @@ impl PhysicsSurfaceFluxProvider {
     pub fn set_solar_gain(&mut self, surface_idx: usize, solar_gain_wm2: f64) {
         if surface_idx < self.solar_gain_wm2.len() {
             self.solar_gain_wm2[surface_idx] = solar_gain_wm2;
+        }
+    }
+
+    /// Issue #2344: Set exterior longwave flux for a surface from urban radiative
+    /// exchange (W/m²).
+    ///
+    /// Positive value = net gain from surroundings into surface (warmer surface
+    /// loses heat to cooler surroundings; negative value = net gain for this
+    /// surface). Called by `FluxionCitySurfaceFluxProvider::step_all` after
+    /// computing per-surface net flux from `UrbanRadiationSolver`.
+    ///
+    /// # Arguments
+    /// * `surface_idx` - Zero-based surface index (out-of-bounds is a no-op)
+    /// * `flux_wm2` - Net longwave radiative flux [W/m²]
+    pub fn set_exterior_longwave_flux(&mut self, surface_idx: usize, flux_wm2: f64) {
+        if surface_idx < self.exterior_longwave_flux_wm2.len() {
+            self.exterior_longwave_flux_wm2[surface_idx] = flux_wm2;
         }
     }
 
@@ -268,6 +293,17 @@ impl PhysicsSurfaceFluxProvider {
     /// Get surface area.
     pub fn get_area(&self, surface_idx: usize) -> f64 {
         self.areas.get(surface_idx).copied().unwrap_or(0.0)
+    }
+
+    /// Issue #2344: Get the currently set exterior longwave flux for a surface (W/m²).
+    ///
+    /// This is the value most recently set via `set_exterior_longwave_flux`.
+    /// Returns 0.0 for out-of-bounds indices.
+    pub fn get_exterior_longwave_flux(&self, surface_idx: usize) -> f64 {
+        self.exterior_longwave_flux_wm2
+            .get(surface_idx)
+            .copied()
+            .unwrap_or(0.0)
     }
 
     /// Issue #1409 — Advance every per-surface solver by `dt` (state-advancing
@@ -393,9 +429,14 @@ impl SurfaceHeatFluxProvider for PhysicsSurfaceFluxProvider {
                     .unwrap_or(0.0)
             };
 
-        // Total flux = conduction + solar
+        let urban_longwave = *self
+            .exterior_longwave_flux_wm2
+            .get(surface_idx)
+            .unwrap_or(&0.0);
+
+        // Total flux = conduction + solar + urban longwave (issue #2344)
         // Positive = heat into zone
-        conduction_flux + solar
+        conduction_flux + solar + urban_longwave
     }
 
     fn num_surfaces(&self) -> usize {
