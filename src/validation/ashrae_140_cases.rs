@@ -1748,17 +1748,14 @@ impl CaseBuilder {
             .expect("Case 600 should validate")
     }
 
-    /// Case 610 - Low mass with south shading + west window.
+    /// Case 610 - Low mass with south shading only (1m overhang).
     pub fn case_610_south_shading() -> CaseSpec {
         Self::new()
             .with_case_id("610".to_string())
-            .with_description(
-                "Low mass with south shading (1m overhang) + west 3m² window".to_string(),
-            )
+            .with_description("Low mass with south shading (1m overhang)".to_string())
             .with_dimensions(8.0, 6.0, 2.7)
             .low_mass_construction()
             .with_south_window(12.0)
-            .with_window(3.0, Orientation::West)
             .with_window_properties(WindowSpec::double_clear_glass())
             .with_shading(ShadingDevice::overhang(1.0, 2.7))
             .with_internal_loads(InternalLoads::new(200.0, 0.6, 0.4))
