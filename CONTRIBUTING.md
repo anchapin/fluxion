@@ -81,6 +81,37 @@ If your PR's CI fails on a check that is not in scope for your change (e.g., `AS
 2. **If pre-existing**: file a separate follow-up issue (label `bug`, link your PR in the body). Do NOT bloat your PR diff with the unrelated fix.
 3. **If introduced by your PR**: fix it in scope or STOP and report.
 
+## Disk Space Requirements
+
+Minimum disk space requirements for local development:
+
+| Requirement | Space | Notes |
+|------------|-------|-------|
+| Minimum | 10 GB | Sufficient for basic build/test cycle |
+| Recommended | 50 GB | Needed for release builds, mutation testing, validation runs |
+
+**Critical operations requiring significant space:**
+- `cargo build --release` — full release build
+- `cargo test --features ort` — with ONNX runtime
+- Mutation testing — requires 32 GB RAM + significant disk for results
+- Large validation runs with ASHRAE 140 cases
+
+**Free up disk space:**
+```bash
+# Remove build artifacts
+cargo clean
+
+# Remove large generated files
+rm -rf mutation_testing_results/
+rm -rf validation_artifacts.zip crossval_logs.zip
+rm -rf test_results/
+
+# Check space before operations
+./scripts/disk-space-check.sh
+```
+
+Disk space exhaustion during wave orchestration can cause credential lock failures, PR creation failures, and git ref lock failures.
+
 ## Questions?
 
 Open an issue or ask in the PR review.
