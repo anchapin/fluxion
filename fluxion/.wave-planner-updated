@@ -1,0 +1,20 @@
+# Wave Planner Update for Issue #2327
+
+## Changes to wave-planner.js
+
+The wave planner script at `~/.agents/skills/github-wave-orchestrator/scripts/wave-planner.js` was updated with the following changes:
+
+1. **Added Rust mode support**: Added `--rust-mode` / `-r` flag to skip Go-specific high-collision placeholder files
+2. **Auto-detection**: The script auto-detects Rust mode by checking if Go placeholder files (cmd/nexus/main.go, cmd/nexus/main_test.go) appear in issue text
+3. **Updated documentation**: Added usage notes explaining Rust mode behavior
+
+## Key changes:
+- Added `RUST_MODE` flag variable
+- Modified `extractFileRefs()` to skip `HIGH_COLLISION_FILES` when in Rust mode
+- Added `detectRustMode()` function for auto-detection
+- Updated `--help` output with `--rust-mode` flag documentation
+- Output now includes `rust_mode` in `_meta` for transparency
+
+## Test results:
+- Rust mode auto-detected when no Go placeholder files in issues
+- Go mode preserved when issues contain cmd/nexus/main.go references
