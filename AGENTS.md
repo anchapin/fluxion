@@ -107,6 +107,25 @@ pre-commit run --all-files                 # manual run (covers ruff, black, iso
 #     --container-architecture linux/arm64 -P ubuntu-latest=catthehacker/ubuntu:act-latest
 ```
 
+## Pre-flight Checks
+
+Before running orchestration or large operations, verify disk space:
+
+```bash
+# Check available disk space (10 GB minimum, 50 GB recommended)
+./scripts/disk-space-check.sh
+
+# With cleanup suggestions
+./scripts/disk-space-check.sh --cleanup
+```
+
+**Disk space exhaustion** during wave orchestration has caused:
+- Credential lock failures
+- PR creation failures
+- Git ref lock failures
+
+Minimum requirements: **10 GB free** | Recommended: **50 GB free**
+
 ## Critical Physics Constants
 
 - **`EXTERIOR_FILM_COEFF = 18.3 W/m²K`** (ASHRAE 140 v2023, vertical surfaces, ~3.4 m/s wind) — defined in `src/physics/constants/thermal/ashrae_140/v2023.rs`. The legacy `29.3 W/m²K` (6.7 m/s) must NOT appear in any computation path. Guard: `tests/regression_exterior_film_unification.rs`.
@@ -226,6 +245,7 @@ Heavy Linux jobs honour `vars.FLUXION_LINUX_RUNNER` (self-hosted Hetzner fallbac
 | `release_gates.yaml` | Required branch-protection checks + thresholds |
 | `scripts/check_architecture_drift.py` | ARCHITECTURE.md vs source-code drift |
 | `scripts/check_ashrae_cases_cycle.py` | `sim ↔ validation` cycle regression guard |
+| `scripts/disk-space-check.sh` | Disk space check before operations (10 GB min, 50 GB recommended) |
 | `scripts/coverage_critical_paths.py` | Per-critical-path coverage analysis + ratchet gate (#1932) |
 | `scripts/coverage_baseline.py` | Record/refresh the coverage ratchet baseline (#1932) |
 | `validation/coverage_baseline.json` | Committed coverage baseline (0.0 = unenforced) |
