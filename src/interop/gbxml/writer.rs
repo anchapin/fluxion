@@ -43,6 +43,8 @@ pub struct GbXmlWriter {
     material_counter: usize,
     space_counter: usize,
     surface_counter: usize,
+    schedule_counter: usize,
+    zone_counter: usize,
 }
 
 impl GbXmlWriter {
@@ -54,6 +56,8 @@ impl GbXmlWriter {
             material_counter: 0,
             space_counter: 0,
             surface_counter: 0,
+            schedule_counter: 0,
+            zone_counter: 0,
         }
     }
 
@@ -73,6 +77,12 @@ impl GbXmlWriter {
 
         // Write Campus
         self.write_campus(schema, &mut writer)?;
+
+        // Write Zones (thermal zone properties)
+        self.write_zones(schema, &mut writer)?;
+
+        // Write Schedules
+        self.write_schedules(&schema.schedules, &mut writer)?;
 
         // Write Constructions, Layers, Materials
         self.write_constructions(&schema.constructions, &mut writer)?;
@@ -164,12 +174,13 @@ impl GbXmlWriter {
     fn write_space<W: std::io::Write>(
         &mut self,
         zone: &ZoneGeometry,
-        _zone_idx: usize,
+        zone_idx: usize,
         _schema: &SimulationSchemaV1,
         writer: &mut Writer<W>,
     ) -> Result<(), GbXmlError> {
         self.space_counter += 1;
         let space_id = format!("space{}", self.space_counter);
+        let zone_id = format!("zone{}", zone_idx + 1);
 
         let mut space = BytesStart::new("Space");
         space.push_attribute(("id", space_id.as_str()));
@@ -179,8 +190,12 @@ impl GbXmlWriter {
         write_text_element(writer, "Area", &zone.floor_area.to_string())?;
         write_text_element(writer, "Volume", &zone.volume.to_string())?;
 
-        // Write default wall construction for each surface
-        // In a full implementation, we'd look up actual constructions
+        // ZoneIdRef - link to thermal zone properties
+        let mut zone_ref = BytesStart::new("ZoneIdRef");
+        zone_ref.push_attribute(("zoneIdRef", zone_id.as_str()));
+        writer.write_event(Event::Empty(zone_ref))?;
+
+        // Write surfaces with proper construction IDs based on surface type
         let surface_names = [
             "North Wall",
             "East Wall",
@@ -197,6 +212,15 @@ impl GbXmlWriter {
             "Roof",
             "Floor",
         ];
+        // Correct construction IDs based on surface type
+        let construction_ids = [
+            "construction_wall",
+            "construction_wall",
+            "construction_wall",
+            "construction_wall",
+            "construction_roof",
+            "construction_floor",
+        ];
         let areas = [
             zone.floor_area * 0.25,
             zone.floor_area * 0.25,
@@ -206,10 +230,10 @@ impl GbXmlWriter {
             zone.floor_area,
         ];
 
-        for ((name, surf_type), area) in surface_names
+        for ((name, surf_type), (construction_id, area)) in surface_names
             .iter()
             .zip(surface_types.iter())
-            .zip(areas.iter())
+            .zip(construction_ids.iter().zip(areas.iter()))
         {
             self.surface_counter += 1;
             let surf_id = format!("surface{}", self.surface_counter);
@@ -218,7 +242,7 @@ impl GbXmlWriter {
             surface.push_attribute(("id", surf_id.as_str()));
             surface.push_attribute(("name", *name));
             surface.push_attribute(("surfaceType", *surf_type));
-            surface.push_attribute(("constructionIdRef", "construction_wall"));
+            surface.push_attribute(("constructionIdRef", *construction_id));
             writer.write_event(Event::Start(surface))?;
 
             write_text_element(writer, "Area", &area.to_string())?;
@@ -248,6 +272,202 @@ impl GbXmlWriter {
         }
 
         writer.write_event(Event::End(BytesEnd::new("Space")))?;
+
+        Ok(())
+    }
+
+    /// Write Zone elements for thermal zone properties (LoadClass, Schedules, InternalGains).
+    fn write_zones<W: std::io::Write>(
+        &mut self,
+        schema: &SimulationSchemaV1,
+        writer: &mut Writer<W>,
+    ) -> Result<(), GbXmlError> {
+        for (zone_idx, zone) in schema.geometry.zones.iter().enumerate() {
+            self.zone_counter += 1;
+            let zone_id = format!("zone{}", zone_idx + 1);
+
+            let mut zone_elem = BytesStart::new("Zone");
+            zone_elem.push_attribute(("id", zone_id.as_str()));
+            zone_elem.push_attribute(("name", zone.name.as_str()));
+            writer.write_event(Event::Start(zone_elem))?;
+
+            // LoadClass - building load classification based on occupancy type
+            // Default to "Commercial" as a reasonable assumption for ASHRAE cases
+            write_text_element(writer, "LoadClass", "Commercial")?;
+
+            // SchedulesIdRef - references to schedule elements
+            let schedule_ids = ["schedule_occupancy", "schedule_lighting", "schedule_hvac"];
+            for schedule_id in &schedule_ids {
+                let mut sched_ref = BytesStart::new("SchedulesIdRef");
+                sched_ref.push_attribute(("scheduleIdRef", *schedule_id));
+                writer.write_event(Event::Empty(sched_ref))?;
+            }
+
+            // InternalGains - people, lights, equipment
+            let gains = BytesStart::new("InternalGains");
+            writer.write_event(Event::Start(gains))?;
+
+            // People - occupant heat gain
+            let mut people = BytesStart::new("People");
+            people.push_attribute(("gainPerPerson", "100.0")); // W per person
+            writer.write_event(Event::Start(people))?;
+            let mut people_sched = BytesStart::new("SchedulesIdRef");
+            people_sched.push_attribute(("scheduleIdRef", "schedule_occupancy"));
+            writer.write_event(Event::Empty(people_sched))?;
+            writer.write_event(Event::End(BytesEnd::new("People")))?;
+
+            // Lights - lighting heat gain
+            let mut lights = BytesStart::new("Lights");
+            lights.push_attribute(("gainPerFloorArea", "10.0")); // W/m²
+            writer.write_event(Event::Start(lights))?;
+            let mut lights_sched = BytesStart::new("SchedulesIdRef");
+            lights_sched.push_attribute(("scheduleIdRef", "schedule_lighting"));
+            writer.write_event(Event::Empty(lights_sched))?;
+            writer.write_event(Event::End(BytesEnd::new("Lights")))?;
+
+            // Equipment - miscellaneous equipment gains
+            let mut equip = BytesStart::new("Equipment");
+            equip.push_attribute(("gainPerFloorArea", "5.0")); // W/m²
+            writer.write_event(Event::Start(equip))?;
+            let mut equip_sched = BytesStart::new("SchedulesIdRef");
+            equip_sched.push_attribute(("scheduleIdRef", "schedule_occupancy"));
+            writer.write_event(Event::Empty(equip_sched))?;
+            writer.write_event(Event::End(BytesEnd::new("Equipment")))?;
+
+            writer.write_event(Event::End(BytesEnd::new("InternalGains")))?;
+
+            writer.write_event(Event::End(BytesEnd::new("Zone")))?;
+        }
+
+        Ok(())
+    }
+
+    /// Write Schedule elements for occupancy, lighting, and HVAC schedules.
+    fn write_schedules<W: std::io::Write>(
+        &mut self,
+        schedules: &crate::api::schema::ScheduleSet,
+        writer: &mut Writer<W>,
+    ) -> Result<(), GbXmlError> {
+        // Occupancy schedule
+        self.write_schedule(
+            "schedule_occupancy",
+            "Occupancy",
+            &schedules.occupancy,
+            writer,
+        )?;
+
+        // Lighting schedule
+        self.write_schedule("schedule_lighting", "Lighting", &schedules.lighting, writer)?;
+
+        // HVAC schedule (heating/cooling setpoints)
+        self.write_hvac_schedule("schedule_hvac", "HVAC", &schedules.hvac, writer)?;
+
+        Ok(())
+    }
+
+    /// Write a daily/weekly schedule element.
+    fn write_schedule<W: std::io::Write>(
+        &mut self,
+        schedule_id: &str,
+        schedule_name: &str,
+        schedule: &crate::sim::schedule::DailySchedule,
+        writer: &mut Writer<W>,
+    ) -> Result<(), GbXmlError> {
+        use crate::sim::schedule::{ScheduleType, ScheduleValues};
+
+        let schedule_type_str = match schedule.schedule_type {
+            ScheduleType::Constant => "Constant",
+            ScheduleType::DailyCycle => "Daily",
+            ScheduleType::Weekly => "Weekly",
+            ScheduleType::Custom => "Custom",
+        };
+
+        let mut sched_elem = BytesStart::new("Schedule");
+        sched_elem.push_attribute(("id", schedule_id));
+        sched_elem.push_attribute(("name", schedule_name));
+        sched_elem.push_attribute(("scheduleType", "Temperature"));
+        writer.write_event(Event::Start(sched_elem))?;
+
+        // ScheduleType
+        let mut type_elem = BytesStart::new("ScheduleType");
+        type_elem.push_attribute(("timeType", "Hourly"));
+        writer.write_event(Event::Start(type_elem))?;
+        write_text_element(writer, "ScheduleType", schedule_type_str)?;
+        writer.write_event(Event::End(BytesEnd::new("ScheduleType")))?;
+
+        // ScheduleValues - export first day values as representative
+        let mut values_elem = BytesStart::new("ScheduleValues");
+        values_elem.push_attribute(("dayType", "Monday"));
+        writer.write_event(Event::Start(values_elem))?;
+
+        match &schedule.values {
+            ScheduleValues::Daily(hours) => {
+                for (i, value) in hours.iter().enumerate() {
+                    let mut hourly = BytesStart::new("HourlyValue");
+                    hourly.push_attribute(("hour", i.to_string().as_str()));
+                    writer.write_event(Event::Start(hourly))?;
+                    write_text_element(writer, "Value", &value.to_string())?;
+                    writer.write_event(Event::End(BytesEnd::new("HourlyValue")))?;
+                }
+            }
+            ScheduleValues::Weekly(weeks) => {
+                // Export Monday (first day) as representative
+                for (i, value) in weeks[0].iter().enumerate() {
+                    let mut hourly = BytesStart::new("HourlyValue");
+                    hourly.push_attribute(("hour", i.to_string().as_str()));
+                    writer.write_event(Event::Start(hourly))?;
+                    write_text_element(writer, "Value", &value.to_string())?;
+                    writer.write_event(Event::End(BytesEnd::new("HourlyValue")))?;
+                }
+            }
+        }
+
+        writer.write_event(Event::End(BytesEnd::new("ScheduleValues")))?;
+        writer.write_event(Event::End(BytesEnd::new("Schedule")))?;
+
+        Ok(())
+    }
+
+    /// Write HVAC schedule element (heating and cooling setpoints).
+    fn write_hvac_schedule<W: std::io::Write>(
+        &mut self,
+        schedule_id: &str,
+        schedule_name: &str,
+        hvac: &crate::sim::schedule::HVACSchedule,
+        writer: &mut Writer<W>,
+    ) -> Result<(), GbXmlError> {
+        let mut sched_elem = BytesStart::new("Schedule");
+        sched_elem.push_attribute(("id", schedule_id));
+        sched_elem.push_attribute(("name", schedule_name));
+        sched_elem.push_attribute(("scheduleType", "Temperature"));
+        writer.write_event(Event::Start(sched_elem))?;
+
+        // ScheduleType
+        let mut type_elem = BytesStart::new("ScheduleType");
+        type_elem.push_attribute(("timeType", "Hourly"));
+        writer.write_event(Event::Start(type_elem))?;
+        write_text_element(writer, "ScheduleType", "Weekly")?;
+        writer.write_event(Event::End(BytesEnd::new("ScheduleType")))?;
+
+        // ScheduleValues - export Monday as representative
+        let mut values_elem = BytesStart::new("ScheduleValues");
+        values_elem.push_attribute(("dayType", "Monday"));
+        writer.write_event(Event::Start(values_elem))?;
+
+        // Export cooling schedule values for Monday (first day)
+        use crate::sim::schedule::ScheduleValues;
+        if let ScheduleValues::Daily(hours) = &hvac.cooling.values {
+            for (i, value) in hours.iter().enumerate() {
+                let mut hourly = BytesStart::new("HourlyValue");
+                hourly.push_attribute(("hour", i.to_string().as_str()));
+                writer.write_event(Event::Start(hourly))?;
+                write_text_element(writer, "Value", &value.to_string())?;
+                writer.write_event(Event::End(BytesEnd::new("HourlyValue")))?;
+            }
+        }
+
+        writer.write_event(Event::End(BytesEnd::new("ScheduleValues")))?;
+        writer.write_event(Event::End(BytesEnd::new("Schedule")))?;
 
         Ok(())
     }
@@ -441,5 +661,57 @@ mod tests {
         let parsed = reader.parse(&xml_str).expect("Should parse exported gbXML");
         assert_eq!(parsed.geometry.zones.len(), 1);
         assert_eq!(parsed.geometry.zones[0].name, "Zone 1");
+    }
+
+    #[test]
+    fn test_thermal_zone_properties_export() {
+        let schema = create_test_schema();
+        let mut output = Vec::new();
+        let mut writer = GbXmlWriter::new();
+        writer
+            .write_schema(&schema, &mut output)
+            .expect("Should export");
+
+        let xml_str = String::from_utf8(output).expect("Should be valid UTF-8");
+
+        // Verify Zone elements with thermal properties
+        assert!(xml_str.contains("<Zone"));
+        assert!(xml_str.contains("LoadClass"));
+        assert!(xml_str.contains("Commercial"));
+
+        // Verify InternalGains elements
+        assert!(xml_str.contains("InternalGains"));
+        assert!(xml_str.contains("People"));
+        assert!(xml_str.contains("Lights"));
+        assert!(xml_str.contains("Equipment"));
+
+        // Verify SchedulesIdRef elements
+        assert!(xml_str.contains("SchedulesIdRef"));
+        assert!(xml_str.contains("schedule_occupancy"));
+        assert!(xml_str.contains("schedule_lighting"));
+        assert!(xml_str.contains("schedule_hvac"));
+
+        // Verify Schedule elements
+        assert!(xml_str.contains("<Schedule"));
+        assert!(xml_str.contains("Occupancy"));
+        assert!(xml_str.contains("Lighting"));
+        assert!(xml_str.contains("HVAC"));
+    }
+
+    #[test]
+    fn test_surface_construction_id_ref() {
+        let schema = create_test_schema();
+        let mut output = Vec::new();
+        let mut writer = GbXmlWriter::new();
+        writer
+            .write_schema(&schema, &mut output)
+            .expect("Should export");
+
+        let xml_str = String::from_utf8(output).expect("Should be valid UTF-8");
+
+        // Verify surfaces reference correct constructions
+        assert!(xml_str.contains("constructionIdRef=\"construction_wall\""));
+        assert!(xml_str.contains("constructionIdRef=\"construction_roof\""));
+        assert!(xml_str.contains("constructionIdRef=\"construction_floor\""));
     }
 }
