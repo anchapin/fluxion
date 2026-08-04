@@ -55,6 +55,10 @@ crates/
 
 **`fluxion-mcp`** is a workspace member (`cargo build -p fluxion-mcp`; `cargo test -p fluxion-mcp` to run its own suite).
 
+**`fluxion-twin`** — Digital twin core using Unscented Kalman Filter (UKF) for non-linear state estimation in thermal systems. Uses MQTT for telemetry.
+
+**`fluxion-toon`** — Token-Oriented Object Notation serializer/deserializer; compact, LLM-friendly serialization format. Defined in `crates/fluxion-toon/SPEC.md`.
+
 Re-export paths preserved across the crate split: `crate::weather::*`, `crate::assembly::*`, `crate::multi_node::*`, `crate::ashrae_cases::*`, `crate::sim::assembly::*`, `crate::sim::multi_node_thermal::*`, `crate::validation::ashrae_140_cases::Orientation`.
 
 ## Developer Commands
