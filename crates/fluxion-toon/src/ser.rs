@@ -32,6 +32,7 @@ fn collapse_uniform_arrays(json: &str) -> String {
     transform_value(&value, 0, None)
 }
 
+#[allow(clippy::only_used_in_recursion)]
 fn transform_value(value: &serde_json::Value, indent: usize, field_name: Option<&str>) -> String {
     match value {
         serde_json::Value::Object(obj) => {
@@ -42,7 +43,7 @@ fn transform_value(value: &serde_json::Value, indent: usize, field_name: Option<
                 let comma = if i < sorted_keys.len() - 1 { "," } else { "" };
                 let val = obj.get(key.as_str()).unwrap();
                 if let serde_json::Value::Array(arr) = val {
-                    if arr.len() > 0 && arr.iter().all(|v| v.is_object()) {
+                    if !arr.is_empty() && arr.iter().all(|v| v.is_object()) {
                         let first_obj = arr[0].as_object().unwrap();
                         let mut fields: Vec<&str> = first_obj.keys().map(|s| s.as_str()).collect();
                         fields.sort();
@@ -103,7 +104,7 @@ fn transform_value(value: &serde_json::Value, indent: usize, field_name: Option<
                 }
                 return "[]".to_string();
             }
-            if arr.len() > 0 && arr.iter().all(|v| v.is_object()) {
+            if !arr.is_empty() && arr.iter().all(|v| v.is_object()) {
                 let first_obj = arr[0].as_object().unwrap();
                 let mut fields: Vec<&str> = first_obj.keys().map(|s| s.as_str()).collect();
                 fields.sort();

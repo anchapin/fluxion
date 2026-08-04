@@ -812,9 +812,8 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         let t_i_free = T::from(VectorField::new(t_air_state));
 
         // Persist final solar-lag state
-        for i in 0..self.0.num_zones {
-            self.0.solar_lag.as_mut()[i] = solar_lag_state[i];
-        }
+        self.0.solar_lag.as_mut()[..self.0.num_zones]
+            .copy_from_slice(&solar_lag_state[..self.0.num_zones]);
 
         // Issue #1585: step the air-node ODE state forward for the next
         // timestep.  t_i_free (the new zone-air temperature) becomes
