@@ -1,0 +1,34 @@
+[package]
+name = "fluxion-cfd"
+version = "0.1.0"
+edition = "2021"
+description = "GPU-accelerated Fast Fluid Dynamics solver for building airflow simulation"
+license = "Apache-2.0"
+repository = "https://github.com/anchapin/fluxion"
+authors = ["Dr. Aris Thorne <aris.thorne@fluxion.org>"]
+
+[features]
+default = ["cpu"]
+cuda = []
+opencl = []
+cpu = []
+
+[dependencies]
+fluxion-core = { path = "../fluxion-core", version = "1.0.0" }
+thiserror = "1.0"
+anyhow = "1.0"
+nalgebra = "0.34"
+faer = { version = "0.23.2", default-features = false, features = ["std"] }
+ndarray = { version = "0.16", default-features = false, features = ["std"] }
+num-complex = "0.4"
+rayon = "1.10"
+log = "0.4"
+env_logger = "0.11"
+
+[dev-dependencies]
+approx = "0.5"
+criterion = "0.5"
+
+[[bench]]
+name = "ffd_bench"
+harness = false
