@@ -7,7 +7,7 @@ Related to: validation_report.md (results), FIX.md (placeholder fixes), ARCHITEC
 Status: Post-#1323 baseline refresh — pre-#1323 numbers are obsolete per ARCHITECTURE.md §Current Module Status.
 Action: Check this document before attributing validation failures to new issues; many may be known.
 
-*Last Updated: 2026-07-31* (Post-#1323 / post-Wave-5 baseline refresh; #1421 Case 600 ref-range unified to benchmark.rs:124-127 across validator, CSV, doc, and this document; see issue #1443. CI-01 code-coverage gate #1932 added. **Cases 600 series energy violations (600, 610, 620, 630, 640, 650) are documented as pre-existing model limitations — see §LIMIT-05 UPDATE (#1457 revisit) and §LIMIT-06. Case 900 residual annual-energy deviation (H=2.362 MWh, C=1.330 MWh) confirmed as a structural 5R1C limitation after #2227/#2229 — see §SOLAR-02 UPDATE (Issue #2239).**)
+*Last Updated: 2026-08-03* (Post-#1323 / post-Wave-5 baseline refresh; #1421 Case 600 ref-range unified to benchmark.rs:124-127 across validator, CSV, doc, and this document; see issue #1443. CI-01 code-coverage gate #1932 added. CI-02 debug build rust-lld segfault #2297 added. **Cases 600 series energy violations (600, 610, 620, 630, 640, 650) are documented as pre-existing model limitations — see §LIMIT-05 UPDATE (#1457 revisit) and §LIMIT-06. Case 900 residual annual-energy deviation (H=2.362 MWh, C=1.330 MWh) confirmed as a structural 5R1C limitation after #2227/#2229 — see §SOLAR-02 UPDATE (Issue #2239).**)
 
 > **Post-#1323 baseline changes (read first)** — Between the prior "Last Updated" header
 > (2026-03-30) and this revision, ~100 days and 30+ validation-affecting PRs landed.
@@ -857,6 +857,21 @@ they are physically correct and flip one marginal test.
   `python3 scripts/coverage_baseline.py --update --lcov target/llvm-cov/lcov.info`
   and commit the updated baseline. See `docs/coverage.md` for the full workflow.
 
+### CI-02: Debug build linking crashes with rust-lld segfault (issue #2297)
+
+- **Affected:** Local debug builds (`cargo build`, `cargo test`, `cargo clippy`) on
+  disk-space-constrained systems.
+- **Status:** 🔄 Known limitation — release builds (`--release`) work correctly.
+- **Details:** Debug builds of `fluxion-rest` (and other large targets) crash during
+  linking with SIGSEGV in rust-lld. This is an environmental issue — the linker
+  runs out of memory or disk I/O bandwidth during the debug build's heavy compilation
+  unit count. Observed during earth tube integration work (PR #2280). Not reproducible
+  in CI (GitHub-hosted runners have more disk space and memory). The fix is to use
+  release builds for local development, or ensure sufficient free disk space (~100 GB+
+  recommended).
+- **Workaround:** Use `cargo build --release` or `cargo test --release` for local
+  development. CI uses release builds by default and is unaffected.
+
 ## Summary
 
 | Category | Total Issues | Fixed | Open | Partial | Won't Fix |
@@ -868,14 +883,15 @@ they are physically correct and flip one marginal test.
 | Multi-Zone (MULTI) | 3 | 1 | 0 | 1 | 1 |
 | Model Limits (LIMIT) | 5 | 0 | 0 | 0 | 5 |
 | Reporting (REPORT) | 4 | 0 | 4 | 0 | 0 |
-| **Total** | **24** | **10** | **6** | **1** | **5** |
+| CI/Infrastructure (CI) | 1 | 0 | 1 | 0 | 0 |
+| **Total** | **25** | **10** | **7** | **1** | **5** |
 
 ### Open Issues by Severity
 
 - **Critical:** 0 (none - SOLAR-01 partially resolved)
 - **High:** 4 (SOLAR-01 partial, SOLAR-02, FREE-01, LIMIT-05)
 - **Medium:** 6 (SOLAR-03, SOLAR-04, FREE-02, FREE-03, REPORT-01, REPORT-02)
-- **Low:** 1 (REPORT-03)
+- **Low:** 2 (REPORT-03, CI-02)
 
 ### Critical Path to 100% Validation
 
@@ -999,6 +1015,7 @@ Once these are addressed, expect pass rate to increase significantly. Remaining 
 | #2227 | Case 900 HVAC coupling: use `derived_h_tr_3` instead of `h_tr_ms` | ✅ Closed — H: 5.835 → 2.343 MWh (major advance) | §SOLAR-02 UPDATE (#2239) |
 | #2229 | Case 900 `h_ms_coeff` 9.1 → 13.4 W/(m²·K) for HighMass | ✅ Closed — negligible effect (+0.8 %); gap is structural | §SOLAR-02 UPDATE (#2239) |
 | #2239 | Case 900 residual deviation: H=2.36, C=1.33 MWh | ✅ **Closed — known 5R1C structural limitation**; routed to GaugeSolver #1465 | §SOLAR-02 UPDATE (#2239) |
+| #2297 | Debug build linking crashes with rust-lld segfault | 🔄 **Open** — known environmental issue on disk-space-constrained systems; workaround: use `--release` | §CI-02 |
 
 ## See also
 
