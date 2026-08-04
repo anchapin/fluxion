@@ -139,7 +139,8 @@ fn test_limit_05_inversion_case_900_peak_cooling() {
 #[test]
 #[ignore = "LIMIT-05 inversion diagnostic — locks in current (inverted) state for regression tracking"]
 fn test_limit_05_inversion_case_950_peak_cooling() {
-    let (_, _, _, peak_cooling_kw) = simulate_case(ASHRAE140Case::Case950);
+    let (annual_heating, annual_cooling, peak_heating, peak_cooling_kw) =
+        simulate_case(ASHRAE140Case::Case950);
     let dev_pct = deviation_pct(
         peak_cooling_kw,
         CASE_950_PEAK_COOLING_MIN,
@@ -151,6 +152,11 @@ fn test_limit_05_inversion_case_950_peak_cooling() {
         "Fluxion: {:.2} kW | Reference: {:.2} - {:.2} kW | Deviation: {:+.1}%",
         peak_cooling_kw, CASE_950_PEAK_COOLING_MIN, CASE_950_PEAK_COOLING_MAX, dev_pct
     );
+    println!(
+        "Annual heating: {:.2} kWh (ref: 0.00 kWh), Annual cooling: {:.2} kWh (ref: 390-920 kWh)",
+        annual_heating, annual_cooling
+    );
+    println!("Peak heating: {:.2} kW (ref: 0.00 kW)", peak_heating);
 
     assert!(
         peak_cooling_kw >= 0.1 && peak_cooling_kw <= 15.0,

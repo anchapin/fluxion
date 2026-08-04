@@ -1087,15 +1087,12 @@ proptest! {
         heating_cap in 5_000.0_f64..20_000.0,
         cooling_cap in 5_000.0_f64..20_000.0,
     ) {
-        let cav = CAVSystem {
-            id: "CAV-P".to_string(),
-            design_airflow: 1.0,
-            fan_power: 500.0,
-            fan_efficiency: 0.7,
-            heating_capacity: heating_cap,
-            cooling_capacity: cooling_cap,
-            current_plr: 0.0,
-        };
+        let cav = CAVSystem::with_coils(
+            "CAV-P".to_string(),
+            1.0,
+            cooling_cap,
+            heating_cap,
+        );
         let rated = cav.rated_capacity();
         prop_assert_eq!(
             rated,
