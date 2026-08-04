@@ -102,27 +102,110 @@ fn build_zones(model: &IfcModel, _space_map: &HashMap<u64, &IfcSpace>) -> Vec<Zo
         .spaces
         .iter()
         .map(|space| {
-            let floor_area = extract_space_floor_area(model, space);
+            let floor_area =
+                extract_space_floor_area(model, space).unwrap_or(DEFAULT_ZONE_FLOOR_AREA_M2);
+            let height = extract_space_height(model, space).unwrap_or(DEFAULT_ZONE_HEIGHT_M);
+            let volume = floor_area * height;
             ZoneGeometry {
                 name: space.name.clone(),
                 floor_area,
-                volume: floor_area * DEFAULT_ZONE_HEIGHT_M,
-                height: DEFAULT_ZONE_HEIGHT_M,
+                volume,
+                height,
             }
         })
         .collect()
 }
 
-/// Attempt to extract floor area from an IfcSpace Representation.
+/// Extract floor area from IfcSpace.Representation chain.
 ///
-/// IFC4 encodes zone floor area in `IfcSpace.Representation` as an
-/// `IfcProductDefinitionShape` containing an `IfcShapeRepresentation`
-/// with an `IfcExtrudedAreaSolid` or `IfcPolygonalBoundedSurface`.
-/// Full decoding of the extruded footprint is deferred to #1121;
-/// this function returns the default area when geometry cannot be resolved.
-fn extract_space_floor_area(_model: &IfcModel, space: &IfcSpace) -> f64 {
-    let _ = space;
-    DEFAULT_ZONE_FLOOR_AREA_M2
+/// Follows: IfcSpace → IfcProductDefinitionShape → IfcShapeRepresentation
+/// → IfcExtrudedAreaSolid → IfcRectangleProfileDef
+///
+/// Returns None if geometry cannot be decoded.
+fn extract_space_floor_area(model: &IfcModel, space: &IfcSpace) -> Option<f64> {
+    let space_entity = model.entities.get(&space.id)?;
+    let repr_ref = extract_nth_ref(&space_entity.args, 6)?;
+
+    let repr_entity = model.entities.get(&repr_ref)?;
+    if repr_entity.name != "IFCPRODUCTDEFINITIONSHAPE" {
+        return None;
+    }
+
+    let shape_refs = extract_nth_ref_list(&repr_entity.args, 2)?;
+    if shape_refs.is_empty() {
+        return None;
+    }
+
+    let shape_entity = model.entities.get(&shape_refs[0])?;
+    if shape_entity.name != "IFCSHAPEREPRESENTATION" {
+        return None;
+    }
+
+    let item_refs = extract_nth_ref_list(&shape_entity.args, 4)?;
+    if item_refs.is_empty() {
+        return None;
+    }
+
+    let extruded_entity = model.entities.get(&item_refs[0])?;
+    if extruded_entity.name != "IFCEXTRUDEDAREASOLID" {
+        return None;
+    }
+
+    let swept_area_ref = extract_nth_ref(&extruded_entity.args, 0)?;
+
+    let profile_entity = model.entities.get(&swept_area_ref)?;
+    if profile_entity.name != "IFCRECTANGLEPROFILEDEF" {
+        return None;
+    }
+
+    let x_dim = extract_nth_real(&profile_entity.args, 2)?;
+    let y_dim = extract_nth_real(&profile_entity.args, 3)?;
+
+    let area = x_dim * y_dim;
+    if area > 0.0 {
+        Some(area)
+    } else {
+        None
+    }
+}
+
+/// Extract zone height from IfcSpace.Representation chain.
+///
+/// Follows: IfcSpace → IfcProductDefinitionShape → IfcShapeRepresentation
+/// → IfcExtrudedAreaSolid (Depth field = height)
+///
+/// Returns None if geometry cannot be decoded.
+fn extract_space_height(model: &IfcModel, space: &IfcSpace) -> Option<f64> {
+    let space_entity = model.entities.get(&space.id)?;
+    let repr_ref = extract_nth_ref(&space_entity.args, 6)?;
+
+    let repr_entity = model.entities.get(&repr_ref)?;
+    if repr_entity.name != "IFCPRODUCTDEFINITIONSHAPE" {
+        return None;
+    }
+
+    let shape_refs = extract_nth_ref_list(&repr_entity.args, 2)?;
+    if shape_refs.is_empty() {
+        return None;
+    }
+
+    let shape_entity = model.entities.get(&shape_refs[0])?;
+    if shape_entity.name != "IFCSHAPEREPRESENTATION" {
+        return None;
+    }
+
+    let item_refs = extract_nth_ref_list(&shape_entity.args, 4)?;
+    if item_refs.is_empty() {
+        return None;
+    }
+
+    let extruded_entity = model.entities.get(&item_refs[0])?;
+    if extruded_entity.name != "IFCEXTRUDEDAREASOLID" {
+        return None;
+    }
+
+    let depth = extract_nth_real(&extruded_entity.args, 2)?;
+    Some(depth).filter(|&v| v > 0.0)
 }
 
 /// Build a map from space id → set of contained element ids.
@@ -242,6 +325,15 @@ fn extract_nth_ref_list(args: &str, n: usize) -> Option<Vec<u64>> {
         }
     }
     Some(out)
+}
+
+fn extract_nth_real(args: &str, n: usize) -> Option<f64> {
+    let arg = extract_nth_arg_raw(args, n)?;
+    let s = arg.trim();
+    if s == "$" || s == "*" {
+        return None;
+    }
+    s.parse::<f64>().ok()
 }
 
 fn extract_nth_arg_raw(args: &str, n: usize) -> Option<String> {

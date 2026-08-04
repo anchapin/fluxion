@@ -336,6 +336,15 @@ impl IfcParser {
                     name,
                     line: entity.line,
                 });
+                model.entities.insert(
+                    entity.id,
+                    GenericEntity {
+                        id: entity.id,
+                        name: entity.name.clone(),
+                        args: entity.args.clone(),
+                        line: entity.line,
+                    },
+                );
             }
             "IFCWINDOW" => {
                 let (global_id, name) = parse_root_like(&entity)?;

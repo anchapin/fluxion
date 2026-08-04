@@ -449,7 +449,7 @@ impl<W: Write> IfcWriter<W> {
             layer_counter += 1;
         }
 
-        // Write spaces (zones)
+        // Write spaces (zones) with proper geometry representation
         let mut space_ids: Vec<u64> = Vec::new();
         for (idx, zone) in schema.geometry.zones.iter().enumerate() {
             let space_local_placement = self.next_id();
@@ -461,9 +461,50 @@ impl<W: Write> IfcWriter<W> {
                 space_local_placement, local_placement_storey, pt_id
             )
             .map_err(|e| IfcError::conversion_error(e.to_string()))?;
-            writeln!(self.output, "#{}=IFCSPACE('0Exp0rtSp{{}}Gu1D000000',#{},'{}','{}',$,#{},$,$,.ELEMENT.,.INTERNAL.,$);",
-                space_id, owner_hist_id, escape_ifc_string(&zone.name), escape_ifc_string(&zone.name), space_local_placement)
-                .map_err(|e| IfcError::conversion_error(e.to_string()))?;
+
+            // Encode zone geometry as IfcExtrudedAreaSolid
+            // For a zone with floor_area and height, compute rectangular footprint
+            // Using square footprint: side = sqrt(floor_area)
+            let side = (zone.floor_area.sqrt(), zone.floor_area.sqrt());
+            let profile_id = self.next_id();
+            let extruded_area_id = self.next_id();
+            let shape_rep_id = self.next_id();
+            let product_def_shape_id = self.next_id();
+
+            writeln!(
+                self.output,
+                "#{}=IFCRECTANGLEPROFILEDEF(.AREA.,$,{},{},0.);",
+                profile_id, side.0, side.1
+            )
+            .map_err(|e| IfcError::conversion_error(e.to_string()))?;
+
+            writeln!(
+                self.output,
+                "#{0}=IFCEXTRUDEDAREASOLID(#{1},$,{2:.3},0.);",
+                extruded_area_id, profile_id, zone.height
+            )
+            .map_err(|e| IfcError::conversion_error(e.to_string()))?;
+
+            writeln!(
+                self.output,
+                "#{}=IFCSHAPEREPRESENTATION(#{},'Body','AdvancedBody',(),(#{}));",
+                shape_rep_id, context_id, extruded_area_id
+            )
+            .map_err(|e| IfcError::conversion_error(e.to_string()))?;
+
+            writeln!(
+                self.output,
+                "#{}=IFCPRODUCTDEFINITIONSHAPE($,'Zone geometry',(#{}));",
+                product_def_shape_id, shape_rep_id
+            )
+            .map_err(|e| IfcError::conversion_error(e.to_string()))?;
+
+            writeln!(
+                self.output,
+                "#{}=IFCSPACE('0Exp0rtSp{{}}Gu1D000000',#{},'{}','{}',$,#{},#{},.ELEMENT.,.INTERNAL.,$);",
+                space_id, owner_hist_id, escape_ifc_string(&zone.name), escape_ifc_string(&zone.name), space_local_placement, product_def_shape_id
+            )
+            .map_err(|e| IfcError::conversion_error(e.to_string()))?;
             space_ids.push(space_id);
 
             writeln!(
@@ -785,5 +826,82 @@ mod tests {
         let content = String::from_utf8(output).expect("valid UTF-8");
         assert!(content.contains("Concrete"));
         assert!(content.contains("Insulation"));
+    }
+
+    #[test]
+    fn test_export_roundtrip_preserves_zone_volume() {
+        let schema = create_test_schema();
+        let mut output = Vec::new();
+        let mut writer = IfcWriter::new(&mut output);
+        writer.write_schema(&schema).expect("should export");
+
+        let content = String::from_utf8(output).expect("valid UTF-8");
+
+        let model = IfcParser::from_str(&content).expect("should parse");
+        let parsed_geometry = IfcGeometryParser::parse_model(&model);
+
+        assert_eq!(
+            parsed_geometry.zones.len(),
+            schema.geometry.zones.len(),
+            "zone count must match"
+        );
+
+        for (original, parsed) in schema
+            .geometry
+            .zones
+            .iter()
+            .zip(parsed_geometry.zones.iter())
+        {
+            let volume_diff = (parsed.volume - original.volume).abs();
+            let volume_ref = original.volume.max(1.0);
+            let rel_diff = volume_diff / volume_ref;
+            assert!(
+                rel_diff <= 0.01,
+                "zone volume must round-trip within 1% (got |ΔV|/V = {:.4})",
+                rel_diff
+            );
+
+            let area_diff = (parsed.floor_area - original.floor_area).abs();
+            let area_ref = original.floor_area.max(1.0);
+            let area_rel_diff = area_diff / area_ref;
+            assert!(
+                area_rel_diff <= 0.01,
+                "zone floor area must round-trip within 1% (got |ΔA|/A = {:.4})",
+                area_rel_diff
+            );
+        }
+    }
+
+    #[test]
+    fn test_export_roundtrip_preserves_construction_layers() {
+        let mut schema = create_test_schema();
+        schema.constructions.wall.layers = vec![
+            ConstructionLayer::new("Concrete", 1.4, 2300.0, 880.0, 0.1),
+            ConstructionLayer::new("Insulation", 0.04, 30.0, 840.0, 0.05),
+        ];
+        schema.constructions.floor.layers =
+            vec![ConstructionLayer::new("Concrete", 1.4, 2300.0, 880.0, 0.2)];
+
+        let mut output = Vec::new();
+        let mut writer = IfcWriter::new(&mut output);
+        writer.write_schema(&schema).expect("should export");
+
+        let content = String::from_utf8(output).expect("valid UTF-8");
+        assert!(
+            content.contains("IFCMATERIALLAYER"),
+            "should contain IFCMATERIALLAYER entities"
+        );
+        assert!(
+            content.contains("IFCMATERIALLAYERSET"),
+            "should contain IFCMATERIALLAYERSET entities"
+        );
+        assert!(
+            content.contains("WallLayers"),
+            "should contain WallLayers material layer set"
+        );
+        assert!(
+            content.contains("FloorLayers"),
+            "should contain FloorLayers material layer set"
+        );
     }
 }
