@@ -1,0 +1,40 @@
+name: Disk Space Check
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main, develop]
+
+jobs:
+  disk-space:
+    name: Check disk space
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check disk space
+        run: |
+          AVAILABLE_KB=$(df -k . | awk 'NR==2 {print $4}')
+          AVAILABLE_GB=$(echo "scale=2; $AVAILABLE_KB / 1048576" | bc)
+          echo "Available disk space: ${AVAILABLE_GB} GB"
+          if (( $(echo "$AVAILABLE_GB < 10" | bc -l) )); then
+            echo "ERROR: Less than 10 GB free" >&2
+            exit 1
+          fi
+          echo "Disk space check passed"
+
+  pre-commit-disk-space:
+    name: Pre-commit disk space
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Run disk space gate
+        run: |
+          AVAILABLE_KB=$(df -k . | awk 'NR==2 {print $4}')
+          AVAILABLE_GB=$(echo "scale=2; $AVAILABLE_KB / 1048576" | bc)
+          echo "Available disk space: ${AVAILABLE_GB} GB"
+          if (( $(echo "$AVAILABLE_GB < 5" | bc -l) )); then
+            echo "ERROR: Less than 5 GB free — insufficient for pre-commit" >&2
+            exit 2
+          fi
+          echo "Disk space check passed"
