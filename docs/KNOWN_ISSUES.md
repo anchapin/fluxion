@@ -716,11 +716,26 @@ peak_cooling over-prediction — the discrete-node solar-injection pathology).
    (`solar_distribution_to_air`) is explicitly forbidden per `AGENTS.md` ("fix
    the underlying math").
 
-5. **Current state:** The Issue #1522 structural improvements
-   (`air_thermal_capacitance` + Cm correction + Issue #1860 solar-lag) provide
-   marginal improvement over the LIMIT-05 UPDATE baseline but do not resolve the
-   bidirectional error. Cases 610/630/640 peak_heating remains ~10-18% below
-   the pre-1522 LIMIT-05 baseline.
+5. **Current state (fresh evidence, 2026-08-03):** Confirmed the discrete-node
+   solar-injection pathology persists on `fix/issue-2300-case-600-physics` @
+   `6accd10`. Test run `cargo test --test ashrae_140_case_600_series`:
+   - **14 passed / 13 failed** (same as LIMIT-05 UPDATE baseline)
+   - Cases 610, 630, 640 peak_heating: 3.55–3.76 kW vs ref 4.30–6.10 kW
+     → −24% to −33% UNDER (WORSE than the ~10-18% documented in the prior
+     entry — likely due to roof-solar fix #2303 landing after that entry was
+     written)
+   - Cases 610, 630, 640 peak_cooling: 3.78–5.14 kW vs ref 1.80–3.70 kW
+     → +11% to +92% OVER (confirms the bidirectional error signature)
+   - Debug output `[PHYS]` shows `t_sol_air` values of −12 to −15 °C during
+     winter peak-heating hours — negative sol-air temperature means the
+     exterior-surface radiation balance is dominated by net longwave loss, not
+     solar gain, which is physically correct for winter conditions but
+     demonstrates the 5R1C air node cannot buffer the diurnal solar swing
+     at `dt/τ ≈ 3.6`
+   - The `solar_distribution_to_air = 0.7` band-aid injects 70% of window
+     solar directly into the air node per timestep, but at 1 h resolution the
+     mass node cannot release stored heat fast enough to support the peak
+     heating demand — this is the core architectural limitation
 
 ### LIMIT-05 UPDATE (#1522 investigation, 2026-07-11): option (a) air-node capacitance — INFEASIBLE at 1 h timestep
 
