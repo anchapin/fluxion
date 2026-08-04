@@ -5,3 +5,8 @@
 #
 # [target.'cfg(target_os = "windows")']
 # rustflags = ["-C", "link-args=/STACK:16777216"]
+
+# Disk-space-conscious build options:
+# - CARGO_INCREMENTAL=0 disables incremental compilation, reducing disk usage during build
+# - Use ./scripts/disk-space-gate.sh to check available disk space before building
+# - Use ./scripts/cleanup-build.sh to free up space when disk is low
