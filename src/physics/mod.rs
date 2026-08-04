@@ -49,6 +49,7 @@ pub mod fd_discretization;
 pub mod fd_solver;
 pub mod fd_solver_wrapper;
 pub mod fd_surface_balance;
+pub mod ffd_solver;
 pub mod five_r1c_solver;
 pub mod gauge_solver;
 pub mod gauge_zone_solver;
