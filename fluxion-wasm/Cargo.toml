@@ -18,8 +18,14 @@ fluxion-fluid = { path = "../fluxion-fluid" }
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 fluxion-core = { path = "../fluxion-core" }
 
+[dev-dependencies]
+wasm-bindgen-test = "0.3"
+
 [lib]
 crate-type = ["cdylib", "rlib"]
+
+[package.metadata.wasm-pack.profile.release]
+wasm-opt = false
 
 [profile.release]
 opt-level = "s"
