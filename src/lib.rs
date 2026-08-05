@@ -1320,7 +1320,7 @@ impl BatchOracle {
                 }
             }
         } else if !valid_configs.is_empty() {
-            // Analytical path - fully parallel
+            // Analytical path - sequential per-config to avoid nested parallelism
             // Note: StepParameters is !Sync (Box<dyn Equipment>), so a single
             // instance cannot be shared across rayon workers. We construct
             // one StepParameters per worker work-item and reuse it for every
@@ -1328,29 +1328,22 @@ impl BatchOracle {
             // construction out of the per-timestep inner loop, which
             // previously ran `surrogates.clone()` once per timestep per
             // config — the leading 5R1C allocation-pressure cost).
-            let mut energies = vec![0.0; valid_configs.len()];
-            valid_configs
-                .par_iter_mut()
-                .zip(energies.par_iter_mut())
-                .for_each(|((_, model), energy)| {
-                    let step_params = StepParameters::build_analytical(&self.surrogates);
-                    for t in 0..8760 {
-                        let hour_of_day = t % 24;
-                        let daily_cycle =
-                            (hour_of_day as f64 / 24.0 * 2.0 * std::f64::consts::PI).sin();
-                        let outdoor_temp = 10.0 + 10.0 * daily_cycle;
-                        *energy += model.solve_single_step(t, outdoor_temp, &step_params, 3600.0);
-                    }
-                });
-
-            for ((idx, model), energy) in valid_configs.iter().zip(energies.iter()) {
+            let step_params = StepParameters::build_analytical(&self.surrogates);
+            for (idx, ref mut model) in valid_configs.iter_mut() {
+                let mut total_energy = 0.0;
+                for t in 0..8760 {
+                    let hour_of_day = t % 24;
+                    let daily_cycle =
+                        (hour_of_day as f64 / 24.0 * 2.0 * std::f64::consts::PI).sin();
+                    let outdoor_temp = 10.0 + 10.0 * daily_cycle;
+                    total_energy += model.solve_single_step(t, outdoor_temp, &step_params, 3600.0);
+                }
                 let total_area = model.zone_area.integrate();
                 let eui = if total_area > 0.0 {
-                    *energy / total_area
+                    total_energy / total_area
                 } else {
                     0.0
                 };
-                // Clamp negative results to 0.0
                 results[*idx] = eui.max(0.0);
             }
         }
