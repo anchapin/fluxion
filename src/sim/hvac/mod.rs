@@ -23,6 +23,9 @@ pub mod vav_terminal;
 pub mod zone_equipment;
 pub mod zones;
 
+#[cfg(feature = "fluid")]
+pub mod fluid_adapter;
+
 // Re-export common types for convenience
 pub use airside_coupling::{AirsideEnvelopeCoupler, CoupledStepForcing, CoupledStepResult};
 pub use airside_state::{
@@ -65,6 +68,12 @@ pub use zone_equipment::{
     AnyZoneEquipment, BaseboardHeater, FourPipeFanCoil, HotWaterBaseboard,
     LowTemperatureRadiantSurface, PackagedTerminalAC, PackagedTerminalHeatPump, RadiantSurfaceType,
     ZoneEquipment, ZoneEquipmentMode, ZoneEquipmentSetpoints, ZoneHeatInjection,
+};
+
+#[cfg(feature = "fluid")]
+pub use fluid_adapter::{
+    FluidNetworkAdapter, FluidNetworkSolver, FluidSolveError, FluidSystemMode, FluidSystemResult,
+    ThermalBoundaryConditions, VavSystemConfig, ZoneFluidState,
 };
 
 use serde::{Deserialize, Serialize};

@@ -1005,6 +1005,7 @@ These traits support the main physics pipeline and should also be documented:
 | `PartLoadCurve` | `src/sim/hvac/part_load_curves.rs` | ASHRAE/E+ biquadratic part-load curves for fan, chiller, boiler |
 | `PlantComponent` | `src/sim/hvac/plant/plant_component.rs` | Plant loop equipment trait (chiller, boiler, cooling tower, pump, heat exchanger) |
 | `Pump` | `src/sim/hvac/plant/pump.rs` | Plant-loop pump trait with affinity laws (constant/variable speed) |
+| `FluidNetworkSolver` | `src/sim/hvac/fluid_adapter.rs` | Fluid HVAC network solver trait; `solve_network()` runs the network solve, `get_thermal_outputs()` returns zone boundary conditions; implemented by `FluidNetworkAdapter` (feature `fluid`) |
 | `GroundTemperature` | `src/sim/boundary.rs` | Ground temp boundary condition |
 | `BatchOrchestrator` | `src/sim/orchestrator.rs` | Per-population CPU surrogate compute scheduling (rayon `par_chunks`, #1439) |
 | `DwaveClient` | `src/quantum/dwave_client.rs` | Object-safe trait for submitting Ising problems to a D-Wave sampler (QPU or hybrid); mockable for tests |
