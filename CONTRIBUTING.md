@@ -126,6 +126,38 @@ rm -rf test_results/
 
 Disk space exhaustion during wave orchestration can cause credential lock failures, PR creation failures, and git ref lock failures.
 
+## KNOWN_ISSUES.md Maintenance
+
+`docs/KNOWN_ISSUES.md` is audited by CI for staleness. The CI gate
+(`scripts/check_known_issues_stale.py`) fails if the `*Last Updated: YYYY-MM-DD*`
+line is more than **60 days** old.
+
+A weekly GitHub Actions workflow (`.github/workflows/known-issues-stale.yml`)
+monitors the file and creates an issue when it exceeds **45 days** old, giving
+ahead-of-time notice before the CI gate fails.
+
+### Refresh Workflow
+
+When the staleness issue is triggered:
+
+1. **Review the document** — check each section (BASE, SOLAR, FREE, TEMP,
+   MULTI, LIMIT) for accuracy and add notes about any recent fixes or new
+   issues discovered since the last refresh.
+2. **Run the refresh script** — this updates the `*Last Updated:*` date
+   in-place:
+   ```bash
+   bash scripts/refresh_known_issues.sh
+   ```
+   Use `--dry-run` to preview the change without modifying the file.
+3. **Open a PR** with the refreshed date and a brief summary of section
+   updates (or lack thereof).
+
+### Why This Matters
+
+The document is the primary reference for AI agents and engineers attributing
+validation failures — citing stale numbers can misdirect investigations.
+Keeping it current avoids "known issues" being reopened unnecessarily.
+
 ## Questions?
 
 Open an issue or ask in the PR review.
