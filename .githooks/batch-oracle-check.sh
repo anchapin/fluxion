@@ -13,7 +13,7 @@ for file in "$@"; do
   # Check for nested rayon par_iter (would cause thread-pool exhaustion)
   if grep -q "par_iter" "$file"; then
     # Extract lines within evaluate_population function and count par_iter only there
-    eval_pop_start=$(grep -n "fn evaluate_population" "$file" | cut -d: -f1)
+    eval_pop_start=$(grep -n "pub fn evaluate_population(" "$file" | cut -d: -f1 | head -n1)
     if [ -n "$eval_pop_start" ]; then
       # Find the end of the function by searching for the next unindented closing brace
       eval_pop_end=$(tail -n +"$eval_pop_start" "$file" | grep -n -m1 "^}" | head -n1 | cut -d: -f1)
@@ -33,7 +33,7 @@ for file in "$@"; do
   fi
 
   # Verify evaluate_population actually uses rayon
-  if grep -q "fn evaluate_population" "$file"; then
+  if grep -q "pub fn evaluate_population(" "$file"; then
     # Increase the search range to 300 lines after the function definition
     if ! grep -A 300 "fn evaluate_population" "$file" | grep -q "par_iter"; then
       echo "⚠ PERFORMANCE WARNING: $file"
