@@ -478,6 +478,22 @@ pub trait ThermalModelTrait: Send + Sync {
     fn cooling_setpoint(&self) -> f64;
     fn hvac_power_demand(&self, timestep: usize, outdoor_temp: f64) -> f64;
     fn is_valid(&self) -> bool;
+    fn get_comfort_metrics(&self) -> Vec<ZoneComfortMetrics>;
+}
+```
+
+**Thermal comfort structs** (ASHRAE 55, Issue #2373):
+
+```rust
+pub struct ZoneComfortMetrics {
+    pub pmv: f64,                       // Predicted Mean Vote (7-point scale)
+    pub ppd: f64,                       // Predicted Percentage Dissatisfied [%]
+    pub operative_temp: f64,             // Operative temperature [°C]
+    pub relative_humidity: f64,          // Relative humidity [0–1]
+    pub running_mean_temp: f64,         // Adaptive comfort running mean [°C]
+    pub adaptive_upper_limit: f64,       // Category II upper limit [°C]
+    pub adaptive_lower_limit: f64,      // Category II lower limit [°C]
+    pub is_adaptive_comfortable: bool,  // True if operative is within band
 }
 ```
 
@@ -547,6 +563,24 @@ The 9R4C model (`sim/multi_node_thermal.rs`, `physics/multi_node_solver.rs`) sep
 - `CommonWallGeometry` carries each wall's `(zone_a, zone_b, a_length, a_width, b_length, b_width, separation)`; `area_a()` / `area_b()` return the per-side surface areas used in the reciprocity check.
 
 The common-wall limit (separation `< 0.01 m`) is the analytical limit `F_AB = A_overlap / A_A`; for larger separations the same expression is used as a conservative approximation until the full Hottel crossed-string formula lands (future work, tracked outside #1444).
+
+**Loose (Quasi-Dynamic) BES-FFD Coupling (Issue #2390)**: `src/sim/loose_coupling.rs` implements loose coupling between the Building Energy Simulation (BES) engine and the Fast Fluid Dynamics (FFD) solver. The coupling strategy uses a macro timestep (typically 15-60 min for whole-building energy simulation) and a micro timestep (typically seconds for transient airflow events). FFD runs autonomously between exchange points and results are time-averaged over the macro step before data exchange.
+
+**Key trait**: `FfdSolver` in `src/sim/loose_coupling.rs`
+
+```rust
+pub trait FfdSolver: Send + Sync {
+    fn name(&self) -> &str;
+    fn initialize(&mut self, num_zones: usize, zone_volumes: &[f64],
+                  surface_areas: &[f64], num_surfaces: usize) -> LooseCouplingResult<()>;
+    fn step_micro(&mut self, bc: &BesToFfdBoundaryConditions, dt: f64)
+        -> LooseCouplingResult<FfdMicroResults>;
+    fn recommended_micro_timestep(&self) -> f64;
+    fn is_valid(&self) -> bool;
+}
+```
+
+FFD micro results (`FfdMicroResults`) contain surface convective heat transfer coefficients (CHTC), zone air temperatures, surface heat fluxes, infiltration flow rates, and zone mixing flow rates. The `FfdAccumulator` struct accumulates these results over multiple micro steps and computes time-averaged values at the end of each macro timestep.
 
 ---
 

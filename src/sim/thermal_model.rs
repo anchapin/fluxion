@@ -2060,7 +2060,6 @@ pub(crate) fn compute_pmv_ppd_and_adaptive(
         let t_cl_new = (f_cl * h_c * ta + f_cl * h_r * tr + (35.7 - 0.028 * m) / i_cl)
             / (f_cl * h_c + f_cl * h_r + 1.0 / i_cl);
         if (t_cl_new - t_cl).abs() < 0.01 {
-            t_cl = t_cl_new;
             break;
         }
         t_cl = t_cl_new;
@@ -2088,7 +2087,7 @@ pub(crate) fn compute_pmv_ppd_and_adaptive(
     } else {
         0.0
     };
-    let pmv = pmv_raw.max(-4.0).min(4.0);
+    let pmv = pmv_raw.clamp(-4.0, 4.0);
 
     let ppd = 100.0 - 95.0 * (-0.03353 * pmv.powi(4) - 0.2179 * pmv.powi(2)).exp();
 
