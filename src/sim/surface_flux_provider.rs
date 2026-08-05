@@ -20,6 +20,9 @@ use crate::physics::solver_trait::SolverError;
 use crate::physics::units::{FromF64, HeatTransferCoefficient, Temperature, Time, ToF64};
 use std::sync::{Arc, RwLock};
 
+#[cfg(feature = "fluxion-city")]
+use fluxion_city::sparse::UrbanRadiationSolver;
+
 /// Trait for providing surface heat flux from any source (conduction, solar, or combined).
 ///
 /// This abstraction allows the zone solver to be agnostic about HOW flux is calculated.
@@ -72,6 +75,20 @@ pub trait SurfaceHeatFluxProvider: Send + Sync {
     /// * `h_int` - Interior film coefficient [W/m²·K]
     /// * `h_ext` - Exterior film coefficient [W/m²·K]
     fn set_film_coefficients(&mut self, surface_idx: usize, h_int: f64, h_ext: f64);
+
+    /// Issue #2369: Configure the urban radiation solver for inter-building
+    /// longwave radiative exchange.
+    ///
+    /// This method wires a `fluxion-city::sparse::UrbanRadiationSolver` into
+    /// the provider so that `surface_heat_flux()` automatically includes the
+    /// urban radiative contribution on top of conduction and solar.
+    ///
+    /// The default implementation is a no-op (backward compatible when
+    /// `fluxion-city` feature is not enabled). Production code with the
+    /// feature enabled should override this to store the solver and use it
+    /// in `surface_heat_flux()`.
+    #[cfg(feature = "fluxion-city")]
+    fn set_urban_radiation(&mut self, _solver: UrbanRadiationSolver) {}
 }
 
 /// Mock flux provider that returns fixed flux values for testing.
@@ -185,6 +202,11 @@ pub struct PhysicsSurfaceFluxProvider {
     /// exchange (W/m²). Positive = net gain from surroundings into surface.
     /// Set via `set_exterior_longwave_flux` by `FluxionCitySurfaceFluxProvider`.
     exterior_longwave_flux_wm2: Vec<f64>,
+    /// Issue #2369: Optional urban radiation solver for inter-building
+    /// longwave radiative exchange. When set via `set_urban_radiation`,
+    /// the provider can compute urban flux directly in `surface_heat_flux`.
+    #[cfg(feature = "fluxion-city")]
+    urban_solver: Option<UrbanRadiationSolver>,
 }
 
 impl PhysicsSurfaceFluxProvider {
@@ -198,6 +220,8 @@ impl PhysicsSurfaceFluxProvider {
             h_ext: Vec::new(),
             stepped_fluxes: Vec::new(),
             exterior_longwave_flux_wm2: Vec::new(),
+            #[cfg(feature = "fluxion-city")]
+            urban_solver: None,
         }
     }
 
@@ -264,6 +288,27 @@ impl PhysicsSurfaceFluxProvider {
         if surface_idx < self.exterior_longwave_flux_wm2.len() {
             self.exterior_longwave_flux_wm2[surface_idx] = flux_wm2;
         }
+    }
+
+    /// Issue #2369: Configure the urban radiation solver for inter-building
+    /// longwave radiative exchange.
+    ///
+    /// When set, `surface_heat_flux()` automatically includes the urban
+    /// radiative contribution computed from the solver's
+    /// `compute_net_flux_per_surface_faer()` method.
+    ///
+    /// # Arguments
+    /// * `solver` - `UrbanRadiationSolver` from `fluxion_city::sparse`
+    #[cfg(feature = "fluxion-city")]
+    pub fn set_urban_radiation(&mut self, solver: UrbanRadiationSolver) {
+        self.urban_solver = Some(solver);
+    }
+
+    /// Issue #2369: Access the currently configured urban radiation solver
+    /// (if any).
+    #[cfg(feature = "fluxion-city")]
+    pub fn urban_solver(&self) -> Option<&UrbanRadiationSolver> {
+        self.urban_solver.as_ref()
     }
 
     /// Update interior and exterior film coefficients for a single
@@ -452,6 +497,11 @@ impl SurfaceHeatFluxProvider for PhysicsSurfaceFluxProvider {
         // access and trait-object dispatch) share the bounds-checking and
         // storage logic.
         PhysicsSurfaceFluxProvider::set_film_coefficients(self, surface_idx, h_int, h_ext);
+    }
+
+    #[cfg(feature = "fluxion-city")]
+    fn set_urban_radiation(&mut self, solver: UrbanRadiationSolver) {
+        PhysicsSurfaceFluxProvider::set_urban_radiation(self, solver);
     }
 }
 

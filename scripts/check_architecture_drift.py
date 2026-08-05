@@ -84,13 +84,35 @@ def parse_trait_methods(content: str, trait_name: str) -> dict[str, MethodSignat
         pos += 1
     trait_body = content[start:pos]
 
-    # Parse method signatures using regex
-    # Match: fn name(&self/&mut self) -> ReturnType
-    fn_pattern = r"fn\s+(\w+)\s*(\([^)]*\))\s*(->\s*[^{{]+)?\s*\{?"
-    for match in re.finditer(fn_pattern, trait_body):
-        fn_name = match.group(1)
-        params_str = match.group(2)
-        return_type = match.group(3) or ""
+    # Parse method signatures using a state machine that correctly handles
+    # both trait declarations (ending in `;`) and methods with bodies (ending in `{`).
+    # This avoids the regex bug where [^{{]+ greedily captures too much.
+    fn_lines = trait_body.split("\n")
+    for i, line in enumerate(fn_lines):
+        stripped = line.lstrip()
+        if not stripped.startswith("fn ") or stripped.startswith("///"):
+            continue
+
+        # Extract fn name and params
+        fn_match = re.match(r"fn\s+(\w+)\s*\(([^)]*)\)", stripped)
+        if not fn_match:
+            continue
+        fn_name = fn_match.group(1)
+        params_str = fn_match.group(2)
+
+        # Find return type: scan from end of line backwards
+        # For declarations: `-> Type;`  For bodies: `-> Type {`
+        return_type = ""
+        arrow_pos = stripped.find("->")
+        if arrow_pos != -1:
+            ret_part = stripped[arrow_pos + 2 :].strip()
+            # Find the end of the return type
+            if "{" in ret_part:
+                return_type = "-> " + ret_part[: ret_part.find("{")].strip()
+            elif ";" in ret_part:
+                return_type = "-> " + ret_part[: ret_part.find(";")].strip()
+            else:
+                return_type = "-> " + ret_part.strip()
 
         # Parse receiver
         receiver = ""
@@ -399,6 +421,7 @@ def check_drift() -> tuple[list[str], bool]:
         "ResidualFunction",  # BDF residual trait in bdf_engine.rs (#2074)
         "DecoupledLoopEquipment",  # ECS/rayon parallel loop evaluator (#1991)
         "PhysicsEquipment",  # pre-existing drift on develop
+        "FfdSolver",  # FFD solver trait in src/sim/loose_coupling.rs (new in #2420)
     }
 
     # These are structs mentioned in ARCHITECTURE.md that get false-positived

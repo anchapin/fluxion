@@ -72,4 +72,5 @@ pub mod earth_tube;
 pub mod fluid;
 pub mod multi_node;
 pub mod tensor;
+pub mod urban_radiation;
 pub mod weather;

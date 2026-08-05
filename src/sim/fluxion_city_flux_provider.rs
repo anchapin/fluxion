@@ -158,6 +158,12 @@ impl SurfaceHeatFluxProvider for FluxionCitySurfaceFluxProvider {
         self.physics
             .set_film_coefficients(surface_idx, h_int, h_ext);
     }
+
+    fn set_urban_radiation(&mut self, _solver: UrbanRadiationSolver) {
+        // FluxionCitySurfaceFluxProvider owns its solver at construction time
+        // via `new(physics, urban_solver)`. The solver is already set;
+        // this override is a no-op to satisfy the trait method.
+    }
 }
 
 #[cfg(test)]
@@ -291,6 +297,91 @@ mod tests {
         assert!(
             urban_flux_b.abs() > 0.0,
             "Urban flux for surface B should be non-zero, got {urban_flux_b}"
+        );
+    }
+
+    /// Issue #2369 acceptance test: 2-building city with 3m spacing vs isolated building.
+    ///
+    /// Confirms that urban radiative exchange is non-zero and significant for dense
+    /// building configurations (dense urban H/W ratio ≈ 1.0). Uses ASHRAE Case 600
+    /// geometry: 3m height × 10m width walls, 3m separation between facing walls.
+    #[test]
+    #[cfg(feature = "fluxion-city")]
+    fn test_two_building_city_vs_isolated_building() {
+        let solar_gain_wm2 = 100.0; // 100 W/m² direct solar
+
+        // --- Isolated building (single wall, no neighbors) ---
+        // ASHRAE Case 600 geometry: 3m H × 10m W = 30m² wall
+        let iso_walls = vec![(30.0, 3.0, 0.0)];
+        let ground_area = 200.0;
+        let iso_sparse_vf = create_sparse_from_urban_canyon(&iso_walls, ground_area).unwrap();
+        let iso_areas = vec![30.0, ground_area];
+        let iso_solver =
+            UrbanRadiationSolver::with_uniform_emissivity(iso_sparse_vf, iso_areas, 0.9);
+
+        let iso_wall = WallSpec::single_layer("200mm Concrete", 0.2, 1.73, 2243.0, 837.0);
+        let mut iso_s = FiveR1CSolver::new();
+        iso_s.initialize(&iso_wall).unwrap();
+        let iso_physics =
+            PhysicsSurfaceFluxProvider::new().add_surface(iso_s, 30.0, solar_gain_wm2);
+        let mut iso_provider = FluxionCitySurfaceFluxProvider::new(iso_physics, iso_solver);
+
+        // T_wall = 35°C (308.15 K), ground = 25°C (298.15 K)
+        let iso_temps = vec![308.15, 298.15];
+        iso_provider
+            .step_all(3600.0, 25.0, 30.0, &iso_temps)
+            .unwrap();
+        let iso_urban_flux = iso_provider.physics.get_exterior_longwave_flux(0);
+
+        // --- 2-building city (neighbor at 3m gap, H/W = 1.0 dense) ---
+        // Building A: 30m² at x=0, Building B: 30m² at x=13m (3m gap between faces)
+        // H/W = 3/10 = 0.3, S/H = 3/3 = 1.0 (dense urban canyon)
+        let city_walls = vec![(30.0, 3.0, 0.0), (30.0, 3.0, 13.0)];
+        let city_sparse_vf = create_sparse_from_urban_canyon(&city_walls, ground_area).unwrap();
+        let city_areas = vec![30.0, 30.0, ground_area];
+        let city_solver =
+            UrbanRadiationSolver::with_uniform_emissivity(city_sparse_vf, city_areas, 0.9);
+
+        let mut city_s = FiveR1CSolver::new();
+        city_s.initialize(&iso_wall).unwrap();
+        let city_physics =
+            PhysicsSurfaceFluxProvider::new().add_surface(city_s, 30.0, solar_gain_wm2);
+        let mut city_provider = FluxionCitySurfaceFluxProvider::new(city_physics, city_solver);
+
+        // Building A at 308K (warmer), Building B at 298K (cooler), ground at 298K
+        let city_temps = vec![308.15, 298.15, 298.15];
+        city_provider
+            .step_all(3600.0, 25.0, 30.0, &city_temps)
+            .unwrap();
+        let city_urban_flux = city_provider.physics.get_exterior_longwave_flux(0);
+
+        // The 2-building city should have HIGHER heat loss than the isolated building
+        // because the warmer wall A loses additional heat to the cooler wall B.
+        // The additional inter-building flux should be non-trivial.
+        let additional_flux = city_urban_flux - iso_urban_flux;
+
+        // Directional correctness: the warmer wall in the city should lose MORE heat
+        // than the isolated case (additional heat loss to neighbor).
+        assert!(
+            additional_flux > 0.5,
+            "Warmer wall in 2-building city should lose MORE heat than isolated \
+            (additional_flux = {additional_flux:.2} W/m²), but got city={city_urban_flux:.2}, \
+            iso={iso_urban_flux:.2}",
+        );
+
+        // Rough magnitude check: for dense urban (H/W ≈ 0.3, S/H ≈ 1.0),
+        // additional inter-building flux should be a few W/m² (2-20% of solar).
+        let solar_ref = solar_gain_wm2;
+        let urban_percentage = (additional_flux / solar_ref) * 100.0;
+        assert!(
+            urban_percentage >= 2.0,
+            "Urban additional flux should be ≥ 2% of solar ({solar_ref} W/m²), \
+            got {urban_percentage:.1}%",
+        );
+        assert!(
+            urban_percentage <= 60.0,
+            "Urban additional flux should be ≤ 60% of solar ({solar_ref} W/m²), \
+            got {urban_percentage:.1}%",
         );
     }
 }
