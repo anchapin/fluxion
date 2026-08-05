@@ -255,7 +255,7 @@ jobs:
           script: |
             const ramGb = process.env.RAM_GB || 'unknown';
             const body = `## Mutation Testing Results (diff-scoped, advisory)\n\n`;
-            body += `> Skipped due to insufficient RAM: ${ramGb} GB available, 16 GB required.\n\n`;
+            body += `> Mutation testing skipped: insufficient RAM (<16gb)\n\n`;
             body += `This is an **advisory** check that requires a 32 GB runner.\n`;
             body += `The nightly full-suite run (\`mutation-nightly.yml\`) handles comprehensive coverage on \`develop\`.\n`;
             body += `\n**Note**: Fork PRs from public repos run on smaller runners and may not have enough RAM.\n`;
