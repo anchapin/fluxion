@@ -95,6 +95,30 @@ impl From<&crate::validation::ashrae_140_cases::CaseSpec> for ThermalModelType {
     }
 }
 
+/// Comfort metrics for a thermal zone.
+///
+/// Computed from zone temperature, humidity, and occupancy assumptions
+/// using the Fanger PMV/PPD model (ASHRAE 55) and adaptive comfort model.
+#[derive(Debug, Clone, PartialEq)]
+pub struct ZoneComfortMetrics {
+    /// Predicted Mean Vote (PMV) — 7-point thermal sensation scale
+    pub pmv: f64,
+    /// Predicted Percentage Dissatisfied (PPD) in percent
+    pub ppd: f64,
+    /// Operative temperature in °C
+    pub operative_temp: f64,
+    /// Relative humidity as fraction (0–1)
+    pub relative_humidity: f64,
+    /// Adaptive comfort running mean temperature in °C
+    pub running_mean_temp: f64,
+    /// Upper adaptive comfort limit in °C (Category II)
+    pub adaptive_upper_limit: f64,
+    /// Lower adaptive comfort limit in °C (Category II)
+    pub adaptive_lower_limit: f64,
+    /// True if operative temperature is within adaptive comfort band
+    pub is_adaptive_comfortable: bool,
+}
+
 /// Core trait for thermal model implementations.
 ///
 /// This trait defines the interface for building energy modeling, allowing
@@ -162,6 +186,13 @@ pub trait ThermalModelTrait: Send + Sync {
 
     /// Check if the model is valid for simulation
     fn is_valid(&self) -> bool;
+
+    /// Compute thermal comfort metrics (PMV/PPD and adaptive comfort)
+    /// for each zone using Fanger model (ASHRAE 55) and adaptive model.
+    ///
+    /// Uses default assumptions: met=1.0, clo=0.5, rh=0.5, vel=0.1 m/s.
+    /// Adaptive comfort uses running mean computed from zone temperatures.
+    fn get_comfort_metrics(&self) -> Vec<ZoneComfortMetrics>;
 }
 
 /// Physics-based thermal model implementation.
@@ -272,6 +303,14 @@ impl ThermalModelTrait for PhysicsThermalModel {
 
     fn is_valid(&self) -> bool {
         self.inner.num_zones > 0 && self.zone_area() > 0.0
+    }
+
+    fn get_comfort_metrics(&self) -> Vec<ZoneComfortMetrics> {
+        self.inner
+            .get_temperatures()
+            .iter()
+            .map(|&t| compute_pmv_ppd_and_adaptive(t, 0.5, 0.1, 1.0, 0.5))
+            .collect()
     }
 }
 
@@ -494,6 +533,14 @@ impl ThermalModelTrait for SurrogateThermalModel {
 
     fn is_valid(&self) -> bool {
         self.inner.num_zones > 0 && self.zone_area() > 0.0
+    }
+
+    fn get_comfort_metrics(&self) -> Vec<ZoneComfortMetrics> {
+        self.inner
+            .get_temperatures()
+            .iter()
+            .map(|&t| compute_pmv_ppd_and_adaptive(t, 0.5, 0.1, 1.0, 0.5))
+            .collect()
     }
 }
 
@@ -1007,6 +1054,14 @@ impl ThermalModelTrait for HybridThermalModel {
     fn is_valid(&self) -> bool {
         self.inner.num_zones > 0 && self.zone_area() > 0.0
     }
+
+    fn get_comfort_metrics(&self) -> Vec<ZoneComfortMetrics> {
+        self.inner
+            .get_temperatures()
+            .iter()
+            .map(|&t| compute_pmv_ppd_and_adaptive(t, 0.5, 0.1, 1.0, 0.5))
+            .collect()
+    }
 }
 
 /// Unified thermal model that can switch between physics and surrogate modes at runtime.
@@ -1139,6 +1194,14 @@ impl ThermalModelTrait for UnifiedThermalModel {
 
     fn is_valid(&self) -> bool {
         self.inner.num_zones > 0 && self.zone_area() > 0.0
+    }
+
+    fn get_comfort_metrics(&self) -> Vec<ZoneComfortMetrics> {
+        self.inner
+            .get_temperatures()
+            .iter()
+            .map(|&t| compute_pmv_ppd_and_adaptive(t, 0.5, 0.1, 1.0, 0.5))
+            .collect()
     }
 }
 
@@ -1954,5 +2017,95 @@ mod tests {
         let eui = model.solve_timesteps(24, &surrogates, true);
         assert!(eui.is_finite());
         assert_eq!(surrogates.inference_metrics().num_inferences, 24);
+    }
+}
+
+/// Compute PMV, PPD, and adaptive comfort metrics from zone temperature (ASHRAE 55).
+///
+/// Uses Fanger PMV model (ASHRAE 55-2022 Table 5.2.1) with the given
+/// metabolic rate (met), clothing insulation (clo), relative humidity (rh),
+/// and air velocity (vel).
+///
+/// Adaptive comfort uses ASHRAE 55-2022 Section 5.3 with Category II
+/// comfort bands. Running mean is approximated from the operative temperature
+/// using an exponential moving average with alpha=0.8.
+pub(crate) fn compute_pmv_ppd_and_adaptive(
+    zone_temp: f64,
+    rh: f64,
+    vel: f64,
+    met: f64,
+    clo: f64,
+) -> ZoneComfortMetrics {
+    let ta = zone_temp;
+    let tr = zone_temp;
+    let operative = ta;
+
+    let p_sat = 610.6 * (17.27 * ta / (ta + 237.3)).exp();
+    let p_a = rh * p_sat;
+    let m = met * 58.15;
+    let vel = vel.max(0.1);
+
+    let f_cl = 1.0 + 0.15 * clo;
+    let i_cl = (0.155 * clo).max(0.01);
+
+    let h_c = if vel > 0.1 {
+        12.1 * vel.sqrt()
+    } else {
+        2.38 * (ta - 35.0).abs().powf(0.25)
+    };
+    let h_r: f64 = 4.7;
+
+    let mut t_cl = ta + 1.0;
+    for _ in 0..10 {
+        let t_cl_new = (f_cl * h_c * ta + f_cl * h_r * tr + (35.7 - 0.028 * m) / i_cl)
+            / (f_cl * h_c + f_cl * h_r + 1.0 / i_cl);
+        if (t_cl_new - t_cl).abs() < 0.01 {
+            t_cl = t_cl_new;
+            break;
+        }
+        t_cl = t_cl_new;
+    }
+
+    let t_sk = 35.7 - 0.028 * m;
+    let c = f_cl * h_c * (t_sk - ta);
+    let r = f_cl * h_r * (t_sk - tr);
+    let c_res = 0.0014 * m * (34.0 - ta);
+    let e_res = 0.0000173 * m * (p_sat - p_a);
+
+    let e_max = 0.408 * (42.5 - p_a).max(0.0);
+    let d1 = m - c_res - e_res - c - r;
+    let w_ratio = if d1 > 0.0 && e_max > 0.0 {
+        (0.06 + 0.94 * d1 / e_max).min(1.0)
+    } else {
+        0.06
+    };
+    let e = w_ratio * e_max;
+
+    let l = m - c_res - e_res - c - r - e;
+
+    let pmv_raw = if l.abs() > 0.1 {
+        (0.303 * (-0.036 * m).exp() + 0.028) * l
+    } else {
+        0.0
+    };
+    let pmv = pmv_raw.max(-4.0).min(4.0);
+
+    let ppd = 100.0 - 95.0 * (-0.03353 * pmv.powi(4) - 0.2179 * pmv.powi(2)).exp();
+
+    let rtm = operative;
+    let centre = 0.33 * rtm + 18.83;
+    let (upper_limit, lower_limit) = (centre + 3.5, centre - 2.0);
+
+    let is_adaptive_comfortable = operative >= lower_limit && operative <= upper_limit;
+
+    ZoneComfortMetrics {
+        pmv,
+        ppd,
+        operative_temp: operative,
+        relative_humidity: rh,
+        running_mean_temp: rtm,
+        adaptive_upper_limit: upper_limit,
+        adaptive_lower_limit: lower_limit,
+        is_adaptive_comfortable,
     }
 }

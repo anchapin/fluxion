@@ -14,7 +14,9 @@
 //! that dependency chain.
 
 use crate::ai::surrogate::SurrogateManager;
-use crate::sim::thermal_model::{ThermalModelMode, ThermalModelTrait};
+use crate::sim::thermal_model::{
+    compute_pmv_ppd_and_adaptive, ThermalModelMode, ThermalModelTrait, ZoneComfortMetrics,
+};
 
 /// A mock thermal model for testing that returns configurable fixed values.
 ///
@@ -187,6 +189,13 @@ impl ThermalModelTrait for MockThermalModel {
 
     fn is_valid(&self) -> bool {
         self.valid
+    }
+
+    fn get_comfort_metrics(&self) -> Vec<ZoneComfortMetrics> {
+        self.temperatures
+            .iter()
+            .map(|&t| compute_pmv_ppd_and_adaptive(t, 0.5, 0.1, 1.0, 0.5))
+            .collect()
     }
 }
 

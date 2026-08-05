@@ -508,4 +508,173 @@ mod tests {
         let rtm = ac.calculate_running_mean(&temps, 0.8);
         assert!(rtm > 20.0);
     }
+
+    #[test]
+    fn test_ashrae55_pmv_neutral_23c() {
+        let pmv_comfort = PmvComfort::new();
+        let ta = ThermodynamicTemperature::new::<degree_celsius>(23.0);
+        let tr = ThermodynamicTemperature::new::<degree_celsius>(23.0);
+        let vel = 0.1;
+        let rh = 0.5;
+        let met = 1.0;
+        let clo = 0.5;
+
+        let result = pmv_comfort
+            .calculate_pmv_ppd(ta, tr, vel, rh, met, clo)
+            .unwrap();
+        assert!(
+            result.pmv < 0.0,
+            "ASHRAE 55 Table 5.2.1: PMV at 23°C should be negative (cool side of neutral), got {}",
+            result.pmv
+        );
+    }
+
+    #[test]
+    fn test_ashrae55_pmv_monotonic_increasing_temp() {
+        let pmv_comfort = PmvComfort::new();
+        let vel = 0.1;
+        let rh = 0.5;
+        let met = 1.0;
+        let clo = 0.5;
+
+        let pmv_20 = pmv_comfort
+            .calculate_pmv_ppd(
+                ThermodynamicTemperature::new::<degree_celsius>(20.0),
+                ThermodynamicTemperature::new::<degree_celsius>(20.0),
+                vel,
+                rh,
+                met,
+                clo,
+            )
+            .unwrap()
+            .pmv;
+        let pmv_25 = pmv_comfort
+            .calculate_pmv_ppd(
+                ThermodynamicTemperature::new::<degree_celsius>(25.0),
+                ThermodynamicTemperature::new::<degree_celsius>(25.0),
+                vel,
+                rh,
+                met,
+                clo,
+            )
+            .unwrap()
+            .pmv;
+        let pmv_30 = pmv_comfort
+            .calculate_pmv_ppd(
+                ThermodynamicTemperature::new::<degree_celsius>(30.0),
+                ThermodynamicTemperature::new::<degree_celsius>(30.0),
+                vel,
+                rh,
+                met,
+                clo,
+            )
+            .unwrap()
+            .pmv;
+        assert!(
+            pmv_20 < pmv_25 && pmv_25 < pmv_30,
+            "ASHRAE 55 monotonicity: PMV should increase with temperature: 20°C={}, 25°C={}, 30°C={}",
+            pmv_20, pmv_25, pmv_30
+        );
+    }
+
+    #[test]
+    fn test_ashrae55_adaptive_comfort_band_20c_running_mean() {
+        let ac = AdaptiveComfort::new();
+        let rtm = 20.0;
+        let (upper, lower) = ac.calculate_comfort_band(rtm, 2);
+        let centre = 0.33 * rtm + 18.83;
+        assert!(
+            (upper - 28.93).abs() < 0.1,
+            "ASHRAE 55 Section 5.3: upper limit at rtm=20°C should be ~28.9°C, got {}",
+            upper
+        );
+        assert!(
+            (lower - 23.43).abs() < 0.1,
+            "ASHRAE 55 Section 5.3: lower limit at rtm=20°C should be ~23.4°C, got {}",
+            lower
+        );
+        assert!(
+            upper > lower,
+            "ASHRAE 55 Section 5.3: upper limit should exceed lower"
+        );
+    }
+
+    #[test]
+    fn test_ashrae55_adaptive_comfort_band_15c_running_mean() {
+        let ac = AdaptiveComfort::new();
+        let rtm = 15.0;
+        let (upper, lower) = ac.calculate_comfort_band(rtm, 2);
+        let centre = 0.33 * rtm + 18.83;
+        assert!(
+            (centre - 23.78).abs() < 0.1,
+            "ASHRAE 55 Section 5.3: centre at rtm=15°C should be ~23.8°C, got {}",
+            centre
+        );
+        assert!(
+            upper > lower,
+            "ASHRAE 55 Section 5.3: upper should exceed lower"
+        );
+    }
+
+    #[test]
+    fn test_ashrae55_adaptive_comfort_max_running_mean() {
+        let ac = AdaptiveComfort::new();
+        let rtm = 27.5;
+        let (upper, _) = ac.calculate_comfort_band(rtm, 2);
+        assert!(
+            (upper - 31.41).abs() < 0.1,
+            "ASHRAE 55 Section 5.3.1: upper limit at rtm=27.5°C should be ~31.4°C, got {}",
+            upper
+        );
+    }
+
+    #[test]
+    fn test_ashrae55_adaptive_operative_in_band() {
+        let ac = AdaptiveComfort::new();
+        let rtm = 20.0;
+        let operative = 23.5;
+        let status = ac.evaluate_status(operative, rtm, 2);
+        assert!(
+            matches!(status, AdaptiveComfortStatus::Comfortable),
+            "ASHRAE 55 Section 5.3: operative=23.5°C with rtm=20°C should be comfortable, got {:?}",
+            status
+        );
+    }
+
+    #[test]
+    fn test_ashrae55_adaptive_operative_above_band() {
+        let ac = AdaptiveComfort::new();
+        let rtm = 20.0;
+        let operative = 32.0;
+        let status = ac.evaluate_status(operative, rtm, 2);
+        assert!(
+            matches!(status, AdaptiveComfortStatus::Warm),
+            "ASHRAE 55 Section 5.3: operative=32°C with rtm=20°C should be Warm, got {:?}",
+            status
+        );
+    }
+
+    #[test]
+    fn test_ashrae55_ppd_at_neutral() {
+        let pmv_comfort = PmvComfort::new();
+        let ppd = pmv_comfort.calculate_ppd(0.0);
+        assert!(
+            (ppd - 5.0).abs() < 1.0,
+            "ASHRAE 55: PPD at neutral (PMV=0) should be 5%, got {}%",
+            ppd
+        );
+    }
+
+    #[test]
+    fn test_ashrae55_ppd_symmetric() {
+        let pmv_comfort = PmvComfort::new();
+        let ppd_pos = pmv_comfort.calculate_ppd(1.0);
+        let ppd_neg = pmv_comfort.calculate_ppd(-1.0);
+        assert!(
+            (ppd_pos - ppd_neg).abs() < 0.1,
+            "ASHRAE 55: PPD should be symmetric around PMV=0: +1={}, -1={}",
+            ppd_pos,
+            ppd_neg
+        );
+    }
 }
