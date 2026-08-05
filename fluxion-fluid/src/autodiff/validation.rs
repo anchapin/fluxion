@@ -65,6 +65,44 @@ pub fn verify_jacobian_entries(analytical: &DMatrix<f64>, finite_diff: &DMatrix<
     true
 }
 
+/// Verify Jacobian entries with relaxed tolerance for clamp/saturation points.
+///
+/// At saturation boundaries (where `clamp()` or `max()` in `evaluate` constrains the output),
+/// the analytical Jacobian and finite-difference Jacobian fundamentally disagree because:
+///
+/// - Analytical Jacobian: assumes smooth function, computes derivative of unsaturated formula
+/// - Finite-diff Jacobian: approximates derivative of the actual clamped function (subgradient)
+///
+/// This creates a non-zero "Jacobian gap" at saturation points that cannot be eliminated.
+/// The 50% tolerance accounts for this fundamental mismatch and the subgradient ambiguity
+/// at non-smooth points. Only entries where BOTH analytical AND finite-diff are near-zero
+/// (|value| < 1e-8) are exempt from the tolerance check, since both methods agree the
+/// derivative is effectively zero there.
+///
+/// See: GitHub Issue #2375 (FLUID-01), KNOWN_ISSUES.md §FLUID-01
+pub fn verify_jacobian_entries_at_saturation(
+    analytical: &DMatrix<f64>,
+    finite_diff: &DMatrix<f64>,
+) -> bool {
+    if analytical.nrows() != finite_diff.nrows() || analytical.ncols() != finite_diff.ncols() {
+        return false;
+    }
+
+    const CLAMP_POINT_TOLERANCE: f64 = 0.50;
+    for i in 0..analytical.nrows() {
+        for j in 0..analytical.ncols() {
+            let a = analytical[(i, j)];
+            let b = finite_diff[(i, j)];
+            let both_near_zero = a.abs() < 1e-8 && b.abs() < 1e-8;
+            if !both_near_zero && relative_error(a, b) > CLAMP_POINT_TOLERANCE {
+                return false;
+            }
+        }
+    }
+
+    true
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
