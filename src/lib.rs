@@ -113,6 +113,7 @@ pub use sim::surface_flux_provider::{
 pub use sim::thermal_model::{
     HybridRouting, HybridThermalModel, PhysicsThermalModel, SurrogateThermalModel,
     ThermalModelBuilder, ThermalModelMode, ThermalModelTrait, UnifiedThermalModel,
+    ZoneComfortMetrics,
 };
 pub use sim::thermal_model_mock::MockThermalModel;
 
