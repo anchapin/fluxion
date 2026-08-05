@@ -9,16 +9,11 @@ use fluxion::sim::engine::{StepParameters, ThermalModel};
 use serde_json::Value;
 
 /// Supported response formats for content-negotiation
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, Default)]
 pub enum ResponseFormat {
+    #[default]
     Json,
     Toon,
-}
-
-impl Default for ResponseFormat {
-    fn default() -> Self {
-        ResponseFormat::Json
-    }
 }
 
 impl ResponseFormat {
@@ -47,118 +42,6 @@ fn format_response<T: serde::Serialize>(value: &T, format: &str) -> String {
 /// Serialize JSON value to TOON (compact binary-like format)
 /// TOON uses a compact representation: arrays as comma-separated,
 /// objects as key:value pairs with minimal whitespace
-fn serialize_to_toon(value: &Value) -> String {
-    match value {
-        Value::Null => "null".to_string(),
-        Value::Bool(b) => b.to_string(),
-        Value::Number(n) => n.to_string(),
-        Value::String(s) => format!("\"{}\"", s),
-        Value::Array(arr) => {
-            if arr.is_empty() {
-                "[]".to_string()
-            } else {
-                let inner: Vec<String> = arr.iter().map(|v| serialize_to_toon(v)).collect();
-                format!("[{}]", inner.join(","))
-            }
-        }
-        Value::Object(obj) => {
-            if obj.is_empty() {
-                "{}".to_string()
-            } else {
-                let inner: Vec<String> = obj
-                    .iter()
-                    .map(|(k, v)| format!("{}:{}", k, serialize_to_toon(v)))
-                    .collect();
-                format!("{{{}}}", inner.join(","))
-            }
-        }
-    }
-}
-
-fn toon_string(value: &Value) -> String {
-    match value {
-        Value::Null => "null".to_string(),
-        Value::Bool(b) => b.to_string(),
-        Value::Number(n) => {
-            if let Some(i) = n.as_i64() {
-                i.to_string()
-            } else if let Some(f) = n.as_f64() {
-                if !f.is_finite() {
-                    return "0".to_string();
-                }
-                if f == f.trunc() {
-                    format!("{:.0}", f)
-                } else if f.abs() < 10.0 {
-                    format!("{:.1}", f)
-                        .trim_end_matches('0')
-                        .trim_end_matches('.')
-                        .to_string()
-                } else {
-                    let s = format!("{:.1}", f);
-                    s.trim_end_matches('0').trim_end_matches('.').to_string()
-                }
-            } else {
-                n.to_string()
-            }
-        }
-        Value::String(s) => s.clone(),
-        Value::Array(arr) => {
-            let inner: Vec<String> = arr.iter().map(|v| toon_string(v)).collect();
-            inner.join(",")
-        }
-        Value::Object(obj) => {
-            let inner: Vec<String> = obj
-                .iter()
-                .map(|(k, v)| format!("{}:{}", compact_key(k), toon_string(v)))
-                .collect();
-            format!("{{{}}}", inner.join(","))
-        }
-    }
-}
-
-fn compact_key(key: &str) -> &str {
-    match key {
-        "zone_index" => "i",
-        "start_hour" => "s",
-        "end_hour" => "e",
-        "temperatures_c" => "t",
-        "surface_index" => "si",
-        "incident_w_m2" => "i",
-        "transmitted_w_m2" => "tx",
-        "num_zones" => "nz",
-        "zone_area_m2" => "za",
-        "window_u_value" => "wu",
-        "heating_setpoint" => "hs",
-        "cooling_setpoint" => "cs",
-        "success" => "ok",
-        "message" => "m",
-        "model" => "md",
-        "assemblies" => "a",
-        "count" => "n",
-        "case_id" => "id",
-        "reference_data" => "rd",
-        "fluxion_version" => "fv",
-        "parameter" => "p",
-        "new_value" => "v",
-        "zones" => "z",
-        "total_surfaces" => "ts",
-        "surfaces" => "sf",
-        "metric" => "mt",
-        "fluxion_value" => "fv",
-        "reference_range" => "rr",
-        "within_tolerance" => "wt",
-        "status" => "st",
-        "period_start_hour" => "ps",
-        "period_end_hour" => "pe",
-        "heating_kwh" => "hk",
-        "cooling_kwh" => "ck",
-        "timesteps" => "ts",
-        "total_heating_kwh" => "th",
-        "total_cooling_kwh" => "tc",
-        _ => key,
-    }
-}
-
 pub fn list_tools() -> Vec<serde_json::Value> {
     vec![
         serde_json::json!({
@@ -541,7 +424,7 @@ fn run_simulation(state: &mut McpState, args: &serde_json::Map<String, Value>) -
         .map(|v| v as usize)
         .unwrap_or(8760);
 
-    let use_surrogates = args
+    let _use_surrogates = args
         .get("use_surrogates")
         .and_then(|v| v.as_bool())
         .unwrap_or(false);
@@ -703,21 +586,20 @@ fn get_solar_gains(state: &mut McpState, args: &serde_json::Map<String, Value>) 
 }
 
 fn list_construction_assemblies(
-    state: &mut McpState,
+    _state: &mut McpState,
     args: &serde_json::Map<String, Value>,
 ) -> Value {
-    let _mass_class_filter = args
-        .get("mass_class")
-        .and_then(|v| v.as_str())
-        .map(|s| match s {
-            "VeryLight" => Some(MassClass::VeryLight),
-            "Light" => Some(MassClass::Light),
-            "Medium" => Some(MassClass::Medium),
-            "Heavy" => Some(MassClass::Heavy),
-            "VeryHeavy" => Some(MassClass::VeryHeavy),
-            _ => None,
-        })
-        .flatten();
+    let _mass_class_filter =
+        args.get("mass_class")
+            .and_then(|v| v.as_str())
+            .and_then(|s| match s {
+                "VeryLight" => Some(MassClass::VeryLight),
+                "Light" => Some(MassClass::Light),
+                "Medium" => Some(MassClass::Medium),
+                "Heavy" => Some(MassClass::Heavy),
+                "VeryHeavy" => Some(MassClass::VeryHeavy),
+                _ => None,
+            });
 
     let heavy_wall = Construction::new(vec![
         ConstructionLayer::new("Gypsum", 0.16, 800.0, 1090.0, 0.013),
@@ -741,11 +623,11 @@ fn list_construction_assemblies(
         ConstructionLayer::new("Concrete", 1.4, 2300.0, 880.0, 0.100),
     ]);
 
-    let assemblies = vec![
-        ("Heavy Wall", heavy_wall),
-        ("Light Wall", light_wall),
-        ("Roof", roof),
-        ("Floor", floor),
+    let assemblies: [(&str, &Construction); 4] = [
+        ("Heavy Wall", &heavy_wall),
+        ("Light Wall", &light_wall),
+        ("Roof", &roof),
+        ("Floor", &floor),
     ];
 
     let result: Vec<_> = assemblies
@@ -773,7 +655,7 @@ fn list_construction_assemblies(
     })
 }
 
-fn get_ashrae140_results(state: &mut McpState, args: &serde_json::Map<String, Value>) -> Value {
+fn get_ashrae140_results(_state: &mut McpState, args: &serde_json::Map<String, Value>) -> Value {
     let case_id = args
         .get("case_id")
         .and_then(|v| v.as_str())
@@ -891,7 +773,7 @@ fn describe_model(state: &mut McpState, _args: &serde_json::Map<String, Value>) 
     })
 }
 
-fn compare_to_reference(state: &mut McpState, args: &serde_json::Map<String, Value>) -> Value {
+fn compare_to_reference(_state: &mut McpState, args: &serde_json::Map<String, Value>) -> Value {
     let case_id = args
         .get("case_id")
         .and_then(|v| v.as_str())
@@ -1532,5 +1414,231 @@ fn build_demo_control_sequence(loop_id: &str) -> HvacControlSequence {
                 },
             ],
         },
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_response_format_from_str() {
+        assert_eq!(ResponseFormat::from_str("json"), ResponseFormat::Json);
+        assert_eq!(
+            ResponseFormat::from_str("application/json"),
+            ResponseFormat::Json
+        );
+        assert_eq!(ResponseFormat::from_str("toon"), ResponseFormat::Toon);
+        assert_eq!(ResponseFormat::from_str("x-toon"), ResponseFormat::Toon);
+        assert_eq!(
+            ResponseFormat::from_str("application/x-toon"),
+            ResponseFormat::Toon
+        );
+        assert_eq!(ResponseFormat::from_str("unknown"), ResponseFormat::Json);
+    }
+
+    #[test]
+    fn test_response_format_default() {
+        let fmt = ResponseFormat::default();
+        assert_eq!(fmt, ResponseFormat::Json);
+    }
+
+    #[test]
+    fn test_format_response_json() {
+        let value = serde_json::json!({"key": "value", "num": 42});
+        let result = format_response(&value, "json");
+        assert!(result.contains("key"));
+        assert!(result.contains("value"));
+    }
+
+    #[test]
+    fn test_format_response_toon() {
+        let value = serde_json::json!({"success": true, "count": 5});
+        let result = format_response(&value, "toon");
+        assert!(!result.is_empty());
+    }
+
+    #[test]
+    fn test_list_tools_returns_expected_count() {
+        let tools = list_tools();
+        assert_eq!(tools.len(), 13);
+    }
+
+    #[test]
+    fn test_list_tools_has_required_methods() {
+        let tools = list_tools();
+        let tool_names: Vec<_> = tools
+            .iter()
+            .filter_map(|t| t.get("name").and_then(|n| n.as_str()))
+            .collect();
+
+        assert!(tool_names.contains(&"load_building_model"));
+        assert!(tool_names.contains(&"run_simulation"));
+        assert!(tool_names.contains(&"get_zone_temperatures"));
+        assert!(tool_names.contains(&"get_hvac_energy"));
+        assert!(tool_names.contains(&"get_solar_gains"));
+        assert!(tool_names.contains(&"list_construction_assemblies"));
+        assert!(tool_names.contains(&"get_ashrae140_results"));
+        assert!(tool_names.contains(&"set_parameter"));
+        assert!(tool_names.contains(&"describe_model"));
+        assert!(tool_names.contains(&"compare_to_reference"));
+        assert!(tool_names.contains(&"inspect_fluid_loop"));
+        assert!(tool_names.contains(&"get_hvac_control_sequence"));
+        assert!(tool_names.contains(&"set_hvac_control_sequence"));
+    }
+
+    #[test]
+    fn test_handle_tool_call_unknown_method() {
+        let mut state = McpState::default();
+        let params = serde_json::json!({
+            "name": "nonexistent_method",
+            "arguments": {}
+        });
+        let result = handle_tool_call(&mut state, params);
+        assert!(result.contains("Unknown tool"));
+    }
+
+    #[test]
+    fn test_handle_tool_call_without_model() {
+        let mut state = McpState::default();
+        let params = serde_json::json!({
+            "name": "run_simulation",
+            "arguments": {"timesteps": 24}
+        });
+        let result = handle_tool_call(&mut state, params);
+        assert!(result.contains("No model loaded"));
+    }
+
+    #[test]
+    fn test_load_building_model() {
+        let mut state = McpState::default();
+        let params = serde_json::json!({
+            "name": "load_building_model",
+            "arguments": {
+                "num_zones": 2,
+                "zone_area": 50.0,
+                "window_u_value": 1.5,
+                "heating_setpoint": 21.0,
+                "cooling_setpoint": 26.0
+            }
+        });
+        let result = handle_tool_call(&mut state, params);
+        assert!(result.contains("success"));
+        assert!(result.contains("2 zones") || result.contains("num_zones"));
+    }
+
+    #[test]
+    fn test_list_construction_assemblies() {
+        let mut state = McpState::default();
+        let params = serde_json::json!({
+            "name": "list_construction_assemblies",
+            "arguments": {}
+        });
+        let result = handle_tool_call(&mut state, params);
+        assert!(result.contains("Heavy Wall") || result.contains("assemblies"));
+    }
+
+    #[test]
+    fn test_get_ashrae140_results_case_600() {
+        let mut state = McpState::default();
+        let params = serde_json::json!({
+            "name": "get_ashrae140_results",
+            "arguments": {"case_id": "600"}
+        });
+        let result = handle_tool_call(&mut state, params);
+        assert!(result.contains("case_id"));
+        assert!(result.contains("600"));
+    }
+
+    #[test]
+    fn test_get_ashrae140_results_case_900() {
+        let mut state = McpState::default();
+        let params = serde_json::json!({
+            "name": "get_ashrae140_results",
+            "arguments": {"case_id": "900"}
+        });
+        let result = handle_tool_call(&mut state, params);
+        assert!(result.contains("900"));
+    }
+
+    #[test]
+    fn test_compare_to_reference() {
+        let mut state = McpState::default();
+        let params = serde_json::json!({
+            "name": "compare_to_reference",
+            "arguments": {
+                "case_id": "600",
+                "metric": "annual_heating"
+            }
+        });
+        let result = handle_tool_call(&mut state, params);
+        assert!(result.contains("within_tolerance") || result.contains("status"));
+    }
+
+    #[test]
+    fn test_inspect_fluid_loop_chilled_water() {
+        let mut state = McpState::default();
+        let params = serde_json::json!({
+            "name": "inspect_fluid_loop",
+            "arguments": {"loop_id": "chilled_water_loop"}
+        });
+        let result = handle_tool_call(&mut state, params);
+        assert!(result.contains("chilled_water_loop") || result.contains("loop_id"));
+    }
+
+    #[test]
+    fn test_inspect_fluid_loop_hot_water() {
+        let mut state = McpState::default();
+        let params = serde_json::json!({
+            "name": "inspect_fluid_loop",
+            "arguments": {"loop_id": "hot_water_loop"}
+        });
+        let result = handle_tool_call(&mut state, params);
+        assert!(result.contains("hot_water_loop") || result.contains("loop_id"));
+    }
+
+    #[test]
+    fn test_get_hvac_control_sequence() {
+        let mut state = McpState::default();
+        let params = serde_json::json!({
+            "name": "get_hvac_control_sequence",
+            "arguments": {"loop_id": "chilled_water_loop"}
+        });
+        let result = handle_tool_call(&mut state, params);
+        assert!(result.contains("control_sequence") || result.contains("loop_id"));
+    }
+
+    #[test]
+    fn test_set_hvac_control_sequence_requires_confirm() {
+        let mut state = McpState::default();
+        let params = serde_json::json!({
+            "name": "set_hvac_control_sequence",
+            "arguments": {
+                "loop_id": "chilled_water_loop",
+                "changes": {"heating_setpoint": 22.0},
+                "confirm": false
+            }
+        });
+        let result = handle_tool_call(&mut state, params);
+        assert!(result.contains("confirm") || result.contains("confirmation"));
+    }
+
+    #[test]
+    fn test_set_hvac_control_sequence_with_confirm() {
+        let mut state = McpState::default();
+        let params = serde_json::json!({
+            "name": "set_hvac_control_sequence",
+            "arguments": {
+                "loop_id": "chilled_water_loop",
+                "changes": {"heating_setpoint": 22.0},
+                "confirm": true
+            }
+        });
+        let result = handle_tool_call(&mut state, params);
+        assert!(
+            result.contains("applied_changes")
+                || result.contains("rejected_changes")
+                || result.contains("success")
+        );
     }
 }
