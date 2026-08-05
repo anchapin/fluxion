@@ -1,0 +1,94 @@
+name: Known Issues Staleness
+
+on:
+  schedule:
+    # Run every Monday at 09:00 UTC
+    - cron: '0 9 * * 1'
+  workflow_dispatch:
+
+jobs:
+  check-stale:
+    runs-on: ubuntu-latest
+    name: Check KNOWN_ISSUES.md staleness
+    permissions:
+      contents: read
+      issues: write
+
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4
+
+      - name: Set up Python
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065  # v5
+        with:
+          python-version: '3.12'
+
+      - name: Check staleness
+        id: stale_check
+        run: |
+          python3 scripts/check_known_issues_stale.py
+          EXIT_CODE=$?
+          if [[ $EXIT_CODE -eq 0 ]]; then
+            echo "status=fresh" >> "$GITHUB_OUTPUT"
+          else
+            echo "status=stale" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Find existing staleness issue
+        if: steps.stale_check.outputs.status == 'stale'
+        id: find_issue
+        run: |
+          ISSUE_NUMBER=$(gh issue list \
+            --repo "${{ github.repository }}" \
+            --label "known-issues-refresh" \
+            --state open \
+            --limit 1 \
+            --json number \
+            --jq '.[0].number // empty')
+          echo "issue_number=${ISSUE_NUMBER:-}" >> "$GITHUB_OUTPUT"
+
+      - name: Create issue if stale and no open issue exists
+        if: steps.stale_check.outputs.status == 'stale' && steps.find_issue.outputs.issue_number == ''
+        run: |
+          gh issue create \
+            --repo "${{ github.repository }}" \
+            --title "KNOWN_ISSUES.md Refresh Required — stale >45 days" \
+            --label "documentation" \
+            --label "known-issues-refresh" \
+            --label "P2" \
+            --assignee "@me" \
+            --body "$(cat <<'ISSUE_BODY'
+## KNOWN_ISSUES.md Staleness Alert
+
+`docs/KNOWN_ISSUES.md` is more than **45 days** old and approaching the 60-day CI gate.
+
+### Action Required
+
+1. Review each section of `docs/KNOWN_ISSUES.md` and update the Last Updated date and section notes as needed
+2. Run the refresh script: `bash scripts/refresh_known_issues.sh`
+3. Open a PR with the refreshed date and a brief summary of any section updates
+
+### Refresh Checklist
+
+- [ ] **Foundation Issues (BASE)** — verify all BASE-0x entries still reflect current state
+- [ ] **Solar Issues (SOLAR)** — verify SOLAR-0x entries and update if new issues discovered
+- [ ] **Free-Floating Temperature Issues (FREE)** — verify FREE-0x entries
+- [ ] **Temperature Issues (TEMP)** — verify TEMP-0x entries
+- [ ] **Multi-Zone Issues (MULTI)** — verify MULTI-0x entries
+- [ ] **5R1C Model Limitations (LIMIT)** — verify LIMIT-0x entries, especially LIMIT-05
+- [ ] Update `*Last Updated: YYYY-MM-DD*` at the top of the file
+
+### Reference
+
+- Staleness check: `scripts/check_known_issues_stale.py` (60-day CI gate)
+- Refresh script: `scripts/refresh_known_issues.sh`
+- CI gate fails at 60 days; this issue was created at 45 days to allow time for review
+ISSUE_BODY
+          )"
+
+      - name: Comment on existing issue if stale and already open
+        if: steps.stale_check.outputs.status == 'stale' && steps.find_issue.outputs.issue_number != ''
+        run: |
+          gh issue comment \
+            "${{ steps.find_issue.outputs.issue_number }}" \
+            --repo "${{ github.repository }}" \
+            --body "<!-- known-issues-stale workflow -->\n\n:warning: **Still stale** — `docs/KNOWN_ISSUES.md` is still >45 days old. Please refresh or close this issue if no updates are needed."
