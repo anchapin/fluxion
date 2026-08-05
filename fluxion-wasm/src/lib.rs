@@ -103,6 +103,8 @@ pub struct FluidSimulation {
     control_setpoints: std::collections::HashMap<String, f64>,
     timestep_hours: f64,
     current_hour: f64,
+    mode: String,
+    zone_area: f64,
 }
 
 #[wasm_bindgen]
@@ -135,6 +137,8 @@ impl FluidSimulation {
         let heating_setpoints = vec![heating_sp; num_zones];
         let cooling_setpoints = vec![cooling_sp; num_zones];
 
+        let zone_area = 50.0 * num_zones as f64;
+
         console_log!(
             "fluxion-wasm: FluidSimulation created with {} zones, heating={}°C, cooling={}°C",
             num_zones,
@@ -150,6 +154,8 @@ impl FluidSimulation {
             control_setpoints: std::collections::HashMap::new(),
             timestep_hours: 1.0,
             current_hour: 0.0,
+            mode: "Physics".to_string(),
+            zone_area,
         })
     }
 
@@ -309,6 +315,168 @@ impl FluidSimulation {
     #[wasm_bindgen]
     pub fn current_hour(&self) -> f64 {
         self.current_hour
+    }
+
+    /// Set all zone temperatures.
+    ///
+    /// # Arguments
+    /// * `temperatures` - Vector of zone temperatures in °C (must match `num_zones`)
+    ///
+    /// # Returns
+    /// Unit on success, or `JsValue` error if length mismatch.
+    #[wasm_bindgen]
+    pub fn set_temperatures(&mut self, temperatures: Vec<f64>) -> Result<(), JsValue> {
+        if temperatures.len() != self.zone_temps.len() {
+            return Err(JsValue::from_str(&format!(
+                "temperatures length {} does not match num_zones {}",
+                temperatures.len(),
+                self.zone_temps.len()
+            )));
+        }
+        self.zone_temps = temperatures;
+        Ok(())
+    }
+
+    /// Get the current execution mode.
+    ///
+    /// Returns `"Physics"` since the WASM build only supports physics-based simulation.
+    #[wasm_bindgen]
+    pub fn mode(&self) -> String {
+        self.mode.clone()
+    }
+
+    /// Set the execution mode.
+    ///
+    /// Currently a no-op since only `"Physics"` mode is supported in WASM.
+    /// Calling with any value logs a warning and leaves mode unchanged.
+    #[wasm_bindgen]
+    pub fn set_mode(&mut self, mode: &str) -> Result<(), JsValue> {
+        console_log!(
+            "fluxion-wasm: set_mode({}) — only 'Physics' mode is supported in WASM",
+            mode
+        );
+        if mode != "Physics" {
+            console_log!(
+                "fluxion-wasm: WARNING — mode '{}' not supported, keeping 'Physics'",
+                mode
+            );
+        }
+        self.mode = "Physics".to_string();
+        Ok(())
+    }
+
+    /// Apply parameters from an optimization gene vector.
+    ///
+    /// # Arguments
+    /// * `params` - Parameter vector:
+    ///   - `params[0]`: Window U-value (W/m²K, range: 0.5-3.0) — stored but not used in simplified model
+    ///   - `params[1]`: Heating setpoint (°C, range: 15-25) — applied to all zones
+    ///   - `params[2]`: Cooling setpoint (°C, range: 22-32) — applied to all zones
+    ///
+    /// # Returns
+    /// Unit on success, or `JsValue` error if param count is invalid.
+    #[wasm_bindgen]
+    pub fn apply_parameters(&mut self, params: Vec<f64>) -> Result<(), JsValue> {
+        if params.len() < 3 {
+            return Err(JsValue::from_str(&format!(
+                "apply_parameters requires 3 params, got {}",
+                params.len()
+            )));
+        }
+
+        let heating_sp = params[1].clamp(15.0, 25.0);
+        let cooling_sp = params[2].clamp(22.0, 32.0);
+
+        for sp in &mut self.heating_setpoints {
+            *sp = heating_sp;
+        }
+        for sp in &mut self.cooling_setpoints {
+            *sp = cooling_sp;
+        }
+
+        console_log!(
+            "fluxion-wasm: apply_parameters — heating={}°C, cooling={}°C",
+            heating_sp,
+            cooling_sp
+        );
+        Ok(())
+    }
+
+    /// Get zone floor area in m².
+    ///
+    /// Returns the total floor area (50 m² per zone).
+    #[wasm_bindgen]
+    pub fn zone_area(&self) -> f64 {
+        self.zone_area
+    }
+
+    /// Calculate HVAC power demand based on current conditions.
+    ///
+    /// Uses a simplified energy balance to estimate heating (positive) or cooling
+    /// (negative) power demand in Watts.
+    ///
+    /// # Arguments
+    /// * `timestep` - Current timestep index (unused in simplified model)
+    /// * `outdoor_temp` - Outdoor drybulb temperature in °C
+    ///
+    /// # Returns
+    /// Heating power (positive) or cooling power (negative) in Watts.
+    #[wasm_bindgen]
+    pub fn hvac_power_demand(&self, _timestep: usize, outdoor_temp: f64) -> f64 {
+        let ua = 50.0;
+        let mut total_power = 0.0;
+
+        for i in 0..self.zone_temps.len() {
+            let temp = self.zone_temps[i];
+            let heating_sp = self.heating_setpoints[i];
+            let cooling_sp = self.cooling_setpoints[i];
+
+            if temp < heating_sp {
+                total_power += ua * (heating_sp - temp);
+            } else if temp > cooling_sp {
+                total_power -= ua * (temp - cooling_sp);
+            }
+        }
+
+        total_power -= ua * (outdoor_temp - 20.0) * self.zone_temps.len() as f64;
+        total_power
+    }
+
+    /// Check if the simulation state is valid.
+    ///
+    /// Returns `true` if zone count > 0 and heating setpoint < cooling setpoint.
+    #[wasm_bindgen]
+    pub fn is_valid(&self) -> bool {
+        if self.zone_temps.is_empty() {
+            return false;
+        }
+        for i in 0..self.heating_setpoints.len() {
+            if self.heating_setpoints[i] >= self.cooling_setpoints[i] {
+                return false;
+            }
+        }
+        true
+    }
+
+    /// Solve thermal model for multiple timesteps.
+    ///
+    /// **Note:** This is a stub. Full `solve_timesteps` requires `SurrogateManager`
+    /// which uses ONNX inference — unavailable in WASM. This method returns `0.0`
+    /// as a placeholder EUI value.
+    ///
+    /// # Arguments
+    /// * `steps` - Number of hourly timesteps (ignored)
+    /// * `use_surrogates` - Ignored (always `false` in WASM)
+    ///
+    /// # Returns
+    /// Placeholder EUI value of `0.0`.
+    #[wasm_bindgen]
+    pub fn solve_timesteps(&mut self, steps: usize, _use_surrogates: bool) -> f64 {
+        console_log!(
+            "fluxion-wasm: solve_timesteps({} steps) — ONNX surrogates unavailable in WASM, returning 0.0",
+            steps
+        );
+        0.0
     }
 }
 

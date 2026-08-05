@@ -64,6 +64,7 @@ for (let hour = 0; hour < 8760; hour++) {
 | `step(dtHours)` | Advance simulation by `dtHours` hours |
 | `getZoneTemps()` | Returns `Float64Array` of zone temperatures (°C) |
 | `getZoneTemp(zoneId)` | Get temperature for zone `zoneId` |
+| `setTemperatures(temps)` | Set all zone temperatures (must match `numZones`) |
 | `setControl(loopId, setpoint)` | Set a control loop setpoint |
 | `getControl(loopId)` | Get a control loop setpoint |
 | `numZones()` | Number of thermal zones |
@@ -71,6 +72,13 @@ for (let hour = 0; hour < 8760; hour++) {
 | `getCoolingSetpoints()` | Cooling setpoints per zone |
 | `resetTemperatures(temperature)` | Reset all zone temperatures |
 | `currentHour()` | Current simulation time in hours |
+| `mode()` | Current execution mode (always `"Physics"`) |
+| `setMode(mode)` | Set mode (no-op, WASM only supports Physics) |
+| `applyParameters(params)` | Apply optimization gene vector (window U-value, heating/cooling setpoints) |
+| `zoneArea()` | Zone floor area in m² |
+| `hvacPowerDemand(timestep, outdoorTemp)` | HVAC heating (+) or cooling (−) power in W |
+| `isValid()` | Returns `true` if simulation state is valid |
+| `solveTimesteps(steps, useSurrogates)` | Stub — returns `0.0` (ONNX unavailable in WASM) |
 
 ## Configuration
 
