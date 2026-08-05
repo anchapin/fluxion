@@ -17,6 +17,7 @@ use crate::ai::surrogate::SurrogateManager;
 use crate::sim::thermal_model::{
     compute_pmv_ppd_and_adaptive, ThermalModelMode, ThermalModelTrait, ZoneComfortMetrics,
 };
+use fluxion_twin::TwinCorrection;
 
 /// A mock thermal model for testing that returns configurable fixed values.
 ///
@@ -196,6 +197,14 @@ impl ThermalModelTrait for MockThermalModel {
             .iter()
             .map(|&t| compute_pmv_ppd_and_adaptive(t, 0.5, 0.1, 1.0, 0.5))
             .collect()
+    }
+
+    fn set_twin_correction(&mut self, correction: &TwinCorrection) {
+        for (i, corr) in correction.zone_temperatures.iter().enumerate() {
+            if i < self.temperatures.len() {
+                self.temperatures[i] += corr;
+            }
+        }
     }
 }
 

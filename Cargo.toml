@@ -116,6 +116,7 @@ unexpected_cfgs = { level = "allow", check-cfg = ["cfg(docsrs,test)", "cfg(gil_r
 [dependencies]
 # Workspace sibling crate (#1255): leaf modules built once & cached by cargo-mutants.
 fluxion-core = { path = "fluxion-core", version = "1.0.0" }
+fluxion-twin = { path = "crates/fluxion-twin", version = "0.1.0" }
 
 # Optional acausal HVAC / fluid network crate (Issue #1980 / ADR-005).
 # Compile with --features fluid to enable fluid port types and network topology.

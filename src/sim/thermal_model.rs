@@ -54,6 +54,7 @@
 use crate::ai::surrogate::SurrogateManager;
 use crate::physics::cta::{ContinuousTensor, VectorField};
 use crate::sim::thermal_model_core::get_daily_cycle;
+use fluxion_twin::TwinCorrection;
 use std::error::Error;
 use tracing::info;
 
@@ -193,6 +194,16 @@ pub trait ThermalModelTrait: Send + Sync {
     /// Uses default assumptions: met=1.0, clo=0.5, rh=0.5, vel=0.1 m/s.
     /// Adaptive comfort uses running mean computed from zone temperatures.
     fn get_comfort_metrics(&self) -> Vec<ZoneComfortMetrics>;
+
+    /// Apply a twin correction to zone temperatures.
+    ///
+    /// The digital twin UKF produces a [`TwinCorrection`] that adjusts the
+    /// physics-model predicted temperatures toward the sensor-corrected estimates.
+    /// This method applies those corrections in-place.
+    ///
+    /// # Arguments
+    /// * `correction` — per-zone temperature corrections from the UKF
+    fn set_twin_correction(&mut self, correction: &TwinCorrection);
 }
 
 /// Physics-based thermal model implementation.
@@ -311,6 +322,16 @@ impl ThermalModelTrait for PhysicsThermalModel {
             .iter()
             .map(|&t| compute_pmv_ppd_and_adaptive(t, 0.5, 0.1, 1.0, 0.5))
             .collect()
+    }
+
+    fn set_twin_correction(&mut self, correction: &TwinCorrection) {
+        let mut temps = self.inner.temperatures.as_ref().to_vec();
+        for (i, corr) in correction.zone_temperatures.iter().enumerate() {
+            if i < temps.len() {
+                temps[i] += corr;
+            }
+        }
+        self.inner.temperatures = VectorField::new(temps);
     }
 }
 
@@ -541,6 +562,16 @@ impl ThermalModelTrait for SurrogateThermalModel {
             .iter()
             .map(|&t| compute_pmv_ppd_and_adaptive(t, 0.5, 0.1, 1.0, 0.5))
             .collect()
+    }
+
+    fn set_twin_correction(&mut self, correction: &TwinCorrection) {
+        let mut temps = self.inner.temperatures.as_ref().to_vec();
+        for (i, corr) in correction.zone_temperatures.iter().enumerate() {
+            if i < temps.len() {
+                temps[i] += corr;
+            }
+        }
+        self.inner.temperatures = VectorField::new(temps);
     }
 }
 
@@ -1062,6 +1093,16 @@ impl ThermalModelTrait for HybridThermalModel {
             .map(|&t| compute_pmv_ppd_and_adaptive(t, 0.5, 0.1, 1.0, 0.5))
             .collect()
     }
+
+    fn set_twin_correction(&mut self, correction: &TwinCorrection) {
+        let mut temps = self.inner.temperatures.as_ref().to_vec();
+        for (i, corr) in correction.zone_temperatures.iter().enumerate() {
+            if i < temps.len() {
+                temps[i] += corr;
+            }
+        }
+        self.inner.temperatures = crate::physics::cta::VectorField::new(temps);
+    }
 }
 
 /// Unified thermal model that can switch between physics and surrogate modes at runtime.
@@ -1202,6 +1243,16 @@ impl ThermalModelTrait for UnifiedThermalModel {
             .iter()
             .map(|&t| compute_pmv_ppd_and_adaptive(t, 0.5, 0.1, 1.0, 0.5))
             .collect()
+    }
+
+    fn set_twin_correction(&mut self, correction: &TwinCorrection) {
+        let mut temps = self.inner.temperatures.as_ref().to_vec();
+        for (i, corr) in correction.zone_temperatures.iter().enumerate() {
+            if i < temps.len() {
+                temps[i] += corr;
+            }
+        }
+        self.inner.temperatures = VectorField::new(temps);
     }
 }
 
@@ -2017,6 +2068,63 @@ mod tests {
         let eui = model.solve_timesteps(24, &surrogates, true);
         assert!(eui.is_finite());
         assert_eq!(surrogates.inference_metrics().num_inferences, 24);
+    }
+
+    #[test]
+    fn test_set_twin_correction_single_zone() {
+        use fluxion_twin::TwinCorrection;
+
+        let mut model = PhysicsThermalModel::new(1);
+        model.set_temperatures(&[20.0]);
+
+        let correction = TwinCorrection::single_zone(0.5, 0.1);
+        model.set_twin_correction(&correction);
+
+        let temps = model.get_temperatures();
+        assert!((temps[0] - 20.5).abs() < 1e-9);
+    }
+
+    #[test]
+    fn test_set_twin_correction_multi_zone() {
+        use fluxion_twin::TwinCorrection;
+
+        let mut model = PhysicsThermalModel::new(3);
+        model.set_temperatures(&[18.0, 20.0, 22.0]);
+
+        let correction = TwinCorrection::multi_zone(vec![-0.5, 1.0, 0.3], vec![0.1, 0.1, 0.1]);
+        model.set_twin_correction(&correction);
+
+        let temps = model.get_temperatures();
+        assert!((temps[0] - 17.5).abs() < 1e-9);
+        assert!((temps[1] - 21.0).abs() < 1e-9);
+        assert!((temps[2] - 22.3).abs() < 1e-9);
+    }
+
+    #[test]
+    fn test_set_twin_correction_all_model_types() {
+        use fluxion_twin::TwinCorrection;
+
+        let correction = TwinCorrection::single_zone(1.0, 0.05);
+
+        let mut physics = PhysicsThermalModel::new(1);
+        physics.set_temperatures(&[20.0]);
+        physics.set_twin_correction(&correction);
+        assert!((physics.get_temperatures()[0] - 21.0).abs() < 1e-9);
+
+        let mut surrogate = SurrogateThermalModel::new(1);
+        surrogate.set_temperatures(&[20.0]);
+        surrogate.set_twin_correction(&correction);
+        assert!((surrogate.get_temperatures()[0] - 21.0).abs() < 1e-9);
+
+        let mut hybrid = HybridThermalModel::new(1, HybridRouting::default());
+        hybrid.set_temperatures(&[20.0]);
+        hybrid.set_twin_correction(&correction);
+        assert!((hybrid.get_temperatures()[0] - 21.0).abs() < 1e-9);
+
+        let mut unified = UnifiedThermalModel::new(1);
+        unified.set_temperatures(&[20.0]);
+        unified.set_twin_correction(&correction);
+        assert!((unified.get_temperatures()[0] - 21.0).abs() < 1e-9);
     }
 }
 

@@ -17,9 +17,7 @@
 //!
 //! - Wan, E.A. & van der Merwe, R. (2000). The Unscented Kalman Filter for Nonlinear Estimation.
 
-use nalgebra::DMatrix;
-#[cfg(test)]
-use nalgebra::DVector;
+use nalgebra::{DMatrix, DVector};
 use std::vec::Vec;
 
 pub mod error;
@@ -29,6 +27,175 @@ pub use telemetry::{
     MqttTelemetryConsumer, MqttTelemetryError, MqttTelemetryMessage, Sender, TelemetryConsumer,
     TelemetryError, TelemetryMsg,
 };
+
+/// Correction produced by the digital twin UKF — applied to zone temperatures.
+///
+/// Contains per-zone temperature corrections (in °C) that adjust the physics
+/// model's predicted temperatures towards the UKF's estimated (corrected) state.
+#[derive(Clone, Debug, Default)]
+pub struct TwinCorrection {
+    /// Per-zone temperature corrections in Celsius.
+    pub zone_temperatures: Vec<f64>,
+    /// Estimated covariance diagonal (for diagnostics / trust weighting).
+    pub covariance_diagonal: Vec<f64>,
+}
+
+impl TwinCorrection {
+    /// Create a new correction for a single-zone model.
+    pub fn single_zone(correction: f64, covariance: f64) -> Self {
+        Self {
+            zone_temperatures: vec![correction],
+            covariance_diagonal: vec![covariance],
+        }
+    }
+
+    /// Create a new correction for a multi-zone model.
+    pub fn multi_zone(corrections: Vec<f64>, covariances: Vec<f64>) -> Self {
+        Self {
+            zone_temperatures: corrections,
+            covariance_diagonal: covariances,
+        }
+    }
+
+    /// Number of zones this correction covers.
+    pub fn num_zones(&self) -> usize {
+        self.zone_temperatures.len()
+    }
+}
+
+/// Trait for digital twin state estimators that produce [`TwinCorrection`] values.
+///
+/// Implementors wrap a specific state estimation algorithm (UKF, EKF, particle filter, etc.)
+/// and expose a unified interface for correcting thermal model state.
+pub trait TwinStateEstimator: Send + Sync {
+    /// Advance the estimator by one timestep (predict step).
+    fn predict(&mut self, u: &[f64]) -> Result<(), KalmanError>;
+
+    /// Inject a measurement and produce a corrected state estimate.
+    fn correct(&mut self, measurement: &[f64]) -> Result<TwinCorrection, KalmanError>;
+
+    /// Current estimated state vector.
+    fn current_state(&self) -> Vec<f64>;
+
+    /// Number of state dimensions.
+    fn state_dim(&self) -> usize;
+
+    /// Number of measurement dimensions.
+    fn measurement_dim(&self) -> usize;
+}
+
+/// Adapter that wraps an [`UnscentedKalmanFilter`] into a [`TwinStateEstimator`].
+///
+/// # Type Parameters
+///
+/// - `S`: State vector type (must implement [`StateVector`])
+/// - `M`: Measurement vector type (must implement [`MeasurementVector`])
+pub struct UkfTwinAdapter<S, M>
+where
+    S: StateVector + Send + Sync,
+    M: MeasurementVector + Send + Sync,
+{
+    ukf: UnscentedKalmanFilter<S, M>,
+}
+
+impl<S, M> UkfTwinAdapter<S, M>
+where
+    S: StateVector + Send + Sync,
+    M: MeasurementVector + Send + Sync,
+{
+    /// Construct a new adapter from an existing UKF instance.
+    pub fn new(ukf: UnscentedKalmanFilter<S, M>) -> Self {
+        Self { ukf }
+    }
+
+    /// Construct a new adapter with thermal-domain defaults for a single zone.
+    ///
+    /// State: `[zone_temp]` — single zone temperature in °C.
+    /// Measurement: `[zone_temp]` — observed zone temperature in °C.
+    ///
+    /// # Arguments
+    ///
+    /// * `initial_temp` — initial zone temperature in °C
+    /// * `process_noise_std` — process noise std dev (°C/sqrt(h), typical: 0.1–0.5)
+    /// * `measurement_noise_std` — measurement noise std dev (°C, typical: 0.1–1.0)
+    pub fn single_zone(
+        initial_temp: f64,
+        process_noise_std: f64,
+        measurement_noise_std: f64,
+    ) -> Self {
+        let initial_state = S::from_slice(&[initial_temp]);
+        let _n = 1;
+        let p0 = DMatrix::from_diagonal(&DVector::from_vec(vec![1.0]));
+        let q = DMatrix::from_diagonal(&DVector::from_vec(vec![process_noise_std.powi(2)]));
+        let r = DMatrix::from_diagonal(&DVector::from_vec(vec![measurement_noise_std.powi(2)]));
+        let ukf = UnscentedKalmanFilter::new(
+            initial_state,
+            p0,
+            q,
+            r,
+            |x: &S, _u: &[f64]| {
+                let x_vec = x.as_slice();
+                S::from_slice(&[x_vec[0]])
+            },
+            |x: &S| {
+                let x_vec = x.as_slice();
+                M::from_slice(&[x_vec[0]])
+            },
+        );
+        Self { ukf }
+    }
+}
+
+impl<S, M> TwinStateEstimator for UkfTwinAdapter<S, M>
+where
+    S: StateVector + Send + Sync,
+    M: MeasurementVector + Send + Sync,
+{
+    fn predict(&mut self, u: &[f64]) -> Result<(), KalmanError> {
+        self.ukf.predict(u)
+    }
+
+    fn correct(&mut self, measurement: &[f64]) -> Result<TwinCorrection, KalmanError> {
+        let m_vec = M::from_slice(measurement);
+        let num_zones = measurement.len();
+
+        let state_before = self.ukf.state.as_slice().to_vec();
+        self.ukf.update(&m_vec)?;
+
+        let state_after = self.ukf.state.as_slice();
+        let corrections: Vec<f64> = state_after
+            .iter()
+            .zip(state_before.iter())
+            .map(|(&est, &pred)| est - pred)
+            .collect();
+
+        let cov_diag: Vec<f64> = (0..self.ukf.p_covariance.nrows())
+            .map(|i| self.ukf.p_covariance[(i, i)])
+            .collect();
+
+        let result = TwinCorrection::multi_zone(corrections, cov_diag);
+        if num_zones == 1 && result.zone_temperatures.len() == 1 {
+            return Ok(TwinCorrection::single_zone(
+                result.zone_temperatures[0],
+                result.covariance_diagonal[0],
+            ));
+        }
+
+        Ok(result)
+    }
+
+    fn current_state(&self) -> Vec<f64> {
+        self.ukf.state.as_slice().to_vec()
+    }
+
+    fn state_dim(&self) -> usize {
+        self.ukf.state_dim()
+    }
+
+    fn measurement_dim(&self) -> usize {
+        self.ukf.measurement_dim()
+    }
+}
 
 pub trait StateVector: Clone {
     fn zeros() -> Self;

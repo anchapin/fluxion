@@ -1174,6 +1174,7 @@ dependencies = [
  "fluxion-core",
  "fluxion-fluid",
  "fluxion-toon",
+ "fluxion-twin",
  "futures",
  "futures-util",
  "http-body-util",
@@ -1250,6 +1251,24 @@ dependencies = [
  "tracing",
  "uom",
  "uuid",
+]
+
+[[package]]
+name = "fluxion-cfd"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "approx",
+ "criterion",
+ "env_logger",
+ "faer",
+ "fluxion-core",
+ "log",
+ "nalgebra 0.34.2",
+ "ndarray 0.16.1",
+ "num-complex",
+ "rayon",
+ "thiserror 1.0.69",
 ]
 
 [[package]]
