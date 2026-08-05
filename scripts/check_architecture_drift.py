@@ -7,6 +7,7 @@ Fails if:
   1. A new Rust trait appears that isn't documented in ARCHITECTURE.md
   2. A documented module file no longer exists
   3. A documented trait no longer exists in code
+  4. Trait contract invariants are violated (method signatures)
 
 Usage:
   python3 scripts/check_architecture_drift.py
@@ -17,18 +18,277 @@ Exit codes:
   2 — Script error
 """
 
+import json
 import re
 import sys
+from dataclasses import dataclass, asdict
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 ARCH_FILE = REPO_ROOT / "ARCHITECTURE.md"
+BASELINE_FILE = REPO_ROOT / "scripts" / "trait_contract_baseline.json"
 # Scan source directories from all workspace members
 SRC_DIRS = [
     REPO_ROOT / "src",
     REPO_ROOT / "fluxion-core" / "src",
     REPO_ROOT / "fluxion-grid" / "src",
 ]
+
+# Key trait source files for contract verification
+KEY_TRAIT_FILES = {
+    "HeatConductionSolver": REPO_ROOT / "src" / "physics" / "solver_trait.rs",
+    "VentilationSchedule": REPO_ROOT / "src" / "sim" / "ventilation.rs",
+    "ThermalModelTrait": REPO_ROOT / "src" / "sim" / "thermal_model.rs",
+}
+
+
+@dataclass
+class MethodSignature:
+    name: str
+    receiver: str  # "&self", "&mut self", or "" for static
+    params: list[str]
+    return_type: str
+
+
+@dataclass
+class TraitContract:
+    trait_name: str
+    source_file: str
+    methods: dict[str, MethodSignature]
+
+
+def parse_trait_methods(content: str, trait_name: str) -> dict[str, MethodSignature]:
+    """Parse all method signatures from a trait definition in Rust source."""
+    methods = {}
+
+    # Find the trait block
+    trait_pattern = rf"pub\s+trait\s+{trait_name}\s*[:\{{][^{{]*\{{"
+    trait_match = re.search(trait_pattern, content, re.DOTALL)
+    if not trait_match:
+        # Try simpler pattern
+        trait_pattern = rf"pub\s+trait\s+{trait_name}\s*\{{"
+        trait_match = re.search(trait_pattern, content, re.DOTALL)
+
+    if not trait_match:
+        return methods
+
+    # Extract trait body (everything between { and matching })
+    start = trait_match.end() - 1  # Position of opening {
+    depth = 1
+    pos = start + 1
+    while pos < len(content) and depth > 0:
+        if content[pos] == '{':
+            depth += 1
+        elif content[pos] == '}':
+            depth -= 1
+        pos += 1
+    trait_body = content[start:pos]
+
+    # Parse method signatures using regex
+    # Match: fn name(&self/&mut self) -> ReturnType
+    fn_pattern = r"fn\s+(\w+)\s*(\([^)]*\))\s*(->\s*[^{{]+)?\s*\{?"
+    for match in re.finditer(fn_pattern, trait_body):
+        fn_name = match.group(1)
+        params_str = match.group(2)
+        return_type = match.group(3) or ""
+
+        # Parse receiver
+        receiver = ""
+        if "&mut self" in params_str:
+            receiver = "&mut self"
+        elif "&self" in params_str:
+            receiver = "&self"
+
+        # Parse parameters (strip self variants)
+        params = []
+        inner_params = params_str.strip("()")
+        if inner_params:
+            for param in inner_params.split(","):
+                param = param.strip()
+                if param and not param.startswith("&mut self") and not param.startswith("&self"):
+                    params.append(param)
+
+        methods[fn_name] = MethodSignature(
+            name=fn_name,
+            receiver=receiver,
+            params=params,
+            return_type=return_type.strip(),
+        )
+
+    return methods
+
+
+def extract_trait_contracts() -> dict[str, TraitContract]:
+    """Extract trait contracts from all key source files."""
+    contracts = {}
+
+    for trait_name, source_path in KEY_TRAIT_FILES.items():
+        if not source_path.exists():
+            continue
+
+        content = source_path.read_text(encoding="utf-8", errors="replace")
+        methods = parse_trait_methods(content, trait_name)
+
+        if methods:
+            contracts[trait_name] = TraitContract(
+                trait_name=trait_name,
+                source_file=str(source_path.relative_to(REPO_ROOT)),
+                methods=methods,
+            )
+
+    return contracts
+
+
+def check_trait_invariants(contracts: dict[str, TraitContract]) -> list[str]:
+    """Check trait contract invariants. Returns list of violations."""
+    violations = []
+
+    # HeatConductionSolver invariants
+    if "HeatConductionSolver" in contracts:
+        contract = contracts["HeatConductionSolver"]
+
+        # step() must be &mut self
+        if "step" in contract.methods:
+            step_sig = contract.methods["step"]
+            if step_sig.receiver != "&mut self":
+                violations.append(
+                    f"INVARIANT VIOLATION: HeatConductionSolver::step must be `&mut self`, "
+                    f"found `{step_sig.receiver}` in {contract.source_file}"
+                )
+
+        # steady_state_flux() must be &self (pure query method)
+        if "steady_state_flux" in contract.methods:
+            ssf_sig = contract.methods["steady_state_flux"]
+            if ssf_sig.receiver != "&self":
+                violations.append(
+                    f"INVARIANT VIOLATION: HeatConductionSolver::steady_state_flux must be `&self` "
+                    f"(pure query), found `{ssf_sig.receiver}` in {contract.source_file}"
+                )
+
+        # energy_storage_rate() must be &self
+        if "energy_storage_rate" in contract.methods:
+            esr_sig = contract.methods["energy_storage_rate"]
+            if esr_sig.receiver != "&self":
+                violations.append(
+                    f"INVARIANT VIOLATION: HeatConductionSolver::energy_storage_rate must be `&self`, "
+                    f"found `{esr_sig.receiver}` in {contract.source_file}"
+                )
+
+    # VentilationSchedule invariants
+    if "VentilationSchedule" in contracts:
+        contract = contracts["VentilationSchedule"]
+
+        # get_ach() must be &self
+        if "get_ach" in contract.methods:
+            ach_sig = contract.methods["get_ach"]
+            if ach_sig.receiver != "&self":
+                violations.append(
+                    f"INVARIANT VIOLATION: VentilationSchedule::get_ach must be `&self`, "
+                    f"found `{ach_sig.receiver}` in {contract.source_file}"
+                )
+
+    return violations
+
+
+def serialize_contract(contract: TraitContract) -> dict:
+    """Serialize a TraitContract to a dict for JSON serialization."""
+    return {
+        "trait_name": contract.trait_name,
+        "source_file": contract.source_file,
+        "methods": {
+            name: {
+                "name": sig.name,
+                "receiver": sig.receiver,
+                "params": sig.params,
+                "return_type": sig.return_type,
+            }
+            for name, sig in contract.methods.items()
+        },
+    }
+
+
+def deserialize_contract(data: dict) -> TraitContract:
+    """Deserialize a dict to a TraitContract."""
+    methods = {
+        name: MethodSignature(
+            name=sig["name"],
+            receiver=sig["receiver"],
+            params=sig["params"],
+            return_type=sig["return_type"],
+        )
+        for name, sig in data["methods"].items()
+    }
+    return TraitContract(
+        trait_name=data["trait_name"],
+        source_file=data["source_file"],
+        methods=methods,
+    )
+
+
+def check_contract_drift(
+    current: dict[str, TraitContract], baseline: dict[str, TraitContract]
+) -> list[str]:
+    """Check for drift between current contracts and baseline. Returns list of violations."""
+    violations = []
+
+    for trait_name, current_contract in current.items():
+        if trait_name not in baseline:
+            continue
+
+        baseline_contract = baseline[trait_name]
+
+        # Check methods match
+        for method_name, current_sig in current_contract.methods.items():
+            if method_name not in baseline_contract.methods:
+                violations.append(
+                    f"CONTRACT DRIFT: New method `{method_name}` added to "
+                    f"{trait_name} in {current_contract.source_file} — baseline must be updated"
+                )
+            else:
+                baseline_sig = baseline_contract.methods[method_name]
+                if current_sig.receiver != baseline_sig.receiver:
+                    violations.append(
+                        f"CONTRACT DRIFT: `{trait_name}::{method_name}` receiver changed "
+                        f"from `{baseline_sig.receiver}` to `{current_sig.receiver}` "
+                        f"in {current_contract.source_file}"
+                    )
+                if current_sig.return_type != baseline_sig.return_type:
+                    violations.append(
+                        f"CONTRACT DRIFT: `{trait_name}::{method_name}` return type changed "
+                        f"from `{baseline_sig.return_type}` to `{current_sig.return_type}` "
+                        f"in {current_contract.source_file}"
+                    )
+
+        # Check for removed methods
+        for method_name in baseline_contract.methods:
+            if method_name not in current_contract.methods:
+                violations.append(
+                    f"CONTRACT DRIFT: Method `{method_name}` removed from "
+                    f"{trait_name} — baseline must be updated"
+                )
+
+    return violations
+
+
+def load_or_create_baseline() -> tuple[dict[str, TraitContract], bool]:
+    """Load baseline from file or create from current state. Returns (baseline, created_new)."""
+    contracts = extract_trait_contracts()
+
+    if BASELINE_FILE.exists():
+        with open(BASELINE_FILE, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        baseline = {name: deserialize_contract(cd) for name, cd in data.items()}
+        return baseline, False
+    else:
+        # Create baseline from current state
+        BASELINE_FILE.parent.mkdir(parents=True, exist_ok=True)
+        with open(BASELINE_FILE, "w", encoding="utf-8") as f:
+            json.dump(
+                {name: serialize_contract(c) for name, c in contracts.items()},
+                f,
+                indent=2,
+            )
+        return contracts, True
 
 
 def find_rust_traits(src_dirs: list[Path]) -> dict[str, str]:
@@ -112,12 +372,13 @@ def extract_documented_files(arch_content: str) -> set[str]:
     return files
 
 
-def check_drift() -> list[str]:
-    """Run all drift checks. Returns list of drift findings."""
+def check_drift() -> tuple[list[str], bool]:
+    """Run all drift checks. Returns (findings, baseline_was_created)."""
     findings = []
+    baseline_created = False
 
     if not ARCH_FILE.exists():
-        return ["CRITICAL: ARCHITECTURE.md does not exist"]
+        return ["CRITICAL: ARCHITECTURE.md does not exist"], False
 
     arch_content = ARCH_FILE.read_text(encoding="utf-8")
 
@@ -202,19 +463,49 @@ def check_drift() -> list[str]:
         if not (REPO_ROOT / mod_path).exists():
             findings.append(f"CRITICAL: Key module `{mod_path}` is missing")
 
-    return findings
+    # --- Check 5: Trait contract invariants and baseline comparison ---
+    baseline, was_created = load_or_create_baseline()
+    if was_created:
+        baseline_created = True
+    else:
+        current_contracts = extract_trait_contracts()
+
+        # Check invariants first (these are always errors)
+        invariant_violations = check_trait_invariants(current_contracts)
+        findings.extend(invariant_violations)
+
+        # Check baseline drift (only if no invariant violations)
+        if not invariant_violations:
+            contract_drift = check_contract_drift(current_contracts, baseline)
+            findings.extend(contract_drift)
+
+    return findings, baseline_created
 
 
 def main():
     print("=== Fluxion Architecture Drift Detection ===\n")
 
-    findings = check_drift()
+    findings, baseline_created = check_drift()
+
+    if baseline_created:
+        print(
+            "INFO: Baseline trait contract file created at "
+            f"{BASELINE_FILE.relative_to(REPO_ROOT)}"
+        )
+        print("      This baseline must be committed alongside any trait signature changes.")
+        print()
 
     if not findings:
         print("PASS: No architecture drift detected.")
         print(
             "\nDocumented traits, files, and modules are consistent with source code."
         )
+        if baseline_created:
+            print(
+                "\nNOTE: A new baseline was created. Commit it with:\n"
+                f"  git add {BASELINE_FILE.relative_to(REPO_ROOT)}\n"
+                "  git commit -m 'chore: update trait contract baseline'"
+            )
         sys.exit(0)
 
     print(f"FAIL: {len(findings)} drift finding(s) detected:\n")
@@ -227,9 +518,33 @@ def main():
     print("  1. Update ARCHITECTURE.md to reflect the new code structure, OR")
     print("  2. Fix the code to match the documented architecture")
     print("  3. Add false-positive trait names to `skip_traits` in this script")
+    print("  4. For trait contract drift, update the baseline:")
+    print(f"     python3 scripts/check_architecture_drift.py --update-baseline")
 
     sys.exit(1)
 
 
 if __name__ == "__main__":
+    import argparse
+
+    parser = argparse.ArgumentParser(description="Fluxion Architecture Drift Detection")
+    parser.add_argument(
+        "--update-baseline",
+        action="store_true",
+        help="Force update of the trait contract baseline",
+    )
+    args = parser.parse_args()
+
+    if args.update_baseline:
+        contracts = extract_trait_contracts()
+        BASELINE_FILE.parent.mkdir(parents=True, exist_ok=True)
+        with open(BASELINE_FILE, "w", encoding="utf-8") as f:
+            json.dump(
+                {name: serialize_contract(c) for name, c in contracts.items()},
+                f,
+                indent=2,
+            )
+        print(f"Baseline updated: {BASELINE_FILE.relative_to(REPO_ROOT)}")
+        sys.exit(0)
+
     main()
