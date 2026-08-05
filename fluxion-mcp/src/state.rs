@@ -50,6 +50,7 @@ pub struct FluidLoopTopology {
 }
 
 #[derive(Default)]
+#[allow(dead_code)]
 pub struct McpState {
     pub model: Option<ThermalModel<VectorField>>,
     pub simulation_results: Option<SimulationResults>,
@@ -76,6 +77,7 @@ impl Clone for FluidNetworkState {
 const MAX_CONTROL_CHANGES_PER_MINUTE: usize = 5;
 const RATE_LIMIT_WINDOW: Duration = Duration::from_secs(60);
 
+#[allow(dead_code)]
 pub struct SimulationResults {
     pub zone_temperatures: Vec<Vec<f64>>,
     pub hvac_energy: EnergyResults,
@@ -87,12 +89,14 @@ pub struct EnergyResults {
     pub cooling_kwh: Vec<f64>,
 }
 
+#[allow(dead_code)]
 pub struct SolarGainResult {
     pub surface: String,
     pub incident_w_m2: Vec<f64>,
     pub transmitted_w_m2: Vec<f64>,
 }
 
+#[allow(dead_code)]
 impl McpState {
     pub fn new() -> Self {
         Self::default()

@@ -4,7 +4,7 @@ Model Context Protocol (MCP) server for Rust-native Building Energy Modeling int
 
 ## Overview
 
-Fluxion-MCP provides an AI-native interface to the Fluxion BEM engine via the Model Context Protocol. It enables AI assistants (Claude, Copilot, etc.) to interact with building energy simulations through 10 carefully designed tools.
+Fluxion-MCP provides an AI-native interface to the Fluxion BEM engine via the Model Context Protocol. It enables AI assistants (Claude, Copilot, etc.) to interact with building energy simulations through 13 carefully designed tools.
 
 ## Tools
 
@@ -76,6 +76,31 @@ Compare simulation output against ASHRAE 140 reference bands.
 **Parameters:**
 - `case_id` (string, required): ASHRAE 140 case ID to compare against
 - `metric` (string, required): Metric to compare (annual_heating, annual_cooling, peak_heating, peak_cooling)
+
+### 11. `inspect_fluid_loop`
+Return complete topology of a named plant loop or air handler.
+
+**Parameters:**
+- `loop_id` (string, required): Unique identifier for the plant loop or air handler (e.g., 'chilled_water_loop', 'hot_water_loop', 'ahu_1')
+
+### 12. `get_hvac_control_sequence`
+Return current HVAC control sequence and setpoints for a loop.
+
+**Parameters:**
+- `loop_id` (string, required): Unique identifier for the plant loop or air handler
+
+### 13. `set_hvac_control_sequence`
+Modify HVAC setpoints during simulation. Rate limited to 5 changes per minute. All changes require explicit AI agent confirmation via the confirm parameter.
+
+**Parameters:**
+- `loop_id` (string, required): Unique identifier for the plant loop or air handler
+- `changes` (object, required): Setpoint changes as key-value pairs
+  - `heating_setpoint` (number): Heating setpoint in °C
+  - `cooling_setpoint` (number): Cooling setpoint in °C
+  - `supply_temperature_setpoint` (number): Supply air/water temperature setpoint in °C
+  - `mass_flow_setpoint` (number): Supply air/water mass flow rate setpoint in kg/s
+  - `duct_pressure_setpoint` (number): Duct static pressure setpoint in Pa
+- `confirm` (boolean, required): Explicit AI agent confirmation required for control changes
 
 ## Docker Installation
 
