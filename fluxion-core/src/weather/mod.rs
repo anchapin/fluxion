@@ -20,6 +20,8 @@ pub mod denver;
 pub mod design_day_selector;
 pub mod epw;
 pub mod interpolation;
+pub mod miami;
+pub mod minneapolis;
 pub mod psychrometrics;
 pub mod tmy3;
 
