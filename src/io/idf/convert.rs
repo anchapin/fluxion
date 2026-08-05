@@ -1,15 +1,16 @@
 // Copyright 2026 Fluxion. All rights reserved.
 // SPDX-License-Identifier: MIT
 
-//! `IdfFile → SimulationSchemaV1` conversion (issue #1435, design §4.3).
+//! `IdfFile → SimulationSchemaV1` and `SimulationSchema` conversion (issue #2367).
 //!
 //! This module also exposes [`case_spec_from_idf`] — a companion helper
 //! that bridges to [`crate::validation::ashrae_140_cases::CaseSpec`] for
 //! the ASHRAE 140 acceptance criterion. It reads the additional IDF
 //! objects that the MVP converter ignores (setpoints, infiltration, the
 //! 12 m² south window) directly from the [`IdfFile`].
-//! This module implements [`TryFrom<IdfFile>`] for
-//! [`crate::api::schema::SimulationSchemaV1`]. It consumes the parsed IDF
+//! This module implements [`TryFrom<&IdfFile>`] for
+//! both [`crate::api::schema::SimulationSchemaV1`] and
+//! [`crate::api::schema::SimulationSchema`]. It consumes the parsed IDF
 //! objects produced by [`super::parser`] (issue #1341) and dispatches on
 //! `object_type` to populate the corresponding [`SimulationSchemaV1`]
 //! fields, per `docs/idf-import-design.md` §4.3:
@@ -26,6 +27,9 @@
 //! | `Construction` | `constructions.{wall,roof,floor}` |
 //! | `BuildingSurface:Detailed` | `geometry.zones[i].floor_area` + `volume` |
 //! | `Site:GroundTemperature:BuildingSurface` | `metadata.run_period.ground_temperature` |
+//!
+//! Both [`TryFrom<&IdfFile> for SimulationSchemaV1`] and
+//! [`TryFrom<&IdfFile> for SimulationSchema`] are implemented here.
 //!
 //! All other object types (`Schedule:Compact`, `FenestrationSurface:Detailed`,
 //! `ZoneInfiltration:DesignFlowRate`, HVAC, etc.) are **out of scope** per
@@ -53,7 +57,8 @@ use std::convert::TryFrom;
 
 use crate::api::schema::{
     ConstructionSet, ControlConfig, ControlSet, Geometry, ScheduleSet, SchemaMetadata,
-    SchemaVersion, SimulationSchemaV1, SurfaceConstruction, WindowSpec, ZoneGeometry,
+    SchemaVersion, SimulationSchema, SimulationSchemaV1, SurfaceConstruction, WindowSpec,
+    ZoneGeometry,
 };
 use crate::ashrae_cases::Orientation;
 use crate::sim::boundary::{GroundTemperature, MonthlyGroundTemperature};
@@ -201,6 +206,14 @@ impl TryFrom<&IdfFile> for SimulationSchemaV1 {
             controls,
             output: crate::api::schema::SimulationOutput::default(),
         })
+    }
+}
+
+impl TryFrom<&IdfFile> for SimulationSchema {
+    type Error = IdfError;
+
+    fn try_from(idf: &IdfFile) -> Result<Self, Self::Error> {
+        Ok(SimulationSchema::V1(SimulationSchemaV1::try_from(idf)?))
     }
 }
 
@@ -1315,5 +1328,37 @@ FenestrationSurface:Detailed, SouthWindow, Window, DblWin, SouthWall, , , 0.0, O
         assert!(window.is_some());
         let window = window.as_ref().unwrap();
         assert!(window.window_area > 0.0);
+    }
+
+    #[test]
+    fn idf_file_try_from_path_succeeds() {
+        let fixtures_dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("tests")
+            .join("reference_data")
+            .join("energyplus_models");
+        let path = fixtures_dir.join("ashrae_140_case_600.idf");
+        let idf =
+            IdfFile::try_from(path.as_path()).expect("IdfFile::try_from(path) parses Case 600 IDF");
+        assert_eq!(idf.version.as_deref(), Some("25.2"));
+    }
+
+    #[test]
+    fn simulation_schema_try_from_idf_file_works() {
+        let fixtures_dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("tests")
+            .join("reference_data")
+            .join("energyplus_models");
+        let path = fixtures_dir.join("ashrae_140_case_600.idf");
+        let idf = IdfFile::try_from(path.as_path()).expect("IDF parses");
+        let schema = SimulationSchema::try_from(&idf).expect("converts to SimulationSchema");
+
+        match schema {
+            SimulationSchema::V1(v1) => {
+                assert_eq!(v1.geometry.zones.len(), 1);
+                assert!((v1.geometry.zones[0].floor_area - 48.0).abs() < 1e-3);
+                assert_eq!(v1.controls.zone_control.heating_setpoint, 20.0);
+                assert_eq!(v1.controls.zone_control.cooling_setpoint, 27.0);
+            }
+        }
     }
 }

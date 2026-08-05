@@ -24,8 +24,7 @@ pub enum IdfError {
     #[error("IDF parse error at line {line}: {message}")]
     Parse { line: usize, message: String },
 
-    /// Reserved for the Phase 3 `TryFrom<IdfFile> for SimulationSchema`
-    /// conversion (out of scope for #1341).
+    /// IDF → SimulationSchema conversion failure.
     #[error("IDF conversion error: {0}")]
     Conversion(String),
 

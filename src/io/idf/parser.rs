@@ -258,6 +258,14 @@ impl FromStr for IdfFile {
     }
 }
 
+impl TryFrom<&std::path::Path> for IdfFile {
+    type Error = IdfError;
+
+    fn try_from(path: &std::path::Path) -> Result<Self, Self::Error> {
+        IdfParser::from_path(path)
+    }
+}
+
 /// Convert a single [`RawObject`] from the lexer into a typed
 /// [`IdfObject`]. Splits the body on field commas while respecting
 /// quoted strings.
