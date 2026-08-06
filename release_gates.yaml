@@ -78,9 +78,9 @@ benchmark:
     description: "Maximum latency for single config evaluation"
 
   # Multi-zone scaling
-  # Temporarily disabled - metric not yet implemented in performance_ci_test
+  # Issue #2362: Multi-zone throughput gate (10 configs/sec minimum)
   multi_zone:
-    min_configs_per_sec: 0  # Disabled - not implemented
+    min_configs_per_sec: 10  # Minimum 10 configs/sec for 10-zone simulation
     zones: 10
     description: "Minimum throughput for 10-zone simulation"
 
