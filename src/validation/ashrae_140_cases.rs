@@ -2259,7 +2259,7 @@ impl CaseBuilder {
             .with_window_properties(WindowSpec::double_clear_glass())
             // No windows - this is a solid conduction problem
             .with_internal_loads(InternalLoads::new(0.0, 0.6, 0.4)) // No internal loads
-            .with_hvac_setpoints(20.0, 999.0) // Heating-only control (no cooling)
+            .with_hvac_setpoints(20.0, 27.0) // Cooling setpoint per ASHRAE 140 solid conduction spec
             .with_infiltration(0.0) // No infiltration
             .with_opaque_absorptance(0.0) // No solar absorption for Case 195
             .with_num_zones(1)
