@@ -1,20 +1,20 @@
 # Quality Metrics Tracker
 
-*Generated: 2026-08-04 14:02 UTC
+*Generated: 2026-08-06 01:15 UTC
 
 ## Current Status
 
 - **Pass Rate:** 5.6% (1 / 18 cases)
-- **MAE:** 103.74%
+- **MAE:** 103.66%
 - **Max Deviation:** 1757.96%
 
 ### Status Breakdown
 
 | Status | Count | Percentage |
 |--------|-------|------------|
-| FAIL | 43 | 67.2% |
-| WARN | 6 | 9.4% |
-| PASS | 15 | 23.4% |
+| FAIL | 41 | 64.1% |
+| PASS | 14 | 21.9% |
+| WARN | 9 | 14.1% |
 
 ## Phase Progression
 
@@ -42,24 +42,24 @@
 | 900 | Annual Cooling Energy (kWh) | 7.41 | 2.13-3.67 | 155.7% | ModelLimitation |
 | 940 | Annual Cooling Energy (kWh) | 12.31 | 2.08-3.55 | 142.5% | ModelLimitation |
 | 910 | Peak Cooling Load (kW) | 3.37 | 1.20-1.60 | 141.1% | Unknown |
-| 650 | Peak Cooling Load (kW) | 4.90 | 1.90-2.50 | 122.7% | SolarGains |
+| 650 | Peak Cooling Load (kW) | 5.11 | 1.90-2.50 | 132.2% | SolarGains |
 | 900 | Peak Heating Load (kW) | 3.34 | 1.80-2.40 | 108.5% | Unknown |
 | 195 | Peak Heating Load (kW) | 3.70 | 1.40-2.20 | 105.5% | Unknown |
-| 610 | Peak Cooling Load (kW) | 5.14 | 2.20-2.90 | 101.5% | SolarGains |
+| 610 | Peak Cooling Load (kW) | 5.21 | 2.20-2.90 | 104.3% | SolarGains |
 | 920 | Annual Heating Energy (kWh) | 6.37 | 3.26-4.30 | 68.6% | ModelLimitation |
 | 920 | Annual Cooling Energy (kWh) | 6.24 | 1.84-3.31 | 65.2% | ModelLimitation |
+| 640 | Peak Cooling Load (kW) | 5.35 | 2.80-3.70 | 64.5% | SolarGains |
+| 630 | Peak Cooling Load (kW) | 3.40 | 1.80-2.40 | 62.0% | SolarGains |
 | 960 | Peak Heating Load (kW) | 3.35 | 2.00-8.00 | 60.6% | Unknown |
-| 640 | Peak Cooling Load (kW) | 5.15 | 2.80-3.70 | 58.3% | SolarGains |
-| 630 | Peak Cooling Load (kW) | 3.32 | 1.80-2.40 | 57.9% | SolarGains |
 | 195 | Annual Heating Energy (kWh) | 7.37 | 3.50-6.00 | 55.1% | Unknown |
 | 910 | Peak Heating Load (kW) | 3.34 | 1.90-2.50 | 51.7% | Unknown |
 | 960 | Peak Cooling Load (kW) | 3.40 | 0.00-4.00 | 49.6% | Unknown |
-| 600 | Annual Cooling Energy (kWh) | 5.34 | 3.92-6.14 | 37.1% | Unknown |
 | 940 | Peak Cooling Load (kW) | 7.44 | 1.70-2.30 | 36.5% | Unknown |
 | 930 | Annual Heating Energy (kWh) | 6.43 | 4.14-5.34 | 35.7% | ModelLimitation |
-| 620 | Peak Heating Load (kW) | 4.45 | 2.80-3.80 | 35.0% | Unknown |
+| 620 | Peak Heating Load (kW) | 4.45 | 2.80-3.80 | 34.7% | Unknown |
 | 940 | Annual Heating Energy (kWh) | 8.58 | 0.79-1.41 | 34.6% | ModelLimitation |
-| 600 | Peak Heating Load (kW) | 4.37 | 2.80-3.80 | 32.4% | Unknown |
+| 600 | Annual Cooling Energy (kWh) | 5.69 | 3.92-6.14 | 33.0% | Unknown |
+| 600 | Peak Heating Load (kW) | 4.36 | 2.80-3.80 | 32.0% | Unknown |
 | 930 | Peak Heating Load (kW) | 3.43 | 2.30-3.00 | 27.7% | Unknown |
 
 ## Problematic Cases
@@ -75,8 +75,8 @@ Cases with the highest number of failing metrics:
 | 940 | 3 | 213.6% |
 | 195 | 2 | 160.6% |
 | 960 | 4 | 151.8% |
-| 650 | 2 | 148.2% |
 | 920 | 3 | 144.6% |
+| 650 | 1 | 132.2% |
 | 930 | 4 | 116.7% |
 
 ---
