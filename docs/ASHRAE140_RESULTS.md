@@ -1,6 +1,6 @@
 # ASHRAE Standard 140 Validation Results
 
-*Generated: 2026-08-06 01:15 UTC*
+*Generated: 2026-08-06 03:58 UTC*
 
 ## Summary
 
@@ -18,8 +18,8 @@
 
 | Metric | Value |
 |--------|-------|
-| Total Validation Duration | 0.53 seconds |
-| Throughput | 34.20 cases/sec |
+| Total Validation Duration | 0.14 seconds |
+| Throughput | 127.05 cases/sec |
 | Total Cases | 18 |
 
 ## Detailed Results
@@ -103,35 +103,35 @@
 
 The following recurring issues are affecting validation results:
 
-### Thermal Mass Dynamics
-
-**Affected metrics:** 900FF - Maximum Free-Floating Temperature (°C), 910 - Peak Heating Load (kW), 950FF - Minimum Free-Floating Temperature (°C), 910 - Peak Cooling Load (kW), 930 - Peak Heating Load (kW), 960 - Peak Heating Load (kW), 950 - Peak Heating Load (kW), 950 - Peak Cooling Load (kW), 940 - Peak Cooling Load (kW), 900FF - Minimum Free-Floating Temperature (°C), 900 - Peak Heating Load (kW), 950FF - Maximum Free-Floating Temperature (°C) |
-**Count:** 12 metrics
-
-### HVAC Load Calculation
-
-**Affected metrics:** 610 - Peak Cooling Load (kW), 640 - Peak Cooling Load (kW), 600 - Peak Heating Load (kW), 620 - Peak Heating Load (kW), 195 - Peak Heating Load (kW), 630 - Peak Cooling Load (kW), 630 - Peak Heating Load (kW), 650 - Peak Cooling Load (kW) |
-**Count:** 8 metrics
-
-### Unknown/Unclassified
-
-**Affected metrics:** 930 - Annual Cooling Energy (kWh), 900 - Peak Cooling Load (kW), 195 - Annual Heating Energy (kWh), 920 - Peak Cooling Load (kW) |
-**Count:** 4 metrics
-
 ### Solar Gain Calculations
 
-**Affected metrics:** 600 - Annual Cooling Energy (kWh), 960 - Peak Cooling Load (kW), 650FF - Minimum Free-Floating Temperature (°C), 930 - Peak Cooling Load (kW) |
+**Affected metrics:** 600 - Annual Cooling Energy (kWh), 960 - Peak Cooling Load (kW), 930 - Peak Cooling Load (kW), 650FF - Minimum Free-Floating Temperature (°C) |
 **Count:** 4 metrics
 
 ### 5R1C Model Limitation (Accepted)
 
-**Affected metrics:** 930 - Annual Heating Energy (kWh), 910 - Annual Heating Energy (kWh), 940 - Annual Cooling Energy (kWh), 900 - Annual Heating Energy (kWh), 920 - Annual Heating Energy (kWh), 900 - Annual Cooling Energy (kWh), 920 - Annual Cooling Energy (kWh), 950 - Annual Cooling Energy (kWh), 910 - Annual Cooling Energy (kWh), 950 - Annual Heating Energy (kWh), 940 - Annual Heating Energy (kWh) |
+**Affected metrics:** 940 - Annual Heating Energy (kWh), 940 - Annual Cooling Energy (kWh), 900 - Annual Heating Energy (kWh), 950 - Annual Cooling Energy (kWh), 920 - Annual Heating Energy (kWh), 910 - Annual Cooling Energy (kWh), 930 - Annual Heating Energy (kWh), 950 - Annual Heating Energy (kWh), 910 - Annual Heating Energy (kWh), 900 - Annual Cooling Energy (kWh), 920 - Annual Cooling Energy (kWh) |
 **Count:** 11 metrics
 
 ### Inter-Zone Heat Transfer
 
-**Affected metrics:** 960 - Annual Heating Energy (kWh), 960 - Annual Cooling Energy (kWh) |
+**Affected metrics:** 960 - Annual Cooling Energy (kWh), 960 - Annual Heating Energy (kWh) |
 **Count:** 2 metrics
+
+### Unknown/Unclassified
+
+**Affected metrics:** 930 - Annual Cooling Energy (kWh), 920 - Peak Cooling Load (kW), 195 - Annual Heating Energy (kWh), 900 - Peak Cooling Load (kW) |
+**Count:** 4 metrics
+
+### HVAC Load Calculation
+
+**Affected metrics:** 640 - Peak Cooling Load (kW), 620 - Peak Heating Load (kW), 600 - Peak Heating Load (kW), 195 - Peak Heating Load (kW), 630 - Peak Cooling Load (kW), 610 - Peak Cooling Load (kW), 630 - Peak Heating Load (kW), 650 - Peak Cooling Load (kW) |
+**Count:** 8 metrics
+
+### Thermal Mass Dynamics
+
+**Affected metrics:** 950 - Peak Heating Load (kW), 910 - Peak Cooling Load (kW), 940 - Peak Cooling Load (kW), 930 - Peak Heating Load (kW), 900FF - Minimum Free-Floating Temperature (°C), 950FF - Minimum Free-Floating Temperature (°C), 950 - Peak Cooling Load (kW), 910 - Peak Heating Load (kW), 900 - Peak Heating Load (kW), 960 - Peak Heating Load (kW), 900FF - Maximum Free-Floating Temperature (°C), 950FF - Maximum Free-Floating Temperature (°C) |
+**Count:** 12 metrics
 
 ## References
 
