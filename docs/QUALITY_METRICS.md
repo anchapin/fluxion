@@ -1,6 +1,6 @@
 # Quality Metrics Tracker
 
-*Generated: 2026-08-06 01:15 UTC
+*Generated: 2026-08-06 03:58 UTC
 
 ## Current Status
 
@@ -12,8 +12,8 @@
 
 | Status | Count | Percentage |
 |--------|-------|------------|
-| FAIL | 41 | 64.1% |
 | PASS | 14 | 21.9% |
+| FAIL | 41 | 64.1% |
 | WARN | 9 | 14.1% |
 
 ## Phase Progression
