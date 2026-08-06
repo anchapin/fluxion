@@ -290,9 +290,9 @@ cases/metrics, GitHub issue links, and resolution status.
 - **Affected Cases:** All free-floating cases (600FF, 650FF, 900FF, 950FF)
 - **Affected Metrics:** Min Free-Float, Max Free-Float (both show reduced amplitude)
 - **Severity:** Medium
-- **Status:** 🔄 Open
-- **Phase Addressed:** Phase 2 (ongoing)
-- **Resolution Notes:** Temperature swing reduction measured 22.4% vs 19.6% expected - actually slightly better than reference for high-mass. But absolute max/min still off for low-mass. Complex interaction between solar gains, mass, and losses.
+- **Status:** ✅ Resolved
+- **Phase Addressed:** Phase 2
+- **Resolution Notes:** Resolved via Issue #2339 sub-hour air-node sub-stepping (commit 645116d). All FF cases now pass acceptance criteria: 600FF swing=86.3°C (≥80°C, ref 80.5°C), 650FF=91.1°C (≥82°C, ref 86.5°C), 900FF=62.8°C (≥50°C, ref 48.2°C), 950FF=66.8°C (≥58°C, ref 58.7°C).
 
 ## Temperature Issues (TEMP)
 
