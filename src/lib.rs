@@ -120,6 +120,9 @@ pub use sim::thermal_model_mock::MockThermalModel;
 // Re-export ISO 13790 Annex C construction types
 pub use sim::construction::{Construction, ConstructionLayer, MassClass};
 
+// Re-export utility tariff types for financial cost tracking
+pub use sim::utility_tariff::{CostAccumulator, DemandAccumulator, TouPeriod, UtilityTariff};
+
 use crate::physics::cta::VectorField;
 use ai::surrogate::SurrogateManager;
 
