@@ -13,6 +13,7 @@ use crate::validation::multi_reference::MultiReferenceDB;
 use crate::validation::report::{
     BenchmarkData, BenchmarkReport, MetricType, ReportHeader, ValidationStatus,
 };
+use crate::weather::denver::DenverTmyWeather;
 use crate::weather::epw::EpwWeatherSource;
 use crate::weather::WeatherSource;
 use rayon::prelude::*;
@@ -2981,13 +2982,13 @@ mod tests {
         let mut model = ThermalModel::<VectorField>::from_spec(&spec);
 
         // Enable CTF (replicate enable_advanced_solver logic)
-        let fd_layers: Vec<fluxion::physics::fd_discretization::MaterialLayer> = spec
+        let fd_layers: Vec<crate::physics::fd_discretization::MaterialLayer> = spec
             .construction
             .wall
             .layers
             .iter()
             .map(|layer| {
-                fluxion::physics::fd_discretization::MaterialLayer::new(
+                crate::physics::fd_discretization::MaterialLayer::new(
                     &layer.name,
                     layer.thickness,
                     layer.conductivity,
