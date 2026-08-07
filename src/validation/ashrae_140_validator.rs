@@ -1698,7 +1698,7 @@ impl ASHRAE140Validator {
                 } else {
                     0.0
                 }; // kWh * 3600 = J, / 3600s = W
-                println!("DEBUG Case 950 step={}: t_zone={:.2}°C, hvac_kwh={:.4f}, hvac_power_W={:.1f}, heating_sp={:.1}°C, cooling_sp={:.1}°C, outdoor={:.2}°C",
+                println!("DEBUG Case 950 step={}: t_zone={:.2}°C, hvac_kwh={:.4}, hvac_power_W={:.1}, heating_sp={:.1}°C, cooling_sp={:.1}°C, outdoor={:.2}°C",
                     step, t_zone, hvac_kwh, hvac_power_w, model.heating_setpoint, model.cooling_setpoint, weather_data.dry_bulb_temp);
             }
 
