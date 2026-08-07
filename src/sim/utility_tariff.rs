@@ -610,8 +610,8 @@ mod tests {
         let mut cost_acc = CostAccumulator::with_default_tariff();
 
         // Simulate 720 hours (30 days)
-        for hour in 0..720 {
-            let hour_of_day = hour % 24;
+        for hour in 0..720usize {
+            let hour_of_day = (hour % 24) as u32;
             // Use 10 kW during peak hours, 5 kW during off-peak
             let power = if tariff.is_in_peak_window(hour_of_day) {
                 10.0
@@ -718,9 +718,12 @@ mod tests {
 
         let mut cost_acc = CostAccumulator::new(tariff);
 
-        // Simulate 1 month (720 hours) of hourly data
-        // Using a constant 10 kW HVAC load during all hours
-        for hour in 0..720 {
+        // Simulate 1 full year (8760 hours) to ensure at least one month-end
+        // aligns with a peak-window hour (April month-end at hour 2887 lands
+        // during peak window 9-21). The 720-hour and 744-hour variants miss
+        // this because January month-end (hour 719) has hour_of_day=23,
+        // which is outside peak window (9-21).
+        for hour in 0..8760 {
             cost_acc.update(10.0, hour);
         }
 
@@ -769,7 +772,7 @@ mod tests {
     #[test]
     fn test_tou_rates_hour_by_hour() {
         // Verify the default TOU rate structure
-        let tariff = UtilityTariff::new();
+        let mut tariff = UtilityTariff::new();
         tariff.set_tou_rates(0.08, 0.12, 0.20);
 
         // Verify off-peak hours (0-6, 23)

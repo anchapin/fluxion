@@ -2971,6 +2971,8 @@ mod tests {
 
     #[test]
     fn test_simulate_case_950_with_ctf_trace() {
+        use crate::physics::fd_discretization::MaterialLayer;
+        use crate::weather::denver::DenverTmyWeather;
         // Debug: Replicate simulate_case logic for Case 950 to trace the CTF path
         let spec = ASHRAE140Case::Case950.spec();
         let weather = DenverTmyWeather::new();
@@ -2978,13 +2980,13 @@ mod tests {
         let mut model = ThermalModel::<VectorField>::from_spec(&spec);
 
         // Enable CTF (replicate enable_advanced_solver logic)
-        let fd_layers: Vec<fluxion::physics::fd_discretization::MaterialLayer> = spec
+        let fd_layers: Vec<MaterialLayer> = spec
             .construction
             .wall
             .layers
             .iter()
             .map(|layer| {
-                fluxion::physics::fd_discretization::MaterialLayer::new(
+                MaterialLayer::new(
                     &layer.name,
                     layer.thickness,
                     layer.conductivity,
