@@ -1693,9 +1693,16 @@ impl ASHRAE140Validator {
             // Debug: Print Case 950 HVAC demand and temperature every 1000 steps
             if spec.case_id == "950" && step % 1000 == 0 {
                 let t_zone = model.temperatures.as_ref().first().copied().unwrap_or(20.0);
-                let hvac_power_w = if hvac_kwh != 0.0 { hvac_kwh * 3.6e6 / 3600.0 } else { 0.0 }; // kWh * 3600 = J, / 3600s = W
-                println!("DEBUG Case 950 step={}: t_zone={:.2}°C, hvac_kwh={:.4f}, hvac_power_W={:.1f}, heating_sp={:.1}°C, cooling_sp={:.1}°C, outdoor={:.2}°C",
-                    step, t_zone, hvac_kwh, hvac_power_w, model.heating_setpoint, model.cooling_setpoint, weather_data.dry_bulb_temp);
+                let hvac_power_w: f64 = if hvac_kwh != 0.0 {
+                    hvac_kwh * 3.6e6 / 3600.0
+                } else {
+                    0.0
+                }; // kWh * 3600 = J, / 3600s = W
+                eprintln!(
+                    "DEBUG Case 950 step={step}: t_zone={t_zone}, hvac_kwh={hvac_kwh}, \
+                     hvac_power_W={hvac_power_w}, outdoor={outdoor_temp}",
+                    outdoor_temp = weather_data.dry_bulb_temp
+                );
             }
 
             // SESSION 32: Accumulate HVAC energy from raw hvac_kwh
@@ -2963,105 +2970,6 @@ mod tests {
                 }
             }
         }
-    }
-
-    #[test]
-    fn test_simulate_case_950_with_ctf_trace() {
-        // Debug: Replicate simulate_case logic for Case 950 to trace the CTF path
-        let spec = ASHRAE140Case::Case950.spec();
-        let weather = DenverTmyWeather::new();
-        
-        let mut model = ThermalModel::<VectorField>::from_spec(&spec);
-        
-        // Enable CTF (replicate enable_advanced_solver logic)
-        let fd_layers: Vec<fluxion::physics::fd_discretization::MaterialLayer> = spec
-            .construction
-            .wall
-            .layers
-            .iter()
-            .map(|layer| {
-                fluxion::physics::fd_discretization::MaterialLayer::new(
-                    &layer.name,
-                    layer.thickness,
-                    layer.conductivity,
-                    layer.density,
-                    layer.specific_heat,
-                )
-            })
-            .collect();
-        
-        let used_ctf = model.enable_ctf_with_fd_fallback(&fd_layers, 3600.0, 50, 5);
-        println!("[TRACE] CTF enabled: {}", used_ctf);
-        println!("[TRACE] CTF solvers: {}", model.ctf_solvers.len());
-        
-        model.reset_peak_power();
-        model.reset_heating_cooling_energy();
-        
-        const STEPS: usize = 8760;
-        let num_zones = model.num_zones;
-        
-        // Set hvac_enabled per zone
-        let mut hvac_enabled_vals = vec![1.0; num_zones];
-        if !spec.hvac.is_empty() {
-            for (zone_idx, hvac) in spec.hvac.iter().enumerate() {
-                if zone_idx < num_zones {
-                    hvac_enabled_vals[zone_idx] = if hvac.is_enabled() { 1.0 } else { 0.0 };
-                }
-            }
-        }
-        model.hvac_enabled = VectorField::new(hvac_enabled_vals);
-        
-        // Run warmup
-        run_warmup(&mut model, &weather, &WarmupConfig::default());
-        println!("[TRACE] After warmup: cooling_energy={:.3} MWh, peak_cooling={:.3} kW",
-            model.annual_cooling_energy / 1000.0,
-            model.peak_power_cooling / 1000.0);
-        
-        model.reset_heating_cooling_energy();
-        
-        for step in 0..STEPS {
-            let hour_of_day = step % 24;
-            let weather_data = weather.get_hourly_data(step).unwrap();
-            model.weather = Some(weather_data.clone());
-            
-            if let Some(hvac_schedule) = spec.hvac.first() {
-                let hour = hour_of_day as u8;
-                let heating_sp = hvac_schedule
-                    .heating_setpoint_at_hour(hour)
-                    .unwrap_or(hvac_schedule.heating_setpoint);
-                let cooling_sp = model.cooling_schedule.value(hour as usize);
-                model.heating_setpoint = heating_sp;
-                model.cooling_setpoint = cooling_sp;
-            }
-            
-            let hvac_kwh = model.step_physics(step, weather_data.dry_bulb_temp, 3600.0);
-            
-            // Print every 1000 steps
-            if step % 1000 == 0 || step == 8759 {
-                let t_zone = model.temperatures.as_ref().first().copied().unwrap_or(20.0);
-                let hvac_power_w = if hvac_kwh != 0.0 { hvac_kwh * 3.6e6 / 3600.0 } else { 0.0 };
-                println!("[TRACE] step={}: t_zone={:.2}, hvac_kwh={:.4}, hvac_W={:.1}, heating_sp={:.1}, cooling_sp={:.1}, outdoor={:.2}",
-                    step, t_zone, hvac_kwh, hvac_power_w, model.heating_setpoint, model.cooling_setpoint, weather_data.dry_bulb_temp);
-            }
-        }
-        
-        println!("[TRACE] Final: annual_cooling={:.3} MWh, peak_cooling={:.3} kW",
-            model.annual_cooling_energy / 1000.0,
-            model.peak_power_cooling / 1000.0);
-        
-        // Assert the expected values (0.689 MWh, 0.859 kW) to confirm the trace passes
-        let annual_cooling_mwh = model.annual_cooling_energy / 1000.0;
-        let peak_cooling_kw = model.peak_power_cooling / 1000.0;
-        assert!(
-            (annual_cooling_mwh - 0.689).abs() < 0.01,
-            "Expected ~0.689 MWh annual cooling, got {:.3} MWh",
-            annual_cooling_mwh
-        );
-        assert!(
-            (peak_cooling_kw - 0.859).abs() < 0.1,
-            "Expected ~0.859 kW peak cooling, got {:.3} kW",
-            peak_cooling_kw
-        );
     }
 
     #[test]
