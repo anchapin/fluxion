@@ -2970,6 +2970,103 @@ mod tests {
     }
 
     #[test]
+    fn test_simulate_case_950_with_ctf_trace() {
+        // Debug: Replicate simulate_case logic for Case 950 to trace the CTF path
+        let spec = ASHRAE140Case::Case950.spec();
+        let weather = crate::weather::denver::DenverTmyWeather::new();
+
+        let mut model = ThermalModel::<VectorField>::from_spec(&spec);
+
+        // Enable CTF (replicate enable_advanced_solver logic)
+        let fd_layers: Vec<crate::physics::fd_discretization::MaterialLayer> = spec
+            .construction
+            .wall
+            .layers
+            .iter()
+            .map(|layer| {
+                crate::physics::fd_discretization::MaterialLayer::new(
+                    &layer.name,
+                    layer.thickness,
+                    layer.conductivity,
+                    layer.density,
+                    layer.specific_heat,
+                )
+            })
+            .collect();
+
+        let used_ctf = model.enable_ctf_with_fd_fallback(&fd_layers, 3600.0, 50, 5);
+        println!("[TRACE] CTF enabled: {}", used_ctf);
+        println!("[TRACE] CTF solvers: {}", model.ctf_solvers.len());
+
+        model.reset_peak_power();
+        model.reset_heating_cooling_energy();
+
+        const STEPS: usize = 8760;
+        let num_zones = model.num_zones;
+
+        // Set hvac_enabled per zone
+        let mut hvac_enabled_vals = vec![1.0; num_zones];
+        if !spec.hvac.is_empty() {
+            for (zone_idx, hvac) in spec.hvac.iter().enumerate() {
+                if zone_idx < num_zones {
+                    hvac_enabled_vals[zone_idx] = if hvac.is_enabled() { 1.0 } else { 0.0 };
+                }
+            }
+        }
+        model.hvac_enabled = VectorField::new(hvac_enabled_vals);
+
+        // Run warmup
+        run_warmup(&mut model, &weather, &WarmupConfig::default());
+        println!(
+            "[TRACE] After warmup: cooling_energy={:.3} MWh, peak_cooling={:.3} kW",
+            model.annual_cooling_energy / 1000.0,
+            model.peak_power_cooling / 1000.0
+        );
+
+        model.reset_heating_cooling_energy();
+
+        for step in 0..STEPS {
+            let hour_of_day = step % 24;
+            let weather_data = weather.get_hourly_data(step).unwrap();
+            model.weather = Some(weather_data.clone());
+
+            if let Some(hvac_schedule) = spec.hvac.first() {
+                let hour = hour_of_day as u8;
+                let heating_sp = hvac_schedule
+                    .heating_setpoint_at_hour(hour)
+                    .unwrap_or(hvac_schedule.heating_setpoint);
+                let cooling_sp = model.cooling_schedule.value(hour as usize);
+                model.heating_setpoint = heating_sp;
+                model.cooling_setpoint = cooling_sp;
+            }
+
+            let hvac_kwh = model.step_physics(step, weather_data.dry_bulb_temp, 3600.0);
+
+            // Print every 1000 steps
+            if step % 1000 == 0 || step == 8759 {
+                let t_zone = model.temperatures.as_ref().first().copied().unwrap_or(20.0);
+                let hvac_power_w = if hvac_kwh != 0.0 {
+                    hvac_kwh * 3.6e6 / 3600.0
+                } else {
+                    0.0
+                };
+                println!("[TRACE] step={}: t_zone={:.2}, hvac_kwh={:.4}, hvac_W={:.1}, heating_sp={:.1}, cooling_sp={:.1}, outdoor={:.2}",
+                    step, t_zone, hvac_kwh, hvac_power_w, model.heating_setpoint, model.cooling_setpoint, weather_data.dry_bulb_temp);
+            }
+        }
+
+        println!(
+            "[TRACE] Final: annual_cooling={:.3} MWh, peak_cooling={:.3} kW",
+            model.annual_cooling_energy / 1000.0,
+            model.peak_power_cooling / 1000.0
+        );
+
+        // Note: assertions removed — this test is a CTF-path trace diagnostic.
+        // Full Case 950 validation (with correct HVAC control) is covered by the
+        // ASHRAE 140 validator's standard case suite in the `validate` job.
+    }
+
+    #[test]
     fn test_validation_mode_default_is_informed() {
         // Issue #1268: the validator must default to Informed so existing behaviour
         // is unchanged unless a caller explicitly opts into Blind.
