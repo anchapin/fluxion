@@ -222,6 +222,128 @@ impl Equipment for GenericEquipment {
     }
 }
 
+/// IT Equipment Load for data centers with UPS loss modeling
+///
+/// Data center IT equipment differs from generic equipment:
+/// - 100% sensible heat (no latent heat)
+/// - UPS overhead losses that generate additional heat
+/// - Constant 24/7 load profile
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ITEquipmentLoad {
+    pub id: String,
+    pub rated_power_w: f64,
+    pub ups_efficiency: f64,
+    pub standby_loss_w: f64,
+    pub count: usize,
+    pub schedule: DailySchedule,
+    pub radiative_fraction: f64,
+    pub convective_fraction: f64,
+    pub mass_coupling_factor: f64,
+}
+
+impl ITEquipmentLoad {
+    pub fn new(
+        id: String,
+        rated_power_w: f64,
+        ups_efficiency: f64,
+        standby_loss_w: f64,
+        count: usize,
+    ) -> Self {
+        Self {
+            id,
+            rated_power_w,
+            ups_efficiency,
+            standby_loss_w,
+            count,
+            schedule: DailySchedule::constant(1.0),
+            radiative_fraction: 0.0,
+            convective_fraction: 1.0,
+            mass_coupling_factor: 0.0,
+        }
+    }
+
+    pub fn with_schedule(mut self, schedule: DailySchedule) -> Self {
+        self.schedule = schedule;
+        self
+    }
+
+    pub fn validate(&self) -> Result<(), String> {
+        let total = self.radiative_fraction + self.convective_fraction;
+        if (total - 1.0).abs() > 1e-10 {
+            return Err(format!(
+                "Radiative + convective fractions must sum to 1.0, got {}",
+                total
+            ));
+        }
+        if !(0.0..=1.0).contains(&self.mass_coupling_factor) {
+            return Err(format!(
+                "Mass coupling factor must be in [0, 1], got {}",
+                self.mass_coupling_factor
+            ));
+        }
+        if !(0.0..=1.0).contains(&self.ups_efficiency) {
+            return Err(format!(
+                "UPS efficiency must be in [0, 1], got {}",
+                self.ups_efficiency
+            ));
+        }
+        if self.rated_power_w < 0.0 {
+            return Err(format!(
+                "Rated power must be non-negative, got {}",
+                self.rated_power_w
+            ));
+        }
+        if self.standby_loss_w < 0.0 {
+            return Err(format!(
+                "Standby loss must be non-negative, got {}",
+                self.standby_loss_w
+            ));
+        }
+        Ok(())
+    }
+
+    fn ups_loss_at_hour(&self, hour_of_year: usize) -> f64 {
+        let it_power =
+            self.rated_power_w * self.count as f64 * self.schedule.value(hour_of_year % 24);
+        let total_power = it_power / self.ups_efficiency;
+        total_power - it_power
+    }
+
+    fn total_sensible_gain(&self, hour_of_year: usize) -> f64 {
+        let it_power =
+            self.rated_power_w * self.count as f64 * self.schedule.value(hour_of_year % 24);
+        let ups_loss = self.ups_loss_at_hour(hour_of_year);
+        let standby_loss = self.standby_loss_w * self.count as f64;
+        it_power + ups_loss + standby_loss
+    }
+}
+
+impl Equipment for ITEquipmentLoad {
+    fn id(&self) -> &str {
+        &self.id
+    }
+
+    fn power_at_hour(&self, hour_of_year: usize) -> f64 {
+        self.total_sensible_gain(hour_of_year)
+    }
+
+    fn convective_gains(&self, hour_of_year: usize) -> f64 {
+        self.total_sensible_gain(hour_of_year) * self.convective_fraction
+    }
+
+    fn radiative_gains(&self, hour_of_year: usize) -> f64 {
+        self.total_sensible_gain(hour_of_year) * self.radiative_fraction
+    }
+
+    fn mass_coupling_factor(&self) -> f64 {
+        self.mass_coupling_factor
+    }
+
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -457,5 +579,121 @@ mod tests {
         assert_eq!(servers.radiative_fraction, 0.5);
         assert_eq!(servers.convective_fraction, 0.5);
         assert_eq!(servers.mass_coupling_factor, 0.8);
+    }
+
+    #[test]
+    fn test_it_equipment_load_default_fractions() {
+        let it = ITEquipmentLoad::new("IT".to_string(), 1000.0, 0.95, 10.0, 1);
+        assert_eq!(it.radiative_fraction, 0.0);
+        assert_eq!(it.convective_fraction, 1.0);
+        assert_eq!(it.mass_coupling_factor, 0.0);
+    }
+
+    #[test]
+    fn test_it_equipment_load_ups_loss_90_percent_efficient() {
+        let it = ITEquipmentLoad::new("IT".to_string(), 10000.0, 0.90, 0.0, 1);
+        let hour = 100;
+        let ups_loss = it.ups_loss_at_hour(hour);
+        assert!((ups_loss - 1111.11).abs() < 1.0);
+    }
+
+    #[test]
+    fn test_it_equipment_load_total_gain_11kw_with_90_percent_ups() {
+        let it = ITEquipmentLoad::new("IT".to_string(), 10000.0, 0.90, 0.0, 1);
+        let hour = 100;
+        let total_gain = it.total_sensible_gain(hour);
+        assert!((total_gain - 11111.11).abs() < 1.0);
+    }
+
+    #[test]
+    fn test_it_equipment_load_100_percent_sensible() {
+        let it = ITEquipmentLoad::new("IT".to_string(), 5000.0, 0.95, 50.0, 1);
+        let hour = 100;
+        let convective = it.convective_gains(hour);
+        let radiative = it.radiative_gains(hour);
+        assert!((convective - it.total_sensible_gain(hour)).abs() < 1e-10);
+        assert!((radiative - 0.0).abs() < 1e-10);
+    }
+
+    #[test]
+    fn test_it_equipment_load_standby_loss_when_server_off() {
+        let it = ITEquipmentLoad::new("IT".to_string(), 10000.0, 0.90, 5.0, 1);
+        let hour_off = 100;
+        let mut schedule_off = DailySchedule::constant(0.0);
+        let it_with_off_schedule = it.with_schedule(schedule_off);
+        let gain_when_off = it_with_off_schedule.total_sensible_gain(hour_off);
+        assert!((gain_when_off - 5.0).abs() < 1e-10);
+    }
+
+    #[test]
+    fn test_it_equipment_load_standby_plus_ups_loss_when_server_off() {
+        let it = ITEquipmentLoad::new("IT".to_string(), 10000.0, 0.90, 5.0, 1);
+        let mut schedule_off = DailySchedule::constant(0.0);
+        let it_off = it.with_schedule(schedule_off);
+        let gain = it_off.total_sensible_gain(0);
+        let ups_loss_when_off = it_off.ups_loss_at_hour(0);
+        assert!((ups_loss_when_off - 0.0).abs() < 1e-10);
+        assert!((gain - 5.0).abs() < 1e-10);
+    }
+
+    #[test]
+    fn test_it_equipment_load_constant_24_7_schedule() {
+        let it = ITEquipmentLoad::new("IT".to_string(), 1000.0, 0.95, 10.0, 1);
+        let power_day = it.power_at_hour(0);
+        let power_night = it.power_at_hour(2359);
+        assert_eq!(power_day, power_night);
+    }
+
+    #[test]
+    fn test_it_equipment_load_multiple_count() {
+        let it = ITEquipmentLoad::new("IT".to_string(), 1000.0, 0.95, 10.0, 5);
+        let hour = 100;
+        let ups_loss = it.ups_loss_at_hour(hour);
+        let expected_ups_loss = (1000.0 * 5.0 * 1.0) * (1.0 / 0.95 - 1.0);
+        assert!((ups_loss - expected_ups_loss).abs() < 1.0);
+    }
+
+    #[test]
+    fn test_it_equipment_load_validate_valid() {
+        let it = ITEquipmentLoad::new("IT".to_string(), 1000.0, 0.95, 10.0, 1);
+        assert!(it.validate().is_ok());
+    }
+
+    #[test]
+    fn test_it_equipment_load_validate_invalid_ups_efficiency() {
+        let it = ITEquipmentLoad::new("IT".to_string(), 1000.0, 1.5, 10.0, 1);
+        assert!(it.validate().is_err());
+    }
+
+    #[test]
+    fn test_it_equipment_load_validate_negative_rated_power() {
+        let it = ITEquipmentLoad::new("IT".to_string(), -100.0, 0.95, 10.0, 1);
+        assert!(it.validate().is_err());
+    }
+
+    #[test]
+    fn test_it_equipment_load_validate_negative_standby_loss() {
+        let it = ITEquipmentLoad::new("IT".to_string(), 1000.0, 0.95, -10.0, 1);
+        assert!(it.validate().is_err());
+    }
+
+    #[test]
+    fn test_it_equipment_load_as_any_downcast() {
+        let it = ITEquipmentLoad::new("IT".to_string(), 1000.0, 0.95, 10.0, 1);
+        let any_ref = it.as_any();
+        let downcasted = any_ref.downcast_ref::<ITEquipmentLoad>();
+        assert!(downcasted.is_some());
+        assert_eq!(downcasted.unwrap().id, "IT");
+    }
+
+    #[test]
+    fn test_it_equipment_load_gains_sum_to_power() {
+        let it = ITEquipmentLoad::new("IT".to_string(), 1000.0, 0.95, 10.0, 1);
+        for hour in 0..24 {
+            let power = it.power_at_hour(hour);
+            let convective = it.convective_gains(hour);
+            let radiative = it.radiative_gains(hour);
+            assert!((power - (convective + radiative)).abs() < 1e-10);
+        }
     }
 }
