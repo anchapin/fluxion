@@ -10,12 +10,14 @@
 //! - #2049: Mock Plug Load Fallback with Diurnal Gaussian Noise
 //! - #2050: INT8 Quantization for TSFM CPU Inference
 //! - #2051: DynamicInternalGainAdapter Core
+//! - #2076: TOON Time-Series Encoder for TSFM Context Windows
 //! - #1910: Occupant-dependent internal gains (metabolic rate, equipment diversity, DCV)
 
 pub mod comfort;
 pub mod internal_gains;
 pub mod lighting;
 pub mod occupancy;
+pub mod toon_time_encoder;
 pub mod triggers;
 
 pub use comfort::{
@@ -33,6 +35,10 @@ pub use occupancy::{
     compute_expected_fraction, validate_occupancy, BuildingType, DayOfWeek,
     HourlyTransitionMatrices, MarkovOccupancyGenerator, MarkovOccupancyProvider, OccupancyState,
     OccupancyValidationResult, TransitionMatrix,
+};
+pub use toon_time_encoder::{
+    CollapseStrategy, TelemetryRecord, TimeSeriesPoint, TokenBenchmark, ToonTimeEncoder,
+    ToonTimeEncoderConfig,
 };
 pub use triggers::{ComfortTrigger, OccupantComfortTriggers, OccupantComfortTriggersConfig};
 
