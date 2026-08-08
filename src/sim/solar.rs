@@ -176,7 +176,7 @@ pub fn calculate_window_solar_gain(
             relative_azimuth: rel_az.to_radians(),
         };
 
-        shaded_fraction = calculate_shaded_fraction(geom, overhang, fins, &local_solar);
+        shaded_fraction = calculate_shaded_fraction(geom, overhang, fins, &local_solar, None);
     }
 
     let beam_shgc = if incidence_angle <= 0.0 {
@@ -241,7 +241,7 @@ pub fn calculate_window_solar_gain_with_diagnostics(
             relative_azimuth: rel_az.to_radians(),
         };
 
-        shaded_fraction = calculate_shaded_fraction(geom, overhang, fins, &local_solar);
+        shaded_fraction = calculate_shaded_fraction(geom, overhang, fins, &local_solar, None);
     }
 
     let beam_shgc = if incidence_angle <= 0.0 {
