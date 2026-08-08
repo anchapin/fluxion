@@ -480,6 +480,15 @@ path = "tests/integration/test_fluid_energy_conservation.rs"
 harness = true
 required-features = ["fluid"]
 
+# Issue #2391 — MasterSim co-simulation master setup for BES+FFD coupling.
+# Tests the MasterSim configuration, dummy FMU generation, and 24-hour co-simulation.
+# Requires MasterSim installed: https://github.com/ghorwin/MasterSim
+# Runs with: cargo test -p fluxion integration-mastersim-cosimulation
+[[test]]
+name = "integration-mastersim-cosimulation"
+path = "tests/integration/test_mastersim_cosimulation.rs"
+harness = true
+
 [[test]]
 name = "solar_gain_unit_tests"
 path = "tests/solar_gain_unit_tests.rs"
