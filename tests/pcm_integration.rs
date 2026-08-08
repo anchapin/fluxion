@@ -23,9 +23,7 @@
 
 use fluxion::physics::fd_solver_wrapper::FDSolverWrapper;
 use fluxion::physics::solver_trait::HeatConductionSolver;
-use fluxion::physics::units::{
-    FromF64, HeatTransferCoefficient, Temperature, Time,
-};
+use fluxion::physics::units::{FromF64, HeatTransferCoefficient, Temperature, Time};
 use fluxion_core::assembly::{AssemblyBuilder, MaterialLayer, PcmMaterial};
 use fluxion_core::assembly::{BrickMaterial, GypsumMaterial};
 
@@ -35,12 +33,12 @@ const H_EXT: f64 = 25.0;
 #[test]
 fn test_pcm_enthalpy_trapezoidal_profile() {
     let pcm = PcmMaterial::new(
-        0.05,      // thickness 5 cm
-        2000.0,    // solid Cp J/kgK
-        2000.0,    // liquid Cp J/kgK
-        50_000.0,  // latent heat J/kg = 50 kJ/kg
-        21.0,      // melting point °C
-        4.0,       // melt range °C (±2°C)
+        0.05,     // thickness 5 cm
+        2000.0,   // solid Cp J/kgK
+        2000.0,   // liquid Cp J/kgK
+        50_000.0, // latent heat J/kg = 50 kJ/kg
+        21.0,     // melting point °C
+        4.0,      // melt range °C (±2°C)
     );
 
     let t_below = 17.0;
@@ -66,12 +64,12 @@ fn test_pcm_enthalpy_trapezoidal_profile() {
 #[test]
 fn test_pcm_melt_time_stefan_problem() {
     let pcm = PcmMaterial::new(
-        0.05,       // thickness 5 cm
-        2000.0,     // solid Cp J/kgK
-        2000.0,     // liquid Cp J/kgK
-        50_000.0,   // latent heat J/kg = 50 kJ/kg
-        21.0,       // melting point °C
-        4.0,        // melt range °C (±2°C)
+        0.05,     // thickness 5 cm
+        2000.0,   // solid Cp J/kgK
+        2000.0,   // liquid Cp J/kgK
+        50_000.0, // latent heat J/kg = 50 kJ/kg
+        21.0,     // melting point °C
+        4.0,      // melt range °C (±2°C)
     );
 
     let density = pcm.density();
@@ -93,14 +91,7 @@ fn test_pcm_melt_time_stefan_problem() {
 
 #[test]
 fn test_pcm_latent_heat_energy_integration() {
-    let pcm = PcmMaterial::new(
-        0.05,
-        2000.0,
-        2000.0,
-        50_000.0,
-        21.0,
-        4.0,
-    );
+    let pcm = PcmMaterial::new(0.05, 2000.0, 2000.0, 50_000.0, 21.0, 4.0);
 
     let density = pcm.density();
     let thickness = pcm.thickness();
@@ -135,12 +126,7 @@ fn test_pcm_assembly_builder_integration() {
     let assembly = AssemblyBuilder::new("pcm_wall".to_string())
         .add_layer(Box::new(BrickMaterial::new(0.1)))
         .add_layer(Box::new(PcmMaterial::new(
-            0.05,
-            2000.0,
-            2000.0,
-            50_000.0,
-            21.0,
-            4.0,
+            0.05, 2000.0, 2000.0, 50_000.0, 21.0, 4.0,
         )))
         .add_layer(Box::new(GypsumMaterial::new(0.012)))
         .build()
@@ -159,14 +145,7 @@ fn test_pcm_assembly_builder_integration() {
 
 #[test]
 fn test_pcm_specific_heat_nominal_value() {
-    let pcm = PcmMaterial::new(
-        0.05,
-        1500.0,
-        2500.0,
-        50_000.0,
-        21.0,
-        4.0,
-    );
+    let pcm = PcmMaterial::new(0.05, 1500.0, 2500.0, 50_000.0, 21.0, 4.0);
 
     let nominal_cp = pcm.specific_heat();
     let expected_nominal = (1500.0 + 2500.0) / 2.0;
@@ -175,14 +154,7 @@ fn test_pcm_specific_heat_nominal_value() {
 
 #[test]
 fn test_pcm_melt_fraction_gradient() {
-    let pcm = PcmMaterial::new(
-        0.05,
-        2000.0,
-        2000.0,
-        50_000.0,
-        21.0,
-        4.0,
-    );
+    let pcm = PcmMaterial::new(0.05, 2000.0, 2000.0, 50_000.0, 21.0, 4.0);
 
     let test_temps = [17.0, 19.0, 20.0, 20.5, 21.0, 21.5, 22.0, 23.0, 25.0];
     let expected_fractions = [0.0, 0.0, 0.0, 0.25, 0.5, 0.75, 1.0, 1.0, 1.0];
@@ -203,14 +175,7 @@ fn test_pcm_melt_fraction_gradient() {
 fn test_pcm_fd_solver_seam() {
     use fluxion::physics::wall_spec::WallSpec;
 
-    let pcm = PcmMaterial::new(
-        0.05,
-        2000.0,
-        2000.0,
-        50_000.0,
-        21.0,
-        4.0,
-    );
+    let pcm = PcmMaterial::new(0.05, 2000.0, 2000.0, 50_000.0, 21.0, 4.0);
 
     let wall = WallSpec::single_layer(
         "PCM Wall",
@@ -248,14 +213,7 @@ fn test_pcm_fd_solver_seam() {
 fn test_pcm_fd_solver_step_convergence() {
     use fluxion::physics::wall_spec::WallSpec;
 
-    let pcm = PcmMaterial::new(
-        0.05,
-        2000.0,
-        2000.0,
-        50_000.0,
-        21.0,
-        4.0,
-    );
+    let pcm = PcmMaterial::new(0.05, 2000.0, 2000.0, 50_000.0, 21.0, 4.0);
 
     let wall = WallSpec::single_layer(
         "PCM Wall",
@@ -290,20 +248,10 @@ fn test_pcm_multiple_layers_with_concrete() {
     let assembly = AssemblyBuilder::new("composite_pcm_wall".to_string())
         .add_layer(Box::new(BrickMaterial::new(0.1)))
         .add_layer(Box::new(PcmMaterial::new(
-            0.03,
-            2000.0,
-            2000.0,
-            50_000.0,
-            21.0,
-            4.0,
+            0.03, 2000.0, 2000.0, 50_000.0, 21.0, 4.0,
         )))
         .add_layer(Box::new(PcmMaterial::new(
-            0.02,
-            1500.0,
-            2500.0,
-            60_000.0,
-            25.0,
-            5.0,
+            0.02, 1500.0, 2500.0, 60_000.0, 25.0, 5.0,
         )))
         .add_layer(Box::new(GypsumMaterial::new(0.012)))
         .build()
@@ -315,14 +263,7 @@ fn test_pcm_multiple_layers_with_concrete() {
 
 #[test]
 fn test_pcm_downcast_from_trait() {
-    let pcm = PcmMaterial::new(
-        0.05,
-        2000.0,
-        2000.0,
-        50_000.0,
-        21.0,
-        4.0,
-    );
+    let pcm = PcmMaterial::new(0.05, 2000.0, 2000.0, 50_000.0, 21.0, 4.0);
 
     let layer: &dyn MaterialLayer = &pcm;
     let downcast = layer.as_any().downcast_ref::<PcmMaterial>();

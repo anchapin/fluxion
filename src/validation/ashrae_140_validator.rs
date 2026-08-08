@@ -1693,7 +1693,11 @@ impl ASHRAE140Validator {
             // Debug: Print Case 950 HVAC demand and temperature every 1000 steps
             if spec.case_id == "950" && step % 1000 == 0 {
                 let t_zone = model.temperatures.as_ref().first().copied().unwrap_or(20.0);
-                let hvac_power_w = if hvac_kwh != 0.0 { hvac_kwh * 3.6e6 / 3600.0 } else { 0.0 }; // kWh * 3600 = J, / 3600s = W
+                let hvac_power_w = if hvac_kwh != 0.0 {
+                    hvac_kwh * 3.6e6 / 3600.0
+                } else {
+                    0.0
+                }; // kWh * 3600 = J, / 3600s = W
                 eprintln!(
                     "DEBUG Case 950 step={}: t_zone={:.2} degC, hvac_kwh={}, hvac_power_W={}, heating_sp={} degC, cooling_sp={} degC, outdoor={} degC",
                     step, t_zone, hvac_kwh, hvac_power_w, model.heating_setpoint, model.cooling_setpoint, weather_data.dry_bulb_temp
