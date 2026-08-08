@@ -46,6 +46,7 @@ pub mod thermal_model_physics;
 pub mod thermal_model_scratch;
 pub mod thermal_model_solvers;
 pub mod timestep_solver;
+pub mod utility_tariff;
 pub mod warmup;
 
 pub mod thermal_integration;
