@@ -66,6 +66,10 @@ pub struct FluxionResults {
     /// Cooling energy demand (kWh)
     pub cooling_energy_kwh: f64,
 
+    /// Annual carbon emissions (kg CO2eq)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub total_carbon_kg: Option<f64>,
+
     /// Surface outside face temperatures (hourly, in °C)
     pub surface_outside_temps: Option<Vec<f64>>,
 

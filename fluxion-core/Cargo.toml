@@ -32,3 +32,5 @@ directories = "5.0"
 proptest = "1.5"
 # Mock HTTP server for tmy3 download tests
 mockito = "1.7"
+# For carbon intensity CSV tests
+tempfile = "3"
