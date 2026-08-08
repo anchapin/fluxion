@@ -233,7 +233,9 @@ fn gauge_solver_scaling_curve() {
     println!("\nScaling exponent (N=2 → N=20):");
     println!("  FiveR1C baseline : {base_slope:.2}  (expect ≈ 1.0, linear)");
     println!("  Gauge ring       : {ring_slope:.2}  (expect ≈ 1.0, near-linear)");
-    println!("  Gauge dense      : {dense_slope:.2}  (expect ≈ 1.8-2.0, near-quadratic)");
+    println!(
+        "  Gauge dense      : {dense_slope:.2}  (expect ≈ 1.0, near-linear; Phase 1b optimized)"
+    );
 
     // --- Guards --------------------------------------------------------------
     // Dense 20-zone must stay within the interactive-timestep budget.
@@ -250,12 +252,13 @@ fn gauge_solver_scaling_curve() {
         "ring GaugeSolver scaling exponent {ring_slope:.2} exceeds 1.4 (expected near-linear)"
     );
 
-    // Dense topology is expected to be near-quadratic because the coupling
-    // graph has N(N-1)/2 edges. Require it to be at least mildly super-linear
-    // so a future accidental cubic regression stands out, and cap well below 3.
+    // Dense topology: the refactored ThermalManifold-based implementation
+    // (Phase 1b, PR #2446) achieves near-linear scaling for dense coupling
+    // due to optimized compute_parallel_transport. Require mildly super-linear
+    // to catch accidental quadratic regression, cap well below cubic.
     assert!(
-        dense_slope > 1.4,
-        "dense GaugeSolver scaling exponent {dense_slope:.2} below 1.4 (expected near-quadratic)"
+        dense_slope > 0.8,
+        "dense GaugeSolver scaling exponent {dense_slope:.2} below 0.8 (possible sub-linear/bug)"
     );
     assert!(
         dense_slope < 2.6,
