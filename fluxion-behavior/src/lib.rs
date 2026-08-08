@@ -36,11 +36,11 @@ pub use occupancy::{
     HourlyTransitionMatrices, MarkovOccupancyGenerator, MarkovOccupancyProvider, OccupancyState,
     OccupancyValidationResult, TransitionMatrix,
 };
-pub use triggers::{ComfortTrigger, OccupantComfortTriggers, OccupantComfortTriggersConfig};
 pub use toon_time_encoder::{
-    CollapseStrategy, TelemetryRecord, TimeSeriesPoint, ToonTimeEncoder,
-    ToonTimeEncoderConfig, TokenBenchmark,
+    CollapseStrategy, TelemetryRecord, TimeSeriesPoint, TokenBenchmark, ToonTimeEncoder,
+    ToonTimeEncoderConfig,
 };
+pub use triggers::{ComfortTrigger, OccupantComfortTriggers, OccupantComfortTriggersConfig};
 
 use ndarray::Dimension;
 use rand::prelude::*;

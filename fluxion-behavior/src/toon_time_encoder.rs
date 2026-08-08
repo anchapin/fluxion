@@ -56,12 +56,25 @@ impl CollapseStrategy {
             (_, CollapseStrategy::None) => true,
             (CollapseStrategy::UniformArray, _) => true,
             (_, CollapseStrategy::UniformArray) => false,
-            (CollapseStrategy::ConstantRun { run_length: a }, CollapseStrategy::ConstantRun { run_length: b }) => a > b,
-            (CollapseStrategy::ConstantRun { run_length: a }, CollapseStrategy::RegularInterval { .. }) => *a >= 3,
-            (CollapseStrategy::RegularInterval { .. }, CollapseStrategy::ConstantRun { run_length: a }) => *a < 3,
             (
-                CollapseStrategy::RegularInterval { stride_seconds: a, .. },
-                CollapseStrategy::RegularInterval { stride_seconds: b, .. },
+                CollapseStrategy::ConstantRun { run_length: a },
+                CollapseStrategy::ConstantRun { run_length: b },
+            ) => a > b,
+            (
+                CollapseStrategy::ConstantRun { run_length: a },
+                CollapseStrategy::RegularInterval { .. },
+            ) => *a >= 3,
+            (
+                CollapseStrategy::RegularInterval { .. },
+                CollapseStrategy::ConstantRun { run_length: a },
+            ) => *a < 3,
+            (
+                CollapseStrategy::RegularInterval {
+                    stride_seconds: a, ..
+                },
+                CollapseStrategy::RegularInterval {
+                    stride_seconds: b, ..
+                },
             ) => a > b,
         }
     }
@@ -145,8 +158,7 @@ impl ToonTimeEncoder {
             return (CollapseStrategy::UniformArray, true);
         }
 
-        let (interval_strategy, interval_stride) =
-            self.detect_regular_interval(readings);
+        let (interval_strategy, interval_stride) = self.detect_regular_interval(readings);
         let (run_strategy, run_length) = self.detect_constant_runs(readings);
 
         if interval_strategy.is_better_than(&run_strategy) {
@@ -157,12 +169,7 @@ impl ToonTimeEncoder {
                 true,
             )
         } else {
-            (
-                CollapseStrategy::ConstantRun {
-                    run_length,
-                },
-                true,
-            )
+            (CollapseStrategy::ConstantRun { run_length }, true)
         }
     }
 
@@ -179,7 +186,9 @@ impl ToonTimeEncoder {
         let mut strides: HashMap<i64, usize> = HashMap::new();
 
         for window in readings.windows(2) {
-            let diff = (window[1].timestamp - window[0].timestamp).num_seconds().abs();
+            let diff = (window[1].timestamp - window[0].timestamp)
+                .num_seconds()
+                .abs();
             if diff > 0 {
                 *strides.entry(diff).or_insert(0) += 1;
             }
@@ -220,7 +229,12 @@ impl ToonTimeEncoder {
         }
 
         if max_run >= self.config.constant_run_min_length {
-            (CollapseStrategy::ConstantRun { run_length: max_run }, max_run)
+            (
+                CollapseStrategy::ConstantRun {
+                    run_length: max_run,
+                },
+                max_run,
+            )
         } else {
             (CollapseStrategy::None, 0)
         }
@@ -228,24 +242,26 @@ impl ToonTimeEncoder {
 
     fn encode_uniform_array(&self, readings: &[TimeSeriesPoint], output: &mut String) {
         use std::fmt::Write;
-        writeln!(
-            output,
-            "readings[{}]{{timestamp,value}}:",
-            readings.len()
-        )
-        .unwrap();
+        writeln!(output, "readings[{}]{{timestamp,value}}:", readings.len()).unwrap();
         for r in readings {
             writeln!(output, "{}, {}", r.timestamp.to_rfc3339(), r.value).unwrap();
         }
     }
 
-    fn encode_constant_runs(&self, readings: &[TimeSeriesPoint], output: &mut String, _run_length: usize) {
+    fn encode_constant_runs(
+        &self,
+        readings: &[TimeSeriesPoint],
+        output: &mut String,
+        _run_length: usize,
+    ) {
         use std::fmt::Write;
         let mut i = 0;
         while i < readings.len() {
             let start = i;
             let value = readings[i].value;
-            while i < readings.len() && (readings[i].value - value).abs() <= self.config.value_tolerance {
+            while i < readings.len()
+                && (readings[i].value - value).abs() <= self.config.value_tolerance
+            {
                 i += 1;
             }
             let end_idx = i - 1;
@@ -277,17 +293,17 @@ impl ToonTimeEncoder {
         }
     }
 
-    fn encode_regular_interval(&self, readings: &[TimeSeriesPoint], output: &mut String, stride_seconds: i64) {
+    fn encode_regular_interval(
+        &self,
+        readings: &[TimeSeriesPoint],
+        output: &mut String,
+        stride_seconds: i64,
+    ) {
         use std::fmt::Write;
         if self.config.emit_stride_header && stride_seconds > 0 {
             writeln!(output, "stride_seconds: {}", stride_seconds).unwrap();
         }
-        writeln!(
-            output,
-            "readings[{}]{{timestamp,value}}:",
-            readings.len()
-        )
-        .unwrap();
+        writeln!(output, "readings[{}]{{timestamp,value}}:", readings.len()).unwrap();
         for r in readings {
             writeln!(output, "{}, {}", r.timestamp.to_rfc3339(), r.value).unwrap();
         }
@@ -323,12 +339,7 @@ impl ToonTimeEncoder {
 
         match strategy {
             CollapseStrategy::UniformArray => {
-                writeln!(
-                    output,
-                    "readings[{}]{{timestamp,value}}:",
-                    readings.len()
-                )
-                .unwrap();
+                writeln!(output, "readings[{}]{{timestamp,value}}:", readings.len()).unwrap();
                 for r in readings {
                     writeln!(output, "{}, {}", r.timestamp.to_rfc3339(), r.value).unwrap();
                 }
@@ -340,12 +351,7 @@ impl ToonTimeEncoder {
                 self.encode_regular_interval(readings, output, stride_seconds);
             }
             CollapseStrategy::None => {
-                writeln!(
-                    output,
-                    "readings[{}]{{timestamp,value}}:",
-                    readings.len()
-                )
-                .unwrap();
+                writeln!(output, "readings[{}]{{timestamp,value}}:", readings.len()).unwrap();
                 for r in readings {
                     writeln!(output, "{}, {}", r.timestamp.to_rfc3339(), r.value).unwrap();
                 }
@@ -408,7 +414,9 @@ mod tests {
             .iter()
             .enumerate()
             .map(|(i, &v)| {
-                let t = Utc.with_ymd_and_hms(2024, 1, 15, start_hour + i as u32, 0, 0).unwrap();
+                let t = Utc
+                    .with_ymd_and_hms(2024, 1, 15, start_hour + i as u32, 0, 0)
+                    .unwrap();
                 TimeSeriesPoint {
                     timestamp: t,
                     value: v,
@@ -523,10 +531,24 @@ mod tests {
 
     #[test]
     fn test_collapse_strategy_ordering() {
-        assert!(CollapseStrategy::UniformArray.is_better_than(&CollapseStrategy::RegularInterval { stride_seconds: 3600 }));
-        assert!(CollapseStrategy::ConstantRun { run_length: 5 }.is_better_than(&CollapseStrategy::RegularInterval { stride_seconds: 3600 }));
-        assert!(CollapseStrategy::ConstantRun { run_length: 10 }.is_better_than(&CollapseStrategy::ConstantRun { run_length: 5 }));
-        assert!(CollapseStrategy::RegularInterval { stride_seconds: 3600 }.is_better_than(&CollapseStrategy::RegularInterval { stride_seconds: 60 }));
+        assert!(CollapseStrategy::UniformArray.is_better_than(
+            &CollapseStrategy::RegularInterval {
+                stride_seconds: 3600
+            }
+        ));
+        assert!(
+            CollapseStrategy::ConstantRun { run_length: 5 }.is_better_than(
+                &CollapseStrategy::RegularInterval {
+                    stride_seconds: 3600
+                }
+            )
+        );
+        assert!(CollapseStrategy::ConstantRun { run_length: 10 }
+            .is_better_than(&CollapseStrategy::ConstantRun { run_length: 5 }));
+        assert!(CollapseStrategy::RegularInterval {
+            stride_seconds: 3600
+        }
+        .is_better_than(&CollapseStrategy::RegularInterval { stride_seconds: 60 }));
     }
 
     #[test]
