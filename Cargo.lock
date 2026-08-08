@@ -1240,6 +1240,7 @@ dependencies = [
  "anyhow",
  "chrono",
  "criterion",
+ "fluxion-toon",
  "ndarray 0.17.2",
  "ort",
  "rand 0.8.5",

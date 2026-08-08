@@ -20,6 +20,7 @@ uom = { version = "0.35", features = ["serde"] }
 statrs = "0.18"
 chrono = { version = "0.4", features = ["serde"] }
 uuid = { version = "1.0", features = ["v4", "serde"] }
+fluxion-toon = { path = "../crates/fluxion-toon" }
 
 [features]
 default = ["ort"]
