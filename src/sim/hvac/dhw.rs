@@ -367,8 +367,7 @@ mod tests {
 
         let result = tank.step(12, 3600.0);
 
-        let expected_kwh =
-            100.0 * 1.0 * 4.186 * (60.0 - 10.0) / 1.0;
+        let expected_kwh = 100.0 * 1.0 * 4.186 * (60.0 - 10.0) / 1.0;
 
         assert!(
             (result.heating_energy_kwh - expected_kwh).abs() < 0.01,

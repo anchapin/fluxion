@@ -7,7 +7,7 @@
 //! - Draw profile scheduling
 //! - Energy accumulation
 
-use fluxion::sim::hvac::dhw::{DHWTank, DHWResult, HeatingSource};
+use fluxion::sim::hvac::dhw::{DHWResult, DHWTank, HeatingSource};
 use fluxion::sim::schedule::DailySchedule;
 
 #[test]
