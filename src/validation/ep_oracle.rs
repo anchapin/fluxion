@@ -49,7 +49,7 @@ pub struct EPReference {
 }
 
 /// Fluxion simulation results
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct FluxionResults {
     /// Test case identifier
     pub case_id: String,
@@ -65,6 +65,10 @@ pub struct FluxionResults {
 
     /// Cooling energy demand (kWh)
     pub cooling_energy_kwh: f64,
+
+    /// Annual carbon emissions (kg CO2eq)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub total_carbon_kg: Option<f64>,
 
     /// Surface outside face temperatures (hourly, in °C)
     pub surface_outside_temps: Option<Vec<f64>>,
@@ -597,6 +601,7 @@ mod tests {
             surface_outside_temps: Some(vec![5.0, 6.0]),
             surface_inside_temps: Some(vec![19.0, 20.0]),
             surface_fluxes: Some(vec![10.0, 11.0]),
+            ..Default::default()
         };
         let cloned = results.clone();
         assert_eq!(cloned.heating_energy_kwh, 100.0);
@@ -620,6 +625,7 @@ mod tests {
             surface_outside_temps: None,
             surface_inside_temps: None,
             surface_fluxes: None,
+            ..Default::default()
         };
         let report = oracle.validate(&results);
         assert!(!report.passed);
@@ -687,6 +693,7 @@ mod tests {
             surface_outside_temps: None,
             surface_inside_temps: None,
             surface_fluxes: None,
+            ..Default::default()
         };
         let debug_str = format!("{:?}", results);
         assert!(debug_str.contains("FluxionResults"));
@@ -749,6 +756,7 @@ mod tests {
             surface_outside_temps: Some(vec![5.0, 6.0, 7.0]),
             surface_inside_temps: Some(vec![19.0, 20.0, 21.0]),
             surface_fluxes: Some(vec![10.0, 11.0, 12.0]),
+            ..Default::default()
         };
         assert_eq!(results.case_id, "900");
         assert_eq!(results.zone_temperatures.len(), 3);
@@ -949,6 +957,7 @@ mod tests {
             surface_outside_temps: Some(vec![5.1, 6.1, 7.1, 8.1]),
             surface_inside_temps: Some(vec![19.1, 20.1, 21.1, 22.1]),
             surface_fluxes: Some(vec![10.1, 11.1, 12.1, 13.1]),
+            ..Default::default()
         };
 
         let report = oracle.validate(&results);
@@ -987,6 +996,7 @@ mod tests {
             surface_outside_temps: None,
             surface_inside_temps: None,
             surface_fluxes: None,
+            ..Default::default()
         };
 
         let report = oracle.validate(&results);

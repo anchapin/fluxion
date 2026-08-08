@@ -1690,6 +1690,18 @@ impl ASHRAE140Validator {
 
             let hvac_kwh = model.step_physics(step, weather_data.dry_bulb_temp, 3600.0);
 
+            // Debug: Print Case 950 HVAC demand and temperature every 1000 steps
+            if spec.case_id == "950" && step % 1000 == 0 {
+                let t_zone = model.temperatures.as_ref().first().copied().unwrap_or(20.0);
+                let hvac_power_w = if hvac_kwh != 0.0 {
+                    hvac_kwh * 3.6e6 / 3600.0
+                } else {
+                    0.0
+                }; // kWh * 3600 = J, / 3600s = W
+                println!("DEBUG Case 950 step={}: t_zone={:.2}°C, hvac_kwh={:.4}, hvac_power_W={:.1}, heating_sp={:.1}°C, cooling_sp={:.1}°C, outdoor={:.2}°C",
+                    step, t_zone, hvac_kwh, hvac_power_w, model.heating_setpoint, model.cooling_setpoint, weather_data.dry_bulb_temp);
+            }
+
             // SESSION 32: Accumulate HVAC energy from raw hvac_kwh
             // step_physics() returns kWh (energy for the timestep)
             // Convert kWh to Joules: kWh × 3.6e6 = Joules
