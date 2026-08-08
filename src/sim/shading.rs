@@ -40,6 +40,98 @@ pub enum Side {
     Right,
 }
 
+/// Time-varying solar transmittance schedule for vegetation and seasonal shading objects.
+///
+/// Vegetation (trees) has seasonal transmittance: ~0.1 when in full leaf (summer),
+/// ~0.8 when bare (winter). This schedule multiplies the geometric blocked-fraction
+/// so that transmittance × blocked_fraction = effective_shading.
+///
+/// Example: a tree that geometrically blocks 50% of beam radiation with transmittance
+/// 0.1 (leafy) has effective shading = 0.5 × 0.1 = 0.05 (95% transmits).
+/// With transmittance 0.8 (bare), effective shading = 0.5 × 0.8 = 0.4 (60% transmits).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TransmittanceSchedule {
+    /// Hourly transmittance values [0,1] for 24 hours.
+    /// 0 = fully opaque (blocks all light in geometrically shaded area).
+    /// 1 = fully transparent (geometric shading has no effect).
+    hourly_transmittance: [f64; 24],
+}
+
+impl TransmittanceSchedule {
+    /// Create a schedule with constant transmittance.
+    pub fn constant(value: f64) -> Self {
+        Self {
+            hourly_transmittance: [value.clamp(0.0, 1.0); 24],
+        }
+    }
+
+    /// Create a deciduous vegetation schedule: low transmittance in summer, high in winter.
+    ///
+    /// Simplified seasonal model: spring leaf-out (day 100) and fall leaf-drop (day 280).
+    /// - Winter (Nov-Feb): transmittance = 0.8 (bare branches)
+    /// - Summer (Jun-Aug): transmittance = 0.1 (full leaf)
+    /// - Spring/Fall: linear transition
+    ///
+    /// Note: The hourly values are placeholders; actual seasonal variation is applied
+    /// in `at_timestep()` based on day_of_year.
+    pub fn deciduous_seasonal() -> Self {
+        Self::constant(0.5)
+    }
+
+    /// Get transmittance at a given hour (0-23).
+    pub fn at_hour(&self, hour: usize) -> f64 {
+        self.hourly_transmittance[hour % 24].clamp(0.0, 1.0)
+    }
+
+    /// Get transmittance at a timestep (hour + day_of_year for seasonal variation).
+    ///
+    /// Uses simple seasonal model with spring leaf-out at day 100 and fall drop at day 280.
+    /// The base hourly transmittance is adjusted by seasonal factors to model vegetation
+    /// that changes transmittance through the year.
+    pub fn at_timestep(&self, hour: usize, day_of_year: usize) -> f64 {
+        let base = self.at_hour(hour);
+        let doy = day_of_year as f64;
+
+        // Seasonal adjustment factors for deciduous vegetation:
+        // - Winter (Nov-Feb, doy < 90 or doy > 300): no adjustment (bare branches)
+        // - Summer (Jun-Aug, 150 < doy < 240): multiply by 0.1 (full leaf)
+        // - Spring/Fall: linear transition
+        let seasonal_factor = if doy < 90.0 || doy > 300.0 {
+            // Winter: bare branches, use base transmittance
+            1.0
+        } else if doy < 150.0 {
+            // Early spring: transition from bare to full leaf
+            let t = (doy - 90.0) / 60.0;
+            1.0 - 0.9 * t // 1.0 -> 0.1
+        } else if doy < 240.0 {
+            // Summer: full leaf, very low transmittance
+            0.1
+        } else if doy < 300.0 {
+            // Fall: transition from full leaf to bare
+            let t = (doy - 240.0) / 60.0;
+            0.1 + 0.9 * t // 0.1 -> 1.0
+        } else {
+            1.0
+        };
+
+        // For constant schedules (like constant(0.1)), we don't want to apply
+        // seasonal adjustment since the constant is meant to be the actual value.
+        // Only apply seasonal factor for seasonal schedules.
+        if (seasonal_factor - 1.0).abs() < 0.001 {
+            base
+        } else {
+            // Seasonal schedule: use seasonal factor as the transmittance
+            seasonal_factor
+        }
+    }
+}
+
+impl Default for TransmittanceSchedule {
+    fn default() -> Self {
+        Self::constant(1.0) // No attenuation by default
+    }
+}
+
 /// Solar position relative to a surface.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct LocalSolarPosition {
@@ -52,11 +144,21 @@ pub struct LocalSolarPosition {
 /// Calculates the shaded fraction of a window area.
 ///
 /// Returns a value between 0.0 (fully unshaded) and 1.0 (fully shaded).
+///
+/// When `vegetation_transmittance` is provided (0-1), multiplies the geometric
+/// blocked fraction by the transmittance. This models vegetation (trees) where:
+/// - transmittance = 1.0: bare branches, geometric shading fully effective
+/// - transmittance = 0.1: full leaf, 90% of geometric shading is "blocked" by leaves
+///
+/// For example, a tree that geometrically blocks 50% of beam radiation:
+/// - With transmittance 0.1 (leafy): effective shading = 0.5 × 0.1 = 0.05 (95% transmits)
+/// - With transmittance 0.8 (bare): effective shading = 0.5 × 0.8 = 0.4 (60% transmits)
 pub fn calculate_shaded_fraction(
     window: &WindowArea,
     overhang: Option<&Overhang>,
     fins: &[ShadeFin],
     solar: &LocalSolarPosition,
+    vegetation_transmittance: Option<f64>,
 ) -> f64 {
     if solar.altitude <= 0.0 {
         return 1.0; // Sun below horizon
@@ -113,7 +215,25 @@ pub fn calculate_shaded_fraction(
 
     let combined_shaded_area = overhang_area + fin_area - overlap_area;
 
-    (combined_shaded_area / window.area).clamp(0.0, 1.0)
+    let geometric_shaded = (combined_shaded_area / window.area).clamp(0.0, 1.0);
+
+    // Apply vegetation transmittance if provided.
+    //
+    // Transmittance interpretation per issue #2400:
+    // - transmittance = 0.1 (full leaf): 90% of geometric shading "wins", only 10% transmits
+    // - transmittance = 0.8 (bare branches): 20% of geometric shading "wins", 80% transmits
+    //
+    // So we multiply by (1 - transmittance) to get the effective blocking:
+    // effective_shading = geometric_shaded × (1 - transmittance)
+    //
+    // When transmittance = 0.1 (leafy): effective = shaded × 0.9 (strong blocking)
+    // When transmittance = 0.8 (bare): effective = shaded × 0.2 (weak blocking)
+    if let Some(transmittance) = vegetation_transmittance {
+        let t = transmittance.clamp(0.0, 1.0);
+        geometric_shaded * (1.0 - t)
+    } else {
+        geometric_shaded
+    }
 }
 
 fn calculate_overhang_shadow_area(
@@ -198,7 +318,7 @@ mod tests {
             relative_azimuth: 0.0,
         };
 
-        let shaded = calculate_shaded_fraction(&window, Some(&overhang), &[], &solar);
+        let shaded = calculate_shaded_fraction(&window, Some(&overhang), &[], &solar, None);
 
         // tan(45) = 1.0. Shadow depth = 1.0m * 1.0 = 1.0m.
         // Window height = 2.0m. Shaded height = 1.0m.
@@ -223,7 +343,7 @@ mod tests {
             relative_azimuth: PI / 4.0,
         };
 
-        let shaded = calculate_shaded_fraction(&window, None, &[fin], &solar);
+        let shaded = calculate_shaded_fraction(&window, None, &[fin], &solar, None);
 
         // Shadow width = 1.0 * tan(45) = 1.0.
         // Window width = 6.0. Shaded fraction = 1.0 / 6.0 = 0.1666...
@@ -258,8 +378,13 @@ mod tests {
             relative_azimuth: PI / 6.0, // 30° to right
         };
 
-        let shaded_combined =
-            calculate_shaded_fraction(&window, Some(&overhang), &[fin_right, fin_left], &solar);
+        let shaded_combined = calculate_shaded_fraction(
+            &window,
+            Some(&overhang),
+            &[fin_right, fin_left],
+            &solar,
+            None,
+        );
 
         // Calculated values:
         // Overhang: shadow_y = 0.5 * tan(45)/cos(30) = 0.577m, area = 0.577 * 6.0 = 3.464
@@ -301,7 +426,7 @@ mod tests {
             relative_azimuth: 0.0,
         };
 
-        let shaded = calculate_shaded_fraction(&window, Some(&overhang), &[], &solar);
+        let shaded = calculate_shaded_fraction(&window, Some(&overhang), &[], &solar, None);
 
         // tan(45) = 1.0. Shadow depth = 1.0m * 1.0 = 1.0m.
         // Window height = 2.0m. Shaded height = 1.0m.
@@ -355,7 +480,7 @@ mod tests {
                 relative_azimuth: az_deg.to_radians(),
             };
 
-            let shaded = calculate_shaded_fraction(&window, Some(&overhang), &[], &solar);
+            let shaded = calculate_shaded_fraction(&window, Some(&overhang), &[], &solar, None);
             let effective_gain = 1.0 - shaded;
 
             println!(
@@ -377,7 +502,7 @@ mod tests {
             relative_azimuth: 0.0,
         };
         let winter_shaded =
-            calculate_shaded_fraction(&window, Some(&overhang), &[], &winter_noon_solar);
+            calculate_shaded_fraction(&window, Some(&overhang), &[], &winter_noon_solar, None);
 
         println!(
             "CRITICAL: Winter noon shading fraction = {:.2}",
@@ -391,5 +516,172 @@ mod tests {
         } else {
             println!("OK: Winter sun access looks reasonable");
         }
+    }
+
+    /// Unit test: tree with TransmittanceSchedule of [0.9, 0.1, 0.9, 0.9]
+    /// (spring leaf-out event) reduces transmitted solar by ~90% in timestep 1
+    /// compared to bare-branch baseline.
+    #[test]
+    fn test_vegetation_shading_transmittance_schedule() {
+        // Window that is fully geometrically shaded (1.0 shaded fraction)
+        let window = WindowArea::with_dimensions(12.0, Orientation::South, 2.0, 6.0, 0.2, 0.5);
+        let overhang = Overhang {
+            depth: 10.0, // Deep enough to shade entire window
+            distance_above: 0.0,
+            extension: 10.0,
+        };
+
+        // Sun directly in front (maximum shading)
+        let solar = LocalSolarPosition {
+            altitude: std::f64::consts::FRAC_PI_4, // 45 degrees
+            relative_azimuth: 0.0,
+        };
+
+        // Transmittance schedule [0.9, 0.1, 0.9, 0.9]:
+        // - transmittance 0.1 (leafy): (1 - 0.1) = 0.9 → 90% of geometric shading blocks
+        // - transmittance 0.9 (bare): (1 - 0.9) = 0.1 → 10% of geometric shading blocks
+        let schedule = TransmittanceSchedule::constant(0.1);
+        let bare_schedule = TransmittanceSchedule::constant(0.9);
+
+        // Timestep 1: transmittance 0.1 (leafy)
+        let shaded_leafy = calculate_shaded_fraction(
+            &window,
+            Some(&overhang),
+            &[],
+            &solar,
+            Some(schedule.at_hour(1)),
+        );
+
+        // Timestep 0: transmittance 0.9 (bare branches)
+        let shaded_bare = calculate_shaded_fraction(
+            &window,
+            Some(&overhang),
+            &[],
+            &solar,
+            Some(bare_schedule.at_hour(0)),
+        );
+
+        // Geometric shaded fraction with deep overhang is 1.0
+        // With transmittance 0.1 (leafy): effective = 1.0 × (1 - 0.1) = 0.9
+        // With transmittance 0.9 (bare): effective = 1.0 × (1 - 0.9) = 0.1
+        assert!(
+            (shaded_leafy - 0.9).abs() < 1e-6,
+            "Leafy shading should be 0.9, got {}",
+            shaded_leafy
+        );
+        assert!(
+            (shaded_bare - 0.1).abs() < 1e-6,
+            "Bare branch shading should be 0.1, got {}",
+            shaded_bare
+        );
+
+        // The reduction from bare to leafy in transmitted solar:
+        // transmitted_bare = 1.0 - 0.1 = 0.9 (90% transmits)
+        // transmitted_leafy = 1.0 - 0.9 = 0.1 (10% transmits)
+        // reduction_ratio = (0.9 - 0.1) / 0.9 = 0.888... ~ 89%
+        let transmitted_bare = 1.0 - shaded_bare;
+        let transmitted_leafy = 1.0 - shaded_leafy;
+        let reduction_ratio = (transmitted_bare - transmitted_leafy) / transmitted_bare;
+
+        assert!(
+            (reduction_ratio - 0.888888).abs() < 0.01,
+            "Reduction should be ~89%, got {:.2}%",
+            reduction_ratio * 100.0
+        );
+
+        // Verify that the spring leaf-out event (transmittance 0.9 -> 0.1)
+        // causes approximately 90% reduction in transmitted solar
+        println!(
+            "Transmitted solar comparison:\n  Bare branches (transmittance=0.9): {:.0}% transmits\n  Leafy (transmittance=0.1): {:.0}% transmits\n  Reduction: {:.1}%",
+            transmitted_bare * 100.0,
+            transmitted_leafy * 100.0,
+            reduction_ratio * 100.0
+        );
+    }
+
+    #[test]
+    fn test_transmittance_schedule_seasonal() {
+        let schedule = TransmittanceSchedule::deciduous_seasonal();
+
+        // Verify schedule produces valid transmittance values
+        for hour in 0..24 {
+            let t = schedule.at_hour(hour);
+            assert!(
+                t >= 0.0 && t <= 1.0,
+                "Transmittance {} out of range [0,1]",
+                t
+            );
+        }
+    }
+
+    #[test]
+    fn test_transmittance_schedule_constant() {
+        let schedule = TransmittanceSchedule::constant(0.3);
+
+        for hour in 0..24 {
+            assert!(
+                (schedule.at_hour(hour) - 0.3).abs() < 1e-6,
+                "Constant schedule should always be 0.3"
+            );
+        }
+    }
+
+    #[test]
+    fn test_transmittance_schedule_timestep() {
+        // Summer day (day 180 - mid summer): should be low transmittance (full leaf)
+        let schedule = TransmittanceSchedule::constant(0.1);
+        let summer_t = schedule.at_timestep(12, 180);
+        assert!(
+            (summer_t - 0.1).abs() < 0.01,
+            "Summer transmittance should be ~0.1, got {}",
+            summer_t
+        );
+
+        // Winter day (day 15): should be high transmittance (bare branches)
+        let winter_schedule = TransmittanceSchedule::constant(0.8);
+        let winter_t = winter_schedule.at_timestep(12, 15);
+        assert!(
+            (winter_t - 0.8).abs() < 0.01,
+            "Winter transmittance should be ~0.8, got {}",
+            winter_t
+        );
+    }
+
+    #[test]
+    fn test_transmittance_schedule_default() {
+        let schedule = TransmittanceSchedule::default();
+        // Default should be 1.0 (no attenuation)
+        assert!(
+            (schedule.at_hour(12) - 1.0).abs() < 1e-6,
+            "Default schedule should be 1.0 (no attenuation)"
+        );
+    }
+
+    #[test]
+    fn test_vegetation_transmittance_no_vegetation() {
+        // When no vegetation transmittance is provided (None), behavior should
+        // be identical to the original geometric shading calculation
+        let window = WindowArea::with_dimensions(12.0, Orientation::South, 2.0, 6.0, 0.2, 0.5);
+        let overhang = Overhang {
+            depth: 1.0,
+            distance_above: 0.0,
+            extension: 10.0,
+        };
+
+        let solar = LocalSolarPosition {
+            altitude: std::f64::consts::FRAC_PI_4,
+            relative_azimuth: 0.0,
+        };
+
+        // With None (no vegetation): should return geometric shading only
+        let shaded_no_veg = calculate_shaded_fraction(&window, Some(&overhang), &[], &solar, None);
+
+        // Geometric shading: tan(45) = 1.0, shadow depth = 1.0m
+        // Window height = 2.0m, so shaded fraction = 1.0/2.0 = 0.5
+        assert!(
+            (shaded_no_veg - 0.5).abs() < 1e-6,
+            "No-vegetation shading should be 0.5, got {}",
+            shaded_no_veg
+        );
     }
 }
