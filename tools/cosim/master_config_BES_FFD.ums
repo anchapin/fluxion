@@ -1,0 +1,108 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    MasterSim Co-Simulation Configuration
+    BES + FFD Coupled Simulation (Issue #2391)
+
+    MasterSim: https://github.com/ghorwin/MasterSim
+    Generated: 2026-08-08T20:20:21Z
+
+    Coupling Strategy: Loose Coupling (Issue #2390)
+    - BES runs at coarser timestep (1 hour) for thermal envelope
+    - FFD runs at finer timestep (1 minute) for airflow dynamics
+    - Data exchanged at each BES timestep
+
+    FMU Connections:
+      BES → FFD: outdoor_temperature → inlet_air_temperature
+      BES → FFD: zone_temperature → wall_temperature_0
+      FFD → BES: zone_air_temperature_0 → (used by BES for next step)
+
+    To run:
+      mastersim master_config_BES_FFD.ums
+-->
+<CoSimulationMaster
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xsi:noNamespaceSchemaLocation="https://raw.githubusercontent.com/ghorwin/MasterSim/master/docs/MasterSimulatorUML.xsd">
+
+    <!-- ==================== Simulation Parameters ==================== -->
+    <SimulationParameters
+        startTime="0.0"
+        endTime="86400.0"
+        masterStepSize="60.0"
+        resultFile="cosim_results"
+        resultInterval="3600.0"
+        /* Options:
+           preventEarlyTermination=true|false
+           relayResultsToStdOut=true|false
+        */
+    />
+
+    <!-- ==================== FMU Definitions ==================== -->
+    <!-- BES FMU: Building Energy Simulation (thermal envelope) -->
+    <FMUDefinition
+        name="BES"
+        source="bes_dummy.fmu"
+        instanceName="bes1"
+        visible="false"
+        loggingOn="true"
+        /* Optional:
+           muteInitializationErrors=false
+        */
+    />
+
+    <!-- FFD FMU: Fast Fluid Dynamics (airflow solver) -->
+    <FMUDefinition
+        name="FFD"
+        source="ffd_dummy.fmu"
+        instanceName="ffd1"
+        visible="false"
+        loggingOn="true"
+    />
+
+    <!-- ==================== Data Exchange Connections ==================== -->
+    <!--
+        Connections define the data flow between FMUs at each master step.
+        Format: fmu1:var1 → fmu2:var2
+
+        BES → FDD Connections (boundary conditions):
+    -->
+    <Connection
+        fmu1="bes1" var1="outdoor_temperature"
+        fmu2="ffd1" var2="inlet_air_temperature"
+        delay="0"
+    />
+
+    <!--
+        FFD → BES Connections (zone conditions feedback):
+        The FFD zone air temperature is used by BES for convective heat
+        transfer calculations in the next timestep.
+    -->
+    <Connection
+        fmu1="ffd1" var1="zone_air_temperature_0"
+        fmu2="bes1" var2="zone_temperature"
+        delay="0"
+    />
+
+    <!-- ==================== Logging Configuration ==================== -->
+    <LogCategories>
+        <Category name="logStatus"    enabled="true"/>
+        <Category name="logError"     enabled="true"/>
+        <Category name="logWarning"   enabled="true"/>
+        <Category name="logInfo"       enabled="false"/>
+        <Category name="logDebug"      enabled="false"/>
+        <Category name="logAll"       enabled="false"/>
+    </LogCategories>
+
+    <!-- ==================== Solver Configuration ==================== -->
+    <!--
+        Master solver uses IEC 61774 master algorithm with:
+        - Fixed-step communication (no variable step size)
+        - Steppers: Forward Euler (default), RK4 (optional)
+    -->
+    <SolverSettings
+        stepSize="60.0"
+        useOptimizedTimestep="true"
+        deadlockDetection="true"
+        deadlockRecoveryAttempts="3"
+    />
+
+</CoSimulationMaster>
