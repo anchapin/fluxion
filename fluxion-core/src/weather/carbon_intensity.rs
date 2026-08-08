@@ -160,11 +160,9 @@ impl CarbonIntensityProfile {
                 });
             }
 
-            let intensity: f64 = parts[1].trim().parse().map_err(|_| {
-                CarbonError::CsvParse {
-                    line: line_num + 1,
-                    message: format!("Cannot parse '{}' as float", parts[1]),
-                }
+            let intensity: f64 = parts[1].trim().parse().map_err(|_| CarbonError::CsvParse {
+                line: line_num + 1,
+                message: format!("Cannot parse '{}' as float", parts[1]),
             })?;
 
             // Parse datetime to get hour of year
@@ -203,23 +201,17 @@ fn parse_datetime_to_hour(datetime: &str) -> Result<usize, CarbonError> {
         });
     }
 
-    let month: u32 = parts[1].parse().map_err(|_| {
-        CarbonError::CsvParse {
-            line: 0,
-            message: format!("Cannot parse month '{}'", parts[1]),
-        }
+    let month: u32 = parts[1].parse().map_err(|_| CarbonError::CsvParse {
+        line: 0,
+        message: format!("Cannot parse month '{}'", parts[1]),
     })?;
-    let day: u32 = parts[2].parse().map_err(|_| {
-        CarbonError::CsvParse {
-            line: 0,
-            message: format!("Cannot parse day '{}'", parts[2]),
-        }
+    let day: u32 = parts[2].parse().map_err(|_| CarbonError::CsvParse {
+        line: 0,
+        message: format!("Cannot parse day '{}'", parts[2]),
     })?;
-    let hour: u32 = parts[3].parse().map_err(|_| {
-        CarbonError::CsvParse {
-            line: 0,
-            message: format!("Cannot parse hour '{}'", parts[3]),
-        }
+    let hour: u32 = parts[3].parse().map_err(|_| CarbonError::CsvParse {
+        line: 0,
+        message: format!("Cannot parse hour '{}'", parts[3]),
     })?;
 
     let hour_of_year = date_to_hour_of_year(month, day, hour);
@@ -255,12 +247,7 @@ fn hour_to_datetime(hour: usize) -> String {
         days_acc += days_in_month;
     }
 
-    format!(
-        "2024-{:02}-{:02}T{:02}:00:00",
-        month,
-        day,
-        hour_of_day
-    )
+    format!("2024-{:02}-{:02}T{:02}:00:00", month, day, hour_of_day)
 }
 
 /// Carbon accumulator for tracking hourly carbon emissions.
@@ -391,10 +378,7 @@ mod tests {
         // Jan 2, 00:00 -> hour 24
         assert_eq!(parse_datetime_to_hour("2024-01-02T00:00:00").unwrap(), 24);
         // Dec 31, 23:00 -> hour 8759
-        assert_eq!(
-            parse_datetime_to_hour("2024-12-31T23:00:00").unwrap(),
-            8759
-        );
+        assert_eq!(parse_datetime_to_hour("2024-12-31T23:00:00").unwrap(), 8759);
     }
 
     #[test]
@@ -438,7 +422,7 @@ mod tests {
         let mut acc = CarbonAccumulator::new();
         acc.accumulate(0, 1.0, 0.5).unwrap(); // 0.5 kg
         acc.accumulate(1, -0.5, 0.4).unwrap(); // -0.2 kg (credit)
-        // Net: 0.5 - 0.2 = 0.3 kg
+                                               // Net: 0.5 - 0.2 = 0.3 kg
         assert!((acc.total_carbon_kg() - 0.3).abs() < 1e-10);
     }
 

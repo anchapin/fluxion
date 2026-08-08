@@ -26,7 +26,7 @@ pub mod minneapolis;
 pub mod psychrometrics;
 pub mod tmy3;
 
-pub use carbon_intensity::{CarbonAccumulator, CarbonIntensityProfile, CarbonError};
+pub use carbon_intensity::{CarbonAccumulator, CarbonError, CarbonIntensityProfile};
 
 pub use self::psychrometrics::*;
 pub use ddy::{generate_design_day_hours, DesignDaySource, DesignDaySpec};
