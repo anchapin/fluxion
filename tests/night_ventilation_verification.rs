@@ -117,7 +117,10 @@ fn test_night_ventilation_ach_calculation() {
     eprintln!("fan_capacity       : {} m³/h", vent.fan_capacity);
     eprintln!("zone_volume        : {} m³", ZONE_VOLUME_M3);
     eprintln!("ACH                : {:.4} 1/h", ach);
-    eprintln!("Acceptance (≥5.0) : {}", if ach >= 5.0 { "PASS" } else { "FAIL" });
+    eprintln!(
+        "Acceptance (≥5.0) : {}",
+        if ach >= 5.0 { "PASS" } else { "FAIL" }
+    );
     eprintln!("Elapsed            : {:.2?}", start.elapsed());
 
     // Acceptance criterion: Night hours show ACH ≥ 5.0
@@ -179,11 +182,12 @@ fn test_night_ventilation_is_active_at_hour() {
     }
 
     // Count active hours
-    let active_count: usize = (0..24)
-        .map(|h| vent.is_active_at_hour(h) as usize)
-        .sum();
+    let active_count: usize = (0..24).map(|h| vent.is_active_at_hour(h) as usize).sum();
     eprintln!("Active hours count: {} (expected 13)", active_count);
-    assert_eq!(active_count, 13, "Night ventilation must be active for 13 hours/day");
+    assert_eq!(
+        active_count, 13,
+        "Night ventilation must be active for 13 hours/day"
+    );
 
     eprintln!("Elapsed: {:.2?}", start.elapsed());
 }
@@ -222,8 +226,18 @@ fn test_case_650_vs_600_night_ventilation_ach() {
     eprintln!("  Day ACH (7-18): {:.2}", case_650_base_ach);
     eprintln!("  Night ACH (18-7): {:.2}", case_650_night_ach);
     eprintln!();
-    eprintln!("Night ventilation boost: {:.1}x", case_650_night_ach / case_600_ach);
-    eprintln!("Acceptance (≥5.0 night ACH): {}", if case_650_night_ach >= 5.0 { "PASS" } else { "FAIL" });
+    eprintln!(
+        "Night ventilation boost: {:.1}x",
+        case_650_night_ach / case_600_ach
+    );
+    eprintln!(
+        "Acceptance (≥5.0 night ACH): {}",
+        if case_650_night_ach >= 5.0 {
+            "PASS"
+        } else {
+            "FAIL"
+        }
+    );
     eprintln!("Elapsed: {:.2?}", start.elapsed());
 
     // Acceptance criterion: night ACH ≥ 5.0
@@ -269,12 +283,8 @@ fn test_night_ventilation_conductance() {
     let night_vent_h_ve = ach_to_conductance(NIGHT_VENT_ACH, ZONE_VOLUME_M3, rho, cp);
 
     // Total night h_ve (infiltration + night vent)
-    let total_night_h_ve = ach_to_conductance(
-        INFILTRATION_ACH + NIGHT_VENT_ACH,
-        ZONE_VOLUME_M3,
-        rho,
-        cp,
-    );
+    let total_night_h_ve =
+        ach_to_conductance(INFILTRATION_ACH + NIGHT_VENT_ACH, ZONE_VOLUME_M3, rho, cp);
 
     let ratio = total_night_h_ve.to_value() / baseline_h_ve.to_value();
 
@@ -283,8 +293,14 @@ fn test_night_ventilation_conductance() {
     eprintln!("Air density (ρ)   : {:.1} kg/m³", rho);
     eprintln!("Specific heat (Cp): {:.0} J/kg·K", cp);
     eprintln!();
-    eprintln!("Baseline h_ve (0.5 ACH): {:.2} W/K", baseline_h_ve.to_value());
-    eprintln!("Night vent h_ve (13.14 ACH): {:.2} W/K", night_vent_h_ve.to_value());
+    eprintln!(
+        "Baseline h_ve (0.5 ACH): {:.2} W/K",
+        baseline_h_ve.to_value()
+    );
+    eprintln!(
+        "Night vent h_ve (13.14 ACH): {:.2} W/K",
+        night_vent_h_ve.to_value()
+    );
     eprintln!("Total night h_ve: {:.2} W/K", total_night_h_ve.to_value());
     eprintln!("Ratio (total/baseline): {:.1}x", ratio);
     eprintln!("Elapsed: {:.2?}", start.elapsed());
@@ -321,8 +337,14 @@ fn test_night_ventilation_h_tr_is_multiplier() {
     eprintln!("=== Night Ventilation h_tr_is Multiplier ===");
     eprintln!("Night vent ACH      : {:.2}", NIGHT_VENT_ACH);
     eprintln!("h_tr_is multiplier  : {:.4}", multiplier);
-    eprintln!("Baseline multiplier : {:.4} (at 0.5 ACH)", baseline_multiplier);
-    eprintln!("Expected multiplier : {:.2} ± {:.2}", expected_multiplier, tolerance);
+    eprintln!(
+        "Baseline multiplier : {:.4} (at 0.5 ACH)",
+        baseline_multiplier
+    );
+    eprintln!(
+        "Expected multiplier : {:.2} ± {:.2}",
+        expected_multiplier, tolerance
+    );
     eprintln!(
         "h_c_forced          : {:.2} W/m²K (vs still 3.45 W/m²K)",
         3.45 * multiplier
@@ -398,7 +420,10 @@ fn test_night_ventilation_hours_0_to_8() {
     );
 
     eprintln!();
-    eprintln!("ACH during hours 0-6: {:.2} (≥ 5.0 requirement: PASS)", ach_during_night);
+    eprintln!(
+        "ACH during hours 0-6: {:.2} (≥ 5.0 requirement: PASS)",
+        ach_during_night
+    );
     eprintln!("Elapsed: {:.2?}", start.elapsed());
 }
 
