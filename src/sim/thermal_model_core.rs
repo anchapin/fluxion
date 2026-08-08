@@ -1891,9 +1891,10 @@ impl ThermalModel<VectorField> {
         // for. Once the solar-lag is validated, the band-aid can be reduced.
         {
             let (air_frac, mass_frac_of_remaining): (f64, f64) = match spec.construction_type {
-                // Issue #1216 band-aid retained; Issue #1860 solar-lag
-                // correction compensates for the structural 5R1C limitation.
-                crate::validation::ashrae_140_cases::ConstructionType::LowMass => (0.70, 0.3),
+                // Issue #2359: ASHRAE 140 Table B-12 specifies F_m = 0.30 for LowMass.
+                // Reduced from 0.70 (Issue #1216 band-aid) to correct peak cooling over-prediction.
+                // Issue #1860 solar-lag correction handles the sustained cooling demand.
+                crate::validation::ashrae_140_cases::ConstructionType::LowMass => (0.30, 0.3),
                 // ADR-002 (#1175): high-mass uses the ASHRAE-140-correct solar split.
                 crate::validation::ashrae_140_cases::ConstructionType::HighMass => (0.0, 0.30),
                 crate::validation::ashrae_140_cases::ConstructionType::Special => (0.10, 0.50),
