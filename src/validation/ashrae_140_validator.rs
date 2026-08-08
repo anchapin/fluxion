@@ -45,11 +45,11 @@ impl Default for ValidationMode {
 /// Contains the free-floating temperature results for cases without HVAC control.
 #[derive(Debug, Clone)]
 pub struct FreeFloatValidationResult {
-    /// Minimum zone temperature (°C) for free-floating cases
+    /// Minimum zone temperature ( degC) for free-floating cases
     pub free_float_min_temp: f64,
-    /// Maximum zone temperature (°C) for free-floating cases
+    /// Maximum zone temperature ( degC) for free-floating cases
     pub free_float_max_temp: f64,
-    /// Issue #827: opt-in hourly zone-0 air temperature profile (°C),
+    /// Issue #827: opt-in hourly zone-0 air temperature profile ( degC),
     /// one entry per simulated step (8760 for an annual run).
     /// Populated only for free-floating cases (case_id ending in `FF`);
     /// `None` for HVAC-controlled cases. Allocated once per FF case
@@ -67,7 +67,7 @@ pub struct FreeFloatValidationResult {
 /// - Annual energy: ±15% tolerance
 /// - Monthly energy: ±10% tolerance
 /// - Peak loads: ±15% tolerance
-/// - Free-floating temperature: ±1.0°C tolerance
+/// - Free-floating temperature: ±1.0 degC tolerance
 ///
 /// # Usage
 /// ```rust,no_run
@@ -131,7 +131,7 @@ impl Default for ASHRAE140Validator {
 ///
 /// let case = CaseBuilder::case_900ff();
 /// let result = validate_ashrae_140(&case);
-/// println!("Min temp: {:.2}°C, Max temp: {:.2}°C",
+/// println!("Min temp: {:.2} degC, Max temp: {:.2} degC",
 ///          result.free_float_min_temp, result.free_float_max_temp);
 /// ```
 pub fn validate_ashrae_140(spec: &CaseSpec) -> FreeFloatValidationResult {
@@ -405,7 +405,7 @@ impl ASHRAE140Validator {
     ///
     /// This creates a controller with:
     /// - Dual setpoint control (heating and cooling)
-    /// - Deadband tolerance (0.5°C default)
+    /// - Deadband tolerance (0.5 degC default)
     /// - High capacity limits for ASHRAE 140 validation
     ///
     /// # Arguments
@@ -477,7 +477,7 @@ impl ASHRAE140Validator {
                 if spec.is_free_floating() {
                     if self.diagnostic_config.verbose {
                         println!(
-                            "Case {} (Free-Floating): Min Temp={:.2}°C (Ref: {:.2}-{:.2}), Max Temp={:.2}°C (Ref: {:.2}-{:.2})",
+                            "Case {} (Free-Floating): Min Temp={:.2} degC (Ref: {:.2}-{:.2}), Max Temp={:.2} degC (Ref: {:.2}-{:.2})",
                             case_id,
                             results.min_temp_celsius.unwrap_or(0.0),
                             data.min_free_float_min,
@@ -916,7 +916,7 @@ impl ASHRAE140Validator {
             if spec.case_id == "600" && step % 8760 == 4380 {
                 let t_free =
                     model.calculate_free_float_temperature(step, weather_data.dry_bulb_temp);
-                println!("DEBUG Case 600 hour={}: t_free={:.2}°C, heating_sp={:.1}°C, cooling_sp={:.1}°C",
+                println!("DEBUG Case 600 hour={}: t_free={} degC, heating_sp={} degC, cooling_sp={} degC",
                     step % 24, t_free, model.heating_setpoint, model.cooling_setpoint);
             }
 
@@ -1226,7 +1226,7 @@ impl ASHRAE140Validator {
 
                 if partial.is_free_floating {
                     println!(
-                        "Case {} (Free-Floating): Min Temp={:.2}°C (Ref: {:.2}-{:.2}), Max Temp={:.2}°C (Ref: {:.2}-{:.2})",
+                        "Case {} (Free-Floating): Min Temp={:.2} degC (Ref: {:.2}-{:.2}), Max Temp={:.2} degC (Ref: {:.2}-{:.2})",
                         partial.case_id,
                         results.min_temp_celsius.unwrap_or(0.0),
                         data.min_free_float_min,
@@ -1465,7 +1465,7 @@ impl ASHRAE140Validator {
     ///
     /// Issue #1456: Removed the `configure_6r2c_model` override for Case 960.
     /// The SESSION 23/32 override forced the 6R2C model on top of the default 5R1C/9R4C
-    /// selection from `from_spec`, pushing the back-zone to ~16°C (below setpoint) and
+    /// selection from `from_spec`, pushing the back-zone to ~16 degC (below setpoint) and
     /// producing 264.5% annual heating over-prediction. The default 5R1C/9R4C path now
     /// yields results within the ASHRAE 140 ±15% energy band for Case 960.
     fn enable_advanced_solver(&self, model: &mut ThermalModel<VectorField>, spec: &CaseSpec) {
@@ -1684,7 +1684,7 @@ impl ASHRAE140Validator {
             if spec.case_id == "600" && step % 8760 == 4380 {
                 let t_free =
                     model.calculate_free_float_temperature(step, weather_data.dry_bulb_temp);
-                println!("DEBUG Case 600 hour={}: t_free={:.2}°C, heating_sp={:.1}°C, cooling_sp={:.1}°C",
+                println!("DEBUG Case 600 hour={}: t_free={} degC, heating_sp={} degC, cooling_sp={} degC",
                     step % 24, t_free, model.heating_setpoint, model.cooling_setpoint);
             }
 
@@ -1693,15 +1693,14 @@ impl ASHRAE140Validator {
             // Debug: Print Case 950 HVAC demand and temperature every 1000 steps
             if spec.case_id == "950" && step % 1000 == 0 {
                 let t_zone = model.temperatures.as_ref().first().copied().unwrap_or(20.0);
-                let hvac_power_w: f64 = if hvac_kwh != 0.0 {
+                let hvac_power_w = if hvac_kwh != 0.0 {
                     hvac_kwh * 3.6e6 / 3600.0
                 } else {
                     0.0
                 }; // kWh * 3600 = J, / 3600s = W
                 eprintln!(
-                    "DEBUG Case 950 step={step}: t_zone={t_zone}, hvac_kwh={hvac_kwh}, \
-                     hvac_power_W={hvac_power_w}, outdoor={outdoor_temp}",
-                    outdoor_temp = weather_data.dry_bulb_temp
+                    "DEBUG Case 950 step={}: t_zone={:.2} degC, hvac_kwh={}, hvac_power_W={}, heating_sp={} degC, cooling_sp={} degC, outdoor={} degC",
+                    step, t_zone, hvac_kwh, hvac_power_w, model.heating_setpoint, model.cooling_setpoint, weather_data.dry_bulb_temp
                 );
             }
 
@@ -1908,7 +1907,7 @@ impl ASHRAE140Validator {
             if spec.case_id == "600" && step % 8760 == 4380 {
                 let t_free =
                     model.calculate_free_float_temperature(step, weather_data.dry_bulb_temp);
-                println!("DEBUG Case 600 hour={}: t_free={:.2}°C, heating_sp={:.1}°C, cooling_sp={:.1}°C",
+                println!("DEBUG Case 600 hour={}: t_free={} degC, heating_sp={} degC, cooling_sp={} degC",
                     step % 24, t_free, model.heating_setpoint, model.cooling_setpoint);
             }
 
@@ -2001,11 +2000,11 @@ pub struct CaseResults {
     pub annual_cooling_mwh: f64,
     pub peak_heating_kw: f64,
     pub peak_cooling_kw: f64,
-    /// Minimum zone temperature (°C) for free-floating cases
+    /// Minimum zone temperature ( degC) for free-floating cases
     pub min_temp_celsius: Option<f64>,
-    /// Maximum zone temperature (°C) for free-floating cases
+    /// Maximum zone temperature ( degC) for free-floating cases
     pub max_temp_celsius: Option<f64>,
-    /// Issue #827: opt-in hourly zone-0 air temperature profile (°C),
+    /// Issue #827: opt-in hourly zone-0 air temperature profile ( degC),
     /// one entry per simulated step (8760 for an annual run).
     /// Populated only for free-floating cases; `None` for HVAC-controlled
     /// cases. Allocated once per FF case (~70 KB), so non-FF cases pay no
@@ -2213,7 +2212,7 @@ impl ASHRAE140Validator {
             if spec.case_id == "600" && step % 8760 == 4380 {
                 let t_free =
                     model.calculate_free_float_temperature(step, weather_data.dry_bulb_temp);
-                println!("DEBUG Case 600 hour={}: t_free={:.2}°C, heating_sp={:.1}°C, cooling_sp={:.1}°C",
+                println!("DEBUG Case 600 hour={}: t_free={} degC, heating_sp={} degC, cooling_sp={} degC",
                     step % 24, t_free, model.heating_setpoint, model.cooling_setpoint);
             }
 
@@ -2424,7 +2423,7 @@ impl ASHRAE140Validator {
     ///
     /// let case = CaseBuilder::case_900ff();
     /// let result = validate_ashrae_140(&case);
-    /// println!("Min temp: {:.2}°C, Max temp: {:.2}°C",
+    /// println!("Min temp: {:.2} degC, Max temp: {:.2} degC",
     ///          result.free_float_min_temp, result.free_float_max_temp);
     /// ```
     pub fn validate_ashrae_140(spec: &CaseSpec) -> FreeFloatValidationResult {
@@ -2524,7 +2523,7 @@ impl ASHRAE140Validator {
         .expect("Failed to load EPW weather data");
 
         // Issue #1456: Removed broken `configure_6r2c_model` override. The 6R2C
-        // configuration pushed the back-zone to ~16°C (below setpoint) and produced
+        // configuration pushed the back-zone to ~16 degC (below setpoint) and produced
         // 264.5% annual heating over-prediction. The default 5R1C/9R4C path
         // (selected by `RoutingThermalModelType::from(spec)` in `from_spec`) yields
         // results within the ASHRAE 140 ±15% energy band: heating 1.37 MWh
