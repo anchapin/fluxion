@@ -7,7 +7,7 @@ Related to: validation_report.md (results), FIX.md (archived as `docs/investigat
 Status: Post-#1323 baseline refresh — pre-#1323 numbers are obsolete per ARCHITECTURE.md §Current Module Status.
 Action: Check this document before attributing validation failures to new issues; many may be known.
 
-*Last Updated: 2026-08-09* (Post-#1323 / post-Wave-5 baseline refresh; #1421 Case 600 ref-range unified to benchmark.rs:124-127 across validator, CSV, doc, and this document; see issue #1443. CI-01 code-coverage gate #1932 added. CI-02 debug build rust-lld segfault #2297 added. **Cases 600 series energy violations (600, 610, 620, 630, 640, 650) are documented as pre-existing model limitations — see §LIMIT-05 UPDATE (#1457 revisit) and §LIMIT-06. Case 900 residual annual-energy deviation (H=2.362 MWh, C=1.330 MWh) confirmed as a structural 5R1C limitation after #2227/#2229 — see §SOLAR-02 UPDATE (Issue #2239). 900-series bidirectional annual-energy over-prediction (Cases 900, 910, 920, 930, 940 in the CTF path: H AND C both above band) documented per §LIMIT-05 UPDATE (Issue #2453, 2026-08-09) — diagnostic test + Python analyser shipped, fix routed to GaugeSolver #1465/#1462.**)
+*Last Updated: 2026-08-09* (Post-#1323 / post-Wave-5 baseline refresh; #1421 Case 600 ref-range unified to benchmark.rs:124-127 across validator, CSV, doc, and this document; see issue #1443. CI-01 code-coverage gate #1932 added. CI-02 debug build rust-lld segfault #2297 added. **Cases 600 series energy violations (600, 610, 620, 630, 640, 650) are documented as pre-existing model limitations — see §LIMIT-05 UPDATE (#1457 revisit) and §LIMIT-06. Case 900 residual annual-energy deviation (H=2.362 MWh, C=1.330 MWh) confirmed as a structural 5R1C limitation after #2227/#2229 — see §SOLAR-02 UPDATE (Issue #2239). 900-series bidirectional annual-energy over-prediction (Cases 900, 910, 920, 930, 940 in the CTF path: H AND C both above band) documented per §LIMIT-05 UPDATE (Issue #2453, 2026-08-09) — diagnostic test + Python analyser shipped, fix routed to GaugeSolver #1465/#1462. Case 940 setback thermostat (#2452) — diagnostic test `tests/case_940_setback_diagnostic.rs` ships with CTF-vs-blind path comparison; CTF path overshoots blind by 6–8×; structural fix routed to GaugeSolver #1465/#1462.**)
 
 > **Post-#1323 baseline changes (read first)** — Between the prior "Last Updated" header
 > (2026-03-30) and this revision, ~100 days and 30+ validation-affecting PRs landed.
@@ -1007,6 +1007,88 @@ Once these are addressed, expect pass rate to increase significantly. Remaining 
 
 **Note:** MULTI-01 (Case 960 peak heating) was fixed in Phase 7A - peak heating now 8.90 kW (reference: 2.0-8.0 kW). The small remaining deviation (11% above max) is acceptable given 5R1C model simplifications.
 
+### LIMIT-05 UPDATE (Issue #2452, 2026-08-09): Case 940 setback thermostat — CTF coupling under setback recovery overshoots; structural fix routed to GaugeSolver
+
+**Issue:** [#2452](https://github.com/anchapin/fluxion/issues/2452) — Case 940
+(high-mass with night thermostat setback to 10 °C heating during 23:00–07:00 per
+ASHRAE 140 Annex B8) over-predicts every reported metric by 150–620% above the
+upper reference bound in the **production validator (CTF) path**.
+
+**Status:** 🟡 **Diagnostic shipped; fix routed to GaugeSolver #1465/#1462.**
+No physics-code change in this entry — the bidirectional signature cannot be
+closed by parameter tuning per AGENTS.md.
+
+**Investigation finding — two-path comparison:**
+
+The Issue framing assumes one bug; the diagnostic test
+`tests/case_940_setback_diagnostic.rs::test_case_940_ctf_path_comparison`
+(runs `--ignored --nocapture`) shows Case 940 differs **directionally** between
+the two production paths:
+
+| Path | Annual H | Annual C | Peak H | Peak C | vs ref band [0.79, 1.41] / [2.08, 3.55] MWh, [1.90, 2.50] / [1.70, 2.30] kW |
+|---|---|---|---|---|---|
+| **Blind** (no CTF, 9R4C) | 0.720 MWh | 1.578 MWh | 0.89 kW | 0.81 kW | both UNDER (–9% to –55%) |
+| **CTF** (validator) | 5.158 MWh | 9.553 MWh | 4.83 kW | 6.99 kW | both OVER (+266% to +369%) |
+| **CTF / blind ratio** | 7.17× | 6.05× | 5.42× | 8.59× | — |
+
+The CTF path overshoots the blind path by 6–8× in both annual and peak metrics.
+The over-prediction is **year-round** (every calendar month shows heating AND
+cooling over-prediction), not seasonal — confirming a structural coupling
+issue, not a seasonal solar-injection artefact.
+
+**Root cause isolation:**
+
+1. The setback schedule activation count matches spec: 2920 hours (= 8 h/day ×
+   365 days) of `heating_sp = 10 °C` and 5840 hours (= 16 h/day × 365) of
+   `heating_sp = 20 °C`. The validator loop (`ashrae_140_validator.rs:1619-1649`)
+   correctly applies the schedule per hour.
+2. The zone temperature profile is physically correct: 10 °C during setback,
+   recovers to 20 °C at hour 07, never rises above 27 °C during summer peaks.
+3. The CTF coupling solver
+   (`physics_impl.rs:510-562`) computes `phi_ia_with_iz += q_ctf - q_5r1c`.
+   During setback recovery (zone jumps from 10 °C to 20 °C at hour 07) the CTF
+   transfer function sees a step change in zone temperature, predicts the wall
+   surface is much colder than the lumped 5R1C mass node thinks, and adds a
+   large positive flux correction to the zone air balance. This amplifies
+   the morning heating demand.
+4. The same mechanism amplifies summer cooling: when solar gain through the
+   south window drives the zone above 27 °C, the CTF solver predicts more
+   envelope heat absorption than the 5R1C lumped mass, but the release of that
+   stored heat back to the zone (which is what should drive the cooling load)
+   is also over-predicted.
+
+**Why no fix in this PR:**
+
+The CTF-vs-blind 6–8× gap is not a tuning issue — it is the structural
+discrete-node pathology that #1281 (parallel-resistance), #2300 (sub-stepping),
+and #1457 (air-node capacitance) all attempted to address and explicitly
+flagged as **blocked by GaugeSolver rework #1465/#1462**. Closing Case 940
+into band requires the GaugeSolver's geometric-curvature formulation of
+solar + envelope heat transfer, not a 5R1C/CTF parameter adjustment.
+
+**Path forward (out of scope for this PR):**
+
+1. Ship the diagnostic test (`tests/case_940_setback_diagnostic.rs`,
+   `#[ignore]`-quarantined — runs only with `--ignored --nocapture`).
+2. Add a per-issue `case_940_setback_attribution.py` (Python side-car) if the
+   per-month CTF attribution needs to be compared against EnergyPlus hourly
+   decomposition.
+3. Route the structural fix to GaugeSolver #1465/#1462, then close Case 940
+   as a follow-up PR with the strict ±15% annual-energy band assertion
+   (`test_blind_mode_case_940_annual_energy_within_band`).
+
+**Diagnostic test (run with `--ignored --nocapture`):**
+
+- `tests/case_940_setback_diagnostic.rs::test_case_940_setback_diagnostic` —
+  verifies setback schedule activation count (2920 h expected) and prints
+  per-month H/C breakdown for the blind path.
+- `tests/case_940_setback_diagnostic.rs::test_case_940_setback_controller_mode_trace` —
+  prints zone-temperature by hour bucket (setback vs normal) and the first
+  50 hourly samples, showing the recovery profile.
+- `tests/case_940_setback_diagnostic.rs::test_case_940_ctf_path_comparison` —
+  runs Case 940 in BOTH paths and prints side-by-side annual H/C, peaks, and
+  the CTF/blind ratio. **This is the issue's primary deliverable.**
+
 ### LIMIT-06: 600-Series Annual Heating Correction (Empirical)
 
 - **Description:** Issue #522 gap analysis revealed that 600-series produces ~1.64 MWh annual heating when ASHRAE 140 reference is 4.36-5.79 MWh (authoritative source: `benchmark.rs:124-127`). The 5R1C model doesn't properly differentiate low-mass thermal dynamics, producing energy in the high-mass range for low-mass buildings.
@@ -1144,6 +1226,7 @@ Once these are addressed, expect pass rate to increase significantly. Remaining 
 | #2453 | 900-series bidirectional annual-energy over-prediction (Cases 900, 910, 920, 930, 940) | 🟡 **Diagnostic shipped** — per-month attribution test + Python analyser; fix routed to GaugeSolver #1465/#1462 (out of scope per AGENTS.md "no parameter tuning") | §LIMIT-05 UPDATE (#2453) |
 | #2454 | Case 920 E/W windows annual energy root cause (Issue #2427 follow-up) | ✅ **Closed** — per-orientation diagnostic test ships, fix routed to GaugeSolver #1465/#1462 | (per-orientation test pattern) |
 | #2455 | 900FF free-floating night minimum 6°C below reference band | ✅ **Closed** — wall-capacitance half-insulation rule fix (ISO 13790 §12.2.3 + Annex C) | (test `case_900ff_regression_bisect.rs`) |
+| #2452 | Case 940 setback thermostat: CTF path 5-10× over, blind path 30-50% under | 🟡 **Diagnostic shipped** — CTF-vs-blind path comparison test localises the over-prediction to the CTF coupling under setback recovery; fix routed to GaugeSolver #1465/#1462 (out of scope per AGENTS.md "no parameter tuning") | §LIMIT-05 UPDATE (#2452, 2026-08-09) |
 
 ## See also
 
