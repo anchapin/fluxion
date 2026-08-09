@@ -717,24 +717,29 @@ pub trait FfdSolver: Send + Sync {
 **Source**: `fluxion-grid/` (standalone crate, workspace member)
 **Purpose**: Grid-edge electrical network components for joint thermal-electrical convergence: battery storage, bus nodes, power flow analysis, and `ThermalElectricalCoupler` for COP-based thermal-to-electrical conversion.
 
-**Crate independence**: `fluxion-grid` has **no default dependency** on the main `fluxion` crate. It ships with its own simplified `ThermalModel` and `ThermalElectricalCoupler` that operate on scalar HVAC state values (`HvacState`, `ElectricalLoad`). This keeps the crate buildable and testable without pulling in the full thermal solver stack.
+**Crate independence**: `fluxion-grid` has **no default dependency** on the main `fluxion` crate, and **no default dependency on `fluxion-fluid`** (Issue #2561). It ships with its own simplified `ThermalModel` and `ThermalElectricalCoupler` so the crate can be used for pure electrical-network work (batteries, bus nodes, power flow) without pulling in any thermal solver stack. When the optional `fluid` feature is enabled, the coupler gains `HvacState`/`HvacMode` integration via `fluxion_fluid::hvac`.
 
 **Optional `fluxion` integration (Issue #2275)**: When the `fluxion` feature flag is enabled, `fluxion-grid` gains access to `Arc<dyn ThermalModelTrait>` via an optional dependency on the main `fluxion` crate. The `fluxion_bridge::ThermalModelBridge` struct holds both a `ThermalElectricalCoupler` and an `Arc<dyn ThermalModelTrait>`, enabling joint convergence where the grid-side coupler queries the full thermal solver state directly rather than relying on scalar HVAC values.
 
+**Optional `fluid` integration (Issue #2561)**: When the `fluid` feature flag is enabled, `fluxion-grid` re-introduces the optional dependency on `fluxion-fluid` for `HvacState`/`HvacMode` types. This matches the `fluid = ["dep:fluxion-fluid"]` convention used by the main `fluxion` crate, so the two crates stay in sync on the feature name. The default build (no features) no longer pulls in `fluxion-fluid`, which is useful for consumers who only need the standalone electrical-network solver.
+
 | Feature | ThermalElectricalCoupler behavior |
 |---------|----------------------------------|
-| Default (no feature) | Works with scalar `HvacState` values, COP-based conversion |
-| `fluxion` feature | Can additionally hold `Arc<dyn ThermalModelTrait>` via `ThermalModelTraitBridge` |
+| Default (no feature) | Pure electrical: bus nodes, power flow, batteries. `thermal_to_electrical_simple` and `electrical_to_thermal` are available (scalar COP-based conversion). No `HvacState`/`HvacMode` methods. |
+| `fluid` feature | Adds `hvac_state_to_electrical`, `thermal_to_electrical` (batch), and `update_cop_from_hvac_state` via `fluxion_fluid::hvac::{HvacState, HvacMode}` |
+| `fluxion-integration` feature | Can additionally hold `Arc<dyn ThermalModelTrait>` via `ThermalModelTraitBridge` |
 
 **Key structs** (always available):
 - `ThermalElectricalCoupler` — COP-based coupler between thermal and electrical systems
-- `HvacState` — HVAC operational state for a single building
 - `ElectricalLoad` — Electrical load at a building bus
 - `ThermalModel` — Simplified thermal model for joint convergence (standalone, not `ThermalModelTrait`)
 - `ElectricalNetwork` — Electrical network with bus voltages and power injections
 - `JointConvergenceSolver` — Iterative solver for coupled thermal-electrical systems
 
-**Key structs** (requires `fluxion` feature):
+**Key structs** (requires `fluid` feature):
+- `HvacState` / `HvacMode` (re-exported from `fluxion_fluid::hvac`) — scalar HVAC operational state
+
+**Key structs** (requires `fluxion-integration` feature):
 - `ThermalModelTraitBridge` — Bridge holding `ThermalElectricalCoupler` + `Arc<dyn ThermalModelTrait>`
 
 **Joint convergence pattern** (with `fluxion` feature):
