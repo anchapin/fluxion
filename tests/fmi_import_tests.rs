@@ -105,8 +105,10 @@ fn reimport_round_trip_matches_direct_model_within_tolerance() {
             Some(dt),
         );
 
+        // Issue #2459: do_step now returns one FmuOutputs per zone.
+        assert_eq!(imported_out.len(), 1, "single-zone FMU ⇒ 1 output");
         let denom = direct_zone_k.abs().max(1e-9);
-        let rel_err = (imported_out.zone_temperature - direct_zone_k).abs() / denom;
+        let rel_err = (imported_out[0].zone_temperature - direct_zone_k).abs() / denom;
         max_rel_err = max_rel_err.max(rel_err);
     }
 
@@ -138,10 +140,12 @@ fn do_step_advances_time_and_reports_outputs() {
     );
 
     assert!((master.current_time() - 3600.0).abs() < 1e-9);
-    assert!(o.zone_temperature.is_finite());
-    assert!(o.zone_temperature > 200.0 && o.zone_temperature < 320.0);
-    assert!(o.heating_load >= 0.0);
-    assert!(o.cooling_load >= 0.0);
+    assert_eq!(o.len(), 1, "single-zone FMU ⇒ 1 output");
+    let zone_out = &o[0];
+    assert!(zone_out.zone_temperature.is_finite());
+    assert!(zone_out.zone_temperature > 200.0 && zone_out.zone_temperature < 320.0);
+    assert!(zone_out.heating_load >= 0.0);
+    assert!(zone_out.cooling_load >= 0.0);
 }
 
 #[test]
