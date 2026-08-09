@@ -97,7 +97,6 @@ Tests that validate multiple modules working together, system-level behavior, or
 |-----------|----------|---------------|
 | `tests/energyplus_comparison_tests.rs` | E+ comparison framework | Within 1% for energy, 0.5°C for temperature |
 | `tests/surface_flux_parity.rs` | Surface heat flux vs E+ | Within tolerance |
-| `tests/case_900_energy_balance.rs` | Case 900 energy accounting | Energy balance residual < 0.1% |
 | `tests/diag_917_energy.rs` | Diagnostic 917 energy metrics | Per-reference tolerance |
 | `tests/diag_917_solar.rs` | Diagnostic 917 solar metrics | Per-reference tolerance |
 | `tests/diag_917_v2.rs` | Diagnostic 917 v2 | Per-reference tolerance |
@@ -159,7 +158,8 @@ Tests that validate multiple modules working together, system-level behavior, or
 | Test File | Scenario | Pass Criteria |
 |-----------|----------|---------------|
 | `tests/performance_regression_test.rs` | Performance vs stored baseline | <10% regression threshold |
-| `tests/performance_completion_test.rs` | Simulation completion | All timesteps complete |
+| `tests/performance_integration_test.rs` | ValidationSuite case-coverage aggregation | Pass/warn/fail counts, MAE/RMSE, BenchmarkReport generation |
+| `tests/performance_completion_test.rs` | Phase47CompletionValidator | 14 requirements, completion_percentage math, report generation |
 | `tests/concurrency/loom_concurrency_tests.rs` | Parallel solver race conditions | LOOM=1 mode checking |
 | `tests/test_parallel_validation.rs` | Parallel validation | Correct results |
 | `tests/test_deterministic_parallel.rs` | Deterministic parallel execution | Reproducible results |
