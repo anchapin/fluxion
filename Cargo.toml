@@ -105,6 +105,13 @@ fluxion-city = ["dep:fluxion-city"]
 # Enables dhat allocation tracking for memory profiling of large simulations.
 # Run with: cargo build --features dhat
 dhat = ["dep:dhat"]
+# Feature flag for fluxion-cfd FFD/CFD co-simulation (Issue #2460).
+# Wires `fluxion_cfd::FfdCfdSolver` into `crate::sim::loose_coupling::FfdSolver`
+# via `crate::sim::ffd_cfd_adapter::FfdCfdAdapter`. The adapter is the
+# production bring-up for the BES-FFD loose-coupling path (ARCHITECTURE.md
+# §"Module N+2"). The default CPU solver path in `fluxion-cfd/src/cpu/` is
+# sufficient for the regression test; CUDA is not required.
+fluxion-cfd = ["dep:fluxion-cfd"]
 # Stub feature to allow fluxion-grid to depend on this crate with a fluxion feature.
 # fluxion-grid uses dep:fluxion to reference this crate, and this feature exists
 # to satisfy the feature resolution when --features fluxion is used at workspace level.
@@ -125,6 +132,11 @@ fluxion-fluid = { path = "fluxion-fluid", version = "1.0.0", optional = true }
 # Optional fluxion-city urban radiation integration (Issue #2344).
 # Compile with --features fluxion-city to enable FluxionCitySurfaceFluxProvider.
 fluxion-city = { path = "fluxion-city", version = "0.1.0", optional = true }
+
+# Optional fluxion-cfd FFD/CFD adapter (Issue #2460).
+# Compile with --features fluxion-cfd to enable the FfdCfdAdapter that wires
+# `fluxion_cfd::FfdCfdSolver` into the loose-coupling FfdSolver trait.
+fluxion-cfd = { path = "fluxion-cfd", version = "0.1.0", optional = true }
 
 # Core Logic
 serde = { version = "1.0", features = ["derive"] }
