@@ -2682,6 +2682,7 @@ impl FfdFmuCApi {
 
 /// FMI 2.0 status enum as returned by C API functions.
 #[repr(i32)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum fmi2Status {
     fmi2OK = 0,
     fmi2Warning = 1,
@@ -2693,9 +2694,64 @@ pub enum fmi2Status {
 
 /// FMI 2.0 boolean type.
 #[repr(i32)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum fmi2Boolean {
     fmi2False = 0,
     fmi2True = 1,
+}
+
+/// FMU 2.0 spec: a single FMU exposes at most 8192 value references per
+/// component (`fmi2ValueReference` count cap, FMI 2.0.4 §4.2.1).
+///
+/// Capping `nvr` here prevents an out-of-bounds slice reconstruction when a
+/// malformed FMU master supplies an attacker-controlled length. See #2555.
+pub const FMI2_MAX_VALUE_REFERENCES: usize = 8192;
+
+/// Validate the (component, vr, nvr, value) tuple used by the
+/// `ffd_fmu2SetReal` and `ffd_fmu2GetReal` extern "C" shims.
+///
+/// Guards every precondition that `std::slice::from_raw_parts` requires:
+///
+///   * `component` is non-null (we dereference `_c` later)
+///   * `vr` is non-null when `nvr > 0` and is aligned for `u32`
+///   * `value` is non-null when `nvr > 0` and is aligned for `f64`
+///   * `nvr <= FMI2_MAX_VALUE_REFERENCES` so the reconstructed slice
+///     cannot exceed the FMU 2.0 spec-mandated per-component cap
+///
+/// `nvr == 0` is permitted and treated as a documented no-op; we still
+/// require non-null pointers up front to keep the contract explicit and
+/// symmetric with the FMU 2.0 spec, which does not define a NULL-pointer
+/// zero-length call.
+///
+/// Note: every check below is a runtime `if` (not `debug_assert!`) because
+/// the calling shims are `extern "C"` and therefore `nounwind`; panicking
+/// across that boundary would be undefined behaviour. The runtime checks
+/// always fire in both debug and release builds.
+///
+/// Returns `Ok(())` if the call is safe to dispatch, or
+/// `Err(fmi2Status::fmi2Error)` on any precondition violation.
+#[inline]
+fn validate_fmi2_real_args(
+    component: Fmi2Component,
+    vr: *const u32,
+    nvr: usize,
+    value: *const f64,
+) -> Result<(), fmi2Status> {
+    if component.is_null() || vr.is_null() || value.is_null() {
+        return Err(fmi2Status::fmi2Error);
+    }
+    if nvr > FMI2_MAX_VALUE_REFERENCES {
+        return Err(fmi2Status::fmi2Error);
+    }
+    if nvr == 0 {
+        return Ok(());
+    }
+    if !(vr as usize).is_multiple_of(std::mem::align_of::<u32>())
+        || !(value as usize).is_multiple_of(std::mem::align_of::<f64>())
+    {
+        return Err(fmi2Status::fmi2Error);
+    }
+    Ok(())
 }
 
 /// Allocate a new FFD FMU instance.
@@ -2729,6 +2785,11 @@ pub unsafe extern "C" fn ffd_fmu2FreeInstance(_c: Fmi2Component) {
 ///
 /// # Safety
 /// `vr` must be a valid value reference, `value` must be a valid f64.
+///
+/// `nvr` is bounded by `FMI2_MAX_VALUE_REFERENCES`; see
+/// [`validate_fmi2_real_args`]. A malformed FMU master passing a
+/// maliciously large `nvr`, a misaligned pointer, or a null component will
+/// receive `fmi2Status::fmi2Error` rather than triggering UB.
 #[no_mangle]
 pub unsafe extern "C" fn ffd_fmu2SetReal(
     _c: Fmi2Component,
@@ -2736,7 +2797,7 @@ pub unsafe extern "C" fn ffd_fmu2SetReal(
     nvr: usize,
     value: *const f64,
 ) -> fmi2Status {
-    if _c.is_null() || vr.is_null() || value.is_null() {
+    if validate_fmi2_real_args(_c, vr, nvr, value).is_err() {
         return fmi2Status::fmi2Error;
     }
 
@@ -2757,6 +2818,11 @@ pub unsafe extern "C" fn ffd_fmu2SetReal(
 ///
 /// # Safety
 /// `vr` must be a valid value reference, `value` must point to valid memory.
+///
+/// `nvr` is bounded by `FMI2_MAX_VALUE_REFERENCES`; see
+/// [`validate_fmi2_real_args`]. A malformed FMU master passing a
+/// maliciously large `nvr`, a misaligned pointer, or a null component will
+/// receive `fmi2Status::fmi2Error` rather than triggering UB.
 #[no_mangle]
 pub unsafe extern "C" fn ffd_fmu2GetReal(
     _c: Fmi2Component,
@@ -2764,13 +2830,13 @@ pub unsafe extern "C" fn ffd_fmu2GetReal(
     nvr: usize,
     value: *mut f64,
 ) -> fmi2Status {
-    if _c.is_null() || vr.is_null() || value.is_null() {
+    if validate_fmi2_real_args(_c, vr, nvr, value.cast_const()).is_err() {
         return fmi2Status::fmi2Error;
     }
 
     let component = &*_c;
     let vr_slice = std::slice::from_raw_parts(vr, nvr);
-    let value_slice = unsafe { std::slice::from_raw_parts_mut(value, nvr) };
+    let value_slice = std::slice::from_raw_parts_mut(value, nvr);
 
     for (v, out_val) in vr_slice.iter().zip(value_slice.iter_mut()) {
         match component.get_real(*v) {
