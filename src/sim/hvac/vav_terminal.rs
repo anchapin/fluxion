@@ -51,6 +51,7 @@ use crate::sim::hvac::airside_state::{
 use crate::sim::hvac::cooling_coil::{CoilPerformance, CoolingCoil, CoolingCoilBehavior};
 use crate::sim::hvac::fan::{Fan, FanComponent};
 use crate::sim::hvac::heating_coil::{HeatingCoil, HeatingCoilComponent, HeatingCoilControl};
+use crate::sim::hvac::part_load_curves::FanPowerCurve;
 use serde::{Deserialize, Serialize};
 
 /// Operating mode of a VAV terminal unit.
@@ -224,6 +225,13 @@ pub trait VavTerminal: Send + Sync {
 /// speed fraction; the cooling coil removes sensible and latent load; the
 /// reheat coil (when present) raises the supply temperature for heating mode.
 ///
+/// Fan shaft power is computed from the [`FanPowerCurve`] field
+/// (`fan_power_curve`) rather than the raw cubed affinity law: the curve
+/// multiplies the rated shaft power at the actual air density by the
+/// flow-ratio coefficient, capturing ASHRAE 90.1-2016 §6.5.3.1.1 fan-power
+/// allowance behaviour including static-pressure-reset (SPR) compensation.
+/// See issue #2465 for the SPR compensation rationale.
+///
 /// All three sub-components are concrete types so that the terminal is
 /// `Clone + Serialize + Deserialize` without trait-object indirection.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -242,6 +250,21 @@ pub struct VavTerminalUnit {
     pub min_airflow_ratio: f64,
     /// Last persisted damper position ∈ [0, 1].
     pub current_damper_position: f64,
+    /// Fan-power curve applied to the rated shaft power at the actual air
+    /// density. Defaults to `FanPowerCurve::with_spr_compensation()` (the
+    /// ASHRAE 90.1-2016 SPR-compensated polynomial). Overridable via
+    /// [`VavTerminalUnit::with_fan_power_curve`].
+    ///
+    /// `#[serde(default)]` keeps backward compatibility with terminals
+    /// serialized before issue #2465 (which encoded only the affinity-law
+    /// path); missing field deserialises to the SPR-compensated default.
+    #[serde(default = "default_spr_fan_power_curve")]
+    pub fan_power_curve: FanPowerCurve,
+}
+
+/// Helper: returns the canonical SPR-compensated curve for `#[serde(default)]`.
+fn default_spr_fan_power_curve() -> FanPowerCurve {
+    FanPowerCurve::with_spr_compensation()
 }
 
 impl VavTerminalUnit {
@@ -254,6 +277,12 @@ impl VavTerminalUnit {
     /// The minimum airflow ratio defaults to 0.30 (30 % turndown), a typical
     /// VAV box minimum-stop. Override with
     /// [`VavTerminalUnit::with_min_airflow_ratio`].
+    ///
+    /// The fan-power curve defaults to
+    /// [`FanPowerCurve::with_spr_compensation`] (ASHRAE 90.1-2016
+    /// SPR-compensated polynomial). Override with
+    /// [`VavTerminalUnit::with_fan_power_curve`] to use a non-SPR curve or a
+    /// custom coefficient set (issue #2465).
     pub fn new(
         id: String,
         zone_id: usize,
@@ -270,6 +299,7 @@ impl VavTerminalUnit {
             reheat_coil,
             min_airflow_ratio: 0.30,
             current_damper_position: 0.0,
+            fan_power_curve: FanPowerCurve::with_spr_compensation(),
         }
     }
 
@@ -282,6 +312,17 @@ impl VavTerminalUnit {
     /// Override the minimum airflow ratio (turndown fraction).
     pub fn with_min_airflow_ratio(mut self, ratio: f64) -> Self {
         self.min_airflow_ratio = ratio.clamp(0.0, 1.0);
+        self
+    }
+
+    /// Override the fan-power curve (issue #2465).
+    ///
+    /// Pass [`FanPowerCurve::with_spr_compensation`] (the default) for the
+    /// ASHRAE 90.1-2016 SPR-compensated polynomial, [`FanPowerCurve::new`]
+    /// for the non-SPR quadratic curve, or a custom coefficient set via
+    /// [`FanPowerCurve::with_coeffs`].
+    pub fn with_fan_power_curve(mut self, curve: FanPowerCurve) -> Self {
+        self.fan_power_curve = curve;
         self
     }
 
@@ -356,8 +397,16 @@ impl VavTerminal for VavTerminalUnit {
         let moist_mass_flow = self
             .fan
             .mass_flow_rate(speed_fraction, air_density_kg_per_m3);
-        let shaft_power = self.fan.shaft_power(speed_fraction, air_density_kg_per_m3);
-        let motor_power = self.fan.motor_power(speed_fraction, air_density_kg_per_m3);
+
+        // Shaft power: rated power at the actual air density × the
+        // `fan_power_curve` power ratio. Replaces the raw cubed affinity law
+        // with the ASHRAE 90.1-2016 SPR-compensated polynomial (issue #2465).
+        // At φ = 1.0 the ratio is 1.0 so full-speed operation is unchanged.
+        let rated_shaft_power = self.fan.shaft_power(1.0, air_density_kg_per_m3);
+        let power_ratio = self.fan_power_curve.power_ratio_at(speed_fraction);
+        let shaft_power = rated_shaft_power * power_ratio;
+        let rated_motor_power = self.fan.motor_power(1.0, air_density_kg_per_m3);
+        let motor_power = rated_motor_power * power_ratio;
 
         // Dry-air mass flow for coil calculations.
         let w = entering.humidity_ratio_kg_per_kg_dry_air;
@@ -495,6 +544,13 @@ mod tests {
         assert!(terminal.has_reheat());
         assert!((terminal.rated_cooling_capacity_w() - 30_000.0).abs() < 1e-9);
         assert!((terminal.rated_reheat_capacity_w() - 10_000.0).abs() < 1e-9);
+        // Default fan-power curve is SPR-compensated (issue #2465).
+        assert!(
+            (terminal.fan_power_curve.power_ratio_at(0.30) - 0.1729).abs() < 1e-3,
+            "default VAV fan-power curve should be SPR-compensated; \
+             power_ratio_at(0.30) = {}",
+            terminal.fan_power_curve.power_ratio_at(0.30)
+        );
     }
 
     #[test]
@@ -805,8 +861,17 @@ mod tests {
         );
     }
 
+    /// VAV terminal fan power follows the SPR-compensated polynomial, not the
+    /// raw cubed affinity law (issue #2465).
+    ///
+    /// At damper position `d = 1.0` → φ = 1.0; at `d = 0.5` → φ = 0.65 (because
+    /// the standard minimum airflow ratio is 0.30). The SPR-compensated
+    /// polynomial `P/P_r = 0.395·φ + 0.605·φ²` yields a ratio of 0.5124 at
+    /// φ = 0.65, *not* the cubed affinity value of 0.2746. The 1 % tolerance
+    /// is tight enough to catch the regression but loose enough to absorb
+    /// floating-point rounding.
     #[test]
-    fn fan_power_scales_cubically_with_speed() {
+    fn fan_power_matches_spr_compensated_curve() {
         let terminal = test_terminal();
         let entering = entering_air(24.0, 50.0);
         let rho = entering.density_kg_per_m3;
@@ -819,7 +884,7 @@ mod tests {
             )
             .unwrap();
 
-        // Use two damper positions to verify fan-law cubed scaling.
+        // Use two damper positions to verify SPR-compensated scaling.
         let perf_half = terminal
             .compute_terminal_performance(
                 &entering,
@@ -834,11 +899,59 @@ mod tests {
 
         let phi_full = perf_full.fan_speed_fraction;
         let phi_half = perf_half.fan_speed_fraction;
-        let expected_ratio = (phi_half / phi_full).powi(3);
+        // Expected ratio from the SPR-compensated curve, NOT cubed affinity.
+        let expected_ratio = terminal.fan_power_curve.power_ratio_at(phi_half)
+            / terminal.fan_power_curve.power_ratio_at(phi_full);
         let actual_ratio = perf_half.fan_shaft_power_w / perf_full.fan_shaft_power_w;
         assert!(
             (actual_ratio - expected_ratio).abs() < 0.01,
-            "shaft power ratio {actual_ratio} vs cubed speed ratio {expected_ratio}"
+            "shaft power ratio {actual_ratio} vs SPR-compensated expected {expected_ratio} \
+             (cubed affinity would give {})",
+            (phi_half / phi_full).powi(3)
+        );
+    }
+
+    /// The terminal's default SPR-compensated curve validates at the standard
+    /// load points (re-uses the part-load curve unit-test guarantee).
+    #[test]
+    fn fan_power_curve_validates_at_load_points() {
+        let terminal = test_terminal();
+        use crate::sim::hvac::part_load_curves::PartLoadCurve;
+        assert!(terminal.fan_power_curve.validate_at_load_points());
+
+        // Also confirm the SPR-compensated curve gives the documented
+        // ASHRAE 90.1-2016 reference values at the VAV part-load range.
+        let curve = &terminal.fan_power_curve;
+        assert!(
+            (curve.power_ratio_at(0.30) - 0.1729).abs() < 1e-3,
+            "SPR power ratio at φ=0.30 = {}, expected ~0.1729",
+            curve.power_ratio_at(0.30)
+        );
+        assert!(
+            (curve.power_ratio_at(1.00) - 1.0).abs() < 1e-9,
+            "SPR power ratio at φ=1.00 = {}, expected 1.0",
+            curve.power_ratio_at(1.00)
+        );
+    }
+
+    /// A terminal configured with a non-SPR curve falls back to the standard
+    /// quadratic coefficients and yields a different (lower) part-load ratio
+    /// than the SPR-compensated default.
+    #[test]
+    fn with_fan_power_curve_overrides_spr_default() {
+        let terminal = test_terminal().with_fan_power_curve(FanPowerCurve::new());
+        // Non-SPR curve at φ=0.30 uses the quadratic coefficients
+        // (b=0.51830, c=0.48170) → 0.51830*0.30 + 0.48170*0.09 = 0.19884.
+        let ratio = terminal.fan_power_curve.power_ratio_at(0.30);
+        assert!(
+            (ratio - 0.19884).abs() < 1e-3,
+            "non-SPR curve at φ=0.30 = {ratio}, expected ~0.19884 (quadratic)",
+        );
+        // Must differ from the SPR-compensated default (~0.1729).
+        let spr_ratio = FanPowerCurve::with_spr_compensation().power_ratio_at(0.30);
+        assert!(
+            (ratio - spr_ratio).abs() > 1e-3,
+            "non-SPR ratio {ratio} should differ from SPR ratio {spr_ratio}",
         );
     }
 
@@ -880,6 +993,73 @@ mod tests {
             (actual_delta_h - expected_delta_h).abs() / expected_delta_h.abs().max(1.0) < 0.005,
             "energy balance: actual {actual_delta_h} W vs expected {expected_delta_h} W"
         );
+    }
+
+    /// Regression test for issue #2465 — VAV terminal fan power must track
+    /// the ASHRAE 90.1-2016 SPR-compensated polynomial across the typical
+    /// VAV part-load range. Compares the fluxion `fan_shaft_power_w` value at
+    /// each damper position to the EnergyPlus reference ratio (proportional
+    /// to rated shaft power). At full speed (φ = 1) both models agree exactly;
+    /// at φ = 0.3 the SPR-compensated value is **6.4×** the raw cubed
+    /// affinity value, eliminating the 44 % mean fan-energy error vs
+    /// EnergyPlus reference documented in the issue.
+    #[test]
+    fn fan_power_matches_energyplus_reference_curve_issue_2465() {
+        use crate::sim::hvac::part_load_curves::PartLoadCurve;
+
+        let terminal = test_terminal();
+        let entering = entering_air(24.0, 50.0);
+        let rho = entering.density_kg_per_m3;
+
+        // Damper positions to sweep across φ ∈ [0.30, 1.00] (the
+        // min_airflow_ratio = 0.30 maps d=0.0 to φ=0.30).
+        let damper_positions = [0.0_f64, 0.25, 0.5, 0.75, 1.0];
+
+        // Reference: full speed shaft power at actual density.
+        let rated_shaft_power = terminal.fan.shaft_power(1.0, rho);
+        assert!(rated_shaft_power > 0.0);
+
+        // Compute the SPR-compensated reference curve at each φ.
+        for &d in &damper_positions {
+            let phi = 0.30 + d * 0.70;
+            let perf = terminal
+                .compute_terminal_performance(&entering, rho, &VavTerminalControl::cooling(d))
+                .unwrap();
+            let fluxion_ratio = perf.fan_shaft_power_w / rated_shaft_power;
+            let reference_ratio = terminal.fan_power_curve.power_ratio_at(phi);
+            assert!(
+                (fluxion_ratio - reference_ratio).abs() < 1e-9,
+                "damper={d}, φ={phi:.3}: fluxion={fluxion_ratio:.4} vs SPR={reference_ratio:.4}"
+            );
+
+            // EnergyPlus reference: ASHRAE 90.1-2016 SPR-compensated polynomial.
+            // Verify the fluxion ratio matches within 1 % of the EnergyPlus
+            // reference at the VAV min-airflow setpoint (φ = 0.30), where the
+            // raw cubed affinity under-predicts by 84 %.
+            if (phi - 0.30).abs() < 1e-9 {
+                let raw_cubic = phi * phi * phi;
+                let eplus_expected = 0.395 * phi + 0.605 * phi * phi;
+                assert!(
+                    (fluxion_ratio - eplus_expected).abs() < 1e-9,
+                    "VAV min setpoint: fluxion {fluxion_ratio} vs EnergyPlus {eplus_expected}"
+                );
+                // Confirm the under-prediction of the raw affinity law vs
+                // the new SPR-compensated value at this setpoint.
+                assert!(
+                    raw_cubic < 0.05,
+                    "raw affinity at φ=0.30 should be ~0.027 (got {raw_cubic:.4})"
+                );
+                assert!(
+                    eplus_expected > 0.15,
+                    "SPR at φ=0.30 should be ~0.173 (got {eplus_expected:.4})"
+                );
+                assert!(
+                    eplus_expected / raw_cubic > 5.0,
+                    "SPR/raw ratio at φ=0.30 should be ≥6.4× (got {:.1}×)",
+                    eplus_expected / raw_cubic
+                );
+            }
+        }
     }
 
     // -----------------------------------------------------------------------
