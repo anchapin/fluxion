@@ -1111,15 +1111,23 @@ async fn import_format(
 /// the parsers.
 fn tempfile_for_bytes(bytes: &[u8], ext: &str) -> Result<NamedTempFile, ApiError> {
     use std::io::Write;
-    use std::os::unix::fs::PermissionsExt;
 
-    let mut tmp = tempfile::Builder::new()
-        .prefix("fluxion-import-")
-        .suffix(&format!(".{ext}"))
-        .rand_bytes(16)
-        .permissions(std::fs::Permissions::from_mode(0o600))
-        .tempfile()
-        .map_err(|e| ApiError::ImportFailed(format!("temp file create: {e}")))?;
+    let suffix = format!(".{ext}");
+    let mut tmp = {
+        let mut builder = tempfile::Builder::new();
+        builder
+            .prefix("fluxion-import-")
+            .suffix(&suffix)
+            .rand_bytes(16);
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt as _;
+            builder.permissions(std::fs::Permissions::from_mode(0o600));
+        }
+        builder
+            .tempfile()
+            .map_err(|e| ApiError::ImportFailed(format!("temp file create: {e}")))?
+    };
 
     tmp.as_file_mut()
         .write_all(bytes)
