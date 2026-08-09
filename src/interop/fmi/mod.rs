@@ -1145,50 +1145,63 @@ impl FmuCoSimulationMaster {
     /// Forwards `inputs` to [`ThermalModel::step_physics`] (converting the
     /// outdoor temperature from Kelvin, as declared in the FMU interface,
     /// to degrees Celsius, as required by the physics engine) and returns
-    /// the zone temperature (converted back to Kelvin) together with the
-    /// heating/cooling loads averaged over the step.
+    /// a [`FmuOutputs`] entry per zone (converted back to Kelvin for the
+    /// zone temperature) together with each zone's heating/cooling loads
+    /// averaged over the step.
+    ///
+    /// The returned vector has length `model.num_zones`, so external
+    /// co-simulation masters (FMPy, PyFMI, EnergyPlus-to-FMU, Modelica)
+    /// receive telemetry for **every** zone the FMU was exported with —
+    /// `FmuCoSimulationMaster::do_step` no longer silently drops
+    /// `zone 1..N-1` (issue #2459).
     ///
     /// If `step_size` is omitted the FMU's declared communication timestep
     /// is used.
-    pub fn do_step(&mut self, inputs: FmuInputs, step_size: Option<f64>) -> FmuOutputs {
+    pub fn do_step(&mut self, inputs: FmuInputs, step_size: Option<f64>) -> Vec<FmuOutputs> {
         let dt = step_size.unwrap_or(self.communication_timestep).max(1.0);
 
         // Snapshot per-zone energy accumulators *before* the step so the
         // delta gives the energy consumed during this step alone.
-        let heat_before = self.model.zone_heating_energy_kwh.as_ref().first().copied();
-        let cool_before = self.model.zone_cooling_energy_kwh.as_ref().first().copied();
+        let heat_before: Vec<f64> = self.model.zone_heating_energy_kwh.as_ref().to_vec();
+        let cool_before: Vec<f64> = self.model.zone_cooling_energy_kwh.as_ref().to_vec();
 
         // FMI inputs are Kelvin; step_physics expects °C.
         let outdoor_temp_c = inputs.outdoor_temperature - 273.15;
         let _energy_kwh = self.model.step_physics(self.timestep, outdoor_temp_c, dt);
 
-        let zone_temp_c = self
-            .model
-            .temperatures
-            .as_ref()
-            .first()
-            .copied()
-            .unwrap_or(20.0);
+        let temps_c = self.model.temperatures.as_ref();
+        let heat_after = self.model.zone_heating_energy_kwh.as_ref();
+        let cool_after = self.model.zone_cooling_energy_kwh.as_ref();
 
         // Convert kWh-delta over the step to average Watts:
         //   W = kWh * 3_600_000 / dt
-        let heating_load = heat_before
-            .zip(self.model.zone_heating_energy_kwh.as_ref().first().copied())
-            .map(|(a, b)| ((b - a) * 3_600_000.0 / dt).max(0.0))
-            .unwrap_or(0.0);
-        let cooling_load = cool_before
-            .zip(self.model.zone_cooling_energy_kwh.as_ref().first().copied())
-            .map(|(a, b)| ((b - a) * 3_600_000.0 / dt).max(0.0))
-            .unwrap_or(0.0);
+        let outputs: Vec<FmuOutputs> = (0..self.model.num_zones)
+            .map(|i| {
+                let zone_temp_c = temps_c.get(i).copied().unwrap_or(20.0);
+                let heating_load = heat_before
+                    .get(i)
+                    .copied()
+                    .zip(heat_after.get(i).copied())
+                    .map(|(a, b)| ((b - a) * 3_600_000.0 / dt).max(0.0))
+                    .unwrap_or(0.0);
+                let cooling_load = cool_before
+                    .get(i)
+                    .copied()
+                    .zip(cool_after.get(i).copied())
+                    .map(|(a, b)| ((b - a) * 3_600_000.0 / dt).max(0.0))
+                    .unwrap_or(0.0);
+                FmuOutputs {
+                    zone_temperature: zone_temp_c + 273.15,
+                    heating_load,
+                    cooling_load,
+                }
+            })
+            .collect();
 
         self.timestep += 1;
         self.current_time += dt;
 
-        FmuOutputs {
-            zone_temperature: zone_temp_c + 273.15,
-            heating_load,
-            cooling_load,
-        }
+        outputs
     }
 }
 
@@ -1795,14 +1808,17 @@ mod tests {
         };
         let out_step = master.do_step(inputs, Some(3600.0));
 
-        // do_step must return a finite zone temperature in Kelvin.
-        assert!(out_step.zone_temperature.is_finite());
-        assert!(out_step.zone_temperature > 200.0 && out_step.zone_temperature < 320.0);
+        // do_step must return a finite zone temperature in Kelvin for the
+        // single zone (single-zone FMU ⇒ vector length == 1).
+        assert_eq!(out_step.len(), 1);
+        let zone_out = &out_step[0];
+        assert!(zone_out.zone_temperature.is_finite());
+        assert!(zone_out.zone_temperature > 200.0 && zone_out.zone_temperature < 320.0);
         // The master advanced time by one communication step.
         assert_eq!(master.current_time(), 3600.0);
         // The zone temperature should have moved away from the initial 20 °C
         // (293.15 K) under the cold boundary condition.
-        assert_ne!(out_step.zone_temperature, initial_temp_k);
+        assert_ne!(zone_out.zone_temperature, initial_temp_k);
     }
 
     #[test]
@@ -1813,11 +1829,15 @@ mod tests {
         let fmu = FmiImporter::new().import(&out).expect("import");
         let mut master = FmuCoSimulationMaster::from_imported(fmu);
 
-        // Drive a handful of steps; loads must be non-negative.
+        // Drive a handful of steps; loads must be non-negative for every
+        // zone reported by do_step.
         for _ in 0..5 {
-            let o = master.do_step(FmuInputs::default(), Some(3600.0));
-            assert!(o.heating_load >= 0.0);
-            assert!(o.cooling_load >= 0.0);
+            let outputs = master.do_step(FmuInputs::default(), Some(3600.0));
+            assert!(!outputs.is_empty());
+            for o in &outputs {
+                assert!(o.heating_load >= 0.0);
+                assert!(o.cooling_load >= 0.0);
+            }
         }
         assert_eq!(master.current_time(), 5.0 * 3600.0);
     }
