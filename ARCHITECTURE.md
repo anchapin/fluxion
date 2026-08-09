@@ -625,6 +625,10 @@ pub trait FfdSolver: Send + Sync {
 
 ---
 
+**FFD/CFD Production Adapter (Issue #2460)**: `src/sim/ffd_cfd_adapter.rs` provides `FfdCfdAdapter`, which conforms `fluxion_cfd::FfdCfdSolver` (the real GPU-accelerated FFD solver in the `fluxion-cfd` workspace member) to the BES-side `FfdSolver` trait. The adapter is gated behind the `fluxion-cfd` feature flag (`dep:fluxion-cfd`) so the default build stays small; the CPU solver path is sufficient for the regression test in `tests/ffd_cfd_adapter_integration.rs` (CUDA is not required). The two FFD interfaces are deliberately different — `fluxion_cfd::FfdConfig` is grid-shape focused while `loose_coupling::FfdSolver` is exchange focused — and the adapter keeps the `fluxion-cfd` types opaque to the BES side per Module N+2's coordinator-as-integration-point design.
+
+---
+
 ### Module N+1: Grid-Edge Electrical Network (`fluxion-grid`)
 
 **Source**: `fluxion-grid/` (standalone crate, workspace member)

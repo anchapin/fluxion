@@ -9,6 +9,8 @@ pub mod distributed_inference;
 pub mod ems;
 pub mod engine;
 pub mod equipment;
+#[cfg(feature = "fluxion-cfd")]
+pub mod ffd_cfd_adapter;
 #[cfg(feature = "fluxion-city")]
 pub mod fluxion_city_flux_provider;
 pub mod holiday;

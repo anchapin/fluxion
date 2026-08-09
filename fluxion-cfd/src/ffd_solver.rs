@@ -234,6 +234,21 @@ impl VelocityField {
         self.w.fill(value);
     }
 
+    /// Fill only the x-component (u) of the velocity field with a constant value.
+    pub fn fill_x(&mut self, value: f64) {
+        self.u.fill(value);
+    }
+
+    /// Fill only the y-component (v) of the velocity field with a constant value.
+    pub fn fill_y(&mut self, value: f64) {
+        self.v.fill(value);
+    }
+
+    /// Fill only the z-component (w) of the velocity field with a constant value.
+    pub fn fill_z(&mut self, value: f64) {
+        self.w.fill(value);
+    }
+
     pub fn apply_boundary_velocity(
         &mut self,
         grid: &Grid3d,
@@ -294,5 +309,29 @@ impl FfdCfdSolver {
 
     pub fn pressure(&self) -> &Field3d {
         &self.pressure_field
+    }
+
+    /// Read-only access to the configuration used to construct this solver.
+    pub fn config(&self) -> &FfdConfig {
+        &self.config
+    }
+
+    /// Read-only access to the underlying computational grid.
+    pub fn grid(&self) -> &Grid3d {
+        &self.grid
+    }
+
+    /// Set the velocity field to a uniform value across the whole domain.
+    ///
+    /// This is used by the loose-coupling adapter (`fluxion::sim::ffd_cfd_adapter`)
+    /// to translate `BesToFfdBoundaryConditions` (e.g. wind pressure, HVAC supply
+    /// flow) into an inlet velocity field for the FFD solver. With the current
+    /// FFD API, there is no separate "boundary" type, so the simplest faithful
+    /// translation is to fill the domain with a uniform velocity before the
+    /// first step and let advection/diffusion/pressure evolve it from there.
+    pub fn fill_velocity(&mut self, u: f64, v: f64, w: f64) {
+        self.velocity.fill_x(u);
+        self.velocity.fill_y(v);
+        self.velocity.fill_z(w);
     }
 }
