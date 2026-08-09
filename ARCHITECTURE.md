@@ -867,6 +867,60 @@ The current integration is **future work** — `fluxion-city` is a standalone cr
 
 ---
 
+### Module N+3: MCP Server (`fluxion-mcp`) (Issue #2562)
+
+**Source**: `fluxion-mcp/` (standalone crate, workspace member)
+**Purpose**: Model Context Protocol (MCP) server exposing Fluxion building-energy primitives to LLM clients over line-delimited JSON-RPC on stdin/stdout.
+
+**Crate independence**: `fluxion-mcp` unconditionally depends on `fluxion` with `features = ["multi-zone"]` and on `fluxion-fluid` + `fluxion-toon`. The MCP layer is a thin transport adapter; all physics lives in `fluxion` / `fluxion-core`.
+
+**Threading model** (Issue #2562 — `RefCell` + blocking stdin replaced with `tokio::sync::Mutex` + `tokio::io`):
+
+- The server runs on a Tokio multi-threaded runtime (`#[tokio::main]`), so the runtime worker pool is shared with any future HTTP/WebSocket transport that bolts on top.
+- Mutable session state lives behind `Arc<tokio::sync::Mutex<McpState>>` (in `fluxion-mcp/src/main.rs`). `McpState` is auto-`Send` because every field is `Send` (`ThermalModel<VectorField>`, `HashMap<_, _>`, `Vec<_>`, `Option<_>`, `Instant`, `ResponseFormat`). The `tokio::sync::Mutex` is async-aware: a contended lock suspends the awaiting task instead of blocking the runtime worker thread, which preserves the goal-5 production-artifact promise of being able to extend the server to concurrent transports without re-architecting the state layer.
+- A plain mutex (not `RwLock`) is sufficient — every mutator on `McpState` is `&mut self` and runs to completion, so there is no read-side aliasing concern and we avoid writer starvation.
+- Stdin reads use `tokio::io::stdin()` wrapped in `BufReader` + `AsyncBufReadExt::lines()`. Each response is written with `tokio::io::stdout()` followed by an explicit `flush()` to preserve the byte-identical line-delimited JSON wire protocol that the pre-async `println!` path produced.
+- `run_server(reader, writer, state)` is factored out of `main` so the request loop is testable: tests drive the server over an in-memory `tokio::io::duplex` pipe without spawning a child process.
+
+**Wire format** (unchanged from pre-#2562 — drop-in compatible):
+
+- One JSON-RPC 2.0 request per `\n`-terminated line on stdin.
+- One JSON-RPC 2.0 response per `\n`-terminated line on stdout.
+- `initialize`, `tools/list`, `tools/call` are the only implemented methods (matches `fluxion-mcp/README.md`).
+
+**Key submodules**:
+
+| Submodule | File | Purpose |
+|-----------|------|---------|
+| `main` | `fluxion-mcp/src/main.rs` | `#[tokio::main]` entry, `run_server()` loop, JSON-RPC framing, `process_request` dispatch |
+| `state` | `fluxion-mcp/src/state.rs` | `McpState` (loaded model, parameters, fluid-network registry, response-format preference, rate-limit timestamps) — `Send` by construction |
+| `tools` | `fluxion-mcp/src/tools.rs` | `list_tools()` advertises MCP tools; `handle_tool_call(state, params)` dispatches to per-tool handlers (`load_building_model`, `run_simulation`, `get_zone_temperatures`, `get_hvac_energy`, `get_solar_gains`, `list_construction_assemblies`, `get_ashrae140_results`, `set_parameter`, `describe_model`, `compare_to_reference`, `inspect_fluid_loop`, `get_hvac_control_sequence`, `set_hvac_control_sequence`) |
+
+**Core API**:
+
+```rust
+// fluxion-mcp/src/main.rs
+#[tokio::main(flavor = "current_thread")]
+async fn main() -> anyhow::Result<()> {
+    let state = Arc::new(tokio::sync::Mutex::new(McpState::default()));
+    let stdin = BufReader::new(tokio::io::stdin());
+    run_server(stdin, tokio::io::stdout(), state).await
+}
+
+pub async fn run_server<R, W>(
+    reader: R,
+    mut writer: W,
+    state: Arc<tokio::sync::Mutex<McpState>>,
+) -> anyhow::Result<()>
+where
+    R: tokio::io::AsyncBufRead + Unpin,
+    W: tokio::io::AsyncWrite + Unpin;
+```
+
+**Scope and non-goals** (this phase): *no* HTTP or WebSocket transport yet — the issue's acceptance criterion is the `Send + Sync` state refactor + the threading-model documentation above. Future transports (axum HTTP, WebSocket bridge) are unblocked by this change but not implemented in #2562. The single-threaded `current_thread` flavor is sufficient for the existing stdin/stdout JSON-RPC workload; multi-threaded runtime is available trivially by switching the `#[tokio::main]` flavor when concurrent request handling is added.
+
+---
+
 ### Module 6: Gauge-Theory Foundation (Phase 1a — #1461)
 
 **Source**: `src/physics/geometry_tensor.rs` (lives alongside the existing CTA `GeometryTensor` types for the Python↔Rust boundary; the two domains are deliberately kept on different storage representations — `Vec<f64>` for the CTA tensors, `nalgebra::{Matrix4, Vector4}` for the gauge-theory manifold, because their consumers diverge).

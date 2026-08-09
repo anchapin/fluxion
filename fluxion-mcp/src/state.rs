@@ -1,3 +1,18 @@
+//! Mutable session state for the `fluxion-mcp` server.
+//!
+//! Threading model (Issue #2562)
+//! -----------------------------
+//! `McpState` is intended to be shared across concurrent Tokio tasks via
+//! `Arc<tokio::sync::Mutex<McpState>>`. Every field below uses only types
+//! that are `Send` (`ThermalModel<VectorField>`, `HashMap<_, _>`, `Vec<_>`,
+//! `Option<_>`, `Instant`, `ResponseFormat`), so `McpState` itself is
+//! auto-`Send`. No field requires `&self` access from multiple threads at
+//! once — every mutator is `&mut self` and runs to completion under the
+//! async mutex held by the request loop, so a plain `tokio::sync::Mutex`
+//! (not `RwLock`) is sufficient and avoids writer starvation.
+//!
+//! All time bookkeeping uses `std::time::Instant` (monotonic, thread-safe).
+
 use fluxion::physics::cta::VectorField;
 use fluxion::sim::engine::ThermalModel;
 use std::collections::HashMap;
