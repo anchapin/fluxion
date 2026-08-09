@@ -627,6 +627,138 @@ impl MaterialLayer for BrickMaterial {
     }
 }
 
+/// Phase Change Material (PCM) for latent-heat thermal energy storage.
+///
+/// Stores/releases latent heat at `melting_point_C` while transitioning
+/// from `solid_cp` to `liquid_cp` over a `melt_range_C` band centred on
+/// the melting point (per Issue #2398). Outside the melt zone the
+/// material behaves like a normal sensible-heat storage layer.
+///
+/// Default thermal properties (paraffin-wax class PCM):
+/// - thermal conductivity: 0.2 W/mK
+/// - density: 3240 kg/m³
+/// - emissivity / absorptance: 0.9 / 0.5
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PcmMaterial {
+    thickness: f64,
+    solid_cp: f64,
+    liquid_cp: f64,
+    latent_heat: f64,
+    melting_point: f64,
+    melt_range: f64,
+    density: f64,
+    conductivity: f64,
+}
+
+impl PcmMaterial {
+    /// Construct a new PCM layer.
+    ///
+    /// # Arguments
+    /// * `thickness`      — Layer thickness (m)
+    /// * `solid_cp`       — Sensible Cp in the solid phase (J/kgK)
+    /// * `liquid_cp`      — Sensible Cp in the liquid phase (J/kgK)
+    /// * `latent_heat`    — Latent heat of fusion (J/kg)
+    /// * `melting_point`  — Melting temperature (°C)
+    /// * `melt_range`     — Width of the phase-transition band (°C). Latent
+    ///                       heat is distributed uniformly across this band.
+    pub fn new(
+        thickness: f64,
+        solid_cp: f64,
+        liquid_cp: f64,
+        latent_heat: f64,
+        melting_point: f64,
+        melt_range: f64,
+    ) -> Self {
+        Self {
+            thickness,
+            solid_cp,
+            liquid_cp,
+            latent_heat,
+            melting_point,
+            melt_range,
+            density: 3240.0,
+            conductivity: 0.2,
+        }
+    }
+
+    /// Effective specific heat at temperature `t` (°C), including the
+    /// latent-heat contribution across the melt band.
+    ///
+    /// - `t < melting_point - melt_range/2`     → `solid_cp`
+    /// - `t > melting_point + melt_range/2`     → `liquid_cp`
+    /// - inside the band                        → `(solid_cp + liquid_cp)/2 + latent_heat / melt_range`
+    pub fn effective_specific_heat(&self, t: f64) -> f64 {
+        let t_lo = self.melting_point - self.melt_range / 2.0;
+        let t_hi = self.melting_point + self.melt_range / 2.0;
+        if t < t_lo {
+            self.solid_cp
+        } else if t > t_hi {
+            self.liquid_cp
+        } else {
+            let mid_cp = (self.solid_cp + self.liquid_cp) / 2.0;
+            mid_cp + self.latent_heat / self.melt_range
+        }
+    }
+
+    /// Melt fraction at temperature `t` (°C).
+    ///
+    /// Linearly ramps from 0 to 1 over `melt_range` °C, centred on
+    /// `melting_point`. Clamped to `[0, 1]`.
+    pub fn melt_fraction(&self, t: f64) -> f64 {
+        let f = (t - (self.melting_point - self.melt_range / 4.0)) / (self.melt_range / 2.0);
+        f.clamp(0.0, 1.0)
+    }
+
+    /// Latent heat of fusion (J/kg).
+    pub fn latent_heat_J_kg(&self) -> f64 {
+        self.latent_heat
+    }
+
+    /// Melting point temperature (°C).
+    pub fn melting_point_C(&self) -> f64 {
+        self.melting_point
+    }
+
+    /// Width of the phase-transition band (°C).
+    pub fn melt_range_C(&self) -> f64 {
+        self.melt_range
+    }
+}
+
+impl MaterialLayer for PcmMaterial {
+    fn name(&self) -> &str {
+        "PCM"
+    }
+
+    fn conductivity(&self) -> f64 {
+        self.conductivity
+    }
+
+    fn thickness(&self) -> f64 {
+        self.thickness
+    }
+
+    fn density(&self) -> f64 {
+        self.density
+    }
+
+    fn specific_heat(&self) -> f64 {
+        (self.solid_cp + self.liquid_cp) / 2.0
+    }
+
+    fn absorptance(&self) -> f64 {
+        0.5
+    }
+
+    fn emissivity(&self) -> f64 {
+        0.9
+    }
+
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
+}
+
 /// Assembly validation errors
 #[derive(Debug)]
 pub enum AssemblyError {
@@ -983,6 +1115,8 @@ impl Clone for BuildingAssembly {
                         Box::new(gypsum.clone()) as Box<dyn MaterialLayer>
                     } else if let Some(brick) = layer.as_any().downcast_ref::<BrickMaterial>() {
                         Box::new(brick.clone()) as Box<dyn MaterialLayer>
+                    } else if let Some(pcm) = layer.as_any().downcast_ref::<PcmMaterial>() {
+                        Box::new(pcm.clone()) as Box<dyn MaterialLayer>
                     } else {
                         panic!("Unsupported material type for cloning")
                     }
