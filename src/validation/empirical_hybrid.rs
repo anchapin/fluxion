@@ -181,7 +181,12 @@ pub struct HybridDispatchCounters {
     /// predictor.
     pub surrogate_load_calls: usize,
     /// Number of timesteps the physics conduction solver fired.
-    pub physics_step_calls: usize,
+    ///
+    /// Renamed from `physics_step_calls` in Issue #2457 to reflect that
+    /// this counter increments ONLY when the analytical physics path
+    /// actually runs (i.e. NOT when `use_surrogate_conduction` reroutes
+    /// conduction to the surrogate slot).
+    pub physics_conduction_calls: usize,
     /// Number of timesteps the surrogate conduction branch fired.
     pub surrogate_conduction_calls: usize,
     /// Number of timesteps the surrogate ventilation branch fired.
@@ -379,11 +384,11 @@ pub fn generate_hybrid_empirical_report(
     ));
     notes.push(format!(
         "Hybrid dispatch: surrogate_loads={}, surrogate_conduction={}, \
-         surrogate_ventilation={}, physics_steps={}",
+         surrogate_ventilation={}, physics_conduction={}",
         hybrid_metrics.surrogate_load_calls,
         hybrid_metrics.surrogate_conduction_calls,
         hybrid_metrics.surrogate_ventilation_calls,
-        hybrid_metrics.physics_step_calls,
+        hybrid_metrics.physics_conduction_calls,
     ));
 
     HybridEmpiricalReport {
@@ -402,13 +407,13 @@ pub fn generate_hybrid_empirical_report(
         surrogate_vs_physics_delta_c,
         dispatch: HybridDispatchCounters {
             surrogate_load_calls: hybrid_metrics.surrogate_load_calls,
-            physics_step_calls: hybrid_metrics.physics_step_calls,
+            physics_conduction_calls: hybrid_metrics.physics_conduction_calls,
             surrogate_conduction_calls: hybrid_metrics.surrogate_conduction_calls,
             surrogate_ventilation_calls: hybrid_metrics.surrogate_ventilation_calls,
         },
         physics_dispatch: HybridDispatchCounters {
             surrogate_load_calls: physics_metrics.surrogate_load_calls,
-            physics_step_calls: physics_metrics.physics_step_calls,
+            physics_conduction_calls: physics_metrics.physics_conduction_calls,
             surrogate_conduction_calls: physics_metrics.surrogate_conduction_calls,
             surrogate_ventilation_calls: physics_metrics.surrogate_ventilation_calls,
         },

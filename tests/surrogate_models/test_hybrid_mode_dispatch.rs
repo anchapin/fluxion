@@ -78,9 +78,9 @@ fn hybrid_default_policy_routes_both_branches_in_one_run() {
         STEPS
     );
     assert!(
-        hybrid.physics_step_calls() >= STEPS,
+        hybrid.physics_conduction_calls() >= STEPS,
         "physics conduction branch fired {} times, expected >= {}",
-        hybrid.physics_step_calls(),
+        hybrid.physics_conduction_calls(),
         STEPS
     );
 }
@@ -163,7 +163,7 @@ fn hybrid_loads_only_policy_keeps_load_branch_active() {
     let eui = hybrid.solve_timesteps(168, &surrogates, false); // 1 week
     assert!(eui.is_finite());
     assert_eq!(hybrid.surrogate_load_calls(), 168);
-    assert_eq!(hybrid.physics_step_calls(), 168);
+    assert_eq!(hybrid.physics_conduction_calls(), 168);
 }
 
 #[test]
@@ -177,7 +177,7 @@ fn hybrid_physics_only_policy_suppresses_surrogate_branch() {
     let eui = hybrid.solve_timesteps(168, &surrogates, false);
     assert!(eui.is_finite());
     assert_eq!(hybrid.surrogate_load_calls(), 0);
-    assert_eq!(hybrid.physics_step_calls(), 168);
+    assert_eq!(hybrid.physics_conduction_calls(), 168);
 }
 
 #[test]
@@ -194,5 +194,5 @@ fn hybrid_routing_policy_can_be_swapped_at_runtime() {
     hybrid.set_routing(HybridRouting::all_physics());
     let _ = hybrid.solve_timesteps(24, &surrogates, false);
     assert_eq!(hybrid.surrogate_load_calls(), 0);
-    assert_eq!(hybrid.physics_step_calls(), 24);
+    assert_eq!(hybrid.physics_conduction_calls(), 24);
 }
