@@ -74,6 +74,53 @@ If you encounter a linker segfault during a debug build, use release builds
 for local development: `cargo build --release` / `cargo test --release`.
 See also: `docs/KNOWN_ISSUES.md` §CI-02 (issue #2297).
 
+### Profile-Guided Optimization (PGO) build
+
+The crate ships with a PGO pipeline (issue #2563) that typically yields
+10–20 % throughput improvement on compute-bound paths such as the 5R1C/9R4C
+solvers and the conduction transfer functions.
+
+The pipeline is implemented as a single shell script that can be run
+locally and in CI. It expects a release of `llvm-tools-preview` (for
+`llvm-profdata`).
+
+```bash
+# One-shot: profile-generate → train → merge → profile-use
+./scripts/build_pgo.sh --clean
+```
+
+Useful flags:
+
+| Flag | Purpose |
+| --- | --- |
+| `--pgo-dir DIR` | Where to store profile data (default: `target/pgo`) |
+| `--train-workload CMD` | Override the training workload (default: `cargo test --profile release --test ashrae_140_validation -- --nocapture`) |
+| `--skip-generate` | Reuse an existing instrumented binary |
+| `--skip-train` | Skip the training workload (use existing `.profraw` files) |
+| `--skip-use` | Generate-only; do not produce the optimized binary |
+| `--clean` | Wipe `target/pgo/` before starting |
+
+The pipeline produces a PGO-optimized release binary in `target/release/`
+alongside the merged profile data at `target/pgo/merged/profdata`. Build
+logs are captured under `target/pgo/logs/`.
+
+For manual reuse of the merged profile data:
+
+```bash
+RUSTFLAGS="-Cprofile-use=$(pwd)/target/pgo/merged/profdata" \
+    cargo build --profile release-pgo
+```
+
+A dedicated `[profile.release-pgo]` Cargo profile is provided with
+`lto = "fat"` and `codegen-units = 1` — the PGO instrumentation flags are
+passed via `RUSTFLAGS` because Cargo profiles cannot express PGO directly.
+See `Cargo.toml` for the exact settings.
+
+The nightly `pgo-nightly.yml` GitHub Actions workflow runs the same
+script at 02:30 UTC and uploads the optimized binaries plus profile data
+as artifacts. Trigger it manually via `gh workflow run pgo-nightly.yml`
+when you want to validate a change end-to-end.
+
 ## Code Style
 
 ### Rust formatting

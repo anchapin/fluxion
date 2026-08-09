@@ -409,6 +409,23 @@ lto = true
 codegen-units = 1
 strip = true
 
+# Profile-Guided Optimization build (issue #2563).
+# The actual instrumentation flags (-Cprofile-generate / -Cprofile-use)
+# are passed via RUSTFLAGS by scripts/build_pgo.sh — Cargo profiles
+# cannot express PGO directly. The settings below are the
+# profile-use-friendly defaults: same opt-level as release, but with
+# full LTO + 1 codegen-unit so the optimiser sees the whole program
+# after it has been tuned by the merged profile data.
+[profile.release-pgo]
+inherits = "release"
+opt-level = 3
+lto = "fat"
+codegen-units = 1
+strip = true
+# PGO only works when debug assertions are stripped — the PGO
+# instrumentation hooks themselves depend on it.
+debug = false
+
 # Fast CI build profile — use with `cargo test --profile ci`
 # Balances compile speed against runtime speed:
 #   opt-level=1   — significantly faster to compile than release (3), yet exercises
