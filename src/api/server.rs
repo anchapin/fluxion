@@ -34,7 +34,6 @@
 //!   counters and histograms that `/v1/metrics` renders.
 
 use std::collections::HashMap;
-use std::path::PathBuf;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 
@@ -49,6 +48,7 @@ use axum::{
 };
 use rayon::iter::{IndexedParallelIterator, IntoParallelIterator, ParallelIterator};
 use serde::{Deserialize, Serialize};
+use tempfile::NamedTempFile;
 use thiserror::Error;
 use tokio::sync::{mpsc, Mutex};
 use tower::ServiceBuilder;
@@ -1051,12 +1051,14 @@ async fn import_format(
             // OSM and gbxml readers expect a filesystem path. Write the body
             // to a temp file and hand it off. The temp file is cleaned up by
             // the OS once the handle drops; readers stream-read and close.
+            // `tmp` (a `NamedTempFile`) is kept alive for the duration of
+            // `import_osm` so the OS doesn't recycle the path mid-parse.
             let tmp = tempfile_for_bytes(&body, "osm")?;
-            osm::import_osm(&tmp).map_err(|e| ApiError::ImportFailed(e.to_string()))?
+            osm::import_osm(tmp.path()).map_err(|e| ApiError::ImportFailed(e.to_string()))?
         }
         "gbxml" => {
             let tmp = tempfile_for_bytes(&body, "gbxml")?;
-            gbxml::import_gbxml(&tmp).map_err(|e| ApiError::ImportFailed(e.to_string()))?
+            gbxml::import_gbxml(tmp.path()).map_err(|e| ApiError::ImportFailed(e.to_string()))?
         }
         "idf" => {
             let body_str = std::str::from_utf8(&body)
@@ -1087,25 +1089,68 @@ async fn import_format(
     }))
 }
 
-/// Persist `bytes` to a uniquely-named temp file and return its path. The
-/// file is removed when the returned [`PathBuf`] is dropped (see
-/// `tempfile::NamedTempFile` semantics). We use the standard library directly
-/// here to avoid pulling a new dev-dependency just for this handler.
-fn tempfile_for_bytes(bytes: &[u8], ext: &str) -> Result<PathBuf, ApiError> {
+/// Persist `bytes` to a uniquely-named, owner-only temp file and return
+/// the [`NamedTempFile`] handle. The file is removed when the handle is
+/// dropped.
+///
+/// Security (Issue #2556): the previous implementation built the path as
+/// `fluxion-import-{nanos}.{ext}` under `std::env::temp_dir()` and opened
+/// it with `std::fs::File::create` — a predictable name plus `O_CREAT`
+/// without `O_EXCL`. On a multi-tenant host, an unprivileged co-tenant
+/// that could predict (or race) the same nanosecond could pre-create the
+/// path as a symlink to e.g. `/etc/passwd`; the import handler would
+/// then either overwrite the symlink target or follow the link and
+/// parse a file the attacker chose (CWE-377, CWE-367).
+///
+/// `tempfile::Builder::tempfile()` performs the open atomically with
+/// `O_EXCL | O_NOFOLLOW` semantics and 16 random suffix bytes (128 bits
+/// of entropy), so the file cannot already exist and cannot be a symlink.
+/// We additionally set permissions to `0o600` and then call
+/// `symlink_metadata` after creation as belt-and-braces verification
+/// that the path on disk is a regular file we own before handing it to
+/// the parsers.
+fn tempfile_for_bytes(bytes: &[u8], ext: &str) -> Result<NamedTempFile, ApiError> {
     use std::io::Write;
 
-    let mut dir = std::env::temp_dir();
-    let nanos = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map(|d| d.as_nanos())
-        .unwrap_or(0);
-    dir.push(format!("fluxion-import-{nanos}.{ext}"));
+    let suffix = format!(".{ext}");
+    let mut tmp = {
+        let mut builder = tempfile::Builder::new();
+        builder
+            .prefix("fluxion-import-")
+            .suffix(&suffix)
+            .rand_bytes(16);
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt as _;
+            builder.permissions(std::fs::Permissions::from_mode(0o600));
+        }
+        builder
+            .tempfile()
+            .map_err(|e| ApiError::ImportFailed(format!("temp file create: {e}")))?
+    };
 
-    let mut f = std::fs::File::create(&dir)
-        .map_err(|e| ApiError::ImportFailed(format!("temp file create: {e}")))?;
-    f.write_all(bytes)
+    tmp.as_file_mut()
+        .write_all(bytes)
         .map_err(|e| ApiError::ImportFailed(format!("temp file write: {e}")))?;
-    Ok(dir)
+    tmp.as_file_mut()
+        .sync_all()
+        .map_err(|e| ApiError::ImportFailed(format!("temp file sync: {e}")))?;
+
+    // Defence-in-depth: confirm the path on disk is a regular file and
+    // not a symlink that was somehow substituted between creation and
+    // now. `tempfile::Builder` already passes `O_NOFOLLOW` to the open,
+    // so this should always succeed; we check anyway so a future change
+    // to the builder cannot silently regress the security property.
+    let meta = std::fs::symlink_metadata(tmp.path())
+        .map_err(|e| ApiError::ImportFailed(format!("temp file stat: {e}")))?;
+    let ft = meta.file_type();
+    if !ft.is_file() || ft.is_symlink() {
+        return Err(ApiError::ImportFailed(format!(
+            "temp file is not a regular file (file_type={ft:?})"
+        )));
+    }
+
+    Ok(tmp)
 }
 
 /// Header name carrying the per-request UUID (Issue #1447). Lowercase to
@@ -1453,5 +1498,157 @@ mod tests {
         // The actual cloud store implementation (DynamoDB/Redis) would persist
         // state across client connections.
         let _ = state;
+    }
+
+    // --- Issue #2556: TOCTOU + symlink-race regression tests for the
+    // /v1/import temp-file path. The original `tempfile_for_bytes`
+    // constructed `fluxion-import-{nanos}.{ext}` under `std::env::temp_dir()`
+    // and opened it with `File::create` (no O_EXCL, no O_NOFOLLOW, 0644
+    // by default). An unprivileged co-tenant on a shared host could
+    // predict the nanosecond and pre-create the path as a symlink to
+    // e.g. /etc/passwd; the server would then either overwrite the
+    // symlink target or follow the link and parse attacker-chosen bytes
+    // (CWE-377, CWE-367).
+    //
+    // The fixed implementation uses `tempfile::Builder::tempfile()` which
+    // performs an atomic `O_CREAT|O_EXCL|0o600` open with 16 random
+    // suffix bytes (128 bits of entropy) and `O_NOFOLLOW` semantics.
+    // These tests verify the resulting security properties.
+    #[cfg(unix)]
+    #[test]
+    fn tempfile_for_bytes_creates_regular_file_with_payload() {
+        use std::io::Read;
+        let payload = b"<osm>body-bytes</osm>";
+        let tmp = tempfile_for_bytes(payload, "osm").expect("create temp file");
+
+        // Path resolves on disk and the bytes round-trip exactly.
+        let mut f = std::fs::File::open(tmp.path()).expect("open temp file");
+        let mut buf = Vec::new();
+        f.read_to_end(&mut buf).expect("read temp file");
+        assert_eq!(buf, payload);
+
+        // `symlink_metadata` (not `metadata`) is the lstat that does NOT
+        // follow symlinks — if anyone ever swaps it back to a path that
+        // resolves to a symlink, this assertion will catch it.
+        let meta = std::fs::symlink_metadata(tmp.path()).expect("lstat temp file");
+        let ft = meta.file_type();
+        assert!(ft.is_file(), "expected regular file, got file_type={ft:?}");
+        assert!(
+            !ft.is_symlink(),
+            "temp file must not be a symlink (TOCTOU regression)"
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn tempfile_for_bytes_uses_owner_only_permissions() {
+        use std::os::unix::fs::PermissionsExt;
+        let tmp = tempfile_for_bytes(b"secret", "gbxml").expect("create temp file");
+        let perms = std::fs::metadata(tmp.path())
+            .expect("stat temp file")
+            .permissions();
+        // Strip the file-type bits (S_IFREG = 0o100000 etc.) and compare
+        // the permission bits only.
+        assert_eq!(
+            perms.mode() & 0o777,
+            0o600,
+            "temp file must be owner-read/write only (Issue #2556)"
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn tempfile_for_bytes_distinct_paths_per_call() {
+        // Two consecutive calls must produce different paths because the
+        // suffix is drawn from 16 random bytes (128 bits). If this ever
+        // regresses to a predictable name, the TOCTOU window re-opens
+        // (Issue #2556).
+        let a = tempfile_for_bytes(b"a", "osm").expect("create temp a");
+        let b = tempfile_for_bytes(b"b", "osm").expect("create temp b");
+        assert_ne!(a.path(), b.path());
+
+        // Filenames must not embed the old predictable `fluxion-import-{nanos}`
+        // pattern. We assert the prefix is preserved (helps debugging) and
+        // that the parent dir is the system temp dir.
+        let parent = a.path().parent().expect("temp file has a parent dir");
+        assert_eq!(parent, std::env::temp_dir());
+        let name_a = a.path().file_name().unwrap().to_string_lossy();
+        assert!(
+            name_a.starts_with("fluxion-import-"),
+            "prefix should be preserved for log triage, got {name_a}"
+        );
+        // No `nanos` field — the old format was `fluxion-import-{nanos}.{ext}`,
+        // the new one is `fluxion-import-{22 base64 chars}.{ext}` (16 bytes
+        // b64-encoded ≈ 22 chars + padding). Either way there must NOT be
+        // a long run of digits in the middle.
+        let stem = name_a.trim_start_matches("fluxion-import-");
+        let stem = stem.split('.').next().unwrap_or(stem);
+        let digit_run = stem.chars().take_while(|c| c.is_ascii_digit()).count();
+        assert!(
+            digit_run < 8,
+            "temp filename looks predictable (long digit run): {name_a}"
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn create_new_true_rejects_pre_existing_symlink() {
+        // The attack: an unprivileged co-tenant pre-creates the predicted
+        // temp path as a symlink to a target they want overwritten
+        // (CWE-377). The fix relies on `O_EXCL` semantics: even if a
+        // symlink already occupies the name, the open must fail rather
+        // than follow the link. `tempfile::Builder::tempfile()` does
+        // this internally; we mirror the same call here to lock the
+        // behaviour down with a regression test.
+        use std::os::unix::fs::{symlink, OpenOptionsExt, PermissionsExt};
+        use tempfile::Builder;
+
+        let dir = tempfile::tempdir().expect("create attack sandbox");
+        let victim = dir.path().join("victim");
+        std::fs::write(&victim, b"original victim contents").expect("seed victim");
+
+        let pwn = dir.path().join("pwn");
+        symlink(&victim, &pwn).expect("attacker plants symlink");
+        assert!(
+            std::fs::symlink_metadata(&pwn)
+                .expect("lstat symlink")
+                .file_type()
+                .is_symlink(),
+            "precondition: planted symlink must actually be a symlink"
+        );
+
+        // Mirrors what `tempfile::Builder` does under the hood: open the
+        // pre-existing path with `create_new(true)` so it fails instead
+        // of silently following the link.
+        let result = std::fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .mode(0o600)
+            .open(&pwn);
+        assert!(
+            result.is_err(),
+            "create_new(true) must reject a pre-existing symlink path \
+             (this is the core fix for Issue #2556)"
+        );
+
+        // The victim file must be untouched after the rejected open.
+        assert_eq!(
+            std::fs::read(&victim).expect("read victim"),
+            b"original victim contents",
+            "victim file must not have been clobbered by the failed open"
+        );
+
+        // And a real tempfile created via the same Builder API in the
+        // same dir must succeed and land on a regular file with 0o600.
+        let tmp = Builder::new()
+            .prefix("safe-")
+            .rand_bytes(16)
+            .permissions(std::fs::Permissions::from_mode(0o600))
+            .tempfile_in(dir.path())
+            .expect("create safe temp");
+        let meta = std::fs::symlink_metadata(tmp.path()).expect("lstat safe temp");
+        assert!(meta.file_type().is_file());
+        assert!(!meta.file_type().is_symlink());
+        assert_eq!(meta.permissions().mode() & 0o777, 0o600);
     }
 }

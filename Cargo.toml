@@ -222,6 +222,14 @@ quick-xml = "0.41"
 
 # REST API server (Issue #1342). Async HTTP server with typed extractors
 # and ergonomic routing. Stays on tokio 1.x — already in our dep tree above.
+
+# Secure temp-file creation for /v1/import (Issue #2556). Promoted from
+# [dev-dependencies] to a runtime dep: `tempfile::Builder` performs an
+# atomic `O_EXCL` open with randomised suffix, eliminating the predictable
+# `fluxion-import-{nanos}.{ext}` filename that previously enabled a
+# TOCTOU + symlink race against any unprivileged co-tenant on a shared
+# host (CWE-377, CWE-367).
+tempfile = "3.10"
 axum = { version = "0.7", default-features = false, features = ["http1", "json", "tokio", "query", "matched-path"] }
 tower = { version = "0.5", features = ["util"] }
 http-body-util = "0.1"
@@ -279,7 +287,6 @@ napi-build = { version = "2", optional = true }
 
 [dev-dependencies]
 criterion = "0.5"
-tempfile = "3.10"
 approx = "0.5"
 rstest = "0.25"
 proptest = "1.5"
