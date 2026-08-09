@@ -371,41 +371,29 @@ def test_main_returns_zero_when_clean(checker, tmp_path, monkeypatch, capsys):
 
 
 def test_main_returns_zero_at_documented_baseline(checker, tmp_path, monkeypatch, capsys):
-    """5 physics->sim + 2 sim->physics offenders (the documented baseline) must pass.
+    """The documented baseline (0 physics->sim + 0 sim->physics) must pass.
 
-    Mirrors the current real-repo state per issue #2463: the companion
-    cycle-break work is the only thing authorised to drive the count
-    down. The script must NOT fail on the documented baseline; it only
-    fails if a *new* edge appears that pushes the count above baseline.
+    Issue #2462 drove the cycle to 0+0 edges, so the documented baseline
+    *is* the clean state. The script must NOT fail on the documented
+    baseline; it only fails if a *new* edge appears that pushes the
+    count above baseline.
     """
     _redirect_to_fixture(
         checker,
         tmp_path,
         monkeypatch,
-        physics_files={
-            f"offender{i}.rs": "use crate::sim::construction::ConstructionLayer;\n"
-            for i in range(checker.BASELINE_PHYSICS_TO_SIM)
-        },
+        physics_files={},
         sim_files={
             "construction.rs": "fn f() {}\n",
             "per_surface_conduction.rs": "fn f() {}\n",
         },
-    )
-    # Replace construction.rs with the right number of physics imports
-    # (one per line) to mirror the real baseline of 2 sim->physics edges.
-    (tmp_path / "src" / "sim" / "construction.rs").write_text(
-        "".join(
-            f"use crate::physics::constants::SOMETHING_{i};\n"
-            for i in range(checker.BASELINE_SIM_TO_PHYSICS)
-        ),
-        encoding="utf-8",
     )
 
     rc = checker.main()
     out = capsys.readouterr().out
     assert rc == 0
     assert "OK:" in out
-    assert "at baseline" in out
+    assert "below baseline" in out
     assert "No cycle regression" in out
     baseline_total = checker.BASELINE_PHYSICS_TO_SIM + checker.BASELINE_SIM_TO_PHYSICS
     assert f"Total cycle edges: {baseline_total}" in out

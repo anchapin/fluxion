@@ -8,7 +8,15 @@ use crate::physics::constants::thermal::iso_13790::annex_c::{
     THERMAL_MASS_LIGHT, THERMAL_MASS_LIGHT_UPPER, THERMAL_MASS_MEDIUM, THERMAL_MASS_MEDIUM_UPPER,
     THERMAL_MASS_VERY_HEAVY, THERMAL_MASS_VERY_LIGHT,
 };
-use crate::sim::construction::ConstructionLayer;
+// Issue #2462 (Phase 2 of the crate split): `ConstructionLayer` now lives in
+// `fluxion_core::construction` (the workspace leaf crate). Importing it via
+// the leaf crate directly breaks the `physics ↔ sim` module cycle — see
+// ARCHITECTURE.md §"Remaining cycles" and `docs/mutation_testing_crate_split.md`
+// §"Phase 2". The `crate::sim::construction::ConstructionLayer` path stays
+// valid as a re-export shim, but the leaf-crate import is preferred for new
+// code (and required to keep the cycle guard in
+// `scripts/check_physics_sim_cycle.py` reporting 0 edges).
+use fluxion_core::construction::ConstructionLayer;
 use serde::{Deserialize, Serialize};
 
 /// Construction type enum defining standard building construction categories.

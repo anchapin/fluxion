@@ -30,8 +30,15 @@
 
 use std::f64::consts::PI;
 
-/// Stefan-Boltzmann constant (W/m²·K⁴)
-pub const STEFAN_BOLTZMANN: f64 = 5.67e-8;
+// Issue #2462 (Phase 2 of the crate split): `STEFAN_BOLTZMANN` was hoisted
+// out of this module into `fluxion_core::physics_constants` so that
+// `physics::multi_node_solver` (a leaf physics implementation) can use it
+// without importing from `sim::sky_radiation`, breaking the `physics ↔ sim`
+// module cycle documented in ARCHITECTURE.md §"Remaining cycles". This
+// re-export preserves the historical `crate::sim::sky_radiation::STEFAN_BOLTZMANN`
+// and `fluxion::sim::sky_radiation::STEFAN_BOLTZMANN` paths for every
+// downstream call site (no edits required).
+pub use fluxion_core::physics_constants::STEFAN_BOLTZMANN;
 
 /// Solar constant (W/m²)
 /// ASHRAE 140-2022 Appendix C specifies 1361.0 W/m²

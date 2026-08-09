@@ -33,7 +33,10 @@
 //! |---------------|--------|-------|
 //! | `weather`     | Moved (#1255, true leaf) | EPW/TMY3 parsing, psychrometrics, design-day, interpolation |
 //! | `assembly`    | Moved (#1349) | `BuildingAssembly`, `AssemblyBuilder`, `MaterialLayer` trait, ASHRAE 140 material constants (inlined) |
+//! | `construction`| Moved (#2462) | `ConstructionLayer`, `Construction`, `MassClass`, `Materials`, `Assemblies`, `SurfaceType`, ASHRAE 140 film/air constants (inlined). Breaks 3 of 5 `physics ↔ sim` cycle edges. |
 //! | `multi_node`  | Moved (#1349) | `ThermalMassNode`, `MultiNodeThermalMass`, `MultiNodeModelType`, `MassAirCouplingMode` (pure data, zero deps) |
+//! | `per_surface_conduction` | Moved (#2462) | `SurfaceKind`, `MassNode`, `SurfaceNode`, `PerSurfaceConductionSolver`. Breaks the remaining 2 `physics ↔ sim` cycle edges. |
+//! | `physics_constants` | Moved (#2462) | `STEFAN_BOLTZMANN`. Hoisted out of `sim::sky_radiation` so `physics::multi_node_solver` no longer imports from `sim`. |
 //! | `ashrae_cases`| Moved (#1441) | `Orientation`, `WindowArea`, `ConstructionType`, `ShadingType`, `ShadingDevice`, `GlassType`, `WindowSpec`, `InternalLoads`, `HvacSchedule`, `NightVentilation`, `BuildingType`, `GeometrySpec`, `ConductanceReferences` — pure-data leaf types from `validation::ashrae_140_cases`. Breaks the `sim ↔ validation` cycle (5 sim callers + 3 indirect sim callers). |
 //!
 //! ## Cycle break (#1349)
@@ -56,6 +59,18 @@
 //!   `fluxion::physics::{ctf_coefficients, fd_discretization}` (heavy solver types).
 //!   Moving the whole physics tree requires breaking these intra-crate edges first.
 //!
+//! ## Cycle break (#2462 — physics ↔ sim shared domain types → `fluxion-core`)
+//!
+//! Issue #2462 broke the last `physics ↔ sim` cycle (see ARCHITECTURE.md
+//! §"Remaining cycles" and `docs/mutation_testing_crate_split.md` §"Phase 2")
+//! by hoisting `ConstructionLayer` (+ `Construction`, `MassClass`, `Materials`,
+//! `Assemblies`, `SurfaceType`, ASHRAE 140 film/air constants) and
+//! `PerSurfaceConductionSolver` (+ `SurfaceKind`, `MassNode`, `SurfaceNode`)
+//! into `fluxion_core`, plus lifting `STEFAN_BOLTZMANN` out of `sim::sky_radiation`
+//! into the new `fluxion_core::physics_constants` leaf. `scripts/check_physics_sim_cycle.py`
+//! baseline drops from 5+2 edges to 0; the gate is wired into CI as the
+//! `Physics-Sim-Cycle-Check` listener (see release_gates.yaml).
+//!
 //! The `sim::construction ↔ validation::ashrae_140_cases::Orientation` cycle was
 //! closed in #1441 by moving the leaf types into `fluxion_core::ashrae_cases`.
 //! The `sim::construction ↔ physics::continuous` cycle remains and is the next
@@ -68,9 +83,12 @@
 
 pub mod ashrae_cases;
 pub mod assembly;
+pub mod construction;
 pub mod earth_tube;
 pub mod fluid;
 pub mod multi_node;
+pub mod per_surface_conduction;
+pub mod physics_constants;
 pub mod tensor;
 pub mod urban_radiation;
 pub mod weather;

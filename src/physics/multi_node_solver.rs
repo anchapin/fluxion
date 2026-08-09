@@ -37,11 +37,23 @@
 use crate::physics::solver_trait::{HeatConductionSolver, SolverError};
 use crate::physics::units::{FromF64, HeatFlux, HeatTransferCoefficient, Temperature, Time, ToF64};
 use crate::physics::wall_spec::WallSpec;
-use crate::sim::per_surface_conduction::{PerSurfaceConductionSolver, SurfaceKind};
-// Issue #1858: sky-radiative air-node path reuses the existing sky-radiation
-// Stefan–Boltzmann constant. `crate::sim` is already a dependency of this file
-// (via `per_surface_conduction`), so this adds no new module coupling.
-use crate::sim::sky_radiation::STEFAN_BOLTZMANN;
+// Issue #2462 (Phase 2 of the crate split): per-surface conduction types now
+// live in the `fluxion_core::per_surface_conduction` leaf crate (where they
+// were hoisted to break the `physics ↔ sim` module cycle documented in
+// ARCHITECTURE.md §"Remaining cycles"). `crate::sim::per_surface_conduction::*`
+// is still valid as a re-export shim, but importing from the leaf crate
+// directly is the canonical path that `scripts/check_physics_sim_cycle.py`
+// enforces (the script reports 0 edges when no `use crate::sim::*` imports
+// remain under `src/physics/**`).
+use fluxion_core::per_surface_conduction::{PerSurfaceConductionSolver, SurfaceKind};
+// Issue #2462 (Phase 2 of the crate split): `STEFAN_BOLTZMANN` was hoisted
+// out of `crate::sim::sky_radiation` into the new
+// `fluxion_core::physics_constants` leaf module so this file no longer needs
+// to import from `sim` (which would re-introduce the very cycle #2462 is
+// here to break). The `crate::sim::sky_radiation::STEFAN_BOLTZMANN` path
+// stays valid via a re-export shim, but the leaf-crate import is the
+// canonical path that `scripts/check_physics_sim_cycle.py` enforces.
+use fluxion_core::physics_constants::STEFAN_BOLTZMANN;
 // Issue #1349 (Phase 2 crate split): multi-node thermal mass types moved to `fluxion_core::multi_node`.
 use fluxion_core::multi_node::{MassAirCouplingMode, MultiNodeThermalMass, ThermalMassNode};
 use log;
@@ -2436,27 +2448,23 @@ mod tests {
 
     #[test]
     fn test_issue_1858_air_sky_conductance_formula() {
-        // Verify the linearized conductance against a hand calculation and
-        // against SkyRadiationExchange::radiative_coefficient (per-area basis).
-        use crate::sim::sky_radiation::SkyRadiationExchange;
-
+        // Verify the linearized conductance against a hand calculation.
+        //
+        // Issue #2462 (Phase 2 of the crate split): previously this test also
+        // cross-checked against `crate::sim::sky_radiation::SkyRadiationExchange::radiative_coefficient`,
+        // but that import was one of the 5 documented `physics ↔ sim` cycle
+        // edges. The SkyRadiationExchange::radiative_coefficient formula is
+        // `4.0 * eps * f_sky * STEFAN_BOLTZMANN * t_mean^3` — the same
+        // hand calculation we already verify below — so the cross-check
+        // added nothing once the leaf constant was available here.
         let eps = 0.9;
         let f_sky = 0.25;
         let aperture = 12.0; // m²
         let t_air = -8.0;
         let t_sky = -30.0;
 
-        // Per-area coefficient from the existing module (W/m²·K).
-        let h_per_area = SkyRadiationExchange::new(eps, f_sky).radiative_coefficient(t_air, t_sky);
-
         // Total conductance from the new helper (W/K).
         let h_total = air_sky_conductance(eps, f_sky, aperture, t_air, t_sky);
-
-        assert!(
-            (h_total - h_per_area * aperture).abs() < 1e-9,
-            "air_sky_conductance must equal per-area coefficient × aperture: \
-             {h_total} vs {h_per_area} × {aperture}",
-        );
 
         // Hand calculation for the linearization at T_mean = 254.075 K.
         let sigma = 5.67e-8_f64;

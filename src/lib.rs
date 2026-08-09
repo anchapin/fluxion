@@ -106,6 +106,22 @@ pub use fluxion_core::{assembly, fluid, multi_node};
 // `fluxion::ashrae_cases::Orientation` work too.
 pub use fluxion_core::ashrae_cases;
 
+// #2462 (Phase 2 cycle break, continued): the remaining `physics ↔ sim`
+// cycle edges documented in ARCHITECTURE.md §"Remaining cycles" were broken
+// by hoisting `ConstructionLayer` + helpers into `fluxion_core::construction`,
+// `PerSurfaceConductionSolver` + `SurfaceKind` (+ `MassNode`, `SurfaceNode`)
+// into `fluxion_core::per_surface_conduction`, and the Stefan–Boltzmann
+// constant out of `sim::sky_radiation` into the new
+// `fluxion_core::physics_constants` leaf. The corresponding sim files
+// (`src/sim/construction.rs`, `src/sim/per_surface_conduction.rs`,
+// `src/sim/sky_radiation.rs`) keep the old paths alive via `pub use`
+// re-exports, so `crate::sim::construction::*`, `crate::sim::per_surface_conduction::*`,
+// and `crate::sim::sky_radiation::STEFAN_BOLTZMANN` all still resolve. The
+// top-level re-exports below make `fluxion::construction::*`,
+// `fluxion::per_surface_conduction::*`, and `fluxion::physics_constants::STEFAN_BOLTZMANN`
+// work too.
+pub use fluxion_core::{construction, per_surface_conduction, physics_constants};
+
 // Re-export thermal model traits for public API
 pub use sim::surface_flux_provider::{
     MockSurfaceHeatFluxProvider, PhysicsSurfaceFluxProvider, SurfaceHeatFluxProvider,
@@ -118,6 +134,11 @@ pub use sim::thermal_model::{
 pub use sim::thermal_model_mock::MockThermalModel;
 
 // Re-export ISO 13790 Annex C construction types
+// Issue #2462: `sim::construction` is now a thin re-export shim over
+// `fluxion_core::construction`; the re-export below keeps the historical
+// `fluxion::sim::construction::ConstructionLayer` path alive. The explicit
+// top-level `fluxion::construction::{Construction, ConstructionLayer, MassClass}`
+// re-export is added in the `#2462` block above.
 pub use sim::construction::{Construction, ConstructionLayer, MassClass};
 
 // Re-export utility tariff types for financial cost tracking

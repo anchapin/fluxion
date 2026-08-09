@@ -21,7 +21,15 @@ are built once and cached while `cargo-mutants` mutates only `fluxion`:
 ```
 fluxion-core/src/weather/      # MOVED in #1255 (true leaf: no deps on sim/physics/ai/validation)
 fluxion-core/src/assembly/     # MOVED in #1349 (BuildingAssembly, AssemblyBuilder, MaterialLayer)
+fluxion-core/src/construction/ # MOVED in #2462 (ConstructionLayer, Construction, MassClass,
+                               #   Materials, Assemblies, SurfaceType; ASHRAE 140 film/air
+                               #   constants inlined)
 fluxion-core/src/multi_node/   # MOVED in #1349 (ThermalMassNode, MultiNodeThermalMass)
+fluxion-core/src/per_surface_conduction/ # MOVED in #2462 (SurfaceKind, MassNode, SurfaceNode,
+                               #   PerSurfaceConductionSolver)
+fluxion-core/src/physics_constants/ # MOVED in #2462 (STEFAN_BOLTZMANN, lifted out of
+                               #   sim::sky_radiation so physics::multi_node_solver no
+                               #   longer has to import from sim)
 fluxion-core/src/ashrae_cases/ # MOVED in #1441 (Orientation, WindowArea, ConstructionType,
                                #   ShadingType, ShadingDevice, GlassType, WindowSpec,
                                #   InternalLoads, HvacSchedule, NightVentilation,
@@ -82,9 +90,65 @@ no longer recompiles the 208 KB `validation::ashrae_140_cases` per mutant.
 | `src/sim/thermal_model_data.rs:25` | `use fluxion_core::ashrae_cases::{NightVentilation, Orientation}` |
 | `src/sim/thermal_model_iterative.rs:17` | `use fluxion_core::ashrae_cases::{GeometrySpec, Orientation, WindowArea}` |
 
-**Re-export shim**: `src/validation/ashrae_140_cases.rs` keeps its old shape —
-the leaf types are now defined in `fluxion_core::ashrae_cases` and re-exported
-at the original path:
+### Cycle break (#2462 — physics ↔ sim shared domain types → `fluxion-core`)
+
+Issue #2462 closes the remaining `physics ↔ sim` cycle documented in the
+previous "Remaining cycles" section. Three shared domain-type clusters were
+hoisted out of `fluxion::sim::*` into `fluxion_core::*` leaf modules so that
+`fluxion::physics::*` could stop importing from `fluxion::sim::*`:
+
+| Type / constant                                  | New home                              | Why a leaf module? |
+|--------------------------------------------------|---------------------------------------|--------------------|
+| `ConstructionLayer`, `Construction`, `MassClass`, `Materials`, `Assemblies`, `SurfaceType` | `fluxion_core::construction` | Pure-data structs/enums + the ASHRAE 140 film/air constants (inlined from `physics::constants::thermal::ashrae_140::{v2023, materials}` and `physics::constants::atmospheric`). No upward deps. |
+| `SurfaceKind`, `MassNode`, `SurfaceNode`, `PerSurfaceConductionSolver` | `fluxion_core::per_surface_conduction` | Pure-data structs + `Orientation` (already in `fluxion_core::ashrae_cases`). No upward deps. |
+| `STEFAN_BOLTZMANN`                               | `fluxion_core::physics_constants` | Leaf physics constant used by both `sim::sky_radiation` and `physics::multi_node_solver`. Hoisted here so physics no longer needs sim. |
+
+**Cycle edges closed** (5 physics→sim + 2 sim→physics, all 7 to 0):
+
+| File (before) | After |
+|---|---|
+| `src/physics/thermal_mass/construction.rs:11` (was `use crate::sim::construction::ConstructionLayer`) | `use fluxion_core::construction::ConstructionLayer` |
+| `src/physics/thermal_mass/diagnostics.rs:11` (was same) | `use fluxion_core::construction::ConstructionLayer` |
+| `src/physics/multi_node_solver.rs:40` (was `use crate::sim::per_surface_conduction::{PerSurfaceConductionSolver, SurfaceKind}`) | `use fluxion_core::per_surface_conduction::{PerSurfaceConductionSolver, SurfaceKind}` |
+| `src/physics/multi_node_solver.rs:44` (was `use crate::sim::sky_radiation::STEFAN_BOLTZMANN`) | `use fluxion_core::physics_constants::STEFAN_BOLTZMANN` |
+| `src/physics/multi_node_solver.rs:2441` (test-only `use crate::sim::sky_radiation::SkyRadiationExchange`) | Test rewritten to compute the linearized radiative coefficient directly from `STEFAN_BOLTZMANN` (the formula `4·ε·F·σ·T_mean³` is identical and already hand-verified in the same test). |
+| `src/sim/construction.rs:28` (was `pub use crate::physics::constants::thermal::ashrae_140::{...}`) | Constants inlined at `fluxion_core::construction`. The sim file becomes a thin re-export shim. |
+| `src/sim/construction.rs:32` (was `pub use crate::physics::constants::{AIR_DENSITY_SEA_LEVEL, AIR_SPECIFIC_HEAT}`) | Same — constants inlined. |
+
+**Re-export shims** (kept to avoid touching every downstream call site):
+
+```rust
+// src/sim/construction.rs
+#[doc(inline)]
+pub use fluxion_core::construction::{
+    exterior_film_coeff, interior_film_coeff, Assemblies, Construction, ConstructionLayer,
+    Materials, MassClass, SurfaceType, /* ASHRAE_140 film/air constants */,
+};
+
+// src/sim/per_surface_conduction.rs
+#[doc(inline)]
+pub use fluxion_core::per_surface_conduction::*;
+
+// src/sim/sky_radiation.rs
+pub use fluxion_core::physics_constants::STEFAN_BOLTZMANN;
+```
+
+`fluxion::sim::construction::WallSurface` stays in the main crate because its
+fields reference `crate::sim::shading::{Overhang, ShadeFin}` (shading logic
+the leaf crate does not need). It composes `fluxion_core::construction::*`
+and `fluxion_core::ashrae_cases::Orientation` for its data fields.
+
+**Regression guard**: `scripts/check_physics_sim_cycle.py` now enforces a
+zero-edge baseline — `BASELINE_PHYSICS_TO_SIM = 0` and `BASELINE_SIM_TO_PHYSICS = 0`.
+The CI listener `Physics-Sim-Cycle-Check` (in `.github/workflows/rust-tests.yml`)
+is added to `release_gates.yaml::ci.required_checks` so a regression cannot
+ship past branch protection.
+
+These moves unblock `docs/mutation_testing_crate_split.md` §"Phase 2":
+`cargo mutants -p fluxion` no longer needs to recompile `sim::construction`
+or `sim::per_surface_conduction` per mutant because those modules now live
+in cached `fluxion-core`. The 22.3 GB peak RSS reported in #1668 should drop
+materially; precise before/after numbers will follow in the Phase 3 issue.
 
 ```rust
 // src/validation/ashrae_140_cases.rs
@@ -113,28 +177,35 @@ invariants and is wired into CI (run from repo root):
 
 ### Remaining cycles (deferred to follow-up issues)
 
-- `fluxion::sim::construction` still depends on `fluxion::physics::continuous`.
-  This is the next cycle-break target (see `docs/mutation_testing_crate_split.md`
-  §"Phase 2 — break the `physics ↔ sim` cycle"). Tracked as a follow-up issue.
+- ~~`fluxion::sim::construction` still depends on `fluxion::physics::continuous`.~~
+  **Resolved by #2462**: the shared `ConstructionLayer` domain type (and
+  `Construction`, `MassClass`, `Materials`, `Assemblies`, `SurfaceType`, the
+  ASHRAE 140 film/air constants) moved to `fluxion_core::construction`. The
+  `sim::construction` re-export shim keeps the historical paths alive. The
+  intra-`sim` dependency on `physics::continuous` is still present but
+  uni-directional (sim → physics), which is the *intended* direction per the
+  Module Dependency Diagram.
 - `fluxion::physics::{wall_spec, method_selector, wall_properties}` reference
   `fluxion::physics::{ctf_coefficients, fd_discretization, ctf_solver}` — moving
-  these to `fluxion-core` requires moving the whole `physics` tree.
+  these to `fluxion-core` requires moving the whole `physics` tree (Phase 3
+  of `docs/mutation_testing_crate_split.md`).
 
-**Regression guard (Issue #2463)**: `scripts/check_physics_sim_cycle.py`
+**Regression guard (Issue #2463, closed by #2462)**: `scripts/check_physics_sim_cycle.py`
 mirrors the `check_ashrae_cases_cycle.py` pattern above and reports the
 `physics ↔ sim` cycle edge count by file:line. The script's two phases
 forbid (a) any `use crate::sim::*` import under `src/physics/**` and
 (b) any `use crate::physics::*` import in the two protected `sim` files
 (`src/sim/construction.rs` and `src/sim/per_surface_conduction.rs`).
-The guard ships with a baseline of 5+2 documented edges; the companion
-cycle-break work drives the count to 0. Wired into CI as the
-`Physics-Sim-Cycle-Check` job in `.github/workflows/rust-tests.yml`;
-promotion to `release_gates.yaml::ci.required_checks` is deferred to
-the merge PR that closes both this issue and the cycle-break issue.
+As of #2462 the documented baseline is **0+0 edges** — the script reports
+the count and exits non-zero only on regression. Wired into CI as the
+`Physics-Sim-Cycle-Check` job in `.github/workflows/rust-tests.yml`; promoted
+to `release_gates.yaml::ci.required_checks` by #2462 so a future PR that
+re-introduces a cycle edge fails branch protection.
 
 These will be addressed in subsequent phases. The current change lets
-`cargo-mutants -p fluxion` skip the bulk of the assembly / multi-node /
-ashrae-cases type machinery by mutating only `fluxion`.
+`cargo-mutants -p fluxion` skip the bulk of the assembly / construction /
+per-surface-conduction / multi-node / ashrae-cases type machinery by mutating
+only `fluxion`.
 
 ---
 
