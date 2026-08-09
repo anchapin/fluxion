@@ -177,6 +177,7 @@ ML-surrogate swap-point traits:
 - `Fluxion Determinism Gate (Issue #1351)` — listener on Cross-Platform Determinism CI workflow
 - `Fluxion Performance Gate (Issue #1618)` — listener on Performance Dashboard workflow
 - `Architecture Drift Detection` (nightly + on `src/**/*.rs` / `ARCHITECTURE.md` changes) — `scripts/check_architecture_drift.py`
+- `Docs Hygiene Gate (Issue #2466)` — `.github/workflows/docs-hygiene.yml` runs `scripts/check_root_md_policy.py`, `scripts/check_docs_summaries.py`, and `scripts/doc_inventory_check.py`
 - `Code Coverage Gate (Issue #1932)` — `cargo llvm-cov` + per-critical-path ratchet (baseline in `validation/coverage_baseline.json`; starts unenforced)
 - `Mutation Testing (advisory)` (Issue #1891) — diff-scoped `cargo mutants --in-diff` PR check; non-blocking. `Mutation Testing (nightly)` runs the full suite against `develop`.
 
@@ -214,9 +215,11 @@ Heavy Linux jobs honour `vars.FLUXION_LINUX_RUNNER` (self-hosted Hetzner fallbac
 ## Repository Hygiene
 
 - **Root `.md` policy**: Only these belong at root: `README.md`, `ARCHITECTURE.md`, `CODEBASE_MAP.md`, `CONTRIBUTING.md`, `RULES.md`, `CHANGELOG.md`, `AGENTS.md`. Everything else is transient — do not commit it at root. Move transient artifacts (`CASE_*.md`, `BATCH_*.md`, `ISSUE_*.md`, `*_REPORT.md`, session summaries, analysis docs) to `tmp/` or `docs/` before committing.
-  - **Currently violated**: ~26 transient `.md` files exist at root (case analyses, batch session summaries, issue docs, scorecards, etc.). Before committing any new work, move or delete any transient files you introduced at root.
-  - `CLAUDE.md` is auto-generated per-session (Bernstein agent); never commit it.
+  - **CI gate**: `scripts/check_root_md_policy.py` fails non-zero if any `.md` file at root is not in the allow-list (issue #2466). Wired into `.pre-commit-config.yaml` and `.github/workflows/docs-hygiene.yml`.
+  - `CLAUDE.md` is auto-generated per-session (Bernstein agent); never commit it. Listed in `.gitignore` so it can never be staged even by mistake; the root-`.md` script warns (never fails) on it to avoid blocking Bernstein sessions.
 - All system docs in `docs/` must have a **7-line summary** at the top (lines 2–8). See `docs/doc-inventory.md`. AGENTS.md itself is exempt.
+  - **CI gate**: `scripts/check_docs_summaries.py` enumerates every `docs/**/*.md` file (not just the 11 hand-curated in `docs/doc-inventory.md`) and fails non-zero if any lacks a summary (issue #2466). Wired into `.pre-commit-config.yaml` and `.github/workflows/docs-hygiene.yml`.
+  - **Auto-generated inventory**: `scripts/generate_doc_inventory.py` regenerates the auto-generated inventory table in `docs/doc-inventory.md` (between `<!-- BEGIN AUTO-GENERATED INVENTORY -->` / `<!-- END AUTO-GENERATED INVENTORY -->` markers). Run after adding or removing files under `docs/`.
 - Issue triage labels: see `docs/agents/triage-labels.md`. GitHub issue workflow: `gh issue create --title "..." --body "..." --label "..."` (per `docs/agents/issue-tracker.md`).
 
 ## Branch & PR Conventions
@@ -254,6 +257,9 @@ Heavy Linux jobs honour `vars.FLUXION_LINUX_RUNNER` (self-hosted Hetzner fallbac
 | `release_gates.yaml` | Required branch-protection checks + thresholds |
 | `scripts/check_architecture_drift.py` | ARCHITECTURE.md vs source-code drift |
 | `scripts/check_ashrae_cases_cycle.py` | `sim ↔ validation` cycle regression guard |
+| `scripts/check_root_md_policy.py` | Root `.md` allow-list gate (issue #2466) |
+| `scripts/check_docs_summaries.py` | `docs/**/*.md` 7-line summary coverage gate (issue #2466) |
+| `scripts/generate_doc_inventory.py` | Regenerate `docs/doc-inventory.md` auto-table (issue #2466) |
 | `scripts/disk-space-check.sh` | Disk space check before operations (10 GB min, 50 GB recommended) |
 | `scripts/coverage_critical_paths.py` | Per-critical-path coverage analysis + ratchet gate (#1932) |
 | `scripts/coverage_baseline.py` | Record/refresh the coverage ratchet baseline (#1932) |

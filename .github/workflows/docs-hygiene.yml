@@ -1,0 +1,98 @@
+name: Docs Hygiene Gate
+
+# Issue #2466: Enforce root `.md` policy and 7-line-summary coverage via CI gates.
+#
+# Runs three Python scripts that together close the docs-hygiene gap:
+#   1. scripts/check_root_md_policy.py — fails if any `.md` file at the
+#      repo root is not in the AGENTS.md allow-list (CLAUDE.md is warned,
+#      never failed — it's auto-generated per-session).
+#   2. scripts/check_docs_summaries.py — fails if any `docs/**/*.md`
+#      file lacks a 7-line summary at lines 2-8.
+#   3. scripts/doc_inventory_check.py — verifies the canonical root-docs
+#      table in docs/doc-inventory.md (paths + summaries).
+#
+# All three are wired into `.pre-commit-config.yaml` as `manual`-stage
+# hooks (so they run via `pre-commit run --all-files` but not on every
+# commit) and are required-check listeners for the docs-hygiene job
+# listed in `release_gates.yaml`.
+
+on:
+  pull_request:
+    paths:
+      - "**/*.md"
+      - ".gitignore"
+      - ".pre-commit-config.yaml"
+      - "scripts/check_root_md_policy.py"
+      - "scripts/check_docs_summaries.py"
+      - "scripts/doc_inventory_check.py"
+      - "scripts/doc_inventory_check.sh"
+      - "scripts/generate_doc_inventory.py"
+      - "docs/doc-inventory.md"
+      - "docs/**"
+      - "AGENTS.md"
+      - "ARCHITECTURE.md"
+      - "CODEBASE_MAP.md"
+      - "CONTRIBUTING.md"
+      - "RULES.md"
+      - "CHANGELOG.md"
+      - "README.md"
+  push:
+    branches:
+      - develop
+      - main
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  docs-hygiene:
+    name: Docs Hygiene Gate (Issue #2466)
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4
+
+      - name: Set up Python
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065  # v5
+        with:
+          python-version: '3.12'
+
+      - name: Run root `.md` policy check
+        id: root_md
+        run: |
+          python3 scripts/check_root_md_policy.py
+          EXIT_CODE=$?
+          echo "exit_code=$EXIT_CODE" >> "$GITHUB_OUTPUT"
+          if [[ $EXIT_CODE -ne 0 ]]; then
+            echo "::error::Root .md policy check failed (issue #2466 acceptance criterion #1)"
+          fi
+
+      - name: Run docs 7-line summary coverage check
+        id: docs_summaries
+        run: |
+          python3 scripts/check_docs_summaries.py
+          EXIT_CODE=$?
+          echo "exit_code=$EXIT_CODE" >> "$GITHUB_OUTPUT"
+          if [[ $EXIT_CODE -ne 0 ]]; then
+            echo "::error::Docs summary coverage check failed (issue #2466 acceptance criterion #2)"
+          fi
+
+      - name: Run canonical doc-inventory check
+        id: doc_inventory
+        run: |
+          python3 scripts/doc_inventory_check.py
+          EXIT_CODE=$?
+          echo "exit_code=$EXIT_CODE" >> "$GITHUB_OUTPUT"
+          if [[ $EXIT_CODE -ne 0 ]]; then
+            echo "::error::Doc inventory check failed"
+          fi
+
+      - name: Aggregate results
+        if: steps.root_md.outputs.exit_code != '0' || steps.docs_summaries.outputs.exit_code != '0' || steps.doc_inventory.outputs.exit_code != '0'
+        run: |
+          echo "One or more docs-hygiene checks failed. See logs above."
+          exit 1

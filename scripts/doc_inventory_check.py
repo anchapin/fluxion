@@ -73,7 +73,10 @@ def has_seven_line_summary(file_path: Path) -> tuple[bool, str]:
         return False, f"read error: {e}"
 
     if len(lines) < 9:
-        return False, f"only {len(lines)} lines (need >= 9 for 7-line summary at lines 2-8)"
+        return (
+            False,
+            f"only {len(lines)} lines (need >= 9 for 7-line summary at lines 2-8)",
+        )
 
     # Lines 2-8 (0-indexed: 1-7) = 7-line summary block.
     # Convention: line 1 = "# Title", line 2 = blank, lines 3-8 = 6 summary lines.
@@ -88,11 +91,24 @@ def has_seven_line_summary(file_path: Path) -> tuple[bool, str]:
             continue
         if not stripped:
             continue  # Other blank lines are allowed (e.g., between sections)
-        # Skip HTML comments and Last Updated markers
-        if stripped.startswith("<!--") or stripped.startswith("*Last Updated"):
+        # Last-Updated markers are metadata, not summary content.
+        if stripped.startswith("*Last Updated"):
+            continue
+        # HTML comments that contain substantive text count as summary
+        # content (the `docs/doc-inventory.md` template uses
+        # `<!-- Line 1: ... -->` style summaries — see line 26 of that
+        # file).  Empty HTML comments (`<!-- -->`) and pure-marker
+        # comments are skipped.  Keep this logic in sync with
+        # `scripts/check_docs_summaries.py`.
+        if stripped.startswith("<!--"):
+            inner = stripped.removeprefix("<!--").removesuffix("-->").strip()
+            if len(inner) > 5:
+                content_line_count += 1
             continue
         # Count any meaningful content line (prose, blockquote, heading, bold, list)
-        if len(stripped) >= 3 or stripped.startswith((">", "#", "*", "-", "1.", "2.", "3.")):
+        if len(stripped) >= 3 or stripped.startswith(
+            (">", "#", "*", "-", "1.", "2.", "3.")
+        ):
             content_line_count += 1
 
     # Require at least 3 content lines in lines 2-8 (allowing for intentional blanks).
@@ -100,7 +116,10 @@ def has_seven_line_summary(file_path: Path) -> tuple[bool, str]:
     # with meaningful content. ARCHITECTURE.md and other long-form docs may have
     # headings and blockquotes interspersed with blanks, which is valid.
     if content_line_count < 3:
-        return False, f"only {content_line_count} content line(s) in summary block (need >= 3)"
+        return (
+            False,
+            f"only {content_line_count} content line(s) in summary block (need >= 3)",
+        )
 
     return True, "ok"
 
@@ -141,11 +160,15 @@ def check_inventory() -> list[str]:
         has_summary, _ = has_seven_line_summary(path)
         emoji_needs = "📝" in status or "❌" in status
         if has_summary and emoji_needs:
-            findings.append(f"STATUS: {rel} has 7-line summary but is marked '{status}'")
+            findings.append(
+                f"STATUS: {rel} has 7-line summary but is marked '{status}'"
+            )
             print(f"    FIX: {rel} — has summary but marked '{status.strip()}'")
             status_issues += 1
         elif not has_summary and "✅" in status:
-            findings.append(f"STATUS: {rel} missing 7-line summary but is marked '{status}'")
+            findings.append(
+                f"STATUS: {rel} missing 7-line summary but is marked '{status}'"
+            )
             print(f"    FIX: {rel} — missing summary but marked '{status.strip()}'")
             status_issues += 1
 
@@ -176,7 +199,9 @@ def main() -> int:
         print("  1. Create the missing 7-line summary at lines 2-8, OR")
         print("  2. Remove the unlisted file from the inventory table")
     if any(f.startswith("STATUS:") for f in findings):
-        print("\n  Fix the Status column in docs/doc-inventory.md to reflect actual state.")
+        print(
+            "\n  Fix the Status column in docs/doc-inventory.md to reflect actual state."
+        )
 
     sys.exit(1)
 
