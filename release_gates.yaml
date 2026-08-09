@@ -232,6 +232,16 @@ ci:
     # and one workflow file under `.github/workflows/`.
     - "Docs Hygiene Gate (Issue #2466)"
 
+    # Issue #2462 (closes #2463 cycle guard): physics ↔ sim cycle check.
+    # After #2462 the cycle is broken (zero edges), so the listener job
+    # (defined in `.github/workflows/rust-tests.yml` under
+    # `physics-sim-cycle-gh` / `physics-sim-cycle-hz`) becomes a
+    # regression guard that exits non-zero on any *new* `use crate::sim::*`
+    # import under `src/physics/**` or `use crate::physics::*` import
+    # under `src/sim/construction.rs` / `src/sim/per_surface_conduction.rs`.
+    # Backed by `scripts/check_physics_sim_cycle.py`.
+    - "Physics-Sim-Cycle-Check"
+
   # Job-to-workflow map (informational; branch-protection reads job
   # names directly). Used by `scripts/release_gate_checker.py` to verify
   # the required_checks list is in sync with the workflows directory.
@@ -269,3 +279,14 @@ ci:
       workflow: ".github/workflows/docs-hygiene.yml"
       issue: 2466
       triggered_by: "PR + push to develop/main"
+
+    - job: "Physics-Sim-Cycle-Check"
+      # Mirrors the `Ashrae Cases Cycle Check (Issue #1441)` pattern.
+      # Both the GH runner variant and the Hetzner-overflow variant share
+      # the canonical listener name (the parenthetical "(GH)" / "(Hetzner
+      # Overflow)" suffixes are workflow-internal). Branch protection
+      # matches the canonical name without the suffix.
+      workflow: ".github/workflows/rust-tests.yml"
+      issue: 2463
+      closes_issue: 2462
+      triggered_by: "PR + push to main"

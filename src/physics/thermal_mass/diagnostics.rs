@@ -8,7 +8,11 @@ use crate::physics::constants::thermal::iso_13790::annex_c::{
     calculate_effective_thermal_mass, THERMAL_MASS_HEAVY, THERMAL_MASS_MEDIUM,
     THERMAL_MASS_VERY_HEAVY, THERMAL_MASS_VERY_LIGHT,
 };
-use crate::sim::construction::ConstructionLayer;
+// Issue #2462 (Phase 2 of the crate split): `ConstructionLayer` now lives in
+// `fluxion_core::construction` (the workspace leaf crate). Importing it via
+// the leaf crate directly breaks the `physics ↔ sim` module cycle — see
+// ARCHITECTURE.md §"Remaining cycles" and `scripts/check_physics_sim_cycle.py`.
+use fluxion_core::construction::ConstructionLayer;
 use log::debug;
 use serde::{Deserialize, Serialize};
 

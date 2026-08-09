@@ -3,49 +3,46 @@
 Cycle Regression Guard for the `physics <-> sim` cycle (Issue #2463).
 
 Mirrors `scripts/check_ashrae_cases_cycle.py` (Issue #1441) and verifies
-the `physics <-> sim` cycle documented in `ARCHITECTURE.md` §"Remaining
-cycles" stays in its current target state (5 known physics->sim edges
-+ 2 known sim->physics edges; the companion cycle-break issue is the
-work that drives the count to 0):
+the `physics <-> sim` cycle closed by Issue #2462 stays closed:
 
 1. `src/physics/**` must NOT import from `src/sim/**` (no `use crate::sim::`
-   upward deps). The 5 currently-known offenders are:
-
-   - `src/physics/thermal_mass/construction.rs -> sim::construction::ConstructionLayer`
-   - `src/physics/thermal_mass/diagnostics.rs   -> sim::construction::ConstructionLayer`
-   - `src/physics/multi_node_solver.rs          -> sim::per_surface_conduction::{...}`
-   - `src/physics/multi_node_solver.rs          -> sim::sky_radiation::STEFAN_BOLTZMANN`
-   - `src/physics/multi_node_solver.rs          -> sim::sky_radiation::SkyRadiationExchange`
-
+   upward deps). Issue #2462 hoisted `ConstructionLayer`, `Construction`,
+   `MassClass`, `Materials`, `Assemblies`, `SurfaceType` to
+   `fluxion_core::construction`; `SurfaceKind`, `MassNode`, `SurfaceNode`,
+   `PerSurfaceConductionSolver` to `fluxion_core::per_surface_conduction`;
+   and `STEFAN_BOLTZMANN` to `fluxion_core::physics_constants` — driving the
+   physics->sim edge count from 5 to 0.
 2. `src/sim/construction.rs` and `src/sim/per_surface_conduction.rs`
-   (the two `sim` files that host shared domain types) must NOT import
-   from `src/physics/**` (no `use crate::physics::` upward deps). Currently
-   `sim::construction` re-exports a few leaf constants from
-   `physics::constants`; the companion cycle-break work moves them.
-3. Summary: report the total cycle-edge count so branch protection can
-   track the cycle-break PR's progress to 0.
+   (the two `sim` files that previously hosted shared domain types) must
+   NOT import from `src/physics/**` (no `use crate::physics::` upward
+   deps). Both files are now thin re-export shims over the leaf modules
+   above (no physics imports remain).
+3. Summary: report the total cycle-edge count. As of #2462 the documented
+   baseline is 0+0 edges.
 
 Usage:
   python3 scripts/check_physics_sim_cycle.py
 
 Exit codes:
   0 — no cycle regression (offender count is at or below the documented
-      baseline, or the companion work has driven it down further)
+      baseline of 0)
   1 — cycle regression detected (a NEW edge appeared, exceeding the
       documented baseline)
   2 — script error
 
-The script reports the current `BASELINE_PHYSICS_TO_SIM = 5` and
-`BASELINE_SIM_TO_PHYSICS = 2` documented edges as the *current state*,
-not as failures. A future PR that adds a *new* `use crate::sim::` import
-under `src/physics/**` (or `use crate::physics::` under the two protected
-`src/sim/**` files) — pushing the count *above* the baseline — is flagged
-immediately as a regression. The companion cycle-break issue is the
-work that drives the count down to 0.
+The script reports `BASELINE_PHYSICS_TO_SIM = 0` and
+`BASELINE_SIM_TO_PHYSICS = 0` documented edges as the *current state*.
+A future PR that adds a *new* `use crate::sim::` import under
+`src/physics/**` (or `use crate::physics::` under the two protected
+`src/sim/**` files) — pushing the count *above* zero — is flagged
+immediately as a regression. See ARCHITECTURE.md
+§"Regression guard (Issue #2463, closed by #2462)" for the
+source-of-truth numbers.
 
-See ARCHITECTURE.md §"Remaining cycles (deferred to follow-up issues)"
-and docs/mutation_testing_crate_split.md §"Phase 2 — break the physics
-<-> sim cycle (extract shared domain types)" for context.
+See ARCHITECTURE.md §"Cycle break (#2462 — physics ↔ sim shared domain
+types → `fluxion-core`)" and docs/mutation_testing_crate_split.md
+§"Phase 2 — break the physics <-> sim cycle (extract shared domain
+types)" for context.
 """
 
 from __future__ import annotations
@@ -67,12 +64,14 @@ PROTECTED_SIM_FILES = (
     FLUXION_SRC / "sim" / "per_surface_conduction.rs",
 )
 
-# Documented baseline edge counts. The companion cycle-break work is the
-# only thing authorised to drive these down; any PR that pushes them *up*
-# is a regression and is flagged by this guard. See ARCHITECTURE.md
-# §"Regression guard (Issue #2463)" for the source-of-truth numbers.
-BASELINE_PHYSICS_TO_SIM = 5
-BASELINE_SIM_TO_PHYSICS = 2
+# Documented baseline edge counts. Issue #2462 drove the cycle to 0+0
+# edges by hoisting the shared domain types into `fluxion_core::*` (see
+# ARCHITECTURE.md §"Cycle break (#2462 — physics ↔ sim shared domain types
+# → `fluxion-core`)"). Any PR that pushes these *up* is a regression and is
+# flagged by this guard. See ARCHITECTURE.md §"Regression guard (Issue
+# #2463, closed by #2462)" for the source-of-truth numbers.
+BASELINE_PHYSICS_TO_SIM = 0
+BASELINE_SIM_TO_PHYSICS = 0
 
 # Regex for Phase 2: match `use` or `pub use` against `crate::physics::`.
 # Mirrors `scan_sim_for_orientation_cycle` in check_ashrae_cases_cycle.py

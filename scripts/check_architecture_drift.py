@@ -434,6 +434,8 @@ def check_drift() -> tuple[list[str], bool]:
         "MultiNodeSolver",  # struct in physics/multi_node_solver.rs
         "JointConvergenceSolver",  # struct in fluxion-grid/src/lib.rs
         "UrbanRadiationSolver",  # struct in fluxion-city/src/lib.rs (sparse module)
+        "ConstructionLayer",  # struct in fluxion-core/src/construction.rs (#2462)
+        "PerSurfaceConductionSolver",  # struct in fluxion-core/src/per_surface_conduction.rs (#2462)
     }
 
     # Traits documented as planned-but-not-yet-implemented in the multi-phase
