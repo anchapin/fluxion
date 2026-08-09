@@ -9,6 +9,13 @@
 //!
 //! The attribution helps identify which subsystem is causing annual energy over/under-prediction
 //! and provides bounded residual error with subsystem explanation per PH-04 Definition of Done.
+//!
+//! Issue #2448 uses the ignored Case 900/910 comparison below to separate the
+//! shading signal from the high-mass solver response. The incident-solar guard
+//! proves that the overhang reduces the upstream solar forcing; if annual cooling
+//! does not decrease with it, the inversion is downstream in the 5R1C lumped
+//! thermal network documented by `KNOWN_ISSUES.md` LIMIT-05. The strict reference
+//! bands remain blocked on GaugeSolver #1465/#1462 rather than parameter tuning.
 
 use fluxion::physics::cta::VectorField;
 use fluxion::sim::engine::ThermalModel;
@@ -131,6 +138,12 @@ pub fn calculate_annual_energy_attribution(
 pub fn calculate_annual_energy_attribution_for_case(
     case_spec: &ASHRAE140Case,
 ) -> AnnualEnergyAttribution {
+    simulate_case(case_spec).0
+}
+
+fn simulate_case(
+    case_spec: &ASHRAE140Case,
+) -> (AnnualEnergyAttribution, ThermalModel<VectorField>) {
     let spec = case_spec.spec();
     let weather = DenverTmyWeather::new();
 
@@ -194,10 +207,76 @@ pub fn calculate_annual_energy_attribution_for_case(
         let _hvac_kwh = model.step_physics(step, weather_data.dry_bulb_temp, 3600.0);
     }
 
-    let diag = model
-        .get_diagnostics()
-        .expect("Diagnostics should be attached");
-    calculate_annual_energy_attribution(diag)
+    let attribution = {
+        let diag = model
+            .get_diagnostics()
+            .expect("Diagnostics should be attached");
+        calculate_annual_energy_attribution(diag)
+    };
+    (attribution, model)
+}
+
+fn annual_window_irradiance_kwh_m2(model: &ThermalModel<VectorField>, orientation: &str) -> f64 {
+    let key = format!("window_{orientation}");
+    model
+        .get_incident_solar()
+        .iter()
+        .find(|(surface, _)| surface.as_str() == key.as_str())
+        .map(|(_, irradiance)| irradiance.annual_kwh_m2)
+        .unwrap_or(0.0)
+}
+
+fn annual_zone_solar_kwh(attribution: &AnnualEnergyAttribution) -> f64 {
+    attribution.solar_annual_kwh
+}
+
+#[test]
+#[ignore = "Diagnostic: #2448 strict cooling bands require GaugeSolver #1465/#1462"]
+fn test_issue_2448_case_910_shading_attribution() {
+    let (case_900, model_900) = simulate_case(&ASHRAE140Case::Case900);
+    let (case_910, model_910) = simulate_case(&ASHRAE140Case::Case910);
+
+    // The `incident_solar_per_surface` accumulator reports pre-overhang
+    // incident flux on the surface identifier (e.g., "window_S"), so the
+    // south-window per-m² value is identical for the two cases by design.
+    // The shading effect propagates into the per-zone solar load recorded
+    // in `SimulationDiagnostics::loads.solar` (the energy actually delivered
+    // to the air node after `calculate_hourly_solar_from_pos` applies the
+    // overhang geometry), so the comparison must use the per-zone load
+    // instead of the per-m² incident key.
+    let s_irradiance_900 = annual_window_irradiance_kwh_m2(&model_900, "S");
+    let s_irradiance_910 = annual_window_irradiance_kwh_m2(&model_910, "S");
+
+    // Per-zone solar load integrated over the year (kWh from the
+    // `SimulationDiagnostics::loads.solar` accumulator; the attribution
+    // helper already converts W·h → kWh by dividing by 1e3).
+    let solar_900_kwh = annual_zone_solar_kwh(&case_900);
+    let solar_910_kwh = annual_zone_solar_kwh(&case_910);
+    let solar_reduction = 1.0 - solar_910_kwh / solar_900_kwh;
+    let cooling_delta_kwh = case_910.annual_cooling_kwh - case_900.annual_cooling_kwh;
+
+    println!(
+        "[#2448] Case 900: south incident={s_irradiance_900:.1} kWh/m², zone solar={solar_900_kwh:.3} kWh, cooling={:.3} MWh",
+        case_900.annual_cooling_kwh / 1000.0
+    );
+    println!(
+        "[#2448] Case 910: south incident={s_irradiance_910:.1} kWh/m², zone solar={solar_910_kwh:.3} kWh, cooling={:.3} MWh",
+        case_910.annual_cooling_kwh / 1000.0
+    );
+    println!(
+        "[#2448] shading solar reduction={:.1}%, cooling delta={:+.3} MWh",
+        solar_reduction * 100.0,
+        cooling_delta_kwh / 1000.0
+    );
+
+    assert!(
+        s_irradiance_900 == s_irradiance_910 && s_irradiance_900 > 0.0,
+        "expected pre-shading south incident irradiance to be shared and positive: 900={s_irradiance_900:.1}, 910={s_irradiance_910:.1}"
+    );
+    assert!(
+        solar_910_kwh < solar_900_kwh,
+        "Case 910 overhang must reduce annual solar delivered to the zone: 900={solar_900_kwh:.3} kWh, 910={solar_910_kwh:.3} kWh"
+    );
 }
 
 #[test]
