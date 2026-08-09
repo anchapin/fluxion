@@ -52,11 +52,15 @@
 //! - [x] Failure message shows offending timesteps
 //! - [x] Gate passes both with and without a trained ONNX model
 
-use fluxion::ai::surrogate::SurrogateManager;
+use fluxion::ai::surrogate::{ModelRegistry, SurrogateManager};
 use fluxion::sim::thermal_model::{PhysicsThermalModel, SurrogateThermalModel, ThermalModelTrait};
 use fluxion::validation::ashrae_140_cases::ASHRAE140Case;
+use std::path::PathBuf;
 
 const DRIFT_TOLERANCE_PCT: f64 = 1.0;
+const EXPECTED_ACCURACY: f64 = 0.85;
+const HELD_OUT_VALIDATION_DATASET: &str =
+    "tests/reference_data/zone_balance/case_950_energy_hourly.csv";
 /// Lenient ceiling for the analytical fallback path. The fallback load
 /// predictor is a synthetic sine cycle that is materially different from the
 /// 9R4C baseline (the surrogate_drift gate observes ~95 % drift on the first
@@ -108,6 +112,83 @@ fn compute_drift_result(physics_temps: &[Vec<f64>], surrogate_temps: &[Vec<f64>]
         max_drift_pct,
         offending_timesteps,
     }
+}
+
+/// Validate the loaded model against the committed held-out EnergyPlus hourly
+/// dataset before the drift gate is considered meaningful. The dataset is
+/// Case 950 output from EnergyPlus 25.2.0 (Golden, Colorado TMY3), excluded
+/// from training; each row contains one hourly zone-temperature reference.
+fn load_held_out_zone_temperatures() -> Vec<f64> {
+    let path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join(HELD_OUT_VALIDATION_DATASET);
+    let raw = std::fs::read_to_string(&path).unwrap_or_else(|error| {
+        panic!(
+            "read held-out EnergyPlus dataset {}: {error}",
+            path.display()
+        )
+    });
+
+    raw.lines()
+        .skip_while(|line| line.starts_with('#'))
+        .skip(1)
+        .map(|line| {
+            line.split(',')
+                .nth(1)
+                .unwrap_or_else(|| panic!("missing T_zone column in {path:?}"))
+                .parse::<f64>()
+                .unwrap_or_else(|error| panic!("invalid T_zone value in {path:?}: {error}"))
+        })
+        .collect()
+}
+
+fn held_out_accuracy(reference: &[f64], predicted: &[f64]) -> f64 {
+    let samples = reference.len().min(predicted.len());
+    assert!(samples > 0, "held-out validation requires hourly samples");
+    let passing = reference
+        .iter()
+        .zip(predicted)
+        .take(samples)
+        .filter(|(expected, actual)| compute_drift(**actual, **expected) <= DRIFT_TOLERANCE_PCT)
+        .count();
+    passing as f64 / samples as f64
+}
+
+#[test]
+fn held_out_validation_accuracy_is_nonzero_and_degraded_output_fires_gate() {
+    let reference = load_held_out_zone_temperatures();
+    assert!(
+        reference.len() >= 8760,
+        "held-out EnergyPlus dataset must contain a full year"
+    );
+
+    let accurate = reference.clone();
+    assert_eq!(held_out_accuracy(&reference, &accurate), 1.0);
+
+    let degraded: Vec<f64> = reference
+        .iter()
+        .map(|temperature| temperature + 2.0)
+        .collect();
+    assert!(
+        held_out_accuracy(&reference, &degraded) < EXPECTED_ACCURACY,
+        "degraded surrogate output must fall below the {} held-out accuracy threshold",
+        EXPECTED_ACCURACY
+    );
+
+    let degraded_result = compute_drift_result(&[reference], &[degraded]);
+    assert!(
+        degraded_result.max_drift_pct > DRIFT_TOLERANCE_PCT,
+        "degraded surrogate output must trigger the drift gate"
+    );
+}
+
+#[test]
+fn registry_v3_2_0_declares_held_out_accuracy_contract() {
+    let path =
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/surrogate_models/registry.json");
+    let raw = std::fs::read_to_string(path).expect("read surrogate registry");
+    let registry = ModelRegistry::from_json_str(&raw).expect("parse surrogate registry");
+    let version = registry.lookup("3.2.0").expect("v3.2.0 missing");
+    assert!(version.expected_accuracy >= EXPECTED_ACCURACY);
+    assert!(version.expected_accuracy > 0.0);
 }
 
 /// Apply the gate: the strict 1 % tolerance fires when a trained ONNX model
