@@ -89,9 +89,43 @@ Tracking issue: [#1458](https://github.com/anchapin/fluxion/issues/1458).
 
 ### `RUSTSEC-2026-0177`, `RUSTSEC-2026-0098`, `RUSTSEC-2026-0099`
 
-`PyO3` and `reqwest` advisories marked as accepted-risk pending upstream
-bumps that introduce breaking API changes (see `.cargo/audit.toml` for
-per-line rationale).
+Status as of issue [#2553](https://github.com/anchapin/fluxion/issues/2553):
+
+| Advisory | Crate | Status | Reason | Tracking |
+| --- | --- | --- | --- | --- |
+| `RUSTSEC-2026-0177` | `pyo3` (GHSA-chgr-c6px-7xpp) | **OPEN — CI failure** | Affects `pyo3` 0.15.0..<0.29.0; we pin `pyo3 = "0.22"` (Cargo.lock: `pyo3 0.22.6`). Missing `Sync` bound on `PyCFunction::new_closure` closures (thread-safety bug). | [#2553](https://github.com/anchapin/fluxion/issues/2553) |
+| `RUSTSEC-2026-0098` | `rustls-webpki` (GHSA-965h-392x-2mh5) | **REMEDIATED** (transitive) | Patched in `rustls-webpki` >= 0.103.12. Cargo.lock resolves to 0.103.13 (`rustls 0.23.37` → `hyper-rustls 0.27.7` → `reqwest 0.12.28`; also via `rumqttc` pinned to the `fix/rustsec-2026-webpki` git branch in `fluxion-twin`). | [#2553](https://github.com/anchapin/fluxion/issues/2553) |
+| `RUSTSEC-2026-0099` | `rustls-webpki` (GHSA-xgp8-3hg3-c2mh) | **REMEDIATED** (transitive) | Same patch as RUSTSEC-2026-0098 (`rustls-webpki >= 0.103.12`). Already fixed in our lockfile. | [#2553](https://github.com/anchapin/fluxion/issues/2553) |
+
+#### Why the three entries were removed from `.cargo/audit.toml`
+
+The previous ignore list bundled the three advisories together, but they have
+fundamentally different remediation states. Splitting them surfaced the real
+gap (0177) while letting the cargo-audit CI gate verify the other two on every
+PR.
+
+#### Upgrade plan for `RUSTSEC-2026-0177`
+
+`pyo3` 0.22 → 0.29 is a 7-minor-version jump with several breaking API
+changes (`PyAny::iter` / `IntoPy` / `gil-refs` removed in 0.23, `Bound<'py, T>`
+migration through 0.23–0.26, abi3 abi bumps, `pyo3-macros` /
+`pyo3-build-config` version alignment). The Python bindings in `src/python/`
+and the `fluxion-py` binary entry point must be rewritten against the new
+API. This is out of scope for the audit-suppression cleanup and is tracked
+in [#2553](https://github.com/anchapin/fluxion/issues/2553) as a follow-up
+PR.
+
+Required when the upgrade lands:
+
+1. Bump `pyo3 = "0.22"` → `pyo3 = "0.29"` (Cargo.toml:205).
+2. Bump `pyo3-build-config = "0.22"` → `pyo3-build-config = "0.29"`
+   (Cargo.toml:277).
+3. Migrate `src/python/` and `src/bin/fluxion-py/` to the `Bound<'py, T>` API
+   and the new `IntoPy` / `FromPyObject` traits.
+4. Re-run `cargo audit` to confirm `RUSTSEC-2026-0177` is cleared.
+
+Until that PR lands, the security.yml CI job will fail on this advisory,
+which is the intended outcome of #2553.
 
 ---
 

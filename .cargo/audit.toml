@@ -1,4 +1,28 @@
 # Audit configuration for Fluxion
+#
+# Remediated in this commit (tracking issue #2553):
+#   - RUSTSEC-2026-0177 (PyO3 Sync bound on PyCFunction::new_closure, GHSA-chgr-c6px-7xpp):
+#       Affects pyo3 0.15.0..<0.29.0. We pin pyo3 0.22 (Cargo.toml:205) and Cargo.lock
+#       resolves to 0.22.6, so the advisory is ACTIVE and cargo audit will fail CI
+#       until the upgrade lands. Fix requires pyo3 >= 0.29.0.
+#   - RUSTSEC-2026-0098 (rustls-webpki name constraints for URI names, GHSA-965h-392x-2mh5):
+#   - RUSTSEC-2026-0099 (rustls-webpki name constraints for wildcard DNS, GHSA-xgp8-3hg3-c2mh):
+#       Patched in rustls-webpki >= 0.103.12 (and >= 0.104.0-alpha.6). Our Cargo.lock
+#       already resolves rustls-webpki to 0.103.13 (transitively via rustls 0.23.37 →
+#       hyper-rustls 0.27.7 → reqwest 0.12.28, plus rumqttc on the fix/rustsec-2026-webpki
+#       git branch used by fluxion-twin). Confirmed with `cargo tree -i rustls-webpki`.
+#       The previous ignore entries were stale; removing them lets cargo audit verify
+#       the fix is in place on every PR.
+#
+# Upgrade plan for RUSTSEC-2026-0177 (NOT done in this commit — out of scope):
+#   pyo3 0.22 → 0.29 is a 7-minor-version jump across multiple breaking API changes
+#   (`PyAny::iter`/`IntoPy`/`gil-refs` removal, `Bound<'py, T>` migration, abi3 abi
+#   bumps, pyo3-macros / pyo3-build-config version alignment, and the python
+#   bindings in src/python/ + src/bin/fluxion-py/ must be rewritten against the
+#   new API). The fix is tracked in #2553 with a follow-up PR.
+#   Required: bump `pyo3 = "0.22"` → `pyo3 = "0.29"` and `pyo3-build-config = "0.22"`
+#   → `pyo3-build-config = "0.29"` (Cargo.toml:205, 277), then re-run
+#   `cargo audit` to confirm RUSTSEC-2026-0177 is cleared.
 
 [advisories]
 # Make unmaintained warnings informational (non-blocking)
@@ -8,11 +32,6 @@ ignore = [
     "RUSTSEC-2025-0020",
     # PyO3 Sync bound issue on PyCFunction::new_closure — requires 0.23+ which has breaking API changes
     "RUSTSEC-2024-0436",
-    # PyO3 Sync bound issue — requires 0.29+ which is a breaking API change
-    "RUSTSEC-2026-0177",
-    # Transitive dependency through reqwest - update reqwest to fix
-    "RUSTSEC-2026-0098",
-    "RUSTSEC-2026-0099",
     # ttf-parser is unmaintained but still functional — see docs/SECURITY.md.
     # Depth=2 transitive through plotters (used for chart caption rendering
     # in src/validation/report.rs). No security vulnerability: rustsec type is
@@ -23,4 +42,7 @@ ignore = [
     # switching plotters to its `ab_glyph` font feature and bundling a font
     # at build time, which exceeds the S/<=4h/low-risk scope of #1458.
     "RUSTSEC-2026-0192"
+    # NOTE: RUSTSEC-2026-0177 / -0098 / -0099 previously appeared here; they were
+    # removed in #2553. -0098 / -0099 are already remediated transitively (see
+    # header). -0177 is now a CI failure pending the pyo3 0.22 → 0.29 upgrade.
 ]
