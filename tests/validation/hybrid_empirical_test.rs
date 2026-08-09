@@ -187,12 +187,13 @@ fn test_hybrid_empirical_mae_within_10pct_of_physics() {
         report.annual_energy_mae_kwh
     );
     println!(
-        "  Dispatch (hybrid): surrogate_loads={}, physics_steps={}",
-        report.dispatch.surrogate_load_calls, report.dispatch.physics_step_calls
+        "  Dispatch (hybrid): surrogate_loads={}, physics_conduction={}",
+        report.dispatch.surrogate_load_calls, report.dispatch.physics_conduction_calls
     );
     println!(
-        "  Dispatch (phys)  : surrogate_loads={}, physics_steps={}",
-        report.physics_dispatch.surrogate_load_calls, report.physics_dispatch.physics_step_calls
+        "  Dispatch (phys)  : surrogate_loads={}, physics_conduction={}",
+        report.physics_dispatch.surrogate_load_calls,
+        report.physics_dispatch.physics_conduction_calls
     );
     println!(
         "  Tolerance mult. : {:.2} (ASHRAE G14 NMBE)",
@@ -247,10 +248,10 @@ fn test_hybrid_empirical_mae_within_10pct_of_physics() {
         report.dispatch.surrogate_load_calls
     );
     assert!(
-        report.dispatch.physics_step_calls == TEST_TIMESTEPS,
-        "HybridThermalModel must run {} physics steps; got {}",
+        report.dispatch.physics_conduction_calls == TEST_TIMESTEPS,
+        "HybridThermalModel must run {} physics conduction steps; got {}",
         TEST_TIMESTEPS,
-        report.dispatch.physics_step_calls
+        report.dispatch.physics_conduction_calls
     );
 
     // 7. Sanity: the physics-only baseline must have zero surrogate
@@ -261,8 +262,8 @@ fn test_hybrid_empirical_mae_within_10pct_of_physics() {
         "all_physics baseline must not consult surrogate loads"
     );
     assert_eq!(
-        report.physics_dispatch.physics_step_calls, TEST_TIMESTEPS,
-        "all_physics baseline must run {} physics steps",
+        report.physics_dispatch.physics_conduction_calls, TEST_TIMESTEPS,
+        "all_physics baseline must run {} physics conduction steps",
         TEST_TIMESTEPS
     );
 
@@ -339,9 +340,12 @@ fn test_hybrid_all_physics_matches_physics_baseline() {
     // the surrogate (correct: all_physics forces every subsystem to
     // physics).
     assert_eq!(report.dispatch.surrogate_load_calls, 0);
-    assert_eq!(report.dispatch.physics_step_calls, TEST_TIMESTEPS);
+    assert_eq!(report.dispatch.physics_conduction_calls, TEST_TIMESTEPS);
     assert_eq!(report.physics_dispatch.surrogate_load_calls, 0);
-    assert_eq!(report.physics_dispatch.physics_step_calls, TEST_TIMESTEPS);
+    assert_eq!(
+        report.physics_dispatch.physics_conduction_calls,
+        TEST_TIMESTEPS
+    );
 
     assert!(report.passes_tolerance);
 }
