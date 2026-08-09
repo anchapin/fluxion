@@ -61,6 +61,7 @@ pub use power_flow::{
 };
 pub use pv::{PvPanel, PvSystem, SimpleInverter};
 
+#[cfg(feature = "fluid")]
 use fluxion_fluid::hvac::{HvacMode, HvacState};
 use nalgebra::DMatrix;
 
@@ -462,6 +463,10 @@ impl ThermalElectricalCoupler {
     /// For cooling mode, electrical = thermal / COP.
     ///
     /// Returns `None` if the HVAC is off or if thermal power is zero/negative.
+    ///
+    /// Available when the `fluid` feature is enabled (gates the `fluxion-fluid`
+    /// dependency on `HvacState`/`HvacMode` types — see Issue #2561).
+    #[cfg(feature = "fluid")]
     pub fn hvac_state_to_electrical(&self, state: &HvacState) -> Option<ElectricalLoad> {
         // Only process active HVAC states with positive thermal demand
         if state.mode == HvacMode::Off || state.thermal_power_w <= 0.0 {
@@ -484,6 +489,10 @@ impl ThermalElectricalCoupler {
     ///
     /// Returns a list of building IDs that were not found in the bus mapping.
     /// Any missing buildings are also logged at the warn level.
+    ///
+    /// Available when the `fluid` feature is enabled (gates the `fluxion-fluid`
+    /// dependency on `HvacState`/`HvacMode` types — see Issue #2561).
+    #[cfg(feature = "fluid")]
     pub fn thermal_to_electrical(
         &self,
         hvac_states: &[HvacState],
@@ -569,6 +578,10 @@ impl ThermalElectricalCoupler {
     ///
     /// This is a convenience method that extracts the ambient temperature
     /// from the HVAC state and calls `update_cop`.
+    ///
+    /// Available when the `fluid` feature is enabled (gates the `fluxion-fluid`
+    /// dependency on `HvacState`/`HvacMode` types — see Issue #2561).
+    #[cfg(feature = "fluid")]
     pub fn update_cop_from_hvac_state(&mut self, state: &HvacState) {
         self.update_cop(state.ambient_temperature_c);
     }
@@ -852,7 +865,10 @@ mod tests {
     }
 
     // === Tests for ThermalElectricalCoupler with HvacState ===
+    // Gated behind the `fluid` feature: these depend on `fluxion_fluid::hvac::*`
+    // types (see Issue #2561).
 
+    #[cfg(feature = "fluid")]
     #[test]
     fn test_hvac_state_to_electrical_heating() {
         let coupler = ThermalElectricalCoupler::new(3.0);
@@ -873,6 +889,7 @@ mod tests {
         assert_eq!(load.building_id, building_id);
     }
 
+    #[cfg(feature = "fluid")]
     #[test]
     fn test_hvac_state_to_electrical_cooling() {
         let coupler = ThermalElectricalCoupler::new(4.0);
@@ -892,6 +909,7 @@ mod tests {
         assert!((load.power_w - 1000.0).abs() < 1e-6);
     }
 
+    #[cfg(feature = "fluid")]
     #[test]
     fn test_hvac_state_to_electrical_off_mode() {
         let coupler = ThermalElectricalCoupler::new(3.0);
@@ -908,6 +926,7 @@ mod tests {
         assert!(load.is_none());
     }
 
+    #[cfg(feature = "fluid")]
     #[test]
     fn test_hvac_state_to_electrical_zero_thermal() {
         let coupler = ThermalElectricalCoupler::new(3.0);
@@ -924,6 +943,7 @@ mod tests {
         assert!(load.is_none());
     }
 
+    #[cfg(feature = "fluid")]
     #[test]
     fn test_hvac_state_to_electrical_negative_thermal() {
         let coupler = ThermalElectricalCoupler::new(3.0);
@@ -940,6 +960,7 @@ mod tests {
         assert!(load.is_none());
     }
 
+    #[cfg(feature = "fluid")]
     #[test]
     fn test_thermal_to_electrical_batch_with_mapping() {
         let building1 = uuid::Uuid::new_v4();
@@ -983,6 +1004,7 @@ mod tests {
         assert!((load2.power_w - 2000.0).abs() < 1e-6);
     }
 
+    #[cfg(feature = "fluid")]
     #[test]
     fn test_thermal_to_electrical_batch_missing_building() {
         let building1 = uuid::Uuid::new_v4();
@@ -1024,6 +1046,7 @@ mod tests {
         assert!(missing.contains(&unmapped_building));
     }
 
+    #[cfg(feature = "fluid")]
     #[test]
     fn test_thermal_to_electrical_batch_empty_states() {
         let coupler = ThermalElectricalCoupler::new(3.0);

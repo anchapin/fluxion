@@ -20,13 +20,20 @@ fluxion-integration = ["dep:fluxion"]
 # Backward-compatible alias for fluxion-integration.
 # Deprecated: use fluxion-integration instead.
 fluxion = ["dep:fluxion"]
+# Enable integration with fluxion-fluid for HvacState/HvacMode scalar HVAC types.
+# When enabled, ThermalElectricalCoupler gains hvac_state_to_electrical,
+# thermal_to_electrical, and update_cop_from_hvac_state methods.
+# Matches the `fluid = ["dep:fluxion-fluid"]` convention used by the main fluxion crate.
+fluid = ["dep:fluxion-fluid"]
 
 [dependencies]
 uuid = { version = "1.0", features = ["serde", "v4"] }
 serde = { version = "1.0", features = ["derive"] }
 thiserror = "1.0"
 nalgebra = "0.34"
-fluxion-fluid = { path = "../fluxion-fluid" }
+# Optional dependency on fluxion-fluid for HvacState/HvacMode types
+# (gated behind the "fluid" feature — see Issue #2561).
+fluxion-fluid = { path = "../fluxion-fluid", optional = true }
 
 # Optional dependency on the main fluxion crate for ThermalModelTrait integration.
 # Only available when the "fluxion-integration" feature flag is enabled.
