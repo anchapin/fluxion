@@ -35,28 +35,33 @@ fluxion/                      # main engine crate (src/, benches/, tests/)
 fluxion-core/                 # leaf modules (no sim/physics/ai/validation deps; built once & cached by cargo-mutants)
   src/
     weather/                  # EPW/TMY3 parsing, psychrometrics, design-day, interpolation
-    assembly.rs               # BuildingAssembly, AssemblyBuilder, MaterialLayer
-    multi_node.rs             # ThermalMassNode, MultiNodeThermalMass
-    ashrae_cases.rs           # Orientation, WindowArea, ConstructionType, … (pure data)
+    assembly.rs               # BuildingAssembly, AssemblyBuilder, MaterialLayer; ASHRAE 140 material constants inlined (#1349)
+    construction.rs           # ConstructionLayer, Construction, MassClass, Materials, ASHRAE 140 film/air constants (#2462)
+    multi_node.rs             # ThermalMassNode, MultiNodeThermalMass (#1349)
+    per_surface_conduction.rs # SurfaceKind, MassNode, SurfaceNode, PerSurfaceConductionSolver (#2462)
+    physics_constants.rs      # STEFAN_BOLTZMANN (hoisted out of sim::sky_radiation, #2462)
+    ashrae_cases.rs           # Orientation, WindowArea, ConstructionType, … (pure data; breaks sim↔validation cycle, #1441)
+    earth_tube.rs             # earth-tube / ground-coupled HVAC models
+    urban_radiation.rs        # urban longwave radiation (Nusselt analog view factors)
     tensor.rs                 # geometry tensor types
-    fluid/                    # graph-based strongly-typed fluid port traits
-fluxion-mcp/                  # MCP server (workspace member; built/tested separately)
-fluxion-cfd/                  # GPU-accelerated Fast Fluid Dynamics solver for building airflow simulation
-fluxion-city/                 # urban radiation modeling (Nusselt analog view factors)
-fluxion-grid/                 # grid-edge electrical network (battery, bus nodes, power flow)
-fluxion-behavior/             # thermal comfort models (Fanger PMV/PPD, adaptive comfort)
-fluxion-fluid/                # compile-time strongly typed fluid port traits for DAE systems
-fluxion-wasm/                 # WebAssembly bindings (lib.rs at crate root)
+    fluid/                    # fluid-network graph data structure (NodeId/EdgeId/Port/ComponentKind)
+fluxion-mcp/                  # MCP server (workspace member; depends on fluxion with `multi-zone` feature)
+fluxion-cfd/                  # GPU-accelerated Fast Fluid Dynamics solver for building airflow; gated behind Cargo `--features fluxion-cfd` (default: cpu only)
+fluxion-city/                 # urban radiation modeling (Nusselt analog view factors); gated behind `--features fluxion-city`
+fluxion-grid/                 # grid-edge electrical network (battery, bus nodes, power flow); always built
+fluxion-behavior/             # thermal comfort (Fanger PMV/PPD, adaptive comfort, occupant triggers); always built
+fluxion-fluid/                # compile-time strongly-typed fluid port traits for DAE systems (port, medium, energy, hvac, Pantelides index reduction); gated behind `--features fluid`. NOT the same as fluxion-core/src/fluid/.
+fluxion-wasm/                 # WebAssembly bindings (wasm-bindgen over fluxion-core + fluxion-fluid); always built
 crates/
-  fluxion-toon/               # Token-Oriented Object Notation serializer (LLM-friendly)
-  fluxion-twin/               # Digital twin core (Unscented Kalman Filter for thermal systems)
+  fluxion-toon/               # Token-Oriented Object Notation serializer (LLM-friendly); SPEC in crates/fluxion-toon/SPEC.md
+  fluxion-twin/               # Digital twin core (Unscented Kalman Filter for non-linear thermal systems; MQTT telemetry via rumqttc)
 ```
 
 **Cycle-breaking rule** (enforced by CI via `scripts/check_ashrae_cases_cycle.py`, #1441): `fluxion-core/src/**/*.rs` must NOT import `crate::sim_*`, `crate::physics_*`, `crate::ai_*`, or `crate::validation_*`. The `sim::assembly` and `sim::multi_node_thermal` paths in `src/sim/` are thin re-export shims — keep them that way.
 
-**`fluxion-mcp`** is a workspace member (`cargo build -p fluxion-mcp`; `cargo test -p fluxion-mcp` to run its own suite).
+**`fluxion-mcp`** is a workspace member (`cargo build -p fluxion-mcp`; `cargo test -p fluxion-mcp` to run its own suite). Unconditionally depends on `fluxion` with `features = ["multi-zone"]` and on `fluxion-fluid` + `fluxion-toon`.
 
-**`fluxion-cfd`** — GPU-accelerated Fast Fluid Dynamics solver for building airflow simulation. Built/tested separately from the main crate.
+**`fluxion-cfd`** — GPU-accelerated Fast Fluid Dynamics solver for building airflow simulation. Built/tested separately from the main crate. The `FfdCfdAdapter` that wires it into the main engine is opt-in via the Cargo feature `fluxion-cfd` on the `fluxion` crate (issue #2460).
 
 **`fluxion-twin`** — Digital twin core using Unscented Kalman Filter (UKF) for non-linear state estimation in thermal systems. Uses MQTT for telemetry.
 
@@ -237,7 +242,7 @@ Heavy Linux jobs honour `vars.FLUXION_LINUX_RUNNER` (self-hosted Hetzner fallbac
  - `--no-ff` merges preserve history (CONTRIBUTING.md).
 - Conventional commit messages: `fix(scope): …`, `feat(scope): …`, `refactor(scope): …`, `perf(scope): …`, `test(scope): …`, `docs(scope): …`.
 - **PR body must include `Closes #{{Number}}` or `Fixes #{{Number}}`** — wave orchestration depends on this keyword to auto-close linked issues. PRs without it will fail to close their issues.
-  - **Wave orchestrator (Phase 3c)**: automatically validates that the PR body contains the required `Closes #N` or `Fixes #N` keyword for the linked issue. If the keyword is missing, the orchestrator auto-fixes by editing the PR body to append it before proceeding to CI monitoring. See `.agents/skills/github-wave-orchestrator/SKILL.md`.
+  - **Wave orchestrator (user-level skill, Phase 3c)**: automatically validates that the PR body contains the required `Closes #N` or `Fixes #N` keyword for the linked issue. If the keyword is missing, the orchestrator auto-fixes by editing the PR body to append it before proceeding to CI monitoring. See `~/.agents/skills/github-wave-orchestrator/SKILL.md` (user-installed skill; not in this repo).
 - Never force-push `main` or `develop`. Hotfixes still go through PR review.
 
 ## Key Files
