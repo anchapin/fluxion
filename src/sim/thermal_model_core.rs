@@ -988,15 +988,41 @@ impl ThermalModel<VectorField> {
                 .iso_13790_effective_capacitance_per_area();
 
             // Total thermal capacitance (C_m) from all mass elements
-            // ISO 13790 Annex C half-insulation rule: only layers interior to the
-            // dominant insulation contribute to effective thermal mass. This prevents
-            // exterior-only mass (e.g., roof deck behind fiberglass) from inflating Cm,
-            // which would cause warm night minimums (building retains too much heat).
-            let wall_cap = spec
-                .construction
-                .wall
-                .iso_13790_effective_capacitance_per_area()
-                * opaque_area;
+            // Issue #2455: For HighMass construction, the half-insulation rule
+            // excludes the heavy concrete-block layer from `wall_cap` for the
+            // wall construction `wood_siding + foam + concrete_block` (per
+            // ASHRAE 140 Case 900) because the concrete sits exterior to the
+            // insulation. This drops the per-surface capacitance to
+            // ≈ 736 kJ/K × A_wall ≈ 1.2 MJ/K and the per-surface time constant
+            // collapses to τ ≈ C_wall / (h_tr_em + h_tr_ms) ≈ 1–2 h, so the
+            // wall mass tracks the outdoor dry-bulb and the free-floating
+            // night minimum regresses to ~ -12.7 °C (Case 900FF with real
+            // Denver TMY3 weather) — well below the ASHRAE 140 reference band
+            // [-6.40, -1.60] °C documented in
+            // `docs/investigations/ISSUE_1168_ROOT_CAUSE.md`.
+            //
+            // Restore the heavy-mass layer (concrete_block) to the wall
+            // capacitance for HighMass only — this matches ISO 13790 §12.2.3 +
+            // Annex C, which requires the full envelope capacitance for
+            // "heavy" and "very heavy" classes. The roof and floor constructions
+            // already keep their heavy mass under the half-insulation rule
+            // (their concrete / timber layers are interior to insulation in
+            // the ASHRAE 140 Case 900 spec), so the fix is wall-only.
+            //
+            // LowMass construction (Cases 600, 610, 620, 630, 640, 650, 600FF,
+            // 650FF) continues to use the half-insulation rule — for light
+            // walls, the exterior cladding is thermally decoupled from the
+            // interior by the insulation and excluding it from C_m is correct.
+            let wall_cap = if spec.construction_type
+                == crate::validation::ashrae_140_cases::ConstructionType::HighMass
+            {
+                spec.construction.wall.thermal_capacitance_per_area() * opaque_area
+            } else {
+                spec.construction
+                    .wall
+                    .iso_13790_effective_capacitance_per_area()
+                    * opaque_area
+            };
             let roof_cap = spec
                 .construction
                 .roof
