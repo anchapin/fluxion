@@ -23,6 +23,7 @@ pub enum HVACMode {
 /// This enum enables dynamic equipment selection while maintaining Clone compatibility
 /// for ThermalModel. Each variant wraps a specific equipment type that implements
 /// VariableCapacityEquipment.
+#[allow(clippy::large_enum_variant)]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum AnyEquipment {
     /// Chiller equipment (cooling-only)

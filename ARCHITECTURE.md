@@ -1084,7 +1084,11 @@ pub trait PartLoadCurve: Send + Sync {
 |----------|-----------|---------|---------------------|
 | Chiller | Biquadratic | `EER = a + b*PLR + c*PLR² + d*T_db + e*T_db² + f*PLR*T_db` | AHRI 550/590 + EnergyPlus Curve:Biquadratic |
 | Boiler | Biquadratic | `η = a + b*PLR + c*PLR² + d*T_db + e*T_db² + f*PLR*T_db` | ASHRAE HoF + EnergyPlus Curve:Biquadratic |
-| VAV Fan | Quadratic | `P_ratio = a + b*φ + c*φ²` (φ = flow ratio) | Fan affinity laws (P ∝ φ³) |
+| VAV Fan (non-SPR) | Quadratic | `P_ratio = 0.5183·φ + 0.4817·φ²` (φ = flow ratio) | ASHRAE Standard 205 fan-power allowance |
+| VAV Fan (SPR-compensated, default for VAV terminals) | Quadratic | `P_ratio = 0.395·φ + 0.605·φ²` | ASHRAE Standard 205 + 90.1-2016 §6.5.3.1.1 system-effect compensation |
+| CAV Fan (default) | Quadratic | `P_ratio = 0.5183·φ + 0.4817·φ²` | ASHRAE Standard 205 (no SPR savings at constant volume) |
+
+**Note (issue #2465)**: The fan-power curve form is **NOT** the cubed affinity law (`P ∝ φ³`). The affinity law is correct for isolated fan models and is implemented in `src/sim/hvac/fan.rs` as the cubed raw form used by `FanComponent::shaft_power(φ, ρ)`. However, system-level fan-power modelling uses the ASHRAE Standard 205 quadratic polynomial because duct static-pressure losses, motor losses, and (for VAV) duct-static-pressure-reset compensation prevent the cubed law from applying. The VAV terminal default uses the SPR-compensated polynomial (`FanPowerCurve::with_spr_compensation()`); CAV uses the non-SPR polynomial (`FanPowerCurve::new()`). See `vav_terminal.rs::compute_terminal_performance` and `cav_terminal.rs::compute_terminal_performance`.
 
 **Implemented structs**: `ChillerPartLoadCurve`, `BoilerPartLoadCurve`, `FanPowerCurve`
 **Coefficient accessors**: `chiller_part_load_coeffs()`, `boiler_part_load_coeffs()`, `vav_fan_power_coeffs()`, `vav_fan_power_with_spr_coeffs()`

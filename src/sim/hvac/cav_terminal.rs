@@ -32,6 +32,7 @@ use crate::sim::hvac::airside_state::{validate_nonnegative, AirsideCouplingError
 use crate::sim::hvac::cooling_coil::{CoilPerformance, CoolingCoil, CoolingCoilBehavior};
 use crate::sim::hvac::fan::{Fan, FanComponent};
 use crate::sim::hvac::heating_coil::{HeatingCoil, HeatingCoilComponent, HeatingCoilControl};
+use crate::sim::hvac::part_load_curves::FanPowerCurve;
 use serde::{Deserialize, Serialize};
 
 /// Operating mode of a CAV terminal unit.
@@ -187,6 +188,23 @@ pub struct CavTerminalUnit {
     pub heating_coil: Option<HeatingCoilComponent>,
     /// Airflow fraction in deadband mode (0.0 to 1.0). Default 0.5 (50% of rated).
     pub deadband_airflow_fraction: f64,
+    /// Fan-power curve applied to the rated shaft power at the actual air
+    /// density. Defaults to [`FanPowerCurve::new`] — the non-SPR quadratic
+    /// polynomial — because CAV boxes run at constant volume and do not
+    /// exhibit static-pressure-reset savings (issue #2465). Overridable via
+    /// [`CavTerminalUnit::with_fan_power_curve`].
+    ///
+    /// `#[serde(default)]` keeps backward compatibility with terminals
+    /// serialized before issue #2465; missing field deserialises to the
+    /// non-SPR default (equivalent to the existing CAV behaviour at full
+    /// speed where the curve's power ratio is exactly 1.0).
+    #[serde(default = "default_cav_fan_power_curve")]
+    pub fan_power_curve: FanPowerCurve,
+}
+
+/// Helper: returns the canonical non-SPR curve for `#[serde(default)]`.
+fn default_cav_fan_power_curve() -> FanPowerCurve {
+    FanPowerCurve::new()
 }
 
 impl CavTerminalUnit {
@@ -194,6 +212,12 @@ impl CavTerminalUnit {
     ///
     /// The fan is sized for `max_airflow_m3_per_s` at 500 Pa total pressure
     /// rise and 70% total efficiency (standard commercial fan).
+    ///
+    /// The fan-power curve defaults to [`FanPowerCurve::new`] (the non-SPR
+    /// quadratic polynomial — appropriate for constant-volume systems). At
+    /// φ = 1.0 the ratio is 1.0, matching the existing full-speed behaviour.
+    /// Override with [`CavTerminalUnit::with_fan_power_curve`] for SPR
+    /// compensation (issue #2465).
     pub fn new(
         id: String,
         zone_id: usize,
@@ -209,6 +233,7 @@ impl CavTerminalUnit {
             cooling_coil,
             heating_coil,
             deadband_airflow_fraction: 0.5,
+            fan_power_curve: FanPowerCurve::new(),
         }
     }
 
@@ -221,6 +246,17 @@ impl CavTerminalUnit {
     /// Set the deadband airflow fraction (fraction of rated flow in deadband).
     pub fn with_deadband_fraction(mut self, fraction: f64) -> Self {
         self.deadband_airflow_fraction = fraction.clamp(0.0, 1.0);
+        self
+    }
+
+    /// Override the fan-power curve (issue #2465).
+    ///
+    /// Pass [`FanPowerCurve::new`] (the default) for the standard non-SPR
+    /// quadratic curve, [`FanPowerCurve::with_spr_compensation`] for the
+    /// SPR-compensated polynomial, or a custom coefficient set via
+    /// [`FanPowerCurve::with_coeffs`].
+    pub fn with_fan_power_curve(mut self, curve: FanPowerCurve) -> Self {
+        self.fan_power_curve = curve;
         self
     }
 
@@ -284,12 +320,17 @@ impl CavTerminal for CavTerminalUnit {
         let moist_mass_flow = self
             .fan
             .mass_flow_rate(fan_speed_fraction, air_density_kg_per_m3);
-        let shaft_power = self
-            .fan
-            .shaft_power(fan_speed_fraction, air_density_kg_per_m3);
-        let motor_power = self
-            .fan
-            .motor_power(fan_speed_fraction, air_density_kg_per_m3);
+
+        // Shaft power: rated power at the actual air density × the
+        // `fan_power_curve` power ratio. Replaces the raw cubed affinity law
+        // with the standard ASHRAE quadratic polynomial (issue #2465).
+        // At φ = 1.0 the non-SPR curve gives a ratio of 1.0, so full-speed
+        // operation is unchanged.
+        let rated_shaft_power = self.fan.shaft_power(1.0, air_density_kg_per_m3);
+        let power_ratio = self.fan_power_curve.power_ratio_at(fan_speed_fraction);
+        let shaft_power = rated_shaft_power * power_ratio;
+        let rated_motor_power = self.fan.motor_power(1.0, air_density_kg_per_m3);
+        let motor_power = rated_motor_power * power_ratio;
 
         // Dry-air mass flow for coil calculations.
         let w = entering.humidity_ratio_kg_per_kg_dry_air;
@@ -415,6 +456,16 @@ mod tests {
         assert!(terminal.has_heating());
         assert!((terminal.rated_cooling_capacity_w() - 30_000.0).abs() < 1e-9);
         assert!((terminal.rated_heating_capacity_w() - 10_000.0).abs() < 1e-9);
+        // Default fan-power curve is the non-SPR quadratic (issue #2465).
+        // At φ = 1.0 (cooling/heating) and φ = 0.5 (deadband) the values
+        // come from `0.5183·φ + 0.4817·φ²`.
+        let ratio_full = terminal.fan_power_curve.power_ratio_at(1.0);
+        let ratio_half = terminal.fan_power_curve.power_ratio_at(0.5);
+        assert!((ratio_full - 1.0).abs() < 1e-9);
+        assert!(
+            (ratio_half - 0.5_f64.mul_add(0.5183, 0.4817 * 0.25)).abs() < 1e-9,
+            "non-SPR curve at φ=0.5 = {ratio_half}"
+        );
     }
 
     #[test]
@@ -767,5 +818,52 @@ mod tests {
             .compute_terminal_performance(&entering, rho, &CavTerminalControl::cooling())
             .unwrap();
         assert!(perf.cooling_total_capacity_w > 0.0);
+    }
+
+    /// Regression test for issue #2465 — CAV terminal fan power is routed
+    /// through `FanPowerCurve::new()` (non-SPR). At full speed (φ = 1) the
+    /// curve returns a power ratio of exactly 1.0; in deadband mode
+    /// (φ = `deadband_airflow_fraction`) it returns a non-zero value via the
+    /// quadratic polynomial — matching ASHRAE's standard fan-power model
+    /// and eliminating the raw cubed affinity under-prediction.
+    #[test]
+    fn fan_power_matches_non_spr_curve_issue_2465() {
+        use crate::sim::hvac::part_load_curves::PartLoadCurve;
+
+        let terminal = test_terminal();
+        let entering = entering_air(24.0, 50.0);
+        let rho = entering.density_kg_per_m3;
+
+        // Full-speed (cooling) → φ = 1.0 → ratio = 1.0 → rated shaft power.
+        let rated_shaft_power = terminal.fan.shaft_power(1.0, rho);
+        let perf_cooling = terminal
+            .compute_terminal_performance(&entering, rho, &CavTerminalControl::cooling())
+            .unwrap();
+        let cooling_ratio = perf_cooling.fan_shaft_power_w / rated_shaft_power;
+        let cooling_expected = terminal.fan_power_curve.power_ratio_at(1.0);
+        assert!(
+            (cooling_ratio - cooling_expected).abs() < 1e-9,
+            "cooling (φ=1): fluxion {cooling_ratio} vs curve {cooling_expected}"
+        );
+
+        // Deadband mode → φ = deadband_airflow_fraction = 0.5.
+        let perf_deadband = terminal
+            .compute_terminal_performance(&entering, rho, &CavTerminalControl::deadband())
+            .unwrap();
+        let deadband_ratio = perf_deadband.fan_shaft_power_w / rated_shaft_power;
+        let deadband_expected = terminal.fan_power_curve.power_ratio_at(0.5);
+        assert!(
+            (deadband_ratio - deadband_expected).abs() < 1e-9,
+            "deadband (φ=0.5): fluxion {deadband_ratio} vs curve {deadband_expected}"
+        );
+
+        // The non-SPR curve yields ~0.38 at φ = 0.5, which is the ASHRAE
+        // constant-volume fan-power behaviour at half flow — substantially
+        // larger than the raw cubed affinity value of 0.125, but still below
+        // the SPR-compensated value (issue #2465 root-cause summary).
+        assert!(deadband_expected > 0.35 && deadband_expected < 0.40);
+
+        // Curve validates at the standard load points.
+        assert!(terminal.fan_power_curve.validate_at_load_points());
     }
 }
