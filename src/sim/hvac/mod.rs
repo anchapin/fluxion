@@ -26,6 +26,7 @@ pub mod zones;
 
 #[cfg(feature = "fluid")]
 pub mod fluid_adapter;
+pub mod humidifier;
 
 // Re-export common types for convenience
 pub use airside_coupling::{AirsideEnvelopeCoupler, CoupledStepForcing, CoupledStepResult};
@@ -47,6 +48,7 @@ pub use efficiency_curves::{
 pub use equipment::{AnyEquipment, Boiler, Chiller, HVACMode, VariableCapacityEquipment};
 pub use fan::{Fan, FanComponent, STANDARD_AIR_DENSITY_KG_PER_M3};
 pub use heating_coil::{HeatingCoil, HeatingCoilComponent, HeatingCoilControl, HeatingCoilResult};
+pub use humidifier::{Humidifier, HumidifierComponent, HumidifierControl, HumidifierResult};
 pub use ideal_loads::IdealLoadsSystem;
 pub use modes::PredictiveController;
 pub use part_load_curves::{
