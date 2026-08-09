@@ -56,6 +56,8 @@ crates/
 
 **`fluxion-mcp`** is a workspace member (`cargo build -p fluxion-mcp`; `cargo test -p fluxion-mcp` to run its own suite).
 
+**`fluxion-cfd`** — GPU-accelerated Fast Fluid Dynamics solver for building airflow simulation. Built/tested separately from the main crate.
+
 **`fluxion-twin`** — Digital twin core using Unscented Kalman Filter (UKF) for non-linear state estimation in thermal systems. Uses MQTT for telemetry.
 
 **`fluxion-toon`** — Token-Oriented Object Notation serializer/deserializer; compact, LLM-friendly serialization format. Defined in `crates/fluxion-toon/SPEC.md`.
