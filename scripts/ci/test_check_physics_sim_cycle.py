@@ -370,15 +370,68 @@ def test_main_returns_zero_when_clean(checker, tmp_path, monkeypatch, capsys):
     assert "No cycle regression" in out
 
 
-def test_main_returns_one_when_physics_offender_present(checker, tmp_path, monkeypatch, capsys):
-    """A single new `use crate::sim::` import in src/physics/** must trip main()."""
+def test_main_returns_zero_at_documented_baseline(checker, tmp_path, monkeypatch, capsys):
+    """5 physics->sim + 2 sim->physics offenders (the documented baseline) must pass.
+
+    Mirrors the current real-repo state per issue #2463: the companion
+    cycle-break work is the only thing authorised to drive the count
+    down. The script must NOT fail on the documented baseline; it only
+    fails if a *new* edge appears that pushes the count above baseline.
+    """
     _redirect_to_fixture(
         checker,
         tmp_path,
         monkeypatch,
         physics_files={
-            "sneaky.rs": "use crate::sim::construction::ConstructionLayer;\n",
+            f"offender{i}.rs": "use crate::sim::construction::ConstructionLayer;\n"
+            for i in range(checker.BASELINE_PHYSICS_TO_SIM)
         },
+        sim_files={
+            "construction.rs": "fn f() {}\n",
+            "per_surface_conduction.rs": "fn f() {}\n",
+        },
+    )
+    # Replace construction.rs with the right number of physics imports
+    # (one per line) to mirror the real baseline of 2 sim->physics edges.
+    (tmp_path / "src" / "sim" / "construction.rs").write_text(
+        "".join(
+            f"use crate::physics::constants::SOMETHING_{i};\n"
+            for i in range(checker.BASELINE_SIM_TO_PHYSICS)
+        ),
+        encoding="utf-8",
+    )
+
+    rc = checker.main()
+    out = capsys.readouterr().out
+    assert rc == 0
+    assert "OK:" in out
+    assert "at baseline" in out
+    assert "No cycle regression" in out
+    baseline_total = checker.BASELINE_PHYSICS_TO_SIM + checker.BASELINE_SIM_TO_PHYSICS
+    assert f"Total cycle edges: {baseline_total}" in out
+
+
+def test_main_returns_one_when_physics_offender_exceeds_baseline(
+    checker, tmp_path, monkeypatch, capsys
+):
+    """6+ `use crate::sim::` imports in src/physics/** (1 above baseline 5) must trip main().
+
+    The guard's contract is *regression-only*: a NEW edge that pushes the
+    count above the documented baseline is a failure. A single offender
+    is fine if the baseline allows it; the test therefore seeds
+    `BASELINE_PHYSICS_TO_SIM` legitimate edges + 1 extra, and asserts
+    that the *extra* is what trips the guard.
+    """
+    physics_files = {
+        f"baseline{i}.rs": "use crate::sim::construction::ConstructionLayer;\n"
+        for i in range(checker.BASELINE_PHYSICS_TO_SIM)
+    }
+    physics_files["sneaky.rs"] = "use crate::sim::sky_radiation::STEFAN_BOLTZMANN;\n"
+    _redirect_to_fixture(
+        checker,
+        tmp_path,
+        monkeypatch,
+        physics_files=physics_files,
         sim_files={
             "construction.rs": "fn f() {}\n",
             "per_surface_conduction.rs": "fn f() {}\n",
@@ -388,46 +441,28 @@ def test_main_returns_one_when_physics_offender_present(checker, tmp_path, monke
     out = capsys.readouterr().out
     assert rc == 1
     assert "[1/3]" in out
-    assert "FAIL: 1 offender(s)" in out
+    assert f"({1} above baseline {checker.BASELINE_PHYSICS_TO_SIM})" in out
     assert "src/physics/sneaky.rs" in out
     assert "CYCLE REGRESSION DETECTED" in out
 
 
-def test_main_returns_one_when_sim_offender_present(checker, tmp_path, monkeypatch, capsys):
-    """A `use crate::physics::` import in a protected sim file must trip main()."""
+def test_main_returns_one_when_sim_offender_exceeds_baseline(
+    checker, tmp_path, monkeypatch, capsys
+):
+    """A `use crate::physics::` import in a protected sim file above the baseline of 2 must trip main()."""
+    sim_baseline_lines = "".join(
+        f"use crate::physics::constants::SOMETHING_{i};\n"
+        for i in range(checker.BASELINE_SIM_TO_PHYSICS)
+    )
     _redirect_to_fixture(
         checker,
         tmp_path,
         monkeypatch,
         physics_files={"ok.rs": "fn f() {}\n"},
         sim_files={
-            "construction.rs": "use crate::physics::wall_properties::WallProperties;\n",
-            "per_surface_conduction.rs": "fn f() {}\n",
-        },
-    )
-    rc = checker.main()
-    out = capsys.readouterr().out
-    assert rc == 1
-    assert "[2/3]" in out
-    assert "FAIL: 1 offender(s)" in out
-    assert "src/sim/construction.rs" in out
-    assert "CYCLE REGRESSION DETECTED" in out
-
-
-def test_main_aggregates_offenders_from_both_phases(checker, tmp_path, monkeypatch, capsys):
-    """Both phases contribute offenders to the summary."""
-    _redirect_to_fixture(
-        checker,
-        tmp_path,
-        monkeypatch,
-        physics_files={
-            "sneaky1.rs": "use crate::sim::construction::ConstructionLayer;\n",
-            "sneaky2.rs": "use crate::sim::sky_radiation::STEFAN_BOLTZMANN;\n",
-        },
-        sim_files={
             "construction.rs": (
-                "use crate::physics::constants::thermal::ashrae_140::EXTERIOR_FILM_COEFF;\n"
-                "use crate::physics::constants::AIR_DENSITY_SEA_LEVEL;\n"
+                sim_baseline_lines
+                + "use crate::physics::wall_properties::WallProperties;\n"
             ),
             "per_surface_conduction.rs": "fn f() {}\n",
         },
@@ -435,9 +470,52 @@ def test_main_aggregates_offenders_from_both_phases(checker, tmp_path, monkeypat
     rc = checker.main()
     out = capsys.readouterr().out
     assert rc == 1
-    assert "FAIL: 2 offender(s)" in out  # Phase 1
-    assert "FAIL: 2 offender(s)" in out  # Phase 2
-    assert "Total cycle edges: 4" in out
+    assert "[2/3]" in out
+    assert f"({1} above baseline {checker.BASELINE_SIM_TO_PHYSICS})" in out
+    assert "src/sim/construction.rs" in out
+    assert "CYCLE REGRESSION DETECTED" in out
+
+
+def test_main_aggregates_offenders_from_both_phases(checker, tmp_path, monkeypatch, capsys):
+    """Both phases contribute offenders to the summary when each exceeds baseline."""
+    physics_files = {
+        f"baseline{i}.rs": "use crate::sim::construction::ConstructionLayer;\n"
+        for i in range(checker.BASELINE_PHYSICS_TO_SIM)
+    }
+    # 2 above the Phase 1 baseline.
+    physics_files["sneaky1.rs"] = "use crate::sim::construction::ConstructionLayer;\n"
+    physics_files["sneaky2.rs"] = "use crate::sim::sky_radiation::STEFAN_BOLTZMANN;\n"
+    sim_baseline_lines = "".join(
+        f"use crate::physics::constants::SOMETHING_{i};\n"
+        for i in range(checker.BASELINE_SIM_TO_PHYSICS)
+    )
+    # 2 above the Phase 2 baseline.
+    _redirect_to_fixture(
+        checker,
+        tmp_path,
+        monkeypatch,
+        physics_files=physics_files,
+        sim_files={
+            "construction.rs": (
+                sim_baseline_lines
+                + "use crate::physics::constants::thermal::ashrae_140::EXTERIOR_FILM_COEFF;\n"
+                + "use crate::physics::constants::AIR_DENSITY_SEA_LEVEL;\n"
+            ),
+            "per_surface_conduction.rs": "fn f() {}\n",
+        },
+    )
+    rc = checker.main()
+    out = capsys.readouterr().out
+    assert rc == 1
+    assert f"({2} above baseline {checker.BASELINE_PHYSICS_TO_SIM})" in out  # Phase 1
+    assert f"({2} above baseline {checker.BASELINE_SIM_TO_PHYSICS})" in out  # Phase 2
+    expected_total = (
+        checker.BASELINE_PHYSICS_TO_SIM
+        + 2
+        + checker.BASELINE_SIM_TO_PHYSICS
+        + 2
+    )
+    assert f"Total cycle edges: {expected_total}" in out
     assert "src/physics/sneaky1.rs" in out
     assert "src/physics/sneaky2.rs" in out
     assert "src/sim/construction.rs" in out

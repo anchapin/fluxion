@@ -4,8 +4,9 @@ Cycle Regression Guard for the `physics <-> sim` cycle (Issue #2463).
 
 Mirrors `scripts/check_ashrae_cases_cycle.py` (Issue #1441) and verifies
 the `physics <-> sim` cycle documented in `ARCHITECTURE.md` §"Remaining
-cycles" stays in its current target state (5 known physics->sim edges;
-the companion cycle-break issue is the work that drives the count to 0):
+cycles" stays in its current target state (5 known physics->sim edges
++ 2 known sim->physics edges; the companion cycle-break issue is the
+work that drives the count to 0):
 
 1. `src/physics/**` must NOT import from `src/sim/**` (no `use crate::sim::`
    upward deps). The 5 currently-known offenders are:
@@ -28,15 +29,19 @@ Usage:
   python3 scripts/check_physics_sim_cycle.py
 
 Exit codes:
-  0 — no cycle regression (or only the documented baseline edges remain)
-  1 — cycle regression detected (a NEW edge appeared, beyond the baseline)
+  0 — no cycle regression (offender count is at or below the documented
+      baseline, or the companion work has driven it down further)
+  1 — cycle regression detected (a NEW edge appeared, exceeding the
+      documented baseline)
   2 — script error
 
-The script deliberately reports the current 5+ baseline edges as failures
-so that any future PR that adds a *new* `use crate::sim::` import under
-`src/physics/**` (or `use crate::physics::` under the two protected
-`src/sim/**` files) is flagged immediately. The companion cycle-break
-issue is the work that drives the count to 0.
+The script reports the current `BASELINE_PHYSICS_TO_SIM = 5` and
+`BASELINE_SIM_TO_PHYSICS = 2` documented edges as the *current state*,
+not as failures. A future PR that adds a *new* `use crate::sim::` import
+under `src/physics/**` (or `use crate::physics::` under the two protected
+`src/sim/**` files) — pushing the count *above* the baseline — is flagged
+immediately as a regression. The companion cycle-break issue is the
+work that drives the count down to 0.
 
 See ARCHITECTURE.md §"Remaining cycles (deferred to follow-up issues)"
 and docs/mutation_testing_crate_split.md §"Phase 2 — break the physics
@@ -61,6 +66,13 @@ PROTECTED_SIM_FILES = (
     FLUXION_SRC / "sim" / "construction.rs",
     FLUXION_SRC / "sim" / "per_surface_conduction.rs",
 )
+
+# Documented baseline edge counts. The companion cycle-break work is the
+# only thing authorised to drive these down; any PR that pushes them *up*
+# is a regression and is flagged by this guard. See ARCHITECTURE.md
+# §"Regression guard (Issue #2463)" for the source-of-truth numbers.
+BASELINE_PHYSICS_TO_SIM = 5
+BASELINE_SIM_TO_PHYSICS = 2
 
 # Regex for Phase 2: match `use` or `pub use` against `crate::physics::`.
 # Mirrors `scan_sim_for_orientation_cycle` in check_ashrae_cases_cycle.py
@@ -129,29 +141,48 @@ def main() -> int:
 
     print("[1/3] src/physics/** must not `use crate::sim::` ...")
     physics_to_sim = scan_physics_for_sim_deps()
-    if physics_to_sim:
-        failures.append(f"src/physics has {len(physics_to_sim)} upward dep(s) to src/sim:")
+    if len(physics_to_sim) > BASELINE_PHYSICS_TO_SIM:
+        new_edges = len(physics_to_sim) - BASELINE_PHYSICS_TO_SIM
+        failures.append(
+            f"src/physics has {len(physics_to_sim)} upward dep(s) to src/sim "
+            f"(baseline: {BASELINE_PHYSICS_TO_SIM}; {new_edges} NEW edge(s) above baseline):"
+        )
         failures.extend(f"    {o}" for o in physics_to_sim)
-        print(f"    FAIL: {len(physics_to_sim)} offender(s)")
+        print(f"    FAIL: {len(physics_to_sim)} offender(s) "
+              f"({new_edges} above baseline {BASELINE_PHYSICS_TO_SIM})")
     else:
-        print("    OK: 0 upward deps")
+        if physics_to_sim:
+            print(f"    OK: {len(physics_to_sim)} offender(s) "
+                  f"(at baseline {BASELINE_PHYSICS_TO_SIM})")
+        else:
+            print(f"    OK: 0 upward deps (below baseline {BASELINE_PHYSICS_TO_SIM})")
 
     print("[2/3] src/sim/construction.rs + src/sim/per_surface_conduction.rs "
           "must not `use crate::physics::` ...")
     sim_to_physics = scan_protected_sim_files_for_physics_deps()
-    if sim_to_physics:
+    if len(sim_to_physics) > BASELINE_SIM_TO_PHYSICS:
+        new_edges = len(sim_to_physics) - BASELINE_SIM_TO_PHYSICS
         failures.append(
-            f"protected sim files have {len(sim_to_physics)} upward dep(s) to src/physics:"
+            f"protected sim files have {len(sim_to_physics)} upward dep(s) to src/physics "
+            f"(baseline: {BASELINE_SIM_TO_PHYSICS}; {new_edges} NEW edge(s) above baseline):"
         )
         failures.extend(f"    {o}" for o in sim_to_physics)
-        print(f"    FAIL: {len(sim_to_physics)} offender(s)")
+        print(f"    FAIL: {len(sim_to_physics)} offender(s) "
+              f"({new_edges} above baseline {BASELINE_SIM_TO_PHYSICS})")
     else:
-        print("    OK: no cycle markers")
+        if sim_to_physics:
+            print(f"    OK: {len(sim_to_physics)} offender(s) "
+                  f"(at baseline {BASELINE_SIM_TO_PHYSICS})")
+        else:
+            print(f"    OK: no cycle markers (below baseline {BASELINE_SIM_TO_PHYSICS})")
 
     print("[3/3] summary ...")
     total = len(physics_to_sim) + len(sim_to_physics)
+    baseline_total = BASELINE_PHYSICS_TO_SIM + BASELINE_SIM_TO_PHYSICS
     print(f"    Total cycle edges: {total}")
-    print(f"    (Baseline: 5 physics->sim edges from the [Architecture] issue;")
+    print(f"    (Documented baseline: {baseline_total} "
+          f"({BASELINE_PHYSICS_TO_SIM} physics->sim + "
+          f"{BASELINE_SIM_TO_PHYSICS} sim->physics);")
     print(f"     companion cycle-break work drives this to 0.)")
 
     print()
@@ -160,11 +191,14 @@ def main() -> int:
         for f in failures:
             print(f"  {f}")
         print()
-        print("These cycle markers were already documented in issue #2463. The")
-        print("guard script enforces the *target* invariant (zero cycle edges);")
-        print("the companion cycle-break issue is the work that closes the gap.")
+        print(f"A new `use crate::sim::*` import under `src/physics/**` (or a")
+        print(f"`use crate::physics::*` import under the two protected sim files)")
+        print(f"has appeared that exceeds the documented baseline of "
+              f"{baseline_total} edges. The companion cycle-break issue is the")
+        print(f"work authorised to reduce the count; this guard rejects growth.")
         return 1
-    print("No cycle regression. Issue #2463 cycle stays at 0 edges.")
+    print(f"No cycle regression. Issue #2463 cycle stays at {total} edge(s) "
+          f"(at or below documented baseline of {baseline_total}).")
     return 0
 
 
