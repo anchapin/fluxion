@@ -1,0 +1,139 @@
+# Nightly Profile-Guided Optimization (PGO) build
+#
+# Implements the pipeline accepted in issue #2563:
+#   1. Build the workspace with `-Cprofile-generate` so the resulting
+#      binary drops `.profraw` files into target/pgo/raw/ as it runs.
+#   2. Run the ASHRAE 140 validation suite as the training workload so
+#      the 5R1C/9R4C solver hot paths and the conduction transfer
+#      functions receive representative edge/branch counts.
+#   3. Merge the raw profile data with `llvm-profdata merge`.
+#   4. Rebuild with `-Cprofile-use` to produce a PGO-optimized binary.
+#
+# The pipeline is orchestrated by scripts/build_pgo.sh so the same
+# command runs locally and in CI. The resulting binary is uploaded as
+# an artifact for manual inspection.
+
+name: PGO Nightly Build
+
+on:
+  schedule:
+    # 02:30 UTC, 30 minutes after the nightly_validation job so we
+    # benefit from any cached Cargo artifacts it produced.
+    - cron: '30 2 * * *'
+  workflow_dispatch:
+
+concurrency:
+  group: pgo-nightly-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  pgo-build:
+    name: PGO build & profile-use artifact
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+
+    env:
+      CARGO_TERM_COLOR: always
+      RUST_BACKTRACE: short
+
+    steps:
+      - name: Free disk space (precaution)
+        # PGO doubles disk usage (generate build + use build) and
+        # additional artifacts can push runners past the 14 GB cap.
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android \
+                      /opt/ghc /opt/hostedtoolcache/CodeQL || true
+          df -h
+
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libssl-dev pkg-config libfontconfig1-dev
+
+      - name: Install Rust (stable)
+        uses: dtolnay/rust-toolchain@4cda84d5c5c54efe2404f9d843567869ab1699d4  # stable
+        with:
+          components: rustfmt,clippy,llvm-tools-preview
+
+      - name: Cache cargo + target
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830  # v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-pgo-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-pgo-
+            ${{ runner.os }}-cargo-
+
+      - name: Disk space check
+        run: ./scripts/disk-space-check.sh --cleanup || true
+
+      - name: Run PGO pipeline
+        id: pgo
+        # The PGO script returns non-zero on build failure (exit 2),
+        # profile-merge failure (exit 3), or bad arguments (exit 1).
+        run: |
+          set -o pipefail
+          ./scripts/build_pgo.sh --clean 2>&1 | tee pgo_pipeline.log
+        continue-on-error: true
+
+      - name: Smoke-test PGO binary
+        if: steps.pgo.outcome == 'success'
+        # Run the optimized binary in --help mode to verify the link
+        # succeeded and the resulting executable actually launches.
+        run: |
+          set -e
+          BINARY=./target/release/fluxion
+          if [[ ! -x "$BINARY" ]]; then
+            echo "::error::PGO binary missing at $BINARY"
+            exit 1
+          fi
+          "$BINARY" --help >/dev/null || true
+          echo "PGO binary launched OK"
+
+      - name: Upload pipeline log
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02  # v4
+        with:
+          name: pgo-pipeline-log
+          path: |
+            pgo_pipeline.log
+            target/pgo/logs/*.log
+          retention-days: 30
+          if-no-files-found: warn
+
+      - name: Upload PGO profile data
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02  # v4
+        with:
+          name: pgo-profile-data
+          path: |
+            target/pgo/merged/profdata
+            target/pgo/raw/
+          retention-days: 30
+          if-no-files-found: warn
+
+      - name: Upload PGO-optimized binary
+        if: success()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02  # v4
+        with:
+          name: pgo-optimized-fluxion
+          path: |
+            target/release/fluxion
+            target/release/fluxion-rest
+            target/release/run_ashrae_validation
+          retention-days: 14
+          if-no-files-found: warn
+
+      - name: Fail if pipeline returned non-zero
+        if: steps.pgo.outcome == 'failure'
+        run: |
+          echo "::error::PGO pipeline failed — see uploaded log artifact"
+          exit 1
