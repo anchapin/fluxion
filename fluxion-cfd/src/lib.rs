@@ -1,4 +1,4 @@
-//! Fluxion-CFD: GPU-accelerated Fast Fluid Dynamics solver for building airflow simulation
+//! Fluxion-CFD: Fast Fluid Dynamics solver for building airflow simulation
 //!
 //! This crate implements the FFD (Fast Fluid Dynamics) algorithm - a reduced-order
 //! CFD method for whole-building airflow co-simulation. It provides:
@@ -7,12 +7,36 @@
 //! - **Implicit diffusion**: Unconditionally stable, no stiffness constraints
 //! - **Pressure projection**: Divergence-free velocity field enforcement
 //!
-//! ## GPU Acceleration
+//! ## GPU Acceleration (Issue #2386 / #2456)
 //!
-//! The crate supports CUDA (primary) and OpenCL (fallback) for GPU acceleration:
-//! - Advection: ~1000x speedup on GPU
-//! - Diffusion: ~100x speedup on GPU
-//! - Pressure Poisson: ~200-500x speedup on GPU
+//! The crate is wired for CUDA (primary) and OpenCL (fallback) GPU
+//! acceleration behind `--features cuda` / `--features opencl`. The
+//! architecture contract is in place (`GpuBackend` enum,
+//! `get_available_backend` / `supports_gpu` accessors, the `gpu` module
+//! stub) but **the actual CUDA / OpenCL kernels are not yet
+//! implemented**. CUDA kernel authoring is tracked as a follow-up
+//! issue (out of scope for #2456).
+//!
+//! The numbers below are **target** annotations, not measured values.
+//! They were claimed when issue #2386 closed but cannot be falsified
+//! against the current code path (the prior criterion bench bodies
+//! returned `black_box(32 * 32 * 32)` — integer multiplication cost —
+//! so the Performance Dashboard received `0.0 ns/iter` for the FFD
+//! track). The CPU baseline that the GPU port must beat is now
+//! measurable via `cargo bench -p fluxion-cfd --bench ffd_bench`.
+//!
+//! - Advection: ~1000× speedup on GPU (**target**, unmeasured)
+//! - Diffusion: ~100× speedup on GPU (**target**, unmeasured)
+//! - Pressure Poisson: ~200–500× speedup on GPU (**target**, unmeasured)
+//!
+//! ## CPU Baseline (Issue #2456 First Step)
+//!
+//! The [`cpu`] shim exposes a GPU-portable API surface (straight-line
+//! Rust ports of the top-level loops). The shim is bit-identical to
+//! the top-level implementations on a 32³ grid (enforced by
+//! `fluxion-cfd/tests/cpu_gpu_parity.rs`) so a future CUDA / OpenCL
+//! port that mirrors the shim's loop structure has a provable
+//! reference.
 
 pub mod advection;
 pub mod diffusion;
