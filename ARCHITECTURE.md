@@ -120,6 +120,18 @@ invariants and is wired into CI (run from repo root):
   `fluxion::physics::{ctf_coefficients, fd_discretization, ctf_solver}` — moving
   these to `fluxion-core` requires moving the whole `physics` tree.
 
+**Regression guard (Issue #2463)**: `scripts/check_physics_sim_cycle.py`
+mirrors the `check_ashrae_cases_cycle.py` pattern above and reports the
+`physics ↔ sim` cycle edge count by file:line. The script's two phases
+forbid (a) any `use crate::sim::*` import under `src/physics/**` and
+(b) any `use crate::physics::*` import in the two protected `sim` files
+(`src/sim/construction.rs` and `src/sim/per_surface_conduction.rs`).
+The guard ships with a baseline of 5+2 documented edges; the companion
+cycle-break work drives the count to 0. Wired into CI as the
+`Physics-Sim-Cycle-Check` job in `.github/workflows/rust-tests.yml`;
+promotion to `release_gates.yaml::ci.required_checks` is deferred to
+the merge PR that closes both this issue and the cycle-break issue.
+
 These will be addressed in subsequent phases. The current change lets
 `cargo-mutants -p fluxion` skip the bulk of the assembly / multi-node /
 ashrae-cases type machinery by mutating only `fluxion`.
