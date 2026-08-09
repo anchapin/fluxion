@@ -51,7 +51,7 @@ impl DiffusionSolver {
         let mut r = scalar.data.clone();
         let mut p = scalar.data.clone();
         let mut ap = vec![0.0; scalar.data.len()];
-        let rsold = self.dot(&r, &r);
+        let mut rsold = self.dot(&r, &r);
         if rsold.sqrt() < self.tolerance {
             return Ok(());
         }
@@ -74,6 +74,13 @@ impl DiffusionSolver {
             for i in 0..p.len() {
                 p[i] = r[i] + beta * p[i];
             }
+            // Issue #2456: standard CG requires `rsold ← rsnew` at the end of
+            // each iteration. The previous code left `rsold` pinned to the
+            // initial residual norm, which made `alpha_val` blow up in later
+            // iterations and produced NaN on non-uniform inputs (e.g. a
+            // Gaussian bump on a 32³ grid). With this update the implicit
+            // diffusion step converges in the documented tolerance.
+            rsold = rsnew;
         }
         Ok(())
     }

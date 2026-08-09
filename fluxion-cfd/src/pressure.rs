@@ -64,7 +64,7 @@ impl PressureSolver {
         let mut r = divergence.data.clone();
         let mut p = divergence.data.clone();
         let mut ap = vec![0.0; divergence.data.len()];
-        let rsold = self.dot(&r, &r);
+        let mut rsold = self.dot(&r, &r);
         if rsold.sqrt() < self.tolerance {
             return Ok(());
         }
@@ -87,6 +87,11 @@ impl PressureSolver {
             for i in 0..p.len() {
                 p[i] = r[i] + beta * p[i];
             }
+            // Issue #2456: standard CG requires `rsold ← rsnew` at the end of
+            // each iteration. Same fix as `DiffusionSolver::solve_implicit` —
+            // without it, `alpha_val = rsold/alpha_k` blows up and the Poisson
+            // solve produces NaN on non-uniform divergence fields.
+            rsold = rsnew;
         }
         Ok(())
     }
