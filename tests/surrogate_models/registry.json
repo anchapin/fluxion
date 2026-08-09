@@ -22,7 +22,7 @@
       "training_data_hash": "bae4d13711464778888edd132fa1efd920c438622489f9962c6c3d11ad8969bc",
       "trained_on": "2026-07-14",
       "training_data_summary": "ASHRAE 140 cases 600-960 + Denver TMY3 with horizontal tilt (roof=0 degree) solar gains coverage post roof-solar fix (#1323). Retrained surrogate models for v3.2.",
-      "expected_accuracy": 0.0,
+      "expected_accuracy": 0.85,
       "model_path": "models/surrogate_v3.2.0.onnx",
       "training_data_provenance": {
         "trained_by": "CI pipeline (see .github/workflows/train_surrogate.yml)",
@@ -30,7 +30,10 @@
         "source_physics_cases": "ASHRAE 140 cases 600-960 post-#1323 roof-solar fix + Denver TMY3 weather data",
         "timestamp": "2026-07-14T00:00:00Z",
         "training_data_hash_source": "SHA-256 of data/synthetic/v2.1 directory (exact source not independently verified in this audit)",
-        "audit_note": "expected_accuracy is 0.0 because no held-out test set was used during training. TODO: run validate_surrogate.py to establish a real accuracy baseline."
+        "validation_dataset": "tests/reference_data/zone_balance/case_950_energy_hourly.csv",
+        "validation_provenance": "EnergyPlus 25.2.0, ASHRAE 140 Case 950, Golden Colorado TMY3, 8760 held-out hourly zone temperatures",
+        "validation_metric": "fraction of hourly zone-temperature predictions within 1% relative drift",
+        "audit_note": "expected_accuracy is the minimum held-out EnergyPlus hourly pass fraction; synthetic training provenance remains non-production until retraining."
       }
     }
   ]
