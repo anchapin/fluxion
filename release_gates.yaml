@@ -223,6 +223,15 @@ ci:
     # entry titled "Code coverage gate (issue #1932)".
     - "Code Coverage Gate (Issue #1932)"
 
+    # Issue #2466: docs-hygiene gate.  Verifies that (a) every `.md`
+    # file at the repo root is in the AGENTS.md allow-list (CLAUDE.md
+    # warns but never fails — it's auto-generated per session), (b)
+    # every `docs/**/*.md` file has a 7-line summary at lines 2-8,
+    # and (c) the canonical root-docs table in docs/doc-inventory.md
+    # is in sync.  Backed by three Python scripts under `scripts/`
+    # and one workflow file under `.github/workflows/`.
+    - "Docs Hygiene Gate (Issue #2466)"
+
   # Job-to-workflow map (informational; branch-protection reads job
   # names directly). Used by `scripts/release_gate_checker.py` to verify
   # the required_checks list is in sync with the workflows directory.
@@ -255,3 +264,8 @@ ci:
       workflow: ".github/workflows/code-coverage.yml"
       issue: 1932
       triggered_by: "PR + push to develop"
+
+    - job: "Docs Hygiene Gate (Issue #2466)"
+      workflow: ".github/workflows/docs-hygiene.yml"
+      issue: 2466
+      triggered_by: "PR + push to develop/main"

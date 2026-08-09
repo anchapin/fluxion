@@ -3,7 +3,7 @@
 Catalog of known systematic issues affecting ASHRAE 140 validation compliance.
 Engineering team and AI agents — reference before modifying physics or validation code.
 Covers: BASE-0x foundation issues, SOLAR-0x solar issues, LIMIT-0x limit cycle issues.
-Related to: validation_report.md (results), FIX.md (placeholder fixes), ARCHITECTURE.md (module status).
+Related to: validation_report.md (results), FIX.md (archived as `docs/investigations/issue-1245-ashrae-140-ci-validation.md`), ARCHITECTURE.md (module status).
 Status: Post-#1323 baseline refresh — pre-#1323 numbers are obsolete per ARCHITECTURE.md §Current Module Status.
 Action: Check this document before attributing validation failures to new issues; many may be known.
 

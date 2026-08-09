@@ -97,6 +97,20 @@ repos:
         pass_filenames: false
         stages: [manual]
 
+      - id: root-md-policy-check
+        name: "Root `.md` Policy Check (issue #2466)"
+        entry: python3 scripts/check_root_md_policy.py
+        language: system
+        pass_filenames: false
+        stages: [manual]
+
+      - id: docs-summaries-check
+        name: "Docs 7-Line Summary Coverage (issue #2466)"
+        entry: python3 scripts/check_docs_summaries.py
+        language: system
+        pass_filenames: false
+        stages: [manual]
+
 # Fluxion Pre-Commit Hooks Configuration
 #
 # Installation:

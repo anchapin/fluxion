@@ -207,6 +207,12 @@ logs/security/
 .sdd/runtime/
 benches/orchestration_decisions/baselines/current_tdqs.json
 
+# Bernstein-agent auto-generated session file (per AGENTS.md line 218).
+# The root `.md` policy gate (`scripts/check_root_md_policy.py`) only
+# *warns* on this file; the `.gitignore` line is the real defense that
+# prevents it from ever being staged.  See issue #2466.
+CLAUDE.md
+
 # ONNX model artifacts (issue #1335) — pinned via tests/surrogate_models/registry.json, never committed
 *.onnx
 models/

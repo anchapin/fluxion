@@ -24,7 +24,7 @@ This directory contains session worksheets used by agents to document their inve
 | rules | [RULES.md](../../RULES.md) |
 | codebase | [CODEBASE_MAP.md](../../CODEBASE_MAP.md) |
 | issues | [docs/KNOWN_ISSUES.md](../../docs/KNOWN_ISSUES.md) |
-| fix | [FIX.md](../../FIX.md) |
+| fix | [FIX.md (archived)](../../docs/investigations/issue-1245-ashrae-140-ci-validation.md) |
 | process | [issue-template.md](./issue-template.md) |
 | linter | [docs/linter-rules.md](../../docs/linter-rules.md) |
 | testing | [scripts/audit_false_confidence.py](../../scripts/audit_false_confidence.py) |
@@ -62,4 +62,3 @@ git tag -a issue-703 -m "Issue #703 - 900-Series Peak Cooling Root Cause"
 2. Fill in the Session Meta section
 3. Update this README to include the new worksheet
 4. Tag the worksheet when complete
-
