@@ -398,6 +398,64 @@ jobs:
       - name: Run cycle check
         run: python3 scripts/check_ashrae_cases_cycle.py
 
+  # -- Physics <-> Sim Cycle Check (Issue #2463) -----------------------------
+  # Mirrors the `Ashrae Cases Cycle Check` job above (Issue #1441) but for
+  # the `physics <-> sim` cycle documented in ARCHITECTURE.md §"Remaining
+  # cycles" and docs/mutation_testing_crate_split.md §"Phase 2". The
+  # companion cycle-break issue drives the reported edge count from 5
+  # (current baseline) down to 0; this guard prevents silent regressions
+  # in the meantime.
+  #
+  # Canonical listener job name: `Physics-Sim-Cycle-Check`. The "(GH)"
+  # and "(Hetzner Overflow)" suffixes match the issue #1441 pattern; the
+  # canonical name (sans suffix) is what AGENTS.md §CI Gates and
+  # release_gates.yaml::ci.required_checks reference. Adding the new gate
+  # to release_gates.yaml::ci.required_checks is deferred to the merge PR
+  # that closes both this issue and the companion cycle-break issue
+  # (see issue body §"Notes" for the rationale).
+
+  physics-sim-cycle-gh-probe:
+    name: "PSC Probe"
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    if: |
+      github.event_name == 'pull_request' ||
+      (github.event_name == 'push' && github.ref == 'refs/heads/main')
+    steps:
+      - run: echo "GH runner acquired"
+
+  physics-sim-cycle-gh:
+    name: "Physics-Sim-Cycle-Check (GH)"
+    needs: physics-sim-cycle-gh-probe
+    runs-on: ubuntu-latest
+    if: |
+      github.event_name == 'pull_request' ||
+      (github.event_name == 'push' && github.ref == 'refs/heads/main')
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4
+      - uses: ./.github/actions/setup-rust-python-env
+        with:
+          python-version: '3.10'
+      - name: Run physics-sim cycle check
+        run: python3 scripts/check_physics_sim_cycle.py
+
+  physics-sim-cycle-hz:
+    name: "Physics-Sim-Cycle-Check (Hetzner Overflow)"
+    needs: physics-sim-cycle-gh-probe
+    runs-on: [self-hosted,fluxion-overflow]
+    if: |
+      (github.event_name == 'pull_request' ||
+       (github.event_name == 'push' && github.ref == 'refs/heads/main'))
+      && (needs.physics-sim-cycle-gh-probe.result == 'failure'
+          || needs.physics-sim-cycle-gh-probe.result == 'cancelled')
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4
+      - uses: ./.github/actions/setup-rust-python-env
+        with:
+          python-version: '3.10'
+      - name: Run physics-sim cycle check
+        run: python3 scripts/check_physics_sim_cycle.py
+
   # -- Issue #1603: GPU smoke test for InferenceBackend::CUDA -------------
   # Runs on every PR and main push. On CPU-only runners the test skips
   # gracefully (cuda_ep_available() returns false at runtime). On GPU runners

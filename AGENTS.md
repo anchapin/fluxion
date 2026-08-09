@@ -83,6 +83,7 @@ cargo test --test ashrae_140_blind_validation -- --nocapture         # blind-mod
 python scripts/release_gate_checker.py                                # release-gate evaluation
 python3 scripts/check_architecture_drift.py                            # ARCHITECTURE.md vs code drift
 python3 scripts/check_ashrae_cases_cycle.py                            # sim↔validation cycle regression
+python3 scripts/check_physics_sim_cycle.py                              # physics↔sim cycle regression (Issue #2463)
 
 # Code quality (REQUIRED order)
 cargo fmt -- --check                       # CI gate — omit --check to auto-fix
@@ -172,6 +173,7 @@ ML-surrogate swap-point traits:
 - `Clippy` — `cargo clippy --lib -- -D warnings`
 - `Known Issues Stale Check` (Issue #1723)
 - `Ashrae Cases Cycle Check` (Issue #1441) — runs `scripts/check_ashrae_cases_cycle.py`
+- `Physics-Sim-Cycle-Check` (Issue #2463) — runs `scripts/check_physics_sim_cycle.py` (deferred to release_gates.yaml `required_checks` until the companion cycle-break PR lands)
 - `CUDA Smoke Test` (Issue #1603) — `cargo build --features cuda` + `cargo test --test surrogate_cuda_smoke --features cuda`
 - `ASHRAE 140 Strict Energy Gate (Issue #1333)` (4 tests, named explicitly in workflow)
 - `Fluxion Determinism Gate (Issue #1351)` — listener on Cross-Platform Determinism CI workflow
@@ -257,6 +259,7 @@ Heavy Linux jobs honour `vars.FLUXION_LINUX_RUNNER` (self-hosted Hetzner fallbac
 | `release_gates.yaml` | Required branch-protection checks + thresholds |
 | `scripts/check_architecture_drift.py` | ARCHITECTURE.md vs source-code drift |
 | `scripts/check_ashrae_cases_cycle.py` | `sim ↔ validation` cycle regression guard |
+| `scripts/check_physics_sim_cycle.py` | `physics ↔ sim` cycle regression guard (Issue #2463) |
 | `scripts/check_root_md_policy.py` | Root `.md` allow-list gate (issue #2466) |
 | `scripts/check_docs_summaries.py` | `docs/**/*.md` 7-line summary coverage gate (issue #2466) |
 | `scripts/generate_doc_inventory.py` | Regenerate `docs/doc-inventory.md` auto-table (issue #2466) |
