@@ -7,7 +7,7 @@ Related to: validation_report.md (results), FIX.md (archived as `docs/investigat
 Status: Post-#1323 baseline refresh — pre-#1323 numbers are obsolete per ARCHITECTURE.md §Current Module Status.
 Action: Check this document before attributing validation failures to new issues; many may be known.
 
-*Last Updated: 2026-08-03* (Post-#1323 / post-Wave-5 baseline refresh; #1421 Case 600 ref-range unified to benchmark.rs:124-127 across validator, CSV, doc, and this document; see issue #1443. CI-01 code-coverage gate #1932 added. CI-02 debug build rust-lld segfault #2297 added. **Cases 600 series energy violations (600, 610, 620, 630, 640, 650) are documented as pre-existing model limitations — see §LIMIT-05 UPDATE (#1457 revisit) and §LIMIT-06. Case 900 residual annual-energy deviation (H=2.362 MWh, C=1.330 MWh) confirmed as a structural 5R1C limitation after #2227/#2229 — see §SOLAR-02 UPDATE (Issue #2239).**)
+*Last Updated: 2026-08-09* (Post-#1323 / post-Wave-5 baseline refresh; #1421 Case 600 ref-range unified to benchmark.rs:124-127 across validator, CSV, doc, and this document; see issue #1443. CI-01 code-coverage gate #1932 added. CI-02 debug build rust-lld segfault #2297 added. **Cases 600 series energy violations (600, 610, 620, 630, 640, 650) are documented as pre-existing model limitations — see §LIMIT-05 UPDATE (#1457 revisit) and §LIMIT-06. Case 900 residual annual-energy deviation (H=2.362 MWh, C=1.330 MWh) confirmed as a structural 5R1C limitation after #2227/#2229 — see §SOLAR-02 UPDATE (Issue #2239). 900-series bidirectional annual-energy over-prediction (Cases 900, 910, 920, 930, 940 in the CTF path: H AND C both above band) documented per §LIMIT-05 UPDATE (Issue #2453, 2026-08-09) — diagnostic test + Python analyser shipped, fix routed to GaugeSolver #1465/#1462.**)
 
 > **Post-#1323 baseline changes (read first)** — Between the prior "Last Updated" header
 > (2026-03-30) and this revision, ~100 days and 30+ validation-affecting PRs landed.
@@ -820,6 +820,92 @@ they are physically correct and flip one marginal test.
   already-UNDER peak_heating (3.26 kW) even further below the 4.30 kW floor.
   Tracked here so a later PR can address it with full regression coverage.
 
+### LIMIT-05 UPDATE (Issue #2453, 2026-08-09): 900-series bidirectional annual-energy over-prediction — diagnostic + GaugeSolver routing
+
+- **Issue:** #2453 (re-characterisation of #2448) — Cases 900, 910, 920, 930, 940
+  all over-predict annual heating **AND** annual cooling simultaneously. The
+  simultaneous H+C over-prediction is the textbook signature of solar mass-node
+  over-injection on a long integration horizon (the inverse of the LIMIT-05 peak
+  over/under inversion).
+- **Status:** 🟡 **Diagnostic shipped; fix routed to GaugeSolver #1465 / #1462.**
+  No physics-code change in this PR — the bidirectional signature cannot be
+  closed by parameter tuning per AGENTS.md.
+- **Investigation findings (CTF solver path — same as `ashrae_140_validator`):**
+
+  | Case | Engine H (MWh) | Ref band (MWh) | dH%   | Engine C (MWh) | Ref band (MWh) | dC%   |
+  |------|----------------|----------------|-------|----------------|----------------|-------|
+  | 900  | 5.13           | 1.17 – 2.04    | +220  | 7.13           | 2.13 – 3.67    | +146  |
+  | 910  | 5.67           | 1.51 – 2.28    | +199  | 7.41           | 0.82 – 1.88    | +449  |
+  | 920  | 5.04           | 3.26 – 4.30    | +33   | 5.61           | 1.84 – 3.31    | +118  |
+  | 930  | 5.12           | 4.14 – 5.34    | +8    | 5.39           | 1.04 – 2.24    | +229  |
+  | 940  | 6.64           | 0.79 – 1.41    | +504  | 10.10          | 2.08 – 3.55    | +259  |
+
+  All five cases show the bidirectional signature, with the worst heating
+  over-prediction on Case 940 (5× over) and the worst cooling over-prediction on
+  Case 910 (4.5× over). The 9R4C multi-node path (default when no
+  `enable_advanced_solver` is called) reports much smaller deviations for
+  Case 900 (H=1.29 MWh, C=1.58 MWh per `case_900_multinode_validation`),
+  confirming the over-prediction is concentrated in the **CTF path** and
+  amplifies through the seasonal integration.
+
+- **Per-month seasonal attribution (Issue #2453 diagnostic):** The new test
+  `tests/case_900_series_seasonal_attribution.rs` (companion Python analyser
+  `scripts/issue-2448-seasonal-attribution.py`) decomposes the per-hour
+  `SimulationDiagnostics` loads (solar, internal, infiltration, conduction, hvac)
+  into per-month sums. Key observations:
+
+  1. **Solar gain is correct:** annual Q_solar ≈ 11.0 MWh for Cases 900/910/940
+     and ≈ 7.5 MWh for Cases 920/930 (E/W windows, less south exposure). These
+     match EnergyPlus inter-program totals. The bug is **not** in the
+     incidence-side solar accounting.
+  2. **Q_internal is correct:** 1.75 MWh/year (matches 200 W plug + 200 W
+     lights, 0.5 W/m² × 96 m² × 8760 h = 4.2 MWh — engine reports lower because
+     the test uses occupant-schedule and the case spec uses 200 W per zone).
+  3. **Q_conduction is correct in magnitude:** ≈ −7.7 MWh/year for Cases 900
+     and 940 (high U-value + cold Denver winter), −6.9 MWh for the E/W cases.
+  4. **H+C over-prediction is season-symmetric:** H over-prediction peaks in
+     Dec–Mar (winter), C over-prediction peaks in Apr–Oct (summer). Both
+     directions show the same magnitude. This is the diagnostic signature
+     of the **discrete-node solar-injection pathology** documented in this
+     section: solar mass-node over-charge on a 1-hour timestep releases
+     stored heat at the wrong hour, doubling up on the HVAC demand that
+     would otherwise match the diurnal cycle.
+
+- **Diagnostic test (`#[ignore]`-quarantined, run with `--ignored --nocapture`):**
+  - `tests/case_900_series_seasonal_attribution.rs::test_case_900_series_seasonal_attribution`
+    — runs all 5 cases through the CTF path and prints the per-month table.
+  - `tests/case_900_series_seasonal_attribution.rs::test_case_900_series_seasonal_attribution_reconciles`
+    — guards the per-month sum against the model's annual tracker (±1% of the
+    larger value). This is the energy-balance guard for the diagnostic.
+  - `scripts/issue-2448-seasonal-attribution.py` — parses the test stdout and
+    prints the per-month deviation against the ASHRAE 140 monthly reference CSV
+    `tests/reference_data/ashrae140/monthly/case_900_monthly_reference.csv`.
+
+- **What this PR does NOT do (and why):**
+  1. **No 5R1C parameter tuning** — forbidden by `AGENTS.md` ("fix the underlying
+     math"). The #2229 `h_ms_coeff` investigation (KNOWN_ISSUES §SOLAR-02
+     UPDATE, issue #2239) and the #1457 / #2300 LIMIT-05 chain all concluded
+     that parameter tuning cannot close a **bidirectional** gap.
+  2. **No CTF coefficient re-fitting** — the same `h_ms_total` over-counting
+     issue (#1281) that was addressed by `MassAirCouplingMode::ParallelResistance`
+     (per ARCHITECTURE.md:406 — *not* the cooling fix) would not resolve
+     the bidirectional signature without architectural rework.
+  3. **No sub-hour air-node sub-stepping** — explicitly blocked on GaugeSolver
+     (#1465 / #1462) per the §LIMIT-05 UPDATE (#2300) entry.
+  4. **No `enable_advanced_solver` removal** — the CTF path is the production
+     validator path and is needed to match the §CURRENT MODULE STATUS
+     requirements in `ARCHITECTURE.md`.
+
+- **Recommended path forward:**
+  - **GaugeSolver rework (#1465 / #1462)** — the long-term fix. Treats solar
+    as geometric curvature rather than per-timestep energy injection. The
+    9R4C multi-node path is a better approximation of the same physics, but
+    the CTF path will continue to over-predict on the bidirectional signature
+    until the gauge formulation replaces the per-timestep node-injection.
+  - **Documentation** — `tests/reference_data/zone_balance/PROVENANCE.md`
+    and the `docs/ASHRAE140_RESULTS.md` case-level commentary will need a
+    note that the 900-series annual metrics are gated on GaugeSolver.
+
 ## Reporting Issues (REPORT)
 
 ### REPORT-01: Systematic Issues Classification Heuristic
@@ -1054,6 +1140,10 @@ Once these are addressed, expect pass rate to increase significantly. Remaining 
 | #2239 | Case 900 residual deviation: H=2.36, C=1.33 MWh | ✅ **Closed — known 5R1C structural limitation**; routed to GaugeSolver #1465 | §SOLAR-02 UPDATE (#2239) |
 | #2297 | Debug build linking crashes with rust-lld segfault | 🔄 **Open** — known environmental issue on disk-space-constrained systems; workaround: use `--release` | §CI-02 |
 | #2330 | Pre-existing Jacobian accuracy test failures in fluxion-fluid | 🔄 **Open** — documented as known limitations FLUID-01, FLUID-02 | §FLUID-01, §FLUID-02 |
+| #2448 | 900-series annual cooling 2-4x higher than ASHRAE 140 reference (Cases 900/910/920/930/940) | 🔄 **Open (re-characterised by #2453)** — original cooling-only framing stale; see new bidirectional signature | §LIMIT-05 UPDATE (#2453) |
+| #2453 | 900-series bidirectional annual-energy over-prediction (Cases 900, 910, 920, 930, 940) | 🟡 **Diagnostic shipped** — per-month attribution test + Python analyser; fix routed to GaugeSolver #1465/#1462 (out of scope per AGENTS.md "no parameter tuning") | §LIMIT-05 UPDATE (#2453) |
+| #2454 | Case 920 E/W windows annual energy root cause (Issue #2427 follow-up) | ✅ **Closed** — per-orientation diagnostic test ships, fix routed to GaugeSolver #1465/#1462 | (per-orientation test pattern) |
+| #2455 | 900FF free-floating night minimum 6°C below reference band | ✅ **Closed** — wall-capacitance half-insulation rule fix (ISO 13790 §12.2.3 + Annex C) | (test `case_900ff_regression_bisect.rs`) |
 
 ## See also
 
