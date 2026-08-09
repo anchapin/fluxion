@@ -2991,3 +2991,53 @@ where
         self.0.tracer = Some(tracer);
     }
 }
+
+/// Digital twin (Issue #2461) — apply a [`fluxion_twin::TwinCorrection`] to the
+/// inner [`ThermalModel`] state.
+///
+/// This is the engine-level entry point for the `fluxion-twin` UKF
+/// correction. It is exposed directly on the inner `ThermalModel<T>` so
+/// call sites that hold the engine (rather than the trait adapter) can
+/// apply corrections without going through the `ThermalModelTrait`
+/// abstraction. The trait adapters (`PhysicsThermalModel`,
+/// `SurrogateThermalModel`, `HybridThermalModel`, `UnifiedThermalModel`)
+/// delegate to this method.
+///
+/// # Energy-balance invariant (RULES.md §1, must-always)
+///
+/// The correction is a *state* update, not a *process* update. Adjusting
+/// the per-zone temperature to the UKF estimate does not add or remove
+/// energy from the system — the energy accumulators
+/// (`zone_heating_energy_kwh`, `zone_cooling_energy_kwh`) are NOT
+/// modified by this call. The next `step_physics` will compute HVAC
+/// demand from the corrected state, so the accumulators shift
+/// *consistently* with the corrected temperature (e.g. a warmer zone
+/// requires less heating in the next step). This preserves the
+/// energy-conservation gate.
+///
+/// # Per-zone multiplicity
+///
+/// Extra correction entries beyond `num_zones` are silently ignored
+/// (consistent with the existing `ThermalModelTrait::set_twin_correction`
+/// contract). Missing entries (correction shorter than `num_zones`)
+/// leave the corresponding zone unchanged.
+impl<T> ThermalModel<T>
+where
+    T: ContinuousTensor<f64> + AsRef<[f64]> + AsMut<[f64]> + From<VectorField>,
+{
+    /// Apply a digital-twin correction to the per-zone temperatures.
+    ///
+    /// # Arguments
+    /// * `correction` — [`fluxion_twin::TwinCorrection`] whose
+    ///   `zone_temperatures` vector provides per-zone temperature deltas
+    ///   (in °C) to add to the current `temperatures` field.
+    pub fn set_twin_correction(&mut self, correction: &fluxion_twin::TwinCorrection) {
+        let mut temps = self.0.temperatures.as_ref().to_vec();
+        for (i, corr) in correction.zone_temperatures.iter().enumerate() {
+            if i < temps.len() {
+                temps[i] += corr;
+            }
+        }
+        self.0.temperatures = T::from(VectorField::new(temps));
+    }
+}

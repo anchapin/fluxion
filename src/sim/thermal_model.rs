@@ -325,13 +325,7 @@ impl ThermalModelTrait for PhysicsThermalModel {
     }
 
     fn set_twin_correction(&mut self, correction: &TwinCorrection) {
-        let mut temps = self.inner.temperatures.as_ref().to_vec();
-        for (i, corr) in correction.zone_temperatures.iter().enumerate() {
-            if i < temps.len() {
-                temps[i] += corr;
-            }
-        }
-        self.inner.temperatures = VectorField::new(temps);
+        self.inner.set_twin_correction(correction);
     }
 }
 
@@ -565,13 +559,7 @@ impl ThermalModelTrait for SurrogateThermalModel {
     }
 
     fn set_twin_correction(&mut self, correction: &TwinCorrection) {
-        let mut temps = self.inner.temperatures.as_ref().to_vec();
-        for (i, corr) in correction.zone_temperatures.iter().enumerate() {
-            if i < temps.len() {
-                temps[i] += corr;
-            }
-        }
-        self.inner.temperatures = VectorField::new(temps);
+        self.inner.set_twin_correction(correction);
     }
 }
 
@@ -1095,13 +1083,7 @@ impl ThermalModelTrait for HybridThermalModel {
     }
 
     fn set_twin_correction(&mut self, correction: &TwinCorrection) {
-        let mut temps = self.inner.temperatures.as_ref().to_vec();
-        for (i, corr) in correction.zone_temperatures.iter().enumerate() {
-            if i < temps.len() {
-                temps[i] += corr;
-            }
-        }
-        self.inner.temperatures = crate::physics::cta::VectorField::new(temps);
+        self.inner.set_twin_correction(correction);
     }
 }
 
@@ -1246,13 +1228,7 @@ impl ThermalModelTrait for UnifiedThermalModel {
     }
 
     fn set_twin_correction(&mut self, correction: &TwinCorrection) {
-        let mut temps = self.inner.temperatures.as_ref().to_vec();
-        for (i, corr) in correction.zone_temperatures.iter().enumerate() {
-            if i < temps.len() {
-                temps[i] += corr;
-            }
-        }
-        self.inner.temperatures = VectorField::new(temps);
+        self.inner.set_twin_correction(correction);
     }
 }
 
