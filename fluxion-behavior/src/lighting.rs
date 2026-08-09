@@ -1,4 +1,4 @@
-use chrono::{DateTime, Datelike, Timelike};
+use chrono::{DateTime, Timelike};
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
@@ -58,6 +58,11 @@ impl LightingModel {
             OccupantState::Sleeping => 0.1,
         };
 
+        // Lighting demand is reduced by the daylight control response. The
+        // `daylight_availability` term is a binary indicator (1.0 during
+        // daytime hours, 0.0 at night) and `daylight_fraction` is the
+        // daylight factor — the fraction of the lighting load that can be
+        // offset by available daylight when controls are active.
         let daylight_availability = self.estimate_daylight_fraction(t);
         let lighting_demand = fraction_on * (1.0 - daylight_availability * self.daylight_fraction);
 
@@ -65,10 +70,16 @@ impl LightingModel {
         watts.max(0.0)
     }
 
+    /// Returns the daylight availability indicator: 1.0 when daylight is
+    /// available (daytime hours 06:00–18:00) and 0.0 otherwise.
+    ///
+    /// This is a coarse time-of-day indicator used by `compute()`. The
+    /// magnitude of the daylight savings is controlled separately by
+    /// `daylight_fraction` (the daylight factor).
     fn estimate_daylight_fraction(&self, t: DateTime<chrono::Utc>) -> f64 {
         let hour = t.hour();
         if hour >= 6 && hour <= 18 {
-            0.5
+            1.0
         } else {
             0.0
         }
