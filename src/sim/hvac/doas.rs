@@ -11,11 +11,12 @@
 //!
 //! ## Physical model
 //!
-//! The DOAS composes the three core airside component abstractions —
-//! [`FanComponent`] (#1761), [`CoolingCoil`] (#1762), and
-//! [`HeatingCoilComponent`] (#1763) — but drives them with a **dew-point
-//! target** rather than a zone-temperature target. The conditioning sequence
-//! is:
+//! The DOAS composes the four airside component abstractions —
+//! [`FanComponent`] (#1761), [`CoolingCoil`] (#1762),
+//! [`HeatingCoilComponent`] (#1763), and optionally a
+//! [`HumidifierComponent`](crate::sim::hvac::humidifier::HumidifierComponent)
+//! (#2464) — but drives them with a **dew-point target** rather than a
+//! zone-temperature target. The conditioning sequence is:
 //!
 //! 1. **Supply fan** — constant-volume, full design speed. Establishes the
 //!    ventilation mass flow and dissipates shaft power as fan heat into the
@@ -32,6 +33,12 @@
 //!    the neutral supply setpoint (typically 17–19 °C) at constant humidity
 //!    ratio. This restores sensible capacity removed by the cooling coil
 //!    without re-introducing moisture.
+//! 4. **Winter humidification** (Issue #2464, optional) — when the DOAS is
+//!    equipped with a humidifier and the post-reheat humidity ratio is below
+//!    `w_target`, an adiabatic humidifier raises the leaving humidity ratio
+//!    to `w_target` at constant dry-bulb (ideal-adiabatic simplification,
+//!    matching EnergyPlus `Humidifier:Steam:Adiabatic`). This restores the
+//!    ASHRAE 62.1 §6.4 minimum indoor humidity guidance in cold-dry climates.
 //!
 //! ### Mode selection
 //!
@@ -56,10 +63,18 @@
 //!
 //! ### Scope / known limitations
 //!
-//! - **No winter humidification.** When the outdoor-air dew-point is below the
-//!   target, the DOAS does not add moisture (humidifier out of scope). The
-//!   supply humidity ratio equals the outdoor-air value. A future task can add
-//!   an adiabatic/steam humidifier stage.
+//! - **Winter humidification (Issue #2464).** When the DOAS is equipped with
+//!   an optional [`HumidifierComponent`](crate::sim::hvac::humidifier::HumidifierComponent)
+//!   and the post-reheat humidity ratio is below `w_sat(target_dew_point)` —
+//!   i.e., outdoor air is drier than the target dew-point — the DOAS engages
+//!   an adiabatic humidifier stage that drives the leaving humidity ratio to
+//!   the target. This restores the ASHRAE 62.1 §6.4 minimum indoor humidity
+//!   guidance in cold-dry climates (4–6 months/yr in ASHRAE 169 climate zones
+//!   5B, 6A, 7, 8). The latent heat `Q_lat = ṁ_h2o · h_fg` is delivered to
+//!   the airstream and credited by [`airside_coupling`](crate::sim::hvac::airside_coupling)
+//!   via `supply_latent_heat_w`. When the humidifier is `None` (the default)
+//!   or the outdoor air is already at/above the target, behavior is
+//!   identical to the pre-#2464 implementation.
 //! - **Blow-through fan placement.** Fan heat is applied to the outdoor air
 //!   before the coils, matching the [`VavTerminalUnit`] convention.
 //!
@@ -76,6 +91,7 @@ use crate::sim::hvac::airside_state::{
 use crate::sim::hvac::cooling_coil::{CoolingCoil, CoolingCoilBehavior};
 use crate::sim::hvac::fan::{Fan, FanComponent};
 use crate::sim::hvac::heating_coil::{HeatingCoil, HeatingCoilComponent, HeatingCoilControl};
+use crate::sim::hvac::humidifier::{Humidifier, HumidifierComponent, HumidifierControl};
 use fluxion_core::weather::psychrometrics::{calculate_dew_point, calculate_humidity_ratio};
 use serde::{Deserialize, Serialize};
 
@@ -156,7 +172,8 @@ impl DoasControl {
 /// All capacity values are **positive** quantities reported as for
 /// [`crate::sim::hvac::vav_terminal::VavTerminalPerformance`]: cooling is heat
 /// removed from the air, reheat is heat added, fan heat is shaft power
-/// dissipated into the airstream.
+/// dissipated into the airstream, and humidifier is latent heat delivered to
+/// the air.
 #[derive(Debug, Clone, PartialEq)]
 pub struct DoasPerformance {
     /// Operating mode that produced this result.
@@ -178,6 +195,19 @@ pub struct DoasPerformance {
     pub cooling_shr: f64,
     /// Neutral reheat capacity delivered [W] (0 if no reheat).
     pub reheat_capacity_w: f64,
+    /// Adiabatic humidifier capacity delivered [W] (latent heat added to
+    /// the airstream, 0 if no humidifier or no winter humidification active).
+    /// Issue #2464.
+    pub humidifier_capacity_w: f64,
+    /// Moisture addition rate from the humidifier [kg_water/s].
+    /// Zero when no humidifier or no winter humidification active.
+    /// Issue #2464.
+    pub humidifier_moisture_rate_kg_per_s: f64,
+    /// Whether the winter humidification stage was active this step.
+    /// `true` only when the humidifier ran (post-reheat humidity ratio was
+    /// below `w_sat(target_dew_point)` and a humidifier was present).
+    /// Issue #2464.
+    pub humidifier_active: bool,
     /// Fan shaft power [W].
     pub fan_shaft_power_w: f64,
     /// Fan motor electrical input power [W].
@@ -189,8 +219,11 @@ pub struct DoasPerformance {
     /// Dew-point actually achieved at the supply [°C].
     pub supply_dew_point_c: f64,
     /// Whether the target dew-point was met (`true` when the cooling coil had
-    /// sufficient capacity to reach `target_dew_point_c`). Always `true` in
-    /// non-dehumidification modes.
+    /// sufficient capacity to reach `target_dew_point_c`, **or** when the
+    /// humidifier raised the leaving humidity ratio to `w_sat(target_dew_point)`
+    /// in cold-dry conditions). Always `true` in
+    /// `SensibleCooling` / `HeatingOnly` without humidifier / `Ventilation` /
+    /// `Off` modes.
     pub target_dew_point_met: bool,
 }
 
@@ -251,14 +284,15 @@ pub trait Doas: Send + Sync {
 /// Reference implementation of a constant-volume DOAS.
 ///
 /// Owns a [`FanComponent`] (always run at full design speed), a [`CoolingCoil`]
-/// (dehumidification + sensible cooling), and an optional
-/// [`HeatingCoilComponent`] (neutral reheat). The cooling coil's rated
-/// capacity clamps the achievable dehumidification; its bypass factor and
-/// apparatus dew point are retained for the rated-capacity reference, but the
-/// controlled DOAS overrides the leaving-air humidity ratio to the target
-/// dew-point whenever capacity permits (see module docs).
+/// (dehumidification + sensible cooling), an optional
+/// [`HeatingCoilComponent`] (neutral reheat), and an optional
+/// [`HumidifierComponent`] (winter humidification — Issue #2464). The cooling
+/// coil's rated capacity clamps the achievable dehumidification; its bypass
+/// factor and apparatus dew point are retained for the rated-capacity
+/// reference, but the controlled DOAS overrides the leaving-air humidity
+/// ratio to the target dew-point whenever capacity permits (see module docs).
 ///
-/// All three sub-components are concrete types so the unit is
+/// All sub-components are concrete types so the unit is
 /// `Clone + Serialize + Deserialize` without trait-object indirection, matching
 /// [`crate::sim::hvac::vav_terminal::VavTerminalUnit`].
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -272,6 +306,11 @@ pub struct DoasUnit {
     /// Optional neutral reheat coil. `None` for cooling-only DOAS (rare; most
     /// DOAS reheat to a neutral supply temperature).
     pub reheat_coil: Option<HeatingCoilComponent>,
+    /// Optional adiabatic humidifier for winter humidification (Issue #2464).
+    /// Engaged when the post-reheat humidity ratio is below
+    /// `w_sat(target_dew_point)` to satisfy ASHRAE 62.1 §6.4 minimum indoor
+    /// humidity guidance in cold-dry climates.
+    pub humidifier: Option<HumidifierComponent>,
     /// Last persisted operating mode.
     pub current_mode: DoasMode,
 }
@@ -283,11 +322,17 @@ impl DoasUnit {
     /// pressure rise (typical DOAS external static, higher than a zone VAV fan)
     /// and 70 % total efficiency. Override with [`DoasUnit::with_fan`] for a
     /// custom fan.
+    ///
+    /// Pass `None` for the humidifier to disable winter humidification (the
+    /// pre-#2464 behavior). Pass `Some(...)` to enable the stage; the
+    /// humidifier activates automatically when the post-reheat humidity ratio
+    /// is below `w_sat(target_dew_point)`.
     pub fn new(
         id: String,
         design_outdoor_air_flow_m3_per_s: f64,
         cooling_coil: CoolingCoil,
         reheat_coil: Option<HeatingCoilComponent>,
+        humidifier: Option<HumidifierComponent>,
     ) -> Self {
         let fan = FanComponent::new(
             format!("{id}-FAN"),
@@ -300,6 +345,7 @@ impl DoasUnit {
             fan,
             cooling_coil,
             reheat_coil,
+            humidifier,
             current_mode: DoasMode::Off,
         }
     }
@@ -308,6 +354,18 @@ impl DoasUnit {
     pub fn with_fan(mut self, fan: FanComponent) -> Self {
         self.fan = fan;
         self
+    }
+
+    /// Equip the DOAS with an adiabatic humidifier (Issue #2464). Use this
+    /// to add a humidifier after construction without rebuilding the unit.
+    pub fn with_humidifier(mut self, humidifier: HumidifierComponent) -> Self {
+        self.humidifier = Some(humidifier);
+        self
+    }
+
+    /// Whether the unit is equipped with a winter humidifier.
+    pub fn has_humidifier(&self) -> bool {
+        self.humidifier.is_some()
     }
 
     /// Constant outdoor-air volumetric flow rate — the fan rated flow [m³/s].
@@ -397,6 +455,9 @@ impl Doas for DoasUnit {
                 cooling_latent_capacity_w: 0.0,
                 cooling_shr: 0.0,
                 reheat_capacity_w: 0.0,
+                humidifier_capacity_w: 0.0,
+                humidifier_moisture_rate_kg_per_s: 0.0,
+                humidifier_active: false,
                 fan_shaft_power_w: 0.0,
                 fan_motor_power_w: 0.0,
                 fan_heat_w: 0.0,
@@ -472,6 +533,58 @@ impl Doas for DoasUnit {
                 _ => (post_cooling, 0.0),
             };
 
+        // ---- 5. Winter humidification (Issue #2464) -----------------------
+        // Engages the humidifier when the post-reheat humidity ratio is below
+        // `w_sat(target_dew_point)` — i.e., outdoor air is drier than the
+        // target dew-point setpoint. The humidifier drives the leaving humidity
+        // ratio to `w_sat(target_dew_point)`, restoring the ASHRAE 62.1 §6.4
+        // minimum indoor humidity guidance in cold-dry climates (4–6 months/yr
+        // in ASHRAE 169 climate zones 5B, 6A, 7, 8). Latent heat is delivered
+        // to the airstream as `Q_lat = �_h2o · h_fg`; the airside coupling
+        // layer (`airside_coupling.rs`) credits this via `supply_latent_heat_w`.
+        //
+        // The comparison uses a 1 %-of-target epsilon to absorb round-trip
+        // drift between the cooling coil's `from_humidity_ratio` write and
+        // the same expression in `w_target_saturation` (both go through the
+        // psychrometric library's saturation table, which can introduce
+        // sub-microscopic round-off).
+        let w_target_saturation =
+            calculate_humidity_ratio(control.target_dew_point_c, 100.0, pressure_pa);
+        let w_supply = supply_air.humidity_ratio_kg_per_kg_dry_air;
+        let w_engage_epsilon = w_target_saturation * 1.0e-4;
+        let needs_humidification =
+            dry_air_mass_flow > 0.0 && w_supply < w_target_saturation - w_engage_epsilon;
+        let (
+            supply_air,
+            humidifier_capacity_w,
+            humidifier_moisture_rate_kg_per_s,
+            humidifier_active,
+            target_met_after_humidifier,
+        ) = match (&self.humidifier, needs_humidification) {
+            (Some(humidifier), true) => {
+                let result = humidifier.compute_humidification_capacity(
+                    &supply_air,
+                    dry_air_mass_flow,
+                    HumidifierControl::TargetHumidityRatio(w_target_saturation),
+                )?;
+                // After the humidifier, the leaving humidity ratio is at the
+                // target saturation (subject to the saturation guard inside
+                // the humidifier when the reheat coil is capacity-limited);
+                // the dew-point target is met when the post-humidifier
+                // humidity ratio is at or above the target.
+                let dp_met = result.leaving_air.humidity_ratio_kg_per_kg_dry_air
+                    >= w_target_saturation - w_engage_epsilon;
+                (
+                    result.leaving_air,
+                    result.capacity_w,
+                    result.moisture_rate_kg_per_s,
+                    true,
+                    target_met && dp_met,
+                )
+            }
+            _ => (supply_air, 0.0, 0.0, false, target_met),
+        };
+
         Ok(DoasPerformance {
             mode,
             supply_air,
@@ -482,12 +595,15 @@ impl Doas for DoasUnit {
             cooling_latent_capacity_w: cooling_latent,
             cooling_shr,
             reheat_capacity_w,
+            humidifier_capacity_w,
+            humidifier_moisture_rate_kg_per_s,
+            humidifier_active,
             fan_shaft_power_w: shaft_power,
             fan_motor_power_w: motor_power,
             fan_heat_w,
             condensate_rate_kg_per_s: condensate,
             supply_dew_point_c: dew_point_of(&supply_air),
-            target_dew_point_met: target_met,
+            target_dew_point_met: target_met_after_humidifier,
         })
     }
 
@@ -669,6 +785,7 @@ mod tests {
     /// coil, 35 kW reheat coil. Sized to dehumidify up to 35 °C/80 % RH OA to a
     /// 10 °C dew-point and to reheat the cold coil leaving air to an 18 °C
     /// neutral supply. Target dew-point 10 °C, neutral supply 18 °C.
+    /// No humidifier — preserves the pre-#2464 behavior.
     fn test_doas() -> DoasUnit {
         let cooling = CoolingCoil::new(
             "CC-DOAS".to_string(),
@@ -679,13 +796,30 @@ mod tests {
             1.8,       // design mass flow
         );
         let reheat = HeatingCoilComponent::new("HC-DOAS".to_string(), 35_000.0, 1.8);
-        DoasUnit::new("DOAS-1".to_string(), 1.5, cooling, Some(reheat))
+        DoasUnit::new("DOAS-1".to_string(), 1.5, cooling, Some(reheat), None)
+    }
+
+    /// Test DOAS with a winter humidifier (Issue #2464). Sized for the same
+    /// airflow and reheat but with a 0.050 kg_water/s adiabatic humidifier —
+    /// well above the ≈ 4.16e-3 kg/s required for −10 °C / 20 % RH outdoor air
+    /// targeting a 10 °C dew-point.
+    fn test_doas_with_humidifier() -> DoasUnit {
+        let cooling = CoolingCoil::new("CC-DOAS".to_string(), 150_000.0, 0.50, 0.10, 10.0, 1.8);
+        let reheat = HeatingCoilComponent::new("HC-DOAS".to_string(), 35_000.0, 1.8);
+        let humidifier = HumidifierComponent::new("HUM-DOAS".to_string(), 0.050, 1.8);
+        DoasUnit::new(
+            "DOAS-1H".to_string(),
+            1.5,
+            cooling,
+            Some(reheat),
+            Some(humidifier),
+        )
     }
 
     /// DOAS without a reheat coil (cooling-only — atypical but valid).
     fn cooling_only_doas() -> DoasUnit {
         let cooling = CoolingCoil::new("CC-2".to_string(), 120_000.0, 0.50, 0.10, 10.0, 1.8);
-        DoasUnit::new("DOAS-2".to_string(), 1.5, cooling, None)
+        DoasUnit::new("DOAS-2".to_string(), 1.5, cooling, None, None)
     }
 
     // -----------------------------------------------------------------------
@@ -895,7 +1029,7 @@ mod tests {
         // The enthalpy-exact clamp delivers exactly the rated 5 kW.
         let cooling = CoolingCoil::new("tiny".to_string(), 5_000.0, 0.50, 0.10, 10.0, 1.8);
         let reheat = HeatingCoilComponent::new("hc".to_string(), 35_000.0, 1.8);
-        let doas = DoasUnit::new("small".to_string(), 1.5, cooling, Some(reheat));
+        let doas = DoasUnit::new("small".to_string(), 1.5, cooling, Some(reheat), None);
 
         let oa = outdoor_air(32.0, 60.0);
         let rho = oa.density_kg_per_m3;
