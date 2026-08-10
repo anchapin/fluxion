@@ -56,6 +56,60 @@ paths:
                     status: ok
                     version: 1.0.0
 
+  /v1/readyz:
+    get:
+      tags: [health]
+      summary: Readiness probe (Issue #2514)
+      description: |
+        Returns `200 OK` when all dependency probes pass (ONNX model
+        loadability, configured weather-file readability, AppState init),
+        otherwise `503 Service Unavailable`. Unlike `/v1/healthz`
+        (liveness), this endpoint pokes downstream dependencies and must
+        be wired to a k8s `readinessProbe` — not `livenessProbe` — so a
+        slow disk does not trigger restart loops.
+      operationId: readyz
+      responses:
+        "200":
+          description: All readiness checks passed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ReadinessReport"
+              examples:
+                ok:
+                  value:
+                    status: ok
+                    checks:
+                      onnx:
+                        status: ok
+                        detail: skipped (ort feature off)
+                      weather:
+                        status: ok
+                        detail: no weather file configured
+                      appstate:
+                        status: ok
+                        detail: initialized
+        "503":
+          description: At least one readiness check failed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ReadinessReport"
+              examples:
+                not_ready:
+                  value:
+                    status: not ready
+                    checks:
+                      onnx:
+                        status: ok
+                        detail: mock (no model loaded)
+                      weather:
+                        status: fail
+                        detail: "FLUXION_WEATHER_FILE='/etc/fluxion/weather.epw' not readable: No such file or directory"
+                      appstate:
+                        status: ok
+                        detail: initialized
+
   /v1/openapi.json:
     get:
       tags: [spec]
@@ -474,6 +528,34 @@ components:
           type: string
           enum: [ok]
         version:
+          type: string
+
+    ReadinessReport:
+      type: object
+      required: [status, checks]
+      properties:
+        status:
+          type: string
+          enum: [ok, "not ready"]
+        checks:
+          type: object
+          required: [onnx, weather, appstate]
+          properties:
+            onnx:
+              $ref: "#/components/schemas/ReadinessCheck"
+            weather:
+              $ref: "#/components/schemas/ReadinessCheck"
+            appstate:
+              $ref: "#/components/schemas/ReadinessCheck"
+
+    ReadinessCheck:
+      type: object
+      required: [status, detail]
+      properties:
+        status:
+          type: string
+          enum: [ok, fail]
+        detail:
           type: string
 
     ApiError:

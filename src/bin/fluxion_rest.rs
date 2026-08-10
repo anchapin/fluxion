@@ -34,7 +34,7 @@ use std::net::SocketAddr;
 use std::str::FromStr;
 
 use fluxion::api::security::{check_boot_guard_from_env, RestSecurityConfig};
-use fluxion::api::server::{router_with_security, AppState};
+use fluxion::api::server::{router_with_security, run_readiness_probes, AppState};
 use tokio::net::TcpListener;
 use tracing::Level;
 use tracing_subscriber::{fmt, prelude::*, EnvFilter};
@@ -189,6 +189,27 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     ));
 
     let app = router_with_security(AppState::default(), security_cfg);
+
+    // Issue #2514 — startup self-check. Run the same readiness probes the
+    // `/v1/readyz` endpoint exposes *after* the router is constructed but
+    // *before* `axum::serve` accepts traffic. A misconfigured pod (missing
+    // ONNX model / unreadable weather file / broken state store) exits
+    // non-zero here instead of serving 503 to every request. The listener
+    // is already bound so the port is reserved, but no request is handled
+    // until the probe passes.
+    let report = run_readiness_probes();
+    if !report.is_ready() {
+        let c = &report.checks;
+        eprintln!("fluxion-rest: readiness self-check failed — not accepting traffic:");
+        eprintln!("  onnx:     [{}] {}", c.onnx.status, c.onnx.detail);
+        eprintln!("  weather:  [{}] {}", c.weather.status, c.weather.detail);
+        eprintln!("  appstate: [{}] {}", c.appstate.status, c.appstate.detail);
+        std::process::exit(1);
+    }
+    tracing_or_log_info(&format!(
+        "fluxion-rest: readiness self-check passed (onnx: {}, weather: {}, appstate: {})",
+        report.checks.onnx.detail, report.checks.weather.detail, report.checks.appstate.detail,
+    ));
 
     // Issue #2505 — `into_make_service_with_connect_info` injects the
     // accepted socket's peer address into each request's extensions as
