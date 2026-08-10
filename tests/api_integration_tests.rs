@@ -1094,3 +1094,192 @@ async fn campaign_runs_to_completion_and_returns_results() {
         status["state"]
     );
 }
+
+// ---------------------------------------------------------------------------
+// Issue #2530 — DoS hardening for `/v1/simulate` `years` + batch caps.
+//
+// `SimulateOptions.years` is a `u32` with no upper bound; the handler
+// computed `steps = years * 8760` and ran it synchronously. A single
+// `{"years": u32::MAX}` payload therefore asked the server for ~3.76e13
+// timesteps. These tests pin the new defences: serde range validation
+// (1..=10) returns a structured 400, and the batch size + step budget are
+// enforced before any rayon work is spawned.
+// ---------------------------------------------------------------------------
+
+/// Build a valid single-zone request body with a given `years` option.
+fn simulate_body_with_years(years: u32) -> serde_json::Value {
+    let mut body = serde_json::to_value(default_schema_v1()).unwrap();
+    body["options"] = json!({ "years": years, "use_surrogates": false });
+    body
+}
+
+#[tokio::test]
+async fn simulate_rejects_u32max_years_with_structured_400() {
+    let (base, _state, _shutdown) = start_server().await;
+
+    let resp = http_client()
+        .post(format!("{base}/v1/simulate"))
+        .json(&simulate_body_with_years(u32::MAX))
+        .send()
+        .await
+        .unwrap();
+
+    assert_eq!(
+        resp.status(),
+        400,
+        "years=u32::MAX must be rejected as 400, got {}",
+        resp.status()
+    );
+    let body: serde_json::Value = resp.json().await.unwrap();
+    let error = body
+        .get("error")
+        .expect("structured error envelope must be present");
+    assert!(
+        error["kind"]
+            .as_str()
+            .unwrap_or("")
+            .eq_ignore_ascii_case("invalid_request")
+            || error["kind"]
+                .as_str()
+                .unwrap_or("")
+                .eq_ignore_ascii_case("invalid_schema"),
+        "unexpected error kind: {error}"
+    );
+    let message = error["message"].as_str().unwrap_or("");
+    assert!(
+        message.contains("years"),
+        "error message must mention `years`: {message}"
+    );
+}
+
+#[tokio::test]
+async fn simulate_rejects_zero_years_with_400() {
+    let (base, _state, _shutdown) = start_server().await;
+
+    let resp = http_client()
+        .post(format!("{base}/v1/simulate"))
+        .json(&simulate_body_with_years(0))
+        .send()
+        .await
+        .unwrap();
+
+    assert_eq!(
+        resp.status(),
+        400,
+        "years=0 must be rejected as 400, got {}",
+        resp.status()
+    );
+}
+
+#[tokio::test]
+async fn simulate_accepts_years_within_bound() {
+    let (base, _state, _shutdown) = start_server().await;
+
+    // 5 is well within the 1..=10 bound; the run must clear input
+    // validation. The solver itself may legitimately diverge with the
+    // minimal default schema (pre-existing #2547, unrelated to #2530), so
+    // the contract under test is "validation accepted" — i.e. NOT a 400 —
+    // rather than a guaranteed 200.
+    let resp = http_client()
+        .post(format!("{base}/v1/simulate"))
+        .json(&simulate_body_with_years(5))
+        .send()
+        .await
+        .unwrap();
+
+    let status = resp.status().as_u16();
+    assert_ne!(
+        status, 400,
+        "years=5 must pass validation (not 400), got {}",
+        status
+    );
+    assert_ne!(
+        status, 422,
+        "years=5 must pass validation (not 422), got {}",
+        status
+    );
+    // When the run succeeds, the EUI must be present. When it diverges
+    // (#2547) the body is a structured simulation_failed envelope.
+    let body: serde_json::Value = resp.json().await.unwrap();
+    assert!(
+        body.get("output").is_some() || body.get("error").is_some(),
+        "expected output or error envelope, got {body}"
+    );
+}
+
+#[tokio::test]
+async fn simulate_rejects_just_over_bound_years_with_400() {
+    let (base, _state, _shutdown) = start_server().await;
+
+    // MAX_YEARS is 10, so 11 must be rejected.
+    let resp = http_client()
+        .post(format!("{base}/v1/simulate"))
+        .json(&simulate_body_with_years(11))
+        .send()
+        .await
+        .unwrap();
+
+    assert_eq!(
+        resp.status(),
+        400,
+        "years=11 must be rejected as 400, got {}",
+        resp.status()
+    );
+}
+
+#[tokio::test]
+async fn batch_rejects_more_than_1024_simulations_with_400() {
+    let (base, _state, _shutdown) = start_server().await;
+
+    let one = simulate_body_with_years(1);
+    // 1025 entries — one over the MAX_BATCH_SIMULATIONS cap.
+    let simulations = std::iter::repeat_with(|| one.clone())
+        .take(1025)
+        .collect::<Vec<_>>();
+    let batch_body = json!({ "simulations": simulations });
+
+    let resp = http_client()
+        .post(format!("{base}/v1/batch"))
+        .json(&batch_body)
+        .send()
+        .await
+        .unwrap();
+
+    assert_eq!(
+        resp.status(),
+        400,
+        "batch with 1025 simulations must be rejected as 400, got {}",
+        resp.status()
+    );
+    let body: serde_json::Value = resp.json().await.unwrap();
+    let error = body
+        .get("error")
+        .expect("structured error envelope must be present");
+    assert_eq!(
+        error["kind"], "batch_too_large",
+        "expected batch_too_large kind, got {error}"
+    );
+}
+
+#[tokio::test]
+async fn batch_rejects_entry_with_unbounded_years_with_400() {
+    let (base, _state, _shutdown) = start_server().await;
+
+    // Even a small batch must be rejected if an entry smuggles in u32::MAX.
+    let bad_entry = simulate_body_with_years(u32::MAX);
+    let batch_body = json!({ "simulations": [ bad_entry ] });
+
+    let resp = http_client()
+        .post(format!("{base}/v1/batch"))
+        .json(&batch_body)
+        .send()
+        .await
+        .unwrap();
+
+    assert_eq!(
+        resp.status(),
+        400,
+        "batch entry with years=u32::MAX must be rejected as 400, got {}",
+        resp.status()
+    );
+}

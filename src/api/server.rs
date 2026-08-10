@@ -36,10 +36,11 @@
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
+use std::time::Duration;
 
 use async_stream::stream;
 use axum::{
-    extract::{Path, State},
+    extract::{FromRequest, Path, Request, State},
     http::StatusCode,
     middleware,
     response::{IntoResponse, Response},
@@ -52,7 +53,8 @@ use serde::{Deserialize, Serialize};
 use tempfile::NamedTempFile;
 use thiserror::Error;
 use tokio::sync::{mpsc, Mutex};
-use tower::ServiceBuilder;
+use tower::timeout::TimeoutLayer;
+use tower::{BoxError, ServiceBuilder};
 use tower_http::{
     request_id::{MakeRequestUuid, PropagateRequestIdLayer, SetRequestIdLayer},
     trace::{DefaultMakeSpan, DefaultOnResponse, TraceLayer},
@@ -76,6 +78,43 @@ const SIM_ID_PREFIX: &str = "sim-";
 
 /// Identifier prefix for campaigns (OSimFlow fire-and-forget, Issue #1786).
 const CAMPAIGN_ID_PREFIX: &str = "camp-";
+
+/// Upper bound on `SimulateOptions.years` (Issue #2530 DoS hardening).
+///
+/// The handler computes `steps = years * 8760` and runs `solve_timesteps`
+/// synchronously. Without a cap, `{"years": u32::MAX}` asks the server to
+/// allocate and run ~3.76 × 10¹³ timesteps, pinning a Tokio worker. 10 leaves
+/// headroom for future multi-year validation runs while bounding the worst
+/// case for a single request to `10 * 8760 = 87_600` timesteps.
+pub const MAX_YEARS: u32 = 10;
+
+/// Maximum number of entries accepted by `POST /v1/batch` and `POST
+/// /v1/campaigns` (Issue #2530). 1024 matches the batch ceiling used by the
+/// surrogate `BatchOracle` population path so a REST batch never exceeds what
+/// the engine is designed to fan out across rayon workers.
+pub const MAX_BATCH_SIMULATIONS: usize = 1024;
+
+/// Per-campaign / per-batch step budget (Issue #2530). The total number of
+/// timesteps a single request may schedule is `Σ years_i * 8760`. Bounding it
+/// to `MAX_YEARS * 8760 * MAX_BATCH_SIMULATIONS` (= 89_702_400) means a full
+/// batch of 1024 decade-long simulations is still accepted, but a malicious
+/// batch that smuggles huge `years` past the per-entry validator is rejected
+/// before any rayon work is spawned.
+pub const MAX_CAMPAIGN_STEPS: usize = (MAX_YEARS as usize) * 8760 * MAX_BATCH_SIMULATIONS;
+
+/// Maximum accepted request body size (Issue #2530). axum's default
+/// [`axum::extract::DefaultBodyLimit`] is 2 MiB, which would reject a legit
+/// `/v1/batch` of 1024 entries (~4.4 MiB at ~4.3 KiB/entry) before the
+/// [`MAX_BATCH_SIMULATIONS`] count cap could fire. 8 MiB accommodates a full
+/// batch with headroom for larger per-entry schemas while still bounding the
+/// allocation a single request can trigger.
+pub const MAX_REQUEST_BODY_BYTES: usize = 8 * 1024 * 1024;
+
+/// Wall-clock budget for any single HTTP request (Issue #2530). Enforced via
+/// `tower::timeout::TimeoutLayer` so a runaway synchronous `solve_timesteps`
+/// cannot pin a worker indefinitely; the handler aborts with a structured
+/// 408 once the deadline elapses.
+pub const REQUEST_TIMEOUT: Duration = Duration::from_secs(60);
 
 /// Trait for simulation state persistence.
 ///
@@ -551,8 +590,10 @@ impl<S: SimulationStateStore> AppState<S> {
 /// within numerical noise.
 #[derive(Debug, Clone, Deserialize)]
 pub struct SimulateOptions {
-    /// Number of years to simulate. Default: `1`.
-    #[serde(default = "default_years")]
+    /// Number of years to simulate. Default: `1`. Bounded to `1..=MAX_YEARS`
+    /// at deserialisation (Issue #2530) so a `{"years": u32::MAX}` payload is
+    /// rejected as a 400 before `steps = years * 8760` is ever computed.
+    #[serde(default = "default_years", deserialize_with = "validate_years")]
     pub years: u32,
     /// Whether to use the ONNX surrogate path. Default: `false`.
     #[serde(default)]
@@ -566,6 +607,30 @@ pub struct SimulateOptions {
 
 fn default_years() -> u32 {
     1
+}
+
+/// Serde validator for `SimulateOptions.years` (Issue #2530). Rejects `0` and
+/// any value above [`MAX_YEARS`] at deserialisation so the `Json` extractor
+/// surfaces a structured 400 (via [`ValidatedJson`]) rather than letting a
+/// multi-trillion-step payload reach the synchronous solver. `#[serde(default
+/// = "default_years")]` is still honoured when the field is *absent* — this
+/// function only runs when the caller supplies an explicit value.
+fn validate_years<'de, D>(deserializer: D) -> Result<u32, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let v = u32::deserialize(deserializer)?;
+    if v == 0 {
+        return Err(serde::de::Error::custom(format!(
+            "options.years must be between 1 and {MAX_YEARS} (got 0)"
+        )));
+    }
+    if v > MAX_YEARS {
+        return Err(serde::de::Error::custom(format!(
+            "options.years must be between 1 and {MAX_YEARS} (got {v})"
+        )));
+    }
+    Ok(v)
 }
 
 impl Default for SimulateOptions {
@@ -603,6 +668,39 @@ impl SimulationSchemaBody {
         match self {
             SimulationSchemaBody::V1(v) => v,
             SimulationSchemaBody::Enveloped(SimulationSchema::V1(v)) => v,
+        }
+    }
+}
+
+/// Validating JSON extractor (Issue #2530).
+///
+/// Wraps [`axum::Json`] so that any deserialisation failure — including the
+/// range checks performed by [`validate_years`] — surfaces as a structured
+/// [`ApiError::InvalidRequest`] (HTTP 400) instead of axum's default
+/// `JsonRejection` (which is a bare 422 with a non-`error`-enveloped body).
+/// The rejection flows through `ApiError::into_response`, so clients always
+/// see the canonical `{"error":{"kind":...,"message":...}}` shape.
+///
+/// Handler bodies destructure it exactly like `Json`: `ValidatedJson(req):
+/// ValidatedJson<SimulateRequest>`.
+pub struct ValidatedJson<T>(pub T);
+
+#[async_trait::async_trait]
+impl<S, T> FromRequest<S> for ValidatedJson<T>
+where
+    T: serde::de::DeserializeOwned,
+    S: Send + Sync,
+{
+    type Rejection = ApiError;
+
+    async fn from_request(req: Request, state: &S) -> Result<Self, Self::Rejection> {
+        match axum::Json::<T>::from_request(req, state).await {
+            Ok(j) => Ok(ValidatedJson(j.0)),
+            // `body_text()` preserves the inner serde error chain (e.g. the
+            // `validate_years` "options.years must be between 1 and 10"
+            // message) so the client can see *why* the body was rejected,
+            // not just that it was. `to_string()` would drop that detail.
+            Err(rejection) => Err(ApiError::InvalidRequest(rejection.body_text())),
         }
     }
 }
@@ -647,6 +745,8 @@ pub struct TimestepEvent {
 pub enum ApiError {
     #[error("invalid schema: {0}")]
     InvalidSchema(String),
+    #[error("invalid request body: {0}")]
+    InvalidRequest(String),
     #[error("schema id not found: {0}")]
     SchemaNotFound(String),
     #[error("simulation id not found: {0}")]
@@ -663,6 +763,10 @@ pub enum ApiError {
     SimulationFailed(String, Option<SimulationDiagnostics>),
     #[error("batch request is empty")]
     EmptyBatch,
+    #[error("batch request has {0} simulations, exceeds limit of {MAX_BATCH_SIMULATIONS}")]
+    BatchTooLarge(usize),
+    #[error("request would schedule {requested} timesteps, exceeds per-request limit of {limit}")]
+    StepBudgetExceeded { requested: usize, limit: usize },
     #[error("serialization failed: {0}")]
     SerializationFailed(String),
 }
@@ -671,6 +775,7 @@ impl IntoResponse for ApiError {
     fn into_response(self) -> Response {
         let (status, kind) = match &self {
             ApiError::InvalidSchema(_) => (StatusCode::BAD_REQUEST, "invalid_schema"),
+            ApiError::InvalidRequest(_) => (StatusCode::BAD_REQUEST, "invalid_request"),
             ApiError::SchemaNotFound(_) => (StatusCode::NOT_FOUND, "schema_not_found"),
             ApiError::SimulationNotFound(_) => (StatusCode::NOT_FOUND, "simulation_not_found"),
             ApiError::CampaignNotFound(_) => (StatusCode::NOT_FOUND, "campaign_not_found"),
@@ -681,6 +786,10 @@ impl IntoResponse for ApiError {
                 (StatusCode::INTERNAL_SERVER_ERROR, "simulation_failed")
             }
             ApiError::EmptyBatch => (StatusCode::BAD_REQUEST, "empty_batch"),
+            ApiError::BatchTooLarge(_) => (StatusCode::BAD_REQUEST, "batch_too_large"),
+            ApiError::StepBudgetExceeded { .. } => {
+                (StatusCode::BAD_REQUEST, "step_budget_exceeded")
+            }
             ApiError::SerializationFailed(_) => {
                 (StatusCode::INTERNAL_SERVER_ERROR, "serialization_failed")
             }
@@ -799,6 +908,14 @@ pub fn run_simulation(
         ));
     }
 
+    // Issue #2530 — defense in depth. The REST path already rejects out-of
+    // -range `years` at deserialisation (see `validate_years`), but
+    // `run_simulation` is `pub` and is also called directly by the batch /
+    // campaign handlers and by integration tests. Clamp here so no caller
+    // can ever reach `solve_timesteps` with a multi-trillion-step count.
+    // `clamp` floors at 1 (rejecting 0) and ceilings at [`MAX_YEARS`].
+    let years = years.clamp(1, MAX_YEARS);
+
     let mut model = ThermalModel::<VectorField>::new(num_zones);
     for zone_idx in 0..model.num_zones {
         model.heating_setpoints.as_mut_slice()[zone_idx] = heating;
@@ -861,7 +978,7 @@ pub fn run_simulation(
 async fn simulate(
     State(state): State<AppState>,
     headers: axum::http::HeaderMap,
-    Json(req): Json<SimulateRequest>,
+    ValidatedJson(req): ValidatedJson<SimulateRequest>,
 ) -> Result<Json<SimulateResponse>, ApiError> {
     // Issue #2546 — audit trail. Extract per-request identifiers before
     // the simulation runs so the `simulation_started` event captures the
@@ -947,7 +1064,7 @@ fn schema_audit_hash(schema: &SimulationSchemaV1) -> String {
 /// per timestep with the current zone temperatures.
 async fn simulate_stream(
     State(state): State<AppState>,
-    Json(req): Json<SimulateRequest>,
+    ValidatedJson(req): ValidatedJson<SimulateRequest>,
 ) -> Result<Response, ApiError> {
     let schema = req.schema.into_v1();
     let options = req.options;
@@ -966,7 +1083,12 @@ async fn simulate_stream(
         ));
     }
 
-    let steps = options.years as usize * 8760;
+    // Issue #2530 — `validate_years` already bounds `options.years` to
+    // `1..=MAX_YEARS` at deserialisation; clamp again here (defense in
+    // depth) since this handler computes `steps` directly instead of going
+    // through `run_simulation`.
+    let years = options.years.clamp(1, MAX_YEARS);
+    let steps = years as usize * 8760;
     let surrogates = SurrogateManager::new().map_err(|e| {
         ApiError::SimulationFailed(format!("failed to create SurrogateManager: {e}"), None)
     })?;
@@ -1041,10 +1163,30 @@ async fn simulate_stream(
 /// concurrently using rayon and returns all results.
 async fn batch_simulate(
     State(_state): State<AppState>,
-    Json(req): Json<BatchRequest>,
+    ValidatedJson(req): ValidatedJson<BatchRequest>,
 ) -> Result<Json<BatchResponse>, ApiError> {
     if req.simulations.is_empty() {
         return Err(ApiError::EmptyBatch);
+    }
+
+    // Issue #2530 — cap the batch size and the total step budget before any
+    // rayon work is spawned. Per-entry `years` is already bounded to
+    // `1..=MAX_YEARS` by `validate_years`, so a well-formed request can never
+    // trip the budget guard; it exists to catch a future regression where a
+    // new field smuggles in a larger step count.
+    if req.simulations.len() > MAX_BATCH_SIMULATIONS {
+        return Err(ApiError::BatchTooLarge(req.simulations.len()));
+    }
+    let total_steps: usize = req
+        .simulations
+        .iter()
+        .map(|r| (r.options.years as usize) * 8760)
+        .sum();
+    if total_steps > MAX_CAMPAIGN_STEPS {
+        return Err(ApiError::StepBudgetExceeded {
+            requested: total_steps,
+            limit: MAX_CAMPAIGN_STEPS,
+        });
     }
 
     let schemas: Vec<_> = req
@@ -1095,10 +1237,29 @@ pub struct CampaignSubmitResponse {
 /// state store enabling async polling via `GET /v1/campaigns/:id/status`.
 async fn submit_campaign(
     State(state): State<AppState>,
-    Json(spec): Json<CampaignSpec>,
+    ValidatedJson(spec): ValidatedJson<CampaignSpec>,
 ) -> Result<Json<CampaignSubmitResponse>, ApiError> {
     if spec.simulations.is_empty() {
         return Err(ApiError::EmptyBatch);
+    }
+
+    // Issue #2530 — apply the same batch + step-budget caps as `/v1/batch`.
+    // Campaigns run fire-and-forget on background tasks, so an unbounded
+    // campaign pins worker threads just as effectively as a synchronous
+    // request; reject it up front.
+    if spec.simulations.len() > MAX_BATCH_SIMULATIONS {
+        return Err(ApiError::BatchTooLarge(spec.simulations.len()));
+    }
+    let total_steps: usize = spec
+        .simulations
+        .iter()
+        .map(|r| (r.options.years as usize) * 8760)
+        .sum();
+    if total_steps > MAX_CAMPAIGN_STEPS {
+        return Err(ApiError::StepBudgetExceeded {
+            requested: total_steps,
+            limit: MAX_CAMPAIGN_STEPS,
+        });
     }
 
     let campaign_id = state.register_campaign(spec.clone()).await;
@@ -1295,6 +1456,38 @@ fn tempfile_for_bytes(bytes: &[u8], ext: &str) -> Result<NamedTempFile, ApiError
 /// match the HTTP/2 wire spelling; the AXUM/Tower layers normalize to that.
 const X_REQUEST_ID: &str = "x-request-id";
 
+/// Error handler for the per-request timeout layer (Issue #2530).
+///
+/// `tower::timeout::TimeoutLayer` turns the inner (infallible) service into a
+/// fallible one whose error is [`tower::timeout::Elapsed`]. axum's router
+/// requires an infallible service, so we wrap the timeout in
+/// [`axum::error_handling::HandleErrorLayer`] and convert the deadline error
+/// into the canonical structured `{"error": {...}}` envelope (HTTP 408). Any
+/// non-timeout `BoxError` (which should never occur for this layer stack) is
+/// surfaced as a 500 so it is never silently swallowed.
+async fn handle_timeout_error(err: BoxError) -> Response {
+    if err
+        .downcast_ref::<tower::timeout::error::Elapsed>()
+        .is_some()
+    {
+        let body = Json(serde_json::json!({
+            "error": {
+                "kind": "request_timeout",
+                "message": "request exceeded the 60-second server budget",
+            }
+        }));
+        (StatusCode::REQUEST_TIMEOUT, body).into_response()
+    } else {
+        let body = Json(serde_json::json!({
+            "error": {
+                "kind": "internal_error",
+                "message": format!("unhandled middleware error: {err}"),
+            }
+        }));
+        (StatusCode::INTERNAL_SERVER_ERROR, body).into_response()
+    }
+}
+
 /// Construct the application's router. Exposed so integration tests can
 /// mount it without going through the binary's env-var resolution path.
 ///
@@ -1305,6 +1498,10 @@ const X_REQUEST_ID: &str = "x-request-id";
 /// first on the request and PropagateRequestIdLayer runs last on the
 /// response:
 ///
+///   0. `HandleErrorLayer` + `tower::timeout::TimeoutLayer` (Issue #2530) —
+///      outermost. Bounds the entire request to [`REQUEST_TIMEOUT`] (60 s)
+///      so a runaway synchronous `solve_timesteps` cannot pin a Tokio
+///      worker. On deadline the handler responds with a structured 408.
 ///   1. `SetRequestIdLayer` — assigns a UUID *before* anything else sees
 ///      the request, so `TraceLayer`'s span and the metrics middleware
 ///      can include it.
@@ -1320,6 +1517,15 @@ pub fn router(state: AppState) -> Router {
     let _ = metrics::init_recorder();
 
     let middleware_stack = ServiceBuilder::new()
+        // Issue #2530 — outermost layer. `HandleErrorLayer` converts the
+        // `Elapsed` error produced by `TimeoutLayer` into a structured 408 so
+        // the router stays infallible. Placing the pair first makes the
+        // 60-second budget bound the *entire* request (trace, metrics, and
+        // the synchronous `solve_timesteps` call).
+        .layer(axum::error_handling::HandleErrorLayer::new(
+            handle_timeout_error,
+        ))
+        .layer(TimeoutLayer::new(REQUEST_TIMEOUT))
         .layer(SetRequestIdLayer::new(
             axum::http::HeaderName::from_static(X_REQUEST_ID),
             MakeRequestUuid,
@@ -1353,6 +1559,11 @@ pub fn router(state: AppState) -> Router {
         .route("/v1/campaigns", post(submit_campaign))
         .route("/v1/campaigns/:id/status", get(get_campaign_status))
         .with_state(state)
+        // Issue #2530 — raise the body limit so a legit 1024-entry batch
+        // reaches the explicit [`MAX_BATCH_SIMULATIONS`] count cap instead of
+        // being rejected by axum's 2 MiB default. Still bounded to
+        // [`MAX_REQUEST_BODY_BYTES`] (8 MiB).
+        .layer(axum::extract::DefaultBodyLimit::max(MAX_REQUEST_BODY_BYTES))
         .layer(middleware_stack)
 }
 
@@ -1846,5 +2057,80 @@ mod tests {
         assert!(meta.file_type().is_file());
         assert!(!meta.file_type().is_symlink());
         assert_eq!(meta.permissions().mode() & 0o777, 0o600);
+    }
+
+    // -- Issue #2530 ------------------------------------------------------
+
+    #[test]
+    fn simulate_options_default_years_is_valid() {
+        // When the field is absent, `default_years()` (= 1) must apply and
+        // must survive `validate_years`.
+        let opts: SimulateOptions = serde_json::from_str("{}").unwrap();
+        assert_eq!(opts.years, 1);
+    }
+
+    #[test]
+    fn validate_years_rejects_zero() {
+        let err = serde_json::from_str::<SimulateOptions>(r#"{"years": 0}"#);
+        assert!(err.is_err(), "years=0 must be rejected");
+        let msg = err.unwrap_err().to_string();
+        assert!(msg.contains("years"), "error must mention years: {msg}");
+    }
+
+    #[test]
+    fn validate_years_accepts_max_years_and_rejects_above() {
+        let ok: SimulateOptions = serde_json::from_value(json!({ "years": MAX_YEARS })).unwrap();
+        assert_eq!(ok.years, MAX_YEARS);
+
+        let err = serde_json::from_value::<SimulateOptions>(json!({ "years": MAX_YEARS + 1 }));
+        assert!(err.is_err(), "years=MAX+1 must be rejected");
+    }
+
+    #[test]
+    fn validate_years_rejects_u32max() {
+        let err = serde_json::from_value::<SimulateOptions>(json!({ "years": u32::MAX }));
+        assert!(
+            err.is_err(),
+            "years=u32::MAX must be rejected at deserialisation"
+        );
+    }
+
+    #[test]
+    fn run_simulation_clamps_huge_years_defensively() {
+        // Even though the REST path rejects u32::MAX at deserialisation,
+        // `run_simulation` is `pub` and may be called directly. A defensive
+        // clamp must prevent the multi-trillion-step DoS from ever reaching
+        // `solve_timesteps`. We assert the *invariant*: a call with
+        // `u32::MAX` returns promptly (bounded work) instead of attempting
+        // ~3.76e13 steps. With the default schema the solver may legitimately
+        // diverge (#2547) — that is still a fast, bounded outcome and counts
+        // as success for this guard. The only failing mode is the call never
+        // returning, which would trip the test process timeout.
+        let schema = default_schema_v1();
+        let start = std::time::Instant::now();
+        let result = run_simulation(&schema, u32::MAX, false);
+        assert!(
+            start.elapsed().as_secs() < 30,
+            "run_simulation with u32::MAX took {:?} — clamp appears absent",
+            start.elapsed()
+        );
+        match result {
+            Ok(_) => {}
+            Err(ApiError::SimulationFailed(_, _)) => {
+                // Bounded divergence (#2547) — the clamp did its job.
+            }
+            Err(other) => panic!("unexpected error from clamped run: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn step_budget_constant_bounds_worst_case_batch() {
+        // MAX_CAMPAIGN_STEPS must equal the product of the three caps so a
+        // maximal-but-legal batch is accepted while anything larger is not.
+        let expected = (MAX_YEARS as usize) * 8760 * MAX_BATCH_SIMULATIONS;
+        assert_eq!(MAX_CAMPAIGN_STEPS, expected);
+        // Sanity: the budget is well under usize::MAX and under 2^31 on any
+        // platform the workspace targets (it is 89_702_400).
+        assert!(MAX_CAMPAIGN_STEPS < (1usize << 31));
     }
 }
