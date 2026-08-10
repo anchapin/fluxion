@@ -59,6 +59,8 @@ env/
 # Temporary files
 tmp/
 *.tmp
+*.bak
+*.orig
 .cache/
 .pytest_cache/
 .coverage
