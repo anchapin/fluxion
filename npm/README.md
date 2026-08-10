@@ -28,14 +28,15 @@ const { BatchOracle, BuildingParameters } = require('@fluxion/native');
 // Create oracle instance
 const oracle = new BatchOracle();
 
-// Define building parameters
+// Define validated building parameters (window U-value, heating/cooling setpoints)
 const params = new BuildingParameters(1.5, 20.0, 24.0);
 
-// Evaluate population (high-throughput optimization)
+// Build a population of design candidates. Each entry is a parameter array:
+//   [0] Window U-value (W/m²K), [1] Heating setpoint (°C), [2] Cooling setpoint (°C)
 const population = [
-  [1.5, 20.0, 24.0], // Config 1: U=1.5, Heat=20, Cool=24
-  [2.0, 20.0, 24.0], // Config 2: U=2.0, Heat=20, Cool=24
-  [2.5, 20.0, 24.0], // Config 3: U=2.5, Heat=20, Cool=24
+  params.toVec(),            // reuse the validated parameters above
+  [2.0, 20.0, 24.0],         // Config 2: U=2.0, Heat=20, Cool=24
+  [2.5, 20.0, 24.0],         // Config 3: U=2.5, Heat=20, Cool=24
 ];
 
 // Evaluate with physics-based calculation
@@ -50,7 +51,7 @@ console.log(`EUI values (AI): ${aiResults}`);
 ## TypeScript Usage
 
 ```typescript
-import { BatchOracle, BuildingParameters, ValidationError } from '@fluxion/native';
+import { BatchOracle, ValidationError } from '@fluxion/native';
 
 async function optimizeBuildingDesign() {
   const oracle = new BatchOracle();
@@ -176,9 +177,16 @@ Convert parameters to array for backward compatibility.
 ```typescript
 import { BatchOracle, ValidationError, SimulationError } from '@fluxion/native';
 
+// Candidate designs: [windowUValue, heatingSetpoint, coolingSetpoint]
+const population = [
+  [1.5, 20.0, 24.0],
+  [2.0, 20.0, 24.0],
+];
+
 try {
   const oracle = new BatchOracle();
   const results = oracle.evaluatePopulation(population, false);
+  console.log(`EUI values: ${results}`);
 } catch (error) {
   if (error instanceof ValidationError) {
     console.error('Invalid parameters:', error.message);

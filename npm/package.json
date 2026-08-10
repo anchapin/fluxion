@@ -20,6 +20,7 @@
     "build:debug": "node build.js",
     "prepublishOnly": "napi prepublish",
     "test": "node --test test.js test_interop.js",
+    "test:readme": "node ../scripts/check_npm_readme_codeblocks.mjs",
     "benchmark:zero-copy": "node benchmark_zero_copy.js",
     "universal": "napi universal",
     "version": "napi version"
