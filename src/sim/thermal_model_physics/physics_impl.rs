@@ -1310,6 +1310,7 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                     t_i_act_ref[i]
                 }
             };
+            #[cfg(feature = "debug-physics")]
             if i == 0 && timestep < 3 {
                 let tm = mass_temps_ref[i];
                 let cm_dt = cm / dt;
@@ -1634,8 +1635,9 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         let h_iz_vec = self.0.h_tr_iz.as_ref();
         let h_iz_rad_vec = self.0.h_tr_iz_rad.as_ref();
 
-        // Store phi_ia[0] for debugging before we consume it
-        let _phi_ia_0 = phi_ia.as_ref().first().copied().unwrap_or(0.0);
+        // Store phi_ia[0] for debugging before we consume it (debug-physics only)
+        #[cfg(feature = "debug-physics")]
+        let phi_ia_0 = phi_ia.as_ref().first().copied().unwrap_or(0.0);
 
         // Compute inter-zone heat transfer directly into phi_ia_with_iz to avoid Vec allocation
         let mut phi_ia_with_iz = phi_ia;
