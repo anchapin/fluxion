@@ -27,6 +27,8 @@ on:
       - "scripts/doc_inventory_check.py"
       - "scripts/doc_inventory_check.sh"
       - "scripts/generate_doc_inventory.py"
+      - "scripts/check_npm_readme_codeblocks.mjs"
+      - "npm/README.md"
       - "docs/doc-inventory.md"
       - "docs/**"
       - "AGENTS.md"
@@ -61,6 +63,11 @@ jobs:
         with:
           python-version: '3.12'
 
+      - name: Set up Node
+        uses: actions/setup-node@1d0ff469b7ec7b3cb9d8673fde0c81c44821de2a  # v4.2.0
+        with:
+          node-version: '22'
+
       - name: Run root `.md` policy check
         id: root_md
         run: |
@@ -91,8 +98,18 @@ jobs:
             echo "::error::Doc inventory check failed"
           fi
 
+      - name: Run npm/README.md code-block drift check
+        id: npm_readme
+        run: |
+          node scripts/check_npm_readme_codeblocks.mjs
+          EXIT_CODE=$?
+          echo "exit_code=$EXIT_CODE" >> "$GITHUB_OUTPUT"
+          if [[ $EXIT_CODE -ne 0 ]]; then
+            echo "::error::npm/README.md code-block drift check failed (issue #2511)"
+          fi
+
       - name: Aggregate results
-        if: steps.root_md.outputs.exit_code != '0' || steps.docs_summaries.outputs.exit_code != '0' || steps.doc_inventory.outputs.exit_code != '0'
+        if: steps.root_md.outputs.exit_code != '0' || steps.docs_summaries.outputs.exit_code != '0' || steps.doc_inventory.outputs.exit_code != '0' || steps.npm_readme.outputs.exit_code != '0'
         run: |
           echo "One or more docs-hygiene checks failed. See logs above."
           exit 1
