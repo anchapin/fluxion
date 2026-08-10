@@ -5,7 +5,7 @@ use pyo3::prelude::*;
 use pyo3::types::{PyDict, PyModule};
 
 fn simulation_error(message: impl Into<String>) -> PyErr {
-    FluxionError::Simulation(message.into()).into()
+    FluxionError::Simulation(message.into(), None).into()
 }
 
 fn validation_error(message: impl Into<String>) -> PyErr {

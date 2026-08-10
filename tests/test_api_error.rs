@@ -20,7 +20,7 @@ mod tests {
 
     #[test]
     fn test_fluxion_error_simulation() {
-        let error = FluxionError::Simulation("NaN detected".to_string());
+        let error = FluxionError::Simulation("NaN detected".to_string(), None);
         let msg = format!("{}", error);
         assert!(msg.contains("Simulation error"));
         assert!(msg.contains("NaN detected"));
@@ -47,8 +47,8 @@ mod tests {
 
     #[test]
     fn test_fluxion_error_is_simulation() {
-        let error = FluxionError::Simulation("test".to_string());
-        assert!(matches!(error, FluxionError::Simulation(_)));
+        let error = FluxionError::Simulation("test".to_string(), None);
+        assert!(matches!(error, FluxionError::Simulation(..)));
     }
 
     #[test]
@@ -61,7 +61,7 @@ mod tests {
     #[test]
     fn test_fluxion_error_long_message() {
         let long_msg = "a".repeat(1000);
-        let error = FluxionError::Simulation(long_msg.clone());
+        let error = FluxionError::Simulation(long_msg.clone(), None);
         let msg = format!("{}", error);
         assert!(msg.contains(&long_msg));
     }
@@ -76,7 +76,7 @@ mod tests {
 
     #[test]
     fn test_fluxion_error_newline_message() {
-        let error = FluxionError::Simulation("Line 1\nLine 2".to_string());
+        let error = FluxionError::Simulation("Line 1\nLine 2".to_string(), None);
         let msg = format!("{}", error);
         assert!(msg.contains("Line 1"));
         assert!(msg.contains("Line 2"));
