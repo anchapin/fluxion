@@ -51,6 +51,7 @@
 //! ```
 
 use std::collections::BTreeMap;
+use std::fmt;
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -186,7 +187,11 @@ fn sha256_hex(data: &[u8]) -> String {
 // =============================================================================
 
 /// AWS credentials for S3 authentication.
-#[derive(Clone, Debug)]
+///
+/// **Note**: this struct has a manual [`fmt::Debug`] impl that redacts the
+/// secret access key and session token so they are never leaked through
+/// `format!("{:?}", creds)`, `dbg!()`, or log output (Issue #2503).
+#[derive(Clone)]
 pub struct AwsCredentials {
     pub access_key_id: String,
     pub secret_access_key: String,
@@ -210,6 +215,29 @@ impl AwsCredentials {
             secret_access_key,
             session_token,
         })
+    }
+}
+
+impl fmt::Debug for AwsCredentials {
+    /// Redacts secret material. The access key id is shown truncated (first 4
+    /// characters + `****`) since the prefix is non-sensitive and useful for
+    /// correlating logs with which key is in use; the secret access key and
+    /// session token are fully redacted.
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let masked_access_key = if self.access_key_id.len() >= 4 {
+            format!("{}****", &self.access_key_id[..4])
+        } else {
+            "****".to_string()
+        };
+        let masked_session_token = match &self.session_token {
+            Some(_) => "<redacted>",
+            None => "None",
+        };
+        f.debug_struct("AwsCredentials")
+            .field("access_key_id", &masked_access_key)
+            .field("secret_access_key", &"****")
+            .field("session_token", &masked_session_token)
+            .finish()
     }
 }
 
