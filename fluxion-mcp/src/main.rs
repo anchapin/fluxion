@@ -20,6 +20,7 @@
 //! `McpState` itself. The `Arc` clone is what makes the state shareable
 //! between the request loop and any future concurrent sub-tasks.
 
+mod metrics;
 mod state;
 mod tools;
 
@@ -49,6 +50,12 @@ pub struct JsonRpcResponse {
     pub result: Option<Value>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub error: Option<JsonRpcError>,
+    /// Correlation token (UUIDv4) generated per request so AI agents calling
+    /// `set_hvac_control_sequence` etc. get a traceable handle alongside the
+    /// `"success": true` envelope (Issue #2515). Echoed from every response;
+    /// omitted from the wire when `None`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub request_id: Option<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -67,6 +74,10 @@ async fn main() -> anyhow::Result<()> {
         ))
         .with(tracing_subscriber::fmt::layer())
         .init();
+
+    // Register metric descriptions (no-op without a recorder installed).
+    // Issue #2515 — per-tool latency / error counters.
+    metrics::describe_metrics();
 
     tracing::info!("Starting fluxion-mcp server");
 
@@ -140,6 +151,10 @@ where
 
 async fn process_request(request: JsonRpcRequest, state: &Arc<Mutex<McpState>>) -> JsonRpcResponse {
     let id = request.id.clone();
+    // Per-request correlation token (Issue #2515). Generated unconditionally
+    // so every response — not just tool calls — carries a traceable handle.
+    let request_id = uuid::Uuid::new_v4();
+    let request_id_str = request_id.to_string();
 
     match request.method.as_str() {
         "initialize" => JsonRpcResponse {
@@ -156,6 +171,7 @@ async fn process_request(request: JsonRpcRequest, state: &Arc<Mutex<McpState>>) 
                 }
             })),
             error: None,
+            request_id: Some(request_id_str),
         },
         "tools/list" => {
             let tools = tools::list_tools();
@@ -164,30 +180,61 @@ async fn process_request(request: JsonRpcRequest, state: &Arc<Mutex<McpState>>) 
                 id,
                 result: Some(serde_json::json!({ "tools": tools })),
                 error: None,
+                request_id: Some(request_id_str),
             }
         }
         "tools/call" => {
             let params = request.params.unwrap_or(serde_json::Value::Null);
-            // Acquire the async mutex; this yields `&mut McpState` so the
-            // existing synchronous `handle_tool_call` signature is preserved
-            // and the entire tool-call dispatch remains single-writer
-            // (no aliasing of mutable state).
-            let mut state_guard = state.lock().await;
-            let result_str = tools::handle_tool_call(&mut state_guard, params);
-            // The result string is already formatted (JSON or TOON)
-            // Wrap it as a JSON Value (String for TOON, Object for JSON parsed back)
-            let result_value: serde_json::Value = if result_str.starts_with("toon:v1") {
-                serde_json::json!({ "_toon": result_str })
-            } else {
-                // Parse JSON string back to Value for consistent structure
-                serde_json::from_str(&result_str)
-                    .unwrap_or_else(|_| serde_json::json!({ "raw": result_str }))
+            // Extract the tool name BEFORE dispatch so the span + metric labels
+            // are populated even when the dispatch itself fails (e.g. unknown
+            // tool name, missing `params.name`).
+            let tool_name = params
+                .get("name")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string();
+
+            // Issue #2515 — wrap the dispatch in a tracing span carrying the
+            // tool name and per-request id so distributed traces correlate
+            // with the `request_id` echoed in the response envelope.
+            let span = tracing::info_span!(
+                "mcp_tool_call",
+                tool = %tool_name,
+                request_id = %request_id,
+            );
+            let start = std::time::Instant::now();
+
+            let result_value: serde_json::Value = {
+                let _enter = span.enter();
+                // Acquire the async mutex; this yields `&mut McpState` so the
+                // existing synchronous `handle_tool_call` signature is preserved
+                // and the entire tool-call dispatch remains single-writer
+                // (no aliasing of mutable state).
+                let mut state_guard = state.lock().await;
+                let result_str = tools::handle_tool_call(&mut state_guard, params);
+                // The result string is already formatted (JSON or TOON)
+                // Wrap it as a JSON Value (String for TOON, Object for JSON parsed back)
+                if result_str.starts_with("toon:v1") {
+                    serde_json::json!({ "_toon": result_str })
+                } else {
+                    // Parse JSON string back to Value for consistent structure
+                    serde_json::from_str(&result_str)
+                        .unwrap_or_else(|_| serde_json::json!({ "raw": result_str }))
+                }
             };
+
+            let elapsed = start.elapsed().as_secs_f64();
+            // Record per-tool histogram + (on in-band error) error counter.
+            // Kept synchronous + outside the span so it is testable under a
+            // thread-local DebuggingRecorder without crossing an await point.
+            metrics::record_tool_outcome(&tool_name, elapsed, &result_value);
+
             JsonRpcResponse {
                 jsonrpc: "2.0".into(),
                 id,
                 result: Some(result_value),
                 error: None,
+                request_id: Some(request_id_str),
             }
         }
         _ => JsonRpcResponse {
@@ -199,6 +246,7 @@ async fn process_request(request: JsonRpcRequest, state: &Arc<Mutex<McpState>>) 
                 message: format!("Unknown method: {}", request.method),
                 data: None,
             }),
+            request_id: Some(request_id_str),
         },
     }
 }
@@ -309,6 +357,39 @@ mod tests {
             .as_str()
             .unwrap()
             .contains("Unknown"));
+    }
+
+    /// Issue #2515 — every response carries a non-empty `request_id`
+    /// correlation token. Asserted here for `initialize` and a tool call so
+    /// both the non-tool and tool code paths echo the field.
+    #[tokio::test]
+    async fn response_carries_request_id_correlation_token() {
+        let resp = exchange(serde_json::json!({
+            "jsonrpc": "2.0",
+            "id": "rid-1",
+            "method": "initialize",
+            "params": null
+        }))
+        .await;
+        let rid = resp["request_id"].as_str().expect("request_id present");
+        assert!(!rid.is_empty(), "request_id must be non-empty");
+
+        let resp = exchange(serde_json::json!({
+            "jsonrpc": "2.0",
+            "id": "rid-2",
+            "method": "tools/call",
+            "params": {
+                "name": "describe_model",
+                "arguments": {}
+            }
+        }))
+        .await;
+        let rid = resp["request_id"]
+            .as_str()
+            .expect("request_id present on tool call");
+        // Must look like a UUIDv4 (36 chars, hyphenated).
+        assert_eq!(rid.len(), 36, "request_id '{rid}' is not a UUID");
+        assert_eq!(rid.chars().filter(|c| *c == '-').count(), 4);
     }
 
     #[tokio::test]

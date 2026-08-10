@@ -32,11 +32,21 @@ serde_json = "1.0"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 
+# Observability — per-tool latency / error metrics (Issue #2515). Versions
+# pinned to match the root fluxion crate so the workspace resolves a single
+# copy of each.
+metrics = "0.24"
+uuid = { version = "1.10", features = ["v4"] }
+
 # Error handling
 anyhow = "1.0"
 
 [dev-dependencies]
 tempfile = "3.10"
+# Thread-local DebuggingRecorder lets metric-assertion tests run in parallel
+# without touching the process-global recorder (same pattern as the root
+# crate's ONNX tests in `src/ai/surrogate.rs`).
+metrics-util = "0.20"
 
 [features]
 # `multi-zone` is required by the MCP thermal-model tool surface (ThermalModel::<VectorField>).
