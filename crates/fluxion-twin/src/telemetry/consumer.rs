@@ -83,11 +83,17 @@ impl TelemetryConsumer {
     pub fn recv_with_backpressure(&mut self) -> Result<TelemetryMsg, TelemetryError> {
         let queue_len = self.rx.len();
         if queue_len > SLOW_CONSUMER_THRESHOLD {
-            log::warn!(
-                "Telemetry channel slow consumer: depth {} / {}",
-                queue_len,
-                MAX_CHANNEL_CAPACITY
+            tracing::warn!(
+                queue_depth = queue_len,
+                capacity = MAX_CHANNEL_CAPACITY,
+                threshold = SLOW_CONSUMER_THRESHOLD,
+                "Telemetry channel slow consumer: queue depth exceeds backpressure threshold"
             );
+            // Issue #2519 — surface slow-consumer pressure as a metric so it
+            // can be alerted on without grepping logs. Incremented once per
+            // observed breach (the caller invokes recv per message, so this
+            // tracks the count of messages received while over threshold).
+            metrics::counter!("fluxion_twin_slow_consumer_events_total").increment(1);
         }
 
         match self.rx.recv() {
@@ -247,5 +253,46 @@ mod tests {
 
         let result4 = consumer.recv_with_backpressure();
         assert!(result4.is_err());
+    }
+
+    // ---- Observability (Issue #2519): slow-consumer counter ----
+
+    /// When the channel depth exceeds the backpressure threshold,
+    /// `recv_with_backpressure` must increment
+    /// `fluxion_twin_slow_consumer_events_total`. Uses a thread-local
+    /// `DebuggingRecorder` so the assertion is isolated from the process-global
+    /// recorder (same pattern as the main crate, Issue #2498).
+    #[test]
+    fn slow_consumer_counter_increments_past_threshold() {
+        use metrics_util::debugging::DebuggingRecorder;
+
+        // A bounded channel with capacity just above the slow-consumer
+        // threshold lets us push it past the threshold deterministically.
+        let cap = SLOW_CONSUMER_THRESHOLD + 5;
+        let (tx, rx) = channel::bounded(cap);
+        let mut consumer = TelemetryConsumer::with_receiver(rx);
+        let sensor_id = Uuid::new_v4();
+
+        // Fill the channel above the threshold with a monotonic sequence so
+        // each recv succeeds instead of recursing on duplicates.
+        for seq in 1..=(cap as u64) {
+            tx.send(create_test_msg(sensor_id, seq)).unwrap();
+        }
+
+        let recorder = DebuggingRecorder::new();
+        let snapshotter = recorder.snapshotter();
+        metrics::with_local_recorder(&recorder, || {
+            // Drain one message while the queue is still over threshold.
+            let _ = consumer.recv_with_backpressure();
+        });
+
+        let map = snapshotter.snapshot().into_hashmap();
+        let found = map
+            .keys()
+            .any(|ck| ck.key().name() == "fluxion_twin_slow_consumer_events_total");
+        assert!(
+            found,
+            "expected fluxion_twin_slow_consumer_events_total to be emitted when queue depth > threshold"
+        );
     }
 }
