@@ -2,7 +2,7 @@
 
 All notable changes to Fluxion will be documented in this file.
 
-## [Unreleased] - QG-01 Release Scorecard
+## [Unreleased] - v1.3.0 in progress (ASHRAE 140 Blind Validation) / QG-01 Release Scorecard
 
 ### Added
 
@@ -16,6 +16,63 @@ All notable changes to Fluxion will be documented in this file.
 ### Changed
 
 - README.md now links to Release Scorecard for consolidated status view
+- **ASHRAE 140 Blind Validation** (`docs/ASHRAE_140_BLIND_VALIDATION_PLAN.md`): blind-validation methodology in progress for v1.3.0
+
+## [1.2.0] - 2026-04-08
+
+### Added
+
+- **Validation & Testing Completion milestone** (Phases 44-47), completing the v1.1 deferred work:
+  - High-mass building physics validation and thermal-mass diagnostics (Phase 44)
+  - Advanced cross-validation infrastructure (ESP-r integration) and testing automation (Phase 45)
+  - Expanded ASHRAE 140 case coverage toward the 500-699 series (Phase 46)
+  - Performance validation, benchmarking, and CI/CD regression testing (Phase 47)
+- Validation success criteria: >90% test coverage for validation modules, <50% error reduction in high-mass scenarios, and full CI/CD integration for validation testing
+
+### Notes
+
+- Scope and success criteria per `.planning/MILESTONE_v1.2_SUMMARY.md` (20 requirements spanning validation completion, new test cases, automated testing infrastructure, and performance validation). Milestone planning finalized 2026-04-08; ongoing PR-level validation work is tracked under [Unreleased] (v1.3.0).
+
+## [1.1.0] - 2026-04-08
+
+### Added
+
+- **ASHRAE 140 case expansion:** Series 800-810 (HVAC equipment validation) and Series 195-470 (diagnostic validation) cases (Phase 40-07)
+- **Cross-validation framework:** EnergyPlus and TRNSYS adapters with trait-based architecture for ASHRAE 140 compliance verification (Phase 40-03)
+- **Extended reference database:** 96,361 + 2,417,761 data rows with complete hourly coverage
+- **CLI integration:** validation case execution and cross-validation commands with real simulation comparisons (Phase 40-08)
+- **Performance monitoring:** high-resolution timing, parallel processing, and bottleneck analysis for the expanded validation suite (Phase 40-05)
+- **ASHRAE 140 cases module structure** for extensible case definitions (Phase 40-07)
+
+### Notes
+
+- Partial milestone completion: 6/16 requirements satisfied (37.5%). Phases 41-43 (High-Mass Physics, Advanced Cross-Validation, Validation Optimization) deferred to v1.2.0.
+
+## [1.0.0] - 2026-04-07
+
+### Added
+
+- **Multi-zone thermal network foundation:** extended single-zone 5R1C thermal network to N zones with inter-zone conductance and a coupled ODE solver (Phase M1)
+- **Zone-level HVAC controls:** independent HVAC control per zone with zone-specific setpoints, Python bindings, and CLI support (Phase M2)
+- **ASHRAE 140 multi-zone validation framework:** Case 960 validation tests and Case 970 framework foundation (Phase M3)
+- **Multi-zone validation CLI tool** with reporting and reference-data loading utilities (Phase M3-03)
+- **Python bindings** for multi-zone configuration and simulation (Phase M1-03)
+- **Performance validation framework** for multi-zone simulations (Phase M1-03)
+
+### Changed
+
+- Energy conservation verified within 1W tolerance across coupled zones
+- Multi-zone simulation performance maintained at <50ms per timestep for 10-zone simulations
+- Full Python API and CLI support for multi-zone configuration and simulation
+
+### Fixed
+
+- **Critical compilation errors:** ThermalModel import path and VectorField API usage (Phase M2-07)
+- Zone HVAC control wiring gaps (Phase M2-05)
+
+## [0.9.0] - Skipped
+
+v0.9.0 was not released as a standalone version. The work intended for v0.9 was consolidated into [1.0.0] (Multi-Zone Support), shipped 2026-04-07.
 
 ## [0.8.0] - 2026-04-03
 
