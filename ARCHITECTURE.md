@@ -846,15 +846,56 @@ let csc_bytes = sparse_vf.estimated_faer_csc_bytes();
 let dense_bytes = sparse_vf.estimated_dense_bytes();
 ```
 
-**Integration path to main Fluxion thermal model**:
+**Integration with the main Fluxion thermal model (Issue #2344)**:
 
-The `fluxion-city` module operates at the **urban scale** and is designed to interface with individual building thermal models via surface-level boundary conditions:
+`fluxion-city` is wired into the main `fluxion` thermal model via
+`src/sim/fluxion_city_flux_provider.rs`, which exports
+`FluxionCitySurfaceFluxProvider`. The crate dependency direction is one-way —
+`fluxion` declares an **optional** dependency on `fluxion-city`
+(`dep:fluxion-city`, gated by the `fluxion-city` feature flag), so
+`fluxion-city` itself remains a standalone, zero-dep-on-`fluxion` crate; the
+wiring lives entirely on the `fluxion` side.
 
-1. `UrbanRadiationSolver::compute_net_flux_per_surface_faer()` returns per-surface net radiative heat flow [W]
-2. These fluxes become inputs to `SurfaceHeatFluxProvider` for each building's exterior surfaces
-3. The `fluxion-city/parallel/` module provides `UrbanGraphStepDispatcher` for parallel simulation of multiple buildings
+`FluxionCitySurfaceFluxProvider` composes a `PhysicsSurfaceFluxProvider`
+(conduction + solar, see `Surface Heat Flux Trait Hierarchy` below) with a
+`fluxion_city::sparse::UrbanRadiationSolver` (inter-building longwave
+exchange) and implements `SurfaceHeatFluxProvider`. The per-surface flux
+addition is:
 
-The current integration is **future work** — `fluxion-city` is a standalone crate that has not yet been wired into the main `fluxion` thermal model. The planned integration point is at the zone/building envelope boundary where exterior surface temperatures are affected by radiative exchange with surrounding buildings.
+```text
+total_flux = conduction_flux + solar_gain + exterior_longwave_flux_wm2
+```
+
+The production state-advance path is `FluxionCitySurfaceFluxProvider::step_all()`:
+
+1. `physics.step_all(dt, t_zone, t_outdoor)` advances per-surface conduction.
+2. `urban_solver.compute_net_flux_per_surface_faer(&surface_temperatures_k)`
+   returns per-surface net longwave flux [W] (faer SIMD-accelerated).
+3. Each per-surface flux is divided by the surface area and pushed into the
+   wrapped physics provider via `physics.set_exterior_longwave_flux(i, W/m²)`,
+   so subsequent `surface_heat_flux()` calls include the urban longwave term.
+
+```rust
+use fluxion::sim::fluxion_city_flux_provider::FluxionCitySurfaceFluxProvider;
+use fluxion::sim::surface_flux_provider::SurfaceHeatFluxProvider;
+use fluxion_city::sparse::{create_sparse_from_urban_canyon, UrbanRadiationSolver};
+
+let sparse_vf = create_sparse_from_urban_canyon(&walls, ground_area)?;
+let urban_solver = UrbanRadiationSolver::with_uniform_emissivity(sparse_vf, areas, 0.9);
+let mut provider = FluxionCitySurfaceFluxProvider::new(physics_provider, urban_solver);
+
+// surface_temperatures_k has N+1 entries (N walls + ground); only the N wall
+// indices are wired to set_exterior_longwave_flux on the physics provider.
+let fluxes = provider.step_all(dt, t_zone, t_outdoor, &surface_temperatures_k)?;
+```
+
+The integration point is the zone/building envelope boundary, exactly where
+exterior surface temperatures are affected by radiative exchange with
+surrounding buildings. The `fluxion-city/parallel/` module's
+`UrbanGraphStepDispatcher` remains available for parallel multi-building
+simulation on top of this per-building wiring. Acceptance tests for the
+wiring live in `src/sim/fluxion_city_flux_provider.rs` (Issues #2344 and
+#2369 — directional flux + dense-city-vs-isolated magnitude).
 
 **Validation status**:
 
