@@ -6,11 +6,20 @@
 //! rumqttc handles automatic reconnection on transient disconnects — the event
 //! loop keeps polling and the broker connection is restored transparently.
 //!
+//! # Transport security (default: TLS)
+//!
+//! The consumer defaults to **MQTT-over-TLS** (`mqtts://`, port 8883) using
+//! rustls with the platform trust store. Server certificates are **validated**
+//! by default. Plaintext (`mqtt://` / `tcp://`) broker URLs are rejected unless
+//! `FLUXION_MQTT_ALLOW_INSECURE=true` is set, and certificate validation can be
+//! disabled with `FLUXION_MQTT_INSECURE=1` for local development only. See
+//! [`MqttTelemetryConsumer::connect`].
+//!
 //! # Example
 //!
 //! ```ignore
 //! let (consumer, mut rx) = MqttTelemetryConsumer::connect(
-//!     "mqtt://localhost:1883",
+//!     "mqtts://broker.local:8883",
 //!     "fluxion/sensors/#",
 //! )
 //! .await?;
@@ -27,8 +36,11 @@
 // at the module level.
 #![allow(clippy::result_large_err)]
 
-use rumqttc::{AsyncClient, Event, EventLoop, MqttOptions, Packet, QoS};
+use rumqttc::{
+    AsyncClient, Event, EventLoop, MqttOptions, Packet, QoS, TlsConfiguration, Transport,
+};
 use serde::{Deserialize, Serialize};
+use std::sync::Arc;
 use std::time::Duration;
 use thiserror::Error;
 use tokio::sync::mpsc;
@@ -39,13 +51,28 @@ use tokio::sync::mpsc;
 /// messages slower than the MQTT broker delivers them.
 const CHANNEL_CAPACITY: usize = 1024;
 
-/// Default MQTT port when not specified in the broker URL.
+/// Default MQTT-over-TLS port (secure) when not specified in the broker URL.
+const DEFAULT_MQTTS_PORT: u16 = 8883;
+
+/// Default plaintext MQTT port — only used when plaintext transport is
+/// explicitly permitted via [`ENV_ALLOW_PLAINTEXT`].
 const DEFAULT_MQTT_PORT: u16 = 1883;
+
+/// Env var: when truthy, permits plaintext (`mqtt://` / `tcp://`) broker URLs.
+///
+/// Plaintext means telemetry payloads travel unencrypted; intended only for
+/// local development.
+const ENV_ALLOW_PLAINTEXT: &str = "FLUXION_MQTT_ALLOW_INSECURE";
+
+/// Env var: when truthy, skips TLS server-certificate validation (e.g. for
+/// self-signed brokers). **Disables all certificate checking** — local dev only.
+const ENV_INSECURE_CERTS: &str = "FLUXION_MQTT_INSECURE";
 
 /// Errors produced by the MQTT telemetry consumer.
 #[derive(Error, Debug)]
 pub enum MqttTelemetryError {
-    /// Broker URL or topic failed validation (empty, malformed, etc.).
+    /// Broker URL or topic failed validation (empty, malformed, insecure
+    /// transport requested without an explicit opt-in, etc.).
     #[error("invalid broker configuration: {0}")]
     InvalidConfig(String),
 
@@ -146,21 +173,34 @@ impl MqttTelemetryConsumer {
     /// Returns the consumer and the receiving end of a bounded channel
     /// (capacity 1024). Call [`Self::start`] to begin consuming messages.
     ///
-    /// # Broker URL Format
+    /// # Transport Security (default: TLS)
     ///
-    /// Accepts both scheme-prefixed and bare host forms:
+    /// The default transport is **MQTT-over-TLS** (`mqtts://`, port 8883) using
+    /// rustls with the platform trust store. Server certificates are validated.
     ///
-    /// | Input | Host | Port |
-    /// |-------|------|------|
-    /// | `mqtt://broker.local:8883` | `broker.local` | `8883` |
-    /// | `tcp://10.0.0.5:1883` | `10.0.0.5` | `1883` |
-    /// | `broker.local` | `broker.local` | `1883` (default) |
-    /// | `broker.local:8883` | `broker.local` | `8883` |
+    /// | Input | Transport | Host | Port |
+    /// |-------|-----------|------|------|
+    /// | `mqtts://broker.local` | TLS (validated) | `broker.local` | `8883` |
+    /// | `mqtts://broker.local:8883` | TLS (validated) | `broker.local` | `8883` |
+    /// | `broker.local` | TLS (validated) | `broker.local` | `8883` (default) |
+    /// | `broker.local:1883` | TLS (validated) | `broker.local` | `1883` |
+    /// | `mqtt://broker.local:1883` | **plaintext** | `broker.local` | `1883` |
+    /// | `tcp://10.0.0.5:1883` | **plaintext** | `10.0.0.5` | `1883` |
+    ///
+    /// Plaintext URLs (`mqtt://` / `tcp://`) are **rejected** unless the
+    /// `FLUXION_MQTT_ALLOW_INSECURE` environment variable is set to a truthy
+    /// value (`1`/`true`/`yes`/`on`); telemetry would otherwise travel
+    /// unencrypted.
+    ///
+    /// Certificate validation can be disabled (e.g. for a self-signed local
+    /// broker) by setting `FLUXION_MQTT_INSECURE=1`. This is **dangerous** and
+    /// logged as a warning — never use it in production.
     ///
     /// # Errors
     ///
     /// Returns [`MqttTelemetryError::InvalidConfig`] if the broker URL or topic
-    /// is empty or malformed.
+    /// is empty/malformed, or if a plaintext URL is supplied without
+    /// `FLUXION_MQTT_ALLOW_INSECURE=true`.
     pub async fn connect(
         broker: &str,
         topic: &str,
@@ -176,10 +216,40 @@ impl MqttTelemetryConsumer {
             ));
         }
 
-        let (host, port) = parse_broker_url(broker)?;
+        let (scheme, host, port) = parse_broker_url(broker)?;
+
+        let allow_plaintext = env_flag(ENV_ALLOW_PLAINTEXT);
+        let insecure_certs = env_flag(ENV_INSECURE_CERTS);
+        let transport = resolve_transport(scheme, allow_plaintext, insecure_certs)?;
 
         let mut mqttoptions = MqttOptions::new("fluxion-twin-consumer", host, port);
         mqttoptions.set_keep_alive(Duration::from_secs(5));
+
+        match transport {
+            ResolvedTransport::Tls { verify_certs: true } => {
+                // rustls with the platform trust store; certs are validated.
+                mqttoptions.set_transport(Transport::tls_with_default_config());
+            }
+            ResolvedTransport::Tls {
+                verify_certs: false,
+            } => {
+                log::warn!(
+                    "FLUXION_MQTT_INSECURE is set: MQTT server certificates will NOT be \
+                     validated. This disables TLS trust verification and must only be \
+                     used for local development against self-signed brokers."
+                );
+                mqttoptions.set_transport(Transport::tls_with_config(TlsConfiguration::from(
+                    insecure_tls_config(),
+                )));
+            }
+            ResolvedTransport::Plaintext => {
+                log::warn!(
+                    "FLUXION_MQTT_ALLOW_INSECURE is set: connecting to MQTT broker '{broker}' \
+                     over plaintext TCP. Telemetry payloads will be unencrypted."
+                );
+                // rumqttc's default transport is already `Transport::Tcp`.
+            }
+        }
 
         let (client, eventloop) = AsyncClient::new(mqttoptions, CHANNEL_CAPACITY);
         client.subscribe(topic, QoS::AtLeastOnce).await?;
@@ -257,17 +327,146 @@ impl MqttTelemetryConsumer {
 // Internal helpers
 // ---------------------------------------------------------------------------
 
-/// Parse a broker URL into `(host, port)`.
+/// Scheme recognised in the broker URL.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum BrokerScheme {
+    /// `mqtts://` — MQTT-over-TLS (secure). Also the default for bare hosts.
+    Tls,
+    /// `mqtt://` or `tcp://` — plaintext. Rejected unless explicitly permitted.
+    Plaintext,
+}
+
+/// Transport chosen after combining the URL scheme with the security policy.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ResolvedTransport {
+    /// TLS over rustls. `verify_certs == false` means certificate validation is
+    /// skipped (gated behind `FLUXION_MQTT_INSECURE=1`).
+    Tls { verify_certs: bool },
+    /// Plaintext TCP (only chosen when `FLUXION_MQTT_ALLOW_INSECURE=true`).
+    Plaintext,
+}
+
+/// Decide the transport from the URL scheme and the two policy flags.
 ///
-/// Strips optional `mqtt://` or `tcp://` scheme, extracts host and port, and
-/// defaults to [`DEFAULT_MQTT_PORT`] when the port is omitted.
+/// Pure (no I/O) so it can be unit-tested directly.
+fn resolve_transport(
+    scheme: BrokerScheme,
+    allow_plaintext: bool,
+    insecure_certs: bool,
+) -> Result<ResolvedTransport, MqttTelemetryError> {
+    match scheme {
+        BrokerScheme::Plaintext if !allow_plaintext => Err(MqttTelemetryError::InvalidConfig(
+            "plaintext broker URL ('mqtt://'/'tcp://') rejected: telemetry would be \
+             unencrypted. To permit plaintext for local development, set the \
+             FLUXION_MQTT_ALLOW_INSECURE environment variable to a truthy value."
+                .to_string(),
+        )),
+        BrokerScheme::Plaintext => Ok(ResolvedTransport::Plaintext),
+        BrokerScheme::Tls => Ok(ResolvedTransport::Tls {
+            verify_certs: !insecure_certs,
+        }),
+    }
+}
+
+/// Read a boolean environment flag.
+///
+/// Truthy values (case-insensitive): `1`, `true`, `yes`, `on`. Anything else,
+/// or an unset variable, is `false`.
+fn env_flag(name: &str) -> bool {
+    match std::env::var(name) {
+        Ok(v) => matches!(
+            v.trim().to_ascii_lowercase().as_str(),
+            "1" | "true" | "yes" | "on"
+        ),
+        Err(_) => false,
+    }
+}
+
+/// A [`rustls::client::danger::ServerCertVerifier`] that accepts **any** server
+/// certificate without validation.
+///
+/// This intentionally disables all TLS certificate checks and MUST only be used
+/// for local development against brokers with self-signed certificates. It is
+/// gated behind `FLUXION_MQTT_INSECURE=1` and a warning is logged when active.
+#[derive(Debug)]
+struct NoCertificateVerification;
+
+impl rustls::client::danger::ServerCertVerifier for NoCertificateVerification {
+    fn verify_server_cert(
+        &self,
+        _end_entity: &rustls::pki_types::CertificateDer<'_>,
+        _intermediates: &[rustls::pki_types::CertificateDer<'_>],
+        _server_name: &rustls::pki_types::ServerName<'_>,
+        _ocsp_response: &[u8],
+        _now: rustls::pki_types::UnixTime,
+    ) -> Result<rustls::client::danger::ServerCertVerified, rustls::Error> {
+        Ok(rustls::client::danger::ServerCertVerified::assertion())
+    }
+
+    fn verify_tls12_signature(
+        &self,
+        _message: &[u8],
+        _cert: &rustls::pki_types::CertificateDer<'_>,
+        _dss: &rustls::DigitallySignedStruct,
+    ) -> Result<rustls::client::danger::HandshakeSignatureValid, rustls::Error> {
+        Ok(rustls::client::danger::HandshakeSignatureValid::assertion())
+    }
+
+    fn verify_tls13_signature(
+        &self,
+        _message: &[u8],
+        _cert: &rustls::pki_types::CertificateDer<'_>,
+        _dss: &rustls::DigitallySignedStruct,
+    ) -> Result<rustls::client::danger::HandshakeSignatureValid, rustls::Error> {
+        Ok(rustls::client::danger::HandshakeSignatureValid::assertion())
+    }
+
+    fn supported_verify_schemes(&self) -> Vec<rustls::SignatureScheme> {
+        // Broad list covering the schemes the aws-lc-rs / ring providers verify.
+        vec![
+            rustls::SignatureScheme::RSA_PKCS1_SHA256,
+            rustls::SignatureScheme::ECDSA_NISTP256_SHA256,
+            rustls::SignatureScheme::RSA_PKCS1_SHA384,
+            rustls::SignatureScheme::ECDSA_NISTP384_SHA384,
+            rustls::SignatureScheme::RSA_PKCS1_SHA512,
+            rustls::SignatureScheme::RSA_PSS_SHA256,
+            rustls::SignatureScheme::RSA_PSS_SHA384,
+            rustls::SignatureScheme::RSA_PSS_SHA512,
+            rustls::SignatureScheme::ED25519,
+            rustls::SignatureScheme::ED448,
+        ]
+    }
+}
+
+/// Build a rustls [`ClientConfig`] that performs **no** certificate validation.
+fn insecure_tls_config() -> rustls::ClientConfig {
+    rustls::ClientConfig::builder()
+        .dangerous()
+        .with_custom_certificate_verifier(Arc::new(NoCertificateVerification))
+        .with_no_client_auth()
+}
+
+/// Parse a broker URL into `(scheme, host, port)`.
+///
+/// Recognised schemes:
+/// - `mqtts://` → [`BrokerScheme::Tls`], default port [`DEFAULT_MQTTS_PORT`].
+/// - `mqtt://` / `tcp://` → [`BrokerScheme::Plaintext`], default port
+///   [`DEFAULT_MQTT_PORT`].
+/// - bare host (no scheme) → [`BrokerScheme::Tls`], default port
+///   [`DEFAULT_MQTTS_PORT`].
 ///
 /// Returns [`MqttTelemetryError::InvalidConfig`] for empty hosts or invalid ports.
-fn parse_broker_url(url: &str) -> Result<(String, u16), MqttTelemetryError> {
-    let stripped = url
-        .strip_prefix("mqtt://")
-        .or_else(|| url.strip_prefix("tcp://"))
-        .unwrap_or(url);
+fn parse_broker_url(url: &str) -> Result<(BrokerScheme, String, u16), MqttTelemetryError> {
+    let (scheme, stripped) = if let Some(rest) = url.strip_prefix("mqtts://") {
+        (BrokerScheme::Tls, rest)
+    } else if let Some(rest) = url.strip_prefix("mqtt://") {
+        (BrokerScheme::Plaintext, rest)
+    } else if let Some(rest) = url.strip_prefix("tcp://") {
+        (BrokerScheme::Plaintext, rest)
+    } else {
+        // Bare host — default to the secure transport.
+        (BrokerScheme::Tls, url)
+    };
 
     let (host, port_part) = match stripped.rsplit_once(':') {
         // Don't treat bare IPv6 address `[::1]` as host:port.
@@ -282,14 +481,19 @@ fn parse_broker_url(url: &str) -> Result<(String, u16), MqttTelemetryError> {
         )));
     }
 
+    let default_port = match scheme {
+        BrokerScheme::Tls => DEFAULT_MQTTS_PORT,
+        BrokerScheme::Plaintext => DEFAULT_MQTT_PORT,
+    };
+
     let port = match port_part {
         Some(raw) => raw.trim().parse::<u16>().map_err(|_| {
             MqttTelemetryError::InvalidConfig(format!("invalid port '{raw}' in broker URL"))
         })?,
-        None => DEFAULT_MQTT_PORT,
+        None => default_port,
     };
 
-    Ok((host.to_string(), port))
+    Ok((scheme, host.to_string(), port))
 }
 
 /// Check if an MQTT topic matches a subscription filter.
@@ -485,7 +689,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_empty_topic_returns_error() {
-        let result = MqttTelemetryConsumer::connect("mqtt://localhost:1883", "").await;
+        let result = MqttTelemetryConsumer::connect("mqtts://localhost:8883", "").await;
         assert!(matches!(
             result,
             Err(MqttTelemetryError::InvalidConfig(ref msg))
@@ -493,53 +697,168 @@ mod tests {
         ));
     }
 
+    #[tokio::test]
+    async fn test_plaintext_broker_rejected_by_default() {
+        // Plaintext must be rejected unless explicitly opted in. We do NOT set
+        // the env var here, so the default policy (require TLS) applies.
+        let result = MqttTelemetryConsumer::connect("mqtt://localhost:1883", "sensors/#").await;
+        assert!(matches!(
+            result,
+            Err(MqttTelemetryError::InvalidConfig(ref msg))
+                if msg.contains("FLUXION_MQTT_ALLOW_INSECURE")
+        ));
+    }
+
+    // ---- Transport policy resolution (pure function) ----
+
+    #[test]
+    fn test_resolve_transport_plaintext_rejected_without_flag() {
+        let err = resolve_transport(BrokerScheme::Plaintext, false, false).unwrap_err();
+        assert!(matches!(err, MqttTelemetryError::InvalidConfig(_)));
+    }
+
+    #[test]
+    fn test_resolve_transport_plaintext_allowed_with_flag() {
+        let t = resolve_transport(BrokerScheme::Plaintext, true, false).unwrap();
+        assert_eq!(t, ResolvedTransport::Plaintext);
+    }
+
+    #[test]
+    fn test_resolve_transport_tls_validates_by_default() {
+        let t = resolve_transport(BrokerScheme::Tls, false, false).unwrap();
+        assert_eq!(t, ResolvedTransport::Tls { verify_certs: true });
+    }
+
+    #[test]
+    fn test_resolve_transport_tls_skips_validation_when_insecure() {
+        let t = resolve_transport(BrokerScheme::Tls, false, true).unwrap();
+        assert_eq!(
+            t,
+            ResolvedTransport::Tls {
+                verify_certs: false
+            }
+        );
+    }
+
+    #[test]
+    fn test_resolve_transport_tls_still_validates_when_plaintext_allowed() {
+        // Allowing plaintext must NOT silently weaken TLS connections.
+        let t = resolve_transport(BrokerScheme::Tls, true, false).unwrap();
+        assert_eq!(t, ResolvedTransport::Tls { verify_certs: true });
+    }
+
+    // ---- env_flag parsing ----
+
+    #[test]
+    fn test_env_flag_truthy_values() {
+        assert!(check_env_flag("1"));
+        assert!(check_env_flag("true"));
+        assert!(check_env_flag("TRUE"));
+        assert!(check_env_flag("Yes"));
+        assert!(check_env_flag("on"));
+    }
+
+    #[test]
+    fn test_env_flag_falsy_values() {
+        assert!(!check_env_flag("0"));
+        assert!(!check_env_flag("false"));
+        assert!(!check_env_flag(""));
+        assert!(!check_env_flag("anything"));
+    }
+
+    /// Evaluate [`env_flag`] against `value` using a process-unique variable
+    /// name.
+    ///
+    /// `std::env::set_var` is process-global, so two parallel tests mutating the
+    /// *same* name would race. By minting a fresh, unique name per call (via an
+    /// atomic counter) and never restoring a prior value, every call is fully
+    /// independent — no shared state, no race.
+    fn check_env_flag(value: &str) -> bool {
+        use std::sync::atomic::{AtomicU64, Ordering};
+        static COUNTER: AtomicU64 = AtomicU64::new(0);
+        let id = COUNTER.fetch_add(1, Ordering::Relaxed);
+        let name = format!("FLUXION_MQTT_TEST_ENV_FLAG_{id}");
+        // SAFETY: each call uses a globally unique name that no other code reads
+        // or writes, so there is no concurrent access to the same variable.
+        unsafe {
+            std::env::set_var(&name, value);
+        }
+        let result = env_flag(&name);
+        unsafe {
+            std::env::remove_var(&name);
+        }
+        result
+    }
+
     // ---- Broker URL parsing ----
 
     #[test]
+    fn test_parse_broker_url_with_mqtts_scheme() {
+        let (scheme, host, port) = parse_broker_url("mqtts://broker.local:8883").unwrap();
+        assert_eq!(scheme, BrokerScheme::Tls);
+        assert_eq!(host, "broker.local");
+        assert_eq!(port, 8883);
+    }
+
+    #[test]
+    fn test_parse_broker_url_mqtts_default_port() {
+        let (scheme, host, port) = parse_broker_url("mqtts://broker.local").unwrap();
+        assert_eq!(scheme, BrokerScheme::Tls);
+        assert_eq!(host, "broker.local");
+        assert_eq!(port, DEFAULT_MQTTS_PORT);
+    }
+
+    #[test]
     fn test_parse_broker_url_with_mqtt_scheme() {
-        let (host, port) = parse_broker_url("mqtt://broker.local:8883").unwrap();
+        let (scheme, host, port) = parse_broker_url("mqtt://broker.local:8883").unwrap();
+        assert_eq!(scheme, BrokerScheme::Plaintext);
         assert_eq!(host, "broker.local");
         assert_eq!(port, 8883);
     }
 
     #[test]
     fn test_parse_broker_url_with_tcp_scheme() {
-        let (host, port) = parse_broker_url("tcp://10.0.0.5:1883").unwrap();
+        let (scheme, host, port) = parse_broker_url("tcp://10.0.0.5:1883").unwrap();
+        assert_eq!(scheme, BrokerScheme::Plaintext);
         assert_eq!(host, "10.0.0.5");
         assert_eq!(port, 1883);
     }
 
     #[test]
-    fn test_parse_broker_url_bare_host_default_port() {
-        let (host, port) = parse_broker_url("broker.local").unwrap();
+    fn test_parse_broker_url_bare_host_defaults_to_tls() {
+        let (scheme, host, port) = parse_broker_url("broker.local").unwrap();
+        assert_eq!(scheme, BrokerScheme::Tls);
         assert_eq!(host, "broker.local");
-        assert_eq!(port, DEFAULT_MQTT_PORT);
+        assert_eq!(port, DEFAULT_MQTTS_PORT);
     }
 
     #[test]
     fn test_parse_broker_url_bare_host_with_port() {
-        let (host, port) = parse_broker_url("broker.local:9999").unwrap();
+        let (scheme, host, port) = parse_broker_url("broker.local:9999").unwrap();
+        assert_eq!(scheme, BrokerScheme::Tls);
         assert_eq!(host, "broker.local");
         assert_eq!(port, 9999);
     }
 
     #[test]
     fn test_parse_broker_url_ip_address() {
-        let (host, port) = parse_broker_url("192.168.1.100:1883").unwrap();
+        let (scheme, host, port) = parse_broker_url("192.168.1.100:1883").unwrap();
+        assert_eq!(scheme, BrokerScheme::Tls);
         assert_eq!(host, "192.168.1.100");
         assert_eq!(port, 1883);
     }
 
     #[test]
     fn test_parse_broker_url_empty_host_error() {
+        assert!(parse_broker_url("mqtts://").is_err());
         assert!(parse_broker_url("mqtt://").is_err());
         assert!(parse_broker_url("").is_err());
     }
 
     #[test]
     fn test_parse_broker_url_invalid_port_error() {
-        assert!(parse_broker_url("mqtt://host:notaport").is_err());
-        assert!(parse_broker_url("mqtt://host:99999").is_err());
+        assert!(parse_broker_url("mqtts://host:notaport").is_err());
+        assert!(parse_broker_url("mqtts://host:99999").is_err());
     }
 
     // ---- Topic filter matching ----
@@ -573,9 +892,11 @@ mod tests {
     // ---- Integration test (requires a real broker) ----
 
     #[tokio::test]
-    #[ignore = "requires a running MQTT broker at mqtt://localhost:1883"]
+    #[ignore = "requires a running TLS MQTT broker at mqtts://localhost:8883"]
     async fn test_mqtt_consumer_integration() {
-        let broker = "mqtt://localhost:1883";
+        // Defaults to validated TLS on port 8883. For a self-signed local broker
+        // set FLUXION_MQTT_INSECURE=1 before running: `cargo test -- --ignored`.
+        let broker = "mqtts://localhost:8883";
         let topic = "fluxion/test/zone1";
 
         let consumer = MqttTelemetryConsumer::connect(broker, topic).await;
