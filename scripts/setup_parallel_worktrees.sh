@@ -1,8 +1,20 @@
 #!/bin/bash
 # Fluxion Parallel Worktree Setup Script
 # Creates git worktrees for parallel development based on issues analysis
+#
+# Race-safe (fluxion #2489): each worktree is based directly on origin/develop
+# (updated atomically by `git fetch`) and verified after creation, never on the
+# local `develop` ref which may be stale. For a single-worktree helper with a
+# --check self-test, see scripts/wt-add.sh.
 
-set -e
+set -euo pipefail
+
+REMOTE="${WT_REMOTE:-origin}"
+BASE_BRANCH="${WT_BASE_BRANCH:-develop}"
+
+# Fetch once up front so every create_worktree() reads a fresh remote ref.
+echo "Fetching ${REMOTE}/${BASE_BRANCH}..."
+git fetch "$REMOTE" "$BASE_BRANCH"
 
 echo "================================================================================"
 echo "FLUXION PARALLEL WORKTREE SETUP"
@@ -36,9 +48,20 @@ create_worktree() {
         return 0
     fi
 
-    # Create the worktree
+    # Create the worktree based DIRECTLY on ${REMOTE}/${BASE_BRANCH} (not local
+    # develop, which may be stale -- see fluxion #2489).
     echo "  Creating: $worktree_path"
-    git worktree add "$worktree_path" -b "$branch_name"
+    git worktree add "$worktree_path" -b "$branch_name" "${REMOTE}/${BASE_BRANCH}" >/dev/null
+
+    # Verify the new branch HEAD matches the remote base (invariant from #2489).
+    local remote_head worktree_head
+    remote_head="$(git rev-parse "${REMOTE}/${BASE_BRANCH}")"
+    worktree_head="$(git -C "$worktree_path" rev-parse HEAD)"
+    if [ "$worktree_head" != "$remote_head" ]; then
+        echo "  ❌ FAIL: $worktree_path (${worktree_head:0:12}) != ${REMOTE}/${BASE_BRANCH} (${remote_head:0:12})" >&2
+        return 1
+    fi
+    echo "  ✓ at ${worktree_head:0:12}"
 }
 
 echo "Creating worktrees for 18 issues..."
