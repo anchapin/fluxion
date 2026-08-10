@@ -371,6 +371,195 @@ fn test_inference_backend_variants_exist() {
 }
 
 // ---------------------------------------------------------------------------
+// Issue #2507: surrogate-conduction slot parity tests
+// ---------------------------------------------------------------------------
+//
+// The `HybridThermalModel` dispatcher routes conduction through the
+// `Box<dyn HeatConductionSolver>` slot when
+// `routing.use_surrogate_conduction` is `true`. The slot's `step()`
+// returns a per-surface `HeatFlux` [W/m²] (positive = heat into the
+// zone) that MUST be fed into the zone energy balance — not discarded.
+//
+// Before Issue #2507, the dispatcher hard-coded the per-timestep energy
+// to `0.0` whenever the surrogate-conduction branch fired, silently
+// producing wrong annual energy. The tests below assert:
+//
+//   1. A non-zero flux produces a non-zero EUI (regression for the 0.0
+//      bug).
+//   2. The EUI matches the analytical conversion `q × A × dt / 3.6e6`
+//      summed over all timesteps (the conduction slot matches the CPU
+//      physics-path energy formula exactly).
+//   3. A zero flux still yields a finite (zero) EUI — the existing
+//      `ZeroFluxSolver` regression guard stays green.
+//
+// The EUI formula `steps × Q × dt / 3.6e6` is area-independent (the
+// zone area cancels: total_energy / area = steps × Q × A × dt / 3.6e6 /
+// A), so the assertions are robust to the model's geometric defaults.
+
+use fluxion::physics::solver_trait::{HeatConductionSolver, SolverError};
+use fluxion::physics::units::{FromF64, HeatFlux, HeatTransferCoefficient, Temperature, Time};
+use fluxion::physics::wall_spec::WallSpec;
+use fluxion::sim::thermal_model::{HybridRouting, HybridThermalModel};
+use fluxion::ThermalModelTrait as _;
+
+/// Timestep duration used by the dispatcher (3600 s = 1 h).
+const DT_SECONDS: f64 = 3600.0;
+
+/// Joules per kilowatt-hour.
+const JOULES_PER_KWH: f64 = 3.6e6;
+
+/// A conduction solver stub that always returns a caller-chosen
+/// constant heat flux, regardless of boundary temperatures. This stands
+/// in for an ONNX-trained conduction surrogate so we can exercise the
+/// surrogate-conduction dispatch path without wiring a real ONNX
+/// runtime.
+struct ConstantFluxSolver {
+    flux_wm2: f64,
+}
+
+impl HeatConductionSolver for ConstantFluxSolver {
+    fn name(&self) -> &str {
+        "ConstantFluxSolver"
+    }
+    fn initialize(&mut self, _wall: &WallSpec) -> Result<(), SolverError> {
+        Ok(())
+    }
+    fn step(
+        &mut self,
+        _timestep: Time,
+        _t_int: Temperature,
+        _t_ext: Temperature,
+        _h_int: HeatTransferCoefficient,
+        _h_ext: HeatTransferCoefficient,
+    ) -> Result<HeatFlux, SolverError> {
+        Ok(HeatFlux::from_value(self.flux_wm2))
+    }
+    fn energy_storage_rate(&self) -> f64 {
+        0.0
+    }
+    fn is_valid(&self) -> bool {
+        true
+    }
+}
+
+/// Build a `HybridThermalModel` with surrogate conduction enabled and
+/// the supplied constant-flux solver installed in the slot.
+fn hybrid_with_surrogate_conduction(flux_wm2: f64) -> HybridThermalModel {
+    let routing = HybridRouting {
+        use_surrogate_conduction: true,
+        use_surrogate_ventilation: false,
+        use_surrogate_loads: false,
+        use_surrogate_hvac: false,
+        use_ood_fallback: false,
+    };
+    let mut model = HybridThermalModel::new(1, routing);
+    let _previous = model.set_conduction_solver(Box::new(ConstantFluxSolver { flux_wm2 }));
+    model
+}
+
+#[test]
+fn test_surrogate_conduction_slot_produces_nonzero_energy() {
+    // Issue #2507 regression guard: before the fix, the dispatcher
+    // hard-coded the energy to `0.0` whenever
+    // `use_surrogate_conduction` was `true`, even though the slot
+    // returned a non-zero flux. With a 50 W/m² flux over 24 timesteps,
+    // the EUI must be non-zero and match the analytical formula
+    // `steps × Q × dt / 3.6e6`.
+    let surrogates = SurrogateManager::new().expect("SurrogateManager::new");
+    let flux_wm2 = 50.0;
+    let steps = 24;
+    let mut model = hybrid_with_surrogate_conduction(flux_wm2);
+
+    let eui = model.solve_timesteps(steps, &surrogates, false);
+
+    assert!(
+        eui.is_finite(),
+        "EUI must be finite with surrogate conduction enabled; got {}",
+        eui
+    );
+    assert_ne!(
+        eui, 0.0,
+        "Issue #2507: surrogate-conduction branch must NOT report 0.0 when the slot returns a non-zero flux"
+        );
+    let expected_eui = steps as f64 * flux_wm2 * DT_SECONDS / JOULES_PER_KWH;
+    let rel_err = (eui - expected_eui).abs() / expected_eui.abs().max(1e-12);
+    assert!(
+        rel_err <= CPU_REF_REL_TOL,
+        "surrogate-conduction EUI {:.10} must match analytical conversion {:.10} \
+         (steps={} × Q={} × dt={} / {}; rel_err={:.3e})",
+        eui,
+        expected_eui,
+        steps,
+        flux_wm2,
+        DT_SECONDS,
+        JOULES_PER_KWH,
+        rel_err
+    );
+    assert_eq!(
+        model.surrogate_conduction_calls(),
+        steps,
+        "the conduction slot must be consulted every timestep"
+    );
+}
+
+#[test]
+fn test_surrogate_conduction_energy_matches_analytical_conversion() {
+    // CPU parity: the conduction energy fed into the zone balance must
+    // equal the closed-form `q × A × dt / 3.6e6` per timestep, exactly
+    // as the physics path computes it. This is the conduction-slot
+    // analogue of `test_deterministic_analytical_loads_is_pure` for the
+    // load-prediction slot. We test several flux magnitudes (positive =
+    // heat gain, negative = heat loss) to cover both sign conventions.
+    let surrogates = SurrogateManager::new().expect("SurrogateManager::new");
+    let steps = 48; // 2 days
+
+    for &flux_wm2 in &[50.0_f64, -30.0, 12.5, 100.0, -75.0] {
+        let mut model = hybrid_with_surrogate_conduction(flux_wm2);
+        let area = model.zone_area();
+        let eui = model.solve_timesteps(steps, &surrogates, false);
+
+        assert!(eui.is_finite(), "flux={}: EUI not finite", flux_wm2);
+
+        // EUI = total_energy / area = (steps × q × A × dt / 3.6e6) / A
+        //      = steps × q × dt / 3.6e6   (area cancels)
+        let expected_eui = steps as f64 * flux_wm2 * DT_SECONDS / JOULES_PER_KWH;
+        let denom = expected_eui.abs().max(1e-12);
+        let rel_err = (eui - expected_eui).abs() / denom;
+        assert!(
+            rel_err <= CPU_REF_REL_TOL,
+            "flux={} W/m²: surrogate-conduction EUI {:.10} must match analytical {:.10} \
+             (area={}, rel_err={:.3e})",
+            flux_wm2,
+            eui,
+            expected_eui,
+            area,
+            rel_err
+        );
+    }
+}
+
+#[test]
+fn test_surrogate_conduction_zero_flux_remains_finite() {
+    // Edge case / existing-regression compatibility: a zero-flux solver
+    // (as used by the `hybrid_conduction_flag_skips_physics_when_slot_succeeds`
+    // lib test) must still produce a finite (zero) EUI. This guards
+    // against the fix accidentally introducing NaN/Inf via a division or
+    // an uninitialized variable when the flux is exactly zero.
+    let surrogates = SurrogateManager::new().expect("SurrogateManager::new");
+    let mut model = hybrid_with_surrogate_conduction(0.0);
+    let eui = model.solve_timesteps(24, &surrogates, false);
+    assert!(
+        eui.is_finite(),
+        "zero-flux surrogate conduction must yield a finite EUI; got {}",
+        eui
+    );
+    assert_eq!(
+        eui, 0.0,
+        "zero-flux surrogate conduction must yield exactly 0.0 EUI"
+    );
+}
+
+// ---------------------------------------------------------------------------
 // CUDA-gated tests: only compile under `--features cuda` and ignore when
 // no GPU is available at runtime.
 // ---------------------------------------------------------------------------

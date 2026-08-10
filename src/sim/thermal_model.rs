@@ -55,7 +55,7 @@ use crate::ai::surrogate::SurrogateManager;
 use crate::physics::cta::{ContinuousTensor, VectorField};
 use crate::physics::five_r1c_solver::FiveR1CSolver;
 use crate::physics::solver_trait::HeatConductionSolver;
-use crate::physics::units::{FromF64, HeatTransferCoefficient, Temperature, Time};
+use crate::physics::units::{FromF64, HeatTransferCoefficient, Temperature, Time, ToF64};
 use crate::physics::wall_spec::lightweight_wall_spec;
 use crate::sim::thermal_model_core::get_daily_cycle;
 use crate::sim::ventilation::{ConstantVentilation, VentilationSchedule};
@@ -1068,6 +1068,15 @@ impl ThermalModelTrait for HybridThermalModel {
         // a no-op swap for the default routing; a future commit can plug in
         // a real ONNX-trained conduction surrogate via
         // `HybridThermalModel::set_conduction_solver`.
+        //
+        // Issue #2507: hoist the total zone envelope area out of the
+        // timestep loop. The surrogate-conduction branch converts the
+        // per-surface `HeatFlux` [W/m²] returned by the slot into a
+        // zone-level energy term [kWh] via `q * A * dt / 3.6e6`; the area
+        // is invariant across the run, so we resolve the immutable borrow
+        // once here (returns a copied `f64`) to avoid re-borrowing
+        // `self.inner` inside the `&mut self` closure body.
+        let zone_area_m2 = self.inner.zone_area.integrate();
         let total_energy_kwh: f64 = (0..steps)
             .map(|t| {
                 // Branch 1: surrogate load prediction (only if policy says so).
@@ -1155,6 +1164,11 @@ impl ThermalModelTrait for HybridThermalModel {
                 // finite. A future ONNX surrogate plugs in via
                 // `set_conduction_solver(...)`.
                 let mut conduction_used_surrogate = false;
+                // Issue #2507: the slot returns a `HeatFlux` [W/m²]
+                // (positive = heat flowing into the zone) that MUST be
+                // fed into the zone energy balance — not discarded.
+                // Captured here and converted to kWh in Branch 5 below.
+                let mut surrogate_conduction_flux_wm2: f64 = 0.0;
                 if use_surrogate_conduction {
                     let zone_temp = self
                         .inner
@@ -1171,7 +1185,12 @@ impl ThermalModelTrait for HybridThermalModel {
                         HeatTransferCoefficient::from_value(8.0),
                         HeatTransferCoefficient::from_value(25.0),
                     ) {
-                        Ok(_flux) => {
+                        Ok(flux) => {
+                            // Issue #2507: capture the returned
+                            // `HeatFlux` instead of discarding it. The
+                            // value (W/m², positive = into zone) is fed
+                            // into the zone energy balance in Branch 5.
+                            surrogate_conduction_flux_wm2 = flux.to_value();
                             conduction_used_surrogate = true;
                             self.surrogate_conduction_calls += 1;
                             info!(
@@ -1242,13 +1261,24 @@ impl ThermalModelTrait for HybridThermalModel {
                 // physics path fired in parallel with the surrogate counter
                 // bump, paying the full physics cost plus overhead).
                 let energy = if conduction_used_surrogate {
-                    // Surrogate path returned a heat flux but the slot's
-                    // output is not yet fed back into the zone energy
-                    // balance (future ONNX-surrogate work). The energy
-                    // term for this timestep is therefore a placeholder;
-                    // the regression test asserts only that the physics
-                    // counter stays at zero, which is the bug fix.
-                    0.0
+                    // Issue #2507: feed the surrogate-conduction
+                    // `HeatFlux` into the zone energy balance. The slot
+                    // returns a per-surface flux q [W/m²] (positive =
+                    // heat into the zone); convert to the per-timestep
+                    // zone energy [kWh] exactly as `step_physics` does
+                    // (watts × seconds / 3.6e6):
+                    //
+                    //   E = q × A × dt / 3.6e6
+                    //
+                    // where A is the total zone envelope area [m²] and
+                    // dt = 3600 s. This replaces the hard-coded `0.0`
+                    // placeholder that silently produced wrong annual
+                    // energy whenever `use_surrogate_conduction` was
+                    // enabled. The sign convention is preserved: a
+                    // positive flux (heat gain) is a positive energy
+                    // term, matching the conduction heat gain term in
+                    // the physics path's zone balance.
+                    surrogate_conduction_flux_wm2 * zone_area_m2 * 3600.0 / 3.6e6
                 } else {
                     let energy = self.inner.step_physics(t, outdoor_temp, 3600.0);
                     self.physics_conduction_calls += 1;
