@@ -115,6 +115,28 @@ pub use crate::api::security::MAX_REQUEST_BODY_BYTES;
 /// 408 once the deadline elapses.
 pub const REQUEST_TIMEOUT: Duration = Duration::from_secs(60);
 
+/// Default hard deadline (seconds) for the graceful-shutdown drain phase
+/// (Issue #2517). After a SIGINT/SIGTERM, `fluxion-rest` stops accepting new
+/// connections and gives in-flight requests this many seconds to complete
+/// before forcibly closing them. The value is deliberately below the
+/// Kubernetes default `terminationGracePeriodSeconds` (30 s) so the process
+/// exits before the kubelet issues SIGKILL. Override with
+/// `FLUXION_REST_SHUTDOWN_TIMEOUT_SECS`.
+pub const DEFAULT_SHUTDOWN_TIMEOUT_SECS: u64 = 25;
+
+/// Resolve the graceful-shutdown drain timeout from the
+/// `FLUXION_REST_SHUTDOWN_TIMEOUT_SECS` environment variable, falling back to
+/// [`DEFAULT_SHUTDOWN_TIMEOUT_SECS`] (25 s). Non-positive, empty, or
+/// unparseable values all fall back to the default so a misconfigured env var
+/// can never accidentally disable the hard deadline (Issue #2517).
+pub fn resolve_shutdown_timeout_secs() -> u64 {
+    std::env::var("FLUXION_REST_SHUTDOWN_TIMEOUT_SECS")
+        .ok()
+        .and_then(|s| s.parse::<u64>().ok())
+        .filter(|&v| v > 0)
+        .unwrap_or(DEFAULT_SHUTDOWN_TIMEOUT_SECS)
+}
+
 /// Trait for simulation state persistence.
 ///
 /// Implementers of this trait can store simulation state in any backing store:
@@ -1826,6 +1848,9 @@ pub fn router(state: AppState) -> Router {
 ///   4. `metrics::record` — innermost of the global stack. Wraps the
 ///      handler so it can observe the final response status and elapsed
 ///      time.
+///   5. `metrics::track_in_flight` — innermost-2. Maintains the
+///      `fluxion_rest_in_flight_requests` gauge (Issue #2517) so the
+///      graceful-shutdown drain has an accurate count of active requests.
 ///
 /// The per-request global stack above is applied outermost on the merged
 /// router. Inside it sit, in order: the CORS layer (handles preflight and
@@ -1868,6 +1893,7 @@ pub fn router_with_security(
             axum::http::HeaderName::from_static(X_REQUEST_ID),
         ))
         .layer(middleware::from_fn(metrics::record))
+        .layer(middleware::from_fn(metrics::track_in_flight))
         .into_inner();
 
     // Issue #2505 — `/v1/healthz` stays public so liveness probes work
@@ -3035,5 +3061,150 @@ mod tests {
         let body = serde_json::to_value(&report).unwrap();
         assert_eq!(body["status"], "not ready");
         assert_eq!(body["checks"]["weather"]["status"], "fail");
+    }
+
+    // ---- Issue #2517: in-flight request gauge ---------------------------
+
+    /// Verify that the `fluxion_rest_in_flight_requests` gauge is incremented
+    /// when a request enters the middleware and decremented back to 0 when it
+    /// exits. Uses a thread-local `DebuggingRecorder` (same pattern as the
+    /// ONNX metric tests in `surrogate.rs`) so the assertion never touches the
+    /// process-global Prometheus recorder.
+    #[test]
+    fn in_flight_gauge_tracks_request_lifecycle() {
+        use metrics_util::debugging::DebuggingRecorder;
+
+        let recorder = DebuggingRecorder::new();
+        let snapshotter = recorder.snapshotter();
+
+        // Minimal router with only the in-flight middleware.
+        let app = Router::new()
+            .route("/test", get(|| async { "ok" }))
+            .layer(middleware::from_fn(metrics::track_in_flight));
+
+        // `with_local_recorder` is sync; run the async request on a
+        // current-thread runtime inside the closure so the thread-local
+        // recorder is active for the entire request lifecycle.
+        // `::metrics::` disambiguates the external crate from our local
+        // `crate::api::metrics` module.
+        ::metrics::with_local_recorder(&recorder, || {
+            tokio::runtime::Builder::new_current_thread()
+                .enable_all()
+                .build()
+                .expect("build current-thread runtime")
+                .block_on(async {
+                    use axum::body::Body;
+                    use axum::http::{Request, StatusCode};
+                    let resp = tower::ServiceExt::oneshot(
+                        app,
+                        Request::builder()
+                            .uri("/test")
+                            .body(Body::empty())
+                            .expect("build test request"),
+                    )
+                    .await
+                    .expect("oneshot must not error");
+                    assert_eq!(resp.status(), StatusCode::OK);
+                });
+        });
+
+        // After the request: the gauge must exist (proving the middleware ran)
+        // and its value must be 0 (proving the RAII guard decremented it).
+        let map = snapshotter.snapshot().into_hashmap();
+        let entry = map
+            .iter()
+            .find(|(k, _)| k.key().name() == metrics::IN_FLIGHT_REQUESTS);
+        assert!(
+            entry.is_some(),
+            "fluxion_rest_in_flight_requests gauge was not recorded — \
+             track_in_flight middleware did not execute"
+        );
+        if let Some((_, (_, _, debug_value))) = entry {
+            match debug_value {
+                metrics_util::debugging::DebugValue::Gauge(f) => {
+                    assert_eq!(
+                        **f, 0.0f64,
+                        "gauge should be 0 after request completes (RAII guard must decrement)"
+                    );
+                }
+                other => panic!("expected Gauge, got {other:?}"),
+            }
+        }
+    }
+
+    // ---- Issue #2517: graceful-shutdown timeout config ------------------
+
+    /// Env var key for the shutdown drain timeout (Issue #2517).
+    const SHUTDOWN_TIMEOUT_ENV: &str = "FLUXION_REST_SHUTDOWN_TIMEOUT_SECS";
+
+    /// Mutex to serialize tests that mutate `SHUTDOWN_TIMEOUT_ENV` — without
+    /// this, parallel test execution causes data races on the process-global
+    /// environment block.
+    static SHUTDOWN_ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+    #[test]
+    fn shutdown_timeout_defaults_to_25() {
+        let _guard = SHUTDOWN_ENV_LOCK.lock().unwrap();
+        let saved = std::env::var_os(SHUTDOWN_TIMEOUT_ENV);
+        std::env::remove_var(SHUTDOWN_TIMEOUT_ENV);
+        assert_eq!(resolve_shutdown_timeout_secs(), 25);
+        assert_eq!(DEFAULT_SHUTDOWN_TIMEOUT_SECS, 25);
+        if let Some(v) = saved {
+            std::env::set_var(SHUTDOWN_TIMEOUT_ENV, v);
+        }
+    }
+
+    #[test]
+    fn shutdown_timeout_reads_env_override() {
+        let _guard = SHUTDOWN_ENV_LOCK.lock().unwrap();
+        let saved = std::env::var_os(SHUTDOWN_TIMEOUT_ENV);
+        std::env::set_var(SHUTDOWN_TIMEOUT_ENV, "42");
+        assert_eq!(resolve_shutdown_timeout_secs(), 42);
+        match saved {
+            Some(v) => std::env::set_var(SHUTDOWN_TIMEOUT_ENV, v),
+            None => std::env::remove_var(SHUTDOWN_TIMEOUT_ENV),
+        }
+    }
+
+    #[test]
+    fn shutdown_timeout_rejects_zero_and_invalid() {
+        let _guard = SHUTDOWN_ENV_LOCK.lock().unwrap();
+        let saved = std::env::var_os(SHUTDOWN_TIMEOUT_ENV);
+
+        // 0 — must fall back to default (a 0-second deadline would disable
+        // the safety net entirely, which is worse than the current behaviour).
+        std::env::set_var(SHUTDOWN_TIMEOUT_ENV, "0");
+        assert_eq!(
+            resolve_shutdown_timeout_secs(),
+            DEFAULT_SHUTDOWN_TIMEOUT_SECS,
+            "timeout=0 should fall back to default, not disable the deadline"
+        );
+
+        // Non-numeric — must fall back to default.
+        std::env::set_var(SHUTDOWN_TIMEOUT_ENV, "not-a-number");
+        assert_eq!(
+            resolve_shutdown_timeout_secs(),
+            DEFAULT_SHUTDOWN_TIMEOUT_SECS,
+            "invalid timeout should fall back to default"
+        );
+
+        match saved {
+            Some(v) => std::env::set_var(SHUTDOWN_TIMEOUT_ENV, v),
+            None => std::env::remove_var(SHUTDOWN_TIMEOUT_ENV),
+        }
+    }
+
+    /// Demonstrate that a zero-duration `tokio::time::timeout` fires
+    /// immediately — this is the mechanism the binary uses to enforce the
+    /// hard shutdown deadline (Issue #2517). With `timeout_secs = 0` the
+    /// drain phase is skipped and connections are closed right away.
+    #[tokio::test]
+    async fn zero_duration_timeout_fires_immediately() {
+        let result =
+            tokio::time::timeout(Duration::from_secs(0), std::future::pending::<()>()).await;
+        assert!(
+            result.is_err(),
+            "timeout(0s) must fire immediately (Err), even against a pending future"
+        );
     }
 }

@@ -27,7 +27,7 @@ use axum::{
     middleware::Next,
     response::{IntoResponse, Response},
 };
-use metrics::{counter, describe_counter, describe_histogram, histogram};
+use metrics::{counter, describe_counter, describe_gauge, describe_histogram, gauge, histogram};
 use metrics_exporter_prometheus::{Matcher, PrometheusBuilder, PrometheusHandle};
 
 /// Histogram buckets used for `fluxion_rest_request_duration_seconds`. Tuned
@@ -65,6 +65,13 @@ pub const REQUEST_DURATION_SECONDS: &str = "fluxion_rest_request_duration_second
 
 /// Counter name emitted per error response (status >= 400).
 pub const ERRORS_TOTAL: &str = "fluxion_rest_errors_total";
+
+/// Gauge name tracking the number of HTTP requests currently being processed
+/// by the REST API (Issue #2517). Incremented on request entry, decremented
+/// on exit (including error / panic paths) so the value always reflects the
+/// true in-flight count at any instant. Used by the graceful-shutdown drain
+/// deadline to decide whether all in-flight work has completed.
+pub const IN_FLIGHT_REQUESTS: &str = "fluxion_rest_in_flight_requests";
 
 /// Histogram name for ONNX runtime inference wall-clock latency (Issue #2498).
 /// Labeled `backend` (cpu|cuda|coreml|directml|openvino) and `batch_bucket`.
@@ -124,6 +131,10 @@ pub fn init_recorder() -> PrometheusHandle {
             describe_counter!(
                 ERRORS_TOTAL,
                 "Total number of HTTP responses with status >= 400 from the Fluxion REST API"
+            );
+            describe_gauge!(
+                IN_FLIGHT_REQUESTS,
+                "Number of HTTP requests currently being processed by the Fluxion REST API"
             );
             describe_histogram!(
                 REQUEST_DURATION_SECONDS,
@@ -214,6 +225,27 @@ pub async fn record(req: Request, next: Next) -> Response {
     // per response. We deliberately do not `tracing::info!` here to avoid
     // double-logging.
     response
+}
+
+/// Axum middleware that maintains the `fluxion_rest_in_flight_requests` gauge
+/// (Issue #2517). Increments on request entry, decrements on exit via an RAII
+/// guard so the count is always correct — even if the handler panics, the
+/// timeout layer returns early, or a downstream layer drops the future.
+pub async fn track_in_flight(req: Request, next: Next) -> Response {
+    gauge!(IN_FLIGHT_REQUESTS).increment(1);
+    let _guard = InFlightGuard;
+    next.run(req).await
+}
+
+/// RAII guard that decrements the in-flight gauge when dropped, guaranteeing
+/// the decrement runs regardless of how the middleware future completes
+/// (normal return, early timeout, panic-unwind, or drop).
+struct InFlightGuard;
+
+impl Drop for InFlightGuard {
+    fn drop(&mut self) {
+        gauge!(IN_FLIGHT_REQUESTS).decrement(1);
+    }
 }
 
 /// Handler for `GET /v1/metrics`. Streams the Prometheus exposition format.
