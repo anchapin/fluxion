@@ -113,7 +113,8 @@
 | `install_ripr.sh` | Install RIPR dependencies | - |
 | `provision-hetzner-runner.sh` | Provision Hetzner runner | terraform |
 | `release_v0.8.0.sh` | Release v0.8.0 | git, github cli |
-| `setup_parallel_worktrees.sh` | Setup parallel worktrees | git, xargs |
+| `setup_parallel_worktrees.sh` | Setup parallel worktrees (race-safe, #2489) | git, xargs |
+| `wt-add.sh` | Race-safe single-worktree creation (`--check` self-test, #2489) | git, bash |
 
 ---
 
