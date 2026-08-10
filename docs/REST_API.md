@@ -126,9 +126,16 @@ curl -s -X POST http://localhost:8080/v1/simulate \
 The request body is a bare `SimulationSchemaV1` (or the version-tagged
 `SimulationSchema` envelope); an optional `options` field accepts:
 
-- `years` (default `1`)
+- `years` (default `1`, allowed range `1..=10`) — bounded at
+  deserialisation to prevent CPU/memory exhaustion; out-of-range values are
+  rejected as `400 invalid_request` (#2530). The server also enforces a
+  per-request `60s` timeout.
 - `use_surrogates` (default `false`)
 - `store_as` (optional explicit id; if absent the server auto-assigns one)
+
+`POST /v1/batch` accepts at most `1024` entries per request (`400
+batch_too_large` otherwise) and a total step budget of `Σ years_i * 8760 ≤
+89_702_400`; the maximum request body size is `8 MiB`.
 
 The response is `{ "schema_id": "sch-0", "output": { ... SimulationOutput ... } }`.
 The `schema_id` is always non-null because the server auto-stores the schema

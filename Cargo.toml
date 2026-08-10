@@ -237,7 +237,9 @@ quick-xml = "0.41"
 # host (CWE-377, CWE-367).
 tempfile = "3.10"
 axum = { version = "0.7", default-features = false, features = ["http1", "json", "tokio", "query", "matched-path"] }
-tower = { version = "0.5", features = ["util"] }
+# `timeout` is needed for `tower::timeout::TimeoutLayer`, the per-request
+# 60 s budget that bounds `/v1/simulate` CPU usage (Issue #2530 DoS hardening).
+tower = { version = "0.5", features = ["util", "timeout"] }
 http-body-util = "0.1"
 futures = "0.3"
 futures-util = "0.3"
