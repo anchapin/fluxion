@@ -16,14 +16,14 @@ scripts drift away from the public types.
 | `run_oracle.py`            | `fluxion.BatchOracle.evaluate_population` (Python) | Works as written              |
 | `quick_start.sh`           | Helper: `maturin develop` + run `run_oracle.py` | Works as written                |
 | `run_rest.sh`              | `curl` against `fluxion-rest` on port 8080      | Works as written (added #1411)  |
-| `simulation_schema_v1.json`| `SimulationSchemaV1` example (legacy schedule keys) | Drift-detected by #1411; see `tests/fixtures/single_zone.json` for the live fixture |
-| `simple_config.json`       | Legacy `fluxion.Model` config stub (10 zones)   | No longer consumed by `Model`   |
+| `tests/fixtures/single_zone.json` | Canonical `SimulationSchemaV1` for `POST /v1/simulate` | Round-tripped by `tests/examples_smoke.rs` on every CI run |
 | `dummy_surrogate.onnx`     | Pre-generated dummy ONNX for `Model.load_surrogate` | Works (1.2-constant)        |
 | `multi_zone_demo.rs`       | `MultiZoneThermalModel` from Rust               | Reference only                  |
 | `tutorial_custom_model.rs` | Custom thermal model demo (Rust)                | Reference only                  |
 | `validate_surrogate.py`    | ONNX validation helper                          | Reference only                  |
 | `risk_aware_optimization.py` | Risk-aware oracle workflow (Python)            | Reference only                  |
 | `packs/`                   | Curated example model packs                     | Reference only                  |
+| `legacy/`                  | Stale `simple_config.json` + `simulation_schema_v1.json` | Historical reference only — not consumed by any live surface (moved in #2544) |
 | `*.rs` (construction_example, performance_example, …) | Rust binary examples under a separate `examples/Cargo.toml` | Out of scope for the Python/REST on-ramp |
 
 ## 2. Input formats
@@ -89,14 +89,17 @@ For type safety, prefer `oracle.evaluate_population_typed(...)` with
 `fluxion.BuildingParameters(window_u_value=…, heating_setpoint=…,
 cooling_setpoint=…)` objects (see `src/api/parameters.rs`).
 
-### 2.3 `simple_config.json` and `simulation_schema_v1.json`
+### 2.3 Historical config stubs (`examples/legacy/`)
 
-`examples/simple_config.json` and `examples/simulation_schema_v1.json`
-pre-date the PyO3 / axum surface and are **not** consumed by either
-`Model` or `BatchOracle` at this time. They are kept for historical
-reference. The canonical REST request body is
-`tests/fixtures/single_zone.json`, which is round-tripped by
-`tests/examples_smoke.rs` on every CI run.
+`examples/legacy/simple_config.json` and
+`examples/legacy/simulation_schema_v1.json` pre-date the PyO3 / axum
+surface and are **not** consumed by either `Model` or `BatchOracle`,
+nor accepted by `fluxion-rest`. They were moved out of the top of
+`examples/` in #2544 and are kept under `examples/legacy/` for
+historical reference only. The canonical REST request body — and the
+only JSON document the `POST /v1/simulate` endpoint is validated
+against — is `tests/fixtures/single_zone.json`, which is round-tripped
+by `tests/examples_smoke.rs` on every CI run.
 
 ### 2.4 `run_rest.sh` — REST API curl examples
 

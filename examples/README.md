@@ -20,10 +20,16 @@ runtime.
 | `risk_aware_optimization.py`            | Risk-aware `BatchOracle` workflow (Python)                                 |
 | `performance_example.rs`                | Throughput measurement (Rust)                                              |
 | `construction_example.rs`               | Multi-layer construction assembly (Rust)                                   |
-| `simple_config.json`                    | Legacy 10-zone stub — **not** consumed by `Model`                         |
-| `simulation_schema_v1.json`             | Legacy `SimulationSchemaV1` example with non-canonical schedule keys      |
+| `legacy/`                               | Stale `simple_config.json` + `simulation_schema_v1.json` kept for historical reference only (moved in #2544) |
 | `packs/`                                | Curated example model packs (Rust reference data)                         |
 | `*.rs` under the inner `examples/Cargo.toml` | Standalone Rust binaries (built with `cargo run --manifest-path examples/Cargo.toml`) |
+
+> **Canonical REST fixture.** The only JSON document the `fluxion-rest`
+> `POST /v1/simulate` endpoint is validated against is
+> [`../tests/fixtures/single_zone.json`](../tests/fixtures/single_zone.json),
+> round-tripped by `tests/examples_smoke.rs` on every CI run. The
+> historical stubs under `legacy/` are **not** consumed by `Model`,
+> `BatchOracle`, or `fluxion-rest`.
 
 ## Purpose
 
