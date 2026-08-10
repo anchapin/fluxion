@@ -225,26 +225,29 @@ pub fn compute_state_space_ctf(layers: &[CTFMaterial], timestep: f64) -> CTFCoef
     let a_exp = matrix_exponential(&a_mat, timestep);
 
     // Debug: inspect A matrix and Phi eigenvalues
-    eprintln!("\n=== DIAGNOSTIC: A matrix (n={}) ===", n);
-    for i in 0..n {
-        eprintln!("  A[{}] = {:?}", i, a_mat[i]);
-    }
-    // Compute trace and determinant of Phi = exp(A*dt)
-    let trace_phi: f64 = (0..n).map(|i| a_exp[i][i]).sum();
-    eprintln!("  trace(Phi) = {:.6}", trace_phi);
-    // Check diagonal dominance of Phi
-    let mut max_offdiag = 0.0f64;
-    for i in 0..n {
-        for j in 0..n {
-            if i != j {
-                max_offdiag = max_offdiag.max(a_exp[i][j].abs());
+    #[cfg(feature = "debug-physics")]
+    {
+        eprintln!("\n=== DIAGNOSTIC: A matrix (n={}) ===", n);
+        for i in 0..n {
+            eprintln!("  A[{}] = {:?}", i, a_mat[i]);
+        }
+        // Compute trace and determinant of Phi = exp(A*dt)
+        let trace_phi: f64 = (0..n).map(|i| a_exp[i][i]).sum();
+        eprintln!("  trace(Phi) = {:.6}", trace_phi);
+        // Check diagonal dominance of Phi
+        let mut max_offdiag = 0.0f64;
+        for i in 0..n {
+            for j in 0..n {
+                if i != j {
+                    max_offdiag = max_offdiag.max(a_exp[i][j].abs());
+                }
             }
         }
+        eprintln!("  max |Phi_ij| (i≠j) = {:.6e}", max_offdiag);
+        // Frobenius norm of Phi
+        let frob_phi: f64 = a_exp.iter().flatten().map(|x| x * x).sum::<f64>().sqrt();
+        eprintln!("  ||Phi||_F = {:.6}", frob_phi);
     }
-    eprintln!("  max |Phi_ij| (i≠j) = {:.6e}", max_offdiag);
-    // Frobenius norm of Phi
-    let frob_phi: f64 = a_exp.iter().flatten().map(|x| x * x).sum::<f64>().sqrt();
-    eprintln!("  ||Phi||_F = {:.6}", frob_phi);
 
     // Step 4: Compute matrix inverse A^(-1)
     let a_inv = matrix_inverse(&a_mat).expect("A matrix should be invertible for stable wall");
@@ -260,64 +263,68 @@ pub fn compute_state_space_ctf(layers: &[CTFMaterial], timestep: f64) -> CTFCoef
     let gamma2 = mat_mat_mul_col(&a_inv, &gamma2_diff); // n×2
 
     // Debug: verify DC gain using full matrix formula: -C·A⁻¹·B + D
-    let dc_gain_ct = {
-        let ca_inv = mat_mul_gen(&c_mat, &a_inv); // 2×n × n×n = 2×n
-        let ca_inv_b = mat_mul_gen(&ca_inv, &b_mat); // 2×n × n×2 = 2×2
-        vec![
-            vec![-ca_inv_b[0][0] + d_mat[0][0], -ca_inv_b[0][1] + d_mat[0][1]],
-            vec![-ca_inv_b[1][0] + d_mat[1][0], -ca_inv_b[1][1] + d_mat[1][1]],
-        ]
-    };
+    #[cfg(feature = "debug-physics")]
+    {
+        let dc_gain_ct = {
+            let ca_inv = mat_mul_gen(&c_mat, &a_inv); // 2×n × n×n = 2×n
+            let ca_inv_b = mat_mul_gen(&ca_inv, &b_mat); // 2×n × n×2 = 2×2
+            vec![
+                vec![-ca_inv_b[0][0] + d_mat[0][0], -ca_inv_b[0][1] + d_mat[0][1]],
+                vec![-ca_inv_b[1][0] + d_mat[1][0], -ca_inv_b[1][1] + d_mat[1][1]],
+            ]
+        };
 
-    // Discrete-time DC gain: D + C*(I-Phi)^(-1)*(Gamma1+Gamma2)
-    let dc_gain_dt = {
-        let i_minus_phi = {
-            let mut m = vec![vec![0.0; n]; n];
-            for i in 0..n {
-                for j in 0..n {
-                    m[i][j] = if i == j { 1.0 } else { 0.0 } - a_exp[i][j];
+        // Discrete-time DC gain: D + C*(I-Phi)^(-1)*(Gamma1+Gamma2)
+        let dc_gain_dt = {
+            let i_minus_phi = {
+                let mut m = vec![vec![0.0; n]; n];
+                for i in 0..n {
+                    for j in 0..n {
+                        m[i][j] = if i == j { 1.0 } else { 0.0 } - a_exp[i][j];
+                    }
                 }
-            }
-            m
+                m
+            };
+            let i_minus_phi_inv =
+                matrix_inverse(&i_minus_phi).unwrap_or_else(|| vec![vec![0.0; n]; n]);
+            let g12 = {
+                let mut m = vec![vec![0.0; 2]; n];
+                for i in 0..n {
+                    m[i][0] = gamma1[i][0] + gamma2[i][0];
+                    m[i][1] = gamma1[i][1] + gamma2[i][1];
+                }
+                m
+            };
+            let ci = mat_mul_gen(&c_mat, &i_minus_phi_inv); // 2×n
+            let ci_g12 = mat_mul_gen(&ci, &g12); // 2×2
+            vec![
+                vec![ci_g12[0][0] + d_mat[0][0], ci_g12[0][1] + d_mat[0][1]],
+                vec![ci_g12[1][0] + d_mat[1][0], ci_g12[1][1] + d_mat[1][1]],
+            ]
         };
-        let i_minus_phi_inv = matrix_inverse(&i_minus_phi).unwrap_or_else(|| vec![vec![0.0; n]; n]);
-        let g12 = {
-            let mut m = vec![vec![0.0; 2]; n];
-            for i in 0..n {
-                m[i][0] = gamma1[i][0] + gamma2[i][0];
-                m[i][1] = gamma1[i][1] + gamma2[i][1];
-            }
-            m
-        };
-        let ci = mat_mul_gen(&c_mat, &i_minus_phi_inv); // 2×n
-        let ci_g12 = mat_mul_gen(&ci, &g12); // 2×2
-        vec![
-            vec![ci_g12[0][0] + d_mat[0][0], ci_g12[0][1] + d_mat[0][1]],
-            vec![ci_g12[1][0] + d_mat[1][0], ci_g12[1][1] + d_mat[1][1]],
-        ]
-    };
 
-    let total_r_wall: f64 = layers.iter().map(|l| l.resistance()).sum();
-    let u_bare_check = 1.0 / total_r_wall;
-    eprintln!(
-        "  DC gain CT: [[{:.6}, {:.6}], [{:.6}, {:.6}]]",
-        dc_gain_ct[0][0], dc_gain_ct[0][1], dc_gain_ct[1][0], dc_gain_ct[1][1]
-    );
-    eprintln!(
-        "  DC gain DT (G1+G2): [[{:.6}, {:.6}], [{:.6}, {:.6}]], U_bare = {:.6}",
-        dc_gain_dt[0][0], dc_gain_dt[0][1], dc_gain_dt[1][0], dc_gain_dt[1][1], u_bare_check
-    );
-    eprintln!("  Gamma1[0..2] = {:?}", &gamma1[..2.min(n)]);
-    eprintln!("  Gamma2[0..2] = {:?}", &gamma2[..2.min(n)]);
-    eprintln!(
-        "  C = [{:.6}, {:.6}], D = [[{:.6}, {:.6}], [{:.6}, {:.6}]]",
-        c_mat[0][0],
-        c_mat[1][n - 1],
-        d_mat[0][0],
-        d_mat[0][1],
-        d_mat[1][0],
-        d_mat[1][1]
-    );
+        let total_r_wall: f64 = layers.iter().map(|l| l.resistance()).sum();
+        let u_bare_check = 1.0 / total_r_wall;
+        eprintln!(
+            "  DC gain CT: [[{:.6}, {:.6}], [{:.6}, {:.6}]]",
+            dc_gain_ct[0][0], dc_gain_ct[0][1], dc_gain_ct[1][0], dc_gain_ct[1][1]
+        );
+        eprintln!(
+            "  DC gain DT (G1+G2): [[{:.6}, {:.6}], [{:.6}, {:.6}]], U_bare = {:.6}",
+            dc_gain_dt[0][0], dc_gain_dt[0][1], dc_gain_dt[1][0], dc_gain_dt[1][1], u_bare_check
+        );
+        eprintln!("  Gamma1[0..2] = {:?}", &gamma1[..2.min(n)]);
+        eprintln!("  Gamma2[0..2] = {:?}", &gamma2[..2.min(n)]);
+        eprintln!(
+            "  C = [{:.6}, {:.6}], D = [[{:.6}, {:.6}], [{:.6}, {:.6}]]",
+            c_mat[0][0],
+            c_mat[1][n - 1],
+            d_mat[0][0],
+            d_mat[0][1],
+            d_mat[1][0],
+            d_mat[1][1]
+        );
+    }
 
     // Step 6: Compute bare-wall s0, s, and e coefficients (Seem step 5)
     let mut coeffs = compute_ctf_from_state_space(
@@ -337,19 +344,22 @@ pub fn compute_state_space_ctf(layers: &[CTFMaterial], timestep: f64) -> CTFCoef
     let x_sum_bare: f64 = coeffs.x.iter().sum();
     let phi_sum_bare: f64 = coeffs.phi.iter().sum();
     let r_wall: f64 = layers.iter().map(|l| l.resistance()).sum();
-    let u_bare = 1.0 / r_wall;
     let u_filmed = 1.0 / (R_SI + r_wall + R_SE);
     let denom = x_sum_bare / u_filmed - phi_sum_bare;
 
-    eprintln!(
-        "  Bare-wall: ΣX = {:.6}, U_bare = {:.6}",
-        x_sum_bare, u_bare
-    );
-    eprintln!(
-        "  Film scaling: denom = {:.6}, U_filmed = {:.6}",
-        denom,
-        u_bare / (1.0 + u_bare * (R_SE + R_SI))
-    );
+    #[cfg(feature = "debug-physics")]
+    {
+        let u_bare = 1.0 / r_wall;
+        eprintln!(
+            "  Bare-wall: ΣX = {:.6}, U_bare = {:.6}",
+            x_sum_bare, u_bare
+        );
+        eprintln!(
+            "  Film scaling: denom = {:.6}, U_filmed = {:.6}",
+            denom,
+            u_bare / (1.0 + u_bare * (R_SE + R_SI))
+        );
+    }
 
     // Scale all CTF coefficients by the film factor
     for x in &mut coeffs.x {
@@ -366,19 +376,22 @@ pub fn compute_state_space_ctf(layers: &[CTFMaterial], timestep: f64) -> CTFCoef
     }
 
     // Final verification
-    let x_sum: f64 = coeffs.x.iter().sum();
-    let _y_sum: f64 = coeffs.y.iter().sum();
-    let phi_sum: f64 = coeffs.phi.iter().sum();
-    let u_filmed = 1.0 / (R_SI + r_wall + R_SE);
-    let dc_gain = x_sum / (1.0 + phi_sum);
-    eprintln!("  Filmed: ΣX = {:.6}, ΣΦ = {:.6}", x_sum, phi_sum);
-    eprintln!(
-        "  DC gain ΣX/(1+ΣΦ) = {:.6} (target U_filmed = {:.6}, err = {:.4}%)",
-        dc_gain,
-        u_filmed,
-        (dc_gain / u_filmed - 1.0) * 100.0
-    );
-    eprintln!("  Φ[0:5] = {:?}", &coeffs.phi[..5.min(coeffs.num_coeffs)]);
+    #[cfg(feature = "debug-physics")]
+    {
+        let x_sum: f64 = coeffs.x.iter().sum();
+        let _y_sum: f64 = coeffs.y.iter().sum();
+        let phi_sum: f64 = coeffs.phi.iter().sum();
+        let u_filmed = 1.0 / (R_SI + r_wall + R_SE);
+        let dc_gain = x_sum / (1.0 + phi_sum);
+        eprintln!("  Filmed: ΣX = {:.6}, ΣΦ = {:.6}", x_sum, phi_sum);
+        eprintln!(
+            "  DC gain ΣX/(1+ΣΦ) = {:.6} (target U_filmed = {:.6}, err = {:.4}%)",
+            dc_gain,
+            u_filmed,
+            (dc_gain / u_filmed - 1.0) * 100.0
+        );
+        eprintln!("  Φ[0:5] = {:?}", &coeffs.phi[..5.min(coeffs.num_coeffs)]);
+    }
 
     coeffs
 }
@@ -677,6 +690,7 @@ fn compute_ctf_from_state_space(
             s0[j][k] = d_tilde[j][k];
         }
     }
+    #[cfg(feature = "debug-physics")]
     eprintln!(
         "  s0 = D̃ = [[{:.6}, {:.6}], [{:.6}, {:.6}]]",
         s0[0][0], s0[0][1], s0[1][0], s0[1][1]
@@ -736,6 +750,7 @@ fn compute_ctf_from_state_space(
         }
 
         // Debug: trace s coefficient evolution
+        #[cfg(feature = "debug-physics")]
         if inum <= 10 || inum % 20 == 0 {
             let total_r_wall: f64 = layers.iter().map(|l| l.resistance()).sum();
             let u_bare_p = 1.0 / total_r_wall;
@@ -858,31 +873,34 @@ fn compute_ctf_from_state_space(
     }
 
     // Diagnostic output (no normalization — the math should be exact now)
-    let total_r_wall: f64 = layers.iter().map(|l| l.resistance()).sum();
-    let u_bare = 1.0 / total_r_wall;
-    let x_sum: f64 = coeffs.x.iter().sum();
-    let y_sum: f64 = coeffs.y.iter().sum();
-    let phi_sum: f64 = coeffs.phi.iter().sum();
+    #[cfg(feature = "debug-physics")]
+    {
+        let total_r_wall: f64 = layers.iter().map(|l| l.resistance()).sum();
+        let u_bare = 1.0 / total_r_wall;
+        let x_sum: f64 = coeffs.x.iter().sum();
+        let y_sum: f64 = coeffs.y.iter().sum();
+        let phi_sum: f64 = coeffs.phi.iter().sum();
 
-    eprintln!("Bare-wall CTF ({} layers, {} nodes):", layers.len(), n);
-    eprintln!("  U_bare = {:.6} W/m²K", u_bare);
-    eprintln!(
-        "  s0 = [[{:.6}, {:.6}], [{:.6}, {:.6}]]",
-        s0[0][0], s0[0][1], s0[1][0], s0[1][1]
-    );
-    eprintln!("  e[0:5] = {:?}", &e[..5.min(MAX_CTF_TERMS)]);
-    eprintln!("  Sum(X) = {:.6} (ratio: {:.4})", x_sum, x_sum / u_bare);
-    eprintln!("  Sum(Y) = {:.6} (ratio: {:.4})", y_sum, y_sum / u_bare);
-    eprintln!("  Num CTF terms: {}", num);
-    eprintln!("  X[0:5] = {:?}", &coeffs.x[..5.min(num)]);
-    eprintln!("  Phi[0:5] = {:?}", &coeffs.phi[..5.min(num)]);
-    eprintln!(
-        "  Steady-state check: ΣX={:.6}, ΣΦ={:.6}, ΣX/(1+ΣΦ)={:.6}, U_bare={:.6}",
-        x_sum,
-        phi_sum,
-        x_sum / (1.0 + phi_sum),
-        u_bare
-    );
+        eprintln!("Bare-wall CTF ({} layers, {} nodes):", layers.len(), n);
+        eprintln!("  U_bare = {:.6} W/m²K", u_bare);
+        eprintln!(
+            "  s0 = [[{:.6}, {:.6}], [{:.6}, {:.6}]]",
+            s0[0][0], s0[0][1], s0[1][0], s0[1][1]
+        );
+        eprintln!("  e[0:5] = {:?}", &e[..5.min(MAX_CTF_TERMS)]);
+        eprintln!("  Sum(X) = {:.6} (ratio: {:.4})", x_sum, x_sum / u_bare);
+        eprintln!("  Sum(Y) = {:.6} (ratio: {:.4})", y_sum, y_sum / u_bare);
+        eprintln!("  Num CTF terms: {}", num);
+        eprintln!("  X[0:5] = {:?}", &coeffs.x[..5.min(num)]);
+        eprintln!("  Phi[0:5] = {:?}", &coeffs.phi[..5.min(num)]);
+        eprintln!(
+            "  Steady-state check: ΣX={:.6}, ΣΦ={:.6}, ΣX/(1+ΣΦ)={:.6}, U_bare={:.6}",
+            x_sum,
+            phi_sum,
+            x_sum / (1.0 + phi_sum),
+            u_bare
+        );
+    }
 
     coeffs
 }
@@ -1387,6 +1405,7 @@ fn expm_higham_padé13(a: &[Vec<f64>]) -> Vec<Vec<f64>> {
         s_f.max(0.0) as usize
     };
 
+    #[cfg(feature = "debug-physics")]
     if n <= 32 {
         eprintln!("[expm_pade13] n={}, ||A||_1={:.6e}, s={}", n, norm_1, s);
     }
