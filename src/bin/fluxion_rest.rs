@@ -29,12 +29,22 @@
 //!   guard that refuses `0.0.0.0` + `auth=off`.
 //!
 //! Graceful shutdown is wired to `SIGINT` (Ctrl-C) via `tokio::signal`.
+//!
+//! Issue #2517 — graceful shutdown has a hard drain deadline. After
+//! `SIGINT`/`SIGTERM`, the server stops accepting new connections and gives
+//! in-flight requests `FLUXION_REST_SHUTDOWN_TIMEOUT_SECS` seconds (default
+//! 25) to finish before forcibly closing all connections. The deadline is
+//! below the Kubernetes default `terminationGracePeriodSeconds` (30 s) so the
+//! process exits before the kubelet issues `SIGKILL`.
 
 use std::net::SocketAddr;
 use std::str::FromStr;
+use std::time::Duration;
 
 use fluxion::api::security::{check_boot_guard_from_env, RestSecurityConfig};
-use fluxion::api::server::{router_with_security, run_readiness_probes, AppState};
+use fluxion::api::server::{
+    resolve_shutdown_timeout_secs, router_with_security, run_readiness_probes, AppState,
+};
 use tokio::net::TcpListener;
 use tracing::Level;
 use tracing_subscriber::{fmt, prelude::*, EnvFilter};
@@ -211,16 +221,76 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         report.checks.onnx.detail, report.checks.weather.detail, report.checks.appstate.detail,
     ));
 
+    // Issue #2517 — graceful shutdown with a hard drain deadline.
+    //
+    // `axum::serve(...).with_graceful_shutdown(fut)` stops accepting new
+    // connections as soon as `fut` resolves, then drains in-flight requests
+    // **indefinitely**. In Kubernetes the kubelet sends SIGTERM and then
+    // SIGKILLs the pod after `terminationGracePeriodSeconds` (default 30 s);
+    // without a hard cap a long-running simulation can keep a connection
+    // alive past the SIGKILL, losing in-flight work silently.
+    //
+    // Two-phase approach using a `tokio::sync::watch` channel to broadcast
+    // the signal to both the graceful trigger and a drain-deadline watchdog:
+    //
+    //   Phase 1 — `shutdown_signal()` resolves on SIGINT/SIGTERM; the watch
+    //             value flips to `true`, resolving the
+    //             `with_graceful_shutdown` future so axum stops accepting.
+    //   Phase 2 — A watchdog concurrently waits for the same signal, then
+    //             counts down `shutdown_timeout`. If the server hasn't
+    //             finished draining by then, `tokio::select!` drops the serve
+    //             future, forcibly closing all remaining connections and
+    //             emitting a structured WARN.
+    let shutdown_timeout = Duration::from_secs(resolve_shutdown_timeout_secs());
+
+    let (signal_tx, signal_rx) = tokio::sync::watch::channel(false);
+
+    // Signal-watcher task — resolves on the first SIGINT/SIGTERM and flips
+    // the watch value so every consumer wakes up.
+    tokio::spawn(async move {
+        shutdown_signal().await;
+        let _ = signal_tx.send(true);
+    });
+
+    // Graceful-shutdown trigger — resolves when the watch flips to `true`.
+    // `changed()` returns immediately if the value already changed before
+    // the first poll, so there is no race with the watcher task.
+    let mut graceful_rx = signal_rx.clone();
     // Issue #2505 — `into_make_service_with_connect_info` injects the
     // accepted socket's peer address into each request's extensions as
     // `ConnectInfo<SocketAddr>`, which the per-IP rate limiter reads as a
     // fallback when no `X-Forwarded-For` / `X-Real-IP` header is present.
-    axum::serve(
+    let server = axum::serve(
         listener,
         app.into_make_service_with_connect_info::<SocketAddr>(),
     )
-    .with_graceful_shutdown(shutdown_signal())
-    .await?;
+    .with_graceful_shutdown(async move {
+        let _ = graceful_rx.changed().await;
+    });
+
+    // Hard-deadline watchdog — after the signal, sleep `shutdown_timeout`,
+    // then log and let `select!` drop the server future.
+    let mut watchdog_rx = signal_rx;
+    tokio::select! {
+        // Normal completion — all in-flight connections drained cleanly.
+        result = server => {
+            result?;
+        }
+        // Watchdog — drain exceeded the hard deadline; forcibly close.
+        _ = async {
+            let _ = watchdog_rx.changed().await;
+            tokio::time::sleep(shutdown_timeout).await;
+            tracing::warn!(
+                target: "shutdown",
+                timeout_secs = shutdown_timeout.as_secs(),
+                "graceful shutdown deadline ({}s) exceeded; forcibly closing connections",
+                shutdown_timeout.as_secs()
+            );
+        } => {
+            // The `server` future is dropped here — hyper closes the listener
+            // and every still-open connection immediately.
+        }
+    }
 
     Ok(())
 }
