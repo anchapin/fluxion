@@ -497,6 +497,44 @@ components:
                 - empty_batch
             message:
               type: string
+            diagnostics:
+              description: |
+                Machine-readable divergence diagnostics. Present only when
+                `kind == simulation_failed` and the failure was a divergence
+                (NaN, infinite temperature, energy-balance violation). Issue #2547.
+              allOf:
+                - $ref: "#/components/schemas/SimulationDiagnostics"
+
+    SimulationDiagnostics:
+      type: object
+      description: |
+        Divergence attribution populated from the per-timestep temperature
+        trace and energy-balance residual the simulation already computes.
+        Issue #2547.
+      properties:
+        failing_timestep:
+          type: integer
+          format: int64
+          minimum: 0
+          description: First 0-based hourly timestep at which divergence was detected.
+        failing_zone:
+          type: [string, "null"]
+          description: |
+            0-based zone label (e.g. `zone_0`) attributed with the divergence,
+            or `null` for whole-system residuals / single-zone models.
+        max_residual_pct:
+          type: number
+          format: double
+          minimum: 0
+          description: |
+            Worst energy-balance residual across the run, as a percentage of
+            the tolerance window. `0.0` when divergence was detected by
+            NaN/inf scan rather than the residual check.
+        last_known_good_timestep:
+          type: integer
+          format: int64
+          minimum: 0
+          description: Last timestep for which the simulation was finite and balanced.
 
     SimulateOptions:
       type: object

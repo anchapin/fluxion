@@ -239,6 +239,30 @@ impl PyMultiZoneThermalModel {
             self.inner
                 .solve_timesteps(steps, &surrogates, use_surrogates, None, None, None);
 
+        // Issue #2547 — detect divergence (NaN / infinity) in the per-zone
+        // hourly temperature trace and surface it as a `SimulationError`
+        // carrying a `diagnostics` dict (failing_timestep / failing_zone /
+        // max_residual_pct / last_known_good_timestep). Without this check a
+        // diverged simulation would return a NaN energy figure silently.
+        if let Some(hourly) = self.inner.get_hourly_temperatures() {
+            if let Some(diag) =
+                crate::api::error::SimulationDiagnostics::from_temperature_trace(&hourly)
+            {
+                return Err(crate::api::error::FluxionError::Simulation(
+                    format!(
+                        "simulation diverged at timestep {}{}",
+                        diag.failing_timestep,
+                        diag.failing_zone
+                            .as_ref()
+                            .map(|z| format!(" in zone {z}"))
+                            .unwrap_or_default()
+                    ),
+                    Some(diag),
+                )
+                .into());
+            }
+        }
+
         // Return total energy consumption (heating + cooling) instead of net energy
         // This matches the expectation of Python tests that energy should be non-negative
         let total_energy =
@@ -912,11 +936,11 @@ fn validation_error(message: impl Into<String>) -> PyErr {
 }
 
 fn osm_error(error: OsmError) -> PyErr {
-    FluxionError::Simulation(format!("OSM interoperability error: {}", error)).into()
+    FluxionError::Simulation(format!("OSM interoperability error: {}", error), None).into()
 }
 
 fn gbxml_error(error: GbXmlError) -> PyErr {
-    FluxionError::Simulation(format!("gbXML interoperability error: {}", error)).into()
+    FluxionError::Simulation(format!("gbXML interoperability error: {}", error), None).into()
 }
 
 fn schema_from_json(content: &str) -> PyResult<SimulationSchemaV1> {

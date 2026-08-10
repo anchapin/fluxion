@@ -15,7 +15,7 @@ pub mod schema;
 pub mod server;
 
 // Re-export commonly used types
-pub use error::FluxionError;
+pub use error::{FluxionError, SimulationDiagnostics};
 pub use parameters::BuildingParameters;
 pub use schema::{
     ConstructionSet, ControlConfig, ControlSet, Geometry, SchemaMetadata, SchemaVersion,

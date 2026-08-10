@@ -60,6 +60,7 @@ use tower_http::{
 use tracing::Level;
 
 use crate::ai::surrogate::SurrogateManager;
+use crate::api::error::SimulationDiagnostics;
 use crate::api::metrics::{self, metrics_handler};
 use crate::api::schema::{SimulationOutput, SimulationSchema, SimulationSchemaV1};
 use crate::interop::{gbxml, osm};
@@ -659,7 +660,7 @@ pub enum ApiError {
     #[error("import failed: {0}")]
     ImportFailed(String),
     #[error("simulation failed: {0}")]
-    SimulationFailed(String),
+    SimulationFailed(String, Option<SimulationDiagnostics>),
     #[error("batch request is empty")]
     EmptyBatch,
     #[error("serialization failed: {0}")]
@@ -676,7 +677,7 @@ impl IntoResponse for ApiError {
             ApiError::UnsupportedFormat(_) => (StatusCode::BAD_REQUEST, "unsupported_format"),
             ApiError::IdfNotImplemented => (StatusCode::NOT_IMPLEMENTED, "not_implemented"),
             ApiError::ImportFailed(_) => (StatusCode::UNPROCESSABLE_ENTITY, "import_failed"),
-            ApiError::SimulationFailed(_) => {
+            ApiError::SimulationFailed(_, _) => {
                 (StatusCode::INTERNAL_SERVER_ERROR, "simulation_failed")
             }
             ApiError::EmptyBatch => (StatusCode::BAD_REQUEST, "empty_batch"),
@@ -684,11 +685,27 @@ impl IntoResponse for ApiError {
                 (StatusCode::INTERNAL_SERVER_ERROR, "serialization_failed")
             }
         };
+        // Issue #2547 — when a simulation diverged, embed the machine-readable
+        // diagnostics (failing_timestep / failing_zone / max_residual_pct /
+        // last_known_good_timestep) into the error envelope so REST clients
+        // don't have to parse the human-readable message string. The field is
+        // omitted entirely when no diagnostics are present so existing callers
+        // see no schema change for non-divergence failures.
+        let diagnostics_value = match &self {
+            ApiError::SimulationFailed(_, Some(d)) => Some(serde_json::to_value(d).unwrap_or_else(
+                |_| serde_json::json!({"error": "diagnostics serialization failed"}),
+            )),
+            _ => None,
+        };
+        let mut error_obj = serde_json::json!({
+            "kind": kind,
+            "message": self.to_string(),
+        });
+        if let Some(d) = diagnostics_value {
+            error_obj["diagnostics"] = d;
+        }
         let body = Json(serde_json::json!({
-            "error": {
-                "kind": kind,
-                "message": self.to_string(),
-            }
+            "error": error_obj
         }));
         (status, body).into_response()
     }
@@ -790,9 +807,32 @@ pub fn run_simulation(
 
     let steps = years as usize * 8760;
     let surrogates = SurrogateManager::new().map_err(|e| {
-        ApiError::SimulationFailed(format!("failed to create SurrogateManager: {e}"))
+        ApiError::SimulationFailed(format!("failed to create SurrogateManager: {e}"), None)
     })?;
     let _ = model.solve_timesteps(steps, &surrogates, use_surrogates, None, None, None);
+
+    // Issue #2547 — divergence detection. `solve_timesteps` currently swallows
+    // internal errors and returns a (possibly NaN / infinite) EUI; the
+    // per-zone hourly temperature trace it leaves behind is the only signal
+    // we have. Scan it for NaN / infinity; if found, build a
+    // `SimulationDiagnostics` from the trace and surface it on the
+    // `SimulationFailed` envelope so REST/Python clients get
+    // failing-timestep / failing-zone attribution instead of a bare message.
+    if let Some(hourly) = model.get_hourly_temperatures() {
+        if let Some(diag) = SimulationDiagnostics::from_temperature_trace(&hourly) {
+            return Err(ApiError::SimulationFailed(
+                format!(
+                    "simulation diverged at timestep {}{}",
+                    diag.failing_timestep,
+                    diag.failing_zone
+                        .as_ref()
+                        .map(|z| format!(" in zone {z}"))
+                        .unwrap_or_default()
+                ),
+                Some(diag),
+            ));
+        }
+    }
 
     let heating_energy = model.get_heating_energy_kwh();
     let cooling_energy = model.get_cooling_energy_kwh();
@@ -928,9 +968,8 @@ async fn simulate_stream(
 
     let steps = options.years as usize * 8760;
     let surrogates = SurrogateManager::new().map_err(|e| {
-        ApiError::SimulationFailed(format!("failed to create SurrogateManager: {e}"))
+        ApiError::SimulationFailed(format!("failed to create SurrogateManager: {e}"), None)
     })?;
-
     let (tx, rx) = mpsc::channel::<Result<TimestepEvent, ApiError>>(100);
 
     tokio::spawn(async move {
@@ -1517,6 +1556,64 @@ mod tests {
         bad.geometry.total_volume = 0.0;
         let err = run_simulation(&bad, 1, false).unwrap_err();
         assert!(matches!(err, ApiError::InvalidSchema(_)));
+    }
+
+    // Issue #2547 — the JSON error envelope must embed the diagnostics
+    // object when present on a `SimulationFailed`, and omit it entirely
+    // when absent. We assert against the serialized JSON body directly
+    // because `IntoResponse` consumes `self`.
+    #[tokio::test]
+    async fn simulation_failed_envelope_embeds_diagnostics_when_present() {
+        let diag = SimulationDiagnostics {
+            failing_timestep: 42,
+            failing_zone: Some("zone_0".to_string()),
+            max_residual_pct: 137.5,
+            last_known_good_timestep: 41,
+        };
+        let err = ApiError::SimulationFailed(
+            "simulation diverged at timestep 42 in zone zone_0".to_string(),
+            Some(diag),
+        );
+        let response = err.into_response();
+        assert_eq!(response.status(), StatusCode::INTERNAL_SERVER_ERROR);
+        let body_bytes = axum::body::to_bytes(response.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        let body: serde_json::Value = serde_json::from_slice(&body_bytes).unwrap();
+        let error_obj = body.get("error").expect("envelope has error object");
+        assert_eq!(error_obj["kind"], "simulation_failed");
+        assert!(error_obj["message"]
+            .as_str()
+            .unwrap()
+            .contains("diverged at timestep 42"));
+        let diagnostics = error_obj
+            .get("diagnostics")
+            .expect("diagnostics field embedded when present");
+        assert_eq!(diagnostics["failing_timestep"], 42);
+        assert_eq!(diagnostics["failing_zone"], "zone_0");
+        assert_eq!(diagnostics["max_residual_pct"], 137.5);
+        assert_eq!(diagnostics["last_known_good_timestep"], 41);
+    }
+
+    #[tokio::test]
+    async fn simulation_failed_envelope_omits_diagnostics_when_absent() {
+        // SurrogateManager construction failure passes `None` for diagnostics
+        // — the envelope must not contain a `diagnostics` key in that case.
+        let err = ApiError::SimulationFailed(
+            "failed to create SurrogateManager: missing model".to_string(),
+            None,
+        );
+        let response = err.into_response();
+        let body_bytes = axum::body::to_bytes(response.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        let body: serde_json::Value = serde_json::from_slice(&body_bytes).unwrap();
+        let error_obj = body.get("error").expect("envelope has error object");
+        assert_eq!(error_obj["kind"], "simulation_failed");
+        assert!(
+            error_obj.get("diagnostics").is_none(),
+            "diagnostics must be absent when None"
+        );
     }
 
     #[tokio::test]
