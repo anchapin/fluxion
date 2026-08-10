@@ -47,15 +47,21 @@ jobs:
   determinism-check:
     name: Determinism Check (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
     strategy:
       fail-fast: false
       matrix:
-        # macos-latest is currently Apple Silicon (M1, aarch64) in GitHub's
-        # pool but is not contractually pinned to that arch. macos-13 is the
-        # last Intel (x86_64) macOS runner GitHub offers, so we run both to
-        # explicitly cover x86_64 macOS AND aarch64 Apple Silicon in addition
-        # to Linux/Windows x86_64 (Issue #2549).
-        os: [ubuntu-latest, windows-latest, macos-13, macos-14]
+        # Cover x86_64 (ubuntu/windows) + aarch64 Apple Silicon (macos-14).
+        # macos-13 (the last Intel x86_64 macOS runner) was removed in #2618:
+        # it is redundant with the ubuntu/windows x86_64 determinism signal
+        # AND the macOS Intel GitHub-hosted runner pool is perpetually
+        # oversubscribed (30+ min queue or never starts within the wave
+        # polling window), which left every PR stuck UNSTABLE with a pending
+        # `Determinism Check (macos-13)` job. macos-14 (Apple Silicon)
+        # preserves the cross-arch determinism signal that #2549 wanted.
+        # The job-level timeout-minutes caps runaway queue time for any
+        # remaining variant (esp. macos-14) so none can hold a PR UNSTABLE.
+        os: [ubuntu-latest, windows-latest, macos-14]
         rust: [stable]
 
     steps:
@@ -317,7 +323,7 @@ jobs:
           all_values = {}
 
           # Read hashes and values from all platforms
-          for os_name in ['ubuntu-latest', 'windows-latest', 'macos-13', 'macos-14']:
+          for os_name in ['ubuntu-latest', 'windows-latest', 'macos-14']:
               hash_file = os.path.join(artifacts_dir, f'case900-output-{os_name}', 'output_hash.txt')
               values_file = os.path.join(artifacts_dir, f'case900-output-{os_name}', 'output_values.json')
 
