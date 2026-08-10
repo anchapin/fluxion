@@ -23,10 +23,21 @@ bytes = "1.0"
 uuid = { version = "1.0", features = ["serde", "v4"] }
 chrono = { version = "0.4", features = ["serde"] }
 crossbeam-channel = "0.5"
-log = "0.4"
+# Structured logging / observability (Issue #2519). `tracing` provides spans
+# and `#[instrument]`; `metrics` provides counters/histograms/gauges. Versions
+# match the main `fluxion` crate (root Cargo.toml) so the workspace shares one
+# major version of each. (`log` is no longer a direct dependency — all
+# fluxion-twin logging goes through `tracing`. rumqttc still pulls `log`
+# transitively for its own internals.)
+tracing = "0.1"
+metrics = "0.24"
 
 [dev-dependencies]
 approx = "0.5"
 rand = "0.8"
 rand_distr = "0.4"
 mockito = "1.7"
+# `DebuggingRecorder` + `metrics::with_local_recorder` lets tests assert on
+# emitted observations without polluting the process-global Prometheus
+# recorder (same pattern as the main crate, Issue #2498).
+metrics-util = "0.20"

@@ -425,7 +425,24 @@ where
         Ok((sigma_points, w_m, w_c))
     }
 
+    /// Predict step — propagate state and covariance forward by one timestep.
+    ///
+    /// Wraps [`Self::predict_core`] with a `tracing` span and a
+    /// `fluxion_twin_ukf_predict_duration_seconds` histogram so digital-twin
+    /// state estimation latency is observable end-to-end (Issue #2519).
+    ///
+    /// The duration is recorded on **every** return path (success or error),
+    /// so error latencies are captured too.
+    #[tracing::instrument(skip(self, u), fields(state_dim = self.n))]
     pub fn predict(&mut self, u: &[f64]) -> Result<(), KalmanError> {
+        let start = std::time::Instant::now();
+        let result = self.predict_core(u);
+        metrics::histogram!("fluxion_twin_ukf_predict_duration_seconds")
+            .record(start.elapsed().as_secs_f64());
+        result
+    }
+
+    fn predict_core(&mut self, u: &[f64]) -> Result<(), KalmanError> {
         let (sigma_points, w_m, w_c) = self.generate_sigma_points()?;
 
         let mut x_pred_vec = vec![0.0; self.n];
@@ -456,7 +473,21 @@ where
         Ok(())
     }
 
+    /// Update step — fuse a measurement into the state estimate.
+    ///
+    /// Wraps [`Self::update_core`] with a `tracing` span and a
+    /// `fluxion_twin_ukf_update_duration_seconds` histogram (Issue #2519).
+    /// Duration is recorded on every return path.
+    #[tracing::instrument(skip(self, z), fields(state_dim = self.n, measurement_dim = self.m))]
     pub fn update(&mut self, z: &M) -> Result<(), KalmanError> {
+        let start = std::time::Instant::now();
+        let result = self.update_core(z);
+        metrics::histogram!("fluxion_twin_ukf_update_duration_seconds")
+            .record(start.elapsed().as_secs_f64());
+        result
+    }
+
+    fn update_core(&mut self, z: &M) -> Result<(), KalmanError> {
         let (sigma_points, w_m, w_c) = self.generate_sigma_points()?;
 
         let z_sigma: Vec<M> = sigma_points
@@ -730,5 +761,108 @@ mod tests {
                 );
             }
         }
+    }
+
+    // ---- Observability (Issue #2519): UKF metric emission ----
+    //
+    // Uses the same `DebuggingRecorder` + `metrics::with_local_recorder`
+    // pattern as the main crate (Issue #2498) so assertions never touch the
+    // process-global Prometheus recorder and are safe under parallel test
+    // execution.
+
+    /// Build a minimal single-state-dim UKF used by the metric tests.
+    fn metric_test_ukf() -> UnscentedKalmanFilter<Vec<f64>, Vec<f64>> {
+        UnscentedKalmanFilter::new(
+            vec![1.0],
+            DMatrix::from_diagonal(&DVector::from_vec(vec![1.0])),
+            DMatrix::from_diagonal(&DVector::from_vec(vec![0.01])),
+            DMatrix::from_diagonal(&DVector::from_vec(vec![0.1])),
+            |x: &Vec<f64>, _u: &[f64]| vec![x[0]],
+            |x: &Vec<f64>| vec![x[0]],
+        )
+    }
+
+    /// `fluxion_twin_ukf_predict_duration_seconds` must be emitted exactly
+    /// once per `predict()` call, on both the success and error paths.
+    #[test]
+    fn ukf_predict_duration_metric_emitted() {
+        use metrics_util::debugging::DebuggingRecorder;
+
+        let recorder = DebuggingRecorder::new();
+        let snapshotter = recorder.snapshotter();
+        metrics::with_local_recorder(&recorder, || {
+            let mut ukf = metric_test_ukf();
+            ukf.predict(&[0.0]).unwrap();
+        });
+
+        let map = snapshotter.snapshot().into_hashmap();
+        let count = map
+            .keys()
+            .filter(|ck| ck.key().name() == "fluxion_twin_ukf_predict_duration_seconds")
+            .count();
+        assert!(
+            count >= 1,
+            "expected fluxion_twin_ukf_predict_duration_seconds to be emitted; keys = {:?}",
+            map.keys().collect::<Vec<_>>()
+        );
+    }
+
+    /// `fluxion_twin_ukf_update_duration_seconds` must be emitted exactly
+    /// once per successful `update()` call.
+    #[test]
+    fn ukf_update_duration_metric_emitted() {
+        use metrics_util::debugging::DebuggingRecorder;
+
+        let recorder = DebuggingRecorder::new();
+        let snapshotter = recorder.snapshotter();
+        metrics::with_local_recorder(&recorder, || {
+            let mut ukf = metric_test_ukf();
+            ukf.update(&[1.0]).unwrap();
+        });
+
+        let map = snapshotter.snapshot().into_hashmap();
+        let count = map
+            .keys()
+            .filter(|ck| ck.key().name() == "fluxion_twin_ukf_update_duration_seconds")
+            .count();
+        assert!(
+            count >= 1,
+            "expected fluxion_twin_ukf_update_duration_seconds to be emitted; keys = {:?}",
+            map.keys().collect::<Vec<_>>()
+        );
+    }
+
+    /// Duration histogram is still emitted when `predict()` returns an error
+    /// (non-positive-definite covariance), so error latencies are observable.
+    #[test]
+    fn ukf_predict_duration_metric_emitted_on_error_path() {
+        use metrics_util::debugging::DebuggingRecorder;
+
+        let recorder = DebuggingRecorder::new();
+        let snapshotter = recorder.snapshotter();
+        metrics::with_local_recorder(&recorder, || {
+            // A zero covariance yields a zero Cholesky factor, which
+            // generate_sigma_points reports as NonPositiveDefiniteMatrix.
+            let mut ukf = UnscentedKalmanFilter::new(
+                vec![1.0],
+                DMatrix::zeros(1, 1),
+                DMatrix::from_diagonal(&DVector::from_vec(vec![0.01])),
+                DMatrix::from_diagonal(&DVector::from_vec(vec![0.1])),
+                |x: &Vec<f64>, _u: &[f64]| vec![x[0]],
+                |x: &Vec<f64>| vec![x[0]],
+            );
+            let err = ukf.predict(&[0.0]);
+            assert!(err.is_err(), "expected NonPositiveDefiniteMatrix error");
+        });
+
+        let map = snapshotter.snapshot().into_hashmap();
+        let count = map
+            .keys()
+            .filter(|ck| ck.key().name() == "fluxion_twin_ukf_predict_duration_seconds")
+            .count();
+        assert!(
+            count >= 1,
+            "predict duration metric must be emitted even on the error path"
+        );
     }
 }

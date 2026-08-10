@@ -1381,7 +1381,8 @@ dependencies = [
  "bytes",
  "chrono",
  "crossbeam-channel",
- "log",
+ "metrics",
+ "metrics-util",
  "mockito",
  "nalgebra 0.34.2",
  "rand 0.8.5",
@@ -1392,6 +1393,7 @@ dependencies = [
  "serde_json",
  "thiserror 1.0.69",
  "tokio",
+ "tracing",
  "uuid",
 ]
 

@@ -44,6 +44,7 @@ use std::sync::Arc;
 use std::time::Duration;
 use thiserror::Error;
 use tokio::sync::mpsc;
+use tracing::Span;
 
 /// Default bounded channel capacity.
 ///
@@ -233,7 +234,7 @@ impl MqttTelemetryConsumer {
             ResolvedTransport::Tls {
                 verify_certs: false,
             } => {
-                log::warn!(
+                tracing::warn!(
                     "FLUXION_MQTT_INSECURE is set: MQTT server certificates will NOT be \
                      validated. This disables TLS trust verification and must only be \
                      used for local development against self-signed brokers."
@@ -243,9 +244,10 @@ impl MqttTelemetryConsumer {
                 )));
             }
             ResolvedTransport::Plaintext => {
-                log::warn!(
-                    "FLUXION_MQTT_ALLOW_INSECURE is set: connecting to MQTT broker '{broker}' \
-                     over plaintext TCP. Telemetry payloads will be unencrypted."
+                tracing::warn!(
+                    broker = %broker,
+                    "FLUXION_MQTT_ALLOW_INSECURE is set: connecting to MQTT broker over \
+                     plaintext TCP. Telemetry payloads will be unencrypted."
                 );
                 // rumqttc's default transport is already `Transport::Tcp`.
             }
@@ -267,9 +269,85 @@ impl MqttTelemetryConsumer {
         ))
     }
 
+    /// Poll the event loop and return the next parsed telemetry message that
+    /// matches the subscription topic.
+    ///
+    /// Carries a `tracing` span with `topic` and `payload_bytes` fields
+    /// (populated from the matched `Publish`), and increments the
+    /// [`fluxion_twin_mqtt_messages_total`] counter with `outcome="received"`
+    /// or `outcome="error"` (parse failure). Transient rumqttc disconnects are
+    /// logged and auto-recovered internally — they do **not** count as a
+    /// message outcome. Returns `None` only if the event loop yields a fatal,
+    /// unrecoverable condition; in practice callers loop until `None` or until
+    /// they no longer need messages.
+    ///
+    /// This is the primary observability seam for the MQTT path (Issue #2519):
+    /// every delivered message flows through here, so per-message spans and
+    /// counters are uniform regardless of whether the consumer is driven by
+    /// [`Self::start`] or polled directly.
+    ///
+    /// [`fluxion_twin_mqtt_messages_total`]: crate::telemetry
+    #[tracing::instrument(skip(self), fields(topic, payload_bytes))]
+    pub async fn next(&mut self) -> Option<MqttTelemetryMessage> {
+        loop {
+            match self.eventloop.poll().await {
+                Ok(Event::Incoming(Packet::Publish(publish))) => {
+                    if !topic_matches(&self.topic, &publish.topic) {
+                        continue;
+                    }
+
+                    let payload_bytes = publish.payload.len();
+                    // Record the declared span fields now that we have a
+                    // concrete matched message. `Span::current()` resolves to
+                    // the span created by `#[instrument]` above.
+                    Span::current()
+                        .record("topic", publish.topic.as_str())
+                        .record("payload_bytes", payload_bytes);
+
+                    match parse_and_count(publish.payload.as_ref()) {
+                        Ok(msg) => return Some(msg),
+                        Err(e) => {
+                            // Counter already emitted inside `parse_and_count`.
+                            tracing::warn!(
+                                topic = publish.topic.as_str(),
+                                payload_bytes,
+                                error = %e,
+                                "Failed to parse MQTT payload"
+                            );
+                            // Continue — don't crash the loop on a single bad
+                            // message. The span is still open and already has
+                            // `topic`/`payload_bytes` recorded; the next matched
+                            // message will overwrite them before this call
+                            // returns.
+                        }
+                    }
+                }
+                // Other incoming/outgoing events (SubAck, ConnAck, etc.) — not
+                // a telemetry message, so neither span fields nor counters
+                // apply.
+                Ok(_) => {}
+                Err(e) => {
+                    // rumqttc auto-reconnects on the next poll(). Brief backoff
+                    // to avoid tight-looping on persistent failures (e.g. DNS).
+                    // This is transport-level churn, not a message outcome, so
+                    // the messages_total counter is NOT incremented.
+                    tracing::warn!(
+                        error = %e,
+                        "MQTT connection error (auto-reconnecting)"
+                    );
+                    tokio::time::sleep(Duration::from_secs(1)).await;
+                }
+            }
+        }
+    }
+
     /// Run the event loop: poll for `Publish` packets, parse JSON payloads into
     /// [`MqttTelemetryMessage`] values, and forward them through the bounded
     /// channel.
+    ///
+    /// Thin driver around [`Self::next`] — all per-message observability
+    /// (spans + `fluxion_twin_mqtt_messages_total`) lives in `next()` so it is
+    /// shared with direct callers.
     ///
     /// # Lifecycle
     ///
@@ -279,7 +357,7 @@ impl MqttTelemetryConsumer {
     ///   after a brief backoff sleep.
     /// - **Channel receiver dropped** — `tx.send` fails; the loop exits cleanly
     ///   with `Ok(())`.
-    /// - **Malformed payload** — logs a warning and continues (never panics).
+    /// - **Malformed payload** — counted as `outcome="error"` and continues.
     ///
     /// # Errors
     ///
@@ -287,36 +365,10 @@ impl MqttTelemetryConsumer {
     /// loop tends to run indefinitely until the consumer is dropped or the channel
     /// receiver is dropped.
     pub async fn start(mut self) -> Result<(), MqttTelemetryError> {
-        loop {
-            match self.eventloop.poll().await {
-                Ok(Event::Incoming(Packet::Publish(publish))) => {
-                    if topic_matches(&self.topic, &publish.topic) {
-                        match MqttTelemetryMessage::parse(publish.payload.as_ref()) {
-                            Ok(msg) => {
-                                if self.tx.send(msg).await.is_err() {
-                                    // Receiver dropped — consumer no longer needed.
-                                    break;
-                                }
-                            }
-                            Err(e) => {
-                                log::warn!(
-                                    "Failed to parse MQTT payload on topic '{}': {}",
-                                    publish.topic,
-                                    e
-                                );
-                                // Continue — don't crash on a single bad message.
-                            }
-                        }
-                    }
-                }
-                // Other incoming/outgoing events (SubAck, ConnAck, etc.) — ignore.
-                Ok(_) => {}
-                Err(e) => {
-                    // rumqttc auto-reconnects on the next poll(). Brief backoff
-                    // to avoid tight-looping on persistent failures (e.g. DNS).
-                    log::warn!("MQTT connection error (auto-reconnecting): {}", e);
-                    tokio::time::sleep(Duration::from_secs(1)).await;
-                }
+        while let Some(msg) = self.next().await {
+            if self.tx.send(msg).await.is_err() {
+                // Receiver dropped — consumer no longer needed.
+                break;
             }
         }
         Ok(())
@@ -326,6 +378,41 @@ impl MqttTelemetryConsumer {
 // ---------------------------------------------------------------------------
 // Internal helpers
 // ---------------------------------------------------------------------------
+
+/// Parse an MQTT JSON payload and record the
+/// [`fluxion_twin_mqtt_messages_total`] counter with the appropriate
+/// `outcome` label (`received` on success, `error` on parse failure).
+///
+/// Factored out of [`MqttTelemetryConsumer::next`] so the metric emission is
+/// unit-testable without a live broker (Issue #2519). The topic-aware span
+/// recording and the diagnostic `warn!` stay in `next()`; this helper only
+/// owns parse + counter.
+///
+/// Returns the parsed message on success, or the underlying
+/// [`MqttTelemetryError`] on failure (the counter has already been
+/// incremented — callers should not count again).
+///
+/// [`fluxion_twin_mqtt_messages_total`]: crate::telemetry
+fn parse_and_count(payload: &[u8]) -> Result<MqttTelemetryMessage, MqttTelemetryError> {
+    match MqttTelemetryMessage::parse(payload) {
+        Ok(msg) => {
+            metrics::counter!(
+                "fluxion_twin_mqtt_messages_total",
+                "outcome" => "received"
+            )
+            .increment(1);
+            Ok(msg)
+        }
+        Err(e) => {
+            metrics::counter!(
+                "fluxion_twin_mqtt_messages_total",
+                "outcome" => "error"
+            )
+            .increment(1);
+            Err(e)
+        }
+    }
+}
 
 /// Scheme recognised in the broker URL.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -667,6 +754,64 @@ mod tests {
         let bytes: Vec<u8> = br#"{"sensor_id":"tfv","timestamp":1}"#.to_vec();
         let msg = MqttTelemetryMessage::try_from(bytes).unwrap();
         assert_eq!(msg.sensor_id, "tfv");
+    }
+
+    // ---- Observability (Issue #2519): MQTT message counter ----
+
+    /// A well-formed payload must emit
+    /// `fluxion_twin_mqtt_messages_total{outcome="received"}` exactly once.
+    /// Uses a thread-local `DebuggingRecorder` (Issue #2498) so it is isolated
+    /// from the process-global Prometheus recorder.
+    #[test]
+    fn mqtt_received_counter_increments_on_valid_payload() {
+        use metrics_util::debugging::DebuggingRecorder;
+
+        let recorder = DebuggingRecorder::new();
+        let snapshotter = recorder.snapshotter();
+        let payload = br#"{"sensor_id":"m-1","timestamp":1700000000,"temperature_c":22.5}"#;
+        metrics::with_local_recorder(&recorder, || {
+            let msg = parse_and_count(payload).unwrap();
+            assert_eq!(msg.sensor_id, "m-1");
+        });
+
+        let map = snapshotter.snapshot().into_hashmap();
+        let found = map.keys().any(|ck| {
+            ck.key().name() == "fluxion_twin_mqtt_messages_total"
+                && ck
+                    .key()
+                    .labels()
+                    .any(|l| l.key() == "outcome" && l.value() == "received")
+        });
+        assert!(
+            found,
+            "expected fluxion_twin_mqtt_messages_total{{outcome=\"received\"}} to be emitted"
+        );
+    }
+
+    /// A malformed payload must emit
+    /// `fluxion_twin_mqtt_messages_total{outcome="error"}` and return `Err`.
+    #[test]
+    fn mqtt_error_counter_increments_on_bad_payload() {
+        use metrics_util::debugging::DebuggingRecorder;
+
+        let recorder = DebuggingRecorder::new();
+        let snapshotter = recorder.snapshotter();
+        metrics::with_local_recorder(&recorder, || {
+            assert!(parse_and_count(b"not json").is_err());
+        });
+
+        let map = snapshotter.snapshot().into_hashmap();
+        let found = map.keys().any(|ck| {
+            ck.key().name() == "fluxion_twin_mqtt_messages_total"
+                && ck
+                    .key()
+                    .labels()
+                    .any(|l| l.key() == "outcome" && l.value() == "error")
+        });
+        assert!(
+            found,
+            "expected fluxion_twin_mqtt_messages_total{{outcome=\"error\"}} to be emitted"
+        );
     }
 
     // ---- Connection config validation ----
