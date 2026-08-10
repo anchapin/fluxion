@@ -2,70 +2,35 @@
 
 ## Required Reading
 
-Before modifying physics code or cross-module interfaces, read these:
+Before modifying physics code or cross-module interfaces, read these (both are source-of-truth, kept in sync via `scripts/check_architecture_drift.py`):
 
-1. **`ARCHITECTURE.md`** (root) — module boundaries, trait contracts, data flow. Source of truth for swap-point traits (`HeatConductionSolver`, `VentilationSchedule`, `ThermalModelTrait`).
-2. **`CODEBASE_MAP.md`** (root) — cross-language context (Rust/Python/Node FFI contracts, memory ownership, serialization formats).
+1. **`ARCHITECTURE.md`** — module boundaries, trait contracts, data flow. Source of truth for swap-point traits (`HeatConductionSolver`, `VentilationSchedule`, `ThermalModelTrait`).
+2. **`CODEBASE_MAP.md`** — cross-language context (Rust/Python/Node FFI contracts, memory ownership, serialization formats).
 
 **Rule**: Do NOT modify physics code without checking `ARCHITECTURE.md` first. If code doesn't match the documented interfaces, update `ARCHITECTURE.md` to reflect reality OR fix the code.
 
 Companion docs (read when relevant):
 - `RULES.md` — hard constraints (numerical-reasoning-via-code, energy balance, ASHRAE 140)
-- `CONTRIBUTING.md` — workflow / PR / branch policy
-- `docs/KNOWN_ISSUES.md` — open physics limitations. CI gate `scripts/check_known_issues_stale.py` (issue #1723) fails if the `*Last Updated: YYYY-MM-DD*` line is >60 days old. **Skips (passes) if the file is absent** — a missing file does not itself fail CI.
+- `CONTRIBUTING.md` — workflow / PR / branch policy (two copies exist — see Toolchain Quirks)
+- `docs/KNOWN_ISSUES.md` — open physics limitations. CI gate `scripts/check_known_issues_stale.py` (#1723) fails if the `*Last Updated: YYYY-MM-DD*` line is >60 days old. **Skips (passes) if the file is absent.**
 - `docs/ASHRAE140_RESULTS.md` and `docs/ASHRAE140_RESULTS_v0.8.0.md` — current validation pass rates
+- `.github/copilot-instructions.md` — longer architecture overview (Batch Oracle pattern, thermal network); written for Copilot but applies to any agent
 
 ## Workspace Structure
 
-Cargo workspace (root = main `fluxion` package, `default-members = ["."]`):
+Cargo workspace. **Root is also the main `fluxion` package** (`default-members = ["."]`), so bare `cargo build`/`cargo test` build the root crate, not the whole workspace.
 
-```
-fluxion/                      # main engine crate (src/, benches/, tests/)
-  src/
-    sim/                      # ThermalModel, solar, ventilation, engine
-    physics/                  # conduction solvers (5R1C, CTF, FD, MultiNode)
-    ai/                       # ONNX surrogates, ensemble, batch inference
-    validation/               # ASHRAE 140, energy balance, cross-validation
-    api/                      # axum REST server (openapi.yaml, /v1/*)
-    python/                   # PyO3 bindings (cfg(feature = "python-bindings"))
-    napi/                     # Node.js bindings (cfg(feature = "napi-bindings"))
-    interop/                  # OSM, gbXML, IFC, FMI 2.0 bridges
-    cli/                      # fluxion-delta, validation, multi-zone
-    bin/                      # fluxion-rest, fluxion, parallel-issue-workflow, …
-fluxion-core/                 # leaf modules (no sim/physics/ai/validation deps; built once & cached by cargo-mutants)
-  src/
-    weather/                  # EPW/TMY3 parsing, psychrometrics, design-day, interpolation
-    assembly.rs               # BuildingAssembly, AssemblyBuilder, MaterialLayer; ASHRAE 140 material constants inlined (#1349)
-    construction.rs           # ConstructionLayer, Construction, MassClass, Materials, ASHRAE 140 film/air constants (#2462)
-    multi_node.rs             # ThermalMassNode, MultiNodeThermalMass (#1349)
-    per_surface_conduction.rs # SurfaceKind, MassNode, SurfaceNode, PerSurfaceConductionSolver (#2462)
-    physics_constants.rs      # STEFAN_BOLTZMANN (hoisted out of sim::sky_radiation, #2462)
-    ashrae_cases.rs           # Orientation, WindowArea, ConstructionType, … (pure data; breaks sim↔validation cycle, #1441)
-    earth_tube.rs             # earth-tube / ground-coupled HVAC models
-    urban_radiation.rs        # urban longwave radiation (Nusselt analog view factors)
-    tensor.rs                 # geometry tensor types
-    fluid/                    # fluid-network graph data structure (NodeId/EdgeId/Port/ComponentKind)
-fluxion-mcp/                  # MCP server (workspace member; depends on fluxion with `multi-zone` feature)
-fluxion-cfd/                  # GPU-accelerated Fast Fluid Dynamics solver for building airflow; gated behind Cargo `--features fluxion-cfd` (default: cpu only)
-fluxion-city/                 # urban radiation modeling (Nusselt analog view factors); gated behind `--features fluxion-city`
-fluxion-grid/                 # grid-edge electrical network (battery, bus nodes, power flow); always built
-fluxion-behavior/             # thermal comfort (Fanger PMV/PPD, adaptive comfort, occupant triggers); always built
-fluxion-fluid/                # compile-time strongly-typed fluid port traits for DAE systems (port, medium, energy, hvac, Pantelides index reduction); gated behind `--features fluid`. NOT the same as fluxion-core/src/fluid/.
-fluxion-wasm/                 # WebAssembly bindings (wasm-bindgen over fluxion-core + fluxion-fluid); always built
-crates/
-  fluxion-toon/               # Token-Oriented Object Notation serializer (LLM-friendly); SPEC in crates/fluxion-toon/SPEC.md
-  fluxion-twin/               # Digital twin core (Unscented Kalman Filter for non-linear thermal systems; MQTT telemetry via rumqttc)
-```
+- **`fluxion`** (root, `src/`) — the engine: `sim/` (thermal model, solar, ventilation), `physics/` (conduction solvers), `ai/` (ONNX surrogates), `validation/` (ASHRAE 140, energy balance), `api/` (axum REST), `python/` + `napi/` (bindings, feature-gated), `interop/` (OSM/gbXML/IFC/FMI), `cli/`, `bin/`.
+- **`fluxion-core/`** — dependency-light *leaf* modules (`weather/`, `assembly.rs`, `construction.rs`, `multi_node.rs`, `per_surface_conduction.rs`, `ashrae_cases.rs`, `physics_constants.rs`, …). Built once & cached by cargo-mutants. **Must not depend on sim/physics/ai/validation** (cycle-breaking rule below).
+- **Always-built siblings**: `fluxion-grid` (grid-edge electrical), `fluxion-behavior` (thermal comfort), `fluxion-wasm` (wasm-bindgen over fluxion-core + fluxion-fluid).
+- **Feature-gated siblings**: `fluxion-cfd` (`--features fluxion-cfd`; FFD airflow), `fluxion-city` (`--features fluxion-city`; urban radiation), `fluxion-fluid` (`--features fluid`; acausal HVAC/fluid port traits — **not** the same as `fluxion-core/src/fluid/`).
+- **`fluxion-mcp/`** — MCP server; unconditionally depends on `fluxion` with `features = ["multi-zone"]` + `fluxion-fluid` + `fluxion-toon`. `cargo build -p fluxion-mcp` / `cargo test -p fluxion-mcp`.
+- **`crates/`**: `fluxion-toon` (Token-Oriented Object Notation, LLM-friendly; SPEC in `crates/fluxion-toon/SPEC.md`), `fluxion-twin` (digital twin UKF + MQTT telemetry).
 
-**Cycle-breaking rule** (enforced by CI via `scripts/check_ashrae_cases_cycle.py`, #1441): `fluxion-core/src/**/*.rs` must NOT import `crate::sim_*`, `crate::physics_*`, `crate::ai_*`, or `crate::validation_*`. The `sim::assembly` and `sim::multi_node_thermal` paths in `src/sim/` are thin re-export shims — keep them that way.
-
-**`fluxion-mcp`** is a workspace member (`cargo build -p fluxion-mcp`; `cargo test -p fluxion-mcp` to run its own suite). Unconditionally depends on `fluxion` with `features = ["multi-zone"]` and on `fluxion-fluid` + `fluxion-toon`.
-
-**`fluxion-cfd`** — GPU-accelerated Fast Fluid Dynamics solver for building airflow simulation. Built/tested separately from the main crate. The `FfdCfdAdapter` that wires it into the main engine is opt-in via the Cargo feature `fluxion-cfd` on the `fluxion` crate (issue #2460).
-
-**`fluxion-twin`** — Digital twin core using Unscented Kalman Filter (UKF) for non-linear state estimation in thermal systems. Uses MQTT for telemetry.
-
-**`fluxion-toon`** — Token-Oriented Object Notation serializer/deserializer; compact, LLM-friendly serialization format. Defined in `crates/fluxion-toon/SPEC.md`.
+**Cycle-breaking rules** (each enforced by a CI script):
+- `fluxion-core/src/**/*.rs` must NOT import `crate::sim_*` / `crate::physics_*` / `crate::ai_*` / `crate::validation_*` — guard: `scripts/check_ashrae_cases_cycle.py` (#1441).
+- No new `use crate::sim::*` under `src/physics/**` or `use crate::physics::*` under `src/sim/construction.rs` / `src/sim/per_surface_conduction.rs` — guard: `scripts/check_physics_sim_cycle.py` (#2463).
+- The `sim::assembly` and `sim::multi_node_thermal` paths in `src/sim/` are thin re-export shims — keep them that way.
 
 Re-export paths preserved across the crate split: `crate::weather::*`, `crate::assembly::*`, `crate::multi_node::*`, `crate::ashrae_cases::*`, `crate::sim::assembly::*`, `crate::sim::multi_node_thermal::*`, `crate::validation::ashrae_140_cases::Orientation`.
 
@@ -76,83 +41,52 @@ Re-export paths preserved across the crate split: `crate::weather::*`, `crate::a
 cargo build --release                       # primary build (lto="thin", opt-level=3)
 cargo test                                  # all unit tests
 cargo test -p fluxion <test_name>           # single test (e.g. multi_zone_n_zone_network)
+cargo test --profile ci                     # FAST iteration build (opt-level=1, codegen-units=256)
 cargo test --test ashrae_140_validation     # ASHRAE 140 validation suite
-cargo test --test hvac_bestest               # HVAC BESTEST RP-865 scaffold/suite
-cargo test --profile ci                     # FAST CI build (opt-level=1, codegen-units=256) — use for iteration
-LOOM=1 cargo test --features loom           # concurrency/race-condition tests (needs ~32GB; issue #1065)
-cargo test --features cuda --test surrogate_cuda_smoke  # GPU smoke (skips on CPU-only)
-
-# Targeted validation
 cargo test --test zone_balance_eplus_isolation                       # energy-conservation gate
-cargo test --test ashrae_140_blind_validation -- --nocapture         # blind-mode ASHRAE 140
+LOOM=1 cargo test --features loom           # concurrency tests (needs ~32GB; #1065)
+cargo test --features cuda --test surrogate_cuda_smoke               # GPU smoke (skips on CPU-only)
+
+# Drift / cycle / gate checks
+python3 scripts/check_architecture_drift.py                           # ARCHITECTURE.md vs code
+python3 scripts/check_ashrae_cases_cycle.py                           # sim↔validation cycle
+python3 scripts/check_physics_sim_cycle.py                            # physics↔sim cycle (#2463)
 python scripts/release_gate_checker.py                                # release-gate evaluation
-python3 scripts/check_architecture_drift.py                            # ARCHITECTURE.md vs code drift
-python3 scripts/check_ashrae_cases_cycle.py                            # sim↔validation cycle regression
-python3 scripts/check_physics_sim_cycle.py                              # physics↔sim cycle regression (Issue #2463)
 
 # Code quality (REQUIRED order)
 cargo fmt -- --check                       # CI gate — omit --check to auto-fix
-cargo clippy --all-targets                 # lint (CI runs `cargo clippy --lib -- -D warnings`)
-cargo audit                               # also wired into pre-commit
+cargo clippy --lib -- -D warnings          # CI's exact clippy invocation
+cargo audit                                # also wired into pre-commit
 
-# Python bindings (requires Python 3.10+)
-maturin develop                            # local dev install (rebuilds + pip install -e)
-maturin build --release                    # produces target/wheels/*.whl
+# Bindings (Python 3.10+ / Node)
+maturin develop                             # Python: local dev install
+(cd npm/ && npm run build)                  # Node: node build.js --release
 
-# Node.js bindings (cd npm/, requires @napi-rs/cli)
-npm run build                              # node build.js --release
-
-# Pre-commit hooks (install once)
+# Pre-commit (install once)
 pip install pre-commit && pre-commit install && pre-commit install --hook-type commit-msg -f
-pre-commit run --all-files                 # manual run (covers ruff, black, isort, fmt, cargo-check,
-                                           #   cargo-audit, batch-oracle-pattern, rust-doc-check)
+pre-commit run --all-files                  # ruff, black, isort, fmt, cargo-check, cargo-audit,
+                                            # batch-oracle-pattern, rust-doc-check, conventional-commit-msg
 
-# Local CI verification with act (run GitHub Actions locally)
-# Install: https://github.com/nektos/act#installation
-# On Apple Silicon: act -j <job_id> -W <workflow> --container-architecture linux/arm64 \
-#   -P ubuntu-latest=catthehacker/ubuntu:act-latest
-# Example (coverage job):
-#   act -j coverage -W .github/workflows/code-coverage.yml \
-#     --container-architecture linux/arm64 -P ubuntu-latest=catthehacker/ubuntu:act-latest
+# Local GitHub Actions (optional): https://github.com/nektos/act
 ```
 
-## Pre-flight Checks
-
-Before running orchestration or large operations, verify disk space:
-
-```bash
-# Check available disk space (10 GB minimum, 50 GB recommended)
-./scripts/disk-space-check.sh
-
-# With cleanup suggestions
-./scripts/disk-space-check.sh --cleanup
-```
-
-**Disk space exhaustion** during wave orchestration has caused:
-- Credential lock failures
-- PR creation failures
-- Git ref lock failures
-
-Minimum requirements: **10 GB free** | Recommended: **50 GB free**
+**Pre-flight for orchestration / large ops**: run `./scripts/disk-space-check.sh` first. Minimum **10 GB free** (50 GB recommended) — exhaustion has caused credential-lock, PR-creation, and git-ref-lock failures.
 
 ## Critical Physics Constants
 
-- **`EXTERIOR_FILM_COEFF = 18.3 W/m²K`** (ASHRAE 140 v2023, vertical surfaces, ~3.4 m/s wind) — defined in `src/physics/constants/thermal/ashrae_140/v2023.rs`. The legacy `29.3 W/m²K` (6.7 m/s) must NOT appear in any computation path. Guard: `tests/regression_exterior_film_unification.rs`.
-- ASHRAE 140 material constants (HW_CONCRETE_K, FOAM_BOARD_K, GYPSUM_K, EXTERIOR_SURFACE_ABSORPTANCE, …) are now inlined at `fluxion_core::assembly` call sites — they were previously imported from `crate::physics::constants::thermal::ashrae_140::materials` and that path is gone.
-- ASHRAE 140 reference data lives in `tests/reference_data/` (EnergyPlus CSVs).
+- **`EXTERIOR_FILM_COEFF = 18.3 W/m²K`** (ASHRAE 140 v2023, vertical surfaces, ~3.4 m/s wind) — in `src/physics/constants/thermal/ashrae_140/v2023.rs`. The legacy `29.3 W/m²K` (6.7 m/s) must NOT appear in any computation path. Guard: `tests/regression_exterior_film_unification.rs`.
+- ASHRAE 140 material constants (HW_CONCRETE_K, FOAM_BOARD_K, GYPSUM_K, EXTERIOR_SURFACE_ABSORPTANCE, …) are **inlined at `fluxion_core::assembly` call sites** — the old `crate::physics::constants::thermal::ashrae_140::materials` import path is gone.
+- ASHRAE 140 EnergyPlus reference data lives in `tests/reference_data/`.
 
 ## Validation Strategy
 
-**Bottom-up, module-isolated, EnergyPlus-comparable**:
+Bottom-up, module-isolated, EnergyPlus-comparable:
 1. **No ASHRAE 140 system-level testing** until individual modules pass E+ reference tests within 1% tolerance.
 2. **No parameter tuning** to make system tests pass — fix the underlying math (RULES.md "must-never hardcode results").
-3. Test order: Weather → Solar → Conduction → Ventilation → Zone Balance.
+3. Test order: **Weather → Solar → Conduction → Ventilation → Zone Balance**.
 4. Module comparison tests: `tests/conduction_*_isolation.rs`, `tests/zone_balance_eplus_isolation.rs`, `tests/solar_*_tests.rs`.
 
-Release gates (see `release_gates.yaml`):
-- Validation min pass rate: **60%** (40% for patch releases). Known structural failures: cases **600** and **900**.
-- Throughput ≥150 configs/sec, latency ≤10ms/config, MAE ≤50%.
-- Strict ±15% annual-energy tolerance gate for Cases 600/900 is the **required branch-protection check** named `ASHRAE 140 Strict Energy Gate (Issue #1333)`. Cross-platform determinism (#1351) and performance (#1618) are also required checks.
+Release gates (`release_gates.yaml`): validation min pass rate **60%** (40% for patches; known structural failures: cases **600** and **900**); throughput ≥150 configs/sec; latency ≤10 ms/config; MAE ≤50%. The strict ±15% annual-energy gate for Cases 600/900 is the required branch-protection check `ASHRAE 140 Strict Energy Gate (Issue #1333)`.
 
 ## Module Boundaries
 
@@ -171,108 +105,67 @@ ML-surrogate swap-point traits:
 
 ## CI Gates (must stay green)
 
-`rust-tests.yml` runs on every PR (Ubuntu only, fast signal) and on `main` push (full 3-OS matrix + release build). Required branch-protection checks:
+`rust-tests.yml` runs on every PR (Ubuntu, fast signal) and on `main` push (full 3-OS matrix + release build). Required branch-protection checks (see `release_gates.yaml` → `ci.required_checks` for the canonical list):
 - `Test` (matrix: no-default / wiring-tracing / multi-zone)
-- `Energy Conservation` (Issue #1295) — grep for "violated energy conservation" in test output
-- `Rustfmt` — `cargo fmt -- --check`
-- `Clippy` — `cargo clippy --lib -- -D warnings`
-- `Known Issues Stale Check` (Issue #1723)
-- `Ashrae Cases Cycle Check` (Issue #1441) — runs `scripts/check_ashrae_cases_cycle.py`
-- `Physics-Sim-Cycle-Check` (Issue #2463) — runs `scripts/check_physics_sim_cycle.py` (deferred to release_gates.yaml `required_checks` until the companion cycle-break PR lands)
-- `CUDA Smoke Test` (Issue #1603) — `cargo build --features cuda` + `cargo test --test surrogate_cuda_smoke --features cuda`
-- `ASHRAE 140 Strict Energy Gate (Issue #1333)` (4 tests, named explicitly in workflow)
-- `Fluxion Determinism Gate (Issue #1351)` — listener on Cross-Platform Determinism CI workflow
-- `Fluxion Performance Gate (Issue #1618)` — listener on Performance Dashboard workflow
-- `Architecture Drift Detection` (nightly + on `src/**/*.rs` / `ARCHITECTURE.md` changes) — `scripts/check_architecture_drift.py`
-- `Docs Hygiene Gate (Issue #2466)` — `.github/workflows/docs-hygiene.yml` runs `scripts/check_root_md_policy.py`, `scripts/check_docs_summaries.py`, and `scripts/doc_inventory_check.py`
-- `Code Coverage Gate (Issue #1932)` — `cargo llvm-cov` + per-critical-path ratchet (baseline in `validation/coverage_baseline.json`; starts unenforced)
-- `Mutation Testing (advisory)` (Issue #1891) — diff-scoped `cargo mutants --in-diff` PR check; non-blocking. `Mutation Testing (nightly)` runs the full suite against `develop`.
+- `Energy Conservation` (#1295) — greps test output for "violated energy conservation"
+- `Rustfmt` (`cargo fmt -- --check`) · `Clippy` (`cargo clippy --lib -- -D warnings`)
+- `Known Issues Stale Check` (#1723) · `Ashrae Cases Cycle Check` (#1441) · `Physics-Sim-Cycle-Check` (#2463)
+- `CUDA Smoke Test` (#1603) · `ASHRAE 140 Strict Energy Gate (Issue #1333)`
+- `Fluxion Determinism Gate (Issue #1351)` · `Fluxion Performance Gate (Issue #1618)` (workflow_run listeners)
+- `Architecture Drift Detection` (nightly + on `src/**/*.rs`/`ARCHITECTURE.md` changes)
+- `Docs Hygiene Gate` (#2466) · `Code Coverage Gate` (#1932, ratchet; baseline in `validation/coverage_baseline.json`)
+- `Mutation Testing (advisory)` (#1891, diff-scoped, non-blocking) — full suite runs nightly against `develop`
 
-Heavy Linux jobs honour `vars.FLUXION_LINUX_RUNNER` (self-hosted Hetzner fallback; see `docs/self-hosted-runners.md`).
+Heavy Linux jobs honour `vars.FLUXION_LINUX_RUNNER` (self-hosted Hetzner fallback).
 
 ## Environment Variables
 
-- `FLUXION_REST_BIND` / `FLUXION_REST_PORT` — `fluxion-rest` binary (default `0.0.0.0:8080`, healthcheck `/v1/healthz`).
-- `FLUXION_ONNX_MODEL` — explicit ONNX model path (`models/surrogate_zone_thermal.onnx` default; mock fallback when unset).
+- `FLUXION_REST_BIND` / `FLUXION_REST_PORT` — `fluxion-rest` (default `0.0.0.0:8080`; healthcheck `/v1/healthz`).
+- `FLUXION_ONNX_MODEL` — explicit ONNX model path (default `models/surrogate_zone_thermal.onnx`; mock fallback when unset).
 - `FLUXION_ONNX_BACKEND` — `cpu | cuda | coreml | directml | openvino`; auto-downgrades to `cpu` if `cuda` feature not built.
 - `FLUXION_GPU` — `0`/`false` to force CPU inference.
 - `DWAVE_API_TOKEN` — required at runtime for the `dwave` feature (D-Wave SAPI REST).
-- `PYO3_USE_ABI3_FORWARD_COMPATIBILITY=1` and `RUST_MIN_STACK=33554432` — set by Python-bindings CI to avoid linker SIGSEGV.
+- `PYO3_USE_ABI3_FORWARD_COMPATIBILITY=1` + `RUST_MIN_STACK=33554432` — set by Python-bindings CI to avoid linker SIGSEGV.
 - `CARGO_BUILD_JOBS=1` — set by Clippy CI to keep peak RSS low.
 
 ## Toolchain Quirks
 
-- **`rust-toolchain.toml`** pins **stable** + rustfmt + clippy. `.rustfmt.toml` sets `edition = "2021"` — without it rustfmt falls back to 2015 and breaks on `?`/`async`. Stable rustfmt does NOT support `exclude`; auto-generated fixture data must use `#[rustfmt::skip]` per-item (see `tests/per_tilt_per_azimuth_fixture_data.rs`).
-- **Mutation testing (`cargo mutants`)**: requires **32 GB+ RAM** for the full suite. `.cargo/mutants.toml` excludes combinatorial physics files (`state_space_ctf`, `multi_node_solver`, `ctf_coefficients`, `fd_*`, `ctf_*`, `geometry_tensor`, `cta`, `thermal_mass/**`) and the entire `src/validation/**` tree. **Dual-pipeline** (Issue #1891): (1) *Diff-scoped advisory PR check* — `mutation-testing.yml` runs `cargo mutants --in-diff` on only the changed lines, completing in minutes on a standard 32 GB runner (non-blocking). RAM detection (#2130): if <16 GB is available at runtime, the job skips gracefully and posts a PR comment explaining the skip. This handles fork PRs running on smaller GitHub-hosted runners. (2) *Nightly full suite* — `mutation-nightly.yml` runs the entire workspace against `develop` at 07:00 UTC on a 32 GB runner (self-hosted Hetzner when `vars.FLUXION_LINUX_RUNNER` is set). Run manually: `cargo mutants --config .cargo/mutants.toml -p fluxion --jobs 2 --baseline skip`. See `docs/mutation_testing_crate_split.md` for the Phase 3/4 root-cause fix (gate `ort`/ONNX → <4 GB target).
-- **Feature flags** (default = none): `python-bindings`, `napi-bindings`, `ort` (alias `onnx`), `cuda`, `wiring-tracing`, `multi-zone`, `ashrae_140_v2021`, `pr821-diag`, `loom`, `dwave`, `debug-physics`, `kafka`, `fluid`, `gauge-solver`, `fluxion-city`, `dhat`. Default builds skip the ONNX runtime — opt in via `--features ort` for AI surrogate / mutation tests.
-  - `debug-physics` — gates unconditional `eprintln!` calls in physics hot loops (issue #1967)
-  - `kafka` — enables rdkafka-based Kafka consumer for enterprise telemetry (issue #2056); run `cargo test --features kafka -p fluxion twin::kafka_telemetry_consumer`
-  - `fluid` — enables `fluxion-fluid` crate for acausal HVAC/fluid network modeling (issue #1980 / ADR-005)
-  - `gauge-solver` — enables `GaugeZoneSolver` as primary zone solver (issue #2304); replaces legacy 5R1C/9R4C lumped-capacitance networks. Run: `cargo test --features gauge-solver --test ashrae_140_case_600_series`
-  - `fluxion-city` — wires `UrbanRadiationSolver` into `PhysicsSurfaceFluxProvider` via `FluxionCitySurfaceFluxProvider` (issue #2344)
-  - `dhat` — enables dhat allocation tracking for memory profiling; run `cargo build --features dhat` (issue #2384)
-- **Crate size**: `Cargo.toml` `exclude` + `.cargoignore` strip `refdata/`, `data/`, `models/`, `assets/`, `tests/`, `docs/`, `target/`, `Cargo.lock`, etc. Published crate must stay under 10 MB.
-- **Two CONTRIBUTING.md files** (root + `docs/CONTRIBUTING.md`) — root is the active short form; `docs/CONTRIBUTING.md` has the long-form guide.
-- **`docs/CONTRIBUTING.md`** says `*always run tests, format, clippy*` — root CONTRIBUTING.md has the `cargo fmt --check` rustfmt-1.9 quirks and "avoid scope creep on CI failures" guidance that the docs file lacks.
+- **`rust-toolchain.toml`** pins **stable** + rustfmt + clippy. `.rustfmt.toml` sets `edition = "2021"` — without it rustfmt falls back to 2015 and breaks on `?`/`async`. **Stable rustfmt has no `exclude`**: auto-generated fixture data must use `#[rustfmt::skip]` per-item (see `tests/per_tilt_per_azimuth_fixture_data.rs`).
+- **Mutation testing** (`cargo mutants`): full suite needs **32 GB+ RAM**; `.cargo/mutants.toml` excludes combinatorial physics files and all of `src/validation/**`. Diff-scoped advisory check on PRs, full suite nightly on 32 GB runner (skips gracefully <16 GB, #2130). Run manually: `cargo mutants --config .cargo/mutants.toml -p fluxion --jobs 2 --baseline skip`.
+- **Feature flags (default = none)**: `python-bindings`, `napi-bindings`, `ort` (alias `onnx`), `cuda`, `wiring-tracing`, `multi-zone`, `ashrae_140_v2021`, `pr821-diag`, `loom`, `dwave`, `debug-physics`, `kafka`, `fluid`, `gauge-solver`, `fluxion-city`, `dhat`. **Default builds skip the ONNX runtime** — opt in via `--features ort` for AI surrogate / mutation tests.
+  - `debug-physics` gates `eprintln!` in physics hot loops (#1967) · `fluid` enables `fluxion-fluid` acausal HVAC (#1980/ADR-005) · `gauge-solver` replaces 5R1C/9R4C as primary zone solver (#2304) · `fluxion-city` wires urban radiation (#2344) · `kafka` enables rdkafka telemetry (#2056) · `dhat` enables heap profiling (#2384).
+- **Crate size**: `Cargo.toml` `exclude` + `.cargoignore` strip `refdata/`, `data/`, `models/`, `assets/`, `tests/`, `docs/`, `target/`, `Cargo.lock`. Published crate must stay <10 MB.
+- **Two `CONTRIBUTING.md` files** (root + `docs/CONTRIBUTING.md`): root is the active short form with the `cargo fmt --check` rustfmt-1.9 quirks and "avoid scope creep on CI failures" guidance; `docs/CONTRIBUTING.md` is the long-form guide. Edit the right one for the change.
 
 ## Mathematical Reasoning
 
-**Always write Python code** (`ctx_execute language:"python"`) for calculations — LLMs are unreliable at arithmetic. Use for: unit conversions, formula verification, reference data comparison, solar angles, thermal resistances, statistical analysis. RULES.md makes this a hard "must-always" rule.
+**Always write and execute Python code** for calculations — LLMs are unreliable at arithmetic. Use for unit conversions, formula verification, reference-data comparison, solar angles, thermal resistances, statistical analysis. RULES.md makes this a hard **must-always** rule (constraint #0).
 
 ## Repository Hygiene
 
-- **Root `.md` policy**: Only these belong at root: `README.md`, `ARCHITECTURE.md`, `CODEBASE_MAP.md`, `CONTRIBUTING.md`, `RULES.md`, `CHANGELOG.md`, `AGENTS.md`. Everything else is transient — do not commit it at root. Move transient artifacts (`CASE_*.md`, `BATCH_*.md`, `ISSUE_*.md`, `*_REPORT.md`, session summaries, analysis docs) to `tmp/` or `docs/` before committing.
-  - **CI gate**: `scripts/check_root_md_policy.py` fails non-zero if any `.md` file at root is not in the allow-list (issue #2466). Wired into `.pre-commit-config.yaml` and `.github/workflows/docs-hygiene.yml`.
-  - `CLAUDE.md` is auto-generated per-session (Bernstein agent); never commit it. Listed in `.gitignore` so it can never be staged even by mistake; the root-`.md` script warns (never fails) on it to avoid blocking Bernstein sessions.
-- All system docs in `docs/` must have a **7-line summary** at the top (lines 2–8). See `docs/doc-inventory.md`. AGENTS.md itself is exempt.
-  - **CI gate**: `scripts/check_docs_summaries.py` enumerates every `docs/**/*.md` file (not just the 11 hand-curated in `docs/doc-inventory.md`) and fails non-zero if any lacks a summary (issue #2466). Wired into `.pre-commit-config.yaml` and `.github/workflows/docs-hygiene.yml`.
-  - **Auto-generated inventory**: `scripts/generate_doc_inventory.py` regenerates the auto-generated inventory table in `docs/doc-inventory.md` (between `<!-- BEGIN AUTO-GENERATED INVENTORY -->` / `<!-- END AUTO-GENERATED INVENTORY -->` markers). Run after adding or removing files under `docs/`.
-- Issue triage labels: see `docs/agents/triage-labels.md`. GitHub issue workflow: `gh issue create --title "..." --body "..." --label "..."` (per `docs/agents/issue-tracker.md`).
+- **Root `.md` allow-list** (only these may live at repo root): `README.md`, `ARCHITECTURE.md`, `CODEBASE_MAP.md`, `CONTRIBUTING.md`, `RULES.md`, `CHANGELOG.md`, `AGENTS.md`. Move transient artifacts (`CASE_*.md`, `BATCH_*.md`, `ISSUE_*.md`, `*_REPORT.md`, session summaries) to `tmp/` or `docs/`. CI gate: `scripts/check_root_md_policy.py` (#2466). (`CLAUDE.md` is auto-generated per-session and `.gitignore`d — never commit it.)
+- **`docs/**/*.md` must have a 7-line summary at the top (lines 2–8)**. CI gate: `scripts/check_docs_summaries.py` (#2466). AGENTS.md is exempt. After adding/removing files under `docs/`, run `scripts/generate_doc_inventory.py` to refresh the auto-table in `docs/doc-inventory.md`.
+- Issue triage labels: `docs/agents/triage-labels.md`. Issue workflow: `docs/agents/issue-tracker.md`.
 
 ## Branch & PR Conventions
 
-- **`develop`** is the default branch and integration branch.
-  - All new feature branches must be created from `develop`: `git checkout develop && git pull && git checkout -b fix/issue-123`.
-  - All PRs must target `develop`: `gh pr create --base develop`.
-  - Direct pushes to `develop` are prohibited — all changes go through PR review.
-- **`main`** is release-only.
-  - No direct pushes to `main` — branch protection enforces PR-only flow.
-  - PRs targeting `main` are **only permitted from the `develop` branch** (enforced by the `protect-main-branch.yml` workflow). Hotfixes targeting `main` directly from a feature branch will be automatically rejected by CI.
-  - Releases are cut by merging `develop` → `main` via a release PR.
- - `--no-ff` merges preserve history (CONTRIBUTING.md).
+- **`develop`** is the default + integration branch. Branch from it (`git checkout develop && git pull && git checkout -b fix/issue-123`); **all PRs target `develop`** (`gh pr create --base develop`). No direct pushes to `develop`.
+- **`main`** is release-only. No direct pushes. PRs targeting `main` are **only permitted from `develop`** (enforced by `protect-main-branch.yml` — hotfixes from a feature branch into `main` are auto-rejected). Releases cut by merging `develop` → `main` via a release PR. Use `--no-ff` merges.
 - Conventional commit messages: `fix(scope): …`, `feat(scope): …`, `refactor(scope): …`, `perf(scope): …`, `test(scope): …`, `docs(scope): …`.
-- **PR body must include `Closes #{{Number}}` or `Fixes #{{Number}}`** — wave orchestration depends on this keyword to auto-close linked issues. PRs without it will fail to close their issues.
-  - **Wave orchestrator (user-level skill, Phase 3c)**: automatically validates that the PR body contains the required `Closes #N` or `Fixes #N` keyword for the linked issue. If the keyword is missing, the orchestrator auto-fixes by editing the PR body to append it before proceeding to CI monitoring. See `~/.agents/skills/github-wave-orchestrator/SKILL.md` (user-installed skill; not in this repo).
+- **PR body must include `Closes #N` or `Fixes #N`** for the linked issue — orchestration depends on this keyword to auto-close issues.
 - Never force-push `main` or `develop`. Hotfixes still go through PR review.
 
-## Key Files
+## Key Files (non-obvious)
 
 | File | Purpose |
 |------|---------|
-| `ARCHITECTURE.md` | Module boundaries, I/O contracts, trait hierarchies (~1000 lines, source of truth) |
-| `CODEBASE_MAP.md` | Cross-language context: FFI contracts, module dependency graph |
-| `src/lib.rs` | PyO3 entrypoint — `Model`, `BatchOracle` (reexports thermal_model traits, assembly, multi_node, ashrae_cases) |
-| `src/physics/solver_trait.rs` | `HeatConductionSolver` trait (5R1C/CTF/FD/MultiNode) |
-| `src/sim/thermal_model.rs` | `ThermalModelTrait` + `HybridRouting` |
-| `src/sim/solar.rs` | Solar position and irradiance |
-| `src/sim/ventilation.rs` | `VentilationSchedule` trait |
-| `src/physics/multi_node_solver.rs` | 9R4C multi-node solver (ADR-002) |
-| `src/ai/surrogate.rs` | `SurrogateManager`, ONNX runtime, env-var resolution (FLUXION_ONNX_*) |
-| `src/api/server.rs` + `openapi.yaml` | axum REST API (port 8080, `/v1/healthz`, `/v1/metrics`) |
-| `fluxion-core/src/weather/` | EPW/TMY3, psychrometrics, design-day, interpolation |
-| `tests/reference_data/` | EnergyPlus CSV reference data for unit tests |
+| `ARCHITECTURE.md` · `CODEBASE_MAP.md` | Source-of-truth contracts (see Required Reading) |
+| `src/lib.rs` | PyO3 entrypoint — `Model`, `BatchOracle` (re-exports thermal_model traits, assembly, multi_node, ashrae_cases) |
+| `src/physics/solver_trait.rs` · `src/sim/thermal_model.rs` · `src/sim/ventilation.rs` | ML-surrogate swap-point traits |
 | `release_gates.yaml` | Required branch-protection checks + thresholds |
-| `scripts/check_architecture_drift.py` | ARCHITECTURE.md vs source-code drift |
-| `scripts/check_ashrae_cases_cycle.py` | `sim ↔ validation` cycle regression guard |
-| `scripts/check_physics_sim_cycle.py` | `physics ↔ sim` cycle regression guard (Issue #2463) |
-| `scripts/check_root_md_policy.py` | Root `.md` allow-list gate (issue #2466) |
-| `scripts/check_docs_summaries.py` | `docs/**/*.md` 7-line summary coverage gate (issue #2466) |
-| `scripts/generate_doc_inventory.py` | Regenerate `docs/doc-inventory.md` auto-table (issue #2466) |
-| `scripts/disk-space-check.sh` | Disk space check before operations (10 GB min, 50 GB recommended) |
-| `scripts/coverage_critical_paths.py` | Per-critical-path coverage analysis + ratchet gate (#1932) |
-| `scripts/coverage_baseline.py` | Record/refresh the coverage ratchet baseline (#1932) |
-| `validation/coverage_baseline.json` | Committed coverage baseline (0.0 = unenforced) |
-| `scripts/release_gate_checker.py` | Validates `release_gates.yaml` gates against current results |
-| `scripts/mutants_diff_files.sh` | Extracts changed `.rs` files for diff-scoped mutation testing (`--in-diff`) |
-| `.github/workflows/mutation-testing.yml` | Advisory diff-scoped mutation PR check (Issue #1891) |
-| `.github/workflows/mutation-nightly.yml` | Nightly full-workspace mutation suite against `develop` (Issue #1891) |
+| `tests/reference_data/` | EnergyPlus CSV reference data for unit tests |
+| `scripts/check_{architecture_drift,ashrae_cases_cycle,physics_sim_cycle}.py` | Drift + cycle-regression guards |
+| `scripts/check_{root_md_policy,docs_summaries}.py` · `scripts/generate_doc_inventory.py` | Docs-hygiene gates (#2466) |
+| `scripts/release_gate_checker.py` | Validates gates against current results |
+| `scripts/coverage_{critical_paths,baseline}.py` · `validation/coverage_baseline.json` | Coverage ratchet (#1932; `0.0` = unenforced) |
+| `scripts/disk-space-check.sh` | Pre-flight before orchestration |
