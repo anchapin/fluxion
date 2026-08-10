@@ -35,7 +35,12 @@ fn physics_print_macros_are_gated() {
     let mut offenders: Vec<String> = Vec::new();
     let mut files_scanned = 0usize;
     let mut macros_checked = 0usize;
-    scan_dir(&physics_dir, &mut offenders, &mut files_scanned, &mut macros_checked);
+    scan_dir(
+        &physics_dir,
+        &mut offenders,
+        &mut files_scanned,
+        &mut macros_checked,
+    );
 
     assert!(
         files_scanned > 0,
@@ -71,12 +76,7 @@ enum Kind {
     Test,
 }
 
-fn scan_dir(
-    dir: &Path,
-    offenders: &mut Vec<String>,
-    files: &mut usize,
-    macros: &mut usize,
-) {
+fn scan_dir(dir: &Path, offenders: &mut Vec<String>, files: &mut usize, macros: &mut usize) {
     let entries = match fs::read_dir(dir) {
         Ok(e) => e,
         Err(_) => return,
