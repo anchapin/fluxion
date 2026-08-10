@@ -90,6 +90,7 @@ fn run_case(case: ASHRAE140Case, name: &str) {
 }
 
 #[test]
+#[ignore = "diagnostic-only test with no assertion; quarantined per #2536. Run manually with --ignored if needed."]
 fn diagnostic() {
     run_case(ASHRAE140Case::Case600FF, "600");
     run_case(ASHRAE140Case::Case900FF, "900");
