@@ -87,6 +87,46 @@ Tracking issue: [#1458](https://github.com/anchapin/fluxion/issues/1458).
 | Resolution | No replacement released. `paste` `1.x` is widely used and
   baked into the Rust numerical ecosystem. |
 
+### `RUSTSEC-2026-0177` — PyO3 0.22 `Sync` bound (PR-B)
+
+| Field | Value |
+| --- | --- |
+| Crate | `pyo3` 0.22.6 |
+| Type | memory-safety (PyCFunction::new_closure missing `Sync` bound) |
+| Affects | pyo3 0.15.0..<0.29.0 |
+| Fixed in | pyo3 ≥ 0.29.0 |
+| Fluxion use site | `Cargo.toml:205` pins `pyo3 = "0.22"`; used by `src/python/` and `src/bin/fluxion-py/` |
+| Tracking | [Issue #2553](https://github.com/anchapin/fluxion/issues/2553) (PR-B) |
+| Time-bound | **2026-12-31** — if migration has not landed by this date, REMOVE this ignore from `.cargo/audit.toml` so cargo audit surfaces the failure and forces the work to be prioritized |
+
+#### Why ignored
+
+- **Actively known vulnerability.** PyO3 0.22.6 is missing the `Sync` bound
+  on `PyCFunction::new_closure` (GHSA-chgr-c6px-7xpp). Patched in
+  pyo3 ≥ 0.29.0.
+- **Migration is non-trivial.** pyo3 0.22 → 0.29 spans 7 minor versions and
+  includes breaking API changes:
+  - `Bound<'py, T>` migration (replaces the old `&PyAny` / `&PyTuple` API)
+  - `IntoPy` / `FromPyObject` rewrites
+  - GIL-refs removal (the `Python::with_gil` / `PyGil::acquire` API is gone)
+  - `abi3-py310` → `abi3-py312` (or higher) abi bump
+  - `pyo3-macros` and `pyo3-build-config` version alignment
+  - `src/python/` and `src/bin/fluxion-py/` must be rewritten against the new API
+- **Out of scope** for issue #2553's "remove stale ignores" mandate.
+
+#### Why not removed
+
+Removing this ignore would make `cargo audit` exit non-zero on every PR
+until the PyO3 migration lands, blocking all development. The
+**time-bound** in `.cargo/audit.toml` (target 2026-12-31) is the
+explicit deadline: after that date, the ignore must be removed and the
+PyO3 migration becomes a release blocker.
+
+#### Revisit when
+
+- pyo3 ≥ 0.29.0 migration is complete and `Cargo.toml` pins the new version, **or**
+- 2026-12-31 arrives without migration — at which point REMOVE the ignore.
+
 ### `RUSTSEC-2026-0098`, `RUSTSEC-2026-0099` — remediated transitively in #2553 (PR-A)
 
 Both rustls-webpki name-constraint advisories (URI names, wildcard DNS) are
@@ -95,11 +135,6 @@ patched in `rustls-webpki >= 0.103.12`. Fluxion's `Cargo.lock` resolves
 `hyper-rustls 0.27.7` → `reqwest 0.12.28`). The previous ignore entries
 were stale suppressions; they were removed in PR-A so that `cargo audit`
 now verifies the fix on every PR.
-
-### `RUSTSEC-2026-0177` — PyO3 0.22 `Sync` bound (PR-B)
-
-Tracked separately under PR-B with an explicit time-bound. See
-`.cargo/audit.toml` for the rationale and target date.
 
 ---
 

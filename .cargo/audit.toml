@@ -9,6 +9,17 @@
 #   - RUSTSEC-2026-0099 (rustls-webpki name constraints for wildcard DNS,
 #       GHSA-xgp8-3hg3-c2mh):
 #       Same remediation path as RUSTSEC-2026-0098 above. Stale ignore.
+#
+# Time-bounded ignore pending PyO3 migration (PR-B, #2553):
+#   - RUSTSEC-2026-0177 (PyO3 Sync bound on PyCFunction::new_closure,
+#       GHSA-chgr-c6px-7xpp):
+#       Affects pyo3 0.15.0..<0.29.0. We pin pyo3 0.22 (Cargo.toml:205) and
+#       Cargo.lock resolves to 0.22.6, so the advisory is ACTIVE. Ignore
+#       entry below carries a TODO with target date 2026-12-31; cargo audit
+#       will start failing once that date passes without a PyO3 bump. The
+#       pyo3 0.22 → 0.29 migration is non-trivial (Bound<'py, T>,
+#       IntoPy/FromPyObject, gil-refs removal, abi3 abi bumps) and touches
+#       src/python/, src/bin/fluxion-py/, pyo3-macros, pyo3-build-config.
 
 [advisories]
 # Make unmaintained warnings informational (non-blocking)
@@ -18,7 +29,14 @@ ignore = [
     "RUSTSEC-2025-0020",
     # PyO3 Sync bound issue on PyCFunction::new_closure — requires 0.23+ which has breaking API changes
     "RUSTSEC-2024-0436",
-    # PyO3 Sync bound issue — requires 0.29+ which is a breaking API change
+    # TODO(#2553-PR-B, target 2026-12-31): PyO3 0.22 → 0.29 migration.
+    # RUSTSEC-2026-0177 (PyCFunction::new_closure missing Sync bound, GHSA-chgr-c6px-7xpp)
+    # affects pyo3 0.15.0..<0.29.0; we pin 0.22 (Cargo.toml:205). Migration
+    # touches src/python/, src/bin/fluxion-py/, pyo3-macros, pyo3-build-config.
+    # Until the migration lands, this ignore prevents cargo audit from blocking
+    # CI on an actively known vulnerability. The TODO has a hard deadline: if
+    # the migration has not landed by 2026-12-31, REMOVE this ignore so cargo
+    # audit surfaces the failure and forces the work to be prioritized.
     "RUSTSEC-2026-0177",
     # ttf-parser is unmaintained but still functional — see docs/SECURITY.md.
     # Depth=2 transitive through plotters (used for chart caption rendering
