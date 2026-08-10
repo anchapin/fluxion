@@ -886,10 +886,22 @@ async fn get_schema(
 /// Run a simulation synchronously and return the structured output. Kept as
 /// a free function so it is reusable from integration tests and from the
 /// `bindings.rs` Python path if we ever want to consolidate.
+///
+/// `request_id` carries the per-request correlation id (extracted from the
+/// `x-request-id` header by the HTTP handlers) into the
+/// [`tracing::instrument`] span. Every log line emitted on the simulation
+/// hot path — the surrogate-fallback `WARN` below and the per-timestep logs
+/// inside `solve_timesteps` — therefore carries the request id for
+/// end-to-end correlation (Issue #2499).
+#[tracing::instrument(
+    skip(schema),
+    fields(request_id = %request_id, num_zones = schema.geometry.zones.len().max(1), years),
+)]
 pub fn run_simulation(
     schema: &SimulationSchemaV1,
     years: u32,
     use_surrogates: bool,
+    request_id: &str,
 ) -> Result<SimulationOutput, ApiError> {
     let num_zones = schema.geometry.zones.len().max(1);
 
@@ -926,6 +938,22 @@ pub fn run_simulation(
     let surrogates = SurrogateManager::new().map_err(|e| {
         ApiError::SimulationFailed(format!("failed to create SurrogateManager: {e}"), None)
     })?;
+
+    // Issue #2499 — observability on the surrogate hot path. When a caller
+    // requests neural-surrogate acceleration but no ONNX model is available,
+    // the solver transparently falls back to the analytical/physics path.
+    // Emit a single WARN per simulation (a fresh `SurrogateManager` is built
+    // per call, so this never spams per-timestep) so the fallback is visible
+    // in structured logs. This fires inside the `#[tracing::instrument]`
+    // span declared above, so the line carries the `request_id` for
+    // end-to-end correlation.
+    if use_surrogates && !surrogates.model_loaded {
+        tracing::warn!(
+            backend = surrogates.backend.as_str(),
+            "surrogate requested but no ONNX model loaded — using analytical fallback"
+        );
+    }
+
     let _ = model.solve_timesteps(steps, &surrogates, use_surrogates, None, None, None);
 
     // Issue #2547 — divergence detection. `solve_timesteps` currently swallows
@@ -975,6 +1003,7 @@ pub fn run_simulation(
     })
 }
 
+#[tracing::instrument(skip_all, fields(request_id, num_zones, years))]
 async fn simulate(
     State(state): State<AppState>,
     headers: axum::http::HeaderMap,
@@ -1004,6 +1033,12 @@ async fn simulate(
     let use_surrogates = options.use_surrogates;
     let schema_hash = schema_audit_hash(&schema);
 
+    // Issue #2499 — record the per-request correlation id + shape onto the
+    // handler span so downstream `run_simulation` logs inherit it.
+    tracing::Span::current().record("request_id", request_id.as_str());
+    tracing::Span::current().record("num_zones", num_zones);
+    tracing::Span::current().record("years", years);
+
     tracing::info!(
         target: "audit",
         event = "simulation_started",
@@ -1019,7 +1054,7 @@ async fn simulate(
     // Run first so the `completed` event captures both success and error
     // outcomes. `?` below would otherwise skip the closing audit record on
     // `ApiError::InvalidSchema` / `ApiError::SimulationFailed`.
-    let result = run_simulation(&schema, years, use_surrogates);
+    let result = run_simulation(&schema, years, use_surrogates, &request_id);
     tracing::info!(
         target: "audit",
         event = "simulation_completed",
@@ -1161,10 +1196,23 @@ async fn simulate_stream(
 
 /// Batch simulation handler for `POST /v1/batch`. Runs multiple simulations
 /// concurrently using rayon and returns all results.
+#[tracing::instrument(skip_all, fields(request_id, batch_size))]
 async fn batch_simulate(
     State(_state): State<AppState>,
+    headers: axum::http::HeaderMap,
     ValidatedJson(req): ValidatedJson<BatchRequest>,
 ) -> Result<Json<BatchResponse>, ApiError> {
+    // Issue #2499 — extract the request id once for the whole batch so each
+    // per-entry `run_simulation` span (and its surrogate-fallback warning)
+    // carries it for end-to-end correlation.
+    let request_id = headers
+        .get(X_REQUEST_ID)
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("unknown")
+        .to_string();
+    tracing::Span::current().record("request_id", request_id.as_str());
+    tracing::Span::current().record("batch_size", req.simulations.len());
+
     if req.simulations.is_empty() {
         return Err(ApiError::EmptyBatch);
     }
@@ -1200,7 +1248,7 @@ async fn batch_simulate(
         .into_par_iter()
         .zip(opts.into_par_iter())
         .map(|(schema, options)| {
-            run_simulation(&schema, options.years, options.use_surrogates)
+            run_simulation(&schema, options.years, options.use_surrogates, &request_id)
                 .map(|output| SimulateResponse {
                     schema_id: None,
                     output,
@@ -1237,8 +1285,18 @@ pub struct CampaignSubmitResponse {
 /// state store enabling async polling via `GET /v1/campaigns/:id/status`.
 async fn submit_campaign(
     State(state): State<AppState>,
+    headers: axum::http::HeaderMap,
     ValidatedJson(spec): ValidatedJson<CampaignSpec>,
 ) -> Result<Json<CampaignSubmitResponse>, ApiError> {
+    // Issue #2499 — propagate the request id into the fire-and-forget task so
+    // each `run_simulation` span (and its surrogate-fallback warning) carries
+    // it for end-to-end correlation.
+    let request_id = headers
+        .get(X_REQUEST_ID)
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("unknown")
+        .to_string();
+
     if spec.simulations.is_empty() {
         return Err(ApiError::EmptyBatch);
     }
@@ -1264,6 +1322,7 @@ async fn submit_campaign(
 
     let campaign_id = state.register_campaign(spec.clone()).await;
     let campaign_id_for_task = campaign_id.clone();
+    let request_id_for_task = request_id.clone();
 
     let campaigns = Arc::clone(&state.campaigns);
 
@@ -1292,7 +1351,8 @@ async fn submit_campaign(
             let years = sim_req.options.years;
             let use_surrogates = sim_req.options.use_surrogates;
 
-            let result = run_simulation(&schema, years, use_surrogates).map_err(|e| e.to_string());
+            let result = run_simulation(&schema, years, use_surrogates, &request_id_for_task)
+                .map_err(|e| e.to_string());
 
             results.push(result);
 
@@ -1755,7 +1815,7 @@ mod tests {
         let mut bad = default_schema_v1();
         bad.controls.zone_control.heating_setpoint = 25.0;
         bad.controls.zone_control.cooling_setpoint = 24.0;
-        let err = run_simulation(&bad, 1, false).unwrap_err();
+        let err = run_simulation(&bad, 1, false, "test").unwrap_err();
         assert!(matches!(err, ApiError::InvalidSchema(_)));
     }
 
@@ -1765,7 +1825,7 @@ mod tests {
         bad.geometry.zones.clear();
         bad.geometry.total_floor_area = 0.0;
         bad.geometry.total_volume = 0.0;
-        let err = run_simulation(&bad, 1, false).unwrap_err();
+        let err = run_simulation(&bad, 1, false, "test").unwrap_err();
         assert!(matches!(err, ApiError::InvalidSchema(_)));
     }
 
@@ -2108,7 +2168,7 @@ mod tests {
         // returning, which would trip the test process timeout.
         let schema = default_schema_v1();
         let start = std::time::Instant::now();
-        let result = run_simulation(&schema, u32::MAX, false);
+        let result = run_simulation(&schema, u32::MAX, false, "test");
         assert!(
             start.elapsed().as_secs() < 30,
             "run_simulation with u32::MAX took {:?} — clamp appears absent",
@@ -2132,5 +2192,136 @@ mod tests {
         // Sanity: the budget is well under usize::MAX and under 2^31 on any
         // platform the workspace targets (it is 89_702_400).
         assert!(MAX_CAMPAIGN_STEPS < (1usize << 31));
+    }
+
+    // ---- Issue #2499: structured-log request-id propagation smoke test ----
+
+    /// A `tracing` layer that records, for every WARN/ERROR event, the
+    /// `request_id` field of the innermost active span (the field set by the
+    /// `#[tracing::instrument(... fields(request_id = ...))]` annotation on
+    /// `run_simulation`). Used only by the #2499 smoke test below.
+    struct RequestIdWarnCapture {
+        captured: std::sync::Arc<std::sync::Mutex<Vec<(String, String)>>>,
+        span_request_ids: std::sync::Arc<std::sync::Mutex<HashMap<tracing::span::Id, String>>>,
+    }
+
+    struct FieldCollector<'a> {
+        request_id: &'a mut Option<String>,
+        message: &'a mut String,
+    }
+
+    impl<'a> tracing::field::Visit for FieldCollector<'a> {
+        fn record_str(&mut self, field: &tracing::field::Field, value: &str) {
+            if field.name() == "request_id" {
+                *self.request_id = Some(value.to_string());
+            }
+        }
+
+        fn record_debug(&mut self, field: &tracing::field::Field, value: &dyn std::fmt::Debug) {
+            let formatted = format!("{:?}", value);
+            match field.name() {
+                "request_id" => *self.request_id = Some(formatted),
+                "message" => *self.message = formatted,
+                _ => {}
+            }
+        }
+    }
+
+    impl<S> tracing_subscriber::Layer<S> for RequestIdWarnCapture
+    where
+        S: tracing::Subscriber + for<'a> tracing_subscriber::registry::LookupSpan<'a>,
+    {
+        fn on_new_span(
+            &self,
+            attrs: &tracing::span::Attributes<'_>,
+            id: &tracing::span::Id,
+            _ctx: tracing_subscriber::layer::Context<'_, S>,
+        ) {
+            let mut request_id = None;
+            let mut message = String::new();
+            let mut visitor = FieldCollector {
+                request_id: &mut request_id,
+                message: &mut message,
+            };
+            attrs.record(&mut visitor);
+            if let Some(rid) = request_id {
+                self.span_request_ids
+                    .lock()
+                    .unwrap()
+                    .insert(id.clone(), rid);
+            }
+        }
+
+        fn on_event(
+            &self,
+            event: &tracing::Event<'_>,
+            ctx: tracing_subscriber::layer::Context<'_, S>,
+        ) {
+            // Only WARN / ERROR events reach the assertion (the surrogate
+            // fallback line is WARN). `Level` orders severity descending, so
+            // `level < WARN` covers INFO / DEBUG / TRACE.
+            if event.metadata().level() < &tracing::Level::WARN {
+                return;
+            }
+            let mut message = String::new();
+            let mut request_id_direct = None;
+            let mut visitor = FieldCollector {
+                request_id: &mut request_id_direct,
+                message: &mut message,
+            };
+            event.record(&mut visitor);
+
+            // Resolve the request id from the active `run_simulation` span
+            // when the event itself does not carry it (the fallback WARN does
+            // not — it inherits the field from the span).
+            let request_id = request_id_direct.or_else(|| {
+                ctx.lookup_current().and_then(|span| {
+                    self.span_request_ids
+                        .lock()
+                        .unwrap()
+                        .get(&span.id())
+                        .cloned()
+                })
+            });
+            self.captured
+                .lock()
+                .unwrap()
+                .push((request_id.unwrap_or_default(), message));
+        }
+    }
+
+    #[test]
+    fn run_simulation_propagates_request_id_to_surrogate_fallback_warn() {
+        // Issue #2499 acceptance — the request id supplied to
+        // `run_simulation` must appear on the surrogate-fallback WARN line.
+        // We install a per-test capturing subscriber via `with_default`
+        // (thread-local, so the synchronous `run_simulation` call on this
+        // thread is observed) and assert that a WARN carrying
+        // `request_id = test-123` and the fallback message was emitted.
+        // `use_surrogates = true` with no ONNX model loaded triggers the
+        // analytical-fallback path and therefore the WARN.
+        use tracing_subscriber::layer::SubscriberExt as _;
+
+        let captured: std::sync::Arc<std::sync::Mutex<Vec<(String, String)>>> =
+            std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+        let layer = RequestIdWarnCapture {
+            captured: std::sync::Arc::clone(&captured),
+            span_request_ids: std::sync::Arc::new(std::sync::Mutex::new(HashMap::new())),
+        };
+        let subscriber = tracing_subscriber::registry().with(layer);
+        let schema = default_schema_v1();
+
+        tracing::subscriber::with_default(subscriber, || {
+            let _ = run_simulation(&schema, 1, true, "test-123");
+        });
+
+        let guard = captured.lock().unwrap();
+        assert!(
+            guard.iter().any(|(rid, msg)| {
+                rid.contains("test-123") && msg.to_lowercase().contains("fallback")
+            }),
+            "expected a surrogate-fallback WARN carrying request_id `test-123`; \
+             captured events: {guard:?}"
+        );
     }
 }

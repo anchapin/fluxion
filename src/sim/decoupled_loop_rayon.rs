@@ -1499,7 +1499,17 @@ mod tests {
     /// Requires a ≥2-core machine. On a single-core / fully throttled runner
     /// the sleep workload cannot overlap, so the assertion is skipped to
     /// avoid false failures (CI runs multi-core — see AGENTS.md).
+    ///
+    /// `#[ignore]`: this is a local/manual parallelism regression guard, not a
+    /// correctness test. The Mutex-serialisation regression it guards against is
+    /// already prevented structurally by the `F: Fn + Send + Sync` bound (a
+    /// regression to `FnMut` + `Arc<Mutex<F>>` would fail to compile) and measured
+    /// by the `decoupled_loop_dispatch_bench` criterion bench. Running it in CI
+    /// caused intermittent false failures under runner load on every PR (the
+    /// concurrency probe is sensitive to OS scheduling under contention). Run
+    /// locally with `cargo test -p fluxion --lib decoupled_loop -- --ignored`.
     #[test]
+    #[ignore = "local-only parallelism probe; see doc comment — run with --ignored"]
     fn test_step_does_not_serialize_parallel_work() {
         use std::sync::atomic::{AtomicUsize, Ordering};
         use std::sync::Arc;
