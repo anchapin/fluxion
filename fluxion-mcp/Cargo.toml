@@ -10,8 +10,10 @@ keywords = ["mcp", "bem", "energyplus", "building-energy", "simulation"]
 categories = ["simulation", "scientific", "api-bindings"]
 
 [dependencies]
-# Fluxion core
-fluxion = { path = "..", features = ["multi-zone"] }
+# Fluxion core — `multi-zone` is activated via fluxion-mcp's own `multi-zone` feature (on by
+# default), not unconditionally on this dependency. `default-features = false` keeps fluxion's
+# default feature set explicit. See issue #2540.
+fluxion = { path = "..", default-features = false }
 
 # Fluxion fluid for HVAC fluid network topology
 fluxion-fluid = { path = "../fluxion-fluid", version = "1.0.0" }
@@ -35,6 +37,15 @@ anyhow = "1.0"
 
 [dev-dependencies]
 tempfile = "3.10"
+
+[features]
+# `multi-zone` is required by the MCP thermal-model tool surface (ThermalModel::<VectorField>).
+# It is a default feature so `cargo build -p fluxion-mcp` works out of the box, but it is gated
+# behind this crate's own feature rather than hard-pinned on the `fluxion` dependency, so a
+# workspace `--no-default-features` build no longer forces `multi-zone` onto every other member.
+# See issue #2540.
+default = ["multi-zone"]
+multi-zone = ["fluxion/multi-zone"]
 
 [[bin]]
 name = "fluxion-mcp"
