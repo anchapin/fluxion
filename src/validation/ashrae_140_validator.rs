@@ -4,6 +4,7 @@ use crate::sim::engine::{IdealHVACController, ThermalModel};
 use crate::sim::warmup::{run_warmup, WarmupConfig};
 use crate::validation::ashrae_140_cases::{ASHRAE140Case, CaseSpec, ConstructionType};
 use crate::validation::benchmark;
+use crate::validation::calibration_ledger;
 use crate::validation::diagnostic::{
     ComparisonRow, DiagnosticCollector, DiagnosticConfig, DiagnosticReport, EnergyBreakdown,
     HourlyData, PeakTiming, TemperatureProfile,
@@ -1146,6 +1147,12 @@ impl ASHRAE140Validator {
     pub fn validate_analytical_engine(&self) -> BenchmarkReport {
         let mut report = BenchmarkReport::new();
         report.set_start(); // Record start time
+                            // Issue #2516: in Blind mode, emit the calibration-factor audit ledger so the
+                            // per-build factor history is captured in the structured log stream (Phase E
+                            // SUSTAIN-01..02 depend on this machine-readable audit trail).
+        if self.validation_mode == ValidationMode::Blind {
+            calibration_ledger::emit_blind_mode_audit();
+        }
         let benchmark_data = self.benchmark_data_for_mode();
         let weather = EpwWeatherSource::from_file(
             "assets/weather/USA_CO_Denver-Stapleton.Intl.AP.724690_TMY.epw",
