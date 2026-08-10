@@ -459,16 +459,19 @@ pub trait HeatConductionSolver: Send + Sync {
 > >
 > > Regression: `tests/conduction_solver_manager_production_wiring.rs`.
 
-**Implementations & `SolverRegistry`**: Four `HeatConductionSolver` implementations are available through the registry / manager system:
+**Implementations & `SolverRegistry`**: Four `HeatConductionSolver` implementations are available through the registry / manager system. Since Issue #2494, **all four** are constructible directly via `SolverRegistry::construct` (previously CTF/FD were reachable only through `SolverManager::select`):
 
 | Solver | Construction | Location |
 |--------|-------------|----------|
 | `FiveR1CSolver` | `SolverRegistry::construct("5r1c", &wall)` — key `registry_keys::FIVE_R1C` | `physics/five_r1c_solver.rs` |
-| `CTFSolverWrapper` | `SolverManager::select` (CTF method, auto-selected for low-mass) | `physics/ctf_solver_wrapper.rs` |
-| `FDSolverWrapper` | `SolverManager::select` (FD method / CTF fallback) | `physics/fd_solver_wrapper.rs` |
+| `CTFSolverWrapper` | `SolverRegistry::construct("ctf", &wall)` — key `registry_keys::CTF` (Issue #2494); same construction as `SolverManager::select`'s CTF method | `physics/ctf_solver_wrapper.rs` |
+| `FDSolverWrapper` | `SolverRegistry::construct("fd", &wall)` — key `registry_keys::FD` (Issue #2494); same construction as `SolverManager::select`'s FD method / CTF fallback | `physics/fd_solver_wrapper.rs` |
 | `MultiNodeSolver` (9R4C) | `SolverRegistry::construct("multinode_9r4c", &wall)` — key `registry_keys::MULTINODE_9R4C` (PR #1491 / commit 82f76b2, Issue #1429 / ADR-002) | `physics/multi_node_solver.rs` |
 
-`SolverRegistry` (`physics/solver_registry.rs`) owns the constructor dispatch: callers pass a string key + `&WallSpec` and receive a `Box<dyn HeatConductionSolver>`. `SolverManager` wraps the registry and auto-selects between 5R1C / CTF / FD based on thermal mass; `MultiNodeSolver` is selected explicitly for high-mass constructions per ADR-002. The drift-check test (`tests/architecture_drift_check.rs`) verifies ≥ 3 solver constructors are exported.
+`SolverRegistry` (`physics/solver_registry.rs`) owns the constructor dispatch: callers pass a string key + `&WallSpec` (+ `floor_area`, used only by `multinode_9r4c`) and receive a `Box<dyn HeatConductionSolver>`. Built-in keys are enumerated in `registry_keys::BUILTIN_KEYS` and dispatched on a lock-free match path. `SolverManager` wraps the registry and auto-selects between 5R1C / CTF / FD based on thermal mass; `MultiNodeSolver` is selected explicitly for high-mass constructions per ADR-002. The drift-check test (`tests/architecture_drift_check.rs`) verifies ≥ 3 solver constructors are exported.
+
+> **Pluggable registration** (Issue #2494): `SolverRegistry::register_solver(key, factory)` lets third-party code (e.g. an ML-surrogate adapter, a research solver, or a `FluxionCitySurfaceFluxProvider`-style provider) register a `SolverFactory` (`Fn(&WallSpec, f64) -> Result<Box<dyn HeatConductionSolver>, SolverError> + Send + Sync`) under a custom key. `SolverRegistry::construct` dispatches registered keys exactly like built-ins, so the rest of the pipeline (registry insertion, `PhysicsSurfaceFluxProvider::add_surface`, stats aggregation) is reused. Built-in keys (`5r1c` / `ctf` / `fd` / `multinode_9r4c`) cannot be shadowed or overridden; `unregister_solver` / `is_known_key` / `registered_keys` manage the custom set. This is the constructor-level analogue of the `FluxionCitySurfaceFluxProvider` wrapper pattern — rather than wrapping an already-constructed solver, it plugs into construction dispatch.
+
 **Selector**: `SolverManager` auto-selects based on thermal mass.
 **Per-surface solver**: `sim/per_surface_conduction.rs` provides independent backward-Euler per-surface solving for the multi-node thermal model (#857/#856).
 
