@@ -315,6 +315,11 @@ rusqlite = { version = "0.31", features = ["bundled"] }
 # Memory stats for LiveTwin memory leak test (Issue #2064)
 memory-stats = "1.0"
 
+# Metric capture for unit tests asserting metric emission (Issue #2498).
+# `DebuggingRecorder` + `metrics::with_local_recorder` lets tests assert on
+# emitted observations without polluting the process-global Prometheus recorder.
+metrics-util = "0.20"
+
 [[bench]]
 name = "cta_bench"
 harness = false

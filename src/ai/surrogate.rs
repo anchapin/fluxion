@@ -32,6 +32,36 @@ pub enum InferenceBackend {
     OpenVINO,
 }
 
+impl InferenceBackend {
+    /// Lowercase Prometheus label value for this backend (Issue #2498). Used
+    /// as the `backend` label on `fluxion_onnx_*` metrics so dashboards can
+    /// split CPU vs CUDA vs CoreML vs DirectML vs OpenVINO throughput.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            InferenceBackend::CPU => "cpu",
+            InferenceBackend::CUDA => "cuda",
+            InferenceBackend::CoreML => "coreml",
+            InferenceBackend::DirectML => "directml",
+            InferenceBackend::OpenVINO => "openvino",
+        }
+    }
+}
+
+/// Coarse cardinality-bounded label for the batch size of an ONNX inference
+/// call (Issue #2498). Keeps the `batch_bucket` label of
+/// `fluxion_onnx_inference_duration_seconds` to 5 values regardless of how
+/// many distinct batch sizes callers feed in.
+#[cfg(feature = "ort")]
+fn batch_bucket_label(batch_size: usize) -> &'static str {
+    match batch_size {
+        0 => "0",
+        1 => "1",
+        2..=8 => "2-8",
+        9..=64 => "9-64",
+        _ => "65+",
+    }
+}
+
 #[derive(Clone, Debug, Copy, Default, PartialEq, Eq)]
 pub enum QuantizationType {
     #[default]
@@ -1797,6 +1827,7 @@ impl SurrogateManager {
 
         // No model loaded → use the analytical fallback (not the 1.2 mock).
         if !self.model_loaded && self.composite.is_none() {
+            self.record_onnx_fallback_metric();
             return self.analytical_loads(temps);
         }
 
@@ -1810,6 +1841,7 @@ impl SurrogateManager {
                     );
                     *self.residual_reroute_count.lock() += 1;
                     metrics::counter!("surrogate_residual_reroutes_total", "mode" => "neural_with_fallback").increment(1);
+                    self.record_onnx_fallback_metric();
                     return self.analytical_loads(temps);
                 }
                 Ok(loads)
@@ -1819,9 +1851,24 @@ impl SurrogateManager {
                     "ONNX inference failed ({}), falling back to analytical_loads",
                     e
                 );
+                self.record_onnx_fallback_metric();
                 self.analytical_loads(temps)
             }
         }
+    }
+
+    /// Emit `fluxion_onnx_inference_total{backend, outcome="fallback"}` for
+    /// every routing to the analytical model (Issue #2498). Called from all
+    /// three fallback sites in [`Self::predict_loads_with_fallback`] (no
+    /// model loaded, residual violation, ONNX error) so production telemetry
+    /// can distinguish "neural surrogate diverged" from "ONNX call failed".
+    fn record_onnx_fallback_metric(&self) {
+        metrics::counter!(
+            "fluxion_onnx_inference_total",
+            "backend" => self.backend.as_str(),
+            "outcome" => "fallback",
+        )
+        .increment(1);
     }
 
     pub fn analytical_loads(&self, temps: &[f64]) -> Result<Vec<f64>, String> {
@@ -2211,6 +2258,23 @@ impl SurrogateManager {
     /// - the ONNX runtime reports an inference error
     #[cfg(feature = "ort")]
     pub fn predict_loads_onnx(&self, current_temps: &[f64]) -> Result<Vec<f64>, String> {
+        // Issue #2498: instrument every ONNX inference attempt with backend /
+        // outcome / latency / batch-size metrics so production telemetry can
+        // distinguish "neural surrogate diverged" from "ONNX call itself
+        // failed". Timing wraps the entire attempt (including session-pool
+        // acquisition) so the histogram reflects caller-observed latency.
+        let backend = self.backend.as_str();
+        let start = std::time::Instant::now();
+        let result = self.predict_loads_onnx_impl(current_temps);
+        let elapsed_secs = start.elapsed().as_secs_f64();
+        self.record_onnx_inference_metrics(backend, 1, elapsed_secs, result.is_ok());
+        result
+    }
+
+    /// Pure ONNX inference (single sample) without metric instrumentation.
+    /// Wrapped by [`Self::predict_loads_onnx`] (Issue #2498).
+    #[cfg(feature = "ort")]
+    fn predict_loads_onnx_impl(&self, current_temps: &[f64]) -> Result<Vec<f64>, String> {
         if !self.model_loaded {
             return Err("No ONNX model loaded".to_string());
         }
@@ -2222,7 +2286,6 @@ impl SurrogateManager {
         let input_data: Vec<f32> = current_temps.iter().map(|&x| x as f32).collect();
         let n_input = input_data.len();
 
-        let start = std::time::Instant::now();
         let mut session_guard = pool
             .get_or_create_session()
             .map_err(|e| format!("Could not acquire ORT session: {}", e))?;
@@ -2247,8 +2310,6 @@ impl SurrogateManager {
             return Err("ONNX inference returned no outputs".to_string());
         };
 
-        let elapsed_ms = start.elapsed().as_secs_f64() * 1000.0;
-        self.inference_metrics.lock().record_inference(elapsed_ms);
         let _ = n_input; // kept for forward-compat shape validation
         Ok(result)
     }
@@ -2297,6 +2358,28 @@ impl SurrogateManager {
         &self,
         batch_temps: &[Vec<f64>],
     ) -> Result<Vec<Vec<f64>>, String> {
+        // Issue #2498: instrument batched inference. An empty batch is a
+        // documented no-op (returns Ok(empty)) so it bypasses metric
+        // recording — no inference actually runs.
+        if batch_temps.is_empty() {
+            return self.predict_loads_batched_onnx_impl(batch_temps);
+        }
+        let backend = self.backend.as_str();
+        let batch_size = batch_temps.len();
+        let start = std::time::Instant::now();
+        let result = self.predict_loads_batched_onnx_impl(batch_temps);
+        let elapsed_secs = start.elapsed().as_secs_f64();
+        self.record_onnx_inference_metrics(backend, batch_size, elapsed_secs, result.is_ok());
+        result
+    }
+
+    /// Pure batched ONNX inference without metric instrumentation. Wrapped by
+    /// [`Self::predict_loads_batched_onnx`] (Issue #2498).
+    #[cfg(feature = "ort")]
+    fn predict_loads_batched_onnx_impl(
+        &self,
+        batch_temps: &[Vec<f64>],
+    ) -> Result<Vec<Vec<f64>>, String> {
         if !self.model_loaded {
             return Err("No ONNX model loaded".to_string());
         }
@@ -2323,7 +2406,6 @@ impl SurrogateManager {
             .flat_map(|v| v.iter().map(|&x| x as f32))
             .collect();
 
-        let start = std::time::Instant::now();
         let mut session_guard = pool
             .get_or_create_session()
             .map_err(|e| format!("Could not acquire ORT session: {}", e))?;
@@ -2349,9 +2431,54 @@ impl SurrogateManager {
         let output_size = results.len() / batch_size;
         let batch_results: Vec<Vec<f64>> =
             results.chunks(output_size).map(|c| c.to_vec()).collect();
-        let elapsed_ms = start.elapsed().as_secs_f64() * 1000.0;
-        self.inference_metrics.lock().record_inference(elapsed_ms);
         Ok(batch_results)
+    }
+
+    /// Shared metric recording for a single ONNX inference attempt (Issue
+    /// #2498). Called by both [`Self::predict_loads_onnx`] (batch_size = 1)
+    /// and [`Self::predict_loads_batched_onnx`] wrappers.
+    ///
+    /// - On success: records the internal `InferenceMetrics` latency (ms, kept
+    ///   for the existing `inference_metrics()` API), the
+    ///   `fluxion_onnx_inference_duration_seconds` histogram, the
+    ///   `fluxion_onnx_inference_total{outcome="success"}` counter, and the
+    ///   `fluxion_onnx_batch_size` histogram.
+    /// - On error: records only the `fluxion_onnx_inference_total{outcome=
+    ///   "error"}` counter (no inference ran, so no latency/batch sample).
+    #[cfg(feature = "ort")]
+    fn record_onnx_inference_metrics(
+        &self,
+        backend: &'static str,
+        batch_size: usize,
+        elapsed_secs: f64,
+        succeeded: bool,
+    ) {
+        if succeeded {
+            self.inference_metrics
+                .lock()
+                .record_inference(elapsed_secs * 1000.0);
+            metrics::histogram!(
+                "fluxion_onnx_inference_duration_seconds",
+                "backend" => backend,
+                "batch_bucket" => batch_bucket_label(batch_size),
+            )
+            .record(elapsed_secs);
+            metrics::counter!(
+                "fluxion_onnx_inference_total",
+                "backend" => backend,
+                "outcome" => "success",
+            )
+            .increment(1);
+            metrics::histogram!("fluxion_onnx_batch_size", "backend" => backend)
+                .record(batch_size as f64);
+        } else {
+            metrics::counter!(
+                "fluxion_onnx_inference_total",
+                "backend" => backend,
+                "outcome" => "error",
+            )
+            .increment(1);
+        }
     }
 
     /// Stub for non-`ort` builds (issue #1294).
@@ -2519,6 +2646,91 @@ mod tests {
         assert_eq!(loads.len(), 3);
         // When model_loaded is false, falls back to analytical loads (non-negative)
         assert!(loads[0] >= 0.0);
+    }
+
+    /// Issue #2498 — every backend variant must map to a stable lowercase
+    /// Prometheus label value so dashboards do not break on enum reordering.
+    #[test]
+    fn inference_backend_as_str_covers_all_variants() {
+        assert_eq!(InferenceBackend::CPU.as_str(), "cpu");
+        assert_eq!(InferenceBackend::CUDA.as_str(), "cuda");
+        assert_eq!(InferenceBackend::CoreML.as_str(), "coreml");
+        assert_eq!(InferenceBackend::DirectML.as_str(), "directml");
+        assert_eq!(InferenceBackend::OpenVINO.as_str(), "openvino");
+    }
+
+    /// Issue #2498 — verify `fluxion_onnx_inference_total{outcome="fallback"}`
+    /// is emitted on the analytical fallback path (no model loaded). Uses a
+    /// thread-local `DebuggingRecorder` via `metrics::with_local_recorder` so
+    /// it never touches the process-global Prometheus recorder and is safe to
+    /// run in parallel with the REST API integration tests.
+    #[test]
+    fn onnx_fallback_metric_emitted_on_analytical_path() {
+        use metrics_util::debugging::DebuggingRecorder;
+
+        let recorder = DebuggingRecorder::new();
+        let snapshotter = recorder.snapshotter();
+        metrics::with_local_recorder(&recorder, || {
+            let m = SurrogateManager::new().unwrap();
+            let loads = m.predict_loads_with_fallback(&[20.0, 21.0, 22.0]).unwrap();
+            assert_eq!(loads.len(), 3);
+        });
+
+        let map = snapshotter.snapshot().into_hashmap();
+        let found_fallback = map.keys().any(|ck| {
+            ck.key().name() == "fluxion_onnx_inference_total"
+                && ck
+                    .key()
+                    .labels()
+                    .any(|l| l.key() == "backend" && l.value() == "cpu")
+                && ck
+                    .key()
+                    .labels()
+                    .any(|l| l.key() == "outcome" && l.value() == "fallback")
+        });
+        assert!(
+            found_fallback,
+            "expected fluxion_onnx_inference_total{{backend=\"cpu\",outcome=\"fallback\"}} \
+             to be emitted on the analytical fallback path"
+        );
+    }
+
+    /// Issue #2498 — calling `predict_loads_onnx` without a loaded model
+    /// (the `ort` path's earliest error branch) must emit
+    /// `fluxion_onnx_inference_total{outcome="error"}`.
+    #[cfg(feature = "ort")]
+    #[test]
+    fn onnx_error_metric_emitted_when_no_model_loaded() {
+        use metrics_util::debugging::DebuggingRecorder;
+
+        let recorder = DebuggingRecorder::new();
+        let snapshotter = recorder.snapshotter();
+        metrics::with_local_recorder(&recorder, || {
+            let m = SurrogateManager::new().unwrap();
+            let err = m.predict_loads_onnx(&[20.0]).unwrap_err();
+            assert!(
+                err.contains("No ONNX model loaded"),
+                "unexpected error: {err}"
+            );
+        });
+
+        let map = snapshotter.snapshot().into_hashmap();
+        let found_error = map.keys().any(|ck| {
+            ck.key().name() == "fluxion_onnx_inference_total"
+                && ck
+                    .key()
+                    .labels()
+                    .any(|l| l.key() == "backend" && l.value() == "cpu")
+                && ck
+                    .key()
+                    .labels()
+                    .any(|l| l.key() == "outcome" && l.value() == "error")
+        });
+        assert!(
+            found_error,
+            "expected fluxion_onnx_inference_total{{backend=\"cpu\",outcome=\"error\"}} \
+             to be emitted when predict_loads_onnx runs without a loaded model"
+        );
     }
 
     #[test]
