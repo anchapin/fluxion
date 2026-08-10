@@ -135,7 +135,13 @@ The request body is a bare `SimulationSchemaV1` (or the version-tagged
 
 `POST /v1/batch` accepts at most `1024` entries per request (`400
 batch_too_large` otherwise) and a total step budget of `Σ years_i * 8760 ≤
-89_702_400`; the maximum request body size is `8 MiB`.
+89_702_400`; the maximum request body size is `8 MiB`. Internally the
+per-config work (`run_simulation`) is parallelised across the rayon pool and
+the whole rayon dispatch runs inside `tokio::task::spawn_blocking` (Issue
+#2501), so a batch request never pins its tokio worker — concurrent requests
+and lightweight endpoints (`/v1/healthz`, `/v1/schema/{id}`) stay responsive
+while a batch runs. See [Latency budget](#latency-budget) for the budget
+this unblocks.
 
 The response is `{ "schema_id": "sch-0", "output": { ... SimulationOutput ... } }`.
 The `schema_id` is always non-null because the server auto-stores the schema
@@ -198,6 +204,45 @@ From #1447:
   `fluxion_rest_request_duration_seconds` increment on test traffic
 - ✅ New test target `tests/api_observability_tests.rs` covers
   `/v1/metrics` shape, `x-request-id` propagation, and counter increment
+
+## Latency budget
+
+Issue **#2501** establishes a **10 ms/config** latency budget for `/v1/simulate`
+and `/v1/batch`. "Per-config" is the *amortised throughput* reading:
+`total_wall_time / total_configs` across a batch wave. It is bounded by the
+serial physics cost of one config (`run_simulation` iterates `years * 8760`
+timesteps; measured floor ~6.9 ms for a 1-zone / 1-year config on a reference
+machine), so the amortised budget is met comfortably (observed ~1.2–1.5
+ms/config with 10 concurrent `/v1/batch` requests of 6 configs each).
+
+The hard part of the budget is not raw per-config throughput but keeping the
+tokio runtime responsive under concurrent load. Before #2501, both
+`/v1/simulate` and `/v1/batch` ran the CPU-blocking `run_simulation` work —
+and `/v1/batch` its rayon `into_par_iter().map(run_simulation)` dispatch —
+*directly* on the tokio worker handling the request. With the default
+multi-thread runtime that pins workers for the full physics solve, so
+concurrent requests and lightweight endpoints (`/v1/healthz`,
+`/v1/schema/{id}`) starved behind them — `/v1/healthz` p99 under batch load
+was observed at ~70–80 ms (roughly one batch wave).
+
+The fix (Issue #2501) wraps the blocking work in
+`tokio::task::spawn_blocking`:
+
+- `POST /v1/simulate` — `run_simulation(...)` runs on the dedicated blocking
+  pool; the request's tokio worker is released for the duration of the solve.
+- `POST /v1/batch` — the entire `schemas.into_par_iter().zip(opts).map(...)`
+  dispatch moves into `spawn_blocking`. The inner rayon parallelism is
+  unchanged (configs still fan out across rayon threads); only the
+  *dispatching* thread changes, from a tokio worker to a blocking-pool thread.
+
+With the fix, `/v1/healthz` p99 under the same concurrent batch load drops to
+~4–8 ms (workers stay free), restoring headroom against the budget. The
+regression gate lives in `tests/api_batch_spawn_blocking_test.rs`: it fires
+10 concurrent `/v1/batch` requests, probes `/v1/healthz` while they run, and
+asserts the healthz p99 stays well below the batch duration (so a future
+change that re-introduces blocking work on the handler would fail the gate).
+`simulate_stream` already offloads its physics to a background `tokio::spawn`
+task with an mpsc channel, so it does not block its request handler either.
 
 ## Out of scope (explicitly deferred)
 

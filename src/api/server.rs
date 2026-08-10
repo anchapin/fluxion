@@ -1051,10 +1051,32 @@ async fn simulate(
     );
 
     let started = std::time::Instant::now();
-    // Run first so the `completed` event captures both success and error
-    // outcomes. `?` below would otherwise skip the closing audit record on
-    // `ApiError::InvalidSchema` / `ApiError::SimulationFailed`.
-    let result = run_simulation(&schema, years, use_surrogates, &request_id);
+    // Issue #2501 — `run_simulation` is CPU-bound (it iterates
+    // `years * 8760` physics timesteps). Running it directly on the tokio
+    // worker pinned to this request starves every other concurrent request
+    // sharing that worker, and under load drives `/v1/simulate` p99 well
+    // past the 10 ms/config latency budget. Move the whole solve onto the
+    // dedicated blocking thread pool with `spawn_blocking` so the tokio
+    // worker is free to drive other I/O while the physics runs. The schema
+    // and request_id are cloned into the closure because they are still
+    // needed below (schema for storage, request_id for the audit event).
+    //
+    // `spawn_blocking` yields `Result<Result<SimulationOutput, ApiError>,
+    // JoinError>` (outer = join, inner = simulation). The audit `completed`
+    // event wraps both layers so a panic is still timed; the two `?` then
+    // surface a join failure as `SimulationFailed` and the inner result
+    // unchanged. The `request_id` is threaded in per #2499.
+    let schema_for_sim = schema.clone();
+    let request_id_for_sim = request_id.clone();
+    let result =
+        tokio::task::spawn_blocking(move || run_simulation(&schema_for_sim, years, use_surrogates, &request_id_for_sim))
+            .await
+            .map_err(|join_err| {
+                ApiError::SimulationFailed(
+                    format!("simulation blocking task failed: {join_err}"),
+                    None,
+                )
+            })?;
     tracing::info!(
         target: "audit",
         event = "simulation_completed",
@@ -1244,18 +1266,36 @@ async fn batch_simulate(
         .collect();
     let opts: Vec<_> = req.simulations.iter().map(|r| r.options.clone()).collect();
 
-    let results = schemas
-        .into_par_iter()
-        .zip(opts.into_par_iter())
-        .map(|(schema, options)| {
-            run_simulation(&schema, options.years, options.use_surrogates, &request_id)
-                .map(|output| SimulateResponse {
-                    schema_id: None,
-                    output,
-                })
-                .map_err(|e| e.to_string())
-        })
-        .collect();
+    // Issue #2501 — the per-config `run_simulation` work below is CPU-bound
+    // and, worse, runs on the **rayon** pool via `into_par_iter`. Executing
+    // that rayon dispatch from a tokio `async fn` pins the tokio worker to
+    // the rayon job: every concurrent `/v1/batch` request burns one tokio
+    // worker on blocking CPU work and contends with
+    // `BatchOracle::evaluate_population` (which uses the same global rayon
+    // pool) for threads. Move the entire rayon dispatch into
+    // `spawn_blocking` so the tokio worker is released for the duration of
+    // the batch. The inner `into_par_iter` still parallelises across rayon
+    // threads exactly as before — only the *dispatching* thread changes.
+    // The `request_id` is threaded in per #2499.
+    let request_id_for_batch = request_id.clone();
+    let results = tokio::task::spawn_blocking(move || {
+        schemas
+            .into_par_iter()
+            .zip(opts.into_par_iter())
+            .map(|(schema, options)| {
+                run_simulation(&schema, options.years, options.use_surrogates, &request_id_for_batch)
+                    .map(|output| SimulateResponse {
+                        schema_id: None,
+                        output,
+                    })
+                    .map_err(|e| e.to_string())
+            })
+            .collect::<Vec<_>>()
+    })
+    .await
+    .map_err(|join_err| {
+        ApiError::SimulationFailed(format!("batch blocking task failed: {join_err}"), None)
+    })?;
 
     Ok(Json(BatchResponse { results }))
 }
