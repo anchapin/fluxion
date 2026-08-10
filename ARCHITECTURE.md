@@ -1260,8 +1260,87 @@ ThermalModelTrait (zone level, sim/thermal_model.rs)
 ├── PhysicsThermalModel        (analytical 5R1C thermal network)
 ├── SurrogateThermalModel      (neural network inference, ONNX v3.0 — #1139)
 ├── UnifiedThermalModel        (runtime switching between physics/surrogate)
+├── HybridThermalModel         (per-subsystem routing physics↔surrogate, #1431/#2457)
 └── MockThermalModel           (fixed values for testing, sim/thermal_model_mock.rs)
 ```
+
+#### Clone semantics & BatchOracle parallelism contract (issue #2539)
+
+Every concrete `ThermalModel` implementation is `Clone`-by-design. This is not a
+side-effect of derive macros; it is a load-bearing contract that the optimisation
+hot loop relies on, and the semantics differ enough between the trait level and
+`HybridThermalModel` that they are documented here as part of the swap-point
+contract.
+
+**Trait-level contract — population-level cloning for `BatchOracle`.**
+`BatchOracle::evaluate_population` (`src/lib.rs`) clones `base_model` once per
+candidate in the input population and then solves each clone independently
+(`src/lib.rs:1338`):
+
+```text
+population.par_iter().map(|params| {
+    let mut model = self.base_model.clone();   // ← one clone per candidate
+    model.apply_parameters(params);
+    model.solve_timesteps(...)
+})
+```
+
+The parallelism is deliberately **single-level**: a single `par_iter` over the
+population, with a strictly sequential `solve_timesteps` inside the closure.
+Nested rayon parallelism inside the solver inner loop would exhaust the rayon
+thread pool (the population already saturates it) and has historically caused
+dead-locks under the GPU shared-batch path. The pre-commit hook
+`.githooks/batch-oracle-check.sh` fails any commit to `lib.rs` that introduces a
+second `par_iter` inside `evaluate_population`'s body — this is a hard
+correctness/perf gate, not a style preference. `ThermalModel` clones therefore
+must remain cheap and isolated: each clone is solved exactly once, from a
+pristine pre-solve state, on its own rayon worker.
+
+**`HybridThermalModel` clone asymmetry — slots reset, counters preserved.**
+`HybridThermalModel` (`src/sim/thermal_model.rs:766-784`) implements `Clone` by
+hand because its fields have divergent clone semantics:
+
+| Field group | On clone | Why |
+|---|---|---|
+| `inner: ThermalModel<VectorField>` | Deep-cloned | Pure-value state, round-trips correctly. |
+| `routing: HybridRouting` | Copied (plain `Copy`) | Routing policy must follow the clone. |
+| `conduction_solver: Box<dyn HeatConductionSolver>` | **Reset to `default_conduction_solver()`** | `Box<dyn>` solver objects carry per-step internal state (5R1C capacitance temperatures, FD/CTF history, etc.) that is not meaningfully cloneable across `dyn` types; rebuilding from the default wall spec keeps the slot usable without the caller re-initialising. |
+| `ventilation_schedule: Box<dyn VentilationSchedule>` | **Reset to `default_ventilation_schedule()`** | Same reasoning as the solver slot. |
+| `surrogate_load_calls`, `physics_conduction_calls`, `surrogate_conduction_calls`, `surrogate_ventilation_calls` | **Preserved verbatim** | These are observable routing-counters (Issue #1702 regression guards assert on them); preserving them lets a caller snapshot routing statistics across branches. |
+
+The asymmetry is intentional but easy to misuse. **Contract for consumers of
+`HybridThermalModel::clone`:**
+
+1. **Clone BEFORE solving.** This is the pattern every in-tree caller uses.
+   `BatchOracle::evaluate_population` clones an unsolved `base_model`;
+   `validation::empirical_hybrid` (`src/validation/empirical_hybrid.rs:293`)
+   clones a configured-but-unsolved model and then runs `solve_timesteps` on the
+   clone. In both cases the original is unsolved, so the counters being preserved
+   is a no-op (they are zero) and the reset solver slots match the counters.
+
+2. **Cloning AFTER `solve_timesteps` produces a model whose published routing
+   counters do not correspond to its solver state.** The clone will report the
+   original run's counter values while its solver/schedule slots are fresh
+   defaults — energy balances produced by the clone will not line up with the
+   counters a test or report generator might assert against. Any caller that
+   needs a post-solve branch must call `reset_counters()` on the clone before the
+   next `solve_timesteps`, so that the published counters and the solver state
+   agree on a single run.
+
+3. **The `conduction_solver` / `ventilation_schedule` slots do NOT round-trip
+   across clone.** If a caller installed a custom solver via
+   `set_conduction_solver` (e.g. an ONNX-trained wall surrogate, per Issue
+   #1896), cloning the model discards it and reinstates the default lightweight
+   wall spec. Re-install the custom solver on the clone, or do not rely on
+   clone to preserve it.
+
+The `ThermalModel`-level `Clone` contract (points 1–2 of the trait-level
+section above) does **not** relax any of these `HybridThermalModel`-specific
+rules; it only constrains the cost model of a single clone in the population
+loop. The acceptance criterion for issue #2539 is that the asymmetry is
+documented as part of the trait contract — a regression test asserting the
+clone-after-solve behaviour is an explicit non-goal of the documentation fix
+and would belong in `tests/` if added later.
 
 ### Inference Backend & CUDA Fallback Semantics (issue #1336)
 
