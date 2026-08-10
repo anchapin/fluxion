@@ -12,6 +12,7 @@ pub mod error;
 pub mod metrics;
 pub mod parameters;
 pub mod schema;
+pub mod security;
 pub mod server;
 
 // Re-export commonly used types

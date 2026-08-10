@@ -102,13 +102,11 @@ pub const MAX_BATCH_SIMULATIONS: usize = 1024;
 /// before any rayon work is spawned.
 pub const MAX_CAMPAIGN_STEPS: usize = (MAX_YEARS as usize) * 8760 * MAX_BATCH_SIMULATIONS;
 
-/// Maximum accepted request body size (Issue #2530). axum's default
-/// [`axum::extract::DefaultBodyLimit`] is 2 MiB, which would reject a legit
-/// `/v1/batch` of 1024 entries (~4.4 MiB at ~4.3 KiB/entry) before the
-/// [`MAX_BATCH_SIMULATIONS`] count cap could fire. 8 MiB accommodates a full
-/// batch with headroom for larger per-entry schemas while still bounding the
-/// allocation a single request can trigger.
-pub const MAX_REQUEST_BODY_BYTES: usize = 8 * 1024 * 1024;
+/// Maximum accepted request body size — re-exported from
+/// [`crate::api::security`] (Issue #2505). See there for the rationale.
+/// Kept at this path for API stability (callers and tests historically
+/// referenced `fluxion::api::server::MAX_REQUEST_BODY_BYTES`).
+pub use crate::api::security::MAX_REQUEST_BODY_BYTES;
 
 /// Wall-clock budget for any single HTTP request (Issue #2530). Enforced via
 /// `tower::timeout::TimeoutLayer` so a runaway synchronous `solve_timesteps`
@@ -1594,11 +1592,28 @@ async fn handle_timeout_error(err: BoxError) -> Response {
 /// Construct the application's router. Exposed so integration tests can
 /// mount it without going through the binary's env-var resolution path.
 ///
-/// Layer order matters (Issue #1447). `tower::ServiceBuilder` applies
-/// layers so that the **first** `.layer()` call sits as the **outermost**
-/// middleware (the request hits it first, the response leaves it last).
-/// We arrange them top-to-bottom here so that SetRequestIdLayer runs
-/// first on the request and PropagateRequestIdLayer runs last on the
+/// Security configuration is resolved from the environment (Issue #2505)
+/// via [`crate::api::security::RestSecurityConfig::from_env`]. In tests /
+/// local dev — where none of the `FLUXION_REST_*` vars are set — auth is
+/// `off`, CORS allows localhost dev origins, and the per-IP rate limiter
+/// has a generous default burst. Production operators set
+/// `FLUXION_REST_AUTH=token` (with `FLUXION_REST_AUTH_TOKEN`) and a real
+/// `FLUXION_REST_CORS_ORIGINS` allow-list. For an explicitly-configured
+/// build, prefer [`router_with_security`].
+pub fn router(state: AppState) -> Router {
+    router_with_security(state, crate::api::security::RestSecurityConfig::from_env())
+}
+
+/// Construct the application's router with an explicit security
+/// configuration (Issue #2505). The binary uses this entry point so the
+/// auth / CORS / rate-limit / boot-guard controls are all driven from one
+/// resolved [`RestSecurityConfig`].
+///
+/// Layer order matters (Issue #1447 / #2530 / #2505). `tower::ServiceBuilder`
+/// applies layers so that the **first** `.layer()` call sits as the
+/// **outermost** middleware (the request hits it first, the response leaves
+/// it last). We arrange them top-to-bottom here so that SetRequestIdLayer
+/// runs first on the request and PropagateRequestIdLayer runs last on the
 /// response:
 ///
 ///   0. `HandleErrorLayer` + `tower::timeout::TimeoutLayer` (Issue #2530) —
@@ -1612,9 +1627,20 @@ async fn handle_timeout_error(err: BoxError) -> Response {
 ///      the `x-request-id` header in scope.
 ///   3. `PropagateRequestIdLayer` — copies the captured `x-request-id`
 ///      onto the outbound response.
-///   4. `metrics::record` — innermost. Wraps the handler so it can
-///      observe the final response status and elapsed time.
-pub fn router(state: AppState) -> Router {
+///   4. `metrics::record` — innermost of the global stack. Wraps the
+///      handler so it can observe the final response status and elapsed
+///      time.
+///
+/// The per-request global stack above is applied outermost on the merged
+/// router. Inside it sit, in order: the CORS layer (handles preflight and
+/// stamps allow-list headers), the per-IP token-bucket governor (429), and
+/// the 16 MiB [`axum::extract::DefaultBodyLimit`] (#2505). The auth
+/// middleware is attached only to the **protected** sub-router so
+/// `/v1/healthz` stays reachable anonymously for liveness probes.
+pub fn router_with_security(
+    state: AppState,
+    cfg: crate::api::security::RestSecurityConfig,
+) -> Router {
     // Touch the recorder so it is installed at server start-up rather than
     // on the first request (matters for `/v1/metrics` smoke checks).
     let _ = metrics::init_recorder();
@@ -1648,8 +1674,10 @@ pub fn router(state: AppState) -> Router {
         .layer(middleware::from_fn(metrics::record))
         .into_inner();
 
-    Router::new()
-        .route("/v1/healthz", get(healthz))
+    // Issue #2505 — `/v1/healthz` stays public so liveness probes work
+    // without credentials. Every other `/v1/*` route is mounted on the
+    // protected sub-router, which carries the auth middleware.
+    let protected_routes = Router::new()
         .route("/v1/metrics", get(metrics_handler))
         .route("/v1/openapi.json", get(openapi_json))
         .route("/v1/openapi.yaml", get(openapi_yaml))
@@ -1661,12 +1689,29 @@ pub fn router(state: AppState) -> Router {
         .route("/v1/import/:fmt", post(import_format))
         .route("/v1/campaigns", post(submit_campaign))
         .route("/v1/campaigns/:id/status", get(get_campaign_status))
+        .layer(middleware::from_fn_with_state(
+            cfg.auth_state(),
+            crate::api::security::require_auth,
+        ));
+
+    Router::new()
+        .route("/v1/healthz", get(healthz))
+        .merge(protected_routes)
         .with_state(state)
-        // Issue #2530 — raise the body limit so a legit 1024-entry batch
-        // reaches the explicit [`MAX_BATCH_SIMULATIONS`] count cap instead of
-        // being rejected by axum's 2 MiB default. Still bounded to
-        // [`MAX_REQUEST_BODY_BYTES`] (8 MiB).
-        .layer(axum::extract::DefaultBodyLimit::max(MAX_REQUEST_BODY_BYTES))
+        // Issue #2505 — 16 MiB body cap (innermost global layer). Bounds
+        // `/v1/import/*` and every other POST before any handler allocates.
+        .layer(axum::extract::DefaultBodyLimit::max(
+            crate::api::security::MAX_REQUEST_BODY_BYTES,
+        ))
+        // Issue #2505 — per-IP token-bucket governor (429 on flood).
+        .layer(middleware::from_fn_with_state(
+            cfg.rate_limiter(),
+            crate::api::security::rate_limit_middleware,
+        ))
+        // Issue #2505 — explicit CORS allow-list (handles preflight).
+        .layer(cfg.cors_layer())
+        // Issues #2530 / #1447 — outermost global stack: 60 s timeout +
+        // request-id + trace + metrics.
         .layer(middleware_stack)
 }
 
@@ -2365,6 +2410,330 @@ mod tests {
             }),
             "expected a surrogate-fallback WARN carrying request_id `test-123`; \
              captured events: {guard:?}"
+        );
+    }
+
+    // =====================================================================
+    // Issue #2505 — auth / CORS / body-limit / rate-limit acceptance tests.
+    // These exercise the layered router built by `router_with_security`
+    // directly via `tower::ServiceExt::oneshot` (no socket needed).
+    // =====================================================================
+
+    /// Build a request with optional `Authorization` and `Origin` headers.
+    fn build_request(
+        method: axum::http::Method,
+        uri: &str,
+        body: axum::body::Body,
+        auth_token: Option<&str>,
+        origin: Option<&str>,
+    ) -> Request {
+        let mut b = Request::builder().method(method).uri(uri);
+        if let Some(tok) = auth_token {
+            b = b.header(axum::http::header::AUTHORIZATION, format!("Bearer {tok}"));
+        }
+        if let Some(o) = origin {
+            b = b.header(axum::http::header::ORIGIN, o);
+        }
+        b.body(body).unwrap()
+    }
+
+    /// Read the full response body as bytes.
+    async fn body_bytes(response: Response) -> Vec<u8> {
+        axum::body::to_bytes(response.into_body(), usize::MAX)
+            .await
+            .unwrap()
+            .to_vec()
+    }
+
+    /// Issue #2505 (a): a request to a protected `/v1/*` route without a
+    /// bearer token is rejected with `401` when `AUTH=token`.
+    #[tokio::test]
+    async fn auth_token_mode_rejects_missing_credential() {
+        let mut cfg = crate::api::security::RestSecurityConfig::default();
+        cfg.auth_mode = crate::api::security::AuthMode::Token;
+        cfg.auth_token = Some("s3cret".to_string());
+        let app = router_with_security(AppState::default(), cfg);
+
+        let req = build_request(
+            axum::http::Method::GET,
+            "/v1/metrics",
+            axum::body::Body::empty(),
+            None,
+            None,
+        );
+        let resp = tower::ServiceExt::oneshot(app, req).await.unwrap();
+        assert_eq!(
+            resp.status(),
+            StatusCode::UNAUTHORIZED,
+            "protected route without token must be 401"
+        );
+    }
+
+    /// Issue #2505 (a): a request with the correct bearer token passes the
+    /// auth gate and reaches the handler.
+    #[tokio::test]
+    async fn auth_token_mode_accepts_correct_token() {
+        let mut cfg = crate::api::security::RestSecurityConfig::default();
+        cfg.auth_mode = crate::api::security::AuthMode::Token;
+        cfg.auth_token = Some("s3cret".to_string());
+        let app = router_with_security(AppState::default(), cfg);
+
+        let req = build_request(
+            axum::http::Method::GET,
+            "/v1/metrics",
+            axum::body::Body::empty(),
+            Some("s3cret"),
+            None,
+        );
+        let resp = tower::ServiceExt::oneshot(app, req).await.unwrap();
+        // `/v1/metrics` is a plain GET; reaching the handler yields 200.
+        assert_eq!(
+            resp.status(),
+            StatusCode::OK,
+            "correct token must reach the handler"
+        );
+    }
+
+    /// Issue #2505 (a): `/v1/healthz` stays reachable without credentials
+    /// even when auth is enabled (liveness probes must work anonymously).
+    #[tokio::test]
+    async fn healthz_is_exempt_from_auth() {
+        let mut cfg = crate::api::security::RestSecurityConfig::default();
+        cfg.auth_mode = crate::api::security::AuthMode::Token;
+        cfg.auth_token = Some("s3cret".to_string());
+        let app = router_with_security(AppState::default(), cfg);
+
+        let req = build_request(
+            axum::http::Method::GET,
+            "/v1/healthz",
+            axum::body::Body::empty(),
+            None,
+            None,
+        );
+        let resp = tower::ServiceExt::oneshot(app, req).await.unwrap();
+        assert_eq!(
+            resp.status(),
+            StatusCode::OK,
+            "healthz must be reachable without auth"
+        );
+    }
+
+    /// Issue #2505 (a): the wrong token is rejected with `401`.
+    #[tokio::test]
+    async fn auth_token_mode_rejects_wrong_token() {
+        let mut cfg = crate::api::security::RestSecurityConfig::default();
+        cfg.auth_mode = crate::api::security::AuthMode::Token;
+        cfg.auth_token = Some("s3cret".to_string());
+        let app = router_with_security(AppState::default(), cfg);
+
+        let req = build_request(
+            axum::http::Method::GET,
+            "/v1/metrics",
+            axum::body::Body::empty(),
+            Some("wrong"),
+            None,
+        );
+        let resp = tower::ServiceExt::oneshot(app, req).await.unwrap();
+        assert_eq!(resp.status(), StatusCode::UNAUTHORIZED);
+    }
+
+    /// Issue #2505 (b): a request body exceeding the 16 MiB cap is rejected
+    /// with `413 Payload Too Large` before the handler runs.
+    #[tokio::test]
+    async fn body_limit_rejects_oversized_body() {
+        // Sanity: the production cap is exactly 16 MiB.
+        assert_eq!(
+            crate::api::security::MAX_REQUEST_BODY_BYTES,
+            16 * 1024 * 1024
+        );
+
+        let cfg = crate::api::security::RestSecurityConfig::default(); // auth off
+        let app = router_with_security(AppState::default(), cfg);
+
+        let oversized = vec![0u8; crate::api::security::MAX_REQUEST_BODY_BYTES + 1];
+        let req = build_request(
+            axum::http::Method::POST,
+            "/v1/import/osm",
+            axum::body::Body::from(oversized),
+            None,
+            None,
+        );
+        let resp = tower::ServiceExt::oneshot(app, req).await.unwrap();
+        assert_eq!(
+            resp.status(),
+            StatusCode::PAYLOAD_TOO_LARGE,
+            "body > 16 MiB must be rejected with 413"
+        );
+    }
+
+    /// Issue #2505 (b): a body exactly at the cap is accepted past the
+    /// limit layer (it may still fail in the handler for unrelated reasons,
+    /// so we only assert it is NOT a 413).
+    #[tokio::test]
+    async fn body_limit_accepts_body_at_cap() {
+        let cfg = crate::api::security::RestSecurityConfig::default();
+        let app = router_with_security(AppState::default(), cfg);
+
+        let at_cap = vec![0u8; crate::api::security::MAX_REQUEST_BODY_BYTES];
+        let req = build_request(
+            axum::http::Method::POST,
+            "/v1/import/osm",
+            axum::body::Body::from(at_cap),
+            None,
+            None,
+        );
+        let resp = tower::ServiceExt::oneshot(app, req).await.unwrap();
+        assert_ne!(
+            resp.status(),
+            StatusCode::PAYLOAD_TOO_LARGE,
+            "body exactly at the cap must not be rejected as 413"
+        );
+    }
+
+    /// Issue #2505 (c): a CORS preflight (`OPTIONS`) for an allowed origin
+    /// returns the `access-control-allow-origin` header echoing that origin.
+    #[tokio::test]
+    async fn cors_preflight_allows_origin_in_allowlist() {
+        let mut cfg = crate::api::security::RestSecurityConfig::default();
+        cfg.cors_origins = vec!["http://localhost:3000".to_string()];
+        let app = router_with_security(AppState::default(), cfg);
+
+        let req = Request::builder()
+            .method(axum::http::Method::OPTIONS)
+            .uri("/v1/simulate")
+            .header(axum::http::header::ORIGIN, "http://localhost:3000")
+            .header(axum::http::header::ACCESS_CONTROL_REQUEST_METHOD, "POST")
+            .header(
+                axum::http::header::ACCESS_CONTROL_REQUEST_HEADERS,
+                "content-type",
+            )
+            .body(axum::body::Body::empty())
+            .unwrap();
+        let resp = tower::ServiceExt::oneshot(app, req).await.unwrap();
+        let allow_origin = resp
+            .headers()
+            .get(axum::http::header::ACCESS_CONTROL_ALLOW_ORIGIN)
+            .expect("preflight for an allowed origin must set access-control-allow-origin");
+        assert_eq!(
+            allow_origin.to_str().unwrap(),
+            "http://localhost:3000",
+            "allow-origin must echo the allowed origin exactly"
+        );
+    }
+
+    /// Issue #2505 (c): a CORS preflight for a *disallowed* origin receives
+    /// no `access-control-allow-origin` header (browser denies the request).
+    #[tokio::test]
+    async fn cors_preflight_denies_origin_not_in_allowlist() {
+        let mut cfg = crate::api::security::RestSecurityConfig::default();
+        cfg.cors_origins = vec!["http://localhost:3000".to_string()];
+        let app = router_with_security(AppState::default(), cfg);
+
+        let req = Request::builder()
+            .method(axum::http::Method::OPTIONS)
+            .uri("/v1/simulate")
+            .header(axum::http::header::ORIGIN, "https://evil.example.com")
+            .header(axum::http::header::ACCESS_CONTROL_REQUEST_METHOD, "POST")
+            .body(axum::body::Body::empty())
+            .unwrap();
+        let resp = tower::ServiceExt::oneshot(app, req).await.unwrap();
+        assert!(
+            resp.headers()
+                .get(axum::http::header::ACCESS_CONTROL_ALLOW_ORIGIN)
+                .is_none(),
+            "disallowed origin must not receive an allow-origin header"
+        );
+    }
+
+    /// Issue #2505 (d): flooding a single IP past the token-bucket burst is
+    /// throttled with `429 Too Many Requests`. Uses a tight test config so
+    /// the assertion is deterministic without sending thousands of requests.
+    #[tokio::test]
+    async fn rate_limiter_throttles_flood_from_one_ip() {
+        let mut cfg = crate::api::security::RestSecurityConfig::default();
+        cfg.rate_limit_rps = 1;
+        cfg.rate_limit_burst = 3; // tiny bucket for a deterministic test
+                                  // Build the router once so all clones share the same limiter.
+        let app = router_with_security(AppState::default(), cfg);
+
+        // First `burst` requests are allowed; the next is rejected.
+        let mut got_429 = false;
+        let mut allowed = 0usize;
+        for _ in 0..10 {
+            // Each iteration clones `app`; cloned routers share the
+            // Arc-backed rate-limiter state.
+            let router_clone = app.clone();
+            let req = Request::builder()
+                .method(axum::http::Method::GET)
+                .uri("/v1/healthz")
+                .header("x-forwarded-for", "198.51.100.7")
+                .body(axum::body::Body::empty())
+                .unwrap();
+            let resp = tower::ServiceExt::oneshot(router_clone, req).await.unwrap();
+            if resp.status() == StatusCode::TOO_MANY_REQUESTS {
+                got_429 = true;
+                // Drain body.
+                let _ = body_bytes(resp).await;
+                break;
+            } else {
+                allowed += 1;
+                let _ = body_bytes(resp).await;
+            }
+        }
+        assert!(allowed <= 3, "burst capacity should bound allowed requests");
+        assert!(
+            got_429,
+            "after draining the bucket the flood must be throttled with 429"
+        );
+    }
+
+    /// Issue #2505 (d): distinct IPs are not penalised for each other's
+    /// traffic (per-IP isolation).
+    #[tokio::test]
+    async fn rate_limiter_isolates_distinct_ips() {
+        let mut cfg = crate::api::security::RestSecurityConfig::default();
+        cfg.rate_limit_rps = 1;
+        cfg.rate_limit_burst = 1;
+        let app = router_with_security(AppState::default(), cfg);
+
+        // Drain IP A's single token.
+        let req_a = Request::builder()
+            .method(axum::http::Method::GET)
+            .uri("/v1/healthz")
+            .header("x-forwarded-for", "198.51.100.10")
+            .body(axum::body::Body::empty())
+            .unwrap();
+        let resp = tower::ServiceExt::oneshot(app.clone(), req_a)
+            .await
+            .unwrap();
+        assert_ne!(resp.status(), StatusCode::TOO_MANY_REQUESTS);
+        let _ = body_bytes(resp).await;
+
+        // IP A is now empty → next request from A is throttled.
+        let req_a2 = Request::builder()
+            .method(axum::http::Method::GET)
+            .uri("/v1/healthz")
+            .header("x-forwarded-for", "198.51.100.10")
+            .body(axum::body::Body::empty())
+            .unwrap();
+        let resp = tower::ServiceExt::oneshot(app.clone(), req_a2)
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::TOO_MANY_REQUESTS);
+        let _ = body_bytes(resp).await;
+
+        // IP B has its own bucket → allowed.
+        let req_b = Request::builder()
+            .method(axum::http::Method::GET)
+            .uri("/v1/healthz")
+            .header("x-forwarded-for", "198.51.100.11")
+            .body(axum::body::Body::empty())
+            .unwrap();
+        let resp = tower::ServiceExt::oneshot(app, req_b).await.unwrap();
+        assert_ne!(
+            resp.status(),
+            StatusCode::TOO_MANY_REQUESTS,
+            "different IP must have its own bucket"
         );
     }
 }
