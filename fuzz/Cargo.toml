@@ -1,0 +1,55 @@
+[package]
+name = "fluxion-fuzz"
+version = "0.0.0"
+publish = false
+edition = "2021"
+description = "libFuzzer targets for the fluxion FFI surface and zone-balance solver (issue #2537)."
+
+[package.metadata]
+cargo-fuzz = true
+
+# The fuzz crate depends on libfuzzer-sys (nightly + -Zsanitizer=address).
+# To keep `cargo build` / `cargo check` at the repo root working under stable,
+# this crate is declared as its OWN workspace root so cargo does not try to
+# merge it into the parent workspace (which would force every developer build
+# to pull in the nightly-only libfuzzer dependency).
+[workspace]
+
+[dependencies]
+libfuzzer-sys = "0.4"
+# `arbitrary` provides the `Arbitrary` derive used to structure the raw fuzzer
+# bytes into typed inputs (NaN/Inf float coverage, extreme U-values, ...).
+arbitrary = { version = "1", features = ["derive"] }
+# `tempfile` is used by the EPW-parser target to write fuzzer bytes to a file
+# (EpwWeatherSource::from_file is the only public entry point).
+tempfile = "3"
+
+# Fuzz the production `fluxion` crate (the same crate the PyO3 / NAPI bindings
+# wrap). Feature flags are left at defaults so the fuzz targets exercise the
+# same physics + validation code paths that ship in the default build.
+[dependencies.fluxion]
+path = ".."
+
+# ----------------------------------------------------------------------------
+# Fuzz target binaries — one per public API surface listed in issue #2537.
+# ----------------------------------------------------------------------------
+[[bin]]
+name = "ffi_batch_oracle"
+path = "fuzz_targets/ffi_batch_oracle.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "zone_balance_solver"
+path = "fuzz_targets/zone_balance_solver.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "epw_parser"
+path = "fuzz_targets/epw_parser.rs"
+test = false
+doc = false
+bench = false
