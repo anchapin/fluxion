@@ -79,13 +79,17 @@ fluxion = "fluxion.cli:main"
 # so that pure-Python helpers (e.g. ``fluxion.measures``, ``fluxion.cli``
 # added in issue #1814) ship alongside the compiled ``.abi3.so``.
 #
-# Without the ``pyo3/extension-module`` feature, maturin produces a regular
-# Python package layout: ``fluxion/__init__.py`` re-exports the Rust
-# extension at ``fluxion.fluxion``. The ``source = ["fluxion"]`` below
-# tells maturin to include any ``.py`` files we add to that directory in
-# the wheel — required for the ``FluxionMeasure`` base class and the
-# ``fluxion apply-measures`` CLI (issue #1814).
-features = ["python-bindings"]
+# ``python-extension`` enables ``pyo3/extension-module`` on top of
+# ``python-bindings`` (Issue #2532). Without ``pyo3/extension-module`` the
+# resulting artifact would link libpython and try to initialise an embedded
+# interpreter, which is wrong for a CPython extension. ``cargo test
+# --features python-bindings`` uses only ``python-bindings`` (no extension)
+# so the test binary can link libpython and exercise the Rust-side wrappers.
+# The ``source = ["fluxion"]`` below tells maturin to include any ``.py``
+# files we add to that directory in the wheel — required for the
+# ``FluxionMeasure`` base class and the ``fluxion apply-measures`` CLI
+# (issue #1814).
+features = ["python-extension"]
 module-name = "fluxion.fluxion"
 
 [tool.black]

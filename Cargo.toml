@@ -54,8 +54,14 @@ crate-type = ["cdylib", "rlib"]
 
 [features]
 default = []
-# Feature flag to enable Python bindings (disabled by default for pure Rust testing)
+# Feature flag to enable Python bindings (disabled by default for pure Rust testing).
+# Links libpython so the resulting binary can initialize a Python interpreter
+# (needed for `cargo test --features python-bindings`).
 python-bindings = ["dep:pyo3", "dep:pyo3-build-config", "dep:numpy"]
+# Build the crate as a Python extension module (no libpython link; the host
+# interpreter provides the CPython symbols at load time). Enable this in
+# addition to `python-bindings` when building the wheel with maturin. Issue #2532.
+python-extension = ["python-bindings", "pyo3/extension-module"]
 # Feature flag to enable Node.js/NAPI bindings (disabled by default for pure Rust testing)
 napi-bindings = ["dep:napi", "dep:napi-derive", "dep:napi-build"]
 # ONNX Runtime support (issue #1294). When disabled (the default), the crate does
@@ -202,7 +208,7 @@ statrs = "0.18.0"
 ort = { version = "2.0.0-rc.10", features = ["download-binaries"], optional = true }
 
 # Python Interop
-pyo3 = { version = "0.22", features = ["extension-module", "auto-initialize", "abi3-py310"], optional = true }
+pyo3 = { version = "0.22", features = ["auto-initialize", "abi3-py310"], optional = true }
 numpy = { version = "0.22", optional = true }
 
 # Node.js/NAPI Interop

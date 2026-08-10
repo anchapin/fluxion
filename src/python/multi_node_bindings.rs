@@ -638,3 +638,215 @@ impl PyMultiNodeSolver {
         self.last_dt = solver.last_dt;
     }
 }
+
+#[cfg(all(test, feature = "python-bindings"))]
+mod tests {
+    //! Rust-side inline tests for the PyO3 wrappers in this module (Issue #2532).
+    //!
+    //! Coverage focuses on the pure-Rust conversion / helper layer:
+    //! - `From` round-trips for `ThermalMassNode`, `MultiNodeThermalMass`,
+    //!   `SurfaceExteriorTemperatures`, and `MassAirCouplingMode`,
+    //! - `PyMultiNodeSolver` field setters (conductances, capacitances,
+    //!   temperatures) and aggregate helpers (`wall_temperature`,
+    //!   `effective_time_constant`),
+    //! - `PyMultiNodeSolver::new` end-to-end (constructs an inner solver and
+    //!   snapshots it back into the Python wrapper),
+    //! - `PyMultiNodeSolver::initialize_temperatures` mass-setter,
+    //! - `step()` smoke test (executes one solver step without panic).
+
+    use super::*;
+
+    // ========================================================================
+    // PyThermalMassNode round-trip + constructor
+    // ========================================================================
+
+    #[test]
+    fn thermal_mass_node_constructor_defaults_cumulative_flux_to_zero() {
+        let n = PyThermalMassNode::new(20.0, 1e6, 100.0, 50.0, 30.0);
+        assert_eq!(n.temperature, 20.0);
+        assert_eq!(n.capacitance, 1e6);
+        assert_eq!(n.h_tr_ms, 100.0);
+        assert_eq!(n.h_tr_em, 50.0);
+        assert_eq!(n.h_tr_me, 30.0);
+        assert_eq!(n.heat_flux_cumulative, 0.0);
+    }
+
+    #[test]
+    fn thermal_mass_node_from_inner_copies_all_fields() {
+        let inner = ThermalMassNode::new(22.0, 5e5, 80.0, 40.0).with_h_tr_me(25.0);
+        let py = PyThermalMassNode::from(&inner);
+        assert_eq!(py.temperature, 22.0);
+        assert_eq!(py.capacitance, 5e5);
+        assert_eq!(py.h_tr_ms, 80.0);
+        assert_eq!(py.h_tr_em, 40.0);
+        assert_eq!(py.h_tr_me, 25.0);
+    }
+
+    // ========================================================================
+    // PyMultiNodeThermalMass round-trip
+    // ========================================================================
+
+    #[test]
+    fn multi_node_thermal_mass_from_inner_copies_all_four_nodes() {
+        let inner = MultiNodeThermalMass {
+            wall: ThermalMassNode::new(1.0, 10.0, 100.0, 200.0).with_h_tr_me(50.0),
+            roof: ThermalMassNode::new(2.0, 20.0, 110.0, 210.0).with_h_tr_me(51.0),
+            floor: ThermalMassNode::new(3.0, 30.0, 120.0, 220.0).with_h_tr_me(52.0),
+            internal: ThermalMassNode::new(4.0, 40.0, 130.0, 230.0).with_h_tr_me(53.0),
+        };
+        let py = PyMultiNodeThermalMass::from(&inner);
+        assert_eq!(py.wall.temperature, 1.0);
+        assert_eq!(py.roof.temperature, 2.0);
+        assert_eq!(py.floor.temperature, 3.0);
+        assert_eq!(py.internal.temperature, 4.0);
+        assert_eq!(py.wall.h_tr_me, 50.0);
+        assert_eq!(py.internal.capacitance, 40.0);
+    }
+
+    // ========================================================================
+    // PySurfaceExteriorTemperatures round-trip
+    // ========================================================================
+
+    #[test]
+    fn surface_exterior_temperatures_round_trip_preserves_fields() {
+        let src = SurfaceExteriorTemperatures {
+            t_ext_wall: 5.0,
+            t_ext_roof: 10.0,
+            t_ext_floor: -2.0,
+        };
+        let py = PySurfaceExteriorTemperatures::from(&src);
+        assert_eq!(py.t_ext_wall, 5.0);
+        assert_eq!(py.t_ext_roof, 10.0);
+        assert_eq!(py.t_ext_floor, -2.0);
+
+        let back: SurfaceExteriorTemperatures = SurfaceExteriorTemperatures::from(&py);
+        assert_eq!(back.t_ext_wall, src.t_ext_wall);
+        assert_eq!(back.t_ext_roof, src.t_ext_roof);
+        assert_eq!(back.t_ext_floor, src.t_ext_floor);
+    }
+
+    // ========================================================================
+    // PyMassAirCouplingMode round-trip
+    // ========================================================================
+
+    #[test]
+    fn mass_air_coupling_mode_round_trip_preserves_both_variants() {
+        for v in [
+            MassAirCouplingMode::AdditiveSum,
+            MassAirCouplingMode::ParallelResistance,
+        ] {
+            let py: PyMassAirCouplingMode = v.into();
+            let back: MassAirCouplingMode = py.into();
+            assert_eq!(back, v);
+        }
+    }
+
+    // ========================================================================
+    // PyMultiNodeSolver construction
+    // ========================================================================
+
+    fn sample_solver() -> PyMultiNodeSolver {
+        // Realistic-ish 9R4C node values.
+        let wall = PyThermalMassNode::new(20.0, 1.0e5, 100.0, 50.0, 30.0);
+        let roof = PyThermalMassNode::new(20.0, 0.8e5, 90.0, 45.0, 25.0);
+        let floor = PyThermalMassNode::new(20.0, 1.2e5, 110.0, 55.0, 35.0);
+        let internal = PyThermalMassNode::new(20.0, 0.5e5, 80.0, 40.0, 20.0);
+        PyMultiNodeSolver::new(8.0, wall, roof, floor, internal)
+    }
+
+    #[test]
+    fn solver_constructor_initializes_with_provided_node_temperatures() {
+        let s = sample_solver();
+        assert!((s.wall_temperature() - 20.0).abs() < 1e-12);
+        assert!((s.roof_temperature() - 20.0).abs() < 1e-12);
+        assert!((s.floor_temperature() - 20.0).abs() < 1e-12);
+        assert!((s.internal_temperature() - 20.0).abs() < 1e-12);
+        // MultiNodeSolver::new defaults zone_temperature to 20.0 °C.
+        assert!((s.zone_temperature() - 20.0).abs() < 1e-12);
+    }
+
+    #[test]
+    fn solver_initialize_temperatures_sets_all_nodes_and_zone() {
+        let mut s = sample_solver();
+        s.initialize_temperatures(18.5);
+        assert!((s.wall_temperature() - 18.5).abs() < 1e-12);
+        assert!((s.roof_temperature() - 18.5).abs() < 1e-12);
+        assert!((s.floor_temperature() - 18.5).abs() < 1e-12);
+        assert!((s.internal_temperature() - 18.5).abs() < 1e-12);
+        assert!((s.zone_temperature() - 18.5).abs() < 1e-12);
+        assert!((s.surface_temperature() - 18.5).abs() < 1e-12);
+    }
+
+    #[test]
+    fn solver_setters_update_individual_node_fields() {
+        let mut s = sample_solver();
+
+        s.set_wall_conductances(11.0, 22.0);
+        assert!((s.mass.wall.h_tr_em - 11.0).abs() < 1e-12);
+        assert!((s.mass.wall.h_tr_ms - 22.0).abs() < 1e-12);
+
+        s.set_roof_conductances(13.0, 17.0);
+        assert!((s.mass.roof.h_tr_em - 13.0).abs() < 1e-12);
+        assert!((s.mass.roof.h_tr_ms - 17.0).abs() < 1e-12);
+
+        s.set_floor_conductances(19.0, 23.0);
+        assert!((s.mass.floor.h_tr_em - 19.0).abs() < 1e-12);
+        assert!((s.mass.floor.h_tr_ms - 23.0).abs() < 1e-12);
+
+        s.set_internal_conductance(42.0);
+        assert!((s.mass.internal.h_tr_me - 42.0).abs() < 1e-12);
+
+        s.set_wall_capacitance(1e6);
+        assert!((s.mass.wall.capacitance - 1e6).abs() < 1e-6);
+    }
+
+    #[test]
+    fn solver_effective_time_constant_matches_formula() {
+        // τ = C_total / (h_tr_is + (h_tr_ms_wall + h_tr_ms_roof + h_tr_ms_floor) / 3)
+        let s = sample_solver();
+        let c_total = s.mass.wall.capacitance
+            + s.mass.roof.capacitance
+            + s.mass.floor.capacitance
+            + s.mass.internal.capacitance;
+        let h_tr_ms_total = s.mass.wall.h_tr_ms + s.mass.roof.h_tr_ms + s.mass.floor.h_tr_ms;
+        let expected = c_total / (s.h_tr_is + h_tr_ms_total / 3.0);
+        assert!((s.effective_time_constant() - expected).abs() < 1e-9);
+    }
+
+    #[test]
+    fn solver_exterior_temperatures_round_trip_through_setter() {
+        let mut s = sample_solver();
+        let py = PySurfaceExteriorTemperatures::new(-3.0, 8.0, 12.0);
+        s.set_exterior_temperatures(py);
+        let got = s.exterior_temperatures();
+        assert!((got.t_ext_wall - (-3.0)).abs() < 1e-12);
+        assert!((got.t_ext_roof - 8.0).abs() < 1e-12);
+        assert!((got.t_ext_floor - 12.0).abs() < 1e-12);
+    }
+
+    #[test]
+    fn solver_coupling_mode_setter_round_trips() {
+        let mut s = sample_solver();
+        s.set_coupling_mode(PyMassAirCouplingMode::ParallelResistance);
+        assert_eq!(s.coupling_mode(), PyMassAirCouplingMode::ParallelResistance);
+        s.set_coupling_mode(PyMassAirCouplingMode::AdditiveSum);
+        assert_eq!(s.coupling_mode(), PyMassAirCouplingMode::AdditiveSum);
+    }
+
+    #[test]
+    fn solver_step_does_not_panic_for_short_dt() {
+        // One short step. We're not asserting on the resulting temperatures
+        // (the underlying MultiNodeSolver already has its own unit tests); the
+        // point here is to exercise the `to_solver → step → sync_from_solver`
+        // plumbing so a regression in either direction surfaces immediately.
+        let mut s = sample_solver();
+        s.initialize_temperatures(20.0);
+        s.set_exterior_temperature(20.0);
+        s.set_timestep_seconds(3600.0);
+        s.step(3600.0);
+        // After one step with equal interior/exterior, the zone temperature
+        // should still be finite (no NaN / inf).
+        assert!(s.zone_temperature().is_finite());
+        assert!(s.wall_temperature().is_finite());
+    }
+}
