@@ -63,7 +63,7 @@ pub fn execute_report_generate_command(
     // Write report to file
     std::fs::write(&args.output, report)?;
 
-    println!("Report generated successfully: {}", args.output.display());
+    tracing::info!("Report generated successfully: {}", args.output.display());
     Ok(())
 }
 

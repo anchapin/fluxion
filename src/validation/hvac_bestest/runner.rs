@@ -383,7 +383,7 @@ impl HVACBestestRunner {
 
         let elapsed = start.elapsed();
         if elapsed.as_secs() > 0 {
-            println!("  Chiller simulation: {:.2}s", elapsed.as_secs_f64());
+            tracing::info!("  Chiller simulation: {:.2}s", elapsed.as_secs_f64());
         }
 
         (total_energy_kwh, peak_demand_w)
@@ -437,7 +437,7 @@ impl HVACBestestRunner {
 
         let elapsed = start.elapsed();
         if elapsed.as_secs() > 0 {
-            println!("  Boiler simulation: {:.2}s", elapsed.as_secs_f64());
+            tracing::info!("  Boiler simulation: {:.2}s", elapsed.as_secs_f64());
         }
 
         (total_energy_kwh, peak_demand_w)
@@ -498,7 +498,7 @@ impl HVACBestestRunner {
 
         let elapsed = start.elapsed();
         if elapsed.as_secs() > 0 {
-            println!("  HeatPump simulation: {:.2}s", elapsed.as_secs_f64());
+            tracing::info!("  HeatPump simulation: {:.2}s", elapsed.as_secs_f64());
         }
 
         (total_energy_kwh, peak_demand_w)
@@ -541,7 +541,7 @@ impl HVACBestestRunner {
 
         let elapsed = start.elapsed();
         if elapsed.as_secs() > 0 {
-            println!("  VAV simulation: {:.2}s", elapsed.as_secs_f64());
+            tracing::info!("  VAV simulation: {:.2}s", elapsed.as_secs_f64());
         }
 
         (total_energy_kwh, peak_demand_w)
@@ -583,7 +583,7 @@ impl HVACBestestRunner {
 
         let elapsed = start.elapsed();
         if elapsed.as_secs() > 0 {
-            println!("  CAV simulation: {:.2}s", elapsed.as_secs_f64());
+            tracing::info!("  CAV simulation: {:.2}s", elapsed.as_secs_f64());
         }
 
         (total_energy_kwh, peak_demand_w)
@@ -677,7 +677,7 @@ impl HVACBestestRunner {
 
         let elapsed = start.elapsed();
         if elapsed.as_secs() > 0 {
-            println!("  CAV terminal simulation: {:.2}s", elapsed.as_secs_f64());
+            tracing::info!("  CAV terminal simulation: {:.2}s", elapsed.as_secs_f64());
         }
 
         (total_energy_kwh, peak_demand_w)

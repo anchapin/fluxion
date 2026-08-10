@@ -1447,7 +1447,7 @@ impl ASHRAE140MultiZoneValidator {
 
         // Generate report
         let report_text = case_validator.generate_report();
-        println!("{}", report_text);
+        tracing::info!("{}", report_text);
 
         // Determine overall pass/fail
         let overall_pass = heating_pass && cooling_pass;

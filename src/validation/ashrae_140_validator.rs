@@ -176,7 +176,7 @@ impl ASHRAE140Validator {
                     validator.multi_ref = Some(db);
                 }
                 Err(e) => {
-                    eprintln!(
+                    tracing::warn!(
                         "Warning: Failed to load multi-reference data from {}: {}",
                         default_multi_ref_path.display(),
                         e
@@ -246,7 +246,7 @@ impl ASHRAE140Validator {
                 self.multi_ref = Some(db);
             }
             Err(e) => {
-                eprintln!("Warning: Failed to load multi-reference data: {}", e);
+                tracing::warn!("Warning: Failed to load multi-reference data: {}", e);
             }
         }
         self
@@ -476,7 +476,7 @@ impl ASHRAE140Validator {
 
                 if spec.is_free_floating() {
                     if self.diagnostic_config.verbose {
-                        println!(
+                        tracing::info!(
                             "Case {} (Free-Floating): Min Temp={:.2}°C (Ref: {:.2}-{:.2}), Max Temp={:.2}°C (Ref: {:.2}-{:.2})",
                             case_id,
                             results.min_temp_celsius.unwrap_or(0.0),
@@ -535,7 +535,7 @@ impl ASHRAE140Validator {
                     }
                 } else {
                     if self.diagnostic_config.verbose {
-                        println!(
+                        tracing::info!(
                             "Case {}: Heating={:.2} (Ref: {:.2}-{:.2}), Cooling={:.2} (Ref: {:.2}-{:.2}), Peak H={:.2}, Peak C={:.2}",
                             case_id,
                             results.annual_heating_mwh,
@@ -641,7 +641,7 @@ impl ASHRAE140Validator {
         if self.diagnostic_config.output_hourly {
             if let Some(ref path) = self.diagnostic_config.hourly_output_path {
                 if let Err(e) = diagnostic_report.export_hourly_csv(path) {
-                    eprintln!("Failed to export hourly data: {}", e);
+                    tracing::warn!("Failed to export hourly data: {}", e);
                 }
             }
         }
@@ -652,7 +652,7 @@ impl ASHRAE140Validator {
             if let Some(ref path) = self.diagnostic_config.hourly_output_path {
                 let ff_path = path.replace(".csv", "_ff_temps.csv");
                 if let Err(e) = diagnostic_report.export_hourly_temperature_profiles_csv(&ff_path) {
-                    eprintln!("Failed to export FF temperature profiles: {}", e);
+                    tracing::warn!("Failed to export FF temperature profiles: {}", e);
                 }
             }
         }
@@ -696,7 +696,7 @@ impl ASHRAE140Validator {
 
             // Validate controller configuration
             if let Err(e) = controller.validate() {
-                eprintln!("Warning: Invalid HVAC controller config: {}", e);
+                tracing::warn!("Warning: Invalid HVAC controller config: {}", e);
             }
 
             // Run simulation with the controller
@@ -916,7 +916,7 @@ impl ASHRAE140Validator {
             if spec.case_id == "600" && step % 8760 == 4380 {
                 let t_free =
                     model.calculate_free_float_temperature(step, weather_data.dry_bulb_temp);
-                println!("DEBUG Case 600 hour={}: t_free={:.2}°C, heating_sp={:.1}°C, cooling_sp={:.1}°C",
+                tracing::debug!("DEBUG Case 600 hour={}: t_free={:.2}°C, heating_sp={:.1}°C, cooling_sp={:.1}°C",
                     step % 24, t_free, model.heating_setpoint, model.cooling_setpoint);
             }
 
@@ -927,9 +927,10 @@ impl ASHRAE140Validator {
                 if let Some(&zone_0_temp) = model.temperatures.as_slice().first() {
                     // DEBUG: Print when max changes significantly
                     if zone_0_temp > 30.0 || zone_0_temp < -20.0 {
-                        eprintln!(
+                        tracing::warn!(
                             "DEBUG_900FF_VAL step={} zone_0_temp={:.2}",
-                            step, zone_0_temp
+                            step,
+                            zone_0_temp
                         );
                     }
                     min_temp_celsius = min_temp_celsius.min(zone_0_temp);
@@ -1225,7 +1226,7 @@ impl ASHRAE140Validator {
                 // Print results for transparency
 
                 if partial.is_free_floating {
-                    println!(
+                    tracing::info!(
                         "Case {} (Free-Floating): Min Temp={:.2}°C (Ref: {:.2}-{:.2}), Max Temp={:.2}°C (Ref: {:.2}-{:.2})",
                         partial.case_id,
                         results.min_temp_celsius.unwrap_or(0.0),
@@ -1256,7 +1257,7 @@ impl ASHRAE140Validator {
                         );
                     }
                 } else {
-                    println!(
+                    tracing::info!(
                         "Case {}: Heating={:.2} (Ref: {:.2}-{:.2}), Cooling={:.2} (Ref: {:.2}-{:.2}), Peak H={:.2}, Peak C={:.2}",
                         partial.case_id,
                         results.annual_heating_mwh,
@@ -1318,7 +1319,7 @@ impl ASHRAE140Validator {
                 "195-470" => {
                     // Note: Cases 195-470 diagnostic range validation
                     // Only available in test mode via tests/ashrae_140/diagnostics.rs
-                    println!(
+                    tracing::info!(
                         "Diagnostic range {} registered (requires test mode for execution)",
                         range
                     );
@@ -1326,7 +1327,7 @@ impl ASHRAE140Validator {
                 "800-810" => {
                     // Note: Cases 800-810 diagnostic range validation
                     // Only available in test mode via tests/ashrae_140/diagnostics.rs
-                    println!(
+                    tracing::info!(
                         "Diagnostic range {} registered (requires test mode for execution)",
                         range
                     );
@@ -1357,7 +1358,7 @@ impl ASHRAE140Validator {
                                 data.annual_cooling_max,
                             );
                             report.add_benchmark_data(&case_id, data);
-                            println!("Case {}: Added to report", case_id);
+                            tracing::info!("Case {}: Added to report", case_id);
                         }
                     }
                 }
@@ -1388,7 +1389,7 @@ impl ASHRAE140Validator {
                                 data.annual_cooling_max,
                             );
                             report.add_benchmark_data(&case_id, data);
-                            println!("Case {}: Added to report", case_id);
+                            tracing::info!("Case {}: Added to report", case_id);
                         }
                     }
                 }
@@ -1421,12 +1422,12 @@ impl ASHRAE140Validator {
                                 data.annual_cooling_max,
                             );
                             report.add_benchmark_data(&case_id, data);
-                            println!("Case {}: Added to report", case_id);
+                            tracing::info!("Case {}: Added to report", case_id);
                         }
                     }
                 }
                 _ => {
-                    println!("Unknown diagnostic range: {}", range);
+                    tracing::info!("Unknown diagnostic range: {}", range);
                 }
             }
         }
@@ -1515,7 +1516,7 @@ impl ASHRAE140Validator {
                     .sum::<f64>();
             let solver_name = if used_ctf { "CTF" } else { "FD (fallback)" };
 
-            println!(
+            tracing::info!(
                 "[Solver] Case {}: Enabled {} solver for high-mass construction ({} layers, U={:.3} W/m²K, τ={:.1}h)",
                 spec.case_id,
                 solver_name,
@@ -1684,7 +1685,7 @@ impl ASHRAE140Validator {
             if spec.case_id == "600" && step % 8760 == 4380 {
                 let t_free =
                     model.calculate_free_float_temperature(step, weather_data.dry_bulb_temp);
-                println!("DEBUG Case 600 hour={}: t_free={:.2}°C, heating_sp={:.1}°C, cooling_sp={:.1}°C",
+                tracing::debug!("DEBUG Case 600 hour={}: t_free={:.2}°C, heating_sp={:.1}°C, cooling_sp={:.1}°C",
                     step % 24, t_free, model.heating_setpoint, model.cooling_setpoint);
             }
 
@@ -1698,7 +1699,7 @@ impl ASHRAE140Validator {
                 } else {
                     0.0
                 }; // kWh * 3600 = J, / 3600s = W
-                println!("DEBUG Case 950 step={}: t_zone={:.2}°C, hvac_kwh={:.4}, hvac_power_W={:.1}, heating_sp={:.1}°C, cooling_sp={:.1}°C, outdoor={:.2}°C",
+                tracing::debug!("DEBUG Case 950 step={}: t_zone={:.2}°C, hvac_kwh={:.4}, hvac_power_W={:.1}, heating_sp={:.1}°C, cooling_sp={:.1}°C, outdoor={:.2}°C",
                     step, t_zone, hvac_kwh, hvac_power_w, model.heating_setpoint, model.cooling_setpoint, weather_data.dry_bulb_temp);
             }
 
@@ -1715,11 +1716,12 @@ impl ASHRAE140Validator {
             // Debug: Print energy values for Case 600
             if spec.case_id == "600" && step == 8759 {
                 // Last step
-                println!(
+                tracing::info!(
                     "DEBUG Case 600: raw_heating_joules={}, raw_cooling_joules={}",
-                    annual_heating_joules, annual_cooling_joules
+                    annual_heating_joules,
+                    annual_cooling_joules
                 );
-                println!("DEBUG Case 600: internal_heating_energy={} kWh, internal_cooling_energy={} kWh", model.annual_heating_energy, model.annual_cooling_energy);
+                tracing::debug!("DEBUG Case 600: internal_heating_energy={} kWh, internal_cooling_energy={} kWh", model.annual_heating_energy, model.annual_cooling_energy);
             }
 
             // Track min/max temperatures for free-floating cases
@@ -1905,7 +1907,7 @@ impl ASHRAE140Validator {
             if spec.case_id == "600" && step % 8760 == 4380 {
                 let t_free =
                     model.calculate_free_float_temperature(step, weather_data.dry_bulb_temp);
-                println!("DEBUG Case 600 hour={}: t_free={:.2}°C, heating_sp={:.1}°C, cooling_sp={:.1}°C",
+                tracing::debug!("DEBUG Case 600 hour={}: t_free={:.2}°C, heating_sp={:.1}°C, cooling_sp={:.1}°C",
                     step % 24, t_free, model.heating_setpoint, model.cooling_setpoint);
             }
 
@@ -2210,7 +2212,7 @@ impl ASHRAE140Validator {
             if spec.case_id == "600" && step % 8760 == 4380 {
                 let t_free =
                     model.calculate_free_float_temperature(step, weather_data.dry_bulb_temp);
-                println!("DEBUG Case 600 hour={}: t_free={:.2}°C, heating_sp={:.1}°C, cooling_sp={:.1}°C",
+                tracing::debug!("DEBUG Case 600 hour={}: t_free={:.2}°C, heating_sp={:.1}°C, cooling_sp={:.1}°C",
                     step % 24, t_free, model.heating_setpoint, model.cooling_setpoint);
             }
 
@@ -2905,7 +2907,7 @@ mod tests {
         let validator = ASHRAE140Validator::new();
         // Skip if multi-reference data not available (e.g., in test environment without the file)
         if validator.multi_ref.is_none() {
-            eprintln!("Skipping multi-reference test: multi_ref not loaded (file missing?)");
+            tracing::warn!("Skipping multi-reference test: multi_ref not loaded (file missing?)");
             return;
         }
         let report = validator.validate_analytical_engine();
@@ -2995,8 +2997,8 @@ mod tests {
             .collect();
 
         let used_ctf = model.enable_ctf_with_fd_fallback(&fd_layers, 3600.0, 50, 5);
-        println!("[TRACE] CTF enabled: {}", used_ctf);
-        println!("[TRACE] CTF solvers: {}", model.ctf_solvers.len());
+        tracing::debug!("[TRACE] CTF enabled: {}", used_ctf);
+        tracing::debug!("[TRACE] CTF solvers: {}", model.ctf_solvers.len());
 
         model.reset_peak_power();
         model.reset_heating_cooling_energy();
@@ -3017,7 +3019,7 @@ mod tests {
 
         // Run warmup
         run_warmup(&mut model, &weather, &WarmupConfig::default());
-        println!(
+        tracing::info!(
             "[TRACE] After warmup: cooling_energy={:.3} MWh, peak_cooling={:.3} kW",
             model.annual_cooling_energy / 1000.0,
             model.peak_power_cooling / 1000.0
@@ -3050,12 +3052,12 @@ mod tests {
                 } else {
                     0.0
                 };
-                println!("[TRACE] step={}: t_zone={:.2}, hvac_kwh={:.4}, hvac_W={:.1}, heating_sp={:.1}, cooling_sp={:.1}, outdoor={:.2}",
+                tracing::debug!("[TRACE] step={}: t_zone={:.2}, hvac_kwh={:.4}, hvac_W={:.1}, heating_sp={:.1}, cooling_sp={:.1}, outdoor={:.2}",
                     step, t_zone, hvac_kwh, hvac_power_w, model.heating_setpoint, model.cooling_setpoint, weather_data.dry_bulb_temp);
             }
         }
 
-        println!(
+        tracing::info!(
             "[TRACE] Final: annual_cooling={:.3} MWh, peak_cooling={:.3} kW",
             model.annual_cooling_energy / 1000.0,
             model.peak_power_cooling / 1000.0

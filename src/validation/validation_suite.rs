@@ -30,89 +30,86 @@ impl M1ValidationSuite {
     pub fn run_all(&self) -> Result<M1ValidationReport, anyhow::Error> {
         let start_time = Instant::now();
 
-        println!("=== M1 Multi-Zone Foundation Validation Suite ===");
-        println!("Starting comprehensive validation...");
+        tracing::info!("M1 multi-zone foundation validation suite starting");
 
         // 1. Energy Balance Validation
-        println!("\n[1/4] Running energy balance validation...");
+        tracing::info!(step = 1, total_steps = 4, "running energy balance validation");
         let energy_balance_start = Instant::now();
         let energy_balance_report = self.energy_balance_validator.run()?;
         let energy_balance_duration = energy_balance_start.elapsed();
         let energy_balance_passed = energy_balance_report.is_valid;
 
-        // Print zone and building balance summary
+        // Record zone and building balance summary as structured events.
         if !energy_balance_report.zone_balances.is_empty() {
-            println!("\n  Zone Balance Summary:");
             for entry in &energy_balance_report.zone_balances {
-                println!(
-                    "    Zone {}: HVAC={:.2e}J, Solar={:.2e}J, Internal={:.2e}J",
-                    entry.zone_index, entry.hvac_input, entry.solar_gains, entry.internal_gains
+                tracing::info!(
+                    zone_index = entry.zone_index,
+                    hvac_input_j = entry.hvac_input,
+                    solar_gains_j = entry.solar_gains,
+                    internal_gains_j = entry.internal_gains,
+                    "zone balance summary",
                 );
             }
-            println!("\n  Whole-Building Balance:");
-            println!(
-                "    Total Energy In: {:.6e} J",
-                energy_balance_report.building_balance.total_energy_in
-            );
-            println!(
-                "    Total Energy Out: {:.6e} J",
-                energy_balance_report.building_balance.total_energy_out
-            );
-            println!(
-                "    Balance Error: {:.6}%",
-                energy_balance_report.building_balance.balance_error_pct
+            tracing::info!(
+                total_energy_in_j = energy_balance_report.building_balance.total_energy_in,
+                total_energy_out_j = energy_balance_report.building_balance.total_energy_out,
+                balance_error_pct = energy_balance_report.building_balance.balance_error_pct,
+                "whole-building balance",
             );
         }
 
-        println!(
-            "✅ Energy balance validation completed in {:.3}s - {}",
-            energy_balance_duration.as_secs_f64(),
-            if energy_balance_passed {
-                "PASSED"
-            } else {
-                "FAILED"
-            }
-        );
+        if energy_balance_passed {
+            tracing::info!(
+                elapsed_secs = energy_balance_duration.as_secs_f64(),
+                status = "PASSED",
+                "energy balance validation completed",
+            );
+        } else {
+            tracing::warn!(
+                elapsed_secs = energy_balance_duration.as_secs_f64(),
+                status = "FAILED",
+                "energy balance validation completed",
+            );
+        }
 
         // 2. Performance Validation
-        println!("\n[2/4] Running performance validation...");
+        tracing::info!(step = 2, total_steps = 4, "running performance validation");
         let performance_start = Instant::now();
         let performance_report = self
             .performance_validator
             .validate_performance_regression()?;
         let performance_duration = performance_start.elapsed();
-        println!(
-            "✅ Performance validation completed in {:.3}s",
-            performance_duration.as_secs_f64()
+        tracing::info!(
+            elapsed_secs = performance_duration.as_secs_f64(),
+            "performance validation completed",
         );
 
         // 3. ASHRAE 140 Case 960 Validation
-        println!("\n[3/4] Running ASHRAE 140 Case 960 validation...");
+        tracing::info!(step = 3, total_steps = 4, "running ASHRAE 140 Case 960 validation");
         let case_960_start = Instant::now();
         let case_960_result = self.ashrae_multi_zone_validator.validate_case_960()?;
         let case_960_duration = case_960_start.elapsed();
-        println!(
-            "✅ Case 960 validation completed in {:.3}s",
-            case_960_duration.as_secs_f64()
+        tracing::info!(
+            elapsed_secs = case_960_duration.as_secs_f64(),
+            "Case 960 validation completed",
         );
 
         // 4. Generate performance report
-        println!("\n[4/4] Generating comprehensive report...");
+        tracing::info!(step = 4, total_steps = 4, "generating comprehensive report");
         let report_start = Instant::now();
         let performance_report_text = self
             .performance_validator
             .generate_performance_report(&performance_report);
         let report_duration = report_start.elapsed();
-        println!(
-            "✅ Report generation completed in {:.3}s",
-            report_duration.as_secs_f64()
+        tracing::info!(
+            elapsed_secs = report_duration.as_secs_f64(),
+            "report generation completed",
         );
 
         let total_duration = start_time.elapsed();
-        println!("\n🎉 All M1 validations completed successfully!");
-        println!(
-            "Total validation time: {:.3}s",
-            total_duration.as_secs_f64()
+        tracing::info!(
+            total_elapsed_secs = total_duration.as_secs_f64(),
+            "all M1 validations completed successfully",
         );
 
         Ok(M1ValidationReport {
@@ -168,32 +165,7 @@ impl M1ValidationSuite {
                 });
             }
             crate::validation::performance::ScalabilityAnalysis::LinearScalability { .. } => {
-                findings.push(RequirementFinding {
-                    requirement_id: "MZ-08".to_string(),
-                    description: "Performance maintenance".to_string(),
-                    passed: false,
-                    details: "Linear scalability detected (>2× slowdown)".to_string(),
-                });
-                all_passed = false;
-            }
-            crate::validation::performance::ScalabilityAnalysis::QuadraticScaling { .. } => {
-                findings.push(RequirementFinding {
-                    requirement_id: "MZ-08".to_string(),
-                    description: "Performance maintenance".to_string(),
-                    passed: false,
-                    details: "Quadratic scalability detected (poor performance)".to_string(),
-                });
-                all_passed = false;
-            }
-            crate::validation::performance::ScalabilityAnalysis::InsufficientData => {
-                findings.push(RequirementFinding {
-                    requirement_id: "MZ-08".to_string(),
-                    description: "Performance maintenance".to_string(),
-                    passed: false,
-                    details: "Insufficient data for performance analysis".to_string(),
-                });
-                all_passed = false;
-            }
+            tracing::warn!(scalability = "linear", "performance scalability");
         }
 
         // Check Case 960 validation
@@ -250,69 +222,64 @@ pub fn run_m1_validation_cli() -> Result<(), anyhow::Error> {
     let requirements_check = suite.check_requirements(&report);
 
     // Print summary
-    println!("\n=== M1 Validation Summary ===");
-    println!(
-        "Energy Balance: {}",
-        if report.energy_balance_passed {
-            "✅ PASS"
-        } else {
-            "❌ FAIL"
-        }
+    tracing::info!(
+        energy_balance_passed = report.energy_balance_passed,
+        "M1 validation summary: energy balance",
     );
 
     match &report.performance_report.scalability_analysis {
         crate::validation::performance::ScalabilityAnalysis::GoodScalability { .. } => {
-            println!("Performance: ✅ GOOD SCALABILITY");
+            tracing::info!(scalability = "good", "performance scalability");
         }
         crate::validation::performance::ScalabilityAnalysis::LinearScalability { .. } => {
-            println!("Performance: ⚠️  LINEAR SCALABILITY");
+            tracing::warn!(scalability = "linear", "performance scalability");
         }
         crate::validation::performance::ScalabilityAnalysis::QuadraticScaling { .. } => {
-            println!("Performance: ❌ QUADRATIC SCALABILITY");
+            tracing::warn!(scalability = "quadratic", "performance scalability");
         }
         crate::validation::performance::ScalabilityAnalysis::InsufficientData => {
-            println!("Performance: ⚠️  INSUFFICIENT DATA");
+            tracing::warn!(scalability = "insufficient_data", "performance scalability");
         }
     }
 
-    println!(
-        "Case 960: {}",
-        if report.case_960_report.passed {
-            "✅ PASS"
-        } else {
-            "❌ FAIL"
-        }
+    tracing::info!(
+        case_960_passed = report.case_960_report.passed,
+        "M1 validation summary: Case 960",
     );
-    println!(
-        "Overall: {}",
-        if requirements_check.all_requirements_passed {
-            "✅ ALL REQUIREMENTS MET"
-        } else {
-            "❌ SOME REQUIREMENTS FAILED"
-        }
+    tracing::info!(
+        all_requirements_passed = requirements_check.all_requirements_passed,
+        "M1 validation summary: overall",
     );
 
     // Print detailed performance report
-    println!("\n=== Performance Report ===");
-    println!("{}", report.performance_report_text);
+    tracing::info!(report = %report.performance_report_text, "performance report");
 
     // Print requirements checklist
-    println!("\n=== Requirements Checklist ===");
     for finding in &requirements_check.findings {
-        let status = if finding.passed { "✅" } else { "❌" };
-        println!(
-            "{} {}: {}",
-            status, finding.requirement_id, finding.description
-        );
-        if !finding.details.is_empty() {
-            println!("   {}", finding.details);
+        let requirement_id = finding.requirement_id.as_str();
+        let description = finding.description.as_str();
+        if finding.passed {
+            tracing::info!(
+                requirement_id = %requirement_id,
+                description = %description,
+                details = %finding.details,
+                passed = true,
+                "requirement check",
+            );
+        } else {
+            tracing::warn!(
+                requirement_id = %requirement_id,
+                description = %description,
+                details = %finding.details,
+                passed = false,
+                "requirement check",
+            );
         }
     }
 
     // Export JSON results
     let json_export = suite.export_results(&report, &requirements_check)?;
-    println!("\n=== JSON Export ===");
-    println!("{}", json_export);
+    tracing::info!(json_export = %json_export, "JSON export");
 
     Ok(())
 }

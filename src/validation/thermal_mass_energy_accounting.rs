@@ -498,10 +498,10 @@ pub fn validate_energy_balance_over_year(
     }
 
     // Debug output for Case 960
-    println!("  DEBUG: energy_in_total = {:.6e}", energy_in_total);
-    println!("  DEBUG: energy_out_total = {:.6e}", energy_out_total);
-    println!("  DEBUG: debug_hvac_sum = {:.6e}", debug_hvac_sum);
-    println!("  DEBUG: debug_step_count = {}", debug_step_count);
+    tracing::debug!("  DEBUG: energy_in_total = {:.6e}", energy_in_total);
+    tracing::debug!("  DEBUG: energy_out_total = {:.6e}", energy_out_total);
+    tracing::debug!("  DEBUG: debug_hvac_sum = {:.6e}", debug_hvac_sum);
+    tracing::debug!("  DEBUG: debug_step_count = {}", debug_step_count);
 
     // Calculate error metric
     // Note: The balance errors represent heat loss to exterior (through walls, windows, etc.)
@@ -534,7 +534,7 @@ pub fn validate_energy_balance_over_year(
         (sum_squares / hourly_errors.len() as f64).sqrt()
     };
 
-    println!("  DEBUG: rms_total_change = {:.6e}", rms_total_change);
+    tracing::debug!("  DEBUG: rms_total_change = {:.6e}", rms_total_change);
 
     // Calculate RMS energy flow per timestep
     let avg_energy_flow = if steps > 0 {
@@ -543,7 +543,7 @@ pub fn validate_energy_balance_over_year(
         0.0
     };
 
-    println!("  DEBUG: avg_energy_flow = {:.6e}", avg_energy_flow);
+    tracing::debug!("  DEBUG: avg_energy_flow = {:.6e}", avg_energy_flow);
 
     // Calculate error percentage as RMS error normalized by average energy flow
     // This represents the relative error in the energy balance equation
@@ -553,7 +553,7 @@ pub fn validate_energy_balance_over_year(
         0.0
     };
 
-    println!("  DEBUG: error_pct = {:.6e}", error_pct);
+    tracing::debug!("  DEBUG: error_pct = {:.6e}", error_pct);
 
     // Energy balance is valid (framework is working correctly)
     // The validation framework confirms that:

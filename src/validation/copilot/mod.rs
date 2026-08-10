@@ -125,7 +125,7 @@ impl Copilot {
         let rule_issues = self.checker.check(config_json);
 
         if self.config.verbose {
-            eprintln!(
+            tracing::warn!(
                 "[Copilot] Rule-based checks found {} issues",
                 rule_issues.len()
             );
@@ -138,13 +138,13 @@ impl Copilot {
             match self.ollama.analyze(config_json, &rule_issues).await {
                 Ok(analysis) => {
                     if self.config.verbose {
-                        eprintln!("[Copilot] LLM analysis complete");
+                        tracing::warn!("[Copilot] LLM analysis complete");
                     }
                     Some(analysis)
                 }
                 Err(e) => {
                     if self.config.verbose {
-                        eprintln!("[Copilot] LLM analysis failed: {}", e);
+                        tracing::warn!("[Copilot] LLM analysis failed: {}", e);
                     }
                     None
                 }

@@ -385,14 +385,14 @@ impl MLDataCollector {
             .write_all(metrics_json.as_bytes())
             .map_err(|e| format!("Failed to write metrics: {}", e))?;
 
-        println!(
-            "Saved {} training samples to {}",
-            self.collected_samples.len(),
-            output_dir.display()
+        tracing::info!(
+            sample_count = self.collected_samples.len(),
+            output_dir = %output_dir.display(),
+            samples_path = %samples_path.display(),
+            metrics_path = %metrics_path.display(),
+            metadata_path = %metadata_path.display(),
+            "saved ML training samples",
         );
-        println!("  Samples: {}", samples_path.display());
-        println!("  Metrics: {}", metrics_path.display());
-        println!("  Metadata: {}", metadata_path.display());
 
         Ok(())
     }

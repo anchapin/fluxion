@@ -549,10 +549,10 @@ pub fn load_flexlab_weather(
         match parse_record(&fields, cols, line_idx, config) {
             Ok(record) => records.push(record),
             Err(e) => {
-                eprintln!(
-                    "FLEXLAB weather loader warning at line {}: {}",
-                    line_idx + 1,
-                    e
+                tracing::warn!(
+                    line = line_idx + 1,
+                    error = %e,
+                    "flexlab weather loader parse warning",
                 );
             }
         }

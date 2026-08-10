@@ -90,6 +90,12 @@ loom = []
 dwave = []
 # Feature flag to gate unconditional debug eprintln! calls in physics hot loops (issue #1967)
 debug-physics = []
+# Feature flag to emit structured JSON tracing output from the validation
+# module, suitable for ingestion by Loki/Elastic. Enables tracing-subscriber's
+# JSON formatter so `cargo test --test ashrae_140_validation --features
+# tracing-subscriber-json` produces machine-parseable per-case pass/fail
+# events. (Issue #2500)
+tracing-subscriber-json = ["tracing-subscriber/json"]
 # Feature flag for Kafka telemetry consumer (issue #2056).
 # Enables rdkafka-based Kafka consumer for enterprise-scale telemetry ingestion.
 # Run with: cargo test --features kafka -p fluxion twin::kafka_telemetry_consumer

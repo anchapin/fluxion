@@ -31,7 +31,7 @@ impl ParallelValidationExecutor {
         cases: Vec<HighMassValidationCase>,
     ) -> Vec<HighMassValidationReport> {
         if self.progress_reporting {
-            println!("Running {} validation cases in parallel", cases.len());
+            tracing::info!("Running {} validation cases in parallel", cases.len());
         }
 
         // Use rayon for parallel processing
@@ -39,7 +39,7 @@ impl ParallelValidationExecutor {
             .into_par_iter()
             .map(|case| {
                 if self.progress_reporting {
-                    println!("Processing case: {}", case.case_id);
+                    tracing::info!("Processing case: {}", case.case_id);
                 }
                 // TODO: Implement actual validation logic
                 HighMassValidationReport {

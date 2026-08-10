@@ -20,7 +20,7 @@ use std::path::PathBuf;
 /// basic_cross_validation_example().unwrap();
 /// ```
 pub fn basic_cross_validation_example() -> Result<(), Box<dyn Error>> {
-    println!("=== Basic Cross-Validation Example ===");
+    tracing::info!("=== Basic Cross-Validation Example ===");
 
     // Create a simple validator with default tolerance (0.5°C)
     let validator = EspRValidator::new(
@@ -38,10 +38,10 @@ pub fn basic_cross_validation_example() -> Result<(), Box<dyn Error>> {
     let report = validator.validate(&fluxion_results)?;
 
     // Display results
-    println!("Validation completed successfully!");
-    println!("Overall pass status: {}", report.overall_pass);
-    println!("Number of zones validated: {}", report.zone_results.len());
-    println!(
+    tracing::info!("Validation completed successfully!");
+    tracing::info!("Overall pass status: {}", report.overall_pass);
+    tracing::info!("Number of zones validated: {}", report.zone_results.len());
+    tracing::info!(
         "Average temperature difference: {:.2}°C",
         report.average_temperature_difference
     );
@@ -60,7 +60,7 @@ pub fn basic_cross_validation_example() -> Result<(), Box<dyn Error>> {
 /// advanced_cross_validation_example().unwrap();
 /// ```
 pub fn advanced_cross_validation_example() -> Result<(), Box<dyn Error>> {
-    println!("=== Advanced Cross-Validation Example ===");
+    tracing::info!("=== Advanced Cross-Validation Example ===");
 
     // Create validator with custom tolerance (0.25°C for high precision)
     let validator = EspRValidator::new(
@@ -91,13 +91,13 @@ pub fn advanced_cross_validation_example() -> Result<(), Box<dyn Error>> {
     let report = validator.validate(&fluxion_results)?;
 
     // Display detailed results
-    println!("Advanced validation completed!");
-    println!("Tolerance: {:.2}°C", validator.tolerance);
-    println!("Overall pass status: {}", report.overall_pass);
-    println!("Zones validated: {}", report.zone_results.len());
+    tracing::info!("Advanced validation completed!");
+    tracing::info!("Tolerance: {:.2}°C", validator.tolerance);
+    tracing::info!("Overall pass status: {}", report.overall_pass);
+    tracing::info!("Zones validated: {}", report.zone_results.len());
 
     for zone_result in &report.zone_results {
-        println!(
+        tracing::info!(
             "  Zone '{}': pass={}, temp_diff={:.2}°C, heating_diff={:.2}°C",
             zone_result.zone_id,
             zone_result.temp_within_tolerance,
@@ -109,7 +109,7 @@ pub fn advanced_cross_validation_example() -> Result<(), Box<dyn Error>> {
     // Save report to file
     let report_json = serde_json::to_string_pretty(&report)?;
     std::fs::write("examples/advanced_validation_report.json", report_json)?;
-    println!("Report saved to: examples/advanced_validation_report.json");
+    tracing::info!("Report saved to: examples/advanced_validation_report.json");
 
     Ok(())
 }
@@ -125,21 +125,21 @@ pub fn advanced_cross_validation_example() -> Result<(), Box<dyn Error>> {
 /// error_handling_example().unwrap();
 /// ```
 pub fn error_handling_example() -> Result<(), Box<dyn Error>> {
-    println!("=== Error Handling Example ===");
+    tracing::info!("=== Error Handling Example ===");
 
     // Example 1: Handle missing reference file
-    println!("\n1. Handling missing reference file:");
+    tracing::info!("\n1. Handling missing reference file:");
     let validator = EspRValidator::new(PathBuf::from("nonexistent_file.csv"), 0.5);
 
     let fluxion_results = MultiZoneValidationResults::default();
 
     match validator.validate(&fluxion_results) {
-        Ok(_) => println!("  Unexpected success!"),
-        Err(e) => println!("  Caught expected error: {}", e),
+        Ok(_) => tracing::info!("  Unexpected success!"),
+        Err(e) => tracing::info!("  Caught expected error: {}", e),
     }
 
     // Example 2: Handle invalid tolerance
-    println!("\n2. Handling invalid tolerance:");
+    tracing::info!("\n2. Handling invalid tolerance:");
     let validator = EspRValidator::new(
         PathBuf::from("examples/reference_data/esp_r_basic.csv"),
         -1.0, // Invalid negative tolerance
@@ -148,14 +148,14 @@ pub fn error_handling_example() -> Result<(), Box<dyn Error>> {
     // Even with invalid tolerance, the validation will run but likely fail
     match validator.validate(&fluxion_results) {
         Ok(report) => {
-            println!("  Validation completed with negative tolerance");
-            println!("  Pass status: {}", report.overall_pass);
+            tracing::info!("  Validation completed with negative tolerance");
+            tracing::info!("  Pass status: {}", report.overall_pass);
         }
-        Err(e) => println!("  Error during validation: {}", e),
+        Err(e) => tracing::info!("  Error during validation: {}", e),
     }
 
     // Example 3: Handle empty results
-    println!("\n3. Handling empty results:");
+    tracing::info!("\n3. Handling empty results:");
     let validator = EspRValidator::new(
         PathBuf::from("examples/reference_data/esp_r_basic.csv"),
         0.5,
@@ -165,13 +165,13 @@ pub fn error_handling_example() -> Result<(), Box<dyn Error>> {
 
     match validator.validate(&empty_results) {
         Ok(report) => {
-            println!("  Validation completed with empty results");
-            println!("  Number of zones: {}", report.zone_results.len());
+            tracing::info!("  Validation completed with empty results");
+            tracing::info!("  Number of zones: {}", report.zone_results.len());
         }
-        Err(e) => println!("  Error during validation: {}", e),
+        Err(e) => tracing::info!("  Error during validation: {}", e),
     }
 
-    println!("\nError handling examples completed!");
+    tracing::info!("\nError handling examples completed!");
     Ok(())
 }
 
@@ -186,7 +186,7 @@ pub fn error_handling_example() -> Result<(), Box<dyn Error>> {
 /// report_generation_example().unwrap();
 /// ```
 pub fn report_generation_example() -> Result<(), Box<dyn Error>> {
-    println!("=== Report Generation Example ===");
+    tracing::info!("=== Report Generation Example ===");
 
     // Create validator
     let validator = EspRValidator::new(
@@ -203,13 +203,13 @@ pub fn report_generation_example() -> Result<(), Box<dyn Error>> {
     let report = validator.validate(&fluxion_results)?;
 
     // Generate JSON report
-    println!("\n1. JSON Report:");
+    tracing::info!("\n1. JSON Report:");
     let json_report = serde_json::to_string_pretty(&report)?;
-    println!("{}", json_report);
+    tracing::info!("{}", json_report);
     std::fs::write("examples/report_json.json", &json_report)?;
 
     // Generate Markdown report
-    println!("\n2. Markdown Report:");
+    tracing::info!("\n2. Markdown Report:");
     let markdown_report = format!(
         "# Cross-Validation Report\n\n{}",
         format!(
@@ -235,11 +235,11 @@ pub fn report_generation_example() -> Result<(), Box<dyn Error>> {
         ));
     }
 
-    println!("{}", markdown_report);
+    tracing::info!("{}", markdown_report);
     std::fs::write("examples/report_markdown.md", markdown_report)?;
 
     // Generate custom formatted report
-    println!("\n3. Custom Formatted Report:");
+    tracing::info!("\n3. Custom Formatted Report:");
     let timestamp = chrono::Local::now().format("%Y-%m-%d %H:%M:%S").to_string();
     let custom_report = format!("Cross-Validation Report - {}\n", timestamp)
         + "================================\n"
@@ -263,10 +263,10 @@ pub fn report_generation_example() -> Result<(), Box<dyn Error>> {
         ));
     }
 
-    println!("{}", custom_report);
+    tracing::info!("{}", custom_report);
     std::fs::write("examples/report_custom.txt", custom_report)?;
 
-    println!("\nReports generated and saved!");
+    tracing::info!("\nReports generated and saved!");
     Ok(())
 }
 
@@ -281,20 +281,20 @@ pub fn report_generation_example() -> Result<(), Box<dyn Error>> {
 /// run_all_examples().unwrap();
 /// ```
 pub fn run_all_examples() -> Result<(), Box<dyn Error>> {
-    println!("Running all ESP-r cross-validation examples...\n");
+    tracing::info!("Running all ESP-r cross-validation examples...\n");
 
     basic_cross_validation_example()?;
-    println!();
+    tracing::info!();
 
     advanced_cross_validation_example()?;
-    println!();
+    tracing::info!();
 
     error_handling_example()?;
-    println!();
+    tracing::info!();
 
     report_generation_example()?;
 
-    println!("\nAll examples completed successfully!");
+    tracing::info!("\nAll examples completed successfully!");
     Ok(())
 }
 

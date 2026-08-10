@@ -1428,26 +1428,25 @@ impl BenchmarkReport {
         std::fs::write(path, content)
     }
 
-    /// Prints a summary to stdout in human-readable format.
+    /// Emits a summary via `tracing` in human-readable structured form. (Issue #2500)
     pub fn print_summary(&self) {
-        println!("Validation Report Summary:");
-        println!("  Total Results: {}", self.results.len());
-        println!("  Pass Rate: {:.1}%", self.pass_rate());
-        println!(
-            "  Passed: {}",
-            self.results.iter().filter(|r| r.passed()).count()
+        tracing::info!(
+            total_results = self.results.len(),
+            pass_rate_pct = self.pass_rate(),
+            passed = self.results.iter().filter(|r| r.passed()).count(),
+            warnings = self.warning_count(),
+            failed = self.fail_count(),
+            mae_pct = self.mae(),
+            max_deviation_pct = self.max_deviation(),
+            "validation report summary",
         );
-        println!("  Warnings: {}", self.warning_count());
-        println!("  Failed: {}", self.fail_count());
-        println!("  Mean Absolute Error: {:.2}%", self.mae());
-        println!("  Max Deviation: {:.2}%", self.max_deviation());
     }
 
-    /// Prints a machine-readable summary to stdout in JSON format for CI ingestion.
+    /// Emits a machine-readable summary via `tracing` for CI ingestion. (Issue #2500)
     ///
-    /// This output format is designed to be parsed reliably by CI scripts without
-    /// requiring fragile regex patterns. The format avoids issues like `inf%`
-    /// appearing in percentage fields by using JSON numbers directly.
+    /// The fields are recorded as structured tracing fields (and the full JSON
+    /// blob is attached) so that a JSON subscriber produces records ingestible
+    /// by CI scripts / Loki / Elastic without fragile regex parsing.
     pub fn print_summary_json(&self) {
         use serde_json::json;
 
@@ -1466,7 +1465,18 @@ impl BenchmarkReport {
             "duration_seconds": self.duration_seconds(),
         });
 
-        println!("{}", serde_json::to_string_pretty(&summary).unwrap());
+        tracing::info!(
+            total_results = self.results.len() as u32,
+            pass_rate = self.pass_rate(),
+            passed = passed_count,
+            warnings = warning_count,
+            failed = fail_count,
+            mae = self.mae(),
+            max_deviation = self.max_deviation(),
+            duration_seconds = self.duration_seconds(),
+            json = %serde_json::to_string(&summary).unwrap(),
+            "validation report summary (json)",
+        );
     }
 
     /// Appends the report's metrics to the historical performance log.
@@ -1522,7 +1532,7 @@ impl BenchmarkReport {
         // Create target directory if it doesn't exist
         if let Some(parent) = file_path.parent() {
             if let Err(e) = fs::create_dir_all(parent) {
-                eprintln!("Warning: Failed to create target directory: {}", e);
+                tracing::warn!(error = %e, "failed to create target directory");
                 return;
             }
         }
@@ -1531,7 +1541,7 @@ impl BenchmarkReport {
         let json_line = match serde_json::to_string(&entry) {
             Ok(line) => line,
             Err(e) => {
-                eprintln!("Warning: Failed to serialize history entry: {}", e);
+                tracing::warn!(error = %e, "failed to serialize history entry");
                 return;
             }
         };
@@ -1543,16 +1553,16 @@ impl BenchmarkReport {
         {
             Ok(file) => file,
             Err(e) => {
-                eprintln!(
-                    "Warning: Failed to open performance history file for appending: {}",
-                    e
+                tracing::warn!(
+                    error = %e,
+                    "failed to open performance history file for appending",
                 );
                 return;
             }
         };
 
         if let Err(e) = writeln!(file, "{}", json_line) {
-            eprintln!("Warning: Failed to write to performance history: {}", e);
+            tracing::warn!(error = %e, "failed to write to performance history");
         }
     }
 
@@ -2432,32 +2442,24 @@ impl ValidationSuite {
         report
     }
 
-    /// Prints a detailed summary to stdout.
+    /// Emits a detailed summary via `tracing`. (Issue #2500)
     pub fn print_detailed_summary(&self) {
-        println!("Validation Suite Summary:");
-        println!("  Total Results: {}", self.len());
-        println!(
-            "  Pass Rate: {:.1}% ({} passed)",
-            self.calculate_pass_rate(),
-            self.results.iter().filter(|r| r.passed()).count()
+        tracing::info!(
+            total_results = self.len(),
+            pass_rate_pct = self.calculate_pass_rate(),
+            passed = self.results.iter().filter(|r| r.passed()).count(),
+            warning_rate_pct = self.calculate_warning_rate(),
+            warnings = self.warning_count(),
+            fail_rate_pct = self.calculate_fail_rate(),
+            failed = self.fail_count(),
+            mae_pct = self.calculate_mae(),
+            rmse_pct = self.calculate_rmse(),
+            max_deviation_pct = self.calculate_max_deviation(),
+            mean_deviation_pct = self.calculate_mean_deviation(),
+            "validation suite summary",
         );
-        println!(
-            "  Warning Rate: {:.1}% ({} warnings)",
-            self.calculate_warning_rate(),
-            self.warning_count()
-        );
-        println!(
-            "  Fail Rate: {:.1}% ({} failed)",
-            self.calculate_fail_rate(),
-            self.fail_count()
-        );
-        println!("  Mean Absolute Error: {:.2}%", self.calculate_mae());
-        println!("  Root Mean Square Error: {:.2}%", self.calculate_rmse());
-        println!("  Max Deviation: {:.2}%", self.calculate_max_deviation());
-        println!("  Mean Deviation: {:+.2}%", self.calculate_mean_deviation());
 
         // Summary by case
-        println!("\nSummary by Case:");
         let case_summary = self.summary_by_case();
         let mut case_ids: Vec<_> = case_summary.keys().collect();
         case_ids.sort();
@@ -2466,9 +2468,16 @@ impl ValidationSuite {
             let (passed, warnings, failed) = case_summary.get(case_id).unwrap();
             let total = passed + warnings + failed;
             let pass_rate = (*passed as f64 / total as f64) * 100.0;
-            println!(
-                "  {}: {}/{} passed ({:.1}%) - {} warnings, {} failed",
-                case_id, passed, total, pass_rate, warnings, failed
+            let span = tracing::info_span!("ashrae140_case", case_id = %case_id);
+            let _guard = span.enter();
+            tracing::info!(
+                case_id = %case_id,
+                passed = *passed,
+                total = total,
+                pass_rate_pct = pass_rate,
+                warnings = *warnings,
+                failed = *failed,
+                "summary by case",
             );
         }
     }

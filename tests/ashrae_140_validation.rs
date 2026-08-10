@@ -129,3 +129,93 @@ fn generate_validation_report() {
         }
     }
 }
+
+// ---------------------------------------------------------------------------
+// Issue #2500 — structured tracing JSON output from the validation module.
+//
+// When the `tracing-subscriber-json` feature is enabled, the diagnostic
+// helpers emit machine-parseable per-case events. This test installs a JSON
+// `tracing_subscriber` writing to an in-memory buffer (scoped to the test via
+// `with_default`, so no global subscriber is touched), triggers a structured
+// diagnostic, and asserts the captured JSON contains the ingestion contract
+// fields (`case_id`, `metric`, `deviation_pct`, `actual`, `expected`).
+// ---------------------------------------------------------------------------
+#[cfg(feature = "tracing-subscriber-json")]
+#[test]
+fn test_validation_diagnostic_json_output() {
+    use std::io::Write;
+    use std::sync::{Arc, Mutex};
+
+    /// A cloneable shared byte buffer usable as a `tracing_subscriber` writer.
+    #[derive(Clone)]
+    struct SharedBuffer(Arc<Mutex<Vec<u8>>>);
+
+    impl Write for SharedBuffer {
+        fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+            self.0.lock().unwrap().extend_from_slice(buf);
+            Ok(buf.len())
+        }
+        fn flush(&mut self) -> std::io::Result<()> {
+            Ok(())
+        }
+    }
+
+    impl<'a> tracing_subscriber::fmt::MakeWriter<'a> for SharedBuffer {
+        type Writer = SharedBuffer;
+        fn make_writer(&'a self) -> Self::Writer {
+            self.clone()
+        }
+    }
+
+    let buffer = SharedBuffer(Arc::new(Mutex::new(Vec::new())));
+
+    let subscriber = tracing_subscriber::fmt()
+        .with_max_level(tracing::Level::INFO)
+        .with_writer(buffer.clone())
+        .json()
+        .finish();
+
+    let dispatch = tracing::dispatcher::Dispatch::new(subscriber);
+    tracing::dispatcher::with_default(&dispatch, || {
+        // Emit a representative per-case diagnostic (Case 600, annual heating,
+        // value inside the reference range → PASS).
+        fluxion::validation::diagnostic::emit_case_diagnostic(
+            "600",
+            "Annual Heating",
+            5.2,
+            4.30,
+            5.71,
+            0.0,
+            "PASS",
+        );
+    });
+
+    let captured = String::from_utf8(buffer.0.lock().unwrap().clone())
+        .expect("captured tracing output must be valid UTF-8");
+
+    // The ingestion contract: each emitted record must carry these structured
+    // fields so Loki/Elastic can index per-case pass/fail.
+    assert!(
+        captured.contains("\"case_id\":\"600\""),
+        "missing/incorrect case_id field; got: {captured}"
+    );
+    assert!(
+        captured.contains("\"metric\":\"Annual Heating\""),
+        "missing/incorrect metric field; got: {captured}"
+    );
+    assert!(
+        captured.contains("\"deviation_pct\""),
+        "missing deviation_pct field; got: {captured}"
+    );
+    assert!(captured.contains("\"actual\""), "missing actual field");
+    assert!(captured.contains("\"expected\""), "missing expected field");
+    assert!(
+        captured.contains("\"status\":\"PASS\""),
+        "missing/incorrect status field; got: {captured}"
+    );
+    // Span context must be present so events can be correlated to a case.
+    assert!(
+        captured.contains("ashrae140_case"),
+        "missing ashrae140_case span; got: {captured}"
+    );
+}
