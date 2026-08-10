@@ -11,6 +11,10 @@
 //! - `FLUXION_REST_PORT`  — default `8080`
 //! - `RUST_LOG`           — `tracing-subscriber` filter (forwarded into the
 //!                          layer set up below).
+//! - `FLUXION_AUDIT_LOG`  — optional path; when set, `/v1/simulate` audit
+//!                          events (`target = "audit"`) are tee'd to this
+//!                          file in addition to the default stdout log
+//!                          (Issue #2546).
 //!
 //! Graceful shutdown is wired to `SIGINT` (Ctrl-C) via `tokio::signal`.
 
@@ -19,6 +23,7 @@ use std::str::FromStr;
 
 use fluxion::api::server::{router, AppState};
 use tokio::net::TcpListener;
+use tracing::Level;
 use tracing_subscriber::{fmt, prelude::*, EnvFilter};
 
 const DEFAULT_BIND: &str = "0.0.0.0";
@@ -81,10 +86,60 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .with_level(true)
         .with_thread_ids(false)
         .compact();
-    let _ = tracing_subscriber::registry()
-        .with(env_filter)
-        .with(fmt_layer)
-        .try_init();
+
+    // Issue #2546 — opt-in dedicated audit log. When `FLUXION_AUDIT_LOG`
+    // points at a writable path, install a second subscriber layer that
+    // funnels only `target = "audit"` events (the `simulation_started` /
+    // `simulation_completed` records emitted by `/v1/simulate`) into that
+    // file as plain lines. When unset or unopenable, audit events still
+    // flow to the default `fmt_layer` above via the bare `info` filter, so
+    // nothing is silently dropped.
+    let audit_path = std::env::var("FLUXION_AUDIT_LOG").ok();
+    let audit_file = audit_path.as_ref().and_then(|p| {
+        match std::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(p)
+        {
+            Ok(f) => Some(f),
+            Err(e) => {
+                eprintln!(
+                    "fluxion-rest: FLUXION_AUDIT_LOG='{p}' open failed ({e}); audit events stay on stdout only"
+                );
+                None
+            }
+        }
+    });
+
+    match audit_file {
+        Some(file) => {
+            // `Mutex<File>` implements `for<'a> MakeWriter<'a>` (returning
+            // a `MutexGuardWriter`), which is what `with_writer` requires.
+            // The layer owns the writer; no `Box::leak` / `&'static` needed.
+            let audit_filter =
+                tracing_subscriber::filter::Targets::new().with_target("audit", Level::INFO);
+            let audit_layer = fmt::layer()
+                .with_writer(std::sync::Mutex::new(file))
+                .with_target(false)
+                .with_ansi(false)
+                .with_filter(audit_filter);
+            let _ = tracing_subscriber::registry()
+                .with(env_filter)
+                .with(fmt_layer)
+                .with(audit_layer)
+                .try_init();
+            tracing::info!(
+                "fluxion-rest: FLUXION_AUDIT_LOG writing audit events to {}",
+                audit_path.as_deref().unwrap_or("?")
+            );
+        }
+        None => {
+            let _ = tracing_subscriber::registry()
+                .with(env_filter)
+                .with(fmt_layer)
+                .try_init();
+        }
+    }
 
     let addr = resolve_addr();
     let listener = TcpListener::bind(addr).await?;

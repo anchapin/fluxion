@@ -820,12 +820,57 @@ pub fn run_simulation(
 
 async fn simulate(
     State(state): State<AppState>,
+    headers: axum::http::HeaderMap,
     Json(req): Json<SimulateRequest>,
 ) -> Result<Json<SimulateResponse>, ApiError> {
+    // Issue #2546 — audit trail. Extract per-request identifiers before
+    // the simulation runs so the `simulation_started` event captures the
+    // caller even if the run fails immediately.
+    let request_id = headers
+        .get(X_REQUEST_ID)
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("unknown")
+        .to_string();
+    let client_id: Option<String> = headers
+        .get("x-fluxion-client")
+        .or_else(|| headers.get(axum::http::header::USER_AGENT))
+        .and_then(|v| v.to_str().ok())
+        .map(String::from);
+
     let schema = req.schema.into_v1();
     let options = req.options;
 
-    let output = run_simulation(&schema, options.years, options.use_surrogates)?;
+    // Snapshot the inputs for the audit event before `schema` is moved
+    // into the in-memory store below.
+    let num_zones = schema.geometry.zones.len();
+    let years = options.years;
+    let use_surrogates = options.use_surrogates;
+    let schema_hash = schema_audit_hash(&schema);
+
+    tracing::info!(
+        target: "audit",
+        event = "simulation_started",
+        request_id = %request_id,
+        schema_hash = %schema_hash,
+        num_zones = num_zones,
+        years = years,
+        use_surrogates = use_surrogates,
+        client_id = ?client_id,
+    );
+
+    let started = std::time::Instant::now();
+    // Run first so the `completed` event captures both success and error
+    // outcomes. `?` below would otherwise skip the closing audit record on
+    // `ApiError::InvalidSchema` / `ApiError::SimulationFailed`.
+    let result = run_simulation(&schema, years, use_surrogates);
+    tracing::info!(
+        target: "audit",
+        event = "simulation_completed",
+        request_id = %request_id,
+        duration_ms = started.elapsed().as_millis(),
+        outcome = if result.is_ok() { "success" } else { "error" },
+    );
+    let output = result?;
 
     let schema_id = if let Some(id) = options.store_as.clone() {
         // Issue #2552: `schemas` is now `parking_lot::RwLock`. Use a
@@ -843,6 +888,19 @@ async fn simulate(
     };
 
     Ok(Json(SimulateResponse { schema_id, output }))
+}
+
+/// Stable, non-cryptographic hash of a simulation schema used for audit
+/// correlation (Issue #2546). Two requests with byte-identical canonical
+/// JSON produce the same id; intentionally NOT a security primitive.
+fn schema_audit_hash(schema: &SimulationSchemaV1) -> String {
+    use std::collections::hash_map::DefaultHasher;
+    use std::hash::{Hash, Hasher};
+    let mut hasher = DefaultHasher::new();
+    if let Ok(canonical) = serde_json::to_string(schema) {
+        canonical.hash(&mut hasher);
+    }
+    format!("0x{:016x}", hasher.finish())
 }
 
 /// SSE streaming handler for `POST /v1/simulate/stream`. Emits one SSE event
