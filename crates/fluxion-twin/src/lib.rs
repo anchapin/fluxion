@@ -817,7 +817,7 @@ mod tests {
         let snapshotter = recorder.snapshotter();
         metrics::with_local_recorder(&recorder, || {
             let mut ukf = metric_test_ukf();
-            ukf.update(&[1.0]).unwrap();
+            ukf.update(&vec![1.0]).unwrap();
         });
 
         let map = snapshotter.snapshot().into_hashmap();

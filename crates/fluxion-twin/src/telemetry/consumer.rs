@@ -6,7 +6,7 @@
 //! - Sequence number deduplication per sensor
 //! - Slow consumer warning when queue depth > 900
 
-use crossbeam_channel::{self as channel, Receiver, RecvError, SendError};
+use crossbeam_channel::{self as channel, Receiver, RecvError, SendError, TryRecvError};
 use std::collections::{HashMap, VecDeque};
 use uuid::Uuid;
 
@@ -20,6 +20,18 @@ pub struct TelemetryConsumer {
     rx: Receiver<TelemetryMsg>,
     buffer: HashMap<Uuid, VecDeque<TelemetryMsg>>,
     last_sequence: HashMap<Uuid, u64>,
+}
+
+/// Outcome of classifying a freshly-received message against the per-sensor
+/// sequence frontier. Kept private — it is an internal control-flow signal
+/// for [`TelemetryConsumer::recv_with_backpressure`].
+enum RecvOutcome {
+    /// In-order message ready to hand to `process_message` and return.
+    Deliver(TelemetryMsg),
+    /// Duplicate / stale sequence, or out-of-order buffer full.
+    Error(TelemetryError),
+    /// Out-of-order message buffered; keep draining the channel.
+    Buffered,
 }
 
 impl TelemetryConsumer {
@@ -57,30 +69,104 @@ impl TelemetryConsumer {
         Some(msg)
     }
 
-    fn try_drain_buffer(
-        &mut self,
-        sensor_id: Uuid,
-    ) -> Option<Result<TelemetryMsg, TelemetryError>> {
-        let expected_seq = self.last_sequence.get(&sensor_id).copied().unwrap_or(0) + 1;
+    /// Pop the next in-order buffered message, if one is ready.
+    ///
+    /// A buffered message is "ready" when it is exactly the next sequence
+    /// expected for its sensor (`last_sequence[sensor] + 1`). Scanning every
+    /// sensor keeps multi-sensor consumers correct: any sensor whose gap has
+    /// been filled emits its buffered message before the channel is touched
+    /// again.
+    ///
+    /// Emitting ready buffered messages *before* reading the channel is the
+    /// core fix for Issue #2617: without this step a `recv` that follows an
+    /// out-of-order `recv` blocks on the (now empty) channel even though the
+    /// next message is already sitting in the buffer.
+    fn pop_ready_buffered(&mut self) -> Option<TelemetryMsg> {
+        let last_sequence = &self.last_sequence;
+        let target = self
+            .buffer
+            .iter()
+            .filter_map(|(sensor_id, buf)| {
+                let front = buf.front()?;
+                let last = last_sequence.get(sensor_id).copied().unwrap_or(0);
+                (front.sequence == last + 1).then_some((*sensor_id, front.sequence))
+            })
+            // Smallest ready sequence first; tie-break by sensor id so the
+            // pick is deterministic regardless of HashMap iteration order.
+            .min_by_key(|&(sensor_id, seq)| (seq, sensor_id))
+            .map(|(sensor_id, _)| sensor_id)?;
 
-        if let Some(buf) = self.buffer.get(&sensor_id) {
+        let buf = self.buffer.get_mut(&target)?;
+        let msg = buf.pop_front();
+        if buf.is_empty() {
+            self.buffer.remove(&target);
+        }
+        msg
+    }
+
+    /// Fallback for when the channel is empty but out-of-order messages are
+    /// still buffered and the gap cannot be filled from the channel. Emits
+    /// the buffered message closest to the per-sensor frontier so the
+    /// consumer keeps making progress instead of blocking forever — the
+    /// second half of the #2617 deadlock fix.
+    fn pop_best_buffered(&mut self) -> Option<TelemetryMsg> {
+        let target = self
+            .buffer
+            .iter()
+            .filter_map(|(sensor_id, buf)| {
+                let front = buf.front()?;
+                Some((*sensor_id, front.sequence))
+            })
+            .min_by_key(|&(sensor_id, seq)| (seq, sensor_id))
+            .map(|(sensor_id, _)| sensor_id)?;
+
+        let buf = self.buffer.get_mut(&target)?;
+        let msg = buf.pop_front();
+        if buf.is_empty() {
+            self.buffer.remove(&target);
+        }
+        msg
+    }
+
+    /// Run an in-order message through `process_message`, converting the
+    /// (impossible-in-practice, since the caller already verified the
+    /// sequence is strictly greater than the last delivered) `None` into a
+    /// channel-closed error so the signature stays `Result`.
+    fn deliver(&mut self, msg: TelemetryMsg) -> Result<TelemetryMsg, TelemetryError> {
+        self.process_message(msg)
+            .ok_or_else(|| TelemetryError::Recv("Channel closed".to_string()))
+    }
+
+    /// Classify a freshly-pulled message against the per-sensor sequence
+    /// frontier. Duplicates / stale packets and a full out-of-order buffer
+    /// are surfaced as errors; an in-order packet is delivered; an
+    /// out-of-order packet is buffered and the caller keeps draining.
+    fn classify(&mut self, msg: TelemetryMsg) -> RecvOutcome {
+        let sensor_id = msg.sensor_id;
+        let seq = msg.sequence;
+        let last = self.last_sequence.get(&sensor_id).copied().unwrap_or(0);
+        if seq <= last {
+            RecvOutcome::Error(TelemetryError::Recv(format!(
+                "duplicate or stale sequence {seq} for sensor {sensor_id} (last delivered {last})"
+            )))
+        } else if seq == last + 1 {
+            RecvOutcome::Deliver(msg)
+        } else {
+            let buf = self.buffer.entry(sensor_id).or_default();
             if buf.len() >= 100 {
-                return Some(Err(TelemetryError::BufferFull(sensor_id)));
-            }
-            for (i, msg) in buf.iter().enumerate() {
-                if msg.sequence == expected_seq {
-                    let msg = self.buffer.get_mut(&sensor_id).unwrap().remove(i).unwrap();
-                    return Some(
-                        self.process_message(msg)
-                            .ok_or(TelemetryError::Recv("Channel closed".to_string())),
-                    );
-                }
+                RecvOutcome::Error(TelemetryError::BufferFull(sensor_id))
+            } else {
+                buf.push_back(msg);
+                RecvOutcome::Buffered
             }
         }
-        None
     }
 
     pub fn recv_with_backpressure(&mut self) -> Result<TelemetryMsg, TelemetryError> {
+        // Slow-consumer backpressure signal (Issue #2519). Sampled once per
+        // recv invocation: if the queue depth has grown past the threshold
+        // we warn and bump the slow-consumer counter so it can be alerted on
+        // without grepping logs.
         let queue_len = self.rx.len();
         if queue_len > SLOW_CONSUMER_THRESHOLD {
             tracing::warn!(
@@ -89,36 +175,65 @@ impl TelemetryConsumer {
                 threshold = SLOW_CONSUMER_THRESHOLD,
                 "Telemetry channel slow consumer: queue depth exceeds backpressure threshold"
             );
-            // Issue #2519 — surface slow-consumer pressure as a metric so it
-            // can be alerted on without grepping logs. Incremented once per
-            // observed breach (the caller invokes recv per message, so this
-            // tracks the count of messages received while over threshold).
+            // Incremented once per observed breach (the caller invokes recv
+            // per message, so this tracks the count of messages received
+            // while over threshold).
             metrics::counter!("fluxion_twin_slow_consumer_events_total").increment(1);
         }
 
-        match self.rx.recv() {
-            Ok(msg) => {
-                let sensor_id = msg.sensor_id;
-                let expected_seq = self.last_sequence.get(&sensor_id).copied().unwrap_or(0) + 1;
-
-                if msg.sequence == expected_seq {
-                    if let Some(processed) = self.process_message(msg) {
-                        Ok(processed)
-                    } else {
-                        self.recv_with_backpressure()
-                    }
-                } else if msg.sequence > expected_seq {
-                    self.buffer.entry(sensor_id).or_default().push_back(msg);
-                    if let Some(result) = self.try_drain_buffer(sensor_id) {
-                        return result;
-                    }
-                    self.recv_with_backpressure()
-                } else {
-                    self.buffer.entry(sensor_id).or_default().push_back(msg);
-                    self.recv_with_backpressure()
-                }
+        loop {
+            // (1) Emit any buffered message that has become the
+            // next-expected for its sensor. This MUST happen before touching
+            // the channel — otherwise a buffered message could hide behind
+            // an empty channel and stall the consumer forever (Issue #2617).
+            if let Some(ready) = self.pop_ready_buffered() {
+                return self.deliver(ready);
             }
-            Err(RecvError) => Err(TelemetryError::Recv("Channel closed".to_string())),
+
+            // (2) Pull the next message. A non-blocking `try_recv` first so
+            // we can reorder across several already-queued packets *and*
+            // notice when the channel runs dry — which is exactly when we
+            // must fall back to the buffer to avoid deadlocking.
+            let msg = match self.rx.try_recv() {
+                Ok(msg) => msg,
+                Err(TryRecvError::Disconnected) => {
+                    return Err(TelemetryError::Recv("Channel closed".to_string()));
+                }
+                Err(TryRecvError::Empty) => {
+                    if self.buffer.is_empty() {
+                        // Nothing buffered and nothing queued — block for the
+                        // next message (normal backpressure semantics), then
+                        // classify it on the next loop iteration.
+                        match self.rx.recv() {
+                            Ok(msg) => msg,
+                            Err(RecvError) => {
+                                return Err(TelemetryError::Recv("Channel closed".to_string()));
+                            }
+                        }
+                    } else {
+                        // Channel empty but the buffer still holds
+                        // out-of-order messages whose gap cannot be filled.
+                        // Emit the closest buffered message so the consumer
+                        // makes progress instead of blocking forever (#2617).
+                        match self.pop_best_buffered() {
+                            Some(best) => return self.deliver(best),
+                            None => match self.rx.recv() {
+                                Ok(msg) => msg,
+                                Err(RecvError) => {
+                                    return Err(TelemetryError::Recv("Channel closed".to_string()));
+                                }
+                            },
+                        }
+                    }
+                }
+            };
+
+            // (3) Classify the freshly-pulled message.
+            match self.classify(msg) {
+                RecvOutcome::Deliver(msg) => return self.deliver(msg),
+                RecvOutcome::Error(e) => return Err(e),
+                RecvOutcome::Buffered => continue,
+            }
         }
     }
 
