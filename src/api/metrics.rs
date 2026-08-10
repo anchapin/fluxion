@@ -28,7 +28,7 @@ use axum::{
     response::{IntoResponse, Response},
 };
 use metrics::{counter, describe_counter, describe_histogram, histogram};
-use metrics_exporter_prometheus::{PrometheusBuilder, PrometheusHandle};
+use metrics_exporter_prometheus::{Matcher, PrometheusBuilder, PrometheusHandle};
 
 /// Histogram buckets used for `fluxion_rest_request_duration_seconds`. Tuned
 /// for a JSON HTTP API that serves both tiny liveness probes (sub-millisecond)
@@ -36,6 +36,24 @@ use metrics_exporter_prometheus::{PrometheusBuilder, PrometheusHandle};
 ///
 ///   1 ms · 5 ms · 10 ms · 50 ms · 100 ms · 500 ms · 1 s · 5 s · 10 s
 const HTTP_LATENCY_BUCKETS_SECONDS: &[f64] = &[0.001, 0.005, 0.01, 0.05, 0.1, 0.5, 1.0, 5.0, 10.0];
+
+/// Histogram buckets for `fluxion_onnx_inference_duration_seconds` (Issue #2498).
+/// Neural-surrogate inference ranges from ~100 µs on a warm CPU session pool to
+/// several seconds for large batches or cold GPU/CUDA initialization, so the
+/// boundaries span 0.1 ms to 5 s:
+///
+///   0.1 ms · 0.5 ms · 1 ms · 5 ms · 10 ms · 50 ms · 100 ms · 500 ms · 1 s · 5 s
+const ONNX_INFERENCE_DURATION_BUCKETS_SECONDS: &[f64] =
+    &[0.0001, 0.0005, 0.001, 0.005, 0.01, 0.05, 0.1, 0.5, 1.0, 5.0];
+
+/// Histogram buckets for `fluxion_onnx_batch_size` (Issue #2498). Batch sizes
+/// are positive integers; the powers-of-two boundaries span a single zone
+/// (batch = 1, the `predict_loads_onnx` path) up to very large
+/// population-evaluation batches (`predict_loads_batched_onnx`):
+///
+///   1 · 2 · 4 · 8 · 16 · 32 · 64 · 128 · 256 · 512
+const ONNX_BATCH_SIZE_BUCKETS: &[f64] =
+    &[1.0, 2.0, 4.0, 8.0, 16.0, 32.0, 64.0, 128.0, 256.0, 512.0];
 
 /// Counter name emitted for every HTTP request handled by the REST API.
 pub const REQUESTS_TOTAL: &str = "fluxion_rest_requests_total";
@@ -47,6 +65,18 @@ pub const REQUEST_DURATION_SECONDS: &str = "fluxion_rest_request_duration_second
 
 /// Counter name emitted per error response (status >= 400).
 pub const ERRORS_TOTAL: &str = "fluxion_rest_errors_total";
+
+/// Histogram name for ONNX runtime inference wall-clock latency (Issue #2498).
+/// Labeled `backend` (cpu|cuda|coreml|directml|openvino) and `batch_bucket`.
+pub const ONNX_INFERENCE_DURATION_SECONDS: &str = "fluxion_onnx_inference_duration_seconds";
+
+/// Counter name for ONNX inference attempts (Issue #2498). Labeled `backend`
+/// and `outcome` (`success` | `error` | `fallback`).
+pub const ONNX_INFERENCE_TOTAL: &str = "fluxion_onnx_inference_total";
+
+/// Histogram name recording the batch size of each ONNX inference call
+/// (Issue #2498). Labeled `backend`.
+pub const ONNX_BATCH_SIZE: &str = "fluxion_onnx_batch_size";
 
 /// Process-global Prometheus handle. Lazily installed so that the integration
 /// tests in `tests/api_integration_tests.rs` (which build the router many times
@@ -67,7 +97,20 @@ pub fn init_recorder() -> PrometheusHandle {
             // downstream consumers can use `histogram_quantile()` directly.
             let builder = PrometheusBuilder::new()
                 .set_buckets(HTTP_LATENCY_BUCKETS_SECONDS)
-                .expect("non-empty histogram buckets");
+                .expect("non-empty histogram buckets")
+                // Issue #2498: ONNX metrics need different bucket boundaries
+                // than HTTP latency (sub-ms inference vs multi-second HTTP).
+                // Per-metric overrides take precedence over the default above.
+                .set_buckets_for_metric(
+                    Matcher::Full(ONNX_INFERENCE_DURATION_SECONDS.to_owned()),
+                    ONNX_INFERENCE_DURATION_BUCKETS_SECONDS,
+                )
+                .expect("non-empty ONNX duration buckets")
+                .set_buckets_for_metric(
+                    Matcher::Full(ONNX_BATCH_SIZE.to_owned()),
+                    ONNX_BATCH_SIZE_BUCKETS,
+                )
+                .expect("non-empty ONNX batch-size buckets");
             let handle = builder
                 .install_recorder()
                 .expect("PrometheusBuilder::install_recorder");
@@ -86,6 +129,22 @@ pub fn init_recorder() -> PrometheusHandle {
                 REQUEST_DURATION_SECONDS,
                 metrics::Unit::Seconds,
                 "Wall-clock duration of HTTP requests served by the Fluxion REST API"
+            );
+            // Issue #2498 — ONNX inference observability.
+            describe_histogram!(
+                ONNX_INFERENCE_DURATION_SECONDS,
+                metrics::Unit::Seconds,
+                "Wall-clock duration of ONNX runtime inference calls"
+            );
+            describe_counter!(
+                ONNX_INFERENCE_TOTAL,
+                "Number of ONNX inference attempts by backend (cpu|cuda|coreml|directml|openvino) \
+                 and outcome (success|error|fallback)"
+            );
+            describe_histogram!(
+                ONNX_BATCH_SIZE,
+                metrics::Unit::Count,
+                "Number of configs per ONNX inference batch"
             );
             handle
         })
