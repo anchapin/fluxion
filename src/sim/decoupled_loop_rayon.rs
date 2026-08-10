@@ -1501,8 +1501,8 @@ mod tests {
     /// avoid false failures (CI runs multi-core — see AGENTS.md).
     #[test]
     fn test_step_does_not_serialize_parallel_work() {
-        use std::thread::sleep;
-        use std::time::{Duration, Instant};
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        use std::sync::Arc;
 
         let cores = std::thread::available_parallelism()
             .map(|n| n.get())
@@ -1529,42 +1529,40 @@ mod tests {
 
         let mut dispatcher = ParallelLoopDispatcher::new(subgraphs);
 
-        // Use a per-subgraph workload large enough that real parallelism
-        // produces a clear speedup over full serialisation, independent of
-        // runner clock speed or Linux sleep granularity. 10 ms × 8 subgraphs =
-        // ~80 ms fully serial.
-        let per_work = Duration::from_millis(10);
+        // DETERMINISTIC concurrency probe (no wall-clock timing, so it is
+        // immune to CI runner load/contention that made the earlier sleep-based
+        // assertions flaky). Each closure bumps an in-flight counter, records
+        // the high-water mark of simultaneous executions, yields to give other
+        // rayon workers a chance to overlap, then decrements. A Mutex-
+        // serialisation regression caps the high-water mark at 1; genuine
+        // parallelism drives it to ≥ 2.
+        let in_flight = Arc::new(AtomicUsize::new(0));
+        let max_concurrent = Arc::new(AtomicUsize::new(0));
+        let inflight = in_flight.clone();
+        let maxseen = max_concurrent.clone();
 
-        // Measure a serial baseline (same total work, no overlap).
-        let serial_start = Instant::now();
-        for _ in 0..n_subgraphs {
-            sleep(per_work);
-        }
-        let serial = serial_start.elapsed();
-
-        // Measure the parallel dispatch.
-        let par_start = Instant::now();
-        let res = dispatcher.step(0.0, 0.001, |_sg| {
-            sleep(per_work);
+        let res = dispatcher.step(0.0, 0.001, move |_sg| {
+            let cur = inflight.fetch_add(1, Ordering::SeqCst) + 1;
+            maxseen.fetch_max(cur, Ordering::SeqCst);
+            // Yield a few times so other workers can enter the closure
+            // concurrently (this is what makes overlap observable without
+            // relying on sleep timing).
+            for _ in 0..8 {
+                std::thread::yield_now();
+            }
+            inflight.fetch_sub(1, Ordering::SeqCst);
             Ok::<(), DispatchError>(())
         });
-        let parallel = par_start.elapsed();
 
         assert!(res.is_ok(), "dispatch failed: {:?}", res.err());
 
-        // Relative comparison (robust to runner speed/load/core count):
-        // real parallelism ⇒ parallel ≤ serial/2 on ≥2 cores, so
-        // parallel*4 < serial*3 holds. A Mutex-serialisation regression makes
-        // parallel ≈ serial, failing this bound. Using integer millis avoids
-        // Duration overflow concerns.
-        let serial_ms = serial.as_millis() as u128;
-        let par_ms = parallel.as_millis() as u128;
+        let observed = max_concurrent.load(Ordering::SeqCst);
         assert!(
-            par_ms * 4 < serial_ms * 3,
-            "step() parallel {:?} not meaningfully faster than serial {:?} \
-             — suspected Mutex-serialisation regression (#2525)",
-            parallel,
-            serial
+            observed >= 2,
+            "max concurrent closures = {} (expected ≥ 2 on {} cores) — suspected \
+             Mutex-serialisation regression (#2525)",
+            observed,
+            cores
         );
     }
 
