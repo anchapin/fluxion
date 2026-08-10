@@ -101,7 +101,7 @@ fn test_shaded_fraction_bounds_always_valid() {
             relative_azimuth: az,
         };
 
-        let shaded = calculate_shaded_fraction(&window, Some(&overhang), &[fin], &solar);
+        let shaded = calculate_shaded_fraction(&window, Some(&overhang), &[fin], &solar, None);
 
         assert!(
             (0.0..=1.0).contains(&shaded),
@@ -137,7 +137,7 @@ fn test_overhang_45_degrees_front() {
         relative_azimuth: 0.0,
     };
 
-    let shaded = calculate_shaded_fraction(&window, Some(&overhang), &[], &solar);
+    let shaded = calculate_shaded_fraction(&window, Some(&overhang), &[], &solar, None);
     let expected = 0.5;
 
     let rel_error = (shaded - expected).abs() / expected;
@@ -168,7 +168,7 @@ fn test_overhang_30_degrees_front() {
         relative_azimuth: 0.0,
     };
 
-    let shaded = calculate_shaded_fraction(&window, Some(&overhang), &[], &solar);
+    let shaded = calculate_shaded_fraction(&window, Some(&overhang), &[], &solar, None);
 
     // Expected: tan(30°) ≈ 0.57735, shadow_y = 0.57735m
     // shaded_height = 0.57735m, area = 0.57735 * 6 = 3.4641 m²
@@ -203,7 +203,7 @@ fn test_overhang_60_degrees_front() {
         relative_azimuth: 0.0,
     };
 
-    let shaded = calculate_shaded_fraction(&window, Some(&overhang), &[], &solar);
+    let shaded = calculate_shaded_fraction(&window, Some(&overhang), &[], &solar, None);
 
     // Expected: tan(60°) ≈ 1.732, shadow_y = 1.732m
     // shaded_height = 1.732m, area = 1.732 * 6 = 10.392 m²
@@ -237,7 +237,7 @@ fn test_overhang_45_degrees_with_azimuth() {
         relative_azimuth: PI / 6.0, // 30° to the right
     };
 
-    let shaded = calculate_shaded_fraction(&window, Some(&overhang), &[], &solar);
+    let shaded = calculate_shaded_fraction(&window, Some(&overhang), &[], &solar, None);
 
     // Expected: tan_profile = tan(45) / cos(30) = 1 / 0.8660 = 1.1547
     // shadow_y = 1.1547, shaded_height = 1.1547, fraction = 0.57735
@@ -273,7 +273,7 @@ fn test_overhang_distance_above() {
         relative_azimuth: 0.0,
     };
 
-    let shaded = calculate_shaded_fraction(&window, Some(&overhang), &[], &winter_solar);
+    let shaded = calculate_shaded_fraction(&window, Some(&overhang), &[], &winter_solar, None);
 
     // For winter noon at 26.5°:
     // tan_profile = tan(26.5°) / cos(0°) ≈ 0.498
@@ -310,7 +310,7 @@ fn test_fin_45_degrees_right() {
         relative_azimuth: PI / 4.0,     // 45° to the right
     };
 
-    let shaded = calculate_shaded_fraction(&window, None, &[fin], &solar);
+    let shaded = calculate_shaded_fraction(&window, None, &[fin], &solar, None);
     let expected = 1.0 / 6.0; // ≈ 0.1667
 
     let rel_error = (shaded - expected).abs() / expected;
@@ -336,7 +336,7 @@ fn test_fin_45_degrees_left() {
         relative_azimuth: -PI / 4.0, // 45° to the LEFT
     };
 
-    let shaded = calculate_shaded_fraction(&window, None, &[fin], &solar);
+    let shaded = calculate_shaded_fraction(&window, None, &[fin], &solar, None);
     let expected = 1.0 / 6.0; // ≈ 0.1667
 
     let rel_error = (shaded - expected).abs() / expected;
@@ -362,7 +362,7 @@ fn test_fin_no_shade_opposite_side() {
         relative_azimuth: -PI / 4.0, // Sun to the LEFT
     };
 
-    let shaded = calculate_shaded_fraction(&window, None, &[fin], &solar);
+    let shaded = calculate_shaded_fraction(&window, None, &[fin], &solar, None);
 
     assert!(
         shaded < 1e-10,
@@ -398,8 +398,13 @@ fn test_combined_shading_not_greater_than_one() {
                 relative_azimuth: az,
             };
 
-            let shaded =
-                calculate_shaded_fraction(&window, Some(&overhang), &[fin_right, fin_left], &solar);
+            let shaded = calculate_shaded_fraction(
+                &window,
+                Some(&overhang),
+                &[fin_right, fin_left],
+                &solar,
+                None,
+            );
 
             assert!(
                 shaded <= 1.0,
@@ -431,8 +436,13 @@ fn test_combined_overhang_front_sun() {
         relative_azimuth: 0.0,
     };
 
-    let shaded =
-        calculate_shaded_fraction(&window, Some(&overhang), &[fin_right, fin_left], &solar);
+    let shaded = calculate_shaded_fraction(
+        &window,
+        Some(&overhang),
+        &[fin_right, fin_left],
+        &solar,
+        None,
+    );
 
     // Overhang shades 50%, fins don't contribute (sun in front)
     let expected = 0.5;
@@ -465,7 +475,7 @@ fn test_combined_overhang_and_fin() {
         relative_azimuth: PI / 4.0, // 45° to the right
     };
 
-    let shaded = calculate_shaded_fraction(&window, Some(&overhang), &[fin_right], &solar);
+    let shaded = calculate_shaded_fraction(&window, Some(&overhang), &[fin_right], &solar, None);
 
     // Overhang at 45° alt, 45° az: tan_profile = tan(45)/cos(45) = 1/0.866 = 1.414
     // shadow_y = 1.414m, shaded_height = 1.414m, fraction = 1.414*6/12 = 0.7071
@@ -509,7 +519,7 @@ fn test_no_shading_sun_below_horizon() {
         relative_azimuth: 0.0,
     };
 
-    let shaded = calculate_shaded_fraction(&window, Some(&overhang), &[fin], &solar);
+    let shaded = calculate_shaded_fraction(&window, Some(&overhang), &[fin], &solar, None);
 
     // Sun below horizon should return 1.0 (fully shaded / no sun)
     assert!(
@@ -531,7 +541,7 @@ fn test_no_shading_sun_behind_surface() {
         relative_azimuth: PI / 2.0, // 90° - sun is perpendicular to surface
     };
 
-    let shaded = calculate_shaded_fraction(&window, Some(&overhang), &[], &solar);
+    let shaded = calculate_shaded_fraction(&window, Some(&overhang), &[], &solar, None);
 
     assert!(
         shaded < 1e-10,
@@ -558,7 +568,7 @@ fn test_full_shading_near_zenith() {
         relative_azimuth: 0.0,
     };
 
-    let shaded = calculate_shaded_fraction(&window, Some(&overhang), &[], &solar);
+    let shaded = calculate_shaded_fraction(&window, Some(&overhang), &[], &solar, None);
 
     // Near-zenith should shade entire window
     assert!(
@@ -579,7 +589,7 @@ fn test_minimal_shading_near_horizon() {
         relative_azimuth: 0.0,
     };
 
-    let shaded = calculate_shaded_fraction(&window, Some(&overhang), &[], &solar);
+    let shaded = calculate_shaded_fraction(&window, Some(&overhang), &[], &solar, None);
 
     // Near-horizon should produce minimal shading
     assert!(
@@ -608,7 +618,7 @@ fn test_zero_depth_overhang() {
         relative_azimuth: 0.0,
     };
 
-    let shaded = calculate_shaded_fraction(&window, Some(&overhang), &[], &solar);
+    let shaded = calculate_shaded_fraction(&window, Some(&overhang), &[], &solar, None);
 
     assert!(
         shaded < 1e-10,
@@ -633,7 +643,7 @@ fn test_zero_depth_fin() {
         relative_azimuth: PI / 4.0,
     };
 
-    let shaded = calculate_shaded_fraction(&window, None, &[fin], &solar);
+    let shaded = calculate_shaded_fraction(&window, None, &[fin], &solar, None);
 
     assert!(
         shaded < 1e-10,
@@ -652,7 +662,7 @@ fn test_no_shading_devices() {
         relative_azimuth: 0.0,
     };
 
-    let shaded = calculate_shaded_fraction(&window, None, &[], &solar);
+    let shaded = calculate_shaded_fraction(&window, None, &[], &solar, None);
 
     assert!(
         shaded < 1e-10,
@@ -672,7 +682,7 @@ fn test_negative_altitude_full_shading() {
         relative_azimuth: 0.0,
     };
 
-    let shaded = calculate_shaded_fraction(&window, None, &[], &solar);
+    let shaded = calculate_shaded_fraction(&window, None, &[], &solar, None);
 
     assert!(
         (shaded - 1.0).abs() < 1e-10,
@@ -715,7 +725,7 @@ fn test_case_610_summer_noon_shading() {
         relative_azimuth: 0.0,
     };
 
-    let shaded = calculate_shaded_fraction(&window, Some(&overhang), &[], &solar);
+    let shaded = calculate_shaded_fraction(&window, Some(&overhang), &[], &solar, None);
 
     // Expected: shadow_y = 3.37m, shadow_top_on_window = 0.67m
     // shaded_fraction ≈ 0.335
@@ -758,7 +768,7 @@ fn test_case_610_winter_noon_minimal_shading() {
         relative_azimuth: 0.0,
     };
 
-    let shaded = calculate_shaded_fraction(&window, Some(&overhang), &[], &winter_solar);
+    let shaded = calculate_shaded_fraction(&window, Some(&overhang), &[], &winter_solar, None);
 
     // Winter sun at 26.5° should NOT reach the window
     // shadow_y = 0.498m < distance_above = 2.7m
@@ -794,7 +804,7 @@ fn test_case_610_equinox_noon_no_shading() {
         relative_azimuth: 0.0,
     };
 
-    let shaded = calculate_shaded_fraction(&window, Some(&overhang), &[], &equinox_solar);
+    let shaded = calculate_shaded_fraction(&window, Some(&overhang), &[], &equinox_solar, None);
 
     // Even at 45° altitude, shadow_y = 1.0m < distance_above = 2.7m
     assert!(
@@ -827,7 +837,7 @@ fn test_case_610_summer_afternoon_with_azimuth() {
         relative_azimuth: 45.0_f64.to_radians(),
     };
 
-    let shaded = calculate_shaded_fraction(&window, Some(&overhang), &[], &summer_afternoon);
+    let shaded = calculate_shaded_fraction(&window, Some(&overhang), &[], &summer_afternoon, None);
 
     // With azimuth, tan_profile increases but still shadow_y < distance_above
     assert!(
@@ -872,7 +882,7 @@ fn test_case_910_matches_case_610_shading() {
             relative_azimuth: az,
         };
 
-        let shaded = calculate_shaded_fraction(&window, Some(&overhang), &[], &solar);
+        let shaded = calculate_shaded_fraction(&window, Some(&overhang), &[], &solar, None);
 
         // Case 910 shading must match Case 610 (same geometry)
         // Re-use expected values from Case 610 tests
@@ -918,7 +928,7 @@ fn test_case_910_summer_noon_shading() {
         relative_azimuth: 0.0,
     };
 
-    let shaded = calculate_shaded_fraction(&window, Some(&overhang), &[], &solar);
+    let shaded = calculate_shaded_fraction(&window, Some(&overhang), &[], &solar, None);
 
     // Same as Case 610: shadow_y = 3.37m, shadow_top_on_window = 0.67m
     let expected = 0.335;
@@ -950,7 +960,7 @@ fn test_case_910_winter_noon_minimal_shading() {
         relative_azimuth: 0.0,
     };
 
-    let shaded = calculate_shaded_fraction(&window, Some(&overhang), &[], &solar);
+    let shaded = calculate_shaded_fraction(&window, Some(&overhang), &[], &solar, None);
 
     assert!(
         shaded < 0.05,
@@ -987,7 +997,7 @@ fn test_case_610_combined_overhang_fin_summer() {
         relative_azimuth: -45.0_f64.to_radians(),
     };
 
-    let shaded = calculate_shaded_fraction(&window, Some(&overhang), &[fin_right], &solar);
+    let shaded = calculate_shaded_fraction(&window, Some(&overhang), &[fin_right], &solar, None);
 
     // Overhang: shadow_y = 1.0 * tan(50°)/cos(-45°) ≈ 1.686m
     // shadow_top_on_window = max(0, 1.686 - 2.7) = 0
@@ -1033,7 +1043,7 @@ fn test_case_610_reduction_factor_bounds() {
             relative_azimuth: az,
         };
 
-        let shaded = calculate_shaded_fraction(&window, Some(&overhang), &[], &solar);
+        let shaded = calculate_shaded_fraction(&window, Some(&overhang), &[], &solar, None);
         let reduction = 1.0 - shaded;
 
         assert!(
@@ -1077,7 +1087,13 @@ fn test_performance_under_100ms() {
 
     let start = Instant::now();
     for _ in 0..1000 {
-        let _ = calculate_shaded_fraction(&window, Some(&overhang), &[fin_right, fin_left], &solar);
+        let _ = calculate_shaded_fraction(
+            &window,
+            Some(&overhang),
+            &[fin_right, fin_left],
+            &solar,
+            None,
+        );
     }
     let elapsed = start.elapsed();
 
@@ -1145,8 +1161,13 @@ fn test_ew_fins_low_angle_east() {
         relative_azimuth: 10.0_f64.to_radians(),
     };
 
-    let shaded =
-        calculate_shaded_fraction(&window, Some(&overhang), &[fin_left, fin_right], &solar);
+    let shaded = calculate_shaded_fraction(
+        &window,
+        Some(&overhang),
+        &[fin_left, fin_right],
+        &solar,
+        None,
+    );
 
     assert!(
         shaded > 0.10,
@@ -1199,8 +1220,13 @@ fn test_ew_fins_low_angle_west() {
         relative_azimuth: -10.0_f64.to_radians(),
     };
 
-    let shaded =
-        calculate_shaded_fraction(&window, Some(&overhang), &[fin_left, fin_right], &solar);
+    let shaded = calculate_shaded_fraction(
+        &window,
+        Some(&overhang),
+        &[fin_left, fin_right],
+        &solar,
+        None,
+    );
 
     assert!(
         shaded > 0.10,
@@ -1233,7 +1259,7 @@ fn test_ew_fins_low_angle_east_fin_only() {
         relative_azimuth: 10.0_f64.to_radians(),
     };
 
-    let shaded = calculate_shaded_fraction(&window, None, &[fin_right], &solar);
+    let shaded = calculate_shaded_fraction(&window, None, &[fin_right], &solar, None);
 
     assert!(
         shaded < 0.01,
@@ -1262,7 +1288,7 @@ fn test_ew_fins_low_angle_west_fin_only() {
         relative_azimuth: -10.0_f64.to_radians(),
     };
 
-    let shaded = calculate_shaded_fraction(&window, None, &[fin_left], &solar);
+    let shaded = calculate_shaded_fraction(&window, None, &[fin_left], &solar, None);
 
     assert!(
         shaded < 0.01,
@@ -1329,8 +1355,13 @@ fn test_ew_shading_low_angle_issue_1617() {
         relative_azimuth: 10.0_f64.to_radians(),
     };
 
-    let shaded =
-        calculate_shaded_fraction(&window, Some(&overhang), &[fin_right, fin_left], &solar);
+    let shaded = calculate_shaded_fraction(
+        &window,
+        Some(&overhang),
+        &[fin_right, fin_left],
+        &solar,
+        None,
+    );
 
     // The shaded fraction should be significantly higher than the buggy version
     // that used window.height=3.0m for infinite fin assumption.
@@ -1383,7 +1414,7 @@ fn test_fin_height_bounded_by_mounting_height() {
         relative_azimuth: 30.0_f64.to_radians(),
     };
 
-    let fin_only_shaded = calculate_shaded_fraction(&window, None, &[fin], &solar);
+    let fin_only_shaded = calculate_shaded_fraction(&window, None, &[fin], &solar, None);
 
     // Fin with height=0 should produce essentially no shading
     assert!(

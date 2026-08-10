@@ -33,7 +33,7 @@ mod basic_functionality {
             relative_azimuth: 0.0,
         };
 
-        let shaded = calculate_shaded_fraction(&window, Some(&overhang), &[], &solar);
+        let shaded = calculate_shaded_fraction(&window, Some(&overhang), &[], &solar, None);
         assert_eq!(shaded, 0.0);
     }
 
@@ -58,7 +58,7 @@ mod basic_functionality {
             relative_azimuth: 0.0,
         };
 
-        let shaded = calculate_shaded_fraction(&window, None, &fins, &solar);
+        let shaded = calculate_shaded_fraction(&window, None, &fins, &solar, None);
         assert_eq!(shaded, 0.0);
     }
 
@@ -77,7 +77,7 @@ mod basic_functionality {
             relative_azimuth: 0.0,
         };
 
-        let shaded = calculate_shaded_fraction(&window, None, &[], &solar);
+        let shaded = calculate_shaded_fraction(&window, None, &[], &solar, None);
         assert_eq!(shaded, 0.0);
     }
 }
@@ -106,7 +106,7 @@ mod edge_cases {
             relative_azimuth: 0.0,
         };
 
-        let shaded = calculate_shaded_fraction(&window, Some(&overhang), &[], &solar);
+        let shaded = calculate_shaded_fraction(&window, Some(&overhang), &[], &solar, None);
         assert_eq!(shaded, 1.0);
     }
 
@@ -130,7 +130,7 @@ mod edge_cases {
             relative_azimuth: PI * 0.6,
         }; // > 90 deg
 
-        let shaded = calculate_shaded_fraction(&window, Some(&overhang), &[], &solar);
+        let shaded = calculate_shaded_fraction(&window, Some(&overhang), &[], &solar, None);
         assert_eq!(shaded, 0.0);
     }
 
@@ -159,8 +159,9 @@ mod edge_cases {
             relative_azimuth: 0.0,
         };
 
-        let shaded_close = calculate_shaded_fraction(&window, Some(&overhang_close), &[], &solar);
-        let shaded_far = calculate_shaded_fraction(&window, Some(&overhang_far), &[], &solar);
+        let shaded_close =
+            calculate_shaded_fraction(&window, Some(&overhang_close), &[], &solar, None);
+        let shaded_far = calculate_shaded_fraction(&window, Some(&overhang_far), &[], &solar, None);
 
         assert!(shaded_close > shaded_far);
     }
@@ -192,8 +193,8 @@ mod edge_cases {
             relative_azimuth: -PI / 6.0,
         };
 
-        let shaded_close = calculate_shaded_fraction(&window, None, &[fin_close], &solar);
-        let shaded_far = calculate_shaded_fraction(&window, None, &[fin_far], &solar);
+        let shaded_close = calculate_shaded_fraction(&window, None, &[fin_close], &solar, None);
+        let shaded_far = calculate_shaded_fraction(&window, None, &[fin_far], &solar, None);
 
         assert!(shaded_close > shaded_far);
     }
@@ -229,9 +230,10 @@ mod interactions {
             relative_azimuth: 0.0,
         };
 
-        let shaded_only_overhang = calculate_shaded_fraction(&window, Some(&overhang), &[], &solar);
-        let shaded_only_fins = calculate_shaded_fraction(&window, None, &fins, &solar);
-        let shaded_both = calculate_shaded_fraction(&window, Some(&overhang), &fins, &solar);
+        let shaded_only_overhang =
+            calculate_shaded_fraction(&window, Some(&overhang), &[], &solar, None);
+        let shaded_only_fins = calculate_shaded_fraction(&window, None, &fins, &solar, None);
+        let shaded_both = calculate_shaded_fraction(&window, Some(&overhang), &fins, &solar, None);
 
         assert!(shaded_both >= shaded_only_overhang);
         assert!(shaded_both >= shaded_only_fins);

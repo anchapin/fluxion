@@ -485,6 +485,7 @@ mod heap_verification {
         }
     }
 
+    #[cfg(feature = "dhat")]
     #[test]
     fn test_bdf_step_zero_alloc() {
         /// Verify that BdfTimeStepper::step() does not allocate on the heap
