@@ -1353,7 +1353,7 @@ impl BatchOracle {
             // construction out of the per-timestep inner loop, which
             // previously ran `surrogates.clone()` once per timestep per
             // config — the leading 5R1C allocation-pressure cost).
-            let step_params = StepParameters::build_analytical(&self.surrogates);
+            let step_params = StepParameters::build_analytical();
             for (idx, ref mut model) in valid_configs.iter_mut() {
                 let mut total_energy = 0.0;
                 for t in 0..8760 {
@@ -1573,7 +1573,7 @@ impl BatchOracle {
                 .par_iter_mut()
                 .zip(energies.par_iter_mut())
                 .for_each(|((_, model), energy)| {
-                    let step_params = StepParameters::build_analytical(&self.surrogates);
+                    let step_params = StepParameters::build_analytical();
                     for t in 0..8760 {
                         let hour_of_day = t % 24;
                         let daily_cycle =

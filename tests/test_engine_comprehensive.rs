@@ -18,7 +18,7 @@ fn test_night_ventilation_activation() {
     // Test at 12:00 (inactive)
     let step_params_inactive = StepParameters {
         use_ai: false,
-        surrogates: surrogates.clone(),
+        surrogates: Some(std::sync::Arc::new(surrogates.clone())),
         use_analytical_gains: false,
         lighting: None,
         equipment: None,
@@ -29,7 +29,7 @@ fn test_night_ventilation_activation() {
     // Test at 23:00 (active)
     let step_params_active = StepParameters {
         use_ai: false,
-        surrogates: surrogates.clone(),
+        surrogates: Some(std::sync::Arc::new(surrogates.clone())),
         use_analytical_gains: false,
         lighting: None,
         equipment: None,
@@ -54,7 +54,7 @@ fn test_multi_zone_initialization() {
     // Run a step
     let step_params = StepParameters {
         use_ai: false,
-        surrogates: surrogates.clone(),
+        surrogates: Some(std::sync::Arc::new(surrogates.clone())),
         use_analytical_gains: false,
         lighting: None,
         equipment: None,
@@ -63,7 +63,7 @@ fn test_multi_zone_initialization() {
     let energy = model.solve_single_step(0, 10.0, &step_params, 3600.0);
     let step_params = StepParameters {
         use_ai: false,
-        surrogates: surrogates.clone(),
+        surrogates: Some(std::sync::Arc::new(surrogates.clone())),
         use_analytical_gains: false,
         lighting: None,
         equipment: None,
@@ -81,7 +81,7 @@ fn test_8r3c_initialization() {
     // Run a step
     let step_params = StepParameters {
         use_ai: false,
-        surrogates: surrogates.clone(),
+        surrogates: Some(std::sync::Arc::new(surrogates.clone())),
         use_analytical_gains: false,
         lighting: None,
         equipment: None,
@@ -108,7 +108,7 @@ fn test_ctf_integration() {
     // Run a step (should use CTF solver)
     let step_params = StepParameters {
         use_ai: false,
-        surrogates: surrogates.clone(),
+        surrogates: Some(std::sync::Arc::new(surrogates.clone())),
         use_analytical_gains: false,
         lighting: None,
         equipment: None,
@@ -129,7 +129,7 @@ fn test_fd_integration() {
     // Run a step (should use FD solver)
     let step_params = StepParameters {
         use_ai: false,
-        surrogates: surrogates.clone(),
+        surrogates: Some(std::sync::Arc::new(surrogates.clone())),
         use_analytical_gains: false,
         lighting: None,
         equipment: None,
@@ -147,7 +147,7 @@ fn test_thermal_mass_integration() {
     // Run a step (should use thermal mass)
     let step_params = StepParameters {
         use_ai: false,
-        surrogates: surrogates.clone(),
+        surrogates: Some(std::sync::Arc::new(surrogates.clone())),
         use_analytical_gains: false,
         lighting: None,
         equipment: None,
@@ -169,7 +169,7 @@ fn test_hvac_equipment_integration() {
     // Run a step
     let step_params = StepParameters {
         use_ai: false,
-        surrogates: surrogates.clone(),
+        surrogates: Some(std::sync::Arc::new(surrogates.clone())),
         use_analytical_gains: false,
         lighting: None,
         equipment: None,

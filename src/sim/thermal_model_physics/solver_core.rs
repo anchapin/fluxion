@@ -12,6 +12,7 @@
 //! of the Issue #902 modular split.
 
 use log::{error, info, warn};
+use std::sync::Arc;
 
 use crate::ai::surrogate::SurrogateManager;
 use crate::physics::cta::{ContinuousTensor, VectorField};
@@ -286,15 +287,9 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         // Issue #901 perf: construct a single StepParameters once and reuse it
         // (passed by & reference to solve_single_step). Avoids per-step clones of
         // SurrogateManager, LightingSchedule, and OccupancyProfile.
-        // When use_ai is false we still need a SurrogateManager value; use Default
-        // (heap-free) instead of cloning the (potentially heavy) composite surrogate.
         let step_params = StepParameters {
             use_ai,
-            surrogates: if use_ai {
-                surrogates.clone()
-            } else {
-                SurrogateManager::default()
-            },
+            surrogates: use_ai.then(|| Arc::new(surrogates.clone())),
             use_analytical_gains: true,
             lighting: lighting_ref.cloned(),
             equipment: None, // Can't clone dyn Equipment, so pass None

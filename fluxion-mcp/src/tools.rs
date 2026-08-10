@@ -2,7 +2,6 @@ use crate::state::{
     EnergyResults, FluidLoopConnection, FluidLoopNode, FluidLoopTopology, FluidNetworkState,
     HvacControlSequence, HvacControlSetpoint, McpState, SimulationResults,
 };
-use fluxion::ai::surrogate::SurrogateManager;
 use fluxion::physics::cta::VectorField;
 use fluxion::sim::construction::{Construction, ConstructionLayer, MassClass};
 use fluxion::sim::engine::{StepParameters, ThermalModel};
@@ -429,11 +428,9 @@ fn run_simulation(state: &mut McpState, args: &serde_json::Map<String, Value>) -
         .and_then(|v| v.as_bool())
         .unwrap_or(false);
 
-    let surrogates = SurrogateManager::new().unwrap_or_default();
-
     let step_params = StepParameters {
         use_ai: false,
-        surrogates,
+        surrogates: None,
         use_analytical_gains: true,
         lighting: None,
         equipment: None,
