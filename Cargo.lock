@@ -1352,12 +1352,15 @@ dependencies = [
  "fluxion",
  "fluxion-fluid",
  "fluxion-toon",
+ "metrics",
+ "metrics-util",
  "serde",
  "serde_json",
  "tempfile",
  "tokio",
  "tracing",
  "tracing-subscriber",
+ "uuid",
 ]
 
 [[package]]
