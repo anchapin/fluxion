@@ -48,6 +48,8 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
             // Try ONNX with fallback to analytical mode
             match step_params
                 .surrogates
+                .as_deref()
+                .expect("use_ai requires a SurrogateManager")
                 .predict_loads_with_fallback(self.0.temperatures.as_ref())
             {
                 Ok(pred) => {
