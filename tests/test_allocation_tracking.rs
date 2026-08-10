@@ -36,6 +36,7 @@ fn create_single_zone_model() -> ThermalModel<VectorField> {
 ///
 /// Baseline target (before optimization): < 10,000 allocations per config per year
 /// (to be determined by actual measurement)
+#[cfg(feature = "dhat")]
 #[test]
 fn test_allocation_count_single_model() {
     // Initialize dhat profiler for this test only
@@ -58,6 +59,7 @@ fn test_allocation_count_single_model() {
 ///
 /// Baseline target: Should scale linearly and not have pathological allocations.
 /// Reduced from 1000 to 100 to avoid timeout in CI coverage runs.
+#[cfg(feature = "dhat")]
 #[test]
 fn test_allocation_count_batch_100() {
     // Initialize dhat profiler for this test only

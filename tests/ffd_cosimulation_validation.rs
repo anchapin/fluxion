@@ -549,7 +549,7 @@ fn test_diurnal_cycle_with_solar_variation() {
     let ffd = BuoyancyDrivenFfdSolver::new(1, 6);
     let mut coupling = LooseCoupling::new(Box::new(ffd), 1, 6, 3600.0).unwrap();
 
-    let mut daily_peak_chtc = 0.0;
+    let mut daily_peak_chtc: f64 = 0.0;
     let mut daily_min_chtc = f64::MAX;
     let mut total_heating_energy = 0.0;
 
@@ -659,9 +659,9 @@ fn test_peak_cooling_load_tolerance() {
     let mut coupling = LooseCoupling::new(Box::new(ffd), 1, 6, 3600.0).unwrap();
 
     // Reference peak cooling load [kW] from literature (NIST HVAC BESTEST)
-    let reference_peak_cooling = 4.5;
+    let reference_peak_cooling: f64 = 4.5;
 
-    let mut peak_cooling = 0.0;
+    let mut peak_cooling: f64 = 0.0;
 
     for hour in 0..24 {
         // Hot day: 30°C peak at 3pm
