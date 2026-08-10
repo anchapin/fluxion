@@ -159,6 +159,20 @@ use crate::weather::HourlyWeatherData;
 use anyhow::Result;
 #[allow(unused_imports)]
 use log::{debug, info};
+
+// Issue #2548: per-call tracing spans + metrics for the PyO3 `Model`/`BatchOracle`
+// entrypoints. Gated on `python-bindings` because they are only referenced from
+// the Python-facing methods below.
+#[cfg(feature = "python-bindings")]
+use std::sync::atomic::{AtomicU64, Ordering};
+#[cfg(feature = "python-bindings")]
+use std::time::{Duration, Instant};
+
+/// Monotonic id generator for Python-facing `Model` instances (Issue #2548).
+/// Surfaces as `simulation_id` on `Model.__repr__` so Python users can correlate
+/// a divergence back to a specific simulation.
+#[cfg(feature = "python-bindings")]
+static MODEL_ID_COUNTER: AtomicU64 = AtomicU64::new(0);
 #[cfg(feature = "python-bindings")]
 use ndarray::Array2;
 #[cfg(feature = "python-bindings")]
@@ -215,6 +229,15 @@ use pyo3::{
 struct Model {
     inner: ThermalModel<VectorField>,
     surrogates: SurrogateManager,
+    /// Stable id for this Python `Model` instance, surfaced via `__repr__`
+    /// (Issue #2548) so users can correlate a tracing span / metric to one
+    /// specific simulation when debugging a divergence.
+    #[pyo3(get)]
+    simulation_id: String,
+    /// Wall-clock duration of the most recent `simulate()` call, recorded for
+    /// the debug-friendly `__repr__` (Issue #2548). `None` until the first
+    /// successful `simulate()` invocation.
+    last_duration: Option<Duration>,
 }
 
 #[cfg(feature = "python-bindings")]
@@ -232,6 +255,8 @@ impl Model {
             surrogates: SurrogateManager::new().map_err(|e| {
                 SurrogateError::new_err(format!("Failed to create SurrogateManager: {}", e))
             })?,
+            simulation_id: format!("model-{}", MODEL_ID_COUNTER.fetch_add(1, Ordering::Relaxed)),
+            last_duration: None,
         })
     }
 
@@ -310,17 +335,52 @@ impl Model {
     /// # Returns
     /// Total energy use intensity (EUI) in kWh/m²/year
     fn simulate(&mut self, years: u32, use_surrogates: bool) -> PyResult<f64> {
-        info!(
-            "Starting simulation for {} years, use_surrogates={}",
-            years, use_surrogates
-        );
-        let steps = years as usize * 8760;
-        debug!("Simulation will process {} timesteps", steps);
-        let result =
-            self.inner
-                .solve_timesteps(steps, &self.surrogates, use_surrogates, None, None, None);
-        info!("Simulation complete, EUI = {:.2} kWh/m²/year", result);
-        Ok(result)
+        // Issue #2548: enter a tracing span for the full duration of the
+        // Python-visible call so spans/metrics emitted from the physics core
+        // are correlated to this `simulation_id`.
+        let _span = tracing::info_span!(
+            "python_simulate",
+            simulation_id = %self.simulation_id,
+            years,
+            use_surrogates,
+        )
+        .entered();
+
+        let start = Instant::now();
+        // The physics core currently infallibly returns EUI, but compute the
+        // result as a `PyResult<f64>` block so the success/error outcome
+        // label is derived from a real `Result` — the error branch will fire
+        // as soon as a future change makes `simulate` fallible.
+        let outcome: PyResult<f64> = {
+            info!(
+                "Starting simulation for {} years, use_surrogates={}",
+                years, use_surrogates
+            );
+            let steps = years as usize * 8760;
+            debug!("Simulation will process {} timesteps", steps);
+            let result = self.inner.solve_timesteps(
+                steps,
+                &self.surrogates,
+                use_surrogates,
+                None,
+                None,
+                None,
+            );
+            info!("Simulation complete, EUI = {:.2} kWh/m²/year", result);
+            Ok(result)
+        };
+
+        let duration = start.elapsed();
+        // Always record the last call's duration, even on error, so the
+        // `__repr__` reflects the most recent attempt when debugging.
+        self.last_duration = Some(duration);
+
+        metrics::histogram!("fluxion_python_simulate_duration_seconds")
+            .record(duration.as_secs_f64());
+        let outcome_label = if outcome.is_ok() { "success" } else { "error" };
+        metrics::counter!("fluxion_python_simulate_total", "outcome" => outcome_label).increment(1);
+
+        outcome
     }
 
     /// Simulate building energy consumption with internal loads (Plan 17-04).
@@ -694,6 +754,26 @@ impl Model {
     /// `ThermalModelData`.
     fn set_hvac_system(&mut self, hvac: crate::python::model_bindings::PyHVACSystem) {
         crate::python::model_bindings::apply_hvac_system_to_model(&mut self.inner, &hvac);
+    }
+
+    /// Debug-friendly `__repr__` (Issue #2548).
+    ///
+    /// Exposes the stable `simulation_id` (so users can grep tracing/metrics
+    /// output for one specific run) and `last_duration_ms` from the most
+    /// recent `simulate()` call. `last_duration_ms` is `0.0` before the first
+    /// simulation has run.
+    fn __repr__(&self) -> String {
+        let last_duration_ms = self
+            .last_duration
+            .map(|d| d.as_secs_f64() * 1_000.0)
+            .unwrap_or(0.0);
+        format!(
+            "Model(simulation_id='{}', last_duration_ms={:.2}, num_zones={}, use_surrogates_ready={})",
+            self.simulation_id,
+            last_duration_ms,
+            self.inner.num_zones,
+            self.surrogates.gpu_supported(),
+        )
     }
 }
 
@@ -1425,7 +1505,30 @@ impl BatchOracle {
         population: Vec<Vec<f64>>,
         use_surrogates: bool,
     ) -> PyResult<Vec<f64>> {
-        Ok(Self::evaluate_population(self, population, use_surrogates)?)
+        // Issue #2548: tracing span + metrics for the Python-facing batch
+        // entrypoint. Mirrors `Model::simulate`. The span covers the full
+        // Python→Rust call including rayon parallelism in the inner loop.
+        let _span = tracing::info_span!(
+            "python_batch_evaluate",
+            population_size = population.len(),
+            use_surrogates,
+        )
+        .entered();
+
+        let start = Instant::now();
+        let result = Self::evaluate_population(self, population, use_surrogates);
+        let duration = start.elapsed();
+
+        metrics::histogram!("fluxion_python_batch_evaluate_duration_seconds")
+            .record(duration.as_secs_f64());
+        let outcome_label = if result.is_ok() { "success" } else { "error" };
+        metrics::counter!(
+            "fluxion_python_batch_evaluate_total",
+            "outcome" => outcome_label
+        )
+        .increment(1);
+
+        Ok(result?)
     }
 
     /// Evaluate a population of building design configurations using BuildingParameters.
