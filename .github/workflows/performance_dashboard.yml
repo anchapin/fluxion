@@ -1,10 +1,22 @@
 name: Performance Dashboard
 
+# Issue #2550: split the dashboard workflow so the PR-blocking benchmark job
+# builds with default features only (~3 min cold-cache) instead of
+# `--all-features` (~25 min cold-cache). The slow `--all-features` build
+# pulls in `ort` (CUDA, TensorRT), `pyo3`, `napi`, `rdkafka`, `fluxion-city`,
+# `fluxion-cfd`, and `gauge-solver`, and only runs on the nightly schedule
+# plus manual workflow_dispatch — never as a PR blocker.
+
 on:
   push:
     branches: [ main ]
   pull_request:
     branches: [ main ]
+  schedule:
+    # Nightly at 02:00 UTC, well before the mutation-nightly job at 07:00 UTC
+    # so the heavy `--all-features` build does not contend for self-hosted
+    # runner disk / RAM with mutation testing.
+    - cron: '0 2 * * *'
   workflow_dispatch:
     inputs:
       skip_regression_check:
@@ -28,10 +40,16 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  benchmark:
-    name: Run Benchmarks
+  # =========================================================================
+  # bench-default — REQUIRED PR check.
+  # Builds with default features only (matches what a user gets from
+  # `cargo install fluxion`). Cold-cache compile time: ~3 min. Warm-cache:
+  # <1 min. This is the fast path the dashboard regression check consumes.
+  # =========================================================================
+  bench-default:
+    name: Bench (default features)
     runs-on: ubuntu-latest
-    timeout-minutes: 60
+    timeout-minutes: 15
 
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4
@@ -44,25 +62,21 @@ jobs:
       - name: Install Rust
         uses: dtolnay/rust-toolchain@4cda84d5c5c54efe2404f9d843567869ab1699d4  # stable
 
-      - name: Cache cargo
-        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830  # v4
+      # Swatinem/rust-cache@v2 automatically differentiates cache entries
+      # by the rustc invocation (feature flags included), so the
+      # `--all-features` cache from `bench-all-features` cannot poison
+      # the default-features cache and vice versa.
+      - name: Cache cargo (default features)
+        uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32  # v2
         with:
-          path: |
-            ~/.cargo/registry
-            ~/.cargo/git
-            target
-          key: ${{ runner.os }}-cargo-bench-${{ hashFiles('**/Cargo.lock') }}
-          restore-keys: |
-            ${{ runner.os }}-cargo-bench-
+          shared-key: perf-dashboard-default
+          cache-on-failure: true
 
-      - name: Build release
-        run: cargo build --release --all-features
+      - name: Build release (default features)
+        run: cargo build --release
 
-      - name: Run all benchmarks
-        run: cargo bench --all-features --no-fail-fast -- --output-format=json 2>&1 | tee benchmark_output.txt
-
-      - name: Run allocation tracking (dhat)
-        run: cargo test test_allocation_tracking --release -- --nocapture 2>&1 | tee dhat_output.txt
+      - name: Run benchmarks (default features)
+        run: cargo bench --no-fail-fast -- --output-format=json 2>&1 | tee benchmark_output.txt
 
       - name: Generate benchmark summary
         run: |
@@ -104,6 +118,7 @@ jobs:
           summary = {
               "timestamp": os.environ.get('GITHUB_RUN_ID', 'local'),
               "commit": os.environ.get('GITHUB_SHA', 'unknown')[:8],
+              "feature_profile": "default",
               "benchmarks": []
           }
 
@@ -120,6 +135,224 @@ jobs:
               json.dump(summary, f, indent=2)
 
           # Save full output for artifact
+          with open('benchmark_full_output.txt', 'w') as f:
+              f.write(content)
+
+          print(f"Extracted {len(summary['benchmarks'])} benchmark results")
+          for b in summary["benchmarks"][:5]:
+              print(f"  {b['name']}: {b['value']:.2f} {b['unit']}")
+          EOF
+
+      - name: Upload benchmark artifacts (default features)
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02  # v4
+        with:
+          name: bench-default-results-${{ github.run_id }}
+          path: |
+            benchmark_summary.json
+            benchmark_full_output.txt
+            target/criterion/**/*
+          retention-days: 30
+
+  # =========================================================================
+  # published-crate-bench — main push only.
+  # Tracks the user-facing performance budget by re-running the default-
+  # features benchmark on every main commit. Produces a distinct artifact
+  # (`published-crate-bench-results-…`) so the dashboard can isolate the
+  # "what users actually get via cargo install" perf signal from PR-noise
+  # `bench-default` runs. NOT a PR blocker; runs only on push to main.
+  # =========================================================================
+  published-crate-bench:
+    name: Published Crate Bench
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    timeout-minutes: 15
+    needs: bench-default
+
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4
+
+      - name: Install system dependencies
+        uses: ./.github/actions/install-system-deps
+        with:
+          packages: libssl-dev,pkg-config,libfontconfig1-dev,fontconfig
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@4cda84d5c5c54efe2404f9d843567869ab1699d4  # stable
+
+      - name: Cache cargo (default features)
+        uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32  # v2
+        with:
+          shared-key: perf-dashboard-default
+          cache-on-failure: true
+
+      - name: Build release (default features, published-crate scenario)
+        run: cargo build --release
+
+      - name: Run benchmarks (published-crate, default features)
+        run: cargo bench --no-fail-fast -- --output-format=json 2>&1 | tee benchmark_output.txt
+
+      - name: Generate published-crate benchmark summary
+        run: |
+          python3 << 'EOF'
+          import json
+          import re
+          import os
+          from pathlib import Path
+
+          with open('benchmark_output.txt', 'r') as f:
+              content = f.read()
+
+          benchmarks = []
+          current_benchmark = []
+          in_json = False
+          json_depth = 0
+
+          for line in content.split('\n'):
+              if '"benchmarks"' in line:
+                  in_json = True
+              if in_json:
+                  current_benchmark.append(line)
+                  json_depth += line.count('{') - line.count('}')
+                  if json_depth == 0 and current_benchmark:
+                      try:
+                          json_str = '\n'.join(current_benchmark)
+                          data = json.loads(json_str)
+                          if 'benchmarks' in data:
+                              benchmarks.extend(data['benchmarks'])
+                      except:
+                          pass
+                      current_benchmark = []
+                      in_json = '"benchmarks"' in '\n'.join(current_benchmark + [line])
+
+          summary = {
+              "timestamp": os.environ.get('GITHUB_RUN_ID', 'local'),
+              "commit": os.environ.get('GITHUB_SHA', 'unknown')[:8],
+              "feature_profile": "default-published-crate",
+              "benchmarks": []
+          }
+
+          for b in benchmarks:
+              if isinstance(b, dict):
+                  summary["benchmarks"].append({
+                      "name": b.get("name", "unknown"),
+                      "value": b.get("median", {}).get("value", 0) if isinstance(b.get("median"), dict) else b.get("median", 0),
+                      "unit": b.get("unit", "ns"),
+                  })
+
+          with open('benchmark_summary.json', 'w') as f:
+              json.dump(summary, f, indent=2)
+
+          with open('benchmark_full_output.txt', 'w') as f:
+              f.write(content)
+
+          print(f"Extracted {len(summary['benchmarks'])} benchmark results")
+          for b in summary["benchmarks"][:5]:
+              print(f"  {b['name']}: {b['value']:.2f} {b['unit']}")
+          EOF
+
+      - name: Upload published-crate artifacts
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02  # v4
+        with:
+          name: published-crate-bench-results-${{ github.run_id }}
+          path: |
+            benchmark_summary.json
+            benchmark_full_output.txt
+            target/criterion/**/*
+          retention-days: 90
+
+  # =========================================================================
+  # bench-all-features — nightly schedule + manual dispatch only.
+  # NOT a PR blocker. This is the only job that compiles the full optional
+  # dependency surface (CUDA, TensorRT, pyo3, napi, rdkafka, fluxion-city,
+  # fluxion-cfd, gauge-solver, dhat). The `dhat` allocation-tracking test
+  # requires the `dhat` feature, so it lives here too. Cold-cache compile
+  # time: ~25 min. Warm-cache: ~5 min.
+  # =========================================================================
+  bench-all-features:
+    name: Bench (all features)
+    runs-on: ubuntu-latest
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    timeout-minutes: 60
+
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4
+
+      - name: Install system dependencies
+        uses: ./.github/actions/install-system-deps
+        with:
+          packages: libssl-dev,pkg-config,libfontconfig1-dev,fontconfig
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@4cda84d5c5c54efe2404f9d843567869ab1699d4  # stable
+
+      # Separate cache namespace so the heavy `--all-features` build does
+      # not evict or get evicted by the default-features cache.
+      - name: Cache cargo (all features)
+        uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32  # v2
+        with:
+          shared-key: perf-dashboard-all-features
+          cache-on-failure: true
+
+      - name: Build release (--all-features)
+        run: cargo build --release --all-features
+
+      - name: Run all-feature benchmarks
+        run: cargo bench --all-features --no-fail-fast -- --output-format=json 2>&1 | tee benchmark_output.txt
+
+      - name: Run allocation tracking (dhat, requires dhat feature from --all-features)
+        run: cargo test test_allocation_tracking --release --all-features -- --nocapture 2>&1 | tee dhat_output.txt
+
+      - name: Generate benchmark summary
+        run: |
+          python3 << 'EOF'
+          import json
+          import re
+          import os
+          from pathlib import Path
+
+          with open('benchmark_output.txt', 'r') as f:
+              content = f.read()
+
+          benchmarks = []
+          current_benchmark = []
+          in_json = False
+          json_depth = 0
+
+          for line in content.split('\n'):
+              if '"benchmarks"' in line:
+                  in_json = True
+              if in_json:
+                  current_benchmark.append(line)
+                  json_depth += line.count('{') - line.count('}')
+                  if json_depth == 0 and current_benchmark:
+                      try:
+                          json_str = '\n'.join(current_benchmark)
+                          data = json.loads(json_str)
+                          if 'benchmarks' in data:
+                              benchmarks.extend(data['benchmarks'])
+                      except:
+                          pass
+                      current_benchmark = []
+                      in_json = '"benchmarks"' in '\n'.join(current_benchmark + [line])
+
+          summary = {
+              "timestamp": os.environ.get('GITHUB_RUN_ID', 'local'),
+              "commit": os.environ.get('GITHUB_SHA', 'unknown')[:8],
+              "feature_profile": "all-features",
+              "benchmarks": []
+          }
+
+          for b in benchmarks:
+              if isinstance(b, dict):
+                  summary["benchmarks"].append({
+                      "name": b.get("name", "unknown"),
+                      "value": b.get("median", {}).get("value", 0) if isinstance(b.get("median"), dict) else b.get("median", 0),
+                      "unit": b.get("unit", "ns"),
+                  })
+
+          with open('benchmark_summary.json', 'w') as f:
+              json.dump(summary, f, indent=2)
+
           with open('benchmark_full_output.txt', 'w') as f:
               f.write(content)
 
@@ -159,10 +392,10 @@ jobs:
               print(f"Allocated: {allocated_match.group(1)} bytes")
           EOF
 
-      - name: Upload benchmark artifacts
+      - name: Upload benchmark artifacts (all features)
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02  # v4
         with:
-          name: benchmark-results-${{ github.run_id }}
+          name: bench-all-features-results-${{ github.run_id }}
           path: |
             benchmark_summary.json
             benchmark_full_output.txt
@@ -171,25 +404,32 @@ jobs:
             target/criterion/**/*
           retention-days: 30
 
-  # ===========================================================================
-  # Regression Check (runs on PR + push to main)
-  # ===========================================================================
+  # =========================================================================
+  # Regression Check — PR + push to main.
+  # Depends on `bench-default` only (NOT `bench-all-features`). The
+  # regression check consumes the current `bench-default-results-*`
+  # artifact, downloads the previous successful run's stable
+  # `benchmark-results` artifact (uploaded by `publish-dashboard`), and
+  # diffs the two. Skips on first PR with no baseline.
+  # =========================================================================
   regression-check:
     name: Regression Check
     runs-on: ubuntu-latest
-    timeout-minutes: 30
-    needs: benchmark
+    timeout-minutes: 15
+    needs: bench-default
     if: github.event_name == 'pull_request' || (github.event_name == 'push' && github.ref == 'refs/heads/main')
 
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4
 
-      - name: Install system dependencies
-        uses: ./.github/actions/install-system-deps
+      - name: Download current benchmark data (default features)
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093  # v4
         with:
-          packages: libssl-dev,pkg-config,libfontconfig1-dev,fontconfig
+          name: bench-default-results-${{ github.run_id }}
+          path: current_results
+        continue-on-error: true
 
-      - name: Download previous benchmark data
+      - name: Download previous benchmark data (default features, from main)
         uses: dawidd6/action-download-artifact@bf251b5aa9c2f7eeb574a96ee720e24f801b7c11  # v6
         with:
           workflow: performance_dashboard.yml
@@ -198,64 +438,30 @@ jobs:
           workflow_conclusion_filter: success
         continue-on-error: true
 
-      - name: Install Rust
-        uses: dtolnay/rust-toolchain@4cda84d5c5c54efe2404f9d843567869ab1699d4  # stable
-
-      - name: Cache cargo
-        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830  # v4
-        with:
-          path: |
-            ~/.cargo/registry
-            ~/.cargo/git
-            target
-          key: ${{ runner.os }}-cargo-bench-${{ hashFiles('**/Cargo.lock') }}
-          restore-keys: |
-            ${{ runner.os }}-cargo-bench-
-
-      - name: Build release
-        run: cargo build --release --all-features
-
-      - name: Run benchmarks
-        run: cargo bench --all-features --no-fail-fast -- --output-format=json 2>&1 | tee benchmark_output.txt
-
       - name: Generate current benchmark summary
         run: |
           python3 << 'EOF'
           import json
           import re
           import os
+          from pathlib import Path
 
-          with open('benchmark_output.txt', 'r') as f:
-              content = f.read()
+          current_path = Path('current_results/benchmark_summary.json')
+          if not current_path.exists():
+              print('No current benchmark results found; skipping regression check.')
+              with open('current_benchmark.json', 'w') as f:
+                  json.dump({}, f)
+              sys_exit_0 = True
+              if sys_exit_0:
+                  raise SystemExit(0)
 
-          benchmarks = []
-          current_benchmark = []
-          in_json = False
-          json_depth = 0
-
-          for line in content.split('\n'):
-              if '"benchmarks"' in line:
-                  in_json = True
-              if in_json:
-                  current_benchmark.append(line)
-                  json_depth += line.count('{') - line.count('}')
-                  if json_depth == 0 and current_benchmark:
-                      try:
-                          json_str = '\n'.join(current_benchmark)
-                          data = json.loads(json_str)
-                          if 'benchmarks' in data:
-                              benchmarks.extend(data['benchmarks'])
-                      except:
-                          pass
-                      current_benchmark = []
-                      in_json = '"benchmarks"' in '\n'.join(current_benchmark + [line])
+          with open(current_path, 'r') as f:
+              data = json.load(f)
 
           current = {}
-          for b in benchmarks:
-              if isinstance(b, dict):
-                  name = b.get("name", "unknown")
-                  value = b.get("median", {}).get("value", 0) if isinstance(b.get("median"), dict) else b.get("median", 0)
-                  current[name] = value
+          for b in data.get('benchmarks', []):
+              if isinstance(b, dict) and 'name' in b and 'value' in b:
+                  current[b['name']] = b['value']
 
           with open('current_benchmark.json', 'w') as f:
               json.dump(current, f, indent=2)
@@ -375,14 +581,17 @@ jobs:
           echo "Skipping failure due to manual trigger"
           exit 0
 
-  # ===========================================================================
-  # Generate and Publish Dashboard (runs on main push)
-  # ===========================================================================
+  # =========================================================================
+  # Publish Dashboard — main push only.
+  # Depends on `bench-default` + `published-crate-bench` (and consumes any
+  # `bench-all-features-results-*` artifact that happens to be in the same
+  # run, when nightly + main push overlap).
+  # =========================================================================
   publish-dashboard:
     name: Publish Dashboard
     runs-on: ubuntu-latest
     timeout-minutes: 30
-    needs: benchmark
+    needs: [bench-default, published-crate-bench]
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
 
     permissions:
@@ -394,11 +603,18 @@ jobs:
       - name: Setup Pages
         uses: actions/configure-pages@1f0c5cde4bc74cd7e1254d0cb4de8d49e9068c7d  # v4
 
-      - name: Download all benchmark artifacts
+      - name: Download default-feature benchmark artifacts
         uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093  # v4
         with:
-          path: benchmark_data
-          pattern: benchmark-results-*
+          path: default_benchmark_data
+          pattern: bench-default-results-*
+          merge-multiple: true
+
+      - name: Download published-crate benchmark artifacts
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093  # v4
+        with:
+          path: published_crate_data
+          pattern: published-crate-bench-results-*
           merge-multiple: true
 
       - name: Generate dashboard data
@@ -409,8 +625,9 @@ jobs:
           from datetime import datetime
           from pathlib import Path
 
-          benchmark_files = list(Path('benchmark_data').glob('benchmark_summary.json'))
-          dhat_files = list(Path('benchmark_data').glob('dhat_summary.json'))
+          benchmark_files = list(Path('default_benchmark_data').glob('**/benchmark_summary.json')) \
+                          + list(Path('published_crate_data').glob('**/benchmark_summary.json'))
+          dhat_files = list(Path('default_benchmark_data').glob('**/dhat_summary.json'))
 
           all_benchmarks = []
           all_dhat = []
@@ -434,6 +651,7 @@ jobs:
               "dhat": all_dhat,
           }
 
+          os.makedirs('benchmark_data', exist_ok=True)
           with open('benchmark_data/dashboard_data.json', 'w') as f:
               json.dump(dashboard_data, f, indent=2)
 
@@ -460,12 +678,14 @@ jobs:
           benchmark_history = {}
           for run in benchmarks:
               commit = run.get('commit', 'unknown')
+              profile = run.get('feature_profile', 'unknown')
               for b in run.get('benchmarks', []):
                   name = b.get('name', 'unknown')
                   if name not in benchmark_history:
                       benchmark_history[name] = []
                   benchmark_history[name].append({
                       'commit': commit,
+                      'profile': profile,
                       'value': b.get('value', 0),
                       'unit': b.get('unit', 'ns'),
                   })
@@ -571,6 +791,9 @@ jobs:
           destination_dir: perf/data
           only_commit_hash: false
 
+      # Stable artifact name (no run_id suffix) so the next run's
+      # regression-check can download the previous baseline via
+      # dawidd6/action-download-artifact with name: benchmark-results.
       - name: Upload latest benchmark
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02  # v4
         with:
