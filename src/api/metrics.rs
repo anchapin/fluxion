@@ -27,7 +27,7 @@ use axum::{
     middleware::Next,
     response::{IntoResponse, Response},
 };
-use metrics::{counter, describe_counter, describe_histogram, histogram};
+use metrics::{counter, describe_counter, describe_gauge, describe_histogram, gauge, histogram};
 use metrics_exporter_prometheus::{Matcher, PrometheusBuilder, PrometheusHandle};
 
 /// Histogram buckets used for `fluxion_rest_request_duration_seconds`. Tuned
@@ -55,6 +55,26 @@ const ONNX_INFERENCE_DURATION_BUCKETS_SECONDS: &[f64] =
 const ONNX_BATCH_SIZE_BUCKETS: &[f64] =
     &[1.0, 2.0, 4.0, 8.0, 16.0, 32.0, 64.0, 128.0, 256.0, 512.0];
 
+/// Histogram buckets for `fluxion_simulation_duration_seconds` (Issue #2518).
+/// A 1-year (8760-step) solve at the ≥150 configs/sec throughput budget is
+/// ~7 ms; a 10-year solve is ~70 ms. Divergence / cold-start paths can run
+/// longer, so the boundaries span 1 ms to 30 s:
+///
+///   1 ms · 5 ms · 10 ms · 50 ms · 100 ms · 500 ms · 1 s · 5 s · 10 s · 30 s
+const SIMULATION_DURATION_BUCKETS_SECONDS: &[f64] =
+    &[0.001, 0.005, 0.01, 0.05, 0.1, 0.5, 1.0, 5.0, 10.0, 30.0];
+
+/// Histogram buckets for `fluxion_simulation_batch_size` (Issue #2518). A
+/// batch ranges from 1 up to [`MAX_BATCH_SIMULATIONS`] (1024); powers-of-two
+/// boundaries match the ONNX batch-size convention so dashboards line up:
+///
+///   1 · 2 · 4 · 8 · 16 · 32 · 64 · 128 · 256 · 512 · 1024
+///
+/// [`MAX_BATCH_SIMULATIONS`]: crate::api::server::MAX_BATCH_SIMULATIONS
+const SIMULATION_BATCH_SIZE_BUCKETS: &[f64] = &[
+    1.0, 2.0, 4.0, 8.0, 16.0, 32.0, 64.0, 128.0, 256.0, 512.0, 1024.0,
+];
+
 /// Counter name emitted for every HTTP request handled by the REST API.
 pub const REQUESTS_TOTAL: &str = "fluxion_rest_requests_total";
 
@@ -77,6 +97,29 @@ pub const ONNX_INFERENCE_TOTAL: &str = "fluxion_onnx_inference_total";
 /// Histogram name recording the batch size of each ONNX inference call
 /// (Issue #2498). Labeled `backend`.
 pub const ONNX_BATCH_SIZE: &str = "fluxion_onnx_batch_size";
+
+/// Histogram name for the wall-clock duration of a single simulation solve
+/// (Issue #2518). Labeled `years`, `use_surrogates` (`true` | `false`) and
+/// `outcome` (`success` | `error`).
+pub const SIMULATION_DURATION_SECONDS: &str = "fluxion_simulation_duration_seconds";
+
+/// Counter name accumulating the total annual energy (kWh) reported by
+/// successful simulations (Issue #2518). Gives cumulative energy throughput
+/// across the process lifetime.
+pub const SIMULATION_ENERGY_KWH_TOTAL: &str = "fluxion_simulation_energy_kwh_total";
+
+/// Counter name recording which conduction solver and thermal-model kind
+/// handled a simulation (Issue #2518). Labeled `conduction` and
+/// `thermal_model`; incremented once per simulation.
+pub const SIMULATION_SOLVER_KIND: &str = "fluxion_simulation_solver_kind";
+
+/// Histogram name recording the number of simulations in each `/v1/batch`
+/// request (Issue #2518). Recorded on batch entry.
+pub const SIMULATION_BATCH_SIZE: &str = "fluxion_simulation_batch_size";
+
+/// Gauge name recording the zone count of the most recent simulation
+/// (Issue #2518).
+pub const SIMULATION_ZONE_COUNT: &str = "fluxion_simulation_zone_count";
 
 /// Process-global Prometheus handle. Lazily installed so that the integration
 /// tests in `tests/api_integration_tests.rs` (which build the router many times
@@ -110,7 +153,20 @@ pub fn init_recorder() -> PrometheusHandle {
                     Matcher::Full(ONNX_BATCH_SIZE.to_owned()),
                     ONNX_BATCH_SIZE_BUCKETS,
                 )
-                .expect("non-empty ONNX batch-size buckets");
+                .expect("non-empty ONNX batch-size buckets")
+                // Issue #2518 — simulation solve latency and batch size need
+                // their own bucket boundaries (multi-second solves, 1..1024
+                // batch entries) distinct from HTTP/ONNX defaults.
+                .set_buckets_for_metric(
+                    Matcher::Full(SIMULATION_DURATION_SECONDS.to_owned()),
+                    SIMULATION_DURATION_BUCKETS_SECONDS,
+                )
+                .expect("non-empty simulation-duration buckets")
+                .set_buckets_for_metric(
+                    Matcher::Full(SIMULATION_BATCH_SIZE.to_owned()),
+                    SIMULATION_BATCH_SIZE_BUCKETS,
+                )
+                .expect("non-empty simulation batch-size buckets");
             let handle = builder
                 .install_recorder()
                 .expect("PrometheusBuilder::install_recorder");
@@ -146,9 +202,99 @@ pub fn init_recorder() -> PrometheusHandle {
                 metrics::Unit::Count,
                 "Number of configs per ONNX inference batch"
             );
+            // Issue #2518 — per-simulation observability.
+            describe_histogram!(
+                SIMULATION_DURATION_SECONDS,
+                metrics::Unit::Seconds,
+                "Wall-clock duration of a single simulation solve"
+            );
+            describe_counter!(
+                SIMULATION_ENERGY_KWH_TOTAL,
+                metrics::Unit::Count,
+                "Cumulative total annual energy (kWh) reported by successful simulations"
+            );
+            describe_counter!(
+                SIMULATION_SOLVER_KIND,
+                "Number of simulations by conduction solver and thermal-model kind"
+            );
+            describe_histogram!(
+                SIMULATION_BATCH_SIZE,
+                metrics::Unit::Count,
+                "Number of simulations per /v1/batch request"
+            );
+            describe_gauge!(
+                SIMULATION_ZONE_COUNT,
+                metrics::Unit::Count,
+                "Zone count of the most recent simulation"
+            );
             handle
         })
         .clone()
+}
+
+/// Record the outcome of a single simulation (Issue #2518).
+///
+/// Emits four observations in one call so the `run_simulation` call site stays
+/// free of telemetry boilerplate:
+///
+/// - [`SIMULATION_DURATION_SECONDS`] histogram, labeled `years`,
+///   `use_surrogates` (`true` | `false`) and `outcome` (`success` | `error`).
+/// - [`SIMULATION_SOLVER_KIND`] counter (+1), labeled `conduction` and
+///   `thermal_model`. The REST `run_simulation` path always uses the built-in
+///   analytical conduction solver; `thermal_model` reflects whether a neural
+///   surrogate was requested.
+/// - [`SIMULATION_ZONE_COUNT`] gauge set to `num_zones`.
+/// - [`SIMULATION_ENERGY_KWH_TOTAL`] counter, incremented by `energy_kwh`
+///   **only on success** (pass `None` on the error path).
+///
+/// All label values are owned by the caller; the macro forms
+/// `SharedString`s internally so there is no allocation churn beyond the
+/// per-label string rendering.
+pub fn record_simulation(
+    duration_seconds: f64,
+    years: u32,
+    use_surrogates: bool,
+    success: bool,
+    num_zones: usize,
+    energy_kwh: Option<f64>,
+) {
+    let outcome = if success { "success" } else { "error" };
+    histogram!(
+        SIMULATION_DURATION_SECONDS,
+        "years" => years.to_string(),
+        "use_surrogates" => use_surrogates.to_string(),
+        "outcome" => outcome,
+    )
+    .record(duration_seconds);
+
+    counter!(
+        SIMULATION_SOLVER_KIND,
+        "conduction" => "analytical",
+        "thermal_model" => if use_surrogates { "surrogate" } else { "analytical" },
+    )
+    .increment(1);
+
+    gauge!(SIMULATION_ZONE_COUNT).set(num_zones as f64);
+
+    if let Some(kwh) = energy_kwh {
+        // Clamp negatives so a diverged/NaN output can never wind the counter
+        // backwards (Prometheus counters are monotonically non-decreasing).
+        // The `metrics` counter API takes `u64`, so cumulative throughput is
+        // recorded in whole kWh — sufficient resolution for annual building
+        // energy (typically 10^3–10^6 kWh).
+        if kwh > 0.0 {
+            counter!(SIMULATION_ENERGY_KWH_TOTAL).increment(kwh as u64);
+        }
+    }
+}
+
+/// Record the size of a `/v1/batch` request on entry (Issue #2518).
+///
+/// Emits one [`SIMULATION_BATCH_SIZE`] histogram observation. Call this before
+/// any per-config work is spawned so the observation is recorded even if the
+/// batch later fails validation or a join error.
+pub fn record_batch_size(batch_size: usize) {
+    histogram!(SIMULATION_BATCH_SIZE).record(batch_size as f64);
 }
 
 /// Render the current snapshot of all metrics in Prometheus text exposition

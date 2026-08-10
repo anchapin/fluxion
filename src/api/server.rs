@@ -1122,79 +1122,104 @@ pub fn run_simulation(
     // `clamp` floors at 1 (rejecting 0) and ceilings at [`MAX_YEARS`].
     let years = years.clamp(1, MAX_YEARS);
 
-    let mut model = ThermalModel::<VectorField>::new(num_zones);
-    for zone_idx in 0..model.num_zones {
-        model.heating_setpoints.as_mut_slice()[zone_idx] = heating;
-        model.cooling_setpoints.as_mut_slice()[zone_idx] = cooling;
-    }
-
-    let steps = years as usize * 8760;
-    let surrogates = SurrogateManager::new().map_err(|e| {
-        ApiError::SimulationFailed(format!("failed to create SurrogateManager: {e}"), None)
-    })?;
-
-    // Issue #2499 — observability on the surrogate hot path. When a caller
-    // requests neural-surrogate acceleration but no ONNX model is available,
-    // the solver transparently falls back to the analytical/physics path.
-    // Emit a single WARN per simulation (a fresh `SurrogateManager` is built
-    // per call, so this never spams per-timestep) so the fallback is visible
-    // in structured logs. This fires inside the `#[tracing::instrument]`
-    // span declared above, so the line carries the `request_id` for
-    // end-to-end correlation.
-    if use_surrogates && !surrogates.model_loaded {
-        tracing::warn!(
-            backend = surrogates.backend.as_str(),
-            "surrogate requested but no ONNX model loaded — using analytical fallback"
-        );
-    }
-
-    let _ = model.solve_timesteps(steps, &surrogates, use_surrogates, None, None, None);
-
-    // Issue #2547 — divergence detection. `solve_timesteps` currently swallows
-    // internal errors and returns a (possibly NaN / infinite) EUI; the
-    // per-zone hourly temperature trace it leaves behind is the only signal
-    // we have. Scan it for NaN / infinity; if found, build a
-    // `SimulationDiagnostics` from the trace and surface it on the
-    // `SimulationFailed` envelope so REST/Python clients get
-    // failing-timestep / failing-zone attribution instead of a bare message.
-    if let Some(hourly) = model.get_hourly_temperatures() {
-        if let Some(diag) = SimulationDiagnostics::from_temperature_trace(&hourly) {
-            return Err(ApiError::SimulationFailed(
-                format!(
-                    "simulation diverged at timestep {}{}",
-                    diag.failing_timestep,
-                    diag.failing_zone
-                        .as_ref()
-                        .map(|z| format!(" in zone {z}"))
-                        .unwrap_or_default()
-                ),
-                Some(diag),
-            ));
+    // Issue #2518 — time the solve (model construction through output
+    // assembly) so a single `fluxion_simulation_duration_seconds` observation
+    // is recorded on every exit path. The cheap input-validation guards above
+    // return before this point, so a rejected request does not pollute the
+    // histogram. The solve body is wrapped in a closure so the `?` operator
+    // stays ergonomic while still funnelling every outcome through one metric
+    // emission below.
+    let solve_started = std::time::Instant::now();
+    let solve_result: Result<SimulationOutput, ApiError> = (|| {
+        let mut model = ThermalModel::<VectorField>::new(num_zones);
+        for zone_idx in 0..model.num_zones {
+            model.heating_setpoints.as_mut_slice()[zone_idx] = heating;
+            model.cooling_setpoints.as_mut_slice()[zone_idx] = cooling;
         }
-    }
 
-    let heating_energy = model.get_heating_energy_kwh();
-    let cooling_energy = model.get_cooling_energy_kwh();
-    let total_energy = heating_energy + cooling_energy;
-    let floor_area = schema.geometry.total_floor_area.max(1.0);
-    let eui = total_energy / floor_area;
+        let steps = years as usize * 8760;
+        let surrogates = SurrogateManager::new().map_err(|e| {
+            ApiError::SimulationFailed(format!("failed to create SurrogateManager: {e}"), None)
+        })?;
 
-    let peak_heating_load = model.get_peak_heating_power_kw() * 1000.0;
-    let peak_cooling_load = model.get_peak_cooling_power_kw() * 1000.0;
+        // Issue #2499 — observability on the surrogate hot path. When a caller
+        // requests neural-surrogate acceleration but no ONNX model is available,
+        // the solver transparently falls back to the analytical/physics path.
+        // Emit a single WARN per simulation (a fresh `SurrogateManager` is built
+        // per call, so this never spams per-timestep) so the fallback is visible
+        // in structured logs. This fires inside the `#[tracing::instrument]`
+        // span declared above, so the line carries the `request_id` for
+        // end-to-end correlation.
+        if use_surrogates && !surrogates.model_loaded {
+            tracing::warn!(
+                backend = surrogates.backend.as_str(),
+                "surrogate requested but no ONNX model loaded — using analytical fallback"
+            );
+        }
 
-    let hourly_zone_temperatures = model.get_hourly_temperatures();
-    let zone_temperatures = model.get_temperatures();
+        let _ = model.solve_timesteps(steps, &surrogates, use_surrogates, None, None, None);
 
-    Ok(SimulationOutput {
-        eui,
-        total_energy,
-        peak_heating_load,
-        peak_cooling_load,
-        heating_energy,
-        cooling_energy,
-        zone_temperatures: Some(zone_temperatures),
-        hourly_zone_temperatures,
-    })
+        // Issue #2547 — divergence detection. `solve_timesteps` currently swallows
+        // internal errors and returns a (possibly NaN / infinite) EUI; the
+        // per-zone hourly temperature trace it leaves behind is the only signal
+        // we have. Scan it for NaN / infinity; if found, build a
+        // `SimulationDiagnostics` from the trace and surface it on the
+        // `SimulationFailed` envelope so REST/Python clients get
+        // failing-timestep / failing-zone attribution instead of a bare message.
+        if let Some(hourly) = model.get_hourly_temperatures() {
+            if let Some(diag) = SimulationDiagnostics::from_temperature_trace(&hourly) {
+                return Err(ApiError::SimulationFailed(
+                    format!(
+                        "simulation diverged at timestep {}{}",
+                        diag.failing_timestep,
+                        diag.failing_zone
+                            .as_ref()
+                            .map(|z| format!(" in zone {z}"))
+                            .unwrap_or_default()
+                    ),
+                    Some(diag),
+                ));
+            }
+        }
+
+        let heating_energy = model.get_heating_energy_kwh();
+        let cooling_energy = model.get_cooling_energy_kwh();
+        let total_energy = heating_energy + cooling_energy;
+        let floor_area = schema.geometry.total_floor_area.max(1.0);
+        let eui = total_energy / floor_area;
+
+        let peak_heating_load = model.get_peak_heating_power_kw() * 1000.0;
+        let peak_cooling_load = model.get_peak_cooling_power_kw() * 1000.0;
+
+        let hourly_zone_temperatures = model.get_hourly_temperatures();
+        let zone_temperatures = model.get_temperatures();
+
+        Ok(SimulationOutput {
+            eui,
+            total_energy,
+            peak_heating_load,
+            peak_cooling_load,
+            heating_energy,
+            cooling_energy,
+            zone_temperatures: Some(zone_temperatures),
+            hourly_zone_temperatures,
+        })
+    })();
+    let solve_elapsed = solve_started.elapsed().as_secs_f64();
+
+    // Issue #2518 — emit the per-simulation metric family once, on every exit
+    // path. `energy_kwh` is only forwarded on success so the cumulative
+    // throughput counter never advances on a failed run.
+    metrics::record_simulation(
+        solve_elapsed,
+        years,
+        use_surrogates,
+        solve_result.is_ok(),
+        num_zones,
+        solve_result.as_ref().ok().map(|o| o.total_energy),
+    );
+
+    solve_result
 }
 
 #[tracing::instrument(skip_all, fields(request_id, num_zones, years))]
@@ -1430,6 +1455,12 @@ async fn batch_simulate(
     if req.simulations.is_empty() {
         return Err(ApiError::EmptyBatch);
     }
+
+    // Issue #2518 — record the (non-empty) batch size on entry, before the
+    // size/step-budget caps can reject it, so the histogram still captures
+    // oversized batches. Each per-config `run_simulation` invocation below
+    // emits its own duration/solver-kind/energy observations.
+    metrics::record_batch_size(req.simulations.len());
 
     // Issue #2530 — cap the batch size and the total step budget before any
     // rayon work is spawned. Per-entry `years` is already bounded to
@@ -2115,6 +2146,356 @@ mod tests {
         bad.geometry.total_volume = 0.0;
         let err = run_simulation(&bad, 1, false, "test").unwrap_err();
         assert!(matches!(err, ApiError::InvalidSchema(_)));
+    }
+
+    // ---- Issue #2518 — per-simulation observability ----------------------
+    //
+    // These tests use a thread-local `DebuggingRecorder` (via
+    // `metrics::with_local_recorder`) so they never touch the process-global
+    // Prometheus recorder and are safe to run in parallel with the REST API
+    // integration tests. Each `snapshot().into_hashmap()` *drains* the
+    // recorder (counters/gauges reset to zero, histograms cleared), so exactly
+    // one observation is expected per metric per run.
+    //
+    // (`::metrics::` with leading colons resolves to the external `metrics`
+    // crate; the parent module binds the bare name `metrics` to
+    // `crate::api::metrics`, so we disambiguate explicitly here.)
+
+    /// Helper: find a metric observation in a `DebuggingRecorder` snapshot by
+    /// name and a predicate over its labels. Returns a borrow of the matching
+    /// `DebugValue` (`DebugValue` is not `Clone`), or panics with a
+    /// descriptive message.
+    fn find_metric_value<'a>(
+        map: &'a std::collections::HashMap<
+            metrics_util::CompositeKey,
+            (
+                Option<::metrics::Unit>,
+                Option<::metrics::SharedString>,
+                metrics_util::debugging::DebugValue,
+            ),
+        >,
+        name: &str,
+        label_pred: &dyn Fn(&::metrics::Label) -> bool,
+    ) -> &'a metrics_util::debugging::DebugValue {
+        let entry = map.iter().find(|(ck, _)| {
+            // `KeyName` implements `PartialEq<&str>`, so we compare directly
+            // (`name().as_str()` would require the unstable `str_as_str`).
+            if ck.key().name() != name {
+                return false;
+            }
+            // Label-less metrics (zone_count, energy, batch_size) match by
+            // name alone. Labelled metrics (duration, solver_kind) require the
+            // predicate to match at least one label so callers can
+            // disambiguate e.g. outcome="success" vs "error".
+            let mut has_labels = false;
+            let mut matched = false;
+            for l in ck.key().labels() {
+                has_labels = true;
+                if label_pred(l) {
+                    matched = true;
+                }
+            }
+            !has_labels || matched
+        });
+        match entry {
+            Some((_, (_, _, v))) => v,
+            None => {
+                let keys: Vec<String> = map.keys().map(|ck| ck.key().name().to_string()).collect();
+                panic!(
+                    "no observation for metric `{name}` matching the label predicate. \
+                     snapshot had {} metric names: {keys:?}",
+                    keys.len()
+                );
+            }
+        }
+    }
+
+    /// Issue #2518 — `run_simulation` must funnel every solve outcome through
+    /// the metric family. The default REST schema's thermal params diverge at
+    /// timestep ~91 (a pre-existing physics limitation tracked separately —
+    /// `run_simulation` only consumes setpoints from the schema, not
+    /// construction params), so the real end-to-end path here exercises the
+    /// `outcome="error"` branch. The success branch (including the energy
+    /// counter) is covered by `record_simulation_success_family_emits_energy`
+    /// below, which drives the helper with a known-good payload.
+    #[test]
+    fn simulation_metrics_emit_on_run_simulation() {
+        use metrics_util::debugging::{DebugValue, DebuggingRecorder};
+
+        let recorder = DebuggingRecorder::new();
+        let snapshotter = recorder.snapshotter();
+        let schema = default_schema_v1();
+
+        let result =
+            ::metrics::with_local_recorder(&recorder, || run_simulation(&schema, 1, false, "test"));
+        // We do not assert on `result`'s Ok/Err here — either way the metric
+        // family must have been emitted. (With the current default schema the
+        // run diverges, so `result` is `Err(SimulationFailed)`.)
+        let _ = result;
+        let map = snapshotter.snapshot().into_hashmap();
+
+        // 1. duration histogram — exactly one observation on the error branch.
+        let dur = find_metric_value(
+            &map,
+            crate::api::metrics::SIMULATION_DURATION_SECONDS,
+            &|l| l.key() == "outcome" && l.value() == "error",
+        );
+        match dur {
+            DebugValue::Histogram(vals) => {
+                assert_eq!(
+                    vals.len(),
+                    1,
+                    "exactly one duration observation expected per simulation"
+                );
+                assert!(
+                    vals[0].into_inner() >= 0.0,
+                    "duration must be non-negative, got {}",
+                    vals[0]
+                );
+            }
+            other => panic!("expected Histogram for duration, got {other:?}"),
+        }
+        // The duration label set must also carry `years` and `use_surrogates`.
+        let has_labels = map.keys().any(|ck| {
+            ck.key().name() == crate::api::metrics::SIMULATION_DURATION_SECONDS
+                && ck
+                    .key()
+                    .labels()
+                    .any(|l| l.key() == "years" && l.value() == "1")
+                && ck
+                    .key()
+                    .labels()
+                    .any(|l| l.key() == "use_surrogates" && l.value() == "false")
+                && ck
+                    .key()
+                    .labels()
+                    .any(|l| l.key() == "outcome" && l.value() == "error")
+        });
+        assert!(
+            has_labels,
+            "duration histogram must carry years/use_surrogates/outcome labels"
+        );
+
+        // 2. solver-kind counter — analytical/analytical for a physics run.
+        let kind = find_metric_value(&map, crate::api::metrics::SIMULATION_SOLVER_KIND, &|l| {
+            l.key() == "conduction" && l.value() == "analytical"
+        });
+        assert!(
+            matches!(kind, DebugValue::Counter(c) if *c >= 1),
+            "expected solver_kind counter >= 1, got {kind:?}"
+        );
+        let thermal_analytical = map.keys().any(|ck| {
+            ck.key().name() == crate::api::metrics::SIMULATION_SOLVER_KIND
+                && ck
+                    .key()
+                    .labels()
+                    .any(|l| l.key() == "thermal_model" && l.value() == "analytical")
+        });
+        assert!(
+            thermal_analytical,
+            "thermal_model=\"analytical\" label expected"
+        );
+
+        // 3. zone-count gauge — default schema has exactly one zone.
+        let zc = find_metric_value(&map, crate::api::metrics::SIMULATION_ZONE_COUNT, &|_| true);
+        assert!(
+            matches!(zc, DebugValue::Gauge(v) if (*v).into_inner() == 1.0),
+            "default schema has 1 zone; gauge must read 1.0"
+        );
+
+        // 4. energy counter must be absent on the error path (never advanced).
+        let energy_present = map
+            .keys()
+            .any(|ck| ck.key().name() == crate::api::metrics::SIMULATION_ENERGY_KWH_TOTAL);
+        assert!(
+            !energy_present,
+            "energy counter must not advance when the simulation fails"
+        );
+    }
+
+    /// Issue #2518 — the success path of the metric family: the duration
+    /// histogram carries `outcome="success"` and the energy counter advances
+    /// by exactly the forwarded kWh (truncated to whole kWh, matching the
+    /// `u64` counter API). Drives `record_simulation` directly because the
+    /// default schema cannot reach the solve-phase success branch
+    /// deterministically (see the note on the test above).
+    #[test]
+    fn record_simulation_success_family_emits_energy() {
+        use metrics_util::debugging::{DebugValue, DebuggingRecorder};
+
+        let recorder = DebuggingRecorder::new();
+        let snapshotter = recorder.snapshotter();
+        ::metrics::with_local_recorder(&recorder, || {
+            crate::api::metrics::record_simulation(0.042, 2, true, true, 3, Some(5_000.7));
+        });
+        let map = snapshotter.snapshot().into_hashmap();
+
+        // duration — outcome=success, years=2, use_surrogates=true.
+        let dur = find_metric_value(
+            &map,
+            crate::api::metrics::SIMULATION_DURATION_SECONDS,
+            &|l| l.key() == "outcome" && l.value() == "success",
+        );
+        match dur {
+            DebugValue::Histogram(vals) => {
+                assert_eq!(vals.len(), 1);
+                assert!((vals[0].into_inner() - 0.042).abs() < 1e-9);
+            }
+            other => panic!("expected Histogram for success duration, got {other:?}"),
+        }
+        let success_labels = map.keys().any(|ck| {
+            ck.key().name() == crate::api::metrics::SIMULATION_DURATION_SECONDS
+                && ck
+                    .key()
+                    .labels()
+                    .any(|l| l.key() == "years" && l.value() == "2")
+                && ck
+                    .key()
+                    .labels()
+                    .any(|l| l.key() == "use_surrogates" && l.value() == "true")
+                && ck
+                    .key()
+                    .labels()
+                    .any(|l| l.key() == "outcome" && l.value() == "success")
+        });
+        assert!(
+            success_labels,
+            "success duration must carry years=2/use_surrogates=true labels"
+        );
+
+        // solver-kind — surrogate requested → thermal_model=surrogate.
+        let kind_surrogate = map.keys().any(|ck| {
+            ck.key().name() == crate::api::metrics::SIMULATION_SOLVER_KIND
+                && ck
+                    .key()
+                    .labels()
+                    .any(|l| l.key() == "thermal_model" && l.value() == "surrogate")
+        });
+        assert!(
+            kind_surrogate,
+            "use_surrogates=true ⇒ thermal_model=\"surrogate\""
+        );
+
+        // zone-count gauge == 3.
+        let zc = find_metric_value(&map, crate::api::metrics::SIMULATION_ZONE_COUNT, &|_| true);
+        assert!(
+            matches!(zc, DebugValue::Gauge(v) if (*v).into_inner() == 3.0),
+            "zone-count gauge must read 3.0"
+        );
+
+        // energy counter — 5_000.7 truncated to whole kWh = 5_000.
+        let energy = find_metric_value(
+            &map,
+            crate::api::metrics::SIMULATION_ENERGY_KWH_TOTAL,
+            &|_| true,
+        );
+        match energy {
+            DebugValue::Counter(c) => assert_eq!(
+                *c, 5_000,
+                "energy counter must advance by the forwarded kWh (whole-kWh truncation)"
+            ),
+            other => panic!("expected Counter for energy, got {other:?}"),
+        }
+    }
+
+    /// Issue #2518 — when a surrogate is requested, the `thermal_model` label
+    /// must read `surrogate` (the surrogate-requested configuration is what
+    /// this layer records; the #2499 fallback WARN separately logs when no
+    /// ONNX model is actually loaded).
+    #[test]
+    fn simulation_solver_kind_reflects_surrogate_request() {
+        use metrics_util::debugging::DebuggingRecorder;
+
+        let recorder = DebuggingRecorder::new();
+        let snapshotter = recorder.snapshotter();
+        let mut schema = default_schema_v1();
+        schema.controls.zone_control.cooling_setpoint = 27.0;
+        let _ =
+            ::metrics::with_local_recorder(&recorder, || run_simulation(&schema, 1, true, "test"));
+        let map = snapshotter.snapshot().into_hashmap();
+        let surrogate_label = map.keys().any(|ck| {
+            ck.key().name() == crate::api::metrics::SIMULATION_SOLVER_KIND
+                && ck
+                    .key()
+                    .labels()
+                    .any(|l| l.key() == "thermal_model" && l.value() == "surrogate")
+        });
+        assert!(
+            surrogate_label,
+            "use_surrogates=true must set thermal_model=\"surrogate\" on the solver-kind counter"
+        );
+    }
+
+    /// Issue #2518 — the error-outcome path must emit the duration histogram
+    /// with `outcome="error"` and must NOT advance the energy counter. We
+    /// exercise the helper directly because the default schema cannot reach
+    /// the solve-phase error branch (divergence) deterministically.
+    #[test]
+    fn simulation_duration_histogram_records_error_outcome_without_energy() {
+        use metrics_util::debugging::{DebugValue, DebuggingRecorder};
+
+        let recorder = DebuggingRecorder::new();
+        let snapshotter = recorder.snapshotter();
+        ::metrics::with_local_recorder(&recorder, || {
+            crate::api::metrics::record_simulation(0.0123, 1, false, false, 2, None);
+        });
+        let map = snapshotter.snapshot().into_hashmap();
+
+        // duration — outcome=error, one observation of 0.0123.
+        let dur = find_metric_value(
+            &map,
+            crate::api::metrics::SIMULATION_DURATION_SECONDS,
+            &|l| l.key() == "outcome" && l.value() == "error",
+        );
+        match dur {
+            DebugValue::Histogram(vals) => {
+                assert_eq!(vals.len(), 1);
+                assert!((vals[0].into_inner() - 0.0123).abs() < 1e-9);
+            }
+            other => panic!("expected Histogram for error duration, got {other:?}"),
+        }
+
+        // energy counter must be absent (never incremented → never registered
+        // in the snapshot, since `DebuggingRecorder` only tracks metrics that
+        // were actually observed).
+        let energy_present = map
+            .keys()
+            .any(|ck| ck.key().name() == crate::api::metrics::SIMULATION_ENERGY_KWH_TOTAL);
+        assert!(
+            !energy_present,
+            "energy counter must not advance on the error path"
+        );
+
+        // zone-count gauge still recorded (num_zones=2 forwarded).
+        let zc = find_metric_value(&map, crate::api::metrics::SIMULATION_ZONE_COUNT, &|_| true);
+        assert!(
+            matches!(zc, DebugValue::Gauge(v) if (*v).into_inner() == 2.0),
+            "zone-count gauge must read 2.0 on the error path"
+        );
+    }
+
+    /// Issue #2518 — `record_batch_size` emits exactly one
+    /// `fluxion_simulation_batch_size` observation. `batch_simulate` calls
+    /// this on entry; we assert the helper directly to keep the test free of
+    /// axum `AppState` wiring.
+    #[test]
+    fn batch_size_histogram_records_on_entry() {
+        use metrics_util::debugging::DebugValue;
+
+        let recorder = metrics_util::debugging::DebuggingRecorder::new();
+        let snapshotter = recorder.snapshotter();
+        ::metrics::with_local_recorder(&recorder, || {
+            crate::api::metrics::record_batch_size(7);
+        });
+        let map = snapshotter.snapshot().into_hashmap();
+        let bs = find_metric_value(&map, crate::api::metrics::SIMULATION_BATCH_SIZE, &|_| true);
+        match bs {
+            DebugValue::Histogram(vals) => {
+                assert_eq!(vals.len(), 1, "exactly one batch-size observation expected");
+                assert_eq!(vals[0].into_inner(), 7.0);
+            }
+            other => panic!("expected Histogram for batch_size, got {other:?}"),
+        }
     }
 
     // Issue #2547 — the JSON error envelope must embed the diagnostics
