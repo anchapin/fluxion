@@ -6,6 +6,7 @@ use fluxion::weather::denver::DenverTmyWeather;
 use fluxion::weather::WeatherSource;
 
 #[test]
+#[ignore = "diagnostic-only test with no assertion; quarantined per #2536. Run manually with --ignored if needed."]
 fn solar_fields() {
     let spec = ASHRAE140Case::Case600FF.spec();
     let mut model = ThermalModel::<VectorField>::from_spec(&spec);
