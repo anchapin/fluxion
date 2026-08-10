@@ -38,6 +38,7 @@ pub mod reporter;
 
 pub mod adaptive_calibration;
 pub mod ashrae_140_multi_zone;
+pub mod calibration_ledger;
 pub mod case_195_calibration;
 pub mod case_960;
 pub mod empirical;
@@ -98,6 +99,9 @@ pub use ashrae_140_cases::{
 };
 pub use ashrae_140_multi_zone::{ASHRAE140MultiZoneValidator, Case960Reference};
 pub use benchmark::{get_all_benchmark_data, get_all_case_ids, get_benchmark_data};
+pub use calibration_ledger::{
+    emit_blind_mode_audit, lookup as lookup_calibration_factor, CalibrationFactor, LEDGER,
+};
 pub use case_195_calibration::{
     run_case_195_calibration, CalibrationParameters, CalibrationResult, Case195Calibrator,
 };

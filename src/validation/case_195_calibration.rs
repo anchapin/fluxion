@@ -17,10 +17,10 @@ pub struct CalibrationParameters {
 impl Default for CalibrationParameters {
     fn default() -> Self {
         Self {
-            thermal_conductivity: 0.16,
-            specific_heat: 840.0,
-            density: 2400.0,
-            infiltration_rate: 0.5,
+            thermal_conductivity: 0.16, // LEDGER: CAL_CASE195_THERMAL_CONDUCTIVITY
+            specific_heat: 840.0,       // LEDGER: CAL_CASE195_SPECIFIC_HEAT
+            density: 2400.0,            // LEDGER: CAL_CASE195_DENSITY
+            infiltration_rate: 0.5,     // LEDGER: CAL_CASE195_INFILTRATION_RATE
         }
     }
 }

@@ -69,12 +69,12 @@ pub struct CalibrationState {
 impl Default for CalibrationState {
     fn default() -> Self {
         Self {
-            thermal_conductivity: 0.16,
-            specific_heat: 840.0,
-            density: 2400.0,
-            infiltration_rate: 0.5,
-            internal_gain_multiplier: 1.0,
-            solar_gain_multiplier: 1.0,
+            thermal_conductivity: 0.16,    // LEDGER: CAL_ADAPTIVE_THERMAL_CONDUCTIVITY
+            specific_heat: 840.0,          // LEDGER: CAL_ADAPTIVE_SPECIFIC_HEAT
+            density: 2400.0,               // LEDGER: CAL_ADAPTIVE_DENSITY
+            infiltration_rate: 0.5,        // LEDGER: CAL_ADAPTIVE_INFILTRATION_RATE
+            internal_gain_multiplier: 1.0, // LEDGER: CAL_ADAPTIVE_INTERNAL_GAIN_MULT
+            solar_gain_multiplier: 1.0,    // LEDGER: CAL_ADAPTIVE_SOLAR_GAIN_MULT
         }
     }
 }
@@ -151,12 +151,16 @@ impl SmartMeterPatternAnalyzer {
 
         // Classify based on characteristics
         if std_dev < mean_bias.abs() * 0.1 {
+            // LEDGER: CAL_ADAPTIVE_UNIVERSAL_BIAS_RATIO
             // Low variance relative to mean -> Universal Bias
             BiasPattern::UniversalBias
         } else if seasonal_correlation > 0.5 {
+            // LEDGER: CAL_ADAPTIVE_SEASONAL_CORR_THRESHOLD
             // High correlation with day_of_year -> Seasonal Bias
             BiasPattern::SeasonalBias
         } else if std_dev > mean_bias.abs() * 0.3 && seasonal_correlation > 0.3 {
+            // LEDGER: CAL_ADAPTIVE_MIXED_BIAS_RATIO
+            // LEDGER: CAL_ADAPTIVE_MIXED_CORR_THRESHOLD
             // High variance AND some seasonal correlation -> Mixed
             BiasPattern::MixedBias
         } else {
@@ -228,8 +232,8 @@ impl TriggerDetector {
         Self {
             occupancy_baseline: 0.5,
             efficiency_baseline: 1.0,
-            temp_anomaly_threshold: 5.0, // °C from normal
-            bias_change_threshold: 0.15, // 15% change in bias
+            temp_anomaly_threshold: 5.0, // °C from normal  // LEDGER: CAL_ADAPTIVE_TEMP_ANOMALY_THRESHOLD
+            bias_change_threshold: 0.15, // 15% change in bias  // LEDGER: CAL_ADAPTIVE_BIAS_CHANGE_THRESHOLD
         }
     }
 
@@ -249,6 +253,7 @@ impl TriggerDetector {
                 week_history.iter().map(|o| o.occupancy_level).sum::<f64>()
                     / week_history.len() as f64;
             if (current.occupancy_level - baseline_occupancy).abs() > 0.3 {
+                // LEDGER: CAL_ADAPTIVE_OCCUPANCY_SHIFT_THRESHOLD
                 triggers.push(CalibrationTrigger::OccupancyShift);
             }
         }
@@ -332,9 +337,9 @@ impl AdaptiveHourlyCalibrator {
             state: CalibrationState::default(),
             smart_meter: SmartMeterPatternAnalyzer::new(168), // 1 week window
             trigger_detector: TriggerDetector::new(),
-            max_iterations: 50,
-            tolerance: 0.01, // 1% error tolerance
-            learning_rate: 0.1,
+            max_iterations: 50, // LEDGER: CAL_ADAPTIVE_MAX_ITERATIONS
+            tolerance: 0.01,    // 1% error tolerance  // LEDGER: CAL_ADAPTIVE_CONVERGENCE_TOLERANCE
+            learning_rate: 0.1, // LEDGER: CAL_ADAPTIVE_LEARNING_RATE
             iterations: Vec::new(),
         }
     }
@@ -416,7 +421,7 @@ impl AdaptiveHourlyCalibrator {
         // Simplified simulation: base model with corrections
         // In a real implementation, this would call the actual simulation engine
         let base_energy = obs.expected_energy;
-        let infiltration_correction = 1.0 + (state.infiltration_rate - 0.5) * 0.1;
+        let infiltration_correction = 1.0 + (state.infiltration_rate - 0.5) * 0.1; // LEDGER: CAL_ADAPTIVE_INFIL_CORRECTION_FACTOR
         let internal_correction = state.internal_gain_multiplier;
         let solar_correction = state.solar_gain_multiplier;
 
@@ -430,9 +435,9 @@ impl AdaptiveHourlyCalibrator {
             BiasPattern::UniversalBias => {
                 // Adjust parameters that affect constant offset
                 ParameterAdjustments {
-                    thermal_conductivity: adjustment * 0.1,
-                    infiltration_rate: adjustment * 0.3,
-                    internal_gain_multiplier: adjustment * 0.6,
+                    thermal_conductivity: adjustment * 0.1, // LEDGER: CAL_ADAPTIVE_W_UNIVERSAL_TC
+                    infiltration_rate: adjustment * 0.3, // LEDGER: CAL_ADAPTIVE_W_UNIVERSAL_INFIL
+                    internal_gain_multiplier: adjustment * 0.6, // LEDGER: CAL_ADAPTIVE_W_UNIVERSAL_IGAIN
                     solar_gain_multiplier: 0.0,
                     specific_heat: 0.0,
                     density: 0.0,
@@ -442,18 +447,18 @@ impl AdaptiveHourlyCalibrator {
                 // Adjust solar-related parameters for seasonal effects
                 ParameterAdjustments {
                     thermal_conductivity: 0.0,
-                    infiltration_rate: adjustment * 0.2,
+                    infiltration_rate: adjustment * 0.2, // LEDGER: CAL_ADAPTIVE_W_SEASONAL_INFIL
                     internal_gain_multiplier: 0.0,
-                    solar_gain_multiplier: adjustment * 0.8,
+                    solar_gain_multiplier: adjustment * 0.8, // LEDGER: CAL_ADAPTIVE_W_SEASONAL_SGAIN
                     specific_heat: 0.0,
                     density: 0.0,
                 }
             }
             BiasPattern::MixedBias => ParameterAdjustments {
-                thermal_conductivity: adjustment * 0.2,
-                infiltration_rate: adjustment * 0.3,
-                internal_gain_multiplier: adjustment * 0.3,
-                solar_gain_multiplier: adjustment * 0.2,
+                thermal_conductivity: adjustment * 0.2, // LEDGER: CAL_ADAPTIVE_W_MIXED_TC
+                infiltration_rate: adjustment * 0.3,    // LEDGER: CAL_ADAPTIVE_W_MIXED_INFIL
+                internal_gain_multiplier: adjustment * 0.3, // LEDGER: CAL_ADAPTIVE_W_MIXED_IGAIN
+                solar_gain_multiplier: adjustment * 0.2, // LEDGER: CAL_ADAPTIVE_W_MIXED_SGAIN
                 specific_heat: 0.0,
                 density: 0.0,
             },
@@ -548,7 +553,7 @@ impl AdaptiveCalibrationResult {
             final_error_pct,
             bias_pattern: calibrator.get_bias_pattern(),
             mean_bias: calibrator.mean_bias(),
-            target_met: final_error_pct.abs() < 10.0,
+            target_met: final_error_pct.abs() < 10.0, // LEDGER: CAL_ADAPTIVE_TARGET_ERROR_PCT
         }
     }
 }
