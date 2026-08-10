@@ -387,7 +387,10 @@ harness = false
 
 [[bench]]
 name = "ctf_solver_bench"
-path = "benches/ctf_solver_bench.rs"
+harness = false
+
+[[bench]]
+name = "decoupled_loop_dispatch_bench"
 harness = false
 
 [[bin]]
