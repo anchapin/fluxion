@@ -50,8 +50,11 @@ def build_baseline_payload(reports: dict, previous: dict) -> dict:
     """Compose the JSON payload that becomes the new baseline.
 
     Each path records ``line`` and ``branch`` percentages plus the raw
-    counts so a future reader can audit the sample size.  ``_ratchet``
-    documents the one-way tolerance the gate applies.
+    counts so a future reader can audit the sample size.  Both
+    dimensions are ratcheted one-way: once a non-zero floor has been
+    recorded it never moves downward.  ``_ratchet`` documents the
+    one-way tolerance the gate applies (Issue #2533 extended the
+    ratchet from line-only to line + branch).
     """
     paths_section = previous.get("paths", {}) if isinstance(previous, dict) else {}
     new_paths: dict[str, dict] = {}
@@ -59,16 +62,24 @@ def build_baseline_payload(reports: dict, previous: dict) -> dict:
         rep = reports.get(name)
         prev_entry = paths_section.get(name, {}) if isinstance(paths_section, dict) else {}
         prev_line = float(prev_entry.get("line", 0.0)) if isinstance(prev_entry, dict) else 0.0
+        prev_branch = (
+            float(prev_entry.get("branch", 0.0)) if isinstance(prev_entry, dict) else 0.0
+        )
 
         current_line = round(rep.line_pct, 4) if rep else 0.0
+        current_branch = round(rep.branch_pct, 4) if rep else 0.0
         # Ratchet: never move the floor *down* once it has been set.  This
         # stops a bad merge from quietly lowering the bar; the floor only
-        # rises (or stays flat) as coverage improves.
+        # rises (or stays flat) as coverage improves.  Applied to both
+        # line and branch dimensions independently (#2533).
         ratcheted_line = max(current_line, prev_line) if prev_line > 0.0 else current_line
+        ratcheted_branch = (
+            max(current_branch, prev_branch) if prev_branch > 0.0 else current_branch
+        )
 
         new_paths[name] = {
             "line": ratcheted_line,
-            "branch": round(rep.branch_pct, 4) if rep else 0.0,
+            "branch": ratcheted_branch,
             "lines_hit": rep.lines_hit if rep else 0,
             "lines_found": rep.lines_found if rep else 0,
             "branches_hit": rep.branches_hit if rep else 0,
@@ -78,10 +89,12 @@ def build_baseline_payload(reports: dict, previous: dict) -> dict:
     return {
         "_comment": (
             "Coverage baseline for the Code Coverage Gate (#1932). "
-            "A line value of 0.0 means the path is unenforced; the gate "
+            "A value of 0.0 means the path/dimension is unenforced; the gate "
             "activates automatically once a real number is recorded here. "
+            "Both line and branch coverage are ratcheted one-way (#2533). "
             "Regenerate with `python scripts/coverage_baseline.py --update "
-            "--lcov target/llvm-cov/lcov.info`."
+            "--lcov target/llvm-cov/lcov.info` (requires `cargo llvm-cov "
+            "--branch` upstream)."
         ),
         "_issue": 1932,
         "_updated": datetime.now(timezone.utc).isoformat(timespec="seconds").replace(
@@ -90,8 +103,10 @@ def build_baseline_payload(reports: dict, previous: dict) -> dict:
         "_ratchet": {
             "tolerance": 0.01,
             "description": (
-                "Gate fails when a path's current line coverage drops below "
-                "baseline × (1 − tolerance). Baseline never moves downward."
+                "Gate fails when a path's current line OR branch coverage "
+                "drops below baseline × (1 − tolerance). Both dimensions' "
+                "baselines never move downward. Branch coverage requires "
+                "cargo llvm-cov --branch-coverage (#2533)."
             ),
         },
         "paths": new_paths,

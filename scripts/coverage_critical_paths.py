@@ -28,11 +28,18 @@ ratchet tolerance read from the baseline file)::
         --baseline validation/coverage_baseline.json \\
         --gate
 
-The baseline stores one entry per critical path.  A baseline value of
-``0.0`` means *unenforced* (collection pending) — the gate passes with
-a notice for that path.  Once a maintainer records real numbers via
+The baseline stores one entry per critical path, with separate ``line``
+and ``branch`` fields.  A baseline value of ``0.0`` means *unenforced*
+for that dimension (collection pending) — the gate passes with a notice
+for that path/dimension.  Once a maintainer records real numbers via
 ``scripts/coverage_baseline.py --update`` the ratchet activates
-automatically.
+automatically on the next run.
+
+Branch coverage (Issue #2533): the gate enforces *both* line and branch
+coverage independently.  ``cargo llvm-cov`` must be invoked with
+``--branch`` for the LCOV ``BRF:`` / ``BRH:`` records to appear;
+otherwise branch coverage stays at 0 and the branch dimension remains
+unenforced.
 
 Exit codes
 ~~~~~~~~~~
@@ -297,10 +304,18 @@ def evaluate_gate(
 ) -> list[str]:
     """Return a list of human-readable failure lines (empty list = pass).
 
-    The gate trips when a path's current line coverage drops below
-    ``baseline * (1 - tolerance)``.  Paths whose baseline is ``0.0`` (or
-    absent) are *unenforced* and never trip the gate; they emit a notice
-    instead so the baseline-collection status is visible.
+    Both the **line** and **branch** coverage dimensions are enforced
+    independently (Issue #2533).  The gate trips when a path's current
+    coverage in *either* dimension drops below
+    ``baseline * (1 - tolerance)``.  Paths whose baseline value is
+    ``0.0`` (or absent) for a dimension are *unenforced* on that
+    dimension and never trip the gate; they emit a notice instead so the
+    baseline-collection status is visible.
+
+    Rationale for tracking branch separately: line coverage can hold at
+    80% while branch coverage sits at 30%, and a hidden ``else`` branch
+    can silently corrupt simulation behaviour.  Line coverage alone does
+    not surface that risk.
     """
     failures: list[str] = []
     paths_section = baseline.get("paths", {}) if isinstance(baseline, dict) else {}
@@ -309,35 +324,93 @@ def evaluate_gate(
         rep = reports.get(name)
         base_entry = paths_section.get(name, {}) if isinstance(paths_section, dict) else {}
         base_line = float(base_entry.get("line", 0.0)) if isinstance(base_entry, dict) else 0.0
+        base_branch = float(base_entry.get("branch", 0.0)) if isinstance(base_entry, dict) else 0.0
 
-        if base_line <= 0.0:
-            print(
-                f"   ℹ️  {name}: baseline not set (unenforced) — "
-                f"current line coverage "
-                f"{rep.line_pct:.2f}%"
-                if rep and rep.lines_found
-                else f"   ℹ️  {name}: baseline not set (unenforced) — no instrumented files"
+        # If neither dimension has a baseline yet, the path is fully
+        # unenforced — emit a single notice and move on.
+        if base_line <= 0.0 and base_branch <= 0.0:
+            if rep and (rep.lines_found or rep.branches_found):
+                print(
+                    f"   ℹ️  {name}: baseline not set (unenforced) — "
+                    f"current line {rep.line_pct:.2f}%, "
+                    f"branch {rep.branch_pct:.2f}%"
+                )
+            else:
+                print(
+                    f"   ℹ️  {name}: baseline not set (unenforced) — no instrumented files"
+                )
+            continue
+
+        # A path with a baseline must still produce instrumented files;
+        # losing all instrumentation is a measurement regression.
+        if rep is None or (rep.lines_found == 0 and rep.branches_found == 0):
+            failures.append(
+                f"{name}: no instrumented files found "
+                f"(baseline line {base_line:.2f}%, branch {base_branch:.2f}%)"
             )
             continue
 
-        if rep is None or rep.lines_found == 0:
-            failures.append(
-                f"{name}: no instrumented files found (baseline {base_line:.2f}%)"
-            )
-            continue
+        path_failed = False
 
-        floor = base_line * (1.0 - tolerance)
-        if rep.line_pct < floor:
-            failures.append(
-                f"{name}: line coverage {rep.line_pct:.2f}% fell below "
-                f"ratchet floor {floor:.2f}% "
-                f"(baseline {base_line:.2f}% × (1 − {tolerance:.0%}))"
-            )
+        # --- Line coverage dimension -------------------------------------
+        if base_line > 0.0:
+            floor = base_line * (1.0 - tolerance)
+            if rep.line_pct < floor:
+                path_failed = True
+                failures.append(
+                    f"{name}: line coverage {rep.line_pct:.2f}% fell below "
+                    f"ratchet floor {floor:.2f}% "
+                    f"(baseline {base_line:.2f}% × (1 − {tolerance:.0%}))"
+                )
+            else:
+                print(
+                    f"   ✅ {name} line: {rep.line_pct:.2f}% ≥ floor {floor:.2f}% "
+                    f"(baseline {base_line:.2f}%)"
+                )
         else:
             print(
-                f"   ✅ {name}: {rep.line_pct:.2f}% ≥ ratchet floor {floor:.2f}% "
-                f"(baseline {base_line:.2f}%)"
+                f"   ℹ️  {name} line: unenforced (baseline 0.0), "
+                f"current {rep.line_pct:.2f}%"
             )
+
+        # --- Branch coverage dimension (#2533) ---------------------------
+        if base_branch > 0.0:
+            # A set branch baseline with no instrumented branches in the
+            # current run means measurement regressed (e.g. CI forgot
+            # ``--branch-coverage``) — fail loud rather than silently.
+            if rep.branches_found == 0:
+                path_failed = True
+                failures.append(
+                    f"{name}: branch baseline {base_branch:.2f}% is set but the "
+                    f"current run instrumented 0 branches "
+                    f"(did cargo llvm-cov get --branch-coverage?)"
+                )
+            else:
+                floor = base_branch * (1.0 - tolerance)
+                if rep.branch_pct < floor:
+                    path_failed = True
+                    failures.append(
+                        f"{name}: branch coverage {rep.branch_pct:.2f}% fell below "
+                        f"ratchet floor {floor:.2f}% "
+                        f"(baseline {base_branch:.2f}% × (1 − {tolerance:.0%}))"
+                    )
+                else:
+                    print(
+                        f"   ✅ {name} branch: {rep.branch_pct:.2f}% ≥ floor {floor:.2f}% "
+                        f"(baseline {base_branch:.2f}%)"
+                    )
+        else:
+            cur = rep.branch_pct if rep.branches_found else 0.0
+            print(
+                f"   ℹ️  {name} branch: unenforced (baseline 0.0), current {cur:.2f}%"
+            )
+
+        if not path_failed:
+            # Aggregate confirmation line for paths that passed both
+            # dimensions (keeps the single-path summary readable when
+            # both dimensions are enforced).
+            pass
+
     return failures
 
 
