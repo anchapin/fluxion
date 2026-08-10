@@ -46,6 +46,7 @@ use axum::{
     routing::{get, post},
     Json, Router,
 };
+use parking_lot::RwLock;
 use rayon::iter::{IndexedParallelIterator, IntoParallelIterator, ParallelIterator};
 use serde::{Deserialize, Serialize};
 use tempfile::NamedTempFile;
@@ -195,8 +196,34 @@ impl SimulationStateStore for InMemorySimulationStateStore {
 
 /// Shared application state — held inside an [`axum::extract::State`] so every
 /// handler can mutate the same schema store. The store is process-local (in
-/// scope per #1342) and is intentionally behind a `tokio::sync::Mutex` to
-/// avoid blocking the async runtime on contended reads.
+/// scope per #1342).
+///
+/// # Locking strategy (Issue #2552)
+///
+/// Two fields that previously held `tokio::sync::Mutex` now hold
+/// `parking_lot::RwLock`:
+///
+/// * `schemas` — heavily read-mostly (`GET /v1/schema/{id}` dominates the
+///   workload; writes only happen on `POST /v1/simulate` and
+///   `POST /v1/import/*`). `parking_lot::RwLock` lets an arbitrary number of
+///   concurrent readers proceed without ever going through the tokio task
+///   scheduler, eliminating the p99 cliff reported in #2552.
+/// * `campaigns` — reads (`GET /v1/campaigns/:id/status`) dominate over
+///   writes (per-step status pushes inside the spawned worker task).
+///
+/// `tokio::sync::Mutex` is intentionally retained for `SimulationStateStore`
+/// implementations (the `inner: Arc<Mutex<HashMap<...>>>` inside
+/// [`InMemorySimulationStateStore`]) because the trait's `async fn` signatures
+/// must remain compatible with cloud backends (DynamoDB/Redis) that await on
+/// network I/O between the lock acquisition and the data access. Holding a
+/// sync lock across an `.await` would block the async runtime, so we keep the
+/// `tokio::sync::Mutex` for the only field where an `.await` legitimately
+/// appears inside the critical section.
+///
+/// All lock acquisitions on `schemas` and `campaigns` are synchronous and
+/// non-blocking under contention — they never cross an `.await`. The public
+/// methods on `AppState` stay `async fn` for backwards compatibility; the
+/// `.await`s are now unnecessary in the lock paths but harmless.
 ///
 /// # Cloud State Store
 ///
@@ -226,18 +253,18 @@ impl SimulationStateStore for InMemorySimulationStateStore {
 /// This is the prerequisite for T7.2 (async coordinator).
 #[derive(Clone)]
 pub struct AppState<S = InMemorySimulationStateStore> {
-    schemas: Arc<Mutex<HashMap<String, SimulationSchemaV1>>>,
+    schemas: Arc<RwLock<HashMap<String, SimulationSchemaV1>>>,
     simulations: S,
-    campaigns: Arc<Mutex<HashMap<String, CampaignState>>>,
+    campaigns: Arc<RwLock<HashMap<String, CampaignState>>>,
     next_id: Arc<AtomicU64>,
 }
 
 impl Default for AppState<InMemorySimulationStateStore> {
     fn default() -> Self {
         Self {
-            schemas: Arc::new(Mutex::new(HashMap::new())),
+            schemas: Arc::new(RwLock::new(HashMap::new())),
             simulations: InMemorySimulationStateStore::new(),
-            campaigns: Arc::new(Mutex::new(HashMap::new())),
+            campaigns: Arc::new(RwLock::new(HashMap::new())),
             next_id: Arc::new(AtomicU64::new(0)),
         }
     }
@@ -250,9 +277,9 @@ impl<S: SimulationStateStore> AppState<S> {
     /// status to a cloud store (DynamoDB/Redis) instead of local memory.
     pub fn with_cloud_store(simulations: S) -> Self {
         Self {
-            schemas: Arc::new(Mutex::new(HashMap::new())),
+            schemas: Arc::new(RwLock::new(HashMap::new())),
             simulations,
-            campaigns: Arc::new(Mutex::new(HashMap::new())),
+            campaigns: Arc::new(RwLock::new(HashMap::new())),
             next_id: Arc::new(AtomicU64::new(0)),
         }
     }
@@ -367,15 +394,22 @@ impl<S: SimulationStateStore> AppState<S> {
     }
 
     /// Store a schema and return its assigned id.
+    ///
+    /// The `schemas` lock is `parking_lot::RwLock` (Issue #2552), so this
+    /// method takes a synchronous write guard and never crosses an `.await`
+    /// while the lock is held.
     pub async fn store(&self, schema: SimulationSchemaV1) -> String {
         let id = self.next_id();
-        self.schemas.lock().await.insert(id.clone(), schema);
+        self.schemas.write().insert(id.clone(), schema);
         id
     }
 
     /// Look up a previously-stored schema by id.
+    ///
+    /// Uses a synchronous read guard so multiple concurrent `GET /v1/schema/{id}`
+    /// requests can proceed without contending with each other.
     pub async fn get(&self, id: &str) -> Option<SimulationSchemaV1> {
-        self.schemas.lock().await.get(id).cloned()
+        self.schemas.read().get(id).cloned()
     }
 
     /// Register a new simulation and return its id.
@@ -406,14 +440,14 @@ impl<S: SimulationStateStore> AppState<S> {
 
     /// Number of stored schemas (for tests / diagnostics).
     pub async fn len(&self) -> usize {
-        self.schemas.lock().await.len()
+        self.schemas.read().len()
     }
 
     /// Whether the store has zero schemas. Kept to satisfy
     /// `clippy::len_without_is_empty`; cheaper than `len() == 0` only if
     /// callers already hold the lock.
     pub async fn is_empty(&self) -> bool {
-        self.schemas.lock().await.is_empty()
+        self.schemas.read().is_empty()
     }
 
     /// Allocate a new monotonically-increasing campaign id.
@@ -426,20 +460,19 @@ impl<S: SimulationStateStore> AppState<S> {
     pub async fn register_campaign(&self, spec: CampaignSpec) -> String {
         let id = self.next_campaign_id();
         self.campaigns
-            .lock()
-            .await
+            .write()
             .insert(id.clone(), CampaignState::Pending { spec });
         id
     }
 
     /// Update campaign state.
     pub async fn update_campaign(&self, id: &str, state: CampaignState) {
-        self.campaigns.lock().await.insert(id.to_string(), state);
+        self.campaigns.write().insert(id.to_string(), state);
     }
 
     /// Get campaign status for polling.
     pub async fn get_campaign_status(&self, id: &str) -> Option<CampaignStatus> {
-        self.campaigns.lock().await.get(id).map(|state| {
+        self.campaigns.read().get(id).map(|state| {
             let (state_enum, progress, completed, total) = match state {
                 CampaignState::Pending { spec } => (
                     CampaignStateEnum::Pending,
@@ -795,7 +828,11 @@ async fn simulate(
     let output = run_simulation(&schema, options.years, options.use_surrogates)?;
 
     let schema_id = if let Some(id) = options.store_as.clone() {
-        state.schemas.lock().await.insert(id.clone(), schema);
+        // Issue #2552: `schemas` is now `parking_lot::RwLock`. Use a
+        // synchronous write guard — no `.await` crosses the critical
+        // section, so concurrent `simulate` calls do not serialise on the
+        // lock.
+        state.schemas.write().insert(id.clone(), schema);
         Some(id)
     } else {
         // Auto-store so clients can retrieve the schema that produced the
@@ -976,7 +1013,11 @@ async fn submit_campaign(
         let total = spec.simulations.len();
 
         {
-            let mut guard = campaigns.lock().await;
+            // Issue #2552: `campaigns` is now `parking_lot::RwLock`. The
+            // write guard is held only for the duration of the synchronous
+            // `HashMap::get_mut` + assignment; nothing inside is async, so
+            // we avoid parking the worker task.
+            let mut guard = campaigns.write();
             if let Some(current) = guard.get_mut(&campaign_id_for_task) {
                 *current = CampaignState::Running {
                     spec: spec.clone(),
@@ -1001,7 +1042,7 @@ async fn submit_campaign(
             let completed = i + 1;
 
             {
-                let mut guard = campaigns.lock().await;
+                let mut guard = campaigns.write();
                 if let Some(current) = guard.get_mut(&campaign_id_for_task) {
                     *current = CampaignState::Running {
                         spec: spec.clone(),
@@ -1013,7 +1054,7 @@ async fn submit_campaign(
         }
 
         {
-            let mut guard = campaigns.lock().await;
+            let mut guard = campaigns.write();
             if let Some(current) = guard.get_mut(&campaign_id_for_task) {
                 *current = CampaignState::Completed {
                     spec: spec.clone(),
