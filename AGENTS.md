@@ -121,6 +121,11 @@ Heavy Linux jobs honour `vars.FLUXION_LINUX_RUNNER` (self-hosted Hetzner fallbac
 ## Environment Variables
 
 - `FLUXION_REST_BIND` / `FLUXION_REST_PORT` — `fluxion-rest` (default `0.0.0.0:8080`; healthcheck `/v1/healthz`).
+- `FLUXION_REST_AUTH` — `off` (default) | `token` | `tls`. Issue #2505 auth middleware on every `/v1/*` route except `/v1/healthz`. `token` requires `FLUXION_REST_AUTH_TOKEN`; `tls` expects the reverse proxy to set the verified-client header (or a token fallback).
+- `FLUXION_REST_AUTH_TOKEN` — bearer token for `FLUXION_REST_AUTH=token|tls`.
+- `FLUXION_REST_CORS_ORIGINS` — comma-separated origin allow-list (defaults to localhost dev origins; never `permissive()`).
+- `FLUXION_REST_RATE_LIMIT_RPS` / `FLUXION_REST_RATE_LIMIT_BURST` — per-IP token-bucket governor (default `100`/`1000`). Body capped at 16 MiB.
+- `FLUXION_REST_ALLOW_INSECURE=1` — opt out of the release-build boot guard that refuses `FLUXION_REST_BIND=0.0.0.0` + `FLUXION_REST_AUTH=off`.
 - `FLUXION_ONNX_MODEL` — explicit ONNX model path (default `models/surrogate_zone_thermal.onnx`; mock fallback when unset).
 - `FLUXION_ONNX_BACKEND` — `cpu | cuda | coreml | directml | openvino`; auto-downgrades to `cpu` if `cuda` feature not built.
 - `FLUXION_GPU` — `0`/`false` to force CPU inference.

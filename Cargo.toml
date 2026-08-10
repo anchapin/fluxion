@@ -257,13 +257,15 @@ async-trait = "0.1"
 #   - `tower-http` brings `TraceLayer` and `RequestId`/`PropagateRequestId`
 #     middleware so every response carries an `x-request-id` header and every
 #     request emits a structured log line via `tracing`.
+#   - `cors` feature enables `CorsLayer` (Issue #2505 hardening) with an
+#     explicit origin allow-list — never `permissive()`.
 #   - `metrics` is the facade; counters and histograms go through the macros
 #     and the global recorder (set up in `src/api/server.rs`).
 #   - `metrics-exporter-prometheus` with `default-features = false` keeps the
 #     dependency surface narrow — we only need the encoder and the in-process
 #     `PrometheusHandle` (no HTTP listener, no push-gateway, no protobuf), and
 #     we serve `/v1/metrics` from the axum router using `handle.render()`.
-tower-http = { version = "0.6", features = ["trace", "request-id", "util"] }
+tower-http = { version = "0.6", features = ["trace", "request-id", "util", "cors"] }
 metrics = "0.24"
 metrics-exporter-prometheus = { version = "0.18", default-features = false }
 

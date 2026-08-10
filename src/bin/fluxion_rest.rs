@@ -7,21 +7,34 @@
 //! Defaults to `0.0.0.0:8080`; both bind address and port can be overridden
 //! by environment variables:
 //!
-//! - `FLUXION_REST_BIND`  — default `0.0.0.0`
-//! - `FLUXION_REST_PORT`  — default `8080`
-//! - `RUST_LOG`           — `tracing-subscriber` filter (forwarded into the
-//!                          layer set up below).
-//! - `FLUXION_AUDIT_LOG`  — optional path; when set, `/v1/simulate` audit
-//!                          events (`target = "audit"`) are tee'd to this
-//!                          file in addition to the default stdout log
-//!                          (Issue #2546).
+//! - `FLUXION_REST_BIND` — default `0.0.0.0`
+//! - `FLUXION_REST_PORT` — default `8080`
+//! - `RUST_LOG` — `tracing-subscriber` filter (forwarded into the layer set
+//!   up below).
+//! - `FLUXION_AUDIT_LOG` — optional path; when set, `/v1/simulate` audit
+//!   events (`target = "audit"`) are tee'd to this file in addition to the
+//!   default stdout log (Issue #2546).
+//!
+//! # Security (Issue #2505)
+//!
+//! Every `/v1/*` route is wrapped by auth + CORS + a 16 MiB body limit +
+//! a per-IP token-bucket governor, configured from the environment via
+//! [`fluxion::api::security::RestSecurityConfig`]:
+//!
+//! - `FLUXION_REST_AUTH` — `off` (default) | `token` | `tls`
+//! - `FLUXION_REST_AUTH_TOKEN` — bearer token (required for `token`)
+//! - `FLUXION_REST_CORS_ORIGINS` — comma-separated origin allow-list
+//! - `FLUXION_REST_RATE_LIMIT_RPS` / `FLUXION_REST_RATE_LIMIT_BURST`
+//! - `FLUXION_REST_ALLOW_INSECURE=1` — opt out of the release-build boot
+//!   guard that refuses `0.0.0.0` + `auth=off`.
 //!
 //! Graceful shutdown is wired to `SIGINT` (Ctrl-C) via `tokio::signal`.
 
 use std::net::SocketAddr;
 use std::str::FromStr;
 
-use fluxion::api::server::{router, AppState};
+use fluxion::api::security::{check_boot_guard_from_env, RestSecurityConfig};
+use fluxion::api::server::{router_with_security, AppState};
 use tokio::net::TcpListener;
 use tracing::Level;
 use tracing_subscriber::{fmt, prelude::*, EnvFilter};
@@ -142,6 +155,31 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     let addr = resolve_addr();
+
+    // Issue #2505 — release-build boot guard: refuse to start when binding
+    // all interfaces with authentication disabled (an anonymous network
+    // client could reach every `/v1/*` route). `check_boot_guard_from_env`
+    // is a no-op in debug builds so `cargo run` keeps working locally.
+    if let Err(msg) = check_boot_guard_from_env() {
+        eprintln!("{msg}");
+        std::process::exit(1);
+    }
+
+    // Issue #2505 — resolve the full security configuration from the
+    // environment once and hand it to the router builder.
+    let security_cfg = RestSecurityConfig::from_env();
+    tracing::info!(
+        "fluxion-rest security: auth={:?} cors_origins={} rate_limit_rps={} rate_limit_burst={}",
+        security_cfg.auth_mode,
+        if security_cfg.cors_origins.is_empty() {
+            "<dev-defaults>".to_string()
+        } else {
+            security_cfg.cors_origins.join(",")
+        },
+        security_cfg.rate_limit_rps,
+        security_cfg.rate_limit_burst,
+    );
+
     let listener = TcpListener::bind(addr).await?;
     let bound = listener.local_addr()?;
     tracing_or_log_info(&format!(
@@ -150,11 +188,18 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         bound.port()
     ));
 
-    let app = router(AppState::default());
+    let app = router_with_security(AppState::default(), security_cfg);
 
-    axum::serve(listener, app)
-        .with_graceful_shutdown(shutdown_signal())
-        .await?;
+    // Issue #2505 — `into_make_service_with_connect_info` injects the
+    // accepted socket's peer address into each request's extensions as
+    // `ConnectInfo<SocketAddr>`, which the per-IP rate limiter reads as a
+    // fallback when no `X-Forwarded-For` / `X-Real-IP` header is present.
+    axum::serve(
+        listener,
+        app.into_make_service_with_connect_info::<SocketAddr>(),
+    )
+    .with_graceful_shutdown(shutdown_signal())
+    .await?;
 
     Ok(())
 }
