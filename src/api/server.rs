@@ -1068,15 +1068,13 @@ async fn simulate(
     // unchanged. The `request_id` is threaded in per #2499.
     let schema_for_sim = schema.clone();
     let request_id_for_sim = request_id.clone();
-    let result =
-        tokio::task::spawn_blocking(move || run_simulation(&schema_for_sim, years, use_surrogates, &request_id_for_sim))
-            .await
-            .map_err(|join_err| {
-                ApiError::SimulationFailed(
-                    format!("simulation blocking task failed: {join_err}"),
-                    None,
-                )
-            })?;
+    let result = tokio::task::spawn_blocking(move || {
+        run_simulation(&schema_for_sim, years, use_surrogates, &request_id_for_sim)
+    })
+    .await
+    .map_err(|join_err| {
+        ApiError::SimulationFailed(format!("simulation blocking task failed: {join_err}"), None)
+    })?;
     tracing::info!(
         target: "audit",
         event = "simulation_completed",
@@ -1283,12 +1281,17 @@ async fn batch_simulate(
             .into_par_iter()
             .zip(opts.into_par_iter())
             .map(|(schema, options)| {
-                run_simulation(&schema, options.years, options.use_surrogates, &request_id_for_batch)
-                    .map(|output| SimulateResponse {
-                        schema_id: None,
-                        output,
-                    })
-                    .map_err(|e| e.to_string())
+                run_simulation(
+                    &schema,
+                    options.years,
+                    options.use_surrogates,
+                    &request_id_for_batch,
+                )
+                .map(|output| SimulateResponse {
+                    schema_id: None,
+                    output,
+                })
+                .map_err(|e| e.to_string())
             })
             .collect::<Vec<_>>()
     })
