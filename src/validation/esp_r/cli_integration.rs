@@ -207,7 +207,7 @@ fn save_report(
         }
     }
 
-    println!("Report saved to: {}", output_path.display());
+    tracing::info!("Report saved to: {}", output_path.display());
     Ok(())
 }
 
@@ -288,20 +288,20 @@ pub fn generate_markdown_report(result: &EspRCliResult) -> Result<String, Box<dy
 
 /// Print validation summary to console
 fn print_summary(config: &EspRCliConfig, passed: bool, pass_rate: f64) {
-    println!("ESP-r Cross-Validation Summary");
-    println!("==============================");
-    println!("ESP-r Output: {}", config.esp_r_output.display());
-    println!("Fluxion Config: {}", config.fluxion_config.display());
-    println!("Tolerance: {}°C", config.tolerance);
-    println!("Format: {}", config.output_format);
-    println!();
-    println!("Results:");
-    println!(
+    tracing::info!("ESP-r Cross-Validation Summary");
+    tracing::info!("==============================");
+    tracing::info!("ESP-r Output: {}", config.esp_r_output.display());
+    tracing::info!("Fluxion Config: {}", config.fluxion_config.display());
+    tracing::info!("Tolerance: {}°C", config.tolerance);
+    tracing::info!("Format: {}", config.output_format);
+    tracing::info!();
+    tracing::info!("Results:");
+    tracing::info!(
         "  Status: {}",
         if passed { "✅ PASSED" } else { "❌ FAILED" }
     );
-    println!("  Pass Rate: {:.1}%", pass_rate * 100.0);
-    println!();
+    tracing::info!("  Pass Rate: {:.1}%", pass_rate * 100.0);
+    tracing::info!();
 }
 
 /// Helper function to run validation and return formatted output

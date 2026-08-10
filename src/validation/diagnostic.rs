@@ -26,6 +26,53 @@ use std::collections::HashMap;
 use std::io::Write;
 use std::path::Path;
 
+/// Emit a structured, machine-parseable per-case ASHRAE 140 diagnostic event,
+/// scoped to an `ashrae140_case` span. (Issue #2500)
+///
+/// Every field is recorded as a structured tracing field (not interpolated into
+/// the message) so that a JSON subscriber emits records of the form:
+///
+/// ```json
+/// {"timestamp":"...","level":"INFO","spans":[{"name":"ashrae140_case",
+///  "case_id":"600","metric":"Annual Heating"}],"fields":{"case_id":"600",
+///  "metric":"Annual Heating","expected":5.0,"expected_min":4.3,
+///  "expected_max":5.7,"actual":5.2,"deviation_pct":0.0,"status":"PASS", ...}}
+/// ```
+///
+/// This is the canonical ingestion contract for CI log aggregators
+/// (Loki/Elastic) consuming the validation suite output.
+pub fn emit_case_diagnostic(
+    case_id: &str,
+    metric: &str,
+    actual: f64,
+    ref_min: f64,
+    ref_max: f64,
+    deviation_pct: f64,
+    status: &str,
+) {
+    // Reference midpoint — used as the single `expected` scalar field plus the
+    // explicit min/max bounds so consumers can reconstruct the full range.
+    let expected_mid = (ref_min + ref_max) * 0.5;
+
+    let span = tracing::info_span!(
+        "ashrae140_case",
+        case_id = %case_id,
+        metric = %metric,
+    );
+    let _guard = span.enter();
+    tracing::info!(
+        case_id = %case_id,
+        metric = %metric,
+        expected = expected_mid,
+        expected_min = ref_min,
+        expected_max = ref_max,
+        actual = actual,
+        deviation_pct = deviation_pct,
+        status = %status,
+        "ashrae 140 per-case diagnostic",
+    );
+}
+
 /// Configuration for diagnostic output.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DiagnosticConfig {
@@ -307,20 +354,25 @@ impl EnergyBreakdown {
         self.envelope_conduction_mwh + self.infiltration_mwh
     }
 
-    /// Prints the energy breakdown to stdout.
+    /// Emits the energy breakdown as a structured `tracing::info!` event. (Issue #2500)
+    ///
+    /// Replaces the former `println!` block; the breakdown is now capturable by
+    /// any tracing subscriber (JSON or human-readable).
     pub fn print(&self, case_id: &str) {
-        println!("\nCase {} Energy Breakdown:", case_id);
-        println!(
-            "  Envelope conduction: {:.3} MWh",
-            self.envelope_conduction_mwh
+        let span = tracing::info_span!("ashrae140_case", case_id = %case_id);
+        let _guard = span.enter();
+        tracing::info!(
+            case_id = %case_id,
+            metric = "energy_breakdown",
+            envelope_conduction_mwh = self.envelope_conduction_mwh,
+            infiltration_mwh = self.infiltration_mwh,
+            solar_gains_mwh = self.solar_gains_mwh,
+            internal_gains_mwh = self.internal_gains_mwh,
+            heating_mwh = self.heating_mwh,
+            cooling_mwh = self.cooling_mwh,
+            net_balance_mwh = self.net_balance_mwh,
+            "case energy breakdown",
         );
-        println!("  Infiltration:        {:.3} MWh", self.infiltration_mwh);
-        println!("  Solar gains:         {:.3} MWh", self.solar_gains_mwh);
-        println!("  Internal gains:      {:.3} MWh", self.internal_gains_mwh);
-        println!("  ─────────────────────────────────");
-        println!("  Heating energy:      {:.3} MWh", self.heating_mwh);
-        println!("  Cooling energy:      {:.3} MWh", self.cooling_mwh);
-        println!("  Net balance:         {:.3} MWh", self.net_balance_mwh);
     }
 }
 
@@ -399,20 +451,20 @@ impl PeakTiming {
         format!("Month {:02} Day {:02}, {:02}:00", month, day, hour)
     }
 
-    /// Prints the peak timing to stdout.
+    /// Emits the peak-load timing as a structured `tracing::info!` event. (Issue #2500)
     pub fn print(&self, case_id: &str) {
-        println!("\nCase {} Peak Load Timing:", case_id);
-        println!(
-            "  Peak Heating: {:.2} kW at Hour {} ({})",
-            self.peak_heating_kw,
-            self.peak_heating_hour,
-            self.peak_heating_time_str()
-        );
-        println!(
-            "  Peak Cooling: {:.2} kW at Hour {} ({})",
-            self.peak_cooling_kw,
-            self.peak_cooling_hour,
-            self.peak_cooling_time_str()
+        let span = tracing::info_span!("ashrae140_case", case_id = %case_id);
+        let _guard = span.enter();
+        tracing::info!(
+            case_id = %case_id,
+            metric = "peak_timing",
+            peak_heating_kw = self.peak_heating_kw,
+            peak_heating_hour = self.peak_heating_hour,
+            peak_heating_time = %Self::hour_to_datetime(self.peak_heating_hour),
+            peak_cooling_kw = self.peak_cooling_kw,
+            peak_cooling_hour = self.peak_cooling_hour,
+            peak_cooling_time = %Self::hour_to_datetime(self.peak_cooling_hour),
+            "case peak-load timing",
         );
     }
 }
@@ -730,49 +782,63 @@ impl DiagnosticReport {
         std::fs::write(path, content)
     }
 
-    /// Print summary to console
+    /// Emit the diagnostic summary via `tracing` (replaces `println!`). (Issue #2500)
     pub fn print_summary(&self) {
         if !self.config.verbose {
             return;
         }
 
-        println!("\n=== ASHRAE 140 Diagnostic Summary ===\n");
+        tracing::info!(
+            metric = "diagnostic_summary",
+            energy_breakdown_count = self.energy_breakdowns.len(),
+            peak_timing_count = self.peak_timings.len(),
+            temperature_profile_count = self.temperature_profiles.len(),
+            "ASHRAE 140 diagnostic summary",
+        );
 
         if !self.energy_breakdowns.is_empty() {
-            println!("Energy Breakdowns:");
             for (case_id, breakdown) in &self.energy_breakdowns {
-                println!(
-                    "  {}: Heating={:.2} MWh, Cooling={:.2} MWh",
-                    case_id, breakdown.heating_mwh, breakdown.cooling_mwh
+                let span = tracing::info_span!("ashrae140_case", case_id = %case_id);
+                let _guard = span.enter();
+                tracing::info!(
+                    case_id = %case_id,
+                    metric = "energy_breakdown",
+                    heating_mwh = breakdown.heating_mwh,
+                    cooling_mwh = breakdown.cooling_mwh,
+                    "energy breakdown",
                 );
             }
-            println!();
         }
 
         if !self.peak_timings.is_empty() {
-            println!("Peak Load Timing:");
             for (case_id, timing) in &self.peak_timings {
-                println!(
-                    "  {}: Peak Heat={:.2} kW at hour {}, Peak Cool={:.2} kW at hour {}",
-                    case_id,
-                    timing.peak_heating_kw,
-                    timing.peak_heating_hour,
-                    timing.peak_cooling_kw,
-                    timing.peak_cooling_hour
+                let span = tracing::info_span!("ashrae140_case", case_id = %case_id);
+                let _guard = span.enter();
+                tracing::info!(
+                    case_id = %case_id,
+                    metric = "peak_timing",
+                    peak_heating_kw = timing.peak_heating_kw,
+                    peak_heating_hour = timing.peak_heating_hour,
+                    peak_cooling_kw = timing.peak_cooling_kw,
+                    peak_cooling_hour = timing.peak_cooling_hour,
+                    "peak load timing",
                 );
             }
-            println!();
         }
 
         if !self.temperature_profiles.is_empty() {
-            println!("Free-Floating Temperature Ranges:");
             for (case_id, profile) in &self.temperature_profiles {
-                println!(
-                    "  {}: Min={:.1}°C, Max={:.1}°C, Swing={:.1}°C",
-                    case_id, profile.min_temp, profile.max_temp, profile.swing
+                let span = tracing::info_span!("ashrae140_case", case_id = %case_id);
+                let _guard = span.enter();
+                tracing::info!(
+                    case_id = %case_id,
+                    metric = "free_float_temperature_range",
+                    min_temp_c = profile.min_temp,
+                    max_temp_c = profile.max_temp,
+                    swing_c = profile.swing,
+                    "free-floating temperature ranges",
                 );
             }
-            println!();
         }
     }
 }
@@ -831,7 +897,13 @@ impl DiagnosticCollector {
         self.hourly_data.clear();
 
         if self.config.verbose {
-            println!("\n=== Simulating Case {} ===", case_id);
+            let span = tracing::info_span!("ashrae140_case", case_id = %case_id);
+            let _guard = span.enter();
+            tracing::info!(
+                case_id = %case_id,
+                num_zones = num_zones,
+                "simulating case",
+            );
         }
     }
 
@@ -842,11 +914,14 @@ impl DiagnosticCollector {
         }
 
         if self.config.verbose && data.hour.is_multiple_of(1000) {
-            println!(
-                "  Hour {}: Zone Temp = {:.2}°C, Outdoor = {:.2}°C",
-                data.hour,
-                data.zone_temps.first().unwrap_or(&0.0),
-                data.outdoor_temp
+            let span = tracing::info_span!("ashrae140_case", case_id = %self.current_case);
+            let _guard = span.enter();
+            tracing::info!(
+                case_id = %self.current_case,
+                hour = data.hour,
+                zone_temp_c = *data.zone_temps.first().unwrap_or(&0.0),
+                outdoor_temp_c = data.outdoor_temp,
+                "hourly progress",
             );
         }
 
@@ -1017,29 +1092,32 @@ impl DiagnosticCollector {
         Ok(())
     }
 
-    /// Prints the validation comparison table.
+    /// Emits the validation comparison table via structured `tracing` events.
+    ///
+    /// Each row emits one `tracing::info!` event scoped to an `ashrae140_case`
+    /// span, with machine-parseable fields (`case_id`, `metric`, `expected`,
+    /// `actual`, `deviation_pct`, `status`). This is the ingestion contract for
+    /// CI log aggregators (Loki/Elastic). (Issue #2500)
     pub fn print_comparison_table(&self) {
         if !self.config.enabled || !self.config.output_comparison_table {
             return;
         }
 
-        println!("\n=== Validation Comparison Table ===");
-        println!(
-            "{:<8} {:<20} {:>10} {:>10} {:>10} {:>8} {:>10}",
-            "Case", "Metric", "Fluxion", "Ref Min", "Ref Max", "Status", "Deviation"
+        tracing::info!(
+            metric = "comparison_table",
+            row_count = self.comparison_rows.len(),
+            "ASHRAE 140 validation comparison table",
         );
-        println!("{}", "-".repeat(80));
 
         for row in &self.comparison_rows {
-            println!(
-                "{:<8} {:<20} {:>10.2} {:>10.2} {:>10.2} {:>8} {:>+9.1}%",
-                row.case_id,
-                row.metric,
+            emit_case_diagnostic(
+                &row.case_id,
+                &row.metric,
                 row.fluxion_value,
                 row.ref_min,
                 row.ref_max,
-                row.status,
-                row.deviation_percent
+                row.deviation_percent,
+                &row.status,
             );
         }
     }
@@ -1049,7 +1127,10 @@ impl DiagnosticCollector {
         if let Some(ref path) = self.config.hourly_output_path {
             self.export_hourly_csv(path)?;
             if self.config.verbose {
-                println!("Hourly data exported to: {}", path);
+                tracing::info!(
+                    hourly_output_path = %path,
+                    "hourly data exported",
+                );
             }
         }
 

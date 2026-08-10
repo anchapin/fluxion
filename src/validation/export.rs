@@ -60,7 +60,7 @@ impl CsvExporter {
 
         // If no hourly data collected, warn and exit early
         if collector.hourly_data.is_empty() {
-            eprintln!("Warning: No hourly data collected for case {}", case_id);
+            tracing::warn!("Warning: No hourly data collected for case {}", case_id);
             return Ok(());
         }
 

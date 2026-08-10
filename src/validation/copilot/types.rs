@@ -202,60 +202,63 @@ impl CopilotResult {
     pub fn print_summary(&self) {
         let (errors, warnings, infos, hints) = self.count_by_severity();
 
-        println!("\n╔══════════════════════════════════════════════════════════════╗");
-        println!("║              BEM Configuration Analysis Results              ║");
-        println!("╠══════════════════════════════════════════════════════════════╣");
-        println!(
+        tracing::info!("\n╔══════════════════════════════════════════════════════════════╗");
+        tracing::info!("║              BEM Configuration Analysis Results              ║");
+        tracing::info!("╠══════════════════════════════════════════════════════════════╣");
+        tracing::info!(
             "║  Issues Found: {} errors, {} warnings, {} info, {} hints     ║",
-            errors, warnings, infos, hints
+            errors,
+            warnings,
+            infos,
+            hints
         );
-        println!("╚══════════════════════════════════════════════════════════════╝");
+        tracing::info!("╚══════════════════════════════════════════════════════════════╝");
 
         if self.issues.is_empty() {
-            println!("\n✓ Configuration appears valid!");
+            tracing::info!("\n✓ Configuration appears valid!");
             return;
         }
 
         if errors > 0 {
-            println!("\n❌ ERRORS (must fix before simulation):");
+            tracing::info!("\n❌ ERRORS (must fix before simulation):");
             for issue in self
                 .issues
                 .iter()
                 .filter(|i| i.severity == BemIssueSeverity::Error)
             {
-                println!("  • [{}] {}", issue.category, issue.message);
+                tracing::info!("  • [{}] {}", issue.category, issue.message);
                 if let Some(ref s) = issue.suggestion {
-                    println!("    → Suggestion: {}", s);
+                    tracing::info!("    → Suggestion: {}", s);
                 }
             }
         }
 
         if warnings > 0 {
-            println!("\n⚠ WARNINGS (may affect accuracy):");
+            tracing::info!("\n⚠ WARNINGS (may affect accuracy):");
             for issue in self
                 .issues
                 .iter()
                 .filter(|i| i.severity == BemIssueSeverity::Warning)
             {
-                println!("  • [{}] {}", issue.category, issue.message);
+                tracing::info!("  • [{}] {}", issue.category, issue.message);
                 if let Some(ref s) = issue.suggestion {
-                    println!("    → Suggestion: {}", s);
+                    tracing::info!("    → Suggestion: {}", s);
                 }
             }
         }
 
         if infos > 0 || hints > 0 {
-            println!("\n💡 INFO / HINTS:");
+            tracing::info!("\n💡 INFO / HINTS:");
             for issue in self.issues.iter().filter(|i| {
                 i.severity == BemIssueSeverity::Info || i.severity == BemIssueSeverity::Hint
             }) {
-                println!("  • [{}] {}", issue.category, issue.message);
+                tracing::info!("  • [{}] {}", issue.category, issue.message);
             }
         }
 
         if let Some(ref analysis) = self.llm_analysis {
-            println!("\n🤖 LLM Analysis:");
-            println!("{}", analysis);
+            tracing::info!("\n🤖 LLM Analysis:");
+            tracing::info!("{}", analysis);
         }
     }
 }

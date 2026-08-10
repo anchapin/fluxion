@@ -24,7 +24,7 @@ pub fn run_all_high_mass_cases() -> Vec<crate::validation::report::ValidationRes
         match case.execute() {
             Ok(result) => results.push(result),
             Err(e) => {
-                eprintln!("Error executing case {}: {}", case.case_id, e);
+                tracing::warn!("Error executing case {}: {}", case.case_id, e);
                 // Create a failed result
                 results.push(crate::validation::report::ValidationResult {
                     case_id: case.case_id,

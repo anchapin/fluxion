@@ -489,7 +489,7 @@ impl EnergyBalanceValidator {
             }
             Err(e) => {
                 report.is_valid = false;
-                eprintln!("Energy balance validation error: {}", e);
+                tracing::warn!("Energy balance validation error: {}", e);
             }
         }
 

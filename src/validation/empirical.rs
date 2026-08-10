@@ -517,7 +517,7 @@ impl MonitoredBuildingDatabase {
 
         // Verify count matches source metadata
         if points.len() != source.num_data_points && source.num_data_points > 0 {
-            eprintln!(
+            tracing::warn!(
                 "Warning: CSV has {} points, source metadata indicates {}",
                 points.len(),
                 source.num_data_points

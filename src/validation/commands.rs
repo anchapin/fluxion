@@ -18,7 +18,7 @@ pub fn update_references(url: Option<&str>) -> Result<()> {
 pub fn update_references_ext(url: Option<&str>, output_path: &Path) -> Result<()> {
     match url {
         Some(remote_url) => {
-            eprintln!("Fetching reference data from {}...", remote_url);
+            tracing::warn!("Fetching reference data from {}...", remote_url);
             // Build blocking HTTP client
             let client = Client::builder()
                 .build()
@@ -78,7 +78,7 @@ pub fn update_references_ext(url: Option<&str>, output_path: &Path) -> Result<()
                     Ok(db) => db,
                     Err(e) => {
                         // If it exists but invalid, we overwrite it anyway
-                        eprintln!("Warning: Existing reference data is invalid: {}", e);
+                        tracing::warn!("Warning: Existing reference data is invalid: {}", e);
                         MultiReferenceDB {
                             version: "".to_string(),
                             source: None,
@@ -87,7 +87,7 @@ pub fn update_references_ext(url: Option<&str>, output_path: &Path) -> Result<()
                     }
                 };
                 if existing.version == db.version {
-                    println!("Already up-to-date (version {})", db.version);
+                    tracing::info!("Already up-to-date (version {})", db.version);
                     return Ok(());
                 }
                 // Backup existing
@@ -99,7 +99,7 @@ pub fn update_references_ext(url: Option<&str>, output_path: &Path) -> Result<()
             let json =
                 serde_json::to_string_pretty(&db).context("Failed to serialize reference data")?;
             fs::write(output_path, json).context("Failed to write reference data to file")?;
-            println!(
+            tracing::info!(
                 "Updated reference data to version {} from {}. Cases: {}.",
                 db.version,
                 db.source.as_deref().unwrap_or("unknown"),
@@ -113,12 +113,12 @@ pub fn update_references_ext(url: Option<&str>, output_path: &Path) -> Result<()
             }
             match MultiReferenceDB::from_file(output_path) {
                 Ok(db) => {
-                    println!("Reference data is valid.");
-                    println!("Version: {}", db.version);
+                    tracing::info!("Reference data is valid.");
+                    tracing::info!("Version: {}", db.version);
                     if let Some(source) = &db.source {
-                        println!("Source: {}", source);
+                        tracing::info!("Source: {}", source);
                     }
-                    println!("Number of cases: {}", db.cases.len());
+                    tracing::info!("Number of cases: {}", db.cases.len());
                 }
                 Err(e) => {
                     anyhow::bail!("Failed to parse reference data: {}", e);
