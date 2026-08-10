@@ -25,11 +25,16 @@
 #   3. test_surrogate_drift_metric_definition  (surrogate_drift_gate)
 #      filter: _surrogate_drift_metric_definition
 #      Pure unit test on the drift metric formula (no simulation).
+#      Runs in its OWN `cargo test` step (Issue #2582) and captures to
+#      /tmp/surrogate_drift_metric.txt so the verify-step coverage grep is
+#      deterministic (no interleaving with sibling-test eprintln output).
 #
 #   4. test_surrogate_drift_gate_lenient_fallback_contract  (surrogate_drift_gate)
 #      filter: _lenient_fallback_contract
 #      Issue #1865 regression guard: locks the two-mode lenient-fallback
 #      contract (50% drift must not trip the gate when no model is loaded).
+#      Also runs in its OWN step (Issue #2582); captures to
+#      /tmp/surrogate_drift_lenient.txt.
 #
 # Drift metric defined as:
 #   drift_pct = |T_surrogate - T_physics| / max(|T_physics|, ε) × 100
@@ -176,22 +181,45 @@ jobs:
           echo "---"
           echo "exit_code=$?"
 
-      - name: Drift metric + lenient-fallback contract tests
-        # Tests 3/4 & 4/4: light unit tests that must run on every gate
-        # invocation (Issue #1866). cargo accepts only one TESTNAME before
-        # `--`, so the two precise substring filters go AFTER `--` and are
-        # passed to the libtest runner, which ORs them: a test runs if its
-        # name contains ANY token. Neither token matches the two heavy
-        # simulations above, and no other test in the workspace shares
-        # either suffix, so exactly these two tests run.
-        # `test_surrogate_drift_gate_lenient_fallback_contract` is the
-        # Issue #1865 regression guard added in PR #1874, which was silently
-        # unrun by the gate before this step.
+      - name: Drift metric definition test
+        # Test 3/4: pure unit test on the drift metric formula (no
+        # simulation). Runs in its OWN `cargo test` invocation and captures
+        # to a dedicated file (`/tmp/surrogate_drift_metric.txt`) so the
+        # verify step can grep its summary line deterministically — the ONLY
+        # `test <name> ... ok` line in that file is this test's.
+        #
+        # Issue #2582: previously this was OR-grouped with the
+        # lenient-fallback test in a single invocation
+        # (`-- _surrogate_drift_metric_definition _lenient_fallback_contract`).
+        # The sibling test's `eprintln!` context output interleaved with (and
+        # sometimes masked) this test's summary line, making the coverage
+        # regex `^test test_surrogate_drift_metric_definition ... (ok|...)`
+        # flake and randomly report `DROPPED FROM GATE` on PRs that touched
+        # neither file. Splitting the invocations guarantees each test's
+        # summary line is the only one in its captured output.
         run: |
           cargo test --release --features ort --verbose \
             --test surrogate_drift_gate \
-            -- _surrogate_drift_metric_definition _lenient_fallback_contract --nocapture \
-            2>&1 | tee -a /tmp/surrogate_drift_output.txt
+            _surrogate_drift_metric_definition \
+            -- --nocapture \
+            2>&1 | tee /tmp/surrogate_drift_metric.txt | tee -a /tmp/surrogate_drift_output.txt
+          echo "---"
+          echo "exit_code=$?"
+
+      - name: Lenient-fallback contract test
+        # Test 4/4: Issue #1865 regression guard — locks the two-mode lenient
+        # fallback contract (50% drift must not trip the gate when no model is
+        # loaded). `test_surrogate_drift_gate_lenient_fallback_contract` was
+        # silently unrun by the gate before PR #1874. Runs in its OWN
+        # invocation for the same deterministic-capture reason as the metric
+        # test above (Issue #2582); captures to
+        # `/tmp/surrogate_drift_lenient.txt`.
+        run: |
+          cargo test --release --features ort --verbose \
+            --test surrogate_drift_gate \
+            _lenient_fallback_contract \
+            -- --nocapture \
+            2>&1 | tee /tmp/surrogate_drift_lenient.txt | tee -a /tmp/surrogate_drift_output.txt
           echo "---"
           echo "exit_code=$?"
 
@@ -201,21 +229,30 @@ jobs:
           # All four tests in `tests/surrogate_drift_gate.rs` must appear in
           # the cargo output. A name missing means a filter silently dropped
           # it (Issue #1866) — fail honestly rather than report a false PASS.
-          for t in \
-            test_surrogate_drift_gate_case_900_9r4c \
-            test_surrogate_drift_gate_annual_simulation \
-            test_surrogate_drift_metric_definition \
-            test_surrogate_drift_gate_lenient_fallback_contract ; do
-            if grep -qE "^test $t \\.\\.\\. (ok|ignored|FAILED)" /tmp/surrogate_drift_output.txt; then
-              echo "  COVERED: $t"
+          #
+          # Issue #2582: the two light unit tests now run in dedicated
+          # `cargo test` invocations, each capturing to its OWN file, so each
+          # test's summary line is the ONLY `test <name> ... ok` line in that
+          # file and the coverage grep is deterministic (no interleaving with
+          # a sibling test's eprintln! context output). The two heavy
+          # simulations still append to the aggregate file; their precise
+          # one-test filters mean each contributes exactly one summary line.
+          check_coverage() {
+            local name="$1" file="$2"
+            if grep -qE "^test $name \\.\\.\\. (ok|ignored|FAILED)" "$file"; then
+              echo "  COVERED: $name (from $(basename "$file"))"
             else
-              echo "  DROPPED FROM GATE: $t"
-              echo "  This test name is no longer matched by the cargo filter."
+              echo "  DROPPED FROM GATE: $name"
+              echo "  This test name was not found in $file."
               echo "  Either the test was renamed/removed, or the workflow"
               echo "  filter needs updating. Failing the build."
               exit 1
             fi
-          done
+          }
+          check_coverage test_surrogate_drift_gate_case_900_9r4c             /tmp/surrogate_drift_output.txt
+          check_coverage test_surrogate_drift_gate_annual_simulation         /tmp/surrogate_drift_output.txt
+          check_coverage test_surrogate_drift_metric_definition              /tmp/surrogate_drift_metric.txt
+          check_coverage test_surrogate_drift_gate_lenient_fallback_contract /tmp/surrogate_drift_lenient.txt
 
           echo
           echo "=== Surrogate drift gate result extraction ==="
