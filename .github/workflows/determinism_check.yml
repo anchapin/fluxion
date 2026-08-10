@@ -16,12 +16,32 @@ permissions:
 env:
   CARGO_TERM_COLOR: always
   RUST_BACKTRACE: 1
-  # RUSTFLAGS for cross-platform FP determinism (Issue #1297)
-  # - opt-level=3: maximum optimization for consistent math behavior
-  # - debug-assertions=no: disable debug assertions for release-like behavior
-  # Note: target-cpu=haswell was removed — it causes SIMD compilation errors on ARM macOS.
-  # Determinism is achieved via BTreeMap for HashMap replacement (iteration order fix).
-  RUSTFLAGS: "-C opt-level=3 -C debug-assertions=no"
+  # RUSTFLAGS for cross-platform FP determinism (Issues #1297 and #2549).
+  # - opt-level=3: maximum optimization for consistent math behavior.
+  # - debug-assertions=no: disable debug assertions for release-like behavior.
+  # - codegen-units=1: serialize codegen so LLVM sees the whole crate at once;
+  #   this removes the parallel-codegen reordering that perturbs float results.
+  # - llvm-args=--enable-no-infs-fp-math=false: forbid LLVM from assuming
+  #   arguments are never +inf, which would let it replace x/inf -> 0 etc.
+  # - llvm-args=--enable-no-nans-fp-math=false: forbid LLVM from assuming
+  #   arguments are never NaN, which would let it reorder x != x -> false etc.
+  #
+  # Together these pin LLVM's fp-math model so x86_64, ARM64, and Apple
+  # Silicon all emit the same arithmetic ops (no Inf/NaN elision, no
+  # reassociation). Note: target-cpu=haswell was removed earlier — it
+  # causes SIMD compilation errors on ARM macOS.
+  #
+  # Flag rejection log (#2549): `-C llvm-args=--enable-unsafe-fp-math=false`
+  # is NOT recognized by the LLVM bundled with rustc 1.97.x (LLVM 21);
+  # rustc emits "Unknown command line argument". It is therefore omitted
+  # here. The two `no-infs`/`no-nans` flags ARE recognized and are the
+  # primary levers for disabling unsafe fp reassociation.
+  RUSTFLAGS: >-
+    -C opt-level=3
+    -C debug-assertions=no
+    -C codegen-units=1
+    -C llvm-args=--enable-no-infs-fp-math=false
+    -C llvm-args=--enable-no-nans-fp-math=false
 
 jobs:
   determinism-check:
@@ -30,7 +50,12 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, windows-latest, macos-latest]
+        # macos-latest is currently Apple Silicon (M1, aarch64) in GitHub's
+        # pool but is not contractually pinned to that arch. macos-13 is the
+        # last Intel (x86_64) macOS runner GitHub offers, so we run both to
+        # explicitly cover x86_64 macOS AND aarch64 Apple Silicon in addition
+        # to Linux/Windows x86_64 (Issue #2549).
+        os: [ubuntu-latest, windows-latest, macos-13, macos-14]
         rust: [stable]
 
     steps:
@@ -211,6 +236,12 @@ jobs:
           set -euo pipefail
           cargo test --test case_900_determinism --release -- --nocapture 2>&1 | tee case900_output.txt
 
+      - name: Run matrix_exponential_faer determinism test (Issue #2549)
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo test --test determinism_matrix_exponential --release 2>&1 | tee matexp_output.txt
+
       - name: Extract determinism values
         id: extract
         shell: bash
@@ -286,7 +317,7 @@ jobs:
           all_values = {}
 
           # Read hashes and values from all platforms
-          for os_name in ['ubuntu-latest', 'windows-latest', 'macos-latest']:
+          for os_name in ['ubuntu-latest', 'windows-latest', 'macos-13', 'macos-14']:
               hash_file = os.path.join(artifacts_dir, f'case900-output-{os_name}', 'output_hash.txt')
               values_file = os.path.join(artifacts_dir, f'case900-output-{os_name}', 'output_values.json')
 
