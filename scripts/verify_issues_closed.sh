@@ -21,7 +21,9 @@ fi
 
 ISSUE_NUMBER="$1"
 
-STATE=$(gh issue view "$ISSUE_NUMBER" --json state --jq '.state')
+# The GitHub CLI returns state in UPPERCASE (CLOSED, OPEN); lowercase it so the
+# comparison is case-insensitive (issue #2488).
+STATE=$(gh issue view "$ISSUE_NUMBER" --json state --jq '.state' | tr '[:upper:]' '[:lower:]')
 
 case "$STATE" in
   closed)
