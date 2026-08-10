@@ -1,19 +1,44 @@
 # Fluxion Quickstart Guide
 
-Get started with Fluxion in minutes.
+Get started with Fluxion in minutes. This guide covers installation,
+the Python module (`Model`, `BatchOracle`, `MultiZoneThermalModel`),
+the `fluxion` CLI, and the `fluxion-rest` HTTP server.
 
-> **⚠️ Pre-release note**
->
-> The `eui` returned by `model.simulate(...)` in the examples below is
-> currently a **raw cumulative temperature-departure metric**, not a
-> calibrated `kWh/m²/year` value. The label `kWh/m²/year` in the
-> examples is a placeholder that will become accurate after the
-> ASHRAE 140 physics calibration work in
-> [#749-G2](https://github.com/anchapin/fluxion/issues/749) lands. Do
-> not benchmark the raw metric against ASHRAE 90.1 / RESNET HERS until
-> then ([#767](https://github.com/anchapin/fluxion/issues/767)).
+## Production scope
 
-## What Fluxion actually exposes today (Issue #1411)
+Fluxion ships as a **parametric building-energy optimization toolkit**,
+not a calibrated energy-rate calculator. The production-supported
+surfaces are:
+
+- **Parametric optimization oracle** — `BatchOracle.evaluate_population`
+  evaluates thousands of building-design candidates in parallel via
+  rayon and ranks them by a relative energy-cost objective.
+- **Throughput benchmarking** — the same oracle sustains
+  ≥150 configs/sec on commodity CI runners (see `release_gates.yaml` →
+  `performance.throughput.min_configs_per_sec`).
+- **ASHRAE 140 / BESTEST validation harness** —
+  `cargo test --test ashrae_140_validation` runs the Standard 140
+  BESTEST case suite against the 5R1C thermal network; current pass
+  rates are in [`docs/ASHRAE140_RESULTS.md`](ASHRAE140_RESULTS.md).
+
+The scalar returned by `Model.simulate` and
+`BatchOracle.evaluate_population` is a **relative energy-cost
+objective**: the cumulative absolute temperature departure from
+setpoint, summed across zones and timesteps. It is the correct metric
+for **ranking candidate designs within one optimization run** (lower =
+better) and for **regression-testing the solver**, and it is what the
+optimization oracle and the throughput / ASHRAE 140 gates operate on.
+
+It is **not** a calibrated `kWh/m²/year` value. The `kWh/m²/year`
+label appears in the Rust docstrings and log lines for forward
+compatibility, but the number behind it must not be benchmarked
+against ASHRAE 90.1 / RESNET HERS thresholds or quoted as a physical
+EUI. Calibration of the absolute energy rate against ASHRAE 140
+reference data is tracked in
+[#749](https://github.com/anchapin/fluxion/issues/749); see also
+[#767](https://github.com/anchapin/fluxion/issues/767).
+
+## What Fluxion exposes today (Issue #1411)
 
 The `fluxion` Python module is built with PyO3 and ships (see `src/lib.rs:1727`):
 
@@ -100,12 +125,12 @@ from fluxion import Model
 # REST API (see example 4) or the multi-zone path (example 5).
 model = Model(num_zones=1)
 
-# Run physics-based simulation.
-# NOTE: `eui` is currently a raw cumulative temperature-departure
-# metric, not calibrated kWh/m²/year. See the pre-release notes at the
-# top of this document and issue #767 for context.
+# Run physics-based simulation. The returned `eui` is the relative
+# energy-cost objective described in "Production scope" above — use it
+# for ranking designs and solver regression, not as a calibrated
+# kWh/m²/year value.
 eui = model.simulate(years=1, use_surrogates=False)
-print(f"EUI (uncalibrated, see #767): {eui:.2f}")
+print(f"EUI objective: {eui:.2f}")
 ```
 
 ### 2. Using a pre-trained ONNX surrogate
@@ -124,9 +149,9 @@ model = Model(num_zones=1)
 #       --out examples/dummy_surrogate.onnx
 model.load_surrogate("examples/dummy_surrogate.onnx")
 
-# Same uncalibrated-metric caveat applies (see #767).
+# Same relative energy-cost objective as the analytical path above.
 eui = model.simulate(years=1, use_surrogates=True)
-print(f"EUI with surrogate (uncalibrated): {eui:.2f}")
+print(f"EUI objective with surrogate: {eui:.2f}")
 ```
 
 ### 3. Population optimisation with `BatchOracle`
@@ -145,12 +170,13 @@ oracle = BatchOracle()
 #   cooling_setpoint  : 22.0 – 32.0 °C
 population = [[1.5, 20.0, 24.0]] * 1000
 
-# Returns a list of EUI values (kWh/m²/year, currently uncalibrated —
-# see #767), one per candidate, evaluated in parallel via rayon.
+# Returns a list of energy-cost objective values (one per candidate),
+# evaluated in parallel via rayon. Use these for relative ranking
+# within this population — see "Production scope" above.
 results = oracle.evaluate_population(population, use_surrogates=True)
 
 print(f"Evaluated {len(results)} designs")
-print(f"Best EUI: {min(results):.2f}")
+print(f"Best (lowest) objective: {min(results):.2f}")
 ```
 
 ### 4. Driving Fluxion over the REST API
