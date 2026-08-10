@@ -826,40 +826,44 @@ impl ParallelLoopDispatcher {
     }
 
     /// Dispatch all subgraphs in parallel using Rayon (non-WASM).
+    ///
+    /// The closure `f` must be stateless (`Fn`, callable from a shared
+    /// reference) so every rayon worker can invoke it concurrently without any
+    /// lock. A previous implementation wrapped `f` in `Arc<Mutex<F>>` and
+    /// acquired the lock inside `par_iter`, which serialised the whole
+    /// iteration — see #2525. Closures that need to accumulate per-worker
+    /// output should capture their own interior synchronisation (e.g. a
+    /// `Mutex` or atomics *inside* `f`) rather than relying on `FnMut` state.
+    ///
+    /// Parallelism stays at exactly this one `par_iter` level (no nested
+    /// `par_iter`); the closure body is evaluated sequentially per subgraph.
     #[cfg(not(target_arch = "wasm32"))]
     pub fn step<F, R>(&mut self, _t: f64, _dt: f64, f: F) -> Result<(), DispatchError>
     where
-        F: FnMut(&Subgraph) -> Result<R, DispatchError> + Send + Sync,
+        F: Fn(&Subgraph) -> Result<R, DispatchError> + Send + Sync,
         R: Send,
     {
-        use rayon::iter::ParallelIterator;
-        use std::sync::{Arc, Mutex};
-
-        let f = Arc::new(Mutex::new(f));
-
-        let parallel_results: Vec<Result<R, DispatchError>> = self
-            .subgraphs
+        // `F: Sync` ⇒ `&F: Send`, so each rayon worker holds a shared
+        // reference to the same closure and invokes it directly. No
+        // `Mutex`/`Arc` is required.
+        self.subgraphs
             .par_iter()
             .map(|subgraph| {
                 if subgraph.has_feedback {
                     Err(DispatchError::FeedbackLoop(subgraph.id))
                 } else {
-                    f.lock().unwrap()(subgraph)
+                    f(subgraph)
                 }
             })
-            .collect();
-
-        for result in parallel_results {
-            result?;
-        }
-        Ok(())
+            .collect::<Result<Vec<R>, DispatchError>>()
+            .map(drop)
     }
 
     /// WASM fallback: sequential dispatch when Rayon is not available.
     #[cfg(target_arch = "wasm32")]
-    pub fn step<F, R>(&mut self, _t: f64, _dt: f64, mut f: F) -> Result<(), DispatchError>
+    pub fn step<F, R>(&mut self, _t: f64, _dt: f64, f: F) -> Result<(), DispatchError>
     where
-        F: FnMut(&Subgraph) -> Result<R, DispatchError>,
+        F: Fn(&Subgraph) -> Result<R, DispatchError>,
     {
         for subgraph in &self.subgraphs {
             if subgraph.has_feedback {
@@ -1420,6 +1424,8 @@ mod tests {
 
     #[test]
     fn test_parallel_loop_dispatcher() {
+        use std::sync::Mutex;
+
         let subgraphs = vec![
             Subgraph {
                 id: 0,
@@ -1446,14 +1452,18 @@ mod tests {
         assert_eq!(dispatcher.parallel_subgraphs().len(), 3);
         assert_eq!(dispatcher.sequential_subgraphs().len(), 0);
 
-        let mut results: Vec<usize> = Vec::new();
+        // The closure must be `Fn` (stateless). Output is accumulated via
+        // interior synchronisation captured inside the closure, so rayon can
+        // invoke it concurrently without any lock on the closure itself (#2525).
+        let results: Mutex<Vec<usize>> = Mutex::new(Vec::new());
         let result = dispatcher.step(0.0, 3600.0, |sg| {
-            results.push(sg.id);
+            results.lock().unwrap().push(sg.id);
             Ok::<(), DispatchError>(())
         });
 
         assert!(result.is_ok());
-        assert_eq!(results.len(), 3);
+        let collected = results.into_inner().unwrap();
+        assert_eq!(collected.len(), 3);
     }
 
     #[test]
@@ -1478,6 +1488,84 @@ mod tests {
             DispatchError::FeedbackLoop(id) => assert_eq!(id, 0),
             _ => panic!("Expected FeedbackLoop error"),
         }
+    }
+
+    /// Regression test for #2525: `ParallelLoopDispatcher::step` must NOT
+    /// serialise parallel work through a `Mutex` on the closure. Each
+    /// subgraph is given a 1 ms wall-clock workload; with genuine rayon
+    /// concurrency the total is ~1–2 ms, whereas the pre-fix `Arc<Mutex<F>>`
+    /// fully serialised iteration and would take ~N ms.
+    ///
+    /// Requires a ≥2-core machine. On a single-core / fully throttled runner
+    /// the sleep workload cannot overlap, so the assertion is skipped to
+    /// avoid false failures (CI runs multi-core — see AGENTS.md).
+    #[test]
+    fn test_step_does_not_serialize_parallel_work() {
+        use std::thread::sleep;
+        use std::time::{Duration, Instant};
+
+        let cores = std::thread::available_parallelism()
+            .map(|n| n.get())
+            .unwrap_or(1);
+        if cores < 2 {
+            eprintln!(
+                "test_step_does_not_serialize_parallel_work: skipped ({} core available)",
+                cores
+            );
+            return;
+        }
+
+        // ≥ 8 independent (no-feedback) subgraphs, per the #2525 acceptance
+        // criterion.
+        let n_subgraphs: usize = 8;
+        let subgraphs = (0..n_subgraphs)
+            .map(|id| Subgraph {
+                id,
+                nodes: vec![GraphNodeId::new(id)],
+                edges: vec![],
+                has_feedback: false,
+            })
+            .collect::<Vec<_>>();
+
+        let mut dispatcher = ParallelLoopDispatcher::new(subgraphs);
+
+        // Use a per-subgraph workload large enough that real parallelism
+        // produces a clear speedup over full serialisation, independent of
+        // runner clock speed or Linux sleep granularity. 10 ms × 8 subgraphs =
+        // ~80 ms fully serial.
+        let per_work = Duration::from_millis(10);
+
+        // Measure a serial baseline (same total work, no overlap).
+        let serial_start = Instant::now();
+        for _ in 0..n_subgraphs {
+            sleep(per_work);
+        }
+        let serial = serial_start.elapsed();
+
+        // Measure the parallel dispatch.
+        let par_start = Instant::now();
+        let res = dispatcher.step(0.0, 0.001, |_sg| {
+            sleep(per_work);
+            Ok::<(), DispatchError>(())
+        });
+        let parallel = par_start.elapsed();
+
+        assert!(res.is_ok(), "dispatch failed: {:?}", res.err());
+
+        // Relative comparison (robust to runner speed/load/core count):
+        // real parallelism ⇒ parallel ≤ serial/2 on ≥2 cores, so
+        // parallel*4 < serial*3 holds. A Mutex-serialisation regression makes
+        // parallel ≈ serial, failing this bound. Using integer millis avoids
+        // Duration overflow concerns.
+        let serial_ms = serial.as_millis() as u128;
+        let par_ms = parallel.as_millis() as u128;
+        assert!(
+            par_ms * 4 < serial_ms * 3,
+            "step() parallel {:?} not meaningfully faster than serial {:?} \
+             — suspected Mutex-serialisation regression (#2525)",
+            parallel,
+            serial
+        );
     }
 
     #[test]
