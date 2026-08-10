@@ -1283,7 +1283,7 @@ fn householder_qr(m: &[Vec<f64>], start: usize, nn: usize) -> (Vec<Vec<f64>>, Ve
 ///    precision (the squaring error is bounded by Higham's theorem).
 ///
 /// For small n (≤ 2), falls through to a direct formula.
-fn matrix_exponential_faer(a: &[Vec<f64>], t: f64) -> Vec<Vec<f64>> {
+pub fn matrix_exponential_faer(a: &[Vec<f64>], t: f64) -> Vec<Vec<f64>> {
     let n = a.len();
 
     if n == 0 {
