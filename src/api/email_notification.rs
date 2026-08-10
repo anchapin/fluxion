@@ -52,6 +52,7 @@
 //! ```
 
 use std::collections::HashMap;
+use std::env;
 use std::fmt::Write as _;
 use std::sync::Mutex;
 
@@ -136,6 +137,12 @@ pub struct EmailConfig {
     #[serde(default = "default_body_template")]
     pub body_template: String,
     /// Download URL template (uses `{campaign_id}`).
+    ///
+    /// **Security (Issue #2554):** the template MUST use the `https://`
+    /// scheme. `http://`, `file://`, `gopher://`, etc. are rejected by
+    /// [`EmailConfig::validate`] — this prevents the rendered email from
+    /// turning into an SSRF primitive when the user follows the link or
+    /// when downstream tooling dereferences it.
     #[serde(default = "default_download_url_template")]
     pub download_url_template: String,
     /// Optional override of the recipient download URL. If `Some`, this wins
@@ -145,9 +152,27 @@ pub struct EmailConfig {
     /// Optional HTTP API endpoint for the transactional email provider. When
     /// `None`, [`EmailNotifier`] still renders the body but skips delivery
     /// (test/preview mode).
+    ///
+    /// **Security (Issue #2554):** the endpoint hostname is checked against
+    /// the `FLUXION_EMAIL_ENDPOINT_ALLOWLIST` env var when it is set (comma-
+    /// separated hostnames, e.g. `api.sendgrid.com,api.mailgun.net`). When
+    /// the env var is unset all `https://` endpoints are accepted. `http://`,
+    /// `file://`, `gopher://`, etc. are always rejected.
     #[serde(default)]
     pub api_endpoint: Option<String>,
     /// Optional HTTP `Authorization` header value (e.g. `"Bearer SG.xxx"`).
+    ///
+    /// **Security (Issue #2554):** when present the value MUST match the
+    /// strict regex `^Bearer [A-Za-z0-9_\-\.]{8,256}$` (no whitespace, no
+    /// control characters, no CRLF, no scheme prefix other than `Bearer `).
+    /// Any other value — including CRLF-injected headers, oversized values,
+    /// or non-Bearer schemes — causes [`EmailConfig::validate`] to return
+    /// [`EmailError::InvalidConfig`] and the notifier to refuse to send.
+    ///
+    /// Operators SHOULD prefer the `FLUXION_EMAIL_API_AUTH` env var instead
+    /// of setting this field: the env var is server-controlled, never
+    /// accepted from a request payload, and wins over `api_auth_header` if
+    /// both are present.
     #[serde(default)]
     pub api_auth_header: Option<String>,
     /// Request timeout in seconds.
@@ -171,6 +196,159 @@ fn default_timeout() -> u64 {
     10
 }
 
+/// Strict regex-equivalent for the `Authorization` header value the email
+/// notifier accepts. Equivalent to `^Bearer [A-Za-z0-9_\-\.]{8,256}$` but
+/// written by hand so we don't pull a `regex` dependency for one anchor.
+///
+/// Issue #2554 acceptance criterion.
+const BEARER_AUTH_HEADER_MIN_TOKEN_LEN: usize = 8;
+const BEARER_AUTH_HEADER_MAX_TOKEN_LEN: usize = 256;
+
+/// Env var consulted when the operator wants a server-controlled credential
+/// (Issue #2554 — preferred over `api_auth_header`).
+pub const EMAIL_API_AUTH_ENV: &str = "FLUXION_EMAIL_API_AUTH";
+
+/// Env var consulted when the operator wants to restrict which upstream
+/// transactional-email hostnames this process will talk to. Comma-separated
+/// hostnames, e.g. `api.sendgrid.com,api.mailgun.net`.
+pub const EMAIL_ENDPOINT_ALLOWLIST_ENV: &str = "FLUXION_EMAIL_ENDPOINT_ALLOWLIST";
+
+/// Validate that `value` is a safe `https://` URL.
+///
+/// Rejects:
+/// - any URL whose scheme is not `https://`
+/// - any URL containing whitespace, control characters, CRLF, or NULs
+/// - any URL without a host segment
+fn validate_https_url(value: &str, field: &str) -> Result<(), EmailError> {
+    let trimmed_start = value.trim_start();
+    if !trimmed_start.starts_with("https://") {
+        return Err(EmailError::InvalidConfig(format!(
+            "`{field}` must use the https:// scheme (got `{value}`)"
+        )));
+    }
+    if value
+        .as_bytes()
+        .iter()
+        .any(|&b| b == b'\r' || b == b'\n' || b == 0 || b == b' ' || b == b'\t')
+    {
+        return Err(EmailError::InvalidConfig(format!(
+            "`{field}` contains whitespace or control characters"
+        )));
+    }
+    let host = extract_url_host(trimmed_start)
+        .ok_or_else(|| EmailError::InvalidConfig(format!("`{field}` is missing a hostname")))?;
+    if host.is_empty() {
+        return Err(EmailError::InvalidConfig(format!(
+            "`{field}` is missing a hostname"
+        )));
+    }
+    Ok(())
+}
+
+/// Extract the host (lower-cased) from an `https://host[:port]/path` URL.
+/// Returns `None` for malformed URLs.
+fn extract_url_host(url: &str) -> Option<String> {
+    let after_scheme = url.strip_prefix("https://")?;
+    let host_end = after_scheme.find(['/', ':', '?', '#'])?;
+    let host = &after_scheme[..host_end];
+    if host.is_empty() {
+        return None;
+    }
+    Some(host.to_ascii_lowercase())
+}
+
+/// Enforce the `FLUXION_EMAIL_ENDPOINT_ALLOWLIST` env var (if set) against
+/// the hostname of `endpoint`.
+fn validate_endpoint_host_allowlisted(endpoint: &str) -> Result<(), EmailError> {
+    let host = match extract_url_host(endpoint) {
+        Some(h) => h,
+        None => {
+            return Err(EmailError::InvalidConfig(
+                "`api_endpoint` is missing a hostname".to_string(),
+            ))
+        }
+    };
+    let allowlist = match env::var_os(EMAIL_ENDPOINT_ALLOWLIST_ENV) {
+        Some(v) => v,
+        None => return Ok(()), // no allow-list configured → accept any https host
+    };
+    let allowlist_str = allowlist.to_string_lossy();
+    let allowed: Vec<String> = allowlist_str
+        .split(',')
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .map(str::to_ascii_lowercase)
+        .collect();
+    if allowed.is_empty() {
+        return Ok(());
+    }
+    if !allowed.iter().any(|h| h == &host) {
+        return Err(EmailError::InvalidConfig(format!(
+            "`api_endpoint` host `{host}` is not in {EMAIL_ENDPOINT_ALLOWLIST_ENV} \
+             (allowed: {})",
+            allowed.join(", ")
+        )));
+    }
+    Ok(())
+}
+
+/// Validate that `value` matches `^Bearer [A-Za-z0-9_\-\.]{8,256}$`. Returns
+/// `InvalidConfig` on any CRLF, whitespace, non-Bearer scheme, or
+/// over/undersized token. Issue #2554 acceptance criterion.
+fn validate_bearer_auth_header(value: &str) -> Result<(), EmailError> {
+    if value
+        .as_bytes()
+        .iter()
+        .any(|&b| b == b'\r' || b == b'\n' || b == 0)
+    {
+        return Err(EmailError::InvalidConfig(
+            "`api_auth_header` contains CRLF or control characters".to_string(),
+        ));
+    }
+    if value.len() > "Bearer ".len() + BEARER_AUTH_HEADER_MAX_TOKEN_LEN {
+        return Err(EmailError::InvalidConfig(
+            "`api_auth_header` token exceeds 256 characters".to_string(),
+        ));
+    }
+    let token = value.strip_prefix("Bearer ").ok_or_else(|| {
+        EmailError::InvalidConfig(
+            "`api_auth_header` must start with the `Bearer ` scheme".to_string(),
+        )
+    })?;
+    let token_len = token.len();
+    if token_len < BEARER_AUTH_HEADER_MIN_TOKEN_LEN {
+        return Err(EmailError::InvalidConfig(format!(
+            "`api_auth_header` token is shorter than {BEARER_AUTH_HEADER_MIN_TOKEN_LEN} characters"
+        )));
+    }
+    if token
+        .chars()
+        .any(|c| !(c.is_ascii_alphanumeric() || c == '_' || c == '-' || c == '.'))
+    {
+        return Err(EmailError::InvalidConfig(
+            "`api_auth_header` token contains invalid characters \
+             (allowed: A-Z a-z 0-9 _ - .)"
+                .to_string(),
+        ));
+    }
+    Ok(())
+}
+
+/// Resolve the outbound `Authorization` header value, preferring the
+/// server-controlled env var over any (already-validated) `api_auth_header`
+/// on the config. Issue #2554 — server-side credential wins.
+///
+/// Exposed (rather than kept private) so the `tests/email_notifier_header_safety.rs`
+/// integration test can pin the precedence invariant.
+pub fn resolve_auth_header(config: &EmailConfig) -> Option<String> {
+    if let Ok(env_value) = env::var(EMAIL_API_AUTH_ENV) {
+        if !env_value.is_empty() {
+            return Some(env_value);
+        }
+    }
+    config.api_auth_header.clone()
+}
+
 impl Default for EmailConfig {
     fn default() -> Self {
         Self {
@@ -190,7 +368,9 @@ impl Default for EmailConfig {
 
 impl EmailConfig {
     /// Validate the configuration. Returns `Err(EmailError::InvalidConfig)`
-    /// if a required field is empty.
+    /// if a required field is empty, or — per the security contract
+    /// documented on each field — if `api_auth_header`, `api_endpoint`, or
+    /// `download_url_template` carry an unsafe value (Issue #2554).
     pub fn validate(&self) -> Result<(), EmailError> {
         if self.from.trim().is_empty() {
             return Err(EmailError::InvalidConfig(
@@ -229,10 +409,23 @@ impl EmailConfig {
                 "`download_url_template` must not be empty".to_string(),
             ));
         }
+        // Issue #2554 — download_url_template must be https:// to avoid SSRF.
+        validate_https_url(&self.download_url_template, "download_url_template")?;
         if self.timeout_seconds == 0 {
             return Err(EmailError::InvalidConfig(
                 "`timeout_seconds` must be > 0".to_string(),
             ));
+        }
+        // Issue #2554 — api_endpoint must be a safe, allow-listed https URL.
+        if let Some(endpoint) = &self.api_endpoint {
+            validate_https_url(endpoint, "api_endpoint")?;
+            validate_endpoint_host_allowlisted(endpoint)?;
+        }
+        // Issue #2554 — api_auth_header must be a strict Bearer token; no
+        // user-supplied header is forwarded verbatim to the upstream SMTP /
+        // transactional-email provider.
+        if let Some(auth) = &self.api_auth_header {
+            validate_bearer_auth_header(auth)?;
         }
         Ok(())
     }
@@ -630,7 +823,7 @@ impl EmailTransport for HttpEmailTransport {
             .header(HEADER_COMPLETION_HASH, rendered.completion_hash.to_string())
             .json(&envelope);
 
-        if let Some(auth) = &config.api_auth_header {
+        if let Some(auth) = resolve_auth_header(config) {
             request = request.header(reqwest::header::AUTHORIZATION, auth);
         }
 
