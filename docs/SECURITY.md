@@ -87,11 +87,19 @@ Tracking issue: [#1458](https://github.com/anchapin/fluxion/issues/1458).
 | Resolution | No replacement released. `paste` `1.x` is widely used and
   baked into the Rust numerical ecosystem. |
 
-### `RUSTSEC-2026-0177`, `RUSTSEC-2026-0098`, `RUSTSEC-2026-0099`
+### `RUSTSEC-2026-0098`, `RUSTSEC-2026-0099` — remediated transitively in #2553 (PR-A)
 
-`PyO3` and `reqwest` advisories marked as accepted-risk pending upstream
-bumps that introduce breaking API changes (see `.cargo/audit.toml` for
-per-line rationale).
+Both rustls-webpki name-constraint advisories (URI names, wildcard DNS) are
+patched in `rustls-webpki >= 0.103.12`. Fluxion's `Cargo.lock` resolves
+`rustls-webpki` to `0.103.13` (transitively via `rustls 0.23.37` →
+`hyper-rustls 0.27.7` → `reqwest 0.12.28`). The previous ignore entries
+were stale suppressions; they were removed in PR-A so that `cargo audit`
+now verifies the fix on every PR.
+
+### `RUSTSEC-2026-0177` — PyO3 0.22 `Sync` bound (PR-B)
+
+Tracked separately under PR-B with an explicit time-bound. See
+`.cargo/audit.toml` for the rationale and target date.
 
 ---
 
