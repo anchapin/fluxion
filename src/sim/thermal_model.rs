@@ -717,6 +717,27 @@ impl MetricsSnapshot {
 /// `validation::empirical_hybrid` harness (Issue #1846) can run a fresh
 /// hybrid solve on a cloned model without disturbing the caller's
 /// instance.
+///
+/// # Clone asymmetry (Issue #2539)
+///
+/// The hand-rolled `impl Clone for HybridThermalModel` (see below) has an
+/// asymmetric split: solver/schedule slots are reset to fresh defaults,
+/// while the routing counters are preserved verbatim. This is intentional
+/// and documented as part of the swap-point contract in `ARCHITECTURE.md`
+/// §"Thermal Model Trait Hierarchy" → "Clone semantics & BatchOracle
+/// parallelism contract". Contract summary for callers:
+///
+/// 1. **Clone BEFORE `solve_timesteps`** — every in-tree caller
+///    (`BatchOracle::evaluate_population`, `empirical_hybrid`) does this,
+///    so the preserved counters are zero and the reset solver slots agree
+///    with them.
+/// 2. **Cloning AFTER `solve_timesteps` yields counters that do not
+///    correspond to the clone's fresh solver state.** Call
+///    `reset_counters()` on the clone before re-solving, or your
+///    published routing counters will describe the *previous* run.
+/// 3. **Custom `conduction_solver` / `ventilation_schedule` slots do not
+///    round-trip** — they are replaced with defaults on clone. Re-install
+///    via `set_conduction_solver` / `set_ventilation_schedule` on the clone.
 pub struct HybridThermalModel {
     inner: crate::sim::engine::ThermalModel<VectorField>,
     routing: HybridRouting,
