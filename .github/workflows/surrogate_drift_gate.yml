@@ -155,6 +155,44 @@ jobs:
             echo "Gate mode: FALLBACK (advisory — no trained ONNX model; lenient <=100% ceiling)"
           fi
 
+      - name: Regex tolerance self-test (Issue #2487)
+        # Fast-fail guard: prove the verify-step test-summary regexes still
+        # match libtest's `test <name> ... ok|FAILED` line when unbuffered
+        # eprintln! output interleaves onto the same captured line (the race
+        # documented in #2487, observed in PR #2473 run 31300498830). Runs
+        # before the heavy simulations so a regex regression fails the gate
+        # in seconds, not minutes.
+        run: |
+          set -euo pipefail
+          # Synthetic interleaved lines mirroring the PR #2473 capture:
+          #   `[drift-gate-diag] ... tolerance=test <name> ... ok`
+          ok_interleaved='[drift-gate-diag] context=Issue #1865 tolerance=test test_surrogate_drift_metric_definition ... ok'
+          ok_plain='test test_surrogate_drift_metric_definition ... ok'
+          fail_interleaved='some eprintln noise test surrogate_drift_gate_case_900_9r4c ... FAILED'
+          printf '%s\n%s\n%s\n' "$ok_interleaved" "$ok_plain" "$fail_interleaved" > /tmp/regex_selftest.txt
+
+          # check_coverage-style regex must find the specific test name even
+          # behind an eprintln! prefix.
+          grep -qE '(^|[^[:alnum:]_])test test_surrogate_drift_metric_definition \.\.\. (ok|ignored|FAILED)' /tmp/regex_selftest.txt \
+            || { echo "::error::coverage regex did not match interleaved ok line (#2487)"; exit 1; }
+
+          # PASSED extractor must count BOTH ok lines (plain + interleaved).
+          passed=$(grep -cE '(^|[^[:alnum:]_])test test_surrogate_drift_(gate|metric).* \.\.\. ok' /tmp/regex_selftest.txt)
+          [ "$passed" -eq 2 ] || { echo "::error::PASSED regex counted $passed (expected 2) for interleaved ok lines (#2487)"; exit 1; }
+
+          # FAILED extractor must count the interleaved FAILED line.
+          failed=$(grep -cE '(^|[^[:alnum:]_])test .* \.\.\. FAILED' /tmp/regex_selftest.txt)
+          [ "$failed" -eq 1 ] || { echo "::error::FAILED regex counted $failed (expected 1) for interleaved FAILED line (#2487)"; exit 1; }
+
+          # No false positive: `latest` (contains the substring `test`) must
+          # NOT be counted as a test FAILED line — the leading word boundary
+          # guard rejects it.
+          printf 'latest scenario ... FAILED\n' >> /tmp/regex_selftest.txt
+          failed2=$(grep -cE '(^|[^[:alnum:]_])test .* \.\.\. FAILED' /tmp/regex_selftest.txt)
+          [ "$failed2" -eq 1 ] || { echo "::error::FAILED regex false-positive on 'latest scenario ... FAILED' (#2487)"; exit 1; }
+
+          echo "Regex tolerance self-test passed (#2487): interleaved ok/FAILED lines matched, no false positives."
+
       - name: Case 900 9R4C 1-week drift check
         # Test 1/4: 168-timestep (1-week) drift gate
         # Filter `_surrogate_drift_gate_case_900_9r4c` is precise — no other
@@ -193,10 +231,16 @@ jobs:
         # (`-- _surrogate_drift_metric_definition _lenient_fallback_contract`).
         # The sibling test's `eprintln!` context output interleaved with (and
         # sometimes masked) this test's summary line, making the coverage
-        # regex `^test test_surrogate_drift_metric_definition ... (ok|...)`
-        # flake and randomly report `DROPPED FROM GATE` on PRs that touched
-        # neither file. Splitting the invocations guarantees each test's
-        # summary line is the only one in its captured output.
+        # regex flake and randomly report `DROPPED FROM GATE` on PRs that
+        # touched neither file. Splitting the invocations guarantees each
+        # test's summary line is the only one in its captured output.
+        #
+        # Issue #2487: splitting steps was not enough — a test's OWN
+        # unbuffered eprintln! can still interleave mid-line with its libtest
+        # `test ... ok` summary (PR #2473 run 31300498830 @ line 2122). The
+        # coverage/result regexes in the verify step below are therefore
+        # UNANCHORED with a leading word boundary so they survive such
+        # interleaving, and a self-test step guards against regressions.
         run: |
           cargo test --release --features ort --verbose \
             --test surrogate_drift_gate \
@@ -239,7 +283,11 @@ jobs:
           # one-test filters mean each contributes exactly one summary line.
           check_coverage() {
             local name="$1" file="$2"
-            if grep -qE "^test $name \\.\\.\\. (ok|ignored|FAILED)" "$file"; then
+            # Issue #2487: drop the `^` line anchor and require a word
+            # boundary before `test` so the match survives mid-line
+            # interleaving (an unbuffered eprintln! glued onto the start of
+            # libtest's `test <name> ... ok` summary line under --nocapture).
+            if grep -qE "(^|[^[:alnum:]_])test $name \\.\\.\\. (ok|ignored|FAILED)" "$file"; then
               echo "  COVERED: $name (from $(basename "$file"))"
             else
               echo "  DROPPED FROM GATE: $name"
@@ -258,9 +306,15 @@ jobs:
           echo "=== Surrogate drift gate result extraction ==="
           sed -i 's/\x1b\[[0-9;]*m//g' /tmp/surrogate_drift_output.txt
 
-          FAILED=$(grep -cE '^test .* \.\.\. FAILED$' /tmp/surrogate_drift_output.txt || true)
+          # Issue #2487: the test-summary regexes are deliberately UNANCHORED
+          # (no `^`/`$`) and require a leading word boundary so they still
+          # match libtest's `test <name> ... ok|FAILED` line when an
+          # unbuffered eprintln! diagnostic interleaves onto the same captured
+          # line (e.g. `[drift-gate-diag] ... tolerance=test <name> ... ok`).
+          # The word boundary prevents false positives like `latest ... FAILED`.
+          FAILED=$(grep -cE '(^|[^[:alnum:]_])test .* \.\.\. FAILED' /tmp/surrogate_drift_output.txt || true)
           PANICS=$(grep -cE 'panicked at' /tmp/surrogate_drift_output.txt || true)
-          PASSED=$(grep -cE '^test test_surrogate_drift_(gate|metric).* \.\.\. ok$' /tmp/surrogate_drift_output.txt || true)
+          PASSED=$(grep -cE '(^|[^[:alnum:]_])test test_surrogate_drift_(gate|metric).* \.\.\. ok' /tmp/surrogate_drift_output.txt || true)
 
           # Test self-reported mode + peak drift (printed via eprintln! under
           # --nocapture). Used to cross-check the independently resolved mode.
