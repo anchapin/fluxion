@@ -1529,22 +1529,42 @@ mod tests {
 
         let mut dispatcher = ParallelLoopDispatcher::new(subgraphs);
 
-        let start = Instant::now();
+        // Use a per-subgraph workload large enough that real parallelism
+        // produces a clear speedup over full serialisation, independent of
+        // runner clock speed or Linux sleep granularity. 10 ms × 8 subgraphs =
+        // ~80 ms fully serial.
+        let per_work = Duration::from_millis(10);
+
+        // Measure a serial baseline (same total work, no overlap).
+        let serial_start = Instant::now();
+        for _ in 0..n_subgraphs {
+            sleep(per_work);
+        }
+        let serial = serial_start.elapsed();
+
+        // Measure the parallel dispatch.
+        let par_start = Instant::now();
         let res = dispatcher.step(0.0, 0.001, |_sg| {
-            sleep(Duration::from_millis(1));
+            sleep(per_work);
             Ok::<(), DispatchError>(())
         });
-        let elapsed = start.elapsed();
+        let parallel = par_start.elapsed();
 
         assert!(res.is_ok(), "dispatch failed: {:?}", res.err());
 
-        // 8 subgraphs × 1 ms each: parallel ≈ 1–2 ms; a fully serialising
-        // Mutex regression ≈ 8 ms. The 5 ms bound (from the #2525 AC) cleanly
-        // separates the two regimes on any ≥2-core machine.
+        // Relative comparison (robust to runner speed/load/core count):
+        // real parallelism ⇒ parallel ≤ serial/2 on ≥2 cores, so
+        // parallel*4 < serial*3 holds. A Mutex-serialisation regression makes
+        // parallel ≈ serial, failing this bound. Using integer millis avoids
+        // Duration overflow concerns.
+        let serial_ms = serial.as_millis() as u128;
+        let par_ms = parallel.as_millis() as u128;
         assert!(
-            elapsed.as_millis() < 5,
-            "step() took {:?} — suspected Mutex-serialisation regression (#2525)",
-            elapsed
+            par_ms * 4 < serial_ms * 3,
+            "step() parallel {:?} not meaningfully faster than serial {:?} \
+             — suspected Mutex-serialisation regression (#2525)",
+            parallel,
+            serial
         );
     }
 
