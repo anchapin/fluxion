@@ -113,3 +113,118 @@ pub fn export_osm(schema: &Bound<'_, PyDict>, path: &str) -> PyResult<()> {
     let schema = schema_from_dict(schema)?;
     export_osm_file(&schema, path).map_err(osm_error)
 }
+
+#[cfg(all(test, feature = "python-bindings"))]
+mod tests {
+    //! Rust-side inline tests for the PyO3 wrappers in this module (Issue #2532).
+    //!
+    //! These tests exercise the schema-parsing helper (`schema_from_json`),
+    //! which is the same parser used by every public entry point in this
+    //! module (`PyOsmReader::from_path`, `PyOsmWriter::from_schema_dict`,
+    //! `PyOsmWriter::from_schema_file`, `import_osm`, `export_osm`), plus the
+    //! three private error-mapping helpers (`simulation_error`,
+    //! `validation_error`, `osm_error`). They do not touch a live Python
+    //! interpreter.
+
+    use super::*;
+
+    // -- schema_from_json ------------------------------------------------
+
+    #[test]
+    fn schema_from_json_rejects_empty_input() {
+        let err = schema_from_json("")
+            .err()
+            .expect("empty input should error");
+        assert!(err.to_string().contains("Failed to parse"));
+    }
+
+    #[test]
+    fn schema_from_json_rejects_garbage_input() {
+        let err = schema_from_json("{ not json")
+            .err()
+            .expect("garbage should error");
+        assert!(err.to_string().contains("Failed to parse"));
+    }
+
+    #[test]
+    fn schema_from_json_accepts_bare_v1_schema() {
+        // The fast path: a bare SimulationSchemaV1 deserializes directly.
+        let json = serde_json::to_string(&SimulationSchemaV1::default()).unwrap();
+        let schema = schema_from_json(&json).expect("bare V1 schema should parse");
+        assert_eq!(schema, SimulationSchemaV1::default());
+    }
+
+    #[test]
+    fn schema_from_json_accepts_envelope_v1_schema() {
+        // The slower fallback path: a `{"V1": ...}` envelope.
+        let wrapped = SimulationSchema::V1(SimulationSchemaV1::default());
+        let json = serde_json::to_string(&wrapped).unwrap();
+        let schema = schema_from_json(&json).expect("enveloped V1 schema should parse");
+        assert_eq!(schema, SimulationSchemaV1::default());
+    }
+
+    #[test]
+    fn schema_from_json_round_trip_preserves_version() {
+        // Round-trip a non-default schema version through serialize → parse.
+        let mut schema = SimulationSchemaV1::default();
+        schema.version = crate::api::schema::SchemaVersion::V1;
+        let json = serde_json::to_string(&schema).unwrap();
+        let parsed = schema_from_json(&json).expect("round-trip should parse");
+        assert_eq!(parsed.version, schema.version);
+    }
+
+    // -- error helpers ---------------------------------------------------
+    //
+    // `osm_bindings.rs` keeps three mappers: `simulation_error`, `validation_error`,
+    // and `osm_error`. Each must convert cleanly into a `PyErr` and carry the
+    // source message.
+
+    #[test]
+    fn simulation_error_helper_carries_message() {
+        let err = simulation_error("sim failed");
+        let s = err.to_string();
+        assert!(s.contains("sim failed"), "s={}", s);
+        assert!(s.contains("Simulation"), "s={}", s);
+    }
+
+    #[test]
+    fn validation_error_helper_carries_message() {
+        let err = validation_error("schema missing field");
+        let s = err.to_string();
+        assert!(s.contains("schema missing field"), "s={}", s);
+        // The exception type is registered as `ValidationError` (capital V).
+        assert!(s.to_lowercase().contains("validation"), "s={}", s);
+    }
+
+    #[test]
+    fn osm_error_helper_wraps_message() {
+        // Map every OsmError variant to ensure the helper doesn't panic on
+        // any branch of the underlying Display impl.
+        let cases = [
+            OsmError::InvalidObject("bad object".to_string()),
+            OsmError::parse_error(42, "boom"),
+            OsmError::missing_field("Surface", "Area"),
+            OsmError::UnknownObjectType("Mystery".to_string()),
+            OsmError::ConversionError("units".to_string()),
+            OsmError::ExportError("write fail".to_string()),
+            OsmError::IoError(std::io::Error::new(std::io::ErrorKind::NotFound, "gone")),
+        ];
+        for case in cases {
+            let err = osm_error(case);
+            let s = err.to_string();
+            assert!(
+                s.contains("OSM interoperability error"),
+                "missing prefix; s={}",
+                s
+            );
+        }
+    }
+
+    #[test]
+    fn osm_error_helper_preserves_underlying_message() {
+        let src = OsmError::invalid_object("specific failure text");
+        let err = osm_error(src);
+        let s = err.to_string();
+        assert!(s.contains("specific failure text"), "s={}", s);
+    }
+}

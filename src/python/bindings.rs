@@ -998,3 +998,282 @@ pub fn hvac(_py: Python, m: &Bound<'_, PyModule>) -> PyResult<()> {
     )?)?;
     Ok(())
 }
+
+#[cfg(all(test, feature = "python-bindings"))]
+mod tests {
+    //! Rust-side inline tests for the PyO3 wrappers in this module (Issue #2532).
+    //!
+    //! These tests exercise the Rust validation/conversion logic without going
+    //! through a live Python interpreter. They cover:
+    //! - `PyMultiZoneThermalModel::new` zone-count validation,
+    //! - `from_case_spec` case-id normalization (whitespace / underscore
+    //!   stripping, case-insensitivity, alias coverage, unknown-id error path),
+    //! - `set_zone_temperatures` length check,
+    //! - `set_zone_setpoints` index- and ordering-range checks,
+    //! - `set_inter_zone_conductance` range- and sign-checks,
+    //! - the private `schema_from_json` schema-parsing helper, and
+    //! - the `validation_error` / `osm_error` / `gbxml_error` mappers.
+
+    use super::*;
+    use crate::interop::gbxml::GbXmlError;
+    use crate::interop::osm::OsmError;
+
+    // -- PyMultiZoneThermalModel::new ------------------------------------
+
+    #[test]
+    fn new_rejects_zero_zones() {
+        let err = PyMultiZoneThermalModel::new(0)
+            .err()
+            .expect("0 zones should be rejected");
+        // ValidationError message must mention the lower bound.
+        assert!(err.to_string().contains("at least 1"));
+    }
+
+    #[test]
+    fn new_accepts_default_and_explicit_zone_counts() {
+        let one = PyMultiZoneThermalModel::new(1).expect("1 zone is valid");
+        assert_eq!(one.num_zones(), 1);
+        assert_eq!(one.get_inner_num_zones(), 1);
+
+        let five = PyMultiZoneThermalModel::new(5).expect("5 zones is valid");
+        assert_eq!(five.num_zones(), 5);
+    }
+
+    // -- from_case_spec --------------------------------------------------
+
+    #[test]
+    fn from_case_spec_accepts_canonical_ids() {
+        // Spot-check one low-mass and one high-mass case — these exercise
+        // `case_enum.spec()` + `ThermalModel::from_spec` end-to-end without
+        // touching Python.
+        let m900 = PyMultiZoneThermalModel::from_case_spec("Case900").expect("Case900 parses");
+        assert!(m900.num_zones() >= 1);
+
+        let m600 = PyMultiZoneThermalModel::from_case_spec("Case600").expect("Case600 parses");
+        assert!(m600.num_zones() >= 1);
+    }
+
+    #[test]
+    fn from_case_spec_is_case_insensitive_and_strips_separators() {
+        // The normalizer strips whitespace AND underscores, then uppercases.
+        for input in [
+            "case900",
+            "CASE900",
+            "  Case900  ",
+            "Case 900",
+            "Case_900",
+            "case_9_0_0",
+        ] {
+            let model = PyMultiZoneThermalModel::from_case_spec(input)
+                .unwrap_or_else(|e| panic!("'{}' should parse: {}", input, e));
+            assert_eq!(model.num_zones(), 1, "input='{}'", input);
+        }
+    }
+
+    #[test]
+    fn from_case_spec_accepts_aliases() {
+        // The short aliases for the Case195 variants must round-trip.
+        PyMultiZoneThermalModel::from_case_spec("Case195HM").expect("Case195HM alias parses");
+        PyMultiZoneThermalModel::from_case_spec("Case195NL").expect("Case195NL alias parses");
+        PyMultiZoneThermalModel::from_case_spec("Case195NS").expect("Case195NS alias parses");
+    }
+
+    #[test]
+    fn from_case_spec_rejects_unknown_id() {
+        let err = PyMultiZoneThermalModel::from_case_spec("CaseNotFound")
+            .err()
+            .expect("unknown case id should error");
+        // Error message should mention the bad id (normalized to upper case)
+        // and the known set.
+        let msg = err.to_string();
+        assert!(msg.contains("CASENOTFOUND"), "msg={}", msg);
+        // The known-cases hint should be in the message.
+        assert!(
+            msg.contains("Case600") || msg.contains("Case900"),
+            "msg={}",
+            msg
+        );
+    }
+
+    // -- set_zone_temperatures ------------------------------------------
+
+    #[test]
+    fn set_zone_temperatures_rejects_length_mismatch() {
+        let mut model = PyMultiZoneThermalModel::new(3).expect("3 zones");
+        let err = model
+            .set_zone_temperatures(vec![20.0, 21.0])
+            .err()
+            .expect("length mismatch should error");
+        assert!(err.to_string().contains("2"));
+        assert!(err.to_string().contains("3"));
+    }
+
+    #[test]
+    fn set_zone_temperatures_round_trips() {
+        let mut model = PyMultiZoneThermalModel::new(2).expect("2 zones");
+        model
+            .set_zone_temperatures(vec![20.0, 22.0])
+            .expect("matching length is accepted");
+        assert_eq!(model.get_zone_temperatures(), vec![20.0, 22.0]);
+    }
+
+    // -- set_zone_setpoints ---------------------------------------------
+
+    #[test]
+    fn set_zone_setpoints_rejects_out_of_range_index() {
+        let mut model = PyMultiZoneThermalModel::new(2).expect("2 zones");
+        let err = model
+            .set_zone_setpoints(5, 20.0, 24.0)
+            .err()
+            .expect("out-of-range zone index should error");
+        assert!(err.to_string().contains("Zone index"));
+    }
+
+    #[test]
+    fn set_zone_setpoints_enforces_heating_below_cooling() {
+        let mut model = PyMultiZoneThermalModel::new(1).expect("1 zone");
+        // Equal heating/cooling is invalid.
+        let err = model
+            .set_zone_setpoints(0, 22.0, 22.0)
+            .err()
+            .expect("equal heating/cooling should error");
+        assert!(err.to_string().contains("Heating setpoint"));
+
+        // Heating above cooling is invalid.
+        let err = model
+            .set_zone_setpoints(0, 25.0, 22.0)
+            .err()
+            .expect("heating above cooling should error");
+        assert!(err.to_string().contains("Heating setpoint"));
+    }
+
+    #[test]
+    fn set_zone_setpoints_accepts_valid_pair() {
+        let mut model = PyMultiZoneThermalModel::new(1).expect("1 zone");
+        model
+            .set_zone_setpoints(0, 20.0, 24.0)
+            .expect("20 < 24 is a valid pair");
+    }
+
+    // -- set_inter_zone_conductance -------------------------------------
+
+    #[test]
+    fn set_inter_zone_conductance_rejects_out_of_range_index() {
+        let mut model = PyMultiZoneThermalModel::new(2).expect("2 zones");
+        let err = model
+            .set_inter_zone_conductance(5, 0, 1.0)
+            .err()
+            .expect("out-of-range index should error");
+        assert!(err.to_string().contains("out of range"));
+    }
+
+    #[test]
+    fn set_inter_zone_conductance_rejects_negative_value() {
+        let mut model = PyMultiZoneThermalModel::new(2).expect("2 zones");
+        let err = model
+            .set_inter_zone_conductance(0, 1, -0.5)
+            .err()
+            .expect("negative conductance should error");
+        assert!(err.to_string().contains("non-negative"));
+    }
+
+    #[test]
+    fn set_inter_zone_conductance_vector_round_trips() {
+        let mut model = PyMultiZoneThermalModel::new(3).expect("3 zones");
+        model
+            .set_inter_zone_conductance_vector(vec![1.0, 2.0, 3.0])
+            .expect("valid conductance vector");
+        assert_eq!(
+            model.get_inter_zone_conductance_vector(),
+            vec![1.0, 2.0, 3.0]
+        );
+    }
+
+    #[test]
+    fn set_inter_zone_conductance_vector_rejects_mismatched_length() {
+        let mut model = PyMultiZoneThermalModel::new(3).expect("3 zones");
+        let err = model
+            .set_inter_zone_conductance_vector(vec![1.0, 2.0])
+            .err()
+            .expect("length mismatch should error");
+        assert!(err.to_string().contains("2"));
+        assert!(err.to_string().contains("3"));
+    }
+
+    #[test]
+    fn set_inter_zone_conductance_vector_rejects_negative_value() {
+        let mut model = PyMultiZoneThermalModel::new(2).expect("2 zones");
+        let err = model
+            .set_inter_zone_conductance_vector(vec![1.0, -2.0])
+            .err()
+            .expect("negative value should error");
+        assert!(err.to_string().contains("non-negative"));
+    }
+
+    // -- schema_from_json (private helper) ------------------------------
+
+    #[test]
+    fn schema_from_json_rejects_empty_input() {
+        let err = schema_from_json("")
+            .err()
+            .expect("empty input should error");
+        assert!(err.to_string().contains("Failed to parse"));
+    }
+
+    #[test]
+    fn schema_from_json_rejects_garbage_input() {
+        let err = schema_from_json("not json")
+            .err()
+            .expect("garbage should error");
+        assert!(err.to_string().contains("Failed to parse"));
+    }
+
+    #[test]
+    fn schema_from_json_accepts_bare_v1_schema() {
+        // A bare SimulationSchemaV1 (no `{"V1": ...}` envelope) is the fast
+        // path: serde should deserialize it directly.
+        let json = serde_json::to_string(&SimulationSchemaV1::default()).unwrap();
+        let schema = schema_from_json(&json).expect("bare V1 schema should parse");
+        assert_eq!(schema, SimulationSchemaV1::default());
+    }
+
+    #[test]
+    fn schema_from_json_accepts_envelope_v1_schema() {
+        // The SimulationSchema::V1(...) envelope is the slower fallback path.
+        let wrapped = SimulationSchema::V1(SimulationSchemaV1::default());
+        let json = serde_json::to_string(&wrapped).unwrap();
+        let schema = schema_from_json(&json).expect("enveloped V1 schema should parse");
+        assert_eq!(schema, SimulationSchemaV1::default());
+    }
+
+    // -- error helpers ---------------------------------------------------
+    //
+    // These exercise each `*Error -> PyErr` mapper to ensure they don't panic
+    // and produce a `PyErr` carrying the expected message text.
+
+    #[test]
+    fn validation_error_helper_carries_message() {
+        let err = validation_error("a test validation problem");
+        let s = err.to_string();
+        assert!(s.contains("a test validation problem"), "s={}", s);
+        assert!(s.contains("validation"), "s={}", s);
+    }
+
+    #[test]
+    fn osm_error_helper_wraps_message() {
+        let src = OsmError::invalid_object("bad object");
+        let err = osm_error(src);
+        let s = err.to_string();
+        assert!(s.contains("OSM interoperability error"), "s={}", s);
+        assert!(s.contains("bad object"), "s={}", s);
+    }
+
+    #[test]
+    fn gbxml_error_helper_wraps_message() {
+        let src = GbXmlError::invalid_structure("xml broke");
+        let err = gbxml_error(src);
+        let s = err.to_string();
+        assert!(s.contains("gbXML interoperability error"), "s={}", s);
+        assert!(s.contains("xml broke"), "s={}", s);
+    }
+}

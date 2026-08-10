@@ -1303,3 +1303,488 @@ pub fn compute_vav_terminal_performance(
 }
 
 // Python module initialization - classes are registered in main fluxion module
+
+#[cfg(all(test, feature = "python-bindings"))]
+mod tests {
+    //! Rust-side inline tests for the PyO3 wrappers in this module (Issue #2532).
+    //!
+    //! Coverage focuses on the pure-Rust conversion / wrapper layer:
+    //! - the four HVAC enum round-trips (SystemType / Mode / HeatPumpMode /
+    //!   VavOperatingMode),
+    //! - `PyZoneSetpoints` validation (zero-zone rejection, out-of-range
+    //!   zone id, out-of-range temperature, out-of-range deadband),
+    //! - `PyDailySchedule` and `PyHVACSchedule` (invalid-type rejection,
+    //!   constant / setback / operating-hours constructors, free-floating
+    //!   detection),
+    //! - the equipment wrappers (`PyChiller`, `PyBoiler`, `PyHeatPump`,
+    //!   `PyVAVTerminal`, `PyCAVSystem`) — constructor + getters + simple
+    //!   derived values,
+    //! - `PyVavTerminalUnit::new` argument validation and
+    //!   `PyVavTerminalControl` mode resolution.
+
+    use super::*;
+
+    // ========================================================================
+    // Enum round-trips
+    // ========================================================================
+
+    #[test]
+    fn hvac_system_type_round_trip_preserves_all_variants() {
+        let variants = [
+            HVACSystemType::Simple,
+            HVACSystemType::VAV,
+            HVACSystemType::CAV,
+            HVACSystemType::HeatPump,
+            HVACSystemType::Ideal,
+        ];
+        for v in variants {
+            let py: PyHVACSystemType = v.into();
+            let back: HVACSystemType = py.into();
+            assert_eq!(back, v);
+        }
+    }
+
+    #[test]
+    fn hvac_mode_round_trip_preserves_all_variants() {
+        let variants = [HVACMode::Heating, HVACMode::Cooling, HVACMode::Off];
+        for v in variants {
+            let py: PyHVACMode = v.into();
+            let back: HVACMode = py.into();
+            assert_eq!(back, v);
+        }
+    }
+
+    #[test]
+    fn heat_pump_mode_round_trip_preserves_all_variants() {
+        let variants = [
+            HeatPumpMode::Heating,
+            HeatPumpMode::Cooling,
+            HeatPumpMode::Off,
+        ];
+        for v in variants {
+            let py: PyHeatPumpMode = v.into();
+            let back: HeatPumpMode = py.into();
+            assert_eq!(back, v);
+        }
+    }
+
+    #[test]
+    fn vav_operating_mode_round_trip_preserves_all_variants() {
+        let variants = [
+            VavOperatingMode::Cooling,
+            VavOperatingMode::Heating,
+            VavOperatingMode::Deadband,
+        ];
+        for v in variants {
+            let py: PyVavOperatingMode = v.into();
+            let back: VavOperatingMode = py.into();
+            assert_eq!(back, v);
+        }
+    }
+
+    // ========================================================================
+    // PyZoneSetpoints validation
+    // ========================================================================
+
+    #[test]
+    fn zone_setpoints_rejects_zero_zones() {
+        let err = PyZoneSetpoints::new(0).err().expect("0 zones should error");
+        assert!(err.to_string().contains("at least 1"));
+    }
+
+    #[test]
+    fn zone_setpoints_accepts_positive_zone_count() {
+        let s = PyZoneSetpoints::new(3).expect("3 zones is valid");
+        assert_eq!(s.num_zones(), 3);
+    }
+
+    #[test]
+    fn zone_setpoints_rejects_out_of_range_zone_id() {
+        let mut s = PyZoneSetpoints::new(2).expect("2 zones");
+        let err = s
+            .set_heating_setpoint(5, 20.0)
+            .err()
+            .expect("out-of-range zone id should error");
+        assert!(err.to_string().to_lowercase().contains("range"));
+    }
+
+    #[test]
+    fn zone_setpoints_rejects_out_of_range_temperature() {
+        let mut s = PyZoneSetpoints::new(1).expect("1 zone");
+        // The inner validator accepts temperatures in [10.0, 40.0] °C.
+        let cold = s.set_heating_setpoint(0, 5.0).err().expect("5°C too cold");
+        assert!(cold.to_string().contains("10.0"));
+        let hot = s.set_cooling_setpoint(0, 50.0).err().expect("50°C too hot");
+        assert!(hot.to_string().contains("40.0"));
+    }
+
+    #[test]
+    fn zone_setpoints_rejects_non_positive_deadband() {
+        let mut s = PyZoneSetpoints::new(1).expect("1 zone");
+        let err = s.set_deadband(0, 0.0).err().expect("0 deadband rejected");
+        assert!(err.to_string().contains("0.0"));
+        let err = s.set_deadband(0, 6.0).err().expect("6°C deadband rejected");
+        assert!(err.to_string().contains("5.0"));
+    }
+
+    #[test]
+    fn zone_setpoints_round_trips_through_set_get() {
+        let mut s = PyZoneSetpoints::new(2).expect("2 zones");
+        s.set_heating_setpoint(0, 19.5).unwrap();
+        s.set_cooling_setpoint(0, 23.5).unwrap();
+        s.set_deadband(0, 1.0).unwrap();
+
+        s.set_heating_setpoint(1, 20.0).unwrap();
+        s.set_cooling_setpoint(1, 24.0).unwrap();
+        s.set_deadband(1, 2.0).unwrap();
+
+        assert_eq!(s.get_heating_setpoint(0).unwrap(), 19.5);
+        assert_eq!(s.get_cooling_setpoint(0).unwrap(), 23.5);
+        assert_eq!(s.get_deadband(0).unwrap(), 1.0);
+        assert_eq!(s.get_heating_setpoint(1).unwrap(), 20.0);
+        assert_eq!(s.get_cooling_setpoint(1).unwrap(), 24.0);
+        assert_eq!(s.get_deadband(1).unwrap(), 2.0);
+    }
+
+    #[test]
+    fn zone_setpoints_get_out_of_range_errors() {
+        let s = PyZoneSetpoints::new(1).expect("1 zone");
+        let err = s.get_heating_setpoint(7).err().expect("out-of-range");
+        assert!(err.to_string().contains("7"));
+    }
+
+    // ========================================================================
+    // PyDailySchedule
+    // ========================================================================
+
+    #[test]
+    fn daily_schedule_rejects_unknown_type() {
+        let err = PyDailySchedule::new("name".to_string(), "Hourly".to_string())
+            .err()
+            .expect("unknown schedule type should error");
+        assert!(err.to_string().contains("Invalid schedule type"));
+    }
+
+    #[test]
+    fn daily_schedule_accepts_all_documented_types() {
+        for ty in ["Constant", "DailyCycle", "Weekly", "Custom"] {
+            let _ = PyDailySchedule::new("s".to_string(), ty.to_string())
+                .unwrap_or_else(|e| panic!("'{}' should be accepted: {}", ty, e));
+        }
+    }
+
+    #[test]
+    fn daily_schedule_constant_sets_every_hour() {
+        let s = PyDailySchedule::constant(21.0);
+        for h in 0..24 {
+            assert_eq!(s.value(h), 21.0, "hour {}", h);
+        }
+        // value(hour) wraps modulo 24 — hour 24 maps back to hour 0.
+        assert_eq!(s.value(24), 21.0);
+    }
+
+    #[test]
+    fn daily_schedule_set_hour_updates_single_hour() {
+        let mut s = PyDailySchedule::new("s".to_string(), "DailyCycle".to_string()).unwrap();
+        s.set_hour(7, 18.5).unwrap();
+        assert_eq!(s.value(7), 18.5);
+        assert_eq!(s.value(8), 0.0);
+    }
+
+    #[test]
+    fn daily_schedule_fill_range_writes_inclusive_start_exclusive_end() {
+        let mut s = PyDailySchedule::new("s".to_string(), "DailyCycle".to_string()).unwrap();
+        s.fill_range(6, 18, 22.0).unwrap();
+        for h in 6..18 {
+            assert_eq!(s.value(h), 22.0, "hour {} should be set", h);
+        }
+        assert_eq!(s.value(18), 0.0, "end is exclusive");
+        assert_eq!(s.value(5), 0.0, "before start unchanged");
+    }
+
+    // ========================================================================
+    // PyHVACSchedule
+    // ========================================================================
+
+    #[test]
+    fn hvac_schedule_constant_schedule_applies_to_every_hour() {
+        let s = PyHVACSchedule::constant_schedule(20.0, 24.0);
+        for h in 0..24 {
+            assert_eq!(s.heating_setpoint(h), 20.0);
+            assert_eq!(s.cooling_setpoint(h), 24.0);
+        }
+        assert!(!s.is_free_floating());
+    }
+
+    #[test]
+    fn hvac_schedule_setback_overrides_night_window() {
+        // Day = 21°C heating, setback 22..6 → 16°C, cooling always 26°C.
+        let s = PyHVACSchedule::setback_schedule(21.0, 16.0, 26.0, 22, 6);
+        // Inside the setback window (22..24 and 0..6): 16°C
+        for h in [22, 23, 0, 1, 2, 3, 4, 5] {
+            assert_eq!(s.heating_setpoint(h), 16.0, "hour {} should be setback", h);
+        }
+        // Outside the setback window: 21°C
+        for h in [6, 7, 12, 21] {
+            assert_eq!(s.heating_setpoint(h), 21.0, "hour {} should be day", h);
+        }
+        // Cooling always 26°C.
+        for h in 0..24 {
+            assert_eq!(s.cooling_setpoint(h), 26.0);
+        }
+    }
+
+    #[test]
+    fn hvac_schedule_operating_hours_only_actives_in_window() {
+        // Heating = 20°C, cooling = 24°C only during 8..18.
+        let s = PyHVACSchedule::with_operating_hours(20.0, 24.0, 8, 18);
+        for h in [8, 12, 17] {
+            assert_eq!(s.heating_setpoint(h), 20.0, "hour {}", h);
+            assert_eq!(s.cooling_setpoint(h), 24.0, "hour {}", h);
+        }
+        // Outside operating hours the schedule keeps the constant fill
+        // defaults (-100 / 100) — i.e. "off".
+        for h in [0, 7, 18, 23] {
+            assert!(s.heating_setpoint(h) <= -100.0);
+            assert!(s.cooling_setpoint(h) >= 100.0);
+        }
+    }
+
+    #[test]
+    fn hvac_schedule_free_floating_is_detected() {
+        let s = PyHVACSchedule::free_floating();
+        assert!(s.is_free_floating());
+        // A constant schedule is not free-floating.
+        let on = PyHVACSchedule::constant_schedule(20.0, 24.0);
+        assert!(!on.is_free_floating());
+    }
+
+    #[test]
+    fn hvac_schedule_default_is_new() {
+        // Default::default() must equal PyHVACSchedule::new() — PyO3 calls
+        // Default for `#[new]`-less classes that impl Default.
+        let d = PyHVACSchedule::default();
+        let n = PyHVACSchedule::new();
+        // Both should read 0.0 everywhere (empty DailySchedule).
+        assert_eq!(d.heating_setpoint(0), n.heating_setpoint(0));
+        assert_eq!(d.cooling_setpoint(0), n.cooling_setpoint(0));
+    }
+
+    // ========================================================================
+    // Equipment wrappers — constructor + getters
+    // ========================================================================
+
+    #[test]
+    fn chiller_wraps_getters() {
+        let c = PyChiller::new("C-1".to_string(), 12_000.0, 4.0, 35.0);
+        assert_eq!(c.id(), "C-1");
+        assert_eq!(c.cooling_capacity(), 12_000.0);
+        assert_eq!(c.cooling_cop(), 4.0);
+        assert_eq!(c.design_temp(), 35.0);
+        // A fresh chiller hasn't been loaded yet.
+        assert_eq!(c.current_plr(), 0.0);
+        // Capacity scales with PLR.
+        let full = c.calculate_capacity(1.0, 35.0);
+        let half = c.calculate_capacity(0.5, 35.0);
+        assert!(full > 0.0);
+        assert!(half > 0.0);
+        assert!(half < full);
+    }
+
+    #[test]
+    fn boiler_wraps_getters() {
+        let b = PyBoiler::new("B-1".to_string(), 15_000.0, 0.9, -5.0);
+        assert_eq!(b.id(), "B-1");
+        assert_eq!(b.heating_capacity(), 15_000.0);
+        assert_eq!(b.efficiency(), 0.9);
+        assert_eq!(b.design_temp(), -5.0);
+        assert_eq!(b.current_plr(), 0.0);
+        // Heating load draws fuel — power should be positive for any load > 0.
+        let power = b.calculate_power(5_000.0, -5.0);
+        assert!(power > 0.0);
+        // No load → no power.
+        assert_eq!(b.calculate_power(0.0, -5.0), 0.0);
+    }
+
+    #[test]
+    fn heat_pump_mode_transitions_off_heating_cooling() {
+        let mut hp = PyHeatPump::new("HP-1".to_string(), 10_000.0, 12_000.0, 3.5, 3.8);
+        assert_eq!(hp.mode(), "off");
+
+        hp.set_mode(15.0, 20.0, 24.0);
+        assert_eq!(hp.mode(), "heating");
+
+        hp.set_mode(30.0, 20.0, 24.0);
+        assert_eq!(hp.mode(), "cooling");
+
+        hp.set_mode(22.0, 20.0, 24.0);
+        assert_eq!(hp.mode(), "off");
+    }
+
+    #[test]
+    fn heat_pump_power_only_when_active() {
+        let mut hp = PyHeatPump::new("HP".into(), 10_000.0, 12_000.0, 3.0, 4.0);
+        // Off by default — no power consumed either side.
+        assert_eq!(hp.heating_power(0.0), 0.0);
+        assert_eq!(hp.cooling_power(35.0), 0.0);
+
+        hp.set_mode(15.0, 20.0, 24.0); // heating
+        assert!(hp.heating_power(-5.0) > 0.0);
+        assert_eq!(hp.cooling_power(35.0), 0.0);
+
+        hp.set_mode(30.0, 20.0, 24.0); // cooling
+        assert_eq!(hp.heating_power(-5.0), 0.0);
+        assert!(hp.cooling_power(35.0) > 0.0);
+    }
+
+    #[test]
+    fn heat_pump_cop_getters_return_rated_cop() {
+        // The current HeatPump impl returns rated COP regardless of outdoor
+        // temperature (constant-COP BESTEST reference behaviour). Lock that
+        // contract here.
+        let hp = PyHeatPump::new("HP".into(), 1.0, 1.0, 3.25, 4.5);
+        for t in [-20.0, 0.0, 20.0, 40.0] {
+            assert!((hp.heating_cop_at_temperature(t) - 3.25).abs() < 1e-12);
+            assert!((hp.cooling_cop_at_temperature(t) - 4.5).abs() < 1e-12);
+        }
+    }
+
+    #[test]
+    fn vav_terminal_wraps_getters_and_setters() {
+        let mut v = PyVAVTerminal::new("V-1".to_string(), 0, 0.5);
+        assert_eq!(v.id(), "V-1");
+        assert_eq!(v.zone_id(), 0);
+        assert_eq!(v.max_airflow(), 0.5);
+        // Defaults: 30% min airflow, 5 kW reheat.
+        assert!((v.min_airflow() - 0.15).abs() < 1e-12);
+        assert!((v.reheat_capacity() - 5_000.0).abs() < 1e-9);
+
+        v.set_min_airflow(0.2);
+        assert!((v.min_airflow() - 0.2).abs() < 1e-12);
+        v.set_reheat_capacity(7_500.0);
+        assert!((v.reheat_capacity() - 7_500.0).abs() < 1e-9);
+    }
+
+    #[test]
+    fn cav_system_wraps_getters_and_setters() {
+        let mut cav = PyCAVSystem::new("C-1".to_string(), 1.0);
+        assert_eq!(cav.id(), "C-1");
+        assert_eq!(cav.design_airflow(), 1.0);
+        // fan_power defaults to design_airflow * 500, efficiency 0.7.
+        assert!((cav.fan_power() - 500.0).abs() < 1e-9);
+        assert!((cav.fan_efficiency() - 0.7).abs() < 1e-12);
+        assert!((cav.fan_power_consumption() - (500.0 / 0.7)).abs() < 1e-9);
+
+        cav.set_fan_power(700.0);
+        cav.set_fan_efficiency(0.8);
+        cav.set_heating_capacity(9_000.0);
+        cav.set_cooling_capacity(11_000.0);
+        assert!((cav.fan_power() - 700.0).abs() < 1e-9);
+        assert!((cav.fan_efficiency() - 0.8).abs() < 1e-12);
+        assert!((cav.heating_capacity() - 9_000.0).abs() < 1e-9);
+        assert!((cav.cooling_capacity() - 11_000.0).abs() < 1e-9);
+        assert!((cav.fan_power_consumption() - (700.0 / 0.8)).abs() < 1e-9);
+    }
+
+    // ========================================================================
+    // PyVavTerminalUnit validation
+    // ========================================================================
+
+    #[test]
+    fn vav_terminal_unit_rejects_non_positive_max_airflow() {
+        let err = PyVavTerminalUnit::new("V".into(), 0, 0.0, 5_000.0, 0.0)
+            .err()
+            .expect("zero max_airflow should error");
+        assert!(err.to_string().contains("max_airflow"));
+
+        let err = PyVavTerminalUnit::new("V".into(), 0, f64::NAN, 5_000.0, 0.0)
+            .err()
+            .expect("NaN max_airflow should error");
+        assert!(err.to_string().contains("max_airflow"));
+    }
+
+    #[test]
+    fn vav_terminal_unit_rejects_non_positive_cooling_capacity() {
+        let err = PyVavTerminalUnit::new("V".into(), 0, 0.5, 0.0, 0.0)
+            .err()
+            .expect("zero cooling_capacity should error");
+        assert!(err.to_string().contains("cooling_capacity"));
+    }
+
+    #[test]
+    fn vav_terminal_unit_with_reheat_reports_has_reheat() {
+        let unit = PyVavTerminalUnit::new("V".into(), 0, 0.5, 8_000.0, 5_000.0).unwrap();
+        assert!(unit.has_reheat());
+        assert!(unit.rated_reheat_capacity() > 0.0);
+        assert_eq!(unit.max_airflow(), 0.5);
+        assert!((unit.min_airflow() - 0.5 * 0.30).abs() < 1e-12);
+        // No simulation has run yet, so damper position is the default 0.0.
+        assert!((unit.current_damper_position() - 0.0).abs() < 1e-12);
+    }
+
+    #[test]
+    fn vav_terminal_unit_without_reheat_reports_no_reheat() {
+        let unit = PyVavTerminalUnit::new("V".into(), 0, 0.5, 8_000.0, 0.0).unwrap();
+        assert!(!unit.has_reheat());
+        assert_eq!(unit.rated_reheat_capacity(), 0.0);
+    }
+
+    #[test]
+    fn vav_terminal_unit_min_airflow_ratio_clamps() {
+        let mut unit = PyVavTerminalUnit::new("V".into(), 0, 0.5, 8_000.0, 0.0).unwrap();
+        // set_min_airflow_ratio clamps to [0, 1].
+        unit.set_min_airflow_ratio(2.0);
+        assert!((unit.min_airflow_ratio() - 1.0).abs() < 1e-12);
+        unit.set_min_airflow_ratio(-1.0);
+        assert!((unit.min_airflow_ratio() - 0.0).abs() < 1e-12);
+        unit.set_min_airflow_ratio(0.4);
+        assert!((unit.min_airflow_ratio() - 0.4).abs() < 1e-12);
+    }
+
+    // ========================================================================
+    // PyVavTerminalControl mode resolution
+    // ========================================================================
+
+    #[test]
+    fn vav_control_cooling_factory_yields_cooling_mode() {
+        let c = PyVavTerminalControl::cooling(0.7);
+        assert_eq!(c.mode(), PyVavOperatingMode::Cooling);
+        assert!((c.damper_position() - 0.7).abs() < 1e-12);
+        assert!(c.cooling_active());
+    }
+
+    #[test]
+    fn vav_control_heating_factory_yields_heating_mode() {
+        let c = PyVavTerminalControl::heating(40.0);
+        assert_eq!(c.mode(), PyVavOperatingMode::Heating);
+        assert!((c.damper_position() - 0.0).abs() < 1e-12);
+        assert!(!c.cooling_active());
+    }
+
+    #[test]
+    fn vav_control_deadband_factory_yields_deadband_mode() {
+        let c = PyVavTerminalControl::deadband();
+        assert_eq!(c.mode(), PyVavOperatingMode::Deadband);
+        assert!(!c.cooling_active());
+    }
+
+    #[test]
+    fn vav_control_new_with_reheat_setpoint_resolves_heating_mode() {
+        // The general constructor: when cooling_active is false but a reheat
+        // setpoint is supplied, mode() must resolve to Heating.
+        let c = PyVavTerminalControl::new(0.0, false, Some(40.0));
+        assert_eq!(c.mode(), PyVavOperatingMode::Heating);
+    }
+
+    #[test]
+    fn vav_control_new_without_reheat_or_cooling_resolves_deadband() {
+        let c = PyVavTerminalControl::new(0.3, false, None);
+        assert_eq!(c.mode(), PyVavOperatingMode::Deadband);
+    }
+
+    #[test]
+    fn vav_control_new_with_cooling_active_resolves_cooling() {
+        let c = PyVavTerminalControl::new(0.9, true, None);
+        assert_eq!(c.mode(), PyVavOperatingMode::Cooling);
+    }
+}

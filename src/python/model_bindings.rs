@@ -902,3 +902,427 @@ pub fn apply_hvac_system_to_model(model: &mut ThermalModel<VectorField>, hvac: &
     model.hvac_heating_capacity = hvac.heating_capacity;
     model.hvac_cooling_capacity = hvac.cooling_capacity;
 }
+
+#[cfg(all(test, feature = "python-bindings"))]
+mod tests {
+    //! Rust-side inline tests for the PyO3 wrappers in this module (Issue #2532).
+    //!
+    //! Coverage focuses on the pure-Rust conversion / helper layer:
+    //! - `From` round-trips for the enums (Orientation, ShadingType,
+    //!   ShadingDevice) and structs (PyMaterial <-> ConstructionLayer),
+    //! - `PySurface::from(&WallSurface)` for the four shading branches
+    //!   (none / overhang / fins / both),
+    //! - `surface_to_wall` round-trip preserving shading,
+    //! - `PyMaterial` derived properties (r_value, thermal capacitance),
+    //! - `PySurface` / `PyZone` aggregate helpers,
+    //! - `PyHVACSystem` derived properties (electrical input, can_operate_at),
+    //! - the model↔snapshot helpers
+    //!   (`hvac_system_from_model` / `apply_hvac_system_to_model`).
+
+    use super::*;
+    use crate::sim::shading::{Overhang, ShadeFin};
+
+    // ========================================================================
+    // Orientation round-trip
+    // ========================================================================
+
+    #[test]
+    fn orientation_round_trip_preserves_all_variants() {
+        let variants = [
+            Orientation::North,
+            Orientation::East,
+            Orientation::South,
+            Orientation::West,
+            Orientation::Up,
+            Orientation::Down,
+            Orientation::Horizontal,
+        ];
+        for v in variants {
+            let py: PyOrientation = v.into();
+            let back: Orientation = py.into();
+            assert_eq!(back, v, "round-trip lost variant");
+        }
+    }
+
+    // ========================================================================
+    // ShadingType / ShadingDevice round-trip
+    // ========================================================================
+
+    #[test]
+    fn shading_type_round_trip_preserves_all_variants() {
+        let variants = [
+            ShadingType::None,
+            ShadingType::Overhang,
+            ShadingType::Fins,
+            ShadingType::OverhangAndFins,
+        ];
+        for v in variants {
+            let py: PyShadingType = v.into();
+            let back: ShadingType = py.into();
+            assert_eq!(back, v);
+        }
+    }
+
+    #[test]
+    fn shading_device_round_trip_preserves_fields() {
+        let device = ShadingDevice::overhang_and_fins(0.7, 0.3, 2.1);
+        let py: PyShadingDevice = device.into();
+        let back: ShadingDevice = py.into();
+        assert_eq!(back, device);
+    }
+
+    #[test]
+    fn shading_device_none_factory_yields_none_type() {
+        let py = PyShadingDevice::none();
+        let back: ShadingDevice = py.into();
+        assert_eq!(back.shading_type, ShadingType::None);
+        assert_eq!(back.overhang_depth, 0.0);
+        assert_eq!(back.fin_width, 0.0);
+    }
+
+    #[test]
+    fn shading_device_overhang_factory_preserves_depth_and_height() {
+        let py = PyShadingDevice::overhang(0.8, 1.9);
+        let back: ShadingDevice = py.into();
+        assert_eq!(back.shading_type, ShadingType::Overhang);
+        assert_eq!(back.overhang_depth, 0.8);
+        assert_eq!(back.mounting_height, 1.9);
+        assert_eq!(back.fin_width, 0.0);
+    }
+
+    #[test]
+    fn shading_device_fins_factory_preserves_width() {
+        let py = PyShadingDevice::fins(0.45);
+        let back: ShadingDevice = py.into();
+        assert_eq!(back.shading_type, ShadingType::Fins);
+        assert_eq!(back.fin_width, 0.45);
+        assert_eq!(back.overhang_depth, 0.0);
+    }
+
+    #[test]
+    fn shading_device_combined_factory_preserves_all_three() {
+        let py = PyShadingDevice::overhang_and_fins(0.9, 0.25, 2.4);
+        let back: ShadingDevice = py.into();
+        assert_eq!(back.shading_type, ShadingType::OverhangAndFins);
+        assert_eq!(back.overhang_depth, 0.9);
+        assert_eq!(back.fin_width, 0.25);
+        assert_eq!(back.mounting_height, 2.4);
+    }
+
+    // ========================================================================
+    // Material (ConstructionLayer) round-trip
+    // ========================================================================
+
+    fn sample_layer() -> ConstructionLayer {
+        // All ConstructionLayer::new args must be > 0 (it asserts positivity).
+        ConstructionLayer::new("Concrete", 1.7, 2200.0, 900.0, 0.2)
+    }
+
+    #[test]
+    fn material_round_trip_preserves_thermal_fields() {
+        let layer = sample_layer();
+        let py: PyMaterial = (&layer).into();
+        let back: ConstructionLayer = py.into();
+        assert_eq!(back.name, layer.name);
+        assert_eq!(back.conductivity, layer.conductivity);
+        assert_eq!(back.density, layer.density);
+        assert_eq!(back.specific_heat, layer.specific_heat);
+        assert_eq!(back.thickness, layer.thickness);
+    }
+
+    #[test]
+    fn material_r_value_is_thickness_over_conductivity() {
+        let layer = sample_layer(); // k=1.7, t=0.2  ->  R = 0.1176...
+        let py: PyMaterial = (&layer).into();
+        let expected = layer.thickness / layer.conductivity;
+        assert!((py.r_value() - expected).abs() < 1e-12);
+    }
+
+    #[test]
+    fn material_r_value_zero_conductivity_yields_zero() {
+        // Defensive: zero conductivity should not divide-by-zero.
+        let py = PyMaterial::new("Vacuum".to_string(), 0.0, 1.0, 1.0, 0.1);
+        assert_eq!(py.r_value(), 0.0);
+    }
+
+    #[test]
+    fn material_thermal_capacitance_per_area_matches_formula() {
+        let layer = sample_layer(); // rho=2200, t=0.2, cp=900 -> 396_000 J/m²K
+        let py: PyMaterial = (&layer).into();
+        let expected = layer.density * layer.thickness * layer.specific_heat;
+        assert!((py.thermal_capacitance_per_area() - expected).abs() < 1e-6);
+    }
+
+    // ========================================================================
+    // Surface shading branches (From<&WallSurface>)
+    // ========================================================================
+
+    #[test]
+    fn surface_from_wall_no_shading_yields_empty_devices() {
+        let wall = WallSurface::new(10.0, 0.5, Orientation::South);
+        let py = PySurface::from(&wall);
+        assert!(py.shading_devices.is_empty());
+        assert!(py.overhang_depth.is_none());
+        assert!(py.overhang_height.is_none());
+        assert!(py.fin_width.is_none());
+    }
+
+    #[test]
+    fn surface_from_wall_overhang_only_populates_overhang_fields() {
+        let wall = WallSurface::new(10.0, 0.5, Orientation::South).with_overhang(Overhang {
+            depth: 0.6,
+            distance_above: 1.5,
+            extension: 0.0,
+        });
+        let py = PySurface::from(&wall);
+        assert_eq!(py.shading_devices.len(), 1);
+        assert_eq!(py.shading_devices[0].shading_type, PyShadingType::Overhang);
+        assert_eq!(py.shading_devices[0].overhang_depth, 0.6);
+        assert_eq!(py.shading_devices[0].mounting_height, 1.5);
+        assert_eq!(py.overhang_depth, Some(0.6));
+        assert_eq!(py.overhang_height, Some(1.5));
+        assert!(py.fin_width.is_none());
+    }
+
+    #[test]
+    fn surface_from_wall_fins_only_populates_fin_fields() {
+        let mut wall = WallSurface::new(10.0, 0.5, Orientation::South);
+        wall.fins.push(ShadeFin {
+            depth: 0.4,
+            distance_from_edge: 0.0,
+            side: crate::sim::shading::Side::Left,
+            height: 0.0,
+        });
+        let py = PySurface::from(&wall);
+        assert_eq!(py.shading_devices.len(), 1);
+        assert_eq!(py.shading_devices[0].shading_type, PyShadingType::Fins);
+        assert_eq!(py.shading_devices[0].fin_width, 0.4);
+        assert_eq!(py.fin_width, Some(0.4));
+        assert!(py.overhang_depth.is_none());
+    }
+
+    #[test]
+    fn surface_from_wall_overhang_and_fins_merges_into_one_device() {
+        let mut wall = WallSurface::new(10.0, 0.5, Orientation::South).with_overhang(Overhang {
+            depth: 0.7,
+            distance_above: 2.0,
+            extension: 0.0,
+        });
+        wall.fins.push(ShadeFin {
+            depth: 0.3,
+            distance_from_edge: 0.0,
+            side: crate::sim::shading::Side::Left,
+            height: 0.0,
+        });
+        let py = PySurface::from(&wall);
+        // The (true, true) branch produces exactly one OverhangAndFins device.
+        assert_eq!(py.shading_devices.len(), 1);
+        assert_eq!(
+            py.shading_devices[0].shading_type,
+            PyShadingType::OverhangAndFins
+        );
+        assert_eq!(py.shading_devices[0].overhang_depth, 0.7);
+        assert_eq!(py.shading_devices[0].mounting_height, 2.0);
+        assert_eq!(py.shading_devices[0].fin_width, 0.3);
+    }
+
+    // ========================================================================
+    // surface_to_wall round-trip
+    // ========================================================================
+
+    #[test]
+    fn surface_to_wall_preserves_basic_fields() {
+        let mut py = PySurface::new(12.0, 0.45, PyOrientation::East, 2.0);
+        py.append_shading(PyShadingDevice::overhang(0.5, 1.8));
+        let wall = surface_to_wall(&py);
+        assert_eq!(wall.area, 12.0);
+        assert_eq!(wall.u_value, 0.45);
+        assert_eq!(wall.orientation, Orientation::East);
+        assert_eq!(wall.window_area, 2.0);
+        assert!(wall.overhang.is_some());
+        let oh = wall.overhang.unwrap();
+        assert_eq!(oh.depth, 0.5);
+        assert_eq!(oh.distance_above, 1.8);
+    }
+
+    #[test]
+    fn surface_to_wall_overhang_and_fins_round_trip() {
+        let mut py = PySurface::new(8.0, 0.3, PyOrientation::West, 0.0);
+        py.append_shading(PyShadingDevice::overhang_and_fins(0.6, 0.25, 1.7));
+        let wall = surface_to_wall(&py);
+        assert!(wall.overhang.is_some(), "overhang should be set");
+        assert_eq!(wall.fins.len(), 1, "one fin should be set");
+        assert_eq!(wall.overhang.unwrap().depth, 0.6);
+        assert_eq!(wall.fins[0].depth, 0.25);
+    }
+
+    #[test]
+    fn surface_to_wall_falls_back_to_shorthand_fields_when_no_devices() {
+        // When shading_devices is empty, the helper should still respect the
+        // legacy optional shorthand fields (overhang_depth / overhang_height /
+        // fin_width). This is the backward-compat branch.
+        let mut py = PySurface::new(5.0, 0.4, PyOrientation::North, 0.0);
+        py.overhang_depth = Some(0.55);
+        py.overhang_height = Some(1.6);
+        py.fin_width = Some(0.22);
+        // NB: intentionally NOT calling append_shading — shading_devices stays empty.
+        let wall = surface_to_wall(&py);
+        assert!(wall.overhang.is_some());
+        assert_eq!(wall.overhang.unwrap().depth, 0.55);
+        assert_eq!(wall.overhang.unwrap().distance_above, 1.6);
+        assert_eq!(wall.fins.len(), 1);
+        assert_eq!(wall.fins[0].depth, 0.22);
+    }
+
+    // ========================================================================
+    // PySurface / PyZone aggregation helpers
+    // ========================================================================
+
+    #[test]
+    fn surface_total_area_is_area_field() {
+        let s = PySurface::new(15.5, 0.4, PyOrientation::South, 3.0);
+        assert_eq!(s.total_area(), 15.5);
+    }
+
+    #[test]
+    fn surface_append_shading_extends_list() {
+        let mut s = PySurface::new(10.0, 0.4, PyOrientation::South, 0.0);
+        assert_eq!(s.shading_devices.len(), 0);
+        s.append_shading(PyShadingDevice::none());
+        assert_eq!(s.shading_devices.len(), 1);
+    }
+
+    #[test]
+    fn surface_add_overhang_and_fins_update_both_state_and_list() {
+        let mut s = PySurface::new(10.0, 0.4, PyOrientation::South, 0.0);
+
+        // add_overhang updates shorthand fields and appends a device.
+        s.add_overhang(0.7, 1.9);
+        assert_eq!(s.overhang_depth, Some(0.7));
+        assert_eq!(s.overhang_height, Some(1.9));
+        assert_eq!(s.shading_devices.len(), 1);
+
+        // add_fins updates the shorthand field and appends another device.
+        s.add_fins(0.3);
+        assert_eq!(s.fin_width, Some(0.3));
+        assert_eq!(s.shading_devices.len(), 2);
+    }
+
+    fn sample_zone_with_surfaces() -> PyZone {
+        // Two south-facing surfaces + one east-facing surface.
+        let s1 = PySurface::new(10.0, 0.4, PyOrientation::South, 0.0);
+        let s2 = PySurface::new(8.0, 0.5, PyOrientation::South, 0.0);
+        let s3 = PySurface::new(6.0, 0.5, PyOrientation::East, 0.0);
+        PyZone::new(0, 22.0, 50.0, 20.0, 24.0, true, vec![s1, s2, s3])
+    }
+
+    #[test]
+    fn zone_surface_count_matches_constructor() {
+        let z = sample_zone_with_surfaces();
+        assert_eq!(z.surface_count(), 3);
+    }
+
+    #[test]
+    fn zone_total_surface_area_sums_all_surfaces() {
+        let z = sample_zone_with_surfaces();
+        // 10 + 8 + 6 = 24 m²
+        assert!((z.total_surface_area() - 24.0).abs() < 1e-9);
+    }
+
+    #[test]
+    fn zone_surfaces_with_orientation_filters_correctly() {
+        let z = sample_zone_with_surfaces();
+        let south = z.surfaces_with_orientation(PyOrientation::South);
+        assert_eq!(south.len(), 2);
+        for s in &south {
+            assert_eq!(s.orientation, PyOrientation::South);
+        }
+        let east = z.surfaces_with_orientation(PyOrientation::East);
+        assert_eq!(east.len(), 1);
+    }
+
+    #[test]
+    fn zone_surfaces_with_orientation_returns_empty_for_no_match() {
+        let z = sample_zone_with_surfaces();
+        let up = z.surfaces_with_orientation(PyOrientation::Up);
+        assert!(up.is_empty());
+    }
+
+    // ========================================================================
+    // PyHVACSystem derived properties
+    // ========================================================================
+
+    #[test]
+    fn hvac_heating_electrical_input_divides_capacity_by_cop() {
+        let h = PyHVACSystem::new(
+            10_000.0, 8_000.0, 4.0, 4.0, 1, -10.0, 40.0, false, false, 13.0,
+        );
+        assert!((h.heating_electrical_input() - 2_500.0).abs() < 1e-9);
+    }
+
+    #[test]
+    fn hvac_cooling_electrical_input_divides_capacity_by_cop() {
+        let h = PyHVACSystem::new(
+            10_000.0, 8_000.0, 4.0, 4.0, 1, -10.0, 40.0, false, false, 13.0,
+        );
+        assert!((h.cooling_electrical_input() - 2_000.0).abs() < 1e-9);
+    }
+
+    #[test]
+    fn hvac_electrical_input_zero_when_cop_is_zero() {
+        let h = PyHVACSystem::new(
+            10_000.0, 8_000.0, 0.0, 0.0, 1, -10.0, 40.0, false, false, 13.0,
+        );
+        assert_eq!(h.heating_electrical_input(), 0.0);
+        assert_eq!(h.cooling_electrical_input(), 0.0);
+    }
+
+    #[test]
+    fn hvac_can_operate_at_respects_min_max_bounds() {
+        let h = PyHVACSystem::new(
+            10_000.0, 8_000.0, 3.0, 3.2, 1, -10.0, 40.0, false, false, 13.0,
+        );
+        assert!(!h.can_operate_at(-15.0), "below min");
+        assert!(h.can_operate_at(-10.0), "exactly min (inclusive)");
+        assert!(h.can_operate_at(20.0), "mid-range");
+        assert!(h.can_operate_at(40.0), "exactly max (inclusive)");
+        assert!(!h.can_operate_at(45.0), "above max");
+    }
+
+    #[test]
+    fn hvac_from_model_round_trip_through_apply() {
+        // hvac_system_from_model snapshots capacities; apply_hvac_system_to_model
+        // writes them back. Round-tripping should preserve the new values.
+        let mut model = ThermalModel::<VectorField>::new(1);
+        model.hvac_heating_capacity = 12_345.0;
+        model.hvac_cooling_capacity = 6_789.0;
+        let snap = hvac_system_from_model(&model);
+        assert_eq!(snap.heating_capacity, 12_345.0);
+        assert_eq!(snap.cooling_capacity, 6_789.0);
+
+        // Apply modified values back.
+        let mut updated = snap.clone();
+        updated.heating_capacity = 99_999.0;
+        updated.cooling_capacity = 88_888.0;
+        apply_hvac_system_to_model(&mut model, &updated);
+        assert_eq!(model.hvac_heating_capacity, 99_999.0);
+        assert_eq!(model.hvac_cooling_capacity, 88_888.0);
+    }
+
+    #[test]
+    fn hvac_from_model_uses_default_cop_and_stages() {
+        // hvac_system_from_model hard-codes the default COPs / stages / temp
+        // limits when constructing a snapshot — those should match the
+        // PyHVACSystem::new defaults so Python sees consistent values.
+        let model = ThermalModel::<VectorField>::new(1);
+        let snap = hvac_system_from_model(&model);
+        assert_eq!(snap.cop_heating, 3.0);
+        assert_eq!(snap.cop_cooling, 3.2);
+        assert_eq!(snap.stages, 1);
+        assert_eq!(snap.min_outdoor_temp, -10.0);
+        assert_eq!(snap.max_outdoor_temp, 40.0);
+        assert!(!snap.vav_enabled);
+        assert!(!snap.economizer_enabled);
+        assert_eq!(snap.supply_air_temp, 13.0);
+    }
+}
