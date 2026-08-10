@@ -68,11 +68,8 @@ impl MassBalanceSystem {
         }
 
         // Write back to world
-        for i in 0..n {
-            world.set_mass_flowrate(
-                crate::ecs::entity::EquipmentEntity::new(i as u64),
-                mass_flowrates[i],
-            );
+        for (i, &m_dot) in mass_flowrates.iter().enumerate().take(n) {
+            world.set_mass_flowrate(crate::ecs::entity::EquipmentEntity::new(i as u64), m_dot);
         }
     }
 }
@@ -227,9 +224,9 @@ impl HeatTransferSystem {
         }
 
         // Write back to world
-        for i in 0..n {
+        for (i, &h) in new_enthalpies.iter().enumerate().take(n) {
             let entity = crate::ecs::entity::EquipmentEntity::new(i as u64);
-            world.set_enthalpy(entity, new_enthalpies[i]);
+            world.set_enthalpy(entity, h);
         }
     }
 }
@@ -310,9 +307,9 @@ impl ControlLoopSystem {
         }
 
         // Write back to world
-        for i in 0..n {
+        for (i, &p) in positions.iter().enumerate().take(n) {
             let entity = crate::ecs::entity::EquipmentEntity::new(i as u64);
-            world.set_position(entity, positions[i]);
+            world.set_position(entity, p);
         }
     }
 }
