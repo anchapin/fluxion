@@ -2330,7 +2330,8 @@ impl ThermalModel<VectorField> {
         // 2. Coupling solver Newton-Raphson uses negative Z₀ (unstable, disabled)
         // 3. Explicit coupling feedback loop: q_ctf depends on T_zone, T_zone depends on q_ctf
         //    (grows ~3.1x per timestep → NaN). Needs implicit solver.
-        // The 5R1C model passes all tests without CTF. See issue #XXX for CTF fix tracking.
+        // The 5R1C model passes all tests without CTF. Re-enabling requires an implicit
+        // coupling solver for bug #3; no tracking issue is currently open for that work.
         // if spec.case_id == "900FF" {
         //     use crate::physics::ctf_coefficients::CTFMaterial;
         //     let wall_layers = vec![
