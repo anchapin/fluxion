@@ -22,10 +22,13 @@ pub mod bindings;
 pub mod hvac_bindings;
 #[cfg(feature = "python-bindings")]
 pub mod model_bindings;
+// Issue #2528: panic-safety hook + unsafe-site shape validation.
 #[cfg(feature = "python-bindings")]
 pub mod multi_node_bindings;
 #[cfg(feature = "python-bindings")]
 pub mod osm_bindings;
+#[cfg(feature = "python-bindings")]
+pub mod panic_hook;
 
 #[cfg(feature = "python-bindings")]
 pub use hvac_bindings::*;
@@ -41,6 +44,9 @@ use pyo3::prelude::*;
 #[cfg(feature = "python-bindings")]
 #[pymodule]
 pub fn fluxion_python(_py: Python, m: &Bound<'_, PyModule>) -> PyResult<()> {
+    // Issue #2528: same panic hook as the main `fluxion` module. Idempotent.
+    crate::python::panic_hook::install();
+
     // Import and initialize the main fluxion module
     let _fluxion_module = PyModule::import_bound(_py, "fluxion")?;
 
