@@ -176,8 +176,18 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     // Issue #2505 — resolve the full security configuration from the
-    // environment once and hand it to the router builder.
-    let security_cfg = RestSecurityConfig::from_env();
+    // environment once and hand it to the router builder. `from_env` is
+    // fail-closed (Issue #2689): an unrecognized FLUXION_REST_AUTH value
+    // returns an Err and we refuse to boot rather than silently defaulting
+    // to `off`. In practice `check_boot_guard_from_env` above catches this
+    // first; this is the defense-in-depth second gate.
+    let security_cfg = match RestSecurityConfig::from_env() {
+        Ok(cfg) => cfg,
+        Err(msg) => {
+            eprintln!("fluxion-rest: refusing to boot — {msg}");
+            std::process::exit(1);
+        }
+    };
     tracing::info!(
         "fluxion-rest security: auth={:?} cors_origins={} rate_limit_rps={} rate_limit_burst={}",
         security_cfg.auth_mode,
