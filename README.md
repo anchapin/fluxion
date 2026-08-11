@@ -62,7 +62,7 @@ Most functionality is behind cargo feature flags; default builds skip the ONNX r
 - **Acausal HVAC / fluid:** `fluid` (enables `fluxion-fluid` acausal HVAC/fluid port traits).
 - **Advanced co-simulation:** `fluxion-cfd` (FFD/CFD airflow), `fluxion-city` (urban radiation), `dwave` (D-Wave quantum annealing SAPI).
 - **Telemetry / concurrency:** `kafka` (rdkafka telemetry), `loom` (concurrency fuzzing; needs ~32 GB).
-- **Bindings / interop:** `python-bindings`, `extension-module` (maturin wheel), `napi-bindings`, `multi-zone`, `wiring-tracing`, `ashrae_140_v2021`, `dhat` (heap profiling).
+- **Bindings / interop:** `python-bindings`, `python-extension` (maturin wheel build, #2532), `napi-bindings`, `multi-zone`, `wiring-tracing`, `ashrae_140_v2021`, `dhat` (heap profiling).
 
 See [`AGENTS.md`](AGENTS.md) §Toolchain Quirks for the complete, authoritative feature list and build commands.
 

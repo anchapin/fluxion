@@ -61,7 +61,7 @@ Default = none. Most functionality is behind cargo feature flags; default builds
 | Feature | Effect |
 |---------|--------|
 | `python-bindings` | Enable PyO3 Python bindings (links libpython) |
-| `python-extension` | Build as a Python extension module (maturin wheel; #2532. Note: AGENTS.md refers to this as `extension-module`) |
+| `python-extension` | Build as a Python extension module (maturin wheel; #2532). Aliases `python-bindings` + `pyo3/extension-module` |
 | `napi-bindings` | Enable Node.js / NAPI bindings |
 | `ort` (alias `onnx`) | ONNX Runtime inference (AI surrogate); auto-download binaries |
 | `cuda` | CUDA / TensorRT execution providers for `ort` (implies `ort`; auto-downgrades to CPU if feature not built) |
