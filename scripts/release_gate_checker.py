@@ -151,8 +151,20 @@ class ReleaseGateChecker:
 
         return results
 
-    def check_benchmark_gates(self, benchmark_results: dict) -> list[GateResult]:
-        """Check all benchmark gates."""
+    def check_benchmark_gates(
+        self,
+        benchmark_results: dict,
+        gate_filter: Optional[set[str]] = None,
+    ) -> list[GateResult]:
+        """Check all benchmark gates.
+
+        If ``gate_filter`` is provided, only benchmark gates whose ``name``
+        is in the set are evaluated and returned. This lets lightweight PR
+        jobs (issue #2693) evaluate just the throughput + latency absolute
+        floors without needing multi-zone / cross-validation measurements
+        that the heavy criterion sweep produces. Unset (default) evaluates
+        every benchmark gate — preserving the release-time behaviour.
+        """
         results = []
         benchmark_config = self.config.get("benchmark", {})
         throughput_config = benchmark_config.get("throughput", {})
@@ -247,6 +259,13 @@ class ReleaseGateChecker:
                     details={"baseline": baseline_throughput},
                 )
             )
+
+        # Issue #2693: restrict to a named subset of benchmark gates so a
+        # lightweight PR job can evaluate just the absolute throughput +
+        # latency floors without multi-zone / cross-validation data (which
+        # default to 0 and would spuriously fail). Unset ⇒ all gates.
+        if gate_filter:
+            results = [r for r in results if r.name in gate_filter]
 
         return results
 
@@ -396,8 +415,13 @@ class ReleaseGateChecker:
         validation_results: Optional[dict] = None,
         benchmark_results: Optional[dict] = None,
         update_baseline: bool = False,
+        benchmark_gate_filter: Optional[set[str]] = None,
     ) -> GateReport:
-        """Check all gates and return a comprehensive report."""
+        """Check all gates and return a comprehensive report.
+
+        ``benchmark_gate_filter`` restricts the benchmark sub-gates evaluated
+        (issue #2693); see :meth:`check_benchmark_gates`.
+        """
         self.results = []
 
         # Validation gates
@@ -413,7 +437,9 @@ class ReleaseGateChecker:
 
         # Benchmark gates
         if benchmark_results:
-            self.results.extend(self.check_benchmark_gates(benchmark_results))
+            self.results.extend(
+                self.check_benchmark_gates(benchmark_results, benchmark_gate_filter)
+            )
 
         # Calculate overall
         overall_passed = all(r.passed for r in self.results)
@@ -544,8 +570,25 @@ def main():
     parser.add_argument(
         "--benchmark-results", type=Path, help="Path to benchmark results JSON"
     )
+    parser.add_argument(
+        "--benchmark-gates",
+        type=str,
+        default=None,
+        help=(
+            "Comma-separated benchmark gate names to evaluate (issue #2693). "
+            "Default: all benchmark gates. Example: 'throughput,latency' to "
+            "evaluate only the absolute throughput + latency floors on a PR."
+        ),
+    )
     parser.add_argument("--output", "-o", type=Path, help="Output file path")
     args = parser.parse_args()
+
+    # Parse the optional benchmark-gate filter into a set (issue #2693).
+    benchmark_gate_filter: Optional[set[str]] = None
+    if args.benchmark_gates:
+        benchmark_gate_filter = {
+            g.strip() for g in args.benchmark_gates.split(",") if g.strip()
+        }
 
     # Find project root
     script_dir = Path(__file__).parent
@@ -577,6 +620,7 @@ def main():
         validation_results=validation_results,
         benchmark_results=benchmark_results,
         update_baseline=args.update_baseline,
+        benchmark_gate_filter=benchmark_gate_filter,
     )
 
     # Update baseline if requested
