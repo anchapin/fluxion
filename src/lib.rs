@@ -570,15 +570,21 @@ impl Model {
     /// * `outdoor_temp` - Outdoor air temperature (°C)
     /// * `use_surrogates` - If true, use neural surrogates; if false, use analytical calculations
     /// Register an ONNX surrogate model for this `Model` instance.
+    ///
+    /// The path is validated per Issue #2529 (existence, `.onnx` extension,
+    /// allow-list directory via `FLUXION_MODEL_DIR`, and 256 MiB size limit)
+    /// before reaching the ONNX runtime. Error messages are generic and never
+    /// echo the raw user-supplied path.
     fn load_surrogate(&mut self, model_path: String) -> PyResult<()> {
-        match SurrogateManager::load_onnx(&model_path) {
+        let validated = crate::ai::surrogate::validate_model_path(&model_path)
+            .map_err(SurrogateError::new_err)?;
+        match SurrogateManager::load_onnx(&validated.to_string_lossy()) {
             Ok(manager) => {
                 self.surrogates = manager;
                 Ok(())
             }
             Err(e) => Err(SurrogateError::new_err(format!(
-                "Failed to load ONNX surrogate model '{}': {}",
-                model_path, e
+                "Failed to load ONNX surrogate model: {e}"
             ))),
         }
     }
@@ -1712,15 +1718,21 @@ impl BatchOracle {
 
     /// Register an ONNX surrogate model for the oracle. This replaces the internal
     /// `SurrogateManager` with one pointing at the provided model file.
+    ///
+    /// The path is validated per Issue #2529 (existence, `.onnx` extension,
+    /// allow-list directory via `FLUXION_MODEL_DIR`, and 256 MiB size limit)
+    /// before reaching the ONNX runtime. Error messages are generic and never
+    /// echo the raw user-supplied path.
     fn load_surrogate(&mut self, model_path: String) -> PyResult<()> {
-        match SurrogateManager::load_onnx(&model_path) {
+        let validated = crate::ai::surrogate::validate_model_path(&model_path)
+            .map_err(SurrogateError::new_err)?;
+        match SurrogateManager::load_onnx(&validated.to_string_lossy()) {
             Ok(manager) => {
                 self.surrogates = manager;
                 Ok(())
             }
             Err(e) => Err(SurrogateError::new_err(format!(
-                "Failed to load ONNX surrogate model '{}': {}",
-                model_path, e
+                "Failed to load ONNX surrogate model: {e}"
             ))),
         }
     }

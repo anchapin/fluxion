@@ -2598,6 +2598,75 @@ impl SurrogateManager {
     }
 }
 
+/// Maximum permitted ONNX model file size: 256 MiB (Issue #2529).
+pub const MAX_MODEL_SIZE_BYTES: u64 = 256 * 1024 * 1024;
+
+/// Default allow-list directory for ONNX models when `FLUXION_MODEL_DIR` is
+/// unset (Issue #2529). Mirrors the conventional location used by
+/// `FLUXION_ONNX_MODEL`'s default (`models/surrogate_zone_thermal.onnx`).
+const DEFAULT_MODEL_DIR: &str = "models";
+
+/// Validates a user-supplied model path against the security policy from
+/// Issue #2529 before it reaches the ONNX runtime. Reads the allow-list
+/// directory from the `FLUXION_MODEL_DIR` environment variable (default
+/// `models/`).
+///
+/// On success returns the canonicalised absolute path. All error messages
+/// are deliberately generic and omit the raw user-supplied path so that
+/// attacker-controlled input is never reflected back to the Python caller
+/// (closes the error oracle).
+pub fn validate_model_path(p: &str) -> Result<std::path::PathBuf, String> {
+    let dir = std::env::var("FLUXION_MODEL_DIR").unwrap_or_else(|_| DEFAULT_MODEL_DIR.to_string());
+    validate_model_path_in_dir(p, std::path::Path::new(&dir))
+}
+
+/// Parameterised core of [`validate_model_path`]. Accepts an explicit
+/// allow-list directory so it can be unit-tested without racing on the
+/// process-wide `FLUXION_MODEL_DIR` env var.
+///
+/// Checks, in order:
+/// 1. `Path::new(p).is_file()` — existence (follows symlinks like the rest
+///    of `std::fs`).
+/// 2. extension == `onnx`.
+/// 3. canonicalised path is inside `allowed_dir` (component-wise
+///    `starts_with` on canonical paths — blocks `..` traversal and symlinks
+///    that escape the allow-list).
+/// 4. file size ≤ [`MAX_MODEL_SIZE_BYTES`].
+pub fn validate_model_path_in_dir(
+    p: &str,
+    allowed_dir: &Path,
+) -> Result<std::path::PathBuf, String> {
+    let raw = Path::new(p);
+    if !raw.is_file() {
+        return Err("model file not found".to_string());
+    }
+    if raw
+        .extension()
+        .and_then(|e| e.to_str())
+        .map(|e| e.to_ascii_lowercase())
+        != Some("onnx".to_string())
+    {
+        return Err("invalid model file extension (expected .onnx)".to_string());
+    }
+    let canonical_model =
+        std::fs::canonicalize(raw).map_err(|_| "failed to canonicalize model path".to_string())?;
+    let canonical_dir = std::fs::canonicalize(allowed_dir)
+        .map_err(|_| "allowed model directory not found".to_string())?;
+    if !canonical_model.starts_with(&canonical_dir) {
+        return Err("model path outside allowed directory".to_string());
+    }
+    let size = std::fs::metadata(&canonical_model)
+        .map_err(|_| "failed to read model file metadata".to_string())?
+        .len();
+    if size > MAX_MODEL_SIZE_BYTES {
+        return Err(format!(
+            "model file exceeds size limit ({} bytes)",
+            MAX_MODEL_SIZE_BYTES
+        ));
+    }
+    Ok(canonical_model)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -2636,6 +2705,163 @@ mod tests {
     fn load_onnx_file_check() {
         let result = SurrogateManager::load_onnx("/nonexistent/path/model.onnx");
         assert!(result.is_err());
+    }
+
+    // ===== Issue #2529 — PyO3 load_surrogate path validation =====
+    //
+    // All cases use `validate_model_path_in_dir` with a `tempfile` allow-list
+    // directory so they never touch the process-wide `FLUXION_MODEL_DIR` env
+    // var (and therefore cannot race with each other under parallel `cargo
+    // test`).
+
+    /// A real `.onnx` file inside the allow-list directory validates and
+    /// returns a canonicalised path.
+    #[test]
+    fn validate_model_path_accepts_valid_onnx() {
+        let dir = tempfile::tempdir().unwrap();
+        let model = dir.path().join("surrogate.onnx");
+        std::fs::write(&model, b"dummy").unwrap();
+        let rel = model.to_string_lossy().into_owned();
+        let validated = validate_model_path_in_dir(&rel, dir.path());
+        assert!(validated.is_ok(), "valid path rejected: {validated:?}");
+        let canon = validated.unwrap();
+        assert!(canon.is_absolute());
+        assert_eq!(canon.extension().and_then(|e| e.to_str()), Some("onnx"));
+    }
+
+    /// A non-existent file is rejected with a generic "not found" message
+    /// that does NOT echo the supplied path.
+    #[test]
+    fn validate_model_path_rejects_missing_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let missing = dir.path().join("ghost.onnx");
+        let err = validate_model_path_in_dir(&missing.to_string_lossy(), dir.path()).unwrap_err();
+        assert_eq!(err, "model file not found");
+        // The raw user-supplied path must not be reflected back.
+        assert!(!err.contains("ghost"));
+    }
+
+    /// A file with the wrong extension is rejected even if it lives inside
+    /// the allow-list directory.
+    #[test]
+    fn validate_model_path_rejects_wrong_extension() {
+        let dir = tempfile::tempdir().unwrap();
+        let model = dir.path().join("model.bin");
+        std::fs::write(&model, b"not an onnx").unwrap();
+        let err = validate_model_path_in_dir(&model.to_string_lossy(), dir.path()).unwrap_err();
+        assert_eq!(err, "invalid model file extension (expected .onnx)");
+    }
+
+    /// An uppercase `.ONNX` extension is accepted (case-insensitive check).
+    #[test]
+    fn validate_model_path_accepts_uppercase_extension() {
+        let dir = tempfile::tempdir().unwrap();
+        let model = dir.path().join("MODEL.ONNX");
+        std::fs::write(&model, b"dummy").unwrap();
+        let res = validate_model_path_in_dir(&model.to_string_lossy(), dir.path());
+        assert!(res.is_ok(), "uppercase .ONNX should be accepted: {res:?}");
+    }
+
+    /// A `.onnx` file inside the allow-list but reached via `..` traversal
+    /// still resolves into the allow-list, so it must be accepted. The
+    /// canonicalisation + `starts_with` check operates on real paths, not
+    /// string prefixes.
+    #[test]
+    fn validate_model_path_allows_dotdot_inside_allowlist() {
+        let dir = tempfile::tempdir().unwrap();
+        let subdir = dir.path().join("sub");
+        std::fs::create_dir(&subdir).unwrap();
+        let model = subdir.join("m.onnx");
+        std::fs::write(&model, b"x").unwrap();
+        // Build a path with redundant `..` that still lands inside the dir.
+        let traversal = subdir
+            .join("..")
+            .join("sub")
+            .join("m.onnx")
+            .to_string_lossy()
+            .into_owned();
+        let res = validate_model_path_in_dir(&traversal, dir.path());
+        assert!(res.is_ok(), "in-allowlist dotdot should pass: {res:?}");
+    }
+
+    /// Path-traversal to a file OUTSIDE the allow-list directory is rejected.
+    /// Uses a sibling temp dir so the `.onnx` file genuinely exists but lives
+    /// beyond the allow-list boundary.
+    #[test]
+    fn validate_model_path_rejects_traversal_outside_allowlist() {
+        let allowed = tempfile::tempdir().unwrap();
+        let outside = tempfile::tempdir().unwrap();
+        // Real .onnx file in the *outside* dir.
+        let evil = outside.path().join("evil.onnx");
+        std::fs::write(&evil, b"pwned").unwrap();
+        // Reference it via a traversal path from inside the allowed dir.
+        let rel = allowed
+            .path()
+            .join("..")
+            .join(outside.path().file_name().unwrap())
+            .join("evil.onnx")
+            .to_string_lossy()
+            .into_owned();
+        let err = validate_model_path_in_dir(&rel, allowed.path()).unwrap_err();
+        assert_eq!(err, "model path outside allowed directory");
+    }
+
+    /// `/etc/passwd` (no `.onnx` extension) is rejected — the classic
+    /// traversal probe from the issue. Uses an absolute path so it is
+    /// deterministic regardless of the test working directory.
+    #[test]
+    fn validate_model_path_rejects_etc_passwd() {
+        let dir = tempfile::tempdir().unwrap();
+        // /etc/passwd exists on Linux; guard other platforms.
+        if !std::path::Path::new("/etc/passwd").is_file() {
+            eprintln!("skipping: /etc/passwd not present on this platform");
+            return;
+        }
+        let err = validate_model_path_in_dir("/etc/passwd", dir.path()).unwrap_err();
+        // Fails at the extension check (no .onnx). Either way, it must fail
+        // and must not echo the path.
+        assert!(
+            err == "invalid model file extension (expected .onnx)"
+                || err == "model path outside allowed directory"
+        );
+        assert!(!err.contains("passwd"));
+    }
+
+    /// A file larger than [`MAX_MODEL_SIZE_BYTES`] (256 MiB) is rejected.
+    /// Uses `File::set_len` to create a sparse file whose reported length
+    /// exceeds the limit without actually allocating 256 MiB on disk
+    /// (`metadata().len()` reports the logical size).
+    #[test]
+    fn validate_model_path_rejects_oversized_file() {
+        // The limit must be exactly 256 MiB (Issue #2529 acceptance).
+        assert_eq!(MAX_MODEL_SIZE_BYTES, 256 * 1024 * 1024);
+
+        let dir = tempfile::tempdir().unwrap();
+        let model = dir.path().join("huge.onnx");
+        let f = std::fs::File::create(&model).unwrap();
+        f.set_len(MAX_MODEL_SIZE_BYTES + 1).unwrap();
+        drop(f);
+        let err = validate_model_path_in_dir(&model.to_string_lossy(), dir.path()).unwrap_err();
+        assert_eq!(
+            err,
+            format!(
+                "model file exceeds size limit ({} bytes)",
+                MAX_MODEL_SIZE_BYTES
+            )
+        );
+        // Generic message: must not contain the user-supplied path.
+        assert!(!err.contains("huge"));
+    }
+
+    /// A small file (well under the limit) passes the size gate — the
+    /// acceptance criterion "file size <= 256 MiB".
+    #[test]
+    fn validate_model_path_accepts_small_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let model = dir.path().join("small.onnx");
+        std::fs::write(&model, b"x").unwrap();
+        let res = validate_model_path_in_dir(&model.to_string_lossy(), dir.path());
+        assert!(res.is_ok(), "small file should pass: {res:?}");
     }
 
     #[test]
