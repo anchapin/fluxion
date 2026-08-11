@@ -115,6 +115,7 @@ ML-surrogate swap-point traits:
 - `Architecture Drift Detection` (nightly + on `src/**/*.rs`/`ARCHITECTURE.md` changes)
 - `Docs Hygiene Gate` (#2466) · `Code Coverage Gate` (#1932, ratchet; baseline in `validation/coverage_baseline.json`)
 - `Mutation Testing (advisory)` (#1891, diff-scoped, non-blocking) — full suite runs nightly against `develop`
+- `Loom Concurrency Stress Tests` (#2521, advisory) — weekly cron (`0 3 * * 0`) + `workflow_dispatch`; runs `LOOM=1 cargo test --features loom --test loom_concurrency_tests` on the 32 GB runner (`vars.FLUXION_LINUX_RUNNER || ubuntu-latest-8-cores`), posts a `loom-stress-results` summary artifact
 
 Heavy Linux jobs honour `vars.FLUXION_LINUX_RUNNER` (self-hosted Hetzner fallback).
 
