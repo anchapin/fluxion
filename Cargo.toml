@@ -207,10 +207,15 @@ libm = "0.2"
 statrs = "0.18.0"
 
 # AI / Machine Learning Integration
-# Using 2.0.0-rc.10 (prerelease) as stable 1.20 is not available on crates.io.
-# Gated behind the `ort` feature (issue #1294) so the default build (no features)
-# does not pull in the ONNX runtime. The mutation-testing workflow opts in via
-# `--features ort`; default Rust builds stay small and fast.
+# `ort` (ONNX Runtime bindings, pykeio/ort) has NO stable 2.0 release on crates.io
+# yet — latest is 2.0.0-rc.13 (issue #2691). We pin rc.10 (NOT the newest rc.13)
+# because rc.13 renamed/removed `CUDAExecutionProvider` from `execution_providers`,
+# breaking the `--features cuda` build path (src/ai/surrogate.rs, src/ai/rl_policy.rs).
+# Migrating to rc.13's EP API is deferred until it stabilizes. The pin stays behind
+# the `ort` feature (issue #1294) so the default build does not pull in the ONNX
+# runtime; `fluxion-behavior` also makes `ort` opt-in (issue #2691) so the RC is not
+# pulled into every consumer. When `ort` 2.0 stable ships, bump this pin, port the
+# CUDA EP call sites, and drop the RC note in docs/KNOWN_ISSUES.md (CI-03).
 ort = { version = "2.0.0-rc.10", features = ["download-binaries"], optional = true }
 
 # Python Interop
