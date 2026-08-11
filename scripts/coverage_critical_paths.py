@@ -405,6 +405,63 @@ def evaluate_gate(
                 f"   ℹ️  {name} branch: unenforced (baseline 0.0), current {cur:.2f}%"
             )
 
+        # --- Absolute branch floor + v1.3 target (#2710) ----------------
+        # The regression ratchet above only prevents coverage from
+        # *dropping* relative to the recorded baseline — it never drives
+        # coverage *up* toward a goal, so a 60-68% branch gap on the
+        # critical physics paths could persist forever.  Issue #2710 adds
+        # two independent per-path policy levers read from the baseline:
+        #
+        #   min_branch_floor    absolute hard floor; FAILS when current
+        #                       branch coverage is below it.  Independent
+        #                       of the regression ratchet so it still
+        #                       bites even if the ratchet baseline were
+        #                       lowered.  0.0 / absent = unenforced.
+        #
+        #   v1_3_target_branch  aspirational target for the v1.3 release;
+        #                       REPORTED (gap printed every run) but not
+        #                       yet failing — makes the remaining gap
+        #                       visible so it cannot be ignored.  Becomes
+        #                       a hard release gate once the metrics
+        #                       approach it.
+        min_branch_floor = (
+            float(base_entry.get("min_branch_floor", 0.0))
+            if isinstance(base_entry, dict)
+            else 0.0
+        )
+        v1_3_target = (
+            float(base_entry.get("v1_3_target_branch", 0.0))
+            if isinstance(base_entry, dict)
+            else 0.0
+        )
+
+        if rep.branches_found > 0:
+            if min_branch_floor > 0.0:
+                if rep.branch_pct < min_branch_floor:
+                    path_failed = True
+                    failures.append(
+                        f"{name}: branch coverage {rep.branch_pct:.2f}% is below "
+                        f"the absolute minimum floor {min_branch_floor:.2f}% "
+                        f"(#2710 v1.3 critical-path bar)"
+                    )
+                else:
+                    print(
+                        f"   ✅ {name} branch floor: {rep.branch_pct:.2f}% ≥ "
+                        f"min {min_branch_floor:.2f}% (#2710)"
+                    )
+            if v1_3_target > 0.0:
+                gap = v1_3_target - rep.branch_pct
+                if gap > 0.0:
+                    print(
+                        f"   🎯 {name} v1.3 target: {rep.branch_pct:.2f}% / "
+                        f"{v1_3_target:.2f}% — {gap:.2f}pp to close (#2710)"
+                    )
+                else:
+                    print(
+                        f"   🎯 {name} v1.3 target: MET "
+                        f"({rep.branch_pct:.2f}% ≥ {v1_3_target:.2f}%)"
+                    )
+
         if not path_failed:
             # Aggregate confirmation line for paths that passed both
             # dimensions (keeps the single-path summary readable when

@@ -77,6 +77,22 @@ def build_baseline_payload(reports: dict, previous: dict) -> dict:
             max(current_branch, prev_branch) if prev_branch > 0.0 else current_branch
         )
 
+        # Policy levers (#2710): min_branch_floor / v1_3_target_branch are
+        # maintainer-set goals, not measured values, so re-baselining
+        # neither invents nor erases them — they are carried forward
+        # verbatim from the previous baseline (defaulting to 0.0 =
+        # unenforced when absent, matching the existing convention).
+        prev_min_floor = (
+            float(prev_entry.get("min_branch_floor", 0.0))
+            if isinstance(prev_entry, dict)
+            else 0.0
+        )
+        prev_v1_3_target = (
+            float(prev_entry.get("v1_3_target_branch", 0.0))
+            if isinstance(prev_entry, dict)
+            else 0.0
+        )
+
         new_paths[name] = {
             "line": ratcheted_line,
             "branch": ratcheted_branch,
@@ -84,6 +100,8 @@ def build_baseline_payload(reports: dict, previous: dict) -> dict:
             "lines_found": rep.lines_found if rep else 0,
             "branches_hit": rep.branches_hit if rep else 0,
             "branches_found": rep.branches_found if rep else 0,
+            "min_branch_floor": prev_min_floor,
+            "v1_3_target_branch": prev_v1_3_target,
         }
 
     return {
@@ -92,6 +110,10 @@ def build_baseline_payload(reports: dict, previous: dict) -> dict:
             "A value of 0.0 means the path/dimension is unenforced; the gate "
             "activates automatically once a real number is recorded here. "
             "Both line and branch coverage are ratcheted one-way (#2533). "
+            "Per critical path, min_branch_floor is an absolute hard floor "
+            "and v1_3_target_branch is the v1.3 release target (#2710); "
+            "both default to 0.0 (unenforced) and are carried forward "
+            "verbatim by this script. "
             "Regenerate with `python scripts/coverage_baseline.py --update "
             "--lcov target/llvm-cov/lcov.info` (requires `cargo llvm-cov "
             "--branch` upstream)."
@@ -107,6 +129,15 @@ def build_baseline_payload(reports: dict, previous: dict) -> dict:
                 "drops below baseline × (1 − tolerance). Both dimensions' "
                 "baselines never move downward. Branch coverage requires "
                 "cargo llvm-cov --branch-coverage (#2533)."
+            ),
+        },
+        "_policy": {
+            "issue": 2710,
+            "description": (
+                "min_branch_floor (absolute hard floor; FAILS below it, "
+                "independent of the ratchet) + v1_3_target_branch "
+                "(aspirational v1.3 target; REPORTED but not yet failing). "
+                "Both default to 0.0 = unenforced; carried forward verbatim."
             ),
         },
         "paths": new_paths,

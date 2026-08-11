@@ -79,7 +79,25 @@ the command after coverage improvements to bump the ratchet upward.
 |--------|--------|-------|
 | Overall line coverage | >80% | `docs/CONTRIBUTING.md` baseline is 69.36% (Phase 10) |
 | Per-critical-path line coverage | >85% | Ratchet enforces "no regression" first |
-| Branch coverage | Informational | Reported in step summary, not yet gated |
+| Per-critical-path branch coverage | >75% (v1.3) | Ratchet (#2533) + absolute `min_branch_floor` (#2710) |
+
+## v1.3 branch-coverage floor and target (#2710)
+
+The regression ratchet only prevents coverage from *dropping* — it never
+drives it *up*, so a 60–68% branch gap on the critical physics paths
+could persist forever. Issue #2710 adds two independent per-path policy
+levers to `validation/coverage_baseline.json`:
+
+- **`min_branch_floor`** — an absolute hard floor. The gate FAILS when
+  current branch coverage is below it, independent of the ratchet
+  baseline. Set at or slightly below current values so the gate passes
+  today; maintainers raise it over time. `0.0` = unenforced.
+- **`v1_3_target_branch`** — the v1.3 release target (75% branch). The
+  gate REPORTS the gap every run but does not yet fail; it becomes a
+  hard release gate once the metrics approach it.
+
+Together they ensure the branch gap is tracked and pressured toward a
+goal rather than silently locked in by the one-way ratchet.
 
 ## Related
 
