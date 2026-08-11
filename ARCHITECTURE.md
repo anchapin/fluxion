@@ -921,7 +921,7 @@ wiring live in `src/sim/fluxion_city_flux_provider.rs` (Issues #2344 and
 **Source**: `fluxion-mcp/` (standalone crate, workspace member)
 **Purpose**: Model Context Protocol (MCP) server exposing Fluxion building-energy primitives to LLM clients over line-delimited JSON-RPC on stdin/stdout.
 
-**Crate independence**: `fluxion-mcp` unconditionally depends on `fluxion` with `features = ["multi-zone"]` and on `fluxion-fluid` + `fluxion-toon`. The MCP layer is a thin transport adapter; all physics lives in `fluxion` / `fluxion-core`.
+**Crate independence**: `fluxion-mcp` depends on `fluxion` with `default-features = false` and on `fluxion-fluid` + `fluxion-toon`. `multi-zone` is a **default feature of fluxion-mcp itself** (`default = ["multi-zone"]`, forwarded via `multi-zone = ["fluxion/multi-zone"]`), so `cargo build -p fluxion-mcp` enables it out of the box while `--no-default-features` no longer forces `multi-zone` onto the rest of the workspace (Issue #2540). The MCP layer is a thin transport adapter; all physics lives in `fluxion` / `fluxion-core`.
 
 **Threading model** (Issue #2562 — `RefCell` + blocking stdin replaced with `tokio::sync::Mutex` + `tokio::io`):
 
