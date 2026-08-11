@@ -133,8 +133,8 @@ Heavy Linux jobs honour `vars.FLUXION_LINUX_RUNNER` (self-hosted Hetzner fallbac
 - `DWAVE_API_TOKEN` — required at runtime for the `dwave` feature (D-Wave SAPI REST).
 - `PYO3_USE_ABI3_FORWARD_COMPATIBILITY=1` + `RUST_MIN_STACK=33554432` — set by Python-bindings CI to avoid linker SIGSEGV.
 - `CARGO_BUILD_JOBS=1` — set by Clippy CI to keep peak RSS low.
-- `FLUXION_MQTT_ALLOW_INSECURE` — `fluxion-twin` MQTT consumer. Set to a truthy value (`1`/`true`/`yes`/`on`) to permit plaintext broker URLs (`mqtt://`/`tcp://`). **Default: TLS-only** (`mqtts://`, port 8883); plaintext is rejected unless this is set. Local dev only.
-- `FLUXION_MQTT_INSECURE` — `fluxion-twin` MQTT consumer. Set to a truthy value to skip TLS server-certificate validation (e.g. for self-signed brokers). **Dangerous** — disables all cert checking; logged as a warning. Local dev only.
+- `FLUXION_MQTT_ALLOW_INSECURE` — `fluxion-twin` MQTT consumer. Set to a truthy value (`1`/`true`/`yes`/`on`) to permit plaintext broker URLs (`mqtt://`/`tcp://`). **Default: TLS-only** (`mqtts://`, port 8883); plaintext is rejected unless this is set. Also serves as the **release-boot-guard opt-in** (#2703): in release builds, any insecure MQTT transport — plaintext **or** disabled cert validation — is refused at boot unless this is set (parity with `FLUXION_REST_ALLOW_INSECURE`). Debug builds skip the guard for local dev.
+- `FLUXION_MQTT_INSECURE` — `fluxion-twin` MQTT consumer. Set to a truthy value to skip TLS server-certificate validation (e.g. for self-signed brokers). **Dangerous** — disables all cert checking; logged as a warning. In **release** builds the boot guard (#2703) refuses to start with this set unless `FLUXION_MQTT_ALLOW_INSECURE=1` is also set; debug builds permit it for local dev.
 
 ## Toolchain Quirks
 
