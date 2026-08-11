@@ -695,8 +695,28 @@ name = "surrogate_cuda_smoke"
 path = "tests/surrogate_cuda_smoke_test.rs"
 harness = true
 
-# Patch rustls-webpki to address RUSTSEC-2026-0049 and RUSTSEC-2026-0104
-# (CRL parsing vulnerabilities fixed in >= 0.103.13).
-# Patches rumqttc from our fork to use the safe rustls-webpki version.
-[patch.crates-io]
-rumqttc = { git = "https://github.com/anchapin/rumqtt", branch = "fix/rustsec-2026-webpki" }
+# Issue #2690 — supply-chain: rumqttc was previously redirected via a
+# `[patch.crates-io]` entry to a fork on a *personal* GitHub account
+# (anchapin/rumqtt, branch `fix/rustsec-2026-webpki`). A floating branch on a
+# personal account bypasses crates.io provenance entirely and is an
+# unacceptable supply-chain exposure, so the patch has been removed.
+# `fluxion-twin` now consumes the official crates.io release (`rumqttc = "0.25"`
+# → 0.25.1) like the rest of the workspace.
+#
+# Trade-off (tracked): the official rumqttc 0.25.1 still declares
+# `rustls-webpki = "^0.102.8"` under its `use-rustls` feature, so four
+# CRL / name-constraint advisories on that copy (RUSTSEC-2026-0049, -0098,
+# -0099, -0104; fixed in rustls-webpki >= 0.103.10 / 0.103.12 / 0.103.13)
+# re-surface transiently until upstream publishes a fixed release. No patched
+# 0.102.x exists on crates.io (0.102.8 is the last 0.102 release), so they
+# cannot be cleared without an upstream rumqttc release. The
+# `[advisories].ignore` entries in `.cargo/audit.toml` carry this temporarily
+# with explicit removal conditions.
+#
+# Upstream tracking:
+#   - https://github.com/bytebeamio/rumqtt/issues/1067  (advisory report)
+#   - https://github.com/bytebeamio/rumqtt/pull/1037     (open PR: bump
+#     rustls-webpki + tokio-rustls)
+# When a fixed rumqttc is published on crates.io, bump `rumqttc = "0.25"` to
+# that version in `crates/fluxion-twin/Cargo.toml` and remove the matching
+# `.cargo/audit.toml` ignore entries + this comment.
