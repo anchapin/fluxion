@@ -1,0 +1,144 @@
+# cargo-deny configuration — supply-chain gate for Fluxion (issue #2699).
+#
+# Complements `.cargo/audit.toml` (cargo-audit) by enforcing:
+#   - [licenses]   no copyleft (GPL/AGPL/LGPL) sneaks in transitively;
+#                  Fluxion is Apache-2.0 and only permissive licenses are allowed.
+#   - [bans]       duplicate-version detection (start permissive: "warn") and a
+#                  documented denylist slot for banned crates.
+#   - [advisories] RustSec advisory DB scan; `ignore` list mirrored from
+#                  `.cargo/audit.toml` so the two tools agree.
+#   - [sources]    flag crates from unexpected registries or git sources.
+#
+# Run locally:  cargo deny check
+# CI:           .github/workflows/security.yml → job `cargo-deny`
+#
+# Schema note: cargo-deny 0.14+ moved advisory severity to a scope enum
+# (`all` | `workspace` | `transitive` | `none`) and applies sensible defaults
+# (vulnerabilities/unsound → deny) out of the box. We set `unmaintained =
+# "workspace"` so that unmaintained advisories are only enforced for workspace
+# members, matching `.cargo/audit.toml`'s `informational_warnings =
+# ["unmaintained"]` (transitive unmaintained deps are non-blocking in both
+# tools). Override on the CLI via `cargo deny check --deny <lint>` if needed.
+
+[graph]
+# Scan the default-feature graph (matches the primary `cargo build`). Toggle
+# with `cargo deny check --all-features` when auditing the full feature space.
+all-features = false
+no-default-features = false
+
+[output]
+feature-depth = 1
+
+# -----------------------------------------------------------------------------
+# Advisories — RustSec database scan.
+# The `ignore` list is intentionally kept in lock-step with `.cargo/audit.toml`
+# so cargo-audit and cargo-deny agree. When you add or remove an ignore in one
+# file, update the other. A single shared source of truth is a follow-up.
+# -----------------------------------------------------------------------------
+[advisories]
+# Only enforce `unmaintained` for workspace members (transitive unmaintained
+# deps such as rustls-pemfile via rumqttc are non-blocking, matching
+# `.cargo/audit.toml`). Vulnerabilities and unsound advisories are denied by
+# default for all crates.
+unmaintained = "workspace"
+ignore = [
+    "RUSTSEC-2025-0020",  # see .cargo/audit.toml for context
+    "RUSTSEC-2024-0436",  # PyO3 Sync bound (pre-0.23); tracked with the PyO3 migration
+    "RUSTSEC-2026-0192",  # ttf-parser unmaintained (transitive via plotters)
+    # --- TEMPORARY: Issue #2690 (rumqttc → rustls-webpki 0.102.8) -------------
+    # The [patch.crates-io] personal-fork was removed in #2690; fluxion-twin
+    # now consumes official rumqttc 0.25.1 which pins webpki ^0.102.8 (no
+    # patched 0.102.x exists). Remove these four once upstream rumqttc bumps
+    # past webpki 0.102.x. Upstream: bytebeamio/rumqtt#1067, #1037.
+    "RUSTSEC-2026-0049",
+    "RUSTSEC-2026-0098",
+    "RUSTSEC-2026-0099",
+    "RUSTSEC-2026-0104",
+    # --- TEMPORARY: unsoundness advisories surfaced by cargo-deny's fresher DB -
+    # cargo-deny fetches the RustSec DB independently and surfaces two unsound
+    # advisories that cargo-audit (with the current DB snapshot) does NOT flag.
+    # Both have patch-bump fixes (no API breakage) but bumping them is a
+    # dependency-version change that is out of scope for the #2699 gate-only
+    # change ("do not change dependency versions"). TODO: drop these two
+    # ignores and run `cargo update -p rand -p anyhow` once a dedicated dep
+    # refresh is scheduled.
+    #   - rand 0.8.5 (RUSTSEC-2026-0097): unsound ThreadRng reseeding under a
+    #     custom logger. Fix: >=0.8.6 / 0.9.3 / 0.10.1.
+    #   - anyhow 1.0.102 (RUSTSEC-2026-0190): unsound Error::downcast_mut.
+    #     Fix: >=1.0.103.
+    "RUSTSEC-2026-0097",
+    "RUSTSEC-2026-0190",
+]
+
+# -----------------------------------------------------------------------------
+# Licenses — allowlist of permissive licenses only. Fluxion is Apache-2.0.
+#
+# cargo-deny 0.20 (PR #611) removed the `[licenses] deny` field: anything NOT
+# in `allow` is rejected automatically. So copyleft (GPL/AGPL/LGPL/EUPL) is
+# excluded BY OMISSION — if a crate's resolved license expression can't be
+# satisfied from the allowlist, the check fails with a clear "license not
+# allowed" diagnostic. (LGPL-2.1-or-later appears only inside `r-efi`'s
+# `MIT OR Apache-2.0 OR LGPL-2.1-or-later` OR-expression; since MIT and
+# Apache-2.0 are allowed, that crate resolves clean without listing LGPL.)
+# -----------------------------------------------------------------------------
+[licenses]
+allow = [
+    "MIT",
+    "MIT-0",
+    "Apache-2.0",
+    "Apache-2.0 WITH LLVM-exception",
+    "BSD-2-Clause",
+    "BSD-3-Clause",
+    "ISC",
+    "Zlib",
+    "0BSD",
+    "Unlicense",
+    "Unicode-3.0",
+    "Unicode-DFS-2016",
+    "MPL-2.0",          # file-level copyleft — acceptable (colored, dwrote, option-ext)
+    "CC0-1.0",
+    "BSL-1.0",
+    "CDLA-Permissive-2.0",
+]
+confidence-threshold = 0.8
+
+# -----------------------------------------------------------------------------
+# Bans — duplicate-version detection and a crate denylist.
+# START PERMISSIVE: `multiple-versions = "warn"` so the gate passes today.
+# The current workspace has ~42 duplicate-version instances (mostly
+# windows-sys/targets and glam — both transitive and not trivially removable).
+# To tighten later: flip to "deny" and add unavoidable duplicates to `skip`
+# with a comment per entry. See issue #2699 follow-up.
+# -----------------------------------------------------------------------------
+[bans]
+multiple-versions = "warn"
+wildcards = "warn"
+highlight = "all"
+workspace-default-features = "allow"
+external-default-features = "allow"
+# Banned-crate denylist — add crates that must never enter the dependency graph.
+# Example: a crate with a license-downgrade history or a known-broken release.
+# Entries use the `crate = "name@version"` spec (version optional) and may
+# carry a `reason`. Wrapper crates can exempt a banned transitive via
+# `{ crate = "x@1.0", wrappers = ["direct-depender"] }`.
+deny = [
+    # (empty by default — add as needed)
+]
+# Focused skip exceptions for duplicate-version warnings that are unavoidable.
+# Only add a crate here as a last resort after attempting `cargo update` or a
+# workspace pin, and ALWAYS include a `reason`. Not needed while
+# multiple-versions = "warn"; populated when tightening to "deny".
+skip = [
+    # { crate = "windows-sys@0.48.0", reason = "transitive via windows-targets 0.48; unifiable only by bumping the whole windows-* family" },
+]
+
+# -----------------------------------------------------------------------------
+# Sources — flag crates from anywhere other than crates.io. Fluxion's only
+# expected registry is crates.io; the rumqttc personal-fork [patch.crates-io]
+# was removed in #2690 and there should be no git-only deps in the default graph.
+# -----------------------------------------------------------------------------
+[sources]
+unknown-registry = "warn"
+unknown-git = "warn"
+allow-registry = ["https://github.com/rust-lang/crates.io-index"]
+allow-git = []
