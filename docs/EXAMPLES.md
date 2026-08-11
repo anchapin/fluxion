@@ -47,7 +47,9 @@ eui = model.simulate(years=1, use_surrogates=False)
 
 `model.simulate(years, use_surrogates)` runs the physics for
 `years * 8760` timesteps and returns a single `f64` EUI value
-(uncalibrated — see the pre-release note in `docs/QUICKSTART.md`).
+(uncalibrated — see the "Production scope" section in
+[`docs/QUICKSTART.md`](QUICKSTART.md); calibration of the absolute
+energy rate is tracked in issues #749 / #767).
 
 If you want to use a pre-trained ONNX surrogate, call
 `model.load_surrogate("path/to/model.onnx")` before
