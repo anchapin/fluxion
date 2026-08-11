@@ -135,9 +135,18 @@ pub fn compute_r_interior_to_mass(
 /// Compute R_exterior_to_mass for a construction.
 ///
 /// This represents the thermal resistance from the exterior environment to the thermal mass node
-/// (located at the dominant insulation layer). Per ISO 13790 Annex C:
+/// (located at the midpoint of the dominant insulation layer). Per ISO 13790 Annex C:
 /// - Layers exterior to insulation contribute their full R-value
 /// - The insulation layer contributes half its R-value
+///
+/// # Layer ordering convention
+/// `Construction::layers` is ordered **interior → exterior** (index 0 is the interior surface,
+/// the last index is the exterior surface); see `fluxion_core::construction::Construction`.
+/// `find_dominant_insulation_layer_index` returns an index in that same interior-based frame.
+/// The exterior-to-mass path therefore runs from the **last** (exterior-most) layer inward, so
+/// we iterate the slice in reverse: full R for every layer strictly exterior to the insulation,
+/// then half the insulation R, then stop. Interior-side layers (index < `ins_idx`) are excluded
+/// — they belong to [`compute_r_interior_to_mass`].
 ///
 /// # Arguments
 /// * `construction` - The construction to compute R for
@@ -158,18 +167,22 @@ pub fn compute_r_exterior_to_mass(
     let mut r_exterior_to_mass = r_ext_film;
 
     let layers = &construction.layers;
-    let num_layers = layers.len();
 
-    for (idx, layer) in layers.iter().enumerate() {
-        let reverse_idx = num_layers - 1 - idx;
+    // Iterate exterior (last index) → interior (index 0). `.enumerate().rev()` yields the
+    // original forward indices in descending order, so `idx` is still the interior-based index
+    // used by `find_dominant_insulation_layer_index`.
+    for (idx, layer) in layers.iter().enumerate().rev() {
         let layer_r = layer.r_value();
 
-        if reverse_idx > ins_idx {
+        if idx > ins_idx {
+            // Layer is strictly exterior to the insulation → full R contribution.
             r_exterior_to_mass += layer_r;
-        } else if reverse_idx == ins_idx {
+        } else if idx == ins_idx {
+            // Insulation layer: the mass node sits at its midpoint (ISO 13790 half-rule).
             r_exterior_to_mass += layer_r / 2.0;
             break;
         } else {
+            // idx < ins_idx: interior-side layer — part of R_interior_to_mass, not this path.
             break;
         }
     }
@@ -3199,9 +3212,6 @@ mod tests {
     fn test_compute_r_exterior_to_mass_case600_wall_finite_and_includes_film() {
         // The exterior path must start at the exterior film resistance
         // (1 / EXTERIOR_FILM_COEFF_DEFAULT) and stay finite + positive.
-        // (Exact layer attribution in this helper is being audited separately;
-        //  here we assert the invariants that hold regardless: film term
-        //  present, sign-correct, finite.)
         let wall = case600_wall();
         let r_ext = compute_r_exterior_to_mass(&wall, SimSurfaceType::Wall, 10.0);
         let r_film =
@@ -3211,6 +3221,42 @@ mod tests {
         assert!(r_ext >= r_film - TOL);
         // Must include at least the film + half the dominant insulation (1.65/2).
         assert!(r_ext >= r_film + (1.65 / 2.0) - TOL);
+    }
+
+    /// Regression for issue #2613: the exterior-to-mass path must sum only
+    /// EXTERIOR-side layers (wood siding) plus half the insulation, never the
+    /// interior plasterboard. Verified against a layer-by-layer Python reference
+    /// (RULES.md: no parameter tuning; ASHRAE 140 Case 600 wall constants).
+    ///
+    /// Reference (Python, h_ext = EXTERIOR_FILM_COEFF_DEFAULT = 18.3 W/m²K):
+    ///   R_film       = 1/18.3           = 0.054645 m²K/W
+    ///   R_wood_siding = 0.009/0.14       = 0.064286 m²K/W   (exterior layer, full)
+    ///   R_fiberglass/2 = (0.066/0.04)/2  = 0.825000 m²K/W   (insulation, half)
+    ///   R_exterior_to_mass              = 0.943930 m²K/W
+    ///
+    /// The pre-fix code walked the slice interior→exterior with a `reverse_idx`
+    /// comparison, which folded the interior plasterboard (R=0.075) into the
+    /// exterior path instead of the wood siding, yielding 0.954645 m²K/W
+    /// (delta = R_plaster − R_wood = 0.010714).
+    #[test]
+    fn test_compute_r_exterior_to_mass_case600_wall_physical_value() {
+        let wall = case600_wall();
+        let r_ext = compute_r_exterior_to_mass(&wall, SimSurfaceType::Wall, 10.0);
+        let r_film =
+            1.0 / crate::physics::constants::thermal::ashrae_140::EXTERIOR_FILM_COEFF_DEFAULT;
+        let r_wood_siding = 0.009_f64 / 0.14;
+        let r_fiberglass = 0.066_f64 / 0.04;
+        let expected = r_film + r_wood_siding + r_fiberglass / 2.0; // ≈ 0.943930
+        assert!(
+            approx_eq(r_ext, expected, 1e-9),
+            "R_exterior_to_mass: expected {expected} (≈0.9439), got {r_ext}"
+        );
+        // Hard guard against the pre-fix regression: must NOT equal the buggy value.
+        let buggy = r_film + 0.075 + r_fiberglass / 2.0; // plasterboard in exterior path ≈ 0.954645
+        assert!(
+            !approx_eq(r_ext, buggy, 1e-3),
+            "R_exterior_to_mass matched the pre-fix buggy value {buggy} (issue #2613 regressed)"
+        );
     }
 
     #[test]
