@@ -1,0 +1,41 @@
+{
+  "_doc": "Known structural-failure baseline for the ASHRAE 140 strict +/-15% annual-energy gate (issue #2506). The Case 600/900 annual COOLING physics gap is NOT yet fixed (tracked by the post-#1323 / #1213 / #1328 cooling-load chain); these two metrics are expected to FAIL the +/-15% band today. The strict-energy-gate workflow runs the two `#[ignore]`'d strict tests with `--include-ignored`, parses the printed H/C values, computes each metric's gap as a percentage of the band midpoint, and compares against this baseline. The gate FAILS only when a metric REGRESSES beyond `regression_tolerance_pp` percentage points worse than its recorded `gap_pct_of_mid` (or when a previously-`pass` metric starts failing beyond the tolerance). When the physics is fixed and a cooling metric re-enters its band (gap == 0), lower its value here and eventually un-ignore the tests (issues #1333 / #2506 acceptance). Do NOT raise a baseline gap to make a regression disappear (RULES.md: no parameter tuning).",
+  "_rule": "Per AGENTS.md / RULES.md: this file records the KNOWN gap; it must never be loosened to hide a regression. Only lower a gap when the engine genuinely improved, and commit the improving change together with the baseline update.",
+  "captured_commit": "develop @ 1492a5f (2026-08-11)",
+  "source_command": "cargo test --release --features ort --test zone_balance_eplus_isolation _annual_energy_ashrae140_tolerance -- --include-ignored --nocapture",
+  "source_path": "run_blind_annual_energy() in tests/zone_balance_eplus_isolation.rs (blind zone-balance path, NOT the Informed benchmark.rs path)",
+  "tolerance_fraction": 0.15,
+  "_tolerance_fraction_doc": "Band edges = midpoint(published_range) * (1 +/- tolerance_fraction). Matches ANNUAL_TOLERANCE_PCT in tests/zone_balance_eplus_isolation.rs.",
+  "regression_tolerance_pp": 5.0,
+  "_regression_tolerance_pp_doc": "A metric may get at most this many percentage-points worse (relative to band midpoint) than its recorded gap_pct_of_mid before the gate fails for regression. Absorbs cross-runner numerical noise; tuned for deterministic release builds. A previously-passing metric (gap 0) that drifts outside the band by more than this tolerance ALSO trips the gate.",
+  "metrics": {
+    "case_600_heating": {
+      "published_range_mwh": [4.36, 5.79],
+      "band_mwh": [4.314, 5.836],
+      "value_mwh": 5.236,
+      "gap_pct_of_mid": 0.0,
+      "status": "pass"
+    },
+    "case_600_cooling": {
+      "published_range_mwh": [3.92, 6.14],
+      "band_mwh": [4.275, 5.784],
+      "value_mwh": 2.455,
+      "gap_pct_of_mid": 36.1865,
+      "status": "known_fail"
+    },
+    "case_900_heating": {
+      "published_range_mwh": [1.17, 2.04],
+      "band_mwh": [1.364, 1.846],
+      "value_mwh": 1.754,
+      "gap_pct_of_mid": 0.0,
+      "status": "pass"
+    },
+    "case_900_cooling": {
+      "published_range_mwh": [2.13, 3.67],
+      "band_mwh": [2.465, 3.335],
+      "value_mwh": 0.689,
+      "gap_pct_of_mid": 61.241379,
+      "status": "known_fail"
+    }
+  }
+}
