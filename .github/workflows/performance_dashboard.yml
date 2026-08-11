@@ -588,6 +588,59 @@ jobs:
           exit 0
 
   # =========================================================================
+  # dhat-alloc-budget — PR-gated allocation-budget gate for the BatchOracle
+  # hot loop (Issue #2709).
+  # Runs the feature-gated `dhat_alloc_budget` integration test, which installs
+  # `dhat::Alloc` as the global allocator and asserts a hard ceiling on the heap
+  # allocations produced by one reduced `BatchOracle::evaluate_population` run
+  # (10 configs × 8 760 timesteps). The budget is a ceiling on current
+  # behaviour; #2687 will ratchet it down. This is the PR-level allocation-count
+  # gate that was missing per #2709 — previously dhat only ran in
+  # `bench-all-features` (nightly + manual dispatch), so the ~22 M-alloc/yr
+  # BatchOracle hot loop had no PR-time regression guard.
+  # Runs on PRs, main pushes, and manual dispatch (not nightly schedule, which
+  # already covers dhat via `bench-all-features`).
+  # =========================================================================
+  dhat-alloc-budget:
+    name: dhat Alloc Budget (BatchOracle)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    if: github.event_name == 'pull_request' || (github.event_name == 'push' && github.ref == 'refs/heads/main') || github.event_name == 'workflow_dispatch'
+
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4
+
+      - name: Install system dependencies
+        uses: ./.github/actions/install-system-deps
+        with:
+          packages: libssl-dev,pkg-config,libfontconfig1-dev,fontconfig
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@4cda84d5c5c54efe2404f9d843567869ab1699d4  # stable
+
+      - name: Cache cargo (dhat)
+        uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32  # v2
+        with:
+          shared-key: perf-dhat-alloc-budget
+          cache-on-failure: true
+
+      - name: Run dhat allocation-budget test
+        # `--features dhat` only (no ort/pyo3/napi) keeps the build light. The
+        # test is #[ignore]'d so it only runs under --include-ignored; measured
+        # at ~2.2 M blocks / ~17.8 MB over ~4 s of runtime. Allocation count is
+        # structurally determined (identical across --release and --profile ci).
+        run: |
+          cargo test --release -p fluxion --features dhat --test dhat_alloc_budget -- --nocapture --include-ignored
+
+      - name: Summary
+        if: always()
+        run: |
+          echo "## dhat Alloc Budget (BatchOracle, #2709)" >> $GITHUB_STEP_SUMMARY
+          echo "Ceiling: 2,650,000 blocks / 21,500,000 bytes over 10 configs × 8760 timesteps." >> $GITHUB_STEP_SUMMARY
+          echo "Measured baseline: 2,191,396 blocks (≈219K/config), 17,782,528 bytes." >> $GITHUB_STEP_SUMMARY
+          echo "See \`tests/dhat_alloc_budget.rs\` for how to ratchet the budget down after #2687." >> $GITHUB_STEP_SUMMARY
+
+  # =========================================================================
   # Publish Dashboard — main push only.
   # Depends on `bench-default` + `published-crate-bench` (and consumes any
   # `bench-all-features-results-*` artifact that happens to be in the same
