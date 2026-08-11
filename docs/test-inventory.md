@@ -97,9 +97,9 @@ Tests that validate multiple modules working together, system-level behavior, or
 |-----------|----------|---------------|
 | `tests/energyplus_comparison_tests.rs` | E+ comparison framework | Within 1% for energy, 0.5°C for temperature |
 | `tests/surface_flux_parity.rs` | Surface heat flux vs E+ | Within tolerance |
-| `tests/diag_917_energy.rs` | Diagnostic 917 energy metrics | Per-reference tolerance |
-| `tests/diag_917_solar.rs` | Diagnostic 917 solar metrics | Per-reference tolerance |
-| `tests/diag_917_v2.rs` | Diagnostic 917 v2 | Per-reference tolerance |
+| `tests/diagnostics/diag_917_energy.rs` | Diagnostic 917 energy metrics (on-demand, not gated) | Per-reference tolerance |
+| `tests/diagnostics/diag_917_solar.rs` | Diagnostic 917 solar metrics (on-demand, not gated) | Per-reference tolerance |
+| `tests/diagnostics/diag_917_v2.rs` | Diagnostic 917 v2 (on-demand, not gated) | Per-reference tolerance |
 
 ### HVAC Tests
 
@@ -198,8 +198,8 @@ Tests that validate multiple modules working together, system-level behavior, or
 | `tests/ashrae_140_output_validation.rs` | Output validation | Per-metric tolerance |
 | `tests/case_900_quick_check.rs` | Case 900 quick validation | Sanity checks |
 | `tests/case_900_cooling_diagnostic.rs` | Case 900 cooling diagnostic | Cooling metrics |
-| `tests/diag_phim.rs` | Phi*_m diagnostic metrics | Per-metric tolerance |
-| `tests/diag_mass_traj.rs` | Mass trajectory diagnostics | Trajectory validation |
+| `tests/diagnostics/diag_phim.rs` | Phi*_m diagnostic metrics (on-demand, not gated) | Per-metric tolerance |
+| `tests/diagnostics/diag_mass_traj.rs` | Mass trajectory diagnostics (on-demand, not gated) | Trajectory validation |
 | `tests/case_900_determinism.rs` | Deterministic execution | Reproducible results |
 
 ## Reference Data Directory Structure
