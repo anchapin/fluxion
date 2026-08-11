@@ -1,0 +1,110 @@
+name: Loom Concurrency Stress Tests
+
+# Wires the `loom` concurrency stress suite (#1065, #2521) into CI.
+#
+# The `tests/concurrency/loom_concurrency_tests.rs` target exercises
+# `Arc<Mutex<...>>` patterns, the multi-zone airflow network, and the
+# per-surface conduction solver under `loom::fuzz` model-checking. These
+# tests are state-space exhaustive and need ~32 GB RAM, so they are NOT run
+# on every PR. This workflow runs them on a weekly schedule and on manual
+# dispatch.
+#
+# Runner selection mirrors `mutation-nightly.yml`: prefer the self-hosted
+# Hetzner pool (`vars.FLUXION_LINUX_RUNNER`) and fall back to the
+# GitHub-hosted 8-core runner (32 GB RAM) documented in
+# docs/self-hosted-runners.md.
+
+on:
+  schedule:
+    # 03:00 UTC every Sunday (off-peak for US/EU contributors).
+    - cron: '0 3 * * 0'
+  workflow_dispatch: {}  # manual trigger for on-demand runs
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: 1
+
+jobs:
+  loom-stress:
+    name: Loom Concurrency Stress Suite
+    runs-on: ${{ vars.FLUXION_LINUX_RUNNER || 'ubuntu-latest-8-cores' }}
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libssl-dev pkg-config libfontconfig1-dev
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@4cda84d5c5c54efe2404f9d843567869ab1699d4  # stable
+
+      - name: Cache cargo dependencies
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830  # v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-loom-stress-cargo-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-loom-stress-cargo-
+
+      - name: Run loom concurrency stress tests
+        id: loom
+        env:
+          LOOM: "1"
+        run: |
+          mkdir -p loom_results
+          # Run the full loom suite; capture output for the summary artifact.
+          # `set +e` lets us upload artifacts on failure before re-failing the job.
+          set +e
+          LOOM=1 cargo test --features loom --test loom_concurrency_tests \
+            --no-fail-fast 2>&1 | tee loom_results/loom_test_output.log
+          LOOM_EXIT=${PIPESTATUS[0]}
+          echo "loom_exit=$LOOM_EXIT" >> $GITHUB_OUTPUT
+          exit 0
+
+      - name: Generate summary
+        if: always()
+        env:
+          LOOM_EXIT: ${{ steps.loom.outputs.loom_exit }}
+        run: |
+          NOW=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+          if [ "$LOOM_EXIT" = "0" ]; then
+            STATUS="PASS"
+          else
+            STATUS="FAIL (exit $LOOM_EXIT)"
+          fi
+          cat > loom_results/summary.md <<EOF
+          # Loom Concurrency Stress Suite — ${NOW}
+
+          | Field | Value |
+          |-------|-------|
+          | Status | ${STATUS} |
+          | Command | \`LOOM=1 cargo test --features loom --test loom_concurrency_tests\` |
+          | Runner | \`${{ vars.FLUXION_LINUX_RUNNER || 'ubuntu-latest-8-cores' }}\` |
+          | Trigger | \`${{ github.event_name }}\` |
+          | Ref | \`${{ github.ref_name }}\` |
+
+          See \`loom_test_output.log\` for the full test output.
+          EOF
+
+      - name: Upload loom summary artifact
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02  # v4
+        with:
+          name: loom-stress-results
+          path: |
+            loom_results/
+          retention-days: 30
+
+      - name: Fail job on loom test failure
+        if: steps.loom.outputs.loom_exit != '0'
+        run: |
+          echo "::error::Loom concurrency stress tests failed (exit ${{ steps.loom.outputs.loom_exit }})"
+          exit 1
