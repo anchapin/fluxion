@@ -27,7 +27,7 @@ The canonical source of truth is always `Cargo.toml` — if this file disagrees 
 | [`debug-physics`](#debug-physics) | off | Unconditional `eprintln!` in physics hot loops (#1967) | none | none |
 | [`kafka`](#kafka) | off | `rdkafka` telemetry consumer (#2056) | manual only | Kafka broker config |
 | [`fluid`](#fluid) | off | Acausal HVAC / fluid network modeling via `fluxion-fluid` (ADR-005, #1980) | `fluxion-mcp` build (unconditional) | none |
-| [`gauge-solver`](#gauge-solver) | off | `GaugeZoneSolver` as primary zone solver (#2304) | advisory ASHRAE variant | none |
+| [`gauge-solver`](#gauge-solver) | off | experimental `GaugeZoneSolver` scaffolding (#2304); not wired as primary — always `None` (#2686) | advisory ASHRAE variant | none |
 | [`fluxion-city`](#fluxion-city) | off | Urban radiation solver wiring (#2344) | manual only | none |
 | [`dhat`](#dhat) | off | `dhat` heap allocation profiling (#2384) | manual only | `DHAT_ANALYSIS=1` |
 | [`fluxion-cfd`](#fluxion-cfd) | off | FFD / CFD loose-coupling co-simulation (#2460) | manual only | none |
@@ -194,9 +194,15 @@ Combine flags with commas: `cargo test --features ort,multi-zone,fluid`.
 
 ### `gauge-solver`
 
-- **Enables:** `GaugeZoneSolver` as the primary zone solver (Issue #2304), replacing the
-  legacy 5R1C / 9R4C lumped-capacitance networks. The per-surface gauge-theory approach
-  conserves energy more accurately and supports multi-zone coupling.
+- **Enables:** the experimental `GaugeZoneSolver` zone-level scaffolding (Issue #2304).
+  **Status (Issue #2686, 2026-08-11): opt-in and NOT wired as primary.** The
+  `gauge_zone_solver` field on `ThermalModelData` is feature-gated but always initialized
+  to `None`, and no construction path sets it to `Some`. Even with `--features gauge-solver`,
+  the routing branch in `step_physics` is unreachable, so the legacy 5R1C / 9R4C
+  lumped-capacitance networks remain the primary zone solver in ALL builds (default and
+  feature-enabled). This stub wiring is preserved as WIP for whoever finishes #2304. The
+  live gauge-theory research path is the separate per-surface `GaugeSolver` run in shadow
+  mode via `PhysicsAdapter` (ARCHITECTURE.md Module 6, #1465 / #1462).
 - **Build:** `cargo test --features gauge-solver --test ashrae_140_case_600_series`.
 - **CI implication:** Advisory ASHRAE variant; the production solver path in CI is still the
   5R1C / 9R4C default so the strict energy gate (#1333) remains directly comparable to

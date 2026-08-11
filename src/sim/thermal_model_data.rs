@@ -223,9 +223,16 @@ pub struct ThermalModelData<T: ContinuousTensor<f64> + Clone> {
     pub fd_timestep: f64,
     pub multi_node_solvers: Vec<MultiNodeSolver>,
     pub solver_manager: Option<SolverManager>,
-    /// Issue #2304 — GaugeZoneSolver for per-surface gauge-theory zone heat balance.
-    /// When the `gauge-solver` feature is enabled, this solver replaces the legacy
-    /// 5R1C/9R4C lumped-capacitance networks for zone-level heat balance.
+    /// Issue #2304 — experimental `GaugeZoneSolver` scaffolding (opt-in via the
+    /// `gauge-solver` feature).
+    ///
+    /// STATUS (Issue #2686): this field is feature-gated but **always `None`** —
+    /// no construction path initializes it. Even with `--features gauge-solver`
+    /// the routing branch in `step_physics` is unreachable, so the legacy
+    /// 5R1C/9R4C networks remain the primary zone solver in ALL builds. This
+    /// stub wiring is preserved as WIP for whoever finishes #2304; it is
+    /// distinct from the live per-surface `GaugeSolver` shadow-mode path
+    /// (`PhysicsAdapter`, #1465/#1462).
     #[cfg(feature = "gauge-solver")]
     pub gauge_zone_solver: Option<GaugeZoneSolver>,
     pub convective_fraction: f64,
