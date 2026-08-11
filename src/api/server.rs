@@ -3374,25 +3374,37 @@ mod tests {
     /// Issue #2505 (d): flooding a single IP past the token-bucket burst is
     /// throttled with `429 Too Many Requests`. Uses a tight test config so
     /// the assertion is deterministic without sending thousands of requests.
+    ///
+    /// Issue #2688: the client IP is now the injected `ConnectInfo` socket
+    /// peer (the secure default). A spoofed `X-Forwarded-For` that rotates
+    /// per request must NOT grant a fresh bucket, so the flood is still
+    /// throttled.
     #[tokio::test]
     async fn rate_limiter_throttles_flood_from_one_ip() {
+        use axum::extract::ConnectInfo;
+        use std::net::SocketAddr;
+
         let mut cfg = crate::api::security::RestSecurityConfig::default();
         cfg.rate_limit_rps = 1;
         cfg.rate_limit_burst = 3; // tiny bucket for a deterministic test
                                   // Build the router once so all clones share the same limiter.
         let app = router_with_security(AppState::default(), cfg);
 
+        // A single peer address; each request sends a *different* spoofed
+        // XFF to confirm the limiter keys on the peer, not the header.
+        let peer: SocketAddr = "198.51.100.7:4000".parse().unwrap();
         // First `burst` requests are allowed; the next is rejected.
         let mut got_429 = false;
         let mut allowed = 0usize;
-        for _ in 0..10 {
+        for i in 0..10u32 {
             // Each iteration clones `app`; cloned routers share the
             // Arc-backed rate-limiter state.
             let router_clone = app.clone();
             let req = Request::builder()
                 .method(axum::http::Method::GET)
                 .uri("/v1/healthz")
-                .header("x-forwarded-for", "198.51.100.7")
+                .extension(ConnectInfo(peer))
+                .header("x-forwarded-for", format!("{i}.{i}.{i}.{i}"))
                 .body(axum::body::Body::empty())
                 .unwrap();
             let resp = tower::ServiceExt::oneshot(router_clone, req).await.unwrap();
@@ -3409,24 +3421,32 @@ mod tests {
         assert!(allowed <= 3, "burst capacity should bound allowed requests");
         assert!(
             got_429,
-            "after draining the bucket the flood must be throttled with 429"
+            "after draining the bucket the flood must be throttled with 429 despite spoofed XFF"
         );
     }
 
     /// Issue #2505 (d): distinct IPs are not penalised for each other's
-    /// traffic (per-IP isolation).
+    /// traffic (per-IP isolation). Issue #2688: isolation keys on the
+    /// socket peer address (the secure default), not a client-controlled
+    /// header.
     #[tokio::test]
     async fn rate_limiter_isolates_distinct_ips() {
+        use axum::extract::ConnectInfo;
+        use std::net::SocketAddr;
+
         let mut cfg = crate::api::security::RestSecurityConfig::default();
         cfg.rate_limit_rps = 1;
         cfg.rate_limit_burst = 1;
         let app = router_with_security(AppState::default(), cfg);
 
-        // Drain IP A's single token.
+        let peer_a: SocketAddr = "198.51.100.10:4001".parse().unwrap();
+        let peer_b: SocketAddr = "198.51.100.11:4002".parse().unwrap();
+
+        // Drain peer A's single token.
         let req_a = Request::builder()
             .method(axum::http::Method::GET)
             .uri("/v1/healthz")
-            .header("x-forwarded-for", "198.51.100.10")
+            .extension(ConnectInfo(peer_a))
             .body(axum::body::Body::empty())
             .unwrap();
         let resp = tower::ServiceExt::oneshot(app.clone(), req_a)
@@ -3435,11 +3455,11 @@ mod tests {
         assert_ne!(resp.status(), StatusCode::TOO_MANY_REQUESTS);
         let _ = body_bytes(resp).await;
 
-        // IP A is now empty → next request from A is throttled.
+        // Peer A is now empty → next request from A is throttled.
         let req_a2 = Request::builder()
             .method(axum::http::Method::GET)
             .uri("/v1/healthz")
-            .header("x-forwarded-for", "198.51.100.10")
+            .extension(ConnectInfo(peer_a))
             .body(axum::body::Body::empty())
             .unwrap();
         let resp = tower::ServiceExt::oneshot(app.clone(), req_a2)
@@ -3448,18 +3468,65 @@ mod tests {
         assert_eq!(resp.status(), StatusCode::TOO_MANY_REQUESTS);
         let _ = body_bytes(resp).await;
 
-        // IP B has its own bucket → allowed.
+        // Peer B has its own bucket → allowed.
         let req_b = Request::builder()
             .method(axum::http::Method::GET)
             .uri("/v1/healthz")
-            .header("x-forwarded-for", "198.51.100.11")
+            .extension(ConnectInfo(peer_b))
             .body(axum::body::Body::empty())
             .unwrap();
         let resp = tower::ServiceExt::oneshot(app, req_b).await.unwrap();
         assert_ne!(
             resp.status(),
             StatusCode::TOO_MANY_REQUESTS,
-            "different IP must have its own bucket"
+            "different peer must have its own bucket"
+        );
+    }
+
+    /// Issue #2688 integration: with trusted proxies configured, the
+    /// limiter honours `X-Forwarded-For` *only* when the peer is a trusted
+    /// proxy, resolving the real client behind the proxy.
+    #[tokio::test]
+    async fn rate_limiter_trusted_proxy_honours_xff() {
+        use axum::extract::ConnectInfo;
+        use std::net::SocketAddr;
+
+        let mut cfg = crate::api::security::RestSecurityConfig::default();
+        cfg.rate_limit_rps = 1;
+        cfg.rate_limit_burst = 1;
+        cfg.trusted_proxies =
+            vec![crate::api::security::TrustedProxyCidr::parse("10.0.0.0/8").unwrap()];
+        let app = router_with_security(AppState::default(), cfg);
+
+        // Peer is a trusted proxy (10.x); XFF names client 203.0.113.9.
+        let proxy_peer: SocketAddr = "10.1.2.3:5000".parse().unwrap();
+        let drain = Request::builder()
+            .method(axum::http::Method::GET)
+            .uri("/v1/healthz")
+            .extension(ConnectInfo(proxy_peer))
+            .header("x-forwarded-for", "203.0.113.9")
+            .body(axum::body::Body::empty())
+            .unwrap();
+        let resp = tower::ServiceExt::oneshot(app.clone(), drain)
+            .await
+            .unwrap();
+        assert_ne!(resp.status(), StatusCode::TOO_MANY_REQUESTS);
+        let _ = body_bytes(resp).await;
+
+        // Same resolved client (203.0.113.9) via the same trusted proxy →
+        // bucket is now empty → throttled, even with a fresh XFF chain.
+        let again = Request::builder()
+            .method(axum::http::Method::GET)
+            .uri("/v1/healthz")
+            .extension(ConnectInfo(proxy_peer))
+            .header("x-forwarded-for", "203.0.113.9")
+            .body(axum::body::Body::empty())
+            .unwrap();
+        let resp = tower::ServiceExt::oneshot(app, again).await.unwrap();
+        assert_eq!(
+            resp.status(),
+            StatusCode::TOO_MANY_REQUESTS,
+            "same resolved client behind the proxy must share one bucket"
         );
     }
 

@@ -15,9 +15,16 @@
 //!   liveness probes succeed unauthenticated.
 //! - **Per-IP token-bucket governor** ([`RateLimiter`] +
 //!   [`rate_limit_middleware`]) — in-memory, dependency-light. Client IP is
-//!   resolved from `X-Forwarded-For` / `X-Real-IP` and falls back to axum
-//!   `ConnectInfo<SocketAddr>` (the binary wires the latter via
-//!   `into_make_service_with_connect_info`).
+//!   resolved from the axum `ConnectInfo<SocketAddr>` socket peer address
+//!   (the binary wires it via `into_make_service_with_connect_info`).
+//!   `X-Forwarded-For` / `X-Real-IP` are **ignored by default** so a client
+//!   cannot spoof a fresh rate-limit bucket per request (Issue #2688). They
+//!   are honoured only when the operator explicitly configures a trusted
+//!   proxy CIDR allow-list via `FLUXION_REST_TRUSTED_PROXIES`, and even then
+//!   only when the connecting peer itself resolves to a trusted proxy. The
+//!   per-IP bucket map is bounded by an LRU cap
+//!   (`FLUXION_REST_RATE_LIMIT_MAX_ENTRIES`, default 100 000) so a
+//!   spoofed-IP or many-IP flood cannot grow memory unboundedly.
 //! - **CORS** ([`build_cors_layer`]) — explicit origin allow-list from
 //!   `FLUXION_REST_CORS_ORIGINS`; defaults to localhost dev origins. Never
 //!   `CorsLayer::permissive()`.
@@ -28,8 +35,8 @@
 //! All primitives are pure-library code so they are unit-testable from
 //! `cargo test -p fluxion --lib api` without spawning the binary.
 
-use std::collections::HashMap;
-use std::net::{IpAddr, SocketAddr};
+use std::collections::{BTreeMap, HashMap};
+use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr};
 use std::sync::Arc;
 use std::time::Instant;
 
@@ -59,6 +66,12 @@ pub const DEFAULT_RATE_LIMIT_RPS: u32 = 100;
 /// never trip the governor, while a sustained flood is still throttled to
 /// [`DEFAULT_RATE_LIMIT_RPS`] once the bucket drains.
 pub const DEFAULT_RATE_LIMIT_BURST: u32 = 1000;
+
+/// Default cap on the number of distinct per-IP token buckets kept in
+/// memory at once (Issue #2688). The map is LRU-evicted at this cap so a
+/// spoofed-IP or many-source flood cannot grow memory unboundedly. Each
+/// entry is ~tens of bytes, so 100 000 entries is well under 10 MiB.
+pub const DEFAULT_RATE_LIMIT_MAX_ENTRIES: usize = 100_000;
 
 /// Default header name a reverse proxy sets once it has validated the
 /// client's mTLS certificate (used when `FLUXION_REST_AUTH=tls`).
@@ -130,6 +143,18 @@ pub struct RestSecurityConfig {
     pub rate_limit_rps: u32,
     /// Per-IP burst capacity.
     pub rate_limit_burst: u32,
+    /// Maximum distinct per-IP buckets retained (LRU-evicted at the cap).
+    /// Bounds memory against spoofed-IP / many-IP floods (Issue #2688).
+    pub rate_limit_max_entries: usize,
+    /// Trusted reverse-proxy CIDR allow-list. When **empty** (the default),
+    /// `X-Forwarded-For` / `X-Real-IP` are ignored and the rate limiter
+    /// keys on the socket peer address only — closing the spoofing hole.
+    /// When non-empty, the headers are honoured **only** for connections
+    /// whose peer address falls inside one of these CIDRs, and the
+    /// rightmost non-trusted hop is taken as the client IP (matching nginx
+    /// `realip_recursive on` / Express `proxy-addr` semantics — *not* the
+    /// spoofable leftmost entry).
+    pub trusted_proxies: Vec<TrustedProxyCidr>,
     /// Header name the trusted proxy sets after mTLS validation.
     pub verified_header_name: HeaderName,
     /// Expected value of [`Self::verified_header_name`].
@@ -144,6 +169,8 @@ impl Default for RestSecurityConfig {
             cors_origins: default_dev_cors_origins(),
             rate_limit_rps: DEFAULT_RATE_LIMIT_RPS,
             rate_limit_burst: DEFAULT_RATE_LIMIT_BURST,
+            rate_limit_max_entries: DEFAULT_RATE_LIMIT_MAX_ENTRIES,
+            trusted_proxies: Vec::new(),
             verified_header_name: HeaderName::from_static(DEFAULT_VERIFIED_HEADER_NAME),
             verified_header_value: DEFAULT_VERIFIED_HEADER_VALUE.to_string(),
         }
@@ -163,6 +190,16 @@ impl RestSecurityConfig {
     /// - `FLUXION_REST_CORS_ORIGINS` — comma-separated origin allow-list
     /// - `FLUXION_REST_RATE_LIMIT_RPS` — sustained req/s per IP
     /// - `FLUXION_REST_RATE_LIMIT_BURST` — burst capacity per IP
+    /// - `FLUXION_REST_RATE_LIMIT_MAX_ENTRIES` — max distinct per-IP
+    ///   buckets retained (LRU-evicted; default 100 000). Bounds memory
+    ///   against spoofed-IP / many-IP floods (Issue #2688).
+    /// - `FLUXION_REST_TRUSTED_PROXIES` — comma-separated CIDR/IP
+    ///   allow-list of trusted reverse proxies (e.g.
+    ///   `10.0.0.0/8,192.0.2.1`). When **unset/empty** (default),
+    ///   `X-Forwarded-For` / `X-Real-IP` are ignored and the limiter keys
+    ///   on the socket peer only. When set, the headers are honoured only
+    ///   for peers inside the list, taking the rightmost non-trusted hop.
+    ///   Malformed entries are skipped with a warning.
     /// - `FLUXION_REST_VERIFIED_HEADER_NAME` — mTLS proxy header name
     /// - `FLUXION_REST_VERIFIED_HEADER_VALUE` — mTLS proxy header value
     ///
@@ -203,6 +240,31 @@ impl RestSecurityConfig {
                 }
             }
         }
+        if let Ok(v) = std::env::var("FLUXION_REST_RATE_LIMIT_MAX_ENTRIES") {
+            if let Ok(n) = v.parse::<usize>() {
+                if n > 0 {
+                    cfg.rate_limit_max_entries = n;
+                }
+            }
+        }
+        if let Ok(v) = std::env::var("FLUXION_REST_TRUSTED_PROXIES") {
+            let parsed: Vec<TrustedProxyCidr> = v
+                .split(',')
+                .map(|s| s.trim())
+                .filter(|s| !s.is_empty())
+                .filter_map(|s| match TrustedProxyCidr::parse(s) {
+                    Ok(cidr) => Some(cidr),
+                    Err(e) => {
+                        tracing::warn!(
+                            entry = s, error = %e,
+                            "FLUXION_REST_TRUSTED_PROXIES: skipping malformed entry"
+                        );
+                        None
+                    }
+                })
+                .collect();
+            cfg.trusted_proxies = parsed;
+        }
         if let Ok(v) = std::env::var("FLUXION_REST_VERIFIED_HEADER_NAME") {
             if let Ok(name) = HeaderName::try_from(v.as_str()) {
                 cfg.verified_header_name = name;
@@ -227,7 +289,12 @@ impl RestSecurityConfig {
 
     /// Build a fresh [`RateLimiter`] sized to this configuration.
     pub fn rate_limiter(&self) -> RateLimiter {
-        RateLimiter::new(self.rate_limit_rps, self.rate_limit_burst)
+        RateLimiter::new(
+            self.rate_limit_rps,
+            self.rate_limit_burst,
+            self.rate_limit_max_entries,
+            &self.trusted_proxies,
+        )
     }
 
     /// Build the tower-http [`CorsLayer`] for this configuration.
@@ -351,75 +418,255 @@ fn constant_time_eq(a: &[u8], b: &[u8]) -> bool {
 }
 
 // =========================================================================
+// Trusted-proxy CIDR allow-list (Issue #2688)
+// =========================================================================
+
+/// A single trusted-proxy entry — either a bare IP (`192.0.2.1`) or a CIDR
+/// block (`10.0.0.0/8`, `::1/128`). Used to gate when
+/// `X-Forwarded-For` / `X-Real-IP` may be honoured (Issue #2688): the
+/// headers are trusted only for connections whose socket peer falls inside
+/// one of the configured CIDRs.
+#[derive(Clone, Debug)]
+pub struct TrustedProxyCidr {
+    network: IpAddr,
+    prefix_len: u8,
+}
+
+impl TrustedProxyCidr {
+    /// Parse a single `ip` or `ip/prefix` entry. Returns `Err` on a
+    /// malformed value so the caller can skip-and-warn rather than panic.
+    pub fn parse(s: &str) -> Result<Self, String> {
+        let s = s.trim();
+        let (net_str, prefix_str) = match s.split_once('/') {
+            Some((n, p)) => (n, Some(p)),
+            None => (s, None),
+        };
+        let network: IpAddr = net_str
+            .parse()
+            .map_err(|e| format!("invalid IP '{net_str}': {e}"))?;
+        let max_len: u8 = match network {
+            IpAddr::V4(_) => 32,
+            IpAddr::V6(_) => 128,
+        };
+        let prefix_len = match prefix_str {
+            None => max_len,
+            Some(p) => {
+                let n: u8 = p
+                    .parse()
+                    .map_err(|e| format!("invalid prefix '/{p}': {e}"))?;
+                if n > max_len {
+                    return Err(format!(
+                        "prefix /{n} out of range for {network} (max /{max_len})"
+                    ));
+                }
+                n
+            }
+        };
+        // Normalise the network address to the masked base so containment
+        // checks and equality behave intuitively (e.g. `10.1.2.3/8` acts
+        // like `10.0.0.0/8`).
+        let network = apply_prefix(network, prefix_len);
+        Ok(Self {
+            network,
+            prefix_len,
+        })
+    }
+
+    /// `true` iff `ip` (same address family) falls inside this CIDR.
+    pub fn contains(&self, ip: IpAddr) -> bool {
+        match (self.network, ip) {
+            (IpAddr::V4(net), IpAddr::V4(addr)) => {
+                let m = v4_mask(self.prefix_len);
+                (m & u32::from(net)) == (m & u32::from(addr))
+            }
+            (IpAddr::V6(net), IpAddr::V6(addr)) => {
+                let m = v6_mask(self.prefix_len);
+                (m & u128::from(net)) == (m & u128::from(addr))
+            }
+            _ => false, // address-family mismatch
+        }
+    }
+}
+
+/// Network mask for an IPv4 `/prefix` (0 → all-zero, 32 → all-one).
+fn v4_mask(prefix: u8) -> u32 {
+    match prefix {
+        0 => 0,
+        n if n >= 32 => u32::MAX,
+        n => u32::MAX << (32 - n),
+    }
+}
+
+/// Network mask for an IPv6 `/prefix` (0 → all-zero, 128 → all-one).
+fn v6_mask(prefix: u8) -> u128 {
+    match prefix {
+        0 => 0,
+        n if n >= 128 => u128::MAX,
+        n => u128::MAX << (128 - n),
+    }
+}
+
+/// Zero out the host bits of `ip` for the given prefix length.
+fn apply_prefix(ip: IpAddr, prefix: u8) -> IpAddr {
+    match ip {
+        IpAddr::V4(v4) => IpAddr::V4(Ipv4Addr::from(v4_mask(prefix) & u32::from(v4))),
+        IpAddr::V6(v6) => IpAddr::V6(Ipv6Addr::from(v6_mask(prefix) & u128::from(v6))),
+    }
+}
+
+/// `true` iff `ip` falls inside any of the configured trusted-proxy CIDRs.
+fn peer_is_trusted(ip: IpAddr, trusted: &[TrustedProxyCidr]) -> bool {
+    trusted.iter().any(|c| c.contains(ip))
+}
+
+// =========================================================================
 // Per-IP token-bucket rate limiter
 // =========================================================================
 
 /// In-memory, per-IP token-bucket governor. Cheaply clonable (inner state
 /// is behind an [`Arc`]); all clones share the same bucket map, so the
-/// limit is enforced process-globally per source IP.
+/// limit is enforced process-globally per resolved client IP. The bucket
+/// map is bounded by an LRU cap (Issue #2688) so memory cannot grow
+/// unboundedly under a spoofed-IP or many-source flood.
 #[derive(Clone)]
 pub struct RateLimiter(Arc<RateLimiterInner>);
 
 struct RateLimiterInner {
-    buckets: Mutex<HashMap<IpAddr, Bucket>>,
+    state: Mutex<LimiterState>,
     capacity: f64,
     refill_per_sec: f64,
+    max_entries: usize,
+    trusted_proxies: Vec<TrustedProxyCidr>,
+}
+
+/// All mutate-together state guarded by a single lock.
+struct LimiterState {
+    buckets: HashMap<IpAddr, Bucket>,
+    /// `seq → ip` ordering for LRU eviction; smallest `seq` = LRU.
+    lru: BTreeMap<u64, IpAddr>,
+    /// Monotonic counter; starts at 1 so `0` is a "no LRU entry yet"
+    /// sentinel inside [`Bucket::lru_seq`].
+    next_seq: u64,
 }
 
 struct Bucket {
     tokens: f64,
     last_refill: Instant,
+    /// Current key of this IP in [`LimiterState::lru`], or `0` if the
+    /// bucket was just inserted and not yet registered.
+    lru_seq: u64,
 }
 
 impl RateLimiter {
-    /// Construct a limiter with `rps` sustained refill rate and `burst`
-    /// capacity. Values of `0` are clamped to `1` so a misconfiguration can
-    /// never produce a zero-capacity bucket that would reject every
-    /// request.
-    pub fn new(rps: u32, burst: u32) -> Self {
+    /// Construct a limiter with `rps` sustained refill rate, `burst`
+    /// capacity, a hard cap on distinct buckets (`max_entries`), and a
+    /// trusted-proxy allow-list governing `X-Forwarded-For` handling (see
+    /// [`crate::api::security`] module docs). `rps`/`burst` of `0` are
+    /// clamped to `1`; `max_entries` of `0` is clamped to `1` so the map
+    /// can always hold at least the active client.
+    pub fn new(
+        rps: u32,
+        burst: u32,
+        max_entries: usize,
+        trusted_proxies: &[TrustedProxyCidr],
+    ) -> Self {
         let capacity = burst.max(1) as f64;
         let refill_per_sec = rps.max(1) as f64;
         Self(Arc::new(RateLimiterInner {
-            buckets: Mutex::new(HashMap::new()),
+            state: Mutex::new(LimiterState {
+                buckets: HashMap::new(),
+                lru: BTreeMap::new(),
+                next_seq: 1,
+            }),
             capacity,
             refill_per_sec,
+            max_entries: max_entries.max(1),
+            trusted_proxies: trusted_proxies.to_vec(),
         }))
     }
 
     /// Attempt to consume one token for `ip`. Returns `true` if the
     /// request is allowed, `false` if the bucket is empty (caller should
-    /// respond `429`). Lazily refills based on wall-clock elapsed time.
+    /// respond `429`). Lazily refills based on wall-clock elapsed time and
+    /// LRU-evicts the least-recently-touched bucket once the map exceeds
+    /// `max_entries`, bounding memory (Issue #2688).
     pub fn try_acquire(&self, ip: IpAddr) -> bool {
         let now = Instant::now();
-        let mut map = self.0.buckets.lock();
-        let bucket = map.entry(ip).or_insert_with(|| Bucket {
-            tokens: self.0.capacity,
+        let capacity = self.0.capacity;
+        let refill_per_sec = self.0.refill_per_sec;
+        let max_entries = self.0.max_entries;
+        let mut st = self.0.state.lock();
+
+        // Refresh the LRU position *before* taking a mutable borrow of a
+        // bucket entry (the two live in the same locked struct). Determine
+        // the IP's prior LRU key without holding a bucket borrow.
+        let seq = st.next_seq;
+        st.next_seq += 1;
+        let old_seq = st.buckets.get(&ip).map(|b| b.lru_seq).unwrap_or(0);
+        if old_seq != 0 {
+            st.lru.remove(&old_seq);
+        }
+        st.lru.insert(seq, ip);
+
+        // Allocate / fetch the bucket (no other borrow of `st` is live now).
+        let bucket = st.buckets.entry(ip).or_insert_with(|| Bucket {
+            tokens: capacity,
             last_refill: now,
+            lru_seq: 0,
         });
+        bucket.lru_seq = seq;
+
+        // Token-bucket refill + consume (operates only on `bucket`).
         let elapsed = now.duration_since(bucket.last_refill).as_secs_f64();
         if elapsed > 0.0 {
-            bucket.tokens = (bucket.tokens + elapsed * self.0.refill_per_sec).min(self.0.capacity);
+            bucket.tokens = (bucket.tokens + elapsed * refill_per_sec).min(capacity);
             bucket.last_refill = now;
         }
-        if bucket.tokens >= 1.0 {
+        let allowed = if bucket.tokens >= 1.0 {
             bucket.tokens -= 1.0;
             true
         } else {
             false
+        };
+        // `bucket` borrow ends here (NLL); `st` is freely mutable again.
+
+        // Bounded eviction: drop the least-recently-touched bucket until we
+        // are back at/under the cap. This is the memory bound (Issue #2688).
+        while st.buckets.len() > max_entries {
+            match st.lru.iter().next().map(|(&k, &v)| (k, v)) {
+                Some((oldest_seq, oldest_ip)) => {
+                    st.lru.remove(&oldest_seq);
+                    st.buckets.remove(&oldest_ip);
+                }
+                None => break,
+            }
         }
+
+        allowed
+    }
+
+    /// Current number of distinct per-IP buckets retained. Bounded by the
+    /// configured `max_entries`; exposed for observability and tests.
+    pub fn num_entries(&self) -> usize {
+        self.0.state.lock().buckets.len()
     }
 }
 
-/// axum middleware enforcing [`RateLimiter`] per source IP. Resolves the
-/// client IP via [`client_ip`] (header-first, `ConnectInfo` fallback). When
-/// no IP can be determined the request is allowed through (fail-open) — the
-/// body limit and timeout still bound worst-case behaviour.
+/// axum middleware enforcing [`RateLimiter`] per resolved client IP.
+///
+/// The client IP is resolved via [`client_ip`] using the limiter's trusted
+/// proxy allow-list. By default (no trusted proxies configured) only the
+/// socket peer address is used and `X-Forwarded-For` / `X-Real-IP` are
+/// ignored, so a client cannot spoof a fresh bucket per request (Issue
+/// #2688). When no IP can be determined the request is allowed through
+/// (fail-open) — the body limit and timeout still bound worst-case
+/// behaviour.
 pub async fn rate_limit_middleware(
     State(limiter): State<RateLimiter>,
     req: Request,
     next: Next,
 ) -> Response {
-    match client_ip(&req) {
+    match client_ip(&req, &limiter.0.trusted_proxies) {
         Some(ip) => {
             if limiter.try_acquire(ip) {
                 next.run(req).await
@@ -431,31 +678,85 @@ pub async fn rate_limit_middleware(
     }
 }
 
-/// Resolve the client IP for rate-limiting purposes. Order of precedence:
-/// `X-Forwarded-For` (first hop) → `X-Real-IP` → axum `ConnectInfo`. The
-/// header-first order matches deployments behind a trusted reverse proxy;
-/// when no proxy is present, the binary wires `ConnectInfo` so the socket
-/// peer address is used.
-pub fn client_ip(req: &Request) -> Option<IpAddr> {
+/// Resolve the client IP for rate-limiting purposes (Issue #2688).
+///
+/// Resolution order:
+/// 1. The axum `ConnectInfo<SocketAddr>` socket peer address is the
+///    **primary** client identity. This is always trusted (it comes from
+///    the kernel, not a header).
+/// 2. `X-Forwarded-For` / `X-Real-IP` are consulted **only** when
+///    `trusted_proxies` is non-empty **and** the socket peer itself falls
+///    inside one of the configured CIDRs. In that case the **rightmost**
+///    hop in `X-Forwarded-For` that is not itself a trusted proxy is
+///    returned (nginx `realip_recursive on` / Express `proxy-addr`
+///    semantics). The leftmost entry is deliberately *not* used — it is
+///    trivially spoofable by the client.
+/// 3. If the peer is unknown and no headers are trusted, returns `None`.
+///
+/// When `trusted_proxies` is empty (the default), headers are never read,
+/// closing the spoofing hole regardless of what a client sends.
+pub fn client_ip(req: &Request, trusted_proxies: &[TrustedProxyCidr]) -> Option<IpAddr> {
+    let peer = req
+        .extensions()
+        .get::<ConnectInfo<SocketAddr>>()
+        .map(|ci| ci.0.ip());
+
+    // No trusted-proxy configuration → key strictly on the socket peer.
+    // Headers are never consulted, so they cannot grant a fresh bucket.
+    if trusted_proxies.is_empty() {
+        return peer;
+    }
+
+    // Trusted proxies are configured: honour headers *only* when the peer
+    // itself is a trusted proxy. A direct (non-proxy) connection still keys
+    // on its real peer address — an attacker cannot bypass by pretending to
+    // be behind a proxy.
+    let peer = peer?;
+    if !peer_is_trusted(peer, trusted_proxies) {
+        return Some(peer);
+    }
+
+    // Peer is a trusted proxy → resolve the real client from the headers.
+    if let Some(ip) = forwarded_client_ip(req, trusted_proxies) {
+        return Some(ip);
+    }
+
+    // Header was absent/malformed: fall back to the trusted peer rather
+    // than failing open with `None` (which would skip limiting entirely).
+    Some(peer)
+}
+
+/// Extract the real client IP from `X-Forwarded-For` (rightmost
+/// non-trusted hop) falling back to `X-Real-IP`. Both are only meaningful
+/// once the peer has been verified as a trusted proxy.
+fn forwarded_client_ip(req: &Request, trusted: &[TrustedProxyCidr]) -> Option<IpAddr> {
     if let Some(xff) = req
         .headers()
         .get("x-forwarded-for")
         .and_then(|v| v.to_str().ok())
     {
-        if let Some(first) = xff.split(',').next() {
-            if let Ok(ip) = first.trim().parse::<IpAddr>() {
-                return Some(ip);
+        // Rightmost non-trusted hop. Walking right→left skips the chain of
+        // trusted proxies that appended themselves; the first untrusted
+        // address is the originating client. (The leftmost entry is
+        // spoofable and intentionally not used.)
+        let hops: Vec<Option<IpAddr>> = xff
+            .split(',')
+            .map(|s| s.trim().parse::<IpAddr>().ok())
+            .collect();
+        for hop in hops.into_iter().rev().flatten() {
+            if !peer_is_trusted(hop, trusted) {
+                return Some(hop);
             }
         }
     }
+    // `X-Real-IP` is typically set by the immediate proxy to the client it
+    // saw; since the peer is already trusted, honour it directly.
     if let Some(xri) = req.headers().get("x-real-ip").and_then(|v| v.to_str().ok()) {
         if let Ok(ip) = xri.trim().parse::<IpAddr>() {
             return Some(ip);
         }
     }
-    req.extensions()
-        .get::<ConnectInfo<SocketAddr>>()
-        .map(|ci| ci.0.ip())
+    None
 }
 
 /// `429 Too Many Requests` response with a structured JSON envelope and a
@@ -689,7 +990,7 @@ mod tests {
     // ---- RateLimiter token bucket ----
     #[test]
     fn rate_limiter_allows_up_to_burst_then_rejects() {
-        let limiter = RateLimiter::new(0, 5);
+        let limiter = RateLimiter::new(0, 5, DEFAULT_RATE_LIMIT_MAX_ENTRIES, &[]);
         let ip: IpAddr = "10.0.0.1".parse().unwrap();
         for _ in 0..5 {
             assert!(limiter.try_acquire(ip), "within burst should be allowed");
@@ -702,7 +1003,7 @@ mod tests {
         // rps=10 → 1 token every 100 ms. Two consecutive synchronous calls
         // are always < 100 ms apart, so the bucket stays empty between
         // them; sleeping 150 ms then refills ≥1 token.
-        let limiter = RateLimiter::new(10, 1);
+        let limiter = RateLimiter::new(10, 1, DEFAULT_RATE_LIMIT_MAX_ENTRIES, &[]);
         let ip: IpAddr = "10.0.0.2".parse().unwrap();
         assert!(limiter.try_acquire(ip)); // drains the single token
         assert!(
@@ -718,12 +1019,214 @@ mod tests {
 
     #[test]
     fn rate_limiter_isolates_ips() {
-        let limiter = RateLimiter::new(0, 1);
+        let limiter = RateLimiter::new(0, 1, DEFAULT_RATE_LIMIT_MAX_ENTRIES, &[]);
         let a: IpAddr = "10.0.0.3".parse().unwrap();
         let b: IpAddr = "10.0.0.4".parse().unwrap();
         assert!(limiter.try_acquire(a));
         assert!(limiter.try_acquire(b), "different IP has its own bucket");
         assert!(!limiter.try_acquire(a));
+    }
+
+    // ---- Issue #2688: bounded LRU eviction ----
+
+    #[test]
+    fn rate_limiter_evicts_at_cap() {
+        // Small cap; insert far more distinct IPs and assert the map stays
+        // bounded at exactly the cap.
+        let cap = 64usize;
+        let limiter = RateLimiter::new(0, 1, cap, &[]);
+        for i in 0..(cap * 4) as u32 {
+            let o = i % 256;
+            let ip: IpAddr = format!("10.{i}.{o}.1").parse().unwrap();
+            assert!(
+                limiter.try_acquire(ip),
+                "first acquire of a fresh IP is allowed"
+            );
+            // Size must never exceed the cap by more than the single entry
+            // we are mid-insert on (eviction runs at the end of try_acquire,
+            // so after return it is always <= cap).
+            assert!(
+                limiter.num_entries() <= cap,
+                "map grew to {} > cap {cap}",
+                limiter.num_entries()
+            );
+        }
+        assert_eq!(
+            limiter.num_entries(),
+            cap,
+            "after inserting well past the cap the map should sit exactly at the cap"
+        );
+    }
+
+    #[test]
+    fn rate_limiter_lru_keeps_hot_ip() {
+        // A frequently-renewed IP must survive eviction of older, cold IPs
+        // even when the map is pinned at the cap.
+        let cap = 8usize;
+        let limiter = RateLimiter::new(0, 1, cap, &[]);
+        let hot: IpAddr = "203.0.113.1".parse().unwrap();
+        // Prime the hot bucket (burst=1 → now empty).
+        assert!(limiter.try_acquire(hot));
+        // Flood with `cap` distinct cold IPs, but touch `hot` each iteration
+        // so it stays MRU and is never the eviction candidate. The renewing
+        // touch ignores the (empty) token — LRU position refreshes regardless.
+        for i in 0..cap as u32 {
+            let _ = limiter.try_acquire(hot); // touch; bool intentionally unused
+            let cold: IpAddr = format!("198.51.100.{i}").parse().unwrap();
+            let _ = limiter.try_acquire(cold);
+            assert!(limiter.num_entries() <= cap);
+        }
+        // Discrimination: if `hot` survived, its bucket is still empty
+        // (burst drained, no time to refill) → the next acquire is rejected.
+        // If `hot` had been evicted, this would mint a fresh full bucket and
+        // be allowed — failing the assertion.
+        assert!(
+            !limiter.try_acquire(hot),
+            "hot IP's bucket must have survived eviction"
+        );
+    }
+
+    // ---- Issue #2688: client_ip resolution (no blind XFF trust) ----
+
+    /// Build a `Request` carrying an injected `ConnectInfo<SocketAddr>` peer
+    /// (mirrors what `into_make_service_with_connect_info` wires in
+    /// production) plus optional headers.
+    fn req_with_peer(peer: SocketAddr, xff: Option<&str>, x_real_ip: Option<&str>) -> Request {
+        let mut builder = Request::builder().method(Method::GET).uri("/v1/healthz");
+        builder = builder.extension(ConnectInfo(peer));
+        if let Some(v) = xff {
+            builder = builder.header("x-forwarded-for", v);
+        }
+        if let Some(v) = x_real_ip {
+            builder = builder.header("x-real-ip", v);
+        }
+        builder.body(axum::body::Body::empty()).unwrap()
+    }
+
+    #[test]
+    fn client_ip_ignores_xff_by_default() {
+        // Default (no trusted proxies): XFF/X-Real-IP must be IGNORED so a
+        // client rotating a spoofed XFF cannot get a fresh bucket per
+        // request. Only the socket peer is used.
+        let peer: SocketAddr = "198.51.100.7:4000".parse().unwrap();
+        let req = req_with_peer(peer, Some("1.1.1.1, 2.2.2.2"), Some("3.3.3.3"));
+        assert_eq!(
+            client_ip(&req, &[]),
+            Some(peer.ip()),
+            "default must resolve to the socket peer, ignoring spoofed headers"
+        );
+    }
+
+    #[test]
+    fn client_ip_rotating_xff_does_not_grant_fresh_bucket() {
+        // Issue #2688 (1): the same peer sending a different spoofed XFF on
+        // every request resolves to the SAME client IP, so it shares one
+        // token bucket and is throttled like any single client.
+        let limiter = RateLimiter::new(0, 2, DEFAULT_RATE_LIMIT_MAX_ENTRIES, &[]);
+        let peer: SocketAddr = "198.51.100.7:4000".parse().unwrap();
+        for i in 0..5u32 {
+            let xff = format!("{i}.{i}.{i}.{i}");
+            let req = req_with_peer(peer, Some(&xff), None);
+            let ip = client_ip(&req, &[]).expect("peer resolves");
+            assert_eq!(ip, peer.ip(), "spoofed XFF must not change the resolved IP");
+            let _ = limiter.try_acquire(ip);
+        }
+        // Two acquires were allowed (burst=2); the remaining three drained
+        // the same bucket → it is now empty.
+        assert_eq!(limiter.num_entries(), 1, "all requests shared one bucket");
+        assert!(
+            !limiter.try_acquire(peer.ip()),
+            "bucket must be empty after draining"
+        );
+    }
+
+    #[test]
+    fn client_ip_trusted_proxy_resolves_from_xff() {
+        // Trusted-proxy mode: the peer is a trusted proxy, so the rightmost
+        // non-trusted XFF hop is the real client.
+        let trusted = vec![
+            TrustedProxyCidr::parse("10.0.0.0/8").unwrap(),
+            TrustedProxyCidr::parse("192.0.2.1").unwrap(),
+        ];
+        let proxy_peer: SocketAddr = "10.1.2.3:5000".parse().unwrap();
+        // XFF chain: spoofed-left, real-client, trusted-proxy. The
+        // rightmost non-trusted hop is the real client (203.0.113.9), NOT
+        // the spoofed leftmost entry.
+        let req = req_with_peer(
+            proxy_peer,
+            Some("198.51.100.99, 203.0.113.9, 10.1.2.3"),
+            None,
+        );
+        assert_eq!(
+            client_ip(&req, &trusted),
+            Some("203.0.113.9".parse::<IpAddr>().unwrap()),
+            "trusted-proxy mode must take the rightmost non-trusted XFF hop"
+        );
+    }
+
+    #[test]
+    fn client_ip_trusted_proxy_falls_back_to_x_real_ip() {
+        let trusted = vec![TrustedProxyCidr::parse("10.0.0.0/8").unwrap()];
+        let proxy_peer: SocketAddr = "10.1.2.3:5000".parse().unwrap();
+        let req = req_with_peer(proxy_peer, None, Some("203.0.113.42"));
+        assert_eq!(
+            client_ip(&req, &trusted),
+            Some("203.0.113.42".parse::<IpAddr>().unwrap()),
+        );
+    }
+
+    #[test]
+    fn client_ip_untrusted_peer_keys_on_peer_not_xff() {
+        // Even with trusted proxies configured, a peer that is NOT in the
+        // allow-list keys on its own address and its XFF is ignored — an
+        // attacker cannot bypass by sending an XFF that names a trusted
+        // proxy.
+        let trusted = vec![TrustedProxyCidr::parse("10.0.0.0/8").unwrap()];
+        let direct_peer: SocketAddr = "203.0.113.50:6000".parse().unwrap();
+        let req = req_with_peer(direct_peer, Some("10.1.2.3, 198.51.100.1"), None);
+        assert_eq!(
+            client_ip(&req, &trusted),
+            Some(direct_peer.ip()),
+            "untrusted peer must key on itself, ignoring XFF entirely"
+        );
+    }
+
+    #[test]
+    fn client_ip_no_connect_info_no_trust_returns_none() {
+        // No peer available (e.g. test harness without ConnectInfo) and no
+        // trusted proxies → None (middleware fails open; body/timeout bound).
+        let req = Request::builder()
+            .method(Method::GET)
+            .uri("/v1/healthz")
+            .header("x-forwarded-for", "1.2.3.4")
+            .body(axum::body::Body::empty())
+            .unwrap();
+        assert_eq!(client_ip(&req, &[]), None);
+    }
+
+    // ---- TrustedProxyCidr parsing / matching ----
+
+    #[test]
+    fn trusted_proxy_cidr_parse_and_contains() {
+        let c = TrustedProxyCidr::parse("10.0.0.0/8").unwrap();
+        assert!(c.contains("10.255.255.255".parse::<IpAddr>().unwrap()));
+        assert!(!c.contains("11.0.0.0".parse::<IpAddr>().unwrap()));
+        // Bare IP → /32.
+        let c = TrustedProxyCidr::parse("192.0.2.1").unwrap();
+        assert_eq!(c.prefix_len, 32);
+        assert!(c.contains("192.0.2.1".parse::<IpAddr>().unwrap()));
+        assert!(!c.contains("192.0.2.2".parse::<IpAddr>().unwrap()));
+        // IPv6.
+        let c = TrustedProxyCidr::parse("2001:db8::/32").unwrap();
+        assert!(c.contains("2001:db8:ffff:ffff::1".parse::<IpAddr>().unwrap()));
+        assert!(!c.contains("2001:db9::1".parse::<IpAddr>().unwrap()));
+        // Match-all.
+        let c = TrustedProxyCidr::parse("0.0.0.0/0").unwrap();
+        assert!(c.contains("8.8.8.8".parse::<IpAddr>().unwrap()));
+        // Malformed.
+        assert!(TrustedProxyCidr::parse("not-an-ip").is_err());
+        assert!(TrustedProxyCidr::parse("10.0.0.0/33").is_err());
+        assert!(TrustedProxyCidr::parse("::1/129").is_err());
     }
 
     // ---- Boot guard decision function ----
