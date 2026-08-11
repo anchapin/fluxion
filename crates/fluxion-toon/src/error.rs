@@ -56,6 +56,16 @@ pub enum ToonError {
     /// JSON error.
     #[error("JSON error: {0}")]
     Json(#[from] serde_json::Error),
+
+    /// Parser size/depth limit exceeded (issue #2527 DoS hardening).
+    ///
+    /// The TOON grammar is non-recursive (object → array → object), so
+    /// recursion depth is structurally bounded; the material DoS vector
+    /// is a declared array length that drives an unbounded
+    /// `(0..len).map(...)` allocation, which this guard caps at
+    /// [`crate::parse::MAX_ARRAY_ELEMENTS`].
+    #[error("parser size limit exceeded: {0}")]
+    TooLarge(String),
 }
 
 /// Result type alias for TOON operations.

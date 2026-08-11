@@ -73,4 +73,41 @@ zones:2
             _ => panic!("expected InvalidSyntax, got {:?}", err),
         }
     }
+
+    // ----- Issue #2527: array-element cap -----------------------------------
+
+    #[test]
+    fn rejects_huge_declared_array() {
+        // Declare an array larger than MAX_ARRAY_ELEMENTS (1M) without
+        // supplying any data. The cap must fire before the parser tries
+        // to allocate a billion-entry Vec via `(0..len).map(...)`.
+        let input = format!(
+            "toon:v1\nzones:{}\nname,temperature\n",
+            crate::parse::MAX_ARRAY_ELEMENTS + 1
+        );
+        let err = deserialize_from_str::<serde_json::Value>(&input).unwrap_err();
+        match err {
+            ToonError::TooLarge(msg) => {
+                assert!(
+                    msg.contains("zones"),
+                    "message should name the array: {}",
+                    msg
+                );
+            }
+            _ => panic!("expected TooLarge, got {:?}", err),
+        }
+    }
+
+    #[test]
+    fn normal_array_parses_within_cap() {
+        let input = r#"toon:v1
+count=2
+zones:2
+name,temperature
+Zone1,22.5
+Zone2,23.0
+"#;
+        let result: Zones = deserialize_from_str(input).unwrap();
+        assert_eq!(result.zones.len(), 2);
+    }
 }

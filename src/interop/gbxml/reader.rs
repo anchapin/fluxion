@@ -18,6 +18,7 @@ use std::collections::HashMap;
 use std::fs;
 use std::path::Path;
 
+use fluxion_core::parser_limits::ParserLimits;
 use quick_xml::events::Event;
 use quick_xml::Reader;
 use quick_xml::XmlVersion;
@@ -29,17 +30,46 @@ use crate::api::schema::{
 use crate::interop::gbxml::error::GbXmlError;
 use crate::interop::gbxml::types::*;
 
-/// Import a gbXML file and convert to fluxion SimulationSchema.
+/// Import a gbXML file with the strict default parser limits (64 MiB —
+/// issue #2527).
 pub fn import_gbxml(path: impl AsRef<Path>) -> Result<SimulationSchemaV1, GbXmlError> {
-    let content = fs::read_to_string(path.as_ref())
-        .map_err(|e| GbXmlError::io_error(path.as_ref(), e.to_string()))?;
-
-    let reader = GbXmlReader::new();
-    reader.parse(&content)
+    import_gbxml_with_limits(path, &ParserLimits::default())
 }
 
-/// Parse gbXML content into a GbXmlDocument.
+/// Import a gbXML file with explicit [`ParserLimits`] (issue #2527).
+/// The on-disk size is checked via `fs::metadata` before the file is
+/// read into memory.
+pub fn import_gbxml_with_limits(
+    path: impl AsRef<Path>,
+    limits: &ParserLimits,
+) -> Result<SimulationSchemaV1, GbXmlError> {
+    let path = path.as_ref();
+    let file_len = fs::metadata(path)
+        .map_err(|e| GbXmlError::io_error(path, e.to_string()))?
+        .len() as usize;
+    limits.check_file_bytes(file_len)?;
+
+    let content =
+        fs::read_to_string(path).map_err(|e| GbXmlError::io_error(path, e.to_string()))?;
+
+    let reader = GbXmlReader::new();
+    reader.parse_with_limits(&content, limits)
+}
+
+/// Parse gbXML content into a GbXmlDocument with the strict default
+/// parser limits (issue #2527).
 pub fn parse_gbxml(content: &str) -> Result<GbXmlDocument, GbXmlError> {
+    parse_gbxml_with_limits(content, &ParserLimits::default())
+}
+
+/// Parse gbXML content into a GbXmlDocument with explicit
+/// [`ParserLimits`] (issue #2527). Enforces `max_file_bytes` before the
+/// XML event loop runs.
+pub fn parse_gbxml_with_limits(
+    content: &str,
+    limits: &ParserLimits,
+) -> Result<GbXmlDocument, GbXmlError> {
+    limits.check_file_bytes(content.len())?;
     let mut reader = Reader::from_str(content);
     reader.config_mut().trim_text(true);
 
@@ -406,7 +436,16 @@ impl GbXmlReader {
 
     /// Parse gbXML content into fluxion SimulationSchema.
     pub fn parse(&self, content: &str) -> Result<SimulationSchemaV1, GbXmlError> {
-        let doc = parse_gbxml(content)?;
+        self.parse_with_limits(content, &ParserLimits::default())
+    }
+
+    /// Parse gbXML content with explicit [`ParserLimits`] (issue #2527).
+    pub fn parse_with_limits(
+        &self,
+        content: &str,
+        limits: &ParserLimits,
+    ) -> Result<SimulationSchemaV1, GbXmlError> {
+        let doc = parse_gbxml_with_limits(content, limits)?;
 
         // Build lookup maps
         let mut construction_map: HashMap<String, &Construction> = HashMap::new();
@@ -600,5 +639,40 @@ mod tests {
 </gbXML>"#;
         let doc = parse_gbxml(minimal).expect("Should parse minimal gbXML");
         assert_eq!(doc.campus.id, "c1");
+    }
+
+    // ----- Issue #2527: parser DoS limits -----------------------------------
+
+    fn tiny_limits() -> fluxion_core::parser_limits::ParserLimits {
+        fluxion_core::parser_limits::ParserLimits {
+            max_file_bytes: 512,
+            max_lines: 1_000_000,
+            max_recursion_depth: 256,
+            max_array_elements: 1_000_000,
+        }
+    }
+
+    #[test]
+    fn gbxml_rejects_oversized_bytes() {
+        // Build a gbXML doc larger than 512 bytes.
+        let mut big = String::from(
+            "<?xml version=\"1.0\"?><gbXML xmlns=\"http://www.gbxml.org/schema\" version=\"8.01\">",
+        );
+        big.push_str(&"<Campus id=\"c1\"/>".repeat(40));
+        big.push_str("</gbXML>");
+        let err = parse_gbxml_with_limits(&big, &tiny_limits()).unwrap_err();
+        assert!(
+            matches!(err, GbXmlError::SizeLimitExceeded(_)),
+            "expected SizeLimitExceeded, got {:?}",
+            err
+        );
+        assert!(err.to_string().to_lowercase().contains("file size"));
+    }
+
+    #[test]
+    fn gbxml_normal_parses_with_default_limits() {
+        let reader = GbXmlReader::new();
+        let schema = reader.parse(SAMPLE_GBXML).expect("default limits parse");
+        assert_eq!(schema.geometry.zones.len(), 1);
     }
 }

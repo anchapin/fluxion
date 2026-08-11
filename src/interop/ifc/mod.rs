@@ -91,10 +91,10 @@ pub mod writer;
 
 pub use error::IfcError;
 pub use geometry::IfcGeometryParser;
-pub use mapping::{import_ifc, IfcToSchema};
+pub use mapping::{import_ifc, import_ifc_with_limits, IfcToSchema};
 pub use parser::{
     IfcBuilding, IfcBuildingStorey, IfcDoor, IfcModel, IfcParser, IfcRoof, IfcSlab, IfcSpace,
     IfcWall, IfcWindow, MaterialLayerSpec,
 };
-pub use step_lexer::{tokenize, RawEntity};
+pub use step_lexer::{tokenize, tokenize_with_schema_and_limits, RawEntity};
 pub use writer::{export_ifc, write_ifc_file, IfcWriter};

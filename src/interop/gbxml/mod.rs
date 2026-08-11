@@ -76,5 +76,7 @@ pub mod types;
 pub mod writer;
 
 pub use error::GbXmlError;
-pub use reader::{import_gbxml, parse_gbxml, GbXmlReader};
+pub use reader::{
+    import_gbxml, import_gbxml_with_limits, parse_gbxml, parse_gbxml_with_limits, GbXmlReader,
+};
 pub use writer::{export_gbxml, GbXmlWriter};

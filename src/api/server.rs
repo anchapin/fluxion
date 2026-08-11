@@ -1689,6 +1689,15 @@ async fn get_campaign_status(
 
 /// Import a file from one of the supported external formats. The body is the
 /// raw file bytes; the path parameter selects the decoder.
+///
+/// DoS hardening (issue #2527): this route is protected by **two** layers.
+/// The outer 16 MiB `DefaultBodyLimit` (#2505, applied at the router stack
+/// below) rejects oversized bodies before the handler allocates. Each parser
+/// additionally enforces `ParserLimits::default()` (64 MiB file / 1M lines /
+/// 256 depth) — for HTTP the body limit binds first, but the parser caps
+/// still catch pathologically line-dense inputs and protect the in-process
+/// `from_str` paths used by `BatchOracle` / `fluxion-mcp` (which use
+/// `ParserLimits::cli_default()`, 1 GiB).
 async fn import_format(
     State(state): State<AppState>,
     Path(fmt): Path<String>,

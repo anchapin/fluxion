@@ -30,6 +30,8 @@
 use std::fs;
 use std::path::Path;
 
+use fluxion_core::parser_limits::ParserLimits;
+
 use crate::api::schema::{
     ConstructionSet, ControlConfig, ControlSet, Geometry, ScheduleSet, SchemaMetadata,
     SchemaVersion, SimulationOutput, SimulationSchemaV1, SurfaceConstruction, WeatherData,
@@ -38,11 +40,29 @@ use crate::api::schema::{
 use crate::interop::osm::error::OsmError;
 use crate::interop::osm::types::*;
 
+/// Import an OSM file with the strict default parser limits (64 MiB /
+/// 1M lines — issue #2527).
 pub fn import_osm(path: impl AsRef<Path>) -> Result<SimulationSchemaV1, OsmError> {
-    let content = fs::read_to_string(path.as_ref()).map_err(|e| OsmError::IoError(e))?;
+    import_osm_with_limits(path, &ParserLimits::default())
+}
+
+/// Import an OSM file with an explicit [`ParserLimits`] configuration.
+///
+/// The file's on-disk size is checked against `limits.max_file_bytes`
+/// via `fs::metadata` **before** the contents are read, so an oversized
+/// file is rejected without ever being slurped into memory.
+pub fn import_osm_with_limits(
+    path: impl AsRef<Path>,
+    limits: &ParserLimits,
+) -> Result<SimulationSchemaV1, OsmError> {
+    let path = path.as_ref();
+    let file_len = fs::metadata(path).map_err(|e| OsmError::IoError(e))?.len() as usize;
+    limits.check_file_bytes(file_len)?;
+
+    let content = fs::read_to_string(path).map_err(|e| OsmError::IoError(e))?;
 
     let mut reader = OsmReader::new();
-    reader.parse(&content)
+    reader.parse_with_limits(&content, limits)
 }
 
 pub struct OsmReader {
@@ -59,6 +79,25 @@ impl OsmReader {
     }
 
     pub fn parse(&mut self, content: &str) -> Result<SimulationSchemaV1, OsmError> {
+        self.parse_with_limits(content, &ParserLimits::default())
+    }
+
+    /// Parse with explicit parser limits (issue #2527 DoS hardening).
+    ///
+    /// Enforces `max_file_bytes` (on `content.len()`) and `max_lines`
+    /// (counted before the per-line `Vec` is allocated, so a billion-line
+    /// input is rejected without ever being collected).
+    pub fn parse_with_limits(
+        &mut self,
+        content: &str,
+        limits: &ParserLimits,
+    ) -> Result<SimulationSchemaV1, OsmError> {
+        limits.check_file_bytes(content.len())?;
+        // Count lines without allocating a Vec first. The byte cap above
+        // bounds this O(n) pass to <= max_file_bytes, so it is itself DoS-safe.
+        let line_count = content.lines().count();
+        limits.check_lines(line_count)?;
+
         let objects = self.parse_content(content)?;
         self.build_context(objects);
         self.convert_to_schema()
@@ -1259,5 +1298,71 @@ OS:ElectricEquipment,
             !reader.ctx.schedules.is_empty(),
             "Should have parsed Schedule:Constant"
         );
+    }
+
+    // ----- Issue #2527: parser DoS limits -----------------------------------
+
+    fn tiny_limits() -> fluxion_core::parser_limits::ParserLimits {
+        fluxion_core::parser_limits::ParserLimits {
+            max_file_bytes: 4 * 1024,
+            max_lines: 50,
+            max_recursion_depth: 256,
+            max_array_elements: 1_000_000,
+        }
+    }
+
+    #[test]
+    fn normal_osm_parses_with_limits() {
+        let mut reader = OsmReader::new();
+        // SAMPLE_OSM is ~60 lines, so verify against the real default
+        // limits (which a normal model will always satisfy).
+        let result = reader.parse_with_limits(
+            SAMPLE_OSM,
+            &fluxion_core::parser_limits::ParserLimits::default(),
+        );
+        assert!(
+            result.is_ok(),
+            "normal OSM should parse: {:?}",
+            result.err()
+        );
+    }
+
+    #[test]
+    fn osm_rejects_too_many_lines() {
+        // Build an input with more lines than the tiny max_lines (50).
+        let mut big = String::from("OS:Version,\n  {v},!- Handle\n  3.2.0;\n");
+        for _ in 0..60 {
+            big.push_str("! comment line to inflate line count\n");
+        }
+        let mut reader = OsmReader::new();
+        let err = reader.parse_with_limits(&big, &tiny_limits()).unwrap_err();
+        assert!(
+            matches!(err, OsmError::SizeLimitExceeded(_)),
+            "expected SizeLimitExceeded, got {:?}",
+            err
+        );
+        assert!(err.to_string().to_lowercase().contains("line"));
+    }
+
+    #[test]
+    fn osm_rejects_oversized_bytes() {
+        // max_file_bytes=4KiB; build a >4KiB single-line input that has
+        // few lines so only the byte cap fires.
+        let big = "OS:Version,\n".to_string() + &"x".repeat(5 * 1024) + ";\n";
+        let mut reader = OsmReader::new();
+        let err = reader.parse_with_limits(&big, &tiny_limits()).unwrap_err();
+        assert!(
+            matches!(err, OsmError::SizeLimitExceeded(_)),
+            "expected SizeLimitExceeded, got {:?}",
+            err
+        );
+        assert!(err.to_string().to_lowercase().contains("file size"));
+    }
+
+    #[test]
+    fn osm_default_limits_match_issue_acceptance() {
+        let d = fluxion_core::parser_limits::ParserLimits::default();
+        assert_eq!(d.max_file_bytes, 64 * 1024 * 1024);
+        assert_eq!(d.max_lines, 1_000_000);
     }
 }

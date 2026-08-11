@@ -40,6 +40,16 @@ pub enum IdfError {
     /// Introduced in issue #1435.
     #[error("Unsupported EnergyPlus version: {0} (allowed: 24-2, 25-1, 25-2)")]
     UnsupportedVersion(String),
+
+    /// Parser size/depth limit exceeded (issue #2527 DoS hardening).
+    #[error("parser size limit exceeded: {0}")]
+    SizeLimitExceeded(String),
+}
+
+impl From<fluxion_core::parser_limits::ParseLimitError> for IdfError {
+    fn from(e: fluxion_core::parser_limits::ParseLimitError) -> Self {
+        IdfError::SizeLimitExceeded(e.to_string())
+    }
 }
 
 impl IdfError {

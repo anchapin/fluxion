@@ -129,8 +129,16 @@ impl IfcToSchema {
 ///
 /// Performs the full pipeline — [`IfcParser::from_path`] → mapper.
 pub fn import_ifc(path: impl AsRef<Path>) -> Result<SimulationSchemaV1, IfcError> {
+    import_ifc_with_limits(path, &fluxion_core::parser_limits::ParserLimits::default())
+}
+
+/// Convenience wrapper with explicit [`ParserLimits`] (issue #2527).
+pub fn import_ifc_with_limits(
+    path: impl AsRef<Path>,
+    limits: &fluxion_core::parser_limits::ParserLimits,
+) -> Result<SimulationSchemaV1, IfcError> {
     let path = path.as_ref();
-    let model = super::parser::IfcParser::from_path(path)?;
+    let model = super::parser::IfcParser::from_path_with_limits(path, limits)?;
     IfcToSchema::new().convert(&model)
 }
 

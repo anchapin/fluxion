@@ -26,11 +26,14 @@
 
 use serde_json::Value;
 
+use fluxion_core::parser_limits::ParserLimits;
+
 use super::error::IdfError;
 use super::parser::{IdfFile, IdfObject, IdfParser, IdfValue};
 
 impl IdfParser {
-    /// Parse an in-memory epJSON document into an [`IdfFile`].
+    /// Parse an in-memory epJSON document into an [`IdfFile`] with the
+    /// strict default parser limits (64 MiB / 1M lines — issue #2527).
     ///
     /// The JSON is expected to follow the EnergyPlus epJSON schema:
     /// top-level keys are object types; values are dictionaries of
@@ -44,8 +47,22 @@ impl IdfParser {
     /// # Errors
     ///
     /// Returns [`IdfError::Parse`] if the JSON is malformed or cannot be
-    /// interpreted as epJSON.
+    /// interpreted as epJSON, or [`IdfError::SizeLimitExceeded`] if the
+    /// input exceeds the configured [`ParserLimits`].
     pub fn from_epjson_str(input: &str) -> Result<IdfFile, IdfError> {
+        Self::from_epjson_str_with_limits(input, &ParserLimits::default())
+    }
+
+    /// Parse an in-memory epJSON document with explicit [`ParserLimits`]
+    /// (issue #2527). The byte/line caps are enforced **before**
+    /// `serde_json::from_str` allocates the DOM.
+    pub fn from_epjson_str_with_limits(
+        input: &str,
+        limits: &ParserLimits,
+    ) -> Result<IdfFile, IdfError> {
+        limits.check_file_bytes(input.len())?;
+        limits.check_lines(input.lines().count())?;
+
         let json: Value = serde_json::from_str(input).map_err(|e| IdfError::Parse {
             line: 1,
             message: format!("invalid JSON: {e}"),
@@ -84,8 +101,20 @@ impl IdfParser {
 
     /// Parse an epJSON document from a filesystem path.
     pub fn from_epjson_path(path: &std::path::Path) -> Result<IdfFile, IdfError> {
+        Self::from_epjson_path_with_limits(path, &ParserLimits::default())
+    }
+
+    /// Parse an epJSON document from a filesystem path with explicit
+    /// [`ParserLimits`] (issue #2527). The on-disk size is checked
+    /// before the file is read.
+    pub fn from_epjson_path_with_limits(
+        path: &std::path::Path,
+        limits: &ParserLimits,
+    ) -> Result<IdfFile, IdfError> {
+        let file_len = std::fs::metadata(path).map_err(IdfError::from)?.len() as usize;
+        limits.check_file_bytes(file_len)?;
         let content = std::fs::read_to_string(path)?;
-        Self::from_epjson_str(&content)
+        Self::from_epjson_str_with_limits(&content, limits)
     }
 }
 

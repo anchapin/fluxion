@@ -102,5 +102,5 @@ pub mod writer;
 
 pub use error::OsmError;
 pub use parser::OsmParser;
-pub use reader::{import_osm, OsmReader};
+pub use reader::{import_osm, import_osm_with_limits, OsmReader};
 pub use writer::{export_osm, OsmWriter};

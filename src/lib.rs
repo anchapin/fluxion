@@ -122,6 +122,13 @@ pub use fluxion_core::ashrae_cases;
 // work too.
 pub use fluxion_core::{construction, per_surface_conduction, physics_constants};
 
+// #2527 (DoS hardening): parser size/depth/repetition limits. Re-exported so
+// `fluxion-mcp` / CLI / `BatchOracle` callers can pass
+// `fluxion::parser_limits::ParserLimits::cli_default()` to the `_with_limits`
+// parser entry points, and so the strict HTTP default is available as
+// `ParserLimits::http_default()`.
+pub use fluxion_core::parser_limits;
+
 // Re-export thermal model traits for public API
 pub use sim::surface_flux_provider::{
     MockSurfaceHeatFluxProvider, PhysicsSurfaceFluxProvider, SurfaceHeatFluxProvider,

@@ -27,6 +27,16 @@ pub enum OsmError {
 
     #[error("Export error: {0}")]
     ExportError(String),
+
+    /// Parser size/depth limit exceeded (issue #2527 DoS hardening).
+    #[error("parser size limit exceeded: {0}")]
+    SizeLimitExceeded(String),
+}
+
+impl From<fluxion_core::parser_limits::ParseLimitError> for OsmError {
+    fn from(e: fluxion_core::parser_limits::ParseLimitError) -> Self {
+        OsmError::SizeLimitExceeded(e.to_string())
+    }
 }
 
 impl OsmError {

@@ -46,6 +46,16 @@ pub enum IfcError {
     /// references a material layer set that has no layers).
     #[error("IFC conversion error: {0}")]
     Conversion(String),
+
+    /// Parser size/depth limit exceeded (issue #2527 DoS hardening).
+    #[error("parser size limit exceeded: {0}")]
+    SizeLimitExceeded(String),
+}
+
+impl From<fluxion_core::parser_limits::ParseLimitError> for IfcError {
+    fn from(e: fluxion_core::parser_limits::ParseLimitError) -> Self {
+        IfcError::SizeLimitExceeded(e.to_string())
+    }
 }
 
 impl IfcError {
