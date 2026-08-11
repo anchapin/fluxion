@@ -4,10 +4,7 @@ use std::ops::{Add, AddAssign, Div, Index, Mul, Sub};
 use fluxion_core::tensor::ContinuousField;
 
 #[cfg(feature = "python-bindings")]
-use pyo3::{pymethods, Bound, IntoPy, PyAny, PyObject, PyResult, Python};
-
-#[cfg(feature = "python-bindings")]
-use pyo3::types::PyAnyMethods;
+use pyo3::{pymethods, Bound, IntoPyObject, Py, PyAny, PyResult, Python};
 
 #[cfg(feature = "python-bindings")]
 use numpy::{PyArray1, PyArrayMethods};
@@ -418,13 +415,13 @@ impl ContinuousField<f64> for VectorField {
 impl VectorField {
     /// Convert to a numpy array (zero-copy borrow).
     pub fn to_numpy_array<'py>(&self, py: Python<'py>) -> Bound<'py, PyArray1<f64>> {
-        PyArray1::from_slice_bound(py, &self.data)
+        PyArray1::from_slice(py, &self.data)
     }
 
     /// Create from a numpy array.
     #[allow(unused_unsafe)]
     pub fn from_numpy_array<'py>(_py: Python<'py>, array: &Bound<'py, PyAny>) -> PyResult<Self> {
-        let numpy_array = array.downcast::<PyArray1<f64>>()?;
+        let numpy_array = array.cast::<PyArray1<f64>>()?;
         let slice = unsafe { numpy_array.as_slice()? };
         Ok(VectorField::new(slice.to_vec()))
     }
@@ -439,8 +436,12 @@ impl VectorField {
         VectorField::new(data)
     }
 
-    fn to_numpy(&self, py: Python) -> PyResult<PyObject> {
-        Ok(self.to_numpy_array(py).into_py(py))
+    fn to_numpy(&self, py: Python) -> PyResult<Py<PyAny>> {
+        Ok(self
+            .to_numpy_array(py)
+            .into_pyobject(py)?
+            .into_any()
+            .unbind())
     }
 
     fn integrate(&self) -> f64 {
@@ -550,9 +551,7 @@ mod tests {
     #[cfg(feature = "python-bindings")]
     #[test]
     fn test_vector_field_numpy_conversion() {
-        pyo3::prepare_freethreaded_python();
-
-        pyo3::Python::with_gil(|py| {
+        pyo3::Python::attach(|py| {
             let original = VectorField::new(vec![1.0, 2.0, 3.0, 4.0, 5.0]);
 
             let numpy_array = original.to_numpy_array(py);
@@ -566,9 +565,7 @@ mod tests {
     #[cfg(feature = "python-bindings")]
     #[test]
     fn test_empty_vector_field_numpy() {
-        pyo3::prepare_freethreaded_python();
-
-        pyo3::Python::with_gil(|py| {
+        pyo3::Python::attach(|py| {
             let empty = VectorField::new(vec![]);
             let numpy_array = empty.to_numpy_array(py);
             let recovered = VectorField::from_numpy_array(py, &numpy_array).unwrap();

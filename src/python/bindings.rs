@@ -304,7 +304,7 @@ impl PyMultiZoneThermalModel {
     pub fn get_zone_peaks(
         &self,
         zone_identifier: &Bound<'_, PyAny>,
-    ) -> PyResult<HashMap<String, PyObject>> {
+    ) -> PyResult<HashMap<String, Py<PyAny>>> {
         let zone_idx = if let Ok(idx) = zone_identifier.extract::<usize>() {
             idx
         } else if let Ok(name) = zone_identifier.extract::<String>() {
@@ -349,23 +349,35 @@ impl PyMultiZoneThermalModel {
         let heating_timesteps = self.inner.get_zone_peak_heating_timestep();
         let cooling_timesteps = self.inner.get_zone_peak_cooling_timestep();
 
-        Python::with_gil(|py| {
+        Python::attach(|py| {
             let mut result = HashMap::new();
             result.insert(
                 "heating_mw".to_string(),
-                (heating_kw[zone_idx] / 1000.0).to_object(py),
+                (heating_kw[zone_idx] / 1000.0)
+                    .into_pyobject(py)?
+                    .into_any()
+                    .unbind(),
             );
             result.insert(
                 "cooling_mw".to_string(),
-                (cooling_kw[zone_idx] / 1000.0).to_object(py),
+                (cooling_kw[zone_idx] / 1000.0)
+                    .into_pyobject(py)?
+                    .into_any()
+                    .unbind(),
             );
             result.insert(
                 "heating_timestep".to_string(),
-                heating_timesteps[zone_idx].to_object(py),
+                heating_timesteps[zone_idx]
+                    .into_pyobject(py)?
+                    .into_any()
+                    .unbind(),
             );
             result.insert(
                 "cooling_timestep".to_string(),
-                cooling_timesteps[zone_idx].to_object(py),
+                cooling_timesteps[zone_idx]
+                    .into_pyobject(py)?
+                    .into_any()
+                    .unbind(),
             );
             Ok(result)
         })
@@ -373,8 +385,8 @@ impl PyMultiZoneThermalModel {
 
     /// Export zone temperatures as Python dictionary
     pub fn export_zone_temperatures(&self) -> PyResult<Py<PyDict>> {
-        Python::with_gil(|py| {
-            let dict = PyDict::new_bound(py);
+        Python::attach(|py| {
+            let dict = PyDict::new(py);
 
             for (i, temp) in self.inner.get_temperatures().iter().enumerate() {
                 dict.set_item(format!("zone_{}", i), *temp)?;
@@ -427,8 +439,8 @@ impl PyMultiZoneThermalModel {
                 let timesteps = if num_zones > 0 { temps[0].len() } else { 0 };
                 let shape = vec![num_zones, timesteps];
 
-                // Create numpy array from Vec<Vec<f64>> - this is the expected format for from_vec2_bound
-                let arr = numpy::PyArray2::from_vec2_bound(py, &temps).map_err(|e| {
+                // Create numpy array from Vec<Vec<f64>> - this is the expected format for from_vec2
+                let arr = numpy::PyArray2::from_vec2(py, &temps).map_err(|e| {
                     pyo3::exceptions::PyValueError::new_err(format!(
                         "Failed to create numpy array: {}",
                         e
@@ -529,10 +541,10 @@ impl PyMultiZoneThermalModel {
         };
 
         // Flatten into a row-major contiguous buffer of shape [Z, N, T].
-        // numpy::PyArray3::from_vec3_bound expects `&[Vec<Vec<f64>>]` of length Z,
+        // numpy::PyArray3::from_vec3 expects `&[Vec<Vec<f64>>]` of length Z,
         // each entry length N, each inner entry length T — exactly our layout.
         let shape = vec![num_zones, num_nodes, timesteps];
-        let arr = numpy::PyArray3::from_vec3_bound(py, &nodal).map_err(|e| {
+        let arr = numpy::PyArray3::from_vec3(py, &nodal).map_err(|e| {
             pyo3::exceptions::PyValueError::new_err(format!(
                 "Failed to create numpy 3D array: {}",
                 e
@@ -673,7 +685,7 @@ pub fn create_multi_zone_model_from_config(
 
     // Set zone setpoints from zones dict (zone_0, zone_1, etc.)
     if let Ok(Some(zone_configs)) = config.get_item("zones") {
-        let zones_dict: &Bound<'_, PyDict> = match zone_configs.downcast() {
+        let zones_dict: &Bound<'_, PyDict> = match zone_configs.cast() {
             Ok(d) => d,
             Err(_) => {
                 return Err(pyo3::exceptions::PyTypeError::new_err(
@@ -689,7 +701,7 @@ pub fn create_multi_zone_model_from_config(
             };
             if let Some(stripped) = zone_key.strip_prefix("zone_") {
                 if let Ok(zone_idx) = stripped.parse::<usize>() {
-                    let zone_dict: &Bound<'_, PyDict> = match value.downcast() {
+                    let zone_dict: &Bound<'_, PyDict> = match value.cast() {
                         Ok(d) => d,
                         Err(_) => continue,
                     };
@@ -716,7 +728,7 @@ pub fn create_multi_zone_model_from_config(
         }
     } else if let Ok(Some(zone_setpoints)) = config.get_item("zone_setpoints") {
         // Legacy zone_setpoints format (zone_0: (heating, cooling), zone_1: (heating, cooling), ...)
-        let setpoints_dict: &Bound<'_, PyDict> = match zone_setpoints.downcast() {
+        let setpoints_dict: &Bound<'_, PyDict> = match zone_setpoints.cast() {
             Ok(d) => d,
             Err(_) => {
                 return Err(pyo3::exceptions::PyTypeError::new_err(
@@ -744,7 +756,7 @@ pub fn create_multi_zone_model_from_config(
 
     // Set inter-zone conductances
     if let Ok(Some(iz_conductance)) = config.get_item("inter_zone_conductance") {
-        let iz_dict: &Bound<'_, PyDict> = match iz_conductance.downcast() {
+        let iz_dict: &Bound<'_, PyDict> = match iz_conductance.cast() {
             Ok(d) => d,
             Err(_) => {
                 return Err(pyo3::exceptions::PyTypeError::new_err(
@@ -757,7 +769,7 @@ pub fn create_multi_zone_model_from_config(
         for i in 0..num_zones {
             let row_key = format!("zone_{}", i);
             if let Ok(Some(row)) = iz_dict.get_item(&row_key) {
-                let row_dict: &Bound<'_, PyDict> = match row.downcast() {
+                let row_dict: &Bound<'_, PyDict> = match row.cast() {
                     Ok(d) => d,
                     Err(_) => {
                         conductance_vec.push(vec![0.0; num_zones]);
@@ -856,13 +868,13 @@ pub fn create_multi_zone_model_from_schema_dict(
     // Extract number of zones from geometry
     let num_zones: usize = match schema.get_item("geometry") {
         Ok(Some(geometry)) => {
-            let geometry_dict: &Bound<'_, PyDict> = match geometry.downcast() {
+            let geometry_dict: &Bound<'_, PyDict> = match geometry.cast() {
                 Ok(d) => d,
                 Err(_) => return PyMultiZoneThermalModel::new(1),
             };
             match geometry_dict.get_item("zones") {
                 Ok(Some(zones)) => {
-                    let zones_list: &Bound<'_, pyo3::types::PyList> = match zones.downcast() {
+                    let zones_list: &Bound<'_, pyo3::types::PyList> = match zones.cast() {
                         Ok(d) => d,
                         Err(_) => return PyMultiZoneThermalModel::new(1),
                     };
@@ -878,13 +890,13 @@ pub fn create_multi_zone_model_from_schema_dict(
 
     // Extract setpoints from controls
     if let Ok(Some(controls)) = schema.get_item("controls") {
-        let controls_dict: &Bound<'_, PyDict> = match controls.downcast() {
+        let controls_dict: &Bound<'_, PyDict> = match controls.cast() {
             Ok(d) => d,
             Err(_) => return Ok(model),
         };
 
         if let Ok(Some(zone_control)) = controls_dict.get_item("zone_control") {
-            let zone_control_dict: &Bound<'_, PyDict> = match zone_control.downcast() {
+            let zone_control_dict: &Bound<'_, PyDict> = match zone_control.cast() {
                 Ok(d) => d,
                 Err(_) => return Ok(model),
             };
@@ -956,7 +968,7 @@ fn schema_from_json(content: &str) -> PyResult<SimulationSchemaV1> {
 
 fn schema_from_dict(schema: &Bound<'_, PyDict>) -> PyResult<SimulationSchemaV1> {
     let py = schema.py();
-    let json = PyModule::import_bound(py, "json")?;
+    let json = PyModule::import(py, "json")?;
     let content: String = json.call_method1("dumps", (schema,))?.extract()?;
     schema_from_json(&content)
 }

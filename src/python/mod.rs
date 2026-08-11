@@ -48,7 +48,7 @@ pub fn fluxion_python(_py: Python, m: &Bound<'_, PyModule>) -> PyResult<()> {
     crate::python::panic_hook::install();
 
     // Import and initialize the main fluxion module
-    let _fluxion_module = PyModule::import_bound(_py, "fluxion")?;
+    let _fluxion_module = PyModule::import(_py, "fluxion")?;
 
     // Re-export multi-zone functionality
     m.add_wrapped(pyo3::wrap_pymodule!(bindings::multi_zone))?;

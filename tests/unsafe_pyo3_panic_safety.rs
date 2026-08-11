@@ -12,7 +12,7 @@
 //!
 //! 2. **Unsafe-site shape hardening** (`validate_population_array_shape`):
 //!    the exact input named in the issue —
-//!    `numpy::PyArray2::<f64>::new_bound(py, [0, 3], false)` (zero rows) —
+//!    `numpy::PyArray2::<f64>::new(py, [0, 3], false)` (zero rows) —
 //!    must return a catchable `PyValueError` rather than reaching the
 //!    `unsafe { array.as_slice() }` / `RawArrayView::from_shape_ptr` blocks
 //!    that previously panicked and aborted the host interpreter. This needs
@@ -81,7 +81,7 @@ fn sanitiser_preserves_innocuous_message() {
 /// any `unsafe` dereference.
 #[test]
 fn zero_row_population_array_returns_pyvalueerror() {
-    Python::with_gil(|py| {
+    Python::attach(|py| {
         // `(0, 3)`: zero candidates, three param columns — well-formed but
         // empty. `false` = not Fortran-ordered (C-contiguous).
         //
@@ -89,7 +89,7 @@ fn zero_row_population_array_returns_pyvalueerror() {
         // for a zero-element (`[0, 3]`) array there is no element storage to
         // initialise, so reading through `validate_population_array_shape`
         // (which only inspects `.shape()`, never the data pointer) is sound.
-        let empty = unsafe { PyArray2::<f64>::new_bound(py, [0, POPULATION_N_PARAMS], false) };
+        let empty = unsafe { PyArray2::<f64>::new(py, [0, POPULATION_N_PARAMS], false) };
         let err = validate_population_array_shape(&empty).expect_err(
             "a zero-row population array must be rejected before any unsafe slice access",
         );
@@ -109,13 +109,13 @@ fn zero_row_population_array_returns_pyvalueerror() {
 
 #[test]
 fn wrong_column_count_returns_pyvalueerror() {
-    Python::with_gil(|py| {
+    Python::attach(|py| {
         // Two candidates, two columns — wrong arity for `[U-value, heating, cooling]`.
         //
         // SAFETY: same as above — `validate_population_array_shape` inspects
         // only the shape, not the uninitialised element storage, so the
         // `new_bound` allocation is safe to hand it.
-        let bad = unsafe { PyArray2::<f64>::new_bound(py, [2, 2], false) };
+        let bad = unsafe { PyArray2::<f64>::new(py, [2, 2], false) };
         let err =
             validate_population_array_shape(&bad).expect_err("wrong column count must be rejected");
         assert!(
@@ -127,13 +127,12 @@ fn wrong_column_count_returns_pyvalueerror() {
 
 #[test]
 fn well_formed_population_array_is_accepted() {
-    Python::with_gil(|py| {
+    Python::attach(|py| {
         // Shape (2, 3) with dummy data — must pass and report the right dims.
         // Initialise non-zero so a future strict-mode validator cannot reject
         // on contents rather than shape.
-        let good =
-            PyArray2::<f64>::from_vec2_bound(py, &[vec![0.5, 20.0, 24.0], vec![0.7, 18.0, 26.0]])
-                .unwrap();
+        let good = PyArray2::<f64>::from_vec2(py, &[vec![0.5, 20.0, 24.0], vec![0.7, 18.0, 26.0]])
+            .unwrap();
         let (n_candidates, n_params) =
             validate_population_array_shape(&good).expect("a (2, 3) population array is valid");
         assert_eq!((n_candidates, n_params), (2, POPULATION_N_PARAMS));

@@ -217,14 +217,14 @@ pub fn create_zone_setpoints(config: &Bound<'_, PyDict>) -> PyResult<PyZoneSetpo
     // Set zone setpoints if provided
     if let Ok(Some(zone_configs)) = config.get_item("zones") {
         let zones_dict: &Bound<'_, PyDict> = zone_configs
-            .downcast()
+            .cast()
             .map_err(|_| pyo3::exceptions::PyTypeError::new_err("Expected dict for 'zones'"))?;
 
         for (key, value) in zones_dict {
             let zone_key: String = key.extract()?;
             if let Some(stripped) = zone_key.strip_prefix("zone_") {
                 if let Ok(zone_idx) = stripped.parse::<usize>() {
-                    let zone_dict: &Bound<'_, PyDict> = value.downcast()?;
+                    let zone_dict: &Bound<'_, PyDict> = value.cast()?;
 
                     if let Ok(Some(heating)) = zone_dict.get_item("heating") {
                         let heating_temp: f64 = heating.extract()?;
