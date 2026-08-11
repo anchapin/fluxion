@@ -2,45 +2,69 @@
 
 **Fluxion** is a next-generation Building Energy Modeling (BEM) engine. It is designed to be differentiable, quantum-ready, and exponentially faster than legacy monolithic tools by utilizing a hybrid Neuro-Symbolic architecture.
 
+> **Status:** Fluxion is **in active development** — specifically mid-milestone on **v1.3 "Blind ASHRAE 140 Validation"** (physics-only, no calibration factors). It is **not** production-ready. Current ASHRAE 140-2023 validation pass rate is **~20%** (see [Current Validation Status](#current-validation-status) below). Use it as a high-throughput research/oracle tool, not as a drop-in EnergyPlus replacement.
+
 ## 🏗 Architecture
 
-Fluxion separates the "heavy lifting" of physics (CFD/Radiation) into AI surrogates, while maintaining a rigorous First-Principles thermal network for energy conservation.
+Fluxion separates the "heavy lifting" of physics (CFD/Radiation) into AI surrogates, while maintaining a rigorous First-Principles thermal network for energy conservation. The thermal network, conduction solvers, and solar/ventilation models are organized as swap-point traits (`HeatConductionSolver`, `VentilationSchedule`, `ThermalModelTrait`) so that physics and AI-surrogate implementations are interchangeable. See [`ARCHITECTURE.md`](ARCHITECTURE.md) and [`CODEBASE_MAP.md`](CODEBASE_MAP.md) for module boundaries and the full trait contracts.
 
-## ASHRAE 140 Validation
+## Current Validation Status
 
-![ASHRAE 140](https://img.shields.io/badge/ASHRAE140-v0.8.0-brightgreen)
-![Version](https://img.shields.io/badge/version-0.8.0-blue)
+![ASHRAE 140](https://img.shields.io/badge/ASHRAE140-20.3%25%20pass-red)
+![Version](https://img.shields.io/badge/status-in--development-orange)
 
-Fluxion v0.8.0 introduces **Peak Load & Free-Float Validation** with comprehensive ASHRAE 140-2023 compliance testing. This release focuses on high-mass building physics improvements and proper reference data integration.
+Fluxion is **not yet ASHRAE 140-compliant**. The figures below come from the committed validation suite (generated 2026-08-07); see [`docs/ASHRAE140_RESULTS.md`](docs/ASHRAE140_RESULTS.md) for the full case-by-case breakdown and [`SCORECARD.md`](SCORECARD.md) for the consolidated, reproducible release-readiness view.
 
-### v0.8.0 Release Highlights
+| Metric | Current | Target (release gate) | Status |
+|--------|---------|-----------------------|--------|
+| Pass rate (metric-level) | **20.3%** (13/64) | ≥ 60% | ❌ Fail |
+| Mean Absolute Error (MAE) | **55.09%** | ≤ 50% | ❌ Fail |
+| Cases fully passing | 1/18 (5.6%) | — | ❌ |
+| Max single-case deviation | 499.89% | — | ℹ️ |
 
-- **Complete ASHRAE 140 Reference Database**: Multi-program reference ranges (EnergyPlus, ESP-r, TRNSYS) for all test cases including high-mass and free-float scenarios.
-- **Peak Load Validation**: Proper validation of heating/cooling peak loads with ASHRAE 140-2023 reference ranges.
-- **Free-Floating Temperature Validation**: Comprehensive validation of unconditioned building temperature profiles.
-- **Automated Validation System**: Enhanced validation runner with proper reference data loading and detailed reporting.
-- **Physics Improvements**: Continued refinement of CTF solver parameters for high-mass buildings.
-- **Performance**: Achieves ~900 configs/sec throughput in release mode (exceeds 800 target).
+### v1.3 Milestone — Blind ASHRAE 140 Validation (Physics Only)
 
-See [ASHRAE 140 v0.8.0 Validation Results](docs/ASHRAE140_RESULTS_v0.8.0.md) for comprehensive validation data including peak loads and free-floating temperature profiles.
+The current milestone removes all post-simulation correction factors and case-type hints, then fixes the underlying physics so the engine passes against **true** ASHRAE 140 reference values (not "calibrated for 5R1C" ranges). The milestone is structured in five phases (all currently in planning/baseline):
 
-### Release Scorecard
+- **Phase A — Baseline Stripping:** Catalog and remove all correction infrastructure; measure the true physics-only baseline.
+- **Phase B — Physics Fixes:** Solar distribution (ISO 13790), thermal-mass time constant, and free-floating temperature fixes across ~18 weeks.
+- **Phase C — Benchmark Correction:** Replace calibrated ranges with true EnergyPlus/ESP-r/TRNSYS reference values.
+- **Phase D — Blind Validation Pass:** Run the full blind suite targeting ≥80% pass.
+- **Phase E — Sustained Validation:** CI gate + regression tracking to hold the pass rate as the codebase evolves.
 
-For a consolidated view of release readiness, pass rates, and benchmark status, see the [Release Scorecard](SCORECARD.md).
+See [`.planning/ROADMAP.md`](.planning/ROADMAP.md) and [`.planning/ASHRAE_140_BLIND_VALIDATION_PLAN.md`](.planning/ASHRAE_140_BLIND_VALIDATION_PLAN.md) for phase detail and requirements.
 
 ### Known Limitations
 
-- **Peak Load Accuracy**: High-mass peak loads show ~76-100% overestimation due to CTF solver limitations with instantaneous peak conditions. This is a known architectural constraint for v0.8.0.
-- **CTF Thermal Mass**: Annual energy accuracy improved (±15-30% range), but peak load handling remains challenging. Full peak accuracy requires the planned v1.0 finite volume solver.
-- **Free-Floating Validation**: Working correctly but shows ±1-2°C temperature range deviations due to simplified thermal damping models.
+These are documented **structural failures** (also listed in `release_gates.yaml → validation.individual.known_failures` and `AGENTS.md`). Per `RULES.md`, the fix path is the underlying physics — **no parameter tuning** to make tests pass.
+
+- **Baseline 600-series (low-mass):** All 6 cases FAIL. Simplified envelope model over-predicts peak loads (e.g. peak heating ~4.36 kW vs 2.80–3.80 kW reference band).
+- **High-mass 900-series:** All 6 cases FAIL. Heating is over-predicted by ~**200%** due to a 5R1C/CTF thermal-mass limitation (e.g. Case 900 annual heating 5,449 kWh vs 1,170–2,040 kWh reference band).
+- **Overall accuracy:** 55.09% MAE, driven by the high-mass annual-energy deviation above.
+- **Peak load accuracy:** High-mass peak loads over-estimated; full peak accuracy awaits the planned gauge-solver / finite-volume work (Phase B / `gauge-solver` feature).
+
+For the historical v0.8.0 snapshot (Peak Load & Free-Float Validation narrative), see [`docs/ASHRAE140_RESULTS_v0.8.0.md`](docs/ASHRAE140_RESULTS_v0.8.0.md). Note that the v0.8.0 "near-passing" framing is superseded by the current blind-validation figures above.
 
 ## 🚀 Features
 
-  * **Throughput**: Evaluates **800-1000+ configurations/sec** via `BatchOracle` and `rayon` threading.
-  * **Speed**: <100ms annual simulations via AI approximation.
-  * **Hybrid Physics**: Hard constraints (Energy Balance) + Soft constraints (Neural Surrogates).
-  * **Interoperability**: Native Python SDK via `pyo3` and Node.js bindings via `napi-rs`.
-  * **Cross-Platform**: Supports macOS (x64 + ARM), Linux, and Windows.
+- **Throughput:** ~900 configs/sec throughput in release mode via `BatchOracle` and `rayon` threading (≥150 configs/sec CI gate; see [`SCORECARD.md`](SCORECARD.md)).
+- **Speed:** <100ms annual simulations via AI approximation (design target).
+- **Hybrid Physics:** Hard constraints (Energy Balance) + Soft constraints (Neural Surrogates) at swap-point traits.
+- **Interoperability:** Native Python SDK via `pyo3` and Node.js bindings via `napi-rs`.
+- **Cross-Platform:** Supports macOS (x64 + ARM), Linux, and Windows.
+
+### Feature Flags (default = none)
+
+Most functionality is behind cargo feature flags; default builds skip the ONNX runtime. Notable flags:
+
+- **Physics solvers:** `gauge-solver` (replaces 5R1C/9R4C as primary zone solver), `debug-physics` (gates `eprintln!` in physics hot loops).
+- **AI / surrog:** `ort` (alias `onnx`, ONNX inference), `cuda` (GPU inference; auto-downgrades to CPU if unavailable).
+- **Acausal HVAC / fluid:** `fluid` (enables `fluxion-fluid` acausal HVAC/fluid port traits).
+- **Advanced co-simulation:** `fluxion-cfd` (FFD/CFD airflow), `fluxion-city` (urban radiation), `dwave` (D-Wave quantum annealing SAPI).
+- **Telemetry / concurrency:** `kafka` (rdkafka telemetry), `loom` (concurrency fuzzing; needs ~32 GB).
+- **Bindings / interop:** `python-bindings`, `extension-module` (maturin wheel), `napi-bindings`, `multi-zone`, `wiring-tracing`, `ashrae_140_v2021`, `dhat` (heap profiling).
+
+See [`AGENTS.md`](AGENTS.md) §Toolchain Quirks for the complete, authoritative feature list and build commands.
 
 ## 🛠 Installation
 
@@ -62,7 +86,7 @@ npm install
 npm run build
 ```
 
-The Node.js bindings provide high-performance native access to Fluxion with >10,000 configs/sec throughput and full TypeScript support. See [npm/README.md](npm/README.md) for detailed documentation.
+The Node.js bindings provide high-performance native access to Fluxion with full TypeScript support. See [`npm/README.md`](npm/README.md) for detailed documentation.
 
 ### Development Setup (recommended)
 
@@ -102,63 +126,65 @@ python -m pip install 'maturin>=1.0,<2.0'
 ## 🌳 Contributing & Branching
 
 **Development Workflow**:
-- **Development**: Use the \`develop\` branch for active feature development and testing
-- **Pull Requests**: Create PRs against the \`develop\` branch
-- **Releases**: Merge from \`develop\` to \`main\` for official releases
+- **Development**: Use the `develop` branch for active feature development and testing.
+- **Pull Requests**: Create PRs against the `develop` branch (PR body must include `Closes #N` / `Fixes #N`).
+- **Releases**: Merge from `develop` to `main` via a release PR (`--no-ff`). No direct pushes to `develop` or `main`.
 
-See [CONTRIBUTING.md](docs/CONTRIBUTING.md) for detailed guidelines.
+See [`CONTRIBUTING.md`](CONTRIBUTING.md) (short form) and [`docs/CONTRIBUTING.md`](docs/CONTRIBUTING.md) (long form) for detailed guidelines.
 
 ## 🚀 Release Process
 
-Follow these steps to prepare and publish a new version of Fluxion:
+Follow these steps to prepare and publish a new version of Fluxion.
+
+> **Note on validation gating:** ASHRAE 140 validation is **not** currently a release-passing check — the strict ±15% annual-energy gate applies only to cases that are not documented structural failures (see [Current Validation Status](#current-validation-status)). Baseline **Case 600** and high-mass **Case 900** are excluded as known structural failures; do **not** treat "Case 900 annual energy within reference ranges" as a pre-release verification step — it is a known FAIL (5,449 kWh vs the 1,170–2,040 kWh band) being addressed by the v1.3 milestone.
 
 ### 1. Version Bump
 Update the version number in both configuration files:
-- **Rust**: \`Cargo.toml\` (\`[package] version = "X.Y.Z"\`)
-- **Python**: \`pyproject.toml\` (\`[project] version = "X.Y.Z"\`)
+- **Rust**: `Cargo.toml` (`[package] version = "X.Y.Z"`)
+- **Python**: `pyproject.toml` (`[project] version = "X.Y.Z"`)
 
 ### 2. Validation & Quality Check
 Ensure all physics and integration tests pass before proceeding:
-\`\`\`bash
+```bash
 # Run all unit tests
 cargo test --release
 
-# Run ASHRAE 140 validation suite
+# Run ASHRAE 140 validation suite (informational until v1.3 lands)
 cargo test --test ashrae_140_validation -- --nocapture
-\`\`\`
-Verify that Case 900 annual energy results are within reference ranges in \`docs/ASHRAE140_RESULTS.md\`.
+```
+Check the current pass rate and known failures in [`docs/ASHRAE140_RESULTS.md`](docs/ASHRAE140_RESULTS.md) and [`SCORECARD.md`](SCORECARD.md). Required branch-protection checks are listed in `release_gates.yaml → ci.required_checks`.
 
 ### 3. Package Verification
 Verify the crate size and structure for crates.io:
-\`\`\`bash
+```bash
 # Check package size (must be < 10MB)
 # Ensure large directories like refdata/ and assets/ are excluded in Cargo.toml
 cargo publish --dry-run --allow-dirty
-\`\`\`
-Successful output should show: \`Packaged X files, ~3.1MiB (632.9KiB compressed)\`.
+```
+Successful output should show: `Packaged X files, ~3.1MiB (632.9KiB compressed)`.
 
 ### 4. Build Python Wheels
 Build the cross-platform Python wheels:
-\`\`\`bash
+```bash
 maturin build --release
-\`\`\`
-Wheels will be generated in \`target/wheels/\`.
+```
+Wheels will be generated in `target/wheels/`.
 
 ### 5. Publication
 Publish to package registries (requires owner tokens):
-\`\`\`bash
+```bash
 # Publish to crates.io
 cargo publish
 
 # Publish to PyPI
 twine upload target/wheels/*
-\`\`\`
+```
 
 ### 6. GitHub Release
 Create a new tag and release on GitHub:
-\`\`\`bash
+```bash
 gh release create vX.Y.Z --notes-file CHANGELOG.md
-\`\`\`
+```
 
 ## 🧪 Usage
 
@@ -286,4 +312,4 @@ Sample results:
 
 Notes:
 - The included `SurrogateManager` currently returns deterministic mock loads when no neural model is loaded, so results are deterministic given the same random seed and are intended for API validation and performance testing rather than production accuracy.
-- For validation or publication-quality results, implement a trained surrogate (ONNX) and calibrate the physics engine; then `EUI` can be converted and reported in `kWh/m²/year` as described in the docs.
+- For validation or publication-quality results, implement a trained surrogate (ONNX) and complete the v1.3 blind-validation milestone; then `EUI` can be converted and reported in `kWh/m²/year` as described in the docs.
