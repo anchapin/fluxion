@@ -1,256 +1,264 @@
 # Codebase Structure
 
-**Analysis Date:** 2026-03-08
+**Analysis Date:** 2026-08-11
+**Layout:** Post-#1255 multi-crate Cargo workspace (1 root package + 10 workspace members).
 
-## Directory Layout
+## Workspace Layout
 
 ```
-fluxion/
-├── src/                      # Rust source code (core engine)
-│   ├── ai/                   # AI surrogate models and inference
-│   ├── physics/              # Continuous Tensor Abstraction (CTA)
-│   ├── sim/                  # Physics-based building simulation
-│   ├── validation/           # ASHRAE 140 validation framework
-│   ├── weather/             # Weather data handling (EPW, TMY)
-│   ├── bin/                 # Rust CLI entry point
-│   └── lib.rs              # PyO3 module definition (Python bindings)
-├── api/                     # FastAPI REST API server
-├── tests/                   # Integration tests (Rust and Python)
-├── tools/                   # Python training and benchmarking scripts
-├── benches/                 # Rust benchmarks (CTA, engine performance)
-├── examples/                # Usage examples and demos
-├── docs/                    # Documentation (architecture, guides)
-├── models/                  # Trained ONNX models (gitignored)
-├── .planning/              # Planning documents (this file)
-├── Cargo.toml              # Rust package configuration
-├── pyproject.toml          # Python packaging configuration
-└── README.md               # Project overview
+fluxion/                          # Cargo workspace root (also the main `fluxion` package)
+├── src/                          # Root `fluxion` crate — the engine
+│   ├── ai/                       # ONNX surrogate models and inference
+│   ├── api/                      # Rust-native axum REST server (fluxion-rest)
+│   ├── bin/                      # Rust CLI binaries (fluxion, fluxion_rest, export_csv, …)
+│   ├── cli/                      # CLI module
+│   ├── interop/                  # OSM / gbXML / IFC / FMI interoperability
+│   ├── physics/                  # Conduction solvers (HeatConductionSolver trait)
+│   ├── python/                   # PyO3 bindings (feature-gated: python-bindings)
+│   ├── napi/                     # NAPI-RS Node.js bindings (feature-gated: napi-bindings)
+│   ├── sim/                      # Physics-based building simulation (thermal model, solar, ventilation)
+│   ├── validation/               # ASHRAE 140 validation framework + energy balance
+│   └── lib.rs                    # PyO3 entrypoint — Model, BatchOracle
+│
+├── fluxion-core/                 # Dependency-light leaf modules (cycle-breaking crate, #1255)
+│   └── src/
+│       ├── weather/              # EPW / TMY weather parsing
+│       ├── fluid/                # Core fluid types (NOT the same as fluxion-fluid crate)
+│       ├── assembly.rs           # Construction assembly + ASHRAE 140 material constants
+│       ├── construction.rs       # Construction layer modeling
+│       ├── multi_node.rs         # Multi-node thermal network
+│       ├── per_surface_conduction.rs
+│       ├── ashrae_cases.rs       # ASHRAE 140 case definitions
+│       ├── physics_constants.rs
+│       ├── urban_radiation.rs
+│       ├── earth_tube.rs
+│       └── tensor.rs
+│
+├── fluxion-grid/                 # Grid-edge electrical: battery, bus, power flow, PV
+├── fluxion-behavior/             # Thermal comfort (Fanger PMV/PPD, adaptive), occupancy, lighting
+├── fluxion-wasm/                 # WebAssembly bindings (fluxion-core + fluxion-fluid)
+├── fluxion-city/                 # Urban radiation modeling (feature-gated: fluxion-city, #2344)
+├── fluxion-fluid/                # Acausal HVAC / fluid port traits (feature-gated: fluid, #1980)
+├── fluxion-cfd/                  # Fast Fluid Dynamics solver (feature-gated: fluxion-cfd, #2460)
+├── fluxion-mcp/                  # MCP server (depends on fluxion + multi-zone + fluid + toon)
+│
+├── crates/
+│   ├── fluxion-toon/             # Token-Oriented Object Notation (LLM-friendly serializer)
+│   └── fluxion-twin/             # Digital twin: Unscented Kalman Filter + MQTT telemetry
+│
+├── api/                          # Legacy Python FastAPI REST server (superseded by src/api/)
+├── npm/                          # Node.js NAPI-RS binding sources + build (node build.js --release)
+├── tests/                        # Integration tests + reference_data/ (EnergyPlus CSVs)
+├── benches/                      # Rust benchmarks
+├── tools/                        # Python training / benchmarking scripts
+├── examples/                     # Usage examples
+├── docs/                         # Documentation (architecture, ASHRAE 140 results, known issues)
+├── scripts/                      # CI guards: drift / cycle / docs-hygiene / release-gate checks
+├── models/                       # Trained ONNX models (gitignored)
+├── refdata/                      # Reference data (excluded from published crate)
+├── data/                         # Data files (excluded from published crate)
+├── validation/                   # Validation harness + coverage baseline
+├── measures/                     # OpenStudio measures (Ruby)
+├── .planning/                    # Planning documents (this file)
+├── .github/                      # GitHub Actions CI/CD workflows
+├── .githooks/                    # Custom git hooks (batch-oracle-pattern, rust-doc-check)
+│
+├── Cargo.toml                    # Workspace + root package config (members, features, profiles)
+├── Cargo.lock                    # Workspace lockfile (root)
+├── rust-toolchain.toml           # Stable toolchain pin (+ rustfmt + clippy)
+├── .rustfmt.toml                 # edition = "2021" (required)
+├── pyproject.toml                # Python packaging (PEP 621)
+├── release_gates.yaml            # Required branch-protection checks + thresholds
+├── ARCHITECTURE.md               # Source-of-truth module boundaries + trait contracts
+├── CODEBASE_MAP.md               # Cross-language FFI contracts (Rust/Python/Node)
+├── RULES.md                      # Hard constraints (numerical-reasoning-via-code, energy balance)
+├── CONTRIBUTING.md               # Workflow / PR / branch policy
+├── SCORECARD.md                  # Auto-generated release-readiness scorecard
+├── CHANGELOG.md                  # Versioned release notes
+├── AGENTS.md                     # Agent instructions (this project)
+└── README.md                     # Project overview
 ```
 
-## Directory Purposes
+`default-members = ["."]` — bare `cargo build` / `cargo test` build the root `fluxion` crate only. Workspace `members = ["fluxion-core", "fluxion-city", "fluxion-fluid", "fluxion-grid", "fluxion-behavior", "fluxion-mcp", "fluxion-wasm", "crates/fluxion-toon", "crates/fluxion-twin", "fluxion-cfd"]`.
 
-**src/:**
-- Purpose: Core Rust building energy modeling engine
-- Contains: Physics engine, AI surrogates, validation framework, weather handling, Python bindings
-- Key files: `src/lib.rs` (PyO3 bindings), `src/sim/engine.rs` (ThermalModel), `src/ai/surrogate.rs` (ONNX integration), `src/validation/ashrae_140_validator.rs` (validation)
+## Workspace Crate Purposes
 
-**src/ai/:**
-- Purpose: AI surrogate models and neural network inference for fast thermal load predictions
-- Contains: SurrogateManager (ONNX Runtime), NeuralScalarField (Fourier basis), context-aware inference, ensemble models, batch inference optimization
-- Key files: `src/ai/surrogate.rs` (main surrogate manager), `src/ai/neural_field.rs` (neural scalar field), `src/ai/context_aware.rs` (context-aware inference)
+### `fluxion` (root, `src/`)
 
-**src/physics/:**
-- Purpose: Continuous Tensor Abstraction (CTA) for unified tensor operations
-- Contains: ContinuousTensor trait, VectorField (CPU implementation), continuous fields, geometry tensors
-- Key files: `src/physics/cta.rs` (CTA trait and VectorField), `src/physics/continuous.rs` (ContinuousField trait), `src/physics/geometry_tensor.rs` (geometry tensors)
+- **Purpose:** Core Rust building energy modeling engine — the primary crate.
+- **Contains:** Physics engine (`sim/`, `physics/`), AI surrogates (`ai/`), validation framework (`validation/`), axum REST API (`api/`), Python / Node bindings (`python/`, `napi/`), interop (`interop/`), CLI (`cli/`, `bin/`).
+- **Key files:**
+  - `src/lib.rs` — PyO3 entrypoint; re-exports `Model`, `BatchOracle`, thermal_model traits, assembly, multi_node, ashrae_cases
+  - `src/physics/solver_trait.rs` — `HeatConductionSolver` swap-point trait (5R1C, CTF, FD, MultiNode)
+  - `src/sim/thermal_model.rs` — `ThermalModelTrait` swap-point trait (physics, surrogate, hybrid)
+  - `src/sim/ventilation.rs` — `VentilationSchedule` swap-point trait
+  - `src/api/server.rs` — Rust-native axum REST server (binary `fluxion-rest`)
+  - `src/bin/fluxion_rest.rs`, `src/bin/fluxion.rs`, `src/bin/run_ashrae_validation.rs` — CLI binaries
 
-**src/sim/:**
-- Purpose: Physics-based building energy simulation with RC thermal networks
-- Contains: ThermalModel (5R1C/6R2C), HVAC controllers, solar calculations, construction assemblies, shading, lighting, occupancy schedules, interzone heat transfer
-- Key files: `src/sim/engine.rs` (ThermalModel implementation), `src/sim/thermal_model.rs` (ThermalModelTrait), `src/sim/solar.rs` (solar calculations), `src/sim/construction.rs` (construction assemblies)
+### `fluxion-core/`
 
-**src/validation/:**
-- Purpose: ASHRAE 140 compliance testing and diagnostic tools
-- Contains: ASHRAE140Validator, CaseSpec definitions (18 cases), diagnostic collectors, benchmark data, cross-validation framework, fault detection and diagnosis (FDD)
-- Key files: `src/validation/ashrae_140_validator.rs` (validator), `src/validation/ashrae_140_cases.rs` (case specifications), `src/validation/diagnostic.rs` (diagnostic tools)
+- **Purpose:** Dependency-light *leaf* modules extracted to break the `sim` ↔ `validation` cycle (#1255). Built once & cached by cargo-mutants.
+- **Cycle rule:** `fluxion-core/src/**/*.rs` must NOT import `crate::sim_*` / `crate::physics_*` / `crate::ai_*` / `crate::validation_*` — enforced by `scripts/check_ashrae_cases_cycle.py` (#1441).
+- **Key files:** `weather/` (EPW / TMY), `assembly.rs` (inlined ASHRAE 140 material constants), `multi_node.rs`, `ashrae_cases.rs` (incl. `Orientation`), `per_surface_conduction.rs`, `physics_constants.rs`, `urban_radiation.rs`, `earth_tube.rs`, `tensor.rs`, `fluid/` (core fluid types).
+- **Re-exports:** `crate::weather::*`, `crate::assembly::*`, `crate::multi_node::*`, `crate::ashrae_cases::*`, `crate::sim::assembly::*`, `crate::sim::multi_node_thermal::*`, `crate::validation::ashrae_140_cases::Orientation` are preserved from the root crate as thin shims.
 
-**src/weather/:**
-- Purpose: Hourly meteorological data for building simulation
-- Contains: HourlyWeatherData structure, EPW file parser, embedded TMY data (Denver), WeatherSource trait
-- Key files: `src/weather/mod.rs` (weather structures), `src/weather/epw.rs` (EPW parser), `src/weather/denver.rs` (Denver TMY)
+### `fluxion-grid/`
 
-**src/bin/:**
-- Purpose: Rust CLI entry point for validation and benchmarking
-- Contains: fluxion CLI tool
-- Key files: `src/bin/fluxion.rs` (CLI implementation)
+- **Purpose:** Grid-edge electrical network components — battery storage, bus nodes, power flow, PV, joint thermal-electrical convergence (`ThermalElectricalCoupler`).
+- **Features:** `fluxion-integration` (alias `fluxion`) for `Arc<dyn ThermalModelTrait>` coupling; `fluid` for `fluxion-fluid` HvacState coupling.
 
-**api/:**
-- Purpose: Production-ready FastAPI REST API for remote building energy evaluation
-- Contains: FastAPI application, population evaluation endpoints, distributed inference management, monitoring and BAS integration
-- Key files: `api/main.py` (FastAPI app), `api/distributed_inference.py` (distributed inference), `api/monitoring.py` (monitoring endpoints)
+### `fluxion-behavior/`
 
-**tests/:**
-- Purpose: Integration tests for Rust and Python functionality
-- Contains: ASHRAE 140 validation tests, issue reproduction tests, thermal mass tests, Python binding tests
-- Key files: `tests/test_python_bindings.py` (Python tests), `tests/test_thermal_mass_accounting.rs` (thermal mass tests), `tests/ashrae_140_free_floating.rs` (FF cases)
+- **Purpose:** Behavioral and thermal comfort models — Fanger PMV/PPD, adaptive comfort, Markov + deterministic occupancy, lighting, plug loads, internal gains, moisture, occupant triggers, TOON time encoder.
+- **Features:** default = `["ort"]`.
 
-**tools/:**
-- Purpose: Python training scripts and benchmarking tools
-- Contains: ONNX model training, RL environment, batch inference benchmarks, distributed inference configuration
-- Key files: `tools/train_surrogate.py` (ONNX training), `tools/benchmark_throughput.py` (performance benchmarks), `tools/gymnasium_env.py` (RL environment)
+### `fluxion-wasm/`
 
-**benches/:**
-- Purpose: Rust benchmarks for CTA and engine performance
-- Contains: CTA performance benchmarks, engine throughput benchmarks
-- Key files: `benches/cta_bench.rs` (CTA benchmarks), `benches/engine_bench.rs` (engine benchmarks)
+- **Purpose:** WebAssembly bindings over `fluxion-core` + `fluxion-fluid` via `wasm-bindgen`.
 
-**examples/:**
-- Purpose: Usage examples and demonstration scripts
-- Contains: Risk-aware optimization examples, construction examples, validation demos
-- Key files: `examples/risk_aware_optimization.py` (optimization demo), `examples/construction_example.rs` (construction usage)
+### `fluxion-city/` (feature-gated)
 
-**docs/:**
-- Purpose: Project documentation and guides
-- Contains: Architecture deep dives, ASHRAE 140 validation guides, API reference, troubleshooting
-- Key files: `docs/ARCHITECTURE.md` (architecture overview), `docs/ASHRAE140_RESULTS.md` (validation results), `docs/API_REFERENCE.md` (API documentation)
+- **Purpose:** Urban radiation modeling with Nusselt-analog view factor computation (Issue #2344). Wires `UrbanRadiationSolver` into `PhysicsSurfaceFluxProvider` via `FluxionCitySurfaceFluxProvider`.
+- **Root feature:** `fluxion-city = ["dep:fluxion-city"]`.
+- **Crate features:** `parallel = ["rayon"]`.
 
-**models/:**
-- Purpose: Trained ONNX models for surrogate inference
-- Contains: ONNX model files (gitignored)
-- Generated: True
-- Committed: No (gitignored)
+### `fluxion-fluid/` (feature-gated)
+
+- **Purpose:** Compile-time strongly typed fluid port traits for acausal HVAC / fluid DAE systems (Issue #1980 / ADR-005). **Not** the same as `fluxion-core/src/fluid/`.
+- **Root feature:** `fluid = ["dep:fluxion-fluid"]`.
+- **Contains:** `port.rs`, `ports/`, `medium.rs`, `mediums/`, `properties.rs`, `energy.rs`, `hvac.rs`, `ecs/`, `autodiff/`, `pantelides.rs`.
+
+### `fluxion-cfd/` (feature-gated)
+
+- **Purpose:** GPU-accelerated Fast Fluid Dynamics (FFD) solver for building airflow simulation (Issue #2460). CPU / CUDA / OpenCL backends; wires `fluxion_cfd::FfdCfdSolver` into the loose-coupling `FfdSolver` trait.
+- **Root feature:** `fluxion-cfd = ["dep:fluxion-cfd"]`.
+- **Features:** default = `["cpu"]`; `cuda`, `opencl`.
+
+### `fluxion-mcp/`
+
+- **Purpose:** Model Context Protocol server for Rust-native BEM interface.
+- **Dependency:** Unconditionally depends on `fluxion` with `multi-zone` + `fluxion-fluid` + `fluxion-toon`.
+- **Features:** default = `["multi-zone"]` (gated behind the crate's own feature so workspace `--no-default-features` builds don't force `multi-zone` onto every member; see issue #2540).
+- **Build:** `cargo build -p fluxion-mcp` / `cargo test -p fluxion-mcp`.
+
+### `crates/fluxion-toon/`
+
+- **Purpose:** Token-Oriented Object Notation (TOON) — compact, LLM-friendly serializer/deserializer. SPEC in `crates/fluxion-toon/SPEC.md`.
+- **Features:** default = `[]`; `std`.
+
+### `crates/fluxion-twin/`
+
+- **Purpose:** Digital twin core — Unscented Kalman Filter for non-linear state estimation in thermal systems; MQTT telemetry consumer (TLS-only `mqtts://` port 8883 by default; plaintext gated on `FLUXION_MQTT_ALLOW_INSECURE`).
+
+## Module Boundaries (root `src/`)
+
+```
+Weather (fluxion-core/src/weather/)  →  Solar (src/sim/solar.rs)      →  Zone Balance
+                                     →  Ventilation (src/sim/ventilation.rs)
+                                     →  Conduction (src/physics/solver_trait.rs)
+```
+
+**ML-surrogate swap-point traits** (see `ARCHITECTURE.md` for full contracts):
+- `HeatConductionSolver` (`src/physics/solver_trait.rs`) — 5R1C, CTF, FD, MultiNode
+- `VentilationSchedule` (`src/sim/ventilation.rs`) — constant, scheduled, weather-dependent
+- `ThermalModelTrait` (`src/sim/thermal_model.rs`) — physics, surrogate, hybrid (`HybridThermalModel` + `HybridRouting`)
+
+`ThermalModel` is `Clone`-by-design — `BatchOracle::evaluate_population` uses rayon `par_iter()` at the **population level only**. Nested parallelism in the inner loop causes thread-pool exhaustion; pre-commit hook `.githooks/batch-oracle-check.sh` enforces this on `lib.rs`.
 
 ## Key File Locations
 
 **Entry Points:**
-- `src/lib.rs`: PyO3 module definition (BatchOracle, Model classes for Python)
-- `src/bin/fluxion.rs`: Rust CLI entry point (fluxion validate --all)
-- `api/main.py`: FastAPI REST API entry point (HTTP endpoints)
+- `src/lib.rs` — PyO3 module definition (`BatchOracle`, `Model`)
+- `src/bin/fluxion.rs` — Rust CLI (`fluxion validate --all`, etc.)
+- `src/bin/fluxion_rest.rs` — Rust-native axum REST server (`fluxion-rest`, default `0.0.0.0:8080`)
+- `fluxion-mcp/src/main.rs` — MCP server binary (`fluxion-mcp`)
+- `api/main.py` — *Legacy* Python FastAPI server (superseded by `src/api/`)
 
 **Configuration:**
-- `Cargo.toml`: Rust package configuration (dependencies, features, release profile)
-- `pyproject.toml`: Python packaging configuration (dependencies, build system)
-- `rust-toolchain.toml`: Rust toolchain version (1.83.0)
-- `.pre-commit-config.yaml`: Pre-commit hooks (Rust and Python linting)
+- `Cargo.toml` — Workspace + root package (members, features, profiles)
+- `pyproject.toml` — Python packaging (PEP 621)
+- `rust-toolchain.toml` — Stable toolchain pin
+- `.rustfmt.toml` — `edition = "2021"`
+- `.pre-commit-config.yaml` — Pre-commit hooks
+- `release_gates.yaml` — Required branch-protection checks + thresholds
 
-**Core Logic:**
-- `src/sim/engine.rs`: ThermalModel implementation (4059 lines, 5R1C/6R2C physics)
-- `src/sim/thermal_model.rs`: ThermalModelTrait and modular model types
-- `src/physics/cta.rs`: Continuous Tensor Abstraction (VectorField, trait definitions)
-- `src/ai/surrogate.rs`: SurrogateManager (ONNX Runtime integration, session pooling)
+**Source-of-truth contracts:**
+- `ARCHITECTURE.md` — Module boundaries, trait contracts, data flow (checked by `scripts/check_architecture_drift.py`)
+- `CODEBASE_MAP.md` — Cross-language FFI contracts (Rust / Python / Node), memory ownership, serialization
 
-**Testing:**
-- `tests/test_python_bindings.py`: Python integration tests
-- `tests/ashrae_140_free_floating.rs`: ASHRAE 140 FF case tests
-- `tests/test_thermal_mass_accounting.rs`: Thermal mass energy accounting tests
-- `src/validation/ashrae_140_validator.rs`: Validation framework (1431 lines)
+**Validation:**
+- `src/validation/` — ASHRAE 140 validator, case specs, diagnostic tools
+- `tests/ashrae_140_validation.rs`, `tests/zone_balance_eplus_isolation.rs` — Validation suites
+- `tests/reference_data/` — EnergyPlus CSV reference data
+- `validation/coverage_baseline.json` — Coverage ratchet baseline (#1932)
+
+**Drift / cycle / docs-hygiene guards:**
+- `scripts/check_architecture_drift.py` — `ARCHITECTURE.md` vs code
+- `scripts/check_ashrae_cases_cycle.py` — `fluxion-core` cycle guard (#1441)
+- `scripts/check_physics_sim_cycle.py` — physics ↔ sim cycle guard (#2463)
+- `scripts/check_root_md_policy.py` / `scripts/check_docs_summaries.py` — docs hygiene (#2466)
+- `scripts/check_known_issues_stale.py` — `docs/KNOWN_ISSUES.md` freshness (#1723)
+- `scripts/release_gate_checker.py` — release-gate evaluation
 
 ## Naming Conventions
 
 **Files:**
-- Rust source: `snake_case.rs` (e.g., `thermal_model.rs`, `surrogate_manager.rs`)
+- Rust source: `snake_case.rs` (e.g., `thermal_model.rs`, `solver_trait.rs`)
 - Python source: `snake_case.py` (e.g., `main.py`, `train_surrogate.py`)
-- Module directories: `snake_case/` (e.g., `src/sim/`, `src/ai/`)
-
-**Directories:**
-- Core modules: `src/` (Rust), `api/` (Python), `tools/` (Python scripts)
-- Test directories: `tests/` (integration tests), `benches/` (Rust benchmarks)
-- Documentation: `docs/` (markdown files), `examples/` (usage examples)
-
-**Functions:**
-- Rust: `snake_case` (e.g., `solve_timesteps`, `apply_parameters`, `predict_loads`)
-- Python: `snake_case` (e.g., `evaluate_population`, `simulate`, `validate`)
+- Module directories: `snake_case/` (e.g., `src/sim/`, `fluxion-core/src/weather/`)
 
 **Types:**
-- Rust structs: `PascalCase` (e.g., `ThermalModel`, `VectorField`, `SurrogateManager`)
-- Rust enums: `PascalCase` (e.g., `HVACMode`, `ThermalModelType`, `InferenceBackend`)
-- Rust traits: `PascalCase` (e.g., `ContinuousTensor`, `ThermalModelTrait`, `WeatherSource`)
-- Python classes: `PascalCase` (e.g., `BatchOracle`, `Model`, `PopulationEvaluationRequest`)
+- Rust structs / enums / traits: `PascalCase` (e.g., `ThermalModel`, `HeatConductionSolver`, `ThermalModelTrait`, `BatchOracle`)
+- Python classes: `PascalCase` (e.g., `BatchOracle`, `Model`)
 
 **Constants:**
-- Rust: `SCREAMING_SNAKE_CASE` (e.g., `MIN_U_VALUE`, `MAX_SETPOINT`, `HOURS_PER_YEAR`)
-- Python: `SCREAMING_SNAKE_CASE` (e.g., `HOURS_PER_YEAR`, `DEFAULT_NUM_ZONES`)
-
-**Modules:**
-- Rust: `snake_case` (e.g., `pub mod ai;`, `pub mod sim;`, `pub mod validation;`)
-- Python: `snake_case` (e.g., `import fluxion`, `from ai import surrogate`)
+- Rust / Python: `SCREAMING_SNAKE_CASE` (e.g., `EXTERIOR_FILM_COEFF`, `HOURS_PER_YEAR`)
 
 ## Where to Add New Code
 
-**New Feature (Physics):**
-- Primary code: `src/sim/[feature_name].rs` (e.g., `src/sim/humidity.rs` for humidity modeling)
-- Tests: `tests/test_[feature_name].rs` (e.g., `tests/test_humidity.rs`)
-- Add to `src/sim/mod.rs`: `pub mod [feature_name];`
+**New physics feature:**
+- Primary: `src/sim/[feature].rs` or `src/physics/[feature].rs`
+- Tests: `tests/[feature].rs`
+- Module wire-up: add `pub mod [feature];` to the relevant `mod.rs`
+- ⚠️ Check `ARCHITECTURE.md` first — do NOT modify physics code without verifying the documented interfaces
 
-**New Feature (AI):**
-- Primary code: `src/ai/[feature_name].rs` (e.g., `src/ai/transformer_surrogate.rs` for transformer-based models)
-- Tests: `tests/test_[feature_name].rs` (e.g., `tests/test_transformer_surrogate.rs`)
-- Add to `src/ai/mod.rs`: `pub mod [feature_name];`
+**New leaf module (cycle-safe):**
+- Add to `fluxion-core/src/[module].rs` (must not import `crate::sim_*` / `physics_*` / `ai_*` / `validation_*`)
 
-**New Validation Case:**
-- Implementation: `src/validation/ashrae_140/case_[case_id].rs` (e.g., `case_600.rs`)
-- Integration: Add case to `src/validation/ashrae_140_cases.rs` (ASHRAE140Case enum)
-- Tests: `tests/test_case_[case_id].rs` (e.g., `tests/test_case_600.rs`)
+**New workspace crate:**
+- Add the crate directory, add to `members = [...]` in root `Cargo.toml`, and (if optional on the root) wire a feature flag in `[features]`
 
-**New Component/Module:**
-- Implementation: `src/[category]/[component_name].rs` (e.g., `src/physics/tensor_ops.rs` for new tensor operations)
-- Tests: `tests/test_[component_name].rs` (e.g., `tests/test_tensor_ops.rs`)
-- Add to module `mod.rs`: `pub mod [component_name];`
+**New ASHRAE 140 case:**
+- Implementation: `fluxion-core/src/ashrae_cases.rs`
+- Tests: `tests/` (follow the existing `tests/ashrae_140_*` pattern)
+- Reference data: `tests/reference_data/`
 
-**New Python API Endpoint:**
-- Implementation: `api/[endpoint_name].py` (e.g., `api/health.py` for health checks)
-- Integration: Add router to `api/main.py` (app.include_router)
-- Tests: `api/tests/test_[endpoint_name].py` (e.g., `api/tests/test_health.py`)
+**New Rust CLI binary:**
+- Source: `src/bin/[name].rs`
+- Wire-up: add `[[bin]]` to root `Cargo.toml`
 
-**New Training Script:**
-- Implementation: `tools/train_[model_name].py` (e.g., `tools/train_gnn_surrogate.py` for GNN-based surrogates)
-- Dependencies: Add to `tools/requirements.txt` or `requirements-dev.txt`
-- Tests: `tools/tests/test_train_[model_name].py` (e.g., `tools/tests/test_train_gnn_surrogate.py`)
-
-**Utilities:**
-- Shared helpers: `src/utils/[utility_name].rs` (e.g., `src/utils/conversions.rs` for unit conversions)
-- Add to `src/lib.rs`: `pub mod utils;` (if creating utils module)
-
-**New Benchmark:**
-- Implementation: `benches/[benchmark_name].rs` (e.g., `benches/solar_bench.rs` for solar calculation performance)
-- Add to `Cargo.toml`: `[[bench]] name = "[benchmark_name]" harness = false`
+**New Rust benchmark:**
+- Source: `benches/[name].rs`
+- Wire-up: add `[[bench]] name = "[name]"` to root `Cargo.toml`
 
 ## Special Directories
 
-**models/:**
-- Purpose: Trained ONNX models for surrogate inference
-- Contains: ONNX model files (.onnx)
-- Generated: Yes (trained by scripts in `tools/`)
-- Committed: No (gitignored in `.gitignore`)
+**`models/`:** Trained ONNX models for surrogate inference (gitignored; mock fallback when unset).
 
-**.planning/:**
-- Purpose: Planning documents and codebase analysis
-- Contains: Codebase mapping (this file), project configuration, work plans
-- Generated: Yes (by GSD agents)
-- Committed: Yes (documentation)
+**`.planning/`:** Planning documents and codebase analysis (this file). Not subject to the root-`.md` allow-list or docs-summary gate — it is project-internal planning.
 
-**target/:**
-- Purpose: Rust build artifacts (compiled binaries, libraries)
-- Contains: Debug/release builds, dependencies
-- Generated: Yes (by `cargo build`)
-- Committed: No (gitignored in `.gitignore`)
+**`target/`:** Rust build artifacts (gitignored).
 
-**.venv/, venv/:**
-- Purpose: Python virtual environments
-- Contains: Installed Python packages
-- Generated: Yes (by `python -m venv`)
-- Committed: No (gitignored in `.gitignore`)
+**`.venv/`, `venv/`:** Python virtual environments (gitignored).
 
-**.pytest_cache/, .ruff_cache/:**
-- Purpose: Test runner and linter cache
-- Contains: Cached test results, linting data
-- Generated: Yes (by pytest, ruff)
-- Committed: No (gitignored in `.gitignore`)
+**`worktrees/`:** Git worktrees for parallel development (gitignored).
 
-**.github/:**
-- Purpose: GitHub Actions CI/CD workflows
-- Contains: Workflow YAML files
-- Generated: No
-- Committed: Yes (CI/CD configuration)
+**`.github/`:** GitHub Actions CI/CD workflows (committed).
 
-**.githooks/:**
-- Purpose: Custom Git hooks for code quality
-- Contains: Shell scripts for batch-oracle-pattern enforcement, rust-doc-check
-- Generated: No
-- Committed: Yes (developer tooling)
+**`.githooks/`:** Custom git hooks (`batch-oracle-check.sh`, `rust-doc-check`; committed).
 
-**.jules/:**
-- Purpose: Jules AI agent workspace
-- Contains: Agent configuration and workspace data
-- Generated: Yes
-- Committed: No (gitignored in `.gitignore`)
-
-**worktrees/:**
-- Purpose: Git worktrees for parallel development
-- Contains: Separate working directories
-- Generated: Yes (by `git worktree add`)
-- Committed: No (gitignored in `.gitignore`)
+**`refdata/`, `data/`, `assets/`, `tests/`, `docs/`, `tools/`, `benches/`, `examples/`:** Excluded from the published crate via `Cargo.toml` `exclude` + `.cargoignore` (crate must stay <10 MB).
 
 ---
 
-*Structure analysis: 2026-03-08*
+*Structure analysis: 2026-08-11 (post-#1255 multi-crate workspace layout; 11 crates total — 1 root + 10 members).*
