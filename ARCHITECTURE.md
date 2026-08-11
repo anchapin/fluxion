@@ -164,16 +164,38 @@ they carry upward deps to `crate::sim::construction`, `crate::sim::hvac`,
 `crate::physics::constants::thermal::ashrae_140::*`, etc. — they cannot move
 into `fluxion-core`.
 
-**Regression guard**: `scripts/check_ashrae_cases_cycle.py` enforces three
+**Regression guard**: `scripts/check_ashrae_cases_cycle.py` enforces six
 invariants and is wired into CI (run from repo root):
 
 1. `fluxion-core/src/**/*.rs` has no `crate::sim::*` / `crate::physics::*` /
    `crate::ai::*` / `crate::validation::*` / `crate::interop::*` /
    `crate::python::*` / etc. references — keeps `fluxion-core` acyclic w.r.t.
    `fluxion`.
-2. `src/sim/**` has no `use crate::validation::ashrae_140_cases::Orientation`
-   — keeps the `sim ↔ validation` cycle closed.
-3. `fluxion_core::ashrae_cases` contains all 13 moved leaf types.
+2. `fluxion_core::ashrae_cases` contains all 13 moved leaf types.
+3. `src/sim/**` → `crate::validation::*` edge count is at or below the
+   documented baseline (currently 72). This counts *every* reference — not
+   just the leaf-type `Orientation` import the original #1441 guard forbid,
+   but the composite types that actually drive the cycle (`CaseSpec`,
+   `CaseBuilder`, `ASHRAE140Case`, `CommonWall`, `ConstructionSpec`) plus
+   `validation::diagnostics` / `validation::config`, whether written as a
+   `use` import or a fully-qualified path in a signature / match arm.
+4. `src/validation/**` → `crate::sim::*` (baseline 58).
+5. `src/validation/**` → `crate::physics::*` (baseline 62).
+6. `src/validation/**` → `crate::weather::*` (baseline 23).
+
+**The `sim ↔ validation` cycle is NOT fully removed.** Issue #1441 only
+moved the 13 pure-data leaf types; the composite types (`ASHRAE140Case`,
+`CaseSpec`, `CaseBuilder`, `CommonWall`, `ConstructionSpec`) stayed in
+`validation::ashrae_140_cases` because they carry upward deps to
+`crate::sim::*` / `crate::physics::*`, and `src/validation/**` legitimately
+drives the engine, weather sources, and physics tensors. As a result ~215
+directional edges remain (72 sim→validation + 58 validation→sim + 62
+validation→physics + 23 validation→weather). The guard therefore mirrors
+`scripts/check_physics_sim_cycle.py`: it snapshots the current counts as
+baselines and **fails only on regression** (a count grows above baseline),
+rather than requiring the full cycle removal in one step. Lowering a
+baseline is authorised only by the companion cycle-removal work; this
+guard rejects growth. See issue #2495.
 
 ### Remaining cycles (deferred to follow-up issues)
 

@@ -1,22 +1,46 @@
 #!/usr/bin/env python3
 """
-Cycle Regression Guard for the ASHRAE-140 leaf-types cycle (#1441).
+Cycle Regression Guard for the `sim <-> validation` cycle (#1441 + #2495).
 
-Verifies the `sim ↔ validation` cycle documented in `ARCHITECTURE.md`
-§"Remaining cycles" stays closed:
+Verifies the `sim <-> validation` cycle documented in `ARCHITECTURE.md`
+§"Cycle break (#1441 — ASHRAE-140 leaf types → `fluxion-core`)" cannot
+grow. Issue #1441 only *partially* broke the cycle — it moved 13 pure-data
+leaf types (Orientation, WindowArea, ...) into `fluxion_core::ashrae_cases`
+and the original version of this guard forbid a single import shape
+(`use crate::validation::ashrae_140_cases::Orientation`). The composite
+types that actually drive the cycle (`CaseSpec`, `CaseBuilder`,
+`ASHRAE140Case`, `CommonWall`, `ConstructionSpec`, ...) were never moved
+because they carry upward deps to `crate::sim::*` / `crate::physics::*`,
+so the cycle persisted undetected (issue #2495).
 
-1. `fluxion-core` must NOT import from `fluxion` (i.e. no `crate::sim::*`,
-   `crate::physics::*`, `crate::ai::*`, `crate::validation::*`, etc.).
-2. The `sim` source tree must NOT carry a `use crate::validation::ashrae_140_cases::Orientation`
-   import (the canonical cycle marker from issue #1441).
-3. `fluxion_core::ashrae_cases` MUST exist and contain the moved leaf types.
+This guard enforces four invariants:
+
+1. `fluxion-core` must NOT import from `fluxion` (no `crate::sim::*`,
+   `crate::physics::*`, `crate::ai::*`, `crate::validation::*`, etc.) —
+   the leaf crate stays acyclic w.r.t. the main crate.
+2. `fluxion_core::ashrae_cases` MUST exist and contain all 13 moved leaf
+   types (structural verification of the #1441 move).
+3. `src/sim/**` → `src/validation/**` edge count is at or below the
+   documented baseline (any `crate::validation::*` reference — `use`
+   imports AND fully-qualified usage like match arms on `CaseSpec`).
+4. `src/validation/**` → `src/{sim,physics,weather}/**` edge counts are
+   each at or below their documented baseline.
+
+Baseline/regression semantics (mirrors `scripts/check_physics_sim_cycle.py`):
+the documented baseline counts below snapshot the cycle as of the commit
+that introduced this guard (#2495). The script PASSES when every count is
+at or below its baseline and FAILS (exit 1) the moment a count INCREASES.
+This enforces "no new cycle edges" without requiring the (large, deferred)
+removal of the ~72 sim->validation + ~143 validation->{sim,physics,weather}
+edges that exist today. The companion cycle-removal work is the only
+change authorised to *lower* a baseline; this guard rejects growth.
 
 Usage:
   python3 scripts/check_ashrae_cases_cycle.py
 
 Exit codes:
-  0 — no cycle regression
-  1 — cycle regression detected
+  0 — no cycle regression (every count at or below its baseline)
+  1 — cycle regression detected (a count rose above its baseline)
   2 — script error
 """
 
@@ -29,6 +53,8 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parent.parent
 FLUXION_CORE_SRC = REPO_ROOT / "fluxion-core" / "src"
 FLUXION_SRC = REPO_ROOT / "src"
+SIM_DIR = FLUXION_SRC / "sim"
+VALIDATION_DIR = FLUXION_SRC / "validation"
 ASHRAE_CASES_FILE = FLUXION_CORE_SRC / "ashrae_cases.rs"
 
 # Leaf types that issue #1441 moved into fluxion-core.
@@ -48,10 +74,62 @@ MOVED_LEAF_TYPES = {
     "ConductanceReferences",
 }
 
+# ---------------------------------------------------------------------------
+# Documented baseline edge counts (issue #2495).
+#
+# Each baseline is the count of `crate::<dir>::` references the scan below
+# reports against the tree at the commit that introduced this guard. The
+# guard PASSES at-or-below baseline and FAILS when a count grows above it
+# (a new cycle edge appeared). Lowering a baseline is only authorised by
+# the companion cycle-removal work; see ARCHITECTURE.md
+# §"Cycle break (#1441 — ASHRAE-140 leaf types → `fluxion-core`)".
+#
+# Why a broad scan (not just `use` imports): the cycle is driven equally by
+# `use crate::validation::ashrae_140_cases::CaseSpec` imports and by
+# fully-qualified usages such as `crate::validation::ashrae_140_cases::
+# CaseSpec` in `impl`/`fn`/match arms. Counting every reference (after
+# stripping `//` and `*` comment lines) catches both forms and matches the
+# technique already used by `scan_fluxion_core_for_upward_deps` below and
+# by `check_physics_sim_cycle.py`'s physics->sim direction.
+# ---------------------------------------------------------------------------
+BASELINE_SIM_TO_VALIDATION = 72  # src/sim/**    -> crate::validation::*
+BASELINE_VALIDATION_TO_SIM = 58  # src/validation/** -> crate::sim::*
+BASELINE_VALIDATION_TO_PHYSICS = 62  # src/validation/** -> crate::physics::*
+BASELINE_VALIDATION_TO_WEATHER = 23  # src/validation/** -> crate::weather::*
+
+
+def _scan_dir_for_prefixes(directory: Path, prefixes: tuple[str, ...]) -> list[str]:
+    """Walk `directory`/**/*.rs and report every non-comment line containing
+    any of the given `crate::` prefixes.
+
+    Uses the `prefix in stripped` technique (no `use` anchor) so we catch
+    every form that would create the upward edge: `use`, `pub use`, glob
+    imports, and fully-qualified `crate::dir::Type` paths in expressions,
+    match arms, and signatures. Comment lines (`//`, `///`, `//!`, and `*`
+    block-comment continuations) are skipped, mirroring
+    `scan_fluxion_core_for_upward_deps`.
+    """
+    offenders: list[str] = []
+    if not directory.exists():
+        return offenders
+    for rs_file in directory.rglob("*.rs"):
+        rel = rs_file.relative_to(REPO_ROOT)
+        for lineno, line in enumerate(
+            rs_file.read_text(encoding="utf-8", errors="replace").splitlines(),
+            start=1,
+        ):
+            stripped = line.strip()
+            if stripped.startswith("//") or stripped.startswith("*"):
+                continue
+            for prefix in prefixes:
+                if prefix in stripped:
+                    offenders.append(f"{rel}:{lineno}: {stripped}")
+                    break
+    return offenders
+
 
 def scan_fluxion_core_for_upward_deps() -> list[str]:
     """Walk fluxion-core/src and forbid any reference to crate::sim|physics|ai|validation."""
-    offenders: list[str] = []
     upward_prefixes = (
         "crate::sim::",
         "crate::physics::",
@@ -68,31 +146,35 @@ def scan_fluxion_core_for_upward_deps() -> list[str]:
         "crate::thermal::",
         "crate::testing::",
     )
-    for rs_file in FLUXION_CORE_SRC.rglob("*.rs"):
-        rel = rs_file.relative_to(REPO_ROOT)
-        for lineno, line in enumerate(rs_file.read_text(encoding="utf-8", errors="replace").splitlines(), start=1):
-            stripped = line.strip()
-            if stripped.startswith("//") or stripped.startswith("*"):
-                continue
-            for prefix in upward_prefixes:
-                if prefix in stripped:
-                    offenders.append(f"{rel}:{lineno}: {stripped}")
-    return offenders
+    return _scan_dir_for_prefixes(FLUXION_CORE_SRC, upward_prefixes)
 
 
-def scan_sim_for_orientation_cycle() -> list[str]:
-    """Walk src/sim and forbid `use crate::validation::ashrae_140_cases::Orientation`."""
-    offenders: list[str] = []
-    pattern = re.compile(r"^\s*(pub\s+)?use\s+crate::validation::ashrae_140_cases::Orientation\b")
-    sim_dir = FLUXION_SRC / "sim"
-    if not sim_dir.exists():
-        return offenders
-    for rs_file in sim_dir.rglob("*.rs"):
-        rel = rs_file.relative_to(REPO_ROOT)
-        for lineno, line in enumerate(rs_file.read_text(encoding="utf-8", errors="replace").splitlines(), start=1):
-            if pattern.match(line):
-                offenders.append(f"{rel}:{lineno}: {line.strip()}")
-    return offenders
+def scan_sim_for_validation_deps() -> list[str]:
+    """src/sim/** -> crate::validation::* (composite types + re-exports).
+
+    Issue #2495: the old guard only forbid `use ...::Orientation` (a leaf
+    type that #1441 moved). The cycle is actually driven by composite types
+    — `CaseSpec`, `CaseBuilder`, `ASHRAE140Case`, `CommonWall`,
+    `ConstructionSpec`, plus the `validation::diagnostics` /
+    `validation::config` imports — so we now count *every*
+    `crate::validation::*` reference from `src/sim/**`.
+    """
+    return _scan_dir_for_prefixes(SIM_DIR, ("crate::validation::",))
+
+
+def scan_validation_for_sim_deps() -> list[str]:
+    """src/validation/** -> crate::sim::* (the validation->sim direction)."""
+    return _scan_dir_for_prefixes(VALIDATION_DIR, ("crate::sim::",))
+
+
+def scan_validation_for_physics_deps() -> list[str]:
+    """src/validation/** -> crate::physics::* (validation->physics edges)."""
+    return _scan_dir_for_prefixes(VALIDATION_DIR, ("crate::physics::",))
+
+
+def scan_validation_for_weather_deps() -> list[str]:
+    """src/validation/** -> crate::weather::* (validation->weather edges)."""
+    return _scan_dir_for_prefixes(VALIDATION_DIR, ("crate::weather::",))
 
 
 def verify_ashrae_cases_module() -> list[str]:
@@ -105,17 +187,48 @@ def verify_ashrae_cases_module() -> list[str]:
     for type_name in MOVED_LEAF_TYPES:
         # Match `pub enum TypeName` or `pub struct TypeName`
         if not re.search(rf"\bpub\s+(enum|struct)\s+{type_name}\b", content):
-            offenders.append(f"{ASHRAE_CASES_FILE.relative_to(REPO_ROOT)}: missing pub {type_name}")
+            offenders.append(
+                f"{ASHRAE_CASES_FILE.relative_to(REPO_ROOT)}: missing pub {type_name}"
+            )
     return offenders
 
 
+def _check_baseline(
+    name: str, found: list[str], baseline: int, failures: list[str]
+) -> None:
+    """Append a failure if `len(found)` exceeds `baseline`; print either way.
+
+    Mirrors the messaging shape of `check_physics_sim_cycle.py`: report the
+    count, the baseline, and (on regression) how many edges are NEW above
+    baseline. At-or-below baseline is OK.
+    """
+    count = len(found)
+    if count > baseline:
+        new_edges = count - baseline
+        failures.append(
+            f"{name}: {count} edge(s) (baseline: {baseline}; "
+            f"{new_edges} NEW edge(s) above baseline):"
+        )
+        failures.extend(f"    {o}" for o in found)
+        print(f"    FAIL: {count} edge(s) ({new_edges} above baseline {baseline})")
+    elif count:
+        print(f"    OK: {count} edge(s) (at baseline {baseline})")
+    else:
+        print(f"    OK: 0 edges (below baseline {baseline})")
+
+
 def main() -> int:
-    print(f"Checking cycle guards for issue #1441 (repo: {REPO_ROOT})")
+    print(
+        f"Checking sim<->validation cycle guards for issues #1441 + #2495 "
+        f"(repo: {REPO_ROOT})"
+    )
     print()
 
     failures: list[str] = []
 
-    print("[1/3] fluxion-core must have no upward deps to sim/physics/ai/validation ...")
+    print(
+        "[1/6] fluxion-core must have no upward deps to sim/physics/ai/validation ..."
+    )
     upward = scan_fluxion_core_for_upward_deps()
     if upward:
         failures.append(f"fluxion-core has {len(upward)} upward dep(s):")
@@ -124,16 +237,7 @@ def main() -> int:
     else:
         print("    OK: 0 upward deps")
 
-    print("[2/3] src/sim must not `use crate::validation::ashrae_140_cases::Orientation` ...")
-    cycle_markers = scan_sim_for_orientation_cycle()
-    if cycle_markers:
-        failures.append(f"src/sim has {len(cycle_markers)} cycle marker(s):")
-        failures.extend(f"    {m}" for m in cycle_markers)
-        print(f"    FAIL: {len(cycle_markers)} marker(s)")
-    else:
-        print("    OK: no cycle markers")
-
-    print("[3/3] fluxion_core::ashrae_cases must contain all moved leaf types ...")
+    print("[2/6] fluxion_core::ashrae_cases must contain all moved leaf types ...")
     missing = verify_ashrae_cases_module()
     if missing:
         failures.append("fluxion_core::ashrae_cases is incomplete:")
@@ -142,13 +246,79 @@ def main() -> int:
     else:
         print(f"    OK: all {len(MOVED_LEAF_TYPES)} leaf types present")
 
+    sim_to_validation = scan_sim_for_validation_deps()
+    validation_to_sim = scan_validation_for_sim_deps()
+    validation_to_physics = scan_validation_for_physics_deps()
+    validation_to_weather = scan_validation_for_weather_deps()
+
+    print("[3/6] src/sim/** -> crate::validation::* (composite + leaf types) ...")
+    _check_baseline(
+        "sim->validation", sim_to_validation, BASELINE_SIM_TO_VALIDATION, failures
+    )
+
+    print("[4/6] src/validation/** -> crate::sim::* ...")
+    _check_baseline(
+        "validation->sim", validation_to_sim, BASELINE_VALIDATION_TO_SIM, failures
+    )
+
+    print("[5/6] src/validation/** -> crate::physics::* ...")
+    _check_baseline(
+        "validation->physics",
+        validation_to_physics,
+        BASELINE_VALIDATION_TO_PHYSICS,
+        failures,
+    )
+
+    print("[6/6] src/validation/** -> crate::weather::* ...")
+    _check_baseline(
+        "validation->weather",
+        validation_to_weather,
+        BASELINE_VALIDATION_TO_WEATHER,
+        failures,
+    )
+
+    total = (
+        len(sim_to_validation)
+        + len(validation_to_sim)
+        + len(validation_to_physics)
+        + len(validation_to_weather)
+    )
+    baseline_total = (
+        BASELINE_SIM_TO_VALIDATION
+        + BASELINE_VALIDATION_TO_SIM
+        + BASELINE_VALIDATION_TO_PHYSICS
+        + BASELINE_VALIDATION_TO_WEATHER
+    )
+    print()
+    print(f"Total sim<->validation cycle edges: {total}")
+    print(
+        f"(Documented baseline: {baseline_total} = "
+        f"{BASELINE_SIM_TO_VALIDATION} sim->validation + "
+        f"{BASELINE_VALIDATION_TO_SIM} validation->sim + "
+        f"{BASELINE_VALIDATION_TO_PHYSICS} validation->physics + "
+        f"{BASELINE_VALIDATION_TO_WEATHER} validation->weather)"
+    )
+    print(
+        "The companion cycle-removal work drives each baseline toward 0; "
+        "this guard rejects growth."
+    )
+
     print()
     if failures:
         print("CYCLE REGRESSION DETECTED:")
         for f in failures:
             print(f"  {f}")
+        print()
+        print("A new `crate::validation::*` reference under `src/sim/**`, or a new")
+        print("`crate::{sim,physics,weather}::*` reference under `src/validation/**`,")
+        print("has appeared that exceeds the documented baseline. The companion")
+        print("cycle-removal issue is the only work authorised to lower a baseline;")
+        print('this guard rejects growth. See ARCHITECTURE.md §"Cycle break (#1441)".')
         return 1
-    print("No cycle regression. Issue #1441 cycle stays broken.")
+    print(
+        f"No cycle regression. sim<->validation cycle stays at {total} edge(s) "
+        f"(at or below documented baseline of {baseline_total})."
+    )
     return 0
 
 
