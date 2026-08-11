@@ -214,7 +214,7 @@ under §LIMIT-05 of KNOWN_ISSUES — the same root cause as Q4
 §4). Cases 600/650 and 900 peak cooling **are** within the post-#1270
 ±15 % reference envelope. Case 940 setback thermostat overshoots blind
 by 6–8× in the CTF path (diagnostic test
-`tests/case_940_setback_diagnostic.rs`, issue #2452); the structural
+`tests/diagnostics/case_940_setback_diagnostic.rs`, issue #2452); the structural
 fix is routed to GaugeSolver #1465/#1462.
 
 Do **not** cite the legacy "peak cooling 40–80 % under-predicted"
