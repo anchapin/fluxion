@@ -184,6 +184,5 @@ src/
 
 ## Further Reading
 
-- [Theory and Strategy](../docs/THEORY_AND_STRATEGY.md)
-- [Performance Tuning](../docs/PERFORMANCE_TUNING.md)
-- [ASHRAE 140 Validation](../docs/ASHRAE140_VALIDATION.md)
+- [Performance Benchmarks](PERFORMANCE_BENCHMARKS.md)
+- [ASHRAE 140 Validation](ASHRAE140_VALIDATION.md)
