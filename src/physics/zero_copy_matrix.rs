@@ -291,7 +291,9 @@ mod tests {
         let arc2 = std::sync::Arc::clone(&m.data);
         let ptr2 = arc2.as_ptr();
         assert_eq!(ptr1, ptr2);
-        assert_eq!(arc.len(), 3);
+        // Three strong references to the same allocation: `m.data`, `arc`, `arc2`.
+        // (`Arc::len` does not exist; `arc.len()` would deref to `Vec::len` → 4.)
+        assert_eq!(std::sync::Arc::strong_count(&arc), 3);
     }
 
     #[test]
