@@ -184,6 +184,14 @@ use pyo3::{
     Bound, PyResult, Python,
 };
 
+// Issue #2528: re-export the FFI crates so integration tests under
+// `tests/` (which link against `fluxion` as an external crate) can construct
+// numpy arrays and acquire the GIL without their own `numpy`/`pyo3`
+// `[dev-dependencies]` entry. Default-feature builds are unaffected: this
+// `pub use` is feature-gated exactly like the imports above.
+#[cfg(feature = "python-bindings")]
+pub use {numpy, pyo3};
+
 // Re-export things for easier access in other modules
 // pub use ai::tensor_wrapper::TorchScalar; // REMOVED
 
@@ -1625,18 +1633,36 @@ impl BatchOracle {
         // Try to extract as 2D numpy array
         let array = population.downcast::<numpy::PyArray2<f64>>()?;
 
-        // Get raw data pointer and dimensions
-        let array_slice = unsafe { array.as_slice()? };
+        // Issue #2528: validate shape *before* any `unsafe` slice dereference.
+        // A zero-row array (`[0, 3]`) or a wrong column count previously
+        // reached `unsafe { array.as_slice() }` and could panic / abort the
+        // host interpreter. Now it raises a catchable `PyValueError`.
+        let (n_candidates, n_params) =
+            crate::python::panic_hook::validate_population_array_shape(array)?;
+
+        // SAFETY-free path: `readonly().as_slice()` is the safe numpy accessor
+        // (returns `Err(NotContiguousError)` instead of panicking). The
+        // previous `unsafe { array.as_slice()? }` had no soundness benefit —
+        // `PyArrayMethods::as_slice` is itself the safe `readonly().as_slice()`
+        // — and the `unsafe` block masked the panic-abort hazard.
+        let readonly = array.readonly();
+        let array_slice = readonly.as_slice().map_err(|e| {
+            pyo3::exceptions::PyValueError::new_err(format!(
+                "population array must be C-contiguous: {e}"
+            ))
+        })?;
         let total_len = array_slice.len();
 
-        // Assume 3 columns: U-value, heating, cooling
-        let n_params = 3;
-        if total_len % n_params != 0 {
-            return Err(pyo3::exceptions::PyValueError::new_err(
-                "Population array size must be divisible by 3",
+        // Defensive double-check: the validator guarantees the shape, but the
+        // slice length must agree with `n_candidates * n_params`. If a future
+        // change breaks that invariant we surface a clean error rather than
+        // panicking on the row/slice indexing below.
+        debug_assert_eq!(total_len, n_candidates * n_params);
+        if total_len != n_candidates * n_params {
+            return Err(pyo3::exceptions::PyRuntimeError::new_err(
+                "population array slice length disagrees with validated shape",
             ));
         }
-        let n_candidates = total_len / n_params;
 
         // Get contiguous copy of the data for efficient iteration
         let population_vec: Vec<Vec<f64>> = (0..n_candidates)
@@ -1864,6 +1890,13 @@ impl ParameterBounds {
 #[cfg(feature = "python-bindings")]
 #[pymodule]
 fn fluxion(_py: Python, m: &Bound<'_, PyModule>) -> PyResult<()> {
+    // Issue #2528: install the PyO3-aware panic hook before registering any
+    // #[pyfunction]. A panic inside a #[pyfunction] (e.g. from the
+    // `unsafe { array.as_slice() }` / `RawArrayView::from_shape_ptr` blocks)
+    // would otherwise abort the host interpreter / leak source paths via the
+    // default `std::panic` hook. Idempotent — safe across re-exports.
+    crate::python::panic_hook::install();
+
     // Register custom exception types
     m.add("FluxionError", _py.get_type_bound::<FluxionErrorPy>())?;
     m.add("ValidationError", _py.get_type_bound::<ValidationError>())?;
@@ -2315,15 +2348,28 @@ impl PyGeometryTensor {
         fn borrow_f64_slice(arr: &Bound<'_, pyo3::types::PyAny>) -> PyResult<Vec<f64>> {
             // Try 2D array first
             if let Ok(pyarr) = arr.downcast::<numpy::PyArray2<f64>>() {
-                // SAFETY: PyReadonlyArray dynamically borrows the numpy array;
-                // `as_slice` returns a `&[f64]` with no copy on the binding
-                // layer.
-                let slice = unsafe { pyarr.as_slice()? };
+                // Issue #2528: use the safe `readonly().as_slice()` accessor
+                // instead of `unsafe { pyarr.as_slice()? }`. The previous
+                // `unsafe` block was unsound-by-omission (the safe path
+                // exists exactly for this) and masked the panic-abort hazard
+                // for non-contiguous / zero-dim arrays. Bind `readonly` to a
+                // local so the returned slice outlives the temporary guard.
+                let readonly = pyarr.readonly();
+                let slice = readonly.as_slice().map_err(|e| {
+                    pyo3::exceptions::PyValueError::new_err(format!(
+                        "non-contiguous 2-D array: {e}"
+                    ))
+                })?;
                 return Ok(slice.to_vec());
             }
             // Try 1D array
             if let Ok(pyarr) = arr.downcast::<numpy::PyArray1<f64>>() {
-                let slice = unsafe { pyarr.as_slice()? };
+                let readonly = pyarr.readonly();
+                let slice = readonly.as_slice().map_err(|e| {
+                    pyo3::exceptions::PyValueError::new_err(format!(
+                        "non-contiguous 1-D array: {e}"
+                    ))
+                })?;
                 return Ok(slice.to_vec());
             }
             // Fallback to Python sequence iteration (no zero-copy possible —
