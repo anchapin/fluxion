@@ -421,6 +421,19 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         self.0.temperatures.as_ref().to_vec()
     }
 
+    /// Extract current temperatures into a caller-supplied reuse buffer.
+    ///
+    /// This is the zero-allocation variant of [`Self::get_temperatures`] for
+    /// the per-timestep hot loop (Issue #2687): `out` is cleared and refilled
+    /// in place, reusing its existing capacity, so after warm-up no heap
+    /// allocation occurs. The produced bytes are identical to
+    /// `self.get_temperatures()` — only the ownership of the buffer differs.
+    pub fn get_temperatures_into(&self, out: &mut Vec<f64>) {
+        let src = self.0.temperatures.as_ref();
+        out.clear();
+        out.extend_from_slice(src);
+    }
+
     /// Get the full hourly zone temperature profiles (Issue #763).
     ///
     /// # Returns
@@ -520,8 +533,13 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
     ///
     /// # Arguments
     /// * `loads` - Thermal loads (W/m²) for each zone
+    ///
+    /// Issue #2687: backed by `VectorField::from_slice`, so for ≤ 4 zones the
+    /// load field is rebuilt inline (no heap allocation) instead of via a
+    /// `to_vec()` + `Vec`→`SmallVec` round-trip. The stored values are
+    /// identical to the prior implementation.
     pub fn set_loads(&mut self, loads: &[f64]) {
-        self.0.loads = T::from(VectorField::new(loads.to_vec()));
+        self.0.loads = T::from(VectorField::from_slice(loads));
     }
 
     /// Set weather data for solar gain calculations.

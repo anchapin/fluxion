@@ -178,6 +178,11 @@ sha2 = "0.10"
 faer = { version = "0.23.2", default-features = false, features = ["std"] }
 nalgebra = "0.34"  # Linear algebra - matrix operations
 uom = "0.35"  # Units of measurement - dimensional analysis
+# Inline storage for small collections — backs VectorField's SmallVec<[f64; 4]>
+# so the per-timestep hot loop (Issue #2687) stops heap-allocating for ≤4-zone
+# models (clone/map/zip_with/constant_like become stack ops). Already a
+# transitive dep; pinned to the workspace version (see Cargo.lock).
+smallvec = "1.15"
 # ndarray 0.16 uses pulp 0.21+ which has fixed the size assertion issue with num-complex
 ndarray = { version = "0.17", default-features = false, features = ["std", "serde"] }
 num-complex = "0.4"

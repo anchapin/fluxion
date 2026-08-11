@@ -4,31 +4,46 @@
 //! `ThermalModelData` (via `PhysicsScratchPool`) to eliminate per-timestep
 //! heap allocations. Each timestep, `fill_zero()` reuses the existing
 //! capacity and just zero-fills in-place.
+//!
+//! Issue #2687: every scratch field is now a `SmallVec<[f64; 4]>`, so
+//! `PhysicsScratch*rYc::new(num_zones)` performs **no heap allocation** for
+//! `num_zones <= 4` (the common BatchOracle / ASHRAE 140 single- and
+//! few-zone case). The fields are scratch buffers — no arithmetic lives
+//! here — so changing the container type is bit-identical to the prior
+//! `Vec<f64>`. The `9r4c` `inter` buffer is `num_zones * 7`, which exceeds
+//! the inline capacity for ≥1 zone and spills transparently (still correct,
+//! just heap-backed).
+
+use smallvec::SmallVec;
+
+/// Inline capacity shared with [`crate::physics::cta::VectorField`] so a
+/// scratch field and the VectorField it feeds stay on the stack together.
+const SCRATCH_INLINE_CAPACITY: usize = 4;
 
 pub(crate) struct PhysicsScratch5r1c {
     pub num_zones: usize,
-    pub phi_ia: Vec<f64>,
-    pub phi_st: Vec<f64>,
-    pub phi_m: Vec<f64>,
-    pub t_i_act: Vec<f64>,
-    pub t_s_act: Vec<f64>,
-    pub new_mass: Vec<f64>,
-    pub wall_surface_new: Vec<f64>,
-    pub wall_surface_correction: Vec<f64>,
+    pub phi_ia: SmallVec<[f64; SCRATCH_INLINE_CAPACITY]>,
+    pub phi_st: SmallVec<[f64; SCRATCH_INLINE_CAPACITY]>,
+    pub phi_m: SmallVec<[f64; SCRATCH_INLINE_CAPACITY]>,
+    pub t_i_act: SmallVec<[f64; SCRATCH_INLINE_CAPACITY]>,
+    pub t_s_act: SmallVec<[f64; SCRATCH_INLINE_CAPACITY]>,
+    pub new_mass: SmallVec<[f64; SCRATCH_INLINE_CAPACITY]>,
+    pub wall_surface_new: SmallVec<[f64; SCRATCH_INLINE_CAPACITY]>,
+    pub wall_surface_correction: SmallVec<[f64; SCRATCH_INLINE_CAPACITY]>,
 }
 
 impl PhysicsScratch5r1c {
     pub fn new(num_zones: usize) -> Self {
         Self {
             num_zones,
-            phi_ia: vec![0.0; num_zones],
-            phi_st: vec![0.0; num_zones],
-            phi_m: vec![0.0; num_zones],
-            t_i_act: vec![0.0; num_zones],
-            t_s_act: vec![0.0; num_zones],
-            new_mass: vec![0.0; num_zones],
-            wall_surface_new: vec![0.0; num_zones],
-            wall_surface_correction: vec![0.0; num_zones],
+            phi_ia: SmallVec::from_elem(0.0, num_zones),
+            phi_st: SmallVec::from_elem(0.0, num_zones),
+            phi_m: SmallVec::from_elem(0.0, num_zones),
+            t_i_act: SmallVec::from_elem(0.0, num_zones),
+            t_s_act: SmallVec::from_elem(0.0, num_zones),
+            new_mass: SmallVec::from_elem(0.0, num_zones),
+            wall_surface_new: SmallVec::from_elem(0.0, num_zones),
+            wall_surface_correction: SmallVec::from_elem(0.0, num_zones),
         }
     }
 
@@ -72,34 +87,34 @@ impl PhysicsScratch5r1c {
 
 pub(crate) struct PhysicsScratch6r2c {
     pub num_zones: usize,
-    pub phi_ia: Vec<f64>,
-    pub phi_st: Vec<f64>,
-    pub phi_m_env: Vec<f64>,
-    pub phi_m_int: Vec<f64>,
-    pub ground_coeff: Vec<f64>,
-    pub den: Vec<f64>,
-    pub num_rest: Vec<f64>,
-    pub t_i_act: Vec<f64>,
-    pub t_s: Vec<f64>,
-    pub new_env: Vec<f64>,
-    pub new_int: Vec<f64>,
+    pub phi_ia: SmallVec<[f64; SCRATCH_INLINE_CAPACITY]>,
+    pub phi_st: SmallVec<[f64; SCRATCH_INLINE_CAPACITY]>,
+    pub phi_m_env: SmallVec<[f64; SCRATCH_INLINE_CAPACITY]>,
+    pub phi_m_int: SmallVec<[f64; SCRATCH_INLINE_CAPACITY]>,
+    pub ground_coeff: SmallVec<[f64; SCRATCH_INLINE_CAPACITY]>,
+    pub den: SmallVec<[f64; SCRATCH_INLINE_CAPACITY]>,
+    pub num_rest: SmallVec<[f64; SCRATCH_INLINE_CAPACITY]>,
+    pub t_i_act: SmallVec<[f64; SCRATCH_INLINE_CAPACITY]>,
+    pub t_s: SmallVec<[f64; SCRATCH_INLINE_CAPACITY]>,
+    pub new_env: SmallVec<[f64; SCRATCH_INLINE_CAPACITY]>,
+    pub new_int: SmallVec<[f64; SCRATCH_INLINE_CAPACITY]>,
 }
 
 impl PhysicsScratch6r2c {
     pub fn new(num_zones: usize) -> Self {
         Self {
             num_zones,
-            phi_ia: vec![0.0; num_zones],
-            phi_st: vec![0.0; num_zones],
-            phi_m_env: vec![0.0; num_zones],
-            phi_m_int: vec![0.0; num_zones],
-            ground_coeff: vec![0.0; num_zones],
-            den: vec![0.0; num_zones],
-            num_rest: vec![0.0; num_zones],
-            t_i_act: vec![0.0; num_zones],
-            t_s: vec![0.0; num_zones],
-            new_env: vec![0.0; num_zones],
-            new_int: vec![0.0; num_zones],
+            phi_ia: SmallVec::from_elem(0.0, num_zones),
+            phi_st: SmallVec::from_elem(0.0, num_zones),
+            phi_m_env: SmallVec::from_elem(0.0, num_zones),
+            phi_m_int: SmallVec::from_elem(0.0, num_zones),
+            ground_coeff: SmallVec::from_elem(0.0, num_zones),
+            den: SmallVec::from_elem(0.0, num_zones),
+            num_rest: SmallVec::from_elem(0.0, num_zones),
+            t_i_act: SmallVec::from_elem(0.0, num_zones),
+            t_s: SmallVec::from_elem(0.0, num_zones),
+            new_env: SmallVec::from_elem(0.0, num_zones),
+            new_int: SmallVec::from_elem(0.0, num_zones),
         }
     }
 
@@ -155,14 +170,14 @@ impl PhysicsScratch6r2c {
 
 pub(crate) struct PhysicsScratch9r4c {
     pub n: usize,
-    pub inter: Vec<f64>,
-    pub phi_ia: Vec<f64>,
-    pub phi_st: Vec<f64>,
-    pub phi_m: Vec<f64>,
-    pub t_i_free: Vec<f64>,
-    pub hvac: Vec<f64>,
-    pub t_i_act: Vec<f64>,
-    pub new_mass: Vec<f64>,
+    pub inter: SmallVec<[f64; SCRATCH_INLINE_CAPACITY]>,
+    pub phi_ia: SmallVec<[f64; SCRATCH_INLINE_CAPACITY]>,
+    pub phi_st: SmallVec<[f64; SCRATCH_INLINE_CAPACITY]>,
+    pub phi_m: SmallVec<[f64; SCRATCH_INLINE_CAPACITY]>,
+    pub t_i_free: SmallVec<[f64; SCRATCH_INLINE_CAPACITY]>,
+    pub hvac: SmallVec<[f64; SCRATCH_INLINE_CAPACITY]>,
+    pub t_i_act: SmallVec<[f64; SCRATCH_INLINE_CAPACITY]>,
+    pub new_mass: SmallVec<[f64; SCRATCH_INLINE_CAPACITY]>,
 }
 
 impl PhysicsScratch9r4c {
@@ -171,14 +186,14 @@ impl PhysicsScratch9r4c {
     pub fn new(num_zones: usize) -> Self {
         Self {
             n: num_zones,
-            inter: vec![0.0; num_zones * Self::NSLOTS],
-            phi_ia: vec![0.0; num_zones],
-            phi_st: vec![0.0; num_zones],
-            phi_m: vec![0.0; num_zones],
-            t_i_free: vec![0.0; num_zones],
-            hvac: vec![0.0; num_zones],
-            t_i_act: vec![0.0; num_zones],
-            new_mass: vec![0.0; num_zones],
+            inter: SmallVec::from_elem(0.0, num_zones * Self::NSLOTS),
+            phi_ia: SmallVec::from_elem(0.0, num_zones),
+            phi_st: SmallVec::from_elem(0.0, num_zones),
+            phi_m: SmallVec::from_elem(0.0, num_zones),
+            t_i_free: SmallVec::from_elem(0.0, num_zones),
+            hvac: SmallVec::from_elem(0.0, num_zones),
+            t_i_act: SmallVec::from_elem(0.0, num_zones),
+            new_mass: SmallVec::from_elem(0.0, num_zones),
         }
     }
 

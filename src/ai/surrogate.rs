@@ -2248,6 +2248,48 @@ impl SurrogateManager {
         }
     }
 
+    /// Zero-allocation variant of [`Self::predict_loads`] for the per-timestep
+    /// hot loop (Issue #2687).
+    ///
+    /// Writes the prediction into `out`, reusing its existing capacity (after
+    /// warm-up, no heap allocation). The bytes produced are identical to
+    /// `self.predict_loads(current_temps)` — only the ownership of the return
+    /// buffer differs — so simulation output is bit-identical. Callers that
+    /// run the surrogate once per timestep should hoist `out` above the loop.
+    pub fn predict_loads_into(&self, current_temps: &[f64], out: &mut Vec<f64>) {
+        if let Some(ref comp) = self.composite {
+            // The composite path produces a fresh Vec internally; spill it into
+            // the reuse buffer (one allocation saved at this call site).
+            let loads = comp.predict_loads(current_temps);
+            out.clear();
+            out.extend_from_slice(&loads);
+            return;
+        }
+
+        if !self.model_loaded {
+            // Mock fallback: constant 1.2 load per zone, into the reuse buffer.
+            out.clear();
+            out.resize(current_temps.len(), 1.2);
+            return;
+        }
+
+        // Real ONNX path with graceful fallback to mock on failure.
+        match self.predict_loads_onnx(current_temps) {
+            Ok(loads) => {
+                out.clear();
+                out.extend_from_slice(&loads);
+            }
+            Err(e) => {
+                warn!(
+                    "ONNX inference failed ({}), falling back to mock placeholder",
+                    e
+                );
+                out.clear();
+                out.resize(current_temps.len(), 1.2);
+            }
+        }
+    }
+
     /// Explicit ONNX inference — returns an error instead of panicking
     /// or silently falling back to mock data. Use this when you need to
     /// distinguish real neural predictions from mock placeholders.

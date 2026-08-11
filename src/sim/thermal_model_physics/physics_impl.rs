@@ -237,9 +237,15 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
             scratch.phi_m[i] = load_w * m_air_frac + remaining_sol * m_sol_frac;
         }
 
-        let phi_ia = T::from(VectorField::new(std::mem::take(&mut scratch.phi_ia)));
-        let phi_st = T::from(VectorField::new(std::mem::take(&mut scratch.phi_st)));
-        let phi_m = T::from(VectorField::new(std::mem::take(&mut scratch.phi_m)));
+        let phi_ia = T::from(VectorField::from_smallvec(std::mem::take(
+            &mut scratch.phi_ia,
+        )));
+        let phi_st = T::from(VectorField::from_smallvec(std::mem::take(
+            &mut scratch.phi_st,
+        )));
+        let phi_m = T::from(VectorField::from_smallvec(std::mem::take(
+            &mut scratch.phi_m,
+        )));
 
         // PR #821 / Issue #825 — record zone-0 heat-balance terms for the
         // `pr821-diag` hourly CSV. Zero overhead when the feature is disabled
@@ -1134,7 +1140,9 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                 scratch.t_i_act[i] = t_free[i];
             }
         }
-        let t_i_act = T::from(VectorField::new(std::mem::take(&mut scratch.t_i_act)));
+        let t_i_act = T::from(VectorField::from_smallvec(std::mem::take(
+            &mut scratch.t_i_act,
+        )));
 
         // Use hvac_for_temp_calc for energy (matches what was used for temperature update)
         // This ensures energy calculation is consistent with temperature physics
@@ -1273,7 +1281,9 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
 
             scratch.t_s_act[i] = t_s_blended;
         }
-        let t_s_act = T::from(VectorField::new(std::mem::take(&mut scratch.t_s_act)));
+        let t_s_act = T::from(VectorField::from_smallvec(std::mem::take(
+            &mut scratch.t_s_act,
+        )));
 
         // Update mass temperatures using implicit integration for high thermal capacitance
         // This addresses instability with explicit Euler for Cm > 500 J/K
@@ -1428,7 +1438,8 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         }
 
         // Update the mass temperatures with new values (convert Vec to T type)
-        let new_mass_temps_vf: T = VectorField::new(std::mem::take(&mut scratch.new_mass)).into();
+        let new_mass_temps_vf: T =
+            VectorField::from_smallvec(std::mem::take(&mut scratch.new_mass)).into();
 
         // Plan 03-04: Update previous mass temperature for tracking (kept for diagnostic output)
         // Mass energy change tracking removed - Ti_free already includes thermal mass effects
@@ -1549,10 +1560,18 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
             scratch.phi_m_int[i] = sol_w * m_int_sol_frac;
         }
 
-        let phi_ia = T::from(VectorField::new(std::mem::take(&mut scratch.phi_ia)));
-        let phi_st = T::from(VectorField::new(std::mem::take(&mut scratch.phi_st)));
-        let phi_m_env = T::from(VectorField::new(std::mem::take(&mut scratch.phi_m_env)));
-        let phi_m_int = T::from(VectorField::new(std::mem::take(&mut scratch.phi_m_int)));
+        let phi_ia = T::from(VectorField::from_smallvec(std::mem::take(
+            &mut scratch.phi_ia,
+        )));
+        let phi_st = T::from(VectorField::from_smallvec(std::mem::take(
+            &mut scratch.phi_st,
+        )));
+        let phi_m_env = T::from(VectorField::from_smallvec(std::mem::take(
+            &mut scratch.phi_m_env,
+        )));
+        let phi_m_int = T::from(VectorField::from_smallvec(std::mem::take(
+            &mut scratch.phi_m_int,
+        )));
 
         // Use pre-computed cached values
         #[cfg(feature = "debug-physics")]
@@ -1609,9 +1628,10 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
             let d = h_ms_me_is_prod_ref[i] + (h_sum_ref[i] * h_total_with_iz_ref[i]) + g;
             scratch.den[i] = d;
         }
-        let ground_coeff_6r2c =
-            T::from(VectorField::new(std::mem::take(&mut scratch.ground_coeff)));
-        den = T::from(VectorField::new(std::mem::take(&mut scratch.den)));
+        let ground_coeff_6r2c = T::from(VectorField::from_smallvec(std::mem::take(
+            &mut scratch.ground_coeff,
+        )));
+        den = T::from(VectorField::from_smallvec(std::mem::take(&mut scratch.den)));
 
         // Use envelope mass temperature instead of single mass temperature
         // Optimized: use zip_with to avoid double clones
@@ -1721,7 +1741,9 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         for i in 0..self.0.num_zones {
             scratch.num_rest[i] = sum_term_ref[i] * term_rest_1_ref[i] + ground_coeff[i] * t_g;
         }
-        let num_rest_with_iz = T::from(VectorField::new(std::mem::take(&mut scratch.num_rest)));
+        let num_rest_with_iz = T::from(VectorField::from_smallvec(std::mem::take(
+            &mut scratch.num_rest,
+        )));
 
         // DEBUG: Save values for 900FF before they're consumed
         #[cfg(feature = "debug-physics")]
@@ -1916,7 +1938,9 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                 scratch.t_i_act[i] = t_free[i];
             }
         }
-        let t_i_act = T::from(VectorField::new(std::mem::take(&mut scratch.t_i_act)));
+        let t_i_act = T::from(VectorField::from_smallvec(std::mem::take(
+            &mut scratch.t_i_act,
+        )));
 
         // Calculate surface temperature for mass update (including HVAC effect)
         // === 6R2C: Update two mass nodes ===
@@ -1940,7 +1964,7 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                     // Use conservative 0.5 factor for stability
                     scratch.t_s[i] = t_si_ctf + 0.5 * delta_t_i;
                 }
-                T::from(VectorField::new(std::mem::take(&mut scratch.t_s)))
+                T::from(VectorField::from_smallvec(std::mem::take(&mut scratch.t_s)))
             } else {
                 // PHASE 36-04 FIX: 6R2C surface temperature with h_tr_me * Tm_int coupling
                 // T_s = (h_tr_is*T_i + h_tr_ms*Tm_env + h_tr_me*Tm_int + phi_st) / (h_tr_is + h_tr_ms + h_tr_me)
@@ -1958,7 +1982,7 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                     let denominator = term_rest_data[i] + h_tr_me_ref[i];
                     scratch.t_s[i] = numerator / denominator;
                 }
-                T::from(VectorField::new(std::mem::take(&mut scratch.t_s)))
+                T::from(VectorField::from_smallvec(std::mem::take(&mut scratch.t_s)))
             }
         } else {
             // PHASE 36-04 FIX: 6R2C surface temperature with h_tr_me * Tm_int coupling
@@ -1977,7 +2001,7 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                 let denominator = term_rest_data[i] + h_tr_me_ref[i];
                 scratch.t_s[i] = numerator / denominator;
             }
-            T::from(VectorField::new(std::mem::take(&mut scratch.t_s)))
+            T::from(VectorField::from_smallvec(std::mem::take(&mut scratch.t_s)))
         };
 
         // === 6R2C: Update two mass nodes with implicit integration ===
@@ -2142,11 +2166,13 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
             scratch.new_int[i] = tm_int_new;
         }
 
-        let new_env_temps_vf: T = VectorField::new(std::mem::take(&mut scratch.new_env)).into();
+        let new_env_temps_vf: T =
+            VectorField::from_smallvec(std::mem::take(&mut scratch.new_env)).into();
         let old_env_mass_temperatures =
             std::mem::replace(&mut self.0.envelope_mass_temperatures, new_env_temps_vf);
 
-        let new_int_temps_vf: T = VectorField::new(std::mem::take(&mut scratch.new_int)).into();
+        let new_int_temps_vf: T =
+            VectorField::from_smallvec(std::mem::take(&mut scratch.new_int)).into();
         let old_int_mass_temperatures =
             std::mem::replace(&mut self.0.internal_mass_temperatures, new_int_temps_vf);
 
@@ -2448,9 +2474,15 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
 
         // (#872) Save raw gain data for multi-node solver before moving into tensors.
         // Used for internal radiative gain injection via step_with_gains().
-        let phi_ia = T::from(VectorField::new(std::mem::take(&mut scratch.phi_ia)));
-        let phi_st = T::from(VectorField::new(std::mem::take(&mut scratch.phi_st)));
-        let phi_m = T::from(VectorField::new(std::mem::take(&mut scratch.phi_m)));
+        let phi_ia = T::from(VectorField::from_smallvec(std::mem::take(
+            &mut scratch.phi_ia,
+        )));
+        let phi_st = T::from(VectorField::from_smallvec(std::mem::take(
+            &mut scratch.phi_st,
+        )));
+        let phi_m = T::from(VectorField::from_smallvec(std::mem::take(
+            &mut scratch.phi_m,
+        )));
 
         // Issue #863: Compute per-surface sol-air temperature for walls.
         // The CTF/FD flux calculations use t_sol_air_data as the exterior boundary
@@ -2980,7 +3012,9 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                 scratch.t_i_free[zone_idx] = t_i_free.as_ref()[zone_idx];
             }
         }
-        let t_i_free_mn = T::from(VectorField::new(std::mem::take(&mut scratch.t_i_free)));
+        let t_i_free_mn = T::from(VectorField::from_smallvec(std::mem::take(
+            &mut scratch.t_i_free,
+        )));
 
         // Issue #1279: Restore h_tr_is to original value after computing zone air temperature.
         if night_vent_active_now {
@@ -3237,8 +3271,12 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                 }
             }
             (
-                T::from(VectorField::new(std::mem::take(&mut scratch.hvac))),
-                T::from(VectorField::new(std::mem::take(&mut scratch.t_i_act))),
+                T::from(VectorField::from_smallvec(std::mem::take(
+                    &mut scratch.hvac,
+                ))),
+                T::from(VectorField::from_smallvec(std::mem::take(
+                    &mut scratch.t_i_act,
+                ))),
             )
         };
 
@@ -3395,7 +3433,7 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                 scratch.new_mass[i] = tm_new;
             }
             let new_mass_temps_vf: T =
-                VectorField::new(std::mem::take(&mut scratch.new_mass)).into();
+                VectorField::from_smallvec(std::mem::take(&mut scratch.new_mass)).into();
             self.0.previous_mass_temperatures =
                 std::mem::replace(&mut self.0.mass_temperatures, new_mass_temps_vf);
         }

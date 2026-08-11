@@ -62,26 +62,31 @@ const NUM_CONFIGS: usize = 10;
 
 /// Allocation-count (heap block) ceiling for the reduced run.
 ///
-/// **Recorded baseline:** 2 191 396 blocks (≈ 219 139 / config) measured on
-/// `develop` when #2709 landed — i.e. the analytical `evaluate_population`
-/// path allocates ~219 K times per config per 8 760-timestep year, which
-/// projects to ≈ 21.9 M for the 100-config reference run in #2709/#2687.
+/// **Recorded baseline (post-#2687):** 876 316 blocks (≈ 87 631 / config)
+/// measured after Issue #2687 landed — i.e. the analytical
+/// `evaluate_population` path now allocates ~88 K times per config per
+/// 8 760-timestep year, down from ~219 K / config (2 191 396 total) when
+/// #2709 landed. That is a **60 % block-count reduction**: VectorField's
+/// backing store is now `SmallVec<[f64; 4]>` (heap-free for ≤ 4 zones), the
+/// physics scratch buffers are SmallVec-backed, and the CPU surrogate hot
+/// loop reuses its `get_temperatures_into` / `predict_loads_into` buffers.
 /// The budget is `baseline × 1.20` (20 % headroom for allocator nondeterminism
 /// on the CI runner).
 ///
-/// This is intentionally a **ceiling on current behaviour**, not an target —
-/// this issue (#2709) ships the *gate*; lowering the count is #2687's job.
-/// When #2687 lands, ratchet this DOWN to the new measured × 1.20 (see
-/// "Regenerating the budget"). Never raise it to silence a regression.
-const ALLOC_BLOCKS_BUDGET: u64 = 2_650_000;
+/// Pre-#2687 budget (for the record): 2 650 000. When a *further* deliberate
+/// allocation reduction lands, ratchet this DOWN to the new measured × 1.20
+/// (see "Regenerating the budget"). Never raise it to silence a regression.
+const ALLOC_BLOCKS_BUDGET: u64 = 1_100_000;
 
 /// Total allocated bytes ceiling for the reduced run.
 ///
-/// **Recorded baseline:** 17 782 528 bytes (≈ 17.8 MB) measured alongside
-/// [`ALLOC_BLOCKS_BUDGET`], with 20 % headroom. Pairs with the block-count
-/// budget so a pathological *size* growth (e.g. a large `Vec` rebuilt every
-/// timestep) is caught even if the *count* stays flat.
-const ALLOC_BYTES_BUDGET: u64 = 21_500_000;
+/// **Recorded baseline (post-#2687):** 7 310 848 bytes (≈ 7.3 MB) measured
+/// alongside [`ALLOC_BLOCKS_BUDGET`], down from 17 782 528 bytes (≈ 17.8 MB)
+/// when #2709 landed — a **59 % byte reduction**. Budget is the new measured
+/// value with 20 % headroom. Pairs with the block-count budget so a
+/// pathological *size* growth (e.g. a large `Vec` rebuilt every timestep) is
+/// caught even if the *count* stays flat.
+const ALLOC_BYTES_BUDGET: u64 = 8_800_000;
 
 /// Build the same single-zone analytical model the other allocation fixtures
 /// use (`tests/test_allocation_tracking.rs`), so this gate measures the
