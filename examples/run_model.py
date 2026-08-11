@@ -11,9 +11,10 @@ This script:
    if the file is missing or the `ort` runtime is unavailable, so the
    script still succeeds on a fresh checkout.
 
-The `eui` value is a raw cumulative temperature-departure metric at
-this stage of the ASHRAE 140 calibration work (see the pre-release
-note in `docs/QUICKSTART.md` and issue #767).
+The `eui` value is a raw cumulative temperature-departure metric —
+a relative energy-cost objective, not a calibrated `kWh/m²/year`
+value (see the "Production scope" section in `docs/QUICKSTART.md`
+and issues #749 / #767).
 """
 
 from __future__ import annotations
