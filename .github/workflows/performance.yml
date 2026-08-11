@@ -54,6 +54,36 @@ jobs:
       - name: Run batch oracle benchmarks
         run: cargo bench --bench performance --no-fail-fast -- batch_oracle
 
+  # Issue #2522 — multi-zone throughput criterion benchmark compile check.
+  # Verifies benches/multi_zone_throughput.rs (sweeps BatchOracle::evaluate_population
+  # across populations {10,100,1000,10000} on a 10-zone ThermalModel) compiles in
+  # the gate-relevant multi-zone feature profile. The bench carries
+  # `required-features = ["multi-zone"]`, so a full criterion run (~1 h for
+  # population_10k at ~28 configs/sec) is opt-in and CI compile-checks (--no-run).
+  # The default-features Performance Dashboard sweep (which the Fluxion Performance
+  # Gate #1618 observes) skips this target via required-features, keeping the 15-min
+  # dashboard budget intact; the runtime floor (10 configs/sec @ pop 100) stays
+  # enforced by tests/performance_ci_test.rs in the performance-tests job above.
+  multi-zone-throughput-bench:
+    name: Multi-Zone Throughput Bench
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4
+      - name: Install system dependencies
+        uses: ./.github/actions/install-system-deps
+        with:
+          packages: libssl-dev,pkg-config,libfontconfig1-dev,fontconfig
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@4cda84d5c5c54efe2404f9d843567869ab1699d4  # stable
+      - name: Cache cargo
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830  # v4
+        with:
+          path: ~/.cargo/registry/index ~/.cargo/registry/cache ~/.cargo/git/db target/
+          key: ${{ runner.os }}-cargo-multizone-${{ hashFiles('**/Cargo.lock') }}
+      - name: Compile-check multi-zone throughput benchmark
+        run: cargo bench --bench multi_zone_throughput --features multi-zone --no-run
+
   performance-tests:
     name: Performance Tests
     runs-on: ubuntu-latest
