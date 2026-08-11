@@ -1417,8 +1417,17 @@ impl BatchOracle {
                 use crate::sim::orchestrator::{BatchOrchestrator, RayonChunksOrchestrator};
 
                 let orchestrator = RayonChunksOrchestrator::for_population(valid_configs.len());
-                let final_worker_data =
-                    orchestrator.run_cpu_surrogate(valid_configs, &self.surrogates);
+                // Issue #2520: when a real ONNX model is loaded, take the
+                // per-timestep batched path (crossbeam rendezvous) so ONNX
+                // tensor batching is restored — 8760 batched inference calls
+                // instead of 8.97M per-config calls (1024× reduction). For the
+                // mock / analytical fallback there is no batch-dimension
+                // speedup, so the zero-coordinator `par_chunks` path is faster.
+                let final_worker_data = if self.surrogates.model_loaded {
+                    orchestrator.run_cpu_surrogate_batched(valid_configs, &self.surrogates)
+                } else {
+                    orchestrator.run_cpu_surrogate(valid_configs, &self.surrogates)
+                };
 
                 for (idx, eui) in final_worker_data {
                     results[idx] = eui;

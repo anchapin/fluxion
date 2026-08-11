@@ -21,8 +21,10 @@
 //!   `Throughput` row drops >5% vs the criterion baseline.
 
 use criterion::{criterion_group, criterion_main, Criterion, Throughput};
+use fluxion::ai::surrogate::SurrogateManager;
 use fluxion::physics::cta::VectorField;
 use fluxion::sim::engine::ThermalModel;
+use fluxion::sim::orchestrator::{BatchOrchestrator, RayonChunksOrchestrator};
 use fluxion::BatchOracle;
 use rand::rngs::StdRng;
 use rand::{Rng, SeedableRng};
@@ -114,10 +116,77 @@ fn bench_analytical_population_10000(c: &mut Criterion) {
     group.finish();
 }
 
+/// Build orchestrator-ready configs `(idx, ThermalModel)` with valid
+/// parameters applied, matching `BatchOracle::evaluate_population`'s
+/// `valid_configs` shape.
+fn build_orchestrator_configs(size: usize) -> Vec<(usize, ThermalModel<VectorField>)> {
+    let mut rng = StdRng::seed_from_u64(42);
+    (0..size)
+        .map(|i| {
+            let mut m = ThermalModel::<VectorField>::new(10);
+            let params = vec![
+                rng.gen_range(0.1..5.0),
+                rng.gen_range(15.0..25.0),
+                rng.gen_range(22.0..32.0),
+            ];
+            m.apply_parameters(&params);
+            (i, m)
+        })
+        .collect()
+}
+
+/// Issue #2520 — per-timestep ONNX batching overhead vs the unbatched
+/// `par_chunks` path.
+///
+/// Both benches drive an identical mock surrogate (`SurrogateManager::new`,
+/// `model_loaded == false`) so the *only* difference is the coordination
+/// cost: the unbatched path runs each `par_chunks` worker to completion with
+/// zero cross-thread hand-offs, while the batched path pays a
+/// `crossbeam::channel` rendezvous per timestep (one batched inference call
+/// instead of `N` per-config calls).
+///
+/// Acceptance criterion (#2520): `batched_mock_<N>` must be < 2×
+/// `unbatched_mock_<N>`. With a real ONNX model loaded the batched path is
+/// dramatically faster (1024× fewer inference calls), but a real model is
+/// not staged in the bench environment, so we measure the rendezvous
+/// overhead in isolation against the mock fallback.
+fn bench_cpu_surrogate_batched_vs_unbatched(c: &mut Criterion) {
+    let surrogates = SurrogateManager::new().expect("SurrogateManager::new");
+    let size = 1000;
+    let orchestrator = RayonChunksOrchestrator::for_population(size);
+
+    let mut group = c.benchmark_group("cpu_surrogate_batching");
+    group.throughput(Throughput::Elements(size as u64));
+    group.sample_size(10);
+
+    group.bench_function("unbatched_mock_1000", |b| {
+        b.iter_batched(
+            || build_orchestrator_configs(size),
+            |configs| {
+                let _ = orchestrator.run_cpu_surrogate(configs, &surrogates);
+            },
+            criterion::BatchSize::SmallInput,
+        )
+    });
+
+    group.bench_function("batched_mock_1000", |b| {
+        b.iter_batched(
+            || build_orchestrator_configs(size),
+            |configs| {
+                let _ = orchestrator.run_cpu_surrogate_batched(configs, &surrogates);
+            },
+            criterion::BatchSize::SmallInput,
+        )
+    });
+
+    group.finish();
+}
+
 criterion_group!(
     batch_oracle_chunks,
     bench_cpu_surrogate_population_10000,
     bench_cpu_surrogate_scaling,
-    bench_analytical_population_10000
+    bench_analytical_population_10000,
+    bench_cpu_surrogate_batched_vs_unbatched
 );
 criterion_main!(batch_oracle_chunks);

@@ -45,11 +45,22 @@
 //! | `crossbeam::channel` allocations | `2N` | 0 |
 //! | ONNX tensor batching at the coordinator | Yes (per-timestep batched inference) | No (per-config inference) |
 //!
-//! The ONNX-tensor batching loss is intentional and bounded: CPU
-//! ONNX inference has limited batch-dimension speedup, and removing
-//! the coordinator bottleneck wins more than it loses on the CPU
-//! surrogate branch. The trait is structured so a future GPU-backed
-//! `BatchOrchestrator` can re-introduce batching where it matters.
+//! The ONNX-tensor batching loss is intentional and bounded for the
+//! **mock / analytical** path: CPU ONNX inference has limited
+//! batch-dimension speedup there, and removing the coordinator
+//! bottleneck wins more than it loses. The trait is structured so a
+//! future GPU-backed `BatchOrchestrator` can re-introduce batching
+//! where it matters.
+//!
+//! ## Issue #2520 — per-timestep ONNX batching restored
+//!
+//! [`RayonChunksOrchestrator::run_cpu_surrogate_batched`] adds a
+//! crossbeam-channel rendezvous that re-batches ONNX inference across
+//! the whole population per timestep when a real model is loaded
+//! (`SurrogateManager::model_loaded`). The mock path keeps using the
+//! zero-coordinator `par_chunks` path; only the ONNX path pays the
+//! rendezvous cost, which the 1024× call-count reduction
+//! (`8.97 M → 8 760` calls) dwarfs.
 //!
 //! ## Acceptance criteria reference
 //!
@@ -106,6 +117,36 @@ pub trait BatchOrchestrator: Send + Sync {
         configs: Vec<(usize, ThermalModel<VectorField>)>,
         surrogates: &SurrogateManager,
     ) -> Vec<CpuResult>;
+
+    /// Per-timestep **batched** CPU surrogate path (Issue #2520).
+    ///
+    /// Restores the ONNX tensor batching that Issue #1439 deliberately
+    /// traded away when it moved to `par_chunks`. The unbatched
+    /// [`Self::run_cpu_surrogate`] runs every timestep locally inside
+    /// each `par_chunks` worker and calls `predict_loads` (batch size 1)
+    /// once per config per timestep — `1024 × 8760 = 8.97 M` inference
+    /// calls for a 1024-config population. ONNX matrix-batch inference
+    /// is much cheaper per sample, so this path re-batches across the
+    /// whole population per timestep, collapsing the call count to
+    /// `8760`.
+    ///
+    /// The default implementation delegates to [`Self::run_cpu_surrogate`]
+    /// (no batching) so the trait stays implementable by a single-method
+    /// orchestrator. [`RayonChunksOrchestrator`] overrides it with the
+    /// crossbeam-rendezvous implementation described below.
+    ///
+    /// Callers should select this path only when a real ONNX model is
+    /// loaded (`SurrogateManager::model_loaded`); for the mock /
+    /// analytical fallback there is no batch-dimension speedup and the
+    /// unbatched `par_chunks` path is strictly faster (zero coordinator
+    /// round-trips).
+    fn run_cpu_surrogate_batched(
+        &self,
+        configs: Vec<(usize, ThermalModel<VectorField>)>,
+        surrogates: &SurrogateManager,
+    ) -> Vec<CpuResult> {
+        self.run_cpu_surrogate(configs, surrogates)
+    }
 }
 
 /// Rayon-chunks CPU orchestrator.
@@ -203,6 +244,217 @@ impl BatchOrchestrator for RayonChunksOrchestrator {
         let mut out: Vec<CpuResult> = Vec::with_capacity(configs.len());
         for chunk_results in per_chunk {
             out.extend(chunk_results);
+        }
+        out
+    }
+
+    /// Crossbeam-rendezvous implementation of
+    /// [`BatchOrchestrator::run_cpu_surrogate_batched`] (Issue #2520).
+    ///
+    /// # Design — per-timestep batched inference with NO nested `par_iter`
+    ///
+    /// The population is split into `n_workers` contiguous slices, where
+    /// `n_workers = min(ceil(N / chunk_size), available_parallelism)` so we
+    /// never oversubscribe the host. Each slice is owned by one persistent
+    /// worker thread spawned with `std::thread::scope`. Per timestep:
+    ///
+    /// 1. Every worker gathers its slice's temperature vectors and hands
+    ///    them to the coordinator over a bounded `crossbeam::channel`
+    ///    (the rendezvous).
+    /// 2. The coordinator concatenates all slices (preserving worker-id
+    ///    order), runs **one** `SurrogateManager::predict_loads_batched`
+    ///    call for the whole population, and scatters each worker's load
+    ///    vectors back over per-worker reply channels.
+    /// 3. Workers apply the loads and step the physics sequentially.
+    ///
+    /// This brings inference calls from `N × 8760` down to `8760`.
+    ///
+    /// No `rayon` is used inside this method — `std::thread::scope`
+    /// spawns the workers and the calling thread runs the coordinator —
+    /// so there is zero possibility of nested `par_iter` (rayon
+    /// thread-pool exhaustion, #1065/#2524). The `par_iter` in
+    /// `BatchOracle::evaluate_population` (population validation) has
+    /// already terminated before this method is invoked.
+    fn run_cpu_surrogate_batched(
+        &self,
+        configs: Vec<(usize, ThermalModel<VectorField>)>,
+        surrogates: &SurrogateManager,
+    ) -> Vec<CpuResult> {
+        use crossbeam::channel;
+        use std::thread;
+
+        let n = configs.len();
+        if n == 0 {
+            return Vec::new();
+        }
+
+        let n_cpus = thread::available_parallelism()
+            .map(|p| p.get())
+            .unwrap_or(1);
+        // One persistent worker per `par_chunks`-equivalent unit, capped at
+        // the host's parallelism to avoid thread oversubscription.
+        let nominal = n.div_ceil(self.chunk_size.max(1));
+        let n_workers = nominal.min(n_cpus).max(1);
+
+        // Split into contiguous worker-owned slices (each worker processes a
+        // strided-but-contiguous block; ordering within a worker is preserved).
+        let slice_cap = n.div_ceil(n_workers);
+        let slices: Vec<Vec<(usize, ThermalModel<VectorField>)>> = configs
+            .chunks(slice_cap.max(1))
+            .map(|c| c.to_vec())
+            .collect();
+        let n_workers = slices.len();
+        // Per-worker config count is constant across timesteps (workers own a
+        // fixed slice), so we precompute it once for the scatter slicing.
+        let worker_counts: Vec<usize> = slices.iter().map(|s| s.len()).collect();
+
+        // Work channel: worker -> coordinator, carrying (worker_id, temps).
+        // Capacity = n_workers so the first per-timestep burst of sends never
+        // blocks before the coordinator begins draining (tight hand-off).
+        let (work_tx, work_rx) = channel::bounded::<(usize, Vec<Vec<f64>>)>(n_workers);
+        // One reply channel per worker (coordinator -> worker).
+        let mut reply_senders: Vec<channel::Sender<Vec<Vec<f64>>>> = Vec::with_capacity(n_workers);
+        let mut reply_receivers: Vec<channel::Receiver<Vec<Vec<f64>>>> =
+            Vec::with_capacity(n_workers);
+        for _ in 0..n_workers {
+            let (tx, rx) = channel::bounded::<Vec<Vec<f64>>>(1);
+            reply_senders.push(tx);
+            reply_receivers.push(rx);
+        }
+        // Result channel: workers -> coordinator, carrying finished (idx, eui).
+        let (result_tx, result_rx) = channel::unbounded::<Vec<CpuResult>>();
+
+        let n_timesteps: usize = 8760;
+
+        thread::scope(|s| {
+            // ---------------- workers (one OS thread per slice) ----------------
+            // Each worker gets its own clone of the work/result senders and
+            // borrows its dedicated reply receiver (which outlives this scope).
+            for (wid, mut models) in slices.into_iter().enumerate() {
+                let work_tx = work_tx.clone();
+                let result_tx = result_tx.clone();
+                let reply_rx = &reply_receivers[wid];
+                s.spawn(move || {
+                    // Deterministic daily cycle — identical to `run_cpu_surrogate`,
+                    // computed once per worker (cheap: 24 sin evaluations) so the
+                    // mock build produces bit-identical EUI between the two paths.
+                    let cycle: [f64; 24] = {
+                        let mut arr = [0.0_f64; 24];
+                        for (h, v) in arr.iter_mut().enumerate() {
+                            *v = ((h as f64 / 24.0) * 2.0 * std::f64::consts::PI
+                                - std::f64::consts::PI / 2.0)
+                                .sin();
+                        }
+                        arr
+                    };
+
+                    let mut energy: Vec<f64> = vec![0.0; models.len()];
+                    for t in 0..n_timesteps {
+                        let outdoor_temp = 10.0 + 10.0 * cycle[t % 24];
+
+                        // Gather this slice's temperatures for timestep `t`.
+                        let temps: Vec<Vec<f64>> =
+                            models.iter().map(|(_, m)| m.get_temperatures()).collect();
+
+                        // Rendezvous: hand temps to the coordinator.
+                        if work_tx.send((wid, temps)).is_err() {
+                            return;
+                        }
+                        // Block until the coordinator returns this slice's loads.
+                        let loads = match reply_rx.recv() {
+                            Ok(l) => l,
+                            Err(_) => return,
+                        };
+
+                        // Apply loads + step physics. Sequential within the
+                        // worker — NO nested par_iter (would exhaust the rayon
+                        // pool, #1065/#2524).
+                        for (((_, model), load), e) in models
+                            .iter_mut()
+                            .zip(loads.into_iter())
+                            .zip(energy.iter_mut())
+                        {
+                            model.set_loads(&load);
+                            *e += model.step_physics(t, outdoor_temp, 3600.0);
+                        }
+                    }
+
+                    // Reduce to per-config EUI and ship to the coordinator.
+                    let results: Vec<CpuResult> = models
+                        .into_iter()
+                        .zip(energy.into_iter())
+                        .map(|((idx, model), e)| {
+                            let total_area = model.zone_area.integrate();
+                            let eui = if total_area > 0.0 {
+                                (e / total_area).max(0.0)
+                            } else {
+                                0.0
+                            };
+                            (idx, eui)
+                        })
+                        .collect();
+                    let _ = result_tx.send(results);
+                });
+            }
+
+            // ---------------- coordinator (runs on this scope thread) ----------------
+            // Borrows `work_rx`, `surrogates`, `reply_senders`, and
+            // `worker_counts` from the enclosing frame (all outlive the scope).
+            for _t in 0..n_timesteps {
+                // Gather every worker's slice for this timestep. Workers may
+                // arrive in any order; we index by the worker id they tag onto
+                // each message so the scatter stays deterministic.
+                let mut slices_by_wid: Vec<Option<Vec<Vec<f64>>>> =
+                    (0..n_workers).map(|_| None).collect();
+                let mut received = 0usize;
+                while received < n_workers {
+                    match work_rx.recv() {
+                        Ok((wid, temps)) => {
+                            slices_by_wid[wid] = Some(temps);
+                            received += 1;
+                        }
+                        Err(_) => {
+                            // All workers dropped their senders (exited). Aborting
+                            // here is safe — no worker is left blocked on a reply.
+                            return;
+                        }
+                    }
+                }
+
+                // Flatten in worker-id order so the scatter slicing is stable.
+                let mut batch: Vec<Vec<f64>> = Vec::with_capacity(n);
+                for slice in slices_by_wid.iter_mut() {
+                    if let Some(temps) = slice.take() {
+                        batch.extend(temps);
+                    }
+                }
+
+                // ONE batched inference call for the whole population this
+                // timestep — the whole point of Issue #2520.
+                let loads = surrogates.predict_loads_batched(&batch);
+
+                // Scatter each worker's load slice back.
+                let mut offset = 0usize;
+                for wid in 0..n_workers {
+                    let count = worker_counts[wid];
+                    let slice_loads: Vec<Vec<f64>> = loads[offset..offset + count].to_vec();
+                    offset += count;
+                    // A send error means the worker exited; keep going so the
+                    // remaining workers can finish this timestep.
+                    let _ = reply_senders[wid].send(slice_loads);
+                }
+            }
+        });
+
+        // All worker result-sender clones dropped when their threads exited;
+        // drop the last original so `result_rx` hits EOF and the drain loop
+        // terminates.
+        drop(result_tx);
+
+        // Collect worker results in arrival order; the caller maps by `idx`.
+        let mut out: Vec<CpuResult> = Vec::with_capacity(n);
+        while let Ok(chunk) = result_rx.recv() {
+            out.extend(chunk);
         }
         out
     }
@@ -322,5 +574,98 @@ mod tests {
         let configs: Vec<_> = (0..64).map(make_dummy_config).collect();
         let result = orchestrator.run_cpu_surrogate(configs, &surrogates);
         assert_eq!(result.len(), 64);
+    }
+
+    // -----------------------------------------------------------------------
+    // Issue #2520 — per-timestep batched path (crossbeam rendezvous).
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn batched_empty_configs_returns_empty_results() {
+        let surrogates = SurrogateManager::new().expect("SurrogateManager::new");
+        let orchestrator = RayonChunksOrchestrator::default();
+        let result = orchestrator.run_cpu_surrogate_batched(Vec::new(), &surrogates);
+        assert!(result.is_empty());
+    }
+
+    #[test]
+    fn batched_returns_all_indices_exactly_once() {
+        let surrogates = SurrogateManager::new().expect("SurrogateManager::new");
+        let orchestrator = RayonChunksOrchestrator::for_population(16);
+        let configs: Vec<_> = (0..16).map(make_dummy_config).collect();
+        let result = orchestrator.run_cpu_surrogate_batched(configs, &surrogates);
+        assert_eq!(result.len(), 16);
+        let mut indices: Vec<usize> = result.iter().map(|(i, _)| *i).collect();
+        indices.sort_unstable();
+        assert_eq!(indices, (0..16).collect::<Vec<_>>());
+    }
+
+    #[test]
+    fn batched_matches_unbatched_for_mock_surrogate() {
+        // The mock fallback returns a constant 1.2 load per zone, and both
+        // paths drive identical physics with the same deterministic daily
+        // cycle. So the batched (crossbeam rendezvous) path MUST produce
+        // bit-identical EUI per population index — this is the correctness
+        // invariant that lets `evaluate_population` swap paths freely.
+        let surrogates = SurrogateManager::new().expect("SurrogateManager::new");
+        let orchestrator = RayonChunksOrchestrator::with_chunk_size(4);
+
+        let make_pop = || {
+            (0..12)
+                .map(|i| {
+                    let mut m = ThermalModel::<VectorField>::new(1);
+                    m.apply_parameters(&[1.5, 20.0, 24.0]);
+                    (i, m)
+                })
+                .collect::<Vec<_>>()
+        };
+
+        let mut unbatched = orchestrator.run_cpu_surrogate(make_pop(), &surrogates);
+        let mut batched = orchestrator.run_cpu_surrogate_batched(make_pop(), &surrogates);
+        unbatched.sort_by_key(|(i, _)| *i);
+        batched.sort_by_key(|(i, _)| *i);
+
+        assert_eq!(unbatched.len(), batched.len());
+        for ((i1, v1), (i2, v2)) in unbatched.iter().zip(batched.iter()) {
+            assert_eq!(i1, i2);
+            assert!(
+                (v1 - v2).abs() < 1e-12,
+                "batched vs unbatched drift: idx={} {} vs {}",
+                i1,
+                v1,
+                v2
+            );
+        }
+    }
+
+    #[test]
+    fn batched_deterministic_across_repeated_runs() {
+        let surrogates = SurrogateManager::new().expect("SurrogateManager::new");
+        let orchestrator = RayonChunksOrchestrator::for_population(8);
+
+        let make_pop = || {
+            (0..8)
+                .map(|i| {
+                    let mut m = ThermalModel::<VectorField>::new(1);
+                    m.apply_parameters(&[1.5, 20.0, 24.0]);
+                    (i, m)
+                })
+                .collect::<Vec<_>>()
+        };
+
+        let mut r1 = orchestrator.run_cpu_surrogate_batched(make_pop(), &surrogates);
+        let mut r2 = orchestrator.run_cpu_surrogate_batched(make_pop(), &surrogates);
+        r1.sort_by_key(|(i, _)| *i);
+        r2.sort_by_key(|(i, _)| *i);
+        for ((i1, v1), (i2, v2)) in r1.iter().zip(r2.iter()) {
+            assert_eq!(i1, i2);
+            assert!(
+                (v1 - v2).abs() < 1e-12,
+                "batched run-to-run drift: idx={} {} vs {}",
+                i1,
+                v1,
+                v2
+            );
+        }
     }
 }
