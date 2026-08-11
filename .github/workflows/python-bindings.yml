@@ -18,6 +18,11 @@ env:
 # PRs: fast signal with 2 key combos (ubuntu + windows, oldest + newest py).
 # Main: full matrix (4 OS × 4 Python) for comprehensive validation.
 
+# Least-privilege GITHUB_TOKEN grants (Issue #2526): maturin build matrix only
+# builds + uploads artifacts; no repo write-back.
+permissions:
+  contents: read
+
 jobs:
   build:
     name: Build Python Wheels (${{ matrix.os }} / py ${{ matrix.python-version }})

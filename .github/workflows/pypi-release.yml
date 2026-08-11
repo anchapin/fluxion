@@ -10,6 +10,14 @@ on:
       - 'v*'
   workflow_dispatch:
 
+# Least-privilege GITHUB_TOKEN default (Issue #2526). The gate-check job only
+# runs validation + benchmarks and needs read access. The publish / publish-test
+# jobs escalate ONLY to `id-token: write` (OIDC trusted publishing) via their own
+# job-level permissions blocks — they never need contents: write because PyPI
+# trusted publishing does not push tags or commits.
+permissions:
+  contents: read
+
 jobs:
   # Gate check job - must pass before publish
   gate-check:

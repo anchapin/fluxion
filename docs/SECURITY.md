@@ -1,7 +1,8 @@
 # Security
 
-This document covers security policy and accepted-risk advisories for the
-Fluxion dependency graph.
+Security policy, accepted-risk advisories, and hardening guides for Fluxion.
+Covers vulnerability reporting, the `cargo audit` ignore list, and the GitHub
+Actions supply-chain / least-privilege baseline enforced across all workflows.
 
 ## Reporting vulnerabilities
 
@@ -154,3 +155,123 @@ cargo audit -D unmaintained  # strictest gate (used in CI if/when enforced)
 
 The CI workflow at `.github/workflows/security.yml` runs `cargo audit` on every
 pull request and weekly on the main branch.
+
+---
+
+## GitHub Actions least-privilege & supply-chain baseline
+
+**Tracking issue:** [#2526](https://github.com/anchapin/fluxion/issues/2526).
+
+Every `.github/workflows/*.yml` workflow follows the rules below. The policy is
+enforced by review; `actionlint` and the SHA-pinning audit below surface
+regressions.
+
+### 1. Explicit `permissions:` on every workflow
+
+Each workflow declares a top-level `permissions:` block. The default is the
+minimum that lets the workflow do its job — for the majority of build / test /
+lint / validation workflows that is:
+
+```yaml
+permissions:
+  contents: read
+```
+
+A job that needs more escalates **only** itself via a job-level `permissions:`
+block. Workflows never rely on the repository-wide default token permissions
+(which historically granted `contents: write` to every run).
+
+| Scope | Granted to | Example |
+| --- | --- | --- |
+| `contents: read` | every workflow (default) | `rust-tests.yml`, `security.yml` |
+| `contents: write` | jobs that `git commit`/`git push` | benchmark baseline updates in `ashrae_benchmark_harness.yml`, `tdqs_regression.yml`; gh-pages push in `performance_dashboard.yml` |
+| `packages: write` | jobs pushing to ghcr.io | `docker.yml` build/merge jobs |
+| `pull-requests: write` | jobs posting PR comments | `github-script` comment steps in `mutation-testing.yml`, `ripr-preflight.yml` |
+| `issues: write` | jobs opening/commenting issues | `nightly_validation.yml`, `known-issues-stale.yml` |
+| `security-events: write` | SARIF upload | Trivy job in `docker.yml` |
+| `id-token: write` | OIDC only (trusted publishing / AWS) | PyPI publish jobs in `pypi-release.yml`; all jobs in `cloud_campaign.yml` |
+
+### 2. `actions/github-script` scoping
+
+GitHub Actions **does not support `permissions:` at the step level** (confirmed
+via `actionlint` — it rejects an inline `permissions:` key under a `step`).
+Therefore each `actions/github-script` invocation is constrained by the
+**job-level** `permissions:` of the job that contains it, which is set to the
+minimal scope the script actually needs (e.g. `pull-requests: write` to post a
+single PR comment). Every `actions/github-script` use is pinned to a fixed
+commit SHA, so the action itself cannot exfiltrate or widen the token.
+
+### 3. PyPI release — OIDC trusted publishing
+
+`pypi-release.yml` keeps `contents: read` at workflow level. The `publish` and
+`publish-test` jobs grant **only** `id-token: write` (plus `contents: read`)
+at the job level — the minimal set for PyPI trusted publishing. They never
+receive `contents: write`, because publishing pushes to PyPI, not to the repo.
+
+### 4. AWS — OIDC federation, no static secrets
+
+`cloud_campaign.yml` formerly injected long-lived static keys
+(`secrets.AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY` / `AWS_SESSION_TOKEN`).
+It now assumes an IAM role via OIDC using
+`aws-actions/configure-aws-credentials@<SHA>` with short-lived STS credentials.
+No static AWS secret is referenced by any workflow.
+
+**Required repository configuration** (Settings → Secrets and variables →
+Actions → **Variables**, not Secrets):
+
+- `FLUXION_AWS_CAMPAIGN_ROLE_ARN` — IAM role ARN to assume. Until this is set,
+  the configure-aws-credentials step fails fast rather than falling back to
+  static keys.
+
+The role's trust policy must permit `sts:AssumeRoleWithWebIdentity` for this
+repository's GitHub OIDC provider, restricted to the `main` branch:
+
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Principal": { "Federated": "arn:aws:iam::<ACCOUNT>:oidc-provider/token.actions.githubusercontent.com" },
+      "Action": "sts:AssumeRoleWithWebIdentity",
+      "Condition": {
+        "StringEquals": {
+          "token.actions.githubusercontent.com:aud": "sts.amazonaws.com"
+        },
+        "StringLike": {
+          "token.actions.githubusercontent.com:sub": "repo:anchapin/fluxion:ref:refs/heads/main"
+        }
+      }
+    }
+  ]
+}
+```
+
+The role's own permission policy must be scoped to exactly the S3/SNS resources
+the campaign scripts touch (least privilege), e.g. `s3:PutObject` /
+`s3:GetObject` on `arn:aws:s3:::<bucket>/*` only.
+
+### 5. Action pinning
+
+- **All third-party actions are pinned to a 40-char commit SHA** with the
+  human-readable tag in a trailing comment (`@<sha>  # vN`). Tags are
+  mutable and are never used as the resolved ref.
+- **First-party `actions/*` actions are also SHA-pinned** per this repo's
+  convention (e.g. `actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4`).
+- The only tag-ref that remained (`disk-space.yml` → `actions/checkout@v4`) was
+  pinned in this change. `git ls-remote <repo> refs/tags/<tag>` resolves a tag
+  to its commit SHA before pinning.
+
+### 6. Adding a new workflow — checklist
+
+1. Add a top-level `permissions:` block. Start from `contents: read` and add a
+   scope only if a step provably needs it.
+2. If a job posts a PR comment, opens an issue, pushes a commit/tag, publishes a
+   package, uploads SARIF, or assumes a cloud role — give **that job only** the
+   extra `permissions:` it needs.
+3. Pin every `uses:` to a commit SHA (resolve via `git ls-remote`).
+4. Run `actionlint .github/workflows/<file>.yml` and
+   `python3 -c "import yaml,sys; yaml.safe_load(open(sys.argv[1]))" <file>`
+   before committing.
+5. Never reference static cloud keys; use OIDC (`id-token: write` +
+   `role-to-assume`) and document the required repo variable here.

@@ -14,6 +14,10 @@ concurrency:
   group: ashrae-140-${{ github.ref }}
   cancel-in-progress: false
 
+# Least-privilege GITHUB_TOKEN grants (Issue #2526): validation is read-only.
+permissions:
+  contents: read
+
 jobs:
   validate:
     runs-on: ubuntu-latest

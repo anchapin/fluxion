@@ -36,6 +36,11 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
+# Least-privilege GITHUB_TOKEN grants (Issue #2526). Coverage upload to Codecov
+# uses CODECOV_TOKEN, not the GITHUB_TOKEN; no write-back to the repo occurs.
+permissions:
+  contents: read
+
 jobs:
   coverage:
     name: Code Coverage Gate (Issue #1932)

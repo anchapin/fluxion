@@ -6,6 +6,12 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
+# Least-privilege GITHUB_TOKEN grants (Issue #2526). The Pages deploy step only
+# fires on push-to-main, but this workflow is pull_request-only, so in practice
+# contents: read is all that is ever exercised.
+permissions:
+  contents: read
+
 jobs:
   docs:
     name: Build & Publish Docs

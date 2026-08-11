@@ -11,6 +11,11 @@ env:
   CARGO_TERM_COLOR: always
   RUST_MIN_STACK: '16777216'
 
+# Least-privilege GITHUB_TOKEN grants (Issue #2526): cross-validation only
+# builds, runs tests, and uploads an artifact — no repo write-back.
+permissions:
+  contents: read
+
 jobs:
   cross-validation:
     name: Cross-Validation Tests

@@ -13,6 +13,11 @@ on:
 # PRs: manual trigger only (workflow_dispatch) to save runner minutes.
 # Main/dev push + manual dispatch: run full benchmark suite.
 
+# Least-privilege GITHUB_TOKEN grants (Issue #2526): benchmarks only run + upload
+# artifacts; no repo write-back.
+permissions:
+  contents: read
+
 jobs:
   thermal-model-bench:
     name: Thermal Model Bench

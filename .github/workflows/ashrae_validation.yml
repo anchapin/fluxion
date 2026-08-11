@@ -99,6 +99,12 @@ env:
   # by this change.
   RUNNER_TIER: github-hosted
 
+# Least-privilege GITHUB_TOKEN default (Issue #2526). The validate-* jobs that
+# post PR comments or commit regression notices escalate via their own job-level
+# permissions blocks; everything else is read-only.
+permissions:
+  contents: read
+
 jobs:
   # =====================================================================
   # Issue #1505 — Queue-stall detector (10-min wait)
