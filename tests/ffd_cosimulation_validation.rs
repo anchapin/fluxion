@@ -160,8 +160,19 @@ impl FfdSolver for BuoyancyDrivenFfdSolver {
 ///
 /// This test validates that the FFD solver produces CHTC values within ±15%
 /// of the analytical Nusselt number correlation for buoyancy-driven flow.
+///
+/// Issue #2612 root cause (resolved): an earlier revision hard-coded the
+/// reference Rayleigh number as `1.6e9`. That value is an arithmetic mistake —
+/// for the stated Chen & Griffith (1963) configuration (L = 3 m, ΔT = 10 K,
+/// ν = 1.5e-5 m²/s, α = 2.1e-5 m²/s) the Rayleigh number is ~2.87e10
+/// (Python-verified; see issue #2612). The `BuoyancyDrivenFfdSolver` computes
+/// Ra correctly from first principles, so the ~161 % CHTC error was entirely a
+/// test-side reference miscalculation, *not* an FFD solver bug. Fixing the
+/// reference Ra from first principles (rather than loosening the tolerance)
+/// is required by RULES.md ("no parameter tuning / hardcoding to match"). The
+/// reference is computed independently here so the test still catches any drift
+/// in the solver's Ra → Nu → CHTC pipeline.
 #[test]
-#[ignore = "latent FFD/CFD physics-assertion failure (CHTC error ~161% vs 15% tol) exposed when #2583 compile fix let this file build; type-annotation fix has zero runtime effect so this is pre-existing, not a regression. RULES.md forbids physics tuning — needs a real FFD solver fix in a separate follow-up issue."]
 fn test_buoyancy_driven_chtc_analytical() {
     let mut ffd = BuoyancyDrivenFfdSolver::new(1, 6);
     ffd.initialize(1, &[300.0], &[10.0, 10.0, 10.0, 10.0, 10.0, 10.0], 6)
@@ -181,12 +192,21 @@ fn test_buoyancy_driven_chtc_analytical() {
 
     let results = ffd.step_micro(&bc, 1.0).unwrap();
 
-    // Compute analytical CHTC
-    let delta_t = 10.0;
-    let ra = 1.6e9; // Approximate Ra for this configuration
+    // Compute analytical reference CHTC from the Chen & Griffith (1963) Nusselt
+    // correlation. The Rayleigh number is derived from first principles using
+    // the documented benchmark air properties (matching the constants inside
+    // `BuoyancyDrivenFfdSolver`), so this is an independent cross-check of the
+    // solver's Ra → Nu → CHTC pipeline rather than a re-call of its own method.
+    let delta_t = 10.0_f64;
+    let beta_ref = 1.0 / 293.15; // thermal expansion coefficient [1/K]
+    let g_ref = 9.81; // gravitational acceleration [m/s²]
+    let l_ref = 3.0_f64; // characteristic length (room height) [m]
+    let nu_ref = 1.5e-5; // kinematic viscosity of air [m²/s]
+    let alpha_ref = 2.1e-5; // thermal diffusivity of air [m²/s]
+    let ra = beta_ref * g_ref * delta_t * l_ref.powi(3) / (nu_ref * alpha_ref);
     let nu_analytical = analytical_nusselt_number(ra);
     let k_air = 0.025;
-    let ch_analytical = nu_analytical * k_air / 3.0;
+    let ch_analytical = nu_analytical * k_air / l_ref;
 
     // FFD-computed CHTC
     let ch_computed = results.chtc[0];
@@ -208,6 +228,23 @@ fn test_buoyancy_driven_chtc_analytical() {
         100.0 * error / ch_analytical,
         ch_analytical,
         ch_computed
+    );
+
+    // Independent physical-sanity guard: ASHRAE interior natural-convection
+    // coefficients for vertical surfaces are typically ~0.5–6 W/(m²·K). This
+    // catches a regression that happens to keep the solver/reference ratio at
+    // 1.0 while both drift out of the physically reasonable band.
+    assert!(
+        ch_computed > 0.5 && ch_computed < 10.0,
+        "computed CHTC {:.3} W/(m²·K) outside the natural-convection band [0.5, 10.0]",
+        ch_computed
+    );
+    // Ra must be in the turbulent natural-convection regime the correlation
+    // targets (Ra > 1e9); this guards against a silent constant/units error.
+    assert!(
+        ra > 1.0e9,
+        "reference Rayleigh number {:.3e} below the turbulent regime (1e9)",
+        ra
     );
 }
 
@@ -654,8 +691,24 @@ fn test_loose_coupling_multi_zone() {
 ///
 /// This test validates that the coupled simulation can achieve < 10% error
 /// in peak cooling/heating loads, consistent with the issue acceptance criteria.
+///
+/// Structural limitation (issue #2612): the `BuoyancyDrivenFfdSolver` stub
+/// returns a *constant* 293.15 K zone temperature regardless of boundary
+/// conditions — it has no zone air energy balance. The test's cooling-load
+/// estimator only fires when the zone exceeds 296.15 K, so `peak_cooling` is
+/// always 0 kW (100% error vs the 4.5 kW NIST HVAC BESTEST reference). Closing
+/// this requires a genuine coupled BES↔FFD zone energy balance (real thermal
+/// capacitance + HVAC coupling), which is a structural rework analogous to the
+/// GaugeSolver effort — not a constant tweak. RULES.md forbids parameter
+/// tuning to hit the reference, so the test stays `#[ignore]`-quarantined until
+/// the coupled solver lands. See `docs/KNOWN_ISSUES.md` §FFD-02 (issue #2612)
+/// for the full root-cause analysis and the Python verification that the stub
+/// zone temperature is BC-independent. It compiles and runs under
+/// `--features fluxion-cfd`; `cargo test` skips it, and `--ignored` reproduces
+/// the documented 100% gap as a close-out signal (same quarantine pattern as
+/// the §LIMIT-05 GaugeSolver-blocked diagnostics).
 #[test]
-#[ignore = "latent FFD/CFD physics-assertion failure (peak cooling error ~100% vs 10% tol) exposed when #2583 compile fix let this file build; pre-existing, not a regression. RULES.md forbids physics tuning — needs a real coupled-solver fix in a separate follow-up issue."]
+#[ignore = "structural FFD/BES coupling gap (issue #2612, KNOWN_ISSUES §FFD-02): stub BuoyancyDrivenFfdSolver has no zone air energy balance — returns constant 293.15 K, so peak_cooling is always 0 kW (100% error vs 4.5 kW ref). Needs a real coupled BES↔FFD solver; not parameter-tunable per RULES.md."]
 fn test_peak_cooling_load_tolerance() {
     let ffd = BuoyancyDrivenFfdSolver::new(1, 6);
     let mut coupling = LooseCoupling::new(Box::new(ffd), 1, 6, 3600.0).unwrap();
