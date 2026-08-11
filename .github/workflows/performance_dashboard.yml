@@ -588,6 +588,169 @@ jobs:
           exit 0
 
   # =========================================================================
+  # absolute-perf-gate — PR-blocking ABSOLUTE performance floor (Issue #2693).
+  #
+  # `release_gates.yaml` defines absolute thresholds — throughput ≥ 150
+  # configs/sec, latency ≤ 10 ms/config — but before #2693 these were only
+  # evaluated by `performance.yml` on push to main/dev (and by the release
+  # checker), never on PRs. The `regression-check` job above is a RELATIVE
+  # 5% gate with no absolute floor, so a PR could drop throughput 200→120
+  # cfg/s (below the 150 floor yet within 5% of a noisy baseline) and merge.
+  #
+  # This job closes that gap: it runs the same `performance_regression_test`
+  # the release check uses, takes the MEDIAN of 3 runs to suppress shared-
+  # runner noise, writes `benchmark_results.json`, and feeds it to
+  # `scripts/release_gate_checker.py --benchmark-gates throughput,latency`
+  # (the filter restricts evaluation to the two absolute floors this job
+  # measures — multi-zone / cross-validation stay with the heavy sweep).
+  # The job FAILS if throughput < 150 OR latency > 10.
+  #
+  # Runner: `ubuntu-latest` (NOT `vars.FLUXION_LINUX_RUNNER`) because the
+  # 150 cfg/s floor was calibrated on GitHub-hosted ubuntu-latest (see the
+  # comment at `release_gates.yaml` → `benchmark.throughput`). A self-hosted
+  # runner would measure a different absolute throughput and make the floor
+  # incomparable. `bench-default` / `regression-check` use the same runner
+  # for the same reason.
+  # =========================================================================
+  absolute-perf-gate:
+    name: Absolute Perf Gate (Issue #2693)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    # NOTE: intentionally no `needs: bench-default` — this job builds its own
+    # release test binary and does not consume any bench-default artifact, so
+    # it runs in parallel for a faster PR signal.
+    if: github.event_name == 'pull_request' || (github.event_name == 'push' && github.ref == 'refs/heads/main') || github.event_name == 'workflow_dispatch'
+
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4
+
+      - name: Install system dependencies
+        uses: ./.github/actions/install-system-deps
+        with:
+          packages: libssl-dev,pkg-config,libfontconfig1-dev,fontconfig
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@4cda84d5c5c54efe2404f9d843567869ab1699d4  # stable
+
+      - name: Cache cargo (absolute-perf-gate)
+        uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32  # v2
+        with:
+          shared-key: perf-dashboard-default
+          cache-on-failure: true
+
+      # Build the release test binary once (shared across all 3 measurement
+      # runs). Default features only — matches `bench-default` and what a
+      # user gets from `cargo install fluxion`.
+      - name: Build release (default features)
+        run: cargo build --release
+
+      # Median-of-3 noise suppression. Each run invokes the single
+      # `test_performance_regression` test (population = 100), which prints
+      # exactly one `Throughput:` and one `Latency per config:` line. We
+      # tolerate a nonzero test exit (e.g. a baseline-regression panic that
+      # does not reflect an absolute-gate breach) with `|| true`; the
+      # throughput/latency lines are printed before the baseline check.
+      - name: Run benchmark (median of 3)
+        run: |
+          rm -f run_*.txt
+          for i in 1 2 3; do
+            echo "=== measurement run ${i}/3 ==="
+            cargo test --test performance_regression_test --release test_performance_regression -- --nocapture --no-fail-fast > "run_${i}.txt" 2>&1 || true
+          done
+
+          python3 << 'EOF'
+          import glob
+          import json
+          import re
+          import statistics
+          import sys
+
+          throughput_re = re.compile(r'Throughput:\s*([\d.]+)\s*configs/sec')
+          latency_re = re.compile(r'Latency per config:\s*([\d.]+)ms')
+
+          throughputs, latencies = [], []
+          for path in sorted(glob.glob('run_*.txt')):
+              txt = open(path, errors='replace').read()
+              t = throughput_re.findall(txt)
+              l = latency_re.findall(txt)
+              if t and l:
+                  throughputs.append(float(t[-1]))
+                  latencies.append(float(l[-1]))
+                  print(f"{path}: throughput={t[-1]} cfg/s, latency={l[-1]} ms")
+              else:
+                  print(f"WARNING: {path} produced no parseable metrics")
+
+          if len(throughputs) < 2:
+              print("ERROR: fewer than 2 successful measurement runs; cannot compute a stable median.")
+              print("This usually means a compile error or a runtime panic before measurement.")
+              for path in sorted(glob.glob('run_*.txt')):
+                  print(f"\n--- {path} (first 2000 chars) ---")
+                  print(open(path, errors='replace').read()[:2000])
+              sys.exit(2)
+
+          med_throughput = statistics.median(throughputs)
+          med_latency = statistics.median(latencies)
+
+          print(f"\nSamples: throughput={throughputs}")
+          print(f"         latency={latencies}")
+          print(f"Median throughput: {med_throughput:.1f} configs/sec")
+          print(f"Median latency:    {med_latency:.3f} ms/config")
+
+          results = {
+              "metrics": {
+                  "throughput_configs_per_sec": med_throughput,
+                  "latency_ms_per_config": med_latency,
+              },
+              "samples": {
+                  "throughput": throughputs,
+                  "latency": latencies,
+                  "runs": len(throughputs),
+                  "strategy": "median-of-3",
+              },
+          }
+          with open('benchmark_results.json', 'w') as f:
+              json.dump(results, f, indent=2)
+          print("\nWrote benchmark_results.json")
+          EOF
+
+      # Evaluate the ABSOLUTE floors from release_gates.yaml (throughput ≥ 150
+      # cfg/s, latency ≤ 10 ms). --benchmark-gates restricts evaluation to
+      # these two gates (issue #2693); the checker exits 1 on any failure.
+      - name: Evaluate absolute gates (150 cfg/s + 10 ms)
+        run: |
+          python3 scripts/release_gate_checker.py \
+            --benchmark-results benchmark_results.json \
+            --benchmark-gates throughput,latency \
+            --json --output gate_status.json
+
+      - name: Summary
+        if: always()
+        run: |
+          echo "## Absolute Perf Gate (Issue #2693)" >> $GITHUB_STEP_SUMMARY
+          echo "Enforces \`release_gates.yaml\` absolute floors on every PR:" >> $GITHUB_STEP_SUMMARY
+          echo "- throughput ≥ 150 configs/sec" >> $GITHUB_STEP_SUMMARY
+          echo "- latency ≤ 10 ms/config" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Noise suppression:** median of 3 \`performance_regression_test\` runs (population = 100, release build, default features)." >> $GITHUB_STEP_SUMMARY
+          echo "**Runner:** \`ubuntu-latest\` (the 150 cfg/s floor was calibrated here; self-hosted runners measure a different absolute throughput)." >> $GITHUB_STEP_SUMMARY
+          if [ -f gate_status.json ]; then
+            echo '```json' >> $GITHUB_STEP_SUMMARY
+            cat gate_status.json >> $GITHUB_STEP_SUMMARY
+            echo '```' >> $GITHUB_STEP_SUMMARY
+          fi
+
+      - name: Upload results
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02  # v4
+        with:
+          name: absolute-perf-gate-${{ github.run_id }}
+          path: |
+            benchmark_results.json
+            gate_status.json
+            run_*.txt
+          retention-days: 30
+
+  # =========================================================================
   # dhat-alloc-budget — PR-gated allocation-budget gate for the BatchOracle
   # hot loop (Issue #2709).
   # Runs the feature-gated `dhat_alloc_budget` integration test, which installs

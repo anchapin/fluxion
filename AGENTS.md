@@ -113,6 +113,7 @@ ML-surrogate swap-point traits:
 - `Known Issues Stale Check` (#1723) · `Ashrae Cases Cycle Check` (#1441) · `Physics-Sim-Cycle-Check` (#2463)
 - `CUDA Smoke Test` (#1603) · `ASHRAE 140 Strict Energy Gate (Issue #1333)`
 - `Fluxion Determinism Gate (Issue #1351)` · `Fluxion Performance Gate (Issue #1618)` (workflow_run listeners)
+- `Absolute Perf Gate (Issue #2693)` — PR-blocking ABSOLUTE performance floor: throughput ≥ 150 cfg/s AND latency ≤ 10 ms/config (`release_gates.yaml`). Runs `performance_regression_test` ×3 → median → `release_gate_checker.py --benchmark-gates throughput,latency` in `performance_dashboard.yml`. Distinct from the #1618 RELATIVE 5% gate (no floor); closes the release-gate bypass where a PR could drop below 150 cfg/s and still merge. Runner is `ubuntu-latest` (where the 150 floor was calibrated), median-of-3 for shared-runner noise suppression.
 - `Architecture Drift Detection` (nightly + on `src/**/*.rs`/`ARCHITECTURE.md` changes)
  - `Docs Hygiene Gate` (#2466) · `Code Coverage Gate` (#1932, ratchet; baseline in `validation/coverage_baseline.json`)
  - `Cargo Deny` (#2699) — supply-chain gate: licenses (no copyleft via transitive deps), duplicate-crate detection, banned-crate denylist, source-registry validation. Config: `deny.toml` (repo root); runs in `.github/workflows/security.yml` alongside `Cargo Audit`. Advisory `ignore` list is mirrored from `.cargo/audit.toml` — keep in sync.
