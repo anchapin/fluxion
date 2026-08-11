@@ -87,15 +87,29 @@ pub enum AuthMode {
 }
 
 impl AuthMode {
-    /// Parse the mode from the `FLUXION_REST_AUTH` env value. Unknown /
-    /// empty values map to [`AuthMode::Off`] (fail-open for local
-    /// convenience; the boot guard separately refuses `off`+`0.0.0.0` in
-    /// release builds).
-    pub fn parse(raw: &str) -> Self {
-        match raw.trim().to_ascii_lowercase().as_str() {
-            "token" => AuthMode::Token,
-            "tls" => AuthMode::Tls,
-            _ => AuthMode::Off,
+    /// Parse the mode from the `FLUXION_REST_AUTH` env value.
+    ///
+    /// **Fail-closed** (Issue #2689): an unrecognized *non-empty* value
+    /// returns an `Err`, so a typo (e.g. `FLUXION_REST_AUTH=tken`,
+    /// `=mtls`, `=bearer`) can never silently disable authentication. An
+    /// empty / whitespace-only value is the legitimate default and
+    /// resolves to [`AuthMode::Off`] — this lets `cargo run` and test
+    /// harnesses boot without setting `FLUXION_REST_AUTH`, while still
+    /// rejecting garbage like a stray unknown config-map key.
+    ///
+    /// Matching is ASCII-case-insensitive and trims surrounding whitespace,
+    /// so `TLS`, ` off `, and `Token` are all accepted. A trailing newline
+    /// around a *known* value (e.g. `"token\n"` from a Kubernetes
+    /// ConfigMap) is trimmed and parses correctly.
+    pub fn parse(raw: &str) -> Result<Self, String> {
+        let normalized = raw.trim().to_ascii_lowercase();
+        match normalized.as_str() {
+            "" | "off" => Ok(AuthMode::Off),
+            "token" => Ok(AuthMode::Token),
+            "tls" => Ok(AuthMode::Tls),
+            _ => Err(format!(
+                "unknown FLUXION_REST_AUTH value '{normalized}'; expected one of: off, token, tls"
+            )),
         }
     }
 }
@@ -140,18 +154,25 @@ impl RestSecurityConfig {
     /// Resolve security configuration from the process environment.
     ///
     /// # Environment variables
-    /// - `FLUXION_REST_AUTH` — `off` (default) | `token` | `tls`
+    /// - `FLUXION_REST_AUTH` — `off` (default) | `token` | `tls`. Parsed
+    ///   strictly by [`AuthMode::parse`]: an unrecognized non-empty value
+    ///   (e.g. a typo) is propagated as an `Err` so the server refuses to
+    ///   boot rather than silently disabling auth (Issue #2689). Unset /
+    ///   empty is the legitimate `off` default.
     /// - `FLUXION_REST_AUTH_TOKEN` — bearer token (required for `token`)
     /// - `FLUXION_REST_CORS_ORIGINS` — comma-separated origin allow-list
     /// - `FLUXION_REST_RATE_LIMIT_RPS` — sustained req/s per IP
     /// - `FLUXION_REST_RATE_LIMIT_BURST` — burst capacity per IP
     /// - `FLUXION_REST_VERIFIED_HEADER_NAME` — mTLS proxy header name
     /// - `FLUXION_REST_VERIFIED_HEADER_VALUE` — mTLS proxy header value
-    pub fn from_env() -> Self {
+    ///
+    /// Returns `Err` iff `FLUXION_REST_AUTH` is set to an unrecognized
+    /// non-empty value (fail-closed).
+    pub fn from_env() -> Result<Self, String> {
         let mut cfg = Self::default();
 
         if let Ok(v) = std::env::var("FLUXION_REST_AUTH") {
-            cfg.auth_mode = AuthMode::parse(&v);
+            cfg.auth_mode = AuthMode::parse(&v)?;
         }
         if let Ok(v) = std::env::var("FLUXION_REST_AUTH_TOKEN") {
             if !v.is_empty() {
@@ -191,7 +212,7 @@ impl RestSecurityConfig {
             cfg.verified_header_value = v;
         }
 
-        cfg
+        Ok(cfg)
     }
 
     /// Build the shared [`AuthState`] handed to [`require_auth`].
@@ -541,15 +562,24 @@ pub fn is_insecure_bind_configuration(
 
 /// Convenience wrapper for the binary: reads the three inputs from the
 /// environment and returns an error message when boot should be refused
-/// (release builds). In debug builds this always returns `Ok(())` so local
-/// `cargo run` keeps working with the defaults.
+/// (release builds). In debug builds the insecure-bind check is a no-op so
+/// local `cargo run` keeps working with the defaults — but the
+/// `FLUXION_REST_AUTH` value is still **validated in every build**
+/// (Issue #2689): an unrecognized non-empty value refuses to boot rather
+/// than silently resolving to `off`.
 pub fn check_boot_guard_from_env() -> Result<(), String> {
-    // The guard is a release-only control. In debug builds (e.g. `cargo
-    // test`) the default `0.0.0.0` + `off` combination must stay usable.
+    let auth_raw = std::env::var("FLUXION_REST_AUTH").unwrap_or_default();
+    // Issue #2689 — fail-closed on an unrecognized FLUXION_REST_AUTH value
+    // in *every* build. A typo that silently resolves to `off` would
+    // disable authentication; erroring here is the fail-closed fix.
+    let auth = AuthMode::parse(&auth_raw)?;
+
+    // Release-only insecure-bind guard (Issue #2505). In debug builds the
+    // default `0.0.0.0` + `off` combination must stay usable for
+    // `cargo run`.
     #[cfg(not(debug_assertions))]
     {
         let bind = std::env::var("FLUXION_REST_BIND").unwrap_or_default();
-        let auth = AuthMode::parse(&std::env::var("FLUXION_REST_AUTH").unwrap_or_default());
         let allow_insecure = std::env::var("FLUXION_REST_ALLOW_INSECURE")
             .map(|v| matches!(v.trim(), "1" | "true" | "yes" | "on"))
             .unwrap_or(false);
@@ -562,11 +592,13 @@ pub fn check_boot_guard_from_env() -> Result<(), String> {
             ));
         }
     }
-    // Avoid "unused" warnings for the env reads in debug builds.
+    // In debug builds `auth` is only computed to validate the env value;
+    // touch it (and the remaining guard inputs) to avoid unused-variable
+    // warnings. The env reads also keep the guard inputs "used".
     #[cfg(debug_assertions)]
     {
+        let _ = auth;
         let _ = std::env::var("FLUXION_REST_BIND");
-        let _ = std::env::var("FLUXION_REST_AUTH");
         let _ = std::env::var("FLUXION_REST_ALLOW_INSECURE");
     }
     Ok(())
@@ -576,14 +608,73 @@ pub fn check_boot_guard_from_env() -> Result<(), String> {
 mod tests {
     use super::*;
 
-    // ---- AuthMode parsing ----
+    // ---- AuthMode parsing (fail-closed, Issue #2689) ----
     #[test]
     fn auth_mode_parses_known_values() {
-        assert_eq!(AuthMode::parse("token"), AuthMode::Token);
-        assert_eq!(AuthMode::parse("TLS"), AuthMode::Tls);
-        assert_eq!(AuthMode::parse(" off "), AuthMode::Off);
-        assert_eq!(AuthMode::parse(""), AuthMode::Off);
-        assert_eq!(AuthMode::parse("bogus"), AuthMode::Off);
+        assert_eq!(AuthMode::parse("token").unwrap(), AuthMode::Token);
+        assert_eq!(AuthMode::parse("TLS").unwrap(), AuthMode::Tls);
+        assert_eq!(AuthMode::parse("Tls").unwrap(), AuthMode::Tls);
+        assert_eq!(AuthMode::parse(" off ").unwrap(), AuthMode::Off);
+        assert_eq!(AuthMode::parse("OFF").unwrap(), AuthMode::Off);
+        assert_eq!(AuthMode::parse("off").unwrap(), AuthMode::Off);
+    }
+
+    #[test]
+    fn auth_mode_unset_or_empty_defaults_to_off() {
+        // Unset / empty / whitespace-only is the legitimate default — NOT
+        // an error — so `cargo run` and test harnesses boot without setting
+        // FLUXION_REST_AUTH.
+        assert_eq!(AuthMode::parse("").unwrap(), AuthMode::Off);
+        assert_eq!(AuthMode::parse("   ").unwrap(), AuthMode::Off);
+        assert_eq!(AuthMode::parse("\t\n").unwrap(), AuthMode::Off);
+    }
+
+    #[test]
+    fn auth_mode_trims_whitespace_around_known_values() {
+        // A stray trailing newline (e.g. from a Kubernetes ConfigMap value)
+        // around a *known* value is trimmed away and parses correctly.
+        assert_eq!(AuthMode::parse("token\n").unwrap(), AuthMode::Token);
+        assert_eq!(AuthMode::parse("\n off \n").unwrap(), AuthMode::Off);
+        assert_eq!(AuthMode::parse("  TLS  ").unwrap(), AuthMode::Tls);
+    }
+
+    #[test]
+    fn auth_mode_unknown_value_fails_closed() {
+        // Issue #2689: a typo or unrecognized alias must NOT silently coerce
+        // to Off — that would disable authentication with no warning.
+        let err = AuthMode::parse("tken").unwrap_err();
+        assert!(
+            err.contains("unknown FLUXION_REST_AUTH value"),
+            "error should name the problem, got: {err}"
+        );
+        assert!(
+            err.contains("'tken'"),
+            "error should echo the offending value, got: {err}"
+        );
+        assert!(
+            err.contains("off") && err.contains("token") && err.contains("tls"),
+            "error should list the valid options, got: {err}"
+        );
+
+        // Other plausible typos / aliases called out in the issue.
+        assert!(AuthMode::parse("bearer").is_err());
+        assert!(AuthMode::parse("mtls").is_err());
+        assert!(AuthMode::parse("tls-mode").is_err());
+        assert!(AuthMode::parse("none").is_err());
+        assert!(AuthMode::parse("disabled").is_err());
+        // A trailing newline around an *unknown* value still errors (trim
+        // leaves the unknown token intact).
+        assert!(AuthMode::parse("mtls\n").is_err());
+    }
+
+    #[test]
+    fn auth_mode_error_is_never_silently_off() {
+        // Defense-in-depth: the Result variant itself must be Err — it must
+        // never be Ok(Off) for an unknown input. This is the precise
+        // fail-open regression from the bug report (`bogus -> Off`).
+        let parsed = AuthMode::parse("bogus");
+        assert!(parsed.is_err(), "unknown value must not parse to Ok");
+        assert_ne!(parsed, Ok(AuthMode::Off));
     }
 
     // ---- constant_time_eq ----

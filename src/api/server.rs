@@ -1857,8 +1857,17 @@ async fn handle_timeout_error(err: BoxError) -> Response {
 /// `FLUXION_REST_AUTH=token` (with `FLUXION_REST_AUTH_TOKEN`) and a real
 /// `FLUXION_REST_CORS_ORIGINS` allow-list. For an explicitly-configured
 /// build, prefer [`router_with_security`].
+///
+/// `from_env` is fail-closed (Issue #2689): an unrecognized
+/// `FLUXION_REST_AUTH` value is an `Err`. This convenience wrapper panics
+/// on that condition — a misconfigured auth value must crash loudly rather
+/// than silently disable authentication. In the documented test/dev use
+/// (env unset) `from_env` always returns `Ok`, so the panic is unreachable
+/// in normal operation.
 pub fn router(state: AppState) -> Router {
-    router_with_security(state, crate::api::security::RestSecurityConfig::from_env())
+    let security_cfg = crate::api::security::RestSecurityConfig::from_env()
+        .unwrap_or_else(|e| panic!("fluxion-rest security misconfiguration: {e}"));
+    router_with_security(state, security_cfg)
 }
 
 /// Request-header names that are safe to record on the `TraceLayer` span.
