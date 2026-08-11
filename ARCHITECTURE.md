@@ -453,12 +453,14 @@ The standard formula's endpoint limits (0 at β=0 and ρ·GHI at β=180) are inv
 ```rust
 pub trait HeatConductionSolver: Send + Sync {
     fn name(&self) -> &str;
-    fn initialize(&mut self, wall: &BuildingAssembly) -> Result<(), SolverError>;
+    fn initialize(&mut self, wall: &WallSpec) -> Result<(), SolverError>;
     fn step(&mut self, dt: f64, T_int: f64, T_ext: f64, h_int: f64, h_ext: f64) -> Result<f64, SolverError>;
     fn energy_storage_rate(&self) -> f64;
     fn is_valid(&self) -> bool;
 }
 ```
+
+> _Note: the `step` line above is illustrative (primitive `f64`). The actual signature in `src/physics/solver_trait.rs` uses newtype units — `timestep: Time`, `T_interior: Temperature`, `h_interior: HeatTransferCoefficient` — and returns `Result<HeatFlux, SolverError>`. The `initialize` parameter is `&WallSpec` (not `&BuildingAssembly`)._
 
 > **Trait contract — query vs state-advancing separation** (added in #1392, fix for the pre-existing bug fixed by `steady_state_flux`):
 >
@@ -633,10 +635,15 @@ pub struct HybridRouting {
     pub use_surrogate_ventilation: bool,
     /// Route internal/external load prediction to the surrogate.
     pub use_surrogate_loads: bool,
+    /// Route HVAC power demand to the surrogate.
+    pub use_surrogate_hvac: bool,
+    /// When `true`, check inputs against training bounds before surrogate
+    /// inference and fall back to physics when OOD is detected (Issue #1892).
+    pub use_ood_fallback: bool,
 }
 ```
 
-Each flag independently routes one subsystem to the surrogate path (`true`) or the analytical/physics path (`false`). `HybridRouting::all_physics()` sets every flag to `false` (equivalent to `ThermalModelMode::Physics`); the `Default` routes **loads → surrogate, conduction + ventilation → physics** — the highest-value + lowest-risk split from Issue #1431's acceptance criteria. The `HybridThermalModel` struct holds the routing policy alongside the inner `ThermalModel` and applies per-timestep dispatch with instrumentation (`surrogate_load_calls` / `physics_step_calls` counters for test verification). The routing can be changed at runtime via `set_routing()`. Regression: `tests/surrogate_models/test_hybrid_mode_dispatch.rs`.
+Each flag independently routes one subsystem to the surrogate path (`true`) or the analytical/physics path (`false`). `HybridRouting::all_physics()` sets every flag to `false` (equivalent to `ThermalModelMode::Physics`); the `Default` routes **loads → surrogate, conduction + ventilation + hvac → physics**, with `use_ood_fallback = false` — the highest-value + lowest-risk split from Issue #1431's acceptance criteria (the `hvac` and `ood_fallback` flags were added by #1892/#2457). The `HybridThermalModel` struct holds the routing policy alongside the inner `ThermalModel` and applies per-timestep dispatch with instrumentation (`surrogate_load_calls` / `physics_step_calls` counters for test verification). The routing can be changed at runtime via `set_routing()`. Regression: `tests/surrogate_models/test_hybrid_mode_dispatch.rs`.
 
 **Multi-node HVAC & free-float (ADR-002 selection rule)**: The zone-level thermal network has two solver paths, selected by construction type in `thermal_model_core.rs::from_spec`:
 

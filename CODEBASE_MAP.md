@@ -397,17 +397,20 @@ pub trait HeatConductionSolver: Send + Sync {
 
 ```rust
 pub trait ThermalModelTrait: Send + Sync {
+    fn num_zones(&self) -> usize;
+    fn get_temperatures(&self) -> Vec<f64>;
+    fn set_temperatures(&mut self, temperatures: &[f64]);
+    fn mode(&self) -> ThermalModelMode;
+    fn set_mode(&mut self, mode: ThermalModelMode);
     fn solve_timesteps(
         &mut self,
         steps: usize,
         surrogates: &SurrogateManager,
-        use_ai: bool,
-        loads: Option<&[f64]>,
-        weather: Option<&HourlyWeatherData>,
-        schedule: Option<&ScheduleSet>,
+        use_surrogates: bool,
     ) -> f64;
-    fn get_temperatures(&self) -> Vec<f64>;
-    fn set_loads(&mut self, loads: &[f64]);
+    fn set_twin_correction(&mut self, correction: &TwinCorrection);
+    // ... (per-timestep load/temperature setters live on the concrete
+    //      ThermalModel / ThermalModelData type, not on this trait.)
 }
 ```
 
