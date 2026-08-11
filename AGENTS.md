@@ -128,6 +128,8 @@ Heavy Linux jobs honour `vars.FLUXION_LINUX_RUNNER` (self-hosted Hetzner fallbac
 - `FLUXION_REST_AUTH_TOKEN` — bearer token for `FLUXION_REST_AUTH=token|tls`.
 - `FLUXION_REST_CORS_ORIGINS` — comma-separated origin allow-list (defaults to localhost dev origins; never `permissive()`).
 - `FLUXION_REST_RATE_LIMIT_RPS` / `FLUXION_REST_RATE_LIMIT_BURST` — per-IP token-bucket governor (default `100`/`1000`). Body capped at 16 MiB.
+- `FLUXION_REST_RATE_LIMIT_MAX_ENTRIES` — hard cap on distinct per-IP token buckets retained in memory (default `100000`); LRU-evicted at the cap so a spoofed-IP / many-IP flood cannot grow memory unboundedly (#2688).
+- `FLUXION_REST_TRUSTED_PROXIES` — comma-separated CIDR/IP allow-list of trusted reverse proxies (e.g. `10.0.0.0/8,192.0.2.1`). When **unset/empty** (default), `X-Forwarded-For` / `X-Real-IP` are **ignored** and the limiter keys on the socket peer address only — closing the spoofing hole (#2688). When set, the headers are honoured **only** for connections whose peer falls inside the list, taking the **rightmost non-trusted** hop as the client (nginx `realip_recursive on` / Express `proxy-addr` semantics; the spoofable leftmost entry is never used).
 - `FLUXION_REST_ALLOW_INSECURE=1` — opt out of the release-build boot guard that refuses `FLUXION_REST_BIND=0.0.0.0` + `FLUXION_REST_AUTH=off`.
 - `FLUXION_ONNX_MODEL` — explicit ONNX model path (default `models/surrogate_zone_thermal.onnx`; mock fallback when unset).
 - `FLUXION_ONNX_BACKEND` — `cpu | cuda | coreml | directml | openvino`; auto-downgrades to `cpu` if `cuda` feature not built.
