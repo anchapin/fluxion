@@ -8,7 +8,7 @@
 //!
 //! - [`PyReadonlyArray::as_slice`] (from the `numpy` crate) gives a `&[T]`
 //!   borrowed directly from a numpy array's storage — no copy.
-//! - [`numpy::PyArray::borrow_from_array_bound`] wraps an existing
+//! - [`numpy::PyArray::borrow_from_array`] wraps an existing
 //!   `ndarray::ArrayView` as a numpy array that shares the same memory.
 //!
 //! Combined, these two primitives allow `PyGeometryTensor::from_numpy` and
@@ -19,7 +19,7 @@
 //!
 //! # Why Arc?
 //!
-//! `borrow_from_array_bound` is `unsafe`: the caller promises that the data
+//! `borrow_from_array` is `unsafe`: the caller promises that the data
 //! referenced by the view lives as long as the returned numpy array's
 //! container. The container is a `Bound<'py, PyAny>` — a Python-owned object
 //! whose lifetime is bounded by Python's GC. We can't hand it a Rust reference
@@ -51,7 +51,7 @@ use std::sync::Arc;
 /// A 1-D matrix that can cross the Rust ↔ Python boundary without copying.
 ///
 /// Internally an `Arc<Vec<f64>>`: cloning the `Arc` is a refcount bump, so
-/// handing the data to Python via `borrow_from_array_bound` does not duplicate
+/// handing the data to Python via `borrow_from_array` does not duplicate
 /// the buffer. The `Arc` is held by the numpy array's container (a Python
 /// object), so the underlying bytes outlive any subsequent Python use of the
 /// numpy array.
@@ -135,7 +135,7 @@ mod python_impl {
         /// `Arc` clone, so the data stays alive as long as Python holds the
         /// numpy array.
         pub fn to_numpy<'py>(&self, py: Python<'py>) -> Bound<'py, PyArray1<f64>> {
-            // SAFETY: we hand `borrow_from_array_bound` a container that
+            // SAFETY: we hand `borrow_from_array` a container that
             // holds an Arc clone of the underlying Vec, and a view that
             // points into that Vec's storage. The Arc is kept alive by the
             // numpy array's container, so the view's data remains valid for
@@ -144,7 +144,7 @@ mod python_impl {
             let view = ndarray::ArrayView1::from(&*arc_for_view);
             // Clone again for the holder so `view` (which borrows from
             // `arc_for_view`) stays valid for the
-            // `borrow_from_array_bound` call.
+            // `borrow_from_array` call.
             let arc_for_holder = Arc::clone(&self.data);
             let holder = ZeroCopyHolder1D {
                 data: arc_for_holder,
@@ -152,7 +152,7 @@ mod python_impl {
             let container = Bound::new(py, holder)
                 .expect("ZeroCopyHolder1D allocation cannot fail")
                 .into_any();
-            unsafe { PyArray1::borrow_from_array_bound(&view, container) }
+            unsafe { PyArray1::borrow_from_array(&view, container) }
         }
     }
 
@@ -176,7 +176,7 @@ mod python_impl {
             let view = unsafe { raw.deref_into_view() };
             // Clone again for the holder so `view` (which borrows from
             // `arc_for_view`) stays valid for the
-            // `borrow_from_array_bound` call.
+            // `borrow_from_array` call.
             let arc_for_holder = Arc::clone(&self.data);
             let holder = ZeroCopyHolder2D {
                 data: arc_for_holder,
@@ -185,11 +185,11 @@ mod python_impl {
             let container = Bound::new(py, holder)
                 .expect("ZeroCopyHolder2D allocation cannot fail")
                 .into_any();
-            unsafe { PyArray2::borrow_from_array_bound(&view, container) }
+            unsafe { PyArray2::borrow_from_array(&view, container) }
         }
     }
 
-    /// Holder passed to `borrow_from_array_bound` as the container. Holding
+    /// Holder passed to `borrow_from_array` as the container. Holding
     /// the `Arc` in a `#[pyclass]` lets the numpy array's base object keep
     /// the data alive through Python's GC.
     #[pyo3::pyclass]
@@ -320,11 +320,11 @@ mod tests {
     }
 
     /// Round-trip test that exercises the full numpy path: zero-copy Arc +
-    /// `borrow_from_array_bound`. Requires the `python-bindings` feature.
+    /// `borrow_from_array`. Requires the `python-bindings` feature.
     #[test]
     fn to_numpy_round_trip() {
         use numpy::{PyArrayMethods, PyUntypedArrayMethods};
-        pyo3::Python::with_gil(|py| {
+        pyo3::Python::attach(|py| {
             let v = vec![1.0_f64, 2.0, 3.0, 4.0];
             let m = ZeroCopyMatrix2D::from_vec(v.clone(), (2, 2));
             let pyarr = m.to_numpy(py);

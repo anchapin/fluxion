@@ -144,16 +144,16 @@ impl From<FluxionError> for PyErr {
             // attribute on the Python `SimulationError` so Python clients
             // can read failing_timestep / failing_zone / max_residual_pct /
             // last_known_good_timestep without parsing the error message.
-            FluxionError::Simulation(msg, diagnostics) => Python::with_gil(|py| {
+            FluxionError::Simulation(msg, diagnostics) => Python::attach(|py| {
                 let py_err = SimulationError::new_err(msg);
                 if let Some(diag) = diagnostics {
-                    let dict = pyo3::types::PyDict::new_bound(py);
+                    let dict = pyo3::types::PyDict::new(py);
                     let _ = dict.set_item("failing_timestep", diag.failing_timestep);
                     let _ = dict.set_item("failing_zone", diag.failing_zone.as_deref());
                     let _ = dict.set_item("max_residual_pct", diag.max_residual_pct);
                     let _ =
                         dict.set_item("last_known_good_timestep", diag.last_known_good_timestep);
-                    let bound = py_err.value_bound(py);
+                    let bound = py_err.value(py);
                     let _ = bound.setattr("diagnostics", dict);
                 }
                 py_err

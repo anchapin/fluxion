@@ -88,45 +88,33 @@ Tracking issue: [#1458](https://github.com/anchapin/fluxion/issues/1458).
 | Resolution | No replacement released. `paste` `1.x` is widely used and
   baked into the Rust numerical ecosystem. |
 
-### `RUSTSEC-2026-0177` — PyO3 0.22 `Sync` bound (PR-B)
+### `RUSTSEC-2026-0177` — PyO3 0.22 `Sync` bound (REMEDIATED in #2585)
 
 | Field | Value |
 | --- | --- |
-| Crate | `pyo3` 0.22.6 |
+| Crate | `pyo3` 0.22.6 → **0.29.2** (migrated) |
 | Type | memory-safety (PyCFunction::new_closure missing `Sync` bound) |
 | Affects | pyo3 0.15.0..<0.29.0 |
 | Fixed in | pyo3 ≥ 0.29.0 |
-| Fluxion use site | `Cargo.toml:205` pins `pyo3 = "0.22"`; used by `src/python/` and `src/bin/fluxion-py/` |
-| Tracking | [Issue #2553](https://github.com/anchapin/fluxion/issues/2553) (PR-B) |
-| Time-bound | **2026-12-31** — if migration has not landed by this date, REMOVE this ignore from `.cargo/audit.toml` so cargo audit surfaces the failure and forces the work to be prioritized |
+| Status | **REMEDIATED** — `Cargo.toml` now pins `pyo3 = "0.29"`. The ignore entry in `.cargo/audit.toml` was removed so cargo audit verifies the fix on every PR. |
+| Tracking | [Issue #2585](https://github.com/anchapin/fluxion/issues/2585) |
 
-#### Why ignored
+#### Remediation
 
-- **Actively known vulnerability.** PyO3 0.22.6 is missing the `Sync` bound
-  on `PyCFunction::new_closure` (GHSA-chgr-c6px-7xpp). Patched in
-  pyo3 ≥ 0.29.0.
-- **Migration is non-trivial.** pyo3 0.22 → 0.29 spans 7 minor versions and
-  includes breaking API changes:
-  - `Bound<'py, T>` migration (replaces the old `&PyAny` / `&PyTuple` API)
-  - `IntoPy` / `FromPyObject` rewrites
-  - GIL-refs removal (the `Python::with_gil` / `PyGil::acquire` API is gone)
-  - `abi3-py310` → `abi3-py312` (or higher) abi bump
-  - `pyo3-macros` and `pyo3-build-config` version alignment
-  - `src/python/` and `src/bin/fluxion-py/` must be rewritten against the new API
-- **Out of scope** for issue #2553's "remove stale ignores" mandate.
-
-#### Why not removed
-
-Removing this ignore would make `cargo audit` exit non-zero on every PR
-until the PyO3 migration lands, blocking all development. The
-**time-bound** in `.cargo/audit.toml` (target 2026-12-31) is the
-explicit deadline: after that date, the ignore must be removed and the
-PyO3 migration becomes a release blocker.
-
-#### Revisit when
-
-- pyo3 ≥ 0.29.0 migration is complete and `Cargo.toml` pins the new version, **or**
-- 2026-12-31 arrives without migration — at which point REMOVE the ignore.
+The PyO3 0.22 → 0.29 migration in #2585 resolves the advisory. Key API
+migrations applied:
+- `Bound<PyAny>::downcast::<T>()` → `cast::<T>()` (renamed in 0.29)
+- `Python::with_gil()` → `Python::attach()` (GIL API change)
+- `PyObject` (type alias) → `Py<PyAny>` (removed in 0.29)
+- `IntoPy::into_py()` → `IntoPyObject::into_pyobject()` (trait rewrite)
+- `ToPyObject::to_object()` → `IntoPyObject::into_pyobject()` (trait rewrite)
+- `PyModule::import_bound()` → `PyModule::import()` (`_bound` suffix dropped)
+- `Python::get_type_bound()` → `Python::get_type()` (`_bound` suffix dropped)
+- `PyDict::new_bound()` → `PyDict::new()` (`_bound` suffix dropped)
+- numpy `_bound` method suffixes dropped (`from_vec_bound` → `from_vec`, etc.)
+- `Bound<PyAny>::iter()` → `try_iter()` (sequence iteration)
+- `pyo3::prepare_freethreaded_python()` removed (auto-initialize handles it)
+- `ndarray` bumped 0.16 → 0.17 to match numpy 0.29's ndarray dependency
 
 ### `RUSTSEC-2026-0098`, `RUSTSEC-2026-0099` — remediated transitively in #2553 (PR-A)
 

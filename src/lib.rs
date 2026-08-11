@@ -498,7 +498,7 @@ impl Model {
     ) -> PyResult<Bound<'py, numpy::PyArray2<f64>>> {
         // Helper to extract 1D numpy array as Vec<f64>
         fn extract_1d_f64(arr: &Bound<'_, pyo3::types::PyAny>) -> PyResult<Vec<f64>> {
-            if let Ok(pyarr) = arr.downcast::<numpy::PyArray1<f64>>() {
+            if let Ok(pyarr) = arr.cast::<numpy::PyArray1<f64>>() {
                 let slice = unsafe { pyarr.as_slice()? };
                 return Ok(slice.to_vec());
             }
@@ -575,7 +575,7 @@ impl Model {
         }
 
         info!("NumPy simulation complete");
-        Ok(numpy::PyArray2::from_owned_array_bound(py, zone_temps))
+        Ok(numpy::PyArray2::from_owned_array(py, zone_temps))
     }
 
     /// Simulate one timestep.
@@ -815,7 +815,7 @@ impl PyVectorField {
     #[new]
     fn new(data: &Bound<'_, pyo3::types::PyAny>) -> PyResult<Self> {
         // Try to extract as numpy array first (most efficient for large data)
-        if let Ok(arr) = data.downcast::<numpy::PyArray1<f64>>() {
+        if let Ok(arr) = data.cast::<numpy::PyArray1<f64>>() {
             // Fast path: directly copy from numpy array slice
             let slice = unsafe { arr.as_slice()? };
             return Ok(PyVectorField {
@@ -828,7 +828,7 @@ impl PyVectorField {
         let len = data.len()?;
         vec.reserve(len);
 
-        for item in data.iter()? {
+        for item in data.try_iter()? {
             let val = item?.extract::<f64>()?;
             vec.push(val);
         }
@@ -861,8 +861,8 @@ impl PyVectorField {
     /// Returns a numpy array view of the underlying data when possible,
     /// avoiding unnecessary memory copies for maximum performance.
     fn to_numpy<'a>(&self, py: Python<'a>) -> PyResult<Bound<'a, numpy::PyArray1<f64>>> {
-        // Use from_vec_bound for zero-copy conversion
-        Ok(numpy::PyArray1::from_vec_bound(
+        // Use from_vec for zero-copy conversion
+        Ok(numpy::PyArray1::from_vec(
             py,
             self.inner.as_slice().to_vec(),
         ))
@@ -1638,7 +1638,7 @@ impl BatchOracle {
         use rayon::prelude::*;
 
         // Try to extract as 2D numpy array
-        let array = population.downcast::<numpy::PyArray2<f64>>()?;
+        let array = population.cast::<numpy::PyArray2<f64>>()?;
 
         // Issue #2528: validate shape *before* any `unsafe` slice dereference.
         // A zero-row array (`[0, 3]`) or a wrong column count previously
@@ -1746,7 +1746,7 @@ impl BatchOracle {
         }
 
         // Return as numpy array
-        Ok(numpy::PyArray1::from_vec_bound(py, results))
+        Ok(numpy::PyArray1::from_vec(py, results))
     }
 
     /// Register an ONNX surrogate model for the oracle. This replaces the internal
@@ -1905,10 +1905,10 @@ fn fluxion(_py: Python, m: &Bound<'_, PyModule>) -> PyResult<()> {
     crate::python::panic_hook::install();
 
     // Register custom exception types
-    m.add("FluxionError", _py.get_type_bound::<FluxionErrorPy>())?;
-    m.add("ValidationError", _py.get_type_bound::<ValidationError>())?;
-    m.add("SurrogateError", _py.get_type_bound::<SurrogateError>())?;
-    m.add("SimulationError", _py.get_type_bound::<SimulationError>())?;
+    m.add("FluxionError", _py.get_type::<FluxionErrorPy>())?;
+    m.add("ValidationError", _py.get_type::<ValidationError>())?;
+    m.add("SurrogateError", _py.get_type::<SurrogateError>())?;
+    m.add("SimulationError", _py.get_type::<SimulationError>())?;
 
     m.add_class::<Model>()?;
     m.add_class::<BatchOracle>()?;
@@ -2383,7 +2383,7 @@ impl PyGeometryTensor {
         // hot path. The refactor keeps only the unavoidable ownership copy.
         fn borrow_f64_slice(arr: &Bound<'_, pyo3::types::PyAny>) -> PyResult<Vec<f64>> {
             // Try 2D array first
-            if let Ok(pyarr) = arr.downcast::<numpy::PyArray2<f64>>() {
+            if let Ok(pyarr) = arr.cast::<numpy::PyArray2<f64>>() {
                 // Issue #2528: use the safe `readonly().as_slice()` accessor
                 // instead of `unsafe { pyarr.as_slice()? }`. The previous
                 // `unsafe` block was unsound-by-omission (the safe path
@@ -2399,7 +2399,7 @@ impl PyGeometryTensor {
                 return Ok(slice.to_vec());
             }
             // Try 1D array
-            if let Ok(pyarr) = arr.downcast::<numpy::PyArray1<f64>>() {
+            if let Ok(pyarr) = arr.cast::<numpy::PyArray1<f64>>() {
                 let readonly = pyarr.readonly();
                 let slice = readonly.as_slice().map_err(|e| {
                     pyo3::exceptions::PyValueError::new_err(format!(
@@ -2411,7 +2411,7 @@ impl PyGeometryTensor {
             // Fallback to Python sequence iteration (no zero-copy possible —
             // Python objects must be extracted element by element).
             let mut vec = Vec::new();
-            for item in arr.iter()? {
+            for item in arr.try_iter()? {
                 let val = item?.extract::<f64>()?;
                 vec.push(val);
             }
@@ -2479,7 +2479,7 @@ impl PyGeometryTensor {
 
     /// Convert to numpy arrays with zero-copy buffer sharing.
     ///
-    /// Each returned numpy array wraps a `numpy::PyArray2::borrow_from_array_bound`
+    /// Each returned numpy array wraps a `numpy::PyArray2::borrow_from_array`
     /// view of the underlying `GeometryTensor` storage — the numpy array and
     /// the Rust struct share the same buffer. A `PyClass` holder that retains
     /// an `Arc<GeometryTensor>` clone keeps the storage alive for the lifetime
@@ -2527,7 +2527,7 @@ impl PyGeometryTensor {
             let container = Bound::new(py, holder)
                 .expect("ZeroCopyGeometryTensorHolder allocation cannot fail")
                 .into_any();
-            Ok(unsafe { numpy::PyArray2::borrow_from_array_bound(&view, container) })
+            Ok(unsafe { numpy::PyArray2::borrow_from_array(&view, container) })
         }
 
         let zone_coords = build_zero_copy_2d(
@@ -2577,7 +2577,7 @@ impl PyGeometryTensor {
             .expect("ZeroCopyGeometryTensorHolder allocation cannot fail")
             .into_any();
         let summary =
-            unsafe { numpy::PyArray1::borrow_from_array_bound(&summary_view, summary_container) };
+            unsafe { numpy::PyArray1::borrow_from_array(&summary_view, summary_container) };
 
         Ok((
             zone_coords,

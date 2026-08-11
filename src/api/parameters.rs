@@ -245,8 +245,8 @@ impl BuildingParameters {
     ///
     /// # Returns
     /// `list[float64]` in format `[window_u_value, heating_setpoint, cooling_setpoint]`
-    fn to_vec_py(&self, py: Python<'_>) -> PyResult<PyObject> {
-        Ok(self.to_vec().into_py(py))
+    fn to_vec_py(&self, py: Python<'_>) -> PyResult<Py<PyAny>> {
+        Ok(self.to_vec().into_pyobject(py)?.into_any().unbind())
     }
 
     /// String representation for debugging.
@@ -264,7 +264,7 @@ impl BuildingParameters {
 }
 
 #[cfg(feature = "python-bindings")]
-use pyo3::PyObject;
+use pyo3::{Py, PyAny};
 
 #[cfg(test)]
 mod tests {

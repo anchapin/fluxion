@@ -29,17 +29,17 @@ fn schema_from_json(content: &str) -> PyResult<SimulationSchemaV1> {
 
 fn schema_from_dict(schema: &Bound<'_, PyDict>) -> PyResult<SimulationSchemaV1> {
     let py = schema.py();
-    let json = PyModule::import_bound(py, "json")?;
+    let json = PyModule::import(py, "json")?;
     let content: String = json.call_method1("dumps", (schema,))?.extract()?;
     schema_from_json(&content)
 }
 
 fn schema_to_dict(py: Python<'_>, schema: &SimulationSchemaV1) -> PyResult<Py<PyDict>> {
-    let json = PyModule::import_bound(py, "json")?;
+    let json = PyModule::import(py, "json")?;
     let content = serde_json::to_string(schema)
         .map_err(|error| validation_error(format!("Failed to serialize schema: {error}")))?;
     let value = json.call_method1("loads", (content,))?;
-    Ok(value.downcast_into::<PyDict>()?.unbind())
+    Ok(value.cast::<PyDict>()?.clone().unbind())
 }
 
 #[pyclass(name = "OsmReader")]
