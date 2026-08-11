@@ -10,7 +10,7 @@ repository = "https://github.com/anchapin/fluxion"
 [dependencies]
 # ONNX Runtime bindings. RC pin (issue #2691) — see root Cargo.toml for rationale;
 # opt-in here so the release-candidate is not pulled into every consumer.
-ort = { version = "2.0.0-rc.13", features = ["download-binaries"], optional = true }
+ort = { version = "2.0.0-rc.10", features = ["download-binaries"], optional = true }
 rand = { version = "0.8", features = ["small_rng"] }
 rand_distr = "0.4"
 thiserror = "1.0"
