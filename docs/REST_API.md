@@ -133,16 +133,6 @@ The request body is a bare `SimulationSchemaV1` (or the version-tagged
 - `use_surrogates` (default `false`)
 - `store_as` (optional explicit id; if absent the server auto-assigns one)
 
-`POST /v1/batch` accepts at most `1024` entries per request (`400
-batch_too_large` otherwise) and a total step budget of `Σ years_i * 8760 ≤
-89_702_400`; the maximum request body size is `8 MiB`. Internally the
-per-config work (`run_simulation`) is parallelised across the rayon pool and
-the whole rayon dispatch runs inside `tokio::task::spawn_blocking` (Issue
-#2501), so a batch request never pins its tokio worker — concurrent requests
-and lightweight endpoints (`/v1/healthz`, `/v1/schema/{id}`) stay responsive
-while a batch runs. See [Latency budget](#latency-budget) for the budget
-this unblocks.
-
 The response is `{ "schema_id": "sch-0", "output": { ... SimulationOutput ... } }`.
 The `schema_id` is always non-null because the server auto-stores the schema
 so callers can retrieve it via `GET /v1/schema/{id}`.
@@ -177,6 +167,218 @@ reader is a separate scope item and will be tracked in a follow-up issue.
 curl -s -X POST http://localhost:8080/v1/import/osm \
   --data-binary @model.osm | jq '.schema_id'
 ```
+
+### `POST /v1/batch`
+
+Run up to `1024` simulations in a single request. The body is a
+`BatchRequest` wrapping a `Vec<SimulateRequest>`; each entry uses the same
+schema + `options` shape as `POST /v1/simulate`. Per-config work
+(`run_simulation`) is parallelised across the rayon pool via
+`into_par_iter`, and the whole rayon dispatch runs inside
+`tokio::task::spawn_blocking` (Issue #2501) so a batch request never pins its
+tokio worker — concurrent requests and lightweight endpoints (`/v1/healthz`,
+`/v1/schema/{id}`) stay responsive while a batch runs (see
+[Latency budget](#latency-budget)).
+
+| Guard               | Value                                            | Failure status / kind            |
+|---------------------|--------------------------------------------------|----------------------------------|
+| Empty `simulations` | —                                                | `400 empty_batch`                |
+| Max entries         | `MAX_BATCH_SIMULATIONS = 1024`                   | `400 batch_too_large`            |
+| Step budget         | `MAX_CAMPAIGN_STEPS = 89_702_400` (`Σ years_i * 8760`) | `400 step_budget_exceeded` |
+| Request body        | `16 MiB` (`MAX_REQUEST_BODY_BYTES`)              | `413` at the router layer        |
+| Request wall clock  | `60 s` (`REQUEST_TIMEOUT`)                       | `408 request_timeout`            |
+
+The response is a `BatchResponse` whose `results` array has one entry per
+input simulation, preserving order. Each entry is either
+`{ "schema_id": null, "output": { ... SimulationOutput ... } }` on success
+(`schema_id` is `null` because batch entries are not individually stored) or
+a bare error string on failure (`e.to_string()` of the underlying `ApiError`).
+
+```bash
+curl -s -X POST http://localhost:8080/v1/batch \
+  -H 'content-type: application/json' \
+  -d '{"simulations":[{"options":{"years":1},"geometry":{...}},...]}' \
+  | jq '.results | length'
+```
+
+<!-- src/api/server.rs: BatchRequest 746, BatchResponse 752, batch_simulate 1461,
+     MAX_BATCH_SIMULATIONS 96, MAX_CAMPAIGN_STEPS 104, BatchTooLarge 810,
+     StepBudgetExceeded 811, spawn_blocking dispatch 1526;
+     MAX_REQUEST_BODY_BYTES src/api/security.rs:49 -->
+
+### `POST /v1/simulate/stream`
+
+Server-Sent Events variant of `POST /v1/simulate`. Accepts the same
+`SimulateRequest` (schema + `options`) and validates it identically
+(`heating_setpoint < cooling_setpoint`, non-empty `geometry.zones`,
+`1 <= options.years <= MAX_YEARS`). Instead of waiting for the full solve,
+it spawns the physics on a background `tokio::spawn` task connected to the
+response by an mpsc channel (buffer 100) and streams per-timestep results as
+they are produced.
+
+The response carries `Content-Type: text/event-stream`,
+`Cache-Control: no-cache`, `Connection: keep-alive`. Each SSE event is a
+`data:` line whose payload is a JSON-serialised `TimestepEvent`:
+
+```
+data: {"timestep":0,"zone_temperatures":[21.0,21.0]}
+data: {"timestep":1,"zone_temperatures":[21.02,21.01]}
+```
+
+The stream yields one event per hourly timestep from the solver's
+`get_hourly_temperatures()` trace (i.e. `years * 8760` events total). A
+serialisation failure or solver error is emitted as
+`data: {"error":"..."}\n\n` rather than tearing down the connection. The
+schema is also persisted via the in-memory store so it is retrievable through
+`GET /v1/schema/{id}` afterwards. Like `/v1/simulate`, the handler is
+non-blocking: the request's tokio worker is released for the duration of the
+solve (see [Latency budget](#latency-budget)).
+
+```bash
+curl -N -X POST http://localhost:8080/v1/simulate/stream \
+  -H 'content-type: application/json' \
+  -d @tests/fixtures/single_zone.json
+# => data: {"timestep":0,"zone_temperatures":[...]}
+# => data: {"timestep":1,"zone_temperatures":[...]}
+# => ...
+```
+
+<!-- src/api/server.rs: simulate_stream 1361, TimestepEvent 758,
+     mpsc + tokio::spawn 1391-1422, SSE framing 1424-1453 -->
+
+### `GET /v1/simulation/:id/status`
+
+Async polling endpoint for long-running simulations. A simulation id
+(`sim-N`, allocated by `AppState::register_simulation`) is looked up in the
+configured `SimulationStateStore` (in-memory by default; a cloud store can
+back it so status survives client disconnect). Returns
+`404 simulation_not_found` for an unknown id. The body is a
+`SimulationStatus`:
+
+| Field      | Type                              | Notes                                                                              |
+|------------|-----------------------------------|------------------------------------------------------------------------------------|
+| `id`       | string                            | The id queried.                                                                    |
+| `state`    | `SimulationStateEnum` (tagged)    | `pending`, `running { progress }`, `completed`, or `failed { error }`.             |
+| `progress` | number \| null                    | `0.0..=1.0` when `running`/`completed`, else null.                                 |
+| `result`   | `SimulateResponse` \| null        | Result envelope; the in-memory store returns null here — fetch outputs via the originating handler. |
+
+```bash
+curl -s http://localhost:8080/v1/simulation/sim-3/status | jq '.state'
+# => "completed"
+```
+
+<!-- src/api/server.rs: get_simulation_status 1554, SimulationStatus 351,
+     SimulationStateEnum 361, SIM_ID_PREFIX 78, register_simulation 481,
+     InMemorySimulationStateStore::get_status 228,
+     ApiError::SimulationNotFound 774 -->
+
+### `POST /v1/campaigns`
+
+Submit a campaign — a large, fire-and-forget batch of configs (Issue #1786).
+The request body is a `CampaignSpec`:
+
+| Field         | Type                     | Notes                                       |
+|---------------|--------------------------|---------------------------------------------|
+| `name`        | string \| null           | Optional human-readable label.              |
+| `description` | string \| null           | Optional long-form description.             |
+| `simulations` | `Vec<SimulateRequest>`   | Same per-entry shape as `/v1/batch`.        |
+
+The handler applies the **same** caps as `/v1/batch` (empty → `empty_batch`,
+`> 1024` entries → `batch_too_large`, step budget `> 89_702_400` →
+`step_budget_exceeded`, all `400`; body limit `16 MiB`) and then returns
+immediately with a `CampaignSubmitResponse { "campaign_id": "camp-N" }`. The
+simulations themselves run on a spawned tokio task that walks the state
+machine `pending` → `running` → `completed`, so the HTTP response does not
+wait on any physics. Poll progress with `GET /v1/campaigns/:id/status`.
+
+```bash
+curl -s -X POST http://localhost:8080/v1/campaigns \
+  -H 'content-type: application/json' \
+  -d '{"name":"sweep","simulations":[{"options":{"years":1},"geometry":{...}},...]}' \
+  | jq '.campaign_id'
+# => "camp-0"
+```
+
+<!-- src/api/server.rs: submit_campaign 1576, CampaignSpec 383,
+     CampaignSubmitResponse 1567, CAMPAIGN_ID_PREFIX 81, caps 1590-1611,
+     spawned worker task 1619-1673 -->
+
+### `GET /v1/campaigns/:id/status`
+
+Poll the state of a campaign submitted via `POST /v1/campaigns`. Returns
+`404 campaign_not_found` for an unknown id. The body is a `CampaignStatus`:
+
+| Field                   | Type                              | Notes                                                              |
+|-------------------------|-----------------------------------|--------------------------------------------------------------------|
+| `id`                    | string                            | The campaign id.                                                   |
+| `name`                  | string \| null                    | Echoed from the `CampaignSpec`.                                    |
+| `state`                 | `CampaignStateEnum` (tagged)      | `pending`, `running { progress }`, `completed`, or `failed { error }`. |
+| `progress`              | number \| null                    | `0.0..=1.0` when `running`/`completed`, else null.                 |
+| `total_simulations`     | integer                           | `spec.simulations.len()`.                                          |
+| `completed_simulations` | integer                           | Count completed so far.                                            |
+| `result`                | `CampaignResult` \| null          | Present only when `state == "completed"`.                          |
+
+When present, `result.outputs` is a `Vec<CampaignSimulationResult>` with one
+entry per input simulation (order preserved); each entry is either
+`{ "schema_id": null, "output": { ... SimulationOutput ... }, "error": null }`
+on success or `{ "schema_id": null, "output": null, "error": "..." }` on
+failure.
+
+```bash
+curl -s http://localhost:8080/v1/campaigns/camp-0/status \
+  | jq '{state,progress,completed:.completed_simulations,total:.total_simulations}'
+# => {"state":"completed","progress":1.0,"completed":6,"total":6}
+```
+
+<!-- src/api/server.rs: get_campaign_status 1679, CampaignStatus 391,
+     CampaignStateEnum 404, CampaignResult 438, CampaignSimulationResult 444,
+     get_campaign_status body assembly 535-606, ApiError::CampaignNotFound 775 -->
+
+### `GET /v1/readyz`
+
+Readiness probe (Issue #2514), complementing `GET /v1/healthz` (liveness).
+Unlike `healthz`, this endpoint *does* poke downstream dependencies, so wire
+it to a Kubernetes `readinessProbe` (not `livenessProbe`) to avoid restart
+loops. Returns `200 OK` when every sub-probe passes, or `503 Service
+Unavailable` with the same body when any one fails. The route is public (no
+auth), mirroring `/v1/healthz`.
+
+| Probe      | Checks                                                                                                                                                                                          |
+|------------|-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| `onnx`     | With `--features ort`: constructs `SurrogateManager` and, if `FLUXION_ONNX_MODEL` is set, verifies the path exists on disk. Without `ort`: passes unconditionally (`"skipped (ort feature off)"`). |
+| `weather`  | If `FLUXION_WEATHER_FILE` is set, verifies the file is readable; otherwise passes (`"no weather file configured"`).                                                                              |
+| `appstate` | `AppState::default()` must construct (`"initialized"`). Infallible today; the hook exists for future state stores that can fail.                                                                 |
+
+The body is a `ReadinessReport`:
+
+```json
+{
+  "status": "ok",
+  "checks": {
+    "onnx":     { "status": "ok", "detail": "mock (no model loaded)" },
+    "weather":  { "status": "ok", "detail": "no weather file configured" },
+    "appstate": { "status": "ok", "detail": "initialized" }
+  }
+}
+```
+
+`status` is `"ok"` only when every check is `"ok"`; otherwise it is
+`"not ready"` and the HTTP status flips to 503 (the per-check `detail`
+explains which dependency failed). The probe logic lives in the pure
+`run_readiness_probes_with` function so the HTTP handler and the
+`fluxion-rest` boot-time self-check share one definition of "ready".
+
+```bash
+curl -s -o /dev/null -w '%{http_code}\n' http://localhost:8080/v1/readyz
+# => 200
+curl -s http://localhost:8080/v1/readyz | jq '.checks.onnx.status'
+# => "ok"
+```
+
+<!-- src/api/server.rs: readyz 1047, run_readiness_probes_with 1006,
+     probe_onnx 947, probe_weather 981, probe_appstate 998, ReadinessReport 921,
+     ReadinessChecks 908, public route 2063, 200-on-happy-path test 3517,
+     503-when-not-ready test 3540 -->
 
 ## Acceptance criteria
 
