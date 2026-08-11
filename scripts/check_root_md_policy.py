@@ -7,9 +7,9 @@ files may live at the repo root.  Anything else is a transient artifact
 and must be moved to `tmp/`, `docs/archive/`, or `docs/investigations/`
 before committing.
 
-Allow-list (per `AGENTS.md` lines 214-220):
+Allow-list (per `AGENTS.md` §Repository Hygiene):
     README.md, ARCHITECTURE.md, CODEBASE_MAP.md, CONTRIBUTING.md,
-    RULES.md, CHANGELOG.md, AGENTS.md
+    RULES.md, CHANGELOG.md, AGENTS.md, SCORECARD.md
 
 Special handling:
     CLAUDE.md — auto-generated per-session by the Bernstein agent.
@@ -36,7 +36,7 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parent.parent
 
 # The hard allow-list.  Anything else at the root is a violation.
-# Keep in sync with AGENTS.md §Repository Hygiene (line 216).
+# Keep in sync with AGENTS.md §Repository Hygiene.
 ROOT_MD_ALLOWLIST: frozenset[str] = frozenset(
     {
         "README.md",
@@ -46,6 +46,7 @@ ROOT_MD_ALLOWLIST: frozenset[str] = frozenset(
         "RULES.md",
         "CHANGELOG.md",
         "AGENTS.md",
+        "SCORECARD.md",
     }
 )
 
