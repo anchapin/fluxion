@@ -50,7 +50,7 @@
 //!
 //! See also
 //! --------
-//! - `tests/case_920_orientation_attribution.rs` (#2454) — per-orientation
+//! - `tests/diagnostics/case_920_orientation_attribution.rs` (#2454) — per-orientation
 //!   solar decomposition for Case 920 (E/W windows).
 //! - `tests/case_900ff_regression_bisect.rs` (#2455) — Case 900FF night
 //!   minimum regression (separate issue, different physics path).

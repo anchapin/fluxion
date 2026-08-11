@@ -104,7 +104,7 @@ diurnal cycle for an E/W-glazed high-mass building.
 
 The E/W incidence path is correct (E=1136.9 kWh/m², W=1148.0 kWh/m²,
 symmetry ratio 0.990). See
-`tests/case_920_orientation_attribution.rs` (per #2454) and
+`tests/diagnostics/case_920_orientation_attribution.rs` (per #2454) and
 `tests/ashrae_140_case_920.rs::test_case_920_per_orientation_solar_distribution`.
 The bug is downstream in the mass-to-air coupling, not upstream in the
 solar incidence path.
@@ -176,7 +176,7 @@ than per-timestep energy injection. Per
 ## Key files
 
 - `tests/ashrae_140_case_920.rs` — new integration test file (Issue #2427)
-- `tests/case_920_orientation_attribution.rs` — per-orientation diagnostic (Issue #2454)
+- `tests/diagnostics/case_920_orientation_attribution.rs` — per-orientation diagnostic (Issue #2454)
 - `src/sim/thermal_model_physics/hvac.rs` — `compute_hvac_coefficient` (current: `derived_h_tr_3 + h_tr_w` for 9R4C, `h_tr_1 + h_tr_w` for 5R1C)
 - `src/validation/ashrae_140_cases.rs` — `validate_case_920` validator
 - `docs/KNOWN_ISSUES.md` §LIMIT-05 — root cause documentation

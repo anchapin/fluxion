@@ -22,7 +22,7 @@
 //!
 //! The per-orientation solar distribution is verified independently — the
 //! incidence path is correct (E/W symmetry 0.99, see
-//! `tests/case_920_orientation_attribution.rs`), so the bug is downstream in
+//! `tests/diagnostics/case_920_orientation_attribution.rs`), so the bug is downstream in
 //! the mass-to-air coupling. Per AGENTS.md "no parameter tuning," the band
 //! can only close via the **GaugeSolver** (#1465 / #1462) architectural
 //! rework.
@@ -204,7 +204,7 @@ fn test_case_920_spec_has_6m2_east_and_west_windows() {
 // the correct wall orientation.
 //
 // Companion to the standalone diagnostic in
-// `tests/case_920_orientation_attribution.rs`. Asserts both the E/W symmetry
+// `tests/diagnostics/case_920_orientation_attribution.rs`. Asserts both the E/W symmetry
 // ratio (a wiring check) and the (E + W) / roof per-m² ratio (a sanity
 // check against obvious double-counts or swaps).
 // ─────────────────────────────────────────────────────────────────────────────

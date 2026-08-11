@@ -7,7 +7,7 @@ Related to: validation_report.md (results), FIX.md (archived as `docs/investigat
 Status: Post-#1323 baseline refresh — pre-#1323 numbers are obsolete per ARCHITECTURE.md §Current Module Status.
 Action: Check this document before attributing validation failures to new issues; many may be known.
 
-*Last Updated: 2026-08-11* (Post-#1323 / post-Wave-5 baseline refresh; #1421 Case 600 ref-range unified to benchmark.rs:124-127 across validator, CSV, doc, and this document; see issue #1443. CI-01 code-coverage gate #1932 added. CI-02 debug build rust-lld segfault #2297 added. **Cases 600 series energy violations (600, 610, 620, 630, 640, 650) are documented as pre-existing model limitations — see §LIMIT-05 UPDATE (#1457 revisit) and §LIMIT-06. Case 900 residual annual-energy deviation (H=2.362 MWh, C=1.330 MWh) confirmed as a structural 5R1C limitation after #2227/#2229 — see §SOLAR-02 UPDATE (Issue #2239). 900-series bidirectional annual-energy over-prediction (Cases 900, 910, 920, 930, 940 in the CTF path: H AND C both above band) documented per §LIMIT-05 UPDATE (Issue #2453, 2026-08-09) — diagnostic test + Python analyser shipped, fix routed to GaugeSolver #1465/#1462. Case 940 setback thermostat (#2452) — diagnostic test `tests/case_940_setback_diagnostic.rs` ships with CTF-vs-blind path comparison; CTF path overshoots blind by 6–8×; structural fix routed to GaugeSolver #1465/#1462. FFD/CFD co-simulation physics-assertion failures (issue #2612) — `test_buoyancy_driven_chtc_analytical` CHTC gap resolved as a test-side Ra miscalculation (hardcoded 1.6e9 → corrected to first-principles 2.87e10); `test_peak_cooling_load_tolerance` documented as a structural gap (stub has no zone air energy balance) — see §FFD-01 / §FFD-02. Empirical thermal-mass correction factor removed for v1.3 no-tuning compliance (Issue #2706) — see §BASE-03.**)
+*Last Updated: 2026-08-11* (Post-#1323 / post-Wave-5 baseline refresh; #1421 Case 600 ref-range unified to benchmark.rs:124-127 across validator, CSV, doc, and this document; see issue #1443. CI-01 code-coverage gate #1932 added. CI-02 debug build rust-lld segfault #2297 added. **Cases 600 series energy violations (600, 610, 620, 630, 640, 650) are documented as pre-existing model limitations — see §LIMIT-05 UPDATE (#1457 revisit) and §LIMIT-06. Case 900 residual annual-energy deviation (H=2.362 MWh, C=1.330 MWh) confirmed as a structural 5R1C limitation after #2227/#2229 — see §SOLAR-02 UPDATE (Issue #2239). 900-series bidirectional annual-energy over-prediction (Cases 900, 910, 920, 930, 940 in the CTF path: H AND C both above band) documented per §LIMIT-05 UPDATE (Issue #2453, 2026-08-09) — diagnostic test + Python analyser shipped, fix routed to GaugeSolver #1465/#1462. Case 940 setback thermostat (#2452) — diagnostic test `tests/diagnostics/case_940_setback_diagnostic.rs` ships with CTF-vs-blind path comparison; CTF path overshoots blind by 6–8×; structural fix routed to GaugeSolver #1465/#1462. FFD/CFD co-simulation physics-assertion failures (issue #2612) — `test_buoyancy_driven_chtc_analytical` CHTC gap resolved as a test-side Ra miscalculation (hardcoded 1.6e9 → corrected to first-principles 2.87e10); `test_peak_cooling_load_tolerance` documented as a structural gap (stub has no zone air energy balance) — see §FFD-01 / §FFD-02. Empirical thermal-mass correction factor removed for v1.3 no-tuning compliance (Issue #2706) — see §BASE-03.**)
 
 > **Post-#1323 baseline changes (read first)** — Between the prior "Last Updated" header
 > (2026-03-30) and this revision, ~100 days and 30+ validation-affecting PRs landed.
@@ -1023,7 +1023,7 @@ closed by parameter tuning per AGENTS.md.
 **Investigation finding — two-path comparison:**
 
 The Issue framing assumes one bug; the diagnostic test
-`tests/case_940_setback_diagnostic.rs::test_case_940_ctf_path_comparison`
+`tests/diagnostics/case_940_setback_diagnostic.rs::test_case_940_ctf_path_comparison`
 (runs `--ignored --nocapture`) shows Case 940 differs **directionally** between
 the two production paths:
 
@@ -1070,7 +1070,7 @@ solar + envelope heat transfer, not a 5R1C/CTF parameter adjustment.
 
 **Path forward (out of scope for this PR):**
 
-1. Ship the diagnostic test (`tests/case_940_setback_diagnostic.rs`,
+1. Ship the diagnostic test (`tests/diagnostics/case_940_setback_diagnostic.rs`,
    `#[ignore]`-quarantined — runs only with `--ignored --nocapture`).
 2. Add a per-issue `case_940_setback_attribution.py` (Python side-car) if the
    per-month CTF attribution needs to be compared against EnergyPlus hourly
@@ -1081,13 +1081,13 @@ solar + envelope heat transfer, not a 5R1C/CTF parameter adjustment.
 
 **Diagnostic test (run with `--ignored --nocapture`):**
 
-- `tests/case_940_setback_diagnostic.rs::test_case_940_setback_diagnostic` —
+- `tests/diagnostics/case_940_setback_diagnostic.rs::test_case_940_setback_diagnostic` —
   verifies setback schedule activation count (2920 h expected) and prints
   per-month H/C breakdown for the blind path.
-- `tests/case_940_setback_diagnostic.rs::test_case_940_setback_controller_mode_trace` —
+- `tests/diagnostics/case_940_setback_diagnostic.rs::test_case_940_setback_controller_mode_trace` —
   prints zone-temperature by hour bucket (setback vs normal) and the first
   50 hourly samples, showing the recovery profile.
-- `tests/case_940_setback_diagnostic.rs::test_case_940_ctf_path_comparison` —
+- `tests/diagnostics/case_940_setback_diagnostic.rs::test_case_940_ctf_path_comparison` —
   runs Case 940 in BOTH paths and prints side-by-side annual H/C, peaks, and
   the CTF/blind ratio. **This is the issue's primary deliverable.**
 
