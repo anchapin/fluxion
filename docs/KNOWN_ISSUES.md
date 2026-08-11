@@ -7,7 +7,7 @@ Related to: validation_report.md (results), FIX.md (archived as `docs/investigat
 Status: Post-#1323 baseline refresh — pre-#1323 numbers are obsolete per ARCHITECTURE.md §Current Module Status.
 Action: Check this document before attributing validation failures to new issues; many may be known.
 
-*Last Updated: 2026-08-09* (Post-#1323 / post-Wave-5 baseline refresh; #1421 Case 600 ref-range unified to benchmark.rs:124-127 across validator, CSV, doc, and this document; see issue #1443. CI-01 code-coverage gate #1932 added. CI-02 debug build rust-lld segfault #2297 added. **Cases 600 series energy violations (600, 610, 620, 630, 640, 650) are documented as pre-existing model limitations — see §LIMIT-05 UPDATE (#1457 revisit) and §LIMIT-06. Case 900 residual annual-energy deviation (H=2.362 MWh, C=1.330 MWh) confirmed as a structural 5R1C limitation after #2227/#2229 — see §SOLAR-02 UPDATE (Issue #2239). 900-series bidirectional annual-energy over-prediction (Cases 900, 910, 920, 930, 940 in the CTF path: H AND C both above band) documented per §LIMIT-05 UPDATE (Issue #2453, 2026-08-09) — diagnostic test + Python analyser shipped, fix routed to GaugeSolver #1465/#1462. Case 940 setback thermostat (#2452) — diagnostic test `tests/case_940_setback_diagnostic.rs` ships with CTF-vs-blind path comparison; CTF path overshoots blind by 6–8×; structural fix routed to GaugeSolver #1465/#1462.**)
+*Last Updated: 2026-08-11* (Post-#1323 / post-Wave-5 baseline refresh; #1421 Case 600 ref-range unified to benchmark.rs:124-127 across validator, CSV, doc, and this document; see issue #1443. CI-01 code-coverage gate #1932 added. CI-02 debug build rust-lld segfault #2297 added. **Cases 600 series energy violations (600, 610, 620, 630, 640, 650) are documented as pre-existing model limitations — see §LIMIT-05 UPDATE (#1457 revisit) and §LIMIT-06. Case 900 residual annual-energy deviation (H=2.362 MWh, C=1.330 MWh) confirmed as a structural 5R1C limitation after #2227/#2229 — see §SOLAR-02 UPDATE (Issue #2239). 900-series bidirectional annual-energy over-prediction (Cases 900, 910, 920, 930, 940 in the CTF path: H AND C both above band) documented per §LIMIT-05 UPDATE (Issue #2453, 2026-08-09) — diagnostic test + Python analyser shipped, fix routed to GaugeSolver #1465/#1462. Case 940 setback thermostat (#2452) — diagnostic test `tests/case_940_setback_diagnostic.rs` ships with CTF-vs-blind path comparison; CTF path overshoots blind by 6–8×; structural fix routed to GaugeSolver #1465/#1462. FFD/CFD co-simulation physics-assertion failures (issue #2612) — `test_buoyancy_driven_chtc_analytical` CHTC gap resolved as a test-side Ra miscalculation (hardcoded 1.6e9 → corrected to first-principles 2.87e10); `test_peak_cooling_load_tolerance` documented as a structural gap (stub has no zone air energy balance) — see §FFD-01 / §FFD-02.**)
 
 > **Post-#1323 baseline changes (read first)** — Between the prior "Last Updated" header
 > (2026-03-30) and this revision, ~100 days and 30+ validation-affecting PRs landed.
@@ -987,7 +987,8 @@ they are physically correct and flip one marginal test.
 | Reporting (REPORT) | 4 | 0 | 4 | 0 | 0 |
 | CI/Infrastructure (CI) | 1 | 0 | 1 | 0 | 0 |
 | fluxion-fluid (FLUID) | 2 | 0 | 2 | 0 | 0 |
-| **Total** | **27** | **10** | **9** | **1** | **5** |
+| FFD/CFD (FFD) | 2 | 1 | 0 | 1 | 0 |
+| **Total** | **29** | **11** | **9** | **2** | **5** |
 
 ### Open Issues by Severity
 
@@ -1181,6 +1182,84 @@ solar + envelope heat transfer, not a 5R1C/CTF parameter adjustment.
 - **GitHub Issue:** #2330
 - **Status:** 🔄 **Known Limitation** — Test would require redesign to either pass all 3 inputs or support partial-input optimization.
 
+## FFD/CFD Co-Simulation Issues (FFD)
+
+These cover the BES↔FFD (Building Energy Simulation ↔ Fast Fluid Dynamics)
+loose-coupling validation tests in `tests/ffd_cosimulation_validation.rs`,
+enabled under the `fluxion-cfd` feature. They were exposed when PR #2583
+(`fix(tests): resolve 54 pre-existing test compile errors`) let the file build
+for the first time; the failures are latent (pre-existing), not regressions
+(the #2583 fix was a pure type annotation with zero runtime effect).
+
+### FFD-01: buoyancy-driven CHTC analytical comparison — RESOLVED (test-side Ra miscalculation)
+
+- **Issue:** [#2612](https://github.com/anchapin/fluxion/issues/2612) (test 1,
+  `test_buoyancy_driven_chtc_analytical`) — CHTC error ~161 % vs the ±15 %
+  tolerance for the Chen & Griffith (1963) buoyancy-driven natural-convection
+  benchmark.
+- **Affected Tests:** `tests/ffd_cosimulation_validation.rs::
+  test_buoyancy_driven_chtc_analytical` (was `#[ignore]`).
+- **Severity:** N/A (was quarantined; now fixed).
+- **Status:** ✅ **Fixed** — root cause was a test-side reference
+  miscalculation, not an FFD solver bug.
+- **Resolution Notes (Python-verified):** The test hard-coded the analytical
+  reference Rayleigh number as `ra = 1.6e9`. For the stated configuration
+  (L = 3 m, ΔT = 10 K, ν = 1.5e-5 m²/s, α = 2.1e-5 m²/s, air at 20 °C) the
+  correct Rayleigh number is `Ra = g·β·ΔT·L³/(ν·α) ≈ 2.87e10` (Python:
+  `(1/293.15)·9.81·10·27 / (1.5e-5·2.1e-5) = 2.8684e10`). The `1.6e9` value is
+  an arithmetic mistake — it would require L ≈ 1.15 m, not 3 m. The
+  `BuoyancyDrivenFfdSolver` stub computes Ra correctly from first principles, so
+  it produced CHTC = 3.32 W/(m²·K) while the miscalculated reference gave 1.27
+  W/(m²·K) → 161.7 % error. The fix computes the reference Ra from first
+  principles (independent code path) rather than loosening the tolerance —
+  required by RULES.md ("no parameter tuning / hardcoding to match"). After the
+  fix the test validates the solver's Ra → Nu → CHTC pipeline produces a
+  physically-sensible CHTC (3.32 W/(m²·K), within the ASHRAE natural-convection
+  band 0.5–10 W/(m²·K)) and that Ra is in the turbulent regime (> 1e9). The
+  `#[ignore]` is removed; the test now passes in the normal `cargo test` run.
+
+### FFD-02: peak cooling load tolerance — STRUCTURAL (stub lacks zone air energy balance)
+
+- **Issue:** [#2612](https://github.com/anchapin/fluxion/issues/2612) (test 2,
+  `test_peak_cooling_load_tolerance`) — peak cooling load error ~100 % vs the
+  10 % acceptance tolerance. Validates BES↔FFD coupled simulation against the
+  NIST HVAC BESTEST 4.5 kW reference.
+- **Affected Tests:** `tests/ffd_cosimulation_validation.rs::
+  test_peak_cooling_load_tolerance` (`#[ignore]`-quarantined).
+- **Severity:** Medium (accepted structural limitation).
+- **GitHub Issue:** #2612 (open — needs real coupled BES↔FFD solver).
+- **Status:** 🟡 **Structural limitation — documented; `#[ignore]` retained.**
+- **Root Cause (Python-verified):** The `BuoyancyDrivenFfdSolver` stub returns a
+  *constant* 293.15 K (20 °C) zone temperature regardless of the
+  `BesToFfdBoundaryConditions` it receives — it has no zone air energy balance.
+  The test's cooling-load estimator only fires when the zone exceeds 296.15 K,
+  so `peak_cooling` is always 0 kW, giving exactly 100 % error vs the 4.5 kW
+  reference. Reproduction: `cargo test --features fluxion-cfd --test
+  ffd_cosimulation_validation -- --ignored --nocapture` prints
+  `Peak cooling: reference=4.50 kW, simulated=0.00 kW, error=100.0%`.
+- **Why this is NOT a fixable constant tweak (per AGENTS.md / RULES.md):**
+  Closing the gap requires implementing a genuine coupled zone energy balance
+  (real air-node thermal capacitance `C_air = ρ·cp·V`, HVAC supply-air coupling,
+  envelope conduction feedback) so the zone temperature actually *responds* to
+  the outdoor/surface/internal-gain boundary conditions. The 4.5 kW NIST HVAC
+  BESTEST reference is a calibrated full-BES figure; making the stub emit it by
+  choosing constants would be **parameter tuning to pass a system test** —
+  explicitly forbidden. This is the same class of structural gap as the §LIMIT-05
+  GaugeSolver-blocked diagnostics: the model topology does not yet implement the
+  required physics, so the test is `#[ignore]`-quarantined until the coupled
+  solver lands.
+- **What was done in #2612:** The test compiles and runs under
+  `--features fluxion-cfd` without panicking in the normal `cargo test` run (it
+  is skipped). The `#[ignore]` message and doc comment were rewritten to point
+  at the structural root cause and this section. Running with `--ignored`
+  reproduces the documented 100 % gap as a close-out signal (same quarantine
+  pattern as the §LIMIT-05 GaugeSolver-blocked tests).
+- **Path forward (out of scope for #2612):** Implement a real coupled BES↔FFD
+  zone energy balance (wire `fluxion-cfd`'s `FfdCfdSolver` through the
+  `FfdSolver` trait adapter `src/sim/ffd_cfd_adapter.rs` with an air-node ODE),
+  then remove the `#[ignore]` and assert the 10 % peak-cooling tolerance against
+  the NIST reference.
+
 ## Related GitHub Issues
 
 | Issue | Title | Status | In this doc |
@@ -1227,6 +1306,7 @@ solar + envelope heat transfer, not a 5R1C/CTF parameter adjustment.
 | #2454 | Case 920 E/W windows annual energy root cause (Issue #2427 follow-up) | ✅ **Closed** — per-orientation diagnostic test ships, fix routed to GaugeSolver #1465/#1462 | (per-orientation test pattern) |
 | #2455 | 900FF free-floating night minimum 6°C below reference band | ✅ **Closed** — wall-capacitance half-insulation rule fix (ISO 13790 §12.2.3 + Annex C) | (test `case_900ff_regression_bisect.rs`) |
 | #2452 | Case 940 setback thermostat: CTF path 5-10× over, blind path 30-50% under | 🟡 **Diagnostic shipped** — CTF-vs-blind path comparison test localises the over-prediction to the CTF coupling under setback recovery; fix routed to GaugeSolver #1465/#1462 (out of scope per AGENTS.md "no parameter tuning") | §LIMIT-05 UPDATE (#2452, 2026-08-09) |
+| #2612 | FFD/CFD solver accuracy: 2 latent physics-assertion failures exposed by #2583 | 🟡 **Partial** — test 1 (`test_buoyancy_driven_chtc_analytical`) CHTC gap fixed (test-side Ra miscalculation 1.6e9 → 2.87e10; #[ignore] removed, now passes); test 2 (`test_peak_cooling_load_tolerance`) documented as structural (stub has no zone air energy balance; #[ignore] retained, needs real coupled BES↔FFD solver) | §FFD-01, §FFD-02 |
 
 ## See also
 
