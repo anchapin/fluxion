@@ -1326,3 +1326,626 @@ mod tests {
         assert_eq!(snap.supply_air_temp, 13.0);
     }
 }
+
+// =============================================================================
+// Single-building Model — top-level Python entrypoint (Issue #2493).
+// Moved verbatim from `lib.rs`; the crate-root #[pymodule] registers this via
+// `m.add_class::<python::model_bindings::Model>()`. Python name is unchanged
+// (`#[pyclass]` with no `name` attribute => "Model").
+// =============================================================================
+
+use crate::ai::surrogate::SurrogateManager;
+use crate::api::error::SurrogateError;
+use crate::batch_oracle::BatchOracle;
+use crate::python::batch_oracle_bindings::ParameterBounds;
+use crate::weather::HourlyWeatherData;
+
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::time::{Duration, Instant};
+
+use ndarray::Array2;
+use numpy::PyArrayMethods;
+
+#[allow(unused_imports)]
+use log::{debug, info};
+
+/// Monotonic id generator for Python-facing `Model` instances (Issue #2548).
+/// Surfaces as `simulation_id` on `Model.__repr__` so Python users can correlate
+/// a divergence back to a specific simulation.
+static MODEL_ID_COUNTER: AtomicU64 = AtomicU64::new(0);
+
+/// Standard Single-Building Model for detailed building energy analysis.
+///
+/// Use this class when you need detailed simulation of a single building configuration,
+/// including hourly temperature traces and ASHRAE 140 validation.
+#[cfg(feature = "python-bindings")]
+/// Single-building energy model for detailed simulation.
+///
+/// Use for validation, hourly temperature traces, or ASHRAE 140 testing.
+/// Provides detailed diagnostics including hourly temperature traces, peak loads,
+/// energy consumption breakdown, and comparison reports.
+///
+/// # Python API
+/// ```python,ignore
+/// from fluxion import Model
+///
+/// # Create from ASHRAE 140 case
+/// model = Model.from_case("600")
+///
+/// # Run simulation
+/// eui = model.simulate(years=1, use_surrogates=False)
+///
+/// # Get detailed diagnostics
+/// temps = model.get_hourly_temperatures()
+/// peak_heating = model.get_peak_heating()
+/// report = model.generate_comparison_report()
+/// ```
+///
+/// # Diagnostics
+/// - Hourly temperature traces (zone, mass, surface)
+/// - Peak load tracking (heating/cooling timing and magnitude)
+/// - Energy consumption breakdown (heating, cooling, fans)
+/// - Comparison reports against reference data (ASHRAE 140)
+///
+/// # Performance
+/// - Single configuration: <100ms for 8760 timesteps
+/// - Detailed diagnostics: Additional overhead for data collection
+///
+/// See docs/API_REFERENCE.md for complete API reference.
+#[pyclass]
+pub struct Model {
+    inner: ThermalModel<VectorField>,
+    surrogates: SurrogateManager,
+    /// Stable id for this Python `Model` instance, surfaced via `__repr__`
+    /// (Issue #2548) so users can correlate a tracing span / metric to one
+    /// specific simulation when debugging a divergence.
+    #[pyo3(get)]
+    simulation_id: String,
+    /// Wall-clock duration of the most recent `simulate()` call, recorded for
+    /// the debug-friendly `__repr__` (Issue #2548). `None` until the first
+    /// successful `simulate()` invocation.
+    last_duration: Option<Duration>,
+}
+
+#[cfg(feature = "python-bindings")]
+#[pymethods]
+impl Model {
+    /// Create a new Model instance with default configuration.
+    ///
+    /// # Arguments
+    /// * `num_zones` - Number of thermal zones (default: 1)
+    #[new]
+    #[pyo3(signature = (num_zones=1))]
+    fn new(num_zones: usize) -> PyResult<Self> {
+        Ok(Model {
+            inner: ThermalModel::<VectorField>::new(num_zones),
+            surrogates: SurrogateManager::new().map_err(|e| {
+                SurrogateError::new_err(format!("Failed to create SurrogateManager: {}", e))
+            })?,
+            simulation_id: format!("model-{}", MODEL_ID_COUNTER.fetch_add(1, Ordering::Relaxed)),
+            last_duration: None,
+        })
+    }
+
+    /// Get number of zones in the model.
+    fn num_zones(&self) -> usize {
+        self.inner.num_zones
+    }
+
+    /// Get current zone temperatures.
+    fn get_temperatures(&self) -> Vec<f64> {
+        self.inner.get_temperatures()
+    }
+
+    /// Set zone temperatures.
+    fn set_temperatures(&mut self, temps: Vec<f64>) -> PyResult<()> {
+        if temps.len() != self.inner.num_zones {
+            return Err(pyo3::exceptions::PyValueError::new_err(format!(
+                "Temperature vector length ({}) must match number of zones ({})",
+                temps.len(),
+                self.inner.num_zones
+            )));
+        }
+        self.inner.temperatures = VectorField::new(temps);
+        Ok(())
+    }
+
+    /// Get building type for auto-loading internal load profiles (Plan 17-04).
+    ///
+    /// Returns the building type enum (Office, Retail, School, etc.) which is used
+    /// to auto-load default internal load profiles when simulate_with_loads() is called.
+    fn building_type(&self) -> String {
+        // Convert BuildingType enum to string
+        match self.inner.building_type {
+            crate::sim::occupancy::BuildingType::Office => "Office".to_string(),
+            crate::sim::occupancy::BuildingType::Retail => "Retail".to_string(),
+            crate::sim::occupancy::BuildingType::School => "School".to_string(),
+            crate::sim::occupancy::BuildingType::Hospital => "Hospital".to_string(),
+            crate::sim::occupancy::BuildingType::Hotel => "Hotel".to_string(),
+            crate::sim::occupancy::BuildingType::Restaurant => "Restaurant".to_string(),
+            crate::sim::occupancy::BuildingType::Warehouse => "Warehouse".to_string(),
+        }
+    }
+
+    /// Set building type for auto-loading internal load profiles (Plan 17-04).
+    ///
+    /// # Arguments
+    /// * `building_type` - Building type string (Office, Retail, School, Hospital, Hotel, Restaurant, Warehouse)
+    ///
+    /// This building type is used to auto-load default internal load profiles (lighting, equipment, occupancy)
+    /// when simulate_with_loads() is called without specifying custom loads.
+    fn set_building_type(&mut self, building_type: String) -> PyResult<()> {
+        self.inner.building_type = match building_type.as_str() {
+            "Office" => crate::sim::occupancy::BuildingType::Office,
+            "Retail" => crate::sim::occupancy::BuildingType::Retail,
+            "School" => crate::sim::occupancy::BuildingType::School,
+            "Hospital" => crate::sim::occupancy::BuildingType::Hospital,
+            "Hotel" => crate::sim::occupancy::BuildingType::Hotel,
+            "Restaurant" => crate::sim::occupancy::BuildingType::Restaurant,
+            "Warehouse" => crate::sim::occupancy::BuildingType::Warehouse,
+            _ => {
+                return Err(pyo3::exceptions::PyValueError::new_err(format!(
+                    "Invalid building type '{}'. Must be one of: Office, Retail, School, Hospital, Hotel, Restaurant, Warehouse",
+                    building_type
+                )));
+            }
+        };
+        Ok(())
+    }
+
+    /// Simulate building energy consumption over specified years.
+    ///
+    /// # Arguments
+    /// * `years` - Number of years to simulate (1-5 typical)
+    /// * `use_surrogates` - If true, use AI surrogates for load predictions; if false, use analytical calculations
+    ///
+    /// # Returns
+    /// Total energy use intensity (EUI) in kWh/m²/year
+    fn simulate(&mut self, years: u32, use_surrogates: bool) -> PyResult<f64> {
+        // Issue #2548: enter a tracing span for the full duration of the
+        // Python-visible call so spans/metrics emitted from the physics core
+        // are correlated to this `simulation_id`.
+        let _span = tracing::info_span!(
+            "python_simulate",
+            simulation_id = %self.simulation_id,
+            years,
+            use_surrogates,
+        )
+        .entered();
+
+        let start = Instant::now();
+        // The physics core currently infallibly returns EUI, but compute the
+        // result as a `PyResult<f64>` block so the success/error outcome
+        // label is derived from a real `Result` — the error branch will fire
+        // as soon as a future change makes `simulate` fallible.
+        let outcome: PyResult<f64> = {
+            info!(
+                "Starting simulation for {} years, use_surrogates={}",
+                years, use_surrogates
+            );
+            let steps = years as usize * 8760;
+            debug!("Simulation will process {} timesteps", steps);
+            let result = self.inner.solve_timesteps(
+                steps,
+                &self.surrogates,
+                use_surrogates,
+                None,
+                None,
+                None,
+            );
+            info!("Simulation complete, EUI = {:.2} kWh/m²/year", result);
+            Ok(result)
+        };
+
+        let duration = start.elapsed();
+        // Always record the last call's duration, even on error, so the
+        // `__repr__` reflects the most recent attempt when debugging.
+        self.last_duration = Some(duration);
+
+        metrics::histogram!("fluxion_python_simulate_duration_seconds")
+            .record(duration.as_secs_f64());
+        let outcome_label = if outcome.is_ok() { "success" } else { "error" };
+        metrics::counter!("fluxion_python_simulate_total", "outcome" => outcome_label).increment(1);
+
+        outcome
+    }
+
+    /// Simulate building energy consumption with internal loads (Plan 17-04).
+    ///
+    /// This method allows specifying internal loads (lighting, equipment, occupancy)
+    /// for more detailed building energy modeling. If all load parameters are None,
+    /// the building type profile will be auto-loaded based on model.building_type.
+    ///
+    /// # Arguments
+    /// * `years` - Number of years to simulate (1-5 typical)
+    /// * `use_surrogates` - If true, use AI surrogates for load predictions; if false, use analytical calculations
+    ///
+    /// # Returns
+    /// Total energy use intensity (EUI) in kWh/m²/year
+    ///
+    /// # Note
+    /// This method currently accepts None for all load parameters, which will trigger
+    /// auto-loading of the building profile based on model.building_type.
+    /// Full Python API for passing custom load objects will be added in a future phase.
+    ///
+    /// # Example
+    /// ```python
+    /// import fluxion
+    ///
+    /// model = fluxion.Model()
+    /// model.building_type = fluxion.BuildingType.Office
+    ///
+    /// # Simulate with auto-loaded Office building profile
+    /// eui = model.simulate_with_loads(1, False)
+    /// ```
+    fn simulate_with_loads(&mut self, years: u32, use_surrogates: bool) -> PyResult<f64> {
+        info!(
+            "Starting simulation with auto-loaded internal loads for {} years, use_surrogates={}",
+            years, use_surrogates
+        );
+        let steps = years as usize * 8760;
+
+        // Pass None for all loads to trigger auto-loading from building_type
+        let result =
+            self.inner
+                .solve_timesteps(steps, &self.surrogates, use_surrogates, None, None, None);
+        info!("Simulation complete, EUI = {:.2} kWh/m²/year", result);
+        Ok(result)
+    }
+
+    /// Simulate building energy consumption with NumPy array inputs for weather data.
+    ///
+    /// This method enables direct NumPy memory sharing between Python and Rust,
+    /// eliminating copy overhead for large simulations. Weather data is passed
+    /// as NumPy arrays, and zone temperatures are returned as a 2D NumPy array.
+    ///
+    /// # Arguments
+    /// * `dry_bulb_temp` - Outdoor dry bulb temperature (°C), shape (steps,)
+    /// * `dni` - Direct Normal Irradiance (W/m²), shape (steps,)
+    /// * `dhi` - Diffuse Horizontal Irradiance (W/m²), shape (steps,)
+    /// * `ghi` - Global Horizontal Irradiance (W/m²), shape (steps,)
+    /// * `wind_speed` - Wind speed (m/s), shape (steps,)
+    /// * `humidity` - Relative humidity (%), shape (steps,)
+    /// * `horizontal_infrared` - Horizontal infrared radiation (W/m²), shape (steps,)
+    /// * `use_surrogates` - If true, use AI surrogates for load predictions
+    ///
+    /// # Returns
+    /// 2D NumPy array of zone temperatures (steps x num_zones) in °C
+    ///
+    /// # Example
+    /// ```python
+    /// import fluxion
+    /// import numpy as np
+    ///
+    /// model = fluxion.Model(num_zones=3)
+    ///
+    /// # Create weather data arrays (8760 hourly values)
+    /// n_timesteps = 8760
+    /// dry_bulb = np.random.uniform(10, 35, n_timesteps)
+    /// dni = np.random.uniform(0, 1000, n_timesteps)
+    /// dhi = np.random.uniform(0, 500, n_timesteps)
+    /// ghi = np.random.uniform(0, 1000, n_timesteps)
+    /// wind_speed = np.random.uniform(0, 10, n_timesteps)
+    /// humidity = np.random.uniform(30, 80, n_timesteps)
+    /// horizontal_ir = np.random.uniform(200, 500, n_timesteps)
+    ///
+    /// # Run simulation and get zone temperatures
+    /// zone_temps = model.simulate_numpy(
+    ///     dry_bulb, dni, dhi, ghi, wind_speed, humidity, horizontal_ir, False
+    /// )
+    /// # zone_temps.shape == (8760, 3)
+    /// ```
+    #[allow(clippy::too_many_arguments)]
+    fn simulate_numpy<'py>(
+        &mut self,
+        py: Python<'py>,
+        dry_bulb_temp: &Bound<'py, pyo3::types::PyAny>,
+        dni: &Bound<'py, pyo3::types::PyAny>,
+        dhi: &Bound<'py, pyo3::types::PyAny>,
+        ghi: &Bound<'py, pyo3::types::PyAny>,
+        wind_speed: &Bound<'py, pyo3::types::PyAny>,
+        humidity: &Bound<'py, pyo3::types::PyAny>,
+        horizontal_infrared: &Bound<'py, pyo3::types::PyAny>,
+        use_surrogates: bool,
+    ) -> PyResult<Bound<'py, numpy::PyArray2<f64>>> {
+        // Helper to extract 1D numpy array as Vec<f64>
+        fn extract_1d_f64(arr: &Bound<'_, pyo3::types::PyAny>) -> PyResult<Vec<f64>> {
+            if let Ok(pyarr) = arr.cast::<numpy::PyArray1<f64>>() {
+                let slice = unsafe { pyarr.as_slice()? };
+                return Ok(slice.to_vec());
+            }
+            Err(pyo3::exceptions::PyValueError::new_err(
+                "Expected 1D numpy array",
+            ))
+        }
+
+        // Extract weather data arrays
+        let dry_bulb_vec = extract_1d_f64(dry_bulb_temp)?;
+        let dni_vec = extract_1d_f64(dni)?;
+        let dhi_vec = extract_1d_f64(dhi)?;
+        let ghi_vec = extract_1d_f64(ghi)?;
+        let wind_vec = extract_1d_f64(wind_speed)?;
+        let humidity_vec = extract_1d_f64(humidity)?;
+        let hir_vec = extract_1d_f64(horizontal_infrared)?;
+
+        let steps = dry_bulb_vec.len();
+
+        // Validate all arrays have the same length
+        if dni_vec.len() != steps
+            || dhi_vec.len() != steps
+            || ghi_vec.len() != steps
+            || wind_vec.len() != steps
+            || humidity_vec.len() != steps
+            || hir_vec.len() != steps
+        {
+            return Err(pyo3::exceptions::PyValueError::new_err(
+                "All weather arrays must have the same length",
+            ));
+        }
+
+        let num_zones = self.inner.num_zones;
+        info!(
+            "Starting NumPy simulation for {} timesteps, {} zones, use_surrogates={}",
+            steps, num_zones, use_surrogates
+        );
+
+        // Initialize temperature storage: (steps x num_zones)
+        let mut zone_temps = Array2::<f64>::zeros((steps, num_zones));
+
+        // Build weather data and run simulation
+        for t in 0..steps {
+            if t % 1000 == 0 {
+                info!("Progress: {}/{} timesteps", t, steps);
+            }
+
+            let weather = HourlyWeatherData {
+                dry_bulb_temp: dry_bulb_vec[t],
+                dni: dni_vec[t],
+                dhi: dhi_vec[t],
+                ghi: ghi_vec[t],
+                wind_speed: wind_vec[t],
+                humidity: humidity_vec[t],
+                horizontal_infrared: hir_vec[t],
+                hour_of_year: t,
+                ground_temperature: None,
+                horizontal_illuminance: None,
+                diffuse_illuminance: None,
+                snow_depth: None,
+                snow_cover: None,
+                present_weather: None,
+                present_weather_code: None,
+            };
+
+            self.inner.set_weather(weather);
+            let _energy = self.inner.step_physics(t, dry_bulb_vec[t], 3600.0);
+
+            // Collect zone temperatures
+            let temps = self.inner.get_temperatures();
+            for (zone_idx, &temp) in temps.iter().enumerate() {
+                zone_temps[[t, zone_idx]] = temp;
+            }
+        }
+
+        info!("NumPy simulation complete");
+        Ok(numpy::PyArray2::from_owned_array(py, zone_temps))
+    }
+
+    /// Simulate one timestep.
+    ///
+    /// # Arguments
+    /// * `timestep` - Current timestep index (0-8759 for hourly annual simulation)
+    /// * `outdoor_temp` - Outdoor air temperature (°C)
+    /// * `use_surrogates` - If true, use neural surrogates; if false, use analytical calculations
+    /// Register an ONNX surrogate model for this `Model` instance.
+    ///
+    /// The path is validated per Issue #2529 (existence, `.onnx` extension,
+    /// allow-list directory via `FLUXION_MODEL_DIR`, and 256 MiB size limit)
+    /// before reaching the ONNX runtime. Error messages are generic and never
+    /// echo the raw user-supplied path.
+    fn load_surrogate(&mut self, model_path: String) -> PyResult<()> {
+        let validated = crate::ai::surrogate::validate_model_path(&model_path)
+            .map_err(SurrogateError::new_err)?;
+        match SurrogateManager::load_onnx(&validated.to_string_lossy()) {
+            Ok(manager) => {
+                self.surrogates = manager;
+                Ok(())
+            }
+            Err(e) => Err(SurrogateError::new_err(format!(
+                "Failed to load ONNX surrogate model: {e}"
+            ))),
+        }
+    }
+
+    /// Get the parameter bounds for building design variables.
+    ///
+    /// Returns a ParameterBounds struct with the valid ranges for all design
+    /// parameters used by BatchOracle. This is useful for optimization libraries
+    /// that need to generate valid parameter vectors.
+    ///
+    /// # Returns
+    /// ParameterBounds struct containing min/max values for:
+    /// - Window U-value (W/m²K)
+    /// - Heating setpoint (°C)
+    /// - Cooling setpoint (°C)
+    ///
+    /// # Example
+    /// ```python
+    /// import fluxion
+    ///
+    /// oracle = fluxion.BatchOracle()
+    /// bounds = oracle.get_parameter_bounds()
+    ///
+    /// print(f"U-value range: [{bounds.min_u_value}, {bounds.max_u_value}]")
+    /// print(f"Heating setpoint range: [{bounds.min_heating_setpoint}, {bounds.max_heating_setpoint}]")
+    /// print(f"Cooling setpoint range: [{bounds.min_cooling_setpoint}, {bounds.max_cooling_setpoint}]")
+    /// ```
+    fn get_parameter_bounds(&self) -> ParameterBounds {
+        ParameterBounds::get_bounds()
+    }
+
+    /// Validate a parameter vector against physical constraints.
+    ///
+    /// This method checks that all parameter values are within valid ranges and
+    /// that heating/cooling setpoints are consistent. If validation fails, a
+    /// ValidationError is raised with a clear, actionable message.
+    ///
+    /// # Arguments
+    /// * `params` - Parameter vector to validate. Elements:
+    ///   - `[0]`: Window U-value (W/m²K, must be finite and in [0.1, 5.0])
+    ///   - `[1]`: Heating setpoint (°C, must be finite and in [15.0, 25.0])
+    ///   - `[2]`: Cooling setpoint (°C, must be finite and in [22.0, 32.0])
+    ///
+    /// # Raises
+    /// ValidationError with detailed message including:
+    /// - Parameter index
+    /// - Invalid value
+    /// - Valid range
+    /// - Type of error (NaN, infinite, or out of range)
+    ///
+    /// # Example
+    /// ```python
+    /// import fluxion
+    ///
+    /// oracle = fluxion.BatchOracle()
+    ///
+    /// # Valid parameters
+    /// oracle.validate_parameters([1.5, 20.0, 27.0])  # OK
+    ///
+    /// # Invalid U-value (raises ValidationError)
+    /// try:
+    ///     oracle.validate_parameters([-1.0, 20.0, 27.0])
+    /// except fluxion.ValidationError as e:
+    ///     print(f"Validation failed: {e}")
+    ///     # Output: Window U-value (index 0, -1.00 W/m²K) out of range [0.1, 5.0] W/m²K
+    ///
+    /// # NaN value (raises ValidationError)
+    /// try:
+    ///     oracle.validate_parameters([float('nan'), 20.0, 27.0])
+    /// except fluxion.ValidationError as e:
+    ///     print(f"Validation failed: {e}")
+    ///     # Output: Window U-value (index 0) is NaN (value: nan W/m²K). Cannot use in simulation.
+    /// ```
+    fn validate_parameters_py(&self, params: Vec<f64>) -> PyResult<()> {
+        BatchOracle::validate_parameters(&params)?;
+        Ok(())
+    }
+
+    /// Set ground temperature model to constant value.
+    ///
+    /// # Arguments
+    /// * `temperature` - Constant ground temperature (°C)
+    fn set_ground_temp(&mut self, temperature: f64) {
+        self.inner.set_ground_temp(temperature);
+    }
+
+    /// Get ground temperature at a specific timestep.
+    ///
+    /// # Arguments
+    /// * `timestep` - Timestep index (0-8759 for hourly annual simulation)
+    ///
+    /// # Returns
+    /// Ground temperature (°C)
+    fn ground_temperature_at(&self, timestep: usize) -> f64 {
+        self.inner.ground_temperature_at(timestep)
+    }
+
+    /// Return a Python list of [`crate::python::model_bindings::PyZone`] snapshots,
+    /// one per zone in the model.
+    ///
+    /// Each returned `Zone` is an **owned snapshot** of the current zone state
+    /// (temperature, area, surfaces, HVAC setpoints). The snapshot does **not**
+    /// borrow from this model — Python garbage collection of any returned
+    /// `Zone` cannot invalidate this model, and conversely this model may be
+    /// mutated or re-simulated while Python still holds references to
+    /// previously returned zones. See `docs/bindings.md` for the full
+    /// lifetime story.
+    ///
+    /// Iteration works out of the box via the standard Python list iterator
+    /// protocol:
+    /// ```python,ignore
+    /// model = fluxion.Model(num_zones=3)
+    /// for z in model.zones():
+    ///     print(z.index, z.temperature, z.area)
+    /// ```
+    fn zones(&self) -> Vec<crate::python::model_bindings::PyZone> {
+        crate::python::model_bindings::all_zones_from_model(&self.inner)
+    }
+
+    /// Return a flat Python list of [`crate::python::model_bindings::PySurface`]
+    /// snapshots, one for every surface in every zone.
+    ///
+    /// Like [`Self::zones`], each surface is an owned snapshot. Mutating a
+    /// snapshot via `surface.append_shading(...)` only mutates the Python
+    /// object — to push the change back into the model, use
+    /// [`Self::set_surfaces`].
+    ///
+    /// # Example: find all south-facing surfaces
+    /// ```python,ignore
+    /// model = fluxion.Model(num_zones=2)
+    /// south = [s for s in model.surfaces() if s.orientation == fluxion.Orientation.South]
+    /// for s in south:
+    ///     s.add_overhang(depth=1.0, height=2.5)
+    /// model.set_surfaces(south + [s for s in model.surfaces() if s.orientation != fluxion.Orientation.South])
+    /// ```
+    fn surfaces(&self) -> Vec<crate::python::model_bindings::PySurface> {
+        crate::python::model_bindings::all_surfaces_from_model(&self.inner)
+    }
+
+    /// Push a flat list of [`crate::python::model_bindings::PySurface`]
+    /// snapshots back into the model. Surfaces are reshaped per-zone (4 per
+    /// zone by default; this matches the ASHRAE 140 case-default wall
+    /// configuration).
+    ///
+    /// The number of zones in the model does not change — only the surface
+    /// data inside each zone is replaced. This is the round-trip companion
+    /// to [`Self::surfaces`].
+    ///
+    /// # Arguments
+    /// * `surfaces` - flat list of [`crate::python::model_bindings::PySurface`]
+    ///   values; the list length must be a multiple of `surfaces_per_zone`,
+    ///   otherwise the trailing surfaces are truncated.
+    fn set_surfaces(&mut self, surfaces: Vec<crate::python::model_bindings::PySurface>) {
+        self.inner.surfaces =
+            crate::python::model_bindings::reshape_surfaces_for_model(&self.inner, surfaces);
+    }
+
+    /// Return an [`crate::python::model_bindings::PyHVACSystem`] snapshot of
+    /// the model's current heating and cooling plant configuration.
+    ///
+    /// The snapshot is an owned value (no borrow back into the model). To
+    /// push changes back, use [`Self::set_hvac_system`].
+    fn hvac_system(&self) -> crate::python::model_bindings::PyHVACSystem {
+        crate::python::model_bindings::hvac_system_from_model(&self.inner)
+    }
+
+    /// Apply a [`crate::python::model_bindings::PyHVACSystem`] snapshot's
+    /// heating/cooling capacity to the model. Used together with
+    /// [`Self::hvac_system`] for snapshot-then-commit mutation patterns.
+    ///
+    /// Only heating/cooling capacity is propagated back; other HVACSystem
+    /// fields (COP, stages, etc.) are advisory and not stored on
+    /// `ThermalModelData`.
+    fn set_hvac_system(&mut self, hvac: crate::python::model_bindings::PyHVACSystem) {
+        crate::python::model_bindings::apply_hvac_system_to_model(&mut self.inner, &hvac);
+    }
+
+    /// Debug-friendly `__repr__` (Issue #2548).
+    ///
+    /// Exposes the stable `simulation_id` (so users can grep tracing/metrics
+    /// output for one specific run) and `last_duration_ms` from the most
+    /// recent `simulate()` call. `last_duration_ms` is `0.0` before the first
+    /// simulation has run.
+    fn __repr__(&self) -> String {
+        let last_duration_ms = self
+            .last_duration
+            .map(|d| d.as_secs_f64() * 1_000.0)
+            .unwrap_or(0.0);
+        format!(
+            "Model(simulation_id='{}', last_duration_ms={:.2}, num_zones={}, use_surrogates_ready={})",
+            self.simulation_id,
+            last_duration_ms,
+            self.inner.num_zones,
+            self.surrogates.gpu_supported(),
+        )
+    }
+}

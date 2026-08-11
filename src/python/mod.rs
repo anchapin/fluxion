@@ -30,6 +30,14 @@ pub mod osm_bindings;
 #[cfg(feature = "python-bindings")]
 pub mod panic_hook;
 
+// Issue #2493: BatchOracle PyO3 surface (#[pymethods] + ParameterBounds) and
+// the construction / vector-field / geometry #[pyclass] types were extracted
+// out of `lib.rs` to bring the crate root under the 500-line module budget.
+#[cfg(feature = "python-bindings")]
+pub mod batch_oracle_bindings;
+#[cfg(feature = "python-bindings")]
+pub mod construction_bindings;
+
 #[cfg(feature = "python-bindings")]
 pub use hvac_bindings::*;
 #[cfg(feature = "python-bindings")]
