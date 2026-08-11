@@ -207,11 +207,13 @@ libm = "0.2"
 statrs = "0.18.0"
 
 # AI / Machine Learning Integration
-# Using 2.0.0-rc.10 (prerelease) as stable 1.20 is not available on crates.io.
-# Gated behind the `ort` feature (issue #1294) so the default build (no features)
+# `ort` (ONNX Runtime bindings, pykeio/ort) has NO stable 2.0 release on crates.io
+# yet — latest is 2.0.0-rc.13 (issue #2691). We pin the newest RC for freshness and
+# keep it behind the `ort` feature (issue #1294) so the default build (no features)
 # does not pull in the ONNX runtime. The mutation-testing workflow opts in via
-# `--features ort`; default Rust builds stay small and fast.
-ort = { version = "2.0.0-rc.10", features = ["download-binaries"], optional = true }
+# `--features ort`; default Rust builds stay small and fast. When `ort` 2.0 stable
+# ships, bump this pin and drop the RC note in docs/KNOWN_ISSUES.md (CI-03).
+ort = { version = "2.0.0-rc.13", features = ["download-binaries"], optional = true }
 
 # Python Interop
 # Issue #2585: PyO3 0.22 → 0.29 to remediate RUSTSEC-2026-0177

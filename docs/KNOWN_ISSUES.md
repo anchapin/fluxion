@@ -7,7 +7,7 @@ Related to: validation_report.md (results), FIX.md (archived as `docs/investigat
 Status: Post-#1323 baseline refresh — pre-#1323 numbers are obsolete per ARCHITECTURE.md §Current Module Status.
 Action: Check this document before attributing validation failures to new issues; many may be known.
 
-*Last Updated: 2026-08-11* (Post-#1323 / post-Wave-5 baseline refresh; #1421 Case 600 ref-range unified to benchmark.rs:124-127 across validator, CSV, doc, and this document; see issue #1443. CI-01 code-coverage gate #1932 added. CI-02 debug build rust-lld segfault #2297 added. **Cases 600 series energy violations (600, 610, 620, 630, 640, 650) are documented as pre-existing model limitations — see §LIMIT-05 UPDATE (#1457 revisit) and §LIMIT-06. Case 900 residual annual-energy deviation (H=2.362 MWh, C=1.330 MWh) confirmed as a structural 5R1C limitation after #2227/#2229 — see §SOLAR-02 UPDATE (Issue #2239). 900-series bidirectional annual-energy over-prediction (Cases 900, 910, 920, 930, 940 in the CTF path: H AND C both above band) documented per §LIMIT-05 UPDATE (Issue #2453, 2026-08-09) — diagnostic test + Python analyser shipped, fix routed to GaugeSolver #1465/#1462. Case 940 setback thermostat (#2452) — diagnostic test `tests/diagnostics/case_940_setback_diagnostic.rs` ships with CTF-vs-blind path comparison; CTF path overshoots blind by 6–8×; structural fix routed to GaugeSolver #1465/#1462. FFD/CFD co-simulation physics-assertion failures (issue #2612) — `test_buoyancy_driven_chtc_analytical` CHTC gap resolved as a test-side Ra miscalculation (hardcoded 1.6e9 → corrected to first-principles 2.87e10); `test_peak_cooling_load_tolerance` documented as a structural gap (stub has no zone air energy balance) — see §FFD-01 / §FFD-02. Empirical thermal-mass correction factor removed for v1.3 no-tuning compliance (Issue #2706) — see §BASE-03.**)
+*Last Updated: 2026-08-11* (Post-#1323 / post-Wave-5 baseline refresh; #1421 Case 600 ref-range unified to benchmark.rs:124-127 across validator, CSV, doc, and this document; see issue #1443. CI-01 code-coverage gate #1932 added. CI-02 debug build rust-lld segfault #2297 added. CI-03 `ort` release-candidate pin #2691 added (no stable 2.0 on crates.io; `fluxion-behavior` ort feature moved out of default). **Cases 600 series energy violations (600, 610, 620, 630, 640, 650) are documented as pre-existing model limitations — see §LIMIT-05 UPDATE (#1457 revisit) and §LIMIT-06. Case 900 residual annual-energy deviation (H=2.362 MWh, C=1.330 MWh) confirmed as a structural 5R1C limitation after #2227/#2229 — see §SOLAR-02 UPDATE (Issue #2239). 900-series bidirectional annual-energy over-prediction (Cases 900, 910, 920, 930, 940 in the CTF path: H AND C both above band) documented per §LIMIT-05 UPDATE (Issue #2453, 2026-08-09) — diagnostic test + Python analyser shipped, fix routed to GaugeSolver #1465/#1462. Case 940 setback thermostat (#2452) — diagnostic test `tests/diagnostics/case_940_setback_diagnostic.rs` ships with CTF-vs-blind path comparison; CTF path overshoots blind by 6–8×; structural fix routed to GaugeSolver #1465/#1462. FFD/CFD co-simulation physics-assertion failures (issue #2612) — `test_buoyancy_driven_chtc_analytical` CHTC gap resolved as a test-side Ra miscalculation (hardcoded 1.6e9 → corrected to first-principles 2.87e10); `test_peak_cooling_load_tolerance` documented as a structural gap (stub has no zone air energy balance) — see §FFD-01 / §FFD-02. Empirical thermal-mass correction factor removed for v1.3 no-tuning compliance (Issue #2706) — see §BASE-03.**)
 
 > **Post-#1323 baseline changes (read first)** — Between the prior "Last Updated" header
 > (2026-03-30) and this revision, ~100 days and 30+ validation-affecting PRs landed.
@@ -974,6 +974,25 @@ they are physically correct and flip one marginal test.
   recommended).
 - **Workaround:** Use `cargo build --release` or `cargo test --release` for local
   development. CI uses release builds by default and is unaffected.
+
+### CI-03: `ort` pinned to a release candidate (issue #2691) — no stable 2.0 on crates.io
+
+- **Affected:** Dependency hygiene / release-gates; both root `fluxion` crate and
+  `fluxion-behavior` sibling.
+- **Status:** 🔄 Intentional — tracked until `ort` 2.0 stable ships.
+- **Details:** The `ort` crate (ONNX Runtime Rust bindings, pykeio/ort) has no stable
+  2.0 release on crates.io. As of this writing the latest version is `2.0.0-rc.13`
+  (verified via `cargo search ort`); no `2.0.0` (non-prerelease) exists. The v1.3
+  milestone therefore pins the newest RC for freshness. The earlier `2.0.0-rc.10`
+  pin was bumped to `2.0.0-rc.13`, and — critically — `fluxion-behavior`'s `ort`
+  feature was moved OUT of `default` (now `default = []`), so the release-candidate
+  ONNX runtime is no longer pulled into every consumer of that sibling. The root
+  crate already gated `ort` behind a non-default `ort`/`onnx` feature (issue #1294),
+  so default builds never compiled `ort`.
+- **Resolution:** When `ort` 2.0 stable (a version without `-rc`/`-alpha`/`-beta`)
+  is published, bump the pin in `Cargo.toml` and `fluxion-behavior/Cargo.toml`,
+  update the comments, and drop this CI-03 entry. Until then the RC pin is
+  intentional and the non-default feature ensures it is opt-in everywhere.
 
 ## Summary
 
