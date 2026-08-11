@@ -42,7 +42,7 @@ uuid = { version = "1.10", features = ["v4"] }
 anyhow = "1.0"
 
 [dev-dependencies]
-tempfile = "3.10"
+tempfile = "3.27"
 # Thread-local DebuggingRecorder lets metric-assertion tests run in parallel
 # without touching the process-global recorder (same pattern as the root
 # crate's ONNX tests in `src/ai/surrogate.rs`).

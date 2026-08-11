@@ -50,7 +50,7 @@ use std::fs::File;
 use std::io::{Cursor, Write};
 use std::path::Path;
 use thiserror::Error;
-use zip::write::FileOptions;
+use zip::write::SimpleFileOptions;
 use zip::CompressionMethod;
 
 use crate::physics::cta::VectorField;
@@ -563,7 +563,7 @@ impl FmiExporter {
         {
             let cursor = Cursor::new(&mut zip_buf);
             let mut zip = zip::ZipWriter::new(cursor);
-            let options = FileOptions::default()
+            let options = SimpleFileOptions::default()
                 .compression_method(CompressionMethod::Deflated)
                 .unix_permissions(0o644);
 
@@ -2382,7 +2382,7 @@ impl FfdFmuExporter {
         {
             let cursor = Cursor::new(&mut zip_buf);
             let mut zip = zip::ZipWriter::new(cursor);
-            let options = FileOptions::default()
+            let options = SimpleFileOptions::default()
                 .compression_method(CompressionMethod::Deflated)
                 .unix_permissions(0o644);
 

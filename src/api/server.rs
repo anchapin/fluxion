@@ -149,7 +149,7 @@ pub fn resolve_shutdown_timeout_secs() -> u64 {
 /// When a cloud store implementation (Redis/DynamoDB) is used, workers push
 /// status updates directly to the store. The campaign continues running even if
 /// the client that initiated it disconnects. Clients can reconnect later and
-/// query the simulation status via `GET /v1/simulation/:id/status`.
+/// query the simulation status via `GET /v1/simulation/{id}/status`.
 ///
 /// This enables the T7.2 async coordinator pattern where the campaign manager
 /// is decoupled from the workers via the state store.
@@ -269,7 +269,7 @@ impl SimulationStateStore for InMemorySimulationStateStore {
 ///   `POST /v1/import/*`). `parking_lot::RwLock` lets an arbitrary number of
 ///   concurrent readers proceed without ever going through the tokio task
 ///   scheduler, eliminating the p99 cliff reported in #2552.
-/// * `campaigns` — reads (`GET /v1/campaigns/:id/status`) dominate over
+/// * `campaigns` — reads (`GET /v1/campaigns/{id}/status`) dominate over
 ///   writes (per-step status pushes inside the spawned worker task).
 ///
 /// `tokio::sync::Mutex` is intentionally retained for `SimulationStateStore`
@@ -346,7 +346,7 @@ impl<S: SimulationStateStore> AppState<S> {
     }
 }
 
-/// Simulation status for async polling via `GET /v1/simulation/:id/status`.
+/// Simulation status for async polling via `GET /v1/simulation/{id}/status`.
 #[derive(Debug, Clone, Serialize)]
 pub struct SimulationStatus {
     pub id: String,
@@ -386,7 +386,7 @@ pub struct CampaignSpec {
     pub simulations: Vec<SimulateRequest>,
 }
 
-/// Campaign status for async polling via `GET /v1/campaigns/:id/status`.
+/// Campaign status for async polling via `GET /v1/campaigns/{id}/status`.
 #[derive(Debug, Clone, Serialize)]
 pub struct CampaignStatus {
     pub id: String,
@@ -706,7 +706,6 @@ impl SimulationSchemaBody {
 /// ValidatedJson<SimulateRequest>`.
 pub struct ValidatedJson<T>(pub T);
 
-#[async_trait::async_trait]
 impl<S, T> FromRequest<S> for ValidatedJson<T>
 where
     T: serde::de::DeserializeOwned,
@@ -1550,7 +1549,7 @@ async fn batch_simulate(
     Ok(Json(BatchResponse { results }))
 }
 
-/// Get simulation status for async polling via `GET /v1/simulation/:id/status`.
+/// Get simulation status for async polling via `GET /v1/simulation/{id}/status`.
 async fn get_simulation_status(
     State(state): State<AppState>,
     Path(id): Path<String>,
@@ -1572,7 +1571,7 @@ pub struct CampaignSubmitResponse {
 ///
 /// The coordinator accepts a campaign spec and returns a campaign ID immediately
 /// without waiting for simulations to complete. Workers push status to the
-/// state store enabling async polling via `GET /v1/campaigns/:id/status`.
+/// state store enabling async polling via `GET /v1/campaigns/{id}/status`.
 async fn submit_campaign(
     State(state): State<AppState>,
     headers: axum::http::HeaderMap,
@@ -1675,7 +1674,7 @@ async fn submit_campaign(
     Ok(Json(CampaignSubmitResponse { campaign_id }))
 }
 
-/// Get campaign status for async polling via `GET /v1/campaigns/:id/status`.
+/// Get campaign status for async polling via `GET /v1/campaigns/{id}/status`.
 async fn get_campaign_status(
     State(state): State<AppState>,
     Path(id): Path<String>,
@@ -2048,11 +2047,11 @@ pub fn router_with_security(
         .route("/v1/simulate", post(simulate))
         .route("/v1/simulate/stream", post(simulate_stream))
         .route("/v1/batch", post(batch_simulate))
-        .route("/v1/simulation/:id/status", get(get_simulation_status))
-        .route("/v1/schema/:id", get(get_schema))
-        .route("/v1/import/:fmt", post(import_format))
+        .route("/v1/simulation/{id}/status", get(get_simulation_status))
+        .route("/v1/schema/{id}", get(get_schema))
+        .route("/v1/import/{fmt}", post(import_format))
         .route("/v1/campaigns", post(submit_campaign))
-        .route("/v1/campaigns/:id/status", get(get_campaign_status))
+        .route("/v1/campaigns/{id}/status", get(get_campaign_status))
         .layer(middleware::from_fn_with_state(
             cfg.auth_state(),
             crate::api::security::require_auth,
@@ -2207,10 +2206,11 @@ mod tests {
     }
 
     /// Issue #1442 (cross-check): `src/api/openapi.yaml`'s `paths:` keys
-    /// (OpenAPI-style `{id}`, `{fmt}`) must match the routes declared in
-    /// `Router::new()` (axum-style `:id`, `:fmt`), one-to-one, modulo the
-    /// brace/colon difference. Adding a route on either side without the
-    /// matching entry on the other side turns this test red.
+    /// (`{id}`, `{fmt}`) must match the routes declared in `Router::new()`
+    /// one-to-one. Since axum 0.8 the router uses the same `{x}` capture
+    /// syntax that OpenAPI always used, so the keys compare directly. Adding
+    /// a route on either side without the matching entry on the other side
+    /// turns this test red.
     #[test]
     fn openapi_yaml_paths_match_router() {
         // Routes declared in `Router::new()` (axum-style). Keep this list
@@ -2225,9 +2225,9 @@ mod tests {
             "/v1/simulate",
             "/v1/simulate/stream",
             "/v1/batch",
-            "/v1/simulation/:id/status",
-            "/v1/schema/:id",
-            "/v1/import/:fmt",
+            "/v1/simulation/{id}/status",
+            "/v1/schema/{id}",
+            "/v1/import/{fmt}",
         ];
 
         let yaml = include_str!("openapi.yaml");
@@ -2243,11 +2243,11 @@ mod tests {
             .map(|(k, _)| k.as_str().expect("path keys must be strings").to_string())
             .collect();
 
-        // Normalize OpenAPI-style `{x}` → axum-style `:x`.
-        let normalized: std::collections::BTreeSet<String> = openapi_paths
-            .iter()
-            .map(|p| p.replace("{id}", ":id").replace("{fmt}", ":fmt"))
-            .collect();
+        // axum 0.8+ dropped the legacy `:x` capture syntax in favour of `{x}`,
+        // which is exactly what OpenAPI already used, so the path keys now
+        // compare directly — no brace↔colon normalization is needed.
+        let normalized: std::collections::BTreeSet<String> =
+            openapi_paths.iter().cloned().collect();
 
         let axum_routes: std::collections::BTreeSet<String> =
             AXUM_ROUTES.iter().map(|s| s.to_string()).collect();
@@ -2260,7 +2260,7 @@ mod tests {
             "OpenAPI ↔ Router drift detected.\n\
              Routes in `Router::new()` but missing from openapi.yaml: {only_in_router:#?}\n\
              Routes in openapi.yaml but missing from `Router::new()`: {only_in_yaml:#?}\n\
-             Update both sides (axum uses `:id`/`:fmt`, OpenAPI uses `{{id}}`/`{{fmt}}`) \
+             Update both sides (both axum 0.8+ and OpenAPI use `{{id}}`/`{{fmt}}`) \
              and keep this test passing.",
         );
     }

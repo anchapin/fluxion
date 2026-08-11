@@ -243,8 +243,8 @@ quick-xml = "0.41"
 # `fluxion-import-{nanos}.{ext}` filename that previously enabled a
 # TOCTOU + symlink race against any unprivileged co-tenant on a shared
 # host (CWE-377, CWE-367).
-tempfile = "3.10"
-axum = { version = "0.7", default-features = false, features = ["http1", "json", "tokio", "query", "matched-path"] }
+tempfile = "3.27"
+axum = { version = "0.8", default-features = false, features = ["http1", "json", "tokio", "query", "matched-path"] }
 # `timeout` is needed for `tower::timeout::TimeoutLayer`, the per-request
 # 60 s budget that bounds `/v1/simulate` CPU usage (Issue #2530 DoS hardening).
 tower = { version = "0.5", features = ["util", "timeout"] }
@@ -272,7 +272,7 @@ metrics = "0.24"
 metrics-exporter-prometheus = { version = "0.18", default-features = false }
 
 # ZIP archive writer for FMI 2.0 FMU packaging (#1339)
-zip = { version = "0.6", default-features = false, features = ["deflate"] }
+zip = { version = "8.6", default-features = false, features = ["deflate"] }
 
 # JSON Patch (RFC 6902) — Issue #1811 / Phase 1 (Declarative Deltas)
 # of the Hybrid Measure Approach. Used by `fluxion::measures::json_patch`
@@ -293,7 +293,7 @@ rmp-serde = "1.3"
 rdkafka = { version = "0.36", features = ["dynamic-linking"], optional = true }
 
 # SQLite for reporting output (issue #1904)
-rusqlite = { version = "0.31", features = ["bundled"] }
+rusqlite = { version = "0.36", features = ["bundled"] }
 
 # dhat heap profiler for memory profiling of large simulations (Issue #2384).
 # Enable with --features dhat and use #[global_allocator] = dhat::Allocator.
@@ -322,7 +322,7 @@ loom = "0.1"
 
 # SQLite for reproducer tests (Issue #1790)
 # Demonstrates the "database is locked" race condition in distributed array jobs
-rusqlite = { version = "0.31", features = ["bundled"] }
+rusqlite = { version = "0.36", features = ["bundled"] }
 
 # Memory stats for LiveTwin memory leak test (Issue #2064)
 memory-stats = "1.0"
