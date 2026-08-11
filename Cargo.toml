@@ -347,6 +347,10 @@ name = "batch_oracle_bench"
 harness = false
 
 [[bench]]
+name = "hybrid_hotloop_tracing_bench"
+harness = false
+
+[[bench]]
 name = "rayon_chunks_bench"
 harness = false
 

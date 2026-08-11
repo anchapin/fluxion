@@ -61,7 +61,15 @@ use crate::sim::thermal_model_core::get_daily_cycle;
 use crate::sim::ventilation::{ConstantVentilation, VentilationSchedule};
 use fluxion_twin::TwinCorrection;
 use std::error::Error;
-use tracing::info;
+// Issue #2523: per-timestep HybridThermalModel diagnostics were emitted
+// at `info!` level, producing up to 8.76M (5 branches × 8760 steps × 1
+// config) structured-log invocations per BatchOracle population even when
+// the level filter discarded them. They are now `trace!` — available
+// under verbose tracing (`RUST_LOG=trace`) but zero-cost at the default
+// INFO/WARN release filter. This is consistent with the `debug-physics`
+// hot-loop gating pattern (#1967): per-timestep diagnostics must never
+// pay formatting/dispatch cost in the production binary.
+use tracing::trace;
 
 /// Result type for thermal model operations
 pub type ThermalModelResult<T> = Result<T, Box<dyn Error + Send + Sync>>;
@@ -1103,7 +1111,7 @@ impl ThermalModelTrait for HybridThermalModel {
                                     self.inner.loads =
                                         crate::physics::cta::VectorField::new(pred);
                                     self.surrogate_load_calls += 1;
-                                    info!(
+                                    trace!(
                                         hybrid.surrogate_load_calls = self.surrogate_load_calls,
                                         hybrid.timestep = t,
                                         "surrogate load branch fired"
@@ -1127,7 +1135,7 @@ impl ThermalModelTrait for HybridThermalModel {
                                 self.inner.loads =
                                     crate::physics::cta::VectorField::new(pred);
                                 self.surrogate_load_calls += 1;
-                                info!(
+                                trace!(
                                     hybrid.surrogate_load_calls = self.surrogate_load_calls,
                                     hybrid.timestep = t,
                                     "surrogate load branch fired"
@@ -1193,7 +1201,7 @@ impl ThermalModelTrait for HybridThermalModel {
                             surrogate_conduction_flux_wm2 = flux.to_value();
                             conduction_used_surrogate = true;
                             self.surrogate_conduction_calls += 1;
-                            info!(
+                            trace!(
                                 hybrid.surrogate_conduction_calls =
                                     self.surrogate_conduction_calls,
                                 hybrid.timestep = t,
@@ -1239,7 +1247,7 @@ impl ThermalModelTrait for HybridThermalModel {
                         0.0, // zone volume not retained on inner; placeholder
                     );
                     self.surrogate_ventilation_calls += 1;
-                    info!(
+                    trace!(
                         hybrid.surrogate_ventilation_calls =
                             self.surrogate_ventilation_calls,
                         hybrid.timestep = t,
@@ -1282,7 +1290,7 @@ impl ThermalModelTrait for HybridThermalModel {
                 } else {
                     let energy = self.inner.step_physics(t, outdoor_temp, 3600.0);
                     self.physics_conduction_calls += 1;
-                    info!(
+                    trace!(
                         hybrid.physics_conduction_calls = self.physics_conduction_calls,
                         hybrid.timestep = t,
                         "physics conduction branch fired"

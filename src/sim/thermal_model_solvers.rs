@@ -3,7 +3,7 @@
 //! ISO 13790-compliant 5R1C/6R2C thermal network implementation.
 //! Contains the core thermal model types, struct, and implementations.
 
-use log::{debug, info, trace, warn};
+use log::{debug, trace, warn};
 
 use crate::physics::constants::thermal::ashrae_140::INTERIOR_FILM_COEFF;
 use crate::physics::cta::{ContinuousTensor, VectorField};
@@ -677,7 +677,12 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
     /// ```
     pub fn set_timestep_mode(&mut self, mode: TimestepMode) {
         self.0.timestep_mode = mode;
-        info!("Timestep mode set to {:?}", self.0.timestep_mode);
+        // Issue #2523: demoted from `info!` to `trace!`. Although this
+        // setter is config-time (not per-timestep), it is invoked once per
+        // model build inside `BatchOracle::evaluate_population` and was
+        // listed in #2523. `trace!` keeps it available under verbose
+        // tracing while removing it from the default release log stream.
+        trace!("Timestep mode set to {:?}", self.0.timestep_mode);
     }
 
     /// Get the current timestep mode.
