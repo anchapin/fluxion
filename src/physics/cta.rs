@@ -2,6 +2,7 @@ use std::convert::AsMut;
 use std::ops::{Add, AddAssign, Div, Index, Mul, Sub};
 
 use fluxion_core::tensor::ContinuousField;
+use smallvec::SmallVec;
 
 #[cfg(feature = "python-bindings")]
 use pyo3::{pymethods, Bound, IntoPyObject, Py, PyAny, PyResult, Python};
@@ -132,26 +133,81 @@ where
 /// - Future: GPU acceleration via backend abstraction
 /// - Current: CPU-based with SIMD optimization
 /// - Buffer reuse in arithmetic operations to minimize allocations
+/// - Backed by `SmallVec<[f64; 4]>`: for models with ≤ 4 zones (the common
+///   BatchOracle / ASHRAE 140 single- and few-zone case) `clone`, `map`,
+///   `zip_with`, `from_scalar` and `constant_like` perform **no heap
+///   allocation** — they write into the inline array. This is the key to the
+///   per-timestep hot-loop allocation reduction (Issue #2687): the BatchOracle
+///   inner loop churns VectorFields every timestep, and SmallVec removes that
+///   heap pressure without changing any arithmetic (identical f64 values in
+///   identical order — bit-identical simulation output). Spilling to the heap
+///   for > 4 zones is automatic and transparent.
 ///
 /// # Thread Safety
 /// VectorField is Clone and Send, enabling parallel evaluation.
 #[cfg_attr(feature = "python-bindings", pyo3::pyclass)]
 #[derive(Debug, Clone, PartialEq)]
 pub struct VectorField {
-    data: Vec<f64>,
+    data: SmallVec<[f64; 4]>,
 }
+
+/// Inline capacity (in `f64`s) of a `VectorField`'s backing `SmallVec`.
+///
+/// Kept as a private const so the rationale lives next to the type. Models
+/// with `num_zones <= VECTORFIELD_INLINE_CAPACITY` never heap-allocate for
+/// `VectorField` arithmetic in the hot loop (Issue #2687).
+const VECTORFIELD_INLINE_CAPACITY: usize = 4;
 
 impl VectorField {
     /// Create a new VectorField from a vector of data.
+    ///
+    /// Takes ownership of the `Vec`; callers that already hold a slice should
+    /// prefer [`VectorField::from_slice`] to avoid the intermediate `Vec`
+    /// allocation (it builds the inline `SmallVec` directly when
+    /// `slice.len() <= VECTORFIELD_INLINE_CAPACITY`).
     pub fn new(data: Vec<f64>) -> Self {
+        VectorField {
+            data: SmallVec::from_vec(data),
+        }
+    }
+
+    /// Create a new VectorField by copying a slice.
+    ///
+    /// This is the allocation-friendly constructor for hot paths: when
+    /// `slice.len() <= VECTORFIELD_INLINE_CAPACITY` the data is stored inline
+    /// (no heap allocation). Use this instead of `VectorField::new(slice.to_vec())`
+    /// in per-timestep loops (Issue #2687).
+    pub fn from_slice(slice: &[f64]) -> Self {
+        VectorField {
+            data: SmallVec::from_slice(slice),
+        }
+    }
+
+    /// Create a new VectorField by adopting an already-built `SmallVec`.
+    ///
+    /// Zero-allocation, zero-copy: the backing buffer is moved into the field
+    /// as-is. This is the constructor the per-timestep physics scratch path
+    /// uses (Issue #2687): the scratch fields hold `SmallVec<[f64; 4]>` and are
+    /// moved out with `std::mem::take`, then handed straight to the
+    /// VectorField without any re-allocation or element copy.
+    pub fn from_smallvec(data: SmallVec<[f64; 4]>) -> Self {
         VectorField { data }
     }
 
     /// Create a new VectorField with all elements initialized to a scalar value.
     pub fn from_scalar(value: f64, size: usize) -> Self {
         VectorField {
-            data: vec![value; size],
+            // SmallVec::from_elem fills the inline array when size <= capacity
+            // (no heap allocation); spills transparently otherwise.
+            data: SmallVec::from_elem(value, size),
         }
+    }
+
+    /// The inline (stack) capacity, in elements, of every VectorField.
+    /// Vectors at or below this length never touch the heap.
+    #[allow(dead_code)]
+    pub const fn inline_capacity() -> usize {
+        VECTORFIELD_INLINE_CAPACITY
     }
 
     /// Get the number of elements in the field.
@@ -268,9 +324,15 @@ impl ContinuousTensor<f64> for VectorField {
     where
         F: Fn(f64) -> f64,
     {
-        VectorField {
-            data: self.data.iter().copied().map(f).collect(),
+        // Issue #2687: build the result inline (heap-free for
+        // len <= VECTORFIELD_INLINE_CAPACITY) instead of collecting into a
+        // fresh Vec. Pushing into a new'd SmallVec keeps small results on the
+        // stack; the produced f64 values and ordering are unchanged.
+        let mut out: SmallVec<[f64; VECTORFIELD_INLINE_CAPACITY]> = SmallVec::new();
+        for &x in self.data.iter() {
+            out.push(f(x));
         }
+        VectorField { data: out }
     }
 
     fn zip_with<F>(&self, other: &Self, f: F) -> Self
@@ -278,14 +340,12 @@ impl ContinuousTensor<f64> for VectorField {
         F: Fn(f64, f64) -> f64,
     {
         assert_eq!(self.len(), other.len(), "Tensor dimension mismatch");
-        VectorField {
-            data: self
-                .data
-                .iter()
-                .zip(other.data.iter())
-                .map(|(&a, &b)| f(a, b))
-                .collect(),
+        // Issue #2687: inline construction, same rationale as `map`.
+        let mut out: SmallVec<[f64; VECTORFIELD_INLINE_CAPACITY]> = SmallVec::new();
+        for (&a, &b) in self.data.iter().zip(other.data.iter()) {
+            out.push(f(a, b));
         }
+        VectorField { data: out }
     }
 
     fn reduce<F>(&self, init: f64, f: F) -> f64
@@ -305,13 +365,16 @@ impl ContinuousTensor<f64> for VectorField {
         // Optimized: manual loop avoids slice allocations from .windows(3), improving cache locality
         let n = self.data.len();
         if n == 0 {
-            return VectorField::new(vec![]);
+            return VectorField::from_slice(&[]);
         }
         if n == 1 {
             return VectorField::from_scalar(0.0, 1);
         }
 
-        let mut grad_data = vec![0.0; n];
+        // Issue #2687: SmallVec container keeps the scratch buffer inline for
+        // small n. Values/indices are identical to the prior `vec![0.0; n]`.
+        let mut grad_data: SmallVec<[f64; VECTORFIELD_INLINE_CAPACITY]> =
+            SmallVec::from_elem(0.0, n);
         // Forward difference for first element
         grad_data[0] = self.data[1] - self.data[0];
         // Central differences for interior points - manual index access eliminates slice overhead
@@ -320,7 +383,7 @@ impl ContinuousTensor<f64> for VectorField {
         }
         // Backward difference for last element
         grad_data[n - 1] = self.data[n - 1] - self.data[n - 2];
-        VectorField::new(grad_data)
+        VectorField { data: grad_data }
     }
 
     fn constant_like(&self, value: f64) -> Self {
@@ -415,7 +478,7 @@ impl ContinuousField<f64> for VectorField {
 impl VectorField {
     /// Convert to a numpy array (zero-copy borrow).
     pub fn to_numpy_array<'py>(&self, py: Python<'py>) -> Bound<'py, PyArray1<f64>> {
-        PyArray1::from_slice(py, &self.data)
+        PyArray1::from_slice(py, self.data.as_slice())
     }
 
     /// Create from a numpy array.
@@ -483,13 +546,13 @@ mod tests {
         let v2 = VectorField::new(vec![4.0, 5.0, 6.0]);
 
         let sum = v1.clone() + v2.clone();
-        assert_eq!(sum.data, vec![5.0, 7.0, 9.0]);
+        assert_eq!(sum.as_slice(), &[5.0, 7.0, 9.0]);
 
         let prod = v1.clone() * v2.clone();
-        assert_eq!(prod.data, vec![4.0, 10.0, 18.0]);
+        assert_eq!(prod.as_slice(), &[4.0, 10.0, 18.0]);
 
         let scaled = v1 * 2.0;
-        assert_eq!(scaled.data, vec![2.0, 4.0, 6.0]);
+        assert_eq!(scaled.as_slice(), &[2.0, 4.0, 6.0]);
     }
 
     #[test]
@@ -626,7 +689,7 @@ mod tests {
         let v1 = VectorField::new(vec![10.0, 20.0, 30.0]);
         let v2 = VectorField::new(vec![1.0, 2.0, 3.0]);
         let diff = v1 - v2;
-        assert_eq!(diff.data, vec![9.0, 18.0, 27.0]);
+        assert_eq!(diff.as_slice(), &[9.0, 18.0, 27.0]);
     }
 
     #[test]
@@ -634,24 +697,24 @@ mod tests {
         let v1 = VectorField::new(vec![10.0, 20.0, 30.0]);
         let v2 = VectorField::new(vec![2.0, 4.0, 6.0]);
         let quotient = v1 / v2;
-        assert_eq!(quotient.data, vec![5.0, 5.0, 5.0]);
+        assert_eq!(quotient.as_slice(), &[5.0, 5.0, 5.0]);
     }
 
     #[test]
     fn test_scalar_division() {
         let v = VectorField::new(vec![10.0, 20.0, 30.0]);
         let divided = v / 2.0;
-        assert_eq!(divided.data, vec![5.0, 10.0, 15.0]);
+        assert_eq!(divided.as_slice(), &[5.0, 10.0, 15.0]);
     }
 
     #[test]
     fn test_map() {
         let v = VectorField::new(vec![1.0, 2.0, 3.0]);
         let squared = v.map(|x| x * x);
-        assert_eq!(squared.data, vec![1.0, 4.0, 9.0]);
+        assert_eq!(squared.as_slice(), &[1.0, 4.0, 9.0]);
 
         let negative = v.map(|x| -x);
-        assert_eq!(negative.data, vec![-1.0, -2.0, -3.0]);
+        assert_eq!(negative.as_slice(), &[-1.0, -2.0, -3.0]);
     }
 
     #[test]
@@ -659,7 +722,7 @@ mod tests {
         let v1 = VectorField::new(vec![1.0, 2.0, 3.0]);
         let v2 = VectorField::new(vec![10.0, 20.0, 30.0]);
         let combined = v1.zip_with(&v2, |a, b| a + b * 2.0);
-        assert_eq!(combined.data, vec![21.0, 42.0, 63.0]);
+        assert_eq!(combined.as_slice(), &[21.0, 42.0, 63.0]);
     }
 
     #[test]
@@ -687,7 +750,7 @@ mod tests {
     fn test_constant_like() {
         let v = VectorField::new(vec![1.0, 2.0, 3.0, 4.0]);
         let constant = v.constant_like(7.5);
-        assert_eq!(constant.data, vec![7.5; 4]);
+        assert_eq!(constant.as_slice(), &[7.5; 4]);
         assert_eq!(constant.len(), 4);
     }
 
@@ -696,7 +759,7 @@ mod tests {
         let v1 = VectorField::new(vec![5.0, 2.0, 8.0, 1.0]);
         let v2 = VectorField::new(vec![3.0, 7.0, 4.0, 9.0]);
         let result = v1.elementwise_min(&v2);
-        assert_eq!(result.data, vec![3.0, 2.0, 4.0, 1.0]);
+        assert_eq!(result.as_slice(), &[3.0, 2.0, 4.0, 1.0]);
     }
 
     #[test]
@@ -704,7 +767,7 @@ mod tests {
         let v1 = VectorField::new(vec![5.0, 2.0, 8.0, 1.0]);
         let v2 = VectorField::new(vec![3.0, 7.0, 4.0, 9.0]);
         let result = v1.elementwise_max(&v2);
-        assert_eq!(result.data, vec![5.0, 7.0, 8.0, 9.0]);
+        assert_eq!(result.as_slice(), &[5.0, 7.0, 8.0, 9.0]);
     }
 
     #[test]
@@ -712,7 +775,7 @@ mod tests {
         let mut v1 = VectorField::new(vec![10.0, 20.0, 30.0]);
         let v2 = VectorField::new(vec![2.0, 4.0, 6.0]);
         v1.div_assign(&v2);
-        assert_eq!(v1.data, vec![5.0, 5.0, 5.0]);
+        assert_eq!(v1.as_slice(), &[5.0, 5.0, 5.0]);
     }
 
     #[test]
@@ -764,21 +827,21 @@ mod tests {
     fn test_gradient_constant() {
         let v = VectorField::new(vec![5.0; 5]);
         let grad = v.gradient();
-        assert_eq!(grad.data, vec![0.0; 5]);
+        assert_eq!(grad.as_slice(), &[0.0; 5]);
     }
 
     #[test]
     fn test_gradient_linear_increasing() {
         let v = VectorField::new(vec![0.0, 1.0, 2.0, 3.0, 4.0]);
         let grad = v.gradient();
-        assert_eq!(grad.data, vec![1.0; 5]);
+        assert_eq!(grad.as_slice(), &[1.0; 5]);
     }
 
     #[test]
     fn test_gradient_single_element() {
         let v = VectorField::new(vec![5.0]);
         let grad = v.gradient();
-        assert_eq!(grad.data, vec![0.0]);
+        assert_eq!(grad.as_slice(), &[0.0]);
     }
 
     #[test]
@@ -841,13 +904,13 @@ mod tests {
         let v2 = VectorField::new(vec![2.0, 5.0, 3.0]);
 
         let sum = v1.clone() + v2.clone();
-        assert_eq!(sum.data, vec![-3.0, -5.0, -12.0]);
+        assert_eq!(sum.as_slice(), &[-3.0, -5.0, -12.0]);
 
         let prod = v1.clone() * v2.clone();
-        assert_eq!(prod.data, vec![-10.0, -50.0, -45.0]);
+        assert_eq!(prod.as_slice(), &[-10.0, -50.0, -45.0]);
 
         let scaled = v2 * -2.0;
-        assert_eq!(scaled.data, vec![-4.0, -10.0, -6.0]);
+        assert_eq!(scaled.as_slice(), &[-4.0, -10.0, -6.0]);
     }
 
     #[test]
@@ -858,7 +921,7 @@ mod tests {
         // 2*2 + 2/2 = 5.0
         // 3*3 + 3/2 = 10.5
         // 4*4 + 4/2 = 18.0
-        assert_eq!(result.data, vec![1.5, 5.0, 10.5, 18.0]);
+        assert_eq!(result.as_slice(), &[1.5, 5.0, 10.5, 18.0]);
     }
 
     #[test]
