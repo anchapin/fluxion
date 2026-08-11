@@ -27,3 +27,22 @@ jobs:
           crate: cargo-audit
       - name: Run cargo audit
         run: cargo audit
+
+  deny:
+    name: Cargo Deny
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4
+      - uses: ./.github/actions/setup-rust-env
+      - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32  # v2
+      - name: Install cargo-deny
+        uses: baptiste0928/cargo-install@f204293d9709061b7bc1756fec3ec4e2cd57dec0  # v3
+        with:
+          crate: cargo-deny
+          version: 0.20.2
+      # Supply-chain gate (issue #2699): licenses (no copyleft), duplicate
+      # crates (warn), banned crates (denylist), advisory DB scan, and source
+      # registry validation. Config lives in deny.toml at the repo root.
+      # Mirrors .cargo/audit.toml ignores so the two tools agree.
+      - name: Run cargo deny check
+        run: cargo deny check

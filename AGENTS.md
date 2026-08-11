@@ -57,6 +57,7 @@ python scripts/release_gate_checker.py                                # release-
 cargo fmt -- --check                       # CI gate — omit --check to auto-fix
 cargo clippy --lib -- -D warnings          # CI's exact clippy invocation
 cargo audit                                # also wired into pre-commit
+cargo deny check                           # supply-chain gate (#2699): licenses/duplicates/bans/sources
 
 # Bindings (Python 3.10+ / Node)
 maturin develop                             # Python: local dev install
@@ -113,7 +114,8 @@ ML-surrogate swap-point traits:
 - `CUDA Smoke Test` (#1603) · `ASHRAE 140 Strict Energy Gate (Issue #1333)`
 - `Fluxion Determinism Gate (Issue #1351)` · `Fluxion Performance Gate (Issue #1618)` (workflow_run listeners)
 - `Architecture Drift Detection` (nightly + on `src/**/*.rs`/`ARCHITECTURE.md` changes)
-- `Docs Hygiene Gate` (#2466) · `Code Coverage Gate` (#1932, ratchet; baseline in `validation/coverage_baseline.json`)
+ - `Docs Hygiene Gate` (#2466) · `Code Coverage Gate` (#1932, ratchet; baseline in `validation/coverage_baseline.json`)
+ - `Cargo Deny` (#2699) — supply-chain gate: licenses (no copyleft via transitive deps), duplicate-crate detection, banned-crate denylist, source-registry validation. Config: `deny.toml` (repo root); runs in `.github/workflows/security.yml` alongside `Cargo Audit`. Advisory `ignore` list is mirrored from `.cargo/audit.toml` — keep in sync.
 - `Mutation Testing (advisory)` (#1891, diff-scoped, non-blocking) — full suite runs nightly against `develop`
 - `Loom Concurrency Stress Tests` (#2521, advisory) — weekly cron (`0 3 * * 0`) + `workflow_dispatch`; runs `LOOM=1 cargo test --features loom --test loom_concurrency_tests` on the 32 GB runner (`vars.FLUXION_LINUX_RUNNER || ubuntu-latest-8-cores`), posts a `loom-stress-results` summary artifact
 
