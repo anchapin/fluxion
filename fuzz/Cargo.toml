@@ -22,7 +22,7 @@ libfuzzer-sys = "0.4"
 arbitrary = { version = "1", features = ["derive"] }
 # `tempfile` is used by the EPW-parser target to write fuzzer bytes to a file
 # (EpwWeatherSource::from_file is the only public entry point).
-tempfile = "3"
+tempfile = "3.27"
 
 # Fuzz the production `fluxion` crate (the same crate the PyO3 / NAPI bindings
 # wrap). Feature flags are left at defaults so the fuzz targets exercise the
