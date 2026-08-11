@@ -87,6 +87,9 @@ pub mod construction;
 pub mod earth_tube;
 pub mod fluid;
 pub mod multi_node;
+/// Parser size/depth/repetition limits — DoS hardening (issue #2527).
+/// Dependency-light leaf; must not import sim/physics/ai/validation.
+pub mod parser_limits;
 pub mod per_surface_conduction;
 pub mod physics_constants;
 pub mod tensor;

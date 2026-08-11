@@ -31,6 +31,8 @@
 
 use std::str::FromStr;
 
+use fluxion_core::parser_limits::ParserLimits;
+
 use super::error::IdfError;
 use super::lexer::{tokenize, RawObject};
 
@@ -222,9 +224,22 @@ impl IdfFile {
 pub struct IdfParser;
 
 impl IdfParser {
-    /// Parse an in-memory IDF document.
+    /// Parse an in-memory IDF document with the strict default parser
+    /// limits (64 MiB / 1M lines — issue #2527).
     #[allow(clippy::should_implement_trait)] // design §9 mandates `from_str` signature
     pub fn from_str(input: &str) -> Result<IdfFile, IdfError> {
+        Self::from_str_with_limits(input, &ParserLimits::default())
+    }
+
+    /// Parse an in-memory IDF document with explicit [`ParserLimits`].
+    ///
+    /// Enforces `max_file_bytes` (on `input.len()`, checked in O(1)
+    /// before the lexer allocates a `Vec<char>` of the whole source)
+    /// and `max_lines` (counted without allocating).
+    pub fn from_str_with_limits(input: &str, limits: &ParserLimits) -> Result<IdfFile, IdfError> {
+        limits.check_file_bytes(input.len())?;
+        limits.check_lines(input.lines().count())?;
+
         let raw_objects = tokenize(input)?;
         let mut idf = IdfFile::default();
         for raw in raw_objects {
@@ -243,8 +258,20 @@ impl IdfParser {
 
     /// Parse an IDF document from a filesystem path.
     pub fn from_path(path: &std::path::Path) -> Result<IdfFile, IdfError> {
+        Self::from_path_with_limits(path, &ParserLimits::default())
+    }
+
+    /// Parse an IDF document from a filesystem path with explicit
+    /// [`ParserLimits`]. The on-disk size is checked before the file is
+    /// read (issue #2527).
+    pub fn from_path_with_limits(
+        path: &std::path::Path,
+        limits: &ParserLimits,
+    ) -> Result<IdfFile, IdfError> {
+        let file_len = std::fs::metadata(path).map_err(IdfError::from)?.len() as usize;
+        limits.check_file_bytes(file_len)?;
         let content = std::fs::read_to_string(path)?;
-        Self::from_str(&content)
+        Self::from_str_with_limits(&content, limits)
     }
 }
 
@@ -437,5 +464,60 @@ mod tests {
         let idf = IdfParser::from_str(src).unwrap();
         assert_eq!(idf.objects.len(), 1);
         assert_eq!(idf.objects[0].object_type, "TotallyMadeUpObject");
+    }
+
+    // ----- Issue #2527: parser DoS limits -----------------------------------
+
+    fn tiny_limits() -> fluxion_core::parser_limits::ParserLimits {
+        fluxion_core::parser_limits::ParserLimits {
+            max_file_bytes: 4 * 1024,
+            max_lines: 20,
+            max_recursion_depth: 256,
+            max_array_elements: 1_000_000,
+        }
+    }
+
+    #[test]
+    fn idf_parses_with_limits() {
+        let src = "Version, 25.2;\nTimestep, 4;\n";
+        let idf = IdfParser::from_str_with_limits(src, &tiny_limits()).unwrap();
+        assert_eq!(idf.objects.len(), 2);
+    }
+
+    #[test]
+    fn idf_rejects_too_many_lines() {
+        // 25 lines, limit is 20.
+        let mut src = String::from("Version, 25.2;\n");
+        for _ in 0..24 {
+            src.push_str("! comment\n");
+        }
+        let err = IdfParser::from_str_with_limits(&src, &tiny_limits()).unwrap_err();
+        assert!(
+            matches!(err, IdfError::SizeLimitExceeded(_)),
+            "expected SizeLimitExceeded, got {:?}",
+            err
+        );
+        assert!(err.to_string().to_lowercase().contains("line"));
+    }
+
+    #[test]
+    fn idf_rejects_oversized_bytes() {
+        // Build a >4KiB single-line IDF so only the byte cap fires.
+        let padding = "a".repeat(5 * 1024);
+        let src = format!("Version, {};\n", padding);
+        let err = IdfParser::from_str_with_limits(&src, &tiny_limits()).unwrap_err();
+        assert!(
+            matches!(err, IdfError::SizeLimitExceeded(_)),
+            "expected SizeLimitExceeded, got {:?}",
+            err
+        );
+        assert!(err.to_string().to_lowercase().contains("file size"));
+    }
+
+    #[test]
+    fn idf_default_limits_match_issue_acceptance() {
+        let d = fluxion_core::parser_limits::ParserLimits::default();
+        assert_eq!(d.max_file_bytes, 64 * 1024 * 1024);
+        assert_eq!(d.max_lines, 1_000_000);
     }
 }

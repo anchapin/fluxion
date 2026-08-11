@@ -51,6 +51,7 @@
 //!   one `DATA;` section per file, and we assert that.
 
 use super::error::IfcError;
+use fluxion_core::parser_limits::ParserLimits;
 
 /// A single STEP entity record produced by the lexer.
 ///
@@ -87,14 +88,23 @@ pub fn tokenize(source: &str) -> Result<Vec<RawEntity>, IfcError> {
     Ok(tokenize_with_schema(source)?.1)
 }
 
-/// Tokenize an IFC4 STEP file and also capture the declared schema.
-///
-/// Equivalent to [`tokenize`], but additionally returns the string
-/// payload of `FILE_SCHEMA(('IFC4'))` so the parser can validate the
-/// schema version. Splits the lexer into schema capture + entity stream
-/// so the entity list stays clean (no synthetic `#0=FILE_SCHEMA(...)`
-/// record).
+/// Tokenize with the strict default [`ParserLimits`] (issue #2527).
 pub fn tokenize_with_schema(source: &str) -> Result<(Option<String>, Vec<RawEntity>), IfcError> {
+    tokenize_with_schema_and_limits(source, &ParserLimits::default())
+}
+
+/// Tokenize with explicit [`ParserLimits`] (issue #2527).
+///
+/// Enforces `max_file_bytes` on the source length **before** the
+/// ASCII-filter `Vec<u8>` is allocated, and `max_recursion_depth` on
+/// parenthesis nesting inside entity argument lists (the STEP analogue
+/// of recursive-descent depth — a pathologically nested `(((...)))`
+/// body no longer runs unbounded).
+pub fn tokenize_with_schema_and_limits(
+    source: &str,
+    limits: &ParserLimits,
+) -> Result<(Option<String>, Vec<RawEntity>), IfcError> {
+    limits.check_file_bytes(source.len())?;
     let mut entities: Vec<RawEntity> = Vec::new();
     let mut schema: Option<String> = None;
 
@@ -347,6 +357,16 @@ pub fn tokenize_with_schema(source: &str) -> Result<(Option<String>, Vec<RawEnti
                 }
                 '(' => {
                     depth += 1;
+                    // Issue #2527 — bound parenthesis nesting (the STEP
+                    // analogue of recursion depth). A pathologically
+                    // nested `(((...)))` argument body can no longer run
+                    // unbounded; the default cap is 256 levels.
+                    if depth > limits.max_recursion_depth {
+                        return Err(IfcError::SizeLimitExceeded(format!(
+                            "nesting depth {} exceeds limit {} in {} #{}",
+                            depth, limits.max_recursion_depth, name, id
+                        )));
+                    }
                     i += 1;
                 }
                 ')' => {
@@ -511,5 +531,66 @@ END-ISO-10303-21;
 ";
         let err = tokenize(src).expect_err("should fail");
         assert!(matches!(err, IfcError::Parse { .. }));
+    }
+
+    // ----- Issue #2527: recursion-depth cap ---------------------------------
+
+    #[test]
+    fn deep_nesting_is_capped() {
+        // 10 nested parentheses inside an entity body. With a tiny
+        // max_recursion_depth=3 the lexer must abort with
+        // SizeLimitExceeded when depth reaches 4.
+        let open = "(".repeat(10);
+        let close = ")".repeat(10);
+        let src = format!(
+            "ISO-10303-21;\nHEADER;\nFILE_SCHEMA(('IFC4'));\nENDSEC;\nDATA;\n\
+             #1=IFCX({open}1{close});\nENDSEC;\nEND-ISO-10303-21;\n"
+        );
+        let tiny = fluxion_core::parser_limits::ParserLimits {
+            max_file_bytes: 64 * 1024 * 1024,
+            max_lines: 1_000_000,
+            max_recursion_depth: 3,
+            max_array_elements: 1_000_000,
+        };
+        let err = tokenize_with_schema_and_limits(&src, &tiny).unwrap_err();
+        assert!(
+            matches!(err, IfcError::SizeLimitExceeded(_)),
+            "expected SizeLimitExceeded, got {:?}",
+            err
+        );
+        assert!(err.to_string().to_lowercase().contains("nesting"));
+    }
+
+    #[test]
+    fn shallow_nesting_passes_default_limits() {
+        // A well-formed entity with modest nesting parses fine.
+        let src = "\
+ISO-10303-21;
+HEADER;
+FILE_SCHEMA(('IFC4'));
+ENDSEC;
+DATA;
+#1=IFCPROJECT('guid',#2,'Sample',$,$,$,$,(#5),#6);
+ENDSEC;
+END-ISO-10303-21;
+";
+        let (schema, entities) =
+            tokenize_with_schema_and_limits(&src, &Default::default()).expect("parses");
+        assert_eq!(entities.len(), 1);
+        assert_eq!(schema.as_deref(), Some("IFC4"));
+    }
+
+    #[test]
+    fn oversized_source_is_capped() {
+        // Tiny byte cap; build a >cap source.
+        let tiny = fluxion_core::parser_limits::ParserLimits {
+            max_file_bytes: 8,
+            max_lines: 1_000_000,
+            max_recursion_depth: 256,
+            max_array_elements: 1_000_000,
+        };
+        let src = "ISO-10303-21; much longer than eight bytes";
+        let err = tokenize_with_schema_and_limits(src, &tiny).unwrap_err();
+        assert!(matches!(err, IfcError::SizeLimitExceeded(_)));
     }
 }

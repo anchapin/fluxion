@@ -33,6 +33,8 @@ pub enum GbXmlError {
     InvalidCoordinate(String),
     /// Material property error
     InvalidMaterialProperty(String),
+    /// Parser size limit exceeded (issue #2527 DoS hardening).
+    SizeLimitExceeded(String),
 }
 
 impl fmt::Display for GbXmlError {
@@ -65,6 +67,9 @@ impl fmt::Display for GbXmlError {
             GbXmlError::InvalidMaterialProperty(msg) => {
                 write!(f, "Invalid material property in gbXML: {}", msg)
             }
+            GbXmlError::SizeLimitExceeded(msg) => {
+                write!(f, "gbXML parser size limit exceeded: {}", msg)
+            }
         }
     }
 }
@@ -87,6 +92,12 @@ impl From<io::Error> for GbXmlError {
 impl From<XmlError> for GbXmlError {
     fn from(err: XmlError) -> Self {
         GbXmlError::XmlParseError(err.to_string())
+    }
+}
+
+impl From<fluxion_core::parser_limits::ParseLimitError> for GbXmlError {
+    fn from(e: fluxion_core::parser_limits::ParseLimitError) -> Self {
+        GbXmlError::SizeLimitExceeded(e.to_string())
     }
 }
 

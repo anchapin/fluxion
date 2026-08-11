@@ -9,6 +9,15 @@
 use crate::error::{Result, ToonError};
 use serde_json::{Map, Value};
 
+/// Maximum number of elements a single declared TOON array may hold
+/// (issue #2527 DoS hardening). Mirrors
+/// `fluxion_core::parser_limits::DEFAULT_MAX_ARRAY_ELEMENTS` without
+/// pulling the heavy `fluxion-core` dependency into this compact
+/// serializer crate. A TOON array header `name:<N>` (or `name[N]{…}`)
+/// whose `N` exceeds this is rejected before the
+/// `(0..N).map(...)` object allocation runs.
+pub const MAX_ARRAY_ELEMENTS: usize = 1_000_000;
+
 #[derive(Debug)]
 pub struct ToonDocument {
     pub count: Option<usize>,
@@ -55,6 +64,17 @@ impl ToonDocument {
                     line: i,
                     message: format!("invalid array length: {}", len_str),
                 })?;
+
+                // Issue #2527 — cap the declared array length before the
+                // `(0..len).map(...)` allocation (line ~111) runs. Without
+                // this guard a header like `zones:1000000000` would
+                // attempt to allocate a billion `Value::Object`s.
+                if len > MAX_ARRAY_ELEMENTS {
+                    return Err(ToonError::TooLarge(format!(
+                        "TOON array '{}' declares {} elements (limit {})",
+                        array_name, len, MAX_ARRAY_ELEMENTS
+                    )));
+                }
 
                 if i >= lines.len() {
                     return Err(ToonError::InvalidSyntax {

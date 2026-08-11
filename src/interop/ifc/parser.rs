@@ -34,7 +34,7 @@
 use std::collections::HashMap;
 
 use super::error::IfcError;
-use super::step_lexer::{tokenize_with_schema, RawEntity};
+use super::step_lexer::RawEntity;
 
 /// A typed `IFCWALL` entity.
 ///
@@ -251,7 +251,18 @@ impl IfcParser {
     /// line number.
     #[allow(clippy::should_implement_trait)]
     pub fn from_str(source: &str) -> Result<IfcModel, IfcError> {
-        let (schema, raw) = tokenize_with_schema(source)?;
+        Self::from_str_with_limits(
+            source,
+            &fluxion_core::parser_limits::ParserLimits::default(),
+        )
+    }
+
+    /// Parse with explicit [`ParserLimits`] (issue #2527).
+    pub fn from_str_with_limits(
+        source: &str,
+        limits: &fluxion_core::parser_limits::ParserLimits,
+    ) -> Result<IfcModel, IfcError> {
+        let (schema, raw) = super::step_lexer::tokenize_with_schema_and_limits(source, limits)?;
         if let Some(ref s) = schema {
             if s != "IFC4" {
                 return Err(IfcError::UnsupportedSchema(s.clone()));
@@ -267,8 +278,20 @@ impl IfcParser {
 
     /// Parse an IFC4 STEP document from a filesystem path.
     pub fn from_path(path: &std::path::Path) -> Result<IfcModel, IfcError> {
+        Self::from_path_with_limits(path, &fluxion_core::parser_limits::ParserLimits::default())
+    }
+
+    /// Parse an IFC4 STEP document from a filesystem path with explicit
+    /// [`ParserLimits`] (issue #2527). The on-disk size is checked before
+    /// the file is read.
+    pub fn from_path_with_limits(
+        path: &std::path::Path,
+        limits: &fluxion_core::parser_limits::ParserLimits,
+    ) -> Result<IfcModel, IfcError> {
+        let file_len = std::fs::metadata(path).map_err(IfcError::from)?.len() as usize;
+        limits.check_file_bytes(file_len)?;
         let content = std::fs::read_to_string(path)?;
-        Self::from_str(&content)
+        Self::from_str_with_limits(&content, limits)
     }
 
     /// Dispatch one raw entity into the appropriate typed bucket.
