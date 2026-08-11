@@ -763,14 +763,13 @@ fn validate_diagnostic_case(case_spec: &str) -> Result<()> {
                 case_spec, results.annual_heating_mwh, results.annual_cooling_mwh
             );
         }
-        // Diagnostic ranges - TODO: Implement diagnostic case runners
+        // Diagnostic ranges - not yet implemented (issue #2711). Kept in the
+        // match so usage/`--help` documents the option, but fail loudly.
         "195-470" => {
-            eprintln!("Diagnostic case range 195-470 not yet implemented");
-            anyhow::bail!("Diagnostic cases 195-470 not implemented");
+            return Err(not_yet_implemented("diagnostic case range 195-470"));
         }
         "800-810" => {
-            eprintln!("Diagnostic case range 800-810 not yet implemented");
-            anyhow::bail!("Diagnostic cases 800-810 not implemented");
+            return Err(not_yet_implemented("diagnostic case range 800-810"));
         }
         _ => {
             eprintln!("Unknown case specification: {}", case_spec);
@@ -781,6 +780,18 @@ fn validate_diagnostic_case(case_spec: &str) -> Result<()> {
         }
     }
     Ok(())
+}
+
+/// Return a consistent "not yet implemented" error for stubbed CLI workflows.
+///
+/// These code paths are kept in the CLI surface so `--help` documents them, but
+/// they do not execute yet. They must fail loudly with a non-zero exit code
+/// rather than silently succeeding. Tracked by issue #2711.
+fn not_yet_implemented(feature: &str) -> anyhow::Error {
+    anyhow::anyhow!(
+        "'{}' is not yet implemented (see issue #2711); this CLI path is documented but does not execute yet",
+        feature
+    )
 }
 
 /// Run a direct simulation (EnergyPlus-compatible mode)
@@ -863,21 +874,15 @@ fn run_direct_simulation(
     let _weather = fluxion::weather::epw::EpwWeatherSource::from_file(weather_path)
         .map_err(|e| anyhow::anyhow!("Failed to load weather file: {}", e))?;
 
-    // TODO: Implement actual simulation
-    // This is a stub that demonstrates the CLI structure
-    println!("\nSimulation configuration prepared.");
-    println!("Note: Full simulation engine integration pending.");
-
+    // TODO(#2711): Wire the thermal simulation engine into this path. All
+    // EnergyPlus-compatible arguments are parsed and validated above, but the
+    // actual timestepping is not yet integrated. Fail loudly rather than
+    // silently report success — blind runs depend on a non-zero exit here.
     if readvars {
-        println!("Post-processing enabled (readvars)");
+        println!("Post-processing requested (readvars)");
     }
-
-    println!("\nSimulation would run here with:");
-    println!("  - Input: {}", input_file);
-    println!("  - Weather: {}", weather_path.display());
-    println!("  - Timesteps: 8760 (annual)");
-
-    Ok(())
+    eprintln!("error: direct simulation is not yet implemented (see issue #2711)");
+    Err(not_yet_implemented("direct simulation"))
 }
 
 /// Run a workflow (OpenStudio-compatible mode)
@@ -900,15 +905,13 @@ fn run_workflow(
     }
 
     if measures_only {
-        println!("Running measures only (skipping simulation)...");
-        // TODO: Implement measures-only workflow
-        anyhow::bail!("Measures-only workflow not yet implemented");
+        // TODO(#2711): Implement measures-only workflow.
+        return Err(not_yet_implemented("measures-only workflow"));
     }
 
     if postprocess_only {
-        println!("Running post-processing only (using existing results)...");
-        // TODO: Implement postprocess-only workflow
-        anyhow::bail!("Postprocess-only workflow not yet implemented");
+        // TODO(#2711): Implement postprocess-only workflow.
+        return Err(not_yet_implemented("postprocess-only workflow"));
     }
 
     // Load and parse workflow file
@@ -943,11 +946,11 @@ fn run_workflow(
         }
     }
 
-    // TODO: Implement actual workflow execution
-    println!("\nWorkflow execution not yet implemented.");
-    println!("This structure supports future measure-based workflows.");
-
-    Ok(())
+    // TODO(#2711): Implement actual workflow execution. The workflow file is
+    // parsed and its steps are listed above, but measure execution is pending.
+    // Fail loudly rather than silently report success.
+    eprintln!("error: workflow execution is not yet implemented (see issue #2711)");
+    Err(not_yet_implemented("workflow execution"))
 }
 
 /// Handle measure subcommands
@@ -955,25 +958,25 @@ fn run_measure_command(command: &MeasureSubcommand) -> Result<()> {
     match command {
         MeasureSubcommand::Update { measure_dir } => {
             println!("Updating measure at: {}", measure_dir.display());
-            // TODO: Implement measure update
-            anyhow::bail!("Measure update not yet implemented");
+            // TODO(#2711): Implement measure update.
+            Err(not_yet_implemented("measure update"))
         }
         MeasureSubcommand::UpdateAll { measures_dir } => {
             println!("Updating all measures in: {}", measures_dir.display());
-            // TODO: Implement measure update all
-            anyhow::bail!("Measure update all not yet implemented");
+            // TODO(#2711): Implement measure update --all.
+            Err(not_yet_implemented("measure update --all"))
         }
         MeasureSubcommand::ComputeArguments { model, measure_dir } => {
             println!("Computing arguments for measure:");
             println!("  Model: {}", model.display());
             println!("  Measure: {}", measure_dir.display());
-            // TODO: Implement compute arguments
-            anyhow::bail!("Compute arguments not yet implemented");
+            // TODO(#2711): Implement measure compute-args.
+            Err(not_yet_implemented("measure compute-args"))
         }
         MeasureSubcommand::RunTests { measures_dir } => {
             println!("Running tests for measures in: {}", measures_dir.display());
-            // TODO: Implement measure tests
-            anyhow::bail!("Measure tests not yet implemented");
+            // TODO(#2711): Implement measure tests.
+            Err(not_yet_implemented("measure tests"))
         }
     }
 }
@@ -1772,5 +1775,53 @@ mod tests {
         if let Some(Commands::Run { workflow, .. }) = cli.unwrap().command {
             assert!(workflow.is_some());
         }
+    }
+
+    // --- Issue #2711: stubbed workflows must fail loudly, not silently succeed ---
+
+    #[test]
+    fn test_workflow_execution_is_gated_non_silent() {
+        // The workflow runner parses the file but must NOT return Ok(()) for
+        // the unimplemented execution path (issue #2711).
+        use std::io::Write;
+        let mut tmp = tempfile::NamedTempFile::new().unwrap();
+        writeln!(tmp, "{{\"name\": \"stub\", \"steps\": []}}").unwrap();
+        let err = run_workflow(Some(tmp.path()), false, false, false).unwrap_err();
+        let msg = format!("{err}");
+        assert!(msg.contains("not yet implemented"), "got: {msg}");
+        assert!(
+            msg.contains("#2711"),
+            "error should reference the tracking issue: {msg}"
+        );
+    }
+
+    #[test]
+    fn test_measures_only_workflow_is_gated() {
+        // `fluxion run --measures-only` must return a non-silent error.
+        let err = run_workflow(Some(Path::new("dummy.fwf")), false, true, false).unwrap_err();
+        let msg = format!("{err}");
+        assert!(msg.contains("not yet implemented"), "got: {msg}");
+        assert!(msg.contains("#2711"), "should reference #2711: {msg}");
+    }
+
+    #[test]
+    fn test_measure_update_is_gated() {
+        // `fluxion measure update` must return a non-silent error.
+        let cmd = MeasureSubcommand::Update {
+            measure_dir: PathBuf::from("m"),
+        };
+        let err = run_measure_command(&cmd).unwrap_err();
+        let msg = format!("{err}");
+        assert!(msg.contains("not yet implemented"), "got: {msg}");
+        assert!(msg.contains("#2711"), "should reference #2711: {msg}");
+    }
+
+    #[test]
+    fn test_diagnostic_case_range_is_gated() {
+        // `fluxion validate-case 195-470` must return a non-silent error.
+        let err = validate_diagnostic_case("195-470").unwrap_err();
+        let msg = format!("{err}");
+        assert!(msg.contains("not yet implemented"), "got: {msg}");
+        assert!(msg.contains("#2711"), "should reference #2711: {msg}");
     }
 }
