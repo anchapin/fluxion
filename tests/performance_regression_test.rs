@@ -1,7 +1,8 @@
 //! Performance regression test for Fluxion
 //!
 //! This test measures performance against a stored baseline and fails if
-//! performance degrades by more than 10%.
+//! performance degrades by more than the threshold defined in
+//! `release_gates.yaml` (`benchmark.regression_threshold`, currently 5%).
 
 use std::fs;
 use std::path::PathBuf;
@@ -9,8 +10,49 @@ use std::time::Instant;
 
 /// Baseline file location
 const BASELINE_FILE: &str = "tests/perf_baseline.json";
-/// Regression threshold (10%)
-const REGRESSION_THRESHOLD: f64 = 0.10;
+
+/// Canonical location of the release-gate configuration (source of truth
+/// for the regression threshold). Resolved relative to the workspace root,
+/// which is the CWD when `cargo test` invokes this binary.
+const RELEASE_GATES_FILE: &str = "release_gates.yaml";
+
+/// Regression threshold fallback — **fraction** (0.05 = 5% slowdown allowed).
+///
+/// **Source of truth**: `release_gates.yaml` → `benchmark.regression_threshold`
+/// (expressed as a percentage, currently `5.0`). The test reads that YAML at
+/// runtime via [`regression_threshold`]; this constant is only a fallback for
+/// environments where the YAML cannot be located (e.g. an exotic `--target-dir`
+/// remap). The drift-guard test `test_regression_threshold_matches_yaml`
+/// (below) asserts this constant and the YAML stay in sync, so the two cannot
+/// silently diverge — if you change one, update the other (issue #2700).
+const REGRESSION_THRESHOLD_FALLBACK: f64 = 0.05;
+
+/// Read the regression threshold (as a fraction, 0.05 = 5%) from
+/// `release_gates.yaml` → `benchmark.regression_threshold`.
+///
+/// Returns `None` if the file is absent or malformed; callers fall back to
+/// [`REGRESSION_THRESHOLD_FALLBACK`]. Keeping the YAML as the source of truth
+/// prevents the test/gate drift that issue #2700 was filed against.
+fn regression_threshold_from_yaml() -> Option<f64> {
+    let content = fs::read_to_string(RELEASE_GATES_FILE).ok()?;
+    let yaml: serde_yaml::Value = serde_yaml::from_str(&content).ok()?;
+    let pct = yaml
+        .get("benchmark")?
+        .get("regression_threshold")?
+        .as_f64()?;
+    // Reject nonsensical values (≤0 or >100%) rather than flipping the
+    // comparison sign in `check_regression`.
+    if !pct.is_finite() || pct <= 0.0 || pct > 100.0 {
+        return None;
+    }
+    Some(pct / 100.0)
+}
+
+/// Resolve the active regression threshold: the YAML value if readable,
+/// otherwise [`REGRESSION_THRESHOLD_FALLBACK`].
+fn regression_threshold() -> f64 {
+    regression_threshold_from_yaml().unwrap_or(REGRESSION_THRESHOLD_FALLBACK)
+}
 
 /// Load baseline metrics from JSON file
 fn load_baseline() -> Option<BaselineMetrics> {
@@ -85,7 +127,14 @@ fn run_performance_test(population_size: usize) -> PerformanceMetrics {
 }
 
 /// Check for performance regression
-fn check_regression(current: &PerformanceMetrics, baseline: &BaselineMetrics) -> Option<f64> {
+///
+/// `threshold` is a fraction (e.g. 0.05 = 5%); a slowdown larger than this
+/// fraction relative to baseline returns `Some(percent_change)`.
+fn check_regression(
+    current: &PerformanceMetrics,
+    baseline: &BaselineMetrics,
+    threshold: f64,
+) -> Option<f64> {
     let baseline_throughput = baseline.throughput_analytical;
 
     if baseline_throughput <= 0.0 {
@@ -94,8 +143,8 @@ fn check_regression(current: &PerformanceMetrics, baseline: &BaselineMetrics) ->
 
     let percent_change = (current.throughput - baseline_throughput) / baseline_throughput;
 
-    // Return Some(percent_change) if regression detected (>10% slowdown)
-    if percent_change < -REGRESSION_THRESHOLD {
+    // Return Some(percent_change) if regression detected (> threshold slowdown)
+    if percent_change < -threshold {
         Some(percent_change)
     } else {
         None
@@ -104,8 +153,9 @@ fn check_regression(current: &PerformanceMetrics, baseline: &BaselineMetrics) ->
 
 /// Integration test: Performance regression detection
 ///
-/// This test verifies that performance doesn't regress by more than 10%
-/// from the stored baseline. Run with:
+/// This test verifies that performance doesn't regress by more than the
+/// threshold documented in `release_gates.yaml`
+/// (`benchmark.regression_threshold`, currently 5%). Run with:
 /// ```
 /// cargo test performance_regression --release
 /// ```
@@ -117,6 +167,7 @@ fn check_regression(current: &PerformanceMetrics, baseline: &BaselineMetrics) ->
 #[test]
 fn test_performance_regression() {
     let population_size = 100;
+    let threshold = regression_threshold();
 
     // Run performance test
     let metrics = run_performance_test(population_size);
@@ -128,6 +179,11 @@ fn test_performance_regression() {
     println!(
         "  Latency per config: {:.3}ms",
         metrics.latency_per_config_ms
+    );
+    println!(
+        "  Regression threshold: {:.1}% (from {})",
+        threshold * 100.0,
+        RELEASE_GATES_FILE
     );
 
     // Try to load baseline
@@ -141,18 +197,18 @@ fn test_performance_regression() {
             println!("  Latency: {:.3}ms", baseline.latency_ms);
 
             // Check for regression
-            match check_regression(&metrics, &baseline) {
+            match check_regression(&metrics, &baseline, threshold) {
                 Some(percent_change) => {
                     let change_percent = percent_change * 100.0;
                     panic!(
                         "PERFORMANCE REGRESSION DETECTED: {:.1}% slowdown\n\
                          Baseline: {:.0} configs/sec\n\
                          Current:  {:.0} configs/sec\n\
-                         Threshold: -{}%",
+                         Threshold: -{:.1}% (release_gates.yaml benchmark.regression_threshold)",
                         change_percent,
                         baseline.throughput_analytical,
                         metrics.throughput,
-                        (REGRESSION_THRESHOLD * 100.0) as i32
+                        threshold * 100.0
                     );
                 }
                 None => {
@@ -164,6 +220,40 @@ fn test_performance_regression() {
             println!("\nℹ No baseline found. Run:");
             println!("  python .githooks/perf-baseline.py --update-baseline");
             println!("  to create a baseline for regression detection.");
+        }
+    }
+}
+
+/// Drift guard: the [`REGRESSION_THRESHOLD_FALLBACK`] constant MUST match
+/// `release_gates.yaml` → `benchmark.regression_threshold`.
+///
+/// This is the "single source of truth" enforcement for issue #2700: even
+/// though the regression test reads the YAML at runtime, the fallback
+/// constant can still rot if someone changes the YAML without updating the
+/// constant. This test fails CI in that case (the YAML is always present in
+/// repo-rooted test runs), turning silent drift into a loud signal.
+#[test]
+fn test_regression_threshold_matches_yaml() {
+    match regression_threshold_from_yaml() {
+        Some(yaml_fraction) => {
+            assert!(
+                (yaml_fraction - REGRESSION_THRESHOLD_FALLBACK).abs() < 1e-9,
+                "REGRESSION_THRESHOLD_FALLBACK ({}) does not match \
+                 release_gates.yaml benchmark.regression_threshold ({}). \
+                 The YAML is the source of truth — update the constant to match.",
+                REGRESSION_THRESHOLD_FALLBACK,
+                yaml_fraction,
+            );
+        }
+        None => {
+            // The YAML was not readable in this environment (unusual — cargo
+            // tests run with the workspace root as CWD). CI exercises the
+            // normal path where the file is present, so drift is still
+            // caught there; we just cannot assert it locally here.
+            eprintln!(
+                "warning: could not read {RELEASE_GATES_FILE}; \
+                 drift guard skipped in this environment"
+            );
         }
     }
 }
