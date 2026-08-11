@@ -39,6 +39,12 @@ concurrency:
   group: perf-dashboard-${{ github.ref }}
   cancel-in-progress: true
 
+# Least-privilege GITHUB_TOKEN default (Issue #2526). The publish-dashboard job
+# pushes the regenerated dashboard to the gh-pages branch and therefore escalates
+# via its own job-level `permissions: contents: write` block.
+permissions:
+  contents: read
+
 jobs:
   # =========================================================================
   # bench-default — REQUIRED PR check.

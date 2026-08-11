@@ -6,6 +6,12 @@ on:
     - cron: '0 9 * * 1'
   workflow_dispatch:
 
+# Least-privilege GITHUB_TOKEN default (Issue #2526). The check-stale job opens
+# / comments on a tracking issue and escalates via its own job-level permissions
+# block (issues: write).
+permissions:
+  contents: read
+
 jobs:
   check-stale:
     runs-on: ubuntu-latest

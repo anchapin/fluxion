@@ -55,6 +55,10 @@ on:
         default: "3.10"
         description: Python version for setup.
 
+# Least-privilege GITHUB_TOKEN grants (Issue #2526): reusable CI steps are read-only.
+permissions:
+  contents: read
+
 jobs:
   ci:
     runs-on: ${{ inputs.runner-label }}

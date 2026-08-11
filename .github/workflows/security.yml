@@ -9,6 +9,10 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
+# Least-privilege GITHUB_TOKEN grants (Issue #2526): cargo audit is read-only.
+permissions:
+  contents: read
+
 jobs:
   audit:
     name: Cargo Audit

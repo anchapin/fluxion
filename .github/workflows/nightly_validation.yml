@@ -23,10 +23,21 @@ concurrency:
   group: nightly-validation-${{ github.ref }}
   cancel-in-progress: false
 
+# Least-privilege GITHUB_TOKEN default (Issue #2526). The ashrae-regression job
+# opens a tracking issue on failure and escalates via its own job-level
+# permissions block (issues: write); hvac-bestest stays read-only.
+permissions:
+  contents: read
+
 jobs:
   ashrae-regression:
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    # Issue #2526: scoped to the minimal set this job needs. issues: write is
+    # required by the github-script step that opens a regression-tracking issue.
+    permissions:
+      contents: read
+      issues: write
 
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4

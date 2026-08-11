@@ -22,6 +22,12 @@ env:
   REGISTRY: ghcr.io
   IMAGE_NAME: ${{ github.repository }}
 
+# Least-privilege GITHUB_TOKEN default (Issue #2526). Each job that pushes to
+# ghcr.io or uploads SARIF escalates via its own job-level permissions block
+# (packages: write / security-events: write).
+permissions:
+  contents: read
+
 jobs:
   # Smoke test: build amd64 image, run basic container checks
   build-and-test:

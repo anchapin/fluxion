@@ -36,6 +36,11 @@ env:
 # See docs/self-hosted-runners.md for provisioning instructions.
 # ---------------------------------------------------------------------------
 
+# Least-privilege GITHUB_TOKEN grants (Issue #2526): the test matrix only checks
+# out code, builds, runs tests, and uploads artifacts — no repo write-back.
+permissions:
+  contents: read
+
 jobs:
   # -- Always: fast gate (both PR and main) ----------------------------------
   # PRs: single-platform (ubuntu only) for fast signal.

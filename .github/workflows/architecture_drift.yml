@@ -11,6 +11,11 @@ on:
       - 'scripts/check_architecture_drift.py'
   workflow_dispatch:
 
+# Least-privilege GITHUB_TOKEN grants (Issue #2526). The check-drift job
+# escalates to issues/pull-requests write only where posting a comment needs it.
+permissions:
+  contents: read
+
 jobs:
   check-drift:
     runs-on: ubuntu-latest

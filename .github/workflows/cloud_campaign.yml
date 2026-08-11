@@ -1,5 +1,21 @@
 name: Cloud Campaign Runner
 
+# Issue #2526: this workflow previously injected long-lived static AWS credentials
+# (AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY / AWS_SESSION_TOKEN secrets) directly
+# into the runner environment. It now assumes an IAM role via OIDC federation
+# (short-lived STS tokens) using `aws-actions/configure-aws-credentials`. No static
+# AWS secrets are referenced anywhere in the workflow.
+#
+# PREREQUISITE — the repository maintainer MUST configure (Settings → Secrets and
+# variables → Actions → Variables, NOT Secrets):
+#   * FLUXION_AWS_CAMPAIGN_ROLE_ARN — the IAM role ARN to assume. The role's trust
+#     policy must allow `sts:AssumeRoleWithWebIdentity` for this repo's GitHub OIDC
+#     provider, scoped to `ref:refs/heads/main` (and `environment:` if one is added).
+#     See docs/SECURITY.md "GitHub Actions least-privilege" for the trust policy.
+#   * AWS_REGION (optional, defaults to us-east-1 below)
+# Until FLUXION_AWS_CAMPAIGN_ROLE_ARN is set, the configure-aws-credentials step
+# fails fast with a clear message instead of silently using static keys.
+
 on:
   workflow_dispatch:
     inputs:
@@ -44,9 +60,18 @@ on:
         description: 'SNS topic ARN for notifications'
         required: false
 
+# Least-privilege GITHUB_TOKEN default (Issue #2526). Each job that talks to AWS
+# escalates to id-token: write (required to mint the OIDC token) via its own
+# job-level permissions block.
+permissions:
+  contents: read
+
 jobs:
   create-campaign:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write  # Required for OIDC federation → STS role assumption
     steps:
       - name: Checkout
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4
@@ -60,12 +85,14 @@ jobs:
         run: |
           pip install boto3
 
+      - name: Configure AWS credentials via OIDC (no static secrets)
+        uses: aws-actions/configure-aws-credentials@7474bc4690e29a8392af63c5b98e7449536d5c3a  # v4.3.1
+        with:
+          role-to-assume: ${{ vars.FLUXION_AWS_CAMPAIGN_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION || 'us-east-1' }}
+
       - name: Create campaign
         env:
-          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          AWS_SESSION_TOKEN: ${{ secrets.AWS_SESSION_TOKEN }}
-          AWS_REGION: ${{ vars.AWS_REGION || 'us-east-1' }}
           FLUXION_S3_BUCKET: ${{ inputs.s3_bucket }}
           FLUXION_S3_PREFIX: ${{ inputs.s3_prefix }}
           FLUXION_SNS_TOPIC_ARN: ${{ inputs.sns_topic }}
@@ -82,6 +109,9 @@ jobs:
   wait-for-completion:
     needs: create-campaign
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write  # Required for OIDC federation → STS role assumption
     steps:
       - name: Set up Python
         uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065  # v5
@@ -92,12 +122,14 @@ jobs:
         run: |
           pip install boto3
 
+      - name: Configure AWS credentials via OIDC (no static secrets)
+        uses: aws-actions/configure-aws-credentials@7474bc4690e29a8392af63c5b98e7449536d5c3a  # v4.3.1
+        with:
+          role-to-assume: ${{ vars.FLUXION_AWS_CAMPAIGN_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION || 'us-east-1' }}
+
       - name: Wait for campaign
         env:
-          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          AWS_SESSION_TOKEN: ${{ secrets.AWS_SESSION_TOKEN }}
-          AWS_REGION: ${{ vars.AWS_REGION || 'us-east-1' }}
           FLUXION_S3_BUCKET: ${{ inputs.s3_bucket }}
           FLUXION_S3_PREFIX: ${{ inputs.s3_prefix }}
           FLUXION_SNS_TOPIC_ARN: ${{ inputs.sns_topic }}
@@ -111,6 +143,9 @@ jobs:
   aggregate-results:
     needs: wait-for-completion
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write  # Required for OIDC federation → STS role assumption
     steps:
       - name: Checkout
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4
@@ -124,12 +159,14 @@ jobs:
         run: |
           pip install boto3
 
+      - name: Configure AWS credentials via OIDC (no static secrets)
+        uses: aws-actions/configure-aws-credentials@7474bc4690e29a8392af63c5b98e7449536d5c3a  # v4.3.1
+        with:
+          role-to-assume: ${{ vars.FLUXION_AWS_CAMPAIGN_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION || 'us-east-1' }}
+
       - name: Aggregate results
         env:
-          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          AWS_SESSION_TOKEN: ${{ secrets.AWS_SESSION_TOKEN }}
-          AWS_REGION: ${{ vars.AWS_REGION || 'us-east-1' }}
           FLUXION_S3_BUCKET: ${{ inputs.s3_bucket }}
           FLUXION_S3_PREFIX: ${{ inputs.s3_prefix }}
         run: |
