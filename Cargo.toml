@@ -407,6 +407,24 @@ harness = false
 name = "decoupled_loop_dispatch_bench"
 harness = false
 
+# Issue #2522 — multi-zone throughput criterion benchmark.
+# Sweeps BatchOracle::evaluate_population across populations {10, 100, 1000, 10k}
+# on a 10-zone ThermalModel; reports configs/sec via criterion Throughput.
+#
+# `required-features = ["multi-zone"]`: the 10-zone model makes population_10k
+# take ~6 min/sample (~28 configs/sec), so a full criterion run is ~1 h — too
+# long for the Performance Dashboard's 15-min `cargo bench` sweep. Gating the
+# bench behind `multi-zone` keeps the default-features dashboard sweep (which
+# the Fluxion Performance Gate #1618 observes) green, while still allowing the
+# gate-relevant profile to compile-check it (performance.yml runs
+# `cargo bench --bench multi_zone_throughput --features multi-zone --no-run`)
+# and enabling on-demand full runs. The runtime floor (10 configs/sec on
+# population 100) stays enforced by tests/performance_ci_test.rs.
+[[bench]]
+name = "multi_zone_throughput"
+harness = false
+required-features = ["multi-zone"]
+
 [[bin]]
 name = "fluxion-delta"
 path = "tools/fluxion_delta.rs"
