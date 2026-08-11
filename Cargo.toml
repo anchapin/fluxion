@@ -103,10 +103,18 @@ kafka = ["dep:rdkafka"]
 # Feature flag for acausal HVAC / fluid network modeling (Issue #1980 / ADR-005).
 # Gates the `fluxion-fluid` crate which provides port-based fluid circuit traits.
 fluid = ["dep:fluxion-fluid"]
-# Feature flag for GaugeSolver as primary zone solver (Issue #2304).
-# When enabled, GaugeZoneSolver replaces the legacy 5R1C/9R4C lumped-capacitance
-# networks for zone-level heat balance. The per-surface gauge theory approach
-# conserves energy more accurately and supports multi-zone coupling.
+# Feature flag for the experimental GaugeZoneSolver zone-level scaffolding
+# (Issue #2304). OFF by default.
+#
+# STATUS (Issue #2686, 2026-08-11): this flag is OPT-IN / EXPERIMENTAL and does
+# NOT change the active solver. The `gauge_zone_solver` field on
+# `ThermalModelData` is feature-gated but always initialized to `None`, and no
+# construction path sets it to `Some`. Even with `--features gauge-solver` the
+# routing branch in `step_physics` is unreachable, so the 5R1C / 9R4C
+# lumped-capacitance networks remain the primary zone solver in ALL builds. The
+# live gauge-theory research path is the per-surface `GaugeSolver` run in shadow
+# mode via `PhysicsAdapter` (ARCHITECTURE.md Module 6, #1465 / #1462) — a
+# separate struct from this zone-level `GaugeZoneSolver` wrapper.
 # Run with: cargo test --features gauge-solver --test ashrae_140_case_600_series
 gauge-solver = []
 # Feature flag for fluxion-city urban radiation integration (Issue #2344).
