@@ -275,3 +275,33 @@ the campaign scripts touch (least privilege), e.g. `s3:PutObject` /
    before committing.
 5. Never reference static cloud keys; use OIDC (`id-token: write` +
    `role-to-assume`) and document the required repo variable here.
+
+## Production deploy checklist
+
+Hardening controls that MUST be verified before a `fluxion-rest` instance is
+exposed to untrusted traffic. Each item maps to an enforced control (code or
+config) so it can be checked mechanically, not just by process.
+
+- **Header redaction on TraceLayer spans (Issue #2504).**
+  The `tower_http` `TraceLayer` span is built by `SafeHeaderMakeSpan`
+  (`src/api/server.rs`), which records only an explicit allow-list of safe
+  request headers — `x-request-id`, `content-type`, `user-agent`. Credential
+  headers (`Authorization`, `Cookie`, `x-api-key`, AWS Sig V4 `x-amz-*`) are
+  omitted by construction; there is no deny-list to keep in sync. The previous
+  `DefaultMakeSpan::new().include_headers(true)` recorded *every* request
+  header, leaking bearer tokens and session cookies into structured logs
+  (OWASP A09:2021). Regression test `tracelayer_does_not_log_credentials`
+  asserts neither the credential header names nor their values appear in span
+  output. Do **not** revert to `include_headers(true)`; do **not** widen
+  `SAFE_HEADER_ALLOWLIST` to include any credential-bearing header. If you add
+  a subscriber that exports span fields to an observability backend, this
+  allow-list is what bounds what leaves the process.
+- **Auth mode (Issue #2505).** Set `FLUXION_REST_AUTH=token|tls` for any
+  network-reachable bind; `off` is refused for `0.0.0.0` release builds unless
+  `FLUXION_REST_ALLOW_INSECURE=1`.
+- **CORS (Issue #2505).** `FLUXION_REST_CORS_ORIGINS` must be an explicit
+  origin allow-list (never permissive).
+- **Rate limiting (Issue #2505).** Tune `FLUXION_REST_RATE_LIMIT_RPS` /
+  `FLUXION_REST_RATE_LIMIT_BURST` to the deployment; defaults are `100`/`1000`.
+- **TLS for telemetry sinks.** `fluxion-twin` MQTT is TLS-only by default
+  (`mqtts://`, port 8883); plaintext requires `FLUXION_MQTT_ALLOW_INSECURE`.

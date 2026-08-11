@@ -58,7 +58,7 @@ use tower::timeout::TimeoutLayer;
 use tower::{BoxError, ServiceBuilder};
 use tower_http::{
     request_id::{MakeRequestUuid, PropagateRequestIdLayer, SetRequestIdLayer},
-    trace::{DefaultMakeSpan, DefaultOnResponse, TraceLayer},
+    trace::{DefaultOnResponse, MakeSpan, TraceLayer},
 };
 use tracing::Level;
 
@@ -1853,6 +1853,101 @@ pub fn router(state: AppState) -> Router {
     router_with_security(state, crate::api::security::RestSecurityConfig::from_env())
 }
 
+/// Request-header names that are safe to record on the `TraceLayer` span.
+///
+/// This is an **allow-list**, not a deny-list: a header is recorded only if
+/// it appears here. Every credential-bearing header (`authorization`,
+/// `cookie`, `x-api-key`, AWS Sig V4 `x-amz-*`, proxy-auth tokens, …) is
+/// omitted by construction — there is no deny-list to keep in sync.
+///
+/// Issue #2504: `DefaultMakeSpan::new().include_headers(true)` previously
+/// recorded *every* request header as a span field, leaking credentials
+/// into structured logs (OWASP A09:2021). [`SafeHeaderMakeSpan`] replaces
+/// it and only ever records the headers below.
+const SAFE_HEADER_ALLOWLIST: [&str; 3] = ["x-request-id", "content-type", "user-agent"];
+
+/// A [`MakeSpan`] that records an explicit allow-list of safe request
+/// headers onto the `tower_http` trace span.
+///
+/// Replaces `DefaultMakeSpan::new().include_headers(true)` (Issue #2504).
+/// Only the names in [`SAFE_HEADER_ALLOWLIST`] are ever recorded; everything
+/// else — including `Authorization`, `Cookie`, `x-api-key`, and all AWS Sig
+/// V4 headers — is omitted by construction.
+#[derive(Clone)]
+struct SafeHeaderMakeSpan {
+    level: Level,
+}
+
+impl SafeHeaderMakeSpan {
+    /// Create a new span builder that emits at `INFO` level (matching the
+    /// previous `DefaultMakeSpan::new().level(Level::INFO)` configuration).
+    fn new() -> Self {
+        Self { level: Level::INFO }
+    }
+
+    /// Read an allow-listed header off the request, returning `""` if it is
+    /// absent or not valid UTF-8. The header name is matched case-insensitively
+    /// (HTTP headers are case-insensitive per RFC 7230 §3.2).
+    ///
+    /// The `debug_assert!` ties this method to [`SAFE_HEADER_ALLOWLIST`] so the
+    /// allow-list constant is the single source of truth: calling this with a
+    /// name not on the allow-list fails loudly in dev/test rather than silently
+    /// recording an un-vetted header (Issue #2504).
+    fn safe_header<'a>(headers: &'a axum::http::HeaderMap, name: &str) -> &'a str {
+        debug_assert!(
+            SAFE_HEADER_ALLOWLIST.contains(&name),
+            "SafeHeaderMakeSpan::safe_header({name:?}) — not on SAFE_HEADER_ALLOWLIST; \
+             refusing to record an un-vetted header (Issue #2504)"
+        );
+        headers
+            .get(name)
+            .and_then(|v| v.to_str().ok())
+            .unwrap_or("")
+    }
+}
+
+impl<B> MakeSpan<B> for SafeHeaderMakeSpan {
+    fn make_span(&mut self, request: &axum::http::Request<B>) -> tracing::Span {
+        let headers = request.headers();
+        // Only allow-listed names are ever touched — credential headers
+        // (`authorization`, `cookie`, `x-api-key`, …) are never read here,
+        // so they cannot leak into the span by construction (Issue #2504).
+        let x_request_id = Self::safe_header(headers, "x-request-id");
+        let content_type = Self::safe_header(headers, "content-type");
+        let user_agent = Self::safe_header(headers, "user-agent");
+
+        // The `tracing::span!` macro requires the level as a static token,
+        // so (like `DefaultMakeSpan`) we expand via a macro + match.
+        macro_rules! make_span {
+            ($level:expr) => {
+                tracing::span!(
+                    $level,
+                    "request",
+                    method = %request.method(),
+                    uri = %request.uri(),
+                    version = ?request.version(),
+                    x_request_id = %x_request_id,
+                    content_type = %content_type,
+                    user_agent = %user_agent,
+                )
+            };
+        }
+        match self.level {
+            Level::ERROR => make_span!(Level::ERROR),
+            Level::WARN => make_span!(Level::WARN),
+            Level::INFO => make_span!(Level::INFO),
+            Level::DEBUG => make_span!(Level::DEBUG),
+            Level::TRACE => make_span!(Level::TRACE),
+        }
+    }
+}
+
+impl Default for SafeHeaderMakeSpan {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 /// Construct the application's router with an explicit security
 /// configuration (Issue #2505). The binary uses this entry point so the
 /// auth / CORS / rate-limit / boot-guard controls are all driven from one
@@ -1912,12 +2007,18 @@ pub fn router_with_security(
             MakeRequestUuid,
         ))
         .layer(
+            // Issue #2504: do NOT use `DefaultMakeSpan::new().include_headers(true)`
+            // — that records *every* request header (including `Authorization`,
+            // `Cookie`, `x-api-key`, AWS Sig V4) on the span, leaking
+            // credentials into structured logs (OWASP A09:2021). Instead we
+            // build the span with [`SafeHeaderMakeSpan`], which records only
+            // the allow-listed names in `SAFE_HEADER_ALLOWLIST`
+            // (`x-request-id`, `content-type`, `user-agent`). Credential
+            // headers are omitted by construction — there is no deny-list to
+            // keep in sync. See the regression test
+            // `tracelayer_does_not_log_credentials`.
             TraceLayer::new_for_http()
-                .make_span_with(
-                    DefaultMakeSpan::new()
-                        .level(Level::INFO)
-                        .include_headers(true),
-                )
+                .make_span_with(SafeHeaderMakeSpan::new())
                 .on_response(DefaultOnResponse::new().level(Level::INFO)),
         )
         .layer(PropagateRequestIdLayer::new(
@@ -3587,5 +3688,142 @@ mod tests {
             result.is_err(),
             "timeout(0s) must fire immediately (Err), even against a pending future"
         );
+    }
+
+    // =====================================================================
+    // Issue #2504 — TraceLayer span header redaction regression tests.
+    //
+    // `DefaultMakeSpan::new().include_headers(true)` previously recorded
+    // *every* request header (Authorization, Cookie, x-api-key, AWS Sig V4)
+    // as a span field, leaking credentials into structured logs (OWASP
+    // A09:2021). The span is now built by `SafeHeaderMakeSpan`, which
+    // records only the names in `SAFE_HEADER_ALLOWLIST`.
+    //
+    // These tests capture the span output with a `tracing-subscriber` fmt
+    // layer backed by an in-memory buffer and assert that credential
+    // values/names never appear.
+    // =====================================================================
+
+    /// `io::Write` adapter that funnels bytes into a shared buffer, so the
+    /// #2504 tests can assert over what the TraceLayer span recorded.
+    struct CaptureBuf(std::sync::Arc<std::sync::Mutex<Vec<u8>>>);
+
+    impl std::io::Write for CaptureBuf {
+        fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
+            self.0.lock().unwrap().extend_from_slice(bytes);
+            Ok(bytes.len())
+        }
+        fn flush(&mut self) -> std::io::Result<()> {
+            Ok(())
+        }
+    }
+
+    /// Issue #2504: a request carrying `Authorization` and `Cookie`
+    /// credentials must NOT record those header names or their values on the
+    /// TraceLayer span. Runs the real layered router (`router_with_security`)
+    /// under a capturing subscriber configured to emit span fields
+    /// (`FmtSpan::NEW`), so any header recorded by the span builder appears in
+    /// the captured buffer. With the old `include_headers(true)` the buffer
+    /// would contain `"authorization"`, `"secret"`, `"cookie"`, `"leak"`.
+    #[tokio::test]
+    async fn tracelayer_does_not_log_credentials() {
+        use std::sync::{Arc, Mutex};
+
+        let buf = Arc::new(Mutex::new(Vec::<u8>::new()));
+        let buf_for_writer = buf.clone();
+
+        // Build a fmt subscriber that records span fields (so a header on the
+        // span is observable) into the shared buffer. `set_default` installs
+        // it as the thread-local default — safe under `#[tokio::test]`
+        // (current-thread runtime polls on this thread).
+        let subscriber = tracing_subscriber::fmt()
+            .with_writer(move || CaptureBuf(buf_for_writer.clone()))
+            .with_max_level(tracing::Level::TRACE)
+            .with_span_events(tracing_subscriber::fmt::format::FmtSpan::NEW)
+            .finish();
+        let _guard = tracing::dispatcher::set_default(&tracing::Dispatch::new(subscriber));
+
+        let app = router_with_security(
+            AppState::default(),
+            crate::api::security::RestSecurityConfig::default(),
+        );
+
+        // Send a public route (`/v1/healthz` is auth-exempt) carrying
+        // credential-bearing headers that MUST NEVER be logged.
+        let req = Request::builder()
+            .method(axum::http::Method::GET)
+            .uri("/v1/healthz")
+            .header("authorization", "Bearer hunter2-secret-token")
+            .header("cookie", "session=leak; csrftoken=also-leak")
+            .header("x-api-key", "AKIA-deadbeef")
+            .header("user-agent", "regression-test/1.0")
+            .body(axum::body::Body::empty())
+            .unwrap();
+        let resp = tower::ServiceExt::oneshot(app, req).await.unwrap();
+        // Drain the body so on_response fully completes and flushes.
+        let _ = body_bytes(resp).await;
+
+        let captured = {
+            let locked = buf.lock().unwrap();
+            String::from_utf8_lossy(&locked).to_string()
+        };
+
+        // The span MUST have been recorded — guards against a silently-empty
+        // buffer that would make the negative assertions vacuously true.
+        assert!(
+            captured.contains("request{") || captured.contains("request "),
+            "expected a TraceLayer 'request' span in captured output; got: {captured:?}"
+        );
+
+        // Negative assertions — credential values.
+        for secret in ["hunter2-secret-token", "leak", "also-leak", "AKIA-deadbeef"] {
+            assert!(
+                !captured.contains(secret),
+                "Issue #2504: credential value {secret:?} leaked into span output: {captured:?}"
+            );
+        }
+        // Negative assertions — credential header names.
+        for header in ["authorization", "cookie", "x-api-key", "x-amz"] {
+            assert!(
+                !captured.to_ascii_lowercase().contains(header),
+                "Issue #2504: credential header {header:?} recorded on span: {captured:?}"
+            );
+        }
+        // Positive assertion — allow-listed headers ARE recorded (confirms
+        // the span is still useful, not just silent).
+        assert!(
+            captured.contains("regression-test/1.0"),
+            "user-agent (allow-listed) should be recorded on the span: {captured:?}"
+        );
+    }
+
+    /// Issue #2504: the allow-list is exactly the documented set — `x-request-id`,
+    /// `content-type`, `user-agent`. Catches accidental widening (e.g. someone
+    /// adding `authorization`) and keeps `SAFE_HEADER_ALLOWLIST` referenced so
+    /// `#[warn(dead_code)]` / clippy stays clean.
+    #[test]
+    fn safe_header_allowlist_is_exactly_documented_set() {
+        assert_eq!(
+            SAFE_HEADER_ALLOWLIST.len(),
+            3,
+            "SAFE_HEADER_ALLOWLIST must contain exactly 3 entries"
+        );
+        let as_set: std::collections::HashSet<&str> =
+            SAFE_HEADER_ALLOWLIST.iter().copied().collect();
+        assert!(as_set.contains("x-request-id"));
+        assert!(as_set.contains("content-type"));
+        assert!(as_set.contains("user-agent"));
+        // No credential header may ever appear on the allow-list.
+        for forbidden in [
+            "authorization",
+            "cookie",
+            "x-api-key",
+            "x-amz-security-token",
+        ] {
+            assert!(
+                !as_set.contains(forbidden),
+                "{forbidden:?} must never be on the safe-header allow-list"
+            );
+        }
     }
 }
