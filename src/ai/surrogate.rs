@@ -2364,34 +2364,91 @@ impl SurrogateManager {
         Err("ONNX inference requires the `ort` feature (build with --features ort)".to_string())
     }
 
-    pub fn predict_loads_batched(&self, batch_temps: &[Vec<f64>]) -> Vec<Vec<f64>> {
+    /// Zero-allocation variant of [`Self::predict_loads_batched`] for the
+    /// per-timestep batched hot loop (Issue #2771).
+    ///
+    /// Reuses three caller-supplied scratch buffers across calls:
+    /// - `scratch_in`  — flattened `f32` input fed to the ONNX runtime,
+    /// - `scratch_out` — flattened `f64` results extracted from the output
+    ///   tensor,
+    /// - `out`         — the batched per-config load vectors.
+    ///
+    /// Each buffer is cleared and refilled in place. After warm-up (a
+    /// constant batch size, the steady state in the 8 760-timestep
+    /// orchestrator loop) the steady-state call performs **no heap
+    /// allocation**: the ONNX input tensor is built from a *borrowed*
+    /// `&[f32]` view (`ort::value::TensorRef::from_array_view`) rather
+    /// than an owned `Vec`, and the per-config result vectors are recycled
+    /// via `Vec::resize_with` instead of being reallocated as N fresh
+    /// `Vec<f64>`s every call. The bytes produced are identical to
+    /// `predict_loads_batched` — only buffer ownership differs — so
+    /// simulation output is bit-identical. See the
+    /// `dhat_batched_surrogate_zero_growth` gate for the steady-state
+    /// proof.
+    ///
+    /// Callers that run this once per timestep should hoist the buffers
+    /// above the loop (the same reuse pattern `predict_loads_into` /
+    /// Issue #2687 use for the unbatched path).
+    pub fn predict_loads_batched_into(
+        &self,
+        batch_temps: &[Vec<f64>],
+        scratch_in: &mut Vec<f32>,
+        scratch_out: &mut Vec<f64>,
+        out: &mut Vec<Vec<f64>>,
+    ) {
         if let Some(ref comp) = self.composite {
-            return batch_temps
-                .iter()
-                .map(|temps| comp.predict_loads(temps))
-                .collect();
+            // Composite path: recycle `out`'s outer + inner capacity.
+            out.resize_with(batch_temps.len(), Vec::new);
+            for (temps, inner) in batch_temps.iter().zip(out.iter_mut()) {
+                let loads = comp.predict_loads(temps);
+                inner.clear();
+                inner.extend_from_slice(&loads);
+            }
+            return;
         }
 
         if !self.model_loaded || batch_temps.is_empty() {
-            return batch_temps
-                .iter()
-                .map(|temps| vec![1.2; temps.len()])
-                .collect();
+            // Mock fallback: constant 1.2 load per zone, into reused buffers.
+            out.resize_with(batch_temps.len(), Vec::new);
+            for (temps, inner) in batch_temps.iter().zip(out.iter_mut()) {
+                inner.clear();
+                inner.resize(temps.len(), 1.2);
+            }
+            return;
         }
 
-        match self.predict_loads_batched_onnx(batch_temps) {
-            Ok(loads) => loads,
+        // Real ONNX path with graceful fallback to mock on failure.
+        #[cfg(feature = "ort")]
+        match self.predict_loads_batched_onnx_into(batch_temps, scratch_in, scratch_out, out) {
+            Ok(()) => {}
             Err(e) => {
                 warn!(
                     "Batched ONNX inference failed ({}), falling back to mock placeholder",
                     e
                 );
-                batch_temps
-                    .iter()
-                    .map(|temps| vec![1.2; temps.len()])
-                    .collect()
+                out.resize_with(batch_temps.len(), Vec::new);
+                for (temps, inner) in batch_temps.iter().zip(out.iter_mut()) {
+                    inner.clear();
+                    inner.resize(temps.len(), 1.2);
+                }
             }
         }
+
+        // Without the `ort` feature no model can ever be loaded, so the ONNX
+        // branch above is absent and the mock path has already returned.
+        // Silence the unused-buffer warning for non-`ort` builds.
+        #[cfg(not(feature = "ort"))]
+        let _ = (scratch_in, scratch_out);
+    }
+
+    pub fn predict_loads_batched(&self, batch_temps: &[Vec<f64>]) -> Vec<Vec<f64>> {
+        // Allocate one-shot buffers; the per-timestep hot loop uses
+        // `predict_loads_batched_into` to reuse them across the 8 760 steps.
+        let mut out = Vec::new();
+        let mut scratch_in = Vec::new();
+        let mut scratch_out = Vec::new();
+        self.predict_loads_batched_into(batch_temps, &mut scratch_in, &mut scratch_out, &mut out);
+        out
     }
 
     /// Explicit batched ONNX inference — returns an error instead of
@@ -2418,16 +2475,75 @@ impl SurrogateManager {
 
     /// Pure batched ONNX inference without metric instrumentation. Wrapped by
     /// [`Self::predict_loads_batched_onnx`] (Issue #2498).
+    ///
+    /// Delegates to [`Self::predict_loads_batched_onnx_impl_into`] so the
+    /// buffer-reuse fix (Issue #2771) lives in exactly one place; this
+    /// Vec-returning wrapper exists for the public metric-recording API.
     #[cfg(feature = "ort")]
     fn predict_loads_batched_onnx_impl(
         &self,
         batch_temps: &[Vec<f64>],
     ) -> Result<Vec<Vec<f64>>, String> {
+        let mut scratch_in = Vec::new();
+        let mut scratch_out = Vec::new();
+        let mut out = Vec::new();
+        self.predict_loads_batched_onnx_impl_into(
+            batch_temps,
+            &mut scratch_in,
+            &mut scratch_out,
+            &mut out,
+        )?;
+        Ok(out)
+    }
+
+    /// Metric-recording batched ONNX inference into reusable buffers
+    /// (Issue #2771). The buffer-reuse twin of
+    /// [`Self::predict_loads_batched_onnx`]; records the same
+    /// `fluxion_onnx_*` telemetry.
+    #[cfg(feature = "ort")]
+    fn predict_loads_batched_onnx_into(
+        &self,
+        batch_temps: &[Vec<f64>],
+        scratch_in: &mut Vec<f32>,
+        scratch_out: &mut Vec<f64>,
+        out: &mut Vec<Vec<f64>>,
+    ) -> Result<(), String> {
+        if batch_temps.is_empty() {
+            out.clear();
+            return Ok(());
+        }
+        let backend = self.backend.as_str();
+        let batch_size = batch_temps.len();
+        let start = std::time::Instant::now();
+        let result =
+            self.predict_loads_batched_onnx_impl_into(batch_temps, scratch_in, scratch_out, out);
+        let elapsed_secs = start.elapsed().as_secs_f64();
+        self.record_onnx_inference_metrics(backend, batch_size, elapsed_secs, result.is_ok());
+        result
+    }
+
+    /// Pure batched ONNX inference into reusable buffers, without metric
+    /// instrumentation (Issue #2771). All three buffers are reused across
+    /// calls: `scratch_in` is refilled with the flattened `f32` input and
+    /// passed to the runtime as a **borrowed** `TensorRef` (no owned-data
+    /// copy), `scratch_out` receives the flattened `f64` output, and `out`
+    /// receives the per-config load slices (outer + inner capacity recycled
+    /// via `resize_with`). The bytes produced are identical to the prior
+    /// `predict_loads_batched_onnx_impl` — only buffer ownership differs.
+    #[cfg(feature = "ort")]
+    fn predict_loads_batched_onnx_impl_into(
+        &self,
+        batch_temps: &[Vec<f64>],
+        scratch_in: &mut Vec<f32>,
+        scratch_out: &mut Vec<f64>,
+        out: &mut Vec<Vec<f64>>,
+    ) -> Result<(), String> {
         if !self.model_loaded {
             return Err("No ONNX model loaded".to_string());
         }
         if batch_temps.is_empty() {
-            return Ok(Vec::new());
+            out.clear();
+            return Ok(());
         }
         let pool = self
             .session_pool
@@ -2444,18 +2560,27 @@ impl SurrogateManager {
                 ));
             }
         }
-        let flattened: Vec<f32> = batch_temps
-            .iter()
-            .flat_map(|v| v.iter().map(|&x| x as f32))
-            .collect();
+
+        // Refill the flattened f32 input buffer in place; no reallocation
+        // after warm-up (Issue #2771).
+        scratch_in.clear();
+        scratch_in.reserve(batch_size * input_size);
+        for v in batch_temps {
+            scratch_in.extend(v.iter().map(|&x| x as f32));
+        }
 
         let mut session_guard = pool
             .get_or_create_session()
             .map_err(|e| format!("Could not acquire ORT session: {}", e))?;
 
-        let input_tensor =
-            ort::value::Value::from_array((vec![batch_size as i64, input_size as i64], flattened))
-                .map_err(|e| format!("Failed to create input tensor: {}", e))?;
+        // Borrowed tensor view: the runtime reads `scratch_in` by reference
+        // instead of taking ownership of a freshly allocated Vec (the prior
+        // per-call allocation). The shape is a stack `[i64; 2]`, not a Vec.
+        let input_tensor = ort::value::TensorRef::from_array_view((
+            [batch_size as i64, input_size as i64],
+            &scratch_in[..],
+        ))
+        .map_err(|e| format!("Failed to create input tensor: {}", e))?;
 
         let outputs = session_guard
             .run(ort::inputs![input_tensor])
@@ -2467,14 +2592,23 @@ impl SurrogateManager {
         let array_view = outputs[0]
             .try_extract_array::<f32>()
             .map_err(|e| format!("Failed to extract tensor: {}", e))?;
-        let results: Vec<f64> = array_view.iter().copied().map(|x| x as f64).collect();
-        if results.is_empty() {
+        // Refill the flattened f64 results buffer in place.
+        scratch_out.clear();
+        scratch_out.extend(array_view.iter().copied().map(|x| x as f64));
+        if scratch_out.is_empty() {
             return Err("ONNX inference returned empty batch output".to_string());
         }
-        let output_size = results.len() / batch_size;
-        let batch_results: Vec<Vec<f64>> =
-            results.chunks(output_size).map(|c| c.to_vec()).collect();
-        Ok(batch_results)
+        let output_size = scratch_out.len() / batch_size;
+
+        // Scatter into `out`, recycling outer + inner capacity. After warm-up
+        // (constant batch_size) `resize_with` is a no-op and each inner Vec
+        // is cleared + refilled without reallocation (Issue #2771).
+        out.resize_with(batch_size, Vec::new);
+        for (i, inner) in out.iter_mut().enumerate() {
+            inner.clear();
+            inner.extend_from_slice(&scratch_out[i * output_size..(i + 1) * output_size]);
+        }
+        Ok(())
     }
 
     /// Shared metric recording for a single ONNX inference attempt (Issue
