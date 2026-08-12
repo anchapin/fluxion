@@ -331,6 +331,240 @@ FmiConfig {
 
 ---
 
+## Boundary Crates (Workspace Siblings)
+
+Workspace crates that cross a process, protocol, or model boundary rather than a
+language-FFI boundary. Each is a Cargo workspace member documented here so
+contributors following AGENTS.md's mandatory-reading directive can find them.
+
+### fluxion-toon (crates/fluxion-toon/)
+
+**Purpose**: Token-Oriented Object Notation (TOON) — compact, tabular
+serialization format that reduces LLM context-window usage by 35–50% vs JSON for
+uniform flat-struct arrays (zone temperatures, surface fluxes, HVAC energy).
+Authoritative spec: `crates/fluxion-toon/SPEC.md` (TOON v1.0). Issues #2066, #2071.
+
+**Feature-gate relationship**: standalone **leaf crate** — has no `fluxion`
+dependency. Consumed by `fluxion-mcp` (Issue #2072) to serialize tool responses
+for LLM clients.
+
+**Entry point**: `crates/fluxion-toon/src/lib.rs`
+
+#### Public Surface
+
+| Item | Kind | Purpose |
+|------|------|---------|
+| `to_string<T: Serialize>(&T) -> Result<String>` | fn | Serialize any `serde::Serialize` type to TOON |
+| `from_str<T: DeserializeOwned>(&str) -> Result<T>` | fn | Deserialize; verifies `toon:v1` header + array length guardrails |
+| `token_savings_pct(json_len, toon_len) -> f64` | fn | Token/byte savings utility |
+| `ToonError` | enum | `Eof`, `LengthMismatch`, `InvalidSyntax`, `MalformedRow`, `InvalidHeader`, `MalformedPatch`, `Custom`, `Deserialization`, `Serialization`, `PatchError`, `Io`, `Json`, `TooLarge` (DoS cap, #2527) |
+| `patch::ModelPatch { param, value, target? }` | struct | Parsed parameter patch from an LLM response |
+| `patch::parse_toon_patch(input) -> Result<ModelPatch>` | fn | Strips markdown codeblock fences (```` ```toon ````, ```` ```json ````) and parses the patch |
+| `parse::ToonDocument`, `parse_line`, `parse_uniform_array_header`, `parse_array_row` | fn/struct | Low-level parser primitives |
+
+#### Serialization Contract
+
+**Wire format** — every TOON payload begins with the version header:
+```
+toon:v1
+<body>
+```
+
+The body is a JSON document in which uniform flat-struct arrays collapse to
+CSV-style rows under an explicit-count header. The `[N]` length is a
+**hallucination guardrail** — the parser raises `LengthMismatch` if the declared
+count does not equal the row count, preventing LLMs from omitting or inventing
+elements:
+
+```
+zone_temps[3]{id,temp_c,humidity_rh}:
+  z0, 21.4, 45.0
+  z1, 22.1, 44.2
+  z2, 20.8, 46.1
+```
+
+**Collapse preconditions** (all must hold, else falls back to per-element JSON):
+1. Every element is a flat object (no nested objects or arrays as values).
+2. All elements share identical field names in the same order.
+3. All field values are primitives (`f64`, `i64`, `bool`, `string`).
+4. Array length is explicit (`[N]`).
+
+**Out of scope**: internal numerical solver state (CTF/FD thermal networks),
+multi-node thermal-mass configs with deep nesting, hand-edited configuration
+files (use JSON/YAML). See `SPEC.md` § Limitations.
+
+#### Memory Ownership
+
+Pure value-passing, no `unsafe`, no shared state. `to_string` borrows `&T` and
+returns an owned `String`; `from_str` borrows `&str` and returns an owned `T`.
+The parser is non-recursive (object → array → object) and caps declared array
+lengths at `parse::MAX_ARRAY_ELEMENTS` (#2527 DoS hardening → `ToonError::TooLarge`).
+
+---
+
+### fluxion-twin (crates/fluxion-twin/)
+
+**Purpose**: Digital twin core — Unscented Kalman Filter (UKF) for non-linear
+state estimation in thermal systems, plus an MQTT telemetry ingestion subsystem.
+Produces `TwinCorrection` values consumed by
+`ThermalModelTrait::set_twin_correction` (see Trait Hierarchy below).
+
+**Feature-gate relationship**: standalone workspace crate (no `fluxion`
+dependency). Wired into the main crate through the `TwinCorrection` struct and
+the `set_twin_correction` method on `ThermalModelTrait` — the thermal model
+accepts corrections produced by `UkfTwinAdapter::correct()`.
+
+**Entry point**: `crates/fluxion-twin/src/lib.rs` + `src/telemetry/mod.rs`
+
+#### Public Surface
+
+| Item | Kind | Purpose |
+|------|------|---------|
+| `UnscentedKalmanFilter<S, M>` | struct | Sigma-point UKF, generic over state vector `S` and measurement vector `M` |
+| `TwinStateEstimator` | trait | Unified estimator interface (`predict`, `correct`, `current_state`, `state_dim`, `measurement_dim`) |
+| `UkfTwinAdapter<S, M>` | struct | Adapts a UKF into `TwinStateEstimator`; `correct()` returns `TwinCorrection` |
+| `TwinCorrection { zone_temperatures, covariance_diagonal }` | struct | Per-zone temperature corrections (°C) + covariance diagonal; `single_zone(...)`, `multi_zone(...)` constructors |
+| `StateVector`, `MeasurementVector` | traits | Vector-space ops (`zeros`, `as_slice`, `from_slice`, `add`, `sub`, `scale`); both implemented for `Vec<f64>` |
+| `KalmanError` | enum | `DimensionMismatch`, `NonPositiveDefiniteMatrix`, `SingularMatrix`, `CholeskyFailed`, `SigmaPointGenerationFailed`, `PredictionFailed`, `UpdateFailed` |
+| `TelemetryConsumer`, `Sender`, `TelemetryMsg`, `TelemetryError` | telemetry | Bounded-channel consumer with out-of-order deduplication |
+| `MqttTelemetryConsumer`, `MqttTelemetryMessage`, `MqttTelemetryError` | telemetry | MQTT subscriber → bounded `tokio::sync::mpsc` channel (capacity 1024) |
+
+**UKF API**:
+```rust
+let mut ukf = UnscentedKalmanFilter::new(
+    initial_state, initial_covariance, process_noise, measurement_noise,
+    state_transition_fn,   // Box<dyn Fn(&S, &[f64]) -> S + Send + Sync>
+    measurement_fn,        // Box<dyn Fn(&S) -> M + Send + Sync>
+);
+ukf.predict(&u)?;          // propagate state + covariance one timestep
+ukf.update(&measurement)?; // fuse measurement via Kalman gain
+```
+
+#### FFI / Boundary Contract
+
+**MQTT telemetry wire format** (`MqttTelemetryMessage`, JSON over MQTT payload):
+```json
+{
+  "sensor_id": "zone-1-temp",
+  "timestamp": 1700000000,
+  "temperature_c": 22.5,
+  "humidity_pct": 45.0,
+  "power_w": 150.0
+}
+```
+Measurement fields are `Option<f64>` so heterogeneous sensor types can share a
+topic. The consumer subscribes via `rumqttc` (auto-reconnects on transient
+disconnects) and forwards owned `MqttTelemetryMessage` values through a bounded
+`mpsc` channel — backpressure is applied at capacity 1024.
+
+**TwinCorrection** crosses the crate boundary into the thermal model as a plain
+owned struct (no trait object, no `unsafe`); `ThermalModelTrait::set_twin_correction`
+takes it by reference.
+
+#### MQTT TLS Boot Guard (#2703)
+
+Default transport is **MQTT-over-TLS** (`mqtts://`, port 8883) using rustls with
+the platform trust store; server certificates are validated by default.
+
+| Env var | Effect |
+|---------|--------|
+| `FLUXION_MQTT_ALLOW_INSECURE` | Truthy → permits plaintext `mqtt://`/`tcp://` URLs (port 1883). **Also the release boot-guard opt-in**: in release builds any insecure transport (plaintext **or** disabled cert validation) is refused at boot unless this is set. Debug builds skip the guard. |
+| `FLUXION_MQTT_INSECURE` | Truthy → skip TLS server-cert validation (e.g. self-signed brokers). In **release** builds this is refused unless `FLUXION_MQTT_ALLOW_INSECURE=1` is also set; debug builds permit it for local dev. |
+
+Parity with the `fluxion-rest` boot guard (`FLUXION_REST_ALLOW_INSECURE`).
+
+#### Memory Ownership
+
+The UKF owns `nalgebra::DMatrix<f64>` covariance/noise matrices and boxed
+`state_transition` / `measurement_fn` closures (`Box<dyn Fn + Send + Sync + 'static>`).
+State vector `S` and measurement `M` are owned values (cloned per sigma point).
+The telemetry consumer owns the rumqttc `AsyncClient` + `EventLoop`.
+Observability (#2519): `predict` / `update` emit
+`fluxion_twin_ukf_{predict,update}_duration_seconds` histograms on **every**
+return path (success and error).
+
+---
+
+### fluxion-mcp (fluxion-mcp/)
+
+**Purpose**: Model Context Protocol (MCP) server exposing the Fluxion BEM engine
+to AI assistants (Claude, Copilot, etc.) over JSON-RPC 2.0. **Binary-only
+crate** — `[[bin]] fluxion-mcp` in `Cargo.toml`, no library target.
+
+**Feature-gate relationship** (`fluxion-mcp/Cargo.toml`):
+- Depends on `fluxion` with **`default-features = false`**; `multi-zone` is
+  activated via the MCP crate's own `multi-zone` feature (default-on), not
+  unconditionally on the dependency (Issue #2540). This keeps a workspace
+  `--no-default-features` build from forcing `multi-zone` onto every member.
+- **Unconditionally** pulls `fluxion-fluid` (HVAC fluid-network topology) and
+  `fluxion-toon` (TOON response serialization, Issue #2072).
+- Build: `cargo build -p fluxion-mcp` · Test: `cargo test -p fluxion-mcp`.
+
+**Entry point**: `fluxion-mcp/src/main.rs` (binary), `tools.rs` (tool registry),
+`state.rs` (session state), `metrics.rs` (per-tool observability).
+
+#### Public Surface (JSON-RPC over stdio)
+
+One JSON object per `\n`-terminated line on stdin, one per line on stdout.
+Methods: `initialize` (returns `protocolVersion: "2024-11-05"`), `tools/list`,
+`tools/call`. Every response (including errors) carries a UUIDv4 `request_id`
+correlation token (#2515).
+
+#### Tools (12 registered via `tools::list_tools()`)
+
+| Tool | Purpose |
+|------|---------|
+| `load_building_model` | Load + validate a fluxion thermal network model |
+| `run_simulation` | Execute an annual/period simulation with weather |
+| `get_zone_temperatures` | Hourly zone temperatures from the last simulation |
+| `get_hvac_energy` | Heating/cooling energy by period |
+| `get_solar_gains` | Per-surface incident + transmitted solar gains |
+| `list_construction_assemblies` | Enumerate `fluxion-core` construction assemblies |
+| `set_parameter` | Mutate a model parameter |
+| `describe_model` | Dump current model state |
+| `compare_to_reference` | Compare results against reference data |
+| `inspect_fluid_loop` | Inspect an HVAC fluid-network topology |
+| `get_hvac_control_sequence` | Read HVAC control loop setpoints |
+| `set_hvac_control_sequence` | Mutate HVAC control (rate-limited: 5 changes/min) |
+
+#### Response Formats (`ResponseFormat` enum)
+
+Content-negotiated via the `response_format` argument (`from_str` accepts
+`application/json`/`json` and `application/x-toon`/`x-toon`/`toon`):
+- **`Json`** (default) — tool result re-parsed to a JSON `Value` for the envelope.
+- **`Toon`** — result serialized with `fluxion_toon::to_string`; the server wraps
+  it for transport as `{"_toon": "<toon:v1\n...>"}`. Clients detect the `_toon`
+  key and decode.
+
+#### State + Threading Model (#2562)
+
+`McpState` is held behind `Arc<tokio::sync::Mutex<McpState>>` on a
+`current_thread` Tokio runtime. `McpState` is `Send` (every field is `Send`) so
+no additional `Sync` bound is required; mutable access is serialized through the
+async mutex. Fields:
+
+| Field | Type | Purpose |
+|-------|------|---------|
+| `model` | `Option<ThermalModel<VectorField>>` | Multi-zone thermal model |
+| `simulation_results` | `Option<SimulationResults>` | Outputs from last `run_simulation` |
+| `parameters` | `HashMap<String, f64>` | Mutable parameter overrides |
+| `response_format` | `ResponseFormat` | Json / Toon |
+| `fluid_networks` | `HashMap<String, FluidNetworkState>` | HVAC fluid topology + control sequence per loop |
+| `control_changes_timestamps` | `Vec<Instant>` | Rate-limit bucket for `set_hvac_control_sequence` |
+
+#### FFI / Memory Ownership Contract
+
+The wire boundary is JSON-RPC **text over stdio** — there is no shared memory
+with the client process. `process_request` parses each stdin line into an owned
+`JsonRpcRequest`, dispatches to `tools::handle_tool_call(&mut McpState, params)`,
+and serializes the `JsonRpcResponse` back to an owned `String` + `\n`. Tool
+results are produced as owned `String`s (JSON or `toon:v1\n...`) and then
+re-parsed into `serde_json::Value` for the response envelope (TOON strings are
+wrapped as `{"_toon": <string>}`). Per-tool latency and error metrics are
+recorded via the `metrics` crate (#2515).
+
+---
+
 ## Core Data Structures
 
 ### ThermalModel
