@@ -360,15 +360,31 @@ impl BatchOrchestrator for RayonChunksOrchestrator {
                     };
 
                     let mut energy: Vec<f64> = vec![0.0; models.len()];
+
+                    // Issue #2771: hoist the per-timestep temps buffer out of
+                    // the 8 760-step loop. The rendezvous hands ownership of
+                    // `msg` to the coordinator each timestep and gets the
+                    // loads back; we recycle the *received* loads Vec as the
+                    // next `msg` (refilling each inner via
+                    // `get_temperatures_into`), so after the first timestep
+                    // the worker performs zero heap allocation. The bytes
+                    // sent each step are bit-identical to the prior
+                    // `models.iter().map(|m| m.get_temperatures()).collect()`
+                    // gather — only the buffer ownership differs.
+                    let mut msg: Vec<Vec<f64>> = models
+                        .iter()
+                        .map(|(_, m)| {
+                            let mut v = Vec::new();
+                            m.get_temperatures_into(&mut v);
+                            v
+                        })
+                        .collect();
+
                     for t in 0..n_timesteps {
                         let outdoor_temp = 10.0 + 10.0 * cycle[t % 24];
 
-                        // Gather this slice's temperatures for timestep `t`.
-                        let temps: Vec<Vec<f64>> =
-                            models.iter().map(|(_, m)| m.get_temperatures()).collect();
-
-                        // Rendezvous: hand temps to the coordinator.
-                        if work_tx.send((wid, temps)).is_err() {
+                        // Hand this slice's temps (msg) to the coordinator.
+                        if work_tx.send((wid, msg)).is_err() {
                             return;
                         }
                         // Block until the coordinator returns this slice's loads.
@@ -379,14 +395,26 @@ impl BatchOrchestrator for RayonChunksOrchestrator {
 
                         // Apply loads + step physics. Sequential within the
                         // worker — NO nested par_iter (would exhaust the rayon
-                        // pool, #1065/#2524).
-                        for (((_, model), load), e) in models
-                            .iter_mut()
-                            .zip(loads.into_iter())
-                            .zip(energy.iter_mut())
+                        // pool, #1065/#2524). Borrow `loads` immutably so the
+                        // buffer can be recycled below.
+                        for (((_, model), load), e) in
+                            models.iter_mut().zip(loads.iter()).zip(energy.iter_mut())
                         {
-                            model.set_loads(&load);
+                            model.set_loads(load);
                             *e += model.step_physics(t, outdoor_temp, 3600.0);
+                        }
+
+                        // Recycle the received loads Vec as the next `msg`.
+                        // The reassignment is unconditional so the borrow
+                        // checker sees `msg` reinitialized every iteration
+                        // before the next `send` moves it; the (cheap)
+                        // temperature refill only runs when a further step
+                        // follows, since the final step's gather is wasted.
+                        msg = loads;
+                        if t + 1 < n_timesteps {
+                            for ((_, m), inner) in models.iter().zip(msg.iter_mut()) {
+                                m.get_temperatures_into(inner);
+                            }
                         }
                     }
 
@@ -411,12 +439,27 @@ impl BatchOrchestrator for RayonChunksOrchestrator {
             // ---------------- coordinator (runs on this scope thread) ----------------
             // Borrows `work_rx`, `surrogates`, `reply_senders`, and
             // `worker_counts` from the enclosing frame (all outlive the scope).
+            //
+            // Issue #2771: hoist the per-timestep coordinator buffers out of
+            // the 8 760-step loop. `slices_by_wid`, `batch`, and the three
+            // surrogate scratch buffers are cleared/refilled in place each
+            // timestep. The scatter uses `drain` (ownership transfer of the
+            // inner Vecs) instead of `.to_vec()` (clone), eliminating the N
+            // per-timestep clone allocations of the prior code. Together with
+            // `predict_loads_batched_into` this removes the per-timestep
+            // flattened-input / results / N-chunk allocations the prior
+            // `predict_loads_batched` call made.
+            let mut slices_by_wid: Vec<Option<Vec<Vec<f64>>>> =
+                (0..n_workers).map(|_| None).collect();
+            let mut batch: Vec<Vec<f64>> = Vec::with_capacity(n);
+            let mut flat_in: Vec<f32> = Vec::new();
+            let mut flat_out: Vec<f64> = Vec::new();
+            let mut loads: Vec<Vec<f64>> = Vec::with_capacity(n);
+
             for _t in 0..n_timesteps {
                 // Gather every worker's slice for this timestep. Workers may
                 // arrive in any order; we index by the worker id they tag onto
                 // each message so the scatter stays deterministic.
-                let mut slices_by_wid: Vec<Option<Vec<Vec<f64>>>> =
-                    (0..n_workers).map(|_| None).collect();
                 let mut received = 0usize;
                 while received < n_workers {
                     match work_rx.recv() {
@@ -433,7 +476,7 @@ impl BatchOrchestrator for RayonChunksOrchestrator {
                 }
 
                 // Flatten in worker-id order so the scatter slicing is stable.
-                let mut batch: Vec<Vec<f64>> = Vec::with_capacity(n);
+                batch.clear();
                 for slice in slices_by_wid.iter_mut() {
                     if let Some(temps) = slice.take() {
                         batch.extend(temps);
@@ -441,15 +484,23 @@ impl BatchOrchestrator for RayonChunksOrchestrator {
                 }
 
                 // ONE batched inference call for the whole population this
-                // timestep — the whole point of Issue #2520.
-                let loads = surrogates.predict_loads_batched(&batch);
+                // timestep — the whole point of Issue #2520. The `_into`
+                // variant reuses `flat_in` / `flat_out` / `loads` across
+                // timesteps (Issue #2771).
+                surrogates.predict_loads_batched_into(
+                    &batch,
+                    &mut flat_in,
+                    &mut flat_out,
+                    &mut loads,
+                );
 
-                // Scatter each worker's load slice back.
-                let mut offset = 0usize;
+                // Scatter each worker's load slice back via `drain`, which
+                // moves the inner Vecs out by ownership rather than cloning.
+                // The loads the workers receive are recycled by them into the
+                // next timestep's temps (see the worker loop above).
                 for wid in 0..n_workers {
                     let count = worker_counts[wid];
-                    let slice_loads: Vec<Vec<f64>> = loads[offset..offset + count].to_vec();
-                    offset += count;
+                    let slice_loads: Vec<Vec<f64>> = loads.drain(..count).collect();
                     // A send error means the worker exited; keep going so the
                     // remaining workers can finish this timestep.
                     let _ = reply_senders[wid].send(slice_loads);
