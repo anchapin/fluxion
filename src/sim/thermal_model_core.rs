@@ -1436,18 +1436,22 @@ impl ThermalModel<VectorField> {
             }
             let h_tr_em_south = south_opaque_area / r_exterior_to_mass_south.max(0.001);
 
-            // Series combination: 1/(1/h_tr_is_south + 1/h_tr_em_south)
-            let h_south_series = if h_tr_is_south > 0.0 && h_tr_em_south > 0.0 {
-                1.0 / (1.0 / h_tr_is_south + 1.0 / h_tr_em_south)
-            } else {
-                0.0
-            };
+            // ISSUE715 SOUTH WALL diagnostic — gated per #1967 (debug-physics feature).
+            #[cfg(feature = "debug-physics")]
+            {
+                // Series combination: 1/(1/h_tr_is_south + 1/h_tr_em_south)
+                let h_south_series = if h_tr_is_south > 0.0 && h_tr_em_south > 0.0 {
+                    1.0 / (1.0 / h_tr_is_south + 1.0 / h_tr_em_south)
+                } else {
+                    0.0
+                };
 
-            if zone_idx == 0 && spec.case_id == "900" {
-                eprintln!(
-                    "ISSUE715 SOUTH WALL: opaque_area={:.3}m², h_tr_is_south={:.3}W/K, h_tr_em_south={:.3}W/K, series={:.3}W/K, R_ext_to_mass={:.3}",
-                    south_opaque_area, h_tr_is_south, h_tr_em_south, h_south_series, r_exterior_to_mass_south
-                );
+                if zone_idx == 0 && spec.case_id == "900" {
+                    eprintln!(
+                        "ISSUE715 SOUTH WALL: opaque_area={:.3}m², h_tr_is_south={:.3}W/K, h_tr_em_south={:.3}W/K, series={:.3}W/K, R_ext_to_mass={:.3}",
+                        south_opaque_area, h_tr_is_south, h_tr_em_south, h_south_series, r_exterior_to_mass_south
+                    );
+                }
             }
 
             // h_tr_is_no_south = total_h_tr_is - south wall's contribution
@@ -1459,26 +1463,30 @@ impl ThermalModel<VectorField> {
             h_tr_em_south_vec.push(h_tr_em_south);
 
             // === PHASE 36-04 FIX: τ DIAGNOSTIC OUTPUT ===
-            // Calculate thermal time constant using derived_h_tr_3 (ISO 13790 air-to-mass conductance)
-            // For 6R2C model, the mass receives heat from the AIR node through H_tr_3,
-            // not directly from the surface through h_tr_ms.
-            // NOTE: derived_h_tr_3 not yet computed at this point; use h_tr_ms as proxy
-            // (actual H_tr_3 will be computed after the zone loop when all conductances are set)
-            if zone_idx == 0 && spec.case_id == "900" && !thermal_cap_vec.is_empty() {
-                let cm = thermal_cap_vec[0]; // J/K
-                let h_ms = h_tr_ms_vec[zone_idx]; // W/K
-                let floor_area_0 = if 0 < spec.geometry.len() {
-                    spec.geometry[0].floor_area()
-                } else {
-                    48.0 // fallback
-                };
-                let h_me = 4.5 * 0.5 * floor_area_0;
-                // NOTE: Using h_tr_ms here; actual H_tr_3 will be ~40 W/K (much smaller)
-                // The correct τ will be logged after derived_h_tr_3 is computed
-                let h_total = h_ms + h_me; // W/K - proxy (h_tr_ms >> H_tr_3)
-                let tau_seconds = cm / h_total.max(0.1);
-                let tau_hours = tau_seconds / 3600.0;
-                eprintln!("PHASE 36-04 DIAGNOSTIC τ (proxy): Case 900 - Cm={:.0e} J/K, h_tr_ms+h_tr_me={:.2} W/K, τ_proxy={:.1} hours", cm, h_total, tau_hours);
+            // Gated per #1967 (debug-physics feature); pure diagnostic, no side effects.
+            #[cfg(feature = "debug-physics")]
+            {
+                // Calculate thermal time constant using derived_h_tr_3 (ISO 13790 air-to-mass conductance)
+                // For 6R2C model, the mass receives heat from the AIR node through H_tr_3,
+                // not directly from the surface through h_tr_ms.
+                // NOTE: derived_h_tr_3 not yet computed at this point; use h_tr_ms as proxy
+                // (actual H_tr_3 will be computed after the zone loop when all conductances are set)
+                if zone_idx == 0 && spec.case_id == "900" && !thermal_cap_vec.is_empty() {
+                    let cm = thermal_cap_vec[0]; // J/K
+                    let h_ms = h_tr_ms_vec[zone_idx]; // W/K
+                    let floor_area_0 = if 0 < spec.geometry.len() {
+                        spec.geometry[0].floor_area()
+                    } else {
+                        48.0 // fallback
+                    };
+                    let h_me = 4.5 * 0.5 * floor_area_0;
+                    // NOTE: Using h_tr_ms here; actual H_tr_3 will be ~40 W/K (much smaller)
+                    // The correct τ will be logged after derived_h_tr_3 is computed
+                    let h_total = h_ms + h_me; // W/K - proxy (h_tr_ms >> H_tr_3)
+                    let tau_seconds = cm / h_total.max(0.1);
+                    let tau_hours = tau_seconds / 3600.0;
+                    eprintln!("PHASE 36-04 DIAGNOSTIC τ (proxy): Case 900 - Cm={:.0e} J/K, h_tr_ms+h_tr_me={:.2} W/K, τ_proxy={:.1} hours", cm, h_total, tau_hours);
+                }
             }
 
             // === SESSION 83 DIAGNOSTIC: Output h_tr_em, h_tr_ms, solar distribution ===
@@ -1781,16 +1789,20 @@ impl ThermalModel<VectorField> {
             model.derived_h_tr_3 = VectorField::new(derived_h_tr_3_vec);
 
             // Issue #894: Log correct τ using derived_h_tr_3 for Case 900
-            if spec.case_id == "900" {
-                let cm = *model.thermal_capacitance.as_ref().first().unwrap_or(&0.0);
-                let h_tr_3_0 = *model.derived_h_tr_3.as_ref().first().unwrap_or(&0.0);
-                let h_tr_ms_0 = *model.h_tr_ms.as_ref().first().unwrap_or(&0.0);
-                let tau_seconds = if h_tr_3_0 > 0.0 { cm / h_tr_3_0 } else { 0.0 };
-                let tau_hours = tau_seconds / 3600.0;
-                eprintln!(
-                    "Issue #894 FIX: Case 900 - derived_h_tr_3={:.2} W/K (was h_tr_ms={:.2} W/K), τ={:.1} hours ({:.1} days)",
-                    h_tr_3_0, h_tr_ms_0, tau_hours, tau_hours / 24.0
-                );
+            // Gated per #1967 (debug-physics feature); pure diagnostic, no side effects.
+            #[cfg(feature = "debug-physics")]
+            {
+                if spec.case_id == "900" {
+                    let cm = *model.thermal_capacitance.as_ref().first().unwrap_or(&0.0);
+                    let h_tr_3_0 = *model.derived_h_tr_3.as_ref().first().unwrap_or(&0.0);
+                    let h_tr_ms_0 = *model.h_tr_ms.as_ref().first().unwrap_or(&0.0);
+                    let tau_seconds = if h_tr_3_0 > 0.0 { cm / h_tr_3_0 } else { 0.0 };
+                    let tau_hours = tau_seconds / 3600.0;
+                    eprintln!(
+                        "Issue #894 FIX: Case 900 - derived_h_tr_3={:.2} W/K (was h_tr_ms={:.2} W/K), τ={:.1} hours ({:.1} days)",
+                        h_tr_3_0, h_tr_ms_0, tau_hours, tau_hours / 24.0
+                    );
+                }
             }
         }
 
@@ -2150,22 +2162,26 @@ impl ThermalModel<VectorField> {
                 // Therefore, radiative inter-zone conductance should be ZERO
                 radiative_conductance = 0.0;
 
-                println!(
-                    "Issue #1616: Inter-zone coupling for Case 960: {:.2} W/K",
-                    total_conductance
-                );
-                println!(
-                    "  - Convective (stack effect, Cd={:.2}, ΔT={:.0}K): {:.2} W/K",
-                    DISCHARGE_COEFFICIENT, REPRESENTATIVE_DELTA_T, convective_coupling
-                );
-                println!(
-                    "  - Conductive (U={:.1} W/m²K, A={:.1} m²): {:.2} W/K",
-                    U_DOOR, door_area, door_conduction
-                );
-                println!(
-                    "  - Radiative (window): {:.2} W/K (windows face same direction - no exchange)",
-                    radiative_conductance
-                );
+                // Gated per #1967 (debug-physics feature); pure diagnostic, no side effects.
+                #[cfg(feature = "debug-physics")]
+                {
+                    println!(
+                        "Issue #1616: Inter-zone coupling for Case 960: {:.2} W/K",
+                        total_conductance
+                    );
+                    println!(
+                        "  - Convective (stack effect, Cd={:.2}, ΔT={:.0}K): {:.2} W/K",
+                        DISCHARGE_COEFFICIENT, REPRESENTATIVE_DELTA_T, convective_coupling
+                    );
+                    println!(
+                        "  - Conductive (U={:.1} W/m²K, A={:.1} m²): {:.2} W/K",
+                        U_DOOR, door_area, door_conduction
+                    );
+                    println!(
+                        "  - Radiative (window): {:.2} W/K (windows face same direction - no exchange)",
+                        radiative_conductance
+                    );
+                }
             } else {
                 // Generic multi-zone: use common wall conductance
                 for wall in &spec.common_walls {
