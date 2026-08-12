@@ -102,8 +102,8 @@ fn test_ctf_integration() {
     let config = CTFSolverConfig::new(3600.0, 10);
     let solver = CTFSolver::new(coeffs, config);
 
-    model.ctf_solvers = vec![solver];
-    model.ctf_enabled = true;
+    model.conduction.ctf_solvers = vec![solver];
+    model.conduction.ctf_enabled = true;
 
     // Run a step (should use CTF solver)
     let step_params = StepParameters {
@@ -124,7 +124,7 @@ fn test_fd_integration() {
     let surrogates = SurrogateManager::default();
 
     // Enable FD solver
-    model.fd_enabled = true;
+    model.conduction.fd_enabled = true;
 
     // Run a step (should use FD solver)
     let step_params = StepParameters {

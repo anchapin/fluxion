@@ -18,7 +18,9 @@ use crate::sim::shading::{Overhang, ShadeFin, Side};
 use crate::sim::sky_radiation::SolAirTemperature;
 use crate::sim::solar::{SolarPosition, WindowProperties};
 use crate::sim::thermal_model::ThermalModelType as RoutingThermalModelType;
-use crate::sim::thermal_model_data::{IncidentSolarAccumulator, ThermalModelData};
+use crate::sim::thermal_model_data::{
+    ConductionBackend, DiagnosticsState, IncidentSolarAccumulator, ThermalModelData,
+};
 use crate::sim::view_factors;
 use crate::validation::ashrae_140_cases::CaseSpec;
 use crate::validation::config::{validate_assembly, validate_constants};
@@ -245,8 +247,8 @@ where
         }
 
         let ctf_flux_w: Option<Vec<f64>>;
-        let ctf_surface_temps: Option<Vec<f64>> = if self.0.ctf_enabled
-            && !self.0.ctf_solvers.is_empty()
+        let ctf_surface_temps: Option<Vec<f64>> = if self.0.conduction.ctf_enabled
+            && !self.0.conduction.ctf_solvers.is_empty()
         {
             let temps = self.0.temperatures.as_ref();
             // Use envelope mass temperatures for high-mass physics if available,
@@ -260,12 +262,12 @@ where
             let mut ctf_fluxes = Vec::with_capacity(self.0.num_zones);
             let mut ctf_surface_temps_inner = Vec::with_capacity(self.0.num_zones);
 
-            for (i, solver) in self.0.ctf_solvers.iter_mut().enumerate() {
+            for (i, solver) in self.0.conduction.ctf_solvers.iter_mut().enumerate() {
                 let t_zone = temps.get(i).copied().unwrap_or(20.0);
                 let t_ext = t_sol_air_data.get(i).copied().unwrap_or(outdoor_temp);
                 let t_mass = ext_temps.get(i).copied().unwrap_or(20.0);
 
-                if let Some(ref coupling_solver) = self.0.ctf_zone_coupling_solver {
+                if let Some(ref coupling_solver) = self.0.conduction.ctf_zone_coupling_solver {
                     // Issue #1152 follow-up: Route 80% of shortwave solar to interior surfaces
                     // via CTF zone coupling (matching the physically accurate split).
                     // The remaining 20% is implicitly handled through the 5R1C network
@@ -292,28 +294,29 @@ where
             None
         };
 
-        let fd_flux_w: Option<Vec<f64>> = if self.0.fd_enabled && !self.0.fd_solvers.is_empty() {
-            use crate::physics::fd_solver::SurfaceBC;
-            let temps = self.0.temperatures.as_ref();
-            let mut fd_fluxes = Vec::with_capacity(self.0.num_zones);
+        let fd_flux_w: Option<Vec<f64>> =
+            if self.0.conduction.fd_enabled && !self.0.conduction.fd_solvers.is_empty() {
+                use crate::physics::fd_solver::SurfaceBC;
+                let temps = self.0.temperatures.as_ref();
+                let mut fd_fluxes = Vec::with_capacity(self.0.num_zones);
 
-            for (i, solver) in self.0.fd_solvers.iter_mut().enumerate() {
-                let t_zone = temps.get(i).copied().unwrap_or(20.0);
-                let t_ext = t_sol_air_data.get(i).copied().unwrap_or(outdoor_temp);
-                // h_int = 8.29, h_ext = 18.3 (EXTERIOR_FILM_COEFF) per ASHRAE 140
-                // v2023, vertical surfaces ~3.4 m/s wind (#1419/#2679).
-                let interior_bc = SurfaceBC::new_interior(INTERIOR_FILM_COEFF, t_zone);
-                let exterior_bc = SurfaceBC::new_exterior(EXTERIOR_FILM_COEFF, t_ext, 0.0);
+                for (i, solver) in self.0.conduction.fd_solvers.iter_mut().enumerate() {
+                    let t_zone = temps.get(i).copied().unwrap_or(20.0);
+                    let t_ext = t_sol_air_data.get(i).copied().unwrap_or(outdoor_temp);
+                    // h_int = 8.29, h_ext = 18.3 (EXTERIOR_FILM_COEFF) per ASHRAE 140
+                    // v2023, vertical surfaces ~3.4 m/s wind (#1419/#2679).
+                    let interior_bc = SurfaceBC::new_interior(INTERIOR_FILM_COEFF, t_zone);
+                    let exterior_bc = SurfaceBC::new_exterior(EXTERIOR_FILM_COEFF, t_ext, 0.0);
 
-                // Step FD solver and get interior surface heat flux
-                solver.step(3600.0, &interior_bc, &exterior_bc);
-                let q_flux = solver.interior_heat_flux(INTERIOR_FILM_COEFF, t_zone);
-                fd_fluxes.push(q_flux);
-            }
-            Some(fd_fluxes)
-        } else {
-            None
-        };
+                    // Step FD solver and get interior surface heat flux
+                    solver.step(3600.0, &interior_bc, &exterior_bc);
+                    let q_flux = solver.interior_heat_flux(INTERIOR_FILM_COEFF, t_zone);
+                    fd_fluxes.push(q_flux);
+                }
+                Some(fd_fluxes)
+            } else {
+                None
+            };
 
         (t_sol_air_data, ctf_flux_w, fd_flux_w, ctf_surface_temps)
     }
@@ -432,7 +435,7 @@ where
     pub fn get_incident_solar(
         &self,
     ) -> &std::collections::BTreeMap<String, IncidentSolarAccumulator> {
-        &self.0.incident_solar_per_surface
+        &self.0.diagnostics_state.incident_solar_per_surface
     }
 
     /// Reset heating and cooling energy tracking (Plan 03-08d)
@@ -451,12 +454,12 @@ where
     // Diagnostic hook methods (Phase 5: Diagnostics & Reporting)
     /// Set a diagnostics collector for this model. Pass `None` to disable.
     pub fn set_diagnostics(&mut self, diag: Option<SimulationDiagnostics>) {
-        self.0.diagnostics = diag;
+        self.0.diagnostics_state.diagnostics = diag;
     }
 
     /// Get a reference to the attached diagnostics collector, if any.
     pub fn get_diagnostics(&self) -> Option<&SimulationDiagnostics> {
-        self.0.diagnostics.as_ref()
+        self.0.diagnostics_state.diagnostics.as_ref()
     }
 
     /// Reset all energy tracking (peak power, heating/cooling energy, thermal mass)
@@ -1733,7 +1736,7 @@ impl ThermalModel<VectorField> {
                 solver.initialize_temperatures(20.0);
                 solvers.push(solver);
             }
-            model.multi_node_solvers = solvers;
+            model.conduction.multi_node_solvers = solvers;
         }
 
         model.h_tr_me = VectorField::new(h_tr_me_vec);
@@ -2766,32 +2769,8 @@ impl ThermalModel<VectorField> {
             free_float: false,                  // Free-floating mode disabled by default
             warm_up_years: 2, // Warm-up years for periodic steady-state (Issue #744)
 
-            // CTF (Conduction Transfer Function) solver for high-mass walls (Phase 28)
-            ctf_coefficients: None, // Will be set during initialization if CTF enabled
-            ctf_solvers: Vec::new(), // One solver per zone
-            ctf_enabled: false,     // Disabled by default (use 5R1C)
-            ctf_timestep: 3600.0,   // 1-hour timestep default
-            ctf_zone_coupling_solver: None, // Will be initialized when CTF is enabled
-            ctf_primary: false,     // CTF-primary disabled by default (use standard 5R1C/6R2C path)
-
-            // FD (Finite Difference) solver for high-mass walls (Phase 28)
-            fd_solvers: Vec::new(), // One solver per zone
-            fd_enabled: false,      // Disabled by default
-            fd_timestep: 3600.0,    // 1-hour timestep default
-
-            // Phase 6D: Multi-node thermal solver for 9R4C model
-            multi_node_solvers: Vec::new(), // One solver per zone
-
-            // Solver manager for unified heat conduction solving (Phase 28)
-            solver_manager: None, // Will be initialized when solver method is selected
-
-            // Issue #2304: experimental GaugeZoneSolver scaffolding (opt-in via
-            // `gauge-solver` feature). Always None — see Issue #2686: no
-            // construction path initializes this field, so even with the feature
-            // enabled the step_physics routing branch is unreachable and 5R1C/
-            // 9R4C remain the primary zone solver in all builds.
-            #[cfg(feature = "gauge-solver")]
-            gauge_zone_solver: None,
+            // Conduction backend (Issue #2767): CTF / FD / MultiNode / SolverManager
+            conduction: ConductionBackend::default(),
 
             // Peak power tracking (Issue #272)
             peak_power_heating: 0.0, // Peak heating power in watts
@@ -2872,7 +2851,7 @@ impl ThermalModel<VectorField> {
             derived_h_tr_1: VectorField::from_scalar(0.0, num_zones),
             derived_h_tr_2: VectorField::from_scalar(0.0, num_zones),
             derived_h_tr_3: VectorField::from_scalar(0.0, num_zones),
-            diagnostics: None,
+            diagnostics_state: DiagnosticsState::default(),
             current_hvac_output: None,
 
             // Internal radiative heat gains to thermal mass (Plan 17-04)
@@ -2903,16 +2882,6 @@ impl ThermalModel<VectorField> {
 
             // Wiring tracer for test-only integration validation (Plan 21-10)
             tracer: None,
-
-            // Issue #763 — hourly zone temperature profiles
-            hourly_temperatures: None,
-
-            // Issue #1799 — sub-hourly 9R4C node temperature profiles
-            nodal_temperatures: None,
-
-            // Issue #762 — per-surface incident solar tracking
-            // BTreeMap for deterministic iteration order across platforms (Issue #1297)
-            incident_solar_per_surface: std::collections::BTreeMap::new(),
 
             // Issue #1212 — solar position cache keyed by `(timestep, hour_slot)`.
             // 2 slots per timestep (integer-hour for 5R1C, mid-hour for 9R4C).

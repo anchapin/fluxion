@@ -207,14 +207,14 @@ impl BatchRunner9R4C {
             "ThermalModel is not in 9R4C mode — refusing to generate training targets"
         );
         assert!(
-            !self.model.multi_node_solvers.is_empty(),
+            !self.model.conduction.multi_node_solvers.is_empty(),
             "No MultiNodeSolver instances found — 9R4C solver was not initialised"
         );
     }
 
     /// Returns `true` if the base model is configured for 9R4C.
     pub fn is_9r4c(&self) -> bool {
-        self.model.is_nine_r4c_model() && !self.model.multi_node_solvers.is_empty()
+        self.model.is_nine_r4c_model() && !self.model.conduction.multi_node_solvers.is_empty()
     }
 
     /// Number of samples in the manifest.

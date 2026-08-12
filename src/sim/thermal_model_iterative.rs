@@ -458,7 +458,7 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                     if irradiance.total_wm2 > 0.0 {
                         if opaque_area > 0.0 {
                             accumulate_incident_solar(
-                                &mut self.0.incident_solar_per_surface,
+                                &mut self.0.diagnostics_state.incident_solar_per_surface,
                                 opaque_surface_id_str(orientation),
                                 irradiance.total_wm2,
                                 opaque_area,
@@ -468,7 +468,7 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
 
                         if win_area > 0.0 {
                             accumulate_incident_solar(
-                                &mut self.0.incident_solar_per_surface,
+                                &mut self.0.diagnostics_state.incident_solar_per_surface,
                                 window_surface_id_str(orientation),
                                 irradiance.total_wm2,
                                 win_area,

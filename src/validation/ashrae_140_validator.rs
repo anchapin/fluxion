@@ -2448,7 +2448,7 @@ impl ASHRAE140Validator {
         // This addresses thermal mass dynamics limitation (Issue #486)
         let is_free_floating = spec.case_id.ends_with("FF");
         if is_free_floating {
-            model.ctf_primary = true;
+            model.conduction.ctf_primary = true;
             // Disable HVAC for free-floating
             model.heating_setpoint = -999.0;
             model.cooling_setpoint = 999.0;
@@ -3005,7 +3005,10 @@ mod tests {
 
         let used_ctf = model.enable_ctf_with_fd_fallback(&fd_layers, 3600.0, 50, 5);
         tracing::debug!("[TRACE] CTF enabled: {}", used_ctf);
-        tracing::debug!("[TRACE] CTF solvers: {}", model.ctf_solvers.len());
+        tracing::debug!(
+            "[TRACE] CTF solvers: {}",
+            model.conduction.ctf_solvers.len()
+        );
 
         model.reset_peak_power();
         model.reset_heating_cooling_energy();

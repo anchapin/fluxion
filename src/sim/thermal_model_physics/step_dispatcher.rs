@@ -64,7 +64,7 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         // the 5R1C/9R4C dispatch below. Preserved as WIP for whoever finishes
         // the zone-level gauge integration (#2304).
         #[cfg(feature = "gauge-solver")]
-        if let Some(ref mut gauge_solver) = self.0.gauge_zone_solver {
+        if let Some(ref mut gauge_solver) = self.0.conduction.gauge_zone_solver {
             // Extract parameters for GaugeZoneSolver from ThermalModel state
             let zone_temps = self.0.temperatures.as_ref();
             let _T_int = if zone_temps.is_empty() {

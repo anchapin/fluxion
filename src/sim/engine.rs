@@ -130,8 +130,8 @@ mod tests {
 
         let mut model = ThermalModel::<VectorField>::new(1);
         assert!(!model.ctf_is_enabled());
-        assert!(model.ctf_coefficients.is_none());
-        assert!(model.ctf_solvers.is_empty());
+        assert!(model.conduction.ctf_coefficients.is_none());
+        assert!(model.conduction.ctf_solvers.is_empty());
 
         let layers = vec![
             CTFMaterial::new("Gypsum", 0.013, 0.16, 800.0, 1090.0),
@@ -142,9 +142,9 @@ mod tests {
         model.enable_ctf(&layers, 3600.0, 50);
 
         assert!(model.ctf_is_enabled());
-        assert!(model.ctf_coefficients.is_some());
-        assert_eq!(model.ctf_solvers.len(), 1);
-        assert!((model.ctf_timestep - 3600.0).abs() < 1e-9);
+        assert!(model.conduction.ctf_coefficients.is_some());
+        assert_eq!(model.conduction.ctf_solvers.len(), 1);
+        assert!((model.conduction.ctf_timestep - 3600.0).abs() < 1e-9);
     }
 
     #[test]
@@ -159,8 +159,8 @@ mod tests {
         model.disable_ctf();
 
         assert!(!model.ctf_is_enabled());
-        assert!(model.ctf_coefficients.is_none());
-        assert!(model.ctf_solvers.is_empty());
+        assert!(model.conduction.ctf_coefficients.is_none());
+        assert!(model.conduction.ctf_solvers.is_empty());
     }
 
     #[test]
@@ -175,7 +175,7 @@ mod tests {
         model.enable_ctf(&layers, 3600.0, 50);
 
         assert!(model.ctf_is_enabled());
-        assert_eq!(model.ctf_solvers.len(), 5);
+        assert_eq!(model.conduction.ctf_solvers.len(), 5);
     }
 
     #[test]

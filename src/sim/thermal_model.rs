@@ -403,7 +403,8 @@ impl SurrogateThermalLoadAdapter {
         surrogates: &SurrogateManager,
     ) -> f64 {
         let dt_seconds = model.calculate_timestep_seconds();
-        model.hourly_temperatures = Some(vec![Vec::with_capacity(steps); model.num_zones]);
+        model.diagnostics_state.hourly_temperatures =
+            Some(vec![Vec::with_capacity(steps); model.num_zones]);
         let cycle = get_daily_cycle();
         let total_energy_kwh: f64 = (0..steps)
             .map(|t| {
@@ -424,7 +425,7 @@ impl SurrogateThermalLoadAdapter {
                 model.set_loads(&loads);
                 let energy = model.step_physics(t, outdoor_temp, dt_seconds);
                 let temps = model.temperatures.as_ref().to_vec();
-                if let Some(ref mut hourly) = model.hourly_temperatures {
+                if let Some(ref mut hourly) = model.diagnostics_state.hourly_temperatures {
                     for (zone_idx, &temp) in temps.iter().enumerate() {
                         hourly[zone_idx].push(temp);
                     }
@@ -1062,7 +1063,7 @@ impl ThermalModelTrait for HybridThermalModel {
         // `get_hourly_temperatures()` returns the same shape for hybrid
         // and physics models, enabling apples-to-apples MAE comparison
         // in the empirical_hybrid harness.
-        self.inner.hourly_temperatures =
+        self.inner.diagnostics_state.hourly_temperatures =
             Some(vec![Vec::with_capacity(steps); self.inner.num_zones]);
 
         // Issue #2457: `use_surrogate_conduction` and `use_surrogate_ventilation`
@@ -1309,7 +1310,7 @@ impl ThermalModelTrait for HybridThermalModel {
                     .temperatures
                     .as_ref()
                     .to_vec();
-                if let Some(ref mut hourly) = self.inner.hourly_temperatures {
+                if let Some(ref mut hourly) = self.inner.diagnostics_state.hourly_temperatures {
                     for (zone_idx, temp) in temps_snapshot.iter().enumerate() {
                         hourly[zone_idx].push(*temp);
                     }
