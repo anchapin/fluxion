@@ -18,8 +18,9 @@ cargo build -p fluxion-mcp                          # forces multi-zone + fluid 
 cargo build --bin fluxion-rest                       # needs `wiring-tracing` off for fast builds
 ```
 
-`fluxion-mcp` unconditionally depends on `fluxion` with
-`features = ["multi-zone"]` + `fluxion-fluid` + `fluxion-toon`. If you
+`fluxion-mcp` depends on `fluxion` with `default-features = false` and
+enables `multi-zone` via its own default feature (#2540); it
+unconditionally pulls `fluxion-fluid` + `fluxion-toon`. If you
 see unresolved-import errors for `MultiZoneThermalModel` or
 `ThermalPort`, you forgot the `multi-zone` / `fluid` feature.
 
