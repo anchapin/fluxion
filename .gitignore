@@ -1,5 +1,7 @@
 # Rust
 target/
+# Variant build dirs at repo root (e.g. target_rtk_test/, target_release_test/)
+/target_*/
 **/*.rs.bk
 *.pdb
 
@@ -38,6 +40,8 @@ env/
 *.swp
 *.swo
 *~
+# Accidental 'cd ~' typo dir at repo root (agent artifact)
+/~
 .DS_Store
 *.iml
 .classpath
@@ -149,7 +153,7 @@ tests/*_ORIG             # Backup/orig files
 validation_*.txt
 validation_results.json
 diagnostics_*.csv
-hourly_output.csv
+hourly_output*.csv
 session_*_test_results.txt
 *.profraw
 
@@ -195,7 +199,7 @@ tools/energyplus_*.csv
 .planning/phases/
 .planning/debug/
 .planning/V07_RELEASE_DECISION.md
-case_900ff_profile_hourly.csv
+*_profile_hourly.csv
 
 # Auto Claude data directory
 .auto-claude/
