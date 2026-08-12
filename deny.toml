@@ -126,9 +126,25 @@ skip = [
 # Sources — flag crates from anywhere other than crates.io. Fluxion's only
 # expected registry is crates.io; the rumqttc personal-fork [patch.crates-io]
 # was removed in #2690 and there should be no git-only deps in the default graph.
+#
+# `unknown-registry` / `unknown-git` are set to "deny" (not "warn") so that any
+# future supply-chain redirection — e.g. a [patch.crates-io] pointing at a
+# personal fork, or a git-only dep slipping in — fails the gate loudly instead
+# of being silently observed. Issue #2774: the original "warn" setting let the
+# #2690 rumqttc fork pass unnoticed; this tightening makes the rule enforceable.
+#
+# `allow-registry` lists BOTH resolution paths so the rule matches regardless of
+# how cargo resolves the index:
+#   - `https://github.com/rust-lang/crates.io-index`  — legacy git index
+#   - `sparse+https://index.crates.io/`                — modern sparse index
+#     (the default since cargo 1.70). Without the sparse entry, deny would
+#     falsely flag every crates.io dep under the modern resolution path.
 # -----------------------------------------------------------------------------
 [sources]
-unknown-registry = "warn"
-unknown-git = "warn"
-allow-registry = ["https://github.com/rust-lang/crates.io-index"]
+unknown-registry = "deny"
+unknown-git = "deny"
+allow-registry = [
+    "https://github.com/rust-lang/crates.io-index",
+    "sparse+https://index.crates.io/",
+]
 allow-git = []
