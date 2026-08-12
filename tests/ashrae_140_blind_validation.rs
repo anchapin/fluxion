@@ -7,10 +7,14 @@
 //! In addition to the annual / peak / free-floating metrics, this suite also
 //! measures **monthly** heating/cooling energy for Cases 600 and 900 against
 //! the Phase D ±10% criterion (issue #1165). The monthly metric is
-//! **reporting-only**: it never fails the build — the physics fixes that would
-//! make it pass are tracked separately in #1163 and #1168. See
-//! `tests/reference_data/ashrae140/monthly/README.md` for the interim
-//! reference-data provenance.
+//! **`#[ignore]`'d as of #2677** (v1.3 DoD blocker): its reference CSVs under
+//! `tests/reference_data/ashrae140/monthly/` are PLACEHOLDER values (a
+//! degree-day-derived shape applied to the authoritative annual midpoint),
+//! not direct EnergyPlus monthly outputs, so a CI pass/fail rate against
+//! them would be false confidence. The measurement infrastructure is kept
+//! runnable via `--ignored` for local diagnostics; see
+//! `tests/reference_data/ashrae140/monthly/README.md` for the placeholder
+//! provenance and the replacement path.
 //!
 //! # Expected Result
 //! ~0% pass rate when corrections are disabled - the corrections are what
@@ -442,10 +446,11 @@ fn categorize_failures(
 // ─────────────────────────────────────────────────────────────────────────────
 // Monthly energy validation (issue #1165)
 // ─────────────────────────────────────────────────────────────────────────────
-// Reporting-only: never panics. The monthly reference is an INTERIM
-// degree-day-derived value pending direct EnergyPlus monthly output — see
-// tests/reference_data/ashrae140/monthly/README.md. The pass rate is tracked
-// separately in BLIND_VALIDATION_RESULTS.md.
+// The dependent gate `test_monthly_energy_validation_baseline` is `#[ignore]`'d
+// (#2677, v1.3 DoD blocker) because the monthly reference is a PLACEHOLDER
+// degree-day-derived value — not direct EnergyPlus monthly output. The
+// infrastructure here is kept runnable via `--ignored` for local diagnostics;
+// see tests/reference_data/ashrae140/monthly/README.md.
 
 /// Parsed monthly reference band for one case (heating + cooling, Jan..Dec).
 struct MonthlyReference {
@@ -748,10 +753,27 @@ fn test_blind_validation_baseline() {
 /// deltas into calendar months, compares each month against the Phase D ±10%
 /// reference window, and reports the pass rate. It deliberately does **not**
 /// panic on physics failure — the underlying fixes are tracked in #1163 and
-/// #1168, and the monthly reference itself is an interim degree-day-derived
-/// value (see `tests/reference_data/ashrae140/monthly/README.md`). Pass/fail is
-/// reported to stdout and tracked in `BLIND_VALIDATION_RESULTS.md`.
+/// #1168.
+///
+/// **`#[ignore]`'d in #2677 (v1.3 DoD blocker):** the monthly reference CSVs at
+/// `tests/reference_data/ashrae140/monthly/case_{600,900}_monthly_reference.csv`
+/// are PLACEHOLDER values — a degree-day-derived *shape* applied to the
+/// authoritative annual midpoint, **not** direct EnergyPlus monthly outputs.
+/// ASHRAE 140-2023 Annex B publishes only annual + peak figures (no monthly
+/// breakdown), and no hourly EnergyPlus CSV exists in-repo for Cases 600/900
+/// (the Case 900 IDF is "pending" per `case_900_energy_reference.csv`; the
+/// `generate_case_600_900_energy.py` regenerator has not been run). Running
+/// this test against the placeholder would report a monthly pass/fail rate
+/// against fabricated data — i.e. false confidence (the v1.3 DoD blocker
+/// called out in issue #2677). The test is kept runnable via
+/// `--ignored` so the measurement infrastructure can still be exercised
+/// locally for diagnostic purposes; the gate is inert in CI until the
+/// placeholder is replaced with direct EnergyPlus monthly totals.
 #[test]
+#[ignore = "Blind-validation monthly reference data is PLACEHOLDER (#2677, v1.3 DoD blocker) — \
+            not direct EnergyPlus output. Run with --ignored for diagnostic against the \
+            interim degree-day-derived reference. See \
+            tests/reference_data/ashrae140/monthly/README.md."]
 fn test_monthly_energy_validation_baseline() {
     println!("\nStarting ASHRAE 140 Monthly Energy Validation (issue #1165)");
     println!("Phase D criterion: each month within ±10% of reference midpoint.");
