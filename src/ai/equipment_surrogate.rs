@@ -576,9 +576,7 @@ pub fn cooling_coil_surrogate_node<M>(
     let mut training_data = Vec::new();
     for t_inlet in [280.0, 290.0, 300.0, 310.0].iter() {
         for mdot in [0.5, 1.0, 1.5].iter() {
-            for p_inlet in [101325.0].iter() {
-                training_data.push(vec![*t_inlet, *mdot, *p_inlet, 0.0]);
-            }
+            training_data.push(vec![*t_inlet, *mdot, 101325.0, 0.0]);
         }
     }
 
