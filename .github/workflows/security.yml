@@ -14,6 +14,21 @@ permissions:
   contents: read
 
 jobs:
+  audit-config-unique:
+    # Issue #2773: enforce a single canonical cargo-audit config at
+    # `.cargo/audit.toml`. A stray root-level `audit.toml` is dead weight
+    # (cargo-audit reads `.cargo/audit.toml` by default) that misleads
+    # reviewers and can mislabel ignored advisories or place directives
+    # under the wrong table where they silently no-op.
+    name: Audit Config Unique
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4
+      - name: Check for stray audit.toml
+        run: python3 scripts/check_audit_config_unique.py
+
   audit:
     name: Cargo Audit
     runs-on: ubuntu-latest
