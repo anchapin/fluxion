@@ -1,6 +1,15 @@
-# EnergyPlus Reference: ASHRAE 140 Case 600 — Monthly Heating/Cooling Energy (INTERIM)
+# EnergyPlus Reference: ASHRAE 140 Case 600 — Monthly Heating/Cooling Energy (PLACEHOLDER)
 #
-# !!! STATUS: INTERIM / PLACEHOLDER — pending direct EnergyPlus monthly output !!!
+# !!! >>> THIS IS PLACEHOLDER DATA — NOT AUTHORITATIVE. DO NOT USE FOR PASS/FAIL GATING. <<< !!!
+# !!! >>> REPLACE when direct EnergyPlus ≥25.2.0 monthly output for Case 600 lands. <<< !!!
+# !!!     (issue #2677, v1.3 DoD blocker — see monthly/README.md §STATUS)            !!!
+#
+# STATUS: PLACEHOLDER (a degree-day-derived SHAPE applied to the authoritative
+#         annual midpoint; NOT direct EnergyPlus monthly output). The dependent
+#         Phase D ±10% monthly gate `test_monthly_energy_validation_baseline`
+#         in tests/ashrae_140_blind_validation.rs is `#[ignore]`'d until this
+#         file is regenerated from a real E+ run, so CI does NOT report a
+#         pass rate against these fabricated values.
 #
 # This file is consumed by tests/ashrae_140_blind_validation.rs (monthly metric
 # infrastructure added in issue #1165). See monthly/README.md for the full
@@ -10,7 +19,7 @@
 # Case 600: Low-mass 6x8x2.7m, 12m² south window, 0.5 ACH, 20°C heat / 27°C cool
 # EPW baseline: USA_CO_Golden-NREL.724666_TMY3.epw (ARCHITECTURE.md §Reference Data)
 #
-# METHODOLOGY (interim, fully reproducible):
+# METHODOLOGY (placeholder, fully reproducible):
 #   monthly_mid = ANNUAL_AUTHORITY_MID × MONTHLY_FRACTION
 #   where ANNUAL_AUTHORITY_MID = midpoint of the ASHRAE 140-2023 Annex B
 #   reference band across BEM programs (same source as the annual band in
@@ -29,15 +38,16 @@
 #
 # CAVEAT: degree-day shape is a temperature-driven approximation. Case 600
 # cooling is partly solar-gain-driven (south-facing glazing), so the pure CDD
-# shape will under-weight shoulder-season cooling. Treat values as a reporting
-# baseline only until direct E+ monthly output replaces them.
+# shape will under-weight shoulder-season cooling. The values below are a
+# placeholder only — DO NOT treat a per-month PASS/FAIL against them as signal
+# (issue #2677).
 #
 # Columns:
 #   month                       Jan..Dec (TMY non-leap year)
-#   heating_mid_mwh             interim reference midpoint (MWh)
+#   heating_mid_mwh             placeholder reference midpoint (MWh)
 #   heating_accept_min_mwh      Phase D lower bound (mid - 10%) (MWh)
 #   heating_accept_max_mwh      Phase D upper bound (mid + 10%) (MWh)
-#   cooling_mid_mwh             interim reference midpoint (MWh)
+#   cooling_mid_mwh             placeholder reference midpoint (MWh)
 #   cooling_accept_min_mwh      Phase D lower bound (mid - 10%) (MWh)
 #   cooling_accept_max_mwh      Phase D upper bound (mid + 10%) (MWh)
 month,heating_mid_mwh,heating_accept_min_mwh,heating_accept_max_mwh,cooling_mid_mwh,cooling_accept_min_mwh,cooling_accept_max_mwh
