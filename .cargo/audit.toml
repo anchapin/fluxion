@@ -22,8 +22,20 @@
 #       src/python/, src/bin/fluxion-py/, pyo3-macros, pyo3-build-config.
 
 [advisories]
-# Make unmaintained warnings informational (non-blocking)
-informational_warnings = ["unmaintained"]
+# Issue #2750: the previous `informational_warnings = ["unmaintained"]` line
+# explicitly downgraded unmaintained-crate advisories to non-blocking warnings.
+# It is removed so unmaintained advisories are surfaced at their default
+# severity. The gate is now enforced hard-fail via `cargo audit --deny warnings`
+# in .github/workflows/security.yml.
+#
+# Policy note (divergence vs deny.toml): cargo-deny scopes unmaintained to
+# `unmaintained = "workspace"` (transitive unmaintained deps are non-blocking),
+# whereas `cargo audit --deny warnings` fails on ALL unmaintained advisories
+# including transitive ones. The transitive unmaintained advisory
+# RUSTSEC-2025-0134 (rustls-pemfile via rumqttc, see issue #2690/#2757 cluster)
+# therefore fails cargo-audit but not cargo-deny. Aligning the two scopes is
+# tracked as a follow-up; do NOT re-add `informational_warnings` to paper over
+# the gap — surface and track the advisory instead.
 # Ignore advisories for pinned/transitive dependencies that can't be easily bumped
 ignore = [
     "RUSTSEC-2025-0020",
