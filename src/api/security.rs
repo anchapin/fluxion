@@ -28,9 +28,13 @@
 //! - **CORS** ([`build_cors_layer`]) — explicit origin allow-list from
 //!   `FLUXION_REST_CORS_ORIGINS`; defaults to localhost dev origins. Never
 //!   `CorsLayer::permissive()`.
-//! - **Boot guard** ([`is_insecure_bind_configuration`]) — pure decision
-//!   function; the binary refuses to start when `0.0.0.0` + `auth=off`
-//!   coincide in a release build unless `FLUXION_REST_ALLOW_INSECURE=1`.
+//! - **Boot guard** ([`is_insecure_bind_configuration`] +
+//!   [`is_insecure_tls_configuration`]) — pure decision functions; the
+//!   binary refuses to start when `0.0.0.0` + `auth=off` coincide in a
+//!   release build unless `FLUXION_REST_ALLOW_INSECURE=1` (#2505), and
+//!   refuses `auth=tls` without a `FLUXION_REST_TRUSTED_PROXIES`
+//!   allow-list in *every* build (#2754) so the verified-client header
+//!   can never silently degrade to no-op.
 //!
 //! All primitives are pure-library code so they are unit-testable from
 //! `cargo test -p fluxion --lib api` without spawning the binary.
@@ -93,9 +97,12 @@ pub enum AuthMode {
     /// Require a bearer token matching `FLUXION_REST_AUTH_TOKEN`.
     Token,
     /// mTLS is terminated by a trusted reverse proxy which injects a
-    /// verification header (see [`DEFAULT_VERIFIED_HEADER_NAME`]). A valid
-    /// bearer token is also accepted as a fallback so the same deployment
-    /// can serve both proxied-mTLS and direct-token clients.
+    /// verification header (see [`DEFAULT_VERIFIED_HEADER_NAME`]). The
+    /// header is honoured **only** when the connection's socket peer is in
+    /// `FLUXION_REST_TRUSTED_PROXIES` (Issue #2754); without that gate the
+    /// header would be trivially spoofable. A valid bearer token is also
+    /// accepted as a fallback so the same deployment can serve both
+    /// proxied-mTLS and direct-token clients.
     Tls,
 }
 
@@ -247,24 +254,7 @@ impl RestSecurityConfig {
                 }
             }
         }
-        if let Ok(v) = std::env::var("FLUXION_REST_TRUSTED_PROXIES") {
-            let parsed: Vec<TrustedProxyCidr> = v
-                .split(',')
-                .map(|s| s.trim())
-                .filter(|s| !s.is_empty())
-                .filter_map(|s| match TrustedProxyCidr::parse(s) {
-                    Ok(cidr) => Some(cidr),
-                    Err(e) => {
-                        tracing::warn!(
-                            entry = s, error = %e,
-                            "FLUXION_REST_TRUSTED_PROXIES: skipping malformed entry"
-                        );
-                        None
-                    }
-                })
-                .collect();
-            cfg.trusted_proxies = parsed;
-        }
+        cfg.trusted_proxies = parse_trusted_proxies_from_env();
         if let Ok(v) = std::env::var("FLUXION_REST_VERIFIED_HEADER_NAME") {
             if let Ok(name) = HeaderName::try_from(v.as_str()) {
                 cfg.verified_header_name = name;
@@ -284,6 +274,7 @@ impl RestSecurityConfig {
             token: self.auth_token.clone(),
             verified_header_name: self.verified_header_name.clone(),
             verified_header_value: self.verified_header_value.clone(),
+            trusted_proxies: self.trusted_proxies.clone(),
         }))
     }
 
@@ -332,6 +323,13 @@ struct AuthStateInner {
     token: Option<String>,
     verified_header_name: HeaderName,
     verified_header_value: String,
+    /// Trusted reverse-proxy CIDR allow-list (Issue #2754). The mTLS
+    /// verification header is honoured **only** when the socket peer of
+    /// the connection falls inside one of these CIDRs — mirroring the
+    /// rate limiter's (#2688) `X-Forwarded-For` gate. When empty (the
+    /// default) the header is *never* trusted, so a direct client cannot
+    /// spoof `x-verified-client: 1` to bypass TLS auth.
+    trusted_proxies: Vec<TrustedProxyCidr>,
 }
 
 /// axum middleware enforcing the configured authentication policy.
@@ -371,14 +369,32 @@ pub async fn require_auth(
             // proxy validates the client certificate and, on success,
             // injects the agreed verification header. A valid bearer token
             // is also accepted so a deployment can mix both auth schemes.
-            let proxy_verified = req
-                .headers()
-                .get(&auth.0.verified_header_name)
-                .and_then(|v| v.to_str().ok())
-                .map(|s| s == auth.0.verified_header_value)
+            //
+            // Issue #2754: the verification header is trusted ONLY when the
+            // connection's socket peer is itself a configured trusted proxy
+            // (`FLUXION_REST_TRUSTED_PROXIES`). Without this gate any direct
+            // client could spoof `x-verified-client: 1` and bypass TLS auth
+            // entirely — a complete authentication bypass. When the peer is
+            // unknown or untrusted (including the default
+            // `trusted_proxies = []`, and any request lacking
+            // `ConnectInfo`), the header is ignored and the request falls
+            // through to the bearer-token check. The `off` and `token`
+            // modes are untouched by this gate.
+            let peer_is_trusted_proxy = req
+                .extensions()
+                .get::<ConnectInfo<SocketAddr>>()
+                .map(|ci| peer_is_trusted(ci.0.ip(), &auth.0.trusted_proxies))
                 .unwrap_or(false);
-            if proxy_verified {
-                return Ok(next.run(req).await);
+            if peer_is_trusted_proxy {
+                let proxy_verified = req
+                    .headers()
+                    .get(&auth.0.verified_header_name)
+                    .and_then(|v| v.to_str().ok())
+                    .map(|s| s == auth.0.verified_header_value)
+                    .unwrap_or(false);
+                if proxy_verified {
+                    return Ok(next.run(req).await);
+                }
             }
             if let Some(expected) = auth.0.token.as_deref().filter(|t| !t.is_empty()) {
                 if let Some(provided) = bearer_token(&req) {
@@ -512,6 +528,33 @@ fn apply_prefix(ip: IpAddr, prefix: u8) -> IpAddr {
         IpAddr::V4(v4) => IpAddr::V4(Ipv4Addr::from(v4_mask(prefix) & u32::from(v4))),
         IpAddr::V6(v6) => IpAddr::V6(Ipv6Addr::from(v6_mask(prefix) & u128::from(v6))),
     }
+}
+
+/// Parse `FLUXION_REST_TRUSTED_PROXIES` (comma-separated CIDR/IP list),
+/// skipping malformed entries with a warning. Factored out so both
+/// [`RestSecurityConfig::from_env`] and the boot guard
+/// ([`check_boot_guard_from_env`]) share a single parsing path and cannot
+/// drift apart.
+fn parse_trusted_proxies_from_env() -> Vec<TrustedProxyCidr> {
+    std::env::var("FLUXION_REST_TRUSTED_PROXIES")
+        .ok()
+        .map(|v| {
+            v.split(',')
+                .map(|s| s.trim())
+                .filter(|s| !s.is_empty())
+                .filter_map(|s| match TrustedProxyCidr::parse(s) {
+                    Ok(cidr) => Some(cidr),
+                    Err(e) => {
+                        tracing::warn!(
+                            entry = s, error = %e,
+                            "FLUXION_REST_TRUSTED_PROXIES: skipping malformed entry"
+                        );
+                        None
+                    }
+                })
+                .collect()
+        })
+        .unwrap_or_default()
 }
 
 /// `true` iff `ip` falls inside any of the configured trusted-proxy CIDRs.
@@ -861,6 +904,38 @@ pub fn is_insecure_bind_configuration(
     matches!(ip, Some(ip) if ip.is_unspecified())
 }
 
+/// Pure decision function for the TLS boot guard (Issue #2754).
+///
+/// Returns `true` when `FLUXION_REST_AUTH=tls` is selected but no trusted
+/// reverse-proxy CIDR allow-list (`FLUXION_REST_TRUSTED_PROXIES`) has been
+/// configured. In that state the proxy-verified mTLS header can never be
+/// honoured — the [`require_auth`] gate refuses it for any non-trusted
+/// peer, and the default empty list trusts *no* peer — so `tls` mode
+/// silently degrades to token-only auth. That is the precise
+/// misconfiguration that made the #2754 bypass possible: an operator who
+/// selected `tls` expecting mTLS-header protection in fact had none.
+///
+/// Refusing to boot forces the operator to either configure the
+/// trusted-proxy allow-list (enabling the header path) or switch to the
+/// cheaper `token` mode, eliminating the silent degradation. Mirrors the
+/// #2689 fail-closed posture (applies in **every** build, not only
+/// release); `FLUXION_REST_ALLOW_INSECURE=1` is honoured as an explicit
+/// opt-out for local dev / test, for parity with the sibling
+/// [`is_insecure_bind_configuration`] guard.
+pub fn is_insecure_tls_configuration(
+    auth_mode: AuthMode,
+    trusted_proxies: &[TrustedProxyCidr],
+    allow_insecure: bool,
+) -> bool {
+    if allow_insecure {
+        return false;
+    }
+    if auth_mode != AuthMode::Tls {
+        return false;
+    }
+    trusted_proxies.is_empty()
+}
+
 /// Convenience wrapper for the binary: reads the three inputs from the
 /// environment and returns an error message when boot should be refused
 /// (release builds). In debug builds the insecure-bind check is a no-op so
@@ -875,15 +950,37 @@ pub fn check_boot_guard_from_env() -> Result<(), String> {
     // disable authentication; erroring here is the fail-closed fix.
     let auth = AuthMode::parse(&auth_raw)?;
 
+    // `FLUXION_REST_ALLOW_INSECURE` is the shared opt-out for both boot
+    // guards. Read once here so every build path uses the same value.
+    let allow_insecure = std::env::var("FLUXION_REST_ALLOW_INSECURE")
+        .map(|v| matches!(v.trim(), "1" | "true" | "yes" | "on"))
+        .unwrap_or(false);
+
+    // Issue #2754 — fail-closed when `tls` mode is selected with no
+    // trusted-proxy allow-list: the verified-client header could never be
+    // safely honoured (the auth gate refuses it for every non-trusted
+    // peer, and the default empty list trusts none), so `tls` mode would
+    // silently degrade to token-only auth — the exact misconfiguration
+    // behind the bypass. Applies in every build (mirrors #2689); the
+    // shared `allow_insecure` flag is the explicit opt-out.
+    let trusted_proxies = parse_trusted_proxies_from_env();
+    if is_insecure_tls_configuration(auth, &trusted_proxies, allow_insecure) {
+        return Err(
+            "fluxion-rest: refusing to boot — FLUXION_REST_AUTH=tls requires a non-empty \
+             FLUXION_REST_TRUSTED_PROXIES allow-list so the proxy-verified mTLS header can be \
+             honoured safely (Issue #2754). Set FLUXION_REST_TRUSTED_PROXIES to your reverse \
+             proxy's CIDR (e.g. 10.0.0.0/8), switch to FLUXION_REST_AUTH=token, or set \
+             FLUXION_REST_ALLOW_INSECURE=1 to explicitly opt out."
+                .to_string(),
+        );
+    }
+
     // Release-only insecure-bind guard (Issue #2505). In debug builds the
     // default `0.0.0.0` + `off` combination must stay usable for
     // `cargo run`.
     #[cfg(not(debug_assertions))]
     {
         let bind = std::env::var("FLUXION_REST_BIND").unwrap_or_default();
-        let allow_insecure = std::env::var("FLUXION_REST_ALLOW_INSECURE")
-            .map(|v| matches!(v.trim(), "1" | "true" | "yes" | "on"))
-            .unwrap_or(false);
         if is_insecure_bind_configuration(&bind, auth, allow_insecure) {
             return Err(format!(
                 "fluxion-rest: refusing to boot — FLUXION_REST_BIND='{bind}' binds all interfaces \
@@ -893,14 +990,12 @@ pub fn check_boot_guard_from_env() -> Result<(), String> {
             ));
         }
     }
-    // In debug builds `auth` is only computed to validate the env value;
-    // touch it (and the remaining guard inputs) to avoid unused-variable
-    // warnings. The env reads also keep the guard inputs "used".
+    // In debug the release-only insecure-bind guard above is skipped; the
+    // env read stays "used". `auth`, `trusted_proxies`, and `allow_insecure`
+    // are consumed by the #2754 TLS guard above in every build.
     #[cfg(debug_assertions)]
     {
-        let _ = auth;
         let _ = std::env::var("FLUXION_REST_BIND");
-        let _ = std::env::var("FLUXION_REST_ALLOW_INSECURE");
     }
     Ok(())
 }
@@ -1280,5 +1375,234 @@ mod tests {
             AuthMode::Off,
             false
         ));
+    }
+
+    // ---- Issue #2754: TLS boot-guard decision function ----
+
+    #[test]
+    fn tls_boot_guard_flags_tls_without_trusted_proxies() {
+        // auth=tls + empty trusted list → insecure (the verified-client
+        // header could never be safely honoured, so tls silently degrades
+        // to token-only auth — the misconfiguration behind the bypass).
+        assert!(is_insecure_tls_configuration(AuthMode::Tls, &[], false));
+    }
+
+    #[test]
+    fn tls_boot_guard_passes_tls_with_trusted_proxies() {
+        let trusted = [TrustedProxyCidr::parse("10.0.0.0/8").unwrap()];
+        assert!(!is_insecure_tls_configuration(
+            AuthMode::Tls,
+            &trusted,
+            false
+        ));
+    }
+
+    #[test]
+    fn tls_boot_guard_ignores_non_tls_modes() {
+        // off / token never trip the TLS guard regardless of the trusted
+        // list — this guard must NOT weaken the other two modes.
+        assert!(!is_insecure_tls_configuration(AuthMode::Off, &[], false));
+        assert!(!is_insecure_tls_configuration(AuthMode::Token, &[], false));
+    }
+
+    #[test]
+    fn tls_boot_guard_respects_allow_insecure_override() {
+        // FLUXION_REST_ALLOW_INSECURE=1 is the explicit opt-out (parity
+        // with the sibling is_insecure_bind_configuration guard).
+        assert!(!is_insecure_tls_configuration(AuthMode::Tls, &[], true));
+    }
+
+    // ---- Issue #2754: require_auth TLS header trusted-proxy gate ----
+    //
+    // These exercise [`require_auth`] in isolation through a minimal
+    // auth-only router (mirroring how it is mounted on the protected
+    // sub-router), with `ConnectInfo<SocketAddr>` injected exactly as
+    // `into_make_service_with_connect_info` does in production.
+
+    /// Minimal router carrying only [`require_auth`] over a dummy 200-OK
+    /// handler. Decouples the auth-middleware tests from the full API
+    /// router while exercising the real middleware stack.
+    fn tls_auth_router(cfg: &RestSecurityConfig) -> axum::Router {
+        axum::Router::new()
+            .route(
+                "/v1/metrics",
+                axum::routing::get(|| async { StatusCode::OK }),
+            )
+            .layer(axum::middleware::from_fn_with_state(
+                cfg.auth_state(),
+                require_auth,
+            ))
+    }
+
+    /// Build a `GET /v1/metrics` request with optional `ConnectInfo`
+    /// socket peer, optional `x-verified-client` header, and optional
+    /// `Authorization: Bearer <token>`.
+    fn tls_req(
+        peer: Option<SocketAddr>,
+        verified_header: Option<&str>,
+        bearer: Option<&str>,
+    ) -> Request {
+        let mut b = Request::builder().method(Method::GET).uri("/v1/metrics");
+        if let Some(p) = peer {
+            b = b.extension(ConnectInfo(p));
+        }
+        if let Some(v) = verified_header {
+            b = b.header("x-verified-client", v);
+        }
+        if let Some(tok) = bearer {
+            b = b.header(header::AUTHORIZATION, format!("Bearer {tok}"));
+        }
+        b.body(axum::body::Body::empty()).unwrap()
+    }
+
+    /// Issue #2754 (negative): a direct client whose socket peer is NOT in
+    /// the trusted-proxy list cannot bypass TLS auth by spoofing the
+    /// verification header — it is rejected with 401.
+    #[tokio::test]
+    async fn tls_mode_rejects_spoofed_header_from_untrusted_peer() {
+        let mut cfg = RestSecurityConfig::default();
+        cfg.auth_mode = AuthMode::Tls;
+        cfg.trusted_proxies = vec![TrustedProxyCidr::parse("10.0.0.0/8").unwrap()];
+        let app = tls_auth_router(&cfg);
+
+        // Direct, untrusted peer carrying the default spoofed header.
+        let peer: SocketAddr = "203.0.113.10:7000".parse().unwrap();
+        let req = tls_req(Some(peer), Some("1"), None);
+        let resp = tower::ServiceExt::oneshot(app, req).await.unwrap();
+        assert_eq!(
+            resp.status(),
+            StatusCode::UNAUTHORIZED,
+            "spoofed header from a non-trusted peer must NOT bypass TLS auth"
+        );
+    }
+
+    /// Issue #2754 (positive): a request whose socket peer IS a trusted
+    /// proxy and which carries the agreed verification header is accepted.
+    #[tokio::test]
+    async fn tls_mode_accepts_header_from_trusted_proxy() {
+        let mut cfg = RestSecurityConfig::default();
+        cfg.auth_mode = AuthMode::Tls;
+        cfg.trusted_proxies = vec![TrustedProxyCidr::parse("10.0.0.0/8").unwrap()];
+        let app = tls_auth_router(&cfg);
+
+        let proxy_peer: SocketAddr = "10.1.2.3:5000".parse().unwrap();
+        let req = tls_req(Some(proxy_peer), Some("1"), None);
+        let resp = tower::ServiceExt::oneshot(app, req).await.unwrap();
+        assert_eq!(
+            resp.status(),
+            StatusCode::OK,
+            "trusted proxy with the correct header must reach the handler"
+        );
+    }
+
+    /// Issue #2754 (default): with `FLUXION_REST_TRUSTED_PROXIES` unset
+    /// (the default empty list), the verification header is ALWAYS ignored
+    /// — even when the peer address happens to look like a proxy — so a
+    /// spoofed header never grants access.
+    #[tokio::test]
+    async fn tls_mode_ignores_header_when_no_trusted_proxies_configured() {
+        let mut cfg = RestSecurityConfig::default();
+        cfg.auth_mode = AuthMode::Tls;
+        // trusted_proxies left at the default (empty).
+        let app = tls_auth_router(&cfg);
+
+        // A peer that WOULD be trusted if 10.0.0.0/8 were configured — but
+        // it is not, so the header must be ignored.
+        let peer: SocketAddr = "10.1.2.3:5000".parse().unwrap();
+        let req = tls_req(Some(peer), Some("1"), None);
+        let resp = tower::ServiceExt::oneshot(app, req).await.unwrap();
+        assert_eq!(
+            resp.status(),
+            StatusCode::UNAUTHORIZED,
+            "with no trusted proxies configured the header must be ignored"
+        );
+    }
+
+    /// Issue #2754: the bearer-token fallback is unaffected by the
+    /// trusted-proxy gate — a direct (untrusted) client with a valid token
+    /// is still accepted. Guards against over-tightening the fix and
+    /// breaking token auth under `tls` mode.
+    #[tokio::test]
+    async fn tls_mode_token_fallback_works_for_untrusted_peer() {
+        let mut cfg = RestSecurityConfig::default();
+        cfg.auth_mode = AuthMode::Tls;
+        cfg.auth_token = Some("s3cret".to_string());
+        cfg.trusted_proxies = vec![TrustedProxyCidr::parse("10.0.0.0/8").unwrap()];
+        let app = tls_auth_router(&cfg);
+
+        let direct_peer: SocketAddr = "203.0.113.20:7001".parse().unwrap();
+        // Spoofed header present too — must be ignored; the token wins.
+        let req = tls_req(Some(direct_peer), Some("1"), Some("s3cret"));
+        let resp = tower::ServiceExt::oneshot(app, req).await.unwrap();
+        assert_eq!(
+            resp.status(),
+            StatusCode::OK,
+            "valid token must work regardless of trusted-proxy status"
+        );
+    }
+
+    /// Issue #2754: a request with no `ConnectInfo` (e.g. a harness that
+    /// forgot `into_make_service_with_connect_info`) cannot trust the
+    /// header — fail-closed to 401.
+    #[tokio::test]
+    async fn tls_mode_no_connect_info_ignores_header() {
+        let mut cfg = RestSecurityConfig::default();
+        cfg.auth_mode = AuthMode::Tls;
+        cfg.trusted_proxies = vec![TrustedProxyCidr::parse("10.0.0.0/8").unwrap()];
+        let app = tls_auth_router(&cfg);
+
+        let req = tls_req(None, Some("1"), None);
+        let resp = tower::ServiceExt::oneshot(app, req).await.unwrap();
+        assert_eq!(
+            resp.status(),
+            StatusCode::UNAUTHORIZED,
+            "no ConnectInfo → peer unknown → header must be ignored"
+        );
+    }
+
+    /// Issue #2754 defense-in-depth: a trusted proxy presenting the WRONG
+    /// header value is still rejected.
+    #[tokio::test]
+    async fn tls_mode_trusted_proxy_wrong_header_value_rejected() {
+        let mut cfg = RestSecurityConfig::default();
+        cfg.auth_mode = AuthMode::Tls;
+        cfg.trusted_proxies = vec![TrustedProxyCidr::parse("10.0.0.0/8").unwrap()];
+        let app = tls_auth_router(&cfg);
+
+        let proxy_peer: SocketAddr = "10.1.2.3:5000".parse().unwrap();
+        let req = tls_req(Some(proxy_peer), Some("0"), None); // wrong value
+        let resp = tower::ServiceExt::oneshot(app, req).await.unwrap();
+        assert_eq!(resp.status(), StatusCode::UNAUTHORIZED);
+    }
+
+    /// Issue #2754 regression guard: the `off` and `token` modes are
+    /// entirely unaffected by the trusted-proxy gate. `off` stays a no-op
+    /// (the default); `token` keeps working with no trusted proxies.
+    #[tokio::test]
+    async fn off_and_token_modes_unaffected_by_trusted_proxy_gate() {
+        // off (default) — never weakened.
+        let cfg = RestSecurityConfig::default();
+        let app = tls_auth_router(&cfg);
+        let peer: SocketAddr = "203.0.113.30:7002".parse().unwrap();
+        let req = tls_req(Some(peer), Some("1"), None);
+        let resp = tower::ServiceExt::oneshot(app, req).await.unwrap();
+        assert_eq!(
+            resp.status(),
+            StatusCode::OK,
+            "off mode must remain a no-op regardless of headers / proxies"
+        );
+
+        // token — works with no trusted proxies configured.
+        let mut cfg = RestSecurityConfig::default();
+        cfg.auth_mode = AuthMode::Token;
+        cfg.auth_token = Some("s3cret".to_string());
+        let app = tls_auth_router(&cfg);
+        let req = tls_req(Some(peer), None, Some("s3cret"));
+        let resp = tower::ServiceExt::oneshot(app, req).await.unwrap();
+        assert_eq!(
+            resp.status(),
+            StatusCode::OK,
+            "token mode must work without any trusted-proxy configuration"
+        );
     }
 }
