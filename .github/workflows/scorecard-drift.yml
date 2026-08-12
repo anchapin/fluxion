@@ -15,7 +15,7 @@ on:
       - "SCORECARD.md"
       - "scripts/generate_scorecard.py"
       - "docs/ASHRAE140_RESULTS.md"
-      - "docs/ASHRAE140_RESULTS_v0.8.0.md"
+      - "docs/archive/ASHRAE140_RESULTS_v0.8.0.md"
       - "release_gates.yaml"
       - "README.md"
       - "AGENTS.md"

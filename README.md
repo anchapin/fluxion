@@ -43,7 +43,7 @@ These are documented **structural failures** (also listed in `release_gates.yaml
 - **Overall accuracy:** 55.09% MAE, driven by the high-mass annual-energy deviation above.
 - **Peak load accuracy:** High-mass peak loads over-estimated; full peak accuracy awaits the planned gauge-solver / finite-volume work (Phase B / `gauge-solver` feature).
 
-For the historical v0.8.0 snapshot (Peak Load & Free-Float Validation narrative), see [`docs/ASHRAE140_RESULTS_v0.8.0.md`](docs/ASHRAE140_RESULTS_v0.8.0.md). Note that the v0.8.0 "near-passing" framing is superseded by the current blind-validation figures above.
+For the historical v0.8.0 snapshot (Peak Load & Free-Float Validation narrative), see [`docs/archive/ASHRAE140_RESULTS_v0.8.0.md`](docs/archive/ASHRAE140_RESULTS_v0.8.0.md) (archived; superseded by the current blind-validation figures above).
 
 ## 🚀 Features
 

@@ -9,7 +9,7 @@ dependency_graph:
     - "Peak load calibration for high-mass buildings"
     - "τ diagnostic output for debugging"
   affects:
-    - "ASHRAE140_RESULTS_v0.8.0.md"
+    - "docs/archive/ASHRAE140_RESULTS_v0.8.0.md"
     - "Annual energy validation"
 tech_stack:
   added:

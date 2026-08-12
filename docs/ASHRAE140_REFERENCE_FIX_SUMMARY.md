@@ -49,7 +49,7 @@ These issues should be investigated in future phases to achieve full ASHRAE 140 
 
 ## Files Modified
 - `docs/ashrae_140_references.json`: Added complete reference database
-- `docs/ASHRAE140_RESULTS_v0.8.0.md`: Updated validation report with proper references
+- `docs/archive/ASHRAE140_RESULTS_v0.8.0.md`: Updated validation report with proper references (archived; see Issue #2764)
 
 ## Verification
 - ✅ Reference values now properly loaded from JSON file

@@ -1,3 +1,5 @@
+> **ARCHIVED (Issue #2764):** This is a historical v0.8.0 snapshot and is no longer current. For live validation pass rates, see `docs/ASHRAE140_RESULTS.md`.
+
 # ASHRAE 140 Validation Report
 
 ## Summary

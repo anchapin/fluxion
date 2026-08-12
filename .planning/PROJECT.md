@@ -125,7 +125,7 @@ Per `RULES.md`, the fix path is the underlying physics — **no parameter tuning
 - Hourly profile alignment with EnergyPlus/ESP-r/TRNSYS references
 - Performance: 1,237 configs/sec maintained
 
-> **Note:** The v0.8 "near-passing" framing is superseded by the current v1.3 blind-validation figures above. See `docs/ASHRAE140_RESULTS_v0.8.0.md` for the historical snapshot.
+> **Note:** The v0.8 "near-passing" framing is superseded by the current v1.3 blind-validation figures above. See `docs/archive/ASHRAE140_RESULTS_v0.8.0.md` for the historical snapshot (archived per Issue #2764).
 
 </details>
 

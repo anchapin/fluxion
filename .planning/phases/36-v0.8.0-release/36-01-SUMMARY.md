@@ -14,7 +14,7 @@ provides:
   - v0.8.0-validation-report
   - Peak load validation results
   - Free-float validation results
-affects: [docs/ASHRAE140_RESULTS_v0.8.0.md, src/bin/run_ashrae_validation.rs]
+affects: [docs/archive/ASHRAE140_RESULTS_v0.8.0.md, src/bin/run_ashrae_validation.rs]
 
 # Tech tracking
 tech-stack:
@@ -23,7 +23,7 @@ tech-stack:
 
 key-files:
   created:
-    - path: "docs/ASHRAE140_RESULTS_v0.8.0.md"
+    - path: "docs/archive/ASHRAE140_RESULTS_v0.8.0.md"
       provides: "v0.8.0 validation report with peak load and free-float results"
   modified:
     - path: "src/bin/run_ashrae_validation.rs"
@@ -59,7 +59,7 @@ completed: 2026-04-06T19:29:00Z
 ## Accomplishments
 - Validation runner updated for v0.8.0 milestone
 - Full ASHRAE 140 validation suite executed (64 metrics)
-- Validation report generated at docs/ASHRAE140_RESULTS_v0.8.0.md
+- Validation report generated at docs/archive/ASHRAE140_RESULTS_v0.8.0.md
 - Results documented for human verification
 
 ## Task Commits
@@ -73,7 +73,7 @@ Each task was committed atomically:
 
 ## Files Created/Modified
 - `src/bin/run_ashrae_validation.rs` - Updated milestone text to v0.8
-- `docs/ASHRAE140_RESULTS_v0.8.0.md` - Full validation report
+- `docs/archive/ASHRAE140_RESULTS_v0.8.0.md` - Full validation report
 
 ## Decisions Made
 - Validation results documented for human review
@@ -91,7 +91,7 @@ None - plan executed as specified.
 - **Found during:** Task 2 (Run validation suite)
 - **Issue:** Validation results show peak load and free-float pass rates at 25%, far below the >90% target. This suggests Phase 34 (Peak Load Physics Fix) and Phase 35 (Free-Floating Validation) have not been fully executed.
 - **Fix:** Need to verify Phase 34-35 completion before proceeding with v0.8.0 release
-- **Files modified:** docs/ASHRAE140_RESULTS_v0.8.0.md
+- **Files modified:** docs/archive/ASHRAE140_RESULTS_v0.8.0.md
 - **Verification:** Pass rate analysis shows 4/16 (25%) for 900-series, 2/8 (25%) for free-float
 - **Committed in:** a9bf962 (Task 2 commit)
 

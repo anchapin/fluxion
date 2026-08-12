@@ -13,7 +13,7 @@ Companion docs (read when relevant):
 - `RULES.md` — hard constraints (numerical-reasoning-via-code, energy balance, ASHRAE 140)
 - `CONTRIBUTING.md` — workflow / PR / branch policy (two copies exist — see Toolchain Quirks)
 - `docs/KNOWN_ISSUES.md` — open physics limitations. CI gate `scripts/check_known_issues_stale.py` (#1723) fails if the `*Last Updated: YYYY-MM-DD*` line is >60 days old. **Skips (passes) if the file is absent.**
-- `docs/ASHRAE140_RESULTS.md` and `docs/ASHRAE140_RESULTS_v0.8.0.md` — current validation pass rates
+- `docs/ASHRAE140_RESULTS.md` — current validation pass rates
 - `.github/copilot-instructions.md` — longer architecture overview (Batch Oracle pattern, thermal network); written for Copilot but applies to any agent
 
 ## Workspace Structure

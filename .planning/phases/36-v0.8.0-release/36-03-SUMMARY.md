@@ -83,7 +83,7 @@ Each task was committed atomically:
 - `Cargo.toml` - Version 0.8.0 (already set)
 - `pyproject.toml` - Version 0.8.0 (already set)
 - `CHANGELOG.md` - v0.8.0 release notes
-- `docs/ASHRAE140_RESULTS_v0.8.0.md` - Validation results
+- `docs/archive/ASHRAE140_RESULTS_v0.8.0.md` - Validation results (archived per Issue #2764)
 - `src/validation/*.rs` - Fixed optional CaseRefs fields
 
 ## Decisions Made
