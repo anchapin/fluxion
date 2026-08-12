@@ -1268,16 +1268,17 @@ impl SessionPool {
     fn create_session(
         path: &str,
         backend: InferenceBackend,
-        device_id: usize,
+        _device_id: usize,
     ) -> Result<ort::session::Session, String> {
         use ort::session::Session;
+        #[allow(unused_mut)]
         let mut builder =
             Session::builder().map_err(|e| format!("Failed to create session builder: {}", e))?;
         match backend {
             InferenceBackend::CUDA => {
                 #[cfg(feature = "cuda")]
                 {
-                    let ep = CUDAExecutionProvider::default().with_device_id(device_id as i32);
+                    let ep = CUDAExecutionProvider::default().with_device_id(_device_id as i32);
                     builder = builder
                         .with_execution_providers([ep.build()])
                         .map_err(|e| format!("Failed to add CUDA execution provider: {}", e))?;
@@ -1309,7 +1310,7 @@ impl SessionPool {
             InferenceBackend::DirectML => {
                 #[cfg(target_os = "windows")]
                 {
-                    let ep = DirectMLExecutionProvider::default().with_device_id(device_id as i32);
+                    let ep = DirectMLExecutionProvider::default().with_device_id(_device_id as i32);
                     builder = builder
                         .with_execution_providers([ep.build()])
                         .map_err(|e| format!("Failed to add DirectML execution provider: {}", e))?;
