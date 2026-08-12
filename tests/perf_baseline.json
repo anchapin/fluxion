@@ -1,0 +1,41 @@
+{
+  "timestamp": "2026-08-12T06:37:03+00:00",
+  "throughput_analytical": 225.0,
+  "latency_ms": 4.454,
+  "population_size": 100,
+  "_meta": {
+    "measured_at": "2026-08-12",
+    "methodology": "Median of N runs of `cargo test --test performance_regression_test --release test_performance_regression` (population=100, 1 warmup + 1 measured per run). Same harness CI's absolute-perf-gate (#2693) and performance.yml use. Computed via Python statistics.median (RULES.md constraint #0).",
+    "n_runs": 7,
+    "strategy": "median",
+    "samples": {
+      "throughput_configs_per_sec": [
+        222.0,
+        225.0,
+        223.0,
+        226.0,
+        226.0,
+        225.0,
+        213.0
+      ],
+      "latency_ms_per_config": [
+        4.501,
+        4.454,
+        4.48,
+        4.433,
+        4.43,
+        4.436,
+        4.694
+      ]
+    },
+    "machine": {
+      "platform": "Linux-6.17.0-40-generic-x86_64-with-glibc2.39",
+      "processor": "x86_64",
+      "cpu_count": 12
+    },
+    "enforcement": "report-only",
+    "runner_class": "dev-local",
+    "stale_after_days": 90,
+    "regression_threshold_pct_source": "release_gates.yaml benchmark.regression_threshold"
+  }
+}

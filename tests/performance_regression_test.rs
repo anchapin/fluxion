@@ -6,7 +6,7 @@
 
 use std::fs;
 use std::path::PathBuf;
-use std::time::Instant;
+use std::time::{Instant, SystemTime, UNIX_EPOCH};
 
 /// Baseline file location
 const BASELINE_FILE: &str = "tests/perf_baseline.json";
@@ -54,7 +54,13 @@ fn regression_threshold() -> f64 {
     regression_threshold_from_yaml().unwrap_or(REGRESSION_THRESHOLD_FALLBACK)
 }
 
-/// Load baseline metrics from JSON file
+/// Load baseline metrics from JSON file.
+///
+/// Reads the optional `_meta` block written by
+/// `scripts/generate_perf_baseline.py`: `enforcement` (`"hard-gate"` panics on
+/// regression; `"report-only"` warns — for baselines measured on a non-CI
+/// runner), `measured_at` (ISO `YYYY-MM-DD`, for staleness), and `runner_class`
+/// (provenance). Returns `None` only when the file is absent or malformed.
 fn load_baseline() -> Option<BaselineMetrics> {
     let path = PathBuf::from(BASELINE_FILE);
     if !path.exists() {
@@ -64,19 +70,88 @@ fn load_baseline() -> Option<BaselineMetrics> {
     let content = fs::read_to_string(&path).ok()?;
     let json: serde_json::Value = serde_json::from_str(&content).ok()?;
 
+    let meta = json.get("_meta");
+    let hard_gate = meta
+        .and_then(|m| m.get("enforcement"))
+        .and_then(|v| v.as_str())
+        .map(|s| s == "hard-gate")
+        .unwrap_or(true);
+    let measured_at = meta
+        .and_then(|m| m.get("measured_at"))
+        .and_then(|v| v.as_str())
+        .map(str::to_owned);
+    let runner_class = meta
+        .and_then(|m| m.get("runner_class"))
+        .and_then(|v| v.as_str())
+        .map(str::to_owned);
+
     Some(BaselineMetrics {
         timestamp: json.get("timestamp")?.as_str()?.to_string(),
         throughput_analytical: json.get("throughput_analytical")?.as_f64()?,
         latency_ms: json.get("latency_ms")?.as_f64()?,
+        hard_gate,
+        measured_at,
+        runner_class,
     })
 }
 
+/// Days since the UNIX epoch (1970-01-01) for a proleptic Gregorian date.
+///
+/// Howard Hinnant's `days_from_civil` algorithm. Verified equal to Python's
+/// `datetime.date.toordinal()` arithmetic across leap years and century
+/// boundaries (RULES.md constraint #0 — the date math was checked in Python,
+/// not by hand). Uses Euclidean (`div_euclid`) division so it matches Python's
+/// floor `//` for every sign of input.
+fn days_from_civil(y: i64, m: i64, d: i64) -> i64 {
+    let y2 = y - if m <= 2 { 1 } else { 0 };
+    let era = y2.div_euclid(400);
+    let yoe = y2 - era * 400;
+    let mp = if m > 2 { m - 3 } else { m + 9 };
+    let doy = (153 * mp + 2).div_euclid(5) + d - 1;
+    let doe = yoe * 365 + yoe.div_euclid(4) - yoe.div_euclid(100) + doy;
+    era * 146097 + doe - 719468
+}
+
+/// Parse the leading `YYYY-MM-DD` of an ISO timestamp into days-since-epoch.
+/// Returns `None` on any parse failure (caller treats as "no staleness info").
+fn parse_date_to_days(s: &str) -> Option<i64> {
+    let s = s.trim();
+    if s.len() < 10 {
+        return None;
+    }
+    let mut parts = s[..10].split('-');
+    let y: i64 = parts.next()?.parse().ok()?;
+    let m: i64 = parts.next()?.parse().ok()?;
+    let d: i64 = parts.next()?.parse().ok()?;
+    if !(1..=12).contains(&m) || !(1..=31).contains(&d) {
+        return None;
+    }
+    Some(days_from_civil(y, m, d))
+}
+
+/// Current date as days-since-epoch (UTC), derived from the system clock with
+/// no external crate. Returns `None` only if the system clock is before epoch.
+fn current_date_days() -> Option<i64> {
+    let secs = SystemTime::now().duration_since(UNIX_EPOCH).ok()?.as_secs();
+    Some((secs / 86400) as i64)
+}
+
 /// Baseline metrics structure
+///
+/// `hard_gate` controls enforcement: `true` → a detected regression PANICS
+/// (the historical behaviour); `false` → it prints a loud WARNING instead.
+/// Defaults to `true` when `_meta.enforcement` is absent, so the test stays
+/// strict by default. A baseline measured on a dev machine sets it `false`
+/// because cross-runner throughput is not comparable within the 5% threshold
+/// (issue #2680).
 #[allow(dead_code)]
 struct BaselineMetrics {
     timestamp: String,
     throughput_analytical: f64,
     latency_ms: f64,
+    hard_gate: bool,
+    measured_at: Option<String>,
+    runner_class: Option<String>,
 }
 
 /// Performance metrics from a test run
@@ -162,7 +237,7 @@ fn check_regression(
 ///
 /// To update the baseline:
 /// ```
-/// python .githooks/perf-baseline.py --update-baseline
+/// python3 scripts/generate_perf_baseline.py tests/perf_baseline.json 7
 /// ```
 #[test]
 fn test_performance_regression() {
@@ -186,40 +261,110 @@ fn test_performance_regression() {
         RELEASE_GATES_FILE
     );
 
-    // Try to load baseline
-    match load_baseline() {
-        Some(baseline) => {
-            println!("\nBaseline metrics:");
-            println!(
-                "  Throughput: {:.0} configs/sec",
-                baseline.throughput_analytical
+    // Load baseline. Issue #2680: a missing baseline used to make this test a
+    // SILENT no-op (it printed "No baseline found" and returned Ok), so the
+    // regression guard could never fire. It now FAILS LOUD so a missing or
+    // unparseable baseline can never pass silently again.
+    let baseline = match load_baseline() {
+        Some(b) => b,
+        None => {
+            panic!(
+                "PERF BASELINE MISSING: {}\n\
+                 The performance-regression test cannot detect regressions without \
+                 it — before issue #2680 it silently passed here, giving false \
+                 confidence that performance was guarded. Regenerate by running the \
+                 SAME harness CI uses (median-of-N):\n\
+                 \n    python3 scripts/generate_perf_baseline.py tests/perf_baseline.json 7\n\
+                 \n\
+                 (or, with the Python bindings installed via `maturin develop \
+                 --release`):\n    python .githooks/perf-baseline.py --update-baseline\n\
+                 \n\
+                 Commit the generated file. See issue #2680.",
+                BASELINE_FILE
             );
-            println!("  Latency: {:.3}ms", baseline.latency_ms);
+        }
+    };
 
-            // Check for regression
-            match check_regression(&metrics, &baseline, threshold) {
-                Some(percent_change) => {
-                    let change_percent = percent_change * 100.0;
-                    panic!(
-                        "PERFORMANCE REGRESSION DETECTED: {:.1}% slowdown\n\
-                         Baseline: {:.0} configs/sec\n\
-                         Current:  {:.0} configs/sec\n\
-                         Threshold: -{:.1}% (release_gates.yaml benchmark.regression_threshold)",
-                        change_percent,
-                        baseline.throughput_analytical,
-                        metrics.throughput,
-                        threshold * 100.0
-                    );
+    println!("\nBaseline metrics:");
+    println!(
+        "  Throughput: {:.0} configs/sec",
+        baseline.throughput_analytical
+    );
+    println!("  Latency: {:.3}ms", baseline.latency_ms);
+    println!(
+        "  Runner:    {}  (enforcement: {})",
+        baseline.runner_class.as_deref().unwrap_or("unknown"),
+        if baseline.hard_gate {
+            "hard-gate"
+        } else {
+            "report-only"
+        }
+    );
+
+    // Staleness check (issue #2680, mirrors the KNOWN_ISSUES staleness gate).
+    // A baseline older than 90 days is stale. Hard-gate baselines panic;
+    // report-only baselines warn — a stale dev baseline must not red dev/main
+    // CI, but it must not be invisible either.
+    if let (Some(measured), Some(now)) = (baseline.measured_at.as_deref(), current_date_days()) {
+        if let Some(m_days) = parse_date_to_days(measured) {
+            let age = now - m_days;
+            const STALE_AFTER_DAYS: i64 = 90;
+            if age > STALE_AFTER_DAYS {
+                let msg = format!(
+                    "PERF BASELINE STALE: {} measured {age} days ago (>{STALE_AFTER_DAYS}).\n\
+                     Regenerate via:\n    \
+                     python3 scripts/generate_perf_baseline.py tests/perf_baseline.json 7\n\
+                     and commit the result.",
+                    BASELINE_FILE
+                );
+                if baseline.hard_gate {
+                    panic!("{}", msg);
+                } else {
+                    eprintln!("⚠ {msg}");
                 }
-                None => {
-                    println!("\n✓ Performance OK: No regression detected");
-                }
+            } else {
+                println!("  Baseline age: {age} days (fresh)");
+            }
+        }
+    }
+
+    // Regression check. For `report-only` baselines (e.g. measured on a dev
+    // machine) a regression is a LOUD WARNING, not a panic: cross-runner
+    // throughput routinely varies far more than the 5% threshold (a dev machine
+    // may measure 1.5-10x the GitHub-hosted ubuntu-latest runner), so a hard
+    // panic against a non-CI baseline would red dev/main CI on every push. The
+    // machine-independent hard gates are the absolute floor (#2693, 150 cfg/s +
+    // 10 ms) and the criterion same-runner artifact diff (#1618). A future
+    // baseline generated ON ubuntu-latest may set `_meta.enforcement=hard-gate`
+    // to restore a panic-on-regression here.
+    match check_regression(&metrics, &baseline, threshold) {
+        Some(percent_change) => {
+            let change_percent = percent_change * 100.0;
+            let headline = format!(
+                "PERFORMANCE REGRESSION DETECTED: {:.1}% slowdown\n\
+                 Baseline: {:.0} configs/sec (runner: {})\n\
+                 Current:  {:.0} configs/sec\n\
+                 Threshold: -{:.1}% (release_gates.yaml benchmark.regression_threshold)",
+                change_percent,
+                baseline.throughput_analytical,
+                baseline.runner_class.as_deref().unwrap_or("unknown"),
+                metrics.throughput,
+                threshold * 100.0
+            );
+            if baseline.hard_gate {
+                panic!("{}", headline);
+            } else {
+                eprintln!(
+                    "⚠ {}\n\
+                     NOTE: report-only baseline — this is a WARNING, not a failure. \
+                     Cross-runner throughput is not comparable within 5%; the hard \
+                     gates are #2693 (absolute floor) and #1618 (same-runner diff).",
+                    headline
+                );
             }
         }
         None => {
-            println!("\nℹ No baseline found. Run:");
-            println!("  python .githooks/perf-baseline.py --update-baseline");
-            println!("  to create a baseline for regression detection.");
+            println!("\n✓ Performance OK: No regression detected");
         }
     }
 }

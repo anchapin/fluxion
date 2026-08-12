@@ -190,6 +190,22 @@ def main():
             "throughput_analytical": throughput,
             "latency_ms": time_per_config,
             "population_size": metrics["population_size"],
+            "_meta": {
+                "measured_at": datetime.utcnow().date().isoformat(),
+                "methodology": (
+                    "Single run via the Python BatchOracle FFI bindings "
+                    "(maturin develop --release), NOT the Rust test harness. "
+                    "PREFER scripts/generate_perf_baseline.py (median-of-N, Rust "
+                    "harness matching CI) as the canonical generator — see issue "
+                    "#2680. This hook path is kept for the pre-commit manual flow."
+                ),
+                "n_runs": 1,
+                "strategy": "single",
+                "enforcement": "report-only",
+                "runner_class": "dev-local-python-ffi",
+                "stale_after_days": 90,
+                "regression_threshold_pct_source": "release_gates.yaml benchmark.regression_threshold",
+            },
         }
         save_baseline(new_baseline)
 
