@@ -410,7 +410,7 @@ impl Default for PyHVACSchedule {
 ///
 /// Mirrors [`crate::sim::hvac::HVACSystemType`]. Exposed as a Python enum so
 /// users can compare with `==` (e.g. `system.system_type == HVACSystemType.VAV`).
-#[pyclass(name = "HVACSystemType", eq, eq_int)]
+#[pyclass(name = "HVACSystemType", eq, eq_int, from_py_object)]
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum PyHVACSystemType {
     Simple,
@@ -447,7 +447,7 @@ impl From<PyHVACSystemType> for HVACSystemType {
 /// HVAC operating mode (heating / cooling / off).
 ///
 /// Mirrors [`crate::sim::hvac::equipment::HVACMode`].
-#[pyclass(name = "HVACMode", eq, eq_int)]
+#[pyclass(name = "HVACMode", eq, eq_int, from_py_object)]
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum PyHVACMode {
     Heating,
@@ -478,7 +478,7 @@ impl From<PyHVACMode> for HVACMode {
 /// Heat-pump operating mode.
 ///
 /// Mirrors [`crate::sim::hvac::HeatPumpMode`].
-#[pyclass(name = "HeatPumpMode", eq, eq_int)]
+#[pyclass(name = "HeatPumpMode", eq, eq_int, from_py_object)]
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum PyHeatPumpMode {
     Heating,
@@ -509,7 +509,7 @@ impl From<PyHeatPumpMode> for HeatPumpMode {
 /// Operating mode of a VAV terminal unit.
 ///
 /// Mirrors [`crate::sim::hvac::vav_terminal::VavOperatingMode`].
-#[pyclass(name = "VavOperatingMode", eq, eq_int)]
+#[pyclass(name = "VavOperatingMode", eq, eq_int, from_py_object)]
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum PyVavOperatingMode {
     Cooling,
@@ -1054,7 +1054,7 @@ impl PyVavTerminalUnit {
 ///
 /// Encapsulates the damper position and coil on/off states. Mirrors
 /// [`crate::sim::hvac::vav_terminal::VavTerminalControl`].
-#[pyclass(name = "VavTerminalControl")]
+#[pyclass(name = "VavTerminalControl", from_py_object)]
 #[derive(Clone)]
 pub struct PyVavTerminalControl {
     pub(crate) inner: VavTerminalControl,

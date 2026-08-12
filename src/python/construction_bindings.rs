@@ -108,7 +108,7 @@ impl PyVectorField {
 
 /// Construction layer material properties for Python.
 #[cfg(feature = "python-bindings")]
-#[pyclass(name = "ConstructionLayer")]
+#[pyclass(name = "ConstructionLayer", from_py_object)]
 #[derive(Clone)]
 pub struct PyConstructionLayer {
     #[pyo3(get, set)]
@@ -196,7 +196,7 @@ impl PyConstructionLayer {
 
 /// Surface type for construction calculations.
 #[cfg(feature = "python-bindings")]
-#[pyclass(name = "SurfaceType", eq, eq_int)]
+#[pyclass(name = "SurfaceType", eq, eq_int, from_py_object)]
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub enum PySurfaceType {
     Wall,
@@ -217,7 +217,7 @@ impl From<PySurfaceType> for crate::sim::construction::SurfaceType {
 
 /// Thermal mass classification for Python.
 #[cfg(feature = "python-bindings")]
-#[pyclass(name = "MassClass", eq, eq_int)]
+#[pyclass(name = "MassClass", eq, eq_int, from_py_object)]
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub enum PyMassClass {
     VeryLight,
@@ -345,7 +345,7 @@ impl PyConstruction {
 
 /// Wall surface representation for Python.
 #[cfg(feature = "python-bindings")]
-#[pyclass(name = "WallSurface")]
+#[pyclass(name = "WallSurface", from_py_object)]
 #[derive(Clone)]
 pub struct PyWallSurface {
     #[pyo3(get, set)]

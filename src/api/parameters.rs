@@ -41,7 +41,7 @@ use pyo3::{exceptions::PyValueError, PyResult, Python};
 /// - `heating_setpoint`: 15.0–25.0 °C
 /// - `cooling_setpoint`: 22.0–32.0 °C
 /// - Heating setpoint must be less than cooling setpoint
-#[cfg_attr(feature = "python-bindings", pyclass)]
+#[cfg_attr(feature = "python-bindings", pyclass(from_py_object))]
 #[derive(Clone, Debug, PartialEq)]
 pub struct BuildingParameters {
     /// Window U-value (thermal transmittance) in W/m²K.
