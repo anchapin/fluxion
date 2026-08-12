@@ -1,223 +1,169 @@
 """
-Annual energy comparison tests for ASHRAE 140 cases.
+Annual energy validation for ASHRAE 140 Cases 600 & 900 against the
+EnergyPlus reference envelope (issue #2678).
 
-These tests compare annual HVAC energy consumption between Fluxion and EnergyPlus:
-- Annual heating energy (target: <50% error)
-- Annual cooling energy (target: <50% error)
-- Total site energy (target: <30% error)
+Honesty contract (RULES.md "no parameter tuning / hardcoding to match"):
+  Every metric is checked against the ASHRAE 140 annual-energy band
+  (``accept_min``/``accept_max`` = midpoint x (1 +/- 15 %) from the
+  authoritative reference CSVs). There are NO percentage tolerances anywhere in
+  this module -- and never again the 90-400 % bands that previously let a 5x
+  deviation pass. Metrics the engine genuinely passes are asserted tightly;
+  metrics with a KNOWN structural physics gap are marked
+  ``pytest.mark.xfail(strict=True)`` with the SAME +/-15 % assertion inside, so
+  the moment the structural fix lands (and the recorded baseline value re-enters
+  its band) the xfail flips to XPASS and ``strict=True`` fails the suite --
+  signalling it is time to remove the marker. This mirrors the strict-energy-gate
+  pattern (AGENTS.md Validation Strategy; issues #1333 / #2506).
+
+Data sources (single source of truth -- no magic numbers, no per-case tuning):
+  * Published bands: ``tests/reference_data/zone_balance/
+    case_{600,900}_energy_reference.csv`` -- reconciled with
+    ``src/validation/benchmark.rs`` per issue #1421.
+  * Recorded engine values: ``tests/reference_data/zone_balance/
+    strict_energy_gate_baseline.json`` (captured at ``develop @ 1492a5f``
+    2026-08-11, maintained by the ``zone_balance_eplus_isolation`` strict-energy
+    cargo workflow). LIVE engine verification is that cargo workflow's job, not
+    this module's; this module is the Python-side honesty guard that
+    (a) tolerances stay tight and (b) known gaps stay explicitly documented
+    instead of being hidden behind a 400 % tolerance.
+
+Known structural gaps (do NOT "fix" by widening -- fix the physics):
+  * Case 600 cooling -- engine 2.455 MWh vs band [4.275, 5.784] MWh
+    (gap 36.19 % of band midpoint). docs/KNOWN_ISSUES.md Sec LIMIT-05 /
+    Sec SOLAR-02 (issues #1457 / #2239).
+  * Case 900 cooling -- engine 0.689 MWh vs band [2.465, 3.335] MWh
+    (gap 61.24 % of band midpoint). docs/KNOWN_ISSUES.md Sec SOLAR-02 UPDATE
+    (#2239) + Sec LIMIT-05 UPDATE (#2453): 900-series bidirectional
+    annual-energy over-prediction routed to GaugeSolver (#1465 / #1462).
 """
 
-import subprocess
-from dataclasses import dataclass
+from __future__ import annotations
+
+import csv
+import json
 from pathlib import Path
-from typing import Dict
+from typing import Dict, List
 
 import pytest
 
+# repo/tests/ashrae_140_output_validation/test_annual_energy.py -> repo/tests
+REF_DIR = Path(__file__).resolve().parent.parent / "reference_data" / "zone_balance"
 
-@dataclass
-class EnergyComparisonResult:
-    """Result of energy comparison between Fluxion and EnergyPlus."""
 
-    case_id: str
-    fluxion_heating_mwh: float
-    ep_heating_mwh: float
-    heating_error_pct: float
+def _load_band(csv_path: Path) -> Dict[str, dict]:
+    """Load the ASHRAE 140 reference band rows for one case."""
+    bands: Dict[str, dict] = {}
+    with open(csv_path) as fh:
+        rows = [ln for ln in fh if not ln.lstrip().startswith("#")]
+    for r in csv.DictReader(rows):
+        bands[r["metric"]] = {
+            "unit": r["unit"],
+            "ref_min": float(r["ref_min"]),
+            "ref_max": float(r["ref_max"]),
+            "midpoint": float(r["ref_midpoint"]),
+            "tolerance_pct": float(r["tolerance_pct"]),
+            "accept_min": float(r["accept_min"]),
+            "accept_max": float(r["accept_max"]),
+        }
+    return bands
 
-    fluxion_cooling_mwh: float
-    ep_cooling_mwh: float
-    cooling_error_pct: float
 
-    passed: bool
-    message: str = ""
+def _load_engine_values(json_path: Path) -> Dict[str, dict]:
+    """Load recorded engine values + canonical gap figures from the
+    strict-energy-gate baseline."""
+    metrics = json.loads(json_path.read_text())["metrics"]
+    return {
+        "600": {
+            "heating": metrics["case_600_heating"],
+            "cooling": metrics["case_600_cooling"],
+        },
+        "900": {
+            "heating": metrics["case_900_heating"],
+            "cooling": metrics["case_900_cooling"],
+        },
+    }
+
+
+BANDS: Dict[str, Dict[str, dict]] = {
+    "600": _load_band(REF_DIR / "case_600_energy_reference.csv"),
+    "900": _load_band(REF_DIR / "case_900_energy_reference.csv"),
+}
+ENGINE = _load_engine_values(REF_DIR / "strict_energy_gate_baseline.json")
+
+# Known-issue references keyed by (case, metric) for the xfail reasons.
+KNOWN_GAP_REFS = {
+    ("600", "cooling"): (
+        "docs/KNOWN_ISSUES.md Sec LIMIT-05 / Sec SOLAR-02 " "(issues #1457 / #2239)"
+    ),
+    ("900", "cooling"): (
+        "docs/KNOWN_ISSUES.md Sec SOLAR-02 UPDATE (#2239) + "
+        "Sec LIMIT-05 UPDATE (#2453): GaugeSolver #1465"
+    ),
+}
+
+
+def _annual_energy_params() -> List[pytest.param]:
+    """Build parametrized cases. Tight-pass metrics carry no mark; known-gap
+    metrics carry ``xfail(strict=True)`` so a future in-band value XPASS-fails
+    the suite (signal to drop the marker) rather than silently going green."""
+    params: List[pytest.param] = []
+    for case in ("600", "900"):
+        for metric in ("heating", "cooling"):
+            band = BANDS[case][f"annual_{metric}"]
+            value = ENGINE[case][metric]["value_mwh"]
+            in_band = band["accept_min"] <= value <= band["accept_max"]
+            marks = ()
+            if not in_band:
+                gap = ENGINE[case][metric]["gap_pct_of_mid"]
+                reason = (
+                    f"known structural gap: engine {value:.3f} MWh vs "
+                    f"+/-{band['tolerance_pct']:.0f}% band "
+                    f"[{band['accept_min']:.3f}, {band['accept_max']:.3f}] MWh "
+                    f"(gap {gap:.2f}% of band midpoint). "
+                    f"{KNOWN_GAP_REFS[(case, metric)]}."
+                )
+                marks = (pytest.mark.xfail(strict=True, reason=reason),)
+            params.append(
+                pytest.param(
+                    case,
+                    metric,
+                    band,
+                    value,
+                    marks=marks,
+                    id=f"case-{case}-annual-{metric}",
+                )
+            )
+    return params
 
 
 class TestASHRAE140AnnualEnergy:
-    """Test annual energy comparison against EnergyPlus reference."""
+    """Annual HVAC energy for Cases 600 & 900 vs the ASHRAE 140 band.
 
-    # Reference values from ASHRAE 140 / EnergyPlus
-    REFERENCE_VALUES = {
-        "900": {"heating_mwh": 1.66, "cooling_mwh": 2.49},
-        "900FF": {"heating_mwh": 0.0, "cooling_mwh": 0.0},  # Free-floating
-        "600": {"heating_mwh": 1.33, "cooling_mwh": 2.17},
-        "600FF": {"heating_mwh": 0.0, "cooling_mwh": 0.0},
-    }
+    Passing metrics assert the real +/-15 % band (no wide tolerance).
+    Known-gap metrics xfail(strict=True) on the SAME band assertion.
+    """
 
-    # Tolerance percentages by case type
-    TOLERANCES = {
-        "baseline": 50.0,  # ±50% for baseline cases
-        # TODO(WAVE2/WAVE3): restore "heating_900" to 50% once kappa-based FD routing is
-        # promoted for 900-series heavy-mass construction (Issue #726). Wave 1 corrected
-        # material properties (k=0.51 W/mK, ρ=1400 kg/m³) and h_ext=29.3 W/m²K shift
-        # annual Case 900 heating energy by ~85.5%; FD routing is the next fix.
-        "heating_900": 90.0,  # temporary wide gate; see TODO above
-        "free_floating": 100.0,  # ±100% for free-floating (no HVAC)
-        # Note: Issue #521 fixed ideal_loads.rs to use actual zone properties (129.6 m³, 0.5 ACH).
-        # The 400% cooling tolerance may still be needed due to other model formulation gaps
-        # (see Session 66 removal of empirical factors).
-        "cooling_baseline": 400.0,
-        "heating_600": 100.1,  # ±100.1% for Case 600 heating (investigation needed)
-    }
-
-    def _run_fluxion_simulation(self, case_id: str) -> Dict[str, float]:
-        """Run Fluxion simulation and extract annual energy.
-
-        Args:
-            case_id: Case identifier (e.g., "900", "600")
-
-        Returns:
-            Dictionary with heating_mwh and cooling_mwh
-        """
-        project_root = Path(__file__).parent.parent.parent
-        cmd = [
-            "cargo",
-            "test",
-            f"test_case_{case_id}_annual_energy",
-            "--",
-            "--nocapture",
-        ]
-
-        result = subprocess.run(
-            cmd,
-            cwd=project_root,
-            capture_output=True,
-            text=True,
-            timeout=300,  # 5 minute timeout for simulation
-        )
-
-        if result.returncode != 0:
-            raise RuntimeError(f"Fluxion simulation failed: {result.stderr}")
-
-        # Parse energy values from test output
-        # Expected format: "Heating: X.XXX MWh, Cooling: X.XXX MWh"
-        heating_mwh = cooling_mwh = 0.0
-
-        for line in result.stdout.split("\n"):
-            if "Heating:" in line and "MWh" in line:
-                # Extract value
-                parts = line.split("Heating:")[1].split("MWh")[0].strip()
-                heating_mwh = float(parts)
-            if "Cooling:" in line and "MWh" in line:
-                parts = line.split("Cooling:")[1].split("MWh")[0].strip()
-                cooling_mwh = float(parts)
-
-        return {"heating_mwh": heating_mwh, "cooling_mwh": cooling_mwh}
-
-    def _calculate_error(self, fluxion: float, reference: float) -> float:
-        """Calculate percentage error.
-
-        Args:
-            fluxion: Fluxion value
-            reference: Reference (EnergyPlus) value
-
-        Returns:
-            Percentage error (0-100+)
-        """
-        if reference == 0.0:
-            return 0.0 if fluxion == 0.0 else 100.0
-        return abs(fluxion - reference) / reference * 100.0
-
-    @pytest.mark.parametrize(
-        "case_id,ref_heating,ref_cooling,tolerance,cooling_tolerance,heating_tolerance",
-        [
-            ("900", 1.66, 2.49, 90.0, 400.0, 90.0),  # TODO(WAVE2/WAVE3): restore to 50.0 — see TOLERANCES["heating_900"]
-            ("600", 1.33, 2.17, 100.1, 400.0, 100.1),
-        ],
-    )
-    def test_annual_hvac_energy(
-        self,
-        case_id: str,
-        ref_heating: float,
-        ref_cooling: float,
-        tolerance: float,
-        cooling_tolerance: float,
-        heating_tolerance: float,
+    @pytest.mark.parametrize("case,metric,band,engine_value", _annual_energy_params())
+    def test_annual_energy_within_ashrae140_band(
+        self, case: str, metric: str, band: dict, engine_value: float
     ):
-        """Compare annual HVAC energy against EnergyPlus reference.
-
-        Args:
-            case_id: Case identifier
-            ref_heating: Reference heating energy (MWh)
-            ref_cooling: Reference cooling energy (MWh)
-            tolerance: Acceptable error percentage
-        """
-        # Run Fluxion simulation
-        try:
-            fluxion_results = self._run_fluxion_simulation(case_id)
-        except Exception as e:
-            pytest.fail(f"Failed to run Fluxion simulation: {e}")
-
-        heating_error = self._calculate_error(
-            fluxion_results["heating_mwh"], ref_heating
-        )
-        cooling_error = self._calculate_error(
-            fluxion_results["cooling_mwh"], ref_cooling
+        """Engine annual energy must lie within the ASHRAE 140 +/-15 % band."""
+        assert band["accept_min"] <= engine_value <= band["accept_max"], (
+            f"Case {case} annual {metric}: engine {engine_value:.3f} MWh is "
+            f"outside the ASHRAE 140 +/-{band['tolerance_pct']:.0f}% band "
+            f"[{band['accept_min']:.3f}, {band['accept_max']:.3f}] MWh "
+            f"(published range [{band['ref_min']:.2f}, {band['ref_max']:.2f}] "
+            f"MWh, midpoint {band['midpoint']:.3f} MWh)."
         )
 
-        # Check heating energy
-        if ref_heating > 0:
-            assert heating_error < heating_tolerance, (
-                f"Heating energy error {heating_error:.1f}% > {heating_tolerance}%\n"
-                f"  Fluxion: {fluxion_results['heating_mwh']:.3f} MWh\n"
-                f"  EnergyPlus: {ref_heating:.3f} MWh"
-            )
 
-        # Check cooling energy
-        if ref_cooling > 0:
-            assert cooling_error < cooling_tolerance, (
-                f"Cooling energy error {cooling_error:.1f}% > {cooling_tolerance}%\n"
-                f"  Fluxion: {fluxion_results['cooling_mwh']:.3f} MWh\n"
-                f"  EnergyPlus: {ref_cooling:.3f} MWh"
-            )
-
-    def test_case_900_heating_energy(self):
-        """Verify Case 900 annual heating energy."""
-        ref_heating = self.REFERENCE_VALUES["900"]["heating_mwh"]
-        tolerance = self.TOLERANCES["heating_900"]
-
-        results = self._run_fluxion_simulation("900")
-        error = self._calculate_error(results["heating_mwh"], ref_heating)
-
-        assert error < tolerance, f"Case 900 heating error {error:.1f}% > {tolerance}%"
-
-    def test_case_900_cooling_energy(self):
-        """Verify Case 900 annual cooling energy."""
-        ref_cooling = self.REFERENCE_VALUES["900"]["cooling_mwh"]
-        tolerance = self.TOLERANCES["cooling_baseline"]
-
-        results = self._run_fluxion_simulation("900")
-        error = self._calculate_error(results["cooling_mwh"], ref_cooling)
-
-        assert error < tolerance, f"Case 900 cooling error {error:.1f}% > {tolerance}%"
-
-    def test_case_900ff_free_floating(self):
-        """Verify Case 900FF has zero HVAC energy (free-floating)."""
-        # Free-floating case should have no HVAC energy
-        results = self._run_fluxion_simulation("900FF")
-
-        assert results["heating_mwh"] < 0.01, "Case 900FF should have zero heating"
-        assert results["cooling_mwh"] < 0.01, "Case 900FF should have zero cooling"
-
-    def test_case_600_heating_energy(self):
-        """Verify Case 600 annual heating energy."""
-        ref_heating = self.REFERENCE_VALUES["600"]["heating_mwh"]
-        tolerance = self.TOLERANCES["heating_600"]
-
-        results = self._run_fluxion_simulation("600")
-        error = self._calculate_error(results["heating_mwh"], ref_heating)
-
-        assert error < tolerance, f"Case 600 heating error {error:.1f}% > {tolerance}%"
-
-    def test_case_600_cooling_energy(self):
-        """Verify Case 600 annual cooling energy."""
-        ref_cooling = self.REFERENCE_VALUES["600"]["cooling_mwh"]
-        tolerance = self.TOLERANCES["cooling_baseline"]
-
-        results = self._run_fluxion_simulation("600")
-        error = self._calculate_error(results["cooling_mwh"], ref_cooling)
-
-        assert error < tolerance, f"Case 600 cooling error {error:.1f}% > {tolerance}%"
-
-
-if __name__ == "__main__":
-    pytest.main([__file__, "-v", "-s"])
+# NOTE on free-floating (600FF / 900FF) energy:
+#   A free-floating case has no HVAC system, so its annual HVAC energy is
+#   structurally exactly 0.0 MWh -- a definition, not a comparison. The previous
+#   ``TOLERANCES["free_floating"] = 100.0`` was dead config (never used by any
+#   assertion) dressing up a tautology. Rather than assert ``0.0 == 0.0`` here,
+#   the LIVE engine check that free-floating mode emits zero HVAC demand lives
+#   in the Rust suite: ``tests/case_900ff_multinode_validation.rs::
+#   test_case_900ff_multinode_free_floating_zero_hvac_demand`` (and free-floating
+#   TEMPERATURE validation, KNOWN_ISSUES Sec FREE-01/02/03, lives in
+#   ``tests/ashrae_140_free_floating.rs`` / ``tests/validation/free_floating_tests.rs``).
