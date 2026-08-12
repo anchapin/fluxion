@@ -3088,14 +3088,23 @@ mod tests {
             // Resolve the request id from the active `run_simulation` span
             // when the event itself does not carry it (the fallback WARN does
             // not — it inherits the field from the span).
+            //
+            // #2669 — walk the *full* span scope chain (innermost current span
+            // up to the root) and return the first span whose id we recorded in
+            // `on_new_span`, rather than consulting only `lookup_current()`.
+            // `event_scope` yields the same innermost span first, so this is
+            // strictly more robust: even if the event's contextual current span
+            // is not the request-id-carrying one (e.g. an intermediate span is
+            // current when the WARN fires), the request id is still resolved.
+            // This keeps the per-test capture hermetic and deterministic under
+            // parallel execution — the assertion can never fail due to a
+            // dropped/empty request id.
             let request_id = request_id_direct.or_else(|| {
-                ctx.lookup_current().and_then(|span| {
-                    self.span_request_ids
-                        .lock()
-                        .unwrap()
-                        .get(&span.id())
-                        .cloned()
-                })
+                let span_ids = self.span_request_ids.lock().unwrap();
+                ctx.event_scope(event)
+                    .into_iter()
+                    .flatten()
+                    .find_map(|span| span_ids.get(&span.id()).cloned())
             });
             self.captured
                 .lock()
@@ -3114,6 +3123,13 @@ mod tests {
         // `request_id = test-123` and the fallback message was emitted.
         // `use_surrogates = true` with no ONNX model loaded triggers the
         // analytical-fallback path and therefore the WARN.
+        //
+        // #2669 — this test was reported flaky under parallel execution
+        // (captured WARN occasionally observed without its `request_id`).
+        // The capture is fully hermetic: a per-test `Arc<Mutex<Vec<_>>>`
+        // buffer and a per-test span-id map, installed on a thread-local
+        // subscriber via `with_default`, and `on_event` walks the full span
+        // scope chain to resolve `request_id` (see `RequestIdWarnCapture`).
         use tracing_subscriber::layer::SubscriberExt as _;
 
         let captured: std::sync::Arc<std::sync::Mutex<Vec<(String, String)>>> =
@@ -3130,12 +3146,23 @@ mod tests {
         });
 
         let guard = captured.lock().unwrap();
+        // #2669 — distinct diagnostics for the two failure modes so any future
+        // regression is instantly diagnosable: (a) the WARN was never observed
+        // at all vs. (b) WARN(s) were observed but none carried `test-123`.
+        assert!(
+            !guard.is_empty(),
+            "expected at least one surrogate-fallback WARN event on the per-test \
+             subscriber, but none were captured — `run_simulation` emits the \
+             fallback WARN synchronously when `use_surrogates = true` and no \
+             ONNX model is loaded"
+        );
         assert!(
             guard.iter().any(|(rid, msg)| {
                 rid.contains("test-123") && msg.to_lowercase().contains("fallback")
             }),
             "expected a surrogate-fallback WARN carrying request_id `test-123`; \
-             captured events: {guard:?}"
+             captured {} WARN/ERROR event(s): {guard:?}",
+            guard.len()
         );
     }
 
