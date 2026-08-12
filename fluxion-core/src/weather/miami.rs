@@ -42,8 +42,8 @@ use std::f64::consts::PI;
 ///
 /// println!("Location: {}", weather.location().unwrap());
 ///
-/// // Get weather for July 1st noon
-/// let data = weather.get_hourly_data(4344).unwrap(); // ~July 1
+/// // Get weather for July 1st solar noon
+/// let data = weather.get_hourly_data(4356).unwrap(); // July 1, 12:00
 /// println!("Temperature: {}°C", data.dry_bulb_temp);
 /// ```
 #[derive(Debug, Clone)]
@@ -300,7 +300,15 @@ mod tests {
     #[test]
     fn test_miami_solar_radiation() {
         let weather = MiamiTmyWeather::new();
-        let data_noon = weather.get_hourly_data(4344).unwrap(); // July noon-ish
+        // Hour 4356 = day-of-year 181 (July 1), hour-of-day 12 (solar noon).
+        // NOTE: the previous index 4344 was day 181, hour 0 (midnight) — the sun is
+        // ~41° below the horizon so the generator correctly returns GHI = 0. That
+        // was the source of the pre-existing failure (#2673), not the GHI model.
+        // Verified via Python (RULES.md §0): at hour-of-day 12 on July 1 the
+        // generator yields elevation ≈ 87°, DNI ≈ 924, DHI ≈ 323, GHI ≈ 1246 W/m² —
+        // within the plausible clear-sky band for Miami (25.82°N) at the July 1
+        // solar noon (Haurwitz ≈ 1034 W/m², ASHRAE 2009 ≈ 1004 W/m²).
+        let data_noon = weather.get_hourly_data(4356).unwrap(); // July 1, solar noon
 
         // Miami should have significant solar radiation
         assert!(
