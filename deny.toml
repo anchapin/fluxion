@@ -21,9 +21,12 @@
 # tools). Override on the CLI via `cargo deny check --deny <lint>` if needed.
 
 [graph]
-# Scan the default-feature graph (matches the primary `cargo build`). Toggle
-# with `cargo deny check --all-features` when auditing the full feature space.
-all-features = false
+# Scan the FULL feature graph so crates that only appear under a feature flag
+# (ONNX/`ort` w/ download-binaries, `rdkafka`, `pyo3`, `napi`, `dhat`, `dwave`,
+# etc.) are scanned for advisories / licenses / bans / sources too. The
+# `dwave` feature in particular handles a live API token — its deps must not
+# go unscanned. Issue #2758.
+all-features = true
 no-default-features = false
 
 [output]
