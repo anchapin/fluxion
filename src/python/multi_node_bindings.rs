@@ -7,7 +7,7 @@ use crate::physics::multi_node_solver::{MultiNodeSolver, SurfaceExteriorTemperat
 use fluxion_core::multi_node::{MassAirCouplingMode, MultiNodeThermalMass, ThermalMassNode};
 use pyo3::prelude::*;
 
-#[pyclass(name = "ThermalMassNode")]
+#[pyclass(name = "ThermalMassNode", from_py_object)]
 #[derive(Clone, Debug)]
 pub struct PyThermalMassNode {
     pub temperature: f64,
@@ -107,7 +107,7 @@ impl PyThermalMassNode {
     }
 }
 
-#[pyclass(name = "MultiNodeThermalMass")]
+#[pyclass(name = "MultiNodeThermalMass", from_py_object)]
 #[derive(Clone, Debug)]
 pub struct PyMultiNodeThermalMass {
     pub wall: PyThermalMassNode,
@@ -185,7 +185,7 @@ impl PyMultiNodeThermalMass {
     }
 }
 
-#[pyclass(name = "MassAirCouplingMode", eq, eq_int)]
+#[pyclass(name = "MassAirCouplingMode", eq, eq_int, from_py_object)]
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum PyMassAirCouplingMode {
     AdditiveSum,
@@ -220,7 +220,7 @@ impl PyMassAirCouplingMode {
     }
 }
 
-#[pyclass(name = "SurfaceExteriorTemperatures")]
+#[pyclass(name = "SurfaceExteriorTemperatures", from_py_object)]
 #[derive(Clone, Debug)]
 pub struct PySurfaceExteriorTemperatures {
     pub t_ext_wall: f64,
@@ -290,7 +290,7 @@ impl PySurfaceExteriorTemperatures {
     }
 }
 
-#[pyclass(name = "MultiNodeSolver")]
+#[pyclass(name = "MultiNodeSolver", from_py_object)]
 #[derive(Clone, Debug)]
 pub struct PyMultiNodeSolver {
     pub mass: PyMultiNodeThermalMass,

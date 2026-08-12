@@ -56,7 +56,7 @@ use pyo3::prelude::*;
 /// Python-side mirror of [`fluxion_core::ashrae_cases::Orientation`]. Equality
 /// and hashing are preserved via `eq, eq_int` so users can compare with `==`
 /// and `!=` (e.g. `s.orientation == Orientation.South`).
-#[pyclass(name = "Orientation", eq, eq_int)]
+#[pyclass(name = "Orientation", eq, eq_int, from_py_object)]
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum PyOrientation {
     North,
@@ -131,7 +131,7 @@ impl PyOrientation {
 // =============================================================================
 
 /// Shading device attached to a surface (overhang, fins, or both).
-#[pyclass(name = "ShadingDevice")]
+#[pyclass(name = "ShadingDevice", from_py_object)]
 #[derive(Clone, Copy, Debug)]
 pub struct PyShadingDevice {
     /// Type of shading (overhang, fins, both, or none).
@@ -144,7 +144,7 @@ pub struct PyShadingDevice {
     pub mounting_height: f64,
 }
 
-#[pyclass(name = "ShadingType", eq, eq_int)]
+#[pyclass(name = "ShadingType", eq, eq_int, from_py_object)]
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum PyShadingType {
     None,
@@ -244,7 +244,7 @@ impl PyShadingDevice {
 /// This is the Python-side mirror of [`ConstructionLayer`]. Each `Material`
 /// is an owned snapshot — mutations on it do not propagate back to the parent
 /// model unless explicitly written via the model's setters.
-#[pyclass(name = "Material")]
+#[pyclass(name = "Material", from_py_object)]
 #[derive(Clone, Debug)]
 pub struct PyMaterial {
     /// Material name (e.g. "Gypsum", "Concrete").
@@ -342,7 +342,7 @@ impl PyMaterial {
 /// `u_value`, `orientation`) and the existing shading devices
 /// (`overhang`/`fins`). Appending a [`PyShadingDevice`] mutates only the
 /// snapshot — see module docs for the lifetime story.
-#[pyclass(name = "Surface")]
+#[pyclass(name = "Surface", from_py_object)]
 #[derive(Clone, Debug)]
 pub struct PySurface {
     /// Total surface area in square meters (m²).
@@ -499,7 +499,7 @@ impl PySurface {
 /// parent model: its index, current air temperature, zone floor area, and
 /// the surfaces that bound it. Like [`PySurface`], this is an owned
 /// snapshot — see the module-level docs for the lifetime story.
-#[pyclass(name = "Zone")]
+#[pyclass(name = "Zone", from_py_object)]
 #[derive(Clone, Debug)]
 pub struct PyZone {
     /// Zero-based zone index in the parent model.
@@ -595,7 +595,7 @@ impl PyZone {
 /// Mirrors [`crate::validation::ashrae140::HVACSystem`] (the validation-layer
 /// HVAC type) with the most commonly-used ASHRAE 140 fields exposed. Used by
 /// Measures that want to inspect or tweak the heating / cooling plant.
-#[pyclass(name = "HVACSystem")]
+#[pyclass(name = "HVACSystem", from_py_object)]
 #[derive(Clone, Debug)]
 pub struct PyHVACSystem {
     /// Heating capacity (W).

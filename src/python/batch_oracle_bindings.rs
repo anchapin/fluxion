@@ -402,7 +402,7 @@ impl BatchOracle {
 /// design parameters used by BatchOracle and Model. Optimization libraries
 /// can query these bounds to generate valid parameter vectors.
 #[cfg(feature = "python-bindings")]
-#[pyclass]
+#[pyclass(from_py_object)]
 #[derive(Clone)]
 pub struct ParameterBounds {
     /// Minimum window U-value (W/m²K)

@@ -145,7 +145,7 @@ where
 ///
 /// # Thread Safety
 /// VectorField is Clone and Send, enabling parallel evaluation.
-#[cfg_attr(feature = "python-bindings", pyo3::pyclass)]
+#[cfg_attr(feature = "python-bindings", pyo3::pyclass(from_py_object))]
 #[derive(Debug, Clone, PartialEq)]
 pub struct VectorField {
     data: SmallVec<[f64; 4]>,
