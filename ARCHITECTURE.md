@@ -224,6 +224,59 @@ the count and exits non-zero only on regression. Wired into CI as the
 to `release_gates.yaml::ci.required_checks` by #2462 so a future PR that
 re-introduces a cycle edge fails branch protection.
 
+### Downward trend guard (Issue #2768)
+
+The two regression guards above enforce a **magnitude contract** — the cycle
+edge count must stay at or below the grandfathered baseline. They cannot
+detect two pathologies that block goal #3 (the cycle must *trend toward
+zero*):
+
+1. **Frozen, not broken** — the count sits at 215 run after run. The
+   magnitude gate passes green every time; nothing forces the count down.
+2. **Net-flat edge swap** — a PR removes an edge in one file and adds a
+   *different* edge in another. Net count is unchanged, the magnitude
+   gate passes, but the cycle's *shape* changed without authorisation.
+   The new edge may be higher-criticality than the one it replaced
+   (e.g. swapping a `validation::diagnostics` import for a fresh
+   `CaseSpec` match arm).
+
+`scripts/check_cycle_downward_trend.py` closes both gaps. It consumes the
+scan primitives of the two existing guards (it does **not** re-implement
+the detection logic) and layers three directional rules on top of an
+append-only ledger at `scripts/cycle_baseline_history.json`:
+
+| Rule | Scope | Fires when |
+|------|-------|------------|
+| **R1** (no growth)         | per-PR + nightly | `current_total > last_total` |
+| **R2** (downward progress) | nightly only     | last `STALE_THRESHOLD_NIGHTS` (=14) snapshots all have the same total |
+| **R3** (no net-flat swap)  | per-PR + nightly | `current_total == last_total` but the sorted multiset of `(file, lineno, scanned-line)` tuples changed (sha256 differs) |
+
+The per-PR job (`Cycle Downward Trend Guard (Issue #2768)` in
+`.github/workflows/rust-tests.yml`) runs R1 + R3 on every PR and main
+push. The nightly job (`Cycle Downward Trend Guard (nightly, Issue #2768)`,
+`cron: "17 3 * * *"`) additionally runs R2. R2 is **not** enforced on
+PRs so an ordinary PR that doesn't touch the cycle still merges; the
+nightly cron is what drives the architecture toward zero.
+
+The ledger's `edge_signature` field is the sha256 of the sorted offender
+strings, so any change to the *set* of edges — even one that nets the
+total to flat — is caught by R3.
+
+**Reset policy.** The ledger is append-only. The only authorised way to
+extend it with a *higher* total is an architectural sign-off commit that
+also updates the baselines in `scripts/check_ashrae_cases_cycle.py` and
+the baseline table above. Silently rewriting the ledger (or editing a
+prior snapshot's total) to hide a regression defeats the purpose and is
+a blocking review issue. A *lower* total may be appended freely as part
+of the cycle-removal workflow (run
+`python3 scripts/check_cycle_downward_trend.py --update` after landing a
+cycle-removal PR and commit the updated ledger).
+
+The new jobs are wired into CI but **not** added to
+`release_gates.yaml::ci.required_checks` yet — they run as non-blocking
+checks first to validate the signature-stability of the edge scan across
+the PR fleet. Promote to `required_checks` after a green week.
+
 These will be addressed in subsequent phases. The current change lets
 `cargo-mutants -p fluxion` skip the bulk of the assembly / construction /
 per-surface-conduction / multi-node / ashrae-cases type machinery by mutating

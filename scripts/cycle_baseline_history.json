@@ -1,0 +1,28 @@
+{
+  "schema_version": 1,
+  "buckets": [
+    "sim_to_validation",
+    "validation_to_sim",
+    "validation_to_physics",
+    "validation_to_weather",
+    "physics_to_sim",
+    "sim_to_physics"
+  ],
+  "snapshots": [
+    {
+      "timestamp": "2026-08-12T17:36:32+00:00",
+      "commit": "82663dd",
+      "source": "initial-baseline-issue-2768",
+      "totals": {
+        "sim_to_validation": 72,
+        "validation_to_sim": 58,
+        "validation_to_physics": 62,
+        "validation_to_weather": 23,
+        "physics_to_sim": 0,
+        "sim_to_physics": 0
+      },
+      "total": 215,
+      "edge_signature": "e3973d3fd4f592fbc0d6f49dc2127f7a9019c7543cd6b3849768e5821d9e9e60"
+    }
+  ]
+}
