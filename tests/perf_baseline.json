@@ -3,6 +3,12 @@
   "throughput_analytical": 225.0,
   "latency_ms": 4.454,
   "population_size": 100,
+  "multi_zone_throughput": 50.0,
+  "multi_zone": {
+    "population_size": 1000,
+    "zones": 10,
+    "use_surrogates": false
+  },
   "_meta": {
     "measured_at": "2026-08-12",
     "methodology": "Median of N runs of `cargo test --test performance_regression_test --release test_performance_regression` (population=100, 1 warmup + 1 measured per run). Same harness CI's absolute-perf-gate (#2693) and performance.yml use. Computed via Python statistics.median (RULES.md constraint #0).",
@@ -26,6 +32,22 @@
         4.43,
         4.436,
         4.694
+      ]
+    },
+    "multi_zone_methodology": "Median of 4 release-mode runs of `cargo test --test performance_regression_test --release test_multi_zone_performance_regression` (issue #2772: 10-zone ThermalModel, population=1000, analytical mode, 1 warmup + 1 measured per run). The multi-zone gate floor is `release_gates.yaml → benchmark.multi_zone.min_configs_per_sec: 10`; this baseline (50 cfg/sec) gives ~5x margin on dev-local. CI ubuntu-latest measurements may differ; the field is additive (no existing fields perturbed) and the test treats the absolute floor as the hard gate regardless of this baseline.",
+    "multi_zone_n_runs": 4,
+    "multi_zone_samples": {
+      "throughput_configs_per_sec": [
+        34.0,
+        48.0,
+        53.0,
+        53.0
+      ],
+      "latency_ms_per_config": [
+        29.407,
+        20.775,
+        18.915,
+        18.922
       ]
     },
     "machine": {

@@ -751,6 +751,185 @@ jobs:
           retention-days: 30
 
   # =========================================================================
+  # multi-zone-perf-gate — PR-blocking ABSOLUTE multi-zone floor (Issue #2772).
+  #
+  # The Absolute Perf Gate (#2693) measures against the 150 cfg/s floor on
+  # the SINGLE-ZONE analytical path — a much easier target than the
+  # multi-zone gate (`release_gates.yaml` →
+  # `benchmark.multi_zone.min_configs_per_sec: 10` for a 10-zone model).
+  # `benches/multi_zone_throughput.rs:17` documents that population_10k
+  # runs at ~28 cfg/sec — only 2.8× margin over the 10 cfg/s floor — yet
+  # before this job the slowest regime (pop_10k / pop_1000) was only
+  # gated by manual `cargo bench` (and `performance_ci_test.rs` only
+  # exercised population=100). A change adding per-zone cost could pass
+  # the #2693 absolute gate while blowing the multi-zone margin.
+  #
+  # This job closes that gap (issue #2772). It runs the
+  # `test_multi_zone_performance_regression` test x3, takes the MEDIAN of
+  # the parsed `Multi-zone throughput:` lines, writes
+  # `benchmark_results.json` with the `multi_zone_throughput` metric, and
+  # feeds it to `scripts/release_gate_checker.py --benchmark-gates
+  # multi_zone_throughput`. The job FAILS if throughput < 10 cfg/s on the
+  # 10-zone pop_1000 workload.
+  #
+  # Runner: `ubuntu-latest` (NOT `vars.FLUXION_LINUX_RUNNER`) — parity
+  # with `absolute-perf-gate`, whose 150 cfg/s floor was calibrated on
+  # ubuntu-latest. The multi-zone floor (10 cfg/s) was likewise set on
+  # GitHub-hosted ubuntu-latest, so a self-hosted runner would measure a
+  # different absolute throughput and make the floor incomparable.
+  # =========================================================================
+  multi-zone-perf-gate:
+    name: Multi-Zone Perf Gate (Issue #2772)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    # NOTE: intentionally no `needs: bench-default` — this job builds its
+    # own release test binary and runs in parallel with `absolute-perf-gate`
+    # / `bench-default` for a faster PR signal.
+    if: github.event_name == 'pull_request' || (github.event_name == 'push' && github.ref == 'refs/heads/main') || github.event_name == 'workflow_dispatch'
+
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4
+
+      - name: Install system dependencies
+        uses: ./.github/actions/install-system-deps
+        with:
+          packages: libssl-dev,pkg-config,libfontconfig1-dev,fontconfig
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@4cda84d5c5c54efe2404f9d843567869ab1699d4  # stable
+
+      - name: Cache cargo (multi-zone-perf-gate)
+        uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32  # v2
+        with:
+          shared-key: perf-dashboard-default
+          cache-on-failure: true
+
+      # Build the release test binary once (shared across all 3 measurement
+      # runs). Default features only — matches `bench-default` and what a
+      # user gets from `cargo install fluxion`.
+      - name: Build release (default features)
+        run: cargo build --release
+
+      # Median-of-3 noise suppression. Each run invokes the single
+      # `test_multi_zone_performance_regression` test (population = 1000 on
+      # a 10-zone model), which prints exactly one `Multi-zone throughput:`
+      # line. We tolerate a nonzero test exit (e.g. a baseline-regression
+      # warning from a `report-only` baseline, which is NOT a failure) with
+      # `|| true`; the throughput line is printed before any baseline check.
+      #
+      # Runtime budget: each pop_1000 / 10-zone run measures ~30-60s on
+      # ubuntu-latest; median-of-3 + ~3 min cold-cache build fits inside
+      # the 20-min job timeout with margin.
+      - name: Run multi-zone benchmark (median of 3)
+        run: |
+          rm -f run_*.txt
+          for i in 1 2 3; do
+            echo "=== measurement run ${i}/3 ==="
+            cargo test --test performance_regression_test --release test_multi_zone_performance_regression -- --nocapture --no-fail-fast > "run_${i}.txt" 2>&1 || true
+          done
+
+          python3 << 'EOF'
+          import glob
+          import json
+          import re
+          import statistics
+          import sys
+
+          throughput_re = re.compile(r'Multi-zone throughput:\s*([\d.]+)\s*configs/sec')
+          latency_re = re.compile(r'Latency per config:\s*([\d.]+)ms')
+
+          throughputs, latencies = [], []
+          for path in sorted(glob.glob('run_*.txt')):
+              txt = open(path, errors='replace').read()
+              t = throughput_re.findall(txt)
+              l = latency_re.findall(txt)
+              if t and l:
+                  throughputs.append(float(t[-1]))
+                  latencies.append(float(l[-1]))
+                  print(f"{path}: throughput={t[-1]} cfg/s, latency={l[-1]} ms")
+              else:
+                  print(f"WARNING: {path} produced no parseable metrics")
+
+          if len(throughputs) < 2:
+              print("ERROR: fewer than 2 successful multi-zone measurement runs; cannot compute a stable median.")
+              print("This usually means a compile error or a runtime panic before measurement.")
+              for path in sorted(glob.glob('run_*.txt')):
+                  print(f"\n--- {path} (first 2000 chars) ---")
+                  print(open(path, errors='replace').read()[:2000])
+              sys.exit(2)
+
+          med_throughput = statistics.median(throughputs)
+          med_latency = statistics.median(latencies)
+
+          print(f"\nSamples: throughput={throughputs}")
+          print(f"         latency={latencies}")
+          print(f"Median multi-zone throughput: {med_throughput:.1f} configs/sec")
+          print(f"Median multi-zone latency:    {med_latency:.3f} ms/config")
+
+          results = {
+              "metrics": {
+                  # `multi_zone_throughput` is the gate name expected by
+                  # scripts/release_gate_checker.py (mirrors how it reads
+                  # `benchmark.multi_zone.min_configs_per_sec` from
+                  # release_gates.yaml). Throughput + latency are also
+                  # populated so a future --benchmark-gates filter expansion
+                  # picks them up without re-running the job.
+                  "multi_zone_throughput": med_throughput,
+                  "throughput_configs_per_sec": med_throughput,
+                  "latency_ms_per_config": med_latency,
+              },
+              "samples": {
+                  "throughput": throughputs,
+                  "latency": latencies,
+                  "runs": len(throughputs),
+                  "strategy": "median-of-3",
+                  "workload": "10-zone ThermalModel, pop_1000, analytical mode",
+              },
+          }
+          with open('benchmark_results.json', 'w') as f:
+              json.dump(results, f, indent=2)
+          print("\nWrote benchmark_results.json")
+          EOF
+
+      # Evaluate the ABSOLUTE multi-zone floor from release_gates.yaml
+      # (≥ 10 cfg/s on 10-zone pop_1000). --benchmark-gates restricts
+      # evaluation to the `multi_zone_throughput` gate (issue #2772); the
+      # checker exits 1 on any failure.
+      - name: Evaluate multi-zone gate (≥ 10 cfg/s)
+        run: |
+          python3 scripts/release_gate_checker.py \
+            --benchmark-results benchmark_results.json \
+            --benchmark-gates multi_zone_throughput \
+            --json --output gate_status.json
+
+      - name: Summary
+        if: always()
+        run: |
+          echo "## Multi-Zone Perf Gate (Issue #2772)" >> $GITHUB_STEP_SUMMARY
+          echo "Enforces \`release_gates.yaml\` multi-zone absolute floor on every PR:" >> $GITHUB_STEP_SUMMARY
+          echo "- multi-zone throughput ≥ 10 configs/sec (10-zone, pop_1000, analytical mode)" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Why:** the #2693 Absolute Perf Gate measures the *single-zone* analytical path against the 150 cfg/s floor — a much easier target than the 10 cfg/s multi-zone floor. \`benches/multi_zone_throughput.rs:17\` documents only 2.8× margin at pop_10k; without this gate a per-zone-cost regression could merge and blow that margin silently." >> $GITHUB_STEP_SUMMARY
+          echo "**Noise suppression:** median of 3 \`test_multi_zone_performance_regression\` runs (pop_1000, release build, default features)." >> $GITHUB_STEP_SUMMARY
+          echo "**Runner:** \`ubuntu-latest\` (the 10 cfg/s floor was calibrated here; self-hosted runners measure a different absolute throughput — parity with \`absolute-perf-gate\`)." >> $GITHUB_STEP_SUMMARY
+          if [ -f gate_status.json ]; then
+            echo '```json' >> $GITHUB_STEP_SUMMARY
+            cat gate_status.json >> $GITHUB_STEP_SUMMARY
+            echo '```' >> $GITHUB_STEP_SUMMARY
+          fi
+
+      - name: Upload results
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02  # v4
+        with:
+          name: multi-zone-perf-gate-${{ github.run_id }}
+          path: |
+            benchmark_results.json
+            gate_status.json
+            run_*.txt
+          retention-days: 30
+
+  # =========================================================================
   # dhat-alloc-budget — PR-gated allocation-budget gate for the BatchOracle
   # hot loop (Issue #2709).
   # Runs the feature-gated `dhat_alloc_budget` integration test, which installs
