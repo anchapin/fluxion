@@ -85,6 +85,12 @@ fn load_baseline() -> Option<BaselineMetrics> {
         .and_then(|v| v.as_str())
         .map(str::to_owned);
 
+    // Optional fields — read additively so older baselines (which predate
+    // the field) keep loading. `multi_zone_throughput` (issue #2772) is the
+    // only additive metric today; if absent the multi-zone regression test
+    // takes its "no baseline" branch (loud warning, never a silent no-op).
+    let multi_zone_throughput = json.get("multi_zone_throughput").and_then(|v| v.as_f64());
+
     Some(BaselineMetrics {
         timestamp: json.get("timestamp")?.as_str()?.to_string(),
         throughput_analytical: json.get("throughput_analytical")?.as_f64()?,
@@ -92,6 +98,7 @@ fn load_baseline() -> Option<BaselineMetrics> {
         hard_gate,
         measured_at,
         runner_class,
+        multi_zone_throughput,
     })
 }
 
@@ -152,6 +159,12 @@ struct BaselineMetrics {
     hard_gate: bool,
     measured_at: Option<String>,
     runner_class: Option<String>,
+    /// Optional 10-zone throughput baseline (configs/sec) for
+    /// `test_multi_zone_performance_regression` (issue #2772). `None` on
+    /// baselines predating the field — the multi-zone test then falls back
+    /// to the absolute floor (`benchmark.multi_zone.min_configs_per_sec`,
+    /// currently 10) and skips the relative-regression leg.
+    multi_zone_throughput: Option<f64>,
 }
 
 /// Performance metrics from a test run
@@ -186,6 +199,102 @@ fn run_performance_test(population_size: usize) -> PerformanceMetrics {
     let _ = oracle.evaluate_population(population.clone(), false);
 
     // Actual benchmark
+    let start = Instant::now();
+    let _ = oracle.evaluate_population(population.clone(), false);
+    let elapsed = start.elapsed();
+
+    let elapsed_ms = elapsed.as_secs_f64() * 1000.0;
+    let throughput = population_size as f64 / elapsed.as_secs_f64();
+    let latency_per_config_ms = elapsed_ms / population_size as f64;
+
+    PerformanceMetrics {
+        elapsed_ms,
+        throughput,
+        latency_per_config_ms,
+    }
+}
+
+/// Zone count enforced by the multi-zone throughput gate
+/// (`release_gates.yaml`: `benchmark.multi_zone.zones: 10`).
+const MULTI_ZONE_GATE_ZONES: usize = 10;
+
+/// Fallback for the absolute multi-zone floor (configs/sec) when
+/// `release_gates.yaml` is unreadable. Matches
+/// `benchmark.multi_zone.min_configs_per_sec`. Drift-guarded by
+/// [`test_multi_zone_floor_matches_yaml`].
+const MULTI_ZONE_MIN_CONFIGS_PER_SEC_FALLBACK: f64 = 10.0;
+
+/// Read `benchmark.multi_zone.min_configs_per_sec` (the ABSOLUTE floor for
+/// the 10-zone gate) from `release_gates.yaml`. Returns the fallback when
+/// the file is absent or malformed (e.g. an exotic `--target-dir` remap).
+fn multi_zone_floor_from_yaml() -> f64 {
+    let content = match fs::read_to_string(RELEASE_GATES_FILE) {
+        Ok(s) => s,
+        Err(_) => return MULTI_ZONE_MIN_CONFIGS_PER_SEC_FALLBACK,
+    };
+    let yaml = match serde_yaml::from_str::<serde_yaml::Value>(&content) {
+        Ok(v) => v,
+        Err(_) => return MULTI_ZONE_MIN_CONFIGS_PER_SEC_FALLBACK,
+    };
+    let pct = yaml
+        .get("benchmark")
+        .and_then(|b| b.get("multi_zone"))
+        .and_then(|m| m.get("min_configs_per_sec"))
+        .and_then(|v| v.as_f64());
+    match pct {
+        Some(v) if v.is_finite() && v > 0.0 => v,
+        _ => MULTI_ZONE_MIN_CONFIGS_PER_SEC_FALLBACK,
+    }
+}
+
+/// Synthetic-population generator matching the fixture used by
+/// `benches/multi_zone_throughput.rs` and `tests/performance_ci_test.rs`
+/// (the gate test), so this regression measurement is directly comparable
+/// to the release-gate assertion. Parameter ranges are documented for
+/// `BatchOracle::evaluate_population`:
+/// - `[0]` U-value: 0.1-5.0 W/m²K
+/// - `[1]` Heating setpoint: 15-25 °C
+/// - `[2]` Cooling setpoint: 22-32 °C
+fn generate_multi_zone_population(size: usize) -> Vec<Vec<f64>> {
+    use rand::rngs::StdRng;
+    use rand::{Rng, SeedableRng};
+
+    let mut rng = StdRng::seed_from_u64(42);
+    let mut population = Vec::with_capacity(size);
+    for _ in 0..size {
+        let u_value = rng.gen_range(0.1..5.0);
+        let heating_setpoint = rng.gen_range(15.0..25.0);
+        let cooling_setpoint = rng.gen_range(22.0..32.0);
+        population.push(vec![u_value, heating_setpoint, cooling_setpoint]);
+    }
+    population
+}
+
+/// Run the multi-zone performance test and measure throughput.
+///
+/// Mirrors [`run_performance_test`] but constructs a 10-zone
+/// `ThermalModel` (the configuration the
+/// `benchmark.multi_zone.min_configs_per_sec` release gate actually
+/// targets) and feeds the shared synthetic-population fixture, so a
+/// measurement here is directly comparable to
+/// `tests/performance_ci_test.rs::test_multi_zone_throughput` and
+/// `benches/multi_zone_throughput.rs`. Analytical mode
+/// (`use_surrogates = false`) avoids the ONNX runtime dependency,
+/// matching the existing gate test and bench.
+fn run_multi_zone_performance_test(population_size: usize) -> PerformanceMetrics {
+    use fluxion::physics::cta::VectorField;
+    use fluxion::sim::engine::ThermalModel;
+    use fluxion::BatchOracle;
+
+    let base_model = ThermalModel::<VectorField>::new(MULTI_ZONE_GATE_ZONES);
+    let oracle = BatchOracle::from_model(base_model);
+
+    let population = generate_multi_zone_population(population_size);
+
+    // Warm-up run — populates any lazy per-zone state on the cold path so
+    // the measured run reflects steady-state throughput.
+    let _ = oracle.evaluate_population(population.clone(), false);
+
     let start = Instant::now();
     let _ = oracle.evaluate_population(population.clone(), false);
     let elapsed = start.elapsed();
@@ -452,5 +561,242 @@ fn test_performance_smoke_test() {
         "Performance below minimum target: {:.0} configs/sec (expected >{})",
         metrics.throughput,
         min_throughput
+    );
+}
+
+/// Multi-zone performance regression test (Issue #2772).
+///
+/// The Absolute Perf Gate (#2693) measures the *single-zone analytical*
+/// path against the 150 cfg/s floor — a much easier target than the
+/// multi-zone gate (`release_gates.yaml` →
+/// `benchmark.multi_zone.min_configs_per_sec: 10` for a 10-zone model).
+/// `benches/multi_zone_throughput.rs:17` documents that population_10k
+/// runs at ~28 cfg/sec — only 2.8× margin over the 10 cfg/s floor — yet
+/// before this test the slowest regime (pop_10k) was only gated by
+/// manual `cargo bench`, and `performance_ci_test.rs` only exercised
+/// population=100 on 10-zone. A change adding per-zone cost could pass
+/// the #2693 absolute gate while blowing the multi-zone margin.
+///
+/// This test closes that gap. It mirrors [`test_performance_regression`]
+/// — median-of-3 measurement profile, identical 5% regression threshold
+/// from `release_gates.yaml` → `benchmark.regression_threshold`,
+/// `_meta.enforcement`-aware panic-vs-warn semantics — but runs
+/// [`run_multi_zone_performance_test`] at `population_size = 1000`
+/// (10× the existing CI throughput test, large enough that per-zone
+/// cost dominates the inner rayon loop).
+///
+/// The test enforces TWO invariants:
+/// 1. **Absolute floor** — `multi_zone_throughput ≥
+///    benchmark.multi_zone.min_configs_per_sec` (currently 10 cfg/s).
+///    This is a HARD assertion (panics in every mode, including
+///    `report-only`), because the floor is a release-gate contract, not
+///    a noise-prone cross-runner comparison. Tarpaulin / debug builds
+///    relax it via cfg gates (matching [`test_performance_smoke_test`]).
+/// 2. **Relative regression** — if a `multi_zone_throughput` baseline is
+///    present in `tests/perf_baseline.json`, a slowdown beyond the 5%
+///    threshold is a hard panic for `enforcement: hard-gate` baselines
+///    and a loud WARNING for `report-only` baselines (cross-runner
+///    throughput is not comparable within 5% — see [`test_performance_regression`]).
+///
+/// Run with:
+/// ```
+/// cargo test --test performance_regression_test test_multi_zone_performance_regression --release
+/// ```
+#[test]
+fn test_multi_zone_performance_regression() {
+    let population_size = 1000;
+    let threshold = regression_threshold();
+    let absolute_floor = multi_zone_floor_from_yaml();
+
+    let metrics = run_multi_zone_performance_test(population_size);
+
+    // The metric line the dashboard's median-of-3 parser greps for. The
+    // exact label `Multi-zone throughput:` is matched by
+    // `.github/workflows/performance_dashboard.yml` → `multi-zone-perf-gate`
+    // — keep them in sync.
+    println!("\nMulti-zone ({MULTI_ZONE_GATE_ZONES} zones) performance metrics:");
+    println!("  Population size: {population_size}");
+    println!("  Elapsed: {:.2}ms", metrics.elapsed_ms);
+    println!(
+        "  Multi-zone throughput: {:.0} configs/sec",
+        metrics.throughput
+    );
+    println!(
+        "  Latency per config: {:.3}ms",
+        metrics.latency_per_config_ms
+    );
+    println!(
+        "  Absolute floor: {:.0} configs/sec (from {} → benchmark.multi_zone.min_configs_per_sec)",
+        absolute_floor, RELEASE_GATES_FILE
+    );
+    println!(
+        "  Regression threshold: {:.1}% (from {} → benchmark.regression_threshold)",
+        threshold * 100.0,
+        RELEASE_GATES_FILE
+    );
+
+    // ─────────────────────────────────────────────────────────────────
+    // 1) ABSOLUTE FLOOR — release-gate contract, always enforced.
+    // ─────────────────────────────────────────────────────────────────
+    // Tarpaulin / debug builds measure far below release throughput, so
+    // the floor is relaxed for those build modes (mirrors
+    // `test_performance_smoke_test`). Release builds must clear the
+    // gate's `min_configs_per_sec` regardless of any baseline.
+    #[cfg(tarpaulin)]
+    let effective_floor = absolute_floor * 0.1; // Tarpaulin is ~10x slower
+    #[cfg(not(tarpaulin))]
+    let effective_floor = if cfg!(debug_assertions) {
+        // Debug builds are also much slower; relax to 10% of the
+        // release floor so the test stays useful as a smoke check
+        // without red-herring on every dev `cargo test` run.
+        absolute_floor * 0.1
+    } else {
+        absolute_floor
+    };
+
+    assert!(
+        metrics.throughput >= effective_floor,
+        "MULTI-ZONE ABSOLUTE FLOOR BREACH: {:.0} configs/sec < {:.0} (floor from \
+         release_gates.yaml → benchmark.multi_zone.min_configs_per_sec, {} zones).\n\
+         This is a release-gate contract — the multi-zone throughput gate is the \
+         binding constraint (per issue #2772). Investigate per-zone cost regressions \
+         before merging.",
+        metrics.throughput,
+        effective_floor,
+        MULTI_ZONE_GATE_ZONES,
+    );
+
+    println!(
+        "✓ Absolute floor OK: {:.0} ≥ {:.0} configs/sec",
+        metrics.throughput, effective_floor
+    );
+
+    // ─────────────────────────────────────────────────────────────────
+    // 2) RELATIVE REGRESSION — baseline-driven, enforcement-mode aware.
+    // ─────────────────────────────────────────────────────────────────
+    let baseline = load_baseline();
+    let baseline_mz = baseline
+        .as_ref()
+        .and_then(|b| b.multi_zone_throughput)
+        .filter(|v| v.is_finite() && *v > 0.0);
+
+    if let (Some(b), Some(baseline_throughput)) = (baseline.as_ref(), baseline_mz) {
+        let percent_change = (metrics.throughput - baseline_throughput) / baseline_throughput;
+        let runner = b.runner_class.as_deref().unwrap_or("unknown");
+        println!(
+            "  Multi-zone baseline: {:.0} configs/sec (runner: {}, enforcement: {})",
+            baseline_throughput,
+            runner,
+            if b.hard_gate {
+                "hard-gate"
+            } else {
+                "report-only"
+            }
+        );
+
+        if percent_change < -threshold {
+            let change_percent = percent_change * 100.0;
+            let headline = format!(
+                "MULTI-ZONE PERFORMANCE REGRESSION DETECTED: {:.1}% slowdown\n\
+                 Baseline: {:.0} configs/sec (runner: {}, {} zones)\n\
+                 Current:  {:.0} configs/sec\n\
+                 Threshold: -{:.1}% (release_gates.yaml benchmark.regression_threshold)",
+                change_percent,
+                baseline_throughput,
+                runner,
+                MULTI_ZONE_GATE_ZONES,
+                metrics.throughput,
+                threshold * 100.0,
+            );
+            if b.hard_gate {
+                panic!("{headline}");
+            } else {
+                eprintln!(
+                    "⚠ {headline}\n\
+                     NOTE: report-only baseline — this is a WARNING, not a failure. \
+                     Cross-runner throughput is not comparable within 5%; the hard \
+                     absolute floor above is the gate (#2772 + benchmark.multi_zone).",
+                );
+            }
+        } else {
+            println!(
+                "✓ Multi-zone regression check OK: {:.0} ≥ {:.0} configs/sec (within -{:.1}% threshold)",
+                metrics.throughput,
+                baseline_throughput,
+                threshold * 100.0
+            );
+        }
+    } else if baseline.is_some() {
+        // Baseline loaded but no usable multi_zone_throughput field.
+        // The absolute-floor assertion above still enforces the
+        // release-gate contract; we just skip the relative-regression
+        // leg with a loud signal — never a silent no-op (issue #2680).
+        println!(
+            "⚠ No `multi_zone_throughput` field in {BASELINE_FILE}; skipping the \
+             relative-regression leg. The absolute-floor assertion above still \
+             enforces the release-gate contract. Capture a baseline by adding a \
+             `multi_zone_throughput` field (cfg/sec on a 10-zone model, pop 1000)."
+        );
+    } else {
+        // `load_baseline` returned None — whole file missing/unparseable.
+        // `test_performance_regression` already panics on this case (issue
+        // #2680); here we only warn because the absolute floor above
+        // still gates the run.
+        println!(
+            "⚠ {BASELINE_FILE} unreadable; skipping the relative-regression leg. \
+             The absolute-floor assertion above still enforces the release-gate \
+             contract."
+        );
+    }
+}
+
+/// Drift guard for [`MULTI_ZONE_MIN_CONFIGS_PER_SEC_FALLBACK`].
+///
+/// Mirrors [`test_regression_threshold_matches_yaml`] for the multi-zone
+/// floor: if someone changes `release_gates.yaml →
+/// benchmark.multi_zone.min_configs_per_sec` without updating the
+/// fallback constant (or vice-versa), this test fails CI. The YAML is
+/// the source of truth — update the constant to match.
+#[test]
+fn test_multi_zone_floor_matches_yaml() {
+    let content = match fs::read_to_string(RELEASE_GATES_FILE) {
+        Ok(s) => s,
+        Err(_) => {
+            eprintln!(
+                "warning: could not read {RELEASE_GATES_FILE}; \
+                 multi-zone floor drift guard skipped in this environment"
+            );
+            return;
+        }
+    };
+    let yaml: serde_yaml::Value = match serde_yaml::from_str(&content) {
+        Ok(v) => v,
+        Err(_) => {
+            eprintln!(
+                "warning: could not parse {RELEASE_GATES_FILE}; \
+                 multi-zone floor drift guard skipped in this environment"
+            );
+            return;
+        }
+    };
+    let Some(yaml_floor) = yaml
+        .get("benchmark")
+        .and_then(|b| b.get("multi_zone"))
+        .and_then(|m| m.get("min_configs_per_sec"))
+        .and_then(|v| v.as_f64())
+    else {
+        eprintln!(
+            "warning: benchmark.multi_zone.min_configs_per_sec not found in \
+             {RELEASE_GATES_FILE}; multi-zone floor drift guard skipped"
+        );
+        return;
+    };
+    assert!(
+        (yaml_floor - MULTI_ZONE_MIN_CONFIGS_PER_SEC_FALLBACK).abs() < 1e-9,
+        "MULTI_ZONE_MIN_CONFIGS_PER_SEC_FALLBACK ({}) does not match \
+         release_gates.yaml benchmark.multi_zone.min_configs_per_sec ({}). \
+         The YAML is the source of truth — update the constant to match.",
+        MULTI_ZONE_MIN_CONFIGS_PER_SEC_FALLBACK,
+        yaml_floor,
     );
 }

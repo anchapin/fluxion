@@ -254,6 +254,23 @@ ci:
     # --benchmark-gates throughput,latency`, failing the PR on breach.
     - "Absolute Perf Gate (Issue #2693)"
 
+    # Issue #2772: PR-level ABSOLUTE multi-zone floor. The
+    # `benchmark.multi_zone.min_configs_per_sec: 10` threshold (10-zone
+    # model) was already defined here but only enforced by
+    # `tests/performance_ci_test.rs` on population=100 — never on the
+    # slowest regime (pop_1000 / pop_10k). The #2693 Absolute Perf Gate
+    # measures the SINGLE-ZONE analytical path (150 cfg/s floor), a much
+    # easier target, so a per-zone-cost regression could merge and blow
+    # the multi-zone margin (only 2.8× per
+    # `benches/multi_zone_throughput.rs:17`) silently. The
+    # `multi-zone-perf-gate` job in `performance_dashboard.yml` runs the
+    # new `test_multi_zone_performance_regression` (pop_1000, 10-zone,
+    # analytical) x3 → median → `release_gate_checker.py --benchmark-gates
+    # multi_zone_throughput`, failing the PR on breach. Transparency rule
+    # (#2506 / #1333): this is a real regression-catching absolute floor,
+    # not a silently-greened gate.
+    - "Multi-Zone Perf Gate (Issue #2772)"
+
   # Job-to-workflow map (informational; branch-protection reads job
   # names directly). Used by `scripts/release_gate_checker.py` to verify
   # the required_checks list is in sync with the workflows directory.
@@ -309,4 +326,19 @@ ci:
       # Gate (#1618)` which only checks 5% regression with no floor.
       workflow: ".github/workflows/performance_dashboard.yml"
       issue: 2693
+      triggered_by: "PR + push to main + workflow_dispatch"
+
+    - job: "Multi-Zone Perf Gate (Issue #2772)"
+      # PR-blocking ABSOLUTE multi-zone floor (≥ 10 cfg/s on a 10-zone
+      # model, pop_1000, analytical mode). The #2693 Absolute Perf Gate
+      # measures the SINGLE-ZONE analytical path against 150 cfg/s — a
+      # much easier target than the 10 cfg/s multi-zone floor
+      # (`benchmark.multi_zone.min_configs_per_sec`). Before #2772 the
+      # slowest regime (pop_1000 / pop_10k) was only gated by manual
+      # `cargo bench`; a per-zone-cost regression could pass #2693 and
+      # blow the multi-zone margin (only 2.8× per
+      # `benches/multi_zone_throughput.rs:17`). Same runner / noise-
+      # suppression discipline as #2693 (ubuntu-latest, median-of-3).
+      workflow: ".github/workflows/performance_dashboard.yml"
+      issue: 2772
       triggered_by: "PR + push to main + workflow_dispatch"
