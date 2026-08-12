@@ -35,6 +35,8 @@ tags:
     description: Retrieve previously imported or stored schemas
   - name: import
     description: Convert external model files into a Fluxion SimulationSchemaV1
+  - name: campaign
+    description: Fire-and-forget campaign submission and async status polling (Issue #1786)
 
 paths:
   /v1/healthz:
@@ -474,6 +476,134 @@ paths:
         "501":
           $ref: "#/components/responses/NotImplemented"
 
+  /v1/campaigns:
+    post:
+      tags: [campaign]
+      summary: Submit a campaign for fire-and-forget execution
+      description: |
+        Accepts a `CampaignSpec` (a batch of `SimulateRequest` bodies plus
+        optional metadata) and returns a campaign id immediately without
+        waiting for simulations to complete (Issue #1786). Workers push
+        status updates to the state store; poll progress via
+        `GET /v1/campaigns/{id}/status`.
+
+        Subject to the same batch + step-budget caps as `/v1/batch`
+        (Issue #2530): at most `MAX_BATCH_SIMULATIONS` simulations and
+        `MAX_CAMPAIGN_STEPS` total hourly timesteps per campaign. A request
+        exceeding either cap is rejected with `400`.
+      operationId: createCampaign
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CampaignSpec"
+            examples:
+              two_zone_one_year:
+                summary: 2-simulation campaign, 1 year each
+                value:
+                  name: "two-zone-param-sweep"
+                  description: "Sweep across two envelope configs"
+                  simulations:
+                    - version: "V1"
+                      geometry:
+                        zones:
+                          - name: "Zone 1"
+                            floor_area: 48.0
+                            volume: 129.6
+                            height: 2.7
+                        total_floor_area: 48.0
+                        total_volume: 129.6
+                        number_of_floors: 1
+                        floor_height: 2.7
+                      constructions:
+                        wall:
+                          name: "Default Wall"
+                          layers: []
+                          window:
+                            window_area: 12.0
+                            window_u_value: 1.5
+                            window_shgc: 0.3
+                        roof:
+                          name: "Default Roof"
+                          layers: []
+                          window: null
+                        floor:
+                          name: "Default Floor"
+                          layers: []
+                          window: null
+                      schedules:
+                        occupancy:
+                          kind: weekly
+                          name: "Occupancy"
+                        lighting:
+                          kind: weekly
+                          name: "Lighting"
+                        hvac:
+                          kind: constant
+                          heating_setpoint: 20.0
+                          cooling_setpoint: 24.0
+                        infiltration: null
+                      weather:
+                        type: tmy
+                        location: "Denver, CO"
+                      controls:
+                        zone_control:
+                          heating_setpoint: 20.0
+                          cooling_setpoint: 24.0
+                          deadband_tolerance: 0.5
+                          heating_capacity: 100000.0
+                          cooling_capacity: 100000.0
+                      output:
+                        eui: 0.0
+                        total_energy: 0.0
+                        peak_heating_load: 3500.0
+                        peak_cooling_load: 1200.0
+                        heating_energy: 0.0
+                        cooling_energy: 0.0
+                        zone_temperatures: null
+                        hourly_zone_temperatures: null
+                      options:
+                        years: 1
+                        use_surrogates: false
+      responses:
+        "200":
+          description: Campaign accepted and registered
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CampaignSubmitResponse"
+        "400":
+          $ref: "#/components/responses/InvalidCampaign"
+
+  /v1/campaigns/{id}/status:
+    get:
+      tags: [campaign]
+      summary: Poll for campaign completion
+      description: |
+        Returns the current state of a campaign identified by `id`. States:
+        `pending`, `running`, `completed`, `failed`. Clients should poll
+        this endpoint to track fire-and-forget campaign progress submitted
+        via `POST /v1/campaigns`. The status is updated as each simulation
+        in the campaign completes.
+      operationId: getCampaignStatus
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: Campaign identifier, e.g. `camp-0`, `camp-42`
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Campaign status retrieved
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CampaignStatus"
+        "404":
+          $ref: "#/components/responses/CampaignNotFound"
+
 components:
   responses:
     InvalidSchema:
@@ -514,6 +644,22 @@ components:
             $ref: "#/components/schemas/ApiError"
     SimulationNotFound:
       description: No simulation under the given id
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ApiError"
+    CampaignNotFound:
+      description: No campaign under the given id
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ApiError"
+    InvalidCampaign:
+      description: |
+        Campaign request was empty (`empty_batch`), exceeded the simulation
+        cap (`batch_too_large`), or exceeded the per-campaign step budget
+        (`step_budget_exceeded`). Also covers malformed JSON bodies
+        (`invalid_request`).
       content:
         application/json:
           schema:
@@ -577,6 +723,10 @@ components:
                 - import_failed
                 - simulation_failed
                 - empty_batch
+                - batch_too_large
+                - step_budget_exceeded
+                - invalid_request
+                - campaign_not_found
             message:
               type: string
             diagnostics:
@@ -1061,3 +1211,117 @@ components:
           $ref: "#/components/schemas/ControlSet"
         output:
           $ref: "#/components/schemas/SimulationOutput"
+
+    CampaignSpec:
+      type: object
+      description: |
+        Request body for `POST /v1/campaigns` (fire-and-forget, Issue #1786).
+        A campaign batches one or more `SimulateRequest` bodies for
+        background execution; the server returns a campaign id immediately.
+      required: [simulations]
+      properties:
+        name:
+          type: [string, "null"]
+        description:
+          type: [string, "null"]
+        simulations:
+          type: array
+          minItems: 1
+          items:
+            $ref: "#/components/schemas/SimulateRequest"
+
+    CampaignSubmitResponse:
+      type: object
+      description: Response body for `POST /v1/campaigns`.
+      required: [campaign_id]
+      properties:
+        campaign_id:
+          type: string
+          description: Opaque id assigned by the server (e.g. `camp-0`).
+
+    CampaignStatus:
+      type: object
+      description: |
+        Campaign status for async polling via
+        `GET /v1/campaigns/{id}/status` (Issue #1786). Mirrors the
+        internally-tagged `state` shape used by `SimulationStatus`.
+      required: [id, state, total_simulations, completed_simulations]
+      properties:
+        id:
+          type: string
+        name:
+          type: [string, "null"]
+        state:
+          oneOf:
+            - type: object
+              required: [state]
+              properties:
+                state:
+                  type: string
+                  enum: [pending]
+            - type: object
+              required: [state, progress]
+              properties:
+                state:
+                  type: string
+                  enum: [running]
+                progress:
+                  type: number
+                  format: float
+            - type: object
+              required: [state]
+              properties:
+                state:
+                  type: string
+                  enum: [completed]
+            - type: object
+              required: [state, error]
+              properties:
+                state:
+                  type: string
+                  enum: [failed]
+                error:
+                  type: string
+        progress:
+          description: |
+            Overall campaign progress in `[0.0, 1.0]`. `null` before the
+            campaign starts running and `1.0` once completed.
+          oneOf:
+            - type: number
+              format: float
+            - type: "null"
+        total_simulations:
+          type: integer
+          minimum: 0
+        completed_simulations:
+          type: integer
+          minimum: 0
+        result:
+          oneOf:
+            - $ref: "#/components/schemas/CampaignResult"
+            - type: "null"
+
+    CampaignResult:
+      type: object
+      description: Campaign result containing all simulation outputs.
+      required: [outputs]
+      properties:
+        outputs:
+          type: array
+          items:
+            $ref: "#/components/schemas/CampaignSimulationResult"
+
+    CampaignSimulationResult:
+      type: object
+      description: |
+        Individual simulation result within a campaign. On success `output`
+        is populated; on failure `error` carries the diagnostic message.
+      properties:
+        schema_id:
+          type: [string, "null"]
+        output:
+          oneOf:
+            - $ref: "#/components/schemas/SimulationOutput"
+            - type: "null"
+        error:
+          type: [string, "null"]
