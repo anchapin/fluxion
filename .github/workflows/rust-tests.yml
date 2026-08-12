@@ -4,6 +4,16 @@ on:
   push:
     branches: [main]
   pull_request:
+  schedule:
+    # Issue #2768: nightly cron for the cycle downward-trend guard's R2
+    # enforcement (downward progress within the last 14 snapshots). Only
+    # the `cycle-trend-nightly` job below listens for `schedule` events;
+    # every other job keeps its explicit `pull_request` / `push: main`
+    # gating so the nightly trigger does NOT broaden their runs.
+    #        minute hour dom month dow
+    - cron: "17 3 * * *"
+  workflow_dispatch:
+    # Manual trigger for the `cycle-trend-nightly` job (issue #2768).
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -460,6 +470,58 @@ jobs:
           python-version: '3.10'
       - name: Run physics-sim cycle check
         run: python3 scripts/check_physics_sim_cycle.py
+
+  # -- Cycle Downward Trend Guard (Issue #2768) ------------------------------
+  # Companion to `Ashrae Cases Cycle Check` (#1441) and `Physics-Sim-Cycle-
+  # Check` (#2463). The existing guards enforce a *magnitude* contract
+  # (count <= baseline); this guard enforces a *directional* contract:
+  # the cycle must trend toward zero, and a net-flat edge swap (removing
+  # one edge while adding another of equal count but different
+  # criticality) is rejected. Backed by `scripts/check_cycle_downward_
+  # trend.py` reading the append-only ledger
+  # `scripts/cycle_baseline_history.json`.
+  #
+  # NOT in `release_gates.yaml::ci.required_checks` yet -- letting it run
+  # as a non-blocking check first to validate the signature stability of
+  # the edge scan across the PR fleet. Promote to `required_checks`
+  # after a green week (see the PR that closes #2768).
+  #
+  # The `cycle-trend-nightly` job below is the only consumer of the
+  # `schedule` trigger added to this workflow's `on:` block. It enforces
+  # R2 (downward progress within the last 14 snapshots); per-PR jobs do
+  # not enforce R2, so an ordinary PR that doesn't touch the cycle still
+  # merges.
+
+  cycle-trend-gh:
+    name: "Cycle Downward Trend Guard (Issue #2768)"
+    runs-on: ubuntu-latest
+    if: |
+      github.event_name == 'pull_request' ||
+      (github.event_name == 'push' && github.ref == 'refs/heads/main')
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4
+      - uses: ./.github/actions/setup-rust-python-env
+        with:
+          python-version: '3.10'
+      - name: "Run cycle downward-trend guard (per-PR: R1 + R3)"
+        run: python3 scripts/check_cycle_downward_trend.py
+
+  cycle-trend-nightly:
+    name: "Cycle Downward Trend Guard (nightly, Issue #2768)"
+    # Read-only R2 enforcement: fails if the cycle has been frozen at the
+    # same total for >= 14 consecutive snapshots. Does NOT auto-update the
+    # ledger -- snapshots are appended manually via `--update` as part of
+    # the cycle-removal workflow (see ARCHITECTURE.md Section "Downward
+    # trend guard (Issue #2768)").
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4
+      - uses: ./.github/actions/setup-rust-python-env
+        with:
+          python-version: '3.10'
+      - name: "Run cycle downward-trend guard (nightly: R1 + R2 + R3)"
+        run: python3 scripts/check_cycle_downward_trend.py --nightly
 
   # -- Issue #1603: GPU smoke test for InferenceBackend::CUDA -------------
   # Runs on every PR and main push. On CPU-only runners the test skips
