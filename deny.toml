@@ -16,9 +16,13 @@
 # (`all` | `workspace` | `transitive` | `none`) and applies sensible defaults
 # (vulnerabilities/unsound → deny) out of the box. We set `unmaintained =
 # "workspace"` so that unmaintained advisories are only enforced for workspace
-# members, matching `.cargo/audit.toml`'s `informational_warnings =
-# ["unmaintained"]` (transitive unmaintained deps are non-blocking in both
-# tools). Override on the CLI via `cargo deny check --deny <lint>` if needed.
+# members; transitive unmaintained deps (e.g. rustls-pemfile via rumqttc) are
+# non-blocking here. NOTE (#2750): cargo-audit is now the STRICTER gate for
+# unmaintained — it runs with `--deny warnings` and fails on transitive
+# unmaintained too, whereas cargo-deny (with `unmaintained = "workspace"`)
+# does not. `.cargo/audit.toml`'s `informational_warnings` line was removed in
+# #2750; aligning the unmaintained scope across both tools is a tracked
+# follow-up. Override on the CLI via `cargo deny check --deny <lint>`.
 
 [graph]
 # Scan the FULL feature graph so crates that only appear under a feature flag

@@ -41,7 +41,13 @@ jobs:
         with:
           crate: cargo-audit
       - name: Run cargo audit
-        run: cargo audit
+        # Issue #2750: `--deny warnings` makes informational advisories
+        # (unmaintained, unsound, yanked) fail the gate with a non-zero exit,
+        # closing the leniency where plain `cargo audit` exits 0 on unmaintained
+        # warnings. Combined with removing `informational_warnings` suppression
+        # in .cargo/audit.toml, the cargo-audit gate now blocks on advisories
+        # it previously allowed through as soft warnings.
+        run: cargo audit --deny warnings
 
   deny:
     name: Cargo Deny
