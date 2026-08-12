@@ -24,7 +24,7 @@ Cargo workspace. **Root is also the main `fluxion` package** (`default-members =
 - **`fluxion-core/`** — dependency-light *leaf* modules (`weather/`, `assembly.rs`, `construction.rs`, `multi_node.rs`, `per_surface_conduction.rs`, `ashrae_cases.rs`, `physics_constants.rs`, …). Built once & cached by cargo-mutants. **Must not depend on sim/physics/ai/validation** (cycle-breaking rule below).
 - **Always-built siblings**: `fluxion-grid` (grid-edge electrical), `fluxion-behavior` (thermal comfort), `fluxion-wasm` (wasm-bindgen over fluxion-core + fluxion-fluid).
 - **Feature-gated siblings**: `fluxion-cfd` (`--features fluxion-cfd`; FFD airflow), `fluxion-city` (`--features fluxion-city`; urban radiation), `fluxion-fluid` (`--features fluid`; acausal HVAC/fluid port traits — **not** the same as `fluxion-core/src/fluid/`).
-- **`fluxion-mcp/`** — MCP server; unconditionally depends on `fluxion` with `features = ["multi-zone"]` + `fluxion-fluid` + `fluxion-toon`. `cargo build -p fluxion-mcp` / `cargo test -p fluxion-mcp`.
+- **`fluxion-mcp/`** — MCP server; depends on `fluxion` with `default-features = false` and enables `multi-zone` via its own default feature (`default = ["multi-zone"]`, per #2540); unconditionally pulls `fluxion-fluid` + `fluxion-toon`. `cargo build -p fluxion-mcp` / `cargo test -p fluxion-mcp`.
 - **`crates/`**: `fluxion-toon` (Token-Oriented Object Notation, LLM-friendly; SPEC in `crates/fluxion-toon/SPEC.md`), `fluxion-twin` (digital twin UKF + MQTT telemetry).
 
 **Cycle-breaking rules** (each enforced by a CI script):
