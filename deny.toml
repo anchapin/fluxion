@@ -38,9 +38,15 @@ feature-depth = 1
 
 # -----------------------------------------------------------------------------
 # Advisories — RustSec database scan.
-# The `ignore` list is intentionally kept in lock-step with `.cargo/audit.toml`
-# so cargo-audit and cargo-deny agree. When you add or remove an ignore in one
-# file, update the other. A single shared source of truth is a follow-up.
+# The `ignore` list is kept in lock-step with `.cargo/audit.toml` wherever both
+# tools enforce the same scope. The ONE deliberate exception is transitive
+# `unmaintained` advisories (e.g. paste via gemm, ttf-parser via plotters):
+# cargo-deny scopes unmaintained to workspace members (`unmaintained =
+# "workspace"` below) so it never flags them, and an ignore entry here would
+# only emit `advisory-not-detected` noise. Those advisories ARE still ignored
+# in `.cargo/audit.toml`, which (run as `cargo audit --deny warnings`) enforces
+# transitive unmaintained too. See #2749 for the cleanup rationale. A single
+# shared source of truth for both tools remains a follow-up.
 # -----------------------------------------------------------------------------
 [advisories]
 # Only enforce `unmaintained` for workspace members (transitive unmaintained
@@ -49,9 +55,21 @@ feature-depth = 1
 # default for all crates.
 unmaintained = "workspace"
 ignore = [
-    "RUSTSEC-2025-0020",  # see .cargo/audit.toml for context
-    "RUSTSEC-2024-0436",  # PyO3 Sync bound (pre-0.23); tracked with the PyO3 migration
-    "RUSTSEC-2026-0192",  # ttf-parser unmaintained (transitive via plotters)
+    # NOTE (#2749): three formerly-listed advisories were removed because each
+    # produced an `advisory-not-detected` warning under this file's
+    # `unmaintained = "workspace"` scope:
+    #   - RUSTSEC-2025-0020 (pyo3 < 0.24.1, PyString buffer overflow) — pyo3
+    #     was bumped to 0.29 in #2585; the affected range no longer matches.
+    #   - RUSTSEC-2024-0436 (paste, unmaintained) — transitive via gemm; never
+    #     flagged here because cargo-deny scopes unmaintained to workspace
+    #     members. STILL IGNORED in `.cargo/audit.toml` (cargo-audit enforces
+    #     transitive unmaintained too).
+    #   - RUSTSEC-2026-0192 (ttf-parser, unmaintained) — transitive via
+    #     plotters; same reasoning as RUSTSEC-2024-0436. STILL IGNORED in
+    #     `.cargo/audit.toml`.
+    # The two `*.audit.toml` ignores are deliberately NOT mirrored here: doing
+    # so would re-introduce `advisory-not-detected` noise without changing
+    # cargo-deny's enforcement (transitive unmaintained is out of scope).
     # --- TEMPORARY: Issue #2690 (rumqttc → rustls-webpki 0.102.8) -------------
     # The [patch.crates-io] personal-fork was removed in #2690; fluxion-twin
     # now consumes official rumqttc 0.25.1 which pins webpki ^0.102.8 (no
