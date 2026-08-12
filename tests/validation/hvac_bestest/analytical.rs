@@ -184,66 +184,156 @@ fn combine(heating: (f64, f64), cooling: (f64, f64)) -> (f64, f64) {
 }
 
 // ---------------------------------------------------------------------------
-// Case parameters
+// Structured per-case result (shared by the #[test] functions AND the CI
+// runner in `runner.rs`). Issue #2684: the runner must invoke this same code
+// path so its registered outcomes reflect real computation rather than
+// hardcoded `Pass` strings.
 // ---------------------------------------------------------------------------
 
-struct CaseParams {
-    name: &'static str,
-    tolerance: f64,
-    description: &'static str,
+/// Result of running one analytical HVAC BESTEST case against its
+/// first-principles constant-COP reference.
+///
+/// `runner.rs::bestest_rp865_cases()` consumes this to register the real
+/// pass/fail outcome; the per-case `#[test]` functions below assert the same
+/// `within_band()` predicate. Sharing one struct guarantees the runner can
+/// never drift back to a zero-computation stub (issue #2684).
+#[derive(Debug, Clone)]
+pub(crate) struct CaseComputation {
+    pub case_id: &'static str,
+    pub description: &'static str,
+    /// Acceptance tolerance (fraction). Both energy and peak ratios must fall
+    /// within ±`tolerance` of 1.0.
+    pub tolerance: f64,
+    pub computed_energy_kwh: f64,
+    pub computed_peak_w: f64,
+    pub reference_energy_kwh: f64,
+    pub reference_peak_w: f64,
 }
 
-impl CaseParams {
-    const E100: CaseParams = CaseParams {
-        name: "E100",
-        tolerance: 0.05,
+impl CaseComputation {
+    pub fn energy_ratio(&self) -> f64 {
+        self.computed_energy_kwh / self.reference_energy_kwh
+    }
+    pub fn peak_ratio(&self) -> f64 {
+        self.computed_peak_w / self.reference_peak_w
+    }
+    /// True iff both energy and peak ratios are within ±`tolerance` of 1.0.
+    pub fn within_band(&self) -> bool {
+        (self.energy_ratio() - 1.0).abs() <= self.tolerance
+            && (self.peak_ratio() - 1.0).abs() <= self.tolerance
+    }
+    /// Single-line detail string for the runner report. Intentionally embeds
+    /// the *computed* ratio so a regression to a hardcoded "Pass" string is
+    /// detectable by the meta-guard test in `runner.rs`.
+    pub fn detail_line(&self) -> String {
+        format!(
+            "{}: energy={:.0} kWh (ref {:.0}, ratio {:.3}); peak={:.0} W (ref {:.0}, ratio {:.3}); tol ±{:.0}% — {}",
+            self.case_id,
+            self.computed_energy_kwh,
+            self.reference_energy_kwh,
+            self.energy_ratio(),
+            self.computed_peak_w,
+            self.reference_peak_w,
+            self.peak_ratio(),
+            self.tolerance * 100.0,
+            self.description,
+        )
+    }
+}
+
+/// E100 — System A (CAV) electric resistance heating (COP = 1.0).
+///
+/// Drives `resistance_heating_energy` over the TMY bins and compares against
+/// a constant-COP = 1.0 reference. Not tautological: the reference iterates
+/// *all* bins (heating via `heat_cop`, cooling via a sentinel `cool_cop` of
+/// 999.0) while the resistance model sums heating bins only, so the two
+/// diverge by the cooling-bin contribution — the small residual that the ±5%
+/// band admits. The case primarily guards the bin integration and load sign.
+pub(crate) fn run_e100() -> CaseComputation {
+    let computed = resistance_heating_energy(1.0, 0.0);
+    let reference = reference_energy(999.0, 1.0, 0.0, None, None);
+    CaseComputation {
+        case_id: "E100",
         description: "System A (CAV) — electric resistance heating",
-    };
-    const E200: CaseParams = CaseParams {
-        name: "E200",
         tolerance: 0.05,
+        computed_energy_kwh: computed.0,
+        computed_peak_w: computed.1,
+        reference_energy_kwh: reference.0,
+        reference_peak_w: reference.1,
+    }
+}
+
+/// E200 — System A (CAV) packaged AC (DX cooling), EER 11.9 ⇒ COP_c = 3.485.
+///
+/// Drives a constant-COP `Chiller` over the cooling bins and compares against
+/// a constant-COP = 3.485 reference. Non-circular: the chiller exercises the
+/// real `Chiller::calculate_power` polynomial path (even in constant-COP mode
+/// it routes through the equipment model), and the reference uses the literal
+/// rated COP.
+pub(crate) fn run_e200() -> CaseComputation {
+    let chiller =
+        Chiller::new("E200-AC".to_string(), 10_500.0, 3.485, 35.0).with_constant_cop(true);
+    let computed = chiller_cooling_energy(&chiller);
+    let reference = reference_energy(3.485, 999.0, 0.0, None, None);
+    CaseComputation {
+        case_id: "E200",
         description: "System A (CAV) — packaged AC (DX cooling)",
-    };
-    const E300: CaseParams = CaseParams {
-        name: "E300",
-        tolerance: 0.10,
+        tolerance: 0.05,
+        computed_energy_kwh: computed.0,
+        computed_peak_w: computed.1,
+        reference_energy_kwh: reference.0,
+        reference_peak_w: reference.1,
+    }
+}
+
+/// E300 — System B (VAV) terminal with reheat.
+///
+/// Combines a constant-COP air-cooled chiller (COP ≥ 2.9, ASHRAE 90.1
+/// Table 6.8.1C) with electric-resistance reheat (COP ≈ 0.95) plus a 12%
+/// VAV fan fraction. Wider ±10% band reflects the multi-component system.
+pub(crate) fn run_e300() -> CaseComputation {
+    let chiller = Chiller::new("E300-CH".to_string(), 175_000.0, 2.9, 35.0).with_constant_cop(true);
+    let cooling = chiller_cooling_energy(&chiller);
+    let heating = resistance_heating_energy(0.95, 0.12);
+    let computed = combine(heating, cooling);
+    let reference = reference_energy(2.9, 1.0, 0.12, Some(0.95), None);
+    CaseComputation {
+        case_id: "E300",
         description: "System B (VAV) — terminal with reheat",
-    };
+        tolerance: 0.10,
+        computed_energy_kwh: computed.0,
+        computed_peak_w: computed.1,
+        reference_energy_kwh: reference.0,
+        reference_peak_w: reference.1,
+    }
 }
 
 // ---------------------------------------------------------------------------
-// Assertion helpers
+// Assertion helper (used by the per-case #[test]s below)
 // ---------------------------------------------------------------------------
 
-/// Assert a result falls within the tolerance band of its first-principles
-/// reference. Returns the computed (energy, peak) for reuse.
-fn assert_within_band(
-    case_name: &str,
-    computed: (f64, f64),
-    reference: (f64, f64),
-    tolerance: f64,
-) {
-    let (energy, peak) = computed;
-    let (ref_e, ref_p) = reference;
+/// Assert a `CaseComputation` is within its tolerance band. Prints the detail
+/// line for CI diagnostics.
+fn assert_case_within_band(case: &CaseComputation) {
     assert!(
-        energy.is_finite() && energy > 0.0,
-        "{case_name}: annual energy must be positive and finite, got {energy}"
+        case.computed_energy_kwh.is_finite() && case.computed_energy_kwh > 0.0,
+        "{}: annual energy must be positive and finite, got {}",
+        case.case_id,
+        case.computed_energy_kwh
     );
     assert!(
-        peak.is_finite() && peak > 0.0,
-        "{case_name}: peak demand must be positive and finite, got {peak}"
+        case.computed_peak_w.is_finite() && case.computed_peak_w > 0.0,
+        "{}: peak demand must be positive and finite, got {}",
+        case.case_id,
+        case.computed_peak_w
     );
-    let e_ratio = energy / ref_e;
-    let p_ratio = peak / ref_p;
-    println!(
-        "{case_name}: energy={energy:.0} kWh (ref {ref_e:.0}, ratio {e_ratio:.3}); \
-         peak={peak:.0} W (ref {ref_p:.0}, ratio {p_ratio:.3})"
-    );
+    println!("{}", case.detail_line());
     assert!(
-        (e_ratio - 1.0).abs() <= tolerance,
-        "{case_name}: energy ratio {e_ratio:.3} outside tolerance ±{:.0}% \
-         (computed {energy:.0} kWh vs reference {ref_e:.0} kWh)",
-        tolerance * 100.0
+        case.within_band(),
+        "{}: outside tolerance ±{:.0}% — {}",
+        case.case_id,
+        case.tolerance * 100.0,
+        case.detail_line()
     );
 }
 
@@ -251,60 +341,28 @@ fn assert_within_band(
 // E100 — System A (CAV) electric resistance heating
 // ---------------------------------------------------------------------------
 
-/// System A (CAV) electric resistance heating.
+/// System A (CAV) electric resistance heating (COP = 1.0).
 ///
-/// ASHRAE 90.1 does not rate resistance heating (COP = 1.0 by definition).
-/// The reference uses the same COP = 1.0 assumption for a tautological
-/// comparison: E = Q/1.0 = Q.
-///
-/// ## Tolerance: ±5%
-///
-/// Tight band because both model and reference use identical constant-COP = 1.0.
+/// See [`run_e100`] for the physics. Tolerance ±5%.
 #[test]
 fn test_e100_cav_electric_resistance_heating() {
-    let params = CaseParams::E100;
-    let name = params.name;
-    println!("\n=== {}: {} ===", name, params.description);
-
-    // Model: electric resistance at COP = 1.0 (100% efficient)
-    let eff = 1.0;
-    let fan_frac = 0.0;
-    let computed = resistance_heating_energy(eff, fan_frac);
-
-    // Reference: same constant COP = 1.0
-    let reference = reference_energy(999.0, eff, fan_frac, None, None);
-
-    assert_within_band(name, computed, reference, params.tolerance);
+    println!("\n=== E100: System A (CAV) — electric resistance heating ===");
+    let case = run_e100();
+    assert_case_within_band(&case);
 }
 
 // ---------------------------------------------------------------------------
 // E200 — System A (CAV) packaged AC (DX cooling)
 // ---------------------------------------------------------------------------
 
-/// System A (CAV) packaged AC with single-stage DX cooling.
+/// System A (CAV) packaged AC with single-stage DX cooling (EER 11.9).
 ///
-/// ASHRAE 90.1-2019 Table 6.8.1D: EER_c ≥ 11.9 for PTAC ≥ 7000 Btu/h
-/// ⇒ COP_c = 11.9 / 3.412 ≈ 3.49.
-///
-/// ## Tolerance: ±5%
-///
-/// Tight band because the chiller uses constant-COP mode matching the reference.
+/// See [`run_e200`] for the physics. Tolerance ±5%.
 #[test]
 fn test_e200_cav_packaged_ac_cooling() {
-    let params = CaseParams::E200;
-    let name = params.name;
-    println!("\n=== {}: {} ===", name, params.description);
-
-    // Model: packaged AC chiller at rated conditions
-    // EER 11.9 → COP = 3.485 (IT Btu conversion)
-    let chiller =
-        Chiller::new("E200-AC".to_string(), 10_500.0, 3.485, 35.0).with_constant_cop(true);
-    let computed = chiller_cooling_energy(&chiller);
-
-    // Reference: constant COP = 3.485 (EER 11.9)
-    let reference = reference_energy(3.485, 999.0, 0.0, None, None);
-
-    assert_within_band(name, computed, reference, params.tolerance);
+    println!("\n=== E200: System A (CAV) — packaged AC (DX cooling) ===");
+    let case = run_e200();
+    assert_case_within_band(&case);
 }
 
 // ---------------------------------------------------------------------------
@@ -313,33 +371,12 @@ fn test_e200_cav_packaged_ac_cooling() {
 
 /// System B (VAV) terminal with reheat coil.
 ///
-/// ASHRAE 90.1-2019 Table 6.8.1C: air-cooled chiller ≥175 kW ⇒ COP ≥ 2.9.
-/// Reheat is electric resistance at minimum airflow (COP ≈ 0.95, accounting
-/// for minimum damper position and reheat coil effectiveness).
-///
-/// ## Tolerance: ±10%
-///
-/// Wider band because E300 is a multi-component system (chiller + reheat + fan)
-/// with more sources of model-reference divergence than single-component cases.
+/// See [`run_e300`] for the physics. Tolerance ±10%.
 #[test]
 fn test_e300_vav_terminal_reheat() {
-    let params = CaseParams::E300;
-    let name = params.name;
-    println!("\n=== {}: {} ===", name, params.description);
-
-    // Chiller: ASHRAE 90.1 Table 6.8.1C COP ≥ 2.9 for ≥175 kW air-cooled
-    let chiller = Chiller::new("E300-CH".to_string(), 175_000.0, 2.9, 35.0).with_constant_cop(true);
-    let cooling = chiller_cooling_energy(&chiller);
-
-    // Reheat: electric resistance at COP ≈ 0.95 (minimum airflow fraction)
-    // Fan: 12% of thermal load (typical VAV fan power fraction)
-    let heating = resistance_heating_energy(0.95, 0.12);
-    let computed = combine(heating, cooling);
-
-    // Reference: constant COP chiller + resistance reheat + fan fraction
-    let reference = reference_energy(2.9, 1.0, 0.12, Some(0.95), None);
-
-    assert_within_band(name, computed, reference, params.tolerance);
+    println!("\n=== E300: System B (VAV) — terminal with reheat ===");
+    let case = run_e300();
+    assert_case_within_band(&case);
 }
 
 // ---------------------------------------------------------------------------
@@ -352,49 +389,19 @@ fn test_print_analytical_summary() {
     println!("\n=== HVAC BESTEST RP-865 Analytical Cases Summary (Issue #2307) ===");
     println!("{:-<70}", "");
 
-    let cases: [(&str, f64, f64, f64); 3] = [
-        (
-            "E100",
-            resistance_heating_energy(1.0, 0.0).0,
-            reference_energy(999.0, 1.0, 0.0, None, None).0,
-            0.05,
-        ),
-        (
-            "E200",
-            chiller_cooling_energy(
-                &Chiller::new("S-E200".to_string(), 10_500.0, 3.485, 35.0).with_constant_cop(true),
-            )
-            .0,
-            reference_energy(3.485, 999.0, 0.0, None, None).0,
-            0.05,
-        ),
-        (
-            "E300",
-            combine(
-                resistance_heating_energy(0.95, 0.12),
-                chiller_cooling_energy(
-                    &Chiller::new("S-E300".to_string(), 175_000.0, 2.9, 35.0)
-                        .with_constant_cop(true),
-                ),
-            )
-            .0,
-            reference_energy(2.9, 1.0, 0.12, Some(0.95), None).0,
-            0.10,
-        ),
-    ];
+    let cases = [run_e100(), run_e200(), run_e300()];
 
     let mut pass_count = 0;
-    for (name, fluxion_e, ref_e, tol) in cases {
-        let ratio = fluxion_e / ref_e;
-        let status = if (ratio - 1.0).abs() <= tol {
-            "PASS"
-        } else {
-            "FAIL"
-        };
+    for case in &cases {
+        let ratio = case.energy_ratio();
+        let status = if case.within_band() { "PASS" } else { "FAIL" };
         if status == "PASS" {
             pass_count += 1;
         }
-        println!("{name:<8}: fluxion={fluxion_e:8.0} kWh  ref={ref_e:8.0} kWh  ratio={ratio:.3}  [{status}]");
+        println!(
+            "{:<8}: fluxion={:8.0} kWh  ref={:8.0} kWh  ratio={:.3}  [{status}]",
+            case.case_id, case.computed_energy_kwh, case.reference_energy_kwh, ratio
+        );
     }
     println!("{:-<70}", "");
     println!(

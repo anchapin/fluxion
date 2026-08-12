@@ -1,25 +1,40 @@
-//! HVAC BESTEST CI runner stub (issue #1756).
+//! HVAC BESTEST CI runner — issue #2684.
 //!
-//! Establishes the runner plumbing for the HVAC BESTEST CI-check pipeline so
-//! that follow-on issues (#1755, #1757, #1758, #1759) can register real
-//! analytical and comparative cases without touching CI wiring.
+//! Previously (issues #1756 / #2307) this module was a *zero-case stub*: it
+//! registered zero cases (later: three cases hardcoded as `CaseStatus::Pass`
+//! without running any simulation), so `cargo test --test hvac_bestest` was
+//! **structurally incapable of failing**. That gave false confidence — a green
+//! CI badge that misrepresented the validation posture.
 //!
-//! ## Design
+//! ## Current design (post-#2684)
 //!
-//! The runner emits a structured **pass / skip / fail** report. During rollout
-//! the runner registers zero cases, producing an always-passing empty report
-//! that keeps CI green while real assertions are still TODO. When a case is
-//! registered as [`CaseStatus::Skip`] it does **not** fail the CI gate — only
-//! an explicit [`CaseStatus::Fail`] does.
+//! The runner now invokes the **real** analytical case computations defined in
+//! [`crate::analytical`] (`run_e100` / `run_e200` / `run_e300`) and registers
+//! the actual pass/fail outcome against the first-principles constant-COP
+//! reference. A [`CaseStatus::Fail`] — produced when a computed energy or peak
+//! ratio falls outside the documented tolerance — trips the CI gate.
 //!
-//! ## Future integration
+//! Three structural-guard tests below enforce that the runner can never
+//! silently regress to a stub:
+//!   1. [`test_runner_registers_nonzero_cases`] — the canonical runner must
+//!      register more than zero cases.
+//!   2. [`test_runner_outcomes_carry_real_computation`] — every registered
+//!      detail string must embed a numeric ratio, proving the result came from
+//!      a computation rather than a hardcoded "Pass" phrase.
+//!   3. [`test_gate_fails_when_analytical_case_out_of_band`] — the gate
+//!      semantics: an out-of-band computation produces `CaseStatus::Fail`.
 //!
-//! Follow-on issues will:
-//! 1. Implement case runners in `analytical.rs` / `comparative.rs`.
-//! 2. Call [`HvacBestestRunner::register`] for each case.
-//! 3. The `#[test]` functions below already enforce the gate semantics.
+//! Cases that would require a full EnergyPlus-comparable annual zone simulation
+//! (the IEA Task 22 / RP-865 published *ensemble* bounds in
+//! `data/comparative_bounds_*.csv`) are blocked on the documented
+//! Case-600-class cooling structural gap (see `docs/KNOWN_ISSUES.md` §LIMIT-05
+//! / §SOLAR-02) and are wired as `#[ignore]`-quarantined tests that run on
+//! demand via `cargo test -- --ignored`, documenting the gap without blocking
+//! every PR.
 
 use std::fmt;
+
+use crate::analytical::{run_e100, run_e200, run_e300, CaseComputation};
 
 // ---------------------------------------------------------------------------
 // Report data model
@@ -27,9 +42,8 @@ use std::fmt;
 
 /// Outcome status for a single HVAC BESTEST case.
 ///
-/// The three-valued enum allows follow-on issues to mark a case as `Skip`
-/// during incremental rollout without failing the CI gate. Only `Fail` is
-/// treated as a hard failure.
+/// `Skip` is permitted during incremental rollout and does **not** fail the CI
+/// gate — only `Fail` does.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CaseStatus {
     /// Case passed within its acceptance tolerance.
@@ -43,11 +57,13 @@ pub enum CaseStatus {
 /// Structured outcome for a single registered case.
 #[derive(Debug, Clone)]
 pub struct CaseOutcome {
-    /// Case identifier (e.g. `"AE101"`, `"E100"`).
+    /// Case identifier (e.g. `"E100"`, `"AE101"`).
     pub case_id: String,
     /// Pass / Skip / Fail status.
     pub status: CaseStatus,
     /// Human-readable detail: tolerance band, skip reason, or failure message.
+    /// For computed cases this embeds the numeric ratio so the outcome is
+    /// auditable and a regression to a hardcoded string is detectable (#2684).
     pub detail: String,
 }
 
@@ -105,7 +121,10 @@ impl fmt::Display for BestestReport {
             fail
         )?;
         if self.outcomes.is_empty() {
-            writeln!(f, "  (no cases registered — dummy stub mode, issue #1756)")?;
+            writeln!(
+                f,
+                "  (no cases registered — REGRESSION: issue #2684 requires non-zero cases)"
+            )?;
         } else {
             for o in &self.outcomes {
                 writeln!(f, "  [{:?}] {:<10} {}", o.status, o.case_id, o.detail)?;
@@ -117,17 +136,15 @@ impl fmt::Display for BestestReport {
 }
 
 // ---------------------------------------------------------------------------
-// Runner stub
+// Runner — registers REAL computed outcomes (issue #2684)
 // ---------------------------------------------------------------------------
 
-/// HVAC BESTEST runner stub.
+/// HVAC BESTEST runner. Iterates registered cases and emits a structured
+/// pass/skip/fail report ([`BestestReport`]).
 ///
-/// Iterates registered cases and emits a structured pass/skip/fail report
-/// ([`BestestReport`]). During initial rollout (this issue) the runner
-/// registers zero cases, producing an always-passing empty report.
-///
-/// Follow-on issues register cases via [`Self::register`] once real
-/// simulation logic lands in `analytical.rs` / `comparative.rs`.
+/// Use [`HvacBestestRunner::bestest_rp865_cases`] to obtain a runner populated
+/// with the canonical RP-865 analytical cases — each driven by the real
+/// Fluxion equipment-model computation in [`crate::analytical`].
 pub struct HvacBestestRunner {
     cases: Vec<CaseOutcome>,
 }
@@ -139,18 +156,24 @@ impl Default for HvacBestestRunner {
 }
 
 impl HvacBestestRunner {
-    /// Create a runner with no registered cases (dummy stub mode).
+    /// Create an empty runner. Intended for ad-hoc composition; the canonical
+    /// CI entry point is [`Self::bestest_rp865_cases`].
     pub fn new() -> Self {
         Self { cases: Vec::new() }
     }
 
-    /// Create a runner pre-configured with the HVAC BESTEST RP-865 analytical
-    /// cases (E100, E200, E300) that exercise the core HVAC system types:
-    /// System A (CAV), System B (VAV reheat), and equipment archetypes.
+    /// Create a runner pre-populated with the HVAC BESTEST RP-865 analytical
+    /// cases (E100, E200, E300), each driven by the **real** equipment-model
+    /// computation in [`crate::analytical`].
     ///
-    /// Each case is defined with documented reference bounds and tolerances
-    /// derived from the IEA SHC Task 22 / NREL TP-5500-66000 (RP-865)
-    /// comparative methodology.
+    /// Each case computes annual energy + peak demand via a Fluxion HVAC model
+    /// over a mid-latitude TMY temperature-bin distribution (8760 h) and
+    /// compares against an independent first-principles constant-COP reference
+    /// derived from the cited ASHRAE 90.1 rated efficiency. The registered
+    /// status is the **actual** [`CaseComputation::within_band`] verdict —
+    /// `Pass` when within tolerance, `Fail` when outside — so the CI gate
+    /// genuinely trips on a regression in the equipment models or bin
+    /// integration.
     ///
     /// ## Cases
     ///
@@ -160,14 +183,6 @@ impl HvacBestestRunner {
     /// | E200 | System A (CAV) | Packaged AC (DX cooling) | ±5% |
     /// | E300 | System B (VAV) | VAV terminal with reheat | ±10% |
     ///
-    /// ## Method
-    ///
-    /// Each case drives a Fluxion HVAC model through a mid-latitude TMY
-    /// temperature-bin distribution (8760 h equivalent). The zone load follows
-    /// a sensible UA·ΔT profile about a 20 °C maintained setpoint. Annual
-    /// energy is compared against a first-principles reference computed from
-    /// the ASHRAE 90.1 rated efficiency within the documented tolerance band.
-    ///
     /// ## Sources
     ///
     /// - IEA SHC Task 22, "HVAC BESTEST Volume 1: Cases E100-E200"
@@ -175,38 +190,30 @@ impl HvacBestestRunner {
     /// - ASHRAE Standard 90.1-2019, Tables 6.8.1A/C/D
     pub fn bestest_rp865_cases() -> Self {
         let mut runner = Self { cases: Vec::new() };
-
-        // E100 — CAV electric resistance heating (System A)
-        // Tolerance: ±5% — tight band for simple electric resistance
-        runner.register(
-            "E100",
-            CaseStatus::Pass,
-            "CAV electric resistance heating; energy ratio within ±5% of rated-COP reference",
-        );
-
-        // E200 — CAV packaged AC / DX cooling (System A)
-        // Tolerance: ±5% — tight band for single-stage DX cooling
-        runner.register(
-            "E200",
-            CaseStatus::Pass,
-            "CAV packaged AC cooling; energy ratio within ±5% of rated-COP reference",
-        );
-
-        // E300 — VAV terminal with reheat (System B)
-        // Tolerance: ±10% — wider band for multi-component VAV system
-        runner.register(
-            "E300",
-            CaseStatus::Pass,
-            "VAV reheat system; energy ratio within ±10% of rated-COP reference",
-        );
-
+        runner.register_computed(run_e100());
+        runner.register_computed(run_e200());
+        runner.register_computed(run_e300());
         runner
     }
 
-    /// Register a case outcome.
-    ///
-    /// Called by follow-on case modules (#1755–#1759) to report their result.
-    /// The runner collects these and [`Self::run`] assembles the final report.
+    /// Register a computed analytical case. The status is derived from the
+    /// computation: `Pass` if within tolerance, `Fail` otherwise. The detail
+    /// string embeds the numeric ratios for auditability.
+    fn register_computed(&mut self, case: CaseComputation) {
+        let status = if case.within_band() {
+            CaseStatus::Pass
+        } else {
+            CaseStatus::Fail
+        };
+        self.cases.push(CaseOutcome {
+            case_id: case.case_id.to_string(),
+            status,
+            detail: case.detail_line(),
+        });
+    }
+
+    /// Register a case outcome directly. Used by ad-hoc composition and by the
+    /// gate-semantics unit tests below.
     pub fn register(&mut self, case_id: &str, status: CaseStatus, detail: &str) {
         self.cases.push(CaseOutcome {
             case_id: case_id.to_string(),
@@ -216,11 +223,6 @@ impl HvacBestestRunner {
     }
 
     /// Produce the structured pass/skip/fail report.
-    ///
-    /// In the current stub this returns the pre-registered outcomes directly.
-    /// When real simulation cases are added, this method will execute each
-    /// case runner and evaluate acceptance tolerances before assembling the
-    /// report.
     pub fn run(&self) -> BestestReport {
         BestestReport {
             outcomes: self.cases.clone(),
@@ -231,48 +233,143 @@ impl HvacBestestRunner {
 // ---------------------------------------------------------------------------
 // CI entry-point tests
 //
-// `cargo test --test hvac_bestest` discovers these. During rollout every test
-// passes; the suite verifies pipeline plumbing and gate semantics only.
+// `cargo test --test hvac_bestest` discovers these. The tests below enforce
+// both the gate semantics AND the issue-#2684 structural guarantee that the
+// runner registers real, computed, non-zero cases.
 // ---------------------------------------------------------------------------
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::analytical::run_e100;
 
-    /// Marker test: confirms the dummy runner stub pipeline is wired and
-    /// `cargo test --test hvac_bestest` executes end-to-end. This is the
-    /// always-green CI anchor.
+    // --- Structural guards (issue #2684: prevent regression to zero-case stub) -
+
+    /// **Meta-guard (issue #2684):** the canonical RP-865 runner MUST register
+    /// a non-zero number of cases. If a future change re-stubs the runner to
+    /// the old "always-passing empty report" (or the later three-hardcoded-
+    /// passes variant), this test fails. This is the single assertion that
+    /// makes the false-confidence class of regression impossible.
     #[test]
-    fn test_hvac_bestest_pipeline_smoke() {
-        let runner = HvacBestestRunner::new();
-        let report = runner.run();
-
-        // Dummy stub: zero registered cases, always passes.
-        assert_eq!(report.total(), 0);
-        assert!(!report.has_failures());
-
-        let (pass, skip, fail) = report.counts();
-        assert_eq!((pass, skip, fail), (0, 0, 0));
-
-        // Print the report artifact for CI inspection.
-        println!("{report}");
-    }
-
-    /// Verifies that an empty runner (rollout mode) always passes the gate.
-    #[test]
-    fn test_empty_runner_passes_gate() {
-        let runner = HvacBestestRunner::new();
+    fn test_runner_registers_nonzero_cases() {
+        let runner = HvacBestestRunner::bestest_rp865_cases();
         let report = runner.run();
 
         assert!(
+            report.total() > 0,
+            "issue #2684 regression: runner registered {} cases; must be > 0",
+            report.total()
+        );
+
+        let (pass, skip, fail) = report.counts();
+        assert!(
+            pass + skip + fail == report.total(),
+            "counts must partition the registered cases"
+        );
+
+        println!("{report}");
+    }
+
+    /// **Meta-guard (issue #2684):** every registered detail string must carry
+    /// evidence of real computation — specifically a numeric energy ratio
+    /// (`ratio <number>`). The old hardcoded stub registered details like
+    /// `"energy ratio within ±5% of rated-COP reference"` with no number; this
+    /// test rejects that class of phrase so the runner cannot silently revert
+    /// to asserting a string instead of a measurement.
+    #[test]
+    fn test_runner_outcomes_carry_real_computation() {
+        let runner = HvacBestestRunner::bestest_rp865_cases();
+        let report = runner.run();
+
+        assert!(
+            !report.outcomes.is_empty(),
+            "runner must register cases to audit"
+        );
+        for o in &report.outcomes {
+            assert!(
+                o.detail.contains("ratio "),
+                "{:?} detail missing numeric ratio: {}",
+                o.case_id,
+                o.detail
+            );
+            // Reject the old hardcoded phrase that had no number.
+            assert!(
+                !o.detail.contains("within ±") || o.detail.contains("ratio "),
+                "{:?} detail looks hardcoded (no computed ratio): {}",
+                o.case_id,
+                o.detail
+            );
+        }
+    }
+
+    /// **Gate-semantics guard:** the canonical RP-865 cases currently pass
+    /// within tolerance, so the runner must not report any failure. If a
+    /// regression in the equipment models or bin integration pushes a case
+    /// out of band, this test fails — the CI signal that previously did not
+    /// exist at all.
+    #[test]
+    fn test_bestest_rp865_cases_pass_within_tolerance() {
+        let runner = HvacBestestRunner::bestest_rp865_cases();
+        let report = runner.run();
+
+        assert_eq!(
+            report.total(),
+            3,
+            "expected E100, E200, E300 registered; got {} cases",
+            report.total()
+        );
+
+        let case_ids: Vec<_> = report.outcomes.iter().map(|o| o.case_id.as_str()).collect();
+        assert!(case_ids.contains(&"E100"), "E100 missing: {case_ids:?}");
+        assert!(case_ids.contains(&"E200"), "E200 missing: {case_ids:?}");
+        assert!(case_ids.contains(&"E300"), "E300 missing: {case_ids:?}");
+
+        assert!(
             !report.has_failures(),
-            "empty report must not fail the gate"
+            "RP-865 analytical cases must pass within tolerance; got failures:\n{report}"
+        );
+
+        let (pass, _, fail) = report.counts();
+        assert_eq!(fail, 0, "no failures expected; got:\n{report}");
+        assert_eq!(pass, 3, "all three cases should pass; got:\n{report}");
+
+        println!("{report}");
+    }
+
+    /// **Gate-semantics guard:** verify the gate actually trips when an
+    /// analytical case is out of band. Drives `run_e100` with a corrupted
+    /// reference (10× the real reference energy) so `within_band` is false,
+    /// and confirms the runner would register `Fail` + `has_failures()`.
+    /// This proves the gate is not structurally incapable of failing — the
+    /// core complaint of issue #2684.
+    #[test]
+    fn test_gate_fails_when_analytical_case_out_of_band() {
+        let mut broken = run_e100();
+        // Corrupt the reference so the computed ratio is far out of band.
+        broken.reference_energy_kwh = broken.computed_energy_kwh / 10.0;
+        assert!(
+            !broken.within_band(),
+            "fixture: corrupted reference must push the case out of band"
+        );
+
+        let mut runner = HvacBestestRunner::new();
+        runner.register_computed(broken);
+        let report = runner.run();
+
+        assert_eq!(report.total(), 1);
+        let (pass, skip, fail) = report.counts();
+        assert_eq!((pass, skip, fail), (0, 0, 1));
+        assert!(
+            report.has_failures(),
+            "an out-of-band analytical case MUST fail the gate (issue #2684)"
         );
     }
 
+    // --- Report / gate plumbing (retain semantics from the original stub) -----
+
     /// Verifies that `Skip` cases do **not** fail the CI gate. This is the
-    /// core rollout guarantee: follow-on issues can register incomplete cases
-    /// as `Skip` without breaking CI.
+    /// rollout guarantee: follow-on issues can register incomplete cases as
+    /// `Skip` without breaking CI.
     #[test]
     fn test_skip_does_not_fail_gate() {
         let mut runner = HvacBestestRunner::new();
@@ -288,82 +385,66 @@ mod tests {
         println!("{report}");
     }
 
-    /// Verifies that `Pass` cases are counted correctly and do not fail.
-    #[test]
-    fn test_pass_case_counted() {
-        let mut runner = HvacBestestRunner::new();
-        runner.register(
-            "AE101",
-            CaseStatus::Pass,
-            "energy error 1.2% within 10% tolerance",
-        );
-
-        let report = runner.run();
-        let (pass, skip, fail) = report.counts();
-
-        assert_eq!((pass, skip, fail), (1, 0, 0));
-        assert!(!report.has_failures());
-    }
-
-    /// Verifies that a `Fail` case is detected by the gate. The test asserts
-    /// `has_failures()` returns `true` — it does **not** itself fail.
-    #[test]
-    fn test_fail_detected_by_gate() {
-        let mut runner = HvacBestestRunner::new();
-        runner.register("AE445", CaseStatus::Fail, "sensible load 25% out of band");
-
-        let report = runner.run();
-        let (pass, skip, fail) = report.counts();
-
-        assert_eq!((pass, skip, fail), (0, 0, 1));
-        assert!(
-            report.has_failures(),
-            "a Fail case must be detected by the gate"
-        );
-    }
-
     /// Verifies the `Display` implementation renders the report for CI
     /// artifact inspection.
     #[test]
     fn test_report_display() {
-        let mut runner = HvacBestestRunner::new();
-        runner.register("AE101", CaseStatus::Pass, "ok");
-        runner.register("AE200", CaseStatus::Skip, "TODO");
-
+        let runner = HvacBestestRunner::bestest_rp865_cases();
         let report = runner.run();
         let rendered = format!("{report}");
 
         assert!(rendered.contains("HVAC BESTEST CI Report"));
-        assert!(rendered.contains("Pass: 1"));
-        assert!(rendered.contains("Skip: 1"));
-        assert!(rendered.contains("Fail: 0"));
+        assert!(rendered.contains("Registered: 3"));
+        assert!(!rendered.contains("REGRESSION"));
+        // Each computed case prints its detail line (E100/E200/E300).
+        assert!(rendered.contains("E100"));
+        assert!(rendered.contains("E200"));
+        assert!(rendered.contains("E300"));
     }
 
-    /// Verifies that `bestest_rp865_cases()` registers 3 cases (E100, E200, E300)
-    /// and all are in `Pass` status.
-    #[test]
-    fn test_bestest_rp865_cases_registers_three_passing_cases() {
-        let runner = HvacBestestRunner::bestest_rp865_cases();
-        let report = runner.run();
+    // --- Comparative ensemble-bound case (STRUCTURAL GAP — #[ignore]) --------
+    //
+    // The IEA Task 22 / RP-865 PUBLISHED ensemble bounds
+    // (data/comparative_bounds_e100_e200.csv) require a full EnergyPlus-
+    // comparable annual zone simulation. Fluxion's cooling-load path has a
+    // documented structural gap vs EnergyPlus (Case 600/900 annual cooling
+    // ≈20-60% below the ensemble midpoint — see docs/KNOWN_ISSUES.md §LIMIT-05
+    // UPDATE / §SOLAR-02 UPDATE, and the strict-energy-gate baseline in
+    // tests/reference_data/zone_balance/strict_energy_gate_baseline.json).
+    //
+    // Per issue #2684's preferred-fix clause (3), these are REAL cases that
+    // run on-demand via `cargo test --test hvac_bestest -- --ignored`, so the
+    // gap is documented and measured rather than hidden, but they do NOT
+    // block CI on every PR.
 
-        assert_eq!(report.total(), 3, "E100, E200, E300 should be registered");
-        let (pass, skip, fail) = report.counts();
-        assert_eq!(
-            (pass, skip, fail),
-            (3, 0, 0),
-            "all three cases should be Pass (no skips, no fails)"
+    /// Comparative check of the analytical E200 cooling energy against the
+    /// published IEA Task 22 ensemble bound (5.60–6.70 MWh annual cooling).
+    ///
+    /// # Ignored reason
+    /// Blocked on the Case-600-class annual-cooling structural gap
+    /// (`docs/KNOWN_ISSUES.md` §LIMIT-05 UPDATE — GaugeSolver-routed; §SOLAR-02
+    /// UPDATE — residual annual-energy deviation). The analytical E200 model
+    /// (constant-COP chiller over a UA·ΔT bin load) yields ≈4.89 MWh, ≈20%
+    /// below the ensemble midpoint — the same direction and magnitude as the
+    /// ASHRAE 140 Case 600 cooling gap. Closing it requires the post-#1323 /
+    /// #1213 / #1328 cooling-path fix, not a test-side constant. Run on demand:
+    /// `cargo test --test hvac_bestest comparative_e200 -- --ignored --nocapture`
+    #[test]
+    #[ignore = "blocked on Case-600-class cooling structural gap; see docs/KNOWN_ISSUES.md §LIMIT-05/§SOLAR-02"]
+    fn comparative_e200_cooling_vs_iea_task22_ensemble() {
+        let case = run_e200();
+        // Published IEA Task 22 E200 annual-cooling ensemble band (MWh), from
+        // data/comparative_bounds_e100_e200.csv (transcribed; provenance in the CSV).
+        let band_low_mwh = 5.60;
+        let band_high_mwh = 6.70;
+        let computed_mwh = case.computed_energy_kwh / 1000.0;
+        println!(
+            "E200 comparative: computed {computed_mwh:.3} MWh vs IEA Task 22 ensemble [{band_low_mwh}, {band_high_mwh}] MWh"
         );
         assert!(
-            !report.has_failures(),
-            "bestest_rp865_cases must not produce any failures"
+            (band_low_mwh..=band_high_mwh).contains(&computed_mwh),
+            "E200 annual cooling {computed_mwh:.3} MWh outside IEA Task 22 ensemble [{band_low_mwh}, {band_high_mwh}] MWh — \
+             this is the documented Case-600-class structural cooling gap (KNOWN_ISSUES §LIMIT-05/§SOLAR-02)"
         );
-
-        // Verify case IDs are present
-        let case_ids: Vec<_> = report.outcomes.iter().map(|o| o.case_id.as_str()).collect();
-        assert!(case_ids.contains(&"E100"), "E100 should be registered");
-        assert!(case_ids.contains(&"E200"), "E200 should be registered");
-        assert!(case_ids.contains(&"E300"), "E300 should be registered");
-
-        println!("{report}");
     }
 }
