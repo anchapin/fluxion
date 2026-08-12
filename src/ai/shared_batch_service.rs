@@ -274,6 +274,15 @@ impl SharedBatchInferenceService {
     /// Returns a `Receiver` that will receive the predicted loads (`Vec<f64>`).
     /// The call is non-blocking; the returned receiver should be used to wait
     /// for the result.
+    ///
+    /// **Allocation note:** this convenience method allocates a fresh
+    /// `crossbeam::channel::unbounded()` per call — one heap block for the
+    /// channel structure plus its internal queue. For one-shot requests that
+    /// is negligible, but callers that submit once per timestep inside a hot
+    /// loop (e.g. [`BatchOracle::evaluate_population`]'s GPU path) should use
+    /// [`Self::submit_with_sender`] instead, which reuses a caller-owned
+    /// channel and eliminates the per-timestep channel allocation (Issue
+    /// #2751).
     pub fn submit(&self, temps: Vec<f64>) -> Receiver<Vec<f64>> {
         let (resp_tx, resp_rx) = channel::unbounded();
         let request = InferenceRequest {
@@ -296,6 +305,49 @@ impl SharedBatchInferenceService {
             }
         }
         resp_rx
+    }
+
+    /// Submits a temperature vector using a caller-provided response sender,
+    /// avoiding the per-call channel allocation of [`Self::submit`] (Issue
+    /// #2751).
+    ///
+    /// The caller owns a `(Sender<Vec<f64>>, Receiver<Vec<f64>>)` pair created
+    /// **once** outside the hot loop and reuses it across timesteps:
+    ///
+    /// 1. `submit_with_sender(temps_buf, resp_tx.clone())` — moves the temps
+    ///    into the service and hands it a **clone** of the sender (a cheap
+    ///    `Arc` bump; crossbeam `Sender` is `Arc`-backed internally, so
+    ///    `clone()` performs no heap allocation).
+    /// 2. `resp_rx.recv()` — blocks until the service ships the loads back via
+    ///    the cloned sender.
+    /// 3. The loads `Vec<f64>` received from `resp_rx` is recycled as the next
+    ///    timestep's `temps_buf` (ping-pong buffer pattern — same approach the
+    ///    CPU batched orchestrator uses, `orchestrator.rs:486`).
+    ///
+    /// Compared to [`Self::submit`], this eliminates the `channel::unbounded()`
+    /// heap allocation that `submit` performs per call — one heap block per
+    /// channel structure, per timestep, per worker. For a 1 024-config × 8 760
+    /// -timestep run that is ~8.97 M channel allocations removed. The bytes
+    /// flowing into and out of the service are bit-identical to `submit`; only
+    /// the buffer / channel ownership differs.
+    ///
+    /// # Error handling
+    /// If the service has been dropped (all worker threads exited), the
+    /// caller's receiver will receive an empty `Vec::new()` — the same
+    /// "service dropped" signal that `submit` uses. The caller should treat an
+    /// empty loads vector as a fatal service-disconnect.
+    pub fn submit_with_sender(&self, temps: Vec<f64>, response_tx: Sender<Vec<f64>>) {
+        let request = InferenceRequest { temps, response_tx };
+        match self.inner.sender.as_ref() {
+            Some(sender) => {
+                if let Err(e) = sender.send(request) {
+                    let _ = e.0.response_tx.send(Vec::new());
+                }
+            }
+            None => {
+                let _ = request.response_tx.send(Vec::new());
+            }
+        }
     }
 
     /// Atomically-readable panel of dispatcher metrics.
@@ -330,13 +382,35 @@ impl SharedBatchInferenceService {
         let mut ema_ms: f64 = sched.target_latency_ms as f64;
         let mut wait_ms: u64 = sched.target_latency_ms;
 
+        // Issue #2751: hoist the per-batch scratch buffers above the batch
+        // loop. `predict_loads_batched_into` recycles `flat_in` (flattened f32
+        // ONNX input), `flat_out` (flattened f64 raw output), and `outputs`
+        // (per-config `Vec<f64>` load vectors) via `clear`/`resize_with` in
+        // place, so after warm-up these contribute zero heap allocation per
+        // batch. `inputs` and `senders` similarly reuse their outer capacity
+        // via `clear` each batch; the inner temps `Vec`s are moved out of
+        // `InferenceRequest` and dropped on the next `clear`, which is the
+        // inherent per-request floor (the temps `Vec` crosses the thread
+        // boundary by ownership — see `dhat_batched_surrogate_zero_growth.rs`
+        // module docs).
+        let mut inputs: Vec<Vec<f64>> = Vec::new();
+        let mut senders: Vec<Sender<Vec<f64>>> = Vec::new();
+        let mut flat_in: Vec<f32> = Vec::new();
+        let mut flat_out: Vec<f64> = Vec::new();
+        let mut outputs: Vec<Vec<f64>> = Vec::new();
+        // Issue #2751: hoist the per-batch `batch` Vec above the loop so its
+        // capacity is reused (clear + refill) instead of reallocated each
+        // batch-cycle. Previously this was `Vec::with_capacity(...)` inside the
+        // loop — one allocation per batch.
+        let mut batch: Vec<InferenceRequest> = Vec::with_capacity(sched.max_batch_size.min(64));
+
         loop {
             // 1) Block until the first request arrives.
             let first_req = match req_rx.recv() {
                 Ok(req) => req,
                 Err(_) => break, // All senders gone — exit cleanly.
             };
-            let mut batch = Vec::with_capacity(sched.max_batch_size.min(64));
+            batch.clear();
             batch.push(first_req);
 
             // 2) Try to fill the batch within the adaptive wait window. The
@@ -350,12 +424,17 @@ impl SharedBatchInferenceService {
                     Err(RecvTimeoutError::Disconnected) => {
                         // Channel closed. Process what we have and exit.
                         Self::process_batch(
-                            batch,
+                            &mut batch,
                             &surrogate,
                             &metrics,
                             &mut ema_ms,
                             &mut wait_ms,
                             &sched,
+                            &mut inputs,
+                            &mut senders,
+                            &mut flat_in,
+                            &mut flat_out,
+                            &mut outputs,
                         );
                         return;
                     }
@@ -363,34 +442,74 @@ impl SharedBatchInferenceService {
             }
 
             Self::process_batch(
-                batch,
+                &mut batch,
                 &surrogate,
                 &metrics,
                 &mut ema_ms,
                 &mut wait_ms,
                 &sched,
+                &mut inputs,
+                &mut senders,
+                &mut flat_in,
+                &mut flat_out,
+                &mut outputs,
             );
         }
     }
 
     /// Run one batch through the surrogate, update the per-worker adaptive
     /// state, publish metrics, and ship results back to requesters.
+    ///
+    /// # Hoisted scratch buffers (Issue #2751)
+    ///
+    /// `inputs`, `senders`, `flat_in`, `flat_out`, and `outputs` are borrowed
+    /// from the caller (`run_worker`) and `clear`'d in place each batch so
+    /// their capacity is reused across batches rather than reallocated. The
+    /// inner `Vec<f64>` load vectors in `outputs` are moved out to requesters
+    /// via `drain` (the scatter step), so each batch does allocate `batch.len()`
+    /// fresh inner `Vec`s via `predict_loads_batched_into`'s `resize_with` —
+    /// that is the inherent per-request floor documented in
+    /// `tests/dhat_batched_surrogate_zero_growth.rs` (the load `Vec` must cross
+    /// the thread boundary by ownership). Everything else — the flattened f32
+    /// ONNX input, the flattened raw output, the outer `Vec` capacities — is
+    /// fully reused after warm-up.
     #[allow(clippy::too_many_arguments)]
     fn process_batch(
-        batch: Vec<InferenceRequest>,
+        batch: &mut Vec<InferenceRequest>,
         surrogate: &SurrogateManager,
         metrics: &Arc<BatchMetrics>,
         ema_ms: &mut f64,
         wait_ms: &mut u64,
         sched: &SchedulerConfig,
+        inputs: &mut Vec<Vec<f64>>,
+        senders: &mut Vec<Sender<Vec<f64>>>,
+        flat_in: &mut Vec<f32>,
+        flat_out: &mut Vec<f64>,
+        outputs: &mut Vec<Vec<f64>>,
     ) {
-        let (inputs, senders): (Vec<Vec<f64>>, Vec<Sender<Vec<f64>>>) = batch
-            .into_iter()
-            .map(|req| (req.temps, req.response_tx))
-            .unzip();
+        // Unzip the batch into the hoisted `inputs` and `senders` buffers,
+        // reusing their outer capacity. The inner temps Vecs are moved out of
+        // each InferenceRequest via `drain(..)` (retaining `batch`'s capacity
+        // for the next batch-cycle); they are dropped when `inputs.clear()`
+        // runs next batch (the borrowing `predict_loads_batched_into` has
+        // already returned by then).
+        inputs.clear();
+        senders.clear();
+        inputs.reserve(batch.len());
+        senders.reserve(batch.len());
+        for req in batch.drain(..) {
+            inputs.push(req.temps);
+            senders.push(req.response_tx);
+        }
 
         let start = Instant::now();
-        let outputs = surrogate.predict_loads_batched(&inputs);
+        // Issue #2751: use the `_into` variant so the flattened f32 ONNX
+        // input, the flattened raw output, and the per-config load vectors
+        // are recycled via the hoisted scratch buffers rather than allocated
+        // fresh each batch. The bytes produced are bit-identical to the prior
+        // `predict_loads_batched(&inputs)` call — only buffer ownership
+        // differs (verified by `dhat_batched_surrogate_zero_growth`).
+        surrogate.predict_loads_batched_into(inputs, flat_in, flat_out, outputs);
         let elapsed_ms = start.elapsed().as_secs_f64() * 1000.0;
 
         // Update EMA + adaptive wait.
@@ -411,7 +530,10 @@ impl SharedBatchInferenceService {
             .store((*ema_ms * 1000.0) as u64, Ordering::Relaxed);
 
         // Ship results back. If a requester dropped, ignore the send error.
-        for (tx, out) in senders.into_iter().zip(outputs.into_iter()) {
+        // The inner load Vecs are drained out of `outputs` by ownership —
+        // callers that use `submit_with_sender` recycle them as their next
+        // timestep's temps buffer (ping-pong pattern, Issue #2751).
+        for (tx, out) in senders.drain(..).zip(outputs.drain(..)) {
             let _ = tx.send(out);
         }
     }

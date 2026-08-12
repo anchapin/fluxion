@@ -249,16 +249,58 @@ impl BatchOracle {
                                 }
                                 arr
                             };
+                            // Issue #2751: hoist the per-timestep buffers out
+                            // of the 8 760-step inner loop.
+                            //
+                            // **Response channel**: created once as a bounded(1)
+                            // crossbeam channel and reused every timestep via
+                            // `resp_tx.clone()` (a cheap `Arc` bump — crossbeam
+                            // `Sender` is `Arc`-backed internally, so `clone()`
+                            // performs zero heap allocation). The previous code
+                            // called `service.submit(temps)` which allocated a
+                            // fresh `channel::unbounded()` per timestep — one
+                            // heap block per channel structure, per timestep,
+                            // per config worker. `submit_with_sender` is the
+                            // zero-alloc variant that takes the cloned sender.
+                            //
+                            // **Temps / loads buffer (ping-pong)**: `temps_buf`
+                            // is filled in place by `get_temperatures_into`
+                            // (no allocation). The loads `Vec` returned by the
+                            // service is recycled as the next timestep's
+                            // `temps_buf` — the same buffer-reuse pattern the
+                            // CPU batched orchestrator uses
+                            // (`orchestrator.rs:486`, Issue #2771). The bytes
+                            // flowing into `step_physics` are bit-identical to
+                            // the prior `get_temperatures()` + `submit()` +
+                            // `recv()` path; only buffer ownership differs.
+                            let (resp_tx, resp_rx) = crossbeam::channel::bounded::<Vec<f64>>(1);
+                            let mut temps_buf: Vec<f64> = Vec::new();
+                            model.get_temperatures_into(&mut temps_buf);
                             for t in 0..8760 {
                                 let hour_of_day = t % 24;
                                 let daily_cycle = cycle[hour_of_day];
                                 let outdoor_temp = 10.0 + 10.0 * daily_cycle;
-                                let temps = model.get_temperatures();
-                                let rx = service.submit(temps);
-                                let loads =
-                                    rx.recv().expect("Failed to receive loads from service");
+                                // Hand the temps to the service; the cloned
+                                // sender reuses the per-worker response channel
+                                // (no per-call channel allocation).
+                                service.submit_with_sender(temps_buf, resp_tx.clone());
+                                let loads = resp_rx
+                                    .recv()
+                                    .expect("Failed to receive loads from service");
                                 model.set_loads(&loads);
                                 energy += model.step_physics(t, outdoor_temp, 3600.0);
+                                // Recycle the received loads Vec as the next
+                                // timestep's temps buffer (ping-pong). The
+                                // reassignment is unconditional so the borrow
+                                // checker sees `temps_buf` reinitialized every
+                                // iteration before the next `submit_with_sender`
+                                // moves it; the (cheap) temperature refill only
+                                // runs when a further step follows, since the
+                                // final step's gather is wasted.
+                                temps_buf = loads;
+                                if t + 1 < 8760 {
+                                    model.get_temperatures_into(&mut temps_buf);
+                                }
                             }
                             let _ = res_tx.send((idx, model, energy));
                         });
