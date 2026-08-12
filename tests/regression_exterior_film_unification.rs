@@ -97,6 +97,137 @@ fn test_no_legacy_one_over_29_3_literal_in_src() {
     );
 }
 
+/// Reject any bare `29.3` literal in a *computation* context under `src/`.
+///
+/// Issue #2679: the FD-solver path in `src/sim/thermal_model_core.rs` called
+/// `SurfaceBC::new_exterior(29.3, ...)` directly. That is not the reciprocal
+/// form `1.0 / 29.3` caught by [`test_no_legacy_one_over_29_3_literal_in_src`],
+/// so the existing guard passed while the violation shipped in production
+/// physics code.
+///
+/// This test scans every `.rs` file under `src/` for a `29.3` token that is
+/// **not** a comment, **not** a doc-string, and **not** the sanctioned named
+/// constant definition `pub const ASHRAE140_H_EXT: f64 = 29.3;` in
+/// `src/physics/constants/thermal/ashrae_140/materials.rs` (the single
+/// intentional storage of the legacy 6.7 m/s value, kept for backward
+/// compatibility with legacy ASHRAE 140 design-wind scenarios).
+///
+/// Any other bare `29.3` in source is almost certainly a re-introduction of
+/// the forbidden coefficient into an active computation path. Replace it with
+/// the imported canonical constant `EXTERIOR_FILM_COEFF` (18.3 W/m²K, v2023)
+/// or, if the legacy 6.7 m/s value is genuinely required, reference it via the
+/// named constant `ASHRAE140_H_EXT`.
+///
+/// Reference: GitHub issue #2679.
+#[test]
+fn test_no_bare_29_3_literal_in_src_computation_paths() {
+    let src_root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
+    // The single sanctioned location for the legacy 29.3 value as a named
+    // constant. Use forward slashes so this is portable across platforms.
+    let sanctioned_const_file =
+        std::path::Path::new("src/physics/constants/thermal/ashrae_140/materials.rs");
+
+    let mut violations: Vec<String> = Vec::new();
+
+    walk_rs_files(&src_root, &mut |path: &std::path::Path| {
+        let content = match std::fs::read_to_string(path) {
+            Ok(c) => c,
+            Err(_) => return,
+        };
+        let rel = path
+            .strip_prefix(env!("CARGO_MANIFEST_DIR"))
+            .unwrap_or(path);
+        let is_sanctioned = rel == sanctioned_const_file;
+
+        for (idx, raw_line) in content.lines().enumerate() {
+            let line_no = idx + 1;
+            // Skip comments and doc-strings entirely — we only police
+            // computation paths, not documentation of the legacy value.
+            let trimmed = raw_line.trim_start();
+            if trimmed.starts_with("//")
+                || trimmed.starts_with("///")
+                || trimmed.starts_with("//!")
+                || trimmed.starts_with('*')
+            {
+                continue;
+            }
+
+            for occurrence in find_bare_29_3_offsets(raw_line) {
+                // In the sanctioned constant file, the named constant
+                // definition line `pub const ASHRAE140_H_EXT: f64 = 29.3;`
+                // is allowed (it is the storage of the legacy value, not a
+                // computation). Any *other* bare 29.3 in that file would
+                // still be flagged.
+                if is_sanctioned && line_is_ashrae140_h_ext_definition(raw_line) {
+                    continue;
+                }
+
+                violations.push(format!(
+                    "regression (issue #2679): {}:{} contains a bare `29.3` literal \
+                     outside a comment. The legacy 29.3 W/m²K (6.7 m/s wind) exterior \
+                     film coefficient MUST NOT appear in any computation path \
+                     (AGENTS.md §Critical Physics Constants). Replace with the imported \
+                     canonical `EXTERIOR_FILM_COEFF` (18.3 W/m²K, v2023) from \
+                     `src/physics/constants/thermal/ashrae_140/v2023.rs`, or — only if \
+                     the legacy 6.7 m/s value is explicitly required — reference the \
+                     named constant `ASHRAE140_H_EXT`. Column {}: {}",
+                    rel.display(),
+                    line_no,
+                    occurrence + 1,
+                    raw_line.trim()
+                ));
+            }
+        }
+    });
+
+    assert!(
+        violations.is_empty(),
+        "Found {} forbidden bare 29.3 literal(s) in computation paths under src/:\n{}",
+        violations.len(),
+        violations.join("\n")
+    );
+}
+
+/// Return the byte offsets of every `29.3` token in `line` that is followed by
+/// a non-identifier boundary (so `29.33` or `29.3_f64` are not matched).
+fn find_bare_29_3_offsets(line: &str) -> Vec<usize> {
+    let bytes = line.as_bytes();
+    let n = bytes.len();
+    let mut out = Vec::new();
+    let pattern = b"29.3";
+    let mut i = 0;
+    while i + 4 <= n {
+        if &bytes[i..i + 4] == pattern {
+            let after = i + 4;
+            let ok_boundary = after == n
+                || !(bytes[after].is_ascii_alphanumeric()
+                    || bytes[after] == b'_'
+                    || bytes[after] == b'.');
+            // Also ensure the preceding char is not an identifier continuation
+            // or a digit/`.` (so `129.3`, `x29.3`, `.29.3` are not matched).
+            let prev_ok = i == 0
+                || !(bytes[i - 1].is_ascii_alphanumeric()
+                    || bytes[i - 1] == b'_'
+                    || bytes[i - 1] == b'.');
+            if ok_boundary && prev_ok {
+                out.push(i);
+            }
+            i += 4;
+        } else {
+            i += 1;
+        }
+    }
+    out
+}
+
+/// Recognise the sanctioned named-constant definition line for the legacy
+/// exterior film coefficient. Allows whitespace variations but anchors on the
+/// `pub const ASHRAE140_H_EXT` identifier and a `29.3` literal on the same line.
+fn line_is_ashrae140_h_ext_definition(line: &str) -> bool {
+    let t = line.trim();
+    t.starts_with("pub const ASHRAE140_H_EXT") && t.contains("29.3")
+}
+
 /// Recursively walk a directory and invoke `f` on every `.rs` file.
 fn walk_rs_files(dir: &std::path::Path, f: &mut dyn FnMut(&std::path::Path)) {
     let entries = match std::fs::read_dir(dir) {
@@ -273,5 +404,58 @@ mod self_tests {
     fn does_not_match_unrelated_29_3_followed_by_underscore() {
         // `29.3_X` should NOT trigger — the trailing `_` makes it an identifier.
         assert!(!contains_legacy_one_over_29_3("let x = 1.0 / 29.3_X;"));
+    }
+}
+
+#[cfg(test)]
+mod bare_29_3_detector_tests {
+    use super::{find_bare_29_3_offsets, line_is_ashrae140_h_ext_definition};
+
+    #[test]
+    fn detects_bare_literal_in_function_call() {
+        // The exact #2679 regression form.
+        let line = "                let exterior_bc = SurfaceBC::new_exterior(29.3, t_ext, 0.0);";
+        assert!(!find_bare_29_3_offsets(line).is_empty());
+    }
+
+    #[test]
+    fn detects_bare_literal_assignment() {
+        assert!(!find_bare_29_3_offsets("let h = 29.3;").is_empty());
+    }
+
+    #[test]
+    fn does_not_detect_29_33() {
+        assert!(find_bare_29_3_offsets("let h = 29.33;").is_empty());
+    }
+
+    #[test]
+    fn does_not_detect_preceded_by_digit() {
+        // `129.3` must not trigger — preceding digit is an identifier-ish boundary.
+        assert!(find_bare_29_3_offsets("let h = 129.3;").is_empty());
+    }
+
+    #[test]
+    fn does_not_detect_preceded_by_dot() {
+        // `.29.3` is not a real token but should not match anyway.
+        assert!(find_bare_29_3_offsets("let h = .29.3;").is_empty());
+    }
+
+    #[test]
+    fn does_not_detect_inside_identifier_suffix() {
+        assert!(find_bare_29_3_offsets("let h = foo_29_3;").is_empty());
+    }
+
+    #[test]
+    fn sanctioned_const_line_is_recognised() {
+        assert!(line_is_ashrae140_h_ext_definition(
+            "pub const ASHRAE140_H_EXT: f64 = 29.3;"
+        ));
+    }
+
+    #[test]
+    fn non_sanctioned_const_line_is_not_recognised() {
+        assert!(!line_is_ashrae140_h_ext_definition(
+            "pub const SOMETHING_ELSE: f64 = 29.3;"
+        ));
     }
 }
