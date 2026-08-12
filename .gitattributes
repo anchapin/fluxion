@@ -1,0 +1,16 @@
+# Cross-platform line-ending policy (Issue #2760).
+#
+# GitHub Windows runners default to `core.autocrlf=true`, which checks out text
+# files with CRLF. Several tests parse source as raw text and would see shifted
+# byte offsets / spurious "\r" characters under CRLF:
+#   - tests/pyi_stub_completeness.rs reads `fluxion.pyi` and `src/lib.rs`
+#   - the PyO3 pytest suite imports pure-Python modules under tests/python/
+#
+# Pin LF for the file types the bindings test suite compiles, parses, or
+# imports so behaviour is identical on ubuntu / windows / macos runners.
+*.pyi   text eol=lf
+*.py    text eol=lf
+*.rs    text eol=lf
+*.toml  text eol=lf
+*.yml   text eol=lf
+*.yaml  text eol=lf
