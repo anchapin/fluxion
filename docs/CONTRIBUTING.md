@@ -214,7 +214,7 @@ If you hit an error you can't resolve locally, capture the `act` output and open
 - `docs/API_REFERENCE.md`: Comprehensive API reference with examples
 - `docs/ARCHITECTURE.md`: Architecture deep dive
 - `docs/CONTRIBUTING.md`: This guide
-- `docs/KNOWN_LIMITATIONS.md`: Known model limitations and accuracy constraints
+- `docs/KNOWN_ISSUES.md`: Known model limitations and accuracy constraints
 - `docs/tutorials/`: Step-by-step tutorials (planned)
 - `docs/ASHRAE140_RESULTS.md`: Validation results and analysis
 

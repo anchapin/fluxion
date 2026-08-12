@@ -846,4 +846,4 @@ fn test_custom_model_performance() {
 - [API Reference](../API_REFERENCE.md) - Comprehensive BatchOracle and Model documentation
 - [Architecture Overview](../ARCHITECTURE.md) - Deep dive into Fluxion's design
 - [ASHRAE 140 Validation](../ASHRAE_140_RESULTS.md) - Validation methodology and results
-- [Known Limitations](../KNOWN_LIMITATIONS.md) - Current model limitations and planned improvements
+- [Known Limitations](../KNOWN_ISSUES.md) - Current model limitations and planned improvements
