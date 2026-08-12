@@ -38,6 +38,38 @@
       },
       "total": 215,
       "edge_signature": "63ef73b0a30b4fe79acb6564ce24436cc358bdadf2081b5c20ba36539ac3787a"
+    },
+    {
+      "timestamp": "2026-08-12T18:00:00+00:00",
+      "commit": "73d15a6",
+      "source": "coverage-extension-issue-2766",
+      "reason": "Issue #2766 extended check_physics_sim_cycle.py Phase 2 from 2 guarded sim files (construction.rs + per_surface_conduction.rs) to ALL src/sim/**/*.rs files. The extension surfaced 84 pre-existing `use crate::physics::` imports across 26 sim files that the pre-#2766 guard never scanned (thermal_model.rs, engine.rs, ventilation.rs, ...). The 84 edges existed all along \u2014 this is a one-time coverage-driven re-baselining (sim_to_physics 0 -> 84, total 215 -> 299), NOT a regression: BASELINE_SIM_TO_PHYSICS in check_physics_sim_cycle.py was raised from 0 to 84 in the same commit. The +84 is entirely pre-existing coupling made visible; no new cycle edges were introduced. Downward trend from this new baseline is enforced by R1/R2/R3 going forward.",
+      "totals": {
+        "sim_to_validation": 72,
+        "validation_to_sim": 58,
+        "validation_to_physics": 62,
+        "validation_to_weather": 23,
+        "physics_to_sim": 0,
+        "sim_to_physics": 84
+      },
+      "total": 299,
+      "edge_signature": "a71e4c3012c86750bd1fa48eb528ee3ee038454360f6a4da527ebda72d4c41aa"
+    },
+    {
+      "timestamp": "2026-08-12T20:06:58+00:00",
+      "commit": "84f6eee",
+      "source": "post-rebase-issue2767",
+      "reason": "PR #2793 (issue #2766) was rebased onto develop after merge of #2792 (refactor(sim): decompose ThermalModelData god-struct, issue #2767). The ThermalModelData decomposition relocated several `use crate::physics::` imports across the newly-split sim files without changing the total count (sim_to_physics stayed at 84, total stayed at 299) but altered the edge signature. This snapshot re-captures the post-rebase edge set so R3 (net-flat swap) does not flag the refactor-driven relocation as a regression. No new cycle edges were introduced.",
+      "totals": {
+        "sim_to_validation": 72,
+        "validation_to_sim": 58,
+        "validation_to_physics": 62,
+        "validation_to_weather": 23,
+        "physics_to_sim": 0,
+        "sim_to_physics": 84
+      },
+      "total": 299,
+      "edge_signature": "e2b76e940dd625f1c0d21e06f4380b05c39863880b4d66b9c755653586e23a06"
     }
   ]
 }

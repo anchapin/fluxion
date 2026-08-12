@@ -12,32 +12,37 @@ the `physics <-> sim` cycle closed by Issue #2462 stays closed:
    `PerSurfaceConductionSolver` to `fluxion_core::per_surface_conduction`;
    and `STEFAN_BOLTZMANN` to `fluxion_core::physics_constants` — driving the
    physics->sim edge count from 5 to 0.
-2. `src/sim/construction.rs` and `src/sim/per_surface_conduction.rs`
-   (the two `sim` files that previously hosted shared domain types) must
-   NOT import from `src/physics/**` (no `use crate::physics::` upward
-   deps). Both files are now thin re-export shims over the leaf modules
-   above (no physics imports remain).
-3. Summary: report the total cycle-edge count. As of #2462 the documented
-   baseline is 0+0 edges.
+2. **All** of `src/sim/**/*.rs` must NOT grow its `use crate::physics::`
+   import count above the documented baseline (Issue #2766). The original
+   Phase 2 (Issue #2463) guarded only the two files that previously hosted
+   shared domain types — `src/sim/construction.rs` and
+   `src/sim/per_surface_conduction.rs` — leaving ~84 ``use crate::physics::``
+   imports across 26 other sim files (``thermal_model.rs``, ``engine.rs``,
+   ``ventilation.rs``, ...) completely unguarded. Issue #2766 extended
+   coverage to ALL of ``src/sim/**`` and snapshotted the 84 pre-existing
+   edges as the new baseline; any NEW edge (the 85th) fails.
+3. Summary: report the total cycle-edge count. As of #2462 + #2766 the
+   documented baseline is 0 physics->sim + 84 sim->physics edges.
 
 Usage:
   python3 scripts/check_physics_sim_cycle.py
 
 Exit codes:
   0 — no cycle regression (offender count is at or below the documented
-      baseline of 0)
+      baseline)
   1 — cycle regression detected (a NEW edge appeared, exceeding the
       documented baseline)
   2 — script error
 
-The script reports `BASELINE_PHYSICS_TO_SIM = 0` and
-`BASELINE_SIM_TO_PHYSICS = 0` documented edges as the *current state*.
-A future PR that adds a *new* `use crate::sim::` import under
-`src/physics/**` (or `use crate::physics::` under the two protected
-`src/sim/**` files) — pushing the count *above* zero — is flagged
-immediately as a regression. See ARCHITECTURE.md
-§"Regression guard (Issue #2463, closed by #2462)" for the
-source-of-truth numbers.
+The script reports ``BASELINE_PHYSICS_TO_SIM = 0`` and
+``BASELINE_SIM_TO_PHYSICS = 84`` documented edges as the *current state*.
+A future PR that adds a *new* ``use crate::sim::`` import under
+``src/physics/**`` (or a *new* ``use crate::physics::`` import under any
+``src/sim/**/*.rs`` file) — pushing the count *above* the documented
+baseline — is flagged immediately as a regression. See ARCHITECTURE.md
+§"Regression guard (Issue #2463, closed by #2462)" and
+§"Regression guard (Issue #2766, extends #2463)" for the source-of-truth
+numbers.
 
 See ARCHITECTURE.md §"Cycle break (#2462 — physics ↔ sim shared domain
 types → `fluxion-core`)" and docs/mutation_testing_crate_split.md
@@ -54,31 +59,45 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parent.parent
 FLUXION_SRC = REPO_ROOT / "src"
 PHYSICS_DIR = FLUXION_SRC / "physics"
+SIM_DIR = FLUXION_SRC / "sim"
 
-# `sim` files that host shared domain types and must not import physics internals.
-# Per ARCHITECTURE.md §"Remaining cycles" and the companion cycle-break plan,
-# these are the two sides of the `physics <-> sim` seam. They currently carry
-# leaf re-exports from `physics::constants`; the cycle-break work moves those.
-PROTECTED_SIM_FILES = (
-    FLUXION_SRC / "sim" / "construction.rs",
-    FLUXION_SRC / "sim" / "per_surface_conduction.rs",
-)
+# ``src/sim/`` files exempted from the Phase 2 scan. Carry-forward of the
+# original ``PROTECTED_SIM_FILES`` allowlist mechanism (Issue #2463): add a
+# POSIX-relative path (relative to ``SIM_DIR``) here ONLY when a documented
+# thin re-export shim (see ARCHITECTURE.md §"Re-export shims") legitimately
+# needs to re-export a physics type. Currently empty — every
+# ``src/sim/**/*.rs`` file, including the four documented shims
+# (``assembly.rs``, ``multi_node_thermal.rs``, ``construction.rs``,
+# ``per_surface_conduction.rs``), is scanned. All four shims are presently
+# clean (0 ``use crate::physics::`` imports, per #2462), so they pass the
+# scan naturally without needing an exemption.
+SIM_SHIM_EXCEPTIONS: frozenset[str] = frozenset()
 
-# Documented baseline edge counts. Issue #2462 drove the cycle to 0+0
-# edges by hoisting the shared domain types into `fluxion_core::*` (see
-# ARCHITECTURE.md §"Cycle break (#2462 — physics ↔ sim shared domain types
-# → `fluxion-core`)"). Any PR that pushes these *up* is a regression and is
-# flagged by this guard. See ARCHITECTURE.md §"Regression guard (Issue
-# #2463, closed by #2462)" for the source-of-truth numbers.
+# Documented baseline edge counts.
+#
+# Phase 1 (physics->sim): Issue #2462 drove this direction to 0 edges by
+# hoisting the shared domain types into ``fluxion_core::*``. Any PR that
+# pushes this above 0 is a regression.
+#
+# Phase 2 (sim->physics): Issue #2766 extended this phase from the 2
+# originally-guarded files (``construction.rs`` +
+# ``per_surface_conduction.rs``) to ALL ``src/sim/**/*.rs`` files. The
+# extension surfaced 84 pre-existing ``use crate::physics::`` imports
+# across 26 sim files that the original guard never saw. These 84 edges
+# are snapshotted here as the new baseline; the guard PASSES at-or-below
+# 84 and FAILS when a NEW edge pushes the count to 85+. Lowering this
+# baseline is authorised only by companion cycle-removal work; see
+# ARCHITECTURE.md §"Regression guard (Issue #2766, extends #2463)".
+#
+# See ARCHITECTURE.md §"Regression guard (Issue #2463, closed by #2462)"
+# for the source-of-truth numbers.
 BASELINE_PHYSICS_TO_SIM = 0
-BASELINE_SIM_TO_PHYSICS = 0
+BASELINE_SIM_TO_PHYSICS = 84
 
 # Regex for Phase 2: match `use` or `pub use` against `crate::physics::`.
 # Mirrors `scan_sim_for_orientation_cycle` in check_ashrae_cases_cycle.py
 # which uses `(pub\s+)?use\s+crate::validation::...::Orientation\b`.
-_PHYSICS_IMPORT_RE = re.compile(
-    r"^\s*(pub\s+)?use\s+crate::physics::"
-)
+_PHYSICS_IMPORT_RE = re.compile(r"^\s*(pub\s+)?use\s+crate::physics::")
 
 
 def scan_physics_for_sim_deps() -> list[str]:
@@ -109,18 +128,30 @@ def scan_physics_for_sim_deps() -> list[str]:
     return offenders
 
 
-def scan_protected_sim_files_for_physics_deps() -> list[str]:
-    """Walk the two protected `sim` files and forbid `use crate::physics::`.
+def scan_sim_for_physics_deps() -> list[str]:
+    """Walk ``src/sim/**/*.rs`` and report every ``use crate::physics::`` import.
 
-    Mirrors `scan_sim_for_orientation_cycle` in check_ashrae_cases_cycle.py:
-    anchors on `(pub\\s+)?use\\s+crate::physics::` and reports every match
-    (file:line + the offending line) so the cycle-break PR can verify
-    progress.
+    Issue #2766: the original Phase 2 (Issue #2463) scanned only the two
+    files in the old ``PROTECTED_SIM_FILES`` tuple — ``construction.rs``
+    and ``per_surface_conduction.rs`` — leaving ~84 ``use crate::physics::``
+    imports across 26 other sim files completely unguarded. This function
+    extends coverage to ALL of ``src/sim/**`` (minus the files in
+    ``SIM_SHIM_EXCEPTIONS``) so any new sim->physics edge in any sim file
+    is caught.
+
+    Mirrors ``scan_sim_for_validation_deps`` in check_ashrae_cases_cycle.py
+    (directory ``rglob`` walk) but anchors on the existing
+    ``(pub\\s+)?use\\s+crate::physics::`` regex — the established Phase 2
+    detection logic is unchanged; only the set of files scanned grew.
+    Reports every match as ``file:line: text`` so cycle-removal work can
+    verify progress file-by-file.
     """
     offenders: list[str] = []
-    for rs_file in PROTECTED_SIM_FILES:
-        if not rs_file.exists():
-            offenders.append(f"{rs_file.relative_to(REPO_ROOT)}: file missing")
+    if not SIM_DIR.exists():
+        return offenders
+    for rs_file in sorted(SIM_DIR.rglob("*.rs")):
+        rel_posix = rs_file.relative_to(SIM_DIR).as_posix()
+        if rel_posix in SIM_SHIM_EXCEPTIONS:
             continue
         rel = rs_file.relative_to(REPO_ROOT)
         for lineno, line in enumerate(
@@ -130,6 +161,14 @@ def scan_protected_sim_files_for_physics_deps() -> list[str]:
             if _PHYSICS_IMPORT_RE.match(line):
                 offenders.append(f"{rel}:{lineno}: {line.strip()}")
     return offenders
+
+
+# Backward-compat alias. The pre-#2766 name is kept so downstream consumers
+# (notably ``scripts/check_cycle_downward_trend.py``'s
+# ``collect_current_edges``, Issue #2768) keep working without modification.
+# New code should call ``scan_sim_for_physics_deps`` directly, paralleling
+# ``scan_sim_for_validation_deps`` in check_ashrae_cases_cycle.py.
+scan_protected_sim_files_for_physics_deps = scan_sim_for_physics_deps
 
 
 def main() -> int:
@@ -147,42 +186,56 @@ def main() -> int:
             f"(baseline: {BASELINE_PHYSICS_TO_SIM}; {new_edges} NEW edge(s) above baseline):"
         )
         failures.extend(f"    {o}" for o in physics_to_sim)
-        print(f"    FAIL: {len(physics_to_sim)} offender(s) "
-              f"({new_edges} above baseline {BASELINE_PHYSICS_TO_SIM})")
+        print(
+            f"    FAIL: {len(physics_to_sim)} offender(s) "
+            f"({new_edges} above baseline {BASELINE_PHYSICS_TO_SIM})"
+        )
     else:
         if physics_to_sim:
-            print(f"    OK: {len(physics_to_sim)} offender(s) "
-                  f"(at baseline {BASELINE_PHYSICS_TO_SIM})")
+            print(
+                f"    OK: {len(physics_to_sim)} offender(s) "
+                f"(at baseline {BASELINE_PHYSICS_TO_SIM})"
+            )
         else:
             print(f"    OK: 0 upward deps (below baseline {BASELINE_PHYSICS_TO_SIM})")
 
-    print("[2/3] src/sim/construction.rs + src/sim/per_surface_conduction.rs "
-          "must not `use crate::physics::` ...")
-    sim_to_physics = scan_protected_sim_files_for_physics_deps()
+    print(
+        "[2/3] src/sim/**/*.rs must not `use crate::physics::` "
+        "(all sim files; issue #2766) ..."
+    )
+    sim_to_physics = scan_sim_for_physics_deps()
     if len(sim_to_physics) > BASELINE_SIM_TO_PHYSICS:
         new_edges = len(sim_to_physics) - BASELINE_SIM_TO_PHYSICS
         failures.append(
-            f"protected sim files have {len(sim_to_physics)} upward dep(s) to src/physics "
+            f"src/sim has {len(sim_to_physics)} upward dep(s) to src/physics "
             f"(baseline: {BASELINE_SIM_TO_PHYSICS}; {new_edges} NEW edge(s) above baseline):"
         )
         failures.extend(f"    {o}" for o in sim_to_physics)
-        print(f"    FAIL: {len(sim_to_physics)} offender(s) "
-              f"({new_edges} above baseline {BASELINE_SIM_TO_PHYSICS})")
+        print(
+            f"    FAIL: {len(sim_to_physics)} offender(s) "
+            f"({new_edges} above baseline {BASELINE_SIM_TO_PHYSICS})"
+        )
     else:
         if sim_to_physics:
-            print(f"    OK: {len(sim_to_physics)} offender(s) "
-                  f"(at baseline {BASELINE_SIM_TO_PHYSICS})")
+            print(
+                f"    OK: {len(sim_to_physics)} offender(s) "
+                f"(at baseline {BASELINE_SIM_TO_PHYSICS})"
+            )
         else:
-            print(f"    OK: no cycle markers (below baseline {BASELINE_SIM_TO_PHYSICS})")
+            print(
+                f"    OK: no cycle markers (below baseline {BASELINE_SIM_TO_PHYSICS})"
+            )
 
     print("[3/3] summary ...")
     total = len(physics_to_sim) + len(sim_to_physics)
     baseline_total = BASELINE_PHYSICS_TO_SIM + BASELINE_SIM_TO_PHYSICS
     print(f"    Total cycle edges: {total}")
-    print(f"    (Documented baseline: {baseline_total} "
-          f"({BASELINE_PHYSICS_TO_SIM} physics->sim + "
-          f"{BASELINE_SIM_TO_PHYSICS} sim->physics);")
-    print(f"     companion cycle-break work drives this to 0.)")
+    print(
+        f"    (Documented baseline: {baseline_total} "
+        f"({BASELINE_PHYSICS_TO_SIM} physics->sim + "
+        f"{BASELINE_SIM_TO_PHYSICS} sim->physics);"
+    )
+    print("     companion cycle-break work drives this to 0.)")
 
     print()
     if failures:
@@ -190,14 +243,18 @@ def main() -> int:
         for f in failures:
             print(f"  {f}")
         print()
-        print(f"A new `use crate::sim::*` import under `src/physics/**` (or a")
-        print(f"`use crate::physics::*` import under the two protected sim files)")
-        print(f"has appeared that exceeds the documented baseline of "
-              f"{baseline_total} edges. The companion cycle-break issue is the")
-        print(f"work authorised to reduce the count; this guard rejects growth.")
+        print("A new `use crate::sim::*` import under `src/physics/**` (or a")
+        print("`use crate::physics::*` import under any `src/sim/**/*.rs` file)")
+        print(
+            f"has appeared that exceeds the documented baseline of "
+            f"{baseline_total} edges. The companion cycle-break issue is the"
+        )
+        print("work authorised to reduce the count; this guard rejects growth.")
         return 1
-    print(f"No cycle regression. Issue #2463 cycle stays at {total} edge(s) "
-          f"(at or below documented baseline of {baseline_total}).")
+    print(
+        f"No cycle regression. Issue #2463 cycle stays at {total} edge(s) "
+        f"(at or below documented baseline of {baseline_total})."
+    )
     return 0
 
 

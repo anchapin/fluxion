@@ -138,11 +138,16 @@ fields reference `crate::sim::shading::{Overhang, ShadeFin}` (shading logic
 the leaf crate does not need). It composes `fluxion_core::construction::*`
 and `fluxion_core::ashrae_cases::Orientation` for its data fields.
 
-**Regression guard**: `scripts/check_physics_sim_cycle.py` now enforces a
-zero-edge baseline — `BASELINE_PHYSICS_TO_SIM = 0` and `BASELINE_SIM_TO_PHYSICS = 0`.
-The CI listener `Physics-Sim-Cycle-Check` (in `.github/workflows/rust-tests.yml`)
-is added to `release_gates.yaml::ci.required_checks` so a regression cannot
-ship past branch protection.
+**Regression guard**: `scripts/check_physics_sim_cycle.py` enforces a
+zero-edge physics→sim baseline (`BASELINE_PHYSICS_TO_SIM = 0`) and — since
+Issue #2766 extended Phase 2 coverage from the 2 originally-guarded files to
+ALL of `src/sim/**/*.rs` — an 84-edge sim→physics baseline
+(`BASELINE_SIM_TO_PHYSICS = 84`; the 84 pre-existing
+`use crate::physics::` imports across 26 sim files that the pre-#2766 guard
+never scanned). The CI listener `Physics-Sim-Cycle-Check` (in
+`.github/workflows/rust-tests.yml`) is wired into
+`release_gates.yaml::ci.required_checks` so a regression cannot ship past
+branch protection.
 
 These moves unblock `docs/mutation_testing_crate_split.md` §"Phase 2":
 `cargo mutants -p fluxion` no longer needs to recompile `sim::construction`
@@ -212,17 +217,25 @@ guard rejects growth. See issue #2495.
   these to `fluxion-core` requires moving the whole `physics` tree (Phase 3
   of `docs/mutation_testing_crate_split.md`).
 
-**Regression guard (Issue #2463, closed by #2462)**: `scripts/check_physics_sim_cycle.py`
-mirrors the `check_ashrae_cases_cycle.py` pattern above and reports the
-`physics ↔ sim` cycle edge count by file:line. The script's two phases
-forbid (a) any `use crate::sim::*` import under `src/physics/**` and
-(b) any `use crate::physics::*` import in the two protected `sim` files
-(`src/sim/construction.rs` and `src/sim/per_surface_conduction.rs`).
-As of #2462 the documented baseline is **0+0 edges** — the script reports
-the count and exits non-zero only on regression. Wired into CI as the
-`Physics-Sim-Cycle-Check` job in `.github/workflows/rust-tests.yml`; promoted
-to `release_gates.yaml::ci.required_checks` by #2462 so a future PR that
-re-introduces a cycle edge fails branch protection.
+**Regression guard (Issue #2463, closed by #2462; extended by #2766)**:
+`scripts/check_physics_sim_cycle.py` mirrors the `check_ashrae_cases_cycle.py`
+pattern above and reports the `physics ↔ sim` cycle edge count by file:line.
+The script's two phases forbid (a) any `use crate::sim::*` import under
+`src/physics/**` and (b) any *new* `use crate::physics::*` import under any
+`src/sim/**/*.rs` file that pushes the count above the documented baseline.
+Issue #2463 (closed by #2462) originally guarded only the two files that
+hosted shared domain types (`src/sim/construction.rs` and
+`src/sim/per_surface_conduction.rs`, then at 0+0 edges). Issue #2766 found
+that those 2 files were just 2 of 26 sim files importing `crate::physics::`
+— 84 pre-existing `use crate::physics::` edges across `thermal_model.rs`,
+`engine.rs`, `ventilation.rs`, and 23 others were completely unguarded —
+and extended Phase 2 to ALL of `src/sim/**`, snapshotting the 84 edges as
+the new baseline. The documented baseline is now **0+84 edges** (0
+physics→sim + 84 sim→physics); the script exits non-zero only on regression
+(a count grows above its baseline). Wired into CI as the
+`Physics-Sim-Cycle-Check` job in `.github/workflows/rust-tests.yml`;
+promoted to `release_gates.yaml::ci.required_checks` by #2462 so a future
+PR that re-introduces a cycle edge fails branch protection.
 
 ### Downward trend guard (Issue #2768)
 
@@ -231,8 +244,10 @@ edge count must stay at or below the grandfathered baseline. They cannot
 detect two pathologies that block goal #3 (the cycle must *trend toward
 zero*):
 
-1. **Frozen, not broken** — the count sits at 215 run after run. The
-   magnitude gate passes green every time; nothing forces the count down.
+1. **Frozen, not broken** — the count sits at 299 run after run (was 215
+   before Issue #2766 extended the physics-sim guard's coverage from 2 to
+   26 sim files, surfacing 84 pre-existing edges). The magnitude gate
+   passes green every time; nothing forces the count down.
 2. **Net-flat edge swap** — a PR removes an edge in one file and adds a
    *different* edge in another. Net count is unchanged, the magnitude
    gate passes, but the cycle's *shape* changed without authorisation.

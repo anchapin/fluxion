@@ -319,8 +319,10 @@ def test_main_per_pr_passes_against_real_repo_ledger(
     ledger. Uses a tmp ledger file so the committed baseline is not touched.
 
     The scan reads the real ``src/`` tree, so the seeded snapshot's total
-    must equal 215 (the current cycle count) for R1 to pass. The signature
-    is the real one computed by ``collect_current_edges``.
+    must equal the current real cycle count for R1 to pass. The signature
+    is the real one computed by ``collect_current_edges``. The total is
+    deliberately read dynamically (not hardcoded) so this test stays valid
+    when a coverage-extension PR (e.g. Issue #2766) re-baselines the ledger.
     """
     real_current = guard.collect_current_edges(*guard._load_cycle_scripts())
     ledger = tmp_path / "history.json"
@@ -328,18 +330,24 @@ def test_main_per_pr_passes_against_real_repo_ledger(
     code = guard.main(["--history", str(ledger)])
     assert code == 0
     out = capsys.readouterr().out
-    assert "holds at 215" in out
+    assert f"holds at {real_current['total']}" in out
 
 
 def test_main_per_pr_fails_when_real_total_grew(guard, tmp_path, capsys):
-    """Seed a lower total than the real one -> R1 must fire (exit 1)."""
+    """Seed a lower total than the real one -> R1 must fire (exit 1).
+
+    The seeded total is ``real_total - 1`` (dynamic, not hardcoded) so the
+    test survives coverage-extension re-baselining (e.g. Issue #2766).
+    """
+    real_current = guard.collect_current_edges(*guard._load_cycle_scripts())
+    seed_total = real_current["total"] - 1
     ledger = tmp_path / "history.json"
-    _seed_ledger(ledger, total=214, signature="never-matches-real")
+    _seed_ledger(ledger, total=seed_total, signature="never-matches-real")
     code = guard.main(["--history", str(ledger)])
     assert code == 1
     out = capsys.readouterr().out
     assert "R1 FAIL" in out
-    assert "214" in out and "215" in out
+    assert str(seed_total) in out and str(real_current["total"]) in out
 
 
 def test_main_per_pr_fails_on_real_signature_drift(guard, tmp_path, capsys):
