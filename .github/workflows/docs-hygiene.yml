@@ -1,8 +1,9 @@
 name: Docs Hygiene Gate
 
 # Issue #2466: Enforce root `.md` policy and 7-line-summary coverage via CI gates.
+# Issue #2765: Also enforce that docs/doc-inventory.md is fresh.
 #
-# Runs three Python scripts that together close the docs-hygiene gap:
+# Runs four Python scripts that together close the docs-hygiene gap:
 #   1. scripts/check_root_md_policy.py — fails if any `.md` file at the
 #      repo root is not in the AGENTS.md allow-list (CLAUDE.md is warned,
 #      never failed — it's auto-generated per-session).
@@ -10,8 +11,11 @@ name: Docs Hygiene Gate
 #      file lacks a 7-line summary at lines 2-8.
 #   3. scripts/doc_inventory_check.py — verifies the canonical root-docs
 #      table in docs/doc-inventory.md (paths + summaries).
+#   4. scripts/check_doc_inventory_fresh.py — fails if the auto-generated
+#      inventory block in docs/doc-inventory.md has drifted from what
+#      scripts/generate_doc_inventory.py would produce (issue #2765).
 #
-# All three are wired into `.pre-commit-config.yaml` as `manual`-stage
+# All four are wired into `.pre-commit-config.yaml` as `manual`-stage
 # hooks (so they run via `pre-commit run --all-files` but not on every
 # commit) and are required-check listeners for the docs-hygiene job
 # listed in `release_gates.yaml`.
@@ -27,6 +31,7 @@ on:
       - "scripts/doc_inventory_check.py"
       - "scripts/doc_inventory_check.sh"
       - "scripts/generate_doc_inventory.py"
+      - "scripts/check_doc_inventory_fresh.py"
       - "scripts/check_npm_readme_codeblocks.mjs"
       - "npm/README.md"
       - "docs/doc-inventory.md"
@@ -98,6 +103,16 @@ jobs:
             echo "::error::Doc inventory check failed"
           fi
 
+      - name: Run doc-inventory freshness check
+        id: doc_inventory_fresh
+        run: |
+          python3 scripts/check_doc_inventory_fresh.py
+          EXIT_CODE=$?
+          echo "exit_code=$EXIT_CODE" >> "$GITHUB_OUTPUT"
+          if [[ $EXIT_CODE -ne 0 ]]; then
+            echo "::error::Doc inventory is stale — run \`python3 scripts/generate_doc_inventory.py\` and commit the result (issue #2765)"
+          fi
+
       - name: Run npm/README.md code-block drift check
         id: npm_readme
         run: |
@@ -109,7 +124,7 @@ jobs:
           fi
 
       - name: Aggregate results
-        if: steps.root_md.outputs.exit_code != '0' || steps.docs_summaries.outputs.exit_code != '0' || steps.doc_inventory.outputs.exit_code != '0' || steps.npm_readme.outputs.exit_code != '0'
+        if: steps.root_md.outputs.exit_code != '0' || steps.docs_summaries.outputs.exit_code != '0' || steps.doc_inventory.outputs.exit_code != '0' || steps.doc_inventory_fresh.outputs.exit_code != '0' || steps.npm_readme.outputs.exit_code != '0'
         run: |
           echo "One or more docs-hygiene checks failed. See logs above."
           exit 1
