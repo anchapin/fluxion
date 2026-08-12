@@ -70,6 +70,22 @@
       },
       "total": 299,
       "edge_signature": "e2b76e940dd625f1c0d21e06f4380b05c39863880b4d66b9c755653586e23a06"
+    },
+    {
+      "timestamp": "2026-08-12T21:49:55+00:00",
+      "commit": "6ec3242",
+      "source": "post-physics-scratch-pool-2756",
+      "reason": "PR #2796 (issue #2756) wired PhysicsScratchPool into the physics hot path, adding ~336 lines to src/sim/thermal_model_physics/physics_impl.rs ABOVE seven pre-existing `crate::validation::ashrae_140_cases::Orientation` references. No cycle edge was added or removed: a content-only offender diff (ignoring line numbers) between origin/develop and this branch is empty (0 added, 0 removed) across all six categories, and every category count is unchanged (sim_to_validation 72, sim_to_physics 84, etc.; total holds at 299). The signature change is purely a line-number shift of those seven existing references (e.g. 541->548, 589->596, 2516->2533). This snapshot re-captures the post-wiring edge set so R3 (net-flat swap) does not flag the insertion-driven line shift as a regression. No new cycle edges were introduced.",
+      "totals": {
+        "sim_to_validation": 72,
+        "validation_to_sim": 58,
+        "validation_to_physics": 62,
+        "validation_to_weather": 23,
+        "physics_to_sim": 0,
+        "sim_to_physics": 84
+      },
+      "total": 299,
+      "edge_signature": "acf0249e6decb3f9f2bdc96f01bc070370a40d84b45ab5ebc12db28971a8b749"
     }
   ]
 }

@@ -406,12 +406,12 @@ pub struct ThermalModelData<T: ContinuousTensor<f64> + Clone> {
     /// Issue #1968 — cached zero vector to eliminate per-timestep `vec![0.0; num_zones]`
     /// allocations in hot loops. Cloned (not borrowed) to avoid borrow conflicts.
     pub zero_vector: VectorField,
-    /// Issue #1966 — pooled physics scratch buffers for per-timestep solvers.
+    /// Issue #1966 / #2756 — pooled physics scratch buffers for per-timestep solvers.
     ///
-    /// Lazily initialized on first use by `step_physics_*`. The pool is NOT
-    /// cloned on `ThermalModelData::clone()` (clone gets a fresh empty pool);
-    /// cloning is a cold-path operation that does not need pooled scratch reuse.
-    #[allow(dead_code)]
+    /// Checked out / returned by the `step_physics_*` hot path on every
+    /// timestep. Lazily initialised on first use; the pool is NOT cloned on
+    /// `ThermalModelData::clone()` (clone gets a fresh empty pool) — cloning is
+    /// a cold-path operation that does not need pooled scratch reuse.
     pub(crate) scratch_pool: PhysicsScratchPool,
 }
 

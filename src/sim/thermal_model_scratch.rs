@@ -13,6 +13,18 @@
 //! `Vec<f64>`. The `9r4c` `inter` buffer is `num_zones * 7`, which exceeds
 //! the inline capacity for ≥1 zone and spills transparently (still correct,
 //! just heap-backed).
+//!
+//! Issue #2756: `PhysicsScratchPool` is now *live* in the `step_physics_*`
+//! hot path. Each step performs `checkout_*` (owned take from the pool;
+//! allocates only on the very first timestep) → `fill_zero()` (resizes every
+//! field back to `num_zones`, reproducing the post-`new(num_zones)` state)
+//! → … physics … → `return_*` (restore the owned scratch into the pool).
+//! The owned checkout/return pair is what lets the scratch coexist with
+//! `&mut self` method calls (e.g. `self.prepare_solvers_and_sol_air`) — a
+//! borrowed `&mut scratch` held across the whole step re-introduces the
+//! borrow conflict that sank the #1436 WIP and forced #1966 to construct
+//! locally. Steady-state (timestep ≥ 2) is now allocation-free for the
+//! scratch buffers across all of 5R1C / 6R2C / 9R4C.
 
 use smallvec::SmallVec;
 
@@ -47,7 +59,12 @@ impl PhysicsScratch5r1c {
         }
     }
 
-    #[allow(dead_code)]
+    /// Resize every field back to `num_zones` and zero-fill in place.
+    ///
+    /// Called by `step_physics_*` right after [`PhysicsScratchPool::checkout_5r1c`]
+    /// to reproduce the exact post-`new(num_zones)` state. Reusing a pooled
+    /// scratch without this would panic: several fields are emptied by
+    /// `mem::take` during the previous step and then written by `[i] = …`.
     pub fn fill_zero(&mut self) {
         let n = self.num_zones;
         self.phi_ia.resize(n, 0.0);
@@ -118,7 +135,8 @@ impl PhysicsScratch6r2c {
         }
     }
 
-    #[allow(dead_code)]
+    /// Resize every field back to `num_zones` and zero-fill in place. See
+    /// [`PhysicsScratch5r1c::fill_zero`] for the rationale.
     pub fn fill_zero(&mut self) {
         let n = self.num_zones;
         self.phi_ia.resize(n, 0.0);
@@ -197,7 +215,9 @@ impl PhysicsScratch9r4c {
         }
     }
 
-    #[allow(dead_code)]
+    /// Resize every field back to `num_zones` and zero-fill in place. See
+    /// [`PhysicsScratch5r1c::fill_zero`] for the rationale. The `inter`
+    /// buffer is resized to `num_zones * 7`.
     pub fn fill_zero(&mut self) {
         let n = self.n;
         self.inter.resize(n * Self::NSLOTS, 0.0);
@@ -293,18 +313,24 @@ impl PhysicsScratch9r4c {
     }
 }
 
-#[allow(dead_code)]
+/// Per-instance pool of reusable `PhysicsScratch*rYc` buffers.
+///
+/// Lives on `ThermalModelData::scratch_pool` and is checked out / returned
+/// by the `step_physics_*` hot path (Issue #2756). The pool is **not**
+/// cloned — `ThermalModelData::clone()` gets a fresh empty pool (cloning is
+/// a cold-path operation that does not need scratch reuse).
+///
+/// The checkout/return API returns *owned* scratch (not `&mut`) so the
+/// caller can hold the scratch as a local variable across `&mut self`
+/// method calls without the borrow-checker conflict that sank the #1436 WIP
+/// and forced #1966 to construct locally (see module docs).
 pub(crate) struct PhysicsScratchPool {
-    #[allow(dead_code)]
     pub r5r1c: Option<PhysicsScratch5r1c>,
-    #[allow(dead_code)]
     pub r6r2c: Option<PhysicsScratch6r2c>,
-    #[allow(dead_code)]
     pub r9r4c: Option<PhysicsScratch9r4c>,
 }
 
 impl PhysicsScratchPool {
-    #[allow(dead_code)]
     pub fn new() -> Self {
         Self {
             r5r1c: None,
@@ -313,28 +339,51 @@ impl PhysicsScratchPool {
         }
     }
 
-    #[allow(dead_code)]
-    pub fn get_5r1c(&mut self, num_zones: usize) -> &mut PhysicsScratch5r1c {
-        if self.r5r1c.is_none() {
-            self.r5r1c = Some(PhysicsScratch5r1c::new(num_zones));
-        }
-        self.r5r1c.as_mut().unwrap()
+    /// Take the 5R1C scratch out of the pool (owned). Allocates only when the
+    /// pool is empty (first timestep); subsequent calls reuse the buffer that
+    /// [`PhysicsScratchPool::return_5r1c`] restored on the previous step.
+    /// The caller MUST call `fill_zero()` before indexing into any field —
+    /// several fields are emptied by `mem::take` during the previous step.
+    /// The caller MUST return the scratch via `return_5r1c` on every exit
+    /// path (including early return), else the pool re-allocates next call.
+    pub fn checkout_5r1c(&mut self, num_zones: usize) -> PhysicsScratch5r1c {
+        self.r5r1c
+            .take()
+            .unwrap_or_else(|| PhysicsScratch5r1c::new(num_zones))
     }
 
-    #[allow(dead_code)]
-    pub fn get_6r2c(&mut self, num_zones: usize) -> &mut PhysicsScratch6r2c {
-        if self.r6r2c.is_none() {
-            self.r6r2c = Some(PhysicsScratch6r2c::new(num_zones));
-        }
-        self.r6r2c.as_mut().unwrap()
+    /// Restore a checked-out 5R1C scratch into the pool for reuse on the next
+    /// timestep. Cheap (one `Option` write); does not reallocate.
+    pub fn return_5r1c(&mut self, scratch: PhysicsScratch5r1c) {
+        self.r5r1c = Some(scratch);
     }
 
-    #[allow(dead_code)]
-    pub fn get_9r4c(&mut self, num_zones: usize) -> &mut PhysicsScratch9r4c {
-        if self.r9r4c.is_none() {
-            self.r9r4c = Some(PhysicsScratch9r4c::new(num_zones));
-        }
-        self.r9r4c.as_mut().unwrap()
+    /// Take the 6R2C scratch out of the pool (owned). See
+    /// [`PhysicsScratchPool::checkout_5r1c`].
+    pub fn checkout_6r2c(&mut self, num_zones: usize) -> PhysicsScratch6r2c {
+        self.r6r2c
+            .take()
+            .unwrap_or_else(|| PhysicsScratch6r2c::new(num_zones))
+    }
+
+    /// Restore a checked-out 6R2C scratch. See
+    /// [`PhysicsScratchPool::return_5r1c`].
+    pub fn return_6r2c(&mut self, scratch: PhysicsScratch6r2c) {
+        self.r6r2c = Some(scratch);
+    }
+
+    /// Take the 9R4C scratch out of the pool (owned). See
+    /// [`PhysicsScratchPool::checkout_5r1c`].
+    pub fn checkout_9r4c(&mut self, num_zones: usize) -> PhysicsScratch9r4c {
+        self.r9r4c
+            .take()
+            .unwrap_or_else(|| PhysicsScratch9r4c::new(num_zones))
+    }
+
+    /// Restore a checked-out 9R4C scratch. See
+    /// [`PhysicsScratchPool::return_5r1c`].
+    pub fn return_9r4c(&mut self, scratch: PhysicsScratch9r4c) {
+        self.r9r4c = Some(scratch);
     }
 }
 
