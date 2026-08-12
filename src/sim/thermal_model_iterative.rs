@@ -3,8 +3,6 @@
 //! ISO 13790-compliant 5R1C/6R2C thermal network implementation.
 //! Contains the core thermal model types, struct, and implementations.
 
-use std::collections::HashMap;
-
 use crate::physics::cta::{ContinuousTensor, VectorField};
 use crate::sim::boundary::{
     ConstantGroundTemperature, DynamicGroundTemperature, GroundTemperature,
@@ -13,9 +11,74 @@ use crate::sim::holiday;
 use crate::sim::shading::ShadeFin;
 use crate::sim::solar::{calculate_hourly_solar_from_pos, WindowProperties};
 use crate::sim::thermal_model_core::{get_daily_cycle, ThermalModel};
+use crate::sim::thermal_model_data::IncidentSolarAccumulator;
 use crate::sim::timestep_solver::StepParameters;
 use crate::weather::HourlyWeatherData;
 use fluxion_core::ashrae_cases::{GeometrySpec, Orientation, WindowArea};
+
+// ---------------------------------------------------------------------------
+// Issue #2770: zero-allocation helpers for `calculate_zone_solar_gain`.
+//
+// These functions replace per-timestep `HashMap::new()`, `format!()`, and
+// `String::to_string()` allocations on the solar-gain hot path (called once
+// per zone per timestep — ~87 600 times per annual run for a 10-zone model).
+// ---------------------------------------------------------------------------
+
+/// Returns the `&'static str` opaque-surface identifier for `orientation`.
+///
+/// Replaces `match orientation { Up => "roof".to_string(), _ => format!("wall_{}", orientation.prefix()) }`
+/// which allocated a fresh `String` every timestep. The values are compile-time
+/// constants — zero heap allocation at any call site.
+fn opaque_surface_id_str(orientation: Orientation) -> &'static str {
+    match orientation {
+        Orientation::Up => "roof",
+        Orientation::North => "wall_N",
+        Orientation::East => "wall_E",
+        Orientation::South => "wall_S",
+        Orientation::West => "wall_W",
+        Orientation::Horizontal => "wall_H",
+        Orientation::Down => "wall_Down",
+    }
+}
+
+/// Returns the `&'static str` window-surface identifier for `orientation`.
+///
+/// Replaces `format!("window_{}", orientation.prefix())` which allocated a
+/// fresh `String` every timestep.
+fn window_surface_id_str(orientation: Orientation) -> &'static str {
+    match orientation {
+        Orientation::North => "window_N",
+        Orientation::East => "window_E",
+        Orientation::South => "window_S",
+        Orientation::West => "window_W",
+        Orientation::Up => "window_Up",
+        Orientation::Horizontal => "window_H",
+        Orientation::Down => "window_Down",
+    }
+}
+
+/// Zero-alloc steady-state accumulator for `incident_solar_per_surface`.
+///
+/// `BTreeMap<String, _>::get_mut` accepts a borrowed `&str` key via the
+/// `Borrow<str>` impl on `String`, so the hot path does NOT construct a
+/// `String`. The `entry().or_default()` fallback runs at most once per surface
+/// ID per simulation (first-call miss), after which the key exists and
+/// `get_mut` always hits — producing zero `String` allocations in steady state.
+fn accumulate_incident_solar(
+    map: &mut std::collections::BTreeMap<String, IncidentSolarAccumulator>,
+    key: &'static str,
+    irradiance_wm2: f64,
+    area_m2: f64,
+    dt_seconds: f64,
+) {
+    if let Some(entry) = map.get_mut(key) {
+        entry.accumulate(irradiance_wm2, area_m2, dt_seconds);
+        return;
+    }
+    map.entry(key.to_owned())
+        .or_default()
+        .accumulate(irradiance_wm2, area_m2, dt_seconds);
+}
 
 impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>> ThermalModel<T> {
     /// Solves a single timestep of the thermal simulation.
@@ -218,10 +281,17 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         let re = 1.0 / EXTERIOR_FILM_COEFF_DEFAULT; // 1/18.3 = 0.0546 m²K/W
 
         if let Some(zone_surfaces) = self.0.surfaces.get(zone_idx) {
-            // Group surfaces by orientation to avoid double-counting solar gain
-            // Solar irradiance is the same for all surfaces with the same orientation,
-            // so we should calculate it once per unique orientation
-            let mut surfaces_by_orientation: HashMap<Orientation, (f64, f64)> = HashMap::new();
+            // Issue #2770: Stack-allocated per-orientation area aggregator.
+            //
+            // Replaces a per-call `HashMap::new()` that allocated ~87 600 times
+            // per annual run (once per zone per timestep). `Orientation` is a
+            // 7-variant C-like enum (North=0 .. Horizontal=6), so we index flat
+            // `[f64; 7]` arrays by `Orientation as usize`. Index 5 (Down) is
+            // unused because floors are skipped for solar gain (see `continue`
+            // below). The arrays live on the stack — zero heap allocation.
+            let mut win_area_by_ori = [0.0f64; 7];
+            let mut opaque_area_by_ori = [0.0f64; 7];
+            let mut ori_present = [false; 7];
 
             // Diagnostic: Check if surfaces have window areas
             for surface in zone_surfaces {
@@ -235,22 +305,39 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                 let win_area = surface.window_area;
                 let opaque_area = (surface.area - win_area).max(0.0);
 
-                // Accumulate areas by orientation
-                surfaces_by_orientation
-                    .entry(orientation)
-                    .and_modify(|(w, o)| {
-                        *w += win_area;
-                        *o += opaque_area;
-                    })
-                    .or_insert((win_area, opaque_area));
+                let i = orientation as usize;
+                win_area_by_ori[i] += win_area;
+                opaque_area_by_ori[i] += opaque_area;
+                ori_present[i] = true;
             }
 
-            // DEBUG: Trace solar calculation for key timesteps (noon in summer/winter)
-            let _debug_timesteps = [12, 288, 576]; // Jan 1 noon, Jan 12 noon, Feb 1 noon
-                                                   // DEBUG: DEBUG_ZONE_SOLAR removed (PR #821)
+            // Issue #2770: reusable fins buffer — cleared and refilled per
+            // orientation instead of allocating a fresh `Vec` per orientation
+            // per call. After the first call the Vec retains capacity and
+            // `clear()` / `extend` never reallocate.
+            let mut fins_buf: Vec<ShadeFin> = Vec::new();
+
+            // Issue #2770: iterate orientations in canonical enum order
+            // (deterministic — Issue #1297). The previous HashMap iteration
+            // order was non-deterministic (random seed), making FP sums
+            // non-reproducible at the ULP level across runs.
+            const SOLAR_ORIENTATIONS: [Orientation; 6] = [
+                Orientation::North,
+                Orientation::East,
+                Orientation::South,
+                Orientation::West,
+                Orientation::Up,
+                Orientation::Horizontal,
+            ];
 
             // Now calculate solar gain once per unique orientation
-            for (orientation, (total_win_area, _total_opaque_area)) in surfaces_by_orientation {
+            for &orientation in SOLAR_ORIENTATIONS.iter() {
+                let i = orientation as usize;
+                if !ori_present[i] {
+                    continue;
+                }
+                let total_win_area = win_area_by_ori[i];
+
                 // Create temporary window properties with the combined window area for this orientation.
                 // `window_props` is now an owned `WindowProperties` (Issue #1385) so we
                 // splat the fields directly without deref.
@@ -264,15 +351,20 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                     .iter()
                     .filter(|s| s.orientation == orientation)
                     .find_map(|s| s.overhang.as_ref());
-                let fins: Vec<ShadeFin> = zone_surfaces
-                    .iter()
-                    .filter(|s| s.orientation == orientation)
-                    .flat_map(|s| s.fins.iter())
-                    .cloned()
-                    .collect();
+                // Issue #2770: reuse fins buffer — clear + refill, no new
+                // allocation after the first orientation. ShadeFin is Copy so
+                // we use .copied() instead of .cloned().
+                fins_buf.clear();
+                fins_buf.extend(
+                    zone_surfaces
+                        .iter()
+                        .filter(|s| s.orientation == orientation)
+                        .flat_map(|s| s.fins.iter())
+                        .copied(),
+                );
 
                 // Create window geometry for shading calculations (needed when overhang/fins present)
-                let geometry = if overhang.is_some() || !fins.is_empty() {
+                let geometry = if overhang.is_some() || !fins_buf.is_empty() {
                     // Calculate window dimensions from area (assume square-ish window)
                     let width = (total_win_area / 1.5_f64).sqrt();
                     let height = total_win_area / width;
@@ -302,13 +394,10 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                     &oriented_window_props, // Use combined window area for this orientation
                     geometry.as_ref(),      // Use geometry for shading calculations
                     overhang,               // Use overhang from surface
-                    &fins,                  // Use fins from surface
+                    &fins_buf,              // Issue #2770: reused buffer
                     orientation,
                     Some(0.2), // Ground reflectance
                 );
-
-                // DEBUG: Log EVERY calculate_hourly_solar call for key timesteps
-                // DEBUG: DEBUG_HOURLY_SOLAR removed (PR #821)
 
                 // Distribute solar gain to each surface with this orientation
                 for surface in zone_surfaces {
@@ -362,32 +451,29 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                             opaque_area * surface.u_value * irradiance.total_wm2 * alpha * re;
                     }
 
-                    // Issue #762: Accumulate per-surface incident solar for ASHRAE 140-2023 Section 8.2.3
-                    // Incident solar is accumulated per surface identifier (e.g., "wall_N", "roof", "window_S")
+                    // Issue #762: Accumulate per-surface incident solar for ASHRAE 140-2023 Section 8.2.3.
+                    // Issue #2770: Surface IDs are now `&'static str` compile-time constants
+                    // (opaque_surface_id_str / window_surface_id_str) and the BTreeMap lookup
+                    // uses `get_mut` with `&str` borrow — zero `String` allocations in steady state.
                     if irradiance.total_wm2 > 0.0 {
-                        // Opaque surface: walls use "wall_{N/E/S/W}", roof uses "roof"
-                        let opaque_surface_id = match orientation {
-                            Orientation::Up => "roof".to_string(),
-                            _ => format!("wall_{}", orientation.prefix()),
-                        };
                         if opaque_area > 0.0 {
-                            let entry = self
-                                .0
-                                .incident_solar_per_surface
-                                .entry(opaque_surface_id.clone())
-                                .or_default();
-                            entry.accumulate(irradiance.total_wm2, opaque_area, dt_seconds);
+                            accumulate_incident_solar(
+                                &mut self.0.incident_solar_per_surface,
+                                opaque_surface_id_str(orientation),
+                                irradiance.total_wm2,
+                                opaque_area,
+                                dt_seconds,
+                            );
                         }
 
-                        // Window surface: "window_{N/E/S/W}"
                         if win_area > 0.0 {
-                            let window_surface_id = format!("window_{}", orientation.prefix());
-                            let window_entry = self
-                                .0
-                                .incident_solar_per_surface
-                                .entry(window_surface_id)
-                                .or_default();
-                            window_entry.accumulate(irradiance.total_wm2, win_area, dt_seconds);
+                            accumulate_incident_solar(
+                                &mut self.0.incident_solar_per_surface,
+                                window_surface_id_str(orientation),
+                                irradiance.total_wm2,
+                                win_area,
+                                dt_seconds,
+                            );
                         }
                     }
                 }
@@ -985,5 +1071,116 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         let cooling_capacity = peak_cooling_w * safety_factor;
 
         (heating_capacity, cooling_capacity)
+    }
+
+    /// Issue #2770: test-only accessor for `calculate_zone_solar_gain` so that
+    /// dhat integration tests can assert zero HashMap / String allocations on
+    /// the solar-gain hot path without pulling in the full `solve_single_step`
+    /// machinery (which has its own per-timestep Vec allocations unrelated to
+    /// this issue).
+    #[doc(hidden)]
+    pub fn _dhat_calculate_zone_solar_gain(
+        &mut self,
+        zone_idx: usize,
+        timestep: usize,
+        weather: &HourlyWeatherData,
+        dt_seconds: f64,
+    ) -> (f64, f64) {
+        self.calculate_zone_solar_gain(zone_idx, timestep, weather, dt_seconds)
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Issue #2770 tests
+// ---------------------------------------------------------------------------
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use fluxion_core::ashrae_cases::Orientation;
+
+    /// Verify `opaque_surface_id_str` produces bit-identical strings to the
+    /// original `match orientation { Up => "roof".to_string(), _ => format!("wall_{}", orientation.prefix()) }`.
+    ///
+    /// This is the deterministic equivalence test: if any surface-id mapping
+    /// changes, `incident_solar_per_surface` keys would silently break.
+    #[test]
+    fn test_opaque_surface_id_str_matches_legacy_format() {
+        for orientation in [
+            Orientation::North,
+            Orientation::East,
+            Orientation::South,
+            Orientation::West,
+            Orientation::Up,
+            Orientation::Horizontal,
+            Orientation::Down,
+        ] {
+            let legacy = match orientation {
+                Orientation::Up => "roof".to_string(),
+                _ => format!("wall_{}", orientation.prefix()),
+            };
+            let hoisted = opaque_surface_id_str(orientation);
+            assert_eq!(
+                legacy, hoisted,
+                "opaque_surface_id_str({orientation:?}) mismatch"
+            );
+        }
+    }
+
+    /// Verify `window_surface_id_str` produces bit-identical strings to the
+    /// original `format!("window_{}", orientation.prefix())`.
+    #[test]
+    fn test_window_surface_id_str_matches_legacy_format() {
+        for orientation in [
+            Orientation::North,
+            Orientation::East,
+            Orientation::South,
+            Orientation::West,
+            Orientation::Up,
+            Orientation::Horizontal,
+            Orientation::Down,
+        ] {
+            let legacy = format!("window_{}", orientation.prefix());
+            let hoisted = window_surface_id_str(orientation);
+            assert_eq!(
+                legacy, hoisted,
+                "window_surface_id_str({orientation:?}) mismatch"
+            );
+        }
+    }
+
+    /// Verify `accumulate_incident_solar` produces the same result as the
+    /// original `entry().or_default()` pattern.
+    #[test]
+    fn test_accumulate_incident_solar_equivalence() {
+        let key = "wall_N";
+
+        // Original pattern
+        let mut map_orig: std::collections::BTreeMap<String, IncidentSolarAccumulator> =
+            std::collections::BTreeMap::new();
+        map_orig
+            .entry(key.to_string())
+            .or_default()
+            .accumulate(500.0, 10.0, 3600.0);
+
+        // New pattern
+        let mut map_new: std::collections::BTreeMap<String, IncidentSolarAccumulator> =
+            std::collections::BTreeMap::new();
+        accumulate_incident_solar(&mut map_new, "wall_N", 500.0, 10.0, 3600.0);
+
+        let orig = map_orig.get(key).unwrap();
+        let new = map_new.get(key).unwrap();
+        assert!(
+            (orig.annual_kwh_m2 - new.annual_kwh_m2).abs() < f64::EPSILON,
+            "annual_kwh_m2 mismatch: {} vs {}",
+            orig.annual_kwh_m2,
+            new.annual_kwh_m2
+        );
+        assert!(
+            (orig.peak_wm2 - new.peak_wm2).abs() < f64::EPSILON,
+            "peak_wm2 mismatch: {} vs {}",
+            orig.peak_wm2,
+            new.peak_wm2
+        );
     }
 }
