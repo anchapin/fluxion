@@ -3589,12 +3589,16 @@ mod scratch_pool_tests {
     //! dhat gate under `tests/dhat_step_physics_zero_alloc.rs` provides the
     //! independent heap-growth measurement.
 
-    use crate::physics::cta::VectorField;
     use crate::sim::construction::WallSurface;
     use crate::sim::solar::WindowProperties;
     use crate::sim::thermal_model_core::ThermalModel;
     use crate::weather::HourlyWeatherData;
     use fluxion_core::ashrae_cases::Orientation;
+    // `VectorField` is already imported by the outer module (line 16). Reuse it
+    // via `super::` rather than a fresh `use crate::physics::cta::VectorField` —
+    // that would add a new sim→physics edge and trip the Physics-Sim-Cycle-Check
+    // gate (#2463 / scripts/check_physics_sim_cycle.py).
+    use super::VectorField;
 
     /// More than 4 zones so every `SmallVec<[f64; 4]>` field SPILLS to heap —
     /// that is the regime where per-step `new(num_zones)` allocation is
