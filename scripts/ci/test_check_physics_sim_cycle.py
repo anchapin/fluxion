@@ -31,10 +31,10 @@ SCRIPT_PATH = (
 def _load_checker():
     """Load scripts/check_physics_sim_cycle.py as a module.
 
-    The script uses module-level ``REPO_ROOT`` / ``PHYSICS_DIR`` /
-    ``PROTECTED_SIM_FILES`` constants rooted at the real repo, so we
-    reload it fresh for each test that wants to monkey-patch those
-    paths. Returns the imported module object.
+    The script uses module-level ``REPO_ROOT`` / ``PHYSICS_DIR`` / ``SIM_DIR``
+    constants rooted at the real repo, so we reload it fresh for each test
+    that wants to monkey-patch those paths. Returns the imported module
+    object.
     """
     spec = importlib.util.spec_from_file_location(
         "check_physics_sim_cycle", SCRIPT_PATH
@@ -99,7 +99,9 @@ def test_phase1_flags_pub_use_crate_sim(checker, tmp_path, monkeypatch):
     assert "src/physics/re_export.rs" in offenders[0]
 
 
-def test_phase1_flags_fully_qualified_path_in_function_body(checker, tmp_path, monkeypatch):
+def test_phase1_flags_fully_qualified_path_in_function_body(
+    checker, tmp_path, monkeypatch
+):
     """A `crate::sim::foo::bar()` call (not a use-stmt) is still an upward dep."""
     monkeypatch.setattr(checker, "REPO_ROOT", tmp_path)
     monkeypatch.setattr(checker, "PHYSICS_DIR", tmp_path / "src" / "physics")
@@ -116,7 +118,9 @@ def test_phase1_flags_fully_qualified_path_in_function_body(checker, tmp_path, m
     assert "src/physics/weird_path.rs" in offenders[0]
 
 
-def test_phase1_ignores_use_crate_sim_inside_line_comments(checker, tmp_path, monkeypatch):
+def test_phase1_ignores_use_crate_sim_inside_line_comments(
+    checker, tmp_path, monkeypatch
+):
     """Comment-only mentions of `crate::sim::` must not trip the guard.
 
     The script mirrors ``check_ashrae_cases_cycle.py`` which strips
@@ -199,20 +203,13 @@ def test_phase1_matches_real_offender_baseline(checker, tmp_path, monkeypatch):
 
 
 # ---------------------------------------------------------------------------
-# scan_protected_sim_files_for_physics_deps  (Phase 2)
+# scan_sim_for_physics_deps  (Phase 2 — extended to all src/sim/** by #2766)
 # ---------------------------------------------------------------------------
 
 
 def test_phase2_flags_use_crate_physics_in_construction(checker, tmp_path, monkeypatch):
     monkeypatch.setattr(checker, "REPO_ROOT", tmp_path)
-    monkeypatch.setattr(
-        checker,
-        "PROTECTED_SIM_FILES",
-        (
-            tmp_path / "src" / "sim" / "construction.rs",
-            tmp_path / "src" / "sim" / "per_surface_conduction.rs",
-        ),
-    )
+    monkeypatch.setattr(checker, "SIM_DIR", tmp_path / "src" / "sim")
     _write(
         tmp_path / "src" / "sim" / "construction.rs",
         "use crate::physics::constants::SOMETHING;\n",
@@ -221,7 +218,7 @@ def test_phase2_flags_use_crate_physics_in_construction(checker, tmp_path, monke
         tmp_path / "src" / "sim" / "per_surface_conduction.rs",
         "fn clean() -> i32 { 0 }\n",
     )
-    offenders = checker.scan_protected_sim_files_for_physics_deps()
+    offenders = checker.scan_sim_for_physics_deps()
     assert len(offenders) == 1
     assert "src/sim/construction.rs" in offenders[0]
 
@@ -229,11 +226,7 @@ def test_phase2_flags_use_crate_physics_in_construction(checker, tmp_path, monke
 def test_phase2_flags_pub_use_crate_physics(checker, tmp_path, monkeypatch):
     """pub use crate::physics:: must also trip Phase 2 (it is still an upward dep)."""
     monkeypatch.setattr(checker, "REPO_ROOT", tmp_path)
-    monkeypatch.setattr(
-        checker,
-        "PROTECTED_SIM_FILES",
-        (tmp_path / "src" / "sim" / "construction.rs",),
-    )
+    monkeypatch.setattr(checker, "SIM_DIR", tmp_path / "src" / "sim")
     _write(
         tmp_path / "src" / "sim" / "construction.rs",
         """
@@ -241,27 +234,22 @@ def test_phase2_flags_pub_use_crate_physics(checker, tmp_path, monkeypatch):
         pub use crate::physics::constants::AIR_DENSITY_SEA_LEVEL;
         """,
     )
-    offenders = checker.scan_protected_sim_files_for_physics_deps()
+    offenders = checker.scan_sim_for_physics_deps()
     assert len(offenders) == 2
     assert all("src/sim/construction.rs" in o for o in offenders)
 
 
-def test_phase2_flags_crate_physics_in_per_surface_conduction(checker, tmp_path, monkeypatch):
+def test_phase2_flags_crate_physics_in_per_surface_conduction(
+    checker, tmp_path, monkeypatch
+):
     monkeypatch.setattr(checker, "REPO_ROOT", tmp_path)
-    monkeypatch.setattr(
-        checker,
-        "PROTECTED_SIM_FILES",
-        (
-            tmp_path / "src" / "sim" / "construction.rs",
-            tmp_path / "src" / "sim" / "per_surface_conduction.rs",
-        ),
-    )
+    monkeypatch.setattr(checker, "SIM_DIR", tmp_path / "src" / "sim")
     _write(tmp_path / "src" / "sim" / "construction.rs", "fn clean() -> i32 { 0 }\n")
     _write(
         tmp_path / "src" / "sim" / "per_surface_conduction.rs",
         "use crate::physics::wall_properties::WallProperties;\n",
     )
-    offenders = checker.scan_protected_sim_files_for_physics_deps()
+    offenders = checker.scan_sim_for_physics_deps()
     assert len(offenders) == 1
     assert "src/sim/per_surface_conduction.rs" in offenders[0]
 
@@ -275,11 +263,7 @@ def test_phase2_ignores_comments_and_unrelated_paths(checker, tmp_path, monkeypa
     block-comment contents are not relevant.
     """
     monkeypatch.setattr(checker, "REPO_ROOT", tmp_path)
-    monkeypatch.setattr(
-        checker,
-        "PROTECTED_SIM_FILES",
-        (tmp_path / "src" / "sim" / "construction.rs",),
-    )
+    monkeypatch.setattr(checker, "SIM_DIR", tmp_path / "src" / "sim")
     _write(
         tmp_path / "src" / "sim" / "construction.rs",
         """
@@ -289,21 +273,47 @@ def test_phase2_ignores_comments_and_unrelated_paths(checker, tmp_path, monkeypa
         fn clean() -> i32 { 0 }
         """,
     )
-    assert checker.scan_protected_sim_files_for_physics_deps() == []
+    assert checker.scan_sim_for_physics_deps() == []
 
 
-def test_phase2_reports_missing_protected_file(checker, tmp_path, monkeypatch):
-    """A missing protected file must be reported as an offender (loud failure)."""
+def test_phase2_returns_empty_when_sim_dir_missing(checker, tmp_path, monkeypatch):
+    """If `src/sim/` does not exist, the guard must not crash (mirrors Phase 1)."""
     monkeypatch.setattr(checker, "REPO_ROOT", tmp_path)
-    monkeypatch.setattr(
-        checker,
-        "PROTECTED_SIM_FILES",
-        (tmp_path / "src" / "sim" / "construction.rs",),
-    )
-    offenders = checker.scan_protected_sim_files_for_physics_deps()
-    assert len(offenders) == 1
-    assert "file missing" in offenders[0]
-    assert "src/sim/construction.rs" in offenders[0]
+    monkeypatch.setattr(checker, "SIM_DIR", tmp_path / "no" / "such" / "path")
+    assert checker.scan_sim_for_physics_deps() == []
+
+
+def test_phase2_scans_all_sim_files_in_real_repo(checker):
+    """Issue #2766 acceptance criterion: Phase 2 must scan ALL of src/sim/**.
+
+    The pre-#2766 guard scanned only 2 files (construction.rs +
+    per_surface_conduction.rs). This test pins the extended coverage by
+    running the REAL scan (no monkey-patch) against the committed tree and
+    asserting:
+
+    * the offender count equals ``BASELINE_SIM_TO_PHYSICS`` (the snapshot
+      of 84 pre-existing ``use crate::physics::`` edges across 26 sim files);
+    * the offenders span many more than the 2 files the old guard saw;
+    * the four documented re-export shims (assembly.rs,
+      multi_node_thermal.rs, construction.rs, per_surface_conduction.rs)
+      are all clean (0 edges) — the cycle-break work of #2462 holds.
+    """
+    offenders = checker.scan_sim_for_physics_deps()
+    assert len(offenders) == checker.BASELINE_SIM_TO_PHYSICS
+    # The 2 files the old guard scanned must be clean (they were the
+    # pre-#2766 protected seam and #2462 drove them to 0 physics imports).
+    files = {o.split(":", 1)[0] for o in offenders}
+    for shim in (
+        "src/sim/assembly.rs",
+        "src/sim/multi_node_thermal.rs",
+        "src/sim/construction.rs",
+        "src/sim/per_surface_conduction.rs",
+    ):
+        assert shim not in files, f"{shim} re-introduced a physics import"
+    # Coverage extension: far more than the old 2 files are now scanned.
+    assert (
+        len(files) >= 20
+    ), f"Phase 2 should cover 20+ sim files (issue #2766), only saw {len(files)}"
 
 
 # ---------------------------------------------------------------------------
@@ -318,9 +328,10 @@ def _redirect_to_fixture(
 
     ``physics_files`` is a dict of {relpath: content} written under
     ``tmp_path/src/physics/``. ``sim_files`` is the same for
-    ``tmp_path/src/sim/`` — the two protected files must be present for
-    Phase 2 to do anything meaningful, but missing files are tolerated
-    and reported by the scan.
+    ``physics_files`` is a dict of {relpath: content} written under
+    ``tmp_path/src/physics/``. ``sim_files`` is the same for
+    ``tmp_path/src/sim/`` — Phase 2 walks the whole ``src/sim/`` tree
+    (Issue #2766), so every file written there is scanned.
     """
     physics_files = physics_files or {}
     sim_files = sim_files or {}
@@ -332,11 +343,7 @@ def _redirect_to_fixture(
         _write(sim_root / rel, content)
     monkeypatch.setattr(checker, "REPO_ROOT", tmp_path)
     monkeypatch.setattr(checker, "PHYSICS_DIR", physics_root)
-    monkeypatch.setattr(
-        checker,
-        "PROTECTED_SIM_FILES",
-        (sim_root / "construction.rs", sim_root / "per_surface_conduction.rs"),
-    )
+    monkeypatch.setattr(checker, "SIM_DIR", sim_root)
 
 
 def test_main_returns_zero_when_clean(checker, tmp_path, monkeypatch, capsys):
@@ -352,8 +359,7 @@ def test_main_returns_zero_when_clean(checker, tmp_path, monkeypatch, capsys):
         },
         sim_files={
             "construction.rs": (
-                "use crate::sim::construction::ConstructionLayer;\n"
-                "fn f() {}\n"
+                "use crate::sim::construction::ConstructionLayer;\n" "fn f() {}\n"
             ),
             "per_surface_conduction.rs": (
                 "use crate::sim::per_surface_conduction::PerSurfaceConductionSolver;\n"
@@ -370,13 +376,15 @@ def test_main_returns_zero_when_clean(checker, tmp_path, monkeypatch, capsys):
     assert "No cycle regression" in out
 
 
-def test_main_returns_zero_at_documented_baseline(checker, tmp_path, monkeypatch, capsys):
-    """The documented baseline (0 physics->sim + 0 sim->physics) must pass.
+def test_main_returns_zero_at_documented_baseline(
+    checker, tmp_path, monkeypatch, capsys
+):
+    """A clean fixture (0 offenders in both directions) must pass below baseline.
 
-    Issue #2462 drove the cycle to 0+0 edges, so the documented baseline
-    *is* the clean state. The script must NOT fail on the documented
-    baseline; it only fails if a *new* edge appears that pushes the
-    count above baseline.
+    Issue #2462 drove the physics->sim direction to 0 edges; the sim->physics
+    baseline is 84 (Issue #2766 snapshotted the pre-existing edges). A clean
+    fixture has 0 actual offenders — below both baselines — so the guard
+    passes. It only fails if a *new* edge pushes a count *above* its baseline.
     """
     _redirect_to_fixture(
         checker,
@@ -395,8 +403,7 @@ def test_main_returns_zero_at_documented_baseline(checker, tmp_path, monkeypatch
     assert "OK:" in out
     assert "below baseline" in out
     assert "No cycle regression" in out
-    baseline_total = checker.BASELINE_PHYSICS_TO_SIM + checker.BASELINE_SIM_TO_PHYSICS
-    assert f"Total cycle edges: {baseline_total}" in out
+    assert "Total cycle edges: 0" in out
 
 
 def test_main_returns_one_when_physics_offender_exceeds_baseline(
@@ -437,21 +444,22 @@ def test_main_returns_one_when_physics_offender_exceeds_baseline(
 def test_main_returns_one_when_sim_offender_exceeds_baseline(
     checker, tmp_path, monkeypatch, capsys
 ):
-    """A `use crate::physics::` import in a protected sim file above the baseline of 2 must trip main()."""
-    sim_baseline_lines = "".join(
-        f"use crate::physics::constants::SOMETHING_{i};\n"
-        for i in range(checker.BASELINE_SIM_TO_PHYSICS)
-    )
+    """A `use crate::physics::` import in any sim file above the baseline must trip main().
+
+    The guard's contract is *regression-only*: a NEW edge that pushes the
+    count above the documented baseline is a failure. We monkey-patch
+    ``BASELINE_SIM_TO_PHYSICS`` to 0 (so the test does not have to generate
+    84 baseline lines) and seed a single offender in ``construction.rs`` —
+    the *extra* edge above the (patched) baseline is what trips the guard.
+    """
+    monkeypatch.setattr(checker, "BASELINE_SIM_TO_PHYSICS", 0)
     _redirect_to_fixture(
         checker,
         tmp_path,
         monkeypatch,
         physics_files={"ok.rs": "fn f() {}\n"},
         sim_files={
-            "construction.rs": (
-                sim_baseline_lines
-                + "use crate::physics::wall_properties::WallProperties;\n"
-            ),
+            "construction.rs": "use crate::physics::wall_properties::WallProperties;\n",
             "per_surface_conduction.rs": "fn f() {}\n",
         },
     )
@@ -464,20 +472,21 @@ def test_main_returns_one_when_sim_offender_exceeds_baseline(
     assert "CYCLE REGRESSION DETECTED" in out
 
 
-def test_main_aggregates_offenders_from_both_phases(checker, tmp_path, monkeypatch, capsys):
-    """Both phases contribute offenders to the summary when each exceeds baseline."""
+def test_main_aggregates_offenders_from_both_phases(
+    checker, tmp_path, monkeypatch, capsys
+):
+    """Both phases contribute offenders to the summary when each exceeds baseline.
+
+    We monkey-patch both baselines to 0 (so the test does not have to
+    generate 84+ baseline lines) and seed 2 offenders in each phase; the
+    *extra* edges above the (patched) baselines are what trip the guard.
+    """
+    monkeypatch.setattr(checker, "BASELINE_PHYSICS_TO_SIM", 0)
+    monkeypatch.setattr(checker, "BASELINE_SIM_TO_PHYSICS", 0)
     physics_files = {
-        f"baseline{i}.rs": "use crate::sim::construction::ConstructionLayer;\n"
-        for i in range(checker.BASELINE_PHYSICS_TO_SIM)
+        "sneaky1.rs": "use crate::sim::construction::ConstructionLayer;\n",
+        "sneaky2.rs": "use crate::sim::sky_radiation::STEFAN_BOLTZMANN;\n",
     }
-    # 2 above the Phase 1 baseline.
-    physics_files["sneaky1.rs"] = "use crate::sim::construction::ConstructionLayer;\n"
-    physics_files["sneaky2.rs"] = "use crate::sim::sky_radiation::STEFAN_BOLTZMANN;\n"
-    sim_baseline_lines = "".join(
-        f"use crate::physics::constants::SOMETHING_{i};\n"
-        for i in range(checker.BASELINE_SIM_TO_PHYSICS)
-    )
-    # 2 above the Phase 2 baseline.
     _redirect_to_fixture(
         checker,
         tmp_path,
@@ -485,9 +494,8 @@ def test_main_aggregates_offenders_from_both_phases(checker, tmp_path, monkeypat
         physics_files=physics_files,
         sim_files={
             "construction.rs": (
-                sim_baseline_lines
-                + "use crate::physics::constants::thermal::ashrae_140::EXTERIOR_FILM_COEFF;\n"
-                + "use crate::physics::constants::AIR_DENSITY_SEA_LEVEL;\n"
+                "use crate::physics::constants::thermal::ashrae_140::EXTERIOR_FILM_COEFF;\n"
+                "use crate::physics::constants::AIR_DENSITY_SEA_LEVEL;\n"
             ),
             "per_surface_conduction.rs": "fn f() {}\n",
         },
@@ -498,10 +506,7 @@ def test_main_aggregates_offenders_from_both_phases(checker, tmp_path, monkeypat
     assert f"({2} above baseline {checker.BASELINE_PHYSICS_TO_SIM})" in out  # Phase 1
     assert f"({2} above baseline {checker.BASELINE_SIM_TO_PHYSICS})" in out  # Phase 2
     expected_total = (
-        checker.BASELINE_PHYSICS_TO_SIM
-        + 2
-        + checker.BASELINE_SIM_TO_PHYSICS
-        + 2
+        checker.BASELINE_PHYSICS_TO_SIM + 2 + checker.BASELINE_SIM_TO_PHYSICS + 2
     )
     assert f"Total cycle edges: {expected_total}" in out
     assert "src/physics/sneaky1.rs" in out
@@ -509,7 +514,9 @@ def test_main_aggregates_offenders_from_both_phases(checker, tmp_path, monkeypat
     assert "src/sim/construction.rs" in out
 
 
-def test_main_returns_two_on_unhandled_exception(checker, tmp_path, monkeypatch, capsys):
+def test_main_returns_two_on_unhandled_exception(
+    checker, tmp_path, monkeypatch, capsys
+):
     """The ``__main__`` wrapper must translate unhandled exceptions to exit 2.
 
     Mirrors ``check_ashrae_cases_cycle.py`` — its ``if __name__ == '__main__'``
@@ -530,14 +537,12 @@ def test_main_returns_two_on_unhandled_exception(checker, tmp_path, monkeypatch,
     _write(sim_root / "per_surface_conduction.rs", "fn f() {}\n")
 
     # Write a small driver that imports the cycle-check script, redirects
-    # its REPO_ROOT / PHYSICS_DIR / PROTECTED_SIM_FILES to the fixture,
-    # patches scan_physics_for_sim_deps to raise, then mirrors the
-    # script's own __main__ wrapper so the exception is translated to
-    # exit 2.
+    # its REPO_ROOT / PHYSICS_DIR / SIM_DIR to the fixture, patches
+    # scan_physics_for_sim_deps to raise, then mirrors the script's own
+    # __main__ wrapper so the exception is translated to exit 2.
     driver = tmp_path / "driver.py"
     driver.write_text(
-        dedent(
-            f"""\
+        dedent(f"""\
             import importlib.util
             import sys
             from pathlib import Path
@@ -550,10 +555,7 @@ def test_main_returns_two_on_unhandled_exception(checker, tmp_path, monkeypatch,
 
             checker.REPO_ROOT = {str(tmp_path)!r}
             checker.PHYSICS_DIR = {str(physics_root)!r}
-            checker.PROTECTED_SIM_FILES = (
-                {str(sim_root / "construction.rs")!r},
-                {str(sim_root / "per_surface_conduction.rs")!r},
-            )
+            checker.SIM_DIR = {str(sim_root)!r}
 
             def boom():
                 raise RuntimeError("boom from test")
@@ -566,8 +568,7 @@ def test_main_returns_two_on_unhandled_exception(checker, tmp_path, monkeypatch,
                 print(f"ERROR: {{e}}", file=sys.stderr)
                 sys.exit(2)
             sys.exit(rc)
-            """
-        ),
+            """),
         encoding="utf-8",
     )
 
