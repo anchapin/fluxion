@@ -263,15 +263,16 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         let _equipment_ref = equipment_converted.as_deref().or(equipment);
 
         // Issue #763 — initialize hourly temperature storage before timestep loop
-        self.0.hourly_temperatures = Some(vec![Vec::with_capacity(steps); self.0.num_zones]);
+        self.0.diagnostics_state.hourly_temperatures =
+            Some(vec![Vec::with_capacity(steps); self.0.num_zones]);
 
         // Issue #1799 — initialize sub-hourly 9R4C node temperature storage.
         // Only meaningful when the model carries at least one `MultiNodeSolver`
         // (high-mass construction); for low-mass models we keep `None` so callers
         // can distinguish "not a 9R4C model" from "empty trace".
-        if !self.0.multi_node_solvers.is_empty() {
+        if !self.0.conduction.multi_node_solvers.is_empty() {
             const NODES: usize = 4; // wall, roof, floor, internal (see MultiNodeSolver::NODE_NAMES)
-            self.0.nodal_temperatures = Some(
+            self.0.diagnostics_state.nodal_temperatures = Some(
                 (0..self.0.num_zones)
                     .map(|_| {
                         (0..NODES)
@@ -281,7 +282,7 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                     .collect(),
             );
         } else {
-            self.0.nodal_temperatures = None;
+            self.0.diagnostics_state.nodal_temperatures = None;
         }
 
         // Issue #901 perf: construct a single StepParameters once and reuse it
@@ -373,7 +374,7 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                 // Issue #763 — capture zone temperatures after each timestep
                 // Issue #901 perf: bound check is unnecessary — temperatures always has
                 // exactly num_zones entries and hourly is sized to num_zones at init.
-                if let Some(ref mut hourly) = self.0.hourly_temperatures {
+                if let Some(ref mut hourly) = self.0.diagnostics_state.hourly_temperatures {
                     let temps = self.0.temperatures.as_ref();
                     debug_assert_eq!(temps.len(), hourly.len());
                     for (zone_idx, &temp) in temps.iter().enumerate() {
@@ -385,12 +386,18 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                 // (sub-hourly diagnostic trace for Python diagnostics + ML features).
                 // Snapshot order matches `MultiNodeSolver::NODE_NAMES`:
                 // 0=wall, 1=roof, 2=floor, 3=internal.
-                if let Some(ref mut nodal) = self.0.nodal_temperatures {
+                if let Some(ref mut nodal) = self.0.diagnostics_state.nodal_temperatures {
                     debug_assert_eq!(nodal.len(), self.0.num_zones);
                     debug_assert!(nodal.iter().all(|n| n.len() == 4));
-                    let n_solvers = self.0.multi_node_solvers.len().min(self.0.num_zones);
+                    let n_solvers = self
+                        .0
+                        .conduction
+                        .multi_node_solvers
+                        .len()
+                        .min(self.0.num_zones);
                     for (zone_idx, zone_nodes) in nodal.iter_mut().enumerate().take(n_solvers) {
-                        let snapshot = self.0.multi_node_solvers[zone_idx].snapshot_temperatures();
+                        let snapshot =
+                            self.0.conduction.multi_node_solvers[zone_idx].snapshot_temperatures();
                         for (node_idx, temp) in snapshot.iter().enumerate() {
                             zone_nodes[node_idx].push(*temp);
                         }
@@ -441,7 +448,7 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
     /// inner index is timestep (0..steps-1), or `None` if the simulation has not
     /// been run through `solve_timesteps_with_dt`.
     pub fn get_hourly_temperatures(&self) -> Option<Vec<Vec<f64>>> {
-        self.0.hourly_temperatures.clone()
+        self.0.diagnostics_state.hourly_temperatures.clone()
     }
 
     /// Get the sub-hourly 9R4C node temperature profiles (Issue #1799).
@@ -455,7 +462,7 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
     /// Returns `None` for low-mass models (which have no `MultiNodeSolver`) or
     /// before a simulation has been run through `solve_timesteps_with_dt`.
     pub fn get_nodal_temperatures(&self) -> Option<Vec<Vec<Vec<f64>>>> {
-        self.0.nodal_temperatures.clone()
+        self.0.diagnostics_state.nodal_temperatures.clone()
     }
 
     /// Number of zones carrying a 9R4C `MultiNodeSolver` (Issue #1799).
@@ -464,7 +471,7 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
     /// low-mass. Use this to disambiguate `get_nodal_temperatures() == None`
     /// ("not a 9R4C model") from "simulation has not been run yet".
     pub fn num_multizone_solvers(&self) -> usize {
-        self.0.multi_node_solvers.len()
+        self.0.conduction.multi_node_solvers.len()
     }
 
     /// Calculate analytical thermal loads without neural surrogates.

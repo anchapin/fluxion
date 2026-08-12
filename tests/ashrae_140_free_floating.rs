@@ -829,7 +829,7 @@ fn apply_900ff_thermal_config(model: &mut ThermalModel<VectorField>) {
         CTFMaterial::new("Wood Siding", 0.009, 0.14, 500.0, 1300.0),
     ];
     model.enable_ctf(&wall_layers, 3600.0, 50);
-    model.ctf_primary = true;
+    model.conduction.ctf_primary = true;
 }
 
 /// Test: Compare 600FF with different thermal model configurations

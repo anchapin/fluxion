@@ -324,10 +324,10 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
             solvers.push(CTFSolver::new(coefficients.clone(), config));
         }
 
-        self.0.ctf_coefficients = Some(coefficients);
-        self.0.ctf_solvers = solvers;
-        self.0.ctf_enabled = true;
-        self.0.ctf_timestep = timestep;
+        self.0.conduction.ctf_coefficients = Some(coefficients);
+        self.0.conduction.ctf_solvers = solvers;
+        self.0.conduction.ctf_enabled = true;
+        self.0.conduction.ctf_timestep = timestep;
 
         // === SESSION 77: CTF-Zone Air Coupling Solver ===
         // DISABLED: The iterative coupling solver creates an explicit feedback loop
@@ -336,19 +336,19 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         // path is stable and provides correct CTF flux without coupling instability.
         // The coupling solver would need implicit (simultaneous) solving of T_zone
         // and T_si to be stable, which is a future enhancement.
-        // self.0.ctf_zone_coupling_solver = Some(CtfZoneCouplingSolver::new());
+        // self.0.conduction.ctf_zone_coupling_solver = Some(CtfZoneCouplingSolver::new());
     }
 
     /// Disable CTF solver and revert to 5R1C conduction calculation.
     pub fn disable_ctf(&mut self) {
-        self.0.ctf_enabled = false;
-        self.0.ctf_coefficients = None;
-        self.0.ctf_solvers.clear();
+        self.0.conduction.ctf_enabled = false;
+        self.0.conduction.ctf_coefficients = None;
+        self.0.conduction.ctf_solvers.clear();
     }
 
     /// Check if CTF solver is enabled.
     pub fn ctf_is_enabled(&self) -> bool {
-        self.0.ctf_enabled
+        self.0.conduction.ctf_enabled
     }
 
     /// Enable Finite Difference (FD) solver for high-mass walls.
@@ -390,20 +390,20 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
             solvers.push(ImplicitFDSolver::new(discretization.clone(), initial_temp));
         }
 
-        self.0.fd_solvers = solvers;
-        self.0.fd_enabled = true;
-        self.0.fd_timestep = timestep;
+        self.0.conduction.fd_solvers = solvers;
+        self.0.conduction.fd_enabled = true;
+        self.0.conduction.fd_timestep = timestep;
     }
 
     /// Disable FD solver and revert to 5R1C conduction calculation.
     pub fn disable_fd(&mut self) {
-        self.0.fd_enabled = false;
-        self.0.fd_solvers.clear();
+        self.0.conduction.fd_enabled = false;
+        self.0.conduction.fd_solvers.clear();
     }
 
     /// Check if FD solver is enabled.
     pub fn fd_is_enabled(&self) -> bool {
-        self.0.fd_enabled
+        self.0.conduction.fd_enabled
     }
 
     /// Enable the unified solver manager with explicit solver selection.
@@ -443,29 +443,30 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         let mut selector = ThermalMethodSelector::default();
         selector.set_selection_config(selection_config);
 
-        self.0.solver_manager = Some(crate::physics::solver_manager::SolverManager::new(selector));
+        self.0.conduction.solver_manager =
+            Some(crate::physics::solver_manager::SolverManager::new(selector));
     }
 
     /// Get a reference to the solver manager if it exists.
     pub fn get_solver_manager(&self) -> Option<&crate::physics::solver_manager::SolverManager> {
-        self.0.solver_manager.as_ref()
+        self.0.conduction.solver_manager.as_ref()
     }
 
     /// Get a mutable reference to the solver manager if it exists.
     pub fn get_solver_manager_mut(
         &mut self,
     ) -> Option<&mut crate::physics::solver_manager::SolverManager> {
-        self.0.solver_manager.as_mut()
+        self.0.conduction.solver_manager.as_mut()
     }
 
     /// Disable the solver manager and revert to default 5R1C/CTF/FD behavior.
     pub fn disable_solver_manager(&mut self) {
-        self.0.solver_manager = None;
+        self.0.conduction.solver_manager = None;
     }
 
     /// Check if solver manager is enabled.
     pub fn solver_manager_is_enabled(&self) -> bool {
-        self.0.solver_manager.is_some()
+        self.0.conduction.solver_manager.is_some()
     }
 
     /// Enable CTF with automatic fallback to FD if coefficients are invalid.

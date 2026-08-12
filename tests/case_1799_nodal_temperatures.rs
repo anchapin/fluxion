@@ -132,7 +132,7 @@ fn test_nodal_temperatures_match_internal_solver_trace() {
         .expect("Case 900 (high-mass) must populate nodal_temperatures");
 
     for (zone_idx, zone_nodes) in nodal.iter().enumerate() {
-        let solver = &model.multi_node_solvers[zone_idx];
+        let solver = &model.conduction.multi_node_solvers[zone_idx];
         let trace_final = [
             solver.wall_temperature(),
             solver.roof_temperature(),
@@ -176,7 +176,7 @@ fn test_nodal_temperatures_match_per_step_snapshot() {
 
         // Capture immediately after the step (same capture point as the
         // high-level solver_core.rs hook).
-        let solver = &model.multi_node_solvers[0];
+        let solver = &model.conduction.multi_node_solvers[0];
         manual_trace.push([
             solver.wall_temperature(),
             solver.roof_temperature(),

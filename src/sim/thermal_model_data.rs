@@ -31,6 +31,112 @@ use fluxion_core::ashrae_cases::{NightVentilation, Orientation};
 use std::collections::BTreeMap;
 use std::sync::Arc;
 
+/// Conduction backend state — all concrete solver state for the thermal model.
+///
+/// Extracted from `ThermalModelData` (Issue #2767) so swap-point traits can
+/// reason about a single boxed backend instead of a struct that owns every
+/// concrete solver simultaneously. The custom `Clone` copies only
+/// CTF/coefficients state (matching the pre-refactor `ThermalModelData::clone`
+/// behaviour) — the heavy `Vec<ImplicitFDSolver>`, `Vec<MultiNodeSolver>`, and
+/// `SolverManager` are dropped and re-initialised by `prepare_solvers` on the
+/// first timestep after clone.
+pub struct ConductionBackend {
+    // --- CTF (Conduction Transfer Function) ---
+    pub ctf_coefficients: Option<CTFCoefficients>,
+    pub ctf_solvers: Vec<CTFSolver>,
+    pub ctf_enabled: bool,
+    pub ctf_timestep: f64,
+    pub ctf_zone_coupling_solver: Option<CtfZoneCouplingSolver>,
+    pub ctf_primary: bool,
+    // --- FD (Finite Difference) ---
+    pub fd_solvers: Vec<ImplicitFDSolver>,
+    pub fd_enabled: bool,
+    pub fd_timestep: f64,
+    // --- Multi-node (9R4C) ---
+    pub multi_node_solvers: Vec<MultiNodeSolver>,
+    // --- Unified solver manager ---
+    pub solver_manager: Option<SolverManager>,
+    // --- Gauge-zone solver (experimental, feature-gated, always None per #2686) ---
+    #[cfg(feature = "gauge-solver")]
+    pub gauge_zone_solver: Option<GaugeZoneSolver>,
+}
+
+impl Clone for ConductionBackend {
+    fn clone(&self) -> Self {
+        Self {
+            ctf_coefficients: self.ctf_coefficients.clone(),
+            ctf_solvers: self.ctf_solvers.clone(),
+            ctf_enabled: self.ctf_enabled,
+            ctf_timestep: self.ctf_timestep,
+            ctf_zone_coupling_solver: self.ctf_zone_coupling_solver.clone(),
+            ctf_primary: self.ctf_primary,
+            // Heavy Vecs — dropped on clone (re-initialised by prepare_solvers).
+            fd_solvers: Vec::new(),
+            fd_enabled: self.fd_enabled,
+            fd_timestep: self.fd_timestep,
+            multi_node_solvers: Vec::new(),
+            solver_manager: None,
+            #[cfg(feature = "gauge-solver")]
+            gauge_zone_solver: self.gauge_zone_solver.clone(),
+        }
+    }
+}
+
+impl Default for ConductionBackend {
+    fn default() -> Self {
+        Self {
+            ctf_coefficients: None,
+            ctf_solvers: Vec::new(),
+            ctf_enabled: false,
+            ctf_timestep: 3600.0,
+            ctf_zone_coupling_solver: None,
+            ctf_primary: false,
+            fd_solvers: Vec::new(),
+            fd_enabled: false,
+            fd_timestep: 3600.0,
+            multi_node_solvers: Vec::new(),
+            solver_manager: None,
+            #[cfg(feature = "gauge-solver")]
+            gauge_zone_solver: None,
+        }
+    }
+}
+
+/// Diagnostics + reporting output state.
+///
+/// Extracted from `ThermalModelData` (Issue #2767). The custom `Clone` drops
+/// the live diagnostics collector and accumulated output profiles (matching
+/// the pre-refactor `ThermalModelData::clone` behaviour) so a per-config
+/// clone in `BatchOracle` never deep-copies reporting state.
+pub struct DiagnosticsState {
+    pub diagnostics: Option<SimulationDiagnostics>,
+    pub hourly_temperatures: Option<Vec<Vec<f64>>>,
+    pub nodal_temperatures: Option<Vec<Vec<Vec<f64>>>>,
+    pub incident_solar_per_surface: BTreeMap<String, IncidentSolarAccumulator>,
+}
+
+impl Clone for DiagnosticsState {
+    fn clone(&self) -> Self {
+        Self {
+            diagnostics: None,
+            hourly_temperatures: None,
+            nodal_temperatures: None,
+            incident_solar_per_surface: self.incident_solar_per_surface.clone(),
+        }
+    }
+}
+
+impl Default for DiagnosticsState {
+    fn default() -> Self {
+        Self {
+            diagnostics: None,
+            hourly_temperatures: None,
+            nodal_temperatures: None,
+            incident_solar_per_surface: BTreeMap::new(),
+        }
+    }
+}
+
 /// Accumulator for per-surface incident solar radiation tracking.
 ///
 /// Tracks annual incident solar energy (kWh/m²) and peak irradiance (W/m²)
@@ -212,29 +318,9 @@ pub struct ThermalModelData<T: ContinuousTensor<f64> + Clone> {
     /// ensuring periodic steady-state for high-mass constructions.
     /// Default: 2.
     pub warm_up_years: u32,
-    pub ctf_coefficients: Option<CTFCoefficients>,
-    pub ctf_solvers: Vec<CTFSolver>,
-    pub ctf_enabled: bool,
-    pub ctf_timestep: f64,
-    pub ctf_zone_coupling_solver: Option<CtfZoneCouplingSolver>,
-    pub ctf_primary: bool,
-    pub fd_solvers: Vec<ImplicitFDSolver>,
-    pub fd_enabled: bool,
-    pub fd_timestep: f64,
-    pub multi_node_solvers: Vec<MultiNodeSolver>,
-    pub solver_manager: Option<SolverManager>,
-    /// Issue #2304 — experimental `GaugeZoneSolver` scaffolding (opt-in via the
-    /// `gauge-solver` feature).
-    ///
-    /// STATUS (Issue #2686): this field is feature-gated but **always `None`** —
-    /// no construction path initializes it. Even with `--features gauge-solver`
-    /// the routing branch in `step_physics` is unreachable, so the legacy
-    /// 5R1C/9R4C networks remain the primary zone solver in ALL builds. This
-    /// stub wiring is preserved as WIP for whoever finishes #2304; it is
-    /// distinct from the live per-surface `GaugeSolver` shadow-mode path
-    /// (`PhysicsAdapter`, #1465/#1462).
-    #[cfg(feature = "gauge-solver")]
-    pub gauge_zone_solver: Option<GaugeZoneSolver>,
+    /// Conduction backend — all concrete solver state (CTF / FD / MultiNode /
+    /// SolverManager / Gauge). Extracted from the flat layout in Issue #2767.
+    pub conduction: ConductionBackend,
     pub convective_fraction: f64,
     pub solar_distribution_to_air: f64,
     pub solar_beam_to_mass_fraction: f64,
@@ -281,7 +367,9 @@ pub struct ThermalModelData<T: ContinuousTensor<f64> + Clone> {
     pub derived_h_tr_2: T,
     /// ISO 13790 §C.8: H_tr_3 = 1/(1/H_tr_2 + 1/H_tr_ms) — combined air-to-mass (~40 W/K for Case 900)
     pub derived_h_tr_3: T,
-    pub diagnostics: Option<SimulationDiagnostics>,
+    /// Diagnostics + reporting output state. Extracted from the flat layout
+    /// in Issue #2767.
+    pub diagnostics_state: DiagnosticsState,
     pub current_hvac_output: Option<T>,
     pub internal_radiative_to_mass: f64,
     // Per-surface thermal mass conductances for 9R4C model (Issue #715, Phase 6B)
@@ -310,23 +398,6 @@ pub struct ThermalModelData<T: ContinuousTensor<f64> + Clone> {
     /// PR #821 / Issue #825 — most recent zone-0 phi_m (W to mass node).
     #[cfg(feature = "pr821-diag")]
     pub last_phi_m: f64,
-    /// Issue #763 — full hourly zone temperature profiles for post-processing and reporting.
-    /// Format: [num_zones][8760] hourly temperatures in °C.
-    pub hourly_temperatures: Option<Vec<Vec<f64>>>,
-    /// Issue #1799 — sub-hourly 9R4C node temperatures per zone (diagnostics + ML features).
-    ///
-    /// `nodal_temperatures[zone][node][timestep]` where `node` follows the
-    /// canonical `MultiNodeSolver::NODE_NAMES` ordering:
-    /// `0=wall, 1=roof, 2=floor, 3=internal`.
-    ///
-    /// Only populated when the model carries at least one `MultiNodeSolver`
-    /// (i.e. 9R4C / heavy-mass construction like ASHRAE 140 Case 900+).
-    /// `None` for low-mass models or before a simulation has been run.
-    pub nodal_temperatures: Option<Vec<Vec<Vec<f64>>>>,
-    /// Issue #762 — per-surface incident solar radiation tracking for ASHRAE 140-2023 Section 8.2.3.
-    /// Key: surface identifier (e.g., "wall_N", "window_S", "roof").
-    /// BTreeMap for deterministic iteration order across platforms (Issue #1297)
-    pub incident_solar_per_surface: BTreeMap<String, IncidentSolarAccumulator>,
     /// Issue #1212 — solar position cache keyed by `(timestep, hour_slot)`.
     /// 2 slots per timestep (integer-hour for 5R1C, mid-hour for 9R4C) prevent
     /// the 5R1C caller from overwriting the 9R4C caller's value (see
@@ -431,19 +502,7 @@ impl<T: ContinuousTensor<f64> + Clone> Clone for ThermalModelData<T> {
             ideal_loads_system: self.ideal_loads_system.clone(),
             free_float: self.free_float,
             warm_up_years: self.warm_up_years,
-            ctf_coefficients: self.ctf_coefficients.clone(),
-            ctf_solvers: self.ctf_solvers.clone(),
-            ctf_enabled: self.ctf_enabled,
-            ctf_timestep: self.ctf_timestep,
-            ctf_zone_coupling_solver: self.ctf_zone_coupling_solver.clone(),
-            ctf_primary: self.ctf_primary,
-            fd_solvers: vec![],
-            fd_enabled: self.fd_enabled,
-            fd_timestep: self.fd_timestep,
-            multi_node_solvers: vec![],
-            solver_manager: None,
-            #[cfg(feature = "gauge-solver")]
-            gauge_zone_solver: self.gauge_zone_solver.clone(),
+            conduction: self.conduction.clone(),
             convective_fraction: self.convective_fraction,
             solar_distribution_to_air: self.solar_distribution_to_air,
             solar_beam_to_mass_fraction: self.solar_beam_to_mass_fraction,
@@ -477,7 +536,7 @@ impl<T: ContinuousTensor<f64> + Clone> Clone for ThermalModelData<T> {
             derived_h_tr_1: self.derived_h_tr_1.clone(),
             derived_h_tr_2: self.derived_h_tr_2.clone(),
             derived_h_tr_3: self.derived_h_tr_3.clone(),
-            diagnostics: None,
+            diagnostics_state: self.diagnostics_state.clone(),
             current_hvac_output: self.current_hvac_output.clone(),
             internal_radiative_to_mass: self.internal_radiative_to_mass,
             h_tr_ms_wall: self.h_tr_ms_wall.clone(),
@@ -497,12 +556,83 @@ impl<T: ContinuousTensor<f64> + Clone> Clone for ThermalModelData<T> {
             last_phi_st: self.last_phi_st,
             #[cfg(feature = "pr821-diag")]
             last_phi_m: self.last_phi_m,
-            hourly_temperatures: None,
-            nodal_temperatures: None,
-            incident_solar_per_surface: self.incident_solar_per_surface.clone(),
             sun_pos_cache: Default::default(), // Issue #1970
             zero_vector: self.zero_vector.clone(),
             scratch_pool: PhysicsScratchPool::new(), // Fresh pool on clone; scratch is not deep-cloned
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_conduction_backend_clone_preserves_flags_drops_heavy_state() {
+        let mut backend = ConductionBackend::default();
+        backend.ctf_enabled = true;
+        backend.ctf_primary = true;
+        backend.fd_enabled = true;
+        backend.fd_timestep = 120.0;
+
+        // Even though default() starts with empty Vecs, the Clone impl
+        // explicitly resets them to Vec::new() / None — verifying the
+        // flags survive clone while heavy solver state would be dropped.
+        let cloned = backend.clone();
+        assert!(cloned.ctf_enabled, "ctf_enabled flag must survive clone");
+        assert!(cloned.ctf_primary, "ctf_primary flag must survive clone");
+        assert!(cloned.fd_enabled, "fd_enabled flag must survive clone");
+        assert_eq!(cloned.fd_timestep, 120.0, "fd_timestep must survive clone");
+        // Heavy solver Vecs are always empty after clone (Vec::new())
+        assert!(
+            cloned.fd_solvers.is_empty(),
+            "fd_solvers must be empty after clone"
+        );
+        assert!(
+            cloned.multi_node_solvers.is_empty(),
+            "multi_node_solvers must be empty after clone"
+        );
+        assert!(
+            cloned.solver_manager.is_none(),
+            "solver_manager must be None after clone"
+        );
+    }
+
+    #[test]
+    fn test_diagnostics_state_clone_drops_live_state() {
+        let mut diag = DiagnosticsState::default();
+        diag.hourly_temperatures = Some(vec![vec![20.0; 8760]]);
+        diag.incident_solar_per_surface
+            .insert("wall_S".to_string(), IncidentSolarAccumulator::new());
+
+        let cloned = diag.clone();
+        assert!(
+            cloned.diagnostics.is_none(),
+            "diagnostics collector must be dropped on clone"
+        );
+        assert!(
+            cloned.hourly_temperatures.is_none(),
+            "hourly_temperatures must be dropped on clone"
+        );
+        assert!(cloned.nodal_temperatures.is_none());
+        assert_eq!(
+            cloned.incident_solar_per_surface.len(),
+            1,
+            "incident_solar_per_surface must survive clone"
+        );
+    }
+
+    #[test]
+    fn test_conduction_backend_default_values() {
+        let backend = ConductionBackend::default();
+        assert!(backend.ctf_solvers.is_empty());
+        assert!(backend.fd_solvers.is_empty());
+        assert!(backend.multi_node_solvers.is_empty());
+        assert!(backend.solver_manager.is_none());
+        assert!(!backend.ctf_enabled);
+        assert!(!backend.fd_enabled);
+        assert!(!backend.ctf_primary);
+        assert_eq!(backend.ctf_timestep, 3600.0);
+        assert_eq!(backend.fd_timestep, 3600.0);
     }
 }
