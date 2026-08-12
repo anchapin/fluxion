@@ -52,6 +52,20 @@
 //! future GPU-backed `BatchOrchestrator` can re-introduce batching
 //! where it matters.
 //!
+//! ## Issue #2769 — analytical path dispatched through the orchestrator
+//!
+//! [`RayonChunksOrchestrator::run_cpu_analytical`] mirrors the unbatched
+//! surrogate path but drives each config with
+//! `ThermalModel::solve_single_step` against a per-worker
+//! `StepParameters::build_analytical()` instead of `surrogates.predict_loads`.
+//! Parallelism is across configs only (`par_chunks`); the 8 760-step inner
+//! loop stays sequential per config, so the per-config EUI is bit-identical
+//! to the pre-change serial baseline (verified by
+//! `tests/batch_oracle_hotloop_equivalence.rs` and the in-module
+//! `analytical_matches_sequential_baseline` test). `par_chunks` is used
+//! (not `par_iter`) to keep this file's nested-parallelism hygiene (#1065)
+//! and to share the chunk-size heuristic with the surrogate path.
+//!
 //! ## Issue #2520 — per-timestep ONNX batching restored
 //!
 //! [`RayonChunksOrchestrator::run_cpu_surrogate_batched`] adds a
@@ -146,6 +160,65 @@ pub trait BatchOrchestrator: Send + Sync {
         surrogates: &SurrogateManager,
     ) -> Vec<CpuResult> {
         self.run_cpu_surrogate(configs, surrogates)
+    }
+
+    /// Evaluate `configs` (already validated and parameter-applied) on the
+    /// CPU using the **analytical** physics path — i.e. with
+    /// `use_ai = false` and `use_analytical_gains = true`, no surrogate
+    /// inference (Issue #2769).
+    ///
+    /// This is the orchestrator entry point for the `use_surrogates = false`
+    /// branch of [`crate::BatchOracle::evaluate_population`]. The default
+    /// implementation is sequential so the trait stays implementable by a
+    /// single method; [`RayonChunksOrchestrator`] overrides it with the
+    /// multi-core `par_chunks` path.
+    ///
+    /// # Per-config determinism
+    ///
+    /// The 8 760-step inner loop runs sequentially within each config —
+    /// parallelism is across configs only — so each `(idx, eui)` is
+    /// bit-identical to the pre-#2769 serial loop given the same input
+    /// model. `StepParameters::build_analytical()` is constructed **per
+    /// worker** because `StepParameters` is `!Send + !Sync` (its
+    /// `equipment: Option<Vec<Box<dyn Equipment>>>` field makes the type
+    /// auto-traits fail even when the analytical variant holds `None`
+    /// everywhere — see `src/sim/timestep_solver.rs` "Threading note").
+    ///
+    /// # Daily-cycle formula
+    ///
+    /// This method uses `sin(2π · hour_of_day / 24)` (NO `- π/2` phase
+    /// shift), matching the historical analytical-path weather generator
+    /// in `BatchOracle::evaluate_population`. The surrogate paths use a
+    /// `- π/2`-shifted cycle because they were re-derived from a different
+    /// fixture; do **not** unify the two formulas without re-validating
+    /// the analytical golden snapshot in
+    /// `tests/batch_oracle_hotloop_equivalence.rs`.
+    fn run_cpu_analytical(
+        &self,
+        configs: Vec<(usize, ThermalModel<VectorField>)>,
+    ) -> Vec<CpuResult> {
+        // Sequential default — `RayonChunksOrchestrator` overrides this.
+        use crate::sim::timestep_solver::StepParameters;
+
+        let step_params = StepParameters::build_analytical();
+        let mut out: Vec<CpuResult> = Vec::with_capacity(configs.len());
+        for (idx, mut model) in configs {
+            let mut total_energy = 0.0_f64;
+            for t in 0..8760 {
+                let hour_of_day = t % 24;
+                let daily_cycle = (hour_of_day as f64 / 24.0 * 2.0 * std::f64::consts::PI).sin();
+                let outdoor_temp = 10.0 + 10.0 * daily_cycle;
+                total_energy += model.solve_single_step(t, outdoor_temp, &step_params, 3600.0);
+            }
+            let total_area = model.zone_area.integrate();
+            let eui = if total_area > 0.0 {
+                (total_energy / total_area).max(0.0)
+            } else {
+                0.0
+            };
+            out.push((idx, eui));
+        }
+        out
     }
 }
 
@@ -520,6 +593,101 @@ impl BatchOrchestrator for RayonChunksOrchestrator {
         }
         out
     }
+
+    /// `par_chunks`-parallel analytical path (Issue #2769).
+    ///
+    /// Mirrors [`Self::run_cpu_surrogate`] structurally — same chunk
+    /// heuristic, same `Vec::with_capacity(N) + indexed assignment`
+    /// result placement, same `Fn + Sync` worker closure model — but
+    /// drives each config with
+    /// [`ThermalModel::solve_single_step`] against a per-worker
+    /// [`StepParameters::build_analytical`] instead of
+    /// `surrogates.predict_loads`. No `rayon::scope` / crossbeam
+    /// rendezvous is needed because there is no per-timestep batching to
+    /// coordinate; the whole 8 760-step inner loop runs locally inside
+    /// the worker, exactly like the unbatched surrogate path.
+    ///
+    /// # Why `par_chunks`, not `par_iter`
+    ///
+    /// The orchestrator file is in scope of
+    /// `.githooks/batch-oracle-check.sh`'s nested-parallelism scan. Using
+    /// `par_chunks` keeps the scan trivially clean (no `par_iter` token
+    /// in this method) and shares the surrogate path's
+    /// `recommended_chunk_size` heuristic, so analytical and surrogate
+    /// throughput scale identically with core count.
+    ///
+    /// # Numerical equivalence
+    ///
+    /// Each `(idx, model)` pair is processed by exactly one worker, and
+    /// the 8 760-step inner loop runs sequentially inside that worker, so
+    /// the per-config EUI is IEEE-754 bit-identical to the serial
+    /// baseline given identical inputs. Verified by
+    /// `analytical_matches_sequential_baseline` below and by the
+    /// analytical-path golden snapshot in
+    /// `tests/batch_oracle_hotloop_equivalence.rs`.
+    fn run_cpu_analytical(
+        &self,
+        configs: Vec<(usize, ThermalModel<VectorField>)>,
+    ) -> Vec<CpuResult> {
+        use crate::sim::timestep_solver::StepParameters;
+        use rayon::prelude::*;
+
+        if configs.is_empty() {
+            return Vec::new();
+        }
+
+        let chunk_size = self.chunk_size.min(configs.len());
+
+        // Same `Vec<Vec<CpuResult>>` flatten pattern as `run_cpu_surrogate`
+        // so any future optimization to the result-gather path applies to
+        // both. The closure captures nothing by reference (no `surrogates`
+        // equivalent here — `StepParameters::build_analytical()` is cheap
+        // and constructed per chunk worker, sidestepping the type's
+        // `!Send + !Sync` auto-trait failure).
+        let per_chunk: Vec<Vec<CpuResult>> = configs
+            .par_chunks(chunk_size)
+            .map(|chunk| {
+                // Per-worker `StepParameters` (the type is !Send via its
+                // `equipment: Option<Vec<Box<dyn Equipment>>>` field; the
+                // analytical variant holds None so this is a few-ns leaf
+                // allocation, see `src/sim/timestep_solver.rs` "Threading
+                // note (Issue #1437)"). One construction per chunk reuses
+                // the parameter set across all of this worker's configs
+                // and all 8 760 of each config's timesteps.
+                let step_params = StepParameters::build_analytical();
+                let mut chunk_results: Vec<CpuResult> = Vec::with_capacity(chunk.len());
+                for (idx, mut model) in chunk.iter().cloned() {
+                    let mut total_energy = 0.0_f64;
+                    // Analytical-path daily cycle: `sin(2π · h / 24)`.
+                    // DO NOT add the surrogate path's `- π/2` phase shift
+                    // — see the trait-level doc comment and the golden
+                    // snapshot in batch_oracle_hotloop_equivalence.rs.
+                    for t in 0..8760 {
+                        let hour_of_day = t % 24;
+                        let daily_cycle =
+                            (hour_of_day as f64 / 24.0 * 2.0 * std::f64::consts::PI).sin();
+                        let outdoor_temp = 10.0 + 10.0 * daily_cycle;
+                        total_energy +=
+                            model.solve_single_step(t, outdoor_temp, &step_params, 3600.0);
+                    }
+                    let total_area = model.zone_area.integrate();
+                    let eui = if total_area > 0.0 {
+                        (total_energy / total_area).max(0.0)
+                    } else {
+                        0.0
+                    };
+                    chunk_results.push((idx, eui));
+                }
+                chunk_results
+            })
+            .collect();
+
+        let mut out: Vec<CpuResult> = Vec::with_capacity(configs.len());
+        for chunk_results in per_chunk {
+            out.extend(chunk_results);
+        }
+        out
+    }
 }
 
 #[cfg(test)]
@@ -636,6 +804,146 @@ mod tests {
         let configs: Vec<_> = (0..64).map(make_dummy_config).collect();
         let result = orchestrator.run_cpu_surrogate(configs, &surrogates);
         assert_eq!(result.len(), 64);
+    }
+
+    // -----------------------------------------------------------------------
+    // Issue #2769 — analytical path (`par_chunks`-parallel).
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn analytical_empty_configs_returns_empty_results() {
+        // The analytical path takes no `surrogates` arg, so this also
+        // confirms the trait method signature does not require a
+        // SurrogateManager just to construct one.
+        let orchestrator = RayonChunksOrchestrator::default();
+        let result = orchestrator.run_cpu_analytical(Vec::new());
+        assert!(result.is_empty());
+    }
+
+    #[test]
+    fn analytical_returns_all_indices_exactly_once() {
+        let orchestrator = RayonChunksOrchestrator::for_population(16);
+        let configs: Vec<_> = (0..16).map(make_dummy_config).collect();
+        let result = orchestrator.run_cpu_analytical(configs);
+        assert_eq!(result.len(), 16);
+        let mut indices: Vec<usize> = result.iter().map(|(i, _)| *i).collect();
+        indices.sort_unstable();
+        assert_eq!(indices, (0..16).collect::<Vec<_>>());
+    }
+
+    #[test]
+    fn analytical_chunk_size_smaller_than_population() {
+        // Same load-balancing claim as `chunk_size_smaller_than_population_produces_chunks`
+        // but on the analytical path. For N=64 with chunk_size=8 we expect
+        // 8 rayon chunks of 8 configs each, no configs lost.
+        let orchestrator = RayonChunksOrchestrator::with_chunk_size(8);
+        let configs: Vec<_> = (0..64).map(make_dummy_config).collect();
+        let result = orchestrator.run_cpu_analytical(configs);
+        assert_eq!(result.len(), 64);
+    }
+
+    /// Bit-identical numerical equivalence vs the pre-#2769 serial baseline.
+    ///
+    /// Re-implements the exact serial loop that lived in
+    /// `BatchOracle::evaluate_population` before #2769 (same daily-cycle
+    /// formula, same `StepParameters::build_analytical()`, same
+    /// `solve_single_step` call order, same `eui.max(0.0)` clamp) and
+    /// asserts the orchestrator's `par_chunks` path produces identical
+    /// f64 bytes for every population index.
+    ///
+    /// The 8 760-step inner loop runs sequentially inside each chunk
+    /// worker — parallelism is across configs only — so the per-config
+    /// f64 accumulator is unaffected by chunking choices.
+    #[test]
+    fn analytical_matches_sequential_baseline() {
+        use crate::sim::timestep_solver::StepParameters;
+
+        let orchestrator = RayonChunksOrchestrator::with_chunk_size(3);
+        // Pick a population larger than the chunk size so the test
+        // exercises multi-chunk dispatch + indexed result placement, and
+        // vary the window U-value so each config's EUI is distinct
+        // (catches per-config index swaps that a constant-population
+        // fixture would miss).
+        let pop: Vec<(usize, ThermalModel<VectorField>)> = (0..10)
+            .map(|i| {
+                let mut m = ThermalModel::<VectorField>::new(1);
+                m.apply_parameters(&[0.5 + (i as f64) * 0.3, 20.0, 26.0]);
+                (i, m)
+            })
+            .collect();
+
+        // Serial baseline (the pre-#2769 loop body, verbatim).
+        let step_params = StepParameters::build_analytical();
+        let mut expected: Vec<f64> = vec![f64::NAN; pop.len()];
+        for (idx, mut model) in pop.iter().cloned() {
+            let mut total_energy = 0.0_f64;
+            for t in 0..8760 {
+                let hour_of_day = t % 24;
+                let daily_cycle = (hour_of_day as f64 / 24.0 * 2.0 * std::f64::consts::PI).sin();
+                let outdoor_temp = 10.0 + 10.0 * daily_cycle;
+                total_energy += model.solve_single_step(t, outdoor_temp, &step_params, 3600.0);
+            }
+            let total_area = model.zone_area.integrate();
+            let eui = if total_area > 0.0 {
+                total_energy / total_area
+            } else {
+                0.0
+            };
+            expected[idx] = eui.max(0.0);
+        }
+
+        // Parallel path.
+        let mut parallel = orchestrator.run_cpu_analytical(pop);
+        parallel.sort_by_key(|(i, _)| *i);
+
+        assert_eq!(parallel.len(), expected.len());
+        for (idx, (got_i, got_v)) in parallel.iter().enumerate() {
+            assert_eq!(*got_i, idx, "index mismatch at slot {}", idx);
+            assert!(
+                (got_v - expected[idx]).abs() == 0.0,
+                "analytical path drifted from serial baseline at idx={}: \
+                 parallel={:?} serial={:?} (delta={})",
+                idx,
+                got_v,
+                expected[idx],
+                got_v - expected[idx]
+            );
+        }
+    }
+
+    /// Run-to-run determinism — same input population, two orchestrator
+    /// invocations must produce bit-identical EUI per index. Guards
+    /// against any future per-worker buffer reuse bug on the analytical
+    /// path that could leak state across configs.
+    #[test]
+    fn analytical_deterministic_across_repeated_runs() {
+        let orchestrator = RayonChunksOrchestrator::for_population(8);
+
+        let make_pop = || {
+            (0..8)
+                .map(|i| {
+                    let mut m = ThermalModel::<VectorField>::new(1);
+                    m.apply_parameters(&[1.5, 20.0, 24.0]);
+                    (i, m)
+                })
+                .collect::<Vec<_>>()
+        };
+
+        let mut r1 = orchestrator.run_cpu_analytical(make_pop());
+        let mut r2 = orchestrator.run_cpu_analytical(make_pop());
+        r1.sort_by_key(|(i, _)| *i);
+        r2.sort_by_key(|(i, _)| *i);
+
+        for ((i1, v1), (i2, v2)) in r1.iter().zip(r2.iter()) {
+            assert_eq!(i1, i2);
+            assert!(
+                (v1 - v2).abs() == 0.0,
+                "analytical run-to-run drift: idx={} {} vs {}",
+                i1,
+                v1,
+                v2
+            );
+        }
     }
 
     // -----------------------------------------------------------------------
