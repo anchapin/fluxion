@@ -1283,7 +1283,7 @@ dependencies = [
  "fluxion-core",
  "log",
  "nalgebra 0.34.2",
- "ndarray 0.16.1",
+ "ndarray 0.17.2",
  "num-complex",
  "rayon",
  "thiserror 1.0.69",

@@ -8,11 +8,11 @@ repository = "https://github.com/anchapin/fluxion"
 authors = ["Dr. Aris Thorne <aris.thorne@fluxion.org>"]
 
 [dependencies]
-thiserror = "1.0"
-serde = { version = "1.0", features = ["derive"] }
+thiserror.workspace = true
+serde.workspace = true
 serde_json = "1.0"
-nalgebra = { version = "0.34", features = ["serde"] }
-tokio = { version = "1.40", features = ["rt-multi-thread", "sync", "time", "macros"] }
+nalgebra = { workspace = true, features = ["serde"] }
+tokio = { workspace = true, features = ["rt-multi-thread", "sync", "time", "macros"] }
 rumqttc = "0.25"
 # rustls is used directly to build a permissive verifier for the opt-in
 # FLUXION_MQTT_INSECURE self-signed-cert escape hatch. Provider + std come via
@@ -20,7 +20,7 @@ rumqttc = "0.25"
 # `aws-lc-rs` explicitly so this crate is self-contained.
 rustls = { version = "0.23", default-features = false, features = ["std", "logging", "tls12", "aws-lc-rs"] }
 bytes = "1.0"
-uuid = { version = "1.0", features = ["serde", "v4"] }
+uuid = { workspace = true, features = ["serde", "v4"] }
 chrono = { version = "0.4", features = ["serde"] }
 crossbeam-channel = "0.5"
 # Structured logging / observability (Issue #2519). `tracing` provides spans
@@ -29,8 +29,8 @@ crossbeam-channel = "0.5"
 # major version of each. (`log` is no longer a direct dependency — all
 # fluxion-twin logging goes through `tracing`. rumqttc still pulls `log`
 # transitively for its own internals.)
-tracing = "0.1"
-metrics = "0.24"
+tracing.workspace = true
+metrics.workspace = true
 
 [dev-dependencies]
 approx = "0.5"

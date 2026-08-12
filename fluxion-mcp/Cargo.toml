@@ -22,21 +22,21 @@ fluxion-fluid = { path = "../fluxion-fluid", version = "1.0.0" }
 fluxion-toon = { path = "../crates/fluxion-toon" }
 
 # Async runtime
-tokio = { version = "1.40", features = ["full"], default-features = false }
+tokio = { workspace = true, features = ["full"] }
 
 # Serialization
-serde = { version = "1.0", features = ["derive"] }
+serde.workspace = true
 serde_json = "1.0"
 
 # Logging
-tracing = "0.1"
+tracing.workspace = true
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 
 # Observability — per-tool latency / error metrics (Issue #2515). Versions
 # pinned to match the root fluxion crate so the workspace resolves a single
 # copy of each.
-metrics = "0.24"
-uuid = { version = "1.10", features = ["v4"] }
+metrics.workspace = true
+uuid = { workspace = true, features = ["v4"] }
 
 # Error handling
 anyhow = "1.0"
