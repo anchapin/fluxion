@@ -1,0 +1,82 @@
+name: Node/NAPI Bindings
+
+# Builds the @fluxion/native NAPI bindings (npm/) and runs the Node test
+# suite (test.js, test_interop.js) declared in npm/package.json — the
+# PyO3 surface has CI (python-bindings.yml); this covers the NAPI side.
+# See issue #2759.
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    paths:
+      - npm/**
+      - src/python/**
+      - src/napi/**
+      - src/sim/thermal_model.rs
+      - .github/workflows/node-bindings.yml
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: 1
+  # build.js compiles the full fluxion crate via `napi build` (cargo);
+  # match the stack size used by the other binding workflows.
+  RUST_MIN_STACK: 33554432
+
+# Least-privilege GITHUB_TOKEN grants (Issue #2526): the NAPI build matrix
+# only checks out code, builds the native module, and runs tests — no
+# repo write-back.
+permissions:
+  contents: read
+
+jobs:
+  build-test:
+    name: Node/NAPI Bindings (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        # Linux honours the repo's FLUXION_LINUX_RUNNER routing var
+        # (defaults to ubuntu-latest); Windows is always GitHub-hosted.
+        os:
+          - ${{ vars.FLUXION_LINUX_RUNNER || 'ubuntu-latest' }}
+          - windows-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4
+
+      # Rust toolchain is required: npm/build.js shells out to
+      # `napi build --manifest-path ../Cargo.toml --features napi-bindings`,
+      # which invokes cargo. The napi-bindings feature does not pull PyO3,
+      # so the Rust-only setup action suffices (no Python needed).
+      - name: Set up Rust toolchain
+        uses: ./.github/actions/setup-rust-env
+        with:
+          sccache: 'true'
+
+      # npm/package.json declares "engines": { "node": ">= 18" }; pin to
+      # the current LTS (20) which satisfies that constraint.
+      - name: Set up Node.js 20 (LTS)
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020  # v4
+        with:
+          node-version: '20'
+
+      # No package-lock.json / npm-shrinkwrap.json is committed under npm/,
+      # so use `npm install` (resolves from package.json) rather than
+      # `npm ci`, which requires a lockfile. setup-node's `cache: 'npm'`
+      # is intentionally omitted for the same reason.
+      - name: Install npm dependencies
+        working-directory: npm
+        run: npm install
+
+      - name: Build NAPI bindings (debug)
+        working-directory: npm
+        run: npm run build:debug
+
+      - name: Run Node tests
+        working-directory: npm
+        run: npm test
