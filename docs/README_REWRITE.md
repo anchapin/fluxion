@@ -2,7 +2,7 @@
 
 **A fast, open-source Building Energy Modeling (BEM) engine** — written in Rust, with Python and Node.js bindings. Evaluates 800–1,000+ building configurations per second. ASHRAE 140 validation in progress.
 
-[![ASHRAE 140](https://img.shields.io/badge/ASHRAE140-v0.8.0--in--progress-yellow)](docs/ASHRAE140_RESULTS_v0.8.0.md)
+[![ASHRAE 140](https://img.shields.io/badge/ASHRAE140-v0.8.0--in--progress-yellow)](docs/archive/ASHRAE140_RESULTS_v0.8.0.md)
 [![Version](https://img.shields.io/badge/version-0.8.0-blue)](CHANGELOG.md)
 [![License](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 
@@ -162,7 +162,7 @@ fluxion serve   # REST API server
 | Section 8 output format | 🔴 Incomplete | Units, timestamps, hourly profiles not yet compliant |
 | Weather data | 🔴 Non-normative | Synthetic data in use; normative Annex C file pending (#732) |
 
-Full results: [`docs/ASHRAE140_RESULTS_v0.8.0.md`](docs/ASHRAE140_RESULTS_v0.8.0.md) | Scorecard: [`SCORECARD.md`](SCORECARD.md) | Known deviations: [`docs/compliance/deviations-register.md`](docs/compliance/deviations-register.md)
+Full results: [`docs/archive/ASHRAE140_RESULTS_v0.8.0.md`](docs/archive/ASHRAE140_RESULTS_v0.8.0.md) | Scorecard: [`SCORECARD.md`](SCORECARD.md) | Known deviations: [`docs/compliance/deviations-register.md`](docs/compliance/deviations-register.md)
 
 ---
 

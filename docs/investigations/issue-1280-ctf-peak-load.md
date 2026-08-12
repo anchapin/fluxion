@@ -79,7 +79,7 @@ flipped the direction.
 
 ### v0.8.0 archived snapshot for context
 
-`docs/ASHRAE140_RESULTS_v0.8.0.md` (previous milestone) reported:
+`docs/archive/ASHRAE140_RESULTS_v0.8.0.md` (previous milestone, archived) reported:
 
 | Case | Fluxion peak cooling | Reference range    | Delta       |
 | ---- | -------------------- | ------------------ | ----------- |

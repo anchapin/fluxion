@@ -68,7 +68,7 @@ RELEASE_ASSETS_DIR="release_assets_v0.8.0"
 mkdir -p "$RELEASE_ASSETS_DIR"
 
 # Copy key artifacts
-cp docs/ASHRAE140_RESULTS_v0.8.0.md "$RELEASE_ASSETS_DIR/"
+cp docs/archive/ASHRAE140_RESULTS_v0.8.0.md "$RELEASE_ASSETS_DIR/"
 cp CHANGELOG.md "$RELEASE_ASSETS_DIR/"
 cp README.md "$RELEASE_ASSETS_DIR/"
 
@@ -125,7 +125,7 @@ pip install --upgrade fluxion
 ### 📚 Documentation
 
 - [CHANGELOG.md](CHANGELOG.md) - Complete release notes
-- [ASHRAE140_RESULTS_v0.8.0.md](docs/ASHRAE140_RESULTS_v0.8.0.md) - Validation results
+- [ASHRAE140_RESULTS_v0.8.0.md](docs/archive/ASHRAE140_RESULTS_v0.8.0.md) - Validation results (archived; see Issue #2764)
 - [API Reference](docs/API_REFERENCE.md) - Updated API documentation
 
 ---
