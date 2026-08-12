@@ -196,7 +196,7 @@ RUST
     scan_nested "$tmp/nested2.rs" >/dev/null 2>&1; [ $? -eq 1 ] || { echo "selftest FAIL: nested2.rs not caught"; fail=1; }
     scan_nested "$tmp/chunks.rs" >/dev/null 2>&1; [ $? -eq 0 ] || { echo "selftest FAIL: par_chunks falsely flagged"; fail=1; }
 
-    real=$(find src/lib.rs src/sim src/ai src/validation -name '*.rs' 2>/dev/null)
+    real=$(find src/lib.rs src/batch_oracle.rs src/sim src/ai src/validation -name '*.rs' 2>/dev/null)
     if [ -n "$real" ]; then
         scan_nested $real >/dev/null 2>&1 || { echo "selftest FAIL: real in-scope tree has false positives"; fail=1; }
     fi
@@ -212,8 +212,11 @@ fi
 # ---------------------------------------------------------------------------
 # Default: pre-commit flow over staged files.
 # ---------------------------------------------------------------------------
-# Scope (#2524): lib.rs + sim/ + ai/ + validation/.
-SCOPE_RE='lib\.rs$|sim/.*\.rs$|ai/.*\.rs$|validation/.*\.rs$'
+# Scope (#2524): lib.rs + batch_oracle.rs + sim/ + ai/ + validation/.
+# batch_oracle.rs was added in #2493 (evaluate_population extracted from lib.rs);
+# without it the hook is blind to nested-par_iter regressions in the very file
+# that owns the population-level parallelism contract (#1065).
+SCOPE_RE='lib\.rs$|batch_oracle\.rs$|sim/.*\.rs$|ai/.*\.rs$|validation/.*\.rs$'
 
 in_scope=()
 for file in "$@"; do
