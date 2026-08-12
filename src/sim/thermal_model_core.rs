@@ -2160,22 +2160,26 @@ impl ThermalModel<VectorField> {
                 // Therefore, radiative inter-zone conductance should be ZERO
                 radiative_conductance = 0.0;
 
-                println!(
-                    "Issue #1616: Inter-zone coupling for Case 960: {:.2} W/K",
-                    total_conductance
-                );
-                println!(
-                    "  - Convective (stack effect, Cd={:.2}, ΔT={:.0}K): {:.2} W/K",
-                    DISCHARGE_COEFFICIENT, REPRESENTATIVE_DELTA_T, convective_coupling
-                );
-                println!(
-                    "  - Conductive (U={:.1} W/m²K, A={:.1} m²): {:.2} W/K",
-                    U_DOOR, door_area, door_conduction
-                );
-                println!(
-                    "  - Radiative (window): {:.2} W/K (windows face same direction - no exchange)",
-                    radiative_conductance
-                );
+                // Gated per #1967 (debug-physics feature); pure diagnostic, no side effects.
+                #[cfg(feature = "debug-physics")]
+                {
+                    println!(
+                        "Issue #1616: Inter-zone coupling for Case 960: {:.2} W/K",
+                        total_conductance
+                    );
+                    println!(
+                        "  - Convective (stack effect, Cd={:.2}, ΔT={:.0}K): {:.2} W/K",
+                        DISCHARGE_COEFFICIENT, REPRESENTATIVE_DELTA_T, convective_coupling
+                    );
+                    println!(
+                        "  - Conductive (U={:.1} W/m²K, A={:.1} m²): {:.2} W/K",
+                        U_DOOR, door_area, door_conduction
+                    );
+                    println!(
+                        "  - Radiative (window): {:.2} W/K (windows face same direction - no exchange)",
+                        radiative_conductance
+                    );
+                }
             } else {
                 // Generic multi-zone: use common wall conductance
                 for wall in &spec.common_walls {
