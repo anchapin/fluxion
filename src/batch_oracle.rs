@@ -15,7 +15,7 @@
 
 use crate::ai::surrogate::SurrogateManager;
 use crate::physics::cta::VectorField;
-use crate::sim::engine::{StepParameters, ThermalModel};
+use crate::sim::engine::ThermalModel;
 
 // `pyclass` must be in scope for `#[cfg_attr(feature = "python-bindings", pyclass)]`
 // on the struct below. PyO3 0.29 (post-#2585) API.
@@ -307,31 +307,41 @@ impl BatchOracle {
                 }
             }
         } else if !valid_configs.is_empty() {
-            // Analytical path - sequential per-config to avoid nested parallelism
-            // Note: StepParameters is !Sync (Box<dyn Equipment>), so a single
-            // instance cannot be shared across rayon workers. We construct
-            // one StepParameters per worker work-item and reuse it for every
-            // one of the 8 760 inner timesteps (Issue #1437 hoists the
-            // construction out of the per-timestep inner loop, which
-            // previously ran `surrogates.clone()` once per timestep per
-            // config — the leading 5R1C allocation-pressure cost).
-            let step_params = StepParameters::build_analytical();
-            for (idx, ref mut model) in valid_configs.iter_mut() {
-                let mut total_energy = 0.0;
-                for t in 0..8760 {
-                    let hour_of_day = t % 24;
-                    let daily_cycle =
-                        (hour_of_day as f64 / 24.0 * 2.0 * std::f64::consts::PI).sin();
-                    let outdoor_temp = 10.0 + 10.0 * daily_cycle;
-                    total_energy += model.solve_single_step(t, outdoor_temp, &step_params, 3600.0);
-                }
-                let total_area = model.zone_area.integrate();
-                let eui = if total_area > 0.0 {
-                    total_energy / total_area
-                } else {
-                    0.0
-                };
-                results[*idx] = eui.max(0.0);
+            // Analytical path (Issue #2769): dispatch through the same
+            // `RayonChunksOrchestrator` used by the CPU surrogate path so
+            // the analytical path gets multi-core scaling — previously this
+            // branch left N-1 cores idle, which was the path the absolute
+            // perf gate (#2693) and `tests/performance_regression_test.rs`
+            // actually measured.
+            //
+            // The pre-#2769 "sequential per-config to avoid nested
+            // parallelism" rationale was stale: the population-validation
+            // rayon loop above has already terminated before any branch
+            // runs, so a single additional `par_chunks` inside the
+            // orchestrator does not introduce nested parallelism (rayon
+            // thread-pool exhaustion, #1065/#2524). The
+            // `.githooks/batch-oracle-check.sh` scan explicitly excludes
+            // `par_chunks`, and the orchestrator file is in its scope.
+            //
+            // `StepParameters` is `!Send + !Sync` (its
+            // `equipment: Option<Vec<Box<dyn Equipment>>>` field fails the
+            // auto-traits even when the analytical variant holds `None`),
+            // so it cannot be shared across workers; the orchestrator
+            // constructs one `StepParameters::build_analytical()` per
+            // chunk worker (Issue #1437 hoisted the prior per-timestep
+            // `surrogates.clone()` out of the inner loop).
+            //
+            // Per-config determinism is preserved bit-identically — the
+            // 8 760-step inner loop runs sequentially inside each worker,
+            // and result placement is by population index. Verified by
+            // `tests/batch_oracle_hotloop_equivalence.rs`.
+            use crate::sim::orchestrator::{BatchOrchestrator, RayonChunksOrchestrator};
+
+            let orchestrator = RayonChunksOrchestrator::for_population(valid_configs.len());
+            let final_worker_data = orchestrator.run_cpu_analytical(valid_configs);
+
+            for (idx, eui) in final_worker_data {
+                results[idx] = eui;
             }
         }
 
