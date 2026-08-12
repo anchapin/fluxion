@@ -8,15 +8,15 @@ repository = "https://github.com/anchapin/fluxion"
 license = "Apache-2.0"
 
 [dependencies]
-thiserror = "1.0"
-serde = { version = "1.0", features = ["derive"] }
+thiserror.workspace = true
+serde.workspace = true
 approx = "0.5"
-faer = "0.23"
+faer = { workspace = true, features = ["default"] }
 num-traits = "0.2"
 rand = "0.8"
-rayon = { version = "1.8", optional = true }
+rayon = { workspace = true, optional = true }
 petgraph = { version = "0.6", features = ["serde-1"] }
-uuid = { version = "1.0", features = ["v4", "serde"] }
+uuid = { workspace = true, features = ["v4", "serde"] }
 
 [features]
 default = []
