@@ -54,20 +54,10 @@ ignore = [
     "RUSTSEC-2026-0098",
     "RUSTSEC-2026-0099",
     "RUSTSEC-2026-0104",
-    # --- TEMPORARY: unsoundness advisories surfaced by cargo-deny's fresher DB -
-    # cargo-deny fetches the RustSec DB independently and surfaces two unsound
-    # advisories that cargo-audit (with the current DB snapshot) does NOT flag.
-    # Both have patch-bump fixes (no API breakage) but bumping them is a
-    # dependency-version change that is out of scope for the #2699 gate-only
-    # change ("do not change dependency versions"). TODO: drop these two
-    # ignores and run `cargo update -p rand -p anyhow` once a dedicated dep
-    # refresh is scheduled.
-    #   - rand 0.8.5 (RUSTSEC-2026-0097): unsound ThreadRng reseeding under a
-    #     custom logger. Fix: >=0.8.6 / 0.9.3 / 0.10.1.
-    #   - anyhow 1.0.102 (RUSTSEC-2026-0190): unsound Error::downcast_mut.
-    #     Fix: >=1.0.103.
-    "RUSTSEC-2026-0097",
-    "RUSTSEC-2026-0190",
+    # RUSTSEC-2026-0097 (rand) and RUSTSEC-2026-0190 (anyhow) were REMOVED in
+    # #2681: both unsound advisories are patch-fixed in Cargo.lock (anyhow
+    # 1.0.104, rand 0.8.7 + 0.9.5) via `cargo update -p anyhow -p rand@*`.
+    # Do not re-add ignores for advisories that a routine `cargo update` clears.
 ]
 
 # -----------------------------------------------------------------------------
