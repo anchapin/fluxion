@@ -159,14 +159,14 @@ All requirements mapped to phases and validated through automated tests. **Howev
 | Multi-reference JSON architecture | Easy updates without code changes | ✅ Remote fetching implemented |
 | Modular surrogates | Separate component models for flexibility | ✅ Architecture supports future additions |
 | CLI subcommands for research | Expose advanced tools directly | ✅ sensitivity, delta, viz all accessible |
-| Known limitations documentation | Transparent about gaps | ✅ Comprehensive KNOWN_LIMITATIONS.md |
+| Known limitations documentation | Transparent about gaps | ✅ Comprehensive KNOWN_ISSUES.md |
 
 ### What Worked
 
 - **Sequential physics domains** (foundation → mass → solar → multi-zone) ensured each layer was solid before adding complexity
 - **Comprehensive test scaffolding** (45+ test functions for inter-zone physics) caught edge cases early
 - **Automated validation reporting** kept progress visible and guided debugging
-- **Gap documentation** (KNOWN_LIMITATIONS.md) allowed honest assessment without blocking release
+- **Gap documentation** (KNOWN_ISSUES.md) allowed honest assessment without blocking release
 
 ### What Was Inefficient
 
@@ -181,7 +181,7 @@ All requirements mapped to phases and validated through automated tests. **Howev
 - Analysis modules: `src/analysis/` (sensitivity, delta, components, swing)
 - CLI framework: 7 subcommands with common output formatting
 - Test data: `docs/ashrae_140_references.json` (multi-reference database)
-- Documentation templates: `KNOWN_LIMITATIONS.md`, `ASHRAE140_RESULTS.md`
+- Documentation templates: `KNOWN_ISSUES.md`, `ASHRAE140_RESULTS.md`
 
 ---
 

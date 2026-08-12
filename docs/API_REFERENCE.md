@@ -585,7 +585,7 @@ print(f"Results: {results}")
 - **Parameter Vector Semantics:** See `CLAUDE.md` for detailed parameter semantics and design variable definitions
 - **Architecture Details:** See `docs/ARCHITECTURE.md` for BatchOracle pattern and thermal network structure
 - **Testing Guidelines:** See `docs/CONTRIBUTING.md` for testing strategies and validation approaches
-- **Known Limitations:** See `docs/KNOWN_LIMITATIONS.md` for 5R1C model limitations and accuracy constraints
+- **Known Limitations:** See `docs/KNOWN_ISSUES.md` for 5R1C model limitations and accuracy constraints
 
 ---
 
