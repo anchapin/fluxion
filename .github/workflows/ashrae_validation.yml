@@ -168,7 +168,12 @@ jobs:
           brew install pkg-config nasm
 
       - name: Install Rust
-        uses: dtolnay/rust-toolchain@4cda84d5c5c54efe2404f9d843567869ab1699d4  # stable
+        uses: nick-fields/retry@ad984534de44a9489a53aefd81eb77f87c70dc60  # v4.0.0
+        with:
+          max_attempts: 3
+          timeout_minutes: 10
+          retry_wait_seconds: 15
+          command: rustup toolchain install stable --profile default
 
       - name: Cache cargo dependencies
         uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830  # v4
@@ -375,7 +380,12 @@ jobs:
           sudo apt-get install -y libssl-dev pkg-config libfontconfig1-dev
 
       - name: Install Rust
-        uses: dtolnay/rust-toolchain@4cda84d5c5c54efe2404f9d843567869ab1699d4  # stable
+        uses: nick-fields/retry@ad984534de44a9489a53aefd81eb77f87c70dc60  # v4.0.0
+        with:
+          max_attempts: 3
+          timeout_minutes: 10
+          retry_wait_seconds: 15
+          command: rustup toolchain install stable --profile default
 
       - name: Cache cargo dependencies
         uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830  # v4
@@ -597,7 +607,12 @@ jobs:
           sudo apt-get install -y libssl-dev pkg-config libfontconfig1-dev
 
       - name: Install Rust
-        uses: dtolnay/rust-toolchain@4cda84d5c5c54efe2404f9d843567869ab1699d4  # stable
+        uses: nick-fields/retry@ad984534de44a9489a53aefd81eb77f87c70dc60  # v4.0.0
+        with:
+          max_attempts: 3
+          timeout_minutes: 10
+          retry_wait_seconds: 15
+          command: rustup toolchain install stable --profile default
 
       - name: Cache cargo dependencies
         uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830  # v4
@@ -635,7 +650,12 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y libssl-dev pkg-config libfontconfig1-dev
       - name: Install Rust
-        uses: dtolnay/rust-toolchain@4cda84d5c5c54efe2404f9d843567869ab1699d4  # stable
+        uses: nick-fields/retry@ad984534de44a9489a53aefd81eb77f87c70dc60  # v4.0.0
+        with:
+          max_attempts: 3
+          timeout_minutes: 10
+          retry_wait_seconds: 15
+          command: rustup toolchain install stable --profile default
       - name: Cache cargo dependencies
         uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830  # v4
         with:
@@ -661,7 +681,12 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y libssl-dev pkg-config libfontconfig1-dev
       - name: Install Rust
-        uses: dtolnay/rust-toolchain@4cda84d5c5c54efe2404f9d843567869ab1699d4  # stable
+        uses: nick-fields/retry@ad984534de44a9489a53aefd81eb77f87c70dc60  # v4.0.0
+        with:
+          max_attempts: 3
+          timeout_minutes: 10
+          retry_wait_seconds: 15
+          command: rustup toolchain install stable --profile default
       - name: Cache cargo dependencies
         uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830  # v4
         with:
@@ -687,7 +712,12 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y libssl-dev pkg-config libfontconfig1-dev
       - name: Install Rust
-        uses: dtolnay/rust-toolchain@4cda84d5c5c54efe2404f9d843567869ab1699d4  # stable
+        uses: nick-fields/retry@ad984534de44a9489a53aefd81eb77f87c70dc60  # v4.0.0
+        with:
+          max_attempts: 3
+          timeout_minutes: 10
+          retry_wait_seconds: 15
+          command: rustup toolchain install stable --profile default
       - name: Cache cargo dependencies
         uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830  # v4
         with:
@@ -713,7 +743,12 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y libssl-dev pkg-config libfontconfig1-dev
       - name: Install Rust
-        uses: dtolnay/rust-toolchain@4cda84d5c5c54efe2404f9d843567869ab1699d4  # stable
+        uses: nick-fields/retry@ad984534de44a9489a53aefd81eb77f87c70dc60  # v4.0.0
+        with:
+          max_attempts: 3
+          timeout_minutes: 10
+          retry_wait_seconds: 15
+          command: rustup toolchain install stable --profile default
       - name: Cache cargo dependencies
         uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830  # v4
         with:
@@ -739,7 +774,12 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y libssl-dev pkg-config libfontconfig1-dev
       - name: Install Rust
-        uses: dtolnay/rust-toolchain@4cda84d5c5c54efe2404f9d843567869ab1699d4  # stable
+        uses: nick-fields/retry@ad984534de44a9489a53aefd81eb77f87c70dc60  # v4.0.0
+        with:
+          max_attempts: 3
+          timeout_minutes: 10
+          retry_wait_seconds: 15
+          command: rustup toolchain install stable --profile default
       - name: Cache cargo dependencies
         uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830  # v4
         with:
@@ -769,7 +809,12 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y libssl-dev pkg-config libfontconfig1-dev python3
       - name: Install Rust
-        uses: dtolnay/rust-toolchain@4cda84d5c5c54efe2404f9d843567869ab1699d4  # stable
+        uses: nick-fields/retry@ad984534de44a9489a53aefd81eb77f87c70dc60  # v4.0.0
+        with:
+          max_attempts: 3
+          timeout_minutes: 10
+          retry_wait_seconds: 15
+          command: rustup toolchain install stable --profile default
       - name: Cache cargo dependencies
         uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830  # v4
         with:
@@ -795,7 +840,12 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y libssl-dev pkg-config libfontconfig1-dev python3
       - name: Install Rust
-        uses: dtolnay/rust-toolchain@4cda84d5c5c54efe2404f9d843567869ab1699d4  # stable
+        uses: nick-fields/retry@ad984534de44a9489a53aefd81eb77f87c70dc60  # v4.0.0
+        with:
+          max_attempts: 3
+          timeout_minutes: 10
+          retry_wait_seconds: 15
+          command: rustup toolchain install stable --profile default
       - name: Cache cargo dependencies
         uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830  # v4
         with:

@@ -121,7 +121,12 @@ jobs:
 
       - name: Install Rust
         if: steps.ram-check.outputs.skip != 'true'
-        uses: dtolnay/rust-toolchain@4cda84d5c5c54efe2404f9d843567869ab1699d4  # stable
+        uses: nick-fields/retry@ad984534de44a9489a53aefd81eb77f87c70dc60  # v4.0.0
+        with:
+          max_attempts: 3
+          timeout_minutes: 10
+          retry_wait_seconds: 15
+          command: rustup toolchain install stable --profile default
 
       - name: Install cargo-mutants
         if: steps.ram-check.outputs.skip != 'true'
