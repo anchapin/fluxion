@@ -446,11 +446,18 @@ fn categorize_failures(
 // ─────────────────────────────────────────────────────────────────────────────
 // Monthly energy validation (issue #1165)
 // ─────────────────────────────────────────────────────────────────────────────
-// The dependent gate `test_monthly_energy_validation_baseline` is `#[ignore]`'d
-// (#2677, v1.3 DoD blocker) because the monthly reference is a PLACEHOLDER
-// degree-day-derived value — not direct EnergyPlus monthly output. The
-// infrastructure here is kept runnable via `--ignored` for local diagnostics;
-// see tests/reference_data/ashrae140/monthly/README.md.
+// The dependent gate `test_monthly_energy_validation_baseline` was `#[ignore]`'d
+// in #2677 (v1.3 DoD blocker) because the monthly reference was labeled
+// PLACEHOLDER. In #2748 the reference was recast as the **v1.3 documented-shape
+// reference** (authoritative annual midpoint redistributed by degree-day share
+// of the repo's own hourly Denver TMY3 weather, per ASHRAE Fundamentals Ch. 19)
+// — see tests/reference_data/ashrae140/monthly/README.md §STATUS. The test is
+// now runnable in CI (no longer `#[ignore]`'d) and reports the monthly pass/fail
+// rate against the documented-shape reference. The test is **reporting-only**
+// (no assert) because the engine cooling under-prediction
+// (docs/KNOWN_ISSUES.md §SOLAR-02 UPDATE / Issue #2239) means the pass rate
+// will be low until the cooling physics is fixed; once Issue #2239 closes,
+// harden the test to assert a Phase D pass-rate target.
 
 /// Parsed monthly reference band for one case (heating + cooling, Jan..Dec).
 struct MonthlyReference {
@@ -755,29 +762,33 @@ fn test_blind_validation_baseline() {
 /// panic on physics failure — the underlying fixes are tracked in #1163 and
 /// #1168.
 ///
-/// **`#[ignore]`'d in #2677 (v1.3 DoD blocker):** the monthly reference CSVs at
-/// `tests/reference_data/ashrae140/monthly/case_{600,900}_monthly_reference.csv`
-/// are PLACEHOLDER values — a degree-day-derived *shape* applied to the
-/// authoritative annual midpoint, **not** direct EnergyPlus monthly outputs.
-/// ASHRAE 140-2023 Annex B publishes only annual + peak figures (no monthly
-/// breakdown), and no hourly EnergyPlus CSV exists in-repo for Cases 600/900
-/// (the Case 900 IDF is "pending" per `case_900_energy_reference.csv`; the
-/// `generate_case_600_900_energy.py` regenerator has not been run). Running
-/// this test against the placeholder would report a monthly pass/fail rate
-/// against fabricated data — i.e. false confidence (the v1.3 DoD blocker
-/// called out in issue #2677). The test is kept runnable via
-/// `--ignored` so the measurement infrastructure can still be exercised
-/// locally for diagnostic purposes; the gate is inert in CI until the
-/// placeholder is replaced with direct EnergyPlus monthly totals.
+/// **Issue #2748 — gate is no longer `#[ignore]`'d:** the monthly reference CSVs
+/// at `tests/reference_data/ashrae140/monthly/case_{600,900}_monthly_reference.csv`
+/// were recast as the **v1.3 documented-shape reference** (authoritative
+/// annual midpoint redistributed by degree-day share of the repo's own hourly
+/// Denver TMY3 weather, per ASHRAE Fundamentals Ch. 19 — see
+/// `tests/reference_data/ashrae140/monthly/README.md` §STATUS). The test now
+/// runs in CI and prints the monthly pass/fail rate against that reference.
+/// It is **reporting-only** (no assert) because the engine's cooling
+/// under-prediction (per `docs/KNOWN_ISSUES.md` §SOLAR-02 UPDATE / Issue
+/// #2239) means the pass rate will be low until the cooling physics is
+/// fixed; once Issue #2239 closes, this test can be hardened to assert a
+/// Phase D pass-rate target.
+///
+/// Historical: the test was originally `#[ignore]`'d in #2677 because the
+/// reference was labelled PLACEHOLDER (a degree-day-derived shape against
+/// the authoritative annual midpoint — *not* direct EnergyPlus monthly
+/// output). #2748's investigation found that no direct-E+-output path is
+/// achievable today (the in-repo Case 600/900 IDFs produce cooling ~50× / 5×
+/// below the ASHRAE band; ASHRAE 140-2023 Annex B publishes only annual +
+/// peak; the IEA SHC Task 12 / BESTEST report has monthly figures as plots
+/// only). The v1.3 documented-shape reference is the only path that does
+/// not require either new E+ physics work or a new published monthly source.
 #[test]
-#[ignore = "Blind-validation monthly reference data is PLACEHOLDER (#2677, v1.3 DoD blocker) — \
-            not direct EnergyPlus output. Run with --ignored for diagnostic against the \
-            interim degree-day-derived reference. See \
-            tests/reference_data/ashrae140/monthly/README.md."]
 fn test_monthly_energy_validation_baseline() {
     println!("\nStarting ASHRAE 140 Monthly Energy Validation (issue #1165)");
     println!("Phase D criterion: each month within ±10% of reference midpoint.");
-    println!("Reporting-only — physics not expected to pass yet (#1163, #1168).\n");
+    println!("Reporting-only — physics not expected to pass yet (#1163, #1168, #2239).\n");
 
     let (results, passed, total, pass_rate, mae) = run_monthly_validation();
 
@@ -802,10 +813,13 @@ fn test_monthly_energy_validation_baseline() {
     println!("Monthly pass rate: {:.2}%", pass_rate);
     println!("Monthly Mean Absolute Error: {:.2}%", mae);
     println!();
-    println!("Reference = INTERIM degree-day-derived values (not direct E+ output).");
-    println!("Phase D acceptance requires: (1) replace interim reference with direct");
-    println!("EnergyPlus monthly totals, (2) monthly pass rate ≥ target once physics");
-    println!("fixes #1163/#1168 land. See BLIND_VALIDATION_RESULTS.md.");
+    println!("Reference = v1.3 documented-shape values (degree-day redistribution of the");
+    println!("authoritative annual midpoint, ASHRAE Fundamentals Ch. 19 — see");
+    println!("tests/reference_data/ashrae140/monthly/README.md §STATUS).");
+    println!("Phase D acceptance requires: (1) replace v1.3 reference with direct E+");
+    println!("monthly totals once the IDF physics matches the ASHRAE band (Issue #2239),");
+    println!("(2) monthly pass rate ≥ target once physics fixes #1163/#1168/#2239 land.");
+    println!("See BLIND_VALIDATION_RESULTS.md.");
     println!("====================================================================================================");
 
     // Intentionally no assert: this is reporting infrastructure. The build must
