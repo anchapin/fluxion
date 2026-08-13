@@ -96,49 +96,65 @@ impl NineR4CConfigInit {
         let wall_cap = self.wall.as_ref().map(|n| n.capacitance).unwrap_or(5e6);
         let wall_h_tr_ms = self.wall.as_ref().map(|n| n.h_tr_ms).unwrap_or(50.0);
         let wall_h_tr_em = self.wall.as_ref().map(|n| n.h_tr_em).unwrap_or(20.0);
-        let wall_h_tr_me = resolve_node(self.wall.clone(), MassNode {
-            temperature: wall_temp,
-            capacitance: wall_cap,
-            h_tr_ms: wall_h_tr_ms,
-            h_tr_em: wall_h_tr_em,
-            h_tr_me: Some(0.0),
-        });
+        let wall_h_tr_me = resolve_node(
+            self.wall.clone(),
+            MassNode {
+                temperature: wall_temp,
+                capacitance: wall_cap,
+                h_tr_ms: wall_h_tr_ms,
+                h_tr_em: wall_h_tr_em,
+                h_tr_me: Some(0.0),
+            },
+        );
 
         let roof_temp = self.roof.as_ref().map(|n| n.temperature).unwrap_or(20.0);
         let roof_cap = self.roof.as_ref().map(|n| n.capacitance).unwrap_or(3e6);
         let roof_h_tr_ms = self.roof.as_ref().map(|n| n.h_tr_ms).unwrap_or(30.0);
         let roof_h_tr_em = self.roof.as_ref().map(|n| n.h_tr_em).unwrap_or(15.0);
-        let roof_h_tr_me = resolve_node(self.roof.clone(), MassNode {
-            temperature: roof_temp,
-            capacitance: roof_cap,
-            h_tr_ms: roof_h_tr_ms,
-            h_tr_em: roof_h_tr_em,
-            h_tr_me: Some(0.0),
-        });
+        let roof_h_tr_me = resolve_node(
+            self.roof.clone(),
+            MassNode {
+                temperature: roof_temp,
+                capacitance: roof_cap,
+                h_tr_ms: roof_h_tr_ms,
+                h_tr_em: roof_h_tr_em,
+                h_tr_me: Some(0.0),
+            },
+        );
 
         let floor_temp = self.floor.as_ref().map(|n| n.temperature).unwrap_or(20.0);
         let floor_cap = self.floor.as_ref().map(|n| n.capacitance).unwrap_or(2e6);
         let floor_h_tr_ms = self.floor.as_ref().map(|n| n.h_tr_ms).unwrap_or(20.0);
         let floor_h_tr_em = self.floor.as_ref().map(|n| n.h_tr_em).unwrap_or(10.0);
-        let floor_h_tr_me = resolve_node(self.floor.clone(), MassNode {
-            temperature: floor_temp,
-            capacitance: floor_cap,
-            h_tr_ms: floor_h_tr_ms,
-            h_tr_em: floor_h_tr_em,
-            h_tr_me: Some(0.0),
-        });
+        let floor_h_tr_me = resolve_node(
+            self.floor.clone(),
+            MassNode {
+                temperature: floor_temp,
+                capacitance: floor_cap,
+                h_tr_ms: floor_h_tr_ms,
+                h_tr_em: floor_h_tr_em,
+                h_tr_me: Some(0.0),
+            },
+        );
 
-        let internal_temp = self.internal.as_ref().map(|n| n.temperature).unwrap_or(20.0);
+        let internal_temp = self
+            .internal
+            .as_ref()
+            .map(|n| n.temperature)
+            .unwrap_or(20.0);
         let internal_cap = self.internal.as_ref().map(|n| n.capacitance).unwrap_or(1e6);
         let internal_h_tr_ms = self.internal.as_ref().map(|n| n.h_tr_ms).unwrap_or(0.0);
         let internal_h_tr_em = self.internal.as_ref().map(|n| n.h_tr_em).unwrap_or(0.0);
-        let internal_h_tr_me = resolve_node(self.internal.clone(), MassNode {
-            temperature: internal_temp,
-            capacitance: internal_cap,
-            h_tr_ms: internal_h_tr_ms,
-            h_tr_em: internal_h_tr_em,
-            h_tr_me: Some(100.0),
-        });
+        let internal_h_tr_me = resolve_node(
+            self.internal.clone(),
+            MassNode {
+                temperature: internal_temp,
+                capacitance: internal_cap,
+                h_tr_ms: internal_h_tr_ms,
+                h_tr_em: internal_h_tr_em,
+                h_tr_me: Some(100.0),
+            },
+        );
 
         let coupling = match self.coupling_mode.as_deref() {
             Some("parallel_resistance") => MassAirCouplingMode::ParallelResistance,
@@ -274,8 +290,14 @@ impl NineR4CConfig {
             internal
         };
 
-        let mut solver =
-            MultiNodeSolver::new_with_mode(resolved.h_tr_is, wall, roof, floor, internal, resolved.coupling);
+        let mut solver = MultiNodeSolver::new_with_mode(
+            resolved.h_tr_is,
+            wall,
+            roof,
+            floor,
+            internal,
+            resolved.coupling,
+        );
         solver.zone_temperature = resolved.zone_temperature;
         solver.surface_temperature = resolved.surface_temperature;
         solver.exterior_temperature = resolved.exterior_temperature;
