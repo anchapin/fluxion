@@ -264,7 +264,7 @@ append-only ledger at `scripts/cycle_baseline_history.json`:
 |------|-------|------------|
 | **R1** (no growth)         | per-PR + nightly | `current_total > last_total` |
 | **R2** (downward progress) | nightly only     | last `STALE_THRESHOLD_NIGHTS` (=14) snapshots all have the same total |
-| **R3** (no net-flat swap)  | per-PR + nightly | `current_total == last_total` but the sorted multiset of `(file, lineno, scanned-line)` tuples changed (sha256 differs) |
+| **R3** (no net-flat swap)  | per-PR + nightly | `current_total == last_total` but the sorted multiset of `(file, scanned-line)` identity tuples changed (sha256 differs). The identity **excludes `lineno`** (Issue #2810) so a refactor that only inserts code above an unchanged edge does not trip R3; `lineno` stays in the raw offender string for the report |
 
 The per-PR job (`Cycle Downward Trend Guard (Issue #2768)` in
 `.github/workflows/rust-tests.yml`) runs R1 + R3 on every PR and main
@@ -273,9 +273,11 @@ push. The nightly job (`Cycle Downward Trend Guard (nightly, Issue #2768)`,
 PRs so an ordinary PR that doesn't touch the cycle still merges; the
 nightly cron is what drives the architecture toward zero.
 
-The ledger's `edge_signature` field is the sha256 of the sorted offender
-strings, so any change to the *set* of edges — even one that nets the
-total to flat — is caught by R3.
+The ledger's `edge_signature` field is the sha256 of the sorted, lineno-stripped
+offender identities (`file: text`, per Issue #2810), so any change to the *set*
+of edges — even one that nets the total to flat — is caught by R3, while a pure
+line-shift refactor (insertion above an unchanged edge) leaves the signature
+stable.
 
 **Reset policy.** The ledger is append-only. The only authorised way to
 extend it with a *higher* total is an architectural sign-off commit that

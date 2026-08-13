@@ -32,8 +32,13 @@ enforces three directional rules:
   nightly cron job to avoid blocking ordinary PRs that do not touch the
   cycle.
 * **R3 (no net-flat edge swap)**: ``current_total == last_total`` but the
-  sorted multiset of ``(file, lineno, scanned-line)`` tuples has changed
-  -> FAIL. Catches the swap path the magnitude gate cannot see.
+  sorted multiset of ``(file, scanned-line)`` identity tuples has changed
+  -> FAIL. Catches the swap path the magnitude gate cannot see. The
+  identity tuple deliberately **excludes ``lineno``** (Issue #2810): a
+  refactor that only inserts code *above* an unchanged cycle edge shifts
+  its line number without altering the edge, and must not trip R3. The
+  raw offender string (``file:line: text``) still carries ``lineno`` for
+  the human-readable report; only the sha256 signature drops it.
 
 Usage:
   python3 scripts/check_cycle_downward_trend.py             # per-PR (R1 + R3)
@@ -60,6 +65,7 @@ import argparse
 import hashlib
 import importlib.util
 import json
+import re
 import subprocess
 import sys
 from datetime import datetime, timezone
@@ -82,6 +88,54 @@ BUCKETS = (
     "physics_to_sim",
     "sim_to_physics",
 )
+
+
+# Issue #2810: offender strings produced by the scan primitives are formatted
+# ``file:line: text`` (see ``check_ashrae_cases_cycle.py`` /
+# ``check_physics_sim_cycle.py``). The leading ``file`` component is a POSIX
+# relative path (no colons on this repo's platforms), so the line number is
+# always the sole all-digits field between the first colon and the ``: ``
+# separator that precedes the scanned-line content.
+_OFFENDER_LINENO_RE = re.compile(r"^([^:]+):(\d+): (.*)$")
+
+
+def _signature_identity(offender: str) -> str:
+    """Return the lineno-independent identity of a cycle offender.
+
+    The scan primitives report each edge as ``file:line: text``. For the R3
+    signature we collapse that to ``file: text`` so a pure line-shift
+    refactor -- inserting code *above* an unchanged cycle edge -- does not
+    alter the signature (Issue #2810). A *genuine* edge swap changes the
+    scanned-line content (or the file), so the multiset of identities still
+    differs and R3 still fires.
+
+    ``lineno`` is preserved in the raw offender string the scan primitives
+    return; it remains available to the human-readable report for debugging.
+    It is intentionally NOT part of the signature.
+    """
+    m = _OFFENDER_LINENO_RE.match(offender)
+    if m:
+        return f"{m.group(1)}: {m.group(3)}"
+    # Unrecognised shape (defensive): fall back to the raw string so the
+    # signature is still deterministic rather than dropping the offender.
+    return offender
+
+
+def _compute_signature(offenders_by_bucket: dict[str, list[str]]) -> str:
+    """sha256 over the sorted multiset of lineno-stripped offender identities.
+
+    Sorted so the hash is independent of scan/bucket iteration order, and
+    identity-stripped so it is invariant to benign line-number drift (see
+    :func:`_signature_identity`). The hash still changes when the *set* of
+    edges changes -- even one that nets the total to flat -- which is exactly
+    what R3 must detect.
+    """
+    flat = sorted(
+        _signature_identity(off)
+        for parts in offenders_by_bucket.values()
+        for off in parts
+    )
+    return hashlib.sha256("\n".join(flat).encode("utf-8")).hexdigest()
 
 
 def _load_module(name: str, path: Path) -> Any:
@@ -123,10 +177,14 @@ def collect_current_edges(acc: Any, psc: Any) -> dict[str, Any]:
     Returns a dict with:
       ``totals``    -- {bucket: count} for each label in ``BUCKETS``.
       ``total``     -- sum of ``totals.values()``.
-      ``signature`` -- sha256 over the sorted offender strings
-                       (``file:line: text``), so any change to the set of
-                       edges -- even one that nets the total to flat -- is
-                       detected by R3.
+      ``signature`` -- sha256 over the sorted multiset of lineno-stripped
+                       offender identities (``file: text``), so a pure
+                       line-shift refactor does not change the hash while a
+                       genuine net-flat edge swap still does (Issue #2810).
+      ``offenders`` -- the raw ``file:line: text`` strings keyed by bucket,
+                       kept for the human-readable report (``lineno`` is
+                       preserved here for debugging and deliberately excluded
+                       from ``signature``).
     """
     offenders: dict[str, list[str]] = {
         "sim_to_validation": acc.scan_sim_for_validation_deps(),
@@ -138,9 +196,13 @@ def collect_current_edges(acc: Any, psc: Any) -> dict[str, Any]:
     }
     totals = {k: len(v) for k, v in offenders.items()}
     total = sum(totals.values())
-    flat = sorted(off for parts in offenders.values() for off in parts)
-    signature = hashlib.sha256("\n".join(flat).encode("utf-8")).hexdigest()
-    return {"totals": totals, "total": total, "signature": signature}
+    signature = _compute_signature(offenders)
+    return {
+        "totals": totals,
+        "total": total,
+        "signature": signature,
+        "offenders": offenders,
+    }
 
 
 def load_history(path: Path = HISTORY_FILE) -> dict[str, Any]:
@@ -300,9 +362,18 @@ def append_snapshot(
     current: dict[str, Any],
     commit: str | None,
     source: str,
+    reason: str | None = None,
 ) -> dict[str, Any]:
-    """Append a snapshot to the ledger in-place; return ``history``."""
-    snap = {
+    """Append a snapshot to the ledger in-place; return ``history``.
+
+    ``reason`` is an optional human-readable justification for the snapshot
+    (e.g. a line-shift re-baseline). When provided it is stored as the
+    snapshot's ``reason`` field -- matching the convention of prior
+    re-baseline entries -- so a future reader can tell a genuine re-scan
+    from a papered-over regression. Omitted when ``None`` for backward
+    compatibility with callers that predate the field.
+    """
+    snap: dict[str, Any] = {
         "timestamp": datetime.now(timezone.utc).isoformat(timespec="seconds"),
         "commit": commit or "unknown",
         "source": source,
@@ -310,6 +381,8 @@ def append_snapshot(
         "total": current["total"],
         "edge_signature": current["signature"],
     }
+    if reason:
+        snap["reason"] = reason
     history.setdefault("snapshots", []).append(snap)
     return history
 
@@ -365,6 +438,13 @@ def main(argv: list[str] | None = None) -> int:
         help="label recorded in the snapshot's `source` field when using "
         "--update (default: manual-update)",
     )
+    parser.add_argument(
+        "--reason",
+        default=None,
+        help="optional human-readable justification recorded in the snapshot's "
+        "`reason` field when using --update (e.g. a re-baseline rationale); "
+        "omitted from the snapshot when not provided",
+    )
     args = parser.parse_args(argv)
 
     print(
@@ -406,7 +486,7 @@ def main(argv: list[str] | None = None) -> int:
     if args.update:
         sha = _git_commit_sha()
         before = len(history.get("snapshots", []))
-        append_snapshot(history, current, sha, source=args.source)
+        append_snapshot(history, current, sha, source=args.source, reason=args.reason)
         save_history(history, args.history)
         try:
             rel = args.history.relative_to(REPO_ROOT)

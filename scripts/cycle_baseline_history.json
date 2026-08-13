@@ -86,6 +86,22 @@
       },
       "total": 299,
       "edge_signature": "acf0249e6decb3f9f2bdc96f01bc070370a40d84b45ab5ebc12db28971a8b749"
+    },
+    {
+      "timestamp": "2026-08-13T07:29:08+00:00",
+      "commit": "345aa00",
+      "source": "post-orchestration-2026-08-13",
+      "totals": {
+        "sim_to_validation": 72,
+        "validation_to_sim": 58,
+        "validation_to_physics": 62,
+        "validation_to_weather": 23,
+        "physics_to_sim": 0,
+        "sim_to_physics": 84
+      },
+      "total": 299,
+      "edge_signature": "9cb0744c1b6d1810379a0e0ee5e4ed4210a50715ad4a51634da3164106c37922",
+      "reason": "Post-orchestration refactor wave (PRs #2798-#2804) shifted line numbers in cycle-edge files (e.g. PR #2798 added the TLS trusted-proxy gate above pre-existing crate::validation::ashrae_140_cases::Orientation references) without adding or removing any cycle edge: total holds at 299 and a content-only offender diff (file + scanned line, ignoring lineno) is empty across all six buckets. This snapshot is also the first recorded under the Issue #2810 lineno-independent signature scheme, so the signature reflects the lineno-stripped edge set and will no longer drift on benign line-shift refactors."
     }
   ]
 }
