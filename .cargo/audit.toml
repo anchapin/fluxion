@@ -38,8 +38,24 @@
 # the gap — surface and track the advisory instead.
 # Ignore advisories for pinned/transitive dependencies that can't be easily bumped
 ignore = [
-    "RUSTSEC-2025-0020",
-    # PyO3 Sync bound issue on PyCFunction::new_closure — requires 0.23+ which has breaking API changes
+    # RUSTSEC-2025-0020 (pyo3 < 0.24.1, PyString buffer overflow) was REMOVED
+    # in #2749: the PyO3 0.22 -> 0.29 migration in #2585 moved pyo3 outside the
+    # affected range (< 0.24.1); cargo audit now verifies the fix on every PR.
+    #
+    # The two entries below are transitive `unmaintained` advisories. They are
+    # deliberately NOT mirrored in `deny.toml` (#2749): cargo-deny scopes
+    # unmaintained to workspace members (`unmaintained = "workspace"`) and
+    # would only emit `advisory-not-detected` noise for them, whereas
+    # cargo-audit (run with `--deny warnings`) enforces transitive unmaintained
+    # too. Removing them HERE would re-introduce two unmaintained failures on
+    # the cargo-audit gate (currently only RUSTSEC-2025-0134 is expected to
+    # fail -- tracked by #2797).
+    #
+    # `paste` is unmaintained; transitive via gemm (linear-algebra path:
+    # gemm <- faer/simba/nalgebra <- fluxion/statrs). No security vulnerability:
+    # rustsec type is `unmaintained`, no patched versions exist. Drop this
+    # ignore once the upstream chain migrates off paste (e.g. gemm/ndarray
+    # adopt `pastey` or drop the proc-macro dependency).
     "RUSTSEC-2024-0436",
     # RUSTSEC-2026-0177 (PyCFunction::new_closure missing Sync bound) REMEDIATED
     # in #2585 by migrating PyO3 0.22 → 0.29. pyo3 0.29.0+ includes the Sync
