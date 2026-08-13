@@ -250,6 +250,16 @@ impl PyMultiZoneThermalModel {
         // per-call energy (10429 → 20861 → 31294 …), breaking determinism.
         // Reset first so the trackers reflect only THIS call's energy.
         self.inner.reset_heating_cooling_energy();
+        // Issue #2826 follow-up: also reset transient state (zone air, mass,
+        // surface, and air-node ODE state). Without this reset, the second
+        // call starts from the first call's end-state, so `simulate_multi_zone`
+        // is non-deterministic across calls (the first call is a warm-up from
+        // constructor defaults; subsequent calls reach steady state from a
+        // different initial condition). This also caused the multi-zone
+        // fixture's per-test state to leak — `test_cooling_setpoint_decrease_raises_energy`
+        // saw baseline energy figures inflated by warm-up heat stored in the
+        // mass from earlier tests' heating branch.
+        self.inner.reset_state();
 
         // Issue #2806 / #2747: pass an empty lighting schedule so the solver
         // does NOT auto-load the bundled Office building profile (which would

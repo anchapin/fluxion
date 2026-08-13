@@ -1989,6 +1989,14 @@ impl Model {
             );
             let steps = years as usize * 8760;
             debug!("Simulation will process {} timesteps", steps);
+            // Issue #2826 follow-up: reset transient state so the simulation
+            // starts from constructor defaults. Without this, sequential
+            // `simulate` calls on the same instance are non-deterministic
+            // (the second call inherits the first call's end-state). Also
+            // resets `reset_heating_cooling_energy` so the returned EUI
+            // reflects only this call (Issue #2806).
+            self.inner.reset_state();
+            self.inner.reset_heating_cooling_energy();
             // Issue #2806 / #2747: pass an empty lighting schedule so the
             // solver does NOT auto-load the bundled Office building profile
             // (solver_core.rs auto-loads when lighting/equipment/occupancy are
