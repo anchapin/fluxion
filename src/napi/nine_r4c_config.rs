@@ -10,6 +10,148 @@
 use crate::physics::multi_node_solver::{MultiNodeSolver, SurfaceExteriorTemperatures};
 use fluxion_core::multi_node::{MassAirCouplingMode, ThermalMassNode};
 
+/// Plain-data view of a single thermal mass node (wall/roof/floor/internal).
+///
+/// Exposed to JavaScript as an object with named properties so the npm test
+/// suite can read `config.wall.temperature`, `config.wall.capacitance`, etc.
+#[napi_derive::napi(object)]
+pub struct MassNode {
+    /// Node temperature [°C].
+    pub temperature: f64,
+    /// Node thermal capacitance [J/K].
+    pub capacitance: f64,
+    /// Surface-to-mass conductance [W/K].
+    #[napi(js_name = "hTrMs")]
+    pub h_tr_ms: f64,
+    /// Exterior-to-mass conductance [W/K].
+    #[napi(js_name = "hTrEm")]
+    pub h_tr_em: f64,
+    /// Mass-to-envelope conductance [W/K].
+    #[napi(js_name = "hTrMe")]
+    pub h_tr_me: f64,
+}
+
+/// Optional constructor parameters for [`NineR4CConfig`].
+///
+/// All fields default to the canonical 9R4C defaults when `None` or omitted
+/// by the JavaScript caller. Mirrors the structure accepted by the npm test
+/// suite (issue #1796 / #2832).
+#[napi_derive::napi(object)]
+pub struct NineR4CConfigInit {
+    /// Interior surface-to-indoor air conductance [W/K]. Defaults to 10.0.
+    #[napi(js_name = "hTrIs")]
+    pub h_tr_is: Option<f64>,
+    /// Wall mass node. Defaults to `{ temperature: 20.0, capacitance: 5e6,
+    /// hTrMs: 50.0, hTrEm: 20.0, hTrMe: 0.0 }`.
+    pub wall: Option<MassNode>,
+    /// Roof mass node. Defaults to `{ temperature: 20.0, capacitance: 3e6,
+    /// hTrMs: 30.0, hTrEm: 15.0, hTrMe: 0.0 }`.
+    pub roof: Option<MassNode>,
+    /// Floor mass node. Defaults to `{ temperature: 20.0, capacitance: 2e6,
+    /// hTrMs: 20.0, hTrEm: 10.0, hTrMe: 0.0 }`.
+    pub floor: Option<MassNode>,
+    /// Internal mass node. Defaults to `{ temperature: 20.0, capacitance: 1e6,
+    /// hTrMs: 0.0, hTrEm: 0.0, hTrMe: 100.0 }`.
+    pub internal: Option<MassNode>,
+    /// Initial zone air temperature [°C]. Defaults to 20.0.
+    #[napi(js_name = "zoneTemperature")]
+    pub zone_temperature: Option<f64>,
+    /// Initial surface temperature [°C]. Defaults to 20.0.
+    #[napi(js_name = "surfaceTemperature")]
+    pub surface_temperature: Option<f64>,
+    /// Initial exterior air temperature [°C]. Defaults to 10.0.
+    #[napi(js_name = "exteriorTemperature")]
+    pub exterior_temperature: Option<f64>,
+    /// Air-mass coupling mode: `"additive_sum"` (default) or
+    /// `"parallel_resistance"`.
+    #[napi(js_name = "couplingMode")]
+    pub coupling_mode: Option<String>,
+}
+
+impl Default for NineR4CConfigInit {
+    fn default() -> Self {
+        Self {
+            h_tr_is: None,
+            wall: None,
+            roof: None,
+            floor: None,
+            internal: None,
+            zone_temperature: None,
+            surface_temperature: None,
+            exterior_temperature: None,
+            coupling_mode: None,
+        }
+    }
+}
+
+impl NineR4CConfigInit {
+    /// Resolve every `Option` against the canonical 9R4C defaults.
+    fn resolve(self) -> ResolvedNineR4CConfig {
+        fn resolve_node(override_node: Option<MassNode>, default: MassNode) -> MassNode {
+            override_node.unwrap_or(default)
+        }
+
+        let wall = resolve_node(self.wall, MassNode {
+            temperature: 20.0,
+            capacitance: 5e6,
+            h_tr_ms: 50.0,
+            h_tr_em: 20.0,
+            h_tr_me: 0.0,
+        });
+        let roof = resolve_node(self.roof, MassNode {
+            temperature: 20.0,
+            capacitance: 3e6,
+            h_tr_ms: 30.0,
+            h_tr_em: 15.0,
+            h_tr_me: 0.0,
+        });
+        let floor = resolve_node(self.floor, MassNode {
+            temperature: 20.0,
+            capacitance: 2e6,
+            h_tr_ms: 20.0,
+            h_tr_em: 10.0,
+            h_tr_me: 0.0,
+        });
+        let internal = resolve_node(self.internal, MassNode {
+            temperature: 20.0,
+            capacitance: 1e6,
+            h_tr_ms: 0.0,
+            h_tr_em: 0.0,
+            h_tr_me: 100.0,
+        });
+
+        let coupling = match self.coupling_mode.as_deref() {
+            Some("parallel_resistance") => MassAirCouplingMode::ParallelResistance,
+            _ => MassAirCouplingMode::AdditiveSum,
+        };
+
+        ResolvedNineR4CConfig {
+            h_tr_is: self.h_tr_is.unwrap_or(10.0),
+            wall,
+            roof,
+            floor,
+            internal,
+            zone_temperature: self.zone_temperature.unwrap_or(20.0),
+            surface_temperature: self.surface_temperature.unwrap_or(20.0),
+            exterior_temperature: self.exterior_temperature.unwrap_or(10.0),
+            coupling,
+        }
+    }
+}
+
+/// Resolved (no-Option) values for building a [`NineR4CConfig`].
+struct ResolvedNineR4CConfig {
+    h_tr_is: f64,
+    wall: MassNode,
+    roof: MassNode,
+    floor: MassNode,
+    internal: MassNode,
+    zone_temperature: f64,
+    surface_temperature: f64,
+    exterior_temperature: f64,
+    coupling: MassAirCouplingMode,
+}
+
 /// JavaScript-accessible 9R4C thermal solver configuration.
 ///
 /// This class exposes all internal configuration parameters of the 9R4C multi-node
@@ -22,15 +164,70 @@ pub struct NineR4CConfig {
 
 #[napi_derive::napi]
 impl NineR4CConfig {
-    /// Create a NineR4CConfig with default parameters.
+    /// Create a NineR4CConfig with optional parameters.
+    ///
+    /// When `params` is `None` (i.e. `new NineR4CConfig()`) the canonical 9R4C
+    /// defaults are used. The full default set is documented on
+    /// [`NineR4CConfigInit`].
     #[napi(constructor)]
-    pub fn new() -> Self {
-        let wall = ThermalMassNode::new(20.0, 5e6, 50.0, 20.0);
-        let roof = ThermalMassNode::new(20.0, 3e6, 30.0, 15.0);
-        let floor = ThermalMassNode::new(20.0, 2e6, 20.0, 10.0);
-        let internal = ThermalMassNode::new(20.0, 1e6, 0.0, 0.0).with_h_tr_me(100.0);
+    pub fn new(params: Option<NineR4CConfigInit>) -> Self {
+        let resolved = params.unwrap_or_default().resolve();
+        let wall = ThermalMassNode::new(
+            resolved.wall.temperature,
+            resolved.wall.capacitance,
+            resolved.wall.h_tr_ms,
+            resolved.wall.h_tr_em,
+        );
+        let wall = if resolved.wall.h_tr_me > 0.0 {
+            wall.with_h_tr_me(resolved.wall.h_tr_me)
+        } else {
+            wall
+        };
 
-        let solver = MultiNodeSolver::new(10.0, wall, roof, floor, internal);
+        let roof = ThermalMassNode::new(
+            resolved.roof.temperature,
+            resolved.roof.capacitance,
+            resolved.roof.h_tr_ms,
+            resolved.roof.h_tr_em,
+        );
+        let roof = if resolved.roof.h_tr_me > 0.0 {
+            roof.with_h_tr_me(resolved.roof.h_tr_me)
+        } else {
+            roof
+        };
+
+        let floor = ThermalMassNode::new(
+            resolved.floor.temperature,
+            resolved.floor.capacitance,
+            resolved.floor.h_tr_ms,
+            resolved.floor.h_tr_em,
+        );
+        let floor = if resolved.floor.h_tr_me > 0.0 {
+            floor.with_h_tr_me(resolved.floor.h_tr_me)
+        } else {
+            floor
+        };
+
+        let internal = ThermalMassNode::new(
+            resolved.internal.temperature,
+            resolved.internal.capacitance,
+            resolved.internal.h_tr_ms,
+            resolved.internal.h_tr_em,
+        );
+        let internal = if resolved.internal.h_tr_me > 0.0 {
+            internal.with_h_tr_me(resolved.internal.h_tr_me)
+        } else {
+            internal
+        };
+
+        let mut solver =
+            MultiNodeSolver::new_with_mode(resolved.h_tr_is, wall, roof, floor, internal, resolved.coupling);
+        solver.zone_temperature = resolved.zone_temperature;
+        solver.surface_temperature = resolved.surface_temperature;
+        solver.exterior_temperature = resolved.exterior_temperature;
+        solver.exterior_temperatures =
+            SurfaceExteriorTemperatures::uniform(resolved.exterior_temperature);
+
         NineR4CConfig { inner: solver }
     }
 
@@ -303,50 +500,51 @@ impl NineR4CConfig {
     }
 
     // ── Node parameter views ──────────────────────────────────────────
-    // Returns [temperature, capacitance, h_tr_ms, h_tr_em, h_tr_me]
+    // Returns a MassNode object so JavaScript can read `config.wall.temperature`,
+    // `config.wall.hTrMs`, etc. (matches the npm test expectations, issue #1796).
 
     #[napi(getter)]
-    pub fn get_wall(&self) -> Vec<f64> {
-        vec![
-            self.inner.mass.wall.temperature,
-            self.inner.mass.wall.capacitance,
-            self.inner.mass.wall.h_tr_ms,
-            self.inner.mass.wall.h_tr_em,
-            self.inner.mass.wall.h_tr_me,
-        ]
+    pub fn get_wall(&self) -> MassNode {
+        MassNode {
+            temperature: self.inner.mass.wall.temperature,
+            capacitance: self.inner.mass.wall.capacitance,
+            h_tr_ms: self.inner.mass.wall.h_tr_ms,
+            h_tr_em: self.inner.mass.wall.h_tr_em,
+            h_tr_me: self.inner.mass.wall.h_tr_me,
+        }
     }
 
     #[napi(getter)]
-    pub fn get_roof(&self) -> Vec<f64> {
-        vec![
-            self.inner.mass.roof.temperature,
-            self.inner.mass.roof.capacitance,
-            self.inner.mass.roof.h_tr_ms,
-            self.inner.mass.roof.h_tr_em,
-            self.inner.mass.roof.h_tr_me,
-        ]
+    pub fn get_roof(&self) -> MassNode {
+        MassNode {
+            temperature: self.inner.mass.roof.temperature,
+            capacitance: self.inner.mass.roof.capacitance,
+            h_tr_ms: self.inner.mass.roof.h_tr_ms,
+            h_tr_em: self.inner.mass.roof.h_tr_em,
+            h_tr_me: self.inner.mass.roof.h_tr_me,
+        }
     }
 
     #[napi(getter)]
-    pub fn get_floor(&self) -> Vec<f64> {
-        vec![
-            self.inner.mass.floor.temperature,
-            self.inner.mass.floor.capacitance,
-            self.inner.mass.floor.h_tr_ms,
-            self.inner.mass.floor.h_tr_em,
-            self.inner.mass.floor.h_tr_me,
-        ]
+    pub fn get_floor(&self) -> MassNode {
+        MassNode {
+            temperature: self.inner.mass.floor.temperature,
+            capacitance: self.inner.mass.floor.capacitance,
+            h_tr_ms: self.inner.mass.floor.h_tr_ms,
+            h_tr_em: self.inner.mass.floor.h_tr_em,
+            h_tr_me: self.inner.mass.floor.h_tr_me,
+        }
     }
 
     #[napi(getter)]
-    pub fn get_internal(&self) -> Vec<f64> {
-        vec![
-            self.inner.mass.internal.temperature,
-            self.inner.mass.internal.capacitance,
-            self.inner.mass.internal.h_tr_ms,
-            self.inner.mass.internal.h_tr_em,
-            self.inner.mass.internal.h_tr_me,
-        ]
+    pub fn get_internal(&self) -> MassNode {
+        MassNode {
+            temperature: self.inner.mass.internal.temperature,
+            capacitance: self.inner.mass.internal.capacitance,
+            h_tr_ms: self.inner.mass.internal.h_tr_ms,
+            h_tr_em: self.inner.mass.internal.h_tr_em,
+            h_tr_me: self.inner.mass.internal.h_tr_me,
+        }
     }
 
     // ── Simulation methods ────────────────────────────────────────────
