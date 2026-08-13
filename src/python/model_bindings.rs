@@ -1325,6 +1325,167 @@ mod tests {
         assert!(!snap.economizer_enabled);
         assert_eq!(snap.supply_air_temp, 13.0);
     }
+
+    // ========================================================================
+    // populate_default_model_physics (Issue #2806)
+    //
+    // Regression tests mirroring tests/python/test_model_mutations.py at the
+    // Rust level. The Python pytest legs (ubuntu/windows × py 3.10/3.12) surface
+    // `SimulationError: simulation diverged at timestep 0 in zone zone_0` because
+    // ThermalModel::new leaves thermal_capacitance at its 1.0 J/K placeholder.
+    // These tests prove the wiring fix replaces that placeholder with a real
+    // envelope capacitance and that a default-constructed model no longer
+    // diverges on the analytical path (use_surrogates=false).
+    // ========================================================================
+
+    #[test]
+    fn new_leaves_cm_one_placeholder_before_fix() {
+        // Guard: document the root cause we are fixing. ThermalModel::new must
+        // still leave the 1.0 placeholder (we fix the binding wiring, not
+        // ThermalModel::new itself — see issue #2806 / scope note in
+        // populate_default_model_physics). If this ever changes, the regression
+        // below needs revisiting.
+        let raw = ThermalModel::<VectorField>::new(1);
+        assert_eq!(raw.thermal_capacitance[0], 1.0);
+        assert_eq!(raw.air_thermal_capacitance[0], 0.0);
+    }
+
+    #[test]
+    fn populate_default_physics_replaces_cm_placeholder_single_zone() {
+        let mut model = ThermalModel::<VectorField>::new(1);
+        populate_default_model_physics(&mut model);
+
+        let cm = model.thermal_capacitance[0];
+        assert!(
+            cm > 1.0e4,
+            "thermal_capacitance should be a real envelope value (got {cm}), \
+             not the 1.0 J/K placeholder"
+        );
+        // Air-node capacitance C_air = ρ·cp·V > 0 (Issue #1522 option (a)).
+        assert!(model.air_thermal_capacitance[0] > 0.0);
+        // Envelope↔mass and mass↔surface conductances must be coupled
+        // (non-zero) so the mass node never floats free.
+        assert!(model.h_tr_em[0] > 0.0);
+        assert!(model.h_tr_ms[0] > 0.0);
+        assert!(model.h_tr_me[0] > 0.0);
+        // U-values populated from the default construction (not the new()
+        // 0.5/0.5/0.039 placeholders — though they are close, they must be
+        // positive and finite).
+        assert!(model.wall_u_value > 0.0 && model.wall_u_value.is_finite());
+        assert!(model.roof_u_value > 0.0 && model.roof_u_value.is_finite());
+        assert!(model.floor_u_value > 0.0 && model.floor_u_value.is_finite());
+    }
+
+    #[test]
+    fn populate_default_physics_replaces_cm_placeholder_multi_zone() {
+        // Mirror the tests/python/test_model_mutations.py multi_zone_model
+        // fixture: MultiZoneThermalModel(num_zones=3).
+        let mut model = ThermalModel::<VectorField>::new(3);
+        populate_default_model_physics(&mut model);
+        assert_eq!(model.thermal_capacitance.len(), 3);
+        for i in 0..3 {
+            assert!(
+                model.thermal_capacitance[i] > 1.0e4,
+                "zone {i} thermal_capacitance {} should exceed the 1.0 placeholder",
+                model.thermal_capacitance[i]
+            );
+        }
+    }
+
+    #[test]
+    fn default_model_analytical_simulation_does_not_diverge() {
+        // Issue #2806 end-to-end regression: a default Model(num_zones=1) run
+        // through the analytical path (use_surrogates=false) must not diverge.
+        // With the C_m=1.0 placeholder this blows up within ~91 hourly steps
+        // (see docs/KNOWN_ISSUES.md §LIMIT-07); 30 days (720 steps) is far
+        // past that threshold while keeping the unit test fast.
+        //
+        // Like the REST `/v1/simulate` path (build_model_from_schema, #2747)
+        // and the Python `Model::simulate` wiring, this passes an empty
+        // lighting schedule so the auto-loaded office profile (whose per-step
+        // `loads[i] += internal_gains` accumulation quirk overheats the small
+        // default zone) does not run — envelope-only is the physically-sane
+        // baseline. `simulate_with_loads` is the documented auto-load path.
+        use crate::ai::surrogate::SurrogateManager;
+        use crate::sim::lighting::LightingSchedule;
+        let mut model = ThermalModel::<VectorField>::new(1);
+        populate_default_model_physics(&mut model);
+        let zone_area = model.zone_area.as_slice().iter().sum::<f64>().max(1.0);
+        let empty_lighting = LightingSchedule::new(0.0, zone_area);
+        let surrogates = SurrogateManager::new().expect("SurrogateManager");
+        let eui = model.solve_timesteps(
+            24 * 30,
+            &surrogates,
+            false,
+            Some(&empty_lighting),
+            None,
+            None,
+        );
+        assert!(eui.is_finite(), "EUI must be finite, got {eui}");
+        assert!(eui >= 0.0, "EUI must be non-negative, got {eui}");
+        // Zone temperature must stay in a physically-sane band (the C_m=1.0
+        // blowup reaches ±1e5 °C within a few dozen steps).
+        let t = model.temperatures[0];
+        assert!(
+            (-50.0..=60.0).contains(&t),
+            "zone temp {t} out of physical range"
+        );
+    }
+
+    #[test]
+    fn default_multi_zone_model_analytical_simulation_does_not_diverge() {
+        // Mirror tests/python/test_model_mutations.py: MultiZoneThermalModel(3)
+        // + set_inter_zone_conductance + simulate_multi_zone(use_surrogates=false).
+        use crate::ai::surrogate::SurrogateManager;
+        use crate::sim::lighting::LightingSchedule;
+        let mut model = ThermalModel::<VectorField>::new(3);
+        populate_default_model_physics(&mut model);
+        let zone_area = model.zone_area.as_slice().iter().sum::<f64>().max(1.0);
+        let empty_lighting = LightingSchedule::new(0.0, zone_area);
+        let surrogates = SurrogateManager::new().expect("SurrogateManager");
+        let eui = model.solve_timesteps(
+            24 * 30,
+            &surrogates,
+            false,
+            Some(&empty_lighting),
+            None,
+            None,
+        );
+        assert!(eui.is_finite(), "multi-zone EUI must be finite, got {eui}");
+        assert!(eui >= 0.0);
+        for i in 0..3 {
+            let t = model.temperatures[i];
+            assert!(
+                (-50.0..=60.0).contains(&t),
+                "zone {i} temp {t} out of physical range"
+            );
+        }
+    }
+
+    #[test]
+    fn office_profile_autoload_is_the_negative_eui_cause() {
+        // Diagnostic pinning the secondary symptom: with all-None loads the
+        // solver auto-loads the bundled Office building profile
+        // (solver_core.rs `solve_timesteps_with_dt`), whose per-step
+        // `loads[i] += internal_gains` accumulation quirk overheats the small
+        // default zone and drives EUI negative (net cooling). This is why
+        // `Model::simulate` / `simulate_multi_zone` pass an empty lighting
+        // schedule (envelope-only), matching the REST #2747 fix. The test
+        // asserts the auto-load path is negative so the wiring choice is
+        // self-documenting; if the office-profile quirk is ever fixed, this
+        // guard will fire and the empty-lighting isolation can be revisited.
+        use crate::ai::surrogate::SurrogateManager;
+        let mut model = ThermalModel::<VectorField>::new(1);
+        populate_default_model_physics(&mut model);
+        let surrogates = SurrogateManager::new().expect("SurrogateManager");
+        let eui_autoload = model.solve_timesteps(24 * 30, &surrogates, false, None, None, None);
+        assert!(
+            eui_autoload < 0.0,
+            "auto-loaded office profile should still drive EUI negative until its \
+             accumulation quirk is fixed; got {eui_autoload} (if non-negative, revisit \
+             the empty-lighting isolation in Model::simulate)"
+        );
+    }
 }
 
 // =============================================================================
@@ -1348,6 +1509,162 @@ use numpy::PyArrayMethods;
 
 #[allow(unused_imports)]
 use log::{debug, info};
+
+// =============================================================================
+// Default physics initialisation (Issue #2806)
+// =============================================================================
+
+/// Populate physically-sane default thermal physics on a model built by
+/// [`ThermalModel::new`].
+///
+/// This mirrors the schema→physics wiring that [`ThermalModel::from_spec`]
+/// performs for the ASHRAE 140 validation path and that
+/// `build_model_from_schema` (`src/api/server.rs`, issue #2747 / LIMIT-07)
+/// performs for the REST `/v1/simulate` path.
+///
+/// # Root cause this fixes (issue #2806)
+///
+/// `ThermalModel::new(num_zones)` deliberately leaves `thermal_capacitance`
+/// at its `1.0 J/K` placeholder and `air_thermal_capacitance` at `0.0` — values
+/// intended to be overwritten by `from_spec`, which the Python bindings never
+/// call. With `C_m = 1.0 J/K`, `select_integration_method`
+/// (`src/sim/thermal_integration.rs`) selects the conditionally-stable
+/// Explicit-Euler mass integrator, and the update `Tm += (q_net/C_m)·dt` with
+/// `C_m = 1.0`, `dt = 3600 s` blows up, surfacing as
+/// `SimulationError: simulation diverged at timestep 0 in zone zone_0`. This is
+/// the same family of bug as #2747 (REST path) — see `docs/KNOWN_ISSUES.md`
+/// §LIMIT-07 (resolved) for the full root-cause analysis.
+///
+/// # What this wires
+///
+/// The helper reads the default geometry already initialised by
+/// [`ThermalModel::new`] (`zone_area`, `wall_area`, `zone_volume`,
+/// `window_ratio`) and a default low-mass ASHRAE 140 Case 600 construction
+/// ([`Assemblies::low_mass_wall`] / [`Assemblies::low_mass_roof`] /
+/// [`Assemblies::insulated_floor`]) — real, named material layers rather than
+/// invented capacitance numbers — and populates, per zone:
+///
+/// - Opaque U-values from the default construction.
+/// - Thermal capacitance `C_m = wall_cap + roof_cap + floor_cap` per
+///   ISO 13790 §7.2 (air-node `C_air = ρ·cp·V` stored separately per
+///   Issue #1522 option (a)).
+/// - `h_tr_ms = h_ms_coeff · A_m` (ISO 13790 §7.2.2.2; low-mass coeff 2.0 W/m²K,
+///   `A_m = 2.5 · A_floor`).
+/// - `h_tr_em = 1 / (1/h_op − 1/h_ms)` (ISO 13790 Eq. 64 series-consistent form).
+/// - `h_tr_me = 9.1 · 0.5 · A_floor` (furniture coupling, matches `from_spec`).
+///
+/// `update_derived_parameters` is called last so the cached derived conductances
+/// (`derived_h_tr_3`, `derived_h_ext`, `derived_den`, …) are consistent with
+/// the populated scalar fields.
+///
+/// # What this deliberately does NOT wire
+///
+/// ASHRAE 140 case-specific branches, shading, real weather, or per-zone
+/// construction variation — the bare `Model(num_zones=N)` / `MultiZoneThermalModel(num_zones=N)`
+/// constructors carry none of that. Callers that need it should use
+/// `from_case` / `from_case_spec` (which go through `from_spec`). This is the
+/// minimum surface needed to produce physically-sane, non-divergent output for
+/// a default-constructed model and no more.
+pub(crate) fn populate_default_model_physics(model: &mut ThermalModel<VectorField>) {
+    use crate::sim::construction::{Assemblies, SurfaceType};
+
+    let num_zones = model.num_zones;
+    if num_zones == 0 {
+        return;
+    }
+
+    // Default low-mass construction (ASHRAE 140 Case 600 assemblies). These
+    // give real, named material layers whose U-values / per-area capacitances
+    // are EnergyPlus-comparable — no invented magic capacitance numbers.
+    let wall_c = Assemblies::low_mass_wall();
+    let roof_c = Assemblies::low_mass_roof();
+    let floor_c = Assemblies::insulated_floor();
+
+    let wall_u_value = wall_c.u_value(Some(SurfaceType::Wall), None);
+    let roof_u_value = roof_c.u_value(Some(SurfaceType::Ceiling), None);
+    let floor_u_value = floor_c.u_value(Some(SurfaceType::Floor), None);
+    // `window_u_value` is left at the ThermalModel::new default (2.5); windows
+    // are not part of the opaque thermal-mass network that was diverging.
+
+    let wall_cap_per_area = wall_c.thermal_capacitance_per_area();
+    let roof_cap_per_area = roof_c.thermal_capacitance_per_area();
+    let floor_cap_per_area = floor_c.thermal_capacitance_per_area();
+
+    // Constants — ρ_air / cp_air at sea level (matches ThermalModel::new and
+    // fluxion_core::construction AIR_DENSITY_SEA_LEVEL / AIR_SPECIFIC_HEAT).
+    const AIR_DENSITY: f64 = 1.2; // kg/m³
+    const AIR_SPECIFIC_HEAT: f64 = 1005.0; // J/(kg·K)
+                                           // ISO 13790 §7.2.2.2 surface-to-mass coupling coefficient for low-mass /
+                                           // generic construction. The ASHRAE-140 path picks construction-type-
+                                           // specific values in `from_spec`; the bare Python constructors have no
+                                           // construction-type field, so the low-mass default (the safer, slightly
+                                           // under-coupled choice for unknown stock) is used — identical to
+                                           // build_model_from_schema in src/api/server.rs (#2747).
+    const H_MS_COEFF_LOW_MASS: f64 = 2.0; // W/(m²·K)
+
+    let mut thermal_cap_vec = Vec::with_capacity(num_zones);
+    let mut air_thermal_cap_vec = Vec::with_capacity(num_zones);
+    let mut h_tr_ms_vec = Vec::with_capacity(num_zones);
+    let mut h_tr_em_vec = Vec::with_capacity(num_zones);
+    let mut h_tr_me_vec = Vec::with_capacity(num_zones);
+
+    for zone_idx in 0..num_zones {
+        let zone_floor_area = model.zone_area[zone_idx].max(1.0);
+        let zone_wall_area = model.wall_area[zone_idx].max(0.0);
+        let zone_volume = model.zone_volume[zone_idx].max(1.0);
+        let window_ratio = model.window_ratio[zone_idx].clamp(0.0, 0.95);
+        let window_area = zone_wall_area * window_ratio;
+        let opaque_wall_area = (zone_wall_area - window_area).max(0.0);
+
+        // C_m per ISO 13790 §7.2 (envelope only; air-node capacitance is
+        // stored separately per Issue #1522 option (a)).
+        let wall_cap = wall_cap_per_area * opaque_wall_area;
+        let roof_cap = roof_cap_per_area * zone_floor_area;
+        let floor_cap = floor_cap_per_area * zone_floor_area;
+        let total_thermal_cap = (wall_cap + roof_cap + floor_cap).max(1.0e3);
+        thermal_cap_vec.push(total_thermal_cap);
+
+        let air_cap = zone_volume * AIR_DENSITY * AIR_SPECIFIC_HEAT;
+        air_thermal_cap_vec.push(air_cap);
+
+        // ISO 13790 §7.2.2.2 effective mass area A_m for low-mass
+        // construction = 2.5 · A_floor (Table C.2 simplified form).
+        let a_m = 2.5 * zone_floor_area;
+        let h_ms = H_MS_COEFF_LOW_MASS * a_m;
+        h_tr_ms_vec.push(h_ms);
+
+        // ISO 13790 Eq. 64: h_em = 1 / (1/h_op − 1/h_ms), where
+        // h_op = U_wall·A_opaque_wall + U_roof·A_roof (floor has its own
+        // ground node via h_tr_floor and is excluded to avoid double-count).
+        let h_op = wall_u_value * opaque_wall_area + roof_u_value * zone_floor_area;
+        let h_em = if h_op > 0.0 && h_op < h_ms {
+            (1.0 / (1.0 / h_op - 1.0 / h_ms)).max(0.1)
+        } else {
+            // Degenerate (e.g. near-zero wall U) — fall back to direct opaque
+            // transmittance so the mass node never fully decouples.
+            h_op.max(0.1)
+        };
+        h_tr_em_vec.push(h_em);
+
+        // Interior-surface ↔ internal-mass (furniture) coupling. ISO 13790
+        // Annex C: 9.1 W/(m²·K) over an internal-mass area of 0.5·A_floor
+        // (matches `from_spec`).
+        h_tr_me_vec.push(9.1 * 0.5 * zone_floor_area);
+    }
+
+    model.wall_u_value = wall_u_value;
+    model.roof_u_value = roof_u_value;
+    model.floor_u_value = floor_u_value;
+    model.thermal_capacitance = VectorField::new(thermal_cap_vec);
+    model.air_thermal_capacitance = VectorField::new(air_thermal_cap_vec);
+    model.h_tr_ms = VectorField::new(h_tr_ms_vec);
+    model.h_tr_em = VectorField::new(h_tr_em_vec);
+    model.h_tr_me = VectorField::new(h_tr_me_vec);
+
+    // Recompute the cached derived conductances (derived_h_tr_3, derived_h_ext,
+    // derived_den, …) so they are consistent with the populated scalar fields.
+    model.update_derived_parameters();
+}
 
 /// Monotonic id generator for Python-facing `Model` instances (Issue #2548).
 /// Surfaces as `simulation_id` on `Model.__repr__` so Python users can correlate
@@ -1417,8 +1734,16 @@ impl Model {
     #[new]
     #[pyo3(signature = (num_zones=1))]
     fn new(num_zones: usize) -> PyResult<Self> {
+        // Issue #2806: route the default model through the same physics
+        // initialisation as the REST `/v1/simulate` path (`build_model_from_schema`,
+        // issue #2747) and the ASHRAE 140 validation path (`from_spec`). Without
+        // this, `ThermalModel::new` leaves `thermal_capacitance` at its 1.0 J/K
+        // placeholder and the analytical solver diverges ("simulation diverged
+        // at timestep 0 in zone zone_0") — see `populate_default_model_physics`.
+        let mut inner = ThermalModel::<VectorField>::new(num_zones);
+        populate_default_model_physics(&mut inner);
         Ok(Model {
-            inner: ThermalModel::<VectorField>::new(num_zones),
+            inner,
             surrogates: SurrogateManager::new().map_err(|e| {
                 SurrogateError::new_err(format!("Failed to create SurrogateManager: {}", e))
             })?,
@@ -1495,6 +1820,13 @@ impl Model {
 
     /// Simulate building energy consumption over specified years.
     ///
+    /// Runs **envelope-only** (ventilation + conduction + solar + HVAC): no
+    /// auto-loaded internal-load profile. This mirrors the REST `/v1/simulate`
+    /// path (`build_model_from_schema`, issue #2747) and is the physically-sane
+    /// baseline for a default-constructed model. Use
+    /// [`simulate_with_loads`](Self::simulate_with_loads) to auto-load the
+    /// building-type internal-load profile.
+    ///
     /// # Arguments
     /// * `years` - Number of years to simulate (1-5 typical)
     /// * `use_surrogates` - If true, use AI surrogates for load predictions; if false, use analytical calculations
@@ -1525,11 +1857,20 @@ impl Model {
             );
             let steps = years as usize * 8760;
             debug!("Simulation will process {} timesteps", steps);
+            // Issue #2806 / #2747: pass an empty lighting schedule so the
+            // solver does NOT auto-load the bundled Office building profile
+            // (solver_core.rs auto-loads when lighting/equipment/occupancy are
+            // all None). That profile has a per-step `loads[i] += internal_gain`
+            // accumulation quirk that overheats a default-constructed zone and
+            // drives EUI negative. `simulate` is the envelope-only path;
+            // `simulate_with_loads` is the documented auto-load path.
+            let zone_area = self.inner.zone_area.as_slice().iter().sum::<f64>().max(1.0);
+            let empty_lighting = crate::sim::lighting::LightingSchedule::new(0.0, zone_area);
             let result = self.inner.solve_timesteps(
                 steps,
                 &self.surrogates,
                 use_surrogates,
-                None,
+                Some(&empty_lighting),
                 None,
                 None,
             );
