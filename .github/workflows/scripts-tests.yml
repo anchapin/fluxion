@@ -60,5 +60,11 @@ jobs:
 
       - name: Enforce ruff clean (keep the #2811 baseline at 0)
         run: |
-          pip install ruff
+          # Match ``.pre-commit-config.yaml``'s ``astral-sh/ruff-pre-commit``
+          # pin (``v0.14.5``) so the gate stays reproducible. A floating
+          # ``pip install ruff`` here would silently pick up new minor
+          # releases whose new rule codes (e.g. ``EXE001``, ``BLE001``,
+          # ``DTZ011``, ``PLR1716``, ``UP006``/``UP007``) shift the
+          # baseline and fail the pre-existing #2811-cleared scripts.
+          pip install 'ruff==0.14.5'
           ruff check scripts/
