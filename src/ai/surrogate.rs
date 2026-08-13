@@ -3614,16 +3614,8 @@ mod tests {
         let guard = pool
             .get_or_create_session()
             .expect("acquire session for inspection");
-        let input_names: Vec<String> = guard
-            .inputs
-            .iter()
-            .map(|i| i.name.clone())
-            .collect();
-        let output_names: Vec<String> = guard
-            .outputs
-            .iter()
-            .map(|o| o.name.clone())
-            .collect();
+        let input_names: Vec<String> = guard.inputs.iter().map(|i| i.name.clone()).collect();
+        let output_names: Vec<String> = guard.outputs.iter().map(|o| o.name.clone()).collect();
         assert!(
             input_names.contains(&"input".to_string()),
             "expected input named 'input', got {:?}",
