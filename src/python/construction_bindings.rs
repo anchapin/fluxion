@@ -12,7 +12,7 @@ use crate::physics::geometry_tensor::{
     ZONE_PROPERTIES_DIMS,
 };
 #[cfg(feature = "python-bindings")]
-use crate::physics::zero_copy_matrix::ZeroCopyGeometryTensorHolder;
+use crate::physics::zero_copy_matrix::flat_slice_to_pyarray2;
 
 #[cfg(feature = "python-bindings")]
 use numpy::PyArrayMethods;
@@ -397,12 +397,11 @@ impl PyWallSurface {
 }
 
 // ============================================================================
-// Geometry Tensor Python Bindings (Zero-Copy)
+// Geometry Tensor Python Bindings
 // ============================================================================
 //
-// (`GeometryTensor`, the `*_DIMS` constants, and `ZeroCopyGeometryTensorHolder`
-// are imported at the top of this file — they were lifted here from the
-// original `lib.rs` block.)
+// (`GeometryTensor` and the `*_DIMS` constants are imported at the top of
+// this file — they were lifted here from the original `lib.rs` block.)
 
 #[cfg(feature = "python-bindings")]
 #[pyclass(name = "GeometryTensor")]
@@ -556,20 +555,13 @@ impl PyGeometryTensor {
         self.inner.zones_adjacent(i, j)
     }
 
-    /// Convert to numpy arrays with zero-copy buffer sharing.
+    /// Convert to numpy arrays.
     ///
-    /// Each returned numpy array wraps a `numpy::PyArray2::borrow_from_array`
-    /// view of the underlying `GeometryTensor` storage — the numpy array and
-    /// the Rust struct share the same buffer. A `PyClass` holder that retains
-    /// an `Arc<GeometryTensor>` clone keeps the storage alive for the lifetime
-    /// of the numpy array. The Arc clone is a refcount bump (no buffer copy),
-    /// so the Rust → Python direction is allocation-free beyond the small
-    /// holder object.
-    ///
-    /// This is the standard numpy buffer protocol that Arrow uses for
-    /// inter-process buffer sharing — any Arrow-compatible consumer
-    /// (PyArrow, ML frameworks) can ingest the returned arrays without
-    /// re-copying.
+    /// Each returned numpy array is built by copying the underlying
+    /// `GeometryTensor` field into a new `PyArray2`. The zero-copy
+    /// `borrow_from_array` view path was removed because the `numpy 0.29` /
+    /// `ndarray 0.17` version conflict (issue #2746) makes the view
+    /// constructors unusable — see `zero_copy_matrix.rs` for details.
     #[allow(clippy::type_complexity)]
     fn to_numpy<'py>(
         &self,
@@ -582,81 +574,29 @@ impl PyGeometryTensor {
         Bound<'py, numpy::PyArray2<f64>>,
         Bound<'py, numpy::PyArray1<f64>>,
     )> {
-        // The holder pattern: the numpy array's container holds an Arc clone
-        // of the GeometryTensor. The borrowed view points into the Arc's
-        // storage. When Python releases the numpy array, the Arc is dropped,
-        // and (if the last reference) the GeometryTensor is dropped too.
-        fn build_zero_copy_2d<'py>(
+        // Copy each flat `&[f64]` field of the shared `GeometryTensor` into a
+        // freshly-allocated `PyArray2` / `PyArray1`.
+        fn build_2d<'py>(
             py: Python<'py>,
-            inner: std::sync::Arc<GeometryTensor>,
+            inner: &GeometryTensor,
             shape: (usize, usize),
             pick: fn(&GeometryTensor) -> &[f64],
-        ) -> PyResult<Bound<'py, numpy::PyArray2<f64>>> {
-            // SAFETY: the holder's Arc clone keeps `inner` alive for the
-            // lifetime of the returned numpy array, so the view's data
-            // pointer remains valid. `pick(&inner)` returns a borrow of one
-            // of `inner`'s `Vec<f64>` fields, which is contiguous and
-            // `shape.0 * shape.1` elements long (validated by the
-            // `GeometryTensor::from_numpy_arrays` constructor and the
-            // `WALL_MATRIX_DIMS` / etc. constants).
-            let ptr = pick(&inner).as_ptr();
-            let raw = unsafe { ndarray::RawArrayView::from_shape_ptr(shape, ptr) };
-            let view = unsafe { raw.deref_into_view() };
-            let holder = ZeroCopyGeometryTensorHolder { inner };
-            let container = Bound::new(py, holder)
-                .expect("ZeroCopyGeometryTensorHolder allocation cannot fail")
-                .into_any();
-            Ok(unsafe { numpy::PyArray2::borrow_from_array(&view, container) })
+        ) -> Bound<'py, numpy::PyArray2<f64>> {
+            flat_slice_to_pyarray2(py, pick(inner), shape)
         }
 
-        let zone_coords = build_zero_copy_2d(
-            py,
-            std::sync::Arc::clone(&self.inner),
-            ZONE_COORDS_DIMS,
-            |t| &t.zone_coords,
-        )?;
-        let wall_matrix = build_zero_copy_2d(
-            py,
-            std::sync::Arc::clone(&self.inner),
-            WALL_MATRIX_DIMS,
-            |t| &t.wall_matrix,
-        )?;
-        let window_matrix = build_zero_copy_2d(
-            py,
-            std::sync::Arc::clone(&self.inner),
-            WINDOW_MATRIX_DIMS,
-            |t| &t.window_matrix,
-        )?;
-        let adjacency_matrix = build_zero_copy_2d(
-            py,
-            std::sync::Arc::clone(&self.inner),
-            ADJACENCY_MATRIX_DIMS,
-            |t| &t.adjacency_matrix,
-        )?;
-        let zone_properties = build_zero_copy_2d(
-            py,
-            std::sync::Arc::clone(&self.inner),
-            ZONE_PROPERTIES_DIMS,
-            |t| &t.zone_properties,
-        )?;
+        let zone_coords = build_2d(py, &self.inner, ZONE_COORDS_DIMS, |t| &t.zone_coords);
+        let wall_matrix = build_2d(py, &self.inner, WALL_MATRIX_DIMS, |t| &t.wall_matrix);
+        let window_matrix = build_2d(py, &self.inner, WINDOW_MATRIX_DIMS, |t| &t.window_matrix);
+        let adjacency_matrix = build_2d(py, &self.inner, ADJACENCY_MATRIX_DIMS, |t| {
+            &t.adjacency_matrix
+        });
+        let zone_properties = build_2d(py, &self.inner, ZONE_PROPERTIES_DIMS, |t| {
+            &t.zone_properties
+        });
 
-        // 1-D summary path — same zero-copy recipe.
-        let summary_inner = std::sync::Arc::clone(&self.inner);
-        let summary_ptr = summary_inner.summary.as_ptr();
-        // SAFETY: same Arc-alive invariant; `summary` is a 6-element Vec<f64>
-        // held by the GeometryTensor.
-        let summary_raw = unsafe {
-            ndarray::RawArrayView::from_shape_ptr(summary_inner.summary.len(), summary_ptr)
-        };
-        let summary_view = unsafe { summary_raw.deref_into_view() };
-        let summary_holder = ZeroCopyGeometryTensorHolder {
-            inner: summary_inner,
-        };
-        let summary_container = Bound::new(py, summary_holder)
-            .expect("ZeroCopyGeometryTensorHolder allocation cannot fail")
-            .into_any();
-        let summary =
-            unsafe { numpy::PyArray1::borrow_from_array(&summary_view, summary_container) };
+        // 1-D summary path — copy into a new `PyArray1`.
+        let summary = numpy::PyArray1::from_vec(py, self.inner.summary.clone());
 
         Ok((
             zone_coords,

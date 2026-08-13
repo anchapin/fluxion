@@ -1727,7 +1727,16 @@ impl Model {
         }
 
         info!("NumPy simulation complete");
-        Ok(numpy::PyArray2::from_owned_array(py, zone_temps))
+        // Copy the contiguous `Array2` into a `PyArray2`. The zero-copy
+        // `from_owned_array` path requires the same `ndarray` version as the
+        // `numpy` crate (0.16), which conflicts with the workspace's 0.17 —
+        // see issue #2746. `as_slice()` succeeds because `::zeros` produces a
+        // C-contiguous array.
+        let shape = (steps, num_zones);
+        let flat = zone_temps.as_slice().expect("C-contiguous Array2");
+        Ok(crate::physics::zero_copy_matrix::flat_slice_to_pyarray2(
+            py, flat, shape,
+        ))
     }
 
     /// Simulate one timestep.
