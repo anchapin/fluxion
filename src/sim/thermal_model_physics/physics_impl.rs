@@ -881,8 +881,13 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
             // Issue #1163: symmetric ideal-HVAC formula uses t_i_free as the
             // driving temperature for both heating and cooling (mass
             // heat-release is already embedded in t_i_free via num_tm).
+            // Issue #2826: per-zone setpoint vectors now drive the HVAC
+            // demand; the scalar fields are the fallback when the per-zone
+            // vector is shorter than `num_zones`.
             self.compute_zone_hvac_load(
                 t_i_free.as_ref(),
+                self.0.heating_setpoints.as_ref(),
+                self.0.cooling_setpoints.as_ref(),
                 self.0.heating_setpoint,
                 self.0.cooling_setpoint,
             )
@@ -973,8 +978,16 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
             //
             // Issue #1163: symmetric ideal-HVAC formula (mass heat-release is
             // already embedded in t_i_free via num_tm).
-            let hvac_output =
-                self.compute_zone_hvac_load(t_i_free.as_ref(), heating_setpoint, cooling_setpoint);
+            // Issue #2826: per-zone setpoint vectors drive HVAC demand;
+            // scalar `heating_setpoint` / `cooling_setpoint` (from
+            // `self.0.heating_setpoint` above) are used as fallback.
+            let hvac_output = self.compute_zone_hvac_load(
+                t_i_free.as_ref(),
+                self.0.heating_setpoints.as_ref(),
+                self.0.cooling_setpoints.as_ref(),
+                heating_setpoint,
+                cooling_setpoint,
+            );
 
             // Track peak heating/cooling based on per-zone HVAC demand (Plan 18-08)
             // Physics-based: No calibration factors - track actual HVAC demand
@@ -1023,8 +1036,12 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
             //
             // Issue #1163: symmetric ideal-HVAC formula (mass heat-release is
             // already embedded in t_i_free via num_tm).
+            // Issue #2826: per-zone setpoint vectors drive HVAC demand;
+            // scalar fallback when vectors are shorter than `num_zones`.
             let hvac_output_raw = self.compute_zone_hvac_load(
                 t_i_free.as_ref(),
+                self.0.heating_setpoints.as_ref(),
+                self.0.cooling_setpoints.as_ref(),
                 self.0.heating_setpoint,
                 self.0.cooling_setpoint,
             );
@@ -1097,8 +1114,12 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         } else {
             // Issue #1163: symmetric ideal-HVAC formula (mass heat-release is
             // already embedded in t_i_free via num_tm).
+            // Issue #2826: per-zone setpoint vectors drive HVAC demand;
+            // scalar fallback when vectors are shorter than `num_zones`.
             self.compute_zone_hvac_load(
                 t_i_free.as_ref(),
+                self.0.heating_setpoints.as_ref(),
+                self.0.cooling_setpoints.as_ref(),
                 self.0.heating_setpoint,
                 self.0.cooling_setpoint,
             )
@@ -1829,8 +1850,12 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         //
         // Issue #1163: symmetric ideal-HVAC formula (mass heat-release is
         // already embedded in t_i_free via num_tm).
+        // Issue #2826: per-zone setpoint vectors drive HVAC demand;
+        // scalar fallback when vectors are shorter than `num_zones`.
         let hvac_output_raw = self.compute_zone_hvac_load(
             t_i_free.as_ref(),
+            self.0.heating_setpoints.as_ref(),
+            self.0.cooling_setpoints.as_ref(),
             self.0.heating_setpoint,
             self.0.cooling_setpoint,
         );
@@ -3230,7 +3255,7 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                         "  t_free={:.2}, t_mass_mn={:.2}, q_heating={:.2}",
                         t_free_val,
                         t_mass_mn,
-                        h_coeff * (self.0.heating_setpoint - t_free_val).max(0.0)
+                        h_coeff * (self.0.heating_setpoints.as_ref()[i] - t_free_val).max(0.0)
                     );
                 }
 
@@ -3254,14 +3279,33 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                 // - The HVAC needs to cool T_zone to 27°C, not T_mass to 27°C
                 // - Using t_mass gives ~162 W demand instead of ~730 W (4.5× underestimate)
                 //
-                // Sign convention: Q > 0 = heating, Q < 0 = cooling.
-                let q = if t_free_val < self.0.heating_setpoint {
+                // Issue #2826: per-zone setpoints are read from the
+                // `heating_setpoints` / `cooling_setpoints` vectors (with the
+                // legacy scalar `heating_setpoint` / `cooling_setpoint` as
+                // fallback when the slice is too short — slice read at index
+                // `i` here is the same index used in `compute_zone_hvac_load`,
+                // so the two paths produce identical demand figures).
+                let heating_setpoint_i = self
+                    .0
+                    .heating_setpoints
+                    .as_ref()
+                    .get(i)
+                    .copied()
+                    .unwrap_or(self.0.heating_setpoint);
+                let cooling_setpoint_i = self
+                    .0
+                    .cooling_setpoints
+                    .as_ref()
+                    .get(i)
+                    .copied()
+                    .unwrap_or(self.0.cooling_setpoint);
+                let q = if t_free_val < heating_setpoint_i {
                     // Heating: Q = h_coeff × (T_heat_sp − T_free) > 0
-                    h_coeff * (self.0.heating_setpoint - t_free_val)
-                } else if t_free_val > self.0.cooling_setpoint {
+                    h_coeff * (heating_setpoint_i - t_free_val)
+                } else if t_free_val > cooling_setpoint_i {
                     // Cooling: Q = h_coeff × (T_cool_sp − T_free) = −h_coeff × (T_free − T_cool_sp) < 0
                     // Driving temperature is t_free (zone air), NOT t_mass_mn
-                    -h_coeff * (t_free_val - self.0.cooling_setpoint)
+                    -h_coeff * (t_free_val - cooling_setpoint_i)
                 } else {
                     // Zone air is within deadband: no HVAC demand
                     0.0

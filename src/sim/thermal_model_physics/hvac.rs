@@ -139,13 +139,34 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
     /// # Arguments
     /// * `zone_temps` - Free-floating zone air temperatures `t_i_free` (°C).
     ///   This is the driving temperature for BOTH heating and cooling.
-    /// * `heating_setpoint` - Heating setpoint (°C) applied to all zones.
-    /// * `cooling_setpoint` - Cooling setpoint (°C) applied to all zones.
+    /// * `heating_setpoints` - Per-zone heating setpoints (°C). Falls back to
+    ///   `default_heating_setpoint` (scalar) when `zone_idx` is out of range
+    ///   for the slice — see Issue #2826.
+    /// * `cooling_setpoints` - Per-zone cooling setpoints (°C). Falls back to
+    ///   `default_cooling_setpoint` (scalar) when `zone_idx` is out of range
+    ///   for the slice.
+    /// * `default_heating_setpoint` - Per-zone-vector fallback scalar heating
+    ///   setpoint (°C). Used when the per-zone slice is shorter than the
+    ///   model's `num_zones`.
+    /// * `default_cooling_setpoint` - Per-zone-vector fallback scalar cooling
+    ///   setpoint (°C). Used when the per-zone slice is shorter than the
+    ///   model's `num_zones`.
+    ///
+    /// Issue #2826: Historically the simulation step passed the model's
+    /// single-scalar `heating_setpoint` / `cooling_setpoint` fields, so the
+    /// `MultiZoneThermalModel.set_zone_setpoints` API (which writes the
+    /// per-zone `heating_setpoints` / `cooling_setpoints` vectors) had no
+    /// effect on simulated energy. This function now consumes the per-zone
+    /// vectors and uses the scalar fields only as a fallback when the
+    /// vectors are too short.
+    #[allow(clippy::too_many_arguments)]
     pub(crate) fn compute_zone_hvac_load(
         &self,
         zone_temps: &[f64],
-        heating_setpoint: f64,
-        cooling_setpoint: f64,
+        heating_setpoints: &[f64],
+        cooling_setpoints: &[f64],
+        default_heating_setpoint: f64,
+        default_cooling_setpoint: f64,
     ) -> T {
         let enabled_vec = self.0.hvac_enabled.as_ref();
 
@@ -171,6 +192,20 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
             // `step_physics_5r1c`), so the mass contribution is captured exactly
             // once — not zero times, not twice.
             let t_free = zone_temps[zone_idx];
+
+            // Issue #2826: per-zone setpoint read with scalar fallback. The
+            // fallback is intentional — `apply_parameters` (BatchOracle) writes
+            // only the scalar field, and any caller that has not yet populated
+            // the per-zone vector (e.g. `ThermalModel::new` default path)
+            // continues to get a sensible, non-NaN setpoint.
+            let heating_setpoint = heating_setpoints
+                .get(zone_idx)
+                .copied()
+                .unwrap_or(default_heating_setpoint);
+            let cooling_setpoint = cooling_setpoints
+                .get(zone_idx)
+                .copied()
+                .unwrap_or(default_cooling_setpoint);
 
             let demand = if t_free <= heating_setpoint {
                 // Heating: Q = h_coeff × (T_heat_sp − T_free).
