@@ -1486,6 +1486,138 @@ mod tests {
              the empty-lighting isolation in Model::simulate)"
         );
     }
+
+    // ========================================================================
+    // Issue #2826 — `MultiZoneThermalModel.set_zone_setpoints` had zero effect
+    // on simulated energy because `step_physics_*` read the scalar
+    // `heating_setpoint` / `cooling_setpoint` fields, not the per-zone
+    // `heating_setpoints` / `cooling_setpoints` vectors that the Python
+    // binding writes to.
+    //
+    // The regression test re-runs the analytical simulation with three
+    // distinct heating/cooling setpoint pairs and asserts that each pair
+    // yields a different total energy (heating + cooling). Prior to the fix
+    // every pair returned the same kWh figure, masking the wiring bug.
+    // ========================================================================
+
+    #[test]
+    fn set_zone_setpoints_drives_energy_single_zone_issue_2826() {
+        use crate::ai::surrogate::SurrogateManager;
+        use crate::sim::lighting::LightingSchedule;
+
+        // Three distinct (heating, cooling) pairs that should produce three
+        // distinct energy figures. Pre-#2826 all three pairs produced the
+        // same energy because the simulation read the scalar
+        // `heating_setpoint` / `cooling_setpoint` fields, not the per-zone
+        // vectors `set_zone_setpoints` writes to.
+        let pairs: [(f64, f64); 3] = [
+            (20.0, 24.0), // tight band
+            (22.0, 24.0), // hotter heating setpoint → less heating load
+            (15.0, 30.0), // wide deadband → much less heating & cooling
+        ];
+
+        // Run each setpoint pair in a fresh model and collect energy.
+        let mut energies: Vec<f64> = Vec::with_capacity(pairs.len());
+        for (heat, cool) in pairs {
+            let mut model = ThermalModel::<VectorField>::new(1);
+            populate_default_model_physics(&mut model);
+            // Initialise the scalar setpoint to neutral values (matching
+            // `ThermalModel::new` defaults: 20 / 27) so the per-zone
+            // vector is the only thing that changes between runs.
+            model.heating_setpoint = 20.0;
+            model.cooling_setpoint = 27.0;
+
+            // Mirror `PyMultiZoneThermalModel::set_zone_setpoints` —
+            // writes only the per-zone vectors, NOT the scalar fields.
+            model.heating_setpoints.as_mut_slice()[0] = heat;
+            model.cooling_setpoints.as_mut_slice()[0] = cool;
+
+            // Run a fixed-length simulation (envelope-only, analytical,
+            // matching the `simulate_multi_zone` configuration so the
+            // physics path is identical to the Python entrypoint).
+            let surrogates = SurrogateManager::new().expect("SurrogateManager");
+            model.reset_heating_cooling_energy();
+            let zone_area = model.zone_area.as_slice().iter().sum::<f64>().max(1.0);
+            let empty_lighting = LightingSchedule::new(0.0, zone_area);
+            let _eui = model.solve_timesteps(
+                24 * 30,
+                &surrogates,
+                false,
+                Some(&empty_lighting),
+                None,
+                None,
+            );
+            let total = model.get_heating_energy_kwh() + model.get_cooling_energy_kwh();
+            energies.push(total);
+        }
+
+        // All three energies must be finite (no NaN, no divergence).
+        for (i, e) in energies.iter().enumerate() {
+            assert!(e.is_finite(), "energy[{i}] = {e} must be finite");
+        }
+        // Pairwise distinct: a wiring bug that ignores setpoints would make
+        // these all equal. We use a strict > 0 relative-or-absolute check
+        // (max(1e-3, 0.5% of the larger value)) so stochastic noise from
+        // the iteration count cannot mask the regression.
+        for i in 0..energies.len() {
+            for j in (i + 1)..energies.len() {
+                let lo = energies[i].min(energies[j]);
+                let hi = energies[i].max(energies[j]);
+                let tol = (lo.abs() * 5e-3).max(1e-3);
+                assert!(
+                    (hi - lo) > tol,
+                    "Issue #2826 regression: setpoints {pairs:?} indices {i} and \
+                     {j} produced nearly-identical energies ({:?}); varying \
+                     setpoints must produce varying energy. \
+                     (tol = {tol})",
+                    energies
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn apply_parameters_scalar_broadcasts_to_per_zone_vectors_issue_2826() {
+        // Companion regression: BatchOracle's `apply_parameters` historically
+        // touched only the scalar setpoint fields. After the per-zone refactor,
+        // `apply_parameters` must broadcast scalar → per-zone vector so the
+        // optimisation loop can actually steer the simulation. This test
+        // confirms that two scalar-driven runs with different setpoints
+        // produce different energies (the BatchOracle contract).
+        use crate::ai::surrogate::SurrogateManager;
+        use crate::sim::lighting::LightingSchedule;
+
+        let mut energies: Vec<f64> = Vec::with_capacity(2);
+        for &(heat, cool) in &[(20.0, 27.0), (15.0, 30.0)] {
+            let mut model = ThermalModel::<VectorField>::new(1);
+            populate_default_model_physics(&mut model);
+            model.apply_parameters(&[model.window_u_value, heat, cool]);
+            let surrogates = SurrogateManager::new().expect("SurrogateManager");
+            model.reset_heating_cooling_energy();
+            let zone_area = model.zone_area.as_slice().iter().sum::<f64>().max(1.0);
+            let empty_lighting = LightingSchedule::new(0.0, zone_area);
+            let _eui = model.solve_timesteps(
+                24 * 30,
+                &surrogates,
+                false,
+                Some(&empty_lighting),
+                None,
+                None,
+            );
+            let total = model.get_heating_energy_kwh() + model.get_cooling_energy_kwh();
+            energies.push(total);
+        }
+
+        let lo = energies[0].min(energies[1]);
+        let hi = energies[0].max(energies[1]);
+        let tol = (lo.abs() * 5e-3).max(1e-3);
+        assert!(
+            (hi - lo) > tol,
+            "scalar broadcast regression: apply_parameters should drive \
+             different setpoints into different energies; got {:?} (tol = {tol})",
+            energies
+        );
+    }
 }
 
 // =============================================================================
@@ -1857,6 +1989,14 @@ impl Model {
             );
             let steps = years as usize * 8760;
             debug!("Simulation will process {} timesteps", steps);
+            // Issue #2826 follow-up: reset transient state so the simulation
+            // starts from constructor defaults. Without this, sequential
+            // `simulate` calls on the same instance are non-deterministic
+            // (the second call inherits the first call's end-state). Also
+            // resets `reset_heating_cooling_energy` so the returned EUI
+            // reflects only this call (Issue #2806).
+            self.inner.reset_state();
+            self.inner.reset_heating_cooling_energy();
             // Issue #2806 / #2747: pass an empty lighting schedule so the
             // solver does NOT auto-load the bundled Office building profile
             // (solver_core.rs auto-loads when lighting/equipment/occupancy are

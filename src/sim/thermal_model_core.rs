@@ -451,6 +451,42 @@ where
         }
     }
 
+    /// Reset transient state to constructor defaults (Issue #2826, #2806 follow-up).
+    ///
+    /// Restores zone air / mass / surface temperatures and the air-node ODE state
+    /// to the values set by `ThermalModel::new` (temperatures = 20 °C, solar-lag
+    /// = 0, hourly-trace buffers dropped). Configuration fields such as
+    /// setpoints, conductances, capacities, and the building-type profile are
+    /// NOT touched.
+    ///
+    /// Use this at the start of every fresh `simulate_multi_zone` /
+    /// `simulate` call so that the simulation begins from a known
+    /// initial condition. Without it, the second call on the same model
+    /// starts from the first call's end-state, producing non-deterministic
+    /// energy figures and coupling unrelated tests that share a module-
+    /// scoped fixture.
+    pub fn reset_state(&mut self) {
+        let n = self.0.num_zones;
+        let init_temp = 20.0_f64;
+        // Zone air / mass temperatures and their previous-step memory
+        for i in 0..n {
+            self.0.temperatures.as_mut()[i] = init_temp;
+            self.0.mass_temperatures.as_mut()[i] = init_temp;
+            self.0.previous_temperatures.as_mut()[i] = init_temp;
+            self.0.previous_mass_temperatures.as_mut()[i] = init_temp;
+            self.0.envelope_mass_temperatures.as_mut()[i] = init_temp;
+            self.0.internal_mass_temperatures.as_mut()[i] = init_temp;
+            self.0.air_temperatures.as_mut()[i] = init_temp;
+            self.0.solar_lag.as_mut()[i] = 0.0;
+        }
+        // Mass-energy-change accumulators (Plan 18-08, used by step_physics_5r1c)
+        self.0.envelope_mass_energy_change_cumulative = 0.0;
+        self.0.internal_mass_energy_change_cumulative = 0.0;
+        // Drop per-step diagnostic traces so the next call rebuilds them.
+        self.0.diagnostics_state.hourly_temperatures = None;
+        self.0.diagnostics_state.nodal_temperatures = None;
+    }
+
     // Diagnostic hook methods (Phase 5: Diagnostics & Reporting)
     /// Set a diagnostics collector for this model. Pass `None` to disable.
     pub fn set_diagnostics(&mut self, diag: Option<SimulationDiagnostics>) {

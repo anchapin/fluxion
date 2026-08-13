@@ -630,6 +630,18 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         if params.len() >= 2 {
             self.0.heating_setpoint = params[1];
             self.0.heating_schedule = DailySchedule::constant(self.0.heating_setpoint);
+            // Issue #2826: scalar → per-zone broadcast. The simulation
+            // step now reads `heating_setpoints` (per zone) first with the
+            // scalar as fallback; `apply_parameters` historically only
+            // updated the scalar, so a BatchOracle optimisation that
+            // tweaked `heating_setpoint` would not affect the simulation.
+            // Broadcasting to every zone keeps the legacy BatchOracle API
+            // contract intact (every zone uses the same setpoints) while
+            // making the change visible to the physics step.
+            let heating_vec = self.0.heating_setpoints.as_mut();
+            for v in heating_vec.iter_mut() {
+                *v = self.0.heating_setpoint;
+            }
             debug!("Set heating setpoint to {}°C", self.0.heating_setpoint);
         }
         if params.len() >= 3 {
@@ -645,6 +657,11 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
             }
             self.0.heating_schedule = DailySchedule::constant(self.0.heating_setpoint);
             self.0.cooling_schedule = DailySchedule::constant(self.0.cooling_setpoint);
+            // Issue #2826: scalar → per-zone broadcast (see above).
+            let cooling_vec = self.0.cooling_setpoints.as_mut();
+            for v in cooling_vec.iter_mut() {
+                *v = self.0.cooling_setpoint;
+            }
             debug!("Set cooling setpoint to {}°C", self.0.cooling_setpoint);
         }
 
