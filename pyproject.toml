@@ -113,7 +113,14 @@ ignore_missing_imports = true
 explicit_package_bases = true
 
 [tool.pytest.ini_options]
-testpaths = ["tests"]
+# Collect the script-test harness under ``scripts/ci/`` (issue #2817).
+# Note: ``tests/`` is the Rust integration-test directory (see AGENTS.md) and
+# is owned by ``cargo test`` — not pytest. The pre-existing Python files under
+# ``tests/python/`` and ``tests/visual/`` have a known syntax bug (#2832, filed
+# during this work) and require the maturin-built ``fluxion`` extension for
+# their native bindings; both are out of scope for #2817 and are collected
+# explicitly by the Python-bindings workflow legs, not by ``pytest``.
+testpaths = ["scripts"]
 python_files = "test_*.py"
 
 [tool.coverage.run]
