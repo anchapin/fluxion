@@ -45,7 +45,7 @@ use axum::{
     http::StatusCode,
     middleware,
     response::{IntoResponse, Response},
-    routing::{get, post},
+    routing::{get, post, MethodRouter},
     Json, Router,
 };
 use parking_lot::RwLock;
@@ -2309,6 +2309,251 @@ impl Default for SafeHeaderMakeSpan {
     }
 }
 
+// =========================================================================
+// Issue #2812 — single source of truth for the `/v1/*` REST surface.
+// =========================================================================
+//
+// `axum` 0.8 (the pinned version, `Cargo.toml:295`) does **not** expose a
+// public route-introspection API: its `RouteId`, the internal `path_router`
+// module, and the `matchit` router store are all `pub(crate)`, and
+// `Router::as_service` / `Router::into_service` only wrap the router for
+// request dispatch — they do not enumerate registered paths. That means the
+// drift gate cannot ask a live `Router` "what routes do you mount?".
+//
+// The robust alternative (per the issue) is to make the route *registration*
+// itself the single source of truth. The table below is the only place the
+// `/v1/*` surface is enumerated:
+//
+//   - the production builder [`router_with_security`] iterates it to mount
+//     routes (so the live `Router` is built *from* the table — there is no
+//     parallel hardcoded `.route()` chain whose paths could drift), and
+//   - the OpenAPI drift gate `openapi_yaml_paths_match_router` iterates the
+//     same table to compare against `src/api/openapi.yaml`.
+//
+// Adding a route is a single edit to this table (+ the handler wiring in
+// [`method_router_for_path`]). Forget the table and the route is simply not
+// mounted — the drift gate cannot "silently green" a route that was never
+// registered, which is exactly the footgun that hid `/v1/campaigns` for ~5
+// months (#2747/#2803).
+
+/// Access tier for a `/v1/*` route — drives where the builder mounts it.
+///
+/// `Public` routes (`/v1/healthz`, `/v1/readyz`) sit at the top level so
+/// liveness/readiness probes work without credentials (#2505/#2514). Every
+/// other route is `Protected` and carries the auth middleware.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum RouteTier {
+    Public,
+    Protected,
+}
+
+/// HTTP method tag carried alongside each registry entry. Kept as a small
+/// `Copy` enum (rather than `axum::http::Method`, which is only `Clone`) so
+/// the whole [`REST_ROUTES`] tuple is `Copy` and cheap to iterate by value.
+///
+/// Only the methods the REST surface actually uses appear here; the OpenAPI
+/// side of the drift check ([`openapi_router_drift`]) parses arbitrary
+/// method keys, so adding a `PUT`/`DELETE` route later only needs a new
+/// variant here plus its handler.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum HttpMethod {
+    Get,
+    Post,
+}
+
+impl HttpMethod {
+    /// Lowercase method name, matching the keys OpenAPI uses under each path
+    /// (`get:`, `post:`, …). Only used by the (test-only) drift detector.
+    #[cfg(test)]
+    const fn as_str(self) -> &'static str {
+        match self {
+            HttpMethod::Get => "get",
+            HttpMethod::Post => "post",
+        }
+    }
+}
+
+/// The canonical list of `/v1/*` REST routes — **the single source of truth**
+/// (Issue #2812). Each entry is `(HTTP method, path template, access tier)`.
+///
+/// Order is irrelevant to `axum::matching`; routes are listed in
+/// public-then-protected, doc-order for readability. Both axum 0.8+ and
+/// OpenAPI use the `{id}` / `{fmt}` capture syntax, so path templates compare
+/// directly with no brace↔colon normalization.
+///
+/// **When you add a route here you MUST also wire its handler in
+/// [`method_router_for_path`].** The test
+/// `method_router_for_path_covers_every_registry_path` enforces this — a
+/// table entry with no handler fails the build's test suite loudly.
+#[rustfmt::skip]
+const REST_ROUTES: &[(HttpMethod, &str, RouteTier)] = &[
+    // Public — anonymous liveness/readiness probes.
+    (HttpMethod::Get,  "/v1/healthz",                   RouteTier::Public),
+    (HttpMethod::Get,  "/v1/readyz",                    RouteTier::Public),
+    // Protected — credential-gated via `require_auth` (#2505).
+    (HttpMethod::Get,  "/v1/metrics",                   RouteTier::Protected),
+    (HttpMethod::Get,  "/v1/openapi.json",              RouteTier::Protected),
+    (HttpMethod::Get,  "/v1/openapi.yaml",              RouteTier::Protected),
+    (HttpMethod::Post, "/v1/simulate",                  RouteTier::Protected),
+    (HttpMethod::Post, "/v1/simulate/stream",           RouteTier::Protected),
+    (HttpMethod::Post, "/v1/batch",                     RouteTier::Protected),
+    (HttpMethod::Get,  "/v1/simulation/{id}/status",    RouteTier::Protected),
+    (HttpMethod::Get,  "/v1/schema/{id}",               RouteTier::Protected),
+    (HttpMethod::Post, "/v1/import/{fmt}",              RouteTier::Protected),
+    (HttpMethod::Post, "/v1/campaigns",                 RouteTier::Protected),
+    (HttpMethod::Get,  "/v1/campaigns/{id}/status",     RouteTier::Protected),
+];
+
+/// Resolve a registry path to its [`MethodRouter`] handler pair.
+///
+/// This is the *only* place a path is wired to its handler function. It is
+/// keyed on the same path strings as [`REST_ROUTES`]; the test
+/// [`method_router_for_path_covers_every_registry_path`] asserts every table
+/// entry resolves here, so a path present in the table but missing a handler
+/// arm is caught immediately rather than silently dropped.
+///
+/// Returns [`MethodRouter<AppState>`] so the builder can mount every entry
+/// uniformly regardless of which extractors (`State`, `Path`, …) the handler
+/// uses — handlers without a `State` extractor are `Handler<T, S>` for all
+/// `S`, so they coerce to `MethodRouter<AppState>` alongside the rest.
+fn method_router_for_path(path: &str) -> MethodRouter<AppState> {
+    match path {
+        "/v1/healthz" => get(healthz),
+        "/v1/readyz" => get(readyz),
+        "/v1/metrics" => get(metrics_handler),
+        "/v1/openapi.json" => get(openapi_json),
+        "/v1/openapi.yaml" => get(openapi_yaml),
+        "/v1/simulate" => post(simulate),
+        "/v1/simulate/stream" => post(simulate_stream),
+        "/v1/batch" => post(batch_simulate),
+        "/v1/simulation/{id}/status" => get(get_simulation_status),
+        "/v1/schema/{id}" => get(get_schema),
+        "/v1/import/{fmt}" => post(import_format),
+        "/v1/campaigns" => post(submit_campaign),
+        "/v1/campaigns/{id}/status" => get(get_campaign_status),
+        other => unreachable!(
+            "REST_ROUTES references {other:?} but method_router_for_path has no handler — \
+             registry/handler drift (Issue #2812). Add the handler arm or remove the entry."
+        ),
+    }
+}
+
+/// Symmetric-path and per-path method drift between a route registry (the
+/// single source of truth) and an OpenAPI document. Produced by
+/// [`openapi_router_drift`]; empty iff the two are in sync. (Issue #2812.)
+#[cfg(test)]
+#[derive(Debug, Default, PartialEq, Eq)]
+struct OpenApiRouterDrift {
+    /// Paths mounted on the Router but absent from `openapi.yaml`.
+    only_in_router: Vec<String>,
+    /// Paths in `openapi.yaml` but not mounted on the Router.
+    only_in_openapi: Vec<String>,
+    /// `(path, router_methods, openapi_methods)` for paths present on both
+    /// sides whose HTTP-method sets disagree. Methods are lowercase
+    /// (`get`, `post`, …). Empty if every shared path agrees on methods.
+    method_mismatches: Vec<(String, Vec<String>, Vec<String>)>,
+}
+
+#[cfg(test)]
+impl OpenApiRouterDrift {
+    /// `true` iff there is no drift to report.
+    fn is_clean(&self) -> bool {
+        self.only_in_router.is_empty()
+            && self.only_in_openapi.is_empty()
+            && self.method_mismatches.is_empty()
+    }
+}
+
+/// Pure drift detector between a route registry and an OpenAPI YAML document.
+///
+/// Computes (a) the symmetric difference of path templates and (b) the
+/// per-path HTTP-method set difference. Path templates compare directly
+/// because axum 0.8+ and OpenAPI both use `{x}` captures. Method keys under
+/// each OpenAPI path (`get`, `post`, `put`, `delete`, `patch`, `head`,
+/// `options`) are lowercased and compared against the registry's
+/// [`HttpMethod`] tags.
+///
+/// Factored as a pure function so the drift gate and its regression tests
+/// share one implementation (Issue #2812).
+#[cfg(test)]
+fn openapi_router_drift(registry: &[(HttpMethod, &str)], openapi_yaml: &str) -> OpenApiRouterDrift {
+    use std::collections::{BTreeMap, BTreeSet};
+
+    // Registry side: path -> set<lowercase method>.
+    let mut router: BTreeMap<&str, BTreeSet<&str>> = BTreeMap::new();
+    for (method, path) in registry {
+        router.entry(path).or_default().insert(method.as_str());
+    }
+
+    // OpenAPI side: parse `paths:` -> path -> set<lowercase method>.
+    let parsed: serde_yaml::Value = match serde_yaml::from_str(openapi_yaml) {
+        Ok(v) => v,
+        Err(e) => panic!("OpenAPI YAML failed to parse: {e}"),
+    };
+    let paths = parsed
+        .get("paths")
+        .and_then(|v| v.as_mapping())
+        .expect("OpenAPI document must have a top-level `paths:` mapping");
+    let mut openapi: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
+    for (key, val) in paths.iter() {
+        let path = key
+            .as_str()
+            .unwrap_or_else(|| panic!("OpenAPI path key {key:?} must be a string"))
+            .to_string();
+        let mut methods = BTreeSet::new();
+        if let Some(ops) = val.as_mapping() {
+            for (method_key, _) in ops.iter() {
+                if let Some(s) = method_key.as_str() {
+                    let lower = s.to_ascii_lowercase();
+                    if matches!(
+                        lower.as_str(),
+                        "get" | "post" | "put" | "delete" | "patch" | "head" | "options"
+                    ) {
+                        methods.insert(lower);
+                    }
+                }
+            }
+        }
+        openapi.insert(path, methods);
+    }
+
+    let router_paths: BTreeSet<&str> = router.keys().copied().collect();
+    let openapi_paths: BTreeSet<&str> = openapi.keys().map(String::as_str).collect();
+
+    let only_in_router: Vec<String> = router_paths
+        .difference(&openapi_paths)
+        .map(|s| (*s).to_string())
+        .collect();
+    let only_in_openapi: Vec<String> = openapi_paths
+        .difference(&router_paths)
+        .map(|s| (*s).to_string())
+        .collect();
+
+    let method_mismatches: Vec<(String, Vec<String>, Vec<String>)> = router_paths
+        .intersection(&openapi_paths)
+        .filter_map(|path| {
+            let router_methods: BTreeSet<String> =
+                router[path].iter().map(|s| (*s).to_string()).collect();
+            let openapi_methods: &BTreeSet<String> = &openapi[*path];
+            if &router_methods == openapi_methods {
+                None
+            } else {
+                Some((
+                    (*path).to_string(),
+                    router_methods.into_iter().collect(),
+                    openapi_methods.iter().cloned().collect(),
+                ))
+            }
+        })
+        .collect();
+
+    OpenApiRouterDrift {
+        only_in_router,
+        only_in_openapi,
+        method_mismatches,
+    }
+}
+
 /// Construct the application's router with an explicit security
 /// configuration (Issue #2505). The binary uses this entry point so the
 /// auth / CORS / rate-limit / boot-guard controls are all driven from one
@@ -2393,26 +2638,28 @@ pub fn router_with_security(
     // without credentials. Every other `/v1/*` route is mounted on the
     // protected sub-router, which carries the auth middleware.
     // Issue #2514 — `/v1/readyz` is likewise public (readiness probes).
-    let protected_routes = Router::new()
-        .route("/v1/metrics", get(metrics_handler))
-        .route("/v1/openapi.json", get(openapi_json))
-        .route("/v1/openapi.yaml", get(openapi_yaml))
-        .route("/v1/simulate", post(simulate))
-        .route("/v1/simulate/stream", post(simulate_stream))
-        .route("/v1/batch", post(batch_simulate))
-        .route("/v1/simulation/{id}/status", get(get_simulation_status))
-        .route("/v1/schema/{id}", get(get_schema))
-        .route("/v1/import/{fmt}", post(import_format))
-        .route("/v1/campaigns", post(submit_campaign))
-        .route("/v1/campaigns/{id}/status", get(get_campaign_status))
-        .layer(middleware::from_fn_with_state(
-            cfg.auth_state(),
-            crate::api::security::require_auth,
-        ));
+    //
+    // Issue #2812 — routes are mounted from the single-source-of-truth
+    // [`REST_ROUTES`] table via [`method_router_for_path`], rather than a
+    // parallel hardcoded `.route()` chain. The drift gate below reads the
+    // same table, so there is no second list of paths that can fall out of
+    // sync. A path listed in the table without a handler arm fails
+    // `method_router_for_path_covers_every_registry_path` loudly.
+    let mut protected: Router<AppState> = Router::new();
+    let mut public: Router<AppState> = Router::new();
+    for &(_, path, tier) in REST_ROUTES {
+        let method_router = method_router_for_path(path);
+        match tier {
+            RouteTier::Protected => protected = protected.route(path, method_router),
+            RouteTier::Public => public = public.route(path, method_router),
+        }
+    }
+    let protected_routes = protected.layer(middleware::from_fn_with_state(
+        cfg.auth_state(),
+        crate::api::security::require_auth,
+    ));
 
-    Router::new()
-        .route("/v1/healthz", get(healthz))
-        .route("/v1/readyz", get(readyz))
+    public
         .merge(protected_routes)
         .with_state(state)
         // Issue #2505 — 16 MiB body cap (innermost global layer). Bounds
@@ -2559,71 +2806,114 @@ mod tests {
     }
 
     /// Issue #1442 (cross-check): `src/api/openapi.yaml`'s `paths:` keys
-    /// (`{id}`, `{fmt}`) must match the routes declared in `Router::new()`
-    /// one-to-one. Since axum 0.8 the router uses the same `{x}` capture
-    /// syntax that OpenAPI always used, so the keys compare directly. Adding
-    /// a route on either side without the matching entry on the other side
-    /// turns this test red.
+    /// (`{id}`, `{fmt}`) must match the routes mounted by
+    /// [`router_with_security`](Self) one-to-one, and the HTTP methods under
+    /// each path must agree.
+    ///
+    /// Issue #2812 — the Router side of the comparison is no longer a
+    /// manually-maintained `AXUM_ROUTES` array (which hid `/v1/campaigns`
+    /// for ~5 months in #2747/#2803). It now comes from the single source of
+    /// truth [`REST_ROUTES`] — the same table the production builder iterates
+    /// — so the gate cannot silently green a route that was registered
+    /// without a doc entry (or vice versa). Path templates compare directly
+    /// because axum 0.8+ and OpenAPI both use `{x}` captures.
     #[test]
     fn openapi_yaml_paths_match_router() {
-        // Routes declared in `Router::new()` (axum-style). Keep this list
-        // in sync with `src/api/server.rs:476` — it is the canonical
-        // source-of-truth used by this drift gate.
-        const AXUM_ROUTES: &[&str] = &[
-            "/v1/healthz",
-            "/v1/readyz",
-            "/v1/metrics",
-            "/v1/openapi.json",
-            "/v1/openapi.yaml",
-            "/v1/simulate",
-            "/v1/simulate/stream",
-            "/v1/batch",
-            "/v1/simulation/{id}/status",
-            "/v1/schema/{id}",
-            "/v1/import/{fmt}",
-            // Issue #2747 side-fix (clears the PR #2781 `AXUM_ROUTES` baseline
-            // failure): the two `/v1/campaigns` routes have been mounted on
-            // the Router since #2530 and declared in `openapi.yaml` since
-            // #1786, but were missing from this drift-gate array — every
-            // PR since #2781 inherited a red `openapi_yaml_paths_match_router`
-            // gate. Add them here so the gate stays green going forward.
-            "/v1/campaigns",
-            "/v1/campaigns/{id}/status",
-        ];
-
+        // Single source of truth: the same `REST_ROUTES` the live
+        // `router_with_security` mounts from.
+        let registry: Vec<(HttpMethod, &str)> =
+            REST_ROUTES.iter().map(|(m, p, _)| (*m, *p)).collect();
         let yaml = include_str!("openapi.yaml");
-        let parsed: serde_yaml::Value =
-            serde_yaml::from_str(yaml).expect("src/api/openapi.yaml must be a valid YAML document");
-        let paths = parsed
-            .get("paths")
-            .and_then(|v| v.as_mapping())
-            .expect("src/api/openapi.yaml must have a top-level `paths:` map");
 
-        let openapi_paths: std::collections::BTreeSet<String> = paths
-            .iter()
-            .map(|(k, _)| k.as_str().expect("path keys must be strings").to_string())
-            .collect();
-
-        // axum 0.8+ dropped the legacy `:x` capture syntax in favour of `{x}`,
-        // which is exactly what OpenAPI already used, so the path keys now
-        // compare directly — no brace↔colon normalization is needed.
-        let normalized: std::collections::BTreeSet<String> =
-            openapi_paths.iter().cloned().collect();
-
-        let axum_routes: std::collections::BTreeSet<String> =
-            AXUM_ROUTES.iter().map(|s| s.to_string()).collect();
-
-        let only_in_router: Vec<&String> = axum_routes.difference(&normalized).collect();
-        let only_in_yaml: Vec<&String> = normalized.difference(&axum_routes).collect();
+        let drift = openapi_router_drift(&registry, yaml);
 
         assert!(
-            only_in_router.is_empty() && only_in_yaml.is_empty(),
-            "OpenAPI ↔ Router drift detected.\n\
-             Routes in `Router::new()` but missing from openapi.yaml: {only_in_router:#?}\n\
-             Routes in openapi.yaml but missing from `Router::new()`: {only_in_yaml:#?}\n\
-             Update both sides (both axum 0.8+ and OpenAPI use `{{id}}`/`{{fmt}}`) \
-             and keep this test passing.",
+            drift.is_clean(),
+            "OpenAPI ↔ Router drift detected (Issue #2812).\n\
+             Routes mounted (via REST_ROUTES) but missing from openapi.yaml: \
+             {:#?}\n\
+             Routes in openapi.yaml but missing from the Router: {:#?}\n\
+             Per-path HTTP-method mismatches: {:#?}\n\
+             Update both sides — axum 0.8+ and OpenAPI both use `{{id}}`/`{{fmt}}` \
+             and lowercase method keys (`get`, `post`, …).",
+            drift.only_in_router,
+            drift.only_in_openapi,
+            drift.method_mismatches,
         );
+    }
+
+    /// Issue #2812 — proves the gate *catches* drift rather than silently
+    /// passing. A route present in the registry but absent from the OpenAPI
+    /// document must be reported in `only_in_router`.
+    #[test]
+    fn drift_detector_flags_route_only_in_registry() {
+        let yaml = "paths:\n  /v1/here:\n    get: {}\n";
+        let registry = [
+            (HttpMethod::Get, "/v1/here"),
+            (HttpMethod::Post, "/v1/undocumented"),
+        ];
+        let drift = openapi_router_drift(&registry, yaml);
+        assert_eq!(drift.only_in_router, vec!["/v1/undocumented".to_string()]);
+        assert!(drift.only_in_openapi.is_empty());
+        assert!(drift.method_mismatches.is_empty());
+        assert!(!drift.is_clean());
+    }
+
+    /// Issue #2812 — a path documented in OpenAPI but not mounted on the
+    /// Router must be reported in `only_in_openapi`.
+    #[test]
+    fn drift_detector_flags_path_only_in_openapi() {
+        let yaml = "paths:\n  /v1/mounted:\n    get: {}\n  /v1/orphan:\n    post: {}\n";
+        let registry = [(HttpMethod::Get, "/v1/mounted")];
+        let drift = openapi_router_drift(&registry, yaml);
+        assert_eq!(drift.only_in_openapi, vec!["/v1/orphan".to_string()]);
+        assert!(drift.only_in_router.is_empty());
+        assert!(!drift.is_clean());
+    }
+
+    /// Issue #2812 (bonus) — a path present on both sides whose HTTP methods
+    /// disagree must be reported in `method_mismatches` even though the path
+    /// sets match.
+    #[test]
+    fn drift_detector_flags_method_mismatch() {
+        let yaml = "paths:\n  /v1/thing:\n    post: {}\n";
+        // Registry says GET, OpenAPI says POST → method mismatch.
+        let registry = [(HttpMethod::Get, "/v1/thing")];
+        let drift = openapi_router_drift(&registry, yaml);
+        assert!(drift.only_in_router.is_empty());
+        assert!(drift.only_in_openapi.is_empty());
+        assert_eq!(
+            drift.method_mismatches,
+            vec![(
+                "/v1/thing".to_string(),
+                vec!["get".to_string()],
+                vec!["post".to_string()],
+            )]
+        );
+        assert!(!drift.is_clean());
+    }
+
+    /// Issue #2812 — a perfectly aligned registry/document must report a
+    /// clean (empty) drift so the gate stays green in the happy path.
+    #[test]
+    fn drift_detector_clean_when_aligned() {
+        let yaml = "paths:\n  /a:\n    get: {}\n  /b:\n    post: {}\n";
+        let registry = [(HttpMethod::Get, "/a"), (HttpMethod::Post, "/b")];
+        let drift = openapi_router_drift(&registry, yaml);
+        assert!(drift.is_clean());
+    }
+
+    /// Issue #2812 — every path in [`REST_ROUTES`] must resolve to a handler
+    /// in [`method_router_for_path`]. A table entry added without its handler
+    /// arm triggers the `unreachable!` here, so registry/handler drift can
+    /// never silently drop a route. This closes the one gap the pure drift
+    /// detector cannot see (the handler wiring is not in the OpenAPI doc).
+    #[test]
+    fn method_router_for_path_covers_every_registry_path() {
+        for &(_, path, _) in REST_ROUTES {
+            // Must not panic — proves a handler is wired for this path.
+            let _ = method_router_for_path(path);
+        }
     }
 
     #[test]
