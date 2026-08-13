@@ -109,6 +109,7 @@ ROOT_BLOCKED_DIRECTORIES: frozenset[str] = frozenset(
         "results",
         "reports",
         "bem-engineer-workspace",
+        "bem-engineer",
         "scratch",
         "output",
         "outputs",
@@ -352,7 +353,6 @@ def _self_test() -> int:
             ("src", True),  # legit dir (not in denylist)
             ("docs", True),
             ("crates", True),
-            ("bem-engineer", True),  # legit-ish dir (not in denylist)
         ]
         for name, is_dir in legit:
             _touch(root, name, is_dir=is_dir)
@@ -374,6 +374,7 @@ def _self_test() -> int:
             "results": "blocked_dirs",
             "reports": "blocked_dirs",
             "bem-engineer-workspace": "blocked_dirs",
+            "bem-engineer": "blocked_dirs",
         }
         for name in expected_violations:
             is_dir = expected_violations[name] == "blocked_dirs"
