@@ -435,7 +435,7 @@ def run_simulation(work_unit: WorkUnit) -> tuple[dict[str, Any], str]:
             },
         )
         output = result.stdout + result.stderr
-        metrics = parse_cargo_output(output)
+        metrics = parse_cargo_output(output, work_unit.case_id)
         return metrics, output
     except subprocess.TimeoutExpired:
         return {"error": "timeout"}, ""
@@ -443,8 +443,20 @@ def run_simulation(work_unit: WorkUnit) -> tuple[dict[str, Any], str]:
         return {"error": str(e)}, ""
 
 
-def parse_cargo_output(output: str) -> dict[str, Any]:
-    """Parse ASHRAE 140 validation output for MAE values."""
+def parse_cargo_output(output: str, case_id: str = "") -> dict[str, Any]:
+    """Parse ASHRAE 140 validation output for MAE values.
+
+    Parameters
+    ----------
+    output : str
+        Combined stdout/stderr from the ``cargo test`` invocation.
+    case_id : str, optional
+        When non-empty, only per-case entries whose identifier starts with
+        ``case_id`` (or contains it as a substring) contribute to the
+        per-case heating/cooling MAE aggregation. Empty string disables
+        filtering and aggregates every matched case — matching the behavior
+        of :func:`scripts.autonomous_parameter_sweep.parse_cargo_output`.
+    """
     import re
 
     metrics: dict[str, Any] = {
@@ -472,13 +484,7 @@ def parse_cargo_output(output: str) -> dict[str, Any]:
     cooling_errors = []
     for match in case_pattern.finditer(output):
         case = match.group(1)
-        # TODO(#2811): latent bug - `work_unit` is not in scope in parse_cargo_output(output);
-        # this case filter raises NameError when reached. Proper fix requires adding a
-        # work_unit/case_id parameter and updating the caller run_simulation(). Suppressed
-        # here to avoid a behavior change in this lint-only pass.
-        if work_unit.case_id and (  # noqa: F821
-            case.startswith(work_unit.case_id) or work_unit.case_id in case  # noqa: F821
-        ):
+        if case_id and (case.startswith(case_id) or case_id in case):
             ref_heat = (float(match.group(3)) + float(match.group(4))) / 2
             ref_cool = (float(match.group(6)) + float(match.group(7))) / 2
             sim_heat = float(match.group(2))
