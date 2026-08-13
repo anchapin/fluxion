@@ -188,16 +188,35 @@ jobs:
         # `fluxion.pyd`) on Windows. Globbing `*.so`/`*.pyd` is safe — the
         # package dir contains only .py source files plus the one compiled
         # extension.
+        #
+        # Issue #2836: do NOT use `site.getsitepackages()[0]` here. On the
+        # `windows-latest` runner with the official setup-python install
+        # (C:\hostedtoolcache\windows\Python\X.Y.Z\x64), it returns the
+        # bare `sys.prefix` instead of `sys.prefix\Lib\site-packages`, so
+        # the glob below looks one directory too high and fails to find
+        # the compiled `.pyd`. Verified by 10+ PRs (e.g. #2821, #2823,
+        # #2824, #2827, #2828, #2829, #2833, #2834) across waves 1-5.
+        # `pip show fluxion` reports the actual install location pip used
+        # and is reliable cross-platform.
         shell: bash
         run: |
           set -euo pipefail
-          SP="$(python -c 'import site; print(site.getsitepackages()[0])')"
-          echo "site-packages: $SP"
+          SP="$(pip show fluxion | awk '/^Location:/{print $2}')"
+          if [ -z "$SP" ]; then
+            echo "::error::Could not determine fluxion install location via 'pip show fluxion'"
+            pip show fluxion || true
+            exit 1
+          fi
+          echo "fluxion install location (per pip): $SP"
           shopt -s nullglob
           NATIVE=( "$SP"/fluxion/*.so "$SP"/fluxion/*.pyd )
           if [ "${#NATIVE[@]}" -eq 0 ]; then
             echo "::error::No compiled extension (.so/.pyd) under $SP/fluxion/"
             ls -la "$SP"/fluxion/ || true
+            echo "--- debug: site.getsitepackages() said ---"
+            python -c 'import site; print(site.getsitepackages())' || true
+            echo "--- debug: sys.prefix / sys.exec_prefix ---"
+            python -c 'import sys; print("prefix=", sys.prefix, "exec_prefix=", sys.exec_prefix)' || true
             exit 1
           fi
           cp -v "${NATIVE[@]}" fluxion/
