@@ -855,8 +855,12 @@ mod tests {
     ///      engine output was nowhere near the canonical envelope.
     ///
     /// After this fix:
-    ///   1. `validate_case_960` takes ≫ 100ms because it steps 8760
-    ///      physics hours through `ASHRAE140Validator::validate_case_960`.
+    ///   1. `validate_case_960` steps 8760 physics hours through
+    ///      `ASHRAE140Validator::validate_case_960`, producing a real
+    ///      computed annual-heating value distinct from the pre-#1407
+    ///      stub placeholder (12.5 MWh) — see assertion (1) below.
+    ///      (Issue #2745: this was previously a flaky >200ms wall-clock
+    ///      proxy; it is now a deterministic structural check.)
     ///   2. The current engine output (7.47 MWh heating vs canonical
     ///      1.65-2.45 MWh) is far outside ±15%, so the validator
     ///      correctly returns `in_range = false` — proving PASS is no
@@ -867,33 +871,39 @@ mod tests {
     ///      is correct (independent of the engine's current accuracy).
     #[test]
     fn test_case_960_validator_runs_real_model_not_stub() {
-        use std::time::Instant;
-
         let validator = ASHRAE140MultiZoneValidator::new();
         let spec = ASHRAE140Case::Case960.spec();
         let model = ThermalModel::<VectorField>::from_spec(&spec);
         let reference = Case960Reference::load_case_960_reference_data();
 
-        // (1) The validator must take substantially longer than the
-        //     <1ms the stub took. A 8760-step physics simulation takes
-        //     many milliseconds even on a fast machine, so 200ms is a
-        //     very conservative floor that the stub would never reach.
-        //
-        //     NOTE: This threshold was raised from 100ms to 200ms to handle
-        //     loaded CI runners where 38ms < 100ms was observed (#1714).
-        //     The real fix (verifying computed load is non-zero) is tracked
-        //     separately. This threshold is a proxy; the real execution is
-        //     independently proven by steps (2)-(4) below.
-        let started = Instant::now();
-        let result = validator.validate_case_960(&model, &reference);
-        let elapsed_ms = started.elapsed().as_secs_f64() * 1000.0;
-
+        // (1) DETERMINISTIC structural check that the real physics ran
+        //     (issue #2745). The pre-#1407 stub never called
+        //     `step_physics`: it returned hardcoded placeholders
+        //     (annual_heating = 12.5 MWh) and fabricated `in_range = true`.
+        //     The original regression guard used a >200ms wall-clock proxy,
+        //     which is inherently machine/profile-dependent and flaked
+        //     under `--profile ci` on fast runners (~120-140ms). It is
+        //     replaced here by asserting the computed annual heating is a
+        //     finite, positive value that is NOT the stub's 12.5 MWh
+        //     placeholder. A 1.0 MWh separation is a robust, machine-
+        //     independent discriminator that survives model-accuracy
+        //     improvements (the real value will never return to 12.5).
+        let report = validator.run_real_case_960_report();
+        let computed_heating_mwh = report.annual_heating_mwh;
+        const STUB_PLACEHOLDER_HEATING_MWH: f64 = 12.5;
         assert!(
-            elapsed_ms > 200.0,
-            "Validator should take > 200ms (real physics); took {:.1}ms — \
-             likely still the stub.",
-            elapsed_ms
+            computed_heating_mwh.is_finite() && computed_heating_mwh > 0.0,
+            "Real physics must produce a finite, positive annual heating value; got {}",
+            computed_heating_mwh,
         );
+        assert!(
+            (computed_heating_mwh - STUB_PLACEHOLDER_HEATING_MWH).abs() > 1.0,
+            "Computed annual heating ({:.3} MWh) is within 1.0 MWh of the pre-#1407 \
+             stub placeholder (12.5 MWh) — the stub may be reinstalled.",
+            computed_heating_mwh,
+        );
+
+        let result = validator.validate_case_960(&model, &reference);
 
         // (2) The validator must NOT fabricate PASS for the current
         //     engine output. The current model produces ~7.47 MWh
