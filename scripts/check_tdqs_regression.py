@@ -54,7 +54,9 @@ def extract_tdqs(data: dict) -> tuple[float, dict[str, float]]:
     pt = data.get("per_type", {})
     for dt in DECISION_TYPES:
         entry = pt.get(dt, {})
-        per_type[dt] = float(entry.get("tdqs", entry) if isinstance(entry, dict) else entry)
+        per_type[dt] = float(
+            entry.get("tdqs", entry) if isinstance(entry, dict) else entry
+        )
     return overall, per_type
 
 
@@ -70,11 +72,13 @@ def check_regression(
     cur_overall, cur_pt = extract_tdqs(current_data)
     base_overall, base_pt = extract_tdqs(baseline_data)
 
-    print(f"\n{'='*60}")
+    print(f"\n{'=' * 60}")
     print(f"TDQS Regression Check  (threshold = {threshold:.2f})")
-    print(f"{'='*60}")
-    print(f"  {'Metric':<28} {'Baseline':>10} {'Current':>10} {'Delta':>10} {'Status':>10}")
-    print(f"  {'-'*28} {'-'*10} {'-'*10} {'-'*10} {'-'*10}")
+    print(f"{'=' * 60}")
+    print(
+        f"  {'Metric':<28} {'Baseline':>10} {'Current':>10} {'Delta':>10} {'Status':>10}"
+    )
+    print(f"  {'-' * 28} {'-' * 10} {'-' * 10} {'-' * 10} {'-' * 10}")
 
     regressions: list[str] = []
 
@@ -84,7 +88,9 @@ def check_regression(
     status = "OK" if base_overall - cur_overall <= threshold else "REGRESSION"
     if status == "REGRESSION":
         regressions.append(f"overall ({delta_overall:+.4f})")
-    print(f"  {'overall':<28} {base_overall:>10.4f} {cur_overall:>10.4f} {sign}{delta_overall:>9.4f} {status:>10}")
+    print(
+        f"  {'overall':<28} {base_overall:>10.4f} {cur_overall:>10.4f} {sign}{delta_overall:>9.4f} {status:>10}"
+    )
 
     # Per-type
     for dt in DECISION_TYPES:
@@ -95,7 +101,9 @@ def check_regression(
         status = "OK" if base_score - cur_score <= threshold else "REGRESSION"
         if status == "REGRESSION":
             regressions.append(f"{dt} ({delta:+.4f})")
-        print(f"  {dt:<28} {base_score:>10.4f} {cur_score:>10.4f} {sign}{delta:>9.4f} {status:>10}")
+        print(
+            f"  {dt:<28} {base_score:>10.4f} {cur_score:>10.4f} {sign}{delta:>9.4f} {status:>10}"
+        )
 
     print()
 
@@ -112,13 +120,15 @@ def check_regression(
     if summary_path:
         lines = [
             "## TDQS Regression Check\n",
-            f"| Metric | Baseline | Current | Delta | Status |",
-            f"|--------|----------|---------|-------|--------|",
+            "| Metric | Baseline | Current | Delta | Status |",
+            "|--------|----------|---------|-------|--------|",
         ]
         delta = cur_overall - base_overall
         sig = "+" if delta >= 0 else ""
         ok = "✅ OK" if base_overall - cur_overall <= threshold else "❌ REGRESSION"
-        lines.append(f"| **overall** | {base_overall:.4f} | **{cur_overall:.4f}** | `{sig}{delta:.4f}` | {ok} |")
+        lines.append(
+            f"| **overall** | {base_overall:.4f} | **{cur_overall:.4f}** | `{sig}{delta:.4f}` | {ok} |"
+        )
         for dt in DECISION_TYPES:
             b = base_pt.get(dt, 0.0)
             c = cur_pt.get(dt, 0.0)
@@ -131,30 +141,49 @@ def check_regression(
 
     if regressions:
         if warn_only:
-            print(f"⚠️  WARNING: TDQS regressions (non-blocking): {', '.join(regressions)}")
+            print(
+                f"⚠️  WARNING: TDQS regressions (non-blocking): {', '.join(regressions)}"
+            )
             return 0
         else:
             print(f"❌ REGRESSION DETECTED in: {', '.join(regressions)}")
             print(f"   TDQS dropped > {threshold:.0%} in one or more decision types.")
-            print("   To resolve: ensure physics fixes do not degrade decision quality.")
+            print(
+                "   To resolve: ensure physics fixes do not degrade decision quality."
+            )
             return 1
     else:
-        print(f"✅ No regressions detected. TDQS: {cur_overall:.4f} (baseline: {base_overall:.4f})")
+        print(
+            f"✅ No regressions detected. TDQS: {cur_overall:.4f} (baseline: {base_overall:.4f})"
+        )
         return 0
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("--current",
-                        default="benches/orchestration_decisions/baselines/current_tdqs.json",
-                        help="Path to current TDQS JSON (output from Criterion bench)")
-    parser.add_argument("--baseline",
-                        default="benches/orchestration_decisions/baselines/rule_based_baseline.json",
-                        help="Path to baseline TDQS JSON")
-    parser.add_argument("--threshold", type=float, default=0.05,
-                        help="Regression threshold in TDQS points (default: 0.05 = 5%%)")
-    parser.add_argument("--warn-only", action="store_true",
-                        help="Warn but do not fail on regression (for PRs only)")
+    parser = argparse.ArgumentParser(
+        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
+    )
+    parser.add_argument(
+        "--current",
+        default="benches/orchestration_decisions/baselines/current_tdqs.json",
+        help="Path to current TDQS JSON (output from Criterion bench)",
+    )
+    parser.add_argument(
+        "--baseline",
+        default="benches/orchestration_decisions/baselines/rule_based_baseline.json",
+        help="Path to baseline TDQS JSON",
+    )
+    parser.add_argument(
+        "--threshold",
+        type=float,
+        default=0.05,
+        help="Regression threshold in TDQS points (default: 0.05 = 5%%)",
+    )
+    parser.add_argument(
+        "--warn-only",
+        action="store_true",
+        help="Warn but do not fail on regression (for PRs only)",
+    )
     args = parser.parse_args()
 
     return check_regression(

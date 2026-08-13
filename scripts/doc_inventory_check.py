@@ -153,7 +153,7 @@ def check_inventory() -> list[str]:
         else:
             print(f"    OK: {rel}")
 
-    print(f"[2/2] Verifying Status column accuracy ...")
+    print("[2/2] Verifying Status column accuracy ...")
     status_issues = 0
     for name, path, status in docs:
         rel = path.relative_to(REPO_ROOT) if path.is_absolute() else path
@@ -173,13 +173,13 @@ def check_inventory() -> list[str]:
             status_issues += 1
 
     if status_issues == 0:
-        print(f"    OK: All Status column entries are accurate")
+        print("    OK: All Status column entries are accurate")
 
     return findings
 
 
 def main() -> int:
-    print(f"=== Fluxion Doc Inventory Check ===")
+    print("=== Fluxion Doc Inventory Check ===")
     print(f"Repo: {REPO_ROOT}")
     print()
 

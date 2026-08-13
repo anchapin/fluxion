@@ -3,10 +3,8 @@
 Generate synthetic reference data for ASHRAE 140 Cases 800-810 (HVAC Equipment)
 """
 
-import csv
 import math
 import sys
-from datetime import datetime, timedelta
 
 
 def generate_hourly_temperature(hour, base_temp, seasonal_variation):

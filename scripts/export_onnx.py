@@ -21,10 +21,10 @@ import json
 import logging
 import sys
 import time
-from dataclasses import dataclass, asdict
+from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Tuple
 
 import numpy as np
 
@@ -119,7 +119,9 @@ def analyze_onnx_model(model_path: Path) -> ValidationReport:
     opset_version = model.opset_import[0].version if model.opset_import else 0
     onnx_version = onnx.__version__
 
-    test_input = np.random.randn(1, input_tensor.shape[1] if input_tensor.shape[1] else 8).astype(np.float32)
+    test_input = np.random.randn(
+        1, input_tensor.shape[1] if input_tensor.shape[1] else 8
+    ).astype(np.float32)
 
     start = time.perf_counter()
     result = session.run([output_tensor.name], {input_tensor.name: test_input})
@@ -170,7 +172,9 @@ def analyze_onnx_model(model_path: Path) -> ValidationReport:
     return report
 
 
-def validate_model_structure(model_path: Path, component: str) -> Tuple[bool, List[str]]:
+def validate_model_structure(
+    model_path: Path, component: str
+) -> Tuple[bool, List[str]]:
     """Validate model structure matches expected I/O specification."""
     import onnx
     import onnxruntime as ort
@@ -181,13 +185,15 @@ def validate_model_structure(model_path: Path, component: str) -> Tuple[bool, Li
     try:
         model = onnx.load(str(model_path))
         onnx.checker.check_model(model)
-        logger.info(f"  ONNX model structure is valid")
+        logger.info("  ONNX model structure is valid")
     except onnx.validation.ValidationError as e:
         errors.append(f"ONNX validation error: {e}")
         return False, errors
 
     try:
-        session = ort.InferenceSession(str(model_path), providers=["CPUExecutionProvider"])
+        session = ort.InferenceSession(
+            str(model_path), providers=["CPUExecutionProvider"]
+        )
     except Exception as e:
         errors.append(f"Failed to load model with onnxruntime: {e}")
         return False, errors
@@ -204,16 +210,30 @@ def validate_model_structure(model_path: Path, component: str) -> Tuple[bool, Li
         spec = COMPONENT_IO_SPECS[component]
 
         if inputs[0].name != spec["input_name"]:
-            warnings.append(f"Input name '{inputs[0].name}' differs from spec '{spec['input_name']}'")
+            warnings.append(
+                f"Input name '{inputs[0].name}' differs from spec '{spec['input_name']}'"
+            )
 
-        if spec["input_shape"][1] is not None and inputs[0].shape[1] != spec["input_shape"][1]:
-            errors.append(f"Input feature dim {inputs[0].shape[1]} != expected {spec['input_shape'][1]}")
+        if (
+            spec["input_shape"][1] is not None
+            and inputs[0].shape[1] != spec["input_shape"][1]
+        ):
+            errors.append(
+                f"Input feature dim {inputs[0].shape[1]} != expected {spec['input_shape'][1]}"
+            )
 
         if outputs[0].name != spec["output_name"]:
-            warnings.append(f"Output name '{outputs[0].name}' differs from spec '{spec['output_name']}'")
+            warnings.append(
+                f"Output name '{outputs[0].name}' differs from spec '{spec['output_name']}'"
+            )
 
-        if spec["output_shape"][1] is not None and outputs[0].shape[1] != spec["output_shape"][1]:
-            errors.append(f"Output feature dim {outputs[0].shape[1]} != expected {spec['output_shape'][1]}")
+        if (
+            spec["output_shape"][1] is not None
+            and outputs[0].shape[1] != spec["output_shape"][1]
+        ):
+            errors.append(
+                f"Output feature dim {outputs[0].shape[1]} != expected {spec['output_shape'][1]}"
+            )
 
     return len(errors) == 0, errors + warnings
 
@@ -260,7 +280,7 @@ def export_model(
 ) -> bool:
     """Export sklearn MLP model to ONNX format."""
     import onnx
-    from onnx import helper, TensorProto, numpy_helper
+    from onnx import TensorProto, helper, numpy_helper
 
     schema = COMPONENT_IO_SPECS.get(component)
     if schema is None:
@@ -279,19 +299,35 @@ def export_model(
     mlp_out_name = "mlp_out"
     scaled_input_name = "scaled_input"
 
-    input_info = helper.make_tensor_value_info(input_tensor_name, TensorProto.FLOAT, [None, n_features])
-    output_info = helper.make_tensor_value_info(output_tensor_name, TensorProto.FLOAT, [None, n_outputs])
+    input_info = helper.make_tensor_value_info(
+        input_tensor_name, TensorProto.FLOAT, [None, n_features]
+    )
+    output_info = helper.make_tensor_value_info(
+        output_tensor_name, TensorProto.FLOAT, [None, n_outputs]
+    )
 
-    init_scale_in = numpy_helper.from_array(scaler.scale_.astype(np.float32), scale_in_name)
-    init_bias_in = numpy_helper.from_array((-scaler.mean_ * scaler.scale_).astype(np.float32), bias_in_name)
-    init_scale_out = numpy_helper.from_array((1.0 / scaler.scale_).astype(np.float32), scale_out_name)
-    init_bias_out = numpy_helper.from_array(scaler.mean_.astype(np.float32), bias_out_name)
+    init_scale_in = numpy_helper.from_array(
+        scaler.scale_.astype(np.float32), scale_in_name
+    )
+    init_bias_in = numpy_helper.from_array(
+        (-scaler.mean_ * scaler.scale_).astype(np.float32), bias_in_name
+    )
+    init_scale_out = numpy_helper.from_array(
+        (1.0 / scaler.scale_).astype(np.float32), scale_out_name
+    )
+    init_bias_out = numpy_helper.from_array(
+        scaler.mean_.astype(np.float32), bias_out_name
+    )
 
     nodes = []
     initializers = [init_scale_in, init_bias_in, init_scale_out, init_bias_out]
 
-    scale_in_node = helper.make_node("Mul", [input_tensor_name, scale_in_name], ["scale_in_mul"])
-    add_in_node = helper.make_node("Add", ["scale_in_mul", bias_in_name], [scaled_input_name])
+    scale_in_node = helper.make_node(
+        "Mul", [input_tensor_name, scale_in_name], ["scale_in_mul"]
+    )
+    add_in_node = helper.make_node(
+        "Add", ["scale_in_mul", bias_in_name], [scaled_input_name]
+    )
     nodes.extend([scale_in_node, add_in_node])
 
     layer_sizes = [n_features] + list(hidden_layer_sizes) + [n_outputs]
@@ -306,7 +342,7 @@ def export_model(
         initializers.append(numpy_helper.from_array(w_values, w_name))
         initializers.append(numpy_helper.from_array(b_values, b_name))
 
-        prev_name = scaled_input_name if i == 0 else f"layer{i-1}_out"
+        prev_name = scaled_input_name if i == 0 else f"layer{i - 1}_out"
         curr_name = f"layer{i}_out"
 
         w_node = helper.make_node("MatMul", [prev_name, w_name], ["w_mul_out"])
@@ -321,8 +357,12 @@ def export_model(
             last_layer_node = helper.make_node("Identity", [curr_name], [mlp_out_name])
             nodes.append(last_layer_node)
 
-    scale_out_node = helper.make_node("Mul", [mlp_out_name, scale_out_name], ["scaled_out"])
-    add_out_node = helper.make_node("Add", ["scaled_out", bias_out_name], [output_tensor_name])
+    scale_out_node = helper.make_node(
+        "Mul", [mlp_out_name, scale_out_name], ["scaled_out"]
+    )
+    add_out_node = helper.make_node(
+        "Add", ["scaled_out", bias_out_name], [output_tensor_name]
+    )
     nodes.extend([scale_out_node, add_out_node])
 
     graph = helper.make_graph(
@@ -345,13 +385,21 @@ def export_model(
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Export and validate ONNX surrogate models")
+    parser = argparse.ArgumentParser(
+        description="Export and validate ONNX surrogate models"
+    )
     parser.add_argument("--model", type=Path, help="Model file to validate")
     parser.add_argument("--component", type=str, help="Component name (for validation)")
-    parser.add_argument("--all-models", action="store_true", help="Validate all models in models/")
-    parser.add_argument("--input-dir", type=Path, default=Path("models"), help="Input directory")
+    parser.add_argument(
+        "--all-models", action="store_true", help="Validate all models in models/"
+    )
+    parser.add_argument(
+        "--input-dir", type=Path, default=Path("models"), help="Input directory"
+    )
     parser.add_argument("--benchmark", action="store_true", help="Run benchmark")
-    parser.add_argument("--n-iterations", type=int, default=100, help="Benchmark iterations")
+    parser.add_argument(
+        "--n-iterations", type=int, default=100, help="Benchmark iterations"
+    )
     parser.add_argument("--output", type=Path, help="Output validation report path")
 
     args = parser.parse_args()
@@ -387,7 +435,7 @@ def main():
             reports.append(report)
 
             if report.errors:
-                logger.warning(f"  Errors found:")
+                logger.warning("  Errors found:")
                 for error in report.errors:
                     logger.warning(f"    - {error}")
                 all_passed = False
@@ -399,7 +447,9 @@ def main():
             logger.info(f"  IR version: {report.ir_version}")
             logger.info(f"  Model size: {report.model_size_bytes / 1024:.2f} KB")
             logger.info(f"  Parameters: {report.total_params}")
-            logger.info(f"  Runtime validation: {'PASS' if report.runtime_validation else 'FAIL'}")
+            logger.info(
+                f"  Runtime validation: {'PASS' if report.runtime_validation else 'FAIL'}"
+            )
             logger.info(f"  Inference time: {report.inference_time_ms:.4f} ms")
 
             if args.benchmark:
@@ -407,13 +457,17 @@ def main():
                 bench = benchmark_inference(model_path, args.n_iterations)
                 logger.info(f"  Mean: {bench['mean_ms']:.4f} ms")
                 logger.info(f"  P95: {bench['p95_ms']:.4f} ms")
-                logger.info(f"  Throughput: {bench['throughput_samples_per_sec']:.1f} samples/sec")
+                logger.info(
+                    f"  Throughput: {bench['throughput_samples_per_sec']:.1f} samples/sec"
+                )
 
                 if bench["mean_ms"] > 1.0:
-                    logger.warning(f"  WARNING: Inference time exceeds 1ms target!")
+                    logger.warning("  WARNING: Inference time exceeds 1ms target!")
 
             if component:
-                struct_ok, struct_errors = validate_model_structure(model_path, component)
+                struct_ok, struct_errors = validate_model_structure(
+                    model_path, component
+                )
                 if struct_errors:
                     for err in struct_errors:
                         logger.warning(f"  {err}")

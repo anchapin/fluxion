@@ -21,23 +21,25 @@ Exits 0 on success, 1 on any assertion failure.
 
 from __future__ import annotations
 
-import json
 import sys
 import tempfile
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO / "scripts"))
-from coverage_critical_paths import evaluate_gate, parse_lcov, bucket_coverage  # noqa: E402
 from coverage_baseline import build_baseline_payload  # noqa: E402
+from coverage_critical_paths import (  # noqa: E402
+    bucket_coverage,
+    evaluate_gate,
+    parse_lcov,
+)
 
 
-def write_lcov(path: Path, *, lf: int, lh: int, brf: int, brh: int, sf: str = "src/sim/solar.rs") -> None:
+def write_lcov(
+    path: Path, *, lf: int, lh: int, brf: int, brh: int, sf: str = "src/sim/solar.rs"
+) -> None:
     path.write_text(
-        f"SF:{sf}\n"
-        f"LF:{lf}\nLH:{lh}\n"
-        f"BRF:{brf}\nBRH:{brh}\n"
-        "end_of_record\n",
+        f"SF:{sf}\nLF:{lf}\nLH:{lh}\nBRF:{brf}\nBRH:{brh}\nend_of_record\n",
         encoding="utf-8",
     )
 
@@ -113,7 +115,9 @@ def main() -> int:
     }
     payload = build_baseline_payload(reports, previous)
     ws = payload["paths"]["weather_solar"]
-    assert ws["branch"] == 70.0, f"branch should ratchet to 70 (max of 70,50), got {ws['branch']}"
+    assert ws["branch"] == 70.0, (
+        f"branch should ratchet to 70 (max of 70,50), got {ws['branch']}"
+    )
     assert ws["line"] == 80.0, f"line should ratchet to 80, got {ws['line']}"
     print("[6/10] OK: branch ratchets one-way (70 stayed at 70, not 50)")
 
@@ -123,14 +127,26 @@ def main() -> int:
     #    (ratchet floor 59.4, passes).  But min_branch_floor = 70 -> FAILS.
     write_lcov(lcov, lf=10, lh=9, brf=20, brh=13, sf="src/sim/solar.rs")  # 65% branch
     reports = reports_for(lcov)
-    assert reports["weather_solar"].branch_pct == 65.0, reports["weather_solar"].branch_pct
-    base = {"paths": {"weather_solar": {
-        "line": 90.0, "branch": 60.0, "min_branch_floor": 70.0,
-    }}}
+    assert reports["weather_solar"].branch_pct == 65.0, reports[
+        "weather_solar"
+    ].branch_pct
+    base = {
+        "paths": {
+            "weather_solar": {
+                "line": 90.0,
+                "branch": 60.0,
+                "min_branch_floor": 70.0,
+            }
+        }
+    }
     fails = evaluate_gate(reports, base, 0.01)
-    assert any("absolute minimum floor" in f and "weather_solar" in f for f in fails), fails
+    assert any("absolute minimum floor" in f and "weather_solar" in f for f in fails), (
+        fails
+    )
     # And the ratchet-only check (branch 65 >= 59.4) should NOT be in failures
-    assert not any("fell below ratchet floor" in f and "branch" in f for f in fails), fails
+    assert not any("fell below ratchet floor" in f and "branch" in f for f in fails), (
+        fails
+    )
     print("[7/10] OK: absolute floor fails below 70% even when ratchet passes")
 
     # 8. min_branch_floor unenforced (absent) -> no floor failure.
@@ -146,9 +162,15 @@ def main() -> int:
     #    even when current is far below target.
     write_lcov(lcov, lf=10, lh=9, brf=20, brh=13, sf="src/sim/solar.rs")  # 65% branch
     reports = reports_for(lcov)
-    base = {"paths": {"weather_solar": {
-        "line": 90.0, "branch": 60.0, "v1_3_target_branch": 75.0,
-    }}}
+    base = {
+        "paths": {
+            "weather_solar": {
+                "line": 90.0,
+                "branch": 60.0,
+                "v1_3_target_branch": 75.0,
+            }
+        }
+    }
     fails = evaluate_gate(reports, base, 0.01)
     assert fails == [], fails  # target must not fail
     print("[9/10] OK: v1.3 target reported but does not fail gate")
@@ -160,8 +182,10 @@ def main() -> int:
     previous = {
         "paths": {
             "weather_solar": {
-                "line": 80.0, "branch": 70.0,
-                "min_branch_floor": 60.0, "v1_3_target_branch": 75.0,
+                "line": 80.0,
+                "branch": 70.0,
+                "min_branch_floor": 60.0,
+                "v1_3_target_branch": 75.0,
             },
             "weather_ventilation": {"line": 0.0, "branch": 0.0},
             "conduction_zone": {"line": 0.0, "branch": 0.0},
@@ -171,8 +195,12 @@ def main() -> int:
     }
     payload = build_baseline_payload(reports, previous)
     ws = payload["paths"]["weather_solar"]
-    assert ws["min_branch_floor"] == 60.0, f"floor should carry forward, got {ws['min_branch_floor']}"
-    assert ws["v1_3_target_branch"] == 75.0, f"target should carry forward, got {ws['v1_3_target_branch']}"
+    assert ws["min_branch_floor"] == 60.0, (
+        f"floor should carry forward, got {ws['min_branch_floor']}"
+    )
+    assert ws["v1_3_target_branch"] == 75.0, (
+        f"target should carry forward, got {ws['v1_3_target_branch']}"
+    )
     # And a path WITHOUT policy fields should get 0.0 defaults, not KeyError
     assert payload["paths"]["overall"]["min_branch_floor"] == 0.0
     assert payload["paths"]["overall"]["v1_3_target_branch"] == 0.0

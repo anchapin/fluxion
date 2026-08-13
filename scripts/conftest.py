@@ -18,7 +18,6 @@ from __future__ import annotations
 
 import os
 import sys
-import urllib.error
 from contextlib import contextmanager
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -86,11 +85,13 @@ class _FakeS3Client:
     listed_objects: dict[str, list[dict[str, Any]]] = field(default_factory=dict)
     head_should_fail: bool = False
 
-    def put_object(self, Bucket: str, Key: str, Body: bytes = b"", **_: Any) -> dict[str, Any]:
+    def put_object(
+        self, Bucket: str, Key: str, Body: bytes = b"", **_: Any
+    ) -> dict[str, Any]:
         self.bucket_objects.setdefault(Bucket, {})[Key] = (
             Body if isinstance(Body, (bytes, bytearray)) else str(Body).encode("utf-8")
         )
-        return {"ETag": "\"deadbeef\""}
+        return {"ETag": '"deadbeef"'}
 
     def get_object(self, Bucket: str, Key: str, **_: Any) -> dict[str, Any]:
         body = self.bucket_objects.get(Bucket, {}).get(Key)
@@ -146,7 +147,10 @@ def _make_client_error(code: int, error_code: str, key: str) -> Exception:
     from botocore.exceptions import ClientError
 
     return ClientError(
-        {"Error": {"Code": error_code, "Message": f"missing {key}"}, "ResponseMetadata": {"HTTPStatusCode": code}},
+        {
+            "Error": {"Code": error_code, "Message": f"missing {key}"},
+            "ResponseMetadata": {"HTTPStatusCode": code},
+        },
         "HeadObject",
     )
 
@@ -156,7 +160,10 @@ def _make_client_error_for_get(code: int, error_code: str, key: str) -> Exceptio
     from botocore.exceptions import ClientError
 
     return ClientError(
-        {"Error": {"Code": error_code, "Message": f"missing {key}"}, "ResponseMetadata": {"HTTPStatusCode": code}},
+        {
+            "Error": {"Code": error_code, "Message": f"missing {key}"},
+            "ResponseMetadata": {"HTTPStatusCode": code},
+        },
         "GetObject",
     )
 
@@ -208,8 +215,13 @@ def populated_state_store(in_memory_state_store):
 
     store = in_memory_state_store
     for i, status in enumerate(
-        [TaskStatus.COMPLETED, TaskStatus.COMPLETED, TaskStatus.COMPLETED,
-         TaskStatus.FAILED, TaskStatus.PENDING]
+        [
+            TaskStatus.COMPLETED,
+            TaskStatus.COMPLETED,
+            TaskStatus.COMPLETED,
+            TaskStatus.FAILED,
+            TaskStatus.PENDING,
+        ]
     ):
         wu = f"wu-{i:04d}"
         store.set_state(
@@ -217,7 +229,9 @@ def populated_state_store(in_memory_state_store):
                 work_unit_id=wu,
                 status=status,
                 campaign_id="fluxion-camp-test",
-                metrics={"heating_mae": 1.2 + i * 0.1} if status == TaskStatus.COMPLETED else {},
+                metrics={"heating_mae": 1.2 + i * 0.1}
+                if status == TaskStatus.COMPLETED
+                else {},
                 timestamp="2026-01-01T00:00:00Z",
             )
         )
@@ -254,20 +268,25 @@ def fake_urlopen(monkeypatch: pytest.MonkeyPatch):
     """
     state: dict[str, Any] = {"calls": []}
 
-    def _install(status: int = 200, raises: Exception | None = None,
-                 capture: Any | None = None) -> _FakeHTTPResponse:
+    def _install(
+        status: int = 200, raises: Exception | None = None, capture: Any | None = None
+    ) -> _FakeHTTPResponse:
         if capture is not None:
+
             def _factory(request, *args, **kwargs):
                 state["calls"].append(request)
                 return capture(request)
         elif raises is not None:
+
             def _factory(request, *args, **kwargs):
                 state["calls"].append(request)
                 raise raises
         else:
+
             def _factory(request, *args, **kwargs):
                 state["calls"].append(request)
                 return _FakeHTTPResponse(status=status)
+
         monkeypatch.setattr("urllib.request.urlopen", _factory)
         return _FakeHTTPResponse(status=status)
 
@@ -306,7 +325,11 @@ def fake_subprocess(monkeypatch: pytest.MonkeyPatch):
             state["run_calls"].append((args, kwargs))
             if isinstance(run_return, Exception):
                 raise run_return
-            return run_return if run_return is not None else _FakeCompletedProcess(0, "", "")
+            return (
+                run_return
+                if run_return is not None
+                else _FakeCompletedProcess(0, "", "")
+            )
 
         def _fake_check_output(*args, **kwargs):
             state["check_output_calls"].append((args, kwargs))
@@ -333,9 +356,22 @@ def fluxion_model_spec() -> dict[str, Any]:
         "case_id": "600",
         "sweep_type": "random",
         "parameters": [
-            {"name": "R_value", "default": 2.0, "min": 1.0, "max": 5.0, "step": 0.5, "unit": "m²K/W"},
-            {"name": "wall_thickness", "default": 0.15, "min": 0.05, "max": 0.30,
-             "step": 0.05, "unit": "m"},
+            {
+                "name": "R_value",
+                "default": 2.0,
+                "min": 1.0,
+                "max": 5.0,
+                "step": 0.5,
+                "unit": "m²K/W",
+            },
+            {
+                "name": "wall_thickness",
+                "default": 0.15,
+                "min": 0.05,
+                "max": 0.30,
+                "step": 0.05,
+                "unit": "m",
+            },
         ],
         "max_iterations": 4,
         "samples_per_param": 4,

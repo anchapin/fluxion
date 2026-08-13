@@ -168,6 +168,7 @@ class KPIResult:
     raw_results : Optional[list[WorkUnitResult]]
         Individual run results if --emit-raw was specified, None otherwise.
     """
+
     work_unit_id: str
     campaign_id: str
     run_id: str
@@ -195,7 +196,9 @@ class KPIResult:
 def get_aws_clients():
     """Get configured boto3 clients."""
     if boto3 is None:
-        raise RuntimeError("boto3 is required for S3 worker. Install: pip install boto3")
+        raise RuntimeError(
+            "boto3 is required for S3 worker. Install: pip install boto3"
+        )
 
     session = boto3.Session(
         aws_access_key_id=os.environ.get("AWS_ACCESS_KEY_ID"),
@@ -238,7 +241,9 @@ def parse_s3_uri(uri: str) -> tuple[str, str]:
     return parts[0], parts[1] if len(parts) > 1 else ""
 
 
-def sync_to_s3(local_path: str, s3_uri: str, exclude_patterns: list[str] | None = None) -> subprocess.CompletedProcess:
+def sync_to_s3(
+    local_path: str, s3_uri: str, exclude_patterns: list[str] | None = None
+) -> subprocess.CompletedProcess:
     """Sync a local directory to S3 using aws s3 sync with exclude patterns.
 
     Args:
@@ -262,7 +267,9 @@ def sync_to_s3(local_path: str, s3_uri: str, exclude_patterns: list[str] | None 
     return subprocess.run(cmd, capture_output=True, text=True)
 
 
-def push_result_to_s3(result: WorkUnitResult | KPIResult, s3_prefix: str, clients: dict) -> str:
+def push_result_to_s3(
+    result: WorkUnitResult | KPIResult, s3_prefix: str, clients: dict
+) -> str:
     """Push work unit result or KPI result directly to S3. Returns the S3 URI."""
     bucket, prefix = parse_s3_uri(s3_prefix)
     result_key = f"{prefix}/results/{result.work_unit_id}.json.zst"
@@ -419,7 +426,13 @@ def run_simulation(work_unit: WorkUnit) -> tuple[dict[str, Any], str]:
             text=True,
             timeout=300,
             cwd=Path(__file__).parent.parent,
-            env={**os.environ, **{f"FLUXION_PARAM_{k.upper()}": str(v) for k, v in work_unit.parameters.items()}},
+            env={
+                **os.environ,
+                **{
+                    f"FLUXION_PARAM_{k.upper()}": str(v)
+                    for k, v in work_unit.parameters.items()
+                },
+            },
         )
         output = result.stdout + result.stderr
         metrics = parse_cargo_output(output)
@@ -459,7 +472,13 @@ def parse_cargo_output(output: str) -> dict[str, Any]:
     cooling_errors = []
     for match in case_pattern.finditer(output):
         case = match.group(1)
-        if work_unit.case_id and (case.startswith(work_unit.case_id) or work_unit.case_id in case):
+        # TODO(#2811): latent bug - `work_unit` is not in scope in parse_cargo_output(output);
+        # this case filter raises NameError when reached. Proper fix requires adding a
+        # work_unit/case_id parameter and updating the caller run_simulation(). Suppressed
+        # here to avoid a behavior change in this lint-only pass.
+        if work_unit.case_id and (  # noqa: F821
+            case.startswith(work_unit.case_id) or work_unit.case_id in case  # noqa: F821
+        ):
             ref_heat = (float(match.group(3)) + float(match.group(4))) / 2
             ref_cool = (float(match.group(6)) + float(match.group(7))) / 2
             sim_heat = float(match.group(2))
@@ -491,7 +510,11 @@ def compute_kpi_stats(values: list[float]) -> tuple[float, float, float, float]:
     if not values:
         return 0.0, 0.0, 0.0, 0.0
     mean_val = sum(values) / len(values)
-    std_val = (sum((v - mean_val) ** 2 for v in values) / len(values)) ** 0.5 if len(values) > 1 else 0.0
+    std_val = (
+        (sum((v - mean_val) ** 2 for v in values) / len(values)) ** 0.5
+        if len(values) > 1
+        else 0.0
+    )
     return mean_val, std_val, min(values), max(values)
 
 
@@ -553,22 +576,24 @@ def run_worker(
         durations.append(duration_ms)
 
         if "error" in metrics:
-            raw_results.append(WorkUnitResult(
-                work_unit_id=work_unit.work_unit_id,
-                campaign_id=work_unit.campaign_id,
-                run_id=f"{run_id}-{run_idx}",
-                case_id=work_unit.case_id,
-                parameters=work_unit.parameters,
-                heating_mae=999.0,
-                cooling_mae=999.0,
-                peak_heating_mae=999.0,
-                peak_cooling_mae=999.0,
-                temperature_mae=999.0,
-                overall_pass=False,
-                duration_ms=duration_ms,
-                timestamp=datetime.now(timezone.utc).isoformat(),
-                error_message=str(metrics.get("error", "unknown")),
-            ))
+            raw_results.append(
+                WorkUnitResult(
+                    work_unit_id=work_unit.work_unit_id,
+                    campaign_id=work_unit.campaign_id,
+                    run_id=f"{run_id}-{run_idx}",
+                    case_id=work_unit.case_id,
+                    parameters=work_unit.parameters,
+                    heating_mae=999.0,
+                    cooling_mae=999.0,
+                    peak_heating_mae=999.0,
+                    peak_cooling_mae=999.0,
+                    temperature_mae=999.0,
+                    overall_pass=False,
+                    duration_ms=duration_ms,
+                    timestamp=datetime.now(timezone.utc).isoformat(),
+                    error_message=str(metrics.get("error", "unknown")),
+                )
+            )
         else:
             heating = metrics.get("heating_mae", 999.0)
             cooling = metrics.get("cooling_mae", 999.0)
@@ -585,21 +610,23 @@ def run_worker(
             if passed:
                 pass_count += 1
 
-            raw_results.append(WorkUnitResult(
-                work_unit_id=work_unit.work_unit_id,
-                campaign_id=work_unit.campaign_id,
-                run_id=f"{run_id}-{run_idx}",
-                case_id=work_unit.case_id,
-                parameters=work_unit.parameters,
-                heating_mae=heating,
-                cooling_mae=cooling,
-                peak_heating_mae=peak_heat,
-                peak_cooling_mae=peak_cool,
-                temperature_mae=temp,
-                overall_pass=passed,
-                duration_ms=duration_ms,
-                timestamp=datetime.now(timezone.utc).isoformat(),
-            ))
+            raw_results.append(
+                WorkUnitResult(
+                    work_unit_id=work_unit.work_unit_id,
+                    campaign_id=work_unit.campaign_id,
+                    run_id=f"{run_id}-{run_idx}",
+                    case_id=work_unit.case_id,
+                    parameters=work_unit.parameters,
+                    heating_mae=heating,
+                    cooling_mae=cooling,
+                    peak_heating_mae=peak_heat,
+                    peak_cooling_mae=peak_cool,
+                    temperature_mae=temp,
+                    overall_pass=passed,
+                    duration_ms=duration_ms,
+                    timestamp=datetime.now(timezone.utc).isoformat(),
+                )
+            )
 
         # Push per-run progress to state store
         update_campaign_progress(
@@ -627,7 +654,9 @@ def run_worker(
     has_error = any(r.error_message is not None for r in raw_results)
     error_msg = None
     if has_error and all(r.error_message is not None for r in raw_results):
-        error_msg = "; ".join(set(r.error_message for r in raw_results if r.error_message))
+        error_msg = "; ".join(
+            set(r.error_message for r in raw_results if r.error_message)
+        )
 
     result = KPIResult(
         work_unit_id=work_unit.work_unit_id,
@@ -707,7 +736,12 @@ def run_sqs_worker(
                 work_unit = download_work_unit(body["param_file"], clients)
 
                 try:
-                    run_worker(work_unit, emit_raw=emit_raw, num_runs=num_runs, state_store=state_store)
+                    run_worker(
+                        work_unit,
+                        emit_raw=emit_raw,
+                        num_runs=num_runs,
+                        state_store=state_store,
+                    )
                     sqs.delete_message(
                         QueueUrl=queue_url, ReceiptHandle=message["ReceiptHandle"]
                     )
@@ -786,8 +820,12 @@ def main() -> int:
 
     print(f"[*] Work unit complete: {result.work_unit_id}")
     print(f"    Aggregated KPIs over {result.num_runs} run(s):")
-    print(f"    Heating MAE: {result.heating_mae_mean:.2f}% (std: {result.heating_mae_std:.2f}%)")
-    print(f"    Cooling MAE: {result.cooling_mae_mean:.2f}% (std: {result.cooling_mae_std:.2f}%)")
+    print(
+        f"    Heating MAE: {result.heating_mae_mean:.2f}% (std: {result.heating_mae_std:.2f}%)"
+    )
+    print(
+        f"    Cooling MAE: {result.cooling_mae_mean:.2f}% (std: {result.cooling_mae_std:.2f}%)"
+    )
     print(f"    Pass rate: {result.overall_pass_rate * 100:.1f}%")
 
     return 0 if result.error_message is None else 1

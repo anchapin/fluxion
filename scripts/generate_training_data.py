@@ -37,12 +37,11 @@ Output:
 import argparse
 import json
 import logging
-import sys
-from dataclasses import dataclass, field, asdict
+from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
 from enum import Enum
 from pathlib import Path
-from typing import List, Optional, Tuple
+from typing import List, Tuple
 
 import numpy as np
 from tqdm import tqdm
@@ -206,8 +205,8 @@ class BuildingConfig:
         # Simplified: thermal mass proportional to zone volume and surface area
         surface_area = (
             2 * (self.zone_area_m2)  # floor + ceiling
-            + 2 * (self.zone_area_m2 ** 0.5 * self.ceiling_height_m)  # two walls
-            + 2 * (self.zone_area_m2 ** 0.5 * self.ceiling_height_m)  # other two
+            + 2 * (self.zone_area_m2**0.5 * self.ceiling_height_m)  # two walls
+            + 2 * (self.zone_area_m2**0.5 * self.ceiling_height_m)  # other two
         )
         return surface_area * 0.05  # rough approximation MJ/K per m²
 
@@ -368,7 +367,6 @@ def simulate_zone_thermal(
         List of ZoneThermalRecord for each timestep
     """
     n_timesteps = len(weather)
-    rng = np.random.default_rng(seed)
 
     # Thermal model parameters (simplified 6R2C)
     C_mass = building.thermal_mass_mj_k() * 1e6  # J/K
@@ -388,9 +386,7 @@ def simulate_zone_thermal(
         solar_rad = weather[t, 3] * building.window_ratio * building.zone_area_m2 * 0.7
         occupancy = occupancy_schedule[t]
         internal_gains = (
-            building.lighting_density
-            + building.equipment_density
-            + occupancy * 100
+            building.lighting_density + building.equipment_density + occupancy * 100
         ) * building.zone_area_m2
 
         # HVAC control
@@ -486,16 +482,15 @@ def calculate_solar_position(
     lat_rad = np.radians(lat)
 
     # Solar altitude
-    sin_altitude = (
-        np.sin(lat_rad) * np.sin(declination)
-        + np.cos(lat_rad) * np.cos(declination) * np.cos(np.radians(hour_angle))
-    )
+    sin_altitude = np.sin(lat_rad) * np.sin(declination) + np.cos(lat_rad) * np.cos(
+        declination
+    ) * np.cos(np.radians(hour_angle))
     altitude = np.degrees(np.arcsin(sin_altitude))
 
     # Solar azimuth
-    cos_azimuth = (
-        np.sin(declination) - np.sin(lat_rad) * sin_altitude
-    ) / (np.cos(lat_rad) * np.cos(np.radians(altitude)))
+    cos_azimuth = (np.sin(declination) - np.sin(lat_rad) * sin_altitude) / (
+        np.cos(lat_rad) * np.cos(np.radians(altitude))
+    )
     azimuth = np.degrees(np.arccos(np.clip(cos_azimuth, -1, 1)))
     if hour > 12:
         azimuth = 360 - azimuth
@@ -656,8 +651,6 @@ def simulate_conduction(
 
         # Storage rate (simplified)
         energy_storage_rate = C_wall * (T_surface_ext - T_surface_int) / 3600
-
-        hour_of_day = t % 24
 
         record = ConductionRecord(
             scenario_id="",

@@ -13,9 +13,8 @@ Intended to run monthly via cron or CI scheduled job.
 
 import subprocess
 import sys
-import re
-from pathlib import Path
 from datetime import datetime, timedelta
+from pathlib import Path
 from typing import Dict, List, Tuple
 
 PROJECT_ROOT = Path(__file__).parent.parent
@@ -28,11 +27,7 @@ def run_command(cmd: List[str], timeout: int = 120) -> Tuple[str, int]:
     """Run command and return (stdout, returncode)."""
     try:
         result = subprocess.run(
-            cmd,
-            cwd=PROJECT_ROOT,
-            capture_output=True,
-            text=True,
-            timeout=timeout
+            cmd, cwd=PROJECT_ROOT, capture_output=True, text=True, timeout=timeout
         )
         return result.stdout + result.stderr, result.returncode
     except subprocess.TimeoutExpired:
@@ -44,10 +39,16 @@ def get_recent_commits(days: int = 30) -> List[Dict]:
     cutoff = datetime.now() - timedelta(days=days)
     cutoff_str = cutoff.strftime("%Y-%m-%d")
 
-    stdout, _ = run_command([
-        "git", "log", f"--since={cutoff_str}", "--format=%H|%s|%an|%ad",
-        "--date=iso", "--no-merges"
-    ])
+    stdout, _ = run_command(
+        [
+            "git",
+            "log",
+            f"--since={cutoff_str}",
+            "--format=%H|%s|%an|%ad",
+            "--date=iso",
+            "--no-merges",
+        ]
+    )
 
     commits = []
     for line in stdout.strip().splitlines():
@@ -55,12 +56,14 @@ def get_recent_commits(days: int = 30) -> List[Dict]:
             continue
         parts = line.split("|", 3)
         if len(parts) >= 4:
-            commits.append({
-                "hash": parts[0],
-                "subject": parts[1],
-                "author": parts[2],
-                "date": parts[3],
-            })
+            commits.append(
+                {
+                    "hash": parts[0],
+                    "subject": parts[1],
+                    "author": parts[2],
+                    "date": parts[3],
+                }
+            )
     return commits
 
 
@@ -68,13 +71,15 @@ def check_numerical_accuracy(commit_hash: str) -> List[str]:
     """Check for numerical accuracy regressions in physics modules."""
     issues = []
 
-    stdout, _ = run_command([
-        "git", "show", commit_hash, "--stat", "--name-only"
-    ])
+    stdout, _ = run_command(["git", "show", commit_hash, "--stat", "--name-only"])
 
     physics_files = [
-        "solar.rs", "ventilation.rs", "solver_trait.rs",
-        "thermal_model.rs", "weather.rs", "epw.rs"
+        "solar.rs",
+        "ventilation.rs",
+        "solver_trait.rs",
+        "thermal_model.rs",
+        "weather.rs",
+        "epw.rs",
     ]
 
     changed_phys_files = []
@@ -87,7 +92,9 @@ def check_numerical_accuracy(commit_hash: str) -> List[str]:
         run_command(["git", "checkout", commit_hash, "--"] + changed_phys_files)
         test_result, _ = run_command(["cargo", "test", "--lib", "--", "-q"])
         if "test result: FAILED" in test_result or "FAILED" in test_result:
-            issues.append(f"  [{commit_hash[:7]}] Numerical test failures in: {', '.join(changed_phys_files)}")
+            issues.append(
+                f"  [{commit_hash[:7]}] Numerical test failures in: {', '.join(changed_phys_files)}"
+            )
         run_command(["git", "checkout", "HEAD", "--"] + changed_phys_files)
 
     return issues
@@ -105,7 +112,9 @@ def check_architecture_drift() -> List[str]:
     else:
         dep_check = Path(PROJECT_ROOT) / "ARCHITECTURE.md"
         if dep_check.exists():
-            issues.append("  Architecture doc exists but check_architecture_drift.py missing")
+            issues.append(
+                "  Architecture doc exists but check_architecture_drift.py missing"
+            )
 
     return issues
 
@@ -161,13 +170,15 @@ def generate_report(
     arch_issues: List[str],
     perf_issues: List[str],
     convention_issues: List[str],
-    ashrae_issues: List[str]
+    ashrae_issues: List[str],
 ) -> str:
     """Generate markdown report."""
     total_issues = (
-        len(numerical_issues) + len(arch_issues) +
-        len(perf_issues) + len(convention_issues) +
-        len(ashrae_issues)
+        len(numerical_issues)
+        + len(arch_issues)
+        + len(perf_issues)
+        + len(convention_issues)
+        + len(ashrae_issues)
     )
 
     report = f"""# Periodic Sweep Report
@@ -208,7 +219,9 @@ def generate_report(
     if total_issues == 0:
         report += "\n## Status: PASSED\n\nNo issues found in this sweep.\n"
     else:
-        report += f"\n## Status: NEEDS ATTENTION\n\n{total_issues} issue(s) require review.\n"
+        report += (
+            f"\n## Status: NEEDS ATTENTION\n\n{total_issues} issue(s) require review.\n"
+        )
 
     return report
 
@@ -240,8 +253,12 @@ def main():
             numerical_issues.extend(issues)
 
     report = generate_report(
-        commits, numerical_issues, arch_issues,
-        perf_issues, convention_issues, ashrae_issues
+        commits,
+        numerical_issues,
+        arch_issues,
+        perf_issues,
+        convention_issues,
+        ashrae_issues,
     )
 
     with open(REPORT_FILE, "w") as f:
@@ -251,9 +268,11 @@ def main():
     print(report)
 
     total_issues = (
-        len(numerical_issues) + len(arch_issues) +
-        len(perf_issues) + len(convention_issues) +
-        len(ashrae_issues)
+        len(numerical_issues)
+        + len(arch_issues)
+        + len(perf_issues)
+        + len(convention_issues)
+        + len(ashrae_issues)
     )
     sys.exit(1 if total_issues > 0 else 0)
 

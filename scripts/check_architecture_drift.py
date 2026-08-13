@@ -21,7 +21,7 @@ Exit codes:
 import json
 import re
 import sys
-from dataclasses import dataclass, asdict
+from dataclasses import dataclass
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
@@ -77,9 +77,9 @@ def parse_trait_methods(content: str, trait_name: str) -> dict[str, MethodSignat
     depth = 1
     pos = start + 1
     while pos < len(content) and depth > 0:
-        if content[pos] == '{':
+        if content[pos] == "{":
             depth += 1
-        elif content[pos] == '}':
+        elif content[pos] == "}":
             depth -= 1
         pos += 1
     trait_body = content[start:pos]
@@ -127,7 +127,11 @@ def parse_trait_methods(content: str, trait_name: str) -> dict[str, MethodSignat
         if inner_params:
             for param in inner_params.split(","):
                 param = param.strip()
-                if param and not param.startswith("&mut self") and not param.startswith("&self"):
+                if (
+                    param
+                    and not param.startswith("&mut self")
+                    and not param.startswith("&self")
+                ):
                     params.append(param)
 
         methods[fn_name] = MethodSignature(
@@ -517,7 +521,9 @@ def main():
             "INFO: Baseline trait contract file created at "
             f"{BASELINE_FILE.relative_to(REPO_ROOT)}"
         )
-        print("      This baseline must be committed alongside any trait signature changes.")
+        print(
+            "      This baseline must be committed alongside any trait signature changes."
+        )
         print()
 
     if not findings:
@@ -544,7 +550,7 @@ def main():
     print("  2. Fix the code to match the documented architecture")
     print("  3. Add false-positive trait names to `skip_traits` in this script")
     print("  4. For trait contract drift, update the baseline:")
-    print(f"     python3 scripts/check_architecture_drift.py --update-baseline")
+    print("     python3 scripts/check_architecture_drift.py --update-baseline")
 
     sys.exit(1)
 

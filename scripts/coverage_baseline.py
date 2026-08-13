@@ -42,8 +42,13 @@ from coverage_critical_paths import (  # noqa: E402  (sys.path insert above)
     parse_lcov,
 )
 
-
-PATH_ORDER = ["overall", "weather_solar", "weather_ventilation", "conduction_zone", "hvac_zone"]
+PATH_ORDER = [
+    "overall",
+    "weather_solar",
+    "weather_ventilation",
+    "conduction_zone",
+    "hvac_zone",
+]
 
 
 def build_baseline_payload(reports: dict, previous: dict) -> dict:
@@ -60,10 +65,16 @@ def build_baseline_payload(reports: dict, previous: dict) -> dict:
     new_paths: dict[str, dict] = {}
     for name in PATH_ORDER:
         rep = reports.get(name)
-        prev_entry = paths_section.get(name, {}) if isinstance(paths_section, dict) else {}
-        prev_line = float(prev_entry.get("line", 0.0)) if isinstance(prev_entry, dict) else 0.0
+        prev_entry = (
+            paths_section.get(name, {}) if isinstance(paths_section, dict) else {}
+        )
+        prev_line = (
+            float(prev_entry.get("line", 0.0)) if isinstance(prev_entry, dict) else 0.0
+        )
         prev_branch = (
-            float(prev_entry.get("branch", 0.0)) if isinstance(prev_entry, dict) else 0.0
+            float(prev_entry.get("branch", 0.0))
+            if isinstance(prev_entry, dict)
+            else 0.0
         )
 
         current_line = round(rep.line_pct, 4) if rep else 0.0
@@ -72,7 +83,9 @@ def build_baseline_payload(reports: dict, previous: dict) -> dict:
         # stops a bad merge from quietly lowering the bar; the floor only
         # rises (or stays flat) as coverage improves.  Applied to both
         # line and branch dimensions independently (#2533).
-        ratcheted_line = max(current_line, prev_line) if prev_line > 0.0 else current_line
+        ratcheted_line = (
+            max(current_line, prev_line) if prev_line > 0.0 else current_line
+        )
         ratcheted_branch = (
             max(current_branch, prev_branch) if prev_branch > 0.0 else current_branch
         )
@@ -119,9 +132,9 @@ def build_baseline_payload(reports: dict, previous: dict) -> dict:
             "--branch` upstream)."
         ),
         "_issue": 1932,
-        "_updated": datetime.now(timezone.utc).isoformat(timespec="seconds").replace(
-            "+00:00", "Z"
-        ),
+        "_updated": datetime.now(timezone.utc)
+        .isoformat(timespec="seconds")
+        .replace("+00:00", "Z"),
         "_ratchet": {
             "tolerance": 0.01,
             "description": (

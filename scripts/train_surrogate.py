@@ -23,16 +23,15 @@ import json
 import logging
 import sys
 import time
-from dataclasses import dataclass, asdict
-from datetime import datetime, timezone
+from dataclasses import asdict, dataclass
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple
+from typing import List, Tuple
 
 import numpy as np
+from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
 from sklearn.model_selection import train_test_split
 from sklearn.neural_network import MLPRegressor
 from sklearn.preprocessing import StandardScaler
-from sklearn.metrics import mean_squared_error, mean_absolute_error, r2_score
 
 logging.basicConfig(
     level=logging.INFO,
@@ -135,7 +134,9 @@ COMPONENT_SCHEMAS = {
 }
 
 
-def load_synthetic_data(component: str, data_dir: Path) -> Tuple[np.ndarray, np.ndarray, List[str], List[str]]:
+def load_synthetic_data(
+    component: str, data_dir: Path
+) -> Tuple[np.ndarray, np.ndarray, List[str], List[str]]:
     """Load synthetic training data for a component."""
     component_dir = data_dir / component
     train_file = component_dir / "train.parquet"
@@ -148,13 +149,18 @@ def load_synthetic_data(component: str, data_dir: Path) -> Tuple[np.ndarray, np.
 
     try:
         import pandas as pd
+
         df = pd.read_parquet(train_file)
     except ImportError:
-        raise ImportError("pandas is required to load parquet files. Install with: pip install pandas pyarrow")
+        raise ImportError(
+            "pandas is required to load parquet files. Install with: pip install pandas pyarrow"
+        )
 
     schema = COMPONENT_SCHEMAS.get(component)
     if schema is None:
-        raise ValueError(f"Unknown component: {component}. Available: {list(COMPONENT_SCHEMAS.keys())}")
+        raise ValueError(
+            f"Unknown component: {component}. Available: {list(COMPONENT_SCHEMAS.keys())}"
+        )
 
     input_features = schema["input_features"]
     output_features = schema["output_features"]
@@ -163,9 +169,13 @@ def load_synthetic_data(component: str, data_dir: Path) -> Tuple[np.ndarray, np.
     missing_outputs = [f for f in output_features if f not in df.columns]
 
     if missing_inputs:
-        raise ValueError(f"Missing input features for {component}: {missing_inputs}. Available: {list(df.columns)}")
+        raise ValueError(
+            f"Missing input features for {component}: {missing_inputs}. Available: {list(df.columns)}"
+        )
     if missing_outputs:
-        raise ValueError(f"Missing output features for {component}: {missing_outputs}. Available: {list(df.columns)}")
+        raise ValueError(
+            f"Missing output features for {component}: {missing_outputs}. Available: {list(df.columns)}"
+        )
 
     X = df[input_features].values.astype(np.float32)
     y = df[output_features].values.astype(np.float32)
@@ -178,7 +188,9 @@ def load_synthetic_data(component: str, data_dir: Path) -> Tuple[np.ndarray, np.
     return X, y, input_features, output_features
 
 
-def create_synthetic_data(component: str, n_samples: int = 10000, random_state: int = 42) -> Tuple[np.ndarray, np.ndarray, List[str], List[str]]:
+def create_synthetic_data(
+    component: str, n_samples: int = 10000, random_state: int = 42
+) -> Tuple[np.ndarray, np.ndarray, List[str], List[str]]:
     """
     Generate synthetic training data for a component when real data is not available.
     Uses physics-based relationships to create realistic training data.
@@ -205,7 +217,12 @@ def create_synthetic_data(component: str, n_samples: int = 10000, random_state: 
             climate = np.random.uniform(0, 8)
 
             delta_t = zone - exterior
-            base_load = 0.5 * delta_t + 0.01 * solar + 0.1 * occupancy + np.random.normal(0, 0.1)
+            base_load = (
+                0.5 * delta_t
+                + 0.01 * solar
+                + 0.1 * occupancy
+                + np.random.normal(0, 0.1)
+            )
             if hvac_mode == 1:
                 base_load += 2.0
             elif hvac_mode == 2:
@@ -227,8 +244,9 @@ def create_synthetic_data(component: str, n_samples: int = 10000, random_state: 
 
             dec = 23.45 * np.sin(2 * np.pi * (doy - 81) / 365)
             hra = 15 * (hour - 12)
-            cos_zenith = np.sin(np.radians(lat)) * np.sin(np.radians(dec)) + \
-                        np.cos(np.radians(lat)) * np.cos(np.radians(dec)) * np.cos(np.radians(hra))
+            cos_zenith = np.sin(np.radians(lat)) * np.sin(np.radians(dec)) + np.cos(
+                np.radians(lat)
+            ) * np.cos(np.radians(dec)) * np.cos(np.radians(hra))
             zenith = np.arccos(np.clip(cos_zenith, -1, 1))
             effective_irrad = (dni * np.cos(zenith) + dhi) * np.cos(np.radians(tilt))
             gain = np.clip(effective_irrad * 0.85, 0, 1200) + np.random.normal(0, 5)
@@ -247,7 +265,13 @@ def create_synthetic_data(component: str, n_samples: int = 10000, random_state: 
 
             delta_t = interior - exterior
             q_conv = u_val * area * delta_t
-            q_rad = 5.67e-8 * emiss * area * ((interior + 273)**4 - (exterior + 273)**4) * 1e-8
+            q_rad = (
+                5.67e-8
+                * emiss
+                * area
+                * ((interior + 273) ** 4 - (exterior + 273) ** 4)
+                * 1e-8
+            )
             total_flux = q_conv + q_rad * 0.1 + np.random.normal(0, 5)
 
             X.append([exterior, interior, u_val, area, mass, emiss])
@@ -295,7 +319,6 @@ def train_mlp(
 
     y_scaler = StandardScaler()
     y_train_scaled = y_scaler.fit_transform(y_train)
-    y_test_scaled = y_scaler.transform(y_test)
 
     logger.info(f"Training MLP with hidden layers: {config.hidden_layer_sizes}")
     logger.info(f"  Activation: {config.activation}, Solver: {config.solver}")
@@ -319,8 +342,12 @@ def train_mlp(
     model.fit(X_train_scaled, y_train_scaled.ravel())
     training_time = time.time() - start_time
 
-    y_pred_train = y_scaler.inverse_transform(model.predict(X_train_scaled).reshape(-1, 1))
-    y_pred_test = y_scaler.inverse_transform(model.predict(X_test_scaled).reshape(-1, 1))
+    y_pred_train = y_scaler.inverse_transform(
+        model.predict(X_train_scaled).reshape(-1, 1)
+    )
+    y_pred_test = y_scaler.inverse_transform(
+        model.predict(X_test_scaled).reshape(-1, 1)
+    )
 
     train_rmse = np.sqrt(mean_squared_error(y_train, y_pred_train))
     test_rmse = np.sqrt(mean_squared_error(y_test, y_pred_test))
@@ -338,7 +365,9 @@ def train_mlp(
     logger.info(f"  Test RMSE: {test_rmse:.6f}")
     logger.info(f"  Test MAE: {test_mae:.6f}")
     logger.info(f"  Test R²: {test_r2:.6f}")
-    logger.info(f"  Normalized RMSE: {rmse_normalized:.4f} ({rmse_normalized*100:.2f}%)")
+    logger.info(
+        f"  Normalized RMSE: {rmse_normalized:.4f} ({rmse_normalized * 100:.2f}%)"
+    )
     logger.info(f"  Iterations: {model.n_iter_}")
 
     metrics = TrainingMetrics(
@@ -355,8 +384,12 @@ def train_mlp(
         n_iterations=model.n_iter_,
         scaler_mean=scaler.mean_.tolist(),
         scaler_std=scaler.scale_.tolist(),
-        input_features=config.component and COMPONENT_SCHEMAS[config.component]["input_features"] or [],
-        output_features=config.component and COMPONENT_SCHEMAS[config.component]["output_features"] or [],
+        input_features=config.component
+        and COMPONENT_SCHEMAS[config.component]["input_features"]
+        or [],
+        output_features=config.component
+        and COMPONENT_SCHEMAS[config.component]["output_features"]
+        or [],
         hidden_layer_sizes=config.hidden_layer_sizes,
     )
 
@@ -375,7 +408,7 @@ def export_to_onnx(
     Uses onnx directly创建模型结构 rather than skl2onnx.
     """
     import onnx
-    from onnx import helper, TensorProto, numpy_helper
+    from onnx import TensorProto, helper, numpy_helper
 
     schema = COMPONENT_SCHEMAS[config.component]
     n_features = len(schema["input_features"])
@@ -387,20 +420,34 @@ def export_to_onnx(
     input_tensor_name = "X"
     output_tensor_name = "Y"
 
-    input_info = helper.make_tensor_value_info(input_tensor_name, TensorProto.FLOAT, [None, n_features])
-    output_info = helper.make_tensor_value_info(output_tensor_name, TensorProto.FLOAT, [None, n_outputs])
+    input_info = helper.make_tensor_value_info(
+        input_tensor_name, TensorProto.FLOAT, [None, n_features]
+    )
+    output_info = helper.make_tensor_value_info(
+        output_tensor_name, TensorProto.FLOAT, [None, n_outputs]
+    )
 
     nodes = []
     initializers = []
 
-    scale_in_init = numpy_helper.from_array(scaler.scale_.astype(np.float32), "scale_in")
-    bias_in_init = numpy_helper.from_array((-scaler.mean_ * scaler.scale_).astype(np.float32), "bias_in")
-    scale_out_init = numpy_helper.from_array((1.0 / y_scaler.scale_).astype(np.float32), "scale_out")
-    bias_out_init = numpy_helper.from_array(y_scaler.mean_.astype(np.float32), "bias_out")
+    scale_in_init = numpy_helper.from_array(
+        scaler.scale_.astype(np.float32), "scale_in"
+    )
+    bias_in_init = numpy_helper.from_array(
+        (-scaler.mean_ * scaler.scale_).astype(np.float32), "bias_in"
+    )
+    scale_out_init = numpy_helper.from_array(
+        (1.0 / y_scaler.scale_).astype(np.float32), "scale_out"
+    )
+    bias_out_init = numpy_helper.from_array(
+        y_scaler.mean_.astype(np.float32), "bias_out"
+    )
 
     initializers.extend([scale_in_init, bias_in_init, scale_out_init, bias_out_init])
 
-    nodes.append(helper.make_node("Mul", [input_tensor_name, "scale_in"], ["scale_in_mul"]))
+    nodes.append(
+        helper.make_node("Mul", [input_tensor_name, "scale_in"], ["scale_in_mul"])
+    )
     nodes.append(helper.make_node("Add", ["scale_in_mul", "bias_in"], ["scaled_input"]))
 
     prev_out = "scaled_input"
@@ -417,7 +464,9 @@ def export_to_onnx(
         matmul_out = f"mm_out_{i}"
         add_out = f"add_out_{i}"
 
-        nodes.append(helper.make_node("MatMul", [prev_out, f"W_layer{i}"], [matmul_out]))
+        nodes.append(
+            helper.make_node("MatMul", [prev_out, f"W_layer{i}"], [matmul_out])
+        )
         nodes.append(helper.make_node("Add", [matmul_out, f"b_layer{i}"], [add_out]))
 
         if i < len(layer_sizes) - 2:
@@ -428,7 +477,9 @@ def export_to_onnx(
             prev_out = add_out
 
     nodes.append(helper.make_node("Mul", [prev_out, "scale_out"], ["scale_out_mul"]))
-    nodes.append(helper.make_node("Add", ["scale_out_mul", "bias_out"], [output_tensor_name]))
+    nodes.append(
+        helper.make_node("Add", ["scale_out_mul", "bias_out"], [output_tensor_name])
+    )
 
     graph = helper.make_graph(
         nodes,
@@ -456,12 +507,17 @@ def validate_onnx_model(model_path: Path) -> bool:
     import onnxruntime as ort
 
     try:
-        session = ort.InferenceSession(str(model_path), providers=["CPUExecutionProvider"])
+        session = ort.InferenceSession(
+            str(model_path), providers=["CPUExecutionProvider"]
+        )
 
         input_name = session.get_inputs()[0].name
         output_name = session.get_outputs()[0].name
 
-        test_input = np.random.randn(1, session.get_inputs()[0].shape[1] if session.get_inputs()[0].shape[1] else 8).astype(np.float32)
+        test_input = np.random.randn(
+            1,
+            session.get_inputs()[0].shape[1] if session.get_inputs()[0].shape[1] else 8,
+        ).astype(np.float32)
         result = session.run([output_name], {input_name: test_input})
 
         logger.info(f"ONNX model validation passed: {model_path}")
@@ -475,14 +531,41 @@ def validate_onnx_model(model_path: Path) -> bool:
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Train surrogate model for a physics component")
-    parser.add_argument("--component", type=str, help="Component to train (zone_thermal, solar_gain, conduction, ventilation)")
-    parser.add_argument("--all-components", action="store_true", help="Train all components")
-    parser.add_argument("--data-dir", type=Path, default=Path("data/synthetic/v2.1"), help="Data directory")
-    parser.add_argument("--output-dir", type=Path, default=Path("models"), help="Output directory")
-    parser.add_argument("--hidden-layers", type=str, default="64,32", help="Hidden layer sizes (comma-separated)")
-    parser.add_argument("--max-iter", type=int, default=500, help="Max training iterations")
-    parser.add_argument("--n-samples", type=int, default=10000, help="Synthetic samples (if no real data)")
+    parser = argparse.ArgumentParser(
+        description="Train surrogate model for a physics component"
+    )
+    parser.add_argument(
+        "--component",
+        type=str,
+        help="Component to train (zone_thermal, solar_gain, conduction, ventilation)",
+    )
+    parser.add_argument(
+        "--all-components", action="store_true", help="Train all components"
+    )
+    parser.add_argument(
+        "--data-dir",
+        type=Path,
+        default=Path("data/synthetic/v2.1"),
+        help="Data directory",
+    )
+    parser.add_argument(
+        "--output-dir", type=Path, default=Path("models"), help="Output directory"
+    )
+    parser.add_argument(
+        "--hidden-layers",
+        type=str,
+        default="64,32",
+        help="Hidden layer sizes (comma-separated)",
+    )
+    parser.add_argument(
+        "--max-iter", type=int, default=500, help="Max training iterations"
+    )
+    parser.add_argument(
+        "--n-samples",
+        type=int,
+        default=10000,
+        help="Synthetic samples (if no real data)",
+    )
     parser.add_argument("--seed", type=int, default=42, help="Random seed")
 
     args = parser.parse_args()
@@ -511,16 +594,22 @@ def main():
         )
 
         try:
-            X, y, input_features, output_features = load_synthetic_data(comp, args.data_dir)
+            X, y, input_features, output_features = load_synthetic_data(
+                comp, args.data_dir
+            )
         except FileNotFoundError:
             logger.warning(f"Real data not found for {comp}, generating synthetic data")
-            X, y, input_features, output_features = create_synthetic_data(comp, args.n_samples, args.seed)
+            X, y, input_features, output_features = create_synthetic_data(
+                comp, args.n_samples, args.seed
+            )
 
         X_train, X_test, y_train, y_test = train_test_split(
             X, y, test_size=0.2, random_state=args.seed
         )
 
-        model, scaler, y_scaler, metrics = train_mlp(X_train, y_train, X_test, y_test, config)
+        model, scaler, y_scaler, metrics = train_mlp(
+            X_train, y_train, X_test, y_test, config
+        )
 
         metrics.input_features = input_features
         metrics.output_features = output_features
@@ -529,7 +618,7 @@ def main():
         export_to_onnx(model, scaler, y_scaler, config, model_path)
 
         if validate_onnx_model(model_path):
-            logger.info(f"Model export validated successfully")
+            logger.info("Model export validated successfully")
 
         metrics_path = args.output_dir / f"surrogate_{comp}_metrics.json"
         with open(metrics_path, "w") as f:
