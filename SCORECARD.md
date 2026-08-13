@@ -72,6 +72,8 @@ Required branch-protection checks (`release_gates.yaml` → `ci.required_checks`
 | Code Coverage Gate (Issue #1932) | #1932 |
 | Docs Hygiene Gate (Issue #2466) | #2466 |
 | Physics-Sim-Cycle-Check | — |
+| Absolute Perf Gate (Issue #2693) | #2693 |
+| Multi-Zone Perf Gate (Issue #2772) | #2772 |
 
 - **Live status** is intentionally not baked in here (it is non-deterministic and would break scorecard diff stability). Run:
 
