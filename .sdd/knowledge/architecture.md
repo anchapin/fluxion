@@ -1,8 +1,5 @@
 # Architecture Overview
 
-## .
-**gsd_mistral_adapter.py**: GSD-Mistral Vibe Adapter Layer
-
 ## .githooks
 **perf-baseline.py**: Hook: Performance baseline check and comparison
 **rust-doc-check.py**: Hook: Validate Rust doc comments on public API

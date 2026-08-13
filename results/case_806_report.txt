@@ -1,2 +1,0 @@
-ASHRAE 140 Validation Report for Case 806===========================================
-Execution Time: 0.00 seconds

@@ -1,7 +1,0 @@
-ASHRAE 140 Validation Report for Case 195===========================================
-Execution Time: 0.12 seconds
-
-Annual Heating (MWh): 11.41 (Ref: 3.50-6.00) - Status: Fail
-Annual Cooling (MWh): 0.00 (Ref: 0.00-0.00) - Status: Pass
-Peak Heating (kW): 3.93 (Ref: 1.40-2.20) - Status: Fail
-Peak Cooling (kW): 0.00 (Ref: 0.00-0.00) - Status: Pass
