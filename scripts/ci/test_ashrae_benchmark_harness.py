@@ -8,18 +8,13 @@ loaders, and the baseline-comparison delta calculations.  All
 
 from __future__ import annotations
 
-import io
 import json
 import subprocess
-from contextlib import redirect_stdout
-from dataclasses import asdict
 from pathlib import Path
 from unittest.mock import MagicMock
 
-import pytest
-
 import ashrae_benchmark_harness as abh
-
+import pytest
 
 # ---------------------------------------------------------------------------
 # _parse_target_output — Rust-test-runner output.

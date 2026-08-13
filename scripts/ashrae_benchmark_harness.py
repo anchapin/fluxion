@@ -273,7 +273,7 @@ def run_harness(release: bool = True, timeout: int = 300) -> BenchmarkReport:
     pass_rate = mae = 0.0
 
     print(f"\n{'='*60}")
-    print(f"ASHRAE 140 Benchmark Harness")
+    print("ASHRAE 140 Benchmark Harness")
     print(f"Commit: {sha}  Branch: {branch}")
     print(f"Mode:   {'release' if release else 'debug'}")
     print(f"{'='*60}\n")
@@ -437,8 +437,8 @@ def write_github_step_summary(report: BenchmarkReport, delta: Optional[Delta]) -
     sign = lambda v: f"+{v}" if v > 0 else str(v)
     lines = [
         "## ASHRAE 140 Benchmark Harness Results\n",
-        f"| Metric | Value |",
-        f"|--------|-------|",
+        "| Metric | Value |",
+        "|--------|-------|",
         f"| Validation cases passed | **{s.validation_cases_passed}** |",
         f"| Validation cases failed | {s.validation_cases_failed} |",
         f"| Pass rate | {s.pass_rate:.1f}% |",
@@ -453,8 +453,8 @@ def write_github_step_summary(report: BenchmarkReport, delta: Optional[Delta]) -
         lines += [
             f"### Delta vs. Baseline {icon}",
             "",
-            f"| Metric | Delta |",
-            f"|--------|-------|",
+            "| Metric | Delta |",
+            "|--------|-------|",
             f"| Cases passed | `{sign(delta.validation_cases_passed_delta)}` |",
             f"| Pass rate | `{sign(delta.pass_rate_delta)}pp` |",
             f"| MAE | `{sign(delta.mae_delta)}pp` |",

@@ -13,9 +13,8 @@ Intended to run monthly via cron or CI scheduled job.
 
 import subprocess
 import sys
-import re
-from pathlib import Path
 from datetime import datetime, timedelta
+from pathlib import Path
 from typing import Dict, List, Tuple
 
 PROJECT_ROOT = Path(__file__).parent.parent

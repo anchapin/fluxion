@@ -23,16 +23,15 @@ import json
 import logging
 import sys
 import time
-from dataclasses import dataclass, asdict
-from datetime import datetime, timezone
+from dataclasses import asdict, dataclass
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple
+from typing import List, Tuple
 
 import numpy as np
+from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
 from sklearn.model_selection import train_test_split
 from sklearn.neural_network import MLPRegressor
 from sklearn.preprocessing import StandardScaler
-from sklearn.metrics import mean_squared_error, mean_absolute_error, r2_score
 
 logging.basicConfig(
     level=logging.INFO,
@@ -375,7 +374,7 @@ def export_to_onnx(
     Uses onnx directly创建模型结构 rather than skl2onnx.
     """
     import onnx
-    from onnx import helper, TensorProto, numpy_helper
+    from onnx import TensorProto, helper, numpy_helper
 
     schema = COMPONENT_SCHEMAS[config.component]
     n_features = len(schema["input_features"])
@@ -529,7 +528,7 @@ def main():
         export_to_onnx(model, scaler, y_scaler, config, model_path)
 
         if validate_onnx_model(model_path):
-            logger.info(f"Model export validated successfully")
+            logger.info("Model export validated successfully")
 
         metrics_path = args.output_dir / f"surrogate_{comp}_metrics.json"
         with open(metrics_path, "w") as f:

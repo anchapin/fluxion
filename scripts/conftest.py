@@ -18,7 +18,6 @@ from __future__ import annotations
 
 import os
 import sys
-import urllib.error
 from contextlib import contextmanager
 from dataclasses import dataclass, field
 from pathlib import Path

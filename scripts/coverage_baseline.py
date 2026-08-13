@@ -42,7 +42,6 @@ from coverage_critical_paths import (  # noqa: E402  (sys.path insert above)
     parse_lcov,
 )
 
-
 PATH_ORDER = ["overall", "weather_solar", "weather_ventilation", "conduction_zone", "hvac_zone"]
 
 

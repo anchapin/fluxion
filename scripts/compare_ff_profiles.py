@@ -1,6 +1,8 @@
-import pandas as pd
-import numpy as np
 import argparse
+
+import numpy as np
+import pandas as pd
+
 
 def analyze_profiles(csv_path):
     try:
@@ -20,11 +22,11 @@ def analyze_profiles(csv_path):
     max_swing_val = daily_stats['swing'].max()
     min_swing_val = daily_stats['swing'].min()
     
-    print(f"Diurnal Temperature Swing Analysis (Case 900FF):")
+    print("Diurnal Temperature Swing Analysis (Case 900FF):")
     print(f"  Average Swing: {avg_swing:.2f}°C")
     print(f"  Max Swing: {max_swing_val:.2f}°C")
     print(f"  Min Swing: {min_swing_val:.2f}°C")
-    print(f"  Reference Swing (approximate): ~19.6°C")
+    print("  Reference Swing (approximate): ~19.6°C")
     swing_error = ((avg_swing - 19.6) / 19.6 * 100)
     print(f"  Swing Error: {swing_error:.1f}%")
     
@@ -47,7 +49,7 @@ def analyze_profiles(csv_path):
     
     if lags:
         avg_lag = np.mean(lags)
-        print(f"\nPhase Lag Analysis:")
+        print("\nPhase Lag Analysis:")
         print(f"  Average Phase Lag (Solar Peak to Air Peak): {avg_lag:.2f} hours")
         print(f"  Standard Deviation: {np.std(lags):.2f} hours")
     else:
@@ -58,7 +60,7 @@ def analyze_profiles(csv_path):
     night_df = df[df['hour'] % 24 < 6]
     night_df['dt'] = night_df['air_temp'].diff()
     avg_cooling_rate = night_df[night_df['dt'] < 0]['dt'].mean()
-    print(f"\nNighttime Cooling Rate Analysis (Hours 0-5):")
+    print("\nNighttime Cooling Rate Analysis (Hours 0-5):")
     print(f"  Average Nighttime Cooling Rate: {avg_cooling_rate:.2f}°C/hour")
 
 if __name__ == "__main__":

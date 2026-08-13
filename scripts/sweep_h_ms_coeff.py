@@ -8,9 +8,9 @@ The h_tr_is fix (1343 W/K) is now locked in.
 We need to balance h_tr_ms to find the sweet spot.
 """
 
-import subprocess
 import re
-import sys
+import subprocess
+
 
 def run_ashrae_validation():
     """Run the ashrae validation and extract Case 900FF results."""
@@ -86,7 +86,7 @@ def sweep_h_ms_coeff():
         )
 
         if build_result.returncode != 0:
-            print(f"  BUILD FAILED")
+            print("  BUILD FAILED")
             continue
 
         # Run simulation
@@ -109,7 +109,7 @@ def sweep_h_ms_coeff():
             status = "✅ BOTH PASS" if both_pass else "❌"
             print(f"  Min={min_temp:.2f}°C {'✅' if min_pass else '❌'} Max={max_temp:.2f}°C {'✅' if max_pass else '❌'} {status}")
         else:
-            print(f"  FAILED TO EXTRACT RESULTS")
+            print("  FAILED TO EXTRACT RESULTS")
 
     # Find best result
     print("\n=== Results ===")
@@ -133,7 +133,7 @@ def sweep_h_ms_coeff():
             return min_score + max_score
 
         sweet_spot = min(passing, key=score)
-        print(f"\n=== SWEET SPOT FOUND ===")
+        print("\n=== SWEET SPOT FOUND ===")
         print(f"h_ms_coeff = {sweet_spot['h_ms_coeff']}")
         print(f"Min Temp = {sweet_spot['min_temp']:.2f}°C (target <= {MAX_REF}°C)")
         print(f"Max Temp = {sweet_spot['max_temp']:.2f}°C (target >= {MAX_TEMP_MIN}°C)")

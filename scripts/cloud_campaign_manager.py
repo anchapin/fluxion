@@ -1006,7 +1006,7 @@ def main() -> int:
 
         print(f"[*] Campaign created: {state.campaign_id}")
         print(f"[*] Work units: {len(state.work_units)}")
-        print(f"[*] Run workers with:")
+        print("[*] Run workers with:")
         print(f"    python scripts/s3_worker.py --param-file s3://{s3_bucket}/{s3_prefix}/work-units/{{work_unit_id}}.json")
 
         return 0
@@ -1128,7 +1128,7 @@ def main() -> int:
             parser.error("--s3-bucket is required (or set FLUXION_S3_BUCKET env var)")
 
         results_uri = trigger_aggregator(args.campaign_id, s3_bucket, s3_prefix, args.aggregator_function)
-        print(f"[*] Aggregation triggered")
+        print("[*] Aggregation triggered")
         print(f"[*] Results: {results_uri}")
 
         return 0

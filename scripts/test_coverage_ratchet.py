@@ -21,15 +21,18 @@ Exits 0 on success, 1 on any assertion failure.
 
 from __future__ import annotations
 
-import json
 import sys
 import tempfile
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO / "scripts"))
-from coverage_critical_paths import evaluate_gate, parse_lcov, bucket_coverage  # noqa: E402
 from coverage_baseline import build_baseline_payload  # noqa: E402
+from coverage_critical_paths import (  # noqa: E402
+    bucket_coverage,
+    evaluate_gate,
+    parse_lcov,
+)
 
 
 def write_lcov(path: Path, *, lf: int, lh: int, brf: int, brh: int, sf: str = "src/sim/solar.rs") -> None:

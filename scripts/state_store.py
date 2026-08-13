@@ -31,10 +31,10 @@ import logging
 import os
 import sys
 from abc import ABC, abstractmethod
-from dataclasses import asdict, dataclass, field
+from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from enum import Enum
-from typing import Any, Iterable, Optional
+from typing import Any, Optional
 
 LOGGER = logging.getLogger("fluxion.state_store")
 

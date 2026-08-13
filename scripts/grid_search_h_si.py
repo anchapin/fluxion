@@ -9,9 +9,8 @@ This script sweeps H_SI from 3.0 to 8.0 W/m²K and runs the Case 600FF
 test to find values that put the peak temperature in the reference band.
 """
 
-import subprocess
 import re
-import sys
+import subprocess
 from pathlib import Path
 
 # H_SI constant locations in thermal_model_solvers.rs and construction.rs

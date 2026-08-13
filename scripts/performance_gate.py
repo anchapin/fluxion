@@ -6,12 +6,11 @@ Runs benchmarks and compares against main branch baseline.
 Fails if any benchmark degrades by more than 10%.
 """
 
-import subprocess
-import json
-import os
-import sys
-import re
 import argparse
+import json
+import re
+import subprocess
+import sys
 from pathlib import Path
 from typing import Dict, List, Tuple
 
@@ -154,7 +153,7 @@ def main():
         sys.exit(0)
 
     if args.check:
-        print(f"Running in check mode — comparing against baseline")
+        print("Running in check mode — comparing against baseline")
     else:
         print(f"Running on branch '{branch}' — checking against baseline")
 

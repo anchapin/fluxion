@@ -112,8 +112,8 @@ def check_regression(
     if summary_path:
         lines = [
             "## TDQS Regression Check\n",
-            f"| Metric | Baseline | Current | Delta | Status |",
-            f"|--------|----------|---------|-------|--------|",
+            "| Metric | Baseline | Current | Delta | Status |",
+            "|--------|----------|---------|-------|--------|",
         ]
         delta = cur_overall - base_overall
         sig = "+" if delta >= 0 else ""

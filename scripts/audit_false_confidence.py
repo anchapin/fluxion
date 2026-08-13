@@ -21,12 +21,10 @@ Exit codes:
     2 - Error during analysis
 """
 
-import ast
 import argparse
-import os
 import re
 import sys
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
 from typing import Optional

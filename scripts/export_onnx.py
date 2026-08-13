@@ -21,10 +21,10 @@ import json
 import logging
 import sys
 import time
-from dataclasses import dataclass, asdict
+from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Tuple
 
 import numpy as np
 
@@ -181,7 +181,7 @@ def validate_model_structure(model_path: Path, component: str) -> Tuple[bool, Li
     try:
         model = onnx.load(str(model_path))
         onnx.checker.check_model(model)
-        logger.info(f"  ONNX model structure is valid")
+        logger.info("  ONNX model structure is valid")
     except onnx.validation.ValidationError as e:
         errors.append(f"ONNX validation error: {e}")
         return False, errors
@@ -260,7 +260,7 @@ def export_model(
 ) -> bool:
     """Export sklearn MLP model to ONNX format."""
     import onnx
-    from onnx import helper, TensorProto, numpy_helper
+    from onnx import TensorProto, helper, numpy_helper
 
     schema = COMPONENT_IO_SPECS.get(component)
     if schema is None:
@@ -387,7 +387,7 @@ def main():
             reports.append(report)
 
             if report.errors:
-                logger.warning(f"  Errors found:")
+                logger.warning("  Errors found:")
                 for error in report.errors:
                     logger.warning(f"    - {error}")
                 all_passed = False
@@ -410,7 +410,7 @@ def main():
                 logger.info(f"  Throughput: {bench['throughput_samples_per_sec']:.1f} samples/sec")
 
                 if bench["mean_ms"] > 1.0:
-                    logger.warning(f"  WARNING: Inference time exceeds 1ms target!")
+                    logger.warning("  WARNING: Inference time exceeds 1ms target!")
 
             if component:
                 struct_ok, struct_errors = validate_model_structure(model_path, component)

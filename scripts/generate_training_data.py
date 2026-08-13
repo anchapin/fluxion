@@ -37,12 +37,11 @@ Output:
 import argparse
 import json
 import logging
-import sys
-from dataclasses import dataclass, field, asdict
+from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
 from enum import Enum
 from pathlib import Path
-from typing import List, Optional, Tuple
+from typing import List, Tuple
 
 import numpy as np
 from tqdm import tqdm

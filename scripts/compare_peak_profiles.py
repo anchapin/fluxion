@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
+import argparse
 import csv
 import json
 import os
-import argparse
+
 import numpy as np
-from datetime import datetime, timedelta
 
 try:
     import matplotlib.pyplot as plt
@@ -94,13 +94,13 @@ def analyze_peaks(flux_hours, flux_hvac, ref_hours, ref_hvac):
     ref_peak_cool_hour = ref_hours[np.argmin(ref_hvac)]
     
     print("=== Peak Analysis ===")
-    print(f"Heating Peak:")
+    print("Heating Peak:")
     print(f"  Fluxion:   {flux_peak_heat:8.2f} W at hour {flux_peak_heat_hour}")
     print(f"  Reference: {ref_peak_heat:8.2f} W at hour {ref_peak_heat_hour}")
     print(f"  Error:     {flux_peak_heat - ref_peak_heat:8.2f} W ({(flux_peak_heat/ref_peak_heat - 1)*100:+.1f}%)")
     print(f"  Shift:     {flux_peak_heat_hour - ref_peak_heat_hour:8d} hours")
     
-    print(f"\nCooling Peak:")
+    print("\nCooling Peak:")
     print(f"  Fluxion:   {-flux_peak_cool:8.2f} W at hour {flux_peak_cool_hour}")
     print(f"  Reference: {-ref_peak_cool:8.2f} W at hour {ref_peak_cool_hour}")
     print(f"  Error:     {abs(flux_peak_cool) - abs(ref_peak_cool):8.2f} W ({(flux_peak_cool/ref_peak_cool - 1)*100:+.1f}%)")

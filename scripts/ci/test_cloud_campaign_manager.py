@@ -10,17 +10,13 @@ from __future__ import annotations
 
 import json
 import urllib.error
-import uuid
 from dataclasses import asdict
 from datetime import datetime, timezone
-from pathlib import Path
 from unittest.mock import MagicMock
-
-import pytest
 
 # Scripts/ is on sys.path via conftest.
 import cloud_campaign_manager as ccm
-
+import pytest
 
 # ---------------------------------------------------------------------------
 # Fixtures local to this file.
@@ -713,6 +709,7 @@ def test_concurrent_workers_complete_without_lock_issue_1791():
     state-store must succeed and the aggregated progress must equal 800/800.
     """
     import threading
+
     from state_store import InMemoryStateStore, TaskState, TaskStatus
 
     store = InMemoryStateStore()

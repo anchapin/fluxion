@@ -25,9 +25,8 @@ import argparse
 import json
 import os
 import sys
-from dataclasses import asdict, dataclass, field
+from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
-from pathlib import Path
 from typing import Any, Optional
 
 try:
@@ -328,7 +327,7 @@ def main() -> int:
         s3_client, args.s3_bucket, report_key, args.download_link_expiration
     )
 
-    print(f"\n[*] Results available at:")
+    print("\n[*] Results available at:")
     print(f"    {download_url}")
 
     return 0

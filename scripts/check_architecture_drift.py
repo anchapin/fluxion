@@ -21,7 +21,7 @@ Exit codes:
 import json
 import re
 import sys
-from dataclasses import dataclass, asdict
+from dataclasses import dataclass
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
@@ -544,7 +544,7 @@ def main():
     print("  2. Fix the code to match the documented architecture")
     print("  3. Add false-positive trait names to `skip_traits` in this script")
     print("  4. For trait contract drift, update the baseline:")
-    print(f"     python3 scripts/check_architecture_drift.py --update-baseline")
+    print("     python3 scripts/check_architecture_drift.py --update-baseline")
 
     sys.exit(1)
 
