@@ -1,6 +1,0 @@
-{
-  "eval_id": 2,
-  "eval_name": "openstudio-vav-measure",
-  "prompt": "Write an OpenStudio measure that replaces all constant-volume terminal boxes in a model with VAV terminals, applying a minimum airflow fraction of 0.3. Then write a Python script that parses the EnergyPlus SQL output and compares zone airflow rates before and after the measure to confirm the VAV boxes are operating correctly.",
-  "assertions": []
-}
