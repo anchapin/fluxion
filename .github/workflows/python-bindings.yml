@@ -80,8 +80,8 @@ jobs:
           python -c "import fluxion; print('[OK] Fluxion module loaded successfully')"
 
   # ---------------------------------------------------------------------------
-  # Issue #2760: run the PyO3 pytest + cargo test suite across the full
-  # OS × Python matrix, not just ubuntu.
+  # Issue #2760 / #2744: run the PyO3 pytest + cargo test suite across the
+  # full OS × Python matrix, not just ubuntu.
   #
   # This is DISTINCT from the `build` job above (the "Build Python Wheels"
   # gate, tracked separately by #2744): that job only smoke-tests
@@ -90,22 +90,49 @@ jobs:
   #
   # PRs            → ubuntu + windows × {3.10, 3.13}  (fast signal, 4 legs)
   # main / dispatch → full 12-leg matrix (ubuntu + windows + macos × 3.10–3.13)
+  #
+  # NOTE on the dispatch job below: GitHub Actions does NOT expand the
+  # `matrix` context until AFTER a job's `if:` is evaluated, so a job-level
+  # `if:` that references `matrix.*` is a hard YAML parse error that fails
+  # the ENTIRE workflow file (taking down the unrelated `build` wheel job
+  # with it). That was the #2744 root cause: every PR saw all four
+  # `Build Python Wheels` legs fail because the file would not parse.
+  # The dispatch-job pattern below is the standard workaround — emit the
+  # matrix as a JSON `outputs.matrix` from a tiny dispatcher, then consume
+  # it via `needs:<job>.outputs.matrix` + `fromJson` in the consumer's
+  # `strategy.matrix.include`.
   # ---------------------------------------------------------------------------
+  pytest-matrix:
+    name: PyO3 pytest matrix selector
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.set-matrix.outputs.matrix }}
+    steps:
+      - id: set-matrix
+        shell: bash
+        run: |
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            # Fast signal: ubuntu + windows × {3.10, 3.13}  (4 legs)
+            matrix='[{"os":"ubuntu-latest","python-version":"3.10"},{"os":"ubuntu-latest","python-version":"3.13"},{"os":"windows-latest","python-version":"3.10"},{"os":"windows-latest","python-version":"3.13"}]'
+          else
+            # Full matrix: ubuntu + windows + macos × {3.10, 3.11, 3.12, 3.13}  (12 legs)
+            matrix='[{"os":"ubuntu-latest","python-version":"3.10"},{"os":"ubuntu-latest","python-version":"3.11"},{"os":"ubuntu-latest","python-version":"3.12"},{"os":"ubuntu-latest","python-version":"3.13"},{"os":"windows-latest","python-version":"3.10"},{"os":"windows-latest","python-version":"3.11"},{"os":"windows-latest","python-version":"3.12"},{"os":"windows-latest","python-version":"3.13"},{"os":"macos-latest","python-version":"3.10"},{"os":"macos-latest","python-version":"3.11"},{"os":"macos-latest","python-version":"3.12"},{"os":"macos-latest","python-version":"3.13"}]'
+          fi
+          # Single-line JSON so the GITHUB_OUTPUT parse stays simple.
+          echo "matrix=$matrix" >> "$GITHUB_OUTPUT"
+
   pytest-bindings:
+    needs: pytest-matrix
+    # `needs:` already short-circuits to "skipped" if pytest-matrix fails;
+    # the explicit result check keeps the consumer skipped (not failed) when
+    # the dispatcher is itself filtered out by an upstream rule.
+    if: ${{ needs.pytest-matrix.result == 'success' }}
     name: PyO3 pytest (${{ matrix.os }} / py ${{ matrix.python-version }})
     runs-on: ${{ matrix.os }}
-    # On PRs only the ubuntu/windows fast-signal legs run; the full matrix
-    # runs on main pushes and manual dispatch. Non-matching legs are skipped
-    # (visible as "skipped" in the checks UI, not silently dropped).
-    if: |
-      github.event_name != 'pull_request' ||
-      ((matrix.os == 'ubuntu-latest' || matrix.os == 'windows-latest') &&
-       (matrix.python-version == '3.10' || matrix.python-version == '3.13'))
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, windows-latest, macos-latest]
-        python-version: ['3.10', '3.11', '3.12', '3.13']
+        include: ${{ fromJson(needs.pytest-matrix.outputs.matrix) }}
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4
 
@@ -121,17 +148,61 @@ jobs:
         shell: bash
         run: pip install maturin "pytest>=8.0.0" numpy
 
-      - name: Build & install bindings (maturin develop)
-        # `maturin develop` builds the `python-extension` wheel (per
-        # pyproject.toml) and installs it into the active interpreter, so
-        # `import fluxion` resolves for the pytest step below. No venv is
-        # used — setup-python's interpreter is the install target directly,
-        # which avoids the Windows `venv/Scripts/activate` path divergence.
+      - name: Build wheel (maturin build)
+        # Use `maturin build` + `pip install` rather than `maturin develop`.
+        # `maturin develop` requires a virtualenv or conda env — maturin ≥1.14
+        # refuses to install into setup-python's bare system interpreter
+        # (CI has no VIRTUAL_ENV / CONDA_PREFIX / .venv). Creating a venv
+        # cross-OS is fiddly (Windows uses venv/Scripts/activate), so the
+        # simpler path is `maturin build` then `pip install` the resulting
+        # wheel — same approach the `build` job above uses for its
+        # `import fluxion` smoke test.
         env:
           RUST_MIN_STACK: 33554432
           CARGO_BUILD_JOBS: 2
         shell: bash
-        run: maturin develop --release --jobs 2
+        run: maturin build --release --jobs 2
+
+      - name: Install built wheel
+        # `--find-links` points pip at target/wheels. We do NOT use --no-deps
+        # here: the wheel declares numpy/onnxruntime/pandas, and while the
+        # PyO3 pytest suite itself only imports numpy, the native
+        # fluxion.fluxion extension may transitively need the others at
+        # import time. Matching the `build` job's install pattern is the
+        # safe choice.
+        shell: bash
+        run: pip install --find-links ./target/wheels fluxion
+
+      - name: Stage native extension into source tree
+        # `pip install` lands the compiled extension in site-packages, but
+        # the pytest step runs from the repo root where the source `fluxion/`
+        # directory shadows site-packages on sys.path. Without staging the
+        # compiled extension into source fluxion/, `import fluxion.fluxion`
+        # resolves to the source tree (no .so) and fails with
+        # ModuleNotFoundError. (`maturin develop` works locally because it
+        # stages the .so into the source tree as part of editable-install
+        # behaviour; `maturin build` + `pip install` does not.)
+        #
+        # maturin's compiled-extension filename for module-name="fluxion.fluxion"
+        # is `fluxion.abi3.so` on linux/macos and `fluxion.abi3.pyd` (or
+        # `fluxion.pyd`) on Windows. Globbing `*.so`/`*.pyd` is safe — the
+        # package dir contains only .py source files plus the one compiled
+        # extension.
+        shell: bash
+        run: |
+          set -euo pipefail
+          SP="$(python -c 'import site; print(site.getsitepackages()[0])')"
+          echo "site-packages: $SP"
+          shopt -s nullglob
+          NATIVE=( "$SP"/fluxion/*.so "$SP"/fluxion/*.pyd )
+          if [ "${#NATIVE[@]}" -eq 0 ]; then
+            echo "::error::No compiled extension (.so/.pyd) under $SP/fluxion/"
+            ls -la "$SP"/fluxion/ || true
+            exit 1
+          fi
+          cp -v "${NATIVE[@]}" fluxion/
+          echo "Staged into source fluxion/:"
+          ls -la fluxion/*.so fluxion/*.pyd 2>/dev/null || true
 
       - name: Run PyO3 pytest suite
         # Scoped to the binding tests enumerated in Issue #2760. Running bare
@@ -151,7 +222,7 @@ jobs:
             tests/integration/test_numpy_arrays.py
 
       - name: Run Rust-side PyO3 integration tests
-        # `--release` reuses artifacts produced by `maturin develop --release`
+        # `--release` reuses artifacts produced by `maturin build --release`
         # above. `test_pyo3_bindings` is currently a doc-only file (a
         # cross-OS compile check of the python-bindings feature); the active
         # assertion lives in `pyi_stub_completeness` (self-contained text
