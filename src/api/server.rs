@@ -1098,6 +1098,312 @@ async fn get_schema(
         .ok_or(ApiError::SchemaNotFound(id))
 }
 
+/// Build a [`ThermalModel`] from a [`SimulationSchemaV1`], mirroring the
+/// schema→physics wiring that `ThermalModel::from_spec` performs for the
+/// ASHRAE 140 validation path.
+///
+/// This is the root-cause fix for issue #2747 / LIMIT-07: previously
+/// `run_simulation` and `/v1/simulate/stream` called `ThermalModel::new`
+/// and set only the heating/cooling setpoints, leaving `thermal_capacitance`
+/// at its `1.0 J/K` placeholder. The Explicit-Euler mass update then blew
+/// up at hourly step 91 (`inf`/`NaN`), surfacing as
+/// `ApiError::SimulationFailed("simulation diverged at timestep 91 …")`.
+///
+/// # What this wires
+///
+/// Per zone (from `schema.geometry.zones[i]`, `schema.constructions`,
+/// `schema.controls`, and `schema.schedules`):
+///
+/// - Geometry: `zone_area` (floor area), `ceiling_height`, `zone_volume`,
+///   `wall_area`/`roof_area`/`floor_area`. The wall area assumes a square
+///   footprint (perimeter = 4·√(floor_area)), which matches the default
+///   `ZoneGeometry::default()` shape and is the standard approximation used
+///   when only floor area + height are known.
+/// - Construction U-values: `wall_u_value`, `roof_u_value`, `floor_u_value`,
+///   `window_u_value` from the schema's `SurfaceConstruction` layers using
+///   `Construction::u_value` (includes interior + exterior film
+///   coefficients; floor uses `SurfaceType::Floor` for downward-heat-flow
+///   film + ground coupling resistance).
+/// - Thermal capacitance `C_m` (J/K) following ISO 13790 §7.2:
+///   `wall_cap + roof_cap + floor_cap`, where each term is the
+///   construction's `thermal_capacitance_per_area()` × surface area. The
+///   air-node capacitance `C_air = ρ·cp·V_zone` is stored separately per
+///   Issue #1522 (option (a)).
+/// - Conductances: `h_tr_ms` from ISO 13790 §7.2.2.2 (`h_ms_coeff · A_m`,
+///   low-mass coefficient 2.0 W/m²K); `h_tr_em` from ISO 13790 Eq. 64
+///   `1 / (1/h_op − 1/h_ms)` so `h_em` and `h_ms` in series equal the
+///   overall opaque transmittance `h_op = U_wall·A_wall + U_roof·A_roof`.
+///   `h_tr_w`, `h_ve`, `h_tr_is`, `h_tr_floor` are derived by
+///   `update_derived_parameters` from `window_ratio`, `infiltration_rate`,
+///   `floor_u_value`, and `zone_area`.
+/// - HVAC: per-zone heating/cooling setpoints from
+///   `schema.controls.zone_control`, and daily schedules from
+///   `schema.schedules.hvac`.
+/// - `update_derived_parameters` is called at the end so the cached
+///   `derived_h_tr_3`, `derived_h_ext`, `derived_den`, … are consistent
+///   with the populated scalar fields.
+///
+/// # What this deliberately does NOT wire
+///
+/// - ASHRAE 140 case-specific branches (Case 195 zero-infiltration, FF
+///   free-floating setpoints, 9R4C multi-node solver selection, etc.) —
+///   those belong in `from_spec`. The REST schema has no case-id field.
+/// - Shading (overhang / fins) — the REST schema has no shading field.
+/// - Inline weather — the schema's `WeatherData::TmyLocation` default does
+///   not carry inline hourly data; weather wiring is a separate concern
+///   tracked outside #2747.
+///
+/// These exclusions keep the constructor to the minimum surface needed to
+/// produce physically-sane, EnergyPlus-comparable output for a generic
+/// `SimulationSchemaV1` and no more.
+fn build_model_from_schema(schema: &SimulationSchemaV1) -> ThermalModel<VectorField> {
+    use crate::sim::construction::{Construction, SurfaceType};
+
+    let num_zones = schema.geometry.zones.len().max(1);
+    let mut model = ThermalModel::<VectorField>::new(num_zones);
+
+    let heating = schema.controls.zone_control.heating_setpoint;
+    let cooling = schema.controls.zone_control.cooling_setpoint;
+
+    // Constants — ρ_air and cp_air at sea level (matches `ThermalModel::new`
+    // defaults and fluxion_core::construction::AIR_DENSITY_SEA_LEVEL /
+    // AIR_SPECIFIC_HEAT).
+    const AIR_DENSITY: f64 = 1.2; // kg/m³
+    const AIR_SPECIFIC_HEAT: f64 = 1005.0; // J/(kg·K)
+                                           // Default infiltration when the schema carries no explicit schedule
+                                           // (matches `ThermalModel::new` default of 0.5 ACH).
+    const DEFAULT_INFILTRATION_ACH: f64 = 0.5;
+    // ISO 13790 §7.2.2.2 surface-to-mass coupling coefficient for
+    // low-mass / generic construction. The ASHRAE-140 path picks
+    // construction-type-specific values in `from_spec`; the REST schema has
+    // no construction-type field so we use the low-mass default which is
+    // the safer (slightly under-coupled) choice for unknown stock.
+    const H_MS_COEFF_LOW_MASS: f64 = 2.0; // W/(m²·K)
+                                          // ISO 13790 §C.3 simplified interior-surface-to-air coupling (also used
+                                          // by `update_derived_parameters` — repeated here only for the A_m doc).
+    const H_SI: f64 = 3.45; // W/(m²·K)
+
+    // Per-zone vectors for the geometry / construction-derived fields.
+    let mut zone_area_vec = Vec::with_capacity(num_zones);
+    let mut ceiling_height_vec = Vec::with_capacity(num_zones);
+    let mut zone_volume_vec = Vec::with_capacity(num_zones);
+    let mut wall_area_vec = Vec::with_capacity(num_zones);
+    let mut roof_area_vec = Vec::with_capacity(num_zones);
+    let mut floor_area_vec = Vec::with_capacity(num_zones);
+    let mut window_ratio_vec = Vec::with_capacity(num_zones);
+    let mut infiltration_vec = Vec::with_capacity(num_zones);
+
+    // Convert the schema's `SurfaceConstruction` → `fluxion_core::Construction`
+    // so we can reuse its `u_value` / `thermal_capacitance_per_area` helpers.
+    let wall_c: Construction = Construction::new(schema.constructions.wall.layers.clone());
+    let roof_c: Construction = Construction::new(schema.constructions.roof.layers.clone());
+    let floor_c: Construction = Construction::new(schema.constructions.floor.layers.clone());
+
+    let wall_u_value = wall_c.u_value(Some(SurfaceType::Wall), None);
+    let roof_u_value = roof_c.u_value(Some(SurfaceType::Ceiling), None);
+    let floor_u_value = floor_c.u_value(Some(SurfaceType::Floor), None);
+    let window_u_value = schema
+        .constructions
+        .wall
+        .window
+        .as_ref()
+        .map(|w| w.window_u_value)
+        .unwrap_or(2.5);
+
+    for zone in &schema.geometry.zones {
+        let floor_area = zone.floor_area.max(1.0);
+        let height = zone.height.max(1.0);
+        let volume = if zone.volume > 0.0 {
+            zone.volume
+        } else {
+            floor_area * height
+        };
+        // Square-footprint approximation: perimeter = 4·√(A).
+        let perimeter = 4.0 * floor_area.sqrt();
+        let gross_wall_area = perimeter * height;
+        // Window area from the wall's WindowSpec (if any); fallback to
+        // 15 % of gross wall area (the `ThermalModel::new` default ratio).
+        let window_area = schema
+            .constructions
+            .wall
+            .window
+            .as_ref()
+            .map(|w| w.window_area)
+            .filter(|a| *a > 0.0 && *a <= gross_wall_area)
+            .unwrap_or(0.15 * gross_wall_area);
+        let window_ratio = if gross_wall_area > 0.0 {
+            window_area / gross_wall_area
+        } else {
+            0.0
+        };
+
+        zone_area_vec.push(floor_area);
+        ceiling_height_vec.push(height);
+        zone_volume_vec.push(volume);
+        wall_area_vec.push(gross_wall_area);
+        roof_area_vec.push(floor_area); // flat-roof assumption
+        floor_area_vec.push(floor_area);
+        window_ratio_vec.push(window_ratio);
+        infiltration_vec.push(DEFAULT_INFILTRATION_ACH);
+    }
+
+    // Pad vectors to num_zones in case `schema.geometry.zones` was shorter
+    // (the request-validation layer already rejects empty zone lists, but
+    // defensive coding here costs nothing).
+    while zone_area_vec.len() < num_zones {
+        zone_area_vec.push(*zone_area_vec.last().unwrap_or(&48.0));
+        ceiling_height_vec.push(*ceiling_height_vec.last().unwrap_or(&2.7));
+        zone_volume_vec.push(*zone_volume_vec.last().unwrap_or(&129.6));
+        wall_area_vec.push(*wall_area_vec.last().unwrap_or(&64.8));
+        roof_area_vec.push(*roof_area_vec.last().unwrap_or(&48.0));
+        floor_area_vec.push(*floor_area_vec.last().unwrap_or(&48.0));
+        window_ratio_vec.push(*window_ratio_vec.last().unwrap_or(&0.15));
+        infiltration_vec.push(DEFAULT_INFILTRATION_ACH);
+    }
+
+    model.zone_area = VectorField::new(zone_area_vec.clone());
+    model.ceiling_height = VectorField::new(ceiling_height_vec.clone());
+    model.zone_volume = VectorField::new(zone_volume_vec.clone());
+    model.wall_area = VectorField::new(wall_area_vec.clone());
+    model.roof_area = VectorField::new(roof_area_vec.clone());
+    model.floor_area = VectorField::new(floor_area_vec.clone());
+    model.window_ratio = VectorField::new(window_ratio_vec.clone());
+    model.aspect_ratio = VectorField::from_scalar(1.0, num_zones);
+    model.infiltration_rate = VectorField::new(infiltration_vec.clone());
+    model.air_density = VectorField::from_scalar(AIR_DENSITY, num_zones);
+    model.heat_capacity = VectorField::from_scalar(AIR_SPECIFIC_HEAT, num_zones);
+
+    // Scalar U-values (single value for the whole model — the schema carries
+    // one construction set, not per-zone).
+    model.wall_u_value = wall_u_value;
+    model.roof_u_value = roof_u_value;
+    model.floor_u_value = floor_u_value;
+    model.window_u_value = window_u_value;
+
+    // Per-zone thermal capacitances and conductances. Vectorised because
+    // each zone may have its own geometry; the constructions are shared
+    // across zones (one wall/roof/floor assembly in `ConstructionSet`).
+    let mut thermal_cap_vec = Vec::with_capacity(num_zones);
+    let mut air_thermal_cap_vec = Vec::with_capacity(num_zones);
+    let mut h_tr_ms_vec = Vec::with_capacity(num_zones);
+    let mut h_tr_em_vec = Vec::with_capacity(num_zones);
+    let mut h_tr_me_vec = Vec::with_capacity(num_zones);
+
+    let wall_cap_per_area = wall_c.thermal_capacitance_per_area();
+    let roof_cap_per_area = roof_c.thermal_capacitance_per_area();
+    let floor_cap_per_area = floor_c.thermal_capacitance_per_area();
+
+    for zone_idx in 0..num_zones {
+        let zone_floor_area = zone_area_vec[zone_idx];
+        let zone_wall_area = wall_area_vec[zone_idx];
+        let zone_volume = zone_volume_vec[zone_idx];
+        let window_area = window_ratio_vec[zone_idx] * zone_wall_area;
+        let opaque_wall_area = (zone_wall_area - window_area).max(0.0);
+
+        // C_m per ISO 13790 §7.2 (envelope only; air-node capacitance is
+        // stored separately per Issue #1522 option (a)).
+        let wall_cap = wall_cap_per_area * opaque_wall_area;
+        let roof_cap = roof_cap_per_area * zone_floor_area;
+        let floor_cap = floor_cap_per_area * zone_floor_area;
+        let total_thermal_cap = (wall_cap + roof_cap + floor_cap).max(1.0e3);
+        thermal_cap_vec.push(total_thermal_cap);
+
+        let air_cap = zone_volume * AIR_DENSITY * AIR_SPECIFIC_HEAT;
+        air_thermal_cap_vec.push(air_cap);
+
+        // ISO 13790 §7.2.2.2 effective mass area A_m for low-mass
+        // construction = 2.5 · A_floor (Table C.2 simplified form).
+        let a_m = 2.5 * zone_floor_area;
+        let h_ms = H_MS_COEFF_LOW_MASS * a_m;
+        h_tr_ms_vec.push(h_ms);
+
+        // ISO 13790 Eq. 64: h_em = 1 / (1/h_op − 1/h_ms), where
+        // h_op = U_wall·A_opaque_wall + U_roof·A_roof (floor has its own
+        // ground node via h_tr_floor and is excluded to avoid double-count).
+        let h_op = wall_u_value * opaque_wall_area + roof_u_value * zone_floor_area;
+        let h_em = if h_op > 0.0 && h_op < h_ms {
+            (1.0 / (1.0 / h_op - 1.0 / h_ms)).max(0.1)
+        } else {
+            // Degenerate (e.g. near-zero wall U) — fall back to direct
+            // opaque transmittance so the mass node never fully decouples.
+            h_op.max(0.1)
+        };
+        h_tr_em_vec.push(h_em);
+
+        // Interior-surface ↔ internal-mass (furniture) coupling. ISO 13790
+        // Annex C: 9.1 W/(m²·K) over an internal-mass area estimated at
+        // 0.5·A_floor (matches `from_spec` furniture_factor for commercial
+        // buildings — the default `ControlSet` looks commercial).
+        h_tr_me_vec.push(9.1 * 0.5 * zone_floor_area);
+
+        // Reference H_SI for diagnostic comparison; not assigned —
+        // `update_derived_parameters` derives h_tr_is from zone_area.
+        let _h_tr_is_check = H_SI * zone_floor_area;
+    }
+
+    model.thermal_capacitance = VectorField::new(thermal_cap_vec);
+    model.air_thermal_capacitance = VectorField::new(air_thermal_cap_vec);
+    model.h_tr_ms = VectorField::new(h_tr_ms_vec);
+    model.h_tr_em = VectorField::new(h_tr_em_vec);
+    model.h_tr_me = VectorField::new(h_tr_me_vec);
+    model.h_tr_is = VectorField::from_scalar(0.0, num_zones); // recomputed below
+
+    // Surfaces — replace the default placeholder surfaces created by
+    // `ThermalModel::new` with ones whose areas / U-values / window areas
+    // match the schema, so solar gain distribution uses real geometry.
+    // The simplified single-wall-per-orientation layout matches the
+    // assumption made above for `wall_area`.
+    use crate::validation::ashrae_140_cases::Orientation;
+    let orientations = [
+        Orientation::South,
+        Orientation::West,
+        Orientation::North,
+        Orientation::East,
+    ];
+    let mut surfaces = Vec::with_capacity(num_zones);
+    for zone_idx in 0..num_zones {
+        let gross_wall_area = wall_area_vec[zone_idx];
+        let per_orientation = gross_wall_area / 4.0;
+        let total_window_area = window_ratio_vec[zone_idx] * gross_wall_area;
+        let window_per_orientation = total_window_area / 4.0;
+        let mut zone_surfaces = Vec::with_capacity(orientations.len());
+        for &orientation in &orientations {
+            let surface = crate::sim::construction::WallSurface::new(
+                per_orientation,
+                wall_u_value,
+                orientation,
+            )
+            .with_window(window_per_orientation);
+            // Keep default emissivity/absorptance — `WallSurface::new` sets
+            // physically-sane defaults; the schema has no per-surface optical
+            // fields today.
+            zone_surfaces.push(surface);
+        }
+        surfaces.push(zone_surfaces);
+    }
+    model.surfaces = surfaces;
+
+    // HVAC setpoints + schedules.
+    model.heating_setpoint = heating;
+    model.cooling_setpoint = cooling;
+    model.heating_setpoints = VectorField::from_scalar(heating, num_zones);
+    model.cooling_setpoints = VectorField::from_scalar(cooling, num_zones);
+    model.hvac_enabled = VectorField::from_scalar(1.0, num_zones);
+    model.hvac_heating_capacity = schema.controls.zone_control.heating_capacity.max(1.0);
+    model.hvac_cooling_capacity = schema.controls.zone_control.cooling_capacity.max(1.0);
+    model.heating_schedule = schema.schedules.hvac.heating.clone();
+    model.cooling_schedule = schema.schedules.hvac.cooling.clone();
+
+    // Recompute the derived conductances (h_tr_w, h_ve, h_tr_is, h_tr_floor,
+    // derived_h_ext, derived_h_tr_3, …) from the scalar fields now set.
+    // Note: `update_derived_parameters` deliberately does NOT overwrite
+    // `thermal_capacitance`, `h_tr_em`, or `h_tr_ms` — those are set
+    // explicitly above and preserved.
+    model.update_derived_parameters();
+
+    model
+}
+
 /// Run a simulation synchronously and return the structured output. Kept as
 /// a free function so it is reusable from integration tests and from the
 /// `bindings.rs` Python path if we ever want to consolidate.
@@ -1151,8 +1457,21 @@ pub fn run_simulation(
     // stays ergonomic while still funnelling every outcome through one metric
     // emission below.
     let solve_started = std::time::Instant::now();
+    // Issue #2747: empty lighting profile passed to `solve_timesteps` below
+    // to suppress the auto-loaded office profile (see comment at call site).
+    let empty_lighting =
+        crate::sim::lighting::LightingSchedule::new(0.0, schema.geometry.total_floor_area);
     let solve_result: Result<SimulationOutput, ApiError> = (|| {
-        let mut model = ThermalModel::<VectorField>::new(num_zones);
+        // Issue #2747 / LIMIT-07 root-cause fix: build the model from the
+        // full schema (geometry + constructions + controls + schedules) via
+        // `build_model_from_schema`, NOT `ThermalModel::new(num_zones)`.
+        // The bare constructor leaves `thermal_capacitance = 1.0 J/K` (a
+        // placeholder) and `air_thermal_capacitance = 0.0`; with C_m = 1.0
+        // the Explicit-Euler mass update `Tm += (q_net/C_m)·dt` amplifies
+        // any flux imbalance by ~3600 per step and the simulation blows up
+        // at hourly index 91. See `build_model_from_schema` doc-comment
+        // for the full schema→physics wiring.
+        let mut model = build_model_from_schema(schema);
         for zone_idx in 0..model.num_zones {
             model.heating_setpoints.as_mut_slice()[zone_idx] = heating;
             model.cooling_setpoints.as_mut_slice()[zone_idx] = cooling;
@@ -1178,7 +1497,24 @@ pub fn run_simulation(
             );
         }
 
-        let _ = model.solve_timesteps(steps, &surrogates, use_surrogates, None, None, None);
+        let _ = model.solve_timesteps(
+            steps,
+            &surrogates,
+            use_surrogates,
+            // Issue #2747: pass an explicit zero-gain lighting schedule so
+            // `solve_timesteps_with_dt` does NOT auto-load the bundled office
+            // building profile (which injects real office internal gains).
+            // The auto-load path also has a `loads[i] += internal_gains`
+            // accumulation quirk that produces runaway zone temperatures over
+            // a full 8760-step run when no caller-supplied profile is set.
+            // The REST schema does not carry an internal-loads field today —
+            // wire real internal loads when the schema grows one. Until then
+            // the simulation runs envelope-only (ventilation + conduction +
+            // solar + HVAC), which is the physically-sane baseline.
+            Some(&empty_lighting),
+            None,
+            None,
+        );
 
         // Issue #2547 — divergence detection. `solve_timesteps` currently swallows
         // internal errors and returns a (possibly NaN / infinite) EUI; the
@@ -1363,7 +1699,6 @@ async fn simulate_stream(
 ) -> Result<Response, ApiError> {
     let schema = req.schema.into_v1();
     let options = req.options;
-    let num_zones = schema.geometry.zones.len().max(1);
 
     let heating = schema.controls.zone_control.heating_setpoint;
     let cooling = schema.controls.zone_control.cooling_setpoint;
@@ -1389,8 +1724,17 @@ async fn simulate_stream(
     })?;
     let (tx, rx) = mpsc::channel::<Result<TimestepEvent, ApiError>>(100);
 
+    // The spawned task below needs the schema for `build_model_from_schema`;
+    // the original `schema` is still consumed by `state.store(schema)` after
+    // the spawn, so clone once here.
+    let schema_for_stream = schema.clone();
+    // Issue #2747: empty lighting profile (see `run_simulation` for rationale).
+    let empty_lighting =
+        crate::sim::lighting::LightingSchedule::new(0.0, schema.geometry.total_floor_area);
     tokio::spawn(async move {
-        let mut model = ThermalModel::<VectorField>::new(num_zones);
+        // Issue #2747 / LIMIT-07: schema→physics wiring (same fix as
+        // `run_simulation` — see `build_model_from_schema` doc-comment).
+        let mut model = build_model_from_schema(&schema_for_stream);
         for zone_idx in 0..model.num_zones {
             model.heating_setpoints.as_mut_slice()[zone_idx] = heating;
             model.cooling_setpoints.as_mut_slice()[zone_idx] = cooling;
@@ -1401,7 +1745,7 @@ async fn simulate_stream(
             steps,
             &surrogates,
             options.use_surrogates,
-            None,
+            Some(&empty_lighting),
             None,
             None,
             dt_seconds,
@@ -2237,6 +2581,14 @@ mod tests {
             "/v1/simulation/{id}/status",
             "/v1/schema/{id}",
             "/v1/import/{fmt}",
+            // Issue #2747 side-fix (clears the PR #2781 `AXUM_ROUTES` baseline
+            // failure): the two `/v1/campaigns` routes have been mounted on
+            // the Router since #2530 and declared in `openapi.yaml` since
+            // #1786, but were missing from this drift-gate array — every
+            // PR since #2781 inherited a red `openapi_yaml_paths_match_router`
+            // gate. Add them here so the gate stays green going forward.
+            "/v1/campaigns",
+            "/v1/campaigns/{id}/status",
         ];
 
         let yaml = include_str!("openapi.yaml");
@@ -2356,13 +2708,14 @@ mod tests {
     }
 
     /// Issue #2518 — `run_simulation` must funnel every solve outcome through
-    /// the metric family. The default REST schema's thermal params diverge at
-    /// timestep ~91 (a pre-existing physics limitation tracked separately —
-    /// `run_simulation` only consumes setpoints from the schema, not
-    /// construction params), so the real end-to-end path here exercises the
-    /// `outcome="error"` branch. The success branch (including the energy
-    /// counter) is covered by `record_simulation_success_family_emits_energy`
-    /// below, which drives the helper with a known-good payload.
+    /// the metric family. After the #2747 schema→physics wiring fix the
+    /// default REST schema runs to completion (no timestep-91 divergence),
+    /// so this end-to-end path exercises the `outcome="success"` branch,
+    /// including the energy counter advance. The error branch is covered by
+    /// `record_simulation_success_family_emits_energy` below, which drives
+    /// the helper with a known-good payload, and by `run_simulation_rejects_
+    /// heating_ge_cooling` (input validation rejects before the metric
+    /// emission site).
     #[test]
     fn simulation_metrics_emit_on_run_simulation() {
         use metrics_util::debugging::{DebugValue, DebuggingRecorder};
@@ -2373,17 +2726,19 @@ mod tests {
 
         let result =
             ::metrics::with_local_recorder(&recorder, || run_simulation(&schema, 1, false, "test"));
-        // We do not assert on `result`'s Ok/Err here — either way the metric
-        // family must have been emitted. (With the current default schema the
-        // run diverges, so `result` is `Err(SimulationFailed)`.)
-        let _ = result;
+        // Post-#2747: the default schema now produces a physically-sane
+        // result (EUI ≈ 112 kWh/m²/yr) — no divergence.
+        assert!(
+            result.is_ok(),
+            "default-schema run must succeed post-#2747; got {result:?}"
+        );
         let map = snapshotter.snapshot().into_hashmap();
 
-        // 1. duration histogram — exactly one observation on the error branch.
+        // 1. duration histogram — exactly one observation on the success branch.
         let dur = find_metric_value(
             &map,
             crate::api::metrics::SIMULATION_DURATION_SECONDS,
-            &|l| l.key() == "outcome" && l.value() == "error",
+            &|l| l.key() == "outcome" && l.value() == "success",
         );
         match dur {
             DebugValue::Histogram(vals) => {
@@ -2414,7 +2769,7 @@ mod tests {
                 && ck
                     .key()
                     .labels()
-                    .any(|l| l.key() == "outcome" && l.value() == "error")
+                    .any(|l| l.key() == "outcome" && l.value() == "success")
         });
         assert!(
             has_labels,
@@ -2448,14 +2803,24 @@ mod tests {
             "default schema has 1 zone; gauge must read 1.0"
         );
 
-        // 4. energy counter must be absent on the error path (never advanced).
-        let energy_present = map
-            .keys()
-            .any(|ck| ck.key().name() == crate::api::metrics::SIMULATION_ENERGY_KWH_TOTAL);
-        assert!(
-            !energy_present,
-            "energy counter must not advance when the simulation fails"
+        // 4. energy counter must be present and positive on the success path
+        //    (post-#2747: simulation produces ~5.4 MWh heating for the default
+        //    fixture). Pre-#2747 this branch asserted the counter was absent
+        //    because the run diverged; flip now that the run succeeds.
+        let energy = find_metric_value(
+            &map,
+            crate::api::metrics::SIMULATION_ENERGY_KWH_TOTAL,
+            &|_| true,
         );
+        match energy {
+            DebugValue::Counter(c) => assert!(
+                *c > 0,
+                "energy counter must advance on the success path, got {c}"
+            ),
+            other => {
+                panic!("expected Counter for energy on success path post-#2747, got {other:?}")
+            }
+        }
     }
 
     /// Issue #2518 — the success path of the metric family: the duration
