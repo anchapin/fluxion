@@ -63,6 +63,12 @@ cargo deny check                           # supply-chain gate (#2699): licenses
 maturin develop                             # Python: local dev install
 (cd npm/ && npm run build)                  # Node: node build.js --release
 
+# Binaries (cargo run --bin <name>)
+cargo run --bin fluxion                  # primary CLI (sim / validate / batch); src/bin/fluxion.rs
+cargo run --bin fluxion-rest             # axum REST API (see FLUXION_REST_* env below; health: GET /v1/healthz)
+cargo run --bin fluxion-delta            # diff tool (tools/fluxion_delta.rs)
+cargo run -p fluxion-mcp                 # MCP server — SEPARATE package; do not use --bin here
+
 # Pre-commit (install once)
 pip install pre-commit && pre-commit install && pre-commit install --hook-type commit-msg -f
 pre-commit run --all-files                  # ruff, black, isort, fmt, cargo-check, cargo-audit,
