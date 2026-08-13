@@ -2,12 +2,40 @@
 Python tests for HVAC bindings
 """
 
-import fluxion
 import pytest
 
-ZoneSetpoints = getattr(fluxion, "ZoneSetpoints", None)
-ZoneControl = getattr(fluxion, "ZoneControl", None)
-create_zone_setpoints = getattr(fluxion, "create_zone_setpoints", None)
+# Defensive import: fluxion's `__getattr__` raises ImportError when the
+# native extension is unavailable, but ``getattr(obj, name, default)`` only
+# suppresses AttributeError. Probe the package's documented import-error
+# flag (fluxion/__init__.py sets ``_NATIVE_IMPORT_ERROR`` to the underlying
+# exception, or to ``None`` when the extension loaded) so we can fall back
+# to a module-level skip rather than failing collection.
+try:
+    import fluxion as _fluxion
+
+    fluxion = _fluxion
+except ImportError:
+    fluxion = None  # type: ignore[assignment]
+
+_native_import_error = getattr(fluxion, "_NATIVE_IMPORT_ERROR", None)
+
+
+def _safe_getattr(name: str):
+    """Wrap ``getattr(fluxion, name, None)`` so ImportError from
+    ``__getattr__`` also returns ``None`` (matches the original intent of
+    ``getattr(..., default=None)`` for the missing-native-extension case).
+    """
+    if fluxion is None or _native_import_error is not None:
+        return None
+    try:
+        return getattr(fluxion, name)
+    except ImportError:
+        return None
+
+
+ZoneSetpoints = _safe_getattr("ZoneSetpoints")
+ZoneControl = _safe_getattr("ZoneControl")
+create_zone_setpoints = _safe_getattr("create_zone_setpoints")
 
 if ZoneSetpoints is None or ZoneControl is None or create_zone_setpoints is None:
     pytest.skip("fluxion HVAC bindings not available", allow_module_level=True)
@@ -300,10 +328,13 @@ def test_heat_pump_configuration_and_cop():
     assert hp.cooling_cop == 3.0
     assert hp.mode == "off"
 
-    # COP degrades away from design temperature.
+    # COP is constant across outdoor temperatures — src/sim/hvac/mod.rs
+    # documents this as deliberate ("no temperature degradation to match
+    # reference behavior"). The Rust unit test asserts the same
+    # (`cop_cold - 3.5` < 0.1 at any temperature).
     cop_design = hp.heating_cop_at_temperature(-5.0)
     cop_cold = hp.heating_cop_at_temperature(-15.0)
-    assert cop_cold < cop_design
+    assert cop_cold == cop_design == hp.heating_cop
 
     # Mode selection from setpoints.
     hp.set_mode(18.0, 20.0, 27.0)

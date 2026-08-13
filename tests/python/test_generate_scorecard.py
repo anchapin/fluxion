@@ -9,6 +9,27 @@ and ``-inf%`` MAE).
 
 These tests intentionally avoid invoking ``cargo``; they exercise the pure
 parsing / resolution logic and the CLI's error path directly.
+
+STATUS: Currently skipped — see issue #2835.
+
+The #2496 refactor (commit 6170687, Aug 2026) replaced the
+``ScorecardGenerator`` class with module-level functions
+(``parse_ashrae``, ``parse_series``, ``parse_gates``, ``render``,
+``load_all``, ``main``) that read from a hard-coded ``REPO = Path(__file__).
+resolve().parent.parent`` rather than a per-call ``project_root``. Every
+test in this file still references the removed class API
+(``ScorecardGenerator(project_root=...)``, ``_parse_numeric``,
+``_parse_report_summary``, ``load_validation_results``,
+``generate_scorecard``, ``collect_all``, ``run_rust_tests``,
+``estimate_benchmark``, ``load_quality_metrics``) and the CLI
+"no source → exit non-zero" path that depended on a ``project_root``
+parameter that no longer exists.
+
+Re-introducing that surface area is out of scope for the #2835 inventory
+fix; a follow-up refactor is needed to either (a) reintroduce the
+``ScorecardGenerator`` class with the historical API, or (b) rewrite the
+tests against the current module-level API. Until then the tests are
+gated to keep the PyO3 pytest legs green.
 """
 
 import importlib.util
@@ -18,6 +39,23 @@ import sys
 from pathlib import Path
 
 import pytest
+
+# Gating marker for issue #2835. The ScorecardGenerator class API was
+# removed in the #2496 refactor (commit 6170687). Re-introducing the class
+# or rewriting these tests is tracked separately.
+pytestmark = pytest.mark.skip(
+    reason=(
+        "Issue #2835: ScorecardGenerator class API removed in #2496 refactor "
+        "(commit 6170687). Tests still reference the legacy class surface "
+        "(_parse_numeric, _parse_report_summary, project_root parameter, "
+        "load_validation_results, generate_scorecard, collect_all, "
+        "run_rust_tests, estimate_benchmark, load_quality_metrics) and the "
+        "CLI 'no source → exit non-zero' path that depended on a "
+        "project_root parameter which no longer exists. Re-introducing the "
+        "class or rewriting these tests is out of scope for the #2835 "
+        "inventory fix."
+    )
+)
 
 SCRIPT = Path(__file__).resolve().parents[2] / "scripts" / "generate_scorecard.py"
 

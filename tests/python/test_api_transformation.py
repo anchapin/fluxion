@@ -22,10 +22,19 @@ import pytest
 def fluxion_module():
     try:
         import fluxion
-
-        return fluxion
     except ImportError:
         pytest.skip("fluxion Python bindings not available")
+    # ``fluxion.__getattr__`` raises ``ImportError`` (not ``AttributeError``)
+    # when the native extension is unavailable, so a plain
+    # ``getattr(fluxion_module, name, None)`` cannot express "fall back to
+    # None". Detect the missing-extension case via the package's documented
+    # ``_NATIVE_IMPORT_ERROR`` sentinel so dependent fixtures skip cleanly.
+    if getattr(fluxion, "_NATIVE_IMPORT_ERROR", None) is not None:
+        pytest.skip(
+            f"fluxion native extension is unavailable "
+            f"({fluxion._NATIVE_IMPORT_ERROR})"
+        )
+    return fluxion
 
 
 @pytest.fixture(scope="module")
@@ -338,10 +347,13 @@ class TestTransformation5_ConstructionLayers:
 
         construction = Construction([layer])
 
-        # Calculate expected U-value
+        # Calculate expected U-value.
+        # Use EXTERIOR_FILM_COEFF = 18.3 W/m²K (ASHRAE 140 v2023, vertical
+        # surfaces, ~3.4 m/s wind) per AGENTS.md — the legacy 29.3 W/m²K
+        # (6.7 m/s) value must NOT appear in any computation path.
         r_material = 0.1 / 0.9
         r_film_int = 1.0 / 8.29
-        r_film_ext = 1.0 / 29.3
+        r_film_ext = 1.0 / 18.3
         r_total = r_film_int + r_material + r_film_ext
         expected_u = 1.0 / r_total
 

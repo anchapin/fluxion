@@ -446,10 +446,13 @@ def test_run_worker_success_path(state_store_module, s3_worker_module):
         result = s3_worker_module.run_worker(wu, state_store=store)
 
     assert result.error_message is None
-    assert result.heating_mae == pytest.approx(1.0)
+    # KPIResult aggregates stats across runs: heating_mae_mean / _std /
+    # _min / _max (single-run == rated). The legacy flat field
+    # ``heating_mae`` no longer exists on KPIResult.
+    assert result.heating_mae_mean == pytest.approx(1.0)
     state = store.get_state("camp-A", "wu-1")
     assert state.status == state_store_module.TaskStatus.COMPLETED
-    assert state.metrics["heating_mae"] == pytest.approx(1.0)
+    assert state.metrics["heating_mae_mean"] == pytest.approx(1.0)
 
 
 def test_run_worker_failure_path(state_store_module, s3_worker_module):
