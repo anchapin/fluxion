@@ -39,7 +39,15 @@ impl PyMultiZoneThermalModel {
         }
 
         Ok(PyMultiZoneThermalModel {
-            inner: ThermalModel::<VectorField>::new(num_zones),
+            // Issue #2806: populate real thermal physics (mirror of the REST
+            // `build_model_from_schema` fix, #2747) so the analytical solver
+            // does not diverge on the C_m=1.0 placeholder left by
+            // `ThermalModel::new`. See `model_bindings::populate_default_model_physics`.
+            inner: {
+                let mut m = ThermalModel::<VectorField>::new(num_zones);
+                crate::python::model_bindings::populate_default_model_physics(&mut m);
+                m
+            },
         })
     }
 
@@ -235,9 +243,32 @@ impl PyMultiZoneThermalModel {
             ))
         })?;
 
-        let _net_result =
-            self.inner
-                .solve_timesteps(steps, &surrogates, use_surrogates, None, None, None);
+        // Issue #2806: `simulate_multi_zone` returns the cumulative
+        // `annual_heating_energy + annual_cooling_energy` trackers (see return
+        // below), which `solve_timesteps` accumulates but never resets. Without
+        // this reset, sequential calls on the same instance return N× the
+        // per-call energy (10429 → 20861 → 31294 …), breaking determinism.
+        // Reset first so the trackers reflect only THIS call's energy.
+        self.inner.reset_heating_cooling_energy();
+
+        // Issue #2806 / #2747: pass an empty lighting schedule so the solver
+        // does NOT auto-load the bundled Office building profile (which would
+        // otherwise run because lighting/equipment/occupancy are all None).
+        // That profile has a per-step `loads[i] += internal_gain` accumulation
+        // quirk that overheats a default-constructed zone and drives EUI
+        // negative. Envelope-only is the physically-sane baseline, matching
+        // `Model::simulate` and the REST `/v1/simulate` path (#2747).
+        let zone_area = self.inner.zone_area.as_slice().iter().sum::<f64>().max(1.0);
+        let empty_lighting = crate::sim::lighting::LightingSchedule::new(0.0, zone_area);
+
+        let _net_result = self.inner.solve_timesteps(
+            steps,
+            &surrogates,
+            use_surrogates,
+            Some(&empty_lighting),
+            None,
+            None,
+        );
 
         // Issue #2547 — detect divergence (NaN / infinity) in the per-zone
         // hourly temperature trace and surface it as a `SimulationError`
