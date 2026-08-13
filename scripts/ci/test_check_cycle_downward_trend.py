@@ -386,6 +386,46 @@ def test_main_update_appends_and_exits_zero(guard, tmp_path, capsys):
     reloaded = guard.load_history(ledger)
     assert len(reloaded["snapshots"]) == 2
     assert reloaded["snapshots"][-1]["source"] == "test-update"
+    # --reason omitted -> snapshot has no `reason` key (backward compatible).
+    assert "reason" not in reloaded["snapshots"][-1]
+
+
+def test_main_update_records_reason_when_provided(guard, tmp_path, capsys):
+    """`--update --reason X` records the justification in the snapshot so a
+    re-baseline (Issue #2810) is self-documenting in the ledger."""
+    real_current = guard.collect_current_edges(*guard._load_cycle_scripts())
+    ledger = tmp_path / "history.json"
+    _seed_ledger(ledger, real_current["total"], real_current["signature"])
+    code = guard.main(
+        [
+            "--history",
+            str(ledger),
+            "--update",
+            "--source",
+            "post-orchestration-2026-08-13",
+            "--reason",
+            "post-orchestration refactor wave shifted line numbers",
+        ]
+    )
+    assert code == 0
+    reloaded = guard.load_history(ledger)
+    snap = reloaded["snapshots"][-1]
+    assert snap["source"] == "post-orchestration-2026-08-13"
+    assert snap["reason"] == "post-orchestration refactor wave shifted line numbers"
+
+
+def test_append_snapshot_reason_is_optional(guard):
+    """``reason=None`` (the default) omits the field for backward compat."""
+    history = {
+        "schema_version": guard.SCHEMA_VERSION,
+        "buckets": list(guard.BUCKETS),
+        "snapshots": [],
+    }
+    cur = _current(5, signature="abc")
+    guard.append_snapshot(history, cur, commit="x", source="t")
+    assert "reason" not in history["snapshots"][0]
+    guard.append_snapshot(history, cur, commit="x", source="t", reason="why")
+    assert history["snapshots"][1]["reason"] == "why"
 
 
 def test_main_returns_2_on_corrupt_ledger(guard, tmp_path, capsys):
@@ -455,3 +495,201 @@ def test_end_to_end_frozen_ledger_fails_nightly(guard, tmp_path, capsys):
     out = capsys.readouterr().out
     assert "R2 FAIL" in out
     assert "frozen" in out
+
+
+# ---------------------------------------------------------------------------
+# Issue #2810: lineno-independent offender signature
+#
+# The offender identity used to include ``lineno``, so any refactor that
+# inserted code *above* an unchanged cycle edge shifted its line number and
+# flipped R3 (net-flat swap) even though no edge was added or removed. The
+# signature now drops ``lineno`` (keeping ``file`` + scanned-line content);
+# ``lineno`` survives only in the raw offender string for the report.
+# ---------------------------------------------------------------------------
+
+
+def test_signature_identity_strips_lineno(guard):
+    """``_signature_identity`` must drop the lineno field, keeping file+text."""
+    raw = "src/sim/thermal_model.rs:541: use crate::validation::Foo;"
+    assert (
+        guard._signature_identity(raw)
+        == "src/sim/thermal_model.rs: use crate::validation::Foo;"
+    )
+
+
+def test_signature_identity_preserves_content_colons(guard):
+    """Rust path separators (``::``) in the scanned line must survive."""
+    raw = "src/validation/cases.rs:10: use crate::sim::thermal_model::Model;"
+    assert guard._signature_identity(raw) == (
+        "src/validation/cases.rs: use crate::sim::thermal_model::Model;"
+    )
+
+
+def test_signature_identity_fallback_on_unrecognised_shape(guard):
+    """An offender without the ``file:line: text`` shape is passed through
+    unchanged so the signature stays deterministic (defensive fallback)."""
+    weird = "no-colons-here"
+    assert guard._signature_identity(weird) == weird
+
+
+def test_compute_signature_invariant_to_pure_line_shift(guard):
+    """A benign line-shift refactor (insertion above an existing edge) moves
+    the lineno but leaves file+content identical -> signature MUST NOT change.
+
+    This is the exact false positive Issue #2810 documents: the
+    post-orchestration refactor wave (#2798-#2804) shifted line numbers in
+    cycle-edge files without altering any edge, yet R3 fired.
+    """
+    before = {
+        "sim_to_validation": [
+            "src/sim/a.rs:100: use crate::validation::Foo;",
+            "src/sim/b.rs:50: use crate::validation::Bar;",
+        ]
+    }
+    after = {
+        "sim_to_validation": [
+            # Both edges shifted down by 48 lines (e.g. an import block inserted
+            # at the top of each file); content and file unchanged.
+            "src/sim/a.rs:148: use crate::validation::Foo;",
+            "src/sim/b.rs:98: use crate::validation::Bar;",
+        ]
+    }
+    assert guard._compute_signature(before) == guard._compute_signature(after)
+
+
+def test_compute_signature_detects_genuine_edge_swap(guard):
+    """Removing one edge and adding a different-content edge (same total)
+    MUST change the signature -- this is the swap R3 exists to catch."""
+    before = {
+        "sim_to_validation": [
+            "src/sim/a.rs:100: use crate::validation::diagnostics::Foo;",
+        ]
+    }
+    after = {
+        "sim_to_validation": [
+            # Same file/lineno, but a different (higher-criticality) edge.
+            "src/sim/a.rs:100: use crate::validation::casespec::CaseSpec;",
+        ]
+    }
+    assert guard._compute_signature(before) != guard._compute_signature(after)
+
+
+def test_compute_signature_detects_edge_removal_and_addition_across_files(guard):
+    """A swap spread across two files (remove in A, add in B) must still flip
+    the signature even though file+lineno of each survivor is unchanged."""
+    before = {
+        "sim_to_validation": ["src/sim/a.rs:10: use crate::validation::Foo;"],
+        "validation_to_sim": ["src/validation/c.rs:20: use crate::sim::Bar;"],
+    }
+    after = {
+        "sim_to_validation": ["src/sim/b.rs:99: use crate::validation::Qux;"],
+        "validation_to_sim": ["src/validation/c.rs:20: use crate::sim::Bar;"],
+    }
+    assert guard._compute_signature(before) != guard._compute_signature(after)
+
+
+def test_compute_signature_counts_duplicate_edges_via_multiset(guard):
+    """Two identical edges in the same file must register as count 2 in the
+    multiset (so adding/removing one is detectable), even though their
+    lineno-stripped identities are equal."""
+    two = {
+        "sim_to_validation": [
+            "src/sim/a.rs:10: use crate::validation::Foo;",
+            "src/sim/a.rs:20: use crate::validation::Foo;",
+        ]
+    }
+    one = {
+        "sim_to_validation": [
+            "src/sim/a.rs:10: use crate::validation::Foo;",
+        ]
+    }
+    assert guard._compute_signature(two) != guard._compute_signature(one)
+
+
+class _MockScanModules:
+    """Minimal stand-in for the acc/psc cycle-scan modules.
+
+    Lets ``collect_current_edges`` be driven by synthetic offender lists so
+    the lineno-independence contract can be exercised end-to-end (through the
+    real signature path) without touching the real ``src/`` tree.
+    """
+
+    def __init__(self, sim_to_validation: list[str] | None = None) -> None:
+        self._sim_to_validation = sim_to_validation or []
+
+    def scan_sim_for_validation_deps(self):
+        return list(self._sim_to_validation)
+
+    def scan_validation_for_sim_deps(self):
+        return []
+
+    def scan_validation_for_physics_deps(self):
+        return []
+
+    def scan_validation_for_weather_deps(self):
+        return []
+
+    def scan_physics_for_sim_deps(self):
+        return []
+
+    def scan_protected_sim_files_for_physics_deps(self):
+        return []
+
+
+def test_collect_current_edges_signature_ignores_line_shift(guard):
+    """End-to-end via ``collect_current_edges``: a pure lineno shift across a
+    full re-scan must yield an identical signature (Issue #2810 contract)."""
+    mock = _MockScanModules(["src/sim/a.rs:100: use crate::validation::Foo;"])
+    before = guard.collect_current_edges(mock, mock)
+    mock2 = _MockScanModules(["src/sim/a.rs:250: use crate::validation::Foo;"])
+    after = guard.collect_current_edges(mock2, mock2)
+    assert before["signature"] == after["signature"]
+    # Total is unchanged (still one edge).
+    assert before["total"] == after["total"] == 1
+
+
+def test_collect_current_edges_preserves_lineno_in_offenders(guard):
+    """``lineno`` is dropped from the signature but preserved in the raw
+    offender strings (for the human-readable debug report)."""
+    mock = _MockScanModules(["src/sim/a.rs:100: use crate::validation::Foo;"])
+    res = guard.collect_current_edges(mock, mock)
+    assert res["offenders"]["sim_to_validation"] == [
+        "src/sim/a.rs:100: use crate::validation::Foo;"
+    ]
+
+
+def test_r3_does_not_fire_on_benign_line_shift(guard):
+    """R3 must NOT trip when only line numbers drifted (the Issue #2810 fix).
+
+    Builds two snapshots whose offender sets differ ONLY in lineno; their
+    lineno-stripped signatures are equal, so ``evaluate_per_pr`` reports a
+    clean hold rather than a net-flat swap.
+    """
+    before = guard._compute_signature(
+        {"sim_to_validation": ["src/sim/a.rs:100: use crate::validation::Foo;"]}
+    )
+    after = guard._compute_signature(
+        {"sim_to_validation": ["src/sim/a.rs:150: use crate::validation::Foo;"]}
+    )
+    assert before == after  # sanity: the signatures really are equal
+    last = _snapshot(1, signature=before)
+    cur = _current(1, signature=after)
+    code, msgs = guard.evaluate_per_pr(cur, last)
+    assert code == 0
+    assert any("holds at 1" in m and "unchanged" in m for m in msgs)
+    assert not any("R3 FAIL" in m for m in msgs)
+
+
+def test_r3_fires_on_genuine_edge_swap(guard):
+    """R3 MUST still trip on a real swap (different content, same total)."""
+    before = guard._compute_signature(
+        {"sim_to_validation": ["src/sim/a.rs:100: use crate::validation::Foo;"]}
+    )
+    after = guard._compute_signature(
+        {"sim_to_validation": ["src/sim/a.rs:100: use crate::validation::Bar;"]}
+    )
+    last = _snapshot(1, signature=before)
+    cur = _current(1, signature=after)
+    code, msgs = guard.evaluate_per_pr(cur, last)
+    assert code == 1
+    assert any("R3 FAIL" in m and "swap" in m for m in msgs)
