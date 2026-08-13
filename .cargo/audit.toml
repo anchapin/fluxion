@@ -101,27 +101,75 @@ ignore = [
     # >>> cause); resolving #2757's webpki bump will resolve this too.
     "RUSTSEC-2025-0134",
 
-    # --- TEMPORARY: Issue #2690 (rumqttc personal-fork removal) ---------
-    # The `[patch.crates-io]` entry that redirected rumqttc to a fork on a
-    # *personal* GitHub account (anchapin/rumqtt, floating branch) was removed
-    # to eliminate the supply-chain exposure. fluxion-twin now consumes the
-    # official crates.io rumqttc 0.25.1, which still declares
-    # `rustls-webpki = "^0.102.8"` under its `use-rustls` feature. No patched
-    # 0.102.x exists on crates.io (0.102.8 is the last 0.102 release); the
-    # fixes landed only in rustls-webpki 0.103.10 / 0.103.12 / 0.103.13. Until
-    # upstream publishes a rumqttc release that bumps the webpki requirement,
-    # these four advisories cannot be cleared.
+    # --- TEMPORARY: Issue #2757 (rumqttc → rustls-webpki 0.102.8) -------------
+    # The four CR-LF CRL / name-constraint / name-constraint-wildcard / CRL-panic
+    # advisories on rustls-webpki 0.102.8, all reached via rumqttc 0.25.1's
+    # `use-rustls` feature. The predecessor `rumqttc` ignore block (Issue #2690,
+    # "personal-fork removal") only documented the supply-chain-cleanup context
+    # and pointed to the upstream tracking; this rewrite (#2757) expands it to
+    # match the PR #2847 / RUSTSEC-2025-0134 documentation pattern (depth,
+    # scope, upstream tracking, explicit REMOVE conditions) so the gate
+    # surfaces the advisories and the suppressions are fully traceable.
     #
-    # Impact scope: the vulnerable 0.102.8 copy is pulled in only by rumqttc's
-    # TLS feature; fluxion-twin's direct `rustls = "0.23"` dependency resolves
-    # the fixed rustls-webpki 0.103.13 that backs the actual TLS stack.
+    # Depth=2 transitive: rustls-webpki v0.102.8 <- rumqttc v0.25.1 <-
+    # fluxion-twin <- fluxion. No patched 0.102.x exists on crates.io
+    # (0.102.8 is the last 0.102 release); the fixes landed only in
+    # rustls-webpki 0.103.10 / 0.103.12 / 0.103.13. Removing the 0.102.x
+    # copy from the dep graph requires a new rumqttc release that bumps the
+    # webpki requirement past 0.102.x — there is no published release on
+    # crates.io that does so today (queried 2026-08-13). Upstream PR
+    # bytebeamio/rumqtt#1037 carries the bump but is not yet merged.
+    #
+    # Impact scope: rustls-webpki 0.102.8 is loaded by rumqttc's `use-rustls`
+    # feature for x.509 certificate validation against the broker. The
+    # affected advisories are real vulnerabilities (rustsec types: `vulnerability`
+    # for the four entries below — not `unmaintained` or `informational`):
+    #   - RUSTSEC-2026-0049: CRL Distribution Point faulty matching
+    #     (fix >=0.103.10). CWE-295, improper certificate validation.
+    #   - RUSTSEC-2026-0098: URI name-constraints wrongly accepted
+    #     (fix >=0.103.12). CWE-295, issuer-imposed constraints bypassed.
+    #   - RUSTSEC-2026-0099: wildcard DNS name-constraints wrongly accepted
+    #     (fix >=0.103.12). CWE-295, same class as -0098.
+    #   - RUSTSEC-2026-0104: reachable panic in CRL parsing
+    #     (fix >=0.103.13). CWE-400, denial-of-service via malformed CRL.
+    # The 0.102.8 copy is pulled in ONLY by rumqttc's TLS feature; fluxion-twin's
+    # direct `rustls = "0.23"` dependency resolves the fixed rustls-webpki
+    # 0.103.13 that backs the actual TLS stack. The vulnerable 0.102.8 is
+    # therefore not the one validating live broker certs in the
+    # rumqttc→broker path — but it does still ship in the binary and would
+    # be used if any other code path inside rumqttc exercised it. The
+    # documented "certificates are validated by default" posture in
+    # `crates/fluxion-twin/src/mqtt.rs:11-15` is therefore satisfied by the
+    # fixed 0.103.13 copy, not the 0.102.8 one.
+    #
+    # Resolution path (acceptance criteria):
+    #   (a) bump rumqttc to a release requiring webpki >=0.103.10; OR
+    #   (b) vendor a `[patch.crates-io]` pin on an auditable org account
+    #       (NOT a personal-fork — cf. #2690, which removed exactly that).
+    # Neither option is currently available — there is no patched rumqttc
+    # on crates.io, and no auditable org account publishes a rumqttc fork
+    # with the bump. The ignore entries below are the documented fallback.
     #
     # Upstream tracking:
     #   - https://github.com/bytebeamio/rumqtt/issues/1067
+    #     (advisory report, originally opened by maintainers)
     #   - https://github.com/bytebeamio/rumqtt/pull/1037
+    #     (open PR: bumps rustls-webpki + tokio-rustls; not yet merged)
+    #
+    # Side benefit: removing these four entries will ALSO close
+    # RUSTSEC-2025-0134 (rustls-pemfile unmaintained, tracked by #2797,
+    # already correctly documented in this file above) — both clusters
+    # clear when upstream publishes a rumqttc release that drops the
+    # 0.102.x webpki and the rustls-pemfile transitive.
     #
     # >>> REMOVE these four entries once a fixed rumqttc is published on
-    # >>> crates.io and `crates/fluxion-twin/Cargo.toml` is bumped to it.
+    # >>> crates.io (or a [patch.crates-io] pin is added on an auditable
+    # >>> org account per the acceptance criteria above) and
+    # >>> `crates/fluxion-twin/Cargo.toml` is bumped to that version.
+    # >>> Verify Cargo.lock resolves `rustls-webpki` to >=0.103.13 across
+    # >>> the workspace, then `cargo audit --deny warnings` and
+    # >>> `cargo deny check advisories` must both pass with these four
+    # >>> entries removed.
     "RUSTSEC-2026-0049",  # CRL Distribution Point faulty matching (fix >=0.103.10)
     "RUSTSEC-2026-0098",  # URI name-constraints wrongly accepted (fix >=0.103.12)
     "RUSTSEC-2026-0099",  # wildcard name-constraints wrongly accepted (fix >=0.103.12)

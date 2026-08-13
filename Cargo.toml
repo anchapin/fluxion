@@ -743,7 +743,7 @@ name = "surrogate_cuda_smoke"
 path = "tests/surrogate_cuda_smoke_test.rs"
 harness = true
 
-# Issue #2690 — supply-chain: rumqttc was previously redirected via a
+# Issue #2690 / #2757 — supply-chain: rumqttc was previously redirected via a
 # `[patch.crates-io]` entry to a fork on a *personal* GitHub account
 # (anchapin/rumqtt, branch `fix/rustsec-2026-webpki`). A floating branch on a
 # personal account bypasses crates.io provenance entirely and is an
@@ -758,11 +758,13 @@ harness = true
 # re-surface transiently until upstream publishes a fixed release. No patched
 # 0.102.x exists on crates.io (0.102.8 is the last 0.102 release), so they
 # cannot be cleared without an upstream rumqttc release. The
-# `[advisories].ignore` entries in `.cargo/audit.toml` carry this temporarily
-# with explicit removal conditions. A fifth advisory on the same crate
-# (RUSTSEC-2025-0134, rustls-pemfile unmaintained, see #2797) is ignored
-# alongside for the same reason; both clear together once a fixed rumqttc
-# is published.
+# `[advisories].ignore` entries in `.cargo/audit.toml` and `deny.toml`
+# carry this temporarily with explicit removal conditions (depth, scope,
+# upstream tracking, `>>> REMOVE` conditions — see #2757 / PR #2847
+# pattern). The same root cause surfaces the RUSTSEC-2025-0134
+# (rustls-pemfile unmaintained) ignore above (#2797); both clusters clear
+# together when upstream publishes a rumqttc release that drops the 0.102.x
+# webpki and the rustls-pemfile transitive.
 #
 # Upstream tracking:
 #   - https://github.com/bytebeamio/rumqtt/issues/1067  (advisory report)
@@ -770,4 +772,4 @@ harness = true
 #     rustls-webpki + tokio-rustls)
 # When a fixed rumqttc is published on crates.io, bump `rumqttc = "0.25"` to
 # that version in `crates/fluxion-twin/Cargo.toml` and remove the matching
-# `.cargo/audit.toml` ignore entries + this comment.
+# `.cargo/audit.toml` and `deny.toml` ignore entries + this comment.
