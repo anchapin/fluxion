@@ -4,9 +4,6 @@
 **perf-baseline.py**: Hook: Performance baseline check and comparison
 **rust-doc-check.py**: Hook: Validate Rust doc comments on public API
 
-## .github/scripts
-**comment_pr.py**: (no docstring)
-
 ## api
 **distributed_inference.py**: Distributed Inference Architecture for AI Surrogates
 **distributed_inference_config.py**: Configuration Management for Distributed Inference
@@ -14,7 +11,6 @@
 **monitoring.py**: Real-time Monitoring and BAS Integration Module
 
 ## api/tests
-**__init__.py**: (no docstring)
 **test_distributed_inference.py**: Tests for Distributed Inference Architecture
 
 ## examples
@@ -75,7 +71,6 @@
 **test_hvac_bindings.py**: Python tests for HVAC bindings
 
 ## tools
-**__init__.py**: (no docstring)
 **ashrae_140_reference.py**: ASHRAE 140 Reference Data Module
 **ashrae_140_test_harness.py**: ASHRAE 140 Test Harness.
 **benchmark_batch_inference.py**: Phase 6: Batch Inference Benchmark
@@ -105,7 +100,6 @@
 **llm_backend.py**: LLM Backend Interface for Code Compliance Agent
 
 ## tools/compliance_agent/tests
-**__init__.py**: (no docstring)
 **test_compliance_agent.py**: Tests for the Code Compliance Agent
 
 ## tools/data_gen
