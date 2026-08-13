@@ -76,7 +76,9 @@ class AggregationReport:
 def get_aws_clients():
     """Get configured boto3 clients."""
     if boto3 is None:
-        raise RuntimeError("boto3 is required for S3 aggregator. Install: pip install boto3")
+        raise RuntimeError(
+            "boto3 is required for S3 aggregator. Install: pip install boto3"
+        )
 
     session = boto3.Session(
         aws_access_key_id=os.environ.get("AWS_ACCESS_KEY_ID"),
@@ -98,7 +100,9 @@ def parse_s3_uri(uri: str) -> tuple[str, str]:
     return parts[0], parts[1] if len(parts) > 1 else ""
 
 
-def collect_results_from_s3(s3_client, bucket: str, results_prefix: str) -> list[AggregatedResult]:
+def collect_results_from_s3(
+    s3_client, bucket: str, results_prefix: str
+) -> list[AggregatedResult]:
     """Collect all result JSON files from S3 results prefix."""
     results: list[AggregatedResult] = []
 
@@ -163,22 +167,34 @@ def aggregate_results(
     successful = [r for r in results if r.error_message is None]
     failed = [r for r in results if r.error_message is not None]
 
-    pass_rate = sum(1 for r in successful if r.overall_pass) / len(successful) * 100 if successful else 0.0
+    pass_rate = (
+        sum(1 for r in successful if r.overall_pass) / len(successful) * 100
+        if successful
+        else 0.0
+    )
 
-    best_result = min(successful, key=lambda r: r.heating_mae + r.cooling_mae) if successful else None
-    best_mae = (best_result.heating_mae + best_result.cooling_mae) if best_result else 999.0
+    best_result = (
+        min(successful, key=lambda r: r.heating_mae + r.cooling_mae)
+        if successful
+        else None
+    )
+    best_mae = (
+        (best_result.heating_mae + best_result.cooling_mae) if best_result else 999.0
+    )
     best_parameters = best_result.parameters if best_result else {}
 
     convergence_data = []
     for r in sorted(results, key=lambda x: x.timestamp):
         if r.error_message is None:
-            convergence_data.append({
-                "iteration": len(convergence_data) + 1,
-                "timestamp": r.timestamp,
-                "heating_mae": r.heating_mae,
-                "cooling_mae": r.cooling_mae,
-                "total_mae": r.heating_mae + r.cooling_mae,
-            })
+            convergence_data.append(
+                {
+                    "iteration": len(convergence_data) + 1,
+                    "timestamp": r.timestamp,
+                    "heating_mae": r.heating_mae,
+                    "cooling_mae": r.cooling_mae,
+                    "total_mae": r.heating_mae + r.cooling_mae,
+                }
+            )
 
     report = AggregationReport(
         campaign_id=campaign_id,
@@ -223,7 +239,9 @@ def aggregate_results(
     return report
 
 
-def generate_download_link(s3_client, bucket: str, key: str, expiration: int = 3600) -> str:
+def generate_download_link(
+    s3_client, bucket: str, key: str, expiration: int = 3600
+) -> str:
     """Generate a pre-signed URL for downloading results."""
     try:
         url = s3_client.generate_presigned_url(
@@ -253,15 +271,17 @@ def lambda_handler(event: dict, context: Any) -> dict:
 
         return {
             "statusCode": 200,
-            "body": json.dumps({
-                "campaign_id": campaign_id,
-                "status": "aggregated",
-                "total_work_units": report.total_work_units,
-                "successful_runs": report.successful_runs,
-                "failed_runs": report.failed_runs,
-                "pass_rate": report.pass_rate,
-                "best_mae": report.best_mae,
-            }),
+            "body": json.dumps(
+                {
+                    "campaign_id": campaign_id,
+                    "status": "aggregated",
+                    "total_work_units": report.total_work_units,
+                    "successful_runs": report.successful_runs,
+                    "failed_runs": report.failed_runs,
+                    "pass_rate": report.pass_rate,
+                    "best_mae": report.best_mae,
+                }
+            ),
         }
     except Exception as e:
         print(f"[ERROR] Aggregation failed: {e}")
@@ -317,12 +337,16 @@ def main() -> int:
     if not args.s3_bucket:
         parser.error("--s3-bucket is required (or set FLUXION_S3_BUCKET env var)")
 
-    report = aggregate_results(args.campaign_id, args.s3_bucket, args.s3_prefix, args.output_format)
+    aggregate_results(
+        args.campaign_id, args.s3_bucket, args.s3_prefix, args.output_format
+    )
 
     clients = get_aws_clients()
     s3_client = clients["s3"]
 
-    report_key = f"{args.s3_prefix}/campaigns/{args.campaign_id}/results/aggregation_report.json"
+    report_key = (
+        f"{args.s3_prefix}/campaigns/{args.campaign_id}/results/aggregation_report.json"
+    )
     download_url = generate_download_link(
         s3_client, args.s3_bucket, report_key, args.download_link_expiration
     )

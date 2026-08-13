@@ -62,16 +62,16 @@ SCHEMA_VERSION = "1"
 # The comprehensive validator is listed first — its --nocapture output drives
 # the per-case pass/fail breakdown.
 TEST_TARGETS = [
-    "ashrae_140_validation",           # comprehensive: all 18+ cases, main source of per-case data
-    "ashrae_140_blind_validation",     # blind validation (no peeking at ref ranges during sim)
-    "ashrae_140_case_600_series",      # 600/610/620/630/640/650 series
-    "ashrae_140_case_900",             # 900/910/920/930/940/950 and FF variants
-    "ashrae_140_case_960_sunspace",    # Sunspace (Case 960)
-    "ashrae_140_case_195_470",         # Analytical cases 195 and 470
-    "ashrae_140_free_floating",        # Free-floating temperature (600FF, 650FF, 900FF, 950FF)
-    "ashrae_140_integration",          # Integration tests across the validator stack
-    "ashrae_140_case_non_residential", # Non-residential cases
-    "ashrae_140_cases_800_810",        # 800 / 810 series
+    "ashrae_140_validation",  # comprehensive: all 18+ cases, main source of per-case data
+    "ashrae_140_blind_validation",  # blind validation (no peeking at ref ranges during sim)
+    "ashrae_140_case_600_series",  # 600/610/620/630/640/650 series
+    "ashrae_140_case_900",  # 900/910/920/930/940/950 and FF variants
+    "ashrae_140_case_960_sunspace",  # Sunspace (Case 960)
+    "ashrae_140_case_195_470",  # Analytical cases 195 and 470
+    "ashrae_140_free_floating",  # Free-floating temperature (600FF, 650FF, 900FF, 950FF)
+    "ashrae_140_integration",  # Integration tests across the validator stack
+    "ashrae_140_case_non_residential",  # Non-residential cases
+    "ashrae_140_cases_800_810",  # 800 / 810 series
     "ashrae_140_setback_ventilation",  # Setback and ventilation variants
 ]
 
@@ -81,8 +81,20 @@ TEST_TARGETS = [
 _NUMERIC_PATTERN = r"([+-]?(?:inf|\d+\.?\d*))"  # Matches numbers including inf/-inf
 _CASE_PATTERN = re.compile(
     r"Case\s+(\d+[A-Z0-9_]*)\s*[:\-]\s*"
-    r"Heating\s*=\s*" + _NUMERIC_PATTERN + r"\s*\(Ref:\s*" + _NUMERIC_PATTERN + r"\s*-\s*" + _NUMERIC_PATTERN + r"\),\s*"
-    r"Cooling\s*=\s*" + _NUMERIC_PATTERN + r"\s*\(Ref:\s*" + _NUMERIC_PATTERN + r"\s*-\s*" + _NUMERIC_PATTERN + r"\)"
+    r"Heating\s*=\s*"
+    + _NUMERIC_PATTERN
+    + r"\s*\(Ref:\s*"
+    + _NUMERIC_PATTERN
+    + r"\s*-\s*"
+    + _NUMERIC_PATTERN
+    + r"\),\s*"
+    r"Cooling\s*=\s*"
+    + _NUMERIC_PATTERN
+    + r"\s*\(Ref:\s*"
+    + _NUMERIC_PATTERN
+    + r"\s*-\s*"
+    + _NUMERIC_PATTERN
+    + r"\)"
 )
 _SUMMARY_PATTERN = re.compile(
     r"^\s*Pass\s+Rate:\s*([\d.]+|inf)%.*?Passed:\s*(\d+).*?Failed:\s*(\d+).*?"
@@ -90,9 +102,7 @@ _SUMMARY_PATTERN = re.compile(
     re.DOTALL | re.IGNORECASE | re.MULTILINE,
 )
 # Rust test runner output: "test result: ok. N passed; M failed; ..."
-_RUST_RESULT_PATTERN = re.compile(
-    r"test result:.*?(\d+)\s+passed;\s*(\d+)\s+failed"
-)
+_RUST_RESULT_PATTERN = re.compile(r"test result:.*?(\d+)\s+passed;\s*(\d+)\s+failed")
 # Individual test FAILED line
 _FAILED_TEST_PATTERN = re.compile(r"^FAILED\s+(.+)$", re.MULTILINE)
 
@@ -100,6 +110,7 @@ _FAILED_TEST_PATTERN = re.compile(r"^FAILED\s+(.+)$", re.MULTILINE)
 # ---------------------------------------------------------------------------
 # Data classes
 # ---------------------------------------------------------------------------
+
 
 @dataclass
 class ValidationCase:
@@ -134,7 +145,7 @@ class BenchmarkSummary:
     pass_rate: float
     mae_percent: float
     total_duration_s: float
-    total_tests_passed: int   # sum across all targets (rust test functions)
+    total_tests_passed: int  # sum across all targets (rust test functions)
     total_tests_failed: int
 
 
@@ -153,18 +164,23 @@ class BenchmarkReport:
 # Core runner
 # ---------------------------------------------------------------------------
 
+
 def _git_info() -> tuple[str, str]:
     """Return (commit_sha, branch) from the repo, or empty strings on failure."""
     try:
         sha = subprocess.check_output(
-            ["git", "rev-parse", "--short", "HEAD"], stderr=subprocess.DEVNULL, text=True
+            ["git", "rev-parse", "--short", "HEAD"],
+            stderr=subprocess.DEVNULL,
+            text=True,
         ).strip()
     except Exception:
         sha = os.environ.get("GITHUB_SHA", "unknown")[:7]
 
     try:
         branch = subprocess.check_output(
-            ["git", "rev-parse", "--abbrev-ref", "HEAD"], stderr=subprocess.DEVNULL, text=True
+            ["git", "rev-parse", "--abbrev-ref", "HEAD"],
+            stderr=subprocess.DEVNULL,
+            text=True,
         ).strip()
     except Exception:
         branch = os.environ.get("GITHUB_REF_NAME", "unknown")
@@ -172,7 +188,9 @@ def _git_info() -> tuple[str, str]:
     return sha, branch
 
 
-def _run_cargo_test(target: str, release: bool = True, timeout: int = 300) -> tuple[str, float, int]:
+def _run_cargo_test(
+    target: str, release: bool = True, timeout: int = 300
+) -> tuple[str, float, int]:
     """
     Run `cargo test --test <target> [--release] -- --nocapture`.
     Returns (combined_stdout_stderr, duration_s, exit_code).
@@ -203,6 +221,7 @@ def _run_cargo_test(target: str, release: bool = True, timeout: int = 300) -> tu
 
 def _monotonic() -> float:
     import time
+
     return time.monotonic()
 
 
@@ -242,20 +261,30 @@ def _parse_validation_output(output: str) -> tuple[list[ValidationCase], float, 
         c_min = parse_numeric(m.group(6))
         c_max = parse_numeric(m.group(7))
         # Handle inf in range checks - if ref range is inf, always pass
-        h_pass = h_min <= h_act <= h_max if h_min != float("inf") and h_max != float("inf") else True
-        c_pass = c_min <= c_act <= c_max if c_min != float("inf") and c_max != float("inf") else True
-        cases.append(ValidationCase(
-            case_id=case_id,
-            heating_actual=h_act,
-            heating_ref_min=h_min,
-            heating_ref_max=h_max,
-            heating_pass=h_pass,
-            cooling_actual=c_act,
-            cooling_ref_min=c_min,
-            cooling_ref_max=c_max,
-            cooling_pass=c_pass,
-            overall_pass=h_pass and c_pass,
-        ))
+        h_pass = (
+            h_min <= h_act <= h_max
+            if h_min != float("inf") and h_max != float("inf")
+            else True
+        )
+        c_pass = (
+            c_min <= c_act <= c_max
+            if c_min != float("inf") and c_max != float("inf")
+            else True
+        )
+        cases.append(
+            ValidationCase(
+                case_id=case_id,
+                heating_actual=h_act,
+                heating_ref_min=h_min,
+                heating_ref_max=h_max,
+                heating_pass=h_pass,
+                cooling_actual=c_act,
+                cooling_ref_min=c_min,
+                cooling_ref_max=c_max,
+                cooling_pass=c_pass,
+                overall_pass=h_pass and c_pass,
+            )
+        )
 
     pass_rate = mae = 0.0
     m = _SUMMARY_PATTERN.search(output)
@@ -272,15 +301,17 @@ def run_harness(release: bool = True, timeout: int = 300) -> BenchmarkReport:
     validation_cases: list[ValidationCase] = []
     pass_rate = mae = 0.0
 
-    print(f"\n{'='*60}")
+    print(f"\n{'=' * 60}")
     print("ASHRAE 140 Benchmark Harness")
     print(f"Commit: {sha}  Branch: {branch}")
     print(f"Mode:   {'release' if release else 'debug'}")
-    print(f"{'='*60}\n")
+    print(f"{'=' * 60}\n")
 
     for target in TEST_TARGETS:
         print(f"[{target}]")
-        output, duration, code = _run_cargo_test(target, release=release, timeout=timeout)
+        output, duration, code = _run_cargo_test(
+            target, release=release, timeout=timeout
+        )
         passed, failed, failed_names = _parse_target_output(output)
 
         # Only parse validation cases from the comprehensive target
@@ -294,7 +325,9 @@ def run_harness(release: bool = True, timeout: int = 300) -> BenchmarkReport:
             tests_passed=passed,
             tests_failed=failed,
             failed_test_names=failed_names,
-            notes="TIMEOUT" if code == 124 else ("NOT FOUND (skipped)" if code == 127 else ""),
+            notes="TIMEOUT"
+            if code == 124
+            else ("NOT FOUND (skipped)" if code == 127 else ""),
         )
         target_results.append(result)
         status = "✓" if code == 0 else "✗"
@@ -340,6 +373,7 @@ def run_harness(release: bool = True, timeout: int = 300) -> BenchmarkReport:
 # Baseline comparison
 # ---------------------------------------------------------------------------
 
+
 @dataclass
 class Delta:
     validation_cases_passed_delta: int
@@ -347,11 +381,13 @@ class Delta:
     pass_rate_delta: float
     mae_delta: float
     duration_delta_s: float
-    regression: bool          # True if pass count went down
-    improvement: bool         # True if pass count went up
+    regression: bool  # True if pass count went down
+    improvement: bool  # True if pass count went up
 
 
-def compare_to_baseline(report: BenchmarkReport, baseline_path: Path) -> Optional[Delta]:
+def compare_to_baseline(
+    report: BenchmarkReport, baseline_path: Path
+) -> Optional[Delta]:
     if not baseline_path.exists():
         print(f"[compare] Baseline not found at {baseline_path}, skipping comparison.")
         return None
@@ -385,36 +421,57 @@ def compare_to_baseline(report: BenchmarkReport, baseline_path: Path) -> Optiona
 
 def print_delta(report: BenchmarkReport, delta: Delta) -> None:
     cur = report.summary
-    sign = lambda v: f"+{v}" if v > 0 else str(v)
-    icon = "⬆️  IMPROVEMENT" if delta.improvement else ("⬇️  REGRESSION" if delta.regression else "➡️  NO CHANGE")
 
-    print(f"\n{'='*60}")
+    def sign(v):
+        return f"+{v}" if v > 0 else str(v)
+
+    icon = (
+        "⬆️  IMPROVEMENT"
+        if delta.improvement
+        else ("⬇️  REGRESSION" if delta.regression else "➡️  NO CHANGE")
+    )
+
+    print(f"\n{'=' * 60}")
     print(f"DELTA vs. BASELINE  {icon}")
-    print(f"{'='*60}")
-    print(f"  Validation cases passed : {cur.validation_cases_passed}  ({sign(delta.validation_cases_passed_delta)})")
-    print(f"  Validation cases failed : {cur.validation_cases_failed}  ({sign(delta.validation_cases_failed_delta)})")
-    print(f"  Pass rate               : {cur.pass_rate:.1f}%  ({sign(delta.pass_rate_delta)}pp)")
-    print(f"  Mean absolute error     : {cur.mae_percent:.2f}%  ({sign(delta.mae_delta)}pp)")
-    print(f"  Total duration          : {cur.total_duration_s:.1f}s  ({sign(delta.duration_delta_s)}s)")
+    print(f"{'=' * 60}")
+    print(
+        f"  Validation cases passed : {cur.validation_cases_passed}  ({sign(delta.validation_cases_passed_delta)})"
+    )
+    print(
+        f"  Validation cases failed : {cur.validation_cases_failed}  ({sign(delta.validation_cases_failed_delta)})"
+    )
+    print(
+        f"  Pass rate               : {cur.pass_rate:.1f}%  ({sign(delta.pass_rate_delta)}pp)"
+    )
+    print(
+        f"  Mean absolute error     : {cur.mae_percent:.2f}%  ({sign(delta.mae_delta)}pp)"
+    )
+    print(
+        f"  Total duration          : {cur.total_duration_s:.1f}s  ({sign(delta.duration_delta_s)}s)"
+    )
     print()
 
 
 def print_summary(report: BenchmarkReport) -> None:
     s = report.summary
-    print(f"\n{'='*60}")
+    print(f"\n{'=' * 60}")
     print(f"SUMMARY  commit={report.commit_sha}  branch={report.branch}")
-    print(f"{'='*60}")
-    print(f"  Validation cases  : {s.validation_cases_passed} passed / {s.validation_cases_failed} failed "
-          f"({s.pass_rate:.1f}%)")
+    print(f"{'=' * 60}")
+    print(
+        f"  Validation cases  : {s.validation_cases_passed} passed / {s.validation_cases_failed} failed "
+        f"({s.pass_rate:.1f}%)"
+    )
     print(f"  MAE               : {s.mae_percent:.2f}%")
     print(f"  Total duration    : {s.total_duration_s:.1f}s")
-    print(f"  Rust tests (all)  : {s.total_tests_passed} passed / {s.total_tests_failed} failed")
+    print(
+        f"  Rust tests (all)  : {s.total_tests_passed} passed / {s.total_tests_failed} failed"
+    )
     print()
 
     if report.validation_cases:
         print("  Per-case breakdown:")
         print(f"  {'Case':<10} {'Heat':>10} {'Cool':>10} {'Pass?':>6}")
-        print(f"  {'-'*10} {'-'*10} {'-'*10} {'-'*6}")
+        print(f"  {'-' * 10} {'-' * 10} {'-' * 10} {'-' * 6}")
         for c in sorted(report.validation_cases, key=lambda x: x.case_id):
             h = f"{c.heating_actual:.0f}" if c.heating_actual else "—"
             co = f"{c.cooling_actual:.0f}" if c.cooling_actual else "—"
@@ -427,6 +484,7 @@ def print_summary(report: BenchmarkReport) -> None:
 # GitHub Actions helpers
 # ---------------------------------------------------------------------------
 
+
 def write_github_step_summary(report: BenchmarkReport, delta: Optional[Delta]) -> None:
     """Append a Markdown table to $GITHUB_STEP_SUMMARY if in CI."""
     summary_path = os.environ.get("GITHUB_STEP_SUMMARY")
@@ -434,7 +492,10 @@ def write_github_step_summary(report: BenchmarkReport, delta: Optional[Delta]) -
         return
 
     s = report.summary
-    sign = lambda v: f"+{v}" if v > 0 else str(v)
+
+    def sign(v):
+        return f"+{v}" if v > 0 else str(v)
+
     lines = [
         "## ASHRAE 140 Benchmark Harness Results\n",
         "| Metric | Value |",
@@ -449,7 +510,7 @@ def write_github_step_summary(report: BenchmarkReport, delta: Optional[Delta]) -
     ]
 
     if delta:
-        icon = "⬆️" if delta.improvement else ("⬇️" if delta.regression else "➡️"  )
+        icon = "⬆️" if delta.improvement else ("⬇️" if delta.regression else "➡️")
         lines += [
             f"### Delta vs. Baseline {icon}",
             "",
@@ -463,9 +524,13 @@ def write_github_step_summary(report: BenchmarkReport, delta: Optional[Delta]) -
         ]
 
         if delta.regression:
-            lines.append("> ⚠️ **Regression detected**: fewer validation cases passing than baseline.")
+            lines.append(
+                "> ⚠️ **Regression detected**: fewer validation cases passing than baseline."
+            )
         elif delta.improvement:
-            lines.append(f"> ✅ **Improvement**: +{delta.validation_cases_passed_delta} validation case(s) now passing.")
+            lines.append(
+                f"> ✅ **Improvement**: +{delta.validation_cases_passed_delta} validation case(s) now passing."
+            )
 
     lines += [
         "",
@@ -476,7 +541,9 @@ def write_github_step_summary(report: BenchmarkReport, delta: Optional[Delta]) -
     ]
     for t in report.test_targets:
         status = "✓" if t.exit_code == 0 else "✗"
-        lines.append(f"| {status} `{t.target}` | {t.tests_passed} | {t.tests_failed} | {t.duration_s:.1f}s |")
+        lines.append(
+            f"| {status} `{t.target}` | {t.tests_passed} | {t.tests_failed} | {t.duration_s:.1f}s |"
+        )
 
     with open(summary_path, "a") as f:
         f.write("\n".join(lines) + "\n")
@@ -486,20 +553,40 @@ def write_github_step_summary(report: BenchmarkReport, delta: Optional[Delta]) -
 # CLI
 # ---------------------------------------------------------------------------
 
+
 def main() -> int:
-    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("--compare", metavar="BASELINE_JSON",
-                        help="Path to baseline JSON to compare against")
-    parser.add_argument("--save-baseline", metavar="BASELINE_JSON",
-                        help="Save current results as the new baseline at this path")
-    parser.add_argument("--output", metavar="OUTPUT_JSON",
-                        help="Write full JSON report to this file (for CI artifact upload)")
-    parser.add_argument("--fail-on-regression", action="store_true",
-                        help="Exit with code 1 if regression vs. baseline is detected")
-    parser.add_argument("--debug", action="store_true",
-                        help="Run in debug mode (no --release flag)")
-    parser.add_argument("--timeout", type=int, default=300,
-                        help="Per-target timeout in seconds (default: 300)")
+    parser = argparse.ArgumentParser(
+        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
+    )
+    parser.add_argument(
+        "--compare",
+        metavar="BASELINE_JSON",
+        help="Path to baseline JSON to compare against",
+    )
+    parser.add_argument(
+        "--save-baseline",
+        metavar="BASELINE_JSON",
+        help="Save current results as the new baseline at this path",
+    )
+    parser.add_argument(
+        "--output",
+        metavar="OUTPUT_JSON",
+        help="Write full JSON report to this file (for CI artifact upload)",
+    )
+    parser.add_argument(
+        "--fail-on-regression",
+        action="store_true",
+        help="Exit with code 1 if regression vs. baseline is detected",
+    )
+    parser.add_argument(
+        "--debug", action="store_true", help="Run in debug mode (no --release flag)"
+    )
+    parser.add_argument(
+        "--timeout",
+        type=int,
+        default=300,
+        help="Per-target timeout in seconds (default: 300)",
+    )
     args = parser.parse_args()
 
     report = run_harness(release=not args.debug, timeout=args.timeout)
@@ -524,6 +611,7 @@ def main() -> int:
                 if isinstance(obj, list):
                     return [_to_dict(i) for i in obj]
                 return obj
+
             json.dump(_to_dict(report), f, indent=2)
         print(f"[output] Report written to {args.output}")
 
@@ -531,12 +619,14 @@ def main() -> int:
         baseline_path = Path(args.save_baseline)
         baseline_path.parent.mkdir(parents=True, exist_ok=True)
         with baseline_path.open("w") as f:
+
             def _to_dict(obj):
                 if hasattr(obj, "__dataclass_fields__"):
                     return {k: _to_dict(v) for k, v in asdict(obj).items()}
                 if isinstance(obj, list):
                     return [_to_dict(i) for i in obj]
                 return obj
+
             json.dump(_to_dict(report), f, indent=2)
         print(f"[baseline] Saved to {args.save_baseline}")
 

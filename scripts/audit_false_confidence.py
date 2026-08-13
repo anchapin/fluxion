@@ -102,7 +102,9 @@ class FalseConfidenceAuditor:
             line = lines[i]
             if test_pattern.search(line):
                 # Find function name
-                func_match = re.search(r"fn\s+(\w+)", lines[i + 1] if i + 1 < len(lines) else "")
+                func_match = re.search(
+                    r"fn\s+(\w+)", lines[i + 1] if i + 1 < len(lines) else ""
+                )
                 if func_match:
                     func_name = func_match.group(1)
                     start_line = i + 1
@@ -122,25 +124,29 @@ class FalseConfidenceAuditor:
                             break
 
                     # Extract body
-                    body_lines = lines[start_line:end_line + 1]
+                    body_lines = lines[start_line : end_line + 1]
                     body = "\n".join(body_lines)
 
                     # Find assertions
-                    assertions = re.findall(r"assert[!?]?_?(?:eq|ne|ion|true|false)?!\s*\([^)]+\)", body)
+                    assertions = re.findall(
+                        r"assert[!?]?_?(?:eq|ne|ion|true|false)?!\s*\([^)]+\)", body
+                    )
 
                     # Find mocks
                     mocks = re.findall(r"(Mock\w+|mock\(\)|when\(|\.verify\(\))", body)
 
-                    tests.append(TestInfo(
-                        name=func_name,
-                        file=str(file_path),
-                        line=start_line + 1,
-                        end_line=end_line + 1,
-                        body=body_lines,
-                        has_assert=len(assertions) > 0,
-                        assertions=assertions,
-                        mocks=mocks,
-                    ))
+                    tests.append(
+                        TestInfo(
+                            name=func_name,
+                            file=str(file_path),
+                            line=start_line + 1,
+                            end_line=end_line + 1,
+                            body=body_lines,
+                            has_assert=len(assertions) > 0,
+                            assertions=assertions,
+                            mocks=mocks,
+                        )
+                    )
             i += 1
 
         return tests
@@ -223,9 +229,6 @@ class FalseConfidenceAuditor:
 
     def check_wrong_tolerance(self, test: TestInfo) -> Optional[Issue]:
         """Check for tests with wrong tolerance."""
-        # Look for tolerance values
-        tolerance_pattern = re.compile(r"(epsilon|rtol|atol|tolerance|1e-\d+)")
-
         for assertion in test.assertions:
             if "approx" in assertion or "relative" in assertion.lower():
                 # Check for very loose tolerances
@@ -248,7 +251,9 @@ class FalseConfidenceAuditor:
     def check_mock_overkill(self, test: TestInfo) -> Optional[Issue]:
         """Check for tests that over-mock (mocking too much)."""
         # Count ratio of mock code to assertion code
-        mock_lines = sum(1 for line in test.body if "mock" in line.lower() or "when" in line.lower())
+        mock_lines = sum(
+            1 for line in test.body if "mock" in line.lower() or "when" in line.lower()
+        )
         assertion_lines = sum(1 for line in test.body if "assert" in line.lower())
 
         if mock_lines > 0 and assertion_lines == 0:
@@ -335,7 +340,11 @@ class FalseConfidenceAuditor:
             )
 
         # Check for random number generation without seed
-        if "rand::" in body and "seed_from_u64" not in body and "Rng::seed_from_u64" not in body:
+        if (
+            "rand::" in body
+            and "seed_from_u64" not in body
+            and "Rng::seed_from_u64" not in body
+        ):
             if "SmallRng" not in body or "from_entropy" in body:
                 return Issue(
                     severity=IssueSeverity.LOW,
@@ -428,7 +437,12 @@ class FalseConfidenceAuditor:
                 by_severity[issue.severity] = []
             by_severity[issue.severity].append(issue)
 
-        for severity in [IssueSeverity.CRITICAL, IssueSeverity.HIGH, IssueSeverity.MEDIUM, IssueSeverity.LOW]:
+        for severity in [
+            IssueSeverity.CRITICAL,
+            IssueSeverity.HIGH,
+            IssueSeverity.MEDIUM,
+            IssueSeverity.LOW,
+        ]:
             if severity not in by_severity:
                 continue
 
@@ -452,7 +466,9 @@ class FalseConfidenceAuditor:
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Audit tests for false confidence issues")
+    parser = argparse.ArgumentParser(
+        description="Audit tests for false confidence issues"
+    )
     parser.add_argument("path", nargs="?", help="Path to analyze (default: src/)")
     parser.add_argument("--fix", action="store_true", help="Auto-fix some issues")
     parser.add_argument("--output", "-o", help="Output file for report")

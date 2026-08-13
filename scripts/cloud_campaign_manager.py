@@ -138,7 +138,9 @@ class CampaignState:
 def get_aws_clients():
     """Get configured boto3 clients."""
     if boto3 is None:
-        raise RuntimeError("boto3 is required for cloud campaign. Install: pip install boto3")
+        raise RuntimeError(
+            "boto3 is required for cloud campaign. Install: pip install boto3"
+        )
 
     session = boto3.Session(
         aws_access_key_id=os.environ.get("AWS_ACCESS_KEY_ID"),
@@ -190,14 +192,14 @@ def build_completion_payload(
     }
 
 
-def render_email_body(payload: dict[str, Any], download_url: Optional[str] = None) -> str:
+def render_email_body(
+    payload: dict[str, Any], download_url: Optional[str] = None
+) -> str:
     """Render the plain-text email body for a completion event (T7.5)."""
     download = download_url or payload["results_uri"]
     best_params = payload.get("best_parameters") or {}
     if best_params:
-        params_block = "\n".join(
-            f"  {k} = {v}" for k, v in sorted(best_params.items())
-        )
+        params_block = "\n".join(f"  {k} = {v}" for k, v in sorted(best_params.items()))
     else:
         params_block = "  (none)"
     status_display = "completed" if payload["status"] != "failed" else "failed"
@@ -218,10 +220,7 @@ def render_email_body(payload: dict[str, Any], download_url: Optional[str] = Non
 def render_email_subject(payload: dict[str, Any]) -> str:
     """Render the subject line for a completion email (T7.5)."""
     status_display = "completed" if payload["status"] != "failed" else "failed"
-    return (
-        f"Fluxion campaign {payload['campaign_id']} {status_display} — "
-        f"results ready"
-    )
+    return f"Fluxion campaign {payload['campaign_id']} {status_display} — results ready"
 
 
 def parse_s3_uri(uri: str) -> tuple[str, str]:
@@ -256,11 +255,11 @@ def _resolve_state_store(selection: str) -> Optional["StateStore"]:
         env = (os.environ.get("FLUXION_STATE_STORE") or "").strip().lower()
         if env:
             selection = env
-        elif os.environ.get("FLUXION_CAMPAIGN_TABLE") or os.environ.get("FLUXION_REDIS_URL"):
+        elif os.environ.get("FLUXION_CAMPAIGN_TABLE") or os.environ.get(
+            "FLUXION_REDIS_URL"
+        ):
             selection = (
-                "dynamodb"
-                if os.environ.get("FLUXION_CAMPAIGN_TABLE")
-                else "redis"
+                "dynamodb" if os.environ.get("FLUXION_CAMPAIGN_TABLE") else "redis"
             )
         else:
             return None
@@ -335,7 +334,6 @@ def create_campaign(
     clients = get_aws_clients()
 
     campaign_id = f"fluxion-{uuid.uuid4().hex[:12]}"
-    timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
 
     print(f"[*] Creating campaign {campaign_id}")
 
@@ -427,7 +425,9 @@ def create_campaign(
     return state
 
 
-def get_campaign_state(campaign_id: str, s3_bucket: str, s3_prefix: str) -> Optional[CampaignState]:
+def get_campaign_state(
+    campaign_id: str, s3_bucket: str, s3_prefix: str
+) -> Optional[CampaignState]:
     """Retrieve campaign state from S3."""
     clients = get_aws_clients()
 
@@ -537,7 +537,9 @@ def check_campaign_progress(
     total = len(state.work_units)
     progress_pct = (completed + failed) / total * 100 if total > 0 else 0
 
-    print(f"[*] Campaign {state.campaign_id}: {completed}/{total} completed, {failed} failed ({progress_pct:.1f}%)")
+    print(
+        f"[*] Campaign {state.campaign_id}: {completed}/{total} completed, {failed} failed ({progress_pct:.1f}%)"
+    )
 
     if state.status == "created" and (completed + failed) > 0:
         state.status = "running"
@@ -605,16 +607,19 @@ def send_webhook_notification(
         with urllib.request.urlopen(request, timeout=timeout) as response:  # noqa: S310
             status_code = response.getcode()
             if 200 <= status_code < 300:
-                print(
-                    f"[*] Webhook delivered: {webhook_url} (HTTP {status_code})"
-                )
+                print(f"[*] Webhook delivered: {webhook_url} (HTTP {status_code})")
                 return True
             print(
                 f"[WARN] Webhook returned non-2xx status {status_code}: {webhook_url}",
                 file=sys.stderr,
             )
             return False
-    except (urllib.error.URLError, urllib.error.HTTPError, TimeoutError, OSError) as exc:
+    except (
+        urllib.error.URLError,
+        urllib.error.HTTPError,
+        TimeoutError,
+        OSError,
+    ) as exc:
         print(
             f"[WARN] Webhook delivery failed for {webhook_url}: {exc}",
             file=sys.stderr,
@@ -655,7 +660,8 @@ def send_email_notification(
             "cc": email_config.get("cc", []),
             "subject": subject,
             "body_text": body,
-            "download_url": email_config.get("download_url_override") or payload["results_uri"],
+            "download_url": email_config.get("download_url_override")
+            or payload["results_uri"],
             "campaign": payload,
         }
         body_bytes = json.dumps(envelope).encode("utf-8")
@@ -681,7 +687,14 @@ def send_email_notification(
                 file=sys.stderr,
             )
             return False
-    except (urllib.error.URLError, urllib.error.HTTPError, TimeoutError, OSError, KeyError, ValueError) as exc:
+    except (
+        urllib.error.URLError,
+        urllib.error.HTTPError,
+        TimeoutError,
+        OSError,
+        KeyError,
+        ValueError,
+    ) as exc:
         print(f"[WARN] Email delivery failed: {exc}", file=sys.stderr)
         return False
 
@@ -748,7 +761,10 @@ def send_completion_notification(
 
 
 def trigger_aggregator(
-    campaign_id: str, s3_bucket: str, s3_prefix: str, aggregator_function_name: Optional[str] = None
+    campaign_id: str,
+    s3_bucket: str,
+    s3_prefix: str,
+    aggregator_function_name: Optional[str] = None,
 ) -> str:
     """Trigger the aggregator Lambda or ECS task."""
     clients = get_aws_clients()
@@ -760,12 +776,14 @@ def trigger_aggregator(
         lambda_client.invoke(
             FunctionName=aggregator_function_name,
             InvocationType="Event",
-            Payload=json.dumps({
-                "campaign_id": campaign_id,
-                "s3_bucket": s3_bucket,
-                "s3_prefix": s3_prefix,
-                "results_uri": results_uri,
-            }),
+            Payload=json.dumps(
+                {
+                    "campaign_id": campaign_id,
+                    "s3_bucket": s3_bucket,
+                    "s3_prefix": s3_prefix,
+                    "results_uri": results_uri,
+                }
+            ),
         )
         print(f"[*] Aggregator Lambda triggered: {aggregator_function_name}")
     else:
@@ -983,7 +1001,9 @@ def main() -> int:
                 specs.append(default_params[name])
             else:
                 specs.append(
-                    ParameterSpec(name, default=1.0, min_val=0.1, max_val=10.0, step=0.1)
+                    ParameterSpec(
+                        name, default=1.0, min_val=0.1, max_val=10.0, step=0.1
+                    )
                 )
 
         config = CampaignConfig(
@@ -1007,7 +1027,9 @@ def main() -> int:
         print(f"[*] Campaign created: {state.campaign_id}")
         print(f"[*] Work units: {len(state.work_units)}")
         print("[*] Run workers with:")
-        print(f"    python scripts/s3_worker.py --param-file s3://{s3_bucket}/{s3_prefix}/work-units/{{work_unit_id}}.json")
+        print(
+            f"    python scripts/s3_worker.py --param-file s3://{s3_bucket}/{s3_prefix}/work-units/{{work_unit_id}}.json"
+        )
 
         return 0
 
@@ -1127,7 +1149,9 @@ def main() -> int:
         if not s3_bucket:
             parser.error("--s3-bucket is required (or set FLUXION_S3_BUCKET env var)")
 
-        results_uri = trigger_aggregator(args.campaign_id, s3_bucket, s3_prefix, args.aggregator_function)
+        results_uri = trigger_aggregator(
+            args.campaign_id, s3_bucket, s3_prefix, args.aggregator_function
+        )
         print("[*] Aggregation triggered")
         print(f"[*] Results: {results_uri}")
 

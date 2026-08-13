@@ -80,7 +80,9 @@ def generate_physics_baseline(
         hvac_mode = np.random.choice([0, 1, 2], n_samples)
         climate = np.random.uniform(0, 8, n_samples)
 
-        X = np.column_stack([exterior, zone, solar, humidity, occupancy, hvac_mode, climate])
+        X = np.column_stack(
+            [exterior, zone, solar, humidity, occupancy, hvac_mode, climate]
+        )
 
         delta_t = zone - exterior
         base_load = 0.5 * delta_t + 0.01 * solar + 0.1 * occupancy
@@ -102,11 +104,14 @@ def generate_physics_baseline(
 
         dec = 23.45 * np.sin(2 * np.pi * (doy - 81) / 365)
         hra = 15 * (hour - 12)
-        cos_zenith = np.sin(np.radians(lat)) * np.sin(np.radians(dec)) + \
-                    np.cos(np.radians(lat)) * np.cos(np.radians(dec)) * np.cos(np.radians(hra))
+        cos_zenith = np.sin(np.radians(lat)) * np.sin(np.radians(dec)) + np.cos(
+            np.radians(lat)
+        ) * np.cos(np.radians(dec)) * np.cos(np.radians(hra))
         zenith = np.arccos(np.clip(cos_zenith, -1, 1))
         effective_irrad = (dni * np.cos(zenith) + dhi) * np.cos(np.radians(tilt))
-        gain = np.clip(effective_irrad * 0.85, 0, 1200) + np.random.normal(0, 5, n_samples)
+        gain = np.clip(effective_irrad * 0.85, 0, 1200) + np.random.normal(
+            0, 5, n_samples
+        )
         y = gain.reshape(-1, 1)
 
     elif component == "conduction":
@@ -121,7 +126,13 @@ def generate_physics_baseline(
 
         delta_t = interior - exterior
         q_conv = u_val * area * delta_t
-        q_rad = 5.67e-8 * emiss * area * ((interior + 273)**4 - (exterior + 273)**4) * 1e-8
+        q_rad = (
+            5.67e-8
+            * emiss
+            * area
+            * ((interior + 273) ** 4 - (exterior + 273) ** 4)
+            * 1e-8
+        )
         total_flux = q_conv + q_rad * 0.1 + np.random.normal(0, 5, n_samples)
         y = total_flux.reshape(-1, 1)
 
@@ -212,11 +223,10 @@ def validate_component(
         _, t = run_neural_inference(model_path, X[:10])
         inference_times.append(t)
     mean_inference_time = np.mean(inference_times)
-    inference_time_p95 = np.percentile(inference_times, 95)
 
     single_pred_time = []
     for i in range(100):
-        single_X = X[i:i+1]
+        single_X = X[i : i + 1]
         start = time.perf_counter()
         _ = run_neural_inference(model_path, single_X)
         single_pred_time.append((time.perf_counter() - start) * 1000)
@@ -228,7 +238,9 @@ def validate_component(
     logger.info(f"  Physics mean: {y_physics.mean():.4f}, std: {y_physics.std():.4f}")
     logger.info(f"  Neural mean: {y_neural.mean():.4f}, std: {y_neural.std():.4f}")
     logger.info(f"  RMSE: {metrics['rmse']:.6f}")
-    logger.info(f"  Normalized RMSE: {metrics['rmse_normalized']:.4f} ({metrics['rmse_normalized']*100:.2f}%)")
+    logger.info(
+        f"  Normalized RMSE: {metrics['rmse_normalized']:.4f} ({metrics['rmse_normalized'] * 100:.2f}%)"
+    )
     logger.info(f"  R²: {metrics['r2']:.6f}")
     logger.info(f"  MAE: {metrics['mae']:.6f}")
     logger.info(f"  Max error: {metrics['max_error']:.6f}")
@@ -263,15 +275,27 @@ def validate_component(
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Validate surrogate models against physics baseline")
+    parser = argparse.ArgumentParser(
+        description="Validate surrogate models against physics baseline"
+    )
     parser.add_argument("--component", type=str, help="Component to validate")
     parser.add_argument("--model", type=Path, help="Model file to validate")
-    parser.add_argument("--all-models", action="store_true", help="Validate all models in directory")
-    parser.add_argument("--model-dir", type=Path, default=Path("models"), help="Model directory")
+    parser.add_argument(
+        "--all-models", action="store_true", help="Validate all models in directory"
+    )
+    parser.add_argument(
+        "--model-dir", type=Path, default=Path("models"), help="Model directory"
+    )
     parser.add_argument("--n-samples", type=int, default=1000, help="Test samples")
-    parser.add_argument("--rmse-target", type=float, default=0.02, help="RMSE target (normalized)")
-    parser.add_argument("--inference-target-ms", type=float, default=1.0, help="Inference target (ms)")
-    parser.add_argument("--output-dir", type=Path, default=Path("models"), help="Output directory")
+    parser.add_argument(
+        "--rmse-target", type=float, default=0.02, help="RMSE target (normalized)"
+    )
+    parser.add_argument(
+        "--inference-target-ms", type=float, default=1.0, help="Inference target (ms)"
+    )
+    parser.add_argument(
+        "--output-dir", type=Path, default=Path("models"), help="Output directory"
+    )
 
     args = parser.parse_args()
 
@@ -331,11 +355,21 @@ def main():
                 model_path=str(model_path),
                 physics_baseline="",
                 n_test_samples=0,
-                rmse=0, rmse_normalized=0, mae=0, r2=0, max_error=0,
-                inference_time_ms=0, inference_time_p95_ms=0,
-                rmse_target_met=False, inference_target_met=False, all_targets_met=False,
-                physics_output_mean=0, physics_output_std=0,
-                neural_output_mean=0, neural_output_std=0, correlation=0,
+                rmse=0,
+                rmse_normalized=0,
+                mae=0,
+                r2=0,
+                max_error=0,
+                inference_time_ms=0,
+                inference_time_p95_ms=0,
+                rmse_target_met=False,
+                inference_target_met=False,
+                all_targets_met=False,
+                physics_output_mean=0,
+                physics_output_std=0,
+                neural_output_mean=0,
+                neural_output_std=0,
+                correlation=0,
                 validation_timestamp=datetime.now(timezone.utc).isoformat(),
                 errors=[str(e)],
             )
@@ -343,7 +377,9 @@ def main():
     logger.info("\n" + "=" * 60)
     logger.info("VALIDATION SUMMARY")
     logger.info("=" * 60)
-    logger.info(f"{'Component':<20} {'RMSE Norm':<12} {'RMSE Target':<12} {'Inf P95':<12} {'Inf Target':<12} {'Status'}")
+    logger.info(
+        f"{'Component':<20} {'RMSE Norm':<12} {'RMSE Target':<12} {'Inf P95':<12} {'Inf Target':<12} {'Status'}"
+    )
     logger.info("-" * 80)
 
     for component, metrics in results.items():
@@ -368,7 +404,9 @@ def main():
 
     if all_passed:
         logger.info("\nALL COMPONENTS PASSED VALIDATION")
-        logger.info(f"  RMSE < {args.rmse_target*100}% and Inference < {args.inference_target_ms}ms")
+        logger.info(
+            f"  RMSE < {args.rmse_target * 100}% and Inference < {args.inference_target_ms}ms"
+        )
     else:
         logger.warning("\nSOME COMPONENTS FAILED VALIDATION")
 

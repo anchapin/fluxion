@@ -146,6 +146,7 @@ def test_git_info_uses_subprocess(tmp_path, monkeypatch):
 
 def test_git_info_falls_back_to_env_on_subprocess_exception(monkeypatch):
     """When ``git rev-parse`` fails (no .git dir), env vars drive the result."""
+
     def fake_check_output(cmd, **kwargs):
         raise FileNotFoundError("no git")
 
@@ -360,15 +361,19 @@ def _make_report(
 
 def test_compare_to_baseline_regression(tmp_path: Path):
     baseline = tmp_path / "baseline.json"
-    baseline.write_text(json.dumps({
-        "summary": {
-            "validation_cases_passed": 12,
-            "validation_cases_failed": 3,
-            "pass_rate": 80.0,
-            "mae_percent": 2.0,
-            "total_duration_s": 90.0,
-        }
-    }))
+    baseline.write_text(
+        json.dumps(
+            {
+                "summary": {
+                    "validation_cases_passed": 12,
+                    "validation_cases_failed": 3,
+                    "pass_rate": 80.0,
+                    "mae_percent": 2.0,
+                    "total_duration_s": 90.0,
+                }
+            }
+        )
+    )
     cur = _make_report(passed=10, failed=5, pass_rate=66.7, mae=3.0, duration=110.0)
     delta = abh.compare_to_baseline(cur, baseline)
     assert delta is not None
@@ -382,15 +387,19 @@ def test_compare_to_baseline_regression(tmp_path: Path):
 
 def test_compare_to_baseline_improvement(tmp_path: Path):
     baseline = tmp_path / "baseline.json"
-    baseline.write_text(json.dumps({
-        "summary": {
-            "validation_cases_passed": 8,
-            "validation_cases_failed": 7,
-            "pass_rate": 53.3,
-            "mae_percent": 5.0,
-            "total_duration_s": 110.0,
-        }
-    }))
+    baseline.write_text(
+        json.dumps(
+            {
+                "summary": {
+                    "validation_cases_passed": 8,
+                    "validation_cases_failed": 7,
+                    "pass_rate": 53.3,
+                    "mae_percent": 5.0,
+                    "total_duration_s": 110.0,
+                }
+            }
+        )
+    )
     cur = _make_report(passed=12, failed=3, pass_rate=80.0, mae=2.5, duration=90.0)
     delta = abh.compare_to_baseline(cur, baseline)
     assert delta.validation_cases_passed_delta == 4
@@ -420,9 +429,11 @@ def test_print_delta_smoke(tmp_path: Path, capsys):
     delta = abh.Delta(
         validation_cases_passed_delta=2,
         validation_cases_failed_delta=-2,
-        pass_rate_delta=10.0, mae_delta=-0.5,
+        pass_rate_delta=10.0,
+        mae_delta=-0.5,
         duration_delta_s=-5.0,
-        regression=False, improvement=True,
+        regression=False,
+        improvement=True,
     )
     abh.print_delta(cur, delta)
     out = capsys.readouterr().out
@@ -451,17 +462,25 @@ def test_print_summary_with_cases(capsys):
         validation_cases=[
             abh.ValidationCase(
                 case_id="600",
-                heating_actual=2.0, heating_ref_min=1.0, heating_ref_max=3.0,
+                heating_actual=2.0,
+                heating_ref_min=1.0,
+                heating_ref_max=3.0,
                 heating_pass=True,
-                cooling_actual=1.0, cooling_ref_min=0.5, cooling_ref_max=1.5,
+                cooling_actual=1.0,
+                cooling_ref_min=0.5,
+                cooling_ref_max=1.5,
                 cooling_pass=True,
                 overall_pass=True,
             ),
             abh.ValidationCase(
                 case_id="900",
-                heating_actual=5.0, heating_ref_min=4.5, heating_ref_max=5.5,
+                heating_actual=5.0,
+                heating_ref_min=4.5,
+                heating_ref_max=5.5,
                 heating_pass=True,
-                cooling_actual=8.0, cooling_ref_min=7.5, cooling_ref_max=8.5,
+                cooling_actual=8.0,
+                cooling_ref_min=7.5,
+                cooling_ref_max=8.5,
                 cooling_pass=True,
                 overall_pass=True,
             ),
@@ -501,13 +520,18 @@ def test_write_github_step_summary_appends_markdown(tmp_path: Path, monkeypatch)
         test_targets=[
             abh.TargetResult(
                 target="ashrae_140_validation",
-                duration_s=12.0, exit_code=0,
-                tests_passed=10, tests_failed=0,
+                duration_s=12.0,
+                exit_code=0,
+                tests_passed=10,
+                tests_failed=0,
             ),
             abh.TargetResult(
                 target="ashrae_140_case_900",
-                duration_s=8.0, exit_code=1,
-                tests_passed=5, tests_failed=1, failed_test_names=["x"],
+                duration_s=8.0,
+                exit_code=1,
+                tests_passed=5,
+                tests_failed=1,
+                failed_test_names=["x"],
             ),
         ],
         validation_cases=[],
@@ -515,9 +539,11 @@ def test_write_github_step_summary_appends_markdown(tmp_path: Path, monkeypatch)
     delta = abh.Delta(
         validation_cases_passed_delta=1,
         validation_cases_failed_delta=0,
-        pass_rate_delta=5.0, mae_delta=-0.5,
+        pass_rate_delta=5.0,
+        mae_delta=-0.5,
         duration_delta_s=-3.0,
-        regression=False, improvement=True,
+        regression=False,
+        improvement=True,
     )
     abh.write_github_step_summary(report, delta)
     text = summary_path.read_text()
@@ -562,7 +588,8 @@ def test_write_github_step_summary_regression_block(tmp_path: Path, monkeypatch)
         pass_rate_delta=-30.0,
         mae_delta=2.0,
         duration_delta_s=2.0,
-        regression=True, improvement=False,
+        regression=True,
+        improvement=False,
     )
     abh.write_github_step_summary(report, delta)
     text = summary_path.read_text()

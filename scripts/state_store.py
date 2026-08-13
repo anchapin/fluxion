@@ -249,9 +249,8 @@ class StateStore(ABC):
                 return DynamoDBStateStore.from_env()
             return DynamoDBStateStore(
                 dynamodb_client=client,
-                table_name=table_name or os.environ.get(
-                    "FLUXION_CAMPAIGN_TABLE", "fluxion-campaign-state"
-                ),
+                table_name=table_name
+                or os.environ.get("FLUXION_CAMPAIGN_TABLE", "fluxion-campaign-state"),
             )
         if backend == "redis":
             if redis_client is not None:
@@ -475,13 +474,16 @@ class RedisStateStore(StateStore):
                     "redis is required for RedisStateStore; install with `pip install redis`"
                 ) from exc
             redis_client = redis.Redis.from_url(
-                redis_url or os.environ.get("FLUXION_REDIS_URL", "redis://localhost:6379/0")
+                redis_url
+                or os.environ.get("FLUXION_REDIS_URL", "redis://localhost:6379/0")
             )
         self.client = redis_client
 
     @classmethod
     def from_env(cls) -> "RedisStateStore":
-        return cls(key_prefix=os.environ.get("FLUXION_REDIS_PREFIX", "fluxion:campaign"))
+        return cls(
+            key_prefix=os.environ.get("FLUXION_REDIS_PREFIX", "fluxion:campaign")
+        )
 
     def _task_key(self, campaign_id: str, work_unit_id: str) -> str:
         return f"{self.key_prefix}:{campaign_id}:task:{work_unit_id}"

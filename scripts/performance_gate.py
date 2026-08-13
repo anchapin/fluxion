@@ -23,11 +23,7 @@ def run_command(cmd: List[str], timeout: int = 300) -> Tuple[str, int]:
     """Run command and return (stdout, returncode)."""
     try:
         result = subprocess.run(
-            cmd,
-            cwd=PROJECT_ROOT,
-            capture_output=True,
-            text=True,
-            timeout=timeout
+            cmd, cwd=PROJECT_ROOT, capture_output=True, text=True, timeout=timeout
         )
         return result.stdout + result.stderr, result.returncode
     except subprocess.TimeoutExpired:
@@ -51,6 +47,7 @@ def get_main_branch_baseline() -> Dict[str, float]:
         run_command(["git", "checkout", "main"])
 
     import json
+
     try:
         with open(BASELINE_FILE) as f:
             main_baseline = json.load(f)
@@ -84,8 +81,9 @@ def run_benchmarks() -> Dict[str, float]:
 
     if not benchmarks:
         for line in stdout.splitlines():
-            m = re.search(r"(?P<name>[\w_]+)\s+time:\s+(?P<time>[\d.]+)\s*(?P<unit>\w+)",
-                          line)
+            m = re.search(
+                r"(?P<name>[\w_]+)\s+time:\s+(?P<time>[\d.]+)\s*(?P<unit>\w+)", line
+            )
             if m:
                 name = m.group("name")
                 time_val = float(m.group("time"))
@@ -102,7 +100,9 @@ def run_benchmarks() -> Dict[str, float]:
     return benchmarks
 
 
-def check_perf_regression(current: Dict[str, float], baseline: Dict[str, float]) -> List[str]:
+def check_perf_regression(
+    current: Dict[str, float], baseline: Dict[str, float]
+) -> List[str]:
     """Check for regressions > threshold."""
     regressions = []
     for name, current_time in current.items():
@@ -115,7 +115,7 @@ def check_perf_regression(current: Dict[str, float], baseline: Dict[str, float])
         if pct_change > BENCHMARK_THRESHOLD:
             regressions.append(
                 f"  {name}: {baseline_time:.4f}s -> {current_time:.4f}s "
-                f"(+{pct_change*100:.1f}%)"
+                f"(+{pct_change * 100:.1f}%)"
             )
     return regressions
 
@@ -131,12 +131,12 @@ def main():
     parser.add_argument(
         "--check",
         action="store_true",
-        help="Run benchmark check against baseline and exit with appropriate code"
+        help="Run benchmark check against baseline and exit with appropriate code",
     )
     args = parser.parse_args()
 
     print("=== Performance Gate ===")
-    print(f"Threshold: {BENCHMARK_THRESHOLD*100}% max regression")
+    print(f"Threshold: {BENCHMARK_THRESHOLD * 100}% max regression")
 
     branch = get_git_branch()
     is_main = branch == "main"
@@ -172,7 +172,9 @@ def main():
         print("\nPERFORMANCE REGRESSIONS DETECTED:")
         for r in regressions:
             print(r)
-        print(f"\nFailed: {len(regressions)} benchmark(s) exceed {BENCHMARK_THRESHOLD*100}% threshold")
+        print(
+            f"\nFailed: {len(regressions)} benchmark(s) exceed {BENCHMARK_THRESHOLD * 100}% threshold"
+        )
         sys.exit(1)
 
     print(f"All {len(current)} benchmarks within threshold")

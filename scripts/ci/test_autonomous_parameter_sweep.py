@@ -27,8 +27,12 @@ def sweep_config() -> aps.SweepConfig:
         case_id="600",
         sweep_type=aps.SweepType.GRID,
         parameters=[
-            aps.ParameterSpec("R_value", default=2.0, min_val=1.0, max_val=2.0, step=1.0),
-            aps.ParameterSpec("wall_thickness", default=0.15, min_val=0.10, max_val=0.20, step=0.05),
+            aps.ParameterSpec(
+                "R_value", default=2.0, min_val=1.0, max_val=2.0, step=1.0
+            ),
+            aps.ParameterSpec(
+                "wall_thickness", default=0.15, min_val=0.10, max_val=0.20, step=0.05
+            ),
         ],
         max_iterations=10,
         samples_per_param=4,
@@ -176,8 +180,13 @@ def test_load_sweep_state_returns_none_when_missing(tmp_path: Path):
 def test_save_sweep_state_creates_directory(tmp_path: Path):
     nested = tmp_path / "deep" / "nested"
     state = aps.SweepState(
-        config={}, results=[], best_parameters={}, best_mae=999.0,
-        start_time="now", status="created", iteration=0,
+        config={},
+        results=[],
+        best_parameters={},
+        best_mae=999.0,
+        start_time="now",
+        status="created",
+        iteration=0,
     )
     aps.save_sweep_state(nested, state)
     assert (nested / "sweep_state.json").exists()
@@ -189,7 +198,8 @@ def test_save_sweep_state_creates_directory(tmp_path: Path):
 
 
 def test_run_sweep_dry_run_writes_config_and_returns_state(
-    sweep_config, temp_trace_dir,
+    sweep_config,
+    temp_trace_dir,
 ):
     sweep_config.trace_dir = temp_trace_dir
     state = aps.run_sweep(sweep_config, dry_run=True)
@@ -202,7 +212,9 @@ def test_run_sweep_dry_run_writes_config_and_returns_state(
 
 
 def test_run_sweep_dry_run_does_not_invoke_cargo(
-    sweep_config, temp_trace_dir, fake_subprocess,
+    sweep_config,
+    temp_trace_dir,
+    fake_subprocess,
 ):
     sweep_config.trace_dir = temp_trace_dir
     # Configure subprocess.run to fail loudly if invoked (proves dry-run doesn't call it).
@@ -220,7 +232,9 @@ def test_run_sweep_dry_run_does_not_invoke_cargo(
 
 
 def test_run_sweep_random_with_mocked_cargo(
-    sweep_config, temp_trace_dir, fake_subprocess,
+    sweep_config,
+    temp_trace_dir,
+    fake_subprocess,
 ):
     sweep_config.sweep_type = aps.SweepType.RANDOM
     sweep_config.samples_per_param = 2
@@ -233,9 +247,9 @@ def test_run_sweep_random_with_mocked_cargo(
         run_return=_fake_proc(
             0,
             stdout="Mean Absolute Error: 3.10%\n"
-                   "Case 600 : Heating=2.00 (Ref: 1.00-3.00), "
-                   "Cooling=1.20 (Ref: 0.80-1.60)\n"
-                   "Pass Rate: 92.0% ... Passed: 9 ... Failed: 1",
+            "Case 600 : Heating=2.00 (Ref: 1.00-3.00), "
+            "Cooling=1.20 (Ref: 0.80-1.60)\n"
+            "Pass Rate: 92.0% ... Passed: 9 ... Failed: 1",
         )
     )
 
@@ -244,7 +258,12 @@ def test_run_sweep_random_with_mocked_cargo(
     assert state.iteration == 2
     assert len(state.results) == 2
     # log_result wrote JSONL
-    jsonl = (temp_trace_dir / "parameter_sweep_results.jsonl").read_text().strip().splitlines()
+    jsonl = (
+        (temp_trace_dir / "parameter_sweep_results.jsonl")
+        .read_text()
+        .strip()
+        .splitlines()
+    )
     assert len(jsonl) == 2
     first = json.loads(jsonl[0])
     assert first["case_id"] == "600"
@@ -255,7 +274,9 @@ def test_run_sweep_random_with_mocked_cargo(
 
 
 def test_run_sweep_aborts_early_when_tolerance_met(
-    sweep_config, temp_trace_dir, fake_subprocess,
+    sweep_config,
+    temp_trace_dir,
+    fake_subprocess,
 ):
     sweep_config.sweep_type = aps.SweepType.GRID
     sweep_config.max_iterations = 5
@@ -272,7 +293,9 @@ def test_run_sweep_aborts_early_when_tolerance_met(
 
 
 def test_run_sweep_handles_cargo_timeout(
-    sweep_config, temp_trace_dir, fake_subprocess,
+    sweep_config,
+    temp_trace_dir,
+    fake_subprocess,
 ):
     sweep_config.sweep_type = aps.SweepType.GRID
     sweep_config.max_iterations = 2
@@ -376,25 +399,40 @@ def test_create_divergence_report_emits_markdown(tmp_path: Path):
     config = aps.SweepConfig(
         case_id="600",
         sweep_type=aps.SweepType.RANDOM,
-        parameters=[aps.ParameterSpec("R_value", default=2.0, min_val=1.0,
-                                       max_val=5.0, step=0.5, unit="m²K/W")],
+        parameters=[
+            aps.ParameterSpec(
+                "R_value", default=2.0, min_val=1.0, max_val=5.0, step=0.5, unit="m²K/W"
+            )
+        ],
     )
     results = [
         aps.SweepResult(
-            run_id="r1", case_id="600", iteration=1,
+            run_id="r1",
+            case_id="600",
+            iteration=1,
             parameters={"R_value": 2.0},
-            heating_mae=4.0, cooling_mae=3.0,
-            peak_heating_mae=4.0, peak_cooling_mae=3.0,
-            temperature_mae=4.0, overall_pass=True,
-            timestamp="t0", duration_ms=10,
+            heating_mae=4.0,
+            cooling_mae=3.0,
+            peak_heating_mae=4.0,
+            peak_cooling_mae=3.0,
+            temperature_mae=4.0,
+            overall_pass=True,
+            timestamp="t0",
+            duration_ms=10,
         ),
         aps.SweepResult(
-            run_id="r2", case_id="600", iteration=2,
+            run_id="r2",
+            case_id="600",
+            iteration=2,
             parameters={"R_value": 3.0},
-            heating_mae=6.0, cooling_mae=5.0,
-            peak_heating_mae=6.0, peak_cooling_mae=5.0,
-            temperature_mae=6.0, overall_pass=False,
-            timestamp="t0", duration_ms=10,
+            heating_mae=6.0,
+            cooling_mae=5.0,
+            peak_heating_mae=6.0,
+            peak_cooling_mae=5.0,
+            temperature_mae=6.0,
+            overall_pass=False,
+            timestamp="t0",
+            duration_ms=10,
         ),
     ]
     aps.create_divergence_report(trace, config, results)
@@ -412,7 +450,9 @@ def test_create_divergence_report_no_results_writes_nothing(tmp_path: Path):
     config = aps.SweepConfig(
         case_id="600",
         sweep_type=aps.SweepType.RANDOM,
-        parameters=[aps.ParameterSpec("x", default=1.0, min_val=0.0, max_val=1.0, step=0.1)],
+        parameters=[
+            aps.ParameterSpec("x", default=1.0, min_val=0.0, max_val=1.0, step=0.1)
+        ],
     )
     aps.create_divergence_report(trace, config, [])
     assert not (trace / "divergence_report.md").exists()
@@ -425,12 +465,15 @@ def test_create_divergence_report_no_results_writes_nothing(tmp_path: Path):
 
 def _pytest_fail(msg: str):
     """Wrap pytest.fail so the test process surfaces the assertion cleanly."""
+
     def _fail(*a, **kw):
         pytest.fail(msg)
+
     return _fail
 
 
 def _raise_on_call(exc: BaseException):
     def _runner(*args, **kwargs):
         raise exc
+
     return _runner

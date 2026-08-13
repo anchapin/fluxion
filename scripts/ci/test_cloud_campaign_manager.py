@@ -29,8 +29,17 @@ def campaign_config() -> ccm.CampaignConfig:
         case_id="600",
         sweep_type=ccm.SweepType.RANDOM,
         parameters=[
-            ccm.ParameterSpec("R_value", default=2.0, min_val=1.0, max_val=2.5, step=0.5, unit="m²K/W"),
-            ccm.ParameterSpec("wall_thickness", default=0.15, min_val=0.10, max_val=0.20, step=0.05, unit="m"),
+            ccm.ParameterSpec(
+                "R_value", default=2.0, min_val=1.0, max_val=2.5, step=0.5, unit="m²K/W"
+            ),
+            ccm.ParameterSpec(
+                "wall_thickness",
+                default=0.15,
+                min_val=0.10,
+                max_val=0.20,
+                step=0.05,
+                unit="m",
+            ),
         ],
         max_iterations=4,
         samples_per_param=4,
@@ -122,9 +131,15 @@ def test_generate_grid_points_full_factorial():
     assert len(points) == 9
     seen_pairs = {(round(p["a"], 6), round(p["b"], 6)) for p in points}
     assert seen_pairs == {
-        (0.0, 10.0), (0.0, 11.0), (0.0, 12.0),
-        (1.0, 10.0), (1.0, 11.0), (1.0, 12.0),
-        (2.0, 10.0), (2.0, 11.0), (2.0, 12.0),
+        (0.0, 10.0),
+        (0.0, 11.0),
+        (0.0, 12.0),
+        (1.0, 10.0),
+        (1.0, 11.0),
+        (1.0, 12.0),
+        (2.0, 10.0),
+        (2.0, 11.0),
+        (2.0, 12.0),
     }
 
 
@@ -182,7 +197,10 @@ def test_get_required_env_raises_when_unset(monkeypatch):
 
 def test_parse_email_recipients_handles_separators_and_whitespace():
     assert ccm.parse_email_recipients("a@x,b@x ; c@x,,,d@x") == [
-        "a@x", "b@x", "c@x", "d@x",
+        "a@x",
+        "b@x",
+        "c@x",
+        "d@x",
     ]
 
 
@@ -197,7 +215,9 @@ def test_parse_email_recipients_empty_returns_empty_list():
 # ---------------------------------------------------------------------------
 
 
-def test_create_campaign_generates_work_units_and_persists(monkeypatch, fake_aws_clients, campaign_config):
+def test_create_campaign_generates_work_units_and_persists(
+    monkeypatch, fake_aws_clients, campaign_config
+):
     state = ccm.create_campaign(
         campaign_config,
         s3_bucket="fluxion-test-bucket",
@@ -239,8 +259,12 @@ def test_create_campaign_grid_sweep_uses_grid_points(monkeypatch, fake_aws_clien
         case_id="600",
         sweep_type=ccm.SweepType.GRID,
         parameters=[
-            ccm.ParameterSpec("R_value", default=2.0, min_val=1.0, max_val=2.0, step=1.0),
-            ccm.ParameterSpec("wall_thickness", default=0.15, min_val=0.10, max_val=0.20, step=0.05),
+            ccm.ParameterSpec(
+                "R_value", default=2.0, min_val=1.0, max_val=2.0, step=1.0
+            ),
+            ccm.ParameterSpec(
+                "wall_thickness", default=0.15, min_val=0.10, max_val=0.20, step=0.05
+            ),
         ],
         max_iterations=10,
     )
@@ -249,7 +273,9 @@ def test_create_campaign_grid_sweep_uses_grid_points(monkeypatch, fake_aws_clien
     assert len(state.work_units) == 6
 
 
-def test_create_campaign_uses_max_iterations_when_no_random(campaign_config, fake_aws_clients):
+def test_create_campaign_uses_max_iterations_when_no_random(
+    campaign_config, fake_aws_clients
+):
     """``BINARY`` falls into the default branch: ``generate_random_points(..., max_iterations)``."""
     campaign_config.sweep_type = ccm.SweepType.BINARY
     campaign_config.samples_per_param = 2
@@ -284,7 +310,9 @@ def test_update_campaign_state_overwrites_state_blob(fake_aws_clients, base_stat
 
 
 def test_check_campaign_progress_via_in_memory_state_store(
-    in_memory_state_store, fake_aws_clients, base_state,
+    in_memory_state_store,
+    fake_aws_clients,
+    base_state,
 ):
     """In-memory state-store path is authoritative when populated.
 
@@ -296,15 +324,22 @@ def test_check_campaign_progress_via_in_memory_state_store(
 
     base_state.work_units = [{"work_unit_id": f"wu-{i:04d}"} for i in range(5)]
     for i, status in enumerate(
-        [TaskStatus.COMPLETED, TaskStatus.COMPLETED, TaskStatus.COMPLETED,
-         TaskStatus.FAILED, TaskStatus.RUNNING]
+        [
+            TaskStatus.COMPLETED,
+            TaskStatus.COMPLETED,
+            TaskStatus.COMPLETED,
+            TaskStatus.FAILED,
+            TaskStatus.RUNNING,
+        ]
     ):
         in_memory_state_store.set_state(
             TaskState(
                 work_unit_id=f"wu-{i:04d}",
                 campaign_id=base_state.campaign_id,
                 status=status,
-                metrics={"heating_mae": 1.2 + i * 0.1} if status == TaskStatus.COMPLETED else {},
+                metrics={"heating_mae": 1.2 + i * 0.1}
+                if status == TaskStatus.COMPLETED
+                else {},
                 timestamp="2026-01-01T00:00:00Z",
             )
         )
@@ -333,7 +368,8 @@ def test_check_campaign_progress_via_s3_listing(fake_aws_clients, base_state):
 
 
 def test_check_campaign_progress_zero_work_units_no_division_error(
-    base_state, fake_aws_clients,
+    base_state,
+    fake_aws_clients,
 ):
     """Zero work units should not divide-by-zero in the progress-pct calculation.
 
@@ -348,7 +384,9 @@ def test_check_campaign_progress_zero_work_units_no_division_error(
 
 
 def test_check_campaign_progress_marks_completed_when_state_store_reports_full(
-    in_memory_state_store, fake_aws_clients, base_state,
+    in_memory_state_store,
+    fake_aws_clients,
+    base_state,
 ):
     from state_store import TaskState, TaskStatus
 
@@ -383,7 +421,9 @@ def test_build_completion_payload_has_results_uri(base_state):
     assert payload["best_mae"] == 2.345
     assert payload["best_parameters"] == {"R_value": 2.5}
     assert payload["results_uri"].startswith("https://my-bucket.s3.")
-    assert payload["results_uri"].endswith(f"/campaigns/{base_state.campaign_id}/results/")
+    assert payload["results_uri"].endswith(
+        f"/campaigns/{base_state.campaign_id}/results/"
+    )
 
 
 def test_render_email_subject_uses_status(base_state):
@@ -425,12 +465,18 @@ def test_send_webhook_2xx_returns_true(base_state, fake_urlopen):
 
 def test_send_webhook_5xx_returns_false(base_state, fake_urlopen):
     fake_urlopen["install"](status=500)
-    assert ccm.send_webhook_notification(base_state, "b", "p", "https://hook.test/x") is False
+    assert (
+        ccm.send_webhook_notification(base_state, "b", "p", "https://hook.test/x")
+        is False
+    )
 
 
 def test_send_webhook_url_error_returns_false(base_state, fake_urlopen):
     fake_urlopen["install"](raises=urllib.error.URLError("nope"))
-    assert ccm.send_webhook_notification(base_state, "b", "p", "https://hook.test/x") is False
+    assert (
+        ccm.send_webhook_notification(base_state, "b", "p", "https://hook.test/x")
+        is False
+    )
 
 
 def test_send_email_2xx_returns_true(base_state, fake_urlopen):
@@ -444,7 +490,9 @@ def test_send_email_2xx_returns_true(base_state, fake_urlopen):
     # Envelope contains the rendered subject and body.
     body = json.loads(fake_urlopen["calls"][0].data.decode("utf-8"))
     assert body["to"] == ["ops@test"]
-    assert "started" in body["subject"].lower() or "completed" in body["subject"].lower()
+    assert (
+        "started" in body["subject"].lower() or "completed" in body["subject"].lower()
+    )
     assert "Fluxion campaign" in body["body_text"]
 
 
@@ -457,8 +505,10 @@ def test_send_email_includes_x_fluxion_campaign_id_header(base_state, fake_urlop
     }
     ccm.send_email_notification(base_state, "b", "p", cfg)
     headers = fake_urlopen["calls"][0].headers
-    assert headers.get("X-fluxion-campaign-id") == base_state.campaign_id or \
-        headers.get("X-Fluxion-Campaign-Id") == base_state.campaign_id
+    assert (
+        headers.get("X-fluxion-campaign-id") == base_state.campaign_id
+        or headers.get("X-Fluxion-Campaign-Id") == base_state.campaign_id
+    )
 
 
 def test_send_email_5xx_returns_false(base_state, fake_urlopen):
@@ -473,7 +523,9 @@ def test_send_email_missing_endpoint_does_not_raise(base_state, fake_urlopen):
     assert ccm.send_email_notification(base_state, "b", "p", cfg) is False
 
 
-def test_send_completion_notification_no_channels_logs_warning(base_state, fake_aws_clients, capsys):
+def test_send_completion_notification_no_channels_logs_warning(
+    base_state, fake_aws_clients, capsys
+):
     base_state.notification_sent = False
     ccm.send_completion_notification(base_state, "b", "p")
     out = capsys.readouterr().err
@@ -482,7 +534,9 @@ def test_send_completion_notification_no_channels_logs_warning(base_state, fake_
     assert base_state.notification_sent is False
 
 
-def test_send_completion_notification_idempotent(base_state, fake_aws_clients, capsys, fake_urlopen):
+def test_send_completion_notification_idempotent(
+    base_state, fake_aws_clients, capsys, fake_urlopen
+):
     base_state.notification_sent = True
     ccm.send_completion_notification(base_state, "b", "p", webhook_url="https://hook")
     assert "already sent" in capsys.readouterr().out
@@ -491,7 +545,10 @@ def test_send_completion_notification_idempotent(base_state, fake_aws_clients, c
 
 
 def test_send_completion_notification_webhook_failure_keeps_state_unflagged(
-    base_state, fake_urlopen, fake_aws_clients, capsys,
+    base_state,
+    fake_urlopen,
+    fake_aws_clients,
+    capsys,
 ):
     fake_urlopen["install"](status=500)
     ccm.send_completion_notification(
@@ -504,7 +561,8 @@ def test_send_completion_notification_webhook_failure_keeps_state_unflagged(
 
 
 def test_send_completion_notification_sns_2xx_marks_success(
-    base_state, fake_aws_clients,
+    base_state,
+    fake_aws_clients,
 ):
     base_state.notification_sent = False
     ccm.send_completion_notification(
@@ -517,7 +575,9 @@ def test_send_completion_notification_sns_2xx_marks_success(
 
 
 def test_send_completion_notification_email_2xx_marks_success(
-    base_state, fake_urlopen, fake_aws_clients,
+    base_state,
+    fake_urlopen,
+    fake_aws_clients,
 ):
     fake_urlopen["install"](status=202)
     cfg = {"from": "f@t", "to": ["x@t"], "api_endpoint": "https://api"}
@@ -593,8 +653,10 @@ def test_get_campaign_state_propagates_non_404_client_error(fake_aws_clients):
     # Override the S3 client to raise a non-404 ClientError.
     s3.get_object = MagicMock(
         side_effect=ClientError(
-            {"Error": {"Code": "AccessDenied", "Message": "no"},
-             "ResponseMetadata": {"HTTPStatusCode": 403}},
+            {
+                "Error": {"Code": "AccessDenied", "Message": "no"},
+                "ResponseMetadata": {"HTTPStatusCode": 403},
+            },
             "GetObject",
         )
     )
@@ -647,9 +709,7 @@ def test_trigger_aggregator_lambda_branch(fake_aws_clients):
 
 
 def test_trigger_aggregator_no_function_returns_results_uri(fake_aws_clients):
-    out = ccm.trigger_aggregator(
-        campaign_id="cid", s3_bucket="b", s3_prefix="p"
-    )
+    out = ccm.trigger_aggregator(campaign_id="cid", s3_bucket="b", s3_prefix="p")
     assert out.startswith("s3://b/p/campaigns/cid/results/")
 
 
@@ -691,13 +751,16 @@ def test_resolve_state_store_auto_redis_when_redis_url(monkeypatch):
     monkeypatch.setenv("FLUXION_REDIS_URL", "redis://localhost:6379/0")
     # The redis backend construction may fail without a server; the helper
     # catches that and returns None — both outcomes prove the code path.
-    assert ccm._resolve_state_store("auto") is None or \
-        ccm._resolve_state_store("auto").__class__.__name__ == "RedisStateStore"
+    assert (
+        ccm._resolve_state_store("auto") is None
+        or ccm._resolve_state_store("auto").__class__.__name__ == "RedisStateStore"
+    )
 
 
 # ---------------------------------------------------------------------------
 # Issue #1791 — T8.1 reproducer no longer triggers the lock
 # ---------------------------------------------------------------------------
+
 
 def test_concurrent_workers_complete_without_lock_issue_1791():
     """The T8.1 sqlite_lock_race_reproducer documented SQLite SQLITE_BUSY under

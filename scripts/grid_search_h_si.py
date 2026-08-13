@@ -21,17 +21,17 @@ CONSTRUCTION_FILE = Path("src/sim/construction.rs")
 REF_MIN = 64.90
 REF_MAX = 75.10
 
+
 def update_h_si(new_value: float) -> tuple[float, float]:
     """Update H_SI constant in both files. Returns old values."""
     # Read and update thermal_model_solvers.rs
     content_solver = SOLVER_FILE.read_text()
     old_solver = None
-    for line in content_solver.split('\n'):
-        if 'const H_SI: f64' in line and 'W/m²K' in line:
-            old_solver = float(re.search(r'= (\d+\.?\d*)', line).group(1))
+    for line in content_solver.split("\n"):
+        if "const H_SI: f64" in line and "W/m²K" in line:
+            old_solver = float(re.search(r"= (\d+\.?\d*)", line).group(1))
             content_solver = content_solver.replace(
-                line,
-                line.replace(f'= {old_solver};', f'= {new_value};')
+                line, line.replace(f"= {old_solver};", f"= {new_value};")
             )
             break
     SOLVER_FILE.write_text(content_solver)
@@ -39,35 +39,36 @@ def update_h_si(new_value: float) -> tuple[float, float]:
     # Read and update construction.rs
     content_const = CONSTRUCTION_FILE.read_text()
     old_const = None
-    for line in content_const.split('\n'):
-        if 'const H_SI: f64' in line and 'W/m²K' in line:
-            old_const = float(re.search(r'= (\d+\.?\d*)', line).group(1))
+    for line in content_const.split("\n"):
+        if "const H_SI: f64" in line and "W/m²K" in line:
+            old_const = float(re.search(r"= (\d+\.?\d*)", line).group(1))
             content_const = content_const.replace(
-                line,
-                line.replace(f'= {old_const};', f'= {new_value};')
+                line, line.replace(f"= {old_const};", f"= {new_value};")
             )
             break
     CONSTRUCTION_FILE.write_text(content_const)
 
     return old_solver, old_const
 
+
 def restore_h_si(old_solver: float, old_const: float):
     """Restore original H_SI values."""
     content_solver = SOLVER_FILE.read_text()
     content_solver = re.sub(
-        r'(const H_SI: f64.*= )\d+\.?\d*(;.*W/m²K)',
-        f'\\g<1>{old_solver}\\g<2>',
-        content_solver
+        r"(const H_SI: f64.*= )\d+\.?\d*(;.*W/m²K)",
+        f"\\g<1>{old_solver}\\g<2>",
+        content_solver,
     )
     SOLVER_FILE.write_text(content_solver)
 
     content_const = CONSTRUCTION_FILE.read_text()
     content_const = re.sub(
-        r'(const H_SI: f64.*= )\d+\.?\d*(;.*W/m²K)',
-        f'\\g<1>{old_const}\\g<2>',
-        content_const
+        r"(const H_SI: f64.*= )\d+\.?\d*(;.*W/m²K)",
+        f"\\g<1>{old_const}\\g<2>",
+        content_const,
     )
     CONSTRUCTION_FILE.write_text(content_const)
+
 
 def run_case_600ff_test() -> tuple[bool, float]:
     """Run Case 600FF test and return (passed, max_temp)."""
@@ -75,16 +76,17 @@ def run_case_600ff_test() -> tuple[bool, float]:
         ["cargo", "test", "case_600ff::test_max_temperature", "--", "--nocapture"],
         capture_output=True,
         text=True,
-        timeout=300
+        timeout=300,
     )
 
     # Parse max temperature from output
-    match = re.search(r'Case 600FF Max Temp: ([\d.]+)°C', result.stdout + result.stderr)
+    match = re.search(r"Case 600FF Max Temp: ([\d.]+)°C", result.stdout + result.stderr)
     if match:
         max_temp = float(match.group(1))
         passed = REF_MIN <= max_temp <= REF_MAX
         return passed, max_temp
     return False, 0.0
+
 
 def main():
     print("=" * 60)
@@ -111,10 +113,7 @@ def main():
 
         # Rebuild
         build_result = subprocess.run(
-            ["cargo", "build"],
-            capture_output=True,
-            text=True,
-            timeout=120
+            ["cargo", "build"], capture_output=True, text=True, timeout=120
         )
 
         if build_result.returncode != 0:
@@ -150,9 +149,14 @@ def main():
         # Find closest to center of range
         center = (REF_MIN + REF_MAX) / 2
         best = min(in_range, key=lambda x: abs(x[1] - center))
-        print(f"Best (closest to center {center:.1f}°C): H_SI = {best[0]:.1f} -> {best[1]:.2f}°C")
+        print(
+            f"Best (closest to center {center:.1f}°C): H_SI = {best[0]:.1f} -> {best[1]:.2f}°C"
+        )
     else:
-        print("\nNo values in reference range. Consider wider sweep or different parameter.")
+        print(
+            "\nNo values in reference range. Consider wider sweep or different parameter."
+        )
+
 
 if __name__ == "__main__":
     main()

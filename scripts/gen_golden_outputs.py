@@ -14,6 +14,7 @@ Usage:
     python3 scripts/gen_golden_outputs.py --version 3.2.0 > tests/surrogate_models/golden/golden_v3_2_0.json
     python3 scripts/gen_golden_outputs.py --version 3.1.0 > tests/surrogate_models/golden/golden_v3_1_0.json
 """
+
 from __future__ import annotations
 
 import argparse
