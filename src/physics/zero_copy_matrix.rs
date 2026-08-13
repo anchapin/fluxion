@@ -8,8 +8,11 @@
 //!
 //! - [`PyReadonlyArray::as_slice`] (from the `numpy` crate) gives a `&[T]`
 //!   borrowed directly from a numpy array's storage — no copy.
-//! - [`numpy::PyArray::borrow_from_array`] wraps an existing
-//!   `ndarray::ArrayView` as a numpy array that shares the same memory.
+//! - `flat_slice_to_pyarray2` copies a flat `&[f64]` + shape into a new
+//!   `PyArray2`. This was previously a zero-copy `borrow_from_array` view, but
+//!   the `numpy 0.29` / `ndarray 0.17` version conflict (issue #2746) makes
+//!   the zero-copy view constructors unavailable, so the Rust → Python
+//!   direction now copies once.
 //!
 //! Combined, these two primitives allow `PyGeometryTensor::from_numpy` and
 //! `PyGeometryTensor::to_numpy` to ship matrices between Rust and Python
@@ -19,16 +22,16 @@
 //!
 //! # Why Arc?
 //!
-//! `borrow_from_array` is `unsafe`: the caller promises that the data
-//! referenced by the view lives as long as the returned numpy array's
-//! container. The container is a `Bound<'py, PyAny>` — a Python-owned object
-//! whose lifetime is bounded by Python's GC. We can't hand it a Rust reference
-//! to `self.inner.wall_matrix` (the borrow would end when `&self` does), and
-//! we can't `mem::take` it out (the matrix must remain accessible after the
-//! call). `Arc<Vec<f64>>` is the only sound choice: cloning the `Arc` is a
-//! refcount bump (no data copy), and the cloned `Arc` held by the numpy
-//! array's container keeps the underlying bytes alive for as long as Python
-//! holds the numpy array.
+//! The `Arc<Vec<f64>>` storage lets the pure-Rust `ZeroCopyMatrix*` types be
+//! cloned cheaply (a refcount bump) for internal use — e.g. sharing a buffer
+//! between the simulation loop and the bench harness without a `to_vec()`
+//! copy. The `to_numpy` transfer previously used `Arc` to keep a `borrow_from_array`
+//! view's backing storage alive inside a Python container; that zero-copy view
+//! path is currently unavailable due to the `numpy 0.29` / `ndarray 0.17`
+//! version conflict (issue #2746), so `to_numpy` now copies. The `Arc` storage
+//! is retained because the Rust-side clone-cheaply guarantee still holds and the
+//! zero-copy Python transfer can be restored once `numpy` publishes a build
+//! compatible with `ndarray 0.17.1+`.
 //!
 //! # Arrow compatibility
 //!
@@ -48,13 +51,12 @@
 
 use std::sync::Arc;
 
-/// A 1-D matrix that can cross the Rust ↔ Python boundary without copying.
+/// A 1-D matrix that can cross the Rust ↔ Python boundary cheaply.
 ///
-/// Internally an `Arc<Vec<f64>>`: cloning the `Arc` is a refcount bump, so
-/// handing the data to Python via `borrow_from_array` does not duplicate
-/// the buffer. The `Arc` is held by the numpy array's container (a Python
-/// object), so the underlying bytes outlive any subsequent Python use of the
-/// numpy array.
+/// Internally an `Arc<Vec<f64>>`: cloning the `Arc` is a refcount bump. The
+/// Rust → Python transfer (`to_numpy`) copies the buffer once — see the module
+/// docs and issue #2746 for why the zero-copy view path is currently
+/// unavailable.
 #[derive(Debug, Clone)]
 pub struct ZeroCopyMatrix1D {
     data: Arc<Vec<f64>>,
@@ -72,7 +74,7 @@ impl ZeroCopyMatrix1D {
     }
 }
 
-/// A 2-D matrix that can cross the Rust ↔ Python boundary without copying.
+/// A 2-D matrix that can cross the Rust ↔ Python boundary cheaply.
 ///
 /// Same storage strategy as [`ZeroCopyMatrix1D`]. The shape `(rows, cols)` is
 /// stored alongside the buffer; the buffer length must equal `rows * cols`.
@@ -125,95 +127,71 @@ impl ZeroCopyMatrix2D {
 
 #[cfg(feature = "python-bindings")]
 mod python_impl {
-    use super::{Arc, ZeroCopyMatrix1D, ZeroCopyMatrix2D};
+    use super::{ZeroCopyMatrix1D, ZeroCopyMatrix2D};
     use numpy::{PyArray1, PyArray2, PyArrayMethods};
     use pyo3::{Bound, PyResult, Python};
 
     impl ZeroCopyMatrix1D {
-        /// Build a numpy array that shares the underlying buffer (zero-copy on
-        /// the Rust → Python direction). The numpy array's container holds an
-        /// `Arc` clone, so the data stays alive as long as Python holds the
-        /// numpy array.
+        /// Build a numpy array from the underlying buffer.
+        ///
+        /// The data is copied once into the numpy array's own storage. This
+        /// transfer was previously zero-copy via `borrow_from_array`, but the
+        /// `numpy 0.29` crate resolves to `ndarray 0.16` (its `<=0.17` version
+        /// constraint excludes `0.17.1+`, and `ndarray 0.17.0` is yanked)
+        /// while the workspace pins `ndarray = "0.17"`, so the zero-copy view
+        /// constructors — which require the *same* `ndarray` version on both
+        /// sides — are unavailable (issue #2746). The Rust-side `Arc<Vec<f64>>`
+        /// storage remains zero-copy to clone; only the final Rust → Python
+        /// transfer copies.
         pub fn to_numpy<'py>(&self, py: Python<'py>) -> Bound<'py, PyArray1<f64>> {
-            // SAFETY: we hand `borrow_from_array` a container that
-            // holds an Arc clone of the underlying Vec, and a view that
-            // points into that Vec's storage. The Arc is kept alive by the
-            // numpy array's container, so the view's data remains valid for
-            // the lifetime of the returned `Bound<'py, PyArray1<f64>>`.
-            let arc_for_view = Arc::clone(&self.data);
-            let view = ndarray::ArrayView1::from(&*arc_for_view);
-            // Clone again for the holder so `view` (which borrows from
-            // `arc_for_view`) stays valid for the
-            // `borrow_from_array` call.
-            let arc_for_holder = Arc::clone(&self.data);
-            let holder = ZeroCopyHolder1D {
-                data: arc_for_holder,
-            };
-            let container = Bound::new(py, holder)
-                .expect("ZeroCopyHolder1D allocation cannot fail")
-                .into_any();
-            unsafe { PyArray1::borrow_from_array(&view, container) }
+            PyArray1::from_slice(py, self.as_slice())
         }
     }
 
     impl ZeroCopyMatrix2D {
-        /// Build a numpy array that shares the underlying buffer (zero-copy
-        /// on the Rust → Python direction).
+        /// Build a numpy array from the underlying buffer.
+        ///
+        /// Same copy-on-transfer semantics as [`ZeroCopyMatrix1D::to_numpy`].
         pub fn to_numpy<'py>(&self, py: Python<'py>) -> Bound<'py, PyArray2<f64>> {
-            // SAFETY: the container holds an Arc clone of the underlying
-            // Vec, and the view points into that Vec's storage. The Arc
-            // outlives the returned numpy array.
-            let arc_for_view = Arc::clone(&self.data);
-            // SAFETY: `arc_for_view.as_ptr()` is a valid, aligned, non-null
-            // pointer to `self.shape.0 * self.shape.1` contiguous `f64`
-            // values. The shape matches the buffer length, so the view is
-            // well-formed.
-            let raw =
-                unsafe { ndarray::RawArrayView::from_shape_ptr(self.shape, arc_for_view.as_ptr()) };
-            // SAFETY: same invariants as above; this converts the raw view
-            // into a borrow-checked `ArrayView`. The Arc keeps the backing
-            // storage alive.
-            let view = unsafe { raw.deref_into_view() };
-            // Clone again for the holder so `view` (which borrows from
-            // `arc_for_view`) stays valid for the
-            // `borrow_from_array` call.
-            let arc_for_holder = Arc::clone(&self.data);
-            let holder = ZeroCopyHolder2D {
-                data: arc_for_holder,
-                shape: self.shape,
-            };
-            let container = Bound::new(py, holder)
-                .expect("ZeroCopyHolder2D allocation cannot fail")
-                .into_any();
-            unsafe { PyArray2::borrow_from_array(&view, container) }
+            flat_slice_to_pyarray2(py, self.as_slice(), self.shape)
         }
     }
 
-    /// Holder passed to `borrow_from_array` as the container. Holding
-    /// the `Arc` in a `#[pyclass]` lets the numpy array's base object keep
-    /// the data alive through Python's GC.
-    #[pyo3::pyclass]
-    struct ZeroCopyHolder1D {
-        #[allow(dead_code)]
-        data: Arc<Vec<f64>>,
-    }
-
-    #[pyo3::pyclass]
-    struct ZeroCopyHolder2D {
-        #[allow(dead_code)]
-        data: Arc<Vec<f64>>,
-        #[allow(dead_code)]
+    /// Build a 2-D `PyArray2<f64>` from a flat C-contiguous `&[f64]` and a
+    /// `(rows, cols)` shape, copying the data once.
+    ///
+    /// This bridges fluxion's `ndarray 0.17` storage to the `numpy 0.29` crate
+    /// (which internally depends on `ndarray 0.16`) without crossing the crate
+    /// version boundary at the type level. See [`ZeroCopyMatrix1D::to_numpy`]
+    /// for why the zero-copy `borrow_from_array` / `from_owned_array`
+    /// constructors are unavailable (issue #2746).
+    pub(crate) fn flat_slice_to_pyarray2<'py>(
+        py: Python<'py>,
+        data: &[f64],
         shape: (usize, usize),
-    }
-
-    /// Holder for `PyGeometryTensor::to_numpy`. Holds an `Arc<GeometryTensor>`
-    /// clone so that the numpy array's container keeps the geometry's
-    /// storage alive. Used by the `to_numpy` pymethod to wrap individual
-    /// matrix fields of the shared `GeometryTensor` without copying.
-    #[pyo3::pyclass]
-    pub struct ZeroCopyGeometryTensorHolder {
-        #[allow(dead_code)]
-        pub inner: Arc<crate::physics::geometry_tensor::GeometryTensor>,
+    ) -> Bound<'py, PyArray2<f64>> {
+        debug_assert_eq!(
+            data.len(),
+            shape.0 * shape.1,
+            "flat_slice_to_pyarray2: data length {} != shape {:?}",
+            data.len(),
+            shape,
+        );
+        // SAFETY: `PyArray2::new` allocates an uninitialized C-contiguous
+        // array. We immediately fill every element via
+        // `ptr::copy_nonoverlapping`, so no uninitialized memory is ever
+        // observed.
+        let pyarr = unsafe { PyArray2::new(py, shape, false) };
+        if !data.is_empty() {
+            // SAFETY: `data` is a valid readable slice of `data.len()` `f64`s;
+            // `pyarr` was just allocated as C-contiguous with matching length,
+            // so the destination region is valid for writes and does not
+            // overlap the source.
+            unsafe {
+                std::ptr::copy_nonoverlapping(data.as_ptr(), pyarr.data(), data.len());
+            }
+        }
+        pyarr
     }
 
     /// Zero-copy extraction of a `&[f64]` from a 1-D numpy array.
@@ -274,9 +252,11 @@ mod python_impl {
 }
 
 #[cfg(feature = "python-bindings")]
+pub(crate) use python_impl::flat_slice_to_pyarray2;
+
+#[cfg(feature = "python-bindings")]
 pub use python_impl::{
     extract_1d_slice, extract_2d_slice, from_numpy_1d_zero_copy, from_numpy_2d_zero_copy,
-    ZeroCopyGeometryTensorHolder,
 };
 
 #[cfg(all(test, feature = "python-bindings"))]
@@ -319,8 +299,8 @@ mod tests {
         assert_eq!(std::sync::Arc::strong_count(&m1.data), 2);
     }
 
-    /// Round-trip test that exercises the full numpy path: zero-copy Arc +
-    /// `borrow_from_array`. Requires the `python-bindings` feature.
+    /// Round-trip test that exercises the full numpy path: Arc storage →
+    /// `to_numpy` (copy-on-transfer). Requires the `python-bindings` feature.
     #[test]
     fn to_numpy_round_trip() {
         use numpy::{PyArrayMethods, PyUntypedArrayMethods};
