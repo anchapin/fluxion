@@ -1,0 +1,27 @@
+{
+  "task_id": "fix-docs-doc-inventory-freshness",
+  "title": "Regenerate stale docs/doc-inventory.md to pass freshness gate (#2765 follow-up)",
+  "agent": "docs-curator",
+  "context": "Cleanup pass on Aug 13 found that scripts/check_doc_inventory_fresh.py fails. The drift was first flagged in df477d4 (Aug 12) as 'pre-existing red on develop (missing 2 unrelated docs) — separate fix' and partially addressed by 610ba86 (#2794) which added the freshness gate, but the stale inventory itself was never regenerated. The fix is a one-command regeneration with no source-of-truth change.",
+  "scope_anchor": ".planning/PROJECT.md → v1.3 SUSTAIN-02 (annual re-validation against latest ASHRAE reference data) and ARCHITECTURE.md docs-hygiene policy.",
+  "acceptance_criteria": [
+    "python3 scripts/generate_doc_inventory.py runs without error and exits 0",
+    "git diff shows docs/doc-inventory.md changed (added 2 missing docs, possibly more)",
+    "scripts/check_doc_inventory_fresh.py exits 0 (PASS)",
+    "scripts/check_doc_inventory_fresh.py's auto-regenerate diff is empty (no further drift)",
+    "cargo fmt -- --check passes (touched file may be markdown only)",
+    "No source code touched (Rust/Python/JS untouched)",
+    "Commit message uses conventional form: fix(docs): regenerate stale doc-inventory (#2765 follow-up)",
+    "Body references the closed gate (#2765) so the chain df477d4 → 610ba86 → THIS is traceable"
+  ],
+  "priority": "P1",
+  "dependencies": [],
+  "verification": [
+    "scripts/check_doc_inventory_fresh.py (must exit 0)",
+    "scripts/check_architecture_drift.py (must remain PASS — orthogonal but cheap)",
+    "git diff --stat (only docs/doc-inventory.md should appear)",
+    "git log -1 --stat (single commit, single file)"
+  ],
+  "estimated_effort_minutes": 5,
+  "risk": "trivial — regenerated doc is mechanical, content_hash-stable per generator"
+}
