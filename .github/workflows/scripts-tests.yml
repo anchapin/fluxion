@@ -47,10 +47,13 @@ jobs:
       - name: Install test dependencies
         run: |
           python -m pip install --upgrade pip
-          # ``scripts/pytest.ini`` enables ``--cov`` and ``asyncio_mode=auto``
-          # under ``--strict-config``, so pytest-cov and pytest-asyncio are
-          # required (the gate tests themselves are pure-stdlib + pytest).
-          pip install pytest pytest-asyncio pytest-cov
+          # Install the full OSimFlow test-dep set, which already declares
+          # pytest + pytest-asyncio + pytest-cov AND the boto3/botocore that
+          # the pre-existing scripts/ci/test_cloud_campaign_manager.py needs
+          # to exercise scripts/cloud_campaign_manager.py's S3 client. Skip
+          # the minimum-only install — the gate tests are pure stdlib, but
+          # the 187 pre-existing #2810 tests underneath scripts/ci/ are not.
+          pip install -r scripts/requirements-test.txt
 
       - name: Run scripts/ pytest harness
         run: python3 -m pytest scripts/
