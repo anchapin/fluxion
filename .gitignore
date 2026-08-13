@@ -211,8 +211,32 @@ tools/energyplus_*.csv
 .worktrees/
 .security-key
 logs/security/
-.sdd/runtime/
 benches/orchestration_decisions/baselines/current_tdqs.json
+
+# Bernstein-agent runtime state (resolves the design decision raised in
+# issue #2837).  `.sdd/` is the Bernstein agent-orchestration runtime —
+# `attestations/`, `traces/`, `index/`, `memory/`, `agents/`, `routing/`,
+# `caching/`, `backlog/`, `metrics/`, `upgrades/`, `auth/`, `archive/`,
+# `default/`, `knowledge/file_index.json`, and `knowledge/decisions.jsonl`
+# are all per-developer / per-session state (Ed25519 signatures, JSONL
+# trace logs, SQLite codebase caches, agent catalog snapshots, etc.).
+# The previous `.sdd/runtime/` ignore was the original intent — issue
+# #2837 generalized it to the whole directory because:
+#   1. The only "doc-like" file (`.sdd/knowledge/architecture.md`) is an
+#      auto-generated file index from the Bernstein tool, not
+#      human-authored documentation.  Its drift was the bug #2818/#2828
+#      sweep had to fix, and a CI freshness gate would just re-create
+#      the maintenance burden in a different place.
+#   2. `.sdd/index/codebase.db` (26 MB) and the JSONL trace files are
+#      genuinely per-machine session state and have no business in git.
+#   3. Templates and scripts that reference `.sdd/` paths (e.g.
+#      `templates/skills/bernstein-signal-check.md`,
+#      `scripts/autonomous_parameter_sweep.py`) write runtime data and
+#      do not depend on the files being tracked.
+# Local agents and developers regenerate their `.sdd/` state on first run;
+# no shared canonical view is lost because none existed — every Bernstein
+# run rebuilt the index from scratch.
+.sdd/
 
 # Bernstein-agent auto-generated session file (per AGENTS.md line 218).
 # The root `.md` policy gate (`scripts/check_root_md_policy.py`) only
