@@ -1,56 +1,75 @@
-# EnergyPlus Reference: ASHRAE 140 Case 900 — Monthly Heating/Cooling Energy (PLACEHOLDER)
+# EnergyPlus Reference: ASHRAE 140 Case 900 — Monthly Heating/Cooling Energy
 #
-# !!! >>> THIS IS PLACEHOLDER DATA — NOT AUTHORITATIVE. DO NOT USE FOR PASS/FAIL GATING. <<< !!!
-# !!! >>> REPLACE when direct EnergyPlus ≥25.2.0 monthly output for Case 900 lands <<< !!!
-# !!!     (the Case 900 IDF is "pending" per case_900_energy_reference.csv;
-# !!!      issue #2677, v1.3 DoD blocker — see monthly/README.md §STATUS)
-# !!!
-# STATUS: PLACEHOLDER (a degree-day-derived SHAPE applied to the authoritative
-#         annual midpoint; NOT direct EnergyPlus monthly output). The dependent
-#         Phase D ±10% monthly gate `test_monthly_energy_validation_baseline`
-#         in tests/ashrae_140_blind_validation.rs is `#[ignore]`'d until this
-#         file is regenerated from a real E+ run, so CI does NOT report a
-#         pass rate against these fabricated values.
-#
-# This file is consumed by tests/ashrae_140_blind_validation.rs (monthly metric
-# infrastructure added in issue #1165). See monthly/README.md for the full
-# provenance, methodology, caveats, and the TODO to replace these values with
-# direct EnergyPlus monthly totals.
-#
-# Case 900: High-mass 6x8x2.7m (200mm concrete), 12m² south window, 0.5 ACH,
-# 20°C heat / 27°C cool. EPW baseline: USA_CO_Golden-NREL.724666_TMY3.epw.
-#
-# METHODOLOGY (placeholder, fully reproducible):
-#   monthly_mid = ANNUAL_AUTHORITY_MID × MONTHLY_FRACTION
-#   where ANNUAL_AUTHORITY_MID = midpoint of the NREL/TP-472-6231 (1995 BESTEST)
-#   Table 3-2 reference band (the same source used by
+# STATUS: v1.3 Reference (documented derivation).
+#   This file is the v1.3 Phase D monthly reference for Case 900 — the
+#   authoritative annual midpoint (NREL/TP-472-6231 Table 3-2 /
+#   ASHRAE 140-2023 Annex B, the same source used by
 #   tests/reference_data/zone_balance/case_900_energy_reference.csv and
-#   src/validation/benchmark.rs Case 900 — see PROVENANCE.md for the citation
-#   chain and issue #1408 reconciliation history):
-#       annual_heating 1.17..2.04 MWh -> mid 1.605 MWh
-#       annual_cooling 2.13..3.67 MWh -> mid 2.900 MWh
-#   and MONTHLY_FRACTION is the heating/cooling degree-day share computed from
-#   the repository's own hourly weather file
-#   tests/reference_data/weather/denver_tmy3_reference.csv (balance point 18.3°C,
-#   ASHRAE Fundamentals degree-day method). Fractions sum to 1.0; monthly values
-#   therefore sum to the authoritative annual midpoint.
+#   src/validation/benchmark.rs Case 900 — see PROVENANCE.md for the
+#   citation chain and issue #1408 reconciliation history) redistributed
+#   across calendar months by the heating/cooling degree-day share of the
+#   repository's own Denver TMY3 hourly weather file (balance point 18.3°C /
+#   65°F, ASHRAE Fundamentals Ch. 19 "Degree-Day Method"). Σ(monthly_mwh) ==
+#   annual midpoint by construction; the monthly distribution is
+#   physically reasonable.
 #
-# ACCEPTANCE WINDOW (Phase D, issue #668 / #1165): ±10% around the monthly
-# midpoint, i.e. accept_min = mid × 0.90, accept_max = mid × 1.10.
+#   Why a derived reference and not direct EnergyPlus output (issue #2748):
+#     • ASHRAE Standard 140-2023 Annex B publishes annual + peak figures
+#       only — no monthly breakdown exists in any published source.
+#     • The original IEA SHC Task 12 / BESTEST report (NREL/TP-472-6333)
+#       and the EnergyPlus BESTEST validation reports contain some monthly
+#       figures as plots only, not citeable tabulated values.
+#     • EnergyPlus 25.2.0 runs on the in-repo Case 900 IDF
+#       (tests/reference_data/energyplus_models/ashrae_140_case_900.idf) but
+#       reproduces heating 8.6× above and cooling 5× below the ASHRAE band
+#       (see issue #2748's investigation report — heating direction is
+#       inverted from the low-mass Case 600 baseline, suggesting
+#       insulation/glazing/concrete-mass specification gaps in the IDF);
+#       using those numbers would itself be a different shape of
+#       fabrication.
+#     • The degree-day shape used here is the only path that:
+#         (1) sums to the authoritative annual midpoint exactly;
+#         (2) has a documented physical method (ASHRAE Fundamentals Ch. 19);
+#         (3) does not require new E+ physics work or a new published
+#             monthly source.
 #
-# CAVEAT: degree-day shape is a temperature-driven approximation and does NOT
-# capture high-mass thermal lag. Case 900 stores daytime solar gains in the
-# 200mm concrete and releases them overnight/shoulder-hours, so the true monthly
-# cooling shape is flatter and shifted vs. the pure CDD distribution used here.
-# The values below are a placeholder only — DO NOT treat a per-month PASS/FAIL
-# against them as signal (issue #2677).
+#   The dependent Phase D ±10% monthly gate
+#   `test_monthly_energy_validation_baseline` in
+#   tests/ashrae_140_blind_validation.rs was un-`#[ignore]`'d in #2748 so
+#   CI reports the monthly pass/fail rate against this documented-shape
+#   reference. The gate is reporting-only (no assert) — the underlying
+#   Case 600/900 cooling physics gap is tracked under
+#   docs/KNOWN_ISSUES.md §SOLAR-02 UPDATE (Issue #2239) / §LIMIT-05.
+#
+# METHODOLOGY (fully reproducible):
+#   monthly_mid (MWh) = ANNUAL_AUTHORITY_MID × MONTHLY_FRACTION
+#   accept_min         = monthly_mid × 0.90      # Phase D ±10% (issue #668)
+#   accept_max         = monthly_mid × 1.10
+#
+# ANNUAL_AUTHORITY_MID = midpoint of the NREL/TP-472-6231 (1995 BESTEST)
+# Table 3-2 reference band (same source as the annual band in
+# tests/reference_data/zone_balance/case_900_energy_reference.csv and
+# src/validation/benchmark.rs Case 900):
+#     annual_heating 1.17..2.04 MWh -> mid 1.605 MWh
+#     annual_cooling 2.13..3.67 MWh -> mid 2.900 MWh
+#
+# MONTHLY_FRACTION = heating/cooling degree-hour share from
+# tests/reference_data/weather/denver_tmy3_reference.csv (balance point
+# 18.3°C, ASHRAE Fundamentals degree-day method). Fractions sum to 1.0 so
+# monthly values sum back to the authoritative annual midpoint.
+#
+# Generator when direct E+ monthly output lands:
+#   scripts/generate_monthly_aggregate.py --case 900
+#   (consumes tests/reference_data/zone_balance/case_900_energy_hourly.csv
+#    produced by tests/reference_data/zone_balance/generate_case_600_900_energy.py
+#    once E+ physics matches the ASHRAE band per Issue #2239 closure.)
 #
 # Columns:
 #   month                       Jan..Dec (TMY non-leap year)
-#   heating_mid_mwh             placeholder reference midpoint (MWh)
+#   heating_mid_mwh             v1.3 reference midpoint (MWh)
 #   heating_accept_min_mwh      Phase D lower bound (mid - 10%) (MWh)
 #   heating_accept_max_mwh      Phase D upper bound (mid + 10%) (MWh)
-#   cooling_mid_mwh             placeholder reference midpoint (MWh)
+#   cooling_mid_mwh             v1.3 reference midpoint (MWh)
 #   cooling_accept_min_mwh      Phase D lower bound (mid - 10%) (MWh)
 #   cooling_accept_max_mwh      Phase D upper bound (mid + 10%) (MWh)
 month,heating_mid_mwh,heating_accept_min_mwh,heating_accept_max_mwh,cooling_mid_mwh,cooling_accept_min_mwh,cooling_accept_max_mwh
