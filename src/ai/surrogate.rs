@@ -3602,19 +3602,27 @@ mod tests {
         assert_eq!(m.model_path.as_deref(), Some(DUMMY_ONNX_MODEL));
 
         // Inspect the session I/O schema via the underlying session pool.
+        //
+        // ort 2.0.0-rc.10 API: `Session::inputs` / `Session::outputs` are now
+        // *public fields* (`Vec<Input>` / `Vec<Output>`), not iterator-returning
+        // methods, and `Input`/`Output::name` is a `String` field, not a
+        // `.name()` method. This mirrors the production inference path
+        // (`predict_loads_batched_onnx_impl_into`), which accesses the session
+        // through the same `SessionGuard` deref target (`ort::session::Session`).
+        // Issue #2809.
         let pool = m.session_pool.as_ref().expect("session pool");
-        let mut guard = pool
+        let guard = pool
             .get_or_create_session()
             .expect("acquire session for inspection");
         let input_names: Vec<String> = guard
-            .inputs()
-            .into_iter()
-            .map(|i| i.name().to_string())
+            .inputs
+            .iter()
+            .map(|i| i.name.clone())
             .collect();
         let output_names: Vec<String> = guard
-            .outputs()
-            .into_iter()
-            .map(|o| o.name().to_string())
+            .outputs
+            .iter()
+            .map(|o| o.name.clone())
             .collect();
         assert!(
             input_names.contains(&"input".to_string()),
