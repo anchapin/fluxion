@@ -48,7 +48,7 @@ class TestValidationReportRender:
         width = 0.35
 
         ax.bar(x - width/2, fluxion_times, width, label='Fluxion', color='#3b82f6')
-        ax.bar(x + width/2, reference_times, width, label='Reference (E+)", color='#22c55e')
+        ax.bar(x + width/2, reference_times, width, label='Reference (E+)', color='#22c55e')
 
         ax.set_xlabel('Module')
         ax.set_ylabel('Time (ms)')
