@@ -49,6 +49,17 @@ module.exports = {
   // Issue #1800 (T9.6): sub-hourly 9R4C nodal temperature trace
   NineR4CNodalTracer: native.NineR4CNodalTracer,
 
+  // Issue #1798 (T9.3): HVAC configuration classes
+  HvacVavTerminal: native.HvacVavTerminal,
+  HvacCavSystem: native.HvacCavSystem,
+  HvacHeatPump: native.HvacHeatPump,
+  HvacChiller: native.HvacChiller,
+  HvacBoiler: native.HvacBoiler,
+  ZoneSetpoints: native.ZoneSetpoints,
+  HvacDailySchedule: native.HvacDailySchedule,
+  HvacSchedule: native.HvacSchedule,
+  ZoneController: native.ZoneController,
+
   // Error classes
   FluxionError: native.FluxionError,
   ValidationError: native.ValidationError,
