@@ -1,28 +1,29 @@
-//! Regression harness for issue #2674 — pre-existing default-schema
-//! simulation divergence at timestep 91.
+//! Regression harness for issue #2674 / #2747 — pre-existing default-schema
+//! simulation divergence at timestep 91, now FIXED.
 //!
-//! `run_simulation` over the default `SimulationSchemaV1` returns
+//! Historical context (the bug, prior to the #2747 fix):
+//!
+//! `run_simulation` over the default `SimulationSchemaV1` used to return
 //! `SimulationFailed("simulation diverged at timestep 91 in zone zone_0")`
-//! because `run_simulation` (src/api/server.rs) constructs the engine model
-//! via `ThermalModel::new(num_zones)` and sets only the heating/cooling
+//! because `run_simulation` (`src/api/server.rs`) constructed the engine
+//! model via `ThermalModel::new(num_zones)` and set only the heating/cooling
 //! setpoints, leaving the placeholder `thermal_capacitance = 1.0 J/K` and
 //! `air_thermal_capacitance = 0.0` in place. `select_integration_method`
-//! (`src/sim/thermal_integration.rs`) picks Explicit-Euler for `C_m <= 500`,
+//! (`src/sim/thermal_integration.rs`) picked Explicit-Euler for `C_m <= 500`,
 //! and the Explicit-Euler mass update `Tm_new = Tm_old + (q_net / C_m) · dt`
-//! with `C_m = 1.0` and `dt = 3600 s` amplifies any flux imbalance by ~3600
-//! per step — an exponential blow-up that reaches `inf`/`NaN` at hourly
+//! with `C_m = 1.0` and `dt = 3600 s` amplified any flux imbalance by ~3600
+//! per step — an exponential blow-up that reached `inf`/`NaN` at hourly
 //! index 91 (`last_known_good_timestep = 90`).
 //!
-//! This file deliberately **asserts the divergence** so the gap stays
-//! tracked in CI. The five `/v1/simulate`-driven tests in
-//! `tests/api_integration_tests.rs` and `concurrent_throughput_smoke` in
-//! `tests/api_concurrent_throughput.rs` are `#[ignore]`'d against this
-//! same root cause (see docs/KNOWN_ISSUES.md LIMIT-07). When a real fix
-//! lands — wiring the schema geometry/construction into the model's
-//! thermal capacitances and conductances (an `from_spec`-equivalent for
-//! `SimulationSchemaV1`) — this test will fail because the divergence
-//! will no longer occur; that is the signal to remove the `#[ignore]`s
-//! and flip the assertions below.
+//! The fix (#2747): `run_simulation` and `/v1/simulate/stream` now build the
+//! model via `build_model_from_schema(schema)`, which mirrors
+//! `ThermalModel::from_spec` for the simpler `SimulationSchemaV1` shape:
+//! per-zone geometry, construction-layer U-values, ISO 13790 §7.2 thermal
+//! capacitance C_m = wall_cap + roof_cap + floor_cap, ISO 13790 Eq. 64
+//! envelope conductances (h_tr_em, h_tr_ms, h_tr_me), and HVAC setpoints /
+//! schedules. The 6 `#[ignore]`'d API tests in `tests/api_integration_tests.rs`
+//! and `tests/api_concurrent_throughput.rs` are un-ignored, and this file
+//! asserts the simulation is now stable through step 91+.
 //!
 //! Run with:
 //!   cargo test --profile ci --test issue_2674_repro -- --nocapture
@@ -46,86 +47,128 @@ fn default_schema_v1() -> SimulationSchemaV1 {
     }
 }
 
-/// Pin the exact divergence signature produced by the default schema today.
+/// Pin that the default-schema simulation now SUCCEEDS (no divergence).
 ///
-/// If this test starts FAILING it means the timestep-91 divergence has been
-/// fixed — remove the `#[ignore]`'d tests in `api_integration_tests.rs` and
-/// `api_concurrent_throughput.rs` and update docs/KNOWN_ISSUES.md LIMIT-07.
+/// Prior to #2747 this test asserted the timestep-91 divergence. With the
+/// schema→physics wiring in `build_model_from_schema` (`src/api/server.rs`)
+/// the simulation runs to completion with finite, physically-sane output.
+/// If this test starts FAILING (the divergence returns), the schema→physics
+/// wiring has regressed — see `build_model_from_schema` doc-comment for the
+/// full field list that must be populated.
 #[test]
-fn pins_default_schema_diverges_at_timestep_91() {
+fn pins_default_schema_succeeds_through_step_91() {
     let schema = default_schema_v1();
-    let err = run_simulation(&schema, 1, false, "issue_2674").expect_err(
-        "default-schema simulation must still diverge at timestep 91; \
-         if it now succeeds, the bug is fixed — see module docs",
+    let output = run_simulation(&schema, 1, false, "issue_2674_fix").expect(
+        "default-schema simulation must succeed after the #2747 fix; \
+         if it now diverges again, the schema→physics wiring in \
+         `build_model_from_schema` has regressed",
     );
 
-    let ApiError::SimulationFailed(msg, diag) = err else {
-        panic!("expected SimulationFailed, got {err:?}");
-    };
+    // Sanity checks on the output — physically-sane ranges for a 48 m²
+    // heating-dominated zone with the default envelope construction.
+    // These bounds are deliberately loose: this test pins the *divergence-
+    // is-fixed* invariant, not EnergyPlus-comparable accuracy. The latter
+    // is the responsibility of the ASHRAE 140 validation suite.
     assert!(
-        msg.contains("diverged at timestep 91"),
-        "unexpected divergence message: {msg}"
+        output.eui.is_finite() && output.eui > 0.0,
+        "EUI must be finite and positive, got {}",
+        output.eui
     );
     assert!(
-        msg.contains("zone_0"),
-        "divergence must be attributed to zone_0: {msg}"
+        output.heating_energy > 0.0,
+        "expected non-zero heating energy for a heating-dominated default zone, got {}",
+        output.heating_energy
+    );
+    assert!(
+        output.peak_heating_load > 0.0,
+        "expected non-zero peak heating load, got {}",
+        output.peak_heating_load
     );
 
-    let diag = diag.expect("divergence must carry SimulationDiagnostics");
-    assert_eq!(diag.failing_timestep, 91, "failing_timestep drift");
-    assert_eq!(diag.failing_zone.as_deref(), Some("zone_0"));
-    assert_eq!(diag.last_known_good_timestep, 90, "last_known_good drift");
+    // Hourly temperature trace must be finite across ALL 8760 timesteps.
+    // This is the direct inversion of the original divergence assertion
+    // (which saw `inf`/`NaN` from timestep 91 onward).
+    let hourly = output
+        .hourly_zone_temperatures
+        .as_ref()
+        .and_then(|z| z.first())
+        .expect("hourly_zone_temperatures[0] must be populated");
+    assert_eq!(
+        hourly.len(),
+        8760,
+        "expected a full 8760-step hourly trace, got {}",
+        hourly.len()
+    );
+    let first_non_finite = hourly.iter().position(|&v| !v.is_finite());
+    assert!(
+        first_non_finite.is_none(),
+        "divergence recurred: first non-finite temperature at index {:?} \
+         (was None before #2674, must stay None after #2747)",
+        first_non_finite
+    );
+
+    // Physical-sanity band: zone temperatures must stay within a sane
+    // envelope. The default schema has heating=20°C / cooling=24°C with
+    // 100 kW HVAC capacity, so the zone should never wander more than a
+    // few degrees outside [15, 30]°C even with the synthetic sinusoidal
+    // outdoor-air driver used by `solve_timesteps` when no inline weather
+    // is supplied. ±100°C is a deliberately loose upper bound that still
+    // catches the ±1e5 °C garbage the partial-fix prototype produced.
+    let (min_t, max_t) = hourly
+        .iter()
+        .fold((f64::INFINITY, f64::NEG_INFINITY), |(mn, mx), &v| {
+            (mn.min(v), mx.max(v))
+        });
+    assert!(
+        min_t > -100.0 && max_t < 100.0,
+        "zone temperature out of physical-sanity band: [{min_t:.2}, {max_t:.2}] °C"
+    );
 }
 
-/// Capture the diverging per-zone trace so the magnitude/shape of the
-/// explosion is on record (not just the timestep). This is a no-op
-/// assertion — it only exists so the `println!` output is captured in
-/// `--nocapture` CI logs for future root-cause work.
+/// Capture the now-stable per-zone trace so the magnitude/shape of the
+/// fixed simulation is on record (not just "it didn't diverge"). This is
+/// a no-op assertion test — it only exists so the `println!` output is
+/// captured in `--nocapture` CI logs for future regression analysis.
 #[test]
-fn captures_diverging_temperature_trace() {
-    use fluxion::physics::cta::VectorField;
-    use fluxion::sim::engine::ThermalModel;
-
+fn captures_stable_temperature_trace() {
     let schema = default_schema_v1();
-    let num_zones = schema.geometry.zones.len().max(1);
-    let heating = schema.controls.zone_control.heating_setpoint;
-    let cooling = schema.controls.zone_control.cooling_setpoint;
+    let output =
+        run_simulation(&schema, 1, false, "issue_2674_trace").expect("in-process sim must succeed");
 
-    // Mirror run_simulation's (un-initialized) model setup exactly.
-    let mut model = ThermalModel::<VectorField>::new(num_zones);
-    for z in 0..model.num_zones {
-        model.heating_setpoints.as_mut_slice()[z] = heating;
-        model.cooling_setpoints.as_mut_slice()[z] = cooling;
-    }
-    let surrogates = fluxion::ai::surrogate::SurrogateManager::new().unwrap();
-    let _ = model.solve_timesteps(8760, &surrogates, false, None, None, None);
-
-    let zone0 = model
-        .get_hourly_temperatures()
-        .and_then(|t| t.into_iter().next())
+    let zone0: Vec<f64> = output
+        .hourly_zone_temperatures
+        .as_ref()
+        .and_then(|t| t.first().cloned())
         .unwrap_or_default();
-    let first_bad = zone0.iter().position(|&v| !v.is_finite());
-    let max_abs_finite = zone0
+
+    let (min_t, max_t) = zone0
         .iter()
-        .take_while(|&&v| v.is_finite())
-        .map(|v| v.abs())
-        .fold(0.0_f64, f64::max);
+        .fold((f64::INFINITY, f64::NEG_INFINITY), |(mn, mx), &v| {
+            (mn.min(v), mx.max(v))
+        });
+    let mean_t: f64 = zone0.iter().sum::<f64>() / zone0.len().max(1) as f64;
 
     println!(
-        "issue #2674 trace: len={} first_non_finite={first_bad:?} \
-         max_abs_over_finite_prefix={max_abs_finite:.3e} \
-         sample[t=0..6]={:?}",
+        "issue #2747 stable trace: len={} min={min_t:.2}°C max={max_t:.2}°C \
+         mean={mean_t:.2}°C sample[t=0..6]={:?}",
         zone0.len(),
         &zone0[..zone0.len().min(6)],
     );
 
-    // The diagnostic-side test pins the exact timestep; here we only
-    // assert the qualitative explosion shape so this stays robust to
-    // minor upstream changes while still failing if the divergence
-    // disappears (which is the event we want to detect).
-    assert_eq!(first_bad, Some(91), "divergence first-finite-break moved");
+    // Qualitative shape — the trace must be finite across the whole year
+    // and stay in a physically-sane diurnal band. The old Explicit-Euler
+    // blow-up hit ±1e300 before reaching inf/NaN at step 91; the fixed
+    // run oscillates inside the HVAC deadband with small excursions.
+    assert_eq!(zone0.len(), 8760, "expected full-year trace");
+    assert!(zone0.iter().all(|&v| v.is_finite()));
     assert!(
-        max_abs_finite > 1e10,
-        "expected explicit-Euler blow-up magnitude before step 91, got {max_abs_finite:.3e}"
+        min_t > -100.0 && max_t < 100.0,
+        "physical-sanity band violated: [{min_t}, {max_t}]"
+    );
+    // Heating-dominated default zone → mean temperature tracks toward the
+    // heating setpoint (20°C) within a few degrees.
+    assert!(
+        (15.0..=25.0).contains(&mean_t),
+        "mean zone temperature {mean_t:.2}°C outside expected [15, 25]°C band"
     );
 }
