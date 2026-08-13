@@ -31,25 +31,27 @@
 # Policy note (divergence vs deny.toml): cargo-deny scopes unmaintained to
 # `unmaintained = "workspace"` (transitive unmaintained deps are non-blocking),
 # whereas `cargo audit --deny warnings` fails on ALL unmaintained advisories
-# including transitive ones. The transitive unmaintained advisory
-# RUSTSEC-2025-0134 (rustls-pemfile via rumqttc, see issue #2690/#2757 cluster)
-# therefore fails cargo-audit but not cargo-deny. Aligning the two scopes is
-# tracked as a follow-up; do NOT re-add `informational_warnings` to paper over
-# the gap — surface and track the advisory instead.
+# including transitive ones. The three documented unmaintained advisories
+# below (RUSTSEC-2024-0436 paste, RUSTSEC-2026-0192 ttf-parser,
+# RUSTSEC-2025-0134 rustls-pemfile) are workspace-transparent — they are
+# tracked here with removal conditions rather than papered over via
+# `informational_warnings`. Aligning the two scopes across cargo-audit and
+# cargo-deny is tracked as a follow-up; do NOT re-add
+# `informational_warnings` to hide the gap — surface and track the
+# advisory instead.
 # Ignore advisories for pinned/transitive dependencies that can't be easily bumped
 ignore = [
     # RUSTSEC-2025-0020 (pyo3 < 0.24.1, PyString buffer overflow) was REMOVED
     # in #2749: the PyO3 0.22 -> 0.29 migration in #2585 moved pyo3 outside the
     # affected range (< 0.24.1); cargo audit now verifies the fix on every PR.
     #
-    # The two entries below are transitive `unmaintained` advisories. They are
-    # deliberately NOT mirrored in `deny.toml` (#2749): cargo-deny scopes
+    # The three entries below are transitive `unmaintained` advisories. They
+    # are deliberately NOT mirrored in `deny.toml` (#2749): cargo-deny scopes
     # unmaintained to workspace members (`unmaintained = "workspace"`) and
     # would only emit `advisory-not-detected` noise for them, whereas
     # cargo-audit (run with `--deny warnings`) enforces transitive unmaintained
-    # too. Removing them HERE would re-introduce two unmaintained failures on
-    # the cargo-audit gate (currently only RUSTSEC-2025-0134 is expected to
-    # fail -- tracked by #2797).
+    # too. Removing them HERE would re-introduce unmaintained failures on
+    # the cargo-audit gate.
     #
     # `paste` is unmaintained; transitive via gemm (linear-algebra path:
     # gemm <- faer/simba/nalgebra <- fluxion/statrs). No security vulnerability:
@@ -71,6 +73,33 @@ ignore = [
     # switching plotters to its `ab_glyph` font feature and bundling a font
     # at build time, which exceeds the S/<=4h/low-risk scope of #1458.
     "RUSTSEC-2026-0192",
+    # RUSTSEC-2025-0134 (rustls-pemfile is unmaintained) — Issue #2797.
+    # Depth=1 transitive: rustls-pemfile v2.2.0 <- rumqttc v0.25.1 <-
+    # fluxion-twin <- fluxion. The crate's last release (v2.2.0, May 2025)
+    # is the unmaintained version per the advisory; the recommended successor
+    # (`rustls-pki-types` for the shared types, with PEM parsing absorbed
+    # directly into rustls >= 0.23) is not yet adopted upstream by rumqttc.
+    # No security vulnerability: rustsec type is `unmaintained` ("no patched
+    # versions"). The same root cause as the four rustls-webpki entries
+    # below — both clusters clear when upstream publishes a rumqttc release
+    # that drops rustls-pemfile and bumps webpki past 0.102.x.
+    #
+    # Impact scope: rustls-pemfile is loaded by rumqttc's `use-rustls`
+    # feature to parse PEM certs/keys at MQTT connect time. It is *not* in
+    # the active TLS validation path (rustls 0.23 + rustls-webpki 0.103.13,
+    # pinned by fluxion-twin's direct dependency, do the actual cert
+    # validation). The unmaintained crate only affects PEM file *parsing*
+    # (rustsec type is `unmaintained`, not `vulnerability`).
+    #
+    # Upstream tracking (same as the webpki cluster):
+    #   - https://github.com/bytebeamio/rumqtt/issues/1067
+    #   - https://github.com/bytebeamio/rumqtt/pull/1037
+    #
+    # >>> REMOVE this entry once a fixed rumqttc is published on crates.io
+    # >>> and `crates/fluxion-twin/Cargo.toml` is bumped to it. Coordinated
+    # >>> with #2757 (rumqttc → rustls-webpki 0.102.8 cluster, same root
+    # >>> cause); resolving #2757's webpki bump will resolve this too.
+    "RUSTSEC-2025-0134",
 
     # --- TEMPORARY: Issue #2690 (rumqttc personal-fork removal) ---------
     # The `[patch.crates-io]` entry that redirected rumqttc to a fork on a
