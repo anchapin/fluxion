@@ -32,6 +32,7 @@ on:
       - "scripts/doc_inventory_check.sh"
       - "scripts/generate_doc_inventory.py"
       - "scripts/check_doc_inventory_fresh.py"
+      - "scripts/check_doc_link_integrity.py"
       - "scripts/check_npm_readme_codeblocks.mjs"
       - "npm/README.md"
       - "docs/doc-inventory.md"
@@ -121,6 +122,17 @@ jobs:
           echo "exit_code=$EXIT_CODE" >> "$GITHUB_OUTPUT"
           if [[ $EXIT_CODE -ne 0 ]]; then
             echo "::error::npm/README.md code-block drift check failed (issue #2511)"
+          fi
+
+      - name: Run doc-link-integrity check (advisory — issue #2885)
+        id: doc_link_integrity
+        continue-on-error: true
+        run: |
+          python3 scripts/check_doc_link_integrity.py
+          EXIT_CODE=$?
+          echo "exit_code=$EXIT_CODE" >> "$GITHUB_OUTPUT"
+          if [[ $EXIT_CODE -ne 0 ]]; then
+            echo "::warning::Doc link-integrity check found broken references (issue #2885, advisory only — promote to blocking once all broken refs are fixed)"
           fi
 
       - name: Aggregate results
