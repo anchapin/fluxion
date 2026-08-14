@@ -1888,4 +1888,24 @@ mod tests {
         assert!(msg.contains("not yet implemented"), "got: {msg}");
         assert!(msg.contains("#2947"), "should reference #2947: {msg}");
     }
+
+    // Note: direct simulation (`fluxion -w weather.epw input.flux`) is the
+    // 8th line-877 TODO. It is harder to exercise via unit test because it
+    // requires a valid EPW file plus a valid JSON model file. The gating is
+    // covered end-to-end by the source code (the very last lines of
+    // `run_direct_simulation` return `not_yet_implemented("direct simulation")`)
+    // and by the structure of the integration test suite:
+
+    #[test]
+    fn test_direct_simulation_gated_via_source() {
+        // Source-level guard: the file MUST contain the `not_yet_implemented`
+        // call for `run_direct_simulation`. Anyone removing the gating to
+        // implement direct simulation will need to update this test (and
+        // the eight integration tests in tests/integration/test_cli.rs).
+        let source = include_str!("fluxion.rs");
+        assert!(
+            source.contains("Err(not_yet_implemented(\"direct simulation\"))"),
+            "run_direct_simulation must call not_yet_implemented to preserve #2947 loud-failure"
+        );
+    }
 }
