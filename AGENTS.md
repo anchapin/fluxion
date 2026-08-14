@@ -103,6 +103,16 @@ Stubbed (not yet implemented, see #2947):
 
 Every stubbed path emits an error of the form `'<feature>' is not yet implemented (see issue #2947, originally #2711); this CLI path is documented but does not execute yet` and exits 1. Both `--help` long-help and `tests/integration/test_cli.rs` (the `integration-cli` test target) assert this behaviour, so any silent-success regression will fail CI. Originally flagged by #2711; the work was resumed under #2947 against the same pattern.
 
+## Removed Tools — Do Not Revive
+
+The following tool was deleted rather than stubbed, because its implementation pattern was structurally unsafe (it would silently auto-close issues with placeholder markdown). Do **not** re-add it without addressing the structural problem that motivated removal.
+
+| Tool | Removed in | Why |
+|---|---|---|
+| `parallel-issue-workflow` (`src/bin/parallel_issue_workflow.rs`) | #2946 | `create_fix_for_issue()` wrote a placeholder markdown file (`"implement actual fix before merging"`) and `commit_changes` auto-tagged the commit with `Closes #{N}`, which closed the originating GitHub issue with no real fix. The pattern encouraged test-result tuning and silently undermined the project's validation goals (ASHRAE 140 pass rate, energy balance). The canonical workflow is the `fluxion` CLI (`cargo run --bin fluxion -- <subcommand>`); manual triage of issues should be done via `gh issue` / `gh pr` directly, not via an automation that produces empty PRs. |
+
+The deletion is regression-locked: `tests/integration/test_cli.rs` asserts that `cargo build --bin parallel-issue-workflow` fails and that `src/bin/parallel_issue_workflow.rs` is gone. If you want to re-introduce auto-triage tooling, see the issue's acceptance criteria for the fail-closed rewrite (`diff --stat ≥ 1 line of source change required before commit`).
+
 ## Critical Physics Constants
 
 - **`EXTERIOR_FILM_COEFF = 18.3 W/m²K`** (ASHRAE 140 v2023, vertical surfaces, ~3.4 m/s wind) — `src/physics/constants/thermal/ashrae_140/v2023.rs`. The legacy `29.3 W/m²K` (6.7 m/s) must NOT appear in any computation path. Guard: `tests/regression_exterior_film_unification.rs`.

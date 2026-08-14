@@ -379,3 +379,54 @@ fn test_cli_validate_case_range_returns_not_implemented() {
         "diagnostic case range 800-810",
     );
 }
+
+// =====================================================================
+// Issue #2946: `parallel-issue-workflow` binary was deleted because its
+// `create_fix_for_issue()` produced a placeholder markdown file tagged
+// with `Closes #N`, which auto-closed the originating issue without any
+// real fix. This regression test asserts the binary (and its source
+// file + Cargo.toml `[[bin]]` entry) remain removed — re-adding the
+// tool would re-introduce the silent-placeholder trap.
+// =====================================================================
+
+/// `cargo build --bin parallel-issue-workflow` must fail: the binary was
+/// removed in #2946 because it could auto-close issues with placeholder
+/// markdown files. Re-adding it requires the fix-closed rewrite from the
+/// issue's acceptance criteria, not a silent revival.
+#[test]
+fn test_parallel_issue_workflow_binary_is_removed() {
+    let output = Command::new("cargo")
+        .args(["build", "--bin", "parallel-issue-workflow"])
+        .output()
+        .expect("Failed to invoke cargo build --bin parallel-issue-workflow");
+
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    let stdout = String::from_utf8_lossy(&output.stdout);
+
+    assert!(
+        !output.status.success(),
+        "parallel-issue-workflow binary must not build (issue #2946); got:\nstdout:\n{stdout}\nstderr:\n{stderr}"
+    );
+    // Cargo emits "no bin target named `parallel-issue-workflow`" when the
+    // [[bin]] entry is gone. Match the canonical phrasing so we catch a
+    // re-add that accidentally re-registers a different target name.
+    let combined = format!("{stdout}\n{stderr}");
+    assert!(
+        combined.contains("parallel-issue-workflow"),
+        "cargo error should reference the removed binary by name; got:\n{combined}"
+    );
+}
+
+/// Source file must be gone — re-creating only the `[[bin]]` entry would
+/// resurrect the placeholder-generating logic.
+#[test]
+fn test_parallel_issue_workflow_source_is_removed() {
+    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("src")
+        .join("bin")
+        .join("parallel_issue_workflow.rs");
+    assert!(
+        !path.exists(),
+        "src/bin/parallel_issue_workflow.rs must be removed (issue #2946); found at {path:?}"
+    );
+}
