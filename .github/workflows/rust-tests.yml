@@ -367,7 +367,66 @@ jobs:
       - uses: ./.github/actions/setup-rust-python-env
         with:
           python-version: '3.10'
-      - run: cargo build --release --verbose
+      # Issue #2983: also build the workspace siblings in release mode so the
+      # main-branch release smoke catches sibling regressions. The per-PR
+      # `Workspace Check` job handles default-feature coverage; this step
+      # confirms the workspace also links in release mode. Uses default
+      # features (root has `default = []`) so the cuda/ort features are
+      # not pulled in on CPU-only runners.
+      - run: cargo build --release --workspace --verbose
+
+  # -- Issue #2983: `cargo check --workspace` ---------------------------------
+  # Bare `cargo build` / `cargo test` only compile the root package because
+  # `default-members = ["."]` is set in the workspace root. This gate catches
+  # sibling regressions like PR #2960 (`chore(deps): cargo-major bump`)
+  # which broke `fluxion-behavior` via the `rand 0.8 -> 0.9` bump but left
+  # the root crate compiling green. Without `--workspace` the breakage
+  # slipped through to `develop`. Follows the GH-probe + Hetzner-overflow
+  # pattern (issue #2133). Uses default features (root has `default = []`)
+  # so the cuda / ort features are not pulled in on CPU-only runners — see
+  # the issue body §"Acceptance" for the rationale.
+
+  workspace-check-gh-probe:
+    name: "Workspace Check Probe"
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    if: |
+      github.event_name == 'pull_request' ||
+      (github.event_name == 'push' && github.ref == 'refs/heads/main')
+    steps:
+      - run: echo "GH runner acquired"
+
+  workspace-check-gh:
+    name: "Workspace Check (GH)"
+    needs: workspace-check-gh-probe
+    runs-on: ubuntu-latest
+    if: |
+      github.event_name == 'pull_request' ||
+      (github.event_name == 'push' && github.ref == 'refs/heads/main')
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4
+      - uses: ./.github/actions/setup-rust-python-env
+        with:
+          python-version: '3.10'
+      - name: Run workspace check
+        run: cargo check --workspace --verbose
+
+  workspace-check-hz:
+    name: "Workspace Check (Hetzner Overflow)"
+    needs: workspace-check-gh-probe
+    runs-on: [self-hosted,fluxion-overflow]
+    if: |
+      (github.event_name == 'pull_request' ||
+       (github.event_name == 'push' && github.ref == 'refs/heads/main'))
+      && (needs.workspace-check-gh-probe.result == 'failure'
+          || needs.workspace-check-gh-probe.result == 'cancelled')
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4
+      - uses: ./.github/actions/setup-rust-python-env
+        with:
+          python-version: '3.10'
+      - name: Run workspace check
+        run: cargo check --workspace --verbose
 
   # -- ASHRAE Cases Cycle Check -----------------------------------------------
 

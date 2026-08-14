@@ -72,6 +72,7 @@ Required branch-protection checks (`release_gates.yaml` → `ci.required_checks`
 | Code Coverage Gate (Issue #1932) | #1932 |
 | Docs Hygiene Gate (Issue #2466) | #2466 |
 | Physics-Sim-Cycle-Check | — |
+| Workspace Check | — |
 | Absolute Perf Gate (Issue #2693) | #2693 |
 | Multi-Zone Perf Gate (Issue #2772) | #2772 |
 | Energy Conservation (GH) | — |

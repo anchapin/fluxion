@@ -242,6 +242,18 @@ ci:
     # Backed by `scripts/check_physics_sim_cycle.py`.
     - "Physics-Sim-Cycle-Check"
 
+    # Issue #2983: workspace compile gate. Closes the systemic gap that let
+    # PR #2960 (`chore(deps): cargo-major + sha256_hex fix`) merge broken
+    # — the `rand 0.8 -> 0.9` bump broke `fluxion-behavior` but bare
+    # `cargo check` / `cargo test` only compile the root crate (because
+    # `default-members = ["."]` is set in the workspace root), so the
+    # breakage slipped through. Mirrors the `Physics-Sim-Cycle-Check`
+    # pattern: the GH-runner and Hetzner-overflow variants both share the
+    # canonical listener name `Workspace Check` (the parenthetical "(GH)" /
+    # "(Hetzner Overflow)" suffixes are workflow-internal). Branch
+    # protection matches the canonical name without the suffix.
+    - "Workspace Check"
+
     # Issue #2693: PR-level ABSOLUTE performance floor. The throughput ≥ 150
     # configs/sec and latency ≤ 10 ms/config thresholds below were already
     # defined here but only evaluated on push to main/dev (performance.yml)
@@ -366,6 +378,23 @@ ci:
       workflow: ".github/workflows/rust-tests.yml"
       issue: 2463
       closes_issue: 2462
+      triggered_by: "PR + push to main"
+
+    - job: "Workspace Check"
+      # Mirrors the `Physics-Sim-Cycle-Check` pattern above: the GH runner
+      # variant (`workspace-check-gh` job id) and the Hetzner-overflow
+      # variant (`workspace-check-hz` job id) share the canonical listener
+      # name `Workspace Check` (the parenthetical "(GH)" / "(Hetzner
+      # Overflow)" suffixes are workflow-internal). Closes the systemic gap
+      # that let PR #2960 merge broken — bare `cargo check` only compiles
+      # the root crate because `default-members = ["."]` is set in the
+      # workspace root, so sibling regressions like `fluxion-behavior`'s
+      # `rand 0.8 -> 0.9` breakage slipped through. `build-release`
+      # (also in this file) was updated to add `cargo build --release
+      # --workspace` for the main-only release smoke.
+      workflow: ".github/workflows/rust-tests.yml"
+      issue: 2983
+      closes_issue: 2960
       triggered_by: "PR + push to main"
 
     - job: "Absolute Perf Gate (Issue #2693)"

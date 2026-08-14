@@ -139,6 +139,7 @@ ML-surrogate swap-point traits:
 `rust-tests.yml` runs on every PR (Ubuntu, fast signal) and on `main` push (full 3-OS matrix + release build). The canonical required-check list lives in `release_gates.yaml → ci.required_checks`. Headliners:
 
 - `Test` (matrix: no-default / wiring-tracing / multi-zone) · `Energy Conservation` (#1295) · `Rustfmt` · `Clippy` (`-D warnings`)
+- `Workspace Check` (#2983) — `cargo check --workspace` on every PR + main; closes the systemic gap that let PR #2960 (cargo-major bump) merge broken (`fluxion-behavior` regressed on `rand 0.8 → 0.9` but bare `cargo check` only compiles the root because `default-members = ["."]`). Default-feature set (root has `default = []`) so `cuda` / `ort` are not pulled in on CPU-only runners.
 - `Known Issues Stale Check` (#1723) · `Ashrae Cases Cycle Check` (#1441) · `Physics-Sim-Cycle-Check` (#2463)
 - `ASHRAE 140 Strict Energy Gate (Issue #1333)` · `CUDA Smoke Test` (#1603)
 - `Fluxion Determinism Gate (#1351)` · `Fluxion Performance Gate (#1618)` — relative 5% (workflow_run listeners)
