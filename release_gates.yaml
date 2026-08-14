@@ -271,6 +271,54 @@ ci:
     # not a silently-greened gate.
     - "Multi-Zone Perf Gate (Issue #2772)"
 
+    # Energy Conservation gate (#1295). Listener job defined in
+    # `.github/workflows/ashrae_validation.yml` under the
+    # `fluxion-energy-conservation-gate` id. Mirrors the determinism /
+    # performance gate pattern: triggered by the upstream Energy Conservation
+    # workflow_run, exits non-zero on `failure` / `cancelled` / `timed_out`.
+    - "Energy Conservation (GH)"
+
+    # Rustfmt gate. Listener job in `.github/workflows/ashrae_validation.yml`
+    # under the `fluxion-rustfmt-gate` id. Triggers on upstream rustfmt
+    # workflow_run completion; non-zero exit on format drift.
+    - "Rustfmt (GH)"
+
+    # Clippy gate with -D warnings. Listener job in
+    # `.github/workflows/ashrae_validation.yml` under `fluxion-clippy-gate`.
+    # Triggers on upstream clippy workflow_run; non-zero exit on any warning.
+    - "Clippy (GH)"
+
+    # Known Issues Staleness gate (#1723). Listener job in
+    # `.github/workflows/known-issues-stale.yml` (the `fluxion-known-issues-gate`
+    # id). Triggers on the upstream KNOWN_ISSUES.md freshness workflow_run;
+    # non-zero exit when `*Last Updated:*` header is >60 days stale.
+    - "Known Issues Stale Check (GH)"
+
+    # ASHRAE 140 Cases Cycle Check (#1441). Listener job in
+    # `.github/workflows/ashrae_validation.yml` under
+    # `fluxion-ashrae-cases-cycle-gate`. Triggers on upstream cycle check
+    # workflow_run; non-zero exit on any new sim ↔ validation cycle edge.
+    # Companion to Physics-Sim-Cycle-Check (#2463).
+    - "Ashrae Cases Cycle Check (GH)"
+
+    # CUDA smoke test (#1603). The smoke-test job in `ashrae_validation.yml`
+    # verifies `--features cuda` builds and runs the gate. Auto-skips on
+    # CPU-only runners; non-zero exit on any CUDA regression.
+    - "CUDA Smoke Test (Issue #1603)"
+
+    # Architecture Drift Detection. Scheduled job in
+    # `.github/workflows/architecture_drift.yml`; runs nightly plus on
+    # `src/**/*.rs` and `ARCHITECTURE.md` changes. Verifies the documented
+    # swap-point traits (HeatConductionSolver, VentilationSchedule,
+    # ThermalModelTrait) match the source. Backed by
+    # `scripts/check_architecture_drift.py`.
+    - "Architecture Drift Detection"
+
+    # Cargo Deny supply-chain gate (#2699). Job in `.github/workflows/ci.yml`
+    # enforces deny.toml rules: licenses, duplicates, bans, sources. The
+    # `ignore` list is mirrored from `.cargo/audit.toml` (keep in sync).
+    - "Cargo Deny"
+
   # Job-to-workflow map (informational; branch-protection reads job
   # names directly). Used by `scripts/release_gate_checker.py` to verify
   # the required_checks list is in sync with the workflows directory.
