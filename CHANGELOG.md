@@ -16,7 +16,7 @@ All notable changes to Fluxion will be documented in this file.
 ### Changed
 
 - README.md now links to Release Scorecard for consolidated status view
-- **ASHRAE 140 Blind Validation** (`docs/ASHRAE_140_BLIND_VALIDATION_PLAN.md`): blind-validation methodology in progress for v1.3.0
+- **ASHRAE 140 Blind Validation** (`.planning/ASHRAE_140_BLIND_VALIDATION_PLAN.md`): blind-validation methodology in progress for v1.3.0
 
 ## [1.2.0] - 2026-04-08
 
