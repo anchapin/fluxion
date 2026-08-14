@@ -263,9 +263,11 @@ CLAUDE.md
 # in git. These entries are the matching `.gitignore` lines for each
 # runtime dir the gate is supposed to accept on every fresh checkout.
 # A handful of these dirs (`.automaker/`, `.jules/`, `.serena/`,
-# `.sisyphus/`, `.superset/`, `.gitnexus/`, `.issues/`) were committed
-# historically and are still tracked; the gitignore line below is the real
-# defense — it prevents NEW files from being staged on subsequent commits.
+# `.sisyphus/`, `.superset/`, `.gitnexus/`, `.issues/`, `.agents/`)
+# were committed historically and are still tracked; the gitignore line
+# below is the real defense — it prevents NEW files from being staged on
+# subsequent commits.
+.agents/
 .automaker/
 .jules/
 .serena/
@@ -291,4 +293,7 @@ models/
 
 # FMI 2.0 XSD cache used by `.agents/results/issue-D1-multi-zone-fmi-verification.py`.
 # Fetched on demand from modelica/fmi-standard; never committed.
-.agents/results/fmi-xsd/
+# NOTE: superseded by the broader `.agents/` line above (issue #2981).
+# Keeping this rule would re-ignore the same files twice, which is harmless
+# but confusing; remove it to leave a single source of truth.
+# (Intentionally left blank — see `.agents/` in the runtime-dirs block.)

@@ -146,7 +146,6 @@ ROOT_BLOCKED_DIRECTORIES: frozenset[str] = frozenset(
 # at root and causes the gate to FAIL.
 ROOT_DOTFILE_ALLOWLIST: frozenset[str] = frozenset(
     {
-        ".agents",                 # orchestration runtime dir (issues, results, skills)
         ".cargo",                  # cargo config (audit.toml, config.toml, mutants.toml)
         ".cargoignore",            # cargo publish ignore
         ".dockerignore",           # docker ignore
@@ -479,7 +478,6 @@ def _self_test() -> int:
             (".githooks", True),
             (".github", True),
             (".planning", True),
-            (".agents", True),
             ("src", True),  # legit dir (not in denylist)
             ("docs", True),
             ("crates", True),
@@ -515,6 +513,13 @@ def _self_test() -> int:
             "bem-engineer-workspace": "blocked_dirs",
             "bem-engineer": "blocked_dirs",
             ".mytool": "dotfile_unmanaged",  # #2954: unmanaged dotdir
+            # #2981: `.agents/` is a local agent runtime dir (orchestration
+            # results, session plans, agent skill data) and is matched by
+            # `.gitignore` on every fresh checkout. The self-test
+            # neutralizes ``is_gitignored`` so a fresh-clone dotdir that is
+            # neither allow-listed, gitignored, nor tracked is flagged —
+            # mirroring the production check.
+            ".agents": "dotfile_unmanaged",
         }
         for name in expected_violations:
             is_dir = expected_violations[name] in {"blocked_dirs", "dotfile_unmanaged"}
