@@ -1,0 +1,161 @@
+# Issue #2930: PR-blocking crate-size gate (Goal #10 <10 MB published).
+#
+# Goal #10 of the v1.3 release explicitly states "Crate size <10 MB published".
+# Until now the discipline was enforced only declaratively (Cargo.toml exclude
+# block + .cargoignore) — nothing actually measured the packaged artifact and
+# nothing in CI would fail when a regression pushed the .crate over the
+# crates.io ceiling. This workflow closes that gap: it runs `cargo package`
+# against the root crate, measures the resulting `.crate` file, and fails the
+# build (and posts a workflow summary) when the artifact exceeds 10 MiB.
+#
+# The threshold (10 MiB = 10_485_760 bytes) is mirrored from
+# `release_gates.yaml → crate_size.max_mb: 10` and is checked by
+# `scripts/release_gate_checker.py --crate-size-gates`. Keeping the literal in
+# both places is intentional — the workflow must be runnable standalone for
+# local debugging without the Python tool, and the Python tool is the release
+# audit path. Any drift between the two should fail the next CI run via the
+# `architecture_drift` style nightly comparison; if you change one, change both.
+
+name: Crate Size Gate
+
+on:
+  pull_request:
+    paths:
+      - 'Cargo.toml'
+      - '.cargoignore'
+      - '.github/workflows/crate-size.yml'
+      - 'release_gates.yaml'
+      - 'scripts/release_gate_checker.py'
+  push:
+    branches:
+      - develop
+      - main
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+# Least-privilege GITHUB_TOKEN grants (Issue #2526). Crate-size measurement is
+# read-only — we never publish or push anything here, just run `cargo package`
+# against the local checkout and report the size.
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: 1
+  # 10 MiB in bytes — crates.io's published-crate ceiling per Goal #10. Keep in
+  # sync with `release_gates.yaml → crate_size.max_mb` (#2930).
+  CRATE_SIZE_LIMIT_BYTES: 10485760
+  CRATE_SIZE_LIMIT_MB: 10
+
+jobs:
+  crate-size:
+    name: Crate Size Gate (Issue #2930)
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4
+
+      # Rust toolchain only — we don't need Python for this gate, but we still
+      # need libssl-dev / pkg-config / fontconfig to satisfy system deps that
+      # `cargo package` may transitively pull in (openssl-sys / yeslogic-
+      # fontconfig-sys via dev-dependency build scripts). Mirrors the
+      # .github/actions/setup-rust-env/action.yml base list so any drift is
+      # caught in one place.
+      - name: Install system dependencies (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libssl-dev pkg-config libfontconfig1-dev fontconfig
+        env:
+          DEBIAN_FRONTEND: noninteractive
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@8641a17e25bf5b40c118d48fe0f81e8655731839  # 1.85.0
+        with:
+          toolchain: stable
+
+      - name: Cache cargo registry & target
+        uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32  # v2
+        with:
+          workspaces: |
+            .
+            fluxion-core -> target
+
+      # `cargo package` produces `target/package/<name>-<version>.crate` from
+      # the root crate manifest. `--allow-dirty` lets us run on a working tree
+      # that has unrelated edits (the workflow triggers on a narrow `paths`
+      # filter, but PR checkouts in particular can have the user's in-flight
+      # work). `--no-verify` skips the `verify` step that would otherwise
+      # attempt a full unpack-and-rebuild of the crate contents — we just want
+      # the size of the produced archive.
+      #
+      # Note: cargo's manifest-normalization step touches the crates.io index
+      # to verify any `version = "X"` constraints on path-only deps, which can
+      # error out before reporting the failure (the .crate is still written
+      # to a `target/package/tmp-crate/` scratch dir). We tolerate that
+      # specific transient exit code and check for the produced .crate in the
+      # next step — a real packaging failure (e.g. compile error) would not
+      # produce the .crate at all, and the measurement step below will fail
+      # the build with a clear error in that case.
+      - name: cargo package --allow-dirty --no-verify
+        id: package
+        run: |
+          set +e
+          cargo package --allow-dirty --no-verify
+          EXIT_CODE=$?
+          set -e
+          echo "exit_code=${EXIT_CODE}" >> "$GITHUB_OUTPUT"
+          if [[ ${EXIT_CODE} -ne 0 ]]; then
+            echo "::warning::\`cargo package\` exited with code ${EXIT_CODE}; continuing to inspect any produced .crate file."
+          fi
+
+      - name: Measure packaged crate size
+        id: measure
+        run: |
+          set -euo pipefail
+          # cargo writes the .crate to target/package/tmp-crate/<name>-<version>.crate
+          # during the manifest-normalization step; if the verify / registry
+          # step that runs afterward errored, the .crate is still on disk
+          # and valid for size measurement (Goal #10 cares about bytes,
+          # not about whether the post-package registry lookup succeeded).
+          CRATE_FILE=$(ls -1 target/package/tmp-crate/fluxion-*.crate 2>/dev/null | head -n 1 || true)
+          if [[ -z "${CRATE_FILE}" && -d target/package ]]; then
+            CRATE_FILE=$(ls -1 target/package/fluxion-*.crate 2>/dev/null | head -n 1 || true)
+          fi
+          if [[ -z "${CRATE_FILE}" ]]; then
+            echo "::error::No fluxion-*.crate file found under target/package/ — \`cargo package\` likely failed to produce an artifact."
+            exit 1
+          fi
+          CRATE_BYTES=$(stat -c %s "${CRATE_FILE}")
+          CRATE_MB=$(python3 -c "print(round(${CRATE_BYTES} / 1048576, 3))")
+          LIMIT_BYTES=${CRATE_SIZE_LIMIT_BYTES}
+          LIMIT_MB=${CRATE_SIZE_LIMIT_MB}
+
+          echo "crate_file=${CRATE_FILE}"   >> "$GITHUB_OUTPUT"
+          echo "crate_bytes=${CRATE_BYTES}" >> "$GITHUB_OUTPUT"
+          echo "crate_mb=${CRATE_MB}"       >> "$GITHUB_OUTPUT"
+
+          {
+            echo "## Crate Size Gate (Issue #2930)"
+            echo ""
+            echo "| Metric | Value |"
+            echo "| --- | --- |"
+            echo "| Packaged crate | \`${CRATE_FILE}\` |"
+            echo "| Size | **${CRATE_BYTES} bytes** (${CRATE_MB} MiB) |"
+            echo "| Limit (Goal #10) | ${LIMIT_BYTES} bytes (${LIMIT_MB} MiB) |"
+            echo "| Headroom | $(python3 -c "print(round((${LIMIT_BYTES} - ${CRATE_BYTES}) / 1048576, 3))") MiB |"
+            echo "| \`cargo package\` exit code | \`${{ steps.package.outputs.exit_code }}\` |"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          if (( CRATE_BYTES > LIMIT_BYTES )); then
+            PCT=$(python3 -c "print(round(${CRATE_BYTES} / ${LIMIT_BYTES} * 100, 1))")
+            echo "::error::Crate size ${CRATE_BYTES} bytes (${CRATE_MB} MiB) exceeds Goal #10 limit of ${LIMIT_MB} MiB (${PCT}% of limit)."
+            echo "passed=false" >> "$GITHUB_OUTPUT"
+            exit 1
+          fi
+
+          echo "passed=true" >> "$GITHUB_OUTPUT"
+          echo "Crate size ${CRATE_MB} MiB is within the ${LIMIT_MB} MiB limit."

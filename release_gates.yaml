@@ -96,6 +96,31 @@ benchmark:
   absolute_min_throughput: 100
 
 # =============================================================================
+# CRATE SIZE GATES
+# =============================================================================
+# Issue #2930 / Goal #10: enforce the "Crate size <10 MB published" release
+# goal. The packaged crate is whatever `cargo package --allow-dirty
+# --no-verify` produces at `target/package/fluxion-*.crate`. The 10 MiB
+# ceiling matches crates.io's published-crate policy and is the only hard
+# number declared for Goal #10 — the declarative discipline (Cargo.toml
+# `exclude = [...]` block + `.cargoignore`) was in place before but had no
+# CI-side enforcement, so any regression slipped through silently. This gate
+# is the second layer: the workflow (`.github/workflows/crate-size.yml`)
+# runs the measurement, and `scripts/release_gate_checker.py
+# --crate-size-gates` re-validates the size against the threshold declared
+# below as part of the release audit. The 10 MiB limit is mirrored as a
+# literal in the workflow file (CRATE_SIZE_LIMIT_BYTES) — change both if
+# you change one.
+
+crate_size:
+  # Maximum published-crate size, in MiB. Default 10 (Goal #10).
+  max_mb: 10
+  # Path to the packaged crate, relative to project root. Glob is supported
+  # by the loader; the first match is used. Defaults to the standard
+  # cargo-package output path.
+  crate_glob: "target/package/fluxion-*.crate"
+
+# =============================================================================
 # REPORT DRIFT GATES
 # =============================================================================
 # Report drift gates detect unexpected changes in validation reports over time.
@@ -342,6 +367,18 @@ ci:
     # machine-readable signal of which stable toolchain the build requires.
     - "MSRV Check (Issue #2934)"
 
+    # Issue #2930 / Goal #10: PR-blocking crate-size gate. Runs
+    # `cargo package --allow-dirty --no-verify` against the root crate,
+    # measures the resulting `target/package/fluxion-*.crate` file, and
+    # fails the build when the artifact exceeds the 10 MiB ceiling
+    # (`crate_size.max_mb` below). The threshold is mirrored as a literal
+    # (CRATE_SIZE_LIMIT_BYTES) in the workflow file for standalone use;
+    # changing one without the other is a release-gate drift and must be
+    # caught by the next audit run. Goal #10 was previously unenforced —
+    # the declarative discipline in Cargo.toml/.cargoignore had no CI-side
+    # measurement, so any regression slipped through silently.
+    - "Crate Size Gate (Issue #2930)"
+
   # Job-to-workflow map (informational; branch-protection reads job
   # names directly). Used by `scripts/release_gate_checker.py` to verify
   # the required_checks list is in sync with the workflows directory.
@@ -443,4 +480,20 @@ ci:
       # identified.
       workflow: ".github/workflows/msrv.yml"
       issue: 2934
+      triggered_by: "PR + push to develop/main"
+
+    - job: "Crate Size Gate (Issue #2930)"
+      # PR-blocking crate-size gate (Goal #10: <10 MB published). Runs
+      # `cargo package --allow-dirty --no-verify` against the root crate
+      # and measures `target/package/fluxion-*.crate`; fails the build when
+      # the artifact exceeds `crate_size.max_mb: 10` (10 MiB =
+      # 10_485_760 bytes). Triggers on PR + push to develop + push to main
+      # for paths that could affect the packaged artifact (Cargo.toml,
+      # .cargoignore, the workflow itself, the gate-checker, and the
+      # release-gates config). Closes the long-standing gap where Goal #10
+      # was enforced only by declarative discipline (Cargo.toml `exclude`
+      # block + `.cargoignore`) with no CI-side measurement, so any
+      # regression slipped through silently.
+      workflow: ".github/workflows/crate-size.yml"
+      issue: 2930
       triggered_by: "PR + push to develop/main"
