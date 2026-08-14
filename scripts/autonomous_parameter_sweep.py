@@ -41,7 +41,7 @@ import subprocess
 import sys
 import time
 import uuid
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
 from enum import Enum
 from pathlib import Path
@@ -76,6 +76,32 @@ class ParameterSpec:
     max_val: float
     step: float
     unit: str = ""
+
+
+@dataclass
+class BriefSpec:
+    """Top-level parameter-sweep specification loaded from a YAML/JSON brief.
+
+    Schema (all fields optional — missing keys fall back to :data:`DEFAULT_BRIEF_SPEC`):
+
+    * ``axes``   — list of parameter names to sweep.
+    * ``ranges`` — per-parameter bounds: ``{name: {min, max, step?, default?}}``.
+    * ``objective`` — free-form label that downstream tooling can log
+      (e.g. ``"minimize_mae"``).
+    * ``seed``   — optional RNG seed for reproducible random sweeps.
+
+    Backed by Issue #2951.
+    """
+
+    axes: list[str] = field(default_factory=lambda: ["R_value", "wall_thickness"])
+    ranges: dict[str, dict[str, float]] = field(default_factory=dict)
+    objective: str = "minimize_mae"
+    seed: Optional[int] = None
+
+
+# Singleton default brief. Returned by ``load_brief_spec`` when the user
+# did not pass ``--brief`` or the file could not be parsed.
+DEFAULT_BRIEF_SPEC = BriefSpec()
 
 
 @dataclass
@@ -360,6 +386,238 @@ Best MAE achieved at iteration {best_result.iteration}.
 
 
 # ---------------------------------------------------------------------------
+# Brief loader — Issue #2951
+# ---------------------------------------------------------------------------
+
+
+def _emit_brief_warning(path: Optional[Path], message: str) -> None:
+    """Emit a GitHub-Actions-style ``::warning::`` annotation to stderr.
+
+    Used by :func:`load_brief_spec` so CI logs surface brief-parser
+    failures in the standard workflow-commands format.
+    """
+    location = f"file={path}" if path is not None else "file=<none>"
+    print(f"::warning::{location}::{message}", file=sys.stderr)
+
+
+def load_brief_spec(path: Optional[Path]) -> BriefSpec:
+    """Load a :class:`BriefSpec` from a YAML or JSON file.
+
+    Behavior:
+
+    * ``path is None`` → returns :data:`DEFAULT_BRIEF_SPEC` silently.
+    * File missing → ``::warning::`` to stderr, returns defaults.
+    * Parse error / IO error / schema error → ``::warning::`` to stderr,
+      returns defaults.
+
+    YAML is preferred when the file extension is ``.yaml``/``.yml``.
+    PyYAML is imported lazily; if it is not installed we transparently
+    fall back to :mod:`json`. JSON is used for every other extension.
+    """
+    if path is None:
+        return DEFAULT_BRIEF_SPEC
+
+    if not path.exists():
+        _emit_brief_warning(
+            path,
+            "Brief file not found. Using default sweep parameters.",
+        )
+        return DEFAULT_BRIEF_SPEC
+
+    try:
+        text = path.read_text(encoding="utf-8")
+    except OSError as exc:
+        _emit_brief_warning(
+            path,
+            f"Could not read brief ({exc}). Using default sweep parameters.",
+        )
+        return DEFAULT_BRIEF_SPEC
+
+    suffix = path.suffix.lower()
+    data: Any = None
+    yaml_error_types: tuple[type[BaseException], ...] = ()
+    try:
+        import yaml  # type: ignore
+
+        yaml_error_types = (yaml.YAMLError,)
+    except ImportError:
+        yaml_error_types = ()
+    try:
+        if suffix in (".yaml", ".yml"):
+            if yaml_error_types:
+                data = yaml.safe_load(text)
+            else:
+                # PyYAML unavailable — try JSON as a best-effort fallback so
+                # a user-written JSON file still works.
+                try:
+                    data = json.loads(text)
+                except json.JSONDecodeError as json_exc:
+                    raise ValueError(
+                        "PyYAML is not installed and the brief is not valid JSON"
+                    ) from json_exc
+        else:
+            data = json.loads(text)
+    except (ValueError, json.JSONDecodeError) + yaml_error_types as exc:
+        _emit_brief_warning(
+            path,
+            f"Failed to parse brief ({exc}). Using default sweep parameters.",
+        )
+        return DEFAULT_BRIEF_SPEC
+
+    if data is None:
+        # Empty file is treated as "use defaults" without a warning.
+        return DEFAULT_BRIEF_SPEC
+
+    if not isinstance(data, dict):
+        _emit_brief_warning(
+            path,
+            f"Brief must be a mapping at the top level (got {type(data).__name__}). "
+            f"Using default sweep parameters.",
+        )
+        return DEFAULT_BRIEF_SPEC
+
+    return _coerce_brief_spec(data, path)
+
+
+def _coerce_brief_spec(data: dict[str, Any], path: Path) -> BriefSpec:
+    """Coerce a raw parsed mapping into a :class:`BriefSpec`.
+
+    Per-field coercion failures are downgraded to ``::warning::`` lines so
+    a partially-malformed brief still produces a usable spec — only fully
+    broken top-level shapes fail outright (handled in
+    :func:`load_brief_spec`).
+    """
+    axes_raw = data.get("axes", DEFAULT_BRIEF_SPEC.axes)
+    if isinstance(axes_raw, list) and all(isinstance(a, str) for a in axes_raw):
+        axes = list(axes_raw)
+    else:
+        _emit_brief_warning(
+            path,
+            "'axes' must be a list of strings; falling back to defaults.",
+        )
+        axes = list(DEFAULT_BRIEF_SPEC.axes)
+
+    ranges_raw = data.get("ranges", {})
+    ranges: dict[str, dict[str, float]] = {}
+    if isinstance(ranges_raw, dict):
+        for name, bounds in ranges_raw.items():
+            if not isinstance(bounds, dict):
+                _emit_brief_warning(
+                    path,
+                    f"ranges[{name!r}] is not a mapping; ignoring.",
+                )
+                continue
+            try:
+                min_v = float(bounds["min"])
+                max_v = float(bounds["max"])
+            except (KeyError, TypeError, ValueError):
+                _emit_brief_warning(
+                    path,
+                    f"ranges[{name!r}] missing/invalid 'min' or 'max'; ignoring.",
+                )
+                continue
+            if min_v > max_v:
+                _emit_brief_warning(
+                    path,
+                    f"ranges[{name!r}] min > max; swapping bounds.",
+                )
+                min_v, max_v = max_v, min_v
+            step_raw = bounds.get("step")
+            if step_raw is None:
+                step_v = (max_v - min_v) / 4.0 or 0.1
+            else:
+                try:
+                    step_v = float(step_raw)
+                except (TypeError, ValueError):
+                    step_v = (max_v - min_v) / 4.0 or 0.1
+            entry: dict[str, float] = {"min": min_v, "max": max_v, "step": step_v}
+            if "default" in bounds:
+                try:
+                    entry["default"] = float(bounds["default"])
+                except (TypeError, ValueError):
+                    pass
+            ranges[name] = entry
+    else:
+        _emit_brief_warning(
+            path,
+            "'ranges' must be a mapping; treating as empty.",
+        )
+
+    objective_raw = data.get("objective", DEFAULT_BRIEF_SPEC.objective)
+    objective = (
+        str(objective_raw)
+        if objective_raw is not None
+        else DEFAULT_BRIEF_SPEC.objective
+    )
+
+    seed: Optional[int] = None
+    seed_raw = data.get("seed")
+    if seed_raw is not None:
+        try:
+            seed = int(seed_raw)  # type: ignore[arg-type]
+        except (TypeError, ValueError):
+            _emit_brief_warning(
+                path,
+                f"'seed' must be an integer (got {seed_raw!r}); ignoring.",
+            )
+
+    return BriefSpec(axes=axes, ranges=ranges, objective=objective, seed=seed)
+
+
+def brief_to_parameter_specs(
+    brief: BriefSpec,
+    default_params: dict[str, ParameterSpec],
+) -> list[ParameterSpec]:
+    """Translate a :class:`BriefSpec` into a list of :class:`ParameterSpec`.
+
+    For each axis:
+
+    * If ``brief.ranges`` provides bounds, those win (overriding the
+      legacy ``default_params`` table for the matching name).
+    * Otherwise we look up the axis in ``default_params`` (so users
+      that only override axes still get sensible defaults).
+    * Otherwise we synthesize a generic 0.1–10.0 spec.
+    """
+    specs: list[ParameterSpec] = []
+    for name in brief.axes:
+        bounds = brief.ranges.get(name)
+        if bounds is not None and name in default_params:
+            base = default_params[name]
+            specs.append(
+                ParameterSpec(
+                    name=name,
+                    default=float(bounds.get("default", base.default)),
+                    min_val=float(bounds["min"]),
+                    max_val=float(bounds["max"]),
+                    step=float(bounds["step"]),
+                    unit=base.unit,
+                )
+            )
+        elif bounds is not None:
+            min_v = float(bounds["min"])
+            max_v = float(bounds["max"])
+            default = float(bounds.get("default", (min_v + max_v) / 2.0))
+            specs.append(
+                ParameterSpec(
+                    name=name,
+                    default=default,
+                    min_val=min_v,
+                    max_val=max_v,
+                    step=float(bounds["step"]),
+                )
+            )
+        elif name in default_params:
+            specs.append(default_params[name])
+        else:
+            specs.append(
+                ParameterSpec(
+                    name=name, default=1.0, min_val=0.1, max_val=10.0, step=0.1
+                )
+            )
+    return specs
+
+
+# ---------------------------------------------------------------------------
 # Main Sweep Execution
 # ---------------------------------------------------------------------------
 
@@ -553,6 +811,16 @@ def build_parser() -> argparse.ArgumentParser:
         help="Path to filled diagnostic mission brief (alternative to --params)",
     )
     parser.add_argument(
+        "--brief",
+        type=Path,
+        default=None,
+        help=(
+            "Path to a YAML or JSON parameter-sweep brief describing axes, "
+            "ranges, objective, and seed. If missing or malformed, the script "
+            "falls back to the default sweep and logs a ::warning:: to stderr."
+        ),
+    )
+    parser.add_argument(
         "--resume",
         type=str,
         help="Resume from existing trace directory",
@@ -597,12 +865,14 @@ def main() -> int:
         # TODO: Parse parameters from brief
         return 2
 
-    # Build config from CLI args
-    param_names = (
-        parsed_args.params.split(",")
-        if parsed_args.params
-        else ["R_value", "wall_thickness"]
-    )
+    # Build config from CLI args (and optional --brief YAML/JSON).
+    #
+    # Resolution order:
+    #   1. ``--brief`` (loaded earlier) supplies axes + ranges. A missing or
+    #      malformed brief emits a ``::warning::`` and falls through to the
+    #      legacy default sweep — the warning is *not* fatal.
+    #   2. ``--params`` (legacy CSV) overrides axes if both are present.
+    #   3. Otherwise defaults.
     default_params = {
         "R_value": ParameterSpec(
             "R_value", default=2.0, min_val=1.0, max_val=5.0, step=0.5, unit="m²K/W"
@@ -623,14 +893,45 @@ def main() -> int:
         ),
     }
 
-    specs = []
-    for name in param_names:
-        if name in default_params:
-            specs.append(default_params[name])
-        else:
-            specs.append(
-                ParameterSpec(name, default=1.0, min_val=0.1, max_val=10.0, step=0.1)
+    brief = load_brief_spec(parsed_args.brief)
+
+    if parsed_args.params:
+        # CLI wins over brief axes; the brief's ranges still apply per-axis
+        # where the CLI parameter names overlap.
+        param_names = parsed_args.params.split(",")
+        specs = brief_to_parameter_specs(brief, default_params)
+        # Restrict to the CLI-supplied axes, preserving brief-supplied bounds
+        # for the names that overlap.
+        by_name = {s.name: s for s in specs}
+        specs = [
+            by_name.get(
+                name,
+                ParameterSpec(name, default=1.0, min_val=0.1, max_val=10.0, step=0.1),
             )
+            for name in param_names
+        ]
+    elif parsed_args.brief is not None:
+        # Brief was provided (possibly invalid → defaults have been substituted
+        # already; either way, use it as the source of truth for axes/ranges).
+        specs = brief_to_parameter_specs(brief, default_params)
+    else:
+        # Backward-compatible default path.
+        param_names = ["R_value", "wall_thickness"]
+        specs = []
+        for name in param_names:
+            if name in default_params:
+                specs.append(default_params[name])
+            else:
+                specs.append(
+                    ParameterSpec(
+                        name, default=1.0, min_val=0.1, max_val=10.0, step=0.1
+                    )
+                )
+
+    # Optional RNG seed from brief — applied to Python's global ``random``
+    # module so ``generate_random_points`` becomes reproducible.
+    if brief.seed is not None:
+        random.seed(brief.seed)
 
     config = SweepConfig(
         case_id=parsed_args.case,

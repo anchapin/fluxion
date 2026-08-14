@@ -11,3 +11,9 @@ pytest-cov>=4.1.0
 # that we can mock, instead of the `None` fallback.
 boto3>=1.34.0
 botocore>=1.34.0
+
+# YAML parsing — required by `scripts/release_gate_checker.py` (top-level
+# `import yaml`) and by `scripts/autonomous_parameter_sweep.py::load_brief_spec`
+# when a `--brief path/to/brief.yaml` is supplied (Issue #2951). Keep aligned
+# with the `pyyaml>=6.0` pin in `requirements-dev.txt`.
+pyyaml>=6.0

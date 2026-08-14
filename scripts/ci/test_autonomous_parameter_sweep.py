@@ -477,3 +477,169 @@ def _raise_on_call(exc: BaseException):
         raise exc
 
     return _runner
+
+
+# ---------------------------------------------------------------------------
+# --brief YAML/JSON loader — Issue #2951.
+# ---------------------------------------------------------------------------
+
+YAML_BRIEF = """\
+axes:
+  - R_value
+  - wall_thickness
+ranges:
+  R_value:
+    min: 1.0
+    max: 4.0
+    step: 0.5
+    default: 2.0
+  wall_thickness:
+    min: 0.05
+    max: 0.25
+    step: 0.05
+objective: minimize_mae
+seed: 42
+"""
+
+JSON_BRIEF = {
+    "axes": ["thermal_mass", "h_tr_is"],
+    "ranges": {
+        "thermal_mass": {"min": 0.5, "max": 1.5, "step": 0.1, "default": 1.0},
+        "h_tr_is": {"min": 5.0, "max": 12.0, "step": 1.0},
+    },
+    "objective": "minimize_peak_cooling",
+    "seed": 7,
+}
+
+
+def test_brief_yaml_parsed(tmp_path: Path, capsys: pytest.CaptureFixture[str]):
+    """A well-formed YAML brief is parsed into a BriefSpec with all fields set."""
+    path = tmp_path / "brief.yaml"
+    path.write_text(YAML_BRIEF, encoding="utf-8")
+
+    spec = aps.load_brief_spec(path)
+
+    assert isinstance(spec, aps.BriefSpec)
+    assert spec.axes == ["R_value", "wall_thickness"]
+    assert spec.ranges["R_value"]["min"] == pytest.approx(1.0)
+    assert spec.ranges["R_value"]["max"] == pytest.approx(4.0)
+    assert spec.ranges["R_value"]["step"] == pytest.approx(0.5)
+    assert spec.ranges["R_value"]["default"] == pytest.approx(2.0)
+    assert spec.ranges["wall_thickness"]["min"] == pytest.approx(0.05)
+    assert spec.ranges["wall_thickness"]["max"] == pytest.approx(0.25)
+    assert spec.ranges["wall_thickness"]["step"] == pytest.approx(0.05)
+    assert spec.objective == "minimize_mae"
+    assert spec.seed == 42
+
+    # Missing/malformed path does NOT emit a warning on success.
+    captured = capsys.readouterr()
+    assert "::warning::" not in captured.err
+
+
+def test_brief_json_parsed(tmp_path: Path, capsys: pytest.CaptureFixture[str]):
+    """JSON briefs are accepted on any non-YAML extension."""
+    path = tmp_path / "brief.json"
+    path.write_text(json.dumps(JSON_BRIEF), encoding="utf-8")
+
+    spec = aps.load_brief_spec(path)
+
+    assert spec.axes == ["thermal_mass", "h_tr_is"]
+    assert spec.ranges["thermal_mass"]["min"] == pytest.approx(0.5)
+    assert spec.ranges["thermal_mass"]["max"] == pytest.approx(1.5)
+    assert spec.ranges["thermal_mass"]["step"] == pytest.approx(0.1)
+    assert spec.ranges["thermal_mass"]["default"] == pytest.approx(1.0)
+    # "default" key omitted in JSON for h_tr_is → not present in spec.
+    assert "default" not in spec.ranges["h_tr_is"]
+    assert spec.ranges["h_tr_is"]["step"] == pytest.approx(1.0)
+    assert spec.objective == "minimize_peak_cooling"
+    assert spec.seed == 7
+
+    captured = capsys.readouterr()
+    assert "::warning::" not in captured.err
+
+
+def test_brief_missing_falls_back_to_default(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+):
+    """A nonexistent brief path returns DEFAULT_BRIEF_SPEC and emits a warning."""
+    missing = tmp_path / "does_not_exist.yaml"
+    assert not missing.exists()
+
+    spec = aps.load_brief_spec(missing)
+
+    # Spec is the documented default — Issue #2951 acceptance: "missing → default".
+    assert spec.axes == aps.DEFAULT_BRIEF_SPEC.axes
+    assert spec.ranges == aps.DEFAULT_BRIEF_SPEC.ranges
+    assert spec.objective == aps.DEFAULT_BRIEF_SPEC.objective
+    assert spec.seed is None
+
+    captured = capsys.readouterr()
+    assert "::warning::" in captured.err
+    assert "not found" in captured.err.lower()
+
+
+def test_brief_malformed_falls_back_to_default(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+):
+    """A malformed YAML/JSON brief returns defaults and emits a warning."""
+    path = tmp_path / "broken.yaml"
+    path.write_text("{ this is: not valid yaml: [}", encoding="utf-8")
+
+    spec = aps.load_brief_spec(path)
+
+    assert spec.axes == aps.DEFAULT_BRIEF_SPEC.axes
+    assert spec.ranges == aps.DEFAULT_BRIEF_SPEC.ranges
+    assert spec.objective == aps.DEFAULT_BRIEF_SPEC.objective
+    assert spec.seed is None
+
+    captured = capsys.readouterr()
+    assert "::warning::" in captured.err
+
+
+def test_brief_none_returns_default_silently(capsys: pytest.CaptureFixture[str]):
+    """``load_brief_spec(None)`` returns the default brief without warning.
+
+    This guards the ``--brief`` not-provided path so a missing CLI flag is
+    indistinguishable from a deliberately-empty brief.
+    """
+    spec = aps.load_brief_spec(None)
+    assert spec == aps.DEFAULT_BRIEF_SPEC
+    captured = capsys.readouterr()
+    assert captured.err == ""
+
+
+def test_brief_to_parameter_specs_uses_brief_ranges():
+    """``brief_to_parameter_specs`` honors brief-supplied bounds over defaults."""
+    brief = aps.BriefSpec(
+        axes=["R_value"],
+        ranges={"R_value": {"min": 1.5, "max": 3.5, "step": 0.25, "default": 2.0}},
+    )
+    default_params = {
+        "R_value": aps.ParameterSpec(
+            "R_value", default=2.0, min_val=1.0, max_val=5.0, step=0.5, unit="m²K/W"
+        )
+    }
+
+    specs = aps.brief_to_parameter_specs(brief, default_params)
+
+    assert len(specs) == 1
+    assert specs[0].name == "R_value"
+    assert specs[0].min_val == pytest.approx(1.5)
+    assert specs[0].max_val == pytest.approx(3.5)
+    assert specs[0].step == pytest.approx(0.25)
+    assert specs[0].default == pytest.approx(2.0)
+    # Unit is inherited from the legacy default_params table.
+    assert specs[0].unit == "m²K/W"
+
+
+def test_build_parser_exposes_brief_flag():
+    """``--brief`` is registered and parses a Path."""
+    parser = aps.build_parser()
+    args = parser.parse_args(
+        ["--case", "600", "--brief", "/tmp/opencode/some_brief.yaml"]
+    )
+    assert args.brief == Path("/tmp/opencode/some_brief.yaml")
+
+    # Default when not provided is None.
+    args_default = parser.parse_args(["--case", "600"])
+    assert args_default.brief is None
