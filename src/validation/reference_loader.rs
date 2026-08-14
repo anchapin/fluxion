@@ -18,8 +18,23 @@
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::collections::HashMap;
+use std::fmt::Write as _;
 use std::fs;
 use std::path::Path;
+
+/// Format a SHA-256 digest (or any `AsRef<[u8]>`) as a lowercase hex string.
+///
+/// `sha2` 0.11 returns a `GenericArray<u8, U32>` whose `LowerHex` impl is no
+/// longer available in newer `generic-array` releases, so we format the bytes
+/// manually.
+fn sha256_hex(digest: impl AsRef<[u8]>) -> String {
+    let bytes = digest.as_ref();
+    let mut s = String::with_capacity(bytes.len() * 2);
+    for b in bytes {
+        let _ = write!(s, "{:02x}", b);
+    }
+    s
+}
 
 /// Metadata about the reference data source
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -104,7 +119,7 @@ pub fn calculate_file_hash(path: &Path) -> Result<String, ReferenceLoaderError> 
     let content = fs::read(path).map_err(|e| {
         ReferenceLoaderError::FileNotFound(format!("Failed to read {}: {}", path.display(), e))
     })?;
-    let hash = format!("{:x}", Sha256::digest(&content));
+    let hash = sha256_hex(Sha256::digest(&content));
     Ok(hash)
 }
 

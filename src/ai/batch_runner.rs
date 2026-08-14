@@ -22,8 +22,23 @@
 use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
+use std::fmt::Write as _;
 use std::fs;
 use std::path::{Path, PathBuf};
+
+/// Format a SHA-256 digest as a lowercase hex string.
+///
+/// `sha2` 0.11 returns a `GenericArray<u8, U32>` whose `LowerHex` impl is no
+/// longer available in newer `generic-array` releases, so we format the bytes
+/// manually.
+fn sha256_hex(digest: impl AsRef<[u8]>) -> String {
+    let bytes = digest.as_ref();
+    let mut s = String::with_capacity(bytes.len() * 2);
+    for b in bytes {
+        let _ = write!(s, "{:02x}", b);
+    }
+    s
+}
 
 use crate::ai::surrogate::{InferenceBackend, SurrogateManager};
 use crate::physics::cta::{ContinuousTensor, VectorField};
@@ -287,7 +302,7 @@ impl Checkpoint {
         let json = serde_json::to_string(manifest).unwrap_or_default();
         let mut hasher = Sha256::new();
         hasher.update(json.as_bytes());
-        format!("{:x}", hasher.finalize())
+        sha256_hex(hasher.finalize())
     }
 
     fn load(path: &Path, expected_hash: &str) -> Option<Self> {
