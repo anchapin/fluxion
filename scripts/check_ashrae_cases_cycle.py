@@ -94,8 +94,19 @@ MOVED_LEAF_TYPES = {
 # ---------------------------------------------------------------------------
 BASELINE_SIM_TO_VALIDATION = 72  # src/sim/**    -> crate::validation::*
 BASELINE_VALIDATION_TO_SIM = 58  # src/validation/** -> crate::sim::*
-BASELINE_VALIDATION_TO_PHYSICS = 62  # src/validation/** -> crate::physics::*
-BASELINE_VALIDATION_TO_WEATHER = 23  # src/validation/** -> crate::weather::*
+# Issue #2980: +3 physics / +2 weather to run the real 8760-step Case 970
+# physics simulation in `src/validation/ashrae_140_multi_zone.rs`
+# (`run_real_case_970_energy`). The new edges are intentional: the function
+# instantiates `ThermalModel<VectorField>` and loads EPW weather so the
+# validator consumes engine output rather than the pre-#2980 hardcoded MWh
+# placeholders. The cycle-removal work (issue #1441) already hoisted the
+# ASHRAE-140 leaf types to fluxion-core; further baseline reduction requires
+# moving composite validation types (CaseSpec, etc.), which is out of scope
+# for the placeholder-completion work tracked by #2980. Lowering this
+# baseline is still reserved for the companion cycle-removal work; raising
+# (as here) accommodates a one-shot feature-driven growth with rationale.
+BASELINE_VALIDATION_TO_PHYSICS = 65  # src/validation/** -> crate::physics::* (was 62; +3 for #2980)
+BASELINE_VALIDATION_TO_WEATHER = 25  # src/validation/** -> crate::weather::* (was 23; +2 for #2980)
 
 
 def _scan_dir_for_prefixes(directory: Path, prefixes: tuple[str, ...]) -> list[str]:
