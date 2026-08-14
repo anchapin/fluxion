@@ -2,6 +2,7 @@
 name = "fluxion-core"
 version = "1.0.0"
 edition = "2021"
+rust-version = "1.81"
 authors = ["Dr. Aris Thorne <aris.thorne@fluxion.org>"]
 description = "Foundational, dependency-light modules for Fluxion (weather parsing) split out to enable cargo-mutants in CI (issue #1255)."
 repository = "https://github.com/anchapin/fluxion"

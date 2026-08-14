@@ -1,0 +1,61 @@
+name: MSRV Check
+
+on:
+  push:
+    branches: [develop, main]
+  pull_request:
+    paths:
+      - '**/Cargo.toml'
+      - '**/Cargo.lock'
+      - '.github/workflows/msrv.yml'
+  workflow_dispatch:
+
+# Least-privilege GITHUB_TOKEN grants (Issue #2526). The msrv-build job only
+# checks out code and runs `cargo +1.81 build --workspace`; no repo write-back.
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: 1
+
+jobs:
+  msrv-build:
+    runs-on: ubuntu-latest
+    name: MSRV Build (Rust 1.81, workspace)
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4
+
+      # Install the MSRV-pinned stable toolchain (issue #2934). The crate's
+      # `rust-version = "1.81"` field — set on the root Cargo.toml, the
+      # [workspace.package] block, and all 10 workspace-member Cargo.toml
+      # files — is what `cargo install` / crates.io / `cargo update --precise`
+      # users see; this job is the enforcement side, failing the build when
+      # a change drifts past 1.81.
+      - name: Install Rust 1.81 (MSRV)
+        uses: dtolnay/rust-toolchain@1ebd4c1426f7f2018e10cb9327da0b6e394b3281  # stable 1.81
+        with:
+          toolchain: 1.81
+
+      - name: Cache cargo registry & target
+        uses: Swatinem/rust-cache@8e97b9f5ee11f6aff0ad4ad4f1f8faef9d7583b5  # v2
+        with:
+          workspaces: |
+            .
+            fluxion-core -> target
+            fluxion-city -> target
+            fluxion-fluid -> target
+            fluxion-grid -> target
+            fluxion-behavior -> target
+            fluxion-mcp -> target
+            fluxion-wasm -> target
+            crates/fluxion-toon -> target
+            crates/fluxion-twin -> target
+            fluxion-cfd -> target
+
+      - name: cargo +1.81 build --workspace
+        run: cargo +1.81 build --workspace --locked

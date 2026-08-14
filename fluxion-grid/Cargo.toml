@@ -2,6 +2,7 @@
 name = "fluxion-grid"
 version = "0.1.0"
 edition = "2021"
+rust-version = "1.81"
 authors = ["Dr. Aris Thorne <aris.thorne@fluxion.org>"]
 description = "Grid-edge electrical network components for Fluxion: battery storage, bus nodes, power flow, and joint thermal-electrical convergence."
 repository = "https://github.com/anchapin/fluxion"

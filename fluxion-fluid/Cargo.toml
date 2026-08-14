@@ -2,6 +2,7 @@
 name = "fluxion-fluid"
 version = "1.0.0"
 edition = "2021"
+rust-version = "1.81"
 authors = ["Dr. Aris Thorne <aris.thorne@fluxion.org>"]
 description = "Compile-time strongly typed fluid port traits for fluxion DAE systems"
 repository = "https://github.com/anchapin/fluxion"

@@ -2,6 +2,7 @@
 name = "fluxion-twin"
 version = "0.1.0"
 edition = "2021"
+rust-version = "1.81"
 description = "Digital twin core — Unscented Kalman Filter for non-linear state estimation in thermal systems"
 license = "Apache-2.0"
 repository = "https://github.com/anchapin/fluxion"
