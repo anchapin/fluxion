@@ -251,6 +251,30 @@ benches/orchestration_decisions/baselines/current_tdqs.json
 # prevents it from ever being staged.  See issue #2466.
 CLAUDE.md
 
+# Local agent / orchestrator runtime dirs (see AGENTS.md §Repository Hygiene).
+# Issue #2954 added a CI gate (`scripts/check_root_hygiene.py`) that flags
+# any dotfile/dotdir at repo root that is neither in
+# `ROOT_DOTFILE_ALLOWLIST` nor matched by `.gitignore` nor already tracked
+# in git. These entries are the matching `.gitignore` lines for each
+# runtime dir the gate is supposed to accept on every fresh checkout.
+# A handful of these dirs (`.automaker/`, `.jules/`, `.serena/`,
+# `.sisyphus/`, `.superset/`, `.gitnexus/`, `.issues/`) were committed
+# historically and are still tracked; the gitignore line below is the real
+# defense — it prevents NEW files from being staged on subsequent commits.
+.automaker/
+.jules/
+.serena/
+.sisyphus/
+.superset/
+.gitnexus/
+.issues/
+.opencode/
+.claude/
+
+# Python testing framework caches (root-level `.hypothesis/` appeared in
+# fresh checkouts and was flagged by the #2954 gate).
+.hypothesis/
+
 # ONNX model artifacts (issue #1335) — pinned via tests/surrogate_models/registry.json, never committed
 *.onnx
 models/

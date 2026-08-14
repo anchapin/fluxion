@@ -1,6 +1,8 @@
 """
 Tests for ``scripts/check_root_hygiene.py`` -- Issue #2466 (root ``.md`` policy,
-widened to scratch extensions / no-ext blobs / scratch directories).
+widened to scratch extensions / no-ext blobs / scratch directories) and
+issue #2954 (root dotfile/dotdir cross-check against ``.gitignore`` /
+git tracking).
 
 PR #2814 exposed ``scan_root(repo_root) -> RootScan`` precisely so a pytest
 harness could drive it; this file replaces the ad-hoc ``--self-test`` with
@@ -115,6 +117,112 @@ def test_scan_flags_blocked_directory(checker, tmp_path, name):
 def test_scan_allows_legit_directory(checker, tmp_path, name):
     _touch(tmp_path, name, is_dir=True)
     assert checker.scan_root(tmp_path).violations == []
+
+
+# ---------------------------------------------------------------------------
+# Dotfile / dotdir cross-check (issue #2954)
+# ---------------------------------------------------------------------------
+
+
+# Legit root dotfile config — allow-listed, no gitignore needed.
+ROOT_DOTCONFIG_ALLOWLIST = [
+    ".agents",
+    ".cargo",
+    ".cargoignore",
+    ".dockerignore",
+    ".editorconfig",
+    ".env.example",
+    ".git",
+    ".github",
+    ".gitattributes",
+    ".githooks",
+    ".gitignore",
+    ".npmignore",
+    ".planning",
+    ".pre-commit-config.yaml",
+    ".rustfmt.toml",
+]
+
+
+@pytest.mark.parametrize("name", ROOT_DOTCONFIG_ALLOWLIST)
+def test_scan_allows_root_dotconfig(checker, tmp_path, name):
+    """Issue #2954: a dotfile/dotdir in ROOT_DOTFILE_ALLOWLIST is permitted
+    without any gitignore/tracked cross-check (legit root config)."""
+    p = tmp_path / name
+    if name in {".agents", ".cargo", ".githooks", ".github", ".git", ".planning"}:
+        p.mkdir()
+    else:
+        p.write_text("x", encoding="utf-8")
+    assert checker.scan_root(tmp_path).violations == []
+    assert checker.scan_root(tmp_path).dotfile_unmanaged == []
+
+
+def test_scan_flags_unmanaged_dotdir(checker, tmp_path, monkeypatch):
+    """A dotdir at root that is neither allow-listed, nor gitignored, nor
+    tracked must be reported as ``dotfile_unmanaged`` (issue #2954)."""
+    _touch(tmp_path, ".mytool", is_dir=True)
+    # tmp_path has no git, so neutralize every signal.
+    monkeypatch.setattr(checker, "is_gitignored", lambda p: False)
+    monkeypatch.setattr(checker, "is_tracked", lambda p: False)
+    scan = checker.scan_root(tmp_path)
+    assert [p.name for p in scan.dotfile_unmanaged] == [".mytool"]
+    assert scan.violations == [tmp_path / ".mytool"]
+
+
+def test_scan_passes_dotdir_when_gitignored(checker, tmp_path, monkeypatch):
+    """A dotdir matched by `.gitignore` is compliant."""
+    _touch(tmp_path, ".mytool", is_dir=True)
+    monkeypatch.setattr(checker, "is_gitignored", lambda p: p.name == ".mytool")
+    monkeypatch.setattr(checker, "is_tracked", lambda p: False)
+    scan = checker.scan_root(tmp_path)
+    assert scan.dotfile_unmanaged == []
+    assert scan.violations == []
+
+
+def test_scan_passes_dotdir_when_tracked(checker, tmp_path, monkeypatch):
+    """A dotdir already tracked in git (legacy) is compliant even when it
+    has no `.gitignore` line of its own — the tracked fallback accepts it."""
+    _touch(tmp_path, ".mytool", is_dir=True)
+    monkeypatch.setattr(checker, "is_gitignored", lambda p: False)
+    monkeypatch.setattr(checker, "is_tracked", lambda p: p.name == ".mytool")
+    scan = checker.scan_root(tmp_path)
+    assert scan.dotfile_unmanaged == []
+    assert scan.violations == []
+
+
+def test_main_fails_on_unmanaged_dotdir_then_passes_after_gitignore(
+    checker, tmp_path, monkeypatch, capsys
+):
+    """Issue #2954 end-to-end: a fresh-clone dotdir at root fails the gate;
+    adding it to ``.gitignore`` flips it back to PASS. Uses a real ``git
+    init`` so the existing ``is_gitignored()`` (which shells out to
+    ``git check-ignore``) sees the gitignore line."""
+    import subprocess
+
+    subprocess.run(["git", "init", "-q"], cwd=tmp_path, check=True)
+    subprocess.run(
+        ["git", "config", "user.email", "test@test"], cwd=tmp_path, check=True
+    )
+    subprocess.run(["git", "config", "user.name", "test"], cwd=tmp_path, check=True)
+
+    # `.gitignore` does NOT mention `.mytool`, and `.mytool/` exists.
+    (tmp_path / ".gitignore").write_text("*.tmp\n", encoding="utf-8")
+    _touch(tmp_path, ".mytool", is_dir=True)
+    (tmp_path / ".mytool" / "x.txt").write_text("x", encoding="utf-8")
+    subprocess.run(["git", "add", ".gitignore"], cwd=tmp_path, check=True)
+    subprocess.run(["git", "commit", "-q", "-m", "init"], cwd=tmp_path, check=True)
+
+    monkeypatch.setattr(checker, "REPO_ROOT", tmp_path)
+
+    # Phase 1: gate FAILS — `.mytool` is not allow-listed / gitignored / tracked.
+    rc = checker.main()
+    out = capsys.readouterr().out
+    assert rc == 1, f"expected FAIL (rc=1), got rc={rc}\noutput:\n{out}"
+    assert ".mytool" in out, f"expected '.mytool' in output, got:\n{out}"
+
+    # Phase 2: add `.mytool/` to `.gitignore` → gate PASSES.
+    (tmp_path / ".gitignore").write_text("*.tmp\n.mytool/\n", encoding="utf-8")
+    assert checker.main() == 0
 
 
 def test_scan_classifies_multiple_findings_into_separate_buckets(checker, tmp_path):
