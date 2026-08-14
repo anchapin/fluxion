@@ -23,33 +23,18 @@
 //! high-mass [`CaseSpec`] and refuses to run if the solver is not engaged,
 //! guaranteeing that every training target originates from the 9R4C solver.
 
-use std::fmt::Write as _;
 use std::fs;
 use std::path::{Path, PathBuf};
-
-use rayon::prelude::*;
-use serde::{Deserialize, Serialize};
-use sha2::{Digest, Sha256};
-
-/// Format a SHA-256 digest as a lowercase hex string.
-///
-/// `sha2` 0.11 returns a `GenericArray<u8, U32>` whose `LowerHex` impl is no
-/// longer available in newer `generic-array` releases, so we format the bytes
-/// manually.
-fn sha256_hex(digest: impl AsRef<[u8]>) -> String {
-    let bytes = digest.as_ref();
-    let mut s = String::with_capacity(bytes.len() * 2);
-    for b in bytes {
-        let _ = write!(s, "{:02x}", b);
-    }
-    s
-}
 
 use crate::ai::batch_runner::{BatchResults, ParameterManifest, ParameterSample, SimulationOutput};
 use crate::ai::surrogate::SurrogateManager;
 use crate::physics::cta::{ContinuousTensor, VectorField};
 use crate::sim::engine::ThermalModel;
+use crate::util::sha256_hex::sha256_hex;
 use crate::validation::ashrae_140_cases::{ASHRAE140Case, CaseSpec, ConstructionType};
+use rayon::prelude::*;
+use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
 
 /// Default number of timesteps for a full annual run (8 760 hours).
 pub const DEFAULT_TIMESTEPS: usize = 8_760;
