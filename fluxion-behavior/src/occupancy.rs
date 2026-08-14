@@ -517,7 +517,7 @@ pub struct MarkovOccupancyProvider {
 impl MarkovOccupancyProvider {
     pub fn new(generator: MarkovOccupancyGenerator) -> Self {
         Self {
-            simulation_rng: SmallRng::from_entropy(),
+            simulation_rng: SmallRng::from_os_rng(),
             generator,
             current_state: OccupancyState::Vacant,
         }
@@ -576,7 +576,7 @@ pub fn compute_expected_fraction(
 ) -> f64 {
     let mut occupied_count = 0usize;
     let mut total_count = 0usize;
-    let mut rng = SmallRng::from_entropy();
+    let mut rng = SmallRng::from_os_rng();
     let mut current_state = OccupancyState::Vacant;
 
     const WARMUP_DAYS: usize = 500;
@@ -630,7 +630,7 @@ pub fn validate_occupancy(
     let mut vacant_count = 0usize;
     let mut total_count = 0usize;
 
-    let mut rng = SmallRng::from_entropy();
+    let mut rng = SmallRng::from_os_rng();
     let mut current_state = OccupancyState::Vacant;
 
     const WARMUP_DAYS: usize = 500;
@@ -728,7 +728,7 @@ mod tests {
     #[test]
     fn test_markov_state_transition() {
         let g = MarkovOccupancyGenerator::new(BuildingType::Office, 10, 100.0);
-        let mut rng = SmallRng::from_entropy();
+        let mut rng = SmallRng::from_os_rng();
         let state = g.generate_state(&mut rng, OccupancyState::Vacant, 9, DayOfWeek::Tuesday);
         assert!(matches!(
             state,

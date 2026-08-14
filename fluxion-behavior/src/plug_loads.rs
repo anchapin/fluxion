@@ -49,7 +49,7 @@ impl MockPlugLoadGenerator {
             base_watts: 200.0,
             diurnal_amplitude: 150.0,
             noise_std: 30.0,
-            rng: SmallRng::from_entropy(),
+            rng: SmallRng::from_os_rng(),
         }
     }
 
@@ -58,7 +58,7 @@ impl MockPlugLoadGenerator {
             base_watts,
             diurnal_amplitude,
             noise_std,
-            rng: SmallRng::from_entropy(),
+            rng: SmallRng::from_os_rng(),
         }
     }
 
