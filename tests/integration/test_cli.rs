@@ -126,3 +126,256 @@ fn test_cli_binary_exists() {
         "CLI --help should show usage information"
     );
 }
+
+// =====================================================================
+// Issue #2947 (originally #2711): stubbed workflow commands must fail
+// loudly with a non-zero exit code and a "not yet implemented" message
+// referencing #2947 — never silently succeed (the pre-#2711 behaviour).
+// =====================================================================
+
+/// Run `cargo run --bin fluxion -- <args>` and return (status, stdout, stderr).
+///
+/// This helper invokes the binary through cargo so it works in unbuilt
+/// worktrees (the CI runner does the same). Tests that just need to confirm
+/// the binary's exit semantics do not need to assert anything about stdout.
+fn run_fluxion(args: &[&str]) -> (std::process::ExitStatus, String, String) {
+    let mut full: Vec<String> = vec!["run".into(), "--bin".into(), "fluxion".into(), "--".into()];
+    full.extend(args.iter().map(|a| a.to_string()));
+    let output = Command::new("cargo")
+        .args(&full)
+        .output()
+        .expect("Failed to execute fluxion via cargo run");
+    let stdout = String::from_utf8_lossy(&output.stdout).to_string();
+    let stderr = String::from_utf8_lossy(&output.stderr).to_string();
+    (output.status, stdout, stderr)
+}
+
+/// Assert that a (status, stdout, stderr) triple represents a loud (non-zero)
+/// failure with a "not yet implemented" error referencing #2947.
+fn assert_unimplemented_failure(
+    label: &str,
+    result: &(std::process::ExitStatus, String, String),
+    expected_substring: &str,
+) {
+    let (status, stdout, stderr) = result;
+    assert!(
+        !status.success(),
+        "[{label}] expected non-zero exit, got success. stdout:\n{}\nstderr:\n{}",
+        stdout,
+        stderr
+    );
+    let combined = format!("{stdout}\n{stderr}");
+    assert!(
+        combined.contains("not yet implemented"),
+        "[{label}] expected 'not yet implemented' message in output, got:\n{combined}"
+    );
+    assert!(
+        combined.contains("#2947"),
+        "[{label}] expected output to reference tracking issue #2947, got:\n{combined}"
+    );
+    assert!(
+        combined.contains(expected_substring),
+        "[{label}] expected output to name '{expected_substring}', got:\n{combined}"
+    );
+}
+
+/// `fluxion run -w <empty workflow>` must fail loudly with #2947.
+#[test]
+fn test_cli_workflow_run_returns_not_implemented() {
+    let temp_dir = tempdir().expect("Failed to create temp dir");
+    let workflow_path = temp_dir.path().join("empty.fwf");
+    std::fs::write(&workflow_path, "{\"name\": \"stub\", \"steps\": []}")
+        .expect("Failed to write workflow file");
+
+    let args: Vec<String> = vec![
+        "run".into(),
+        "-w".into(),
+        workflow_path.to_string_lossy().into_owned(),
+    ];
+    let args_ref: Vec<&str> = args.iter().map(String::as_str).collect();
+    let result = run_fluxion(&args_ref);
+    assert_unimplemented_failure("fluxion run -w <file>", &result, "workflow execution");
+}
+
+/// `fluxion run -w <file> --measures-only` must fail loudly with #2947.
+#[test]
+fn test_cli_workflow_run_measures_only_returns_not_implemented() {
+    let temp_dir = tempdir().expect("Failed to create temp dir");
+    let workflow_path = temp_dir.path().join("m.fwf");
+    std::fs::write(&workflow_path, "{}").expect("Failed to write workflow file");
+
+    let args: Vec<String> = vec![
+        "run".into(),
+        "-w".into(),
+        workflow_path.to_string_lossy().into_owned(),
+        "--measures-only".into(),
+    ];
+    let args_ref: Vec<&str> = args.iter().map(String::as_str).collect();
+    let result = run_fluxion(&args_ref);
+    assert_unimplemented_failure(
+        "fluxion run --measures-only",
+        &result,
+        "measures-only workflow",
+    );
+}
+
+/// `fluxion run -w <file> --postprocess-only` must fail loudly with #2947.
+#[test]
+fn test_cli_workflow_run_postprocess_only_returns_not_implemented() {
+    let temp_dir = tempdir().expect("Failed to create temp dir");
+    let workflow_path = temp_dir.path().join("p.fwf");
+    std::fs::write(&workflow_path, "{}").expect("Failed to write workflow file");
+
+    let args: Vec<String> = vec![
+        "run".into(),
+        "-w".into(),
+        workflow_path.to_string_lossy().into_owned(),
+        "--postprocess-only".into(),
+    ];
+    let args_ref: Vec<&str> = args.iter().map(String::as_str).collect();
+    let result = run_fluxion(&args_ref);
+    assert_unimplemented_failure(
+        "fluxion run --postprocess-only",
+        &result,
+        "postprocess-only workflow",
+    );
+}
+
+/// `fluxion measure update <dir>` must fail loudly with #2947.
+#[test]
+fn test_cli_measure_update_returns_not_implemented() {
+    let temp_dir = tempdir().expect("Failed to create temp dir");
+    let measure_dir = temp_dir.path().join("measure");
+    std::fs::create_dir_all(&measure_dir).expect("Failed to create dir");
+
+    let args: Vec<String> = vec![
+        "measure".into(),
+        "update".into(),
+        measure_dir.to_string_lossy().into_owned(),
+    ];
+    let args_ref: Vec<&str> = args.iter().map(String::as_str).collect();
+    let result = run_fluxion(&args_ref);
+    assert_unimplemented_failure("fluxion measure update", &result, "measure update");
+}
+
+/// `fluxion measure update-all <dir>` must fail loudly with #2947.
+#[test]
+fn test_cli_measure_update_all_returns_not_implemented() {
+    let temp_dir = tempdir().expect("Failed to create temp dir");
+    let measures_dir = temp_dir.path().join("measures");
+    std::fs::create_dir_all(&measures_dir).expect("Failed to create dir");
+
+    let args: Vec<String> = vec![
+        "measure".into(),
+        "update-all".into(),
+        measures_dir.to_string_lossy().into_owned(),
+    ];
+    let args_ref: Vec<&str> = args.iter().map(String::as_str).collect();
+    let result = run_fluxion(&args_ref);
+    assert_unimplemented_failure(
+        "fluxion measure update-all",
+        &result,
+        "measure update --all",
+    );
+}
+
+/// `fluxion measure compute-arguments <model> <measure>` must fail loudly with #2947.
+#[test]
+fn test_cli_measure_compute_args_returns_not_implemented() {
+    let temp_dir = tempdir().expect("Failed to create temp dir");
+    let model_path = temp_dir.path().join("model.flux");
+    let measure_dir = temp_dir.path().join("measure");
+    std::fs::write(&model_path, "{}").expect("Failed to write model file");
+    std::fs::create_dir_all(&measure_dir).expect("Failed to create measure dir");
+
+    let args: Vec<String> = vec![
+        "measure".into(),
+        "compute-arguments".into(),
+        model_path.to_string_lossy().into_owned(),
+        measure_dir.to_string_lossy().into_owned(),
+    ];
+    let args_ref: Vec<&str> = args.iter().map(String::as_str).collect();
+    let result = run_fluxion(&args_ref);
+    assert_unimplemented_failure(
+        "fluxion measure compute-arguments",
+        &result,
+        "measure compute-args",
+    );
+}
+
+/// `fluxion measure run-tests <dir>` must fail loudly with #2947.
+#[test]
+fn test_cli_measure_run_tests_returns_not_implemented() {
+    let temp_dir = tempdir().expect("Failed to create temp dir");
+    let measures_dir = temp_dir.path().join("measures");
+    std::fs::create_dir_all(&measures_dir).expect("Failed to create dir");
+
+    let args: Vec<String> = vec![
+        "measure".into(),
+        "run-tests".into(),
+        measures_dir.to_string_lossy().into_owned(),
+    ];
+    let args_ref: Vec<&str> = args.iter().map(String::as_str).collect();
+    let result = run_fluxion(&args_ref);
+    assert_unimplemented_failure("fluxion measure run-tests", &result, "measure tests");
+}
+
+/// The `fluxion run --help` and `fluxion measure <sub> --help` outputs must
+/// mark every unimplemented path as "[NOT YET IMPLEMENTED, see #2947]" so the
+/// silent-success trap is visible at the help layer as well as at runtime.
+#[test]
+fn test_cli_help_marks_unimplemented_paths() {
+    // `fluxion run --help`
+    let (status, stdout, _stderr) = run_fluxion(&["run", "--help"]);
+    assert!(status.success(), "fluxion run --help should exit 0");
+    assert!(
+        stdout.contains("[NOT YET IMPLEMENTED, see #2947]"),
+        "fluxion run --help should mark itself unimplemented; got:\n{stdout}"
+    );
+    assert!(
+        stdout.contains("measures-only"),
+        "fluxion run --help should still document --measures-only; got:\n{stdout}"
+    );
+    assert!(
+        stdout.contains("postprocess-only"),
+        "fluxion run --help should still document --postprocess-only; got:\n{stdout}"
+    );
+
+    // Each measure subcommand --help
+    for (sub, _) in [
+        ("update", "measure update"),
+        ("update-all", "measure update-all"),
+        ("compute-arguments", "measure compute-arguments"),
+        ("run-tests", "measure run-tests"),
+    ] {
+        let (status, stdout, _stderr) = run_fluxion(&["measure", sub, "--help"]);
+        assert!(
+            status.success(),
+            "fluxion measure {sub} --help should exit 0"
+        );
+        assert!(
+            stdout.contains("[NOT YET IMPLEMENTED, see #2947]"),
+            "fluxion measure {sub} --help should mark itself unimplemented; got:\n{stdout}"
+        );
+    }
+}
+
+/// `fluxion validate-case 195-470` and `800-810` must also fail loudly with
+/// #2947 (the same pattern as the workflow commands). This guards the
+/// diagnostic stub paths that the previous #2711 fix gated.
+#[test]
+fn test_cli_validate_case_range_returns_not_implemented() {
+    let result = run_fluxion(&["validate-case", "195-470"]);
+    assert_unimplemented_failure(
+        "fluxion validate-case 195-470",
+        &result,
+        "diagnostic case range 195-470",
+    );
+
+    let result = run_fluxion(&["validate-case", "800-810"]);
+    assert_unimplemented_failure(
+        "fluxion validate-case 800-810",
+        &result,
+        "diagnostic case range 800-810",
+    );
+}

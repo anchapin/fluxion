@@ -83,6 +83,26 @@ pre-commit run --all-files                  # ruff, black, fmt, cargo-check, car
 
 **Pre-flight for orchestration / large ops**: `./scripts/disk-space-check.sh`. Minimum **10 GB free** (50 GB recommended) — exhaustion has caused credential-lock, PR-creation, and git-ref-lock failures.
 
+## CLI Subcommands — Partial Implementation Status
+
+The `fluxion` CLI ships several stubbed subcommands that are documented in `--help` but do not execute yet. They **fail loudly with a non-zero exit code and a "not yet implemented" error referencing #2947 (originally #2711)** — never silently succeeding. Do not remove the gating or implement them without coordination; see issue #2947.
+
+Stubbed (not yet implemented, see #2947):
+
+| Command | Reason |
+|---|---|
+| `fluxion <input>` (direct simulation) | thermal timestepping not wired into CLI |
+| `fluxion run -w <wf>` (workflow execution) | measure execution pending |
+| `fluxion run --measures-only` | measures-only workflow pending |
+| `fluxion run --postprocess-only` | postprocess-only workflow pending |
+| `fluxion measure update <dir>` | measure update pending |
+| `fluxion measure update-all <dir>` | measure-update-all pending |
+| `fluxion measure compute-arguments <model> <dir>` | measure arg computation pending |
+| `fluxion measure run-tests <dir>` | measure test harness pending |
+| `fluxion validate-case 195-470` / `800-810` | diagnostic ranges pending |
+
+Every stubbed path emits an error of the form `'<feature>' is not yet implemented (see issue #2947, originally #2711); this CLI path is documented but does not execute yet` and exits 1. Both `--help` long-help and `tests/integration/test_cli.rs` (the `integration-cli` test target) assert this behaviour, so any silent-success regression will fail CI. Originally flagged by #2711; the work was resumed under #2947 against the same pattern.
+
 ## Critical Physics Constants
 
 - **`EXTERIOR_FILM_COEFF = 18.3 W/m²K`** (ASHRAE 140 v2023, vertical surfaces, ~3.4 m/s wind) — `src/physics/constants/thermal/ashrae_140/v2023.rs`. The legacy `29.3 W/m²K` (6.7 m/s) must NOT appear in any computation path. Guard: `tests/regression_exterior_film_unification.rs`.
