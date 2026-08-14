@@ -259,7 +259,7 @@ statrs = "0.18.0"
 # runtime; `fluxion-behavior` also makes `ort` opt-in (issue #2691) so the RC is not
 # pulled into every consumer. When `ort` 2.0 stable ships, bump this pin, port the
 # CUDA EP call sites, and drop the RC note in docs/KNOWN_ISSUES.md (CI-03).
-ort = { version = "2.0.0-rc.10", features = ["download-binaries"], optional = true }
+ort = { version = "=2.0.0-rc.10", features = ["download-binaries"], optional = true }
 
 # Python Interop
 # Issue #2585: PyO3 0.22 → 0.29 to remediate RUSTSEC-2026-0177

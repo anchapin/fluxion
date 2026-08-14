@@ -24,6 +24,7 @@ Exit codes:
 from __future__ import annotations
 
 import re
+import subprocess
 import sys
 from pathlib import Path
 
@@ -33,6 +34,56 @@ INVENTORY_FILE = REPO_ROOT / "docs" / "doc-inventory.md"
 
 BEGIN_MARKER = "<!-- BEGIN AUTO-GENERATED INVENTORY -->"
 END_MARKER = "<!-- END AUTO-GENERATED INVENTORY -->"
+
+
+def _list_tracked_docs(repo_root: Path) -> list[Path] | None:
+    """Enumerate git-tracked ``docs/**/*.md`` files, or ``None`` on git failure.
+
+    Uses ``git ls-files 'docs/*.md' 'docs/**/*.md'`` so the script's
+    view matches the committed tree (Closes #2961).  Files matched by
+    ``.gitignore`` (e.g. ``**/*_PLAN.md``, ``**/*_ANALYSIS.md``) are
+    excluded automatically because they are never tracked.
+
+    Two pattern globs are needed because git's pathspec semantics do
+    not make ``**`` match zero intermediate directories — ``docs/**/*.md``
+    alone would miss top-level files like ``docs/README.md``.  The
+    combined pattern matches the recursive ``Path.rglob("*.md")``
+    semantics the script used previously.
+
+    Returns ``None`` when git is unavailable or ``repo_root`` is not
+    inside a working tree (e.g. ``tests/check_*`` harness uses
+    ``tmp_path`` as a synthetic repo root).  The caller is expected to
+    fall back to a filesystem walk with a printed warning so the
+    generator remains usable in non-git contexts.
+    """
+    try:
+        result = subprocess.run(
+            ["git", "ls-files", "docs/*.md", "docs/**/*.md"],
+            cwd=repo_root,
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+    except (subprocess.CalledProcessError, FileNotFoundError, OSError) as e:
+        print(
+            f"WARNING: git ls-files failed ({type(e).__name__}: {e}); "
+            f"falling back to filesystem walk.  The committed inventory "
+            f"may diverge from the working tree when gitignored files "
+            f"are present.",
+            file=sys.stderr,
+        )
+        return None
+
+    paths: list[Path] = []
+    for line in result.stdout.splitlines():
+        rel = line.strip()
+        if not rel or not rel.endswith(".md"):
+            # Defensive: ``git ls-files`` always emits repo-relative
+            # paths, but a stray empty line or non-.md entry would
+            # silently corrupt the table.  Skip explicitly.
+            continue
+        paths.append(repo_root / rel)
+    return paths
 
 
 def has_seven_line_summary(file_path: Path) -> bool:
@@ -75,9 +126,21 @@ def has_seven_line_summary(file_path: Path) -> bool:
 
 
 def build_inventory_table() -> str:
-    """Build the markdown table that enumerates every `docs/**/*.md` file."""
+    """Build the markdown table that enumerates every `docs/**/*.md` file.
+
+    Enumeration is git-tracked-only so that gitignored files
+    (``**/*_PLAN.md``, ``**/*_ANALYSIS.md``, ...) cannot sneak into the
+    committed inventory and break ``check_doc_inventory_fresh.py`` in
+    CI.  When git is unavailable (e.g. test harness with a synthetic
+    ``tmp_path`` repo root), the function falls back to a filesystem
+    walk — see ``_list_tracked_docs`` for the rationale.
+    """
     rows: list[str] = []
-    md_files = sorted(p for p in DOCS_ROOT.rglob("*.md") if p.is_file())
+    tracked = _list_tracked_docs(REPO_ROOT)
+    if tracked is None:
+        md_files = sorted(p for p in DOCS_ROOT.rglob("*.md") if p.is_file())
+    else:
+        md_files = sorted(tracked)
     for path in md_files:
         rel = path.relative_to(REPO_ROOT).as_posix()
         status = "✅ Has summary" if has_seven_line_summary(path) else "❌ Missing summary"
@@ -126,9 +189,17 @@ def regenerate() -> int:
         return 0
 
     INVENTORY_FILE.write_text(new_content, encoding="utf-8")
+    # Count what the table actually enumerates so the printed number
+    # matches the rendered rows in either enumerated-source path
+    # (git-tracked vs. filesystem walk fallback).
+    tracked = _list_tracked_docs(REPO_ROOT)
+    if tracked is None:
+        enumerated_count = len(list(DOCS_ROOT.rglob("*.md")))
+    else:
+        enumerated_count = len(tracked)
     print(
         f"Regenerated inventory table in {INVENTORY_FILE.relative_to(REPO_ROOT)} "
-        f"({len(list(DOCS_ROOT.rglob('*.md')))} docs enumerated)"
+        f"({enumerated_count} docs enumerated)"
     )
     return 0
 
