@@ -149,15 +149,43 @@ confidence-threshold = 0.8
 
 # -----------------------------------------------------------------------------
 # Bans — duplicate-version detection and a crate denylist.
-# START PERMISSIVE: `multiple-versions = "warn"` so the gate passes today.
-# The current workspace has ~42 duplicate-version instances (mostly
-# windows-sys/targets and glam — both transitive and not trivially removable).
-# To tighten later: flip to "deny" and add unavoidable duplicates to `skip`
-# with a comment per entry. See issue #2699 follow-up.
+# START PERMISSIVE: `multiple-versions = "warn"` and `wildcards = "warn"` so the
+# gate passes today. The current workspace has 45 duplicate-version instances
+# (mostly windows-sys/targets/clusters, the rand family, and the thiserror
+# 1.x→2.x migration chain — see issue #2994 for the cluster inventory).
+#
+# `duplicates_baseline` is the budget the `.github/workflows/security.yml`
+# `deny` job enforces — the CI step greps the `cargo deny` JSON output for
+# `"code":"duplicate"` lines and fails when the count exceeds this baseline.
+# The accepted value is the LIVE count from `cargo deny -f json check bans`
+# measured when #2933 was filed (the issue body says "~42" — that was an
+# approximation; the precise count is 45).
+#
+# cargo-deny 0.20.2 rejects unknown keys in `[bans]` (the schema is fixed at
+# {multiple-versions, multiple-versions-include-dev, highlight, deny, allow,
+# allow-workspace, features, external-default-features, workspace-default-
+# features, skip, skip-tree, wildcards, allow-wildcard-paths, allow-build-
+# scripts, build, workspace-dependencies, std-replacements}), so the baseline
+# lives in a comment-style key/value pair that the CI step parses. Replacing
+# the comment with a real `duplicates_baseline = N` table entry will fail the
+# config load. Future cargo-deny versions MAY add a real key — migrate when
+# the schema is extended.
+#
+# To tighten later: (1) reduce the count via cluster bumping (issue #2994),
+# (2) decrement `duplicates_baseline` to match the new count, (3) flip
+# `multiple-versions` to "deny" and migrate any remaining unavoidable
+# duplicates to `skip` with a `reason` per entry.
+#
+# Tracking issue: #2994 (duplicate-version budget reduction plan).
+# Provenance: #2933 (acceptance criteria), follow-up to #2699.
 # -----------------------------------------------------------------------------
 [bans]
 multiple-versions = "warn"
 wildcards = "warn"
+# Issue #2933: budget enforced by `.github/workflows/security.yml` `deny` job.
+# Live count is 45 as of 2026-08-14; raise the baseline ONLY when a new
+# unavoidable transitive has been verified and added to issue #2994's scope.
+# duplicates_baseline: 45
 highlight = "all"
 workspace-default-features = "allow"
 external-default-features = "allow"

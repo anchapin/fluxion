@@ -67,3 +67,27 @@ jobs:
       # Mirrors .cargo/audit.toml ignores so the two tools agree.
       - name: Run cargo deny check
         run: cargo deny check
+      # Issue #2933: enforce the duplicate-version budget declared in
+      # deny.toml `[bans] duplicates_baseline`. `multiple-versions = "warn"`
+      # makes `cargo deny check` exit 0 even with duplicates, so we count
+      # JSON diagnostics and fail when the count exceeds the baseline. The
+      # baseline lives in a comment inside `[bans]` because cargo-deny 0.20.2
+      # rejects unknown keys in that table. The tracking issue (#2994)
+      # carries the cluster inventory and reduction plan; this step only
+      # catches regressions.
+      - name: Verify duplicate-version budget
+        run: |
+          set -euo pipefail
+          BASELINE=$(grep -E '^#\s*duplicates_baseline\s*:\s*[0-9]+' deny.toml | sed -E 's/.*:\s*([0-9]+).*/\1/' | head -n1)
+          if [ -z "${BASELINE}" ]; then
+            echo "::error::deny.toml [bans] duplicates_baseline (comment) is not set"
+            exit 1
+          fi
+          JSON_OUT=$(cargo deny -f json check bans 2>&1 || true)
+          DUP_COUNT=$(echo "${JSON_OUT}" | grep -c '"code":"duplicate"' || true)
+          echo "Duplicate-version count: ${DUP_COUNT} (baseline: ${BASELINE})"
+          if [ "${DUP_COUNT}" -gt "${BASELINE}" ]; then
+            echo "::error::Duplicate-version count ${DUP_COUNT} exceeds baseline ${BASELINE}. See issue #2994 for the triage plan."
+            exit 1
+          fi
+          echo "OK: duplicate-version count within budget."
