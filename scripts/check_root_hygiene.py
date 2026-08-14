@@ -117,6 +117,36 @@ ROOT_BLOCKED_DIRECTORIES: frozenset[str] = frozenset(
     }
 )
 
+# Dotfile/dotdir entries at repo root that are LEGIT root config and
+# therefore skip the gitignore/tracked cross-check introduced in #2954.
+# These are the dot-prefixed counterparts of the `.toml/.yaml/.lock`
+# allow-list: real tracked config that Git itself needs to see.
+#
+# Anything dot-prefixed that is NOT in this allow-list must either be
+# matched by `.gitignore` (via `git check-ignore`) OR be already tracked
+# in git (legacy runtime dirs that were committed before their
+# gitignore line existed). Anything else is an unmanaged dotfile/dotdir
+# at root and causes the gate to FAIL.
+ROOT_DOTFILE_ALLOWLIST: frozenset[str] = frozenset(
+    {
+        ".agents",                 # orchestration runtime dir (issues, results, skills)
+        ".cargo",                  # cargo config (audit.toml, config.toml, mutants.toml)
+        ".cargoignore",            # cargo publish ignore
+        ".dockerignore",           # docker ignore
+        ".editorconfig",           # editor config
+        ".env.example",            # env example (NOTE: `.env` itself is gitignored)
+        ".git",                    # git's own dir (always present)
+        ".github",                 # GitHub config dir
+        ".gitattributes",          # git attributes
+        ".githooks",               # local git hooks (tracked for CI parity)
+        ".gitignore",              # git ignore
+        ".npmignore",              # npm ignore
+        ".planning",               # project planning artifacts (AGENTS.md allows)
+        ".pre-commit-config.yaml", # pre-commit config
+        ".rustfmt.toml",           # rustfmt config
+    }
+)
+
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -142,6 +172,60 @@ def is_gitignored(path: Path) -> bool:
     return result.returncode == 0
 
 
+def is_tracked(path: Path) -> bool:
+    """Return True if `path` is tracked by git.
+
+    Used as a fallback for the dotfile-root hygiene check introduced in
+    #2954: if a dotfile/dotdir at root is already tracked in git (e.g. an
+    agent-runtime dir that was committed before the gitignore line was
+    added), we accept it rather than demanding an immediate ``git rm``. The
+    ``.gitignore`` line is the real defense — it prevents NEW files from
+    being committed. Falls back to False if Git is unavailable.
+    """
+    import subprocess
+
+    try:
+        rel = path.relative_to(REPO_ROOT)
+    except ValueError:
+        return False
+    try:
+        result = subprocess.run(
+            ["git", "ls-files", "--error-unmatch", "--", str(rel)],
+            cwd=REPO_ROOT,
+            capture_output=True,
+            timeout=5,
+        )
+    except (FileNotFoundError, subprocess.TimeoutExpired):
+        return False
+    return result.returncode == 0
+
+
+def is_dotfile_root_compliant(path: Path) -> bool:
+    """Return True if `path` (a dotfile/dotdir at repo root) is allowed.
+
+    Allowed when ANY of:
+
+      * ``path.name`` is in :data:`ROOT_DOTFILE_ALLOWLIST` — legit root
+        config that Git itself needs to see (``.git/``, ``.cargo/``,
+        ``.gitignore``, ...).
+      * ``path`` is matched by ``.gitignore`` (``git check-ignore``) —
+        the gate verifies the gitignore line is in place for new dirs.
+      * ``path`` is already tracked in git (``git ls-files --error-unmatch``)
+        — handles legacy runtime dirs that were committed before their
+        gitignore line existed.
+
+    Otherwise the path is an *unmanaged* dotfile/dotdir at root and the
+    gate fails. See issue #2954.
+    """
+    if path.name in ROOT_DOTFILE_ALLOWLIST:
+        return True
+    if is_gitignored(path):
+        return True
+    if is_tracked(path):
+        return True
+    return False
+
+
 def _is_dotfile(name: str) -> bool:
     return name.startswith(".") and name not in {"."}
 
@@ -163,6 +247,9 @@ class RootScan:
         self.blocked_ext: list[Path] = []
         self.no_ext_blocked: list[Path] = []
         self.blocked_dirs: list[Path] = []
+        # Issue #2954: dotfile/dotdir at repo root that is neither
+        # allow-listed, gitignored, nor tracked.
+        self.dotfile_unmanaged: list[Path] = []
 
     @property
     def violations(self) -> list[Path]:
@@ -172,6 +259,7 @@ class RootScan:
             + self.blocked_ext
             + self.no_ext_blocked
             + self.blocked_dirs
+            + self.dotfile_unmanaged
         )
 
 
@@ -182,15 +270,24 @@ def scan_root(repo_root: Path) -> RootScan:
     for path in sorted(repo_root.iterdir()):
         name = path.name
 
+        # Dotfiles / dotdirs (.gitignore, .rustfmt.toml, .editorconfig,
+        # .git/, .cargo/, ...): cross-checked against the dotfile allow-list,
+        # `.gitignore`, and git tracking. Issue #2954 widened the gate so a
+        # dotfile-prefixed runtime directory is no longer structurally
+        # invisible. Anything not allow-listed, not gitignored, and not
+        # already tracked is flagged as ``dotfile_unmanaged``.
+        # NOTE: this check must run BEFORE the ``path.is_dir()`` short-circuit
+        # below, otherwise a dotdir like ``.mytool/`` would be skipped
+        # wholesale (it is a directory but not a known scratch dir).
+        if _is_dotfile(name):
+            if not is_dotfile_root_compliant(path):
+                scan.dotfile_unmanaged.append(path)
+            continue
+
         # Directories: check against the scratch denylist.
         if path.is_dir():
             if name in ROOT_BLOCKED_DIRECTORIES:
                 scan.blocked_dirs.append(path)
-            continue
-
-        # Dotfiles (.gitignore, .rustfmt.toml, .editorconfig, ...): legit
-        # root config — skipped wholesale.
-        if _is_dotfile(name):
             continue
 
         # `.md` files: original #2466 policy (allow-list / warn-list).
@@ -241,7 +338,11 @@ def _print_remediation() -> None:
     print("  4. If it is a legit root config file that uses a normally-blocked")
     print("     extension, add it to ROOT_BLOCKED_EXT_ALLOWLIST or")
     print("     ROOT_NO_EXT_ALLOWLIST in scripts/check_root_hygiene.py.")
-    print("  5. Update any links in other docs to the new path.")
+    print("  5. If it is a dotfile/dotdir (issue #2954): add it to `.gitignore`")
+    print("     (preferred) so the gate accepts it on every checkout, or add")
+    print("     it to ROOT_DOTFILE_ALLOWLIST in scripts/check_root_hygiene.py")
+    print("     if it is legit root config that must stay tracked.")
+    print("  6. Update any links in other docs to the new path.")
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -255,6 +356,7 @@ def main(argv: list[str] | None = None) -> int:
     print(f".md warn-list (non-blocking): {sorted(ROOT_MD_WARNLIST)}")
     print(f"Blocked extensions: {sorted(ROOT_BLOCKED_EXTENSIONS)}")
     print(f"Blocked directories: {sorted(ROOT_BLOCKED_DIRECTORIES)}")
+    print(f"Dotfile allow-list: {sorted(ROOT_DOTFILE_ALLOWLIST)}")
     print()
 
     scan = scan_root(REPO_ROOT)
@@ -271,13 +373,19 @@ def main(argv: list[str] | None = None) -> int:
         print(f"    FAIL (no-extension blob): {p.name}")
     for p in scan.blocked_dirs:
         print(f"    FAIL (scratch directory): {p.name}/")
+    for p in scan.dotfile_unmanaged:
+        kind = "dir" if p.is_dir() else "file"
+        print(
+            f"    FAIL (unmanaged dotfile/dotdir, not allow-listed/gitignored/tracked): {p.name} ({kind})"
+        )
 
     total_files = len(
         [p for p in REPO_ROOT.iterdir() if p.is_file() and not _is_dotfile(p.name)]
     )
+    total_dotfiles = len([p for p in REPO_ROOT.iterdir() if _is_dotfile(p.name)])
     print()
     print(
-        f"Scanned {total_files} non-dotfile(s) at repo root: "
+        f"Scanned {total_files} non-dotfile(s) + {total_dotfiles} dotfile(s) at repo root: "
         f"{len(scan.md_allow)} allow-listed, {len(scan.md_warn)} warned, "
         f"{len(scan.violations)} violation(s)."
     )
@@ -347,9 +455,15 @@ def _self_test() -> int:
             ("tests_tmp_dummy.onnx", False),
             ("requirements-dev.txt", False),  # blocked-ext allow-list
             ("requirements.txt", False),
-            (".gitignore", False),  # dotfile
+            (".gitignore", False),  # dotfile allow-list (#2954)
             (".rustfmt.toml", False),
             (".env.example", False),
+            (".git", True),  # dotdir allow-list (#2954)
+            (".cargo", True),
+            (".githooks", True),
+            (".github", True),
+            (".planning", True),
+            (".agents", True),
             ("src", True),  # legit dir (not in denylist)
             ("docs", True),
             ("crates", True),
@@ -375,9 +489,10 @@ def _self_test() -> int:
             "reports": "blocked_dirs",
             "bem-engineer-workspace": "blocked_dirs",
             "bem-engineer": "blocked_dirs",
+            ".mytool": "dotfile_unmanaged",  # #2954: unmanaged dotdir
         }
         for name in expected_violations:
-            is_dir = expected_violations[name] == "blocked_dirs"
+            is_dir = expected_violations[name] in {"blocked_dirs", "dotfile_unmanaged"}
             binary = (
                 expected_violations[name] == "no_ext_blocked" and name == "test_cases"
             )
@@ -387,12 +502,15 @@ def _self_test() -> int:
         # False in the tmpdir so it should land in md_warn (not a violation).
         _touch(root, "CLAUDE.md")
 
-        # Monkey-patch REPO_ROOT + is_gitignored so the tmpdir scan is hermetic.
+        # Monkey-patch REPO_ROOT + is_gitignored + is_tracked so the tmpdir
+        # scan is hermetic. The dotfile cross-check (#2954) consults all
+        # three signals, so we have to neutralize every one of them.
         import check_root_hygiene as mod
 
         orig_root = mod.REPO_ROOT
         mod.REPO_ROOT = root
         mod.is_gitignored = lambda p: False  # type: ignore[assignment]
+        mod.is_tracked = lambda p: False  # type: ignore[assignment]
         try:
             scan = mod.scan_root(root)
         finally:
