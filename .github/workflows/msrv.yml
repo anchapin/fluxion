@@ -35,14 +35,16 @@ jobs:
       # [workspace.package] block, and all 10 workspace-member Cargo.toml
       # files — is what `cargo install` / crates.io / `cargo update --precise`
       # users see; this job is the enforcement side, failing the build when
-      # a change drifts past 1.81.
+      # a change drifts past 1.81. The action SHA pin matches the one used
+      # by .github/actions/setup-rust-env/action.yml so any drift is caught
+      # in one place.
       - name: Install Rust 1.81 (MSRV)
-        uses: dtolnay/rust-toolchain@1ebd4c1426f7f2018e10cb9327da0b6e394b3281  # stable 1.81
+        uses: dtolnay/rust-toolchain@8641a17e25bf5b40c118d48fe0f81e8655731839  # 1.85.0 (pinned for 1.81 toolchain via `with:`)
         with:
           toolchain: 1.81
 
       - name: Cache cargo registry & target
-        uses: Swatinem/rust-cache@8e97b9f5ee11f6aff0ad4ad4f1f8faef9d7583b5  # v2
+        uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32  # v2
         with:
           workspaces: |
             .
