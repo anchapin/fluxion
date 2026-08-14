@@ -4,7 +4,7 @@ Compile-time strongly typed fluid port traits for [Fluxion](https://github.com/a
 
 ## What it does
 
-`fluxion-fluid` provides the acausal HVAC / fluid-system port traits used to assemble plant loops, air loops, and other DAE (differential-algebraic equation) systems in Fluxion (ADR-005, issues #1980). It exposes strongly typed ports (`ports/`), a graph layer for connecting them (`graph/`), and solvers (`solvers/`) — including a WASM-compatible sequential fallback that does not require `rayon`.
+`fluxion-fluid` provides the acausal HVAC / fluid-system port traits used to assemble plant loops, air loops, and other DAE (differential-algebraic equation) systems in Fluxion (ADR-0005, issues #1980). It exposes strongly typed ports (`ports/`), a graph layer for connecting them (`graph/`), and solvers (`solvers/`) — including a WASM-compatible sequential fallback that does not require `rayon`.
 
 > **Not to be confused:** this crate is *not* the same as `fluxion-core/src/fluid/`. This `fluxion-fluid` crate is the feature-gated, acausal-HVAC port-trait layer; `fluxion-core/src/fluid/` is a different, lighter in-core module.
 
@@ -29,7 +29,7 @@ See [WASM_STATUS.md](./WASM_STATUS.md) for the dependency compatibility matrix; 
 ## See also
 
 - [Top-level README](../README.md) — project overview and quickstart
-- [ARCHITECTURE.md](../ARCHITECTURE.md) — module boundaries and ADR-005
+- [ARCHITECTURE.md](../ARCHITECTURE.md) — module boundaries and ADR-0005
 - [AGENTS.md](../AGENTS.md) — workspace structure and feature-flag reference
 
 ## License

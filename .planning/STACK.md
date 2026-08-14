@@ -40,7 +40,7 @@ The fluxion workspace contains 11 crates. The root `fluxion` package is the main
 | **fluxion-behavior** | `fluxion-behavior/` | Thermal comfort & behavioral models: Fanger PMV/PPD, adaptive comfort, occupancy (Markov + deterministic), lighting, plug loads, internal gains, moisture, occupant triggers, TOON time encoder. | always built; default = `["ort"]` |
 | **fluxion-wasm** | `fluxion-wasm/` | WebAssembly bindings over `fluxion-core` + `fluxion-fluid` via `wasm-bindgen`. | always built |
 | **fluxion-city** | `fluxion-city/` | Urban radiation modeling with Nusselt-analog view factor computation. Parallel harness + ray tracing. | feature-gated on root: `fluxion-city` (Issue #2344); crate-local `parallel` feature |
-| **fluxion-fluid** | `fluxion-fluid/` | Compile-time strongly typed fluid port traits for acausal HVAC / fluid DAE systems (Issue #1980 / ADR-005). *Not* the same as `fluxion-core/src/fluid/`. | feature-gated on root: `fluid` |
+| **fluxion-fluid** | `fluxion-fluid/` | Compile-time strongly typed fluid port traits for acausal HVAC / fluid DAE systems (Issue #1980 / ADR-0005). *Not* the same as `fluxion-core/src/fluid/`. | feature-gated on root: `fluid` |
 | **fluxion-cfd** | `fluxion-cfd/` | GPU-accelerated Fast Fluid Dynamics (FFD) solver for building airflow simulation (Issue #2460). CPU / CUDA / OpenCL backends. | feature-gated on root: `fluxion-cfd` |
 | **fluxion-mcp** | `fluxion-mcp/` | Model Context Protocol server for Rust-native BEM interface. Unconditionally depends on `fluxion` with `multi-zone` + `fluxion-fluid` + `fluxion-toon`. | always built; default = `["multi-zone"]` |
 | **fluxion-toon** | `crates/fluxion-toon/` | Token-Oriented Object Notation (TOON) — compact, LLM-friendly serializer/deserializer. SPEC in `crates/fluxion-toon/SPEC.md`. | always built; `std` feature |
@@ -74,7 +74,7 @@ Default = none. Most functionality is behind cargo feature flags; default builds
 | `debug-physics` | Gate `eprintln!` in physics hot loops (#1967) |
 | `tracing-subscriber-json` | Structured JSON tracing output from validation (#2500) |
 | `kafka` | rdkafka Kafka telemetry consumer (#2056) |
-| `fluid` | Enable `fluxion-fluid` acausal HVAC / fluid port traits (#1980 / ADR-005) |
+| `fluid` | Enable `fluxion-fluid` acausal HVAC / fluid port traits (#1980 / ADR-0005) |
 | `gauge-solver` | GaugeSolver as primary zone solver (replaces 5R1C/9R4C; #2304) |
 | `fluxion-city` | Wire `fluxion-city` urban radiation solver (#2344) |
 | `fluxion-cfd` | Wire `fluxion-cfd` FFD/CFD adapter (#2460) |
