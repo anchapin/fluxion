@@ -78,6 +78,26 @@ def test_scan_flags_blocked_extension(checker, tmp_path, ext):
     assert scan.violations == [tmp_path / f"dump{ext}"]
 
 
+@pytest.mark.parametrize(
+    "ext",
+    [
+        ".onnx",  # ONNX (PyTorch export / sklearn-onnx)
+        ".bin",  # HuggingFace / generic binary checkpoint
+        ".pt",  # PyTorch state_dict
+        ".pkl",  # sklearn / pickle
+        ".h5",  # Keras / TensorFlow HDF5
+    ],
+)
+def test_scan_flags_blocked_ml_model_extension(checker, tmp_path, ext):
+    """Issue #2949: binary ML model extensions at the repo root are transient
+    artifacts. Legit model files live inside ``models/``, ``assets/``,
+    ``examples/`` directories and are never seen by the root-only scan."""
+    _touch(tmp_path, f"tests_tmp_dummy{ext}")
+    scan = checker.scan_root(tmp_path)
+    assert [p.name for p in scan.blocked_ext] == [f"tests_tmp_dummy{ext}"]
+    assert scan.violations == [tmp_path / f"tests_tmp_dummy{ext}"]
+
+
 @pytest.mark.parametrize("name", ["requirements-dev.txt", "requirements.txt"])
 def test_scan_allows_blocked_ext_exceptions(checker, tmp_path, name):
     _touch(tmp_path, name)
@@ -267,3 +287,46 @@ def test_main_returns_zero_on_clean_real_repo(checker, repo_root, capsys):
     """The real checkout is a required-check that stays clean; a scanner
     regression would surface a phantom violation here."""
     assert checker.main() == 0, capsys.readouterr().out
+
+
+def test_main_fails_on_onnx_escapee_then_passes_after_gitignore(
+    checker, tmp_path, monkeypatch, capsys
+):
+    """Issue #2949 regression test, end-to-end.
+
+    A 122-byte ``tests_tmp_dummy.onnx`` escaped a temp dir and landed at the
+    repo root. The hygiene gate must FAIL on a freshly-planted ``.onnx`` file
+    at the root (binary ML model extensions are blocked per #2949) and must
+    pass once the file is gone. We run ``git init`` so ``is_gitignored``
+    (which shells out to ``git check-ignore``) exercises the real code
+    path — the planted ``.gitignore`` deliberately does NOT mention
+    ``*.onnx`` so the file is treated as un-ignored and un-tracked.
+    """
+    import subprocess
+
+    subprocess.run(["git", "init", "-q"], cwd=tmp_path, check=True)
+    subprocess.run(
+        ["git", "config", "user.email", "test@test"], cwd=tmp_path, check=True
+    )
+    subprocess.run(["git", "config", "user.name", "test"], cwd=tmp_path, check=True)
+
+    # `.gitignore` does NOT mention `.onnx` and the file is not tracked.
+    (tmp_path / ".gitignore").write_text("*.tmp\n", encoding="utf-8")
+    (tmp_path / "tests_tmp_dummy.onnx").write_bytes(b"\x00" * 122)
+    subprocess.run(["git", "add", ".gitignore"], cwd=tmp_path, check=True)
+    subprocess.run(["git", "commit", "-q", "-m", "init"], cwd=tmp_path, check=True)
+
+    monkeypatch.setattr(checker, "REPO_ROOT", tmp_path)
+
+    # Phase 1: gate FAILS — `tests_tmp_dummy.onnx` is a blocked extension at root.
+    rc = checker.main()
+    out = capsys.readouterr().out
+    assert rc == 1, f"expected FAIL (rc=1), got rc={rc}\noutput:\n{out}"
+    assert "tests_tmp_dummy.onnx" in out, (
+        f"expected 'tests_tmp_dummy.onnx' in output, got:\n{out}"
+    )
+    assert ".onnx" in out, f"expected '.onnx' in output, got:\n{out}"
+
+    # Phase 2: delete the escapee → gate PASSES.
+    (tmp_path / "tests_tmp_dummy.onnx").unlink()
+    assert checker.main() == 0

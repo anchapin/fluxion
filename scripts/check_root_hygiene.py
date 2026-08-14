@@ -12,6 +12,7 @@ Originally ``.md``-only (see ``#2466`` and the git history of
 repeatedly slipped past the ``.md``-only gate:
 
     - scratch file extensions: ``.txt .csv .rs .py .sh .json .zip``
+    - binary ML model extensions: ``.onnx .bin .pt .pkl .h5`` (see #2949)
     - no-extension blobs / committed binaries (e.g. ELF files)
     - known scratch directory names (``fixes/ results/ reports/ ...``)
 
@@ -21,10 +22,18 @@ does not false-positive on real config:
     - dotfiles (``.gitignore``, ``.rustfmt.toml``, ...) — skipped wholesale
     - ``.md`` allow-list (``README.md``, ``ARCHITECTURE.md``, ...) — unchanged
     - build/config extensions that are NEVER blocked: ``.toml``, ``.yaml``/
-      ``.yml``, ``.lock``, ``.pyi``, ``.skill``, ``.onnx``
+      ``.yml``, ``.lock``, ``.pyi``, ``.skill``
     - no-extension allow-list: ``LICENSE``, ``Dockerfile``, ``Makefile``
     - per-extension exception allow-list for legit files that use a normally
       blocked extension (e.g. ``requirements-dev.txt``)
+
+Note: ``.onnx`` was previously exempted via ``ROOT_NEVER_BLOCKED_EXTENSIONS``
+because the repo ships legitimate ONNX surrogates under ``models/``,
+``assets/``, and ``examples/``. Those live inside directories so this gate
+(root-only) does not touch them. Issue #2949 caught a 122-byte stray
+``tests_tmp_dummy.onnx`` that escaped a temp dir and was committed at the
+repo root — proof that a "never-blocked" exemption at the root is the
+wrong default for binary model artifacts.
 
 A thin backward-compat alias lives at ``scripts/check_root_md_policy.py`` so
 ``.github/workflows/docs-hygiene.yml`` and ``.pre-commit-config.yaml`` keep
@@ -76,8 +85,16 @@ ROOT_MD_WARNLIST: frozenset[str] = frozenset({"CLAUDE.md"})
 
 # Scratch file extensions that should never appear at the repo root.
 # Legit exceptions are listed in ROOT_BLOCKED_EXT_ALLOWLIST below.
+#
+# Binary ML-model extensions (``.onnx .bin .pt .pkl .h5``) are included
+# here (issue #2949). Legitimate model artifacts live inside ``models/``,
+# ``assets/``, ``examples/`` and similar directories, so the root-only scan
+# never sees them; an ``.onnx`` / ``.bin`` / ``.pt`` / ``.pkl`` / ``.h5``
+# file at the root is by definition a stray (a test fixture that escaped
+# a temp directory, a notebook export, a HuggingFace / sklearn download,
+# etc.) and should be flagged.
 ROOT_BLOCKED_EXTENSIONS: frozenset[str] = frozenset(
-    {".txt", ".csv", ".rs", ".py", ".sh", ".json", ".zip"}
+    {".txt", ".csv", ".rs", ".py", ".sh", ".json", ".zip", ".onnx", ".bin", ".pt", ".pkl", ".h5"}
 )
 
 # Legit files that use a normally-blocked extension. Add here if a genuine
@@ -92,7 +109,7 @@ ROOT_BLOCKED_EXT_ALLOWLIST: frozenset[str] = frozenset(
 # Build/config extensions that are NEVER blocked at root. Listed explicitly
 # so the gate's intent is self-documenting; not in ROOT_BLOCKED_EXTENSIONS.
 ROOT_NEVER_BLOCKED_EXTENSIONS: frozenset[str] = frozenset(
-    {".toml", ".yaml", ".yml", ".lock", ".pyi", ".skill", ".onnx"}
+    {".toml", ".yaml", ".yml", ".lock", ".pyi", ".skill"}
 )
 
 # No-extension files permitted at root. Anything else without an extension
@@ -319,7 +336,7 @@ def scan_root(repo_root: Path) -> RootScan:
             continue
 
         # Everything else (never-blocked extensions like .toml/.yaml/.lock/
-        # .pyi/.skill/.onnx, plus any unlisted extension): permitted.
+        # .pyi/.skill, plus any unlisted extension): permitted.
         continue
 
     return scan
@@ -452,7 +469,6 @@ def _self_test() -> int:
             ("uv.lock", False),
             ("fluxion.pyi", False),
             ("bem-engineer.skill", False),
-            ("tests_tmp_dummy.onnx", False),
             ("requirements-dev.txt", False),  # blocked-ext allow-list
             ("requirements.txt", False),
             (".gitignore", False),  # dotfile allow-list (#2954)
@@ -482,6 +498,15 @@ def _self_test() -> int:
             "run.sh": "blocked_ext",
             "data.json": "blocked_ext",
             "logs.zip": "blocked_ext",
+            # Binary ML model extensions — issue #2949. ``tests_tmp_dummy.onnx``
+            # was the original escapee (122 bytes); the other extensions mirror
+            # common PyTorch / sklearn / Keras / HuggingFace checkpoint formats
+            # that must NEVER be committed at the repo root.
+            "tests_tmp_dummy.onnx": "blocked_ext",
+            "tests_tmp_dummy.bin": "blocked_ext",
+            "tests_tmp_dummy.pt": "blocked_ext",
+            "tests_tmp_dummy.pkl": "blocked_ext",
+            "tests_tmp_dummy.h5": "blocked_ext",
             "test_cases": "no_ext_blocked",  # no-extension binary blob
             "pull_request": "no_ext_blocked",
             "fixes": "blocked_dirs",
