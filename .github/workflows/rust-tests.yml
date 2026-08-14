@@ -546,9 +546,27 @@ jobs:
       - uses: ./.github/actions/setup-rust-python-env
         with:
           python-version: '3.10'
+      # -- Issue #2962: skip the CUDA build on CPU-only runners ---------------
+      # `cargo build --features cuda` requires nvcc + cudnn headers; on
+      # GitHub-hosted CPU runners those are absent and the build fails with
+      # bindgen / pkg-config errors. Detect nvcc up-front and skip the build
+      # step (which would otherwise fail CI for unrelated PRs — see #2944,
+      # #2959, #2960). Actual CUDA validation on self-hosted GPU runners is
+      # unchanged.
+      - name: Detect CUDA toolchain
+        id: cuda
+        run: |
+          if ! command -v nvcc >/dev/null 2>&1; then
+            echo "cuda_available=false" >> "$GITHUB_OUTPUT"
+            echo "::warning::nvcc not found on this runner; skipping CUDA job (CPU-only runner, see issue #2962)"
+          else
+            echo "cuda_available=true" >> "$GITHUB_OUTPUT"
+          fi
       - name: Build with CUDA support
+        if: steps.cuda.outputs.cuda_available == 'true'
         run: cargo build --features cuda --verbose
       - name: Run CUDA smoke test
+        if: steps.cuda.outputs.cuda_available == 'true'
         run: cargo test --test surrogate_cuda_smoke --features cuda --verbose
         env:
           PYO3_PYTHON: /usr/bin/python3
@@ -582,9 +600,25 @@ jobs:
       - uses: ./.github/actions/setup-rust-python-env
         with:
           python-version: '3.10'
+      # -- Issue #2962: skip the CUDA build on CPU-only runners ---------------
+      # See cuda-smoke job above for rationale. Detects nvcc and gates the
+      # build + test steps so they are skipped (not failed) on runners that
+      # lack the CUDA toolkit. continue-on-error on the job ensures that any
+      # remaining parity-test drift does not block PRs.
+      - name: Detect CUDA toolchain
+        id: cuda
+        run: |
+          if ! command -v nvcc >/dev/null 2>&1; then
+            echo "cuda_available=false" >> "$GITHUB_OUTPUT"
+            echo "::warning::nvcc not found on this runner; skipping CUDA job (CPU-only runner, see issue #2962)"
+          else
+            echo "cuda_available=true" >> "$GITHUB_OUTPUT"
+          fi
       - name: Build with CUDA + ONNX Runtime
+        if: steps.cuda.outputs.cuda_available == 'true'
         run: cargo build --features cuda --features ort --verbose
       - name: Run CUDA parity test
+        if: steps.cuda.outputs.cuda_available == 'true'
         run: cargo test --test surrogate_backend_parity --features cuda --features ort -- --ignored
         env:
           PYO3_PYTHON: /usr/bin/python3
