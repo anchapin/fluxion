@@ -11,15 +11,15 @@ repository = "https://github.com/anchapin/fluxion"
 # ONNX Runtime bindings. RC pin (issue #2691) — see root Cargo.toml for rationale;
 # opt-in here so the release-candidate is not pulled into every consumer.
 ort = { version = "2.0.0-rc.10", features = ["download-binaries"], optional = true }
-rand = { version = "0.8", features = ["small_rng"] }
-rand_distr = "0.4"
+rand = { version = "0.9", features = ["small_rng"] }
+rand_distr = "0.5"
 thiserror.workspace = true
 anyhow = "1.0"
 tracing.workspace = true
 serde.workspace = true
 ndarray = { workspace = true, default-features = false, features = ["std", "serde"] }
-uom = { version = "0.35", features = ["serde"] }
-statrs = "0.18"
+uom = { version = "0.38", features = ["serde"] }
+statrs = "0.19"
 chrono = { version = "0.4", features = ["serde"] }
 uuid = { workspace = true, features = ["v4", "serde"] }
 fluxion-toon = { path = "../crates/fluxion-toon" }
@@ -31,5 +31,5 @@ default = []
 ort = ["dep:ort"]
 
 [dev-dependencies]
-criterion = "0.5"
-serial_test = "3"
+criterion = "0.8"
+serial_test = "4"

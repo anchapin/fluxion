@@ -18,8 +18,23 @@ use rand::Rng;
 use rand::SeedableRng;
 use rayon::prelude::*;
 use sha2::{Digest, Sha256};
+use std::fmt::Write as _;
 use std::path::Path;
 use std::sync::Arc;
+
+/// Format a SHA-256 digest as a lowercase hex string.
+///
+/// `sha2` 0.11 returns a `GenericArray<u8, U32>` whose `LowerHex` impl is no
+/// longer available in newer `generic-array` releases, so we format the bytes
+/// manually.
+fn sha256_hex(digest: impl AsRef<[u8]>) -> String {
+    let bytes = digest.as_ref();
+    let mut s = String::with_capacity(bytes.len() * 2);
+    for b in bytes {
+        let _ = write!(s, "{:02x}", b);
+    }
+    s
+}
 
 #[derive(Clone, Debug, Copy, Default, PartialEq, Eq)]
 /// Inference backend for ONNX runtime execution.
@@ -915,14 +930,14 @@ pub fn compute_file_sha256(path: &Path) -> Result<String, String> {
     let bytes = std::fs::read(path).map_err(|e| format!("read failed: {}", e))?;
     let mut hasher = Sha256::new();
     hasher.update(&bytes);
-    Ok(format!("{:x}", hasher.finalize()))
+    Ok(sha256_hex(hasher.finalize()))
 }
 
 /// Compute the lowercase hex SHA-256 of a byte slice (for in-memory checks).
 pub fn compute_bytes_sha256(bytes: &[u8]) -> String {
     let mut hasher = Sha256::new();
     hasher.update(bytes);
-    format!("{:x}", hasher.finalize())
+    sha256_hex(hasher.finalize())
 }
 
 /// Compare a claimed SHA-256 against the file's actual SHA-256.

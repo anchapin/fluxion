@@ -100,6 +100,21 @@ pub struct Tmy3Cache {
     client: Client,
 }
 
+/// Compute the SHA-256 hex digest of `bytes`.
+///
+/// `sha2` 0.11 returns a `GenericArray<u8, U32>` whose `LowerHex` impl
+/// is no longer available in newer `generic-array` releases, so we
+/// format the bytes manually.
+fn sha256_hex(bytes: &[u8]) -> String {
+    let digest = Sha256::digest(bytes);
+    let mut s = String::with_capacity(digest.len() * 2);
+    for b in digest {
+        use std::fmt::Write as _;
+        let _ = write!(s, "{:02x}", b);
+    }
+    s
+}
+
 impl Tmy3Cache {
     /// Create new TMY3 cache with default cache directory.
     ///
@@ -168,7 +183,7 @@ impl Tmy3Cache {
                 // Verify checksum
                 let content = fs::read(&filepath)
                     .map_err(|e| format!("Failed to read cached file: {}", e))?;
-                let checksum = format!("{:x}", Sha256::digest(&content));
+                let checksum = sha256_hex(&content);
 
                 let expected_checksum = fs::read_to_string(&checksum_path)
                     .map_err(|e| format!("Failed to read checksum file: {}", e))?;
@@ -199,7 +214,7 @@ impl Tmy3Cache {
             .map_err(|e| format!("Failed to read response: {}", e))?;
 
         // Calculate checksum
-        let checksum = format!("{:x}", Sha256::digest(&content));
+        let checksum = sha256_hex(&content);
 
         // Write to cache
         let mut file = fs::File::create(&filepath)
@@ -381,7 +396,7 @@ mod tests {
         let checksum_path = temp_dir.join("Test_Location.sha256");
 
         std::fs::write(&filepath, "test content").unwrap();
-        let checksum = format!("{:x}", Sha256::digest(b"test content"));
+        let checksum = sha256_hex(b"test content");
         std::fs::write(&checksum_path, checksum).unwrap();
 
         let result = cache.get_or_download("https://example.com/test.tmy3", "Test Location");
@@ -420,7 +435,7 @@ mod tests {
         let checksum_path = temp_dir.join("New_York_City.sha256");
 
         std::fs::write(&filepath, "nyc content").unwrap();
-        let checksum = format!("{:x}", Sha256::digest(b"nyc content"));
+        let checksum = sha256_hex(b"nyc content");
         std::fs::write(&checksum_path, checksum).unwrap();
 
         let result = cache.get_or_download("https://example.com/nyc.tmy3", "New York City");
@@ -439,7 +454,7 @@ mod tests {
         let checksum_path = temp_dir.join("Los_Angeles.sha256");
 
         std::fs::write(&filepath, "la content").unwrap();
-        let checksum = format!("{:x}", Sha256::digest(b"la content"));
+        let checksum = sha256_hex(b"la content");
         std::fs::write(&checksum_path, checksum).unwrap();
 
         let result = cache.get_or_download("https://example.com/la.tmy3", "Los Angeles");
@@ -557,7 +572,7 @@ mod tests {
         // Check checksum file
         let checksum_path = filepath.with_extension("sha256");
         assert!(checksum_path.exists());
-        let expected_checksum = format!("{:x}", Sha256::digest(mock_content));
+        let expected_checksum = sha256_hex(mock_content);
         assert_eq!(
             std::fs::read_to_string(checksum_path).unwrap(),
             expected_checksum

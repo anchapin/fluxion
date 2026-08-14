@@ -13,9 +13,9 @@ serde.workspace = true
 approx = "0.5"
 faer = { workspace = true, features = ["default"] }
 num-traits = "0.2"
-rand = "0.8"
+rand = "0.9"
 rayon = { workspace = true, optional = true }
-petgraph = { version = "0.6", features = ["serde-1"] }
+petgraph = { version = "0.8", features = ["serde-1"] }
 uuid = { workspace = true, features = ["v4", "serde"] }
 
 [features]
@@ -23,8 +23,8 @@ default = []
 parallel = ["rayon"]
 
 [dev-dependencies]
-criterion = "0.5"
-sysinfo = "0.30"
+criterion = "0.8"
+sysinfo = "0.39"
 
 [[bench]]
 name = "parallel_harness"
