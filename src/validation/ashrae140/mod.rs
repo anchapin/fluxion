@@ -10,7 +10,7 @@ pub use crate::validation::ashrae_140_cases::ASHRAE140Case;
 
 // Import necessary crates for validation execution
 use crate::sim::construction::ConstructionLayer;
-use crate::validation::report::MetricType;
+use crate::validation::report::{MetricType, ValidationResult, ValidationStatus};
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
 use std::time::Instant;
@@ -414,6 +414,92 @@ pub struct ComparisonMetrics {
     pub within_tolerance: bool,
 }
 
+impl ComparisonMetrics {
+    /// Compute aggregate comparison metrics from a `BenchmarkReport`'s results.
+    ///
+    /// Each [`ValidationResult`] already carries `fluxion_value`, `ref_min`,
+    /// `ref_max`, `percent_error`, and a per-metric `ValidationStatus`
+    /// (Pass / Warning / Fail) determined by
+    /// [`crate::validation::report::compute_status`] (ASHRAE 140 ±5% band
+    /// plus a 10% Pass threshold inside the band). We aggregate them into
+    /// the summary [`ComparisonMetrics`]:
+    ///
+    /// - `rmse`: sqrt(mean((fluxion − reference_midpoint)²))
+    /// - `percentage_difference`: (rmse / mean(|reference_midpoint|)) * 100
+    /// - `max_deviation`: max(|percent_error|) — worst single-metric
+    ///   deviation, dimensionless (%)
+    /// - `within_tolerance`: true iff every result's `status != Fail`.
+    ///   This matches the ASHRAE 140 ±5% band: a metric that lands inside
+    ///   the band is Warning at worst (still "within tolerance"); a metric
+    ///   outside the band is a genuine Fail.
+    ///
+    /// Issue #2945: the previous constructor hardcoded placeholder values
+    /// (`rmse: 0.5`, `percentage_difference: 5.0`, `max_deviation: 1.2`,
+    /// `within_tolerance: true`) which faked a green-light regardless of the
+    /// actual results and made headline metrics (pass-rate, MAE) misleading.
+    /// The empty-results case returns `within_tolerance: false` (no evidence
+    /// to support a green-light).
+    pub fn from_results(results: &[ValidationResult]) -> Self {
+        let n = results.len();
+
+        if n == 0 {
+            return Self {
+                rmse: 0.0,
+                percentage_difference: 0.0,
+                max_deviation: 0.0,
+                within_tolerance: false,
+            };
+        }
+
+        let n_f = n as f64;
+        let mids: Vec<f64> = results
+            .iter()
+            .map(|r| (r.ref_min + r.ref_max) / 2.0)
+            .collect();
+
+        // RMSE of (fluxion_value − reference_midpoint), in the metric's
+        // original units. Units are mixed across metrics (kWh, kW, °C, …)
+        // because each result has its own units; the aggregate RMSE is
+        // reported as-is per the issue spec and the historical `rmse` field
+        // semantics.
+        let sum_sq_err: f64 = results
+            .iter()
+            .zip(mids.iter())
+            .map(|(r, &m)| {
+                let diff = r.fluxion_value - m;
+                diff * diff
+            })
+            .sum();
+        let rmse = (sum_sq_err / n_f).sqrt();
+
+        // Dimensionless percentage: (rmse / mean(|reference|)) * 100.
+        let mean_abs_mid = mids.iter().map(|m| m.abs()).sum::<f64>() / n_f;
+        let percentage_difference = if mean_abs_mid > 0.0 {
+            (rmse / mean_abs_mid) * 100.0
+        } else {
+            0.0
+        };
+
+        // Worst-case |percent_error| across all metrics.
+        let max_deviation = results
+            .iter()
+            .map(|r| r.percent_error.abs())
+            .fold(0.0_f64, f64::max);
+
+        // Within tolerance iff no result has status == Fail.
+        let within_tolerance = results
+            .iter()
+            .all(|r| !matches!(r.status, ValidationStatus::Fail));
+
+        Self {
+            rmse,
+            percentage_difference,
+            max_deviation,
+            within_tolerance,
+        }
+    }
+}
+
 impl Default for ComparisonMetrics {
     fn default() -> Self {
         Self {
@@ -504,15 +590,117 @@ pub fn run_validation(case: ASHRAE140Case) -> Result<ASHRAE140ValidationResults>
     validation_results.annual_cooling = annual_cooling;
     validation_results.report = report;
 
-    // Calculate comparison metrics (placeholder - will be enhanced)
-    let comparison = ComparisonMetrics {
-        rmse: 0.5,                  // Placeholder - will be calculated from actual comparison
-        percentage_difference: 5.0, // Placeholder
-        max_deviation: 1.2,         // Placeholder
-        within_tolerance: true,     // Placeholder
-    };
+    // Calculate comparison metrics from the actual benchmark report.
+    //
+    // Issue #2945: previously this struct was constructed with hardcoded
+    // placeholder values (rmse=0.5, percentage_difference=5.0, max_deviation=1.2,
+    // within_tolerance=true) regardless of the actual results, which made
+    // the headline pass-rate and MAE metrics misleading. `from_results`
+    // computes the aggregates from `benchmark_report.results` directly.
+    let comparison = ComparisonMetrics::from_results(&benchmark_report.results);
 
     validation_results.comparison = comparison;
 
     Ok(validation_results)
+}
+
+#[cfg(test)]
+mod tests {
+    //! Regression tests for issue #2945: the old `ComparisonMetrics` constructor
+    //! hardcoded `rmse: 0.5`, `percentage_difference: 5.0`, `max_deviation: 1.2`,
+    //! `within_tolerance: true` regardless of the actual results, which faked
+    //! a green-light for the headline metrics. These tests pin the new
+    //! computed behaviour so a future "simplification" can't silently
+    //! re-introduce the placeholders.
+
+    use super::*;
+
+    /// Build a synthetic mix of metrics where the values are deliberately
+    /// not the placeholder constants: RMSE, percentage_difference, and
+    /// max_deviation should all deviate from the old hardcoded numbers.
+    fn synthetic_passing_results() -> Vec<ValidationResult> {
+        vec![
+            // fluxion = ref_mid → percent_error = 0 → Pass
+            ValidationResult::new("600", MetricType::AnnualHeating, 5.0, 4.0, 6.0),
+            // fluxion = 7.5 vs ref_mid = 7.0 → percent_error = +7.142…% → Pass
+            ValidationResult::new("600", MetricType::AnnualCooling, 7.5, 6.0, 8.0),
+            // fluxion = ref_mid → percent_error = 0 → Pass
+            ValidationResult::new("600", MetricType::PeakHeating, 5.0, 4.5, 5.5),
+        ]
+    }
+
+    #[test]
+    fn comparison_metrics_are_not_constant_placeholders() {
+        // The aggregate values must reflect the actual synthetic data, not the
+        // old placeholder constants (rmse=0.5, percentage_difference=5.0,
+        // max_deviation=1.2, within_tolerance=true).
+        let results = synthetic_passing_results();
+        let m = ComparisonMetrics::from_results(&results);
+
+        // RMSE of (0.0, 0.5, 0.0) = sqrt(0.5² / 3) ≈ 0.2887 — nowhere near 0.5
+        let expected_rmse = ((0.5_f64 * 0.5_f64) / 3.0_f64).sqrt();
+        assert!(
+            (m.rmse - expected_rmse).abs() < 1e-9,
+            "rmse should be computed from results (≈{:.6}), not the placeholder 0.5; got {}",
+            expected_rmse,
+            m.rmse
+        );
+
+        // max_deviation = max(|percent_error|) = 7.142857… — nowhere near 1.2
+        let expected_max = (0.5_f64 / 7.0_f64) * 100.0;
+        assert!(
+            (m.max_deviation - expected_max).abs() < 1e-6,
+            "max_deviation should be computed from results (≈{:.6}), not the placeholder 1.2; got {}",
+            expected_max,
+            m.max_deviation
+        );
+
+        // percentage_difference = (rmse / mean(|ref_mid|)) * 100, which is
+        // not the placeholder 5.0 (coincidentally close for this dataset, but
+        // the implementation is now derived from the data, not a constant).
+        let mean_abs_mid = (5.0_f64 + 7.0_f64 + 5.0_f64) / 3.0_f64;
+        let expected_pd = (expected_rmse / mean_abs_mid) * 100.0;
+        assert!(
+            (m.percentage_difference - expected_pd).abs() < 1e-6,
+            "percentage_difference should be computed from results (≈{:.6}); got {}",
+            expected_pd,
+            m.percentage_difference
+        );
+
+        // No Fail results ⇒ within_tolerance = true (and not the placeholder
+        // constant — the test would also catch a regression to "always true").
+        assert!(
+            m.within_tolerance,
+            "within_tolerance should be true when no result has status == Fail; got false"
+        );
+    }
+
+    #[test]
+    fn comparison_metrics_with_failing_result_marks_not_within_tolerance() {
+        // If ANY result is a Fail (outside the ASHRAE 140 ±5% band),
+        // within_tolerance must be false — never silently fall back to true.
+        let results = vec![
+            ValidationResult::new("600", MetricType::AnnualHeating, 5.0, 4.0, 6.0), // Pass
+            ValidationResult::new("600", MetricType::AnnualCooling, 100.0, 6.0, 8.0), // Fail
+        ];
+        let m = ComparisonMetrics::from_results(&results);
+        assert!(
+            !m.within_tolerance,
+            "presence of a Fail result must mark within_tolerance = false"
+        );
+    }
+
+    #[test]
+    fn comparison_metrics_empty_results_marks_not_within_tolerance() {
+        // No evidence ⇒ within_tolerance = false. Don't fake green-light
+        // for the empty case.
+        let m = ComparisonMetrics::from_results(&[]);
+        assert!(
+            !m.within_tolerance,
+            "empty results should NOT be reported as within tolerance"
+        );
+        assert_eq!(m.rmse, 0.0);
+        assert_eq!(m.percentage_difference, 0.0);
+        assert_eq!(m.max_deviation, 0.0);
+    }
 }
