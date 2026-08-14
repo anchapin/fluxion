@@ -12,10 +12,10 @@ Hand-curated index of the eight approved root `.md` files plus the highest-traff
 | [RULES.md](../../RULES.md) | Coding rules, hard constraints, must-always rules | ✅ Has summary |
 | [CONTRIBUTING.md](../../CONTRIBUTING.md) | Contribution guide, PR workflow, hotfix process | ✅ Has summary |
 | [CODEBASE_MAP.md](../../CODEBASE_MAP.md) | Code navigation, module dependency graph, Rust/Python/JS overview | ✅ Has summary |
-| [FIX.md — archived](../../docs/investigations/issue-1245-ashrae-140-ci-validation.md) | Issue #1245 placeholder fix (moved from root per issue #2466) | ✅ Has summary |
+| [FIX.md — archived](./investigations/issue-1245-ashrae-140-ci-validation.md) | Issue #1245 placeholder fix (moved from root per issue #2466) | ✅ Has summary |
 | [docs/KNOWN_ISSUES.md](../../docs/KNOWN_ISSUES.md) | Known systematic issues, ASHRAE 140 validation issues | ✅ Has summary |
-| [docs/coverage.md](../../docs/coverage.md) | Code coverage tracking, critical-path ratchet gate, llvm-cov workflow | ✅ Has summary |
-| [docs/validation_report.md](../../docs/validation_report.md) | ASHRAE 140 validation results, pass/fail rates | ✅ Has summary |
+| [docs/coverage.md](./coverage.md) | Code coverage tracking, critical-path ratchet gate, llvm-cov workflow | ✅ Has summary |
+| [docs/validation_report.md](./validation_report.md) | ASHRAE 140 validation results, pass/fail rates | ✅ Has summary |
 | [docs/worksheets/README.md](../../docs/worksheets/README.md) | Index of worksheets by issue/tag | 🆕 New |
 
 ## Auto-Generated Inventory

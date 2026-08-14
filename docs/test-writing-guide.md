@@ -440,5 +440,5 @@ cargo test --test '*isolation*'
 ## See Also
 
 - [ARCHITECTURE.md](../ARCHITECTURE.md) — Module boundaries and data flow
-- [tests/reference_data/](../reference_data/) — E+ reference CSVs
-- [ASHRAE 140 Validation](../ASHRAE140_VALIDATION.md) — Standard compliance testing
+- [tests/reference_data/](../tests/reference_data/) — E+ reference CSVs
+- [ASHRAE 140 Validation](ASHRAE140_VALIDATION.md) — Standard compliance testing

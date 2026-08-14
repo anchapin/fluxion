@@ -301,7 +301,7 @@ println!("Mean temp: {:.1}°C", summary.mean_temp_c);
 ### Integration with Empirical Validation
 
 The loader produces `FlexlabWeatherRecord` entries that map to the
-[`MonitoredDataPoint`](../src/validation/empirical.rs) interface used by the empirical
+[`MonitoredDataPoint`](../../src/validation/empirical.rs) interface used by the empirical
 validation pipeline. See `empirical.rs` for registration of data sources and comparison
 against simulation outputs.
 

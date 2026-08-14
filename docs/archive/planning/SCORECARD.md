@@ -194,7 +194,6 @@ Fixing the generator's data sources is tracked as a follow-up.*
 ## Links
 
 - [ASHRAE 140 Validation Report](docs/archive/ASHRAE140_RESULTS_v0.8.0.md)
-- [Validation Report (authoritative)](validation_report.md)
 - [Known Issues Catalog](docs/KNOWN_ISSUES.md)
 - [Quality Metrics](docs/QUALITY_METRICS.md)
 - [Release Notes v1.2](docs/RELEASE_NOTES_v1.2.md)
