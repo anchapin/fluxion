@@ -170,6 +170,8 @@ class ReleaseGateChecker:
         throughput_config = benchmark_config.get("throughput", {})
         latency_config = benchmark_config.get("latency", {})
         multi_zone_config = benchmark_config.get("multi_zone", {})
+        hybrid_config = benchmark_config.get("hybrid", {})
+        hybrid_multi_zone_config = benchmark_config.get("hybrid_multi_zone", {})
         cv_config = benchmark_config.get("cross_validation", {})
 
         metrics = benchmark_results.get("metrics", {})
@@ -221,6 +223,50 @@ class ReleaseGateChecker:
                 message=f"Multi-zone throughput {multi_zone:.0f} vs required {min_multi_zone}",
                 value=multi_zone,
                 threshold=min_multi_zone,
+            )
+        )
+
+        # Hybrid (Issue #2922) — single-zone HybridThermalModel absolute
+        # floor. Mirrors `benchmark.hybrid.min_configs_per_sec` in
+        # release_gates.yaml. Distinct from the pure-physics
+        # `throughput_configs_per_sec` floor above (#2693) because Hybrid
+        # default routing (surrogate loads + physics everything else) adds
+        # per-timestep dispatch overhead the physics-only path skips.
+        hybrid = metrics.get("hybrid_throughput", 0.0)
+        min_hybrid = hybrid_config.get("min_configs_per_sec", 0)
+        results.append(
+            GateResult(
+                name="hybrid_throughput",
+                category="benchmark",
+                passed=hybrid >= min_hybrid if min_hybrid > 0 else True,
+                message=(
+                    f"Hybrid throughput {hybrid:.0f} vs required {min_hybrid}"
+                    if min_hybrid > 0
+                    else f"Hybrid throughput {hybrid:.0f} (no floor configured; pass-through)"
+                ),
+                value=hybrid,
+                threshold=min_hybrid,
+            )
+        )
+
+        # Hybrid multi-zone (Issue #2922) — 10-zone HybridThermalModel
+        # absolute floor. Mirrors `benchmark.hybrid_multi_zone.min_configs_per_sec`.
+        hybrid_multi_zone = metrics.get("hybrid_multi_zone_throughput", 0.0)
+        min_hybrid_multi_zone = hybrid_multi_zone_config.get("min_configs_per_sec", 0)
+        results.append(
+            GateResult(
+                name="hybrid_multi_zone_throughput",
+                category="benchmark",
+                passed=hybrid_multi_zone >= min_hybrid_multi_zone
+                if min_hybrid_multi_zone > 0
+                else True,
+                message=(
+                    f"Hybrid multi-zone throughput {hybrid_multi_zone:.0f} vs required {min_hybrid_multi_zone}"
+                    if min_hybrid_multi_zone > 0
+                    else f"Hybrid multi-zone throughput {hybrid_multi_zone:.0f} (no floor configured; pass-through)"
+                ),
+                value=hybrid_multi_zone,
+                threshold=min_hybrid_multi_zone,
             )
         )
 

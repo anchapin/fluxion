@@ -84,6 +84,22 @@ benchmark:
     zones: 10
     description: "Minimum throughput for 10-zone simulation"
 
+  # HybridThermalModel scaling (Issue #2922)
+  # The Absolute Perf Gate (#2693) and Multi-Zone Perf Gate (#2772) only
+  # measure the pure-physics path (ThermalModel<VectorField>). They do NOT
+  # exercise the production-default HybridThermalModel routing
+  # (`HybridRouting::default()`: surrogate loads, physics everything else).
+  # A regression adding per-timestep dispatch overhead in Hybrid mode
+  # (e.g. to the surrogate-load branch) would slip through both gates
+  # silently. These floors close that gap.
+  hybrid:
+    min_configs_per_sec: 80  # Single-zone HybridThermalModel, pop_100, default routing
+    description: "Minimum throughput for single-zone HybridThermalModel"
+  hybrid_multi_zone:
+    min_configs_per_sec: 8  # 10-zone HybridThermalModel, pop_1000, default routing
+    zones: 10
+    description: "Minimum throughput for 10-zone HybridThermalModel"
+
   # Cross-validation latency
   cross_validation:
     max_ms: 500
@@ -283,6 +299,25 @@ ci:
     # not a silently-greened gate.
     - "Multi-Zone Perf Gate (Issue #2772)"
 
+    # Issue #2922: PR-level ABSOLUTE HybridThermalModel floor. The
+    # #2693 Absolute Perf Gate and #2772 Multi-Zone Perf Gate both measure
+    # the pure-physics path (`ThermalModel<VectorField>` /
+    # `BatchOracle::evaluate_population`); HybridThermalModel with
+    # `HybridRouting::default()` (the production-recommended default
+    # `ThermalModelMode::Hybrid` routing — surrogate loads, physics
+    # everything else) is NOT exercised by either gate. A regression
+    # adding per-timestep overhead in the surrogate-load branch fires
+    # only in Hybrid mode and would slip through. The `hybrid-perf-gate`
+    # job in `performance_dashboard.yml` runs the new
+    # `tests/hybrid_perf_regression.rs::test_hybrid_performance_regression`
+    # (pop_100, 1-zone) and
+    # `test_hybrid_multi_zone_performance_regression` (pop_1000, 10-zone)
+    # x3 → median → `release_gate_checker.py --benchmark-gates
+    # hybrid_throughput,hybrid_multi_zone_throughput`, failing the PR on
+    # breach. Floors: `benchmark.hybrid.min_configs_per_sec: 80` and
+    # `benchmark.hybrid_multi_zone.min_configs_per_sec: 8`.
+    - "Hybrid Perf Gate (Issue #2922)"
+
     # Energy Conservation gate (#1295). Listener job defined in
     # `.github/workflows/ashrae_validation.yml` under the
     # `fluxion-energy-conservation-gate` id. Mirrors the determinism /
@@ -429,6 +464,19 @@ ci:
       # suppression discipline as #2693 (ubuntu-latest, median-of-3).
       workflow: ".github/workflows/performance_dashboard.yml"
       issue: 2772
+      triggered_by: "PR + push to main + workflow_dispatch"
+
+    - job: "Hybrid Perf Gate (Issue #2922)"
+      # PR-blocking ABSOLUTE HybridThermalModel floor (≥ 80 cfg/s single-
+      # zone, pop_100; ≥ 8 cfg/s 10-zone, pop_1000; `HybridRouting::default()`).
+      # The #2693 Absolute Perf Gate and #2772 Multi-Zone Perf Gate both
+      # measure the pure-physics path (`ThermalModel<VectorField>` /
+      # `BatchOracle::evaluate_population`); neither exercises
+      # HybridThermalModel with `HybridRouting::default()` (the production-
+      # recommended default routing). Same runner / noise-suppression
+      # discipline as #2693 (ubuntu-latest, median-of-3).
+      workflow: ".github/workflows/performance_dashboard.yml"
+      issue: 2922
       triggered_by: "PR + push to main + workflow_dispatch"
 
     - job: "MSRV Check (Issue #2934)"

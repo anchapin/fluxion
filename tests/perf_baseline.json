@@ -1,5 +1,5 @@
 {
-  "timestamp": "2026-08-12T06:37:03+00:00",
+  "timestamp": "2026-08-14T19:35:00+00:00",
   "throughput_analytical": 225.0,
   "latency_ms": 4.454,
   "population_size": 100,
@@ -9,8 +9,22 @@
     "zones": 10,
     "use_surrogates": false
   },
+  "hybrid_throughput": 80.0,
+  "hybrid_multi_zone_throughput": 8.0,
+  "hybrid": {
+    "population_size": 100,
+    "zones": 1,
+    "routing": "default",
+    "use_surrogates": true
+  },
+  "hybrid_multi_zone": {
+    "population_size": 1000,
+    "zones": 10,
+    "routing": "default",
+    "use_surrogates": true
+  },
   "_meta": {
-    "measured_at": "2026-08-12",
+    "measured_at": "2026-08-14",
     "methodology": "Median of N runs of `cargo test --test performance_regression_test --release test_performance_regression` (population=100, 1 warmup + 1 measured per run). Same harness CI's absolute-perf-gate (#2693) and performance.yml use. Computed via Python statistics.median (RULES.md constraint #0).",
     "n_runs": 7,
     "strategy": "median",
@@ -50,6 +64,8 @@
         18.922
       ]
     },
+    "hybrid_methodology": "HybridThermalModel (Issue #2922) absolute floors are captured as the same numeric value the release-gate YAML uses (`benchmark.hybrid.min_configs_per_sec: 80`, `benchmark.hybrid_multi_zone.min_configs_per_sec: 8`). The field is additive — the test never regresses against the absolute floor in any runner class; the per-runner baseline will be measured once `hybrid-perf-gate` runs enough times on ubuntu-latest to seed `enforcement: hard-gate`. Until then the absolute-floor assertion (which IS runner-independent) is the only enforcement. HybridThermalModel::from_spec(ASHRAE140Case::Case600.spec()) for single-zone, HybridThermalModel::new(10, HybridRouting::default()) for multi-zone — both use the production-recommended default routing (surrogate loads, physics everything else).",
+    "hybrid_n_runs": 0,
     "machine": {
       "platform": "Linux-6.17.0-40-generic-x86_64-with-glibc2.39",
       "processor": "x86_64",
