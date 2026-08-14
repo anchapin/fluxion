@@ -87,6 +87,7 @@ pub mod solar;
 pub mod testing;
 pub mod thermal;
 pub mod twin;
+pub mod util;
 pub mod validation;
 
 // Issue #2493: BatchOracle core (struct + physics `evaluate_population` hot
