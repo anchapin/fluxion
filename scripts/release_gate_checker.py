@@ -421,25 +421,43 @@ class ReleaseGateChecker:
 
         ``benchmark_gate_filter`` restricts the benchmark sub-gates evaluated
         (issue #2693); see :meth:`check_benchmark_gates`.
+
+        When ``ci.fail_fast: true`` is set in the YAML config (default), the
+        checker stops evaluating further gate categories after the first
+        failure. Drift and benchmark gates are skipped if validation gates
+        already produced a failure. Issue #2886.
         """
         self.results = []
 
         # Validation gates
+        validation_failed = False
         if validation_results:
-            self.results.extend(self.check_validation_gates(validation_results))
+            validation_results_list = self.check_validation_gates(validation_results)
+            self.results.extend(validation_results_list)
+            validation_failed = any(not r.passed for r in validation_results_list)
 
-            # Drift gates (need both current and baseline)
+            # Drift gates (need both current and baseline) — skip on fail_fast
             if self.config.get("drift", {}).get("enabled", True):
-                baseline = self._load_baseline()
-                self.results.extend(
-                    self.check_drift_gates(validation_results, baseline)
-                )
+                if validation_failed and self.config.get("ci", {}).get("fail_fast", True):
+                    sys.stderr.write(
+                        "::warning::fail_fast: skipping drift gates after validation failure\n"
+                    )
+                else:
+                    baseline = self._load_baseline()
+                    self.results.extend(
+                        self.check_drift_gates(validation_results, baseline)
+                    )
 
-        # Benchmark gates
+        # Benchmark gates — skip on fail_fast
         if benchmark_results:
-            self.results.extend(
-                self.check_benchmark_gates(benchmark_results, benchmark_gate_filter)
-            )
+            if validation_failed and self.config.get("ci", {}).get("fail_fast", True):
+                sys.stderr.write(
+                    "::warning::fail_fast: skipping benchmark gates after validation failure\n"
+                )
+            else:
+                self.results.extend(
+                    self.check_benchmark_gates(benchmark_results, benchmark_gate_filter)
+                )
 
         # Calculate overall
         overall_passed = all(r.passed for r in self.results)
