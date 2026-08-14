@@ -527,6 +527,41 @@ jobs:
             pr_comment.md
           retention-days: 30
 
+      # Issue #2978 — capture the regenerated validation docs as a workflow
+      # artifact instead of leaving them dirty in the worktree. We chose
+      # path (b) (artifact-only) over path (a) (auto-commit + push a
+      # `[skip ci]` commit on every run) because path (a) pollutes the PR
+      # branch history with a docs-only commit per CI invocation and would
+      # also re-trigger the same `validate` job recursively when the
+      # committed contents change. The committed snapshots of these two
+      # files remain the static reference baseline; a separate release-time
+      # PR updates them. See issue #2978 for the full acceptance criteria.
+      - name: Upload regenerated validation docs (Issue #2978)
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02  # v4
+        with:
+          name: ashrae140-results
+          path: |
+            docs/ASHRAE140_RESULTS.md
+            docs/QUALITY_METRICS.md
+          retention-days: 30
+          if-no-files-found: ignore
+
+      # Issue #2978 — restore the committed baseline snapshots of the two
+      # docs files the validation test regenerates. Without this step, the
+      # worktree remains dirty (the regenerated content differs from the
+      # source-branch tip the PR was based on) and any sub-agent that runs
+      # `git status` in a worktree branched off this SHA during the 5-min
+      # CI poll interval would see them as "modified but not committed"
+      # (PRs #2975 and #2977 cleanup reports hit this). Combined with the
+      # upload step above, downstream consumers can download the live
+      # regenerated report from the artifact without the worktree state
+      # being polluted.
+      - name: Restore committed baseline docs (Issue #2978)
+        if: always()
+        run: |
+          git checkout HEAD -- docs/ASHRAE140_RESULTS.md docs/QUALITY_METRICS.md
+
       - name: CI Gate Check
         id: gate
         continue-on-error: true  # advisory on PRs; hard gate on push/schedule
