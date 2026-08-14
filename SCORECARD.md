@@ -83,6 +83,7 @@ Required branch-protection checks (`release_gates.yaml` → `ci.required_checks`
 | CUDA Smoke Test (Issue #1603) | #1603 |
 | Architecture Drift Detection | — |
 | Cargo Deny | — |
+| MSRV Check (Issue #2934) | #2934 |
 
 - **Live status** is intentionally not baked in here (it is non-deterministic and would break scorecard diff stability). Run:
 
