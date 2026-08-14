@@ -4,6 +4,13 @@ target/
 /target_*/
 **/*.rs.bk
 *.pdb
+# Per-workspace-member Cargo.lock files must NOT be tracked: Cargo uses the
+# workspace-root Cargo.lock for every member. Tracking a divergent local lock
+# (e.g. fluxion-mcp/Cargo.lock with different anyhow/rand versions) makes
+# `cargo update -p foo` from inside the member silently revert the next
+# workspace-root build. See issue #2931.
+fluxion-mcp/Cargo.lock
+/crates/*/Cargo.lock
 
 # Python
 __pycache__/
