@@ -65,14 +65,14 @@ exclude = [
 # faer: the minimal floor is `std` + `default-features = false` (root & fluxion-cfd
 # use only basic `Mat` ops). fluxion-city additionally needs the `sparse`/`linalg`
 # feature groups, so it re-enables faer's `default` feature group at its call site.
-faer = { version = "0.23.2", default-features = false, features = ["std"] }
+faer = { version = "0.24.4", default-features = false, features = ["std"] }
 # ndarray: every consumer disables default features; members add `std`/`serde`.
 ndarray = { version = "0.17", default-features = false }
-nalgebra = "0.34"
+nalgebra = "0.35"
 uuid = "1.10"
 tokio = "1.40"
 serde = { version = "1.0", features = ["derive"] }
-thiserror = "1.0"
+thiserror = "2.0"
 reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls", "blocking"] }
 tracing = "0.1"
 metrics = "0.24"
