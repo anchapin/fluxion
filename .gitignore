@@ -71,6 +71,11 @@ env/
 tmp/
 *.tmp
 *.bak
+# Backup files with numeric suffixes (e.g., `.bak1`, `.bak2`, `.bak3`)
+# sometimes written in-place by editors / post-edit hooks and never cleaned
+# up. `*.bak` above matches only the literal `.bak` suffix, not `bak1`,
+# `bak2`, etc.; this rule closes that gap (see issue #2950).
+*.bak[0-9]*
 *.orig
 .cache/
 .pytest_cache/
