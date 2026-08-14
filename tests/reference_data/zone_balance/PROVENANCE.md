@@ -112,3 +112,65 @@ follow-up to issue #1408.
 #
 cargo test --release -p fluxion test_benchmark_csv_consistent_for_case_900
 ```
+
+## Companion file: `generate_case_800_810_energy.py` (issue #2953)
+
+**Script:** `tests/reference_data/zone_balance/generate_case_800_810_energy.py`
+**Issue:** #2953 (script creation for ASHRAE 140 Cases 800 / 810 reference data)
+**Status (as of this commit):** **Script created; CSVs are follow-up PR.**
+
+The 800 / 810 cases are ASHRAE 140-2023 §5.2 HVAC-equipment variants of the
+Case 600 / Case 900 envelope:
+
+* **Case 800** — light-mass single-story + single-stage heat pump (COP 3.2
+  heat / 3.5 cool). Geometry shared with Case 600; the HVAC layer is novel.
+* **Case 810** — high-mass commercial + comprehensive HVAC plant
+  (COP 4.0 heat / 6.0 cool, 75% heat recovery, VAV + economizer).
+  Geometry shared with Case 900; the HVAC layer is novel.
+
+The script:
+
+1. References the expected EnergyPlus IDF paths
+   (`tests/reference_data/energyplus_models/ashrae_140_case_{800,810}.idf`).
+   The IDFs are **not yet authored** — they are a follow-up to #2953 and
+   tracked together with the CSV outputs.
+2. Skips any case whose IDF is missing and prints a clear warning (this is
+   the current state of the repo, so the script exits 0 with no work to do).
+3. When run against complete IDFs:
+   - Runs EnergyPlus 25.2.0 against each IDF
+     (driver: `subprocess.run(["/usr/local/EnergyPlus-25-2-0/energyplus", ...])`)
+   - Extracts 8760-row hourly time series from `eplusout.sql`
+     (Zone Mean Air Temperature, Site Outdoor Air Drybulb Temperature,
+     Zone Air System Sensible Heating/Cooling Energy)
+   - Writes `case_800_energy_hourly.csv` and `case_810_energy_hourly.csv`
+   - Computes annual heating, annual cooling, peak heating, peak cooling
+   - Writes `case_800_energy_reference.csv` and
+     `case_810_energy_reference.csv` in the schema of
+     `case_600_energy_reference.csv` (metric, unit, ref_min, ref_max,
+     ref_midpoint, tolerance_pct, accept_min, accept_max, notes)
+
+The reference-band logic mirrors `generate_case_970_energy.py` and the
+existing Case 600 / 900 / 920 / 950 / 960 reference CSVs: ±15% tolerance
+around the EnergyPlus-run midpoint, with the conservation band sanity
+check against `(0.5, 50.0) MWh` total annual energy.
+
+**Spec source:** `src/validation/ashrae140/cases/series_800.rs` (Case 800
+and Case 810 case definitions — heat pump capacities, COP, setpoints,
+zone geometry).
+
+**How to run when the IDFs land (follow-up PR):**
+
+```bash
+# From the repo root, with EnergyPlus 25.2.0 at /usr/local/EnergyPlus-25-2-0/:
+python3 tests/reference_data/zone_balance/generate_case_800_810_energy.py
+# Regenerates: case_800_energy_hourly.csv,
+#              case_810_energy_hourly.csv,
+#              case_800_energy_reference.csv,
+#              case_810_energy_reference.csv
+```
+
+**Companion / sibling scripts** (same directory): the script follows the
+established pattern of `generate_case_600_900_energy.py` (EnergyPlus
+invocation + hourly extraction) and `generate_case_970_energy.py`
+(summary-only reference band output), and merges the hourly-and-summary
+pattern of `generate_case_920_950_960_energy.py`.
