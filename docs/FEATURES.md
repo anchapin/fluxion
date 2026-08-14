@@ -26,7 +26,7 @@ The canonical source of truth is always `Cargo.toml` — if this file disagrees 
 | [`dwave`](#dwave) | off | D-Wave quantum annealer client (Phase 2c, #1609) | manual only | `DWAVE_API_TOKEN` (required at runtime) |
 | [`debug-physics`](#debug-physics) | off | Unconditional `eprintln!` in physics hot loops (#1967) | none | none |
 | [`kafka`](#kafka) | off | `rdkafka` telemetry consumer (#2056) | manual only | Kafka broker config |
-| [`fluid`](#fluid) | off | Acausal HVAC / fluid network modeling via `fluxion-fluid` (ADR-005, #1980) | `fluxion-mcp` build (unconditional) | none |
+| [`fluid`](#fluid) | off | Acausal HVAC / fluid network modeling via `fluxion-fluid` (ADR-0005, #1980) | `fluxion-mcp` build (unconditional) | none |
 | [`gauge-solver`](#gauge-solver) | off | experimental `GaugeZoneSolver` scaffolding (#2304); not wired as primary — always `None` (#2686) | advisory ASHRAE variant | none |
 | [`fluxion-city`](#fluxion-city) | off | Urban radiation solver wiring (#2344) | manual only | none |
 | [`dhat`](#dhat) | off | `dhat` heap allocation profiling (#2384) | manual only | `DHAT_ANALYSIS=1` |
@@ -184,7 +184,7 @@ Combine flags with commas: `cargo test --features ort,multi-zone,fluid`.
 ### `fluid`
 
 - **Enables:** Acausal HVAC / fluid network modeling via the `fluxion-fluid` crate, providing
-  port-based fluid circuit traits (Issue #1980 / ADR-005). This is **not** the same as
+  port-based fluid circuit traits (Issue #1980 / ADR-0005). This is **not** the same as
   `fluxion-core/src/fluid/`.
 - **Build:** `cargo build --features fluid`.
 - **CI implication:** `fluxion-mcp` unconditionally builds with `fluxion-fluid`, so the

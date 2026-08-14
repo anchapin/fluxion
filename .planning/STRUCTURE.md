@@ -124,7 +124,7 @@ fluxion/                          # Cargo workspace root (also the main `fluxion
 
 ### `fluxion-fluid/` (feature-gated)
 
-- **Purpose:** Compile-time strongly typed fluid port traits for acausal HVAC / fluid DAE systems (Issue #1980 / ADR-005). **Not** the same as `fluxion-core/src/fluid/`.
+- **Purpose:** Compile-time strongly typed fluid port traits for acausal HVAC / fluid DAE systems (Issue #1980 / ADR-0005). **Not** the same as `fluxion-core/src/fluid/`.
 - **Root feature:** `fluid = ["dep:fluxion-fluid"]`.
 - **Contains:** `port.rs`, `ports/`, `medium.rs`, `mediums/`, `properties.rs`, `energy.rs`, `hvac.rs`, `ecs/`, `autodiff/`, `pantelides.rs`.
 
