@@ -30,6 +30,19 @@ jobs:
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4
 
+      # System build deps (libssl-dev, pkg-config, fontconfig). Matches
+      # the apt-install list in .github/actions/setup-rust-env/action.yml so
+      # the MSRV job can build crates that link against C libs (yeslogic-
+      # fontconfig-sys, openssl-sys, etc.). Keep this in sync with
+      # setup-rust-env if more system deps are added there.
+      - name: Install system dependencies (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libssl-dev pkg-config libfontconfig1-dev fontconfig
+        env:
+          DEBIAN_FRONTEND: noninteractive
+
       # Install the MSRV-pinned stable toolchain (issue #2934). The crate's
       # `rust-version = "1.89"` field — set on the root Cargo.toml, the
       # [workspace.package] block, and all 10 workspace-member Cargo.toml
