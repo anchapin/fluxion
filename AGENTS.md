@@ -27,7 +27,7 @@ Cargo workspace. The root `Cargo.toml` is also the `fluxion` package; bare `carg
 - **Feature-gated siblings**: `fluxion-cfd` (FFD airflow), `fluxion-city` (urban radiation), `fluxion-fluid` (acausal HVAC/fluid port traits — **not** the same as `fluxion-core/src/fluid/`).
 - **`fluxion-mcp/`** — MCP server, separate package: `cargo build -p fluxion-mcp` / `cargo test -p fluxion-mcp` (do not use `--bin`). Depends on `fluxion` with `default-features = false`; enables `multi-zone` via its own default feature (#2540); unconditionally pulls `fluxion-fluid` + `fluxion-toon`.
 - **`crates/`**: `fluxion-toon` (LLM-friendly token format; SPEC in `crates/fluxion-toon/SPEC.md`), `fluxion-twin` (digital twin UKF + MQTT).
-- **Orchestration config at repo root**: `agent-orchestrator.yaml` (multi-agent task graph), `bernstein.yaml` (project context). `.opencode/plugins/` holds local OpenCode plugins (`agent-review`, `task-queue`) — agents on this machine may load them via `.opencode/package.json`.
+- **Orchestration config at repo root**: `agent-orchestrator.yaml` (multi-agent task graph), `bernstein.yaml` (project context). `.opencode/plugins/entire.ts` is the Entire CLI plugin (auto-generated; gitignored) — installed locally via `.opencode/package.json`.
 
 Cycle-breaking rules (each enforced by CI):
 - `fluxion-core/src/**/*.rs` may not import sim/physics/ai/validation — see above.
@@ -58,7 +58,7 @@ python3 scripts/check_root_hygiene.py                       # root-allow-list + 
 python3 scripts/check_known_issues_stale.py                 # KNOWN_ISSUES Last-Updated freshness (#1723)
 python3 scripts/check_doc_inventory_fresh.py                # docs/doc-inventory.md freshness (#2765)
 python3 scripts/check_strict_energy_gate_regression.py      # ±15% Cases 600/900 regression (#1333)
-python  scripts/release_gate_checker.py                     # release-gate evaluation
+python3 scripts/release_gate_checker.py                     # release-gate evaluation
 
 # Code quality (REQUIRED order — mirrors CI)
 cargo fmt -- --check                       # omit --check to auto-fix
@@ -150,21 +150,13 @@ ML-surrogate swap-point traits:
 
 ## Environment Variables
 
-- `FLUXION_REST_BIND` / `FLUXION_REST_PORT` — `fluxion-rest` (default `0.0.0.0:8080`; healthcheck `/v1/healthz`).
-- `FLUXION_REST_AUTH` — `off` (default) | `token` | `tls`. Issue #2505 auth middleware on every `/v1/*` route except `/v1/healthz`. `token` requires `FLUXION_REST_AUTH_TOKEN`; `tls` expects the reverse proxy to set the verified-client header.
-- `FLUXION_REST_AUTH_TOKEN` — bearer for `token|tls`.
-- `FLUXION_REST_CORS_ORIGINS` — comma-separated allow-list (defaults to localhost dev origins; never `permissive()`).
-- `FLUXION_REST_RATE_LIMIT_RPS` / `_BURST` / `_MAX_ENTRIES` — per-IP token-bucket governor (defaults `100`/`1000`/`100000`). Body capped at 16 MiB. `_MAX_ENTRIES` LRU-caps distinct per-IP buckets (#2688).
-- `FLUXION_REST_TRUSTED_PROXIES` — CIDR allow-list of trusted reverse proxies. **When unset (default), `X-Forwarded-For`/`X-Real-IP` are IGNORED** and the limiter keys on the socket peer only (#2688 spoofing fix). When set, only rightmost-non-trusted hop is honoured.
-- `FLUXION_REST_ALLOW_INSECURE=1` — opt out of the release-build boot guard that refuses `FLUXION_REST_BIND=0.0.0.0` + `FLUXION_REST_AUTH=off`.
-- `FLUXION_ONNX_MODEL` — explicit ONNX model path (default `models/surrogate_zone_thermal.onnx`; mock fallback when unset).
-- `FLUXION_ONNX_BACKEND` — `cpu|cuda|coreml|directml|openvino`; auto-downgrades to `cpu` if `cuda` feature not built.
-- `FLUXION_GPU` — `0`/`false` to force CPU inference.
-- `FLUXION_MQTT_ALLOW_INSECURE` — `fluxion-twin` MQTT consumer. Truthy (`1`/`true`/`yes`/`on`) opts into plaintext broker URLs AND bypasses the #2703 release-build boot guard that otherwise refuses insecure transports (plaintext or disabled cert validation). Debug builds skip the guard. **Default: TLS-only.**
-- `FLUXION_MQTT_INSECURE` — truthy skips TLS server-cert validation (dangerous, warning-logged). Refused in release builds unless `FLUXION_MQTT_ALLOW_INSECURE=1` is also set.
-- `DWAVE_API_TOKEN` — required at runtime for the `dwave` feature.
-- `PYO3_USE_ABI3_FORWARD_COMPATIBILITY=1` + `RUST_MIN_STACK=33554432` — set by Python-bindings CI to avoid linker SIGSEGV.
-- `CARGO_BUILD_JOBS=1` — set by Clippy CI to keep peak RSS low.
+**REST server (`fluxion-rest`)** — defaults `0.0.0.0:8080`, healthcheck `/v1/healthz`. Auth modes (`FLUXION_REST_AUTH`): `off` (default) | `token` | `tls` (#2505). `token` requires `FLUXION_REST_AUTH_TOKEN`; `tls` expects the reverse proxy to set the verified-client header. `FLUXION_REST_CORS_ORIGINS` is an allow-list (never `permissive()`). Rate-limit governor (`FLUXION_REST_RATE_LIMIT_{RPS,BURST,MAX_ENTRIES}`, defaults `100`/`1000`/`100000`); body capped at 16 MiB; `_MAX_ENTRIES` LRU-caps distinct per-IP buckets (#2688). `FLUXION_REST_TRUSTED_PROXIES` — **when unset (default), `X-Forwarded-For`/`X-Real-IP` are IGNORED** and the limiter keys on the socket peer only (#2688 spoofing fix). `FLUXION_REST_ALLOW_INSECURE=1` opts out of the release-build boot guard that refuses `BIND=0.0.0.0` + `AUTH=off`.
+
+**ONNX surrogate** — `FLUXION_ONNX_MODEL` (default `models/surrogate_zone_thermal.onnx`; mock fallback when unset), `FLUXION_ONNX_BACKEND` (`cpu|cuda|coreml|directml|openvino`; auto-downgrades to `cpu` if `cuda` feature not built), `FLUXION_GPU=0` to force CPU inference.
+
+**MQTT (`fluxion-twin`)** — **default: TLS-only.** `FLUXION_MQTT_ALLOW_INSECURE=1` opts into plaintext broker URLs AND bypasses the #2703 release-build boot guard; debug builds skip the guard. `FLUXION_MQTT_INSECURE=1` skips TLS server-cert validation (refused in release unless `ALLOW_INSECURE` is also set).
+
+**Misc** — `DWAVE_API_TOKEN` (required at runtime for the `dwave` feature); `PYO3_USE_ABI3_FORWARD_COMPATIBILITY=1` + `RUST_MIN_STACK=33554432` (set by Python-bindings CI to avoid linker SIGSEGV); `CARGO_BUILD_JOBS=1` (set by Clippy CI to keep peak RSS low).
 
 ## Toolchain Quirks
 
