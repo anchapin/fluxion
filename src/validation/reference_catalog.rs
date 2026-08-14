@@ -28,8 +28,23 @@
 
 use sha2::{Digest, Sha256};
 use std::collections::BTreeMap;
+use std::fmt::Write as _;
 use std::fs;
 use std::path::{Path, PathBuf};
+
+/// Format a SHA-256 digest as a lowercase hex string.
+///
+/// `sha2` 0.11 returns a `GenericArray<u8, U32>` whose `LowerHex` impl is no
+/// longer available in newer `generic-array` releases, so we format the bytes
+/// manually.
+fn sha256_hex(digest: impl AsRef<[u8]>) -> String {
+    let bytes = digest.as_ref();
+    let mut s = String::with_capacity(bytes.len() * 2);
+    for b in bytes {
+        let _ = write!(s, "{:02x}", b);
+    }
+    s
+}
 
 /// Root directory of the reference data tree (relative to the cargo
 /// manifest / test working directory).
@@ -183,7 +198,7 @@ impl ReferenceEntry {
             return Ok(h.as_str());
         }
         let bytes = fs::read(&self.absolute_path)?;
-        let digest = format!("{:x}", Sha256::digest(&bytes));
+        let digest = sha256_hex(Sha256::digest(&bytes));
         self.sha256 = Some(digest);
         Ok(self.sha256.as_ref().expect("just-set").as_str())
     }
