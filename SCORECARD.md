@@ -74,6 +74,14 @@ Required branch-protection checks (`release_gates.yaml` → `ci.required_checks`
 | Physics-Sim-Cycle-Check | — |
 | Absolute Perf Gate (Issue #2693) | #2693 |
 | Multi-Zone Perf Gate (Issue #2772) | #2772 |
+| Energy Conservation (GH) | — |
+| Rustfmt (GH) | — |
+| Clippy (GH) | — |
+| Known Issues Stale Check (GH) | — |
+| Ashrae Cases Cycle Check (GH) | — |
+| CUDA Smoke Test (Issue #1603) | #1603 |
+| Architecture Drift Detection | — |
+| Cargo Deny | — |
 
 - **Live status** is intentionally not baked in here (it is non-deterministic and would break scorecard diff stability). Run:
 
