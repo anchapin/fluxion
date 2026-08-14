@@ -102,6 +102,22 @@
       "total": 299,
       "edge_signature": "9cb0744c1b6d1810379a0e0ee5e4ed4210a50715ad4a51634da3164106c37922",
       "reason": "Post-orchestration refactor wave (PRs #2798-#2804) shifted line numbers in cycle-edge files (e.g. PR #2798 added the TLS trusted-proxy gate above pre-existing crate::validation::ashrae_140_cases::Orientation references) without adding or removing any cycle edge: total holds at 299 and a content-only offender diff (file + scanned line, ignoring lineno) is empty across all six buckets. This snapshot is also the first recorded under the Issue #2810 lineno-independent signature scheme, so the signature reflects the lineno-stripped edge set and will no longer drift on benign line-shift refactors."
+    },
+    {
+      "timestamp": "2026-08-14T20:30:00+00:00",
+      "commit": "7290dbe",
+      "source": "post-pr2988-issue2980",
+      "reason": "PR #2988 (issue #2980: complete remaining ASHRAE 140 placeholders from #2945) was merged into develop at commit 7290dbe. The PR added 5 new cycle edges (validation_to_physics 62 -> 65, +3; validation_to_weather 23 -> 25, +2; total 299 -> 304) by introducing `crate::physics::cta::*` (VectorField, ContinuousTensor) and `crate::weather::*` references in the new ASHRAE 140 Case 600/900/195 multi-zone validators (src/validation/ashrae_140_multi_zone.rs and src/validation/ashrae_140_validator.rs). The architectural sign-off for this growth was raised in the same PR: BASELINE_VALIDATION_TO_PHYSICS was raised 62 -> 65 and BASELINE_VALIDATION_TO_WEATHER was raised 23 -> 25 in scripts/check_ashrae_cases_cycle.py (issue #2980 +5 edges); BASELINE_VALIDATION_TO_PHYSICS in scripts/check_physics_sim_cycle.py was raised to match. The magnitude cycle guard (check_ashrae_cases_cycle.py) passes at the new count. This snapshot is the trend-guard counterpart that re-baselines the downward-trend ledger so per-PR R1 (no growth) does not false-positive against unrelated PRs that follow #2988 onto develop. Downward trend from this new 304 baseline is enforced going forward; the cycle-removal work referenced in check_ashrae_cases_cycle.py (issue #2495) still owns reducing validation_to_physics and validation_to_weather below 65/25.",
+      "totals": {
+        "sim_to_validation": 72,
+        "validation_to_sim": 58,
+        "validation_to_physics": 65,
+        "validation_to_weather": 25,
+        "physics_to_sim": 0,
+        "sim_to_physics": 84
+      },
+      "total": 304,
+      "edge_signature": "cd6683e1d6008d0f66594801d9796ef91ea562334b0cfaab24c865ae43ef4890"
     }
   ]
 }
