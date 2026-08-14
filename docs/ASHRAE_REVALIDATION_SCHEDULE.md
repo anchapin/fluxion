@@ -163,7 +163,7 @@ See `scripts/annual_ashrae_revalidation.sh` for full documentation.
 
 ## See Also
 
-- [ASHRAE 140 Mathematical Model](../ashrae_140/mathematical_model.md)
-- [ASHRAE 140 Test Cases](../ashrae_140/cases/)
-- [CI Gate Workflow](../../.github/workflows/ashrae_validation.yml)
+- [ASHRAE 140 Mathematical Model](ashrae_140/mathematical_model.md)
+- [ASHRAE 140 Test Cases](../src/validation/ashrae140/cases/)
+- [CI Gate Workflow](../.github/workflows/ashrae_validation.yml)
 - [Validation Results Dashboard](https://github.com/anchapin/fluxion/actions/workflows/ashrae_validation.yml)
