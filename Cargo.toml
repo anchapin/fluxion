@@ -495,6 +495,14 @@ path = "src/bin/run_multi_zone_validation.rs"
 name = "parallel-issue-workflow"
 path = "src/bin/parallel_issue_workflow.rs"
 
+[[bin]]
+name = "run_ashrae_validation"
+path = "src/bin/run_ashrae_validation.rs"
+
+[[bin]]
+name = "run_cross_validation"
+path = "src/bin/run_cross_validation.rs"
+
 [profile.release]
 opt-level = 3
 lto = "thin"
