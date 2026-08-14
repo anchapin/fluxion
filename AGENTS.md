@@ -19,14 +19,15 @@ Companion docs (read when relevant):
 
 ## Workspace Structure
 
-Cargo workspace. **Root is also the main `fluxion` package** (`default-members = ["."]`), so bare `cargo build`/`cargo test` build the root crate, not the whole workspace.
+Cargo workspace. The root `Cargo.toml` is also the `fluxion` package; bare `cargo build`/`cargo test` run against it (default-members is implicit — only `cargo test --workspace` or `cargo build -p <pkg>` reach siblings).
 
-- **`fluxion`** (root, `src/`) — engine: `sim/` (thermal model, solar, ventilation), `physics/` (conduction solvers), `ai/` (ONNX surrogates), `validation/` (ASHRAE 140, energy balance), `api/` (axum REST), `python/` + `napi/` (bindings, feature-gated), `interop/` (OSM/gbXML/IFC/FMI), `cli/`, `bin/`.
+- **`fluxion`** (root, `src/`) — engine: `sim/` (thermal model, solar, ventilation), `physics/` (conduction solvers), `ai/` (ONNX surrogates), `validation/` (ASHRAE 140, energy balance), `api/` (axum REST), `python/` + `napi/` (bindings, feature-gated), `interop/` (OSM/gbXML/IFC/FMI), `cli/`, `bin/`. Binaries: `fluxion` (CLI; `src/bin/fluxion.rs`), `fluxion-rest` (axum API), `fluxion-delta` (diff tool), plus `export_csv` and four `run_{ashrae,cross,multi_zone}_validation` helpers — all via `cargo run --bin <name>`.
 - **`fluxion-core/`** — dependency-light *leaf* modules (`weather/`, `assembly.rs`, `construction.rs`, `multi_node.rs`, `per_surface_conduction.rs`, `ashrae_cases.rs`, `physics_constants.rs`). **Must NOT import `crate::sim_*` / `crate::physics_*` / `crate::ai_*` / `crate::validation_*`** — guard: `scripts/check_ashrae_cases_cycle.py` (#1441).
 - **Always-built siblings**: `fluxion-grid`, `fluxion-behavior`, `fluxion-wasm` (wasm-bindgen over `fluxion-core` + `fluxion-fluid`).
 - **Feature-gated siblings**: `fluxion-cfd` (FFD airflow), `fluxion-city` (urban radiation), `fluxion-fluid` (acausal HVAC/fluid port traits — **not** the same as `fluxion-core/src/fluid/`).
 - **`fluxion-mcp/`** — MCP server, separate package: `cargo build -p fluxion-mcp` / `cargo test -p fluxion-mcp` (do not use `--bin`). Depends on `fluxion` with `default-features = false`; enables `multi-zone` via its own default feature (#2540); unconditionally pulls `fluxion-fluid` + `fluxion-toon`.
 - **`crates/`**: `fluxion-toon` (LLM-friendly token format; SPEC in `crates/fluxion-toon/SPEC.md`), `fluxion-twin` (digital twin UKF + MQTT).
+- **Orchestration config at repo root**: `agent-orchestrator.yaml` (multi-agent task graph), `bernstein.yaml` (project context). `.opencode/plugins/` holds local OpenCode plugins (`agent-review`, `task-queue`) — agents on this machine may load them via `.opencode/package.json`.
 
 Cycle-breaking rules (each enforced by CI):
 - `fluxion-core/src/**/*.rs` may not import sim/physics/ai/validation — see above.
@@ -126,9 +127,6 @@ ML-surrogate swap-point traits:
 - `Architecture Drift Detection` (nightly + on `src/**/*.rs`/`ARCHITECTURE.md` changes)
 - `Docs Hygiene Gate` (#2466; freshness sub-check #2765) · `Code Coverage Gate` (#1932, ratchet; `validation/coverage_baseline.json`; `0.0` = unenforced)
 - `Cargo Deny` (#2699) — supply-chain: licenses/duplicates/bans/sources (`deny.toml`); `ignore` list mirrored from `.cargo/audit.toml` (keep in sync)
-- Advisory: `Mutation Testing` (#1891, diff-scoped on PR, full nightly) · `Loom Concurrency Stress Tests` (#2521, weekly)
-
-Heavy Linux jobs honour `vars.FLUXION_LINUX_RUNNER` (self-hosted Hetzner fallback).
 
 ## Environment Variables
 
@@ -154,7 +152,7 @@ Heavy Linux jobs honour `vars.FLUXION_LINUX_RUNNER` (self-hosted Hetzner fallbac
 - **Mutation testing** (`cargo mutants`): full suite needs **32 GB+ RAM**; `.cargo/mutants.toml` excludes combinatorial physics files and all of `src/validation/**`. Diff-scoped advisory on PRs, full nightly on 32 GB runner (skips gracefully <16 GB, #2130). Manual: `cargo mutants --config .cargo/mutants.toml -p fluxion --jobs 2 --baseline skip`.
 - **Feature flags (default = none)**: `python-bindings`, `python-extension` (maturin wheel builds, #2532), `napi-bindings`, `ort` (alias `onnx`), `cuda`, `wiring-tracing`, `multi-zone`, `ashrae_140_v2021`, `pr821-diag`, `loom`, `dwave`, `debug-physics`, `kafka`, `fluid`, `gauge-solver`, `fluxion-city`, `fluxion-cfd`, `dhat`, `tracing-subscriber-json` (#2500). **Default builds skip the ONNX runtime** — opt in via `--features ort` for AI surrogate / mutation tests.
   - `debug-physics` gates `eprintln!` in physics hot loops (#1967) · `fluid` enables `fluxion-fluid` acausal HVAC (#1980/ADR-0005) · **`gauge-solver` is experimental/opt-in scaffolding** for `GaugeZoneSolver` (#2304) — it does NOT replace 5R1C/9R4C: the field is feature-gated but always `None` (#2686); the live research path is the per-surface `GaugeSolver` in shadow mode via `PhysicsAdapter` (#1465/#1462) · `fluxion-city` wires urban radiation (#2344) · `fluxion-cfd` enables FFD/CFD co-simulation (#2460) · `kafka` enables rdkafka telemetry (#2056) · `dhat` enables heap profiling (#2384).
-- **Crate size**: `Cargo.toml` `exclude` + `.cargoignore` strip `refdata/`, `data/`, `models/`, `assets/`, `tests/`, `docs/`, `target/`, `Cargo.lock`. Published crate must stay <10 MB.
+- **Crate size**: `.cargoignore` (33-line) strips `refdata/`, `data/`, `models/`, `assets/`, `tests/`, `benches/`, `docs/`, `target/`, `Cargo.lock`, `Dockerfile`, `.githooks/`, `.github/`, etc. from publish. Published crate must stay <10 MB.
 - **Two `CONTRIBUTING.md` files** (root + `docs/CONTRIBUTING.md`): root is the active short form with rustfmt-1.9 quirks and "avoid scope creep on CI failures" guidance; `docs/CONTRIBUTING.md` is the long-form guide. Edit the right one for the change.
 
 ## Mathematical Reasoning
@@ -182,7 +180,7 @@ Heavy Linux jobs honour `vars.FLUXION_LINUX_RUNNER` (self-hosted Hetzner fallbac
 |------|---------|
 | `ARCHITECTURE.md` · `CODEBASE_MAP.md` | Source-of-truth contracts (see Required Reading) |
 | `RULES.md` | Hard constraints (math via code, energy balance, ASHRAE 140, no tuning) |
-| `Cargo.toml` · `.cargo/audit.toml` · `deny.toml` | Workspace + supply-chain config (advisories list mirrored across `audit.toml` � `deny.toml`) |
+| `Cargo.toml` · `.cargo/audit.toml` · `deny.toml` | Workspace + supply-chain config (advisories list mirrored across `audit.toml` ↔ `deny.toml`) |
 | `src/lib.rs` · `src/python/` | PyO3 entrypoint — `Model` + re-exports of `thermal_model` traits, `assembly`, `multi_node`, `ashrae_cases`. `BatchOracle` bindings live in `src/python/` (extracted #2493; `lib.rs` kept <500 lines) |
 | `src/physics/solver_trait.rs` · `src/sim/thermal_model.rs` · `src/sim/ventilation.rs` | ML-surrogate swap-point traits |
 | `release_gates.yaml` | Required branch-protection checks + thresholds (canonical source of truth for CI gates) |
