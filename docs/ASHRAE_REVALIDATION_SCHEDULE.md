@@ -4,8 +4,9 @@
 
 This document describes the annual re-validation process for ASHRAE Standard 140
 building energy simulation validation. The re-validation ensures that Fluxion's
-ASHRAE 140 blind validation pass rate is maintained above the 80% threshold as
-code evolves.
+ASHRAE 140 blind validation pass rate is maintained above the 60% threshold
+(matching `release_gates.yaml → validation.min_pass_rate` and `SCORECARD.md`)
+as code evolves.
 
 ## Schedule
 
@@ -46,7 +47,9 @@ Before running re-validation:
      tests/reference_data/trnsys/
    ```
 
-3. **Document reference data version in `docs/ashrae_140/reference_data_versions.md`**
+3. **Document reference data version in `tests/reference_data/ashrae140/versions.json`**
+   (the closest equivalent to `docs/ashrae_140/reference_data_versions.md`; the
+   latter path does not exist in this repository — see Issue #2864.)
 
 ### Phase 2: Run Full Validation Suite
 
@@ -63,8 +66,11 @@ Before running re-validation:
 
 3. **Generate validation report:**
    ```bash
-   ./scripts/generate_ashrae_report.sh
+   ./scripts/annual_ashrae_revalidation.sh --year YYYY --report-only
    ```
+   (the actual script is `scripts/annual_ashrae_revalidation.sh` — see Phase 4
+   below. The previously-cited `./scripts/generate_ashrae_report.sh` does not
+   exist in this repository — see Issue #2864.)
 
 ### Phase 3: Analysis and Sign-off
 
@@ -76,13 +82,14 @@ Before running re-validation:
      - Known limitation (document and accept)
 
 2. **Calculate metrics:**
-   - Overall pass rate (must be >= 80%)
-   - Mean Absolute Error
+   - Overall pass rate (must be >= 60% per `release_gates.yaml → validation.min_pass_rate`)
+   - Mean Absolute Error (must be ≤ 50% per `release_gates.yaml → validation.max_mae`)
    - Comparison with previous year's results
 
 3. **Sign-off requirements:**
    - [ ] All critical regressions fixed or accepted
-   - [ ] Pass rate >= 80%
+   - [ ] Pass rate >= 60%
+   - [ ] Mean Absolute Error ≤ 50%
    - [ ] Validation report generated and archived
    - [ ] Reference data versions documented
 
@@ -97,8 +104,10 @@ Before running re-validation:
 
 2. **Close issues and update documentation:**
    - Update this document with any process changes
-   - Archive validation report in `docs/ashrae_140/annual_reports/`
-   - Update `ARCHITECTURE.md` if module interfaces changed
+- Archive validation report under `tests/reference_data/ashrae140/annual_reports/`
+      (the previously-cited `docs/ashrae_140/annual_reports/` directory does not
+      exist in this repository — see Issue #2864.)
+    - Update `ARCHITECTURE.md` if module interfaces changed
 
 ## Automated Script
 
@@ -112,15 +121,15 @@ See `scripts/annual_ashrae_revalidation.sh` for full documentation.
 
 ## Success Criteria
 
-| Criterion | Target | Acceptable Range |
-|-----------|--------|------------------|
-| Pass Rate | >= 80% | 80-100% |
-| Mean Absolute Error | < 5% | 0-5% |
-| Failed Cases | 0 | 0-20% of total |
+| Criterion | Target | Acceptable Range | Source of Truth |
+|-----------|--------|------------------|-----------------|
+| Pass Rate | >= 60% | 60-100% | `release_gates.yaml` `validation.min_pass_rate: 0.60` |
+| Mean Absolute Error | <= 50% | 0-50% | `release_gates.yaml` `validation.max_mae: 50` |
+| Failed Cases | within `extreme_deviation_limit: 2` | 0-2 cases | `release_gates.yaml` `validation.individual.known_failures: ["600","900"]` |
 
 ## Failed Case Handling
 
-### If Pass Rate < 80%
+### If Pass Rate < 60%
 
 1. **Immediate action:**
    - Block all PRs to main until resolved
@@ -132,7 +141,7 @@ See `scripts/annual_ashrae_revalidation.sh` for full documentation.
    - **Reference Drift:** Reference data changed → update tolerance or document
    - **Physics Limitation:** Model limitation → document as known issue
 
-### If Pass Rate >= 80%
+### If Pass Rate >= 60%
 
 1. **Archive results**
 2. **Update status dashboard**
