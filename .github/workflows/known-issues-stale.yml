@@ -5,6 +5,10 @@ on:
     # Run every Monday at 09:00 UTC
     - cron: '0 9 * * 1'
   workflow_dispatch:
+  pull_request:
+    paths:
+      - 'docs/KNOWN_ISSUES.md'
+      - 'scripts/check_known_issues_stale.py'
 
 # Least-privilege GITHUB_TOKEN default (Issue #2526). The check-stale job opens
 # / comments on a tracking issue and escalates via its own job-level permissions
