@@ -20,3 +20,67 @@ updates:
     labels:
       - "dependencies"
       - "github-actions"
+
+  # Cargo — root workspace. 147.7 KB / 6,169-line Cargo.lock has 100+
+  # direct + transitive deps with several active supply-chain clusters
+  # awaiting upstream fixes (rumqttc → rustls-webpki 0.102.8 +
+  # rustls-pemfile 2.2.0; paste RUSTSEC-2024-0436; ttf-parser
+  # RUSTSEC-2026-0192). Every bump needs to land with green
+  # `cargo audit` / `cargo deny check`; Dependabot opening the bump
+  # PR the morning of upstream release is the right cadence.
+  - package-ecosystem: "cargo"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    target-branch: "develop"
+    open-pull-requests-limit: 8
+    groups:
+      cargo-major:
+        update-types:
+          - "major"
+      cargo-minor:
+        update-types:
+          - "minor"
+      cargo-patch:
+        update-types:
+          - "patch"
+    commit-message:
+      prefix: "chore(deps)"
+      include: "scope"
+    labels:
+      - "dependencies"
+      - "cargo"
+
+  # Cargo — crates/ workspace siblings (fluxion-twin, fluxion-toon).
+  # Workspace-root lock covers fluxion-core, fluxion-mcp, fluxion-grid,
+  # fluxion-behavior, fluxion-fluid, fluxion-wasm, fluxion-city,
+  # fluxion-cfd; the two crates/* members need separate monitoring
+  # because their `path` deps carry different resolver inputs.
+  - package-ecosystem: "cargo"
+    directory: "/crates/fluxion-twin"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    target-branch: "develop"
+    open-pull-requests-limit: 4
+    commit-message:
+      prefix: "chore(deps)"
+      include: "scope"
+    labels:
+      - "dependencies"
+      - "cargo"
+
+  - package-ecosystem: "cargo"
+    directory: "/crates/fluxion-toon"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    target-branch: "develop"
+    open-pull-requests-limit: 4
+    commit-message:
+      prefix: "chore(deps)"
+      include: "scope"
+    labels:
+      - "dependencies"
+      - "cargo"
