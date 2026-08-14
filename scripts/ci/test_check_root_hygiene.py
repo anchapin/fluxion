@@ -145,8 +145,13 @@ def test_scan_allows_legit_directory(checker, tmp_path, name):
 
 
 # Legit root dotfile config — allow-listed, no gitignore needed.
+# Note: `.agents/` is intentionally absent — it is a local agent runtime
+# dir that is matched by `.gitignore` on every fresh checkout (issue
+# #2981) and is therefore covered by the dotfile cross-check's
+# ``is_gitignored`` branch rather than this allow-list. See
+# ``test_agents_md_runtime_dirs_have_gitignore_entries`` for the regression
+# guard that pins the gitignore line in place.
 ROOT_DOTCONFIG_ALLOWLIST = [
-    ".agents",
     ".cargo",
     ".cargoignore",
     ".dockerignore",
@@ -169,7 +174,7 @@ def test_scan_allows_root_dotconfig(checker, tmp_path, name):
     """Issue #2954: a dotfile/dotdir in ROOT_DOTFILE_ALLOWLIST is permitted
     without any gitignore/tracked cross-check (legit root config)."""
     p = tmp_path / name
-    if name in {".agents", ".cargo", ".githooks", ".github", ".git", ".planning"}:
+    if name in {".cargo", ".githooks", ".github", ".git", ".planning"}:
         p.mkdir()
     else:
         p.write_text("x", encoding="utf-8")
@@ -399,3 +404,95 @@ def test_agents_md_runtime_dirs_have_gitignore_entries(repo_root):
             f"Hygiene; without a gitignore entry, fresh checkouts would not "
             f"prevent future commits."
         )
+
+
+# ---------------------------------------------------------------------------
+# `.agents/` runtime dir (issue #2981)
+# ---------------------------------------------------------------------------
+
+
+def test_agents_dir_has_gitignore_entry(repo_root):
+    """Issue #2981 regression: `.agents/` is a local agent-runtime dir
+    (issues/, results/, skills/, coverage/) that the
+    github-wave-orchestrator and parallel-issue-generator skills write to.
+    During the 2026-08-14 wave run, every sub-agent wrote a
+    `result-backend-*.md` to `.agents/results/`; the files were untracked
+    but present on disk, so `git pull --ff-only` failed with
+    "Please commit or stash them" on every wave boundary.
+
+    The `.gitignore` line is the real defense — once `.agents/` is
+    gitignored, Git treats new sub-agent result files as ignored (not
+    dirty) and `git pull --ff-only` proceeds cleanly. Without this line,
+    a fresh `git clone` would re-allow untracked agent telemetry to
+    block fast-forward pulls.
+    """
+    gitignore_text = (repo_root / ".gitignore").read_text(encoding="utf-8")
+    assert ".agents/" in gitignore_text, (
+        "`.gitignore` is missing a line for `.agents/`. The directory is "
+        "a local agent runtime dir (issues/, results/, skills/, "
+        "coverage/); without a gitignore entry, fresh checkouts would "
+        "not prevent untracked sub-agent result files from blocking "
+        "`git pull --ff-only` (issue #2981)."
+    )
+
+
+def test_agents_dir_not_in_root_dotfile_allowlist(checker):
+    """Issue #2981 regression: `.agents/` MUST NOT be in the gate's
+    ``ROOT_DOTFILE_ALLOWLIST``. The allow-list is reserved for legit
+    root config that Git itself needs to see (``.git/``, ``.cargo/``,
+    ``.gitignore``, ...); agent-runtime state is per-developer and
+    belongs under the gitignore + dotfile-cross-check path (mirroring
+    ``.sdd/``, ``.automaker/``, ``.serena/``, ``.sisyphus/``, ``.jules/``,
+    ``.superset/``, ``.gitnexus/``, ``.issues/``, ``.opencode/``,
+    ``.claude/`` per #2954). A regression that re-adds `.agents` here
+    would silently bypass the gate on fresh checkouts.
+    """
+    assert ".agents" not in checker.ROOT_DOTFILE_ALLOWLIST, (
+        "`.agents` must not be in ROOT_DOTFILE_ALLOWLIST (issue #2981). "
+        "The gate accepts the directory via `is_gitignored()` because "
+        "`.gitignore` matches `.agents/`; an allow-list entry would "
+        "bypass that check and let the directory sneak back into the "
+        "tree on fresh checkouts."
+    )
+
+
+def test_main_passes_after_agents_gitignore_added(checker, tmp_path, monkeypatch, capsys):
+    """Issue #2981 end-to-end: a fresh-clone dotdir at root that is NOT in
+    ``ROOT_DOTFILE_ALLOWLIST`` fails the gate; adding ``.agents/`` to
+    ``.gitignore`` flips it back to PASS. Mirrors the ``.mytool``
+    regression in #2954 — except the dotdir under test is the real
+    `.agents/` from the production ``.gitignore``.
+
+    Uses a real ``git init`` so the existing ``is_gitignored()`` (which
+    shells out to ``git check-ignore``) sees the gitignore line.
+    """
+    import subprocess
+
+    subprocess.run(["git", "init", "-q"], cwd=tmp_path, check=True)
+    subprocess.run(
+        ["git", "config", "user.email", "test@test"], cwd=tmp_path, check=True
+    )
+    subprocess.run(["git", "config", "user.name", "test"], cwd=tmp_path, check=True)
+
+    # `.gitignore` does NOT mention `.agents/`, and `.agents/` exists.
+    (tmp_path / ".gitignore").write_text("*.tmp\n", encoding="utf-8")
+    _touch(tmp_path, ".agents", is_dir=True)
+    (tmp_path / ".agents" / "result-backend-1281.md").write_text(
+        "x", encoding="utf-8"
+    )
+    subprocess.run(["git", "add", ".gitignore"], cwd=tmp_path, check=True)
+    subprocess.run(["git", "commit", "-q", "-m", "init"], cwd=tmp_path, check=True)
+
+    monkeypatch.setattr(checker, "REPO_ROOT", tmp_path)
+
+    # Phase 1: gate FAILS — `.agents/` is not allow-listed / gitignored /
+    # tracked. (`.agents/` happens to also be the dotdir under test in
+    # the real repo, but the test only exercises the gate's logic.)
+    rc = checker.main()
+    out = capsys.readouterr().out
+    assert rc == 1, f"expected FAIL (rc=1), got rc={rc}\noutput:\n{out}"
+    assert ".agents" in out, f"expected '.agents' in output, got:\n{out}"
+
+    # Phase 2: add `.agents/` to `.gitignore` → gate PASSES.
+    (tmp_path / ".gitignore").write_text("*.tmp\n.agents/\n", encoding="utf-8")
+    assert checker.main() == 0
