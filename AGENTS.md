@@ -159,6 +159,15 @@ ML-surrogate swap-point traits:
 
 **Misc** — `DWAVE_API_TOKEN` (required at runtime for the `dwave` feature); `PYO3_USE_ABI3_FORWARD_COMPATIBILITY=1` + `RUST_MIN_STACK=33554432` (set by Python-bindings CI to avoid linker SIGSEGV); `CARGO_BUILD_JOBS=1` (set by Clippy CI to keep peak RSS low).
 
+## Mojo toolchain (advisory, optional)
+
+The Mojo programming language and Modular MAX CLI are **evaluation-only** dependencies for #2938, #2937, and #2940. Fluxion remains Rust-only per `ARCHITECTURE.md` and `RULES.md`; Mojo never ships in a production build path.
+
+- **Install guide**: `docs/agents/mojo-setup.md` — three paths (pixi, uv, legacy `modular` CLI) plus Windows/WSL notes. Captured from <https://mojolang.org/install/> v1.0.0 on 2026-08-14.
+- **Advisory gate**: `bash scripts/check_mojo_toolchain.sh` — detects `mojo` and `max` on PATH, prints `PASS`/`WARN`/`FAIL` lines, **always exits 0** in the default (advisory) mode. Use `--strict` for agent pre-flight when a hard signal is needed (exits 1 if `mojo` or `max` is missing or broken). NOT wired into any CI required-check; informational only.
+- **Verify after install**: `mojo --version` and `max --version` must both print non-empty version strings in a fresh shell.
+- **Where to find binaries**: `~/.modular/bin` (legacy `curl https://get.modular.com | sh` install) or inside the pixi/uv project venv (modern install paths). The script does NOT assume a specific install path — it relies on `command -v` resolution.
+
 ## Toolchain Quirks
 
 - **`rust-toolchain.toml`** pins **stable** + rustfmt + clippy. `.rustfmt.toml` sets `edition = "2021"` — without it rustfmt falls back to 2015 and breaks on `?`/`async`/2021+ fn syntax (PR #1387). **Stable rustfmt has no `exclude`**: auto-generated fixture data must use `#[rustfmt::skip]` per-item (see `tests/per_tilt_per_azimuth_fixture_data.rs`).
