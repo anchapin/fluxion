@@ -330,3 +330,72 @@ def test_main_fails_on_onnx_escapee_then_passes_after_gitignore(
     # Phase 2: delete the escapee → gate PASSES.
     (tmp_path / "tests_tmp_dummy.onnx").unlink()
     assert checker.main() == 0
+
+
+# ---------------------------------------------------------------------------
+# AGENTS.md runtime dirs (issue #2984)
+# ---------------------------------------------------------------------------
+
+# The six runtime dirs declared in AGENTS.md §Repository Hygiene as
+# "gitignored — never commit, never create at repo root".  The untrack
+# step in #2984 removed them from git's index, but the gate would
+# silently regress if any of them got re-added later.  These tests
+# pin ``git ls-files <dir>/`` to zero so a fresh re-commit flips the
+# test red.
+AGENTS_MD_RUNTIME_DIRS = [
+    ".automaker",
+    ".serena",
+    ".sisyphus",
+    ".jules",
+    ".superset",
+    ".gitnexus",
+]
+
+
+@pytest.mark.parametrize("dir_name", AGENTS_MD_RUNTIME_DIRS)
+def test_agents_md_runtime_dir_has_no_tracked_files(repo_root, dir_name):
+    """Issue #2984 regression: every dir declared in AGENTS.md §Repository
+    Hygiene as a local-only runtime dir must have **zero** entries in
+    ``git ls-files``. A tracked file inside one of these dirs means the
+    agent-runtime state is being shared across contributors — exactly the
+    bug the gitignore + untrack pattern prevents.
+
+    The dirs themselves may legitimately exist on the developer's machine
+    (their own runtime state); the test only checks the index, not the
+    working tree.
+    """
+    import subprocess
+
+    result = subprocess.run(
+        ["git", "ls-files", "--", f"{dir_name}/"],
+        cwd=repo_root,
+        capture_output=True,
+        text=True,
+        check=True,
+        timeout=5,
+    )
+    tracked = [line for line in result.stdout.splitlines() if line.strip()]
+    assert tracked == [], (
+        f"runtime dir {dir_name}/ has {len(tracked)} tracked file(s) at HEAD; "
+        f"AGENTS.md §Repository Hygiene forbids tracking them. "
+        f"Run `git rm -r --cached {dir_name}/` and verify the matching "
+        f"`.gitignore` line exists. Tracked entries: {tracked}"
+    )
+
+
+def test_agents_md_runtime_dirs_have_gitignore_entries(repo_root):
+    """Issue #2984 — belt-and-braces: each of the six runtime dirs declared
+    in AGENTS.md §Repository Hygiene must have a matching `.gitignore`
+    entry. The gitignore line is the real defense; the untrack step just
+    removes the legacy tracked copies. A fresh `git clone` would re-allow
+    commits of agent-runtime state if the gitignore line went missing.
+    """
+    gitignore_path = repo_root / ".gitignore"
+    gitignore_text = gitignore_path.read_text(encoding="utf-8")
+    for dir_name in AGENTS_MD_RUNTIME_DIRS:
+        assert dir_name in gitignore_text, (
+            f".gitignore is missing a line for {dir_name}/. The directory is "
+            f"declared as a local-only runtime dir in AGENTS.md §Repository "
+            f"Hygiene; without a gitignore entry, fresh checkouts would not "
+            f"prevent future commits."
+        )

@@ -1,9 +1,0 @@
-{
-  "id": "evt-1777299300606-5b41cf8b",
-  "trigger": "feature_created",
-  "timestamp": "2026-04-27T14:15:00.606Z",
-  "projectPath": "/home/alex/Projects/fluxion",
-  "projectName": "fluxion",
-  "featureId": "issue-573-cdd82820-3d28-4c8f-85aa-d67cb8865b52",
-  "featureName": "Increase ASHRAE 140 validation pass rate to 65%"
-}
