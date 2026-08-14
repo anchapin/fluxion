@@ -1,0 +1,80 @@
+name: MSRV Check
+
+on:
+  push:
+    branches: [develop, main]
+  pull_request:
+    paths:
+      - '**/Cargo.toml'
+      - '**/Cargo.lock'
+      - '.github/workflows/msrv.yml'
+  workflow_dispatch:
+
+# Least-privilege GITHUB_TOKEN grants (Issue #2526). The msrv-build job only
+# checks out code and runs `cargo +1.89 build --workspace`; no repo write-back.
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: 1
+
+jobs:
+  msrv-build:
+    runs-on: ubuntu-latest
+    name: MSRV Build (Rust 1.89, workspace)
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4
+
+      # System build deps (libssl-dev, pkg-config, fontconfig). Matches
+      # the apt-install list in .github/actions/setup-rust-env/action.yml so
+      # the MSRV job can build crates that link against C libs (yeslogic-
+      # fontconfig-sys, openssl-sys, etc.). Keep this in sync with
+      # setup-rust-env if more system deps are added there.
+      - name: Install system dependencies (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libssl-dev pkg-config libfontconfig1-dev fontconfig
+        env:
+          DEBIAN_FRONTEND: noninteractive
+
+      # Install the MSRV-pinned stable toolchain (issue #2934). The crate's
+      # `rust-version = "1.89"` field — set on the root Cargo.toml, the
+      # [workspace.package] block, and all 10 workspace-member Cargo.toml
+      # files — is what `cargo install` / crates.io / `cargo update --precise`
+      # users see; this job is the enforcement side, failing the build when
+      # a change drifts past 1.89. The action SHA pin matches the one used
+      # by .github/actions/setup-rust-env/action.yml so any drift is caught
+      # in one place. (Originally targeted 1.81, but clap_lex 1.1.0 uses
+      # edition2024 (needs Cargo 1.85+), and nalgebra 0.35 / safe_arch 1.1 /
+      # statrs 0.19.1 / wide 1.6.1 each declare rustc >= 1.89; 1.89 is the
+      # lowest stable that builds today per the issue's "or the lowest stable
+      # that builds today" clause.)
+      - name: Install Rust 1.89 (MSRV)
+        uses: dtolnay/rust-toolchain@8641a17e25bf5b40c118d48fe0f81e8655731839  # 1.85.0 (toolchain overridden to 1.89 via `with:`)
+        with:
+          toolchain: 1.89
+
+      - name: Cache cargo registry & target
+        uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32  # v2
+        with:
+          workspaces: |
+            .
+            fluxion-core -> target
+            fluxion-city -> target
+            fluxion-fluid -> target
+            fluxion-grid -> target
+            fluxion-behavior -> target
+            fluxion-mcp -> target
+            fluxion-wasm -> target
+            crates/fluxion-toon -> target
+            crates/fluxion-twin -> target
+            fluxion-cfd -> target
+
+      - name: cargo +1.89 build --workspace
+        run: cargo +1.89 build --workspace --locked

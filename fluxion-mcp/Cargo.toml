@@ -2,6 +2,7 @@
 name = "fluxion-mcp"
 version = "0.1.0"
 edition = "2021"
+rust-version = "1.89"
 authors = ["Fluxion Team <team@fluxion.org>"]
 description = "Model Context Protocol server for Rust-native Building Energy Modeling interface"
 license = "Apache-2.0"

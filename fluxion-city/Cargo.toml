@@ -2,6 +2,7 @@
 name = "fluxion-city"
 version = "0.1.0"
 edition = "2021"
+rust-version = "1.89"
 authors = ["Dr. Aris Thorne <aris.thorne@fluxion.org>"]
 description = "Urban radiation modeling with Nusselt analog view factor computation for building energy modeling"
 repository = "https://github.com/anchapin/fluxion"

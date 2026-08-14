@@ -2,6 +2,7 @@
 name = "fluxion-toon"
 version = "0.1.0"
 edition = "2021"
+rust-version = "1.89"
 description = "Token-Oriented Object Notation (TOON) serializer/deserializer for compact LLM-friendly serialization"
 license = "Apache-2.0"
 repository = "https://github.com/anchapin/fluxion"

@@ -331,6 +331,17 @@ ci:
     # `ignore` list is mirrored from `.cargo/audit.toml` (keep in sync).
     - "Cargo Deny"
 
+    # Issue #2934: Minimum Supported Rust Version (MSRV) gate. The
+    # `package.rust-version = "1.81"` field is now declared on the root
+    # Cargo.toml, the root `[workspace.package]` block, and all 10
+    # workspace-member Cargo.toml files; this job enforces it by running
+    # `cargo +1.81 build --workspace --locked` against any change that
+    # touches a Cargo.toml, Cargo.lock, or the workflow itself. Closes the
+    # crate-publish goal (#1) gap — without an MSRV declaration, `cargo
+    # install` / crates.io / `cargo update --precise` users had no
+    # machine-readable signal of which stable toolchain the build requires.
+    - "MSRV Check (Issue #2934)"
+
   # Job-to-workflow map (informational; branch-protection reads job
   # names directly). Used by `scripts/release_gate_checker.py` to verify
   # the required_checks list is in sync with the workflows directory.
@@ -419,3 +430,17 @@ ci:
       workflow: ".github/workflows/performance_dashboard.yml"
       issue: 2772
       triggered_by: "PR + push to main + workflow_dispatch"
+
+    - job: "MSRV Check (Issue #2934)"
+      # Minimum Supported Rust Version gate. Runs `cargo +1.81 build
+      # --workspace --locked` on every PR + push to develop/main that
+      # touches any `**/Cargo.toml`, `**/Cargo.lock`, or the workflow
+      # itself; fails the merge when the build breaks against the pinned
+      # stable. The `package.rust-version = "1.81"` declaration (root
+      # Cargo.toml + 10 workspace members) is what `cargo install` /
+      # crates.io / `cargo update --precise` users see — this job is the
+      # enforcement side, closing the #1 release-readiness gap that #2934
+      # identified.
+      workflow: ".github/workflows/msrv.yml"
+      issue: 2934
+      triggered_by: "PR + push to develop/main"
