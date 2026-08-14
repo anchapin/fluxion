@@ -18,6 +18,10 @@ All notable changes to Fluxion will be documented in this file.
 - README.md now links to Release Scorecard for consolidated status view
 - **ASHRAE 140 Blind Validation** (`.planning/ASHRAE_140_BLIND_VALIDATION_PLAN.md`): blind-validation methodology in progress for v1.3.0
 
+### Scope
+
+- v1.3 scope anchor: see `.planning/PROJECT.md` (BASELINE-01 → SUSTAIN-02 — current requirements tracked live there). The v1.2 milestone summary at `.planning/MILESTONE_v1.2_SUMMARY.md` (2026-04-08) is frozen at the v1.2 cut and does not reflect ongoing v1.3 work.
+
 ## [1.2.0] - 2026-04-08
 
 ### Added
@@ -31,7 +35,7 @@ All notable changes to Fluxion will be documented in this file.
 
 ### Notes
 
-- Scope and success criteria per `.planning/MILESTONE_v1.2_SUMMARY.md` (20 requirements spanning validation completion, new test cases, automated testing infrastructure, and performance validation). Milestone planning finalized 2026-04-08; ongoing PR-level validation work is tracked under [Unreleased] (v1.3.0).
+- Scope and success criteria per `.planning/MILESTONE_v1.2_SUMMARY.md` (20 requirements spanning validation completion, new test cases, automated testing infrastructure, and performance validation). Milestone planning finalized 2026-04-08; ongoing PR-level validation work is tracked under [Unreleased] (v1.3.0). See `.planning/PROJECT.md` for the current v1.3 scope (live requirements, BASELINE-01 → SUSTAIN-02).
 
 ## [1.1.0] - 2026-04-08
 
