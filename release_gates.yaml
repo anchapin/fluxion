@@ -192,6 +192,21 @@ ci:
     # enforce the ±15% band automatically.
     - "ASHRAE 140 Strict Energy Gate (Issue #1333)"
 
+    # Issue #2924: surrogate-layer MAE gate (between the per-timestep drift
+    # gate #1784 and the system-level strict ±15% gate #1333 just above).
+    # Asserts `SurrogateThermalModel::solve_timesteps` predicts annual
+    # cooling kWh within ±5% of the EnergyPlus published reference for
+    # ASHRAE 140 Cases 600 / 900. Job is defined in
+    # `.github/workflows/ashrae_validation.yml` under the
+    # `surrogate-ashrae-mae-gate` id, gated by `--features ort`. Two-mode
+    # operation (mirrors Issue #1865 / `surrogate_drift_gate.yml`): ONNX
+    # mode enforces the strict ±5% gate; fallback mode (no trained model
+    # shipped) is an advisory that only enforces finite / non-negative
+    # invariants — the system-level #1333 gate is the authoritative catch
+    # for the underlying engine gap. The reference JSON files live at
+    # `tests/reference_data/ashrae140/case_{600,900}_cooling_kwh.json`.
+    - "Surrogate ASHRAE 140 MAE Gate (Issue #2924)"
+
     # Cross-platform floating-point determinism (issues #1351 / #1297).
     # The listener job is defined in `.github/workflows/ashrae_validation.yml`
     # under the `fluxion-determinism-gate` id and is triggered by the
@@ -350,6 +365,17 @@ ci:
       workflow: ".github/workflows/ashrae_140_strict_energy_gate.yml"
       issue: 1333
       triggered_by: "PR + push to main"
+
+    - job: "Surrogate ASHRAE 140 MAE Gate (Issue #2924)"
+      # Surrogate-layer annual cooling kWh MAE gate. Closes the gap
+      # between the per-timestep drift gate (#1784) and the system-level
+      # strict ±15% gate (#1333) — the 0.5%-per-timestep surrogate
+      # divergence that compounds to ≈5% annual would slip through #1784
+      # and only be caught by #1333 once it pushed the band, not at the
+      # source. Job is a PR-blocking required check on PRs to develop.
+      workflow: ".github/workflows/ashrae_validation.yml"
+      issue: 2924
+      triggered_by: "PR + push to develop"
 
     - job: "Fluxion Determinism Gate (Issue #1351)"
       # The listener job is defined in `ashrae_validation.yml`; it

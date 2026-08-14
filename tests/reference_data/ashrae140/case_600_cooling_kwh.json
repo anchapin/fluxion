@@ -1,0 +1,18 @@
+{
+  "_doc": "ASHRAE 140 Case 600 annual cooling reference for the surrogate-layer MAE gate (issue #2924). The surrogate's annual cooling kWh (Solved by `SurrogateThermalModel::solve_timesteps`) is compared against the EnergyPlus published midpoint. The deviation is reported as a percentage of the band midpoint. The STRICT gate fires when an ONNX model is loaded and the deviation exceeds the 5% tolerance; the FALLBACK gate (no model loaded) reports the deviation informatively and exits 0 unless the deviation regresses beyond the recorded baseline beyond regression_tolerance_kwh. Update the `current_measured_kwh` / `current_gap_pct_of_mid` fields in the same PR that improves the engine (per RULES.md / AGENTS.md: never raise the baseline to hide a regression).",
+  "_source": "Extracted from tests/reference_data/zone_balance/case_600_energy_reference.csv (ASHRAE 140-2023 Annex B annual band across BEM programs incl. EnergyPlus). Same authoritative source as the strict ±15% annual-energy gate (issue #1333) and the v1.3 monthly reference (issue #2748).",
+  "case_id": "600",
+  "description": "Low-mass baseline, 12 m² south window, 0.5 ACH, 20°C heat / 27°C cool, USA_CO_Golden-NREL.724666_TMY3.epw",
+  "metric": "annual_cooling_kwh",
+  "energyplus_reference_kwh": 5030.0,
+  "published_band_kwh": [3920.0, 6140.0],
+  "tolerance_pct": 5.0,
+  "_tolerance_pct_doc": "Strict ±5% gate vs. the EnergyPlus midpoint (Issue #2924 acceptance). When the ONNX model is loaded the gate fails on any deviation > 5% of |midpoint|. In fallback mode this becomes a regression ceiling instead (regression_tolerance_kwh below).",
+  "regression_tolerance_kwh": 250.0,
+  "_regression_tolerance_kwh_doc": "Fallback-mode regression ceiling. The surrogate's current measured kWh may drift by at most this amount between runs (absorbs cross-runner numerical noise). A PR that worsens the gap by more than this against the recorded baseline fails the gate. Tune alongside the engine — do NOT raise to hide a regression.",
+  "current_measured_kwh": 0.0,
+  "_current_measured_kwh_doc": "Most recent measured surrogate value when the surrogate is in fallback mode (no trained ONNX model shipped). The surrogate's synthetic weather cycle (0–20 °C, see SurrogateThermalLoadAdapter::solve_timesteps in src/sim/thermal_model.rs) cannot reproduce the EnergyPlus outdoor temperature range that drives the published Case 600/900 cooling demand, so the measured kWh is 0 in the default build. The strict-ORT gate target is energyplus_reference_kwh × (1 ± tolerance_pct/100). NOTE: the STRICT_EnergyPLUS baseline in tests/reference_data/zone_balance/strict_energy_gate_baseline.json (case_600_cooling.value_mwh = 2.455 MWh) is for the PHYSICS path with REAL ASHRAE 140 weather (run_blind_annual_energy in tests/zone_balance_eplus_isolation.rs), not the surrogate's synthetic-weather path. The two paths run different weather inputs and report different values; the surrogate path is the subject of this gate.",
+  "current_gap_pct_of_mid": 100.0,
+  "status": "known_fail",
+  "_status_doc": "Per AGENTS.md / RULES.md: this records the KNOWN gap from the EnergyPlus reference; it must never be loosened to hide a regression. Only lower the gap when the engine genuinely improves and commit the engine fix + baseline update together."
+}

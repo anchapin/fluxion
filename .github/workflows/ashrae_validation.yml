@@ -828,6 +828,190 @@ jobs:
       - name: Run Zone Balance Isolation Tests
         run: cargo test --test zone_balance_eplus_isolation --release
 
+  # =====================================================================
+  # Issue #2924 — Surrogate ASHRAE 140 MAE Gate (Cases 600/900 cooling)
+  # =====================================================================
+  # Annual cooling kWh MAE gate at the SURROGATE layer (between the
+  # per-timestep drift gate #1784 and the system-level strict ±15% gate
+  # #1333). Asserts `SurrogateThermalModel::solve_timesteps` predicts
+  # annual cooling kWh within ±5% of the EnergyPlus published reference
+  # for ASHRAE 140 Cases 600 (low-mass) and 900 (high-mass).
+  #
+  # Two-mode operation (mirrors `surrogate_drift_gate.yml` Issue #1865):
+  #   - ONNX mode — a trained model is resolvable. The strict ±5% gate
+  #     is enforced; any deviation > 5% of the EnergyPlus midpoint fails.
+  #   - FALLBACK mode — no trained model. The surrogate runs the analytical
+  #     predictor with synthetic weather (0–20 °C, see
+  #     SurrogateThermalLoadAdapter::solve_timesteps in src/sim/thermal_model.rs);
+  #     the synthetic cycle cannot reproduce the EnergyPlus outdoor range
+  #     that drives the published Case 600/900 cooling demand, so the
+  #     measured-vs-EnergyPlus gap is expected to be near 100%. The gate
+  #     degrades to an advisory that only enforces finite / non-negative
+  #     invariants — the system-level #1333 gate is the authoritative
+  #     catch for the underlying engine gap.
+  #
+  # The reference JSON files live at
+  # `tests/reference_data/ashrae140/case_{600,900}_cooling_kwh.json`. The
+  # EnergyPlus reference values are the midpoints of the published ASHRAE
+  # 140-2023 Annex B band (Case 600: 5030 kWh, Case 900: 2900 kWh).
+  #
+  # Why --features ort
+  # ------------------
+  # The 9R4C thermal network (Case 900) lives behind the `ort` feature
+  # gate (per issue #1294). Without `--features ort`, the surrogate path
+  # would compile out the multi-node solver and the gate would not exercise
+  # the correct physics baseline. The `ort` feature also enables the
+  # ONNX runtime so `SurrogateManager::new_with_auto_load()` can resolve
+  # `models/surrogate_zone_thermal.onnx` when present.
+  #
+  # Status check name
+  # -----------------
+  # Job id is `surrogate-ashrae-mae-gate`; the human-readable name is
+  # "Surrogate ASHRAE 140 MAE Gate (Issue #2924)". Declared in
+  # `release_gates.yaml` under `ci.required_checks`.
+  # =====================================================================
+  surrogate-ashrae-mae-gate:
+    name: Surrogate ASHRAE 140 MAE Gate (Issue #2924)
+    runs-on: ${{ vars.FLUXION_LINUX_RUNNER || 'ubuntu-latest' }}
+    needs: compare-hashes
+    timeout-minutes: 30
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libssl-dev pkg-config libfontconfig1-dev
+
+      - uses: ./.github/actions/setup-rust-python-env
+        with:
+          python-version: '3.10'
+          sccache: 'false'
+
+      - name: Cache cargo registry + build artifacts
+        uses: actions/cache@0057852bfaa89a36745cba8c7296529d2fc39830  # v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: surrogate-mae-gate-${{ runner.os }}-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            surrogate-mae-gate-${{ runner.os }}-
+
+      - name: Resolve surrogate gate mode
+        # Mirror SurrogateManager::new_with_auto_load() (src/ai/surrogate.rs):
+        #   1. FLUXION_ONNX_MODEL env var (if it points at an existing file)
+        #   2. models/surrogate_zone_thermal.onnx (built-in default)
+        #   3. otherwise → fallback (analytical predictor, advisory gate)
+        id: gate-mode
+        run: |
+          model=""
+          if [ -n "${FLUXION_ONNX_MODEL:-}" ] && [ -f "${FLUXION_ONNX_MODEL}" ]; then
+            model="${FLUXION_ONNX_MODEL}"
+          elif [ -f "models/surrogate_zone_thermal.onnx" ]; then
+            model="models/surrogate_zone_thermal.onnx"
+          fi
+          if [ -n "$model" ]; then
+            echo "mode=onnx" >> "$GITHUB_OUTPUT"
+            echo "model=$model" >> "$GITHUB_OUTPUT"
+            echo "Gate mode: ONNX (strict ±5% tolerance) — model: $model"
+          else
+            echo "mode=fallback" >> "$GITHUB_OUTPUT"
+            echo "model=" >> "$GITHUB_OUTPUT"
+            echo "Gate mode: FALLBACK (advisory — no trained ONNX model; finite / non-negative invariant only)"
+          fi
+
+      - name: Run surrogate ASHRAE 140 MAE gate
+        # All three tests in `tests/surrogate_ashrae_600_cooling_mae.rs`:
+        #   1. surrogate_annual_cooling_within_5pct_of_energyplus_when_model_loaded
+        #      — STRICT ±5% gate (ONNX mode). Dormant in fallback mode.
+        #   2. surrogate_annual_cooling_fallback_advisory_report
+        #      — ADVISORY fallback report (finite / non-negative invariant).
+        #        Dormant in ONNX mode.
+        #   3. reference_json_files_match_authoritative_ashrae_140_band
+        #      — Pure unit test on the JSON schema (no simulation). Always runs.
+        # The coverage regex below enforces all three appear in the captured
+        # output (Issue #1866: a renamed / removed test is itself a gate
+        # regression).
+        run: |
+          cargo test --release --features ort --verbose \
+            --test surrogate_ashrae_600_cooling_mae \
+            -- --nocapture \
+            2>&1 | tee /tmp/surrogate_mae_gate_output.txt
+          echo "---"
+          echo "exit_code=$?"
+
+      - name: Verify gate coverage and extract results
+        run: |
+          echo "=== Surrogate ASHRAE 140 MAE gate coverage check ==="
+          # Strip ANSI colour codes so the parser does not get confused.
+          sed -i 's/\x1b\[[0-9;]*m//g' /tmp/surrogate_mae_gate_output.txt
+
+          # All three tests must appear in the captured output. A missing
+          # test name means a filter silently dropped it (Issue #1866) —
+          # fail honestly rather than report a false PASS.
+          check_coverage() {
+            local name="$1"
+            if grep -qE "(^|[^[:alnum:]_])test $name \.\.\. (ok|ignored|FAILED)" /tmp/surrogate_mae_gate_output.txt; then
+              echo "  COVERED: $name"
+            else
+              echo "  DROPPED FROM GATE: $name"
+              echo "  This test name was not found in the cargo output."
+              echo "  Either the test was renamed/removed, or the workflow"
+              echo "  filter needs updating. Failing the build."
+              exit 1
+            fi
+          }
+          check_coverage surrogate_annual_cooling_within_5pct_of_energyplus_when_model_loaded
+          check_coverage surrogate_annual_cooling_fallback_advisory_report
+          check_coverage reference_json_files_match_authoritative_ashrae_140_band
+
+          echo
+          echo "=== Surrogate ASHRAE 140 MAE gate result extraction ==="
+          FAILED=$(grep -cE '(^|[^[:alnum:]_])test .* \.\.\. FAILED' /tmp/surrogate_mae_gate_output.txt || true)
+          PANICS=$(grep -cE 'panicked at' /tmp/surrogate_mae_gate_output.txt || true)
+          PASSED=$(grep -cE '(^|[^[:alnum:]_])test (surrogate_annual_cooling_|reference_json_files_).* \.\.\. ok' /tmp/surrogate_mae_gate_output.txt || true)
+          RESOLVED_MODE="${{ steps.gate-mode.outputs.mode }}"
+
+          echo "  Passed        : $PASSED"
+          echo "  Failed        : $FAILED"
+          echo "  Panics        : $PANICS"
+          echo "  Resolved mode : $RESOLVED_MODE"
+
+          # Pull the two diagnostic lines printed by the test under
+          # --nocapture. The advisory branch always prints; the strict
+          # branch only prints when the ONNX model is loaded.
+          grep -E '\[surrogate-mae-gate-diag\] case=600' /tmp/surrogate_mae_gate_output.txt || true
+          grep -E '\[surrogate-mae-gate-diag\] case=900' /tmp/surrogate_mae_gate_output.txt || true
+
+          if [ "$FAILED" -gt 0 ] || [ "$PANICS" -gt 0 ]; then
+            echo
+            if [ "$RESOLVED_MODE" = "onnx" ]; then
+              echo "::error::Surrogate ASHRAE 140 MAE gate FAILED — surrogate's annual cooling kWh exceeded the strict ±5% tolerance vs. the EnergyPlus midpoint for one or both cases. Retrain the surrogate or fix the underlying energy balance (Issue #2924)."
+            else
+              echo "::error::Surrogate ASHRAE 140 MAE gate FAILED — fallback-mode invariant breached (non-finite or negative annual cooling kWh). The surrogate produced NaN/Inf or a negative value; investigate the dispatch loop (Issue #2924)."
+            fi
+            echo "See /tmp/surrogate_mae_gate_output.txt for the failing assertion messages."
+            exit 1
+          fi
+
+          if [ "$RESOLVED_MODE" = "onnx" ]; then
+            echo "PASS: Surrogate ASHRAE 140 MAE gate holds (≤5% deviation from EnergyPlus midpoint, strict ONNX mode)."
+          else
+            echo "::warning::Surrogate ASHRAE 140 MAE gate ran in ADVISORY (fallback) mode — no trained ONNX model is registered (FLUXION_ONNX_MODEL unset and models/surrogate_zone_thermal.onnx absent). The strict ±5% gate is dormant; the finite / non-negative invariant passed. To activate the strict gate, ship models/surrogate_zone_thermal.onnx and configure FLUXION_ONNX_MODEL. See Issue #1865 / #2924."
+            echo "PASS: Surrogate ASHRAE 140 MAE gate passed in ADVISORY fallback mode (strict ±5% gate dormant — no trained ONNX model)."
+          fi
+
+      - name: Upload MAE gate log
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02  # v4
+        with:
+          name: surrogate-ashrae-mae-gate
+          path: /tmp/surrogate_mae_gate_output.txt
+          retention-days: 14
+
   # Python verification scripts — Issue #1699
   # These scripts validate QUBO math (issue-1464) and diurnal parity (issue-1465).
   # They are not built into the Rust binary; they run as standalone Python scripts
