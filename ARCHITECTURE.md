@@ -1451,8 +1451,17 @@ hand because its fields have divergent clone semantics:
 | `ventilation_schedule: Box<dyn VentilationSchedule>` | **Reset to `default_ventilation_schedule()`** | Same reasoning as the solver slot. |
 | `surrogate_load_calls`, `physics_conduction_calls`, `surrogate_conduction_calls`, `surrogate_ventilation_calls` | **Preserved verbatim** | These are observable routing-counters (Issue #1702 regression guards assert on them); preserving them lets a caller snapshot routing statistics across branches. |
 
-The asymmetry is intentional but easy to misuse. **Contract for consumers of
-`HybridThermalModel::clone`:**
+The asymmetry is intentional but easy to misuse. End-to-end regression coverage
+lives in `tests/hybrid_clone_preserves_dispatch_counters.rs` (Issue #2925): the
+first test (`clone_preserves_dispatch_counters_mid_solve`) pins counter
+preservation across `clone()` after a mid-solve snapshot, and the second
+(`clone_resets_solver_and_schedule_slots_independently`) pins the
+slot-pointer-independence guarantee via pointer-address comparison and a
+`set_conduction_solver` / `set_ventilation_schedule` swap that must not bleed
+into the original. Any future refactor that re-derives the counters in `Clone`
+(e.g. resets them to 0 "for symmetry") or that aliases the slot pointers
+across clone will fail one of these tests immediately. **Contract for consumers
+of `HybridThermalModel::clone`:**
 
 1. **Clone BEFORE solving.** This is the pattern every in-tree caller uses.
    `BatchOracle::evaluate_population` clones an unsolved `base_model`;
