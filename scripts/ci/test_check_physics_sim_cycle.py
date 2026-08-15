@@ -292,7 +292,12 @@ def test_phase2_scans_all_sim_files_in_real_repo(checker):
     asserting:
 
     * the offender count equals ``BASELINE_SIM_TO_PHYSICS`` (the snapshot
-      of 83 pre-existing ``use crate::physics::`` edges across 26 sim files);
+      of 85 ``use crate::physics::`` edges across 26+ sim files — 83
+      pre-existing edges snapshotted at Issue #2766, minus the single edge
+      removed by PR #3020 / issue #2896 doc-only stub deletion, plus the
+      two new ``use crate::physics::exterior_convection::{...}`` edges
+      added by PR #3024 / issue #2891 for ASHRAE 140 §5.2.6 wind-
+      velocity-dependent exterior convection in the 5R1C path);
     * the offenders span many more than the 2 files the old guard saw;
     * the four documented re-export shims (assembly.rs,
       multi_node_thermal.rs, construction.rs, per_surface_conduction.rs)
@@ -382,9 +387,11 @@ def test_main_returns_zero_at_documented_baseline(
     """A clean fixture (0 offenders in both directions) must pass below baseline.
 
     Issue #2462 drove the physics->sim direction to 0 edges; the sim->physics
-    baseline is 84 (Issue #2766 snapshotted the pre-existing edges). A clean
-    fixture has 0 actual offenders — below both baselines — so the guard
-    passes. It only fails if a *new* edge pushes a count *above* its baseline.
+    baseline is 85 (84 pre-existing edges from Issue #2766, minus 1 from
+    PR #3020 / issue #2896 stub deletion, plus 2 from PR #3024 / issue #2891
+    exterior-convection fix). A clean fixture has 0 actual offenders —
+    below both baselines — so the guard passes. It only fails if a *new*
+    edge pushes a count *above* its baseline.
     """
     _redirect_to_fixture(
         checker,
@@ -449,10 +456,14 @@ def test_main_returns_one_when_sim_offender_exceeds_baseline(
     The guard's contract is *regression-only*: a NEW edge that pushes the
     count above the documented baseline is a failure. We monkey-patch
     ``BASELINE_SIM_TO_PHYSICS`` to 0 (so the test does not have to generate
-    84 baseline lines) and seed a single offender in ``construction.rs`` —
+    85 baseline lines) and seed a single offender in ``construction.rs`` —
     the *extra* edge above the (patched) baseline is what trips the guard.
     """
     monkeypatch.setattr(checker, "BASELINE_SIM_TO_PHYSICS", 0)
+    # (The actual repository baseline is 85; the test fixture generates a
+    # minimal set of offenders and patches the baseline to 0 so the relative
+    # arithmetic — baseline + 1 offender = regression — is what we exercise
+    # here, not the absolute count.)
     _redirect_to_fixture(
         checker,
         tmp_path,
@@ -478,7 +489,7 @@ def test_main_aggregates_offenders_from_both_phases(
     """Both phases contribute offenders to the summary when each exceeds baseline.
 
     We monkey-patch both baselines to 0 (so the test does not have to
-    generate 84+ baseline lines) and seed 2 offenders in each phase; the
+    generate 85+ baseline lines) and seed 2 offenders in each phase; the
     *extra* edges above the (patched) baselines are what trip the guard.
     """
     monkeypatch.setattr(checker, "BASELINE_PHYSICS_TO_SIM", 0)

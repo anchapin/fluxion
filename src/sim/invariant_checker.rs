@@ -429,7 +429,21 @@ impl InvariantChecker {
         };
 
         let sky_temp = weather.sky_temperature();
-        let sol_air = SolAirTemperature::ashrae_140_default();
+        // Issue #2891: replicate step_physics_5r1c's wind-dependent
+        // h_c_ext calculation (ASHRAE 140 §5.2.6: roofs 5.8 + 3.8·V) so the
+        // invariant check sums to a residual of ~0 even when the wind is
+        // varying per timestep. We pick the same windward-roof coefficient
+        // used in step_physics_5r1c via the production helper.
+        let v_building = crate::physics::exterior_convection::wind_at_building_height_from_10m(
+            weather.wind_speed,
+            2.7,
+        );
+        let h_c_ext_roof = crate::physics::exterior_convection::h_c_ext_wind_dependent(
+            crate::physics::exterior_convection::ExteriorSurfaceDirection::HorizontalRoofWindward,
+            v_building,
+        );
+        let alpha = crate::physics::constants::thermal::ashrae_140::SOLAR_ABSORPTANCE_DEFAULT;
+        let sol_air = SolAirTemperature::new(alpha, 0.9, h_c_ext_roof);
         let opaque_solar_ref = model.opaque_solar_gains.as_ref();
 
         let mut t_sol_air_vec = Vec::with_capacity(n);

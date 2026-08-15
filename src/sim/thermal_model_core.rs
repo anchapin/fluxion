@@ -221,6 +221,16 @@ where
 {
     /// Prepare sol-air temperature and calculate CTF/FD heat fluxes.
     /// This is a shared helper for 5R1C and 6R2C models.
+    ///
+    /// Issue #2891: prior to the wind-dependent exterior convection fix, the
+    /// roof sol-air coefficient `h_se` and the FD exterior BC film coefficient
+    /// were the time-invariant `EXTERIOR_FILM_COEFF_DEFAULT = 18.3 W/m²·K`
+    /// (vertical surfaces, ~3.4 m/s wind). We now derive both from the
+    /// hourly wind speed stored in `weather`, using
+    /// [`crate::physics::exterior_convection::h_c_ext_wind_dependent`] and
+    /// the ASHRAE 140 §5.2.6 `(a, b)` coefficients per surface direction.
+    /// When weather is absent the legacy 3.4 m/s wall constant recovers
+    /// `EXTERIOR_FILM_COEFF` so legacy tests remain bit-identical.
     pub(crate) fn prepare_solvers_and_sol_air(
         &mut self,
         _timestep: usize,
@@ -228,13 +238,30 @@ where
         sky_temp: f64, // EPW-derived sky temperature from WeatherData
     ) -> SolversAndSolAirResult {
         use crate::physics::constants::thermal::ashrae_140::v2023::{
-            EXTERIOR_FILM_COEFF, EXTERIOR_FILM_COEFF_DEFAULT, INTERIOR_FILM_COEFF,
-            SOLAR_ABSORPTANCE_DEFAULT,
+            INTERIOR_FILM_COEFF, SOLAR_ABSORPTANCE_DEFAULT,
+        };
+        use crate::physics::exterior_convection::{
+            h_c_ext_wind_dependent, wind_at_building_height_from_10m, ExteriorSurfaceDirection,
         };
         let solar_ref = self.0.solar_gains.as_ref();
         let alpha = SOLAR_ABSORPTANCE_DEFAULT;
-        let h_se = EXTERIOR_FILM_COEFF_DEFAULT;
         let emissivity = 0.9; // Surface emissivity for longwave
+        let v_wind_building = self
+            .0
+            .weather
+            .as_ref()
+            .map(|w| wind_at_building_height_from_10m(w.wind_speed, 2.7))
+            .unwrap_or(3.4);
+        let h_se_roof = h_c_ext_wind_dependent(
+            ExteriorSurfaceDirection::HorizontalRoofWindward,
+            v_wind_building,
+        );
+        // FD solver boundary conditions use the wall (vertical) windward coefficient.
+        let h_se_fd = h_c_ext_wind_dependent(
+            ExteriorSurfaceDirection::VerticalWallWindward,
+            v_wind_building,
+        );
+        let h_se = h_se_roof;
 
         let mut t_sol_air_data = Vec::with_capacity(self.0.num_zones);
         for &i_sol in solar_ref.iter().take(self.0.num_zones) {
@@ -303,10 +330,11 @@ where
                 for (i, solver) in self.0.conduction.fd_solvers.iter_mut().enumerate() {
                     let t_zone = temps.get(i).copied().unwrap_or(20.0);
                     let t_ext = t_sol_air_data.get(i).copied().unwrap_or(outdoor_temp);
-                    // h_int = 8.29, h_ext = 18.3 (EXTERIOR_FILM_COEFF) per ASHRAE 140
-                    // v2023, vertical surfaces ~3.4 m/s wind (#1419/#2679).
+                    // h_int = 8.29, h_ext = wind-dependent per ASHRAE 140
+                    // v2023 §5.2.6 vertical-wall windward correlation
+                    // h_c = 4.0 + 4.0·V_building (#2891/#1419/#2679).
                     let interior_bc = SurfaceBC::new_interior(INTERIOR_FILM_COEFF, t_zone);
-                    let exterior_bc = SurfaceBC::new_exterior(EXTERIOR_FILM_COEFF, t_ext, 0.0);
+                    let exterior_bc = SurfaceBC::new_exterior(h_se_fd, t_ext, 0.0);
 
                     // Step FD solver and get interior surface heat flux
                     solver.step(3600.0, &interior_bc, &exterior_bc);
