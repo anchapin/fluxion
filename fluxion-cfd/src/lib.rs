@@ -75,3 +75,130 @@ pub enum CfdError {
 }
 
 pub type CfdResult<T> = Result<T, CfdError>;
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn cfd_error_grid_display_includes_context() {
+        let e = CfdError::Grid("nx must be positive".into());
+        let s = format!("{e}");
+        assert!(
+            s.contains("Grid"),
+            "display should mention 'Grid' (got {s:?})"
+        );
+        assert!(
+            s.contains("nx must be positive"),
+            "display should include the context message (got {s:?})"
+        );
+    }
+
+    #[test]
+    fn cfd_error_solver_display_includes_context() {
+        let e = CfdError::Solver("CG did not converge".into());
+        let s = format!("{e}");
+        assert!(
+            s.contains("Solver"),
+            "display should mention 'Solver' (got {s:?})"
+        );
+        assert!(s.contains("CG did not converge"));
+    }
+
+    #[test]
+    fn cfd_error_gpu_display_includes_context() {
+        let e = CfdError::Gpu("cuda kernel launch failed".into());
+        let s = format!("{e}");
+        assert!(
+            s.contains("GPU"),
+            "display should mention 'GPU' (got {s:?})"
+        );
+        assert!(s.contains("cuda kernel launch failed"));
+    }
+
+    #[test]
+    fn cfd_error_invalid_parameter_display_includes_context() {
+        let e = CfdError::InvalidParameter("dt must be > 0".into());
+        let s = format!("{e}");
+        assert!(
+            s.contains("Invalid parameter"),
+            "display should mention 'Invalid parameter' (got {s:?})"
+        );
+        assert!(s.contains("dt must be > 0"));
+    }
+
+    #[test]
+    fn cfd_error_convergence_display_includes_context() {
+        let e = CfdError::Convergence("Poisson solve exceeded 1000 iters".into());
+        let s = format!("{e}");
+        assert!(
+            s.contains("Convergence"),
+            "display should mention 'Convergence' (got {s:?})"
+        );
+        assert!(s.contains("Poisson solve exceeded 1000 iters"));
+    }
+
+    #[test]
+    fn cfd_error_variants_are_distinct() {
+        let errors = [
+            CfdError::Grid(String::new()),
+            CfdError::Solver(String::new()),
+            CfdError::Gpu(String::new()),
+            CfdError::InvalidParameter(String::new()),
+            CfdError::Convergence(String::new()),
+        ];
+        let formatted: Vec<String> = errors.iter().map(|e| format!("{e}")).collect();
+        for (i, a) in formatted.iter().enumerate() {
+            for (j, b) in formatted.iter().enumerate() {
+                if i != j {
+                    assert_ne!(a, b, "variants {i} and {j} must format differently");
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn cfd_result_ok_unwraps_to_value() {
+        let r: CfdResult<i32> = Ok(42);
+        match r {
+            Ok(v) => assert_eq!(v, 42),
+            Err(_) => panic!("expected Ok variant"),
+        }
+    }
+
+    #[test]
+    fn cfd_result_err_propagates() {
+        let r: CfdResult<i32> = Err(CfdError::Grid("nope".into()));
+        assert!(r.is_err());
+    }
+
+    #[test]
+    fn public_reexports_are_constructible() {
+        let _ = AdvectionSolver::new();
+        let _ = DiffusionSolver::default();
+        let _ = PressureSolver::default();
+        let cfg = FfdConfig {
+            nx: 4,
+            ny: 4,
+            nz: 4,
+            ..FfdConfig::default()
+        };
+        let _ = FfdCfdSolver::new(cfg).expect("FfdCfdSolver::new must succeed on a 4x4x4 grid");
+    }
+
+    #[cfg(feature = "cuda")]
+    #[test]
+    fn gpu_dispatch_reports_cpu_backend_by_default() {
+        use crate::gpu::{get_available_backend, supports_gpu, GpuBackend};
+        assert_eq!(get_available_backend(), GpuBackend::CPU);
+        assert!(!supports_gpu());
+    }
+
+    #[cfg(feature = "cuda")]
+    #[test]
+    fn gpu_config_default_uses_cpu_backend() {
+        use crate::gpu::{GpuBackend, GpuConfig};
+        let cfg = GpuConfig::default();
+        assert_eq!(cfg.backend, GpuBackend::CPU);
+    }
+}

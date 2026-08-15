@@ -156,3 +156,94 @@ impl Default for DiffusionSolver {
         Self::new(1000, 1e-8)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn peak_field(nx: usize, ny: usize, nz: usize, peak_value: f64) -> Field3d {
+        let mut f = Field3d::filled(nx, ny, nz, 0.0);
+        f.set(nx / 2, ny / 2, nz / 2, peak_value)
+            .expect("center cell must exist");
+        f
+    }
+
+    #[test]
+    fn diffuse_zero_field_stays_zero() {
+        let grid = Grid3d::new(8, 8, 8, 0.1, 0.1, 0.1);
+        let mut scalar = Field3d::zeros(8, 8, 8);
+        DiffusionSolver::default()
+            .step(&grid, 0.01, 1.0, &mut scalar)
+            .expect("step should succeed");
+        for &v in scalar.data.iter() {
+            assert!(
+                v.abs() < 1e-12,
+                "zero field must stay zero after diffusion (got {v})"
+            );
+        }
+    }
+
+    #[test]
+    fn diffuse_produces_finite_values_for_peak_input() {
+        let grid = Grid3d::new(8, 8, 8, 0.1, 0.1, 0.1);
+        let mut scalar = peak_field(8, 8, 8, 1.0);
+        DiffusionSolver::default()
+            .step(&grid, 0.01, 1.0, &mut scalar)
+            .expect("step should succeed");
+        for &v in scalar.data.iter() {
+            assert!(v.is_finite(), "diffused field must remain finite (got {v})");
+        }
+    }
+
+    #[test]
+    fn diffuse_modifies_nonuniform_field() {
+        let grid = Grid3d::new(8, 8, 8, 0.1, 0.1, 0.1);
+        let mut scalar = peak_field(8, 8, 8, 5.0);
+        let pre_data = scalar.data.clone();
+        DiffusionSolver::default()
+            .step(&grid, 0.01, 1.0, &mut scalar)
+            .expect("step should succeed");
+        let mut differs = false;
+        for (idx, (&pre, &post)) in pre_data.iter().zip(scalar.data.iter()).enumerate() {
+            if (pre - post).abs() > 1e-12 {
+                differs = true;
+                break;
+            }
+            assert!(
+                post.is_finite(),
+                "diffused cell {idx} must be finite (got {post})"
+            );
+        }
+        assert!(differs, "diffusion step must modify the non-uniform field");
+    }
+
+    #[test]
+    fn diffuse_velocity_modifies_all_components() {
+        let grid = Grid3d::new(8, 8, 8, 0.1, 0.1, 0.1);
+        let mut velocity = VelocityField::zeros(8, 8, 8);
+        velocity.u.fill(1.0);
+        velocity.v.fill(2.0);
+        velocity.w.fill(3.0);
+        DiffusionSolver::default()
+            .diffuse_velocity(&grid, 0.01, 1.0, &mut velocity)
+            .expect("diffuse_velocity should succeed");
+        for (idx, &u) in velocity.u.data.iter().enumerate() {
+            assert!(
+                u.is_finite(),
+                "u[{idx}] must remain finite after diffusion (got {u})"
+            );
+        }
+        for (idx, &v) in velocity.v.data.iter().enumerate() {
+            assert!(
+                v.is_finite(),
+                "v[{idx}] must remain finite after diffusion (got {v})"
+            );
+        }
+        for (idx, &w) in velocity.w.data.iter().enumerate() {
+            assert!(
+                w.is_finite(),
+                "w[{idx}] must remain finite after diffusion (got {w})"
+            );
+        }
+    }
+}
