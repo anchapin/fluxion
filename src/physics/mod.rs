@@ -39,6 +39,7 @@
 pub mod bdf_engine;
 pub mod constants;
 pub mod continuous;
+pub mod exterior_convection;
 
 pub mod cta;
 pub mod ctf_coefficients;

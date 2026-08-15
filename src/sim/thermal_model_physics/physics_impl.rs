@@ -308,7 +308,35 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         // Now: t_sol_air includes solar via the sol-air formula using opaque irradiance.
         // opaque_sol_w has been removed from phi_m to avoid double-counting.
         // The sol-air formula: T_sol_air = T_out + α*I_opaque/h_ext - ε*σ*(T_out-T_sky)^4/h_ext
-        let sol_air_calc = SolAirTemperature::ashrae_140_default();
+        //
+        // Issue #2891: h_ext used to be the time-invariant `EXTERIOR_FILM_COEFF_DEFAULT
+        // = 18.3 W/m²·K` (~3.4 m/s wind), which over-estimated convection in winter
+        // (V≈2-4 m/s) and under-estimated it in summer low-wind hours. We now read the
+        // hourly wind speed from the model's weather buffer (if available) and pick
+        // the windward-roof wind-dependent coefficient
+        // `h_c = 5.8 + 3.8·V_building` per ASHRAE 140 §5.2.6. The 10 m → building-height
+        // conversion uses the ASHRAE power-law profile `(z/10)^0.15`.
+        // When the weather buffer is absent (single-zone diagnostic tests), we fall
+        // back to the ASHRAE-140 reference building-height wind of 3.4 m/s, which
+        // recovers `h_c_ext = EXTERIOR_FILM_COEFF` at the constant baseline.
+        use crate::physics::exterior_convection::{
+            h_c_ext_wind_dependent, wind_at_building_height_from_10m, ExteriorSurfaceDirection,
+        };
+        let v_wind_building = self
+            .0
+            .weather
+            .as_ref()
+            .map(|w| wind_at_building_height_from_10m(w.wind_speed, 2.7))
+            .unwrap_or(3.4);
+        let h_c_ext_wind = h_c_ext_wind_dependent(
+            ExteriorSurfaceDirection::HorizontalRoofWindward,
+            v_wind_building,
+        );
+        let sol_air_calc = SolAirTemperature::new(
+            SolAirTemperature::ashrae_140_default().solar_absorptance,
+            SolAirTemperature::ashrae_140_default().emissivity,
+            h_c_ext_wind,
+        );
         let mut t_sol_air_vec = Vec::with_capacity(self.0.num_zones);
         for opaque_solar in opaque_solar_ref.iter().take(self.0.num_zones) {
             // opaque_solar is the effective opaque irradiance on exterior surfaces (W/m²)
