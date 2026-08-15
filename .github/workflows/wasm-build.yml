@@ -195,10 +195,14 @@ jobs:
       # would break downstream npm consumers) is caught too.
       #
       # `python3 -c` for the hash avoids the BSD-vs-GNU `sha256sum`
-      # split on macOS (which lacks `sha256sum`). CRLF in text files
-      # is normalized to LF so the hash matches across Windows /
-      # Linux / macOS builds regardless of which platform wrote the
-      # file — see the matching note in `interface-stability` below.
+      # split on macOS (which lacks `sha256sum`). Only the wasm-bindgen
+      # generated `.d.ts` files are hashed — `package.json` is excluded
+      # because it embeds npm publish metadata (description, repository,
+      # author) that wasm-pack may render with platform-dependent
+      # whitespace/line endings even though the published JS interface
+      # is identical. CRLF in the .d.ts files is normalized to LF so
+      # the hash matches across Windows / Linux / macOS builds
+      # regardless of which platform wrote the file.
       - name: Compute wasm-bindgen interface hash
         id: iface
         shell: bash
@@ -210,7 +214,6 @@ jobs:
           for path in [
               "fluxion-wasm/pkg/fluxion_wasm.d.ts",
               "fluxion-wasm/pkg/fluxion_wasm_bg.wasm.d.ts",
-              "fluxion-wasm/pkg/package.json",
           ]:
               m.update(b"===" + path.encode() + b"===\n")
               with open(path, "rb") as f:
@@ -287,20 +290,18 @@ jobs:
           import hashlib, sys
           base = sys.argv[1]
           m = hashlib.sha256()
+          # Only hash the .d.ts files — package.json is excluded
+          # because it embeds npm publish metadata (description,
+          # repository, author) that wasm-pack may render with
+          # platform-dependent whitespace/line endings even though
+          # the published JS interface is identical. CRLF in the
+          # .d.ts files is normalized to LF.
           for path in [
               f"{base}/fluxion_wasm.d.ts",
               f"{base}/fluxion_wasm_bg.wasm.d.ts",
-              f"{base}/package.json",
           ]:
               m.update(b"===" + path.encode() + b"===\n")
               with open(path, "rb") as f:
-                  # Normalize CRLF -> LF so Windows-built artifacts
-                  # (which embed CRLF in the .d.ts / package.json
-                  # text files) hash the same as Linux/macOS-built
-                  # artifacts (LF). Without this, the byte-size
-                  # difference shows up as ~27 extra bytes per
-                  # platform-injected CRLF run and the hashes diverge
-                  # even though the interface is semantically identical.
                   data = f.read().replace(b"\r\n", b"\n")
               m.update(data)
           print(m.hexdigest())
