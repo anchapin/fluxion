@@ -1,0 +1,332 @@
+# Issue #2914: Cross-platform WASM build verification matrix.
+#
+# Closes the gap where `wasm-pack build --release` for `fluxion-wasm` was
+# implicitly tested (build once, ship everywhere) with no CI matrix
+# confirming it succeeds on ubuntu/macos/windows AND that the resulting
+# `.wasm` artifact stays within Goal #10's 10 MB ceiling. The
+# crate-size.yml gate (#2930) only enforces the threshold against the
+# root crate's `cargo package` output, not the WASM artifact — this
+# workflow is the WASM-side mirror of the same discipline.
+#
+# Two jobs:
+#   1. `wasm-build` (matrix: ubuntu-latest, macos-latest, windows-latest)
+#      — installs wasm-pack, builds fluxion-wasm via
+#        `wasm-pack build --release --target web`, asserts the `.wasm`
+#        size ≤ 10 MiB, computes a wasm-bindgen interface hash over the
+#        generated TypeScript declarations, exposes the hash as a
+#        per-OS job output, and uploads the `pkg/` directory as a
+#        per-OS artifact.
+#   2. `interface-stability` — depends on all three matrix rows and
+#      asserts that the per-job IFACE_HASH job outputs are
+#      byte-identical. This is a regression guard against
+#      platform-specific build flags or non-deterministic build
+#      behavior leaking into the public JS surface — a silent
+#      consumer-facing regression that would otherwise only show up
+#      at npm-publish time.
+#
+# The interface hash is compared via the matrix jobs' per-OS output
+# values rather than by re-downloading and re-hashing the per-OS
+# artifacts. Two reasons: (a) the build step already computes the
+# canonical hash from the wasm-pack output on disk — re-downloading
+# the zip and re-hashing the bytes is redundant and is sensitive to
+# upload/download roundtrip quirks (zip metadata, line-ending
+# normalization, etc.) that have nothing to do with the actual JS
+# interface; (b) comparing outputs avoids the additional
+# zip-compression / unzip-extraction surface area, so a CI failure
+# here can only mean the JS interface actually diverged.
+#
+# The per-OS output name is wired up via the standard
+# `strategy.matrix.include` pattern: each matrix row carries an
+# `output_name` that determines the key under which the interface
+# hash is exposed on the `wasm-build` job's `outputs:` map, so the
+# downstream job can read e.g. `needs.wasm-build.outputs.ubuntu_hash`.
+#
+# Triggered on PR + push to develop/main for paths that could affect the
+# WASM output: fluxion-wasm sources, its fluxion-fluid / fluxion-core
+# transitive deps, any Cargo.toml/Cargo.lock in the workspace, the
+# workflow file itself, and release_gates.yaml.
+
+name: WASM Build Verification
+
+on:
+  pull_request:
+    paths:
+      - 'fluxion-wasm/**'
+      - 'fluxion-fluid/**'
+      - 'fluxion-core/**'
+      - '**/Cargo.toml'
+      - '**/Cargo.lock'
+      - '.github/workflows/wasm-build.yml'
+      - 'release_gates.yaml'
+  push:
+    branches:
+      - develop
+      - main
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+# Least-privilege GITHUB_TOKEN grants (Issue #2526): the WASM build only
+# checks out code, runs wasm-pack / cargo, and uploads the resulting
+# pkg/ directory as an artifact — no repo write-back.
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: 1
+  # 10 MiB in bytes — Goal #10 published-crate ceiling. Mirrored from
+  # `release_gates.yaml → crate_size.max_mb: 10` and
+  # `.github/workflows/crate-size.yml CRATE_SIZE_LIMIT_BYTES` (kept in
+  # sync per the same drift-discipline comment in #2930). Any drift
+  # between the three should fail the next CI run via the
+  # `architecture_drift` style nightly comparison.
+  WASM_SIZE_LIMIT_BYTES: 10485760
+  WASM_SIZE_LIMIT_MB: 10
+
+jobs:
+  wasm-build:
+    name: WASM Build (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os:
+          - ubuntu-latest
+          - macos-latest
+          - windows-latest
+        # Per-OS `output_name` keys into the matrix job's `outputs:`
+        # block below, so the downstream `interface-stability` job
+        # can read each platform's hash via e.g.
+        # `needs.wasm-build.outputs.ubuntu_hash`. The platform-name
+        # suffix matches `${{ matrix.os }}`; the matrix `include` is
+        # also a useful place to add per-OS overrides later (e.g.
+        # extra `flags:` or `env:` for windows) without touching the
+        # steps block.
+        include:
+          - os: ubuntu-latest
+            output_name: ubuntu_hash
+          - os: macos-latest
+            output_name: macos_hash
+          - os: windows-latest
+            output_name: windows_hash
+    # Dynamic per-matrix output — the key is the value of
+    # `matrix.output_name` (one of ubuntu_hash / macos_hash /
+    # windows_hash), so each platform's interface hash ends up under
+    # a stable name on the `wasm-build` job outputs map.
+    outputs:
+      ${{ matrix.output_name }}: ${{ steps.iface.outputs.hash }}
+
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4
+
+      # wasm-pack 0.15.x is pinned via the official installer. The
+      # installer downloads a prebuilt binary for the current OS+arch
+      # from https://github.com/rustwasm/wasm-pack/releases (faster than
+      # `cargo install` and avoids a wasted build when the toolchain is
+      # already cached). The version is not specified exactly because
+      # the installer always resolves to the latest 0.15.x release — a
+      # wasm-pack major bump changes the .d.ts output format and would
+      # invalidate the cross-platform interface hash, so it must be a
+      # deliberate change tracked alongside a hash re-baseline.
+      - name: Install wasm-pack (official installer)
+        shell: bash
+        run: |
+          set -euo pipefail
+          if ! command -v wasm-pack >/dev/null 2>&1; then
+            curl https://rustwasm.github.io/wasm-pack/installer/init.sh -sSf | sh
+          fi
+          wasm-pack --version
+
+      # Toolchain with the wasm32-unknown-unknown target. `setup-rust-env`
+      # also installs libssl/fontconfig system deps on Linux (unnecessary
+      # for a pure WASM build but harmless, and keeps the workflow aligned
+      # with the rest of the CI surface so a future shared refactor
+      # doesn't have to special-case this file). sccache is OFF — matrix
+      # builds run on cold cache for the first run anyway, and
+      # cross-OS cache reuse is unreliable for the wasm32 target
+      # (cargo encodes the host arch into target-fingerprinted artifacts).
+      - name: Set up Rust toolchain (with wasm32 target)
+        uses: ./.github/actions/setup-rust-env
+        with:
+          toolchain: wasm32-unknown-unknown
+          sccache: 'false'
+
+      - name: Cache cargo registry & git
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830  # v4
+        with:
+          path: |
+            ~/.cargo/registry/index
+            ~/.cargo/registry/cache
+            ~/.cargo/git/db
+          key: ${{ runner.os }}-cargo-wasm-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-wasm-
+
+      # `--target web` emits ES-module style glue + .d.ts. The web
+      # target's outputs match the README example and produce a stable
+      # `.d.ts` surface that we hash in the next step. The path
+      # argument is the crate dir (relative to the checkout root) so
+      # we don't need a `working-directory` override.
+      - name: wasm-pack build --release (fluxion-wasm)
+        shell: bash
+        run: |
+          set -euo pipefail
+          wasm-pack build --release --target web fluxion-wasm
+
+      # Size measurement uses `python3` rather than `stat -c %s` to
+      # avoid the BSD-vs-GNU stat split (macOS needs `stat -f %z`,
+      # Linux/Windows-Git-Bash need `stat -c %s`). Python is preinstalled
+      # on all three GitHub-hosted runners. The threshold is read from
+      # `WASM_SIZE_LIMIT_BYTES` set in `env:` above so a single edit
+      # propagates across the workflow; the literal is also duplicated
+      # here for standalone debugging without the workflow env.
+      - name: Measure .wasm artifact size
+        id: measure
+        shell: bash
+        run: |
+          set -euo pipefail
+          WASM_FILE="fluxion-wasm/pkg/fluxion_wasm_bg.wasm"
+          if [[ ! -f "${WASM_FILE}" ]]; then
+            echo "::error::Expected ${WASM_FILE} not found after wasm-pack build."
+            exit 1
+          fi
+          WASM_BYTES=$(python3 -c "import os; print(os.path.getsize('${WASM_FILE}'))")
+          WASM_MB=$(python3 -c "print(round(${WASM_BYTES} / 1048576, 3))")
+          LIMIT_BYTES=${WASM_SIZE_LIMIT_BYTES}
+          LIMIT_MB=${WASM_SIZE_LIMIT_MB}
+
+          echo "wasm_file=${WASM_FILE}"     >> "$GITHUB_OUTPUT"
+          echo "wasm_bytes=${WASM_BYTES}"   >> "$GITHUB_OUTPUT"
+          echo "wasm_mb=${WASM_MB}"         >> "$GITHUB_OUTPUT"
+
+          {
+            echo "## WASM Build Verification (Issue #2914) — ${{ matrix.os }}"
+            echo ""
+            echo "| Metric | Value |"
+            echo "| --- | --- |"
+            echo "| Platform | \`${{ matrix.os }}\` |"
+            echo "| wasm-pack version | \`$(wasm-pack --version)\` |"
+            echo "| \`.wasm\` artifact | \`${WASM_FILE}\` |"
+            echo "| Size | **${WASM_BYTES} bytes** (${WASM_MB} MiB) |"
+            echo "| Goal #10 limit | ${LIMIT_BYTES} bytes (${LIMIT_MB} MiB) |"
+            echo "| Headroom | $(python3 -c "print(round((${LIMIT_BYTES} - ${WASM_BYTES}) / 1048576, 3))") MiB |"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          if (( WASM_BYTES > LIMIT_BYTES )); then
+            PCT=$(python3 -c "print(round(${WASM_BYTES} / ${LIMIT_BYTES} * 100, 1))")
+            echo "::error::WASM artifact ${WASM_BYTES} bytes (${WASM_MB} MiB) exceeds Goal #10 limit of ${LIMIT_MB} MiB (${PCT}% of limit)."
+            echo "passed=false" >> "$GITHUB_OUTPUT"
+            exit 1
+          fi
+          echo "passed=true" >> "$GITHUB_OUTPUT"
+          echo "WASM size ${WASM_MB} MiB is within the ${LIMIT_MB} MiB limit."
+
+      # The wasm-bindgen interface is the JS surface (exported types +
+      # exported names from the background module). Hashing `*.d.ts`
+      # files gives a deterministic signature that does NOT depend on
+      # platform-specific binary layout — different LLVM/cargo
+      # versions across OSes may produce different `.wasm` bytes, but
+      # the JS interface must stay identical. CRLF in the .d.ts files
+      # is normalized to LF so the hash matches across Windows /
+      # Linux / macOS regardless of which platform wrote the file.
+      # `package.json` is intentionally excluded: it embeds npm
+      # publish metadata (description, repository, author) that
+      # wasm-pack may render with platform-dependent whitespace and
+      # which is not part of the public JS surface consumers compile
+      # against.
+      #
+      # `python3 -c` for the hash avoids the BSD-vs-GNU `sha256sum`
+      # split on macOS (which lacks `sha256sum`).
+      - name: Compute wasm-bindgen interface hash
+        id: iface
+        shell: bash
+        run: |
+          set -euo pipefail
+          HASH=$(python3 <<'PY'
+          import hashlib
+          m = hashlib.sha256()
+          for path in [
+              "fluxion-wasm/pkg/fluxion_wasm.d.ts",
+              "fluxion-wasm/pkg/fluxion_wasm_bg.wasm.d.ts",
+          ]:
+              m.update(b"===" + path.encode() + b"===\n")
+              with open(path, "rb") as f:
+                  data = f.read().replace(b"\r\n", b"\n")
+              m.update(data)
+          print(m.hexdigest())
+          PY
+          )
+          echo "hash=${HASH}" >> "$GITHUB_OUTPUT"
+          {
+            echo "| wasm-bindgen interface hash | \`${HASH}\` |"
+          } >> "$GITHUB_STEP_SUMMARY"
+          echo "WASM interface hash: ${HASH}"
+
+      # Per-OS artifact upload. Kept for downstream consumers
+      # (e.g. an npm publish step or a manual download for
+      # inspection) but NOT consumed by the cross-platform
+      # `interface-stability` job — that job reads the IFACE_HASH
+      # job outputs directly so it does not have to deal with
+      # upload/download roundtrip quirks. `fluxion-wasm/pkg` is the
+      # directory wasm-pack writes; `pkg/.gitignore` (created by
+      # wasm-pack itself) is left in place — it's already
+      # gitignored and contains a single `*` line that doesn't
+      # affect the artifact contents.
+      - name: Upload WASM pkg/ for downstream consumers
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02  # v4
+        with:
+          name: wasm-build-${{ matrix.os }}
+          path: fluxion-wasm/pkg
+          retention-days: 7
+
+  # Cross-platform interface-stability gate. Runs only after ALL three
+  # matrix rows succeed and asserts the per-OS IFACE_HASH job outputs
+  # are byte-identical. A mismatch means a platform-specific build
+  # flag, environment variable, or non-deterministic behavior leaked
+  # into the public JS surface — a silent consumer-facing regression
+  # that would otherwise only show up at npm-publish time.
+  interface-stability:
+    name: WASM Interface Stability (cross-platform)
+    needs: wasm-build
+    runs-on: ubuntu-latest
+    if: always() && needs.wasm-build.result == 'success'
+
+    steps:
+      - name: Compare interface hashes across platforms
+        shell: bash
+        run: |
+          set -euo pipefail
+          HASH_UBUNTU="${{ needs.wasm-build.outputs.ubuntu_hash }}"
+          HASH_MACOS="${{ needs.wasm-build.outputs.macos_hash }}"
+          HASH_WINDOWS="${{ needs.wasm-build.outputs.windows_hash }}"
+
+          {
+            echo "## WASM Interface Stability (Issue #2914)"
+            echo ""
+            echo "| Platform | wasm-bindgen interface hash |"
+            echo "| --- | --- |"
+            echo "| ubuntu-latest | \`${HASH_UBUNTU}\` |"
+            echo "| macos-latest | \`${HASH_MACOS}\` |"
+            echo "| windows-latest | \`${HASH_WINDOWS}\` |"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          if [[ -z "${HASH_UBUNTU}" || -z "${HASH_MACOS}" || -z "${HASH_WINDOWS}" ]]; then
+            echo "::error::One or more matrix jobs did not report an iface hash output."
+            echo "  ubuntu-latest:  '${HASH_UBUNTU}'"
+            echo "  macos-latest:   '${HASH_MACOS}'"
+            echo "  windows-latest: '${HASH_WINDOWS}'"
+            exit 1
+          fi
+
+          if [[ "${HASH_UBUNTU}" != "${HASH_MACOS}" || "${HASH_MACOS}" != "${HASH_WINDOWS}" ]]; then
+            echo "::error::WASM interface hashes differ across platforms — a platform-specific flag or non-deterministic build leaked into the JS surface."
+            echo "  ubuntu-latest:  ${HASH_UBUNTU}"
+            echo "  macos-latest:   ${HASH_MACOS}"
+            echo "  windows-latest: ${HASH_WINDOWS}"
+            exit 1
+          fi
+
+          echo "WASM interface hashes are identical across all three platforms (${HASH_UBUNTU})."

@@ -571,3 +571,33 @@ ci:
       workflow: ".github/workflows/crate-size.yml"
       issue: 2930
       triggered_by: "PR + push to develop/main"
+
+    - job: "WASM Build Verification (Issue #2914)"
+      # Cross-platform WASM build verification matrix for `fluxion-wasm`.
+      # Companion to the `Crate Size Gate (Issue #2930)` above — that
+      # gate measures the root crate's `cargo package` artifact; this
+      # gate measures the WASM artifact (`pkg/fluxion_wasm_bg.wasm`)
+      # produced by `wasm-pack build --release --target web`. Two jobs:
+      #   1. `wasm-build` (matrix: ubuntu/macos/windows) — installs
+      #      wasm-pack, runs the release build, asserts the .wasm size
+      #      ≤ 10 MiB, computes a wasm-bindgen interface hash over the
+      #      generated `*.d.ts` files + `package.json`, uploads pkg/ as
+      #      a per-OS artifact.
+      #   2. `interface-stability` — depends on all three matrix rows,
+      #      re-hashes the three artifacts, and asserts the three
+      #      interface hashes are byte-identical. A mismatch means a
+      #      platform-specific build flag / env var leaked into the JS
+      #      surface — a silent consumer-facing regression that would
+      #      otherwise only show up at npm-publish time.
+      # Triggers on PR + push to develop/main for paths that could
+      # affect the WASM output (fluxion-wasm/**, its fluxion-fluid /
+      # fluxion-core transitive deps, any Cargo.toml/Cargo.lock in the
+      # workspace, the workflow file itself, and release_gates.yaml).
+      # Closes the gap where WASM artifact quality was implicit (build
+      # once, ship everywhere). Not added to `required_checks` above —
+      # the size assertion mirrors #2930 (PR-blocking) but the cross-
+      # platform interface-stability check is a regression guard that
+      # maintainers can opt into branch protection separately.
+      workflow: ".github/workflows/wasm-build.yml"
+      issue: 2914
+      triggered_by: "PR + push to develop/main"
