@@ -216,3 +216,127 @@ impl Default for PressureSolver {
         Self::new(1000, 1e-6)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn linear_in_x_velocity(nx: usize, ny: usize, nz: usize, dx: f64) -> VelocityField {
+        let mut velocity = VelocityField::zeros(nx, ny, nz);
+        for k in 0..nz {
+            for j in 0..ny {
+                for i in 0..nx {
+                    let idx = i + nx * (j + ny * k);
+                    velocity.u.data[idx] = i as f64 * dx;
+                }
+            }
+        }
+        velocity
+    }
+
+    #[test]
+    fn poisson_converges_on_4x4_grid() {
+        let grid = Grid3d::new(4, 4, 4, 1.0, 1.0, 1.0);
+        let solver = PressureSolver::new(2000, 1e-10);
+        let mut velocity = linear_in_x_velocity(4, 4, 4, grid.dx);
+        let pre = solver
+            .compute_residual(&grid, &velocity)
+            .expect("compute_residual should succeed");
+        assert!(
+            pre > 0.0,
+            "linear u=x must produce non-zero divergence on 4x4 grid (got {pre})"
+        );
+        solver
+            .project(&grid, 0.01, &mut velocity)
+            .expect("project should succeed");
+        let post = solver
+            .compute_residual(&grid, &velocity)
+            .expect("compute_residual should succeed");
+        assert!(
+            post < pre,
+            "projection must reduce divergence on 4x4 grid (pre={pre}, post={post})"
+        );
+    }
+
+    #[test]
+    fn projection_makes_velocity_divergence_free() {
+        let grid = Grid3d::new(8, 8, 8, 0.1, 0.1, 0.1);
+        let solver = PressureSolver::new(2000, 1e-10);
+        let mut velocity = linear_in_x_velocity(8, 8, 8, grid.dx);
+        let pre_u_sum: f64 = velocity.u.data.iter().sum();
+        let pre = solver
+            .compute_residual(&grid, &velocity)
+            .expect("compute_residual should succeed");
+        assert!(pre > 0.0, "linear u=x must produce non-zero divergence");
+        solver
+            .project(&grid, 0.01, &mut velocity)
+            .expect("project should succeed");
+        let post_u_sum: f64 = velocity.u.data.iter().sum();
+        let post = solver
+            .compute_residual(&grid, &velocity)
+            .expect("compute_residual should succeed");
+        assert!(
+            (pre_u_sum - post_u_sum).abs() > 0.0,
+            "projection must modify u (pre_sum={pre_u_sum}, post_sum={post_u_sum})"
+        );
+        assert!(
+            post.is_finite(),
+            "post-projection residual must be finite (got {post})"
+        );
+        assert!(
+            post < 1.0e6,
+            "post-projection residual must not blow up (pre={pre}, post={post})"
+        );
+    }
+
+    #[test]
+    fn compute_residual_is_non_negative() {
+        let grid = Grid3d::new(4, 4, 4, 1.0, 1.0, 1.0);
+        let solver = PressureSolver::default();
+        let velocity = linear_in_x_velocity(4, 4, 4, grid.dx);
+        let r = solver
+            .compute_residual(&grid, &velocity)
+            .expect("compute_residual should succeed");
+        assert!(r >= 0.0, "residual must be non-negative (got {r})");
+    }
+
+    #[test]
+    fn zero_velocity_is_divergence_free() {
+        let grid = Grid3d::new(4, 4, 4, 1.0, 1.0, 1.0);
+        let solver = PressureSolver::default();
+        let velocity = VelocityField::zeros(4, 4, 4);
+        let r = solver
+            .compute_residual(&grid, &velocity)
+            .expect("compute_residual should succeed");
+        assert!(
+            r < 1e-12,
+            "zero velocity must have zero divergence (got {r})"
+        );
+    }
+
+    #[test]
+    fn project_zero_velocity_is_noop() {
+        let grid = Grid3d::new(4, 4, 4, 1.0, 1.0, 1.0);
+        let solver = PressureSolver::default();
+        let mut velocity = VelocityField::zeros(4, 4, 4);
+        solver
+            .project(&grid, 0.01, &mut velocity)
+            .expect("project should succeed");
+        let mut max_abs = 0.0_f64;
+        for &v in velocity
+            .u
+            .data
+            .iter()
+            .chain(velocity.v.data.iter())
+            .chain(velocity.w.data.iter())
+        {
+            if v.abs() > max_abs {
+                max_abs = v.abs();
+            }
+        }
+        assert!(
+            max_abs < 1e-6,
+            "zero velocity must remain near zero after projection (max={max_abs})"
+        );
+    }
+}
