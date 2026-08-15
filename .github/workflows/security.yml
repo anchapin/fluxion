@@ -29,6 +29,29 @@ jobs:
       - name: Check for stray audit.toml
         run: python3 scripts/check_audit_config_unique.py
 
+  audit-ignore-freshness:
+    # Issue #2912: surface when the documented `>>> REMOVE` conditions
+    # for `.cargo/audit.toml` ignore entries are met. Historical pattern
+    # (#2749 stale deny.toml advisory-not-detected, #2750 cargo-audit
+    # gate leniency, #2681 unsound advisories papered over) shows that
+    # documented-ignore lists decay into permanent ones unless something
+    # actively checks them. When bytebeamio/rumqtt#1037 ships, the four
+    # rustls-webpki entries and the rustls-pemfile entry should be
+    # removed in the same PR that bumps `crates/fluxion-twin/Cargo.toml`;
+    # this gate is what surfaces that opportunity. The default
+    # invocation runs only the offline (Cargo.lock + removal-date)
+    # checks; condition (a) (crates.io poll) is opt-in via
+    # `--check-upstream` and not used in this job so the gate is
+    # network-free in CI.
+    name: "Audit Ignore Freshness (Issue #2912)"
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4
+      - name: Check .cargo/audit.toml ignore list freshness
+        run: python3 scripts/check_audit_ignores_fresh.py
+
   audit:
     name: Cargo Audit
     runs-on: ubuntu-latest

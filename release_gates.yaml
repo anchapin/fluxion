@@ -406,6 +406,20 @@ ci:
     # `ignore` list is mirrored from `.cargo/audit.toml` (keep in sync).
     - "Cargo Deny"
 
+    # Issue #2912: audit-ignore freshness gate. Parses `.cargo/audit.toml`,
+    # extracts each advisory ignore entry's `>>> REMOVE` block, and
+    # surfaces when at least one documented removal condition is met
+    # (Cargo.lock no longer resolves the vulnerable transitive; an
+    # upstream fix has landed on crates.io; or a recorded removal-date
+    # has passed). Historical pattern (#2749 stale deny.toml advisory-
+    # not-detected, #2750 cargo-audit gate leniency, #2681 unsound
+    # advisories papered over) shows that documented-ignore lists decay
+    # into permanent ones unless something actively checks them. The
+    # default CI invocation is offline (conditions (b)+(c) only);
+    # condition (a) — crates.io poll — is opt-in via `--check-upstream`
+    # and not used here, keeping the gate network-free.
+    - "Audit Ignore Freshness (Issue #2912)"
+
     # Issue #2934: Minimum Supported Rust Version (MSRV) gate. The
     # `package.rust-version = "1.81"` field is now declared on the root
     # Cargo.toml, the root `[workspace.package]` block, and all 10
@@ -570,6 +584,22 @@ ci:
       # regression slipped through silently.
       workflow: ".github/workflows/crate-size.yml"
       issue: 2930
+      triggered_by: "PR + push to develop/main"
+
+    - job: "Audit Ignore Freshness (Issue #2912)"
+      # Audit-ignore freshness gate. Parses `.cargo/audit.toml`, extracts
+      # each advisory ignore entry's `>>> REMOVE` block, and surfaces
+      # when at least one documented removal condition is met. The job
+      # runs `scripts/check_audit_ignores_fresh.py` and exits non-zero
+      # (fails the PR) when any `>>> REMOVE` block's verification
+      # condition is satisfied. Companion to the `Cargo Deny` and
+      # `Cargo Audit` jobs in the same workflow; this gate enforces the
+      # *freshness* of the ignore list rather than the correctness of
+      # the active advisories. Triggers on PR + push to develop/main
+      # for paths that touch the audit config, the lock file, or the
+      # gate script.
+      workflow: ".github/workflows/security.yml"
+      issue: 2912
       triggered_by: "PR + push to develop/main"
 
     - job: "WASM Build Verification (Issue #2914)"
