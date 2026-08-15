@@ -918,8 +918,7 @@ impl ASHRAE140Validator {
 
             // Debug: Print free-floating temperature, setpoints, and HVAC demand for Case 600
             if spec.case_id == "600" && step % 8760 == 4380 {
-                let t_free =
-                    model.calculate_free_float_temperature(step, dry_bulb_temp);
+                let t_free = model.calculate_free_float_temperature(step, dry_bulb_temp);
                 tracing::debug!("DEBUG Case 600 hour={}: t_free={:.2}°C, heating_sp={:.1}°C, cooling_sp={:.1}°C",
                     step % 24, t_free, model.heating_setpoint, model.cooling_setpoint);
             }
@@ -1696,8 +1695,7 @@ impl ASHRAE140Validator {
 
             // Debug: Print free-floating temperature, setpoints, and HVAC demand for Case 600
             if spec.case_id == "600" && step % 8760 == 4380 {
-                let t_free =
-                    model.calculate_free_float_temperature(step, dry_bulb_temp);
+                let t_free = model.calculate_free_float_temperature(step, dry_bulb_temp);
                 tracing::debug!("DEBUG Case 600 hour={}: t_free={:.2}°C, heating_sp={:.1}°C, cooling_sp={:.1}°C",
                     step % 24, t_free, model.heating_setpoint, model.cooling_setpoint);
             }
@@ -1921,8 +1919,7 @@ impl ASHRAE140Validator {
 
             // Debug: Print free-floating temperature, setpoints, and HVAC demand for Case 600
             if spec.case_id == "600" && step % 8760 == 4380 {
-                let t_free =
-                    model.calculate_free_float_temperature(step, dry_bulb_temp);
+                let t_free = model.calculate_free_float_temperature(step, dry_bulb_temp);
                 tracing::debug!("DEBUG Case 600 hour={}: t_free={:.2}°C, heating_sp={:.1}°C, cooling_sp={:.1}°C",
                     step % 24, t_free, model.heating_setpoint, model.cooling_setpoint);
             }
@@ -2229,8 +2226,7 @@ impl ASHRAE140Validator {
 
             // Debug: Print free-floating temperature, setpoints, and HVAC demand for Case 600
             if spec.case_id == "600" && step % 8760 == 4380 {
-                let t_free =
-                    model.calculate_free_float_temperature(step, dry_bulb_temp);
+                let t_free = model.calculate_free_float_temperature(step, dry_bulb_temp);
                 tracing::debug!("DEBUG Case 600 hour={}: t_free={:.2}°C, heating_sp={:.1}°C, cooling_sp={:.1}°C",
                     step % 24, t_free, model.heating_setpoint, model.cooling_setpoint);
             }
