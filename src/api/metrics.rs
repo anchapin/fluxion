@@ -97,6 +97,23 @@ pub const IN_FLIGHT_REQUESTS: &str = "fluxion_rest_in_flight_requests";
 /// Labeled `backend` (cpu|cuda|coreml|directml|openvino) and `batch_bucket`.
 pub const ONNX_INFERENCE_DURATION_SECONDS: &str = "fluxion_onnx_inference_duration_seconds";
 
+/// Histogram buckets for `fluxion_rate_limit_lock_wait_seconds` (Issue
+/// #2894). The per-request lock acquisition ranges from sub-microsecond on
+/// uncontended fast paths (atomic / RwLock-read) to a few milliseconds
+/// under sustained 1000-client flood. Boundaries cover 1 µs → 100 ms:
+///
+///   1 µs · 5 µs · 10 µs · 50 µs · 100 µs · 500 µs · 1 ms · 5 ms · 10 ms · 50 ms · 100 ms
+const RATE_LIMIT_LOCK_WAIT_BUCKETS_SECONDS: &[f64] = &[
+    0.000_001, 0.000_005, 0.000_01, 0.000_05, 0.000_1, 0.000_5, 0.001, 0.005, 0.01, 0.05, 0.1,
+];
+
+/// Histogram name (Issue #2894) recording the wall-clock time the per-IP
+/// rate limiter spent waiting on its internal locks per `try_acquire`.
+/// Labeled `kind` (`read` | `write` | `lru`). Re-exported from
+/// [`crate::api::security`] so the metrics and security modules agree on
+/// the metric name.
+pub use crate::api::security::RATE_LIMIT_LOCK_WAIT_SECONDS;
+
 /// Counter name for ONNX inference attempts (Issue #2498). Labeled `backend`
 /// and `outcome` (`success` | `error` | `fallback`).
 pub const ONNX_INFERENCE_TOTAL: &str = "fluxion_onnx_inference_total";
@@ -173,7 +190,15 @@ pub fn init_recorder() -> PrometheusHandle {
                     Matcher::Full(SIMULATION_BATCH_SIZE.to_owned()),
                     SIMULATION_BATCH_SIZE_BUCKETS,
                 )
-                .expect("non-empty simulation batch-size buckets");
+                .expect("non-empty simulation batch-size buckets")
+                // Issue #2894 — rate-limiter lock-wait histogram needs
+                // sub-microsecond resolution to see the read-locked fast
+                // path cleanly (the HTTP/ONNX defaults start at 1 ms).
+                .set_buckets_for_metric(
+                    Matcher::Full(RATE_LIMIT_LOCK_WAIT_SECONDS.to_owned()),
+                    RATE_LIMIT_LOCK_WAIT_BUCKETS_SECONDS,
+                )
+                .expect("non-empty rate-limit lock-wait buckets");
             let handle = builder
                 .install_recorder()
                 .expect("PrometheusBuilder::install_recorder");
@@ -237,6 +262,14 @@ pub fn init_recorder() -> PrometheusHandle {
                 SIMULATION_ZONE_COUNT,
                 metrics::Unit::Count,
                 "Zone count of the most recent simulation"
+            );
+            // Issue #2894 — rate-limiter lock-wait histogram (per-acquire
+            // wall-clock time waiting for the inner RwLock/Mutex; labelled
+            // `kind` ∈ {read, write, lru}).
+            describe_histogram!(
+                RATE_LIMIT_LOCK_WAIT_SECONDS,
+                metrics::Unit::Seconds,
+                "Wall-clock time spent waiting on internal locks per RateLimiter::try_acquire"
             );
             handle
         })
