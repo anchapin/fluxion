@@ -3831,12 +3831,14 @@ mod tests {
 
     #[test]
     fn test_internal_loads() {
+        // InternalLoads::new(total_load, radiative_fraction, convective_fraction).
+        // ASHRAE 140 §6.5 residential split: radiative = 0.4, convective = 0.6.
         let loads = InternalLoads::new(200.0, 0.4, 0.6);
         assert_eq!(loads.total_load, 200.0);
-        assert_eq!(loads.radiative_fraction, 0.6);
-        assert_eq!(loads.convective_fraction, 0.4);
-        assert_eq!(loads.radiative_load(), 120.0);
-        assert_eq!(loads.convective_load(), 80.0);
+        assert_eq!(loads.radiative_fraction, 0.4);
+        assert_eq!(loads.convective_fraction, 0.6);
+        assert_eq!(loads.radiative_load(), 80.0);
+        assert_eq!(loads.convective_load(), 120.0);
     }
 
     #[test]
