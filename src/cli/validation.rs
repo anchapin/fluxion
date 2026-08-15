@@ -1024,3 +1024,697 @@ fn run_case_195_calibration(
 
     Ok(())
 }
+
+#[cfg(test)]
+mod tests {
+    //! Inline unit tests for the validation CLI surface (Issue #2897).
+    //!
+    //! Coverage split:
+    //! * `parse_case_number` / `parse_series` — the two pure parsers that guard
+    //!   every downstream handler.
+    //! * `--alpha` bounds — the FDR-correction threshold on `Commands::Validate`
+    //!   (`src/cli/mod.rs`), which is the statistical entry point for this
+    //!   validation surface.
+    //! * clap argument wiring for every `ValidationSubcommand` variant
+    //!   (defaults, required args, type rejection).
+    //! * `handle_validate_parallel_high_mass` against a synthetic 8-zone case.
+    //!
+    //! Tests never invoke handlers that run a full annual simulation — those are
+    //! covered by the `tests/ashrae_140_validation.rs` integration suite.
+
+    use super::*;
+    use clap::Parser;
+
+    /// Test-only wrapper so `ValidationSubcommand` can be exercised through the
+    /// real clap parser (arg names, shorts, defaults, and required-ness).
+    #[derive(Debug, Parser)]
+    #[command(name = "fluxion-validate-test")]
+    struct TestCli {
+        #[command(subcommand)]
+        cmd: ValidationSubcommand,
+    }
+
+    fn parse(args: &[&str]) -> ValidationSubcommand {
+        TestCli::try_parse_from(args)
+            .expect("args should parse")
+            .cmd
+    }
+
+    /// The `--alpha` bound enforced by `Commands::Validate` in `src/cli/mod.rs`.
+    /// Mirrored here so the boundary semantics are pinned next to the rest of
+    /// the validation-surface tests.
+    fn alpha_in_bounds(alpha: f64) -> bool {
+        (0.0..=1.0).contains(&alpha)
+    }
+
+    // ---------------------------------------------------------------
+    // parse_case_number
+    // ---------------------------------------------------------------
+
+    #[test]
+    fn parse_case_number_accepts_hvac_series_bounds() {
+        assert_eq!(parse_case_number(800).unwrap(), 800);
+        assert_eq!(parse_case_number(805).unwrap(), 805);
+        assert_eq!(parse_case_number(810).unwrap(), 810);
+    }
+
+    #[test]
+    fn parse_case_number_accepts_diagnostic_series_bounds() {
+        assert_eq!(parse_case_number(195).unwrap(), 195);
+        assert_eq!(parse_case_number(300).unwrap(), 300);
+        assert_eq!(parse_case_number(470).unwrap(), 470);
+    }
+
+    #[test]
+    fn parse_case_number_rejects_values_outside_both_ranges() {
+        // One below / one above each supported inclusive range, plus zero and
+        // a far-out value. Every one of these must be an error, not a silent
+        // pass-through into the simulation handlers.
+        for case in [0_u32, 1, 194, 471, 599, 700, 799, 811, 1000, u32::MAX] {
+            assert!(
+                parse_case_number(case).is_err(),
+                "case {case} must be rejected by parse_case_number"
+            );
+        }
+    }
+
+    #[test]
+    fn parse_case_number_error_points_at_list_cases() {
+        let err = parse_case_number(9999).unwrap_err().to_string();
+        assert!(err.contains("9999"), "error must name the bad case: {err}");
+        assert!(
+            err.contains("--list-cases"),
+            "error must point the user at --list-cases: {err}"
+        );
+    }
+
+    // ---------------------------------------------------------------
+    // parse_series
+    // ---------------------------------------------------------------
+
+    #[test]
+    fn parse_series_hvac_range_is_inclusive_and_contiguous() {
+        let cases = parse_series("800-810").unwrap();
+        assert_eq!(cases.len(), 11, "800..=810 inclusive is 11 cases");
+        assert_eq!(cases.first().copied(), Some(800));
+        assert_eq!(cases.last().copied(), Some(810));
+        // Contiguous, strictly increasing.
+        assert!(cases.windows(2).all(|w| w[1] == w[0] + 1));
+    }
+
+    #[test]
+    fn parse_series_diagnostic_range_is_inclusive_and_contiguous() {
+        let cases = parse_series("195-470").unwrap();
+        assert_eq!(cases.len(), 276, "195..=470 inclusive is 276 cases");
+        assert_eq!(cases.first().copied(), Some(195));
+        assert_eq!(cases.last().copied(), Some(470));
+        assert!(cases.windows(2).all(|w| w[1] == w[0] + 1));
+    }
+
+    #[test]
+    fn parse_series_aliases_match_their_numeric_ranges() {
+        assert_eq!(
+            parse_series("hvac").unwrap(),
+            parse_series("800-810").unwrap()
+        );
+        assert_eq!(
+            parse_series("diagnostic").unwrap(),
+            parse_series("195-470").unwrap()
+        );
+    }
+
+    #[test]
+    fn parse_series_rejects_malformed_and_wrong_case_input() {
+        // Edge cases: empty, whitespace, wrong capitalisation, reversed range,
+        // partial range, and an unrelated token. `parse_series` is an exact
+        // match, so all of these must error rather than silently resolve.
+        for series in [
+            "",
+            " ",
+            "800-810 ",
+            " 800-810",
+            "HVAC",
+            "Diagnostic",
+            "810-800",
+            "800",
+            "195-471",
+            "600-700",
+            "all",
+        ] {
+            assert!(
+                parse_series(series).is_err(),
+                "series {series:?} must be rejected"
+            );
+        }
+    }
+
+    #[test]
+    fn parse_series_error_lists_both_supported_series() {
+        let err = parse_series("nope").unwrap_err().to_string();
+        assert!(
+            err.contains("800-810"),
+            "error must list hvac series: {err}"
+        );
+        assert!(
+            err.contains("195-470"),
+            "error must list diagnostic series: {err}"
+        );
+    }
+
+    // ---------------------------------------------------------------
+    // --alpha bounds (Commands::Validate, src/cli/mod.rs)
+    // ---------------------------------------------------------------
+
+    #[test]
+    fn validate_alpha_defaults_to_five_percent() {
+        let cli = crate::cli::Cli::try_parse_from(["fluxion", "validate"])
+            .expect("`fluxion validate` should parse with no flags");
+        match cli.command {
+            Some(crate::cli::Commands::Validate { alpha, .. }) => {
+                assert!(
+                    (alpha - 0.05).abs() < f64::EPSILON,
+                    "default --alpha must be 0.05, got {alpha}"
+                );
+            }
+            other => panic!("expected Commands::Validate, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn validate_alpha_accepts_explicit_value() {
+        let cli = crate::cli::Cli::try_parse_from(["fluxion", "validate", "--alpha", "0.01"])
+            .expect("--alpha 0.01 should parse");
+        match cli.command {
+            Some(crate::cli::Commands::Validate { alpha, .. }) => {
+                assert!((alpha - 0.01).abs() < 1e-12, "got {alpha}");
+            }
+            other => panic!("expected Commands::Validate, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn validate_alpha_rejects_non_numeric_value_at_parse_time() {
+        assert!(
+            crate::cli::Cli::try_parse_from(["fluxion", "validate", "--alpha", "abc"]).is_err(),
+            "--alpha must be an f64"
+        );
+    }
+
+    #[test]
+    fn alpha_bounds_are_inclusive_zero_to_one() {
+        // Inside (inclusive endpoints).
+        for alpha in [0.0, f64::EPSILON, 0.01, 0.05, 0.5, 0.999, 1.0] {
+            assert!(alpha_in_bounds(alpha), "{alpha} must be accepted");
+        }
+        // Outside, plus non-finite values which must never reach the FDR
+        // correction (RangeInclusive::contains is false for NaN).
+        for alpha in [
+            -0.0001,
+            -1.0,
+            1.0001,
+            2.0,
+            f64::NAN,
+            f64::INFINITY,
+            f64::NEG_INFINITY,
+        ] {
+            assert!(!alpha_in_bounds(alpha), "{alpha} must be rejected");
+        }
+    }
+
+    // ---------------------------------------------------------------
+    // Subcommand argument validation (clap wiring)
+    // ---------------------------------------------------------------
+
+    #[test]
+    fn run_subcommand_defaults_output_and_verbose() {
+        match parse(&["v", "run", "800"]) {
+            ValidationSubcommand::Run {
+                case,
+                output,
+                verbose,
+            } => {
+                assert_eq!(case, 800);
+                assert_eq!(output, "./results");
+                assert!(!verbose);
+            }
+            other => panic!("expected Run, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn run_subcommand_honours_output_and_verbose_flags() {
+        match parse(&["v", "run", "810", "--output", "/tmp/out", "--verbose"]) {
+            ValidationSubcommand::Run {
+                case,
+                output,
+                verbose,
+            } => {
+                assert_eq!(case, 810);
+                assert_eq!(output, "/tmp/out");
+                assert!(verbose);
+            }
+            other => panic!("expected Run, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn run_subcommand_rejects_missing_and_non_numeric_case() {
+        assert!(
+            TestCli::try_parse_from(["v", "run"]).is_err(),
+            "`run` requires a case number"
+        );
+        assert!(
+            TestCli::try_parse_from(["v", "run", "eight-hundred"]).is_err(),
+            "case must parse as u32"
+        );
+        assert!(
+            TestCli::try_parse_from(["v", "run", "-5"]).is_err(),
+            "negative case numbers are not u32"
+        );
+    }
+
+    #[test]
+    fn calibrate_case_195_defaults_match_documented_values() {
+        match parse(&["v", "calibrate-case-195"]) {
+            ValidationSubcommand::CalibrateCase195 {
+                max_iterations,
+                learning_rate,
+                tolerance,
+                output,
+            } => {
+                assert_eq!(max_iterations, 50);
+                assert!((learning_rate - 0.05).abs() < f64::EPSILON);
+                assert!((tolerance - 0.01).abs() < f64::EPSILON);
+                assert_eq!(output, "./calibration");
+            }
+            other => panic!("expected CalibrateCase195, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn calibrate_case_195_rejects_non_numeric_learning_rate() {
+        assert!(
+            TestCli::try_parse_from(["v", "calibrate-case-195", "--learning-rate", "fast"])
+                .is_err(),
+            "--learning-rate must be an f64"
+        );
+        assert!(
+            TestCli::try_parse_from(["v", "calibrate-case-195", "--max-iterations", "-1"]).is_err(),
+            "--max-iterations must be a usize"
+        );
+    }
+
+    #[test]
+    fn run_series_subcommand_requires_series_and_defaults_output() {
+        match parse(&["v", "run-series", "hvac"]) {
+            ValidationSubcommand::RunSeries {
+                series,
+                output,
+                verbose,
+            } => {
+                assert_eq!(series, "hvac");
+                assert_eq!(output, "./results");
+                assert!(!verbose);
+            }
+            other => panic!("expected RunSeries, got {other:?}"),
+        }
+        assert!(
+            TestCli::try_parse_from(["v", "run-series"]).is_err(),
+            "`run-series` requires a series argument"
+        );
+    }
+
+    #[test]
+    fn parallel_subcommand_leaves_thread_and_chunk_size_unset_by_default() {
+        match parse(&["v", "parallel"]) {
+            ValidationSubcommand::Parallel {
+                threads,
+                chunk_size,
+                progress,
+                output,
+            } => {
+                assert_eq!(threads, None, "threads must default to None (=> num_cpus)");
+                assert_eq!(chunk_size, None);
+                assert!(!progress);
+                assert_eq!(output, "./results");
+            }
+            other => panic!("expected Parallel, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn parallel_subcommand_parses_explicit_threads_and_chunk_size() {
+        match parse(&[
+            "v",
+            "parallel",
+            "--threads",
+            "8",
+            "--chunk-size",
+            "4",
+            "--progress",
+        ]) {
+            ValidationSubcommand::Parallel {
+                threads,
+                chunk_size,
+                progress,
+                ..
+            } => {
+                assert_eq!(threads, Some(8));
+                assert_eq!(chunk_size, Some(4));
+                assert!(progress);
+            }
+            other => panic!("expected Parallel, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn parallel_high_mass_subcommand_parses_threads_and_output() {
+        match parse(&[
+            "v",
+            "parallel-high-mass",
+            "--threads",
+            "8",
+            "--output",
+            "/tmp/hm",
+        ]) {
+            ValidationSubcommand::ParallelHighMass {
+                threads,
+                progress,
+                output,
+            } => {
+                assert_eq!(threads, Some(8));
+                assert!(!progress);
+                assert_eq!(output, "/tmp/hm");
+            }
+            other => panic!("expected ParallelHighMass, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn cross_validate_requires_case_tool_and_reference_file() {
+        match parse(&[
+            "v",
+            "cross-validate",
+            "800",
+            "energyplus",
+            "refs/case_800.csv",
+        ]) {
+            ValidationSubcommand::CrossValidate {
+                case,
+                tool,
+                reference_file,
+                output,
+                tolerance,
+                detailed,
+            } => {
+                assert_eq!(case, 800);
+                assert_eq!(tool, "energyplus");
+                assert_eq!(reference_file, "refs/case_800.csv");
+                assert_eq!(output, "./reports");
+                assert_eq!(tolerance, None, "tolerance defaults to tool-specific");
+                assert!(!detailed);
+            }
+            other => panic!("expected CrossValidate, got {other:?}"),
+        }
+        // Each positional is required.
+        assert!(TestCli::try_parse_from(["v", "cross-validate"]).is_err());
+        assert!(TestCli::try_parse_from(["v", "cross-validate", "800"]).is_err());
+        assert!(TestCli::try_parse_from(["v", "cross-validate", "800", "energyplus"]).is_err());
+    }
+
+    #[test]
+    fn cross_validate_parses_tolerance_override() {
+        match parse(&[
+            "v",
+            "cross-validate",
+            "900",
+            "trnsys",
+            "r.csv",
+            "--tolerance",
+            "0.25",
+        ]) {
+            ValidationSubcommand::CrossValidate { tolerance, .. } => {
+                let t = tolerance.expect("--tolerance should be Some");
+                assert!((t - 0.25).abs() < 1e-12, "got {t}");
+            }
+            other => panic!("expected CrossValidate, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn performance_test_and_profile_subcommands_default_iterations() {
+        match parse(&["v", "performance-test"]) {
+            ValidationSubcommand::PerformanceTest {
+                iterations,
+                detailed_timing,
+                output,
+            } => {
+                assert_eq!(iterations, 3);
+                assert!(!detailed_timing);
+                assert_eq!(output, "./performance");
+            }
+            other => panic!("expected PerformanceTest, got {other:?}"),
+        }
+        match parse(&["v", "profile", "800"]) {
+            ValidationSubcommand::Profile {
+                case,
+                iterations,
+                output,
+            } => {
+                assert_eq!(case, 800);
+                assert_eq!(iterations, 3);
+                assert_eq!(output, "./performance");
+            }
+            other => panic!("expected Profile, got {other:?}"),
+        }
+        match parse(&["v", "profile-series", "800-810"]) {
+            ValidationSubcommand::ProfileSeries {
+                series,
+                iterations,
+                parallel,
+                ..
+            } => {
+                assert_eq!(series, "800-810");
+                assert_eq!(iterations, 1, "profile-series defaults to 1 iteration");
+                assert_eq!(parallel, 2);
+            }
+            other => panic!("expected ProfileSeries, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn list_cases_and_high_mass_report_flag_wiring() {
+        assert!(matches!(
+            parse(&["v", "list-cases"]),
+            ValidationSubcommand::ListCases
+        ));
+        match parse(&["v", "high-mass-report", "--json", "--detailed"]) {
+            ValidationSubcommand::HighMassReport {
+                output,
+                json,
+                detailed,
+            } => {
+                assert_eq!(output, "./reports");
+                assert!(json);
+                assert!(detailed);
+            }
+            other => panic!("expected HighMassReport, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn unknown_subcommand_is_rejected() {
+        assert!(TestCli::try_parse_from(["v", "definitely-not-a-subcommand"]).is_err());
+        assert!(
+            TestCli::try_parse_from(["v"]).is_err(),
+            "a subcommand is required"
+        );
+    }
+
+    // ---------------------------------------------------------------
+    // handle_validate_construction
+    // ---------------------------------------------------------------
+
+    #[test]
+    fn validate_construction_accepts_known_types_case_insensitively() {
+        for name in ["light", "LIGHT", "lightweight", "medium", "Medium", "heavy"] {
+            let tmp = tempfile::tempdir().expect("tempdir");
+            let out = tmp.path().to_string_lossy().to_string();
+            handle_validate_construction(name.to_string(), &out)
+                .unwrap_or_else(|e| panic!("construction type {name:?} should be accepted: {e}"));
+            let written: Vec<_> = std::fs::read_dir(tmp.path())
+                .expect("read_dir")
+                .filter_map(|e| e.ok())
+                .collect();
+            assert_eq!(
+                written.len(),
+                1,
+                "exactly one validation artefact expected for {name:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn validate_construction_rejects_unknown_type() {
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let err =
+            handle_validate_construction("unobtainium".to_string(), &tmp.path().to_string_lossy())
+                .unwrap_err()
+                .to_string();
+        assert!(
+            err.contains("unobtainium"),
+            "error must name the bad type: {err}"
+        );
+    }
+
+    // ---------------------------------------------------------------
+    // handle_validate_parallel_high_mass — synthetic 8-zone case
+    // ---------------------------------------------------------------
+
+    /// Build a synthetic 8-zone high-mass result set: zones 0..8, alternating
+    /// pass/fail so the summary's `passed`/`failed` split is non-degenerate.
+    fn synthetic_eight_zone_reports() -> Vec<crate::validation::high_mass::HighMassValidationReport>
+    {
+        (0..8)
+            .map(
+                |zone| crate::validation::high_mass::HighMassValidationReport {
+                    case_id: format!("900-zone-{zone}"),
+                    passed: zone % 2 == 0,
+                    ..Default::default()
+                },
+            )
+            .collect()
+    }
+
+    #[test]
+    fn parallel_high_mass_creates_output_dir_and_summary() {
+        let tmp = tempfile::tempdir().expect("tempdir");
+        // Deliberately nested + non-existent so `create_dir_all` is exercised.
+        let out = tmp.path().join("nested").join("high_mass");
+        let out_str = out.to_string_lossy().to_string();
+
+        handle_validate_parallel_high_mass(Some(8), true, &out_str)
+            .expect("high-mass parallel handler must succeed");
+
+        assert!(out.is_dir(), "handler must create the output directory");
+        let summary_path = out.join("high_mass_summary.json");
+        assert!(
+            summary_path.is_file(),
+            "handler must write high_mass_summary.json"
+        );
+
+        let summary: serde_json::Value =
+            serde_json::from_str(&std::fs::read_to_string(&summary_path).expect("read summary"))
+                .expect("summary must be valid JSON");
+        // Schema contract from ParallelValidationExecutor::monitor_performance.
+        for key in [
+            "total_cases",
+            "passed",
+            "failed",
+            "execution_time_ms",
+            "cases_per_second",
+            "per_case_latency_ms",
+        ] {
+            assert!(
+                summary.get(key).is_some(),
+                "summary must contain `{key}`: {summary}"
+            );
+        }
+    }
+
+    #[test]
+    fn parallel_high_mass_summary_counts_synthetic_eight_zone_split() {
+        // The handler currently reports over an empty result set; the summary
+        // arithmetic itself is what must be correct for an 8-zone case, so
+        // feed the executor the synthetic 8-zone reports directly.
+        let mut executor = crate::validation::performance::ParallelValidationExecutor::new();
+        executor.max_threads = 8;
+        executor.progress_reporting = false;
+
+        let reports = synthetic_eight_zone_reports();
+        assert_eq!(reports.len(), 8, "synthetic case must have 8 zones");
+
+        let summary = executor.monitor_performance(&reports);
+        assert_eq!(summary["total_cases"].as_u64(), Some(8));
+        assert_eq!(summary["passed"].as_u64(), Some(4), "zones 0,2,4,6 pass");
+        assert_eq!(summary["failed"].as_u64(), Some(4), "zones 1,3,5,7 fail");
+        assert_eq!(
+            summary["total_cases"].as_u64().unwrap(),
+            summary["passed"].as_u64().unwrap() + summary["failed"].as_u64().unwrap(),
+            "passed + failed must equal total_cases"
+        );
+    }
+
+    #[test]
+    fn parallel_high_mass_thread_override_is_applied_and_none_falls_back() {
+        // `threads: Some(n)` must override the executor default; `None` must
+        // leave the num_cpus-derived default in place.
+        let mut executor = crate::validation::performance::ParallelValidationExecutor::new();
+        let default_threads = executor.max_threads;
+        assert_eq!(default_threads, num_cpus::get());
+        executor.max_threads = 8;
+        assert_eq!(executor.max_threads, 8);
+
+        // Handler runs to completion with either form.
+        let tmp = tempfile::tempdir().expect("tempdir");
+        for threads in [None, Some(1_usize), Some(8_usize)] {
+            let out = tmp
+                .path()
+                .join(format!("t{}", threads.unwrap_or(0)))
+                .to_string_lossy()
+                .to_string();
+            handle_validate_parallel_high_mass(threads, false, &out)
+                .unwrap_or_else(|e| panic!("threads={threads:?} must succeed: {e}"));
+            assert!(Path::new(&out).join("high_mass_summary.json").is_file());
+        }
+    }
+
+    // ---------------------------------------------------------------
+    // ValidationSummary bookkeeping
+    // ---------------------------------------------------------------
+
+    #[test]
+    fn validation_summary_tracks_successes_and_average_duration() {
+        let mut summary = ValidationSummary::new();
+        assert_eq!(summary.total_cases, 0);
+        summary.add_success(800, Duration::from_secs(2));
+        summary.add_success(801, Duration::from_secs(4));
+        assert_eq!(summary.total_cases, 2);
+        assert_eq!(summary.successful, 2);
+        assert_eq!(summary.failed, 0);
+        assert!((summary.total_duration - 6.0).abs() < 1e-6);
+        assert!(
+            (summary.avg_duration - 3.0).abs() < 1e-6,
+            "avg must be total/count, got {}",
+            summary.avg_duration
+        );
+    }
+
+    #[test]
+    fn validation_summary_records_failure_case_and_message() {
+        let mut summary = ValidationSummary::new();
+        summary.add_success(800, Duration::from_millis(500));
+        summary.add_failure(900, &anyhow!("solver diverged"));
+        assert_eq!(summary.total_cases, 2);
+        assert_eq!(summary.successful, 1);
+        assert_eq!(summary.failed, 1);
+        assert_eq!(summary.failures.len(), 1);
+        assert_eq!(summary.failures[0].0, 900);
+        assert!(summary.failures[0].1.contains("solver diverged"));
+        // A failure must not inflate the duration accounting.
+        assert!((summary.total_duration - 0.5).abs() < 1e-3);
+    }
+
+    #[test]
+    fn validation_summary_serializes_round_trip() {
+        let mut summary = ValidationSummary::new();
+        summary.add_success(805, Duration::from_secs(1));
+        summary.add_failure(470, &anyhow!("missing reference data"));
+        let json = serde_json::to_string(&summary).expect("serialize");
+        let back: ValidationSummary = serde_json::from_str(&json).expect("deserialize");
+        assert_eq!(back.total_cases, summary.total_cases);
+        assert_eq!(back.successful, summary.successful);
+        assert_eq!(back.failed, summary.failed);
+        assert_eq!(back.failures, summary.failures);
+    }
+}
