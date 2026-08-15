@@ -75,6 +75,7 @@ Required branch-protection checks (`release_gates.yaml` → `ci.required_checks`
 | Workspace Check | — |
 | Absolute Perf Gate (Issue #2693) | #2693 |
 | Multi-Zone Perf Gate (Issue #2772) | #2772 |
+| Hybrid Perf Gate (Issue #2922) | #2922 |
 | Energy Conservation (GH) | — |
 | Rustfmt (GH) | — |
 | Clippy (GH) | — |
