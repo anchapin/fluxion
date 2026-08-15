@@ -558,7 +558,7 @@ fn build_random_multizone_spec(
             Assemblies::high_mass_roof(),
             Assemblies::high_mass_floor(),
         )
-        .with_internal_loads(InternalLoads::new(200.0, 0.6, 0.4))
+        .with_internal_loads(InternalLoads::new(200.0, 0.4, 0.6))
         .with_south_window(12.0)
         .with_hvac_setpoints(hvac_heat, hvac_cool)
         .with_infiltration(0.5)

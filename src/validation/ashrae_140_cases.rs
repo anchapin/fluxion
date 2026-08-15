@@ -1737,7 +1737,7 @@ impl CaseBuilder {
             .low_mass_construction()
             .with_south_window(12.0)
             .with_window_properties(WindowSpec::double_clear_glass())
-            .with_internal_loads(InternalLoads::new(200.0, 0.6, 0.4))
+            .with_internal_loads(InternalLoads::new(200.0, 0.4, 0.6))
             .with_hvac_setpoints(20.0, 27.0)
             .with_infiltration(0.5)
             .with_num_zones(1)
@@ -1758,7 +1758,7 @@ impl CaseBuilder {
             .with_south_window(12.0)
             .with_window_properties(WindowSpec::double_clear_glass())
             .with_shading(ShadingDevice::overhang(1.0, 2.7))
-            .with_internal_loads(InternalLoads::new(200.0, 0.6, 0.4))
+            .with_internal_loads(InternalLoads::new(200.0, 0.4, 0.6))
             .with_hvac_setpoints(20.0, 27.0)
             .with_infiltration(0.5)
             .with_num_zones(1)
@@ -1778,7 +1778,7 @@ impl CaseBuilder {
             .low_mass_construction()
             .with_ew_windows(6.0)
             .with_window_properties(WindowSpec::double_clear_glass())
-            .with_internal_loads(InternalLoads::new(200.0, 0.6, 0.4))
+            .with_internal_loads(InternalLoads::new(200.0, 0.4, 0.6))
             .with_hvac_setpoints(20.0, 27.0)
             .with_infiltration(0.5)
             .with_num_zones(1)
@@ -1799,7 +1799,7 @@ impl CaseBuilder {
             .with_ew_windows(6.0)
             .with_window_properties(WindowSpec::double_clear_glass())
             .with_shading(ShadingDevice::overhang_and_fins(1.0, 1.0, 2.7))
-            .with_internal_loads(InternalLoads::new(200.0, 0.6, 0.4))
+            .with_internal_loads(InternalLoads::new(200.0, 0.4, 0.6))
             .with_hvac_setpoints(20.0, 27.0)
             .with_infiltration(0.5)
             .with_num_zones(1)
@@ -1819,7 +1819,7 @@ impl CaseBuilder {
             .low_mass_construction()
             .with_south_window(12.0)
             .with_window_properties(WindowSpec::double_clear_glass())
-            .with_internal_loads(InternalLoads::new(200.0, 0.6, 0.4))
+            .with_internal_loads(InternalLoads::new(200.0, 0.4, 0.6))
             .with_hvac_setback(20.0, 27.0, 10.0)
             .with_infiltration(0.5)
             .with_num_zones(1)
@@ -1839,7 +1839,7 @@ impl CaseBuilder {
             .low_mass_construction()
             .with_south_window(12.0)
             .with_window_properties(WindowSpec::double_clear_glass())
-            .with_internal_loads(InternalLoads::new(200.0, 0.6, 0.4))
+            .with_internal_loads(InternalLoads::new(200.0, 0.4, 0.6))
             .with_hvac(HvacSchedule::with_operating_hours(-100.0, 27.0, 7, 18)) // Heating ALWAYS OFF
             .with_night_ventilation(NightVentilation::case_650())
             .with_infiltration(0.5)
@@ -1912,7 +1912,7 @@ impl CaseBuilder {
             )
             .with_south_window(12.0)
             .with_window_properties(WindowSpec::double_clear_glass())
-            .with_internal_loads(InternalLoads::new(200.0, 0.6, 0.4))
+            .with_internal_loads(InternalLoads::new(200.0, 0.4, 0.6))
             .with_hvac_setpoints(20.0, 27.0)
             .with_infiltration(0.5)
             .with_num_zones(1)
@@ -1938,7 +1938,7 @@ impl CaseBuilder {
             .with_south_window(12.0)
             .with_window_properties(WindowSpec::double_clear_glass())
             .with_shading(ShadingDevice::overhang(1.0, 2.7))
-            .with_internal_loads(InternalLoads::new(200.0, 0.6, 0.4))
+            .with_internal_loads(InternalLoads::new(200.0, 0.4, 0.6))
             .with_hvac_setpoints(20.0, 27.0)
             .with_infiltration(0.5)
             .with_num_zones(1)
@@ -1963,7 +1963,7 @@ impl CaseBuilder {
             )
             .with_ew_windows(6.0)
             .with_window_properties(WindowSpec::double_clear_glass())
-            .with_internal_loads(InternalLoads::new(200.0, 0.6, 0.4))
+            .with_internal_loads(InternalLoads::new(200.0, 0.4, 0.6))
             .with_hvac_setpoints(20.0, 27.0)
             .with_infiltration(0.5)
             .with_num_zones(1)
@@ -1989,7 +1989,7 @@ impl CaseBuilder {
             .with_ew_windows(6.0)
             .with_window_properties(WindowSpec::double_clear_glass())
             .with_shading(ShadingDevice::overhang_and_fins(1.0, 1.0, 2.7))
-            .with_internal_loads(InternalLoads::new(200.0, 0.6, 0.4))
+            .with_internal_loads(InternalLoads::new(200.0, 0.4, 0.6))
             .with_hvac_setpoints(20.0, 27.0)
             .with_infiltration(0.5)
             .with_num_zones(1)
@@ -2014,7 +2014,7 @@ impl CaseBuilder {
             )
             .with_south_window(12.0)
             .with_window_properties(WindowSpec::double_clear_glass())
-            .with_internal_loads(InternalLoads::new(200.0, 0.6, 0.4))
+            .with_internal_loads(InternalLoads::new(200.0, 0.4, 0.6))
             .with_hvac_setback(20.0, 27.0, 10.0)
             .with_infiltration(0.5)
             .with_num_zones(1)
@@ -2049,7 +2049,7 @@ impl CaseBuilder {
             )
             .with_south_window(12.0)
             .with_window_properties(WindowSpec::double_clear_glass())
-            .with_internal_loads(InternalLoads::new(200.0, 0.6, 0.4))
+            .with_internal_loads(InternalLoads::new(200.0, 0.4, 0.6))
             .with_hvac(HvacSchedule::with_operating_hours_and_setback(
                 -100.0, 27.0, 7, 18, // operating hours (cooling 7-18, heating OFF always)
                 -100.0, 22, 6, // setback window 22:00-06:00 (setpoint -100 → no heating)
@@ -2132,7 +2132,7 @@ impl CaseBuilder {
                 Assemblies::high_mass_roof(),
                 Assemblies::high_mass_floor(),
             )
-            .with_internal_loads(InternalLoads::new(200.0, 0.6, 0.4))
+            .with_internal_loads(InternalLoads::new(200.0, 0.4, 0.6))
             .with_zone_window(0, 12.0, Orientation::South) // Back-zone south window
             .with_hvac_setpoints(20.0, 27.0)
             // Zone 1: Sunspace (8m x 2m x 2.7m)
@@ -2197,7 +2197,7 @@ impl CaseBuilder {
                 Assemblies::high_mass_roof(),
                 Assemblies::high_mass_floor(),
             )
-            .with_internal_loads(InternalLoads::new(200.0, 0.6, 0.4))
+            .with_internal_loads(InternalLoads::new(200.0, 0.4, 0.6))
             .with_zone_window(0, 6.0, Orientation::South) // West core south window
             .with_hvac_setpoints(20.0, 27.0)
             // Zones 1-4: East strip (4 m × 1.5 m × 2.7 m = 6 m² each).
@@ -3831,7 +3831,7 @@ mod tests {
 
     #[test]
     fn test_internal_loads() {
-        let loads = InternalLoads::new(200.0, 0.6, 0.4);
+        let loads = InternalLoads::new(200.0, 0.4, 0.6);
         assert_eq!(loads.total_load, 200.0);
         assert_eq!(loads.radiative_fraction, 0.6);
         assert_eq!(loads.convective_fraction, 0.4);
