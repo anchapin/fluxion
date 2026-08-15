@@ -104,6 +104,9 @@ jobs:
           cargo test --test validation_empirical_harness --verbose ${{ matrix.feature_set.flags }}
           # Issue #1756 — HVAC BESTEST CI runner stub (dummy, always-green).
           cargo test --test hvac_bestest --verbose ${{ matrix.feature_set.flags }}
+          # Issue #2909 — fluxion-behavior workspace E2E integration tests
+          # (occupancy → thermal → lighting → comfort → moisture).
+          cargo test -p fluxion-behavior --test lighting_occupancy_integration --verbose ${{ matrix.feature_set.flags }}
         env:
           PYO3_PYTHON: /usr/bin/python3
 
@@ -353,6 +356,9 @@ jobs:
           cargo test --test validation_empirical_harness --verbose --no-default-features
           # Issue #1756 — HVAC BESTEST CI runner stub (dummy, always-green).
           cargo test --test hvac_bestest --verbose --no-default-features
+          # Issue #2909 — fluxion-behavior workspace E2E integration tests
+          # (occupancy → thermal → lighting → comfort → moisture).
+          cargo test -p fluxion-behavior --test lighting_occupancy_integration --verbose --no-default-features
         env:
           PYO3_PYTHON: /usr/bin/python3
 
