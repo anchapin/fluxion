@@ -1,0 +1,134 @@
+# Issue #2903: WASM runtime tests gated to cfg(target_arch = "wasm32") never run in any CI workflow.
+#
+# Closes the gap where the 22 wasm-bindgen-test cases in
+# `fluxion-wasm/tests/wasm_integration_tests.rs` (declared under
+# `cfg(target_arch = "wasm32")`) never reached a WASM runtime in CI. The
+# companion `wasm-build.yml` (issue #2914) verifies that the artifact
+# *builds* across ubuntu/macos/windows; this workflow verifies that the
+# wasm-bindgen tests *execute* under a real WASM runtime (Node.js) and
+# pass before any artifact is published.
+#
+# To avoid duplicating the wasm-pack installation chattiness with
+# `wasm-build.yml`, we mirror the same installer block (with the same
+# resolved-version note — a wasm-pack major bump would change the
+# `--node` test-runner output and must be a deliberate change tracked
+# alongside a test-suite re-baseline).
+#
+# Mirrors `node-bindings.yml` structure: matrix of ubuntu-latest and
+# windows-latest, `napi-rs`/`napi build` swapped for `wasm-pack test
+# --node`, no `npm install` step (Node ships pre-installed on both
+# runners and `wasm-pack test --node` drives the runtime itself).
+
+name: WASM Bindings
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    paths:
+      - 'fluxion-wasm/**'
+      - 'fluxion-fluid/**'
+      - 'fluxion-core/**'
+      - '**/Cargo.toml'
+      - '**/Cargo.lock'
+      - '.github/workflows/wasm-bindings.yml'
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: 1
+  # wasm-pack's chromium / node runners occasionally hit thread-stack
+  # limits on 32 MiB-default hosts; match the bump used by the other
+  # binding workflows.
+  RUST_MIN_STACK: 33554432
+
+# Least-privilege GITHUB_TOKEN grants (Issue #2526): the WASM runtime
+# test matrix only checks out code, installs wasm-pack, builds the
+# wasm32 crate, and runs the wasm-bindgen-test suite — no repo
+# write-back.
+permissions:
+  contents: read
+
+jobs:
+  build-test:
+    name: WASM Bindings (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        # Linux honours the repo's FLUXION_LINUX_RUNNER routing var
+        # (defaults to ubuntu-latest); Windows is always GitHub-hosted.
+        # macos-latest is intentionally omitted here — `wasm-pack test
+        # --node` on macOS has been a recurring flake source, and the
+        # u+x w cross-platform interface contract is already covered by
+        # the `wasm-build.yml` matrix. Runtime correctness is platform
+        # neutral (the underlying V8 is the same Node version), so the
+        # 2-runner matrix is sufficient for the gate.
+        os:
+          - ${{ vars.FLUXION_LINUX_RUNNER || 'ubuntu-latest' }}
+          - windows-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677252  # v4
+
+      # wasm-pack 0.15.x is pinned via the official installer. The
+      # installer downloads a prebuilt binary for the current OS+arch
+      # from https://github.com/rustwasm/wasm-pack/releases (faster than
+      # `cargo install` and avoids a wasted build when the toolchain is
+      # already cached). The version is not specified exactly because
+      # the installer always resolves to the latest 0.15.x release — a
+      # wasm-pack major bump changes the `wasm-pack test --node`
+      # runner behaviour and would silently change which WASM tests get
+      # collected, so it must be a deliberate change tracked alongside
+      # a test-suite re-baseline.
+      - name: Install wasm-pack (official installer)
+        shell: bash
+        run: |
+          set -euo pipefail
+          if ! command -v wasm-pack >/dev/null 2>&1; then
+            curl https://rustwasm.github.io/wasm-pack/installer/init.sh -sSf | sh
+          fi
+          wasm-pack --version
+
+      # Toolchain with the wasm32-unknown-unknown target. `setup-rust-env`
+      # also installs libssl/fontconfig system deps on Linux (unnecessary
+      # for a pure WASM build but harmless, and keeps the workflow aligned
+      # with the rest of the CI surface so a future shared refactor
+      # doesn't have to special-case this file). sccache is OFF — the
+      # wasm32 test target is rebuilt for each test run anyway (no
+      # cache invalidation between the test compile and the wasm-pack
+      # link step), and cross-OS cache reuse is unreliable for the
+      # wasm32 target (cargo encodes the host arch into
+      # target-fingerprinted artifacts).
+      - name: Set up Rust toolchain (with wasm32 target)
+        uses: ./.github/actions/setup-rust-env
+        with:
+          toolchain: wasm32-unknown-unknown
+          sccache: 'false'
+
+      # Node.js is required by `wasm-pack test --node` — it spawns a
+      # Node child process to execute the generated wasm-bindgen
+      # shim. Pin to the current LTS (20), the same version used by
+      # `node-bindings.yml` so a single `node-version` bump is
+      # symmetric across all bindings workflows.
+      - name: Set up Node.js 20 (LTS)
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020  # v4
+        with:
+          node-version: '20'
+
+      # `wasm-pack test --node fluxion-wasm` compiles the crate to
+      # wasm32-unknown-unknown and then runs every
+      # `#[wasm_bindgen_test]` under Node. The crate is a wasm-bindgen
+      # consumer (no explicit `[[bin]]`/`[lib]` integration target
+      # needed beyond the existing `crate-type = ["cdylib", "rlib"]`).
+      # `--node` is the runtime, not a deploy target — it execs the
+      # generated shim + .wasm inside Node's V8 isolate, which is the
+      # same engine a browser would use for the WASM artifact.
+      - name: Run wasm-pack test --node (fluxion-wasm)
+        shell: bash
+        run: |
+          set -euo pipefail
+          wasm-pack test --node fluxion-wasm
