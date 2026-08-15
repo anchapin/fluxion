@@ -838,6 +838,17 @@ pub struct HybridThermalModel {
     /// Incremented when `routing.use_surrogate_ventilation` is `true`
     /// (Issue #1702, wired by Issue #2457).
     surrogate_ventilation_calls: usize,
+    /// Reuse buffer for [`SurrogateManager::predict_loads_into`] (Issue #2921).
+    ///
+    /// Pre-allocated once in [`HybridThermalModel::new`] / `from_spec` /
+    /// `from_spec_with_routing`, kept across timesteps via
+    /// `Vec::clear()` (which preserves capacity), and reset on
+    /// [`HybridThermalModel::reset_counters`]. After the first timestep
+    /// it holds `num_zones` `f64` slots so the per-step surrogate-load
+    /// hot loop performs **zero** heap allocation — replacing the
+    /// per-step `Vec<f64>` that `predict_loads_with_fallback` returned
+    /// from each `predict_loads_onnx_impl` success path (Issue #2860).
+    surrogate_load_scratch: Vec<f64>,
 }
 
 impl Clone for HybridThermalModel {
@@ -847,7 +858,9 @@ impl Clone for HybridThermalModel {
         // clones models BEFORE solving them, so per-step solver state
         // never needs to round-trip across clones. Counters are
         // preserved (the caller can `reset_counters()` if they want a
-        // clean slate before solving).
+        // clean slate before solving). The surrogate-load scratch buffer
+        // is cloned verbatim — its capacity is preserved so the first
+        // solve on the clone stays zero-alloc.
         Self {
             inner: self.inner.clone(),
             routing: self.routing,
@@ -857,6 +870,7 @@ impl Clone for HybridThermalModel {
             physics_conduction_calls: self.physics_conduction_calls,
             surrogate_conduction_calls: self.surrogate_conduction_calls,
             surrogate_ventilation_calls: self.surrogate_ventilation_calls,
+            surrogate_load_scratch: self.surrogate_load_scratch.clone(),
         }
     }
 }
@@ -914,6 +928,12 @@ impl HybridThermalModel {
             physics_conduction_calls: 0,
             surrogate_conduction_calls: 0,
             surrogate_ventilation_calls: 0,
+            // Issue #2921: pre-allocate the surrogate-load scratch buffer to
+            // `num_zones` slots so the first `predict_loads_into` call does
+            // not need to grow. Empty Vec is fine here — the first call will
+            // `clear()` then `extend_from_slice` into a grown Vec; subsequent
+            // calls reuse the existing capacity.
+            surrogate_load_scratch: Vec::with_capacity(num_zones),
         }
     }
 
@@ -928,6 +948,8 @@ impl HybridThermalModel {
             physics_conduction_calls: 0,
             surrogate_conduction_calls: 0,
             surrogate_ventilation_calls: 0,
+            // Issue #2921: same zero-alloc rationale as `new`.
+            surrogate_load_scratch: Vec::with_capacity(spec.num_zones),
         }
     }
 
@@ -946,6 +968,8 @@ impl HybridThermalModel {
             physics_conduction_calls: 0,
             surrogate_conduction_calls: 0,
             surrogate_ventilation_calls: 0,
+            // Issue #2921: same zero-alloc rationale as `new`.
+            surrogate_load_scratch: Vec::with_capacity(spec.num_zones),
         }
     }
 
@@ -1030,6 +1054,11 @@ impl HybridThermalModel {
         self.physics_conduction_calls = 0;
         self.surrogate_conduction_calls = 0;
         self.surrogate_ventilation_calls = 0;
+        // Issue #2921: clear (NOT deallocate) the surrogate-load scratch
+        // buffer so the next `solve_timesteps` call starts from a clean
+        // state but the pre-allocated capacity is preserved — the
+        // `predict_loads_into` hot path stays zero-alloc on every solve.
+        self.surrogate_load_scratch.clear();
     }
 
     /// Get the full hourly zone temperature profiles from the last simulation.
@@ -1152,51 +1181,51 @@ impl ThermalModelTrait for HybridThermalModel {
                             // Do NOT increment surrogate_load_calls — this was a physics call.
                         } else {
                             // In-distribution — proceed with surrogate inference.
-                            match surrogates
-                                .predict_loads_with_fallback(self.inner.temperatures.as_ref())
-                            {
-                                Ok(pred) => {
-                                    self.inner.loads =
-                                        crate::physics::cta::VectorField::new(pred);
-                                    self.surrogate_load_calls += 1;
-                                    trace!(
-                                        hybrid.surrogate_load_calls = self.surrogate_load_calls,
-                                        hybrid.timestep = t,
-                                        "surrogate load branch fired"
-                                    );
-                                }
-                                Err(e) => {
-                                    log::warn!(
-                                        "HybridThermalModel: surrogate inference failed ({}) at timestep {}; falling back to analytical loads",
-                                        e, t
-                                    );
-                                    self.inner.calc_analytical_loads(t, true, 3600.0);
-                                }
-                            }
+                            // Issue #2921: zero-alloc `predict_loads_into` writes
+                            // the prediction into the pre-allocated
+                            // `surrogate_load_scratch` buffer instead of returning
+                            // a fresh `Vec<f64>` each step. `predict_loads_into`
+                            // never errors (it silently falls back to the 1.2 mock
+                            // on ONNX failure, matching `predict_loads` semantics),
+                            // so the `Err` arm of the previous match disappears.
+                            // The result is installed into `self.inner.loads` via
+                            // `VectorField::from_slice`, which stores inline in the
+                            // SmallVec for ≤ 4 zones (no heap alloc) — covering the
+                            // 1-zone and small-multi-zone regimes that drive the
+                            // absolute-perf-gate harness.
+                            surrogates.predict_loads_into(
+                                self.inner.temperatures.as_ref(),
+                                &mut self.surrogate_load_scratch,
+                            );
+                            self.inner.loads = crate::physics::cta::VectorField::from_slice(
+                                &self.surrogate_load_scratch,
+                            );
+                            self.surrogate_load_calls += 1;
+                            trace!(
+                                hybrid.surrogate_load_calls = self.surrogate_load_calls,
+                                hybrid.timestep = t,
+                                "surrogate load branch fired"
+                            );
                         }
                     } else {
                         // Standard path: no OOD check, direct surrogate call.
-                        match surrogates
-                            .predict_loads_with_fallback(self.inner.temperatures.as_ref())
-                        {
-                            Ok(pred) => {
-                                self.inner.loads =
-                                    crate::physics::cta::VectorField::new(pred);
-                                self.surrogate_load_calls += 1;
-                                trace!(
-                                    hybrid.surrogate_load_calls = self.surrogate_load_calls,
-                                    hybrid.timestep = t,
-                                    "surrogate load branch fired"
-                                );
-                            }
-                            Err(e) => {
-                                log::warn!(
-                                    "HybridThermalModel: surrogate load prediction failed ({}); falling back to analytical loads",
-                                    e
-                                );
-                                self.inner.calc_analytical_loads(t, true, 3600.0);
-                            }
-                        }
+                        // Issue #2921: same zero-alloc `predict_loads_into` swap
+                        // as the OOD-enabled branch above. The `Err` arm goes
+                        // away — `predict_loads_into` always succeeds (with a
+                        // mock fallback on ONNX failure).
+                        surrogates.predict_loads_into(
+                            self.inner.temperatures.as_ref(),
+                            &mut self.surrogate_load_scratch,
+                        );
+                        self.inner.loads = crate::physics::cta::VectorField::from_slice(
+                            &self.surrogate_load_scratch,
+                        );
+                        self.surrogate_load_calls += 1;
+                        trace!(
+                            hybrid.surrogate_load_calls = self.surrogate_load_calls,
+                            hybrid.timestep = t,
+                            "surrogate load branch fired"
+                        );
                     }
                 } else {
                     // Branch 2: analytical (physics) load prediction.
