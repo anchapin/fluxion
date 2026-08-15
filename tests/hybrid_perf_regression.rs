@@ -267,9 +267,7 @@ fn test_hybrid_multi_zone_performance_regression() {
     // exact label `Hybrid multi-zone throughput:` is matched by
     // `.github/workflows/performance_dashboard.yml` → `hybrid-perf-gate`
     // — keep them in sync.
-    println!(
-        "\nHybrid multi-zone ({MULTI_ZONE_GATE_ZONES} zones) performance metrics:"
-    );
+    println!("\nHybrid multi-zone ({MULTI_ZONE_GATE_ZONES} zones) performance metrics:");
     println!("  Population size: {MULTI_ZONE_POP}");
     println!("  Elapsed: {:.2}ms", metrics.elapsed_ms);
     println!(
@@ -326,7 +324,8 @@ fn test_hybrid_floor_matches_yaml() {
         "HYBRID_FLOOR_FALLBACK ({}) does not match release_gates.yaml \
          benchmark.hybrid.min_configs_per_sec ({}). The YAML is the source \
          of truth — update the constant to match.",
-        HYBRID_FLOOR_FALLBACK, yaml_floor,
+        HYBRID_FLOOR_FALLBACK,
+        yaml_floor,
     );
 }
 
@@ -339,6 +338,7 @@ fn test_hybrid_multi_zone_floor_matches_yaml() {
         "HYBRID_MULTI_ZONE_FLOOR_FALLBACK ({}) does not match release_gates.yaml \
          benchmark.hybrid_multi_zone.min_configs_per_sec ({}). The YAML is the \
          source of truth — update the constant to match.",
-        HYBRID_MULTI_ZONE_FLOOR_FALLBACK, yaml_floor,
+        HYBRID_MULTI_ZONE_FLOOR_FALLBACK,
+        yaml_floor,
     );
 }
