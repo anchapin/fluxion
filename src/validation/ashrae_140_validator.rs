@@ -849,9 +849,12 @@ impl ASHRAE140Validator {
             }
 
             let weather_data = weather.get_hourly_data(step).unwrap();
+            // Extract the only field used downstream (f64 is Copy) so we can move
+            // weather_data into model.weather without an extra clone (Issue #2893).
+            let dry_bulb_temp = weather_data.dry_bulb_temp;
 
             // Update weather data on model for solar gain calculation (Issue #278)
-            model.weather = Some(weather_data.clone());
+            model.weather = Some(weather_data);
 
             // Apply dynamic setpoints from schedule - use zone-specific setpoints (Issue #375, Case 960)
             // For multi-zone buildings like Case 960, each zone may have different HVAC control
@@ -915,14 +918,13 @@ impl ASHRAE140Validator {
 
             // Debug: Print free-floating temperature, setpoints, and HVAC demand for Case 600
             if spec.case_id == "600" && step % 8760 == 4380 {
-                let t_free =
-                    model.calculate_free_float_temperature(step, weather_data.dry_bulb_temp);
+                let t_free = model.calculate_free_float_temperature(step, dry_bulb_temp);
                 tracing::debug!("DEBUG Case 600 hour={}: t_free={:.2}°C, heating_sp={:.1}°C, cooling_sp={:.1}°C",
                     step % 24, t_free, model.heating_setpoint, model.cooling_setpoint);
             }
 
             // Use model's step_physics to advance simulation
-            model.step_physics(step, weather_data.dry_bulb_temp, 3600.0);
+            model.step_physics(step, dry_bulb_temp, 3600.0);
 
             if is_free_floating {
                 if let Some(&zone_0_temp) = model.temperatures.as_slice().first() {
@@ -1620,9 +1622,12 @@ impl ASHRAE140Validator {
             }
 
             let weather_data = weather.get_hourly_data(step).unwrap();
+            // Extract the only field used downstream (f64 is Copy) so we can move
+            // weather_data into model.weather without an extra clone (Issue #2893).
+            let dry_bulb_temp = weather_data.dry_bulb_temp;
 
             // Update weather data on model for solar gain calculation (Issue #278)
-            model.weather = Some(weather_data.clone());
+            model.weather = Some(weather_data);
 
             // Apply dynamic setpoints based on HVAC schedule (for setback cases)
             if let Some(hvac_schedule) = spec.hvac.first() {
@@ -1690,13 +1695,12 @@ impl ASHRAE140Validator {
 
             // Debug: Print free-floating temperature, setpoints, and HVAC demand for Case 600
             if spec.case_id == "600" && step % 8760 == 4380 {
-                let t_free =
-                    model.calculate_free_float_temperature(step, weather_data.dry_bulb_temp);
+                let t_free = model.calculate_free_float_temperature(step, dry_bulb_temp);
                 tracing::debug!("DEBUG Case 600 hour={}: t_free={:.2}°C, heating_sp={:.1}°C, cooling_sp={:.1}°C",
                     step % 24, t_free, model.heating_setpoint, model.cooling_setpoint);
             }
 
-            let hvac_kwh = model.step_physics(step, weather_data.dry_bulb_temp, 3600.0);
+            let hvac_kwh = model.step_physics(step, dry_bulb_temp, 3600.0);
 
             // Debug: Print Case 950 HVAC demand and temperature every 1000 steps
             if spec.case_id == "950" && step % 1000 == 0 {
@@ -1707,7 +1711,7 @@ impl ASHRAE140Validator {
                     0.0
                 }; // kWh * 3600 = J, / 3600s = W
                 tracing::debug!("DEBUG Case 950 step={}: t_zone={:.2}°C, hvac_kwh={:.4}, hvac_power_W={:.1}, heating_sp={:.1}°C, cooling_sp={:.1}°C, outdoor={:.2}°C",
-                    step, t_zone, hvac_kwh, hvac_power_w, model.heating_setpoint, model.cooling_setpoint, weather_data.dry_bulb_temp);
+                    step, t_zone, hvac_kwh, hvac_power_w, model.heating_setpoint, model.cooling_setpoint, dry_bulb_temp);
             }
 
             // SESSION 32: Accumulate HVAC energy from raw hvac_kwh
@@ -1842,9 +1846,12 @@ impl ASHRAE140Validator {
             }
 
             let weather_data = weather.get_hourly_data(step).unwrap();
+            // Extract the only field used downstream (f64 is Copy) so we can move
+            // weather_data into model.weather without an extra clone (Issue #2893).
+            let dry_bulb_temp = weather_data.dry_bulb_temp;
 
             // Update weather data on model for solar gain calculation (Issue #278)
-            model.weather = Some(weather_data.clone());
+            model.weather = Some(weather_data);
 
             // Apply dynamic setpoints based on HVAC schedule (for setback cases)
             if let Some(hvac_schedule) = spec.hvac.first() {
@@ -1912,13 +1919,12 @@ impl ASHRAE140Validator {
 
             // Debug: Print free-floating temperature, setpoints, and HVAC demand for Case 600
             if spec.case_id == "600" && step % 8760 == 4380 {
-                let t_free =
-                    model.calculate_free_float_temperature(step, weather_data.dry_bulb_temp);
+                let t_free = model.calculate_free_float_temperature(step, dry_bulb_temp);
                 tracing::debug!("DEBUG Case 600 hour={}: t_free={:.2}°C, heating_sp={:.1}°C, cooling_sp={:.1}°C",
                     step % 24, t_free, model.heating_setpoint, model.cooling_setpoint);
             }
 
-            let hvac_kwh = model.step_physics(step, weather_data.dry_bulb_temp, 3600.0);
+            let hvac_kwh = model.step_physics(step, dry_bulb_temp, 3600.0);
 
             // Track min/max temperatures for free-floating cases
             if is_free_floating {
@@ -1934,7 +1940,7 @@ impl ASHRAE140Validator {
 
             // Record hourly diagnostic data
             let mut hourly_data = HourlyData::new(step, num_zones);
-            hourly_data.outdoor_temp = weather_data.dry_bulb_temp;
+            hourly_data.outdoor_temp = dry_bulb_temp;
             hourly_data.zone_temps = model.temperatures.as_slice().to_vec();
             hourly_data.mass_temps = model.mass_temperatures.as_slice().to_vec();
 
@@ -2170,9 +2176,12 @@ impl ASHRAE140Validator {
             }
 
             let weather_data = weather.get_hourly_data(step).unwrap();
+            // Extract the only field used downstream (f64 is Copy) so we can move
+            // weather_data into model.set_weather without an extra clone (Issue #2893).
+            let dry_bulb_temp = weather_data.dry_bulb_temp;
 
             // Set weather data on model for solar gain calculations
-            model.set_weather(weather_data.clone());
+            model.set_weather(weather_data);
 
             // Apply dynamic setpoints
             if let Some(hvac_schedule) = spec.hvac.first() {
@@ -2217,8 +2226,7 @@ impl ASHRAE140Validator {
 
             // Debug: Print free-floating temperature, setpoints, and HVAC demand for Case 600
             if spec.case_id == "600" && step % 8760 == 4380 {
-                let t_free =
-                    model.calculate_free_float_temperature(step, weather_data.dry_bulb_temp);
+                let t_free = model.calculate_free_float_temperature(step, dry_bulb_temp);
                 tracing::debug!("DEBUG Case 600 hour={}: t_free={:.2}°C, heating_sp={:.1}°C, cooling_sp={:.1}°C",
                     step % 24, t_free, model.heating_setpoint, model.cooling_setpoint);
             }
@@ -2242,7 +2250,7 @@ impl ASHRAE140Validator {
                     .get(zone_idx)
                     .copied()
                     .unwrap_or(zone_temp_first);
-                let delta_t = zone_temp - weather_data.dry_bulb_temp;
+                let delta_t = zone_temp - dry_bulb_temp;
 
                 // Sum envelope conduction for this zone
                 if let (Some(geom), Some(windows)) =
@@ -2272,7 +2280,7 @@ impl ASHRAE140Validator {
             // Apply internal loads
             model.set_loads(&internal_loads_per_zone);
 
-            let hvac_kwh = model.step_physics(step, weather_data.dry_bulb_temp, 3600.0);
+            let hvac_kwh = model.step_physics(step, dry_bulb_temp, 3600.0);
 
             // Accumulate heating/cooling energy (manual tracking)
             // step_physics() returns kWh, convert to Joules: kWh * 3.6e6 = Joules
@@ -2322,7 +2330,7 @@ impl ASHRAE140Validator {
             // Collect hourly data if enabled
             if self.diagnostic_config.output_hourly {
                 let mut hourly = HourlyData::new(step, num_zones);
-                hourly.outdoor_temp = weather_data.dry_bulb_temp;
+                hourly.outdoor_temp = dry_bulb_temp;
                 hourly.zone_temps = model.temperatures.as_slice().to_vec();
 
                 let mut solar_gains_watts = vec![0.0; num_zones];
@@ -2470,8 +2478,11 @@ impl ASHRAE140Validator {
 
         for step in 0..8760 {
             let weather_data = weather.get_hourly_data(step).unwrap();
+            // Extract the only field used downstream (f64 is Copy) so we can move
+            // weather_data into model.set_weather without an extra clone (Issue #2893).
+            let dry_bulb_temp = weather_data.dry_bulb_temp;
             // Set weather data on model
-            model.set_weather(weather_data.clone());
+            model.set_weather(weather_data);
 
             // Calculate internal loads
             let mut internal_loads_per_zone = vec![0.0; num_zones];
@@ -2499,7 +2510,7 @@ impl ASHRAE140Validator {
             // Apply internal loads before stepping
             model.set_loads(&internal_loads_per_zone);
 
-            model.step_physics(step, weather_data.dry_bulb_temp, 3600.0);
+            model.step_physics(step, dry_bulb_temp, 3600.0);
 
             // Track temperatures for free-floating cases
             let zone_temp = model.get_temperatures()[0];
@@ -2557,8 +2568,11 @@ impl ASHRAE140Validator {
         // Run simulation
         for step in 0..8760 {
             let weather_data = weather.get_hourly_data(step).unwrap();
-            model.set_weather(weather_data.clone());
-            model.step_physics(step, weather_data.dry_bulb_temp, 3600.0);
+            // Extract the only field used downstream (f64 is Copy) so we can move
+            // weather_data into model.set_weather without an extra clone (Issue #2893).
+            let dry_bulb_temp = weather_data.dry_bulb_temp;
+            model.set_weather(weather_data);
+            model.step_physics(step, dry_bulb_temp, 3600.0);
         }
 
         // Use model's internal peak tracking (more accurate than manual calculation)
@@ -2732,7 +2746,10 @@ pub fn validate_case_with_diagnostics(
     // Run simulation for 8760 hours
     for step in 0..8760 {
         let weather_data = weather.get_hourly_data(step).unwrap();
-        model.set_weather(weather_data.clone());
+        // Extract the only field used downstream (f64 is Copy) so we can move
+        // weather_data into model.set_weather without an extra clone (Issue #2893).
+        let dry_bulb_temp = weather_data.dry_bulb_temp;
+        model.set_weather(weather_data);
 
         // Apply dynamic setpoints
         if let Some(hvac_schedule) = spec.hvac.first() {
@@ -2742,7 +2759,7 @@ pub fn validate_case_with_diagnostics(
 
         // Step physics (includes diagnostics recording if enabled)
         // step_physics() returns kWh (cumulative energy for timestep)
-        let hvac_kwh = model.step_physics(step, weather_data.dry_bulb_temp, 3600.0);
+        let hvac_kwh = model.step_physics(step, dry_bulb_temp, 3600.0);
 
         // Energy tracking: Convert kWh to Joules (1 kWh = 3.6e6 Joules)
         if hvac_kwh > 0.0 {
@@ -3040,7 +3057,10 @@ mod tests {
         for step in 0..STEPS {
             let hour_of_day = step % 24;
             let weather_data = weather.get_hourly_data(step).unwrap();
-            model.weather = Some(weather_data.clone());
+            // Extract the only field used downstream (f64 is Copy) so we can move
+            // weather_data into model.weather without an extra clone (Issue #2893).
+            let dry_bulb_temp = weather_data.dry_bulb_temp;
+            model.weather = Some(weather_data);
 
             if let Some(hvac_schedule) = spec.hvac.first() {
                 let hour = hour_of_day as u8;
@@ -3052,7 +3072,7 @@ mod tests {
                 model.cooling_setpoint = cooling_sp;
             }
 
-            let hvac_kwh = model.step_physics(step, weather_data.dry_bulb_temp, 3600.0);
+            let hvac_kwh = model.step_physics(step, dry_bulb_temp, 3600.0);
 
             // Print every 1000 steps
             if step % 1000 == 0 || step == 8759 {
@@ -3063,7 +3083,7 @@ mod tests {
                     0.0
                 };
                 tracing::debug!("[TRACE] step={}: t_zone={:.2}, hvac_kwh={:.4}, hvac_W={:.1}, heating_sp={:.1}, cooling_sp={:.1}, outdoor={:.2}",
-                    step, t_zone, hvac_kwh, hvac_power_w, model.heating_setpoint, model.cooling_setpoint, weather_data.dry_bulb_temp);
+                    step, t_zone, hvac_kwh, hvac_power_w, model.heating_setpoint, model.cooling_setpoint, dry_bulb_temp);
             }
         }
 

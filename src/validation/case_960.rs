@@ -138,11 +138,15 @@ impl Case960ReferenceImplementation {
         for step in 0..STEPS {
             let weather_data = weather.get_hourly_data(step).unwrap();
 
+            // Extract the only field used downstream (f64 is Copy) so we can move
+            // weather_data into model.weather without an extra clone (Issue #2893).
+            let dry_bulb_temp = weather_data.dry_bulb_temp;
+
             // Update model with current weather
-            model.weather = Some(weather_data.clone());
+            model.weather = Some(weather_data);
 
             // Step the physics simulation
-            let hvac_kwh = model.step_physics(step, weather_data.dry_bulb_temp, 3600.0);
+            let hvac_kwh = model.step_physics(step, dry_bulb_temp, 3600.0);
 
             // Track energy consumption
             if hvac_kwh > 0.0 {

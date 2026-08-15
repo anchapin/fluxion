@@ -406,10 +406,13 @@ pub fn validate_energy_balance_over_year(
     let mut stored_energy_end = stored_energy_start;
     for step in 0..steps {
         let weather_data = weather.get_hourly_data(step).unwrap();
-        model.weather = Some(weather_data.clone());
+        // Extract the only field used downstream (f64 is Copy) so we can move
+        // weather_data into model.weather without an extra clone (Issue #2893).
+        let dry_bulb_temp = weather_data.dry_bulb_temp;
+        model.weather = Some(weather_data);
 
         // Run physics step and get HVAC energy
-        let hvac_energy = model.step_physics(step, weather_data.dry_bulb_temp, 3600.0);
+        let hvac_energy = model.step_physics(step, dry_bulb_temp, 3600.0);
 
         // Debug: track HVAC energy for Case 960
         debug_hvac_sum += hvac_energy;
@@ -1136,10 +1139,13 @@ mod tests {
         let _max_conservation_error = 0.0_f64;
         for step in 0..24 {
             let weather_data = weather.get_hourly_data(step).unwrap();
-            model.weather = Some(weather_data.clone());
+            // Extract the only field used downstream (f64 is Copy) so we can move
+            // weather_data into model.weather without an extra clone (Issue #2893).
+            let dry_bulb_temp = weather_data.dry_bulb_temp;
+            model.weather = Some(weather_data);
 
             // Run physics step
-            model.step_physics(step, weather_data.dry_bulb_temp, 3600.0);
+            model.step_physics(step, dry_bulb_temp, 3600.0);
 
             // Get heat balance terms via pr821-diag feature
             #[cfg(feature = "pr821-diag")]
@@ -1236,10 +1242,13 @@ mod tests {
 
             for step in 0..24 {
                 let weather_data = weather.get_hourly_data(step).unwrap();
-                model.weather = Some(weather_data.clone());
+                // Extract the only field used downstream (f64 is Copy) so we can move
+                // weather_data into model.weather without an extra clone (Issue #2893).
+                let dry_bulb_temp = weather_data.dry_bulb_temp;
+                model.weather = Some(weather_data);
 
                 // Run physics step
-                model.step_physics(step, weather_data.dry_bulb_temp, 3600.0);
+                model.step_physics(step, dry_bulb_temp, 3600.0);
 
                 // Get heat balance terms via pr821-diag feature
                 #[cfg(feature = "pr821-diag")]
