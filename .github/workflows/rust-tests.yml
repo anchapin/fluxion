@@ -107,6 +107,13 @@ jobs:
           # Issue #2909 — fluxion-behavior workspace E2E integration tests
           # (occupancy → thermal → lighting → comfort → moisture).
           cargo test -p fluxion-behavior --test lighting_occupancy_integration --verbose ${{ matrix.feature_set.flags }}
+          # Issue #2904 — fluxion-twin workspace integration tests
+          # (UKF van der Pol, UKF covariance stability, MQTT → UKF pipeline,
+          # WebSocket broadcaster memory-leak). Closes #2058, #2060, #2061,
+          # #2064. fluxion-twin accepts the matrix flags as no-op
+          # `wiring-tracing` / `multi-zone` features (see its Cargo.toml) so
+          # the test invocation stays matrix-uniform.
+          cargo test -p fluxion-twin --tests --verbose ${{ matrix.feature_set.flags }}
         env:
           PYO3_PYTHON: /usr/bin/python3
 
@@ -359,6 +366,11 @@ jobs:
           # Issue #2909 — fluxion-behavior workspace E2E integration tests
           # (occupancy → thermal → lighting → comfort → moisture).
           cargo test -p fluxion-behavior --test lighting_occupancy_integration --verbose --no-default-features
+          # Issue #2904 — fluxion-twin workspace integration tests
+          # (UKF van der Pol, UKF covariance stability, MQTT → UKF pipeline,
+          # WebSocket broadcaster memory-leak). Closes #2058, #2060, #2061,
+          # #2064.
+          cargo test -p fluxion-twin --tests --verbose --no-default-features
         env:
           PYO3_PYTHON: /usr/bin/python3
 

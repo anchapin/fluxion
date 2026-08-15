@@ -33,6 +33,14 @@ crossbeam-channel = "0.5"
 tracing.workspace = true
 metrics.workspace = true
 
+[features]
+# CI matrix passthrough features (Issue #2904). The root crate's `rust-tests.yml`
+# workflow runs `cargo test -p fluxion-twin --features wiring-tracing,multi-zone`
+# to keep the test invocation matrix-uniform; fluxion-twin does not gate code
+# behind these flags, so they are accepted as no-ops here.
+wiring-tracing = []
+multi-zone = []
+
 [dev-dependencies]
 approx = "0.5"
 rand = "0.9"
