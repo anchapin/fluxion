@@ -141,13 +141,17 @@ and `fluxion_core::ashrae_cases::Orientation` for its data fields.
 **Regression guard**: `scripts/check_physics_sim_cycle.py` enforces a
 zero-edge physics→sim baseline (`BASELINE_PHYSICS_TO_SIM = 0`) and — since
 Issue #2766 extended Phase 2 coverage from the 2 originally-guarded files to
-ALL of `src/sim/**/*.rs` — an 84-edge sim→physics baseline
-(`BASELINE_SIM_TO_PHYSICS = 84`; the 84 pre-existing
-`use crate::physics::` imports across 26 sim files that the pre-#2766 guard
-never scanned). The CI listener `Physics-Sim-Cycle-Check` (in
-`.github/workflows/rust-tests.yml`) is wired into
-`release_gates.yaml::ci.required_checks` so a regression cannot ship past
-branch protection.
+ALL of `src/sim/**/*.rs` — a 85-edge sim→physics baseline
+(`BASELINE_SIM_TO_PHYSICS = 85`; 84 pre-existing `use crate::physics::`
+imports across 26 sim files that the pre-#2766 guard never scanned, minus
+1 edge removed by PR #3020 / issue #2896 (doc-only stub deletion), plus
+2 new `use crate::physics::exterior_convection::{...}` edges added by
+PR #3024 / issue #2891 for ASHRAE 140 §5.2.6 wind-velocity-dependent
+exterior convection in the 5R1C path). The CI listener
+`Physics-Sim-Cycle-Check` (in `.github/workflows/rust-tests.yml`) is wired
+into `release_gates.yaml::ci.required_checks` so a regression cannot ship
+past branch protection. The baseline raises only via legitimate cycle
+work; snapshot every change in `scripts/cycle_baseline_history.json`.
 
 These moves unblock `docs/mutation_testing_crate_split.md` §"Phase 2":
 `cargo mutants -p fluxion` no longer needs to recompile `sim::construction`

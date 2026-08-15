@@ -20,9 +20,16 @@ the `physics <-> sim` cycle closed by Issue #2462 stays closed:
    imports across 26 other sim files (``thermal_model.rs``, ``engine.rs``,
    ``ventilation.rs``, ...) completely unguarded. Issue #2766 extended
    coverage to ALL of ``src/sim/**`` and snapshotted the 83 pre-existing
-   edges as the new baseline; any NEW edge (the 85th) fails.
-3. Summary: report the total cycle-edge count. As of #2462 + #2766 the
-   documented baseline is 0 physics->sim + 83 sim->physics edges.
+   edges as the initial baseline; PR #3020 (issue #2896) lowered the
+   baseline to 83 after deleting doc-only stubs, and PR #3024 (issue #2891)
+   raised it to 85 to admit two legitimate ``use crate::physics::exterior_convection::{...}``
+   edges that implement wind-velocity-dependent exterior convection
+   (ASHRAE 140 §5.2.6) in `src/sim/thermal_model_core.rs` (line 243)
+   and `src/sim/thermal_model_physics/physics_impl.rs` (line 322).
+   Any NEW edge beyond these 85 fails the guard.
+3. Summary: report the total cycle-edge count. As of #2462 + #2766 +
+   #2896 + #2891 the documented baseline is 0 physics->sim + 85 sim->physics
+   edges.
 
 Usage:
   python3 scripts/check_physics_sim_cycle.py
@@ -35,7 +42,7 @@ Exit codes:
   2 — script error
 
 The script reports ``BASELINE_PHYSICS_TO_SIM = 0`` and
-``BASELINE_SIM_TO_PHYSICS = 83`` documented edges as the *current state*.
+``BASELINE_SIM_TO_PHYSICS = 85`` documented edges as the *current state*.
 A future PR that adds a *new* ``use crate::sim::`` import under
 ``src/physics/**`` (or a *new* ``use crate::physics::`` import under any
 ``src/sim/**/*.rs`` file) — pushing the count *above* the documented
@@ -84,15 +91,22 @@ SIM_SHIM_EXCEPTIONS: frozenset[str] = frozenset()
 # ``per_surface_conduction.rs``) to ALL ``src/sim/**/*.rs`` files. The
 # extension surfaced 84 pre-existing ``use crate::physics::`` imports
 # across 26 sim files that the original guard never saw. These 83 edges
-# are snapshotted here as the new baseline; the guard PASSES at-or-below
-# 83 and FAILS when a NEW edge pushes the count to 84+. Lowering this
-# baseline is authorised only by companion cycle-removal work; see
-# ARCHITECTURE.md §"Regression guard (Issue #2766, extends #2463)".
+# were snapshotted as the initial baseline; PR #3020 (issue #2896) lowered
+# the baseline to 83 after deleting doc-only stub
+# ``src/sim/thermal_model_network.rs`` and its single physics edge; PR #3024
+# (issue #2891) then raised the baseline to 85 to admit two new
+# ``use crate::physics::exterior_convection::{...}`` edges that implement
+# ASHRAE 140 §5.2.6 wind-velocity-dependent exterior convection in the 5R1C
+# path (see ``src/sim/thermal_model_core.rs:243`` and
+# ``src/sim/thermal_model_physics/physics_impl.rs:322``). The guard PASSES
+# at-or-below 85 and FAILS when a NEW edge pushes the count to 86+.
+# Lowering this baseline is authorised only by companion cycle-removal
+# work; see ARCHITECTURE.md §"Regression guard (Issue #2766, extends #2463)".
 #
 # See ARCHITECTURE.md §"Regression guard (Issue #2463, closed by #2462)"
 # for the source-of-truth numbers.
 BASELINE_PHYSICS_TO_SIM = 0
-BASELINE_SIM_TO_PHYSICS = 83
+BASELINE_SIM_TO_PHYSICS = 85
 
 # Regex for Phase 2: match `use` or `pub use` against `crate::physics::`.
 # Mirrors `scan_sim_for_orientation_cycle` in check_ashrae_cases_cycle.py
@@ -133,7 +147,7 @@ def scan_sim_for_physics_deps() -> list[str]:
 
     Issue #2766: the original Phase 2 (Issue #2463) scanned only the two
     files in the old ``PROTECTED_SIM_FILES`` tuple — ``construction.rs``
-    and ``per_surface_conduction.rs`` — leaving ~84 ``use crate::physics::``
+    and ``per_surface_conduction.rs`` — leaving ~83 ``use crate::physics::``
     imports across 26 other sim files completely unguarded. This function
     extends coverage to ALL of ``src/sim/**`` (minus the files in
     ``SIM_SHIM_EXCEPTIONS``) so any new sim->physics edge in any sim file

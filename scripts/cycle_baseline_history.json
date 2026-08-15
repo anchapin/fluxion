@@ -133,7 +133,23 @@
       },
       "total": 303,
       "edge_signature": "24d267982e2e446c96c342faa34203edb52b8b32b82926a98998db6bd94068cf",
-      "reason": "PR #3020 (issue #2896) deleted doc-only stub modules src/sim/thermal_model_hvac.rs (no physics imports) and src/sim/thermal_model_network.rs (one `use crate::physics::cta::{ContinuousTensor, VectorField};` import) and consolidated their documentation into src/sim/thermal_model.rs. The deletion removed 1 sim->physics edge; sim_to_physics dropped 84 -> 83 (total 304 -> 303). BASELINE_SIM_TO_PHYSICS in scripts/check_physics_sim_cycle.py was lowered from 84 to 83 in the same PR (companion cycle-removal work authorised by ARCHITECTURE.md §Regression guard). No new cycle edges were introduced; this is a net cycle reduction, not a swap. R1/R2/R3 trend guards continue to enforce downward pressure from this new baseline."
+      "reason": "PR #3020 (issue #2896) deleted doc-only stub modules src/sim/thermal_model_hvac.rs (no physics imports) and src/sim/thermal_model_network.rs (one `use crate::physics::cta::{ContinuousTensor, VectorField};` import) and consolidated their documentation into src/sim/thermal_model.rs. The deletion removed 1 sim->physics edge; sim_to_physics dropped 84 -> 83 (total 304 -> 303). BASELINE_SIM_TO_PHYSICS in scripts/check_physics_sim_cycle.py was lowered from 84 to 83 in the same PR (companion cycle-removal work authorised by ARCHITECTURE.md \u00a7Regression guard). No new cycle edges were introduced; this is a net cycle reduction, not a swap. R1/R2/R3 trend guards continue to enforce downward pressure from this new baseline."
+    },
+    {
+      "timestamp": "2026-08-15T17:09:50+00:00",
+      "commit": "378fd07",
+      "source": "exterior-convection-issue-2891",
+      "totals": {
+        "sim_to_validation": 72,
+        "validation_to_sim": 58,
+        "validation_to_physics": 65,
+        "validation_to_weather": 25,
+        "physics_to_sim": 0,
+        "sim_to_physics": 85
+      },
+      "total": 305,
+      "edge_signature": "22a4d3917a9c23f70c6cc76ac089952ef7173e90f1b390214bcdc4d2c6bfaf3c",
+      "reason": "PR #3024 (issue #2891) implements wind-velocity-dependent exterior convection (ASHRAE 140 \u00a75.2.6) by introducing src/physics/exterior_convection.rs and importing its helpers (h_c_ext_wind_dependent, wind_at_building_height_from_10m, ExteriorSurfaceDirection) from two new sim call sites: src/sim/thermal_model_core.rs:243 (sol-air temperature path) and src/sim/thermal_model_physics/physics_impl.rs:322 (5R1C FD boundary condition path). This adds 2 legitimate sim->physics edges; sim_to_physics grew 83 -> 85 (total 303 -> 305). The new edges are authorised by ARCHITECTURE.md \u00a7Regression guard as companion cycle work for the new physics module: PR #3024 creates the ONLY consumer of the new physics helpers in the 5R1C path it modifies, so any companion cycle-removal that hoists these helpers to fluxion_core would also have to move the wind-convection algorithm itself. Companion cycle-removal work stays open until #2462 phase 3 elides the entire sim->physics edge family. BASELINE_SIM_TO_PHYSICS in scripts/check_physics_sim_cycle.py was raised from 83 to 85 in the same PR, and ARCHITECTURE.md \u00a7Regression guard was updated to match. R1/R2/R3 trend guards continue to enforce downward pressure from this new 305 floor."
     }
   ]
 }
