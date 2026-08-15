@@ -11,6 +11,15 @@ on:
       - 'ARCHITECTURE.md'
       - 'scripts/check_architecture_drift.py'
       - 'scripts/check_doc_drift.py'
+      - 'scripts/check_stub_modules.py'
+      - 'fluxion-core/src/**/*.rs'
+      - 'fluxion-grid/src/**/*.rs'
+      - 'fluxion-behavior/src/**/*.rs'
+      - 'fluxion-wasm/src/**/*.rs'
+      - 'fluxion-cfd/src/**/*.rs'
+      - 'fluxion-city/src/**/*.rs'
+      - 'fluxion-fluid/src/**/*.rs'
+      - 'fluxion-mcp/src/**/*.rs'
   workflow_dispatch:
 
 # Least-privilege GITHUB_TOKEN grants (Issue #2526). The check-drift job
@@ -44,6 +53,9 @@ jobs:
       # doc-comments; this companion script closes that gap.
       - name: Run doc-comment cycle drift detection (issue #2895)
         run: python3 scripts/check_doc_drift.py
+
+      - name: Run stub-module detector (Issue #2896)
+        run: python3 scripts/check_stub_modules.py
 
       - name: Comment on PR if drift detected (on PR trigger only)
         if: failure() && github.event_name == 'pull_request'
