@@ -432,3 +432,474 @@ pub async fn metrics_handler() -> impl IntoResponse {
     let (body, content_type) = render();
     ([(CONTENT_TYPE, content_type)], body)
 }
+
+// Issue #2883 — inline tests for the REST API metrics module. These pin the
+// exact increment / decrement / histogram-sum contract that the integration
+// suite (`tests/api_observability_tests.rs`) relied on before, but at unit
+// granularity with a thread-local `DebuggingRecorder` so each test is
+// independent and parallel-safe. The `record()` and `track_in_flight()`
+// middlewares are exercised end-to-end through a minimal axum router so the
+// middleware future lifecycle (RAII guard, label propagation, panic unwind)
+// is observable in isolation.
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use axum::{
+        body::Body,
+        http::{Request, StatusCode},
+        middleware,
+        routing::get,
+        Router,
+    };
+    use metrics_util::debugging::{DebugValue, DebuggingRecorder};
+    use tower::ServiceExt;
+
+    /// Build a minimal axum router that mounts only the metrics middleware
+    /// under test. Keeps each test focused on one middleware at a time.
+    ///
+    /// Generic over the middleware so the caller can pass either `record` or
+    /// `track_in_flight` directly — both are `async fn`, which can be coerced
+    /// to a `Fn(Request, Next) -> impl Future<Output = Response>`.
+    fn build_router<F, Fut>(middleware_fn: F) -> Router
+    where
+        F: Fn(Request<Body>, axum::middleware::Next) -> Fut + Clone + Send + Sync + 'static,
+        Fut: std::future::Future<Output = Response<Body>> + Send + 'static,
+    {
+        Router::new()
+            .route("/ok", get(|| async { (StatusCode::OK, "ok") }))
+            .route(
+                "/not-found",
+                get(|| async { (StatusCode::NOT_FOUND, "missing") }),
+            )
+            .route(
+                "/boom",
+                get(|| async { (StatusCode::INTERNAL_SERVER_ERROR, "fail") }),
+            )
+            .route(
+                "/panic",
+                get(|| async {
+                    panic!("intentional panic for #2883");
+                    #[allow(unreachable_code)]
+                    String::new()
+                }),
+            )
+            .layer(middleware::from_fn(middleware_fn))
+    }
+
+    /// Run an async future on a fresh current-thread runtime inside the
+    /// thread-local `DebuggingRecorder` scope. Mirrors the pattern from
+    /// `src/api/server.rs::tests::in_flight_gauge_tracks_request_lifecycle`.
+    fn run_with_recorder<F, T>(recorder: &DebuggingRecorder, fut: F) -> T
+    where
+        F: std::future::Future<Output = T>,
+    {
+        ::metrics::with_local_recorder(recorder, || {
+            tokio::runtime::Builder::new_current_thread()
+                .enable_all()
+                .build()
+                .expect("build current-thread runtime")
+                .block_on(fut)
+        })
+    }
+
+    /// Helper: read a counter from a `DebuggingRecorder` snapshot by metric
+    /// name. Returns the observed counter value, or panics with a descriptive
+    /// message if the metric is missing.
+    ///
+    /// When the metric is emitted under multiple label combinations (e.g.
+    /// `record()` emits `REQUESTS_TOTAL` with `route` × `method` × `status`),
+    /// this helper returns the **sum across all label combinations** so
+    /// callers can assert the total observation count.
+    fn counter_value(
+        map: &std::collections::HashMap<
+            metrics_util::CompositeKey,
+            (
+                Option<::metrics::Unit>,
+                Option<::metrics::SharedString>,
+                DebugValue,
+            ),
+        >,
+        name: &str,
+    ) -> u64 {
+        let entries: Vec<u64> = map
+            .iter()
+            .filter_map(|(k, (_, _, v))| {
+                if k.key().name() == name {
+                    if let DebugValue::Counter(c) = v {
+                        Some(*c)
+                    } else {
+                        None
+                    }
+                } else {
+                    None
+                }
+            })
+            .collect();
+        if entries.is_empty() {
+            let keys: Vec<String> = map.keys().map(|ck| ck.key().name().to_string()).collect();
+            panic!(
+                "no observation for `{name}`. snapshot had {} metric names: {keys:?}",
+                keys.len()
+            );
+        }
+        entries.iter().sum()
+    }
+
+    /// Helper: read a gauge from a `DebuggingRecorder` snapshot by metric name.
+    fn gauge_value(
+        map: &std::collections::HashMap<
+            metrics_util::CompositeKey,
+            (
+                Option<::metrics::Unit>,
+                Option<::metrics::SharedString>,
+                DebugValue,
+            ),
+        >,
+        name: &str,
+    ) -> f64 {
+        let entry = map.iter().find(|(k, _)| k.key().name() == name);
+        match entry {
+            Some((_, (_, _, DebugValue::Gauge(g)))) => g.into_inner(),
+            Some((_, (_, _, other))) => {
+                panic!("expected Gauge for `{name}`, got {other:?}")
+            }
+            None => {
+                let keys: Vec<String> = map.keys().map(|ck| ck.key().name().to_string()).collect();
+                panic!(
+                    "no observation for `{name}`. snapshot had {} metric names: {keys:?}",
+                    keys.len()
+                );
+            }
+        }
+    }
+
+    /// Helper: read a histogram from a `DebuggingRecorder` snapshot by metric
+    /// name and return all observations.
+    fn histogram_observations(
+        map: &std::collections::HashMap<
+            metrics_util::CompositeKey,
+            (
+                Option<::metrics::Unit>,
+                Option<::metrics::SharedString>,
+                DebugValue,
+            ),
+        >,
+        name: &str,
+    ) -> Vec<f64> {
+        let entry = map.iter().find(|(k, _)| k.key().name() == name);
+        match entry {
+            Some((_, (_, _, DebugValue::Histogram(vals)))) => {
+                vals.iter().map(|s| s.into_inner()).collect()
+            }
+            Some((_, (_, _, other))) => {
+                panic!("expected Histogram for `{name}`, got {other:?}")
+            }
+            None => {
+                let keys: Vec<String> = map.keys().map(|ck| ck.key().name().to_string()).collect();
+                panic!(
+                    "no observation for `{name}`. snapshot had {} metric names: {keys:?}",
+                    keys.len()
+                );
+            }
+        }
+    }
+
+    // ---- record() middleware -------------------------------------------------
+
+    /// Issue #2883 — `record()` must advance `fluxion_rest_requests_total` by
+    /// exactly one per call, regardless of response status.
+    #[test]
+    fn record_increments_requests_total_exactly_once_on_2xx() {
+        let recorder = DebuggingRecorder::new();
+        let snapshotter = recorder.snapshotter();
+        let app = build_router(record);
+
+        run_with_recorder(&recorder, async {
+            let resp = app
+                .oneshot(
+                    Request::builder()
+                        .uri("/ok")
+                        .body(Body::empty())
+                        .expect("build 2xx request"),
+                )
+                .await
+                .expect("oneshot must not error on 2xx");
+            assert_eq!(resp.status(), StatusCode::OK);
+        });
+
+        let map = snapshotter.snapshot().into_hashmap();
+        assert_eq!(
+            counter_value(&map, REQUESTS_TOTAL),
+            1,
+            "REQUESTS_TOTAL must advance by exactly 1 on a single 2xx request"
+        );
+    }
+
+    /// Issue #2883 — `record()` must increment `fluxion_rest_errors_total` for
+    /// 4xx responses but NOT for 2xx responses. The integration suite flake
+    /// (`metrics_after_404_record_error_total`) was rooted in the absence of
+    /// this unit-level pin.
+    #[test]
+    fn record_increments_errors_total_on_4xx_only() {
+        let recorder = DebuggingRecorder::new();
+        let snapshotter = recorder.snapshotter();
+        let app = build_router(record);
+
+        run_with_recorder(&recorder, async {
+            // 4xx — must increment ERRORS_TOTAL
+            let app_for_4xx = app.clone();
+            let resp = app_for_4xx
+                .oneshot(
+                    Request::builder()
+                        .uri("/not-found")
+                        .body(Body::empty())
+                        .expect("build 4xx request"),
+                )
+                .await
+                .expect("oneshot must not error on 4xx");
+            assert_eq!(resp.status(), StatusCode::NOT_FOUND);
+
+            // 2xx — must NOT touch ERRORS_TOTAL
+            let app_for_2xx = app.clone();
+            let resp = app_for_2xx
+                .oneshot(
+                    Request::builder()
+                        .uri("/ok")
+                        .body(Body::empty())
+                        .expect("build 2xx request"),
+                )
+                .await
+                .expect("oneshot must not error on 2xx");
+            assert_eq!(resp.status(), StatusCode::OK);
+        });
+
+        let map = snapshotter.snapshot().into_hashmap();
+        assert_eq!(
+            counter_value(&map, REQUESTS_TOTAL),
+            2,
+            "REQUESTS_TOTAL must reflect both requests (4xx + 2xx)"
+        );
+        assert_eq!(
+            counter_value(&map, ERRORS_TOTAL),
+            1,
+            "ERRORS_TOTAL must reflect only the 4xx request, not the 2xx"
+        );
+    }
+
+    /// Issue #2883 — `record()` must also increment `ERRORS_TOTAL` for 5xx
+    /// responses (server errors, not just client errors).
+    #[test]
+    fn record_increments_errors_total_on_5xx() {
+        let recorder = DebuggingRecorder::new();
+        let snapshotter = recorder.snapshotter();
+        let app = build_router(record);
+
+        run_with_recorder(&recorder, async {
+            let resp = app
+                .oneshot(
+                    Request::builder()
+                        .uri("/boom")
+                        .body(Body::empty())
+                        .expect("build 5xx request"),
+                )
+                .await
+                .expect("oneshot must not error on 5xx");
+            assert_eq!(resp.status(), StatusCode::INTERNAL_SERVER_ERROR);
+        });
+
+        let map = snapshotter.snapshot().into_hashmap();
+        assert_eq!(
+            counter_value(&map, ERRORS_TOTAL),
+            1,
+            "ERRORS_TOTAL must advance on 5xx (server error)"
+        );
+    }
+
+    /// Issue #2883 — `record()` records one histogram observation per
+    /// request, carrying the wall-clock duration. We don't pin a specific
+    /// value (that would be flaky), but we assert the histogram is present
+    /// with at least one observation.
+    #[test]
+    fn record_records_request_duration_histogram() {
+        let recorder = DebuggingRecorder::new();
+        let snapshotter = recorder.snapshotter();
+        let app = build_router(record);
+
+        run_with_recorder(&recorder, async {
+            let _ = app
+                .oneshot(
+                    Request::builder()
+                        .uri("/ok")
+                        .body(Body::empty())
+                        .expect("build request"),
+                )
+                .await
+                .expect("oneshot must not error");
+        });
+
+        let map = snapshotter.snapshot().into_hashmap();
+        let obs = histogram_observations(&map, REQUEST_DURATION_SECONDS);
+        assert_eq!(
+            obs.len(),
+            1,
+            "exactly one duration observation expected, got {obs:?}"
+        );
+        // Duration must be non-negative (and practically > 0 for a real
+        // handler invocation).
+        assert!(
+            obs[0] >= 0.0,
+            "duration observation must be non-negative, got {}",
+            obs[0]
+        );
+    }
+
+    // ---- record_simulation() helper -----------------------------------------
+
+    /// Issue #2883 — `record_simulation()` must advance
+    /// `SIMULATION_ENERGY_KWH_TOTAL` by the whole-kWh truncation of the
+    /// forwarded `energy_kwh` on the success path.
+    #[test]
+    fn record_simulation_updates_energy_kwh_total_on_success() {
+        let recorder = DebuggingRecorder::new();
+        let snapshotter = recorder.snapshotter();
+
+        ::metrics::with_local_recorder(&recorder, || {
+            // 5_000.7 kWh must truncate to 5_000 whole kWh on the counter.
+            record_simulation(0.042, 2, true, true, 3, Some(5_000.7));
+        });
+
+        let map = snapshotter.snapshot().into_hashmap();
+        assert_eq!(
+            counter_value(&map, SIMULATION_ENERGY_KWH_TOTAL),
+            5_000,
+            "energy counter must advance by whole-kWh truncation of forwarded kWh"
+        );
+    }
+
+    /// Issue #2883 — `record_simulation()` must NOT advance the energy
+    /// counter when `energy_kwh` is `None` (error path) or non-positive
+    /// (defensive clamp against diverged/NaN values).
+    #[test]
+    fn record_simulation_does_not_update_energy_on_error_or_zero() {
+        let recorder = DebuggingRecorder::new();
+        let snapshotter = recorder.snapshotter();
+
+        ::metrics::with_local_recorder(&recorder, || {
+            record_simulation(0.0123, 1, false, false, 2, None);
+            record_simulation(0.05, 1, false, false, 2, Some(0.0));
+            record_simulation(0.05, 1, false, false, 2, Some(-100.0));
+        });
+
+        let map = snapshotter.snapshot().into_hashmap();
+        // The energy counter must be absent — the DebuggingRecorder only
+        // tracks metrics that were actually observed, so the clamp and the
+        // error path together guarantee the counter is never registered.
+        let present = map
+            .keys()
+            .any(|k| k.key().name() == SIMULATION_ENERGY_KWH_TOTAL);
+        assert!(
+            !present,
+            "energy counter must not advance on None / zero / negative kWh"
+        );
+    }
+
+    // ---- record_batch_size() helper -----------------------------------------
+
+    /// Issue #2883 — `record_batch_size()` must record exactly one histogram
+    /// observation per call, with the sum across calls equal to the sum of
+    /// the individual `batch_size` values.
+    #[test]
+    fn record_batch_size_updates_histogram_with_correct_sum() {
+        let recorder = DebuggingRecorder::new();
+        let snapshotter = recorder.snapshotter();
+
+        ::metrics::with_local_recorder(&recorder, || {
+            record_batch_size(5);
+            record_batch_size(10);
+            record_batch_size(15);
+        });
+
+        let map = snapshotter.snapshot().into_hashmap();
+        let obs = histogram_observations(&map, SIMULATION_BATCH_SIZE);
+        assert_eq!(
+            obs.len(),
+            3,
+            "exactly three observations expected, got {obs:?}"
+        );
+        let sum: f64 = obs.iter().sum();
+        assert!(
+            (sum - 30.0).abs() < 1e-9,
+            "histogram sum must equal 5 + 10 + 15 = 30, got {sum}"
+        );
+    }
+
+    // ---- track_in_flight() middleware ---------------------------------------
+
+    /// Issue #2883 / #2517 — `track_in_flight()` RAII guard must decrement
+    /// the gauge on normal completion, leaving it at 0.
+    #[test]
+    fn track_in_flight_raii_decrements_on_normal_completion() {
+        let recorder = DebuggingRecorder::new();
+        let snapshotter = recorder.snapshotter();
+        let app = build_router(track_in_flight);
+
+        run_with_recorder(&recorder, async {
+            let resp = app
+                .oneshot(
+                    Request::builder()
+                        .uri("/ok")
+                        .body(Body::empty())
+                        .expect("build request"),
+                )
+                .await
+                .expect("oneshot must not error on 2xx");
+            assert_eq!(resp.status(), StatusCode::OK);
+        });
+
+        let map = snapshotter.snapshot().into_hashmap();
+        assert_eq!(
+            gauge_value(&map, IN_FLIGHT_REQUESTS),
+            0.0,
+            "RAII guard must decrement in_flight_requests on normal completion"
+        );
+    }
+
+    /// Issue #2883 / #2517 — `track_in_flight()` RAII guard must decrement
+    /// the gauge EVEN WHEN the inner handler panics. This is the critical
+    /// correctness property of the graceful-shutdown drain: a panic must
+    /// never strand the gauge above zero.
+    #[test]
+    fn track_in_flight_raii_decrements_on_panic() {
+        use futures::FutureExt;
+        use std::panic::AssertUnwindSafe;
+
+        let recorder = DebuggingRecorder::new();
+        let snapshotter = recorder.snapshotter();
+        let app = build_router(track_in_flight);
+
+        run_with_recorder(&recorder, async {
+            // Wrap the oneshot future in `AssertUnwindSafe` so the
+            // `catch_unwind` shim can intercept the panic that originates
+            // inside the handler; the middleware's `_guard` must still drop
+            // (and decrement the gauge) when the future is dropped during
+            // panic-unwind.
+            let _ = AssertUnwindSafe(
+                app.oneshot(
+                    Request::builder()
+                        .uri("/panic")
+                        .body(Body::empty())
+                        .expect("build panic request"),
+                ),
+            )
+            .catch_unwind()
+            .await;
+        });
+
+        let map = snapshotter.snapshot().into_hashmap();
+        assert_eq!(
+            gauge_value(&map, IN_FLIGHT_REQUESTS),
+            0.0,
+            "RAII guard must decrement in_flight_requests even when the inner handler panics"
+        );
+    }
+}
