@@ -289,7 +289,22 @@ CLAUDE.md
 # explicitly in audit logs and the broader root-hygiene gate can refer
 # back to a single grep-able symbol.
 tests_tmp_*.onnx
-models/
+# Models directory: ignore everything inside, then re-include specific
+# tracked artifacts below. Issue #2923 manifest must be tracked so the
+# surrogate drift gate can resolve mode=fallback honestly (the manifest's
+# presence is the operator's explicit acknowledgement that fallback mode
+# is acceptable for this milestone).
+models/*
+models/*.onnx
+models/*.pt
+models/*.pth
+models/*.pkl
+models/*.h5
+# Issue #2923 fail-closed surrogate-gate manifest. Re-includes the `.sha256`
+# sidecar after the blanket `models/*` ignore above. The `.sha256` file is
+# the ONLY artifact in `models/` that is tracked; the `.onnx` itself stays
+# gitignored. If a future manifest is added, copy the negation pattern below.
+!models/surrogate_zone_thermal.onnx.sha256
 
 # FMI 2.0 XSD cache used by `.agents/results/issue-D1-multi-zone-fmi-verification.py`.
 # Fetched on demand from modelica/fmi-standard; never committed.

@@ -1,0 +1,38 @@
+# surrogate_zone_thermal.onnx.sha256 — surrogate gate manifest (Issue #2923)
+#
+# This file is the fail-closed trigger for the surrogate drift gate
+# (.github/workflows/surrogate_drift_gate.yml) when the gate resolves
+# mode=fallback (no trained ONNX model registered). Its presence in the
+# repository asserts that an operator has reviewed the surrogate-status
+# question for the current milestone and explicitly opted into fallback
+# mode rather than letting the gate silently downgrade to advisory
+# (which was the regression Issue #2923 fixed).
+#
+# Format (line-oriented; tools must accept comments and blank lines):
+#   <sha256>  <relative-path-from-repo-root>
+# where <sha256> is the lowercase hex SHA-256 of the model file. The
+# `sha256sum` CLI emits this format natively:
+#
+#     sha256sum models/surrogate_zone_thermal.onnx
+#         > models/surrogate_zone_thermal.onnx.sha256
+#
+# Validate before commit:
+#
+#     sha256sum -c models/surrogate_zone_thermal.onnx.sha256
+#
+# Until the trained v3.2.0 model is staged at models/surrogate_zone_thermal.onnx
+# (see tests/surrogate_models/registry.json), this manifest holds a sentinel
+# placeholder hash so the gate still resolves mode=fallback. Once a real
+# model ships, replace the sentinel with the model's actual SHA-256 and
+# ship the .onnx itself (via the release pipeline, NOT committed to git —
+# see docs/adr/0004-onnx-model-versioning.md).
+#
+# Related:
+#   - Issue #2923 — surrogate drift gate must fail closed in fallback mode
+#   - Issue #1784 — surrogate drift tolerance gate (this manifest is its
+#                    mode=fallback precondition)
+#   - Issue #1865 — two-mode lenient-fallback contract (the gate behaviour
+#                    this manifest makes explicit / fail-closed)
+#   - Issue #2924 — surrogate-layer ASHRAE 140 Cases 600/900 cooling MAE gate
+#                    (parallel gate; uses surrogate_zone_thermal.onnx directly)
+0000000000000000000000000000000000000000000000000000000000000000  models/surrogate_zone_thermal.onnx

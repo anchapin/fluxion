@@ -251,6 +251,29 @@ impl PhysicsThermalModel {
     pub fn get_hourly_temperatures(&self) -> Option<Vec<Vec<f64>>> {
         self.inner.get_hourly_temperatures()
     }
+
+    /// Per-zone heating energy in kWh from the last simulation.
+    ///
+    /// Issue #2923 — pairs with `get_zone_cooling_energy_kwh` so the
+    /// analytical-fallback regression test can sum heating + cooling to
+    /// derive the annual HVAC. Same accumulation path as the cooling
+    /// counter; the per-zone vectors sum to the model-level
+    /// `annual_heating_energy` / `annual_cooling_energy` totals.
+    /// Callers should call this after `solve_timesteps`.
+    pub fn get_zone_heating_energy_kwh(&self) -> Vec<f64> {
+        self.inner.get_zone_heating_energy_kwh()
+    }
+
+    /// Per-zone cooling energy in kWh from the last simulation.
+    ///
+    /// Issue #2924 — locks the surrogate-layer MAE gate on CI by letting
+    /// the test compute the physics baseline's annual cooling kWh (sum of
+    /// the returned vector) and compare against the surrogate output. The
+    /// per-zone counters accumulate the same way as the surrogate path.
+    /// Callers should call this after `solve_timesteps`.
+    pub fn get_zone_cooling_energy_kwh(&self) -> Vec<f64> {
+        self.inner.get_zone_cooling_energy_kwh()
+    }
 }
 
 impl ThermalModelTrait for PhysicsThermalModel {
@@ -394,6 +417,18 @@ impl SurrogateThermalModel {
     /// the same way. Callers should call this after `solve_timesteps`.
     pub fn get_zone_cooling_energy_kwh(&self) -> Vec<f64> {
         self.inner.get_zone_cooling_energy_kwh()
+    }
+
+    /// Per-zone heating energy in kWh from the last simulation.
+    ///
+    /// Issue #2923 — pairs with `get_zone_cooling_energy_kwh` so the
+    /// analytical-fallback regression test can sum heating + cooling to
+    /// derive the surrogate's annual HVAC and compare against the 9R4C
+    /// baseline. The per-zone vectors sum to the model-level
+    /// `annual_heating_energy` / `annual_cooling_energy` totals.
+    /// Callers should call this after `solve_timesteps`.
+    pub fn get_zone_heating_energy_kwh(&self) -> Vec<f64> {
+        self.inner.get_zone_heating_energy_kwh()
     }
 }
 
