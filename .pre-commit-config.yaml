@@ -30,7 +30,12 @@ repos:
     rev: v1.0
     hooks:
       - id: fmt
-      - id: cargo-check
+      # NOTE: cargo-check is NOT registered here. The doublify hook runs
+      # `cargo check` against default features only, which does not match
+      # CI's feature graph (multi-zone / ort / python-bindings / --all-features
+      # in cargo-deny). Locally-green PRs would still fail CI. The matching
+      # CI-graph check lives in the `local` repo below (`cargo-check-features`,
+      # issue #2888).
 
   - repo: https://github.com/compilerla/conventional-pre-commit
     rev: v4.3.0
@@ -54,6 +59,25 @@ repos:
         language: system
         types: [rust]
         pass_filenames: true
+        stages: [pre-commit]
+
+      # Issue #2888: replace doublify/pre-commit-rust's `cargo-check` (which
+      # only checks default features) with a diff-driven matrix that mirrors
+      # CI's feature graph. Modes:
+      #   default (pre-commit): parse staged diff, run `cargo check --workspace
+      #     --features <F>` for each matched feature (python-bindings / multi-zone
+      #     / ort), plus the always-required default-features check.
+      #   --all: `cargo check --workspace --all-features` (CI-equivalent, slow).
+      #   --selftest: pattern-matrix dry-run, no cargo invocation.
+      # Use `bash .githooks/cargo-check-features.sh --all` for full CI parity.
+      # Trigger on Rust files OR Cargo.toml: a Cargo.toml-only [features] edit
+      # still needs the escalation path (see detect_features_from_diff).
+      - id: cargo-check-features
+        name: "Cargo Check (CI feature graph, issue #2888)"
+        entry: bash .githooks/cargo-check-features.sh
+        language: system
+        types_or: [rust, toml]
+        pass_filenames: false
         stages: [pre-commit]
 
       - id: cargo-audit
