@@ -7,8 +7,10 @@ on:
   pull_request:
     paths:
       - 'src/**/*.rs'
+      - 'fluxion-core/**/*.rs'
       - 'ARCHITECTURE.md'
       - 'scripts/check_architecture_drift.py'
+      - 'scripts/check_doc_drift.py'
   workflow_dispatch:
 
 # Least-privilege GITHUB_TOKEN grants (Issue #2526). The check-drift job
@@ -35,6 +37,13 @@ jobs:
 
       - name: Run architecture drift detection
         run: python3 scripts/check_architecture_drift.py
+
+      # Issue #2895: doc-comments can claim a cycle "remains" even after
+      # the cycle participants have become one-line `pub use` re-export
+      # shims. `check_architecture_drift.py` reads the *code*, not the
+      # doc-comments; this companion script closes that gap.
+      - name: Run doc-comment cycle drift detection (issue #2895)
+        run: python3 scripts/check_doc_drift.py
 
       - name: Comment on PR if drift detected (on PR trigger only)
         if: failure() && github.event_name == 'pull_request'
