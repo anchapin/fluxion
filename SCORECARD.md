@@ -85,6 +85,7 @@ Required branch-protection checks (`release_gates.yaml` → `ci.required_checks`
 | CUDA Smoke Test (Issue #1603) | #1603 |
 | Architecture Drift Detection | — |
 | Cargo Deny | — |
+| Audit Ignore Freshness (Issue #2912) | #2912 |
 | MSRV Check (Issue #2934) | #2934 |
 | Crate Size Gate (Issue #2930) | #2930 |
 
