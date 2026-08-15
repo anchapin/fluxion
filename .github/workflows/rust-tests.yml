@@ -754,3 +754,66 @@ jobs:
             echo "Memory budget check passed (${MAX_RSS_GB} GB < ${WARN_GB} GB)"
             exit $TEST_EXIT
           fi
+
+  # -- fluxion-grid Integration Tests (Issue #2908) --------------------------
+  # `fluxion-grid` has zero workspace integration tests (Battery/PV/PowerFlow/
+  # Joint-Thermal-Electrical convergence not E2E tested). The
+  # `tests/grid_solver_integration.rs` file exercises three scenarios:
+  #   1. 3-node Newton-Raphson power-flow round-trip,
+  #   2. 10-heat-pump load case on a radial feeder,
+  #   3. IEEE 33-bus co-simulation (Joint-Thermal-Electrical solver + power
+  #      flow with the ANSI C84.1 voltage-band acceptance criterion).
+  # Each test asserts convergence via `max |ΔP|, max |ΔQ| < 1e-6 pu`. The
+  # package has `default = []`, so no feature flag is forwarded.
+
+  fluxion-grid-integration-gh-probe:
+    name: "FGI Probe"
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    if: |
+      github.event_name == 'pull_request' ||
+      (github.event_name == 'push' && github.ref == 'refs/heads/main')
+    steps:
+      - run: echo "GH runner acquired"
+
+  fluxion-grid-integration-gh:
+    name: "fluxion-grid Integration Tests (GH)"
+    needs: fluxion-grid-integration-gh-probe
+    runs-on: ubuntu-latest
+    if: |
+      github.event_name == 'pull_request' ||
+      (github.event_name == 'push' && github.ref == 'refs/heads/main')
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4
+      - name: Install system dependencies (Linux)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libssl-dev pkg-config libfontconfig1-dev
+      - uses: ./.github/actions/setup-rust-python-env
+        with:
+          python-version: '3.10'
+      - name: Run fluxion-grid integration tests
+        run: |
+          cargo test -p fluxion-grid --test grid_solver_integration --verbose
+
+  fluxion-grid-integration-hz:
+    name: "fluxion-grid Integration Tests (Hetzner Overflow)"
+    needs: fluxion-grid-integration-gh-probe
+    runs-on: [self-hosted,fluxion-overflow]
+    if: |
+      (github.event_name == 'pull_request' ||
+       (github.event_name == 'push' && github.ref == 'refs/heads/main'))
+      && (needs.fluxion-grid-integration-gh-probe.result == 'failure'
+          || needs.fluxion-grid-integration-gh-probe.result == 'cancelled')
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4
+      - name: Install system dependencies (Linux)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libssl-dev pkg-config libfontconfig1-dev
+      - uses: ./.github/actions/setup-rust-python-env
+        with:
+          python-version: '3.10'
+      - name: Run fluxion-grid integration tests
+        run: |
+          cargo test -p fluxion-grid --test grid_solver_integration --verbose
