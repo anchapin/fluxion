@@ -2127,9 +2127,15 @@ impl SurrogateManager {
             path, backend, device_id
         );
         use std::path::Path;
-        if !Path::new(path).exists() {
+        let model_path = Path::new(path);
+        if !model_path.exists() {
             return Err(format!("ONNX model file not found: {}", path));
         }
+        // Issue #2906: fail-closed SHA-256 integrity check (see
+        // `verify_onnx_signature`). Runs before the ONNX session is
+        // instantiated so a poisoned model never reaches the inference path
+        // and cannot influence ASHRAE 140 / BatchOracle results.
+        verify_onnx_signature(model_path)?;
         let session = SessionPool::create_session(path, backend, device_id)?;
         let pool = SessionPool::new(path.to_string(), backend, device_id, session);
         Ok(SurrogateManager {
@@ -2149,6 +2155,9 @@ impl SurrogateManager {
 
     /// Stub for non-`ort` builds (issue #1294). Validates the path first so
     /// callers still see a `not found` diagnostic before the feature error.
+    /// Also runs the SHA-256 integrity check (Issue #2906) so a poisoned
+    /// model is rejected even before the feature gate surfaces its own
+    /// error — the integrity check is the stronger guarantee.
     #[cfg(not(feature = "ort"))]
     pub fn with_gpu_backend(
         path: &str,
@@ -2156,9 +2165,11 @@ impl SurrogateManager {
         _device_id: usize,
     ) -> Result<Self, String> {
         use std::path::Path;
-        if !Path::new(path).exists() {
+        let model_path = Path::new(path);
+        if !model_path.exists() {
             return Err(format!("ONNX model file not found: {}", path));
         }
+        verify_onnx_signature(model_path)?;
         Err(
             "Loading ONNX models requires the `ort` feature (build with --features ort)"
                 .to_string(),
@@ -2168,9 +2179,13 @@ impl SurrogateManager {
     #[cfg(feature = "ort")]
     pub fn with_multi_device(path: &str, config: MultiDeviceConfig) -> Result<Self, String> {
         use std::path::Path;
-        if !Path::new(path).exists() {
+        let model_path = Path::new(path);
+        if !model_path.exists() {
             return Err(format!("ONNX model file not found: {}", path));
         }
+        // Issue #2906: fail-closed SHA-256 integrity check (the multi-device
+        // success path bypasses `with_gpu_backend`, so we must verify here).
+        verify_onnx_signature(model_path)?;
         match MultiDeviceSessionPool::new(path.to_string(), &config) {
             Ok(multi_pool) => {
                 let first_pool = multi_pool
@@ -2855,6 +2870,186 @@ pub const MAX_MODEL_SIZE_BYTES: u64 = 256 * 1024 * 1024;
 /// `FLUXION_ONNX_MODEL`'s default (`models/surrogate_zone_thermal.onnx`).
 const DEFAULT_MODEL_DIR: &str = "models";
 
+/// Name of the environment variable that overrides the SHA-256 manifest
+/// check for rotated models (Issue #2906). When set to a 64-char lowercase
+/// or uppercase hex SHA-256 digest, that digest is used as the authoritative
+/// expected hash INSTEAD of the manifest at `<model>.sha256`. The env override
+/// exists so operators can rotate a model without first waiting for the
+/// manifest to be updated in the repo; once the manifest is updated, unset
+/// the variable.
+pub const ENV_ONNX_MODEL_SIGNATURE: &str = "FLUXION_ONNX_MODEL_SIGNATURE";
+
+/// Verify the integrity of an ONNX model against a SHA-256 manifest
+/// (Issue #2906).
+///
+/// Behaviour, in resolution order:
+/// 1. If `FLUXION_ONNX_MODEL_SIGNATURE` is set to a 64-char hex SHA-256,
+///    use it as the authoritative expected digest.
+/// 2. Otherwise, look for a manifest file at `<model>.sha256` (the standard
+///    `sha256sum` output format). If present, parse it and look for an
+///    entry whose filename matches the model basename.
+/// 3. If neither source provides a digest, succeed WITHOUT verification and
+///    emit a one-shot `eprintln!` warning so operators can ship a manifest
+///    with their model. (This branch preserves backward compatibility with
+///    test fixtures in `assets/` that intentionally have no manifest.)
+/// 4. Compute the SHA-256 of the model file and compare with the resolved
+///    expected digest. Mismatch returns `Err` (fail-closed) so a poisoned
+///    or bit-flipped model cannot influence ASHRAE 140 results.
+///
+/// The manifest format mirrors `sha256sum` output:
+///
+/// ```text
+/// # comment lines start with '#'; blank lines are ignored
+/// <64-hex-digest>  <relative-path>
+/// ```
+///
+/// Both single- and double-space separators are accepted, as is the
+/// `sha256sum -b` "binary mode" `*` prefix on the path. The first entry
+/// whose filename ends with the model basename wins.
+pub fn verify_onnx_signature(model_path: &Path) -> Result<(), String> {
+    let expected = match std::env::var(ENV_ONNX_MODEL_SIGNATURE)
+        .ok()
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty())
+    {
+        Some(digest) => {
+            validate_sha256_hex(&digest).map_err(|_| {
+                format!(
+                    "{ENV_ONNX_MODEL_SIGNATURE}={digest:?} is not a valid 64-char hex SHA-256 \
+                     digest; refusing to load (fail-closed, see Issue #2906)"
+                )
+            })?;
+            digest.to_ascii_lowercase()
+        }
+        None => match read_manifest_hash(model_path) {
+            Some(Ok(hash)) => hash,
+            Some(Err(e)) => return Err(e),
+            None => {
+                eprintln!(
+                    "[fluxion::ai::surrogate] WARNING: no SHA-256 manifest at {} and \
+                     {ENV_ONNX_MODEL_SIGNATURE} unset; loading {} without integrity \
+                     verification (Issue #2906). Ship a <model>.sha256 alongside the \
+                     .onnx file or set {ENV_ONNX_MODEL_SIGNATURE}=<hex> for rotated \
+                     models.",
+                    manifest_path_for(model_path).display(),
+                    model_path.display()
+                );
+                return Ok(());
+            }
+        },
+    };
+
+    let actual = compute_file_sha256(model_path)?;
+    validate_hash(&expected, &actual).map_err(|e| {
+        format!(
+            "ONNX model integrity verification FAILED for {} ({e}). This may indicate \
+             model poisoning (bit-flip, tampered registry mirror, malicious build \
+             step). Refusing to load (fail-closed, Issue #2906). To override for a \
+             rotated model, set {ENV_ONNX_MODEL_SIGNATURE}=<hex-digest> to the new \
+             expected digest, regenerate the manifest, and unset the override.",
+            model_path.display()
+        )
+    })
+}
+
+/// Return the conventional path of the SHA-256 manifest for `model_path`
+/// (i.e. `<model_path>.sha256`).
+fn manifest_path_for(model_path: &Path) -> std::path::PathBuf {
+    let mut s = model_path.as_os_str().to_owned();
+    s.push(".sha256");
+    std::path::PathBuf::from(s)
+}
+
+/// Try to read and parse a SHA-256 manifest at `<model>.sha256`. Returns:
+/// - `Some(Ok(hash))` if a matching entry is found,
+/// - `Some(Err(e))` if the manifest exists but is malformed, or
+/// - `None` if the manifest file does not exist.
+fn read_manifest_hash(model_path: &Path) -> Option<Result<String, String>> {
+    let manifest_path = manifest_path_for(model_path);
+    let contents = match std::fs::read_to_string(&manifest_path) {
+        Ok(c) => c,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return None,
+        Err(e) => {
+            return Some(Err(format!(
+                "failed to read SHA-256 manifest at {}: {e}",
+                manifest_path.display()
+            )))
+        }
+    };
+    Some(parse_sha256_manifest(&manifest_path, &contents, model_path))
+}
+
+/// Parse `sha256sum`-format manifest text and return the hash for the
+/// entry whose filename matches `model_path`. Accepts `# comment` lines,
+/// blank lines, single- or double-space separators, and the binary-mode
+/// `*` prefix on the filename.
+fn parse_sha256_manifest(
+    manifest_path: &Path,
+    contents: &str,
+    model_path: &Path,
+) -> Result<String, String> {
+    let expected_basename = model_path
+        .file_name()
+        .and_then(|n| n.to_str())
+        .unwrap_or("");
+    if expected_basename.is_empty() {
+        return Err(format!(
+            "cannot derive basename from model path {}",
+            model_path.display()
+        ));
+    }
+    for (lineno, raw) in contents.lines().enumerate() {
+        let line = raw.trim_end();
+        if line.is_empty() || line.starts_with('#') {
+            continue;
+        }
+        // sha256sum layout: `<hash><space><space-or-*><path>` or
+        // `<hash><space><path>` (text mode). Split on first run of
+        // whitespace; first field is the hash, remainder is the filename.
+        let mut split = line.splitn(2, |c: char| c.is_whitespace());
+        let hash = split.next().unwrap_or("").trim();
+        let filename_raw = split.next().unwrap_or("").trim();
+        // sha256sum -b prefixes the path with `*`; strip it.
+        let filename = filename_raw
+            .strip_prefix('*')
+            .unwrap_or(filename_raw)
+            .trim();
+        if hash.len() != 64 {
+            // Could be a malformed line; surface a precise error rather
+            // than silently skipping.
+            return Err(format!(
+                "{}:{} malformed entry (hash must be 64 hex chars, got {:?})",
+                manifest_path.display(),
+                lineno + 1,
+                hash
+            ));
+        }
+        if let Err(e) = validate_sha256_hex(hash) {
+            return Err(format!(
+                "{}:{} hash {:?} is not valid hex: {:?}",
+                manifest_path.display(),
+                lineno + 1,
+                hash,
+                e
+            ));
+        }
+        if filename.is_empty() {
+            // No filename constraint — accept and require it be the only
+            // entry (typical for a single-model manifest).
+            return Ok(hash.to_ascii_lowercase());
+        }
+        if filename.ends_with(expected_basename) || expected_basename.ends_with(filename) {
+            return Ok(hash.to_ascii_lowercase());
+        }
+    }
+    Err(format!(
+        "{}: no entry found for model {} (basename {:?})",
+        manifest_path.display(),
+        model_path.display(),
+        expected_basename
+    ))
+}
+
 /// Validates a user-supplied model path against the security policy from
 /// Issue #2529 before it reaches the ONNX runtime. Reads the allow-list
 /// directory from the `FLUXION_MODEL_DIR` environment variable (default
@@ -2954,6 +3149,241 @@ mod tests {
     fn load_onnx_file_check() {
         let result = SurrogateManager::load_onnx("/nonexistent/path/model.onnx");
         assert!(result.is_err());
+    }
+
+    // ===== Issue #2906 — ONNX model SHA-256 integrity verification =====
+    //
+    // `verify_onnx_signature` reads `<model>.sha256`, parses a
+    // sha256sum-style manifest entry, computes the model's actual SHA-256,
+    // and refuses to load on mismatch (fail-closed). The
+    // `FLUXION_ONNX_MODEL_SIGNATURE` env var overrides the manifest for
+    // rotated models. These tests use a tempdir so they never race on the
+    // process-wide env var (serialised by `ENV_LOCK`).
+
+    /// Build a tempdir containing `<dir>/model.onnx` with arbitrary bytes
+    /// and write a SHA-256 manifest at `<dir>/model.onnx.sha256` whose entry
+    /// matches that file. Returns `(model_path, manifest_path, sha256)`.
+    fn write_signed_model(contents: &[u8]) -> (tempfile::TempDir, std::path::PathBuf, String) {
+        let dir = tempfile::tempdir().unwrap();
+        let model = dir.path().join("model.onnx");
+        std::fs::write(&model, contents).unwrap();
+        let sha = compute_bytes_sha256(contents);
+        let manifest = dir.path().join("model.onnx.sha256");
+        std::fs::write(
+            &manifest,
+            format!(
+                "# generated by verify_onnx_signature test\n\
+                 {sha}  {name}\n",
+                name = model.file_name().unwrap().to_string_lossy()
+            ),
+        )
+        .unwrap();
+        (dir, model, sha)
+    }
+
+    /// Happy path: a manifest whose hash matches the model bytes must be
+    /// accepted with no error and no env override required.
+    #[test]
+    fn verify_onnx_signature_accepts_matching_manifest() {
+        let _guard = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let (_dir, model, _sha) = write_signed_model(b"fluxion integrity fixture v1");
+        let res = verify_onnx_signature(&model);
+        assert!(res.is_ok(), "valid signature rejected: {res:?}");
+    }
+
+    /// Tamper the model bytes after writing the manifest — verification
+    /// must FAIL with a fail-closed error message that names the issue.
+    #[test]
+    fn verify_onnx_signature_rejects_tampered_model() {
+        let _guard = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let (dir, model, _sha) = write_signed_model(b"original bytes");
+        // Tamper: append a single byte so the digest changes but the file
+        // is still a valid path/exists for the load step.
+        {
+            use std::io::Write;
+            let mut f = std::fs::OpenOptions::new()
+                .append(true)
+                .open(&model)
+                .unwrap();
+            f.write_all(b"!").unwrap();
+        }
+        let err = verify_onnx_signature(&model).expect_err("tamper must fail");
+        assert!(
+            err.contains("integrity verification FAILED"),
+            "expected fail-closed message, got: {err}"
+        );
+        assert!(
+            err.contains("Issue #2906"),
+            "error must reference Issue #2906 so operators find the runbook: {err}"
+        );
+        let _ = dir;
+    }
+
+    /// Env override `FLUXION_ONNX_MODEL_SIGNATURE` must take precedence
+    /// over a mismatched manifest when set to the actual file digest.
+    #[test]
+    fn verify_onnx_signature_env_override_accepts_rotated_model() {
+        let _guard = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let (_dir, model, _stale_sha) = write_signed_model(b"original bytes");
+        // Rotate the model bytes AFTER the manifest was written.
+        std::fs::write(&model, b"rotated bytes -- manifest still says original").unwrap();
+        let rotated_sha = compute_bytes_sha256(b"rotated bytes -- manifest still says original");
+        let prev = std::env::var(ENV_ONNX_MODEL_SIGNATURE).ok();
+        std::env::set_var(ENV_ONNX_MODEL_SIGNATURE, &rotated_sha);
+        let res = verify_onnx_signature(&model);
+        match prev {
+            Some(v) => std::env::set_var(ENV_ONNX_MODEL_SIGNATURE, v),
+            None => std::env::remove_var(ENV_ONNX_MODEL_SIGNATURE),
+        }
+        assert!(
+            res.is_ok(),
+            "env override should accept the rotated model: {res:?}"
+        );
+    }
+
+    /// Env override set to the WRONG digest must STILL fail (env override
+    /// doesn't disable verification, it only changes the expected digest).
+    #[test]
+    fn verify_onnx_signature_env_override_still_rejects_mismatch() {
+        let _guard = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let (_dir, model, _sha) = write_signed_model(b"original bytes");
+        let bogus = "f".repeat(64); // wrong digest
+        let prev = std::env::var(ENV_ONNX_MODEL_SIGNATURE).ok();
+        std::env::set_var(ENV_ONNX_MODEL_SIGNATURE, &bogus);
+        let res = verify_onnx_signature(&model);
+        match prev {
+            Some(v) => std::env::set_var(ENV_ONNX_MODEL_SIGNATURE, v),
+            None => std::env::remove_var(ENV_ONNX_MODEL_SIGNATURE),
+        }
+        let err = res.expect_err("env override with wrong digest must fail");
+        assert!(
+            err.contains("integrity verification FAILED"),
+            "wrong env override must still fail closed: {err}"
+        );
+    }
+
+    /// Env override with a malformed (non-hex / wrong-length) value must be
+    /// rejected up-front so operators don't get a misleading mismatch
+    /// error from a typo.
+    #[test]
+    fn verify_onnx_signature_env_override_rejects_malformed_value() {
+        let _guard = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let (_dir, model, _sha) = write_signed_model(b"original bytes");
+        let prev = std::env::var(ENV_ONNX_MODEL_SIGNATURE).ok();
+        std::env::set_var(ENV_ONNX_MODEL_SIGNATURE, "not-a-sha256");
+        let res = verify_onnx_signature(&model);
+        match prev {
+            Some(v) => std::env::set_var(ENV_ONNX_MODEL_SIGNATURE, v),
+            None => std::env::remove_var(ENV_ONNX_MODEL_SIGNATURE),
+        }
+        let err = res.expect_err("malformed env override must fail");
+        assert!(
+            err.contains(ENV_ONNX_MODEL_SIGNATURE),
+            "error must name the env var: {err}"
+        );
+        assert!(
+            err.contains("not a valid"),
+            "error must explain the rejection: {err}"
+        );
+    }
+
+    /// No manifest next to the model AND no env override = backward-
+    /// compatible "skip with warning" behaviour so existing test fixtures
+    /// (e.g. `assets/dummy_surrogate.onnx`) keep working.
+    #[test]
+    fn verify_onnx_signature_succeeds_without_manifest() {
+        let _guard = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let dir = tempfile::tempdir().unwrap();
+        let model = dir.path().join("nomanifest.onnx");
+        std::fs::write(&model, b"anything").unwrap();
+        let prev = std::env::var(ENV_ONNX_MODEL_SIGNATURE).ok();
+        std::env::remove_var(ENV_ONNX_MODEL_SIGNATURE);
+        let res = verify_onnx_signature(&model);
+        match prev {
+            Some(v) => std::env::set_var(ENV_ONNX_MODEL_SIGNATURE, v),
+            None => std::env::remove_var(ENV_ONNX_MODEL_SIGNATURE),
+        }
+        assert!(
+            res.is_ok(),
+            "missing manifest + no env var must NOT fail (backward compat): {res:?}"
+        );
+    }
+
+    /// Manifest with `sha256sum` style double-space separator AND a `*`
+    /// binary-mode prefix on the filename must be parsed correctly.
+    #[test]
+    fn verify_onnx_signature_parses_sha256sum_format() {
+        let _guard = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let dir = tempfile::tempdir().unwrap();
+        let model = dir.path().join("binary.onnx");
+        std::fs::write(&model, b"\x00\x01\x02binary-mode payload").unwrap();
+        let sha = compute_file_sha256(&model).unwrap();
+        // `sha256sum -b` style: hash, two spaces, `*path`.
+        std::fs::write(
+            dir.path().join("binary.onnx.sha256"),
+            format!("{sha}  *binary.onnx\n"),
+        )
+        .unwrap();
+        let prev = std::env::var(ENV_ONNX_MODEL_SIGNATURE).ok();
+        std::env::remove_var(ENV_ONNX_MODEL_SIGNATURE);
+        let res = verify_onnx_signature(&model);
+        match prev {
+            Some(v) => std::env::set_var(ENV_ONNX_MODEL_SIGNATURE, v),
+            None => std::env::remove_var(ENV_ONNX_MODEL_SIGNATURE),
+        }
+        assert!(res.is_ok(), "sha256sum -b format should parse: {res:?}");
+    }
+
+    /// Manifest whose only entry has no filename (single-model manifest)
+    /// must be accepted as the authoritative hash for the lone .onnx file.
+    #[test]
+    fn verify_onnx_signature_accepts_manifest_without_filename() {
+        let _guard = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let dir = tempfile::tempdir().unwrap();
+        let model = dir.path().join("lonely.onnx");
+        std::fs::write(&model, b"only one model here").unwrap();
+        let sha = compute_bytes_sha256(b"only one model here");
+        std::fs::write(dir.path().join("lonely.onnx.sha256"), format!("{sha}\n")).unwrap();
+        let prev = std::env::var(ENV_ONNX_MODEL_SIGNATURE).ok();
+        std::env::remove_var(ENV_ONNX_MODEL_SIGNATURE);
+        let res = verify_onnx_signature(&model);
+        match prev {
+            Some(v) => std::env::set_var(ENV_ONNX_MODEL_SIGNATURE, v),
+            None => std::env::remove_var(ENV_ONNX_MODEL_SIGNATURE),
+        }
+        assert!(
+            res.is_ok(),
+            "single-entry manifest without filename should pass: {res:?}"
+        );
+    }
+
+    /// Manifest exists but has no entry for the model basename => must fail
+    /// (so an attacker can't slip a wrong hash past the verifier by
+    /// leaving the manifest populated for a different file).
+    #[test]
+    fn verify_onnx_signature_rejects_manifest_with_no_matching_entry() {
+        let _guard = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let dir = tempfile::tempdir().unwrap();
+        let model = dir.path().join("ghost.onnx");
+        std::fs::write(&model, b"ghost").unwrap();
+        // Manifest is for a different file.
+        std::fs::write(
+            dir.path().join("ghost.onnx.sha256"),
+            "0000000000000000000000000000000000000000000000000000000000000000  other.onnx\n",
+        )
+        .unwrap();
+        let prev = std::env::var(ENV_ONNX_MODEL_SIGNATURE).ok();
+        std::env::remove_var(ENV_ONNX_MODEL_SIGNATURE);
+        let res = verify_onnx_signature(&model);
+        match prev {
+            Some(v) => std::env::set_var(ENV_ONNX_MODEL_SIGNATURE, v),
+            None => std::env::remove_var(ENV_ONNX_MODEL_SIGNATURE),
+        }
+        let err = res.expect_err("manifest with no matching entry must fail");
+        assert!(
+            err.contains("no entry found"),
+            "error must explain why: {err}"
+        );
     }
 
     // ===== Issue #2529 — PyO3 load_surrogate path validation =====
