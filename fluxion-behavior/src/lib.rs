@@ -16,6 +16,7 @@
 pub mod comfort;
 pub mod internal_gains;
 pub mod lighting;
+mod moisture;
 pub mod occupancy;
 pub mod toon_time_encoder;
 pub mod triggers;
@@ -41,6 +42,11 @@ pub use toon_time_encoder::{
     ToonTimeEncoderConfig,
 };
 pub use triggers::{ComfortTrigger, OccupantComfortTriggers, OccupantComfortTriggersConfig};
+
+// Re-export the moisture module types (Issue #2909: integration tests need
+// them at the crate root). The module itself stays unexposed; only the
+// stable data types are public.
+pub use moisture::{ActivityLevel, MoistureGeneration};
 
 use ndarray::Dimension;
 use rand::prelude::*;
