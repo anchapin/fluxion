@@ -78,6 +78,17 @@ jobs:
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4
 
+      - name: Install system dependencies for `ort` feature build
+        # `cargo test --features ort` (run below) pulls in `ort`'s transitive
+        # dependency `yeslogic-fontconfig-sys`, which compiles `fontconfig`'s
+        # C headers via `pkg-config`. The default `ubuntu-latest` runner image
+        # does NOT ship `libfontconfig1-dev`, so install it before building.
+        # Matches the apt-get install line in `ci.yml` and `cross-validation.yml`.
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y libssl-dev pkg-config libfontconfig1-dev fontconfig
+
       - name: Validate manifest format
         # Mirrors `parse_sha256_manifest` in src/ai/surrogate.rs. Fails
         # closed if any non-comment / non-blank line is not a 64-char hex
