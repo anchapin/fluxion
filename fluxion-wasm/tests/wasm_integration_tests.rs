@@ -344,3 +344,204 @@ fn fluid_simulation_thousand_step_memory_stability() {
         assert!(temp.is_finite());
     }
 }
+
+// ---------------------------------------------------------------------------
+// Inline wasm-bindgen-test cases (Issue #2903).
+//
+// These tests are wired with `#[wasm_bindgen_test]` rather than
+// `#[test]` so they are collected by `wasm-pack test --node` and run
+// inside a real Node.js V8 isolate on every CI run. The existing
+// `#[test]` cases above are gated to `cfg(target_arch = "wasm32")` so
+// they no-op under native `cargo test`, but they are ALSO wired here
+// under `#[wasm_bindgen_test]` semantics via the same Rust file,
+// giving the CI matrix a single source of truth for the WASM runtime
+// contract. The 4 cases below cover the four explicit acceptance
+// bullets from issue #2903:
+//   1. builder round-trip
+//   2. step returns finite temps
+//   3. NaN-input rejection
+//   4. get_zone_temps length match
+// ---------------------------------------------------------------------------
+
+/// Issue #2903 acceptance bullet 1: builder round-trip.
+///
+/// A `FluidSimulationConfig` is serialized to JSON, fed to
+/// `FluidSimulation::new`, and the resulting sim's introspection
+/// surface (`num_zones`, `current_hour`, `is_valid`,
+/// `get_heating_setpoints`, `get_cooling_setpoints`) is checked against
+/// the original config. The default values from `Default::default()`
+/// populate the unset fields, so we only assert the fields we
+/// explicitly set — anything else risks a false failure on a
+/// `Default` change unrelated to the builder contract.
+#[wasm_bindgen_test]
+fn wasm_builder_round_trip() {
+    let config = FluidSimulationConfig {
+        building: "round_trip_building".to_string(),
+        num_zones: 4,
+        weather: "TMY3_CHICAGO".to_string(),
+        initial_temps: Some(vec![18.0, 21.0, 24.0, 27.0]),
+        heating_setpoint: 19.5,
+        cooling_setpoint: 25.5,
+    };
+    let config_json = serde_json::to_string(&config).unwrap();
+    let sim = FluidSimulation::new(&config_json).unwrap();
+
+    assert_eq!(sim.num_zones(), 4);
+    assert_eq!(sim.current_hour(), 0.0);
+    assert!(sim.is_valid());
+
+    let heating = sim.get_heating_setpoints();
+    let cooling = sim.get_cooling_setpoints();
+    assert_eq!(heating.len(), 4);
+    assert_eq!(cooling.len(), 4);
+    for sp in &heating {
+        assert_eq!(*sp, 19.5);
+    }
+    for sp in &cooling {
+        assert_eq!(*sp, 25.5);
+    }
+}
+
+/// Issue #2903 acceptance bullet 2: step returns finite temps.
+///
+/// After running `step` for a number of hours, every entry in
+/// `get_zone_temps()` must be finite — NaN or Inf would propagate
+/// from a buggy step implementation and corrupt downstream consumers.
+/// Also asserts `current_hour` increments deterministically.
+#[wasm_bindgen_test]
+fn wasm_step_returns_finite_temps() {
+    let config = FluidSimulationConfig {
+        num_zones: 3,
+        initial_temps: Some(vec![22.0, 22.0, 22.0]),
+        heating_setpoint: 20.0,
+        cooling_setpoint: 24.0,
+        ..Default::default()
+    };
+    let mut sim = FluidSimulation::new(&serde_json::to_string(&config).unwrap()).unwrap();
+
+    for _ in 0..24 {
+        let result = sim.step(1.0);
+        assert!(result.is_ok());
+    }
+    assert_eq!(sim.current_hour(), 24.0);
+
+    let temps = sim.get_zone_temps();
+    assert_eq!(temps.len(), 3);
+    for temp in &temps {
+        assert!(temp.is_finite(), "zone temp must be finite, got {}", temp);
+    }
+}
+
+/// Issue #2903 acceptance bullet 3: NaN-input rejection.
+///
+/// `set_temperatures` and `apply_parameters` are the two WASM-boundary
+/// entry points that accept vectors of `f64` from JS. Both must reject
+/// NaN outright (issue #2911: NaN/Inf would propagate through the
+/// energy balance and corrupt downstream consumers). The rejection
+/// contract is: `is_err()` on any NaN input, and the sim state is
+/// unchanged afterwards — the user must be able to recover by
+/// resubmitting a corrected value.
+#[wasm_bindgen_test]
+fn wasm_nan_input_rejection() {
+    let config = FluidSimulationConfig {
+        num_zones: 2,
+        initial_temps: Some(vec![22.0, 22.0]),
+        heating_setpoint: 20.0,
+        cooling_setpoint: 24.0,
+        ..Default::default()
+    };
+    let mut sim = FluidSimulation::new(&serde_json::to_string(&config).unwrap()).unwrap();
+
+    // NaN in set_temperatures → rejected.
+    let nan_result = sim.set_temperatures(vec![f64::NAN, 22.0]);
+    assert!(
+        nan_result.is_err(),
+        "set_temperatures must reject NaN, got {:?}",
+        nan_result
+    );
+    // State unchanged after rejection.
+    let temps = sim.get_zone_temps();
+    assert_eq!(temps[0], 22.0);
+    assert_eq!(temps[1], 22.0);
+
+    // NaN in apply_parameters[0] (U-value) → rejected.
+    let nan_params = sim.apply_parameters(vec![f64::NAN, 20.0, 24.0]);
+    assert!(
+        nan_params.is_err(),
+        "apply_parameters must reject NaN U-value, got {:?}",
+        nan_params
+    );
+
+    // NaN in apply_parameters[1] (heating setpoint) → rejected.
+    let nan_params = sim.apply_parameters(vec![2.0, f64::NAN, 24.0]);
+    assert!(
+        nan_params.is_err(),
+        "apply_parameters must reject NaN heating setpoint, got {:?}",
+        nan_params
+    );
+
+    // NaN in apply_parameters[2] (cooling setpoint) → rejected.
+    let nan_params = sim.apply_parameters(vec![2.0, 20.0, f64::NAN]);
+    assert!(
+        nan_params.is_err(),
+        "apply_parameters must reject NaN cooling setpoint, got {:?}",
+        nan_params
+    );
+
+    // Inf must also be rejected (same code path; issue #2911 explicit).
+    let inf_params = sim.apply_parameters(vec![2.0, 20.0, f64::INFINITY]);
+    assert!(
+        inf_params.is_err(),
+        "apply_parameters must reject +Inf, got {:?}",
+        inf_params
+    );
+}
+
+/// Issue #2903 acceptance bullet 4: get_zone_temps length match.
+///
+/// `get_zone_temps()` must return exactly `num_zones` entries for
+/// every config, regardless of the value of `num_zones`. Edge cases
+/// verified: 1 zone (degenerate), 5 zones (the crate default),
+/// 16 zones (large), and the implicit 22°C fallback when
+/// `initial_temps: None`.
+#[wasm_bindgen_test]
+fn wasm_get_zone_temps_length_match() {
+    for &num_zones in &[1usize, 5, 16] {
+        let config = FluidSimulationConfig {
+            num_zones,
+            initial_temps: None,
+            ..Default::default()
+        };
+        let sim = FluidSimulation::new(&serde_json::to_string(&config).unwrap()).unwrap();
+        let temps = sim.get_zone_temps();
+        assert_eq!(
+            temps.len(),
+            num_zones,
+            "get_zone_temps returned {} entries for num_zones={}",
+            temps.len(),
+            num_zones
+        );
+        // Default fallback is 22°C for every zone — verify the
+        // `initial_temps: None` branch is wired correctly.
+        for temp in &temps {
+            assert_eq!(*temp, 22.0);
+        }
+    }
+
+    // Explicit initial_temps path — length must match num_zones
+    // even after the set_temperatures guard rejects a mismatched
+    // write.
+    let config = FluidSimulationConfig {
+        num_zones: 3,
+        initial_temps: Some(vec![18.0, 21.0, 24.0]),
+        ..Default::default()
+    };
+    let mut sim = FluidSimulation::new(&serde_json::to_string(&config).unwrap()).unwrap();
+    let result = sim.set_temperatures(vec![20.0, 21.0]);
+    assert!(result.is_err());
+    let temps = sim.get_zone_temps();
+    assert_eq!(temps.len(), 3);
+    assert_eq!(temps[0], 18.0);
+    assert_eq!(temps[1], 21.0);
+    assert_eq!(temps[2], 24.0);
+}
