@@ -797,6 +797,215 @@ mod tests {
     }
 
     #[test]
+    fn test_window_properties_new_defaults_frame_fields() {
+        let wp = WindowProperties::new(8.0, 0.6, 0.7);
+        assert_eq!(wp.area, 8.0);
+        assert!((wp.shgc - 0.6).abs() < 1e-12);
+        assert!((wp.normal_transmittance - 0.7).abs() < 1e-12);
+        assert!(
+            (wp.frame_u_value - 0.1).abs() < 1e-12,
+            "WindowProperties::new should default frame_u_value to 0.1 W/m²K (ASHRAE 140 §5.2.4); got {}",
+            wp.frame_u_value
+        );
+        assert!(
+            (wp.frame_area_fraction - 0.15).abs() < 1e-12,
+            "WindowProperties::new should default frame_area_fraction to 0.15 (Bestest framing schedule); got {}",
+            wp.frame_area_fraction
+        );
+        assert!(
+            wp.frame_perimeter.abs() < 1e-12,
+            "WindowProperties::new should default frame_perimeter to 0.0 (derived from geometry); got {}",
+            wp.frame_perimeter
+        );
+    }
+
+    #[test]
+    fn test_window_properties_double_clear_frame_defaults() {
+        let wp = WindowProperties::double_clear(12.0);
+        assert!((wp.frame_u_value - 0.1).abs() < 1e-12);
+        assert!((wp.frame_area_fraction - 0.15).abs() < 1e-12);
+        assert!(wp.frame_perimeter.abs() < 1e-12);
+    }
+
+    #[test]
+    fn test_effective_u_value_frame_disabled_returns_glass() {
+        // Issue #2889 — when frame_area_fraction == 0.0 the bridge is
+        // gated off entirely and effective U must equal the glass U,
+        // regardless of frame_u_value, frame_perimeter, or linear_edge_psi.
+        let wp = WindowProperties {
+            area: 12.0,
+            shgc: 0.787,
+            normal_transmittance: 0.86156,
+            frame_u_value: 5.0,
+            frame_area_fraction: 0.0,
+            frame_perimeter: 100.0,
+        };
+        assert!(
+            (wp.effective_u_value_with_frame(2.10, 0.2) - 2.10).abs() < 1e-12,
+            "frame_area_fraction=0 must suppress the bridge; got {}",
+            wp.effective_u_value_with_frame(2.10, 0.2)
+        );
+        assert!(
+            (wp.effective_u_value_with_frame(1.50, 0.0) - 1.50).abs() < 1e-12,
+            "frame_area_fraction=0 with psi=0 must still return glass U"
+        );
+    }
+
+    #[test]
+    fn test_effective_u_value_frame_area_delta_only() {
+        // Issue #2889 — with frame_perimeter = 0.0 the linear edge term
+        // is omitted and only the area delta contributes. For
+        // u_value_glass = 2.10 and frame_u_value = 0.1 the effective U is
+        // exactly 2.20 W/m²K.
+        let wp = WindowProperties {
+            area: 12.0,
+            shgc: 0.787,
+            normal_transmittance: 0.86156,
+            frame_u_value: 0.1,
+            frame_area_fraction: 0.15,
+            frame_perimeter: 0.0,
+        };
+        let u_eff = wp.effective_u_value_with_frame(2.10, 0.2);
+        assert!(
+            (u_eff - 2.20).abs() < 1e-12,
+            "area delta only: expected 2.20, got {u_eff}"
+        );
+    }
+
+    #[test]
+    fn test_effective_u_value_frame_with_edge_term() {
+        // Issue #2889 — frame area delta + linear edge conductance.
+        // For a 6m × 2m window (perimeter = 16 m, area = 12 m²) with
+        // psi = 0.2 W/(m·K) the edge delta is 0.2 × 16 / 12 = 0.2667 W/m²K.
+        // Total effective U = 2.10 + 0.1 + 0.2667 = 2.4667.
+        let wp = WindowProperties {
+            area: 12.0,
+            shgc: 0.787,
+            normal_transmittance: 0.86156,
+            frame_u_value: 0.1,
+            frame_area_fraction: 0.15,
+            frame_perimeter: 16.0,
+        };
+        let u_eff = wp.effective_u_value_with_frame(2.10, 0.2);
+        let expected = 2.10 + 0.1 + 0.2 * 16.0 / 12.0;
+        assert!(
+            (u_eff - expected).abs() < 1e-9,
+            "area + edge: expected {expected:.6}, got {u_eff:.6}"
+        );
+
+        // Doubling the perimeter doubles the edge delta.
+        let wp2 = WindowProperties {
+            frame_perimeter: 32.0,
+            ..wp
+        };
+        let u_eff_2 = wp2.effective_u_value_with_frame(2.10, 0.2);
+        let expected_2 = 2.10 + 0.1 + 0.2 * 32.0 / 12.0;
+        assert!(
+            (u_eff_2 - expected_2).abs() < 1e-9,
+            "doubling perimeter: expected {expected_2:.6}, got {u_eff_2:.6}"
+        );
+    }
+
+    #[test]
+    fn test_effective_u_value_frame_clamps_negative_frame_u() {
+        // Issue #2889 — negative frame_u_value (e.g. from a misconfigured
+        // spec) must be clamped to 0.0 so it never reduces the effective
+        // U-value below the glass U-value.
+        let wp = WindowProperties {
+            area: 12.0,
+            shgc: 0.787,
+            normal_transmittance: 0.86156,
+            frame_u_value: -1.0,
+            frame_area_fraction: 0.15,
+            frame_perimeter: 0.0,
+        };
+        let u_eff = wp.effective_u_value_with_frame(2.10, 0.2);
+        assert!(
+            (u_eff - 2.10).abs() < 1e-12,
+            "negative frame_u_value must be clamped to 0; got {u_eff}"
+        );
+    }
+
+    #[test]
+    fn test_effective_u_value_frame_clamps_oversized_fraction() {
+        // Issue #2889 — frame_area_fraction > 1.0 must be clamped to 1.0
+        // (treated as fully framed). The area delta still applies and the
+        // edge term still scales linearly with perimeter.
+        let wp = WindowProperties {
+            area: 12.0,
+            shgc: 0.787,
+            normal_transmittance: 0.86156,
+            frame_u_value: 0.1,
+            frame_area_fraction: 2.5,
+            frame_perimeter: 16.0,
+        };
+        let u_eff = wp.effective_u_value_with_frame(2.10, 0.2);
+        let expected = 2.10 + 0.1 + 0.2 * 16.0 / 12.0;
+        assert!(
+            (u_eff - expected).abs() < 1e-9,
+            "fraction > 1.0 clamped to 1.0: expected {expected:.6}, got {u_eff:.6}"
+        );
+    }
+
+    #[test]
+    fn test_effective_u_value_frame_clamps_negative_fraction() {
+        // Issue #2889 — frame_area_fraction < 0.0 must be clamped to 0.0
+        // (treated as fully glazed) and the bridge must be suppressed.
+        let wp = WindowProperties {
+            area: 12.0,
+            shgc: 0.787,
+            normal_transmittance: 0.86156,
+            frame_u_value: 0.5,
+            frame_area_fraction: -0.5,
+            frame_perimeter: 16.0,
+        };
+        let u_eff = wp.effective_u_value_with_frame(2.10, 0.2);
+        assert!(
+            (u_eff - 2.10).abs() < 1e-12,
+            "negative fraction clamped to 0 must suppress bridge; got {u_eff}"
+        );
+    }
+
+    #[test]
+    fn test_effective_u_value_frame_zero_area_suppresses_edge() {
+        // Issue #2889 — when frame_perimeter > 0 but area == 0 the linear
+        // edge term would divide by zero; the implementation must guard
+        // against it and omit the edge term.
+        let wp = WindowProperties {
+            area: 0.0,
+            shgc: 0.787,
+            normal_transmittance: 0.86156,
+            frame_u_value: 0.1,
+            frame_area_fraction: 0.15,
+            frame_perimeter: 16.0,
+        };
+        let u_eff = wp.effective_u_value_with_frame(2.10, 0.2);
+        assert!(
+            (u_eff - 2.20).abs() < 1e-12,
+            "zero area must suppress the edge term; got {u_eff}"
+        );
+    }
+
+    #[test]
+    fn test_effective_u_value_frame_zero_perimeter_suppresses_edge() {
+        // Issue #2889 — when frame_perimeter == 0 the linear edge term
+        // must be omitted, even with the area bridge active.
+        let wp = WindowProperties {
+            area: 12.0,
+            shgc: 0.787,
+            normal_transmittance: 0.86156,
+            frame_u_value: 0.1,
+            frame_area_fraction: 0.15,
+            frame_perimeter: 0.0,
+        };
+        let u_eff = wp.effective_u_value_with_frame(2.10, 0.5);
+        assert!(
+            (u_eff - 2.20).abs() < 1e-12,
+            "zero perimeter must omit the edge term; got {u_eff}"
+        );
+    }
+
+    #[test]
     fn test_ashrae_shgc_ratio_at_zero_angle() {
         assert!((ashrae_140_window_shgc_ratio(0.0) - 1.0).abs() < 1e-6);
     }
