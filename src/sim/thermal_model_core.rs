@@ -2777,6 +2777,14 @@ impl ThermalModel<VectorField> {
             // instead of the legacy lumped (T_m - T_int) / R_total approximation.
             wall_surface_temperatures: VectorField::from_scalar(20.0, num_zones),
 
+            // Issue #2890: partitioned interior surface temperatures for the
+            // floor-ceiling-wall longwave radiation exchange network. Each
+            // surface type has its own ODE state that participates in the LW
+            // network. Initialized to 20°C (matching the wall surface state).
+            surface_temp_floor: VectorField::from_scalar(20.0, num_zones),
+            surface_temp_ceiling: VectorField::from_scalar(20.0, num_zones),
+            surface_temp_wall: VectorField::from_scalar(20.0, num_zones),
+
             // 6R2C model fields (initialized for 5R1C compatibility)
             envelope_mass_temperatures: VectorField::from_scalar(20.0, num_zones),
             internal_mass_temperatures: VectorField::from_scalar(20.0, num_zones),
