@@ -955,6 +955,222 @@ jobs:
           retention-days: 30
 
   # =========================================================================
+  # hybrid-perf-gate — PR-blocking ABSOLUTE HybridThermalModel floor
+  # (Issue #2922).
+  #
+  # The Absolute Perf Gate (#2693) and Multi-Zone Perf Gate (#2772) both
+  # measure `BatchOracle::evaluate_population` over the pure-physics
+  # `ThermalModel<VectorField>` path. Neither exercises the production-
+  # default HybridThermalModel routing (`HybridRouting::default()` —
+  # surrogate loads, physics everything else). A regression adding per-
+  # timestep dispatch overhead to the surrogate-load branch fires only
+  # in Hybrid mode and would slip through both gates.
+  #
+  # This job closes that gap. It runs the new
+  # `tests/hybrid_perf_regression.rs::test_hybrid_performance_regression`
+  # (single-zone, pop_100) and
+  # `test_hybrid_multi_zone_performance_regression` (10-zone, pop_1000) x3,
+  # takes the MEDIAN of the parsed `Hybrid throughput:` /
+  # `Hybrid multi-zone throughput:` lines, writes `benchmark_results.json`
+  # with the `hybrid_throughput` and `hybrid_multi_zone_throughput`
+  # metrics, and feeds it to
+  # `scripts/release_gate_checker.py --benchmark-gates
+  #  hybrid_throughput,hybrid_multi_zone_throughput`. The job FAILS if
+  # single-zone throughput < 80 cfg/s OR 10-zone throughput < 8 cfg/s.
+  #
+  # Runner: `ubuntu-latest` (NOT `vars.FLUXION_LINUX_RUNNER`) — parity with
+  # `absolute-perf-gate` and `multi-zone-perf-gate`, whose floors were
+  # calibrated on GitHub-hosted ubuntu-latest. A self-hosted runner would
+  # measure a different absolute throughput and make the floors
+  # incomparable.
+  # =========================================================================
+  hybrid-perf-gate:
+    name: Hybrid Perf Gate (Issue #2922)
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    # NOTE: intentionally no `needs: bench-default` — this job builds its
+    # own release test binary and runs in parallel with `absolute-perf-gate`
+    # / `multi-zone-perf-gate` / `bench-default` for a faster PR signal.
+    if: github.event_name == 'pull_request' || (github.event_name == 'push' && github.ref == 'refs/heads/main') || github.event_name == 'workflow_dispatch'
+
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4
+
+      - name: Install system dependencies
+        uses: ./.github/actions/install-system-deps
+        with:
+          packages: libssl-dev,pkg-config,libfontconfig1-dev,fontconfig
+
+      - name: Install Rust
+        uses: nick-fields/retry@ad984534de44a9489a53aefd81eb77f87c70dc60  # v4.0.0
+        with:
+          max_attempts: 3
+          timeout_minutes: 10
+          retry_wait_seconds: 15
+          command: rustup toolchain install stable --profile default
+
+      - name: Cache cargo (hybrid-perf-gate)
+        uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32  # v2
+        with:
+          shared-key: perf-dashboard-default
+          cache-on-failure: true
+
+      # Build the release test binary once (shared across all 3 measurement
+      # runs). Default features only — matches `absolute-perf-gate` and
+      # what a user gets from `cargo install fluxion`.
+      - name: Build release (default features)
+        run: cargo build --release
+
+      # Median-of-3 noise suppression. Each run invokes BOTH hybrid tests
+      # (single-zone + 10-zone), which print exactly one
+      # `Hybrid throughput:` line and one `Hybrid multi-zone throughput:`
+      # line respectively. We tolerate a nonzero test exit (the Rust
+      # floor assertion will panic on a real breach but we still want the
+      # throughput line for partial-success diagnostics) with `|| true`;
+      # the throughput lines are printed BEFORE any assertion failure.
+      #
+      # `--test-threads=1` forces SEQUENTIAL test execution. Without it,
+      # the test harness schedules both hybrid tests concurrently — the
+      # short single-zone run (~150 ms pop_100 standalone) gets crushed
+      # to ~25 cfg/s when it shares cores with the long multi-zone run,
+      # tripping the 80 cfg/s floor spuriously. Sequential execution
+      # matches the #2693 / #2772 gate pattern (those jobs each run a
+      # single test) and keeps each test's measurement stable.
+      #
+      # Runtime budget: each pop_100 single-zone run measures ~1.5s and
+      # each pop_1000 / 10-zone run measures ~125s on ubuntu-latest.
+      # 2 tests × 3 runs × worst-case timing + ~3 min cold-cache build
+      # fits inside the 25-min job timeout with margin.
+      - name: Run hybrid benchmark (median of 3, both regimes, sequential)
+        run: |
+          rm -f run_*.txt
+          for i in 1 2 3; do
+            echo "=== measurement run ${i}/3 ==="
+            cargo test --test hybrid_perf_regression --release -- --nocapture --test-threads=1 > "run_${i}.txt" 2>&1 || true
+          done
+
+          python3 << 'EOF'
+          import glob
+          import json
+          import re
+          import statistics
+          import sys
+
+          # Match the metric lines the Rust test prints — keep these in
+          # sync with `tests/hybrid_perf_regression.rs`.
+          single_re = re.compile(r'Hybrid throughput:\s*([\d.]+)\s*configs/sec')
+          multi_re = re.compile(r'Hybrid multi-zone throughput:\s*([\d.]+)\s*configs/sec')
+          single_latency_re = re.compile(r'Latency per config:\s*([\d.]+)ms')
+
+          single_throughputs, multi_throughputs, latencies = [], [], []
+          for path in sorted(glob.glob('run_*.txt')):
+              txt = open(path, errors='replace').read()
+              s = single_re.findall(txt)
+              m = multi_re.findall(txt)
+              l = single_latency_re.findall(txt)
+              if s and m:
+                  single_throughputs.append(float(s[-1]))
+                  multi_throughputs.append(float(m[-1]))
+                  # Use the single-zone latency (last line in the run);
+                  # multi-zone latency is reported separately by the test
+                  # but only one latency is needed for the checker.
+                  if l:
+                      latencies.append(float(l[-1]))
+                  print(f"{path}: single={s[-1]} cfg/s, multi={m[-1]} cfg/s, latency={l[-1] if l else 'n/a'} ms")
+              else:
+                  print(f"WARNING: {path} produced no parseable hybrid metrics (single={s}, multi={m})")
+
+          if len(single_throughputs) < 2 or len(multi_throughputs) < 2:
+              print("ERROR: fewer than 2 successful hybrid measurement runs; cannot compute a stable median.")
+              print("This usually means a compile error or a runtime panic before measurement.")
+              for path in sorted(glob.glob('run_*.txt')):
+                  print(f"\n--- {path} (first 2000 chars) ---")
+                  print(open(path, errors='replace').read()[:2000])
+              sys.exit(2)
+
+          med_single = statistics.median(single_throughputs)
+          med_multi = statistics.median(multi_throughputs)
+          med_latency = statistics.median(latencies) if latencies else 0.0
+
+          print(f"\nSamples: single-zone throughput={single_throughputs}")
+          print(f"         multi-zone throughput={multi_throughputs}")
+          print(f"Median single-zone throughput: {med_single:.1f} configs/sec")
+          print(f"Median multi-zone throughput:  {med_multi:.1f} configs/sec")
+          print(f"Median latency (single-zone):  {med_latency:.3f} ms/config")
+
+          results = {
+              "metrics": {
+                  # `hybrid_throughput` / `hybrid_multi_zone_throughput` are
+                  # the gate names expected by
+                  # scripts/release_gate_checker.py (mirrors how it reads
+                  # `benchmark.hybrid.min_configs_per_sec` /
+                  # `benchmark.hybrid_multi_zone.min_configs_per_sec` from
+                  # release_gates.yaml). Latency is also populated so a
+                  # future --benchmark-gates filter expansion picks it up
+                  # without re-running the job.
+                  "hybrid_throughput": med_single,
+                  "hybrid_multi_zone_throughput": med_multi,
+                  "throughput_configs_per_sec": med_single,
+                  "latency_ms_per_config": med_latency,
+              },
+              "samples": {
+                  "single_zone_throughput": single_throughputs,
+                  "multi_zone_throughput": multi_throughputs,
+                  "latency": latencies,
+                  "runs": len(single_throughputs),
+                  "strategy": "median-of-3",
+                  "workload": "HybridThermalModel with HybridRouting::default() (loads→surrogate, everything else→physics)",
+                  "regimes": {
+                      "single_zone": "1 zone, pop_100, default routing",
+                      "multi_zone": "10 zones, pop_1000, default routing",
+                  },
+              },
+          }
+          with open('benchmark_results.json', 'w') as f:
+              json.dump(results, f, indent=2)
+          print("\nWrote benchmark_results.json")
+          EOF
+
+      # Evaluate the ABSOLUTE hybrid floors from release_gates.yaml
+      # (≥ 80 cfg/s single-zone, ≥ 8 cfg/s 10-zone). --benchmark-gates
+      # restricts evaluation to the two new gates (issue #2922); the
+      # checker exits 1 on any failure.
+      - name: Evaluate hybrid gates (≥ 80 cfg/s + ≥ 8 cfg/s)
+        run: |
+          python3 scripts/release_gate_checker.py \
+            --benchmark-results benchmark_results.json \
+            --benchmark-gates hybrid_throughput,hybrid_multi_zone_throughput \
+            --json --output gate_status.json
+
+      - name: Summary
+        if: always()
+        run: |
+          echo "## Hybrid Perf Gate (Issue #2922)" >> $GITHUB_STEP_SUMMARY
+          echo "Enforces \`release_gates.yaml\` HybridThermalModel absolute floors on every PR:" >> $GITHUB_STEP_SUMMARY
+          echo "- single-zone throughput ≥ 80 configs/sec (HybridThermalModel, \`HybridRouting::default()\`, pop_100)" >> $GITHUB_STEP_SUMMARY
+          echo "- multi-zone throughput ≥ 8 configs/sec (10-zone HybridThermalModel, \`HybridRouting::default()\`, pop_1000)" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Why:** the #2693 Absolute Perf Gate and #2772 Multi-Zone Perf Gate both measure the pure-physics path (\`ThermalModel<VectorField>\` / \`BatchOracle::evaluate_population\`); neither exercises HybridThermalModel with \`HybridRouting::default()\` — the production-recommended default routing. A regression adding per-timestep overhead in the surrogate-load branch fires only in Hybrid mode and would slip through both gates silently." >> $GITHUB_STEP_SUMMARY
+          echo "**Noise suppression:** median of 3 \`hybrid_perf_regression\` runs (release build, default features)." >> $GITHUB_STEP_SUMMARY
+          echo "**Runner:** \`ubuntu-latest\` (parity with \`absolute-perf-gate\` / \`multi-zone-perf-gate\`; the 80 + 8 cfg/s floors were calibrated here)." >> $GITHUB_STEP_SUMMARY
+          if [ -f gate_status.json ]; then
+            echo '```json' >> $GITHUB_STEP_SUMMARY
+            cat gate_status.json >> $GITHUB_STEP_SUMMARY
+            echo '```' >> $GITHUB_STEP_SUMMARY
+          fi
+
+      - name: Upload results
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02  # v4
+        with:
+          name: hybrid-perf-gate-${{ github.run_id }}
+          path: |
+            benchmark_results.json
+            gate_status.json
+            run_*.txt
+          retention-days: 30
+
+  # =========================================================================
   # dhat-alloc-budget — PR-gated allocation-budget gate for the BatchOracle
   # hot loop (Issue #2709).
   # Runs the feature-gated `dhat_alloc_budget` integration test, which installs
