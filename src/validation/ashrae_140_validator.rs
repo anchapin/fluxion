@@ -894,16 +894,25 @@ impl ASHRAE140Validator {
                 }
             }
 
-            // Calculate internal loads (solar is now handled internally by step_physics)
+            // Calculate internal loads (solar is now handled internally by step_physics).
+            //
+            // Issue #2892: ASHRAE 140 §6.5 specifies the convective/radiative
+            // split for internal gains. For residential cases (600/900 series)
+            // the §6.5 default is convective=0.6, radiative=0.4. The split is
+            // read explicitly from the case-spec `InternalLoads` (whose
+            // defaults are now set to §6.5 residential) so the radiative
+            // portion reaches `phi_st` (surface) and `phi_m` (mass/air-routing)
+            // — not all-convective.
             let mut internal_loads: Vec<f64> = Vec::with_capacity(num_zones);
 
             for zone_idx in 0..num_zones {
-                let internal_gains = spec
+                let zone_loads = spec
                     .internal_loads
                     .get(zone_idx)
                     .or(spec.internal_loads.first())
-                    .and_then(|l| l.as_ref())
-                    .map_or(0.0, |l| l.total_load);
+                    .and_then(|l| l.as_ref());
+
+                let internal_gains = zone_loads.map_or(0.0, |l| l.total_load);
 
                 let floor_area = spec
                     .geometry
@@ -915,6 +924,17 @@ impl ASHRAE140Validator {
             }
 
             model.set_loads(&internal_loads);
+
+            // Issue #2892: explicitly apply ASHRAE 140 §6.5 convective/radiative
+            // split. The split is read from the case-spec InternalLoads so the
+            // radiative portion is routed to surface nodes (phi_st) and mass
+            // (phi_m) rather than all-convective to air. `model.convective_fraction`
+            // is set once during `from_spec` from zone 0's `InternalLoads`; we
+            // re-apply it explicitly here for visibility at the per-timestep
+            // boundary so future per-zone splits can plug in at this seam.
+            if let Some(loads) = spec.internal_loads.first().and_then(|l| l.as_ref()) {
+                model.convective_fraction = loads.convective_fraction;
+            }
 
             // Debug: Print free-floating temperature, setpoints, and HVAC demand for Case 600
             if spec.case_id == "600" && step % 8760 == 4380 {
@@ -1673,15 +1693,21 @@ impl ASHRAE140Validator {
                 }
             }
 
-            // Calculate internal loads (solar is now handled internally by step_physics)
+            // Calculate internal loads (solar is now handled internally by step_physics).
+            //
+            // Issue #2892: read the ASHRAE 140 §6.5 convective/radiative split
+            // explicitly from spec.internal_loads[*] so the radiative portion
+            // reaches phi_st (surface) and phi_m (mass/air-routing) instead of
+            // being lumped onto the air node.
             let mut internal_loads: Vec<f64> = Vec::with_capacity(num_zones);
             for zone_idx in 0..num_zones {
-                let internal_gains = spec
+                let zone_loads = spec
                     .internal_loads
                     .get(zone_idx)
                     .or(spec.internal_loads.first())
-                    .and_then(|l| l.as_ref())
-                    .map_or(0.0, |l| l.total_load);
+                    .and_then(|l| l.as_ref());
+
+                let internal_gains = zone_loads.map_or(0.0, |l| l.total_load);
 
                 let floor_area = spec
                     .geometry
@@ -1692,6 +1718,9 @@ impl ASHRAE140Validator {
                 internal_loads.push(internal_gains / floor_area);
             }
             model.set_loads(&internal_loads);
+            if let Some(loads) = spec.internal_loads.first().and_then(|l| l.as_ref()) {
+                model.convective_fraction = loads.convective_fraction;
+            }
 
             // Debug: Print free-floating temperature, setpoints, and HVAC demand for Case 600
             if spec.case_id == "600" && step % 8760 == 4380 {
@@ -1897,15 +1926,21 @@ impl ASHRAE140Validator {
                 }
             }
 
-            // Calculate internal loads (solar is now handled internally by step_physics)
+            // Calculate internal loads (solar is now handled internally by step_physics).
+            //
+            // Issue #2892: read the ASHRAE 140 §6.5 convective/radiative split
+            // explicitly from spec.internal_loads[*] so the radiative portion
+            // reaches phi_st (surface) and phi_m (mass/air-routing) instead of
+            // being lumped onto the air node.
             let mut internal_loads: Vec<f64> = Vec::with_capacity(num_zones);
             for zone_idx in 0..num_zones {
-                let internal_gains = spec
+                let zone_loads = spec
                     .internal_loads
                     .get(zone_idx)
                     .or(spec.internal_loads.first())
-                    .and_then(|l| l.as_ref())
-                    .map_or(0.0, |l| l.total_load);
+                    .and_then(|l| l.as_ref());
+
+                let internal_gains = zone_loads.map_or(0.0, |l| l.total_load);
 
                 let floor_area = spec
                     .geometry
@@ -1916,6 +1951,9 @@ impl ASHRAE140Validator {
                 internal_loads.push(internal_gains / floor_area);
             }
             model.set_loads(&internal_loads);
+            if let Some(loads) = spec.internal_loads.first().and_then(|l| l.as_ref()) {
+                model.convective_fraction = loads.convective_fraction;
+            }
 
             // Debug: Print free-floating temperature, setpoints, and HVAC demand for Case 600
             if spec.case_id == "600" && step % 8760 == 4380 {
@@ -2277,8 +2315,16 @@ impl ASHRAE140Validator {
             total_envelope_conduction_joules += envelope_conduction_w * 3600.0;
             total_infiltration_joules += infiltration_w * 3600.0;
 
-            // Apply internal loads
+            // Apply internal loads.
+            //
+            // Issue #2892: explicitly apply the ASHRAE 140 §6.5
+            // convective/radiative split from spec.internal_loads[*] so the
+            // radiative portion is distributed to phi_st (surface) and phi_m
+            // (mass/air-routing), not all-convective to the air node.
             model.set_loads(&internal_loads_per_zone);
+            if let Some(loads) = spec.internal_loads.first().and_then(|l| l.as_ref()) {
+                model.convective_fraction = loads.convective_fraction;
+            }
 
             let hvac_kwh = model.step_physics(step, dry_bulb_temp, 3600.0);
 
@@ -2507,8 +2553,16 @@ impl ASHRAE140Validator {
                 *load = internal_gains / floor_area;
             }
 
-            // Apply internal loads before stepping
+            // Apply internal loads before stepping.
+            //
+            // Issue #2892: explicitly apply the ASHRAE 140 §6.5
+            // convective/radiative split from spec.internal_loads[*] so the
+            // radiative portion is routed to phi_st (surface) and phi_m
+            // (mass/air-routing), not all-convective to the air node.
             model.set_loads(&internal_loads_per_zone);
+            if let Some(loads) = spec.internal_loads.first().and_then(|l| l.as_ref()) {
+                model.convective_fraction = loads.convective_fraction;
+            }
 
             model.step_physics(step, dry_bulb_temp, 3600.0);
 

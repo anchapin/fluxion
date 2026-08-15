@@ -151,7 +151,7 @@ pub fn flexlab_test_cell_spec() -> CaseSpec {
         // but these are the best available standard values in Fluxion.
         .with_window_properties(WindowSpec::double_clear_glass())
         // Default office internal gains
-        .with_internal_loads(InternalLoads::new(200.0, 0.6, 0.4))
+        .with_internal_loads(InternalLoads::new(200.0, 0.4, 0.6))
         // Constant HVAC setpoints (general experiment configuration)
         .with_hvac(HvacSchedule::constant(20.0, 27.0))
         // Typical sealed test cell infiltration rate
