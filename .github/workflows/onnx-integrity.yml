@@ -1,0 +1,150 @@
+# ONNX Model Integrity Gate (Issue #2906)
+#
+# Re-verifies the SHA-256 manifest for the official ONNX surrogate model on
+# every PR that touches the manifest, the load path, or the integrity check.
+# Goal: prevent silent model poisoning of ASHRAE 140 results by catching
+# drift between the .onnx file and its `.sha256` manifest before merge.
+#
+# What it checks
+# --------------
+# 1. The manifest at `models/surrogate_zone_thermal.onnx.sha256` (if present)
+#    is well-formed `sha256sum` output: every non-comment line has a 64-char
+#    hex hash followed by whitespace and a filename (or no filename).
+# 2. If the official model file at `models/surrogate_zone_thermal.onnx` is
+#    committed, its actual SHA-256 matches the hash in the manifest
+#    (`sha256sum -c` is the canonical verification command).
+# 3. The Rust unit tests for `verify_onnx_signature`
+#    (`src/ai/surrogate.rs`) still pass — these tests exercise the
+#    happy-path, tampered, env-override, and malformed-manifest branches.
+#
+# Trigger policy
+# --------------
+# Runs on every PR that touches ANY of:
+#   - `models/surrogate_zone_thermal.onnx` (the model itself)
+#   - `models/surrogate_zone_thermal.onnx.sha256` (the manifest)
+#   - `src/ai/surrogate.rs` (the load / verify code path)
+#   - this workflow file (so edits are validated)
+# Also runs on pushes to main and develop, and on workflow_dispatch for
+# manual re-runs. Does NOT block the surrogate_drift_gate job — that gate
+# has its own scope (per-timestep ±1% drift).
+#
+# Why it matters
+# --------------
+# `SurrogateManager::load_onnx` and `SurrogateManager::with_gpu_backend`
+# call `verify_onnx_signature` on every load. If the manifest's hash does
+# not match the model's actual SHA-256, the load is REFUSED (fail-closed)
+# so a poisoned model cannot influence ASHRAE 140 results. The CI gate
+# keeps that contract honest by re-running the same check from outside
+# the Rust process.
+#
+# Status check name
+# -----------------
+# Job id is `onnx-integrity`; the human-readable name is
+# "ONNX Integrity Gate (Issue #2906)". Add this job name to the branch
+# protection "Required status checks" list if you want this gate to be
+# merge-blocking.
+
+name: ONNX Integrity Gate
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    paths:
+      - 'models/surrogate_zone_thermal.onnx'
+      - 'models/surrogate_zone_thermal.onnx.sha256'
+      - 'src/ai/surrogate.rs'
+      - '.github/workflows/onnx-integrity.yml'
+  workflow_dispatch:
+
+concurrency:
+  group: onnx-integrity-${{ github.ref }}
+  cancel-in-progress: false
+
+# Least-privilege GITHUB_TOKEN grants (Issue #2526).
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: 1
+
+jobs:
+  onnx-integrity:
+    name: ONNX Integrity Gate (Issue #2906)
+    runs-on: ${{ vars.FLUXION_LINUX_RUNNER || 'ubuntu-latest' }}
+    timeout-minutes: 15
+
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4
+
+      - name: Validate manifest format
+        # Mirrors `parse_sha256_manifest` in src/ai/surrogate.rs. Fails
+        # closed if any non-comment / non-blank line is not a 64-char hex
+        # digest followed by whitespace and (optionally) a filename.
+        # This catches format regressions even when no model file is
+        # checked in (the current state of the repo per Issue #2923).
+        run: |
+          set -euo pipefail
+          MANIFEST="models/surrogate_zone_thermal.onnx.sha256"
+          if [ ! -f "$MANIFEST" ]; then
+            echo "::error::Manifest not found at $MANIFEST (Issue #2906 fail-closed precondition). See Issue #2923 for the operator-acknowledgement manifest context."
+            exit 1
+          fi
+          echo "Manifest present at $MANIFEST — validating format."
+          python3 - <<'PY'
+          import re, sys
+          hex_re = re.compile(r"^[0-9a-fA-F]{64}$")
+          bad = []
+          with open("models/surrogate_zone_thermal.onnx.sha256") as f:
+              for lineno, raw in enumerate(f, 1):
+                  line = raw.rstrip("\n")
+                  stripped = line.strip()
+                  if not stripped or stripped.startswith("#"):
+                      continue
+                  # sha256sum layout: <hash><ws><ws-or-*><path> OR <hash><ws><path>.
+                  parts = stripped.split(None, 1)
+                  if len(parts) < 1 or not hex_re.match(parts[0]):
+                      bad.append((lineno, line))
+          if bad:
+              print(f"::error::Manifest has {len(bad)} malformed line(s):")
+              for lineno, line in bad:
+                  print(f"  line {lineno}: {line!r}")
+              sys.exit(1)
+          print("Manifest format OK (every non-comment line is a valid SHA-256 entry).")
+          PY
+
+      - name: Re-verify digest against the checked-in model (if present)
+        # Run `sha256sum -c` when the official model file is committed.
+        # Skipped (with a recorded skip-line) when only the manifest ships —
+        # the placeholder all-zeros hash is documented as fail-closed
+        # sentinel in Issue #2923, not a real verification target.
+        run: |
+          set -euo pipefail
+          MODEL="models/surrogate_zone_thermal.onnx"
+          MANIFEST="models/surrogate_zone_thermal.onnx.sha256"
+          if [ ! -f "$MODEL" ]; then
+            echo "::notice::No official model committed at $MODEL — skipping sha256sum -c \
+              (manifest is the Issue #2923 fail-closed sentinel; verify_onnx_signature \
+              unit tests cover the load-path check)."
+            exit 0
+          fi
+          echo "Official model found at $MODEL — running sha256sum -c against $MANIFEST."
+          sha256sum -c "$MANIFEST"
+
+      - name: Run verify_onnx_signature unit tests
+        # Exercises the Rust load-path check itself: the 9 inline tests in
+        # src/ai/surrogate.rs::tests cover matching, tampered, env-override,
+        # malformed-override, missing-manifest, sha256sum-format, and
+        # no-matching-entry branches. Running both with and without --features
+        # ort catches regressions in either code path.
+        run: |
+          set -euo pipefail
+          echo "--- verify_onnx_signature (default features) ---"
+          cargo test --lib \
+            ai::surrogate::tests::verify_onnx_signature \
+            -- --nocapture
+          echo "--- verify_onnx_signature (--features ort) ---"
+          cargo test --lib --features ort \
+            ai::surrogate::tests::verify_onnx_signature \
+            -- --nocapture
