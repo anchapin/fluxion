@@ -269,6 +269,98 @@ class ReleaseGateChecker:
 
         return results
 
+    def check_crate_size_gates(
+        self,
+        crate_size_results: Optional[dict],
+        gate_filter: Optional[set[str]] = None,
+    ) -> list[GateResult]:
+        """Check crate-size gate (Issue #2930 / Goal #10: <10 MB published).
+
+        Compares the packaged ``fluxion`` crate size against the
+        ``crate_size.max_mb`` threshold declared in ``release_gates.yaml``.
+
+        ``crate_size_results`` is expected to be a dict of the form::
+
+            {
+                "size_bytes": <int>,
+                "size_mb": <float>,
+                "crate_path": "<absolute path>",
+            }
+
+        If ``None``, a single result is returned with ``passed=False`` and
+        a message that no measurement was supplied. The lightweight PR
+        job (`.github/workflows/crate-size.yml`) handles the actual
+        `cargo package` + measurement; this method is the release-audit
+        re-validation that mirrors the same threshold.
+
+        ``gate_filter`` (issue #2930, mirroring the #2693 benchmark-filter
+        pattern) lets a caller restrict to a single named gate. Unset
+        (default) evaluates every crate-size gate — preserving the
+        release-time behaviour.
+        """
+        results = []
+        crate_config = self.config.get("crate_size", {})
+        max_mb = float(crate_config.get("max_mb", 10.0))
+        max_bytes = int(max_mb * 1024 * 1024)
+
+        if gate_filter and "crate_size" not in gate_filter:
+            return results
+
+        if not crate_size_results:
+            results.append(
+                GateResult(
+                    name="crate_size",
+                    category="crate_size",
+                    passed=False,
+                    message=(
+                        f"No crate-size measurement supplied — run `cargo package "
+                        f"--allow-dirty --no-verify` and re-invoke with "
+                        f"`--crate-size-results <path>` (or place the result at "
+                        f"`target/package/fluxion-*.crate`). Limit: {max_mb} MiB."
+                    ),
+                    threshold=max_mb,
+                )
+            )
+            return results
+
+        size_bytes = int(crate_size_results.get("size_bytes", 0))
+        size_mb = float(crate_size_results.get("size_mb", size_bytes / (1024 * 1024)))
+        crate_path = crate_size_results.get("crate_path", "<unknown>")
+        passed = size_bytes <= max_bytes
+
+        if passed:
+            headroom_mb = round((max_bytes - size_bytes) / (1024 * 1024), 3)
+            message = (
+                f"Crate size {size_mb:.3f} MiB ({size_bytes} bytes) is within "
+                f"the {max_mb} MiB limit ({crate_path}); headroom {headroom_mb} MiB."
+            )
+        else:
+            over_mb = round((size_bytes - max_bytes) / (1024 * 1024), 3)
+            pct = round(size_bytes / max_bytes * 100, 1) if max_bytes else 0.0
+            message = (
+                f"Crate size {size_mb:.3f} MiB ({size_bytes} bytes) exceeds the "
+                f"{max_mb} MiB Goal #10 limit by {over_mb} MiB "
+                f"({pct}% of limit) — path: {crate_path}."
+            )
+
+        results.append(
+            GateResult(
+                name="crate_size",
+                category="crate_size",
+                passed=passed,
+                message=message,
+                value=size_mb,
+                threshold=max_mb,
+                details={
+                    "size_bytes": size_bytes,
+                    "crate_path": crate_path,
+                    "limit_bytes": max_bytes,
+                },
+            )
+        )
+
+        return results
+
     def check_drift_gates(
         self, current_results: dict, baseline: Optional[dict]
     ) -> list[GateResult]:
@@ -416,11 +508,17 @@ class ReleaseGateChecker:
         benchmark_results: Optional[dict] = None,
         update_baseline: bool = False,
         benchmark_gate_filter: Optional[set[str]] = None,
+        crate_size_results: Optional[dict] = None,
+        crate_size_gate_filter: Optional[set[str]] = None,
     ) -> GateReport:
         """Check all gates and return a comprehensive report.
 
         ``benchmark_gate_filter`` restricts the benchmark sub-gates evaluated
         (issue #2693); see :meth:`check_benchmark_gates`.
+
+        ``crate_size_results`` and ``crate_size_gate_filter`` (issue #2930)
+        thread the same pattern through the new crate-size gate — see
+        :meth:`check_crate_size_gates`.
 
         When ``ci.fail_fast: true`` is set in the YAML config (default), the
         checker stops evaluating further gate categories after the first
@@ -458,6 +556,15 @@ class ReleaseGateChecker:
                 self.results.extend(
                     self.check_benchmark_gates(benchmark_results, benchmark_gate_filter)
                 )
+
+        # Crate-size gate (Issue #2930 / Goal #10). Always evaluated when a
+        # measurement is supplied — this gate is orthogonal to the
+        # validation/benchmark/drift triad (it's a packaging contract, not
+        # a runtime property) and must not be skipped under fail_fast.
+        if crate_size_results is not None or "crate_size" in self.config:
+            self.results.extend(
+                self.check_crate_size_gates(crate_size_results, crate_size_gate_filter)
+            )
 
         # Calculate overall
         overall_passed = all(r.passed for r in self.results)
@@ -521,6 +628,60 @@ def load_benchmark_results(project_root: Path) -> Optional[dict]:
         if path.exists():
             with open(path) as f:
                 return json.load(f)
+
+    return None
+
+
+def load_crate_size_results(
+    project_root: Path,
+    crate_glob: str = "target/package/fluxion-*.crate",
+    explicit_path: Optional[Path] = None,
+) -> Optional[dict]:
+    """Load packaged-crate size from the standard cargo-package output path.
+
+    Issue #2930 / Goal #10: returns a dict of the form::
+
+        {
+            "size_bytes": <int>,
+            "size_mb": <float>,
+            "crate_path": "<absolute path>",
+        }
+
+    Resolves the first matching crate file under ``crate_glob`` (relative to
+    ``project_root``) and reports its on-disk size. Returns ``None`` when no
+    crate file is present — callers should treat that as "no measurement
+    supplied" (the gate will surface a clear failure in that case).
+
+    Cargo writes the package artifact to ``target/package/tmp-crate/`` during
+    the manifest-normalization step (before the verify step runs) and only
+    promotes it to ``target/package/`` after verify succeeds. When verify
+    errors out (e.g. on optional path-only deps with a `version = "X"`
+    constraint that isn't on crates.io — see issue #2930) the artifact
+    remains in the scratch dir, so we glob both locations to make the gate
+    robust to that case.
+
+    ``explicit_path`` overrides the glob lookup (used when the caller passes
+    ``--crate-size-results <path>`` from the CLI).
+    """
+    candidates: list[Path] = []
+    if explicit_path is not None:
+        candidates.append(Path(explicit_path))
+    else:
+        # Primary location (post-verify) and scratch location (pre-verify).
+        # The scratch dir is checked first because for in-flight cargo
+        # package runs the artifact is more reliably present there.
+        scratch_glob = str(Path(crate_glob).parent / "tmp-crate" / Path(crate_glob).name)
+        candidates.extend(sorted(project_root.glob(scratch_glob)))
+        candidates.extend(sorted(project_root.glob(crate_glob)))
+
+    for path in candidates:
+        if path.is_file():
+            size_bytes = path.stat().st_size
+            return {
+                "size_bytes": size_bytes,
+                "size_mb": round(size_bytes / (1024 * 1024), 6),
+                "crate_path": str(path.resolve()),
+            }
 
     return None
 
@@ -598,6 +759,27 @@ def main():
             "evaluate only the absolute throughput + latency floors on a PR."
         ),
     )
+    parser.add_argument(
+        "--crate-size-results",
+        type=Path,
+        default=None,
+        help=(
+            "Path to a JSON file with `{size_bytes, size_mb, crate_path}` "
+            "(issue #2930 / Goal #10). Defaults to auto-detecting the first "
+            "`target/package/fluxion-*.crate` under the project root."
+        ),
+    )
+    parser.add_argument(
+        "--crate-size-gates",
+        type=str,
+        default=None,
+        help=(
+            "Comma-separated crate-size gate names to evaluate (issue #2930). "
+            "Default: all crate-size gates. Currently only `crate_size` is "
+            "defined; the flag mirrors `--benchmark-gates` for forward "
+            "compatibility."
+        ),
+    )
     parser.add_argument("--output", "-o", type=Path, help="Output file path")
     args = parser.parse_args()
 
@@ -606,6 +788,13 @@ def main():
     if args.benchmark_gates:
         benchmark_gate_filter = {
             g.strip() for g in args.benchmark_gates.split(",") if g.strip()
+        }
+
+    # Parse the optional crate-size-gate filter into a set (issue #2930).
+    crate_size_gate_filter: Optional[set[str]] = None
+    if args.crate_size_gates:
+        crate_size_gate_filter = {
+            g.strip() for g in args.crate_size_gates.split(",") if g.strip()
         }
 
     # Find project root
@@ -632,6 +821,26 @@ def main():
     else:
         benchmark_results = load_benchmark_results(project_root)
 
+    # Crate-size results (issue #2930 / Goal #10). Accept either an explicit
+    # JSON path or auto-detect `target/package/fluxion-*.crate` (the standard
+    # `cargo package` output). Only attempt auto-detection when the YAML
+    # declares a `crate_size:` section — otherwise the gate is opt-in and a
+    # missing measurement must not silently fail the run.
+    crate_size_results: Optional[dict] = None
+    if args.crate_size_results is not None:
+        if args.crate_size_results.exists():
+            with open(args.crate_size_results) as f:
+                crate_size_results = json.load(f)
+        else:
+            sys.stderr.write(
+                f"::warning::--crate-size-results path does not exist: {args.crate_size_results}\n"
+            )
+    elif "crate_size" in config:
+        crate_glob = config.get("crate_size", {}).get(
+            "crate_glob", "target/package/fluxion-*.crate"
+        )
+        crate_size_results = load_crate_size_results(project_root, crate_glob)
+
     # Check gates
     checker = ReleaseGateChecker(config, project_root)
     report = checker.check_all_gates(
@@ -639,6 +848,8 @@ def main():
         benchmark_results=benchmark_results,
         update_baseline=args.update_baseline,
         benchmark_gate_filter=benchmark_gate_filter,
+        crate_size_results=crate_size_results,
+        crate_size_gate_filter=crate_size_gate_filter,
     )
 
     # Update baseline if requested

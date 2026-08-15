@@ -84,6 +84,7 @@ Required branch-protection checks (`release_gates.yaml` → `ci.required_checks`
 | Architecture Drift Detection | — |
 | Cargo Deny | — |
 | MSRV Check (Issue #2934) | #2934 |
+| Crate Size Gate (Issue #2930) | #2930 |
 
 - **Live status** is intentionally not baked in here (it is non-deterministic and would break scorecard diff stability). Run:
 
