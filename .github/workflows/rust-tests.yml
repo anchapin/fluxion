@@ -110,9 +110,9 @@ jobs:
           # Issue #2904 — fluxion-twin workspace integration tests
           # (UKF van der Pol, UKF covariance stability, MQTT → UKF pipeline,
           # WebSocket broadcaster memory-leak). Closes #2058, #2060, #2061,
-          # #2064. fluxion-twin has no features, so the matrix flags are
-          # passed through unchanged — each test invocation is identical
-          # across the 3 feature slots.
+          # #2064. fluxion-twin accepts the matrix flags as no-op
+          # `wiring-tracing` / `multi-zone` features (see its Cargo.toml) so
+          # the test invocation stays matrix-uniform.
           cargo test -p fluxion-twin --tests --verbose ${{ matrix.feature_set.flags }}
         env:
           PYO3_PYTHON: /usr/bin/python3
