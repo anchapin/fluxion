@@ -1487,21 +1487,38 @@ impl SurrogateManager {
     /// 3. [`Self::DEFAULT_MODEL_PATH`] (`models/surrogate_zone_thermal.onnx`)
     ///    if it exists on disk.
     ///
+    /// Both resolution paths route through [`validate_model_path`] (Issue
+    /// #2905) so an operator — or compromised CI step — cannot bypass the
+    /// `FLUXION_MODEL_DIR` allow-list, the `.onnx` extension check, or the
+    /// 256 MiB size cap by setting `FLUXION_ONNX_MODEL` to a non-model file
+    /// such as `/proc/self/environ` or a 10 GiB binary. An explicit
+    /// `FLUXION_ONNX_MODEL` that fails validation surfaces the error to
+    /// the caller (mirroring `BatchOracle::load_surrogate`); the built-in
+    /// default path silently falls back to mock mode when the file is
+    /// absent so callers that never set the env var keep working in
+    /// air-gapped / fresh-checkout scenarios.
+    ///
     /// If none of the above resolve to an existing file, the manager is
     /// returned in mock mode (matching [`Self::new`]) so callers can still
     /// fall back to analytical loads.
     pub fn new_with_auto_load() -> Result<Self, String> {
         let backend = Self::resolve_backend_from_env();
-        // 1. Explicit env var override.
+        // 1. Explicit env var override — must pass `validate_model_path`.
+        //    A missing path, wrong extension, or out-of-allow-list location
+        //    short-circuits with an `Err` so the operator learns about
+        //    misconfiguration rather than silently falling back to a model
+        //    they did not request.
         if let Ok(path) = std::env::var("FLUXION_ONNX_MODEL") {
-            if !path.is_empty() && std::path::Path::new(&path).exists() {
-                return Self::load_with_backend(&path, backend, 0);
+            if !path.is_empty() {
+                let validated = validate_model_path(&path)?;
+                return Self::load_with_backend(&validated.to_string_lossy(), backend, 0);
             }
         }
-        // 2. Built-in default path.
+        // 2. Built-in default path — also validated. A missing file (the
+        //    common fresh-checkout case) falls through to mock mode below.
         let default_path = Self::DEFAULT_MODEL_PATH;
-        if std::path::Path::new(default_path).exists() {
-            return Self::load_with_backend(default_path, backend, 0);
+        if let Ok(validated) = validate_model_path(default_path) {
+            return Self::load_with_backend(&validated.to_string_lossy(), backend, 0);
         }
         // 3. No model available — return mock manager.
         Ok(SurrogateManager {
@@ -3541,6 +3558,193 @@ mod tests {
         std::fs::write(&model, b"x").unwrap();
         let res = validate_model_path_in_dir(&model.to_string_lossy(), dir.path());
         assert!(res.is_ok(), "small file should pass: {res:?}");
+    }
+
+    // ===== Issue #2905 — `new_with_auto_load` FLUXION_ONNX_MODEL validation =====
+    //
+    // `new_with_auto_load` is the entry point that `bin/fluxion-rest` and
+    // `probe_onnx` use. Issue #2905 closed the bypass where an operator
+    // (or compromised CI step) could set `FLUXION_ONNX_MODEL` to a non-
+    // `.onnx` file, a path outside `FLUXION_MODEL_DIR`, or a traversal-
+    // escaped location and have it ingested without checks. These tests
+    // drive the public entry point end-to-end and assert each validation
+    // branch short-circuits with `Err`. All cases set `FLUXION_MODEL_DIR`
+    // and `FLUXION_ONNX_MODEL` against a tempdir under `ENV_LOCK` so they
+    // never race with parallel `cargo test` threads or other tests in
+    // this module that share the process-wide env state.
+
+    /// `FLUXION_ONNX_MODEL` pointing at a non-`.onnx` file is rejected by
+    /// `validate_model_path` and surfaced as `Err` from
+    /// `new_with_auto_load` (matches the issue's acceptance criterion).
+    #[test]
+    fn new_with_auto_load_rejects_non_onnx_env_var() {
+        let _guard = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+
+        let allowed = tempfile::tempdir().unwrap();
+        let evil = allowed.path().join("malicious.bin");
+        std::fs::write(&evil, b"not an onnx model").unwrap();
+
+        let prev_dir = std::env::var("FLUXION_MODEL_DIR").ok();
+        let prev_model = std::env::var("FLUXION_ONNX_MODEL").ok();
+        std::env::set_var("FLUXION_MODEL_DIR", allowed.path());
+        std::env::set_var("FLUXION_ONNX_MODEL", &evil);
+
+        let res = SurrogateManager::new_with_auto_load();
+
+        match prev_dir {
+            Some(v) => std::env::set_var("FLUXION_MODEL_DIR", v),
+            None => std::env::remove_var("FLUXION_MODEL_DIR"),
+        }
+        match prev_model {
+            Some(v) => std::env::set_var("FLUXION_ONNX_MODEL", v),
+            None => std::env::remove_var("FLUXION_ONNX_MODEL"),
+        }
+
+        let err = res.expect_err("non-.onnx FLUXION_ONNX_MODEL must return Err");
+        assert!(
+            err.contains("invalid model file extension"),
+            "expected extension-rejection error, got: {err}"
+        );
+        // Generic message: must not echo the supplied path back.
+        assert!(!err.contains("malicious"), "path leaked in error: {err}");
+    }
+
+    /// A real `.onnx` file that lives OUTSIDE `FLUXION_MODEL_DIR` is rejected
+    /// even when `FLUXION_ONNX_MODEL` points directly at it. Mirrors the
+    /// `BatchOracle.load_surrogate` allow-list contract.
+    #[test]
+    fn new_with_auto_load_rejects_onnx_outside_allowlist() {
+        let _guard = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+
+        let allowed = tempfile::tempdir().unwrap();
+        let outside = tempfile::tempdir().unwrap();
+        let evil = outside.path().join("evil.onnx");
+        std::fs::write(&evil, b"legit onnx bytes, wrong location").unwrap();
+
+        let prev_dir = std::env::var("FLUXION_MODEL_DIR").ok();
+        let prev_model = std::env::var("FLUXION_ONNX_MODEL").ok();
+        std::env::set_var("FLUXION_MODEL_DIR", allowed.path());
+        std::env::set_var("FLUXION_ONNX_MODEL", &evil);
+
+        let res = SurrogateManager::new_with_auto_load();
+
+        match prev_dir {
+            Some(v) => std::env::set_var("FLUXION_MODEL_DIR", v),
+            None => std::env::remove_var("FLUXION_MODEL_DIR"),
+        }
+        match prev_model {
+            Some(v) => std::env::set_var("FLUXION_ONNX_MODEL", v),
+            None => std::env::remove_var("FLUXION_ONNX_MODEL"),
+        }
+
+        let err = res.expect_err("out-of-allowlist .onnx must return Err");
+        assert!(
+            err.contains("outside allowed directory"),
+            "expected allow-list-rejection error, got: {err}"
+        );
+        // Generic message: must not echo the supplied path back.
+        assert!(!err.contains("evil"), "path leaked in error: {err}");
+    }
+
+    /// `FLUXION_ONNX_MODEL` containing `..` traversal that escapes the
+    /// allow-list directory is rejected. The canonicalised path lands
+    /// outside `FLUXION_MODEL_DIR` so `validate_model_path` short-circuits.
+    #[test]
+    fn new_with_auto_load_rejects_traversal_in_env_var() {
+        let _guard = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+
+        let allowed = tempfile::tempdir().unwrap();
+        let outside = tempfile::tempdir().unwrap();
+        let evil = outside.path().join("traversed.onnx");
+        std::fs::write(&evil, b"traversed model").unwrap();
+        // Construct a traversal path that starts inside `allowed`, hops
+        // out via `..`, and lands on the real `.onnx` in `outside`.
+        let traversal = allowed
+            .path()
+            .join("..")
+            .join(outside.path().file_name().unwrap())
+            .join("traversed.onnx")
+            .to_string_lossy()
+            .into_owned();
+
+        let prev_dir = std::env::var("FLUXION_MODEL_DIR").ok();
+        let prev_model = std::env::var("FLUXION_ONNX_MODEL").ok();
+        std::env::set_var("FLUXION_MODEL_DIR", allowed.path());
+        std::env::set_var("FLUXION_ONNX_MODEL", &traversal);
+
+        let res = SurrogateManager::new_with_auto_load();
+
+        match prev_dir {
+            Some(v) => std::env::set_var("FLUXION_MODEL_DIR", v),
+            None => std::env::remove_var("FLUXION_MODEL_DIR"),
+        }
+        match prev_model {
+            Some(v) => std::env::set_var("FLUXION_ONNX_MODEL", v),
+            None => std::env::remove_var("FLUXION_ONNX_MODEL"),
+        }
+
+        let err = res.expect_err("traversal out of allowlist must return Err");
+        assert!(
+            err.contains("outside allowed directory"),
+            "expected allow-list-rejection error, got: {err}"
+        );
+        // Generic message: must not echo the supplied traversal back.
+        assert!(!err.contains("traversed"), "path leaked in error: {err}");
+    }
+
+    /// A real `.onnx` file INSIDE the allow-list directory passes
+    /// `validate_model_path`. We then expect `new_with_auto_load` to
+    /// reach `load_with_backend`, which (without the `ort` feature
+    /// built) returns a feature-gate error. That non-validation error
+    /// is the proof that validation ran and succeeded — if the
+    /// validation pipeline were still being bypassed, the manager
+    /// would either silently fall through to mock mode or, when
+    /// `ort` IS built, succeed at constructing a real session.
+    #[test]
+    fn new_with_auto_load_passes_valid_onnx_inside_allowlist() {
+        let _guard = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+
+        let allowed = tempfile::tempdir().unwrap();
+        let model = allowed.path().join("good.onnx");
+        std::fs::write(&model, b"dummy model bytes").unwrap();
+
+        let prev_dir = std::env::var("FLUXION_MODEL_DIR").ok();
+        let prev_model = std::env::var("FLUXION_ONNX_MODEL").ok();
+        std::env::set_var("FLUXION_MODEL_DIR", allowed.path());
+        std::env::set_var("FLUXION_ONNX_MODEL", &model);
+
+        let res = SurrogateManager::new_with_auto_load();
+
+        match prev_dir {
+            Some(v) => std::env::set_var("FLUXION_MODEL_DIR", v),
+            None => std::env::remove_var("FLUXION_MODEL_DIR"),
+        }
+        match prev_model {
+            Some(v) => std::env::set_var("FLUXION_ONNX_MODEL", v),
+            None => std::env::remove_var("FLUXION_ONNX_MODEL"),
+        }
+
+        // Either we succeeded at constructing a real session (with `ort`
+        // built) or we got a load-with-backend error that is NOT one of
+        // the four `validate_model_path` rejection strings — both prove
+        // the validation pipeline ran end-to-end.
+        match res {
+            Ok(mgr) => assert!(mgr.model_loaded, "valid path should load a model"),
+            Err(e) => {
+                for forbidden in [
+                    "model file not found",
+                    "invalid model file extension",
+                    "outside allowed directory",
+                    "model file exceeds size limit",
+                ] {
+                    assert!(
+                        !e.contains(forbidden),
+                        "validation must have passed (got validation error \
+                         '{forbidden}' instead of a load-time error): {e}"
+                    );
+                }
+            }
+        }
     }
 
     #[test]
