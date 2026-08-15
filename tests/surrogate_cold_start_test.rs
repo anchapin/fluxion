@@ -221,9 +221,7 @@ fn test_dummy_model_loads_and_predicts_finite_cold() {
     skip_if_no_dummy!();
     let mgr = SurrogateManager::load_onnx(DUMMY_ONNX_MODEL).expect("load dummy ONNX");
     let input = [42.0_f64, 1.0, 2.0, 3.0, 4.0, 5.0];
-    let out = mgr
-        .predict_loads_onnx(&input)
-        .expect("predict dummy ONNX");
+    let out = mgr.predict_loads_onnx(&input).expect("predict dummy ONNX");
     assert_eq!(out.len(), 1, "dummy model returns 1 output element");
     let v = out[0];
     assert!(v.is_finite(), "dummy output must be finite, got {}", v);
