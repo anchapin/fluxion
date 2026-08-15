@@ -1171,6 +1171,239 @@ jobs:
           retention-days: 30
 
   # =========================================================================
+  # multi-zone-cold-start-gate — PR-blocking cold-start latency gate for the
+  # ONNX surrogate (Issue #2919).
+  #
+  # The Absolute Perf Gate (#2693) and Multi-Zone Perf Gate (#2772) measure
+  # `BatchOracle::evaluate_population` over a populated, warmed-up
+  # `ThermalModel` — neither constructs a fresh `SurrogateManager` per
+  # cycle, so neither exercises the FIRST `predict_loads_onnx` call against
+  # a cold session pool. That first call pays the full cost of
+  # `SessionPool::get_or_create_session` (`src/ai/surrogate.rs:1247` — ort
+  # env init + model parse + session allocation) plus per-call scratch
+  # tensors, and is invisible to the warm-path gate. At the API layer the
+  # first `/v1/simulate` request after a fresh process pays this cost —
+  # easy > 500 ms on a 256 MiB shipped model.
+  #
+  # This job closes that gap. It runs the new
+  # `tests/surrogate_cold_start_test.rs::test_surrogate_cold_start_under_100ms_or_2_5x_warm_median`
+  # test (which itself asserts the lenient Issue #2919 acceptance criterion
+  # "100 ms OR 2.5× warm median") x3, takes the MEDIAN of the parsed
+  # `Cold start:` / `Warm steady-state:` / `Cold/warm ratio:` lines,
+  # writes `benchmark_results.json` with the `cold_start_ms`,
+  # `warm_steady_state_ms`, and `cold_warm_ratio` metrics, and feeds it to
+  # `scripts/release_gate_checker.py --benchmark-gates cold_start`. The
+  # checker enforces the STRICTER 1.5× ratio threshold from
+  # `release_gates.yaml → benchmark.cold_start.max_cold_warm_ratio` and
+  # the 25% baseline-regression tolerance from
+  # `tests/reference_data/surrogate/cold_start_baseline.json`. The job
+  # FAILS if cold/warm ratio > 1.5 OR cold-start regresses > 25% relative
+  # to the stored baseline.
+  #
+  # Runner: `ubuntu-latest` (parity with `absolute-perf-gate` /
+  # `multi-zone-perf-gate` / `hybrid-perf-gate`). The cold-start floors
+  # were calibrated on GitHub-hosted ubuntu-latest against the
+  # `assets/dummy_surrogate.onnx` fixture.
+  #
+  # `--features ort` is REQUIRED — `tests/surrogate_cold_start_test.rs`
+  # is `#[cfg(feature = "ort")]` because `SurrogateManager::load_onnx` /
+  # `predict_loads_onnx` only compile under that feature. Without it the
+  # test would compile but skip everything, silently green-gating the PR.
+  # =========================================================================
+  multi-zone-cold-start-gate:
+    name: Multi-Zone Cold Start Gate (Issue #2919)
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    # NOTE: intentionally no `needs` — builds its own release test binary
+    # and runs in parallel with `absolute-perf-gate` /
+    # `multi-zone-perf-gate` / `hybrid-perf-gate` for a faster PR signal.
+    if: github.event_name == 'pull_request' || (github.event_name == 'push' && github.ref == 'refs/heads/main') || github.event_name == 'workflow_dispatch'
+
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4
+
+      - name: Install system dependencies
+        uses: ./.github/actions/install-system-deps
+        with:
+          packages: libssl-dev,pkg-config,libfontconfig1-dev,fontconfig
+
+      - name: Install Rust
+        uses: nick-fields/retry@ad984534de44a9489a53aefd81eb77f87c70dc60  # v4.0.0
+        with:
+          max_attempts: 3
+          timeout_minutes: 10
+          retry_wait_seconds: 15
+          command: rustup toolchain install stable --profile default
+
+      # Separate cache namespace so the `--features ort` build of the cold-
+      # start test does not evict / get evicted by the default-features
+      # cache used by `absolute-perf-gate` / `multi-zone-perf-gate` /
+      # `hybrid-perf-gate`. The ort runtime pulls in a ~30 MB transitive
+      # dependency tree (libonnxruntime + protobuf + ureq) that is not
+      # needed by those jobs.
+      - name: Cache cargo (cold-start-gate, ort feature)
+        uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32  # v2
+        with:
+          shared-key: perf-dashboard-cold-start-ort
+          cache-on-failure: true
+
+      # Build the release test binary once (shared across all 3 measurement
+      # runs). The `--features ort` flag activates the
+      # `predict_loads_onnx` symbol that the new test exercises; on a
+      # default-features build the test compiles to a no-op stub and the
+      # gate would silently green.
+      - name: Build release (--features ort)
+        run: cargo build --release --features ort --tests
+
+      # Median-of-3 noise suppression. Each run invokes the single
+      # `test_surrogate_cold_start_under_100ms_or_2_5x_warm_median` test,
+      # which prints exactly one `Cold start:`, `Warm steady-state:`, and
+      # `Cold/warm ratio:` line (with a `[surrogate-cold-start-diag]`
+      # prefix). We tolerate a nonzero test exit with `|| true`; the
+      # metrics are printed BEFORE any assertion failure so partial
+      # diagnostics still surface in the gate output.
+      #
+      # `--test-threads=1` forces SEQUENTIAL execution — without it the
+      # test harness can spawn parallel `run_cold_warm_cycle` calls that
+      # share the page cache and the CPU thermal envelope, dragging warm
+      # latency up and compressing the cold/warm ratio. Sequential
+      # execution matches the #2922 hybrid-gate pattern.
+      #
+      # Runtime budget: each cold/warm cycle builds a fresh
+      # `SurrogateManager` and runs 4 `predict_loads_onnx` calls. On
+      # ubuntu-latest the dummy fixture is ~1 ms per call. 1 test × 3
+      # runs × worst-case timing + ~5 min cold-cache ort build fits inside
+      # the 25-min job timeout with margin.
+      - name: Run cold-start benchmark (median of 3, sequential)
+        run: |
+          rm -f run_*.txt
+          for i in 1 2 3; do
+            echo "=== measurement run ${i}/3 ==="
+            cargo test --test surrogate_cold_start_test --release --features ort -- --nocapture --test-threads=1 > "run_${i}.txt" 2>&1 || true
+          done
+
+          python3 << 'EOF'
+          import glob
+          import json
+          import re
+          import statistics
+          import sys
+
+          # Match the metric lines the Rust test prints — keep these in
+          # sync with `tests/surrogate_cold_start_test.rs`. The Python
+          # regex looks for the line AFTER the
+          # `[surrogate-cold-start-diag]` prefix to keep the parser robust
+          # to additional log lines around them.
+          cold_re = re.compile(r'Cold start:\s*([\d.]+)ms')
+          warm_re = re.compile(r'Warm steady-state:\s*([\d.]+)ms')
+          ratio_re = re.compile(r'Cold/warm ratio:\s*([\d.]+)')
+
+          cold_samples, warm_samples, ratio_samples = [], [], []
+          for path in sorted(glob.glob('run_*.txt')):
+              txt = open(path, errors='replace').read()
+              c = cold_re.findall(txt)
+              w = warm_re.findall(txt)
+              r = ratio_re.findall(txt)
+              if c and w and r:
+                  cold_samples.append(float(c[-1]))
+                  warm_samples.append(float(w[-1]))
+                  ratio_samples.append(float(r[-1]))
+                  print(f"{path}: cold={c[-1]} ms, warm={w[-1]} ms, ratio={r[-1]}")
+              else:
+                  print(f"WARNING: {path} produced no parseable cold-start metrics (cold={c}, warm={w}, ratio={r})")
+
+          if len(cold_samples) < 2 or len(warm_samples) < 2 or len(ratio_samples) < 2:
+              print("ERROR: fewer than 2 successful cold-start measurement runs; cannot compute a stable median.")
+              print("This usually means a compile error or a runtime panic before measurement.")
+              for path in sorted(glob.glob('run_*.txt')):
+                  print(f"\n--- {path} (first 2000 chars) ---")
+                  print(open(path, errors='replace').read()[:2000])
+              sys.exit(2)
+
+          med_cold = statistics.median(cold_samples)
+          med_warm = statistics.median(warm_samples)
+          med_ratio = statistics.median(ratio_samples)
+
+          print(f"\nSamples: cold_ms={cold_samples}")
+          print(f"         warm_ms={warm_samples}")
+          print(f"         ratio={ratio_samples}")
+          print(f"Median cold-start:    {med_cold:.3f} ms")
+          print(f"Median warm steady-state: {med_warm:.3f} ms")
+          print(f"Median cold/warm ratio:   {med_ratio:.3f}")
+
+          results = {
+              "metrics": {
+                  # `cold_start_ms` / `warm_steady_state_ms` /
+                  # `cold_warm_ratio` are the gate names expected by
+                  # `scripts/release_gate_checker.py` (mirrors how it reads
+                  # `benchmark.cold_start.{max_ms,warm_max_ms,
+                  # max_cold_warm_ratio}` from `release_gates.yaml`).
+                  # Throughput / latency are also populated so a future
+                  # `--benchmark-gates` filter expansion picks them up
+                  # without re-running the job.
+                  "cold_start_ms": med_cold,
+                  "warm_steady_state_ms": med_warm,
+                  "cold_warm_ratio": med_ratio,
+              },
+              "samples": {
+                  "cold_ms": cold_samples,
+                  "warm_ms": warm_samples,
+                  "ratio": ratio_samples,
+                  "runs": len(cold_samples),
+                  "strategy": "median-of-3",
+                  "fixture": "assets/dummy_surrogate.onnx",
+                  "feature": "ort",
+              },
+          }
+          with open('benchmark_results.json', 'w') as f:
+              json.dump(results, f, indent=2)
+          print("\nWrote benchmark_results.json")
+          EOF
+
+      # Evaluate the cold-start gate from release_gates.yaml:
+      # - absolute cold ≤ 100 ms (Issue #2919 acceptance criterion)
+      # - cold/warm ratio ≤ 1.5 (CI gate, stricter than the test's lenient 2.5× bound)
+      # - cold-start regression ≤ 25% relative to the stored baseline at
+      #   `tests/reference_data/surrogate/cold_start_baseline.json`
+      # `--benchmark-gates cold_start` restricts evaluation to this single
+      # gate (Issue #2919); the checker exits 1 on any failure.
+      - name: Evaluate cold-start gate (≤100 ms + ratio ≤1.5 + ≤25% baseline regression)
+        run: |
+          python3 scripts/release_gate_checker.py \
+            --benchmark-results benchmark_results.json \
+            --benchmark-gates cold_start \
+            --json --output gate_status.json
+
+      - name: Summary
+        if: always()
+        run: |
+          echo "## Multi-Zone Cold Start Gate (Issue #2919)" >> $GITHUB_STEP_SUMMARY
+          echo "Enforces \`release_gates.yaml\` cold-start floors on every PR:" >> $GITHUB_STEP_SUMMARY
+          echo "- cold-start latency ≤ 100 ms (absolute, Issue #2919 acceptance)" >> $GITHUB_STEP_SUMMARY
+          echo "- cold/warm ratio ≤ 1.5 (Issue #2919 CI gate; stricter than the test's lenient 2.5× bound)" >> $GITHUB_STEP_SUMMARY
+          echo "- cold-start regression ≤ 25% relative to \`tests/reference_data/surrogate/cold_start_baseline.json\`" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Why:** the #2693 Absolute Perf Gate measures the warm steady-state path of \`BatchOracle::evaluate_population\`, which constructs its own models and never exercises the FIRST \`predict_loads_onnx\` call against a freshly constructed \`SurrogateManager\`. That first call pays the full cost of \`SessionPool::get_or_create_session\` (ort env init + model parse + session allocation), and at the API layer the first \`/v1/simulate\` request after a fresh process pays the same cost — easy > 500 ms on a 256 MiB shipped model. Before #2919 this regression was invisible to CI." >> $GITHUB_STEP_SUMMARY
+          echo "**Noise suppression:** median of 3 cold/warm cycles (\`surrogate_cold_start_test\` x3, release build, \`--features ort\`)." >> $GITHUB_STEP_SUMMARY
+          echo "**Runner:** \`ubuntu-latest\` (parity with \`absolute-perf-gate\` / \`multi-zone-perf-gate\` / \`hybrid-perf-gate\`; the 100 ms + 1.5× ratio floors were calibrated here)." >> $GITHUB_STEP_SUMMARY
+          if [ -f gate_status.json ]; then
+            echo '```json' >> $GITHUB_STEP_SUMMARY
+            cat gate_status.json >> $GITHUB_STEP_SUMMARY
+            echo '```' >> $GITHUB_STEP_SUMMARY
+          fi
+
+      - name: Upload results
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02  # v4
+        with:
+          name: cold-start-gate-${{ github.run_id }}
+          path: |
+            benchmark_results.json
+            gate_status.json
+            run_*.txt
+          retention-days: 30
+
+  # =========================================================================
   # dhat-alloc-budget — PR-gated allocation-budget gate for the BatchOracle
   # hot loop (Issue #2709).
   # Runs the feature-gated `dhat_alloc_budget` integration test, which installs

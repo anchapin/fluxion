@@ -105,6 +105,70 @@ benchmark:
     max_ms: 500
     description: "Maximum latency for cross-validation"
 
+  # Issue #2919: PR-blocking cold-start latency gate for the ONNX surrogate.
+  # `absolute-perf-gate` (#2693) measures warm steady-state latency on
+  # `BatchOracle::evaluate_population`, which constructs its own models and
+  # never exercises the FIRST `predict_loads_onnx` call against a freshly
+  # constructed `SurrogateManager`. That first call pays the full cost of
+  # `SessionPool::get_or_create_session` (`src/ai/surrogate.rs:1247` —
+  # ort env init + model parse + session allocation) plus per-call scratch
+  # tensors, and is invisible to the warm-path gate.
+  #
+  # Floors enforced by the new `tests/surrogate_cold_start_test.rs` and the
+  # `multi-zone-cold-start-gate` GitHub Actions job (Issue #2919). The
+  # baseline lives at `tests/reference_data/surrogate/cold_start_baseline.json`
+  # (median-of-3 cold/warm cycles); a regression > 25% relative to the
+  # baseline trips the gate. Diagnostic regeneration prints the cycle
+  # values via `cargo test --release --features ort -- --ignored
+  # --nocapture diagnostic_print_cold_warm_cycles`.
+  cold_start:
+    # Maximum median cold-start latency (FIRST `predict_loads_onnx` on a
+    # freshly constructed `SurrogateManager`, median of 3 cycles). Matches
+    # the Issue #2919 acceptance criterion "latency < 100 ms". On a 256 MiB
+    # shipped model the cold path is dominated by session-construction; on
+    # the 193-byte dummy CI fixture the cold path is ~0 ms and the bound is
+    # effectively always satisfied in CI — the ratio bound below is the
+    # real CI-side regression catcher.
+    max_ms: 100
+    # Maximum median warm steady-state latency. Bounds warm latency so the
+    # cold/warm ratio stays interpretable — a regression that only inflates
+    # the warm path would otherwise shrink the ratio and silently green
+    # the cold-start signal. Picked with margin over the existing
+    # `latency.max_ms_per_config = 10.0` (#2693) to account for the ORT
+    # forward-pass overhead on a 6-input dummy model.
+    warm_max_ms: 25
+    # Maximum allowed median cold/warm ratio (Issue #2919 acceptance
+    # criterion). A first-call cost above 1.5× steady-state is real
+    # regression noise (page-cache misses, allocator-warmup, ORT session
+    # re-initialization) the warm-path-only #2693 gate does not catch.
+    # Below `trivial_fixture_ms` this bound is SKIPPED — on the 193-byte
+    # dummy CI fixture session-construction dominates the cold path and
+    # the ratio is naturally ~3× even when no regression occurred, so the
+    # absolute cold_ms + baseline-regression checks are the binding signal
+    # in that regime.
+    max_cold_warm_ratio: 1.5
+    # Cold-ms threshold below which the cold/warm ratio check is SKIPPED.
+    # The CI runner only has the 193-byte dummy ONNX fixture (no real
+    # 256 MiB shipped model), so cold-path cost there is dominated by
+    # session-construction rather than real ORT forward-pass work. At
+    # that scale the cold/warm ratio is not a meaningful regression
+    # signal; absolute cold_ms + baseline-regression (25%) are.
+    # 5 ms is well above the dummy fixture's natural cold_ms (~0.015 ms)
+    # and well below the shipped-model cold_ms (~400 ms).
+    trivial_fixture_ms: 5.0
+    # Regression tolerance vs. the stored baseline (fraction; 0.25 = 25%).
+    # Mirrors the #1333 / #2506 strict-energy gate pattern: the CI job
+    # compares the measured median cold/warm ratio against the baseline
+    # ratio and fails the PR if the increase exceeds this threshold.
+    # Calibration: matches the Issue #2919 acceptance wording "fails a PR
+    # if cold-start regresses > 25% relative to a stored baseline".
+    regression_tolerance: 0.25
+    # Path to the JSON baseline (relative to project root). The CI job
+    # loads it via `tests/reference_data/surrogate/cold_start_baseline.json`
+    # and applies the regression tolerance above.
+    baseline_file: "tests/reference_data/surrogate/cold_start_baseline.json"
+    description: "PR-blocking cold-start latency gate for the ONNX surrogate (Issue #2919)"
+
   # Regression threshold - percentage change allowed before warning
   regression_threshold: 5.0  # percentage
 
@@ -339,6 +403,26 @@ ci:
     # not a silently-greened gate.
     - "Multi-Zone Perf Gate (Issue #2772)"
 
+    # Issue #2919: PR-level cold-start latency floor for the ONNX
+    # surrogate. The #2693 Absolute Perf Gate and #2772 / #2922 multi-
+    # zone / hybrid gates all measure warm steady-state paths on
+    # `BatchOracle::evaluate_population` / `HybridThermalModel` — none
+    # construct a fresh `SurrogateManager` per cycle and none exercise
+    # the FIRST `predict_loads_onnx` call against a cold session pool.
+    # That first call pays the full cost of
+    # `SessionPool::get_or_create_session` (`src/ai/surrogate.rs:1247` —
+    # ort env init + model parse + session allocation) plus per-call
+    # scratch tensors, and at the API layer the first `/v1/simulate`
+    # request after a fresh process pays the same cost — easy > 500 ms
+    # on a 256 MiB shipped model. The
+    # `multi-zone-cold-start-gate` job in `performance_dashboard.yml`
+    # runs `tests/surrogate_cold_start_test.rs` x3, takes the median,
+    # and feeds the result to `release_gate_checker.py --benchmark-gates
+    # cold_start`, which enforces absolute cold ≤ 100 ms, cold/warm
+    # ratio ≤ 1.5×, and ≤ 25% regression relative to
+    # `tests/reference_data/surrogate/cold_start_baseline.json`.
+    - "Multi-Zone Cold Start Gate (Issue #2919)"
+
     # Issue #2922: PR-level ABSOLUTE HybridThermalModel floor. The
     # #2693 Absolute Perf Gate and #2772 Multi-Zone Perf Gate both measure
     # the pure-physics path (`ThermalModel<VectorField>` /
@@ -541,6 +625,25 @@ ci:
       # suppression discipline as #2693 (ubuntu-latest, median-of-3).
       workflow: ".github/workflows/performance_dashboard.yml"
       issue: 2772
+      triggered_by: "PR + push to main + workflow_dispatch"
+
+    - job: "Multi-Zone Cold Start Gate (Issue #2919)"
+      # PR-blocking cold-start latency floor for the ONNX surrogate
+      # (`benchmark.cold_start.{max_ms: 100, max_cold_warm_ratio: 1.5,
+      # regression_tolerance: 0.25}`). The #2693 Absolute Perf Gate,
+      # #2772 Multi-Zone Perf Gate, and #2922 Hybrid Perf Gate all
+      # measure warm steady-state paths on `BatchOracle::evaluate_
+      # population` / `HybridThermalModel` — none exercise the FIRST
+      # `predict_loads_onnx` call against a freshly constructed
+      # `SurrogateManager`. Before #2919 a regression that added 400 ms
+      # to first-call cost passed CI invisibly. The job runs
+      # `tests/surrogate_cold_start_test.rs` x3 (release build,
+      # `--features ort`), takes the median, and feeds the result to
+      # `release_gate_checker.py --benchmark-gates cold_start`. Runner
+      # / noise-suppression discipline mirrors #2693 / #2772 /
+      # #2922 (ubuntu-latest, median-of-3, default cache shared-key).
+      workflow: ".github/workflows/performance_dashboard.yml"
+      issue: 2919
       triggered_by: "PR + push to main + workflow_dispatch"
 
     - job: "Hybrid Perf Gate (Issue #2922)"

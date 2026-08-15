@@ -1,0 +1,12 @@
+{
+  "model_id": "dummy_surrogate.onnx",
+  "model_path": "assets/dummy_surrogate.onnx",
+  "model_size_bytes": 193,
+  "recorded_at": "2026-08-15T00:00:00Z",
+  "ort_version": "ort 2.0.0-rc.10 (matches release_gates.yaml's dummy ONNX contract)",
+  "median_cold_ms": 0.015,
+  "median_warm_ms": 0.005,
+  "median_ratio": 3.23,
+  "regression_tolerance_pct": 25.0,
+  "notes": "Issue #2919 calibration baseline for the surrogate cold-start gate. The dummy fixture (193 bytes, pass-through on input[0]) is intentionally tiny so session-construction cost (~10 us) dominates the cold path — cold/warm ratio naturally ~3x even with no regression. The CI gate's `cold_start.trivial_fixture_ms = 5.0` skips the absolute 1.5x ratio check when cold_ms < 5 ms (always true on the dummy fixture), and uses this baseline + the 25% regression tolerance as the binding signal. The 1.5x absolute ratio check fires on real workloads (256 MiB shipped model, cold ~400 ms). Regenerate via: cargo test --release --features ort --test surrogate_cold_start_test -- --ignored --nocapture diagnostic_print_cold_warm_cycles"
+}
