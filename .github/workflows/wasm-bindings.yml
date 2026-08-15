@@ -72,7 +72,7 @@ jobs:
           - ${{ vars.FLUXION_LINUX_RUNNER || 'ubuntu-latest' }}
           - windows-latest
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677252  # v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4
 
       # wasm-pack 0.15.x is pinned via the official installer. The
       # installer downloads a prebuilt binary for the current OS+arch
