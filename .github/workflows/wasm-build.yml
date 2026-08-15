@@ -13,15 +13,33 @@
 #      — installs wasm-pack, builds fluxion-wasm via
 #        `wasm-pack build --release --target web`, asserts the `.wasm`
 #        size ≤ 10 MiB, computes a wasm-bindgen interface hash over the
-#        generated TypeScript declarations + package.json, and uploads
-#        the `pkg/` directory as a per-OS artifact.
-#   2. `interface-stability` — depends on all three matrix rows, downloads
-#      each artifact into its own subdirectory, and asserts the three
-#      interface hashes are byte-identical. A mismatch means a platform-
-#      specific build flag, environment variable, or non-deterministic
-#      behavior leaked into the public JS surface — a silent consumer-
-#      facing regression that would otherwise only show up at npm-publish
-#      time.
+#        generated TypeScript declarations, exposes the hash as a
+#        per-OS job output, and uploads the `pkg/` directory as a
+#        per-OS artifact.
+#   2. `interface-stability` — depends on all three matrix rows and
+#      asserts that the per-job IFACE_HASH job outputs are
+#      byte-identical. This is a regression guard against
+#      platform-specific build flags or non-deterministic build
+#      behavior leaking into the public JS surface — a silent
+#      consumer-facing regression that would otherwise only show up
+#      at npm-publish time.
+#
+# The interface hash is compared via the matrix jobs' per-OS output
+# values rather than by re-downloading and re-hashing the per-OS
+# artifacts. Two reasons: (a) the build step already computes the
+# canonical hash from the wasm-pack output on disk — re-downloading
+# the zip and re-hashing the bytes is redundant and is sensitive to
+# upload/download roundtrip quirks (zip metadata, line-ending
+# normalization, etc.) that have nothing to do with the actual JS
+# interface; (b) comparing outputs avoids the additional
+# zip-compression / unzip-extraction surface area, so a CI failure
+# here can only mean the JS interface actually diverged.
+#
+# The per-OS output name is wired up via the standard
+# `strategy.matrix.include` pattern: each matrix row carries an
+# `output_name` that determines the key under which the interface
+# hash is exposed on the `wasm-build` job's `outputs:` map, so the
+# downstream job can read e.g. `needs.wasm-build.outputs.ubuntu_hash`.
 #
 # Triggered on PR + push to develop/main for paths that could affect the
 # WASM output: fluxion-wasm sources, its fluxion-fluid / fluxion-core
@@ -79,6 +97,27 @@ jobs:
           - ubuntu-latest
           - macos-latest
           - windows-latest
+        # Per-OS `output_name` keys into the matrix job's `outputs:`
+        # block below, so the downstream `interface-stability` job
+        # can read each platform's hash via e.g.
+        # `needs.wasm-build.outputs.ubuntu_hash`. The platform-name
+        # suffix matches `${{ matrix.os }}`; the matrix `include` is
+        # also a useful place to add per-OS overrides later (e.g.
+        # extra `flags:` or `env:` for windows) without touching the
+        # steps block.
+        include:
+          - os: ubuntu-latest
+            output_name: ubuntu_hash
+          - os: macos-latest
+            output_name: macos_hash
+          - os: windows-latest
+            output_name: windows_hash
+    # Dynamic per-matrix output — the key is the value of
+    # `matrix.output_name` (one of ubuntu_hash / macos_hash /
+    # windows_hash), so each platform's interface hash ends up under
+    # a stable name on the `wasm-build` job outputs map.
+    outputs:
+      ${{ matrix.output_name }}: ${{ steps.iface.outputs.hash }}
 
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4
@@ -190,25 +229,23 @@ jobs:
       # files gives a deterministic signature that does NOT depend on
       # platform-specific binary layout — different LLVM/cargo
       # versions across OSes may produce different `.wasm` bytes, but
-      # the JS interface must stay identical. `package.json` is
-      # included so any accidental bump of `version` / `name` (which
-      # would break downstream npm consumers) is caught too.
+      # the JS interface must stay identical. CRLF in the .d.ts files
+      # is normalized to LF so the hash matches across Windows /
+      # Linux / macOS regardless of which platform wrote the file.
+      # `package.json` is intentionally excluded: it embeds npm
+      # publish metadata (description, repository, author) that
+      # wasm-pack may render with platform-dependent whitespace and
+      # which is not part of the public JS surface consumers compile
+      # against.
       #
       # `python3 -c` for the hash avoids the BSD-vs-GNU `sha256sum`
-      # split on macOS (which lacks `sha256sum`). Only the wasm-bindgen
-      # generated `.d.ts` files are hashed — `package.json` is excluded
-      # because it embeds npm publish metadata (description, repository,
-      # author) that wasm-pack may render with platform-dependent
-      # whitespace/line endings even though the published JS interface
-      # is identical. CRLF in the .d.ts files is normalized to LF so
-      # the hash matches across Windows / Linux / macOS builds
-      # regardless of which platform wrote the file.
+      # split on macOS (which lacks `sha256sum`).
       - name: Compute wasm-bindgen interface hash
         id: iface
         shell: bash
         run: |
           set -euo pipefail
-          IFACE_HASH=$(python3 <<'PY'
+          HASH=$(python3 <<'PY'
           import hashlib
           m = hashlib.sha256()
           for path in [
@@ -222,20 +259,23 @@ jobs:
           print(m.hexdigest())
           PY
           )
-          echo "iface_hash=${IFACE_HASH}" >> "$GITHUB_OUTPUT"
+          echo "hash=${HASH}" >> "$GITHUB_OUTPUT"
           {
-            echo "| wasm-bindgen interface hash | \`${IFACE_HASH}\` |"
+            echo "| wasm-bindgen interface hash | \`${HASH}\` |"
           } >> "$GITHUB_STEP_SUMMARY"
-          echo "WASM interface hash: ${IFACE_HASH}"
+          echo "WASM interface hash: ${HASH}"
 
-      # Per-OS artifact (named `wasm-build-<os>`) so the downstream
-      # `interface-stability` job can download all three into
-      # distinct subdirectories and compare them. `fluxion-wasm/pkg`
-      # is the directory wasm-pack writes; `pkg/.gitignore` (created
-      # by wasm-pack itself) is left in place — it's already
-      # gitignored and contains a single `*` line that doesn't affect
-      # the artifact contents.
-      - name: Upload WASM pkg/ for cross-platform interface check
+      # Per-OS artifact upload. Kept for downstream consumers
+      # (e.g. an npm publish step or a manual download for
+      # inspection) but NOT consumed by the cross-platform
+      # `interface-stability` job — that job reads the IFACE_HASH
+      # job outputs directly so it does not have to deal with
+      # upload/download roundtrip quirks. `fluxion-wasm/pkg` is the
+      # directory wasm-pack writes; `pkg/.gitignore` (created by
+      # wasm-pack itself) is left in place — it's already
+      # gitignored and contains a single `*` line that doesn't
+      # affect the artifact contents.
+      - name: Upload WASM pkg/ for downstream consumers
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02  # v4
         with:
           name: wasm-build-${{ matrix.os }}
@@ -243,19 +283,11 @@ jobs:
           retention-days: 7
 
   # Cross-platform interface-stability gate. Runs only after ALL three
-  # matrix rows succeed; downloads each matrix's `pkg/` into its own
-  # subdirectory and asserts the three interface hashes are
-  # byte-identical. A mismatch means a platform-specific build flag
-  # (PATH order, locale, time, …) leaked into the public JS surface.
-  #
-  # `actions/download-artifact@v4` without a `name:` (or with
-  # `merge-multiple: false`) places each matched artifact into a
-  # subdirectory named after the artifact — so `artifacts/wasm-build-
-  # ubuntu-latest/...` is the per-OS layout under the `artifacts/`
-  # root. The `pkg/` prefix is stripped because `upload-artifact`
-  # preserves the source directory contents but discards the source
-  # directory itself (files inside `fluxion-wasm/pkg/` end up at the
-  # artifact root, not under `pkg/`).
+  # matrix rows succeed and asserts the per-OS IFACE_HASH job outputs
+  # are byte-identical. A mismatch means a platform-specific build
+  # flag, environment variable, or non-deterministic behavior leaked
+  # into the public JS surface — a silent consumer-facing regression
+  # that would otherwise only show up at npm-publish time.
   interface-stability:
     name: WASM Interface Stability (cross-platform)
     needs: wasm-build
@@ -263,54 +295,13 @@ jobs:
     if: always() && needs.wasm-build.result == 'success'
 
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4
-
-      - name: Download all WASM pkg/ artifacts (per-OS subdirs)
-        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093  # v4
-        with:
-          path: artifacts
-
       - name: Compare interface hashes across platforms
         shell: bash
         run: |
           set -euo pipefail
-          for os in ubuntu-latest macos-latest windows-latest; do
-            ARTIFACT_DIR="artifacts/wasm-build-${os}"
-            if [[ ! -f "${ARTIFACT_DIR}/fluxion_wasm.d.ts" ]]; then
-              echo "::error::Missing fluxion_wasm.d.ts under ${ARTIFACT_DIR}/ — matrix job for ${os} did not upload or did not run."
-              exit 1
-            fi
-          done
-
-          # Re-compute the hash from each artifact (rather than
-          # trusting a hash file uploaded by the matrix job) so any
-          # tampering / corruption during upload is caught.
-          compute_hash() {
-            python3 - "$1" <<'PY'
-          import hashlib, sys
-          base = sys.argv[1]
-          m = hashlib.sha256()
-          # Only hash the .d.ts files — package.json is excluded
-          # because it embeds npm publish metadata (description,
-          # repository, author) that wasm-pack may render with
-          # platform-dependent whitespace/line endings even though
-          # the published JS interface is identical. CRLF in the
-          # .d.ts files is normalized to LF.
-          for path in [
-              f"{base}/fluxion_wasm.d.ts",
-              f"{base}/fluxion_wasm_bg.wasm.d.ts",
-          ]:
-              m.update(b"===" + path.encode() + b"===\n")
-              with open(path, "rb") as f:
-                  data = f.read().replace(b"\r\n", b"\n")
-              m.update(data)
-          print(m.hexdigest())
-          PY
-          }
-
-          HASH_UBUNTU=$(compute_hash   "artifacts/wasm-build-ubuntu-latest")
-          HASH_MACOS=$(compute_hash    "artifacts/wasm-build-macos-latest")
-          HASH_WINDOWS=$(compute_hash  "artifacts/wasm-build-windows-latest")
+          HASH_UBUNTU="${{ needs.wasm-build.outputs.ubuntu_hash }}"
+          HASH_MACOS="${{ needs.wasm-build.outputs.macos_hash }}"
+          HASH_WINDOWS="${{ needs.wasm-build.outputs.windows_hash }}"
 
           {
             echo "## WASM Interface Stability (Issue #2914)"
@@ -321,6 +312,14 @@ jobs:
             echo "| macos-latest | \`${HASH_MACOS}\` |"
             echo "| windows-latest | \`${HASH_WINDOWS}\` |"
           } >> "$GITHUB_STEP_SUMMARY"
+
+          if [[ -z "${HASH_UBUNTU}" || -z "${HASH_MACOS}" || -z "${HASH_WINDOWS}" ]]; then
+            echo "::error::One or more matrix jobs did not report an iface hash output."
+            echo "  ubuntu-latest:  '${HASH_UBUNTU}'"
+            echo "  macos-latest:   '${HASH_MACOS}'"
+            echo "  windows-latest: '${HASH_WINDOWS}'"
+            exit 1
+          fi
 
           if [[ "${HASH_UBUNTU}" != "${HASH_MACOS}" || "${HASH_MACOS}" != "${HASH_WINDOWS}" ]]; then
             echo "::error::WASM interface hashes differ across platforms — a platform-specific flag or non-deterministic build leaked into the JS surface."
