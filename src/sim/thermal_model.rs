@@ -383,6 +383,18 @@ impl SurrogateThermalModel {
     pub fn get_hourly_temperatures(&self) -> Option<Vec<Vec<f64>>> {
         self.inner.get_hourly_temperatures()
     }
+
+    /// Per-zone cooling energy in kWh from the last simulation.
+    ///
+    /// Issue #2924 — locks the surrogate-layer MAE gate on CI by letting
+    /// the test compute the surrogate's annual cooling kWh (sum of the
+    /// returned vector) and compare against the EnergyPlus published
+    /// reference. The underlying physics step is identical to the
+    /// `PhysicsThermalModel` path, so the per-zone counters accumulate
+    /// the same way. Callers should call this after `solve_timesteps`.
+    pub fn get_zone_cooling_energy_kwh(&self) -> Vec<f64> {
+        self.inner.get_zone_cooling_energy_kwh()
+    }
 }
 
 struct SurrogateThermalLoadAdapter {
