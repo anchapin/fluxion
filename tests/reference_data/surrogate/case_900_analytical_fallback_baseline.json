@@ -1,0 +1,9 @@
+{
+  "case_id": "900",
+  "analytical_heating_kwh": 5996.498390,
+  "analytical_cooling_kwh": 0.0,
+  "analytical_total_kwh": 5996.498390,
+  "drift_tolerance_pct": 10.0,
+  "recorded_at": "2026-08-14T00:00:00Z",
+  "notes": "Recorded from the Issue #2923 fallback-mode drift gate under SurrogateThermalModel::solve_timesteps with no ONNX model loaded. The analytical fallback (src/ai/surrogate.rs:1876) returns a synthetic sine-cycle solar-gain load; the dispatch then routes through SurrogateThermalLoadAdapter (src/sim/thermal_model.rs) which calls predict_loads_with_fallback → analytical_loads → vec![solar_gain; n], then set_loads + step_physics. The 9R4C physics path uses full analytical loads (solar + conduction + ventilation) and produces ~870 MWh annual HVAC — structurally unreachable as a 10% drift comparison (see tests/surrogate_drift_fallback_regression.rs module docstring). The 10% noise envelope here covers floating-point variation, ASHRAE 140 case-spec evolution, and minor refactors of the dispatch path without masking a regression in the analytical predictor itself. Regenerate via: cargo test --release --features ort --test surrogate_drift_fallback_regression -- --ignored --nocapture fallback_annual_hvac_diagnostic"
+}
