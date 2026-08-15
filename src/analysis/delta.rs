@@ -303,9 +303,12 @@ pub fn run_simulation(
     for step in 0..STEPS {
         let hour_of_day = step % 24;
         let weather_data = weather.get_hourly_data(step).unwrap();
+        // Extract the only field used downstream (f64 is Copy) so we can move
+        // weather_data into model.weather without an extra clone (Issue #2893).
+        let dry_bulb_temp = weather_data.dry_bulb_temp;
 
         // Update weather data on model for solar gain calculation
-        model.weather = Some(weather_data.clone());
+        model.weather = Some(weather_data);
 
         // Apply HVAC schedule: handle single-zone and multi-zone
         if !spec.hvac.is_empty() {
@@ -376,7 +379,7 @@ pub fn run_simulation(
         model.set_loads(&internal_loads_density);
 
         // Step physics
-        let hvac_kwh = model.step_physics(step, weather_data.dry_bulb_temp, 3600.0);
+        let hvac_kwh = model.step_physics(step, dry_bulb_temp, 3600.0);
 
         // Accumulate energy (convert kWh to Joules)
         if hvac_kwh > 0.0 {
@@ -388,7 +391,7 @@ pub fn run_simulation(
         // Collect hourly diagnostics if requested
         if let Some(ref mut hourly_vec) = hourly_data_vec {
             let mut hourly = HourlyData::new(step, num_zones);
-            hourly.outdoor_temp = weather_data.dry_bulb_temp;
+            hourly.outdoor_temp = dry_bulb_temp;
             hourly.zone_temps = model.temperatures.as_slice().to_vec();
             hourly.mass_temps = model.mass_temperatures.as_slice().to_vec();
 
@@ -422,7 +425,7 @@ pub fn run_simulation(
                     .get(zone_idx)
                     .copied()
                     .unwrap_or(20.0);
-                let delta_t = zone_temp - weather_data.dry_bulb_temp;
+                let delta_t = zone_temp - dry_bulb_temp;
 
                 // Envelope conduction (walls + roof)
                 let wall_u = spec.construction.wall.u_value(None, None);

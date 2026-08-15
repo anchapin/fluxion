@@ -252,11 +252,15 @@ where
             }
         };
 
+        // Extract the only field used downstream (f64 is Copy) so we can move
+        // weather_data into model.weather without an extra clone (Issue #2893).
+        let dry_bulb_temp = weather_data.dry_bulb_temp;
+
         // Set weather on model for solar gain calculation
-        model.weather = Some(weather_data.clone());
+        model.weather = Some(weather_data);
 
         // Advance physics
-        model.step_physics(step, weather_data.dry_bulb_temp, 3600.0);
+        model.step_physics(step, dry_bulb_temp, 3600.0);
     }
 
     // Calculate max temperature change over the last 24 hours of warm-up
@@ -304,8 +308,11 @@ where
     for step in 0..initial_warmup_hours {
         let weather_hour = step % HOURS_PER_YEAR;
         if let Ok(weather_data) = weather.get_hourly_data(weather_hour) {
-            model.weather = Some(weather_data.clone());
-            model.step_physics(step, weather_data.dry_bulb_temp, 3600.0);
+            // Extract the only field used downstream (f64 is Copy) so we can move
+            // weather_data into model.weather without an extra clone (Issue #2893).
+            let dry_bulb_temp = weather_data.dry_bulb_temp;
+            model.weather = Some(weather_data);
+            model.step_physics(step, dry_bulb_temp, 3600.0);
             total_timesteps += 1;
         }
     }
@@ -319,8 +326,11 @@ where
         // Run one full year
         for step in 0..HOURS_PER_YEAR {
             if let Ok(weather_data) = weather.get_hourly_data(step) {
-                model.weather = Some(weather_data.clone());
-                model.step_physics(step, weather_data.dry_bulb_temp, 3600.0);
+                // Extract the only field used downstream (f64 is Copy) so we can move
+                // weather_data into model.weather without an extra clone (Issue #2893).
+                let dry_bulb_temp = weather_data.dry_bulb_temp;
+                model.weather = Some(weather_data);
+                model.step_physics(step, dry_bulb_temp, 3600.0);
                 total_timesteps += 1;
             }
         }

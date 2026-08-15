@@ -3414,7 +3414,10 @@ fn simulate_case_920_blind(spec: &CaseSpec) -> Case920BlindSim {
             Ok(w) => w,
             Err(_) => continue, // Defensive: should never happen with TMY data
         };
-        model.weather = Some(weather_data.clone());
+        // Extract the only field used downstream (f64 is Copy) so we can move
+        // weather_data into model.weather without an extra clone (Issue #2893).
+        let dry_bulb_temp = weather_data.dry_bulb_temp;
+        model.weather = Some(weather_data);
         if let Some(hvac) = spec.hvac.first() {
             let hour = hour_of_day as u8;
             let heating_sp = hvac
@@ -3424,7 +3427,7 @@ fn simulate_case_920_blind(spec: &CaseSpec) -> Case920BlindSim {
             model.heating_setpoint = heating_sp;
             model.cooling_setpoint = cooling_sp;
         }
-        model.step_physics(step, weather_data.dry_bulb_temp, 3600.0);
+        model.step_physics(step, dry_bulb_temp, 3600.0);
     }
 
     Case920BlindSim {
@@ -3683,7 +3686,10 @@ fn simulate_case_950_blind(spec: &CaseSpec) -> Case950BlindSim {
             Ok(w) => w,
             Err(_) => continue, // Defensive: should never happen with TMY data
         };
-        model.weather = Some(weather_data.clone());
+        // Extract the only field used downstream (f64 is Copy) so we can move
+        // weather_data into model.weather without an extra clone (Issue #2893).
+        let dry_bulb_temp = weather_data.dry_bulb_temp;
+        model.weather = Some(weather_data);
         if let Some(hvac) = spec.hvac.first() {
             let hour = hour_of_day as u8;
             let heating_sp = hvac
@@ -3693,7 +3699,7 @@ fn simulate_case_950_blind(spec: &CaseSpec) -> Case950BlindSim {
             model.heating_setpoint = heating_sp;
             model.cooling_setpoint = cooling_sp;
         }
-        model.step_physics(step, weather_data.dry_bulb_temp, 3600.0);
+        model.step_physics(step, dry_bulb_temp, 3600.0);
     }
 
     Case950BlindSim {

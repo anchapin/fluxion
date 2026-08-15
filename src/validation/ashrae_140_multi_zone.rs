@@ -1737,8 +1737,11 @@ impl ASHRAE140MultiZoneValidator {
             let weather_data = weather
                 .get_hourly_data(step)
                 .expect("Case 970 EPW hourly data");
-            model.set_weather(weather_data.clone());
-            model.step_physics(step, weather_data.dry_bulb_temp, 3600.0);
+            // Extract the only field used downstream (f64 is Copy) so we can move
+            // weather_data into model.set_weather without an extra clone (Issue #2893).
+            let dry_bulb_temp = weather_data.dry_bulb_temp;
+            model.set_weather(weather_data);
+            model.step_physics(step, dry_bulb_temp, 3600.0);
         }
 
         let annual_heating_thermal_mwh = model.get_heating_energy_kwh() / 1000.0;
