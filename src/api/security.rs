@@ -666,7 +666,9 @@ impl RateLimiter {
     /// [`RateLimiter::epoch`]. Saturating at `u64::MAX` so a clock
     /// anomaly cannot wrap to 0.
     fn ticks(now: Instant) -> u64 {
-        now.saturating_duration_since(Self::epoch()).as_nanos().min(u128::from(u64::MAX)) as u64
+        now.saturating_duration_since(Self::epoch())
+            .as_nanos()
+            .min(u128::from(u64::MAX)) as u64
     }
 
     /// Attempt to consume one token for `ip`. Returns `true` if the
@@ -707,7 +709,15 @@ impl RateLimiter {
                 // bucket does not exist under the read lock, so we
                 // must take the write lock to insert it.
                 drop(buckets);
-                return self.try_acquire_insert(ip, seq, now_ticks, capacity, capacity_bits, refill_per_sec, max_entries);
+                return self.try_acquire_insert(
+                    ip,
+                    seq,
+                    now_ticks,
+                    capacity,
+                    capacity_bits,
+                    refill_per_sec,
+                    max_entries,
+                );
             }
         };
 
@@ -765,6 +775,7 @@ impl RateLimiter {
     /// refill+consume under the write lock, registers the LRU position,
     /// and runs eviction if the map is over the cap. Returns the
     /// allow/deny decision.
+    #[allow(clippy::too_many_arguments)]
     fn try_acquire_insert(
         &self,
         ip: IpAddr,
@@ -781,19 +792,17 @@ impl RateLimiter {
 
         // Re-check: another thread may have inserted in between the
         // read-locked peek and the write lock acquisition.
-        let existing_lru_seq: u64;
         let bucket = buckets.entry(ip).or_insert_with(|| Bucket {
             tokens: AtomicU64::new(capacity_bits),
             last_refill_ticks: AtomicU64::new(now_ticks),
             lru_seq: AtomicU64::new(0),
         });
-        existing_lru_seq = bucket.lru_seq.load(Ordering::Relaxed);
+        let existing_lru_seq = bucket.lru_seq.load(Ordering::Relaxed);
 
         // Refill + consume under the write lock (interior mutability
         // is unnecessary here since we have write access).
-        let elapsed_ticks = now_ticks.saturating_sub(
-            bucket.last_refill_ticks.load(Ordering::Relaxed),
-        );
+        let elapsed_ticks =
+            now_ticks.saturating_sub(bucket.last_refill_ticks.load(Ordering::Relaxed));
         let elapsed = elapsed_ticks as f64 / 1e9;
         let mut tokens = f64::from_bits(bucket.tokens.load(Ordering::Relaxed));
         if elapsed > 0.0 {
@@ -909,12 +918,7 @@ fn record_lock_wait(kind: &'static str, wait: std::time::Duration) {
 /// `false` if the bucket is empty.
 ///
 /// [`HashMap`]: std::collections::HashMap
-fn refill_and_consume(
-    bucket: &Bucket,
-    now_ticks: u64,
-    capacity: f64,
-    refill_per_sec: f64,
-) -> bool {
+fn refill_and_consume(bucket: &Bucket, now_ticks: u64, capacity: f64, refill_per_sec: f64) -> bool {
     // Read current state.
     let old_tokens_bits = bucket.tokens.load(Ordering::Relaxed);
     let old_tokens = f64::from_bits(old_tokens_bits);
@@ -968,9 +972,7 @@ fn refill_and_consume(
         Ordering::Relaxed,
     ) {
         Ok(_) => {
-            bucket
-                .last_refill_ticks
-                .store(now_ticks, Ordering::Relaxed);
+            bucket.last_refill_ticks.store(now_ticks, Ordering::Relaxed);
             true
         }
         Err(actual_bits) => {
@@ -997,9 +999,7 @@ fn refill_and_consume(
                 Ordering::Relaxed,
             ) {
                 Ok(_) => {
-                    bucket
-                        .last_refill_ticks
-                        .store(now_ticks, Ordering::Relaxed);
+                    bucket.last_refill_ticks.store(now_ticks, Ordering::Relaxed);
                     true
                 }
                 Err(_) => {
@@ -1582,9 +1582,7 @@ mod tests {
             let limiter = limiter.clone();
             let barrier = barrier.clone();
             handles.push(thread::spawn(move || {
-                let ip: IpAddr = format!("172.16.{}.{}", i / 256, i % 256)
-                    .parse()
-                    .unwrap();
+                let ip: IpAddr = format!("172.16.{}.{}", i / 256, i % 256).parse().unwrap();
                 barrier.wait();
                 limiter.try_acquire(ip)
             }));
@@ -1608,9 +1606,13 @@ mod tests {
         // is a few hundred ns under no contention; 1000 of them in
         // serial would still be sub-millisecond, but contended
         // acquisition against a single mutex would push it well past
-        // this bound).
+        // this bound). The bound here is intentionally loose to absorb
+        // debug-mode CI runner noise (1k thread spawn + barrier sync
+        // alone can take 100-300ms on a shared 2-vCPU runner); the
+        // tighter, relative throughput assertion lives in
+        // `tests/api_concurrent_throughput.rs`.
         assert!(
-            elapsed < std::time::Duration::from_millis(500),
+            elapsed < std::time::Duration::from_millis(1500),
             "1000 concurrent distinct-IP acquires took {elapsed:?} — \
              lock-induced serialisation may have returned (Issue #2894)"
         );
@@ -1642,8 +1644,7 @@ mod tests {
                     // exceed 255 in any octet.
                     let o1 = (i >> 8) & 0xff;
                     let o2 = i & 0xff;
-                    let ip: IpAddr =
-                        std::net::Ipv4Addr::new(10, 20, o1 as u8, o2 as u8).into();
+                    let ip: IpAddr = std::net::Ipv4Addr::new(10, 20, o1 as u8, o2 as u8).into();
                     let _ = limiter.try_acquire(ip);
                 }
             })

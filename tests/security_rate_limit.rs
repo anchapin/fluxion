@@ -35,9 +35,7 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use axum::extract::ConnectInfo;
-use fluxion::api::security::{
-    RateLimiter, TrustedProxyCidr, RATE_LIMIT_LOCK_WAIT_SECONDS,
-};
+use fluxion::api::security::{RateLimiter, TrustedProxyCidr, RATE_LIMIT_LOCK_WAIT_SECONDS};
 use fluxion::api::server::{router_with_security, AppState};
 
 /// Helper: build a minimal REST router carrying only the rate-limit
@@ -161,9 +159,7 @@ fn rate_limiter_handles_one_thousand_distinct_ips_concurrently() {
         let limiter = limiter.clone();
         let barrier = barrier.clone();
         handles.push(std::thread::spawn(move || {
-            let ip: IpAddr = format!("172.16.{}.{}", i / 256, i % 256)
-                .parse()
-                .unwrap();
+            let ip: IpAddr = format!("172.16.{}.{}", i / 256, i % 256).parse().unwrap();
             barrier.wait();
             limiter.try_acquire(ip)
         }));
@@ -232,10 +228,7 @@ fn lock_wait_histogram_is_recorded_for_every_kind() {
             }
         }
     }
-    assert!(
-        saw_read,
-        "expected at least one observation with kind=read"
-    );
+    assert!(saw_read, "expected at least one observation with kind=read");
     assert!(
         saw_write,
         "expected at least one observation with kind=write (new-bucket path)"
@@ -293,8 +286,7 @@ fn rate_limiter_lru_cap_respected_under_concurrent_cold_flood() {
             barrier.wait();
             for i in 0..cold_per_writer {
                 let raw = (w * cold_per_writer + i) as u32;
-                let ip: IpAddr =
-                    format!("198.51.100.{}", raw % 256).parse().unwrap();
+                let ip: IpAddr = format!("198.51.100.{}", raw % 256).parse().unwrap();
                 let _ = limiter.try_acquire(ip);
             }
         }));
