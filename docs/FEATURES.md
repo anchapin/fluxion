@@ -93,6 +93,10 @@ Combine flags with commas: `cargo test --features ort,multi-zone,fluid`.
   `models/surrogate_zone_thermal.onnx`; mock fallback when unset);
   `FLUXION_ONNX_BACKEND` (`cpu | cuda | coreml | directml | openvino`, auto-downgrades to
   `cpu` if `cuda` feature not built); `FLUXION_GPU=0` forces CPU inference.
+  Silent CUDA→CPU downgrades now emit a one-shot `tracing::warn!` on target
+  `fluxion::ai::surrogate::backend` from `SurrogateManager::resolve_backend_from_env`
+  / `gpu_supported` (Issue #2920) — operators see the misconfiguration instead of paying
+  the CPU throughput floor invisibly.
 - **Default:** off.
 
 ### `cuda`

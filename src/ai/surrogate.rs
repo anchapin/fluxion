@@ -20,6 +20,7 @@ use rand::SeedableRng;
 use rayon::prelude::*;
 use sha2::{Digest, Sha256};
 use std::path::Path;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
 #[derive(Clone, Debug, Copy, Default, PartialEq, Eq)]
@@ -1402,7 +1403,53 @@ impl<'a> std::ops::DerefMut for SessionGuard<'a> {
     }
 }
 
+/// One-shot guard for the `FLUXION_ONNX_BACKEND` silent-downgrade warn
+/// (Issue #2920). `compare_exchange(false, true, …)` ensures exactly one warn
+/// per process even under parallel callers; tests reset to `false` so the
+/// assertion can re-trigger the path.
+static BACKEND_DOWNGRADE_WARNED: AtomicBool = AtomicBool::new(false);
+
 impl SurrogateManager {
+    /// Emit (at most once per process) a `tracing::warn!` that surfaces a
+    /// silent CUDA→CPU downgrade. The previous behaviour returned CPU with no
+    /// diagnostic, so an operator who enabled CUDA on a prebuilt image paid
+    /// the CPU throughput floor invisibly (#2920). The first call wins; the
+    /// `AtomicBool` is the one-shot guard.
+    ///
+    /// `env_value` is the raw `FLUXION_ONNX_BACKEND` value the operator set
+    /// (the issue specifies logging the *value*, not the env-var name).
+    fn warn_backend_downgrade(
+        env_value: &str,
+        requested: InferenceBackend,
+        resolved: InferenceBackend,
+    ) {
+        if BACKEND_DOWNGRADE_WARNED
+            .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
+            .is_err()
+        {
+            return;
+        }
+        let gpu_value = std::env::var("FLUXION_GPU").unwrap_or_default();
+        let env_display = if env_value.is_empty() {
+            "<unset>"
+        } else {
+            env_value
+        };
+        let gpu_display = if gpu_value.is_empty() {
+            "<unset>"
+        } else {
+            gpu_value.as_str()
+        };
+        tracing::warn!(
+            target: "fluxion::ai::surrogate::backend",
+            FLUXION_ONNX_BACKEND = env_display,
+            FLUXION_GPU = gpu_display,
+            requested_backend = ?requested,
+            resolved_backend = ?resolved,
+            "FLUXION_ONNX_BACKEND requested CUDA but the surrogate was downgraded to CPU; rebuild with `cargo build --features cuda` or set FLUXION_ONNX_BACKEND=cpu",
+        );
+    }
+
     /// Built-in default model path used when neither `FLUXION_ONNX_MODEL`
     /// nor an explicit `load_onnx` call supplies a model. The zone-thermal
     /// surrogate is shipped in `models/` and is the most general of the
@@ -1474,7 +1521,9 @@ impl SurrogateManager {
 
     /// Resolve the [`InferenceBackend`] from the `FLUXION_ONNX_BACKEND`
     /// environment variable. Unknown values fall back to CPU. The CUDA
-    /// variant is downgraded to CPU when the `cuda` feature is disabled.
+    /// variant is downgraded to CPU when the `cuda` feature is disabled or
+    /// when `FLUXION_GPU=0|false|<empty>` is set; a one-shot `tracing::warn!`
+    /// surfaces the silent downgrade (Issue #2920).
     fn resolve_backend_from_env() -> InferenceBackend {
         let raw = std::env::var("FLUXION_ONNX_BACKEND").unwrap_or_default();
         let parsed = match raw.to_ascii_lowercase().as_str() {
@@ -1485,7 +1534,7 @@ impl SurrogateManager {
             "cpu" | "" => Some(InferenceBackend::CPU),
             _ => None,
         };
-        match parsed {
+        let resolved = match parsed {
             Some(InferenceBackend::CUDA) => {
                 #[cfg(feature = "cuda")]
                 {
@@ -1505,7 +1554,16 @@ impl SurrogateManager {
             }
             Some(other) => other,
             None => InferenceBackend::CPU,
+        };
+        // Issue #2920: a CUDA request that resolves to CPU used to be silent.
+        // Now the first caller per process gets a `tracing::warn!` (target
+        // `fluxion::ai::surrogate::backend`) naming the env var, its value,
+        // the requested backend, and the resolved backend, plus a hint to
+        // rebuild with `--features cuda`.
+        if matches!(parsed, Some(InferenceBackend::CUDA)) && resolved != InferenceBackend::CUDA {
+            Self::warn_backend_downgrade(&raw, InferenceBackend::CUDA, resolved);
         }
+        resolved
     }
 
     fn load_with_backend(
@@ -1922,6 +1980,19 @@ impl SurrogateManager {
         }
         #[cfg(not(feature = "cuda"))]
         {
+            // Issue #2920: if the operator asked for CUDA via env but the
+            // cuda feature is off, surface the silent downgrade before
+            // returning `false`. Shared one-shot guard with
+            // `resolve_backend_from_env`, so only the first caller emits.
+            let env_value = std::env::var("FLUXION_ONNX_BACKEND").unwrap_or_default();
+            let requested_cuda = matches!(env_value.to_ascii_lowercase().as_str(), "cuda" | "gpu");
+            if requested_cuda {
+                Self::warn_backend_downgrade(
+                    &env_value,
+                    InferenceBackend::CUDA,
+                    InferenceBackend::CPU,
+                );
+            }
             false
         }
     }
@@ -4083,5 +4154,154 @@ mod tests {
                 err
             );
         }
+    }
+
+    // ===== Issue #2920 — silent FLUXION_ONNX_BACKEND downgrade warn =====
+    //
+    // `resolve_backend_from_env` must emit a `tracing::warn!` (target
+    // `fluxion::ai::surrogate::backend`) the first time it silently downgrades
+    // a CUDA request to CPU because the `cuda` feature is not built. The
+    // captured output is asserted to contain the literal phrase
+    // `"downgraded to CPU"` plus a hint to rebuild with `--features cuda`.
+
+    /// `io::Write` adapter that funnels bytes into a shared buffer so the
+    /// #2920 test can assert over what `tracing::warn!` emitted. Mirrors the
+    /// `CaptureBuf` helper in `src/api/server.rs` (kept local to avoid
+    /// cross-module `pub(crate)` plumbing for a test-only type).
+    struct WarnCaptureBuf(std::sync::Arc<std::sync::Mutex<Vec<u8>>>);
+
+    impl std::io::Write for WarnCaptureBuf {
+        fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
+            self.0.lock().unwrap().extend_from_slice(bytes);
+            Ok(bytes.len())
+        }
+        fn flush(&mut self) -> std::io::Result<()> {
+            Ok(())
+        }
+    }
+
+    impl<'a> tracing_subscriber::fmt::MakeWriter<'a> for WarnCaptureBuf {
+        type Writer = WarnCaptureBuf;
+        fn make_writer(&'a self) -> Self::Writer {
+            self.clone()
+        }
+    }
+
+    impl Clone for WarnCaptureBuf {
+        fn clone(&self) -> Self {
+            Self(self.0.clone())
+        }
+    }
+
+    #[cfg(not(feature = "cuda"))]
+    #[test]
+    fn test_cuda_request_emits_silent_downgrade_warn() {
+        // Serialize via ENV_LOCK so a parallel `cargo test` thread can't
+        // mutate `FLUXION_ONNX_BACKEND` between our `set_var` and the call.
+        let _guard = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+
+        // Reset the process-wide one-shot guard so this test deterministically
+        // observes the warn even if an earlier test already triggered it.
+        super::BACKEND_DOWNGRADE_WARNED.store(false, std::sync::atomic::Ordering::Release);
+
+        // Install a per-thread tracing subscriber that funnels warn!() output
+        // into a shared buffer we can read back. `set_default` is thread-local,
+        // so it doesn't disturb other tests running in parallel.
+        let buf = std::sync::Arc::new(std::sync::Mutex::new(Vec::<u8>::new()));
+        let buf_for_writer = WarnCaptureBuf(buf.clone());
+        let subscriber = tracing_subscriber::fmt()
+            .with_writer(buf_for_writer)
+            .with_max_level(tracing::Level::WARN)
+            .with_target(true)
+            .without_time()
+            .finish();
+        let _dispatch_guard = tracing::dispatcher::set_default(&tracing::Dispatch::new(subscriber));
+
+        // Snapshot env so we restore exactly what the caller had.
+        let prev_backend = std::env::var("FLUXION_ONNX_BACKEND").ok();
+        let prev_gpu = std::env::var("FLUXION_GPU").ok();
+        std::env::set_var("FLUXION_ONNX_BACKEND", "cuda");
+        std::env::remove_var("FLUXION_GPU");
+
+        let resolved = SurrogateManager::resolve_backend_from_env();
+
+        // Restore env before any assertion that might fail/panic so a
+        // failing test doesn't leave FLUXION_ONNX_BACKEND=cuda behind for
+        // sibling tests.
+        match prev_backend {
+            Some(v) => std::env::set_var("FLUXION_ONNX_BACKEND", v),
+            None => std::env::remove_var("FLUXION_ONNX_BACKEND"),
+        }
+        match prev_gpu {
+            Some(v) => std::env::set_var("FLUXION_GPU", v),
+            None => std::env::remove_var("FLUXION_GPU"),
+        }
+
+        assert_eq!(
+            resolved,
+            InferenceBackend::CPU,
+            "without --features cuda, a FLUXION_ONNX_BACKEND=cuda request must resolve to CPU"
+        );
+
+        let captured = String::from_utf8(buf.lock().unwrap().clone()).unwrap_or_default();
+        assert!(
+            captured.contains("downgraded to CPU"),
+            "expected the silent-downgrade warn to be captured; got: {captured:?}"
+        );
+        assert!(
+            captured.contains("fluxion::ai::surrogate::backend"),
+            "warn must use the documented target; got: {captured:?}"
+        );
+        assert!(
+            captured.contains("--features cuda"),
+            "warn must hint at rebuilding with `--features cuda`; got: {captured:?}"
+        );
+        assert!(
+            captured.contains("cuda"),
+            "warn must echo the FLUXION_ONNX_BACKEND value; got: {captured:?}"
+        );
+    }
+
+    #[cfg(feature = "cuda")]
+    #[test]
+    fn test_cuda_feature_on_does_not_emit_downgrade_warn() {
+        // With the cuda feature built, an unset FLUXION_GPU keeps CUDA
+        // selected and the downgrade warn MUST NOT fire (it would spam
+        // operators who legitimately run the GPU path).
+        let _guard = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        super::BACKEND_DOWNGRADE_WARNED.store(false, std::sync::atomic::Ordering::Release);
+
+        let buf = std::sync::Arc::new(std::sync::Mutex::new(Vec::<u8>::new()));
+        let buf_for_writer = WarnCaptureBuf(buf.clone());
+        let subscriber = tracing_subscriber::fmt()
+            .with_writer(buf_for_writer)
+            .with_max_level(tracing::Level::WARN)
+            .with_target(true)
+            .without_time()
+            .finish();
+        let _dispatch_guard = tracing::dispatcher::set_default(&tracing::Dispatch::new(subscriber));
+
+        let prev_backend = std::env::var("FLUXION_ONNX_BACKEND").ok();
+        let prev_gpu = std::env::var("FLUXION_GPU").ok();
+        std::env::set_var("FLUXION_ONNX_BACKEND", "cuda");
+        std::env::remove_var("FLUXION_GPU");
+
+        let resolved = SurrogateManager::resolve_backend_from_env();
+
+        match prev_backend {
+            Some(v) => std::env::set_var("FLUXION_ONNX_BACKEND", v),
+            None => std::env::remove_var("FLUXION_ONNX_BACKEND"),
+        }
+        match prev_gpu {
+            Some(v) => std::env::set_var("FLUXION_GPU", v),
+            None => std::env::remove_var("FLUXION_GPU"),
+        }
+
+        assert_eq!(resolved, InferenceBackend::CUDA);
+        let captured = String::from_utf8(buf.lock().unwrap().clone()).unwrap_or_default();
+        assert!(
+            !captured.contains("downgraded to CPU"),
+            "cuda feature ON + no FLUXION_GPU must not emit the downgrade warn; got: {captured:?}"
+        );
     }
 }
