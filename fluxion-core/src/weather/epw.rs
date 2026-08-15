@@ -22,7 +22,83 @@
 use crate::weather::{HourlyWeatherData, WeatherError, WeatherSource};
 use std::fs::File;
 use std::io::{BufRead, BufReader, Read};
-use std::path::Path;
+use std::path::{Path, PathBuf};
+
+/// Maximum allowed EPW file size (50 MiB). The largest real-world EPW files
+/// in `assets/weather/` are ~1.6 MB, so 50 MiB gives generous headroom while
+/// still capping the parser-DoS surface flagged by #2527.
+pub const MAX_EPW_SIZE_BYTES: u64 = 50 * 1024 * 1024;
+
+/// Default allow-list directory for EPW files when `FLUXION_EPW_DIR` is
+/// unset (Issue #2915). Mirrors the conventional location of bundled
+/// weather assets.
+pub const DEFAULT_EPW_DIR: &str = "assets/weather";
+
+/// Validates a user-supplied EPW path against the security policy from
+/// Issue #2915 before it reaches `EpwWeatherSource::from_file`. Reads the
+/// allow-list directory from the `FLUXION_EPW_DIR` environment variable
+/// (default `assets/weather/`).
+///
+/// On success returns the canonicalised absolute path. All error messages
+/// are deliberately generic and omit the raw user-supplied path so that
+/// attacker-controlled input is never reflected back to the caller
+/// (closes the error oracle — same hardening as `validate_model_path`
+/// from #2529).
+///
+/// # Security checks (in order)
+/// 1. Path resolves to a real, non-symlink file.
+/// 2. Extension is `.epw` (case-insensitive).
+/// 3. Canonicalised path is inside the `FLUXION_EPW_DIR` allow-list
+///    (blocks `..` traversal and any symlinks that escape the allow-list).
+/// 4. File size ≤ [`MAX_EPW_SIZE_BYTES`].
+pub fn validate_epw_path(p: &str) -> Result<PathBuf, String> {
+    let dir = std::env::var("FLUXION_EPW_DIR").unwrap_or_else(|_| DEFAULT_EPW_DIR.to_string());
+    validate_epw_path_in_dir(p, Path::new(&dir))
+}
+
+/// Parameterised core of [`validate_epw_path`]. Accepts an explicit
+/// allow-list directory so it can be unit-tested without racing on the
+/// process-wide `FLUXION_EPW_DIR` env var.
+///
+/// See [`validate_epw_path`] for the documented checks.
+pub fn validate_epw_path_in_dir(p: &str, allowed_dir: &Path) -> Result<PathBuf, String> {
+    let raw = Path::new(p);
+    if !raw.is_file() {
+        return Err("epw file not found".to_string());
+    }
+    // Refuse symlinks. canonicalize() resolves symlinks to their targets,
+    // so checking symlink_metadata() here also rejects a symlink that
+    // points to a file *inside* the allow-list (belt-and-braces against
+    // future TOCTOU or symlink-swap attacks).
+    let meta = std::fs::symlink_metadata(raw)
+        .map_err(|_| "failed to read epw file metadata".to_string())?;
+    if meta.file_type().is_symlink() {
+        return Err("epw file path may not be a symbolic link".to_string());
+    }
+    if raw
+        .extension()
+        .and_then(|e| e.to_str())
+        .map(|e| e.to_ascii_lowercase())
+        != Some("epw".to_string())
+    {
+        return Err("invalid epw file extension (expected .epw)".to_string());
+    }
+    let canonical_epw =
+        std::fs::canonicalize(raw).map_err(|_| "failed to canonicalize epw path".to_string())?;
+    let canonical_dir = std::fs::canonicalize(allowed_dir)
+        .map_err(|_| "allowed epw directory not found".to_string())?;
+    if !canonical_epw.starts_with(&canonical_dir) {
+        return Err("epw path outside allowed directory".to_string());
+    }
+    let size = meta.len();
+    if size > MAX_EPW_SIZE_BYTES {
+        return Err(format!(
+            "epw file exceeds size limit ({} bytes)",
+            MAX_EPW_SIZE_BYTES
+        ));
+    }
+    Ok(canonical_epw)
+}
 
 /// Hourly weather record from EPW file.
 ///
@@ -2656,5 +2732,152 @@ mod tests {
             prop_assert!(v3[0].dry_bulb_temp.is_finite(),
                 "v3 dry_bulb_temp must stay finite, got {}", v3[0].dry_bulb_temp);
         }
+    }
+
+    // ===== Issue #2915 — `validate_epw_path` security gate =====
+    //
+    // All cases use `validate_epw_path_in_dir` with a `tempfile` allow-list
+    // so they never touch the process-wide `FLUXION_EPW_DIR` env var (and
+    // therefore cannot race with each other under parallel `cargo test`).
+
+    /// A real `.epw` file inside the allow-list directory validates and
+    /// returns a canonicalised path.
+    #[test]
+    fn validate_epw_path_accepts_valid_epw() {
+        let dir = tempfile::tempdir().unwrap();
+        let epw = dir.path().join("USA_CO_Denver.epw");
+        std::fs::write(&epw, b"LOCATION,Denver,CO\n").unwrap();
+        let rel = epw.to_string_lossy().into_owned();
+        let validated = validate_epw_path_in_dir(&rel, dir.path());
+        assert!(validated.is_ok(), "valid path rejected: {validated:?}");
+        let canon = validated.unwrap();
+        assert!(canon.is_absolute());
+        assert_eq!(canon.extension().and_then(|e| e.to_str()), Some("epw"));
+    }
+
+    /// A non-existent file is rejected with a generic "not found" message
+    /// that does NOT echo the supplied path.
+    #[test]
+    fn validate_epw_path_rejects_missing_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let missing = dir.path().join("ghost.epw");
+        let err = validate_epw_path_in_dir(&missing.to_string_lossy(), dir.path()).unwrap_err();
+        assert_eq!(err, "epw file not found");
+        // The raw user-supplied path must not be reflected back.
+        assert!(!err.contains("ghost"));
+    }
+
+    /// A file with the wrong extension is rejected even if it lives inside
+    /// the allow-list directory.
+    #[test]
+    fn validate_epw_path_rejects_wrong_extension() {
+        let dir = tempfile::tempdir().unwrap();
+        let txt = dir.path().join("notes.txt");
+        std::fs::write(&txt, b"not an epw").unwrap();
+        let err = validate_epw_path_in_dir(&txt.to_string_lossy(), dir.path()).unwrap_err();
+        assert_eq!(err, "invalid epw file extension (expected .epw)");
+    }
+
+    /// An uppercase `.EPW` extension is accepted (case-insensitive check).
+    #[test]
+    fn validate_epw_path_accepts_uppercase_extension() {
+        let dir = tempfile::tempdir().unwrap();
+        let epw = dir.path().join("MODEL.EPW");
+        std::fs::write(&epw, b"x").unwrap();
+        let res = validate_epw_path_in_dir(&epw.to_string_lossy(), dir.path());
+        assert!(res.is_ok(), "uppercase .EPW should be accepted: {res:?}");
+    }
+
+    /// Path-traversal to a file OUTSIDE the allow-list directory is rejected.
+    /// Uses a sibling temp dir so the `.epw` file genuinely exists but lives
+    /// beyond the allow-list boundary.
+    #[test]
+    fn validate_epw_path_rejects_traversal_outside_allowlist() {
+        let allowed = tempfile::tempdir().unwrap();
+        let outside = tempfile::tempdir().unwrap();
+        // Real .epw file in the *outside* dir.
+        let evil = outside.path().join("evil.epw");
+        std::fs::write(&evil, b"pwned").unwrap();
+        // Reference it via a traversal path from inside the allowed dir.
+        let rel = allowed
+            .path()
+            .join("..")
+            .join(outside.path().file_name().unwrap())
+            .join("evil.epw")
+            .to_string_lossy()
+            .into_owned();
+        let err = validate_epw_path_in_dir(&rel, allowed.path()).unwrap_err();
+        assert_eq!(err, "epw path outside allowed directory");
+    }
+
+    /// `/etc/passwd` (no `.epw` extension) is rejected — the classic
+    /// traversal probe from the issue. Uses an absolute path so it is
+    /// deterministic regardless of the test working directory.
+    #[test]
+    fn validate_epw_path_rejects_etc_passwd() {
+        let dir = tempfile::tempdir().unwrap();
+        // /etc/passwd exists on Linux; guard other platforms.
+        if !std::path::Path::new("/etc/passwd").is_file() {
+            eprintln!("skipping: /etc/passwd not present on this platform");
+            return;
+        }
+        let err = validate_epw_path_in_dir("/etc/passwd", dir.path()).unwrap_err();
+        // Fails at the extension check (no .epw). Either way, it must fail
+        // and must not echo the path.
+        assert!(
+            err == "invalid epw file extension (expected .epw)"
+                || err == "epw path outside allowed directory"
+        );
+        assert!(!err.contains("passwd"));
+    }
+
+    /// A symbolic link is rejected even when it points at a real `.epw`
+    /// file inside the allow-list. The check happens BEFORE canonicalize
+    /// so a symlink that escapes the allow-list cannot bypass the gate
+    /// by pointing at an in-allowlist target.
+    #[cfg(unix)]
+    #[test]
+    fn validate_epw_path_rejects_symlink() {
+        let dir = tempfile::tempdir().unwrap();
+        let real = dir.path().join("real.epw");
+        std::fs::write(&real, b"x").unwrap();
+        let link = dir.path().join("link.epw");
+        std::os::unix::fs::symlink(&real, &link).unwrap();
+        let err = validate_epw_path_in_dir(&link.to_string_lossy(), dir.path()).unwrap_err();
+        assert_eq!(err, "epw file path may not be a symbolic link");
+    }
+
+    /// A file larger than [`MAX_EPW_SIZE_BYTES`] (50 MiB) is rejected.
+    /// Uses `File::set_len` to create a sparse file whose reported length
+    /// exceeds the limit without actually allocating 50 MiB on disk
+    /// (`metadata().len()` reports the logical size).
+    #[test]
+    fn validate_epw_path_rejects_oversized_file() {
+        // The limit must be exactly 50 MiB (Issue #2915 acceptance).
+        assert_eq!(MAX_EPW_SIZE_BYTES, 50 * 1024 * 1024);
+
+        let dir = tempfile::tempdir().unwrap();
+        let epw = dir.path().join("huge.epw");
+        let f = std::fs::File::create(&epw).unwrap();
+        f.set_len(MAX_EPW_SIZE_BYTES + 1).unwrap();
+        drop(f);
+        let err = validate_epw_path_in_dir(&epw.to_string_lossy(), dir.path()).unwrap_err();
+        assert_eq!(
+            err,
+            format!("epw file exceeds size limit ({} bytes)", MAX_EPW_SIZE_BYTES)
+        );
+        // Generic message: must not contain the user-supplied path.
+        assert!(!err.contains("huge"));
+    }
+
+    /// A small file (well under the limit) passes the size gate — the
+    /// acceptance criterion "file size <= 50 MiB".
+    #[test]
+    fn validate_epw_path_accepts_small_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let epw = dir.path().join("small.epw");
+        std::fs::write(&epw, b"x").unwrap();
+        let res = validate_epw_path_in_dir(&epw.to_string_lossy(), dir.path());
+        assert!(res.is_ok(), "small file should pass: {res:?}");
     }
 }

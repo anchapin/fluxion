@@ -43,12 +43,28 @@
 //! });
 //! ```
 
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Deserializer, Serialize};
 use std::path::PathBuf;
 
 use crate::sim::construction::ConstructionLayer;
 use crate::sim::schedule::{DailySchedule, HVACSchedule};
 use crate::weather::HourlyWeatherData;
+
+/// Custom deserializer for the `path` field of `WeatherData::EpwFile`.
+///
+/// Gates inbound paths on `validate_epw_path` (Issue #2915) so that an
+/// authenticated REST client cannot reach `EpwWeatherSource::from_file`
+/// (which `std::fs::File::open`s the path with no canonicalization) by
+/// pointing at an arbitrary server-readable file. CWE-22 closure.
+fn deserialize_validated_epw_path<'de, D>(deserializer: D) -> Result<PathBuf, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let path = PathBuf::deserialize(deserializer)?;
+    let as_str = path.to_string_lossy().into_owned();
+    crate::weather::epw::validate_epw_path(&as_str).map_err(serde::de::Error::custom)?;
+    Ok(path)
+}
 
 /// Schema version for forward compatibility.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -211,8 +227,16 @@ impl Default for ScheduleSet {
 #[serde(tag = "type")]
 pub enum WeatherData {
     /// Reference to an external EPW file.
+    ///
+    /// Deserialization is gated by `validate_epw_path` (Issue #2915) so an
+    /// authenticated REST client cannot point at arbitrary server-readable
+    /// files via `WeatherData::EpwFile { path }` on `/v1/simulate` or
+    /// `/v1/campaign/*` requests.
     #[serde(rename = "epw")]
-    EpwFile { path: PathBuf },
+    EpwFile {
+        #[serde(deserialize_with = "deserialize_validated_epw_path")]
+        path: PathBuf,
+    },
 
     /// Reference to an embedded TMY location.
     #[serde(rename = "tmy")]
@@ -464,5 +488,144 @@ mod tests {
         let json = serde_json::to_string(&metadata).unwrap();
         let deserialized: SchemaMetadata = serde_json::from_str(&json).unwrap();
         assert_eq!(metadata.author, deserialized.author);
+    }
+
+    // ===== Issue #2915 — EpwFile path validation on deserialize =====
+    //
+    // `WeatherData::EpwFile { path }` is the inbound payload of every
+    // `/v1/simulate` and `/v1/campaign/*` request; a missing validation
+    // gate would let an authenticated REST client reach
+    // `EpwWeatherSource::from_file` with `std::fs::File::open` — i.e.
+    // arbitrary server-readable file read (CWE-22). These tests assert
+    // that `serde_json::from_str` refuses `/etc/passwd` and round-trips a
+    // real `.epw` file inside the `FLUXION_EPW_DIR` allow-list.
+    //
+    // `FLUXION_EPW_DIR` is the process-wide env var read by
+    // `validate_epw_path`; a `Mutex` serialises every test that mutates
+    // it so parallel `cargo test` threads cannot stomp on each other.
+
+    /// Shared mutex serialising every test in this module that mutates
+    /// `FLUXION_EPW_DIR`. Without it, parallel `cargo test` threads would
+    /// race on the env var and produce flaky failures.
+    static ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+    /// Helper: set `FLUXION_EPW_DIR` to the given path for the duration
+    /// of the closure. Returns whatever the closure returns. Any prior
+    /// value of `FLUXION_EPW_DIR` is restored on scope exit (success or
+    /// panic) so tests cannot leak env state into siblings.
+    fn with_epw_dir<F: FnOnce() -> R, R>(dir: &std::path::Path, f: F) -> R {
+        let _guard = ENV_LOCK.lock().unwrap_or_else(|p| p.into_inner());
+        let previous = std::env::var("FLUXION_EPW_DIR").ok();
+        std::env::set_var("FLUXION_EPW_DIR", dir);
+        let result = f();
+        match previous {
+            Some(prev) => std::env::set_var("FLUXION_EPW_DIR", prev),
+            None => std::env::remove_var("FLUXION_EPW_DIR"),
+        }
+        result
+    }
+
+    /// Inbound `/etc/passwd` (no `.epw` extension) is rejected by the
+    /// deserializer before it ever reaches `EpwWeatherSource::from_file`.
+    /// This is the canonical path-traversal probe from Issue #2915.
+    #[test]
+    fn deserialize_epw_file_rejects_etc_passwd() {
+        if !std::path::Path::new("/etc/passwd").is_file() {
+            eprintln!("skipping: /etc/passwd not present on this platform");
+            return;
+        }
+        let dir = tempfile::tempdir().unwrap();
+        let json = r#"{"type":"epw","path":"/etc/passwd"}"#;
+        let result = with_epw_dir(dir.path(), || serde_json::from_str::<WeatherData>(json));
+        assert!(
+            result.is_err(),
+            "/etc/passwd must be rejected at deserialize time: {result:?}"
+        );
+        // Generic message — the raw user-supplied path must not be
+        // reflected back through the deserializer error chain.
+        let err = result.unwrap_err().to_string();
+        assert!(!err.contains("passwd"), "error must not echo path: {err}");
+    }
+
+    /// A `.epw` file inside the `FLUXION_EPW_DIR` allow-list serializes
+    /// and round-trips through the deserializer without error.
+    #[test]
+    fn deserialize_epw_file_round_trips_inside_allowlist() {
+        let dir = tempfile::tempdir().unwrap();
+        let epw = dir.path().join("USA_CO_Denver.epw");
+        std::fs::write(&epw, b"LOCATION,Denver,CO\n").unwrap();
+
+        let original = WeatherData::EpwFile { path: epw.clone() };
+        let json = with_epw_dir(dir.path(), || serde_json::to_string(&original).unwrap());
+        let deserialized: WeatherData =
+            with_epw_dir(dir.path(), || serde_json::from_str(&json).unwrap());
+        assert_eq!(original, deserialized);
+    }
+
+    /// A `.epw` file that lives outside the allow-list is rejected on
+    /// deserialize, even when the path itself is well-formed.
+    #[test]
+    fn deserialize_epw_file_rejects_traversal_outside_allowlist() {
+        let allowed = tempfile::tempdir().unwrap();
+        let outside = tempfile::tempdir().unwrap();
+        let evil = outside.path().join("evil.epw");
+        std::fs::write(&evil, b"pwned").unwrap();
+        let json = serde_json::json!({
+            "type": "epw",
+            "path": evil.to_string_lossy().into_owned(),
+        })
+        .to_string();
+        let result = with_epw_dir(allowed.path(), || {
+            serde_json::from_str::<WeatherData>(&json)
+        });
+        assert!(
+            result.is_err(),
+            "out-of-allowlist epw must be rejected: {result:?}"
+        );
+    }
+
+    /// The deserializer refuses an `.epw` path that contains `..`
+    /// traversal reaching outside the allow-list (defence in depth on
+    /// top of `validate_epw_path`'s canonicalize + `starts_with` check).
+    #[test]
+    fn deserialize_epw_file_rejects_dotdot_traversal() {
+        let allowed = tempfile::tempdir().unwrap();
+        let outside = tempfile::tempdir().unwrap();
+        let real = outside.path().join("secret.epw");
+        std::fs::write(&real, b"x").unwrap();
+        // Build a traversal path: from inside the allowed dir, climb out
+        // via `..` and into the outside dir's basename.
+        let traversal = allowed
+            .path()
+            .join("..")
+            .join(outside.path().file_name().unwrap())
+            .join("secret.epw")
+            .to_string_lossy()
+            .into_owned();
+        let json = serde_json::json!({
+            "type": "epw",
+            "path": traversal,
+        })
+        .to_string();
+        let result = with_epw_dir(allowed.path(), || {
+            serde_json::from_str::<WeatherData>(&json)
+        });
+        assert!(result.is_err(), "dotdot traversal must be rejected");
+    }
+
+    /// `TmyLocation` and `Inline` variants are unaffected by the new
+    /// `EpwFile` deserializer gate (regression guard for the tag-based
+    /// enum dispatch).
+    #[test]
+    fn deserialize_non_epw_variants_unaffected() {
+        let dir = tempfile::tempdir().unwrap();
+        let json = r#"{"type":"tmy","location":"Denver, CO"}"#;
+        let result: WeatherData = with_epw_dir(dir.path(), || serde_json::from_str(json).unwrap());
+        assert_eq!(
+            result,
+            WeatherData::TmyLocation {
+                location: "Denver, CO".to_string(),
+            }
+        );
     }
 }
