@@ -2875,3 +2875,70 @@ pub(crate) fn compute_pmv_ppd_and_adaptive(
         is_adaptive_comfortable,
     }
 }
+
+// =====================================================================
+// Historical extraction notes (Issue #2896)
+// ---------------------------------------------------------------------
+// The following two sections preserve doc-comment material that used to
+// live in standalone stub modules (`thermal_model_hvac.rs` and
+// `thermal_model_network.rs`). Both files were doc-only / placeholder
+// stubs that contributed no production code; they were removed and the
+// useful design notes consolidated here so the cross-module context is
+// not lost. See `scripts/check_stub_modules.py` for the regression guard
+// that prevents future drift back into stub-only modules.
+// =====================================================================
+
+/// Historical extraction notes — HVAC demand calculation.
+///
+/// The `hvac_demand_from_ideal_loads` function used to live in
+/// `thermal_model_physics.rs` due to tight coupling with `ThermalModel`
+/// internal state (access to `ideal_loads_system`, `hvac_enabled`,
+/// `hvac_heating_capacity`, `hvac_cooling_capacity`). The trait-level
+/// `hvac_power_demand` implementations in this file (see
+/// [`PhysicsThermalModel::hvac_power_demand`] and
+/// [`SurrogateThermalModel::hvac_power_demand`]) currently use a
+/// simplified `(setpoint − T) × 100 W/K` heuristic. The
+/// `IdealLoadsSystem` integration (Issue #2538) is the production-grade
+/// path; it lives in `src/sim/hvac.rs` and is wired into
+/// `thermal_model_physics`.
+///
+/// Future extraction considerations (if/when the simplified heuristic is
+/// retired in favour of a `VariableCapacityEquipment::calculate_power_demand_vector`-
+/// style signature):
+///
+/// 1. Requires access to `ThermalModel::ideal_loads_system` field.
+/// 2. Zone-specific HVAC capacity limits must be enforced
+///    (`hvac_heating_capacity`, `hvac_cooling_capacity`).
+/// 3. The physics (`mass_flow × cp × ΔT`) must be preserved exactly
+///    — do NOT tune to match test envelopes (see `RULES.md`).
+/// 4. Economizer free-cooling bypass and dead-band handling must match
+///    `IdealLoadsSystem::should_use_economizer`.
+mod _historical_thermal_model_hvac_notes {}
+
+/// Historical extraction notes — ISO 13790 thermal-network conductances.
+///
+/// The 5R1C/6R2C thermal network conductances
+/// (`h_tr_is`, `h_tr_ms`, `h_tr_em`, `h_tr_ve`) are pre-computed and
+/// stored in `ThermalModel`'s data structures (`update_derived_parameters`
+/// in `thermal_model_core`). This module-level note records the
+/// per-conductance semantics so future maintainers don't re-derive them
+/// in a different layer.
+///
+/// - `h_tr_is` — Surface-to-interior air conductance (ISO 13790 Eq. C.4).
+///   Convective heat transfer between interior surface and zone air:
+///   `h_tr_is = h_c_i × A_i  [W/K]`.
+/// - `h_tr_ms` — Mass-to-surface conductance (ISO 13790 Eq. C.5).
+/// - `h_tr_em` — Exterior-to-mass conductance.
+/// - `h_tr_ve` — Ventilation conductance (ISO 13790 Eq. C.10).
+///   `h_ve = ρ × Cp × ACH / 3600`.
+///
+/// Design considerations:
+///
+/// - Conductances depend on surface area, thermal conductivity, and
+///   thickness. They are typically computed once during model
+///   initialization (`update_derived_parameters`).
+/// - The per-zone vectors (`h_tr_is`, `h_tr_ms`, …) enable vectorized
+///   calculations during `solve_single_step`.
+/// - The convective/radiative split (`h_cv`, `h_rad`) is computed in
+///   `thermal_model_physics` from `h_tr_is` and the surface geometry.
+mod _historical_thermal_model_network_notes {}

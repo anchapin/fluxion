@@ -292,7 +292,7 @@ def test_phase2_scans_all_sim_files_in_real_repo(checker):
     asserting:
 
     * the offender count equals ``BASELINE_SIM_TO_PHYSICS`` (the snapshot
-      of 84 pre-existing ``use crate::physics::`` edges across 26 sim files);
+      of 83 pre-existing ``use crate::physics::`` edges across 26 sim files);
     * the offenders span many more than the 2 files the old guard saw;
     * the four documented re-export shims (assembly.rs,
       multi_node_thermal.rs, construction.rs, per_surface_conduction.rs)

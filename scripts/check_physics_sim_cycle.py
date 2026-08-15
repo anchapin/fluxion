@@ -16,13 +16,13 @@ the `physics <-> sim` cycle closed by Issue #2462 stays closed:
    import count above the documented baseline (Issue #2766). The original
    Phase 2 (Issue #2463) guarded only the two files that previously hosted
    shared domain types — `src/sim/construction.rs` and
-   `src/sim/per_surface_conduction.rs` — leaving ~84 ``use crate::physics::``
+   `src/sim/per_surface_conduction.rs` — leaving ~83 ``use crate::physics::``
    imports across 26 other sim files (``thermal_model.rs``, ``engine.rs``,
    ``ventilation.rs``, ...) completely unguarded. Issue #2766 extended
-   coverage to ALL of ``src/sim/**`` and snapshotted the 84 pre-existing
+   coverage to ALL of ``src/sim/**`` and snapshotted the 83 pre-existing
    edges as the new baseline; any NEW edge (the 85th) fails.
 3. Summary: report the total cycle-edge count. As of #2462 + #2766 the
-   documented baseline is 0 physics->sim + 84 sim->physics edges.
+   documented baseline is 0 physics->sim + 83 sim->physics edges.
 
 Usage:
   python3 scripts/check_physics_sim_cycle.py
@@ -35,7 +35,7 @@ Exit codes:
   2 — script error
 
 The script reports ``BASELINE_PHYSICS_TO_SIM = 0`` and
-``BASELINE_SIM_TO_PHYSICS = 84`` documented edges as the *current state*.
+``BASELINE_SIM_TO_PHYSICS = 83`` documented edges as the *current state*.
 A future PR that adds a *new* ``use crate::sim::`` import under
 ``src/physics/**`` (or a *new* ``use crate::physics::`` import under any
 ``src/sim/**/*.rs`` file) — pushing the count *above* the documented
@@ -83,16 +83,16 @@ SIM_SHIM_EXCEPTIONS: frozenset[str] = frozenset()
 # originally-guarded files (``construction.rs`` +
 # ``per_surface_conduction.rs``) to ALL ``src/sim/**/*.rs`` files. The
 # extension surfaced 84 pre-existing ``use crate::physics::`` imports
-# across 26 sim files that the original guard never saw. These 84 edges
+# across 26 sim files that the original guard never saw. These 83 edges
 # are snapshotted here as the new baseline; the guard PASSES at-or-below
-# 84 and FAILS when a NEW edge pushes the count to 85+. Lowering this
+# 83 and FAILS when a NEW edge pushes the count to 84+. Lowering this
 # baseline is authorised only by companion cycle-removal work; see
 # ARCHITECTURE.md §"Regression guard (Issue #2766, extends #2463)".
 #
 # See ARCHITECTURE.md §"Regression guard (Issue #2463, closed by #2462)"
 # for the source-of-truth numbers.
 BASELINE_PHYSICS_TO_SIM = 0
-BASELINE_SIM_TO_PHYSICS = 84
+BASELINE_SIM_TO_PHYSICS = 83
 
 # Regex for Phase 2: match `use` or `pub use` against `crate::physics::`.
 # Mirrors `scan_sim_for_orientation_cycle` in check_ashrae_cases_cycle.py

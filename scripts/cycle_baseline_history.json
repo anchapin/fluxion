@@ -118,6 +118,22 @@
       "total": 304,
       "edge_signature": "cd6683e1d6008d0f66594801d9796ef91ea562334b0cfaab24c865ae43ef4890",
       "reason": "Issue #2988 (commit 7290dbe, merged 2026-08-14T19:40:39Z) added 3 src/validation/ashrae_140_multi_zone.rs edges to crate::physics::cta::ContinuousTensor/VectorField and 2 src/validation/ashrae_140_multi_zone.rs edges to crate::weather::epw::EpwWeatherSource/WeatherSource to implement Case 960 multi-zone calibration. validation_to_physics: 62 -> 65 (+3); validation_to_weather: 23 -> 25 (+2); total 299 -> 304 (+5). BASELINE_VALIDATION_TO_PHYSICS and BASELINE_VALIDATION_TO_WEATHER in scripts/check_ashrae_cases_cycle.py and the ARCHITECTURE.md baseline table were updated in PR #2988; this snapshot completes the architectural sign-off so the per-PR Cycle Downward Trend Guard stops firing on docs-only PRs (#2979 etc.). No new cycle edges were introduced by this baseline bump beyond PR #2988's already-merged work."
+    },
+    {
+      "timestamp": "2026-08-15T13:54:18+00:00",
+      "commit": "6ec5d1f",
+      "source": "stub-removal-issue-2896",
+      "totals": {
+        "sim_to_validation": 72,
+        "validation_to_sim": 58,
+        "validation_to_physics": 65,
+        "validation_to_weather": 25,
+        "physics_to_sim": 0,
+        "sim_to_physics": 83
+      },
+      "total": 303,
+      "edge_signature": "24d267982e2e446c96c342faa34203edb52b8b32b82926a98998db6bd94068cf",
+      "reason": "PR #3020 (issue #2896) deleted doc-only stub modules src/sim/thermal_model_hvac.rs (no physics imports) and src/sim/thermal_model_network.rs (one `use crate::physics::cta::{ContinuousTensor, VectorField};` import) and consolidated their documentation into src/sim/thermal_model.rs. The deletion removed 1 sim->physics edge; sim_to_physics dropped 84 -> 83 (total 304 -> 303). BASELINE_SIM_TO_PHYSICS in scripts/check_physics_sim_cycle.py was lowered from 84 to 83 in the same PR (companion cycle-removal work authorised by ARCHITECTURE.md §Regression guard). No new cycle edges were introduced; this is a net cycle reduction, not a swap. R1/R2/R3 trend guards continue to enforce downward pressure from this new baseline."
     }
   ]
 }
