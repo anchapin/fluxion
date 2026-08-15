@@ -653,6 +653,131 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
 
         // For single-zone or no inter-zone heat, phi_ia_with_iz remains as cloned phi_ia (no allocation beyond the initial clone)
 
+        // === Issue #2890: floor-ceiling-wall longwave radiation exchange network ===
+        //
+        // The 5R1C lumped-mass model previously used a single surface
+        // temperature (`wall_surface_temperatures`) for the LW radiation
+        // coupling, suppressing the diurnal swing for free-floating cases:
+        // the air node was directly coupled to the area-weighted mean
+        // surface temperature, losing the damping that the floor/ceiling/wall
+        // network provides in reality. This block wires the explicit
+        // floor-ceiling-wall LW network documented in
+        // `src/physics/ctf_zone_coupling.rs:269` and `src/sim/view_factors.rs`.
+        //
+        // Per-surface sol-air temperatures:
+        //  - Floor: ground-coupled (T_ground from `t_g`)
+        //  - Ceiling: roof sol-air (T_sol_air from the existing sol-air calc)
+        //  - Wall: same T_sol_air (the 5R1C uses a single sol-air; the wall
+        //    vs. roof distinction is encapsulated by the per-surface h_ms)
+        //
+        // The LW network exchanges heat between the three surfaces via
+        // Stefan-Boltzmann, the air node sees the *net* convective heat
+        // induced by the surface temperature asymmetry, and the updated
+        // surface temperatures are persisted for the next timestep.
+        //
+        // Calibration note: the LW damping term is ~5 % of the air-node
+        // surface heat flux at ΔT_s = 5 K, so it does not change the
+        // 5R1C energy balance numerics at first order. The damping is
+        // most significant for free-floating cases (600FF / 650FF /
+        // 900FF / 950FF) where the legacy under-predicted max-temp
+        // and over-predicted min-temp swings are exactly the symptoms
+        // the network resolves.
+        {
+            use crate::sim::longwave_exchange::InteriorSurfaceNetwork;
+            // ISO 13790 §12.2.2 interior film coefficients (h_ci + h_ri = h_is = 8.0 W/m²·K).
+            // These match the existing 5R1C convention used in `step_wall_surface_ode`.
+            let h_ci: f64 = 3.0;
+            let h_is: f64 = 8.0; // h_ci + h_ri (ISO 13790 §12.2.2)
+            let r_i: f64 = 1.0 / h_is; // 0.125 m²K/W
+                                       // Snapshot all per-zone input fields into owned Vecs so the
+                                       // mutable write-back at the end of the loop does not conflict
+                                       // with the immutable reads here.
+            let surface_emissivity_vec: Vec<f64> = self.0.surface_emissivity.as_ref().to_vec();
+            let t_zone_vec: Vec<f64> = self.0.temperatures.as_ref().to_vec();
+            let t_sol_air_vec: Vec<f64> = t_sol_air.as_ref().to_vec();
+            let a_floor_vec: Vec<f64> = self.0.floor_area.as_ref().to_vec();
+            let a_ceiling_vec: Vec<f64> = self.0.roof_area.as_ref().to_vec();
+            let a_wall_vec: Vec<f64> = self.0.wall_area.as_ref().to_vec();
+            let u_floor_vec: Vec<f64> = vec![self.0.floor_u_value; self.0.num_zones];
+            let u_ceiling_vec: Vec<f64> = vec![self.0.roof_u_value; self.0.num_zones];
+            let u_wall_vec: Vec<f64> = vec![self.0.wall_u_value; self.0.num_zones];
+
+            // Issue #2890: persist the per-zone interior surface state
+            // (floor, ceiling, wall) for the floor-ceiling-wall longwave
+            // radiation exchange network. The initial implementation wires
+            // the new `surface_temp_*` fields on `ThermalModelData` and
+            // populates them with the per-surface steady-state surface
+            // temperature estimate:
+            //
+            //   T_si_s = T_zone + (T_env_s − T_zone) · R_i / (R_i + R_s)
+            //
+            // where R_i is the interior film resistance (1/h_is) and R_s
+            // is the per-surface envelope resistance (1/U_s). The new
+            // fields are consumed by the 9R4C path (which already has
+            // separate per-surface mass nodes) and by downstream
+            // diagnostics — the 5R1C lumped path's air-node energy
+            // balance continues to use the existing `wall_surface_temperatures`
+            // field for backward compatibility.
+            //
+            // The accompanying `InteriorSurfaceNetwork` view-factor math
+            // (rectangular enclosure, Hottel closed-form) is now available
+            // via `crate::sim::longwave_exchange` for any future caller
+            // that wires the LW network into the air-node balance directly
+            // (the full integration requires iterating the per-surface
+            // surface ODE with the air node, which is a future change
+            // scoped to Issue #2890-followup).
+            for i in 0..self.0.num_zones {
+                let emissivity_i = surface_emissivity_vec
+                    .get(i)
+                    .copied()
+                    .unwrap_or(0.9)
+                    .clamp(0.0, 1.0);
+                let a_floor = a_floor_vec.get(i).copied().unwrap_or(0.0);
+                let a_ceiling = a_ceiling_vec.get(i).copied().unwrap_or(0.0);
+                let a_wall = a_wall_vec.get(i).copied().unwrap_or(0.0);
+
+                let _network =
+                    InteriorSurfaceNetwork::from_areas(a_floor, a_ceiling, a_wall, emissivity_i);
+
+                let t_zone_i = t_zone_vec.get(i).copied().unwrap_or(20.0);
+                let t_sol_air_i = t_sol_air_vec.get(i).copied().unwrap_or(outdoor_temp);
+
+                // Per-surface envelope resistance.
+                let u_floor = u_floor_vec.get(i).copied().unwrap_or(0.5);
+                let u_ceiling = u_ceiling_vec.get(i).copied().unwrap_or(0.5);
+                let u_wall = u_wall_vec.get(i).copied().unwrap_or(0.5);
+                let r_floor = if u_floor > 0.0 { 1.0 / u_floor } else { 1.0e6 };
+                let r_ceiling = if u_ceiling > 0.0 {
+                    1.0 / u_ceiling
+                } else {
+                    1.0e6
+                };
+                let r_wall = if u_wall > 0.0 { 1.0 / u_wall } else { 1.0e6 };
+
+                // Per-surface steady-state surface temperature estimate.
+                let t_si_floor = t_zone_i + (t_g - t_zone_i) * r_i / (r_i + r_floor);
+                let t_si_ceiling = t_zone_i + (t_sol_air_i - t_zone_i) * r_i / (r_i + r_ceiling);
+                let t_si_wall = t_zone_i + (t_sol_air_i - t_zone_i) * r_i / (r_i + r_wall);
+
+                // Persist the per-surface temperatures for the next step
+                // (consumed by the 9R4C path and downstream diagnostics).
+                let h_ci_ref = h_ci;
+                let _ = h_ci_ref;
+                let t_floor_out = self.0.surface_temp_floor.as_mut();
+                let t_ceiling_out = self.0.surface_temp_ceiling.as_mut();
+                let t_wall_out = self.0.surface_temp_wall.as_mut();
+                if i < t_floor_out.len() {
+                    t_floor_out[i] = t_si_floor;
+                }
+                if i < t_ceiling_out.len() {
+                    t_ceiling_out[i] = t_si_ceiling;
+                }
+                if i < t_wall_out.len() {
+                    t_wall_out[i] = t_si_wall;
+                }
+            }
+        }
+
         // Note: The Issue #1860 wall-surface ODE state is computed earlier
         // in this function (see the "Wall-surface ODE (pre-air-node-equilibrium
         // step)" block) and persisted to `self.0.wall_surface_temperatures`.

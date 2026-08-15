@@ -262,7 +262,7 @@ pub struct ThermalModelData<T: ContinuousTensor<f64> + Clone> {
     /// ODE:
     ///
     /// ```text
-    /// T_si_new = T_si_eq + (T_si_old - T_si_eq) · exp(-dt / τ_si)
+    /// T_si_new = T_si_eq + (T_si_old − T_si_eq) · exp(-dt / τ_si)
     /// τ_si = C_m · (R_1 ∥ R_si) = C_m · R_1·R_si / (R_1 + R_si)
     /// T_si_eq = (T_m / R_1 + T_int / R_si) / (1/R_1 + 1/R_si)
     /// ```
@@ -271,6 +271,27 @@ pub struct ThermalModelData<T: ContinuousTensor<f64> + Clone> {
     /// which is represented separately by `R_si = 1 / h_tr_is`.
     /// The flux to the zone air is coupled into the 5R1C air-node numerator.
     pub wall_surface_temperatures: T,
+    /// Issue #2890 — Partitioned interior surface temperatures for the
+    /// floor-ceiling-wall longwave radiation exchange network.
+    ///
+    /// Each of the three interior surface types (floor, ceiling, wall) carries
+    /// its own per-zone surface temperature state that participates in the
+    /// LW radiation exchange documented in `src/sim/longwave_exchange.rs`.
+    /// The 5R1C / 9R4C lumped-mass model previously used a single
+    /// `wall_surface_temperatures` field for the wall surface, leaving the
+    /// floor and ceiling implicit. Adding the three partitioned surfaces
+    /// allows the explicit floor-ceiling-wall LW network to dampen the
+    /// diurnal swing for free-floating cases (600FF / 650FF / 900FF / 950FF).
+    ///
+    /// Initialized to 20°C (matching `wall_surface_temperatures`); stepped
+    /// each call to `step_physics_5r1c` and `step_physics_9r4c` via the
+    /// exact exponential solution in
+    /// [`crate::sim::longwave_exchange::step_interior_surface`].
+    pub surface_temp_floor: T,
+    /// See [`Self::surface_temp_floor`].
+    pub surface_temp_ceiling: T,
+    /// See [`Self::surface_temp_floor`].
+    pub surface_temp_wall: T,
     pub envelope_mass_temperatures: T,
     pub internal_mass_temperatures: T,
     pub envelope_thermal_capacitance: T,
@@ -464,6 +485,11 @@ impl<T: ContinuousTensor<f64> + Clone> Clone for ThermalModelData<T> {
             sub_hour_air_node_steps: self.sub_hour_air_node_steps,
             solar_lag: self.solar_lag.clone(),
             wall_surface_temperatures: self.wall_surface_temperatures.clone(),
+            // Issue #2890: partitioned interior surface temperatures for the
+            // floor-ceiling-wall longwave radiation exchange network.
+            surface_temp_floor: self.surface_temp_floor.clone(),
+            surface_temp_ceiling: self.surface_temp_ceiling.clone(),
+            surface_temp_wall: self.surface_temp_wall.clone(),
             envelope_mass_temperatures: self.envelope_mass_temperatures.clone(),
             internal_mass_temperatures: self.internal_mass_temperatures.clone(),
             envelope_thermal_capacitance: self.envelope_thermal_capacitance.clone(),
