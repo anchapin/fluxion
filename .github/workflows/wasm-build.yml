@@ -195,7 +195,10 @@ jobs:
       # would break downstream npm consumers) is caught too.
       #
       # `python3 -c` for the hash avoids the BSD-vs-GNU `sha256sum`
-      # split on macOS (which lacks `sha256sum`).
+      # split on macOS (which lacks `sha256sum`). CRLF in text files
+      # is normalized to LF so the hash matches across Windows /
+      # Linux / macOS builds regardless of which platform wrote the
+      # file — see the matching note in `interface-stability` below.
       - name: Compute wasm-bindgen interface hash
         id: iface
         shell: bash
@@ -211,7 +214,8 @@ jobs:
           ]:
               m.update(b"===" + path.encode() + b"===\n")
               with open(path, "rb") as f:
-                  m.update(f.read())
+                  data = f.read().replace(b"\r\n", b"\n")
+              m.update(data)
           print(m.hexdigest())
           PY
           )
@@ -290,7 +294,15 @@ jobs:
           ]:
               m.update(b"===" + path.encode() + b"===\n")
               with open(path, "rb") as f:
-                  m.update(f.read())
+                  # Normalize CRLF -> LF so Windows-built artifacts
+                  # (which embed CRLF in the .d.ts / package.json
+                  # text files) hash the same as Linux/macOS-built
+                  # artifacts (LF). Without this, the byte-size
+                  # difference shows up as ~27 extra bytes per
+                  # platform-injected CRLF run and the hashes diverge
+                  # even though the interface is semantically identical.
+                  data = f.read().replace(b"\r\n", b"\n")
+              m.update(data)
           print(m.hexdigest())
           PY
           }
