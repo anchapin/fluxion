@@ -30,6 +30,12 @@ fluxion-toon = { path = "../crates/fluxion-toon" }
 # pulled into every consumer. Enable with --features ort.
 default = []
 ort = ["dep:ort"]
+# CI matrix passthrough features (Issue #2909). The root crate's `rust-tests.yml`
+# workflow runs `cargo test -p fluxion-behavior --features wiring-tracing,multi-zone`
+# to keep the test invocation matrix-uniform; fluxion-behavior does not gate code
+# behind these flags, so they are accepted as no-ops here.
+wiring-tracing = []
+multi-zone = []
 
 [dev-dependencies]
 criterion = "0.8"
