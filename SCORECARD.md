@@ -67,6 +67,7 @@ Required branch-protection checks (`release_gates.yaml` → `ci.required_checks`
 | Required check | Issue |
 |----------------|-------|
 | ASHRAE 140 Strict Energy Gate (Issue #1333) | #1333 |
+| Surrogate ASHRAE 140 MAE Gate (Issue #2924) | #2924 |
 | Fluxion Determinism Gate (Issue #1351) | #1351 |
 | Fluxion Performance Gate (Issue #1618) | #1618 |
 | Code Coverage Gate (Issue #1932) | #1932 |
