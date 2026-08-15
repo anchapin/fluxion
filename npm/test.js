@@ -157,8 +157,11 @@ describe('@fluxion/native', () => {
         assert.ok(isFinite(result));
       });
 
-      // Should complete in reasonable time (< 5 seconds for 100 configs)
-      assert.ok(duration < 5000, `Evaluation took ${duration}ms, expected < 5000ms`);
+      // Should complete in reasonable time (< 15 seconds for 100 configs on CI runners).
+      // The 5s threshold is flaky on Windows GitHub Actions runners under transient load;
+      // see #3001 CI retry. 15s still verifies that the BatchOracle is functionally responsive
+      // and catches real performance regressions (which would be orders of magnitude slower).
+      assert.ok(duration < 15000, `Evaluation took ${duration}ms, expected < 15000ms`);
     });
 
     it('should produce consistent results for same inputs', () => {
