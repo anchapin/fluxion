@@ -157,7 +157,7 @@ def main() -> int:
     print("=== Fluxion stub-module detector (Issue #2896) ===")
     print(f"Repo:            {REPO_ROOT}")
     print(f"LoC threshold:   < {MIN_NON_COMMENT_LOC} non-comment, non-blank lines")
-    print(f"Sentinel phrases:")
+    print("Sentinel phrases:")
     for phrase in SENTINEL_PHRASES:
         print(f"  - {phrase!r}")
     print(f"Scan dirs:       {', '.join(SCAN_DIRS)}")
