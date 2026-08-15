@@ -948,7 +948,11 @@ fn probe_onnx(model_env: Option<&str>) -> Result<String, String> {
     {
         if let Some(path) = model_env {
             if !path.is_empty() && !std::path::Path::new(path).exists() {
-                return Err(format!("FLUXION_ONNX_MODEL='{path}' not found"));
+                // Generic message — do NOT echo the user-supplied path
+                // (Issue #2905: closes the path-oracle / error-leak window
+                // now that the full validation pipeline lives one layer
+                // down in `SurrogateManager::new_with_auto_load`).
+                return Err("FLUXION_ONNX_MODEL file not found".to_string());
             }
         }
         match SurrogateManager::new() {
