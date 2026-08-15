@@ -170,7 +170,7 @@ fn fluid_simulation_reset_temperatures() {
     };
     let mut sim = FluidSimulation::new(&serde_json::to_string(&config).unwrap()).unwrap();
 
-    sim.reset_temperatures(22.0);
+    sim.reset_temperatures(22.0).unwrap();
 
     let temps = sim.get_zone_temps();
     for temp in &temps {
@@ -214,18 +214,32 @@ fn fluid_simulation_apply_parameters() {
 }
 
 #[test]
-fn fluid_simulation_apply_parameters_clamping() {
+fn fluid_simulation_apply_parameters_strict_range() {
     let config = FluidSimulationConfig::default();
     let mut sim = FluidSimulation::new(&serde_json::to_string(&config).unwrap()).unwrap();
 
+    // All three params within their physical ranges → accepted unchanged
+    // (issue #2911 replaces silent clamping with strict validation).
     let result = sim.apply_parameters(vec![2.0, 10.0, 35.0]);
     assert!(result.is_ok());
 
     let heating_sps = sim.get_heating_setpoints();
-    assert_eq!(heating_sps[0], 15.0);
+    assert_eq!(heating_sps[0], 10.0);
 
     let cooling_sps = sim.get_cooling_setpoints();
-    assert_eq!(cooling_sps[0], 32.0);
+    assert_eq!(cooling_sps[0], 35.0);
+
+    // Out-of-range params[1] (heating) → rejected.
+    let result = sim.apply_parameters(vec![2.0, 5.0, 25.0]);
+    assert!(result.is_err());
+
+    // Out-of-range params[2] (cooling) → rejected.
+    let result = sim.apply_parameters(vec![2.0, 20.0, 50.0]);
+    assert!(result.is_err());
+
+    // Out-of-range params[0] (U-value) → rejected (previously unconstrained).
+    let result = sim.apply_parameters(vec![20.0, 20.0, 25.0]);
+    assert!(result.is_err());
 }
 
 #[test]
