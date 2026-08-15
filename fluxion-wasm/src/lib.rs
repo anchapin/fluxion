@@ -37,6 +37,59 @@ macro_rules! console_log {
     ($($t:tt)*) => (log(&format_args!($($t)*).to_string()))
 }
 
+/// Physical-range bounds for f64 inputs from JS/CAD consumers.
+///
+/// Mirrors `src/sim/hvac/zones/zone_setpoints.rs::validate_temperature` and
+/// `validate_deadband`, which is what `PyZoneSetpoints::set_heating_setpoint`
+/// and `set_cooling_setpoint` ultimately call. Issue #2911.
+pub const TEMPERATURE_MIN_C: f64 = 10.0;
+pub const TEMPERATURE_MAX_C: f64 = 40.0;
+
+/// Window U-value (W/m²K). Single-pane ≈ 5.8, high-performance triple-glazed
+/// ≈ 0.5. The WASM `apply_parameters` doc-comment advertised `0.5-3.0` as the
+/// optimization-gene range; we accept a slightly wider physical envelope here
+/// so the strict validation never rejects a reasonable CAD export.
+pub const U_VALUE_MIN: f64 = 0.1;
+pub const U_VALUE_MAX: f64 = 10.0;
+
+/// Generic control-loop setpoint envelope. Damper positions, VAV box flows,
+/// pump speeds, etc. all fit comfortably; NaN/Inf and absurd magnitudes are
+/// rejected.
+pub const CONTROL_VALUE_MIN: f64 = -1.0e6;
+pub const CONTROL_VALUE_MAX: f64 = 1.0e6;
+
+/// Pure-logic check for an `f64` arriving from the JS boundary.
+///
+/// Rejects NaN and ±Inf (they propagate through `step` / `hvac_power_demand`
+/// and corrupt the simulation — see issue #2911) and rejects values outside
+/// `[min, max]`. Returns the validated value on success.
+///
+/// This helper is split from `validate_finite` so the underlying logic can
+/// be unit-tested natively (`cargo test --lib`); the wasm boundary wrapper
+/// is a thin `JsValue` adapter.
+fn check_finite(value: f64, min: f64, max: f64) -> Result<f64, String> {
+    if !value.is_finite() {
+        return Err(format!(
+            "must be a finite number (NaN and ±Inf are rejected to prevent \
+             numerical-instability DoS in downstream consumers); got {}",
+            value
+        ));
+    }
+    if value < min || value > max {
+        return Err(format!(
+            "value {} is outside the valid range [{}, {}]",
+            value, min, max
+        ));
+    }
+    Ok(value)
+}
+
+/// Wasm-boundary wrapper around [`check_finite`]. Attaches the `name` label
+/// and converts the error into a `JsValue` consumable from JS.
+fn validate_finite(value: f64, name: &str, min: f64, max: f64) -> Result<f64, JsValue> {
+    check_finite(value, min, max).map_err(|msg| JsValue::from_str(&format!("{}: {}", name, msg)))
+}
+
 /// Configuration for a fluid simulation run.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct FluidSimulationConfig {
@@ -244,25 +297,45 @@ impl FluidSimulation {
     /// Unit on success, or a `JsValue` error on failure.
     #[wasm_bindgen]
     pub fn set_control(&mut self, loop_id: &str, setpoint: f64) -> Result<(), JsValue> {
-        console_log!("fluxion-wasm: set_control({}, {})", loop_id, setpoint);
-
         if let Some(rest) = loop_id.strip_prefix("heating_zone_") {
             if let Ok(idx) = rest.parse::<usize>() {
                 if idx < self.heating_setpoints.len() {
-                    self.heating_setpoints[idx] = setpoint;
+                    let validated = validate_finite(
+                        setpoint,
+                        &format!("set_control('{}')", loop_id),
+                        TEMPERATURE_MIN_C,
+                        TEMPERATURE_MAX_C,
+                    )?;
+                    console_log!("fluxion-wasm: set_control({}, {})", loop_id, validated);
+                    self.heating_setpoints[idx] = validated;
                     return Ok(());
                 }
             }
         } else if let Some(rest) = loop_id.strip_prefix("cooling_zone_") {
             if let Ok(idx) = rest.parse::<usize>() {
                 if idx < self.cooling_setpoints.len() {
-                    self.cooling_setpoints[idx] = setpoint;
+                    let validated = validate_finite(
+                        setpoint,
+                        &format!("set_control('{}')", loop_id),
+                        TEMPERATURE_MIN_C,
+                        TEMPERATURE_MAX_C,
+                    )?;
+                    console_log!("fluxion-wasm: set_control({}, {})", loop_id, validated);
+                    self.cooling_setpoints[idx] = validated;
                     return Ok(());
                 }
             }
         }
 
-        self.control_setpoints.insert(loop_id.to_string(), setpoint);
+        let validated = validate_finite(
+            setpoint,
+            &format!("set_control('{}')", loop_id),
+            CONTROL_VALUE_MIN,
+            CONTROL_VALUE_MAX,
+        )?;
+        console_log!("fluxion-wasm: set_control({}, {})", loop_id, validated);
+        self.control_setpoints
+            .insert(loop_id.to_string(), validated);
         Ok(())
     }
 
@@ -302,13 +375,26 @@ impl FluidSimulation {
     /// Reset all zone temperatures to a uniform value.
     ///
     /// # Arguments
-    /// * `temperature` - The reset temperature in °C
+    /// * `temperature` - The reset temperature in °C. Must be finite and within
+    ///   the physical building-thermal range (10°C – 40°C, mirroring
+    ///   `PyZoneSetpoints::set_heating_setpoint`).
+    ///
+    /// # Returns
+    /// Unit on success, or a `JsValue` error if `temperature` is NaN/Inf or
+    /// outside the physical range.
     #[wasm_bindgen]
-    pub fn reset_temperatures(&mut self, temperature: f64) {
+    pub fn reset_temperatures(&mut self, temperature: f64) -> Result<(), JsValue> {
+        let validated = validate_finite(
+            temperature,
+            "reset_temperatures(temperature)",
+            TEMPERATURE_MIN_C,
+            TEMPERATURE_MAX_C,
+        )?;
         for t in &mut self.zone_temps {
-            *t = temperature;
+            *t = validated;
         }
-        console_log!("fluxion-wasm: temperatures reset to {}°C", temperature);
+        console_log!("fluxion-wasm: temperatures reset to {}°C", validated);
+        Ok(())
     }
 
     /// Get the current simulation time in hours.
@@ -320,10 +406,14 @@ impl FluidSimulation {
     /// Set all zone temperatures.
     ///
     /// # Arguments
-    /// * `temperatures` - Vector of zone temperatures in °C (must match `num_zones`)
+    /// * `temperatures` - Vector of zone temperatures in °C (must match
+    ///   `num_zones`). Every element must be finite and within the physical
+    ///   building-thermal range (10°C – 40°C, mirroring
+    ///   `PyZoneSetpoints::set_heating_setpoint` / `set_cooling_setpoint`).
     ///
     /// # Returns
-    /// Unit on success, or `JsValue` error if length mismatch.
+    /// Unit on success, or `JsValue` error on length mismatch or on any
+    /// element being NaN/Inf / outside the physical range.
     #[wasm_bindgen]
     pub fn set_temperatures(&mut self, temperatures: Vec<f64>) -> Result<(), JsValue> {
         if temperatures.len() != self.zone_temps.len() {
@@ -332,6 +422,14 @@ impl FluidSimulation {
                 temperatures.len(),
                 self.zone_temps.len()
             )));
+        }
+        for (i, t) in temperatures.iter().enumerate() {
+            validate_finite(
+                *t,
+                &format!("set_temperatures[{}]", i),
+                TEMPERATURE_MIN_C,
+                TEMPERATURE_MAX_C,
+            )?;
         }
         self.zone_temps = temperatures;
         Ok(())
@@ -369,12 +467,19 @@ impl FluidSimulation {
     ///
     /// # Arguments
     /// * `params` - Parameter vector:
-    ///   - `params[0]`: Window U-value (W/m²K, range: 0.5-3.0) — stored but not used in simplified model
-    ///   - `params[1]`: Heating setpoint (°C, range: 15-25) — applied to all zones
-    ///   - `params[2]`: Cooling setpoint (°C, range: 22-32) — applied to all zones
+    ///   - `params[0]`: Window U-value (W/m²K, range: 0.1-10.0) — stored but
+    ///     not used in the simplified model. Previously unconstrained (issue
+    ///     #2911).
+    ///   - `params[1]`: Heating setpoint (°C, range: 10-40) — applied to all
+    ///     zones. Mirrors `PyZoneSetpoints::set_heating_setpoint`.
+    ///   - `params[2]`: Cooling setpoint (°C, range: 10-40) — applied to all
+    ///     zones. Mirrors `PyZoneSetpoints::set_cooling_setpoint`. The
+    ///     previous 15-25 / 22-32 clamps silently masked out-of-range inputs;
+    ///     we now reject them outright.
     ///
     /// # Returns
-    /// Unit on success, or `JsValue` error if param count is invalid.
+    /// Unit on success, or `JsValue` error if param count is invalid, any
+    /// element is NaN/Inf, or any element is outside its physical range.
     #[wasm_bindgen]
     pub fn apply_parameters(&mut self, params: Vec<f64>) -> Result<(), JsValue> {
         if params.len() < 3 {
@@ -384,8 +489,24 @@ impl FluidSimulation {
             )));
         }
 
-        let heating_sp = params[1].clamp(15.0, 25.0);
-        let cooling_sp = params[2].clamp(22.0, 32.0);
+        let u_value = validate_finite(
+            params[0],
+            "apply_parameters[0] (U-value)",
+            U_VALUE_MIN,
+            U_VALUE_MAX,
+        )?;
+        let heating_sp = validate_finite(
+            params[1],
+            "apply_parameters[1] (heating setpoint)",
+            TEMPERATURE_MIN_C,
+            TEMPERATURE_MAX_C,
+        )?;
+        let cooling_sp = validate_finite(
+            params[2],
+            "apply_parameters[2] (cooling setpoint)",
+            TEMPERATURE_MIN_C,
+            TEMPERATURE_MAX_C,
+        )?;
 
         for sp in &mut self.heating_setpoints {
             *sp = heating_sp;
@@ -395,7 +516,8 @@ impl FluidSimulation {
         }
 
         console_log!(
-            "fluxion-wasm: apply_parameters — heating={}°C, cooling={}°C",
+            "fluxion-wasm: apply_parameters — U={} W/m²K, heating={}°C, cooling={}°C",
+            u_value,
             heating_sp,
             cooling_sp
         );
@@ -496,4 +618,245 @@ struct StepResult {
 #[wasm_bindgen(start)]
 pub fn wasm_init() {
     console_log!("fluxion-wasm: module initialized");
+}
+
+#[cfg(test)]
+mod tests {
+    //! Inline tests covering the NaN / ±Inf / out-of-range acceptance
+    //! criteria from issue #2911. The pure-logic `check_finite` helper is
+    //! exercised natively; end-to-end coverage that goes through the
+    //! wasm-bindgen `FluidSimulation` API is gated to wasm32 and runs
+    //! under `wasm-pack test --node` (see `tests/wasm_integration_tests.rs`
+    //! for the native-side mirror).
+
+    use super::*;
+
+    // ---- check_finite unit coverage (native + wasm32) -------------------
+
+    #[test]
+    fn check_finite_accepts_in_range() {
+        assert_eq!(check_finite(22.0, 10.0, 40.0).unwrap(), 22.0);
+
+        // Boundaries are inclusive.
+        assert!(check_finite(10.0, 10.0, 40.0).is_ok());
+        assert!(check_finite(40.0, 10.0, 40.0).is_ok());
+    }
+
+    #[test]
+    fn check_finite_rejects_nan() {
+        let err = check_finite(f64::NAN, 10.0, 40.0).unwrap_err();
+        assert!(
+            err.contains("finite"),
+            "error must mention finiteness; got: {}",
+            err
+        );
+    }
+
+    #[test]
+    fn check_finite_rejects_pos_inf() {
+        assert!(check_finite(f64::INFINITY, 10.0, 40.0).is_err());
+        assert!(check_finite(f64::MAX, 10.0, 40.0).is_err());
+    }
+
+    #[test]
+    fn check_finite_rejects_neg_inf() {
+        assert!(check_finite(f64::NEG_INFINITY, 10.0, 40.0).is_err());
+        assert!(check_finite(f64::MIN, 10.0, 40.0).is_err());
+    }
+
+    #[test]
+    fn check_finite_rejects_below_min() {
+        let err = check_finite(9.999, 10.0, 40.0).unwrap_err();
+        assert!(err.contains("outside the valid range"), "got: {}", err);
+    }
+
+    #[test]
+    fn check_finite_rejects_above_max() {
+        assert!(check_finite(40.001, 10.0, 40.0).is_err());
+        assert!(check_finite(100.0, 10.0, 40.0).is_err());
+    }
+
+    // ---- end-to-end coverage (wasm32 only — needs wasm-bindgen runtime) -
+
+    #[cfg(target_arch = "wasm32")]
+    mod wasm_e2e {
+        use super::*;
+        use wasm_bindgen_test::*;
+
+        fn config() -> FluidSimulationConfig {
+            FluidSimulationConfig {
+                num_zones: 3,
+                initial_temps: Some(vec![22.0, 22.0, 22.0]),
+                heating_setpoint: 20.0,
+                cooling_setpoint: 24.0,
+                ..Default::default()
+            }
+        }
+
+        fn fresh_sim() -> FluidSimulation {
+            FluidSimulation::new(&serde_json::to_string(&config()).unwrap()).unwrap()
+        }
+
+        #[wasm_bindgen_test]
+        fn set_temperatures_rejects_nan() {
+            let mut sim = fresh_sim();
+            assert!(sim.set_temperatures(vec![20.0, f64::NAN, 22.0]).is_err());
+            let temps = sim.get_zone_temps();
+            assert!(temps.iter().all(|t| t.is_finite()));
+        }
+
+        #[wasm_bindgen_test]
+        fn set_temperatures_rejects_pos_inf() {
+            let mut sim = fresh_sim();
+            assert!(sim
+                .set_temperatures(vec![f64::INFINITY, 22.0, 22.0])
+                .is_err());
+        }
+
+        #[wasm_bindgen_test]
+        fn set_temperatures_rejects_neg_inf() {
+            let mut sim = fresh_sim();
+            assert!(sim
+                .set_temperatures(vec![22.0, 22.0, f64::NEG_INFINITY])
+                .is_err());
+        }
+
+        #[wasm_bindgen_test]
+        fn set_temperatures_rejects_out_of_range() {
+            let mut sim = fresh_sim();
+            assert!(sim.set_temperatures(vec![20.0, 5.0, 22.0]).is_err());
+            assert!(sim.set_temperatures(vec![20.0, 22.0, 55.0]).is_err());
+            assert!(sim.set_temperatures(vec![20.0, 22.0, -273.15]).is_err());
+        }
+
+        #[wasm_bindgen_test]
+        fn set_temperatures_accepts_boundary_values() {
+            let mut sim = fresh_sim();
+            assert!(sim.set_temperatures(vec![10.0, 25.0, 40.0]).is_ok());
+            assert_eq!(sim.get_zone_temps(), vec![10.0, 25.0, 40.0]);
+        }
+
+        #[wasm_bindgen_test]
+        fn set_control_rejects_nan_on_heating_setpoint() {
+            let mut sim = fresh_sim();
+            assert!(sim.set_control("heating_zone_0", f64::NAN).is_err());
+        }
+
+        #[wasm_bindgen_test]
+        fn set_control_rejects_nan_on_cooling_setpoint() {
+            let mut sim = fresh_sim();
+            assert!(sim.set_control("cooling_zone_2", f64::NAN).is_err());
+        }
+
+        #[wasm_bindgen_test]
+        fn set_control_rejects_pos_inf_on_custom_loop() {
+            let mut sim = fresh_sim();
+            assert!(sim.set_control("vav_damper_1", f64::INFINITY).is_err());
+        }
+
+        #[wasm_bindgen_test]
+        fn set_control_rejects_neg_inf_on_custom_loop() {
+            let mut sim = fresh_sim();
+            assert!(sim.set_control("vav_damper_1", f64::NEG_INFINITY).is_err());
+        }
+
+        #[wasm_bindgen_test]
+        fn set_control_rejects_out_of_range_temp() {
+            let mut sim = fresh_sim();
+            assert!(sim.set_control("heating_zone_0", 200.0).is_err());
+            assert!(sim.set_control("cooling_zone_0", -50.0).is_err());
+        }
+
+        #[wasm_bindgen_test]
+        fn set_control_does_not_leak_nan_to_console() {
+            // Issue #2911 called out console_log leaking the NaN value
+            // to DevTools. Validation happens BEFORE the log call.
+            let mut sim = fresh_sim();
+            let _ = sim.set_control("heating_zone_0", f64::NAN);
+        }
+
+        #[wasm_bindgen_test]
+        fn reset_temperatures_rejects_nan() {
+            let mut sim = fresh_sim();
+            assert!(sim.reset_temperatures(f64::NAN).is_err());
+            assert!(sim.get_zone_temps().iter().all(|t| t.is_finite()));
+        }
+
+        #[wasm_bindgen_test]
+        fn reset_temperatures_rejects_pos_inf() {
+            let mut sim = fresh_sim();
+            assert!(sim.reset_temperatures(f64::INFINITY).is_err());
+        }
+
+        #[wasm_bindgen_test]
+        fn reset_temperatures_rejects_neg_inf() {
+            let mut sim = fresh_sim();
+            assert!(sim.reset_temperatures(f64::NEG_INFINITY).is_err());
+        }
+
+        #[wasm_bindgen_test]
+        fn reset_temperatures_rejects_out_of_range() {
+            let mut sim = fresh_sim();
+            assert!(sim.reset_temperatures(-10.0).is_err());
+            assert!(sim.reset_temperatures(100.0).is_err());
+        }
+
+        #[wasm_bindgen_test]
+        fn reset_temperatures_accepts_in_range() {
+            let mut sim = fresh_sim();
+            assert!(sim.reset_temperatures(15.0).is_ok());
+            assert_eq!(sim.get_zone_temps(), vec![15.0, 15.0, 15.0]);
+        }
+
+        #[wasm_bindgen_test]
+        fn apply_parameters_rejects_nan_in_u_value() {
+            let mut sim = fresh_sim();
+            assert!(sim.apply_parameters(vec![f64::NAN, 20.0, 24.0]).is_err());
+        }
+
+        #[wasm_bindgen_test]
+        fn apply_parameters_rejects_pos_inf_in_heating() {
+            let mut sim = fresh_sim();
+            assert!(sim
+                .apply_parameters(vec![1.5, f64::INFINITY, 24.0])
+                .is_err());
+        }
+
+        #[wasm_bindgen_test]
+        fn apply_parameters_rejects_neg_inf_in_cooling() {
+            let mut sim = fresh_sim();
+            assert!(sim
+                .apply_parameters(vec![1.5, 20.0, f64::NEG_INFINITY])
+                .is_err());
+        }
+
+        #[wasm_bindgen_test]
+        fn apply_parameters_rejects_out_of_range_u_value() {
+            let mut sim = fresh_sim();
+            assert!(sim.apply_parameters(vec![0.0, 20.0, 24.0]).is_err());
+            assert!(sim.apply_parameters(vec![20.0, 20.0, 24.0]).is_err());
+        }
+
+        #[wasm_bindgen_test]
+        fn apply_parameters_rejects_out_of_range_heating_setpoint() {
+            let mut sim = fresh_sim();
+            assert!(sim.apply_parameters(vec![1.5, 5.0, 24.0]).is_err());
+            assert!(sim.apply_parameters(vec![1.5, 60.0, 24.0]).is_err());
+        }
+
+        #[wasm_bindgen_test]
+        fn apply_parameters_rejects_out_of_range_cooling_setpoint() {
+            let mut sim = fresh_sim();
+            assert!(sim.apply_parameters(vec![1.5, 20.0, 5.0]).is_err());
+            assert!(sim.apply_parameters(vec![1.5, 20.0, 60.0]).is_err());
+        }
+
+        #[wasm_bindgen_test]
+        fn apply_parameters_accepts_boundary_values() {
+            let mut sim = fresh_sim();
+            assert!(sim.apply_parameters(vec![0.1, 10.0, 10.0]).is_ok());
+            let mut sim = fresh_sim();
+            assert!(sim.apply_parameters(vec![10.0, 40.0, 40.0]).is_ok());
+        }
+    }
 }
