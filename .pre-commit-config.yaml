@@ -109,6 +109,13 @@ repos:
         pass_filenames: false
         stages: [manual]
 
+      - id: doc-drift-check
+        name: "Doc-Comment Cycle Drift Check (issue #2895)"
+        entry: python3 scripts/check_doc_drift.py
+        language: system
+        pass_filenames: false
+        stages: [manual]
+
 # Fluxion Pre-Commit Hooks Configuration
 #
 # Installation:

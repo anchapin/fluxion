@@ -73,8 +73,11 @@
 //!
 //! The `sim::construction ↔ validation::ashrae_140_cases::Orientation` cycle was
 //! closed in #1441 by moving the leaf types into `fluxion_core::ashrae_cases`.
-//! The `sim::construction ↔ physics::continuous` cycle remains and is the next
-//! cycle-break target (see `docs/mutation_testing_crate_split.md` §"Phase 2").
+//!
+//! Any doc-comment in this file that names a current cycle target is
+//! diff-checked against the cycle baselines by `scripts/check_doc_drift.py`
+//! (issue #2895); see ARCHITECTURE.md §"Remaining cycles" for the
+//! source-of-truth list.
 
 // Match the main `fluxion` crate's relaxed lint posture so leaf modules compile
 // without the historical style warnings they carried before the split.
