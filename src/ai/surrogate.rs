@@ -1936,14 +1936,14 @@ impl SurrogateManager {
             return Ok(vec![]);
         }
 
-        let hour_of_day = (std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap()
-            .as_secs()
-            / 3600) as usize
-            % 24;
-
-        let daily_cycle = (std::f64::consts::PI * (hour_of_day as f64 - 6.0) / 12.0).sin();
+        // Issue #1335: was previously derived from `SystemTime::now()`, making
+        // the fallback non-deterministic and breaking the surrogate drift gate
+        // (Issue #2923) whenever CI happened to run outside the wall-clock hour
+        // the baseline JSON was captured at. Now derive the phase from the
+        // first input element (`outdoor_temp` in the SurrogateThermalLoadAdapter
+        // 6-element input vector), matching `deterministic_analytical_loads`.
+        let phase = temps.first().copied().unwrap_or(12.0);
+        let daily_cycle = (std::f64::consts::PI * (phase - 6.0) / 12.0).sin();
         let solar_gain = (50.0 * daily_cycle).max(0.0);
 
         Ok(vec![solar_gain; temps.len()])
