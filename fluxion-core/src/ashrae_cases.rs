@@ -306,6 +306,21 @@ pub struct WindowSpec {
     /// Glass emissivity for longwave radiation (0-1)
     /// Typical values: 0.84 for clear glass, 0.04-0.15 for low-E coatings
     pub emissivity: f64,
+    /// Additive extra U-value contribution from the frame (W/m²K).
+    /// Issue #2889 — frame-to-glazing thermal bridge. Default 0.1 W/m²K
+    /// per ASHRAE 140 §5.2.4 (low end of the "5–15 % additional U-value
+    /// on perimeter" range). The effective window U-value used in
+    /// `h_tr_w = U_eff × A_win` adds `frame_u_value` on top of the
+    /// center-of-glass U.
+    pub frame_u_value: f64,
+    /// Fraction of total window area that is frame (0–1). Issue #2889 —
+    /// default 0.15 per ASHRAE 140 Bestest framing schedule. Gating: when
+    /// 0.0 the frame bridge is fully suppressed.
+    pub frame_area_fraction: f64,
+    /// Frame perimeter in metres. Issue #2889 — used with the linear edge
+    /// conductance coefficient (0.2 W/(m·K) by default) to model the
+    /// frame-to-glazing transition. If 0.0, the linear term is omitted.
+    pub frame_perimeter: f64,
 }
 
 impl WindowSpec {
@@ -318,6 +333,9 @@ impl WindowSpec {
             normal_transmittance,
             glass_type,
             emissivity,
+            frame_u_value: 0.1,
+            frame_area_fraction: 0.15,
+            frame_perimeter: 0.0,
         }
     }
 
@@ -350,6 +368,38 @@ impl WindowSpec {
     /// - Emissivity: 0.10 (low-E coating)
     pub fn double_low_e() -> Self {
         WindowSpec::new(2.0, 0.65, 0.70, GlassType::DoubleLowE)
+    }
+
+    /// ASHRAE 140 §5.2.4 — effective window U-value including the frame
+    /// thermal bridge (W/m²K).
+    ///
+    /// Combines:
+    /// 1. The center-of-glass U-value (`self.u_value`).
+    /// 2. The additive frame contribution (`self.frame_u_value`, per unit
+    ///    total window area). This is the area-weighted uplift from the
+    ///    frame vs glass delta, applied to the whole window — within
+    ///    the ASHRAE 140 §5.2.4 "5–15 % additional U-value" range.
+    /// 3. The linear edge conductance at the frame-to-glazing transition:
+    ///    `psi × perimeter / total_area`. The `total_area` argument is the
+    ///    total window area; the linear term is omitted when `self.frame_perimeter == 0.0`.
+    ///
+    /// `psi` defaults to 0.2 W/(m·K) per ASHRAE 140 §5.2.4 (Bestest
+    /// convention). This is the value used by the engine when wiring
+    /// `WindowSpec` into `h_tr_w`. The frame bridge is gated on
+    /// `frame_area_fraction > 0.0` so that "fully glazed" windows (no
+    /// frame) skip it entirely.
+    pub fn effective_u_value_with_frame(&self, total_area: f64, linear_edge_psi: f64) -> f64 {
+        let f_frame = self.frame_area_fraction.clamp(0.0, 1.0);
+        if f_frame <= 0.0 {
+            return self.u_value;
+        }
+        let area_delta = self.frame_u_value.max(0.0);
+        let edge_delta = if self.frame_perimeter > 0.0 && total_area > 0.0 {
+            linear_edge_psi * self.frame_perimeter / total_area
+        } else {
+            0.0
+        };
+        self.u_value + area_delta + edge_delta
     }
 }
 

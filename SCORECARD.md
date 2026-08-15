@@ -4,8 +4,8 @@
 >
 > **Do not edit by hand** — regenerate with `python scripts/generate_scorecard.py`. CI fails on drift (`scorecard-drift` workflow).
 
-**Last Updated:** 2026-08-07  
-**Data source as of:** 2026-08-07 22:07 UTC  
+**Last Updated:** 2026-08-15  
+**Data source as of:** 2026-08-15 19:34 UTC  
 **Sources:** `docs/ASHRAE140_RESULTS.md`, `release_gates.yaml`, `README.md`
 
 ---
@@ -14,16 +14,16 @@
 
 | Metric | Current | Budget (gate) | Status | Source |
 |--------|---------|---------------|--------|--------|
-| ASHRAE 140 pass rate | **20.3%** (13/64 metrics) | ≥ 60% (`validation.min_pass_rate`) | ❌ Fail | `docs/ASHRAE140_RESULTS.md` |
-| Mean Absolute Error (MAE) | **55.09%** | ≤ 50% (`validation.max_mae`) | ❌ Fail | `docs/ASHRAE140_RESULTS.md` |
+| ASHRAE 140 pass rate | **10.9%** (7/64 metrics) | ≥ 60% (`validation.min_pass_rate`) | ❌ Fail | `docs/ASHRAE140_RESULTS.md` |
+| Mean Absolute Error (MAE) | **52.59%** | ≤ 50% (`validation.max_mae`) | ❌ Fail | `docs/ASHRAE140_RESULTS.md` |
 | BatchOracle throughput | **157 (CI) / 900 (release)** configs/sec | ≥ 150 (`benchmark.throughput.min_configs_per_sec`) | ✅ Pass | `release_gates.yaml` comment + `README.md` |
-| Validation-suite throughput | 16.80 cases/sec | (informational) | ℹ️ | `docs/ASHRAE140_RESULTS.md` |
-| Max single-case deviation | 499.89% | (ref: `individual.max_deviation` = 100%) | ℹ️ | `docs/ASHRAE140_RESULTS.md` |
+| Validation-suite throughput | 10.48 cases/sec | (informational) | ℹ️ | `docs/ASHRAE140_RESULTS.md` |
+| Max single-case deviation | 484.61% | (ref: `individual.max_deviation` = 100%) | ℹ️ | `docs/ASHRAE140_RESULTS.md` |
 
 ## ASHRAE 140 Pass Rate
 
-- **Overall (metric-level):** 20.3% — 13 PASS / 5 WARN / 46 FAIL of 64 results. Below the 60% gate.
-- **Case-level:** 1/18 cases fully PASS (5.6%).
+- **Overall (metric-level):** 10.9% — 7 PASS / 6 WARN / 51 FAIL of 64 results. Below the 60% gate.
+- **Case-level:** 0/18 cases fully PASS (0.0%).
 
 ### Per-Series Breakdown (case-level)
 
@@ -31,7 +31,7 @@
 |--------|-------|------|------|------|-----------|
 | Baseline Cases (600 Series) | 6 | 0 | 0 | 6 | 0.0% |
 | High-Mass Cases (900 Series) | 6 | 0 | 0 | 6 | 0.0% |
-| Free-Floating Cases | 4 | 1 | 0 | 3 | 25.0% |
+| Free-Floating Cases | 4 | 0 | 0 | 4 | 0.0% |
 | Special Cases | 2 | 0 | 0 | 2 | 0.0% |
 
 *Case-level = a case is PASS only if its aggregate row is ✅. Metric-level headline (20.3%) counts each reported metric individually; see `docs/ASHRAE140_RESULTS.md` Summary.*
@@ -41,12 +41,12 @@
 - **Gate:** ≥ **150** configs/sec (`benchmark.throughput.min_configs_per_sec`); absolute floor 100; latency ≤ 10 ms/config.
 - **CI runner (Wave 1+1.5):** ~157 configs/sec — ✅ Pass (narrow margin; source: `release_gates.yaml` comment).
 - **Release mode (BatchOracle, rayon):** ~900 configs/sec — ✅ Pass (source: `README.md`).
-- **Validation-suite throughput:** 16.80 cases/sec — informational only; this is the test-runner cadence, not the BatchOracle benchmark (source: `docs/ASHRAE140_RESULTS.md`).
+- **Validation-suite throughput:** 10.48 cases/sec — informational only; this is the test-runner cadence, not the BatchOracle benchmark (source: `docs/ASHRAE140_RESULTS.md`).
 
 ## MAE vs Budget
 
 - **Gate:** ≤ **50%** (`validation.max_mae`).
-- **Current:** **55.09%** — Over budget by +5.09 pp. Max single-case deviation 499.89%.
+- **Current:** **52.59%** — Over budget by +2.59 pp. Max single-case deviation 484.61%.
 - *Driver:* high-mass annual-energy deviation (5R1C/CTF thermal-mass limitation; see Known Structural Failures).
 
 ## Known Structural Failures

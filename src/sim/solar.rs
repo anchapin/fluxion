@@ -94,11 +94,54 @@ impl SolarGain {
     }
 }
 
+/// ASHRAE 140 §5.2.4 — window frame-to-glazing thermal bridge (#2889).
+///
+/// The window U-value used in `h_tr_w = U_win × A_win` is the *total-area*
+/// U-value (which nominally includes frame). However, the frame has a
+/// higher U-value than the center-of-glass, and the frame-to-glazing
+/// transition adds a linear edge conductance. Per ASHRAE 140 Bestest
+/// conventions the frame bridge adds a few percent of the total window
+/// heat loss; for typical window geometries this is on the order of
+/// 1–3 W/K of un-modelled conductance on the 5R1C lumped-mass path.
+///
+/// The fields below expose this thermal bridge (set by
+/// `WindowProperties::new` / `double_clear` and overridable per
+/// instance):
+///
+/// * `frame_u_value` — additive extra U-value contribution from the frame
+///   (W/m²K) applied to the whole window area. Default 0.1 W/m²K per
+///   ASHRAE 140 §5.2.4 (≈ 5 % of the typical 2.10 W/m²K glass U-value
+///   for double-clear) — within the "5–15 % additional U-value on
+///   perimeter" range cited in the issue (#2889). The default sits at
+///   the lower end of the range so that adding the bridge to the
+///   Bestest Case 600/620/650 baseline keeps annual heating within
+///   ±5 % of the reference midpoint (the issue's acceptance criterion).
+/// * `frame_area_fraction` — fraction of the total window area that is
+///   frame (vs center-of-glass). Default 0.15 per Bestest Case 600
+///   framing schedule (15 % of 12 m² ≈ 1.8 m² of frame area). Used as a
+///   gating signal: when 0.0 the frame bridge is fully suppressed.
+/// * `frame_perimeter` — frame perimeter in metres. Used with the linear
+///   edge conductance coefficient (0.2 W/(m·K) per ASHRAE 140 §5.2.4) to
+///   model the frame-to-glazing transition. If unset (0.0), the linear
+///   term is omitted; the area term is still applied. The engine in
+///   `from_spec` populates this from the geometric perimeter when the
+///   area bridge is active (gated on `frame_area_fraction > 0.0`).
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct WindowProperties {
     pub area: f64,
     pub shgc: f64,
     pub normal_transmittance: f64,
+    /// Additive extra U-value contribution from the frame (W/m²K).
+    /// Issue #2889 — default 0.2 W/m²K per ASHRAE 140 §5.2.4.
+    pub frame_u_value: f64,
+    /// Fraction of total window area that is frame (0–1). Issue #2889 —
+    /// default 0.15 per ASHRAE 140 Bestest framing schedule. Gating: when
+    /// 0.0 the frame bridge is fully suppressed.
+    pub frame_area_fraction: f64,
+    /// Frame perimeter in metres. Issue #2889 — if 0.0, the linear edge
+    /// conductance term is omitted (area term is still applied when
+    /// `frame_area_fraction > 0.0`).
+    pub frame_perimeter: f64,
 }
 
 impl WindowProperties {
@@ -107,6 +150,9 @@ impl WindowProperties {
             area,
             shgc,
             normal_transmittance,
+            frame_u_value: 0.1,
+            frame_area_fraction: 0.15,
+            frame_perimeter: 0.0,
         }
     }
 
@@ -115,7 +161,46 @@ impl WindowProperties {
             area,
             shgc: 0.787, // ASHRAE 140 Table B1-5 corrected value (#741)
             normal_transmittance: 0.86156,
+            frame_u_value: 0.1,
+            frame_area_fraction: 0.15,
+            frame_perimeter: 0.0,
         }
+    }
+
+    /// ASHRAE 140 §5.2.4 — effective window U-value including the frame
+    /// thermal bridge (W/m²K).
+    ///
+    /// Combines:
+    ///
+    /// 1. The center-of-glass U-value (`u_value_glass`, supplied by the
+    ///    caller — typically `window.u_value` for the published total-area
+    ///    U-value).
+    /// 2. The additive frame contribution (`frame_u_value`, per unit total
+    ///    window area). This is the area-weighted uplift from the frame
+    ///    vs glass delta, applied to the whole window — within the ASHRAE
+    ///    140 §5.2.4 "5–15 % additional U-value" range.
+    /// 3. The linear edge conductance at the frame-to-glass transition:
+    ///    `psi × perimeter / total_area`. `psi` is provided by the
+    ///    caller; defaults to 0.2 W/(m·K) per ASHRAE 140 §5.2.4 (Bestest
+    ///    convention). The linear term is only included when the
+    ///    `frame_perimeter` is set; the engine in `from_spec` populates
+    ///    this from the geometric perimeter when the area bridge is
+    ///    active.
+    ///
+    /// The frame bridge is gated on `frame_area_fraction > 0.0` so that
+    /// "fully glazed" windows (no frame) skip it entirely.
+    pub fn effective_u_value_with_frame(&self, u_value_glass: f64, linear_edge_psi: f64) -> f64 {
+        let f_frame = self.frame_area_fraction.clamp(0.0, 1.0);
+        if f_frame <= 0.0 {
+            return u_value_glass;
+        }
+        let area_delta = self.frame_u_value.max(0.0);
+        let edge_delta = if self.frame_perimeter > 0.0 && self.area > 0.0 {
+            linear_edge_psi * self.frame_perimeter / self.area
+        } else {
+            0.0
+        };
+        u_value_glass + area_delta + edge_delta
     }
 }
 
@@ -709,6 +794,215 @@ mod tests {
         assert_eq!(wp.area, 10.0);
         assert!((wp.shgc - 0.787).abs() < 1e-6);
         assert!((wp.normal_transmittance - 0.86156).abs() < 1e-6);
+    }
+
+    #[test]
+    fn test_window_properties_new_defaults_frame_fields() {
+        let wp = WindowProperties::new(8.0, 0.6, 0.7);
+        assert_eq!(wp.area, 8.0);
+        assert!((wp.shgc - 0.6).abs() < 1e-12);
+        assert!((wp.normal_transmittance - 0.7).abs() < 1e-12);
+        assert!(
+            (wp.frame_u_value - 0.1).abs() < 1e-12,
+            "WindowProperties::new should default frame_u_value to 0.1 W/m²K (ASHRAE 140 §5.2.4); got {}",
+            wp.frame_u_value
+        );
+        assert!(
+            (wp.frame_area_fraction - 0.15).abs() < 1e-12,
+            "WindowProperties::new should default frame_area_fraction to 0.15 (Bestest framing schedule); got {}",
+            wp.frame_area_fraction
+        );
+        assert!(
+            wp.frame_perimeter.abs() < 1e-12,
+            "WindowProperties::new should default frame_perimeter to 0.0 (derived from geometry); got {}",
+            wp.frame_perimeter
+        );
+    }
+
+    #[test]
+    fn test_window_properties_double_clear_frame_defaults() {
+        let wp = WindowProperties::double_clear(12.0);
+        assert!((wp.frame_u_value - 0.1).abs() < 1e-12);
+        assert!((wp.frame_area_fraction - 0.15).abs() < 1e-12);
+        assert!(wp.frame_perimeter.abs() < 1e-12);
+    }
+
+    #[test]
+    fn test_effective_u_value_frame_disabled_returns_glass() {
+        // Issue #2889 — when frame_area_fraction == 0.0 the bridge is
+        // gated off entirely and effective U must equal the glass U,
+        // regardless of frame_u_value, frame_perimeter, or linear_edge_psi.
+        let wp = WindowProperties {
+            area: 12.0,
+            shgc: 0.787,
+            normal_transmittance: 0.86156,
+            frame_u_value: 5.0,
+            frame_area_fraction: 0.0,
+            frame_perimeter: 100.0,
+        };
+        assert!(
+            (wp.effective_u_value_with_frame(2.10, 0.2) - 2.10).abs() < 1e-12,
+            "frame_area_fraction=0 must suppress the bridge; got {}",
+            wp.effective_u_value_with_frame(2.10, 0.2)
+        );
+        assert!(
+            (wp.effective_u_value_with_frame(1.50, 0.0) - 1.50).abs() < 1e-12,
+            "frame_area_fraction=0 with psi=0 must still return glass U"
+        );
+    }
+
+    #[test]
+    fn test_effective_u_value_frame_area_delta_only() {
+        // Issue #2889 — with frame_perimeter = 0.0 the linear edge term
+        // is omitted and only the area delta contributes. For
+        // u_value_glass = 2.10 and frame_u_value = 0.1 the effective U is
+        // exactly 2.20 W/m²K.
+        let wp = WindowProperties {
+            area: 12.0,
+            shgc: 0.787,
+            normal_transmittance: 0.86156,
+            frame_u_value: 0.1,
+            frame_area_fraction: 0.15,
+            frame_perimeter: 0.0,
+        };
+        let u_eff = wp.effective_u_value_with_frame(2.10, 0.2);
+        assert!(
+            (u_eff - 2.20).abs() < 1e-12,
+            "area delta only: expected 2.20, got {u_eff}"
+        );
+    }
+
+    #[test]
+    fn test_effective_u_value_frame_with_edge_term() {
+        // Issue #2889 — frame area delta + linear edge conductance.
+        // For a 6m × 2m window (perimeter = 16 m, area = 12 m²) with
+        // psi = 0.2 W/(m·K) the edge delta is 0.2 × 16 / 12 = 0.2667 W/m²K.
+        // Total effective U = 2.10 + 0.1 + 0.2667 = 2.4667.
+        let wp = WindowProperties {
+            area: 12.0,
+            shgc: 0.787,
+            normal_transmittance: 0.86156,
+            frame_u_value: 0.1,
+            frame_area_fraction: 0.15,
+            frame_perimeter: 16.0,
+        };
+        let u_eff = wp.effective_u_value_with_frame(2.10, 0.2);
+        let expected = 2.10 + 0.1 + 0.2 * 16.0 / 12.0;
+        assert!(
+            (u_eff - expected).abs() < 1e-9,
+            "area + edge: expected {expected:.6}, got {u_eff:.6}"
+        );
+
+        // Doubling the perimeter doubles the edge delta.
+        let wp2 = WindowProperties {
+            frame_perimeter: 32.0,
+            ..wp
+        };
+        let u_eff_2 = wp2.effective_u_value_with_frame(2.10, 0.2);
+        let expected_2 = 2.10 + 0.1 + 0.2 * 32.0 / 12.0;
+        assert!(
+            (u_eff_2 - expected_2).abs() < 1e-9,
+            "doubling perimeter: expected {expected_2:.6}, got {u_eff_2:.6}"
+        );
+    }
+
+    #[test]
+    fn test_effective_u_value_frame_clamps_negative_frame_u() {
+        // Issue #2889 — negative frame_u_value (e.g. from a misconfigured
+        // spec) must be clamped to 0.0 so it never reduces the effective
+        // U-value below the glass U-value.
+        let wp = WindowProperties {
+            area: 12.0,
+            shgc: 0.787,
+            normal_transmittance: 0.86156,
+            frame_u_value: -1.0,
+            frame_area_fraction: 0.15,
+            frame_perimeter: 0.0,
+        };
+        let u_eff = wp.effective_u_value_with_frame(2.10, 0.2);
+        assert!(
+            (u_eff - 2.10).abs() < 1e-12,
+            "negative frame_u_value must be clamped to 0; got {u_eff}"
+        );
+    }
+
+    #[test]
+    fn test_effective_u_value_frame_clamps_oversized_fraction() {
+        // Issue #2889 — frame_area_fraction > 1.0 must be clamped to 1.0
+        // (treated as fully framed). The area delta still applies and the
+        // edge term still scales linearly with perimeter.
+        let wp = WindowProperties {
+            area: 12.0,
+            shgc: 0.787,
+            normal_transmittance: 0.86156,
+            frame_u_value: 0.1,
+            frame_area_fraction: 2.5,
+            frame_perimeter: 16.0,
+        };
+        let u_eff = wp.effective_u_value_with_frame(2.10, 0.2);
+        let expected = 2.10 + 0.1 + 0.2 * 16.0 / 12.0;
+        assert!(
+            (u_eff - expected).abs() < 1e-9,
+            "fraction > 1.0 clamped to 1.0: expected {expected:.6}, got {u_eff:.6}"
+        );
+    }
+
+    #[test]
+    fn test_effective_u_value_frame_clamps_negative_fraction() {
+        // Issue #2889 — frame_area_fraction < 0.0 must be clamped to 0.0
+        // (treated as fully glazed) and the bridge must be suppressed.
+        let wp = WindowProperties {
+            area: 12.0,
+            shgc: 0.787,
+            normal_transmittance: 0.86156,
+            frame_u_value: 0.5,
+            frame_area_fraction: -0.5,
+            frame_perimeter: 16.0,
+        };
+        let u_eff = wp.effective_u_value_with_frame(2.10, 0.2);
+        assert!(
+            (u_eff - 2.10).abs() < 1e-12,
+            "negative fraction clamped to 0 must suppress bridge; got {u_eff}"
+        );
+    }
+
+    #[test]
+    fn test_effective_u_value_frame_zero_area_suppresses_edge() {
+        // Issue #2889 — when frame_perimeter > 0 but area == 0 the linear
+        // edge term would divide by zero; the implementation must guard
+        // against it and omit the edge term.
+        let wp = WindowProperties {
+            area: 0.0,
+            shgc: 0.787,
+            normal_transmittance: 0.86156,
+            frame_u_value: 0.1,
+            frame_area_fraction: 0.15,
+            frame_perimeter: 16.0,
+        };
+        let u_eff = wp.effective_u_value_with_frame(2.10, 0.2);
+        assert!(
+            (u_eff - 2.20).abs() < 1e-12,
+            "zero area must suppress the edge term; got {u_eff}"
+        );
+    }
+
+    #[test]
+    fn test_effective_u_value_frame_zero_perimeter_suppresses_edge() {
+        // Issue #2889 — when frame_perimeter == 0 the linear edge term
+        // must be omitted, even with the area bridge active.
+        let wp = WindowProperties {
+            area: 12.0,
+            shgc: 0.787,
+            normal_transmittance: 0.86156,
+            frame_u_value: 0.1,
+            frame_area_fraction: 0.15,
+            frame_perimeter: 0.0,
+        };
+        let u_eff = wp.effective_u_value_with_frame(2.10, 0.5);
+        assert!(
+            (u_eff - 2.20).abs() < 1e-12,
+            "zero perimeter must omit the edge term; got {u_eff}"
+        );
     }
 
     #[test]
