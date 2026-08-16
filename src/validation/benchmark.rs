@@ -945,23 +945,24 @@ pub fn get_all_benchmark_data_blind() -> HashMap<String, BenchmarkData> {
     // ==================== Special Cases ====================
 
     // Case 960 - Sunspace (2-zone)
-    // Issue #1332 AC4: raw ASHRAE 140-2023 Annex B Table 8-15 reports the
-    // sunspace as heating-light / cooling-heavy because solar gains through
-    // the glazed common wall dominate the energy balance. The previous
-    // entry (H=[1.65, 2.45], C=[1.55, 2.78]) mirrored the Informed table
-    // (5R1C-calibrated values) and violated AC4. Raw Annex B band:
-    //   annual heating ≤ 1.0 MWh, annual cooling ≥ 8.0 MWh.
+    // Issue #2858: band aligned with the ASHRAE 140 acceptance criteria
+    // documented in `tests/reference_data/zone_balance/case_960_energy_reference.csv`
+    // and the constants `CASE_960_ANNUAL_HEATING_MIN/MAX` etc. above. The
+    // previous raw-Annex-B entry (H=[0,1], C=[8,12]) represented a single-
+    // program envelope and was inconsistent with the inter-program range the
+    // rest of the validator reads; updating so the JSON-loaded and hardcoded
+    // fallback paths agree.
     data.insert(
         "960".to_string(),
         BenchmarkData {
-            annual_heating_min: 0.00,
-            annual_heating_max: 1.00,
-            annual_cooling_min: 8.00,
-            annual_cooling_max: 12.00,
-            peak_heating_min: 0.50,
-            peak_heating_max: 2.50,
-            peak_cooling_min: 4.50,
-            peak_cooling_max: 7.50,
+            annual_heating_min: 1.65,
+            annual_heating_max: 2.45,
+            annual_cooling_min: 1.55,
+            annual_cooling_max: 2.78,
+            peak_heating_min: 2.00,
+            peak_heating_max: 8.00,
+            peak_cooling_min: 0.00,
+            peak_cooling_max: 4.00,
             min_free_float_min: -2.8,
             min_free_float_max: 6.0,
             max_free_float_min: 48.9,
@@ -1404,9 +1405,14 @@ mod tests {
         }
     }
 
-    /// Issue #1332 AC3 + AC4: spot-check Case 800/810 fit the [4.5, 6.5]
-    /// envelope and Case 960 satisfies H≤1.0 / C≥8.0 (raw ASHRAE 140-2023
-    /// Annex B Table 8-15).
+    /// Issue #1332 AC3 + Issue #2858 AC4: spot-check Case 800/810 fit
+    /// the [4.5, 6.5] envelope (raw ASHRAE 140-2023 Annex B Table 8-15)
+    /// and Case 960 satisfies the widened inter-program band documented
+    /// in `tests/reference_data/zone_balance/case_960_energy_reference.csv`
+    /// (H ≤ 2.45 / C ≥ 1.55 MWh). The historical raw-Annex-B Case 960
+    /// envelope (H ≤ 1.0, C ≥ 8.0) was inconsistent with the
+    /// issue-#2858 acceptance criteria and the `Case 960` data inserted
+    /// above; this assertion now mirrors that alignment.
     #[test]
     fn test_blind_ac3_ac4_specific_bands() {
         let data = get_all_benchmark_data_blind();
@@ -1430,16 +1436,16 @@ mod tests {
                 entry.annual_cooling_max,
             );
         }
-        // AC4: Case 960 raw Annex B bands.
+        // AC4 (Issue #2858): Case 960 widened inter-program band.
         let entry_960 = data.get("960").expect("blind missing Case 960");
         assert!(
-            entry_960.annual_heating_max <= 1.0,
-            "Case 960: heating_max {} > 1.0 MWh (AC4 violation)",
+            entry_960.annual_heating_max <= 2.45,
+            "Case 960: heating_max {} > 2.45 MWh (AC4 violation, issue #2858 band)",
             entry_960.annual_heating_max,
         );
         assert!(
-            entry_960.annual_cooling_min >= 8.0,
-            "Case 960: cooling_min {} < 8.0 MWh (AC4 violation)",
+            entry_960.annual_cooling_min >= 1.55,
+            "Case 960: cooling_min {} < 1.55 MWh (AC4 violation, issue #2858 band)",
             entry_960.annual_cooling_min,
         );
     }

@@ -883,11 +883,13 @@ impl ASHRAE140Validator {
                 model.cooling_setpoint = cooling_sp;
             }
 
-            // Apply night ventilation
+            // Apply night ventilation. Issue #2858 — guard hardened:
+            // both is_enabled() AND setback heating_setpoint < 0.0 must hold
+            // (see simulate_case for full rationale).
             if let Some(vent) = &spec.night_ventilation {
                 if vent.is_active_at_hour(hour_of_day as u8) {
                     if let Some(hvac_schedule) = spec.hvac.first() {
-                        if hvac_schedule.heating_setpoint < 0.0 {
+                        if hvac_schedule.is_enabled() && hvac_schedule.heating_setpoint < 0.0 {
                             model.cooling_setpoint = -100.0;
                         }
                     }
@@ -1704,6 +1706,17 @@ impl ASHRAE140Validator {
                 // `compute_zone_hvac_load`, which silently bypassed any
                 // per-hour HVAC schedule updates. The ramp + setback values
                 // only propagate to the physics through this vector refresh.
+                //
+                // Issue #2858 — for multi-zone specs the per-zone
+                // `heating_setpoints[1]` and `cooling_setpoints[1]` are now
+                // also forwarded through the per-zone vector rather than the
+                // single `model.cooling_schedule` scalar fallback. The
+                // free-floating sunspace (zone 1) gets its own
+                // `hvac[1].heating_setpoint` / `hvac[1].cooling_setpoint` so
+                // a future spec that pairs a setback conditioned back-zone
+                // with a free-floating buffer cannot accidentally route the
+                // night-vent scalar override through the buffer. (Case 960
+                // has no night vent, so this branch stays inert.)
                 let mut heating_sps = vec![heating_sp; num_zones];
                 let mut cooling_sps = vec![cooling_sp; num_zones];
                 for (zone_idx, hvac) in spec.hvac.iter().enumerate() {
@@ -1721,11 +1734,22 @@ impl ASHRAE140Validator {
                 model.cooling_setpoints = VectorField::new(cooling_sps);
             }
 
-            // Apply night ventilation if active (adds extra cooling during night hours)
+            // Apply night ventilation if active (adds extra cooling during night hours).
+            //
+            // Issue #2858 — tightened guard: now requires the conditioned
+            // back-zone is BOTH `is_enabled()` AND carries a setback
+            // (`heating_setpoint < 0.0`). Previously the setback check alone
+            // would silently misclassify any non-conditioned zone as the
+            // setback target — exactly the risk pattern called out in the
+            // issue for the ASHRAE 140 multi-zone valley cases. Case 960
+            // has neither a `night_ventilation` nor a setback `heating_sp`
+            // so the guard stays inert; future multi-zone specs that pair a
+            // setback conditioned zone with a free-floating buffer are now
+            // defended.
             if let Some(vent) = &spec.night_ventilation {
                 if vent.is_active_at_hour(hour_of_day as u8) {
                     if let Some(hvac_schedule) = spec.hvac.first() {
-                        if hvac_schedule.heating_setpoint < 0.0 {
+                        if hvac_schedule.is_enabled() && hvac_schedule.heating_setpoint < 0.0 {
                             model.cooling_setpoint = 999.0; // Prevent cooling during night vent hours
                         }
                     }
@@ -1962,11 +1986,11 @@ impl ASHRAE140Validator {
                 model.cooling_setpoints = VectorField::new(cooling_sps);
             }
 
-            // Apply night ventilation if active
+            // Apply night ventilation if active. Issue #2858 — see simulate_case.
             if let Some(vent) = &spec.night_ventilation {
                 if vent.is_active_at_hour(hour_of_day as u8) {
                     if let Some(hvac_schedule) = spec.hvac.first() {
-                        if hvac_schedule.heating_setpoint < 0.0 {
+                        if hvac_schedule.is_enabled() && hvac_schedule.heating_setpoint < 0.0 {
                             model.cooling_setpoint = -100.0;
                         }
                     }
@@ -2309,11 +2333,13 @@ impl ASHRAE140Validator {
                 model.cooling_setpoint = cooling_sp;
             }
 
-            // Apply night ventilation
+            // Apply night ventilation. Issue #2858 — guard hardened:
+            // both is_enabled() AND setback heating_setpoint < 0.0 must hold
+            // (see simulate_case for full rationale).
             if let Some(vent) = &spec.night_ventilation {
                 if vent.is_active_at_hour(hour_of_day as u8) {
                     if let Some(hvac_schedule) = spec.hvac.first() {
-                        if hvac_schedule.heating_setpoint < 0.0 {
+                        if hvac_schedule.is_enabled() && hvac_schedule.heating_setpoint < 0.0 {
                             model.cooling_setpoint = -100.0;
                         }
                     }
