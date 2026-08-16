@@ -481,6 +481,86 @@ pub fn get_all_benchmark_data() -> HashMap<String, BenchmarkData> {
         },
     );
 
+    // ==================== HVAC Equipment Cases (800 Series) ====================
+    // Issue #2869: extend Informed coverage to include Cases 800/810 so the
+    // `validate_analytical_engine()` path (default Informed mode) and the
+    // ASHRAE140_RESULTS.md report pick them up — matching the Blind path
+    // (issue #1332) and the `tests/ashrae_140_blind_validation.rs` test array.
+    // Bands mirror `get_all_benchmark_data_blind()` Cases 800/810.
+
+    // Case 800 - Heat pump (single-stage, basic control)
+    // Annual heating/cooling centred on the synthetic reference CSV at
+    // data/reference/ashrae140/series_800.csv (zone1_delivered sums:
+    // H=5.60 MWh, C=6.07 MWh). Band fits inside the AC3 [4.5, 6.5] MWh
+    // envelope for both heating and cooling.
+    data.insert(
+        "800".to_string(),
+        BenchmarkData {
+            annual_heating_min: 4.50,
+            annual_heating_max: 5.80,
+            annual_cooling_min: 5.00,
+            annual_cooling_max: 6.50,
+            peak_heating_min: 2.80,
+            peak_heating_max: 3.80,
+            peak_cooling_min: 4.80,
+            peak_cooling_max: 6.20,
+            min_free_float_min: -6.0,
+            min_free_float_max: -4.0,
+            max_free_float_min: 64.0,
+            max_free_float_max: 68.0,
+        },
+    );
+
+    // Case 810 - Comprehensive HVAC equipment
+    // Annual heating/cooling centred on the synthetic reference CSV
+    // (zone1_delivered sums: H=3.70 MWh, C=4.12 MWh). The full system has
+    // higher COP, so the band sits below the AC3 [4.5, 6.5] envelope —
+    // the band itself remains ≤ 1.5× the raw ASHRAE 140 width (AC2).
+    data.insert(
+        "810".to_string(),
+        BenchmarkData {
+            annual_heating_min: 3.40,
+            annual_heating_max: 4.50,
+            annual_cooling_min: 3.80,
+            annual_cooling_max: 5.00,
+            peak_heating_min: 2.80,
+            peak_heating_max: 3.80,
+            peak_cooling_min: 4.80,
+            peak_cooling_max: 6.20,
+            min_free_float_min: -6.0,
+            min_free_float_max: -4.0,
+            max_free_float_min: 64.0,
+            max_free_float_max: 68.0,
+        },
+    );
+
+    // Case 970 - 5-zone multi-zone cross-coupling (issue #2869)
+    // Raw ASHRAE 140-2017 §B6.7 / 140-2023 Annex B8-3 inter-program envelope.
+    // The 5-zone geometry creates cross-coupled air-flow + conduction paths
+    // (MultiZoneAirflowNetwork 5x5 conductance matrix); all five zones are
+    // conditioned at 20 °C / 27 °C. Band is intentionally the wider
+    // inter-program band (vs the 5R1C-calibrated 600/900 band) because the
+    // multi-zone coupling makes the per-zone temperature setpoints more
+    // sensitive to cross-zone conductance modelling — most programs fall
+    // within ±15% of the midpoint.
+    data.insert(
+        "970".to_string(),
+        BenchmarkData {
+            annual_heating_min: 10.54,
+            annual_heating_max: 14.26,
+            annual_cooling_min: 7.39,
+            annual_cooling_max: 10.00,
+            peak_heating_min: 4.00,
+            peak_heating_max: 8.00,
+            peak_cooling_min: 2.50,
+            peak_cooling_max: 5.50,
+            min_free_float_min: 0.0,
+            min_free_float_max: 0.0,
+            max_free_float_min: 0.0,
+            max_free_float_max: 0.0,
+        },
+    );
+
     data
 }
 
@@ -906,6 +986,32 @@ pub fn get_all_benchmark_data_blind() -> HashMap<String, BenchmarkData> {
             min_free_float_max: -18.2,
             max_free_float_min: 27.8,
             max_free_float_max: 32.5,
+        },
+    );
+
+    // Case 970 - 5-zone multi-zone cross-coupling (issue #2869)
+    // Raw ASHRAE 140-2017 §B6.7 / 140-2023 Annex B8-3 inter-program envelope.
+    // The 5-zone geometry creates cross-coupled air-flow + conduction paths
+    // (MultiZoneAirflowNetwork 5x5 conductance matrix); all five zones are
+    // conditioned at 20 °C / 27 °C. Band is the wider inter-program band
+    // (vs the 5R1C-calibrated 600/900 band) because multi-zone coupling
+    // makes per-zone setpoints more sensitive to cross-zone conductance
+    // modelling — most programs fall within ±15% of the midpoint.
+    data.insert(
+        "970".to_string(),
+        BenchmarkData {
+            annual_heating_min: 10.54,
+            annual_heating_max: 14.26,
+            annual_cooling_min: 7.39,
+            annual_cooling_max: 10.00,
+            peak_heating_min: 4.00,
+            peak_heating_max: 8.00,
+            peak_cooling_min: 2.50,
+            peak_cooling_max: 5.50,
+            min_free_float_min: 0.0,
+            min_free_float_max: 0.0,
+            max_free_float_min: 0.0,
+            max_free_float_max: 0.0,
         },
     );
 

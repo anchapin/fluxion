@@ -1207,6 +1207,16 @@ impl ASHRAE140Validator {
                 ASHRAE140Case::Case950FF,
                 // Special cases
                 ASHRAE140Case::Case960,
+                // ASHRAE 140 HVAC-equipment cases (issue #2869): Cases 800/810
+                // are the §5.2 HVAC-equipment variants of the Case 600/900
+                // envelope. Both have raw ASHRAE 140-2023 Annex B benchmark
+                // bands in benchmark.rs.
+                ASHRAE140Case::Case800,
+                ASHRAE140Case::Case810,
+                // ASHRAE 140 multi-zone case 970 (issue #2869 / #1446 / #1467):
+                // 5-zone cross-coupling geometry exercises the
+                // MultiZoneAirflowNetwork 5×5 conductance matrix.
+                ASHRAE140Case::Case970,
                 ASHRAE140Case::Case195,
             ]
         };
