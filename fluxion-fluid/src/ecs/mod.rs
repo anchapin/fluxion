@@ -158,7 +158,7 @@ mod tests {
         let chiller_pos = world.get_position(chiller);
         let vav_pos = world.get_position(vav);
 
-        assert!(chiller_pos >= 0.0 && chiller_pos <= 1.0);
-        assert!(vav_pos >= 0.0 && vav_pos <= 1.0);
+        assert!((0.0..=1.0).contains(&chiller_pos));
+        assert!((0.0..=1.0).contains(&vav_pos));
     }
 }

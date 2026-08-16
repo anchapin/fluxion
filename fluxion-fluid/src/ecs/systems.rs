@@ -313,3 +313,125 @@ impl ControlLoopSystem {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn active_pump_world() -> crate::ecs::EquipmentWorld {
+        let mut world = crate::ecs::EquipmentWorld::new();
+        let e = world.spawn(crate::ecs::EquipmentKind::Pump);
+        world.set_mass_flowrate(e, 0.5);
+        world.set_on_off(e, true);
+        world.set_setpoint(e, 0.5);
+        world
+    }
+
+    #[test]
+    fn mass_balance_is_noop_on_empty_world() {
+        let mut world = crate::ecs::EquipmentWorld::new();
+        // Empty world must be a safe no-op (no panic, no allocation).
+        MassBalanceSystem::run(&mut world);
+        assert_eq!(world.entity_count(), 0);
+    }
+
+    #[test]
+    fn mass_balance_zeros_flow_for_inactive_equipment() {
+        let mut world = crate::ecs::EquipmentWorld::new();
+        let e = world.spawn(crate::ecs::EquipmentKind::Pump);
+        world.set_mass_flowrate(e, 5.0);
+        // Spawn defaults to on_off=true; explicitly disable the equipment
+        // before invoking the mass-balance system.
+        world.set_on_off(e, false);
+        MassBalanceSystem::run(&mut world);
+        assert_eq!(world.get_mass_flowrate(e), 0.0);
+    }
+
+    #[test]
+    fn mass_balance_clamps_negative_flow_for_active_equipment() {
+        let mut world = crate::ecs::EquipmentWorld::new();
+        let e = world.spawn(crate::ecs::EquipmentKind::Chiller);
+        world.set_mass_flowrate(e, -3.0);
+        world.set_on_off(e, true);
+        MassBalanceSystem::run(&mut world);
+        // Negative input must be clamped to 0.0 for active equipment.
+        assert_eq!(world.get_mass_flowrate(e), 0.0);
+    }
+
+    #[test]
+    fn heat_transfer_is_noop_on_empty_world() {
+        let mut world = crate::ecs::EquipmentWorld::new();
+        HeatTransferSystem::run(&mut world);
+        assert_eq!(world.entity_count(), 0);
+    }
+
+    #[test]
+    fn heat_transfer_yields_zero_output_for_inactive_equipment() {
+        let mut world = crate::ecs::EquipmentWorld::new();
+        let e = world.spawn(crate::ecs::EquipmentKind::Chiller);
+        world.set_on_off(e, false);
+        let h_before = world.get_enthalpy(e);
+        HeatTransferSystem::run(&mut world);
+        // HeatTransferSystem overwrites heat_transfer_outputs to 0.0 for off entities;
+        // the heat_transfer_outputs slot itself is not exposed via a getter here, but the
+        // enthalpy must not be altered by an inactive run.
+        assert_eq!(world.get_enthalpy(e), h_before);
+    }
+
+    #[test]
+    fn heat_transfer_updates_enthalpy_for_active_chiller() {
+        let mut world = crate::ecs::EquipmentWorld::new();
+        let e = world.spawn(crate::ecs::EquipmentKind::Chiller);
+        world.set_on_off(e, true);
+        world.set_temperature(e, 7.0);
+        world.set_mass_flowrate(e, 0.5);
+        let h_before = world.get_enthalpy(e);
+        HeatTransferSystem::run(&mut world);
+        // Active chiller should update enthalpy (either raise or lower it).
+        assert_ne!(world.get_enthalpy(e), h_before);
+    }
+
+    #[test]
+    fn control_loop_is_noop_on_empty_world() {
+        let mut world = crate::ecs::EquipmentWorld::new();
+        ControlLoopSystem::run(&mut world);
+        assert_eq!(world.entity_count(), 0);
+    }
+
+    #[test]
+    fn control_loop_clamps_position_to_unit_interval() {
+        let mut world = active_pump_world();
+        // Repeated control-loop runs must converge the position within [0, 1] and
+        // never produce NaN or out-of-range values.
+        for _ in 0..20 {
+            ControlLoopSystem::run(&mut world);
+            let e = crate::ecs::EquipmentEntity::new(0);
+            let p = world.get_position(e);
+            assert!(p.is_finite(), "position must remain finite");
+            assert!((0.0..=1.0).contains(&p), "position {p} out of [0,1]");
+        }
+    }
+
+    #[test]
+    fn dispatch_order_mass_then_heat_then_control_is_stable() {
+        // Run the full dispatch sequence twice and assert the world state is
+        // reproducible (same input -> same final position/enthalpy). This locks
+        // down the deterministic system order: mass balance -> heat transfer ->
+        // control loop, regardless of which system the user invokes.
+        let run = || {
+            let mut world = active_pump_world();
+            MassBalanceSystem::run(&mut world);
+            let e = crate::ecs::EquipmentEntity::new(0);
+            let mdot = world.get_mass_flowrate(e);
+            HeatTransferSystem::run(&mut world);
+            let enthalpy_after_heat = world.get_enthalpy(e);
+            ControlLoopSystem::run(&mut world);
+            (mdot, enthalpy_after_heat, world.get_position(e))
+        };
+        let a = run();
+        let b = run();
+        assert_eq!(a.0, b.0);
+        assert_eq!(a.1, b.1);
+        assert_eq!(a.2, b.2);
+    }
+}

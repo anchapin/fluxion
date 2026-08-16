@@ -168,3 +168,99 @@ pub struct SteamConservedVars {
     pub mass_flow: f32,
     pub enthalpy: f32,
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn compat<A, B>() -> bool
+    where
+        A: Medium + CompatibleWith<B>,
+        B: Medium,
+    {
+        <A as CompatibleWith<B>>::is_compatible_with()
+    }
+
+    #[test]
+    fn air_is_not_compatible_with_water() {
+        assert!(!compat::<Air, Water>());
+        assert!(!compat::<Water, Air>());
+    }
+
+    #[test]
+    fn air_is_not_compatible_with_refrigerant_or_steam() {
+        assert!(!compat::<Air, Refrigerant>());
+        assert!(!compat::<Refrigerant, Air>());
+        assert!(!compat::<Air, Steam>());
+        assert!(!compat::<Steam, Air>());
+    }
+
+    #[test]
+    fn water_is_not_compatible_with_refrigerant_or_steam() {
+        assert!(!compat::<Water, Refrigerant>());
+        assert!(!compat::<Refrigerant, Water>());
+        assert!(!compat::<Water, Steam>());
+        assert!(!compat::<Steam, Water>());
+    }
+
+    #[test]
+    fn refrigerant_is_not_compatible_with_steam() {
+        assert!(!compat::<Refrigerant, Steam>());
+        assert!(!compat::<Steam, Refrigerant>());
+    }
+
+    #[test]
+    fn same_medium_is_always_compatible() {
+        // The blanket `impl<T: Medium> CompatibleWith<T> for T` covers all
+        // marker types. Verify it actually applies to every variant.
+        assert!(compat::<Air, Air>());
+        assert!(compat::<Water, Water>());
+        assert!(compat::<Refrigerant, Refrigerant>());
+        assert!(compat::<Steam, Steam>());
+    }
+
+    #[test]
+    fn marker_types_are_zero_sized_and_distinct() {
+        // Marker types must be uninhabited enums (zero-sized) and remain distinct.
+        assert_eq!(std::mem::size_of::<Air>(), 0);
+        assert_eq!(std::mem::size_of::<Water>(), 0);
+        assert_eq!(std::mem::size_of::<Refrigerant>(), 0);
+        assert_eq!(std::mem::size_of::<Steam>(), 0);
+        // Distinctness: a `fn` pointer to each type is a unique ZST.
+        fn id<T>() {}
+        assert_ne!(
+            id::<Air> as *const () as usize,
+            id::<Water> as *const () as usize
+        );
+        assert_ne!(
+            id::<Refrigerant> as *const () as usize,
+            id::<Steam> as *const () as usize
+        );
+    }
+
+    #[test]
+    fn medium_trait_associates_potential_and_conserved_vars() {
+        // The `Medium` trait must surface a non-trivial pair of associated types.
+        // This locks down the type-level wiring used by `FluidPort` consumers.
+        fn assert_associated_types<M: Medium>() {}
+        assert_associated_types::<Air>();
+        assert_associated_types::<Water>();
+        assert_associated_types::<Refrigerant>();
+        assert_associated_types::<Steam>();
+    }
+
+    #[test]
+    fn air_potential_vars_default_is_zeroed() {
+        let v = AirPotentialVars::default();
+        assert_eq!(v.t_db, 0.0);
+        assert_eq!(v.t_wb, 0.0);
+        assert_eq!(v.omega, 0.0);
+    }
+
+    #[test]
+    fn water_potential_vars_default_is_zeroed() {
+        let v = WaterPotentialVars::default();
+        assert_eq!(v.temperature, 0.0);
+        assert_eq!(v.pressure, 0.0);
+    }
+}

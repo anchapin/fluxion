@@ -130,3 +130,136 @@ impl Default for ControlSignal {
         Self::new(20.0, 0.5, true)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn physical_state_new_preserves_fields() {
+        let s = PhysicalState::new(35.0, 200_000.0, 0.42, 1_234.5);
+        assert_eq!(s.temperature, 35.0);
+        assert_eq!(s.pressure, 200_000.0);
+        assert_eq!(s.mass_flowrate, 0.42);
+        assert_eq!(s.enthalpy, 1_234.5);
+    }
+
+    #[test]
+    fn physical_state_default_is_zeroed_flow_and_enthalpy() {
+        let s = PhysicalState::default();
+        assert_eq!(s.temperature, 20.0);
+        assert_eq!(s.pressure, 101_325.0);
+        assert_eq!(s.mass_flowrate, 0.0);
+        assert_eq!(s.enthalpy, 0.0);
+    }
+
+    #[test]
+    fn physical_state_default_for_covers_every_kind() {
+        let kinds = [
+            super::super::EquipmentKind::Chiller,
+            super::super::EquipmentKind::Boiler,
+            super::super::EquipmentKind::CoolingTower,
+            super::super::EquipmentKind::Pump,
+            super::super::EquipmentKind::VavBox,
+            super::super::EquipmentKind::Damper,
+            super::super::EquipmentKind::Fan,
+            super::super::EquipmentKind::CoilHeating,
+            super::super::EquipmentKind::CoilCooling,
+        ];
+        for k in kinds {
+            let s = PhysicalState::default_for(k);
+            // Field invariant: default must always populate non-NaN finite values.
+            for field in [s.temperature, s.pressure, s.mass_flowrate, s.enthalpy] {
+                assert!(
+                    field.is_finite(),
+                    "PhysicalState::default_for({k:?}) produced non-finite field {field}"
+                );
+            }
+            assert!(s.pressure > 0.0, "pressure must be positive for {k:?}");
+        }
+    }
+
+    #[test]
+    fn physical_state_chiller_default_is_cold() {
+        let s = PhysicalState::default_for(super::super::EquipmentKind::Chiller);
+        // Chiller evaporator side runs cold (chilled water).
+        assert!(s.temperature < 15.0, "chiller default T should be cold");
+    }
+
+    #[test]
+    fn physical_state_boiler_default_is_hot() {
+        let s = PhysicalState::default_for(super::super::EquipmentKind::Boiler);
+        // Boiler supply side is hot.
+        assert!(s.temperature > 40.0, "boiler default T should be hot");
+    }
+
+    #[test]
+    fn equipment_parameters_chiller_constructor() {
+        let p = EquipmentParameters::chiller(120_000.0, 4.8);
+        assert_eq!(p.rated_capacity, 120_000.0);
+        assert_eq!(p.efficiency, 4.8);
+        assert!(p.nominal_flowrate > 0.0);
+        // Default control_type is variable speed (1.0).
+        assert_eq!(p.control_type, 1.0);
+    }
+
+    #[test]
+    fn equipment_parameters_boiler_constructor() {
+        let p = EquipmentParameters::boiler(60_000.0, 0.85);
+        assert_eq!(p.rated_capacity, 60_000.0);
+        assert_eq!(p.efficiency, 0.85);
+        assert_eq!(p.control_type, 1.0);
+    }
+
+    #[test]
+    fn equipment_parameters_pump_constructor() {
+        let p = EquipmentParameters::pump(0.5, 100_000.0, 5_000.0);
+        assert_eq!(p.rated_capacity, 5_000.0);
+        // efficiency is rated_head / rated_flow = 100_000 / 0.5 = 200_000.
+        assert_eq!(p.efficiency, 200_000.0);
+        assert_eq!(p.nominal_flowrate, 0.5);
+    }
+
+    #[test]
+    fn equipment_parameters_vav_box_constructor() {
+        let p = EquipmentParameters::vav_box(5_000.0, 0.05);
+        assert_eq!(p.rated_capacity, 5_000.0);
+        assert_eq!(p.efficiency, 0.05);
+        assert!(p.nominal_flowrate > 0.0);
+    }
+
+    #[test]
+    fn equipment_parameters_default_has_positive_capacity() {
+        let p = EquipmentParameters::default();
+        assert!(p.rated_capacity > 0.0);
+        assert!(p.efficiency > 0.0);
+        assert!(p.nominal_flowrate >= 0.0);
+    }
+
+    #[test]
+    fn control_signal_new_clamps_position() {
+        let s = ControlSignal::new(22.0, 2.0, true);
+        assert_eq!(s.position, 1.0, "position above 1.0 must clamp to 1.0");
+        let s = ControlSignal::new(22.0, -0.5, true);
+        assert_eq!(s.position, 0.0, "position below 0.0 must clamp to 0.0");
+        assert_eq!(s.setpoint, 22.0);
+        assert_eq!(s.on_off, 1.0);
+    }
+
+    #[test]
+    fn control_signal_is_on_matches_threshold() {
+        assert!(ControlSignal::new(20.0, 0.5, true).is_on());
+        assert!(!ControlSignal::new(20.0, 0.5, false).is_on());
+        // Custom on_off value still obeys > 0.5 threshold.
+        let s_high = ControlSignal {
+            on_off: 0.6,
+            ..ControlSignal::default()
+        };
+        assert!(s_high.is_on());
+        let s_low = ControlSignal {
+            on_off: 0.4,
+            ..ControlSignal::default()
+        };
+        assert!(!s_low.is_on());
+    }
+}

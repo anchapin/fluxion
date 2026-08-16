@@ -364,3 +364,154 @@ impl Default for EquipmentWorld {
         Self::new()
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn new_world_has_zero_entities() {
+        let w = EquipmentWorld::new();
+        assert_eq!(w.entity_count(), 0);
+        assert!(w.kinds_slice().is_empty());
+        assert!(w.temperatures_slice().is_empty());
+        assert!(w.enthalpies_slice().is_empty());
+    }
+
+    #[test]
+    fn with_capacity_allocates_for_preallocation() {
+        let w = EquipmentWorld::with_capacity(128);
+        assert_eq!(w.entity_count(), 0);
+        // Capacity is a hint, not exposed, but a fresh world should still be empty.
+        assert!(w.temperatures_slice().is_empty());
+        assert!(w.enthalpies_slice().is_empty());
+        assert!(w.mass_flowrates_slice().is_empty());
+        assert!(w.rated_capacities_slice().is_empty());
+        assert!(w.efficiencies_slice().is_empty());
+        assert!(w.nominal_flowrates_slice().is_empty());
+        assert!(w.positions_slice().is_empty());
+        assert!(w.setpoints_slice().is_empty());
+        assert!(w.on_offs_slice().is_empty());
+        assert!(w.kinds_slice().is_empty());
+    }
+
+    #[test]
+    fn spawn_increments_entity_count() {
+        let mut w = EquipmentWorld::new();
+        let a = w.spawn(EquipmentKind::Chiller);
+        let b = w.spawn(EquipmentKind::Boiler);
+        let c = w.spawn(EquipmentKind::Pump);
+        assert_eq!(w.entity_count(), 3);
+        assert_eq!(a.index(), 0);
+        assert_eq!(b.index(), 1);
+        assert_eq!(c.index(), 2);
+        assert_eq!(w.get_kind(a), EquipmentKind::Chiller);
+        assert_eq!(w.get_kind(b), EquipmentKind::Boiler);
+        assert_eq!(w.get_kind(c), EquipmentKind::Pump);
+    }
+
+    #[test]
+    fn physical_state_round_trip() {
+        let mut w = EquipmentWorld::new();
+        let e = w.spawn(EquipmentKind::Chiller);
+        w.set_temperature(e, 7.5);
+        w.set_pressure(e, 250_000.0);
+        w.set_mass_flowrate(e, 1.25);
+        w.set_enthalpy(e, 42_000.0);
+        assert_eq!(w.get_temperature(e), 7.5);
+        assert_eq!(w.get_pressure(e), 250_000.0);
+        assert_eq!(w.get_mass_flowrate(e), 1.25);
+        assert_eq!(w.get_enthalpy(e), 42_000.0);
+    }
+
+    #[test]
+    fn equipment_parameters_round_trip() {
+        let mut w = EquipmentWorld::new();
+        let e = w.spawn(EquipmentKind::Pump);
+        w.set_rated_capacity(e, 7_500.0);
+        w.set_efficiency(e, 0.92);
+        w.set_nominal_flowrate(e, 0.75);
+        assert_eq!(w.get_rated_capacity(e), 7_500.0);
+        assert_eq!(w.get_efficiency(e), 0.92);
+        assert_eq!(w.get_nominal_flowrate(e), 0.75);
+    }
+
+    #[test]
+    fn control_signal_round_trip() {
+        let mut w = EquipmentWorld::new();
+        let e = w.spawn(EquipmentKind::VavBox);
+        w.set_setpoint(e, 22.5);
+        w.set_position(e, 0.65);
+        w.set_on_off(e, true);
+        assert_eq!(w.get_setpoint(e), 22.5);
+        assert_eq!(w.get_position(e), 0.65);
+        assert!(w.get_on_off(e));
+        w.set_on_off(e, false);
+        assert!(!w.get_on_off(e));
+    }
+
+    #[test]
+    fn set_position_clamps_to_unit_interval() {
+        let mut w = EquipmentWorld::new();
+        let e = w.spawn(EquipmentKind::Damper);
+        w.set_position(e, 2.5);
+        assert_eq!(w.get_position(e), 1.0, "position above 1.0 must clamp");
+        w.set_position(e, -0.5);
+        assert_eq!(w.get_position(e), 0.0, "position below 0.0 must clamp");
+        w.set_position(e, 0.42);
+        assert_eq!(w.get_position(e), 0.42, "in-range value must pass through");
+    }
+
+    #[test]
+    fn set_on_off_encodes_as_f64() {
+        let mut w = EquipmentWorld::new();
+        let e = w.spawn(EquipmentKind::Fan);
+        w.set_on_off(e, true);
+        assert_eq!(w.on_offs_slice()[0], 1.0);
+        w.set_on_off(e, false);
+        assert_eq!(w.on_offs_slice()[0], 0.0);
+        // get_on_off uses the > 0.5 threshold, so the boundary cases map
+        // exactly to the boolean getter.
+        assert!(!w.get_on_off(e));
+        w.set_on_off(e, true);
+        assert!(w.get_on_off(e));
+        // Even when read back-to-back, the storage round-trips the bool->f64 mapping.
+        for _ in 0..5 {
+            w.set_on_off(e, true);
+            assert!(w.get_on_off(e));
+            w.set_on_off(e, false);
+            assert!(!w.get_on_off(e));
+        }
+    }
+
+    #[test]
+    fn soa_slices_match_entity_count() {
+        let mut w = EquipmentWorld::new();
+        for _ in 0..4 {
+            w.spawn(EquipmentKind::Chiller);
+        }
+        let n = w.entity_count();
+        assert_eq!(w.temperatures_slice().len(), n);
+        assert_eq!(w.enthalpies_slice().len(), n);
+        assert_eq!(w.mass_flowrates_slice().len(), n);
+        assert_eq!(w.rated_capacities_slice().len(), n);
+        assert_eq!(w.efficiencies_slice().len(), n);
+        assert_eq!(w.nominal_flowrates_slice().len(), n);
+        assert_eq!(w.positions_slice().len(), n);
+        assert_eq!(w.setpoints_slice().len(), n);
+        assert_eq!(w.on_offs_slice().len(), n);
+        assert_eq!(w.kinds_slice().len(), n);
+    }
+
+    #[test]
+    fn kind_specific_default_initialization() {
+        let mut w = EquipmentWorld::new();
+        let chiller = w.spawn(EquipmentKind::Chiller);
+        let boiler = w.spawn(EquipmentKind::Boiler);
+        let pump = w.spawn(EquipmentKind::Pump);
+        // Chiller and boiler defaults differ in temperature.
+        assert!(w.get_temperature(chiller) < w.get_temperature(boiler));
+        // Pump default nominal flowrate is set per-kind (0.5).
+        assert!(w.get_nominal_flowrate(pump) > 0.0);
+    }
+}
