@@ -3866,6 +3866,108 @@ mod tests {
     }
 
     #[test]
+    fn test_hvac_schedule_fractional_hour_ramp() {
+        // Issue #2870 (Case 940 setback recovery): the discrete hourly lookup
+        // would jump from the setback setpoint at hour 7 straight to the
+        // occupied setpoint, producing a single oversized heating spike at
+        // the wake-up hour on a high-mass building. The fractional-hour path
+        // adds a 2-hour linear morning ramp from the setback setpoint up to
+        // the occupied setpoint across `[setback_end, setback_end + 2)`.
+        let schedule = HvacSchedule::with_setback(20.0, 27.0, 10.0, 23, 7);
+
+        // Outside the ramp window: behavior must match the discrete lookup
+        // exactly so the surrounding integer-hour wiring is unchanged.
+        assert_eq!(
+            schedule.heating_setpoint_at_fractional_hour(0.0),
+            Some(10.0),
+            "midnight must remain at the setback setpoint"
+        );
+        assert_eq!(
+            schedule.heating_setpoint_at_fractional_hour(6.999),
+            Some(10.0),
+            "last instants of setback (just before wake-up hour) still at setback"
+        );
+        assert_eq!(
+            schedule.heating_setpoint_at_fractional_hour(9.0),
+            Some(20.0),
+            "ramp endpoint must equal occupied setpoint"
+        );
+        assert_eq!(
+            schedule.heating_setpoint_at_fractional_hour(12.0),
+            Some(20.0),
+            "daytime setpoint unchanged"
+        );
+        assert_eq!(
+            schedule.heating_setpoint_at_fractional_hour(23.0),
+            Some(10.0),
+            "evening setback setpoint unchanged"
+        );
+
+        // Ramp window: monotone rise from setback → occupied across the
+        // 2-hour morning window `[7, 9)`.
+        assert!(
+            (schedule.heating_setpoint_at_fractional_hour(7.0).unwrap() - 10.0).abs() < 1e-9,
+            "ramp start = setback (10°C); got {:?}",
+            schedule.heating_setpoint_at_fractional_hour(7.0)
+        );
+        let mid = schedule.heating_setpoint_at_fractional_hour(7.5).unwrap();
+        assert!(
+            (mid - 12.5).abs() < 1e-9,
+            "mid-ramp at 7.5h must be 12.5°C; got {mid}"
+        );
+        assert!(
+            (schedule.heating_setpoint_at_fractional_hour(8.0).unwrap() - 15.0).abs() < 1e-9,
+            "hour 8 halfway through ramp must be 15°C"
+        );
+        let three_quarter = schedule.heating_setpoint_at_fractional_hour(8.5).unwrap();
+        assert!(
+            (three_quarter - 17.5).abs() < 1e-9,
+            "3/4 through ramp at 8.5h must be 17.5°C; got {three_quarter}"
+        );
+
+        // Wraparound: negative fractional hours wrap into [0, 24) and land at
+        // the corresponding setback setpoint (-1h ≡ 23h on a 24-hr clock).
+        assert_eq!(
+            schedule.heating_setpoint_at_fractional_hour(-1.0),
+            Some(10.0),
+            "negative fractional hour must wrap; -1h should land at 23h setback"
+        );
+    }
+
+    #[test]
+    fn test_hvac_schedule_fractional_hour_disabled() {
+        // Disabled schedule (free-floating) returns None, mirroring
+        // heating_setpoint_at_hour semantics, regardless of fractional hour.
+        let schedule = HvacSchedule::free_floating();
+        assert_eq!(schedule.heating_setpoint_at_fractional_hour(7.5), None);
+        assert_eq!(schedule.heating_setpoint_at_fractional_hour(0.0), None);
+    }
+
+    #[test]
+    fn test_hvac_schedule_fractional_hour_no_setback() {
+        // Without a setback window there is nothing to ramp; every fractional
+        // hour returns the occupied setpoint.
+        let schedule = HvacSchedule::constant(20.0, 27.0);
+        for h in [0.0_f64, 6.5, 7.0, 7.5, 8.0, 12.0, 23.999] {
+            assert_eq!(
+                schedule.heating_setpoint_at_fractional_hour(h),
+                Some(20.0),
+                "constant schedule must return occupied SP for every hour (h={h})"
+            );
+        }
+    }
+
+    #[test]
+    fn test_hvac_schedule_fractional_hour_equal_setpoints() {
+        // When the setback and occupied setpoints coincide, no ramp is
+        // meaningful; the function must return that single value everywhere.
+        let schedule = HvacSchedule::with_setback(20.0, 27.0, 20.0, 23, 7);
+        assert_eq!(schedule.heating_setpoint_at_fractional_hour(0.0), Some(20.0));
+        assert_eq!(schedule.heating_setpoint_at_fractional_hour(7.5), Some(20.0));
+        assert_eq!(schedule.heating_setpoint_at_fractional_hour(12.0), Some(20.0));
+    }
+
+    #[test]
     fn test_night_ventilation() {
         let vent = NightVentilation::case_650();
         assert_eq!(vent.fan_capacity, 1703.16);

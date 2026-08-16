@@ -1652,8 +1652,12 @@ impl ASHRAE140Validator {
             // Apply dynamic setpoints based on HVAC schedule (for setback cases)
             if let Some(hvac_schedule) = spec.hvac.first() {
                 let hour = hour_of_day as u8;
+                // Issue #2870: substitute the sub-hour ramp-aware setpoint
+                // lookup so the overnight setback→occupied transition is
+                // smoothed across a 2-hour linear ramp instead of producing
+                // a single oversized heating spike at the wake-up hour.
                 let heating_sp = hvac_schedule
-                    .heating_setpoint_at_hour(hour)
+                    .heating_setpoint_at_fractional_hour(hour_of_day as f64 + 0.5)
                     .unwrap_or(hvac_schedule.heating_setpoint);
                 // Use hourly cooling schedule which respects operating hours
                 // model.cooling_schedule was set up in from_spec() with 100.0 during non-operating hours
@@ -1661,25 +1665,29 @@ impl ASHRAE140Validator {
                 model.heating_setpoint = heating_sp;
                 model.cooling_setpoint = cooling_sp;
 
-                // Also update zone-specific setpoints for multi-zone cases (Issue #375)
-                // This ensures Case 960 and other multi-zone cases have correct HVAC setpoints
-                if spec.hvac.len() > 1 {
-                    let mut heating_sps = vec![heating_sp; num_zones];
-                    let mut cooling_sps = vec![cooling_sp; num_zones];
-                    for (zone_idx, hvac) in spec.hvac.iter().enumerate() {
-                        if zone_idx < num_zones {
-                            let h_sp = hvac
-                                .heating_setpoint_at_hour(hour)
-                                .unwrap_or(hvac.heating_setpoint);
-                            // For multi-zone, also use hourly schedule
-                            let c_sp = model.cooling_schedule.value(hour as usize);
-                            heating_sps[zone_idx] = h_sp;
-                            cooling_sps[zone_idx] = c_sp;
-                        }
+                // Issue #2870 / #2826: also update the per-zone setpoint
+                // vector used by `compute_zone_hvac_load`. This was previously
+                // only refreshed for multi-zone cases (Issue #375) — leaving
+                // single-zone specs (Case 600, 640, 940, ...) to fall back on
+                // the *initial* spec setpoint via the `unwrap_or` in
+                // `compute_zone_hvac_load`, which silently bypassed any
+                // per-hour HVAC schedule updates. The ramp + setback values
+                // only propagate to the physics through this vector refresh.
+                let mut heating_sps = vec![heating_sp; num_zones];
+                let mut cooling_sps = vec![cooling_sp; num_zones];
+                for (zone_idx, hvac) in spec.hvac.iter().enumerate() {
+                    if zone_idx < num_zones {
+                        let h_sp = hvac
+                            .heating_setpoint_at_fractional_hour(hour_of_day as f64 + 0.5)
+                            .unwrap_or(hvac.heating_setpoint);
+                        // For multi-zone, also use hourly schedule
+                        let c_sp = model.cooling_schedule.value(hour as usize);
+                        heating_sps[zone_idx] = h_sp;
+                        cooling_sps[zone_idx] = c_sp;
                     }
-                    model.heating_setpoints = VectorField::new(heating_sps);
-                    model.cooling_setpoints = VectorField::new(cooling_sps);
                 }
+                model.heating_setpoints = VectorField::new(heating_sps);
+                model.cooling_setpoints = VectorField::new(cooling_sps);
             }
 
             // Apply night ventilation if active (adds extra cooling during night hours)
@@ -1885,8 +1893,12 @@ impl ASHRAE140Validator {
             // Apply dynamic setpoints based on HVAC schedule (for setback cases)
             if let Some(hvac_schedule) = spec.hvac.first() {
                 let hour = hour_of_day as u8;
+                // Issue #2870: substitute the sub-hour ramp-aware setpoint
+                // lookup so the overnight setback→occupied transition is
+                // smoothed across a 2-hour linear ramp instead of producing
+                // a single oversized heating spike at the wake-up hour.
                 let heating_sp = hvac_schedule
-                    .heating_setpoint_at_hour(hour)
+                    .heating_setpoint_at_fractional_hour(hour_of_day as f64 + 0.5)
                     .unwrap_or(hvac_schedule.heating_setpoint);
                 // Use hourly cooling schedule which respects operating hours
                 // model.cooling_schedule was set up in from_spec() with 100.0 during non-operating hours
@@ -1894,25 +1906,29 @@ impl ASHRAE140Validator {
                 model.heating_setpoint = heating_sp;
                 model.cooling_setpoint = cooling_sp;
 
-                // Also update zone-specific setpoints for multi-zone cases (Issue #375)
-                // This ensures Case 960 and other multi-zone cases have correct HVAC setpoints
-                if spec.hvac.len() > 1 {
-                    let mut heating_sps = vec![heating_sp; num_zones];
-                    let mut cooling_sps = vec![cooling_sp; num_zones];
-                    for (zone_idx, hvac) in spec.hvac.iter().enumerate() {
-                        if zone_idx < num_zones {
-                            let h_sp = hvac
-                                .heating_setpoint_at_hour(hour)
-                                .unwrap_or(hvac.heating_setpoint);
-                            // For multi-zone, also use hourly schedule
-                            let c_sp = model.cooling_schedule.value(hour as usize);
-                            heating_sps[zone_idx] = h_sp;
-                            cooling_sps[zone_idx] = c_sp;
-                        }
+                // Issue #2870 / #2826: also update the per-zone setpoint
+                // vector used by `compute_zone_hvac_load`. This was previously
+                // only refreshed for multi-zone cases (Issue #375) — leaving
+                // single-zone specs (Case 600, 640, 940, ...) to fall back on
+                // the *initial* spec setpoint via the `unwrap_or` in
+                // `compute_zone_hvac_load`, which silently bypassed any
+                // per-hour HVAC schedule updates. The ramp + setback values
+                // only propagate to the physics through this vector refresh.
+                let mut heating_sps = vec![heating_sp; num_zones];
+                let mut cooling_sps = vec![cooling_sp; num_zones];
+                for (zone_idx, hvac) in spec.hvac.iter().enumerate() {
+                    if zone_idx < num_zones {
+                        let h_sp = hvac
+                            .heating_setpoint_at_fractional_hour(hour_of_day as f64 + 0.5)
+                            .unwrap_or(hvac.heating_setpoint);
+                        // For multi-zone, also use hourly schedule
+                        let c_sp = model.cooling_schedule.value(hour as usize);
+                        heating_sps[zone_idx] = h_sp;
+                        cooling_sps[zone_idx] = c_sp;
                     }
-                    model.heating_setpoints = VectorField::new(heating_sps);
-                    model.cooling_setpoints = VectorField::new(cooling_sps);
                 }
+                model.heating_setpoints = VectorField::new(heating_sps);
+                model.cooling_setpoints = VectorField::new(cooling_sps);
             }
 
             // Apply night ventilation if active
@@ -3118,12 +3134,32 @@ mod tests {
 
             if let Some(hvac_schedule) = spec.hvac.first() {
                 let hour = hour_of_day as u8;
+                // Issue #2870: sub-hour ramp-aware setpoint (same as
+                // simulate_case) for consistency in the trace path.
                 let heating_sp = hvac_schedule
-                    .heating_setpoint_at_hour(hour)
+                    .heating_setpoint_at_fractional_hour(f64::from(hour) + 0.5)
                     .unwrap_or(hvac_schedule.heating_setpoint);
                 let cooling_sp = model.cooling_schedule.value(hour as usize);
                 model.heating_setpoint = heating_sp;
                 model.cooling_setpoint = cooling_sp;
+
+                // Issue #2870 / #2826: refresh the per-zone setpoint vector
+                // so the physics reads the ramped value (see the note in
+                // `simulate_case` for context on the single-zone bug).
+                let mut heating_sps = vec![heating_sp; num_zones];
+                let mut cooling_sps = vec![cooling_sp; num_zones];
+                for (zone_idx, hvac) in spec.hvac.iter().enumerate() {
+                    if zone_idx < num_zones {
+                        let h_sp = hvac
+                            .heating_setpoint_at_fractional_hour(hour_of_day as f64 + 0.5)
+                            .unwrap_or(hvac.heating_setpoint);
+                        let c_sp = model.cooling_schedule.value(hour as usize);
+                        heating_sps[zone_idx] = h_sp;
+                        cooling_sps[zone_idx] = c_sp;
+                    }
+                }
+                model.heating_setpoints = VectorField::new(heating_sps);
+                model.cooling_setpoints = VectorField::new(cooling_sps);
             }
 
             let hvac_kwh = model.step_physics(step, dry_bulb_temp, 3600.0);
