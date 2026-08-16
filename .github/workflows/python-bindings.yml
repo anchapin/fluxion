@@ -239,8 +239,15 @@ jobs:
         # local `pytest` run (which silently skipped 43+ tests).
         #
         # `python -m pytest` (not the `pytest` script) for cross-OS PATH safety.
+        # Issue #2852: opt out of the perf-benchmark acceptance test
+        # (`test_zero_copy_10k_benchmark_median_improvement`) in CI — the
+        # ≤700 ms ceiling is calibrated for a tuned local release+rayon
+        # workstation, not the stock `ubuntu-latest` runner (~80 s
+        # observed). The test remains runnable locally by unsetting this
+        # var or running `FLUXION_RUN_PERF_BENCHMARK=1 pytest ...`.
         env:
           RUST_MIN_STACK: 33554432
+          FLUXION_RUN_PERF_BENCHMARK: "0"
         shell: bash
         run: |
           set -euo pipefail

@@ -547,6 +547,17 @@ def test_resolve_state_store_auto_defaults_to_none(cloud_manager_module, monkeyp
 def test_resolve_state_store_auto_picks_dynamodb_from_legacy_env(
     cloud_manager_module, monkeypatch
 ):
+    # Issue #2852: gate on `boto3` so the test does not silently pass when
+    # the runtime cannot construct a DynamoDB store. The companion tests
+    # (`test_dynamodb_store_round_trip`, `..._ensure_table_is_idempotent`)
+    # already require `moto`, which pulls in `boto3` transitively; this
+    # test exercises the legacy-env auto-resolution path and only needs
+    # `boto3` itself. `pytest.importorskip` raises a *visible* skip with a
+    # clear reason — never a silent pass — when the dependency is absent.
+    pytest.importorskip(
+        "boto3",
+        reason="boto3 required for DynamoDBStateStore auto-resolution test (see Issue #2852)",
+    )
     monkeypatch.delenv("FLUXION_STATE_STORE", raising=False)
     monkeypatch.delenv("FLUXION_REDIS_URL", raising=False)
     monkeypatch.setenv("FLUXION_CAMPAIGN_TABLE", "fluxion-campaign-state")
