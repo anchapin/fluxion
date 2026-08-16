@@ -660,11 +660,11 @@ ci:
       triggered_by: "PR + push to main + workflow_dispatch"
 
     - job: "MSRV Check (Issue #2934)"
-      # Minimum Supported Rust Version gate. Runs `cargo +1.81 build
+      # Minimum Supported Rust Version gate. Runs `cargo +1.89 build
       # --workspace --locked` on every PR + push to develop/main that
       # touches any `**/Cargo.toml`, `**/Cargo.lock`, or the workflow
       # itself; fails the merge when the build breaks against the pinned
-      # stable. The `package.rust-version = "1.81"` declaration (root
+      # stable. The `package.rust-version = "1.89"` declaration (root
       # Cargo.toml + 10 workspace members) is what `cargo install` /
       # crates.io / `cargo update --precise` users see — this job is the
       # enforcement side, closing the #1 release-readiness gap that #2934
@@ -705,7 +705,7 @@ ci:
       issue: 2912
       triggered_by: "PR + push to develop/main"
 
-    - job: "WASM Build Verification (Issue #2914)"
+    - job: "WASM Build (${{ matrix.os }})"
       # Cross-platform WASM build verification matrix for `fluxion-wasm`.
       # Companion to the `Crate Size Gate (Issue #2930)` above — that
       # gate measures the root crate's `cargo package` artifact; this
@@ -734,3 +734,105 @@ ci:
       workflow: ".github/workflows/wasm-build.yml"
       issue: 2914
       triggered_by: "PR + push to develop/main"
+
+    # Issue #2866: the workflow_index entries below were missing entirely
+    # before the #2866 drift-detection script was added. Each one
+    # already had a corresponding `required_checks` entry above but no
+    # `workflow_index` row, so a job rename in any of these workflows
+    # would have desynced branch protection silently. The CI gate
+    # ``scripts/check_required_checks_sync.py`` now refuses to merge
+    # any future drift in either direction.
+    - job: "Energy Conservation (GH)"
+      # Energy conservation gate (#1295). Listener job in
+      # `.github/workflows/rust-tests.yml` under
+      # `energy-conservation-gh` id. Triggers on the PR + push-to-main
+      # events; runs `cargo test --test test_energy_conservation` and
+      # `cargo test --test zone_balance_eplus_isolation` and fails the
+      # PR when any "violated energy conservation" count > 0. The
+      # Hetzner-overflow variant (`Energy Conservation (Hetzner
+      # Overflow)`) is the same job on the self-hosted overflow runner
+      # and is not separately required.
+      workflow: ".github/workflows/rust-tests.yml"
+      issue: 1295
+      triggered_by: "PR + push to main"
+
+    - job: "Rustfmt (GH)"
+      # Rustfmt gate. Listener job in `.github/workflows/rust-tests.yml`
+      # under `fmt-gh` id. Runs `cargo fmt -- --check`; non-zero exit
+      # when any file is mis-formatted. Companion to the `Clippy (GH)`
+      # and `Energy Conservation (GH)` gates above — all three share
+      # the same GH-runner / Hetzner-overflow job pattern and the
+      # "(GH)" suffix on the canonical name.
+      workflow: ".github/workflows/rust-tests.yml"
+      triggered_by: "PR + push to main"
+
+    - job: "Clippy (GH)"
+      # Clippy gate with `-D warnings`. Listener job in
+      # `.github/workflows/rust-tests.yml` under `clippy-gh` id. Runs
+      # `cargo clippy --lib -- -D warnings`; non-zero exit on any
+      # clippy warning. Required-check counterpart to `cargo audit`
+      # and `cargo deny` from the security gate.
+      workflow: ".github/workflows/rust-tests.yml"
+      triggered_by: "PR + push to main"
+
+    - job: "Known Issues Stale Check (GH)"
+      # Known Issues freshness gate (#1723). Listener job in
+      # `.github/workflows/rust-tests.yml` under `known-issues-stale-gh`
+      # id. Runs `python3 scripts/check_known_issues_stale.py`; exits
+      # non-zero when `docs/KNOWN_ISSUES.md` `*Last Updated:*` line is
+      # >60 days stale. Mirror of the dedicated
+      # `.github/workflows/known-issues-stale.yml` workflow which
+      # runs on the same gate but on `schedule` only.
+      workflow: ".github/workflows/rust-tests.yml"
+      issue: 1723
+      triggered_by: "PR + push to main"
+
+    - job: "Ashrae Cases Cycle Check (GH)"
+      # ASHRAE 140 Cases Cycle Check (#1441). Listener job in
+      # `.github/workflows/rust-tests.yml` under `ashrae-cases-cycle-gh`
+      # id. Runs `python3 scripts/check_ashrae_cases_cycle.py`; exits
+      # non-zero on any new sim↔validation cycle edge above the
+      # documented baseline. Companion to `Physics-Sim-Cycle-Check`
+      # which mirrors this gate for the physics↔sim direction.
+      workflow: ".github/workflows/rust-tests.yml"
+      issue: 1441
+      triggered_by: "PR + push to main"
+
+    - job: "CUDA Smoke Test (Issue #1603)"
+      # CUDA smoke test (#1603). Job in
+      # `.github/workflows/rust-tests.yml` under `cuda-smoke` id.
+      # Builds the root crate with `--features cuda` and runs
+      # `cargo test --test surrogate_cuda_smoke`. Auto-skips on
+      # CPU-only runners via the `cuda_available` step output
+      # (issue #2962); non-zero exit on any CUDA regression on
+      # GPU-enabled runners.
+      workflow: ".github/workflows/rust-tests.yml"
+      issue: 1603
+      triggered_by: "PR + push to main"
+
+    - job: "Architecture Drift Detection"
+      # Architecture Drift Detection. The single job in
+      # `.github/workflows/architecture_drift.yml` is named
+      # `Check ARCHITECTURE.md drift` in the workflow, but the
+      # GitHub-reported check name for a single-job workflow is the
+      # workflow's own ``name:`` field ("Architecture Drift
+      # Detection") — so this entry matches the workflow.name, not
+      # the job.name. The CI gate
+      # ``scripts/check_required_checks_sync.py`` accepts the
+      # workflow-name match for single-job workflows; flipping the
+      # workflow to multi-job without updating this entry would
+      # fail the gate. Triggers on schedule (nightly 03:00 UTC) +
+      # PR paths filter.
+      workflow: ".github/workflows/architecture_drift.yml"
+      triggered_by: "schedule + PR (path-filter)"
+
+    - job: "Cargo Deny"
+      # Cargo Deny supply-chain gate (#2699). Listener job in
+      # `.github/workflows/security.yml` under `deny` id. Enforces
+      # `deny.toml` rules: licenses, duplicates, bans, sources. The
+      # ``ignore`` list is mirrored from `.cargo/audit.toml` (keep
+      # in sync). Companion to `Cargo Audit` (also in security.yml)
+      # and `Audit Ignore Freshness (Issue #2912)` (above).
+      workflow: ".github/workflows/security.yml"
+      issue: 2699
+      triggered_by: "PR + schedule"

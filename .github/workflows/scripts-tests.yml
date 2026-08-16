@@ -11,6 +11,14 @@ name: Scripts Test Suite
 # alongside the pre-existing OSimFlow harness) and drive each gate through
 # parametric clean-tree / planted-violation cases against a hermetic
 # ``tmp_path`` mock repo.
+#
+# Issue #2866: also invokes ``scripts/check_required_checks_sync.py``
+# directly so a ``release_gates.yaml`` / ``.github/workflows/*.yml``
+# desync (e.g. a renamed job that loses its ``workflow_index`` entry)
+# fails the PR even when the pytest suite happens to be green. The
+# ``scripts/ci/test_check_required_checks_sync.py`` companion covers
+# the parser / matching primitives against synthetic fixtures; this
+# direct invocation covers the end-to-end against the real repo.
 
 on:
   pull_request:
@@ -19,6 +27,8 @@ on:
       - "pyproject.toml"
       - "scripts/pytest.ini"
       - ".github/workflows/scripts-tests.yml"
+      - "release_gates.yaml"
+      - ".github/workflows/**"
   push:
     branches:
       - develop
@@ -54,6 +64,14 @@ jobs:
           # the minimum-only install — the gate tests are pure stdlib, but
           # the 187 pre-existing #2810 tests underneath scripts/ci/ are not.
           pip install -r scripts/requirements-test.txt
+
+      # Issue #2866: catch any drift between release_gates.yaml's
+      # `ci.required_checks` / `ci.workflow_index` and the actual
+      # `jobs.<id>.name` fields in `.github/workflows/*.yml`. Run before
+      # the pytest harness so a workflow-renaming PR is rejected with the
+      # drift message rather than a generic test failure.
+      - name: Run required_checks sync gate (Issue #2866)
+        run: python3 scripts/check_required_checks_sync.py
 
       - name: Run scripts/ pytest harness
         run: python3 -m pytest scripts/

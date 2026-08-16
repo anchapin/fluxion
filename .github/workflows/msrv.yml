@@ -26,7 +26,7 @@ env:
 jobs:
   msrv-build:
     runs-on: ubuntu-latest
-    name: MSRV Build (Rust 1.89, workspace)
+    name: MSRV Check (Issue #2934)
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4
 
