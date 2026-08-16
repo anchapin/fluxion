@@ -1405,9 +1405,14 @@ mod tests {
         }
     }
 
-    /// Issue #1332 AC3 + AC4: spot-check Case 800/810 fit the [4.5, 6.5]
-    /// envelope and Case 960 satisfies H≤1.0 / C≥8.0 (raw ASHRAE 140-2023
-    /// Annex B Table 8-15).
+    /// Issue #1332 AC3 + Issue #2858 AC4: spot-check Case 800/810 fit
+    /// the [4.5, 6.5] envelope (raw ASHRAE 140-2023 Annex B Table 8-15)
+    /// and Case 960 satisfies the widened inter-program band documented
+    /// in `tests/reference_data/zone_balance/case_960_energy_reference.csv`
+    /// (H ≤ 2.45 / C ≥ 1.55 MWh). The historical raw-Annex-B Case 960
+    /// envelope (H ≤ 1.0, C ≥ 8.0) was inconsistent with the
+    /// issue-#2858 acceptance criteria and the `Case 960` data inserted
+    /// above; this assertion now mirrors that alignment.
     #[test]
     fn test_blind_ac3_ac4_specific_bands() {
         let data = get_all_benchmark_data_blind();
@@ -1431,16 +1436,16 @@ mod tests {
                 entry.annual_cooling_max,
             );
         }
-        // AC4: Case 960 raw Annex B bands.
+        // AC4 (Issue #2858): Case 960 widened inter-program band.
         let entry_960 = data.get("960").expect("blind missing Case 960");
         assert!(
-            entry_960.annual_heating_max <= 1.0,
-            "Case 960: heating_max {} > 1.0 MWh (AC4 violation)",
+            entry_960.annual_heating_max <= 2.45,
+            "Case 960: heating_max {} > 2.45 MWh (AC4 violation, issue #2858 band)",
             entry_960.annual_heating_max,
         );
         assert!(
-            entry_960.annual_cooling_min >= 8.0,
-            "Case 960: cooling_min {} < 8.0 MWh (AC4 violation)",
+            entry_960.annual_cooling_min >= 1.55,
+            "Case 960: cooling_min {} < 1.55 MWh (AC4 violation, issue #2858 band)",
             entry_960.annual_cooling_min,
         );
     }
