@@ -337,7 +337,7 @@ fn handle_simulate(steps: usize, output: Option<PathBuf>) -> Result<(), String> 
     let mut system = HVAC_SYSTEM.lock().unwrap();
     if system.is_none() {
         // Create a default thermal model with 2 zones
-        let thermal_model = Arc::new(ThermalModel::new(2, 20.0));
+        let thermal_model = Arc::new(ThermalModel::new(2));
         let setpoints = ZoneSetpoints::new(2);
         let zone_control = Arc::new(Mutex::new(ZoneControl::new(thermal_model, setpoints)));
         *system = Some(zone_control);
