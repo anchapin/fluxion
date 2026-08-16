@@ -23,6 +23,7 @@ pub mod invariant_checker;
 pub mod lighting;
 pub mod longwave_exchange;
 pub mod loose_coupling;
+#[cfg(feature = "deprecated-multinode-runner")]
 pub mod multi_node_hvac_runner;
 pub mod multi_node_thermal;
 pub mod multi_zone_network;
