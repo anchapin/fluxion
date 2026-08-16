@@ -437,6 +437,7 @@ mod tests {
         let failing = AshraeValidatorResult {
             in_range: false,
             error_pct: 12.5,
+            band_flags: [None, None, None, None],
         };
         let report = executor.fill_report(&case, &failing);
         assert_eq!(report.case_id, case.case_id);
@@ -458,6 +459,7 @@ mod tests {
         let passing = AshraeValidatorResult {
             in_range: true,
             error_pct: 1.0,
+            band_flags: [None, None, None, None],
         };
         let report = executor.fill_report(&case, &passing);
         assert!(report.passed, "passing result must yield passed=true");
