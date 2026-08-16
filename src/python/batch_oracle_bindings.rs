@@ -23,7 +23,7 @@ use crate::batch_oracle::BatchOracle;
 #[cfg(feature = "python-bindings")]
 use crate::physics::cta::VectorField;
 #[cfg(feature = "python-bindings")]
-use crate::sim::engine::{StepParameters, ThermalModel};
+use crate::sim::engine::ThermalModel;
 
 #[cfg(feature = "python-bindings")]
 use std::time::Instant;
@@ -185,9 +185,6 @@ impl BatchOracle {
         population: &Bound<'_, pyo3::types::PyAny>,
         use_surrogates: bool,
     ) -> PyResult<Bound<'a, numpy::PyArray1<f64>>> {
-        use crate::physics::cta::ContinuousTensor;
-        use rayon::prelude::*;
-
         // Try to extract as 2D numpy array
         let array = population.cast::<numpy::PyArray2<f64>>()?;
 
@@ -209,92 +206,33 @@ impl BatchOracle {
                 "population array must be C-contiguous: {e}"
             ))
         })?;
-        let total_len = array_slice.len();
 
         // Defensive double-check: the validator guarantees the shape, but the
         // slice length must agree with `n_candidates * n_params`. If a future
         // change breaks that invariant we surface a clean error rather than
-        // panicking on the row/slice indexing below.
-        debug_assert_eq!(total_len, n_candidates * n_params);
-        if total_len != n_candidates * n_params {
+        // panicking on the row/slice indexing in
+        // `BatchOracle::evaluate_population_from_slice`.
+        debug_assert_eq!(array_slice.len(), n_candidates * n_params);
+        if array_slice.len() != n_candidates * n_params {
             return Err(pyo3::exceptions::PyRuntimeError::new_err(
                 "population array slice length disagrees with validated shape",
             ));
         }
 
-        // Get contiguous copy of the data for efficient iteration
-        let population_vec: Vec<Vec<f64>> = (0..n_candidates)
-            .map(|i| {
-                vec![
-                    array_slice[i * n_params],
-                    array_slice[i * n_params + 1],
-                    array_slice[i * n_params + 2],
-                ]
-            })
-            .collect();
-
-        // 1. Validate and initialize all models upfront (parallel)
-        let mut valid_configs: Vec<(usize, ThermalModel<VectorField>)> = population_vec
-            .par_iter()
-            .enumerate()
-            .filter_map(|(i, params)| {
-                if Self::validate_parameters(params).is_err() {
-                    return None;
-                }
-                let mut model = self.base_model.clone();
-                model.apply_parameters(params);
-                Some((i, model))
-            })
-            .collect();
-
-        let mut results = vec![f64::NAN; n_candidates];
-
-        if use_surrogates && !valid_configs.is_empty() {
-            // CPU path (Issue #1439): replaced coordinator-worker
-            // channel pattern with `BatchOrchestrator::par_chunks`.
-            // See `evaluate_population` for the rationale.
-            use crate::sim::orchestrator::{BatchOrchestrator, RayonChunksOrchestrator};
-
-            let orchestrator = RayonChunksOrchestrator::for_population(valid_configs.len());
-            let final_worker_data = orchestrator.run_cpu_surrogate(valid_configs, &self.surrogates);
-
-            for (idx, eui) in final_worker_data {
-                results[idx] = eui;
-            }
-        } else if !valid_configs.is_empty() {
-            // Analytical path - fully parallel
-            // Note: StepParameters is !Sync (Box<dyn Equipment>), so a single
-            // instance cannot be shared across rayon workers. We construct
-            // one StepParameters per worker work-item and reuse it for every
-            // one of the 8 760 inner timesteps (Issue #1437 hoists the
-            // construction out of the per-timestep inner loop, which
-            // previously ran `surrogates.clone()` once per timestep per
-            // config — the leading 5R1C allocation-pressure cost).
-            let mut energies = vec![0.0; valid_configs.len()];
-            valid_configs
-                .par_iter_mut()
-                .zip(energies.par_iter_mut())
-                .for_each(|((_, model), energy)| {
-                    let step_params = StepParameters::build_analytical();
-                    for t in 0..8760 {
-                        let hour_of_day = t % 24;
-                        let daily_cycle =
-                            (hour_of_day as f64 / 24.0 * 2.0 * std::f64::consts::PI).sin();
-                        let outdoor_temp = 10.0 + 10.0 * daily_cycle;
-                        *energy += model.solve_single_step(t, outdoor_temp, &step_params, 3600.0);
-                    }
-                });
-
-            for ((idx, model), energy) in valid_configs.iter().zip(energies.iter()) {
-                let total_area = model.zone_area.integrate();
-                let eui = if total_area > 0.0 {
-                    *energy / total_area
-                } else {
-                    0.0
-                };
-                results[*idx] = eui.max(0.0);
-            }
-        }
+        // Issue #2874: hand the numpy read-only slice straight to the
+        // zero-copy hot loop. The pre-#2874 implementation received this
+        // contiguous `&[f64]`, then immediately discarded it by doing
+        // `(0..n_candidates).map(|i| vec![array_slice[i*n_params..(i+1)*n_params]])
+        // .collect::<Vec<Vec<f64>>>()` — one outer Vec + N inner Vec<f64>s +
+        // 3N element copies, all of which the validator's contiguous slice
+        // already represented. We now borrow row slices directly inside
+        // `BatchOracle::evaluate_population_from_slice`'s per-row closure.
+        let results = self.evaluate_population_from_slice(
+            array_slice,
+            n_candidates,
+            n_params,
+            use_surrogates,
+        )?;
 
         // Return as numpy array
         Ok(numpy::PyArray1::from_vec(py, results))
