@@ -29,11 +29,11 @@ mod tests {
         let model = ThermalModel::<VectorField>::from_spec(&low_mass_spec);
 
         // Validate that low-mass construction is actually configured
-        assert!(model.case_id.contains("600"));
+        assert!(model.hvac.case_id.contains("600"));
 
         // Thermal mass should be low for low-mass
         // Check thermal capacitance
-        let thermal_mass = model.thermal_capacitance.as_ref()[0];
+        let thermal_mass = model.mass.thermal_capacitance.as_ref()[0];
 
         // Low-mass: roughly 1000-5000 J/K per zone
         // High-mass: 50000-200000+ J/K per zone
@@ -57,10 +57,10 @@ mod tests {
         let model = ThermalModel::<VectorField>::from_spec(&high_mass_spec);
 
         // Validate that high-mass construction is configured
-        assert!(model.case_id.contains("900"));
+        assert!(model.hvac.case_id.contains("900"));
 
         // Thermal mass should be high for high-mass
-        let thermal_mass = model.thermal_capacitance.as_ref()[0];
+        let thermal_mass = model.mass.thermal_capacitance.as_ref()[0];
 
         // High-mass: roughly 50000-200000 J/K
         assert!(
@@ -120,8 +120,8 @@ mod tests {
         let high_model = ThermalModel::<VectorField>::from_spec(&high_spec);
 
         // h_tr_ms (mass to surface) should scale with thermal mass
-        let low_h_tr_ms = low_model.h_tr_ms.as_ref()[0];
-        let high_h_tr_ms = high_model.h_tr_ms.as_ref()[0];
+        let low_h_tr_ms = low_model.conduction.h_tr_ms.as_ref()[0];
+        let high_h_tr_ms = high_model.conduction.h_tr_ms.as_ref()[0];
 
         // High-mass should have < h_tr_ms (more insulation = lower conductance)
         assert!(
@@ -132,8 +132,8 @@ mod tests {
         );
 
         // h_tr_is (surface to interior air) should scale similarly
-        let low_h_tr_is = low_model.h_tr_is.as_ref()[0];
-        let high_h_tr_is = high_model.h_tr_is.as_ref()[0];
+        let low_h_tr_is = low_model.conduction.h_tr_is.as_ref()[0];
+        let high_h_tr_is = high_model.conduction.h_tr_is.as_ref()[0];
 
         // High-mass should have <= h_tr_is (may be equal in some implementations)
         // h_tr_is for air gap (typically not construction dependent)
@@ -146,8 +146,8 @@ mod tests {
         );
 
         // h_tr_is (surface to interior air) should scale similarly
-        let low_h_tr_is = low_model.h_tr_is.as_ref()[0];
-        let high_h_tr_is = high_model.h_tr_is.as_ref()[0];
+        let low_h_tr_is = low_model.conduction.h_tr_is.as_ref()[0];
+        let high_h_tr_is = high_model.conduction.h_tr_is.as_ref()[0];
 
         // h_tr_is for air gap (typically not construction dependent)
         // Values are numerically very close or equal for low vs high mass with same geometry
@@ -197,8 +197,8 @@ mod tests {
         let high_model = ThermalModel::<VectorField>::from_spec(&high_spec);
 
         // Compare thermal mass
-        let low_mass = low_model.thermal_capacitance.as_ref()[0];
-        let high_mass = high_model.thermal_capacitance.as_ref()[0];
+        let low_mass = low_model.mass.thermal_capacitance.as_ref()[0];
+        let high_mass = high_model.mass.thermal_capacitance.as_ref()[0];
 
         // Low-mass should have lower thermal mass
         assert!(
@@ -221,6 +221,6 @@ mod tests {
         let high_spec = ASHRAE140Case::Case900.spec();
         let model = ThermalModel::<VectorField>::from_spec(&high_spec);
 
-        assert!(model.case_id.contains("900"));
+        assert!(model.hvac.case_id.contains("900"));
     }
 }

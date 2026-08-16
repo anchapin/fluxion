@@ -139,14 +139,14 @@ fn simulate_case_blind(
     model.reset_heating_cooling_energy();
 
     const STEPS: usize = 8760;
-    let num_zones = model.num_zones;
+    let num_zones = model.hvac.num_zones;
     let is_free_floating = spec.is_free_floating();
 
     if is_free_floating {
-        model.heating_setpoint = -999.0;
-        model.cooling_setpoint = 999.0;
-        model.hvac_heating_capacity = 0.0;
-        model.hvac_cooling_capacity = 0.0;
+        model.setpoints.heating_setpoint = -999.0;
+        model.setpoints.cooling_setpoint = 999.0;
+        model.hvac.hvac_heating_capacity = 0.0;
+        model.hvac.hvac_cooling_capacity = 0.0;
     }
 
     let mut hvac_enabled_vals = vec![1.0; num_zones];
@@ -157,7 +157,7 @@ fn simulate_case_blind(
             }
         }
     }
-    model.hvac_enabled = VectorField::new(hvac_enabled_vals);
+    model.hvac.hvac_enabled = VectorField::new(hvac_enabled_vals);
 
     let mut min_temp_celsius: f64 = f64::INFINITY;
     let mut max_temp_celsius: f64 = f64::NEG_INFINITY;
@@ -174,16 +174,16 @@ fn simulate_case_blind(
         let hour_of_day = step % 24;
 
         let weather_data = DenverTmyWeather::new().get_hourly_data(step).unwrap();
-        model.weather = Some(weather_data.clone());
+        model.solar.weather = Some(weather_data.clone());
 
         if let Some(hvac_schedule) = spec.hvac.first() {
             let hour = hour_of_day as u8;
             let heating_sp = hvac_schedule
                 .heating_setpoint_at_hour(hour)
                 .unwrap_or(hvac_schedule.heating_setpoint);
-            let cooling_sp = model.cooling_schedule.value(hour as usize);
-            model.heating_setpoint = heating_sp;
-            model.cooling_setpoint = cooling_sp;
+            let cooling_sp = model.setpoints.cooling_schedule.value(hour as usize);
+            model.setpoints.heating_setpoint = heating_sp;
+            model.setpoints.cooling_setpoint = cooling_sp;
         }
 
         // Snapshot cumulative energy before the physics step so the delta can
@@ -198,7 +198,7 @@ fn simulate_case_blind(
         monthly_cooling_kwh[m] += model.get_cooling_energy_kwh() - cool_before;
 
         if is_free_floating {
-            if let Some(&zone_temp) = model.temperatures.as_slice().first() {
+            if let Some(&zone_temp) = model.setpoints.temperatures.as_slice().first() {
                 min_temp_celsius = min_temp_celsius.min(zone_temp);
                 max_temp_celsius = max_temp_celsius.max(zone_temp);
             }
@@ -223,8 +223,8 @@ fn simulate_case_blind(
         } else {
             None
         },
-        annual_heating_mwh: model.annual_heating_energy / 1000.0,
-        annual_cooling_mwh: model.annual_cooling_energy / 1000.0,
+        annual_heating_mwh: model.hvac.annual_heating_energy / 1000.0,
+        annual_cooling_mwh: model.hvac.annual_cooling_energy / 1000.0,
         peak_heating_kw: model.get_peak_heating_power_kw(),
         peak_cooling_kw: model.get_peak_cooling_power_kw(),
         monthly_heating_mwh,
@@ -1452,13 +1452,14 @@ fn test_case_920_per_orientation_solar_distribution() {
         let w = weather
             .get_hourly_data(step)
             .expect("TMY weather must cover all 8760 hours");
-        model.weather = Some(w.clone());
+        model.solar.weather = Some(w.clone());
         if let Some(hvac) = spec.hvac.first() {
             let hour = (step % 24) as u8;
-            model.heating_setpoint = hvac
+            model.setpoints.heating_setpoint = hvac
                 .heating_setpoint_at_hour(hour)
                 .unwrap_or(hvac.heating_setpoint);
-            model.cooling_setpoint = model.cooling_schedule.value((step % 24) as usize);
+            model.setpoints.cooling_setpoint =
+                model.setpoints.cooling_schedule.value((step % 24) as usize);
         }
         model.step_physics(step, w.dry_bulb_temp, 3600.0);
     }
@@ -1930,13 +1931,13 @@ fn test_case_950_night_flush_zone_cooling_in_july() {
         let w = weather
             .get_hourly_data(step)
             .expect("TMY weather must cover all 8760 hours");
-        model.weather = Some(w.clone());
+        model.solar.weather = Some(w.clone());
         if let Some(hvac) = spec.hvac.first() {
             let hour = (step % 24) as u8;
-            model.heating_setpoint = hvac
+            model.setpoints.heating_setpoint = hvac
                 .heating_setpoint_at_hour(hour)
                 .unwrap_or(hvac.heating_setpoint);
-            model.cooling_setpoint = model.cooling_schedule.value(step % 24);
+            model.setpoints.cooling_setpoint = model.setpoints.cooling_schedule.value(step % 24);
         }
         model.step_physics(step, w.dry_bulb_temp, 3600.0);
         // Read back the zone temperature for hour `step` (year-indexed).
@@ -2188,17 +2189,17 @@ fn test_case_950_mass_temperature_precooled_issue_1422() {
         let w = weather
             .get_hourly_data(step)
             .expect("TMY weather must cover all 8760 hours");
-        model.weather = Some(w.clone());
+        model.solar.weather = Some(w.clone());
         if let Some(hvac) = spec.hvac.first() {
             let hour = (step % 24) as u8;
-            model.heating_setpoint = hvac
+            model.setpoints.heating_setpoint = hvac
                 .heating_setpoint_at_hour(hour)
                 .unwrap_or(hvac.heating_setpoint);
-            model.cooling_setpoint = model.cooling_schedule.value(step % 24);
+            model.setpoints.cooling_setpoint = model.setpoints.cooling_schedule.value(step % 24);
         }
         model.step_physics(step, w.dry_bulb_temp, 3600.0);
         // Case 950 is single-zone — index [0] is the conditioned zone.
-        let mass_temps = model.mass_temperatures.as_ref();
+        let mass_temps = model.mass.mass_temperatures.as_ref();
         mass_t_per_hour.push(mass_temps[0]);
     }
 
@@ -2270,7 +2271,7 @@ fn test_case_950_5r1c_free_float_uses_night_vent_overrides_issue_1422() {
         let w = weather
             .get_hourly_data(step)
             .expect("TMY weather must cover all 8760 hours");
-        model.weather = Some(w.clone());
+        model.solar.weather = Some(w.clone());
         model.step_physics(step, w.dry_bulb_temp, 3600.0);
         let temps = model.get_temperatures();
         zone_t_per_hour.push(temps[0]);

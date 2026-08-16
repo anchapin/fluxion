@@ -57,9 +57,9 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
     /// ad-hoc Norton reduction. It does not introduce any free parameter — both
     /// `H_tr,1` and `H_tr,w` are computed directly from the wall assembly properties.
     pub(crate) fn compute_hvac_coefficient(&self, zone_idx: usize) -> f64 {
-        let h_tr_is = self.0.h_tr_is.as_ref()[zone_idx];
-        let h_tr_ms = self.0.h_tr_ms.as_ref()[zone_idx];
-        let h_tr_w = self.0.h_tr_w.as_ref()[zone_idx];
+        let h_tr_is = self.0.conduction.h_tr_is.as_ref()[zone_idx];
+        let h_tr_ms = self.0.conduction.h_tr_ms.as_ref()[zone_idx];
+        let h_tr_w = self.0.conduction.h_tr_w.as_ref()[zone_idx];
         // Note: h_tr_me (envelope-to-internal-mass coupling) is intentionally NOT used
         // in this function - it's only used for internal mass dynamics, not for
         // the building-to-outdoor HVAC coupling.
@@ -75,9 +75,9 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         // The correct formula uses derived_h_tr_3 (ISO 13790 combined air-to-mass conductance
         // ≈ 42.66 W/K for Case 900) which represents the effective thermal coupling from
         // zone air to the building's thermal mass (envelope), plus h_tr_w for windows.
-        let hvac_coeff = if self.0.thermal_model_type == ThermalModelType::NineRFourC {
+        let hvac_coeff = if self.0.hvac.thermal_model_type == ThermalModelType::NineRFourC {
             // 9R4C: derived_h_tr_3 + h_tr_w is the total HVAC coupling
-            let derived_h_tr_3 = self.0.derived_h_tr_3.as_ref()[zone_idx];
+            let derived_h_tr_3 = self.0.conduction.derived_h_tr_3.as_ref()[zone_idx];
             derived_h_tr_3 + h_tr_w
         } else {
             // 5R1C/6R2C: ISO 13790 §C.3 series combination of air-to-surface
@@ -168,13 +168,13 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         default_heating_setpoint: f64,
         default_cooling_setpoint: f64,
     ) -> T {
-        let enabled_vec = self.0.hvac_enabled.as_ref();
+        let enabled_vec = self.0.hvac.hvac_enabled.as_ref();
 
-        let heat_cap = self.0.hvac_heating_capacity;
-        let cool_cap = self.0.hvac_cooling_capacity;
+        let heat_cap = self.0.hvac.hvac_heating_capacity;
+        let cool_cap = self.0.hvac.hvac_cooling_capacity;
 
-        let mut combined_demand = vec![0.0; self.0.num_zones];
-        for zone_idx in 0..self.0.num_zones {
+        let mut combined_demand = vec![0.0; self.0.hvac.num_zones];
+        for zone_idx in 0..self.0.hvac.num_zones {
             // Check hvac_enabled flag before computing demand
             if enabled_vec[zone_idx] < 0.5 {
                 combined_demand[zone_idx] = 0.0;

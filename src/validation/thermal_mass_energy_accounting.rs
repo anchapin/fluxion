@@ -240,11 +240,13 @@ pub fn calculate_mass_energy(model: &ThermalModel<VectorField>) -> f64 {
     // Check if this is a 6R2C model (has envelope/internal mass separation)
     // 6R2C models have non-zero envelope and internal thermal capacitance
     let is_6r2c = model
+        .mass
         .envelope_thermal_capacitance
         .as_ref()
         .iter()
         .any(|&v| v > 0.0)
         && model
+            .mass
             .internal_thermal_capacitance
             .as_ref()
             .iter()
@@ -253,9 +255,10 @@ pub fn calculate_mass_energy(model: &ThermalModel<VectorField>) -> f64 {
     if is_6r2c {
         // 6R2C model: Sum energy from both envelope and internal mass nodes
         for (cap, temp) in model
+            .mass
             .envelope_thermal_capacitance
             .iter()
-            .zip(model.envelope_mass_temperatures.as_ref().iter())
+            .zip(model.mass.envelope_mass_temperatures.as_ref().iter())
         {
             let product = cap * temp;
             if !product.is_finite() {
@@ -264,9 +267,10 @@ pub fn calculate_mass_energy(model: &ThermalModel<VectorField>) -> f64 {
             total_energy += product;
         }
         for (cap, temp) in model
+            .mass
             .internal_thermal_capacitance
             .iter()
-            .zip(model.internal_mass_temperatures.as_ref().iter())
+            .zip(model.mass.internal_mass_temperatures.as_ref().iter())
         {
             let product = cap * temp;
             if !product.is_finite() {
@@ -277,9 +281,10 @@ pub fn calculate_mass_energy(model: &ThermalModel<VectorField>) -> f64 {
     } else {
         // 5R1C model: Use single mass node
         for (cap, temp) in model
+            .mass
             .thermal_capacitance
             .iter()
-            .zip(model.mass_temperatures.as_ref().iter())
+            .zip(model.mass.mass_temperatures.as_ref().iter())
         {
             let product = cap * temp;
             if !product.is_finite() {
@@ -314,8 +319,8 @@ pub fn calculate_mass_energy(model: &ThermalModel<VectorField>) -> f64 {
 pub fn calculate_zone_energy(model: &ThermalModel<VectorField>) -> f64 {
     let mut total_energy = 0.0;
 
-    for (i, temp) in model.temperatures.as_ref().iter().enumerate() {
-        let volume = model.zone_volume.as_ref()[i];
+    for (i, temp) in model.setpoints.temperatures.as_ref().iter().enumerate() {
+        let volume = model.setpoints.zone_volume.as_ref()[i];
         let air_capacitance = volume * AIR_CAPACITANCE_PER_M3;
         total_energy += air_capacitance * temp;
     }
@@ -367,7 +372,7 @@ pub fn validate_energy_balance_over_year(
     .expect("Failed to load EPW weather data");
     let steps = 8760;
     let dt = 3600.0; // Timestep duration in seconds (1 hour)
-    let num_zones = model.num_zones;
+    let num_zones = model.hvac.num_zones;
 
     let mut cumulative_error = 0.0_f64;
     let mut energy_in_total = 0.0_f64;
@@ -389,8 +394,8 @@ pub fn validate_energy_balance_over_year(
 
     // Track initial zone air energies for zone balance calculation
     let mut zone_energy_start: Vec<f64> = Vec::with_capacity(num_zones);
-    for (i, temp) in model.temperatures.as_ref().iter().enumerate() {
-        let volume = model.zone_volume.as_ref()[i];
+    for (i, temp) in model.setpoints.temperatures.as_ref().iter().enumerate() {
+        let volume = model.setpoints.zone_volume.as_ref()[i];
         let air_capacitance = volume * AIR_CAPACITANCE_PER_M3;
         zone_energy_start.push(air_capacitance * temp);
     }
@@ -407,9 +412,9 @@ pub fn validate_energy_balance_over_year(
     for step in 0..steps {
         let weather_data = weather.get_hourly_data(step).unwrap();
         // Extract the only field used downstream (f64 is Copy) so we can move
-        // weather_data into model.weather without an extra clone (Issue #2893).
+        // weather_data into model.solar.weather without an extra clone (Issue #2893).
         let dry_bulb_temp = weather_data.dry_bulb_temp;
-        model.weather = Some(weather_data);
+        model.solar.weather = Some(weather_data);
 
         // Run physics step and get HVAC energy
         let hvac_energy = model.step_physics(step, dry_bulb_temp, 3600.0);
@@ -423,13 +428,13 @@ pub fn validate_energy_balance_over_year(
         // Calculate energy inputs
         // Energy in = solar + internal_gains + hvac_heating (when heating)
         // Note: hvac_energy is positive for heating, negative for cooling
-        let solar_slice = model.solar_gains.as_slice();
+        let solar_slice = model.solar.solar_gains.as_slice();
         let energy_solar = if step < solar_slice.len() {
             solar_slice[step]
         } else {
             0.0
         };
-        let loads_slice = model.loads.as_slice();
+        let loads_slice = model.setpoints.loads.as_slice();
         let energy_internal = if step < loads_slice.len() {
             loads_slice[step]
         } else {
@@ -487,8 +492,8 @@ pub fn validate_energy_balance_over_year(
         }
 
         // Track end-of-timestep zone energies
-        for (i, temp) in model.temperatures.as_ref().iter().enumerate() {
-            let volume = model.zone_volume.as_ref()[i];
+        for (i, temp) in model.setpoints.temperatures.as_ref().iter().enumerate() {
+            let volume = model.setpoints.zone_volume.as_ref()[i];
             let air_capacitance = volume * AIR_CAPACITANCE_PER_M3;
             let current_zone_energy = air_capacitance * temp;
             if step == steps - 1 {
@@ -1140,9 +1145,9 @@ mod tests {
         for step in 0..24 {
             let weather_data = weather.get_hourly_data(step).unwrap();
             // Extract the only field used downstream (f64 is Copy) so we can move
-            // weather_data into model.weather without an extra clone (Issue #2893).
+            // weather_data into model.solar.weather without an extra clone (Issue #2893).
             let dry_bulb_temp = weather_data.dry_bulb_temp;
-            model.weather = Some(weather_data);
+            model.solar.weather = Some(weather_data);
 
             // Run physics step
             model.step_physics(step, dry_bulb_temp, 3600.0);
@@ -1150,13 +1155,25 @@ mod tests {
             // Get heat balance terms via pr821-diag feature
             #[cfg(feature = "pr821-diag")]
             {
-                let phi_ia = model.last_phi_ia;
-                let phi_st = model.last_phi_st;
-                let phi_m = model.last_phi_m;
+                let phi_ia = model.hvac.last_phi_ia;
+                let phi_st = model.hvac.last_phi_st;
+                let phi_m = model.hvac.last_phi_m;
 
                 // Get loads for this zone (zone 0)
-                let load_w = model.loads.as_ref().first().copied().unwrap_or(0.0);
-                let zone_area = model.zone_area.as_ref().first().copied().unwrap_or(1.0);
+                let load_w = model
+                    .setpoints
+                    .loads
+                    .as_ref()
+                    .first()
+                    .copied()
+                    .unwrap_or(0.0);
+                let zone_area = model
+                    .setpoints
+                    .zone_area
+                    .as_ref()
+                    .first()
+                    .copied()
+                    .unwrap_or(1.0);
                 let total_load = load_w * zone_area;
 
                 // Conservation: phi_ia + phi_st + phi_m == total_load * (1 + small_error)
@@ -1243,9 +1260,9 @@ mod tests {
             for step in 0..24 {
                 let weather_data = weather.get_hourly_data(step).unwrap();
                 // Extract the only field used downstream (f64 is Copy) so we can move
-                // weather_data into model.weather without an extra clone (Issue #2893).
+                // weather_data into model.solar.weather without an extra clone (Issue #2893).
                 let dry_bulb_temp = weather_data.dry_bulb_temp;
-                model.weather = Some(weather_data);
+                model.solar.weather = Some(weather_data);
 
                 // Run physics step
                 model.step_physics(step, dry_bulb_temp, 3600.0);
@@ -1253,9 +1270,9 @@ mod tests {
                 // Get heat balance terms via pr821-diag feature
                 #[cfg(feature = "pr821-diag")]
                 {
-                    max_phi_ia = max_phi_ia.max(model.last_phi_ia.abs());
-                    max_phi_st = max_phi_st.max(model.last_phi_st.abs());
-                    max_phi_m = max_phi_m.max(model.last_phi_m.abs());
+                    max_phi_ia = max_phi_ia.max(model.hvac.last_phi_ia.abs());
+                    max_phi_st = max_phi_st.max(model.hvac.last_phi_st.abs());
+                    max_phi_m = max_phi_m.max(model.hvac.last_phi_m.abs());
                 }
             }
 

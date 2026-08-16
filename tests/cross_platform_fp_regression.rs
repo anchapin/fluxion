@@ -135,7 +135,7 @@ fn test_case_600_energy_balance_conservation() {
 
     let mut checker = InvariantChecker::new(ENERGY_BALANCE_RESIDUAL_THRESHOLD);
 
-    model.temperatures.as_mut()[0] = 20.0;
+    model.setpoints.temperatures.as_mut()[0] = 20.0;
     model.set_ground_temp(10.0);
 
     let dt = 3600.0;
@@ -145,7 +145,7 @@ fn test_case_600_energy_balance_conservation() {
 
     for step in 0..n_steps {
         let w = weather.get_hourly_data(step).unwrap();
-        model.weather = Some(w.clone());
+        model.solar.weather = Some(w.clone());
         model.step_physics(step, w.dry_bulb_temp, dt);
         let result = checker.check_invariant(&model, dt, w.dry_bulb_temp);
 
@@ -189,7 +189,7 @@ fn test_case_920_energy_balance_conservation() {
 
     let mut checker = InvariantChecker::new(ENERGY_BALANCE_RESIDUAL_THRESHOLD);
 
-    model.temperatures.as_mut()[0] = 20.0;
+    model.setpoints.temperatures.as_mut()[0] = 20.0;
     model.set_ground_temp(10.0);
 
     let dt = 3600.0;
@@ -199,7 +199,7 @@ fn test_case_920_energy_balance_conservation() {
 
     for step in 0..n_steps {
         let w = weather.get_hourly_data(step).unwrap();
-        model.weather = Some(w.clone());
+        model.solar.weather = Some(w.clone());
         model.step_physics(step, w.dry_bulb_temp, dt);
         let result = checker.check_invariant(&model, dt, w.dry_bulb_temp);
 
@@ -241,9 +241,9 @@ fn test_case_960_energy_balance_conservation() {
 
     let mut checker = InvariantChecker::new(ENERGY_BALANCE_RESIDUAL_THRESHOLD);
 
-    let n_zones = model.temperatures.len();
+    let n_zones = model.setpoints.temperatures.len();
     for i in 0..n_zones {
-        model.temperatures.as_mut()[i] = 20.0;
+        model.setpoints.temperatures.as_mut()[i] = 20.0;
     }
     model.set_ground_temp(10.0);
 
@@ -254,7 +254,7 @@ fn test_case_960_energy_balance_conservation() {
 
     for step in 0..n_steps {
         let w = weather.get_hourly_data(step).unwrap();
-        model.weather = Some(w.clone());
+        model.solar.weather = Some(w.clone());
         model.step_physics(step, w.dry_bulb_temp, dt);
         let result = checker.check_invariant(&model, dt, w.dry_bulb_temp);
 
@@ -293,7 +293,7 @@ fn test_case_600_annual_determinism_hash() {
 
     for step in 0..warmup_steps {
         let weather_data = weather.get_hourly_data(step).unwrap();
-        model.weather = Some(weather_data.clone());
+        model.solar.weather = Some(weather_data.clone());
         model.step_physics(step, weather_data.dry_bulb_temp, 3600.0);
     }
 
@@ -305,7 +305,7 @@ fn test_case_600_annual_determinism_hash() {
 
     for step in warmup_steps..warmup_steps + steps {
         let weather_data = weather.get_hourly_data(step % 8760).unwrap();
-        model.weather = Some(weather_data.clone());
+        model.solar.weather = Some(weather_data.clone());
         let energy_kwh = model.step_physics(step, weather_data.dry_bulb_temp, 3600.0);
         let energy_joules = energy_kwh * 3.6e6;
         if energy_joules > 0.0 {
@@ -350,7 +350,7 @@ fn test_case_920_annual_determinism_hash() {
 
     for step in 0..warmup_steps {
         let weather_data = weather.get_hourly_data(step).unwrap();
-        model.weather = Some(weather_data.clone());
+        model.solar.weather = Some(weather_data.clone());
         model.step_physics(step, weather_data.dry_bulb_temp, 3600.0);
     }
 
@@ -362,7 +362,7 @@ fn test_case_920_annual_determinism_hash() {
 
     for step in warmup_steps..warmup_steps + steps {
         let weather_data = weather.get_hourly_data(step % 8760).unwrap();
-        model.weather = Some(weather_data.clone());
+        model.solar.weather = Some(weather_data.clone());
         let energy_kwh = model.step_physics(step, weather_data.dry_bulb_temp, 3600.0);
         let energy_joules = energy_kwh * 3.6e6;
         if energy_joules > 0.0 {

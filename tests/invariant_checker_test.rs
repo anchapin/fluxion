@@ -152,9 +152,9 @@ fn test_thermal_mass_energy_tracking() {
     let spec = ASHRAE140Case::Case600.spec();
     let mut model = ThermalModel::from_spec(&spec);
 
-    let cm_before = model.thermal_capacitance[0];
+    let cm_before = model.mass.thermal_capacitance[0];
     model.step_physics(0, 10.0, 3600.0);
-    let cm_after = model.thermal_capacitance[0];
+    let cm_after = model.mass.thermal_capacitance[0];
 
     println!("Thermal capacitance before: {} J/K", cm_before);
     println!("Thermal capacitance after: {} J/K", cm_after);

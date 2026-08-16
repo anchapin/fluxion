@@ -18,18 +18,19 @@ mod tests {
     #[test]
     fn test_thermal_model_creation() {
         let model = ThermalModel::<VectorField>::new(10);
-        assert_eq!(model.num_zones, 10);
-        assert_eq!(model.temperatures.len(), 10);
-        assert_eq!(model.surfaces.len(), 10);
-        assert_eq!(model.surfaces[0].len(), 4);
+        assert_eq!(model.hvac.num_zones, 10);
+        assert_eq!(model.setpoints.temperatures.len(), 10);
+        assert_eq!(model.solar.surfaces.len(), 10);
+        assert_eq!(model.solar.surfaces[0].len(), 4);
 
         const EPSILON: f64 = 1e-9;
         assert!(model
+            .setpoints
             .temperatures
             .iter()
             .all(|&t| (t - 20.0).abs() < EPSILON));
-        assert!((model.zone_area[0] - 20.0).abs() < EPSILON);
-        assert!(model.h_tr_w[0] > 19.0 && model.h_tr_w[0] < 21.0);
+        assert!((model.setpoints.zone_area[0] - 20.0).abs() < EPSILON);
+        assert!(model.conduction.h_tr_w[0] > 19.0 && model.conduction.h_tr_w[0] < 21.0);
     }
 
     #[test]
@@ -37,11 +38,11 @@ mod tests {
         let mut model = ThermalModel::<VectorField>::new(10);
         let params = vec![1.5, 20.0, 27.0];
         model.apply_parameters(&params);
-        assert_eq!(model.window_u_value, 1.5);
-        assert_eq!(model.heating_setpoint, 20.0);
-        assert_eq!(model.cooling_setpoint, 27.0);
-        assert_eq!(model.surfaces[0][0].u_value, 1.5);
-        assert!(model.h_tr_w[0] > 11.0 && model.h_tr_w[0] < 13.0);
+        assert_eq!(model.solar.window_u_value, 1.5);
+        assert_eq!(model.setpoints.heating_setpoint, 20.0);
+        assert_eq!(model.setpoints.cooling_setpoint, 27.0);
+        assert_eq!(model.solar.surfaces[0][0].u_value, 1.5);
+        assert!(model.conduction.h_tr_w[0] > 11.0 && model.conduction.h_tr_w[0] < 13.0);
     }
 
     #[test]
@@ -49,9 +50,9 @@ mod tests {
         let mut model = ThermalModel::<VectorField>::new(10);
         let params = vec![1.5];
         model.apply_parameters(&params);
-        assert_eq!(model.window_u_value, 1.5);
-        assert_eq!(model.heating_setpoint, 20.0);
-        assert_eq!(model.cooling_setpoint, 27.0);
+        assert_eq!(model.solar.window_u_value, 1.5);
+        assert_eq!(model.setpoints.heating_setpoint, 20.0);
+        assert_eq!(model.setpoints.cooling_setpoint, 27.0);
     }
 
     #[test]
@@ -59,9 +60,9 @@ mod tests {
         let mut model = ThermalModel::<VectorField>::new(10);
         let params = vec![1.5, 27.0, 20.0];
         model.apply_parameters(&params);
-        assert_eq!(model.window_u_value, 1.5);
-        assert_eq!(model.heating_setpoint, 20.0);
-        assert_eq!(model.cooling_setpoint, 27.0);
+        assert_eq!(model.solar.window_u_value, 1.5);
+        assert_eq!(model.setpoints.heating_setpoint, 20.0);
+        assert_eq!(model.setpoints.cooling_setpoint, 27.0);
     }
 
     #[test]
@@ -83,7 +84,7 @@ mod tests {
         model.set_loads(&test_loads);
         let energy = model.step_physics(0, 10.0, 3600.0);
         assert!(energy >= 0.0);
-        assert_eq!(model.loads.as_ref(), test_loads.as_slice());
+        assert_eq!(model.setpoints.loads.as_ref(), test_loads.as_slice());
     }
 
     #[test]
@@ -130,8 +131,8 @@ mod tests {
 
         let mut model = ThermalModel::<VectorField>::new(1);
         assert!(!model.ctf_is_enabled());
-        assert!(model.conduction.ctf_coefficients.is_none());
-        assert!(model.conduction.ctf_solvers.is_empty());
+        assert!(model.conduction.backend.ctf_coefficients.is_none());
+        assert!(model.conduction.backend.ctf_solvers.is_empty());
 
         let layers = vec![
             CTFMaterial::new("Gypsum", 0.013, 0.16, 800.0, 1090.0),
@@ -142,9 +143,9 @@ mod tests {
         model.enable_ctf(&layers, 3600.0, 50);
 
         assert!(model.ctf_is_enabled());
-        assert!(model.conduction.ctf_coefficients.is_some());
-        assert_eq!(model.conduction.ctf_solvers.len(), 1);
-        assert!((model.conduction.ctf_timestep - 3600.0).abs() < 1e-9);
+        assert!(model.conduction.backend.ctf_coefficients.is_some());
+        assert_eq!(model.conduction.backend.ctf_solvers.len(), 1);
+        assert!((model.conduction.backend.ctf_timestep - 3600.0).abs() < 1e-9);
     }
 
     #[test]
@@ -159,8 +160,8 @@ mod tests {
         model.disable_ctf();
 
         assert!(!model.ctf_is_enabled());
-        assert!(model.conduction.ctf_coefficients.is_none());
-        assert!(model.conduction.ctf_solvers.is_empty());
+        assert!(model.conduction.backend.ctf_coefficients.is_none());
+        assert!(model.conduction.backend.ctf_solvers.is_empty());
     }
 
     #[test]
@@ -175,7 +176,7 @@ mod tests {
         model.enable_ctf(&layers, 3600.0, 50);
 
         assert!(model.ctf_is_enabled());
-        assert_eq!(model.conduction.ctf_solvers.len(), 5);
+        assert_eq!(model.conduction.backend.ctf_solvers.len(), 5);
     }
 
     #[test]
@@ -205,12 +206,16 @@ mod tests {
     fn test_calc_analytical_loads() {
         use super::get_daily_cycle;
         let mut model = ThermalModel::<VectorField>::new(5);
-        model.loads = VectorField::from_scalar(10.0, 5);
+        model.setpoints.loads = VectorField::from_scalar(10.0, 5);
 
         model.calc_analytical_loads(12, true, 3600.0);
 
-        assert!(model.solar_gains.iter().all(|&l| l > 0.0));
-        assert!(model.loads.iter().all(|&l| (l - 10.0).abs() < 1e-9));
+        assert!(model.solar.solar_gains.iter().all(|&l| l > 0.0));
+        assert!(model
+            .setpoints
+            .loads
+            .iter()
+            .all(|&l| (l - 10.0).abs() < 1e-9));
 
         let hour_of_day = 12;
         let cycle = get_daily_cycle();
@@ -218,21 +223,21 @@ mod tests {
         let expected_solar: f64 = (50.0 * daily_cycle).max(0.0);
 
         const EPSILON: f64 = 1e-9;
-        assert!((model.solar_gains[0] - expected_solar).abs() < EPSILON);
+        assert!((model.solar.solar_gains[0] - expected_solar).abs() < EPSILON);
     }
 
     #[test]
     fn test_apply_parameters_boundary_values() {
         let mut model = ThermalModel::<VectorField>::new(10);
         model.apply_parameters(&[0.5, 15.0, 22.0]);
-        assert_eq!(model.window_u_value, 0.5);
-        assert_eq!(model.heating_setpoint, 15.0);
-        assert_eq!(model.cooling_setpoint, 22.0);
+        assert_eq!(model.solar.window_u_value, 0.5);
+        assert_eq!(model.setpoints.heating_setpoint, 15.0);
+        assert_eq!(model.setpoints.cooling_setpoint, 22.0);
 
         model.apply_parameters(&[3.0, 25.0, 32.0]);
-        assert_eq!(model.window_u_value, 3.0);
-        assert_eq!(model.heating_setpoint, 25.0);
-        assert_eq!(model.cooling_setpoint, 32.0);
+        assert_eq!(model.solar.window_u_value, 3.0);
+        assert_eq!(model.setpoints.heating_setpoint, 25.0);
+        assert_eq!(model.setpoints.cooling_setpoint, 32.0);
     }
 
     #[test]
@@ -240,22 +245,22 @@ mod tests {
         let mut model = ThermalModel::<VectorField>::new(10);
         let params = vec![1.5, 20.0, 27.0, 1000.0, 999.0];
         model.apply_parameters(&params);
-        assert_eq!(model.window_u_value, 1.5);
-        assert_eq!(model.heating_setpoint, 20.0);
-        assert_eq!(model.cooling_setpoint, 27.0);
+        assert_eq!(model.solar.window_u_value, 1.5);
+        assert_eq!(model.setpoints.heating_setpoint, 20.0);
+        assert_eq!(model.setpoints.cooling_setpoint, 27.0);
     }
 
     #[test]
     fn test_thermal_model_zones() {
         let model_5 = ThermalModel::<VectorField>::new(5);
-        assert_eq!(model_5.num_zones, 5);
-        assert_eq!(model_5.temperatures.len(), 5);
-        assert_eq!(model_5.loads.len(), 5);
+        assert_eq!(model_5.hvac.num_zones, 5);
+        assert_eq!(model_5.setpoints.temperatures.len(), 5);
+        assert_eq!(model_5.setpoints.loads.len(), 5);
 
         let model_20 = ThermalModel::<VectorField>::new(20);
-        assert_eq!(model_20.num_zones, 20);
-        assert_eq!(model_20.temperatures.len(), 20);
-        assert_eq!(model_20.loads.len(), 20);
+        assert_eq!(model_20.hvac.num_zones, 20);
+        assert_eq!(model_20.setpoints.temperatures.len(), 20);
+        assert_eq!(model_20.setpoints.loads.len(), 20);
     }
 
     #[test]
@@ -286,7 +291,7 @@ mod tests {
     fn test_calc_analytical_loads_mutation() {
         let mut model = ThermalModel::<VectorField>::new(10);
         model.calc_analytical_loads(0, true, 3600.0);
-        for &load in model.loads.iter() {
+        for &load in model.setpoints.loads.iter() {
             assert!(load >= 0.0);
         }
     }
@@ -309,10 +314,10 @@ mod tests {
     #[test]
     fn test_thermal_lag() {
         let mut model = ThermalModel::<VectorField>::new(1);
-        model.heating_setpoint = -100.0;
-        model.heating_schedule = DailySchedule::constant(-100.0);
-        model.cooling_setpoint = 1000.0;
-        model.cooling_schedule = DailySchedule::constant(1000.0);
+        model.setpoints.heating_setpoint = -100.0;
+        model.setpoints.heating_schedule = DailySchedule::constant(-100.0);
+        model.setpoints.cooling_setpoint = 1000.0;
+        model.setpoints.cooling_schedule = DailySchedule::constant(1000.0);
 
         let mut outdoor_temps = Vec::new();
         let mut indoor_temps = Vec::new();
@@ -320,7 +325,7 @@ mod tests {
 
         for t in 0..48 {
             model.solve_timesteps(1, &surrogates, false, None, None, None);
-            indoor_temps.push(model.temperatures[0]);
+            indoor_temps.push(model.setpoints.temperatures[0]);
 
             let hour_of_day = t % 24;
             let daily_cycle = (hour_of_day as f64 / 24.0 * 2.0 * std::f64::consts::PI).sin();
@@ -352,11 +357,11 @@ mod tests {
             let mut model = ThermalModel::<VectorField>::new(1);
             let surrogates = SurrogateManager::new().expect("Failed to create SurrogateManager");
 
-            let h_tr_em = model.h_tr_em[0];
-            let h_tr_ms = model.h_tr_ms[0];
-            let h_tr_is = model.h_tr_is[0];
-            let h_tr_w = model.h_tr_w[0];
-            let h_ve = model.h_ve[0];
+            let h_tr_em = model.conduction.h_tr_em[0];
+            let h_tr_ms = model.conduction.h_tr_ms[0];
+            let h_tr_is = model.conduction.h_tr_is[0];
+            let h_tr_w = model.conduction.h_tr_w[0];
+            let h_ve = model.conduction.h_ve[0];
 
             model.set_ground_temp(20.0);
 
@@ -370,12 +375,12 @@ mod tests {
             let t_m_steady_state_heating =
                 (h_tr_em * outdoor_temp_heating + h_ms_is * setpoint_heating) / (h_tr_em + h_ms_is);
 
-            model.heating_setpoint = setpoint_heating;
-            model.heating_schedule = DailySchedule::constant(setpoint_heating);
-            model.cooling_setpoint = 100.0;
-            model.cooling_schedule = DailySchedule::constant(100.0);
-            model.temperatures = VectorField::from_scalar(setpoint_heating, 1);
-            model.mass_temperatures = VectorField::from_scalar(t_m_steady_state_heating, 1);
+            model.setpoints.heating_setpoint = setpoint_heating;
+            model.setpoints.heating_schedule = DailySchedule::constant(setpoint_heating);
+            model.setpoints.cooling_setpoint = 100.0;
+            model.setpoints.cooling_schedule = DailySchedule::constant(100.0);
+            model.setpoints.temperatures = VectorField::from_scalar(setpoint_heating, 1);
+            model.mass.mass_temperatures = VectorField::from_scalar(t_m_steady_state_heating, 1);
 
             let num_timesteps = 1000;
             let mut total_energy_kwh = 0.0;
@@ -412,12 +417,12 @@ mod tests {
             let surrogates = SurrogateManager::new().expect("Failed to create SurrogateManager");
 
             let outdoor_temp = 20.0;
-            model.heating_setpoint = 18.0;
-            model.heating_schedule = DailySchedule::constant(18.0);
-            model.cooling_setpoint = 22.0;
-            model.cooling_schedule = DailySchedule::constant(22.0);
-            model.temperatures = VectorField::from_scalar(20.0, 1);
-            model.mass_temperatures = VectorField::from_scalar(20.0, 1);
+            model.setpoints.heating_setpoint = 18.0;
+            model.setpoints.heating_schedule = DailySchedule::constant(18.0);
+            model.setpoints.cooling_setpoint = 22.0;
+            model.setpoints.cooling_schedule = DailySchedule::constant(22.0);
+            model.setpoints.temperatures = VectorField::from_scalar(20.0, 1);
+            model.mass.mass_temperatures = VectorField::from_scalar(20.0, 1);
 
             let step_params = StepParameters {
                 use_ai: false,
@@ -438,13 +443,13 @@ mod tests {
             let mut model = ThermalModel::<VectorField>::new(1);
             let surrogates = SurrogateManager::new().expect("Failed to create SurrogateManager");
 
-            model.heating_setpoint = 20.0;
-            model.heating_schedule = DailySchedule::constant(20.0);
-            model.cooling_setpoint = 27.0;
-            model.cooling_schedule = DailySchedule::constant(27.0);
-            model.temperatures = VectorField::from_scalar(20.0, 1);
-            model.mass_temperatures = VectorField::from_scalar(20.0, 1);
-            model.loads = VectorField::from_scalar(0.0, 1);
+            model.setpoints.heating_setpoint = 20.0;
+            model.setpoints.heating_schedule = DailySchedule::constant(20.0);
+            model.setpoints.cooling_setpoint = 27.0;
+            model.setpoints.cooling_schedule = DailySchedule::constant(27.0);
+            model.setpoints.temperatures = VectorField::from_scalar(20.0, 1);
+            model.mass.mass_temperatures = VectorField::from_scalar(20.0, 1);
+            model.setpoints.loads = VectorField::from_scalar(0.0, 1);
 
             let outdoor_temp_cold = 10.0;
             let step_params = StepParameters {
@@ -458,8 +463,8 @@ mod tests {
             let energy_heating =
                 model.solve_single_step(0, outdoor_temp_cold, &step_params, 3600.0);
 
-            model.temperatures = VectorField::from_scalar(28.0, 1);
-            model.mass_temperatures = VectorField::from_scalar(28.0, 1);
+            model.setpoints.temperatures = VectorField::from_scalar(28.0, 1);
+            model.mass.mass_temperatures = VectorField::from_scalar(28.0, 1);
             let outdoor_temp_hot = 35.0;
             let step_params = StepParameters {
                 use_ai: false,
@@ -471,8 +476,8 @@ mod tests {
             };
             let energy_cooling = model.solve_single_step(0, outdoor_temp_hot, &step_params, 3600.0);
 
-            model.temperatures = VectorField::from_scalar(23.5, 1);
-            model.mass_temperatures = VectorField::from_scalar(23.5, 1);
+            model.setpoints.temperatures = VectorField::from_scalar(23.5, 1);
+            model.mass.mass_temperatures = VectorField::from_scalar(23.5, 1);
             let step_params_2 = StepParameters {
                 use_ai: false,
                 surrogates: Some(std::sync::Arc::new(surrogates.clone())),
@@ -545,7 +550,7 @@ mod tests {
         fn test_floor_conductance_calculated() {
             let model = ThermalModel::<VectorField>::new(1);
             const EPSILON: f64 = 1e-6;
-            assert!((model.h_tr_floor[0] - 0.78).abs() < EPSILON);
+            assert!((model.conduction.h_tr_floor[0] - 0.78).abs() < EPSILON);
         }
 
         #[test]
@@ -554,8 +559,8 @@ mod tests {
             let mut model2 = ThermalModel::<VectorField>::new(1);
             let surrogates = SurrogateManager::new().expect("Failed to create SurrogateManager");
 
-            model1.hvac_enabled = VectorField::from_scalar(0.0, 1);
-            model2.hvac_enabled = VectorField::from_scalar(0.0, 1);
+            model1.hvac.hvac_enabled = VectorField::from_scalar(0.0, 1);
+            model2.hvac.hvac_enabled = VectorField::from_scalar(0.0, 1);
 
             let outdoor_temp = 15.0;
             model1.set_ground_temp(5.0);
@@ -575,7 +580,7 @@ mod tests {
                 model2.solve_single_step(t, outdoor_temp, &step_params, 3600.0);
             }
 
-            assert!(model2.temperatures[0] > model1.temperatures[0]);
+            assert!(model2.setpoints.temperatures[0] > model1.setpoints.temperatures[0]);
         }
 
         #[test]
@@ -624,15 +629,15 @@ mod tests {
             let surrogates = SurrogateManager::new().expect("Failed to create SurrogateManager");
 
             const EPSILON: f64 = 1e-6;
-            assert!((model.h_tr_floor[0] - 0.78).abs() < EPSILON);
+            assert!((model.conduction.h_tr_floor[0] - 0.78).abs() < EPSILON);
 
             let mut model_cold = model.clone();
             let mut model_warm = model.clone();
 
             model_cold.set_ground_temp(5.0);
             model_warm.set_ground_temp(20.0);
-            model_cold.hvac_enabled = VectorField::from_scalar(0.0, 1);
-            model_warm.hvac_enabled = VectorField::from_scalar(0.0, 1);
+            model_cold.hvac.hvac_enabled = VectorField::from_scalar(0.0, 1);
+            model_warm.hvac.hvac_enabled = VectorField::from_scalar(0.0, 1);
 
             let outdoor_temp = 15.0;
             let step_params = StepParameters {
@@ -650,7 +655,10 @@ mod tests {
                 model_warm.solve_single_step(t, outdoor_temp, &warm_params, 3600.0);
             }
 
-            assert_ne!(model_cold.temperatures[0], model_warm.temperatures[0]);
+            assert_ne!(
+                model_cold.setpoints.temperatures[0],
+                model_warm.setpoints.temperatures[0]
+            );
         }
 
         #[test]
@@ -672,7 +680,7 @@ mod inter_zone_tests {
     fn test_inter_zone_heat_transfer_basic() {
         let spec = ASHRAE140Case::Case960.spec();
         let model = ThermalModel::<VectorField>::from_spec(&spec);
-        let h_iz = model.h_tr_iz.as_ref();
+        let h_iz = model.conduction.h_tr_iz.as_ref();
         assert!(h_iz[0] > 0.0);
     }
 
@@ -758,9 +766,9 @@ mod inter_zone_tests {
     fn test_case_960_window_radiative_exchange() {
         let spec = ASHRAE140Case::Case960.spec();
         let model = ThermalModel::<VectorField>::from_spec(&spec);
-        let h_iz_rad = model.h_tr_iz_rad.as_ref();
+        let h_iz_rad = model.conduction.h_tr_iz_rad.as_ref();
         assert!(h_iz_rad[0] == 0.0);
-        let h_iz = model.h_tr_iz.as_ref();
+        let h_iz = model.conduction.h_tr_iz.as_ref();
         let total_h_iz = h_iz[0] + h_iz_rad[0];
         assert!(total_h_iz > 0.0);
     }
@@ -870,31 +878,31 @@ mod hvac_controller_tests {
     #[test]
     fn test_hvac_system_mode_controlled() {
         let mut model = ThermalModel::<VectorField>::new(1);
-        model.hvac_system_mode = HvacSystemMode::Controlled;
-        assert_eq!(model.hvac_system_mode, HvacSystemMode::Controlled);
+        model.hvac.hvac_system_mode = HvacSystemMode::Controlled;
+        assert_eq!(model.hvac.hvac_system_mode, HvacSystemMode::Controlled);
     }
 
     #[test]
     fn test_hvac_system_mode_free_float() {
         let mut model = ThermalModel::<VectorField>::new(1);
-        model.hvac_system_mode = HvacSystemMode::FreeFloat;
-        assert_eq!(model.hvac_system_mode, HvacSystemMode::FreeFloat);
+        model.hvac.hvac_system_mode = HvacSystemMode::FreeFloat;
+        assert_eq!(model.hvac.hvac_system_mode, HvacSystemMode::FreeFloat);
     }
 
     #[test]
     fn test_heating_cooling_setpoints() {
         let model = ThermalModel::<VectorField>::new(1);
-        assert_eq!(model.heating_setpoint, 20.0);
-        assert_eq!(model.cooling_setpoint, 27.0);
+        assert_eq!(model.setpoints.heating_setpoint, 20.0);
+        assert_eq!(model.setpoints.cooling_setpoint, 27.0);
     }
 
     #[test]
     fn test_setpoint_schedules() {
         let model = ThermalModel::<VectorField>::new(1);
-        assert_eq!(model.heating_schedule.value(0), 20.0);
-        assert_eq!(model.heating_schedule.value(12), 20.0);
-        assert_eq!(model.cooling_schedule.value(0), 27.0);
-        assert_eq!(model.cooling_schedule.value(12), 27.0);
+        assert_eq!(model.setpoints.heating_schedule.value(0), 20.0);
+        assert_eq!(model.setpoints.heating_schedule.value(12), 20.0);
+        assert_eq!(model.setpoints.cooling_schedule.value(0), 27.0);
+        assert_eq!(model.setpoints.cooling_schedule.value(12), 27.0);
     }
 
     #[test]
@@ -905,9 +913,9 @@ mod hvac_controller_tests {
         let model = ThermalModel::<VectorField>::from_spec(&spec);
 
         // Default Case 600: cooling ON all day (operating hours 0-24)
-        assert_eq!(model.cooling_schedule.value(0), 27.0); // 12am - on
-        assert_eq!(model.cooling_schedule.value(12), 27.0); // 12pm - on
-        assert_eq!(model.cooling_schedule.value(18), 27.0); // 6pm - on
+        assert_eq!(model.setpoints.cooling_schedule.value(0), 27.0); // 12am - on
+        assert_eq!(model.setpoints.cooling_schedule.value(12), 27.0); // 12pm - on
+        assert_eq!(model.setpoints.cooling_schedule.value(18), 27.0); // 6pm - on
     }
 
     #[test]
@@ -921,11 +929,11 @@ mod hvac_controller_tests {
         let model = ThermalModel::<VectorField>::from_spec(&spec);
 
         // 2am should be in setback for heating
-        assert_eq!(model.heating_schedule.value(2), 100.0);
+        assert_eq!(model.setpoints.heating_schedule.value(2), 100.0);
         // 2pm should be at normal heating
-        assert_eq!(model.heating_schedule.value(14), 20.0);
+        assert_eq!(model.setpoints.heating_schedule.value(14), 20.0);
         // Cooling is always on for Case600 (operating hours 0-24)
-        assert_eq!(model.cooling_schedule.value(14), 25.0);
+        assert_eq!(model.setpoints.cooling_schedule.value(14), 25.0);
     }
 
     #[test]
@@ -936,10 +944,10 @@ mod hvac_controller_tests {
         let model = ThermalModel::<VectorField>::from_spec(&spec);
 
         // Case 600: constant heating at 20.0 all day (no setback)
-        assert_eq!(model.heating_schedule.value(6), 20.0);
-        assert_eq!(model.heating_schedule.value(7), 20.0);
-        assert_eq!(model.heating_schedule.value(23), 20.0);
-        assert_eq!(model.heating_schedule.value(0), 20.0);
+        assert_eq!(model.setpoints.heating_schedule.value(6), 20.0);
+        assert_eq!(model.setpoints.heating_schedule.value(7), 20.0);
+        assert_eq!(model.setpoints.heating_schedule.value(23), 20.0);
+        assert_eq!(model.setpoints.heating_schedule.value(0), 20.0);
     }
 
     #[test]
@@ -951,11 +959,11 @@ mod hvac_controller_tests {
         let model = ThermalModel::<VectorField>::from_spec(&spec);
 
         // Hour 6: cooling should be enabled
-        assert_eq!(model.cooling_schedule.value(6), 27.0);
+        assert_eq!(model.setpoints.cooling_schedule.value(6), 27.0);
         // Hour 12: cooling should be disabled
-        assert_eq!(model.cooling_schedule.value(12), 100.0);
+        assert_eq!(model.setpoints.cooling_schedule.value(12), 100.0);
         // Hour 19: cooling should be enabled
-        assert_eq!(model.cooling_schedule.value(19), 27.0);
+        assert_eq!(model.setpoints.cooling_schedule.value(19), 27.0);
     }
 
     #[test]
@@ -968,9 +976,9 @@ mod hvac_controller_tests {
         let model = ThermalModel::<VectorField>::from_spec(&spec);
 
         // Hour 0: heating should be at setback (15.0)
-        assert_eq!(model.heating_schedule.value(0), 15.0);
+        assert_eq!(model.setpoints.heating_schedule.value(0), 15.0);
         // Hour 12: heating should be at normal (20.0)
-        assert_eq!(model.heating_schedule.value(12), 20.0);
+        assert_eq!(model.setpoints.heating_schedule.value(12), 20.0);
     }
 
     #[test]
@@ -979,7 +987,7 @@ mod hvac_controller_tests {
 
         let spec = ASHRAE140Case::Case600FF.spec();
         let model = ThermalModel::<VectorField>::from_spec(&spec);
-        assert_eq!(model.heating_setpoint, -999.0);
-        assert_eq!(model.cooling_setpoint, 999.0);
+        assert_eq!(model.setpoints.heating_setpoint, -999.0);
+        assert_eq!(model.setpoints.cooling_setpoint, 999.0);
     }
 }

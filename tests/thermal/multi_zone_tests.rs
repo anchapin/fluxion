@@ -190,7 +190,7 @@ fn test_thermal_model_initialization() {
     // Test that ThermalModel initializes correctly
 
     let model = ThermalModel::new(5, 20.0);
-    assert_eq!(model.num_zones, 5);
+    assert_eq!(model.hvac.num_zones, 5);
 
     let temps = model.get_temperatures();
     assert_eq!(temps.len(), 5);

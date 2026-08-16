@@ -14,15 +14,15 @@ fn test_8r3c_structure_exists() {
     // Test 2: Create a ThermalModel and check for 8R3C fields
     let model = ThermalModel::new(1);
     assert!(
-        model.ceiling_mass_temperatures.is_none(),
+        model.mass.ceiling_mass_temperatures.is_none(),
         "Default model should not have 8R3C fields initialized"
     );
     assert!(
-        model.floor_mass_temperatures.is_none(),
+        model.mass.floor_mass_temperatures.is_none(),
         "Default model should not have 8R3C fields initialized"
     );
     assert!(
-        model.partition_mass_temperatures.is_none(),
+        model.mass.partition_mass_temperatures.is_none(),
         "Default model should not have 8R3C fields initialized"
     );
     println!("✓ 8R3C fields are optional in default ThermalModel");
@@ -42,15 +42,15 @@ fn test_8r3c_structure_exists() {
         "new_8r3c() should create 8R3C model"
     );
     assert!(
-        model_8r3c.ceiling_mass_temperatures.is_some(),
+        model_8r3c.mass.ceiling_mass_temperatures.is_some(),
         "8R3C model should have ceiling mass"
     );
     assert!(
-        model_8r3c.floor_mass_temperatures.is_some(),
+        model_8r3c.mass.floor_mass_temperatures.is_some(),
         "8R3C model should have floor mass"
     );
     assert!(
-        model_8r3c.partition_mass_temperatures.is_some(),
+        model_8r3c.mass.partition_mass_temperatures.is_some(),
         "8R3C model should have partition mass"
     );
     println!("✓ new_8r3c() constructor creates 8R3C model");

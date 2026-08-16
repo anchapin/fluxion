@@ -44,7 +44,7 @@ const ISO_HEAVY_MASS_TAU_HOURS: f64 = 26.0;
 const ISO_LOW_MASS_TAU_HOURS: f64 = 7.0;
 
 fn calculate_fluxion_tau(model: &ThermalModel<VectorField>) -> f64 {
-    let cm: f64 = model.thermal_capacitance.iter().sum();
+    let cm: f64 = model.mass.thermal_capacitance.iter().sum();
     // Issue #915 Fix: Use derived_h_tr_3 (ISO 13790 air-to-mass conductance) instead of
     // h_tr_ms + h_tr_em. The derived_h_tr_3 is the series combination of:
     //   H_tr_1 = h_ve × h_tr_is / (h_ve + h_tr_is)  [ventilation + interior surface]
@@ -53,7 +53,7 @@ fn calculate_fluxion_tau(model: &ThermalModel<VectorField>) -> f64 {
     //
     // Using h_tr_ms alone (~1092 W/K) gives τ ~4.6 hours, but the correct ISO 13790
     // τ using derived_h_tr_3 (~44.6 W/K) is ~117 hours for high-mass construction.
-    let h_tr_3: f64 = model.derived_h_tr_3.as_ref().iter().sum();
+    let h_tr_3: f64 = model.conduction.derived_h_tr_3.as_ref().iter().sum();
 
     let tau_seconds = cm / h_tr_3.max(0.1);
     tau_seconds / 3600.0

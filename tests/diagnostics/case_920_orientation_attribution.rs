@@ -81,13 +81,13 @@ fn test_case_920_per_orientation_solar_decomposition() {
         let w = weather
             .get_hourly_data(step)
             .expect("TMY weather must cover all 8760 hours");
-        model.weather = Some(w.clone());
+        model.solar.weather = Some(w.clone());
         if let Some(hvac) = spec.hvac.first() {
             let hour = (step % 24) as u8;
-            model.heating_setpoint = hvac
+            model.setpoints.heating_setpoint = hvac
                 .heating_setpoint_at_hour(hour)
                 .unwrap_or(hvac.heating_setpoint);
-            model.cooling_setpoint = model.cooling_schedule.value(step % 24);
+            model.setpoints.cooling_setpoint = model.setpoints.cooling_schedule.value(step % 24);
         }
 
         let heat_before = model.get_heating_energy_kwh();
@@ -190,8 +190,8 @@ fn test_case_920_per_orientation_solar_decomposition() {
     }
 
     // Annual result
-    let annual_h = model.annual_heating_energy / 1000.0;
-    let annual_c = model.annual_cooling_energy / 1000.0;
+    let annual_h = model.hvac.annual_heating_energy / 1000.0;
+    let annual_c = model.hvac.annual_cooling_energy / 1000.0;
     println!(
         "\n[#2454 Case 920 annual] H={annual_h:.3} MWh (band [3.26, 4.30]) C={annual_c:.3} MWh (band [1.84, 3.31])"
     );

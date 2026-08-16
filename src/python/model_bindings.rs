@@ -34,7 +34,7 @@
 //!
 //! # Iteration
 //!
-//! `model.zones()` and `model.surfaces()` return Python lists, so iteration
+//! `model.zones()` and `model.solar.surfaces()` return Python lists, so iteration
 //! (`for z in model.zones(): ...`) works out of the box via CPython's list
 //! iterator protocol. We do not implement a custom `__iter__` because it
 //! would add complexity without changing the user-visible semantics.
@@ -737,25 +737,26 @@ impl PyHVACSystem {
 /// The model is borrowed immutably for the duration of this call; the returned
 /// `PyZone` does not retain any reference into the model.
 pub fn zone_from_model(model: &ThermalModel<VectorField>, idx: usize) -> PyZone {
-    let temp = if idx < model.temperatures.len() {
-        model.temperatures.as_slice()[idx]
+    let temp = if idx < model.setpoints.temperatures.len() {
+        model.setpoints.temperatures.as_slice()[idx]
     } else {
         0.0
     };
-    let area = if idx < model.zone_area.len() {
-        model.zone_area.as_slice()[idx]
+    let area = if idx < model.setpoints.zone_area.len() {
+        model.setpoints.zone_area.as_slice()[idx]
     } else {
         0.0
     };
     let surfaces = model
+        .solar
         .surfaces
         .get(idx)
         .map(|v| v.iter().map(PySurface::from).collect())
         .unwrap_or_default();
 
     // Extract hvac_enabled from the underlying vector (if present).
-    let hvac_enabled = if idx < model.hvac_enabled.len() {
-        model.hvac_enabled.as_slice()[idx] != 0.0
+    let hvac_enabled = if idx < model.hvac.hvac_enabled.len() {
+        model.hvac.hvac_enabled.as_slice()[idx] != 0.0
     } else {
         true
     };
@@ -764,8 +765,8 @@ pub fn zone_from_model(model: &ThermalModel<VectorField>, idx: usize) -> PyZone 
         index: idx,
         temperature: temp,
         area,
-        heating_setpoint: model.heating_setpoint,
-        cooling_setpoint: model.cooling_setpoint,
+        heating_setpoint: model.setpoints.heating_setpoint,
+        cooling_setpoint: model.setpoints.cooling_setpoint,
         hvac_enabled,
         surfaces,
     }
@@ -774,6 +775,7 @@ pub fn zone_from_model(model: &ThermalModel<VectorField>, idx: usize) -> PyZone 
 /// Build a flat [`Vec<PySurface>`] of every surface in every zone of the model.
 pub fn all_surfaces_from_model(model: &ThermalModel<VectorField>) -> Vec<PySurface> {
     model
+        .solar
         .surfaces
         .iter()
         .flat_map(|zone_surfaces| zone_surfaces.iter().map(PySurface::from))
@@ -782,7 +784,7 @@ pub fn all_surfaces_from_model(model: &ThermalModel<VectorField>) -> Vec<PySurfa
 
 /// Build the [`Vec<PyZone>`] snapshot list from a model.
 pub fn all_zones_from_model(model: &ThermalModel<VectorField>) -> Vec<PyZone> {
-    (0..model.num_zones)
+    (0..model.hvac.num_zones)
         .map(|i| zone_from_model(model, i))
         .collect()
 }
@@ -865,8 +867,14 @@ pub fn reshape_surfaces_for_model(
     model: &ThermalModel<VectorField>,
     flat: Vec<PySurface>,
 ) -> Vec<Vec<WallSurface>> {
-    let per_zone = model.surfaces.first().map(|z| z.len()).unwrap_or(4).max(1);
-    let mut out: Vec<Vec<WallSurface>> = (0..model.num_zones)
+    let per_zone = model
+        .solar
+        .surfaces
+        .first()
+        .map(|z| z.len())
+        .unwrap_or(4)
+        .max(1);
+    let mut out: Vec<Vec<WallSurface>> = (0..model.hvac.num_zones)
         .map(|_| Vec::with_capacity(per_zone))
         .collect();
 
@@ -884,8 +892,8 @@ pub fn reshape_surfaces_for_model(
 /// and supply-air temperature.
 pub fn hvac_system_from_model(model: &ThermalModel<VectorField>) -> PyHVACSystem {
     PyHVACSystem {
-        heating_capacity: model.hvac_heating_capacity,
-        cooling_capacity: model.hvac_cooling_capacity,
+        heating_capacity: model.hvac.hvac_heating_capacity,
+        cooling_capacity: model.hvac.hvac_cooling_capacity,
         cop_heating: 3.0,
         cop_cooling: 3.2,
         stages: 1,
@@ -899,8 +907,8 @@ pub fn hvac_system_from_model(model: &ThermalModel<VectorField>) -> PyHVACSystem
 
 /// Apply a [`PyHVACSystem`] snapshot's heating/cooling capacity back to the model.
 pub fn apply_hvac_system_to_model(model: &mut ThermalModel<VectorField>, hvac: &PyHVACSystem) {
-    model.hvac_heating_capacity = hvac.heating_capacity;
-    model.hvac_cooling_capacity = hvac.cooling_capacity;
+    model.hvac.hvac_heating_capacity = hvac.heating_capacity;
+    model.hvac.hvac_cooling_capacity = hvac.cooling_capacity;
 }
 
 #[cfg(all(test, feature = "python-bindings"))]
@@ -1294,8 +1302,8 @@ mod tests {
         // hvac_system_from_model snapshots capacities; apply_hvac_system_to_model
         // writes them back. Round-tripping should preserve the new values.
         let mut model = ThermalModel::<VectorField>::new(1);
-        model.hvac_heating_capacity = 12_345.0;
-        model.hvac_cooling_capacity = 6_789.0;
+        model.hvac.hvac_heating_capacity = 12_345.0;
+        model.hvac.hvac_cooling_capacity = 6_789.0;
         let snap = hvac_system_from_model(&model);
         assert_eq!(snap.heating_capacity, 12_345.0);
         assert_eq!(snap.cooling_capacity, 6_789.0);
@@ -1305,8 +1313,8 @@ mod tests {
         updated.heating_capacity = 99_999.0;
         updated.cooling_capacity = 88_888.0;
         apply_hvac_system_to_model(&mut model, &updated);
-        assert_eq!(model.hvac_heating_capacity, 99_999.0);
-        assert_eq!(model.hvac_cooling_capacity, 88_888.0);
+        assert_eq!(model.hvac.hvac_heating_capacity, 99_999.0);
+        assert_eq!(model.hvac.hvac_cooling_capacity, 88_888.0);
     }
 
     #[test]
@@ -1355,25 +1363,25 @@ mod tests {
         let mut model = ThermalModel::<VectorField>::new(1);
         populate_default_model_physics(&mut model);
 
-        let cm = model.thermal_capacitance[0];
+        let cm = model.mass.thermal_capacitance[0];
         assert!(
             cm > 1.0e4,
             "thermal_capacitance should be a real envelope value (got {cm}), \
              not the 1.0 J/K placeholder"
         );
         // Air-node capacitance C_air = ρ·cp·V > 0 (Issue #1522 option (a)).
-        assert!(model.air_thermal_capacitance[0] > 0.0);
+        assert!(model.mass.air_thermal_capacitance[0] > 0.0);
         // Envelope↔mass and mass↔surface conductances must be coupled
         // (non-zero) so the mass node never floats free.
-        assert!(model.h_tr_em[0] > 0.0);
-        assert!(model.h_tr_ms[0] > 0.0);
-        assert!(model.h_tr_me[0] > 0.0);
+        assert!(model.conduction.h_tr_em[0] > 0.0);
+        assert!(model.conduction.h_tr_ms[0] > 0.0);
+        assert!(model.mass.h_tr_me[0] > 0.0);
         // U-values populated from the default construction (not the new()
         // 0.5/0.5/0.039 placeholders — though they are close, they must be
         // positive and finite).
-        assert!(model.wall_u_value > 0.0 && model.wall_u_value.is_finite());
-        assert!(model.roof_u_value > 0.0 && model.roof_u_value.is_finite());
-        assert!(model.floor_u_value > 0.0 && model.floor_u_value.is_finite());
+        assert!(model.setpoints.wall_u_value > 0.0 && model.setpoints.wall_u_value.is_finite());
+        assert!(model.setpoints.roof_u_value > 0.0 && model.setpoints.roof_u_value.is_finite());
+        assert!(model.setpoints.floor_u_value > 0.0 && model.setpoints.floor_u_value.is_finite());
     }
 
     #[test]
@@ -1382,12 +1390,12 @@ mod tests {
         // fixture: MultiZoneThermalModel(num_zones=3).
         let mut model = ThermalModel::<VectorField>::new(3);
         populate_default_model_physics(&mut model);
-        assert_eq!(model.thermal_capacitance.len(), 3);
+        assert_eq!(model.mass.thermal_capacitance.len(), 3);
         for i in 0..3 {
             assert!(
-                model.thermal_capacitance[i] > 1.0e4,
+                model.mass.thermal_capacitance[i] > 1.0e4,
                 "zone {i} thermal_capacitance {} should exceed the 1.0 placeholder",
-                model.thermal_capacitance[i]
+                model.mass.thermal_capacitance[i]
             );
         }
     }
@@ -1410,7 +1418,13 @@ mod tests {
         use crate::sim::lighting::LightingSchedule;
         let mut model = ThermalModel::<VectorField>::new(1);
         populate_default_model_physics(&mut model);
-        let zone_area = model.zone_area.as_slice().iter().sum::<f64>().max(1.0);
+        let zone_area = model
+            .setpoints
+            .zone_area
+            .as_slice()
+            .iter()
+            .sum::<f64>()
+            .max(1.0);
         let empty_lighting = LightingSchedule::new(0.0, zone_area);
         let surrogates = SurrogateManager::new().expect("SurrogateManager");
         let eui = model.solve_timesteps(
@@ -1425,7 +1439,7 @@ mod tests {
         assert!(eui >= 0.0, "EUI must be non-negative, got {eui}");
         // Zone temperature must stay in a physically-sane band (the C_m=1.0
         // blowup reaches ±1e5 °C within a few dozen steps).
-        let t = model.temperatures[0];
+        let t = model.setpoints.temperatures[0];
         assert!(
             (-50.0..=60.0).contains(&t),
             "zone temp {t} out of physical range"
@@ -1440,7 +1454,13 @@ mod tests {
         use crate::sim::lighting::LightingSchedule;
         let mut model = ThermalModel::<VectorField>::new(3);
         populate_default_model_physics(&mut model);
-        let zone_area = model.zone_area.as_slice().iter().sum::<f64>().max(1.0);
+        let zone_area = model
+            .setpoints
+            .zone_area
+            .as_slice()
+            .iter()
+            .sum::<f64>()
+            .max(1.0);
         let empty_lighting = LightingSchedule::new(0.0, zone_area);
         let surrogates = SurrogateManager::new().expect("SurrogateManager");
         let eui = model.solve_timesteps(
@@ -1454,7 +1474,7 @@ mod tests {
         assert!(eui.is_finite(), "multi-zone EUI must be finite, got {eui}");
         assert!(eui >= 0.0);
         for i in 0..3 {
-            let t = model.temperatures[i];
+            let t = model.setpoints.temperatures[i];
             assert!(
                 (-50.0..=60.0).contains(&t),
                 "zone {i} temp {t} out of physical range"
@@ -1524,20 +1544,26 @@ mod tests {
             // Initialise the scalar setpoint to neutral values (matching
             // `ThermalModel::new` defaults: 20 / 27) so the per-zone
             // vector is the only thing that changes between runs.
-            model.heating_setpoint = 20.0;
-            model.cooling_setpoint = 27.0;
+            model.setpoints.heating_setpoint = 20.0;
+            model.setpoints.cooling_setpoint = 27.0;
 
             // Mirror `PyMultiZoneThermalModel::set_zone_setpoints` —
             // writes only the per-zone vectors, NOT the scalar fields.
-            model.heating_setpoints.as_mut_slice()[0] = heat;
-            model.cooling_setpoints.as_mut_slice()[0] = cool;
+            model.setpoints.heating_setpoints.as_mut_slice()[0] = heat;
+            model.setpoints.cooling_setpoints.as_mut_slice()[0] = cool;
 
             // Run a fixed-length simulation (envelope-only, analytical,
             // matching the `simulate_multi_zone` configuration so the
             // physics path is identical to the Python entrypoint).
             let surrogates = SurrogateManager::new().expect("SurrogateManager");
             model.reset_heating_cooling_energy();
-            let zone_area = model.zone_area.as_slice().iter().sum::<f64>().max(1.0);
+            let zone_area = model
+                .setpoints
+                .zone_area
+                .as_slice()
+                .iter()
+                .sum::<f64>()
+                .max(1.0);
             let empty_lighting = LightingSchedule::new(0.0, zone_area);
             let _eui = model.solve_timesteps(
                 24 * 30,
@@ -1591,10 +1617,16 @@ mod tests {
         for &(heat, cool) in &[(20.0, 27.0), (15.0, 30.0)] {
             let mut model = ThermalModel::<VectorField>::new(1);
             populate_default_model_physics(&mut model);
-            model.apply_parameters(&[model.window_u_value, heat, cool]);
+            model.apply_parameters(&[model.solar.window_u_value, heat, cool]);
             let surrogates = SurrogateManager::new().expect("SurrogateManager");
             model.reset_heating_cooling_energy();
-            let zone_area = model.zone_area.as_slice().iter().sum::<f64>().max(1.0);
+            let zone_area = model
+                .setpoints
+                .zone_area
+                .as_slice()
+                .iter()
+                .sum::<f64>()
+                .max(1.0);
             let empty_lighting = LightingSchedule::new(0.0, zone_area);
             let _eui = model.solve_timesteps(
                 24 * 30,
@@ -1700,7 +1732,7 @@ use log::{debug, info};
 pub(crate) fn populate_default_model_physics(model: &mut ThermalModel<VectorField>) {
     use crate::sim::construction::{Assemblies, SurfaceType};
 
-    let num_zones = model.num_zones;
+    let num_zones = model.hvac.num_zones;
     if num_zones == 0 {
         return;
     }
@@ -1741,10 +1773,10 @@ pub(crate) fn populate_default_model_physics(model: &mut ThermalModel<VectorFiel
     let mut h_tr_me_vec = Vec::with_capacity(num_zones);
 
     for zone_idx in 0..num_zones {
-        let zone_floor_area = model.zone_area[zone_idx].max(1.0);
-        let zone_wall_area = model.wall_area[zone_idx].max(0.0);
-        let zone_volume = model.zone_volume[zone_idx].max(1.0);
-        let window_ratio = model.window_ratio[zone_idx].clamp(0.0, 0.95);
+        let zone_floor_area = model.setpoints.zone_area[zone_idx].max(1.0);
+        let zone_wall_area = model.setpoints.wall_area[zone_idx].max(0.0);
+        let zone_volume = model.setpoints.zone_volume[zone_idx].max(1.0);
+        let window_ratio = model.setpoints.window_ratio[zone_idx].clamp(0.0, 0.95);
         let window_area = zone_wall_area * window_ratio;
         let opaque_wall_area = (zone_wall_area - window_area).max(0.0);
 
@@ -1784,14 +1816,14 @@ pub(crate) fn populate_default_model_physics(model: &mut ThermalModel<VectorFiel
         h_tr_me_vec.push(9.1 * 0.5 * zone_floor_area);
     }
 
-    model.wall_u_value = wall_u_value;
-    model.roof_u_value = roof_u_value;
-    model.floor_u_value = floor_u_value;
-    model.thermal_capacitance = VectorField::new(thermal_cap_vec);
-    model.air_thermal_capacitance = VectorField::new(air_thermal_cap_vec);
-    model.h_tr_ms = VectorField::new(h_tr_ms_vec);
-    model.h_tr_em = VectorField::new(h_tr_em_vec);
-    model.h_tr_me = VectorField::new(h_tr_me_vec);
+    model.setpoints.wall_u_value = wall_u_value;
+    model.setpoints.roof_u_value = roof_u_value;
+    model.setpoints.floor_u_value = floor_u_value;
+    model.mass.thermal_capacitance = VectorField::new(thermal_cap_vec);
+    model.mass.air_thermal_capacitance = VectorField::new(air_thermal_cap_vec);
+    model.conduction.h_tr_ms = VectorField::new(h_tr_ms_vec);
+    model.conduction.h_tr_em = VectorField::new(h_tr_em_vec);
+    model.mass.h_tr_me = VectorField::new(h_tr_me_vec);
 
     // Recompute the cached derived conductances (derived_h_tr_3, derived_h_ext,
     // derived_den, …) so they are consistent with the populated scalar fields.
@@ -1886,7 +1918,7 @@ impl Model {
 
     /// Get number of zones in the model.
     fn num_zones(&self) -> usize {
-        self.inner.num_zones
+        self.inner.hvac.num_zones
     }
 
     /// Get current zone temperatures.
@@ -1896,14 +1928,14 @@ impl Model {
 
     /// Set zone temperatures.
     fn set_temperatures(&mut self, temps: Vec<f64>) -> PyResult<()> {
-        if temps.len() != self.inner.num_zones {
+        if temps.len() != self.inner.hvac.num_zones {
             return Err(pyo3::exceptions::PyValueError::new_err(format!(
                 "Temperature vector length ({}) must match number of zones ({})",
                 temps.len(),
-                self.inner.num_zones
+                self.inner.hvac.num_zones
             )));
         }
-        self.inner.temperatures = VectorField::new(temps);
+        self.inner.setpoints.temperatures = VectorField::new(temps);
         Ok(())
     }
 
@@ -1913,7 +1945,7 @@ impl Model {
     /// to auto-load default internal load profiles when simulate_with_loads() is called.
     fn building_type(&self) -> String {
         // Convert BuildingType enum to string
-        match self.inner.building_type {
+        match self.inner.hvac.building_type {
             crate::sim::occupancy::BuildingType::Office => "Office".to_string(),
             crate::sim::occupancy::BuildingType::Retail => "Retail".to_string(),
             crate::sim::occupancy::BuildingType::School => "School".to_string(),
@@ -1932,7 +1964,7 @@ impl Model {
     /// This building type is used to auto-load default internal load profiles (lighting, equipment, occupancy)
     /// when simulate_with_loads() is called without specifying custom loads.
     fn set_building_type(&mut self, building_type: String) -> PyResult<()> {
-        self.inner.building_type = match building_type.as_str() {
+        self.inner.hvac.building_type = match building_type.as_str() {
             "Office" => crate::sim::occupancy::BuildingType::Office,
             "Retail" => crate::sim::occupancy::BuildingType::Retail,
             "School" => crate::sim::occupancy::BuildingType::School,
@@ -2004,7 +2036,14 @@ impl Model {
             // accumulation quirk that overheats a default-constructed zone and
             // drives EUI negative. `simulate` is the envelope-only path;
             // `simulate_with_loads` is the documented auto-load path.
-            let zone_area = self.inner.zone_area.as_slice().iter().sum::<f64>().max(1.0);
+            let zone_area = self
+                .inner
+                .setpoints
+                .zone_area
+                .as_slice()
+                .iter()
+                .sum::<f64>()
+                .max(1.0);
             let empty_lighting = crate::sim::lighting::LightingSchedule::new(0.0, zone_area);
             let result = self.inner.solve_timesteps(
                 steps,
@@ -2035,7 +2074,7 @@ impl Model {
     ///
     /// This method allows specifying internal loads (lighting, equipment, occupancy)
     /// for more detailed building energy modeling. If all load parameters are None,
-    /// the building type profile will be auto-loaded based on model.building_type.
+    /// the building type profile will be auto-loaded based on model.hvac.building_type.
     ///
     /// # Arguments
     /// * `years` - Number of years to simulate (1-5 typical)
@@ -2046,7 +2085,7 @@ impl Model {
     ///
     /// # Note
     /// This method currently accepts None for all load parameters, which will trigger
-    /// auto-loading of the building profile based on model.building_type.
+    /// auto-loading of the building profile based on model.hvac.building_type.
     /// Full Python API for passing custom load objects will be added in a future phase.
     ///
     /// # Example
@@ -2054,7 +2093,7 @@ impl Model {
     /// import fluxion
     ///
     /// model = fluxion.Model()
-    /// model.building_type = fluxion.BuildingType.Office
+    /// model.hvac.building_type = fluxion.BuildingType.Office
     ///
     /// # Simulate with auto-loaded Office building profile
     /// eui = model.simulate_with_loads(1, False)
@@ -2164,7 +2203,7 @@ impl Model {
             ));
         }
 
-        let num_zones = self.inner.num_zones;
+        let num_zones = self.inner.hvac.num_zones;
         info!(
             "Starting NumPy simulation for {} timesteps, {} zones, use_surrogates={}",
             steps, num_zones, use_surrogates
@@ -2372,10 +2411,10 @@ impl Model {
     /// # Example: find all south-facing surfaces
     /// ```python,ignore
     /// model = fluxion.Model(num_zones=2)
-    /// south = [s for s in model.surfaces() if s.orientation == fluxion.Orientation.South]
+    /// south = [s for s in model.solar.surfaces() if s.orientation == fluxion.Orientation.South]
     /// for s in south:
     ///     s.add_overhang(depth=1.0, height=2.5)
-    /// model.set_surfaces(south + [s for s in model.surfaces() if s.orientation != fluxion.Orientation.South])
+    /// model.set_surfaces(south + [s for s in model.solar.surfaces() if s.orientation != fluxion.Orientation.South])
     /// ```
     fn surfaces(&self) -> Vec<crate::python::model_bindings::PySurface> {
         crate::python::model_bindings::all_surfaces_from_model(&self.inner)
@@ -2395,7 +2434,7 @@ impl Model {
     ///   values; the list length must be a multiple of `surfaces_per_zone`,
     ///   otherwise the trailing surfaces are truncated.
     fn set_surfaces(&mut self, surfaces: Vec<crate::python::model_bindings::PySurface>) {
-        self.inner.surfaces =
+        self.inner.solar.surfaces =
             crate::python::model_bindings::reshape_surfaces_for_model(&self.inner, surfaces);
     }
 
@@ -2434,7 +2473,7 @@ impl Model {
             "Model(simulation_id='{}', last_duration_ms={:.2}, num_zones={}, use_surrogates_ready={})",
             self.simulation_id,
             last_duration_ms,
-            self.inner.num_zones,
+            self.inner.hvac.num_zones,
             self.surrogates.gpu_supported(),
         )
     }

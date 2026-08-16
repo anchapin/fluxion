@@ -102,7 +102,7 @@ fn simulate_case_900_multinode() -> (f64, f64, f64, f64, f64, f64) {
     // accumulate energy totals.
     for step in 0..WARMUP_HOURS {
         let weather_data = weather.get_hourly_data(step).unwrap();
-        model.weather = Some(weather_data.clone());
+        model.solar.weather = Some(weather_data.clone());
         let _energy_kwh = model.step_physics(step, weather_data.dry_bulb_temp, 3600.0);
     }
 
@@ -116,7 +116,7 @@ fn simulate_case_900_multinode() -> (f64, f64, f64, f64, f64, f64) {
 
     for step in 0..8760 {
         let weather_data = weather.get_hourly_data(step).unwrap();
-        model.weather = Some(weather_data.clone());
+        model.solar.weather = Some(weather_data.clone());
 
         // step_physics returns HVAC energy in kWh (positive=heating, negative=cooling)
         let energy_kwh = model.step_physics(step, weather_data.dry_bulb_temp, 3600.0);
@@ -137,7 +137,7 @@ fn simulate_case_900_multinode() -> (f64, f64, f64, f64, f64, f64) {
         }
 
         // Track zone temperature extremes
-        if let Some(&t) = model.temperatures.as_slice().first() {
+        if let Some(&t) = model.setpoints.temperatures.as_slice().first() {
             if t < min_zone_temp {
                 min_zone_temp = t;
             }
@@ -168,7 +168,7 @@ fn simulate_case_900ff_multinode() -> (f64, f64) {
     // 14-day warm-up (still good practice even without energy accumulation)
     for step in 0..WARMUP_HOURS {
         let weather_data = weather.get_hourly_data(step).unwrap();
-        model.weather = Some(weather_data.clone());
+        model.solar.weather = Some(weather_data.clone());
         let _ = model.step_physics(step, weather_data.dry_bulb_temp, 3600.0);
     }
 
@@ -177,10 +177,10 @@ fn simulate_case_900ff_multinode() -> (f64, f64) {
 
     for step in 0..8760 {
         let weather_data = weather.get_hourly_data(step).unwrap();
-        model.weather = Some(weather_data.clone());
+        model.solar.weather = Some(weather_data.clone());
         let _ = model.step_physics(step, weather_data.dry_bulb_temp, 3600.0);
 
-        if let Some(&t) = model.temperatures.as_slice().first() {
+        if let Some(&t) = model.setpoints.temperatures.as_slice().first() {
             if t < min_temp {
                 min_temp = t;
             }

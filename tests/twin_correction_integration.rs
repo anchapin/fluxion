@@ -94,8 +94,8 @@ fn case600_model(outdoor_temp: f64) -> ThermalModel<VectorField> {
     // Pin zone AND mass temperatures to the initial setpoint so the first
     // step starts from a known, stable state.
     let init_t = 20.0;
-    model.temperatures.as_mut()[0] = init_t;
-    if let Some(ref mut mt) = Some(&mut model.mass_temperatures) {
+    model.setpoints.temperatures.as_mut()[0] = init_t;
+    if let Some(ref mut mt) = Some(&mut model.mass.mass_temperatures) {
         mt.as_mut()[0] = init_t;
     }
     model.set_ground_temp(outdoor_temp);
@@ -127,14 +127,14 @@ fn test_zero_correction_is_noop() {
     // Establish a baseline by running 5 macro steps.
     step_n(&mut model, 5, 10.0);
 
-    let t_before: Vec<f64> = model.temperatures.as_ref().to_vec();
+    let t_before: Vec<f64> = model.setpoints.temperatures.as_ref().to_vec();
     let h_before = model.get_zone_heating_energy_kwh();
     let c_before = model.get_zone_cooling_energy_kwh();
 
     let zero = TwinCorrection::multi_zone(vec![0.0, 0.0], vec![0.01, 0.01]);
     model.set_twin_correction(&zero);
 
-    let t_after: Vec<f64> = model.temperatures.as_ref().to_vec();
+    let t_after: Vec<f64> = model.setpoints.temperatures.as_ref().to_vec();
     let h_after = model.get_zone_heating_energy_kwh();
     let c_after = model.get_zone_cooling_energy_kwh();
 
@@ -179,14 +179,14 @@ fn test_correction_shifts_temperatures_exactly() {
 
     step_n(&mut model, 5, 10.0);
 
-    let t_before: Vec<f64> = model.temperatures.as_ref().to_vec();
+    let t_before: Vec<f64> = model.setpoints.temperatures.as_ref().to_vec();
     let h_before = model.get_zone_heating_energy_kwh();
     let c_before = model.get_zone_cooling_energy_kwh();
 
     let correction = TwinCorrection::multi_zone(vec![0.5, -0.3], vec![0.01, 0.01]);
     model.set_twin_correction(&correction);
 
-    let t_after: Vec<f64> = model.temperatures.as_ref().to_vec();
+    let t_after: Vec<f64> = model.setpoints.temperatures.as_ref().to_vec();
     let h_after = model.get_zone_heating_energy_kwh();
     let c_after = model.get_zone_cooling_energy_kwh();
 
@@ -247,10 +247,10 @@ fn test_correction_energy_balance_gate() {
     // Disable HVAC so the energy accumulators stay at zero (free-floating
     // mode). The energy-balance gate then checks that the correction does
     // not introduce phantom energy in the absence of HVAC processes.
-    model.heating_setpoint = -999.0;
-    model.cooling_setpoint = 999.0;
-    model.hvac_heating_capacity = 0.0;
-    model.hvac_cooling_capacity = 0.0;
+    model.setpoints.heating_setpoint = -999.0;
+    model.setpoints.cooling_setpoint = 999.0;
+    model.hvac.hvac_heating_capacity = 0.0;
+    model.hvac.hvac_cooling_capacity = 0.0;
 
     step_n(&mut model, 5, 10.0);
 
@@ -304,7 +304,7 @@ fn test_correction_energy_balance_gate() {
     // The corrected temperature state must be finite and physically
     // reasonable (sanity floor — the correction must not push the
     // simulation into numerical instability).
-    let t_after: Vec<f64> = model.temperatures.as_ref().to_vec();
+    let t_after: Vec<f64> = model.setpoints.temperatures.as_ref().to_vec();
     for (zone, &t) in t_after.iter().enumerate() {
         assert!(
             t.is_finite(),
@@ -330,8 +330,8 @@ fn test_correction_energy_balance_gate() {
 fn test_correction_two_zone_per_zone_indexing() {
     let mut model: ThermalModel<VectorField> = ThermalModel::new(2);
     let init_t = 20.0;
-    model.temperatures.as_mut()[0] = init_t;
-    model.temperatures.as_mut()[1] = init_t;
+    model.setpoints.temperatures.as_mut()[0] = init_t;
+    model.setpoints.temperatures.as_mut()[1] = init_t;
 
     let h_before = model.get_zone_heating_energy_kwh();
     let c_before = model.get_zone_cooling_energy_kwh();
@@ -339,7 +339,7 @@ fn test_correction_two_zone_per_zone_indexing() {
     let correction = TwinCorrection::multi_zone(vec![0.5, -0.3], vec![0.01, 0.01]);
     model.set_twin_correction(&correction);
 
-    let t_after = model.temperatures.as_ref().to_vec();
+    let t_after = model.setpoints.temperatures.as_ref().to_vec();
 
     // Per-zone temperature deltas equal +0.5 °C / -0.3 °C to 1e-9 °C.
     let expected_delta = [0.5, -0.3];
@@ -376,17 +376,17 @@ fn test_correction_two_zone_per_zone_indexing() {
 fn test_correction_two_zone_zero_is_noop() {
     let mut model: ThermalModel<VectorField> = ThermalModel::new(2);
     let init_t = 20.0;
-    model.temperatures.as_mut()[0] = init_t;
-    model.temperatures.as_mut()[1] = init_t;
+    model.setpoints.temperatures.as_mut()[0] = init_t;
+    model.setpoints.temperatures.as_mut()[1] = init_t;
 
-    let t_before = model.temperatures.as_ref().to_vec();
+    let t_before = model.setpoints.temperatures.as_ref().to_vec();
     let h_before = model.get_zone_heating_energy_kwh();
     let c_before = model.get_zone_cooling_energy_kwh();
 
     let zero = TwinCorrection::multi_zone(vec![0.0, 0.0], vec![0.01, 0.01]);
     model.set_twin_correction(&zero);
 
-    let t_after = model.temperatures.as_ref().to_vec();
+    let t_after = model.setpoints.temperatures.as_ref().to_vec();
     let h_after = model.get_zone_heating_energy_kwh();
     let c_after = model.get_zone_cooling_energy_kwh();
 
@@ -426,16 +426,16 @@ fn test_correction_two_zone_zero_is_noop() {
 fn test_correction_extra_entries_ignored() {
     let mut model: ThermalModel<VectorField> = ThermalModel::new(2);
     let init_t = 20.0;
-    model.temperatures.as_mut()[0] = init_t;
-    model.temperatures.as_mut()[1] = init_t;
+    model.setpoints.temperatures.as_mut()[0] = init_t;
+    model.setpoints.temperatures.as_mut()[1] = init_t;
 
-    let t_before: Vec<f64> = model.temperatures.as_ref().to_vec();
+    let t_before: Vec<f64> = model.setpoints.temperatures.as_ref().to_vec();
 
     // 3 entries for a 2-zone model.
     let correction = TwinCorrection::multi_zone(vec![1.0, 2.0, 99.0], vec![0.1, 0.1, 0.1]);
     model.set_twin_correction(&correction);
 
-    let t_after: Vec<f64> = model.temperatures.as_ref().to_vec();
+    let t_after: Vec<f64> = model.setpoints.temperatures.as_ref().to_vec();
 
     // Only the first two entries are applied.
     let expected_delta = [1.0, 2.0];
@@ -455,16 +455,16 @@ fn test_correction_extra_entries_ignored() {
 fn test_correction_missing_entries_unchanged() {
     let mut model: ThermalModel<VectorField> = ThermalModel::new(2);
     let init_t = 20.0;
-    model.temperatures.as_mut()[0] = init_t;
-    model.temperatures.as_mut()[1] = init_t;
+    model.setpoints.temperatures.as_mut()[0] = init_t;
+    model.setpoints.temperatures.as_mut()[1] = init_t;
 
-    let t_before: Vec<f64> = model.temperatures.as_ref().to_vec();
+    let t_before: Vec<f64> = model.setpoints.temperatures.as_ref().to_vec();
 
     // 1 entry for a 2-zone model.
     let correction = TwinCorrection::multi_zone(vec![1.5], vec![0.1]);
     model.set_twin_correction(&correction);
 
-    let t_after: Vec<f64> = model.temperatures.as_ref().to_vec();
+    let t_after: Vec<f64> = model.setpoints.temperatures.as_ref().to_vec();
 
     // Zone 0 is shifted by +1.5 °C; zone 1 is unchanged.
     assert!(
@@ -484,12 +484,12 @@ fn test_correction_missing_entries_unchanged() {
 fn test_single_zone_correction() {
     let mut model: ThermalModel<VectorField> = ThermalModel::new(1);
     let init_t = 22.0;
-    model.temperatures.as_mut()[0] = init_t;
+    model.setpoints.temperatures.as_mut()[0] = init_t;
 
     let correction = TwinCorrection::single_zone(0.5, 0.1);
     model.set_twin_correction(&correction);
 
-    let t_after = model.temperatures[0];
+    let t_after = model.setpoints.temperatures[0];
     assert!(
         (t_after - (init_t + 0.5)).abs() < TOL_TEMP,
         "single-zone correction: T = {t_after} °C (expected {} °C)",

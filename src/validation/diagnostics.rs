@@ -298,7 +298,7 @@ impl SimulationDiagnostics {
         ground_temp: f64,
     ) {
         trace!("Recording diagnostics for hour {}", hour);
-        let num_zones = model.num_zones;
+        let num_zones = model.hvac.num_zones;
         self.hours.push(hour);
 
         // Outdoor and Ground temperatures
@@ -306,11 +306,11 @@ impl SimulationDiagnostics {
         self.ground_temps.push(ground_temp);
 
         // Zone temperatures
-        let zone_temps: Vec<f64> = model.temperatures.as_ref().to_vec();
+        let zone_temps: Vec<f64> = model.setpoints.temperatures.as_ref().to_vec();
         self.zone_temps.push(zone_temps.clone());
 
         // Mass temperatures
-        let mass_temps: Vec<f64> = model.mass_temperatures.as_ref().to_vec();
+        let mass_temps: Vec<f64> = model.mass.mass_temperatures.as_ref().to_vec();
         self.mass_temps.push(mass_temps.clone());
 
         // Surface temperatures: simple average placeholder
@@ -323,10 +323,11 @@ impl SimulationDiagnostics {
         self.surface_temps.push(surface_est);
 
         // Loads in Watts
-        let zone_areas: Vec<f64> = model.zone_area.as_ref().to_vec();
+        let zone_areas: Vec<f64> = model.setpoints.zone_area.as_ref().to_vec();
 
         // Solar gains (W)
         let solar_watts: Vec<f64> = model
+            .solar
             .solar_gains
             .as_ref()
             .iter()
@@ -337,6 +338,7 @@ impl SimulationDiagnostics {
 
         // Internal gains (W)
         let internal_watts: Vec<f64> = model
+            .setpoints
             .loads
             .as_ref()
             .iter()
@@ -346,7 +348,7 @@ impl SimulationDiagnostics {
         self.loads.internal.push(internal_watts);
 
         // HVAC per-zone power (W) - from the temporary buffer
-        let hvac_vec = if let Some(ref hvac_tensor) = model.current_hvac_output {
+        let hvac_vec = if let Some(ref hvac_tensor) = model.hvac.current_hvac_output {
             hvac_tensor.as_ref().to_vec()
         } else {
             vec![0.0; num_zones]
@@ -358,8 +360,8 @@ impl SimulationDiagnostics {
         self.loads.inter_zone.push(zero_vec);
 
         // Infiltration (W): approximate using ACH and zone volume, outdoor temp unknown (use 0)
-        let infiltration_ach: Vec<f64> = model.infiltration_rate.as_ref().to_vec();
-        let ceiling_heights: Vec<f64> = model.ceiling_height.as_ref().to_vec();
+        let infiltration_ach: Vec<f64> = model.setpoints.infiltration_rate.as_ref().to_vec();
+        let ceiling_heights: Vec<f64> = model.setpoints.ceiling_height.as_ref().to_vec();
         let mut infiltration_watts = Vec::with_capacity(num_zones);
         for i in 0..num_zones {
             let ach = infiltration_ach.get(i).copied().unwrap_or(0.0);
@@ -377,8 +379,8 @@ impl SimulationDiagnostics {
 
         // Envelope conduction (W): Q = h_tr_em * (T_outdoor - T_mass)
         // h_tr_em is the exterior-to-mass conductance
-        let h_tr_em_vec: Vec<f64> = model.h_tr_em.as_ref().to_vec();
-        let mass_temps: Vec<f64> = model.mass_temperatures.as_ref().to_vec();
+        let h_tr_em_vec: Vec<f64> = model.conduction.h_tr_em.as_ref().to_vec();
+        let mass_temps: Vec<f64> = model.mass.mass_temperatures.as_ref().to_vec();
         let mut conduction_watts = Vec::with_capacity(num_zones);
         for i in 0..num_zones {
             let h_tr_em = h_tr_em_vec.get(i).copied().unwrap_or(0.0);
@@ -705,15 +707,15 @@ mod tests {
         use crate::physics::cta::VectorField;
 
         let mut model = ThermalModel::new(1);
-        model.temperatures = VectorField::new(vec![22.0]);
-        model.mass_temperatures = VectorField::new(vec![21.0]);
-        model.zone_area = VectorField::new(vec![50.0]);
-        model.solar_gains = VectorField::new(vec![10.0]);
-        model.loads = VectorField::new(vec![5.0]);
-        model.current_hvac_output = Some(VectorField::new(vec![1000.0]));
-        model.infiltration_rate = VectorField::new(vec![0.5]);
-        model.ceiling_height = VectorField::new(vec![2.5]);
-        model.h_tr_em = VectorField::new(vec![10.0]);
+        model.setpoints.temperatures = VectorField::new(vec![22.0]);
+        model.mass.mass_temperatures = VectorField::new(vec![21.0]);
+        model.setpoints.zone_area = VectorField::new(vec![50.0]);
+        model.solar.solar_gains = VectorField::new(vec![10.0]);
+        model.setpoints.loads = VectorField::new(vec![5.0]);
+        model.hvac.current_hvac_output = Some(VectorField::new(vec![1000.0]));
+        model.setpoints.infiltration_rate = VectorField::new(vec![0.5]);
+        model.setpoints.ceiling_height = VectorField::new(vec![2.5]);
+        model.conduction.h_tr_em = VectorField::new(vec![10.0]);
 
         let mut diag = SimulationDiagnostics::new(1, 10);
         diag.record_timestep(0, &model, -5.0, 10.0);

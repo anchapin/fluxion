@@ -205,7 +205,7 @@ impl MultiZoneAirflowNetwork {
     }
 
     /// Per-zone outgoing conductance sum `Σ_j h_tr_iz[i, j]` (W/K). This is
-    /// the value stored in `model.h_tr_iz[i]` (flat per-zone total) for
+    /// the value stored in `model.conduction.h_tr_iz[i]` (flat per-zone total) for
     /// backward-compatible integration with the existing Case-960
     /// `ThermalModel` air-node solver, which uses the flat per-zone total
     /// rather than the full N×N matrix.
@@ -608,7 +608,7 @@ mod tests {
     }
 
     /// `per_zone_conductance` returns the row sums of the N×N matrix — the
-    /// backward-compatible flat vector for the existing `model.h_tr_iz`
+    /// backward-compatible flat vector for the existing `model.conduction.h_tr_iz`
     /// field used by the Case 960 physics pipeline.
     #[test]
     fn per_zone_conductance_is_row_sum_of_matrix() {

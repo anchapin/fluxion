@@ -176,11 +176,11 @@ fn issue_1163_annual_cooling_nonzero_for_case_900() {
     let weather = fluxion::weather::denver::DenverTmyWeather::new();
     for step in 0..8760 {
         let wd = weather.get_hourly_data(step).unwrap();
-        model.weather = Some(wd.clone());
+        model.solar.weather = Some(wd.clone());
         model.step_physics(step, wd.dry_bulb_temp, 3600.0);
     }
 
-    let cooling_mwh = model.annual_cooling_energy / 1000.0;
+    let cooling_mwh = model.hvac.annual_cooling_energy / 1000.0;
     println!("Case 900 annual cooling (post-#1163): {cooling_mwh:.3} MWh");
 
     // Cooling must be positive and in a reasonable range.
@@ -199,11 +199,11 @@ fn issue_1163_annual_heating_nonzero_for_case_900() {
     let weather = fluxion::weather::denver::DenverTmyWeather::new();
     for step in 0..8760 {
         let wd = weather.get_hourly_data(step).unwrap();
-        model.weather = Some(wd.clone());
+        model.solar.weather = Some(wd.clone());
         model.step_physics(step, wd.dry_bulb_temp, 3600.0);
     }
 
-    let heating_mwh = model.annual_heating_energy / 1000.0;
+    let heating_mwh = model.hvac.annual_heating_energy / 1000.0;
     println!("Case 900 annual heating (post-#1163): {heating_mwh:.3} MWh");
 
     // Heating must be positive and in a reasonable range (2-4 MWh for Case 900).

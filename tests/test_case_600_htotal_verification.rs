@@ -70,13 +70,13 @@ fn test_case_600_htotal_hand_verification() {
     let model: ThermalModel<VectorField> = ThermalModel::from_spec(&spec);
 
     // ── Extract all 5R1C conductances ──
-    let h_em = model.h_tr_em.as_ref()[0];
-    let h_ms = model.h_tr_ms.as_ref()[0];
-    let h_is = model.h_tr_is.as_ref()[0];
-    let h_w = model.h_tr_w.as_ref()[0];
-    let h_ve = model.h_ve.as_ref()[0];
-    let h_floor = model.h_tr_floor.as_ref()[0];
-    let cm = model.thermal_capacitance.as_ref()[0];
+    let h_em = model.conduction.h_tr_em.as_ref()[0];
+    let h_ms = model.conduction.h_tr_ms.as_ref()[0];
+    let h_is = model.conduction.h_tr_is.as_ref()[0];
+    let h_w = model.conduction.h_tr_w.as_ref()[0];
+    let h_ve = model.conduction.h_ve.as_ref()[0];
+    let h_floor = model.conduction.h_tr_floor.as_ref()[0];
+    let cm = model.mass.thermal_capacitance.as_ref()[0];
 
     // ── Hand-calculated reference values ──
 
@@ -252,11 +252,11 @@ fn test_case_600_htotal_hand_verification() {
     eprintln!("\n─── Solar Distribution ───");
     eprintln!(
         "  solar_beam_to_mass_fraction: {:.2}",
-        model.solar_beam_to_mass_fraction
+        model.solar.solar_beam_to_mass_fraction
     );
     eprintln!(
         "  solar_distribution_to_air:   {:.2}",
-        model.solar_distribution_to_air
+        model.solar.solar_distribution_to_air
     );
 
     // ── Assertions ──

@@ -25,15 +25,15 @@ fn test_case_900ff_profile_diagnostic() {
         let weather_data = weather
             .get_hourly_data(hour)
             .expect("Failed to get weather data");
-        model.weather = Some(weather_data.clone());
+        model.solar.weather = Some(weather_data.clone());
 
         let outdoor_temp = weather_data.dry_bulb_temp;
         model.step_physics(hour, outdoor_temp, 3600.0);
 
         // Accessing first zone's temperatures and solar gain
-        let air_temp = model.temperatures[0];
-        let mass_temp = model.mass_temperatures[0];
-        let solar_gain = model.solar_gains[0] * model.zone_area[0];
+        let air_temp = model.setpoints.temperatures[0];
+        let mass_temp = model.mass.mass_temperatures[0];
+        let solar_gain = model.solar.solar_gains[0] * model.setpoints.zone_area[0];
 
         writeln!(
             file,

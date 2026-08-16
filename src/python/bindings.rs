@@ -114,12 +114,12 @@ impl PyMultiZoneThermalModel {
 
     /// Get number of zones in the model
     pub fn num_zones(&self) -> usize {
-        self.inner.num_zones
+        self.inner.hvac.num_zones
     }
 
     /// Get the number of zones from the inner ThermalModel
     pub fn get_inner_num_zones(&self) -> usize {
-        self.inner.num_zones
+        self.inner.hvac.num_zones
     }
 
     /// Get current zone temperatures
@@ -129,14 +129,14 @@ impl PyMultiZoneThermalModel {
 
     /// Set zone temperatures
     pub fn set_zone_temperatures(&mut self, temps: Vec<f64>) -> PyResult<()> {
-        if temps.len() != self.inner.num_zones {
+        if temps.len() != self.inner.hvac.num_zones {
             return Err(pyo3::exceptions::PyValueError::new_err(format!(
                 "Temperature vector length ({}) must match number of zones ({})",
                 temps.len(),
-                self.inner.num_zones
+                self.inner.hvac.num_zones
             )));
         }
-        self.inner.temperatures = VectorField::new(temps);
+        self.inner.setpoints.temperatures = VectorField::new(temps);
         Ok(())
     }
 
@@ -147,11 +147,11 @@ impl PyMultiZoneThermalModel {
         heating: f64,
         cooling: f64,
     ) -> PyResult<()> {
-        if zone_idx >= self.inner.num_zones {
+        if zone_idx >= self.inner.hvac.num_zones {
             return Err(pyo3::exceptions::PyValueError::new_err(format!(
                 "Zone index {} out of range (0-{})",
                 zone_idx,
-                self.inner.num_zones - 1
+                self.inner.hvac.num_zones - 1
             )));
         }
 
@@ -162,21 +162,21 @@ impl PyMultiZoneThermalModel {
         }
 
         // Set zone-specific setpoints
-        self.inner.heating_setpoints.as_mut_slice()[zone_idx] = heating;
-        self.inner.cooling_setpoints.as_mut_slice()[zone_idx] = cooling;
+        self.inner.setpoints.heating_setpoints.as_mut_slice()[zone_idx] = heating;
+        self.inner.setpoints.cooling_setpoints.as_mut_slice()[zone_idx] = cooling;
 
         Ok(())
     }
 
     /// Get inter-zone conductance between two zones
     pub fn get_inter_zone_conductance(&self, zone_i: usize, zone_j: usize) -> PyResult<f64> {
-        if zone_i >= self.inner.num_zones || zone_j >= self.inner.num_zones {
+        if zone_i >= self.inner.hvac.num_zones || zone_j >= self.inner.hvac.num_zones {
             return Err(pyo3::exceptions::PyValueError::new_err(
                 "Zone indices out of range",
             ));
         }
 
-        Ok(self.inner.h_tr_iz.as_slice()[zone_i])
+        Ok(self.inner.conduction.h_tr_iz.as_slice()[zone_i])
     }
 
     /// Set inter-zone conductance between two zones
@@ -186,7 +186,7 @@ impl PyMultiZoneThermalModel {
         zone_j: usize,
         conductance: f64,
     ) -> PyResult<()> {
-        if zone_i >= self.inner.num_zones || zone_j >= self.inner.num_zones {
+        if zone_i >= self.inner.hvac.num_zones || zone_j >= self.inner.hvac.num_zones {
             return Err(pyo3::exceptions::PyValueError::new_err(
                 "Zone indices out of range",
             ));
@@ -198,20 +198,20 @@ impl PyMultiZoneThermalModel {
             ));
         }
 
-        self.inner.h_tr_iz.as_mut_slice()[zone_i] = conductance;
+        self.inner.conduction.h_tr_iz.as_mut_slice()[zone_i] = conductance;
         if zone_i != zone_j {
-            self.inner.h_tr_iz.as_mut_slice()[zone_j] = conductance;
+            self.inner.conduction.h_tr_iz.as_mut_slice()[zone_j] = conductance;
         }
         Ok(())
     }
 
     /// Set all inter-zone conductances from a vector
     pub fn set_inter_zone_conductance_vector(&mut self, conductances: Vec<f64>) -> PyResult<()> {
-        if conductances.len() != self.inner.num_zones {
+        if conductances.len() != self.inner.hvac.num_zones {
             return Err(pyo3::exceptions::PyValueError::new_err(format!(
                 "Conductance vector length ({}) must match number of zones ({})",
                 conductances.len(),
-                self.inner.num_zones
+                self.inner.hvac.num_zones
             )));
         }
 
@@ -221,14 +221,14 @@ impl PyMultiZoneThermalModel {
                     "All conductances must be non-negative",
                 ));
             }
-            self.inner.h_tr_iz.as_mut_slice()[i] = c;
+            self.inner.conduction.h_tr_iz.as_mut_slice()[i] = c;
         }
         Ok(())
     }
 
     /// Get all inter-zone conductances as a vector
     pub fn get_inter_zone_conductance_vector(&self) -> Vec<f64> {
-        self.inner.h_tr_iz.as_slice().to_vec()
+        self.inner.conduction.h_tr_iz.as_slice().to_vec()
     }
 
     /// Simulate multi-zone building energy consumption
@@ -268,7 +268,14 @@ impl PyMultiZoneThermalModel {
         // quirk that overheats a default-constructed zone and drives EUI
         // negative. Envelope-only is the physically-sane baseline, matching
         // `Model::simulate` and the REST `/v1/simulate` path (#2747).
-        let zone_area = self.inner.zone_area.as_slice().iter().sum::<f64>().max(1.0);
+        let zone_area = self
+            .inner
+            .setpoints
+            .zone_area
+            .as_slice()
+            .iter()
+            .sum::<f64>()
+            .max(1.0);
         let empty_lighting = crate::sim::lighting::LightingSchedule::new(0.0, zone_area);
 
         let _net_result = self.inner.solve_timesteps(
@@ -377,11 +384,11 @@ impl PyMultiZoneThermalModel {
             ));
         };
 
-        if zone_idx >= self.inner.num_zones {
+        if zone_idx >= self.inner.hvac.num_zones {
             return Err(pyo3::exceptions::PyValueError::new_err(format!(
                 "Zone index {} out of range (0-{})",
                 zone_idx,
-                self.inner.num_zones - 1
+                self.inner.hvac.num_zones - 1
             )));
         }
 
@@ -697,8 +704,8 @@ impl PyMultiZoneThermalModel {
         // This method can be used to check if the model has been
         // intentionally broken for testing validate_energy_balance
         // For now, we check if thermal capacitance is negative
-        for i in 0..self.inner.num_zones {
-            if self.inner.thermal_capacitance.as_ref()[i] < 0.0 {
+        for i in 0..self.inner.hvac.num_zones {
+            if self.inner.mass.thermal_capacitance.as_ref()[i] < 0.0 {
                 return Ok(true);
             }
         }
@@ -752,7 +759,8 @@ pub fn create_multi_zone_model_from_config(
                             Ok(t) => t,
                             Err(_) => continue,
                         };
-                        let current_cooling = model.inner.cooling_setpoints.as_slice()[zone_idx];
+                        let current_cooling =
+                            model.inner.setpoints.cooling_setpoints.as_slice()[zone_idx];
                         model.set_zone_setpoints(zone_idx, heating_temp, current_cooling)?;
                     }
 
@@ -761,7 +769,8 @@ pub fn create_multi_zone_model_from_config(
                             Ok(t) => t,
                             Err(_) => continue,
                         };
-                        let current_heating = model.inner.heating_setpoints.as_slice()[zone_idx];
+                        let current_heating =
+                            model.inner.setpoints.heating_setpoints.as_slice()[zone_idx];
                         model.set_zone_setpoints(zone_idx, current_heating, cooling_temp)?;
                     }
                 }
@@ -884,7 +893,7 @@ pub fn create_multi_zone_model_from_schema_file(
     // Set zone setpoints from schema
     let heating = schema_v1.controls.zone_control.heating_setpoint;
     let cooling = schema_v1.controls.zone_control.cooling_setpoint;
-    for zone_idx in 0..model.inner.num_zones {
+    for zone_idx in 0..model.inner.hvac.num_zones {
         model.set_zone_setpoints(zone_idx, heating, cooling)?;
     }
 
@@ -1119,7 +1128,7 @@ mod tests {
         ] {
             let model = PyMultiZoneThermalModel::from_case_spec(input)
                 .unwrap_or_else(|e| panic!("'{}' should parse: {}", input, e));
-            assert_eq!(model.num_zones(), 1, "input='{}'", input);
+            assert_eq!(model.hvac.num_zones(), 1, "input='{}'", input);
         }
     }
 

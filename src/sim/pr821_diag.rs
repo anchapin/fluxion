@@ -93,12 +93,14 @@ impl DiagCollector {
     ) {
         let zone_idx = 0;
         let t_air = model
+            .setpoints
             .temperatures
             .as_slice()
             .get(zone_idx)
             .copied()
             .unwrap_or(f64::NAN);
         let t_mass = model
+            .mass
             .mass_temperatures
             .as_slice()
             .get(zone_idx)
@@ -108,12 +110,14 @@ impl DiagCollector {
         // the implicit (h_is·T_air + h_ms·T_mass) / (h_is + h_ms) combination.
         // Reconstructed here for diagnostic clarity.
         let h_is = model
+            .conduction
             .h_tr_is
             .as_slice()
             .get(zone_idx)
             .copied()
             .unwrap_or(0.0);
         let h_ms = model
+            .conduction
             .h_tr_ms
             .as_slice()
             .get(zone_idx)
@@ -127,25 +131,28 @@ impl DiagCollector {
         };
 
         let cm = model
+            .mass
             .thermal_capacitance
             .as_slice()
             .get(zone_idx)
             .copied()
             .unwrap_or(0.0);
         let h_tr_em = model
+            .conduction
             .h_tr_em
             .as_slice()
             .get(zone_idx)
             .copied()
             .unwrap_or(0.0);
         let h_tr_floor = model
+            .conduction
             .h_tr_floor
             .as_slice()
             .get(zone_idx)
             .copied()
             .unwrap_or(0.0);
 
-        let t_ground = model.ground_temperature.ground_temperature(t);
+        let t_ground = model.conduction.ground_temperature.ground_temperature(t);
 
         self.rows.push(DiagRow {
             t,

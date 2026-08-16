@@ -68,7 +68,7 @@ fn physics_thermal_model_step_physics_no_panic_edge_cases() {
     // Note: dt=0 triggers an assertion in thermal_integration.rs
     // This is expected behavior, not a bug
 
-    assert!(model.num_zones > 0);
+    assert!(model.hvac.num_zones > 0);
 }
 
 #[test]

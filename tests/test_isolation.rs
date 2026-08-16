@@ -294,9 +294,9 @@ use fluxion::sim::engine::ThermalModel;
 fn test_thermal_model_state_isolation() {
     // Test 1: Create and modify a model
     let mut model1 = ThermalModel::<VectorField>::new(1);
-    model1.window_u_value = 3.5;
-    model1.heating_setpoint = 25.0;
-    model1.cooling_setpoint = 27.0;
+    model1.solar.window_u_value = 3.5;
+    model1.setpoints.heating_setpoint = 25.0;
+    model1.setpoints.cooling_setpoint = 27.0;
 
     // Test 2: Create a fresh model and verify it doesn't see modifications
     let model2 = ThermalModel::<VectorField>::new(1);
@@ -304,15 +304,15 @@ fn test_thermal_model_state_isolation() {
     // Verify model2 has default values, not model1's modified values
     // Default window_u_value is 2.5 (from ThermalModel::new implementation)
     assert!(
-        (model2.window_u_value - 2.5).abs() < 0.01,
+        (model2.solar.window_u_value - 2.5).abs() < 0.01,
         "Model2 should have default window_u_value, got {}",
-        model2.window_u_value
+        model2.solar.window_u_value
     );
 
     assert!(
-        (model2.heating_setpoint - 20.0).abs() < 0.01, // Default is 20.0
+        (model2.setpoints.heating_setpoint - 20.0).abs() < 0.01, // Default is 20.0
         "Model2 should have default heating_setpoint, got {}",
-        model2.heating_setpoint
+        model2.setpoints.heating_setpoint
     );
 
     println!("✓ ThermalModel state isolation verified");
@@ -467,24 +467,24 @@ fn test_multiple_tempfile_isolation() {
 #[test]
 fn test_thermal_model_clone_isolation() {
     let mut model1 = ThermalModel::<VectorField>::new(1);
-    model1.window_u_value = 4.0;
+    model1.solar.window_u_value = 4.0;
 
     let model2 = model1.clone();
 
     // Modify model1
-    model1.window_u_value = 5.0;
+    model1.solar.window_u_value = 5.0;
 
     // Verify model2 still has the old value (deep copy, not shared reference)
     assert!(
-        (model2.window_u_value - 4.0).abs() < 0.01,
+        (model2.solar.window_u_value - 4.0).abs() < 0.01,
         "Cloned model should have old value 4.0, got {}",
-        model2.window_u_value
+        model2.solar.window_u_value
     );
 
     assert!(
-        (model1.window_u_value - 5.0).abs() < 0.01,
+        (model1.solar.window_u_value - 5.0).abs() < 0.01,
         "Original model should have new value 5.0, got {}",
-        model1.window_u_value
+        model1.solar.window_u_value
     );
 
     println!("✓ ThermalModel clone isolation verified");
@@ -498,14 +498,14 @@ fn test_parallel_model_execution() {
     // Create models in different threads
     let handle1 = thread::spawn(|| {
         let mut model = ThermalModel::<VectorField>::new(1);
-        model.window_u_value = 3.0;
-        model.window_u_value
+        model.solar.window_u_value = 3.0;
+        model.solar.window_u_value
     });
 
     let handle2 = thread::spawn(|| {
         let mut model = ThermalModel::<VectorField>::new(1);
-        model.window_u_value = 2.0;
-        model.window_u_value
+        model.solar.window_u_value = 2.0;
+        model.solar.window_u_value
     });
 
     let value1 = handle1.join().unwrap();
@@ -522,7 +522,7 @@ fn test_parallel_model_execution() {
 fn test_model_state_reset() {
     // Create model, modify it
     let mut model1 = ThermalModel::<VectorField>::new(1);
-    model1.window_u_value = 5.0;
+    model1.solar.window_u_value = 5.0;
 
     // Create new model - should have default state
     let model2 = ThermalModel::<VectorField>::new(1);
@@ -530,9 +530,9 @@ fn test_model_state_reset() {
     // Verify model2 has defaults, not model1's modified state
     // Default window_u_value is 2.5 (from ThermalModel::new implementation)
     assert!(
-        (model2.window_u_value - 2.5).abs() < 0.01,
+        (model2.solar.window_u_value - 2.5).abs() < 0.01,
         "New model should have default window_u_value, got {}",
-        model2.window_u_value
+        model2.solar.window_u_value
     );
 
     println!("✓ Model state reset on creation verified");

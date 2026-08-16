@@ -90,7 +90,7 @@ impl InvariantChecker {
 
     /// Compute per-zone mass-node energy balance matching the actual physics model.
     ///
-    /// The model integrates the lumped mass node (`self.0.mass_temperatures` per zone)
+    /// The model integrates the lumped mass node (`self.0.mass.mass_temperatures` per zone)
     /// with two distinct formulas (see `physics_impl.rs::step_physics_5r1c`,
     /// `step_physics_9r4c`, and `thermal_integration.rs`):
     ///
@@ -143,14 +143,14 @@ impl InvariantChecker {
             + AsMut<[f64]>
             + Index<usize, Output = f64>,
     {
-        let num_zones = model.num_zones;
-        let temps = model.temperatures.as_ref();
-        let mass_temps = model.mass_temperatures.as_ref();
-        let prev_mass_temps = model.previous_mass_temperatures.as_ref();
-        let loads = model.loads.as_ref();
-        let solar_gains = model.solar_gains.as_ref();
-        let opaque_solar_gains = model.opaque_solar_gains.as_ref();
-        let area = model.zone_area.as_ref();
+        let num_zones = model.hvac.num_zones;
+        let temps = model.setpoints.temperatures.as_ref();
+        let mass_temps = model.mass.mass_temperatures.as_ref();
+        let prev_mass_temps = model.mass.previous_mass_temperatures.as_ref();
+        let loads = model.setpoints.loads.as_ref();
+        let solar_gains = model.solar.solar_gains.as_ref();
+        let opaque_solar_gains = model.solar.opaque_solar_gains.as_ref();
+        let area = model.setpoints.zone_area.as_ref();
 
         // Per-zone sol-air temperature computed per thermal model path:
         // - 9R4C: South-wall sol-air via Perez model (physics_impl.rs:1977-2020)
@@ -166,7 +166,7 @@ impl InvariantChecker {
             // Issue #1580: previously only 9R4C had a non-uniform t_sol_air;
             // the 5R1C branch was hardcoded to outdoor_temp (causing the
             // 168-violation energy-balance regression).
-            let t_sol_air_zone = match model.thermal_model_type {
+            let t_sol_air_zone = match model.hvac.thermal_model_type {
                 ThermalModelType::NineRFourC => t_sol_air_9r4c[i],
                 _ => t_sol_air_5r1c[i],
             };
@@ -219,15 +219,20 @@ impl InvariantChecker {
             + AsMut<[f64]>
             + Index<usize, Output = f64>,
     {
-        let h_tr_em = model.h_tr_em[i];
-        let h_tr_ms = model.h_tr_ms[i];
-        let h_tr_3 = *model.derived_h_tr_3.as_ref().get(i).unwrap_or(&h_tr_ms);
-        let cm = model.thermal_capacitance[i];
+        let h_tr_em = model.conduction.h_tr_em[i];
+        let h_tr_ms = model.conduction.h_tr_ms[i];
+        let h_tr_3 = *model
+            .conduction
+            .derived_h_tr_3
+            .as_ref()
+            .get(i)
+            .unwrap_or(&h_tr_ms);
+        let cm = model.mass.thermal_capacitance[i];
 
-        let conv_frac = model.convective_fraction;
+        let conv_frac = model.solar.convective_fraction;
         let rad_frac = 1.0 - conv_frac;
-        let sol_dist_to_air = model.solar_distribution_to_air;
-        let solar_beam_to_mass = model.solar_beam_to_mass_fraction;
+        let sol_dist_to_air = model.solar.solar_distribution_to_air;
+        let solar_beam_to_mass = model.solar.solar_beam_to_mass_fraction;
 
         let m_air_frac = rad_frac * sol_dist_to_air;
         let m_sol_frac = solar_beam_to_mass;
@@ -239,7 +244,7 @@ impl InvariantChecker {
         // includes it via the proper sol-air temperature pathway
         // (h_tr_em * (t_sol_air - T_mass_avg)). The InvariantChecker must mirror
         // this distinction exactly.
-        let phi_m = match model.thermal_model_type {
+        let phi_m = match model.hvac.thermal_model_type {
             ThermalModelType::NineRFourC => {
                 load_w * m_air_frac + remaining_sol * m_sol_frac + opaque_sol_w
             }
@@ -248,7 +253,7 @@ impl InvariantChecker {
 
         let storage = cm * (t_mass - t_mass_prev) / dt_seconds;
 
-        match model.thermal_model_type {
+        match model.hvac.thermal_model_type {
             ThermalModelType::NineRFourC => {
                 // BE-implicit lumped update at
                 // physics_impl.rs::step_physics_9r4c:2757-2829.
@@ -257,8 +262,8 @@ impl InvariantChecker {
                 // computation at line 2791-2796:
                 //   T_s = (h_ms·T_m_old + h_is·T_i + phi_st) / (h_ms + h_is + h_me)
                 // phi_st is rebuilt from the same scalars the integrator used.
-                let h_tr_is = model.h_tr_is[i];
-                let h_tr_me = model.h_tr_me[i];
+                let h_tr_is = model.conduction.h_tr_is[i];
+                let h_tr_me = model.mass.h_tr_me[i];
                 let st_int_frac = rad_frac * (1.0 - sol_dist_to_air);
                 let st_sol_frac = 1.0 - solar_beam_to_mass;
                 let phi_st = load_w * st_int_frac + remaining_sol * st_sol_frac;
@@ -279,7 +284,7 @@ impl InvariantChecker {
                 denom * t_mass - numer
             }
             ThermalModelType::FiveROneC => {
-                let t_i_free = model.air_temperatures.as_ref()[i];
+                let t_i_free = model.mass.air_temperatures.as_ref()[i];
                 let cm_dt = cm / dt_seconds;
                 let half_cond = 0.5 * (h_tr_3 + h_tr_em);
                 let alpha = if cm > 0.0 && h_tr_3 > 0.0 && dt_seconds > 0.0 {
@@ -319,7 +324,7 @@ impl InvariantChecker {
     /// Issue #1402 — the 9R4C integrator builds
     /// `t_sol_air_data[i] = sol_air.for_wall(outdoor_temp, wall_irr.total_wm2,
     /// wall_irr.ground_reflected_wm2)` per zone from the South-orientation
-    /// surface irradiance, computed from `model.weather.{hour_of_year, dni,
+    /// surface irradiance, computed from `model.solar.weather.{hour_of_year, dni,
     /// dhi, ghi}` and `model.{latitude_deg, longitude_deg}`. Reading the
     /// integrator's value verbatim requires re-running the solar-position /
     /// surface-irradiance / sol-air chain, which is what this helper does.
@@ -329,7 +334,7 @@ impl InvariantChecker {
     /// invariant check remains well-defined for callers that don't drive
     /// per-timestep weather (e.g. unit tests with synthetic temperature).
     ///
-    /// Returns a `Vec<f64>` of length `model.num_zones` to match the
+    /// Returns a `Vec<f64>` of length `model.hvac.num_zones` to match the
     /// integrator's uniform-value-per-zone layout.
     fn compute_9r4c_t_sol_air<T>(&self, model: &ThermalModel<T>, outdoor_temp: f64) -> Vec<f64>
     where
@@ -339,10 +344,10 @@ impl InvariantChecker {
             + AsMut<[f64]>
             + Index<usize, Output = f64>,
     {
-        let n = model.num_zones;
+        let n = model.hvac.num_zones;
         let fallback = vec![outdoor_temp; n];
 
-        let weather = match model.weather.as_ref() {
+        let weather = match model.solar.weather.as_ref() {
             Some(w) => w,
             None => return fallback,
         };
@@ -350,7 +355,7 @@ impl InvariantChecker {
         // Without a configured site, fall back to outdoor_temp. (lat == 0 &&
         // lon == 0 means the model was never bound to a real location, even
         // if weather is present.)
-        if model.latitude_deg == 0.0 && model.longitude_deg == 0.0 {
+        if model.solar.latitude_deg == 0.0 && model.solar.longitude_deg == 0.0 {
             return fallback;
         }
 
@@ -370,8 +375,8 @@ impl InvariantChecker {
         // Solar position — note `day.min(28)` matches the integrator's guard
         // against month-days indices that would otherwise exceed month length.
         let sun_pos = calculate_solar_position(
-            model.latitude_deg,
-            model.longitude_deg,
+            model.solar.latitude_deg,
+            model.solar.longitude_deg,
             2024,
             month,
             day.min(28),
@@ -420,10 +425,10 @@ impl InvariantChecker {
             + AsMut<[f64]>
             + Index<usize, Output = f64>,
     {
-        let n = model.num_zones;
+        let n = model.hvac.num_zones;
         let fallback = vec![outdoor_temp; n];
 
-        let weather = match model.weather.as_ref() {
+        let weather = match model.solar.weather.as_ref() {
             Some(w) => w,
             None => return fallback,
         };
@@ -444,7 +449,7 @@ impl InvariantChecker {
         );
         let alpha = crate::physics::constants::thermal::ashrae_140::SOLAR_ABSORPTANCE_DEFAULT;
         let sol_air = SolAirTemperature::new(alpha, 0.9, h_c_ext_roof);
-        let opaque_solar_ref = model.opaque_solar_gains.as_ref();
+        let opaque_solar_ref = model.solar.opaque_solar_gains.as_ref();
 
         let mut t_sol_air_vec = Vec::with_capacity(n);
         for opaque_ref in opaque_solar_ref.iter().take(n) {
@@ -507,19 +512,19 @@ impl InvariantChecker {
     {
         self.total_checks += 1;
 
-        let mut modified_loads = model.loads.as_ref().to_vec();
+        let mut modified_loads = model.setpoints.loads.as_ref().to_vec();
         if zone_index < modified_loads.len() {
             modified_loads[zone_index] +=
-                artificial_gain_watts / model.zone_area.as_ref()[zone_index];
+                artificial_gain_watts / model.setpoints.zone_area.as_ref()[zone_index];
         }
 
-        let num_zones = model.num_zones;
-        let temps = model.temperatures.as_ref();
-        let mass_temps = model.mass_temperatures.as_ref();
-        let prev_mass_temps = model.previous_mass_temperatures.as_ref();
-        let area = model.zone_area.as_ref();
-        let solar_gains = model.solar_gains.as_ref();
-        let opaque_solar_gains = model.opaque_solar_gains.as_ref();
+        let num_zones = model.hvac.num_zones;
+        let temps = model.setpoints.temperatures.as_ref();
+        let mass_temps = model.mass.mass_temperatures.as_ref();
+        let prev_mass_temps = model.mass.previous_mass_temperatures.as_ref();
+        let area = model.setpoints.zone_area.as_ref();
+        let solar_gains = model.solar.solar_gains.as_ref();
+        let opaque_solar_gains = model.solar.opaque_solar_gains.as_ref();
 
         // Sol-air per zone — both paths (Issue #1580: 5R1C was hardcoded
         // to outdoor_temp, causing the energy-balance regression).
@@ -530,7 +535,7 @@ impl InvariantChecker {
         let mut zone_imbalances = Vec::with_capacity(num_zones);
 
         for i in 0..num_zones {
-            let t_sol_air_zone = match model.thermal_model_type {
+            let t_sol_air_zone = match model.hvac.thermal_model_type {
                 ThermalModelType::NineRFourC => t_sol_air_9r4c[i],
                 _ => t_sol_air_5r1c[i],
             };

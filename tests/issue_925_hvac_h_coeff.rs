@@ -35,11 +35,11 @@ use fluxion::validation::ashrae_140_cases::ASHRAE140Case;
 /// network. Mirrors the formula used by `compute_zone_hvac_load` and the
 /// inline h_coeff in `step_physics_5r1c`.
 fn h_loss_5r1c(model: &ThermalModel<VectorField>) -> f64 {
-    let h_ve = model.h_ve.as_ref()[0];
-    let h_tr_w = model.h_tr_w.as_ref()[0];
-    let h_tr_is = model.h_tr_is.as_ref()[0];
-    let h_tr_ms = model.h_tr_ms.as_ref()[0];
-    let h_tr_em = model.h_tr_em.as_ref()[0];
+    let h_ve = model.conduction.h_ve.as_ref()[0];
+    let h_tr_w = model.conduction.h_tr_w.as_ref()[0];
+    let h_tr_is = model.conduction.h_tr_is.as_ref()[0];
+    let h_tr_ms = model.conduction.h_tr_ms.as_ref()[0];
+    let h_tr_em = model.conduction.h_tr_em.as_ref()[0];
 
     let denom = h_tr_is * h_tr_ms + h_tr_ms * h_tr_em + h_tr_em * h_tr_is;
     let h_loss_via_mass = if h_tr_is > 0.0 && h_tr_ms > 0.0 && h_tr_em > 0.0 && denom > 0.0 {
@@ -70,11 +70,11 @@ fn issue_925_h_loss_matches_hand_calc_for_case_600() {
     let spec = ASHRAE140Case::Case600.spec();
     let model: ThermalModel<VectorField> = ThermalModel::from_spec(&spec);
 
-    let h_ve = model.h_ve.as_ref()[0];
-    let h_tr_w = model.h_tr_w.as_ref()[0];
-    let h_tr_is = model.h_tr_is.as_ref()[0];
-    let h_tr_ms = model.h_tr_ms.as_ref()[0];
-    let h_tr_em = model.h_tr_em.as_ref()[0];
+    let h_ve = model.conduction.h_ve.as_ref()[0];
+    let h_tr_w = model.conduction.h_tr_w.as_ref()[0];
+    let h_tr_is = model.conduction.h_tr_is.as_ref()[0];
+    let h_tr_ms = model.conduction.h_tr_ms.as_ref()[0];
+    let h_tr_em = model.conduction.h_tr_em.as_ref()[0];
 
     // Direct path: ventilation + window.  (Same for both cases — they
     // share the same envelope and infiltration.)
@@ -138,8 +138,8 @@ fn issue_925_h_loss_is_less_than_old_h_coeff() {
     let spec_600 = ASHRAE140Case::Case600.spec();
     let model_600: ThermalModel<VectorField> = ThermalModel::from_spec(&spec_600);
     let h_loss_600 = h_loss_5r1c(&model_600);
-    let old_h_coeff_600 =
-        model_600.derived_den.as_ref()[0] / (2.0 * model_600.derived_term_rest_1.as_ref()[0]);
+    let old_h_coeff_600 = model_600.conduction.derived_den.as_ref()[0]
+        / (2.0 * model_600.conduction.derived_term_rest_1.as_ref()[0]);
     assert!(
         h_loss_600 < old_h_coeff_600,
         "Case 600: new h_loss ({h_loss_600:.2}) should be < old h_coeff ({old_h_coeff_600:.2})"
@@ -148,8 +148,8 @@ fn issue_925_h_loss_is_less_than_old_h_coeff() {
     let spec_900 = ASHRAE140Case::Case900.spec();
     let model_900: ThermalModel<VectorField> = ThermalModel::from_spec(&spec_900);
     let h_loss_900 = h_loss_5r1c(&model_900);
-    let old_h_coeff_900 =
-        model_900.derived_den.as_ref()[0] / (2.0 * model_900.derived_term_rest_1.as_ref()[0]);
+    let old_h_coeff_900 = model_900.conduction.derived_den.as_ref()[0]
+        / (2.0 * model_900.conduction.derived_term_rest_1.as_ref()[0]);
     assert!(
         h_loss_900 < old_h_coeff_900,
         "Case 900: new h_loss ({h_loss_900:.2}) should be < old h_coeff ({old_h_coeff_900:.2})"

@@ -104,7 +104,7 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         if step_params.use_ai {
             // Record call for wiring validation (Plan 21-10)
             #[cfg(feature = "wiring-tracing")]
-            if let Some(ref tracer) = self.0.tracer {
+            if let Some(ref tracer) = self.0.hvac.tracer {
                 tracer.record_call("predict_loads");
             }
 
@@ -113,10 +113,10 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                 .surrogates
                 .as_deref()
                 .expect("use_ai requires a SurrogateManager")
-                .predict_loads_with_fallback(self.0.temperatures.as_ref())
+                .predict_loads_with_fallback(self.0.setpoints.temperatures.as_ref())
             {
                 Ok(pred) => {
-                    self.0.loads = T::from(VectorField::new(pred));
+                    self.0.setpoints.loads = T::from(VectorField::new(pred));
                 }
                 Err(e) => {
                     // If both ONNX and analytical fail, log error and use analytical mode
@@ -136,7 +136,7 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         }
 
         // 1.5. Add Internal Loads (lighting, equipment, occupancy) - Plan 17-04
-        // Internal loads are added to self.0.loads which will be used by step_physics
+        // Internal loads are added to self.0.setpoints.loads which will be used by step_physics
         let day_of_year = timestep / 24 + 1; // 1-indexed day of year
         let hour = timestep % 24;
         let _day_type = holiday::get_day_type(day_of_year);
@@ -177,14 +177,15 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         // These are added BEFORE step_physics so they're included in energy balance
         if internal_convective > 0.0 || internal_radiative_to_air > 0.0 {
             // Convert Watts to W/m² by dividing by zone_area
-            let loads_slice = self.0.loads.as_mut();
+            let loads_slice = self.0.setpoints.loads.as_mut();
             for (i, &zone_area) in self
                 .0
+                .setpoints
                 .zone_area
                 .as_ref()
                 .iter()
                 .enumerate()
-                .take(self.0.num_zones)
+                .take(self.0.hvac.num_zones)
             {
                 if zone_area > 0.0 {
                     loads_slice[i] += (internal_convective + internal_radiative_to_air) / zone_area;
@@ -194,7 +195,7 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
 
         // Note: internal_radiative_to_mass will be handled in step_physics_5r1c
         // where it's added directly to thermal mass temperature
-        self.0.internal_radiative_to_mass = internal_radiative_to_mass;
+        self.0.solar.internal_radiative_to_mass = internal_radiative_to_mass;
 
         // 2. Call step_physics (pass timestep for ground temperature and dt_seconds)
         self.step_physics(timestep, outdoor_temp, dt_seconds)
@@ -240,11 +241,11 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         // Get window properties for this zone. Issue #1385: copy `window_props` out
         // of `self` so the mutable borrow for `cached_solar_position` doesn't conflict
         // with the immutable borrow that previously held the window pointer.
-        let window_props: WindowProperties = if zone_idx < self.0.window_properties.len() {
-            self.0.window_properties[zone_idx]
+        let window_props: WindowProperties = if zone_idx < self.0.solar.window_properties.len() {
+            self.0.solar.window_properties[zone_idx]
         } else {
             // Fallback to first zone if not specified
-            self.0.window_properties[0]
+            self.0.solar.window_properties[0]
         };
 
         // Convert timestep to date
@@ -255,7 +256,7 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         // per orientation is physically redundant. Pattern matches `cached_solar_position`
         // hoisting in the 9R4C path (Issue #1212). This is computed *before* the
         // `if let Some(zone_surfaces)` block so the mutable borrow for the cache
-        // doesn't conflict with the immutable borrow of `self.0.surfaces` (E0502).
+        // doesn't conflict with the immutable borrow of `self.0.solar.surfaces` (E0502).
         let sun_pos = self.cached_solar_position(timestep, year, month, day, hour);
 
         // Calculate solar gain for each surface in the zone
@@ -280,7 +281,7 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         let alpha_wall = 0.6; // ASHRAE 140 Annex B1-2 (walls stay at 0.6 per spec)
         let re = 1.0 / EXTERIOR_FILM_COEFF_DEFAULT; // 1/18.3 = 0.0546 m²K/W
 
-        if let Some(zone_surfaces) = self.0.surfaces.get(zone_idx) {
+        if let Some(zone_surfaces) = self.0.solar.surfaces.get(zone_idx) {
             // Issue #2770: Stack-allocated per-orientation area aggregator.
             //
             // Replaces a per-call `HashMap::new()` that allocated ~87 600 times
@@ -503,31 +504,35 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         radiative_gain_watts: f64,
     ) -> (f64, f64) {
         // Get surfaces for this zone
-        if zone_idx >= self.0.surfaces.len() || self.0.surfaces[zone_idx].is_empty() {
+        if zone_idx >= self.0.solar.surfaces.len() || self.0.solar.surfaces[zone_idx].is_empty() {
             // Fallback to default distribution if no surfaces defined
             // Use solar_distribution_to_air for diffuse, solar_beam_to_mass_fraction for beam
-            let radiative_to_surface = radiative_gain_watts * self.0.solar_distribution_to_air;
-            let radiative_to_mass = radiative_gain_watts * (1.0 - self.0.solar_distribution_to_air);
+            let radiative_to_surface =
+                radiative_gain_watts * self.0.solar.solar_distribution_to_air;
+            let radiative_to_mass =
+                radiative_gain_watts * (1.0 - self.0.solar.solar_distribution_to_air);
             return (radiative_to_surface, radiative_to_mass);
         }
 
-        let surfaces = &self.0.surfaces[zone_idx];
+        let surfaces = &self.0.solar.surfaces[zone_idx];
         let a_at: f64 = surfaces.iter().map(|s| s.area).sum();
 
         if a_at == 0.0 {
             // Fallback to default distribution if total area is zero
-            let radiative_to_surface = radiative_gain_watts * self.0.solar_distribution_to_air;
-            let radiative_to_mass = radiative_gain_watts * (1.0 - self.0.solar_distribution_to_air);
+            let radiative_to_surface =
+                radiative_gain_watts * self.0.solar.solar_distribution_to_air;
+            let radiative_to_mass =
+                radiative_gain_watts * (1.0 - self.0.solar.solar_distribution_to_air);
             return (radiative_to_surface, radiative_to_mass);
         }
 
         // ISO 13790 Detailed Radiation Network Distribution
         // 1. Effective mass area (Am) is derived from h_tr_ms = 9.1 * Am
-        let h_ms_val = self.0.h_tr_ms.as_ref()[zone_idx];
+        let h_ms_val = self.0.conduction.h_tr_ms.as_ref()[zone_idx];
         let a_m = h_ms_val / 9.1;
 
         // 2. Window conductance for correction (simplified)
-        let h_tr_w = self.0.h_tr_w.as_ref()[zone_idx];
+        let h_tr_w = self.0.conduction.h_tr_w.as_ref()[zone_idx];
 
         // 3. Distribution factors
         // Fraction to mass (phi_m)
@@ -553,7 +558,7 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         &self,
         radiative_gain: T,
     ) -> (T, T) {
-        let num_zones = self.0.num_zones;
+        let num_zones = self.0.hvac.num_zones;
         let mut f_st_vec = Vec::with_capacity(num_zones);
         let mut f_m_vec = Vec::with_capacity(num_zones);
 
@@ -714,15 +719,15 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
 
         if use_analytical_gains {
             // Try to use weather data for solar gain calculation (Issue #278)
-            if let Some(weather) = self.0.weather.clone() {
+            if let Some(weather) = self.0.solar.weather.clone() {
                 // Calculate solar gain for each zone using weather data
-                let mut zone_solar_gains = Vec::with_capacity(self.0.num_zones);
-                let mut zone_opaque_gains = Vec::with_capacity(self.0.num_zones);
+                let mut zone_solar_gains = Vec::with_capacity(self.0.hvac.num_zones);
+                let mut zone_opaque_gains = Vec::with_capacity(self.0.hvac.num_zones);
 
-                for zone_idx in 0..self.0.num_zones {
+                for zone_idx in 0..self.0.hvac.num_zones {
                     let (window_gain_watts, opaque_gain_watts) =
                         self.calculate_zone_solar_gain(zone_idx, timestep, &weather, dt_seconds);
-                    let floor_area = self.0.zone_area.as_ref()[zone_idx];
+                    let floor_area = self.0.setpoints.zone_area.as_ref()[zone_idx];
                     let solar_gain_normalized = window_gain_watts / floor_area;
                     let opaque_gain_normalized = opaque_gain_watts / floor_area;
                     zone_solar_gains.push(solar_gain_normalized);
@@ -737,18 +742,18 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                 // Apply zone-specific solar gains
                 // Issue #901 perf: consume the freshly-built Vec directly into VectorField::new
                 // rather than cloning first (the variables are not used after this point).
-                self.0.solar_gains = T::from(VectorField::new(zone_solar_gains));
-                self.0.opaque_solar_gains = T::from(VectorField::new(zone_opaque_gains));
+                self.0.solar.solar_gains = T::from(VectorField::new(zone_solar_gains));
+                self.0.solar.opaque_solar_gains = T::from(VectorField::new(zone_opaque_gains));
             } else {
                 // Fallback to trivial sine-wave approximation if no weather data
                 let hour_of_day = timestep % 24;
                 let daily_cycle = get_daily_cycle()[hour_of_day];
                 let total_gain = (50.0 * daily_cycle).max(0.0);
-                self.0.solar_gains = self.0.temperatures.constant_like(total_gain);
-                self.0.opaque_solar_gains = self.0.temperatures.constant_like(0.0);
+                self.0.solar.solar_gains = self.0.setpoints.temperatures.constant_like(total_gain);
+                self.0.solar.opaque_solar_gains = self.0.setpoints.temperatures.constant_like(0.0);
             }
         } else {
-            self.0.loads = self.0.temperatures.constant_like(0.0);
+            self.0.setpoints.loads = self.0.setpoints.temperatures.constant_like(0.0);
         }
     }
 
@@ -760,7 +765,8 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
     ///
     /// * `temperature` - Constant ground temperature (°C)
     pub fn set_ground_temp(&mut self, temperature: f64) {
-        self.0.ground_temperature = Box::new(ConstantGroundTemperature::new(temperature));
+        self.0.conduction.ground_temperature =
+            Box::new(ConstantGroundTemperature::new(temperature));
     }
 
     /// Set a dynamic ground temperature model using the Kusuda formula.
@@ -782,7 +788,7 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         depth: f64,
         diffusivity: f64,
     ) {
-        self.0.ground_temperature = Box::new(DynamicGroundTemperature::new(
+        self.0.conduction.ground_temperature = Box::new(DynamicGroundTemperature::new(
             t_mean,
             t_amplitude,
             depth,
@@ -798,7 +804,7 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
     ///
     /// * `ground_temp` - Custom ground temperature model implementing GroundTemperature trait
     pub fn with_ground_temperature(&mut self, ground_temp: Box<dyn GroundTemperature>) {
-        self.0.ground_temperature = ground_temp;
+        self.0.conduction.ground_temperature = ground_temp;
     }
 
     /// Get the ground temperature at a specific timestep.
@@ -811,7 +817,10 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
     ///
     /// Ground temperature (°C)
     pub fn ground_temperature_at(&self, timestep: usize) -> f64 {
-        self.0.ground_temperature.ground_temperature(timestep)
+        self.0
+            .conduction
+            .ground_temperature
+            .ground_temperature(timestep)
     }
 
     /// Solve coupled zone temperatures using matrix-based approach (Issue #381)
@@ -874,13 +883,17 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
     /// Free-floating zone temperature (°C)
     pub fn calculate_free_float_temperature(&self, timestep: usize, outdoor_temp: f64) -> f64 {
         // Use the same calculation as in step_physics
-        let t_g = self.0.ground_temperature.ground_temperature(timestep);
+        let t_g = self
+            .0
+            .conduction
+            .ground_temperature
+            .ground_temperature(timestep);
 
         // --- Dynamic Ventilation (Night Ventilation) ---
         let hour_of_day = (timestep % 24) as u8;
 
         // Combine fractions to avoid multiple intermediate VectorField allocations
-        let conv_frac = self.0.convective_fraction;
+        let conv_frac = self.0.solar.convective_fraction;
         let rad_frac = 1.0 - conv_frac;
         // Internal radiative gains split per ISO 13790 Section C.4 Eq. C.5/C.6:
         // Eq. C.5 (radiative-to-surface): phi_st = (1 - F_sup) * phi_int_rad
@@ -900,26 +913,26 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         //
         // st_sol_frac: Solar gains to surface (fraction of solar that goes to surface)
         // m_sol_frac: Solar gains to mass (fraction of solar that goes to mass)
-        let st_int_frac = rad_frac * (1.0 - self.0.solar_distribution_to_air);
-        let m_air_frac = rad_frac * self.0.solar_distribution_to_air;
-        let st_sol_frac = 1.0 - self.0.solar_beam_to_mass_fraction;
-        let m_sol_frac = self.0.solar_beam_to_mass_fraction;
+        let st_int_frac = rad_frac * (1.0 - self.0.solar.solar_distribution_to_air);
+        let m_air_frac = rad_frac * self.0.solar.solar_distribution_to_air;
+        let st_sol_frac = 1.0 - self.0.solar.solar_beam_to_mass_fraction;
+        let m_sol_frac = self.0.solar.solar_beam_to_mass_fraction;
 
-        let loads_ref = self.0.loads.as_ref();
-        let solar_ref = self.0.solar_gains.as_ref();
-        let opaque_ref = self.0.opaque_solar_gains.as_ref();
-        let area_ref = self.0.zone_area.as_ref();
+        let loads_ref = self.0.setpoints.loads.as_ref();
+        let solar_ref = self.0.solar.solar_gains.as_ref();
+        let opaque_ref = self.0.solar.opaque_solar_gains.as_ref();
+        let area_ref = self.0.setpoints.zone_area.as_ref();
 
-        let mut phi_ia_data = Vec::with_capacity(self.0.num_zones);
-        let mut phi_st_data = Vec::with_capacity(self.0.num_zones);
-        let mut phi_m_data = Vec::with_capacity(self.0.num_zones);
+        let mut phi_ia_data = Vec::with_capacity(self.0.hvac.num_zones);
+        let mut phi_st_data = Vec::with_capacity(self.0.hvac.num_zones);
+        let mut phi_m_data = Vec::with_capacity(self.0.hvac.num_zones);
 
-        for i in 0..self.0.num_zones {
+        for i in 0..self.0.hvac.num_zones {
             let load_w = loads_ref[i] * area_ref[i];
             let sol_w = solar_ref[i] * area_ref[i];
             let opaque_sol_w = opaque_ref[i] * area_ref[i];
 
-            let sol_to_air = sol_w * self.0.solar_distribution_to_air;
+            let sol_to_air = sol_w * self.0.solar.solar_distribution_to_air;
             let remaining_sol = sol_w - sol_to_air;
 
             phi_ia_data.push(load_w * conv_frac + sol_to_air);
@@ -934,7 +947,7 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         // Simplified 5R1C calculation using CTA
         // Include ground coupling through floor
         // Use pre-computed cached values to avoid redundant allocations
-        let h_ext_base = &self.0.derived_h_ext;
+        let h_ext_base = &self.0.conduction.derived_h_ext;
 
         // Night ventilation is modeled as a separate heat term in the zone energy balance,
         // NOT as a modification to h_ext (which represents building envelope conductance).
@@ -942,7 +955,7 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         // h_ext modification was incorrect: night ventilation cools zone through direct air supply.
         let h_ext = h_ext_base;
 
-        let term_rest_1 = &self.0.derived_term_rest_1;
+        let term_rest_1 = &self.0.conduction.derived_term_rest_1;
 
         // Dynamic den must include derived_ground_coeff
         // den = h_ms_is_prod + term_rest_1 * (h_ext + h_tr_floor + h_tr_iz)
@@ -956,36 +969,41 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         // double-counting once the ISO 13790 `h_tr_ms` was raised to its standard
         // value (~1.3 kW/K). Mass cooling under night ventilation is now mediated
         // entirely by air-side h_ve and the much-stronger air-mass coupling.
-        if let Some(ref night_vent) = self.0.night_ventilation {
+        if let Some(ref night_vent) = self.0.hvac.night_ventilation {
             if night_vent.is_active_at_hour(hour_of_day) {
                 let _ = night_vent.fan_capacity;
             }
         }
 
-        let den = self.0.derived_den.clone();
+        let den = self.0.conduction.derived_den.clone();
 
         // Use mass_temperatures to match step_physics_5r1c
         let num_tm = self
             .0
+            .conduction
             .derived_h_ms_is_prod
-            .zip_with(&self.0.mass_temperatures, |a, b| a * b);
-        let num_phi_st = self.0.h_tr_is.zip_with(&phi_st, |a, b| a * b);
-        let num_phi_m = self.0.h_tr_ms.zip_with(&phi_m_with_vent, |a, b| a * b);
+            .zip_with(&self.0.mass.mass_temperatures, |a, b| a * b);
+        let num_phi_st = self.0.conduction.h_tr_is.zip_with(&phi_st, |a, b| a * b);
+        let num_phi_m = self
+            .0
+            .conduction
+            .h_tr_ms
+            .zip_with(&phi_m_with_vent, |a, b| a * b);
 
         // Inter-zone heat transfer (with radiative component - Issue #302)
         // Optimized: eliminate Vec allocation by adding directly to phi_ia buffer
-        let num_zones = self.0.num_zones;
+        let num_zones = self.0.hvac.num_zones;
 
         // Get inter-zone heat transfer coefficients
-        let h_iz_vec = self.0.h_tr_iz.as_ref();
-        let h_iz_rad_vec = self.0.h_tr_iz_rad.as_ref();
+        let h_iz_vec = self.0.conduction.h_tr_iz.as_ref();
+        let h_iz_rad_vec = self.0.conduction.h_tr_iz_rad.as_ref();
 
         // Issue #381: Use matrix-based solver for simultaneous boundary conditions
         // Optimization: Replace O(N^2) nested loop with O(N) grouping solver from step_physics.
         // Returns Option<Vec> to prevent allocating zero-filled VectorFields when uncoupled.
         let inter_zone_heat: Option<Vec<f64>> = self.solve_coupled_zone_temperatures(
             num_zones,
-            self.0.temperatures.as_ref(),
+            self.0.setpoints.temperatures.as_ref(),
             h_iz_vec,
             h_iz_rad_vec,
         );
@@ -1002,7 +1020,7 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         // Re-enabled with correct formula: num_rest = term_rest_1 * (phi_ia + h_ext * T_ext + h_tr_floor * T_ground)
         let num_rest = term_rest_1.clone() * (h_ext.clone() * outdoor_temp + phi_ia_with_iz)
             + num_phi_m
-            + self.0.h_tr_floor.clone() * t_g;
+            + self.0.conduction.h_tr_floor.clone() * t_g;
 
         let t_i_free = (num_tm + num_phi_st + num_rest) / den;
 
@@ -1033,8 +1051,8 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         safety_factor: f64,
     ) -> (f64, f64) {
         // Save current state
-        let original_temperatures = self.0.temperatures.clone();
-        let original_mass_temperatures = self.0.mass_temperatures.clone();
+        let original_temperatures = self.0.setpoints.temperatures.clone();
+        let original_mass_temperatures = self.0.mass.mass_temperatures.clone();
 
         // Run heating design day simulation (24 hours)
         self.reset_peak_power();
@@ -1052,8 +1070,8 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         self.reset_all_energy_tracking();
 
         // Reset temperatures to initial state for cooling simulation
-        self.0.temperatures = original_temperatures.clone();
-        self.0.mass_temperatures = original_mass_temperatures.clone();
+        self.0.setpoints.temperatures = original_temperatures.clone();
+        self.0.mass.mass_temperatures = original_mass_temperatures.clone();
 
         for (hour, weather) in cooling_design_hours.iter().enumerate() {
             self.set_weather(weather.clone());
@@ -1063,8 +1081,8 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         let peak_cooling_w = self.get_peak_cooling_power_kw() * 1000.0;
 
         // Restore original temperatures
-        self.0.temperatures = original_temperatures;
-        self.0.mass_temperatures = original_mass_temperatures;
+        self.0.setpoints.temperatures = original_temperatures;
+        self.0.mass.mass_temperatures = original_mass_temperatures;
 
         // Apply safety factor
         let heating_capacity = peak_heating_w * safety_factor;
@@ -1319,21 +1337,21 @@ mod tests {
     fn test_calculate_free_float_analytical_steady_state() {
         let mut model = ThermalModel::<VectorField>::new(1);
         let zero = VectorField::from_scalar(0.0, 1);
-        model.thermal_capacitance = zero.clone();
-        model.air_thermal_capacitance = zero.clone();
-        model.loads = zero.clone();
-        model.solar_gains = zero.clone();
-        model.opaque_solar_gains = zero.clone();
-        model.mass_temperatures = VectorField::from_scalar(25.0, 1);
-        model.temperatures = VectorField::from_scalar(25.0, 1);
+        model.mass.thermal_capacitance = zero.clone();
+        model.mass.air_thermal_capacitance = zero.clone();
+        model.setpoints.loads = zero.clone();
+        model.solar.solar_gains = zero.clone();
+        model.solar.opaque_solar_gains = zero.clone();
+        model.mass.mass_temperatures = VectorField::from_scalar(25.0, 1);
+        model.setpoints.temperatures = VectorField::from_scalar(25.0, 1);
         model.set_ground_temp(20.0);
         let outdoor = 30.0;
         let t_free = model.calculate_free_float_temperature(0, outdoor);
-        let h_ms_is_prod = model.derived_h_ms_is_prod.as_ref()[0];
-        let term_rest_1 = model.derived_term_rest_1.as_ref()[0];
-        let h_ext = model.derived_h_ext.as_ref()[0];
-        let h_tr_floor = model.h_tr_floor.as_ref()[0];
-        let den = model.derived_den.as_ref()[0];
+        let h_ms_is_prod = model.conduction.derived_h_ms_is_prod.as_ref()[0];
+        let term_rest_1 = model.conduction.derived_term_rest_1.as_ref()[0];
+        let h_ext = model.conduction.derived_h_ext.as_ref()[0];
+        let h_tr_floor = model.conduction.h_tr_floor.as_ref()[0];
+        let den = model.conduction.derived_den.as_ref()[0];
         let expected =
             (h_ms_is_prod * 25.0 + term_rest_1 * h_ext * outdoor + h_tr_floor * 20.0) / den;
         assert!(
@@ -1350,11 +1368,11 @@ mod tests {
         let mut model = ThermalModel::<VectorField>::new(1);
         let zero = VectorField::from_scalar(0.0, 1);
         // tiny thermal mass avoids div-by-zero in ExplicitEuler (cm<500 threshold)
-        model.thermal_capacitance = VectorField::from_scalar(1.0, 1);
-        model.air_thermal_capacitance = zero.clone();
-        model.loads = zero.clone();
-        model.solar_gains = zero.clone();
-        model.opaque_solar_gains = zero.clone();
+        model.mass.thermal_capacitance = VectorField::from_scalar(1.0, 1);
+        model.mass.air_thermal_capacitance = zero.clone();
+        model.setpoints.loads = zero.clone();
+        model.solar.solar_gains = zero.clone();
+        model.solar.opaque_solar_gains = zero.clone();
         model.set_ground_temp(10.0);
         let mut clone = model.clone();
         let step_params = StepParameters {

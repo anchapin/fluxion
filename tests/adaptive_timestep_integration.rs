@@ -327,7 +327,12 @@ fn test_thermal_model_time_constant_estimation() {
     let tau_900 = model_900.estimate_time_constant_hours();
 
     // Issue #894: derived_h_tr_3 must be computed (was 0.0 before fix)
-    let h_tr_3_0 = *model_900.derived_h_tr_3.as_ref().get(0).unwrap_or(&0.0);
+    let h_tr_3_0 = *model_900
+        .conduction
+        .derived_h_tr_3
+        .as_ref()
+        .get(0)
+        .unwrap_or(&0.0);
     assert!(
         h_tr_3_0 > 1.0,
         "Issue #894: derived_h_tr_3 must be > 1 W/K (air-to-mass bottleneck), got {}",

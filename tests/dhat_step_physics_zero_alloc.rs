@@ -9,7 +9,7 @@
 //! per-step allocation that #2756 does NOT remove.
 //!
 //! ## What this catches
-//! A regression that re-introduces `PhysicsScratch*rYc::new(self.0.num_zones)`
+//! A regression that re-introduces `PhysicsScratch*rYc::new(self.0.hvac.num_zones)`
 //! (or any fresh per-step `Vec`/`SmallVec::from_elem` for scratch) inside
 //! `step_physics_5r1c/6r2c/9r4c`. Each such call adds ~8 heap blocks ×
 //! `STEADY_STEPS` to the delta and trips the budget.
@@ -108,14 +108,14 @@ const STEADY_BLOCKS_BUDGET: u64 = 5_300;
 /// per-timestep delta on top of it.
 fn create_multizone_model() -> ThermalModel<VectorField> {
     let mut model = ThermalModel::<VectorField>::new(NUM_ZONES);
-    model.window_u_value = 1.5;
-    model.heating_setpoint = 20.0;
-    model.cooling_setpoint = 26.0;
-    model.temperatures = VectorField::from_scalar(20.0, NUM_ZONES);
-    model.mass_temperatures = VectorField::from_scalar(20.0, NUM_ZONES);
+    model.solar.window_u_value = 1.5;
+    model.setpoints.heating_setpoint = 20.0;
+    model.setpoints.cooling_setpoint = 26.0;
+    model.setpoints.temperatures = VectorField::from_scalar(20.0, NUM_ZONES);
+    model.mass.mass_temperatures = VectorField::from_scalar(20.0, NUM_ZONES);
 
     let wp = WindowProperties::double_clear(8.0);
-    model.window_properties = vec![wp; NUM_ZONES];
+    model.solar.window_properties = vec![wp; NUM_ZONES];
 
     let surfaces_per_zone: Vec<Vec<WallSurface>> = (0..NUM_ZONES)
         .map(|_| {
@@ -128,9 +128,9 @@ fn create_multizone_model() -> ThermalModel<VectorField> {
             ]
         })
         .collect();
-    model.surfaces = surfaces_per_zone;
+    model.solar.surfaces = surfaces_per_zone;
 
-    model.zone_area = VectorField::from_scalar(50.0, NUM_ZONES);
+    model.setpoints.zone_area = VectorField::from_scalar(50.0, NUM_ZONES);
 
     model
 }
@@ -154,7 +154,7 @@ fn step_physics_steady_state_alloc_budget() {
     // every other reuse buffer to steady-state capacity. Fixed weather hour so
     // the solar-position cache does not grow during the probe.
     for step in 0..WARMUP_STEPS {
-        model.weather = Some(midday_weather(12));
+        model.solar.weather = Some(midday_weather(12));
         model.step_physics(step, 30.0, 3600.0);
     }
 
@@ -162,7 +162,7 @@ fn step_physics_steady_state_alloc_budget() {
 
     // Steady-state probe: the delta here is bounded by STEADY_BLOCKS_BUDGET.
     for step in 0..STEADY_STEPS {
-        model.weather = Some(midday_weather(12));
+        model.solar.weather = Some(midday_weather(12));
         model.step_physics(WARMUP_STEPS + step, 30.0, 3600.0);
     }
 

@@ -13,7 +13,7 @@ fn test_night_ventilation_activation() {
 
     // Set up night ventilation (active from 22:00 to 07:00)
     let night_vent = NightVentilation::new(1700.0, 22, 7);
-    model.night_ventilation = Some(night_vent);
+    model.hvac.night_ventilation = Some(night_vent);
 
     // Test at 12:00 (inactive)
     let step_params_inactive = StepParameters {
@@ -46,10 +46,10 @@ fn test_night_ventilation_activation() {
 fn test_multi_zone_initialization() {
     let mut model = ThermalModel::<VectorField>::new(2);
     let surrogates = SurrogateManager::default();
-    assert_eq!(model.num_zones, 2);
+    assert_eq!(model.hvac.num_zones, 2);
 
     // Set inter-zone conductance
-    model.h_tr_iz = VectorField::new(vec![10.0, 10.0]);
+    model.conduction.h_tr_iz = VectorField::new(vec![10.0, 10.0]);
 
     // Run a step
     let step_params = StepParameters {
@@ -102,8 +102,8 @@ fn test_ctf_integration() {
     let config = CTFSolverConfig::new(3600.0, 10);
     let solver = CTFSolver::new(coeffs, config);
 
-    model.conduction.ctf_solvers = vec![solver];
-    model.conduction.ctf_enabled = true;
+    model.conduction.backend.ctf_solvers = vec![solver];
+    model.conduction.backend.ctf_enabled = true;
 
     // Run a step (should use CTF solver)
     let step_params = StepParameters {
@@ -124,7 +124,7 @@ fn test_fd_integration() {
     let surrogates = SurrogateManager::default();
 
     // Enable FD solver
-    model.conduction.fd_enabled = true;
+    model.conduction.backend.fd_enabled = true;
 
     // Run a step (should use FD solver)
     let step_params = StepParameters {
@@ -164,7 +164,7 @@ fn test_hvac_equipment_integration() {
 
     // Create heat pump equipment
     let hp = HeatPump::new("HP-1".to_string(), 5000.0, 5000.0, 3.0, 3.0);
-    model.hvac_equipment = Some(AnyEquipment::HeatPump(hp));
+    model.hvac.hvac_equipment = Some(AnyEquipment::HeatPump(hp));
 
     // Run a step
     let step_params = StepParameters {

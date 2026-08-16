@@ -78,9 +78,9 @@ fn test_iso_hvac_coefficient_case_600_is_in_band() {
     let model = ThermalModel::<VectorField>::from_spec(&spec);
 
     let zone_idx = 0;
-    let h_tr_is = model.0.h_tr_is.as_ref()[zone_idx];
-    let h_tr_ms = model.0.h_tr_ms.as_ref()[zone_idx];
-    let h_tr_w = model.0.h_tr_w.as_ref()[zone_idx];
+    let h_tr_is = model.0.conduction.h_tr_is.as_ref()[zone_idx];
+    let h_tr_ms = model.0.conduction.h_tr_ms.as_ref()[zone_idx];
+    let h_tr_w = model.0.conduction.h_tr_w.as_ref()[zone_idx];
 
     let h_tr_1 = if h_tr_is + h_tr_ms > 0.0 {
         h_tr_is * h_tr_ms / (h_tr_is + h_tr_ms)
@@ -102,9 +102,9 @@ fn test_iso_hvac_coefficient_case_600_is_in_band() {
     // Cross-check: h_coeff must strictly exceed the old Norton equivalent for
     // the same building. If this fails, the formula regressed to the
     // undersizing behaviour documented in #1457.
-    let h_tr_em = model.0.h_tr_em.as_ref()[zone_idx];
-    let h_ve = model.0.h_ve.as_ref()[zone_idx];
-    let h_tr_floor = model.0.h_tr_floor.as_ref()[zone_idx];
+    let h_tr_em = model.0.conduction.h_tr_em.as_ref()[zone_idx];
+    let h_ve = model.0.conduction.h_ve.as_ref()[zone_idx];
+    let h_tr_floor = model.0.conduction.h_tr_floor.as_ref()[zone_idx];
     let h_ms_em_series = h_tr_ms * h_tr_em / (h_tr_ms + h_tr_em);
     let surface_to_boundary = h_tr_w + h_ms_em_series + h_tr_floor;
     let h_is_to_boundary = h_tr_is * surface_to_boundary / (h_tr_is + surface_to_boundary);
@@ -124,9 +124,9 @@ fn test_iso_hvac_coefficient_case_610_in_band() {
     let model = ThermalModel::<VectorField>::from_spec(&spec);
 
     let zone_idx = 0;
-    let h_tr_is = model.0.h_tr_is.as_ref()[zone_idx];
-    let h_tr_ms = model.0.h_tr_ms.as_ref()[zone_idx];
-    let h_tr_w = model.0.h_tr_w.as_ref()[zone_idx];
+    let h_tr_is = model.0.conduction.h_tr_is.as_ref()[zone_idx];
+    let h_tr_ms = model.0.conduction.h_tr_ms.as_ref()[zone_idx];
+    let h_tr_w = model.0.conduction.h_tr_w.as_ref()[zone_idx];
 
     let h_tr_1 = h_tr_is * h_tr_ms / (h_tr_is + h_tr_ms);
     let h_coeff_iso = h_tr_1 + h_tr_w;
@@ -157,12 +157,12 @@ fn test_iso_hvac_formula_does_not_regress_to_norton() {
     for (name, spec) in cases.iter() {
         let model = ThermalModel::<VectorField>::from_spec(spec);
         let zone_idx = 0;
-        let h_tr_is = model.0.h_tr_is.as_ref()[zone_idx];
-        let h_tr_ms = model.0.h_tr_ms.as_ref()[zone_idx];
-        let h_tr_w = model.0.h_tr_w.as_ref()[zone_idx];
-        let h_tr_em = model.0.h_tr_em.as_ref()[zone_idx];
-        let h_ve = model.0.h_ve.as_ref()[zone_idx];
-        let h_tr_floor = model.0.h_tr_floor.as_ref()[zone_idx];
+        let h_tr_is = model.0.conduction.h_tr_is.as_ref()[zone_idx];
+        let h_tr_ms = model.0.conduction.h_tr_ms.as_ref()[zone_idx];
+        let h_tr_w = model.0.conduction.h_tr_w.as_ref()[zone_idx];
+        let h_tr_em = model.0.conduction.h_tr_em.as_ref()[zone_idx];
+        let h_ve = model.0.conduction.h_ve.as_ref()[zone_idx];
+        let h_tr_floor = model.0.conduction.h_tr_floor.as_ref()[zone_idx];
 
         let h_tr_1 = h_tr_is * h_tr_ms / (h_tr_is + h_tr_ms);
         let h_coeff_iso = h_tr_1 + h_tr_w;

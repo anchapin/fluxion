@@ -91,18 +91,18 @@ fn simulate_case_with_weather(
 
     for step in 0..8760 {
         let weather_data = weather.get_hourly_data(step).unwrap();
-        model.weather = Some(weather_data.clone());
+        model.solar.weather = Some(weather_data.clone());
         model.step_physics(step, weather_data.dry_bulb_temp, 3600.0);
 
-        if let Some(&zone_temp) = model.temperatures.as_slice().first() {
+        if let Some(&zone_temp) = model.setpoints.temperatures.as_slice().first() {
             free_float_min = free_float_min.min(zone_temp);
             free_float_max = free_float_max.max(zone_temp);
         }
     }
 
     SimulationOutput {
-        annual_heating_kwh: model.annual_heating_energy,
-        annual_cooling_kwh: model.annual_cooling_energy,
+        annual_heating_kwh: model.hvac.annual_heating_energy,
+        annual_cooling_kwh: model.hvac.annual_cooling_energy,
         free_float_min_temp: free_float_min,
         free_float_max_temp: free_float_max,
     }
@@ -331,11 +331,11 @@ fn test_climate_energy_balance_case600() {
 
         for step in 0..8760 {
             let weather_data = weather.get_hourly_data(step).unwrap();
-            model.weather = Some(weather_data.clone());
+            model.solar.weather = Some(weather_data.clone());
             model.step_physics(step, weather_data.dry_bulb_temp, 3600.0);
         }
 
-        let annual_hvac = model.annual_heating_energy + model.annual_cooling_energy;
+        let annual_hvac = model.hvac.annual_heating_energy + model.hvac.annual_cooling_energy;
         let annual_solar_gain = 144.0; // Approximate annual solar gain per ASHRAE 140 reference
         let annual_internal_gain = 200.0 * 8760.0 / 1000.0; // 200W continuous in kWh
         let net_gain = annual_solar_gain + annual_internal_gain;

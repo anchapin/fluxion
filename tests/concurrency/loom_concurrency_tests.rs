@@ -353,7 +353,7 @@ mod loom_tests {
             let t1 = thread::spawn(move || {
                 let mut m = m1.lock().unwrap();
                 // Mutate the shared HVAC schedule (per-model, per all zones).
-                m.heating_schedule.fill_range(0, 12, 1.0);
+                m.setpoints.heating_schedule.fill_range(0, 12, 1.0);
                 let energy = m.step_physics(0, 10.0, 3600.0);
                 assert!(energy.is_finite());
                 let mut c = c1.lock().unwrap();
@@ -364,7 +364,7 @@ mod loom_tests {
             let c2 = StdArc::clone(&step_counter);
             let t2 = thread::spawn(move || {
                 let mut m = m2.lock().unwrap();
-                m.cooling_schedule.fill_range(12, 24, 1.0);
+                m.setpoints.cooling_schedule.fill_range(12, 24, 1.0);
                 let energy = m.step_physics(0, 5.0, 3600.0);
                 assert!(energy.is_finite());
                 let mut c = c2.lock().unwrap();
@@ -438,7 +438,7 @@ mod loom_tests {
             // Seeder: write initial conductance so readers see a non-zero baseline.
             {
                 let mut m = model.lock().unwrap();
-                let h_iz = m.h_tr_iz.as_mut_slice();
+                let h_iz = m.conduction.h_tr_iz.as_mut_slice();
                 h_iz[0] = 5.0;
                 h_iz[1] = 5.0;
             }
@@ -446,7 +446,7 @@ mod loom_tests {
             let m_writer = StdArc::clone(&model);
             let writer = thread::spawn(move || {
                 let mut m = m_writer.lock().unwrap();
-                let h_iz = m.h_tr_iz.as_mut_slice();
+                let h_iz = m.conduction.h_tr_iz.as_mut_slice();
                 // Toggle the inter-zone conductance to a different value;
                 // any partial-write would corrupt subsequent reads.
                 h_iz[0] = 7.5;
@@ -462,7 +462,7 @@ mod loom_tests {
                 let mut observed = Vec::new();
                 for _ in 0..4 {
                     let m = m_reader.lock().unwrap();
-                    let h_iz = m.h_tr_iz.as_ref();
+                    let h_iz = m.conduction.h_tr_iz.as_ref();
                     observed.push((h_iz[0], h_iz[1]));
                 }
                 // Either the initial 5.0 pair or the post-write 7.5 pair —
@@ -480,7 +480,7 @@ mod loom_tests {
             // Post-condition: regardless of interleaving, h_tr_iz must be
             // exactly the writer's value (5.0 before, 7.5 after writer runs).
             let m = model.lock().unwrap();
-            let final_h_iz = m.h_tr_iz.as_ref();
+            let final_h_iz = m.conduction.h_tr_iz.as_ref();
             assert!(final_h_iz[0] == 5.0 || final_h_iz[0] == 7.5);
             assert_eq!(final_h_iz[0], final_h_iz[1]);
         });
@@ -522,7 +522,7 @@ mod loom_tests {
             // finite and well-formed (len == num_zones).
             let m = model.lock().unwrap();
             let zone_energies = m.get_zone_energies_kwh();
-            assert_eq!(zone_energies.len(), m.num_zones);
+            assert_eq!(zone_energies.len(), m.hvac.num_zones);
             assert!(
                 zone_energies.iter().all(|e| e.is_finite()),
                 "per-zone energies must be finite, got {:?}",
@@ -1507,9 +1507,15 @@ fn test_two_zone_concurrent_step_with_shared_hvac_schedule_baseline() {
             for step in 0..3 {
                 let mut model_guard = m.lock().unwrap();
                 if thread_id == 0 {
-                    model_guard.heating_schedule.fill_range(0, 12, 1.0);
+                    model_guard
+                        .setpoints
+                        .heating_schedule
+                        .fill_range(0, 12, 1.0);
                 } else {
-                    model_guard.cooling_schedule.fill_range(12, 24, 1.0);
+                    model_guard
+                        .setpoints
+                        .cooling_schedule
+                        .fill_range(12, 24, 1.0);
                 }
                 let energy = model_guard.step_physics(step, 10.0, 3600.0);
                 assert!(energy.is_finite(), "energy must be finite");
@@ -1597,7 +1603,7 @@ fn test_shared_inter_zone_conductance_concurrent_steps_baseline() {
     // Seed the conductance.
     {
         let mut m = model.lock().unwrap();
-        let h_iz = m.h_tr_iz.as_mut_slice();
+        let h_iz = m.conduction.h_tr_iz.as_mut_slice();
         h_iz[0] = 5.0;
         h_iz[1] = 5.0;
     }
@@ -1605,7 +1611,7 @@ fn test_shared_inter_zone_conductance_concurrent_steps_baseline() {
     let m_writer = StdArc::clone(&model);
     let writer = thread::spawn(move || {
         let mut m = m_writer.lock().unwrap();
-        let h_iz = m.h_tr_iz.as_mut_slice();
+        let h_iz = m.conduction.h_tr_iz.as_mut_slice();
         h_iz[0] = 7.5;
         h_iz[1] = 7.5;
         let energy = m.step_physics(0, 10.0, 3600.0);
@@ -1617,7 +1623,7 @@ fn test_shared_inter_zone_conductance_concurrent_steps_baseline() {
         let mut observed = Vec::new();
         for _ in 0..10 {
             let m = m_reader.lock().unwrap();
-            let h_iz = m.h_tr_iz.as_ref();
+            let h_iz = m.conduction.h_tr_iz.as_ref();
             observed.push((h_iz[0], h_iz[1]));
         }
         for (a, b) in observed {
@@ -1631,7 +1637,7 @@ fn test_shared_inter_zone_conductance_concurrent_steps_baseline() {
     reader.join().expect("reader thread should not panic");
 
     let m = model.lock().unwrap();
-    let final_h_iz = m.h_tr_iz.as_ref();
+    let final_h_iz = m.conduction.h_tr_iz.as_ref();
     assert!(final_h_iz[0] == 5.0 || final_h_iz[0] == 7.5);
     assert_eq!(final_h_iz[0], final_h_iz[1]);
 }
@@ -1665,7 +1671,7 @@ fn test_per_zone_energy_accumulator_shared_weather_baseline() {
 
     let m = model.lock().unwrap();
     let zone_energies = m.get_zone_energies_kwh();
-    assert_eq!(zone_energies.len(), m.num_zones);
+    assert_eq!(zone_energies.len(), m.hvac.num_zones);
     assert!(
         zone_energies.iter().all(|e| e.is_finite()),
         "per-zone energies must be finite: {:?}",

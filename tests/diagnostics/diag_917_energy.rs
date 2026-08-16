@@ -12,44 +12,44 @@ fn diag_energy_balance_600ff() {
     let mut model = ThermalModel::<VectorField>::from_spec(&spec);
     let weather = DenverTmyWeather::new();
 
-    model.heating_setpoint = -999.0;
-    model.cooling_setpoint = 999.0;
-    model.hvac_heating_capacity = 0.0;
-    model.hvac_cooling_capacity = 0.0;
+    model.setpoints.heating_setpoint = -999.0;
+    model.setpoints.cooling_setpoint = 999.0;
+    model.hvac.hvac_heating_capacity = 0.0;
+    model.hvac.hvac_cooling_capacity = 0.0;
 
     println!("\n=== Zone configuration ===");
-    println!("num_zones: {}", model.num_zones);
-    println!("zone_area[0]: {:.2} m²", model.zone_area.as_ref()[0]);
+    println!("num_zones: {}", model.hvac.num_zones);
+    println!("zone_area[0]: {:.2} m²", model.setpoints.zone_area.as_ref()[0]);
     println!("ground_temp: {:.2}°C", model.ground_temperature_at(0));
-    println!("initial temps: {:?}", model.temperatures.as_slice());
-    println!("heating_setpoint: {:.1}", model.heating_setpoint);
-    println!("cooling_setpoint: {:.1}", model.cooling_setpoint);
+    println!("initial temps: {:?}", model.setpoints.temperatures.as_slice());
+    println!("heating_setpoint: {:.1}", model.setpoints.heating_setpoint);
+    println!("cooling_setpoint: {:.1}", model.setpoints.cooling_setpoint);
 
     // Check conductances
     println!("\n=== Derived parameters ===");
-    println!("h_ve: {:.2}", model.h_ve.as_ref()[0]);
-    println!("h_tr_is: {:.2}", model.h_tr_is.as_ref()[0]);
-    println!("h_tr_ms: {:.2}", model.h_tr_ms.as_ref()[0]);
-    println!("h_tr_w: {:.2}", model.h_tr_w.as_ref()[0]);
-    println!("h_tr_floor: {:.2}", model.h_tr_floor.as_ref()[0]);
+    println!("h_ve: {:.2}", model.conduction.h_ve.as_ref()[0]);
+    println!("h_tr_is: {:.2}", model.conduction.h_tr_is.as_ref()[0]);
+    println!("h_tr_ms: {:.2}", model.conduction.h_tr_ms.as_ref()[0]);
+    println!("h_tr_w: {:.2}", model.conduction.h_tr_w.as_ref()[0]);
+    println!("h_tr_floor: {:.2}", model.conduction.h_tr_floor.as_ref()[0]);
     // println!("h_ext: {:.2}", model.h_ext.as_ref()[0]);
     println!(
         "solar_beam_to_mass_fraction: {:.3}",
-        model.solar_beam_to_mass_fraction
+        model.solar.solar_beam_to_mass_fraction
     );
     println!(
         "solar_distribution_to_air: {:.3}",
-        model.solar_distribution_to_air
+        model.solar.solar_distribution_to_air
     );
     println!(
         "thermal_capacitance[0]: {:.0} J/K = {:.0} Wh/K",
-        model.thermal_capacitance.as_ref()[0],
-        model.thermal_capacitance.as_ref()[0] / 3600.0
+        model.mass.thermal_capacitance.as_ref()[0],
+        model.mass.thermal_capacitance.as_ref()[0] / 3600.0
     );
-    println!("h_tr_em[0]: {:.2} W/K", model.h_tr_em.as_ref()[0]);
+    println!("h_tr_em[0]: {:.2} W/K", model.conduction.h_tr_em.as_ref()[0]);
     println!(
         "derived_h_tr_3[0]: {:.2} W/K",
-        model.derived_h_tr_3.as_ref()[0]
+        model.conduction.derived_h_tr_3.as_ref()[0]
     );
 
     // Simulate a few summer days and print hourly diagnostics
@@ -59,7 +59,7 @@ fn diag_energy_balance_600ff() {
     // First, warm up to July 15
     for step in 0..july15_start {
         let wd = weather.get_hourly_data(step).unwrap();
-        model.weather = Some(wd.clone());
+        model.solar.weather = Some(wd.clone());
         model.step_physics(step, wd.dry_bulb_temp, 3600.0);
     }
 
@@ -69,17 +69,17 @@ fn diag_energy_balance_600ff() {
 
     for step in july15_start..=july15_end {
         let wd = weather.get_hourly_data(step).unwrap();
-        model.weather = Some(wd.clone());
+        model.solar.weather = Some(wd.clone());
 
         let hour = step % 24;
-        let sg = model.solar_gains.as_ref()[0] * model.zone_area.as_ref()[0];
-        let og = model.opaque_solar_gains.as_ref()[0] * model.zone_area.as_ref()[0];
+        let sg = model.solar.solar_gains.as_ref()[0] * model.setpoints.zone_area.as_ref()[0];
+        let og = model.solar.opaque_solar_gains.as_ref()[0] * model.setpoints.zone_area.as_ref()[0];
 
         model.step_physics(step, wd.dry_bulb_temp, 3600.0);
 
-        let t_zone = model.temperatures.as_slice()[0];
-        let t_mass = if model.mass_temperatures.as_ref().len() > 0 {
-            model.mass_temperatures.as_ref()[0]
+        let t_zone = model.setpoints.temperatures.as_slice()[0];
+        let t_mass = if model.mass.mass_temperatures.as_ref().len() > 0 {
+            model.mass.mass_temperatures.as_ref()[0]
         } else {
             -999.0
         };
@@ -91,7 +91,7 @@ fn diag_energy_balance_600ff() {
     }
 
     // Also check the floor construction
-    if let Some(ref surfaces) = model.surfaces.get(0) {
+    if let Some(ref surfaces) = model.solar.surfaces.get(0) {
         println!("\n=== Zone 0 surfaces ===");
         for s in surfaces.iter() {
             println!(

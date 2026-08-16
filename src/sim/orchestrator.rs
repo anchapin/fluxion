@@ -210,7 +210,7 @@ pub trait BatchOrchestrator: Send + Sync {
                 let outdoor_temp = 10.0 + 10.0 * daily_cycle;
                 total_energy += model.solve_single_step(t, outdoor_temp, &step_params, 3600.0);
             }
-            let total_area = model.zone_area.integrate();
+            let total_area = model.setpoints.zone_area.integrate();
             let eui = if total_area > 0.0 {
                 (total_energy / total_area).max(0.0)
             } else {
@@ -312,7 +312,7 @@ impl BatchOrchestrator for RayonChunksOrchestrator {
                         energy_kwh += model.step_physics(t, outdoor_temp, 3600.0);
                     }
 
-                    let total_area = model.zone_area.integrate();
+                    let total_area = model.setpoints.zone_area.integrate();
                     let eui = if total_area > 0.0 {
                         (energy_kwh / total_area).max(0.0)
                     } else {
@@ -496,7 +496,7 @@ impl BatchOrchestrator for RayonChunksOrchestrator {
                         .into_iter()
                         .zip(energy.into_iter())
                         .map(|((idx, model), e)| {
-                            let total_area = model.zone_area.integrate();
+                            let total_area = model.setpoints.zone_area.integrate();
                             let eui = if total_area > 0.0 {
                                 (e / total_area).max(0.0)
                             } else {
@@ -670,7 +670,7 @@ impl BatchOrchestrator for RayonChunksOrchestrator {
                         total_energy +=
                             model.solve_single_step(t, outdoor_temp, &step_params, 3600.0);
                     }
-                    let total_area = model.zone_area.integrate();
+                    let total_area = model.setpoints.zone_area.integrate();
                     let eui = if total_area > 0.0 {
                         (total_energy / total_area).max(0.0)
                     } else {
@@ -883,7 +883,7 @@ mod tests {
                 let outdoor_temp = 10.0 + 10.0 * daily_cycle;
                 total_energy += model.solve_single_step(t, outdoor_temp, &step_params, 3600.0);
             }
-            let total_area = model.zone_area.integrate();
+            let total_area = model.setpoints.zone_area.integrate();
             let eui = if total_area > 0.0 {
                 total_energy / total_area
             } else {

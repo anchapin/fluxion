@@ -1265,24 +1265,24 @@ fn build_model_from_schema(schema: &SimulationSchemaV1) -> ThermalModel<VectorFi
         infiltration_vec.push(DEFAULT_INFILTRATION_ACH);
     }
 
-    model.zone_area = VectorField::new(zone_area_vec.clone());
-    model.ceiling_height = VectorField::new(ceiling_height_vec.clone());
-    model.zone_volume = VectorField::new(zone_volume_vec.clone());
-    model.wall_area = VectorField::new(wall_area_vec.clone());
-    model.roof_area = VectorField::new(roof_area_vec.clone());
-    model.floor_area = VectorField::new(floor_area_vec.clone());
-    model.window_ratio = VectorField::new(window_ratio_vec.clone());
-    model.aspect_ratio = VectorField::from_scalar(1.0, num_zones);
-    model.infiltration_rate = VectorField::new(infiltration_vec.clone());
-    model.air_density = VectorField::from_scalar(AIR_DENSITY, num_zones);
-    model.heat_capacity = VectorField::from_scalar(AIR_SPECIFIC_HEAT, num_zones);
+    model.setpoints.zone_area = VectorField::new(zone_area_vec.clone());
+    model.setpoints.ceiling_height = VectorField::new(ceiling_height_vec.clone());
+    model.setpoints.zone_volume = VectorField::new(zone_volume_vec.clone());
+    model.setpoints.wall_area = VectorField::new(wall_area_vec.clone());
+    model.setpoints.roof_area = VectorField::new(roof_area_vec.clone());
+    model.setpoints.floor_area = VectorField::new(floor_area_vec.clone());
+    model.setpoints.window_ratio = VectorField::new(window_ratio_vec.clone());
+    model.setpoints.aspect_ratio = VectorField::from_scalar(1.0, num_zones);
+    model.setpoints.infiltration_rate = VectorField::new(infiltration_vec.clone());
+    model.setpoints.air_density = VectorField::from_scalar(AIR_DENSITY, num_zones);
+    model.setpoints.heat_capacity = VectorField::from_scalar(AIR_SPECIFIC_HEAT, num_zones);
 
     // Scalar U-values (single value for the whole model — the schema carries
     // one construction set, not per-zone).
-    model.wall_u_value = wall_u_value;
-    model.roof_u_value = roof_u_value;
-    model.floor_u_value = floor_u_value;
-    model.window_u_value = window_u_value;
+    model.setpoints.wall_u_value = wall_u_value;
+    model.setpoints.roof_u_value = roof_u_value;
+    model.setpoints.floor_u_value = floor_u_value;
+    model.solar.window_u_value = window_u_value;
 
     // Per-zone thermal capacitances and conductances. Vectorised because
     // each zone may have its own geometry; the constructions are shared
@@ -1345,12 +1345,12 @@ fn build_model_from_schema(schema: &SimulationSchemaV1) -> ThermalModel<VectorFi
         let _h_tr_is_check = H_SI * zone_floor_area;
     }
 
-    model.thermal_capacitance = VectorField::new(thermal_cap_vec);
-    model.air_thermal_capacitance = VectorField::new(air_thermal_cap_vec);
-    model.h_tr_ms = VectorField::new(h_tr_ms_vec);
-    model.h_tr_em = VectorField::new(h_tr_em_vec);
-    model.h_tr_me = VectorField::new(h_tr_me_vec);
-    model.h_tr_is = VectorField::from_scalar(0.0, num_zones); // recomputed below
+    model.mass.thermal_capacitance = VectorField::new(thermal_cap_vec);
+    model.mass.air_thermal_capacitance = VectorField::new(air_thermal_cap_vec);
+    model.conduction.h_tr_ms = VectorField::new(h_tr_ms_vec);
+    model.conduction.h_tr_em = VectorField::new(h_tr_em_vec);
+    model.mass.h_tr_me = VectorField::new(h_tr_me_vec);
+    model.conduction.h_tr_is = VectorField::from_scalar(0.0, num_zones); // recomputed below
 
     // Surfaces — replace the default placeholder surfaces created by
     // `ThermalModel::new` with ones whose areas / U-values / window areas
@@ -1385,18 +1385,18 @@ fn build_model_from_schema(schema: &SimulationSchemaV1) -> ThermalModel<VectorFi
         }
         surfaces.push(zone_surfaces);
     }
-    model.surfaces = surfaces;
+    model.solar.surfaces = surfaces;
 
     // HVAC setpoints + schedules.
-    model.heating_setpoint = heating;
-    model.cooling_setpoint = cooling;
-    model.heating_setpoints = VectorField::from_scalar(heating, num_zones);
-    model.cooling_setpoints = VectorField::from_scalar(cooling, num_zones);
-    model.hvac_enabled = VectorField::from_scalar(1.0, num_zones);
-    model.hvac_heating_capacity = schema.controls.zone_control.heating_capacity.max(1.0);
-    model.hvac_cooling_capacity = schema.controls.zone_control.cooling_capacity.max(1.0);
-    model.heating_schedule = schema.schedules.hvac.heating.clone();
-    model.cooling_schedule = schema.schedules.hvac.cooling.clone();
+    model.setpoints.heating_setpoint = heating;
+    model.setpoints.cooling_setpoint = cooling;
+    model.setpoints.heating_setpoints = VectorField::from_scalar(heating, num_zones);
+    model.setpoints.cooling_setpoints = VectorField::from_scalar(cooling, num_zones);
+    model.hvac.hvac_enabled = VectorField::from_scalar(1.0, num_zones);
+    model.hvac.hvac_heating_capacity = schema.controls.zone_control.heating_capacity.max(1.0);
+    model.hvac.hvac_cooling_capacity = schema.controls.zone_control.cooling_capacity.max(1.0);
+    model.setpoints.heating_schedule = schema.schedules.hvac.heating.clone();
+    model.setpoints.cooling_schedule = schema.schedules.hvac.cooling.clone();
 
     // Recompute the derived conductances (h_tr_w, h_ve, h_tr_is, h_tr_floor,
     // derived_h_ext, derived_h_tr_3, …) from the scalar fields now set.
@@ -1476,9 +1476,9 @@ pub fn run_simulation(
         // at hourly index 91. See `build_model_from_schema` doc-comment
         // for the full schema→physics wiring.
         let mut model = build_model_from_schema(schema);
-        for zone_idx in 0..model.num_zones {
-            model.heating_setpoints.as_mut_slice()[zone_idx] = heating;
-            model.cooling_setpoints.as_mut_slice()[zone_idx] = cooling;
+        for zone_idx in 0..model.hvac.num_zones {
+            model.setpoints.heating_setpoints.as_mut_slice()[zone_idx] = heating;
+            model.setpoints.cooling_setpoints.as_mut_slice()[zone_idx] = cooling;
         }
 
         let steps = years as usize * 8760;
@@ -1739,9 +1739,9 @@ async fn simulate_stream(
         // Issue #2747 / LIMIT-07: schema→physics wiring (same fix as
         // `run_simulation` — see `build_model_from_schema` doc-comment).
         let mut model = build_model_from_schema(&schema_for_stream);
-        for zone_idx in 0..model.num_zones {
-            model.heating_setpoints.as_mut_slice()[zone_idx] = heating;
-            model.cooling_setpoints.as_mut_slice()[zone_idx] = cooling;
+        for zone_idx in 0..model.hvac.num_zones {
+            model.setpoints.heating_setpoints.as_mut_slice()[zone_idx] = heating;
+            model.setpoints.cooling_setpoints.as_mut_slice()[zone_idx] = cooling;
         }
 
         let dt_seconds = model.calculate_timestep_seconds();

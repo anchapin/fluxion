@@ -239,7 +239,7 @@ where
     for step in 0..warmup_hours {
         // Snapshot temperatures 24 hours before end of warm-up
         if step == snapshot_start {
-            temps_before_last_day = model.temperatures.as_ref().to_vec();
+            temps_before_last_day = model.setpoints.temperatures.as_ref().to_vec();
         }
 
         // Wrap weather data for periodic year
@@ -253,18 +253,18 @@ where
         };
 
         // Extract the only field used downstream (f64 is Copy) so we can move
-        // weather_data into model.weather without an extra clone (Issue #2893).
+        // weather_data into model.solar.weather without an extra clone (Issue #2893).
         let dry_bulb_temp = weather_data.dry_bulb_temp;
 
         // Set weather on model for solar gain calculation
-        model.weather = Some(weather_data);
+        model.solar.weather = Some(weather_data);
 
         // Advance physics
         model.step_physics(step, dry_bulb_temp, 3600.0);
     }
 
     // Calculate max temperature change over the last 24 hours of warm-up
-    let current_temps = model.temperatures.as_ref();
+    let current_temps = model.setpoints.temperatures.as_ref();
     let max_temp_change = if !temps_before_last_day.is_empty() {
         current_temps
             .iter()
@@ -309,9 +309,9 @@ where
         let weather_hour = step % HOURS_PER_YEAR;
         if let Ok(weather_data) = weather.get_hourly_data(weather_hour) {
             // Extract the only field used downstream (f64 is Copy) so we can move
-            // weather_data into model.weather without an extra clone (Issue #2893).
+            // weather_data into model.solar.weather without an extra clone (Issue #2893).
             let dry_bulb_temp = weather_data.dry_bulb_temp;
-            model.weather = Some(weather_data);
+            model.solar.weather = Some(weather_data);
             model.step_physics(step, dry_bulb_temp, 3600.0);
             total_timesteps += 1;
         }
@@ -321,22 +321,22 @@ where
     // Now iterate full years until convergence
     while iteration < config.max_iterations && max_temp_change > config.convergence_threshold {
         // Snapshot temperatures at start of this iteration
-        let temps_start: Vec<f64> = model.temperatures.as_ref().to_vec();
+        let temps_start: Vec<f64> = model.setpoints.temperatures.as_ref().to_vec();
 
         // Run one full year
         for step in 0..HOURS_PER_YEAR {
             if let Ok(weather_data) = weather.get_hourly_data(step) {
                 // Extract the only field used downstream (f64 is Copy) so we can move
-                // weather_data into model.weather without an extra clone (Issue #2893).
+                // weather_data into model.solar.weather without an extra clone (Issue #2893).
                 let dry_bulb_temp = weather_data.dry_bulb_temp;
-                model.weather = Some(weather_data);
+                model.solar.weather = Some(weather_data);
                 model.step_physics(step, dry_bulb_temp, 3600.0);
                 total_timesteps += 1;
             }
         }
 
         // Calculate max temperature change between start and end of this year
-        let temps_end = model.temperatures.as_ref();
+        let temps_end = model.setpoints.temperatures.as_ref();
         max_temp_change = temps_start
             .iter()
             .zip(temps_end.iter())
@@ -369,10 +369,10 @@ mod tests {
         let spec = ASHRAE140Case::Case600FF.spec();
         let mut model = ThermalModel::<VectorField>::from_spec(&spec);
         // Disable HVAC for free-floating mode
-        model.heating_setpoint = -999.0;
-        model.cooling_setpoint = 999.0;
-        model.hvac_heating_capacity = 0.0;
-        model.hvac_cooling_capacity = 0.0;
+        model.setpoints.heating_setpoint = -999.0;
+        model.setpoints.cooling_setpoint = 999.0;
+        model.hvac.hvac_heating_capacity = 0.0;
+        model.hvac.hvac_cooling_capacity = 0.0;
         model
     }
 
@@ -406,7 +406,7 @@ mod tests {
         let config = WarmupConfig::fixed_days(14);
 
         // Temperatures start at 20°C
-        let initial_temp = model.temperatures.as_ref()[0];
+        let initial_temp = model.setpoints.temperatures.as_ref()[0];
         assert!(
             (initial_temp - 20.0).abs() < 1e-9,
             "Initial temp should be 20°C"
@@ -418,7 +418,7 @@ mod tests {
         assert_eq!(result.timesteps, 336);
         assert!(result.converged);
 
-        let final_temp = model.temperatures.as_ref()[0];
+        let final_temp = model.setpoints.temperatures.as_ref()[0];
         // Temperature should have moved from the initial 20°C
         // (Denver January is cold, so free-floating should drift)
         assert!(
@@ -435,11 +435,11 @@ mod tests {
         let weather = DenverTmyWeather::new();
         let config = WarmupConfig::disabled();
 
-        let initial_temp = model.temperatures.as_ref()[0];
+        let initial_temp = model.setpoints.temperatures.as_ref()[0];
         let result = run_warmup(&mut model, &weather, &config);
 
         assert_eq!(result.timesteps, 0);
-        let final_temp = model.temperatures.as_ref()[0];
+        let final_temp = model.setpoints.temperatures.as_ref()[0];
         assert!((final_temp - initial_temp).abs() < 1e-9);
     }
 

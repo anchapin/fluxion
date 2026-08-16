@@ -10,10 +10,10 @@ fn run_case(case: ASHRAE140Case, name: &str) {
     let mut model = ThermalModel::<VectorField>::from_spec(&spec);
     let weather = DenverTmyWeather::new();
 
-    model.heating_setpoint = -999.0;
-    model.cooling_setpoint = 999.0;
-    model.hvac_heating_capacity = 0.0;
-    model.hvac_cooling_capacity = 0.0;
+    model.setpoints.heating_setpoint = -999.0;
+    model.setpoints.cooling_setpoint = 999.0;
+    model.hvac.hvac_heating_capacity = 0.0;
+    model.hvac.hvac_cooling_capacity = 0.0;
 
     let mut max_temp = f64::NEG_INFINITY;
     let mut max_ts = 0usize;
@@ -23,11 +23,11 @@ fn run_case(case: ASHRAE140Case, name: &str) {
 
     for step in 0..8760 {
         let weather_data = weather.get_hourly_data(step).unwrap();
-        model.weather = Some(weather_data.clone());
+        model.solar.weather = Some(weather_data.clone());
         model.step_physics(step, weather_data.dry_bulb_temp, 3600.0);
 
-        let zone_temp = model.temperatures.as_slice()[0];
-        let mass_temp = model.mass_temperatures.as_slice()[0];
+        let zone_temp = model.setpoints.temperatures.as_slice()[0];
+        let mass_temp = model.mass.mass_temperatures.as_slice()[0];
         temps_by_hour.push(zone_temp);
         mass_by_hour.push(mass_temp);
 
@@ -50,24 +50,24 @@ fn run_case(case: ASHRAE140Case, name: &str) {
     println!("  Min zone: {:.2}°C", min_temp);
     println!(
         "  derived_h_ext: {:.2} W/K",
-        model.derived_h_ext.as_slice()[0]
+        model.conduction.derived_h_ext.as_slice()[0]
     );
     println!(
         "  derived_h_tr_3: {:.2} W/K",
-        model.derived_h_tr_3.as_slice()[0]
+        model.conduction.derived_h_tr_3.as_slice()[0]
     );
-    println!("  derived_den: {:.2}", model.derived_den.as_slice()[0]);
-    println!("  h_tr_em: {:.2} W/K", model.h_tr_em.as_slice()[0]);
-    println!("  h_tr_ms: {:.2} W/K", model.h_tr_ms.as_slice()[0]);
-    println!("  h_tr_is: {:.2} W/K", model.h_tr_is.as_slice()[0]);
-    println!("  C_m: {:.0} J/K", model.thermal_capacitance.as_slice()[0]);
+    println!("  derived_den: {:.2}", model.conduction.derived_den.as_slice()[0]);
+    println!("  h_tr_em: {:.2} W/K", model.conduction.h_tr_em.as_slice()[0]);
+    println!("  h_tr_ms: {:.2} W/K", model.conduction.h_tr_ms.as_slice()[0]);
+    println!("  h_tr_is: {:.2} W/K", model.conduction.h_tr_is.as_slice()[0]);
+    println!("  C_m: {:.0} J/K", model.mass.thermal_capacitance.as_slice()[0]);
     println!(
         "  solar_beam_to_mass_fraction: {:.2}",
-        model.solar_beam_to_mass_fraction
+        model.solar.solar_beam_to_mass_fraction
     );
     println!(
         "  solar_distribution_to_air: {:.4}",
-        model.solar_distribution_to_air
+        model.solar.solar_distribution_to_air
     );
 
     // Monthly mass temp averages

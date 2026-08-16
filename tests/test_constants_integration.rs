@@ -59,7 +59,7 @@ fn test_thermal_model_constants_accessible() {
 fn test_thermal_model_can_create_with_constants() {
     // Create ThermalModel to verify it compiles with constants module imported
     let model = ThermalModel::new(1);
-    assert_eq!(model.num_zones, 1);
+    assert_eq!(model.hvac.num_zones, 1);
 }
 
 #[test]

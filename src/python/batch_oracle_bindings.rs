@@ -286,7 +286,7 @@ impl BatchOracle {
                 });
 
             for ((idx, model), energy) in valid_configs.iter().zip(energies.iter()) {
-                let total_area = model.zone_area.integrate();
+                let total_area = model.setpoints.zone_area.integrate();
                 let eui = if total_area > 0.0 {
                     *energy / total_area
                 } else {

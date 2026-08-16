@@ -54,12 +54,12 @@ impl Case600CZ7Model {
         let floor_area = 48.0;
         let ceiling_height = 2.7;
 
-        model.zone_area = VectorField::from_scalar(floor_area, 1);
-        model.ceiling_height = VectorField::from_scalar(ceiling_height, 1);
-        model.infiltration_rate = VectorField::from_scalar(0.5, 1);
-        model.heating_setpoint = 20.0;
-        model.cooling_setpoint = 27.0;
-        model.window_u_value = 3.0;
+        model.setpoints.zone_area = VectorField::from_scalar(floor_area, 1);
+        model.setpoints.ceiling_height = VectorField::from_scalar(ceiling_height, 1);
+        model.setpoints.infiltration_rate = VectorField::from_scalar(0.5, 1);
+        model.setpoints.heating_setpoint = 20.0;
+        model.setpoints.cooling_setpoint = 27.0;
+        model.solar.window_u_value = 3.0;
 
         let _wall_assembly = Assemblies::low_mass_wall();
         let roof_assembly = Assemblies::low_mass_roof();
@@ -68,27 +68,27 @@ impl Case600CZ7Model {
         let u_roof = roof_assembly.u_value(None, None);
 
         let h_roof = u_roof * floor_area;
-        model.h_tr_em = VectorField::from_scalar(h_roof, 1);
+        model.conduction.h_tr_em = VectorField::from_scalar(h_roof, 1);
 
         let window_area = 12.0;
-        let h_window = model.window_u_value * window_area;
-        model.h_tr_w = VectorField::from_scalar(h_window, 1);
+        let h_window = model.solar.window_u_value * window_area;
+        model.conduction.h_tr_w = VectorField::from_scalar(h_window, 1);
 
         let h_floor = floor_assembly.u_value(None, None) * floor_area;
-        model.h_tr_floor = VectorField::from_scalar(h_floor, 1);
+        model.conduction.h_tr_floor = VectorField::from_scalar(h_floor, 1);
 
         let volume = floor_area * ceiling_height;
         let q_vent = 0.5 * volume / 3600.0;
         let air_density = 1.2;
         let cp_air = 1000.0;
         let h_ve = air_density * cp_air * q_vent;
-        model.h_ve = VectorField::from_scalar(h_ve, 1);
+        model.conduction.h_ve = VectorField::from_scalar(h_ve, 1);
 
         let thermal_capacitance = floor_area * 150000.0;
-        model.thermal_capacitance = VectorField::from_scalar(thermal_capacitance, 1);
+        model.mass.thermal_capacitance = VectorField::from_scalar(thermal_capacitance, 1);
 
-        model.temperatures = VectorField::from_scalar(10.0, 1);
-        model.mass_temperatures = VectorField::from_scalar(10.0, 1);
+        model.setpoints.temperatures = VectorField::from_scalar(10.0, 1);
+        model.mass.mass_temperatures = VectorField::from_scalar(10.0, 1);
 
         model.update_optimization_cache();
 
@@ -195,10 +195,10 @@ mod tests {
     #[test]
     fn test_case_600_cz7_creation() {
         let model = Case600CZ7Model::new();
-        assert_eq!(model.model.num_zones, 1);
-        assert_eq!(model.model.heating_setpoint, 20.0);
-        assert_eq!(model.model.cooling_setpoint, 27.0);
-        assert_eq!(model.model.window_u_value, 3.0);
+        assert_eq!(model.model.hvac.num_zones, 1);
+        assert_eq!(model.model.setpoints.heating_setpoint, 20.0);
+        assert_eq!(model.model.setpoints.cooling_setpoint, 27.0);
+        assert_eq!(model.model.solar.window_u_value, 3.0);
     }
 
     #[test]

@@ -197,7 +197,7 @@ try:
     from fluxion import multi_zone
 
     model = multi_zone.create_multi_zone_model_from_schema_file(r"{}")
-    print(f"Python model created with {{model.num_zones()}} zones")
+    print(f"Python model created with {{model.hvac.num_zones()}} zones")
 
     temps = model.get_zone_temperatures()
     print(f"Zone temperatures: {{temps}}")
@@ -308,7 +308,7 @@ try:
     }
 
     model = multi_zone.create_multi_zone_model_from_config(config)
-    print(f"Model zones: {model.num_zones()}")
+    print(f"Model zones: {model.hvac.num_zones()}")
     print(f"Temperatures: {model.get_zone_temperatures()}")
 
     result = model.simulate_multi_zone(1, False)

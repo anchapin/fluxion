@@ -70,11 +70,11 @@ pub fn validate_thermal_mass() -> ThermalMassValidationResult {
     let high_mass_model = ThermalModel::<VectorField>::from_spec(&high_mass_spec);
 
     // Calculate total thermal capacitance for each
-    let low_cap: f64 = low_mass_model.thermal_capacitance.iter().sum();
-    let high_cap: f64 = high_mass_model.thermal_capacitance.iter().sum();
+    let low_cap: f64 = low_mass_model.mass.thermal_capacitance.iter().sum();
+    let high_cap: f64 = high_mass_model.mass.thermal_capacitance.iter().sum();
 
     // Subtract air capacitance to get structure capacitance
-    let zone_area = low_mass_model.zone_area[0];
+    let zone_area = low_mass_model.setpoints.zone_area[0];
     let air_cap = zone_area * 1.2 * 1005.0; // J/K
     let low_structure_cap = low_cap - air_cap;
     let high_structure_cap = high_cap - air_cap;
@@ -131,7 +131,7 @@ pub fn validate_6r2c_thermal_mass() -> ThermalMassValidationResult {
     model.configure_6r2c_model(0.75, 100.0, None);
 
     // Verify envelope and internal mass are initialized
-    if model.envelope_mass_temperatures.as_ref().is_empty() {
+    if model.mass.envelope_mass_temperatures.as_ref().is_empty() {
         all_passed = false;
         result
             .messages
@@ -142,7 +142,7 @@ pub fn validate_6r2c_thermal_mass() -> ThermalMassValidationResult {
             .push("✓ Envelope mass temperatures initialized".to_string());
     }
 
-    if model.internal_mass_temperatures.as_ref().is_empty() {
+    if model.mass.internal_mass_temperatures.as_ref().is_empty() {
         all_passed = false;
         result
             .messages
@@ -154,8 +154,8 @@ pub fn validate_6r2c_thermal_mass() -> ThermalMassValidationResult {
     }
 
     // Verify thermal capacitances are set
-    let env_cap: f64 = model.envelope_thermal_capacitance.iter().sum();
-    let int_cap: f64 = model.internal_thermal_capacitance.iter().sum();
+    let env_cap: f64 = model.mass.envelope_thermal_capacitance.iter().sum();
+    let int_cap: f64 = model.mass.internal_thermal_capacitance.iter().sum();
     let total_cap = env_cap + int_cap;
 
     result.low_mass_capacitance = env_cap;
@@ -197,8 +197,8 @@ pub fn validate_6r2c_thermal_mass() -> ThermalMassValidationResult {
     use crate::ai::surrogate::SurrogateManager;
     let surrogates = SurrogateManager::new().expect("Failed to create surrogate manager");
 
-    let initial_env_temp: f64 = model.envelope_mass_temperatures.as_ref()[0];
-    let initial_int_temp: f64 = model.internal_mass_temperatures.as_ref()[0];
+    let initial_env_temp: f64 = model.mass.envelope_mass_temperatures.as_ref()[0];
+    let initial_int_temp: f64 = model.mass.internal_mass_temperatures.as_ref()[0];
 
     // Run a few timesteps
     for step in 0..10 {
@@ -212,8 +212,8 @@ pub fn validate_6r2c_thermal_mass() -> ThermalMassValidationResult {
         }
     }
 
-    let final_env_temp: f64 = model.envelope_mass_temperatures.as_ref()[0];
-    let final_int_temp: f64 = model.internal_mass_temperatures.as_ref()[0];
+    let final_env_temp: f64 = model.mass.envelope_mass_temperatures.as_ref()[0];
+    let final_int_temp: f64 = model.mass.internal_mass_temperatures.as_ref()[0];
 
     result.messages.push(format!(
         "Envelope temp change: {:.2}",
@@ -301,8 +301,8 @@ mod tests {
         // Configure 6R2C with 75% envelope, 25% internal
         model.configure_6r2c_model(0.75, 100.0, None);
 
-        let env_cap: f64 = model.envelope_thermal_capacitance.iter().sum();
-        let int_cap: f64 = model.internal_thermal_capacitance.iter().sum();
+        let env_cap: f64 = model.mass.envelope_thermal_capacitance.iter().sum();
+        let int_cap: f64 = model.mass.internal_thermal_capacitance.iter().sum();
         let total = env_cap + int_cap;
 
         let env_fraction = env_cap / total;
@@ -332,9 +332,9 @@ mod tests {
         // let spec = ASHRAE140Case::Case900.spec();
         // let mut model = ThermalModel::<VectorField>::from_spec(&spec);
         // let surrogates = SurrogateManager::new().expect("Failed to create surrogate manager");
-        // let initial_mass_temp: f64 = model.mass_temperatures.as_ref()[0];
+        // let initial_mass_temp: f64 = model.mass.mass_temperatures.as_ref()[0];
         // model.solve_timesteps(24, &surrogates, false, None, None, None);
-        // let final_mass_temp: f64 = model.mass_temperatures.as_ref()[0];
+        // let final_mass_temp: f64 = model.mass.mass_temperatures.as_ref()[0];
         // assert!(final_mass_temp > -50.0 && final_mass_temp < 100.0);
 
         // Placeholder assertion to keep test passing

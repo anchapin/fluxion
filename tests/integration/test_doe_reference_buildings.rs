@@ -176,40 +176,40 @@ impl DoeBuildingType {
         let mut model = ThermalModel::new(num_zones);
 
         // Set window properties
-        model.window_u_value = 2.7; // W/m²K typical for DOE buildings
-        model.window_ratio = VectorField::from_scalar(wwr, num_zones);
+        model.solar.window_u_value = 2.7; // W/m²K typical for DOE buildings
+        model.setpoints.window_ratio = VectorField::from_scalar(wwr, num_zones);
 
         // Set setpoints
-        model.heating_setpoint = 21.0; // 21°C
-        model.cooling_setpoint = 24.0; // 24°C
+        model.setpoints.heating_setpoint = 21.0; // 21°C
+        model.setpoints.cooling_setpoint = 24.0; // 24°C
 
         // Initialize temperatures
-        model.temperatures = VectorField::from_scalar(21.0, num_zones);
-        model.mass_temperatures = VectorField::from_scalar(21.0, num_zones);
+        model.setpoints.temperatures = VectorField::from_scalar(21.0, num_zones);
+        model.mass.mass_temperatures = VectorField::from_scalar(21.0, num_zones);
 
         // Set zone properties
-        model.zone_area = VectorField::from_scalar(zone_area, num_zones);
-        model.ceiling_height = VectorField::from_scalar(3.0, num_zones);
-        model.air_density = VectorField::from_scalar(1.2, num_zones);
-        model.heat_capacity = VectorField::from_scalar(1005.0, num_zones);
-        model.aspect_ratio = VectorField::from_scalar(1.5, num_zones);
-        model.infiltration_rate = VectorField::from_scalar(self.infiltration_ach(), num_zones);
+        model.setpoints.zone_area = VectorField::from_scalar(zone_area, num_zones);
+        model.setpoints.ceiling_height = VectorField::from_scalar(3.0, num_zones);
+        model.setpoints.air_density = VectorField::from_scalar(1.2, num_zones);
+        model.setpoints.heat_capacity = VectorField::from_scalar(1005.0, num_zones);
+        model.setpoints.aspect_ratio = VectorField::from_scalar(1.5, num_zones);
+        model.setpoints.infiltration_rate = VectorField::from_scalar(self.infiltration_ach(), num_zones);
 
         // Set building envelope properties
-        model.wall_u_value = 0.3; // W/m²K
-        model.roof_u_value = 0.25; // W/m²K
-        model.floor_u_value = 0.35; // W/m²K
+        model.setpoints.wall_u_value = 0.3; // W/m²K
+        model.setpoints.roof_u_value = 0.25; // W/m²K
+        model.setpoints.floor_u_value = 0.35; // W/m²K
 
         // Set HVAC capacity
-        model.hvac_heating_capacity = zone_area * 80.0; // W/m²
-        model.hvac_cooling_capacity = zone_area * 100.0; // W/m²
+        model.hvac.hvac_heating_capacity = zone_area * 80.0; // W/m²
+        model.hvac.hvac_cooling_capacity = zone_area * 100.0; // W/m²
 
         // Set case ID
-        model.case_id = format!("DOE-{:?}", self);
+        model.hvac.case_id = format!("DOE-{:?}", self);
 
         // Initialize loads
-        model.loads = VectorField::from_scalar(0.0, num_zones);
-        model.solar_gains = VectorField::from_scalar(0.0, num_zones);
+        model.setpoints.loads = VectorField::from_scalar(0.0, num_zones);
+        model.solar.solar_gains = VectorField::from_scalar(0.0, num_zones);
 
         model
     }
@@ -314,10 +314,10 @@ fn test_doe_small_office_load_and_simulate() {
     let mut model = doe_type.create_model();
 
     // Verify model properties
-    assert_eq!(model.temperatures.len(), doe_type.zone_count());
-    assert!(model.window_u_value > 0.0);
-    assert!(model.heating_setpoint > 0.0);
-    assert!(model.cooling_setpoint > model.heating_setpoint);
+    assert_eq!(model.setpoints.temperatures.len(), doe_type.zone_count());
+    assert!(model.solar.window_u_value > 0.0);
+    assert!(model.setpoints.heating_setpoint > 0.0);
+    assert!(model.setpoints.cooling_setpoint > model.setpoints.heating_setpoint);
 
     // Run simulation for 24 hours
     let surrogates = SurrogateManager::new().expect("Failed to create SurrogateManager");
@@ -338,7 +338,7 @@ fn test_doe_medium_office_load_and_simulate() {
     let doe_type = DoeBuildingType::MediumOffice;
     let mut model = doe_type.create_model();
 
-    assert_eq!(model.temperatures.len(), doe_type.zone_count());
+    assert_eq!(model.setpoints.temperatures.len(), doe_type.zone_count());
 
     let surrogates = SurrogateManager::new().expect("Failed to create SurrogateManager");
     let energy = model.solve_timesteps(24, &surrogates, false, None, None, None);
@@ -353,7 +353,7 @@ fn test_doe_large_office_load_and_simulate() {
     let doe_type = DoeBuildingType::LargeOffice;
     let mut model = doe_type.create_model();
 
-    assert_eq!(model.temperatures.len(), doe_type.zone_count());
+    assert_eq!(model.setpoints.temperatures.len(), doe_type.zone_count());
 
     let surrogates = SurrogateManager::new().expect("Failed to create SurrogateManager");
     let energy = model.solve_timesteps(24, &surrogates, false, None, None, None);
@@ -368,7 +368,7 @@ fn test_doe_retail_standalone_load_and_simulate() {
     let doe_type = DoeBuildingType::RetailStandalone;
     let mut model = doe_type.create_model();
 
-    assert_eq!(model.temperatures.len(), doe_type.zone_count());
+    assert_eq!(model.setpoints.temperatures.len(), doe_type.zone_count());
 
     let surrogates = SurrogateManager::new().expect("Failed to create SurrogateManager");
     let energy = model.solve_timesteps(24, &surrogates, false, None, None, None);
@@ -383,7 +383,7 @@ fn test_doe_warehouse_load_and_simulate() {
     let doe_type = DoeBuildingType::Warehouse;
     let mut model = doe_type.create_model();
 
-    assert_eq!(model.temperatures.len(), doe_type.zone_count());
+    assert_eq!(model.setpoints.temperatures.len(), doe_type.zone_count());
 
     let surrogates = SurrogateManager::new().expect("Failed to create SurrogateManager");
     let energy = model.solve_timesteps(24, &surrogates, false, None, None, None);
@@ -398,7 +398,7 @@ fn test_doe_restaurant_load_and_simulate() {
     let doe_type = DoeBuildingType::FullServiceRestaurant;
     let mut model = doe_type.create_model();
 
-    assert_eq!(model.temperatures.len(), doe_type.zone_count());
+    assert_eq!(model.setpoints.temperatures.len(), doe_type.zone_count());
 
     let surrogates = SurrogateManager::new().expect("Failed to create SurrogateManager");
     let energy = model.solve_timesteps(24, &surrogates, false, None, None, None);
@@ -413,7 +413,7 @@ fn test_doe_hospital_load_and_simulate() {
     let doe_type = DoeBuildingType::Hospital;
     let mut model = doe_type.create_model();
 
-    assert_eq!(model.temperatures.len(), doe_type.zone_count());
+    assert_eq!(model.setpoints.temperatures.len(), doe_type.zone_count());
 
     let surrogates = SurrogateManager::new().expect("Failed to create SurrogateManager");
     let energy = model.solve_timesteps(24, &surrogates, false, None, None, None);
@@ -428,7 +428,7 @@ fn test_doe_school_load_and_simulate() {
     let doe_type = DoeBuildingType::PrimarySchool;
     let mut model = doe_type.create_model();
 
-    assert_eq!(model.temperatures.len(), doe_type.zone_count());
+    assert_eq!(model.setpoints.temperatures.len(), doe_type.zone_count());
 
     let surrogates = SurrogateManager::new().expect("Failed to create SurrogateManager");
     let energy = model.solve_timesteps(24, &surrogates, false, None, None, None);
@@ -459,14 +459,14 @@ fn test_doe_all_building_types_load_and_simulate(#[case] doe_type: DoeBuildingTy
 
     // Verify zone count
     assert_eq!(
-        model.temperatures.len(),
+        model.setpoints.temperatures.len(),
         doe_type.zone_count(),
         "Zone count mismatch for {:?}",
         doe_type
     );
 
     // Verify floor area
-    let total_area: f64 = model.zone_area.iter().sum();
+    let total_area: f64 = model.setpoints.zone_area.iter().sum();
     let expected_area = doe_type.floor_area_m2();
     let area_diff_pct = ((total_area - expected_area) / expected_area).abs();
     assert!(
@@ -566,7 +566,7 @@ fn test_doe_hospital_zone_temperature_tracking() {
     assert!(energy.is_finite());
 
     // Verify all zones have finite temperatures
-    for (i, temp) in model.temperatures.iter().enumerate() {
+    for (i, temp) in model.setpoints.temperatures.iter().enumerate() {
         assert!(
             temp.is_finite(),
             "Zone {} temperature should be finite, got {}",
@@ -577,7 +577,7 @@ fn test_doe_hospital_zone_temperature_tracking() {
 
     println!(
         "DOE Hospital zone temperatures: {:?}",
-        model.temperatures.iter().take(5).collect::<Vec<_>>()
+        model.setpoints.temperatures.iter().take(5).collect::<Vec<_>>()
     );
 }
 
@@ -600,13 +600,13 @@ fn test_doe_reference_building_properties() {
 
         // Zone count should be > 0
         assert!(
-            model.temperatures.len() > 0,
+            model.setpoints.temperatures.len() > 0,
             "{:?} should have at least one zone",
             doe_type
         );
 
         // Floor area should be > 0
-        let total_area: f64 = model.zone_area.iter().sum();
+        let total_area: f64 = model.setpoints.zone_area.iter().sum();
         assert!(
             total_area > 0.0,
             "{:?} should have positive floor area",
@@ -615,15 +615,15 @@ fn test_doe_reference_building_properties() {
 
         // Window U-value should be reasonable (0.5 - 5.0 W/m²K)
         assert!(
-            model.window_u_value > 0.5 && model.window_u_value < 5.0,
+            model.solar.window_u_value > 0.5 && model.solar.window_u_value < 5.0,
             "{:?} window U-value {} should be reasonable",
             doe_type,
-            model.window_u_value
+            model.solar.window_u_value
         );
 
         // Infiltration rate should be positive
-        let infiltration: f64 = model.infiltration_rate.iter().fold(0.0, |acc, &x| acc + x)
-            / model.infiltration_rate.len() as f64;
+        let infiltration: f64 = model.setpoints.infiltration_rate.iter().fold(0.0, |acc, &x| acc + x)
+            / model.setpoints.infiltration_rate.len() as f64;
         assert!(
             infiltration > 0.0 && infiltration < 5.0,
             "{:?} infiltration {} should be reasonable",
@@ -634,10 +634,10 @@ fn test_doe_reference_building_properties() {
         println!(
             "{:?}: zones={}, area={:.0}m², wwr={:.0}%, inf={:.2}ACH",
             doe_type,
-            model.temperatures.len(),
+            model.setpoints.temperatures.len(),
             total_area,
-            model.window_ratio.iter().fold(0.0, |acc, &x| acc + x)
-                / model.window_ratio.len() as f64
+            model.setpoints.window_ratio.iter().fold(0.0, |acc, &x| acc + x)
+                / model.setpoints.window_ratio.len() as f64
                 * 100.0,
             infiltration
         );

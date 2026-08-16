@@ -92,18 +92,18 @@ impl Case600Model {
         let _perimeter = 2.0 * (width + depth);
 
         // Set zone area and ceiling height
-        model.zone_area = VectorField::from_scalar(floor_area, 1);
-        model.ceiling_height = VectorField::from_scalar(ceiling_height, 1);
+        model.setpoints.zone_area = VectorField::from_scalar(floor_area, 1);
+        model.setpoints.ceiling_height = VectorField::from_scalar(ceiling_height, 1);
 
         // Set infiltration rate (0.5 ACH as specified in ASHRAE 140)
-        model.infiltration_rate = VectorField::from_scalar(0.5, 1);
+        model.setpoints.infiltration_rate = VectorField::from_scalar(0.5, 1);
 
         // Set HVAC setpoints (dual setpoint control)
-        model.heating_setpoint = 20.0;
-        model.cooling_setpoint = 27.0;
+        model.setpoints.heating_setpoint = 20.0;
+        model.setpoints.cooling_setpoint = 27.0;
 
         // Configure window U-value (3.0 W/m²K for double clear glass)
-        model.window_u_value = 3.0;
+        model.solar.window_u_value = 3.0;
 
         // Calculate construction U-values and update conductances
         // Get Case 600 construction assemblies
@@ -125,16 +125,16 @@ impl Case600Model {
 
         // Roof conductance (Exterior → Mass)
         let h_roof = u_roof * floor_area;
-        model.h_tr_em = VectorField::from_scalar(h_roof, 1);
+        model.conduction.h_tr_em = VectorField::from_scalar(h_roof, 1);
 
         // Window conductance (Exterior → Interior)
         let window_area = 12.0; // South-facing window
-        let h_window = model.window_u_value * window_area;
-        model.h_tr_w = VectorField::from_scalar(h_window, 1);
+        let h_window = model.solar.window_u_value * window_area;
+        model.conduction.h_tr_w = VectorField::from_scalar(h_window, 1);
 
         // Floor conductance (to ground)
         let h_floor = _u_floor * floor_area;
-        model.h_tr_floor = VectorField::from_scalar(h_floor, 1);
+        model.conduction.h_tr_floor = VectorField::from_scalar(h_floor, 1);
 
         // Ventilation conductance
         // Q_vent = ACH * Volume / 3600 (m³/s)
@@ -144,16 +144,16 @@ impl Case600Model {
         let air_density = 1.2; // kg/m³
         let cp_air = 1000.0; // J/kg·K
         let h_ve = air_density * cp_air * q_vent;
-        model.h_ve = VectorField::from_scalar(h_ve, 1);
+        model.conduction.h_ve = VectorField::from_scalar(h_ve, 1);
 
         // Set thermal mass (for low-mass construction)
         // Use approximate thermal capacitance for light construction
         let thermal_capacitance = floor_area * 150000.0; // J/K (150 kJ/m²K)
-        model.thermal_capacitance = VectorField::from_scalar(thermal_capacitance, 1);
+        model.mass.thermal_capacitance = VectorField::from_scalar(thermal_capacitance, 1);
 
         // Initialize temperatures at 20°C
-        model.temperatures = VectorField::from_scalar(20.0, 1);
-        model.mass_temperatures = VectorField::from_scalar(20.0, 1);
+        model.setpoints.temperatures = VectorField::from_scalar(20.0, 1);
+        model.mass.mass_temperatures = VectorField::from_scalar(20.0, 1);
 
         // Update optimization cache since we manually modified conductances
         model.update_optimization_cache();
@@ -290,10 +290,10 @@ mod tests {
     #[test]
     fn test_case_600_creation() {
         let model = Case600Model::new();
-        assert_eq!(model.model.num_zones, 1);
-        assert_eq!(model.model.heating_setpoint, 20.0);
-        assert_eq!(model.model.cooling_setpoint, 27.0);
-        assert_eq!(model.model.window_u_value, 3.0);
+        assert_eq!(model.model.hvac.num_zones, 1);
+        assert_eq!(model.model.setpoints.heating_setpoint, 20.0);
+        assert_eq!(model.model.setpoints.cooling_setpoint, 27.0);
+        assert_eq!(model.model.solar.window_u_value, 3.0);
     }
 
     #[test]

@@ -68,15 +68,15 @@ fn simulate_case(case: ASHRAE140Case) -> (f64, f64) {
         let weather_data = weather.get_hourly_data(step).unwrap();
 
         // Update weather data on model for solar gain calculation (Issue #278)
-        model.weather = Some(weather_data.clone());
+        model.solar.weather = Some(weather_data.clone());
 
         // Apply dynamic setpoints based on HVAC schedule
         if let Some(hvac_schedule) = spec.hvac.first() {
             if let Some(heating_sp) = hvac_schedule.heating_setpoint_at_hour(hour_of_day as u8) {
-                model.heating_setpoint = heating_sp;
+                model.setpoints.heating_setpoint = heating_sp;
             }
             if let Some(cooling_sp) = hvac_schedule.cooling_setpoint_at_hour(hour_of_day as u8) {
-                model.cooling_setpoint = cooling_sp;
+                model.setpoints.cooling_setpoint = cooling_sp;
             }
         }
 

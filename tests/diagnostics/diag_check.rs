@@ -15,15 +15,15 @@ fn check_temps() {
         let spec = case.spec();
         let mut model = ThermalModel::<VectorField>::from_spec(&spec);
         let weather = DenverTmyWeather::new();
-        model.heating_setpoint = -999.0;
-        model.cooling_setpoint = 999.0;
+        model.setpoints.heating_setpoint = -999.0;
+        model.setpoints.cooling_setpoint = 999.0;
 
         let mut max_temp = f64::MIN;
         for step in 0..8760 {
             let wd = weather.get_hourly_data(step).unwrap();
-            model.weather = Some(wd.clone());
+            model.solar.weather = Some(wd.clone());
             model.step_physics(step, wd.dry_bulb_temp, 3600.0);
-            let t = model.temperatures.as_slice()[0];
+            let t = model.setpoints.temperatures.as_slice()[0];
             if t > max_temp {
                 max_temp = t;
             }

@@ -193,9 +193,9 @@ fn test_ashrae_140_envelope_unchanged() {
         let weather_data = weather
             .get_hourly_data(step)
             .expect("Denver TMY must contain every annual timestep");
-        model.weather = Some(weather_data.clone());
+        model.solar.weather = Some(weather_data.clone());
         model.step_physics(step, weather_data.dry_bulb_temp, 3_600.0);
-        let zone_temperature_c = model.temperatures.as_slice()[0];
+        let zone_temperature_c = model.setpoints.temperatures.as_slice()[0];
         assert!(
             zone_temperature_c.is_finite(),
             "Case 900FF produced non-finite zone temperature at hour {step}"

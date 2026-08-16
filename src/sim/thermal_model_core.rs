@@ -19,7 +19,8 @@ use crate::sim::sky_radiation::SolAirTemperature;
 use crate::sim::solar::{SolarPosition, WindowProperties};
 use crate::sim::thermal_model::ThermalModelType as RoutingThermalModelType;
 use crate::sim::thermal_model_data::{
-    ConductionBackend, DiagnosticsState, IncidentSolarAccumulator, ThermalModelData,
+    ConductionBackend, ConductionState, DiagnosticsState, HvacState, IncidentSolarAccumulator,
+    MassState, SetpointState, SolarState, ThermalModelData,
 };
 use crate::sim::view_factors;
 use crate::validation::ashrae_140_cases::CaseSpec;
@@ -243,11 +244,12 @@ where
         use crate::physics::exterior_convection::{
             h_c_ext_wind_dependent, wind_at_building_height_from_10m, ExteriorSurfaceDirection,
         };
-        let solar_ref = self.0.solar_gains.as_ref();
+        let solar_ref = self.0.solar.solar_gains.as_ref();
         let alpha = SOLAR_ABSORPTANCE_DEFAULT;
         let emissivity = 0.9; // Surface emissivity for longwave
         let v_wind_building = self
             .0
+            .solar
             .weather
             .as_ref()
             .map(|w| wind_at_building_height_from_10m(w.wind_speed, 2.7))
@@ -263,8 +265,8 @@ where
         );
         let h_se = h_se_roof;
 
-        let mut t_sol_air_data = Vec::with_capacity(self.0.num_zones);
-        for &i_sol in solar_ref.iter().take(self.0.num_zones) {
+        let mut t_sol_air_data = Vec::with_capacity(self.0.hvac.num_zones);
+        for &i_sol in solar_ref.iter().take(self.0.hvac.num_zones) {
             // ASHRAE 140 Sec. 5.2: include LW correction ε·ΔR/h_ext for roof
             // sky_temp is derived from EPW horizontal infrared radiation via
             // T_sky = (IR/σ)^(1/4) - 273.15, capturing real diurnal sky cooling.
@@ -274,27 +276,29 @@ where
         }
 
         let ctf_flux_w: Option<Vec<f64>>;
-        let ctf_surface_temps: Option<Vec<f64>> = if self.0.conduction.ctf_enabled
-            && !self.0.conduction.ctf_solvers.is_empty()
+        let ctf_surface_temps: Option<Vec<f64>> = if self.0.conduction.backend.ctf_enabled
+            && !self.0.conduction.backend.ctf_solvers.is_empty()
         {
-            let temps = self.0.temperatures.as_ref();
+            let temps = self.0.setpoints.temperatures.as_ref();
             // Use envelope mass temperatures for high-mass physics if available,
             // otherwise fallback to air temperatures (as an estimate) or zone mass.
             let ext_temps = if self.is_6r2c_model() {
-                self.0.envelope_mass_temperatures.as_ref()
+                self.0.mass.envelope_mass_temperatures.as_ref()
             } else {
-                self.0.mass_temperatures.as_ref()
+                self.0.mass.mass_temperatures.as_ref()
             };
 
-            let mut ctf_fluxes = Vec::with_capacity(self.0.num_zones);
-            let mut ctf_surface_temps_inner = Vec::with_capacity(self.0.num_zones);
+            let mut ctf_fluxes = Vec::with_capacity(self.0.hvac.num_zones);
+            let mut ctf_surface_temps_inner = Vec::with_capacity(self.0.hvac.num_zones);
 
-            for (i, solver) in self.0.conduction.ctf_solvers.iter_mut().enumerate() {
+            for (i, solver) in self.0.conduction.backend.ctf_solvers.iter_mut().enumerate() {
                 let t_zone = temps.get(i).copied().unwrap_or(20.0);
                 let t_ext = t_sol_air_data.get(i).copied().unwrap_or(outdoor_temp);
                 let t_mass = ext_temps.get(i).copied().unwrap_or(20.0);
 
-                if let Some(ref coupling_solver) = self.0.conduction.ctf_zone_coupling_solver {
+                if let Some(ref coupling_solver) =
+                    self.0.conduction.backend.ctf_zone_coupling_solver
+                {
                     // Issue #1152 follow-up: Route 80% of shortwave solar to interior surfaces
                     // via CTF zone coupling (matching the physically accurate split).
                     // The remaining 20% is implicitly handled through the 5R1C network
@@ -321,30 +325,31 @@ where
             None
         };
 
-        let fd_flux_w: Option<Vec<f64>> =
-            if self.0.conduction.fd_enabled && !self.0.conduction.fd_solvers.is_empty() {
-                use crate::physics::fd_solver::SurfaceBC;
-                let temps = self.0.temperatures.as_ref();
-                let mut fd_fluxes = Vec::with_capacity(self.0.num_zones);
+        let fd_flux_w: Option<Vec<f64>> = if self.0.conduction.backend.fd_enabled
+            && !self.0.conduction.backend.fd_solvers.is_empty()
+        {
+            use crate::physics::fd_solver::SurfaceBC;
+            let temps = self.0.setpoints.temperatures.as_ref();
+            let mut fd_fluxes = Vec::with_capacity(self.0.hvac.num_zones);
 
-                for (i, solver) in self.0.conduction.fd_solvers.iter_mut().enumerate() {
-                    let t_zone = temps.get(i).copied().unwrap_or(20.0);
-                    let t_ext = t_sol_air_data.get(i).copied().unwrap_or(outdoor_temp);
-                    // h_int = 8.29, h_ext = wind-dependent per ASHRAE 140
-                    // v2023 §5.2.6 vertical-wall windward correlation
-                    // h_c = 4.0 + 4.0·V_building (#2891/#1419/#2679).
-                    let interior_bc = SurfaceBC::new_interior(INTERIOR_FILM_COEFF, t_zone);
-                    let exterior_bc = SurfaceBC::new_exterior(h_se_fd, t_ext, 0.0);
+            for (i, solver) in self.0.conduction.backend.fd_solvers.iter_mut().enumerate() {
+                let t_zone = temps.get(i).copied().unwrap_or(20.0);
+                let t_ext = t_sol_air_data.get(i).copied().unwrap_or(outdoor_temp);
+                // h_int = 8.29, h_ext = wind-dependent per ASHRAE 140
+                // v2023 §5.2.6 vertical-wall windward correlation
+                // h_c = 4.0 + 4.0·V_building (#2891/#1419/#2679).
+                let interior_bc = SurfaceBC::new_interior(INTERIOR_FILM_COEFF, t_zone);
+                let exterior_bc = SurfaceBC::new_exterior(h_se_fd, t_ext, 0.0);
 
-                    // Step FD solver and get interior surface heat flux
-                    solver.step(3600.0, &interior_bc, &exterior_bc);
-                    let q_flux = solver.interior_heat_flux(INTERIOR_FILM_COEFF, t_zone);
-                    fd_fluxes.push(q_flux);
-                }
-                Some(fd_fluxes)
-            } else {
-                None
-            };
+                // Step FD solver and get interior surface heat flux
+                solver.step(3600.0, &interior_bc, &exterior_bc);
+                let q_flux = solver.interior_heat_flux(INTERIOR_FILM_COEFF, t_zone);
+                fd_fluxes.push(q_flux);
+            }
+            Some(fd_fluxes)
+        } else {
+            None
+        };
 
         (t_sol_air_data, ctf_flux_w, fd_flux_w, ctf_surface_temps)
     }
@@ -379,75 +384,75 @@ where
     ) -> SolarPosition {
         let hour_slot = (hour * 2.0).round() as i32;
         let key = (timestep, hour_slot);
-        if let Some(cached) = self.0.sun_pos_cache.get(&key).copied() {
+        if let Some(cached) = self.0.solar.sun_pos_cache.get(&key).copied() {
             return cached;
         }
 
         let sun_pos = crate::sim::solar::calculate_solar_position(
-            self.0.latitude_deg,
-            self.0.longitude_deg,
+            self.0.solar.latitude_deg,
+            self.0.solar.longitude_deg,
             year,
             month,
             day,
             hour,
-            self.0.utc_offset_hours,
+            self.0.solar.utc_offset_hours,
         );
-        self.0.sun_pos_cache.insert(key, sun_pos);
+        self.0.solar.sun_pos_cache.insert(key, sun_pos);
         sun_pos
     }
 
     /// Get peak heating power in kW
     pub fn get_peak_heating_power_kw(&self) -> f64 {
-        self.0.peak_power_heating / 1000.0
+        self.0.hvac.peak_power_heating / 1000.0
     }
 
     /// Get peak cooling power in kW
     pub fn get_peak_cooling_power_kw(&self) -> f64 {
-        self.0.peak_power_cooling / 1000.0
+        self.0.hvac.peak_power_cooling / 1000.0
     }
 
     /// Reset peak power tracking (scalar peaks only)
     /// Note: For per-zone peaks, use the specialized impl ThermalModel<VectorField>
     pub fn reset_peak_power(&mut self) {
-        self.0.peak_power_heating = 0.0;
-        self.0.peak_power_cooling = 0.0;
+        self.0.hvac.peak_power_heating = 0.0;
+        self.0.hvac.peak_power_cooling = 0.0;
     }
 
     /// Get cumulative heating energy in kilowatt-hours (kWh)
     pub fn get_heating_energy_kwh(&self) -> f64 {
-        self.0.annual_heating_energy
+        self.0.hvac.annual_heating_energy
     }
 
     /// Get cumulative cooling energy in kilowatt-hours (kWh)
     pub fn get_cooling_energy_kwh(&self) -> f64 {
-        self.0.annual_cooling_energy
+        self.0.hvac.annual_cooling_energy
     }
 
     /// Get cumulative electrical energy consumption in kilowatt-hours (kWh)
     pub fn get_electrical_energy_kwh(&self) -> f64 {
-        self.0.annual_electrical_energy
+        self.0.hvac.annual_electrical_energy
     }
 
     /// Get per-zone heating energy in kilowatt-hours (kWh)
     ///
     /// Returns a vector with heating energy for each zone.
     pub fn get_zone_heating_energy_kwh(&self) -> Vec<f64> {
-        self.0.zone_heating_energy_kwh.as_ref().to_vec()
+        self.0.hvac.zone_heating_energy_kwh.as_ref().to_vec()
     }
 
     /// Get per-zone cooling energy in kilowatt-hours (kWh)
     ///
     /// Returns a vector with cooling energy for each zone.
     pub fn get_zone_cooling_energy_kwh(&self) -> Vec<f64> {
-        self.0.zone_cooling_energy_kwh.as_ref().to_vec()
+        self.0.hvac.zone_cooling_energy_kwh.as_ref().to_vec()
     }
 
     /// Get per-zone total energy (heating + cooling) in kilowatt-hours (kWh)
     ///
     /// Returns a vector with total energy for each zone.
     pub fn get_zone_energies_kwh(&self) -> Vec<f64> {
-        let heating = self.0.zone_heating_energy_kwh.as_ref();
-        let cooling = self.0.zone_cooling_energy_kwh.as_ref();
+        let heating = self.0.hvac.zone_heating_energy_kwh.as_ref();
+        let cooling = self.0.hvac.zone_cooling_energy_kwh.as_ref();
         heating
             .iter()
             .zip(cooling.iter())
@@ -468,12 +473,12 @@ where
 
     /// Reset heating and cooling energy tracking (Plan 03-08d)
     pub fn reset_heating_cooling_energy(&mut self) {
-        self.0.annual_heating_energy = 0.0;
-        self.0.annual_cooling_energy = 0.0;
+        self.0.hvac.annual_heating_energy = 0.0;
+        self.0.hvac.annual_cooling_energy = 0.0;
         // Reset per-zone energy tracking (Issue #1288)
-        let heating_slice = self.0.zone_heating_energy_kwh.as_mut();
-        let cooling_slice = self.0.zone_cooling_energy_kwh.as_mut();
-        for i in 0..self.0.num_zones {
+        let heating_slice = self.0.hvac.zone_heating_energy_kwh.as_mut();
+        let cooling_slice = self.0.hvac.zone_cooling_energy_kwh.as_mut();
+        for i in 0..self.0.hvac.num_zones {
             heating_slice[i] = 0.0;
             cooling_slice[i] = 0.0;
         }
@@ -494,22 +499,22 @@ where
     /// energy figures and coupling unrelated tests that share a module-
     /// scoped fixture.
     pub fn reset_state(&mut self) {
-        let n = self.0.num_zones;
+        let n = self.0.hvac.num_zones;
         let init_temp = 20.0_f64;
         // Zone air / mass temperatures and their previous-step memory
         for i in 0..n {
-            self.0.temperatures.as_mut()[i] = init_temp;
-            self.0.mass_temperatures.as_mut()[i] = init_temp;
-            self.0.previous_temperatures.as_mut()[i] = init_temp;
-            self.0.previous_mass_temperatures.as_mut()[i] = init_temp;
-            self.0.envelope_mass_temperatures.as_mut()[i] = init_temp;
-            self.0.internal_mass_temperatures.as_mut()[i] = init_temp;
-            self.0.air_temperatures.as_mut()[i] = init_temp;
-            self.0.solar_lag.as_mut()[i] = 0.0;
+            self.0.setpoints.temperatures.as_mut()[i] = init_temp;
+            self.0.mass.mass_temperatures.as_mut()[i] = init_temp;
+            self.0.hvac.previous_temperatures.as_mut()[i] = init_temp;
+            self.0.mass.previous_mass_temperatures.as_mut()[i] = init_temp;
+            self.0.mass.envelope_mass_temperatures.as_mut()[i] = init_temp;
+            self.0.mass.internal_mass_temperatures.as_mut()[i] = init_temp;
+            self.0.mass.air_temperatures.as_mut()[i] = init_temp;
+            self.0.mass.solar_lag.as_mut()[i] = 0.0;
         }
         // Mass-energy-change accumulators (Plan 18-08, used by step_physics_5r1c)
-        self.0.envelope_mass_energy_change_cumulative = 0.0;
-        self.0.internal_mass_energy_change_cumulative = 0.0;
+        self.0.mass.envelope_mass_energy_change_cumulative = 0.0;
+        self.0.mass.internal_mass_energy_change_cumulative = 0.0;
         // Drop per-step diagnostic traces so the next call rebuilds them.
         self.0.diagnostics_state.hourly_temperatures = None;
         self.0.diagnostics_state.nodal_temperatures = None;
@@ -535,24 +540,24 @@ where
 
     /// Reset thermal mass energy tracking (Issue #432)
     pub fn reset_thermal_mass_energy(&mut self) {
-        self.0.mass_energy_change_cumulative = 0.0;
-        self.0.envelope_mass_energy_change_cumulative = 0.0;
-        self.0.internal_mass_energy_change_cumulative = 0.0;
+        self.0.mass.mass_energy_change_cumulative = 0.0;
+        self.0.mass.envelope_mass_energy_change_cumulative = 0.0;
+        self.0.mass.internal_mass_energy_change_cumulative = 0.0;
     }
 
     /// Get cumulative mass energy change in Joules (Issue #432)
     pub fn get_mass_energy_change_joules(&self) -> f64 {
-        self.0.mass_energy_change_cumulative
+        self.0.mass.mass_energy_change_cumulative
     }
 
     /// Get cumulative envelope mass energy change in Joules (Issue #432)
     pub fn get_envelope_mass_energy_change_joules(&self) -> f64 {
-        self.0.envelope_mass_energy_change_cumulative
+        self.0.mass.envelope_mass_energy_change_cumulative
     }
 
     /// Get cumulative internal mass energy change in Joules (Issue #432)
     pub fn get_internal_mass_energy_change_joules(&self) -> f64 {
-        self.0.internal_mass_energy_change_cumulative
+        self.0.mass.internal_mass_energy_change_cumulative
     }
 
     /// Validate energy conservation (Issue #432)
@@ -575,7 +580,7 @@ where
         let total_energy_in =
             total_hvac_energy_joules + total_solar_gains_joules + total_internal_gains_joules;
         let total_energy_out =
-            total_envelope_conduction_joules + self.0.mass_energy_change_cumulative;
+            total_envelope_conduction_joules + self.0.mass.mass_energy_change_cumulative;
 
         let imbalance = (total_energy_in - total_energy_out).abs();
 
@@ -610,34 +615,35 @@ impl ThermalModel<VectorField> {
         let roof_area = geometry.roof_area();
         let total_window_area = spec.total_window_area();
 
-        model.num_zones = num_zones;
-        model.zone_area = VectorField::from_scalar(floor_area, num_zones);
-        model.ceiling_height = VectorField::from_scalar(geometry.height, num_zones);
-        model.window_ratio = VectorField::from_scalar(total_window_area / wall_area, num_zones);
-        model.window_u_value = spec.window_properties.u_value;
+        model.hvac.num_zones = num_zones;
+        model.setpoints.zone_area = VectorField::from_scalar(floor_area, num_zones);
+        model.setpoints.ceiling_height = VectorField::from_scalar(geometry.height, num_zones);
+        model.setpoints.window_ratio =
+            VectorField::from_scalar(total_window_area / wall_area, num_zones);
+        model.solar.window_u_value = spec.window_properties.u_value;
         // Issue #2303: Set surface areas from spec geometry for correct gain distribution
-        model.wall_area = VectorField::from_scalar(wall_area, num_zones);
-        model.roof_area = VectorField::from_scalar(roof_area, num_zones);
-        model.floor_area = VectorField::from_scalar(floor_area, num_zones);
+        model.setpoints.wall_area = VectorField::from_scalar(wall_area, num_zones);
+        model.setpoints.roof_area = VectorField::from_scalar(roof_area, num_zones);
+        model.setpoints.floor_area = VectorField::from_scalar(floor_area, num_zones);
 
         // Case 195: Zero windows for steady-state solid conduction (only envelope conduction)
         if spec.case_id == "195" {
-            model.window_ratio = VectorField::from_scalar(0.0, num_zones);
+            model.setpoints.window_ratio = VectorField::from_scalar(0.0, num_zones);
             // Keep window_u_value at spec value - window area is what matters
         }
 
         // Issue #375: Set opaque surface U-values from construction
-        model.wall_u_value = spec.construction.wall.u_value(None, None);
-        model.roof_u_value = spec.construction.roof.u_value(None, None);
+        model.setpoints.wall_u_value = spec.construction.wall.u_value(None, None);
+        model.setpoints.roof_u_value = spec.construction.roof.u_value(None, None);
 
         // Case 195: Use ASHRAE-specified floor U-value for ground coupling (0.039 W/m²K)
         // This is a simplified ground coupling model for the solid conduction test
         if spec.case_id == "195" {
-            model.floor_u_value = 0.039;
+            model.setpoints.floor_u_value = 0.039;
         } else {
             // Issue #588 Fix: Use SurfaceType::Floor for correct film coefficients
             // and ground coupling resistance in floor U-value calculation.
-            model.floor_u_value = spec
+            model.setpoints.floor_u_value = spec
                 .construction
                 .floor
                 .u_value(Some(crate::sim::construction::SurfaceType::Floor), None);
@@ -646,7 +652,7 @@ impl ThermalModel<VectorField> {
         // Issue #746: Apply ground temperature boundary condition per ASHRAE 140-2023 Annex B §B3.3.
         // T_ground = 9.4°C (annual mean Denver air temperature) for all cases with floor slab.
         if let Some(ground_temp) = spec.ground_temperature_c {
-            model.ground_temperature = Box::new(
+            model.conduction.ground_temperature = Box::new(
                 crate::sim::boundary::ConstantGroundTemperature::new(ground_temp),
             );
         }
@@ -660,11 +666,12 @@ impl ThermalModel<VectorField> {
             (hvac.setback_setpoint, hvac.setback_hours)
         {
             // Use setback schedule: normal setpoint during day, reduced setpoint during setback hours
-            model.heating_schedule = DailySchedule::new();
+            model.setpoints.heating_schedule = DailySchedule::new();
             model
+                .setpoints
                 .heating_schedule
                 .fill_range(0, 24, hvac.heating_setpoint); // Normal setpoint
-            model.heating_schedule.fill_range(
+            model.setpoints.heating_schedule.fill_range(
                 setback_start as usize,
                 setback_end as usize,
                 setback_setpoint,
@@ -672,8 +679,9 @@ impl ThermalModel<VectorField> {
 
             // Handle cooling with operating hours
             let (cool_start, cool_end) = hvac.operating_hours;
-            model.cooling_schedule = DailySchedule::new();
+            model.setpoints.cooling_schedule = DailySchedule::new();
             model
+                .setpoints
                 .cooling_schedule
                 .fill_range(0, 24, hvac.cooling_setpoint);
 
@@ -686,19 +694,19 @@ impl ThermalModel<VectorField> {
                 // Zero out cooling outside operating hours
                 if cool_end > cool_start {
                     // Normal range (e.g., 7-18)
-                    model.cooling_schedule.fill_range(
+                    model.setpoints.cooling_schedule.fill_range(
                         0,
                         cool_start as usize,
                         disabled_cooling_setpoint,
                     );
-                    model.cooling_schedule.fill_range(
+                    model.setpoints.cooling_schedule.fill_range(
                         cool_end as usize,
                         24,
                         disabled_cooling_setpoint,
                     );
                 } else {
                     // Wrapping range (e.g., 18-7, active overnight)
-                    model.cooling_schedule.fill_range(
+                    model.setpoints.cooling_schedule.fill_range(
                         cool_end as usize,
                         cool_start as usize,
                         disabled_cooling_setpoint,
@@ -709,12 +717,13 @@ impl ThermalModel<VectorField> {
         } else if let (Some(_), Some((_start, _end))) = (hvac.setback_setpoint, hvac.setback_hours)
         {
             // Partial setback info - use constant as fallback
-            model.heating_schedule = DailySchedule::constant(hvac.heating_setpoint);
+            model.setpoints.heating_schedule = DailySchedule::constant(hvac.heating_setpoint);
 
             // Handle cooling with operating hours
             let (cool_start, cool_end) = hvac.operating_hours;
-            model.cooling_schedule = DailySchedule::new();
+            model.setpoints.cooling_schedule = DailySchedule::new();
             model
+                .setpoints
                 .cooling_schedule
                 .fill_range(0, 24, hvac.cooling_setpoint);
 
@@ -724,19 +733,19 @@ impl ThermalModel<VectorField> {
             if cool_start != cool_end {
                 if cool_end > cool_start {
                     // Normal range (e.g., 7-18): cooling 0-7 (disabled), cooling 7-18 (normal)
-                    model.cooling_schedule.fill_range(
+                    model.setpoints.cooling_schedule.fill_range(
                         0,
                         cool_start as usize,
                         disabled_cooling_setpoint,
                     );
-                    model.cooling_schedule.fill_range(
+                    model.setpoints.cooling_schedule.fill_range(
                         cool_end as usize,
                         24,
                         disabled_cooling_setpoint,
                     );
                 } else {
                     // Wrapping range (e.g., 18-7): cooling 0-18 (normal), cooling 18-24 + 0-7 (disabled)
-                    model.cooling_schedule.fill_range(
+                    model.setpoints.cooling_schedule.fill_range(
                         cool_end as usize,
                         cool_start as usize,
                         disabled_cooling_setpoint,
@@ -746,11 +755,12 @@ impl ThermalModel<VectorField> {
             // else: cool_start == cool_end (e.g., 0, 24) means all-day operation, keep constant
         } else {
             // No setback - handle cooling with operating hours
-            model.heating_schedule = DailySchedule::constant(hvac.heating_setpoint);
+            model.setpoints.heating_schedule = DailySchedule::constant(hvac.heating_setpoint);
 
             let (cool_start, cool_end) = hvac.operating_hours;
-            model.cooling_schedule = DailySchedule::new();
+            model.setpoints.cooling_schedule = DailySchedule::new();
             model
+                .setpoints
                 .cooling_schedule
                 .fill_range(0, 24, hvac.cooling_setpoint);
 
@@ -760,19 +770,19 @@ impl ThermalModel<VectorField> {
             if cool_start != cool_end {
                 if cool_end > cool_start {
                     // Normal range (e.g., 7-18): cooling 0-7 (disabled), cooling 7-18 (normal)
-                    model.cooling_schedule.fill_range(
+                    model.setpoints.cooling_schedule.fill_range(
                         0,
                         cool_start as usize,
                         disabled_cooling_setpoint,
                     );
-                    model.cooling_schedule.fill_range(
+                    model.setpoints.cooling_schedule.fill_range(
                         cool_end as usize,
                         24,
                         disabled_cooling_setpoint,
                     );
                 } else {
                     // Wrapping range (e.g., 18-7): cooling 0-18 (normal), cooling 18-24 + 0-7 (disabled)
-                    model.cooling_schedule.fill_range(
+                    model.setpoints.cooling_schedule.fill_range(
                         cool_end as usize,
                         cool_start as usize,
                         disabled_cooling_setpoint,
@@ -784,18 +794,18 @@ impl ThermalModel<VectorField> {
 
         // Issue #738: Set free_float flag based on spec to ensure HVAC is disabled
         // This flag is checked in step_physics_* functions before computing HVAC output
-        model.free_float = spec.is_free_floating();
+        model.hvac.free_float = spec.is_free_floating();
 
         // SESSION 73: For free-floating cases, set extreme setpoints to disable HVAC
         // This matches the behavior in ashrae_140_validator.rs
         if spec.is_free_floating() {
-            model.heating_setpoint = -999.0;
-            model.cooling_setpoint = 999.0;
-            model.heating_schedule = DailySchedule::constant(-999.0);
-            model.cooling_schedule = DailySchedule::constant(999.0);
+            model.setpoints.heating_setpoint = -999.0;
+            model.setpoints.cooling_setpoint = 999.0;
+            model.setpoints.heating_schedule = DailySchedule::constant(-999.0);
+            model.setpoints.cooling_schedule = DailySchedule::constant(999.0);
         } else {
-            model.heating_setpoint = hvac.heating_setpoint; // Direct access
-            model.cooling_setpoint = hvac.cooling_setpoint; // Direct access
+            model.setpoints.heating_setpoint = hvac.heating_setpoint; // Direct access
+            model.setpoints.cooling_setpoint = hvac.cooling_setpoint; // Direct access
         }
 
         // Set zone-specific HVAC setpoints for multi-zone buildings (Issue #273)
@@ -812,18 +822,19 @@ impl ThermalModel<VectorField> {
                 cooling_setpoints_vec.push(hvac.cooling_setpoint);
             }
         }
-        model.heating_setpoints = VectorField::new(heating_setpoints_vec);
-        model.cooling_setpoints = VectorField::new(cooling_setpoints_vec);
+        model.setpoints.heating_setpoints = VectorField::new(heating_setpoints_vec);
+        model.setpoints.cooling_setpoints = VectorField::new(cooling_setpoints_vec);
 
         // Weather data for solar gain calculation (Issue #278)
         // Try to load weather data from spec, otherwise use None
-        model.weather = spec.weather_data.clone();
-        model.infiltration_rate = VectorField::from_scalar(spec.infiltration_ach, num_zones);
+        model.solar.weather = spec.weather_data.clone();
+        model.setpoints.infiltration_rate =
+            VectorField::from_scalar(spec.infiltration_ach, num_zones);
 
         // Case 195: Steady-state solid conduction - eliminate all dynamic heat transfer
         // Zero infiltration, internal loads, and use minimal thermal capacitance
         if spec.case_id == "195" {
-            model.infiltration_rate = VectorField::from_scalar(0.0, num_zones);
+            model.setpoints.infiltration_rate = VectorField::from_scalar(0.0, num_zones);
         }
 
         // Set zone-specific HVAC enable flags for multi-zone buildings
@@ -842,7 +853,7 @@ impl ThermalModel<VectorField> {
                 hvac_enabled_vec.push(1.0);
             }
         }
-        model.hvac_enabled = VectorField::new(hvac_enabled_vec);
+        model.hvac.hvac_enabled = VectorField::new(hvac_enabled_vec);
 
         // Update surfaces based on spec window areas (zone-specific for multi-zone)
         let mut surfaces = Vec::with_capacity(num_zones);
@@ -941,7 +952,7 @@ impl ThermalModel<VectorField> {
             }
             surfaces.push(zone_surfaces);
         }
-        model.surfaces = surfaces;
+        model.solar.surfaces = surfaces;
 
         // Update conductances based on spec - zone-specific calculations for multi-zone
         let mut h_tr_w_vec = Vec::with_capacity(num_zones);
@@ -1503,8 +1514,8 @@ impl ThermalModel<VectorField> {
             // This path was bypassed when h_tr_em was added directly to derived_h_ext.
             // Fix: Compute h_tr_is_south and h_tr_em_south separately, and use the
             // series combination 1/(1/h_tr_is_south + 1/h_tr_em_south) in derived_h_ext.
-            let south_opaque_area = if zone_idx < model.surfaces.len() {
-                model.surfaces[zone_idx]
+            let south_opaque_area = if zone_idx < model.solar.surfaces.len() {
+                model.solar.surfaces[zone_idx]
                     .iter()
                     .find(|s| {
                         s.orientation == crate::validation::ashrae_140_cases::Orientation::South
@@ -1634,15 +1645,15 @@ impl ThermalModel<VectorField> {
             cm_floor_vec.push(floor_cap);
         }
 
-        model.h_tr_w = VectorField::new(h_tr_w_vec);
-        model.h_ve = VectorField::new(h_ve_vec);
-        model.h_tr_floor = VectorField::new(h_tr_floor_vec);
-        model.h_tr_is = VectorField::new(h_tr_is_vec);
-        model.h_tr_ms = VectorField::new(h_tr_ms_vec.clone());
-        model.h_tr_em = VectorField::new(h_tr_em_vec.clone());
+        model.conduction.h_tr_w = VectorField::new(h_tr_w_vec);
+        model.conduction.h_ve = VectorField::new(h_ve_vec);
+        model.conduction.h_tr_floor = VectorField::new(h_tr_floor_vec);
+        model.conduction.h_tr_is = VectorField::new(h_tr_is_vec);
+        model.conduction.h_tr_ms = VectorField::new(h_tr_ms_vec.clone());
+        model.conduction.h_tr_em = VectorField::new(h_tr_em_vec.clone());
         // === Issue 715 FIX: Assign south-wall bypass vectors ===
-        model.h_tr_is_no_south = VectorField::new(h_tr_is_no_south_vec);
-        model.h_tr_em_south = VectorField::new(h_tr_em_south_vec.clone());
+        model.conduction.h_tr_is_no_south = VectorField::new(h_tr_is_no_south_vec);
+        model.conduction.h_tr_em_south = VectorField::new(h_tr_em_south_vec.clone());
 
         // === Phase 6B: Assign per-surface thermal mass conductances for 9R4C model ===
         // Only populate when using 9R4C model (heavy mass buildings like Case 900+)
@@ -1650,33 +1661,33 @@ impl ThermalModel<VectorField> {
         let is_9r4c_model = spec.construction_type
             == crate::validation::ashrae_140_cases::ConstructionType::HighMass;
         if is_9r4c_model {
-            model.h_tr_ms_wall = Some(VectorField::new(h_tr_ms_wall_vec.clone()));
-            model.h_tr_ms_roof = Some(VectorField::new(h_tr_ms_roof_vec.clone()));
-            model.h_tr_ms_floor = Some(VectorField::new(h_tr_ms_floor_vec.clone()));
-            model.h_tr_em_wall = Some(VectorField::new(h_tr_em_wall_vec.clone()));
-            model.h_tr_em_roof = Some(VectorField::new(h_tr_em_roof_vec.clone()));
-            model.h_tr_em_floor = Some(VectorField::new(h_tr_em_floor_vec.clone()));
-            model.cm_wall = Some(VectorField::new(cm_wall_vec.clone()));
-            model.cm_roof = Some(VectorField::new(cm_roof_vec.clone()));
-            model.cm_floor = Some(VectorField::new(cm_floor_vec.clone()));
+            model.conduction.h_tr_ms_wall = Some(VectorField::new(h_tr_ms_wall_vec.clone()));
+            model.conduction.h_tr_ms_roof = Some(VectorField::new(h_tr_ms_roof_vec.clone()));
+            model.conduction.h_tr_ms_floor = Some(VectorField::new(h_tr_ms_floor_vec.clone()));
+            model.conduction.h_tr_em_wall = Some(VectorField::new(h_tr_em_wall_vec.clone()));
+            model.conduction.h_tr_em_roof = Some(VectorField::new(h_tr_em_roof_vec.clone()));
+            model.conduction.h_tr_em_floor = Some(VectorField::new(h_tr_em_floor_vec.clone()));
+            model.conduction.cm_wall = Some(VectorField::new(cm_wall_vec.clone()));
+            model.conduction.cm_roof = Some(VectorField::new(cm_roof_vec.clone()));
+            model.conduction.cm_floor = Some(VectorField::new(cm_floor_vec.clone()));
             // cm_internal will be set when h_tr_me is calculated (uses furniture τ ≈ 3-4h)
-            model.cm_internal = None;
+            model.conduction.cm_internal = None;
             // Initialize MultiNodeThermalMass with per-surface nodes
             // Note: actual temperature initialization happens in multi_node_thermal.rs
-            model.multi_node_thermal_mass =
+            model.mass.multi_node_thermal_mass =
                 Some(fluxion_core::multi_node::MultiNodeThermalMass::default());
         } else {
-            model.h_tr_ms_wall = None;
-            model.h_tr_ms_roof = None;
-            model.h_tr_ms_floor = None;
-            model.h_tr_em_wall = None;
-            model.h_tr_em_roof = None;
-            model.h_tr_em_floor = None;
-            model.cm_wall = None;
-            model.cm_roof = None;
-            model.cm_floor = None;
-            model.cm_internal = None;
-            model.multi_node_thermal_mass = None;
+            model.conduction.h_tr_ms_wall = None;
+            model.conduction.h_tr_ms_roof = None;
+            model.conduction.h_tr_ms_floor = None;
+            model.conduction.h_tr_em_wall = None;
+            model.conduction.h_tr_em_roof = None;
+            model.conduction.h_tr_em_floor = None;
+            model.conduction.cm_wall = None;
+            model.conduction.cm_roof = None;
+            model.conduction.cm_floor = None;
+            model.conduction.cm_internal = None;
+            model.mass.multi_node_thermal_mass = None;
         }
 
         // === Issue 692 FIX: Physics-Based h_tr_me Calculation ===
@@ -1737,11 +1748,11 @@ impl ThermalModel<VectorField> {
             .collect();
 
         // For 9R4C model, assign cm_internal if not already set in the loop above
-        if is_9r4c_model && model.cm_internal.is_none() {
+        if is_9r4c_model && model.conduction.cm_internal.is_none() {
             // cm_internal_vec should have been populated in the loop above
             // But if zones == 0, handle that case
             if !cm_internal_vec.is_empty() {
-                model.cm_internal = Some(VectorField::new(cm_internal_vec));
+                model.conduction.cm_internal = Some(VectorField::new(cm_internal_vec));
             }
         }
 
@@ -1749,54 +1760,64 @@ impl ThermalModel<VectorField> {
         // Each zone gets its own MultiNodeSolver with per-surface conductances
         if is_9r4c_model {
             // Extract all needed values first to avoid borrow conflicts
-            let h_tr_is_vals: Vec<f64> = model.h_tr_is.as_ref().to_vec();
-            let h_tr_me_vals: Vec<f64> = model.h_tr_me.as_ref().to_vec();
+            let h_tr_is_vals: Vec<f64> = model.conduction.h_tr_is.as_ref().to_vec();
+            let h_tr_me_vals: Vec<f64> = model.mass.h_tr_me.as_ref().to_vec();
             let cm_wall_vals: Vec<f64> = model
+                .conduction
                 .cm_wall
                 .as_ref()
                 .map(|v| v.as_ref().to_vec())
                 .unwrap_or_default();
             let cm_roof_vals: Vec<f64> = model
+                .conduction
                 .cm_roof
                 .as_ref()
                 .map(|v| v.as_ref().to_vec())
                 .unwrap_or_default();
             let cm_floor_vals: Vec<f64> = model
+                .conduction
                 .cm_floor
                 .as_ref()
                 .map(|v| v.as_ref().to_vec())
                 .unwrap_or_default();
             let cm_internal_vals: Vec<f64> = model
+                .conduction
                 .cm_internal
                 .as_ref()
                 .map(|v| v.as_ref().to_vec())
                 .unwrap_or_default();
             let h_tr_ms_wall_vals: Vec<f64> = model
+                .conduction
                 .h_tr_ms_wall
                 .as_ref()
                 .map(|v| v.as_ref().to_vec())
                 .unwrap_or_default();
             let h_tr_ms_roof_vals: Vec<f64> = model
+                .conduction
                 .h_tr_ms_roof
                 .as_ref()
                 .map(|v| v.as_ref().to_vec())
                 .unwrap_or_default();
             let h_tr_ms_floor_vals: Vec<f64> = model
+                .conduction
                 .h_tr_ms_floor
                 .as_ref()
                 .map(|v| v.as_ref().to_vec())
                 .unwrap_or_default();
             let h_tr_em_wall_vals: Vec<f64> = model
+                .conduction
                 .h_tr_em_wall
                 .as_ref()
                 .map(|v| v.as_ref().to_vec())
                 .unwrap_or_default();
             let h_tr_em_roof_vals: Vec<f64> = model
+                .conduction
                 .h_tr_em_roof
                 .as_ref()
                 .map(|v| v.as_ref().to_vec())
                 .unwrap_or_default();
             let h_tr_em_floor_vals: Vec<f64> = model
+                .conduction
                 .h_tr_em_floor
                 .as_ref()
                 .map(|v| v.as_ref().to_vec())
@@ -1848,16 +1869,16 @@ impl ThermalModel<VectorField> {
                 solver.initialize_temperatures(20.0);
                 solvers.push(solver);
             }
-            model.conduction.multi_node_solvers = solvers;
+            model.conduction.backend.multi_node_solvers = solvers;
         }
 
-        model.h_tr_me = VectorField::new(h_tr_me_vec);
+        model.mass.h_tr_me = VectorField::new(h_tr_me_vec);
 
-        model.thermal_capacitance = VectorField::new(thermal_cap_vec);
+        model.mass.thermal_capacitance = VectorField::new(thermal_cap_vec);
 
         // Issue #1522 option (a): store the air-node capacitance per zone so
         // step_physics_5r1c can apply the implicit-Euler air-node ODE.
-        model.air_thermal_capacitance = VectorField::new(air_thermal_cap_vec);
+        model.mass.air_thermal_capacitance = VectorField::new(air_thermal_cap_vec);
 
         // === Issue #894 FIX: Compute derived_h_tr_3 (ISO 13790 air-to-mass conductance) ===
         //
@@ -1876,10 +1897,25 @@ impl ThermalModel<VectorField> {
         {
             let mut derived_h_tr_3_vec = Vec::with_capacity(num_zones);
             for zone_idx in 0..num_zones {
-                let h_tr_ms_z = *model.h_tr_ms.as_ref().get(zone_idx).unwrap_or(&0.0);
-                let h_tr_is_z = *model.h_tr_is.as_ref().get(zone_idx).unwrap_or(&0.0);
-                let h_tr_w_z = *model.h_tr_w.as_ref().get(zone_idx).unwrap_or(&0.0);
-                let h_ve_z = *model.h_ve.as_ref().get(zone_idx).unwrap_or(&0.0);
+                let h_tr_ms_z = *model
+                    .conduction
+                    .h_tr_ms
+                    .as_ref()
+                    .get(zone_idx)
+                    .unwrap_or(&0.0);
+                let h_tr_is_z = *model
+                    .conduction
+                    .h_tr_is
+                    .as_ref()
+                    .get(zone_idx)
+                    .unwrap_or(&0.0);
+                let h_tr_w_z = *model
+                    .conduction
+                    .h_tr_w
+                    .as_ref()
+                    .get(zone_idx)
+                    .unwrap_or(&0.0);
+                let h_ve_z = *model.conduction.h_ve.as_ref().get(zone_idx).unwrap_or(&0.0);
 
                 let h_tr_3 = if h_tr_ms_z > 0.0 && h_tr_is_z > 0.0 && h_ve_z > 0.0 {
                     // H_tr_1: series of ventilation and interior surface conductance
@@ -1901,16 +1937,26 @@ impl ThermalModel<VectorField> {
                 };
                 derived_h_tr_3_vec.push(h_tr_3);
             }
-            model.derived_h_tr_3 = VectorField::new(derived_h_tr_3_vec);
+            model.conduction.derived_h_tr_3 = VectorField::new(derived_h_tr_3_vec);
 
             // Issue #894: Log correct τ using derived_h_tr_3 for Case 900
             // Gated per #1967 (debug-physics feature); pure diagnostic, no side effects.
             #[cfg(feature = "debug-physics")]
             {
                 if spec.case_id == "900" {
-                    let cm = *model.thermal_capacitance.as_ref().first().unwrap_or(&0.0);
-                    let h_tr_3_0 = *model.derived_h_tr_3.as_ref().first().unwrap_or(&0.0);
-                    let h_tr_ms_0 = *model.h_tr_ms.as_ref().first().unwrap_or(&0.0);
+                    let cm = *model
+                        .mass
+                        .thermal_capacitance
+                        .as_ref()
+                        .first()
+                        .unwrap_or(&0.0);
+                    let h_tr_3_0 = *model
+                        .conduction
+                        .derived_h_tr_3
+                        .as_ref()
+                        .first()
+                        .unwrap_or(&0.0);
+                    let h_tr_ms_0 = *model.conduction.h_tr_ms.as_ref().first().unwrap_or(&0.0);
                     let tau_seconds = if h_tr_3_0 > 0.0 { cm / h_tr_3_0 } else { 0.0 };
                     let tau_hours = tau_seconds / 3600.0;
                     eprintln!(
@@ -1939,7 +1985,7 @@ impl ThermalModel<VectorField> {
                     loads_vec.push(load_per_m2);
                     // Use convective fraction from first zone for now
                     if zone_idx == 0 {
-                        model.convective_fraction = loads.convective_fraction;
+                        model.solar.convective_fraction = loads.convective_fraction;
                     }
                 } else {
                     loads_vec.push(0.0);
@@ -1948,25 +1994,25 @@ impl ThermalModel<VectorField> {
                 loads_vec.push(0.0);
             }
         }
-        model.loads = VectorField::new(loads_vec);
-        model.solar_gains = VectorField::from_scalar(0.0, num_zones);
-        model.opaque_solar_gains = VectorField::from_scalar(0.0, num_zones);
+        model.setpoints.loads = VectorField::new(loads_vec);
+        model.solar.solar_gains = VectorField::from_scalar(0.0, num_zones);
+        model.solar.opaque_solar_gains = VectorField::from_scalar(0.0, num_zones);
 
         // Case 195: Zero internal loads for steady-state solid conduction
         if spec.case_id == "195" {
-            model.loads = VectorField::from_scalar(0.0, num_zones);
-            model.solar_gains = VectorField::from_scalar(0.0, num_zones);
+            model.setpoints.loads = VectorField::from_scalar(0.0, num_zones);
+            model.solar.solar_gains = VectorField::from_scalar(0.0, num_zones);
         }
 
         // SESSION 31: Zero internal loads for free-floating cases per ASHRAE 140
         // FF cases should have NO internal gains according to ASHRAE 140 specification
         // Note: Solar gains are still applied (building is exposed to sun)
         if spec.case_id.contains("FF") {
-            model.loads = VectorField::from_scalar(0.0, num_zones);
+            model.setpoints.loads = VectorField::from_scalar(0.0, num_zones);
         }
 
         // Night ventilation
-        model.night_ventilation = spec.night_ventilation;
+        model.hvac.night_ventilation = spec.night_ventilation;
 
         // Calculate total building floor area for HVAC capacity sizing
         let mut _total_floor_area = 0.0;
@@ -2067,27 +2113,27 @@ impl ThermalModel<VectorField> {
                 crate::validation::ashrae_140_cases::ConstructionType::HighMass => (0.0, 0.30),
                 crate::validation::ashrae_140_cases::ConstructionType::Special => (0.10, 0.50),
             };
-            model.solar_distribution_to_air = air_frac;
-            model.solar_beam_to_mass_fraction = mass_frac_of_remaining;
+            model.solar.solar_distribution_to_air = air_frac;
+            model.solar.solar_beam_to_mass_fraction = mass_frac_of_remaining;
         }
 
         // Physics-based: Thermal mass effects are captured through Cm in the thermal network
         // No correction factor is applied - the 5R1C/6R2C model handles this naturally
 
         // Initialize HVAC controller with setpoints from spec
-        model.hvac_controller =
+        model.hvac.hvac_controller =
             IdealHVACController::new(hvac.heating_setpoint, hvac.cooling_setpoint);
         // Configure HVAC controller capacities and staging
-        model.hvac_controller.heating_stages = 1;
-        model.hvac_controller.cooling_stages = 1;
-        model.hvac_controller.heating_capacity_per_stage = model.hvac_heating_capacity;
-        model.hvac_controller.cooling_capacity_per_stage = model.hvac_cooling_capacity;
-        model.hvac_controller.deadband_tolerance = 0.5; // 0.5°C deadband tolerance
+        model.hvac.hvac_controller.heating_stages = 1;
+        model.hvac.hvac_controller.cooling_stages = 1;
+        model.hvac.hvac_controller.heating_capacity_per_stage = model.hvac.hvac_heating_capacity;
+        model.hvac.hvac_controller.cooling_capacity_per_stage = model.hvac.hvac_cooling_capacity;
+        model.hvac.hvac_controller.deadband_tolerance = 0.5; // 0.5°C deadband tolerance
 
         // Initialize location for solar position calculation (Issue #278)
         // Default to Denver, CO for ASHRAE 140 validation
-        model.latitude_deg = 39.83;
-        model.longitude_deg = -104.65;
+        model.solar.latitude_deg = 39.83;
+        model.solar.longitude_deg = -104.65;
 
         // Initialize window properties for solar gain calculation (Issue #278)
         // Issue #351: Use zone-specific window areas for accurate solar gains
@@ -2122,8 +2168,8 @@ impl ThermalModel<VectorField> {
             window_orients_vec.push(orientations);
         }
 
-        model.window_properties = window_props_vec;
-        model.window_orientations = window_orients_vec;
+        model.solar.window_properties = window_props_vec;
+        model.solar.window_orientations = window_orients_vec;
 
         // Set HVAC capacity limits using design day load calculation
         // Calculate peak loads by simulating 24-hour heating and cooling design days,
@@ -2195,11 +2241,11 @@ impl ThermalModel<VectorField> {
             // Case 960: Sunspace building with much lower peak loads
             // Reference range: 2.0-8.0 kW heating, 0.0-4.0 kW cooling
             // Set capacity to 15 kW to allow for some margin above reference
-            model.hvac_heating_capacity = 15_000.0; // 15 kW for Case 960
-            model.hvac_cooling_capacity = 15_000.0; // 15 kW for Case 960
+            model.hvac.hvac_heating_capacity = 15_000.0; // 15 kW for Case 960
+            model.hvac.hvac_cooling_capacity = 15_000.0; // 15 kW for Case 960
         } else {
-            model.hvac_heating_capacity = 100_000.0; // 100 kW (very high, won't be a limit for ASHRAE 140)
-            model.hvac_cooling_capacity = 100_000.0; // 100 kW (very high, won't be a limit for ASHRAE 140)
+            model.hvac.hvac_heating_capacity = 100_000.0; // 100 kW (very high, won't be a limit for ASHRAE 140)
+            model.hvac.hvac_cooling_capacity = 100_000.0; // 100 kW (very high, won't be a limit for ASHRAE 140)
         }
 
         // Phase 6E / ADR-002 (#1175): Enable the 9R4C model for high-mass
@@ -2342,8 +2388,9 @@ impl ThermalModel<VectorField> {
             }
 
             // Set inter-zone conductance (assuming single connection between zones for now)
-            model.h_tr_iz = VectorField::from_scalar(total_conductance, num_zones);
-            model.h_tr_iz_rad = VectorField::from_scalar(radiative_conductance, num_zones);
+            model.conduction.h_tr_iz = VectorField::from_scalar(total_conductance, num_zones);
+            model.conduction.h_tr_iz_rad =
+                VectorField::from_scalar(radiative_conductance, num_zones);
 
             // Update zone areas for multi-zone case
             // Zone 0: back-zone (8x6m = 48 m²), Zone 1: sunspace (8x2m = 16 m²)
@@ -2360,20 +2407,20 @@ impl ThermalModel<VectorField> {
                         zone_volume_vec.push(spec.geometry[0].volume());
                     }
                 }
-                model.zone_area = VectorField::new(zone_area_vec);
-                model.zone_volume = VectorField::new(zone_volume_vec);
+                model.setpoints.zone_area = VectorField::new(zone_area_vec);
+                model.setpoints.zone_volume = VectorField::new(zone_volume_vec);
 
                 // Calculate common wall area for multi-zone buildings
-                model.common_wall_area = spec.common_walls.iter().map(|w| w.area).sum();
+                model.setpoints.common_wall_area = spec.common_walls.iter().map(|w| w.area).sum();
             }
 
             // Set surface emissivity for inter-zone radiative heat transfer
             // Default interior surface emissivity = 0.9
-            model.surface_emissivity = VectorField::from_scalar(0.9, num_zones);
+            model.conduction.surface_emissivity = VectorField::from_scalar(0.9, num_zones);
         }
 
         // Set the ASHRAE 140 case identifier for special handling
-        model.case_id = spec.case_id.clone();
+        model.hvac.case_id = spec.case_id.clone();
 
         // Issue #2339: Set sub-hour air-node sub-stepping for Case 600 series.
         // The 600 series (Case 600, 610, 620, 630, 640, 650, 600FF, 650FF) all use
@@ -2386,18 +2433,18 @@ impl ThermalModel<VectorField> {
             "600" | "610" | "620" | "630" | "640" | "650" | "600FF" | "650FF"
         );
         if is_600_series {
-            model.sub_hour_air_node_steps = 3;
+            model.mass.sub_hour_air_node_steps = 3;
         }
 
         // Set building type for auto-loading internal load profiles (Plan 17-04)
-        model.building_type = OccupancyBuildingType::Office;
+        model.hvac.building_type = OccupancyBuildingType::Office;
 
         // Configure door geometry for temperature-dependent inter-zone air exchange (stack effect)
         // Used for sunspace buildings (Case 960)
         if let (Some(height), Some(area)) = (spec.door_height, spec.door_area) {
-            model.door_geometry = DoorGeometry::new(height, area);
+            model.hvac.door_geometry = DoorGeometry::new(height, area);
         } else {
-            model.door_geometry = DoorGeometry::default();
+            model.hvac.door_geometry = DoorGeometry::default();
         }
 
         model.update_optimization_cache();
@@ -2413,8 +2460,8 @@ impl ThermalModel<VectorField> {
             // Use computed thermal capacitance (not artificial 1e12)
             // The model computes proper Cm from construction layers
             // Only zero out envelope/internal caps as they're already included in Cm
-            model.envelope_thermal_capacitance = VectorField::from_scalar(0.0, num_zones);
-            model.internal_thermal_capacitance = VectorField::from_scalar(0.0, num_zones);
+            model.mass.envelope_thermal_capacitance = VectorField::from_scalar(0.0, num_zones);
+            model.mass.internal_thermal_capacitance = VectorField::from_scalar(0.0, num_zones);
             // Update cache after modifying thermal capacitance
             model.update_optimization_cache();
         }
@@ -2425,22 +2472,23 @@ impl ThermalModel<VectorField> {
 
         // Attach HVAC equipment from spec (if specified)
         // This is required for Cases 800-810 (HVAC equipment cases)
-        model.hvac_equipment = spec.hvac_equipment.clone();
+        model.hvac.hvac_equipment = spec.hvac_equipment.clone();
 
         // Issue #2345: Compute ventilation airflow for economizer free-cooling calculations.
         // Priority: 1) HVAC equipment design airflow, 2) night ventilation fan capacity, 3) 0.0
-        model.ventilation_airflow_m3_per_s = if let Some(ref equipment) = model.hvac_equipment {
-            equipment.ventilation_airflow_m3_per_s()
-        } else if let Some(ref night_vent) = spec.night_ventilation {
-            // Convert from standard m³/h to m³/s
-            night_vent.fan_capacity / 3600.0
-        } else {
-            0.0
-        };
+        model.setpoints.ventilation_airflow_m3_per_s =
+            if let Some(ref equipment) = model.hvac.hvac_equipment {
+                equipment.ventilation_airflow_m3_per_s()
+            } else if let Some(ref night_vent) = spec.night_ventilation {
+                // Convert from standard m³/h to m³/s
+                night_vent.fan_capacity / 3600.0
+            } else {
+                0.0
+            };
 
         // Initialize IdealLoadsSystem with zone properties from geometry (Issue #521, Issue #532)
         // Create one IdealLoadsSystem per zone with that zone's volume
-        let zone_vols = model.zone_volume.as_ref();
+        let zone_vols = model.setpoints.zone_volume.as_ref();
         let ventilation_ach = if spec.infiltration_ach == 0.0 && spec.case_id == "195" {
             // Case 195 and its variants: Use minimum ventilation for HVAC delivery
             // ASHRAE 140 specifies 0 ACH infiltration but minimum mechanical ventilation is needed
@@ -2452,7 +2500,7 @@ impl ThermalModel<VectorField> {
         } else {
             spec.infiltration_ach
         };
-        model.ideal_loads_system = zone_vols
+        model.hvac.ideal_loads_system = zone_vols
             .iter()
             .map(|&vol| Some(IdealLoadsSystem::new(vol, ventilation_ach)))
             .collect();
@@ -2490,7 +2538,7 @@ impl ThermalModel<VectorField> {
     /// # Panics
     /// Panics if thermal_capacitance or zone_area are empty or if thermal_capacitance[0] == 0
     pub fn apply_thermal_mass_correction(&mut self) {
-        let total_cap: f64 = self.0.thermal_capacitance.iter().sum();
+        let total_cap: f64 = self.0.mass.thermal_capacitance.iter().sum();
 
         // Early exit for low-mass buildings
         if total_cap <= HIGH_MASS_THRESHOLD {
@@ -2647,14 +2695,14 @@ impl ThermalModel<VectorField> {
 
         // Create ThermalModel if all validations pass
         let mut model = ThermalModel::new(num_zones);
-        model.window_u_value = window_u_value;
-        model.heating_setpoint = hvac_setpoint;
-        model.cooling_setpoint = hvac_setpoint + 7.0; // Default cooling setpoint (7K deadband)
-        model.h_tr_em = VectorField::from_scalar(h_tr_em, num_zones);
-        model.h_tr_ms = VectorField::from_scalar(h_tr_ms, num_zones);
-        model.h_tr_is = VectorField::from_scalar(h_tr_is, num_zones);
-        model.h_tr_w = VectorField::from_scalar(h_tr_w, num_zones);
-        model.h_ve = VectorField::from_scalar(h_ve, num_zones);
+        model.solar.window_u_value = window_u_value;
+        model.setpoints.heating_setpoint = hvac_setpoint;
+        model.setpoints.cooling_setpoint = hvac_setpoint + 7.0; // Default cooling setpoint (7K deadband)
+        model.conduction.h_tr_em = VectorField::from_scalar(h_tr_em, num_zones);
+        model.conduction.h_tr_ms = VectorField::from_scalar(h_tr_ms, num_zones);
+        model.conduction.h_tr_is = VectorField::from_scalar(h_tr_is, num_zones);
+        model.conduction.h_tr_w = VectorField::from_scalar(h_tr_w, num_zones);
+        model.conduction.h_ve = VectorField::from_scalar(h_ve, num_zones);
         model.update_derived_parameters();
 
         Ok(model)
@@ -2748,271 +2796,167 @@ impl ThermalModel<VectorField> {
         }
 
         let mut model = ThermalModel(ThermalModelData {
-            num_zones,
-            temperatures: VectorField::from_scalar(20.0, num_zones), // Initialize at 20°C
-            mass_temperatures: VectorField::from_scalar(20.0, num_zones), // Initialize Tm at 20°C
-            loads: VectorField::from_scalar(0.0, num_zones),
-            solar_gains: VectorField::from_scalar(0.0, num_zones),
-            opaque_solar_gains: VectorField::from_scalar(0.0, num_zones),
-            surfaces,
-            window_u_value: 2.5,    // Default U-value
-            heating_setpoint: 20.0, // Default heating setpoint (ASHRAE 140)
-            cooling_setpoint: 27.0, // Default cooling setpoint (ASHRAE 140)
-            heating_setpoints: VectorField::from_scalar(20.0, num_zones), // Zone-specific heating setpoints
-            cooling_setpoints: VectorField::from_scalar(27.0, num_zones), // Zone-specific cooling setpoints
-            hvac_enabled: VectorField::from_scalar(1.0, num_zones), // HVAC enabled for all zones
-            heating_schedule: DailySchedule::constant(20.0),
-            cooling_schedule: DailySchedule::constant(27.0),
-            hvac_heating_capacity: 100_000.0, // Default: 100kW heating (high limit for validation)
-            hvac_cooling_capacity: 100_000.0, // Default: 100kW cooling (high limit for validation)
-
-            // Physical Constants Defaults
-            zone_area: VectorField::from_scalar(zone_area, num_zones),
-            wall_area: VectorField::from_scalar(wall_area_calc, num_zones),
-            roof_area: VectorField::from_scalar(roof_area_calc, num_zones),
-            floor_area: VectorField::from_scalar(floor_area_calc, num_zones),
-            ceiling_height: VectorField::from_scalar(ceiling_height, num_zones),
-            air_density: VectorField::from_scalar(1.2, num_zones),
-            heat_capacity: VectorField::from_scalar(1005.0, num_zones),
-            window_ratio: VectorField::from_scalar(window_ratio, num_zones),
-            aspect_ratio: VectorField::from_scalar(aspect_ratio, num_zones),
-            infiltration_rate: VectorField::from_scalar(0.5, num_zones), // 0.5 ACH
-
-            // Opaque surface U-values from construction (Issue #375)
-            wall_u_value: 0.5,    // Default U-value (will be set from construction)
-            roof_u_value: 0.5,    // Default U-value (will be set from construction)
-            floor_u_value: 0.039, // Default U-value (ASHRAE 140 insulated floor)
-
-            // ASHRAE 140 case identifier
-            case_id: String::new(),
-
-            // Building type for auto-loading internal load profiles (Plan 17-04)
-            building_type: OccupancyBuildingType::Office,
-
-            // Thermal model type
-            thermal_model_type: ThermalModelType::FiveROneC,
-
-            // Adaptive timestep configuration (default: fixed 1-hour for backward compatibility)
-            timestep_mode: TimestepMode::default(),
-
-            // Placeholders (will be updated by update_derived_parameters)
-            thermal_capacitance: VectorField::from_scalar(1.0, num_zones),
-
-            // Issue #1522 option (a): air-node capacitance placeholder; from_spec
-            // populates the real value C_air = ρ·cp·V_zone per zone. Zero here
-            // would reduce step_physics_5r1c to the legacy algebraic-pinning path,
-            // but the air_temperatures field enables the ODE path unconditionally.
-            air_thermal_capacitance: VectorField::from_scalar(0.0, num_zones),
-
-            // Issue #1585: independent air-node ODE state. Initialized to 20°C
-            // (matching the initial zone temperature); stepped each call to
-            // step_physics_5r1c via the exact exponential solution.
-            air_temperatures: VectorField::from_scalar(20.0, num_zones),
-
-            // Issue #2339: sub-hour air-node sub-stepping. Default 1 (no sub-stepping).
-            // Case 600 series (610, 630, 640) use N=3 to resolve LIMIT-05.
-            sub_hour_air_node_steps: 1,
-
-            // Issue #1860: solar-lag state (first-order low-pass filter on
-            // surface/mass solar flux). Initialized to zero (no solar history).
-            solar_lag: VectorField::from_scalar(0.0, num_zones),
-
-            // Issue #1860: independent interior wall-surface ODE state. Initialized
-            // to 20°C (matching the initial zone temperature); stepped each call to
-            // step_physics_5r1c via the exact exponential solution using the wall's
-            // surface time constant τ_si = C_m · (R_1 ∥ R_si). Used by the
-            // time-constant-aware variant to compute q_zone = (T_si - T_int) / R_si
-            // instead of the legacy lumped (T_m - T_int) / R_total approximation.
-            wall_surface_temperatures: VectorField::from_scalar(20.0, num_zones),
-
-            // Issue #2890: partitioned interior surface temperatures for the
-            // floor-ceiling-wall longwave radiation exchange network. Each
-            // surface type has its own ODE state that participates in the LW
-            // network. Initialized to 20°C (matching the wall surface state).
-            surface_temp_floor: VectorField::from_scalar(20.0, num_zones),
-            surface_temp_ceiling: VectorField::from_scalar(20.0, num_zones),
-            surface_temp_wall: VectorField::from_scalar(20.0, num_zones),
-
-            // 6R2C model fields (initialized for 5R1C compatibility)
-            envelope_mass_temperatures: VectorField::from_scalar(20.0, num_zones),
-            internal_mass_temperatures: VectorField::from_scalar(20.0, num_zones),
-            envelope_thermal_capacitance: VectorField::from_scalar(0.0, num_zones),
-            internal_thermal_capacitance: VectorField::from_scalar(0.0, num_zones),
-            h_tr_me: VectorField::from_scalar(0.0, num_zones), // Conductance between envelope and internal mass
-
-            // 8R3C model fields (initialized as None for 5R1C/6R2C compatibility - Phase 20 evaluation)
-            ceiling_mass_temperatures: None,
-            floor_mass_temperatures: None,
-            partition_mass_temperatures: None,
-            ceiling_thermal_capacitance: None,
-            floor_thermal_capacitance: None,
-            partition_thermal_capacitance: None,
-            h_tr_ceiling: None,
-            h_tr_floor_mass: None,
-            h_tr_partition: None,
-
-            h_tr_w: VectorField::from_scalar(0.0, num_zones),
-            h_tr_em: VectorField::from_scalar(0.0, num_zones),
-            h_tr_ms: VectorField::from_scalar(1000.0, num_zones), // Will be set from physics
-            h_tr_is: VectorField::from_scalar(1658.0, num_zones), // ~7.97 W/m²K * 208 m² for default zone
-            h_tr_is_no_south: VectorField::from_scalar(0.0, num_zones), // Will be calculated in conductance setup
-            h_tr_em_south: VectorField::from_scalar(0.0, num_zones), // Will be calculated in conductance setup
-            h_ve: VectorField::from_scalar(0.0, num_zones),
-            h_tr_floor: VectorField::from_scalar(0.0, num_zones), // Will be calculated
-            ground_temperature: Box::new(crate::sim::boundary::ConstantGroundTemperature::new(
-                10.0,
-            )),
-            h_tr_iz: VectorField::from_scalar(0.0, num_zones),
-            h_tr_iz_rad: VectorField::from_scalar(0.0, num_zones), // Radiative coupling through windows (Issue #302)
-            surface_emissivity: VectorField::from_scalar(0.9, num_zones), // Default interior surface emissivity
-            zone_volume: VectorField::from_scalar(zone_area * ceiling_height, num_zones), // Volume = area × height
-            common_wall_area: 0.0, // Will be set from spec for multi-zone buildings
-            hvac_system_mode: HvacSystemMode::Controlled,
-            night_ventilation: None,
-            h_vent_mass: 0.0,
-            ventilation_airflow_m3_per_s: 0.0, // Will be set from hvac_equipment or night_ventilation
-            thermal_bridge_coefficient: 0.0,
-            convective_fraction: 0.4,
-            solar_distribution_to_air: 0.1,
-            solar_beam_to_mass_fraction: 0.6, // Calibrated for ASHRAE 140 (60% to mass)
-            // Mode-specific factors removed - using physics-based conductances
-            // h_tr_em_heating_factor, h_tr_em_cooling_factor removed
-            // h_tr_ms_heating_factor, h_tr_ms_cooling_factor removed
-            // solar_beam_to_mass_fraction_heating, _cooling removed
-
-            // Energy tracking for thermal mass calibration (Issue #272, #274, #275, #432)
-            previous_mass_temperatures: VectorField::from_scalar(20.0, num_zones), // Track previous Tm
-            mass_energy_change_cumulative: 0.0, // Cumulative mass energy change (J)
-            envelope_mass_energy_change_cumulative: 0.0, // Envelope mass energy change (J)
-            internal_mass_energy_change_cumulative: 0.0, // Internal mass energy change (J)
-            ideal_air_loads_mode: false,        // Disable ideal air loads by default (Issue #382)
-            free_float: false,                  // Free-floating mode disabled by default
-            warm_up_years: 2, // Warm-up years for periodic steady-state (Issue #744)
-
-            // Conduction backend (Issue #2767): CTF / FD / MultiNode / SolverManager
-            conduction: ConductionBackend::default(),
-
-            // Peak power tracking (Issue #272)
-            peak_power_heating: 0.0, // Peak heating power in watts
-            peak_power_cooling: 0.0, // Peak cooling power in watts
-            // Per-zone peak power tracking (Issue #1289)
-            zone_peak_heating_kw: VectorField::from_scalar(0.0, num_zones),
-            zone_peak_cooling_kw: VectorField::from_scalar(0.0, num_zones),
-            // Issue #1628: per-zone peak timestep tracking
-            zone_peak_heating_timestep: vec![0usize; num_zones],
-            zone_peak_cooling_timestep: vec![0usize; num_zones],
-
-            // Separate heating and cooling energy tracking (Plan 03-08d: Diagnostic)
-            annual_heating_energy: 0.0, // Cumulative heating energy in kWh
-            annual_cooling_energy: 0.0, // Cumulative cooling energy in kWh
-
-            // Electrical energy tracking for HVAC equipment (Plan 18-08)
-            annual_electrical_energy: 0.0, // Cumulative electrical energy consumption in kWh
-
-            // Per-zone energy tracking (Issue #1288)
-            zone_heating_energy_kwh: VectorField::from_scalar(0.0, num_zones),
-            zone_cooling_energy_kwh: VectorField::from_scalar(0.0, num_zones),
-
-            // Weather data for solar gain calculation (Issue #278)
-            weather: None, // Will be set from spec or loaded from file
-
-            // Location for solar position calculation (Issue #278)
-            latitude_deg: 39.83,    // Default: Denver, CO
-            longitude_deg: -104.65, // Default: Denver, CO
-
-            // Issue #1416: explicit EPW LOCATION time-zone offset. None
-            // preserves the legacy longitude-inferred fallback (the ASHRAE-140
-            // baseline stays bit-identical). Callers that load an EPW file
-            // should populate this from `EpwWeatherSource::utc_offset_hours()`.
-            utc_offset_hours: None,
-
-            // Window properties for solar gain calculation (Issue #278)
-            window_properties: Vec::new(),
-            window_orientations: Vec::new(),
-
-            // Initialize HVAC controller with default setpoints
-            hvac_controller: IdealHVACController::new(20.0, 27.0),
-
-            // Predictive HVAC controller with thermal inertia (Plan 15-04)
-            // Note: physics-based gains require thermal parameters (Cm, h_ms, etc.)
-            // which are not available at construction time. Using with_tuning()
-            // with default values; gains should be updated via set_physics_gains()
-            // when thermal parameters become available.
-            predictive_controller: PredictiveController::with_tuning(20.0, 27.0, 0.1, 0.01),
-
-            // Cycling loss tracker for equipment (Plan 15-03, 15-04)
-            cycling_tracker: CyclingTracker::new(),
-
-            // Economizer mode for free cooling (Plan 15-04)
-            economizer_mode: EconomizerMode::Disabled, // Default: mechanical cooling only
-
-            // Previous zone temperatures for calculating dT/dt (Plan 15-04)
-            previous_temperatures: VectorField::from_scalar(20.0, num_zones), // Initialize at comfortable temp
-
-            // Variable capacity HVAC equipment (Plan 15-06)
-            hvac_equipment: None, // Default to no equipment (uses IdealHVACController)
-
-            // IdealLoadsSystem for thermodynamic HVAC load calculation (mass_flow × cp × ΔT).
-            // Initialized for every zone — the sensitivity-based approach was removed because
-            // it produces incorrect results for low-mass buildings (6.1× conductance overestimate).
-            ideal_loads_system: (0..num_zones)
-                .map(|_| Some(IdealLoadsSystem::new(zone_area * ceiling_height, 0.5)))
-                .collect(),
-
-            // Door geometry for temperature-dependent inter-zone air exchange (stack effect)
-            door_geometry: DoorGeometry::default(),
-
-            // Initialize optimization cache with placeholders (will be updated by update_derived_parameters)
-            derived_h_ext: VectorField::from_scalar(0.0, num_zones),
-            derived_term_rest_1: VectorField::from_scalar(0.0, num_zones),
-            derived_h_ms_is_prod: VectorField::from_scalar(0.0, num_zones),
-            derived_den: VectorField::from_scalar(0.0, num_zones),
-            derived_ground_coeff: VectorField::from_scalar(0.0, num_zones),
-            derived_h_tr_1: VectorField::from_scalar(0.0, num_zones),
-            derived_h_tr_2: VectorField::from_scalar(0.0, num_zones),
-            derived_h_tr_3: VectorField::from_scalar(0.0, num_zones),
+            // Issue #2878: ThermalModelData is a thin wrapper around 6 sub-structs.
+            // The constructor composes the same field defaults into the appropriate
+            // per-domain sub-struct instead of a flat ~140-field layout.
+            hvac: HvacState {
+                num_zones,
+                case_id: String::new(),
+                building_type: OccupancyBuildingType::Office,
+                thermal_model_type: ThermalModelType::FiveROneC,
+                timestep_mode: TimestepMode::default(),
+                door_geometry: DoorGeometry::default(),
+                hvac_heating_capacity: 100_000.0, // Default: 100kW heating (high limit for validation)
+                hvac_cooling_capacity: 100_000.0, // Default: 100kW cooling (high limit for validation)
+                hvac_controller: IdealHVACController::new(20.0, 27.0),
+                predictive_controller: PredictiveController::with_tuning(20.0, 27.0, 0.1, 0.01),
+                cycling_tracker: CyclingTracker::new(),
+                economizer_mode: EconomizerMode::Disabled,
+                hvac_system_mode: HvacSystemMode::Controlled,
+                hvac_equipment: None,
+                ideal_loads_system: (0..num_zones)
+                    .map(|_| Some(IdealLoadsSystem::new(zone_area * ceiling_height, 0.5)))
+                    .collect(),
+                ideal_air_loads_mode: false,
+                free_float: false,
+                warm_up_years: 2,
+                night_ventilation: None,
+                hvac_enabled: VectorField::from_scalar(1.0, num_zones),
+                previous_temperatures: VectorField::from_scalar(20.0, num_zones),
+                current_hvac_output: None,
+                peak_power_heating: 0.0,
+                peak_power_cooling: 0.0,
+                zone_peak_heating_kw: VectorField::from_scalar(0.0, num_zones),
+                zone_peak_cooling_kw: VectorField::from_scalar(0.0, num_zones),
+                zone_peak_heating_timestep: vec![0usize; num_zones],
+                zone_peak_cooling_timestep: vec![0usize; num_zones],
+                annual_heating_energy: 0.0,
+                annual_cooling_energy: 0.0,
+                annual_electrical_energy: 0.0,
+                zone_heating_energy_kwh: VectorField::from_scalar(0.0, num_zones),
+                zone_cooling_energy_kwh: VectorField::from_scalar(0.0, num_zones),
+                #[cfg(feature = "pr821-diag")]
+                last_phi_ia: 0.0,
+                #[cfg(feature = "pr821-diag")]
+                last_phi_st: 0.0,
+                #[cfg(feature = "pr821-diag")]
+                last_phi_m: 0.0,
+                tracer: None,
+                scratch_pool: crate::sim::thermal_model_scratch::PhysicsScratchPool::new(),
+            },
+            setpoints: SetpointState {
+                temperatures: VectorField::from_scalar(20.0, num_zones),
+                loads: VectorField::from_scalar(0.0, num_zones),
+                heating_setpoint: 20.0,
+                cooling_setpoint: 27.0,
+                heating_setpoints: VectorField::from_scalar(20.0, num_zones),
+                cooling_setpoints: VectorField::from_scalar(27.0, num_zones),
+                heating_schedule: DailySchedule::constant(20.0),
+                cooling_schedule: DailySchedule::constant(27.0),
+                zone_area: VectorField::from_scalar(zone_area, num_zones),
+                wall_area: VectorField::from_scalar(wall_area_calc, num_zones),
+                roof_area: VectorField::from_scalar(roof_area_calc, num_zones),
+                floor_area: VectorField::from_scalar(floor_area_calc, num_zones),
+                ceiling_height: VectorField::from_scalar(ceiling_height, num_zones),
+                air_density: VectorField::from_scalar(1.2, num_zones),
+                heat_capacity: VectorField::from_scalar(1005.0, num_zones),
+                window_ratio: VectorField::from_scalar(window_ratio, num_zones),
+                aspect_ratio: VectorField::from_scalar(aspect_ratio, num_zones),
+                infiltration_rate: VectorField::from_scalar(0.5, num_zones),
+                wall_u_value: 0.5,
+                roof_u_value: 0.5,
+                floor_u_value: 0.039,
+                zone_volume: VectorField::from_scalar(zone_area * ceiling_height, num_zones),
+                common_wall_area: 0.0,
+                thermal_bridge_coefficient: 0.0,
+                ventilation_airflow_m3_per_s: 0.0,
+                h_vent_mass: 0.0,
+            },
+            solar: SolarState {
+                solar_gains: VectorField::from_scalar(0.0, num_zones),
+                opaque_solar_gains: VectorField::from_scalar(0.0, num_zones),
+                window_u_value: 2.5,
+                window_properties: Vec::new(),
+                window_orientations: Vec::new(),
+                solar_distribution_to_air: 0.1,
+                solar_beam_to_mass_fraction: 0.6,
+                convective_fraction: 0.4,
+                weather: None,
+                latitude_deg: 39.83,
+                longitude_deg: -104.65,
+                utc_offset_hours: None,
+                sun_pos_cache: std::collections::HashMap::new(),
+                zero_vector: VectorField::from_scalar(0.0, num_zones),
+                surfaces,
+                internal_radiative_to_mass: 0.0,
+            },
+            mass: MassState {
+                mass_temperatures: VectorField::from_scalar(20.0, num_zones),
+                thermal_capacitance: VectorField::from_scalar(1.0, num_zones),
+                air_thermal_capacitance: VectorField::from_scalar(0.0, num_zones),
+                air_temperatures: VectorField::from_scalar(20.0, num_zones),
+                sub_hour_air_node_steps: 1,
+                solar_lag: VectorField::from_scalar(0.0, num_zones),
+                wall_surface_temperatures: VectorField::from_scalar(20.0, num_zones),
+                surface_temp_floor: VectorField::from_scalar(20.0, num_zones),
+                surface_temp_ceiling: VectorField::from_scalar(20.0, num_zones),
+                surface_temp_wall: VectorField::from_scalar(20.0, num_zones),
+                envelope_mass_temperatures: VectorField::from_scalar(20.0, num_zones),
+                internal_mass_temperatures: VectorField::from_scalar(20.0, num_zones),
+                envelope_thermal_capacitance: VectorField::from_scalar(0.0, num_zones),
+                internal_thermal_capacitance: VectorField::from_scalar(0.0, num_zones),
+                h_tr_me: VectorField::from_scalar(0.0, num_zones),
+                ceiling_mass_temperatures: None,
+                floor_mass_temperatures: None,
+                partition_mass_temperatures: None,
+                ceiling_thermal_capacitance: None,
+                floor_thermal_capacitance: None,
+                partition_thermal_capacitance: None,
+                h_tr_ceiling: None,
+                h_tr_floor_mass: None,
+                h_tr_partition: None,
+                previous_mass_temperatures: VectorField::from_scalar(20.0, num_zones),
+                mass_energy_change_cumulative: 0.0,
+                envelope_mass_energy_change_cumulative: 0.0,
+                internal_mass_energy_change_cumulative: 0.0,
+                multi_node_thermal_mass: None,
+            },
+            conduction: ConductionState {
+                backend: ConductionBackend::default(),
+                h_tr_w: VectorField::from_scalar(0.0, num_zones),
+                h_ve: VectorField::from_scalar(0.0, num_zones),
+                h_tr_floor: VectorField::from_scalar(0.0, num_zones),
+                ground_temperature: Box::new(crate::sim::boundary::ConstantGroundTemperature::new(
+                    10.0,
+                )),
+                h_tr_iz: VectorField::from_scalar(0.0, num_zones),
+                h_tr_iz_rad: VectorField::from_scalar(0.0, num_zones),
+                surface_emissivity: VectorField::from_scalar(0.9, num_zones),
+                h_tr_em: VectorField::from_scalar(0.0, num_zones),
+                h_tr_ms: VectorField::from_scalar(1000.0, num_zones),
+                h_tr_is: VectorField::from_scalar(1658.0, num_zones),
+                h_tr_is_no_south: VectorField::from_scalar(0.0, num_zones),
+                h_tr_em_south: VectorField::from_scalar(0.0, num_zones),
+                h_tr_ms_wall: None,
+                h_tr_ms_roof: None,
+                h_tr_ms_floor: None,
+                h_tr_em_wall: None,
+                h_tr_em_roof: None,
+                h_tr_em_floor: None,
+                cm_wall: None,
+                cm_roof: None,
+                cm_floor: None,
+                cm_internal: None,
+                derived_h_ext: VectorField::from_scalar(0.0, num_zones),
+                derived_term_rest_1: VectorField::from_scalar(0.0, num_zones),
+                derived_h_ms_is_prod: VectorField::from_scalar(0.0, num_zones),
+                derived_den: VectorField::from_scalar(0.0, num_zones),
+                derived_ground_coeff: VectorField::from_scalar(0.0, num_zones),
+                derived_h_tr_1: VectorField::from_scalar(0.0, num_zones),
+                derived_h_tr_2: VectorField::from_scalar(0.0, num_zones),
+                derived_h_tr_3: VectorField::from_scalar(0.0, num_zones),
+            },
             diagnostics_state: DiagnosticsState::default(),
-            current_hvac_output: None,
-
-            // Internal radiative heat gains to thermal mass (Plan 17-04)
-            internal_radiative_to_mass: 0.0,
-
-            // Phase 6B: 9R4C model per-surface fields (initialized as None, set in from_spec)
-            h_tr_ms_wall: None,
-            h_tr_ms_roof: None,
-            h_tr_ms_floor: None,
-            h_tr_em_wall: None,
-            h_tr_em_roof: None,
-            h_tr_em_floor: None,
-            cm_wall: None,
-            cm_roof: None,
-            cm_floor: None,
-            cm_internal: None,
-            multi_node_thermal_mass: None,
-
-            // PR #821 / Issue #825 — diagnostic-only zone-0 heat-balance terms.
-            // Initialized to 0.0; overwritten each call to `step_physics_5r1c`
-            // when the `pr821-diag` feature is enabled.
-            #[cfg(feature = "pr821-diag")]
-            last_phi_ia: 0.0,
-            #[cfg(feature = "pr821-diag")]
-            last_phi_st: 0.0,
-            #[cfg(feature = "pr821-diag")]
-            last_phi_m: 0.0,
-
-            // Wiring tracer for test-only integration validation (Plan 21-10)
-            tracer: None,
-
-            // Issue #1212 — solar position cache keyed by `(timestep, hour_slot)`.
-            // 2 slots per timestep (integer-hour for 5R1C, mid-hour for 9R4C).
-            sun_pos_cache: std::collections::HashMap::new(),
-
-            // Issue #1968 — cached zero vector to eliminate per-timestep
-            // `vec![0.0; num_zones]` allocations in hot loops.
-            zero_vector: VectorField::from_scalar(0.0, num_zones),
-
-            // Issue #1966: pooled scratch buffers for physics solvers
-            scratch_pool: crate::sim::thermal_model_scratch::PhysicsScratchPool::new(),
         });
 
         model.update_derived_parameters();
@@ -3021,7 +2965,7 @@ impl ThermalModel<VectorField> {
         // or from_spec() which properly initializes these values. The new() function
         // initializes with placeholder values that will be overwritten.
         // Runtime validation for h_ve (ventilation can be 0, but not negative)
-        if model.h_ve.iter().any(|h| *h < 0.0) {
+        if model.conduction.h_ve.iter().any(|h| *h < 0.0) {
             panic!(
                 "Invalid thermal conductance: h_ve must be non-negative. \
                 Please check infiltration rate configuration."
@@ -3052,7 +2996,7 @@ impl ThermalModel<VectorField> {
     /// use fluxion::physics::solver_trait::PhysicsError;
     ///
     /// match ThermalModel::try_new(10) {
-    ///     Ok(model) => println!("Created model with {} zones", model.num_zones),
+    ///     Ok(model) => println!("Created model with {} zones", model.hvac.num_zones),
     ///     Err(e) => eprintln!("Failed to create model: {}", e),
     /// }
     /// ```
@@ -3060,7 +3004,7 @@ impl ThermalModel<VectorField> {
         let model = Self::new(num_zones);
 
         // Validate h_ve is non-negative (ventilation can be 0, but not negative)
-        if model.h_ve.iter().any(|h| *h < 0.0) {
+        if model.conduction.h_ve.iter().any(|h| *h < 0.0) {
             return Err(PhysicsError::invalid_conductance(
                 "h_ve must be non-negative. Check infiltration rate configuration.",
             ));
@@ -3081,44 +3025,44 @@ impl ThermalModel<VectorField> {
     /// A ThermalModel initialized with 8R3C parameters
     pub fn new_8r3c(num_zones: usize) -> Self {
         let mut model = Self::new(num_zones);
-        model.thermal_model_type = ThermalModelType::EightRThreeC;
+        model.hvac.thermal_model_type = ThermalModelType::EightRThreeC;
 
         // Initialize 8R3C mass temperatures (20°C initial)
-        model.ceiling_mass_temperatures = Some(VectorField::from_scalar(20.0, num_zones));
-        model.floor_mass_temperatures = Some(VectorField::from_scalar(20.0, num_zones));
-        model.partition_mass_temperatures = Some(VectorField::from_scalar(20.0, num_zones));
+        model.mass.ceiling_mass_temperatures = Some(VectorField::from_scalar(20.0, num_zones));
+        model.mass.floor_mass_temperatures = Some(VectorField::from_scalar(20.0, num_zones));
+        model.mass.partition_mass_temperatures = Some(VectorField::from_scalar(20.0, num_zones));
 
         // Initialize 8R3C thermal capacitances (will be set from construction)
-        model.ceiling_thermal_capacitance = Some(VectorField::from_scalar(0.0, num_zones));
-        model.floor_thermal_capacitance = Some(VectorField::from_scalar(0.0, num_zones));
-        model.partition_thermal_capacitance = Some(VectorField::from_scalar(0.0, num_zones));
+        model.mass.ceiling_thermal_capacitance = Some(VectorField::from_scalar(0.0, num_zones));
+        model.mass.floor_thermal_capacitance = Some(VectorField::from_scalar(0.0, num_zones));
+        model.mass.partition_thermal_capacitance = Some(VectorField::from_scalar(0.0, num_zones));
 
         // Initialize 8R3C conductances (will be calculated)
-        model.h_tr_ceiling = Some(VectorField::from_scalar(0.0, num_zones));
-        model.h_tr_floor_mass = Some(VectorField::from_scalar(0.0, num_zones));
-        model.h_tr_partition = Some(VectorField::from_scalar(0.0, num_zones));
+        model.mass.h_tr_ceiling = Some(VectorField::from_scalar(0.0, num_zones));
+        model.mass.h_tr_floor_mass = Some(VectorField::from_scalar(0.0, num_zones));
+        model.mass.h_tr_partition = Some(VectorField::from_scalar(0.0, num_zones));
 
         model
     }
 
     /// Get per-zone peak heating power in kW (Issue #1289)
     pub fn get_zone_peak_heating_kw(&self) -> Vec<f64> {
-        self.0.zone_peak_heating_kw.as_slice().to_vec()
+        self.0.hvac.zone_peak_heating_kw.as_slice().to_vec()
     }
 
     /// Get per-zone peak cooling power in kW (Issue #1289)
     pub fn get_zone_peak_cooling_kw(&self) -> Vec<f64> {
-        self.0.zone_peak_cooling_kw.as_slice().to_vec()
+        self.0.hvac.zone_peak_cooling_kw.as_slice().to_vec()
     }
 
     /// Get per-zone peak heating timestep index (Issue #1628)
     pub fn get_zone_peak_heating_timestep(&self) -> Vec<usize> {
-        self.0.zone_peak_heating_timestep.clone()
+        self.0.hvac.zone_peak_heating_timestep.clone()
     }
 
     /// Get per-zone peak cooling timestep index (Issue #1628)
     pub fn get_zone_peak_cooling_timestep(&self) -> Vec<usize> {
-        self.0.zone_peak_cooling_timestep.clone()
+        self.0.hvac.zone_peak_cooling_timestep.clone()
     }
 }
 
@@ -3139,7 +3083,7 @@ where
         &mut self,
         tracer: std::sync::Arc<crate::testing::integration::wiring::WiringTracer>,
     ) {
-        self.0.tracer = Some(tracer);
+        self.0.hvac.tracer = Some(tracer);
     }
 }
 
@@ -3183,13 +3127,13 @@ where
     ///   `zone_temperatures` vector provides per-zone temperature deltas
     ///   (in °C) to add to the current `temperatures` field.
     pub fn set_twin_correction(&mut self, correction: &fluxion_twin::TwinCorrection) {
-        let mut temps = self.0.temperatures.as_ref().to_vec();
+        let mut temps = self.0.setpoints.temperatures.as_ref().to_vec();
         for (i, corr) in correction.zone_temperatures.iter().enumerate() {
             if i < temps.len() {
                 temps[i] += corr;
             }
         }
-        self.0.temperatures = T::from(VectorField::new(temps));
+        self.0.setpoints.temperatures = T::from(VectorField::new(temps));
     }
 }
 
@@ -3432,7 +3376,7 @@ mod tests {
     #[test]
     fn test_validate_energy_conservation_balanced_returns_none() {
         let mut model = ThermalModel::new(1);
-        model.0.mass_energy_change_cumulative = 5.0e6; // 5 MJ stored in mass
+        model.0.mass.mass_energy_change_cumulative = 5.0e6; // 5 MJ stored in mass
         let hvac = 10.0e6;
         let solar = 3.0e6;
         let internal = 2.0e6;
@@ -3456,7 +3400,7 @@ mod tests {
         // tolerance = |In|*0.001 + 1e6. With In = 1e9, tolerance = 2e6 J.
         // A 5e5 J imbalance is below the threshold → None.
         let mut model = ThermalModel::new(1);
-        model.0.mass_energy_change_cumulative = 0.0;
+        model.0.mass.mass_energy_change_cumulative = 0.0;
         let hvac = 1.0e9;
         let solar = 0.0;
         let internal = 0.0;
@@ -3470,7 +3414,7 @@ mod tests {
     fn test_validate_energy_conservation_large_imbalance_returns_message() {
         // 5e7 J imbalance with tolerance 2e6 J → violation.
         let mut model = ThermalModel::new(1);
-        model.0.mass_energy_change_cumulative = 0.0;
+        model.0.mass.mass_energy_change_cumulative = 0.0;
         let hvac = 1.0e9;
         let envelope = hvac - 5.0e7;
         let result = model.validate_energy_conservation(hvac, 0.0, 0.0, envelope);
@@ -3488,7 +3432,7 @@ mod tests {
         // Negative mass change (mass cooling down) must count as energy OUT,
         // balancing a positive HVAC input → None.
         let mut model = ThermalModel::new(1);
-        model.0.mass_energy_change_cumulative = -8.0e6; // mass releases 8 MJ
+        model.0.mass.mass_energy_change_cumulative = -8.0e6; // mass releases 8 MJ
         let hvac = 2.0e6;
         let envelope = 10.0e6; // 2 (HVAC) + 8 (mass release) = 10 out
         assert!(model
@@ -3502,8 +3446,8 @@ mod tests {
     #[test]
     fn test_get_zone_energies_kwh_sums_heating_and_cooling_per_zone() {
         let mut model = ThermalModel::new(2);
-        model.0.zone_heating_energy_kwh = VectorField::new(vec![10.0, 4.0]);
-        model.0.zone_cooling_energy_kwh = VectorField::new(vec![3.0, 7.5]);
+        model.0.hvac.zone_heating_energy_kwh = VectorField::new(vec![10.0, 4.0]);
+        model.0.hvac.zone_cooling_energy_kwh = VectorField::new(vec![3.0, 7.5]);
         let total = model.get_zone_energies_kwh();
         assert_eq!(total.len(), 2);
         assert!(approx_eq(total[0], 13.0, TOL));
@@ -3513,10 +3457,10 @@ mod tests {
     #[test]
     fn test_reset_heating_cooling_energy_zeroes_scalars_and_per_zone() {
         let mut model = ThermalModel::new(2);
-        model.0.annual_heating_energy = 42.0;
-        model.0.annual_cooling_energy = 17.0;
-        model.0.zone_heating_energy_kwh = VectorField::new(vec![1.0, 2.0]);
-        model.0.zone_cooling_energy_kwh = VectorField::new(vec![3.0, 4.0]);
+        model.0.hvac.annual_heating_energy = 42.0;
+        model.0.hvac.annual_cooling_energy = 17.0;
+        model.0.hvac.zone_heating_energy_kwh = VectorField::new(vec![1.0, 2.0]);
+        model.0.hvac.zone_cooling_energy_kwh = VectorField::new(vec![3.0, 4.0]);
 
         model.reset_heating_cooling_energy();
 
@@ -3533,9 +3477,9 @@ mod tests {
     #[test]
     fn test_reset_thermal_mass_energy_zeroes_all_three_accumulators() {
         let mut model = ThermalModel::new(1);
-        model.0.mass_energy_change_cumulative = 1.0e7;
-        model.0.envelope_mass_energy_change_cumulative = 6.0e6;
-        model.0.internal_mass_energy_change_cumulative = 4.0e6;
+        model.0.mass.mass_energy_change_cumulative = 1.0e7;
+        model.0.mass.envelope_mass_energy_change_cumulative = 6.0e6;
+        model.0.mass.internal_mass_energy_change_cumulative = 4.0e6;
 
         model.reset_thermal_mass_energy();
 
@@ -3555,8 +3499,8 @@ mod tests {
     #[test]
     fn test_reset_peak_power_zeroes_both_powers() {
         let mut model = ThermalModel::new(1);
-        model.0.peak_power_heating = 5_000.0; // W
-        model.0.peak_power_cooling = 7_500.0;
+        model.0.hvac.peak_power_heating = 5_000.0; // W
+        model.0.hvac.peak_power_cooling = 7_500.0;
 
         model.reset_peak_power();
 
@@ -3567,8 +3511,8 @@ mod tests {
     #[test]
     fn test_peak_power_getters_convert_watts_to_kilowatts() {
         let mut model = ThermalModel::new(1);
-        model.0.peak_power_heating = 4_300.0;
-        model.0.peak_power_cooling = 9_100.0;
+        model.0.hvac.peak_power_heating = 4_300.0;
+        model.0.hvac.peak_power_cooling = 9_100.0;
         assert!(approx_eq(model.get_peak_heating_power_kw(), 4.3, TOL));
         assert!(approx_eq(model.get_peak_cooling_power_kw(), 9.1, TOL));
     }
@@ -3576,13 +3520,13 @@ mod tests {
     #[test]
     fn test_reset_all_energy_tracking_clears_every_category() {
         let mut model = ThermalModel::new(1);
-        model.0.peak_power_heating = 1.0;
-        model.0.peak_power_cooling = 2.0;
-        model.0.annual_heating_energy = 3.0;
-        model.0.annual_cooling_energy = 4.0;
-        model.0.mass_energy_change_cumulative = 5.0;
-        model.0.envelope_mass_energy_change_cumulative = 6.0;
-        model.0.internal_mass_energy_change_cumulative = 7.0;
+        model.0.hvac.peak_power_heating = 1.0;
+        model.0.hvac.peak_power_cooling = 2.0;
+        model.0.hvac.annual_heating_energy = 3.0;
+        model.0.hvac.annual_cooling_energy = 4.0;
+        model.0.mass.mass_energy_change_cumulative = 5.0;
+        model.0.mass.envelope_mass_energy_change_cumulative = 6.0;
+        model.0.mass.internal_mass_energy_change_cumulative = 7.0;
 
         model.reset_all_energy_tracking();
 
@@ -3616,7 +3560,7 @@ mod tests {
         assert_eq!(sp1, sp2);
         // The cache must now contain an entry for this key.
         let hour_slot = (12.0_f64 * 2.0).round() as i32;
-        assert!(model.0.sun_pos_cache.contains_key(&(10, hour_slot)));
+        assert!(model.0.solar.sun_pos_cache.contains_key(&(10, hour_slot)));
     }
 
     #[test]
@@ -3626,9 +3570,9 @@ mod tests {
         let mut model = ThermalModel::new(1);
         let _ = model.cached_solar_position(0, 2023, 3, 21, 9.0);
         let _ = model.cached_solar_position(0, 2023, 3, 21, 15.0);
-        assert!(model.0.sun_pos_cache.contains_key(&(0, 18)));
-        assert!(model.0.sun_pos_cache.contains_key(&(0, 30)));
-        for (_, sp) in model.0.sun_pos_cache.iter() {
+        assert!(model.0.solar.sun_pos_cache.contains_key(&(0, 18)));
+        assert!(model.0.solar.sun_pos_cache.contains_key(&(0, 30)));
+        for (_, sp) in model.0.solar.sun_pos_cache.iter() {
             assert!(sp.altitude_deg.is_finite());
             assert!(sp.azimuth_deg.is_finite());
             assert!(sp.zenith_deg.is_finite());
@@ -3644,8 +3588,8 @@ mod tests {
         let _ = model.cached_solar_position(5, 2023, 6, 21, 12.0);
         let _ = model.cached_solar_position(5, 2023, 6, 21, 12.5);
         let _ = model.cached_solar_position(5, 2023, 6, 21, 11.7);
-        assert!(model.0.sun_pos_cache.contains_key(&(5, 24)));
-        assert!(model.0.sun_pos_cache.contains_key(&(5, 25)));
-        assert!(model.0.sun_pos_cache.contains_key(&(5, 23)));
+        assert!(model.0.solar.sun_pos_cache.contains_key(&(5, 24)));
+        assert!(model.0.solar.sun_pos_cache.contains_key(&(5, 25)));
+        assert!(model.0.solar.sun_pos_cache.contains_key(&(5, 23)));
     }
 }

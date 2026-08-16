@@ -34,15 +34,15 @@ const TRANSIENT_TOL: f64 = 0.005;
 const ENERGY_CONSERVATION_TOL: f64 = 0.01;
 
 fn set_zone_temperature(model: &mut ThermalModel<VectorField>, zone: usize, temp: f64) {
-    model.temperatures.as_mut()[zone] = temp;
+    model.setpoints.temperatures.as_mut()[zone] = temp;
 }
 
 fn set_zone_solar(model: &mut ThermalModel<VectorField>, zone: usize, solar: f64) {
-    model.solar_gains.as_mut()[zone] = solar;
+    model.solar.solar_gains.as_mut()[zone] = solar;
 }
 
 fn set_zone_loads(model: &mut ThermalModel<VectorField>, zone: usize, load: f64) {
-    model.loads.as_mut()[zone] = load;
+    model.setpoints.loads.as_mut()[zone] = load;
 }
 
 fn compute_transient_temperature(T_initial: f64, T_ss: f64, t: f64, tau: f64) -> f64 {
@@ -64,12 +64,12 @@ fn test_steady_state_convergence_lightweight() {
         model.step_physics(12, T_outdoor, 3600.0);
     }
 
-    let T_zone = model.temperatures[0];
+    let T_zone = model.setpoints.temperatures[0];
 
     for _ in 0..10 {
-        let temp_before = model.temperatures[0];
+        let temp_before = model.setpoints.temperatures[0];
         model.step_physics(12, T_outdoor, 3600.0);
-        let temp_after = model.temperatures[0];
+        let temp_after = model.setpoints.temperatures[0];
         let change = (temp_after - temp_before).abs();
         assert!(
             change < STEADY_STATE_TOL,
@@ -96,12 +96,12 @@ fn test_steady_state_convergence_heavyweight() {
         model.step_physics(12, T_outdoor, 3600.0);
     }
 
-    let T_zone = model.temperatures[0];
+    let T_zone = model.setpoints.temperatures[0];
 
     for _ in 0..10 {
-        let temp_before = model.temperatures[0];
+        let temp_before = model.setpoints.temperatures[0];
         model.step_physics(12, T_outdoor, 3600.0);
-        let temp_after = model.temperatures[0];
+        let temp_after = model.setpoints.temperatures[0];
         let change = (temp_after - temp_before).abs();
         assert!(
             change < STEADY_STATE_TOL,
@@ -128,12 +128,12 @@ fn test_steady_state_convergence_mixed() {
         model.step_physics(12, T_outdoor, 3600.0);
     }
 
-    let T_zone = model.temperatures[0];
+    let T_zone = model.setpoints.temperatures[0];
 
     for _ in 0..10 {
-        let temp_before = model.temperatures[0];
+        let temp_before = model.setpoints.temperatures[0];
         model.step_physics(12, T_outdoor, 3600.0);
-        let temp_after = model.temperatures[0];
+        let temp_after = model.setpoints.temperatures[0];
         let change = (temp_after - temp_before).abs();
         assert!(
             change < STEADY_STATE_TOL,
@@ -157,10 +157,10 @@ fn test_single_timestep_convergence() {
     set_zone_solar(&mut model, 0, 50.0);
 
     model.step_physics(12, T_outdoor, 1.0);
-    let T_after_1s = model.temperatures[0];
+    let T_after_1s = model.setpoints.temperatures[0];
 
     model.step_physics(12, T_outdoor, 1.0);
-    let T_after_2s = model.temperatures[0];
+    let T_after_2s = model.setpoints.temperatures[0];
 
     let change_1 = (T_after_1s - T_initial).abs();
     let change_2 = (T_after_2s - T_after_1s).abs();

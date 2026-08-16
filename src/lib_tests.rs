@@ -22,14 +22,14 @@ use log::{debug, info};
 #[test]
 fn test_thermal_model_creation() {
     let model = ThermalModel::<VectorField>::new(10);
-    assert_eq!(model.num_zones, 10);
+    assert_eq!(model.hvac.num_zones, 10);
 }
 
 #[test]
 fn test_thermal_model_default() {
     let model = ThermalModel::<VectorField>::new(1);
-    assert_eq!(model.num_zones, 1);
-    assert_eq!(model.temperatures.as_ref().len(), 1);
+    assert_eq!(model.hvac.num_zones, 1);
+    assert_eq!(model.setpoints.temperatures.as_ref().len(), 1);
 }
 
 #[test]
@@ -38,9 +38,9 @@ fn test_apply_parameters() {
     let params = vec![1.5, 20.0, 27.0];
 
     model.apply_parameters(&params);
-    assert_eq!(model.window_u_value, 1.5);
-    assert_eq!(model.heating_setpoint, 20.0);
-    assert_eq!(model.cooling_setpoint, 27.0);
+    assert_eq!(model.solar.window_u_value, 1.5);
+    assert_eq!(model.setpoints.heating_setpoint, 20.0);
+    assert_eq!(model.setpoints.cooling_setpoint, 27.0);
 }
 
 #[test]

@@ -1,0 +1,7 @@
+{
+  "max_lines": 200,
+  "history": [
+    {"actual": 141}
+  ],
+  "notes": "Issue #2878 acceptance: ratchet tracks the historical maximum so the ceiling can only tighten over time. Lower numbers are good; raises are PR-blocking without an issue reference."
+}

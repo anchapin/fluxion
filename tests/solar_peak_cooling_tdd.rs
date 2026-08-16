@@ -70,13 +70,16 @@ fn test_solar_gain_distribution_analysis() {
     println!("\n=== Solar Gain Distribution Analysis ===");
     println!(
         "Solar distribution to air fraction: {:.3}",
-        model.solar_distribution_to_air
+        model.solar.solar_distribution_to_air
     );
     println!(
         "Solar beam to mass fraction: {:.3}",
-        model.solar_beam_to_mass_fraction
+        model.solar.solar_beam_to_mass_fraction
     );
-    println!("Convective fraction: {:.3}", model.convective_fraction);
+    println!(
+        "Convective fraction: {:.3}",
+        model.solar.convective_fraction
+    );
 
     // Analysis:
     // - If solar_distribution_to_air is 0, all solar goes directly to thermal mass
@@ -86,9 +89,9 @@ fn test_solar_gain_distribution_analysis() {
     // Expected: solar_distribution_to_air > 0 for proper peak cooling response
     // Current behavior: likely 0.0, causing underprediction
     assert!(
-        model.solar_distribution_to_air > 0.0,
+        model.solar.solar_distribution_to_air > 0.0,
         "Solar distribution to air is zero - all solar gains go to thermal mass. This delays peak cooling response. Expected: solar_distribution_to_air > 0.0 for immediate air heating. Actual: {:.3}",
-        model.solar_distribution_to_air
+        model.solar.solar_distribution_to_air
     );
 }
 

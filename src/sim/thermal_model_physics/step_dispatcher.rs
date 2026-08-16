@@ -33,7 +33,7 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
     pub fn step_physics(&mut self, timestep: usize, outdoor_temp: f64, dt_seconds: f64) -> f64 {
         // Record call for wiring validation (Plan 21-10)
         #[cfg(feature = "wiring-tracing")]
-        if let Some(ref tracer) = self.0.tracer {
+        if let Some(ref tracer) = self.0.hvac.tracer {
             tracer.record_call("step_physics");
         }
 
@@ -53,7 +53,7 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
 
         // Issue #351: Calculate loads from weather data if not already set
         // This is needed for ASHRAE 140 validation where step_physics is called directly
-        if self.0.weather.is_some() {
+        if self.0.solar.weather.is_some() {
             self.calc_analytical_loads(timestep, true, dt_seconds);
         }
 
@@ -64,21 +64,29 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         // the 5R1C/9R4C dispatch below. Preserved as WIP for whoever finishes
         // the zone-level gauge integration (#2304).
         #[cfg(feature = "gauge-solver")]
-        if let Some(ref mut gauge_solver) = self.0.conduction.gauge_zone_solver {
+        if let Some(ref mut gauge_solver) = self.0.conduction.backend.gauge_zone_solver {
             // Extract parameters for GaugeZoneSolver from ThermalModel state
-            let zone_temps = self.0.temperatures.as_ref();
+            let zone_temps = self.0.setpoints.temperatures.as_ref();
             let _T_int = if zone_temps.is_empty() {
                 20.0 // Default interior temperature
             } else {
                 zone_temps[0]
             };
-            let loads = self.0.loads.as_ref();
+            let loads = self.0.setpoints.loads.as_ref();
             let Q_internal_w = if loads.is_empty() {
                 0.0
             } else {
-                loads[0] * self.0.zone_area.as_ref().get(0).copied().unwrap_or(48.0)
+                loads[0]
+                    * self
+                        .0
+                        .setpoints
+                        .zone_area
+                        .as_ref()
+                        .get(0)
+                        .copied()
+                        .unwrap_or(48.0)
             };
-            let solar_gains = self.0.solar_gains.as_ref();
+            let solar_gains = self.0.solar.solar_gains.as_ref();
             let solar_irradiance_wm2 = if solar_gains.is_empty() {
                 0.0
             } else {
@@ -87,6 +95,7 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
             // Use exterior film coefficient from derived_h_ext or default
             let h_ext = self
                 .0
+                .conduction
                 .derived_h_ext
                 .as_ref()
                 .get(0)

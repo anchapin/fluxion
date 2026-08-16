@@ -13,7 +13,7 @@
 //! were silently lost.
 //!
 //! After the fix, `do_step` returns `Vec<FmuOutputs>` of length
-//! `model.num_zones`, with one entry per zone.  This test exercises the
+//! `model.hvac.num_zones`, with one entry per zone.  This test exercises the
 //! full export → re-import → co-simulation-master round-trip on a 3-zone
 //! FMU and asserts that:
 //!

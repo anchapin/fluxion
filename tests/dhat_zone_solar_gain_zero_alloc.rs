@@ -52,15 +52,15 @@ const STEADY_STEPS: usize = 200;
 /// and exercises every branch of the solar-gain accumulator.
 fn create_multizone_model() -> ThermalModel<VectorField> {
     let mut model = ThermalModel::<VectorField>::new(NUM_ZONES);
-    model.window_u_value = 1.5;
-    model.heating_setpoint = 20.0;
-    model.cooling_setpoint = 26.0;
-    model.temperatures = VectorField::from_scalar(20.0, NUM_ZONES);
-    model.mass_temperatures = VectorField::from_scalar(20.0, NUM_ZONES);
+    model.solar.window_u_value = 1.5;
+    model.setpoints.heating_setpoint = 20.0;
+    model.setpoints.cooling_setpoint = 26.0;
+    model.setpoints.temperatures = VectorField::from_scalar(20.0, NUM_ZONES);
+    model.mass.mass_temperatures = VectorField::from_scalar(20.0, NUM_ZONES);
 
     // Per-zone surfaces: North, East, South, West (walls with windows) + Up (roof).
     let wp = WindowProperties::double_clear(8.0);
-    model.window_properties = vec![wp; NUM_ZONES];
+    model.solar.window_properties = vec![wp; NUM_ZONES];
 
     let surfaces_per_zone: Vec<Vec<WallSurface>> = (0..NUM_ZONES)
         .map(|_| {
@@ -73,10 +73,10 @@ fn create_multizone_model() -> ThermalModel<VectorField> {
             ]
         })
         .collect();
-    model.surfaces = surfaces_per_zone;
+    model.solar.surfaces = surfaces_per_zone;
 
     // Zone areas (nonzero so calc_analytical_loads doesn't divide by zero).
-    model.zone_area = VectorField::from_scalar(50.0, NUM_ZONES);
+    model.setpoints.zone_area = VectorField::from_scalar(50.0, NUM_ZONES);
 
     model
 }

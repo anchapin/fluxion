@@ -21,7 +21,7 @@ fn test_case_900_cooling_with_thermal_mass_correction() {
 
     for step in 0..8760 {
         if let Ok(weather_data) = weather.get_hourly_data(step) {
-            model.weather = Some(weather_data.clone());
+            model.solar.weather = Some(weather_data.clone());
             let _energy_kwh = model.step_physics(step, weather_data.dry_bulb_temp, 3600.0);
 
             // Log progress every 24 hours
@@ -29,15 +29,15 @@ fn test_case_900_cooling_with_thermal_mass_correction() {
                 println!(
                     "Day {}: H={:.2} MWh, C={:.2} MWh",
                     step / 24,
-                    model.annual_heating_energy / 1000.0,
-                    model.annual_cooling_energy / 1000.0
+                    model.hvac.annual_heating_energy / 1000.0,
+                    model.hvac.annual_cooling_energy / 1000.0
                 );
             }
         }
     }
 
-    let heating_total_mwh = model.annual_heating_energy / 1000.0;
-    let cooling_total_mwh = model.annual_cooling_energy / 1000.0;
+    let heating_total_mwh = model.hvac.annual_heating_energy / 1000.0;
+    let cooling_total_mwh = model.hvac.annual_cooling_energy / 1000.0;
 
     println!("\n=== Results ===");
     println!("Total heating: {:.2} MWh", heating_total_mwh);

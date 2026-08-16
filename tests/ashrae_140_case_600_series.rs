@@ -169,7 +169,7 @@ fn run_annual_simulation(case_enum: ASHRAE140Case) -> (f64, f64, f64, f64) {
     const WARMUP_STEPS: usize = 14 * 24; // 14-day warm-up, matches Case 900 test
     for step in 0..WARMUP_STEPS {
         let weather_data = weather.get_hourly_data(step).unwrap();
-        model.weather = Some(weather_data.clone());
+        model.solar.weather = Some(weather_data.clone());
         let _ = model.step_physics(step, weather_data.dry_bulb_temp, 3600.0);
     }
 
@@ -180,8 +180,9 @@ fn run_annual_simulation(case_enum: ASHRAE140Case) -> (f64, f64, f64, f64) {
 
     for step in 0..8760 {
         let weather_data = weather.get_hourly_data(step).unwrap();
-        model.weather = Some(weather_data.clone());
+        model.solar.weather = Some(weather_data.clone());
         let _zone_temp_before = model
+            .setpoints
             .temperatures
             .as_slice()
             .first()
@@ -228,11 +229,11 @@ fn run_free_floating_simulation(case_enum: ASHRAE140Case) -> (f64, f64) {
 
     for step in 0..8760 {
         let weather_data = weather.get_hourly_data(step).unwrap();
-        model.weather = Some(weather_data.clone());
+        model.solar.weather = Some(weather_data.clone());
         let outdoor_temp = weather_data.dry_bulb_temp;
         model.step_physics(step, outdoor_temp, 3600.0);
 
-        if let Some(&zone_temp) = model.temperatures.as_slice().first() {
+        if let Some(&zone_temp) = model.setpoints.temperatures.as_slice().first() {
             min_temp = min_temp.min(zone_temp);
             max_temp = max_temp.max(zone_temp);
         }
@@ -241,8 +242,20 @@ fn run_free_floating_simulation(case_enum: ASHRAE140Case) -> (f64, f64) {
         {
             // The model exposes solar_gains as W/m² of zone floor area; convert to
             // total window-attributable W for the diagnostic CSV.
-            let solar_w_per_m2 = model.solar_gains.as_slice().first().copied().unwrap_or(0.0);
-            let zone_area = model.zone_area.as_slice().first().copied().unwrap_or(1.0);
+            let solar_w_per_m2 = model
+                .solar
+                .solar_gains
+                .as_slice()
+                .first()
+                .copied()
+                .unwrap_or(0.0);
+            let zone_area = model
+                .setpoints
+                .zone_area
+                .as_slice()
+                .first()
+                .copied()
+                .unwrap_or(1.0);
             let solar_window_w = solar_w_per_m2 * zone_area;
 
             let hour = (step % 24) as u8;
@@ -261,9 +274,9 @@ fn run_free_floating_simulation(case_enum: ASHRAE140Case) -> (f64, f64) {
                 &model,
                 outdoor_temp,
                 solar_window_w,
-                model.0.last_phi_ia,
-                model.0.last_phi_st,
-                model.0.last_phi_m,
+                model.0.hvac.last_phi_ia,
+                model.0.hvac.last_phi_st,
+                model.0.hvac.last_phi_m,
                 night_vent_active,
                 0.0, // hvac_out_w (always 0 for FF — guarded by free_float assert)
             );
@@ -634,7 +647,7 @@ mod free_float_hvac_guard {
 
         for step in 0..8760 {
             let weather_data = weather.get_hourly_data(step).unwrap();
-            model.weather = Some(weather_data.clone());
+            model.solar.weather = Some(weather_data.clone());
             model.step_physics(step, weather_data.dry_bulb_temp, 3600.0);
         }
 
@@ -642,16 +655,16 @@ mod free_float_hvac_guard {
         // internal kWh-equivalent accumulator). A non-zero value indicates an
         // HVAC code path bypassing the free_float guard.
         assert!(
-            model.annual_heating_energy.abs() < 1e-9,
+            model.hvac.annual_heating_energy.abs() < 1e-9,
             "Free-float case {} produced non-zero annual heating energy: {} kWh",
             spec.case_id,
-            model.annual_heating_energy
+            model.hvac.annual_heating_energy
         );
         assert!(
-            model.annual_cooling_energy.abs() < 1e-9,
+            model.hvac.annual_cooling_energy.abs() < 1e-9,
             "Free-float case {} produced non-zero annual cooling energy: {} kWh",
             spec.case_id,
-            model.annual_cooling_energy
+            model.hvac.annual_cooling_energy
         );
     }
 
@@ -707,7 +720,13 @@ fn test_case_640_hourly_peak_week_diagnostic() {
     let mut cooling_total_j = 0.0;
 
     // h_tr_is for zone 0 (approx 583 W/K for low-mass)
-    let h_tr_is = model.h_tr_is.as_slice().first().copied().unwrap_or(583.0);
+    let h_tr_is = model
+        .conduction
+        .h_tr_is
+        .as_slice()
+        .first()
+        .copied()
+        .unwrap_or(583.0);
 
     // CSV output
     let dir: PathBuf = ["target", "diag"].iter().collect();
@@ -731,7 +750,7 @@ fn test_case_640_hourly_peak_week_diagnostic() {
 
     for step in 0..8760 {
         let weather_data = weather.get_hourly_data(step).unwrap();
-        model.weather = Some(weather_data.clone());
+        model.solar.weather = Some(weather_data.clone());
         let outdoor_temp = weather_data.dry_bulb_temp;
 
         let energy_kwh = model.step_physics(step, outdoor_temp, 3600.0);
@@ -746,6 +765,7 @@ fn test_case_640_hourly_peak_week_diagnostic() {
 
         // Get zone temperature after HVAC
         let t_zone = model
+            .setpoints
             .temperatures
             .as_slice()
             .first()
@@ -753,8 +773,20 @@ fn test_case_640_hourly_peak_week_diagnostic() {
             .unwrap_or(20.0);
 
         // Solar gain (W/m² -> total window-attributable W)
-        let solar_w_per_m2 = model.solar_gains.as_slice().first().copied().unwrap_or(0.0);
-        let zone_area = model.zone_area.as_slice().first().copied().unwrap_or(129.6);
+        let solar_w_per_m2 = model
+            .solar
+            .solar_gains
+            .as_slice()
+            .first()
+            .copied()
+            .unwrap_or(0.0);
+        let zone_area = model
+            .setpoints
+            .zone_area
+            .as_slice()
+            .first()
+            .copied()
+            .unwrap_or(129.6);
         let total_solar_w = solar_w_per_m2 * zone_area;
 
         // hvac_out_w = energy_kwh * 1000 (dt=3600s, so J/s=W = kWh*3600/3600*1000 = kWh*1000)
@@ -779,8 +811,8 @@ fn test_case_640_hourly_peak_week_diagnostic() {
             };
 
             // Query the HVAC schedule for current setpoints
-            let t_sp_heat = model.heating_schedule.value(hour);
-            let t_sp_cool = model.cooling_schedule.value(hour);
+            let t_sp_heat = model.setpoints.heating_schedule.value(hour);
+            let t_sp_cool = model.setpoints.cooling_schedule.value(hour);
 
             writeln!(
                 csv,

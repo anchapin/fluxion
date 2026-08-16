@@ -50,7 +50,7 @@ fn test_solar_gains_added_to_phi_i() {
     let solar_gains_watts = VectorField::new(vec![850.0]); // Peak solar gain at noon
 
     // Convert to heat flux per unit area
-    let zone_area = model.zone_area.clone();
+    let zone_area = model.setpoints.zone_area.clone();
     let phi_i_solar = solar_gains_watts.clone() / zone_area.clone();
 
     // Verify that phi_i_solar is non-zero during daytime
@@ -61,7 +61,7 @@ fn test_solar_gains_added_to_phi_i() {
     assert!(max_solar_flux > 0.0, "Solar flux should be positive");
 
     // Verify that phi_i_internal exists and can be added to solar
-    let phi_i_internal = model.loads.clone() * zone_area.clone();
+    let phi_i_internal = model.setpoints.loads.clone() * zone_area.clone();
     let phi_i_total = phi_i_internal.clone() + phi_i_solar;
 
     // Check that total is greater than internal alone (when solar is present)
@@ -194,22 +194,26 @@ fn test_solar_gains_integration_with_thermal_model() {
     let mut model = ThermalModel::from_spec(&ASHRAE140Case::Case900.spec());
 
     // This test will initially fail because solar gains are not yet integrated
-    // After implementation, the model.solar_gains field should be populated
+    // After implementation, the model.solar.solar_gains field should be populated
     // during simulation and included in the energy balance
 
     // For now, we'll test that the field exists and can be set
-    model.solar_gains = VectorField::new(vec![850.0]);
+    model.solar.solar_gains = VectorField::new(vec![850.0]);
 
     // Verify the field was set
-    assert_eq!(model.solar_gains.len(), 1, "Solar gains field should exist");
     assert_eq!(
-        model.solar_gains[0], 850.0,
+        model.solar.solar_gains.len(),
+        1,
+        "Solar gains field should exist"
+    );
+    assert_eq!(
+        model.solar.solar_gains[0], 850.0,
         "Solar gains should be settable"
     );
 
     // Verify solar gains are accessible in step_physics context
     // (This will be tested more thoroughly after integration)
-    let solar_gains_watts = model.solar_gains.clone() * model.zone_area.clone();
+    let solar_gains_watts = model.solar.solar_gains.clone() * model.setpoints.zone_area.clone();
     assert!(
         solar_gains_watts[0] > 0.0,
         "Solar gains should produce non-zero power when integrated"

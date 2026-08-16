@@ -30,21 +30,22 @@ fn test_internal_gain_causes_temperature_rise() {
     let mut model = ThermalModel::<VectorField>::from_spec(&spec);
 
     // Disable HVAC
-    model.heating_setpoint = -999.0;
-    model.cooling_setpoint = 999.0;
+    model.setpoints.heating_setpoint = -999.0;
+    model.setpoints.cooling_setpoint = 999.0;
 
     // Set initial conditions
     let initial_temp = 20.0;
     let outdoor_temp = 10.0; // Cold outdoor
 
-    model.temperatures = VectorField::from_scalar(initial_temp, model.num_zones);
-    model.mass_temperatures = VectorField::from_scalar(initial_temp, model.num_zones);
+    model.setpoints.temperatures = VectorField::from_scalar(initial_temp, model.hvac.num_zones);
+    model.mass.mass_temperatures = VectorField::from_scalar(initial_temp, model.hvac.num_zones);
     model.set_ground_temp(outdoor_temp);
 
     // Apply internal gain
-    let floor_area = model.zone_area[0];
+    let floor_area = model.setpoints.zone_area[0];
     let internal_gain_w = 500.0;
-    model.loads = VectorField::from_scalar(internal_gain_w / floor_area, model.num_zones);
+    model.setpoints.loads =
+        VectorField::from_scalar(internal_gain_w / floor_area, model.hvac.num_zones);
 
     // Run simulation
     let steps = 500;
@@ -52,7 +53,7 @@ fn test_internal_gain_causes_temperature_rise() {
         model.step_physics(t, outdoor_temp, 3600.0);
     }
 
-    let final_temp = model.temperatures[0];
+    let final_temp = model.setpoints.temperatures[0];
 
     // With internal gains, temperature should be higher than outdoor temp
     // and potentially higher than initial temp depending on balance
@@ -83,15 +84,15 @@ fn test_hvac_heating_maintains_setpoint() {
 
     // Set HVAC setpoints
     let heating_setpoint = 20.0;
-    model.heating_setpoint = heating_setpoint;
-    model.cooling_setpoint = 999.0;
+    model.setpoints.heating_setpoint = heating_setpoint;
+    model.setpoints.cooling_setpoint = 999.0;
 
     // Set initial conditions - cold zone
     let initial_temp = 10.0;
     let outdoor_temp = 5.0; // Cold outdoor
 
-    model.temperatures = VectorField::from_scalar(initial_temp, model.num_zones);
-    model.mass_temperatures = VectorField::from_scalar(initial_temp, model.num_zones);
+    model.setpoints.temperatures = VectorField::from_scalar(initial_temp, model.hvac.num_zones);
+    model.mass.mass_temperatures = VectorField::from_scalar(initial_temp, model.hvac.num_zones);
     model.set_ground_temp(outdoor_temp);
 
     // Run simulation
@@ -100,7 +101,7 @@ fn test_hvac_heating_maintains_setpoint() {
         model.step_physics(t, outdoor_temp, 3600.0);
     }
 
-    let final_temp = model.temperatures[0];
+    let final_temp = model.setpoints.temperatures[0];
 
     println!(
         "Initial: {:.2}°C, Final: {:.2}°C, Setpoint: {:.2}°C",
@@ -130,15 +131,15 @@ fn test_hvac_cooling_maintains_setpoint() {
 
     // Set HVAC setpoints
     let cooling_setpoint = 24.0;
-    model.heating_setpoint = -999.0;
-    model.cooling_setpoint = cooling_setpoint;
+    model.setpoints.heating_setpoint = -999.0;
+    model.setpoints.cooling_setpoint = cooling_setpoint;
 
     // Set initial conditions - hot zone
     let initial_temp = 30.0;
     let outdoor_temp = 35.0; // Hot outdoor
 
-    model.temperatures = VectorField::from_scalar(initial_temp, model.num_zones);
-    model.mass_temperatures = VectorField::from_scalar(initial_temp, model.num_zones);
+    model.setpoints.temperatures = VectorField::from_scalar(initial_temp, model.hvac.num_zones);
+    model.mass.mass_temperatures = VectorField::from_scalar(initial_temp, model.hvac.num_zones);
     model.set_ground_temp(outdoor_temp);
 
     // Run simulation
@@ -147,7 +148,7 @@ fn test_hvac_cooling_maintains_setpoint() {
         model.step_physics(t, outdoor_temp, 3600.0);
     }
 
-    let final_temp = model.temperatures[0];
+    let final_temp = model.setpoints.temperatures[0];
 
     println!(
         "Initial: {:.2}°C, Final: {:.2}°C, Setpoint: {:.2}°C",
@@ -177,18 +178,22 @@ fn test_heat_flow_symmetry() {
 
     // Test heating scenario
     let mut model_heating = ThermalModel::<VectorField>::from_spec(&spec);
-    model_heating.heating_setpoint = 20.0;
-    model_heating.cooling_setpoint = 999.0;
-    model_heating.temperatures = VectorField::from_scalar(10.0, model_heating.num_zones);
-    model_heating.mass_temperatures = VectorField::from_scalar(10.0, model_heating.num_zones);
+    model_heating.setpoints.heating_setpoint = 20.0;
+    model_heating.setpoints.cooling_setpoint = 999.0;
+    model_heating.setpoints.temperatures =
+        VectorField::from_scalar(10.0, model_heating.hvac.num_zones);
+    model_heating.mass.mass_temperatures =
+        VectorField::from_scalar(10.0, model_heating.hvac.num_zones);
     model_heating.set_ground_temp(15.0);
 
     // Test cooling scenario
     let mut model_cooling = ThermalModel::<VectorField>::from_spec(&spec);
-    model_cooling.heating_setpoint = -999.0;
-    model_cooling.cooling_setpoint = 10.0;
-    model_cooling.temperatures = VectorField::from_scalar(20.0, model_cooling.num_zones);
-    model_cooling.mass_temperatures = VectorField::from_scalar(20.0, model_cooling.num_zones);
+    model_cooling.setpoints.heating_setpoint = -999.0;
+    model_cooling.setpoints.cooling_setpoint = 10.0;
+    model_cooling.setpoints.temperatures =
+        VectorField::from_scalar(20.0, model_cooling.hvac.num_zones);
+    model_cooling.mass.mass_temperatures =
+        VectorField::from_scalar(20.0, model_cooling.hvac.num_zones);
     model_cooling.set_ground_temp(15.0);
 
     let outdoor_temp = 15.0; // Midpoint temperature
@@ -233,21 +238,22 @@ fn test_energy_conservation_steady_state() {
     let mut model = ThermalModel::<VectorField>::from_spec(&spec);
 
     // Disable HVAC
-    model.heating_setpoint = -999.0;
-    model.cooling_setpoint = 999.0;
+    model.setpoints.heating_setpoint = -999.0;
+    model.setpoints.cooling_setpoint = 999.0;
 
     // Set initial conditions
     let initial_temp = 20.0;
     let outdoor_temp = 10.0;
 
-    model.temperatures = VectorField::from_scalar(initial_temp, model.num_zones);
-    model.mass_temperatures = VectorField::from_scalar(initial_temp, model.num_zones);
+    model.setpoints.temperatures = VectorField::from_scalar(initial_temp, model.hvac.num_zones);
+    model.mass.mass_temperatures = VectorField::from_scalar(initial_temp, model.hvac.num_zones);
     model.set_ground_temp(outdoor_temp); // Ground at outdoor temp
 
     // Apply constant internal gain
     let internal_gain_w = 500.0;
-    let floor_area = model.zone_area[0];
-    model.loads = VectorField::from_scalar(internal_gain_w / floor_area, model.num_zones);
+    let floor_area = model.setpoints.zone_area[0];
+    model.setpoints.loads =
+        VectorField::from_scalar(internal_gain_w / floor_area, model.hvac.num_zones);
 
     // Run to steady state
     let steps = 2000;
@@ -257,9 +263,9 @@ fn test_energy_conservation_steady_state() {
 
     // At steady state, the zone temperature should stabilize
     // Check that temperature is no longer changing significantly
-    let temp_before = model.temperatures[0];
+    let temp_before = model.setpoints.temperatures[0];
     model.step_physics(steps, outdoor_temp, 3600.0);
-    let temp_after = model.temperatures[0];
+    let temp_after = model.setpoints.temperatures[0];
 
     let temp_change = (temp_after - temp_before).abs();
     assert!(
@@ -387,10 +393,10 @@ fn test_thermal_model_consistency() {
     // Set identical initial conditions
     let initial_temp = 20.0;
     for model in [&mut model1, &mut model2] {
-        model.temperatures = VectorField::from_scalar(initial_temp, model.num_zones);
-        model.mass_temperatures = VectorField::from_scalar(initial_temp, model.num_zones);
-        model.heating_setpoint = -999.0;
-        model.cooling_setpoint = 999.0;
+        model.setpoints.temperatures = VectorField::from_scalar(initial_temp, model.hvac.num_zones);
+        model.mass.mass_temperatures = VectorField::from_scalar(initial_temp, model.hvac.num_zones);
+        model.setpoints.heating_setpoint = -999.0;
+        model.setpoints.cooling_setpoint = 999.0;
     }
 
     let outdoor_temp = 10.0;
@@ -410,14 +416,14 @@ fn test_thermal_model_consistency() {
         );
 
         // Temperatures should be identical
-        for i in 0..model1.num_zones {
+        for i in 0..model1.hvac.num_zones {
             assert!(
-                (model1.temperatures[i] - model2.temperatures[i]).abs() < 1e-10,
+                (model1.setpoints.temperatures[i] - model2.setpoints.temperatures[i]).abs() < 1e-10,
                 "Temperature mismatch at step {}, zone {}: {:.6} vs {:.6}",
                 t,
                 i,
-                model1.temperatures[i],
-                model2.temperatures[i]
+                model1.setpoints.temperatures[i],
+                model2.setpoints.temperatures[i]
             );
         }
     }
@@ -480,16 +486,19 @@ fn test_multi_zone_energy_balance() {
     let spec = fluxion::validation::ashrae_140_cases::ASHRAE140Case::Case960.spec();
     let mut model = ThermalModel::<VectorField>::from_spec(&spec);
 
-    assert!(model.num_zones > 1, "Case 960 should have multiple zones");
+    assert!(
+        model.hvac.num_zones > 1,
+        "Case 960 should have multiple zones"
+    );
 
     // Disable HVAC
-    model.heating_setpoint = -999.0;
-    model.cooling_setpoint = 999.0;
+    model.setpoints.heating_setpoint = -999.0;
+    model.setpoints.cooling_setpoint = 999.0;
 
     // Set initial conditions
     let initial_temp = 20.0;
-    model.temperatures = VectorField::from_scalar(initial_temp, model.num_zones);
-    model.mass_temperatures = VectorField::from_scalar(initial_temp, model.num_zones);
+    model.setpoints.temperatures = VectorField::from_scalar(initial_temp, model.hvac.num_zones);
+    model.mass.mass_temperatures = VectorField::from_scalar(initial_temp, model.hvac.num_zones);
 
     let outdoor_temp = 10.0;
 
@@ -501,7 +510,7 @@ fn test_multi_zone_energy_balance() {
 
     // Check that inter-zone heat transfer is working
     // Zones should have different temperatures due to different boundary conditions
-    let temps: Vec<f64> = model.temperatures.as_slice().to_vec();
+    let temps: Vec<f64> = model.setpoints.temperatures.as_slice().to_vec();
 
     // For Case 960 sunspace, zones should have different temperatures
     // (sunspace should be warmer/cooler depending on conditions)

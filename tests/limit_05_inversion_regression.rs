@@ -54,7 +54,7 @@ fn simulate_case(case: ASHRAE140Case) -> (f64, f64, f64, f64) {
 
     for step in 0..WARMUP_HOURS {
         let weather_data = weather.get_hourly_data(step).unwrap();
-        model.weather = Some(weather_data.clone());
+        model.solar.weather = Some(weather_data.clone());
         let _ = model.step_physics(step, weather_data.dry_bulb_temp, 3600.0);
     }
 
@@ -65,7 +65,7 @@ fn simulate_case(case: ASHRAE140Case) -> (f64, f64, f64, f64) {
 
     for step in 0..8760 {
         let weather_data = weather.get_hourly_data(step).unwrap();
-        model.weather = Some(weather_data.clone());
+        model.solar.weather = Some(weather_data.clone());
         let energy_kwh = model.step_physics(step, weather_data.dry_bulb_temp, 3600.0);
 
         if energy_kwh > 0.0 {

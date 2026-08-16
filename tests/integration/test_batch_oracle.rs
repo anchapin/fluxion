@@ -13,11 +13,11 @@ fn test_population_evaluation_100() {
     let mut model = ThermalModel::<VectorField>::new(1);
 
     // Initialize model with sensible defaults
-    model.window_u_value = 1.5;
-    model.heating_setpoint = 20.0;
-    model.cooling_setpoint = 26.0;
-    model.temperatures = VectorField::from_scalar(20.0, 1);
-    model.mass_temperatures = VectorField::from_scalar(20.0, 1);
+    model.solar.window_u_value = 1.5;
+    model.setpoints.heating_setpoint = 20.0;
+    model.setpoints.cooling_setpoint = 26.0;
+    model.setpoints.temperatures = VectorField::from_scalar(20.0, 1);
+    model.mass.mass_temperatures = VectorField::from_scalar(20.0, 1);
 
     let oracle = BatchOracle::from_model(model);
 
@@ -47,11 +47,11 @@ fn test_population_evaluation_1000() {
     let mut model = ThermalModel::<VectorField>::new(1);
 
     // Initialize model with sensible defaults
-    model.window_u_value = 1.5;
-    model.heating_setpoint = 20.0;
-    model.cooling_setpoint = 26.0;
-    model.temperatures = VectorField::from_scalar(20.0, 1);
-    model.mass_temperatures = VectorField::from_scalar(20.0, 1);
+    model.solar.window_u_value = 1.5;
+    model.setpoints.heating_setpoint = 20.0;
+    model.setpoints.cooling_setpoint = 26.0;
+    model.setpoints.temperatures = VectorField::from_scalar(20.0, 1);
+    model.mass.mass_temperatures = VectorField::from_scalar(20.0, 1);
 
     let oracle = BatchOracle::from_model(model);
 
@@ -92,11 +92,11 @@ fn test_parameter_vector_semantics() {
     let mut model = ThermalModel::<VectorField>::new(1);
 
     // Initialize model with sensible defaults
-    model.window_u_value = 1.5;
-    model.heating_setpoint = 20.0;
-    model.cooling_setpoint = 26.0;
-    model.temperatures = VectorField::from_scalar(20.0, 1);
-    model.mass_temperatures = VectorField::from_scalar(20.0, 1);
+    model.solar.window_u_value = 1.5;
+    model.setpoints.heating_setpoint = 20.0;
+    model.setpoints.cooling_setpoint = 26.0;
+    model.setpoints.temperatures = VectorField::from_scalar(20.0, 1);
+    model.mass.mass_temperatures = VectorField::from_scalar(20.0, 1);
 
     let oracle = BatchOracle::from_model(model);
 
@@ -142,11 +142,11 @@ fn test_surrogate_integration() {
     let mut model = ThermalModel::<VectorField>::new(1);
 
     // Initialize model with sensible defaults
-    model.window_u_value = 1.5;
-    model.heating_setpoint = 20.0;
-    model.cooling_setpoint = 26.0;
-    model.temperatures = VectorField::from_scalar(20.0, 1);
-    model.mass_temperatures = VectorField::from_scalar(20.0, 1);
+    model.solar.window_u_value = 1.5;
+    model.setpoints.heating_setpoint = 20.0;
+    model.setpoints.cooling_setpoint = 26.0;
+    model.setpoints.temperatures = VectorField::from_scalar(20.0, 1);
+    model.mass.mass_temperatures = VectorField::from_scalar(20.0, 1);
 
     let oracle = BatchOracle::from_model(model);
 
@@ -172,11 +172,11 @@ fn test_parallelism_correctness() {
     let mut model = ThermalModel::<VectorField>::new(1);
 
     // Initialize model with sensible defaults
-    model.window_u_value = 1.5;
-    model.heating_setpoint = 20.0;
-    model.cooling_setpoint = 26.0;
-    model.temperatures = VectorField::from_scalar(20.0, 1);
-    model.mass_temperatures = VectorField::from_scalar(20.0, 1);
+    model.solar.window_u_value = 1.5;
+    model.setpoints.heating_setpoint = 20.0;
+    model.setpoints.cooling_setpoint = 26.0;
+    model.setpoints.temperatures = VectorField::from_scalar(20.0, 1);
+    model.mass.mass_temperatures = VectorField::from_scalar(20.0, 1);
 
     let oracle = BatchOracle::from_model(model);
 

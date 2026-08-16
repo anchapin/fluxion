@@ -53,7 +53,7 @@ fn test_flexlab_x3a_full_simulation() {
 
     // Create the thermal model
     let mut model = ThermalModel::<VectorField>::from_spec(&spec);
-    println!("Thermal model created: {} zone(s)", model.num_zones);
+    println!("Thermal model created: {} zone(s)", model.hvac.num_zones);
 
     // Run 1 year
     println!("Running 8760-step simulation...");
@@ -201,7 +201,7 @@ fn test_flexlab_x3a_sensor_margin() {
     let mut model = ThermalModel::<VectorField>::from_spec(&spec);
     println!(
         "Model: {} zone(s), {:.1} m² floor area",
-        model.num_zones,
+        model.hvac.num_zones,
         spec.geometry[0].width * spec.geometry[0].depth,
     );
 

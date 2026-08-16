@@ -27,7 +27,7 @@ fn run_case_900_simulation() -> DeterminismOutput {
     // Warmup
     for step in 0..warmup_steps {
         let weather_data = weather.get_hourly_data(step).unwrap();
-        model.weather = Some(weather_data.clone());
+        model.solar.weather = Some(weather_data.clone());
         model.step_physics(step, weather_data.dry_bulb_temp, 3600.0);
     }
 
@@ -43,9 +43,10 @@ fn run_case_900_simulation() -> DeterminismOutput {
 
     for step in warmup_steps..warmup_steps + steps {
         let weather_data = weather.get_hourly_data(step % 8760).unwrap();
-        model.weather = Some(weather_data.clone());
+        model.solar.weather = Some(weather_data.clone());
 
         let zone_temp_before = model
+            .setpoints
             .temperatures
             .as_slice()
             .first()
@@ -56,14 +57,14 @@ fn run_case_900_simulation() -> DeterminismOutput {
         let energy_joules = energy_kwh * 3.6e6;
 
         // Track heating
-        if energy_kwh > 0.0 || zone_temp_before < model.heating_setpoint {
+        if energy_kwh > 0.0 || zone_temp_before < model.setpoints.heating_setpoint {
             total_heating += energy_joules;
             let power_watts = energy_joules / 3600.0;
             peak_heating = peak_heating.max(power_watts);
         }
 
         // Track cooling
-        if energy_kwh < 0.0 || zone_temp_before > model.cooling_setpoint {
+        if energy_kwh < 0.0 || zone_temp_before > model.setpoints.cooling_setpoint {
             total_cooling += -energy_joules;
             let power_watts = -energy_joules / 3600.0;
             peak_cooling = peak_cooling.max(power_watts);
@@ -155,10 +156,10 @@ fn test_case_900_determinism_free_floating() {
 
     for step in 0..steps {
         let weather_data = weather.get_hourly_data(step).unwrap();
-        model.weather = Some(weather_data.clone());
+        model.solar.weather = Some(weather_data.clone());
         model.step_physics(step, weather_data.dry_bulb_temp, 3600.0);
 
-        if let Some(&zone_temp) = model.temperatures.as_slice().first() {
+        if let Some(&zone_temp) = model.setpoints.temperatures.as_slice().first() {
             min_temp = min_temp.min(zone_temp);
             max_temp = max_temp.max(zone_temp);
             sum_temps += zone_temp;

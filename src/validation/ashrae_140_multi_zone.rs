@@ -1716,14 +1716,14 @@ impl ASHRAE140MultiZoneValidator {
 
         // Per-zone HVAC enable flags from the spec — mirrors
         // `ASHRAE140Validator::validate_case_960`.
-        let num_zones = model.num_zones;
+        let num_zones = model.hvac.num_zones;
         let mut hvac_enabled_vals = vec![1.0_f64; num_zones];
         for (zone_idx, hvac) in spec.hvac.iter().enumerate() {
             if zone_idx < num_zones {
                 hvac_enabled_vals[zone_idx] = if hvac.is_enabled() { 1.0 } else { 0.0 };
             }
         }
-        model.hvac_enabled = crate::physics::cta::VectorField::new(hvac_enabled_vals);
+        model.hvac.hvac_enabled = crate::physics::cta::VectorField::new(hvac_enabled_vals);
 
         model.reset_heating_cooling_energy();
         model.reset_peak_power();

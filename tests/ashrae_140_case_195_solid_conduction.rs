@@ -145,13 +145,16 @@ fn test_case_195_conduction_only() {
     let model = ThermalModel::<VectorField>::from_spec(&spec);
 
     // Verify the model is configured correctly
-    assert_eq!(model.num_zones, 1, "Should be single-zone");
+    assert_eq!(model.hvac.num_zones, 1, "Should be single-zone");
 
     // Window U-value should still be set (even with zero area)
-    assert!(model.window_u_value > 0.0, "Window U-value should be set");
+    assert!(
+        model.solar.window_u_value > 0.0,
+        "Window U-value should be set"
+    );
 
     // Infiltration should be zero
-    let h_ve = model.h_ve.as_ref();
+    let h_ve = model.conduction.h_ve.as_ref();
     assert_eq!(
         h_ve[0], 0.0,
         "Ventilation conductance should be zero (no infiltration)"
@@ -170,7 +173,7 @@ fn test_case_195_temperature_range() {
     for step in 0..168 {
         let weather_data = weather.get_hourly_data(step).unwrap();
         model.step_physics(step, weather_data.dry_bulb_temp, 3600.0);
-        temperatures.push(model.temperatures.as_ref()[0]);
+        temperatures.push(model.setpoints.temperatures.as_ref()[0]);
     }
 
     let min_temp = temperatures.iter().cloned().fold(f64::INFINITY, f64::min);

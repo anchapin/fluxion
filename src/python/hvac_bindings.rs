@@ -68,11 +68,11 @@ impl PyZoneSetpoints {
 
     /// Get heating setpoint for a zone
     pub fn get_heating_setpoint(&self, zone_id: usize) -> PyResult<f64> {
-        if zone_id >= self.inner.num_zones() {
+        if zone_id >= self.inner.hvac.num_zones() {
             return Err(pyo3::exceptions::PyValueError::new_err(format!(
                 "Zone ID {} out of range (0-{})",
                 zone_id,
-                self.inner.num_zones() - 1
+                self.inner.hvac.num_zones() - 1
             )));
         }
         Ok(self.inner.get_heating_setpoint(zone_id))
@@ -80,11 +80,11 @@ impl PyZoneSetpoints {
 
     /// Get cooling setpoint for a zone
     pub fn get_cooling_setpoint(&self, zone_id: usize) -> PyResult<f64> {
-        if zone_id >= self.inner.num_zones() {
+        if zone_id >= self.inner.hvac.num_zones() {
             return Err(pyo3::exceptions::PyValueError::new_err(format!(
                 "Zone ID {} out of range (0-{})",
                 zone_id,
-                self.inner.num_zones() - 1
+                self.inner.hvac.num_zones() - 1
             )));
         }
         Ok(self.inner.get_cooling_setpoint(zone_id))
@@ -92,11 +92,11 @@ impl PyZoneSetpoints {
 
     /// Get deadband for a zone
     pub fn get_deadband(&self, zone_id: usize) -> PyResult<f64> {
-        if zone_id >= self.inner.num_zones() {
+        if zone_id >= self.inner.hvac.num_zones() {
             return Err(pyo3::exceptions::PyValueError::new_err(format!(
                 "Zone ID {} out of range (0-{})",
                 zone_id,
-                self.inner.num_zones() - 1
+                self.inner.hvac.num_zones() - 1
             )));
         }
         Ok(self.inner.get_deadband(zone_id))
@@ -111,7 +111,7 @@ impl PyZoneSetpoints {
 
     /// Get number of zones
     pub fn num_zones(&self) -> usize {
-        self.inner.num_zones()
+        self.inner.hvac.num_zones()
     }
 }
 
@@ -367,11 +367,11 @@ impl PyHVACSchedule {
     }
 
     pub fn heating_setpoint(&self, hour: usize) -> f64 {
-        self.inner.heating_setpoint(hour)
+        self.inner.setpoints.heating_setpoint(hour)
     }
 
     pub fn cooling_setpoint(&self, hour: usize) -> f64 {
-        self.inner.cooling_setpoint(hour)
+        self.inner.setpoints.cooling_setpoint(hour)
     }
 
     pub fn get_heating_schedule(&self) -> PyDailySchedule {

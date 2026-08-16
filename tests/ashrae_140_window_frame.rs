@@ -244,7 +244,7 @@ fn ashrae_140_case_600_h_tr_w_includes_frame_bridge() {
 
     let spec = fluxion::validation::ashrae_140_cases::ASHRAE140Case::Case600.spec();
     let model = ThermalModel::<VectorField>::from_spec(&spec);
-    let h_tr_w = *model.h_tr_w.as_ref().first().unwrap_or(&0.0);
+    let h_tr_w = *model.conduction.h_tr_w.as_ref().first().unwrap_or(&0.0);
     let total_window_area = spec.total_window_area();
 
     // h_tr_w must be positive (glazing + frame).
@@ -297,7 +297,7 @@ fn ashrae_140_case_600_disabling_frame_returns_glass_only() {
     spec.window_properties.frame_area_fraction = 0.0;
 
     let model = ThermalModel::<VectorField>::from_spec(&spec);
-    let h_tr_w = *model.h_tr_w.as_ref().first().unwrap_or(&0.0);
+    let h_tr_w = *model.conduction.h_tr_w.as_ref().first().unwrap_or(&0.0);
     let total_window_area = spec.total_window_area();
     let glass_only = spec.window_properties.u_value * total_window_area;
 

@@ -59,9 +59,9 @@ fn test_case_office_building() {
     // Create thermal model from spec
     let mut model = ThermalModel::<VectorField>::from_spec(&office_spec);
 
-    println!("Model created: {} zone(s)", model.num_zones);
-    println!("Heating setpoint: {}°C", model.heating_setpoint);
-    println!("Cooling setpoint: {}°C", model.cooling_setpoint);
+    println!("Model created: {} zone(s)", model.hvac.num_zones);
+    println!("Heating setpoint: {}°C", model.setpoints.heating_setpoint);
+    println!("Cooling setpoint: {}°C", model.setpoints.cooling_setpoint);
 
     // Simulate 1 year
     println!("Simulating 1 year...");
@@ -127,9 +127,9 @@ fn test_case_retail_building() {
     // Create thermal model from spec
     let mut model = ThermalModel::<VectorField>::from_spec(&retail_spec);
 
-    println!("Model created: {} zone(s)", model.num_zones);
-    println!("Heating setpoint: {}°C", model.heating_setpoint);
-    println!("Cooling setpoint: {}°C", model.cooling_setpoint);
+    println!("Model created: {} zone(s)", model.hvac.num_zones);
+    println!("Heating setpoint: {}°C", model.setpoints.heating_setpoint);
+    println!("Cooling setpoint: {}°C", model.setpoints.cooling_setpoint);
 
     // Simulate 1 year
     println!("Simulating 1 year...");
@@ -194,9 +194,9 @@ fn test_case_school_building() {
     // Create thermal model from spec
     let mut model = ThermalModel::<VectorField>::from_spec(&school_spec);
 
-    println!("Model created: {} zone(s)", model.num_zones);
-    println!("Heating setpoint: {}°C", model.heating_setpoint);
-    println!("Cooling setpoint: {}°C", model.cooling_setpoint);
+    println!("Model created: {} zone(s)", model.hvac.num_zones);
+    println!("Heating setpoint: {}°C", model.setpoints.heating_setpoint);
+    println!("Cooling setpoint: {}°C", model.setpoints.cooling_setpoint);
 
     // Simulate 1 year
     println!("Simulating 1 year...");

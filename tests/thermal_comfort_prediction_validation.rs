@@ -57,8 +57,8 @@ fn test_wall_surface_temperatures_finite_and_reasonable() {
 
     // Initialize temperatures to a reasonable starting point
     let init_t = 20.0;
-    model.temperatures.as_mut()[0] = init_t;
-    if let Some(ref mut mt) = Some(&mut model.mass_temperatures) {
+    model.setpoints.temperatures.as_mut()[0] = init_t;
+    if let Some(ref mut mt) = Some(&mut model.mass.mass_temperatures) {
         mt.as_mut()[0] = init_t;
     }
     model.set_ground_temp(10.0);
@@ -68,11 +68,11 @@ fn test_wall_surface_temperatures_finite_and_reasonable() {
     // Run for 168 hours (1 week) and collect surface temperatures
     for step in 0..168 {
         let weather_data = weather.get_hourly_data(step).unwrap();
-        model.weather = Some(weather_data.clone());
+        model.solar.weather = Some(weather_data.clone());
         model.step_physics(step, weather_data.dry_bulb_temp, 3600.0);
 
         // Access wall_surface_temperatures if available
-        if let Some(&wt) = model.wall_surface_temperatures.as_slice().first() {
+        if let Some(&wt) = model.mass.wall_surface_temperatures.as_slice().first() {
             surface_temps.push(wt);
         }
     }
@@ -114,8 +114,8 @@ fn test_surface_temperature_thermal_lag() {
 
     // Initialize at 20°C
     let init_t = 20.0;
-    model.temperatures.as_mut()[0] = init_t;
-    if let Some(ref mut mt) = Some(&mut model.mass_temperatures) {
+    model.setpoints.temperatures.as_mut()[0] = init_t;
+    if let Some(ref mut mt) = Some(&mut model.mass.mass_temperatures) {
         mt.as_mut()[0] = init_t;
     }
     model.set_ground_temp(20.0);
@@ -126,13 +126,13 @@ fn test_surface_temperature_thermal_lag() {
     // Run for 240 hours (10 days) to observe thermal lag
     for step in 0..240 {
         let weather_data = weather.get_hourly_data(step).unwrap();
-        model.weather = Some(weather_data.clone());
+        model.solar.weather = Some(weather_data.clone());
         model.step_physics(step, weather_data.dry_bulb_temp, 3600.0);
 
-        if let Some(&wt) = model.wall_surface_temperatures.as_slice().first() {
+        if let Some(&wt) = model.mass.wall_surface_temperatures.as_slice().first() {
             surface_temps.push(wt);
         }
-        if let Some(&zt) = model.temperatures.as_slice().first() {
+        if let Some(&zt) = model.setpoints.temperatures.as_slice().first() {
             zone_temps.push(zt);
         }
     }
@@ -293,8 +293,8 @@ fn test_mrt_from_thermal_model_surfaces() {
 
     // Initialize
     let init_t = 22.0;
-    model.temperatures.as_mut()[0] = init_t;
-    if let Some(ref mut mt) = Some(&mut model.mass_temperatures) {
+    model.setpoints.temperatures.as_mut()[0] = init_t;
+    if let Some(ref mut mt) = Some(&mut model.mass.mass_temperatures) {
         mt.as_mut()[0] = init_t;
     }
     model.set_ground_temp(10.0);
@@ -302,12 +302,12 @@ fn test_mrt_from_thermal_model_surfaces() {
     // Run simulation
     for step in 0..72 {
         let weather_data = weather.get_hourly_data(step).unwrap();
-        model.weather = Some(weather_data.clone());
+        model.solar.weather = Some(weather_data.clone());
         model.step_physics(step, weather_data.dry_bulb_temp, 3600.0);
     }
 
     // Get surface temperatures from model
-    let surface_temps: Vec<f64> = model.wall_surface_temperatures.as_slice().to_vec();
+    let surface_temps: Vec<f64> = model.mass.wall_surface_temperatures.as_slice().to_vec();
 
     // Assume equal view factors and emissivity for a simple zone
     let n = surface_temps.len().max(1);
@@ -316,7 +316,7 @@ fn test_mrt_from_thermal_model_surfaces() {
 
     let mrt = calculate_mrt_from_surfaces(&surface_temps, &view_factors, &emissivities);
 
-    let zone_temp = model.temperatures[0];
+    let zone_temp = model.setpoints.temperatures[0];
 
     println!(
         "[MRT from Model] Zone temp={:.2}°C, MRT={:.2}°C, diff={:.2}°C",
@@ -853,8 +853,8 @@ fn test_thermal_comfort_integration() {
 
     // Initialize
     let init_t = 22.0;
-    model.temperatures.as_mut()[0] = init_t;
-    if let Some(ref mut mt) = Some(&mut model.mass_temperatures) {
+    model.setpoints.temperatures.as_mut()[0] = init_t;
+    if let Some(ref mut mt) = Some(&mut model.mass.mass_temperatures) {
         mt.as_mut()[0] = init_t;
     }
     model.set_ground_temp(10.0);
@@ -866,14 +866,14 @@ fn test_thermal_comfort_integration() {
     // Simulate summer conditions (hours 3000-4000, roughly July-August)
     for step in 3000..3200 {
         let weather_data = weather.get_hourly_data(step).unwrap();
-        model.weather = Some(weather_data.clone());
+        model.solar.weather = Some(weather_data.clone());
         model.step_physics(step, weather_data.dry_bulb_temp, 3600.0);
 
-        let zone_temp = model.temperatures[0];
+        let zone_temp = model.setpoints.temperatures[0];
         summer_temps.push(zone_temp);
 
         // Get surface temperatures for MRT
-        let surface_temps: Vec<f64> = model.wall_surface_temperatures.as_slice().to_vec();
+        let surface_temps: Vec<f64> = model.mass.wall_surface_temperatures.as_slice().to_vec();
 
         // Calculate MRT with equal view factors
         let n = surface_temps.len().max(1) as f64;

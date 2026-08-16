@@ -391,12 +391,12 @@ impl NineR4CConfig {
 
     #[napi(getter)]
     pub fn get_h_tr_is(&self) -> f64 {
-        self.inner.h_tr_is
+        self.inner.conduction.h_tr_is
     }
 
     #[napi(setter)]
     pub fn set_h_tr_is(&mut self, value: f64) {
-        self.inner.h_tr_is = value;
+        self.inner.conduction.h_tr_is = value;
     }
 
     #[napi(getter)]

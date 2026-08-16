@@ -14,10 +14,10 @@ fn diag_mass_trajectory() {
     let mut model = ThermalModel::<VectorField>::from_spec(&spec);
     let weather = DenverTmyWeather::new();
 
-    model.heating_setpoint = -999.0;
-    model.cooling_setpoint = 999.0;
-    model.hvac_heating_capacity = 0.0;
-    model.hvac_cooling_capacity = 0.0;
+    model.setpoints.heating_setpoint = -999.0;
+    model.setpoints.cooling_setpoint = 999.0;
+    model.hvac.hvac_heating_capacity = 0.0;
+    model.hvac.hvac_cooling_capacity = 0.0;
 
     // Track at specific hours
     let check_points: &[usize] = &[
@@ -35,11 +35,11 @@ fn diag_mass_trajectory() {
 
     for step in 0..8760 {
         let weather_data = weather.get_hourly_data(step).unwrap();
-        model.weather = Some(weather_data.clone());
+        model.solar.weather = Some(weather_data.clone());
         model.step_physics(step, weather_data.dry_bulb_temp, 3600.0);
 
-        let mass_temp = model.mass_temperatures.as_slice()[0];
-        let zone_temp = model.temperatures.as_slice()[0];
+        let mass_temp = model.mass.mass_temperatures.as_slice()[0];
+        let zone_temp = model.setpoints.temperatures.as_slice()[0];
         let outdoor_temp = weather_data.dry_bulb_temp;
 
         if mass_temp > max_mass {
