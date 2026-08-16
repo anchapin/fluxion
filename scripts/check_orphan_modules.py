@@ -297,8 +297,6 @@ def _walk_reachable(start: Path) -> set[Path]:
         if current in visited:
             continue
         visited.add(current)
-        raw = current.read_text(encoding="utf-8", errors="replace")
-        cleaned = _clean_source(raw)
         parent_dir = current.parent
         out_of_line, inline_bodies = _collect_declared_mods(current)
         # Out-of-line mod declarations.
