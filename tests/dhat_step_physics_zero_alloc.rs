@@ -1,29 +1,47 @@
-//! Steady-state allocation gate for `step_physics` (Issue #2756).
+//! Steady-state allocation gate for `step_physics` (Issue #2873).
 //!
 //! ## Purpose
-//! Asserts that the per-timestep scratch-buffer construction that
-//! `PhysicsScratch5r1c/6r2c/9r4c::new(num_zones)` used to perform on every
-//! call is gone — the `scratch_pool` now reuses the same SmallVec capacity
-//! for the whole run. The gate measures the dhat heap-block delta over a
-//! steady-state window (after warm-up) and bounds it to the *residual*
-//! per-step allocation that #2756 does NOT remove.
+//! Asserts that the per-timestep allocations eliminated by Issue #2873
+//! (`t_sol_air_vec` in step_physics_5r1c, the duplicate `t_sol_air_data`
+//! Vec that `prepare_solvers_and_sol_air` used to allocate, the
+//! `h_ve_night_zone` Vec, and the `h_ext_owned` Vec / `derived_h_ext.clone()`
+//! pair) are gone — the `PhysicsScratch5r1c::t_sol_air_zone` and
+//! `PhysicsScratch5r1c::h_ext_owned_zone` fields absorb every one of
+//! those allocations. The gate measures the dhat heap-block delta over a
+//! steady-state window (after warm-up) and asserts it stays below the
+//! post-#2873 budget for both day-mode (no night-ventilation) and the
+//! night-ventilation-mode paths.
 //!
 //! ## What this catches
-//! A regression that re-introduces `PhysicsScratch*rYc::new(self.0.num_zones)`
-//! (or any fresh per-step `Vec`/`SmallVec::from_elem` for scratch) inside
-//! `step_physics_5r1c/6r2c/9r4c`. Each such call adds ~8 heap blocks ×
-//! `STEADY_STEPS` to the delta and trips the budget.
+//! A regression that re-introduces per-step `Vec::with_capacity(num_zones)`
+//! or `derived_h_ext.clone()` for the sol-air / h_ext / h_ve_night
+//! triplet that #2873 removed. Each such allocation adds ~1 heap block ×
+//! `STEADY_STEPS` to the steady-state delta and trips the budget.
 //!
 //! ## The residual (why the budget is non-zero)
 //! `step_physics` still performs a fixed set of per-step allocations that are
-//! **out of scope for #2756** — chiefly the `std::mem::take(&mut
-//! scratch.phi_ia)` → `VectorField::from_smallvec` path (the scratch field is
-//! emptied each step, so `fill_zero()` re-allocates it next step) plus
-//! `t_sol_air_vec`, the `h_ext_owned` clone, and `num_tm`/`den` builders. The
-//! budget is ratcheted to the post-#2756 steady-state residual so a regression
-//! (re-adding per-step `new()`) pushes the delta above the ceiling, while a
-//! future issue that eliminates the `mem::take` residual can ratchet it DOWN
-//! toward the zero-gate style of `dhat_zone_solar_gain_zero_alloc.rs`.
+//! **out of scope for #2873** — chiefly `h_tr_is.clone()`,
+//! `num_tm` / `num_phi_st` from `zip_with`, the 8 Vec clones inside the
+//! `Issue #2890` floor-ceiling-wall longwave-radiation block, the
+//! `phi_ia / phi_st / phi_m` `mem::take` residual that re-allocates via
+//! `fill_zero()` on the next step, and `calc_analytical_loads`'s two
+//! solar-gain Vecs. The budget is ratcheted to the post-#2873
+//! steady-state residual so a future regression (re-adding any of the
+//! 4 #2873 allocations) trips the gate.
+//!
+//! ## Budget history
+//! * **Pre-#2873, post-Issue #2756** (PhysicsScratchPool wired in): 5 003
+//!   blocks (25.02 blocks/step). Budget = 5 300.
+//! * **Pre-#2873, post-Issue #2890** (LW block added, 8 Vec clones per
+//!   step): 6 803 blocks (34.02 blocks/step). The budget was *not*
+//!   updated when the LW block landed, so the gate silently failed;
+//!   the #2873 fix should ratchet the budget to its post-#2890 baseline
+//!   minus the 4 #2873-target allocations.
+//! * **Post-#2873** (this commit): 6 003 blocks (30.02 blocks/step).
+//!   Budget = 6 100 (~1.6 % headroom over the deterministic baseline; the
+//!   headroom is tight because the per-step pool signal (#2873 saves
+//!   4 blocks/step) is small relative to the residual (LW block +
+//!   `mem::take` cycle + `zip_with` + solar-gain Vecs).
 //!
 //! ## Why a *global allocator* is required
 //! See [`tests/dhat_alloc_budget.rs`] — `dhat::Profiler` only observes
@@ -44,7 +62,7 @@ use fluxion::sim::construction::WallSurface;
 use fluxion::sim::engine::ThermalModel;
 use fluxion::sim::solar::WindowProperties;
 use fluxion::weather::HourlyWeatherData;
-use fluxion_core::ashrae_cases::Orientation;
+use fluxion_core::ashrae_cases::{NightVentilation, Orientation};
 
 // `dhat::Alloc` MUST be the global allocator for `dhat::Profiler` to see any
 // allocations (see module docs). Isolated to this test binary.
@@ -60,46 +78,31 @@ const NUM_ZONES: usize = 10;
 /// checkout and to grow every other reuse buffer to steady-state capacity.
 const WARMUP_STEPS: usize = 24;
 
-/// Steady-state probe timesteps: the allocation delta over this window is
-/// bounded by [`STEADY_BLOCKS_BUDGET`].
+/// Steady-state probe timesteps: the allocation delta over this window must
+/// be bounded by [`STEADY_BLOCKS_BUDGET_DAY_MODE`] /
+/// [`STEADY_BLOCKS_BUDGET_NIGHT_VENT_MODE`].
 const STEADY_STEPS: usize = 200;
 
-/// Ceiling on the number of heap blocks allocated over the
-/// steady-state window.
+/// Issue #2873 post-fix day-mode budget — see module docs for history.
 ///
-/// **Measured baseline (post-#2756):** 5 003 blocks (25.02 blocks/step) over
-/// 200 steady steps × 10 zones, 5R1C path. Deterministic across runs (dhat
-/// counts alloc *calls*, which are fixed by the source path, not by allocator
-/// behaviour).
+/// Day-mode (`night_ventilation = None`, no fan): the #2873 paths that fire
+/// are the `t_sol_air_vec` duplicate, the `t_sol_air_data` Vec inside
+/// `prepare_solvers_and_sol_air`, and the `derived_h_ext.clone()` for the
+/// `h_ext_owned` VectorField wrap. All three are absorbed into the
+/// pooled `PhysicsScratch5r1c` scratch fields (t_sol_air_zone +
+/// h_ext_owned_zone).
+const STEADY_BLOCKS_BUDGET_DAY_MODE: u64 = 6_100;
+
+/// Issue #2873 post-fix night-vent-mode budget — see module docs for history.
 ///
-/// **Regression signal:** reverting `step_physics_5r1c` to construct a fresh
-/// `PhysicsScratch5r1c::new(num_zones)` each call measures 5 403 blocks
-/// (27.02 blocks/step) — i.e. **+2 blocks/step**. Those 2 blocks are exactly
-/// the two 5R1C scratch fields that are NOT emptied by `mem::take` each step
-/// (`wall_surface_new`, `wall_surface_correction`): the pool reuses their
-/// SmallVec capacity verbatim, while `new()` re-allocates them every call.
-/// (The other six 5R1C fields ARE `mem::take`'n into a `VectorField` each
-/// step, so they re-allocate on the next `fill_zero()` regardless of pooling —
-/// that residual is the remaining 25 blocks/step and is out of scope for
-/// #2756; a future issue that pools the `mem::take`→`VectorField` path should
-/// ratchet this budget DOWN.)
-///
-/// **Budget placement:** 5 300 sits between the pooled baseline (5 003) and
-/// the un-pooled regression (5 403), so a 5R1C-pooling revert (+400 blocks)
-/// trips the gate while leaving ~6 % headroom over the deterministic
-/// baseline. The budget is this tight because the per-step pool signal
-/// (+2 blocks) is small relative to the residual (25 blocks/step); the
-/// *primary* proof that the pool reuses buffers is the in-crate
-/// `scratch_pool_tests` module in `physics_impl.rs` (pointer-stability),
-/// not this budget.
-///
-/// **Regenerating:** after a *deliberate, reviewed* change that lowers
-/// allocations (e.g. a follow-up that pools the `mem::take` residual), measure
-/// the new steady_delta and ratchet this DOWN with a similar baseline-to-
-/// regression-band placement. Never raise it to silence a regression — that
-/// defeats the gate. See the matching ratchet convention in
-/// `tests/dhat_alloc_budget.rs`.
-const STEADY_BLOCKS_BUDGET: u64 = 5_300;
+/// Night-vent-mode (fan active): adds the `h_ve_night_zone` Vec on top of the
+/// day-mode set. #2873 absorbs that Vec into the same pooled
+/// `h_ext_owned_zone` (the per-zone h_ext now gets `derived_h_ext[0] +
+/// h_ve_night` written into zone 0 of the scratch field, no separate Vec).
+/// The night-vent budget is therefore *equal* to the day-mode budget — the
+/// pool keeps the steady-state allocs identical regardless of whether
+/// the fan is blowing.
+const STEADY_BLOCKS_BUDGET_NIGHT_VENT_MODE: u64 = 6_100;
 
 /// Build a NUM_ZONES model, each zone with 5 surfaces (N, E, S, W, Up) each
 /// carrying a window — the same fixture as
@@ -141,49 +144,138 @@ fn midday_weather(hour: usize) -> HourlyWeatherData {
     HourlyWeatherData::new(30.0, 900.0, 150.0, 950.0, 2.0, 40.0, hour)
 }
 
+/// Install an ASHRAE 140-style night-ventilation fan that is *always*
+/// "active" for every hour of the day (24/7). This forces the
+/// `night_vent_active_now` branch in `step_physics_5r1c` (Issue #824/2873)
+/// every step, so the night-vent-mode probe measures the worst-case
+/// per-step allocation count for that path.
+fn install_always_active_night_vent(model: &mut ThermalModel<VectorField>) {
+    // `operating_hours = (start, end)` is *inclusive of start, exclusive of end*
+    // (matches the ASHRAE 140 spec where the fan turns on at `start` and off at
+    // `end`). `is_active_at_hour(h)` returns `start <= h || h < end` —
+    // covering 24 h requires the disjunction to hold for every h ∈ 0..=23,
+    // which `(start=0, end=23)` does (hour 23 satisfies `h < end`).
+    let cfg = NightVentilation::new(1703.16, 0, 23);
+    model.night_ventilation = Some(cfg);
+}
+
 #[test]
 #[ignore]
-fn step_physics_steady_state_alloc_budget() {
+fn step_physics_day_mode_steady_state_alloc_budget() {
     // `testing()` mode: enables `HeapStats::get()` and suppresses writing
-    // `dhat-heap.json` on drop (clean CI trees).
+    // `dhat-heap.json` on drop (clean CI trees). `dhat::Profiler` is a
+    // process-wide singleton, so this test also covers the night-vent
+    // probe (see the second phase below) — splitting into two `#[test]`
+    // functions would conflict on the second profiler construction.
     let _profiler = dhat::Profiler::builder().testing().build();
 
-    let mut model = create_multizone_model();
+    // ----- Phase 1: day-mode probe (night_ventilation = None) -----
+    {
+        let mut model = create_multizone_model();
+        // `night_ventilation` is `None` by default → the night-vent branch
+        // (`h_ve_night_zone` / `h_ext_owned` Vec add) never fires; the only
+        // #2873 paths active are the t_sol_air duplicates and the
+        // `derived_h_ext.clone()` for the day-mode `h_ext_owned` VectorField
+        // wrap, all absorbed into the pooled scratch fields.
 
-    // Warm-up: drive the scratch_pool to populate on its first checkout and
-    // every other reuse buffer to steady-state capacity. Fixed weather hour so
-    // the solar-position cache does not grow during the probe.
-    for step in 0..WARMUP_STEPS {
-        model.weather = Some(midday_weather(12));
-        model.step_physics(step, 30.0, 3600.0);
+        // Warm-up: drive the scratch_pool to populate on its first checkout and
+        // every other reuse buffer to steady-state capacity. Fixed weather hour so
+        // the solar-position cache does not grow during the probe.
+        for step in 0..WARMUP_STEPS {
+            model.weather = Some(midday_weather(12));
+            model.step_physics(step, 30.0, 3600.0);
+        }
+
+        let warm_blocks = dhat::HeapStats::get().total_blocks;
+
+        // Steady-state probe: the delta here is bounded by STEADY_BLOCKS_BUDGET_DAY_MODE.
+        for step in 0..STEADY_STEPS {
+            model.weather = Some(midday_weather(12));
+            model.step_physics(WARMUP_STEPS + step, 30.0, 3600.0);
+        }
+
+        let steady_delta = dhat::HeapStats::get().total_blocks - warm_blocks;
+        let per_step = steady_delta as f64 / STEADY_STEPS as f64;
+
+        println!(
+            "step_physics day-mode steady-state probe \
+             ({NUM_ZONES} zones, 5R1C, {STEADY_STEPS} timesteps): \
+             warm_blocks={warm_blocks}, steady_delta={steady_delta} \
+             ({per_step:.2} blocks/step), budget={STEADY_BLOCKS_BUDGET_DAY_MODE}",
+        );
+
+        assert!(
+            steady_delta <= STEADY_BLOCKS_BUDGET_DAY_MODE,
+            "step_physics day-mode steady-state allocation budget breached: \
+             {steady_delta} blocks > {STEADY_BLOCKS_BUDGET_DAY_MODE} budget \
+             ({per_step:.2} blocks/step over {STEADY_STEPS} timesteps × {NUM_ZONES} zones). \
+             This is the per-timestep regression tracked in #2873 — \
+             step_physics_5r1c must obtain t_sol_air / h_ext from \
+             scratch.t_sol_air_zone / scratch.h_ext_owned_zone (the pooled \
+             PhysicsScratch5r1c fields), not allocate fresh Vecs or \
+             clone derived_h_ext every call. \
+             If this is an intentional improvement that lowers the residual, ratchet \
+             STEADY_BLOCKS_BUDGET_DAY_MODE DOWN, never up.",
+        );
     }
 
-    let warm_blocks = dhat::HeapStats::get().total_blocks;
+    // ----- Phase 2: night-vent-mode probe -----
+    //
+    // Issue #2873: the night-vent-mode path is the *worst-case* for the
+    // `h_ve_night_zone` Vec and the `h_ext_owned` rebuild — both must be
+    // absorbed into the pooled `PhysicsScratch5r1c::h_ext_owned_zone` field
+    // (zone 0 gets `derived_h_ext[0] + h_ve_night`, others get
+    // `derived_h_ext[i]` unchanged). The always-active night-vent config
+    // forces this branch every step.
+    //
+    // The new model carries a fresh scratch_pool (no carry-over from phase 1's
+    // `step_physics_5r1c` warm-up), so this probe measures the night-vent
+    // path in isolation. The day-mode `warm_blocks` is recorded but not
+    // subtracted from the night-vent delta — dhat's `total_blocks` is a
+    // process-wide cumulative counter, and the two probes share that
+    // counter (we just look at the *delta* over each probe window).
+    {
+        let mut model = create_multizone_model();
+        install_always_active_night_vent(&mut model);
 
-    // Steady-state probe: the delta here is bounded by STEADY_BLOCKS_BUDGET.
-    for step in 0..STEADY_STEPS {
-        model.weather = Some(midday_weather(12));
-        model.step_physics(WARMUP_STEPS + step, 30.0, 3600.0);
+        // Warm-up: same as day-mode — drive the scratch_pool to steady-state
+        // capacity and pre-populate the solar-position cache.
+        for step in 0..WARMUP_STEPS {
+            model.weather = Some(midday_weather(12));
+            model.step_physics(step, 30.0, 3600.0);
+        }
+
+        let warm_blocks = dhat::HeapStats::get().total_blocks;
+
+        // Steady-state probe: the delta here is bounded by
+        // STEADY_BLOCKS_BUDGET_NIGHT_VENT_MODE.
+        for step in 0..STEADY_STEPS {
+            model.weather = Some(midday_weather(12));
+            model.step_physics(WARMUP_STEPS + step, 30.0, 3600.0);
+        }
+
+        let steady_delta = dhat::HeapStats::get().total_blocks - warm_blocks;
+        let per_step = steady_delta as f64 / STEADY_STEPS as f64;
+
+        println!(
+            "step_physics night-vent-mode steady-state probe \
+             ({NUM_ZONES} zones, 5R1C, {STEADY_STEPS} timesteps): \
+             warm_blocks={warm_blocks}, steady_delta={steady_delta} \
+             ({per_step:.2} blocks/step), budget={STEADY_BLOCKS_BUDGET_NIGHT_VENT_MODE}",
+        );
+
+        assert!(
+            steady_delta <= STEADY_BLOCKS_BUDGET_NIGHT_VENT_MODE,
+            "step_physics night-vent-mode steady-state allocation budget breached: \
+             {steady_delta} blocks > {STEADY_BLOCKS_BUDGET_NIGHT_VENT_MODE} budget \
+             ({per_step:.2} blocks/step over {STEADY_STEPS} timesteps × {NUM_ZONES} zones). \
+             This is the per-timestep regression tracked in #2873 — \
+             step_physics_5r1c's night-vent path must absorb both \
+             `h_ve_night_zone` and `h_ext_owned` into the pooled \
+             `PhysicsScratch5r1c::h_ext_owned_zone` field, not allocate fresh \
+             Vecs every call. \
+             If this is an intentional improvement that lowers the residual, ratchet \
+             STEADY_BLOCKS_BUDGET_NIGHT_VENT_MODE DOWN, never up.",
+        );
     }
-
-    let steady_delta = dhat::HeapStats::get().total_blocks - warm_blocks;
-    let per_step = steady_delta as f64 / STEADY_STEPS as f64;
-
-    println!(
-        "step_physics steady-state probe ({NUM_ZONES} zones, 5R1C, \
-         {STEADY_STEPS} timesteps): warm_blocks={warm_blocks}, \
-         steady_delta={steady_delta} ({per_step:.2} blocks/step), budget={STEADY_BLOCKS_BUDGET}",
-    );
-
-    assert!(
-        steady_delta <= STEADY_BLOCKS_BUDGET,
-        "step_physics steady-state allocation budget breached: \
-         {steady_delta} blocks > {STEADY_BLOCKS_BUDGET} budget \
-         ({per_step:.2} blocks/step over {STEADY_STEPS} timesteps × {NUM_ZONES} zones). \
-         This is the per-timestep scratch-construction regression tracked in #2756 — \
-         step_physics_5r1c/6r2c/9r4c must obtain scratch from scratch_pool.checkout_*, \
-         not construct a fresh PhysicsScratch*rYc each call. \
-         If this is an intentional improvement that lowers the residual, ratchet \
-         STEADY_BLOCKS_BUDGET DOWN, never up.",
-    );
 }

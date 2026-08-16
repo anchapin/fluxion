@@ -18,6 +18,7 @@ use crate::physics::five_r1c_solver::surface_time_constant_from_conductances;
 use crate::physics::multi_node_solver::SurfaceExteriorTemperatures;
 use crate::sim::boundary::distribute_opaque_solar_gains;
 use crate::sim::hvac::{HVACMode as EquipmentHVACMode, VariableCapacityEquipment};
+use smallvec::SmallVec;
 // #1391: stack-effect helpers removed — the 9R4C and 5R1C inter-zone paths now use
 // a single `q_iz_net[i] = h_tr_iz[i] · Σ_{j≠i} (T[j] − T[i])` conductive loop,
 // matching the iterative path's `solve_coupled_zone_temperatures`. The legacy
@@ -167,8 +168,32 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
             .as_ref()
             .map(|w| w.sky_temperature())
             .unwrap_or(outdoor_temp - 15.0);
-        let (_t_sol_air_data, ctf_flux_w, fd_flux_w, _ctf_surface_temps) =
-            self.prepare_solvers_and_sol_air(timestep, outdoor_temp, sky_temp);
+
+        // Issue #1966 / #2756: scratch is CHECKED OUT of the per-instance
+        // `scratch_pool` (allocates only on the first timestep, then reuses
+        // the same SmallVec capacity for the whole run). `fill_zero()` resizes
+        // every field back to `num_zones` — several were `mem::take`'n empty
+        // on the previous step — and zero-fills them, reproducing the exact
+        // post-`new(num_zones)` state, so the change is bit-identical. The
+        // owned checkout/return pair lets the scratch coexist with `&mut self`
+        // method calls below (a borrowed `&mut scratch` held across the whole
+        // step re-introduces the borrow conflict that sank the #1436 WIP).
+        // Issue #2873: scratch is now checked out *before* the
+        // `prepare_solvers_and_sol_air` call so the caller can pass
+        // `&mut scratch.t_sol_air_zone` as the per-step sol-air buffer
+        // (eliminates the `t_sol_air_data` Vec alloc that used to live inside
+        // that helper and was immediately discarded by this step). The scratch
+        // is held as an *owned* local — does not borrow `&self`/`&mut self` —
+        // so the subsequent `&mut self` method calls below coexist.
+        let mut scratch = self.0.scratch_pool.checkout_5r1c(self.0.num_zones);
+        scratch.fill_zero();
+
+        let (ctf_flux_w, fd_flux_w, _ctf_surface_temps) = self.prepare_solvers_and_sol_air(
+            timestep,
+            outdoor_temp,
+            sky_temp,
+            &mut scratch.t_sol_air_zone,
+        );
 
         // Get ground temperature at this timestep
         let t_g = self.0.ground_temperature.ground_temperature(timestep);
@@ -209,19 +234,11 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         let opaque_solar_ref = self.0.opaque_solar_gains.as_ref();
         let area_ref = self.0.zone_area.as_ref();
 
-        // Issue #1524: consolidated per-timestep scratch (replaces the six
-        // standalone `Vec::with_capacity(num_zones)` allocations below).
-        // Issue #1966 / #2756: scratch is now CHECKED OUT of the per-instance
-        // `scratch_pool` (allocates only on the first timestep, then reuses
-        // the same SmallVec capacity for the whole run). `fill_zero()` resizes
-        // every field back to `num_zones` — several were `mem::take`'n empty
-        // on the previous step — and zero-fills them, reproducing the exact
-        // post-`new(num_zones)` state, so the change is bit-identical. The
-        // owned checkout/return pair lets the scratch coexist with `&mut self`
-        // method calls below (a borrowed `&mut scratch` held across the whole
-        // step re-introduces the borrow conflict that sank the #1436 WIP).
-        let mut scratch = self.0.scratch_pool.checkout_5r1c(self.0.num_zones);
-        scratch.fill_zero();
+        // Issue #2873: scratch was checked out earlier (just before
+        // `prepare_solvers_and_sol_air`) so we could pass
+        // `&mut scratch.t_sol_air_zone` as the helper's per-step sol-air
+        // buffer. The `fill_zero()` call there already resized the rest of
+        // the fields back to `num_zones`; we only need the loop below.
 
         for i in 0..self.0.num_zones {
             let load_w = loads_ref[i] * area_ref[i];
@@ -337,14 +354,39 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
             SolAirTemperature::ashrae_140_default().emissivity,
             h_c_ext_wind,
         );
-        let mut t_sol_air_vec = Vec::with_capacity(self.0.num_zones);
-        for opaque_solar in opaque_solar_ref.iter().take(self.0.num_zones) {
+        // Issue #2873: overwrite `scratch.t_sol_air_zone` with the
+        // opaque-irradiance-based sol-air values used by the 5R1C envelope
+        // conduction pathway (`h_tr_em * (t_sol_air - T_mass)` below). The
+        // helper `prepare_solvers_and_sol_air` already populated this buffer
+        // with the window-transmitted-solar-based sol-air used as the CTF/FD
+        // exterior boundary; we overwrite it here so the downstream `t_sol_air`
+        // reads use the opaque-based value (the previous duplicate allocation
+        // at this site was bit-identical to the opaque-based calculation that
+        // the LW block, the CTF-correction block, and the FD-correction block
+        // all consume — the only thing this rewrite changes is *where* the
+        // values live (in `scratch.t_sol_air_zone` instead of a fresh Vec),
+        // and `fill_zero()` resizes the scratch field back to `num_zones` on
+        // every checkout so the post-`prepare_solvers_and_sol_air` length is
+        // preserved exactly.
+        for (i, &opaque_solar) in opaque_solar_ref.iter().take(self.0.num_zones).enumerate() {
             // opaque_solar is the effective opaque irradiance on exterior surfaces (W/m²)
             // This is the combined wall + roof irradiance for the zone
-            let t_sol_air_i = sol_air_calc.for_roof(outdoor_temp, *opaque_solar, sky_temp);
-            t_sol_air_vec.push(t_sol_air_i);
+            let t_sol_air_i = sol_air_calc.for_roof(outdoor_temp, opaque_solar, sky_temp);
+            scratch.t_sol_air_zone[i] = t_sol_air_i;
         }
-        let t_sol_air = VectorField::new(t_sol_air_vec);
+        // Issue #2873: `scratch.t_sol_air_zone` is intentionally NOT
+        // `mem::take`'n here. The downstream sites (`h_tr_em *
+        // (t_sol_air - T_mass)` at lines 614/663, the LW block at line 774,
+        // the 9R4C-style t_i_free path, etc.) read it through
+        // `scratch.t_sol_air_zone.as_slice()` — a plain `&[f64]`. Leaving the
+        // field populated avoids the per-step heap allocation that would
+        // result from `fill_zero()` having to `resize` an empty SmallVec back
+        // to `num_zones` on the next checkout (the issue hit during initial
+        // measurements: this would have *added* 1-2 allocs/step, defeating
+        // the purpose of pooling). The scratch field is overwritten in-place
+        // each step (`scratch.t_sol_air_zone[i] = …` above), so the values
+        // are always fresh at use time.
+        let t_sol_air: &[f64] = scratch.t_sol_air_zone.as_slice();
 
         // Simplified 5R1C calculation using CTA
         // Include ground coupling through floor
@@ -391,53 +433,55 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         // static vector without re-zeroing a per-step scratch buffer.
         let mut night_vent_active_now = false;
         let mut h_ve_night: f64 = 0.0;
-        let h_ve_night_zone: Option<Vec<f64>> =
-            if let Some(ref night_vent) = self.0.night_ventilation {
-                if night_vent.is_active_at_hour(hour_of_day) {
-                    night_vent_active_now = true;
-                    // ASHRAE 140 night-vent fan supplies outdoor air to zone 0
-                    // (the conditioned zone). Multi-zone night-vent (Case 960
-                    // sunspace etc.) is out of scope for this issue.
-                    let rho = self.0.air_density.as_ref().first().copied().unwrap_or(1.2);
-                    let cp = self
-                        .0
-                        .heat_capacity
-                        .as_ref()
-                        .first()
-                        .copied()
-                        .unwrap_or(1005.0);
-                    h_ve_night = night_vent.fan_capacity * rho * cp / 3600.0;
-                    let mut v = vec![0.0_f64; self.0.num_zones];
-                    v[0] = h_ve_night;
-                    Some(v)
-                } else {
-                    None
-                }
-            } else {
-                None
-            };
+        // Issue #2873: `h_ve_night_zone` was a per-step `Option<Vec<f64>>`
+        // allocation that only fired on night-vent active hours. We now fold
+        // it into `scratch.h_ext_owned_zone` (a pooled `SmallVec` that is
+        // resized back to `num_zones` by `fill_zero()` every checkout) and
+        // track `night_vent_active_now` as a plain bool — no Vec, no clone.
+        if let Some(ref night_vent) = self.0.night_ventilation {
+            if night_vent.is_active_at_hour(hour_of_day) {
+                night_vent_active_now = true;
+                // ASHRAE 140 night-vent fan supplies outdoor air to zone 0
+                // (the conditioned zone). Multi-zone night-vent (Case 960
+                // sunspace etc.) is out of scope for this issue.
+                let rho = self.0.air_density.as_ref().first().copied().unwrap_or(1.2);
+                let cp = self
+                    .0
+                    .heat_capacity
+                    .as_ref()
+                    .first()
+                    .copied()
+                    .unwrap_or(1005.0);
+                h_ve_night = night_vent.fan_capacity * rho * cp / 3600.0;
+            }
+        }
 
         // Build per-zone h_ext that includes the night-vent contribution when
-        // active. When inactive (the common case) this is just an alloc-free
-        // alias to the cached vector via Vec::clone — see below.
-        let h_ext_owned: T = if night_vent_active_now {
-            let base = h_ext_base.as_ref();
-            // Safe to unwrap: h_ve_night_zone is Some exactly when night_vent_active_now is true.
-            let night_add = h_ve_night_zone
-                .as_ref()
-                .expect("night_vent_active_now implies h_ve_night_zone is Some");
-            let mut v = Vec::with_capacity(base.len());
-            for (i, &b) in base.iter().enumerate() {
-                v.push(b + night_add[i]);
-            }
-            T::from(VectorField::new(v))
-        } else {
-            // Issue #901 perf: clone the cached derived_h_ext (T: Clone) instead of
-            // building a fresh Vec from a slice and wrapping it in a new VectorField.
-            // One Vec clone replaces one Vec alloc + one VectorField wrap.
-            self.0.derived_h_ext.clone()
-        };
-        let h_ext: &T = &h_ext_owned;
+        // active, writing into `scratch.h_ext_owned_zone` (no per-step Vec
+        // alloc, no clone of `derived_h_ext`). When night-vent is inactive the
+        // scratch field ends up holding an exact copy of `derived_h_ext`;
+        // when active, zone 0 carries `derived_h_ext[0] + h_ve_night` and the
+        // other zones carry their unchanged `derived_h_ext[i]`. The SmallVec
+        // is then wrapped into a `T` (`VectorField`) below — `mem::take` is
+        // zero-cost and the scratch field is resized back by `fill_zero()` on
+        // the next checkout, so this is bit-identical to the previous
+        // `derived_h_ext.clone()` / `Vec::with_capacity(...) + push` paths.
+        //
+        // Issue #2873: `scratch.h_ext_owned_zone` is intentionally NOT
+        // `mem::take`'n here either — see the parallel note on
+        // `t_sol_air_zone` above. Leaving the field populated avoids the
+        // per-step heap allocation that would result from `fill_zero()`
+        // having to `resize` an empty SmallVec back to `num_zones` on the
+        // next checkout. Downstream sites read through
+        // `scratch.h_ext_owned_zone.as_slice()` (a plain `&[f64]`), so the
+        // values are always fresh at use time.
+        let base = h_ext_base.as_ref();
+        debug_assert_eq!(scratch.h_ext_owned_zone.len(), base.len());
+        scratch.h_ext_owned_zone.copy_from_slice(base);
+        if night_vent_active_now {
+            scratch.h_ext_owned_zone[0] += h_ve_night;
+        }
+        let h_ext: &[f64] = scratch.h_ext_owned_zone.as_slice();
 
         // Recalculate den at each timestep (Issue #301, #366)
         // When ventilation (h_ve) changes, the den for free-floating temperature
@@ -457,7 +501,7 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
             let ground_coeff = self.0.derived_ground_coeff.as_ref();
             let h_iz = self.0.h_tr_iz.as_ref();
             let h_iz_rad = self.0.h_tr_iz_rad.as_ref();
-            let h_ext_slice = h_ext.as_ref();
+            let h_ext_slice = h_ext;
             let mut v = Vec::with_capacity(h_ext_slice.len());
             for i in 0..h_ext_slice.len() {
                 let h_total = if self.0.num_zones > 1 {
@@ -584,7 +628,7 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                     let q_ctf = q_flux * opaque_wall_area;
                     // Subtract standard 5R1C envelope conduction to avoid double-counting
                     // Q_5r1c = h_tr_em * (T_sol_air - T_mass)
-                    let t_sol_air_i = t_sol_air.as_ref().get(i).copied().unwrap_or(outdoor_temp);
+                    let t_sol_air_i = t_sol_air.get(i).copied().unwrap_or(outdoor_temp);
                     let t_mass = self
                         .0
                         .mass_temperatures
@@ -633,7 +677,7 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
 
                     // Subtract standard 5R1C envelope conduction to avoid double-counting
                     // Q_5r1c = h_tr_em * (T_sol_air - T_mass)
-                    let t_sol_air_i = t_sol_air.as_ref().get(i).copied().unwrap_or(outdoor_temp);
+                    let t_sol_air_i = t_sol_air.get(i).copied().unwrap_or(outdoor_temp);
                     let t_mass = self
                         .0
                         .mass_temperatures
@@ -694,7 +738,11 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                                        // with the immutable reads here.
             let surface_emissivity_vec: Vec<f64> = self.0.surface_emissivity.as_ref().to_vec();
             let t_zone_vec: Vec<f64> = self.0.temperatures.as_ref().to_vec();
-            let t_sol_air_vec: Vec<f64> = t_sol_air.as_ref().to_vec();
+            // Issue #2873: `t_sol_air` is no longer cloned here — the LW
+            // block reads it through `t_sol_air.as_ref().get(i)` inline. The
+            // borrow (immutable on `t_sol_air`, mutable on
+            // `self.0.surface_temp_*`) is disjoint, so no per-step Vec clone
+            // is needed.
             let a_floor_vec: Vec<f64> = self.0.floor_area.as_ref().to_vec();
             let a_ceiling_vec: Vec<f64> = self.0.roof_area.as_ref().to_vec();
             let a_wall_vec: Vec<f64> = self.0.wall_area.as_ref().to_vec();
@@ -740,7 +788,7 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                     InteriorSurfaceNetwork::from_areas(a_floor, a_ceiling, a_wall, emissivity_i);
 
                 let t_zone_i = t_zone_vec.get(i).copied().unwrap_or(20.0);
-                let t_sol_air_i = t_sol_air_vec.get(i).copied().unwrap_or(outdoor_temp);
+                let t_sol_air_i = t_sol_air.get(i).copied().unwrap_or(outdoor_temp);
 
                 // Per-surface envelope resistance.
                 let u_floor = u_floor_vec.get(i).copied().unwrap_or(0.5);
@@ -797,11 +845,7 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         // Optimized: combine h_ext * outdoor_temp addition and multiplication into phi_ia_with_iz buffer directly
         // This eliminates one allocation (term_rest_1.clone())
         let mut num_rest_with_iz = phi_ia_with_iz;
-        for (n, h) in num_rest_with_iz
-            .as_mut()
-            .iter_mut()
-            .zip(h_ext.as_ref().iter())
-        {
+        for (n, h) in num_rest_with_iz.as_mut().iter_mut().zip(h_ext.iter()) {
             *n += h * outdoor_temp;
         }
         num_rest_with_iz.mul_assign(term_rest_1);
@@ -1678,8 +1722,18 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
             .as_ref()
             .map(|w| w.sky_temperature())
             .unwrap_or(outdoor_temp - 15.0);
-        let (t_sol_air_data, ctf_flux_w, fd_flux_w, ctf_surface_temps) =
-            self.prepare_solvers_and_sol_air(timestep, outdoor_temp, sky_temp);
+        // Issue #2873: the helper now writes its per-zone sol-air temperatures
+        // into a caller-supplied buffer instead of returning a fresh Vec. The
+        // 6R2C path keeps a `SmallVec` alive across the call so we can pass
+        // it by `&mut`. 6R2C does not have a dedicated scratch field for
+        // sol-air (out of scope for #2873, which is 5R1C-only), so a fresh
+        // per-step allocation persists here — bit-identical to the previous
+        // behaviour (the Vec that `prepare_solvers_and_sol_air` used to
+        // allocate is now allocated by the caller instead, same number of
+        // heap blocks).
+        let mut t_sol_air_buf: SmallVec<[f64; 4]> = SmallVec::with_capacity(self.0.num_zones);
+        let (ctf_flux_w, fd_flux_w, ctf_surface_temps) =
+            self.prepare_solvers_and_sol_air(timestep, outdoor_temp, sky_temp, &mut t_sol_air_buf);
 
         // Get ground temperature at this timestep
         let t_g = self.0.ground_temperature.ground_temperature(timestep);
@@ -1901,7 +1955,7 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                 if i < slice.len() {
                     let area = self.0.zone_area.as_ref().get(i).copied().unwrap_or(1.0);
                     let q_fd = q_flux * area;
-                    let t_sol_air_i = t_sol_air_data.get(i).copied().unwrap_or(outdoor_temp);
+                    let t_sol_air_i = t_sol_air_buf.get(i).copied().unwrap_or(outdoor_temp);
                     let t_mass = self
                         .0
                         .envelope_mass_temperatures
@@ -2619,8 +2673,15 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         };
 
         // Prepare sol-air temperatures and fluxes
-        let (_t_sol_air_data, ctf_flux_w, fd_flux_w, _ctf_surface_temps) =
-            self.prepare_solvers_and_sol_air(timestep, outdoor_temp, sky_temp);
+        // Issue #2873: the helper now writes its per-zone sol-air temperatures
+        // into a caller-supplied buffer instead of returning a fresh Vec.
+        // The 9R4C path discards the buffer (it has its own per-surface
+        // sol-air computation further down), so we hand the helper a stack
+        // `SmallVec` that is dropped at the end of the call — bit-identical
+        // to the previous behaviour.
+        let mut t_sol_air_buf: SmallVec<[f64; 4]> = SmallVec::with_capacity(self.0.num_zones);
+        let (ctf_flux_w, fd_flux_w, _ctf_surface_temps) =
+            self.prepare_solvers_and_sol_air(timestep, outdoor_temp, sky_temp, &mut t_sol_air_buf);
 
         // Combine fractions
         let conv_frac = self.0.convective_fraction;

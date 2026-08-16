@@ -28,12 +28,7 @@ use crate::validation::diagnostics::SimulationDiagnostics;
 use fluxion_core::ashrae_cases::{Orientation, ShadingType};
 use fluxion_core::assembly::BuildingAssembly;
 
-type SolversAndSolAirResult = (
-    Vec<f64>,
-    Option<Vec<f64>>,
-    Option<Vec<f64>>,
-    Option<Vec<f64>>,
-);
+type SolversAndSolAirResult = (Option<Vec<f64>>, Option<Vec<f64>>, Option<Vec<f64>>);
 
 const HIGH_MASS_THRESHOLD: f64 = 5.0e6; // J/K
 
@@ -231,11 +226,21 @@ where
     /// the ASHRAE 140 §5.2.6 `(a, b)` coefficients per surface direction.
     /// When weather is absent the legacy 3.4 m/s wall constant recovers
     /// `EXTERIOR_FILM_COEFF` so legacy tests remain bit-identical.
+    ///
+    /// Issue #2873: `t_sol_air_out` is the caller's per-zone sol-air
+    /// temperature buffer — resized to `num_zones` and filled by this call.
+    /// For the 5R1C path the caller passes `&mut scratch.t_sol_air_zone`
+    /// (zero-allocation, reused across timesteps). The 6R2C and 9R4C
+    /// callers that don't have a dedicated scratch field pass a fresh
+    /// `SmallVec` (one allocation per call — out of scope for #2873, which
+    /// is 5R1C-only). The returned tuple no longer carries `t_sol_air_data`
+    /// because that allocation has been moved into the caller-supplied buffer.
     pub(crate) fn prepare_solvers_and_sol_air(
         &mut self,
         _timestep: usize,
         outdoor_temp: f64,
         sky_temp: f64, // EPW-derived sky temperature from WeatherData
+        t_sol_air_out: &mut smallvec::SmallVec<[f64; 4]>,
     ) -> SolversAndSolAirResult {
         use crate::physics::constants::thermal::ashrae_140::v2023::{
             INTERIOR_FILM_COEFF, SOLAR_ABSORPTANCE_DEFAULT,
@@ -263,14 +268,15 @@ where
         );
         let h_se = h_se_roof;
 
-        let mut t_sol_air_data = Vec::with_capacity(self.0.num_zones);
-        for &i_sol in solar_ref.iter().take(self.0.num_zones) {
+        let t_sol_air_data = t_sol_air_out;
+        t_sol_air_data.resize(self.0.num_zones, 0.0);
+        for (i, &i_sol) in solar_ref.iter().take(self.0.num_zones).enumerate() {
             // ASHRAE 140 Sec. 5.2: include LW correction ε·ΔR/h_ext for roof
             // sky_temp is derived from EPW horizontal infrared radiation via
             // T_sky = (IR/σ)^(1/4) - 273.15, capturing real diurnal sky cooling.
             let sol_air_calc = SolAirTemperature::new(alpha, emissivity, h_se);
             let t_sol_air_zone = sol_air_calc.for_roof(outdoor_temp, i_sol, sky_temp);
-            t_sol_air_data.push(t_sol_air_zone);
+            t_sol_air_data[i] = t_sol_air_zone;
         }
 
         let ctf_flux_w: Option<Vec<f64>>;
@@ -346,7 +352,7 @@ where
                 None
             };
 
-        (t_sol_air_data, ctf_flux_w, fd_flux_w, ctf_surface_temps)
+        (ctf_flux_w, fd_flux_w, ctf_surface_temps)
     }
 
     /// Get or compute solar position for a given hour of year.
