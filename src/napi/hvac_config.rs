@@ -832,7 +832,7 @@ impl ZoneController {
             ));
         }
         let n = num_zones as usize;
-        let thermal_model = Arc::new(ThermalModel::new(n, 20.0));
+        let thermal_model = Arc::new(ThermalModel::new(n));
         let setpoints = CoreZoneSetpoints::new(n);
         let control = ZoneControl::new(thermal_model, setpoints);
         Ok(Self {
