@@ -23,9 +23,7 @@ both the parse functions and the ``--check`` CLI.
 
 from __future__ import annotations
 
-import json
 import sys
-from pathlib import Path
 
 import pytest
 

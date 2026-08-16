@@ -22,8 +22,6 @@ import stat
 import subprocess
 from pathlib import Path
 
-import pytest
-
 SCRIPT_NAME = "check_pr_closing_refs"
 SCRIPT_PATH = (
     Path(__file__).resolve().parents[2]
