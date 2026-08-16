@@ -849,6 +849,30 @@ pub struct HybridThermalModel {
     /// per-step `Vec<f64>` that `predict_loads_with_fallback` returned
     /// from each `predict_loads_onnx_impl` success path (Issue #2860).
     surrogate_load_scratch: Vec<f64>,
+    /// Reuse buffer for hourly zone temperature snapshots (Issue #2860).
+    ///
+    /// Pre-allocated to `num_zones` inner Vecs in
+    /// [`HybridThermalModel::new`] / `from_spec` / `from_spec_with_routing`.
+    /// Each `solve_timesteps` call clears the inner Vecs (preserving
+    /// capacity) and grows them lazily to `steps` capacity on the first
+    /// call where `steps` exceeds the previous capacity. After warm-up
+    /// the per-step `push` stays zero-alloc — replacing:
+    ///
+    /// 1. the per-call `Some(vec![Vec::with_capacity(steps); num_zones])`
+    ///    allocation at the top of `solve_timesteps` (Issue #1846) that
+    ///    fired on every solve (8 760 × `pop_size` per annual sweep).
+    /// 2. the per-step `self.inner.temperatures.as_ref().to_vec()` copy
+    ///    that broke the borrow conflict between
+    ///    `self.inner.temperatures` (read) and
+    ///    `self.inner.diagnostics_state.hourly_temperatures` (write).
+    ///    The new write path borrows `self.inner.temperatures`
+    ///    immutably and `self.hourly_buf` mutably — non-overlapping
+    ///    borrows — so the snapshot copy is gone.
+    ///
+    /// Cloned shallowly on [`Clone`] (the inner Vecs start empty, so each
+    /// clone gets a fresh outer Vec sized to `num_zones`; the first solve
+    /// on the clone grows capacity the same way as a fresh construction).
+    hourly_buf: Vec<Vec<f64>>,
 }
 
 impl Clone for HybridThermalModel {
@@ -871,6 +895,15 @@ impl Clone for HybridThermalModel {
             surrogate_conduction_calls: self.surrogate_conduction_calls,
             surrogate_ventilation_calls: self.surrogate_ventilation_calls,
             surrogate_load_scratch: self.surrogate_load_scratch.clone(),
+            // Issue #2860: clones get a fresh outer Vec sized to
+            // `num_zones` with empty inner Vecs. The first
+            // `solve_timesteps` call on the clone grows inner Vec
+            // capacity the same way as a fresh construction (cheap
+            // one-time cost per clone, zero per-step overhead).
+            // We deliberately do NOT `self.hourly_buf.clone()` —
+            // cloning the populated buffer would deep-copy the f64
+            // values only to drop them on the next `clear()`.
+            hourly_buf: (0..self.inner.num_zones).map(|_| Vec::new()).collect(),
         }
     }
 }
@@ -934,6 +967,12 @@ impl HybridThermalModel {
             // `clear()` then `extend_from_slice` into a grown Vec; subsequent
             // calls reuse the existing capacity.
             surrogate_load_scratch: Vec::with_capacity(num_zones),
+            // Issue #2860: pre-allocate the hourly snapshot buffer's outer
+            // Vec to `num_zones` empty inner Vecs. Inner Vec capacity is
+            // grown lazily to the requested `steps` on the first
+            // `solve_timesteps` call; subsequent calls reuse that capacity
+            // via `clear()`.
+            hourly_buf: (0..num_zones).map(|_| Vec::new()).collect(),
         }
     }
 
@@ -950,6 +989,8 @@ impl HybridThermalModel {
             surrogate_ventilation_calls: 0,
             // Issue #2921: same zero-alloc rationale as `new`.
             surrogate_load_scratch: Vec::with_capacity(spec.num_zones),
+            // Issue #2860: same zero-alloc rationale as `new`.
+            hourly_buf: (0..spec.num_zones).map(|_| Vec::new()).collect(),
         }
     }
 
@@ -970,6 +1011,8 @@ impl HybridThermalModel {
             surrogate_ventilation_calls: 0,
             // Issue #2921: same zero-alloc rationale as `new`.
             surrogate_load_scratch: Vec::with_capacity(spec.num_zones),
+            // Issue #2860: same zero-alloc rationale as `new`.
+            hourly_buf: (0..spec.num_zones).map(|_| Vec::new()).collect(),
         }
     }
 
@@ -1071,8 +1114,21 @@ impl HybridThermalModel {
     /// hybrid report (`validation::empirical_hybrid`, Issue #1846) can
     /// compare hybrid temperatures against FLEXLAB measurements on the
     /// same per-timestep grid as the physics model.
+    ///
+    /// Issue #2860: now reads from the pre-allocated `hourly_buf`
+    /// (reused across solves) instead of `self.inner.diagnostics_state
+    /// .hourly_temperatures`, which `solve_timesteps` now leaves at
+    /// `None` to avoid a per-call `Some(Vec<Vec<f64>>)` allocation.
+    /// The returned `Vec<Vec<f64>>` is a clone of the live buffer —
+    /// allocation cost is one block per outer Vec plus one block per
+    /// non-empty inner Vec, paid only at the call site that reads the
+    /// temperatures (typically once per run, not per timestep).
     pub fn get_hourly_temperatures(&self) -> Option<Vec<Vec<f64>>> {
-        self.inner.get_hourly_temperatures()
+        if self.hourly_buf.is_empty() {
+            None
+        } else {
+            Some(self.hourly_buf.clone())
+        }
     }
 
     /// Returns a structured snapshot of the current dispatch counters,
@@ -1139,8 +1195,30 @@ impl ThermalModelTrait for HybridThermalModel {
         // `get_hourly_temperatures()` returns the same shape for hybrid
         // and physics models, enabling apples-to-apples MAE comparison
         // in the empirical_hybrid harness.
-        self.inner.diagnostics_state.hourly_temperatures =
-            Some(vec![Vec::with_capacity(steps); self.inner.num_zones]);
+        //
+        // Issue #2860 — reuse the pre-allocated `hourly_buf` instead of
+        // allocating a fresh `Vec<Vec<f64>>` every call. We:
+        //   1. Defensively resize the outer Vec to `num_zones` (cheap
+        //      no-op when the outer is already sized correctly — the
+        //      typical case for the perf-test clones, which construct
+        //      and clone `hourly_buf` at `num_zones`).
+        //   2. Clear each inner Vec (preserves capacity, drops length).
+        //   3. Reserve `steps` capacity if a new solve requests more
+        //      steps than the buffer has — first-time cost only;
+        //      subsequent calls with the same `steps` are zero-alloc.
+        //   4. Set `diagnostics_state.hourly_temperatures = None` so the
+        //      legacy accessor path no longer leaks a fresh Vec every
+        //      call. `HybridThermalModel::get_hourly_temperatures()` now
+        //      reads from `hourly_buf` directly (see the public accessor
+        //      below).
+        self.hourly_buf.resize_with(self.inner.num_zones, Vec::new);
+        for inner in self.hourly_buf.iter_mut() {
+            inner.clear();
+            if inner.capacity() < steps {
+                inner.reserve(steps - inner.capacity());
+            }
+        }
+        self.inner.diagnostics_state.hourly_temperatures = None;
 
         // Issue #2457: `use_surrogate_conduction` and `use_surrogate_ventilation`
         // now route through the corresponding `Box<dyn Trait>` slot. When
@@ -1378,17 +1456,19 @@ impl ThermalModelTrait for HybridThermalModel {
                 // Issue #1846 — capture zone temperatures after each timestep
                 // so `get_hourly_temperatures()` returns the full per-timestep
                 // profile for the empirical_hybrid harness (FLEXLAB MAE report).
-                // Snapshot temperatures to break the borrow conflict between
-                // `self.inner.temperatures` (read) and `hourly_temperatures`
-                // (write) — both live on `self.inner`.
-                let temps_snapshot: Vec<f64> = self
-                    .inner
-                    .temperatures
-                    .as_ref()
-                    .to_vec();
-                if let Some(ref mut hourly) = self.inner.diagnostics_state.hourly_temperatures {
-                    for (zone_idx, temp) in temps_snapshot.iter().enumerate() {
-                        hourly[zone_idx].push(*temp);
+                //
+                // Issue #2860 — write directly into the pre-allocated
+                // `hourly_buf` instead of copying temperatures into a fresh
+                // `Vec<f64>` snapshot first. The two borrows are now on
+                // distinct `self` paths (`self.inner.temperatures` is read
+                // immutably; `self.hourly_buf` is written mutably), so no
+                // borrow conflict forces a snapshot copy. The inner Vecs
+                // have capacity ≥ `steps` after warm-up, so the `push` is
+                // zero-alloc on the steady-state hot path.
+                let temps = self.inner.temperatures.as_ref();
+                for (zone_idx, &temp) in temps.iter().enumerate() {
+                    if let Some(inner) = self.hourly_buf.get_mut(zone_idx) {
+                        inner.push(temp);
                     }
                 }
 
