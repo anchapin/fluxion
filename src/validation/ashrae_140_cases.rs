@@ -3962,9 +3962,18 @@ mod tests {
         // When the setback and occupied setpoints coincide, no ramp is
         // meaningful; the function must return that single value everywhere.
         let schedule = HvacSchedule::with_setback(20.0, 27.0, 20.0, 23, 7);
-        assert_eq!(schedule.heating_setpoint_at_fractional_hour(0.0), Some(20.0));
-        assert_eq!(schedule.heating_setpoint_at_fractional_hour(7.5), Some(20.0));
-        assert_eq!(schedule.heating_setpoint_at_fractional_hour(12.0), Some(20.0));
+        assert_eq!(
+            schedule.heating_setpoint_at_fractional_hour(0.0),
+            Some(20.0)
+        );
+        assert_eq!(
+            schedule.heating_setpoint_at_fractional_hour(7.5),
+            Some(20.0)
+        );
+        assert_eq!(
+            schedule.heating_setpoint_at_fractional_hour(12.0),
+            Some(20.0)
+        );
     }
 
     #[test]
