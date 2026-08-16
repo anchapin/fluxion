@@ -1,0 +1,38 @@
+{
+  "_doc": "Drift gate baseline for release_gates.yaml:drift.baseline_file. Records the v1.3-era ASHRAE 140 validation results at the time this file was committed so the release_gate_checker drift gate can detect unexpected regressions in pass-rate, MAE, or case-by-case pass/fail transitions against the historical floor. The schema mirrors the dict that scripts/release_gate_checker.py writes under --update-baseline (root-level `cases` dict + `summary` block with pass_rate/mae/passed/failed), so the script can read this file with no schema translation.",
+  "_rule": "Per AGENTS.md / RULES.md (no parameter tuning, no silent loosening): this file records the KNOWN v1.3-era floor; it must never be raised to hide a regression. Only update values when the engine genuinely improved, and commit the improving change together with the baseline update. The strict-energy-gate baseline (tests/reference_data/zone_balance/strict_energy_gate_baseline.json) follows the same anti-tuning discipline for the per-Case-600/900 annual-energy subset.",
+  "_schema_version": 1,
+  "_stale_threshold_days": 90,
+  "_stale_threshold_doc": "scripts/ci/test_release_gate_checker.py::test_drift_baseline_file_is_fresh fails CI when `captured_at` is more than this many days old — guards against the file silently going stale and the drift gate tripping on a frozen reference.",
+  "captured_at": "2026-08-16T20:03:57Z",
+  "captured_commit": "develop @ 932ca83 (2026-08-16) — pre-fix for #2856",
+  "source": "docs/ASHRAE140_RESULTS.md (Generated 2026-08-16 18:24 UTC)",
+  "source_command": "cargo run --bin fluxion -- validate (regenerates docs/ASHRAE140_RESULTS.md and validation_results.json, then `python3 scripts/release_gate_checker.py --update-baseline` overwrites this file)",
+  "summary": {
+    "pass_rate": 14.3,
+    "mae": 51.03,
+    "max_deviation": 470.11,
+    "passed": 12,
+    "warnings": 8,
+    "failed": 64,
+    "total": 84,
+    "throughput_cases_per_sec": 35.36,
+    "validation_duration_sec": 0.59
+  },
+  "cases": {
+    "600": {"heating": 4604.57, "heating_min": 4360.00, "heating_max": 5790.00, "cooling": 3299.30, "cooling_min": 3920.00, "cooling_max": 6140.00},
+    "610": {"heating": 4691.46, "heating_min": 4360.00, "heating_max": 5790.00, "cooling": 2666.47, "cooling_min": 3920.00, "cooling_max": 6140.00},
+    "620": {"heating": 5948.61, "heating_min": 4500.00, "heating_max": 6500.00, "cooling": 2361.26, "cooling_min": 3200.00, "cooling_max": 5000.00},
+    "630": {"heating": 6065.00, "heating_min": 5050.00, "heating_max": 6470.00, "cooling": 2027.64, "cooling_min": 2130.00, "cooling_max": 3700.00},
+    "640": {"heating": 2385.06, "heating_min": 2750.00, "heating_max": 3800.00, "cooling": 3290.46, "cooling_min": 5950.00, "cooling_max": 8100.00},
+    "650": {"heating": 0.00,    "heating_min": 0.00,    "heating_max": 0.00,    "cooling": 2462.26, "cooling_min": 4820.00, "cooling_max": 7060.00},
+    "900": {"heating": 5052.83, "heating_min": 1170.00, "heating_max": 2040.00, "cooling": 7754.04, "cooling_min": 2130.00, "cooling_max": 3670.00},
+    "910": {"heating": 5428.96, "heating_min": 1510.00, "heating_max": 2280.00, "cooling": 7696.48, "cooling_min": 820.00,  "cooling_max": 1880.00},
+    "920": {"heating": 5354.01, "heating_min": 3260.00, "heating_max": 4300.00, "cooling": 6463.07, "cooling_min": 1840.00, "cooling_max": 3310.00},
+    "930": {"heating": 5531.77, "heating_min": 4140.00, "heating_max": 5340.00, "cooling": 6317.71, "cooling_min": 1040.00, "cooling_max": 2240.00},
+    "940": {"heating": 6966.87, "heating_min": 790.00,  "heating_max": 1410.00, "cooling": 11063.54, "cooling_min": 2080.00, "cooling_max": 3550.00},
+    "950": {"heating": 0.00,    "heating_min": 0.00,    "heating_max": 0.00,    "cooling": 33.08,    "cooling_min": 390.00,  "cooling_max": 920.00},
+    "960": {"heating": 6871.29, "heating_min": 1650.00, "heating_max": 2450.00, "cooling": 8853.50, "cooling_min": 1550.00, "cooling_max": 2780.00},
+    "195": {"heating": 3237.51, "heating_min": 3951.00, "heating_max": 4217.00, "cooling": 5.16,     "cooling_min": 592.00,  "cooling_max": 712.00}
+  }
+}
