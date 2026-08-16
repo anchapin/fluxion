@@ -61,3 +61,100 @@ impl EquipmentKind {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn entity_index_round_trip() {
+        for raw in [0u64, 1, 7, 42, u64::MAX] {
+            let e = EquipmentEntity::new(raw);
+            assert_eq!(e.index(), raw);
+        }
+    }
+
+    #[test]
+    fn entity_from_u64_conversions() {
+        let e: EquipmentEntity = 17u64.into();
+        assert_eq!(e, EquipmentEntity::new(17));
+        let back: u64 = e.into();
+        assert_eq!(back, 17u64);
+    }
+
+    #[test]
+    fn entity_equality_and_hash() {
+        let a = EquipmentEntity::new(3);
+        let b = EquipmentEntity::new(3);
+        let c = EquipmentEntity::new(4);
+        assert_eq!(a, b);
+        assert_ne!(a, c);
+        // Hash consistency for use in HashSet/HashMap.
+        let mut set = std::collections::HashSet::new();
+        set.insert(a);
+        set.insert(b);
+        set.insert(c);
+        assert_eq!(set.len(), 2);
+    }
+
+    #[test]
+    fn entity_is_copy_and_clone() {
+        let e = EquipmentEntity::new(5);
+        let copy = e;
+        let clone2 = e;
+        assert_eq!(copy, clone2);
+    }
+
+    #[test]
+    fn equipment_kind_variants_are_distinct() {
+        let all = [
+            EquipmentKind::Chiller,
+            EquipmentKind::Boiler,
+            EquipmentKind::CoolingTower,
+            EquipmentKind::Pump,
+            EquipmentKind::VavBox,
+            EquipmentKind::Damper,
+            EquipmentKind::Fan,
+            EquipmentKind::CoilHeating,
+            EquipmentKind::CoilCooling,
+        ];
+        // Pairwise distinctness: count how many entries have no later twin.
+        let unique = all
+            .iter()
+            .enumerate()
+            .filter(|(i, a)| !all.iter().skip(i + 1).any(|b| **a == *b))
+            .count();
+        assert_eq!(
+            unique,
+            all.len(),
+            "every EquipmentKind variant must be unique"
+        );
+    }
+
+    #[test]
+    fn params_len_field_invariant() {
+        // Field invariant documented in `params_len`: every kind declares between 1
+        // and 3 parameters. If a future contributor adds a parameter, the contract
+        // is "scalar fields" — assert the documented lower and upper bounds.
+        let kinds = [
+            EquipmentKind::Chiller,
+            EquipmentKind::Boiler,
+            EquipmentKind::CoolingTower,
+            EquipmentKind::Pump,
+            EquipmentKind::VavBox,
+            EquipmentKind::Damper,
+            EquipmentKind::Fan,
+            EquipmentKind::CoilHeating,
+            EquipmentKind::CoilCooling,
+        ];
+        for k in kinds {
+            let n = k.params_len();
+            assert!(
+                (1..=3).contains(&n),
+                "EquipmentKind::{k:?} has params_len={n} outside documented [1, 3] range"
+            );
+        }
+        // Damper is the unique single-parameter kind (k_valve).
+        assert_eq!(EquipmentKind::Damper.params_len(), 1);
+    }
+}
