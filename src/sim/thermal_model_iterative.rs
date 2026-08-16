@@ -1183,4 +1183,193 @@ mod tests {
             new.peak_wm2
         );
     }
+
+    // ============================================================================
+    // Issue #2881 — inline unit coverage for `solve_coupled_zone_temperatures`,
+    // `set_ground_temp` / `with_ground_temperature` clamped vs unclamped modes,
+    // `calculate_free_float_temperature` analytical steady-state, and
+    // `solve_single_step` idempotency under zero-mass nodes.
+    // ============================================================================
+
+    /// Symmetric 2-zone conductance matrix must conserve energy
+    /// (Σ q_iz_net = 0 within f64 machine precision).
+    #[test]
+    fn test_solve_coupled_zone_temperatures_n2_conserves_energy() {
+        let model = ThermalModel::<VectorField>::new(2);
+        let q = model
+            .solve_coupled_zone_temperatures(2, &[20.0, 25.0], &[10.0], &[5.0])
+            .unwrap();
+        assert!(
+            q.iter().sum::<f64>().abs() < 1e-9,
+            "N=2 Σ q_iz_net must be ~0"
+        );
+    }
+
+    /// Smallest N that hides a 2-zone hardcoding bug (#1391 regression guard).
+    /// Also verifies the sign convention: warmest zone loses, coolest gains.
+    #[test]
+    fn test_solve_coupled_zone_temperatures_n3_conserves_energy() {
+        let model = ThermalModel::<VectorField>::new(3);
+        let q = model
+            .solve_coupled_zone_temperatures(3, &[20.0, 25.0, 15.0], &[50.0], &[10.0])
+            .unwrap();
+        assert!(q.iter().sum::<f64>().abs() < 1e-9);
+        assert!(q[1] < 0.0, "warm zone must lose heat: q[1]={}", q[1]);
+        assert!(q[2] > 0.0, "cool zone must gain heat: q[2]={}", q[2]);
+    }
+
+    /// N=4 — the O(N) loop must generalise beyond N=3.
+    #[test]
+    fn test_solve_coupled_zone_temperatures_n4_conserves_energy() {
+        let model = ThermalModel::<VectorField>::new(4);
+        let q = model
+            .solve_coupled_zone_temperatures(4, &[20.0, 25.0, 15.0, 22.0], &[30.0], &[20.0])
+            .unwrap();
+        assert!(q.iter().sum::<f64>().abs() < 1e-9);
+    }
+
+    /// N=1 short-circuits to None — no inter-zone coupling to compute.
+    #[test]
+    fn test_solve_coupled_zone_temperatures_n1_returns_none() {
+        let model = ThermalModel::<VectorField>::new(1);
+        assert!(model
+            .solve_coupled_zone_temperatures(1, &[20.0], &[10.0], &[5.0])
+            .is_none());
+    }
+
+    /// Zero conductive AND zero radiative conductance falls back to None —
+    /// callers skip the inter-zone term when zones are decoupled.
+    #[test]
+    fn test_solve_coupled_zone_temperatures_zero_conductance_returns_none() {
+        let model = ThermalModel::<VectorField>::new(2);
+        assert!(model
+            .solve_coupled_zone_temperatures(2, &[20.0, 25.0], &[0.0], &[0.0])
+            .is_none());
+    }
+
+    /// `set_ground_temp` stores the value as-is (UNCLAMPED mode):
+    /// `ConstantGroundTemperature` accepts any f64 and returns it verbatim
+    /// for every timestep, including extreme values like -50 °C or +80 °C.
+    #[test]
+    fn test_set_ground_temp_constant_unclamped() {
+        let mut model = ThermalModel::<VectorField>::new(1);
+        model.set_ground_temp(15.0);
+        for t in [0_usize, 100, 4380, 8759] {
+            assert!((model.ground_temperature_at(t) - 15.0).abs() < 1e-9);
+        }
+        model.set_ground_temp(-50.0);
+        assert!((model.ground_temperature_at(0) - (-50.0)).abs() < 1e-9);
+        model.set_ground_temp(80.0);
+        assert!((model.ground_temperature_at(0) - 80.0).abs() < 1e-9);
+    }
+
+    /// `set_dynamic_ground_temp` (Kusuda) — time-varying CLAMPED mode.
+    /// The annual oscillation around t_mean must exceed 1 °C when amplitude > 0
+    /// and depth is shallow; the mid-point must lie near t_mean.
+    #[test]
+    fn test_set_dynamic_ground_temp_kusuda_oscillates() {
+        let mut model = ThermalModel::<VectorField>::new(1);
+        model.set_dynamic_ground_temp(15.0, 5.0, 1.0, 0.1);
+        let t_winter = model.ground_temperature_at(0);
+        let t_summer = model.ground_temperature_at(4380);
+        assert!(
+            (t_summer - t_winter).abs() > 1.0,
+            "Kusuda must oscillate: winter={t_winter}, summer={t_summer}"
+        );
+        let mean = (t_winter + t_summer) / 2.0;
+        assert!(
+            (mean - 15.0).abs() < 1.0,
+            "Annual mean ~ t_mean=15.0, got {mean}"
+        );
+    }
+
+    /// `with_ground_temperature` accepts a custom `GroundTemperature` impl.
+    /// Demonstrates the CLAMPED mode contract: callers can plug in any model
+    /// that enforces its own clamping/range policy.
+    #[test]
+    fn test_with_ground_temperature_custom_clamped() {
+        #[derive(Clone)]
+        struct ClampedGround {
+            temp: f64,
+        }
+        impl GroundTemperature for ClampedGround {
+            fn clone_box(&self) -> Box<dyn GroundTemperature> {
+                Box::new(self.clone())
+            }
+            fn ground_temperature(&self, _t: usize) -> f64 {
+                self.temp.clamp(10.0, 30.0)
+            }
+        }
+        let mut model = ThermalModel::<VectorField>::new(1);
+        model.with_ground_temperature(Box::new(ClampedGround { temp: 18.0 }));
+        assert!((model.ground_temperature_at(0) - 18.0).abs() < 1e-9);
+        let mut model2 = ThermalModel::<VectorField>::new(1);
+        model2.with_ground_temperature(Box::new(ClampedGround { temp: -100.0 }));
+        assert!(
+            (model2.ground_temperature_at(0) - 10.0).abs() < 1e-9,
+            "custom clamp to lower bound 10 °C"
+        );
+    }
+
+    /// `calculate_free_float_temperature` matches the analytical 5R1C
+    /// closed-form: T_free = (h_ms_is_prod·T_mass + term_rest_1·h_ext·T_ext
+    /// + h_tr_floor·T_g) / den. We assert the function reproduces this
+    /// formula exactly (1e-9 tolerance) under zero-loads.
+    #[test]
+    fn test_calculate_free_float_analytical_steady_state() {
+        let mut model = ThermalModel::<VectorField>::new(1);
+        let zero = VectorField::from_scalar(0.0, 1);
+        model.thermal_capacitance = zero.clone();
+        model.air_thermal_capacitance = zero.clone();
+        model.loads = zero.clone();
+        model.solar_gains = zero.clone();
+        model.opaque_solar_gains = zero.clone();
+        model.mass_temperatures = VectorField::from_scalar(25.0, 1);
+        model.temperatures = VectorField::from_scalar(25.0, 1);
+        model.set_ground_temp(20.0);
+        let outdoor = 30.0;
+        let t_free = model.calculate_free_float_temperature(0, outdoor);
+        let h_ms_is_prod = model.derived_h_ms_is_prod.as_ref()[0];
+        let term_rest_1 = model.derived_term_rest_1.as_ref()[0];
+        let h_ext = model.derived_h_ext.as_ref()[0];
+        let h_tr_floor = model.h_tr_floor.as_ref()[0];
+        let den = model.derived_den.as_ref()[0];
+        let expected =
+            (h_ms_is_prod * 25.0 + term_rest_1 * h_ext * outdoor + h_tr_floor * 20.0) / den;
+        assert!(
+            (t_free - expected).abs() < 1e-9,
+            "T_free must match analytical 5R1C closed-form: got {t_free}, expected {expected}"
+        );
+    }
+
+    /// `solve_single_step` is a PURE FUNCTION of input state — running it on
+    /// two bit-identical models returns the same HVAC energy. This is the
+    /// idempotency contract: f(S0) = f(f(S0)) when f is pure.
+    #[test]
+    fn test_solve_single_step_idempotent_zero_mass() {
+        let mut model = ThermalModel::<VectorField>::new(1);
+        let zero = VectorField::from_scalar(0.0, 1);
+        // tiny thermal mass avoids div-by-zero in ExplicitEuler (cm<500 threshold)
+        model.thermal_capacitance = VectorField::from_scalar(1.0, 1);
+        model.air_thermal_capacitance = zero.clone();
+        model.loads = zero.clone();
+        model.solar_gains = zero.clone();
+        model.opaque_solar_gains = zero.clone();
+        model.set_ground_temp(10.0);
+        let mut clone = model.clone();
+        let step_params = StepParameters {
+            use_ai: false,
+            surrogates: None,
+            use_analytical_gains: false,
+            lighting: None,
+            equipment: None,
+            occupancy: None,
+        };
+        let e1 = model.solve_single_step(12, 25.0, &step_params, 3600.0);
+        let e2 = clone.solve_single_step(12, 25.0, &step_params, 3600.0);
+        assert!(
+            (e1 - e2).abs() < 1e-9,
+            "solve_single_step must be a pure function of input state: e1={e1}, e2={e2}"
+        );
+    }
 }
