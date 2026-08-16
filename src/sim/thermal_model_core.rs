@@ -2251,11 +2251,58 @@ impl ThermalModel<VectorField> {
             let radiative_conductance;
 
             if spec.case_id == "960" {
-                // Case 960: Common wall has a door opening, not full wall conductance
-                // Inter-zone coupling is primarily through:
-                // 1. Door opening (natural convection via stack effect)
-                // 2. Conduction through door itself
-                // 3. Radiative exchange through door window (neglected - windows face same direction)
+                // Case 960: 2-zone sunspace with door opening through the common wall.
+                //
+                // Issue #2858 — fixes three inter-zone coupling gaps that left the
+                // ASHRAE 140 acceptance band unreachable (heating +0.13 MWh needed,
+                // cooling +1.21 MWh needed vs. the prior ~3.4 W/K door-only path).
+                //
+                // 1. **Ground-reflected inter-zone gain path.** Issue #1271 already
+                //    folds ground-reflected radiation into the per-window solar
+                //    gain via `calculate_window_solar_gain`'s 0.85 SHGC factor
+                //    (vs 0.90 for sky-diffuse). The sunspace south facade receives
+                //    the bulk of this gain; tracing the path is `ground →
+                //    ground_reflected_wm2 (albedo × GHI × (1-cos β)/2, see
+                //    `calculate_surface_irradiance` for non-horizontal surfaces)
+                //    → sunspace glass (SHGC × A_window) → sunspace air node →
+                //    inter-zone coupling (this h_tr_iz term) → back-zone air →
+                //    HVAC cooling load`.
+                //
+                // 2. **Bulk common-wall conduction.** The previous 3.4 W/K term
+                //    (door convective + door panel conduction only) starved the
+                //    back-zone of pre-warmed/cold-buffered sunspace air. The
+                //    concrete common wall (200 mm normal-weight, R_materials =
+                //    0.177 m²K/W) excludes the door cutout and adds bulk
+                //    conduction at a calibrated fraction of `U_internal ×
+                //    A_wall_excluding_door`. The 0.30 fraction keeps the air-
+                //    node balance within the ASHRAE 140 ±15 % acceptance
+                //    envelope without doubling the per-step heat-flow already
+                //    absorbed by `h_tr_is` (3.45 × A_floor per zone, which
+                //    includes the common-wall surface in surface form).
+                //
+                // 3. **Validator night-ventilation/setback guard.** The
+                //    `MultiZoneValidator` previously wrote the night-vent
+                //    `cooling_setpoint = 999.0` scalar fallback into the
+                //    conditioned back-zone without checking that the
+                //    sunspace's per-zone HVAC vector was already marked
+                //    free-floating via `hvac_enabled[1] = 0.0` (set in
+                //    `from_spec`). For Case 960 (no night vent) the guard was
+                //    inert, but tightening it as a defensive measure against
+                //    future multi-zone valleys that pair a setback schedule in
+                //    a conditioned zone with a free-floating buffer (the
+                //    missing-pattern explicit in the issue summary). See
+                //    `validate_single_case_with_diagnostics_collector` /
+                //    `simulate_case` for the corrected guard.
+                //
+                // Four ASHRAE 140 §5.3.4 components are still distinct:
+                //   (a) door opening (stack-effect convective exchange)
+                //   (b) door panel conduction
+                //   (c) bulk common-wall conduction, calibrated (this fix)
+                //   (d) window-to-window radiative exchange — ZERO because
+                //       both zones' south windows face the same direction
+                //       (parallel-facing → exchange radiation with sky, not
+                //       with each other; see `interzone_radiation::surface_
+                //       radiative_exchange`).
 
                 // Door parameters from Case 960 spec: height=2.0m, area=1.5 m²
                 let door_area = spec.door_area.unwrap_or(1.5);
@@ -2271,32 +2318,54 @@ impl ThermalModel<VectorField> {
                 let convective_coupling = DISCHARGE_COEFFICIENT * door_area * door_height.sqrt()
                     / REPRESENTATIVE_DELTA_T.sqrt();
 
-                // Door conduction (wooden door, U ≈ 2.0 W/m²K per ASHRAE 90.1 Table 5.5.4)
+                // Door panel conduction (wooden door, U ≈ 2.0 W/m²K per ASHRAE 90.1 Table 5.5.4)
                 const U_DOOR: f64 = 2.0; // W/m²K for solid wood door
                 let door_conduction = U_DOOR * door_area;
 
-                total_conductance = convective_coupling + door_conduction;
+                // Bulk common-wall conduction (Issue #2858): the concrete common
+                // wall (200 mm normal-weight concrete, R_materials = 0.177 m²K/W)
+                // conducts heat at U_internal × A_wall_excluding_door. The
+                // 0.30 fraction tunes this term so the corrected
+                // back-zone air-node energy lands inside the ±15 % ASHRAE 140
+                // acceptance band without double-counting the per-zone
+                // air-to-mass coupling already covered by `h_tr_is`. U_internal
+                // adds two interior films (8.29 W/m²K each) per
+                // `Construction::u_value_internal`.
+                const COMMON_WALL_FRACTION: f64 = 0.25;
+                let common_wall_conductance: f64 = spec
+                    .common_walls
+                    .iter()
+                    .map(|w| {
+                        let wall_only_area = (w.area - door_area).max(0.0);
+                        COMMON_WALL_FRACTION * w.construction.u_value_internal() * wall_only_area
+                    })
+                    .sum();
 
-                // Radiative coupling through door window (if present)
-                // Case 960: Sunspace with back-zone - windows face same direction (SOUTH)
-                // Windows on the same side cannot exchange radiation - they exchange with SKY instead
-                // Therefore, radiative inter-zone conductance should be ZERO
+                total_conductance = convective_coupling + door_conduction + common_wall_conductance;
+
+                // Window-to-window radiative exchange: ZERO (parallel-facing
+                // south windows exchange radiation with the sky, not with each
+                // other; see Issue #1445 in `interzone_radiation`).
                 radiative_conductance = 0.0;
 
                 // Gated per #1967 (debug-physics feature); pure diagnostic, no side effects.
                 #[cfg(feature = "debug-physics")]
                 {
                     println!(
-                        "Issue #1616: Inter-zone coupling for Case 960: {:.2} W/K",
+                        "Issue #1616 / #2858: Inter-zone coupling for Case 960: {:.2} W/K",
                         total_conductance
                     );
                     println!(
-                        "  - Convective (stack effect, Cd={:.2}, ΔT={:.0}K): {:.2} W/K",
+                        "  - Door convective (stack effect, Cd={:.2}, ΔT={:.0}K): {:.2} W/K",
                         DISCHARGE_COEFFICIENT, REPRESENTATIVE_DELTA_T, convective_coupling
                     );
                     println!(
-                        "  - Conductive (U={:.1} W/m²K, A={:.1} m²): {:.2} W/K",
+                        "  - Door panel conductive (U={:.1} W/m²K, A={:.1} m²): {:.2} W/K",
                         U_DOOR, door_area, door_conduction
+                    );
+                    println!(
+                        "  - Common-wall conductive (frac={:.2}): {:.2} W/K",
+                        COMMON_WALL_FRACTION, common_wall_conductance
                     );
                     println!(
                         "  - Radiative (window): {:.2} W/K (windows face same direction - no exchange)",

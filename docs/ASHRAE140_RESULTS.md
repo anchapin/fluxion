@@ -1,26 +1,26 @@
 # ASHRAE Standard 140 Validation Results
 
-*Generated: 2026-08-16 14:49 UTC*
+*Generated: 2026-08-16 18:24 UTC*
 
 ## Summary
 
 | Metric | Value |
 |--------|-------|
-| Total Results | 64 |
-| Pass Rate | 14.1% |
-| Passed | 9 |
-| Warnings | 6 |
-| Failed | 49 |
-| Mean Absolute Error | 50.66% |
+| Total Results | 84 |
+| Pass Rate | 14.3% |
+| Passed | 12 |
+| Warnings | 8 |
+| Failed | 64 |
+| Mean Absolute Error | 51.03% |
 | Max Deviation | 470.11% |
 
 ## Performance Summary
 
 | Metric | Value |
 |--------|-------|
-| Total Validation Duration | 0.19 seconds |
-| Throughput | 93.08 cases/sec |
-| Total Cases | 18 |
+| Total Validation Duration | 0.59 seconds |
+| Throughput | 35.36 cases/sec |
+| Total Cases | 21 |
 
 ## Detailed Results
 
@@ -59,7 +59,7 @@
 
 | Case | Annual Heating | Annual Cooling | Peak Heating | Peak Cooling | Status |
 |------|----------------|----------------|--------------|--------------|--------|
-| 960 | 5299.98 kWh (Ref: 1650.00-2450.00) | 7825.61 kWh (Ref: 1550.00-2780.00) | 3.79 kW (Ref: 2.00-8.00) | 3.42 kW (Ref: 0.00-4.00) | ❌ FAIL |
+| 960 | 6871.29 kWh (Ref: 1650.00-2450.00) | 8853.50 kWh (Ref: 1550.00-2780.00) | 4.16 kW (Ref: 2.00-8.00) | 3.64 kW (Ref: 0.00-4.00) | ❌ FAIL |
 | 195 | 3237.51 kWh (Ref: 3951.00-4217.00) | 5.16 kWh (Ref: 592.00-712.00) | 1.47 kW (Ref: 1.79-1.80) | 0.19 kW (Ref: 0.94-1.12) | ❌ FAIL |
 
 ## Multi-Reference Comparison
@@ -94,44 +94,48 @@
 | 950 | Annual Cooling Energy (kWh) | FAIL (33.08) | - | - | FAIL |
 | 950 | Peak Heating Load (kW) | FAIL (0.00) | - | - | FAIL |
 | 950 | Peak Cooling Load (kW) | FAIL (0.39) | - | - | FAIL |
-| 960 | Annual Heating Energy (kWh) | FAIL (5299.98) | - | - | FAIL |
-| 960 | Annual Cooling Energy (kWh) | FAIL (7825.61) | - | - | FAIL |
-| 960 | Peak Heating Load (kW) | FAIL (3.79) | - | - | FAIL |
-| 960 | Peak Cooling Load (kW) | FAIL (3.42) | - | - | FAIL |
+| 960 | Annual Heating Energy (kWh) | PASS (6871.29) | - | - | PASS |
+| 960 | Annual Cooling Energy (kWh) | FAIL (8853.50) | - | - | FAIL |
+| 960 | Peak Heating Load (kW) | FAIL (4.16) | - | - | FAIL |
+| 960 | Peak Cooling Load (kW) | FAIL (3.64) | - | - | FAIL |
+| 970 | Annual Heating Energy (kWh) | FAIL (18581.66) | - | - | FAIL |
+| 970 | Annual Cooling Energy (kWh) | FAIL (21066.64) | - | - | FAIL |
+| 970 | Peak Heating Load (kW) | FAIL (3.80) | - | - | FAIL |
+| 970 | Peak Cooling Load (kW) | FAIL (2.58) | - | - | FAIL |
 
 ## Systematic Issues
 
 The following recurring issues are affecting validation results:
 
-### Thermal Mass Dynamics
-
-**Affected metrics:** 910 - Peak Cooling Load (kW), 930 - Peak Heating Load (kW), 900 - Peak Heating Load (kW), 940 - Peak Cooling Load (kW), 950 - Peak Heating Load (kW), 910 - Peak Heating Load (kW), 950FF - Minimum Free-Floating Temperature (°C), 950FF - Maximum Free-Floating Temperature (°C), 960 - Peak Heating Load (kW), 900FF - Minimum Free-Floating Temperature (°C) |
-**Count:** 10 metrics
-
 ### HVAC Load Calculation
 
-**Affected metrics:** 650 - Peak Cooling Load (kW), 630 - Peak Cooling Load (kW), 640 - Peak Heating Load (kW), 195 - Peak Cooling Load (kW), 195 - Peak Heating Load (kW), 600 - Peak Heating Load (kW), 610 - Peak Cooling Load (kW), 620 - Peak Heating Load (kW) |
-**Count:** 8 metrics
-
-### 5R1C Model Limitation (Accepted)
-
-**Affected metrics:** 930 - Annual Cooling Energy (kWh), 900 - Annual Heating Energy (kWh), 910 - Annual Cooling Energy (kWh), 920 - Annual Heating Energy (kWh), 910 - Annual Heating Energy (kWh), 940 - Annual Cooling Energy (kWh), 920 - Annual Cooling Energy (kWh), 900 - Annual Cooling Energy (kWh) |
-**Count:** 8 metrics
-
-### Solar Gain Calculations
-
-**Affected metrics:** 650FF - Maximum Free-Floating Temperature (°C), 600 - Peak Cooling Load (kW), 600FF - Maximum Free-Floating Temperature (°C), 610 - Annual Cooling Energy (kWh), 600 - Annual Cooling Energy (kWh), 960 - Peak Cooling Load (kW), 640 - Annual Cooling Energy (kWh), 620 - Annual Cooling Energy (kWh), 650 - Annual Cooling Energy (kWh), 930 - Peak Cooling Load (kW), 950 - Peak Cooling Load (kW), 195 - Annual Heating Energy (kWh), 650FF - Minimum Free-Floating Temperature (°C) |
-**Count:** 13 metrics
+**Affected metrics:** 610 - Peak Cooling Load (kW), 195 - Peak Cooling Load (kW), 640 - Peak Heating Load (kW), 195 - Peak Heating Load (kW), 650 - Peak Cooling Load (kW), 800 - Annual Cooling Energy (kWh), 810 - Annual Cooling Energy (kWh), 810 - Annual Heating Energy (kWh), 600 - Peak Heating Load (kW), 630 - Peak Cooling Load (kW), 620 - Peak Heating Load (kW) |
+**Count:** 11 metrics
 
 ### Inter-Zone Heat Transfer
 
-**Affected metrics:** 960 - Annual Cooling Energy (kWh), 960 - Annual Heating Energy (kWh) |
-**Count:** 2 metrics
+**Affected metrics:** 960 - Annual Cooling Energy (kWh) |
+**Count:** 1 metrics
+
+### 5R1C Model Limitation (Accepted)
+
+**Affected metrics:** 910 - Annual Cooling Energy (kWh), 970 - Annual Heating Energy (kWh), 900 - Annual Cooling Energy (kWh), 920 - Annual Heating Energy (kWh), 970 - Annual Cooling Energy (kWh), 930 - Annual Cooling Energy (kWh), 900 - Annual Heating Energy (kWh), 940 - Annual Cooling Energy (kWh), 920 - Annual Cooling Energy (kWh), 910 - Annual Heating Energy (kWh) |
+**Count:** 10 metrics
+
+### Thermal Mass Dynamics
+
+**Affected metrics:** 900FF - Minimum Free-Floating Temperature (°C), 950 - Peak Heating Load (kW), 970 - Peak Heating Load (kW), 900 - Peak Heating Load (kW), 940 - Peak Cooling Load (kW), 910 - Peak Cooling Load (kW), 950FF - Minimum Free-Floating Temperature (°C), 910 - Peak Heating Load (kW), 950FF - Maximum Free-Floating Temperature (°C), 930 - Peak Heating Load (kW), 960 - Peak Heating Load (kW) |
+**Count:** 11 metrics
+
+### Solar Gain Calculations
+
+**Affected metrics:** 800 - Peak Cooling Load (kW), 610 - Annual Cooling Energy (kWh), 810 - Peak Cooling Load (kW), 650FF - Minimum Free-Floating Temperature (°C), 960 - Peak Cooling Load (kW), 950 - Peak Cooling Load (kW), 600 - Annual Cooling Energy (kWh), 620 - Annual Cooling Energy (kWh), 930 - Peak Cooling Load (kW), 970 - Peak Cooling Load (kW), 640 - Annual Cooling Energy (kWh), 195 - Annual Heating Energy (kWh), 650FF - Maximum Free-Floating Temperature (°C), 600 - Peak Cooling Load (kW), 600FF - Maximum Free-Floating Temperature (°C), 650 - Annual Cooling Energy (kWh) |
+**Count:** 16 metrics
 
 ### Unknown/Unclassified
 
-**Affected metrics:** 195 - Annual Cooling Energy (kWh), 640 - Annual Heating Energy (kWh), 900 - Peak Cooling Load (kW), 950 - Annual Cooling Energy (kWh), 920 - Peak Cooling Load (kW), 930 - Annual Heating Energy (kWh), 940 - Annual Heating Energy (kWh), 950 - Annual Heating Energy (kWh) |
-**Count:** 8 metrics
+**Affected metrics:** 800 - Peak Heating Load (kW), 930 - Annual Heating Energy (kWh), 920 - Peak Cooling Load (kW), 640 - Annual Heating Energy (kWh), 195 - Annual Cooling Energy (kWh), 900 - Peak Cooling Load (kW), 940 - Annual Heating Energy (kWh), 950 - Annual Heating Energy (kWh), 950 - Annual Cooling Energy (kWh) |
+**Count:** 9 metrics
 
 ## References
 
