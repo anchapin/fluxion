@@ -397,12 +397,7 @@ impl SolAirTemperature {
     /// surface sky view factor so walls receive the correct reduced sky-view
     /// factor. Default `f_sky = 0.0` is preserved by the legacy entrypoint —
     /// callers wanting the LW correction must opt in explicitly.
-    pub fn for_wall(
-        &self,
-        outdoor_temp: f64,
-        solar_irradiance: f64,
-        ground_reflected: f64,
-    ) -> f64 {
+    pub fn for_wall(&self, outdoor_temp: f64, solar_irradiance: f64, ground_reflected: f64) -> f64 {
         let total_solar = solar_irradiance + ground_reflected;
         let solar_term = self.solar_absorptance * total_solar / self.exterior_conductance;
         outdoor_temp + solar_term
