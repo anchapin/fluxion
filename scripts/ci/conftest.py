@@ -44,12 +44,25 @@ def load_script():
     ``monkeypatch.setattr(module, "REPO_ROOT", tmp_path)`` is isolated.
     Mirrors the per-file ``_load_checker`` helpers in the existing
     ``test_check_physics_sim_cycle.py`` / ``test_check_cycle_downward_trend.py``.
+
+    The module is also registered in ``sys.modules`` under the file's
+    stem so the ``@dataclass`` decorator (which inspects
+    ``sys.modules[cls.__module__]`` to resolve string annotations) can
+    resolve forward references introduced by ``from __future__ import
+    annotations``. Without this, ``Optional[...]``-annotated dataclass
+    fields raise ``AttributeError: 'NoneType' object has no attribute
+    '__dict__'`` on class creation.
     """
 
     def _load(name: str):
+        import sys as _sys
+
         path = SCRIPTS_DIR / f"{name}.py"
         spec = importlib.util.spec_from_file_location(name, path)
         module = importlib.util.module_from_spec(spec)
+        # Register BEFORE exec_module so the @dataclass decorator can
+        # resolve forward references whose module is ``name``.
+        _sys.modules.setdefault(name, module)
         assert spec.loader is not None
         spec.loader.exec_module(module)
         return module
