@@ -33,7 +33,7 @@ use crate::sim::thermal_integration::{
 };
 use crate::sim::thermal_model_core::ThermalModel;
 use crate::sim::thermal_model_scratch::PhysicsScratch5r1c;
-use crate::sim::ventilation::h_tr_is_ach_multiplier;
+use crate::sim::ventilation::capped_h_tr_is_ach_multiplier;
 
 // Methods in this file are being incrementally migrated to the sibling
 // submodules in `thermal_model_physics/` (see Issue #902). Methods that
@@ -3043,8 +3043,10 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
             // This ensures t_air_mn_pre uses the ASHRAE/EnergyPlus forced convection
             // correlation, consistent with how step_with_gains and compute_zone_air_temperature
             // are called after the main loop.
+            // Issue #2871: cap the multiplier at MAX_CONVECTIVE_TO_AIR_MULTIPLIER
+            // to prevent mass-node pulsed-charging dump during the morning ramp.
             let h_tr_is_multiplier_pre = if night_vent_active_now {
-                h_tr_is_ach_multiplier(ach_night_vent)
+                capped_h_tr_is_ach_multiplier(ach_night_vent)
             } else {
                 1.0
             };
@@ -3185,9 +3187,11 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
             // Issue #1279: Boost h_tr_is for forced convection during night ventilation.
             // Use ACH-dependent multiplier (ASHRAE/EnergyPlus correlation) instead of
             // the prior hardcoded 4× which was not ACH-accurate.
+            // Issue #2871: cap the multiplier at MAX_CONVECTIVE_TO_AIR_MULTIPLIER
+            // to prevent mass-node pulsed-charging dump during the morning ramp.
             // IMPORTANT: Restore h_tr_is after step to avoid persisting the boost to daytime.
             let h_tr_is_multiplier = if night_vent_active_now {
-                h_tr_is_ach_multiplier(ach_night_vent)
+                capped_h_tr_is_ach_multiplier(ach_night_vent)
             } else {
                 1.0
             };
@@ -3218,8 +3222,9 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         // compute_zone_air_temperature during night ventilation. This ensures
         // the zone air temperature calculation uses the enhanced surface-to-air
         // heat transfer from the ASHRAE/EnergyPlus forced convection correlation.
+        // Issue #2871: cap the multiplier at MAX_CONVECTIVE_TO_AIR_MULTIPLIER.
         if night_vent_active_now {
-            let multiplier = h_tr_is_ach_multiplier(ach_night_vent);
+            let multiplier = capped_h_tr_is_ach_multiplier(ach_night_vent);
             for solver in &mut self.0.conduction.multi_node_solvers {
                 solver.h_tr_is *= multiplier;
             }
@@ -3273,8 +3278,9 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         )));
 
         // Issue #1279: Restore h_tr_is to original value after computing zone air temperature.
+        // Issue #2871: must divide by the SAME (capped) multiplier that was applied above.
         if night_vent_active_now {
-            let multiplier = h_tr_is_ach_multiplier(ach_night_vent);
+            let multiplier = capped_h_tr_is_ach_multiplier(ach_night_vent);
             for solver in &mut self.0.conduction.multi_node_solvers {
                 solver.h_tr_is /= multiplier;
             }
