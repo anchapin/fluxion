@@ -165,7 +165,16 @@ impl Case195Calibrator {
     pub fn run_calibration(&mut self, initial_params: CalibrationParameters) -> CalibrationResult {
         self.state.history.clear();
 
-        let mut params = initial_params;
+        // Clamp the initial parameters to the physical floor so a caller
+        // passing zero / negative / NaN cannot inject NaN into the gradient
+        // computation (NaN initial RMSE → NaN gradient → NaN step → silent
+        // "converged at noise floor" with the original params still NaN).
+        let mut params = CalibrationParameters {
+            thermal_conductivity: clamp_positive(initial_params.thermal_conductivity),
+            specific_heat: clamp_positive(initial_params.specific_heat),
+            density: clamp_positive(initial_params.density),
+            infiltration_rate: clamp_positive(initial_params.infiltration_rate),
+        };
         let targets = &self.state.targets;
         let tolerance = self.state.tolerance;
         let learning_rate = self.state.learning_rate;
@@ -505,5 +514,231 @@ mod tests {
             &CalibrationParameters::default(),
         );
         assert_eq!(rmse, 0.0);
+    }
+
+    #[test]
+    fn clamp_positive_clamps_zero_and_negative() {
+        // Zero, negative, and non-finite inputs must collapse to the
+        // physical-floor value (f64::EPSILON). This guards the gradient
+        // descent from ever producing a parameter <= 0 — which would
+        // otherwise produce a NaN gradient and an unbounded iteration.
+        assert_eq!(clamp_positive(0.0), f64::EPSILON);
+        assert_eq!(clamp_positive(-1.0), f64::EPSILON);
+        assert_eq!(clamp_positive(-1e9), f64::EPSILON);
+        assert_eq!(clamp_positive(f64::NAN), f64::EPSILON);
+        assert_eq!(clamp_positive(f64::INFINITY), f64::EPSILON);
+        assert_eq!(clamp_positive(f64::NEG_INFINITY), f64::EPSILON);
+        // Positive finite values pass through untouched.
+        assert_eq!(clamp_positive(1.0), 1.0);
+        assert_eq!(clamp_positive(0.16), 0.16);
+        assert_eq!(clamp_positive(f64::EPSILON), f64::EPSILON);
+    }
+
+    #[test]
+    fn run_calibration_handles_zero_initial_parameters() {
+        // Non-default check: every initial parameter is zero → the
+        // algorithm's initial-clamp must floor them to f64::EPSILON, the
+        // gradient computation must NOT produce NaN, and the regression
+        // must exit at the gradient noise floor with all parameters
+        // positive (the regression cannot recover the ledger targets from
+        // the floor because the gradient vanishes there).
+        let mut calibrator = Case195Calibrator::new();
+        let result = calibrator.run_calibration(CalibrationParameters {
+            thermal_conductivity: 0.0,
+            specific_heat: 0.0,
+            density: 0.0,
+            infiltration_rate: 0.0,
+        });
+        assert!(
+            result.rmse.is_finite(),
+            "RMSE must remain finite (got NaN/inf)"
+        );
+        // All final parameters must be strictly positive (clamped).
+        assert!(result.parameters.thermal_conductivity > 0.0);
+        assert!(result.parameters.specific_heat > 0.0);
+        assert!(result.parameters.density > 0.0);
+        assert!(result.parameters.infiltration_rate > 0.0);
+        // RMSE stays high because the algorithm cannot recover the targets
+        // from the physical floor — but it must not NaN out.
+        assert!(result.rmse >= CONVERGENCE_TOLERANCE);
+    }
+
+    #[test]
+    fn run_calibration_handles_extreme_low_parameters() {
+        // Non-default check: starting from parameters well below the ledger
+        // defaults (50% of each target), the regression must still recover
+        // the ledger defaults — the gradient is meaningful here, unlike at
+        // the physical floor. This is the "minimum" extreme referenced in
+        // issue #2879.
+        let mut calibrator = Case195Calibrator::new();
+        let initial = CalibrationParameters {
+            thermal_conductivity: 0.08, // 50% of 0.16
+            specific_heat: 420.0,       // 50% of 840.0
+            density: 1200.0,            // 50% of 2400.0
+            infiltration_rate: 0.25,    // 50% of 0.5
+        };
+        let initial_rmse = normalized_rmse(&initial, &CalibrationParameters::default());
+        let result = calibrator.run_calibration(initial.clone());
+        let final_rmse = normalized_rmse(&result.parameters, &CalibrationParameters::default());
+        assert!(
+            result.converged,
+            "low-start calibration must converge (rmse={final_rmse})"
+        );
+        assert!(
+            final_rmse < initial_rmse,
+            "calibration must reduce RMSE (initial={initial_rmse}, final={final_rmse})"
+        );
+        // Final parameters must move toward the targets (larger than the
+        // initial 50%-of-target values, strictly less than the targets).
+        assert!(result.parameters.thermal_conductivity > initial.thermal_conductivity);
+        assert!(result.parameters.specific_heat > initial.specific_heat);
+        assert!(result.parameters.density > initial.density);
+        assert!(result.parameters.infiltration_rate > initial.infiltration_rate);
+        assert!(result.parameters.thermal_conductivity <= 0.16);
+        assert!(result.parameters.specific_heat <= 840.0);
+        assert!(result.parameters.density <= 2400.0);
+        assert!(result.parameters.infiltration_rate <= 0.5);
+    }
+
+    #[test]
+    fn run_calibration_handles_extreme_high_parameters() {
+        // Non-default check: starting from parameters well above the ledger
+        // defaults (200% of each target), the regression must still recover
+        // the ledger defaults — the multiplicative step size keeps the
+        // gradient well-scaled regardless of the parameter magnitude. This
+        // is the "maximum" / high extreme referenced in issue #2879. The
+        // regression may briefly overshoot the targets during iteration, so
+        // we only assert that the final RMSE is well below the initial one
+        // — not that every parameter is monotonic from initial to target.
+        let mut calibrator = Case195Calibrator::new();
+        let initial = CalibrationParameters {
+            thermal_conductivity: 0.32, // 200% of 0.16
+            specific_heat: 1680.0,      // 200% of 840.0
+            density: 4800.0,            // 200% of 2400.0
+            infiltration_rate: 1.0,     // 200% of 0.5
+        };
+        let initial_rmse = normalized_rmse(&initial, &CalibrationParameters::default());
+        let result = calibrator.run_calibration(initial.clone());
+        let final_rmse = normalized_rmse(&result.parameters, &CalibrationParameters::default());
+        assert!(
+            result.converged,
+            "high-start calibration must converge (rmse={final_rmse})"
+        );
+        assert!(
+            final_rmse < initial_rmse,
+            "calibration must reduce RMSE (initial={initial_rmse}, final={final_rmse})"
+        );
+        // The regression must make meaningful progress — final RMSE must
+        // be at least 10× smaller than the initial RMSE. (The algorithm
+        // can declare convergence at the gradient noise floor even if
+        // final_rmse is slightly above CONVERGENCE_TOLERANCE.)
+        assert!(
+            final_rmse * 10.0 < initial_rmse,
+            "calibration must reduce RMSE by ≥10× (initial={initial_rmse}, final={final_rmse})"
+        );
+        // All final parameters must remain strictly positive.
+        assert!(result.parameters.thermal_conductivity > 0.0);
+        assert!(result.parameters.specific_heat > 0.0);
+        assert!(result.parameters.density > 0.0);
+        assert!(result.parameters.infiltration_rate > 0.0);
+    }
+
+    #[test]
+    fn run_calibration_handles_negative_initial_parameters() {
+        // Non-default check: negative initial parameters must be clamped to
+        // the physical floor (f64::EPSILON) before the gradient is computed,
+        // so the regression cannot produce NaN or unbounded growth.
+        let mut calibrator = Case195Calibrator::new();
+        let result = calibrator.run_calibration(CalibrationParameters {
+            thermal_conductivity: -1.0,
+            specific_heat: -100.0,
+            density: -100.0,
+            infiltration_rate: -1.0,
+        });
+        assert!(result.rmse.is_finite(), "RMSE must be finite");
+        // All final parameters must be strictly positive (clamped).
+        assert!(result.parameters.thermal_conductivity > 0.0);
+        assert!(result.parameters.specific_heat > 0.0);
+        assert!(result.parameters.density > 0.0);
+        assert!(result.parameters.infiltration_rate > 0.0);
+    }
+
+    #[test]
+    fn run_calibration_handles_nan_initial_parameters() {
+        // Non-default check: NaN initial parameters must be clamped to the
+        // physical floor — the regression must not propagate NaN into the
+        // RMSE, gradient, or final parameters. This guards the #1333
+        // strict-energy-gate path from a silent NaN regression.
+        let mut calibrator = Case195Calibrator::new();
+        let result = calibrator.run_calibration(CalibrationParameters {
+            thermal_conductivity: f64::NAN,
+            specific_heat: f64::NAN,
+            density: f64::NAN,
+            infiltration_rate: f64::NAN,
+        });
+        assert!(
+            result.rmse.is_finite(),
+            "RMSE must remain finite (NaN initial must not propagate)"
+        );
+        // All final parameters must be finite and positive.
+        assert!(result.parameters.thermal_conductivity.is_finite());
+        assert!(result.parameters.specific_heat.is_finite());
+        assert!(result.parameters.density.is_finite());
+        assert!(result.parameters.infiltration_rate.is_finite());
+        assert!(result.parameters.thermal_conductivity > 0.0);
+        assert!(result.parameters.specific_heat > 0.0);
+        assert!(result.parameters.density > 0.0);
+        assert!(result.parameters.infiltration_rate > 0.0);
+    }
+
+    #[test]
+    fn normalized_rmse_handles_zero_target() {
+        // Non-default check: when the target is at-or-below f64::EPSILON
+        // (i.e. effectively zero), relative_diff returns the raw value
+        // instead of dividing. This protects the regression from a 0/0
+        // NaN when the target collapses to the physical floor.
+        let zero_target = CalibrationParameters {
+            thermal_conductivity: 0.0,
+            specific_heat: 0.0,
+            density: 0.0,
+            infiltration_rate: 0.0,
+        };
+        let params = CalibrationParameters {
+            thermal_conductivity: 0.16,
+            specific_heat: 840.0,
+            density: 2400.0,
+            infiltration_rate: 0.5,
+        };
+        let rmse = normalized_rmse(&params, &zero_target);
+        assert!(rmse.is_finite(), "zero-target RMSE must be finite");
+        // For each component: |Δ| / 0 returns the raw Δ (via the
+        // target.abs() < EPSILON guard). RMSE = sqrt(sum(Δᵢ²) / 4).
+        let nk = params.thermal_conductivity;
+        let nc = params.specific_heat;
+        let nr = params.density;
+        let na = params.infiltration_rate;
+        let expected = ((nk * nk + nc * nc + nr * nr + na * na) / 4.0).sqrt();
+        assert!(
+            (rmse - expected).abs() < 1e-6,
+            "zero-target RMSE must match the direct calculation: got {rmse}, expected {expected}"
+        );
+    }
+
+    #[test]
+    fn normalized_rmse_handles_mixed_extreme_targets() {
+        // Non-default check: an asymmetric target (one parameter at floor,
+        // one at ledger default, two at extreme high) must produce a finite
+        // RMSE without NaN propagation. This exercises the boundary between
+        // the relative_diff branches.
+        let target = CalibrationParameters {
+            thermal_conductivity: f64::EPSILON, // near zero
+            specific_heat: 840.0,               // default
+            density: 1e9,                       // extreme high
+            infiltration_rate: 0.5,             // default
+        };
+        let params = CalibrationParameters::default();
+        let rmse = normalized_rmse(&params, &target);
+        assert!(rmse.is_finite());
+        assert!(rmse > 0.0);
     }
 }
