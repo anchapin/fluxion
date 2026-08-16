@@ -1,69 +1,40 @@
 """
 Unit tests for the release scorecard generator (scripts/generate_scorecard.py).
 
-Covers the data-source resolution that was the subject of issue #1167:
-the generator must read authoritative validation data from
-``validation_results.json`` or ``validation_report.md`` and must NEVER silently
-fall back to stale ``QUALITY_METRICS.md`` data (which held ``0.0%`` pass rate
-and ``-inf%`` MAE).
+Covers the module-level API introduced by the #2496 refactor (commit 6170687):
+``parse_ashrae``, ``parse_series``, ``parse_gates``, ``parse_readme_throughput``,
+``render``, ``load_all``, and ``main``. The script reads from committed sources
+under a hard-coded ``REPO`` root and emits a deterministic ``SCORECARD.md``
+that CI diffs against the committed copy.
 
 These tests intentionally avoid invoking ``cargo``; they exercise the pure
-parsing / resolution logic and the CLI's error path directly.
+parsing / rendering logic and the CLI's drift path directly.
 
-STATUS: Currently skipped — see issue #2835.
-
-The #2496 refactor (commit 6170687, Aug 2026) replaced the
-``ScorecardGenerator`` class with module-level functions
-(``parse_ashrae``, ``parse_series``, ``parse_gates``, ``render``,
-``load_all``, ``main``) that read from a hard-coded ``REPO = Path(__file__).
-resolve().parent.parent`` rather than a per-call ``project_root``. Every
-test in this file still references the removed class API
-(``ScorecardGenerator(project_root=...)``, ``_parse_numeric``,
-``_parse_report_summary``, ``load_validation_results``,
-``generate_scorecard``, ``collect_all``, ``run_rust_tests``,
-``estimate_benchmark``, ``load_quality_metrics``) and the CLI
-"no source → exit non-zero" path that depended on a ``project_root``
-parameter that no longer exists.
-
-Re-introducing that surface area is out of scope for the #2835 inventory
-fix; a follow-up refactor is needed to either (a) reintroduce the
-``ScorecardGenerator`` class with the historical API, or (b) rewrite the
-tests against the current module-level API. Until then the tests are
-gated to keep the PyO3 pytest legs green.
+Fixes issue #2850 by replacing the previously-skipped legacy ``ScorecardGenerator``
+test surface (commit #2496 removed that class) with coverage against the
+current module-level API.
 """
 
 import importlib.util
-import json
 import subprocess
 import sys
 from pathlib import Path
 
 import pytest
 
-# Gating marker for issue #2835. The ScorecardGenerator class API was
-# removed in the #2496 refactor (commit 6170687). Re-introducing the class
-# or rewriting these tests is tracked separately.
-pytestmark = pytest.mark.skip(
-    reason=(
-        "Issue #2835: ScorecardGenerator class API removed in #2496 refactor "
-        "(commit 6170687). Tests still reference the legacy class surface "
-        "(_parse_numeric, _parse_report_summary, project_root parameter, "
-        "load_validation_results, generate_scorecard, collect_all, "
-        "run_rust_tests, estimate_benchmark, load_quality_metrics) and the "
-        "CLI 'no source → exit non-zero' path that depended on a "
-        "project_root parameter which no longer exists. Re-introducing the "
-        "class or rewriting these tests is out of scope for the #2835 "
-        "inventory fix."
-    )
-)
-
 SCRIPT = Path(__file__).resolve().parents[2] / "scripts" / "generate_scorecard.py"
 
 
 def _load_module():
-    """Load scripts/generate_scorecard.py as an isolated module by path."""
+    """Load scripts/generate_scorecard.py as an isolated module by path.
+
+    Registered in ``sys.modules`` so that ``dataclasses`` can resolve
+    ``from __future__ import annotations`` string annotations back to the
+    module's globals (``Optional[float]`` etc.).
+    """
     spec = importlib.util.spec_from_file_location("generate_scorecard", SCRIPT)
     module = importlib.util.module_from_spec(spec)
+    sys.modules.setdefault("generate_scorecard", module)
     spec.loader.exec_module(module)
     return module
 
@@ -73,8 +44,7 @@ def gen_module():
     return _load_module()
 
 
-# A realistic validation_report.md ## Summary block.
-REPORT_SUMMARY = """\
+ASHRAE_DOC_TEXT = """\
 # ASHRAE Standard 140 Validation Results
 
 *Generated: 2026-04-14 17:28 UTC*
@@ -96,22 +66,88 @@ REPORT_SUMMARY = """\
 | Metric | Value |
 |--------|-------|
 | Throughput | 8.51 cases/sec |
+
+## Detailed Results
+
+### Baseline Cases (600 Series)
+
+| Case | Annual Heating | Status |
+|------|----------------|--------|
+| 600 | 4604.57 kWh | ❌ FAIL |
+| 610 | 4691.46 kWh | ❌ FAIL |
+
+### High-Mass Cases (900 Series)
+
+| Case | Annual Heating | Status |
+|------|----------------|--------|
+| 900 | 5052.83 kWh | � FAIL |
+| 910 | 5428.96 kWh | ❌ FAIL |
+
+## Systematic Issues
+
+### HVAC Load Calculation
+
+**Count:** 11 metrics
 """
 
-# Stale dashboard data that must never be used as a validation source.
-STALE_QUALITY_METRICS = """\
-# Quality Metrics Tracker
+GATES_YAML_TEXT = """\
+# Fixture gates.yaml (subset of release_gates.yaml)
+validation:
+  min_pass_rate: 60.0
+  max_mae: 50.0
+  known_failures:
+    - "900"
+    - "600"
 
-## Current Status
+benchmark:
+  throughput:
+    min_configs_per_sec: 150  # Wave 1+1.5 CI runners ~157 configs/sec
+  latency:
+    max_ms_per_config: 10.0
 
-- **Pass Rate:** 0.0% (0 / 18 cases)
-- **MAE:** -inf%
-- **Max Deviation:** 156689872.00%
+absolute_min_throughput: 100
+
+# ============================================================================
+# CI REQUIRED CHECKS
+# ============================================================================
+ci:
+  required_checks:
+    - "ASHRAE 140 Strict Energy Gate (Issue #1333)"
+    - "Workspace Check (Issue #2983)"
+
+# ============================================================================
+# LOWER SECTION
+# ============================================================================
+other:
+  foo: bar
 """
+
+README_TEXT = """\
+# Fluxion
+
+- **Throughput:** ~900 configs/sec throughput in release mode via `BatchOracle`.
+"""
+
+
+@pytest.fixture
+def repo_dir(tmp_path, monkeypatch):
+    """Provide a tmp_path with stub ASHRAE / gates / README / SCORECARD and
+    redirect the module-level path constants to point at it."""
+    ashrae = tmp_path / "ASHRAE140_RESULTS.md"
+    ashrae.write_text(ASHRAE_DOC_TEXT)
+    gates = tmp_path / "release_gates.yaml"
+    gates.write_text(GATES_YAML_TEXT)
+    readme = tmp_path / "README.md"
+    readme.write_text(README_TEXT)
+    scorecard = tmp_path / "SCORECARD.md"
+    scorecard.write_text("placeholder\n")
+
+    monkeypatch.setattr("builtins.print", lambda *a, **k: None, raising=False)
+    return tmp_path, ashrae, gates, readme, scorecard
 
 
 # ---------------------------------------------------------------------------
-# Numeric parser
+# Numeric parser (_num)
 # ---------------------------------------------------------------------------
 
 
@@ -124,177 +160,402 @@ STALE_QUALITY_METRICS = """\
         ("346.87%", 346.87),
         ("0 / 18 cases", 0.0),
         ("1,234.5", 1234.5),
+        ("-5", -5.0),
         ("", None),
         ("n/a", None),
+        ("abc", None),
     ],
 )
-def test_parse_numeric(gen_module, cell, expected):
-    assert gen_module.ScorecardGenerator._parse_numeric(cell) == expected
+def test_num_extracts_leading_numeric(gen_module, cell, expected):
+    assert gen_module._num(cell) == expected
 
 
 # ---------------------------------------------------------------------------
-# Report summary parser
+# parse_ashrae
 # ---------------------------------------------------------------------------
 
 
-def test_parse_report_summary_extracts_all_fields(gen_module):
-    parsed = gen_module.ScorecardGenerator._parse_report_summary(REPORT_SUMMARY)
-    assert parsed == {
-        "total": 64.0,
-        "passed": 4.0,
-        "failed": 58.0,
-        "warnings": 2.0,
-        "pass_rate": 6.2,
-        "mae": 35.35,
-        "max_deviation": 346.87,
-    }
+def test_parse_ashrae_extracts_summary_metrics(gen_module):
+    v = gen_module.parse_ashrae(ASHRAE_DOC_TEXT)
+    assert v.total == 64
+    assert v.passed == 4
+    assert v.failed == 58
+    assert v.warnings == 2
+    assert v.pass_rate == pytest.approx(6.2)
+    assert v.mae == pytest.approx(35.35)
+    assert v.max_deviation == pytest.approx(346.87)
 
 
-def test_parse_report_summary_only_reads_summary_section(gen_module):
-    # "Throughput" lives under a different heading and must be ignored.
-    parsed = gen_module.ScorecardGenerator._parse_report_summary(REPORT_SUMMARY)
-    assert "throughput" not in parsed
+def test_parse_ashrae_extracts_generated_timestamp(gen_module):
+    v = gen_module.parse_ashrae(ASHRAE_DOC_TEXT)
+    assert v.generated_utc == "2026-04-14 17:28 UTC"
 
 
-def test_parse_report_summary_empty_when_no_table(gen_module):
-    assert gen_module.ScorecardGenerator._parse_report_summary("# Title\n\nbody") == {}
+def test_parse_ashrae_extracts_throughput_only_with_cases_per_sec(gen_module):
+    v = gen_module.parse_ashrae(ASHRAE_DOC_TEXT)
+    assert v.throughput_cases_per_sec == pytest.approx(8.51)
+
+
+def test_parse_ashrae_returns_defaults_for_empty(gen_module):
+    v = gen_module.parse_ashrae("# Title\n\nbody")
+    assert v.total == 0
+    assert v.passed == 0
+    assert v.failed == 0
+    assert v.warnings == 0
+    assert v.pass_rate == 0.0
+    assert v.mae == 0.0
+    assert v.max_deviation == 0.0
+    assert v.throughput_cases_per_sec == 0.0
+    assert v.generated_utc == ""
+
+
+def test_parse_ashrae_ignores_sections_outside_tables(gen_module):
+    text = "## Summary\n\nno table here\n## Performance Summary\n\nstill no table\n"
+    v = gen_module.parse_ashrae(text)
+    assert v.total == 0
+    assert v.pass_rate == 0.0
 
 
 # ---------------------------------------------------------------------------
-# Source resolution & loading
+# parse_series
 # ---------------------------------------------------------------------------
 
 
-def test_load_from_report(gen_module, tmp_path):
-    (tmp_path / "validation_report.md").write_text(REPORT_SUMMARY)
-    g = gen_module.ScorecardGenerator(project_root=tmp_path)
-    assert g.load_validation_results() is True
-    assert g.validation_source.endswith("validation_report.md")
-    assert g.validation.pass_rate == pytest.approx(6.2)
-    assert g.validation.mae == pytest.approx(35.35)
-    assert g.validation.max_deviation == pytest.approx(346.87)
-    assert g.validation.total == 64
-    assert g.validation.passed == 4
-    assert g.validation.failed == 58
-    assert g.validation.warnings == 2
+def test_parse_series_groups_by_subsection(gen_module):
+    rows = gen_module.parse_series(ASHRAE_DOC_TEXT)
+    by_name = {r.name: r for r in rows}
+    assert "Baseline Cases (600 Series)" in by_name
+    assert "High-Mass Cases (900 Series)" in by_name
+    assert by_name["Baseline Cases (600 Series)"].failed == 2
+    assert by_name["High-Mass Cases (900 Series)"].failed == 2
 
 
-def test_load_from_json(gen_module, tmp_path):
-    (tmp_path / "validation_results.json").write_text(
-        json.dumps(
-            {
-                "summary": {
-                    "passed": 10,
-                    "failed": 2,
-                    "warnings": 1,
-                    "pass_rate": 83.3,
-                    "mae": 12.5,
-                    "max_deviation": 40.0,
-                }
-            }
-        )
+def test_parse_series_counts_pass_warn_fail(gen_module):
+    text = (
+        "## Detailed Results\n\n"
+        "### Mixed\n\n"
+        "| Case | Status |\n"
+        "|------|--------|\n"
+        "| 1 | ✅ PASS |\n"
+        "| 2 | ⚠ WARN |\n"
+        "| 3 | ❌ FAIL |\n"
+        "| 4 | ✅ PASS |\n"
     )
-    g = gen_module.ScorecardGenerator(project_root=tmp_path)
-    assert g.load_validation_results() is True
-    assert g.validation_source.endswith("validation_results.json")
-    assert g.validation.pass_rate == pytest.approx(83.3)
-    assert g.validation.mae == pytest.approx(12.5)
-    assert g.validation.total == 12
-    assert g.validation.passed == 10
+    rows = gen_module.parse_series(text)
+    assert len(rows) == 1
+    r = rows[0]
+    assert r.name == "Mixed"
+    assert r.passed == 2
+    assert r.warn == 1
+    assert r.failed == 1
+    assert r.cases == 4
+    assert r.pass_rate == pytest.approx(50.0)
 
 
-def test_json_preferred_over_report(gen_module, tmp_path):
-    (tmp_path / "validation_results.json").write_text(
-        json.dumps({"summary": {"passed": 7, "failed": 3, "pass_rate": 70.0, "mae": 5.0}})
+def test_parse_series_drops_rows_without_cases(gen_module):
+    text = "## Detailed Results\n\n### Empty\n\nno rows\n"
+    assert gen_module.parse_series(text) == []
+
+
+def test_parse_series_skips_sections_outside_detailed_results(gen_module):
+    rows = gen_module.parse_series(ASHRAE_DOC_TEXT)
+    names = [r.name for r in rows]
+    assert "HVAC Load Calculation" not in names
+
+
+def test_parse_series_stops_after_detailed_results(gen_module):
+    text = (
+        "## Detailed Results\n\n### Inside\n"
+        "| Case | Status |\n|------|--------|\n| 1 | ✅ PASS |\n\n"
+        "## Systematic Issues\n\n### Outside\n"
+        "| Case | Status |\n|------|--------|\n| 2 | ✅ PASS |\n"
     )
-    (tmp_path / "validation_report.md").write_text(REPORT_SUMMARY)
-    g = gen_module.ScorecardGenerator(project_root=tmp_path)
-    assert g.load_validation_results() is True
-    # JSON is canonical; its values win over the markdown report.
-    assert g.validation_source.endswith("validation_results.json")
-    assert g.validation.pass_rate == pytest.approx(70.0)
-
-
-def test_no_source_returns_false(gen_module, tmp_path):
-    g = gen_module.ScorecardGenerator(project_root=tmp_path)
-    assert g.load_validation_results() is False
-    assert g.validation_source is None
-
-
-def test_no_silent_fallback_to_quality_metrics(gen_module, tmp_path):
-    """A stale QUALITY_METRICS.md must never be used as a validation source."""
-    (tmp_path / "docs").mkdir()
-    (tmp_path / "docs" / "QUALITY_METRICS.md").write_text(STALE_QUALITY_METRICS)
-    g = gen_module.ScorecardGenerator(project_root=tmp_path)
-    assert g.load_validation_results() is False
-    assert g.validation_source is None
-    # Metrics remain at their defaults — NOT the stale -inf / 0.0% values.
-    assert g.validation.mae == 0.0
-    assert g.validation.pass_rate == 0.0
-
-
-def test_load_quality_metrics_is_deprecated_and_unused(gen_module, tmp_path):
-    (tmp_path / "docs").mkdir()
-    (tmp_path / "docs" / "QUALITY_METRICS.md").write_text(STALE_QUALITY_METRICS)
-    g = gen_module.ScorecardGenerator(project_root=tmp_path)
-    assert g.load_quality_metrics() is False
-    # Even after calling it directly, validation metrics are untouched.
-    assert g.validation.mae == 0.0
-    assert g.validation.pass_rate == 0.0
+    rows = gen_module.parse_series(text)
+    assert [r.name for r in rows] == ["Inside"]
 
 
 # ---------------------------------------------------------------------------
-# Scorecard output
+# parse_gates
 # ---------------------------------------------------------------------------
 
 
-def test_generate_scorecard_embeds_real_metrics(gen_module, tmp_path):
-    (tmp_path / "validation_report.md").write_text(REPORT_SUMMARY)
-    g = gen_module.ScorecardGenerator(project_root=tmp_path)
-    g.load_validation_results()
-    out = g.generate_scorecard()
-    assert "6.2%" in out            # pass rate from report
-    assert "35.35%" in out          # MAE from report
-    assert "validation_report.md" in out  # data source is documented
-    # The headline MAE metric must show the real value, never the stale -inf%.
-    mae_line = next(l for l in out.splitlines() if "Mean Absolute Error" in l)
+def test_parse_gates_extracts_budget_values(gen_module):
+    g = gen_module.parse_gates(GATES_YAML_TEXT)
+    assert g.min_pass_rate == 60.0
+    assert g.max_mae == 50.0
+    assert g.min_throughput == 150.0
+    assert g.max_latency_ms == 10.0
+    assert g.absolute_min_throughput == 100.0
+
+
+def test_parse_gates_extracts_known_failures(gen_module):
+    g = gen_module.parse_gates(GATES_YAML_TEXT)
+    assert g.known_failures == ["900", "600"]
+
+
+def test_parse_gates_extracts_required_checks(gen_module):
+    g = gen_module.parse_gates(GATES_YAML_TEXT)
+    assert "ASHRAE 140 Strict Energy Gate (Issue #1333)" in g.required_checks
+    assert "Workspace Check (Issue #2983)" in g.required_checks
+
+
+def test_parse_gates_extracts_ci_throughput_comment(gen_module):
+    g = gen_module.parse_gates(GATES_YAML_TEXT)
+    assert g.ci_throughput_comment == pytest.approx(157.0)
+
+
+def test_parse_gates_returns_defaults_for_empty(gen_module):
+    g = gen_module.parse_gates("# empty\n")
+    assert g.min_pass_rate == 60.0
+    assert g.max_mae == 50.0
+    assert g.min_throughput == 150.0
+    assert g.max_latency_ms == 10.0
+    assert g.absolute_min_throughput == 100.0
+    assert g.known_failures == []
+    assert g.required_checks == []
+    assert g.ci_throughput_comment == 0.0
+
+
+# ---------------------------------------------------------------------------
+# parse_readme_throughput
+# ---------------------------------------------------------------------------
+
+
+def test_parse_readme_throughput_extracts_release_figure(gen_module):
+    b = gen_module.parse_readme_throughput(README_TEXT)
+    assert b.readme_release_throughput == pytest.approx(900.0)
+
+
+def test_parse_readme_throughput_returns_zero_when_missing(gen_module):
+    b = gen_module.parse_readme_throughput("# Fluxion\n\nNo throughput claim here.\n")
+    assert b.readme_release_throughput == 0.0
+
+
+# ---------------------------------------------------------------------------
+# render
+# ---------------------------------------------------------------------------
+
+
+def test_render_embeds_validation_metrics(gen_module):
+    v = gen_module.parse_ashrae(ASHRAE_DOC_TEXT)
+    series = gen_module.parse_series(ASHRAE_DOC_TEXT)
+    g = gen_module.parse_gates(GATES_YAML_TEXT)
+    b = gen_module.parse_readme_throughput(README_TEXT)
+
+    out = gen_module.render(v, series, g, b)
+
+    assert "6.2%" in out
+    assert "35.35%" in out
+    assert "ASHRAE140_RESULTS.md" in out or "ASHRAE 140" in out
+    assert "release_gates.yaml" in out
+    assert "README.md" in out
+
+
+def test_render_never_shows_negative_inf_or_zero_pass_in_headline(gen_module):
+    v = gen_module.Validation()
+    v.pass_rate = 6.2
+    v.mae = 35.35
+    v.total = 64
+    v.passed = 4
+    v.warnings = 2
+    v.failed = 58
+    v.max_deviation = 346.87
+    v.throughput_cases_per_sec = 8.51
+    g = gen_module.parse_gates(GATES_YAML_TEXT)
+    b = gen_module.parse_readme_throughput(README_TEXT)
+
+    out = gen_module.render(v, [], g, b)
+
+    mae_line = next(line for line in out.splitlines() if "Mean Absolute Error" in line)
     assert "35.35%" in mae_line
     assert "-inf%" not in mae_line
-    # The pass-rate headline must be the real 6.2%, not the stale 0.0%.
-    pass_line = next(l for l in out.splitlines() if "ASHRAE 140 Pass Rate" in l)
+
+    pass_line = next(
+        line for line in out.splitlines() if "ASHRAE 140 pass rate" in line
+    )
     assert "6.2%" in pass_line
     assert "(0/0)" not in pass_line
 
 
+def test_render_includes_required_checks_table(gen_module):
+    v = gen_module.parse_ashrae(ASHRAE_DOC_TEXT)
+    g = gen_module.parse_gates(GATES_YAML_TEXT)
+    b = gen_module.parse_readme_throughput(README_TEXT)
+
+    out = gen_module.render(v, [], g, b)
+
+    assert "ASHRAE 140 Strict Energy Gate (Issue #1333)" in out
+    assert "Workspace Check (Issue #2983)" in out
+    assert "#1333" in out
+    assert "#2983" in out
+
+
+def test_render_includes_known_structural_failures(gen_module):
+    v = gen_module.parse_ashrae(ASHRAE_DOC_TEXT)
+    g = gen_module.parse_gates(GATES_YAML_TEXT)
+    b = gen_module.parse_readme_throughput(README_TEXT)
+
+    out = gen_module.render(v, [], g, b)
+
+    assert "600" in out
+    assert "900" in out
+    assert "Known Structural Failures" in out
+
+
+def test_render_is_byte_stable_for_same_input(gen_module):
+    v = gen_module.parse_ashrae(ASHRAE_DOC_TEXT)
+    series = gen_module.parse_series(ASHRAE_DOC_TEXT)
+    g = gen_module.parse_gates(GATES_YAML_TEXT)
+    b = gen_module.parse_readme_throughput(README_TEXT)
+
+    out_a = gen_module.render(v, series, g, b)
+    out_b = gen_module.render(v, series, g, b)
+    assert out_a == out_b
+
+
 # ---------------------------------------------------------------------------
-# CLI error path (end-to-end)
+# load_all
 # ---------------------------------------------------------------------------
 
 
-def test_cli_exits_nonzero_when_no_source(tmp_path):
-    """When no data source exists the CLI must error out, not emit stale data."""
+def test_load_all_returns_parsed_sources(gen_module, repo_dir, monkeypatch):
+    root, ashrae, gates, readme, scorecard = repo_dir
+    monkeypatch.setattr(gen_module, "ASHRAE_DOC", ashrae)
+    monkeypatch.setattr(gen_module, "GATES_YAML", gates)
+    monkeypatch.setattr(gen_module, "README_MD", readme)
+    monkeypatch.setattr(gen_module, "SCORECARD", scorecard)
+
+    v, series, g, b = gen_module.load_all(verbose=False)
+    assert v.total == 64
+    assert v.pass_rate == pytest.approx(6.2)
+    assert g.min_pass_rate == 60.0
+    assert b.readme_release_throughput == pytest.approx(900.0)
+    assert any(r.name == "Baseline Cases (600 Series)" for r in series)
+
+
+def test_load_all_never_calls_cargo(gen_module, repo_dir, monkeypatch):
+    root, ashrae, gates, readme, scorecard = repo_dir
+    monkeypatch.setattr(gen_module, "ASHRAE_DOC", ashrae)
+    monkeypatch.setattr(gen_module, "GATES_YAML", gates)
+    monkeypatch.setattr(gen_module, "README_MD", readme)
+    monkeypatch.setattr(gen_module, "SCORECARD", scorecard)
+
+    def _fail(*_a, **_k):
+        raise AssertionError("load_all must not invoke cargo / shell out")
+
+    monkeypatch.setattr(subprocess, "run", _fail)
+    gen_module.load_all(verbose=False)
+
+
+def test_load_all_exits_when_ashrae_doc_missing(gen_module, tmp_path, monkeypatch):
+    gates = tmp_path / "release_gates.yaml"
+    gates.write_text(GATES_YAML_TEXT)
+    monkeypatch.setattr(gen_module, "ASHRAE_DOC", tmp_path / "missing.md")
+    monkeypatch.setattr(gen_module, "GATES_YAML", gates)
+
+    with pytest.raises(SystemExit) as ei:
+        gen_module.load_all(verbose=False)
+    assert ei.value.code == 2
+
+
+def test_load_all_exits_when_gates_missing(gen_module, tmp_path, monkeypatch):
+    ashrae = tmp_path / "ASHRAE140_RESULTS.md"
+    ashrae.write_text(ASHRAE_DOC_TEXT)
+    monkeypatch.setattr(gen_module, "ASHRAE_DOC", ashrae)
+    monkeypatch.setattr(gen_module, "GATES_YAML", tmp_path / "missing.yaml")
+
+    with pytest.raises(SystemExit) as ei:
+        gen_module.load_all(verbose=False)
+    assert ei.value.code == 2
+
+
+# ---------------------------------------------------------------------------
+# main (CLI)
+# ---------------------------------------------------------------------------
+
+
+def test_main_writes_scorecard_to_default_path(gen_module, repo_dir, monkeypatch):
+    root, ashrae, gates, readme, scorecard = repo_dir
+    monkeypatch.setattr(gen_module, "ASHRAE_DOC", ashrae)
+    monkeypatch.setattr(gen_module, "GATES_YAML", gates)
+    monkeypatch.setattr(gen_module, "README_MD", readme)
+    monkeypatch.setattr(gen_module, "SCORECARD", scorecard)
+    monkeypatch.setattr(sys, "argv", [str(SCRIPT)])
+
+    rc = gen_module.main()
+    assert rc == 0
+    assert scorecard.exists()
+    body = scorecard.read_text()
+    assert "Fluxion Release Scorecard" in body
+    assert "6.2%" in body
+
+
+def test_main_writes_to_custom_output(gen_module, repo_dir, monkeypatch):
+    root, ashrae, gates, readme, scorecard = repo_dir
+    monkeypatch.setattr(gen_module, "ASHRAE_DOC", ashrae)
+    monkeypatch.setattr(gen_module, "GATES_YAML", gates)
+    monkeypatch.setattr(gen_module, "README_MD", readme)
+    monkeypatch.setattr(gen_module, "SCORECARD", scorecard)
+
+    custom = root / "custom_scorecard.md"
+    monkeypatch.setattr(sys, "argv", [str(SCRIPT), "-o", str(custom)])
+
+    rc = gen_module.main()
+    assert rc == 0
+    assert custom.exists()
+    assert "Fluxion Release Scorecard" in custom.read_text()
+
+
+def test_main_check_exits_zero_when_scorecard_matches(
+    gen_module, repo_dir, monkeypatch
+):
+    root, ashrae, gates, readme, scorecard = repo_dir
+    monkeypatch.setattr(gen_module, "ASHRAE_DOC", ashrae)
+    monkeypatch.setattr(gen_module, "GATES_YAML", gates)
+    monkeypatch.setattr(gen_module, "README_MD", readme)
+
+    expected = gen_module.render(
+        gen_module.parse_ashrae(ASHRAE_DOC_TEXT),
+        gen_module.parse_series(ASHRAE_DOC_TEXT),
+        gen_module.parse_gates(GATES_YAML_TEXT),
+        gen_module.parse_readme_throughput(README_TEXT),
+    )
+    scorecard.write_text(expected)
+    monkeypatch.setattr(gen_module, "SCORECARD", scorecard)
+    monkeypatch.setattr(sys, "argv", [str(SCRIPT), "--check"])
+
+    assert gen_module.main() == 0
+
+
+def test_main_check_exits_one_on_drift(gen_module, repo_dir, monkeypatch):
+    root, ashrae, gates, readme, scorecard = repo_dir
+    monkeypatch.setattr(gen_module, "ASHRAE_DOC", ashrae)
+    monkeypatch.setattr(gen_module, "GATES_YAML", gates)
+    monkeypatch.setattr(gen_module, "README_MD", readme)
+    scorecard.write_text("stale content\n")
+    monkeypatch.setattr(gen_module, "SCORECARD", scorecard)
+    monkeypatch.setattr(sys, "argv", [str(SCRIPT), "--check"])
+
+    assert gen_module.main() == 1
+
+
+def test_cli_subprocess_writes_scorecard(tmp_path):
+    """End-to-end: invoke the script as a subprocess with a custom output path
+    and verify it returns 0 and writes a valid scorecard.
+
+    Sources are read from the hard-coded repo root, so we only redirect the
+    output path via ``-o``. The drift / missing-source paths are exercised
+    in-process by ``main()`` tests above (``test_main_check_exits_zero_when_
+    scorecard_matches`` and ``test_main_check_exits_one_on_drift``)."""
+    out = tmp_path / "scorecard.md"
     result = subprocess.run(
-        [sys.executable, str(SCRIPT), "--output", str(tmp_path / "out.md")],
-        cwd=tmp_path,
+        [sys.executable, str(SCRIPT), "-o", str(out)],
         capture_output=True,
         text=True,
         timeout=60,
     )
-    assert result.returncode != 0
-    assert "No validation data source found" in result.stderr
-    assert "QUALITY_METRICS" in result.stderr
-    # No scorecard should have been written.
-    assert not (tmp_path / "out.md").exists()
-
-
-def test_collect_all_fails_fast_without_cargo(gen_module, tmp_path, monkeypatch):
-    """With no validation source, collect_all must short-circuit before cargo."""
-    g = gen_module.ScorecardGenerator(project_root=tmp_path)
-
-    def _boom(*_args, **_kwargs):
-        pytest.fail("run_rust_tests() must not run when no validation source")
-
-    monkeypatch.setattr(g, "run_rust_tests", _boom)
-    monkeypatch.setattr(g, "estimate_benchmark", _boom)
-    assert g.collect_all() is False
-    assert g.validation_source is None
+    assert result.returncode == 0, f"stderr:\n{result.stderr}\nstdout:\n{result.stdout}"
+    assert out.exists()
+    body = out.read_text()
+    assert "Fluxion Release Scorecard" in body
+    assert "ASHRAE 140" in body
