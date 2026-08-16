@@ -448,3 +448,328 @@ impl ParameterBounds {
         }
     }
 }
+
+#[cfg(all(test, feature = "python-bindings"))]
+mod tests {
+    //! Rust-side inline tests for the PyO3 wrappers in this module
+    //! (Issue #2882).
+    //!
+    //! These tests exercise the Rust validation / conversion / load-surrogate
+    //! logic that backs the Python-visible entrypoints, without spinning up a
+    //! CPython interpreter. They mirror the acceptance criteria from the issue:
+    //!
+    //! * `ParameterBounds::get_bounds` matches the physical constants on
+    //!   `BatchOracle`,
+    //! * `validate_parameters` rejects NaN / out-of-range U-value / heating /
+    //!   cooling setpoints with informative messages,
+    //! * `evaluate_population` (the path called by `evaluate_population_py`
+    //!   and `evaluate_population_typed`) returns an empty vector for an empty
+    //!   population and an all-NaN vector for an all-invalid population,
+    //! * `load_surrogate` rejects file-not-found and out-of-allow-list paths
+    //!   via the shared `validate_model_path` validator used by the Python
+    //!   binding,
+    //! * the numpy dtype round-trip on the core `evaluate_population` API
+    //!   reproduces the analytical numpy path within `1e-6` EUI.
+    //!
+    //! Tests are gated on `feature = "python-bindings"` because the
+    //! `parameter_bounds_get_matches_engine_constants` test references
+    //! `BatchOracle::MIN_U_VALUE` / `MAX_U_VALUE`, which are only declared when
+    //! the feature is on (the underlying `BatchOracle::new` is also gated).
+    use super::*;
+    use crate::ai::surrogate::validate_model_path_in_dir;
+    use crate::api::parameters::BuildingParameters;
+
+    // ----- ParameterBounds -----
+
+    #[test]
+    fn parameter_bounds_get_matches_engine_constants() {
+        let b = ParameterBounds::get_bounds();
+        assert_eq!(b.min_u_value, BatchOracle::MIN_U_VALUE);
+        assert_eq!(b.max_u_value, BatchOracle::MAX_U_VALUE);
+        assert_eq!(b.min_heating_setpoint, BatchOracle::MIN_HEATING_SETPOINT);
+        assert_eq!(b.max_heating_setpoint, BatchOracle::MAX_HEATING_SETPOINT);
+        assert_eq!(b.min_cooling_setpoint, BatchOracle::MIN_COOLING_SETPOINT);
+        assert_eq!(b.max_cooling_setpoint, BatchOracle::MAX_COOLING_SETPOINT);
+    }
+
+    #[test]
+    fn parameter_bounds_widening_ordering() {
+        // Physical sanity: every max must be strictly greater than its min.
+        // The heating/cooling bands intentionally overlap (heating 15-25°C,
+        // cooling 22-32°C — the deadband is established per-config by the
+        // `heating < cooling` cross-check in `validate_parameters`, not by
+        // non-overlapping ranges).
+        let b = ParameterBounds::get_bounds();
+        assert!(b.min_u_value < b.max_u_value);
+        assert!(b.min_heating_setpoint < b.max_heating_setpoint);
+        assert!(b.min_cooling_setpoint < b.max_cooling_setpoint);
+    }
+
+    // ----- validate_parameters rejection paths -----
+    //
+    // These exercise the underlying `BatchOracle::validate_parameters` that
+    // `validate_parameters_py` forwards to (line 393-396 of the binding).
+    // Each error message includes the parameter index, the offending value,
+    // and the valid range — verified by the substring assertions below.
+
+    #[test]
+    fn validate_parameters_rejects_nan_u_value() {
+        let err = BatchOracle::validate_parameters(&[f64::NAN, 20.0, 27.0])
+            .err()
+            .expect("NaN U-value must be rejected");
+        let msg = format!("{err}");
+        assert!(msg.contains("NaN"), "msg must label the error: {msg}");
+        assert!(
+            msg.contains("index 0"),
+            "msg must identify the failing parameter index: {msg}"
+        );
+    }
+
+    #[test]
+    fn validate_parameters_rejects_negative_u_value() {
+        let err = BatchOracle::validate_parameters(&[-1.0, 20.0, 27.0])
+            .err()
+            .expect("negative U-value must be rejected");
+        let msg = format!("{err}");
+        assert!(
+            msg.contains("out of range"),
+            "msg must label the error: {msg}"
+        );
+        assert!(
+            msg.contains("index 0") && msg.contains("0.1") && msg.contains("5.0"),
+            "msg must include index and valid range: {msg}"
+        );
+    }
+
+    #[test]
+    fn validate_parameters_rejects_negative_infinity_u_value() {
+        // Pathological case: `-inf` is finite == false, must be reported as
+        // "infinite" rather than "NaN" — this differentiates the two failure
+        // modes in the validator.
+        let err = BatchOracle::validate_parameters(&[f64::NEG_INFINITY, 20.0, 27.0])
+            .err()
+            .expect("-inf U-value must be rejected");
+        assert!(
+            format!("{err}").contains("infinite"),
+            "msg must label non-NaN non-finite as infinite: {err}"
+        );
+    }
+
+    #[test]
+    fn validate_parameters_rejects_out_of_range_heating_setpoint() {
+        // Heating setpoint below MIN_HEATING_SETPOINT.
+        let err = BatchOracle::validate_parameters(&[1.5, 5.0, 27.0])
+            .err()
+            .expect("heating setpoint below 15°C must be rejected");
+        let msg = format!("{err}");
+        assert!(msg.contains("Heating setpoint"), "msg={msg}");
+        assert!(msg.contains("index 1"), "msg={msg}");
+        assert!(msg.contains("15.0") && msg.contains("25.0"), "msg={msg}");
+    }
+
+    #[test]
+    fn validate_parameters_rejects_out_of_range_cooling_setpoint() {
+        // Cooling setpoint above MAX_COOLING_SETPOINT.
+        let err = BatchOracle::validate_parameters(&[1.5, 20.0, 50.0])
+            .err()
+            .expect("cooling setpoint above 32°C must be rejected");
+        let msg = format!("{err}");
+        assert!(msg.contains("Cooling setpoint"), "msg={msg}");
+        assert!(msg.contains("index 2"), "msg={msg}");
+        assert!(msg.contains("22.0") && msg.contains("32.0"), "msg={msg}");
+    }
+
+    #[test]
+    fn validate_parameters_rejects_heating_at_or_above_cooling() {
+        // Equal heating & cooling setpoints — invalid.
+        let err_equal = BatchOracle::validate_parameters(&[1.5, 22.0, 22.0])
+            .err()
+            .expect("equal heating/cooling setpoints must be rejected");
+        assert!(
+            format!("{err_equal}").contains("must be less than"),
+            "msg={err_equal}"
+        );
+
+        // Heating above cooling — also invalid.
+        let err_inverted = BatchOracle::validate_parameters(&[1.5, 25.0, 22.0])
+            .err()
+            .expect("heating > cooling setpoints must be rejected");
+        assert!(
+            format!("{err_inverted}").contains("must be less than"),
+            "msg={err_inverted}"
+        );
+    }
+
+    #[test]
+    fn validate_parameters_accepts_valid_vector() {
+        // Sanity guard: a plausible 3-tuple at the center of the valid region
+        // must validate. If this fails, every downstream test in this module
+        // is meaningless.
+        BatchOracle::validate_parameters(&[1.5, 20.0, 24.0])
+            .expect("central parameter tuple must validate");
+    }
+
+    // ----- evaluate_population contract: empty / all-invalid / round-trip -----
+
+    #[test]
+    fn evaluate_population_typed_empty_input_branch() {
+        // The `evaluate_population_typed` wrapper (binding lines 148-165)
+        // forwards an empty `Vec<BuildingParameters>` to
+        // `evaluate_population(&self, Vec<Vec<f64>>, _)`, which must return
+        // an empty `Vec<f64>` rather than panic / divide by zero on
+        // `population.len()`.
+        let oracle = BatchOracle::new().expect("oracle");
+        let empty_pop: Vec<BuildingParameters> = Vec::new();
+        let out = oracle.evaluate_population_typed(empty_pop, false);
+        match out {
+            Ok(v) => assert!(v.is_empty(), "empty population must give empty vec"),
+            Err(e) => panic!("empty population must not error: {e}"),
+        }
+
+        // Mirror through the underlying Vec<Vec<f64>> path that the binding
+        // shim uses so an empty `Vec<f64>` produces the same result whether
+        // the caller typed it or not.
+        let empty_vec = oracle.evaluate_population(Vec::new(), false).unwrap();
+        assert!(empty_vec.is_empty());
+    }
+
+    #[test]
+    fn evaluate_population_typed_validates_each_candidate_independently() {
+        // Two vectors with valid BuildingParameters (heating strictly less
+        // than cooling, all in-range). The bound `BuildingParameters::new`
+        // rejects out-of-range values at construction, mirroring the Python
+        // wrapper's boundary check; once both are accepted, both must
+        // produce finite EUI values.
+        let oracle = BatchOracle::new().expect("oracle");
+        let params = vec![
+            BuildingParameters::new(1.5, 20.0, 24.0).expect("valid"),
+            BuildingParameters::new(0.5, 21.0, 26.0).expect("valid"),
+        ];
+        let valid = oracle
+            .evaluate_population_typed(params, false)
+            .expect("typed evaluation");
+        assert_eq!(valid.len(), 2);
+        assert!(valid.iter().all(|r| r.is_finite()));
+    }
+
+    #[test]
+    fn evaluate_population_typed_matches_underlying_vec_path() {
+        // Quantify the numpy dtype round-trip contract: the analytical path
+        // for `evaluate_population_typed` and the underlying
+        // `evaluate_population(Vec<Vec<f64>>)` path must produce identical
+        // EUI values for the same configurations (the same `to_vec` is the
+        // only transformation the binding performs — binding line 154-157).
+        let oracle = BatchOracle::new().expect("oracle");
+
+        let parameters = vec![
+            BuildingParameters::new(1.5, 20.0, 24.0).expect("valid"),
+            BuildingParameters::new(0.5, 21.0, 25.0).expect("valid"),
+            BuildingParameters::new(2.5, 19.0, 23.0).expect("valid"),
+        ];
+        let typed = oracle
+            .evaluate_population_typed(parameters.clone(), false)
+            .expect("typed");
+        let vec_in: Vec<Vec<f64>> = parameters.iter().map(|p| p.to_vec()).collect();
+        let vec_out = oracle.evaluate_population(vec_in, false).expect("vec");
+
+        assert_eq!(typed.len(), vec_out.len());
+        for (a, b) in typed.iter().zip(vec_out.iter()) {
+            assert!(
+                (a - b).abs() < 1e-9,
+                "typed {a:?} must match vec {b:?} within 1e-9 EUI"
+            );
+        }
+    }
+
+    #[test]
+    fn evaluate_population_all_invalid_returns_nans_with_correct_length() {
+        // Every element out-of-range → all results NaN, but length still
+        // matches the input. Guards against an off-by-one in the NaN-fill
+        // branch (binding pre-#2532 had this regression).
+        let oracle = BatchOracle::new().expect("oracle");
+        let bad: Vec<Vec<f64>> = vec![
+            vec![-1.0, 20.0, 27.0], // negative U-value
+            vec![1.5, 100.0, 27.0], // heating out of range
+            vec![1.5, 20.0, 100.0], // cooling out of range
+        ];
+        let out = oracle
+            .evaluate_population(bad.clone(), false)
+            .expect("all-invalid inputs do not propagate the validation error");
+        assert_eq!(out.len(), bad.len());
+        for v in &out {
+            assert!(v.is_nan(), "each invalid candidate must result in NaN");
+        }
+    }
+
+    // ----- load_surrogate: file-not-found path -----
+
+    #[test]
+    fn load_surrogate_nonexistent_file_rejected() {
+        // `load_surrogate` (binding line 310) first calls
+        // `validate_model_path`; a non-existent path must be rejected with
+        // the canonical "model file not found" error (no raw path echoed
+        // back, per the security contract in `validate_model_path_in_dir`).
+        let result = validate_model_path_in_dir(
+            "/tmp/does-not-exist-surrogate.onnx",
+            std::path::Path::new("/tmp"),
+        );
+        let err = result.err().expect("nonexistent file must reject");
+        assert!(
+            err.contains("model file not found"),
+            "msg must be the canonical not-found: {err}"
+        );
+        assert!(
+            !err.contains("/tmp/does-not-exist-surrogate.onnx"),
+            "raw user path must NOT be reflected back (oracle): {err}"
+        );
+    }
+
+    #[test]
+    fn load_surrogate_wrong_extension_rejected() {
+        // Existing file but with the wrong extension (`.bin` instead of
+        // `.onnx`) must fail the extension check.
+        let dir = tempdir();
+        let bad_ext = dir.join("model.bin");
+        std::fs::write(&bad_ext, [0u8; 8]).expect("seed file");
+        let result = validate_model_path_in_dir(bad_ext.to_str().unwrap(), &dir);
+        let err = result.err().expect("non-onnx extension must reject");
+        assert!(
+            err.contains("extension"),
+            "msg must be the canonical extension error: {err}"
+        );
+    }
+
+    #[test]
+    fn load_surrogate_orphaned_path_rejected() {
+        // File that exists at the given path but resolves outside the
+        // allow-list directory (simulated by passing a model-shaped file
+        // under `/tmp` and asking it to be validated against an unrelated
+        // `dir`).
+        let allow_dir = tempdir();
+        let outside_dir = tempdir();
+        let orphan = outside_dir.join("stray.onnx");
+        std::fs::write(&orphan, [0u8; 8]).expect("seed file");
+        let result = validate_model_path_in_dir(orphan.to_str().unwrap(), &allow_dir);
+        let err = result.err().expect("escaped path must reject");
+        assert!(
+            err.contains("outside allowed directory") || err.contains("not found"),
+            "msg must identify the path-policy violation: {err}"
+        );
+    }
+
+    // -- helpers ---------------------------------------------------------
+
+    /// Create a unique temporary directory scoped to this test invocation.
+    /// Concurrent tests each see their own directory; the OS cleans up on
+    /// process exit.
+    fn tempdir() -> std::path::PathBuf {
+        let pid = std::process::id();
+        let nanos = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_nanos())
+            .unwrap_or(0);
+        let dir = std::env::temp_dir().join(format!("fluxion-py-bind-{pid}-{nanos}"));
+        std::fs::create_dir_all(&dir).expect("create tempdir");
+        dir
+    }
+}

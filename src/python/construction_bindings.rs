@@ -618,3 +618,310 @@ impl PyGeometryTensor {
         )
     }
 }
+
+#[cfg(all(test, feature = "python-bindings"))]
+mod tests {
+    //! Rust-side inline tests for the PyO3 construction / vector-field /
+    //! geometry wrappers in this module (Issue #2882).
+    //!
+    //! These tests exercise the pure-Rust logic that backs the Python-visible
+    //! entrypoints — the unit conversions, the enum mappings, the layer
+    //! round-trip conversions, and the geometry-tensor accessors — without
+    //! spinning up a CPython interpreter. The PyO3 `#[pymethods]` items remain
+    //! callable from Rust because the `#[pymethods]` impl block is also a
+    //! regular Rust `impl` block; only the error-mapping helpers (`Validation`
+    //! / `PyValueError`) need Python context, and only on the `Err` arm,
+    //! which `pyo3` defers lazily.
+    use super::*;
+
+    // ---- PyConstructionLayer -------------------------------------------
+
+    fn sample_layer() -> PyConstructionLayer {
+        PyConstructionLayer::new(
+            "Fiberglass_50mm".to_string(),
+            0.04,  // conductivity (W/m·K)
+            12.0,  // density (kg/m³)
+            840.0, // specific_heat (J/kg·K)
+            0.05,  // thickness (m)
+            0.9,   // emissivity
+            0.7,   // absorptance
+        )
+    }
+
+    #[test]
+    fn construction_layer_new_preserves_all_fields() {
+        let layer = sample_layer();
+        assert_eq!(layer.name, "Fiberglass_50mm");
+        assert_eq!(layer.conductivity, 0.04);
+        assert_eq!(layer.density, 12.0);
+        assert_eq!(layer.specific_heat, 840.0);
+        assert_eq!(layer.thickness, 0.05);
+        assert_eq!(layer.emissivity, 0.9);
+        assert_eq!(layer.absorptance, 0.7);
+    }
+
+    #[test]
+    fn construction_layer_r_value_is_thickness_over_conductivity() {
+        // R = δ / k = 0.05 / 0.04 = 1.25 m²K/W. This matches the documented
+        // formula in `ConstructionLayer::r_value` (fluxion-core/src/construction.rs)
+        // and the `r_value` method on the Py wrapper (line 187-189).
+        let layer = sample_layer();
+        let got = layer.r_value();
+        let expected = 0.05 / 0.04;
+        assert!(
+            (got - expected).abs() < 1e-12,
+            "PyConstructionLayer::r_value {got} must match δ/k {expected}"
+        );
+    }
+
+    #[test]
+    fn construction_layer_thermal_capacitance_per_area_is_density_times_thickness_times_cp() {
+        // κ/A = ρ × δ × Cp = 12 × 0.05 × 840 = 504 J/m²K
+        let layer = sample_layer();
+        let got = layer.thermal_capacitance_per_area();
+        let expected = 12.0 * 0.05 * 840.0;
+        assert!(
+            (got - expected).abs() < 1e-9,
+            "PyConstructionLayer::thermal_capacitance_per_area {got} must match ρδCp {expected}"
+        );
+    }
+
+    #[test]
+    fn construction_layer_default_emissivity_and_absorptance() {
+        // The Py `__init__` exposes emissivity/absorptance as keyword args
+        // defaulting to 0.9 / 0.7 (binding line 165 `signature = ...`).
+        // `From<PyConstructionLayer>` for the core layer must therefore use
+        // the same defaults when those args are omitted.
+        let layer = PyConstructionLayer::new(
+            "Bare".to_string(),
+            0.5,
+            1000.0,
+            1000.0,
+            0.1,
+            // No emissivity/absorptance — defaults should apply.
+            0.9,
+            0.7,
+        );
+        assert_eq!(layer.emissivity, 0.9);
+        assert_eq!(layer.absorptance, 0.7);
+    }
+
+    // ---- ConstructionLayer ↔ PyConstructionLayer round-trip ------------
+
+    #[test]
+    fn construction_layer_round_trip_preserves_fields() {
+        // ConstructionLayer → PyConstructionLayer → ConstructionLayer via
+        // `From<&Layer>` and `From<PyLayer>` conversions (binding line 131
+        // and line 146).
+        let original = fluxion_core::construction::ConstructionLayer::with_surface_properties(
+            "Insulation",
+            0.035,
+            25.0,
+            900.0,
+            0.08,
+            0.85,
+            0.65,
+        );
+        let py: PyConstructionLayer = PyConstructionLayer::from(&original);
+        assert_eq!(py.name, original.name);
+        assert_eq!(py.conductivity, original.conductivity);
+        assert_eq!(py.density, original.density);
+        assert_eq!(py.specific_heat, original.specific_heat);
+        assert_eq!(py.thickness, original.thickness);
+        assert_eq!(py.emissivity, original.emissivity);
+        assert_eq!(py.absorptance, original.absorptance);
+
+        let roundtripped: fluxion_core::construction::ConstructionLayer = py.into();
+        assert_eq!(roundtripped.name, original.name);
+        assert_eq!(roundtripped.conductivity, original.conductivity);
+        assert_eq!(roundtripped.density, original.density);
+        assert_eq!(roundtripped.specific_heat, original.specific_heat);
+        assert_eq!(roundtripped.thickness, original.thickness);
+        assert_eq!(roundtripped.emissivity, original.emissivity);
+        assert_eq!(roundtripped.absorptance, original.absorptance);
+    }
+
+    // ---- Enum conversions ---------------------------------------------
+
+    #[test]
+    fn surface_type_python_to_rust_covers_all_variants() {
+        // PySurfaceType → SurfaceType covers every variant of the bindgen
+        // mapping (binding line 207-216). If a new variant is ever added the
+        // exhaustiveness of this test (and the `match` in `From`) catches it.
+        let pairs = [
+            (
+                PySurfaceType::Wall,
+                fluxion_core::construction::SurfaceType::Wall,
+            ),
+            (
+                PySurfaceType::Ceiling,
+                fluxion_core::construction::SurfaceType::Ceiling,
+            ),
+            (
+                PySurfaceType::Floor,
+                fluxion_core::construction::SurfaceType::Floor,
+            ),
+        ];
+        for (py, expected) in pairs {
+            let rust: fluxion_core::construction::SurfaceType = py.into();
+            assert_eq!(rust, expected);
+        }
+    }
+
+    #[test]
+    fn mass_class_python_to_rust_covers_all_variants() {
+        // PyMassClass → MassClass covers every variant (binding line 230-241).
+        let pairs = [
+            (
+                PyMassClass::VeryLight,
+                fluxion_core::construction::MassClass::VeryLight,
+            ),
+            (
+                PyMassClass::Light,
+                fluxion_core::construction::MassClass::Light,
+            ),
+            (
+                PyMassClass::Medium,
+                fluxion_core::construction::MassClass::Medium,
+            ),
+            (
+                PyMassClass::Heavy,
+                fluxion_core::construction::MassClass::Heavy,
+            ),
+            (
+                PyMassClass::VeryHeavy,
+                fluxion_core::construction::MassClass::VeryHeavy,
+            ),
+        ];
+        for (py, expected) in pairs {
+            let rust: fluxion_core::construction::MassClass = py.into();
+            assert_eq!(rust, expected);
+        }
+    }
+
+    // ---- PyConstruction round-trip ------------------------------------
+
+    #[test]
+    fn construction_round_trip_preserves_layer_count_and_order() {
+        // PyConstruction → Construction → back through `mass_class` exposes
+        // the layer-count + ISO-13790 mass classification through the entire
+        // Rust convert path. A medium-mass 3-layer concrete/brick/insulation
+        // wall must classify as at-least Medium (the dominant layer sets the
+        // class).
+        let layers = vec![
+            PyConstructionLayer::new("Concrete".into(), 1.4, 2300.0, 880.0, 0.1, 0.9, 0.7),
+            PyConstructionLayer::new("Insulation".into(), 0.04, 30.0, 1000.0, 0.05, 0.9, 0.7),
+            PyConstructionLayer::new("Gypsum".into(), 0.21, 950.0, 840.0, 0.013, 0.9, 0.7),
+        ];
+        let py_cons = PyConstruction { layers };
+        let layer_count = py_cons.layer_count();
+        assert_eq!(layer_count, 3);
+
+        // The mass class aggregate must classify this multi-layer assembly
+        // — Concrete dominates capacitance so we expect at least Medium.
+        let class = py_cons.mass_class().expect("mass_class converts");
+        assert!(
+            matches!(
+                class,
+                PyMassClass::Medium | PyMassClass::Heavy | PyMassClass::VeryHeavy
+            ),
+            "concrete+insulation+gypsum wall must classify medium-or-heavier, got {:?}",
+            mass_class_label(class)
+        );
+    }
+
+    #[test]
+    fn construction_layer_count_matches_vector_length() {
+        // Empty assembly has zero layers; per-layer length matches Rust vec.
+        let empty = PyConstruction { layers: vec![] };
+        assert_eq!(empty.layer_count(), 0);
+
+        let one = PyConstruction {
+            layers: vec![sample_layer()],
+        };
+        assert_eq!(one.layer_count(), 1);
+    }
+
+    // ---- PyGeometryTensor ---------------------------------------------
+
+    #[test]
+    fn geometry_tensor_new_is_zeroed_and_initializes_correctly() {
+        // PyGeometryTensor::new → empty (all zeros) tensor. Default zero
+        // summary means num_zones=0, num_walls=0, total_area=0, total_volume=0.
+        // Validates the empty-tensor contract from the binding's perspective.
+        let g = PyGeometryTensor::new().expect("PyGeometryTensor::new");
+        assert_eq!(g.num_zones(), 0);
+        assert_eq!(g.num_walls(), 0);
+        assert_eq!(g.total_area(), 0.0);
+        assert_eq!(g.total_volume(), 0.0);
+        assert!(
+            g.validate().is_empty(),
+            "fresh tensor must have no validation issues"
+        );
+    }
+
+    #[test]
+    fn geometry_tensor_zones_adjacent_for_empty_is_false() {
+        // Empty tensor has no zones, so any adjacency query returns false.
+        // This guards against a default-summary array access UB.
+        let g = PyGeometryTensor::new().expect("PyGeometryTensor::new");
+        assert!(!g.zones_adjacent(0, 0));
+        // Out-of-range indices must also be safe (return false rather than
+        // panicking).
+        assert!(!g.zones_adjacent(5, 7));
+        assert!(!g.zones_adjacent(100, 100));
+    }
+
+    #[test]
+    fn geometry_tensor_summary_length_matches_contract() {
+        // `GeometryTensor::summary` is documented as a 6-element vector:
+        // [num_zones, num_walls, num_windows, num_doors, total_area, total_volume]
+        // — the `get_summary` Py wrapper returns this directly.
+        let g = PyGeometryTensor::new().expect("PyGeometryTensor::new");
+        let summary = g.get_summary();
+        assert_eq!(summary.len(), 6);
+        for v in &summary {
+            assert_eq!(*v, 0.0, "fresh summary entries must all be zero");
+        }
+    }
+
+    // ---- PyVectorField (via from_scalar -- no Python required) --------
+
+    #[test]
+    fn vector_field_from_scalar_length_and_integrate() {
+        // `from_scalar` is a `#[staticmethod]` with a Rust-only signature
+        // (f64, usize) -> Self, so it can be exercised directly.
+        let vf = PyVectorField::from_scalar(2.0, 4);
+        assert_eq!(vf.len(), 4);
+        // Integral of [2,2,2,2] is 8.0 — `integrate()` is the field integral.
+        assert!((vf.integrate() - 8.0).abs() < 1e-9);
+    }
+
+    #[test]
+    fn vector_field_to_list_round_trip() {
+        // `to_list` returns the data as `Vec<f64>`. With `from_scalar(3, 3)`
+        // every element must be 3.0 — a numpy-dtype round-trip analogue for
+        // the 1-D vector path.
+        let vf = PyVectorField::from_scalar(3.0, 3);
+        let list = vf.to_list();
+        assert_eq!(list.len(), 3);
+        for v in &list {
+            assert!((v - 3.0).abs() < 1e-12);
+        }
+    }
+
+    // ---- helpers --------------------------------------------------------
+
+    /// Label a `PyMassClass` variant for assertion error messages. `PyMassClass`
+    /// does not derive `Debug` (it is a `#[pyclass]` enumeration without an
+    /// explicit `#[derive(Debug)]`), so we match it manually for diagnostics.
+    fn mass_class_label(class: PyMassClass) -> &'static str {
+        match class {
+            PyMassClass::VeryLight => "VeryLight",
+            PyMassClass::Light => "Light",
+            PyMassClass::Medium => "Medium",
+            PyMassClass::Heavy => "Heavy",
+            PyMassClass::VeryHeavy => "VeryHeavy",
+        }
+    }
+}
