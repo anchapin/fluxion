@@ -21,6 +21,7 @@ import sys
 from pathlib import Path
 
 import pytest
+import yaml  # type: ignore[import-untyped]
 
 SCRIPT_NAME = "release_gate_checker"
 
@@ -491,3 +492,126 @@ def test_main_returns_one_when_validation_fails(checker, tmp_path, monkeypatch, 
         sys.argv[:] = saved
 
     assert rc == 1
+
+
+# ---------------------------------------------------------------------------
+# Issue #2865: DEFAULTS dict must stay in sync with release_gates.yaml
+# ---------------------------------------------------------------------------
+
+
+def _collect_leaf_paths(tree: dict, prefix: str = "") -> list[tuple[str, object]]:
+    """Walk a nested dict and return ``(dotted_path, leaf_value)`` tuples.
+
+    Used by the drift test to enumerate every leaf key in ``DEFAULTS``
+    and assert it has a matching leaf in ``release_gates.yaml``.
+    """
+    leaves: list[tuple[str, object]] = []
+    for key, value in tree.items():
+        path = f"{prefix}.{key}" if prefix else str(key)
+        if isinstance(value, dict):
+            leaves.extend(_collect_leaf_paths(value, path))
+        else:
+            leaves.append((path, value))
+    return leaves
+
+
+def _walk_yaml(yaml_tree: dict, dotted_path: str) -> object:
+    """Resolve ``dotted_path`` (``"a.b.c"``) against a nested YAML dict.
+
+    Returns the leaf value if every segment exists, otherwise
+    ``_MISSING`` (a sentinel) so the test can distinguish "key absent"
+    from "key present but value differs".
+    """
+    node: object = yaml_tree
+    for segment in dotted_path.split("."):
+        if not isinstance(node, dict) or segment not in node:
+            return _MISSING
+        node = node[segment]
+    return node
+
+
+_MISSING = object()  # sentinel distinct from any real YAML value
+
+
+def test_defaults_match_release_gates_yaml(checker, repo_root):
+    """Every DEFAULTS leaf must equal the corresponding YAML leaf.
+
+    Issue #2865 acceptance criterion: the script used to embed hard-
+    coded fallback values (e.g. ``min_pass_rate=4.0``, ``min_configs_
+    per_sec=800``, ``max_deviation=150``, ``extreme_deviation_limit=
+    15``) that diverged from ``release_gates.yaml``. If a YAML key was
+    renamed, the script silently fell back to the footgun literal with
+    no warning — pass rate would still report "PASSED" at 4% pass rate
+    (the literal) instead of 60% (the YAML). Hoisting every fallback
+    into the single ``DEFAULTS`` dict makes the drift visible: this
+    test loads the real ``release_gates.yaml`` and compares every leaf
+    in ``DEFAULTS`` against it. A mismatch on either side (DEFAULTS
+    leaf missing from YAML, or value drift) fails the test, blocking
+    any PR that lets the two diverge again.
+
+    The list ``KNOWN_YAML_EXTRAS`` lets the test tolerate YAML keys
+    that legitimately exist in the config but are not gate thresholds
+    (``description``, ``zones``, ``baseline_file``, ``triggered_by``,
+    ``required_checks``, ``workflow_index``, ``release_requirements``,
+    ``create_baseline_if_missing``, ``crate_glob``, ...) — those are
+    metadata / path / policy values, not the numeric thresholds the
+    script reads. Conversely the test does NOT tolerate DEFAULTS keys
+    missing from the YAML: every DEFAULTS leaf is a threshold the
+    script reads, so if YAML drops the key the script would fall back
+    to the DEFAULTS value with no warning — exactly the regression
+    this test exists to catch.
+    """
+    yaml_path = repo_root / "release_gates.yaml"
+    assert yaml_path.is_file(), f"release_gates.yaml missing at {yaml_path}"
+
+    with open(yaml_path) as f:
+        yaml_config = yaml.safe_load(f)
+    assert isinstance(yaml_config, dict), "release_gates.yaml must be a YAML mapping"
+
+    defaults = checker.DEFAULTS
+    assert isinstance(defaults, dict), "DEFAULTS must be a module-level dict"
+
+    # Every DEFAULTS leaf must exist in the YAML with the same value.
+    mismatches: list[str] = []
+    missing_from_yaml: list[str] = []
+
+    for dotted_path, default_value in _collect_leaf_paths(defaults):
+        yaml_value = _walk_yaml(yaml_config, dotted_path)
+        if yaml_value is _MISSING:
+            missing_from_yaml.append(
+                f"{dotted_path} (DEFAULTS={default_value!r})"
+            )
+            continue
+        if yaml_value != default_value:
+            mismatches.append(
+                f"{dotted_path}: DEFAULTS={default_value!r} vs YAML={yaml_value!r}"
+            )
+
+    assert not missing_from_yaml, (
+        "DEFAULTS contains leaf keys not present in release_gates.yaml — "
+        "every DEFAULTS leaf is a threshold the script reads, so YAML must "
+        "declare them. Update release_gates.yaml or trim DEFAULTS:\n  - "
+        + "\n  - ".join(missing_from_yaml)
+    )
+    assert not mismatches, (
+        "DEFAULTS values diverge from release_gates.yaml — update DEFAULTS "
+        "(scripts/release_gate_checker.py) to match the YAML, or update the "
+        "YAML, so they stay in sync:\n  - "
+        + "\n  - ".join(mismatches)
+    )
+
+
+def test_defaults_is_a_dict_at_module_level(checker):
+    """Smoke test: ``DEFAULTS`` is importable as a dict from the script.
+
+    Guards against accidental rename (e.g. to ``DEFAULT_GATES``) that
+    would silently break the drift test above. The drift test itself
+    only runs when the key is present, so without this regression
+    guard the test could be deleted / renamed without failing CI.
+    """
+    assert isinstance(checker.DEFAULTS, dict)
+    # The drift-relevant top-level sections must all be present.
+    for section in ("validation", "benchmark", "crate_size", "drift", "ci"):
+        assert section in checker.DEFAULTS, (
+            f"DEFAULTS is missing top-level section {section!r}"
+        )
