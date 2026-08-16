@@ -2381,6 +2381,55 @@ impl ThermalModel<VectorField> {
         // Set the ASHRAE 140 case identifier for special handling
         model.case_id = spec.case_id.clone();
 
+        // === Issue #2868: exterior IR emittance from the construction spec ===
+        //
+        // The sol-air temperature that drives the 5R1C opaque envelope
+        // conduction pathway (`h_tr_em × (T_sol_air − T_mass)` in
+        // `step_physics_5r1c`) applies a sky-longwave correction
+        // `ε × ΔR / h_ext`. That `ε` used to be the hard-coded
+        // `SolAirTemperature::ashrae_140_default()` value (0.9), ignoring the
+        // per-case exterior IR emittance. ASHRAE 140 in-depth Case 195
+        // specifies an exterior (and interior) IR emittance of 0.1 precisely
+        // to suppress radiative exchange and isolate solid conduction, so the
+        // hard-coded 0.9 applied a ~9× too large sky-radiation term to the
+        // whole envelope for all 8760 hours.
+        //
+        // The exterior emittance is the outermost layer's emissivity, area-
+        // weighted between the wall and roof constructions (the lumped 5R1C
+        // has a single envelope sol-air node). Cases whose constructions keep
+        // the default 0.9 (600-660, 900-960) are bit-identical to before.
+        {
+            let exterior_layer_emissivity = |assembly: &crate::sim::construction::Construction| {
+                // `Construction::layers` is ordered interior (0) → exterior
+                // (last), so the outermost layer is the exterior surface.
+                assembly
+                    .layers
+                    .last()
+                    .map(|layer| layer.emissivity)
+                    .unwrap_or(0.9)
+                    .clamp(0.0, 1.0)
+            };
+            let eps_wall = exterior_layer_emissivity(&spec.construction.wall);
+            let eps_roof = exterior_layer_emissivity(&spec.construction.roof);
+            let mut eps_vec = Vec::with_capacity(num_zones);
+            for zone_idx in 0..num_zones {
+                let geom = if zone_idx < spec.geometry.len() {
+                    &spec.geometry[zone_idx]
+                } else {
+                    &spec.geometry[0]
+                };
+                let a_wall = (geom.wall_area() - spec.total_window_area()).max(0.0);
+                let a_roof = geom.roof_area();
+                let a_total = a_wall + a_roof;
+                eps_vec.push(if a_total > 0.0 {
+                    (a_wall * eps_wall + a_roof * eps_roof) / a_total
+                } else {
+                    eps_wall
+                });
+            }
+            model.exterior_emissivity = VectorField::new(eps_vec);
+        }
+
         // Issue #2339: Set sub-hour air-node sub-stepping for Case 600 series.
         // The 600 series (Case 600, 610, 620, 630, 640, 650, 600FF, 650FF) all use
         // low-mass construction with dt/τ_air ≈ 3.6 on the 1-hour timestep. This exceeds
@@ -2871,6 +2920,10 @@ impl ThermalModel<VectorField> {
             h_tr_iz: VectorField::from_scalar(0.0, num_zones),
             h_tr_iz_rad: VectorField::from_scalar(0.0, num_zones), // Radiative coupling through windows (Issue #302)
             surface_emissivity: VectorField::from_scalar(0.9, num_zones), // Default interior surface emissivity
+            // Issue #2868: default exterior IR emittance (ASHRAE 140 §5.2 /
+            // sky_radiation::ashrae_140_default). `from_spec` overrides this
+            // with the construction's outermost-layer emissivity.
+            exterior_emissivity: VectorField::from_scalar(0.9, num_zones),
             zone_volume: VectorField::from_scalar(zone_area * ceiling_height, num_zones), // Volume = area × height
             common_wall_area: 0.0, // Will be set from spec for multi-zone buildings
             hvac_system_mode: HvacSystemMode::Controlled,

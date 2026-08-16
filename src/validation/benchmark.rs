@@ -451,20 +451,29 @@ pub fn get_all_benchmark_data() -> HashMap<String, BenchmarkData> {
     );
 
     // Case 195 - Solid Conduction (no windows, no infiltration, no loads)
-    // Note: These ranges are calibrated for the 5R1C thermal network model
-    // The ASHRAE 140 reference values are based on detailed hourly simulation
-    // Our model uses simplified 5R1C thermal network
+    // Issue #2868: corrected against the authoritative ASHRAE 140-2023
+    // inter-program ranges in `data/ashrae140_reference.json` (BSIMAC,
+    // CSE, DeST, EnergyPlus, ESP-r, TRNSYS — sourced from Std140_TF_
+    // Results.pdf, TESS 19-Aug-2024). The pre-fix hard-coded
+    // `annual_cooling = 0.00` and `peak_cooling = 0.00` ranges were
+    // copy/paste from the in-depth case's "no-loads" intent and are not
+    // what the inter-program comparison reports: Case 195 has a small
+    // cooling load (≈0.6 MWh) from the 0.1-absorbance solar on the
+    // exterior surfaces through the lumped 5R1C envelope. Likewise
+    // `peak_heating` and `annual_heating` were too wide; the ASHRAE
+    // 140-2023 inter-program spread is 0.011 MWh and 0.011 kW,
+    // respectively.
     data.insert(
         "195".to_string(),
         BenchmarkData {
-            annual_heating_min: 3.5,
-            annual_heating_max: 6.0,
-            annual_cooling_min: 0.00,
-            annual_cooling_max: 0.00,
-            peak_heating_min: 1.4,
-            peak_heating_max: 2.2,
-            peak_cooling_min: 0.00,
-            peak_cooling_max: 0.00,
+            annual_heating_min: 3.951,
+            annual_heating_max: 4.217,
+            annual_cooling_min: 0.592,
+            annual_cooling_max: 0.712,
+            peak_heating_min: 1.791,
+            peak_heating_max: 1.802,
+            peak_cooling_min: 0.944,
+            peak_cooling_max: 1.118,
             min_free_float_min: -21.5,
             min_free_float_max: -18.2,
             max_free_float_min: 27.8,
@@ -881,17 +890,18 @@ pub fn get_all_benchmark_data_blind() -> HashMap<String, BenchmarkData> {
     );
 
     // Case 195 - Solid Conduction (no windows, no infiltration, no loads)
+    // Issue #2868: same correction as above for the `get_*` path.
     data.insert(
         "195".to_string(),
         BenchmarkData {
-            annual_heating_min: 3.5,
-            annual_heating_max: 6.0,
-            annual_cooling_min: 0.00,
-            annual_cooling_max: 0.00,
-            peak_heating_min: 1.4,
-            peak_heating_max: 2.2,
-            peak_cooling_min: 0.00,
-            peak_cooling_max: 0.00,
+            annual_heating_min: 3.951,
+            annual_heating_max: 4.217,
+            annual_cooling_min: 0.592,
+            annual_cooling_max: 0.712,
+            peak_heating_min: 1.791,
+            peak_heating_max: 1.802,
+            peak_cooling_min: 0.944,
+            peak_cooling_max: 1.118,
             min_free_float_min: -21.5,
             min_free_float_max: -18.2,
             max_free_float_min: 27.8,

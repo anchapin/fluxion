@@ -349,11 +349,19 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
             ExteriorSurfaceDirection::HorizontalRoofWindward,
             v_wind_building,
         );
-        let sol_air_calc = SolAirTemperature::new(
-            SolAirTemperature::ashrae_140_default().solar_absorptance,
-            SolAirTemperature::ashrae_140_default().emissivity,
-            h_c_ext_wind,
-        );
+        // Issue #2868: the sky-longwave term of the sol-air temperature scales
+        // with the *exterior* IR emittance of the envelope. That emittance used
+        // to be the hard-coded `ashrae_140_default()` value (ε = 0.9) for every
+        // case, which is wrong for the ASHRAE 140 in-depth series: Case 195
+        // specifies ε_ext = 0.1 to suppress radiative exchange and isolate
+        // solid conduction, so a 0.9 emittance applied a ~9× too large sky
+        // radiation term to the whole envelope for all 8760 h. The per-zone
+        // value now comes from the construction spec
+        // (`ThermalModelData::exterior_emissivity`, populated in `from_spec`);
+        // every case whose outermost layer keeps the default 0.9 emissivity
+        // (600-660, 900-960) is bit-identical to the previous behaviour.
+        let alpha_sol_default = SolAirTemperature::ashrae_140_default().solar_absorptance;
+        let eps_ext_default = SolAirTemperature::ashrae_140_default().emissivity;
         // Issue #2873: overwrite `scratch.t_sol_air_zone` with the
         // opaque-irradiance-based sol-air values used by the 5R1C envelope
         // conduction pathway (`h_tr_em * (t_sol_air - T_mass)` below). The
@@ -368,9 +376,15 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         // and `fill_zero()` resizes the scratch field back to `num_zones` on
         // every checkout so the post-`prepare_solvers_and_sol_air` length is
         // preserved exactly.
+        let exterior_emissivity_ref = self.0.exterior_emissivity.as_ref();
         for (i, &opaque_solar) in opaque_solar_ref.iter().take(self.0.num_zones).enumerate() {
             // opaque_solar is the effective opaque irradiance on exterior surfaces (W/m²)
             // This is the combined wall + roof irradiance for the zone
+            let eps_ext = exterior_emissivity_ref
+                .get(i)
+                .copied()
+                .unwrap_or(eps_ext_default);
+            let sol_air_calc = SolAirTemperature::new(alpha_sol_default, eps_ext, h_c_ext_wind);
             let t_sol_air_i = sol_air_calc.for_roof(outdoor_temp, opaque_solar, sky_temp);
             scratch.t_sol_air_zone[i] = t_sol_air_i;
         }
@@ -1354,13 +1368,48 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         // is retained as-is for now — it is a pre-existing condition, not part
         // of the #1163 cooling-formula fix. The multi-node path (line ~2417)
         // already uses h_coeff correctly.
+        //
+        // === Issue #2868: use the air-node denominator, not h_tr_is ===
+        //
+        // `h_tr_is` is not the conductance the injected HVAC power works
+        // against. Solving the same 5R1C air-node equation that produced
+        // `t_i_free = num / den` with the HVAC source added gives, exactly,
+        //
+        //     t_i_act = t_i_free + Q_hvac / den_true,
+        //     den_true = den / term_rest_1 = H_tr,1 + H_tr,w + H_ve + H_tr,floor
+        //
+        // (`den` and `term_rest_1` are the scaled quantities used above; the
+        // scaling by `term_rest_1 = h_tr_ms + h_tr_is` cancels out of the
+        // ratio). `den_true` is within ~5 % of `h_tr_is` for every case that
+        // has windows *and* infiltration (Case 600: 157.6 vs 165.6 W/K), so
+        // the calibration of the 600/900 series is essentially unchanged.
+        //
+        // For a zone with neither windows nor infiltration — the ASHRAE 140
+        // Case 195 "no-loads" configuration — `den_true` is 40 % smaller
+        // (99.9 vs 165.6 W/K) because every watt must travel
+        // air → surface → mass → outdoor. Dividing by `h_tr_is` there left the
+        // ideal-load-controlled zone air ~10 K BELOW its 20 °C setpoint
+        // (measured: 9.9-12.5 °C in January), and since `t_i_act` is what the
+        // surface/mass balance and the next step's `t_i_free` are built from,
+        // the demand never converged to the envelope loss: 1534 W injected
+        // against a 143 W envelope loss, i.e. a ~10× energy-balance violation
+        // and +82 % annual heating (Issue #2868).
         let h_tr_is_vec = self.0.h_tr_is.as_ref();
+        let den_slice = den.as_ref();
+        let term_rest_1_slice = self.0.derived_term_rest_1.as_ref();
         let t_free = t_i_free.as_ref();
         let hvac = hvac_for_temp_calc.as_ref();
         for i in 0..self.0.num_zones {
             let h_is = h_tr_is_vec[i];
-            if h_is > 0.0 && hvac[i].abs() > 1e-6 {
-                scratch.t_i_act[i] = t_free[i] + hvac[i] / h_is;
+            // den_true = den / term_rest_1 (unscaled air-node denominator).
+            // Fall back to h_tr_is when the scaled quantities are degenerate
+            // (unit tests that bypass `from_spec` and leave the cache empty).
+            let den_true = match (den_slice.get(i), term_rest_1_slice.get(i)) {
+                (Some(&d), Some(&t)) if t > 0.0 && d > 0.0 => d / t,
+                _ => h_is,
+            };
+            if den_true > 0.0 && hvac[i].abs() > 1e-6 {
+                scratch.t_i_act[i] = t_free[i] + hvac[i] / den_true;
             } else {
                 scratch.t_i_act[i] = t_free[i];
             }
@@ -1521,6 +1570,7 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         let t_i_act_ref = t_i_act.as_ref();
         let phi_m_ref = phi_m.as_ref();
         let h_tr_3_ref_2 = self.0.derived_h_tr_3.as_ref();
+        let h_tr_is_ref_2 = self.0.h_tr_is.as_ref();
 
         // Determine HVAC mode from hvac_output_raw (Plan 03-14)
         // Use separate heating/cooling coupling parameters based on mode
@@ -1529,12 +1579,59 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
             let tm_old = mass_temps_ref[i];
             let cm = thermal_cap_ref[i];
             let t_s = t_s_act_ref[i];
+            // === Issue #2868: zone-air ↔ thermal-mass conductance ===
+            //
+            // The three integrators below drive the mass node from the air
+            // side through ISO 13790 `H_tr,3 = 1/(1/H_tr,2 + 1/H_ms)` with
+            // `H_tr,2 = H_tr,1 + H_tr,w` and `H_tr,1 = 1/(1/H_ve + 1/H_is)`.
+            // That elimination expresses the network in terms of the SUPPLY-AIR
+            // node, so `H_tr,1` — and hence `H_tr,3` — collapses to zero when a
+            // zone has neither ventilation/infiltration (`H_ve = 0`) nor windows
+            // (`H_tr,w = 0`).
+            //
+            // With `H_tr,3 = 0` the air-coupling term disappeared from the mass
+            // balance entirely: the mass node was left attached only to
+            // `h_tr_em`, so it floated to the sol-air temperature no matter what
+            // the HVAC did (measured T_mass ≈ daily-mean outdoor). The zone air,
+            // pinned to the mass by the 5R1C closed form, then sat ~10 K below
+            // setpoint and the ideal-load demand charged ~2.4× the true envelope
+            // loss — the +82 % annual-heating error on ASHRAE 140 Case 195.
+            //
+            // The *physical* zone-air ↔ mass conductance never vanishes: it is
+            // the series film/mass coupling `1/(1/H_is + 1/H_ms)` (the same
+            // Norton coefficient `compute_hvac_coefficient` uses for the 5R1C
+            // HVAC demand). Fall back to it when the ISO elimination degenerates.
+            // Cases with windows or infiltration keep `H_tr,3` unchanged, so the
+            // 600-660 / 900-960 calibration is untouched.
+            let h_air_mass = {
+                let h_tr_3_i = h_tr_3_ref_2.get(i).copied().unwrap_or(0.0);
+                if h_tr_3_i > 0.0 {
+                    h_tr_3_i
+                } else {
+                    let h_is = h_tr_is_ref_2.get(i).copied().unwrap_or(0.0);
+                    let h_ms = h_tr_ms_ref[i];
+                    if h_is + h_ms > 0.0 {
+                        h_is * h_ms / (h_is + h_ms)
+                    } else {
+                        h_ms
+                    }
+                }
+            };
             // Issue #1860: blend the air temperature used for mass coupling
             // between the free-floating and HVAC-controlled values, using the
             // same time-constant fraction α = 1 − exp(−dt/τ_mass) as the
             // surface-temperature blend above. This ensures the CrankNicolson
             // path (which takes t_i directly, not t_s) also sees the
             // time-constant-aware mass coupling.
+            //
+            // Issue #2868: the blend deliberately keeps reading the raw
+            // `derived_h_tr_3`, so the degenerate `H_tr,3 = 0` configuration
+            // keeps taking the α = 1 (full HVAC coupling) fallback branch below.
+            // That is the internally consistent pairing: a real conductance
+            // (`h_air_mass`) driven by the actual controlled air temperature.
+            // Re-deriving α from `h_air_mass` instead would re-introduce a
+            // permanent offset between the mass and the conditioned zone and
+            // break the steady-state energy balance again.
             let t_i = {
                 let h_tr_3_i = h_tr_3_ref_2[i];
                 if h_tr_3_i > 0.0 && cm > 0.0 && dt > 0.0 {
@@ -1569,7 +1666,9 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
             // h_tr_em = k * A / d (thermal conductivity * area / thickness)
             // h_tr_ms = k * A / d (thermal conductivity * area / thickness)
             let h_tr_em = h_tr_em_ref[i];
-            let h_tr_ms = h_tr_ms_ref[i];
+            // Issue #2868: `h_tr_ms` is now consumed through `h_air_mass`
+            // (computed above with the degenerate-`H_tr,3` fallback).
+            let _h_tr_ms = h_tr_ms_ref[i];
 
             // Select integration method based on thermal capacitance
             let method = select_integration_method(cm);
@@ -1604,7 +1703,9 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                     // SESSION 72: Include ventilation-to-mass cooling
                     // Issue #896 FIX: Use h_tr_3 instead of h_tr_ms for the air-to-mass bottleneck.
                     // See detailed comment in the CrankNicolson branch below.
-                    let h_tr_3_zone = *self.0.derived_h_tr_3.as_ref().get(i).unwrap_or(&h_tr_ms);
+                    // Issue #2868: `h_air_mass` is `H_tr,3` with the degenerate
+                    // `H_ve = H_tr,w = 0` fallback applied (see above).
+                    let h_tr_3_zone = h_air_mass;
                     // Backward Euler with h_tr_3 and night ventilation:
                     // (Cm/dt + h_tr_em + h_tr_3 + h_vent_mass_zone) * Tm_new =
                     //     Cm/dt * Tm_old + h_tr_em * t_sol_air + h_tr_3 * t_s + h_vent_mass_zone * t_outdoor + phi_m
@@ -1623,7 +1724,8 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                     // SESSION 72: Include ventilation-to-mass cooling
                     // Issue #896 FIX: Use h_tr_3 instead of h_tr_ms for the air-to-mass bottleneck.
                     // See detailed comment in the CrankNicolson branch below.
-                    let h_tr_3_zone = *self.0.derived_h_tr_3.as_ref().get(i).unwrap_or(&h_tr_ms);
+                    // Issue #2868: degenerate-`H_tr,3` fallback (see above).
+                    let h_tr_3_zone = h_air_mass;
                     let q_vent_mass = h_vent_mass_zone * (outdoor_temp - tm_old);
                     let q_m_net = h_tr_em * (t_sol_air[i] - tm_old)
                         + h_tr_3_zone * (t_s - tm_old)
@@ -1643,9 +1745,8 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                     // Issue #1693: Add night ventilation (h_vent_mass_zone) to the mass balance.
                     // Adding it to h_tr_3 approximates night vent as an additional conductance
                     // from mass to zone air, which captures the cooling effect.
-                    let h_tr_3_with_vent =
-                        *self.0.derived_h_tr_3.as_ref().get(i).unwrap_or(&h_tr_ms)
-                            + h_vent_mass_zone;
+                    // Issue #2868: degenerate-`H_tr,3` fallback (see above).
+                    let h_tr_3_with_vent = h_air_mass + h_vent_mass_zone;
                     crank_nicolson_iso13790(
                         tm_old,
                         dt,
