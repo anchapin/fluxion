@@ -520,7 +520,7 @@ impl PyGeometryTensor {
 
     /// Get the number of zones.
     fn num_zones(&self) -> usize {
-        self.inner.hvac.num_zones()
+        self.inner.num_zones()
     }
 
     /// Get the number of walls.
@@ -611,7 +611,7 @@ impl PyGeometryTensor {
     fn __repr__(&self) -> String {
         format!(
             "GeometryTensor(zones={}, walls={}, area={:.2}m², volume={:.2}m³)",
-            self.inner.hvac.num_zones(),
+            self.inner.num_zones(),
             self.inner.num_walls(),
             self.inner.total_area(),
             self.inner.total_volume()

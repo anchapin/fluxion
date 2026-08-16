@@ -10,7 +10,10 @@
 
 #[cfg(feature = "gauge-solver")]
 use super::GaugeZoneSolver;
-use super::{CTFCoefficients, CTFSolver, CtfZoneCouplingSolver, ImplicitFDSolver, MultiNodeSolver, SolverManager};
+use super::{
+    CTFCoefficients, CTFSolver, CtfZoneCouplingSolver, ImplicitFDSolver, MultiNodeSolver,
+    SolverManager,
+};
 
 pub struct ConductionBackend {
     // --- CTF (Conduction Transfer Function) ---

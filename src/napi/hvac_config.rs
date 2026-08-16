@@ -568,21 +568,21 @@ impl ZoneSetpoints {
     /// Heating setpoint [°C] for a zone.
     #[napi]
     pub fn get_heating_setpoint(&self, zone_id: u32) -> napi::bindgen_prelude::Result<f64> {
-        check_zone(zone_id as usize, self.inner.hvac.num_zones())?;
+        check_zone(zone_id as usize, self.inner.num_zones())?;
         Ok(self.inner.get_heating_setpoint(zone_id as usize))
     }
 
     /// Cooling setpoint [°C] for a zone.
     #[napi]
     pub fn get_cooling_setpoint(&self, zone_id: u32) -> napi::bindgen_prelude::Result<f64> {
-        check_zone(zone_id as usize, self.inner.hvac.num_zones())?;
+        check_zone(zone_id as usize, self.inner.num_zones())?;
         Ok(self.inner.get_cooling_setpoint(zone_id as usize))
     }
 
     /// Deadband [°C] for a zone.
     #[napi]
     pub fn get_deadband(&self, zone_id: u32) -> napi::bindgen_prelude::Result<f64> {
-        check_zone(zone_id as usize, self.inner.hvac.num_zones())?;
+        check_zone(zone_id as usize, self.inner.num_zones())?;
         Ok(self.inner.get_deadband(zone_id as usize))
     }
 
@@ -595,7 +595,7 @@ impl ZoneSetpoints {
     /// Number of zones.
     #[napi(getter)]
     pub fn num_zones(&self) -> u32 {
-        self.inner.hvac.num_zones() as u32
+        self.inner.num_zones() as u32
     }
 }
 
@@ -772,13 +772,13 @@ impl HvacSchedule {
     /// Heating setpoint [°C] for the given hour (0–23).
     #[napi]
     pub fn heating_setpoint(&self, hour: u32) -> f64 {
-        self.inner.setpoints.heating_setpoint(hour as usize)
+        self.inner.heating_setpoint(hour as usize)
     }
 
     /// Cooling setpoint [°C] for the given hour (0–23).
     #[napi]
     pub fn cooling_setpoint(&self, hour: u32) -> f64 {
-        self.inner.setpoints.cooling_setpoint(hour as usize)
+        self.inner.cooling_setpoint(hour as usize)
     }
 
     /// Clone of the underlying heating daily schedule.

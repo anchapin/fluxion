@@ -86,7 +86,7 @@ impl BuildingParameters {
     /// Typical values: Single glass (5.0) to triple-pane low-E (0.1)
     #[napi(getter)]
     pub fn window_u_value(&self) -> f64 {
-        self.inner.solar.window_u_value
+        self.inner.window_u_value
     }
 
     /// Get heating setpoint temperature in °C.
@@ -95,7 +95,7 @@ impl BuildingParameters {
     /// Typical value: 20.0 °C for office buildings
     #[napi(getter)]
     pub fn heating_setpoint(&self) -> f64 {
-        self.inner.setpoints.heating_setpoint
+        self.inner.heating_setpoint
     }
 
     /// Get cooling setpoint temperature in °C.
@@ -104,7 +104,7 @@ impl BuildingParameters {
     /// Typical value: 24.0 °C for office buildings
     #[napi(getter)]
     pub fn cooling_setpoint(&self) -> f64 {
-        self.inner.setpoints.cooling_setpoint
+        self.inner.cooling_setpoint
     }
 
     /// Convert parameters to array for backward compatibility.

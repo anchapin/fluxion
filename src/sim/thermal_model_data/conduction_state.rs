@@ -7,8 +7,8 @@
 //! heavy solver `Vec`s are dropped on clone (Issue #2767), and `T` clones are
 //! the same allocation as the legacy flat `ThermalModelData::clone` path.
 
-use crate::sim::boundary::GroundTemperature;
 use super::ContinuousTensor;
+use crate::sim::boundary::GroundTemperature;
 
 use super::conduction_backend::ConductionBackend;
 
