@@ -41,6 +41,15 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Optional
 
+# Pin stdout / stderr to UTF-8 so the ``✓`` glyph in the success print works on
+# Windows runners whose default stdio codec is cp1252. No-op on POSIX runners
+# (already UTF-8). Python 3.7+ supports ``reconfigure``.
+for _stream in (sys.stdout, sys.stderr):
+    try:
+        _stream.reconfigure(encoding="utf-8")
+    except (AttributeError, OSError):
+        pass
+
 REPO = Path(__file__).resolve().parent.parent
 ASHRAE_DOC = REPO / "docs" / "ASHRAE140_RESULTS.md"
 GATES_YAML = REPO / "release_gates.yaml"
@@ -488,9 +497,9 @@ def load_all(
     if not GATES_YAML.exists():
         print(f"ERROR: {GATES_YAML} not found.", file=sys.stderr)
         sys.exit(2)
-    doc = ASHRAE_DOC.read_text()
-    yaml_text = GATES_YAML.read_text()
-    readme_text = README_MD.read_text() if README_MD.exists() else ""
+    doc = ASHRAE_DOC.read_text(encoding="utf-8")
+    yaml_text = GATES_YAML.read_text(encoding="utf-8")
+    readme_text = README_MD.read_text(encoding="utf-8") if README_MD.exists() else ""
 
     v = parse_ashrae(doc)
     series = parse_series(doc)
@@ -543,7 +552,7 @@ def main() -> int:
                 file=sys.stderr,
             )
             return 1
-        committed = SCORECARD.read_text()
+        committed = SCORECARD.read_text(encoding="utf-8")
         if committed != content:
             print(
                 "ERROR: SCORECARD.md is stale (drift detected).\n"
@@ -551,12 +560,12 @@ def main() -> int:
                 file=sys.stderr,
             )
             return 1
-        print("✓ SCORECARD.md is up to date (no drift).")
+        print("[OK] SCORECARD.md is up to date (no drift).")
         return 0
 
     out = Path(args.output)
-    out.write_text(content)
-    print(f"✓ Wrote {out}  (pass {v.pass_rate:.1f}% / MAE {v.mae:.2f}%)")
+    out.write_text(content, encoding="utf-8")
+    print(f"[OK] Wrote {out}  (pass {v.pass_rate:.1f}% / MAE {v.mae:.2f}%)")
     return 0
 
 
