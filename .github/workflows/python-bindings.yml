@@ -224,11 +224,20 @@ jobs:
           ls -la fluxion/*.so fluxion/*.pyd 2>/dev/null || true
 
       - name: Run PyO3 pytest suite
-        # Scoped to the binding tests enumerated in Issue #2760. Running bare
-        # `pytest` would collect every test_*.py under tests/ (state-store,
-        # CLI measures, etc.) and pull in uninstalled heavy deps. The root
-        # conftest (tests/conftest.py) auto-skips `needs_fluxion` tests when
-        # the module is absent, so a leg degrades to skips, not hard errors.
+        # Issue #2852 — run the FULL `tests/python/` suite, not just the
+        # 3-file subset enumerated in Issue #2760. The build job above
+        # has already produced the native extension and staged it into
+        # the source `fluxion/` tree, so every binding test runs against
+        # real native code rather than silently skipping because the
+        # compiled extension is missing. The previous 3-file scope left
+        # `test_api_transformation.py`, `test_hvac_bindings.py`,
+        # `test_osm_bindings.py`, `test_apply_measures_cli.py`,
+        # `test_generate_scorecard.py`, `test_state_store.py`,
+        # `test_webhook_notification.py`, `test_standard_measures.py`,
+        # `test_numpy_zero_copy.py` entirely uncovered by CI — any
+        # regression in those would only be caught at the developer's
+        # local `pytest` run (which silently skipped 43+ tests).
+        #
         # `python -m pytest` (not the `pytest` script) for cross-OS PATH safety.
         env:
           RUST_MIN_STACK: 33554432
@@ -236,8 +245,7 @@ jobs:
         run: |
           set -euo pipefail
           python -m pytest -q \
-            tests/python/test_model_mutations.py \
-            tests/python/test_multi_node_bindings.py \
+            tests/python/ \
             tests/integration/test_numpy_arrays.py
 
       - name: Run Rust-side PyO3 integration tests
