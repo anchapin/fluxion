@@ -134,13 +134,13 @@ def repo_dir(tmp_path, monkeypatch):
     """Provide a tmp_path with stub ASHRAE / gates / README / SCORECARD and
     redirect the module-level path constants to point at it."""
     ashrae = tmp_path / "ASHRAE140_RESULTS.md"
-    ashrae.write_text(ASHRAE_DOC_TEXT)
+    ashrae.write_text(ASHRAE_DOC_TEXT, encoding="utf-8")
     gates = tmp_path / "release_gates.yaml"
-    gates.write_text(GATES_YAML_TEXT)
+    gates.write_text(GATES_YAML_TEXT, encoding="utf-8")
     readme = tmp_path / "README.md"
-    readme.write_text(README_TEXT)
+    readme.write_text(README_TEXT, encoding="utf-8")
     scorecard = tmp_path / "SCORECARD.md"
-    scorecard.write_text("placeholder\n")
+    scorecard.write_text("placeholder\n", encoding="utf-8")
 
     monkeypatch.setattr("builtins.print", lambda *a, **k: None, raising=False)
     return tmp_path, ashrae, gates, readme, scorecard
@@ -449,7 +449,7 @@ def test_load_all_never_calls_cargo(gen_module, repo_dir, monkeypatch):
 
 def test_load_all_exits_when_ashrae_doc_missing(gen_module, tmp_path, monkeypatch):
     gates = tmp_path / "release_gates.yaml"
-    gates.write_text(GATES_YAML_TEXT)
+    gates.write_text(GATES_YAML_TEXT, encoding="utf-8")
     monkeypatch.setattr(gen_module, "ASHRAE_DOC", tmp_path / "missing.md")
     monkeypatch.setattr(gen_module, "GATES_YAML", gates)
 
@@ -460,7 +460,7 @@ def test_load_all_exits_when_ashrae_doc_missing(gen_module, tmp_path, monkeypatc
 
 def test_load_all_exits_when_gates_missing(gen_module, tmp_path, monkeypatch):
     ashrae = tmp_path / "ASHRAE140_RESULTS.md"
-    ashrae.write_text(ASHRAE_DOC_TEXT)
+    ashrae.write_text(ASHRAE_DOC_TEXT, encoding="utf-8")
     monkeypatch.setattr(gen_module, "ASHRAE_DOC", ashrae)
     monkeypatch.setattr(gen_module, "GATES_YAML", tmp_path / "missing.yaml")
 
@@ -485,7 +485,7 @@ def test_main_writes_scorecard_to_default_path(gen_module, repo_dir, monkeypatch
     rc = gen_module.main()
     assert rc == 0
     assert scorecard.exists()
-    body = scorecard.read_text()
+    body = scorecard.read_text(encoding="utf-8")
     assert "Fluxion Release Scorecard" in body
     assert "6.2%" in body
 
@@ -503,7 +503,7 @@ def test_main_writes_to_custom_output(gen_module, repo_dir, monkeypatch):
     rc = gen_module.main()
     assert rc == 0
     assert custom.exists()
-    assert "Fluxion Release Scorecard" in custom.read_text()
+    assert "Fluxion Release Scorecard" in custom.read_text(encoding="utf-8")
 
 
 def test_main_check_exits_zero_when_scorecard_matches(
@@ -520,7 +520,7 @@ def test_main_check_exits_zero_when_scorecard_matches(
         gen_module.parse_gates(GATES_YAML_TEXT),
         gen_module.parse_readme_throughput(README_TEXT),
     )
-    scorecard.write_text(expected)
+    scorecard.write_text(expected, encoding="utf-8")
     monkeypatch.setattr(gen_module, "SCORECARD", scorecard)
     monkeypatch.setattr(sys, "argv", [str(SCRIPT), "--check"])
 
@@ -532,7 +532,7 @@ def test_main_check_exits_one_on_drift(gen_module, repo_dir, monkeypatch):
     monkeypatch.setattr(gen_module, "ASHRAE_DOC", ashrae)
     monkeypatch.setattr(gen_module, "GATES_YAML", gates)
     monkeypatch.setattr(gen_module, "README_MD", readme)
-    scorecard.write_text("stale content\n")
+    scorecard.write_text("stale content\n", encoding="utf-8")
     monkeypatch.setattr(gen_module, "SCORECARD", scorecard)
     monkeypatch.setattr(sys, "argv", [str(SCRIPT), "--check"])
 
@@ -556,6 +556,6 @@ def test_cli_subprocess_writes_scorecard(tmp_path):
     )
     assert result.returncode == 0, f"stderr:\n{result.stderr}\nstdout:\n{result.stdout}"
     assert out.exists()
-    body = out.read_text()
+    body = out.read_text(encoding="utf-8")
     assert "Fluxion Release Scorecard" in body
     assert "ASHRAE 140" in body

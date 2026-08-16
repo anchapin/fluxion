@@ -488,9 +488,9 @@ def load_all(
     if not GATES_YAML.exists():
         print(f"ERROR: {GATES_YAML} not found.", file=sys.stderr)
         sys.exit(2)
-    doc = ASHRAE_DOC.read_text()
-    yaml_text = GATES_YAML.read_text()
-    readme_text = README_MD.read_text() if README_MD.exists() else ""
+    doc = ASHRAE_DOC.read_text(encoding="utf-8")
+    yaml_text = GATES_YAML.read_text(encoding="utf-8")
+    readme_text = README_MD.read_text(encoding="utf-8") if README_MD.exists() else ""
 
     v = parse_ashrae(doc)
     series = parse_series(doc)
@@ -543,7 +543,7 @@ def main() -> int:
                 file=sys.stderr,
             )
             return 1
-        committed = SCORECARD.read_text()
+        committed = SCORECARD.read_text(encoding="utf-8")
         if committed != content:
             print(
                 "ERROR: SCORECARD.md is stale (drift detected).\n"
@@ -555,7 +555,7 @@ def main() -> int:
         return 0
 
     out = Path(args.output)
-    out.write_text(content)
+    out.write_text(content, encoding="utf-8")
     print(f"✓ Wrote {out}  (pass {v.pass_rate:.1f}% / MAE {v.mae:.2f}%)")
     return 0
 
