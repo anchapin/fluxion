@@ -3093,11 +3093,21 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                     );
 
                     let sol_air = SolAirTemperature::ashrae_140_default();
+                    // Issue #2872: per-surface sky view factor.
+                    // Vertical wall (tilt = 90°) → F_sky ≈ 0.5; horizontal roof
+                    // (tilt = 0°) → F_sky = 1.0 (already in for_roof). The
+                    // wall sees half the sky dome, so the LW correction is
+                    // halved. This brings the wall sol-air boundary closer
+                    // to outdoor and reduces the over-cooling of the high-
+                    // mass Case 950FF night minimum.
+                    let f_sky_wall = 0.5;
                     let ext_temps = SurfaceExteriorTemperatures {
-                        t_ext_wall: sol_air.for_wall(
+                        t_ext_wall: sol_air.for_wall_with_f_sky(
                             outdoor_temp,
                             wall_irr.total_wm2,
                             wall_irr.ground_reflected_wm2,
+                            sky_temp,
+                            f_sky_wall,
                         ),
                         t_ext_roof: sol_air.for_roof(outdoor_temp, roof_irr.total_wm2, sky_temp),
                         t_ext_floor: t_g,

@@ -380,15 +380,63 @@ impl SolAirTemperature {
     }
 
     /// Calculates sol-air temperature for a roof (horizontal surface).
+    ///
+    /// A horizontal roof sees the full sky dome (`F_sky = 1.0`), so the
+    /// longwave correction term in [`calculate`](Self::calculate) is applied
+    /// at full magnitude.
     pub fn for_roof(&self, outdoor_temp: f64, solar_irradiance: f64, sky_temp: f64) -> f64 {
         self.calculate(outdoor_temp, solar_irradiance, sky_temp, None)
     }
 
     /// Calculates sol-air temperature for a wall (vertical surface).
+    ///
+    /// Issue #2872: a vertical wall sees only a fraction of the sky dome,
+    /// `F_sky = (1 + cos(tilt)) / 2 ≈ 0.5` for `tilt = 90°`. The legacy
+    /// signature omits the LW correction; the new variant
+    /// [`for_wall_with_f_sky`](Self::for_wall_with_f_sky) accepts the per-
+    /// surface sky view factor so walls receive the correct reduced sky-view
+    /// factor. Default `f_sky = 0.0` is preserved by the legacy entrypoint —
+    /// callers wanting the LW correction must opt in explicitly.
     pub fn for_wall(&self, outdoor_temp: f64, solar_irradiance: f64, ground_reflected: f64) -> f64 {
         let total_solar = solar_irradiance + ground_reflected;
         let solar_term = self.solar_absorptance * total_solar / self.exterior_conductance;
         outdoor_temp + solar_term
+    }
+
+    /// Calculates sol-air temperature for a wall (vertical surface) with a
+    /// per-surface sky view factor (Issue #2872).
+    ///
+    /// A wall tilted 90° from horizontal sees roughly half the sky dome
+    /// (`F_sky ≈ 0.5`); the remaining half radiates to the ground, which we
+    /// approximate as ambient outdoor air. The longwave correction term
+    /// scales linearly with `F_sky` — the same convention used by
+    /// `SkyRadiationExchange::tilted_surface` and ISO 13790 §12.3.2.
+    ///
+    /// When `f_sky == 0.0` this is bit-identical to
+    /// [`for_wall`](Self::for_wall); when `f_sky == 1.0` it reduces to the
+    /// roof formula [`for_roof`](Self::for_roof).
+    pub fn for_wall_with_f_sky(
+        &self,
+        outdoor_temp: f64,
+        solar_irradiance: f64,
+        ground_reflected: f64,
+        sky_temp: f64,
+        f_sky: f64,
+    ) -> f64 {
+        let total_solar = solar_irradiance + ground_reflected;
+        let solar_term = self.solar_absorptance * total_solar / self.exterior_conductance;
+
+        if f_sky <= 0.0 {
+            return outdoor_temp + solar_term;
+        }
+        let f_sky_clamped = f_sky.clamp(0.0, 1.0);
+        // LW term scales linearly with the surface's view of the sky (F_sky).
+        // The remaining (1 - F_sky) fraction radiates to the ground, which
+        // we approximate as ambient outdoor air (no net LW exchange with
+        // surroundings at the same temperature).
+        let delta_r = self.calculate_longwave_radiation_difference(outdoor_temp, sky_temp);
+        let longwave_term = self.emissivity * delta_r / self.exterior_conductance;
+        outdoor_temp + solar_term - f_sky_clamped * longwave_term
     }
 
     /// Calculates the exterior surface conductance based on wind speed.
