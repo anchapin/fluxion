@@ -5,8 +5,8 @@
 //! scalars) plus the heating/cooling setpoints, daily schedules, and the
 //! ventilation airflow used by the economizer / night-ventilation paths.
 
-use crate::physics::cta::ContinuousTensor;
 use crate::sim::schedule::DailySchedule;
+use super::ContinuousTensor;
 
 pub struct SetpointState<T: ContinuousTensor<f64>> {
     // Per-zone primary state (the zone air temperature and the per-zone load).

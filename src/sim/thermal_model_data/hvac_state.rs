@@ -6,7 +6,7 @@
 //! are owned here because they are written/read by HVAC control and the
 //! 5R1C/9R4C physics hot loops.
 
-use crate::physics::cta::{ContinuousTensor, VectorField};
+use super::{ContinuousTensor, VectorField};
 use crate::sim::hvac::{
     AnyEquipment, CyclingTracker, EconomizerMode, IdealLoadsSystem, PredictiveController,
 };

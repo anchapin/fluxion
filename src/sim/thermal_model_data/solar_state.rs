@@ -8,7 +8,7 @@
 //! cache is built on the first step after clone, exactly like the legacy
 //! `ThermalModelData::clone` path.
 
-use crate::physics::cta::{ContinuousTensor, VectorField};
+use super::{ContinuousTensor, VectorField};
 use crate::sim::construction::WallSurface;
 use crate::sim::solar::{SolarPosition, WindowProperties};
 use crate::weather::HourlyWeatherData;

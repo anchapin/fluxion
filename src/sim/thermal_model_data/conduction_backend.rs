@@ -8,14 +8,9 @@
 //! `SolverManager` are dropped and re-initialised by `prepare_solvers` on the
 //! first timestep after clone.
 
-use crate::physics::ctf_coefficients::CTFCoefficients;
-use crate::physics::ctf_solver::CTFSolver;
-use crate::physics::ctf_zone_coupling::CtfZoneCouplingSolver;
-use crate::physics::fd_solver::ImplicitFDSolver;
 #[cfg(feature = "gauge-solver")]
-use crate::physics::gauge_zone_solver::GaugeZoneSolver;
-use crate::physics::multi_node_solver::MultiNodeSolver;
-use crate::physics::solver_manager::SolverManager;
+use super::GaugeZoneSolver;
+use super::{CTFCoefficients, CTFSolver, CtfZoneCouplingSolver, ImplicitFDSolver, MultiNodeSolver, SolverManager};
 
 pub struct ConductionBackend {
     // --- CTF (Conduction Transfer Function) ---

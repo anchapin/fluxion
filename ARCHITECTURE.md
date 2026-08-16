@@ -57,7 +57,7 @@ domain-type imports through `fluxion_core::assembly::*` instead of
 - `src/physics/solver_manager.rs` / `solver_registry.rs` — same
 - `src/physics/multi_node_solver.rs` — `use fluxion_core::multi_node::{MultiNodeThermalMass, ...}`
 - `src/sim/multi_node_hvac_runner.rs` — `use fluxion_core::multi_node::ThermalMassNode`
-- `src/sim/thermal_model_core.rs` / `thermal_model_data.rs` — `use fluxion_core::assembly::BuildingAssembly`
+- `src/sim/thermal_model_core.rs` / `thermal_model_data/` — `use fluxion_core::assembly::BuildingAssembly`
 
 The ASHRAE 140 material constants that `assembly.rs` previously imported from
 `crate::physics::constants::thermal::ashrae_140::materials` (HW_CONCRETE_K,
@@ -87,7 +87,8 @@ no longer recompiles the 208 KB `validation::ashrae_140_cases` per mutant.
 | `src/sim/invariant_checker.rs:9` | `use fluxion_core::ashrae_cases::Orientation` |
 | `src/sim/shading.rs:6,178` | `use fluxion_core::ashrae_cases::WindowArea, Orientation` |
 | `src/sim/thermal_model_core.rs:23` | split: `CaseSpec` stays in validation; `Orientation, ShadingType` move to `fluxion_core::ashrae_cases` |
-| `src/sim/thermal_model_data.rs:25` | `use fluxion_core::ashrae_cases::{NightVentilation, Orientation}` |
+| `src/sim/thermal_model_data/hvac_state.rs:19` | `use fluxion_core::ashrae_cases::NightVentilation` |
+| `src/sim/thermal_model_data/solar_state.rs:13` | `use fluxion_core::ashrae_cases::Orientation` |
 | `src/sim/thermal_model_iterative.rs:17` | `use fluxion_core::ashrae_cases::{GeometrySpec, Orientation, WindowArea}` |
 
 ### Cycle break (#2462 — physics ↔ sim shared domain types → `fluxion-core`)
@@ -141,17 +142,23 @@ and `fluxion_core::ashrae_cases::Orientation` for its data fields.
 **Regression guard**: `scripts/check_physics_sim_cycle.py` enforces a
 zero-edge physics→sim baseline (`BASELINE_PHYSICS_TO_SIM = 0`) and — since
 Issue #2766 extended Phase 2 coverage from the 2 originally-guarded files to
-ALL of `src/sim/**/*.rs` — a 85-edge sim→physics baseline
-(`BASELINE_SIM_TO_PHYSICS = 85`; 84 pre-existing `use crate::physics::`
+ALL of `src/sim/**/*.rs` — a 79-edge sim→physics baseline
+(`BASELINE_SIM_TO_PHYSICS = 79`; 84 pre-existing `use crate::physics::`
 imports across 26 sim files that the pre-#2766 guard never scanned, minus
 1 edge removed by PR #3020 / issue #2896 (doc-only stub deletion), plus
 2 new `use crate::physics::exterior_convection::{...}` edges added by
 PR #3024 / issue #2891 for ASHRAE 140 §5.2.6 wind-velocity-dependent
-exterior convection in the 5R1C path). The CI listener
-`Physics-Sim-Cycle-Check` (in `.github/workflows/rust-tests.yml`) is wired
-into `release_gates.yaml::ci.required_checks` so a regression cannot ship
-past branch protection. The baseline raises only via legitimate cycle
-work; snapshot every change in `scripts/cycle_baseline_history.json`.
+exterior convection in the 5R1C path, minus 6 edges removed by PR #3034 /
+issue #2878 — the legacy ThermalModelData god-struct (8 physics imports)
+was deleted and replaced by a per-domain split in `src/sim/thermal_model_data/`
+that consolidates physics imports into a single `pub use crate::physics::{...}`
+block in the new `mod.rs` plus a cfg-gated re-export of
+`gauge_zone_solver::GaugeZoneSolver`). The CI
+listener `Physics-Sim-Cycle-Check` (in `.github/workflows/rust-tests.yml`)
+is wired into `release_gates.yaml::ci.required_checks` so a regression
+cannot ship past branch protection. The baseline raises only via
+legitimate cycle work; snapshot every change in
+`scripts/cycle_baseline_history.json`.
 
 These moves unblock `docs/mutation_testing_crate_split.md` §"Phase 2":
 `cargo mutants -p fluxion` no longer needs to recompile `sim::construction`
@@ -482,7 +489,7 @@ graph TD
 - `calculate_surface_irradiance(sun_pos, dni, dhi, ghi, orientation) -> SurfaceIrradiance`
 - `calculate_hourly_solar(...) -> (SolarGain, SolarPosition, SurfaceIrradiance)`
 
-**Per-surface distribution** (#1119): Solar gain distribution across multiple surfaces is handled by `sim/solar_gain_distribution.rs`. The `IncidentSolar` metric type (#1132, `validation/report.rs`) and `IncidentSolarAccumulator` (`sim/thermal_model_data.rs`) track per-surface solar radiation for diagnostics and validation.
+**Per-surface distribution** (#1119): Solar gain distribution across multiple surfaces is handled by `sim/solar_gain_distribution.rs`. The `IncidentSolar` metric type (#1132, `validation/report.rs`) and `IncidentSolarAccumulator` (`sim/thermal_model_data/incident_solar_accumulator.rs`) track per-surface solar radiation for diagnostics and validation.
 
 **Ground-reflected component** (#1326): The `ground_reflected` field of `SurfaceIrradiance` uses the standard isotropic view-factor form
 `E_g = ρ · GHI · (1 - cos β) / 2` for β ∈ (0°, 180°), with the two endpoint tilts pinned explicitly so the boundary physics is correct:

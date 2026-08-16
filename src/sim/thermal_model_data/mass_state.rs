@@ -7,8 +7,8 @@
 //! and the few `h_tr_*` conductance vectors that are conceptually part of
 //! the mass-side thermal network rather than the boundary-side network.
 
-use crate::physics::cta::ContinuousTensor;
 use fluxion_core::multi_node::MultiNodeThermalMass;
+use super::ContinuousTensor;
 
 pub struct MassState<T: ContinuousTensor<f64>> {
     // Lumped mass + capacitances (5R1C).
