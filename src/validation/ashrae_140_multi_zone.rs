@@ -255,6 +255,7 @@ impl ASHRAE140MultiZoneValidator {
         ValidationResult {
             in_range,
             error_pct: avg_error_pct,
+            band_flags: [None, None, None, None],
         }
     }
 
@@ -1646,6 +1647,7 @@ impl ASHRAE140MultiZoneValidator {
         ValidationResult {
             in_range,
             error_pct: avg_error_pct,
+            band_flags: [None, None, None, None],
         }
     }
 
@@ -1698,6 +1700,7 @@ impl ASHRAE140MultiZoneValidator {
         ValidationResult {
             in_range: overall_pass,
             error_pct: (heating_pct + cooling_pct) / 2.0,
+            band_flags: [None, None, None, None],
         }
     }
 
