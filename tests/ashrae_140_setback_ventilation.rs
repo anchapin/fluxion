@@ -71,8 +71,12 @@ fn simulate_case(case: ASHRAE140Case) -> (f64, f64) {
         model.weather = Some(weather_data.clone());
 
         // Apply dynamic setpoints based on HVAC schedule
+        // Issue #2870: use the sub-hour ramp-aware setpoint so Cases 640/940
+        // see the smoothed setback→occupied transition over a 2-hour ramp.
         if let Some(hvac_schedule) = spec.hvac.first() {
-            if let Some(heating_sp) = hvac_schedule.heating_setpoint_at_hour(hour_of_day as u8) {
+            if let Some(heating_sp) = hvac_schedule
+                .heating_setpoint_at_fractional_hour(f64::from(hour_of_day as u8) + 0.5)
+            {
                 model.heating_setpoint = heating_sp;
             }
             if let Some(cooling_sp) = hvac_schedule.cooling_setpoint_at_hour(hour_of_day as u8) {

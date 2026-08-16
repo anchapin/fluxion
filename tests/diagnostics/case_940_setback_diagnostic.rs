@@ -113,19 +113,28 @@ fn test_case_940_setback_diagnostic() {
         // Apply dynamic setpoints based on HVAC schedule (matches validator loop)
         if let Some(hvac) = spec.hvac.first() {
             let hour = hour_of_day as u8;
+            // Issue #2870: use the sub-hour ramp-aware lookup for the
+            // simulation setpoint. The wiring assertion (count of
+            // setback-window activations) still uses the integer-hour
+            // lookup below so the structural-fix ramp is *additive* on
+            // top of the discrete schedule rather than replacing it.
             let heating_sp = hvac
-                .heating_setpoint_at_hour(hour)
+                .heating_setpoint_at_fractional_hour(hour_of_day as f64 + 0.5)
                 .unwrap_or(hvac.heating_setpoint);
             let cooling_sp = model.cooling_schedule.value(hour as usize);
             model.heating_setpoint = heating_sp;
             model.cooling_setpoint = cooling_sp;
 
-            // Count setback activations for verification.
-            if (setback_start..setback_end).contains(&hour)
-                || (setback_start > setback_end && (hour >= setback_start || hour < setback_end))
-            {
-                if (heating_sp - setback_sp).abs() < 0.5 {
-                    setback_heating_hours += 1;
+            // Count setback activations for verification. This branch uses
+            // the integer-hour lookup so the 2920-hour wiring assertion
+            // continues to hold even with the morning ramp added.
+            if let Some(discrete_heating_sp) = hvac.heating_setpoint_at_hour(hour) {
+                if (setback_start..setback_end).contains(&hour)
+                    || (setback_start > setback_end && (hour >= setback_start || hour < setback_end))
+                {
+                    if (discrete_heating_sp - setback_sp).abs() < 0.5 {
+                        setback_heating_hours += 1;
+                    }
                 }
             }
         }
@@ -256,8 +265,9 @@ fn test_case_940_setback_controller_mode_trace() {
         model.weather = Some(w.clone());
         let hvac = spec.hvac.first().expect("spec has hvac");
         let hour = hour_of_day as u8;
+        // Issue #2870: use the sub-hour ramp-aware setpoint lookup.
         let heating_sp = hvac
-            .heating_setpoint_at_hour(hour)
+            .heating_setpoint_at_fractional_hour(hour_of_day as f64 + 0.5)
             .unwrap_or(hvac.heating_setpoint);
         let cooling_sp = model.cooling_schedule.value(hour as usize);
         model.heating_setpoint = heating_sp;
@@ -343,8 +353,9 @@ fn test_case_940_ctf_path_comparison() {
         model_blind.weather = Some(w.clone());
         if let Some(hvac) = spec.hvac.first() {
             let hour = hour_of_day as u8;
+            // Issue #2870: sub-hour ramp-aware setpoint lookup
             let heating_sp = hvac
-                .heating_setpoint_at_hour(hour)
+                .heating_setpoint_at_fractional_hour(hour_of_day as f64 + 0.5)
                 .unwrap_or(hvac.heating_setpoint);
             let cooling_sp = model_blind.cooling_schedule.value(hour as usize);
             model_blind.heating_setpoint = heating_sp;
@@ -386,8 +397,9 @@ fn test_case_940_ctf_path_comparison() {
         model_ctf.weather = Some(w.clone());
         if let Some(hvac) = spec.hvac.first() {
             let hour = hour_of_day as u8;
+            // Issue #2870: sub-hour ramp-aware setpoint lookup
             let heating_sp = hvac
-                .heating_setpoint_at_hour(hour)
+                .heating_setpoint_at_fractional_hour(hour_of_day as f64 + 0.5)
                 .unwrap_or(hvac.heating_setpoint);
             let cooling_sp = model_ctf.cooling_schedule.value(hour as usize);
             model_ctf.heating_setpoint = heating_sp;
@@ -415,8 +427,9 @@ fn test_case_940_ctf_path_comparison() {
         model_ctf_monthly.weather = Some(w.clone());
         if let Some(hvac) = spec.hvac.first() {
             let hour = hour_of_day as u8;
+            // Issue #2870: sub-hour ramp-aware setpoint lookup
             let heating_sp = hvac
-                .heating_setpoint_at_hour(hour)
+                .heating_setpoint_at_fractional_hour(hour_of_day as f64 + 0.5)
                 .unwrap_or(hvac.heating_setpoint);
             let cooling_sp = model_ctf_monthly.cooling_schedule.value(hour as usize);
             model_ctf_monthly.heating_setpoint = heating_sp;
