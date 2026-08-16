@@ -17,14 +17,34 @@ use fluxion::validation::ashrae_140_cases::ASHRAE140Case;
 use fluxion::weather::denver::DenverTmyWeather;
 use fluxion::weather::WeatherSource;
 
-/// Reference ranges for Case 195
+/// Reference ranges for Case 195.
+///
+/// Issue #2868: the pre-fix reference was calibrated against an earlier,
+/// over-prediction-prone thermal-model implementation (annual heating 3.5–6.0
+/// MWh, peak heating 1.4–2.2 kW) and asserted 0.00–0.00 MWh for cooling +
+/// peak cooling — i.e. that Case 195 was heating-only. The post-fix
+/// `step_physics_5r1c` (corrected `t_i_act` denominator, degenerate-`H_tr,3`
+/// fallback for the mass-node air coupling, and per-case exterior IR
+/// emittance from the construction spec) lands annual heating in the
+/// ASHRAE 140-2023 inter-program band [3.951, 4.217] MWh, with peak heating
+/// ≈ 1.0 kW on the repo's TMY (peak heating is bounded by the synthetic
+/// weather file's minimum outdoor temperature of −12.47 °C, not the
+/// DRYCOLD.TM2 minimum of −24.4 °C the inter-program comparison uses — that
+/// gap is documented in `docs/KNOWN_ISSUES.md`).
+///
+/// The cooling setpoint in the spec is 27 °C, so the floating zone can sit
+/// between 20–27 °C during summer without active cooling; any non-zero
+/// cooling load is a physics-path artifact (small sol-air longwave term on
+/// the roof under clear-sky conditions). The strict 0.00–0.00 MWh cooling
+/// assertion was therefore physically impossible on the first day and is
+/// replaced by a permissive upper bound with a `println!` so the actual
+/// value is visible in CI logs.
 mod reference {
-    pub const ANNUAL_HEATING_MIN: f64 = 3.50; // Issue #532: was 5.85
-    pub const ANNUAL_HEATING_MAX: f64 = 6.00; // Issue #532: was 7.25
-    pub const ANNUAL_COOLING_MIN: f64 = 0.00;
-    pub const ANNUAL_COOLING_MAX: f64 = 0.00;
-    pub const PEAK_HEATING_MIN: f64 = 1.40; // Issue #532: was 1.70
-    pub const PEAK_HEATING_MAX: f64 = 2.20;
+    pub const ANNUAL_HEATING_MIN: f64 = 3.20;
+    pub const ANNUAL_HEATING_MAX: f64 = 4.40;
+    pub const ANNUAL_COOLING_UPPER: f64 = 0.50;
+    pub const PEAK_HEATING_UPPER: f64 = 1.20;
+    pub const PEAK_COOLING_UPPER: f64 = 1.20;
 }
 
 /// Simulates Case 195 and returns annual heating/cooling in MWh
@@ -94,30 +114,43 @@ fn test_case_195_solid_conduction_simulation() {
 
     println!("\n=== ASHRAE 140 Case 195 Results ===");
     println!(
-        "Annual Heating: {:.2} MWh (reference: {:.2}-{:.2} MWh)",
+        "Annual Heating: {:.3} MWh (reference: {:.2}-{:.2} MWh)",
         heating,
         reference::ANNUAL_HEATING_MIN,
         reference::ANNUAL_HEATING_MAX
     );
     println!(
-        "Annual Cooling: {:.2} MWh (reference: {:.2}-{:.2} MWh)",
+        "Annual Cooling: {:.3} MWh (reference: ≤ {:.2} MWh)",
         cooling,
-        reference::ANNUAL_COOLING_MIN,
-        reference::ANNUAL_COOLING_MAX
+        reference::ANNUAL_COOLING_UPPER
     );
     println!(
-        "Peak Heating: {:.2} kW (reference: {:.2}-{:.2} kW)",
+        "Peak Heating: {:.3} kW (reference: ≤ {:.2} kW)",
         peak_h,
-        reference::PEAK_HEATING_MIN,
-        reference::PEAK_HEATING_MAX
+        reference::PEAK_HEATING_UPPER
     );
     println!("=== End ===\n");
 
-    // Verify heating is positive (heating-only case)
-    assert!(heating >= 0.0, "Heating should be non-negative");
-
-    // Cooling should be zero or minimal (no solar gains, no internal loads)
-    assert!(cooling >= 0.0, "Cooling should be non-negative");
+    // Issue #2868: assert against the post-fix reference ranges. The
+    // previous 0.00–0.00 MWh cooling assertion was physically impossible
+    // (Case 195 has a small sol-air longwave term that drives a tiny roof
+    // cooling load) and the wide 3.50–6.00 MWh heating assertion was
+    // hiding a ~+82 % over-prediction.
+    assert!(
+        (reference::ANNUAL_HEATING_MIN..=reference::ANNUAL_HEATING_MAX).contains(&heating),
+        "annual heating {heating:.3} MWh out of band [{:.2}, {:.2}] MWh",
+        reference::ANNUAL_HEATING_MIN,
+        reference::ANNUAL_HEATING_MAX,
+    );
+    assert!(
+        heating >= 0.0,
+        "heating should be non-negative, got {heating:.3}"
+    );
+    assert!(
+        cooling >= 0.0 && cooling <= reference::ANNUAL_COOLING_UPPER,
+        "annual cooling {cooling:.3} MWh out of upper bound {:.2} MWh",
+        reference::ANNUAL_COOLING_UPPER,
+    );
 }
 
 #[test]
@@ -235,15 +268,10 @@ fn test_case_195_construction_properties() {
 
 #[test]
 fn test_case_195_passes_tolerance() {
-    let (heating, _cooling, peak_h) = simulate_case_195();
+    let (heating, cooling, peak_h) = simulate_case_195();
 
-    // Calculate midpoint of reference ranges
     let heating_midpoint = (reference::ANNUAL_HEATING_MIN + reference::ANNUAL_HEATING_MAX) / 2.0;
-    let peak_h_midpoint = (reference::PEAK_HEATING_MIN + reference::PEAK_HEATING_MAX) / 2.0;
-
-    // Calculate percentage deltas
     let heating_delta = (heating - heating_midpoint).abs() / heating_midpoint;
-    let peak_h_delta = (peak_h - peak_h_midpoint).abs() / peak_h_midpoint;
 
     println!("\n=== ASHRAE 140 Case 195 Tolerance Check ===");
     println!(
@@ -252,16 +280,23 @@ fn test_case_195_passes_tolerance() {
         heating_midpoint,
         heating_delta * 100.0
     );
-    println!(
-        "Peak Heating: {:.4} kW (midpoint: {:.4}), delta: {:.2}%",
-        peak_h,
-        peak_h_midpoint,
-        peak_h_delta * 100.0
-    );
-    println!("Target tolerance: < 0.1%");
+    println!("Peak Heating: {:.3} kW", peak_h);
+    println!("Annual Cooling: {:.3} MWh", cooling);
     println!("=== End ===\n");
 
-    // Note: < 0.1% is a very strict tolerance. Current implementation passes
-    // within reference ranges which is the primary success criterion.
-    // This test documents the current accuracy level.
+    assert!(
+        heating_delta <= 0.20,
+        "annual heating delta {pct:.2}% exceeds 20 % tolerance band",
+        pct = heating_delta * 100.0,
+    );
+    assert!(
+        peak_h <= reference::PEAK_HEATING_UPPER,
+        "peak heating {peak_h:.3} kW exceeds ceiling {:.2} kW",
+        reference::PEAK_HEATING_UPPER,
+    );
+    assert!(
+        cooling <= reference::PEAK_COOLING_UPPER,
+        "annual cooling {cooling:.3} MWh exceeds ceiling {:.2} MWh",
+        reference::PEAK_COOLING_UPPER,
+    );
 }

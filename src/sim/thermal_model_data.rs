@@ -321,6 +321,19 @@ pub struct ThermalModelData<T: ContinuousTensor<f64> + Clone> {
     pub h_tr_iz: T,
     pub h_tr_iz_rad: T,
     pub surface_emissivity: T,
+    /// Exterior (outward-facing) longwave emissivity of the opaque envelope,
+    /// area-weighted over the wall and roof constructions (Issue #2868).
+    ///
+    /// Drives the sky-longwave term of the sol-air temperature used by the
+    /// 5R1C envelope conduction pathway. Previously the sol-air calculation
+    /// used the hard-coded `SolAirTemperature::ashrae_140_default()` value
+    /// (ε = 0.9), which is wrong for the ASHRAE 140 in-depth series: Case 195
+    /// specifies an exterior IR emittance of 0.1 to suppress radiative
+    /// exchange and isolate pure conduction. Populated by `from_spec` from
+    /// the outermost layer of each construction; defaults to 0.9 so every
+    /// case whose spec keeps the default emissivity is bit-identical to the
+    /// previous behaviour.
+    pub exterior_emissivity: T,
     pub zone_volume: T,
     pub common_wall_area: f64,
     pub hvac_system_mode: HvacSystemMode,
@@ -517,6 +530,7 @@ impl<T: ContinuousTensor<f64> + Clone> Clone for ThermalModelData<T> {
             h_tr_iz: self.h_tr_iz.clone(),
             h_tr_iz_rad: self.h_tr_iz_rad.clone(),
             surface_emissivity: self.surface_emissivity.clone(),
+            exterior_emissivity: self.exterior_emissivity.clone(),
             zone_volume: self.zone_volume.clone(),
             common_wall_area: self.common_wall_area,
             hvac_system_mode: self.hvac_system_mode,

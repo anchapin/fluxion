@@ -203,19 +203,30 @@ fn issue_2891_case_195_annual_energy_with_realistic_wind_data() {
     // As of the issue #2891 fix the 5R1C sol-air pathway picks up the
     // ASHRAE 140 §5.2.6 windward-roof wind-dependent coefficient
     //   h_c = 5.8 + 3.8·V_building
-    // The annual heating band-check is intentionally lenient
-    // (<=6.20 MWh): the strict 3.50..6.00 band requires additional
-    // envelope-model fixes tracked under the broader 5R1C validation
-    // epic — the wind-dependence change here is the next-best progress
-    // toward that band. Future work (separate issue) should pair the
-    // wind-dependent h_c_ext with the wind-dependent h_tr_em update so
-    // the wall path no longer compensates for the sol-air path change.
+    //
+    // Issue #2868 (2026-08-16) further reduced Case 195 annual heating
+    // below the previous post-#2891 band: the corrected `t_i_act` divisor
+    // (`den_true = den / term_rest_1`, not `h_tr_is`) puts the
+    // ideal-load-controlled zone air at its 20 °C setpoint (was ~10 °C),
+    // and the degenerate-`H_tr,3` fallback (`H_ve = H_tr,w = 0`) restores
+    // the air � mass coupling. Combined with the per-case exterior IR
+    // emittance (`ε = 0.1` from `low_mass_wall` outermost layer vs. the
+    // previous hard-coded 0.9) and the wind-dependent `h_c_ext`, this
+    // path lands at ~3.2 MWh on the repo's synthetic Denver TMY3.
+    // The ASHRAE 140-2023 inter-program range is [3.951, 4.217] MWh
+    // (DRYCOLD.TM2, ε=0.1, α=0.1); the residual ~0.6 MWh gap is the
+    // weather-file difference documented in `docs/KNOWN_ISSUES.md`
+    // §LIMIT-08. Future work (separate issue) should pair the
+    // wind-dependent `h_c_ext` with the wind-dependent `h_tr_em` update
+    // so the wall path no longer compensates for the sol-air path change.
     const POST_FIX_HEATING_UPPER_MWH: f64 = 6.30;
+    const POST_FIX_HEATING_LOWER_MWH: f64 = 2.80;
     assert!(
-        (3.50..=POST_FIX_HEATING_UPPER_MWH).contains(&annual_heating_mwh),
+        (POST_FIX_HEATING_LOWER_MWH..=POST_FIX_HEATING_UPPER_MWH).contains(&annual_heating_mwh),
         "Case 195 annual heating {annual_heating_mwh:.3} MWh shifted beyond \
-         the post-fix expected window [3.50, {POST_FIX_HEATING_UPPER_MWH:.2}] MWh; \
-         this indicates a regression in the wind-dependent h_c_ext change",
+         the post-fix expected window [{POST_FIX_HEATING_LOWER_MWH:.2}, {POST_FIX_HEATING_UPPER_MWH:.2}] MWh; \
+         this indicates a regression in the wind-dependent h_c_ext change \
+         or in the Issue #2868 surface-balance fix",
     );
     // The issue #2891 acceptance bullet asks for annual energy ≤ 50 kWh.
     // Case 195 is heating-only by construction (no solar gain, no
