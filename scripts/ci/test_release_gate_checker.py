@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import json
 import sys
+from datetime import date, datetime
 from pathlib import Path
 
 import pytest
@@ -55,8 +56,9 @@ _MINIMAL_VALIDATION_CONFIG = {
 }
 
 
-def _results(pass_rate: float = 50.0, mae: float = 30.0,
-             cases: dict | None = None) -> dict:
+def _results(
+    pass_rate: float = 50.0, mae: float = 30.0, cases: dict | None = None
+) -> dict:
     """Build a synthetic ``validation_results`` payload."""
     return {
         "summary": {"pass_rate": pass_rate, "mae": mae},
@@ -95,10 +97,22 @@ def test_check_validation_gates_excludes_known_failures(checker, tmp_path):
     rg = _make_checker(checker, tmp_path, _MINIMAL_VALIDATION_CONFIG)
     # Case 600 (known_fail) is wildly off; case 700 is in-band.
     cases = {
-        "600": {"heating": 100.0, "heating_min": 4.0, "heating_max": 6.0,
-                "cooling": 100.0, "cooling_min": 4.0, "cooling_max": 6.0},
-        "700": {"heating": 5.0, "heating_min": 4.0, "heating_max": 6.0,
-                "cooling": 5.0, "cooling_min": 4.0, "cooling_max": 6.0},
+        "600": {
+            "heating": 100.0,
+            "heating_min": 4.0,
+            "heating_max": 6.0,
+            "cooling": 100.0,
+            "cooling_min": 4.0,
+            "cooling_max": 6.0,
+        },
+        "700": {
+            "heating": 5.0,
+            "heating_min": 4.0,
+            "heating_max": 6.0,
+            "cooling": 5.0,
+            "cooling_min": 4.0,
+            "cooling_max": 6.0,
+        },
     }
     results = rg.check_validation_gates(_results(cases=cases))
     by_name = {r.name: r for r in results}
@@ -115,8 +129,12 @@ def test_check_validation_gates_counts_extreme_cases(checker, tmp_path):
     cases = {}
     for cid in ("100", "200", "300"):
         cases[cid] = {
-            "heating": 100.0, "heating_min": 4.0, "heating_max": 6.0,
-            "cooling": 5.0, "cooling_min": 4.0, "cooling_max": 6.0,
+            "heating": 100.0,
+            "heating_min": 4.0,
+            "heating_max": 6.0,
+            "cooling": 5.0,
+            "cooling_min": 4.0,
+            "cooling_max": 6.0,
         }
     results = rg.check_validation_gates(_results(cases=cases))
     by_name = {r.name: r for r in results}
@@ -142,11 +160,17 @@ _MINIMAL_BENCHMARK_CONFIG = {
 }
 
 
-def _bench(throughput: float = 200.0, latency: float = 5.0,
-           multi_zone: float = 20.0, hybrid: float = 0.0,
-           hybrid_multi_zone: float = 0.0, cv_latency: float = 100.0,
-           cold_start_ms: float = 0.0, warm_ms: float = 0.0,
-           cold_warm_ratio: float = 0.0) -> dict:
+def _bench(
+    throughput: float = 200.0,
+    latency: float = 5.0,
+    multi_zone: float = 20.0,
+    hybrid: float = 0.0,
+    hybrid_multi_zone: float = 0.0,
+    cv_latency: float = 100.0,
+    cold_start_ms: float = 0.0,
+    warm_ms: float = 0.0,
+    cold_warm_ratio: float = 0.0,
+) -> dict:
     return {
         "metrics": {
             "throughput_configs_per_sec": throughput,
@@ -302,8 +326,10 @@ def test_check_drift_gates_fails_when_pass_rate_drifts(checker, tmp_path):
 
 def test_check_drift_gates_handles_missing_baseline(checker, tmp_path):
     """No baseline + create_baseline_if_missing=False → baseline gate fails."""
-    config = {**_DRIFT_CONFIG, "drift": {**_DRIFT_CONFIG["drift"],
-                                          "create_baseline_if_missing": False}}
+    config = {
+        **_DRIFT_CONFIG,
+        "drift": {**_DRIFT_CONFIG["drift"], "create_baseline_if_missing": False},
+    }
     rg = _make_checker(checker, tmp_path, config)
     current = {"summary": {"pass_rate": 50.0, "mae": 30.0}, "cases": {}}
     results = rg.check_drift_gates(current, baseline=None)
@@ -315,12 +341,206 @@ def test_check_drift_gates_disabled_returns_pass(checker, tmp_path):
     """``drift.enabled=False`` → single PASS gate, no baseline required."""
     config = {"drift": {"enabled": False}}
     rg = _make_checker(checker, tmp_path, config)
-    results = rg.check_drift_gates(
-        {"summary": {}, "cases": {}}, baseline=None
-    )
+    results = rg.check_drift_gates({"summary": {}, "cases": {}}, baseline=None)
     assert len(results) == 1
     assert results[0].passed is True
     assert "disabled" in results[0].message.lower()
+
+
+# ---------------------------------------------------------------------------
+# Issue #2856: drift.baseline_file must exist on disk and stay fresh.
+# ---------------------------------------------------------------------------
+# Issue #2856: release_gates.yaml:drift.baseline_file pointed at a
+# non-existent ``validation_baseline.json``. ``_load_baseline()`` silently
+# returned ``None`` and the gate fell through ``create_baseline_if_missing:
+# true`` with a PASS — drift detection was structurally blind. The fix
+# commits the baseline file at the declared path; the regression tests
+# below pin that contract and fail CI if anyone re-points the YAML to a
+# missing or stale file. See ARCHITECTURE.md / release_gates.yaml for the
+# canonical config; do NOT relax these tests without re-reading #2856.
+
+
+def test_drift_baseline_file_path_resolves_in_release_gates_yaml(repo_root):
+    """``release_gates.yaml:drift.baseline_file`` points at an existing file.
+
+    Issue #2856 acceptance #1: the file at the YAML-declared path must
+    exist on disk. Without this the drift gate short-circuits to a
+    silent PASS via ``create_baseline_if_missing`` and never compares
+    current results against history.
+    """
+    yaml_path = repo_root / "release_gates.yaml"
+    assert yaml_path.is_file(), f"release_gates.yaml missing at {yaml_path}"
+
+    with open(yaml_path) as f:
+        yaml_config = yaml.safe_load(f)
+
+    baseline_relpath = yaml_config.get("drift", {}).get("baseline_file", "").strip()
+    assert baseline_relpath, (
+        "release_gates.yaml:drift.baseline_file is empty or missing — "
+        "the drift gate cannot function without a baseline reference."
+    )
+
+    baseline_path = repo_root / baseline_relpath
+    assert baseline_path.is_file(), (
+        f"Drift gate baseline file {baseline_path} (declared at "
+        f"release_gates.yaml:drift.baseline_file) does NOT exist on disk. "
+        "Issue #2856: this regresses the drift gate to a silent PASS via "
+        "`create_baseline_if_missing: true`. Either commit the baseline "
+        "file or repoint `drift.baseline_file` to an existing reference."
+    )
+
+
+def test_drift_baseline_file_has_required_schema(checker, repo_root):
+    """The baseline JSON must parse and expose ``summary`` + ``cases``.
+
+    Issue #2856 acceptance #2: ``check_drift_gates`` reads
+    ``baseline['summary']`` for pass_rate/mae and ``baseline['cases']``
+    for per-case pass/fail transitions. A baseline that parses as JSON
+    but lacks those keys (e.g. a free-form ``_doc`` blob) would still
+    short-circuit the drift logic and silently green the gate.
+    """
+    yaml_path = repo_root / "release_gates.yaml"
+    with open(yaml_path) as f:
+        yaml_config = yaml.safe_load(f)
+    baseline_path = repo_root / yaml_config["drift"]["baseline_file"]
+    assert baseline_path.is_file(), (
+        "Pre-condition for schema test: baseline must exist. "
+        "See test_drift_baseline_file_path_resolves_in_release_gates_yaml."
+    )
+
+    with open(baseline_path) as f:
+        baseline = json.load(f)
+
+    assert "summary" in baseline, (
+        f"{baseline_path.name} must have a top-level `summary` block — "
+        "check_drift_gates reads summary.pass_rate / summary.mae."
+    )
+    assert "cases" in baseline, (
+        f"{baseline_path.name} must have a top-level `cases` dict — "
+        "check_drift_gates reads it for pass_to_fail / fail_to_pass "
+        "transition counts."
+    )
+    summary = baseline["summary"]
+    assert "pass_rate" in summary, (
+        f"{baseline_path.name}: `summary.pass_rate` is required for the "
+        "pass_rate_drift gate."
+    )
+    assert "mae" in summary, (
+        f"{baseline_path.name}: `summary.mae` is required for the " "mae_drift gate."
+    )
+
+
+def test_drift_baseline_file_is_fresh(checker, repo_root):
+    """``captured_at`` must be within ``_stale_threshold_days`` of today.
+
+    Issue #2856 acceptance #3: a baseline file that exists but is
+    years out of date is structurally as bad as a missing one — the
+    drift gate would silently PASS for any current run that happens
+    to be within the recorded band. Mirrors the
+    ``KNOWN_ISSUES.md`` 60-day stale check pattern
+    (``scripts/check_known_issues_stale.py``).
+    """
+    yaml_path = repo_root / "release_gates.yaml"
+    with open(yaml_path) as f:
+        yaml_config = yaml.safe_load(f)
+    baseline_path = repo_root / yaml_config["drift"]["baseline_file"]
+    assert baseline_path.is_file(), (
+        "Pre-condition: baseline must exist. See "
+        "test_drift_baseline_file_path_resolves_in_release_gates_yaml."
+    )
+
+    with open(baseline_path) as f:
+        baseline = json.load(f)
+
+    captured_at_str = baseline.get("captured_at")
+    assert captured_at_str, (
+        f"{baseline_path.name} is missing `captured_at` — the file "
+        "has no staleness signal. Add an ISO-8601 timestamp when the "
+        "baseline is captured / refreshed."
+    )
+
+    # Parse ISO-8601 (allow trailing 'Z' or numeric offset).
+    captured_at = datetime.fromisoformat(captured_at_str.replace("Z", "+00:00"))
+    # Truncate to day boundary so a same-day capture does not race the
+    # threshold (file stamped at 18:00 should not be considered 0.25
+    # days old by a 06:00 CI run).
+    captured_day = captured_at.date()
+    threshold_days = int(baseline.get("_stale_threshold_days", 90))
+    age_days = (date.today() - captured_day).days
+
+    assert age_days <= threshold_days, (
+        f"{baseline_path.name} `captured_at` {captured_at_str} is "
+        f"{age_days} days old (threshold: {threshold_days} days). "
+        "The drift gate has gone stale — refresh the baseline by "
+        "running `cargo run --bin fluxion -- validate` and committing "
+        "the updated validation_results.json / docs/ASHRAE140_RESULTS.md, "
+        "then re-run `python3 scripts/release_gate_checker.py "
+        "--update-baseline` to overwrite this file. See issue #2856."
+    )
+
+
+def test_drift_baseline_loads_via_release_gate_checker(checker, repo_root):
+    """End-to-end: ``_load_baseline()`` returns a non-None dict from the real config.
+
+    Pins the public loader contract against the real
+    ``release_gates.yaml`` (not a tmp_path fixture) so a regression
+    where the YAML-declared file goes missing or the path is broken
+    is caught at the script's own entry point rather than only in CI.
+    """
+    yaml_path = repo_root / "release_gates.yaml"
+    with open(yaml_path) as f:
+        yaml_config = yaml.safe_load(f)
+    drift_config = yaml_config.get("drift", {})
+    assert drift_config.get("enabled", True), (
+        "drift.enabled is False in release_gates.yaml — this test "
+        "only applies when the drift gate is active."
+    )
+
+    rg = _make_checker(checker, repo_root, yaml_config)
+    baseline = rg._load_baseline()
+    assert baseline is not None, (
+        "ReleaseGateChecker._load_baseline() returned None against the "
+        "real repo_root + release_gates.yaml — the drift gate is "
+        "structurally blind. Issue #2856."
+    )
+    assert isinstance(baseline, dict)
+    assert "summary" in baseline and "cases" in baseline
+
+
+def test_drift_gates_fire_against_committed_baseline(checker, repo_root):
+    """Synthetic -5pp pass-rate regression vs committed baseline FAILS the gate.
+
+    Closes the loop on issue #2856: before the fix, the drift gate
+    silently PASSED because the baseline file was missing. After
+    committing ``validation_baseline.json`` with a 14.3% pass-rate,
+    any synthetic current run with pass_rate below 9.3% (i.e.
+    baseline 14.3% − 2pp drift floor = 12.3%, plus the 5pp drop here)
+    MUST trip the pass_rate_drift sub-gate. This is the regression
+    test that proves the gate is wired up end-to-end.
+    """
+    yaml_path = repo_root / "release_gates.yaml"
+    with open(yaml_path) as f:
+        yaml_config = yaml.safe_load(f)
+
+    rg = _make_checker(checker, repo_root, yaml_config)
+    baseline = rg._load_baseline()
+    assert baseline is not None, (
+        "Pre-condition: baseline must load. See "
+        "test_drift_baseline_loads_via_release_gate_checker."
+    )
+
+    current_summary = dict(baseline["summary"])
+    # Drop pass_rate by 5pp — well past the default 2pp drift floor.
+    current_summary["pass_rate"] = current_summary["pass_rate"] - 5.0
+    current = {"summary": current_summary, "cases": dict(baseline["cases"])}
+
+    results = rg.check_drift_gates(current, baseline)
+    by_name = {r.name: r for r in results}
+    assert by_name["pass_rate_drift"].passed is False, (
+        "pass_rate_drift unexpectedly PASSED with a -5pp drop — the "
+        "drift gate is not wired up to the committed baseline. "
+        "Issue #2856."
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -388,8 +608,18 @@ def test_generate_markdown_report_contains_pass_fail(checker, tmp_path):
         timestamp=datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
         overall_passed=all(r.passed for r in results),
         gates=results,
-        summary={"total": len(results), "passed": len(results),
-                 "failed": 0, "by_category": {"validation": {"passed": len(results), "failed": 0, "total": len(results)}}},
+        summary={
+            "total": len(results),
+            "passed": len(results),
+            "failed": 0,
+            "by_category": {
+                "validation": {
+                    "passed": len(results),
+                    "failed": 0,
+                    "total": len(results),
+                }
+            },
+        },
     )
     md = checker.generate_markdown_report(report)
     assert "# Release Gate Status" in md
@@ -411,29 +641,37 @@ def test_main_returns_zero_on_clean_config(checker, tmp_path, monkeypatch, capsy
     ``--validation-results`` pointing at a tmp_path JSON file.
     """
     config = {
-        "validation": {"min_pass_rate": 50.0, "max_mae": 50.0,
-                       "individual": {"max_deviation": 150.0,
-                                      "extreme_deviation_limit": 5,
-                                      "known_failures": []}},
+        "validation": {
+            "min_pass_rate": 50.0,
+            "max_mae": 50.0,
+            "individual": {
+                "max_deviation": 150.0,
+                "extreme_deviation_limit": 5,
+                "known_failures": [],
+            },
+        },
         "ci": {"fail_fast": True},
         "drift": {"enabled": False},
     }
     validation_path = tmp_path / "validation_results.json"
-    validation_path.write_text(json.dumps({
-        "summary": {"pass_rate": 75.0, "mae": 30.0},
-        "cases": {},
-    }))
+    validation_path.write_text(
+        json.dumps(
+            {
+                "summary": {"pass_rate": 75.0, "mae": 30.0},
+                "cases": {},
+            }
+        )
+    )
 
     def fake_yaml_load(stream):
         if hasattr(stream, "name") and "release_gates.yaml" in str(stream.name):
             return config
         import yaml as _yaml  # type: ignore
+
         return _yaml.safe_load(stream)
 
     monkeypatch.setattr(checker.yaml, "safe_load", fake_yaml_load)
-    monkeypatch.setattr(
-        checker, "load_crate_size_results", lambda *a, **kw: None
-    )
+    monkeypatch.setattr(checker, "load_crate_size_results", lambda *a, **kw: None)
 
     saved = sys.argv[:]
     sys.argv[:] = [SCRIPT_NAME, "--validation-results", str(validation_path)]
@@ -458,29 +696,37 @@ def test_main_returns_one_when_validation_fails(checker, tmp_path, monkeypatch, 
     so we monkey-patch the YAML loader to inject the failing fixture.
     """
     config = {
-        "validation": {"min_pass_rate": 90.0, "max_mae": 50.0,
-                       "individual": {"max_deviation": 150.0,
-                                      "extreme_deviation_limit": 5,
-                                      "known_failures": []}},
+        "validation": {
+            "min_pass_rate": 90.0,
+            "max_mae": 50.0,
+            "individual": {
+                "max_deviation": 150.0,
+                "extreme_deviation_limit": 5,
+                "known_failures": [],
+            },
+        },
         "ci": {"fail_fast": True},
         "drift": {"enabled": False},
     }
     validation_path = tmp_path / "validation_results.json"
-    validation_path.write_text(json.dumps({
-        "summary": {"pass_rate": 50.0, "mae": 30.0},
-        "cases": {},
-    }))
+    validation_path.write_text(
+        json.dumps(
+            {
+                "summary": {"pass_rate": 50.0, "mae": 30.0},
+                "cases": {},
+            }
+        )
+    )
 
     def fake_yaml_load(stream):
         if hasattr(stream, "name") and "release_gates.yaml" in str(stream.name):
             return config
         import yaml as _yaml  # type: ignore
+
         return _yaml.safe_load(stream)
 
     monkeypatch.setattr(checker.yaml, "safe_load", fake_yaml_load)
-    monkeypatch.setattr(
-        checker, "load_crate_size_results", lambda *a, **kw: None
-    )
+    monkeypatch.setattr(checker, "load_crate_size_results", lambda *a, **kw: None)
 
     saved = sys.argv[:]
     sys.argv[:] = [SCRIPT_NAME, "--validation-results", str(validation_path)]
@@ -578,9 +824,7 @@ def test_defaults_match_release_gates_yaml(checker, repo_root):
     for dotted_path, default_value in _collect_leaf_paths(defaults):
         yaml_value = _walk_yaml(yaml_config, dotted_path)
         if yaml_value is _MISSING:
-            missing_from_yaml.append(
-                f"{dotted_path} (DEFAULTS={default_value!r})"
-            )
+            missing_from_yaml.append(f"{dotted_path} (DEFAULTS={default_value!r})")
             continue
         if yaml_value != default_value:
             mismatches.append(
@@ -596,8 +840,7 @@ def test_defaults_match_release_gates_yaml(checker, repo_root):
     assert not mismatches, (
         "DEFAULTS values diverge from release_gates.yaml — update DEFAULTS "
         "(scripts/release_gate_checker.py) to match the YAML, or update the "
-        "YAML, so they stay in sync:\n  - "
-        + "\n  - ".join(mismatches)
+        "YAML, so they stay in sync:\n  - " + "\n  - ".join(mismatches)
     )
 
 
@@ -612,6 +855,6 @@ def test_defaults_is_a_dict_at_module_level(checker):
     assert isinstance(checker.DEFAULTS, dict)
     # The drift-relevant top-level sections must all be present.
     for section in ("validation", "benchmark", "crate_size", "drift", "ci"):
-        assert section in checker.DEFAULTS, (
-            f"DEFAULTS is missing top-level section {section!r}"
-        )
+        assert (
+            section in checker.DEFAULTS
+        ), f"DEFAULTS is missing top-level section {section!r}"
