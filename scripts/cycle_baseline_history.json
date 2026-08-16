@@ -164,7 +164,7 @@
         "sim_to_physics": 79
       },
       "total": 299,
-      "edge_signature": "d3345d7a9e70012c62360936f0dea4080940a530c1c242605382397a52a5d647",
+      "edge_signature": "2c4c5e685a69e4e7807b90cf82bc872de565965e3769338f1a6dbf3e3e9e5765",
       "reason": "PR #3034 (issue #2878) split the legacy src/sim/thermal_model_data.rs god-struct (~140 fields, 145-line Clone impl) into 6 per-domain sub-structs in src/sim/thermal_model_data/ (conduction_backend, conduction_state, diagnostics_state, hvac_state, mass_state, setpoint_state, solar_state). The deletion removed 8 use crate::physics:: imports (cta::{ContinuousTensor, VectorField}, ctf_coefficients::CTFCoefficients, ctf_solver::CTFSolver, ctf_zone_coupling::CtfZoneCouplingSolver, fd_solver::ImplicitFDSolver, gauge_zone_solver::GaugeZoneSolver, multi_node_solver::MultiNodeSolver, solver_manager::SolverManager); the per-domain split adds 2 consolidated pub use crate::physics::{...} lines in the new mod.rs (one consolidated block covering 7 types, one cfg-gated re-export of GaugeZoneSolver). Net effect: sim_to_physics 85 -> 79 (-6). BASELINE_SIM_TO_PHYSICS in scripts/check_physics_sim_cycle.py was lowered from 85 to 79 in the same PR (companion cycle-removal work authorised by ARCHITECTURE.md §Regression guard: the god-struct split is itself a cycle-removal operation that reduces sim->physics coupling surface). R1/R2/R3 trend guards continue to enforce downward pressure from this new 299 floor."
     }
   ]
