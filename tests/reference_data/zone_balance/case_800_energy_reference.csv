@@ -1,0 +1,29 @@
+# EnergyPlus Reference: ASHRAE 140 Case 800 — Annual + Peak Energy
+# Source: ASHRAE Standard 140-2023 §5.2 (HVAC equipment validation)
+#         ASHRAE Standard 140-2023 Annex B (Case 600 shared envelope, HVAC layer novel)
+# Spec source: src/validation/ashrae140/cases/series_800.rs (Case 800)
+#              src/validation/ashrae_140_cases.rs::case_800_heat_pump_single_stage
+# Geometry: shared with Case 600 (6m x 8m x 2.7m low-mass single-zone)
+# HVAC: single-stage air-source heat pump, 12 kW heating / 10 kW cooling, COP 3.2 / 3.5
+# Setpoints: heat 20 °C, cool 24 °C
+# Bands mirror `src/validation/benchmark.rs` Case 800 (Informed / Blind identical):
+#   annual_heating  = 4.50 – 5.80 MWh   (midpoint 5.150 MWh)
+#   annual_cooling  = 5.00 – 6.50 MWh   (midpoint 5.750 MWh)
+#   peak_heating    = 2.80 – 3.80 kW    (midpoint 3.300 kW)
+#   peak_cooling    = 4.80 – 6.20 kW    (midpoint 5.500 kW)
+# EPW baseline: USA_CO_Golden-NREL.724666_TMY3.epw (ARCHITECTURE.md §Reference Data)
+# Tolerance: ±15% annual energy per ASHRAE 140 acceptance criteria (issue #1147)
+# Status: placeholder pending EnergyPlus regeneration (issue #1331, #2953).
+#   The IDF `tests/reference_data/energyplus_models/ashrae_140_case_800.idf`
+#   does not yet exist on main (follow-up to #2953). The bands above are the
+#   authoritative raw-ASHRAE-140-2023 Annex B envelope — matching `benchmark.rs`
+#   — so the strict ±15% gate (#1333) and the monthly reference (#1165) can
+#   already consume this CSV. When the IDF lands, re-run
+#   `tests/reference_data/zone_balance/generate_case_800_810_energy.py` to
+#   replace the bands with the EnergyPlus-derived midpoint (and a ±15% band
+#   around it) per the existing PROVENANCE.md contract.
+metric,unit,ref_min,ref_max,ref_midpoint,tolerance_pct,accept_min,accept_max,notes
+annual_heating,MWh,4.500,5.800,5.150,15,4.378,5.923,Light-mass envelope + single-stage heat pump (COP 3.2); shared geometry with Case 600 (raw Annex B band)
+annual_cooling,MWh,5.000,6.500,5.750,15,4.888,6.613,Light-mass envelope + single-stage heat pump (COP 3.5); summer load similar to Case 600 baseline (raw Annex B band)
+peak_heating,kW,2.800,3.800,3.300,15,2.805,3.795,Winter peak at minimum outdoor temperature (Zone 5A)
+peak_cooling,kW,4.800,6.200,5.500,15,4.675,6.325,Summer peak at maximum outdoor temperature (Zone 5A)
