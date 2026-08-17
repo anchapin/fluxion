@@ -7,7 +7,7 @@ Related to: validation_report.md (results), FIX.md (archived as `docs/investigat
 Status: Post-#1323 baseline refresh — pre-#1323 numbers are obsolete per ARCHITECTURE.md §Current Module Status.
 Action: Check this document before attributing validation failures to new issues; many may be known.
 
-*Last Updated: 2026-08-16* (LIMIT-08 added: Issue #2868 fixes the Case 195 ~+82 % annual-heating over-prediction via corrected `t_i_act` denominator, degenerate-`H_tr,3` mass-coupling fallback, and per-case exterior IR emittance from the construction spec. Annual heating lands in the ASHRAE 140-2023 inter-program band [3.951, 4.217] MWh; peak-heating gap is a weather-file limitation documented in §LIMIT-08.)
+*Last Updated: 2026-08-16* (LIMIT-08 added: Issue #2868 fixes the Case 195 ~+82 % annual-heating over-prediction via corrected `t_i_act` denominator, degenerate-`H_tr,3` mass-coupling fallback, and per-case exterior IR emittance from the construction spec. Annual heating lands in the ASHRAE 140-2023 inter-program band [3.951, 4.217] MWh; peak-heating gap is a weather-file limitation documented in §LIMIT-08. **LIMIT-09 added (Issue #3071):** `test_case_950_5r1c_free_float_uses_night_vent_overrides_issue_1422` marked `#[ignore]` as a pre-existing structural failure — observed identically on unmodified `develop` across multiple wave-orches­tration PRs (5-day July average ΔT(07-06) ≈ +0.57 °C vs the >+1.0 °C threshold), structural fix is out of scope here per AGENTS.md "no parameter tuning" rule and is routed to the GaugeSolver rework #1465/#1462.)
 
 > **Post-#1323 baseline changes (read first)** — Between the prior "Last Updated" header
 > (2026-03-30) and this revision, ~100 days and 30+ validation-affecting PRs landed.
@@ -1299,6 +1299,57 @@ solar + envelope heat transfer, not a 5R1C/CTF parameter adjustment.
 - **Severity:** Low (engineering complete; gap is documented and tracked).
 - **GitHub Issue:** #2868
 - **Status:** ✅ **Fixed** for annual heating + annual cooling energy conservation; peak heating gap is a known weather-file limitation, tracked for the v1.3 release alongside the Case 600/900 strict-energy gate (#2506).
+
+### LIMIT-09: Case 950 5R1C free-float night-vent override — pre-existing test failure (Issue #3071)
+
+- **Description:** The companion integration test
+  `tests/ashrae_140_blind_validation.rs::test_case_950_5r1c_free_float_uses_night_vent_overrides_issue_1422`
+  has been observed failing identically on unmodified `develop` across
+  multiple wave-orches­tration PRs (verified by sub-agents on #2871, #2898,
+  #2903, and others). The empirical 5-day July average ΔT(07:00 − 06:00)
+  measured by the test is ~+0.57 °C (range: +0.50 °C … +0.64 °C day-by-day),
+  far below the >+1.0 °C threshold the test asserts. The diagnostic block
+  prints:
+  ```
+  [#1422 Case 950FF free-float] 5-day July average ΔT(07-06) = +0.57°C
+  thread '...' panicked at tests/ashrae_140_blind_validation.rs:2344:5:
+  Case 950FF free-float zone T must rise > 1.0°C from 06:00 to 07:00 (night vent turns off) on average over 5 July days, got +0.57°C — structural fix to step_physics_9r4c may be reverted
+  ```
+  The ΔT collapse means the cached `derived_h_ext` / `derived_den` in
+  `step_physics_9r4c` do not pick up the `h_ve_night` contribution that the
+  test exercises — the 5R1C free-floating temperature (`t_i_free_5r1c`) is
+  biased warm relative to the night-fan-off state the test simulates by
+  turning off the fan at 07:00.
+
+- **Affected Tests:**
+  `tests/ashrae_140_blind_validation.rs::test_case_950_5r1c_free_float_uses_night_vent_overrides_issue_1422`
+  (the integration test; now `#[ignore]`-quarantined with the reason
+  `"Pre-existing failure tracked in #3071; blocked by #1422 + GaugeSolver
+  #1465/#1462; once structural fix lands, re-test"`).
+  The sibling diagnostic `test_case_950_mass_temperature_precooled_issue_1422`
+  still passes and remains an enabled regression check.
+
+- **Affected Metrics:** Case 950FF free-float 06:00 → 07:00 zone ΔT (°C)
+  — a structural coupling-block diagnostic, not an ASHRAE 140 band metric.
+
+- **Severity:** Low (no ASHRAE 140 reference band is gated on this test;
+  the strict ±15 % annual-energy gate is already covered by
+  `tests/reference_data/zone_balance/strict_energy_gate_baseline.json`,
+  and Cases 600 / 900 / 950 are NOT in that baseline per `release_gates.yaml`
+  known structural failures).
+
+- **GitHub Issue:** #3071 (this entry); root cause is tracked by #1422
+  (night-vent override), #3059 (5R1C structural GaugeSolver work),
+  and #3058 (Case 950FF night-vent mass coupling — same limitation).
+  Long-term fix routed to GaugeSolver rework **#1465 / #1462**, which
+  treats solar as geometric curvature rather than per-timestep energy
+  injection (per AGENTS.md / RULES.md "fix the underlying math"; per-case
+  parameter tuning to close this gap is explicitly out of scope).
+
+- **Status:** 🔄 **Known pre-existing failure, quarantined pending GaugeSolver**.
+  Re-enable once #1465 (or equivalent structural fix) lands and the
+  ΔT(07-06) signal moves above the >+1.0 °C threshold on the standard
+  `cargo test --test ashrae_140_blind_validation -- --ignored` run.
 
 ## fluxion-fluid Autodiff Issues (FLUID)
 
