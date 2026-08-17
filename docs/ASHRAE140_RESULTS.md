@@ -60,6 +60,24 @@ structural root cause and cannot be closed by parameter tuning:
   ADR-0007 stub (`docs/adr/0007-gauge-solver-structural-work.md`,
   Status: Proposed) that links the cohort to the GaugeSolver unblocker.
 
+### Case 960 cooling-band gap (Issue #3061)
+
+The post-PR #3052 raw multi-zone diagnostic reports **0.63 MWh annual
+cooling** against the **1.55–2.78 MWh** Case 960 reference band and **1.17 kW
+peak heating** against the **2.0–8.0 kW** band. PR #3052 restored common-wall
+bulk conduction and the ground-reflected inter-zone gain path, but the
+5R1C/9R4C air-mass distribution still cannot accumulate enough cooling demand
+at the conditioned back-zone's 27 °C setpoint through coupling to the
+free-floating sunspace.
+
+This is tracked in `docs/KNOWN_ISSUES.md` **§LIMIT-14**. Adding mechanical
+cooling to the sunspace would contradict the Case 960 free-floating
+specification, while lowering `convective_to_air_factor` would be forbidden
+case-local parameter tuning. The compliant closure route is the GaugeSolver
+production-path work coordinated by **Issue #3059** (#1465 / #1462). These
+figures are the post-#3052 raw diagnostics used by #3061; they do not
+regenerate the 2026-08-16 snapshot tables below.
+
 ## Performance Summary
 
 | Metric | Value |

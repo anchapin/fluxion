@@ -7,7 +7,9 @@ Related to: validation_report.md (results), FIX.md (archived as `docs/investigat
 Status: Post-#1323 baseline refresh — pre-#1323 numbers are obsolete per ARCHITECTURE.md §Current Module Status.
 Action: Check this document before attributing validation failures to new issues; many may be known.
 
-*Last Updated: 2026-08-17*
+*Last Updated: 2026-08-17 (LIMIT-14 #3061 merged with LIMIT-15 #3060 from #3096)*
+
+**LIMIT-14 added (Issue #3061):** After PR #3052's partial Case 960 inter-zone fix, raw annual cooling remains 0.63 MWh versus the 1.55–2.78 MWh reference band and peak heating remains 1.17 kW versus 2.0–8.0 kW. The 5R1C/9R4C air-mass distribution cannot accumulate enough back-zone cooling demand at the 27 °C setpoint through coupling to the free-floating sunspace; compliant closure is blocked on the GaugeSolver production-path work coordinated by #3059, not a sunspace HVAC control or gain-split tuning.
 
 **LIMIT-12 added (Issue #3062):** Case 940 annual heating is 7,487.81 kWh on the CTF validator path versus 1,289.9 kWh on the blind diagnostic path after PR #3042; the remaining setback-recovery overshoot is structural and tracked without a production-physics change.
 
@@ -2189,9 +2191,97 @@ solar + envelope heat transfer, not a 5R1C/CTF parameter adjustment.
     `ARCHITECTURE.md` first"; "Weather (fluxion-core/src/weather/)"
     is a stable interface per the Module Boundaries diagram.
   - `ADR-0001` — No-Parameter-Tuning Rule (forbids option b).
-  - `docs/adr/0007-gauge-solver-structural-work.md` — architectural
+   - `docs/adr/0007-gauge-solver-structural-work.md` — architectural
     unblocker for the §LIMIT-05 / §LIMIT-11 / §LIMIT-15 sister
     issues (#1465 / #1462 production-path switchover).
+
+### LIMIT-14: Case 960 sunspace annual cooling and peak heating below band — GaugeSolver-blocked air-mass distribution gap (Issue #3061)
+
+- **Description:** PR #3052 delivered the partial fix requested by Issue #2858:
+  common-wall bulk conduction and the ground-reflected inter-zone gain path now
+  couple the conditioned back-zone to the free-floating sunspace. The post-fix
+  raw annual heating moved into band, but annual cooling and peak heating remain
+  below the ASHRAE 140-2023 Case 960 inter-program reference envelope:
+
+  | Metric | Post-#3052 result | Reference band | Verdict |
+  |--------|-------------------|----------------|---------|
+  | Annual cooling (raw) | 0.63 MWh | 1.55–2.78 MWh | **BELOW** |
+  | Peak heating | 1.17 kW | 2.0–8.0 kW | **BELOW** |
+  | Cooling validator (COP-adjusted) | 0.10 MWh | 1.55–2.78 MWh | **BELOW** |
+
+  The same run reports raw annual heating at 2.14 MWh within the
+  1.65–2.45 MWh band, confirming that PR #3052 improved the inter-zone path
+  without closing the remaining load-distribution gap. Reference bands are
+  maintained in `validation::benchmark` and summarised in
+  `docs/ASHRAE140_MULTI_ZONE_RESULTS.md` §"Case 960 Reference Data".
+
+- **Root cause:** The 5R1C + 9R4C air-mass distribution cannot accumulate
+  enough back-zone cooling demand at the 27 °C cooling setpoint through
+  inter-zone coupling alone. The free-floating sunspace receives the solar
+  forcing, but the current air-to-mass distribution buffers and redistributes
+  that forcing before enough of it reaches the conditioned back-zone air node. The same topology smooths the winter load response and
+  leaves peak heating below band. This is the Case 960 manifestation of the
+  structural limitation documented in §LIMIT-05 and coordinated by Issue
+  #3059; it is not a missing common-wall conductance term after PR #3052.
+
+- **Affected case and metrics:** Case 960 annual cooling (raw and
+  COP-adjusted validator output) and peak heating. Peak cooling remains in its
+  0–4 kW band; this entry does not alter any validation assertion or reference
+  range.
+
+- **Severity:** High for ASHRAE 140 compliance (two Case 960 reference-band
+  metrics remain below band), with no safe case-local correction in the
+  current solver topology.
+
+- **Implementation options and risk analysis:**
+  1. **Add a sunspace-side mechanical cooling setpoint — rejected.** The Case
+     960 sunspace is specified as free-floating; adding mechanical cooling
+     would simulate a different building and hide the coupling limitation
+     behind a control that the benchmark does not contain.
+  2. **Lower the sunspace-side `convective_to_air_factor` — rejected.** This
+     would tune the solar gain split until more energy reaches the back-zone
+     through conduction, without deriving a new distribution from first
+     principles. It is parameter tuning to pass a system test, explicitly
+     forbidden by RULES.md, AGENTS.md, and ADR-0001, and risks regressions in
+     other multi-zone and solar-distribution cases.
+  3. **Complete the GaugeSolver production-path switchover — required
+     structural route.** Issue #3059 coordinates this unblocker through the
+     GaugeSolver work in #1465 / #1462. Those issues shipped shadow-mode and
+     validation infrastructure, but production `step_physics_5r1c` /
+     `step_physics_9r4c` replacement has not landed. This option has broad
+     solver, energy-balance, and cross-case regression risk, so it requires a
+     dedicated architecture-reviewed physics PR rather than a Case 960
+     constant change.
+
+- **Status:** 🔄 **Documentation/tracking only; blocked on Issue #3059 and the
+  GaugeSolver production-path work (#1465 / #1462).** No physics, validation,
+  test, reference-data, ARCHITECTURE.md, or RULES.md change is part of this
+  entry. The existing GaugeSolver cohort tracking stub in
+  `docs/adr/0007-gauge-solver-structural-work.md` already covers Case 960, so
+  no duplicate ADR is needed for this documentation-only update.
+
+- **Acceptance for the future structural PR:**
+  1. Case 960 raw annual cooling is within 1.55–2.78 MWh.
+  2. Case 960 peak heating is within 2.0–8.0 kW.
+  3. The COP-adjusted validator cooling result is within its reference band.
+  4. Energy-balance, cross-case ASHRAE 140, architecture-drift, and cycle
+     guards remain green without changing
+     `tests/reference_data/zone_balance/strict_energy_gate_baseline.json`.
+
+- **Linkage and provenance:**
+  - Issue #2858 — origin of the Case 960 inter-zone coupling work.
+  - PR #3052 — partial fix: common-wall bulk conduction and ground-reflected
+    inter-zone gain path; exposed the residual cooling/heating gap above.
+  - Issue #3059 — architectural unblocker coordinating the 5R1C/9R4C
+    air-mass-distribution replacement through GaugeSolver.
+  - Issue #1456 — removed the broken Case 960 6R2C override and exposed the
+    default 5R1C/9R4C path on which this limitation occurs.
+  - Issues #1465 / #1462 — GaugeSolver validation and shadow-mode foundations;
+    production-path switchover remains outstanding.
+  - §LIMIT-10 / Issue #3065 — sister Case 960 free-floating sunspace
+    temperature limitation with the same architectural unblocker.
+  - `docs/adr/0007-gauge-solver-structural-work.md` — existing cohort-level
+    tracking stub for the eventual architecture decision.
 
 ## fluxion-fluid Autodiff Issues (FLUID)
 
