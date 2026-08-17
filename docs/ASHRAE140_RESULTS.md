@@ -14,6 +14,52 @@
 | Mean Absolute Error | 51.03% |
 | Max Deviation | 470.11% |
 
+## Structural Blockers (Issue #3072)
+
+The current strict ±15% pass-rate (14.3%) is bounded above by an
+**aggressive-baseline cohort** of five ASHRAE 140 cases that share the same
+structural root cause and cannot be closed by parameter tuning:
+
+- **Cohort cases:** **195, 600, 620, 940, 960** (all five are FAIL in the
+  detailed tables below).
+- **Common root cause:** `step_physics_5r1c` / `step_physics_9r4c` use a single
+  lumped thermal-mass node that cannot capture multi-mode thermal coupling
+  accurately enough for ASHRAE 140's strict ±15% reference band. This is the
+  discrete-node solar-injection pathology documented in
+  `docs/KNOWN_ISSUES.md` §LIMIT-05 (CTF-vs-blind 6–8× ratio, bidirectional
+  peak-cooling OVER + peak-heating UNDER signature, bidirectional annual-energy
+  over-prediction).
+- **Unblocker:** **GaugeSolver structural rework (issues #1465 / #1462)** —
+  treats solar as geometric curvature rather than per-timestep energy injection.
+  Both issues are individually closed (Phase 1b shadow-mode `GaugeSolver` ships
+  in `physics_adapter.rs` per #1462; Phase 3 ASHRAE 140 Case 900 validation
+  harness ships per #1465), but the **production-path switchover is not yet
+  landed**. Without that switchover, the gate cannot lift above ~30% even with
+  all Wave 14–22 partial fixes landed.
+- **Per-case follow-up issues:** Case 195 → #3060 (LIMIT-08 weather mismatch);
+  Cases 600/620 → #3059 (LIMIT-05 GaugeSolver structural); Case 940 → #3062
+  (CTF coupling overshoot); Case 960 → #3061 (5R1C air-mass distribution).
+- **Wave partial-fix reports (PRs #3040, #3041, #3042, #3044, #3052):** Each
+  closed a subset of the cohort or its dependencies. None of them closes the
+  structural block; each is documented in `docs/KNOWN_ISSUES.md` §"Aggressive-
+  baseline cohort tracking (Issue #3072)" (the cross-issue meta-issue tracking
+  entry added 2026-08-16).
+- **No tuning escape hatch:** Per **RULES.md** ("no parameter tuning",
+  "must-never hardcode results"), **AGENTS.md** ("fix the underlying math";
+  `tests/reference_data/zone_balance/strict_energy_gate_baseline.json` must
+  NEVER be raised to hide a regression), and **ADR-0001** (No-Parameter-Tuning
+  Rule), closing these five cases by adjusting `h_ms_coeff`, `derived_h_tr_3`,
+  `solar_distribution_to_air`, or any 5R1C/CTF constant is explicitly
+  forbidden. The structural signature is **structurally infeasible at
+  `dt/τ ≈ 3.6`** per §LIMIT-05 UPDATE (#1522); no air-node damping can reduce
+  the cooling peak while simultaneously increasing the heating peak because
+  damping smooths the air-temperature swing symmetrically.
+- **Cohort tracking:** see `docs/KNOWN_ISSUES.md` §"Aggressive-baseline
+  cohort tracking (Issue #3072)" for the full per-case status, dependent
+  issues (#3058, #3059, #3061, #3062, #3063, #3060, #3070) table, and
+  ADR-0007 stub (`docs/adr/0007-gauge-solver-structural-work.md`,
+  Status: Proposed) that links the cohort to the GaugeSolver unblocker.
+
 ## Performance Summary
 
 | Metric | Value |

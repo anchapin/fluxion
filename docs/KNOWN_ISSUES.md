@@ -7,7 +7,7 @@ Related to: validation_report.md (results), FIX.md (archived as `docs/investigat
 Status: Post-#1323 baseline refresh — pre-#1323 numbers are obsolete per ARCHITECTURE.md §Current Module Status.
 Action: Check this document before attributing validation failures to new issues; many may be known.
 
-*Last Updated: 2026-08-16* (LIMIT-08 added: Issue #2868 fixes the Case 195 ~+82 % annual-heating over-prediction via corrected `t_i_act` denominator, degenerate-`H_tr,3` mass-coupling fallback, and per-case exterior IR emittance from the construction spec. Annual heating lands in the ASHRAE 140-2023 inter-program band [3.951, 4.217] MWh; peak-heating gap is a weather-file limitation documented in §LIMIT-08. **LIMIT-09 added (Issue #3071):** `test_case_950_5r1c_free_float_uses_night_vent_overrides_issue_1422` marked `#[ignore]` as a pre-existing structural failure — observed identically on unmodified `develop` across multiple wave-orches­tration PRs (5-day July average ΔT(07-06) ≈ +0.57 °C vs the >+1.0 °C threshold), structural fix is out of scope here per AGENTS.md "no parameter tuning" rule and is routed to the GaugeSolver rework #1465/#1462.)
+*Last Updated: 2026-08-16* (LIMIT-08 retained. **LIMIT-09 added (Issue #3071):** `test_case_950_5r1c_free_float_uses_night_vent_overrides_issue_1422` marked `#[ignore]` as a pre-existing structural failure — observed identically on unmodified `develop` across multiple wave-orches­tration PRs (5-day July average ΔT(07-06) ≈ +0.57 °C vs the >+1.0 °C threshold), structural fix is out of scope here per AGENTS.md "no parameter tuning" rule and is routed to the GaugeSolver rework #1465/#1462. Added **§"Aggressive-baseline cohort tracking (Issue #3072)"** — meta-issue coordinating the GaugeSolver structural work (#1465/#1462) for the Cases 195/600/620/940/960 cohort. Documents that the strict ±15% pass-rate gate cannot lift above 30% without the GaugeSolver rework per ADR-0001 "no parameter tuning" and AGENTS.md. Cohort tracking only — no physics-code change.)
 
 > **Post-#1323 baseline changes (read first)** — Between the prior "Last Updated" header
 > (2026-03-30) and this revision, ~100 days and 30+ validation-affecting PRs landed.
@@ -1079,6 +1079,66 @@ they are physically correct and flip one marginal test.
   is published, bump the pin in `Cargo.toml` and `fluxion-behavior/Cargo.toml`,
   update the comments, and drop this CI-03 entry. Until then the RC pin is
   intentional and the non-default feature ensures it is opt-in everywhere.
+
+## Aggressive-baseline cohort tracking (Issue #3072)
+
+- **Status:** 🔄 **Meta-issue coordinating GaugeSolver structural work; no physics-code change in this entry.**
+- **Date added:** 2026-08-16 (Issue #3072)
+- **Cohort:** ASHRAE 140 Cases **195 / 600 / 620 / 940 / 960**.
+- **Root cause (shared):** All five cases share the same `step_physics_5r1c` / `step_physics_9r4c` structural limitation — a single lumped thermal-mass node cannot capture multi-mode thermal coupling accurately enough for ASHRAE 140's strict ±15% reference band on the aggressive-cohort cases. This is the same discrete-node solar-injection pathology documented in §LIMIT-05 (CTF-vs-blind 6–8× ratio, bidirectional peak-cooling OVER + peak-heating UNDER, bidirectional annual-energy over-prediction).
+- **Unblocker:** **GaugeSolver structural rework (#1465 / #1462)** — treats solar as geometric curvature rather than per-timestep energy injection, eliminating the per-timestep over-injection that drives the bidirectional signatures. Both issues are individually **closed** (the Phase 1b shadow-mode `GaugeSolver` ships in `physics_adapter.rs` per #1462; the Phase 3 ASHRAE 140 Case 900 validation harness ships per #1465) — but the **production-path switchover is not yet landed**, so the strict ±15% pass-rate gate cannot lift above 30% even with all Wave 14–22 partial fixes.
+- **Why no fix in this meta-issue:** Per **RULES.md** ("no parameter tuning", "must-never hardcode results"), **AGENTS.md** ("fix the underlying math"; the `tests/reference_data/zone_balance/strict_energy_gate_baseline.json` baseline must NEVER be raised to hide a regression), and **ADR-0001** (No-Parameter-Tuning Rule), the cohort cannot be closed by adjusting `h_ms_coeff`, `derived_h_tr_3`, `solar_distribution_to_air`, or any 5R1C/CTF constant. Closing the bidirectional gap is structurally infeasible at `dt/τ ≈ 3.6` per the §LIMIT-05 UPDATE (#1522) investigation and per §SOLAR-02 UPDATE (#2239) routing. This entry is **documentation/tracking only** — it does not propose, suggest, or hint at a tuning fix.
+
+### Per-case cohort status
+
+| Case | Metric | Pre-#3072 status | Origin issue | Follow-up issue | Wave partial-fix PR |
+|------|--------|------------------|--------------|-----------------|----------------------|
+| **195** | Annual heating | 3238 kWh (post-#2868) vs ref [0, 0] band; LIMIT-08 weather source mismatch | #2868 (closed via PR #3044) | **#3060** | Wave 16 (PR #3044) |
+| **600** | Peak cooling | +48 % OVER band (single lumped-mass node at `dt/τ ≈ 3.6`) | #2871 (closed via PR #3041) | **#3059** | Wave 17 (PR #3041) |
+| **620** | Peak cooling | +11 % OVER band (same 5R1C air-mass limitation) | #2871 (closed via PR #3041) | **#3059** | Wave 17 (PR #3041) |
+| **940** | Annual heating | 6.97 MWh vs ref [0.79, 1.41] MWh; CTF path overshoots blind path 6–8× | #2870 (closed via PR #3042) | **#3062** | Wave 17 (PR #3042) |
+| **960** | Annual cooling | 8.85 MWh vs ref [1.55, 2.78] MWh (5R1C air-mass distribution limitation) | #2858 (closed via PR #3052) | **#3061** | Wave 22 (PR #3052) |
+
+### Dependent issues
+
+| Issue | Title | Status | Notes |
+|-------|-------|--------|-------|
+| **#1465** | [Validation] Phase 3: Validate `GaugeSolver` against ASHRAE 140 Case 900 | ✅ **Closed** | Validation harness shipped; production-path switchover NOT yet landed |
+| **#1462** | [Physics] Phase 1b: Implement `GaugeSolver` in Shadow Mode inside `physics_adapter.rs` | ✅ **Closed** | Shadow-mode `GaugeSolver` shipped; production-path switchover NOT yet landed |
+| **#3058** | Case 950FF night-ventilation mass coupling overwhelms F_sky correction (#2872 partial follow-up) | 🔄 Open | F_sky fix moved Case 950FF min by 0.02 °C; still 3.7 °C outside band |
+| **#3059** | Cases 610/630/650 peak cooling OVER (LIMIT-05) — requires GaugeSolver #1465/#1462 structural fix (#2871 follow-up) | 🔄 Open | `MAX_CONVECTIVE_TO_AIR_MULTIPLIER = 2.0×` cap landed (PR #3041); Cases 610/630/650 still over |
+| **#3061** | Case 960 sunspace annual cooling below band (5R1C air-mass distribution limitation, #2858 follow-up) | 🔄 Open | `COMMON_WALL_FRACTION = 0.25 × U_internal × A_wall_excluding_door` landed (PR #3052); annual cooling still below band |
+| **#3062** | Case 940 setback recovery CTF path overshoots blind path by 6–8× (#2870 follow-up, structural) | 🔄 Open | Sub-hour HVAC mode interpolation landed (PR #3042); CTF path still over by 6× |
+| **#3063** | h_tr_em (envelope-to-mass conductance) remains time-invariant in 5R1C path (#2891 follow-up) | 🔄 Open | Wind-dependent `h_se` landed (PR #3024); `h_tr_em` per-step recompute still missing |
+| **#3060** | Case 195 LIMIT-08 — Denver TMY min −12.47 °C vs DRYCOLD.TM2 −24.4 °C weather data source mismatch (#2868 follow-up) | 🔄 Open | Weather-file swap (DRYCOLD.TM2) or band adjustment per ASHRAE 140 Annex B §B.3 required |
+| **#3070** | #2878 god-struct split reverted — Cases 195/600/620 physics regression needs proper fix | 🔄 Open | PR #3034 introduced Cases 195/600/620 regression (violated RULES.md "no parameter tuning"); reverted; coupling between refactor and physics-regression risk must be addressed before re-merge |
+
+### Why the cohort cannot lift above 30% without GaugeSolver
+
+Per `docs/ASHRAE140_RESULTS.md` (2026-08-16 snapshot) and `release_gates.yaml → validation.min_pass_rate: 0.60`, the strict ±15% pass rate is bounded by the aggressive-baseline cohort. Even with all Wave 14–22 partial fixes landed, the remaining bidirectional signatures (peak-cooling OVER + peak-heating UNDER, or annual heating AND cooling OVER simultaneously) cannot be closed by parameter tuning per ADR-0001 and AGENTS.md "no parameter tuning." Per §LIMIT-05 UPDATE (#1522), the trade-off is **structurally infeasible at `dt/τ ≈ 3.6`** — no single air-node damping can reduce the cooling peak while simultaneously increasing the heating peak because damping smooths the air-temperature swing symmetrically. The same trade-off holds for the annual-energy bidirectional over-prediction (Cases 900/910/920/930/940 per §LIMIT-05 UPDATE (#2453)).
+
+The fix is **structural** — the `GaugeSolver` rework (#1465 / #1462) — and the architectural change is out of scope for individual sub-agents per the meta-issue framing of #3072. The Cohort tracking table above is **status-only** (open/closed); it does not change pass-rate claims, alter the strict-energy-gate baseline, or modify any test reference data.
+
+### Related sections in this document
+
+- §LIMIT-05 UPDATE (#1522) — air-node capacitance investigation (structurally infeasible at 1 h timestep)
+- §LIMIT-05 UPDATE (#2453) — 900-series bidirectional annual-energy over-prediction
+- §LIMIT-05 UPDATE (#2452) — Case 940 setback thermostat (CTF vs blind 6–8×)
+- §LIMIT-05 UPDATE (#2300) — sub-hour air-node sub-stepping, **BLOCKED by GaugeSolver**
+- §LIMIT-05 UPDATE (#1281) — `MassAirCouplingMode::ParallelResistance` (architectural; does NOT by itself close the cooling gap)
+- §LIMIT-08 — Case 195 LIMIT-08 weather-file peak-heating gap
+- §SOLAR-02 UPDATE (#2239) — Case 900 residual deviation routed to GaugeSolver #1465
+- §MULTI-01b / PeakHeatingLimit-01 — Case 960 peak-heating architectural under-prediction
+
+### External references
+
+- `docs/ASHRAE140_RESULTS.md` — current pass-rate snapshot (post-#3044 PR; 12.5 % headline, MAE 51.93 %)
+- `docs/adr/0007-gauge-solver-structural-work.md` — structural-work tracking stub (Status: Proposed)
+- `docs/gauge_solver_scalability.md` — `MultiZoneGaugeSolver` scalability characterisation (Issue #1771)
+- `RULES.md` — "no parameter tuning" + "must-never hardcode results"
+- `AGENTS.md` — "fix the underlying math"; strict-energy-gate baseline must NEVER be raised
+- `ADR-0001` — No-Parameter-Tuning Rule
+- Wave 14–22 partial-fix PRs #3040, #3041, #3042, #3044, #3052 (each closes a subset of the cohort; none closes the structural block)
 
 ## Summary
 
