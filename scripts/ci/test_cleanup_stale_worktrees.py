@@ -25,13 +25,9 @@ from __future__ import annotations
 
 import json
 import os
-import shutil
 import subprocess
-import textwrap
 from pathlib import Path
 from typing import Any
-
-import pytest
 
 # Locate the script under test. The tests run from the repo root, so the
 # script lives at ``scripts/cleanup_stale_worktrees.sh`` relative to the
@@ -379,7 +375,7 @@ def test_unmerged_branches_are_skipped(tmp_path):
 
     # Default (dry-run): unmerged branch should be in skip bucket.
     report_path = tmp_path / "report.json"
-    result = _run_script(repo, env, "--json", "--output", str(report_path))
+    _run_script(repo, env, "--json", "--output", str(report_path))
     report = json.loads(report_path.read_text())
 
     unmerged = [
@@ -394,7 +390,7 @@ def test_unmerged_branches_are_skipped(tmp_path):
     )
 
     # Now --apply: the branch must still be there.
-    result = _run_script(repo, env, "--apply")
+    _run_script(repo, env, "--apply")
     after = _git("branch", "--list", cwd=repo, env=env).stdout
     assert "fix/issue-2222-unmerged" in after, (
         "unmerged branch was deleted by --apply:\n" + after
@@ -501,7 +497,7 @@ def test_unpushed_branches_are_skipped(tmp_path):
 
     # Dry-run: unpushed branch should be classified as skip.
     report_path = tmp_path / "report.json"
-    result = _run_script(repo, env, "--json", "--output", str(report_path))
+    _run_script(repo, env, "--json", "--output", str(report_path))
     report = json.loads(report_path.read_text())
 
     unpushed = [
@@ -516,7 +512,7 @@ def test_unpushed_branches_are_skipped(tmp_path):
     )
 
     # --apply: the branch must still be there.
-    result = _run_script(repo, env, "--apply")
+    _run_script(repo, env, "--apply")
     after = _git("branch", "--list", cwd=repo, env=env).stdout
     assert "fix/issue-4444-unpushed" in after, (
         "unpushed branch was deleted by --apply:\n" + after
@@ -737,7 +733,7 @@ def test_default_glob_excludes_develop(tmp_path):
     repo, env = _make_synthetic_repo(tmp_path)
 
     report_path = tmp_path / "report.json"
-    result = _run_script(repo, env, "--json", "--output", str(report_path))
+    _run_script(repo, env, "--json", "--output", str(report_path))
     report = json.loads(report_path.read_text())
 
     # develop appears in the plan ONLY as the main worktree, NOT as a
