@@ -1,0 +1,176 @@
+{
+  "_doc": "Machine-readable duplicate-version cluster inventory for deny.toml [bans] (issue #2994). Each cluster is a single `cargo deny -f json check bans` diagnostic that reports `code=duplicate`. The count of clusters equals the live count of duplicate-version warnings emitted against the current Cargo.lock; the CI gate from #2933 enforces `deny.toml [bans] duplicates_baseline` (currently 45, matching `total_duplicates` here) and fails PRs that grow the count. Tracking issue #2994 carries the prose reduction plan; this artifact is the machine-readable baseline a future reduction PR must lower.",
+  "_rule": "Per RULES.md 'no parameter tuning': do NOT raise `total_duplicates` or `duplicates_baseline` to hide a regression. Lower them only when a cluster is actually removed from the dep graph; commit the dep change together with the baseline update.",
+  "schema_version": 1,
+  "captured_at": "2026-08-17",
+  "captured_commit": "develop @ 6b9dff7 (2026-08-17)",
+  "source_command": "cargo deny -f json check bans",
+  "source_path": "deny.toml [bans] multiple-versions='warn'",
+  "total_duplicates": 45,
+  "duplicates_baseline": 45,
+  "_duplicates_baseline_doc": "Mirrors `# duplicates_baseline: 45` comment in deny.toml [bans]. The CI step in .github/workflows/security.yml parses that comment and fails when the live count exceeds this value. Issue #2994 reduces both in lock-step (45 -> 30 -> 15 -> 0).",
+  "wildcards_baseline": 1,
+  "_wildcards_baseline_doc": "Number of wildcard-version warnings from `cargo deny check bans` (currently 1). The CI gate does NOT enforce this — only duplicates are gated per #2933. Listed here for completeness so future reduction PRs can track both axes.",
+  "milestones": [
+    {"target": 30, "label": "v1.4-M1", "strategy": "Drop `bitflags 1.3.2` (legacy dep), `cpufeatures 0.2.17`, fold `directories 5`+`dirs-sys 0.4` chain, fold `hashbrown 0.15` (criterion plot bump), `foldhash 0.1`."},
+    {"target": 15, "label": "v1.4-M2", "strategy": "Bump `rustls 0.23` family + remove `r-efi 5.x` copy; align `getrandom 0.x` to a single major; align `winnow` to 0.7; fold `thiserror 1.x` to 2.x."},
+    {"target": 0,  "label": "v1.4-M3", "strategy": "Bump `windows-*` family to a single major (likely 0.61); align `nalgebra`/`simba`/`wide` to 0.35/0.10/1.x; align `syn` to 2.x or 3.x. Then flip deny.toml `multiple-versions = 'deny'` and migrate unavoidable entries to `skip` with `reason`."}
+  ],
+  "clusters": [
+    {
+      "name": "windows-sys-family",
+      "crates": ["windows-sys", "windows-targets", "windows_aarch64_gnullvm", "windows_aarch64_msvc", "windows_i686_gnu", "windows_i686_msvc", "windows_x86_64_gnu", "windows_x86_64_gnullvm", "windows_x86_64_msvc"],
+      "crate_versions": {
+        "windows-sys": ["0.42.0", "0.48.0", "0.52.0", "0.61.2"],
+        "windows-targets": ["0.48.5", "0.52.6"],
+        "windows_aarch64_gnullvm": ["0.42.2", "0.48.5", "0.52.6"],
+        "windows_aarch64_msvc": ["0.42.2", "0.48.5", "0.52.6"],
+        "windows_i686_gnu": ["0.42.2", "0.48.5", "0.52.6"],
+        "windows_i686_msvc": ["0.42.2", "0.48.5", "0.52.6"],
+        "windows_x86_64_gnu": ["0.42.2", "0.48.5", "0.52.6"],
+        "windows_x86_64_gnullvm": ["0.42.2", "0.48.5", "0.52.6"],
+        "windows_x86_64_msvc": ["0.42.2", "0.48.5", "0.52.6"]
+      },
+      "diagnostic_count": 9,
+      "source": "transitive via faer 0.24 (0.42), directories 5 (0.48), rustls 0.23 / hyper-rustls / reqwest / tokio-rustls / memory-stats (0.52), anstream/colored/tempfile (0.61)",
+      "removal_strategy": "Requires bumping the entire windows-* family to a single major (likely 0.61) OR a workspace-wide [patch.crates-io] align. Not trivially removable — surfaces at M3.",
+      "issue_ref": "#2994"
+    },
+    {
+      "name": "rand-family",
+      "crates": ["rand", "rand_chacha", "rand_core", "rand_distr", "getrandom"],
+      "crate_versions": {
+        "rand": ["0.8.7", "0.9.5"],
+        "rand_chacha": ["0.3.1", "0.9.0"],
+        "rand_core": ["0.6.4", "0.9.5"],
+        "rand_distr": ["0.4.3", "0.5.1"],
+        "getrandom": ["0.2.17", "0.3.4", "0.4.2"]
+      },
+      "diagnostic_count": 5,
+      "source": "rand 0.8 (rustls et al.) + rand 0.9 (reqwest -> getrandom 0.3 path); getrandom 0.1 pulled transitively by rand 0.8 (issue text) — current Cargo.lock resolves 0.2/0.3/0.4 instead.",
+      "removal_strategy": "Resolves once rustls and reqwest align on rand 0.9 (M2).",
+      "issue_ref": "#2994"
+    },
+    {
+      "name": "directories-family",
+      "crates": ["directories", "dirs-sys"],
+      "crate_versions": {
+        "directories": ["5.0.1", "6.0.0"],
+        "dirs-sys": ["0.4.1", "0.5.0"]
+      },
+      "diagnostic_count": 2,
+      "source": "directories 5 (fluxion direct) + directories 6 (font-kit via plotters -> criterion); dirs-sys tracks the same split.",
+      "removal_strategy": "Resolves once plotters/font-kit move off directories 5 (M1).",
+      "issue_ref": "#2994"
+    },
+    {
+      "name": "thiserror-family",
+      "crates": ["thiserror", "thiserror-impl"],
+      "crate_versions": {
+        "thiserror": ["1.0.69", "2.0.18"],
+        "thiserror-impl": ["1.0.69", "2.0.18"]
+      },
+      "diagnostic_count": 2,
+      "source": "thiserror 1.0.69 (redox_users/sysctl) + thiserror 2.0.18 (workspace-direct).",
+      "removal_strategy": "Requires bumping the entire thiserror 1.x dependency chain (gemm/faer/sysctl/redox_users, plus plotters' transitive). M2.",
+      "issue_ref": "#2994"
+    },
+    {
+      "name": "nalgebra-family",
+      "crates": ["nalgebra", "ndarray", "simba", "wide", "equator", "equator-macro"],
+      "crate_versions": {
+        "nalgebra": ["0.33.3", "0.35.0"],
+        "ndarray": ["0.16.1", "0.17.2"],
+        "simba": ["0.9.1", "0.10.2"],
+        "wide": ["0.7.33", "1.6.1"],
+        "equator": ["0.2.2", "0.4.2", "0.6.0"],
+        "equator-macro": ["0.2.1", "0.4.2", "0.6.0"]
+      },
+      "diagnostic_count": 6,
+      "source": "nalgebra 0.33 (statrs) + nalgebra 0.35 (workspace) + matching lineage in ndarray / simba / wide / equator / equator-macro.",
+      "removal_strategy": "Requires bumping statrs (or removing it) and aligning the simba/equator chain. M3.",
+      "issue_ref": "#2994"
+    },
+    {
+      "name": "uom",
+      "crates": ["uom"],
+      "crate_versions": {"uom": ["0.35.0", "0.38.0"]},
+      "diagnostic_count": 1,
+      "source": "uom 0.35 (fluxion) + uom 0.38 (fluxion-fluid).",
+      "removal_strategy": "Resolves once fluxion is bumped to uom 0.38 (M1).",
+      "issue_ref": "#2994"
+    },
+    {
+      "name": "r-efi",
+      "crates": ["r-efi"],
+      "crate_versions": {"r-efi": ["5.3.0", "6.0.0"]},
+      "diagnostic_count": 1,
+      "source": "r-efi 5.x + r-efi 6.x both pulled by rustls 0.23.x depending on patch release.",
+      "removal_strategy": "Resolves once rustls pin is updated to a single r-efi major (M2).",
+      "issue_ref": "#2994"
+    },
+    {
+      "name": "bitflags",
+      "crates": ["bitflags"],
+      "crate_versions": {"bitflags": ["1.3.2", "2.11.0"]},
+      "diagnostic_count": 1,
+      "source": "bitflags 1.3.2 (legacy) + bitflags 2.11.0 (current). 1.3.2 is deprecated upstream.",
+      "removal_strategy": "Identify the lone remaining 1.3.2 transitive; `cargo update` or workspace pin (M1, lowest-effort candidate).",
+      "issue_ref": "#2994"
+    },
+    {
+      "name": "hashbrown",
+      "crates": ["hashbrown"],
+      "crate_versions": {"hashbrown": ["0.15.5", "0.16.1"]},
+      "diagnostic_count": 1,
+      "source": "hashbrown 0.15 (reqwest) + hashbrown 0.16 (criterion plot).",
+      "removal_strategy": "Resolves once criterion plot bumps to hashbrown 0.16 (M1).",
+      "issue_ref": "#2994"
+    },
+    {
+      "name": "single-version-pairs",
+      "crates": [
+        "block-buffer",
+        "core-foundation",
+        "cpufeatures",
+        "crypto-common",
+        "digest",
+        "foldhash",
+        "foreign-types",
+        "foreign-types-shared",
+        "libloading",
+        "redox_users",
+        "rustc-hash",
+        "rustls-webpki",
+        "safe_arch",
+        "sha2",
+        "smallvec",
+        "syn",
+        "winnow"
+      ],
+      "crate_versions": {
+        "block-buffer": ["0.10.4", "0.12.1"],
+        "core-foundation": ["0.9.4", "0.10.1"],
+        "cpufeatures": ["0.2.17", "0.3.0"],
+        "crypto-common": ["0.1.7", "0.2.2"],
+        "digest": ["0.10.7", "0.11.3"],
+        "foldhash": ["0.1.5", "0.2.0"],
+        "foreign-types": ["0.3.2", "0.5.0"],
+        "foreign-types-shared": ["0.1.1", "0.3.1"],
+        "libloading": ["0.8.9", "0.9.0"],
+        "redox_users": ["0.4.6", "0.5.2"],
+        "rustc-hash": ["1.1.0", "2.1.1"],
+        "rustls-webpki": ["0.102.8", "0.103.13"],
+        "safe_arch": ["0.7.4", "1.1.0"],
+        "sha2": ["0.10.9", "0.11.0"],
+        "smallvec": ["1.15.1", "2.0.0-alpha.10"],
+        "syn": ["1.0.109", "2.0.117", "3.0.3"],
+        "winnow": ["0.5.40", "0.7.15"]
+      },
+      "diagnostic_count": 17,
+      "source": "various transitive sources — each is a single dependency bump candidate.",
+      "removal_strategy": "Tackle per crate, lowest-effort first. `cpufeatures`, `bitflags` (M1) and `winnow` (M2) are the natural first targets.",
+      "issue_ref": "#2994"
+    }
+  ]
+}
