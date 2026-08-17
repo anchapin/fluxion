@@ -262,3 +262,43 @@ pub(crate) fn validate_positive(
         Err(AirsideCouplingError::InvalidInput { field, value })
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn moist_air_state_basic_roundtrip() {
+        let state = MoistAirState::try_new(20.0, 50.0, 101_325.0).expect("valid state");
+        assert!(state.is_finite());
+        assert!(state.dry_air_specific_heat_j_per_kg_k() > 1_000.0);
+        assert!(state.validate_derived().is_ok());
+    }
+
+    #[test]
+    fn moist_air_state_rejects_invalid_inputs() {
+        assert!(MoistAirState::try_new(f64::NAN, 50.0, 101_325.0).is_err());
+        assert!(MoistAirState::try_new(20.0, -1.0, 101_325.0).is_err());
+        assert!(MoistAirState::try_new(20.0, 50.0, 0.0).is_err());
+        assert!(MoistAirState::try_new(-300.0, 50.0, 101_325.0).is_err());
+    }
+
+    #[test]
+    fn validate_helpers_round_trip() {
+        assert!(validate_finite("x", 1.0).is_ok());
+        assert!(validate_finite("x", f64::NAN).is_err());
+        assert!(validate_nonnegative("x", 0.0).is_ok());
+        assert!(validate_nonnegative("x", -1.0).is_err());
+        assert!(validate_positive("x", 1.0).is_ok());
+        assert!(validate_positive("x", 0.0).is_err());
+    }
+
+    #[test]
+    fn airside_flow_round_trip() {
+        let supply = MoistAirState::try_new(13.0, 90.0, 101_325.0).expect("valid state");
+        let flow = AirsideFlow::new(supply, 0.05).expect("valid flow");
+        assert!(flow.dry_air_mass_flow_kg_per_s() > 0.0);
+        assert_eq!(flow.supply_air().dry_bulb_c, 13.0);
+        assert!(AirsideFlow::new(supply, -1.0).is_err());
+    }
+}

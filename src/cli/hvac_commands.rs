@@ -337,7 +337,7 @@ fn handle_simulate(steps: usize, output: Option<PathBuf>) -> Result<(), String> 
     let mut system = HVAC_SYSTEM.lock().unwrap();
     if system.is_none() {
         // Create a default thermal model with 2 zones
-        let thermal_model = Arc::new(ThermalModel::new(2, 20.0));
+        let thermal_model = Arc::new(ThermalModel::new(2));
         let setpoints = ZoneSetpoints::new(2);
         let zone_control = Arc::new(Mutex::new(ZoneControl::new(thermal_model, setpoints)));
         *system = Some(zone_control);
@@ -347,7 +347,7 @@ fn handle_simulate(steps: usize, output: Option<PathBuf>) -> Result<(), String> 
         let mut hvac_guard = hvac.lock().unwrap();
 
         // Get initial temperatures
-        let initial_temps = VectorField::from_scalar(20.0, hvac_guard.thermal_model.num_zones);
+        let initial_temps = VectorField::from_scalar(20.0, hvac_guard.thermal_model.hvac.num_zones);
 
         // Run simulation loop
         let mut results = Vec::new();
@@ -355,7 +355,7 @@ fn handle_simulate(steps: usize, output: Option<PathBuf>) -> Result<(), String> 
             let energy_input = hvac_guard.update_zone_controls(&initial_temps);
 
             // Store results
-            for zone_id in 0..hvac_guard.thermal_model.num_zones {
+            for zone_id in 0..hvac_guard.thermal_model.hvac.num_zones {
                 let temp = initial_temps.as_slice()[zone_id];
                 let energy = energy_input.as_slice()[zone_id];
                 let status = hvac_guard.get_zone_hvac_status(zone_id);
@@ -392,7 +392,7 @@ fn handle_status() -> Result<(), String> {
     let system = HVAC_SYSTEM.lock().unwrap();
     if let Some(hvac) = system.as_ref() {
         let hvac_guard = hvac.lock().unwrap();
-        let num_zones = hvac_guard.thermal_model.num_zones;
+        let num_zones = hvac_guard.thermal_model.hvac.num_zones;
 
         println!("  System: Operational");
         println!("  Zones: {}", num_zones);

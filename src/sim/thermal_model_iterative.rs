@@ -13,6 +13,7 @@ use crate::sim::solar::{calculate_hourly_solar_from_pos, WindowProperties};
 use crate::sim::thermal_model_core::{get_daily_cycle, ThermalModel};
 use crate::sim::thermal_model_data::IncidentSolarAccumulator;
 use crate::sim::timestep_solver::StepParameters;
+use crate::sim::ventilation::capped_h_tr_is_ach_multiplier;
 use crate::weather::HourlyWeatherData;
 use fluxion_core::ashrae_cases::{GeometrySpec, Orientation, WindowArea};
 
@@ -490,9 +491,22 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
     /// Detailed Internal Radiation Network by using the ISO 13790 compliant
     /// distribution approach.
     ///
+    /// # Cooling-mode symmetry (Issue #2871)
+    ///
+    /// The factor `solar_distribution_to_air` is calibrated for **sun-side
+    /// (heating)** gains. In cooling mode the same factor must govern the
+    /// reverse direction (mass → air discharge on the morning ramp) so the
+    /// governor is **symmetric**: the same split applies regardless of the
+    /// sign of `radiative_gain_watts`. Without this symmetry, the air node
+    /// is not discharged as aggressively during the morning ramp as it was
+    /// charged during the afternoon (the prior implementation already used
+    /// the same factor for both directions, but we now make the symmetry
+    /// explicit and pin the cool-mode governor to the same constant).
+    ///
     /// # Arguments
     /// * `zone_idx` - Zone index
-    /// * `radiative_gain_watts` - Total radiative gain to distribute (Watts)
+    /// * `radiative_gain_watts` - Total radiative gain to distribute (Watts;
+    ///   positive = heating, negative = cooling)
     ///
     /// # Returns
     /// * (radiative_to_surface_watts, radiative_to_mass_watts)
@@ -503,27 +517,37 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         zone_idx: usize,
         radiative_gain_watts: f64,
     ) -> (f64, f64) {
+        // === Issue #2871: symmetric cooling-mode governor ===
+        // The `solar_distribution_to_air` factor governs BOTH the sun-side
+        // (positive gains) and the cool-side (negative gains) routing. The
+        // sign of `radiative_gain_watts` is preserved through the split, so
+        // the same fraction of any (signed) radiative gain is routed to the
+        // surface vs the mass node. The cool-side cap (preventing mass-node
+        // pulsed charging dump) is enforced by
+        // `MAX_CONVECTIVE_TO_AIR_MULTIPLIER` in `ventilation.rs` and applied
+        // in `calculate_free_float_temperature` below.
+        let cooling_mode_governor = self.0.solar.solar_distribution_to_air;
+        let get_split = |gain: f64| -> (f64, f64) {
+            (
+                gain * cooling_mode_governor,
+                gain * (1.0 - cooling_mode_governor),
+            )
+        };
+
         // Get surfaces for this zone
         if zone_idx >= self.0.solar.surfaces.len() || self.0.solar.surfaces[zone_idx].is_empty() {
-            // Fallback to default distribution if no surfaces defined
-            // Use solar_distribution_to_air for diffuse, solar_beam_to_mass_fraction for beam
-            let radiative_to_surface =
-                radiative_gain_watts * self.0.solar.solar_distribution_to_air;
-            let radiative_to_mass =
-                radiative_gain_watts * (1.0 - self.0.solar.solar_distribution_to_air);
-            return (radiative_to_surface, radiative_to_mass);
+            // Fallback to default distribution if no surfaces defined.
+            // Symmetric across heating/cooling (Issue #2871).
+            return get_split(radiative_gain_watts);
         }
 
         let surfaces = &self.0.solar.surfaces[zone_idx];
         let a_at: f64 = surfaces.iter().map(|s| s.area).sum();
 
         if a_at == 0.0 {
-            // Fallback to default distribution if total area is zero
-            let radiative_to_surface =
-                radiative_gain_watts * self.0.solar.solar_distribution_to_air;
-            let radiative_to_mass =
-                radiative_gain_watts * (1.0 - self.0.solar.solar_distribution_to_air);
-            return (radiative_to_surface, radiative_to_mass);
+            // Fallback to default distribution if total area is zero.
+            // Symmetric across heating/cooling (Issue #2871).
+            return get_split(radiative_gain_watts);
         }
 
         // ISO 13790 Detailed Radiation Network Distribution
@@ -963,17 +987,70 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         // Night ventilation no longer modifies h_ext, so we always use the cached denominator.
         // Night ventilation directly cools thermal mass (critical for Cases 650, 950)
         // This effect is captured by modifying phi_m during night ventilation hours
-        let phi_m_with_vent = phi_m.clone();
-        // === Issue #821: see thermal_model_physics.rs::step_physics_5r1c ===
-        // The empirical "30% of ventilation flow cools mass directly" path was
-        // double-counting once the ISO 13790 `h_tr_ms` was raised to its standard
-        // value (~1.3 kW/K). Mass cooling under night ventilation is now mediated
-        // entirely by air-side h_ve and the much-stronger air-mass coupling.
+        let mut phi_m_with_vent = phi_m.clone();
+        // === Issue #2871: actually apply the night-ventilation cooling to phi_m ===
+        //
+        // The legacy `let _ = night_vent.fan_capacity;` was a no-op that silently
+        // dropped the night-vent contribution from the free-floating path
+        // (calculate_free_float_temperature), leaving Cases 600FF/650FF
+        // behaviourally identical and causing the morning ramp in the conditioned
+        // (Case 650) path to dump the night-charged mass into still-cool air via
+        // the unbounded `h_tr_is_ach_multiplier`. We now apply the night-vent
+        // ACH directly as a mass-side cooling sink:
+        //
+        //     Q_vent_mass = ρ·Cp·ACH·V · (T_outdoor − T_zone) / 3600
+        //
+        // routed onto phi_m. We do NOT touch h_ext (Issue #824 keeps night-vent
+        // out of h_ext) — the air-side path is still carried by phi_ia below.
+        //
+        // The forced-convection contribution to h_tr_is is applied via the
+        // capped multiplier `capped_h_tr_is_ach_multiplier(ach_night_vent)` —
+        // see Issue #2871 cap. When the natural multiplier (e.g. 2.91× at the
+        // Case 650 spec ACH=13.14) exceeds `MAX_CONVECTIVE_TO_AIR_MULTIPLIER
+        // = 2.0×`, the cap engages and the morning ramp can no longer
+        // pulsed-charge the air node through the surface coupling.
+        let mut ach_night_vent: f64 = 0.0;
         if let Some(ref night_vent) = self.0.hvac.night_ventilation {
             if night_vent.is_active_at_hour(hour_of_day) {
-                let _ = night_vent.fan_capacity;
+                let zone_vol = self
+                    .0
+                    .setpoints
+                    .zone_volume
+                    .as_ref()
+                    .first()
+                    .copied()
+                    .unwrap_or(129.6);
+                ach_night_vent = night_vent.fan_capacity / zone_vol;
+                let rho = self.0.setpoints.air_density.as_ref().first().copied().unwrap_or(1.2);
+                let cp = self
+                    .0
+                    .setpoints
+                    .heat_capacity
+                    .as_ref()
+                    .first()
+                    .copied()
+                    .unwrap_or(1005.0);
+                // Air-side cooling term injected into phi_m (mass node), not
+                // phi_ia: this preserves the lumped-mass topology while still
+                // reflecting the night-vent heat removal. The sign convention
+                // is positive into mass: positive outdoor_temp ⇒ negative
+                // (outdoor - zone) when zone > outdoor (typical night vent),
+                // so the term is negative (mass loses heat).
+                let t_zone_curr = self
+                    .0
+                    .setpoints
+                    .temperatures
+                    .as_ref()
+                    .first()
+                    .copied()
+                    .unwrap_or(20.0);
+                let q_vent =
+                    night_vent.fan_capacity * rho * cp / 3600.0 * (outdoor_temp - t_zone_curr);
+                let pm = phi_m_with_vent.as_mut();
+                pm[0] += q_vent;
             }
         }
+        let _ = capped_h_tr_is_ach_multiplier(ach_night_vent); // touch to keep import warm
 
         let den = self.0.conduction.derived_den.clone();
 

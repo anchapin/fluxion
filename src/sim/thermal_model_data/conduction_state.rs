@@ -22,6 +22,13 @@ pub struct ConductionState<T: ContinuousTensor<f64>> {
     pub h_tr_iz: T,
     pub h_tr_iz_rad: T,
     pub surface_emissivity: T,
+    /// Issue #2868 — exterior IR emittance (ASHRAE 140 §5.2 /
+    /// `sky_radiation::ashrae_140_default`). `from_spec` overrides this with
+    /// the construction's outermost-layer emissivity. Defaults to 0.9 so every
+    /// case whose spec keeps the default emissivity is bit-identical to the
+    /// pre-#2868 behaviour; Case 195 specifies 0.1 to suppress radiative
+    /// exchange and isolate pure conduction.
+    pub exterior_emissivity: T,
     pub h_tr_em: T,
     pub h_tr_ms: T,
     pub h_tr_is: T,
@@ -67,6 +74,7 @@ impl<T: ContinuousTensor<f64> + Clone> Clone for ConductionState<T> {
             h_tr_iz: self.h_tr_iz.clone(),
             h_tr_iz_rad: self.h_tr_iz_rad.clone(),
             surface_emissivity: self.surface_emissivity.clone(),
+            exterior_emissivity: self.exterior_emissivity.clone(),
             h_tr_em: self.h_tr_em.clone(),
             h_tr_ms: self.h_tr_ms.clone(),
             h_tr_is: self.h_tr_is.clone(),

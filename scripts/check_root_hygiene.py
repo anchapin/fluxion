@@ -94,7 +94,20 @@ ROOT_MD_WARNLIST: frozenset[str] = frozenset({"CLAUDE.md"})
 # a temp directory, a notebook export, a HuggingFace / sklearn download,
 # etc.) and should be flagged.
 ROOT_BLOCKED_EXTENSIONS: frozenset[str] = frozenset(
-    {".txt", ".csv", ".rs", ".py", ".sh", ".json", ".zip", ".onnx", ".bin", ".pt", ".pkl", ".h5"}
+    {
+        ".txt",
+        ".csv",
+        ".rs",
+        ".py",
+        ".sh",
+        ".json",
+        ".zip",
+        ".onnx",
+        ".bin",
+        ".pt",
+        ".pkl",
+        ".h5",
+    }
 )
 
 # Legit files that use a normally-blocked extension. Add here if a genuine
@@ -103,6 +116,14 @@ ROOT_BLOCKED_EXT_ALLOWLIST: frozenset[str] = frozenset(
     {
         "requirements-dev.txt",
         "requirements.txt",
+        # Issue #2856: drift gate baseline declared at
+        # release_gates.yaml:drift.baseline_file. The path is fixed in
+        # the YAML (a root-level config artifact), so the file must
+        # also live at the root. Mirror it here so the root-hygiene
+        # gate (which otherwise flags every root-level .json) lets it
+        # through. If the YAML ever repoints `drift.baseline_file`,
+        # update this list in the same commit.
+        "validation_baseline.json",
     }
 )
 
@@ -146,20 +167,20 @@ ROOT_BLOCKED_DIRECTORIES: frozenset[str] = frozenset(
 # at root and causes the gate to FAIL.
 ROOT_DOTFILE_ALLOWLIST: frozenset[str] = frozenset(
     {
-        ".cargo",                  # cargo config (audit.toml, config.toml, mutants.toml)
-        ".cargoignore",            # cargo publish ignore
-        ".dockerignore",           # docker ignore
-        ".editorconfig",           # editor config
-        ".env.example",            # env example (NOTE: `.env` itself is gitignored)
-        ".git",                    # git's own dir (always present)
-        ".github",                 # GitHub config dir
-        ".gitattributes",          # git attributes
-        ".githooks",               # local git hooks (tracked for CI parity)
-        ".gitignore",              # git ignore
-        ".npmignore",              # npm ignore
-        ".planning",               # project planning artifacts (AGENTS.md allows)
-        ".pre-commit-config.yaml", # pre-commit config
-        ".rustfmt.toml",           # rustfmt config
+        ".cargo",  # cargo config (audit.toml, config.toml, mutants.toml)
+        ".cargoignore",  # cargo publish ignore
+        ".dockerignore",  # docker ignore
+        ".editorconfig",  # editor config
+        ".env.example",  # env example (NOTE: `.env` itself is gitignored)
+        ".git",  # git's own dir (always present)
+        ".github",  # GitHub config dir
+        ".gitattributes",  # git attributes
+        ".githooks",  # local git hooks (tracked for CI parity)
+        ".gitignore",  # git ignore
+        ".npmignore",  # npm ignore
+        ".planning",  # project planning artifacts (AGENTS.md allows)
+        ".pre-commit-config.yaml",  # pre-commit config
+        ".rustfmt.toml",  # rustfmt config
     }
 )
 

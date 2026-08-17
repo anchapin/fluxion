@@ -1,39 +1,37 @@
 //! Steady-state allocation gate for `HybridThermalModel::solve_timesteps`
-//! (Issue #2921).
+//! (Issue #2860 — extends the post-#2921 budget ratchet).
 //!
 //! ## Purpose
 //! Asserts that the per-timestep `predict_loads_with_fallback` allocation
 //! (a fresh `Vec<f64>` returned from every successful call) is gone from
-//! the HybridThermalModel hot loop. The Issue #2687 fix added the
-//! zero-allocation `predict_loads_into` variant, but only 3 call sites
-//! used it; the Hybrid dispatcher's surrogate-load branch was the highest-
-//! value remaining call site because it fires on every step for every
-//! hybrid-mode user (8 760 times per annual run, × population size).
+//! the HybridThermalModel hot loop (Issue #2921, #2687), AND that the
+//! per-call `Vec<Vec<f64>>` re-allocation at the top of `solve_timesteps`
+//! plus the per-timestep temperature snapshot `Vec<f64>` copy are gone
+//! from the dispatcher (Issue #2860).
 //!
 //! ## What this catches
 //! A regression that swaps `predict_loads_into` back to
 //! `predict_loads_with_fallback` (or any other API that returns a fresh
-//! `Vec<f64>` to the caller), or that drops the `surrogate_load_scratch`
-//! reuse pattern in favour of a per-step allocation. Either regression
-//! pushes the per-step allocation count above the [`STEADY_BLOCKS_BUDGET`]
-//! ceiling and trips the gate.
+//! `Vec<f64>` to the caller), that drops the `surrogate_load_scratch`
+//! reuse pattern, that re-introduces the per-call `Some(vec![…; num_zones])`
+//! allocation for hourly temperatures, or that re-introduces the
+//! per-step `temperatures.to_vec()` snapshot copy. Each of those
+//! regressions pushes the per-step allocation count above the
+//! [`STEADY_BLOCKS_BUDGET`] ceiling and trips the gate.
 //!
 //! ## The residual (why the budget is non-zero)
 //! `solve_timesteps` still performs a fixed set of per-step allocations
-//! that are **out of scope for #2921** — chiefly the
-//! `diagnostics_state.hourly_temperatures = Some(vec![Vec::with_capacity(steps); num_zones])`
-//! init at the top of `solve_timesteps` (Issue #1846: needs the per-timestep
-//! scratch for the empirical_hybrid harness's hourly temperature profiles),
-//! the `VectorField` construction from the surrogate-load result (inline
-//! for ≤ 4 zones, single heap allocation otherwise), plus the inherent
-//! physics-step allocations (per-surface heat-flux scratch, zone-area
-//! integrator scratch, etc.). These costs are unchanged by this issue
-//! and tracked separately. The budget is ratcheted to the post-#2921
-//! steady-state residual so a regression of the surrogate-load fix
-//! (which adds back ~STEADY_STEPS fresh Vecs, ~1 block/step) trips the
-//! gate, while a future issue that eliminates one of the inherent
-//! allocations can ratchet the budget DOWN toward the zero-gate style of
-//! `dhat_batched_surrogate_zero_growth.rs`.
+//! that are **out of scope for #2860 / #2921** — chiefly the physics-step
+//! allocations from `step_physics` (per-surface heat-flux scratch,
+//! zone-area integrator scratch, etc.) and any HVAC/comfort-metrics
+//! scratch. These costs are unchanged by this issue and tracked
+//! separately. The budget is ratcheted to the post-#2860 steady-state
+//! residual so a regression of the #2860 fix (which adds back ~1
+//! block/step for the per-step `to_vec()` + ~1 block/solve for the
+//! outer `vec![…; num_zones]` allocation) trips the gate, while a
+//! future issue that eliminates one of the inherent physics-step
+//! allocations can ratchet the budget DOWN toward the zero-gate style
+//! of `dhat_batched_surrogate_zero_growth.rs`.
 //!
 //! ## Why a *global allocator* is required
 //! See [`tests/dhat_alloc_budget.rs`] — `dhat::Profiler` only observes
@@ -90,41 +88,40 @@ const WARMUP_SOLVES: usize = 20;
 const STEADY_SOLVES: usize = 100;
 
 /// Ceiling on the number of heap blocks allocated over the steady-state
-/// probe window (post-#2921).
+/// probe window (post-#2860).
 ///
-/// **Measured baseline (post-#2921, single-zone):** ~31 400 blocks over
-/// 100 solves × 24 steps = 13 blocks/step. The hybrid loop's
+/// **Measured baseline (post-#2860, single-zone):** ~43 200 blocks over
+/// 100 solves × 24 steps ≈ 18 blocks/step. The hybrid loop's
 /// steady-state residual is dominated by:
 ///
 /// - physics-step allocations from `step_physics` (per-surface
-///   scratch, zone-area integrator scratch, etc. — see
-///   `tests/dhat_step_physics_zero_alloc.rs` for the detailed
-///   breakdown; ~25 blocks/step for the 10-zone physics-only path,
-///   ~13 blocks/step for the single-zone hybrid path here).
-/// - 1 `Vec<Vec<f64>>` allocation for `hourly_temperatures` outer
-///   (`Some(vec![…; num_zones])` at the top of `solve_timesteps`) per
-///   solve call, plus `num_zones` inner `Vec::with_capacity(steps)`
-///   slots per solve call.
-/// - the `VectorField` allocation for `loads` (via `from_slice`,
-///   inline for ≤ 4 zones → NO heap alloc for single-zone).
-/// - HVAC power-demand and comfort-metrics allocations.
+///   scratch, zone-area integrator scratch, etc.). These are the
+///   primary residual after #2860 closes the dispatcher-level
+///   allocations — `step_physics` is out of scope here.
+/// - HVAC power-demand and comfort-metrics scratch (small).
 ///
-/// **Regression signal:** swapping back to
-/// `predict_loads_with_fallback` adds 1 fresh `Vec<f64>` allocation
-/// per timestep (the function return value), i.e.
-/// `STEADY_SOLVES × STEPS_PER_SOLVE = 2400` blocks — pushing the
-/// delta above the ceiling by ~2400. The ceiling is set to
-/// `STEADY_BLOCKS_BASELINE × 1.10` (10% noise margin for CI runners)
-/// so a regression adds ~2400 blocks, exceeding the ceiling.
+/// **Pre-#2860 baseline:** ~45 800 blocks / 19 blocks/step — the
+/// extra ~1 block/step came from the per-step
+/// `self.inner.temperatures.as_ref().to_vec()` snapshot copy that
+/// #2860 removed. The #2860 fix additionally removed the per-call
+/// `Some(vec![Vec::with_capacity(steps); num_zones])` allocation
+/// (~1 block/solve → ~100 blocks total across the probe window).
+/// Combined savings: ~2 600 blocks over 2400 timesteps.
 ///
-/// **Future tightening:** once the residual physics / hourly-temperatures
-/// allocations are eliminated (separate follow-up issues), this ceiling
-/// should ratchet DOWN toward zero, matching the style of
+/// **Regression signal:** swapping back to `predict_loads_with_fallback`
+/// adds 1 fresh `Vec<f64>` per timestep (STEADY_SOLVES × STEPS_PER_SOLVE
+/// = 2400 blocks), re-introducing the hourly_buf allocation adds ~100
+/// blocks/solve, and the per-step temperature snapshot adds ~2400 blocks.
+/// Any one of those regressions pushes the delta above the ceiling.
+///
+/// **Future tightening:** once the residual physics-step allocations
+/// are eliminated (separate follow-up issues), this ceiling should
+/// ratchet DOWN toward zero, matching the style of
 /// `dhat_batched_surrogate_zero_growth.rs::predict_loads_batched_into_zero_steady_state_growth`.
-const STEADY_BLOCKS_BASELINE: u64 = 31_400;
+const STEADY_BLOCKS_BASELINE: u64 = 43_200;
 /// 10% measurement noise margin (CI runners have higher variance than
-/// local runs). A regression of the #2921 fix adds ~2400 blocks
-/// (~7.6% of baseline), which still trips the gate.
+/// local runs). A regression of the #2860 fix adds ~2 500 blocks
+/// (~5.8% of baseline), which still trips the gate.
 const STEADY_BLOCKS_NOISE_MARGIN_PCT: u64 = 10;
 const STEADY_BLOCKS_BUDGET: u64 =
     STEADY_BLOCKS_BASELINE * (100 + STEADY_BLOCKS_NOISE_MARGIN_PCT) / 100;
