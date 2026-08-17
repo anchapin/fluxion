@@ -38,11 +38,11 @@ use fluxion::BatchOracle;
 /// identical code path as the allocation gate.
 fn create_single_zone_model() -> ThermalModel<VectorField> {
     let mut model = ThermalModel::<VectorField>::new(1);
-    model.window_u_value = 1.5;
-    model.heating_setpoint = 20.0;
-    model.cooling_setpoint = 26.0;
-    model.temperatures = VectorField::from_scalar(20.0, 1);
-    model.mass_temperatures = VectorField::from_scalar(20.0, 1);
+    model.solar.window_u_value = 1.5;
+    model.setpoints.heating_setpoint = 20.0;
+    model.setpoints.cooling_setpoint = 26.0;
+    model.setpoints.temperatures = VectorField::from_scalar(20.0, 1);
+    model.mass.mass_temperatures = VectorField::from_scalar(20.0, 1);
     model
 }
 

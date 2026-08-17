@@ -170,11 +170,11 @@ impl EnergyBalanceValidator {
         &self,
         thermal_model: &ThermalModel<T>,
     ) -> Vec<f64> {
-        let mut zone_energies = Vec::with_capacity(thermal_model.num_zones);
+        let mut zone_energies = Vec::with_capacity(thermal_model.hvac.num_zones);
 
-        for zone_idx in 0..thermal_model.num_zones {
+        for zone_idx in 0..thermal_model.hvac.num_zones {
             // Get zone temperature (convert from VectorField)
-            let temp = thermal_model.temperatures.as_ref()[zone_idx];
+            let temp = thermal_model.setpoints.temperatures.as_ref()[zone_idx];
 
             // For multi-zone models, we use a standard specific heat and estimate mass
             // based on typical building materials (concrete: ~1000 J/kg·K, ~200 kg/m²)
@@ -252,12 +252,12 @@ impl EnergyBalanceValidator {
     ) -> Result<(), ValidationError> {
         // For multi-zone models, check that inter-zone conductance is reasonable
         // In a well-insulated building, inter-zone conductance should be low
-        let h_tr_iz_values = thermal_model.h_tr_iz.as_ref();
+        let h_tr_iz_values = thermal_model.conduction.h_tr_iz.as_ref();
 
         for (zone_idx, &conductance) in h_tr_iz_values
             .iter()
             .enumerate()
-            .take(thermal_model.num_zones)
+            .take(thermal_model.hvac.num_zones)
         {
             // Check for unreasonable conductance values
             if conductance < 0.0 {
@@ -354,24 +354,27 @@ impl EnergyBalanceValidator {
         //   For a hand-balanced stub with no temp changes and no loads → 0 W.
         //   For a stub with +5 W injected load (no losses, no storage) → +5 W.
         //   For a correctly-solved simulation step → machine precision.
-        let num_zones = thermal_model.num_zones;
-        let temps = thermal_model.temperatures.as_ref();
-        let prev_temps = thermal_model.previous_temperatures.as_ref();
-        let mass_temps = thermal_model.mass_temperatures.as_ref();
-        let prev_mass_temps = thermal_model.previous_mass_temperatures.as_ref();
-        let loads = thermal_model.loads.as_ref();
-        let solar_gains = thermal_model.solar_gains.as_ref();
-        let opaque_solar_gains = thermal_model.opaque_solar_gains.as_ref();
-        let area = thermal_model.zone_area.as_ref();
-        let ceiling_height = thermal_model.ceiling_height.as_ref();
-        let air_density = thermal_model.air_density.as_ref();
-        let heat_capacity = thermal_model.heat_capacity.as_ref();
-        let t_ground = thermal_model.ground_temperature.ground_temperature(0);
+        let num_zones = thermal_model.hvac.num_zones;
+        let temps = thermal_model.setpoints.temperatures.as_ref();
+        let prev_temps = thermal_model.hvac.previous_temperatures.as_ref();
+        let mass_temps = thermal_model.mass.mass_temperatures.as_ref();
+        let prev_mass_temps = thermal_model.mass.previous_mass_temperatures.as_ref();
+        let loads = thermal_model.setpoints.loads.as_ref();
+        let solar_gains = thermal_model.solar.solar_gains.as_ref();
+        let opaque_solar_gains = thermal_model.solar.opaque_solar_gains.as_ref();
+        let area = thermal_model.setpoints.zone_area.as_ref();
+        let ceiling_height = thermal_model.setpoints.ceiling_height.as_ref();
+        let air_density = thermal_model.setpoints.air_density.as_ref();
+        let heat_capacity = thermal_model.setpoints.heat_capacity.as_ref();
+        let t_ground = thermal_model
+            .conduction
+            .ground_temperature
+            .ground_temperature(0);
 
-        let conv_frac = thermal_model.convective_fraction;
+        let conv_frac = thermal_model.solar.convective_fraction;
         let rad_frac = 1.0 - conv_frac;
-        let sol_dist_to_air = thermal_model.solar_distribution_to_air;
-        let solar_beam_to_mass = thermal_model.solar_beam_to_mass_fraction;
+        let sol_dist_to_air = thermal_model.solar.solar_distribution_to_air;
+        let solar_beam_to_mass = thermal_model.solar.solar_beam_to_mass_fraction;
 
         let mut total_balance = 0.0_f64;
         let mut zone_residuals_w: Vec<f64> = Vec::with_capacity(num_zones);
@@ -399,18 +402,18 @@ impl EnergyBalanceValidator {
             let phi_m = load_w * m_air_frac + remaining_sol * m_sol_frac + opaque_sol_w;
 
             // 5R1C heat flows (matching `step_physics_5r1c`).
-            let q_em = thermal_model.h_tr_em[i] * (t_mass - outdoor_temp);
-            let q_ms = thermal_model.h_tr_ms[i] * (t_air - t_mass);
-            let q_w = thermal_model.h_tr_w[i] * (t_air - outdoor_temp);
-            let q_ve = thermal_model.h_ve[i] * (t_air - outdoor_temp);
-            let q_floor = thermal_model.h_tr_floor[i] * (t_air - t_ground);
+            let q_em = thermal_model.conduction.h_tr_em[i] * (t_mass - outdoor_temp);
+            let q_ms = thermal_model.conduction.h_tr_ms[i] * (t_air - t_mass);
+            let q_w = thermal_model.conduction.h_tr_w[i] * (t_air - outdoor_temp);
+            let q_ve = thermal_model.conduction.h_ve[i] * (t_air - outdoor_temp);
+            let q_floor = thermal_model.conduction.h_tr_floor[i] * (t_air - t_ground);
 
             let heat_in = phi_ia + phi_st + phi_m;
             let heat_out = q_em + q_ms + q_w + q_ve + q_floor;
 
             // Storage rates.
             let mass_power =
-                thermal_model.thermal_capacitance[i] * (t_mass - t_mass_prev) / dt_seconds;
+                thermal_model.mass.thermal_capacitance[i] * (t_mass - t_mass_prev) / dt_seconds;
             // Air storage: m_air · c_p,air · ΔT_air / Δt.
             let volume = area[i] * ceiling_height[i];
             let m_air = volume * air_density[i];
@@ -429,10 +432,11 @@ impl EnergyBalanceValidator {
         // system is at perfect rest, in which case any non-zero residual is a
         // hard violation regardless of tolerance).
         let throughput_w: f64 = thermal_model
+            .setpoints
             .loads
             .as_ref()
             .iter()
-            .zip(thermal_model.zone_area.as_ref().iter())
+            .zip(thermal_model.setpoints.zone_area.as_ref().iter())
             .map(|(l, a)| (l * a).abs())
             .sum();
 
@@ -521,7 +525,7 @@ impl EnergyBalanceValidator {
             "Status: {}\n",
             if report.is_valid { "PASSED" } else { "FAILED" }
         ));
-        report_text.push_str(&format!("Total Zones: {}\n", thermal_model.num_zones));
+        report_text.push_str(&format!("Total Zones: {}\n", thermal_model.hvac.num_zones));
         report_text.push_str(&format!(
             "Cumulative Error: {:.6e} J\n",
             report.cumulative_error
@@ -530,7 +534,7 @@ impl EnergyBalanceValidator {
         report_text.push_str("\nZone Energy Breakdown:\n");
 
         for (zone_idx, energy) in zone_energies.iter().enumerate() {
-            let temp = thermal_model.temperatures.as_ref()[zone_idx];
+            let temp = thermal_model.setpoints.temperatures.as_ref()[zone_idx];
             report_text.push_str(&format!(
                 "  Zone {}: {:.2e} J (Temp: {:.2}°C)\n",
                 zone_idx, energy, temp
@@ -704,18 +708,18 @@ mod tests {
 
         let spec = ASHRAE140Case::Case960.spec();
         let mut model = ThermalModel::<VectorField>::from_spec(&spec);
-        let area0 = model.zone_area.as_ref()[0];
+        let area0 = model.setpoints.zone_area.as_ref()[0];
 
         // Hand-balance the stub (T_air = T_mass = T_prev_mass = T_outdoor =
         // T_ground = 20 °C, all loads/solar = 0).
         let t_balanced = 20.0_f64;
-        for i in 0..model.num_zones {
-            model.temperatures.as_mut()[i] = t_balanced;
-            model.mass_temperatures.as_mut()[i] = t_balanced;
-            model.previous_mass_temperatures.as_mut()[i] = t_balanced;
-            model.loads.as_mut()[i] = 0.0;
-            model.solar_gains.as_mut()[i] = 0.0;
-            model.opaque_solar_gains.as_mut()[i] = 0.0;
+        for i in 0..model.hvac.num_zones {
+            model.setpoints.temperatures.as_mut()[i] = t_balanced;
+            model.mass.mass_temperatures.as_mut()[i] = t_balanced;
+            model.mass.previous_mass_temperatures.as_mut()[i] = t_balanced;
+            model.setpoints.loads.as_mut()[i] = 0.0;
+            model.solar.solar_gains.as_mut()[i] = 0.0;
+            model.solar.opaque_solar_gains.as_mut()[i] = 0.0;
         }
         model.set_ground_temp(t_balanced);
 
@@ -724,7 +728,7 @@ mod tests {
 
         // Inject +5 W into zone 0's load flux (W/m^2 → W by /area).
         let artificial_gain_w = 5.0_f64;
-        model.loads.as_mut()[0] += artificial_gain_w / area0;
+        model.setpoints.loads.as_mut()[0] += artificial_gain_w / area0;
 
         // Validator: a tight 1e-6% tolerance forces the validator to reject
         // any non-trivial Watt residual.
@@ -769,13 +773,13 @@ mod tests {
         let spec = ASHRAE140Case::Case960.spec();
         let mut model = ThermalModel::<VectorField>::from_spec(&spec);
         let t_balanced = 20.0_f64;
-        for i in 0..model.num_zones {
-            model.temperatures.as_mut()[i] = t_balanced;
-            model.mass_temperatures.as_mut()[i] = t_balanced;
-            model.previous_mass_temperatures.as_mut()[i] = t_balanced;
-            model.loads.as_mut()[i] = 0.0;
-            model.solar_gains.as_mut()[i] = 0.0;
-            model.opaque_solar_gains.as_mut()[i] = 0.0;
+        for i in 0..model.hvac.num_zones {
+            model.setpoints.temperatures.as_mut()[i] = t_balanced;
+            model.mass.mass_temperatures.as_mut()[i] = t_balanced;
+            model.mass.previous_mass_temperatures.as_mut()[i] = t_balanced;
+            model.setpoints.loads.as_mut()[i] = 0.0;
+            model.solar.solar_gains.as_mut()[i] = 0.0;
+            model.solar.opaque_solar_gains.as_mut()[i] = 0.0;
         }
         model.set_ground_temp(t_balanced);
 

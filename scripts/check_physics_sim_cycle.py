@@ -28,7 +28,7 @@ the `physics <-> sim` cycle closed by Issue #2462 stays closed:
    and `src/sim/thermal_model_physics/physics_impl.rs` (line 322).
    Any NEW edge beyond these 85 fails the guard.
 3. Summary: report the total cycle-edge count. As of #2462 + #2766 +
-   #2896 + #2891 the documented baseline is 0 physics->sim + 85 sim->physics
+   #2896 + #2891 + #2878 the documented baseline is 0 physics->sim + 79 sim->physics
    edges.
 
 Usage:
@@ -42,7 +42,7 @@ Exit codes:
   2 — script error
 
 The script reports ``BASELINE_PHYSICS_TO_SIM = 0`` and
-``BASELINE_SIM_TO_PHYSICS = 85`` documented edges as the *current state*.
+``BASELINE_SIM_TO_PHYSICS = 79`` documented edges as the *current state*.
 A future PR that adds a *new* ``use crate::sim::`` import under
 ``src/physics/**`` (or a *new* ``use crate::physics::`` import under any
 ``src/sim/**/*.rs`` file) — pushing the count *above* the documented
@@ -98,15 +98,24 @@ SIM_SHIM_EXCEPTIONS: frozenset[str] = frozenset()
 # ``use crate::physics::exterior_convection::{...}`` edges that implement
 # ASHRAE 140 §5.2.6 wind-velocity-dependent exterior convection in the 5R1C
 # path (see ``src/sim/thermal_model_core.rs:243`` and
-# ``src/sim/thermal_model_physics/physics_impl.rs:322``). The guard PASSES
-# at-or-below 85 and FAILS when a NEW edge pushes the count to 86+.
-# Lowering this baseline is authorised only by companion cycle-removal
-# work; see ARCHITECTURE.md §"Regression guard (Issue #2766, extends #2463)".
+# ``src/sim/thermal_model_physics/physics_impl.rs:322``); PR #3034
+# (issue #2878) then lowered the baseline to 79 by deleting the legacy
+# ``src/sim/thermal_model_data.rs`` god-struct (8 ``use crate::physics::``
+# imports at lines 6-14) and replacing it with a per-domain split in
+# ``src/sim/thermal_model_data/`` that consolidates physics imports into
+# a single ``pub use crate::physics::{...}`` block in the new
+# ``mod.rs`` (2 ``pub use`` lines: the consolidated block + a cfg-gated
+# re-export of ``gauge_zone_solver::GaugeZoneSolver``). Net effect:
+# -6 sim->physics edges (8 removed by god-struct deletion, 2 added by
+# consolidated re-exports). The guard PASSES at-or-below 79 and FAILS
+# when a NEW edge pushes the count to 80+. Lowering this baseline is
+# authorised only by companion cycle-removal work; see ARCHITECTURE.md
+# §"Regression guard (Issue #2766, extends #2463)".
 #
 # See ARCHITECTURE.md §"Regression guard (Issue #2463, closed by #2462)"
 # for the source-of-truth numbers.
 BASELINE_PHYSICS_TO_SIM = 0
-BASELINE_SIM_TO_PHYSICS = 85
+BASELINE_SIM_TO_PHYSICS = 79
 
 # Regex for Phase 2: match `use` or `pub use` against `crate::physics::`.
 # Mirrors `scan_sim_for_orientation_cycle` in check_ashrae_cases_cycle.py

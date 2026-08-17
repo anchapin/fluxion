@@ -243,10 +243,10 @@ pub fn run_simulation(
 
     let is_free_floating = spec.is_free_floating();
     if is_free_floating {
-        model.heating_setpoint = -999.0;
-        model.cooling_setpoint = 999.0;
-        model.hvac_heating_capacity = 0.0;
-        model.hvac_cooling_capacity = 0.0;
+        model.setpoints.heating_setpoint = -999.0;
+        model.setpoints.cooling_setpoint = 999.0;
+        model.hvac.hvac_heating_capacity = 0.0;
+        model.hvac.hvac_cooling_capacity = 0.0;
     }
 
     // Set HVAC enabled flags per zone
@@ -259,7 +259,7 @@ pub fn run_simulation(
             }
         }
     }
-    model.hvac_enabled = VectorField::new(hvac_enabled_vals.clone());
+    model.hvac.hvac_enabled = VectorField::new(hvac_enabled_vals.clone());
 
     // Prepare weather (Denver EPW)
     let weather = EpwWeatherSource::from_file(
@@ -304,11 +304,11 @@ pub fn run_simulation(
         let hour_of_day = step % 24;
         let weather_data = weather.get_hourly_data(step).unwrap();
         // Extract the only field used downstream (f64 is Copy) so we can move
-        // weather_data into model.weather without an extra clone (Issue #2893).
+        // weather_data into model.solar.weather without an extra clone (Issue #2893).
         let dry_bulb_temp = weather_data.dry_bulb_temp;
 
         // Update weather data on model for solar gain calculation
-        model.weather = Some(weather_data);
+        model.solar.weather = Some(weather_data);
 
         // Apply HVAC schedule: handle single-zone and multi-zone
         if !spec.hvac.is_empty() {
@@ -342,12 +342,12 @@ pub fn run_simulation(
                         cooling_sps[zone_idx] = c_sp;
                     }
                 }
-                model.heating_setpoints = VectorField::new(heating_sps);
-                model.cooling_setpoints = VectorField::new(cooling_sps);
+                model.setpoints.heating_setpoints = VectorField::new(heating_sps);
+                model.setpoints.cooling_setpoints = VectorField::new(cooling_sps);
             } else {
                 // Single-zone: use scalars
-                model.heating_setpoint = heating_sp;
-                model.cooling_setpoint = cooling_sp;
+                model.setpoints.heating_setpoint = heating_sp;
+                model.setpoints.cooling_setpoint = cooling_sp;
             }
         }
 
@@ -357,7 +357,7 @@ pub fn run_simulation(
                 if let Some(hvac_schedule) = spec.hvac.first() {
                     // For cases with heating disabled (negative setpoint), adjust cooling setpoint
                     if hvac_schedule.heating_setpoint < 0.0 {
-                        model.cooling_setpoint = -100.0;
+                        model.setpoints.cooling_setpoint = -100.0;
                     }
                 }
             }
@@ -395,8 +395,8 @@ pub fn run_simulation(
         if let Some(ref mut hourly_vec) = hourly_data_vec {
             let mut hourly = HourlyData::new(step, num_zones);
             hourly.outdoor_temp = dry_bulb_temp;
-            hourly.zone_temps = model.temperatures.as_slice().to_vec();
-            hourly.mass_temps = model.mass_temperatures.as_slice().to_vec();
+            hourly.zone_temps = model.setpoints.temperatures.as_slice().to_vec();
+            hourly.mass_temps = model.mass.mass_temperatures.as_slice().to_vec();
 
             for (zone_idx, &internal_load_density) in
                 internal_loads_density.iter().enumerate().take(num_zones)
@@ -423,6 +423,7 @@ pub fn run_simulation(
 
                 // Zone temperature and delta-T
                 let zone_temp = model
+                    .setpoints
                     .temperatures
                     .as_slice()
                     .get(zone_idx)
@@ -447,8 +448,9 @@ pub fn run_simulation(
                 let infil = spec.infiltration_ach * volume * 1.2 * 1005.0 * delta_t.abs() / 3600.0;
                 hourly.infiltration_loss[zone_idx] = infil;
 
-                // Solar gains: model.solar_gains is in W/m², convert to total Watts
+                // Solar gains: model.solar.solar_gains is in W/m², convert to total Watts
                 let solar_wm2 = model
+                    .solar
                     .solar_gains
                     .as_ref()
                     .get(zone_idx)

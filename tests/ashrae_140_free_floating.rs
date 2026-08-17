@@ -64,10 +64,10 @@ fn simulate_free_float_case(case: ASHRAE140Case) -> (f64, f64) {
     assert!(spec.is_free_floating(), "Case should be free-floating");
 
     // Disable HVAC for free-floating mode
-    model.heating_setpoint = -999.0;
-    model.cooling_setpoint = 999.0;
-    model.hvac_heating_capacity = 0.0;
-    model.hvac_cooling_capacity = 0.0;
+    model.setpoints.heating_setpoint = -999.0;
+    model.setpoints.cooling_setpoint = 999.0;
+    model.hvac.hvac_heating_capacity = 0.0;
+    model.hvac.hvac_cooling_capacity = 0.0;
 
     let mut min_temp = f64::INFINITY;
     let mut max_temp = f64::NEG_INFINITY;
@@ -75,11 +75,11 @@ fn simulate_free_float_case(case: ASHRAE140Case) -> (f64, f64) {
     for step in 0..8760 {
         let weather_data = weather.get_hourly_data(step).unwrap();
         // Issue #275: Set weather data on model for solar gain calculation
-        model.weather = Some(weather_data.clone());
+        model.solar.weather = Some(weather_data.clone());
         model.step_physics(step, weather_data.dry_bulb_temp, 3600.0);
 
         // Track zone temperatures
-        if let Some(&zone_temp) = model.temperatures.as_slice().first() {
+        if let Some(&zone_temp) = model.setpoints.temperatures.as_slice().first() {
             min_temp = min_temp.min(zone_temp);
             max_temp = max_temp.max(zone_temp);
         }
@@ -708,19 +708,19 @@ fn simulate_free_float_with_time_series(case: ASHRAE140Case) -> Vec<f64> {
     assert!(spec.is_free_floating(), "Case should be free-floating");
 
     // Disable HVAC for free-floating mode
-    model.heating_setpoint = -999.0;
-    model.cooling_setpoint = 999.0;
-    model.hvac_heating_capacity = 0.0;
-    model.hvac_cooling_capacity = 0.0;
+    model.setpoints.heating_setpoint = -999.0;
+    model.setpoints.cooling_setpoint = 999.0;
+    model.hvac.hvac_heating_capacity = 0.0;
+    model.hvac.hvac_cooling_capacity = 0.0;
 
     let mut temperatures = Vec::with_capacity(8760);
 
     for step in 0..8760 {
         let weather_data = weather.get_hourly_data(step).unwrap();
-        model.weather = Some(weather_data.clone());
+        model.solar.weather = Some(weather_data.clone());
         model.step_physics(step, weather_data.dry_bulb_temp, 3600.0);
 
-        if let Some(&zone_temp) = model.temperatures.as_slice().first() {
+        if let Some(&zone_temp) = model.setpoints.temperatures.as_slice().first() {
             temperatures.push(zone_temp);
         }
     }
@@ -793,20 +793,20 @@ where
     config_fn(&mut model);
 
     // Disable HVAC for free-floating mode
-    model.heating_setpoint = -999.0;
-    model.cooling_setpoint = 999.0;
-    model.hvac_heating_capacity = 0.0;
-    model.hvac_cooling_capacity = 0.0;
+    model.setpoints.heating_setpoint = -999.0;
+    model.setpoints.cooling_setpoint = 999.0;
+    model.hvac.hvac_heating_capacity = 0.0;
+    model.hvac.hvac_cooling_capacity = 0.0;
 
     let mut min_temp = f64::INFINITY;
     let mut max_temp = f64::NEG_INFINITY;
 
     for step in 0..8760 {
         let weather_data = weather.get_hourly_data(step).unwrap();
-        model.weather = Some(weather_data.clone());
+        model.solar.weather = Some(weather_data.clone());
         model.step_physics(step, weather_data.dry_bulb_temp, 3600.0);
 
-        if let Some(&zone_temp) = model.temperatures.as_slice().first() {
+        if let Some(&zone_temp) = model.setpoints.temperatures.as_slice().first() {
             min_temp = min_temp.min(zone_temp);
             max_temp = max_temp.max(zone_temp);
         }
@@ -829,7 +829,7 @@ fn apply_900ff_thermal_config(model: &mut ThermalModel<VectorField>) {
         CTFMaterial::new("Wood Siding", 0.009, 0.14, 500.0, 1300.0),
     ];
     model.enable_ctf(&wall_layers, 3600.0, 50);
-    model.conduction.ctf_primary = true;
+    model.conduction.backend.ctf_primary = true;
 }
 
 /// Test: Compare 600FF with different thermal model configurations
@@ -918,10 +918,10 @@ fn test_900ff_with_5r1c_model() {
         EpwWeatherSource::from_file("assets/weather/WD600.epw").expect("Failed to load WD600.epw");
 
     // Disable HVAC
-    model_900ff_6r2c.heating_setpoint = -999.0;
-    model_900ff_6r2c.cooling_setpoint = 999.0;
-    model_900ff_6r2c.hvac_heating_capacity = 0.0;
-    model_900ff_6r2c.hvac_cooling_capacity = 0.0;
+    model_900ff_6r2c.setpoints.heating_setpoint = -999.0;
+    model_900ff_6r2c.setpoints.cooling_setpoint = 999.0;
+    model_900ff_6r2c.hvac.hvac_heating_capacity = 0.0;
+    model_900ff_6r2c.hvac.hvac_cooling_capacity = 0.0;
 
     // Disable 6R2C and CTF to force 5R1C model
     // Note: We can't fully disable 6R2C, but we can check which model is being used
@@ -949,16 +949,21 @@ fn test_900ff_with_5r1c_model() {
     let mut min_900ff_6r2c = f64::INFINITY;
     let mut max_900ff_6r2c = f64::NEG_INFINITY;
     let mut model_900ff_current = ThermalModel::<VectorField>::from_spec(&spec_900ff);
-    model_900ff_current.heating_setpoint = -999.0;
-    model_900ff_current.cooling_setpoint = 999.0;
-    model_900ff_current.hvac_heating_capacity = 0.0;
-    model_900ff_current.hvac_cooling_capacity = 0.0;
+    model_900ff_current.setpoints.heating_setpoint = -999.0;
+    model_900ff_current.setpoints.cooling_setpoint = 999.0;
+    model_900ff_current.hvac.hvac_heating_capacity = 0.0;
+    model_900ff_current.hvac.hvac_cooling_capacity = 0.0;
 
     for step in 0..8760 {
         let weather_data = weather.get_hourly_data(step).unwrap();
-        model_900ff_current.weather = Some(weather_data.clone());
+        model_900ff_current.solar.weather = Some(weather_data.clone());
         model_900ff_current.step_physics(step, weather_data.dry_bulb_temp, 3600.0);
-        if let Some(&zone_temp) = model_900ff_current.temperatures.as_slice().first() {
+        if let Some(&zone_temp) = model_900ff_current
+            .setpoints
+            .temperatures
+            .as_slice()
+            .first()
+        {
             min_900ff_6r2c = min_900ff_6r2c.min(zone_temp);
             max_900ff_6r2c = max_900ff_6r2c.max(zone_temp);
         }
@@ -968,16 +973,21 @@ fn test_900ff_with_5r1c_model() {
     let mut min_600ff = f64::INFINITY;
     let mut max_600ff = f64::NEG_INFINITY;
     let mut model_600ff_current = ThermalModel::<VectorField>::from_spec(&spec_600ff);
-    model_600ff_current.heating_setpoint = -999.0;
-    model_600ff_current.cooling_setpoint = 999.0;
-    model_600ff_current.hvac_heating_capacity = 0.0;
-    model_600ff_current.hvac_cooling_capacity = 0.0;
+    model_600ff_current.setpoints.heating_setpoint = -999.0;
+    model_600ff_current.setpoints.cooling_setpoint = 999.0;
+    model_600ff_current.hvac.hvac_heating_capacity = 0.0;
+    model_600ff_current.hvac.hvac_cooling_capacity = 0.0;
 
     for step in 0..8760 {
         let weather_data = weather.get_hourly_data(step).unwrap();
-        model_600ff_current.weather = Some(weather_data.clone());
+        model_600ff_current.solar.weather = Some(weather_data.clone());
         model_600ff_current.step_physics(step, weather_data.dry_bulb_temp, 3600.0);
-        if let Some(&zone_temp) = model_600ff_current.temperatures.as_slice().first() {
+        if let Some(&zone_temp) = model_600ff_current
+            .setpoints
+            .temperatures
+            .as_slice()
+            .first()
+        {
             min_600ff = min_600ff.min(zone_temp);
             max_600ff = max_600ff.max(zone_temp);
         }
@@ -1025,10 +1035,10 @@ fn test_900ff_without_ctf() {
 
     // === Case A: 900FF with 6R2C + CTF (CTF enabled by default for 900FF - Issue #913) ===
     let mut model_with_ctf = ThermalModel::<VectorField>::from_spec(&spec_900ff);
-    model_with_ctf.heating_setpoint = -999.0;
-    model_with_ctf.cooling_setpoint = 999.0;
-    model_with_ctf.hvac_heating_capacity = 0.0;
-    model_with_ctf.hvac_cooling_capacity = 0.0;
+    model_with_ctf.setpoints.heating_setpoint = -999.0;
+    model_with_ctf.setpoints.cooling_setpoint = 999.0;
+    model_with_ctf.hvac.hvac_heating_capacity = 0.0;
+    model_with_ctf.hvac.hvac_cooling_capacity = 0.0;
 
     // CTF is now enabled by default in from_spec() for 900FF (Issue #913 fix)
     // Case A uses the default CTF-enabled model
@@ -1038,9 +1048,9 @@ fn test_900ff_without_ctf() {
     let mut max_a = f64::NEG_INFINITY;
     for step in 0..8760 {
         let weather_data = weather.get_hourly_data(step).unwrap();
-        model_with_ctf.weather = Some(weather_data.clone());
+        model_with_ctf.solar.weather = Some(weather_data.clone());
         model_with_ctf.step_physics(step, weather_data.dry_bulb_temp, 3600.0);
-        if let Some(&zone_temp) = model_with_ctf.temperatures.as_slice().first() {
+        if let Some(&zone_temp) = model_with_ctf.setpoints.temperatures.as_slice().first() {
             min_a = min_a.min(zone_temp);
             max_a = max_a.max(zone_temp);
         }
@@ -1049,10 +1059,10 @@ fn test_900ff_without_ctf() {
 
     // === Case B: 900FF with 6R2C but NO CTF ===
     let mut model_no_ctf = ThermalModel::<VectorField>::from_spec(&spec_900ff);
-    model_no_ctf.heating_setpoint = -999.0;
-    model_no_ctf.cooling_setpoint = 999.0;
-    model_no_ctf.hvac_heating_capacity = 0.0;
-    model_no_ctf.hvac_cooling_capacity = 0.0;
+    model_no_ctf.setpoints.heating_setpoint = -999.0;
+    model_no_ctf.setpoints.cooling_setpoint = 999.0;
+    model_no_ctf.hvac.hvac_heating_capacity = 0.0;
+    model_no_ctf.hvac.hvac_cooling_capacity = 0.0;
 
     // CTF is disabled by default - no need to explicitly disable for Case B
     println!("Case B: CTF enabled = {}", model_no_ctf.ctf_is_enabled());
@@ -1068,9 +1078,9 @@ fn test_900ff_without_ctf() {
     let mut max_b = f64::NEG_INFINITY;
     for step in 0..8760 {
         let weather_data = weather.get_hourly_data(step).unwrap();
-        model_no_ctf.weather = Some(weather_data.clone());
+        model_no_ctf.solar.weather = Some(weather_data.clone());
         model_no_ctf.step_physics(step, weather_data.dry_bulb_temp, 3600.0);
-        if let Some(&zone_temp) = model_no_ctf.temperatures.as_slice().first() {
+        if let Some(&zone_temp) = model_no_ctf.setpoints.temperatures.as_slice().first() {
             min_b = min_b.min(zone_temp);
             max_b = max_b.max(zone_temp);
         }
@@ -1112,10 +1122,10 @@ fn test_900ff_without_ctf() {
 
     // === Case C: 900FF with 5R1C (force disable 6R2C and CTF) ===
     let mut model_5r1c = ThermalModel::<VectorField>::from_spec(&spec_900ff);
-    model_5r1c.heating_setpoint = -999.0;
-    model_5r1c.cooling_setpoint = 999.0;
-    model_5r1c.hvac_heating_capacity = 0.0;
-    model_5r1c.hvac_cooling_capacity = 0.0;
+    model_5r1c.setpoints.heating_setpoint = -999.0;
+    model_5r1c.setpoints.cooling_setpoint = 999.0;
+    model_5r1c.hvac.hvac_heating_capacity = 0.0;
+    model_5r1c.hvac.hvac_cooling_capacity = 0.0;
 
     // Force disable 6R2C and CTF to use pure 5R1C model
     model_5r1c.disable_ctf();
@@ -1142,9 +1152,9 @@ fn test_900ff_without_ctf() {
     let mut max_c = f64::NEG_INFINITY;
     for step in 0..8760 {
         let weather_data = weather.get_hourly_data(step).unwrap();
-        model_5r1c.weather = Some(weather_data.clone());
+        model_5r1c.solar.weather = Some(weather_data.clone());
         model_5r1c.step_physics(step, weather_data.dry_bulb_temp, 3600.0);
-        if let Some(&zone_temp) = model_5r1c.temperatures.as_slice().first() {
+        if let Some(&zone_temp) = model_5r1c.setpoints.temperatures.as_slice().first() {
             min_c = min_c.min(zone_temp);
             max_c = max_c.max(zone_temp);
         }
@@ -1187,18 +1197,18 @@ fn test_900ff_without_ctf() {
     // Compare with 600FF (natural 5R1C case)
     let spec_600ff = ASHRAE140Case::Case600FF.spec();
     let mut model_600ff = ThermalModel::<VectorField>::from_spec(&spec_600ff);
-    model_600ff.heating_setpoint = -999.0;
-    model_600ff.cooling_setpoint = 999.0;
-    model_600ff.hvac_heating_capacity = 0.0;
-    model_600ff.hvac_cooling_capacity = 0.0;
+    model_600ff.setpoints.heating_setpoint = -999.0;
+    model_600ff.setpoints.cooling_setpoint = 999.0;
+    model_600ff.hvac.hvac_heating_capacity = 0.0;
+    model_600ff.hvac.hvac_cooling_capacity = 0.0;
 
     let mut min_600 = f64::INFINITY;
     let mut max_600 = f64::NEG_INFINITY;
     for step in 0..8760 {
         let weather_data = weather.get_hourly_data(step).unwrap();
-        model_600ff.weather = Some(weather_data.clone());
+        model_600ff.solar.weather = Some(weather_data.clone());
         model_600ff.step_physics(step, weather_data.dry_bulb_temp, 3600.0);
-        if let Some(&zone_temp) = model_600ff.temperatures.as_slice().first() {
+        if let Some(&zone_temp) = model_600ff.setpoints.temperatures.as_slice().first() {
             min_600 = min_600.min(zone_temp);
             max_600 = max_600.max(zone_temp);
         }
@@ -1253,46 +1263,46 @@ fn test_mass_temperatures_differ_between_600ff_and_900ff() {
 
     // === Simulate 600FF ===
     let mut model_600ff = ThermalModel::<VectorField>::from_spec(&spec_600ff);
-    model_600ff.heating_setpoint = -999.0;
-    model_600ff.cooling_setpoint = 999.0;
-    model_600ff.hvac_heating_capacity = 0.0;
-    model_600ff.hvac_cooling_capacity = 0.0;
+    model_600ff.setpoints.heating_setpoint = -999.0;
+    model_600ff.setpoints.cooling_setpoint = 999.0;
+    model_600ff.hvac.hvac_heating_capacity = 0.0;
+    model_600ff.hvac.hvac_cooling_capacity = 0.0;
 
     let mut mass_temps_600ff = Vec::with_capacity(8760);
     let mut air_temps_600ff = Vec::with_capacity(8760);
 
     for step in 0..8760 {
         let weather_data = weather.get_hourly_data(step).unwrap();
-        model_600ff.weather = Some(weather_data.clone());
+        model_600ff.solar.weather = Some(weather_data.clone());
         model_600ff.step_physics(step, weather_data.dry_bulb_temp, 3600.0);
 
-        if let Some(&mass_temp) = model_600ff.mass_temperatures.as_slice().first() {
+        if let Some(&mass_temp) = model_600ff.mass.mass_temperatures.as_slice().first() {
             mass_temps_600ff.push(mass_temp);
         }
-        if let Some(&air_temp) = model_600ff.temperatures.as_slice().first() {
+        if let Some(&air_temp) = model_600ff.setpoints.temperatures.as_slice().first() {
             air_temps_600ff.push(air_temp);
         }
     }
 
     // === Simulate 900FF ===
     let mut model_900ff = ThermalModel::<VectorField>::from_spec(&spec_900ff);
-    model_900ff.heating_setpoint = -999.0;
-    model_900ff.cooling_setpoint = 999.0;
-    model_900ff.hvac_heating_capacity = 0.0;
-    model_900ff.hvac_cooling_capacity = 0.0;
+    model_900ff.setpoints.heating_setpoint = -999.0;
+    model_900ff.setpoints.cooling_setpoint = 999.0;
+    model_900ff.hvac.hvac_heating_capacity = 0.0;
+    model_900ff.hvac.hvac_cooling_capacity = 0.0;
 
     let mut mass_temps_900ff = Vec::with_capacity(8760);
     let mut air_temps_900ff = Vec::with_capacity(8760);
 
     for step in 0..8760 {
         let weather_data = weather.get_hourly_data(step).unwrap();
-        model_900ff.weather = Some(weather_data.clone());
+        model_900ff.solar.weather = Some(weather_data.clone());
         model_900ff.step_physics(step, weather_data.dry_bulb_temp, 3600.0);
 
-        if let Some(&mass_temp) = model_900ff.mass_temperatures.as_slice().first() {
+        if let Some(&mass_temp) = model_900ff.mass.mass_temperatures.as_slice().first() {
             mass_temps_900ff.push(mass_temp);
         }
-        if let Some(&air_temp) = model_900ff.temperatures.as_slice().first() {
+        if let Some(&air_temp) = model_900ff.setpoints.temperatures.as_slice().first() {
             air_temps_900ff.push(air_temp);
         }
     }
@@ -1376,7 +1386,7 @@ fn test_mass_temperatures_differ_between_600ff_and_900ff() {
     // ADR-002 (#1175): The 9R4C multi-node model is now the SOLE thermal solver for
     // high-mass (Case 900FF). Consequently the authoritative observable for "thermal
     // mass buffers the zone" is the ZONE AIR temperature swing — not the 5R1C
-    // single lumped-mass node (`model.mass_temperatures`), which for high-mass is a
+    // single lumped-mass node (`model.mass.mass_temperatures`), which for high-mass is a
     // vestigial field that the 9R4C path no longer uses to drive the air temperature.
     //
     // Previously (pre-ADR-002) this test asserted that the 5R1C lumped-mass max of

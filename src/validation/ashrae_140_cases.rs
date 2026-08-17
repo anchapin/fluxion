@@ -3415,17 +3415,17 @@ fn simulate_case_920_blind(spec: &CaseSpec) -> Case920BlindSim {
             Err(_) => continue, // Defensive: should never happen with TMY data
         };
         // Extract the only field used downstream (f64 is Copy) so we can move
-        // weather_data into model.weather without an extra clone (Issue #2893).
+        // weather_data into model.solar.weather without an extra clone (Issue #2893).
         let dry_bulb_temp = weather_data.dry_bulb_temp;
-        model.weather = Some(weather_data);
+        model.solar.weather = Some(weather_data);
         if let Some(hvac) = spec.hvac.first() {
             let hour = hour_of_day as u8;
             let heating_sp = hvac
                 .heating_setpoint_at_hour(hour)
                 .unwrap_or(hvac.heating_setpoint);
-            let cooling_sp = model.cooling_schedule.value(hour as usize);
-            model.heating_setpoint = heating_sp;
-            model.cooling_setpoint = cooling_sp;
+            let cooling_sp = model.setpoints.cooling_schedule.value(hour as usize);
+            model.setpoints.heating_setpoint = heating_sp;
+            model.setpoints.cooling_setpoint = cooling_sp;
         }
         model.step_physics(step, dry_bulb_temp, 3600.0);
     }
@@ -3433,8 +3433,8 @@ fn simulate_case_920_blind(spec: &CaseSpec) -> Case920BlindSim {
     Case920BlindSim {
         // The model reports cumulative energy in kWh; ASHRAE 140 reference
         // bands are in MWh. Same conversion the test harness uses.
-        annual_heating_mwh: model.annual_heating_energy / 1000.0,
-        annual_cooling_mwh: model.annual_cooling_energy / 1000.0,
+        annual_heating_mwh: model.hvac.annual_heating_energy / 1000.0,
+        annual_cooling_mwh: model.hvac.annual_cooling_energy / 1000.0,
         peak_heating_kw: model.get_peak_heating_power_kw(),
         peak_cooling_kw: model.get_peak_cooling_power_kw(),
     }
@@ -3687,17 +3687,17 @@ fn simulate_case_950_blind(spec: &CaseSpec) -> Case950BlindSim {
             Err(_) => continue, // Defensive: should never happen with TMY data
         };
         // Extract the only field used downstream (f64 is Copy) so we can move
-        // weather_data into model.weather without an extra clone (Issue #2893).
+        // weather_data into model.solar.weather without an extra clone (Issue #2893).
         let dry_bulb_temp = weather_data.dry_bulb_temp;
-        model.weather = Some(weather_data);
+        model.solar.weather = Some(weather_data);
         if let Some(hvac) = spec.hvac.first() {
             let hour = hour_of_day as u8;
             let heating_sp = hvac
                 .heating_setpoint_at_hour(hour)
                 .unwrap_or(hvac.heating_setpoint);
-            let cooling_sp = model.cooling_schedule.value(hour as usize);
-            model.heating_setpoint = heating_sp;
-            model.cooling_setpoint = cooling_sp;
+            let cooling_sp = model.setpoints.cooling_schedule.value(hour as usize);
+            model.setpoints.heating_setpoint = heating_sp;
+            model.setpoints.cooling_setpoint = cooling_sp;
         }
         model.step_physics(step, dry_bulb_temp, 3600.0);
     }
@@ -3705,8 +3705,8 @@ fn simulate_case_950_blind(spec: &CaseSpec) -> Case950BlindSim {
     Case950BlindSim {
         // The model reports cumulative energy in kWh; ASHRAE 140 reference
         // bands are in MWh. Same conversion the test harness uses.
-        annual_heating_mwh: model.annual_heating_energy / 1000.0,
-        annual_cooling_mwh: model.annual_cooling_energy / 1000.0,
+        annual_heating_mwh: model.hvac.annual_heating_energy / 1000.0,
+        annual_cooling_mwh: model.hvac.annual_cooling_energy / 1000.0,
         peak_heating_kw: model.get_peak_heating_power_kw(),
         peak_cooling_kw: model.get_peak_cooling_power_kw(),
     }

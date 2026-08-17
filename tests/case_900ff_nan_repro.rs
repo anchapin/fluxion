@@ -30,7 +30,7 @@ fn find_first_non_finite(max_steps: usize) -> Option<(usize, f64)> {
 
     for step in 0..max_steps {
         let weather_data = weather.get_hourly_data(step % 8760).unwrap();
-        model.weather = Some(weather_data.clone());
+        model.solar.weather = Some(weather_data.clone());
         model.step_physics(step, weather_data.dry_bulb_temp, 3600.0);
 
         let temps = model.get_temperatures();
@@ -86,7 +86,7 @@ fn dump_trajectory_around_failure(fail_step: usize) {
     println!("--- trajectory (step: zone_temp [all nodes]) ---");
     for step in 0..=end {
         let weather_data = weather.get_hourly_data(step % 8760).unwrap();
-        model.weather = Some(weather_data.clone());
+        model.solar.weather = Some(weather_data.clone());
         let t_out = weather_data.dry_bulb_temp;
         model.step_physics(step, t_out, 3600.0);
 

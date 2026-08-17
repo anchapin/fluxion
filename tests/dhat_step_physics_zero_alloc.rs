@@ -131,9 +131,9 @@ fn create_multizone_model() -> ThermalModel<VectorField> {
             ]
         })
         .collect();
-    model.surfaces = surfaces_per_zone;
+    model.solar.surfaces = surfaces_per_zone;
 
-    model.zone_area = VectorField::from_scalar(50.0, NUM_ZONES);
+    model.setpoints.zone_area = VectorField::from_scalar(50.0, NUM_ZONES);
 
     model
 }
@@ -156,7 +156,7 @@ fn install_always_active_night_vent(model: &mut ThermalModel<VectorField>) {
     // covering 24 h requires the disjunction to hold for every h ∈ 0..=23,
     // which `(start=0, end=23)` does (hour 23 satisfies `h < end`).
     let cfg = NightVentilation::new(1703.16, 0, 23);
-    model.night_ventilation = Some(cfg);
+    model.hvac.night_ventilation = Some(cfg);
 }
 
 #[test]
@@ -182,7 +182,7 @@ fn step_physics_day_mode_steady_state_alloc_budget() {
         // every other reuse buffer to steady-state capacity. Fixed weather hour so
         // the solar-position cache does not grow during the probe.
         for step in 0..WARMUP_STEPS {
-            model.weather = Some(midday_weather(12));
+            model.solar.weather = Some(midday_weather(12));
             model.step_physics(step, 30.0, 3600.0);
         }
 
@@ -190,7 +190,7 @@ fn step_physics_day_mode_steady_state_alloc_budget() {
 
         // Steady-state probe: the delta here is bounded by STEADY_BLOCKS_BUDGET_DAY_MODE.
         for step in 0..STEADY_STEPS {
-            model.weather = Some(midday_weather(12));
+            model.solar.weather = Some(midday_weather(12));
             model.step_physics(WARMUP_STEPS + step, 30.0, 3600.0);
         }
 
@@ -241,7 +241,7 @@ fn step_physics_day_mode_steady_state_alloc_budget() {
         // Warm-up: same as day-mode — drive the scratch_pool to steady-state
         // capacity and pre-populate the solar-position cache.
         for step in 0..WARMUP_STEPS {
-            model.weather = Some(midday_weather(12));
+            model.solar.weather = Some(midday_weather(12));
             model.step_physics(step, 30.0, 3600.0);
         }
 
@@ -250,7 +250,7 @@ fn step_physics_day_mode_steady_state_alloc_budget() {
         // Steady-state probe: the delta here is bounded by
         // STEADY_BLOCKS_BUDGET_NIGHT_VENT_MODE.
         for step in 0..STEADY_STEPS {
-            model.weather = Some(midday_weather(12));
+            model.solar.weather = Some(midday_weather(12));
             model.step_physics(WARMUP_STEPS + step, 30.0, 3600.0);
         }
 

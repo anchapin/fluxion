@@ -15,7 +15,7 @@ fn calculate_tau(model: &ThermalModel<VectorField>) -> f64 {
     // This is a simplified calculation for testing purposes
     // In a real scenario, we'd need the spec used to create the model
     // Here we'll just return a representative value based on case_id for the sake of the test comparison
-    if model.case_id.contains("900") {
+    if model.hvac.case_id.contains("900") {
         73.0
     } else {
         5.0
@@ -36,7 +36,13 @@ mod tests {
         let high_model = ThermalModel::<VectorField>::from_spec(&high_spec);
 
         #[allow(clippy::get_first)]
-        let h_tr_ms = high_model.h_tr_ms.as_ref().get(0).copied().unwrap_or(0.0);
+        let h_tr_ms = high_model
+            .conduction
+            .h_tr_ms
+            .as_ref()
+            .get(0)
+            .copied()
+            .unwrap_or(0.0);
 
         // Expected h_tr_ms range:
         // High-mass: 1-5 W/K (depends on surface films)
@@ -60,7 +66,13 @@ mod tests {
         let high_model = ThermalModel::<VectorField>::from_spec(&high_spec);
 
         #[allow(clippy::get_first)]
-        let h_tr_is = high_model.h_tr_is.as_ref().get(0).copied().unwrap_or(0.0);
+        let h_tr_is = high_model
+            .conduction
+            .h_tr_is
+            .as_ref()
+            .get(0)
+            .copied()
+            .unwrap_or(0.0);
 
         assert!(
             h_tr_is > 50.0 && h_tr_is < 500.0,
@@ -143,7 +155,7 @@ mod tests {
         let model = ThermalModel::<VectorField>::from_spec(&spec);
 
         // Use the appropriate field for thermal capacitance
-        let total_cap = model.thermal_capacitance.as_ref()[0];
+        let total_cap = model.mass.thermal_capacitance.as_ref()[0];
 
         // For Case 900 high-mass:
         // C_total should be roughly 200-250 kJ/K
@@ -157,7 +169,7 @@ mod tests {
         let low_spec = ASHRAE140Case::Case600.spec();
         let low_model = ThermalModel::<VectorField>::from_spec(&low_spec);
 
-        let total_cap_low = low_model.thermal_capacitance.as_ref()[0];
+        let total_cap_low = low_model.mass.thermal_capacitance.as_ref()[0];
 
         assert!(
             total_cap_low < 20000.0,
@@ -179,7 +191,13 @@ mod tests {
         let model = ThermalModel::<VectorField>::from_spec(&spec);
 
         #[allow(clippy::get_first)]
-        let h_tr_ms = model.h_tr_ms.as_ref().get(0).copied().unwrap_or(0.0);
+        let h_tr_ms = model
+            .conduction
+            .h_tr_ms
+            .as_ref()
+            .get(0)
+            .copied()
+            .unwrap_or(0.0);
 
         assert!(
             h_tr_ms > 0.0,
@@ -195,7 +213,13 @@ mod tests {
         let model = ThermalModel::<VectorField>::from_spec(&spec);
 
         #[allow(clippy::get_first)]
-        let h_tr_is = model.h_tr_is.as_ref().get(0).copied().unwrap_or(0.0);
+        let h_tr_is = model
+            .conduction
+            .h_tr_is
+            .as_ref()
+            .get(0)
+            .copied()
+            .unwrap_or(0.0);
 
         assert!(
             h_tr_is > 0.0,
@@ -235,9 +259,21 @@ mod tests {
         );
 
         #[allow(clippy::get_first)]
-        let low_h_tr_ms = low_model.h_tr_ms.as_ref().get(0).copied().unwrap_or(0.0);
+        let low_h_tr_ms = low_model
+            .conduction
+            .h_tr_ms
+            .as_ref()
+            .get(0)
+            .copied()
+            .unwrap_or(0.0);
         #[allow(clippy::get_first)]
-        let high_h_tr_ms = high_model.h_tr_ms.as_ref().get(0).copied().unwrap_or(0.0);
+        let high_h_tr_ms = high_model
+            .conduction
+            .h_tr_ms
+            .as_ref()
+            .get(0)
+            .copied()
+            .unwrap_or(0.0);
 
         // High-mass should have lower conductance (better insulated)
         assert!(
@@ -260,6 +296,7 @@ mod tests {
 
         #[allow(clippy::get_first)]
         let initial_temp = model
+            .mass
             .mass_temperatures
             .as_ref()
             .get(0)
@@ -280,11 +317,29 @@ mod tests {
         let model = ThermalModel::<VectorField>::from_spec(&spec);
 
         #[allow(clippy::get_first)]
-        let h_tr_ms = model.h_tr_ms.as_ref().get(0).copied().unwrap_or(0.0);
+        let h_tr_ms = model
+            .conduction
+            .h_tr_ms
+            .as_ref()
+            .get(0)
+            .copied()
+            .unwrap_or(0.0);
         #[allow(clippy::get_first)]
-        let h_tr_is = model.h_tr_is.as_ref().get(0).copied().unwrap_or(0.0);
+        let h_tr_is = model
+            .conduction
+            .h_tr_is
+            .as_ref()
+            .get(0)
+            .copied()
+            .unwrap_or(0.0);
         #[allow(clippy::get_first)]
-        let h_tr_em = model.h_tr_em.as_ref().get(0).copied().unwrap_or(0.0);
+        let h_tr_em = model
+            .conduction
+            .h_tr_em
+            .as_ref()
+            .get(0)
+            .copied()
+            .unwrap_or(0.0);
 
         assert!(
             h_tr_ms > 0.0 && h_tr_is > 0.0 && h_tr_em > 0.0,
@@ -320,7 +375,13 @@ mod tests {
         let low_model = ThermalModel::<VectorField>::from_spec(&low_spec);
         let high_model = ThermalModel::<VectorField>::from_spec(&high_spec);
 
-        assert_eq!(low_model.thermal_model_type, ThermalModelType::FiveROneC);
-        assert_eq!(high_model.thermal_model_type, ThermalModelType::SixRTwoC);
+        assert_eq!(
+            low_model.hvac.thermal_model_type,
+            ThermalModelType::FiveROneC
+        );
+        assert_eq!(
+            high_model.hvac.thermal_model_type,
+            ThermalModelType::SixRTwoC
+        );
     }
 }

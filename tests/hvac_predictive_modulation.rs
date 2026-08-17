@@ -48,14 +48,10 @@ fn test_predictive_modulation_propagation_case_800() {
     let mut model = ThermalModel::<VectorField>::from_spec(&case_spec);
     // Ensure an equipment is wired so the propagation has somewhere to go.
     // (Case 800's spec may or may not include equipment; we set it explicitly.)
-    if model.hvac_equipment.is_none() {
-        model.hvac_equipment = Some(fluxion::sim::hvac::AnyEquipment::HeatPump(HeatPump::new(
-            "HP-800".to_string(),
-            12_000.0,
-            10_000.0,
-            3.5,
-            3.0,
-        )));
+    if model.hvac.hvac_equipment.is_none() {
+        model.hvac.hvac_equipment = Some(fluxion::sim::hvac::AnyEquipment::HeatPump(
+            HeatPump::new("HP-800".to_string(), 12_000.0, 10_000.0, 3.5, 3.0),
+        ));
     }
 
     // --- 2. Run the 8760 h simulation. ---
@@ -64,6 +60,7 @@ fn test_predictive_modulation_propagation_case_800() {
 
     // --- 3. Read the equipment PLR (post-simulation value). ---
     let equipment = model
+        .hvac
         .hvac_equipment
         .as_ref()
         .expect("hvac_equipment should be set for Case 800");
@@ -96,7 +93,7 @@ fn test_predictive_modulation_propagation_case_800() {
     // on its return value (already covered by the lib tests in
     // `sim::hvac::modes::tests`, repeated here as a regression guard at the
     // integration boundary).
-    let mut controller = model.predictive_controller.clone();
+    let mut controller = model.hvac.predictive_controller.clone();
     let sweep: &[(f64, f64, f64)] = &[
         (15.0, 20.0, -0.01),
         (19.0, 19.0, 0.0),
@@ -133,7 +130,7 @@ fn test_predictive_modulation_propagation_in_9r4c_step() {
 
     // Wire a small heat pump; the propagation check only needs a real
     // `VariableCapacityEquipment` to receive `update_state(modulated_load, ...)`.
-    model.hvac_equipment = Some(fluxion::sim::hvac::AnyEquipment::HeatPump(HeatPump::new(
+    model.hvac.hvac_equipment = Some(fluxion::sim::hvac::AnyEquipment::HeatPump(HeatPump::new(
         "HP-9R4C".to_string(),
         10_000.0,
         10_000.0,
@@ -156,6 +153,7 @@ fn test_predictive_modulation_propagation_in_9r4c_step() {
     model.solve_timesteps(24, &surrogates, false, None, None, None);
 
     let equipment = model
+        .hvac
         .hvac_equipment
         .as_ref()
         .expect("hvac_equipment should be set");

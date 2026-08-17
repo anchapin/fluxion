@@ -123,7 +123,7 @@ fn run_case_with_attribution(case_enum: ASHRAE140Case) -> CaseAttribution {
     // Attach a SimulationDiagnostics collector so we get per-hour load breakdown
     // for solar, internal, infiltration, conduction, and HVAC. The collector
     // is wired in `from_spec` via `set_diagnostics`.
-    let diag = SimulationDiagnostics::new(model.num_zones, 8760);
+    let diag = SimulationDiagnostics::new(model.hvac.num_zones, 8760);
     model.set_diagnostics(Some(diag));
 
     // Enable CTF (with FD fallback) for high-mass construction — matches the
@@ -167,7 +167,7 @@ fn run_case_with_attribution(case_enum: ASHRAE140Case) -> CaseAttribution {
         let weather_data = weather
             .get_hourly_data(step)
             .expect("EPW must cover all 8760 hours");
-        model.weather = Some(weather_data.clone());
+        model.solar.weather = Some(weather_data.clone());
 
         // Apply dynamic setpoints (matches the validator's HVAC schedule handling)
         if let Some(hvac_schedule) = spec.hvac.first() {
@@ -175,11 +175,11 @@ fn run_case_with_attribution(case_enum: ASHRAE140Case) -> CaseAttribution {
             let heating_sp = hvac_schedule
                 .heating_setpoint_at_hour(hour)
                 .unwrap_or(hvac_schedule.heating_setpoint);
-            let cooling_sp = model.cooling_schedule.value(step % 24);
-            model.heating_setpoint = heating_sp;
-            model.cooling_setpoint = cooling_sp;
+            let cooling_sp = model.setpoints.cooling_schedule.value(step % 24);
+            model.setpoints.heating_setpoint = heating_sp;
+            model.setpoints.cooling_setpoint = cooling_sp;
             if spec.hvac.len() > 1 {
-                let num_zones = model.num_zones;
+                let num_zones = model.hvac.num_zones;
                 let mut heating_sps = vec![heating_sp; num_zones];
                 let mut cooling_sps = vec![cooling_sp; num_zones];
                 for (zone_idx, hvac) in spec.hvac.iter().enumerate() {
@@ -187,18 +187,18 @@ fn run_case_with_attribution(case_enum: ASHRAE140Case) -> CaseAttribution {
                         let h_sp = hvac
                             .heating_setpoint_at_hour(hour)
                             .unwrap_or(hvac.heating_setpoint);
-                        let c_sp = model.cooling_schedule.value(step % 24);
+                        let c_sp = model.setpoints.cooling_schedule.value(step % 24);
                         heating_sps[zone_idx] = h_sp;
                         cooling_sps[zone_idx] = c_sp;
                     }
                 }
-                model.heating_setpoints = VectorField::new(heating_sps);
-                model.cooling_setpoints = VectorField::new(cooling_sps);
+                model.setpoints.heating_setpoints = VectorField::new(heating_sps);
+                model.setpoints.cooling_setpoints = VectorField::new(cooling_sps);
             }
         }
 
         // Apply per-zone internal loads (matches the validator)
-        let num_zones = model.num_zones;
+        let num_zones = model.hvac.num_zones;
         let mut internal_loads: Vec<f64> = Vec::with_capacity(num_zones);
         for zone_idx in 0..num_zones {
             let internal_gains = spec
@@ -216,8 +216,8 @@ fn run_case_with_attribution(case_enum: ASHRAE140Case) -> CaseAttribution {
         }
         model.set_loads(&internal_loads);
 
-        // Step the physics. The step updates model.annual_heating_energy /
-        // model.annual_cooling_energy and also advances the diagnostics
+        // Step the physics. The step updates model.hvac.annual_heating_energy /
+        // model.hvac.annual_cooling_energy and also advances the diagnostics
         // collector. We also keep the per-step hvac_kwh return value so the
         // monthly H/C attribution can be reconciled exactly with the model's
         // internal annual tracker (see the *_reconciles test below). The
@@ -288,15 +288,15 @@ fn run_case_with_attribution(case_enum: ASHRAE140Case) -> CaseAttribution {
 
     // Splice the per-month H/C from the per-step hvac_kwh (returned by
     // step_physics) into the monthly table. This guarantees the monthly
-    // table reconciles exactly with model.annual_heating_energy /
-    // model.annual_cooling_energy — the `*_reconciles` test guards this.
+    // table reconciles exactly with model.hvac.annual_heating_energy /
+    // model.hvac.annual_cooling_energy — the `*_reconciles` test guards this.
     for m in 0..12 {
         monthly[m].h_kwh = hvac_per_month[m];
         monthly[m].c_kwh = c_kwh_per_month[m];
     }
 
-    let annual_h_mwh = model.annual_heating_energy / 1000.0;
-    let annual_c_mwh = model.annual_cooling_energy / 1000.0;
+    let annual_h_mwh = model.hvac.annual_heating_energy / 1000.0;
+    let annual_c_mwh = model.hvac.annual_cooling_energy / 1000.0;
     let annual_solar_mwh: f64 = monthly.iter().map(|m| m.solar_kwh).sum::<f64>() / 1000.0;
     let annual_internal_mwh: f64 = monthly.iter().map(|m| m.internal_kwh).sum::<f64>() / 1000.0;
     let annual_conduction_mwh: f64 = monthly.iter().map(|m| m.conduction_kwh).sum::<f64>() / 1000.0;

@@ -163,17 +163,17 @@ mod tests {
                 .unwrap_or_else(|_| panic!("{} scenario failed to build", name));
             let model = built.create_model();
             assert!(
-                model.window_u_value > 0.0,
+                model.solar.window_u_value > 0.0,
                 "{}: window_u_value should be positive",
                 name
             );
             assert!(
-                model.heating_setpoint > 0.0,
+                model.setpoints.heating_setpoint > 0.0,
                 "{}: heating_setpoint should be positive",
                 name
             );
             assert!(
-                model.cooling_setpoint > model.heating_setpoint,
+                model.setpoints.cooling_setpoint > model.setpoints.heating_setpoint,
                 "{}: cooling_setpoint should be > heating_setpoint",
                 name
             );

@@ -70,7 +70,7 @@ mod tests {
     fn test_new_runtime_validation() {
         // Runtime validation in new() should not panic with valid defaults
         let model = ThermalModel::new(1);
-        assert_eq!(model.num_zones, 1);
+        assert_eq!(model.hvac.num_zones, 1);
     }
 
     #[test]

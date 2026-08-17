@@ -12,8 +12,8 @@ fn phi_m_diagnostic() {
     let mut model = ThermalModel::<VectorField>::from_spec(&spec);
     let weather = DenverTmyWeather::new();
 
-    model.heating_setpoint = -999.0;
-    model.cooling_setpoint = 999.0;
+    model.setpoints.heating_setpoint = -999.0;
+    model.setpoints.cooling_setpoint = 999.0;
 
     // Track hourly values on the peak day (day 258)
     let day_start = 257 * 24; // hour 6168
@@ -21,12 +21,12 @@ fn phi_m_diagnostic() {
 
     for step in 0..8760 {
         let weather_data = weather.get_hourly_data(step).unwrap();
-        model.weather = Some(weather_data.clone());
+        model.solar.weather = Some(weather_data.clone());
         model.step_physics(step, weather_data.dry_bulb_temp, 3600.0);
 
         if step >= day_start && step < day_end {
-            let zone = model.temperatures.as_slice()[0];
-            let mass = model.mass_temperatures.as_slice()[0];
+            let zone = model.setpoints.temperatures.as_slice()[0];
+            let mass = model.mass.mass_temperatures.as_slice()[0];
             let hr = step % 24;
             let dni = weather_data.dni;
             let dhi = weather_data.dhi;
@@ -45,17 +45,17 @@ fn phi_m_diagnostic() {
 
     // Reset model and run again to avoid state contamination
     let mut model2 = ThermalModel::<VectorField>::from_spec(&spec);
-    model2.heating_setpoint = -999.0;
-    model2.cooling_setpoint = 999.0;
+    model2.setpoints.heating_setpoint = -999.0;
+    model2.setpoints.cooling_setpoint = 999.0;
 
     for step in 0..8760 {
         let weather_data = weather.get_hourly_data(step).unwrap();
-        model2.weather = Some(weather_data.clone());
+        model2.solar.weather = Some(weather_data.clone());
         model2.step_physics(step, weather_data.dry_bulb_temp, 3600.0);
 
         if step >= summer_start && step < summer_end {
-            let zone = model2.temperatures.as_slice()[0];
-            let mass = model2.mass_temperatures.as_slice()[0];
+            let zone = model2.setpoints.temperatures.as_slice()[0];
+            let mass = model2.mass.mass_temperatures.as_slice()[0];
             let hr = step % 24;
             let dni = weather_data.dni;
             let dhi = weather_data.dhi;

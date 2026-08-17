@@ -1035,7 +1035,7 @@ fn attr_value(attr: &quick_xml::events::attributes::Attribute<'_>) -> Result<Str
 ///
 /// ```ignore
 /// let model = fluxion::interop::fmi::import_fmu("fluxion_three_zone.fmu")?;
-/// assert_eq!(model.num_zones, 3);
+/// assert_eq!(model.hvac.num_zones, 3);
 /// ```
 pub fn import_fmu(path: &Path) -> Result<ThermalModel<VectorField>, FmiError> {
     FmiImporter::new()
@@ -1149,7 +1149,7 @@ impl FmuCoSimulationMaster {
     /// zone temperature) together with each zone's heating/cooling loads
     /// averaged over the step.
     ///
-    /// The returned vector has length `model.num_zones`, so external
+    /// The returned vector has length `model.hvac.num_zones`, so external
     /// co-simulation masters (FMPy, PyFMI, EnergyPlus-to-FMU, Modelica)
     /// receive telemetry for **every** zone the FMU was exported with —
     /// `FmuCoSimulationMaster::do_step` no longer silently drops
@@ -1162,20 +1162,20 @@ impl FmuCoSimulationMaster {
 
         // Snapshot per-zone energy accumulators *before* the step so the
         // delta gives the energy consumed during this step alone.
-        let heat_before: Vec<f64> = self.model.zone_heating_energy_kwh.as_ref().to_vec();
-        let cool_before: Vec<f64> = self.model.zone_cooling_energy_kwh.as_ref().to_vec();
+        let heat_before: Vec<f64> = self.model.hvac.zone_heating_energy_kwh.as_ref().to_vec();
+        let cool_before: Vec<f64> = self.model.hvac.zone_cooling_energy_kwh.as_ref().to_vec();
 
         // FMI inputs are Kelvin; step_physics expects °C.
         let outdoor_temp_c = inputs.outdoor_temperature - 273.15;
         let _energy_kwh = self.model.step_physics(self.timestep, outdoor_temp_c, dt);
 
-        let temps_c = self.model.temperatures.as_ref();
-        let heat_after = self.model.zone_heating_energy_kwh.as_ref();
-        let cool_after = self.model.zone_cooling_energy_kwh.as_ref();
+        let temps_c = self.model.setpoints.temperatures.as_ref();
+        let heat_after = self.model.hvac.zone_heating_energy_kwh.as_ref();
+        let cool_after = self.model.hvac.zone_cooling_energy_kwh.as_ref();
 
         // Convert kWh-delta over the step to average Watts:
         //   W = kWh * 3_600_000 / dt
-        let outputs: Vec<FmuOutputs> = (0..self.model.num_zones)
+        let outputs: Vec<FmuOutputs> = (0..self.model.hvac.num_zones)
             .map(|i| {
                 let zone_temp_c = temps_c.get(i).copied().unwrap_or(20.0);
                 let heating_load = heat_before
@@ -1751,7 +1751,7 @@ mod tests {
         FmiExporter::new().export_fmu(&out).expect("export");
 
         let model = import_fmu(&out).expect("import_fmu");
-        assert_eq!(model.num_zones, 1);
+        assert_eq!(model.hvac.num_zones, 1);
     }
 
     #[test]
@@ -1768,8 +1768,8 @@ mod tests {
         let fmu = FmiImporter::new().import(&out).expect("import");
         assert_eq!(fmu.zone_count(), 3);
         assert_eq!(fmu.communication_timestep(), 3600.0);
-        assert_eq!(fmu.thermal_model().num_zones, 3);
-        assert_eq!(fmu.into_thermal_model().num_zones, 3);
+        assert_eq!(fmu.thermal_model().hvac.num_zones, 3);
+        assert_eq!(fmu.into_thermal_model().hvac.num_zones, 3);
     }
 
     #[test]
@@ -1795,7 +1795,7 @@ mod tests {
         FmiExporter::new().export_fmu(&out).expect("export");
         let fmu = FmiImporter::new().import(&out).expect("import");
 
-        let initial_temp_k = fmu.thermal_model().temperatures.as_ref()[0] + 273.15;
+        let initial_temp_k = fmu.thermal_model().setpoints.temperatures.as_ref()[0] + 273.15;
         let mut master = FmuCoSimulationMaster::from_imported(fmu);
 
         // Cold outdoor air (263.15 K = -10 °C) → expect the zone to cool

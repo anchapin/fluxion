@@ -35,21 +35,26 @@ fn simulate_case_900ff_step_physics_9r4c() -> (f64, f64) {
     let mut model = ThermalModel::<VectorField>::from_spec(&spec);
     let weather = DenverTmyWeather::new();
 
+    // Verify this is a free-floating case
+    assert!(spec.is_free_floating(), "Case should be free-floating");
+
+    // Disable HVAC for free-floating mode
+    model.setpoints.heating_setpoint = -999.0;
+    model.setpoints.cooling_setpoint = 999.0;
+    model.hvac.hvac_heating_capacity = 0.0;
+    model.hvac.hvac_cooling_capacity = 0.0;
+
     let mut min_temp = f64::INFINITY;
     let mut max_temp = f64::NEG_INFINITY;
 
     for step in 0..8760 {
         let weather_data = weather.get_hourly_data(step).unwrap();
-        model.weather = Some(weather_data.clone());
-        let _ = model.step_physics(step, weather_data.dry_bulb_temp, 3600.0);
+        model.solar.weather = Some(weather_data.clone());
+        model.step_physics(step, weather_data.dry_bulb_temp, 3600.0);
 
-        if let Some(&t) = model.temperatures.as_slice().first() {
-            if t < min_temp {
-                min_temp = t;
-            }
-            if t > max_temp {
-                max_temp = t;
-            }
+        if let Some(&zone_temp) = model.setpoints.temperatures.as_slice().first() {
+            min_temp = min_temp.min(zone_temp);
+            max_temp = max_temp.max(zone_temp);
         }
     }
 

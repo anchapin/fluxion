@@ -139,7 +139,7 @@ fn test_fmi_cosimulation_thermostat_exchange() {
     let mut model = scenario.create_model();
 
     // Enable free-float mode: disables internal HVAC so external FMU controls climate
-    model.free_float = true;
+    model.hvac.free_float = true;
 
     let mut fmu = MockThermostatFmu::new();
 
@@ -167,7 +167,7 @@ fn test_fmi_cosimulation_thermostat_exchange() {
 
         // Apply FMU's HVAC signals as internal gains (W/m²)
         // Positive = heating, Negative = cooling
-        let zone_area = model.zone_area.as_ref()[0]; // 100 m²
+        let zone_area = model.setpoints.zone_area.as_ref()[0]; // 100 m²
         let net_load = (heating_signal - cooling_signal) / zone_area; // W/m²
         let loads = vec![net_load];
         model.set_loads(&loads);
@@ -226,7 +226,7 @@ fn test_fmi_cosimulation_energy_conservation_7days() {
         .expect("Invalid scenario");
 
     let mut model = scenario.create_model();
-    model.free_float = true; // Disable internal HVAC
+    model.hvac.free_float = true; // Disable internal HVAC
 
     let mut fmu = MockThermostatFmu::new();
 
@@ -238,7 +238,7 @@ fn test_fmi_cosimulation_energy_conservation_7days() {
     let timesteps_per_day = 24;
     let step_size = 3600.0;
     let outdoor_temp = 7.0; // °C
-    let zone_area = model.zone_area.as_ref()[0];
+    let zone_area = model.setpoints.zone_area.as_ref()[0];
 
     let mut daily_heating: Vec<f64> = Vec::with_capacity(num_days);
     let mut daily_cooling: Vec<f64> = Vec::with_capacity(num_days);
@@ -310,7 +310,7 @@ fn test_fmi_variable_exchange_correctness() {
         .expect("Invalid scenario");
 
     let mut model = scenario.create_model();
-    model.free_float = true;
+    model.hvac.free_float = true;
     let mut fmu = MockThermostatFmu::new();
 
     fmu.setup_experiment(0.0, 86400.0);
@@ -325,7 +325,7 @@ fn test_fmi_variable_exchange_correctness() {
     ];
 
     for (zone_temp_c, description) in &test_temps {
-        model.temperatures = VectorField::from_scalar(*zone_temp_c, 1);
+        model.setpoints.temperatures = VectorField::from_scalar(*zone_temp_c, 1);
 
         fmu.do_step(0.0, 3600.0, *zone_temp_c);
 
@@ -369,7 +369,7 @@ fn test_fmi_energy_balance_consistency() {
         .expect("Invalid scenario");
 
     let mut model = scenario.create_model();
-    model.free_float = true; // Disable internal HVAC
+    model.hvac.free_float = true; // Disable internal HVAC
 
     let mut fmu = MockThermostatFmu::new();
 
@@ -380,7 +380,7 @@ fn test_fmi_energy_balance_consistency() {
     let num_timesteps = 24;
     let step_size = 3600.0;
     let outdoor_temp = 7.0; // °C - cold day
-    let zone_area = model.zone_area.as_ref()[0];
+    let zone_area = model.setpoints.zone_area.as_ref()[0];
 
     let initial_temp = model.get_temperatures()[0];
 

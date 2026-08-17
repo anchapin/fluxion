@@ -98,7 +98,7 @@ fn test_weather_data_flow() {
 
     // Verify that simulation ran (temperatures were updated)
     // Temperature field should have been modified during simulation
-    assert!(!model.temperatures.is_empty());
+    assert!(!model.setpoints.temperatures.is_empty());
 
     // Verify solve_timesteps_with_dt and step_physics were called
     assert!(tracer.verify_called(&["solve_timesteps_with_dt"]));

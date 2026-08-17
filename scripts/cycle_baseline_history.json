@@ -148,8 +148,24 @@
         "sim_to_physics": 85
       },
       "total": 305,
-      "edge_signature": "22a4d3917a9c23f70c6cc76ac089952ef7173e90f1b390214bcdc4d2c6bfaf3c",
-      "reason": "PR #3024 (issue #2891) implements wind-velocity-dependent exterior convection (ASHRAE 140 \u00a75.2.6) by introducing src/physics/exterior_convection.rs and importing its helpers (h_c_ext_wind_dependent, wind_at_building_height_from_10m, ExteriorSurfaceDirection) from two new sim call sites: src/sim/thermal_model_core.rs:243 (sol-air temperature path) and src/sim/thermal_model_physics/physics_impl.rs:322 (5R1C FD boundary condition path). This adds 2 legitimate sim->physics edges; sim_to_physics grew 83 -> 85 (total 303 -> 305). The new edges are authorised by ARCHITECTURE.md \u00a7Regression guard as companion cycle work for the new physics module: PR #3024 creates the ONLY consumer of the new physics helpers in the 5R1C path it modifies, so any companion cycle-removal that hoists these helpers to fluxion_core would also have to move the wind-convection algorithm itself. Companion cycle-removal work stays open until #2462 phase 3 elides the entire sim->physics edge family. BASELINE_SIM_TO_PHYSICS in scripts/check_physics_sim_cycle.py was raised from 83 to 85 in the same PR, and ARCHITECTURE.md \u00a7Regression guard was updated to match. R1/R2/R3 trend guards continue to enforce downward pressure from this new 305 floor."
+"edge_signature": "22a4d3917a9c23f70c6cc76ac089952ef7173e90f1b390214bcdc4d2c6bfaf3c",
+      "reason": "PR #3024 (issue #2891) implements wind-velocity-dependent exterior convection (ASHRAE 140 §5.2.6) by introducing src/physics/exterior_convection.rs and importing its helpers (h_c_ext_wind_dependent, wind_at_building_height_from_10m, ExteriorSurfaceDirection) from two new sim call sites: src/sim/thermal_model_core.rs:243 (sol-air temperature path) and src/sim/thermal_model_physics/physics_impl.rs:322 (5R1C FD boundary condition path). This adds 2 legitimate sim->physics edges; sim_to_physics grew 83 -> 85 (total 303 -> 305). The new edges are authorised by ARCHITECTURE.md §Regression guard as companion cycle work for the new physics module: PR #3024 creates the ONLY consumer of the new physics helpers in the 5R1C path it modifies, so any companion cycle-removal that hoists these helpers to fluxion_core would also have to move the wind-convection algorithm itself. Companion cycle-removal work stays open until #2462 phase 3 elides the entire sim->physics edge family. BASELINE_SIM_TO_PHYSICS in scripts/check_physics_sim_cycle.py was raised from 83 to 85 in the same PR, and ARCHITECTURE.md §Regression guard was updated to match. R1/R2/R3 trend guards continue to enforce downward pressure from this new 305 floor."
+    },
+    {
+      "timestamp": "2026-08-16T00:00:00+00:00",
+      "commit": "3034-pending",
+      "source": "god-struct-split-issue-2878",
+      "totals": {
+        "sim_to_validation": 72,
+        "validation_to_sim": 58,
+        "validation_to_physics": 65,
+        "validation_to_weather": 25,
+        "physics_to_sim": 0,
+        "sim_to_physics": 79
+      },
+      "total": 299,
+      "edge_signature": "2c4c5e685a69e4e7807b90cf82bc872de565965e3769338f1a6dbf3e3e9e5765",
+      "reason": "PR #3034 (issue #2878) split the legacy src/sim/thermal_model_data.rs god-struct (~140 fields, 145-line Clone impl) into 6 per-domain sub-structs in src/sim/thermal_model_data/ (conduction_backend, conduction_state, diagnostics_state, hvac_state, mass_state, setpoint_state, solar_state). The deletion removed 8 use crate::physics:: imports (cta::{ContinuousTensor, VectorField}, ctf_coefficients::CTFCoefficients, ctf_solver::CTFSolver, ctf_zone_coupling::CtfZoneCouplingSolver, fd_solver::ImplicitFDSolver, gauge_zone_solver::GaugeZoneSolver, multi_node_solver::MultiNodeSolver, solver_manager::SolverManager); the per-domain split adds 2 consolidated pub use crate::physics::{...} lines in the new mod.rs (one consolidated block covering 7 types, one cfg-gated re-export of GaugeZoneSolver). Net effect: sim_to_physics 85 -> 79 (-6). BASELINE_SIM_TO_PHYSICS in scripts/check_physics_sim_cycle.py was lowered from 85 to 79 in the same PR (companion cycle-removal work authorised by ARCHITECTURE.md §Regression guard: the god-struct split is itself a cycle-removal operation that reduces sim->physics coupling surface). R1/R2/R3 trend guards continue to enforce downward pressure from this new 299 floor."
     }
   ]
 }

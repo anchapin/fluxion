@@ -59,17 +59,17 @@ fn test_case_600_cz7_baseline() {
 fn test_case_600_cz7_model_creation() {
     let model = Case600CZ7Model::new();
 
-    assert_eq!(model.model.num_zones, 1, "Should be single-zone");
+    assert_eq!(model.model.hvac.num_zones, 1, "Should be single-zone");
     assert_eq!(
-        model.model.heating_setpoint, 20.0,
+        model.model.setpoints.heating_setpoint, 20.0,
         "Heating setpoint should be 20°C"
     );
     assert_eq!(
-        model.model.cooling_setpoint, 27.0,
+        model.model.setpoints.cooling_setpoint, 27.0,
         "Cooling setpoint should be 27°C"
     );
     assert_eq!(
-        model.model.window_u_value, 3.0,
+        model.model.solar.window_u_value, 3.0,
         "Window U-value should be 3.0 W/m²K"
     );
 }

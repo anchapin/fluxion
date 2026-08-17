@@ -126,7 +126,7 @@ fn idf_case_600_simulation_runs_and_reports_energy() {
     let mut total_cooling_j = 0.0_f64;
     for step in 0..8760 {
         let weather_data = weather.get_hourly_data(step).unwrap();
-        model.weather = Some(weather_data.clone());
+        model.solar.weather = Some(weather_data.clone());
         let energy_kwh = model.step_physics(step, weather_data.dry_bulb_temp, 3600.0);
         if energy_kwh > 0.0 {
             total_heating_j += energy_kwh * 3.6e6;
@@ -166,7 +166,7 @@ fn idf_case_600_annual_heating_within_15_percent_strict() {
     let mut total_heating_j = 0.0_f64;
     for step in 0..8760 {
         let weather_data = weather.get_hourly_data(step).unwrap();
-        model.weather = Some(weather_data.clone());
+        model.solar.weather = Some(weather_data.clone());
         let energy_kwh = model.step_physics(step, weather_data.dry_bulb_temp, 3600.0);
         if energy_kwh > 0.0 {
             total_heating_j += energy_kwh * 3.6e6;

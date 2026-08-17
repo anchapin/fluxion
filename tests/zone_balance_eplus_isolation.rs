@@ -129,8 +129,8 @@ fn test_physics_thermal_model_setpoint_tracking_constant_outdoor() {
     // Initialize zone AND mass at the setpoint (matches test_cta_linearity
     // working pattern). Use set_ground_temp to avoid T_out coupling.
     let init_t = 20.0;
-    model.temperatures.as_mut()[0] = init_t;
-    if let Some(ref mut mt) = Some(&mut model.mass_temperatures) {
+    model.setpoints.temperatures.as_mut()[0] = init_t;
+    if let Some(ref mut mt) = Some(&mut model.mass.mass_temperatures) {
         mt.as_mut()[0] = init_t;
     }
     let outdoor = 10.0;
@@ -141,9 +141,9 @@ fn test_physics_thermal_model_setpoint_tracking_constant_outdoor() {
         model.step_physics(0, outdoor, 3600.0);
     }
 
-    let t_zone = model.temperatures[0];
-    let t_heating = model.heating_setpoint;
-    let t_cooling = model.cooling_setpoint;
+    let t_zone = model.setpoints.temperatures[0];
+    let t_heating = model.setpoints.heating_setpoint;
+    let t_cooling = model.setpoints.cooling_setpoint;
 
     println!(
         "[#1013 setpoint] t_heating={:.2}°C, t_cooling={:.2}°C, t_zone_after_48h={:.2}°C",
@@ -241,8 +241,8 @@ fn test_physics_thermal_model_eplus_case_600_reference_csv() {
     // Initialize zone AND mass at E+ setpoint, with ground temp locked to
     // the mean outdoor temperature to isolate the envelope heat balance.
     let init_t = 20.0;
-    model.temperatures.as_mut()[0] = init_t;
-    if let Some(ref mut mt) = Some(&mut model.mass_temperatures) {
+    model.setpoints.temperatures.as_mut()[0] = init_t;
+    if let Some(ref mut mt) = Some(&mut model.mass.mass_temperatures) {
         mt.as_mut()[0] = init_t;
     }
     let mean_outdoor = t_out_samples.iter().sum::<f64>() / t_out_samples.len() as f64;
@@ -256,7 +256,7 @@ fn test_physics_thermal_model_eplus_case_600_reference_csv() {
     let mut prev_t = init_t;
     for (step, &t_out) in t_out_samples.iter().enumerate() {
         model.step_physics(step, t_out, 3600.0);
-        let t = model.temperatures[0];
+        let t = model.setpoints.temperatures[0];
         t_zone_sum += t;
         t_zone_max = t_zone_max.max(t);
         t_zone_min = t_zone_min.min(t);
@@ -309,8 +309,8 @@ fn test_physics_thermal_model_trait_matches_engine() {
 
     // Synchronize initial state (zone + mass + ground)
     let init_t = 20.0;
-    inner.temperatures.as_mut()[0] = init_t;
-    if let Some(ref mut mt) = Some(&mut inner.mass_temperatures) {
+    inner.setpoints.temperatures.as_mut()[0] = init_t;
+    if let Some(ref mut mt) = Some(&mut inner.mass.mass_temperatures) {
         mt.as_mut()[0] = init_t;
     }
     inner.set_ground_temp(10.0);
@@ -322,7 +322,7 @@ fn test_physics_thermal_model_trait_matches_engine() {
     let _ = inner.step_physics(0, outdoor, dt);
     let _ = trait_model.solve_timesteps(1, &SurrogateManager::default(), false);
 
-    let t_inner = inner.temperatures[0];
+    let t_inner = inner.setpoints.temperatures[0];
     let t_trait = trait_model.get_temperatures()[0];
 
     println!(
@@ -350,10 +350,10 @@ fn simulate_free_float(case: ASHRAE140Case) -> (f64, f64, usize) {
     assert!(spec.is_free_floating(), "Case must be free-floating");
 
     // Disable HVAC for free-floating mode (Issue #275)
-    model.heating_setpoint = -999.0;
-    model.cooling_setpoint = 999.0;
-    model.hvac_heating_capacity = 0.0;
-    model.hvac_cooling_capacity = 0.0;
+    model.setpoints.heating_setpoint = -999.0;
+    model.setpoints.cooling_setpoint = 999.0;
+    model.hvac.hvac_heating_capacity = 0.0;
+    model.hvac.hvac_cooling_capacity = 0.0;
 
     let mut min_t = f64::INFINITY;
     let mut max_t = f64::NEG_INFINITY;
@@ -361,10 +361,10 @@ fn simulate_free_float(case: ASHRAE140Case) -> (f64, f64, usize) {
 
     for step in 0..n_steps {
         let weather_data = weather.get_hourly_data(step).unwrap();
-        model.weather = Some(weather_data.clone());
+        model.solar.weather = Some(weather_data.clone());
         model.step_physics(step, weather_data.dry_bulb_temp, 3600.0);
 
-        if let Some(&t) = model.temperatures.as_slice().first() {
+        if let Some(&t) = model.setpoints.temperatures.as_slice().first() {
             min_t = min_t.min(t);
             max_t = max_t.max(t);
         }
@@ -752,7 +752,7 @@ fn run_blind_annual_energy(
 
     for step in 0..8760 {
         let weather_data = weather.get_hourly_data(step).unwrap();
-        model.weather = Some(weather_data.clone());
+        model.solar.weather = Some(weather_data.clone());
         let energy_kwh = model.step_physics(step, weather_data.dry_bulb_temp, 3600.0);
         let energy_j = energy_kwh * 3.6e6;
         if energy_kwh > 0.0 {
@@ -1114,12 +1114,12 @@ fn test_eplus_reference_run_performance() {
     let start = std::time::Instant::now();
     let spec = ASHRAE140Case::Case600.spec();
     let mut model = ThermalModel::<VectorField>::from_spec(&spec);
-    model.temperatures.as_mut()[0] = 20.0;
+    model.setpoints.temperatures.as_mut()[0] = 20.0;
 
     let weather = DenverTmyWeather::new();
     for step in 0..168 {
         let w = weather.get_hourly_data(step).unwrap();
-        model.weather = Some(w.clone());
+        model.solar.weather = Some(w.clone());
         model.step_physics(step, w.dry_bulb_temp, 3600.0);
     }
     let elapsed = start.elapsed();
@@ -1172,7 +1172,7 @@ fn test_case_600_energy_balance_conservation() {
     let tolerance = ENERGY_BALANCE_RESIDUAL_THRESHOLD;
     let mut checker = InvariantChecker::new(tolerance);
 
-    model.temperatures.as_mut()[0] = 20.0;
+    model.setpoints.temperatures.as_mut()[0] = 20.0;
     model.set_ground_temp(10.0);
 
     let dt = 3600.0;
@@ -1182,7 +1182,7 @@ fn test_case_600_energy_balance_conservation() {
 
     for step in 0..n_steps {
         let w = weather.get_hourly_data(step).unwrap();
-        model.weather = Some(w.clone());
+        model.solar.weather = Some(w.clone());
         model.step_physics(step, w.dry_bulb_temp, dt);
         let result = checker.check_invariant(&model, dt, w.dry_bulb_temp);
 
@@ -1221,7 +1221,7 @@ fn test_case_900_energy_balance_conservation() {
     let tolerance = ENERGY_BALANCE_RESIDUAL_THRESHOLD;
     let mut checker = InvariantChecker::new(tolerance);
 
-    model.temperatures.as_mut()[0] = 20.0;
+    model.setpoints.temperatures.as_mut()[0] = 20.0;
     model.set_ground_temp(10.0);
 
     let dt = 3600.0;
@@ -1231,7 +1231,7 @@ fn test_case_900_energy_balance_conservation() {
 
     for step in 0..n_steps {
         let w = weather.get_hourly_data(step).unwrap();
-        model.weather = Some(w.clone());
+        model.solar.weather = Some(w.clone());
         model.step_physics(step, w.dry_bulb_temp, dt);
         let result = checker.check_invariant(&model, dt, w.dry_bulb_temp);
 
@@ -1270,8 +1270,8 @@ fn test_case_960_energy_balance_conservation() {
     let tolerance = ENERGY_BALANCE_RESIDUAL_THRESHOLD;
     let mut checker = InvariantChecker::new(tolerance);
 
-    for i in 0..model.num_zones {
-        model.temperatures.as_mut()[i] = 20.0;
+    for i in 0..model.hvac.num_zones {
+        model.setpoints.temperatures.as_mut()[i] = 20.0;
     }
     model.set_ground_temp(10.0);
 
@@ -1282,7 +1282,7 @@ fn test_case_960_energy_balance_conservation() {
 
     for step in 0..n_steps {
         let w = weather.get_hourly_data(step).unwrap();
-        model.weather = Some(w.clone());
+        model.solar.weather = Some(w.clone());
         model.step_physics(step, w.dry_bulb_temp, dt);
         let result = checker.check_invariant(&model, dt, w.dry_bulb_temp);
 

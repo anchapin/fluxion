@@ -35,18 +35,18 @@ fn test_free_floating_hvac_is_disabled() {
     assert!(spec.is_free_floating(), "Case should be free-floating");
 
     // Disable HVAC for free-floating mode (same as validator does)
-    model.hvac_heating_capacity = 0.0;
-    model.hvac_cooling_capacity = 0.0;
-    model.hvac_enabled = VectorField::from_scalar(0.0, model.num_zones);
+    model.hvac.hvac_heating_capacity = 0.0;
+    model.hvac.hvac_cooling_capacity = 0.0;
+    model.hvac.hvac_enabled = VectorField::from_scalar(0.0, model.hvac.num_zones);
 
     for step in 0..8760 {
         let weather_data = weather.get_hourly_data(step).unwrap();
-        model.weather = Some(weather_data.clone());
+        model.solar.weather = Some(weather_data.clone());
         model.step_physics(step, weather_data.dry_bulb_temp, 3600.0);
     }
 
     // After simulation, HVAC energy should be zero
-    let total_hvac_energy = model.annual_heating_energy + model.annual_cooling_energy;
+    let total_hvac_energy = model.hvac.annual_heating_energy + model.hvac.annual_cooling_energy;
     println!(
         "Total HVAC energy for 900FF: {:.6} kWh (should be 0)",
         total_hvac_energy
@@ -72,19 +72,19 @@ fn test_free_floating_temperatures_physically_reasonable() {
     assert!(spec.is_free_floating(), "Case should be free-floating");
 
     // Disable HVAC for free-floating mode
-    model.hvac_heating_capacity = 0.0;
-    model.hvac_cooling_capacity = 0.0;
-    model.hvac_enabled = VectorField::from_scalar(0.0, model.num_zones);
+    model.hvac.hvac_heating_capacity = 0.0;
+    model.hvac.hvac_cooling_capacity = 0.0;
+    model.hvac.hvac_enabled = VectorField::from_scalar(0.0, model.hvac.num_zones);
 
     let mut min_temp = f64::INFINITY;
     let mut max_temp = f64::NEG_INFINITY;
 
     for step in 0..8760 {
         let weather_data = weather.get_hourly_data(step).unwrap();
-        model.weather = Some(weather_data.clone());
+        model.solar.weather = Some(weather_data.clone());
         model.step_physics(step, weather_data.dry_bulb_temp, 3600.0);
 
-        if let Some(&zone_temp) = model.temperatures.as_slice().first() {
+        if let Some(&zone_temp) = model.setpoints.temperatures.as_slice().first() {
             min_temp = min_temp.min(zone_temp);
             max_temp = max_temp.max(zone_temp);
         }
@@ -127,32 +127,32 @@ fn test_hvac_enabled_zero_produces_zero_output() {
     let weather = DenverTmyWeather::new();
 
     // Enable HVAC with realistic setpoints
-    model.hvac_enabled = VectorField::from_scalar(1.0, model.num_zones);
-    model.heating_setpoint = 20.0;
-    model.cooling_setpoint = 25.0;
-    model.hvac_heating_capacity = 10000.0;
-    model.hvac_cooling_capacity = 10000.0;
+    model.hvac.hvac_enabled = VectorField::from_scalar(1.0, model.hvac.num_zones);
+    model.setpoints.heating_setpoint = 20.0;
+    model.setpoints.cooling_setpoint = 25.0;
+    model.hvac.hvac_heating_capacity = 10000.0;
+    model.hvac.hvac_cooling_capacity = 10000.0;
 
     for step in 0..168 {
         let weather_data = weather.get_hourly_data(step).unwrap();
-        model.weather = Some(weather_data.clone());
+        model.solar.weather = Some(weather_data.clone());
         model.step_physics(step, weather_data.dry_bulb_temp, 3600.0);
     }
 
-    let energy_with_enabled = model.annual_heating_energy + model.annual_cooling_energy;
+    let energy_with_enabled = model.hvac.annual_heating_energy + model.hvac.annual_cooling_energy;
     println!("Energy with HVAC enabled: {:.4} kWh", energy_with_enabled);
 
     // Now disable HVAC
-    model.hvac_enabled = VectorField::from_scalar(0.0, model.num_zones);
+    model.hvac.hvac_enabled = VectorField::from_scalar(0.0, model.hvac.num_zones);
     model.reset_heating_cooling_energy();
 
     for step in 0..168 {
         let weather_data = weather.get_hourly_data(step).unwrap();
-        model.weather = Some(weather_data.clone());
+        model.solar.weather = Some(weather_data.clone());
         model.step_physics(step, weather_data.dry_bulb_temp, 3600.0);
     }
 
-    let energy_with_disabled = model.annual_heating_energy + model.annual_cooling_energy;
+    let energy_with_disabled = model.hvac.annual_heating_energy + model.hvac.annual_cooling_energy;
     println!("Energy with HVAC disabled: {:.4} kWh", energy_with_disabled);
 
     // When HVAC is disabled, energy should be zero

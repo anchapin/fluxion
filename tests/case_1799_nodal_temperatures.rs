@@ -81,7 +81,7 @@ fn test_nodal_temperatures_exposed_for_high_mass() {
         .get_nodal_temperatures()
         .expect("Case 900 (high-mass) must populate nodal_temperatures");
 
-    let num_zones = model.num_zones;
+    let num_zones = model.hvac.num_zones;
     assert_eq!(
         nodal.len(),
         num_zones,
@@ -132,7 +132,7 @@ fn test_nodal_temperatures_match_internal_solver_trace() {
         .expect("Case 900 (high-mass) must populate nodal_temperatures");
 
     for (zone_idx, zone_nodes) in nodal.iter().enumerate() {
-        let solver = &model.conduction.multi_node_solvers[zone_idx];
+        let solver = &model.conduction.backend.multi_node_solvers[zone_idx];
         let trace_final = [
             solver.wall_temperature(),
             solver.roof_temperature(),
@@ -171,12 +171,12 @@ fn test_nodal_temperatures_match_per_step_snapshot() {
     let mut manual_trace: Vec<[f64; 4]> = Vec::with_capacity(NUM_STEPS);
     for step in 0..NUM_STEPS {
         let w = weather.get_hourly_data(step).unwrap();
-        model.weather = Some(w.clone());
+        model.solar.weather = Some(w.clone());
         let _ = model.step_physics(step, w.dry_bulb_temp, 3600.0);
 
         // Capture immediately after the step (same capture point as the
         // high-level solver_core.rs hook).
-        let solver = &model.conduction.multi_node_solvers[0];
+        let solver = &model.conduction.backend.multi_node_solvers[0];
         manual_trace.push([
             solver.wall_temperature(),
             solver.roof_temperature(),

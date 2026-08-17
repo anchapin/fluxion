@@ -65,7 +65,7 @@ fn simulate_case_960() -> (f64, f64, f64, f64) {
     let weather = DenverTmyWeather::new();
 
     // Verify multi-zone configuration
-    assert_eq!(model.num_zones, 2, "Case 960 should have 2 zones");
+    assert_eq!(model.hvac.num_zones, 2, "Case 960 should have 2 zones");
 
     // Reset energy tracking to ensure clean measurement
     model.reset_heating_cooling_energy();
@@ -152,7 +152,7 @@ fn test_case_960_inter_zone_conductance() {
     let model = ThermalModel::<VectorField>::from_spec(&spec);
 
     // Verify inter-zone conductance is set
-    let h_iz = model.h_tr_iz.as_ref();
+    let h_iz = model.conduction.h_tr_iz.as_ref();
     assert!(h_iz[0] > 0.0, "Inter-zone conductance should be positive");
 
     println!("Inter-zone conductance: {:.2} W/K", h_iz[0]);
@@ -210,7 +210,7 @@ fn test_case_960_zone_temperatures() {
         model.set_weather(weather_data.clone());
         model.step_physics(step, weather_data.dry_bulb_temp, 3600.0);
 
-        let temps = model.temperatures.as_ref();
+        let temps = model.setpoints.temperatures.as_ref();
         back_zone_temps.push(temps[0]);
         sunspace_temps.push(temps[1]);
     }
@@ -400,7 +400,7 @@ fn test_case_960_inter_zone_heat_transfer_analysis() {
         model.set_weather(weather_data.clone());
         model.step_physics(step, weather_data.dry_bulb_temp, 3600.0);
 
-        let temps = model.temperatures.as_ref();
+        let temps = model.setpoints.temperatures.as_ref();
         let temp_diff = temps[1] - temps[0];
 
         back_zone_temps.push(temps[0]);
@@ -476,7 +476,7 @@ fn test_case_960_seasonal_temperature_profiles() {
         model.set_weather(weather_data.clone());
         model.step_physics(step, weather_data.dry_bulb_temp, 3600.0);
 
-        let temps = model.temperatures.as_ref();
+        let temps = model.setpoints.temperatures.as_ref();
 
         if (4344..6552).contains(&step) {
             summer_back.push(temps[0]);
@@ -917,7 +917,7 @@ fn test_issue_1445_full_nonlinear_stefan_boltzmann_wired_in() {
     // change that would silently break this invariant.
     let spec = ASHRAE140Case::Case960.spec();
     let model = ThermalModel::<VectorField>::from_spec(&spec);
-    let h_iz_rad = model.h_tr_iz_rad.as_ref();
+    let h_iz_rad = model.conduction.h_tr_iz_rad.as_ref();
     assert!(
         h_iz_rad[0] == 0.0,
         "Case 960 h_tr_iz_rad must remain 0 (windows face same direction), got {}",

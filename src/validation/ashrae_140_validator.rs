@@ -793,19 +793,19 @@ impl ASHRAE140Validator {
         model.reset_heating_cooling_energy();
 
         const STEPS: usize = 8760;
-        let num_zones = model.num_zones;
+        let num_zones = model.hvac.num_zones;
 
         let is_free_floating = spec.is_free_floating();
 
         if is_free_floating {
-            model.heating_setpoint = -999.0;
-            model.cooling_setpoint = 999.0;
-            model.hvac_heating_capacity = 0.0;
-            model.hvac_cooling_capacity = 0.0;
+            model.setpoints.heating_setpoint = -999.0;
+            model.setpoints.cooling_setpoint = 999.0;
+            model.hvac.hvac_heating_capacity = 0.0;
+            model.hvac.hvac_cooling_capacity = 0.0;
         } else {
             // Apply controller setpoints to model
-            model.heating_setpoint = controller.heating_setpoint;
-            model.cooling_setpoint = controller.cooling_setpoint;
+            model.setpoints.heating_setpoint = controller.heating_setpoint;
+            model.setpoints.cooling_setpoint = controller.cooling_setpoint;
         }
 
         // Set hvac_enabled per zone based on HVAC configuration (Issue #375)
@@ -818,7 +818,7 @@ impl ASHRAE140Validator {
                 }
             }
         }
-        model.hvac_enabled = VectorField::new(hvac_enabled_vals.clone());
+        model.hvac.hvac_enabled = VectorField::new(hvac_enabled_vals.clone());
 
         let _annual_heating_joules = 0.0;
         let _annual_cooling_joules = 0.0;
@@ -850,11 +850,11 @@ impl ASHRAE140Validator {
 
             let weather_data = weather.get_hourly_data(step).unwrap();
             // Extract the only field used downstream (f64 is Copy) so we can move
-            // weather_data into model.weather without an extra clone (Issue #2893).
+            // weather_data into model.solar.weather without an extra clone (Issue #2893).
             let dry_bulb_temp = weather_data.dry_bulb_temp;
 
             // Update weather data on model for solar gain calculation (Issue #278)
-            model.weather = Some(weather_data);
+            model.solar.weather = Some(weather_data);
 
             // Apply dynamic setpoints from schedule - use zone-specific setpoints (Issue #375, Case 960)
             // For multi-zone buildings like Case 960, each zone may have different HVAC control
@@ -872,15 +872,15 @@ impl ASHRAE140Validator {
                         hvac_enabled_vals[zone_idx] = if hvac.is_enabled() { 1.0 } else { 0.0 };
                     }
                 }
-                model.heating_setpoints = VectorField::new(heating_sps);
-                model.cooling_setpoints = VectorField::new(cooling_sps);
-                model.hvac_enabled = VectorField::new(hvac_enabled_vals);
+                model.setpoints.heating_setpoints = VectorField::new(heating_sps);
+                model.setpoints.cooling_setpoints = VectorField::new(cooling_sps);
+                model.hvac.hvac_enabled = VectorField::new(hvac_enabled_vals);
             } else if let Some(hvac_schedule) = spec.hvac.first() {
                 // Single zone case: use the same setpoint for all zones (original behavior)
                 let heating_sp = hvac_schedule.heating_setpoint;
                 let cooling_sp = hvac_schedule.cooling_setpoint;
-                model.heating_setpoint = heating_sp;
-                model.cooling_setpoint = cooling_sp;
+                model.setpoints.heating_setpoint = heating_sp;
+                model.setpoints.cooling_setpoint = cooling_sp;
             }
 
             // Apply night ventilation. Issue #2858 — guard hardened:
@@ -889,8 +889,8 @@ impl ASHRAE140Validator {
             if let Some(vent) = &spec.night_ventilation {
                 if vent.is_active_at_hour(hour_of_day as u8) {
                     if let Some(hvac_schedule) = spec.hvac.first() {
-                        if hvac_schedule.is_enabled() && hvac_schedule.heating_setpoint < 0.0 {
-                            model.cooling_setpoint = -100.0;
+                        if hvac_schedule.heating_setpoint < 0.0 {
+                            model.setpoints.cooling_setpoint = -100.0;
                         }
                     }
                 }
@@ -930,26 +930,26 @@ impl ASHRAE140Validator {
             // Issue #2892: explicitly apply ASHRAE 140 §6.5 convective/radiative
             // split. The split is read from the case-spec InternalLoads so the
             // radiative portion is routed to surface nodes (phi_st) and mass
-            // (phi_m) rather than all-convective to air. `model.convective_fraction`
+            // (phi_m) rather than all-convective to air. `model.solar.convective_fraction`
             // is set once during `from_spec` from zone 0's `InternalLoads`; we
             // re-apply it explicitly here for visibility at the per-timestep
             // boundary so future per-zone splits can plug in at this seam.
             if let Some(loads) = spec.internal_loads.first().and_then(|l| l.as_ref()) {
-                model.convective_fraction = loads.convective_fraction;
+                model.solar.convective_fraction = loads.convective_fraction;
             }
 
             // Debug: Print free-floating temperature, setpoints, and HVAC demand for Case 600
             if spec.case_id == "600" && step % 8760 == 4380 {
                 let t_free = model.calculate_free_float_temperature(step, dry_bulb_temp);
                 tracing::debug!("DEBUG Case 600 hour={}: t_free={:.2}°C, heating_sp={:.1}°C, cooling_sp={:.1}°C",
-                    step % 24, t_free, model.heating_setpoint, model.cooling_setpoint);
+                    step % 24, t_free, model.setpoints.heating_setpoint, model.setpoints.cooling_setpoint);
             }
 
             // Use model's step_physics to advance simulation
             model.step_physics(step, dry_bulb_temp, 3600.0);
 
             if is_free_floating {
-                if let Some(&zone_0_temp) = model.temperatures.as_slice().first() {
+                if let Some(&zone_0_temp) = model.setpoints.temperatures.as_slice().first() {
                     // DEBUG: Print when max changes significantly
                     if zone_0_temp > 30.0 || zone_0_temp < -20.0 {
                         tracing::warn!(
@@ -970,8 +970,8 @@ impl ASHRAE140Validator {
 
         // P1 FIX: Use model's internal corrected energy counters
         // The model's annual_heating_energy already has h_corr correction applied
-        let annual_heating_mwh = model.annual_heating_energy / 1000.0;
-        let annual_cooling_mwh = model.annual_cooling_energy / 1000.0;
+        let annual_heating_mwh = model.hvac.annual_heating_energy / 1000.0;
+        let annual_cooling_mwh = model.hvac.annual_cooling_energy / 1000.0;
 
         CaseResults {
             annual_heating_mwh,
@@ -1601,15 +1601,15 @@ impl ASHRAE140Validator {
         }
 
         const STEPS: usize = 8760;
-        let num_zones = model.num_zones;
+        let num_zones = model.hvac.num_zones;
         let is_free_floating = spec.is_free_floating();
 
         // For free-floating cases, disable HVAC
         if is_free_floating {
-            model.heating_setpoint = -999.0;
-            model.cooling_setpoint = 999.0;
-            model.hvac_heating_capacity = 0.0;
-            model.hvac_cooling_capacity = 0.0;
+            model.setpoints.heating_setpoint = -999.0;
+            model.setpoints.cooling_setpoint = 999.0;
+            model.hvac.hvac_heating_capacity = 0.0;
+            model.hvac.hvac_cooling_capacity = 0.0;
         }
 
         // Set hvac_enabled per zone based on HVAC configuration (Issue #375)
@@ -1621,7 +1621,7 @@ impl ASHRAE140Validator {
                 }
             }
         }
-        model.hvac_enabled = VectorField::new(hvac_enabled_vals);
+        model.hvac.hvac_enabled = VectorField::new(hvac_enabled_vals);
 
         let mut min_temp_celsius: f64 = f64::INFINITY;
         let mut max_temp_celsius: f64 = f64::NEG_INFINITY;
@@ -1676,11 +1676,11 @@ impl ASHRAE140Validator {
 
             let weather_data = weather.get_hourly_data(step).unwrap();
             // Extract the only field used downstream (f64 is Copy) so we can move
-            // weather_data into model.weather without an extra clone (Issue #2893).
+            // weather_data into model.solar.weather without an extra clone (Issue #2893).
             let dry_bulb_temp = weather_data.dry_bulb_temp;
 
             // Update weather data on model for solar gain calculation (Issue #278)
-            model.weather = Some(weather_data);
+            model.solar.weather = Some(weather_data);
 
             // Apply dynamic setpoints based on HVAC schedule (for setback cases)
             if let Some(hvac_schedule) = spec.hvac.first() {
@@ -1693,10 +1693,10 @@ impl ASHRAE140Validator {
                     .heating_setpoint_at_fractional_hour(hour_of_day as f64 + 0.5)
                     .unwrap_or(hvac_schedule.heating_setpoint);
                 // Use hourly cooling schedule which respects operating hours
-                // model.cooling_schedule was set up in from_spec() with 100.0 during non-operating hours
-                let cooling_sp = model.cooling_schedule.value(hour as usize);
-                model.heating_setpoint = heating_sp;
-                model.cooling_setpoint = cooling_sp;
+                // model.setpoints.cooling_schedule was set up in from_spec() with 100.0 during non-operating hours
+                let cooling_sp = model.setpoints.cooling_schedule.value(hour as usize);
+                model.setpoints.heating_setpoint = heating_sp;
+                model.setpoints.cooling_setpoint = cooling_sp;
 
                 // Issue #2870 / #2826: also update the per-zone setpoint
                 // vector used by `compute_zone_hvac_load`. This was previously
@@ -1725,13 +1725,13 @@ impl ASHRAE140Validator {
                             .heating_setpoint_at_fractional_hour(hour_of_day as f64 + 0.5)
                             .unwrap_or(hvac.heating_setpoint);
                         // For multi-zone, also use hourly schedule
-                        let c_sp = model.cooling_schedule.value(hour as usize);
+                        let c_sp = model.setpoints.cooling_schedule.value(hour as usize);
                         heating_sps[zone_idx] = h_sp;
                         cooling_sps[zone_idx] = c_sp;
                     }
                 }
-                model.heating_setpoints = VectorField::new(heating_sps);
-                model.cooling_setpoints = VectorField::new(cooling_sps);
+                model.setpoints.heating_setpoints = VectorField::new(heating_sps);
+                model.setpoints.cooling_setpoints = VectorField::new(cooling_sps);
             }
 
             // Apply night ventilation if active (adds extra cooling during night hours).
@@ -1749,8 +1749,8 @@ impl ASHRAE140Validator {
             if let Some(vent) = &spec.night_ventilation {
                 if vent.is_active_at_hour(hour_of_day as u8) {
                     if let Some(hvac_schedule) = spec.hvac.first() {
-                        if hvac_schedule.is_enabled() && hvac_schedule.heating_setpoint < 0.0 {
-                            model.cooling_setpoint = 999.0; // Prevent cooling during night vent hours
+                        if hvac_schedule.heating_setpoint < 0.0 {
+                            model.setpoints.cooling_setpoint = -100.0;
                         }
                     }
                 }
@@ -1782,28 +1782,34 @@ impl ASHRAE140Validator {
             }
             model.set_loads(&internal_loads);
             if let Some(loads) = spec.internal_loads.first().and_then(|l| l.as_ref()) {
-                model.convective_fraction = loads.convective_fraction;
+                model.solar.convective_fraction = loads.convective_fraction;
             }
 
             // Debug: Print free-floating temperature, setpoints, and HVAC demand for Case 600
             if spec.case_id == "600" && step % 8760 == 4380 {
                 let t_free = model.calculate_free_float_temperature(step, dry_bulb_temp);
                 tracing::debug!("DEBUG Case 600 hour={}: t_free={:.2}°C, heating_sp={:.1}°C, cooling_sp={:.1}°C",
-                    step % 24, t_free, model.heating_setpoint, model.cooling_setpoint);
+                    step % 24, t_free, model.setpoints.heating_setpoint, model.setpoints.cooling_setpoint);
             }
 
             let hvac_kwh = model.step_physics(step, dry_bulb_temp, 3600.0);
 
             // Debug: Print Case 950 HVAC demand and temperature every 1000 steps
             if spec.case_id == "950" && step % 1000 == 0 {
-                let t_zone = model.temperatures.as_ref().first().copied().unwrap_or(20.0);
+                let t_zone = model
+                    .setpoints
+                    .temperatures
+                    .as_ref()
+                    .first()
+                    .copied()
+                    .unwrap_or(20.0);
                 let hvac_power_w = if hvac_kwh != 0.0 {
                     hvac_kwh * 3.6e6 / 3600.0
                 } else {
                     0.0
                 }; // kWh * 3600 = J, / 3600s = W
                 tracing::debug!("DEBUG Case 950 step={}: t_zone={:.2}°C, hvac_kwh={:.4}, hvac_power_W={:.1}, heating_sp={:.1}°C, cooling_sp={:.1}°C, outdoor={:.2}°C",
-                    step, t_zone, hvac_kwh, hvac_power_w, model.heating_setpoint, model.cooling_setpoint, dry_bulb_temp);
+                    step, t_zone, hvac_kwh, hvac_power_w, model.setpoints.heating_setpoint, model.setpoints.cooling_setpoint, dry_bulb_temp);
             }
 
             // SESSION 32: Accumulate HVAC energy from raw hvac_kwh
@@ -1824,13 +1830,13 @@ impl ASHRAE140Validator {
                     annual_heating_joules,
                     annual_cooling_joules
                 );
-                tracing::debug!("DEBUG Case 600: internal_heating_energy={} kWh, internal_cooling_energy={} kWh", model.annual_heating_energy, model.annual_cooling_energy);
+                tracing::debug!("DEBUG Case 600: internal_heating_energy={} kWh, internal_cooling_energy={} kWh", model.hvac.annual_heating_energy, model.hvac.annual_cooling_energy);
             }
 
             // Track min/max temperatures for free-floating cases
             if is_free_floating {
                 // Get zone 0 air temperature (primary zone)
-                if let Some(&zone_0_temp) = model.temperatures.as_slice().first() {
+                if let Some(&zone_0_temp) = model.setpoints.temperatures.as_slice().first() {
                     min_temp_celsius = min_temp_celsius.min(zone_0_temp);
                     max_temp_celsius = max_temp_celsius.max(zone_0_temp);
                     // Issue #827
@@ -1844,8 +1850,8 @@ impl ASHRAE140Validator {
         // SESSION 32: Use model's internally tracked (and corrected) annual energy
         // model tracks energy in kWh, convert to MWh for report
         // Note: annual_heating_joules and annual_cooling_joules were accumulated but not used
-        let annual_heating_mwh = model.annual_heating_energy / 1000.0;
-        let annual_cooling_mwh = model.annual_cooling_energy / 1000.0;
+        let annual_heating_mwh = model.hvac.annual_heating_energy / 1000.0;
+        let annual_cooling_mwh = model.hvac.annual_cooling_energy / 1000.0;
 
         CaseResults {
             annual_heating_mwh, // Now uses model's corrected value
@@ -1880,7 +1886,7 @@ impl ASHRAE140Validator {
         let mut model = ThermalModel::<VectorField>::from_spec(spec);
         // Attach simulation diagnostics if requested (Phase 5)
         if self.use_simulation_diagnostics {
-            let diag = SimulationDiagnostics::new(model.num_zones, 8760);
+            let diag = SimulationDiagnostics::new(model.hvac.num_zones, 8760);
             model.set_diagnostics(Some(diag));
         }
 
@@ -1895,17 +1901,17 @@ impl ASHRAE140Validator {
         model.reset_heating_cooling_energy();
 
         const STEPS: usize = 8760;
-        let num_zones = model.num_zones;
+        let num_zones = model.hvac.num_zones;
 
         // Check if this is a free-floating case (no HVAC for zone 0)
         let is_free_floating = spec.is_free_floating();
 
         // For free-floating cases, disable HVAC by setting extreme setpoints
         if is_free_floating {
-            model.heating_setpoint = -999.0;
-            model.cooling_setpoint = 999.0;
-            model.hvac_heating_capacity = 0.0;
-            model.hvac_cooling_capacity = 0.0;
+            model.setpoints.heating_setpoint = -999.0;
+            model.setpoints.cooling_setpoint = 999.0;
+            model.hvac.hvac_heating_capacity = 0.0;
+            model.hvac.hvac_cooling_capacity = 0.0;
         }
 
         let mut _annual_heating_joules = 0.0;
@@ -1939,11 +1945,11 @@ impl ASHRAE140Validator {
 
             let weather_data = weather.get_hourly_data(step).unwrap();
             // Extract the only field used downstream (f64 is Copy) so we can move
-            // weather_data into model.weather without an extra clone (Issue #2893).
+            // weather_data into model.solar.weather without an extra clone (Issue #2893).
             let dry_bulb_temp = weather_data.dry_bulb_temp;
 
             // Update weather data on model for solar gain calculation (Issue #278)
-            model.weather = Some(weather_data);
+            model.solar.weather = Some(weather_data);
 
             // Apply dynamic setpoints based on HVAC schedule (for setback cases)
             if let Some(hvac_schedule) = spec.hvac.first() {
@@ -1956,10 +1962,10 @@ impl ASHRAE140Validator {
                     .heating_setpoint_at_fractional_hour(hour_of_day as f64 + 0.5)
                     .unwrap_or(hvac_schedule.heating_setpoint);
                 // Use hourly cooling schedule which respects operating hours
-                // model.cooling_schedule was set up in from_spec() with 100.0 during non-operating hours
-                let cooling_sp = model.cooling_schedule.value(hour as usize);
-                model.heating_setpoint = heating_sp;
-                model.cooling_setpoint = cooling_sp;
+                // model.setpoints.cooling_schedule was set up in from_spec() with 100.0 during non-operating hours
+                let cooling_sp = model.setpoints.cooling_schedule.value(hour as usize);
+                model.setpoints.heating_setpoint = heating_sp;
+                model.setpoints.cooling_setpoint = cooling_sp;
 
                 // Issue #2870 / #2826: also update the per-zone setpoint
                 // vector used by `compute_zone_hvac_load`. This was previously
@@ -1977,21 +1983,21 @@ impl ASHRAE140Validator {
                             .heating_setpoint_at_fractional_hour(hour_of_day as f64 + 0.5)
                             .unwrap_or(hvac.heating_setpoint);
                         // For multi-zone, also use hourly schedule
-                        let c_sp = model.cooling_schedule.value(hour as usize);
+                        let c_sp = model.setpoints.cooling_schedule.value(hour as usize);
                         heating_sps[zone_idx] = h_sp;
                         cooling_sps[zone_idx] = c_sp;
                     }
                 }
-                model.heating_setpoints = VectorField::new(heating_sps);
-                model.cooling_setpoints = VectorField::new(cooling_sps);
+                model.setpoints.heating_setpoints = VectorField::new(heating_sps);
+                model.setpoints.cooling_setpoints = VectorField::new(cooling_sps);
             }
 
             // Apply night ventilation if active. Issue #2858 — see simulate_case.
             if let Some(vent) = &spec.night_ventilation {
                 if vent.is_active_at_hour(hour_of_day as u8) {
                     if let Some(hvac_schedule) = spec.hvac.first() {
-                        if hvac_schedule.is_enabled() && hvac_schedule.heating_setpoint < 0.0 {
-                            model.cooling_setpoint = -100.0;
+                        if hvac_schedule.heating_setpoint < 0.0 {
+                            model.setpoints.cooling_setpoint = -100.0;
                         }
                     }
                 }
@@ -2023,21 +2029,21 @@ impl ASHRAE140Validator {
             }
             model.set_loads(&internal_loads);
             if let Some(loads) = spec.internal_loads.first().and_then(|l| l.as_ref()) {
-                model.convective_fraction = loads.convective_fraction;
+                model.solar.convective_fraction = loads.convective_fraction;
             }
 
             // Debug: Print free-floating temperature, setpoints, and HVAC demand for Case 600
             if spec.case_id == "600" && step % 8760 == 4380 {
                 let t_free = model.calculate_free_float_temperature(step, dry_bulb_temp);
                 tracing::debug!("DEBUG Case 600 hour={}: t_free={:.2}°C, heating_sp={:.1}°C, cooling_sp={:.1}°C",
-                    step % 24, t_free, model.heating_setpoint, model.cooling_setpoint);
+                    step % 24, t_free, model.setpoints.heating_setpoint, model.setpoints.cooling_setpoint);
             }
 
             let hvac_kwh = model.step_physics(step, dry_bulb_temp, 3600.0);
 
             // Track min/max temperatures for free-floating cases
             if is_free_floating {
-                if let Some(&zone_0_temp) = model.temperatures.as_slice().first() {
+                if let Some(&zone_0_temp) = model.setpoints.temperatures.as_slice().first() {
                     min_temp_celsius = min_temp_celsius.min(zone_0_temp);
                     max_temp_celsius = max_temp_celsius.max(zone_0_temp);
                     // Issue #827
@@ -2050,8 +2056,8 @@ impl ASHRAE140Validator {
             // Record hourly diagnostic data
             let mut hourly_data = HourlyData::new(step, num_zones);
             hourly_data.outdoor_temp = dry_bulb_temp;
-            hourly_data.zone_temps = model.temperatures.as_slice().to_vec();
-            hourly_data.mass_temps = model.mass_temperatures.as_slice().to_vec();
+            hourly_data.zone_temps = model.setpoints.temperatures.as_slice().to_vec();
+            hourly_data.mass_temps = model.mass.mass_temperatures.as_slice().to_vec();
 
             for (zone_idx, load) in internal_loads.iter().enumerate().take(num_zones) {
                 // Get solar gains back from model (in Watts)
@@ -2061,7 +2067,7 @@ impl ASHRAE140Validator {
                     .or(spec.geometry.first())
                     .map_or(20.0, |g| g.floor_area());
                 hourly_data.solar_gains[zone_idx] =
-                    model.solar_gains.as_ref()[zone_idx] * floor_area;
+                    model.solar.solar_gains.as_ref()[zone_idx] * floor_area;
 
                 hourly_data.internal_loads[zone_idx] = load * floor_area;
             }
@@ -2088,8 +2094,8 @@ impl ASHRAE140Validator {
 
         // SESSION 32: Use model's internal energy tracking for consistency
         CaseResults {
-            annual_heating_mwh: model.annual_heating_energy / 1000.0, // Convert kWh to MWh
-            annual_cooling_mwh: model.annual_cooling_energy / 1000.0,
+            annual_heating_mwh: model.hvac.annual_heating_energy / 1000.0, // Convert kWh to MWh
+            annual_cooling_mwh: model.hvac.annual_cooling_energy / 1000.0,
             // Issue #272: Use model's tracked peak power (in watts) instead of calculating from energy
             peak_heating_kw: model.get_peak_heating_power_kw(),
             peak_cooling_kw: model.get_peak_cooling_power_kw(),
@@ -2261,16 +2267,16 @@ impl ASHRAE140Validator {
         model.reset_heating_cooling_energy();
 
         const STEPS: usize = 8760;
-        let num_zones = model.num_zones;
+        let num_zones = model.hvac.num_zones;
 
         let is_free_floating = spec.is_free_floating();
         let mut diagnostic = CaseDiagnostic::new(case_id, num_zones);
 
         if is_free_floating {
-            model.heating_setpoint = -999.0;
-            model.cooling_setpoint = 999.0;
-            model.hvac_heating_capacity = 0.0;
-            model.hvac_cooling_capacity = 0.0;
+            model.setpoints.heating_setpoint = -999.0;
+            model.setpoints.cooling_setpoint = 999.0;
+            model.hvac.hvac_heating_capacity = 0.0;
+            model.hvac.hvac_cooling_capacity = 0.0;
         }
 
         // Issue #744: Run warm-up period to reach periodic steady state per ASHRAE 140 §B2
@@ -2329,8 +2335,8 @@ impl ASHRAE140Validator {
             if let Some(hvac_schedule) = spec.hvac.first() {
                 let heating_sp = hvac_schedule.heating_setpoint;
                 let cooling_sp = hvac_schedule.cooling_setpoint;
-                model.heating_setpoint = heating_sp;
-                model.cooling_setpoint = cooling_sp;
+                model.setpoints.heating_setpoint = heating_sp;
+                model.setpoints.cooling_setpoint = cooling_sp;
             }
 
             // Apply night ventilation. Issue #2858 — guard hardened:
@@ -2339,8 +2345,8 @@ impl ASHRAE140Validator {
             if let Some(vent) = &spec.night_ventilation {
                 if vent.is_active_at_hour(hour_of_day as u8) {
                     if let Some(hvac_schedule) = spec.hvac.first() {
-                        if hvac_schedule.is_enabled() && hvac_schedule.heating_setpoint < 0.0 {
-                            model.cooling_setpoint = -100.0;
+                        if hvac_schedule.heating_setpoint < 0.0 {
+                            model.setpoints.cooling_setpoint = -100.0;
                         }
                     }
                 }
@@ -2372,12 +2378,13 @@ impl ASHRAE140Validator {
             if spec.case_id == "600" && step % 8760 == 4380 {
                 let t_free = model.calculate_free_float_temperature(step, dry_bulb_temp);
                 tracing::debug!("DEBUG Case 600 hour={}: t_free={:.2}°C, heating_sp={:.1}°C, cooling_sp={:.1}°C",
-                    step % 24, t_free, model.heating_setpoint, model.cooling_setpoint);
+                    step % 24, t_free, model.setpoints.heating_setpoint, model.setpoints.cooling_setpoint);
             }
 
             // Estimate envelope conduction and infiltration for diagnostics
             // Use first zone temperature as fallback for missing zone temperatures
             let zone_temp_first = model
+                .setpoints
                 .temperatures
                 .as_slice()
                 .first()
@@ -2389,6 +2396,7 @@ impl ASHRAE140Validator {
             let mut infiltration_w = 0.0;
             for zone_idx in 0..num_zones {
                 let zone_temp = model
+                    .setpoints
                     .temperatures
                     .as_slice()
                     .get(zone_idx)
@@ -2429,7 +2437,7 @@ impl ASHRAE140Validator {
             // (mass/air-routing), not all-convective to the air node.
             model.set_loads(&internal_loads_per_zone);
             if let Some(loads) = spec.internal_loads.first().and_then(|l| l.as_ref()) {
-                model.convective_fraction = loads.convective_fraction;
+                model.solar.convective_fraction = loads.convective_fraction;
             }
 
             let hvac_kwh = model.step_physics(step, dry_bulb_temp, 3600.0);
@@ -2462,13 +2470,13 @@ impl ASHRAE140Validator {
                     .get(zone_idx)
                     .or(spec.geometry.first())
                     .map_or(20.0, |g| g.floor_area());
-                let solar_gain_watts = model.solar_gains.as_ref()[zone_idx] * floor_area;
+                let solar_gain_watts = model.solar.solar_gains.as_ref()[zone_idx] * floor_area;
                 total_solar_gains_joules += solar_gain_watts * 3600.0;
             }
 
             // Track temperatures for free-floating cases
             if is_free_floating {
-                if let Some(&zone_0_temp) = model.temperatures.as_slice().first() {
+                if let Some(&zone_0_temp) = model.setpoints.temperatures.as_slice().first() {
                     min_temp_celsius = min_temp_celsius.min(zone_0_temp);
                     max_temp_celsius = max_temp_celsius.max(zone_0_temp);
                     diagnostic.temp_profile.update(zone_0_temp);
@@ -2483,7 +2491,7 @@ impl ASHRAE140Validator {
             if self.diagnostic_config.output_hourly {
                 let mut hourly = HourlyData::new(step, num_zones);
                 hourly.outdoor_temp = dry_bulb_temp;
-                hourly.zone_temps = model.temperatures.as_slice().to_vec();
+                hourly.zone_temps = model.setpoints.temperatures.as_slice().to_vec();
 
                 let mut solar_gains_watts = vec![0.0; num_zones];
                 for (zone_idx, solar_gain) in
@@ -2494,7 +2502,7 @@ impl ASHRAE140Validator {
                         .get(zone_idx)
                         .or(spec.geometry.first())
                         .map_or(20.0, |g| g.floor_area());
-                    *solar_gain = model.solar_gains.as_ref()[zone_idx] * floor_area;
+                    *solar_gain = model.solar.solar_gains.as_ref()[zone_idx] * floor_area;
                 }
 
                 hourly.solar_gains = solar_gains_watts;
@@ -2535,11 +2543,11 @@ impl ASHRAE140Validator {
         };
 
         // Issue #432: Collect thermal mass energy data
-        diagnostic.mass_energy_change_joules = model.mass_energy_change_cumulative;
+        diagnostic.mass_energy_change_joules = model.mass.mass_energy_change_cumulative;
         diagnostic.envelope_mass_energy_change_joules =
-            model.envelope_mass_energy_change_cumulative;
+            model.mass.envelope_mass_energy_change_cumulative;
         diagnostic.internal_mass_energy_change_joules =
-            model.internal_mass_energy_change_cumulative;
+            model.mass.internal_mass_energy_change_cumulative;
         diagnostic.thermal_mass_energy_accounting_enabled = false; // Plan 03-04: Removed
 
         if is_free_floating {
@@ -2548,8 +2556,8 @@ impl ASHRAE140Validator {
 
         // SESSION 32: Use model's internal energy tracking for consistency
         let results = CaseResults {
-            annual_heating_mwh: model.annual_heating_energy / 1000.0, // Convert kWh to MWh
-            annual_cooling_mwh: model.annual_cooling_energy / 1000.0,
+            annual_heating_mwh: model.hvac.annual_heating_energy / 1000.0, // Convert kWh to MWh
+            annual_cooling_mwh: model.hvac.annual_cooling_energy / 1000.0,
             peak_heating_kw: model.get_peak_heating_power_kw(),
             peak_cooling_kw: model.get_peak_cooling_power_kw(),
             min_temp_celsius: if is_free_floating && min_temp_celsius != f64::INFINITY {
@@ -2608,12 +2616,12 @@ impl ASHRAE140Validator {
         // This addresses thermal mass dynamics limitation (Issue #486)
         let is_free_floating = spec.case_id.ends_with("FF");
         if is_free_floating {
-            model.conduction.ctf_primary = true;
+            model.conduction.backend.ctf_primary = true;
             // Disable HVAC for free-floating
-            model.heating_setpoint = -999.0;
-            model.cooling_setpoint = 999.0;
-            model.hvac_heating_capacity = 0.0;
-            model.hvac_cooling_capacity = 0.0;
+            model.setpoints.heating_setpoint = -999.0;
+            model.setpoints.cooling_setpoint = 999.0;
+            model.hvac.hvac_heating_capacity = 0.0;
+            model.hvac.hvac_cooling_capacity = 0.0;
         }
 
         // Run simulation for one year (8760 hours)
@@ -2626,7 +2634,7 @@ impl ASHRAE140Validator {
         } else {
             None
         };
-        let num_zones = model.num_zones;
+        let num_zones = model.hvac.num_zones;
 
         for step in 0..8760 {
             let weather_data = weather.get_hourly_data(step).unwrap();
@@ -2667,7 +2675,7 @@ impl ASHRAE140Validator {
             // (mass/air-routing), not all-convective to the air node.
             model.set_loads(&internal_loads_per_zone);
             if let Some(loads) = spec.internal_loads.first().and_then(|l| l.as_ref()) {
-                model.convective_fraction = loads.convective_fraction;
+                model.solar.convective_fraction = loads.convective_fraction;
             }
 
             model.step_physics(step, dry_bulb_temp, 3600.0);
@@ -2712,18 +2720,18 @@ impl ASHRAE140Validator {
         model.reset_peak_power();
         model.reset_heating_cooling_energy();
 
-        // Note: peak values come from model.peak_power_heating and model.peak_power_cooling
+        // Note: peak values come from model.hvac.peak_power_heating and model.hvac.peak_power_cooling
         // energy values come from model.get_heating_energy_kwh() and model.get_cooling_energy_kwh()
 
         // Set hvac_enabled per zone based on HVAC configuration
-        let num_zones = model.num_zones;
+        let num_zones = model.hvac.num_zones;
         let mut hvac_enabled_vals = vec![1.0; num_zones];
         for (zone_idx, hvac) in spec.hvac.iter().enumerate() {
             if zone_idx < num_zones {
                 hvac_enabled_vals[zone_idx] = if hvac.is_enabled() { 1.0 } else { 0.0 };
             }
         }
-        model.hvac_enabled = VectorField::new(hvac_enabled_vals);
+        model.hvac.hvac_enabled = VectorField::new(hvac_enabled_vals);
 
         // Run simulation
         for step in 0..8760 {
@@ -2736,9 +2744,9 @@ impl ASHRAE140Validator {
         }
 
         // Use model's internal peak tracking (more accurate than manual calculation)
-        // model.peak_power_heating and model.peak_power_cooling are in Watts, convert to kW
-        let peak_heating_kw = model.peak_power_heating / 1000.0;
-        let peak_cooling_kw = model.peak_power_cooling / 1000.0;
+        // model.hvac.peak_power_heating and model.hvac.peak_power_cooling are in Watts, convert to kW
+        let peak_heating_kw = model.hvac.peak_power_heating / 1000.0;
+        let peak_cooling_kw = model.hvac.peak_power_cooling / 1000.0;
 
         // Use model's internal energy tracking (applies proper calibration and correction factors)
         let annual_heating_kwh = model.get_heating_energy_kwh();
@@ -2884,10 +2892,10 @@ pub fn validate_case_with_diagnostics(
 
     // Handle free-floating cases
     if spec.is_free_floating() {
-        model.heating_setpoint = -999.0;
-        model.cooling_setpoint = 999.0;
-        model.hvac_heating_capacity = 0.0;
-        model.hvac_cooling_capacity = 0.0;
+        model.setpoints.heating_setpoint = -999.0;
+        model.setpoints.cooling_setpoint = 999.0;
+        model.hvac.hvac_heating_capacity = 0.0;
+        model.hvac.hvac_cooling_capacity = 0.0;
     }
 
     // Attach diagnostics if requested
@@ -2919,8 +2927,8 @@ pub fn validate_case_with_diagnostics(
 
         // Apply dynamic setpoints
         if let Some(hvac_schedule) = spec.hvac.first() {
-            model.heating_setpoint = hvac_schedule.heating_setpoint;
-            model.cooling_setpoint = hvac_schedule.cooling_setpoint;
+            model.setpoints.heating_setpoint = hvac_schedule.heating_setpoint;
+            model.setpoints.cooling_setpoint = hvac_schedule.cooling_setpoint;
         }
 
         // Step physics (includes diagnostics recording if enabled)
@@ -2940,7 +2948,7 @@ pub fn validate_case_with_diagnostics(
 
         // Free-floating temperature tracking
         if spec.is_free_floating() {
-            let zone_temps: Vec<f64> = model.temperatures.as_ref().to_vec();
+            let zone_temps: Vec<f64> = model.setpoints.temperatures.as_ref().to_vec();
             if let Some(&t) = zone_temps.first() {
                 min_temp_celsius = min_temp_celsius.min(t);
                 max_temp_celsius = max_temp_celsius.max(t);
@@ -3196,14 +3204,14 @@ mod tests {
         tracing::debug!("[TRACE] CTF enabled: {}", used_ctf);
         tracing::debug!(
             "[TRACE] CTF solvers: {}",
-            model.conduction.ctf_solvers.len()
+            model.conduction.backend.ctf_solvers.len()
         );
 
         model.reset_peak_power();
         model.reset_heating_cooling_energy();
 
         const STEPS: usize = 8760;
-        let num_zones = model.num_zones;
+        let num_zones = model.hvac.num_zones;
 
         // Set hvac_enabled per zone
         let mut hvac_enabled_vals = vec![1.0; num_zones];
@@ -3214,14 +3222,14 @@ mod tests {
                 }
             }
         }
-        model.hvac_enabled = VectorField::new(hvac_enabled_vals);
+        model.hvac.hvac_enabled = VectorField::new(hvac_enabled_vals);
 
         // Run warmup
         run_warmup(&mut model, &weather, &WarmupConfig::default());
         tracing::info!(
             "[TRACE] After warmup: cooling_energy={:.3} MWh, peak_cooling={:.3} kW",
-            model.annual_cooling_energy / 1000.0,
-            model.peak_power_cooling / 1000.0
+            model.hvac.annual_cooling_energy / 1000.0,
+            model.hvac.peak_power_cooling / 1000.0
         );
 
         model.reset_heating_cooling_energy();
@@ -3230,9 +3238,9 @@ mod tests {
             let hour_of_day = step % 24;
             let weather_data = weather.get_hourly_data(step).unwrap();
             // Extract the only field used downstream (f64 is Copy) so we can move
-            // weather_data into model.weather without an extra clone (Issue #2893).
+            // weather_data into model.solar.weather without an extra clone (Issue #2893).
             let dry_bulb_temp = weather_data.dry_bulb_temp;
-            model.weather = Some(weather_data);
+            model.solar.weather = Some(weather_data);
 
             if let Some(hvac_schedule) = spec.hvac.first() {
                 let hour = hour_of_day as u8;
@@ -3241,9 +3249,9 @@ mod tests {
                 let heating_sp = hvac_schedule
                     .heating_setpoint_at_fractional_hour(f64::from(hour) + 0.5)
                     .unwrap_or(hvac_schedule.heating_setpoint);
-                let cooling_sp = model.cooling_schedule.value(hour as usize);
-                model.heating_setpoint = heating_sp;
-                model.cooling_setpoint = cooling_sp;
+                let cooling_sp = model.setpoints.cooling_schedule.value(hour as usize);
+                model.setpoints.heating_setpoint = heating_sp;
+                model.setpoints.cooling_setpoint = cooling_sp;
 
                 // Issue #2870 / #2826: refresh the per-zone setpoint vector
                 // so the physics reads the ramped value (see the note in
@@ -3255,34 +3263,40 @@ mod tests {
                         let h_sp = hvac
                             .heating_setpoint_at_fractional_hour(hour_of_day as f64 + 0.5)
                             .unwrap_or(hvac.heating_setpoint);
-                        let c_sp = model.cooling_schedule.value(hour as usize);
+                        let c_sp = model.setpoints.cooling_schedule.value(hour as usize);
                         heating_sps[zone_idx] = h_sp;
                         cooling_sps[zone_idx] = c_sp;
                     }
                 }
-                model.heating_setpoints = VectorField::new(heating_sps);
-                model.cooling_setpoints = VectorField::new(cooling_sps);
+                model.setpoints.heating_setpoints = VectorField::new(heating_sps);
+                model.setpoints.cooling_setpoints = VectorField::new(cooling_sps);
             }
 
             let hvac_kwh = model.step_physics(step, dry_bulb_temp, 3600.0);
 
             // Print every 1000 steps
             if step % 1000 == 0 || step == 8759 {
-                let t_zone = model.temperatures.as_ref().first().copied().unwrap_or(20.0);
+                let t_zone = model
+                    .setpoints
+                    .temperatures
+                    .as_ref()
+                    .first()
+                    .copied()
+                    .unwrap_or(20.0);
                 let hvac_power_w = if hvac_kwh != 0.0 {
                     hvac_kwh * 3.6e6 / 3600.0
                 } else {
                     0.0
                 };
                 tracing::debug!("[TRACE] step={}: t_zone={:.2}, hvac_kwh={:.4}, hvac_W={:.1}, heating_sp={:.1}, cooling_sp={:.1}, outdoor={:.2}",
-                    step, t_zone, hvac_kwh, hvac_power_w, model.heating_setpoint, model.cooling_setpoint, dry_bulb_temp);
+                    step, t_zone, hvac_kwh, hvac_power_w, model.setpoints.heating_setpoint, model.setpoints.cooling_setpoint, dry_bulb_temp);
             }
         }
 
         tracing::info!(
             "[TRACE] Final: annual_cooling={:.3} MWh, peak_cooling={:.3} kW",
-            model.annual_cooling_energy / 1000.0,
-            model.peak_power_cooling / 1000.0
+            model.hvac.annual_cooling_energy / 1000.0,
+            model.hvac.peak_power_cooling / 1000.0
         );
 
         // Note: assertions removed — this test is a CTF-path trace diagnostic.

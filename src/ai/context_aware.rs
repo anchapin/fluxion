@@ -377,9 +377,9 @@ impl ContextAwareParameterInitializer {
         let bounds = &self.config.param_bounds;
 
         // Extract current parameters from base model
-        let base_u = base_model.window_u_value;
-        let base_heating = base_model.hvac_controller.heating_setpoint;
-        let base_cooling = base_model.hvac_controller.cooling_setpoint;
+        let base_u = base_model.solar.window_u_value;
+        let base_heating = base_model.hvac.hvac_controller.heating_setpoint;
+        let base_cooling = base_model.hvac.hvac_controller.cooling_setpoint;
 
         // Generate variations around the base model
         let mut rng = create_rng(Some(42));

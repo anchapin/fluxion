@@ -14,7 +14,7 @@
 //! Test coverage:
 //! 1. `InternalLoads::new` invariant — `radiative + convective = 1.0`.
 //! 2. Case 600/900 series spec defaults — radiative = 0.4, convective = 0.6.
-//! 3. `ThermalModel::from_spec` propagates the split — `model.convective_fraction`
+//! 3. `ThermalModel::from_spec` propagates the split — `model.solar.convective_fraction`
 //!    equals `spec.internal_loads[0].convective_fraction`.
 //! 4. `model.set_loads(&internal_loads)` does not silently reset the split.
 //! 5. `phi_ia` + `phi_st` + `phi_m` accounts for 100% of internal-gain energy
@@ -170,14 +170,15 @@ fn test_from_spec_propagates_convective_fraction() {
     let spec = ASHRAE140Case::Case600.spec();
     let model = ThermalModel::<VectorField>::from_spec(&spec);
 
-    // Issue #2892: model.convective_fraction must equal the case-spec §6.5
+    // Issue #2892: model.solar.convective_fraction must equal the case-spec §6.5
     // default (0.6) so the load splitter routes the radiative portion to
     // phi_st + phi_m. Pre-#2892 the field drifted to a profile parameter
     // (0.4) and the radiative portion effectively vanished.
     assert!(
-        (model.convective_fraction - ASHRAE140_S65_RESIDENTIAL_CONVECTIVE).abs() < SPLIT_TOLERANCE,
-        "Case 600 model.convective_fraction = {} (expected {})",
-        model.convective_fraction,
+        (model.solar.convective_fraction - ASHRAE140_S65_RESIDENTIAL_CONVECTIVE).abs()
+            < SPLIT_TOLERANCE,
+        "Case 600 model.solar.convective_fraction = {} (expected {})",
+        model.solar.convective_fraction,
         ASHRAE140_S65_RESIDENTIAL_CONVECTIVE
     );
 }
@@ -187,9 +188,10 @@ fn test_from_spec_propagates_convective_fraction_high_mass() {
     let spec = ASHRAE140Case::Case900.spec();
     let model = ThermalModel::<VectorField>::from_spec(&spec);
     assert!(
-        (model.convective_fraction - ASHRAE140_S65_RESIDENTIAL_CONVECTIVE).abs() < SPLIT_TOLERANCE,
-        "Case 900 model.convective_fraction = {} (expected {})",
-        model.convective_fraction,
+        (model.solar.convective_fraction - ASHRAE140_S65_RESIDENTIAL_CONVECTIVE).abs()
+            < SPLIT_TOLERANCE,
+        "Case 900 model.solar.convective_fraction = {} (expected {})",
+        model.solar.convective_fraction,
         ASHRAE140_S65_RESIDENTIAL_CONVECTIVE
     );
 }
@@ -204,22 +206,22 @@ fn test_set_loads_preserves_convective_fraction() {
     let mut model = ThermalModel::<VectorField>::from_spec(&spec);
 
     // Capture the post-construction value.
-    let conv_before = model.convective_fraction;
+    let conv_before = model.solar.convective_fraction;
     assert!((conv_before - ASHRAE140_S65_RESIDENTIAL_CONVECTIVE).abs() < SPLIT_TOLERANCE);
 
     // Per-timestep set_loads (mirrors the validator seam at
     // src/validation/ashrae_140_validator.rs:~917). The field MUST NOT change
     // because the convective fraction is owned by the case spec, not the
     // per-timestep load magnitude.
-    let n = model.num_zones.max(1);
+    let n = model.hvac.num_zones.max(1);
     let loads: Vec<f64> = vec![10.0; n];
     model.set_loads(&loads);
 
     assert!(
-        (model.convective_fraction - conv_before).abs() < SPLIT_TOLERANCE,
+        (model.solar.convective_fraction - conv_before).abs() < SPLIT_TOLERANCE,
         "set_loads must not reset convective_fraction (was {}, now {})",
         conv_before,
-        model.convective_fraction
+        model.solar.convective_fraction
     );
 }
 

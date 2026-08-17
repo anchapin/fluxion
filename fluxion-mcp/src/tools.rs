@@ -567,12 +567,12 @@ fn get_solar_gains(state: &mut McpState, args: &serde_json::Map<String, Value>) 
         .and_then(|v| v.as_i64())
         .unwrap_or(0) as usize;
 
-    let num_surfaces = model.surfaces.len();
+    let num_surfaces = model.solar.surfaces.len();
     if surface_index >= num_surfaces {
         return serde_json::json!({ "error": format!("Surface index {} out of range (max {})", surface_index, num_surfaces - 1) });
     }
 
-    let solar_as_vec: Vec<f64> = model.solar_gains.iter().copied().collect();
+    let solar_as_vec: Vec<f64> = model.solar.solar_gains.iter().copied().collect();
 
     serde_json::json!({
         "surface_index": surface_index,
@@ -711,10 +711,14 @@ fn set_parameter(state: &mut McpState, args: &serde_json::Map<String, Value>) ->
             model.apply_parameters(&[value]);
         }
         "heating_setpoint" => {
-            model.apply_parameters(&[model.window_u_value, value]);
+            model.apply_parameters(&[model.solar.window_u_value, value]);
         }
         "cooling_setpoint" => {
-            model.apply_parameters(&[model.window_u_value, model.heating_setpoint, value]);
+            model.apply_parameters(&[
+                model.solar.window_u_value,
+                model.setpoints.heating_setpoint,
+                value,
+            ]);
         }
         _ => return serde_json::json!({ "error": format!("Unknown parameter: {}", name) }),
     }
@@ -737,36 +741,39 @@ fn describe_model(state: &mut McpState, _args: &serde_json::Map<String, Value>) 
         }
     };
 
-    let zones: Vec<_> = (0..model.num_zones)
+    let zones: Vec<_> = (0..model.hvac.num_zones)
         .map(|i| {
             serde_json::json!({
                 "index": i,
-                "num_surfaces": model.surfaces[i].len()
+                "num_surfaces": model.solar.surfaces[i].len()
             })
         })
         .collect();
 
-    let surfaces: Vec<_> = (0..model.num_zones)
+    let surfaces: Vec<_> = (0..model.hvac.num_zones)
         .flat_map(|z| {
-            model.surfaces[z].iter().enumerate().map(move |(s, surf)| {
-                serde_json::json!({
-                    "zone_index": z,
-                    "surface_index": s,
-                    "u_value": surf.u_value,
-                    "area": surf.area
+            model.solar.surfaces[z]
+                .iter()
+                .enumerate()
+                .map(move |(s, surf)| {
+                    serde_json::json!({
+                        "zone_index": z,
+                        "surface_index": s,
+                        "u_value": surf.u_value,
+                        "area": surf.area
+                    })
                 })
-            })
         })
         .collect();
 
     serde_json::json!({
-        "num_zones": model.num_zones,
+        "num_zones": model.hvac.num_zones,
         "zones": zones,
         "total_surfaces": surfaces.len(),
         "surfaces": surfaces,
-        "window_u_value": model.window_u_value,
-        "heating_setpoint": model.heating_setpoint,
-        "cooling_setpoint": model.cooling_setpoint
+        "window_u_value": model.solar.window_u_value,
+        "heating_setpoint": model.setpoints.heating_setpoint,
+        "cooling_setpoint": model.setpoints.cooling_setpoint
     })
 }
 

@@ -191,23 +191,23 @@ proptest! {
 
         // Apply randomized infiltration (ACH).
         for i in 0..num_zones {
-            model.infiltration_rate.as_mut()[i] = infiltration;
+            model.setpoints.infiltration_rate.as_mut()[i] = infiltration;
         }
 
         // Apply randomized initial temperatures.
         for i in 0..num_zones {
-            model.temperatures.as_mut()[i] = init_t_air;
-            model.mass_temperatures.as_mut()[i] = init_t_mass;
-            model.previous_mass_temperatures.as_mut()[i] = init_t_mass;
-            model.previous_temperatures.as_mut()[i] = init_t_air;
-            model.air_temperatures.as_mut()[i] = init_t_air;
-            model.wall_surface_temperatures.as_mut()[i] = init_t_mass;
+            model.setpoints.temperatures.as_mut()[i] = init_t_air;
+            model.mass.mass_temperatures.as_mut()[i] = init_t_mass;
+            model.mass.previous_mass_temperatures.as_mut()[i] = init_t_mass;
+            model.hvac.previous_temperatures.as_mut()[i] = init_t_air;
+            model.mass.air_temperatures.as_mut()[i] = init_t_air;
+            model.mass.wall_surface_temperatures.as_mut()[i] = init_t_mass;
         }
 
         // Apply randomized gains.
         for i in 0..num_zones {
-            model.loads.as_mut()[i] = q_internal;
-            model.solar_gains.as_mut()[i] = solar_per_m2;
+            model.setpoints.loads.as_mut()[i] = q_internal;
+            model.solar.solar_gains.as_mut()[i] = solar_per_m2;
         }
 
         // Run a single physics timestep.
@@ -279,35 +279,35 @@ proptest! {
         // h_tr_w and h_tr_em via from_spec() / update_derived_parameters();
         // we update them AFTER initial derivation to keep the network
         // consistent, then re-run the public optimization cache update.
-        model.window_u_value = window_u;
+        model.solar.window_u_value = window_u;
 
         // HVAC setpoint randomization. Use a deadband of at least 2°C so
         // HVAC saturation does not dominate the imbalance signal.
         let hvac_cool = hvac_heat + hvac_deadband;
-        model.heating_setpoint = hvac_heat;
-        model.cooling_setpoint = hvac_cool;
+        model.setpoints.heating_setpoint = hvac_heat;
+        model.setpoints.cooling_setpoint = hvac_cool;
 
         // Per-zone randomized infiltration (ACH).
         for i in 0..num_zones {
-            model.infiltration_rate.as_mut()[i] = infiltration;
+            model.setpoints.infiltration_rate.as_mut()[i] = infiltration;
         }
 
         // Per-zone randomized initial temperatures. Use the same air
         // temp as zone temp to avoid transient sub-timestep convergence
         // artifacts (consistent with the deterministic CI gate).
         for i in 0..num_zones {
-            model.temperatures.as_mut()[i] = init_t_air;
-            model.mass_temperatures.as_mut()[i] = init_t_mass;
-            model.previous_mass_temperatures.as_mut()[i] = init_t_mass;
-            model.previous_temperatures.as_mut()[i] = init_t_air;
-            model.air_temperatures.as_mut()[i] = init_t_air;
-            model.wall_surface_temperatures.as_mut()[i] = init_t_mass;
+            model.setpoints.temperatures.as_mut()[i] = init_t_air;
+            model.mass.mass_temperatures.as_mut()[i] = init_t_mass;
+            model.mass.previous_mass_temperatures.as_mut()[i] = init_t_mass;
+            model.hvac.previous_temperatures.as_mut()[i] = init_t_air;
+            model.mass.air_temperatures.as_mut()[i] = init_t_air;
+            model.mass.wall_surface_temperatures.as_mut()[i] = init_t_mass;
         }
 
         // Per-zone randomized gains.
         for i in 0..num_zones {
-            model.loads.as_mut()[i] = q_internal;
-            model.solar_gains.as_mut()[i] = solar_per_m2;
+            model.setpoints.loads.as_mut()[i] = q_internal;
+            model.solar.solar_gains.as_mut()[i] = solar_per_m2;
         }
 
         // Re-run the public optimization cache so derived_h_tr_3 etc.
@@ -606,16 +606,16 @@ proptest! {
             // inter-zone conductance derivation are independent of Cm,
             // so this randomization is safe without re-deriving h_*.
             for i in 0..n {
-                model.thermal_capacitance.as_mut()[i] = c_per_zone;
-                model.air_thermal_capacitance.as_mut()[i] = c_per_zone * 0.01;
+                model.mass.thermal_capacitance.as_mut()[i] = c_per_zone;
+                model.mass.air_thermal_capacitance.as_mut()[i] = c_per_zone * 0.01;
             }
 
             // Randomize inter-zone conductance via the h_tr_iz_rad /
             // h_tr_iz fields. We use a single scalar per zone-pair by
             // populating h_tr_iz from the randomized conductance.
             for i in 0..n {
-                model.h_tr_iz.as_mut()[i] = h_iz;
-                model.h_tr_iz_rad.as_mut()[i] = h_iz * 0.2;
+                model.conduction.h_tr_iz.as_mut()[i] = h_iz;
+                model.conduction.h_tr_iz_rad.as_mut()[i] = h_iz * 0.2;
             }
 
             // Initialize zones at the HVAC heating setpoint with mass
@@ -623,19 +623,19 @@ proptest! {
             // transient that would contaminate the imbalance signal).
             for i in 0..n {
                 let t_init = hvac_heat;
-                model.temperatures.as_mut()[i] = t_init;
-                model.mass_temperatures.as_mut()[i] = t_init;
-                model.previous_mass_temperatures.as_mut()[i] = t_init;
-                model.previous_temperatures.as_mut()[i] = t_init;
-                model.air_temperatures.as_mut()[i] = t_init;
-                model.wall_surface_temperatures.as_mut()[i] = t_init;
+                model.setpoints.temperatures.as_mut()[i] = t_init;
+                model.mass.mass_temperatures.as_mut()[i] = t_init;
+                model.mass.previous_mass_temperatures.as_mut()[i] = t_init;
+                model.hvac.previous_temperatures.as_mut()[i] = t_init;
+                model.mass.air_temperatures.as_mut()[i] = t_init;
+                model.mass.wall_surface_temperatures.as_mut()[i] = t_init;
             }
 
             // No internal gains / solar gains (worst case for the energy
             // balance — only envelope conduction + inter-zone transfer).
             for i in 0..n {
-                model.loads.as_mut()[i] = 0.0;
-                model.solar_gains.as_mut()[i] = 0.0;
+                model.setpoints.loads.as_mut()[i] = 0.0;
+                model.solar.solar_gains.as_mut()[i] = 0.0;
             }
 
             // Run one hourly physics timestep.

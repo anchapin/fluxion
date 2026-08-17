@@ -46,7 +46,7 @@ fn import_fmu_three_zone_has_correct_zone_count() {
     // Acceptance criterion #1: import_fmu produces a ThermalModel with N
     // zones matching the exported FMU.
     let model: ThermalModel<VectorField> = import_fmu(&out).expect("import_fmu");
-    assert_eq!(model.num_zones, 3);
+    assert_eq!(model.hvac.num_zones, 3);
 }
 
 #[test]
@@ -68,7 +68,7 @@ fn import_fmu_preserves_metadata_and_timestep() {
     assert_eq!(desc.fmi_version, "2.0");
     assert_eq!(fmu.zone_count(), 1);
     assert!((fmu.communication_timestep() - 600.0).abs() < 1e-9);
-    assert_eq!(fmu.thermal_model().num_zones, 1);
+    assert_eq!(fmu.thermal_model().hvac.num_zones, 1);
 }
 
 #[test]
@@ -95,7 +95,7 @@ fn reimport_round_trip_matches_direct_model_within_tolerance() {
         let outdoor_c = outdoor_k - 273.15;
 
         direct.step_physics(t, outdoor_c, dt);
-        let direct_zone_k = direct.temperatures.as_ref()[0] + 273.15;
+        let direct_zone_k = direct.setpoints.temperatures.as_ref()[0] + 273.15;
 
         let imported_out = master.do_step(
             FmuInputs {

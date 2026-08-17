@@ -164,8 +164,8 @@ fn test_case_600_energy_conservation_residual() {
     let mut checker = InvariantChecker::new(tolerance);
 
     let init_t = 20.0;
-    model.temperatures.as_mut()[0] = init_t;
-    if let Some(ref mut mt) = Some(&mut model.mass_temperatures) {
+    model.setpoints.temperatures.as_mut()[0] = init_t;
+    if let Some(ref mut mt) = Some(&mut model.mass.mass_temperatures) {
         mt.as_mut()[0] = init_t;
     }
     model.set_ground_temp(10.0);
@@ -232,8 +232,8 @@ fn test_case_900_energy_conservation_residual() {
     let mut checker = InvariantChecker::new(tolerance);
 
     let init_t = 20.0;
-    model.temperatures.as_mut()[0] = init_t;
-    if let Some(ref mut mt) = Some(&mut model.mass_temperatures) {
+    model.setpoints.temperatures.as_mut()[0] = init_t;
+    if let Some(ref mut mt) = Some(&mut model.mass.mass_temperatures) {
         mt.as_mut()[0] = init_t;
     }
     model.set_ground_temp(10.0);
@@ -300,9 +300,9 @@ fn test_case_960_energy_conservation_residual() {
     let tolerance = ENERGY_BALANCE_RESIDUAL_THRESHOLD;
     let mut checker = InvariantChecker::new(tolerance);
 
-    for i in 0..model.num_zones {
-        model.temperatures.as_mut()[i] = 20.0;
-        if let Some(ref mut mt) = Some(&mut model.mass_temperatures) {
+    for i in 0..model.hvac.num_zones {
+        model.setpoints.temperatures.as_mut()[i] = 20.0;
+        if let Some(ref mut mt) = Some(&mut model.mass.mass_temperatures) {
             mt.as_mut()[i] = 20.0;
         }
     }
@@ -368,17 +368,17 @@ fn test_free_floating_energy_conservation_residual() {
     let weather = DenverTmyWeather::new();
 
     // Disable HVAC for free-floating mode
-    model.heating_setpoint = -999.0;
-    model.cooling_setpoint = 999.0;
-    model.hvac_heating_capacity = 0.0;
-    model.hvac_cooling_capacity = 0.0;
+    model.setpoints.heating_setpoint = -999.0;
+    model.setpoints.cooling_setpoint = 999.0;
+    model.hvac.hvac_heating_capacity = 0.0;
+    model.hvac.hvac_cooling_capacity = 0.0;
 
     let tolerance = ENERGY_BALANCE_RESIDUAL_THRESHOLD;
     let mut checker = InvariantChecker::new(tolerance);
 
     let init_t = 20.0;
-    model.temperatures.as_mut()[0] = init_t;
-    if let Some(ref mut mt) = Some(&mut model.mass_temperatures) {
+    model.setpoints.temperatures.as_mut()[0] = init_t;
+    if let Some(ref mut mt) = Some(&mut model.mass.mass_temperatures) {
         mt.as_mut()[0] = init_t;
     }
     model.set_ground_temp(10.0);

@@ -272,7 +272,7 @@ pub fn simulate_annual(case_id: &str) -> SimulationResults {
 
     for step in 0..8760 {
         let weather_data = weather.get_hourly_data(step).unwrap();
-        model.weather = Some(weather_data.clone());
+        model.solar.weather = Some(weather_data.clone());
 
         let energy_kwh = model.step_physics(step, weather_data.dry_bulb_temp, 3600.0);
 
@@ -284,7 +284,7 @@ pub fn simulate_annual(case_id: &str) -> SimulationResults {
         }
 
         // Track temperatures
-        if let Some(&zone_temp) = model.temperatures.as_slice().first() {
+        if let Some(&zone_temp) = model.setpoints.temperatures.as_slice().first() {
             min_temp = min_temp.min(zone_temp);
             max_temp = max_temp.max(zone_temp);
             sum_temp += zone_temp;
@@ -301,8 +301,8 @@ pub fn simulate_annual(case_id: &str) -> SimulationResults {
     SimulationResults {
         annual_heating_mwh: raw_heating_mwh,
         annual_cooling_mwh: raw_cooling_mwh,
-        peak_heating_kw: model.peak_power_heating / 1000.0,
-        peak_cooling_kw: model.peak_power_cooling / 1000.0,
+        peak_heating_kw: model.hvac.peak_power_heating / 1000.0,
+        peak_cooling_kw: model.hvac.peak_power_cooling / 1000.0,
         min_temp_c: min_temp,
         max_temp_c: max_temp,
         avg_temp_c: sum_temp / 8760.0,

@@ -187,40 +187,41 @@ impl DoeBuildingType {
         let mut model = ThermalModel::new(num_zones);
 
         // Set window properties
-        model.window_u_value = 2.7; // W/m²K typical for DOE buildings
-        model.window_ratio = VectorField::from_scalar(wwr, num_zones);
+        model.solar.window_u_value = 2.7; // W/m²K typical for DOE buildings
+        model.setpoints.window_ratio = VectorField::from_scalar(wwr, num_zones);
 
         // Set setpoints
-        model.heating_setpoint = 21.0; // 21°C
-        model.cooling_setpoint = 24.0; // 24°C
+        model.setpoints.heating_setpoint = 21.0; // 21°C
+        model.setpoints.cooling_setpoint = 24.0; // 24°C
 
         // Initialize temperatures
-        model.temperatures = VectorField::from_scalar(21.0, num_zones);
-        model.mass_temperatures = VectorField::from_scalar(21.0, num_zones);
+        model.setpoints.temperatures = VectorField::from_scalar(21.0, num_zones);
+        model.mass.mass_temperatures = VectorField::from_scalar(21.0, num_zones);
 
         // Set zone properties
-        model.zone_area = VectorField::from_scalar(zone_area, num_zones);
-        model.ceiling_height = VectorField::from_scalar(3.0, num_zones);
-        model.air_density = VectorField::from_scalar(1.2, num_zones);
-        model.heat_capacity = VectorField::from_scalar(1005.0, num_zones);
-        model.aspect_ratio = VectorField::from_scalar(1.5, num_zones);
-        model.infiltration_rate = VectorField::from_scalar(self.infiltration_ach(), num_zones);
+        model.setpoints.zone_area = VectorField::from_scalar(zone_area, num_zones);
+        model.setpoints.ceiling_height = VectorField::from_scalar(3.0, num_zones);
+        model.setpoints.air_density = VectorField::from_scalar(1.2, num_zones);
+        model.setpoints.heat_capacity = VectorField::from_scalar(1005.0, num_zones);
+        model.setpoints.aspect_ratio = VectorField::from_scalar(1.5, num_zones);
+        model.setpoints.infiltration_rate =
+            VectorField::from_scalar(self.infiltration_ach(), num_zones);
 
         // Set building envelope properties
-        model.wall_u_value = 0.3; // W/m²K
-        model.roof_u_value = 0.25; // W/m²K
-        model.floor_u_value = 0.35; // W/m²K
+        model.setpoints.wall_u_value = 0.3; // W/m²K
+        model.setpoints.roof_u_value = 0.25; // W/m²K
+        model.setpoints.floor_u_value = 0.35; // W/m²K
 
         // Set HVAC capacity
-        model.hvac_heating_capacity = zone_area * 80.0; // W/m²
-        model.hvac_cooling_capacity = zone_area * 100.0; // W/m²
+        model.hvac.hvac_heating_capacity = zone_area * 80.0; // W/m²
+        model.hvac.hvac_cooling_capacity = zone_area * 100.0; // W/m²
 
         // Set case ID
-        model.case_id = format!("DOE-{:?}", self);
+        model.hvac.case_id = format!("DOE-{:?}", self);
 
         // Initialize loads
-        model.loads = VectorField::from_scalar(0.0, num_zones);
-        model.solar_gains = VectorField::from_scalar(0.0, num_zones);
+        model.setpoints.loads = VectorField::from_scalar(0.0, num_zones);
+        model.solar.solar_gains = VectorField::from_scalar(0.0, num_zones);
 
         model
     }
@@ -357,14 +358,14 @@ mod tests {
     #[test]
     fn test_doe_small_office_model_creation() {
         let model = DoeBuildingType::SmallOffice.create_model();
-        assert_eq!(model.temperatures.len(), 1);
-        assert!(model.window_u_value > 0.0);
+        assert_eq!(model.setpoints.temperatures.len(), 1);
+        assert!(model.solar.window_u_value > 0.0);
     }
 
     #[test]
     fn test_doe_hospital_model_creation() {
         let model = DoeBuildingType::Hospital.create_model();
-        assert_eq!(model.temperatures.len(), 10);
-        assert!(model.window_u_value > 0.0);
+        assert_eq!(model.setpoints.temperatures.len(), 10);
+        assert!(model.solar.window_u_value > 0.0);
     }
 }

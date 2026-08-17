@@ -46,13 +46,13 @@ mod issue_1457_case_600_series_tracking {
         const WARMUP_STEPS: usize = 14 * 24;
         for step in 0..WARMUP_STEPS {
             let w = weather.get_hourly_data(step).unwrap();
-            model.weather = Some(w.clone());
+            model.solar.weather = Some(w.clone());
             let _ = model.step_physics(step, w.dry_bulb_temp, 3600.0);
         }
         let (mut th, mut tc, mut ph, mut pc) = (0.0_f64, 0.0_f64, 0.0_f64, 0.0_f64);
         for step in 0..8760 {
             let w = weather.get_hourly_data(step).unwrap();
-            model.weather = Some(w.clone());
+            model.solar.weather = Some(w.clone());
             let e_kwh = model.step_physics(step, w.dry_bulb_temp, 3600.0);
             let e_j = e_kwh * 3.6e6;
             if e_kwh > 0.0 {
@@ -75,9 +75,9 @@ mod issue_1457_case_600_series_tracking {
         let mut min_temp = f64::MAX;
         for step in 0..8760 {
             let w = weather.get_hourly_data(step).unwrap();
-            model.weather = Some(w.clone());
+            model.solar.weather = Some(w.clone());
             model.step_physics(step, w.dry_bulb_temp, 3600.0);
-            if let Some(&t) = model.temperatures.as_slice().first() {
+            if let Some(&t) = model.setpoints.temperatures.as_slice().first() {
                 min_temp = min_temp.min(t);
             }
         }

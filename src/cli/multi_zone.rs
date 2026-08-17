@@ -248,9 +248,9 @@ pub fn execute_simulate_command(command: &SimulateCommand) -> Result<(), anyhow:
 
     // Configure zone setpoints
     for (zone_idx, (heating, cooling)) in config.zone_setpoints.iter().enumerate() {
-        if zone_idx < model.num_zones {
-            model.heating_setpoints.as_mut_slice()[zone_idx] = *heating;
-            model.cooling_setpoints.as_mut_slice()[zone_idx] = *cooling;
+        if zone_idx < model.hvac.num_zones {
+            model.setpoints.heating_setpoints.as_mut_slice()[zone_idx] = *heating;
+            model.setpoints.cooling_setpoints.as_mut_slice()[zone_idx] = *cooling;
         }
     }
 
@@ -265,16 +265,16 @@ pub fn execute_simulate_command(command: &SimulateCommand) -> Result<(), anyhow:
     // existing Case-960 physics-pipeline semantics
     // (`ThermalModel::h_tr_iz[i]` = total W/K out of zone i) while still
     // surfacing the full N×N matrix in the simulation JSON output.
-    for i in 0..model.num_zones {
+    for i in 0..model.hvac.num_zones {
         let mut row_sum = 0.0_f64;
         if i < config.inter_zone_conductance.len() {
-            for j in 0..model.num_zones {
+            for j in 0..model.hvac.num_zones {
                 if j < config.inter_zone_conductance[i].len() {
                     row_sum += config.inter_zone_conductance[i][j];
                 }
             }
         }
-        model.h_tr_iz.as_mut_slice()[i] = row_sum;
+        model.conduction.h_tr_iz.as_mut_slice()[i] = row_sum;
     }
 
     // Create surrogate manager
@@ -471,8 +471,8 @@ pub fn run_energy_conservation_validation(
     // mass temperatures, loads, solar gains all set by the 5R1C step).
     let dt = 3600.0;
     let t_outdoor = 10.0;
-    for i in 0..model.num_zones {
-        model.temperatures.as_mut()[i] = 20.0;
+    for i in 0..model.hvac.num_zones {
+        model.setpoints.temperatures.as_mut()[i] = 20.0;
     }
     model.step_physics(0, t_outdoor, dt);
 
@@ -636,7 +636,7 @@ fn run_case_960_validation(command: &ValidateCommand) -> Result<(), String> {
     //    h_tr_iz from the door opening (1.5 W/K) instead of the full concrete
     //    common wall (122 W/K). This is the MULTI-01 fix in KNOWN_ISSUES.md.
     let model = ThermalModel::<VectorField>::from_spec(&spec);
-    let h_iz_vec = model.h_tr_iz.as_ref();
+    let h_iz_vec = model.conduction.h_tr_iz.as_ref();
     let h_iz = h_iz_vec.first().copied().unwrap_or(0.0);
 
     // Expected: 1.5 W/K (door convective 0.75 + door conductive 0.75, see from_spec)

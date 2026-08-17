@@ -46,7 +46,7 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
             .sum();
 
         // Normalize by total floor area to get EUI
-        let total_area = self.0.zone_area.integrate();
+        let total_area = self.0.setpoints.zone_area.integrate();
         if total_area > 0.0 {
             total_energy_kwh / total_area
         } else {

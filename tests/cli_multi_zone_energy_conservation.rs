@@ -29,8 +29,8 @@ const ACCEPTANCE_RESIDUAL_TOLERANCE_W: f64 = 1e-3;
 /// exactly zero Watt residual (heat_in = 0, heat_out = 0, dE/dt = 0).
 ///
 /// Returns a `(model, dt, t_outdoor)` triple so callers can either validate
-/// the balanced state or inject deliberate unbalances via `model.loads`,
-/// `model.temperatures`, etc.
+/// the balanced state or inject deliberate unbalances via `model.setpoints.loads`,
+/// `model.setpoints.temperatures`, etc.
 fn build_balanced_two_zone_stub() -> (ThermalModel<VectorField>, f64, f64) {
     let spec = ASHRAE140Case::Case960.spec();
     let mut model = ThermalModel::<VectorField>::from_spec(&spec);
@@ -39,13 +39,13 @@ fn build_balanced_two_zone_stub() -> (ThermalModel<VectorField>, f64, f64) {
     // Manually set every state field the InvariantChecker touches so the
     // initial transient bias from `step_physics()` does not leak in. We are
     // constructing a *hand-balanced stub*, not a simulated timestep.
-    for i in 0..model.num_zones {
-        model.temperatures.as_mut()[i] = t_balanced;
-        model.mass_temperatures.as_mut()[i] = t_balanced;
-        model.previous_mass_temperatures.as_mut()[i] = t_balanced;
-        model.loads.as_mut()[i] = 0.0;
-        model.solar_gains.as_mut()[i] = 0.0;
-        model.opaque_solar_gains.as_mut()[i] = 0.0;
+    for i in 0..model.hvac.num_zones {
+        model.setpoints.temperatures.as_mut()[i] = t_balanced;
+        model.mass.mass_temperatures.as_mut()[i] = t_balanced;
+        model.mass.previous_mass_temperatures.as_mut()[i] = t_balanced;
+        model.setpoints.loads.as_mut()[i] = 0.0;
+        model.solar.solar_gains.as_mut()[i] = 0.0;
+        model.solar.opaque_solar_gains.as_mut()[i] = 0.0;
     }
 
     // Pin the ground temperature to the balanced temperature so the floor
@@ -73,11 +73,11 @@ fn build_balanced_two_zone_stub() -> (ThermalModel<VectorField>, f64, f64) {
 #[test]
 fn test_two_zone_stub_catches_5w_unbalance() {
     let (mut model, dt, t_outdoor) = build_balanced_two_zone_stub();
-    let area0 = model.zone_area.as_ref()[0];
+    let area0 = model.setpoints.zone_area.as_ref()[0];
     let injected_unbalance_w = 5.0_f64;
 
     // Inject the unbalance: +5 W of load flux into zone 0.
-    model.loads.as_mut()[0] += injected_unbalance_w / area0;
+    model.setpoints.loads.as_mut()[0] += injected_unbalance_w / area0;
 
     // Tight tolerance forces the validator to reject any non-trivial Watt
     // residual — this is the 1e-3 W acceptance criterion.

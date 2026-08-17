@@ -12,10 +12,10 @@ fn diag_solar_gains_600ff() {
     let mut model = ThermalModel::<VectorField>::from_spec(&spec);
     let weather = DenverTmyWeather::new();
 
-    model.heating_setpoint = -999.0;
-    model.cooling_setpoint = 999.0;
-    model.hvac_heating_capacity = 0.0;
-    model.hvac_cooling_capacity = 0.0;
+    model.setpoints.heating_setpoint = -999.0;
+    model.setpoints.cooling_setpoint = 999.0;
+    model.hvac.hvac_heating_capacity = 0.0;
+    model.hvac.hvac_cooling_capacity = 0.0;
 
     // Find the timestep with peak temperature
     let mut max_temp = f64::NEG_INFINITY;
@@ -24,10 +24,10 @@ fn diag_solar_gains_600ff() {
 
     for step in 0..8760 {
         let wd = weather.get_hourly_data(step).unwrap();
-        model.weather = Some(wd.clone());
+        model.solar.weather = Some(wd.clone());
         model.step_physics(step, wd.dry_bulb_temp, 3600.0);
 
-        let t = model.temperatures.as_slice()[0];
+        let t = model.setpoints.temperatures.as_slice()[0];
         if t > max_temp {
             max_temp = t;
             max_step = step;
@@ -56,20 +56,20 @@ fn diag_solar_gains_600ff() {
     // Now re-run just the peak step to capture solar gains
     let spec2 = ASHRAE140Case::Case600FF.spec();
     let mut model2 = ThermalModel::<VectorField>::from_spec(&spec2);
-    model2.heating_setpoint = -999.0;
-    model2.cooling_setpoint = 999.0;
-    model2.hvac_heating_capacity = 0.0;
-    model2.hvac_cooling_capacity = 0.0;
+    model2.setpoints.heating_setpoint = -999.0;
+    model2.setpoints.cooling_setpoint = 999.0;
+    model2.hvac.hvac_heating_capacity = 0.0;
+    model2.hvac.hvac_cooling_capacity = 0.0;
 
     // Warm up to the peak step, then read solar gains
     for step in 0..=max_step {
         let wd = weather.get_hourly_data(step).unwrap();
-        model2.weather = Some(wd.clone());
+        model2.solar.weather = Some(wd.clone());
         if step == max_step {
             // Before stepping, read the solar gains that were just calculated
-            let sg = model2.solar_gains.as_ref()[0];
-            let og = model2.opaque_solar_gains.as_ref()[0];
-            let area = model2.zone_area.as_ref()[0];
+            let sg = model2.solar.solar_gains.as_ref()[0];
+            let og = model2.solar.opaque_solar_gains.as_ref()[0];
+            let area = model2.setpoints.zone_area.as_ref()[0];
             println!("\n=== Solar gains at peak step {} ===", step);
             println!("  solar_gains (W/m²): {:.4}", sg);
             println!("  opaque_solar_gains (W/m²): {:.4}", og);

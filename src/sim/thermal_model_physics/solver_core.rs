@@ -85,7 +85,7 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
     /// For high-mass cases (900 series), this returns 360 seconds (6 minutes).
     /// For low-mass cases (600 series), this returns 3600 seconds (1 hour).
     pub fn calculate_timestep_seconds(&self) -> f64 {
-        match &self.0.timestep_mode {
+        match &self.0.hvac.timestep_mode {
             TimestepMode::Fixed { dt } => dt.as_secs_f64(),
             TimestepMode::Adaptive {
                 base_dt,
@@ -108,7 +108,7 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
     /// Estimate thermal time constant in hours from physical parameters.
     ///
     /// Issue #821 / Probe H: We previously short-circuited this with
-    /// `TimeConstantAnalyzer::for_case(&self.0.case_id)`, returning a hard-coded τ
+    /// `TimeConstantAnalyzer::for_case(&self.0.hvac.case_id)`, returning a hard-coded τ
     /// table per ASHRAE 140 case identifier. That broke blind-validation
     /// (case_id is supposed to be opaque to the solver) and could disagree with
     /// the actual `Cm / h_tr_ms` after Probe A's ISO 13790 conductance change.
@@ -119,7 +119,7 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
     pub fn estimate_time_constant_hours(&self) -> f64 {
         // Check if this is a high-mass case (900 series)
         let is_high_mass = matches!(
-            self.0.case_id.as_str(),
+            self.0.hvac.case_id.as_str(),
             "900" | "910" | "920" | "930" | "940" | "950" | "900FF" | "950FF"
         );
 
@@ -131,7 +131,13 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
             // ventilation and interior surface series, plus window in parallel.
             // If derived_h_tr_3 hasn't been computed yet (model not initialized),
             // compute it inline using the ISO 13790 formula.
-            let derived = self.0.derived_h_tr_3.as_ref().iter().sum::<f64>();
+            let derived = self
+                .0
+                .conduction
+                .derived_h_tr_3
+                .as_ref()
+                .iter()
+                .sum::<f64>();
             if derived > 1e-6 {
                 derived
             } else {
@@ -140,10 +146,10 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                 // H_tr_1 = h_ve * h_tr_is / (h_ve + h_tr_is)  [series]
                 // H_tr_2 = H_tr_1 + h_tr_w                      [parallel with windows]
                 // H_tr_3 = H_tr_2 * h_tr_ms / (H_tr_2 + h_tr_ms) [series with mass]
-                let h_tr_ms_sum: f64 = self.0.h_tr_ms.as_ref().iter().sum();
-                let h_tr_is_sum: f64 = self.0.h_tr_is.as_ref().iter().sum();
-                let h_tr_w_sum: f64 = self.0.h_tr_w.as_ref().iter().sum();
-                let h_ve_sum: f64 = self.0.h_ve.as_ref().iter().sum();
+                let h_tr_ms_sum: f64 = self.0.conduction.h_tr_ms.as_ref().iter().sum();
+                let h_tr_is_sum: f64 = self.0.conduction.h_tr_is.as_ref().iter().sum();
+                let h_tr_w_sum: f64 = self.0.conduction.h_tr_w.as_ref().iter().sum();
+                let h_ve_sum: f64 = self.0.conduction.h_ve.as_ref().iter().sum();
 
                 if h_tr_ms_sum > 0.0 && h_tr_is_sum > 0.0 && h_ve_sum > 0.0 {
                     let h_tr_1 = (h_ve_sum * h_tr_is_sum) / (h_ve_sum + h_tr_is_sum);
@@ -159,11 +165,12 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
             }
         } else {
             // Standard: use h_tr_ms for surface-to-mass coupling
-            self.0.h_tr_ms.as_ref().iter().sum::<f64>()
+            self.0.conduction.h_tr_ms.as_ref().iter().sum::<f64>()
         };
 
         if h_tr_sum > 0.0 {
-            let tau_seconds = self.0.thermal_capacitance.as_ref().iter().sum::<f64>() / h_tr_sum;
+            let tau_seconds =
+                self.0.mass.thermal_capacitance.as_ref().iter().sum::<f64>() / h_tr_sum;
             let tau_hours = tau_seconds / 3600.0; // Convert to hours
 
             // Sanity check: if tau is extremely small (< 0.001 hours = 3.6 seconds),
@@ -193,24 +200,24 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
     ) -> f64 {
         // Record call for wiring validation (Plan 21-10)
         #[cfg(feature = "wiring-tracing")]
-        if let Some(ref tracer) = self.0.tracer {
+        if let Some(ref tracer) = self.0.hvac.tracer {
             tracer.record_call("solve_timesteps_with_dt");
         }
 
         info!(
             "Starting simulation for {} timesteps with dt={:.1}s, use_ai={}, warm_up_years={}",
-            steps, dt_seconds, use_ai, self.0.warm_up_years
+            steps, dt_seconds, use_ai, self.0.hvac.warm_up_years
         );
 
         // Auto-load building profile if not manually provided (Plan 17-04)
         let profile_bundle = match (lighting, equipment, occupancy) {
             (None, None, None) => {
                 // Load profile from JSON based on building_type
-                match profiles::load_building_profile(self.0.building_type) {
+                match profiles::load_building_profile(self.0.hvac.building_type) {
                     Ok(profile) => {
                         info!(
                             "Auto-loaded building profile for {:?}: lighting, {} equipment items, occupancy",
-                            self.0.building_type,
+                            self.0.hvac.building_type,
                             profile.equipment.len()
                         );
                         Some(profile)
@@ -218,7 +225,7 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                     Err(e) => {
                         warn!(
                             "Failed to load building profile for {:?}: {}. Running without internal loads.",
-                            self.0.building_type, e
+                            self.0.hvac.building_type, e
                         );
                         None
                     }
@@ -264,16 +271,16 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
 
         // Issue #763 — initialize hourly temperature storage before timestep loop
         self.0.diagnostics_state.hourly_temperatures =
-            Some(vec![Vec::with_capacity(steps); self.0.num_zones]);
+            Some(vec![Vec::with_capacity(steps); self.0.hvac.num_zones]);
 
         // Issue #1799 — initialize sub-hourly 9R4C node temperature storage.
         // Only meaningful when the model carries at least one `MultiNodeSolver`
         // (high-mass construction); for low-mass models we keep `None` so callers
         // can distinguish "not a 9R4C model" from "empty trace".
-        if !self.0.conduction.multi_node_solvers.is_empty() {
+        if !self.0.conduction.backend.multi_node_solvers.is_empty() {
             const NODES: usize = 4; // wall, roof, floor, internal (see MultiNodeSolver::NODE_NAMES)
             self.0.diagnostics_state.nodal_temperatures = Some(
-                (0..self.0.num_zones)
+                (0..self.0.hvac.num_zones)
                     .map(|_| {
                         (0..NODES)
                             .map(|_| Vec::with_capacity(steps))
@@ -306,7 +313,7 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         #[allow(dead_code, clippy::if_same_then_else)]
         if false {
             // Only apply warmup to full-year (8760 timestep) simulations to avoid impacting short-duration tests.
-            let warm_up_years = self.0.warm_up_years;
+            let warm_up_years = self.0.hvac.warm_up_years;
             let is_full_year_simulation = steps >= 8760;
             info!(
                 "Starting warm-up phase: {} year(s), is_full_year={}",
@@ -316,7 +323,7 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
             let hours_per_year = 8760;
 
             for year in 1..=warm_up_years {
-                let mass_temps_start_vec = self.0.mass_temperatures.as_ref().to_vec();
+                let mass_temps_start_vec = self.0.mass.mass_temperatures.as_ref().to_vec();
 
                 // Run one full year of warm-up
                 for t in 0..hours_per_year {
@@ -327,7 +334,7 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                 }
 
                 // Check convergence: compare mass temperatures at start and end of year
-                let mass_temps_end = self.0.mass_temperatures.as_ref();
+                let mass_temps_end = self.0.mass.mass_temperatures.as_ref();
                 let max_delta = mass_temps_start_vec
                     .iter()
                     .zip(mass_temps_end.iter())
@@ -375,7 +382,7 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                 // Issue #901 perf: bound check is unnecessary — temperatures always has
                 // exactly num_zones entries and hourly is sized to num_zones at init.
                 if let Some(ref mut hourly) = self.0.diagnostics_state.hourly_temperatures {
-                    let temps = self.0.temperatures.as_ref();
+                    let temps = self.0.setpoints.temperatures.as_ref();
                     debug_assert_eq!(temps.len(), hourly.len());
                     for (zone_idx, &temp) in temps.iter().enumerate() {
                         hourly[zone_idx].push(temp);
@@ -387,17 +394,18 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                 // Snapshot order matches `MultiNodeSolver::NODE_NAMES`:
                 // 0=wall, 1=roof, 2=floor, 3=internal.
                 if let Some(ref mut nodal) = self.0.diagnostics_state.nodal_temperatures {
-                    debug_assert_eq!(nodal.len(), self.0.num_zones);
+                    debug_assert_eq!(nodal.len(), self.0.hvac.num_zones);
                     debug_assert!(nodal.iter().all(|n| n.len() == 4));
                     let n_solvers = self
                         .0
                         .conduction
+                        .backend
                         .multi_node_solvers
                         .len()
-                        .min(self.0.num_zones);
+                        .min(self.0.hvac.num_zones);
                     for (zone_idx, zone_nodes) in nodal.iter_mut().enumerate().take(n_solvers) {
-                        let snapshot =
-                            self.0.conduction.multi_node_solvers[zone_idx].snapshot_temperatures();
+                        let snapshot = self.0.conduction.backend.multi_node_solvers[zone_idx]
+                            .snapshot_temperatures();
                         for (node_idx, temp) in snapshot.iter().enumerate() {
                             zone_nodes[node_idx].push(*temp);
                         }
@@ -409,7 +417,7 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
             .sum();
 
         // Normalize by total floor area to get EUI
-        let total_area = self.0.zone_area.integrate();
+        let total_area = self.0.setpoints.zone_area.integrate();
         if total_area > 0.0 {
             let eui = total_energy_kwh / total_area;
             info!("Simulation complete: EUI = {:.2} kWh/m²/year", eui);
@@ -425,7 +433,7 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
     /// # Returns
     /// Vector of current zone temperatures in degrees Celsius.
     pub fn get_temperatures(&self) -> Vec<f64> {
-        self.0.temperatures.as_ref().to_vec()
+        self.0.setpoints.temperatures.as_ref().to_vec()
     }
 
     /// Extract current temperatures into a caller-supplied reuse buffer.
@@ -436,7 +444,7 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
     /// allocation occurs. The produced bytes are identical to
     /// `self.get_temperatures()` — only the ownership of the buffer differs.
     pub fn get_temperatures_into(&self, out: &mut Vec<f64>) {
-        let src = self.0.temperatures.as_ref();
+        let src = self.0.setpoints.temperatures.as_ref();
         out.clear();
         out.extend_from_slice(src);
     }
@@ -471,13 +479,13 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
     /// low-mass. Use this to disambiguate `get_nodal_temperatures() == None`
     /// ("not a 9R4C model") from "simulation has not been run yet".
     pub fn num_multizone_solvers(&self) -> usize {
-        self.0.conduction.multi_node_solvers.len()
+        self.0.conduction.backend.multi_node_solvers.len()
     }
 
     /// Calculate analytical thermal loads without neural surrogates.
     ///
     /// This method computes thermal loads from first principles physics:
-    /// - Solar gains: self.0.solar_gains.as_ref()[zone] for each zone
+    /// - Solar gains: self.0.solar.solar_gains.as_ref()[zone] for each zone
     /// - Conduction: window_u_value * window_area[zone] * (outdoor_temp - temperatures.as_ref()[zone])
     /// - Ventilation: h_ve.as_ref()[zone] * (outdoor_temp - temperatures.as_ref()[zone])
     ///
@@ -502,28 +510,30 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
     /// let loads = model.calculate_analytical_loads(outdoor_temp, hour_of_day);
     /// ```
     pub fn calculate_analytical_loads(&self, outdoor_temp: f64, _hour_of_day: usize) -> Vec<f64> {
-        let mut loads = Vec::with_capacity(self.0.num_zones);
+        let mut loads = Vec::with_capacity(self.0.hvac.num_zones);
 
         // Calculate window area for each zone
         let width = self
             .0
+            .setpoints
             .zone_area
-            .zip_with(&self.0.aspect_ratio, |a, ar| (a * ar).sqrt());
-        let depth = self.0.zone_area.zip_with(&width, |a, w| a / w);
+            .zip_with(&self.0.setpoints.aspect_ratio, |a, ar| (a * ar).sqrt());
+        let depth = self.0.setpoints.zone_area.zip_with(&width, |a, w| a / w);
         let perimeter = (width + depth) * 2.0;
-        let gross_wall_area = perimeter.clone() * self.0.ceiling_height.clone();
-        let window_area = gross_wall_area * self.0.window_ratio.clone();
+        let gross_wall_area = perimeter.clone() * self.0.setpoints.ceiling_height.clone();
+        let window_area = gross_wall_area * self.0.setpoints.window_ratio.clone();
 
-        for zone_idx in 0..self.0.num_zones {
-            let zone_temp = self.0.temperatures.as_ref()[zone_idx];
+        for zone_idx in 0..self.0.hvac.num_zones {
+            let zone_temp = self.0.setpoints.temperatures.as_ref()[zone_idx];
             let zone_window_area = window_area.as_ref()[zone_idx];
-            let h_ve = self.0.h_ve.as_ref()[zone_idx];
+            let h_ve = self.0.conduction.h_ve.as_ref()[zone_idx];
 
-            // 1. Solar gains (already computed in self.0.solar_gains)
-            let solar_gain = self.0.solar_gains.as_ref()[zone_idx];
+            // 1. Solar gains (already computed in self.0.solar.solar_gains)
+            let solar_gain = self.0.solar.solar_gains.as_ref()[zone_idx];
 
             // 2. Conduction through windows: Q = U * A * (T_out - T_in)
-            let conduction = self.0.window_u_value * zone_window_area * (outdoor_temp - zone_temp);
+            let conduction =
+                self.0.solar.window_u_value * zone_window_area * (outdoor_temp - zone_temp);
 
             // 3. Ventilation: Q = h_ve * (T_out - T_in)
             let ventilation = h_ve * (outdoor_temp - zone_temp);
@@ -546,7 +556,7 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
     /// `to_vec()` + `Vec`→`SmallVec` round-trip. The stored values are
     /// identical to the prior implementation.
     pub fn set_loads(&mut self, loads: &[f64]) {
-        self.0.loads = T::from(VectorField::from_slice(loads));
+        self.0.setpoints.loads = T::from(VectorField::from_slice(loads));
     }
 
     /// Set weather data for solar gain calculations.
@@ -558,6 +568,6 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
     ///
     /// * `weather` - Hourly weather data to use for solar calculations
     pub fn set_weather(&mut self, weather: HourlyWeatherData) {
-        self.0.weather = Some(weather);
+        self.0.solar.weather = Some(weather);
     }
 }

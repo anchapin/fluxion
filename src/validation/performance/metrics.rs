@@ -107,7 +107,7 @@ fn get_process_cpu_time() -> f64 {
 }
 
 fn get_solver_iterations(model: &ThermalModel<VectorField>) -> u32 {
-    let zone_count = model.num_zones;
+    let zone_count = model.hvac.num_zones;
     if zone_count <= 3 {
         8
     } else if zone_count <= 10 {

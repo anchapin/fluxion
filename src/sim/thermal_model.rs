@@ -278,7 +278,7 @@ impl PhysicsThermalModel {
 
 impl ThermalModelTrait for PhysicsThermalModel {
     fn num_zones(&self) -> usize {
-        self.inner.num_zones
+        self.inner.hvac.num_zones
     }
 
     fn get_temperatures(&self) -> Vec<f64> {
@@ -286,7 +286,7 @@ impl ThermalModelTrait for PhysicsThermalModel {
     }
 
     fn set_temperatures(&mut self, temperatures: &[f64]) {
-        self.inner.temperatures = VectorField::new(temperatures.to_vec());
+        self.inner.setpoints.temperatures = VectorField::new(temperatures.to_vec());
     }
 
     fn mode(&self) -> ThermalModelMode {
@@ -314,28 +314,28 @@ impl ThermalModelTrait for PhysicsThermalModel {
     }
 
     fn zone_area(&self) -> f64 {
-        self.inner.zone_area.integrate()
+        self.inner.setpoints.zone_area.integrate()
     }
 
     fn heating_setpoint(&self) -> f64 {
         // Return heating setpoint (scalar value for single-zone models)
-        self.inner.heating_setpoint
+        self.inner.setpoints.heating_setpoint
     }
 
     fn cooling_setpoint(&self) -> f64 {
         // Return cooling setpoint (scalar value for single-zone models)
-        self.inner.cooling_setpoint
+        self.inner.setpoints.cooling_setpoint
     }
 
     fn hvac_power_demand(&self, timestep: usize, _outdoor_temp: f64) -> f64 {
         // Simplified HVAC demand calculation
-        let temps = self.inner.temperatures.as_ref();
+        let temps = self.inner.setpoints.temperatures.as_ref();
         if temps.is_empty() {
             return 0.0;
         }
         let t = temps[0];
-        let heating_sp = self.inner.heating_schedule.value(timestep % 24);
-        let cooling_sp = self.inner.cooling_schedule.value(timestep % 24);
+        let heating_sp = self.inner.setpoints.heating_schedule.value(timestep % 24);
+        let cooling_sp = self.inner.setpoints.cooling_schedule.value(timestep % 24);
 
         if t < heating_sp {
             // Heating needed
@@ -349,7 +349,7 @@ impl ThermalModelTrait for PhysicsThermalModel {
     }
 
     fn is_valid(&self) -> bool {
-        self.inner.num_zones > 0 && self.zone_area() > 0.0
+        self.inner.hvac.num_zones > 0 && self.zone_area() > 0.0
     }
 
     fn get_comfort_metrics(&self) -> Vec<ZoneComfortMetrics> {
@@ -451,7 +451,7 @@ impl SurrogateThermalLoadAdapter {
     ) -> f64 {
         let dt_seconds = model.calculate_timestep_seconds();
         model.diagnostics_state.hourly_temperatures =
-            Some(vec![Vec::with_capacity(steps); model.num_zones]);
+            Some(vec![Vec::with_capacity(steps); model.hvac.num_zones]);
         let cycle = get_daily_cycle();
         let total_energy_kwh: f64 = (0..steps)
             .map(|t| {
@@ -459,19 +459,19 @@ impl SurrogateThermalLoadAdapter {
                 let outdoor_temp = 10.0 + 10.0 * cycle[hour_of_day];
                 let input = self.input(model, t, outdoor_temp);
                 let loads = match self.predict(surrogates, &input) {
-                    Ok(predicted) => Self::loads_for_zones(predicted, model.num_zones),
+                    Ok(predicted) => Self::loads_for_zones(predicted, model.hvac.num_zones),
                     Err(err) => {
                         log::error!("Surrogate thermal load prediction failed: {}", err);
                         if self.fallback_to_physics {
                             model.calculate_analytical_loads(outdoor_temp, hour_of_day)
                         } else {
-                            vec![0.0; model.num_zones]
+                            vec![0.0; model.hvac.num_zones]
                         }
                     }
                 };
                 model.set_loads(&loads);
                 let energy = model.step_physics(t, outdoor_temp, dt_seconds);
-                let temps = model.temperatures.as_ref().to_vec();
+                let temps = model.setpoints.temperatures.as_ref().to_vec();
                 if let Some(ref mut hourly) = model.diagnostics_state.hourly_temperatures {
                     for (zone_idx, &temp) in temps.iter().enumerate() {
                         hourly[zone_idx].push(temp);
@@ -480,7 +480,7 @@ impl SurrogateThermalLoadAdapter {
                 energy
             })
             .sum();
-        let total_area = model.zone_area.integrate();
+        let total_area = model.setpoints.zone_area.integrate();
         if total_area > 0.0 {
             total_energy_kwh / total_area
         } else {
@@ -494,9 +494,26 @@ impl SurrogateThermalLoadAdapter {
         timestep: usize,
         outdoor_temp: f64,
     ) -> Vec<f64> {
-        let zone_temp = model.temperatures.as_ref().first().copied().unwrap_or(20.0);
-        let solar_gain = model.solar_gains.as_ref().first().copied().unwrap_or(0.0);
-        let humidity = model.weather.as_ref().map(|w| w.humidity).unwrap_or(50.0);
+        let zone_temp = model
+            .setpoints
+            .temperatures
+            .as_ref()
+            .first()
+            .copied()
+            .unwrap_or(20.0);
+        let solar_gain = model
+            .solar
+            .solar_gains
+            .as_ref()
+            .first()
+            .copied()
+            .unwrap_or(0.0);
+        let humidity = model
+            .solar
+            .weather
+            .as_ref()
+            .map(|w| w.humidity)
+            .unwrap_or(50.0);
         let occupancy = 0.1;
         let hour = (timestep % 24) as f64;
         vec![
@@ -539,7 +556,7 @@ impl SurrogateThermalLoadAdapter {
 
 impl ThermalModelTrait for SurrogateThermalModel {
     fn num_zones(&self) -> usize {
-        self.inner.num_zones
+        self.inner.hvac.num_zones
     }
 
     fn get_temperatures(&self) -> Vec<f64> {
@@ -547,7 +564,7 @@ impl ThermalModelTrait for SurrogateThermalModel {
     }
 
     fn set_temperatures(&mut self, temperatures: &[f64]) {
-        self.inner.temperatures = VectorField::new(temperatures.to_vec());
+        self.inner.setpoints.temperatures = VectorField::new(temperatures.to_vec());
     }
 
     fn mode(&self) -> ThermalModelMode {
@@ -576,27 +593,27 @@ impl ThermalModelTrait for SurrogateThermalModel {
     }
 
     fn zone_area(&self) -> f64 {
-        self.inner.zone_area.integrate()
+        self.inner.setpoints.zone_area.integrate()
     }
 
     fn heating_setpoint(&self) -> f64 {
         // Return heating setpoint (scalar value for single-zone models)
-        self.inner.heating_setpoint
+        self.inner.setpoints.heating_setpoint
     }
 
     fn cooling_setpoint(&self) -> f64 {
         // Return cooling setpoint (scalar value for single-zone models)
-        self.inner.cooling_setpoint
+        self.inner.setpoints.cooling_setpoint
     }
 
     fn hvac_power_demand(&self, timestep: usize, _outdoor_temp: f64) -> f64 {
-        let temps = self.inner.temperatures.as_ref();
+        let temps = self.inner.setpoints.temperatures.as_ref();
         if temps.is_empty() {
             return 0.0;
         }
         let t = temps[0];
-        let heating_sp = self.inner.heating_schedule.value(timestep % 24);
-        let cooling_sp = self.inner.cooling_schedule.value(timestep % 24);
+        let heating_sp = self.inner.setpoints.heating_schedule.value(timestep % 24);
+        let cooling_sp = self.inner.setpoints.cooling_schedule.value(timestep % 24);
 
         if t < heating_sp {
             (heating_sp - t) * 100.0
@@ -608,7 +625,7 @@ impl ThermalModelTrait for SurrogateThermalModel {
     }
 
     fn is_valid(&self) -> bool {
-        self.inner.num_zones > 0 && self.zone_area() > 0.0
+        self.inner.hvac.num_zones > 0 && self.zone_area() > 0.0
     }
 
     fn get_comfort_metrics(&self) -> Vec<ZoneComfortMetrics> {
@@ -903,7 +920,7 @@ impl Clone for HybridThermalModel {
             // We deliberately do NOT `self.hourly_buf.clone()` —
             // cloning the populated buffer would deep-copy the f64
             // values only to drop them on the next `clear()`.
-            hourly_buf: (0..self.inner.num_zones).map(|_| Vec::new()).collect(),
+            hourly_buf: (0..self.inner.hvac.num_zones).map(|_| Vec::new()).collect(),
         }
     }
 }
@@ -1140,7 +1157,7 @@ impl HybridThermalModel {
             surrogate_conduction_calls: self.surrogate_conduction_calls,
             surrogate_ventilation_calls: self.surrogate_ventilation_calls,
             mode: ThermalModelMode::Hybrid,
-            num_zones: self.inner.num_zones,
+            num_zones: self.inner.hvac.num_zones,
             routing: self.routing,
         }
     }
@@ -1148,7 +1165,7 @@ impl HybridThermalModel {
 
 impl ThermalModelTrait for HybridThermalModel {
     fn num_zones(&self) -> usize {
-        self.inner.num_zones
+        self.inner.hvac.num_zones
     }
 
     fn get_temperatures(&self) -> Vec<f64> {
@@ -1156,7 +1173,8 @@ impl ThermalModelTrait for HybridThermalModel {
     }
 
     fn set_temperatures(&mut self, temperatures: &[f64]) {
-        self.inner.temperatures = crate::physics::cta::VectorField::new(temperatures.to_vec());
+        self.inner.setpoints.temperatures =
+            crate::physics::cta::VectorField::new(temperatures.to_vec());
     }
 
     fn mode(&self) -> ThermalModelMode {
@@ -1211,7 +1229,8 @@ impl ThermalModelTrait for HybridThermalModel {
         //      call. `HybridThermalModel::get_hourly_temperatures()` now
         //      reads from `hourly_buf` directly (see the public accessor
         //      below).
-        self.hourly_buf.resize_with(self.inner.num_zones, Vec::new);
+        self.hourly_buf
+            .resize_with(self.inner.hvac.num_zones, Vec::new);
         for inner in self.hourly_buf.iter_mut() {
             inner.clear();
             if inner.capacity() < steps {
@@ -1239,7 +1258,7 @@ impl ThermalModelTrait for HybridThermalModel {
         // is invariant across the run, so we resolve the immutable borrow
         // once here (returns a copied `f64`) to avoid re-borrowing
         // `self.inner` inside the `&mut self` closure body.
-        let zone_area_m2 = self.inner.zone_area.integrate();
+        let zone_area_m2 = self.inner.setpoints.zone_area.integrate();
         let total_energy_kwh: f64 = (0..steps)
             .map(|t| {
                 // Branch 1: surrogate load prediction (only if policy says so).
@@ -1247,7 +1266,7 @@ impl ThermalModelTrait for HybridThermalModel {
                     // Issue #1892: OOD-aware routing — check bounds before surrogate inference.
                     if use_ood_fallback {
                         let ood_result =
-                            surrogates.validate_input_bounds(self.inner.temperatures.as_ref());
+                            surrogates.validate_input_bounds(self.inner.setpoints.temperatures.as_ref());
                         if ood_result.is_ood {
                             // OOD detected — emit warnings and reroute to physics solver.
                             ood_result.log_warnings();
@@ -1266,16 +1285,16 @@ impl ThermalModelTrait for HybridThermalModel {
                             // never errors (it silently falls back to the 1.2 mock
                             // on ONNX failure, matching `predict_loads` semantics),
                             // so the `Err` arm of the previous match disappears.
-                            // The result is installed into `self.inner.loads` via
+                            // The result is installed into `self.inner.setpoints.loads` via
                             // `VectorField::from_slice`, which stores inline in the
                             // SmallVec for ≤ 4 zones (no heap alloc) — covering the
                             // 1-zone and small-multi-zone regimes that drive the
                             // absolute-perf-gate harness.
                             surrogates.predict_loads_into(
-                                self.inner.temperatures.as_ref(),
+                                self.inner.setpoints.temperatures.as_ref(),
                                 &mut self.surrogate_load_scratch,
                             );
-                            self.inner.loads = crate::physics::cta::VectorField::from_slice(
+                            self.inner.setpoints.loads = crate::physics::cta::VectorField::from_slice(
                                 &self.surrogate_load_scratch,
                             );
                             self.surrogate_load_calls += 1;
@@ -1292,10 +1311,10 @@ impl ThermalModelTrait for HybridThermalModel {
                         // away — `predict_loads_into` always succeeds (with a
                         // mock fallback on ONNX failure).
                         surrogates.predict_loads_into(
-                            self.inner.temperatures.as_ref(),
+                            self.inner.setpoints.temperatures.as_ref(),
                             &mut self.surrogate_load_scratch,
                         );
-                        self.inner.loads = crate::physics::cta::VectorField::from_slice(
+                        self.inner.setpoints.loads = crate::physics::cta::VectorField::from_slice(
                             &self.surrogate_load_scratch,
                         );
                         self.surrogate_load_calls += 1;
@@ -1334,8 +1353,7 @@ impl ThermalModelTrait for HybridThermalModel {
                 let mut surrogate_conduction_flux_wm2: f64 = 0.0;
                 if use_surrogate_conduction {
                     let zone_temp = self
-                        .inner
-                        .temperatures
+                        .inner.setpoints.temperatures
                         .as_ref()
                         .first()
                         .copied()
@@ -1388,8 +1406,7 @@ impl ThermalModelTrait for HybridThermalModel {
                 // skipped entirely and the slot is the sole route.
                 if use_surrogate_ventilation {
                     let zone_temp = self
-                        .inner
-                        .temperatures
+                        .inner.setpoints.temperatures
                         .as_ref()
                         .first()
                         .copied()
@@ -1460,12 +1477,12 @@ impl ThermalModelTrait for HybridThermalModel {
                 // Issue #2860 — write directly into the pre-allocated
                 // `hourly_buf` instead of copying temperatures into a fresh
                 // `Vec<f64>` snapshot first. The two borrows are now on
-                // distinct `self` paths (`self.inner.temperatures` is read
-                // immutably; `self.hourly_buf` is written mutably), so no
-                // borrow conflict forces a snapshot copy. The inner Vecs
-                // have capacity ≥ `steps` after warm-up, so the `push` is
-                // zero-alloc on the steady-state hot path.
-                let temps = self.inner.temperatures.as_ref();
+                // distinct `self` paths (`self.inner.setpoints.temperatures`
+                // is read immutably via the nested `setpoints` field; `self.hourly_buf`
+                // is written mutably), so no borrow conflict forces a snapshot copy.
+                // The inner Vecs have capacity ≥ `steps` after warm-up, so the
+                // `push` is zero-alloc on the steady-state hot path.
+                let temps = self.inner.setpoints.temperatures.as_ref();
                 for (zone_idx, &temp) in temps.iter().enumerate() {
                     if let Some(inner) = self.hourly_buf.get_mut(zone_idx) {
                         inner.push(temp);
@@ -1476,7 +1493,7 @@ impl ThermalModelTrait for HybridThermalModel {
             })
             .sum();
 
-        let total_area = self.inner.zone_area.integrate();
+        let total_area = self.inner.setpoints.zone_area.integrate();
         if total_area > 0.0 {
             total_energy_kwh / total_area
         } else {
@@ -1489,25 +1506,25 @@ impl ThermalModelTrait for HybridThermalModel {
     }
 
     fn zone_area(&self) -> f64 {
-        self.inner.zone_area.integrate()
+        self.inner.setpoints.zone_area.integrate()
     }
 
     fn heating_setpoint(&self) -> f64 {
-        self.inner.heating_setpoint
+        self.inner.setpoints.heating_setpoint
     }
 
     fn cooling_setpoint(&self) -> f64 {
-        self.inner.cooling_setpoint
+        self.inner.setpoints.cooling_setpoint
     }
 
     fn hvac_power_demand(&self, timestep: usize, _outdoor_temp: f64) -> f64 {
-        let temps = self.inner.temperatures.as_ref();
+        let temps = self.inner.setpoints.temperatures.as_ref();
         if temps.is_empty() {
             return 0.0;
         }
         let t = temps[0];
-        let heating_sp = self.inner.heating_schedule.value(timestep % 24);
-        let cooling_sp = self.inner.cooling_schedule.value(timestep % 24);
+        let heating_sp = self.inner.setpoints.heating_schedule.value(timestep % 24);
+        let cooling_sp = self.inner.setpoints.cooling_schedule.value(timestep % 24);
 
         if t < heating_sp {
             (heating_sp - t) * 100.0
@@ -1519,7 +1536,7 @@ impl ThermalModelTrait for HybridThermalModel {
     }
 
     fn is_valid(&self) -> bool {
-        self.inner.num_zones > 0 && self.zone_area() > 0.0
+        self.inner.hvac.num_zones > 0 && self.zone_area() > 0.0
     }
 
     fn get_comfort_metrics(&self) -> Vec<ZoneComfortMetrics> {
@@ -1596,7 +1613,7 @@ impl UnifiedThermalModel {
 
 impl ThermalModelTrait for UnifiedThermalModel {
     fn num_zones(&self) -> usize {
-        self.inner.num_zones
+        self.inner.hvac.num_zones
     }
 
     fn get_temperatures(&self) -> Vec<f64> {
@@ -1604,7 +1621,7 @@ impl ThermalModelTrait for UnifiedThermalModel {
     }
 
     fn set_temperatures(&mut self, temperatures: &[f64]) {
-        self.inner.temperatures = VectorField::new(temperatures.to_vec());
+        self.inner.setpoints.temperatures = VectorField::new(temperatures.to_vec());
     }
 
     fn mode(&self) -> ThermalModelMode {
@@ -1632,27 +1649,27 @@ impl ThermalModelTrait for UnifiedThermalModel {
     }
 
     fn zone_area(&self) -> f64 {
-        self.inner.zone_area.integrate()
+        self.inner.setpoints.zone_area.integrate()
     }
 
     fn heating_setpoint(&self) -> f64 {
         // Return heating setpoint (scalar value for single-zone models)
-        self.inner.heating_setpoint
+        self.inner.setpoints.heating_setpoint
     }
 
     fn cooling_setpoint(&self) -> f64 {
         // Return cooling setpoint (scalar value for single-zone models)
-        self.inner.cooling_setpoint
+        self.inner.setpoints.cooling_setpoint
     }
 
     fn hvac_power_demand(&self, timestep: usize, _outdoor_temp: f64) -> f64 {
-        let temps = self.inner.temperatures.as_ref();
+        let temps = self.inner.setpoints.temperatures.as_ref();
         if temps.is_empty() {
             return 0.0;
         }
         let t = temps[0];
-        let heating_sp = self.inner.heating_schedule.value(timestep % 24);
-        let cooling_sp = self.inner.cooling_schedule.value(timestep % 24);
+        let heating_sp = self.inner.setpoints.heating_schedule.value(timestep % 24);
+        let cooling_sp = self.inner.setpoints.cooling_schedule.value(timestep % 24);
 
         if t < heating_sp {
             (heating_sp - t) * 100.0
@@ -1664,7 +1681,7 @@ impl ThermalModelTrait for UnifiedThermalModel {
     }
 
     fn is_valid(&self) -> bool {
-        self.inner.num_zones > 0 && self.zone_area() > 0.0
+        self.inner.hvac.num_zones > 0 && self.zone_area() > 0.0
     }
 
     fn get_comfort_metrics(&self) -> Vec<ZoneComfortMetrics> {

@@ -49,7 +49,7 @@ fn test_case_900_separate_heating_cooling_energy() {
     for step in 0..steps {
         let weather_data = weather.get_hourly_data(step).unwrap();
         // Set weather data on model for solar gain calculation
-        model.weather = Some(weather_data.clone());
+        model.solar.weather = Some(weather_data.clone());
 
         // Run physics step
         model.step_physics(step, weather_data.dry_bulb_temp, 3600.0);

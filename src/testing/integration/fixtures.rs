@@ -123,43 +123,43 @@ impl BuildingScenario {
 
         // Apply window U-value or use default
         let u_value = self.window_u_value.unwrap_or(1.5);
-        model.window_u_value = u_value;
+        model.solar.window_u_value = u_value;
 
         // Apply setpoints or use defaults
         let heating_sp = self.heating_setpoint.unwrap_or(20.0);
         let cooling_sp = self.cooling_setpoint.unwrap_or(26.0);
-        model.heating_setpoint = heating_sp;
-        model.cooling_setpoint = cooling_sp;
+        model.setpoints.heating_setpoint = heating_sp;
+        model.setpoints.cooling_setpoint = cooling_sp;
 
         // Initialize temperatures with sensible defaults
-        model.temperatures = VectorField::from_scalar(heating_sp, self.num_zones);
-        model.mass_temperatures = VectorField::from_scalar(20.0, self.num_zones);
+        model.setpoints.temperatures = VectorField::from_scalar(heating_sp, self.num_zones);
+        model.mass.mass_temperatures = VectorField::from_scalar(20.0, self.num_zones);
 
         // Initialize other required fields
-        model.loads = VectorField::from_scalar(0.0, self.num_zones);
-        model.solar_gains = VectorField::from_scalar(0.0, self.num_zones);
+        model.setpoints.loads = VectorField::from_scalar(0.0, self.num_zones);
+        model.solar.solar_gains = VectorField::from_scalar(0.0, self.num_zones);
 
         // Set default zone area and building parameters
         let zone_area = 100.0; // 100 m² per zone
-        model.zone_area = VectorField::from_scalar(zone_area, self.num_zones);
-        model.ceiling_height = VectorField::from_scalar(3.0, self.num_zones);
-        model.air_density = VectorField::from_scalar(1.2, self.num_zones);
-        model.heat_capacity = VectorField::from_scalar(1005.0, self.num_zones); // J/kg·K for air
-        model.window_ratio = VectorField::from_scalar(0.3, self.num_zones);
-        model.aspect_ratio = VectorField::from_scalar(1.5, self.num_zones);
-        model.infiltration_rate = VectorField::from_scalar(0.5, self.num_zones); // 0.5 ACH
+        model.setpoints.zone_area = VectorField::from_scalar(zone_area, self.num_zones);
+        model.setpoints.ceiling_height = VectorField::from_scalar(3.0, self.num_zones);
+        model.setpoints.air_density = VectorField::from_scalar(1.2, self.num_zones);
+        model.setpoints.heat_capacity = VectorField::from_scalar(1005.0, self.num_zones); // J/kg·K for air
+        model.setpoints.window_ratio = VectorField::from_scalar(0.3, self.num_zones);
+        model.setpoints.aspect_ratio = VectorField::from_scalar(1.5, self.num_zones);
+        model.setpoints.infiltration_rate = VectorField::from_scalar(0.5, self.num_zones); // 0.5 ACH
 
         // Set default building-wide parameters
-        model.wall_u_value = 0.3; // W/m²K
-        model.roof_u_value = 0.25; // W/m²K
-        model.floor_u_value = 0.5; // W/m²K
+        model.setpoints.wall_u_value = 0.3; // W/m²K
+        model.setpoints.roof_u_value = 0.25; // W/m²K
+        model.setpoints.floor_u_value = 0.5; // W/m²K
 
         // Set HVAC capacity limits
-        model.hvac_heating_capacity = zone_area * 100.0; // 100 W/m²
-        model.hvac_cooling_capacity = zone_area * 100.0;
+        model.hvac.hvac_heating_capacity = zone_area * 100.0; // 100 W/m²
+        model.hvac.hvac_cooling_capacity = zone_area * 100.0;
 
         // Set default case ID
-        model.case_id = "test".to_string();
+        model.hvac.case_id = "test".to_string();
 
         // Compute thermal capacitance: air thermal mass + building thermal mass
         // Air thermal mass = volume * density * cp = 300 * 1.2 * 1005 = 361,800 J/K
@@ -167,14 +167,15 @@ impl BuildingScenario {
         let volume = zone_area * 3.0; // 300 m³
         let air_thermal_mass = volume * 1.2 * 1005.0; // J/K
         let total_thermal_mass = air_thermal_mass * 4.0; // Add building thermal mass
-        model.thermal_capacitance = VectorField::from_scalar(total_thermal_mass, self.num_zones);
+        model.mass.thermal_capacitance =
+            VectorField::from_scalar(total_thermal_mass, self.num_zones);
 
         // Initialize h_tr_ms (surface-to-mass conductance) - required for 5R1C model
         // h_tr_ms = 6.83 W/m²K * wall_area for typical construction
         let perimeter = 2.0 * ((zone_area * 1.5).sqrt() + (zone_area / (zone_area * 1.5).sqrt()));
         let wall_area = perimeter * 3.0 - zone_area * 0.3; // Approximate wall area minus windows
         let h_tr_ms = 6.83 * wall_area; // W/K
-        model.h_tr_ms = VectorField::from_scalar(h_tr_ms, self.num_zones);
+        model.conduction.h_tr_ms = VectorField::from_scalar(h_tr_ms, self.num_zones);
 
         // Update derived physics parameters
         model.update_derived_parameters();
@@ -349,10 +350,10 @@ mod tests {
         let scenario = BuildingScenario::new().build().unwrap();
         let model = scenario.create_model();
 
-        assert_eq!(model.window_u_value, 1.5);
-        assert_eq!(model.heating_setpoint, 20.0);
-        assert_eq!(model.cooling_setpoint, 26.0);
-        assert_eq!(model.case_id, "test");
+        assert_eq!(model.solar.window_u_value, 1.5);
+        assert_eq!(model.setpoints.heating_setpoint, 20.0);
+        assert_eq!(model.setpoints.cooling_setpoint, 26.0);
+        assert_eq!(model.hvac.case_id, "test");
     }
 
     #[test]
@@ -367,9 +368,9 @@ mod tests {
 
         let model = scenario.create_model();
 
-        assert_eq!(model.window_u_value, 2.0);
-        assert_eq!(model.heating_setpoint, 18.0);
-        assert_eq!(model.cooling_setpoint, 24.0);
+        assert_eq!(model.solar.window_u_value, 2.0);
+        assert_eq!(model.setpoints.heating_setpoint, 18.0);
+        assert_eq!(model.setpoints.cooling_setpoint, 24.0);
     }
 
     #[test]
@@ -382,9 +383,9 @@ mod tests {
 
         let model = scenario.create_model();
 
-        assert_eq!(model.temperatures.len(), 3);
-        assert_eq!(model.mass_temperatures.len(), 3);
-        assert_eq!(model.zone_area.len(), 3);
+        assert_eq!(model.setpoints.temperatures.len(), 3);
+        assert_eq!(model.mass.mass_temperatures.len(), 3);
+        assert_eq!(model.setpoints.zone_area.len(), 3);
     }
 
     #[test]

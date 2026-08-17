@@ -114,7 +114,7 @@ fn simulate_case_900() -> (f64, f64, f64, f64) {
     // using the same (single) EPW source as the annual loop.
     for step in 0..warmup_steps {
         let weather_data = weather.get_hourly_data(step).unwrap();
-        model.weather = Some(weather_data.clone());
+        model.solar.weather = Some(weather_data.clone());
         model.step_physics(step, weather_data.dry_bulb_temp, 3600.0);
     }
 
@@ -143,10 +143,11 @@ fn simulate_case_900() -> (f64, f64, f64, f64) {
     for step in warmup_steps..warmup_steps + steps {
         let weather_data = weather.get_hourly_data(step % 8760).unwrap();
         // Set weather data on model for solar gain calculation
-        model.weather = Some(weather_data.clone());
+        model.solar.weather = Some(weather_data.clone());
 
         // Get zone temperature before HVAC
         let zone_temp_before = model
+            .setpoints
             .temperatures
             .as_slice()
             .first()
@@ -160,42 +161,68 @@ fn simulate_case_900() -> (f64, f64, f64, f64) {
         // Print config on first step
         if step == warmup_steps {
             println!("=== Model Config ===");
-            println!("thermal_model_type: {:?}", model.thermal_model_type);
-            println!("heating_setpoint: {:.1}", model.heating_setpoint);
-            println!("cooling_setpoint: {:.1}", model.cooling_setpoint);
+            println!("thermal_model_type: {:?}", model.hvac.thermal_model_type);
+            println!("heating_setpoint: {:.1}", model.setpoints.heating_setpoint);
+            println!("cooling_setpoint: {:.1}", model.setpoints.cooling_setpoint);
             println!(
                 "hvac_heating_capacity: {:.0} kW",
-                model.hvac_heating_capacity / 1000.0
+                model.hvac.hvac_heating_capacity / 1000.0
             );
             println!(
                 "zone_area: {:.1} m²",
-                model.zone_area.as_slice().first().copied().unwrap_or(0.0)
+                model
+                    .setpoints
+                    .zone_area
+                    .as_slice()
+                    .first()
+                    .copied()
+                    .unwrap_or(0.0)
             );
             println!(
                 "h_tr_is: {:.2} W/K",
-                model.h_tr_is.as_slice().first().copied().unwrap_or(0.0)
+                model
+                    .conduction
+                    .h_tr_is
+                    .as_slice()
+                    .first()
+                    .copied()
+                    .unwrap_or(0.0)
             );
             println!(
                 "h_ve: {:.2} W/K",
-                model.h_ve.as_slice().first().copied().unwrap_or(0.0)
+                model
+                    .conduction
+                    .h_ve
+                    .as_slice()
+                    .first()
+                    .copied()
+                    .unwrap_or(0.0)
             );
         }
 
         // Print detailed HVAC info on day 14
         if step == warmup_steps + 1 {
             let term_rest_1 = model
+                .conduction
                 .derived_term_rest_1
                 .as_slice()
                 .first()
                 .copied()
                 .unwrap_or(0.0);
-            let den = model.derived_den.as_slice().first().copied().unwrap_or(0.0);
+            let den = model
+                .conduction
+                .derived_den
+                .as_slice()
+                .first()
+                .copied()
+                .unwrap_or(0.0);
             let h_coeff = if term_rest_1 > 0.0 {
                 den / (2.0 * term_rest_1)
             } else {
                 0.0
             };
             let t_free_val = model
+                .setpoints
                 .temperatures
                 .as_slice()
                 .first()
@@ -206,10 +233,10 @@ fn simulate_case_900() -> (f64, f64, f64, f64) {
             println!("den: {:.4}", den);
             println!("h_coeff: {:.4}", h_coeff);
             println!("t_free_val: {:.2}", t_free_val);
-            println!("heating_setpoint: {:.1}", model.heating_setpoint);
+            println!("heating_setpoint: {:.1}", model.setpoints.heating_setpoint);
             println!(
                 "q_needed: {:.4}",
-                h_coeff * (model.heating_setpoint - t_free_val)
+                h_coeff * (model.setpoints.heating_setpoint - t_free_val)
             );
         }
 
@@ -220,13 +247,25 @@ fn simulate_case_900() -> (f64, f64, f64, f64) {
                 step / 24,
                 energy_kwh,
                 zone_temp_before,
-                model.mass_energy_change_cumulative
+                model.mass.mass_energy_change_cumulative
             );
         }
 
         // Track solar gains for diagnostics
-        let solar_gain_watts = model.solar_gains.as_slice().first().copied().unwrap_or(0.0)
-            * model.zone_area.as_slice().first().copied().unwrap_or(1.0);
+        let solar_gain_watts = model
+            .solar
+            .solar_gains
+            .as_slice()
+            .first()
+            .copied()
+            .unwrap_or(0.0)
+            * model
+                .setpoints
+                .zone_area
+                .as_slice()
+                .first()
+                .copied()
+                .unwrap_or(1.0);
         total_solar_gain += solar_gain_watts; // This is in Watts, will convert to MWh later
         peak_solar_gain = peak_solar_gain.max(solar_gain_watts);
 
@@ -238,7 +277,7 @@ fn simulate_case_900() -> (f64, f64, f64, f64) {
         }
 
         // Track zone temperatures for diagnostics
-        if let Some(&zone_temp) = model.temperatures.as_slice().first() {
+        if let Some(&zone_temp) = model.setpoints.temperatures.as_slice().first() {
             min_zone_temp = min_zone_temp.min(zone_temp);
             max_zone_temp = max_zone_temp.max(zone_temp);
             if (6..=8).contains(&month) {
@@ -276,12 +315,12 @@ fn simulate_case_900() -> (f64, f64, f64, f64) {
     );
     println!("Summer hours tracked: {}", summer_hours);
     println!("=== HVAC Energy Diagnostics (Plan 03-04) ===");
-    println!("Thermal model type: {:?}", model.thermal_model_type);
+    println!("Thermal model type: {:?}", model.hvac.thermal_model_type);
     println!("Method: hvac_output_raw used directly (no thermal_mass_correction_factor)");
     println!("Reason: Ti_free already includes thermal mass effects via 5R1C network");
     println!(
         "Mass energy change cumulative: {:.2} Wh",
-        model.mass_energy_change_cumulative
+        model.mass.mass_energy_change_cumulative
     );
     println!("=== Zone Temperature Diagnostics ===");
     println!("Min zone temp: {:.2}°C", min_zone_temp);
@@ -291,8 +330,8 @@ fn simulate_case_900() -> (f64, f64, f64, f64) {
 
     // Return model's internal accumulated values (which include correction factors)
     // These are in kWh, so convert back to Joules for test compatibility
-    let corrected_heating_j = model.annual_heating_energy * 3.6e6;
-    let corrected_cooling_j = model.annual_cooling_energy * 3.6e6;
+    let corrected_heating_j = model.hvac.annual_heating_energy * 3.6e6;
+    let corrected_cooling_j = model.hvac.annual_cooling_energy * 3.6e6;
 
     // Use corrected values only for Case 900 (specific calibration)
     // Other cases use manually tracked values
@@ -327,11 +366,11 @@ fn simulate_case_900ff() -> (f64, f64, f64) {
     for _step in 0..steps {
         let weather_data = weather.get_hourly_data(_step).unwrap();
         // Set weather data on model for solar gain calculation
-        model.weather = Some(weather_data.clone());
+        model.solar.weather = Some(weather_data.clone());
         model.step_physics(_step, weather_data.dry_bulb_temp, 3600.0);
 
         // Get current zone temperature
-        if let Some(&zone_temp) = model.temperatures.as_slice().first() {
+        if let Some(&zone_temp) = model.setpoints.temperatures.as_slice().first() {
             min_temp = min_temp.min(zone_temp);
             max_temp = max_temp.max(zone_temp);
             sum_temp += zone_temp;
@@ -415,11 +454,11 @@ fn test_case_900_peak_heating_within_reference_range() {
     // Simulate to populate model peak tracking
     for step in 0..8760 {
         let weather_data = weather.get_hourly_data(step).unwrap();
-        model.weather = Some(weather_data.clone());
+        model.solar.weather = Some(weather_data.clone());
         model.step_physics(step, weather_data.dry_bulb_temp, 3600.0);
     }
 
-    let model_peak_heating_kw = model.peak_power_heating / 1000.0;
+    let model_peak_heating_kw = model.hvac.peak_power_heating / 1000.0;
 
     let (ref_min, ref_max) = CASE_900_REFERENCE.peak_heating;
     let tolerance = (ref_max - ref_min) * PEAK_LOAD_TOLERANCE;
@@ -464,11 +503,11 @@ fn test_case_900_peak_cooling_within_reference_range() {
     // Simulate to populate model peak tracking
     for step in 0..8760 {
         let weather_data = weather.get_hourly_data(step).unwrap();
-        model.weather = Some(weather_data.clone());
+        model.solar.weather = Some(weather_data.clone());
         model.step_physics(step, weather_data.dry_bulb_temp, 3600.0);
     }
 
-    let model_peak_cooling_kw = model.peak_power_cooling / 1000.0;
+    let model_peak_cooling_kw = model.hvac.peak_power_cooling / 1000.0;
 
     let (ref_min, ref_max) = CASE_900_REFERENCE.peak_cooling;
     let tolerance = (ref_max - ref_min) * PEAK_LOAD_TOLERANCE;
@@ -573,10 +612,10 @@ fn test_case_900ff_temperature_swing_reduction() {
 
     for step in 0..8760 {
         let weather_data = weather.get_hourly_data(step).unwrap();
-        model_600.weather = Some(weather_data.clone());
+        model_600.solar.weather = Some(weather_data.clone());
         model_600.step_physics(step, weather_data.dry_bulb_temp, 3600.0);
 
-        if let Some(&zone_temp) = model_600.temperatures.as_slice().first() {
+        if let Some(&zone_temp) = model_600.setpoints.temperatures.as_slice().first() {
             min_temp_600 = min_temp_600.min(zone_temp);
             max_temp_600 = max_temp_600.max(zone_temp);
         }
@@ -643,19 +682,19 @@ fn test_case_900_annual_cooling_energy_with_correction() {
 
     for step in 0..steps {
         let weather_data = weather.get_hourly_data(step).unwrap();
-        model.weather = Some(weather_data.clone());
+        model.solar.weather = Some(weather_data.clone());
 
         model.step_physics(step, weather_data.dry_bulb_temp, 3600.0);
     }
 
     // Use model's internal corrected cooling energy (includes 6R2C correction factors)
     // annual_cooling_energy is in kWh, convert to MWh by dividing by 1000
-    let cooling_mwh = model.annual_cooling_energy / 1000.0;
+    let cooling_mwh = model.hvac.annual_cooling_energy / 1000.0;
 
     println!("=== Final HVAC Energy Calculation (Plan 03-04) ===");
     println!("Annual cooling energy: {:.2} MWh", cooling_mwh);
     println!("Reference range: [2.13, 3.67] MWh");
-    println!("Method: model.annual_cooling_energy");
+    println!("Method: model.hvac.annual_cooling_energy");
 
     // Verify annual cooling energy is within reference range
     assert!(
@@ -679,14 +718,14 @@ fn test_case_900_thermal_mass_energy_balance() {
 
     for step in 0..steps {
         let weather_data = weather.get_hourly_data(step).unwrap();
-        model.weather = Some(weather_data.clone());
+        model.solar.weather = Some(weather_data.clone());
         model.step_physics(step, weather_data.dry_bulb_temp, 3600.0);
     }
 
     // Verify cumulative thermal mass energy change is approximately zero
-    let cumulative_mass_energy_change = model.mass_energy_change_cumulative;
-    let initial_mass_temp = model.mass_temperatures[0];
-    let final_mass_temp = model.previous_mass_temperatures[0];
+    let cumulative_mass_energy_change = model.mass.mass_energy_change_cumulative;
+    let initial_mass_temp = model.mass.mass_temperatures[0];
+    let final_mass_temp = model.mass.previous_mass_temperatures[0];
 
     println!("=== Thermal Mass Energy Balance ===");
     println!(
@@ -772,34 +811,64 @@ fn test_case_900ff_thermal_mass_coupling_parameters() {
     let model = ThermalModel::from_spec(&spec);
 
     println!("=== Case 900FF Thermal Mass Coupling Parameters ===");
-    println!("Number of zones: {}", model.num_zones);
+    println!("Number of zones: {}", model.hvac.num_zones);
     println!();
 
     // Check thermal capacitance (Cm)
     println!("Thermal capacitance (Cm):");
     let cm_avg = model
+        .mass
         .thermal_capacitance
         .as_ref()
         .to_vec()
         .iter()
         .sum::<f64>()
-        / model.num_zones as f64;
+        / model.hvac.num_zones as f64;
     println!("  Average: {:.0} J/K", cm_avg);
     println!();
 
     // Check coupling conductances
     println!("Coupling conductances:");
-    let h_tr_em_avg = model.h_tr_em.as_ref().to_vec().iter().sum::<f64>() / model.num_zones as f64;
-    let h_tr_ms_avg = model.h_tr_ms.as_ref().to_vec().iter().sum::<f64>() / model.num_zones as f64;
+    let h_tr_em_avg = model
+        .conduction
+        .h_tr_em
+        .as_ref()
+        .to_vec()
+        .iter()
+        .sum::<f64>()
+        / model.hvac.num_zones as f64;
+    let h_tr_ms_avg = model
+        .conduction
+        .h_tr_ms
+        .as_ref()
+        .to_vec()
+        .iter()
+        .sum::<f64>()
+        / model.hvac.num_zones as f64;
     println!("  Average h_tr_em: {:.2} W/K", h_tr_em_avg);
     println!("  Average h_tr_ms: {:.2} W/K", h_tr_ms_avg);
     println!();
 
     // Check other 5R1C parameters
     println!("Other 5R1C parameters:");
-    let h_tr_is_avg = model.h_tr_is.as_ref().to_vec().iter().sum::<f64>() / model.num_zones as f64;
-    let h_tr_w_avg = model.h_tr_w.as_ref().to_vec().iter().sum::<f64>() / model.num_zones as f64;
-    let h_ve_avg = model.h_ve.as_ref().to_vec().iter().sum::<f64>() / model.num_zones as f64;
+    let h_tr_is_avg = model
+        .conduction
+        .h_tr_is
+        .as_ref()
+        .to_vec()
+        .iter()
+        .sum::<f64>()
+        / model.hvac.num_zones as f64;
+    let h_tr_w_avg = model
+        .conduction
+        .h_tr_w
+        .as_ref()
+        .to_vec()
+        .iter()
+        .sum::<f64>()
+        / model.hvac.num_zones as f64;
+    let h_ve_avg =
+        model.conduction.h_ve.as_ref().to_vec().iter().sum::<f64>() / model.hvac.num_zones as f64;
     println!("  Average h_tr_is: {:.2} W/K", h_tr_is_avg);
     println!("  Average h_tr_w: {:.2} W/K", h_tr_w_avg);
     println!("  Average h_ve: {:.2} W/K", h_ve_avg);
@@ -809,11 +878,11 @@ fn test_case_900ff_thermal_mass_coupling_parameters() {
     println!("Solar distribution:");
     println!(
         "  solar_beam_to_mass_fraction: {:.2}",
-        model.solar_beam_to_mass_fraction
+        model.solar.solar_beam_to_mass_fraction
     );
     println!(
         "  solar_distribution_to_air: {:.2}",
-        model.solar_distribution_to_air
+        model.solar.solar_distribution_to_air
     );
     println!();
 
@@ -898,27 +967,27 @@ fn test_case_900_solar_gain_distribution_validation() {
     println!("Case 900 Solar Distribution Parameters:");
     println!(
         "  solar_beam_to_mass_fraction: {:.2}",
-        model.solar_beam_to_mass_fraction
+        model.solar.solar_beam_to_mass_fraction
     );
     println!(
         "  solar_distribution_to_air: {:.2}",
-        model.solar_distribution_to_air
+        model.solar.solar_distribution_to_air
     );
     println!();
 
     // Validate solar_beam_to_mass_fraction (actual model value)
     // Note: The model calculates 0.39 based on view factor calculations
     // This is an internal parameter, not an ASHRAE reference value
-    let expected_beam_to_mass = model.solar_beam_to_mass_fraction; // Use actual value
+    let expected_beam_to_mass = model.solar.solar_beam_to_mass_fraction; // Use actual value
     assert!(
-        (model.solar_beam_to_mass_fraction - expected_beam_to_mass).abs() < 0.01,
+        (model.solar.solar_beam_to_mass_fraction - expected_beam_to_mass).abs() < 0.01,
         "solar_beam_to_mass_fraction should be {:.2}, got {:.2}",
         expected_beam_to_mass,
-        model.solar_beam_to_mass_fraction
+        model.solar.solar_beam_to_mass_fraction
     );
     println!(
         "✅ solar_beam_to_mass_fraction = {:.2} (expected: {:.2})",
-        model.solar_beam_to_mass_fraction, expected_beam_to_mass
+        model.solar.solar_beam_to_mass_fraction, expected_beam_to_mass
     );
     println!("   → 70% of beam solar goes to thermal mass exterior");
     println!("   → 30% of beam solar goes to thermal mass interior");
@@ -927,16 +996,16 @@ fn test_case_900_solar_gain_distribution_validation() {
     // Validate solar_distribution_to_air (actual model value)
     // Note: The model calculates 0.34 based on window fraction and orientation
     // This is an internal parameter, not an ASHRAE reference value
-    let expected_dist_to_air = model.solar_distribution_to_air;
+    let expected_dist_to_air = model.solar.solar_distribution_to_air;
     assert!(
-        (model.solar_distribution_to_air - expected_dist_to_air).abs() < 0.01,
+        (model.solar.solar_distribution_to_air - expected_dist_to_air).abs() < 0.01,
         "solar_distribution_to_air should be {:.2}, got {:.2}",
         expected_dist_to_air,
-        model.solar_distribution_to_air
+        model.solar.solar_distribution_to_air
     );
     println!(
         "✅ solar_distribution_to_air = {:.2} (expected: {:.2})",
-        model.solar_distribution_to_air, expected_dist_to_air
+        model.solar.solar_distribution_to_air, expected_dist_to_air
     );
     println!("   → Solar gains do NOT go directly to air");
     println!("   → All solar gains go to mass/surface via distribution parameters");
@@ -978,8 +1047,8 @@ fn test_case_900_hvac_demand_calculation_analysis() {
     let mut cooling_hours = 0_usize;
     let mut off_hours = 0_usize;
 
-    let heating_setpoint = model.heating_setpoints.as_ref()[0];
-    let cooling_setpoint = model.cooling_setpoints.as_ref()[0];
+    let heating_setpoint = model.setpoints.heating_setpoints.as_ref()[0];
+    let cooling_setpoint = model.setpoints.cooling_setpoints.as_ref()[0];
 
     println!("=== HVAC Demand Calculation Analysis (Plan 03-07 Task 1) ===");
     println!("Heating setpoint: {:.1}°C", heating_setpoint);
@@ -993,7 +1062,7 @@ fn test_case_900_hvac_demand_calculation_analysis() {
     // Run simulation and analyze HVAC demand
     for step in 0..8760 {
         let weather_data = weather.get_hourly_data(step).unwrap();
-        model.weather = Some(weather_data.clone());
+        model.solar.weather = Some(weather_data.clone());
 
         // Get Ti_free (free-floating temperature before HVAC)
         // We need to compute this to check if demand is calculated correctly
@@ -1053,8 +1122,8 @@ fn test_case_900_hvac_demand_calculation_analysis() {
     println!();
 
     // Check for over-estimation indicators
-    let heating_capacity = model.hvac_heating_capacity.min(2100.0); // From Plan 03-05
-    let cooling_capacity = model.hvac_cooling_capacity;
+    let heating_capacity = model.hvac.hvac_heating_capacity.min(2100.0); // From Plan 03-05
+    let cooling_capacity = model.hvac.hvac_cooling_capacity;
 
     println!("Capacity Constraints:");
     println!("  Heating capacity: {:.0} W", heating_capacity);
@@ -1112,17 +1181,17 @@ fn test_case_900ff_solar_beam_to_mass_fraction_sweep() {
 
     for &frac in &fractions_to_test {
         let mut model = ThermalModel::<VectorField>::from_spec(&ASHRAE140Case::Case900FF.spec());
-        model.solar_beam_to_mass_fraction = frac;
+        model.solar.solar_beam_to_mass_fraction = frac;
 
         let mut min_temp = f64::MAX;
         let mut max_temp = f64::MIN;
 
         for step in 0..8760 {
             let weather_data = weather.get_hourly_data(step).unwrap();
-            model.weather = Some(weather_data.clone());
+            model.solar.weather = Some(weather_data.clone());
             model.step_physics(step, weather_data.dry_bulb_temp, 3600.0);
 
-            if let Some(&zone_temp) = model.temperatures.as_slice().first() {
+            if let Some(&zone_temp) = model.setpoints.temperatures.as_slice().first() {
                 min_temp = min_temp.min(zone_temp);
                 max_temp = max_temp.max(zone_temp);
             }
@@ -1211,9 +1280,9 @@ fn test_case_600ff_vs_900ff_paired_comparison() {
     let mut max_600 = f64::MIN;
     for step in 0..8760 {
         let weather_data = weather.get_hourly_data(step).unwrap();
-        model_600.weather = Some(weather_data.clone());
+        model_600.solar.weather = Some(weather_data.clone());
         model_600.step_physics(step, weather_data.dry_bulb_temp, 3600.0);
-        if let Some(&zone_temp) = model_600.temperatures.as_slice().first() {
+        if let Some(&zone_temp) = model_600.setpoints.temperatures.as_slice().first() {
             min_600 = min_600.min(zone_temp);
             max_600 = max_600.max(zone_temp);
         }
@@ -1225,9 +1294,9 @@ fn test_case_600ff_vs_900ff_paired_comparison() {
     let mut max_900 = f64::MIN;
     for step in 0..8760 {
         let weather_data = weather.get_hourly_data(step).unwrap();
-        model_900.weather = Some(weather_data.clone());
+        model_900.solar.weather = Some(weather_data.clone());
         model_900.step_physics(step, weather_data.dry_bulb_temp, 3600.0);
-        if let Some(&zone_temp) = model_900.temperatures.as_slice().first() {
+        if let Some(&zone_temp) = model_900.setpoints.temperatures.as_slice().first() {
             min_900 = min_900.min(zone_temp);
             max_900 = max_900.max(zone_temp);
         }
@@ -1274,11 +1343,11 @@ fn test_case_600ff_vs_900ff_paired_comparison() {
     println!("\n=== Parameter Difference ===");
     println!(
         "600FF: solar_beam_to_mass_fraction={:.2}, solar_distribution_to_air={:.2}",
-        model_600.solar_beam_to_mass_fraction, model_600.solar_distribution_to_air
+        model_600.solar.solar_beam_to_mass_fraction, model_600.solar.solar_distribution_to_air
     );
     println!(
         "900FF: solar_beam_to_mass_fraction={:.2}, solar_distribution_to_air={:.2}",
-        model_900.solar_beam_to_mass_fraction, model_900.solar_distribution_to_air
+        model_900.solar.solar_beam_to_mass_fraction, model_900.solar.solar_distribution_to_air
     );
 
     println!("\n=== Resolution ===");
@@ -1362,10 +1431,10 @@ fn test_900_series_regression() {
 
             for step in 0..8760 {
                 let weather_data = weather.get_hourly_data(step).unwrap();
-                model.weather = Some(weather_data.clone());
+                model.solar.weather = Some(weather_data.clone());
                 model.step_physics(step, weather_data.dry_bulb_temp, 3600.0);
 
-                if let Some(&zone_temp) = model.temperatures.as_slice().first() {
+                if let Some(&zone_temp) = model.setpoints.temperatures.as_slice().first() {
                     min_temp = min_temp.min(zone_temp);
                     max_temp = max_temp.max(zone_temp);
                 }
@@ -1405,9 +1474,10 @@ fn test_900_series_regression() {
 
             for step in 0..8760 {
                 let weather_data = weather.get_hourly_data(step).unwrap();
-                model.weather = Some(weather_data.clone());
+                model.solar.weather = Some(weather_data.clone());
 
                 let _zone_temp_before = model
+                    .setpoints
                     .temperatures
                     .as_slice()
                     .first()
@@ -1418,11 +1488,11 @@ fn test_900_series_regression() {
                 let energy_joules = energy_kwh * 3.6e6; // Convert kWh to Joules
 
                 // Track heating and cooling separately
-                if energy_kwh > 0.0 || _zone_temp_before < model.heating_setpoint {
+                if energy_kwh > 0.0 || _zone_temp_before < model.setpoints.heating_setpoint {
                     total_heating += energy_joules;
                     let power_watts = energy_joules / 3600.0;
                     peak_heating = peak_heating.max(power_watts);
-                } else if energy_kwh < 0.0 || _zone_temp_before > model.cooling_setpoint {
+                } else if energy_kwh < 0.0 || _zone_temp_before > model.setpoints.cooling_setpoint {
                     total_cooling += -energy_joules;
                     let power_watts = -energy_joules / 3600.0;
                     peak_cooling = peak_cooling.max(power_watts);

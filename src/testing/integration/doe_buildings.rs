@@ -125,41 +125,47 @@ impl DoeBuildingConfig {
         let mut model = ThermalModel::new(self.num_zones);
 
         // Zone properties
-        model.zone_area = VectorField::from_scalar(self.zone_area_m2, self.num_zones);
-        model.ceiling_height = VectorField::from_scalar(self.ceiling_height_m, self.num_zones);
-        model.window_ratio = VectorField::from_scalar(self.window_to_wall_ratio, self.num_zones);
-        model.aspect_ratio = VectorField::from_scalar(1.5, self.num_zones);
-        model.infiltration_rate =
+        model.setpoints.zone_area = VectorField::from_scalar(self.zone_area_m2, self.num_zones);
+        model.setpoints.ceiling_height =
+            VectorField::from_scalar(self.ceiling_height_m, self.num_zones);
+        model.setpoints.window_ratio =
+            VectorField::from_scalar(self.window_to_wall_ratio, self.num_zones);
+        model.setpoints.aspect_ratio = VectorField::from_scalar(1.5, self.num_zones);
+        model.setpoints.infiltration_rate =
             VectorField::from_scalar(self.infiltration_rate_ach, self.num_zones);
 
         // Building envelope
-        model.wall_u_value = self.wall_u_value_w_m2k;
-        model.roof_u_value = self.roof_u_value_w_m2k;
-        model.window_u_value = self.window_u_value_w_m2k;
+        model.setpoints.wall_u_value = self.wall_u_value_w_m2k;
+        model.setpoints.roof_u_value = self.roof_u_value_w_m2k;
+        model.solar.window_u_value = self.window_u_value_w_m2k;
 
         // Setpoints
-        model.heating_setpoint = self.heating_setpoint_c;
-        model.cooling_setpoint = self.cooling_setpoint_c;
-        model.heating_setpoints = VectorField::from_scalar(self.heating_setpoint_c, self.num_zones);
-        model.cooling_setpoints = VectorField::from_scalar(self.cooling_setpoint_c, self.num_zones);
+        model.setpoints.heating_setpoint = self.heating_setpoint_c;
+        model.setpoints.cooling_setpoint = self.cooling_setpoint_c;
+        model.setpoints.heating_setpoints =
+            VectorField::from_scalar(self.heating_setpoint_c, self.num_zones);
+        model.setpoints.cooling_setpoints =
+            VectorField::from_scalar(self.cooling_setpoint_c, self.num_zones);
 
         // HVAC capacities
         let total_capacity = self.total_floor_area_m2 * self.hvac_heating_capacity_w_m2;
-        model.hvac_heating_capacity = total_capacity;
-        model.hvac_cooling_capacity = total_capacity;
+        model.hvac.hvac_heating_capacity = total_capacity;
+        model.hvac.hvac_cooling_capacity = total_capacity;
 
         // Air properties
-        model.air_density = VectorField::from_scalar(1.2, self.num_zones);
-        model.heat_capacity = VectorField::from_scalar(1005.0, self.num_zones);
+        model.setpoints.air_density = VectorField::from_scalar(1.2, self.num_zones);
+        model.setpoints.heat_capacity = VectorField::from_scalar(1005.0, self.num_zones);
 
         // Initial temperatures
-        model.temperatures = VectorField::from_scalar(self.heating_setpoint_c, self.num_zones);
-        model.mass_temperatures = VectorField::from_scalar(self.heating_setpoint_c, self.num_zones);
+        model.setpoints.temperatures =
+            VectorField::from_scalar(self.heating_setpoint_c, self.num_zones);
+        model.mass.mass_temperatures =
+            VectorField::from_scalar(self.heating_setpoint_c, self.num_zones);
 
         // Internal loads
-        model.loads =
+        model.setpoints.loads =
             VectorField::from_scalar(self.internal_loads_w_m2 * self.zone_area_m2, self.num_zones);
-        model.solar_gains = VectorField::from_scalar(0.0, self.num_zones);
+        model.solar.solar_gains = VectorField::from_scalar(0.0, self.num_zones);
 
         // Case ID
         let name = match self.building_type {
@@ -167,7 +173,7 @@ impl DoeBuildingConfig {
             DoeBuildingType::MediumOffice => "DOE_MediumOffice",
             DoeBuildingType::StandaloneRetail => "DOE_RetailStandalone",
         };
-        model.case_id = name.to_string();
+        model.hvac.case_id = name.to_string();
 
         model
     }
@@ -242,9 +248,9 @@ mod tests {
     fn test_small_office_creates_valid_model() {
         let config = DoeBuildingConfig::small_office();
         let model = config.create_model();
-        assert_eq!(model.case_id, "DOE_SmallOffice");
-        assert!(model.heating_setpoint > 0.0);
-        assert!(model.cooling_setpoint > model.heating_setpoint);
+        assert_eq!(model.hvac.case_id, "DOE_SmallOffice");
+        assert!(model.setpoints.heating_setpoint > 0.0);
+        assert!(model.setpoints.cooling_setpoint > model.setpoints.heating_setpoint);
     }
 
     #[test]
@@ -258,25 +264,25 @@ mod tests {
         for config in configs {
             let model = config.create_model();
             assert!(
-                model.window_u_value > 0.0,
+                model.solar.window_u_value > 0.0,
                 "{}: window_u_value should be positive",
-                model.case_id
+                model.hvac.case_id
             );
             assert!(
-                model.heating_setpoint > 0.0,
+                model.setpoints.heating_setpoint > 0.0,
                 "{}: heating_setpoint should be positive",
-                model.case_id
+                model.hvac.case_id
             );
             assert!(
-                model.cooling_setpoint > model.heating_setpoint,
+                model.setpoints.cooling_setpoint > model.setpoints.heating_setpoint,
                 "{}: cooling_setpoint should be > heating_setpoint",
-                model.case_id
+                model.hvac.case_id
             );
             assert_eq!(
-                model.temperatures.len(),
+                model.setpoints.temperatures.len(),
                 config.num_zones,
                 "{}: temperatures should have num_zones length",
-                model.case_id
+                model.hvac.case_id
             );
         }
     }

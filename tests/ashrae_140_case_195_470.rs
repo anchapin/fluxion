@@ -51,7 +51,7 @@ fn test_case_196_lighting_diagnostics() {
     );
 
     // Verify model has proper configuration
-    assert_eq!(model.num_zones, 1, "Model should have 1 zone");
+    assert_eq!(model.hvac.num_zones, 1, "Model should have 1 zone");
     assert_eq!(spec.case_id, "196");
 }
 

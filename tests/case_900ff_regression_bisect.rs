@@ -38,7 +38,7 @@
 //! The validator uses `EpwWeatherSource::from_file(USA_CO_Denver-Stapleton...)`
 //! rather than the synthetic `DenverTmyWeather` used by most other tests, so
 //! this test loads the same EPW file and exercises the production
-//! `step_physics` path with `model.heating_setpoint = -999.0` /
+//! `step_physics` path with `model.setpoints.heating_setpoint = -999.0` /
 //! `cooling_setpoint = 999.0` (free-floating mode). The captured night
 //! minimum is logged; an assertion confirms it is within 1.6 °C of the lower
 //! reference band edge (-8.0 °C = -6.40 - 1.6) — the issue body's proposed
@@ -63,10 +63,10 @@ fn test_case_900ff_night_minimum_within_reference_band() {
     let mut model = ThermalModel::<VectorField>::from_spec(&spec);
 
     // Free-floating mode — matches the ASHRAE 140 validator path
-    model.heating_setpoint = -999.0;
-    model.cooling_setpoint = 999.0;
-    model.hvac_heating_capacity = 0.0;
-    model.hvac_cooling_capacity = 0.0;
+    model.setpoints.heating_setpoint = -999.0;
+    model.setpoints.cooling_setpoint = 999.0;
+    model.hvac.hvac_heating_capacity = 0.0;
+    model.hvac.hvac_cooling_capacity = 0.0;
 
     let weather = EpwWeatherSource::from_file(EPW_PATH)
         .expect("Failed to load Denver TMY EPW file required by this test");
@@ -82,10 +82,10 @@ fn test_case_900ff_night_minimum_within_reference_band() {
 
     for step in 0..8760 {
         let weather_data = weather.get_hourly_data(step).unwrap();
-        model.weather = Some(weather_data.clone());
+        model.solar.weather = Some(weather_data.clone());
         model.step_physics(step, weather_data.dry_bulb_temp, 3600.0);
 
-        if let Some(&zone_temp) = model.temperatures.as_slice().first() {
+        if let Some(&zone_temp) = model.setpoints.temperatures.as_slice().first() {
             if zone_temp < min_temp {
                 min_temp = zone_temp;
                 step_of_min = step;
@@ -98,7 +98,7 @@ fn test_case_900ff_night_minimum_within_reference_band() {
     }
 
     println!("\n=== Case 900FF Bisect (Issue #2455) ===");
-    println!("Thermal model  : {:?}", model.thermal_model_type);
+    println!("Thermal model  : {:?}", model.hvac.thermal_model_type);
     println!("Night minimum  : {min_temp:.2} °C (at step {step_of_min})");
     println!("Outdoor at min : {min_outdoor_at_step:.2} °C");
     println!("Max temperature: {max_temp:.2} °C");

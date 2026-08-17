@@ -433,7 +433,7 @@ impl BatchRunner {
         let peak_heating_kw = model.get_peak_heating_power_kw();
         let peak_cooling_kw = model.get_peak_cooling_power_kw();
         let zone_temps = model.get_temperatures();
-        let zone_area = model.zone_area.integrate();
+        let zone_area = model.setpoints.zone_area.integrate();
 
         let eui = if zone_area > 0.0 {
             (annual_heating_kwh + annual_cooling_kwh) / zone_area

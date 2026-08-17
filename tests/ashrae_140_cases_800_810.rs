@@ -41,7 +41,7 @@ fn test_ashrae_800() {
     println!("Case 800 electrical energy: {} kWh", total_energy);
     println!(
         "Case 800 peak heating: {} W, peak cooling: {} W",
-        model.peak_power_heating, model.peak_power_cooling
+        model.hvac.peak_power_heating, model.hvac.peak_power_cooling
     );
     assert!(
         (14_000.0..=22_000.0).contains(&total_energy),
@@ -50,7 +50,7 @@ fn test_ashrae_800() {
     );
 
     // Validate equipment efficiency (COP 3.0-4.0, EER 10.0-14.0)
-    if let Some(equipment) = &model.hvac_equipment {
+    if let Some(equipment) = &model.hvac.hvac_equipment {
         let cop = equipment.calculate_efficiency(1.0, -5.0, HVACMode::Heating);
         let eer = equipment.calculate_efficiency(1.0, 35.0, HVACMode::Cooling);
         println!("Case 800 COP: {}, EER: {}", cop, eer);
@@ -67,8 +67,8 @@ fn test_ashrae_800() {
     }
 
     // Validate cycling losses (startup_count < 1000, runtime_hours > 4000)
-    let startup_count = model.cycling_tracker.startup_count;
-    let runtime_hours = model.cycling_tracker.cumulative_runtime_hours;
+    let startup_count = model.hvac.cycling_tracker.startup_count;
+    let runtime_hours = model.hvac.cycling_tracker.cumulative_runtime_hours;
     println!(
         "Case 800 startup count: {}, runtime hours: {:.1}",
         startup_count, runtime_hours
@@ -114,7 +114,7 @@ fn test_ashrae_801() {
     );
 
     // Validate equipment efficiency (higher than Case 800)
-    if let Some(equipment) = &model.hvac_equipment {
+    if let Some(equipment) = &model.hvac.hvac_equipment {
         let cop = equipment.calculate_efficiency(1.0, -5.0, HVACMode::Heating);
         let eer = equipment.calculate_efficiency(1.0, 35.0, HVACMode::Cooling);
         println!("Case 801 COP: {}, EER: {}", cop, eer);
@@ -131,8 +131,8 @@ fn test_ashrae_801() {
     }
 
     // Validate cycling losses (lower than Case 800)
-    let startup_count = model.cycling_tracker.startup_count;
-    let runtime_hours = model.cycling_tracker.cumulative_runtime_hours;
+    let startup_count = model.hvac.cycling_tracker.startup_count;
+    let runtime_hours = model.hvac.cycling_tracker.cumulative_runtime_hours;
     println!(
         "Case 801 startup count: {}, runtime hours: {:.1}",
         startup_count, runtime_hours
@@ -179,7 +179,7 @@ fn test_ashrae_802() {
     // Note: HeatPump::new() creates efficiency curve with coefficients that return
     // COP 3.0 and EER 10.0 at PLR=1.0, not the raw coefficient values (3.5, 11.0)
     // This is expected behavior for polynomial efficiency curves (S-shaped curve)
-    if let Some(equipment) = &model.hvac_equipment {
+    if let Some(equipment) = &model.hvac.hvac_equipment {
         let cop = equipment.calculate_efficiency(1.0, -5.0, HVACMode::Heating);
         let eer = equipment.calculate_efficiency(1.0, 35.0, HVACMode::Cooling);
         println!("Case 802 COP: {}, EER: {}", cop, eer);
@@ -196,8 +196,8 @@ fn test_ashrae_802() {
     }
 
     // Validate cycling losses (lowest among HP cases)
-    let startup_count = model.cycling_tracker.startup_count;
-    let runtime_hours = model.cycling_tracker.cumulative_runtime_hours;
+    let startup_count = model.hvac.cycling_tracker.startup_count;
+    let runtime_hours = model.hvac.cycling_tracker.cumulative_runtime_hours;
     println!(
         "Case 802 startup count: {}, runtime hours: {:.1}",
         startup_count, runtime_hours
@@ -240,7 +240,7 @@ fn test_ashrae_803() {
     assert!((14_000.0..=18_000.0).contains(&total_energy), "Case 803 energy {} kWh outside expected range [14,000, 18,000] kWh (COP 4.5 chiller physics)", total_energy);
 
     // Validate chiller efficiency (COP 4.0-5.0)
-    if let Some(equipment) = &model.hvac_equipment {
+    if let Some(equipment) = &model.hvac.hvac_equipment {
         let cop = equipment.calculate_efficiency(1.0, 35.0, HVACMode::Cooling);
         println!("Case 803 COP: {}", cop);
         assert!(
@@ -251,8 +251,8 @@ fn test_ashrae_803() {
     }
 
     // Validate cycling losses
-    let startup_count = model.cycling_tracker.startup_count;
-    let runtime_hours = model.cycling_tracker.cumulative_runtime_hours;
+    let startup_count = model.hvac.cycling_tracker.startup_count;
+    let runtime_hours = model.hvac.cycling_tracker.cumulative_runtime_hours;
     println!(
         "Case 803 startup count: {}, runtime hours: {:.1}",
         startup_count, runtime_hours
@@ -295,7 +295,7 @@ fn test_ashrae_804() {
     assert!((14_000.0..=18_000.0).contains(&total_energy), "Case 804 energy {} kWh outside expected range [14,000, 18,000] kWh (COP 4.5 chillers, multiple units same total capacity as single)", total_energy);
 
     // Validate chiller efficiency (similar to Case 803)
-    if let Some(equipment) = &model.hvac_equipment {
+    if let Some(equipment) = &model.hvac.hvac_equipment {
         let cop = equipment.calculate_efficiency(1.0, 35.0, HVACMode::Cooling);
         println!("Case 804 COP: {}", cop);
         assert!(
@@ -306,8 +306,8 @@ fn test_ashrae_804() {
     }
 
     // Validate cycling losses (lower than Case 803)
-    let startup_count = model.cycling_tracker.startup_count;
-    let runtime_hours = model.cycling_tracker.cumulative_runtime_hours;
+    let startup_count = model.hvac.cycling_tracker.startup_count;
+    let runtime_hours = model.hvac.cycling_tracker.cumulative_runtime_hours;
     println!(
         "Case 804 startup count: {}, runtime hours: {:.1}",
         startup_count, runtime_hours
@@ -357,7 +357,7 @@ fn test_ashrae_805() {
     );
 
     // Validate boiler efficiency (COP 0.80-0.90)
-    if let Some(equipment) = &model.hvac_equipment {
+    if let Some(equipment) = &model.hvac.hvac_equipment {
         let cop = equipment.calculate_efficiency(1.0, -5.0, HVACMode::Heating);
         println!("Case 805 COP: {}", cop);
         assert!(
@@ -368,8 +368,8 @@ fn test_ashrae_805() {
     }
 
     // Validate cycling losses
-    let startup_count = model.cycling_tracker.startup_count;
-    let runtime_hours = model.cycling_tracker.cumulative_runtime_hours;
+    let startup_count = model.hvac.cycling_tracker.startup_count;
+    let runtime_hours = model.hvac.cycling_tracker.cumulative_runtime_hours;
     println!(
         "Case 805 startup count: {}, runtime hours: {:.1}",
         startup_count, runtime_hours
@@ -422,7 +422,7 @@ fn test_ashrae_806() {
     );
 
     // Validate boiler efficiency (similar to Case 805)
-    if let Some(equipment) = &model.hvac_equipment {
+    if let Some(equipment) = &model.hvac.hvac_equipment {
         let cop = equipment.calculate_efficiency(1.0, -5.0, HVACMode::Heating);
         println!("Case 806 COP: {}", cop);
         assert!(
@@ -433,8 +433,8 @@ fn test_ashrae_806() {
     }
 
     // Validate cycling losses
-    let startup_count = model.cycling_tracker.startup_count;
-    let runtime_hours = model.cycling_tracker.cumulative_runtime_hours;
+    let startup_count = model.hvac.cycling_tracker.startup_count;
+    let runtime_hours = model.hvac.cycling_tracker.cumulative_runtime_hours;
     println!(
         "Case 806 startup count: {}, runtime hours: {:.1}",
         startup_count, runtime_hours
@@ -483,7 +483,7 @@ fn test_ashrae_807() {
     // Validate equipment efficiency (HP primary, low heating energy)
     // Note: Hybrid system uses heat pump with polynomial efficiency curve
     // COP 3.0 and EER 10.0 at PLR=1.0 (polynomial curve output, not raw coefficients)
-    if let Some(equipment) = &model.hvac_equipment {
+    if let Some(equipment) = &model.hvac.hvac_equipment {
         let cop = equipment.calculate_efficiency(1.0, -5.0, HVACMode::Heating);
         let eer = equipment.calculate_efficiency(1.0, 35.0, HVACMode::Cooling);
         println!("Case 807 COP: {}, EER: {}", cop, eer);
@@ -500,8 +500,8 @@ fn test_ashrae_807() {
     }
 
     // Validate cycling losses (moderate)
-    let startup_count = model.cycling_tracker.startup_count;
-    let runtime_hours = model.cycling_tracker.cumulative_runtime_hours;
+    let startup_count = model.hvac.cycling_tracker.startup_count;
+    let runtime_hours = model.hvac.cycling_tracker.cumulative_runtime_hours;
     println!(
         "Case 807 startup count: {}, runtime hours: {:.1}",
         startup_count, runtime_hours
@@ -545,7 +545,7 @@ fn test_ashrae_808() {
 
     // Validate equipment efficiency
     // Note: Case 808 uses VAV system with heat recovery, which may have different efficiency characteristics
-    if let Some(equipment) = &model.hvac_equipment {
+    if let Some(equipment) = &model.hvac.hvac_equipment {
         let cop = equipment.calculate_efficiency(1.0, -5.0, HVACMode::Heating);
         let eer = equipment.calculate_efficiency(1.0, 35.0, HVACMode::Cooling);
         println!("Case 808 COP: {}, EER: {}", cop, eer);
@@ -562,8 +562,8 @@ fn test_ashrae_808() {
     }
 
     // Validate cycling losses
-    let startup_count = model.cycling_tracker.startup_count;
-    let runtime_hours = model.cycling_tracker.cumulative_runtime_hours;
+    let startup_count = model.hvac.cycling_tracker.startup_count;
+    let runtime_hours = model.hvac.cycling_tracker.cumulative_runtime_hours;
     println!(
         "Case 808 startup count: {}, runtime hours: {:.1}",
         startup_count, runtime_hours
@@ -611,7 +611,7 @@ fn test_ashrae_809() {
 
     // Validate equipment efficiency
     // Note: Case 809 uses CAV system with economizer, which may have different efficiency characteristics
-    if let Some(equipment) = &model.hvac_equipment {
+    if let Some(equipment) = &model.hvac.hvac_equipment {
         let cop = equipment.calculate_efficiency(1.0, -5.0, HVACMode::Heating);
         let eer = equipment.calculate_efficiency(1.0, 35.0, HVACMode::Cooling);
         println!("Case 809 COP: {}, EER: {}", cop, eer);
@@ -628,8 +628,8 @@ fn test_ashrae_809() {
     }
 
     // Validate cycling losses
-    let startup_count = model.cycling_tracker.startup_count;
-    let runtime_hours = model.cycling_tracker.cumulative_runtime_hours;
+    let startup_count = model.hvac.cycling_tracker.startup_count;
+    let runtime_hours = model.hvac.cycling_tracker.cumulative_runtime_hours;
     println!(
         "Case 809 startup count: {}, runtime hours: {:.1}",
         startup_count, runtime_hours
@@ -675,7 +675,7 @@ fn test_ashrae_810() {
     // Validate equipment efficiency
     // Note: Comprehensive system uses heat pump with polynomial efficiency curve
     // COP 3.0 and EER 10.0 at PLR=1.0 (polynomial curve output, not raw coefficients)
-    if let Some(equipment) = &model.hvac_equipment {
+    if let Some(equipment) = &model.hvac.hvac_equipment {
         let cop = equipment.calculate_efficiency(1.0, -5.0, HVACMode::Heating);
         let eer = equipment.calculate_efficiency(1.0, 35.0, HVACMode::Cooling);
         println!("Case 810 COP: {}, EER: {}", cop, eer);
@@ -692,8 +692,8 @@ fn test_ashrae_810() {
     }
 
     // Validate cycling losses (lowest among all cases)
-    let startup_count = model.cycling_tracker.startup_count;
-    let runtime_hours = model.cycling_tracker.cumulative_runtime_hours;
+    let startup_count = model.hvac.cycling_tracker.startup_count;
+    let runtime_hours = model.hvac.cycling_tracker.cumulative_runtime_hours;
     println!(
         "Case 810 startup count: {}, runtime hours: {:.1}",
         startup_count, runtime_hours
@@ -748,8 +748,8 @@ fn test_equipment_efficiency_vs_plr() {
 #[test]
 fn test_predictive_control_stability() {
     let mut model = ThermalModel::<VectorField>::new(1);
-    model.heating_setpoint = 20.0;
-    model.cooling_setpoint = 27.0;
+    model.setpoints.heating_setpoint = 20.0;
+    model.setpoints.cooling_setpoint = 27.0;
 
     // Note: For control stability testing, we use the default IdealHVACController
     // VariableCapacityEquipment integration is tested in test_ashrae_800 and test_ashrae_810
@@ -760,8 +760,8 @@ fn test_predictive_control_stability() {
     let _total_energy = model.solve_timesteps(8760, &surrogates, false, None, None, None);
 
     // Verify control is stable (no excessive cycling)
-    let startup_count = model.cycling_tracker.startup_count;
-    let runtime_hours = model.cycling_tracker.cumulative_runtime_hours;
+    let startup_count = model.hvac.cycling_tracker.startup_count;
+    let runtime_hours = model.hvac.cycling_tracker.cumulative_runtime_hours;
 
     // Startup count should be much less than runtime hours
     let cycling_ratio = startup_count as f64 / (runtime_hours * 3600.0 + 1.0);
@@ -772,8 +772,8 @@ fn test_predictive_control_stability() {
 #[test]
 fn test_cycling_losses_startup_penalty() {
     let mut model = ThermalModel::<VectorField>::new(1);
-    model.heating_setpoint = 20.0;
-    model.cooling_setpoint = 27.0;
+    model.setpoints.heating_setpoint = 20.0;
+    model.setpoints.cooling_setpoint = 27.0;
 
     // Run a few timesteps to generate some cycling
     // The cycling_tracker should accumulate startup penalties
@@ -782,12 +782,12 @@ fn test_cycling_losses_startup_penalty() {
 
     // Verify that cycling tracker was active
     // (Note: May not have startup events in 100 timesteps depending on conditions)
-    let startup_count = model.cycling_tracker.startup_count;
+    let startup_count = model.hvac.cycling_tracker.startup_count;
     // startup_count is a usize, always >= 0, just verify it's tracked
     let _ = startup_count;
 
     // Verify cumulative runtime was tracked
-    let runtime_hours = model.cycling_tracker.cumulative_runtime_hours;
+    let runtime_hours = model.hvac.cycling_tracker.cumulative_runtime_hours;
     assert!(runtime_hours >= 0.0, "runtime_hours should be non-negative");
 }
 
@@ -795,8 +795,8 @@ fn test_cycling_losses_startup_penalty() {
 #[test]
 fn test_minimum_runtime_constraint() {
     let mut model = ThermalModel::<VectorField>::new(1);
-    model.heating_setpoint = 20.0;
-    model.cooling_setpoint = 27.0;
+    model.setpoints.heating_setpoint = 20.0;
+    model.setpoints.cooling_setpoint = 27.0;
 
     // Run a few timesteps to trigger minimum runtime
     let surrogates = SurrogateManager::new().expect("Failed to create SurrogateManager");
@@ -804,7 +804,7 @@ fn test_minimum_runtime_constraint() {
 
     // Verify that minimum runtime constraint is being enforced
     // The cycling_tracker should enforce 5-timestep minimum runtime
-    let startup_count = model.cycling_tracker.startup_count;
+    let startup_count = model.hvac.cycling_tracker.startup_count;
 
     // With 50 timesteps, startup count should be limited by minimum runtime
     // If minimum runtime is 5 timesteps, we should have at most ~10 startups
@@ -815,11 +815,11 @@ fn test_minimum_runtime_constraint() {
 #[test]
 fn test_economizer_mode_integration() {
     let mut model = ThermalModel::<VectorField>::new(1);
-    model.heating_setpoint = 20.0;
-    model.cooling_setpoint = 27.0;
+    model.setpoints.heating_setpoint = 20.0;
+    model.setpoints.cooling_setpoint = 27.0;
 
     // Enable economizer mode (dry bulb)
-    model.economizer_mode = fluxion::sim::hvac::EconomizerMode::DryBulb;
+    model.hvac.economizer_mode = fluxion::sim::hvac::EconomizerMode::DryBulb;
 
     // Run simulation with economizer enabled
     let surrogates = SurrogateManager::new().expect("Failed to create SurrogateManager");
@@ -827,7 +827,7 @@ fn test_economizer_mode_integration() {
 
     // Verify economizer mode is set
     assert_eq!(
-        model.economizer_mode,
+        model.hvac.economizer_mode,
         fluxion::sim::hvac::EconomizerMode::DryBulb
     );
 
@@ -839,12 +839,12 @@ fn test_economizer_mode_integration() {
 #[test]
 fn test_predictive_controller_integration() {
     let mut model = ThermalModel::<VectorField>::new(1);
-    model.heating_setpoint = 20.0;
-    model.cooling_setpoint = 27.0;
+    model.setpoints.heating_setpoint = 20.0;
+    model.setpoints.cooling_setpoint = 27.0;
 
     // Verify predictive controller is initialized
-    assert_eq!(model.predictive_controller.heating_setpoint, 20.0);
-    assert_eq!(model.predictive_controller.cooling_setpoint, 27.0);
+    assert_eq!(model.hvac.predictive_controller.heating_setpoint, 20.0);
+    assert_eq!(model.hvac.predictive_controller.cooling_setpoint, 27.0);
 
     // Run simulation
     let surrogates = SurrogateManager::new().expect("Failed to create SurrogateManager");
@@ -852,7 +852,7 @@ fn test_predictive_controller_integration() {
 
     // Verify previous_temperatures field is being updated
     // (Should track zone temperatures for dT/dt calculation)
-    let prev_temp = model.previous_temperatures.as_ref()[0];
+    let prev_temp = model.hvac.previous_temperatures.as_ref()[0];
     // Just verify it's a finite number (actual value depends on initialization)
     assert!(prev_temp.is_finite());
 }

@@ -109,7 +109,7 @@ fn step_wall_surface_ode(
     // by the time the caller invokes this helper, `phi_ia`/`phi_st`/`phi_m`
     // have already been moved out of the scratch via `mem::take`, so any
     // scratch-backed length probe would report zero. The caller guarantees
-    // every input slice has the same length (`self.0.num_zones`).
+    // every input slice has the same length (`self.0.hvac.num_zones`).
     let n = wall_surface_old.len();
     debug_assert_eq!(h_tr_ms.len(), n);
     debug_assert_eq!(h_tr_is.len(), n);
@@ -164,6 +164,7 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         // Calculate sky temperature for proper sol-air calculation with longwave radiation
         let sky_temp = self
             .0
+            .solar
             .weather
             .as_ref()
             .map(|w| w.sky_temperature())
@@ -185,7 +186,11 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         // that helper and was immediately discarded by this step). The scratch
         // is held as an *owned* local — does not borrow `&self`/`&mut self` —
         // so the subsequent `&mut self` method calls below coexist.
-        let mut scratch = self.0.scratch_pool.checkout_5r1c(self.0.num_zones);
+        let mut scratch = self
+            .0
+            .hvac
+            .scratch_pool
+            .checkout_5r1c(self.0.hvac.num_zones);
         scratch.fill_zero();
 
         let (ctf_flux_w, fd_flux_w, _ctf_surface_temps) = self.prepare_solvers_and_sol_air(
@@ -196,13 +201,17 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         );
 
         // Get ground temperature at this timestep
-        let t_g = self.0.ground_temperature.ground_temperature(timestep);
+        let t_g = self
+            .0
+            .conduction
+            .ground_temperature
+            .ground_temperature(timestep);
 
         // --- Dynamic Ventilation (Night Ventilation) ---
         let hour_of_day = (timestep % 24) as u8;
 
         // Combine fractions to avoid multiple intermediate VectorField allocations
-        let conv_frac = self.0.convective_fraction;
+        let conv_frac = self.0.solar.convective_fraction;
         let rad_frac = 1.0 - conv_frac;
 
         // Internal radiative gains split per ISO 13790 Section C.4 Eq. C.5/C.6:
@@ -224,15 +233,15 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         // st_sol_frac: Solar gains to surface (fraction of solar that goes to surface)
         // m_sol_frac: Solar gains to mass (fraction of solar that goes to mass)
         // Note: solar_distribution_to_air controls how much solar goes directly to zone air
-        let st_int_frac = rad_frac * (1.0 - self.0.solar_distribution_to_air);
-        let m_air_frac = rad_frac * self.0.solar_distribution_to_air;
-        let st_sol_frac = 1.0 - self.0.solar_beam_to_mass_fraction;
-        let m_sol_frac = self.0.solar_beam_to_mass_fraction;
+        let st_int_frac = rad_frac * (1.0 - self.0.solar.solar_distribution_to_air);
+        let m_air_frac = rad_frac * self.0.solar.solar_distribution_to_air;
+        let st_sol_frac = 1.0 - self.0.solar.solar_beam_to_mass_fraction;
+        let m_sol_frac = self.0.solar.solar_beam_to_mass_fraction;
 
-        let loads_ref = self.0.loads.as_ref();
-        let solar_ref = self.0.solar_gains.as_ref();
-        let opaque_solar_ref = self.0.opaque_solar_gains.as_ref();
-        let area_ref = self.0.zone_area.as_ref();
+        let loads_ref = self.0.setpoints.loads.as_ref();
+        let solar_ref = self.0.solar.solar_gains.as_ref();
+        let opaque_solar_ref = self.0.solar.opaque_solar_gains.as_ref();
+        let area_ref = self.0.setpoints.zone_area.as_ref();
 
         // Issue #2873: scratch was checked out earlier (just before
         // `prepare_solvers_and_sol_air`) so we could pass
@@ -240,7 +249,7 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         // buffer. The `fill_zero()` call there already resized the rest of
         // the fields back to `num_zones`; we only need the loop below.
 
-        for i in 0..self.0.num_zones {
+        for i in 0..self.0.hvac.num_zones {
             let load_w = loads_ref[i] * area_ref[i];
             let sol_w = solar_ref[i] * area_ref[i];
             // opaque_sol_w: kept for potential debugging; it's included via t_sol_air now
@@ -248,7 +257,7 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
 
             // Internal gains: convective to air, radiative split between surface and mass
             // Solar distribution must conserve energy (sum to 1.0)
-            let sol_to_air = sol_w * self.0.solar_distribution_to_air;
+            let sol_to_air = sol_w * self.0.solar.solar_distribution_to_air;
             let remaining_sol = sol_w - sol_to_air;
             scratch.phi_ia[i] = load_w * conv_frac + sol_to_air;
             scratch.phi_st[i] = load_w * st_int_frac + remaining_sol * st_sol_frac;
@@ -278,9 +287,9 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         // 600FF / 650FF investigation is single-zone.
         #[cfg(feature = "pr821-diag")]
         {
-            self.0.last_phi_ia = phi_ia.as_ref().first().copied().unwrap_or(0.0);
-            self.0.last_phi_st = phi_st.as_ref().first().copied().unwrap_or(0.0);
-            self.0.last_phi_m = phi_m.as_ref().first().copied().unwrap_or(0.0);
+            self.0.hvac.last_phi_ia = phi_ia.as_ref().first().copied().unwrap_or(0.0);
+            self.0.hvac.last_phi_st = phi_st.as_ref().first().copied().unwrap_or(0.0);
+            self.0.hvac.last_phi_m = phi_m.as_ref().first().copied().unwrap_or(0.0);
         }
 
         // === Issue #1860: wall-surface ODE (pre-air-node-equilibrium step) ===
@@ -299,18 +308,19 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         // `wall_surface_correction` fields on the scratch struct.
         step_wall_surface_ode(
             dt,
-            self.0.h_tr_ms.as_ref(),
-            self.0.h_tr_is.as_ref(),
-            self.0.mass_temperatures.as_ref(),
-            self.0.temperatures.as_ref(),
-            self.0.wall_surface_temperatures.as_ref(),
-            self.0.thermal_capacitance.as_ref(),
+            self.0.conduction.h_tr_ms.as_ref(),
+            self.0.conduction.h_tr_is.as_ref(),
+            self.0.mass.mass_temperatures.as_ref(),
+            self.0.setpoints.temperatures.as_ref(),
+            self.0.mass.wall_surface_temperatures.as_ref(),
+            self.0.mass.thermal_capacitance.as_ref(),
             &mut scratch,
         );
         // Persist the new T_si for downstream consumers (diagnostics, the
         // regression test suite, and the future cooling-load coupling that
         // the Issue #1860 epic tracks).
         self.0
+            .mass
             .wall_surface_temperatures
             .as_mut()
             .copy_from_slice(&scratch.wall_surface_new);
@@ -341,6 +351,7 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         };
         let v_wind_building = self
             .0
+            .solar
             .weather
             .as_ref()
             .map(|w| wind_at_building_height_from_10m(w.wind_speed, 2.7))
@@ -376,8 +387,12 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         // and `fill_zero()` resizes the scratch field back to `num_zones` on
         // every checkout so the post-`prepare_solvers_and_sol_air` length is
         // preserved exactly.
-        let exterior_emissivity_ref = self.0.exterior_emissivity.as_ref();
-        for (i, &opaque_solar) in opaque_solar_ref.iter().take(self.0.num_zones).enumerate() {
+        let exterior_emissivity_ref = self.0.conduction.exterior_emissivity.as_ref();
+        for (i, &opaque_solar) in opaque_solar_ref
+            .iter()
+            .take(self.0.hvac.num_zones)
+            .enumerate()
+        {
             // opaque_solar is the effective opaque irradiance on exterior surfaces (W/m²)
             // This is the combined wall + roof irradiance for the zone
             let eps_ext = exterior_emissivity_ref
@@ -405,8 +420,8 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         // Simplified 5R1C calculation using CTA
         // Include ground coupling through floor
         // Use pre-computed cached values to avoid redundant allocations
-        let h_ext_base = &self.0.derived_h_ext;
-        let term_rest_1 = &self.0.derived_term_rest_1;
+        let h_ext_base = &self.0.conduction.derived_h_ext;
+        let term_rest_1 = &self.0.conduction.derived_term_rest_1;
 
         // === Issue #824: Night-ventilation air-side coupling (was missing entirely) ===
         //
@@ -452,15 +467,23 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         // it into `scratch.h_ext_owned_zone` (a pooled `SmallVec` that is
         // resized back to `num_zones` by `fill_zero()` every checkout) and
         // track `night_vent_active_now` as a plain bool — no Vec, no clone.
-        if let Some(ref night_vent) = self.0.night_ventilation {
+        if let Some(ref night_vent) = self.0.hvac.night_ventilation {
             if night_vent.is_active_at_hour(hour_of_day) {
                 night_vent_active_now = true;
                 // ASHRAE 140 night-vent fan supplies outdoor air to zone 0
                 // (the conditioned zone). Multi-zone night-vent (Case 960
                 // sunspace etc.) is out of scope for this issue.
-                let rho = self.0.air_density.as_ref().first().copied().unwrap_or(1.2);
+                let rho = self
+                    .0
+                    .setpoints
+                    .air_density
+                    .as_ref()
+                    .first()
+                    .copied()
+                    .unwrap_or(1.2);
                 let cp = self
                     .0
+                    .setpoints
                     .heat_capacity
                     .as_ref()
                     .first()
@@ -510,15 +533,15 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
             // den = h_ms_is_prod + term_rest_1 * (h_ext + h_iz + h_iz_rad) + ground_coeff
             // (mirrors update_optimization_cache in
             // src/sim/thermal_model_solvers.rs, with h_ext now per-zone vector)
-            let h_ms_is_prod = self.0.derived_h_ms_is_prod.as_ref();
-            let term_rest_1 = self.0.derived_term_rest_1.as_ref();
-            let ground_coeff = self.0.derived_ground_coeff.as_ref();
-            let h_iz = self.0.h_tr_iz.as_ref();
-            let h_iz_rad = self.0.h_tr_iz_rad.as_ref();
+            let h_ms_is_prod = self.0.conduction.derived_h_ms_is_prod.as_ref();
+            let term_rest_1 = self.0.conduction.derived_term_rest_1.as_ref();
+            let ground_coeff = self.0.conduction.derived_ground_coeff.as_ref();
+            let h_iz = self.0.conduction.h_tr_iz.as_ref();
+            let h_iz_rad = self.0.conduction.h_tr_iz_rad.as_ref();
             let h_ext_slice = h_ext;
             let mut v = Vec::with_capacity(h_ext_slice.len());
             for i in 0..h_ext_slice.len() {
-                let h_total = if self.0.num_zones > 1 {
+                let h_total = if self.0.hvac.num_zones > 1 {
                     h_ext_slice[i] + h_iz[i] + h_iz_rad[i]
                 } else {
                     h_ext_slice[i]
@@ -527,20 +550,21 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
             }
             T::from(VectorField::new(v))
         } else {
-            self.0.derived_den.clone()
+            self.0.conduction.derived_den.clone()
         };
         // (#872: sensitivity variable removed — HVAC demand now uses h_loss × ΔT formula)
 
         // Optimized: use zip_with to avoid double clones; num_tm allocates 1 vector instead of 2
         let num_tm = self
             .0
+            .conduction
             .derived_h_ms_is_prod
-            .zip_with(&self.0.mass_temperatures, |a, b| a * b);
+            .zip_with(&self.0.mass.mass_temperatures, |a, b| a * b);
 
         // h_tr_is_for_ti_free: no boost applied (night ventilation affects zone air through
         // h_ve_total, not through surface convection coefficients). The h_ve_night already
         // modifies h_ext and den for the free-floating temperature calculation.
-        let h_tr_is_for_ti_free: T = self.0.h_tr_is.clone();
+        let h_tr_is_for_ti_free: T = self.0.conduction.h_tr_is.clone();
 
         // Note: dynamic h_tr_3_night was tried and REJECTED. Night ventilation already affects
         // the mass through the zone air energy balance (h_ve_total → t_i → t_s → mass).
@@ -584,7 +608,7 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         // including it here would double-count. Mirrors the 9R4C path's #1391
         // fix and the `MultiZoneAirflowNetwork` convention (test:
         // `multi_zone_network.rs::two_zone_case960_backward_compatible`).
-        let num_zones = self.0.num_zones;
+        let num_zones = self.0.hvac.num_zones;
 
         // Start with phi_ia; we will add inter-zone heat directly to its buffer if needed.
         // Issue #901 perf: move phi_ia (no clone). The original is no longer used
@@ -595,8 +619,8 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         if num_zones > 1 {
             let slice = phi_ia_with_iz.as_mut();
             let n = num_zones;
-            let temps = self.0.temperatures.as_ref();
-            let h_iz_vec = self.0.h_tr_iz.as_ref();
+            let temps = self.0.setpoints.temperatures.as_ref();
+            let h_iz_vec = self.0.conduction.h_tr_iz.as_ref();
             let sum_t: f64 = temps.iter().sum();
             for i in 0..n {
                 if h_iz_vec[i] > 0.0 {
@@ -622,6 +646,7 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                     // of actual vertical wall area (~68 m² for Case 600).
                     let opaque_wall_area: f64 = self
                         .0
+                        .solar
                         .surfaces
                         .get(i)
                         .map(|zone_surfaces| {
@@ -645,12 +670,20 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                     let t_sol_air_i = t_sol_air.get(i).copied().unwrap_or(outdoor_temp);
                     let t_mass = self
                         .0
+                        .mass
                         .mass_temperatures
                         .as_ref()
                         .get(i)
                         .copied()
                         .unwrap_or(20.0);
-                    let h_tr_em_i = self.0.h_tr_em.as_ref().get(i).copied().unwrap_or(0.0);
+                    let h_tr_em_i = self
+                        .0
+                        .conduction
+                        .h_tr_em
+                        .as_ref()
+                        .get(i)
+                        .copied()
+                        .unwrap_or(0.0);
                     let q_5r1c = h_tr_em_i * (t_sol_air_i - t_mass);
 
                     // Net CTF contribution (CTF - 5R1C)
@@ -671,6 +704,7 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                     // to convert FD flux [W/m²] to power [W]. Same fix as CTF above.
                     let opaque_wall_area: f64 = self
                         .0
+                        .solar
                         .surfaces
                         .get(i)
                         .map(|zone_surfaces| {
@@ -694,12 +728,20 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                     let t_sol_air_i = t_sol_air.get(i).copied().unwrap_or(outdoor_temp);
                     let t_mass = self
                         .0
+                        .mass
                         .mass_temperatures
                         .as_ref()
                         .get(i)
                         .copied()
                         .unwrap_or(20.0);
-                    let h_tr_em_i = self.0.h_tr_em.as_ref().get(i).copied().unwrap_or(0.0);
+                    let h_tr_em_i = self
+                        .0
+                        .conduction
+                        .h_tr_em
+                        .as_ref()
+                        .get(i)
+                        .copied()
+                        .unwrap_or(0.0);
                     let q_5r1c = h_tr_em_i * (t_sol_air_i - t_mass);
 
                     // Add net FD flux (FD - 5R1C)
@@ -750,19 +792,21 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                                        // Snapshot all per-zone input fields into owned Vecs so the
                                        // mutable write-back at the end of the loop does not conflict
                                        // with the immutable reads here.
-            let surface_emissivity_vec: Vec<f64> = self.0.surface_emissivity.as_ref().to_vec();
-            let t_zone_vec: Vec<f64> = self.0.temperatures.as_ref().to_vec();
+            let surface_emissivity_vec: Vec<f64> =
+                self.0.conduction.surface_emissivity.as_ref().to_vec();
+            let t_zone_vec: Vec<f64> = self.0.setpoints.temperatures.as_ref().to_vec();
             // Issue #2873: `t_sol_air` is no longer cloned here — the LW
             // block reads it through `t_sol_air.as_ref().get(i)` inline. The
             // borrow (immutable on `t_sol_air`, mutable on
             // `self.0.surface_temp_*`) is disjoint, so no per-step Vec clone
             // is needed.
-            let a_floor_vec: Vec<f64> = self.0.floor_area.as_ref().to_vec();
-            let a_ceiling_vec: Vec<f64> = self.0.roof_area.as_ref().to_vec();
-            let a_wall_vec: Vec<f64> = self.0.wall_area.as_ref().to_vec();
-            let u_floor_vec: Vec<f64> = vec![self.0.floor_u_value; self.0.num_zones];
-            let u_ceiling_vec: Vec<f64> = vec![self.0.roof_u_value; self.0.num_zones];
-            let u_wall_vec: Vec<f64> = vec![self.0.wall_u_value; self.0.num_zones];
+            let a_floor_vec: Vec<f64> = self.0.setpoints.floor_area.as_ref().to_vec();
+            let a_ceiling_vec: Vec<f64> = self.0.setpoints.roof_area.as_ref().to_vec();
+            let a_wall_vec: Vec<f64> = self.0.setpoints.wall_area.as_ref().to_vec();
+            let u_floor_vec: Vec<f64> = vec![self.0.setpoints.floor_u_value; self.0.hvac.num_zones];
+            let u_ceiling_vec: Vec<f64> =
+                vec![self.0.setpoints.roof_u_value; self.0.hvac.num_zones];
+            let u_wall_vec: Vec<f64> = vec![self.0.setpoints.wall_u_value; self.0.hvac.num_zones];
 
             // Issue #2890: persist the per-zone interior surface state
             // (floor, ceiling, wall) for the floor-ceiling-wall longwave
@@ -788,7 +832,7 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
             // (the full integration requires iterating the per-surface
             // surface ODE with the air node, which is a future change
             // scoped to Issue #2890-followup).
-            for i in 0..self.0.num_zones {
+            for i in 0..self.0.hvac.num_zones {
                 let emissivity_i = surface_emissivity_vec
                     .get(i)
                     .copied()
@@ -825,9 +869,9 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                 // (consumed by the 9R4C path and downstream diagnostics).
                 let h_ci_ref = h_ci;
                 let _ = h_ci_ref;
-                let t_floor_out = self.0.surface_temp_floor.as_mut();
-                let t_ceiling_out = self.0.surface_temp_ceiling.as_mut();
-                let t_wall_out = self.0.surface_temp_wall.as_mut();
+                let t_floor_out = self.0.mass.surface_temp_floor.as_mut();
+                let t_ceiling_out = self.0.mass.surface_temp_ceiling.as_mut();
+                let t_wall_out = self.0.mass.surface_temp_wall.as_mut();
                 if i < t_floor_out.len() {
                     t_floor_out[i] = t_si_floor;
                 }
@@ -842,7 +886,7 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
 
         // Note: The Issue #1860 wall-surface ODE state is computed earlier
         // in this function (see the "Wall-surface ODE (pre-air-node-equilibrium
-        // step)" block) and persisted to `self.0.wall_surface_temperatures`.
+        // step)" block) and persisted to `self.0.mass.wall_surface_temperatures`.
         // The state is exposed for downstream consumers (diagnostics, the
         // regression test suite in `tests/issue_1860_5r1c_time_constant_aware.rs`,
         // and the future cooling-load coupling that the Issue #1860 epic
@@ -864,7 +908,7 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         }
         num_rest_with_iz.mul_assign(term_rest_1);
         // Fuse ground term addition: (derived_ground_coeff * t_g) added directly
-        let ground_coeff = self.0.derived_ground_coeff.as_ref();
+        let ground_coeff = self.0.conduction.derived_ground_coeff.as_ref();
         for (n, g) in num_rest_with_iz
             .as_mut()
             .iter_mut()
@@ -914,9 +958,9 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         let _num_phi_st_ref = num_phi_st.as_ref();
         let num_rest_ref = num_rest_with_iz.as_ref();
         let den_ref = den.as_ref();
-        let c_air_ref = self.0.air_thermal_capacitance.as_ref();
-        let cm_ref = self.0.thermal_capacitance.as_ref();
-        let t_air_old_ref = self.0.air_temperatures.as_ref();
+        let c_air_ref = self.0.mass.air_thermal_capacitance.as_ref();
+        let cm_ref = self.0.mass.thermal_capacitance.as_ref();
+        let t_air_old_ref = self.0.mass.air_temperatures.as_ref();
         // term_rest_1 = h_tr_ms + h_tr_is scales the entire 5R1C air-node
         // equation (num and den are both multiplied by it to clear the
         // denominator in the surface-temperature elimination). The air-node
@@ -946,17 +990,17 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         // N times per timestep, using the result of sub-step k as the input
         // to sub-step k+1. The driving terms (num, den, phi_st) remain constant;
         // only t_air_old and solar_lag_old change between sub-steps.
-        let steps = self.0.sub_hour_air_node_steps as usize;
+        let steps = self.0.mass.sub_hour_air_node_steps as usize;
         let dt_sub = dt / steps as f64;
 
         // Initialize air-node state from previous timestep
         let mut t_air_state: Vec<f64> = t_air_old_ref.to_vec();
-        let mut solar_lag_state: Vec<f64> = self.0.solar_lag.as_ref().to_vec();
+        let mut solar_lag_state: Vec<f64> = self.0.mass.solar_lag.as_ref().to_vec();
 
         for _step in 0..steps {
             // === Air-node ODE (exact exponential solution) ===
-            let mut t_i_free_data = Vec::with_capacity(self.0.num_zones);
-            for i in 0..self.0.num_zones {
+            let mut t_i_free_data = Vec::with_capacity(self.0.hvac.num_zones);
+            for i in 0..self.0.hvac.num_zones {
                 let num_i = num_tm_ref[i] + num_rest_ref[i];
                 let den_i = den_ref[i];
                 let steady = num_i / den_i;
@@ -981,7 +1025,7 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
             let h_tr_is_for_lag_ref = h_tr_is_for_ti_free.as_ref();
             let mut corrected_t_i_free = t_i_free_data;
 
-            for i in 0..self.0.num_zones {
+            for i in 0..self.0.hvac.num_zones {
                 let den_i = den_ref[i];
                 let cm_i = cm_ref[i];
                 let c_air_i = c_air_ref[i];
@@ -992,7 +1036,7 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                 } else {
                     den_i
                 };
-                let h_tr_3_i = self.0.derived_h_tr_3.as_ref()[i];
+                let h_tr_3_i = self.0.conduction.derived_h_tr_3.as_ref()[i];
 
                 let tau_air_i = if den_true_i > 0.0 && c_air_i > 0.0 {
                     c_air_i / den_true_i
@@ -1036,14 +1080,15 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         let t_i_free = T::from(VectorField::new(t_air_state));
 
         // Persist final solar-lag state
-        self.0.solar_lag.as_mut()[..self.0.num_zones]
-            .copy_from_slice(&solar_lag_state[..self.0.num_zones]);
+        self.0.mass.solar_lag.as_mut()[..self.0.hvac.num_zones]
+            .copy_from_slice(&solar_lag_state[..self.0.hvac.num_zones]);
 
         // Issue #1585: step the air-node ODE state forward for the next
         // timestep.  t_i_free (the new zone-air temperature) becomes
         // t_air_old on the next call to step_physics_5r1c.
         let t_i_free_slice: Vec<f64> = t_i_free.as_ref().to_vec();
         self.0
+            .mass
             .air_temperatures
             .as_mut()
             .copy_from_slice(&t_i_free_slice);
@@ -1058,10 +1103,10 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         // PR #821: DEBUG_650FF_FULL traces removed.
 
         // DEBUG: Case 195 thermal diagnostics - uncomment to debug heating issues
-        // if self.0.case_id == "195" && timestep < 1000 {
+        // if self.0.hvac.case_id == "195" && timestep < 1000 {
         //     let t_i_free_val = t_i_free.as_ref()[0];
-        //     let mass_temp = self.0.mass_temperatures.as_ref()[0];
-        //     let heating_threshold = self.0.heating_setpoint - self.0.hvac_controller.deadband_tolerance;
+        //     let mass_temp = self.0.mass.mass_temperatures.as_ref()[0];
+        //     let heating_threshold = self.0.setpoints.heating_setpoint - self.0.hvac.hvac_controller.deadband_tolerance;
         //     eprintln!(
         //         "DEBUG_195 t={} t_i_free={:.2}°C heating_thresh={:.2}°C num_tm={:.1} num_phi_st={:.1} num_rest={:.1} den={:.1} T_mass={:.2}°C",
         //         timestep, t_i_free_val, heating_threshold, num_tm_val, num_phi_st_val, num_rest_val, den_val, mass_temp
@@ -1071,23 +1116,25 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         // 2.5. Predictive Control Calculation (Plan 15-04, 15-06)
         // Calculate temperature rate (dT/dt) for predictive control using thermal inertia
         let temp_rate = if timestep > 0 {
-            (self.0.temperatures.as_ref()[0] - self.0.previous_temperatures.as_ref()[0]) / dt
+            (self.0.setpoints.temperatures.as_ref()[0]
+                - self.0.hvac.previous_temperatures.as_ref()[0])
+                / dt
         } else {
             0.0
         };
 
         // Predictive control using thermal inertia
-        let (hvac_mode, modulation) = self.0.predictive_controller.calculate_modulation(
-            self.0.temperatures.as_ref()[0],
-            self.0.mass_temperatures.as_ref()[0],
+        let (hvac_mode, modulation) = self.0.hvac.predictive_controller.calculate_modulation(
+            self.0.setpoints.temperatures.as_ref()[0],
+            self.0.mass.mass_temperatures.as_ref()[0],
             temp_rate,
         );
         let hvac_mode: EquipmentHVACMode = hvac_mode; // Type annotation for clarity
 
         // 3. HVAC Calculation
         // Compute ideal loads for equipment modulation BEFORE mutable borrow of hvac_equipment
-        let ideal_loads_for_equipment: T = if self.0.free_float {
-            T::from(self.0.zero_vector.clone())
+        let ideal_loads_for_equipment: T = if self.0.hvac.free_float {
+            T::from(self.0.solar.zero_vector.clone())
         } else {
             // Issue #1163: symmetric ideal-HVAC formula uses t_i_free as the
             // driving temperature for both heating and cooling (mass
@@ -1097,10 +1144,10 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
             // vector is shorter than `num_zones`.
             self.compute_zone_hvac_load(
                 t_i_free.as_ref(),
-                self.0.heating_setpoints.as_ref(),
-                self.0.cooling_setpoints.as_ref(),
-                self.0.heating_setpoint,
-                self.0.cooling_setpoint,
+                self.0.setpoints.heating_setpoints.as_ref(),
+                self.0.setpoints.cooling_setpoints.as_ref(),
+                self.0.setpoints.heating_setpoint,
+                self.0.setpoints.cooling_setpoint,
             )
         };
 
@@ -1110,22 +1157,22 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         // This is a safety check that goes beyond hvac_enabled, which may not be
         // properly set for all code paths. Free-float cases (900FF, etc.) should
         // have zero HVAC output regardless of other settings.
-        let hvac_output_raw = if self.0.free_float {
-            T::from(self.0.zero_vector.clone())
-        } else if let Some(ref mut equipment) = self.0.hvac_equipment {
+        let hvac_output_raw = if self.0.hvac.free_float {
+            T::from(self.0.solar.zero_vector.clone())
+        } else if let Some(ref mut equipment) = self.0.hvac.hvac_equipment {
             // Use scalar setpoints instead of hourly schedules (Issue #???: HVAC schedule fix)
             // This ensures per-hour setpoint changes from validation loop are respected
-            let heating_setpoint = self.0.heating_setpoint;
-            let _cooling_setpoint = self.0.cooling_setpoint;
+            let heating_setpoint = self.0.setpoints.heating_setpoint;
+            let _cooling_setpoint = self.0.setpoints.cooling_setpoint;
 
             // Calculate free cooling if economizer is active
             use crate::sim::hvac::is_economizer_active;
-            let cooling_setpoint = self.0.cooling_schedule.value(hour_of_day_idx);
+            let cooling_setpoint = self.0.setpoints.cooling_schedule.value(hour_of_day_idx);
             let economizer_active = is_economizer_active(
-                self.0.economizer_mode,
+                self.0.hvac.economizer_mode,
                 outdoor_temp,
                 None, // outdoor_enthalpy - not available until Phase 16
-                self.0.temperatures.as_ref()[0],
+                self.0.setpoints.temperatures.as_ref()[0],
                 None, // zone_enthalpy - not available until Phase 16
                 cooling_setpoint,
             );
@@ -1136,8 +1183,8 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                     use crate::sim::hvac::calculate_free_cooling_capacity;
                     calculate_free_cooling_capacity(
                         outdoor_temp,
-                        self.0.temperatures.as_ref()[0],
-                        self.0.ventilation_airflow_m3_per_s, // Issue #2345: was hardcoded 10000.0
+                        self.0.setpoints.temperatures.as_ref()[0],
+                        self.0.setpoints.ventilation_airflow_m3_per_s, // Issue #2345: was hardcoded 10000.0
                     ) * 1000.0 // Convert kW to W
                 } else {
                     0.0
@@ -1171,6 +1218,7 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
             // Apply cycling losses
             let (efficiency_multiplier, _startup_penalty) = self
                 .0
+                .hvac
                 .cycling_tracker
                 .calculate_cycling_loss(electrical_power > 0.0, equipment.current_plr());
 
@@ -1180,7 +1228,7 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
             // actual_electrical_power is in Watts, dt_seconds is in seconds
             // Convert to kWh: (Watts × dt_seconds) / 3.6e6 = kWh
             let energy_this_timestep = actual_electrical_power * dt_seconds / 3.6e6;
-            self.0.annual_electrical_energy += energy_this_timestep;
+            self.0.hvac.annual_electrical_energy += energy_this_timestep;
 
             // FIX: For multi-zone buildings (e.g., Case 960), use per-zone HVAC demand
             // instead of broadcasting a single scalar value to all zones.
@@ -1191,11 +1239,11 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
             // already embedded in t_i_free via num_tm).
             // Issue #2826: per-zone setpoint vectors drive HVAC demand;
             // scalar `heating_setpoint` / `cooling_setpoint` (from
-            // `self.0.heating_setpoint` above) are used as fallback.
+            // `self.0.setpoints.heating_setpoint` above) are used as fallback.
             let hvac_output = self.compute_zone_hvac_load(
                 t_i_free.as_ref(),
-                self.0.heating_setpoints.as_ref(),
-                self.0.cooling_setpoints.as_ref(),
+                self.0.setpoints.heating_setpoints.as_ref(),
+                self.0.setpoints.cooling_setpoints.as_ref(),
                 heating_setpoint,
                 cooling_setpoint,
             );
@@ -1203,7 +1251,7 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
             // Track peak heating/cooling based on per-zone HVAC demand (Plan 18-08)
             // Physics-based: No calibration factors - track actual HVAC demand
             // Only sum HVAC output from zones where HVAC is enabled (fix for Case 960)
-            let enabled_vec = self.0.hvac_enabled.as_ref();
+            let enabled_vec = self.0.hvac.hvac_enabled.as_ref();
             let mut hvac_output_sum: f64 = 0.0;
             for (i, (output, &enabled)) in hvac_output
                 .as_ref()
@@ -1219,24 +1267,26 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                 if val > 0.0 {
                     // Heating mode for this zone
                     let val_kw = val / 1000.0;
-                    if val_kw > self.0.zone_peak_heating_kw.as_mut()[i] {
-                        self.0.zone_peak_heating_kw.as_mut()[i] = val_kw;
-                        self.0.zone_peak_heating_timestep[i] = timestep;
+                    if val_kw > self.0.hvac.zone_peak_heating_kw.as_mut()[i] {
+                        self.0.hvac.zone_peak_heating_kw.as_mut()[i] = val_kw;
+                        self.0.hvac.zone_peak_heating_timestep[i] = timestep;
                     }
                 } else if val < 0.0 {
                     // Cooling mode for this zone
                     let val_kw = -val / 1000.0;
-                    if val_kw > self.0.zone_peak_cooling_kw.as_mut()[i] {
-                        self.0.zone_peak_cooling_kw.as_mut()[i] = val_kw;
-                        self.0.zone_peak_cooling_timestep[i] = timestep;
+                    if val_kw > self.0.hvac.zone_peak_cooling_kw.as_mut()[i] {
+                        self.0.hvac.zone_peak_cooling_kw.as_mut()[i] = val_kw;
+                        self.0.hvac.zone_peak_cooling_timestep[i] = timestep;
                     }
                 }
             }
             // Track global peak (sum of all zones)
             if hvac_output_sum > 0.0 {
-                self.0.peak_power_heating = self.0.peak_power_heating.max(hvac_output_sum);
+                self.0.hvac.peak_power_heating =
+                    self.0.hvac.peak_power_heating.max(hvac_output_sum);
             } else if hvac_output_sum < 0.0 {
-                self.0.peak_power_cooling = self.0.peak_power_cooling.max(-hvac_output_sum);
+                self.0.hvac.peak_power_cooling =
+                    self.0.hvac.peak_power_cooling.max(-hvac_output_sum);
             }
 
             // Both equipment and fallback paths now use hvac_output (per-zone VectorField)
@@ -1251,10 +1301,10 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
             // scalar fallback when vectors are shorter than `num_zones`.
             let hvac_output_raw = self.compute_zone_hvac_load(
                 t_i_free.as_ref(),
-                self.0.heating_setpoints.as_ref(),
-                self.0.cooling_setpoints.as_ref(),
-                self.0.heating_setpoint,
-                self.0.cooling_setpoint,
+                self.0.setpoints.heating_setpoints.as_ref(),
+                self.0.setpoints.cooling_setpoints.as_ref(),
+                self.0.setpoints.heating_setpoint,
+                self.0.setpoints.cooling_setpoint,
             );
 
             // Root Cause Fix: Use hvac_output_raw for peak tracking (consistent with energy calc)
@@ -1266,7 +1316,7 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
             // Note: This is the fallback path when hvac_equipment is None
             // Note: hvac_output_raw is positive for heating, negative for cooling
             // Only sum HVAC output from zones where HVAC is enabled (fix for Case 960)
-            let enabled_vec = self.0.hvac_enabled.as_ref();
+            let enabled_vec = self.0.hvac.hvac_enabled.as_ref();
             let mut hvac_power_watts_sum: f64 = 0.0;
             for (i, (output, &enabled)) in hvac_power_for_peak
                 .iter()
@@ -1280,24 +1330,26 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                 // Issue #1628: Also track timestep when peak occurred
                 if val > 0.0 {
                     let val_kw = val / 1000.0;
-                    if val_kw > self.0.zone_peak_heating_kw.as_mut()[i] {
-                        self.0.zone_peak_heating_kw.as_mut()[i] = val_kw;
-                        self.0.zone_peak_heating_timestep[i] = timestep;
+                    if val_kw > self.0.hvac.zone_peak_heating_kw.as_mut()[i] {
+                        self.0.hvac.zone_peak_heating_kw.as_mut()[i] = val_kw;
+                        self.0.hvac.zone_peak_heating_timestep[i] = timestep;
                     }
                 } else if val < 0.0 {
                     let val_kw = -val / 1000.0;
-                    if val_kw > self.0.zone_peak_cooling_kw.as_mut()[i] {
-                        self.0.zone_peak_cooling_kw.as_mut()[i] = val_kw;
-                        self.0.zone_peak_cooling_timestep[i] = timestep;
+                    if val_kw > self.0.hvac.zone_peak_cooling_kw.as_mut()[i] {
+                        self.0.hvac.zone_peak_cooling_kw.as_mut()[i] = val_kw;
+                        self.0.hvac.zone_peak_cooling_timestep[i] = timestep;
                     }
                 }
             }
 
             // Track global peak
             if hvac_power_watts_sum > 0.0 {
-                self.0.peak_power_heating = self.0.peak_power_heating.max(hvac_power_watts_sum);
+                self.0.hvac.peak_power_heating =
+                    self.0.hvac.peak_power_heating.max(hvac_power_watts_sum);
             } else if hvac_power_watts_sum < 0.0 {
-                self.0.peak_power_cooling = self.0.peak_power_cooling.max(-hvac_power_watts_sum);
+                self.0.hvac.peak_power_cooling =
+                    self.0.hvac.peak_power_cooling.max(-hvac_power_watts_sum);
             }
 
             hvac_output_raw
@@ -1320,8 +1372,8 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         // Temperature change: t_i_act = t_i_free + hvac_power / h_tr_is (physically correct).
         //
         // Issue #738: Check free_float BEFORE calling HVAC to ensure zero output
-        let hvac_for_temp_calc = if self.0.free_float {
-            T::from(self.0.zero_vector.clone())
+        let hvac_for_temp_calc = if self.0.hvac.free_float {
+            T::from(self.0.solar.zero_vector.clone())
         } else {
             // Issue #1163: symmetric ideal-HVAC formula (mass heat-release is
             // already embedded in t_i_free via num_tm).
@@ -1329,10 +1381,10 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
             // scalar fallback when vectors are shorter than `num_zones`.
             self.compute_zone_hvac_load(
                 t_i_free.as_ref(),
-                self.0.heating_setpoints.as_ref(),
-                self.0.cooling_setpoints.as_ref(),
-                self.0.heating_setpoint,
-                self.0.cooling_setpoint,
+                self.0.setpoints.heating_setpoints.as_ref(),
+                self.0.setpoints.cooling_setpoints.as_ref(),
+                self.0.setpoints.heating_setpoint,
+                self.0.setpoints.cooling_setpoint,
             )
         };
 
@@ -1394,12 +1446,12 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         // the demand never converged to the envelope loss: 1534 W injected
         // against a 143 W envelope loss, i.e. a ~10× energy-balance violation
         // and +82 % annual heating (Issue #2868).
-        let h_tr_is_vec = self.0.h_tr_is.as_ref();
+        let h_tr_is_vec = self.0.conduction.h_tr_is.as_ref();
         let den_slice = den.as_ref();
-        let term_rest_1_slice = self.0.derived_term_rest_1.as_ref();
+        let term_rest_1_slice = self.0.conduction.derived_term_rest_1.as_ref();
         let t_free = t_i_free.as_ref();
         let hvac = hvac_for_temp_calc.as_ref();
-        for i in 0..self.0.num_zones {
+        for i in 0..self.0.hvac.num_zones {
             let h_is = h_tr_is_vec[i];
             // den_true = den / term_rest_1 (unscaled air-node denominator).
             // Fall back to h_tr_is when the scaled quantities are degenerate
@@ -1427,9 +1479,9 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         // Per-zone energy accumulation (Issue #1288)
         // hvac_for_temp_calc: positive = heating, negative = cooling
         let hvac_vec = hvac_for_temp_calc.as_ref();
-        let zone_heating_slice = self.0.zone_heating_energy_kwh.as_mut();
-        let zone_cooling_slice = self.0.zone_cooling_energy_kwh.as_mut();
-        for i in 0..self.0.num_zones {
+        let zone_heating_slice = self.0.hvac.zone_heating_energy_kwh.as_mut();
+        let zone_cooling_slice = self.0.hvac.zone_cooling_energy_kwh.as_mut();
+        for i in 0..self.0.hvac.num_zones {
             let val = hvac_vec[i];
             total_signed += val;
 
@@ -1452,7 +1504,7 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         // Promoted from debug_assert! to a hard assert under cfg(test) so the
         // ASHRAE 140 free-float regression test catches any code path that
         // sneaks HVAC demand in via the equipment fallback.
-        if self.0.free_float {
+        if self.0.hvac.free_float {
             #[cfg(test)]
             assert!(
                 total_signed.abs() < 1e-6,
@@ -1468,8 +1520,8 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         }
 
         // Physics-based: No correction factors - use raw energy values
-        self.0.annual_heating_energy += heating_energy_joules / 3.6e6;
-        self.0.annual_cooling_energy += cooling_energy_joules / 3.6e6;
+        self.0.hvac.annual_heating_energy += heating_energy_joules / 3.6e6;
+        self.0.hvac.annual_cooling_energy += cooling_energy_joules / 3.6e6;
 
         // hvac_energy_for_step returns total HVAC energy in JOULES (not kWh)
         // The test expects Joules and multiplies by 3.6e6
@@ -1517,17 +1569,17 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         // It applies uniformly to all construction types and all ASHRAE 140
         // cases. The free-float path (hvac_output == 0 → t_i_act == t_i_free)
         // is unaffected because T_s_free == T_s_act when T_free == T_act.
-        let h_tr_ms_ref = self.0.h_tr_ms.as_ref();
-        let mass_temps_ref = self.0.mass_temperatures.as_ref();
-        let h_tr_is_ref = self.0.h_tr_is.as_ref();
+        let h_tr_ms_ref = self.0.conduction.h_tr_ms.as_ref();
+        let mass_temps_ref = self.0.mass.mass_temperatures.as_ref();
+        let h_tr_is_ref = self.0.conduction.h_tr_is.as_ref();
         let t_i_act_ref = t_i_act.as_ref();
         let t_i_free_ref = t_i_free.as_ref();
         let phi_st_ref = phi_st.as_ref();
         let term_rest_1_ref = term_rest_1.as_ref();
-        let h_tr_3_ref = self.0.derived_h_tr_3.as_ref();
+        let h_tr_3_ref = self.0.conduction.derived_h_tr_3.as_ref();
 
-        for i in 0..self.0.num_zones {
-            let cm_i = self.0.thermal_capacitance.as_ref()[i];
+        for i in 0..self.0.hvac.num_zones {
+            let cm_i = self.0.mass.thermal_capacitance.as_ref()[i];
             let h_tr_3_i = h_tr_3_ref[i];
 
             // HVAC-controlled surface temperature (full HVAC coupling).
@@ -1561,21 +1613,21 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
 
         // Update mass temperatures using implicit integration for high thermal capacitance
         // This addresses instability with explicit Euler for Cm > 500 J/K
-        let mass_temps_ref = self.0.mass_temperatures.as_ref();
-        let thermal_cap_ref = self.0.thermal_capacitance.as_ref();
+        let mass_temps_ref = self.0.mass.mass_temperatures.as_ref();
+        let thermal_cap_ref = self.0.mass.thermal_capacitance.as_ref();
         // Mode-specific fields removed - use physics-based h_tr_em and h_tr_ms
-        let h_tr_em_ref = self.0.h_tr_em.as_ref();
-        let h_tr_ms_ref = self.0.h_tr_ms.as_ref();
+        let h_tr_em_ref = self.0.conduction.h_tr_em.as_ref();
+        let h_tr_ms_ref = self.0.conduction.h_tr_ms.as_ref();
         let t_s_act_ref = t_s_act.as_ref();
         let t_i_act_ref = t_i_act.as_ref();
         let phi_m_ref = phi_m.as_ref();
-        let h_tr_3_ref_2 = self.0.derived_h_tr_3.as_ref();
-        let h_tr_is_ref_2 = self.0.h_tr_is.as_ref();
+        let h_tr_3_ref_2 = self.0.conduction.derived_h_tr_3.as_ref();
+        let h_tr_is_ref_2 = self.0.conduction.h_tr_is.as_ref();
 
         // Determine HVAC mode from hvac_output_raw (Plan 03-14)
         // Use separate heating/cooling coupling parameters based on mode
 
-        for i in 0..self.0.num_zones {
+        for i in 0..self.0.hvac.num_zones {
             let tm_old = mass_temps_ref[i];
             let cm = thermal_cap_ref[i];
             let t_s = t_s_act_ref[i];
@@ -1769,12 +1821,13 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
 
         // Plan 03-04: Update previous mass temperature for tracking (kept for diagnostic output)
         // Mass energy change tracking removed - Ti_free already includes thermal mass effects
-        self.0.previous_mass_temperatures =
-            std::mem::replace(&mut self.0.mass_temperatures, new_mass_temps_vf);
+        self.0.mass.previous_mass_temperatures =
+            std::mem::replace(&mut self.0.mass.mass_temperatures, new_mass_temps_vf);
 
         // Store previous temperatures for dT/dt calculation (Plan 15-04, 15-06)
-        self.0.previous_temperatures = VectorField::new(self.0.temperatures.as_ref().to_vec());
-        self.0.temperatures = t_i_act;
+        self.0.hvac.previous_temperatures =
+            VectorField::new(self.0.setpoints.temperatures.as_ref().to_vec());
+        self.0.setpoints.temperatures = t_i_act;
 
         // Return HVAC energy (Plan 03-04: Use hvac_energy_for_step directly)
         // Thermal mass energy accounting removed - Ti_free calculation already includes thermal mass effects
@@ -1784,18 +1837,18 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         // Diagnostics recording (if enabled)
         if self.0.diagnostics_state.diagnostics.is_some() {
             // Store current HVAC output for this timestep (per zone, Watts)
-            self.0.current_hvac_output = Some(hvac_output_raw);
+            self.0.hvac.current_hvac_output = Some(hvac_output_raw);
             // Temporarily take diagnostics out to avoid borrow conflicts
             let mut diag = self.0.diagnostics_state.diagnostics.take().unwrap();
             diag.record_timestep(timestep, self, outdoor_temp, t_g);
             self.0.diagnostics_state.diagnostics = Some(diag);
             // Clear the buffer after use
-            self.0.current_hvac_output = None;
+            self.0.hvac.current_hvac_output = None;
         }
 
         // Issue #2756: restore the pooled scratch so the next timestep reuses
         // the same SmallVec capacity (zero steady-state allocation).
-        self.0.scratch_pool.return_5r1c(scratch);
+        self.0.hvac.scratch_pool.return_5r1c(scratch);
 
         net_hvac_energy_for_step / 3.6e6 // Return kWh
     }
@@ -1819,6 +1872,7 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         // Calculate sky temperature for proper sol-air calculation with longwave radiation
         let sky_temp = self
             .0
+            .solar
             .weather
             .as_ref()
             .map(|w| w.sky_temperature())
@@ -1832,17 +1886,21 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         // behaviour (the Vec that `prepare_solvers_and_sol_air` used to
         // allocate is now allocated by the caller instead, same number of
         // heap blocks).
-        let mut t_sol_air_buf: SmallVec<[f64; 4]> = SmallVec::with_capacity(self.0.num_zones);
+        let mut t_sol_air_buf: SmallVec<[f64; 4]> = SmallVec::with_capacity(self.0.hvac.num_zones);
         let (ctf_flux_w, fd_flux_w, ctf_surface_temps) =
             self.prepare_solvers_and_sol_air(timestep, outdoor_temp, sky_temp, &mut t_sol_air_buf);
 
         // Get ground temperature at this timestep
-        let t_g = self.0.ground_temperature.ground_temperature(timestep);
+        let t_g = self
+            .0
+            .conduction
+            .ground_temperature
+            .ground_temperature(timestep);
 
         let _hour_of_day = (timestep % 24) as u8;
 
         // Combine fractions to avoid multiple intermediate VectorField allocations
-        let conv_frac = self.0.convective_fraction;
+        let conv_frac = self.0.solar.convective_fraction;
         let rad_frac = 1.0 - conv_frac;
         // Internal radiative gains split per ISO 13790 Section C.4 Eq. C.5/C.6:
         // Eq. C.5 (radiative-to-surface): phi_st = (1 - F_sup) * phi_int_rad
@@ -1859,31 +1917,35 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         // The naming reflects ISO 13790 Section C.4:
         //   st_int_frac = fraction of internal radiative gains to SURFACE node (phi_st)
         //   m_air_frac  = fraction of internal radiative gains to AIR node (phi_ia via routing)
-        let st_int_frac = rad_frac * (1.0 - self.0.solar_distribution_to_air);
-        let m_air_frac = rad_frac * self.0.solar_distribution_to_air;
+        let st_int_frac = rad_frac * (1.0 - self.0.solar.solar_distribution_to_air);
+        let m_air_frac = rad_frac * self.0.solar.solar_distribution_to_air;
         // Solar gain distribution for 6R2C model.
         // Energy-conserving split: st + m_env + m_int = 1.0 when sol_to_air = 0.
         // With solar_beam_to_mass_fraction = 0.0: 100% to surface (fast air heating).
         // With solar_beam_to_mass_fraction = 1.0: 70% envelope mass, 30% internal mass.
-        let st_sol_frac = 1.0 - self.0.solar_beam_to_mass_fraction; // Solar to surface
-        let m_env_sol_frac = self.0.solar_beam_to_mass_fraction * 0.7; // Solar to envelope mass
-        let m_int_sol_frac = self.0.solar_beam_to_mass_fraction * 0.3; // Solar to internal mass
-        let sol_to_air_frac = self.0.solar_distribution_to_air;
+        let st_sol_frac = 1.0 - self.0.solar.solar_beam_to_mass_fraction; // Solar to surface
+        let m_env_sol_frac = self.0.solar.solar_beam_to_mass_fraction * 0.7; // Solar to envelope mass
+        let m_int_sol_frac = self.0.solar.solar_beam_to_mass_fraction * 0.3; // Solar to internal mass
+        let sol_to_air_frac = self.0.solar.solar_distribution_to_air;
 
-        let loads_ref = self.0.loads.as_ref();
-        let solar_ref = self.0.solar_gains.as_ref();
-        let opaque_solar_ref = self.0.opaque_solar_gains.as_ref();
-        let area_ref = self.0.zone_area.as_ref();
+        let loads_ref = self.0.setpoints.loads.as_ref();
+        let solar_ref = self.0.solar.solar_gains.as_ref();
+        let opaque_solar_ref = self.0.solar.opaque_solar_gains.as_ref();
+        let area_ref = self.0.setpoints.zone_area.as_ref();
 
         // Issue #1524: consolidated per-timestep scratch (replaces the eleven
         // standalone `Vec::with_capacity(num_zones)` allocations in 6R2C).
         // Issue #1966 / #2756: scratch is CHECKED OUT of `scratch_pool`
         // (allocates only on the first timestep) and `fill_zero()`'d back to
         // the post-`new(num_zones)` state. Bit-identical vs. fresh construct.
-        let mut scratch = self.0.scratch_pool.checkout_6r2c(self.0.num_zones);
+        let mut scratch = self
+            .0
+            .hvac
+            .scratch_pool
+            .checkout_6r2c(self.0.hvac.num_zones);
         scratch.fill_zero();
 
-        for i in 0..self.0.num_zones {
+        for i in 0..self.0.hvac.num_zones {
             let load_w = loads_ref[i] * area_ref[i];
             let sol_w = solar_ref[i] * area_ref[i];
             let opaque_sol_w = opaque_solar_ref[i] * area_ref[i];
@@ -1914,8 +1976,8 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
 
         // Use pre-computed cached values
         #[cfg(feature = "debug-physics")]
-        let h_ext_base = &self.0.derived_h_ext;
-        let term_rest_1 = &self.0.derived_term_rest_1;
+        let h_ext_base = &self.0.conduction.derived_h_ext;
+        let term_rest_1 = &self.0.conduction.derived_term_rest_1;
 
         // Night ventilation no longer modifies h_ext (same fix as 5R1C path).
         let modified_h_ext: Option<T> = None;
@@ -1925,43 +1987,49 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         // 6R2C specific terms
         let h_sum = self
             .0
+            .conduction
             .h_tr_ms
-            .zip_with(&self.0.h_tr_me, |a, b| a + b)
-            .zip_with(&self.0.h_tr_is, |a, b| a + b);
+            .zip_with(&self.0.mass.h_tr_me, |a, b| a + b)
+            .zip_with(&self.0.conduction.h_tr_is, |a, b| a + b);
 
-        let h_ms_me_is_prod = self.0.h_tr_is.zip_with(
-            &self.0.h_tr_ms.zip_with(&self.0.h_tr_me, |a, b| a + b),
+        let h_ms_me_is_prod = self.0.conduction.h_tr_is.zip_with(
+            &self
+                .0
+                .conduction
+                .h_tr_ms
+                .zip_with(&self.0.mass.h_tr_me, |a, b| a + b),
             |a, b| a * b,
         );
 
         let den: T;
         let h_total_with_iz = if let Some(ref mod_h_ext) = modified_h_ext {
-            if self.0.num_zones > 1 {
+            if self.0.hvac.num_zones > 1 {
                 mod_h_ext
-                    .zip_with(&self.0.h_tr_iz, |a, b| a + b)
-                    .zip_with(&self.0.h_tr_iz_rad, |a, b| a + b)
+                    .zip_with(&self.0.conduction.h_tr_iz, |a, b| a + b)
+                    .zip_with(&self.0.conduction.h_tr_iz_rad, |a, b| a + b)
             } else {
                 mod_h_ext.clone()
             }
         } else {
-            if self.0.num_zones > 1 {
+            if self.0.hvac.num_zones > 1 {
                 self.0
+                    .conduction
                     .derived_h_ext
-                    .zip_with(&self.0.h_tr_iz, |a, b| a + b)
-                    .zip_with(&self.0.h_tr_iz_rad, |a, b| a + b)
+                    .zip_with(&self.0.conduction.h_tr_iz, |a, b| a + b)
+                    .zip_with(&self.0.conduction.h_tr_iz_rad, |a, b| a + b)
             } else {
-                self.0.derived_h_ext.clone()
+                self.0.conduction.derived_h_ext.clone()
             }
         };
 
         // Issue 693 fix: ground coupling coefficient in 6R2C den
         // Optimized: avoid intermediate vector allocations using explicit loop
         let h_sum_ref = h_sum.as_ref();
-        let h_tr_floor_ref = self.0.h_tr_floor.as_ref();
+        let h_tr_floor_ref = self.0.conduction.h_tr_floor.as_ref();
         let h_ms_me_is_prod_ref = h_ms_me_is_prod.as_ref();
         let h_total_with_iz_ref = h_total_with_iz.as_ref();
 
-        for i in 0..self.0.num_zones {
+        for i in 0..self.0.hvac.num_zones {
             let g = h_sum_ref[i] * h_tr_floor_ref[i];
             scratch.ground_coeff[i] = g;
             let d = h_ms_me_is_prod_ref[i] + (h_sum_ref[i] * h_total_with_iz_ref[i]) + g;
@@ -1979,20 +2047,21 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         // When ctf_primary=true, the 6R2C h_tr_ms coupling is DISABLED because
         // CTF provides the correct multi-layer conduction dynamics directly.
         // The CTF heat flow q_ctf (computed from T_si_ctf) replaces the 6R2C h_tr_ms * t_mass term.
-        let num_tm = if self.0.conduction.ctf_primary {
+        let num_tm = if self.0.conduction.backend.ctf_primary {
             // Zero out the 6R2C coupling - CTF will drive the zone air heat balance
-            self.0.derived_h_ms_is_prod.constant_like(0.0)
+            self.0.conduction.derived_h_ms_is_prod.constant_like(0.0)
         } else {
             self.0
+                .conduction
                 .derived_h_ms_is_prod
-                .zip_with(&self.0.envelope_mass_temperatures, |a, b| a * b)
+                .zip_with(&self.0.mass.envelope_mass_temperatures, |a, b| a * b)
         };
-        let num_phi_st = self.0.h_tr_is.zip_with(&phi_st, |a, b| a * b);
+        let num_phi_st = self.0.conduction.h_tr_is.zip_with(&phi_st, |a, b| a * b);
 
         // Inter-zone heat transfer (with radiative component - Issue #302)
-        let num_zones = self.0.num_zones;
-        let h_iz_vec = self.0.h_tr_iz.as_ref();
-        let h_iz_rad_vec = self.0.h_tr_iz_rad.as_ref();
+        let num_zones = self.0.hvac.num_zones;
+        let h_iz_vec = self.0.conduction.h_tr_iz.as_ref();
+        let h_iz_rad_vec = self.0.conduction.h_tr_iz_rad.as_ref();
 
         // Store phi_ia[0] for debugging before we consume it (debug-physics only)
         #[cfg(feature = "debug-physics")]
@@ -2005,7 +2074,7 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
             && (!h_iz_vec.is_empty() && h_iz_vec[0] > 0.0
                 || !h_iz_rad_vec.is_empty() && h_iz_rad_vec[0] > 0.0)
         {
-            let temps = self.0.temperatures.as_ref();
+            let temps = self.0.setpoints.temperatures.as_ref();
             let h_iz_val = h_iz_vec.first().copied().unwrap_or(0.0);
             let h_iz_rad_val = h_iz_rad_vec.first().copied().unwrap_or(0.0);
             let total_h_iz = h_iz_val + h_iz_rad_val;
@@ -2033,7 +2102,7 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         // Correct formula: num_rest = term_rest_1 * (phi_ia + h_ext * outdoor_temp) + h_tr_floor * t_g
         // Note: derived_ground_coeff = term_rest_1 * h_tr_floor, so we need to divide by term_rest_1
         // before multiplying, or add the ground term separately after the multiplication.
-        let _h_tr_floor_ref = self.0.h_tr_floor.as_ref();
+        let _h_tr_floor_ref = self.0.conduction.h_tr_floor.as_ref();
 
         // Start with phi_ia_with_iz
         let mut sum_term = phi_ia_with_iz;
@@ -2042,7 +2111,14 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
             let slice = sum_term.as_mut();
             for (i, &q_flux) in ctf_fluxes.iter().enumerate() {
                 if i < slice.len() {
-                    let area = self.0.zone_area.as_ref().get(i).copied().unwrap_or(1.0);
+                    let area = self
+                        .0
+                        .setpoints
+                        .zone_area
+                        .as_ref()
+                        .get(i)
+                        .copied()
+                        .unwrap_or(1.0);
                     let q_ctf = q_flux * area;
                     slice[i] += q_ctf;
                 }
@@ -2054,17 +2130,32 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
             let slice = sum_term.as_mut();
             for (i, &q_flux) in fd_fluxes.iter().enumerate() {
                 if i < slice.len() {
-                    let area = self.0.zone_area.as_ref().get(i).copied().unwrap_or(1.0);
+                    let area = self
+                        .0
+                        .setpoints
+                        .zone_area
+                        .as_ref()
+                        .get(i)
+                        .copied()
+                        .unwrap_or(1.0);
                     let q_fd = q_flux * area;
                     let t_sol_air_i = t_sol_air_buf.get(i).copied().unwrap_or(outdoor_temp);
                     let t_mass = self
                         .0
+                        .mass
                         .envelope_mass_temperatures
                         .as_ref()
                         .get(i)
                         .copied()
                         .unwrap_or(20.0);
-                    let h_tr_em_i = self.0.h_tr_em.as_ref().get(i).copied().unwrap_or(0.0);
+                    let h_tr_em_i = self
+                        .0
+                        .conduction
+                        .h_tr_em
+                        .as_ref()
+                        .get(i)
+                        .copied()
+                        .unwrap_or(0.0);
                     let q_5r1c = h_tr_em_i * (t_sol_air_i - t_mass);
                     let net_fd_flux = q_fd - q_5r1c;
                     slice[i] += net_fd_flux;
@@ -2077,7 +2168,7 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         let term_rest_1_ref = term_rest_1.as_ref();
         let ground_coeff = ground_coeff_6r2c.as_ref();
 
-        for i in 0..self.0.num_zones {
+        for i in 0..self.0.hvac.num_zones {
             scratch.num_rest[i] = sum_term_ref[i] * term_rest_1_ref[i] + ground_coeff[i] * t_g;
         }
         let num_rest_with_iz = T::from(VectorField::from_smallvec(std::mem::take(
@@ -2086,17 +2177,17 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
 
         // DEBUG: Save values for 900FF before they're consumed
         #[cfg(feature = "debug-physics")]
-        let debug_900ff = if self.0.case_id == "900FF" && timestep.is_multiple_of(24) {
+        let debug_900ff = if self.0.hvac.case_id == "900FF" && timestep.is_multiple_of(24) {
             let den_vals = den.as_ref();
             let _num_tm_vals = num_tm.as_ref();
             let num_rest_vals = num_rest_with_iz.as_ref();
-            let _env_mass_vals = self.0.envelope_mass_temperatures.as_ref();
+            let _env_mass_vals = self.0.mass.envelope_mass_temperatures.as_ref();
             let h_sum_vals = h_sum.as_ref();
             let sum_term_vals = sum_term.as_ref();
             let h_ext_debug = h_ext.as_ref();
-            let solar_debug = self.0.solar_gains.as_ref();
-            let loads_debug = self.0.loads.as_ref();
-            let area_debug = self.0.zone_area.as_ref();
+            let solar_debug = self.0.solar.solar_gains.as_ref();
+            let loads_debug = self.0.setpoints.loads.as_ref();
+            let area_debug = self.0.setpoints.zone_area.as_ref();
             eprintln!("DEBUG_900FF_PREPARE: t={}, phi_ia[0]={:.2}, solar[0]={:.2}, loads[0]={:.2}, area[0]={:.1}", timestep, phi_ia_0, solar_debug[0], loads_debug[0], area_debug[0]);
             Some((
                 den_vals[0],
@@ -2162,10 +2253,10 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         // scalar fallback when vectors are shorter than `num_zones`.
         let hvac_output_raw = self.compute_zone_hvac_load(
             t_i_free.as_ref(),
-            self.0.heating_setpoints.as_ref(),
-            self.0.cooling_setpoints.as_ref(),
-            self.0.heating_setpoint,
-            self.0.cooling_setpoint,
+            self.0.setpoints.heating_setpoints.as_ref(),
+            self.0.setpoints.cooling_setpoints.as_ref(),
+            self.0.setpoints.heating_setpoint,
+            self.0.setpoints.cooling_setpoint,
         );
         // Fix: Use actual HVAC demand instead of steady-state approximation (Plan 03-03 Task 2)
         // hvac_output_raw already includes thermal mass buffering (calculated from t_i_free)
@@ -2176,11 +2267,11 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         // Physics-based: Track actual HVAC demand without calibration factors
         if hvac_power_watts > 0.0 {
             // Heating mode - track actual demand
-            self.0.peak_power_heating = self.0.peak_power_heating.max(hvac_power_watts);
+            self.0.hvac.peak_power_heating = self.0.hvac.peak_power_heating.max(hvac_power_watts);
         } else if hvac_power_watts < 0.0 {
             // Cooling mode (store as positive value)
             let cooling_demand = -hvac_power_watts;
-            self.0.peak_power_cooling = self.0.peak_power_cooling.max(cooling_demand);
+            self.0.hvac.peak_power_cooling = self.0.hvac.peak_power_cooling.max(cooling_demand);
         }
 
         // Plan 03-04: Use hvac_output_raw directly for energy calculation
@@ -2199,10 +2290,10 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         // Per-zone energy accumulation (Issue #1288)
         // hvac_output_raw: positive = heating, negative = cooling
         let hvac_vec = hvac_output_raw.as_ref();
-        let zone_heating_slice = self.0.zone_heating_energy_kwh.as_mut();
-        let zone_cooling_slice = self.0.zone_cooling_energy_kwh.as_mut();
+        let zone_heating_slice = self.0.hvac.zone_heating_energy_kwh.as_mut();
+        let zone_cooling_slice = self.0.hvac.zone_cooling_energy_kwh.as_mut();
 
-        for i in 0..self.0.num_zones {
+        for i in 0..self.0.hvac.num_zones {
             let val = hvac_vec[i];
             total_signed += val;
 
@@ -2216,9 +2307,9 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                 // Issue #1289: Track per-zone peaks
                 // Issue #1628: Also track timestep when peak occurred
                 let val_kw = val / 1000.0;
-                if val_kw > self.0.zone_peak_heating_kw.as_mut()[i] {
-                    self.0.zone_peak_heating_kw.as_mut()[i] = val_kw;
-                    self.0.zone_peak_heating_timestep[i] = timestep;
+                if val_kw > self.0.hvac.zone_peak_heating_kw.as_mut()[i] {
+                    self.0.hvac.zone_peak_heating_kw.as_mut()[i] = val_kw;
+                    self.0.hvac.zone_peak_heating_timestep[i] = timestep;
                 }
             } else {
                 cooling_sum += -val;
@@ -2227,9 +2318,9 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                 // Issue #1289: Track per-zone peaks
                 // Issue #1628: Also track timestep when peak occurred
                 let val_kw = -val / 1000.0;
-                if val_kw > self.0.zone_peak_cooling_kw.as_mut()[i] {
-                    self.0.zone_peak_cooling_kw.as_mut()[i] = val_kw;
-                    self.0.zone_peak_cooling_timestep[i] = timestep;
+                if val_kw > self.0.hvac.zone_peak_cooling_kw.as_mut()[i] {
+                    self.0.hvac.zone_peak_cooling_kw.as_mut()[i] = val_kw;
+                    self.0.hvac.zone_peak_cooling_timestep[i] = timestep;
                 }
             }
         }
@@ -2242,7 +2333,7 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         // Promoted from debug_assert! to a hard assert under cfg(test) so the
         // ASHRAE 140 free-float regression test catches any code path that
         // sneaks HVAC demand in via the equipment fallback.
-        if self.0.free_float {
+        if self.0.hvac.free_float {
             #[cfg(test)]
             assert!(
                 total_signed.abs() < 1e-6,
@@ -2258,8 +2349,8 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         }
 
         // Physics-based: No correction factors - use raw energy values
-        self.0.annual_heating_energy += heating_energy_joules / 3.6e6;
-        self.0.annual_cooling_energy += cooling_energy_joules / 3.6e6;
+        self.0.hvac.annual_heating_energy += heating_energy_joules / 3.6e6;
+        self.0.hvac.annual_cooling_energy += cooling_energy_joules / 3.6e6;
 
         // hvac_energy_for_step returns total HVAC energy in JOULES (not kWh)
         // The test expects Joules and multiplies by 3.6e6
@@ -2270,10 +2361,10 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         // t_i_act = t_i_free + hvac_power / h_tr_is
         // (See the NOTE at the first temperature-update site above for why
         // h_tr_is is retained instead of h_coeff — Issue #1163.)
-        let h_tr_is_vec = self.0.h_tr_is.as_ref();
+        let h_tr_is_vec = self.0.conduction.h_tr_is.as_ref();
         let t_free = t_i_free.as_ref();
         let hvac = hvac_output_raw.as_ref();
-        for i in 0..self.0.num_zones {
+        for i in 0..self.0.hvac.num_zones {
             let h_is = h_tr_is_vec[i];
             if h_is > 0.0 && hvac[i].abs() > 1e-6 {
                 scratch.t_i_act[i] = t_free[i] + hvac[i] / h_is;
@@ -2289,17 +2380,17 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         // === 6R2C: Update two mass nodes ===
         // PHASE 36-04 FIX: Include h_tr_me * Tm_int in surface temperature calculation
         // The 6R2C model requires: T_s = (h_tr_is*T_i + h_tr_ms*Tm_env + h_tr_me*Tm_int + phi_st) / (h_tr_is + h_tr_ms + h_tr_me)
-        let h_tr_me_ref = self.0.h_tr_me.as_ref();
-        let int_mass_temps_ref = self.0.internal_mass_temperatures.as_ref();
+        let h_tr_me_ref = self.0.mass.h_tr_me.as_ref();
+        let int_mass_temps_ref = self.0.mass.internal_mass_temperatures.as_ref();
         // SESSION 89: When ctf_primary is active, use CTF T_si (with HVAC offset) instead of lumped T_s
-        let t_s_act: T = if self.0.conduction.ctf_primary {
+        let t_s_act: T = if self.0.conduction.backend.ctf_primary {
             // Use CTF surface temp adjusted for HVAC effect
             // The CTF T_si was computed at t_i_free; adjust for actual t_i_act via linear correction:
             // T_si_adjusted ≈ T_si_ctf + (h_tr_is / (h_tr_is + Z₀)) * (t_i_act - t_i_free)
             if let Some(ref ctf_temps) = ctf_surface_temps {
                 let t_i_free_ref = t_i_free.as_ref();
                 let t_i_act_ref = t_i_act.as_ref();
-                for i in 0..self.0.num_zones {
+                for i in 0..self.0.hvac.num_zones {
                     let t_si_ctf = ctf_temps.get(i).copied().unwrap_or(20.0);
                     let delta_t_i = t_i_act_ref.get(i).copied().unwrap_or(0.0)
                         - t_i_free_ref.get(i).copied().unwrap_or(0.0);
@@ -2311,13 +2402,13 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
             } else {
                 // PHASE 36-04 FIX: 6R2C surface temperature with h_tr_me * Tm_int coupling
                 // T_s = (h_tr_is*T_i + h_tr_ms*Tm_env + h_tr_me*Tm_int + phi_st) / (h_tr_is + h_tr_ms + h_tr_me)
-                let h_tr_ms_data = self.0.h_tr_ms.as_ref();
-                let h_tr_is_data = self.0.h_tr_is.as_ref();
+                let h_tr_ms_data = self.0.conduction.h_tr_ms.as_ref();
+                let h_tr_is_data = self.0.conduction.h_tr_is.as_ref();
                 let t_i_act_data = t_i_act.as_ref();
                 let phi_st_data = phi_st.as_ref();
-                let env_mass_data = self.0.envelope_mass_temperatures.as_ref();
+                let env_mass_data = self.0.mass.envelope_mass_temperatures.as_ref();
                 let term_rest_data = term_rest_1.as_ref();
-                for i in 0..self.0.num_zones {
+                for i in 0..self.0.hvac.num_zones {
                     let numerator = h_tr_ms_data[i] * env_mass_data[i]
                         + h_tr_is_data[i] * t_i_act_data[i]
                         + phi_st_data[i]
@@ -2330,13 +2421,13 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         } else {
             // PHASE 36-04 FIX: 6R2C surface temperature with h_tr_me * Tm_int coupling
             // T_s = (h_tr_is*T_i + h_tr_ms*Tm_env + h_tr_me*Tm_int + phi_st) / (h_tr_is + h_tr_ms + h_tr_me)
-            let h_tr_ms_data = self.0.h_tr_ms.as_ref();
-            let h_tr_is_data = self.0.h_tr_is.as_ref();
+            let h_tr_ms_data = self.0.conduction.h_tr_ms.as_ref();
+            let h_tr_is_data = self.0.conduction.h_tr_is.as_ref();
             let t_i_act_data = t_i_act.as_ref();
             let phi_st_data = phi_st.as_ref();
-            let env_mass_data = self.0.envelope_mass_temperatures.as_ref();
+            let env_mass_data = self.0.mass.envelope_mass_temperatures.as_ref();
             let term_rest_data = term_rest_1.as_ref();
-            for i in 0..self.0.num_zones {
+            for i in 0..self.0.hvac.num_zones {
                 let numerator = h_tr_ms_data[i] * env_mass_data[i]
                     + h_tr_is_data[i] * t_i_act_data[i]
                     + phi_st_data[i]
@@ -2351,17 +2442,17 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         // Envelope mass: receives heat from exterior (sol-air), surface, and internal mass
 
         // Update envelope mass temperatures using implicit integration for high thermal capacitance
-        let env_mass_temps_ref = self.0.envelope_mass_temperatures.as_ref();
-        let env_thermal_cap_ref = self.0.envelope_thermal_capacitance.as_ref();
+        let env_mass_temps_ref = self.0.mass.envelope_mass_temperatures.as_ref();
+        let env_thermal_cap_ref = self.0.mass.envelope_thermal_capacitance.as_ref();
         // Mode-specific fields removed - use physics-based h_tr_em and h_tr_ms
-        let h_tr_em_ref = self.0.h_tr_em.as_ref();
-        let h_tr_ms_ref = self.0.h_tr_ms.as_ref();
-        let h_tr_me_ref = self.0.h_tr_me.as_ref();
-        let int_mass_temps_ref = self.0.internal_mass_temperatures.as_ref();
+        let h_tr_em_ref = self.0.conduction.h_tr_em.as_ref();
+        let h_tr_ms_ref = self.0.conduction.h_tr_ms.as_ref();
+        let h_tr_me_ref = self.0.mass.h_tr_me.as_ref();
+        let int_mass_temps_ref = self.0.mass.internal_mass_temperatures.as_ref();
         let t_s_act_ref = t_s_act.as_ref();
         let phi_m_env_ref = phi_m_env.as_ref();
 
-        for i in 0..self.0.num_zones {
+        for i in 0..self.0.hvac.num_zones {
             let tm_env_old = env_mass_temps_ref[i];
             let cm_env = env_thermal_cap_ref[i];
             let h_tr_me = h_tr_me_ref[i];
@@ -2377,11 +2468,11 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
             // It affects T_s via the surface network, not directly Tm_env
             let _h_tr_em = h_tr_em_ref[i];
             let h_tr_ms = h_tr_ms_ref[i];
-            let h_tr_3 = self.0.derived_h_tr_3.as_ref()[i];
+            let h_tr_3 = self.0.conduction.derived_h_tr_3.as_ref()[i];
 
             // Check if this is a high-mass case (900 series)
             let is_high_mass = matches!(
-                self.0.case_id.as_str(),
+                self.0.hvac.case_id.as_str(),
                 "900" | "910" | "920" | "930" | "940" | "950" | "900FF" | "950FF"
             );
 
@@ -2463,10 +2554,10 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         // Internal mass: receives heat from envelope mass and direct gains
 
         // Update internal mass temperatures using implicit integration for high thermal capacitance
-        let int_thermal_cap_ref = self.0.internal_thermal_capacitance.as_ref();
+        let int_thermal_cap_ref = self.0.mass.internal_thermal_capacitance.as_ref();
         let phi_m_int_ref = phi_m_int.as_ref();
 
-        for i in 0..self.0.num_zones {
+        for i in 0..self.0.hvac.num_zones {
             let tm_int_old = int_mass_temps_ref[i];
             let cm_int = int_thermal_cap_ref[i];
             let h_tr_me = h_tr_me_ref[i];
@@ -2511,33 +2602,41 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
 
         let new_env_temps_vf: T =
             VectorField::from_smallvec(std::mem::take(&mut scratch.new_env)).into();
-        let old_env_mass_temperatures =
-            std::mem::replace(&mut self.0.envelope_mass_temperatures, new_env_temps_vf);
+        let old_env_mass_temperatures = std::mem::replace(
+            &mut self.0.mass.envelope_mass_temperatures,
+            new_env_temps_vf,
+        );
 
         let new_int_temps_vf: T =
             VectorField::from_smallvec(std::mem::take(&mut scratch.new_int)).into();
-        let old_int_mass_temperatures =
-            std::mem::replace(&mut self.0.internal_mass_temperatures, new_int_temps_vf);
+        let old_int_mass_temperatures = std::mem::replace(
+            &mut self.0.mass.internal_mass_temperatures,
+            new_int_temps_vf,
+        );
 
         // Issue #272, #274, #275: Calculate thermal mass energy change for 6R2C
         // For 6R2C, we track energy changes in both envelope and internal masses
         // Envelope mass energy change (Cm × (Tm_new - Tm_old))
         let env_mass_temp_change = self
             .0
+            .mass
             .envelope_mass_temperatures
             .zip_with(&old_env_mass_temperatures, |a, b| a - b);
         let env_mass_energy_change = self
             .0
+            .mass
             .envelope_thermal_capacitance
             .zip_with(&env_mass_temp_change, |a, b| a * b);
 
         // Internal mass energy change (Cm × (Tm_new - Tm_old))
         let int_mass_temp_change = self
             .0
+            .mass
             .internal_mass_temperatures
             .zip_with(&old_int_mass_temperatures, |a, b| a - b);
         let int_mass_energy_change = self
             .0
+            .mass
             .internal_thermal_capacitance
             .zip_with(&int_mass_temp_change, |a, b| a * b);
 
@@ -2548,47 +2647,50 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         // Track cumulative mass energy change
         let mass_energy_change_for_step_total =
             mass_energy_change_for_step_6r2c.reduce(0.0, |acc, val| acc + val);
-        self.0.mass_energy_change_cumulative += mass_energy_change_for_step_total;
+        self.0.mass.mass_energy_change_cumulative += mass_energy_change_for_step_total;
 
         // Plan 03-04: Update single mass temperature for backward compatibility (average of two masses)
         let total_cap = self
             .0
+            .mass
             .envelope_thermal_capacitance
-            .zip_with(&self.0.internal_thermal_capacitance, |a, b| a + b);
+            .zip_with(&self.0.mass.internal_thermal_capacitance, |a, b| a + b);
 
-        self.0.mass_temperatures = self
+        self.0.mass.mass_temperatures = self
             .0
+            .mass
             .envelope_mass_temperatures
-            .zip_with(&self.0.envelope_thermal_capacitance, |a, b| a * b)
+            .zip_with(&self.0.mass.envelope_thermal_capacitance, |a, b| a * b)
             .zip_with(
                 &self
                     .0
+                    .mass
                     .internal_mass_temperatures
-                    .zip_with(&self.0.internal_thermal_capacitance, |a, b| a * b),
+                    .zip_with(&self.0.mass.internal_thermal_capacitance, |a, b| a * b),
                 |a, b| a + b,
             )
             .zip_with(&total_cap, |a, b| a / b);
 
         // DEBUG: Print t_i_act before storing
-        self.0.temperatures = t_i_act;
+        self.0.setpoints.temperatures = t_i_act;
 
         // Diagnostics recording (if enabled)
         if self.0.diagnostics_state.diagnostics.is_some() {
             // Store current HVAC output for this timestep (per zone, Watts)
-            self.0.current_hvac_output = Some(hvac_output_raw);
+            self.0.hvac.current_hvac_output = Some(hvac_output_raw);
             // Temporarily take diagnostics out to avoid borrow conflicts
             let mut diag = self.0.diagnostics_state.diagnostics.take().unwrap();
             diag.record_timestep(timestep, self, outdoor_temp, t_g);
             self.0.diagnostics_state.diagnostics = Some(diag);
             // Clear the buffer after use
-            self.0.current_hvac_output = None;
+            self.0.hvac.current_hvac_output = None;
         }
 
         // Return HVAC energy (Plan 03-04: Use hvac_energy_for_step directly)
         // Thermal mass energy accounting removed - Ti_free calculation already includes thermal mass effects
         // Issue #2756: restore the pooled scratch so the next timestep reuses
         // the same SmallVec capacity (zero steady-state allocation).
-        self.0.scratch_pool.return_6r2c(scratch);
+        self.0.hvac.scratch_pool.return_6r2c(scratch);
 
         hvac_energy_for_step / 3.6e6 // Return kWh
     }
@@ -2617,7 +2719,11 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         let dt = dt_seconds; // Use provided timestep duration
 
         // Get ground temperature at this timestep (unused in simplified 8R3C)
-        let _t_g = self.0.ground_temperature.ground_temperature(timestep);
+        let _t_g = self
+            .0
+            .conduction
+            .ground_temperature
+            .ground_temperature(timestep);
 
         // Use 5R1C solve for simplicity (Phase 20 evaluation)
         // In a full implementation, this would be a proper 8R3C algebraic system
@@ -2625,71 +2731,80 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
 
         // Update 8R3C mass temperatures using simple relaxation (for evaluation)
         // In a full implementation, these would be coupled with Ti_free calculation
-        let t_i = self.0.temperatures.clone();
+        let t_i = self.0.setpoints.temperatures.clone();
 
         // Validate 8R3C fields are initialized (precondition for 8R3C physics step)
         let ceiling_mass = self
             .0
+            .mass
             .ceiling_mass_temperatures
             .as_mut()
             .expect("ceiling_mass_temperatures must be initialized for 8R3C model");
         let floor_mass = self
             .0
+            .mass
             .floor_mass_temperatures
             .as_mut()
             .expect("floor_mass_temperatures must be initialized for 8R3C model");
         let partition_mass = self
             .0
+            .mass
             .partition_mass_temperatures
             .as_mut()
             .expect("partition_mass_temperatures must be initialized for 8R3C model");
         let ceiling_cap = self
             .0
+            .mass
             .ceiling_thermal_capacitance
             .as_ref()
             .expect("ceiling_thermal_capacitance must be initialized for 8R3C model");
         let floor_cap = self
             .0
+            .mass
             .floor_thermal_capacitance
             .as_ref()
             .expect("floor_thermal_capacitance must be initialized for 8R3C model");
         let partition_cap = self
             .0
+            .mass
             .partition_thermal_capacitance
             .as_ref()
             .expect("partition_thermal_capacitance must be initialized for 8R3C model");
         let h_tr_ceiling = self
             .0
+            .mass
             .h_tr_ceiling
             .as_ref()
             .expect("h_tr_ceiling must be initialized for 8R3C model");
         let h_tr_floor_mass = self
             .0
+            .mass
             .h_tr_floor_mass
             .as_ref()
             .expect("h_tr_floor_mass must be initialized for 8R3C model");
         let h_tr_partition = self
             .0
+            .mass
             .h_tr_partition
             .as_ref()
             .expect("h_tr_partition must be initialized for 8R3C model");
 
         // Update ceiling mass temperature
-        for i in 0..self.0.num_zones {
+        for i in 0..self.0.hvac.num_zones {
             let dtm_ceiling = (t_i.as_ref()[i] - ceiling_mass.as_ref()[i])
                 / (ceiling_cap.as_ref()[i] / (h_tr_ceiling.as_ref()[i] * dt));
             ceiling_mass.as_mut()[i] += dtm_ceiling;
         }
 
         // Update floor mass temperature
-        for i in 0..self.0.num_zones {
+        for i in 0..self.0.hvac.num_zones {
             let dtm_floor = (t_i.as_ref()[i] - floor_mass.as_ref()[i])
                 / (floor_cap.as_ref()[i] / (h_tr_floor_mass.as_ref()[i] * dt));
             floor_mass.as_mut()[i] += dtm_floor;
         }
 
         // Update partition mass temperature
-        for i in 0..self.0.num_zones {
+        for i in 0..self.0.hvac.num_zones {
             let dtm_partition = (t_i.as_ref()[i] - partition_mass.as_ref()[i])
                 / (partition_cap.as_ref()[i] / (h_tr_partition.as_ref()[i] * dt));
             partition_mass.as_mut()[i] += dtm_partition;
@@ -2716,11 +2831,16 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         let dt = dt_seconds;
 
         // Get ground temperature at this timestep
-        let t_g = self.0.ground_temperature.ground_temperature(timestep);
+        let t_g = self
+            .0
+            .conduction
+            .ground_temperature
+            .ground_temperature(timestep);
 
         // Calculate sky temperature for sol-air calculation
         let sky_temp = self
             .0
+            .solar
             .weather
             .as_ref()
             .map(|w| w.sky_temperature())
@@ -2743,13 +2863,21 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         let hour_of_day = (timestep % 24) as u8;
         let mut night_vent_active_now = false;
         let mut ach_night_vent: f64 = 0.0; // ACH of night ventilation (for h_tr_is scaling)
-        let h_ve_night: f64 = if let Some(ref night_vent) = self.0.night_ventilation {
+        let h_ve_night: f64 = if let Some(ref night_vent) = self.0.hvac.night_ventilation {
             if night_vent.is_active_at_hour(hour_of_day) {
                 night_vent_active_now = true;
                 // ASHRAE 140 night-vent fan supplies outdoor air to zone 0
-                let rho = self.0.air_density.as_ref().first().copied().unwrap_or(1.2);
+                let rho = self
+                    .0
+                    .setpoints
+                    .air_density
+                    .as_ref()
+                    .first()
+                    .copied()
+                    .unwrap_or(1.2);
                 let cp = self
                     .0
+                    .setpoints
                     .heat_capacity
                     .as_ref()
                     .first()
@@ -2759,6 +2887,7 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                 // Zone 0 is the conditioned zone per ASHRAE 140
                 let zone_vol = self
                     .0
+                    .setpoints
                     .zone_volume
                     .as_ref()
                     .first()
@@ -2780,12 +2909,12 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         // sol-air computation further down), so we hand the helper a stack
         // `SmallVec` that is dropped at the end of the call — bit-identical
         // to the previous behaviour.
-        let mut t_sol_air_buf: SmallVec<[f64; 4]> = SmallVec::with_capacity(self.0.num_zones);
+        let mut t_sol_air_buf: SmallVec<[f64; 4]> = SmallVec::with_capacity(self.0.hvac.num_zones);
         let (ctf_flux_w, fd_flux_w, _ctf_surface_temps) =
             self.prepare_solvers_and_sol_air(timestep, outdoor_temp, sky_temp, &mut t_sol_air_buf);
 
         // Combine fractions
-        let conv_frac = self.0.convective_fraction;
+        let conv_frac = self.0.solar.convective_fraction;
         let rad_frac = 1.0 - conv_frac;
 
         // Solar gain distribution fractions
@@ -2797,15 +2926,15 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         // Eq. C.6 (radiative-to-air): phi_ia gets the radiative portion via solar_distribution_to_air
         //   m_air_frac = rad_frac * solar_distribution_to_air = rad_frac * F_m
         //
-        let st_int_frac = rad_frac * (1.0 - self.0.solar_distribution_to_air);
-        let m_air_frac = rad_frac * self.0.solar_distribution_to_air;
-        let st_sol_frac = 1.0 - self.0.solar_beam_to_mass_fraction;
-        let m_sol_frac = self.0.solar_beam_to_mass_fraction;
+        let st_int_frac = rad_frac * (1.0 - self.0.solar.solar_distribution_to_air);
+        let m_air_frac = rad_frac * self.0.solar.solar_distribution_to_air;
+        let st_sol_frac = 1.0 - self.0.solar.solar_beam_to_mass_fraction;
+        let m_sol_frac = self.0.solar.solar_beam_to_mass_fraction;
 
-        let loads_ref = self.0.loads.as_ref();
-        let solar_ref = self.0.solar_gains.as_ref();
-        let opaque_solar_ref = self.0.opaque_solar_gains.as_ref();
-        let area_ref = self.0.zone_area.as_ref();
+        let loads_ref = self.0.setpoints.loads.as_ref();
+        let solar_ref = self.0.solar.solar_gains.as_ref();
+        let opaque_solar_ref = self.0.solar.opaque_solar_gains.as_ref();
+        let area_ref = self.0.setpoints.zone_area.as_ref();
 
         // Issue #1524: consolidated per-timestep scratch (replaces the fourteen
         // standalone `Vec::with_capacity(num_zones)` allocations in 9R4C; the
@@ -2814,15 +2943,19 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         // (allocates only on the first timestep) and `fill_zero()`'d back to
         // the post-`new(num_zones)` state (the `inter` buffer is resized to
         // `num_zones * 7`). Bit-identical vs. fresh construct.
-        let mut scratch = self.0.scratch_pool.checkout_9r4c(self.0.num_zones);
+        let mut scratch = self
+            .0
+            .hvac
+            .scratch_pool
+            .checkout_9r4c(self.0.hvac.num_zones);
         scratch.fill_zero();
 
-        for i in 0..self.0.num_zones {
+        for i in 0..self.0.hvac.num_zones {
             let load_w = loads_ref[i] * area_ref[i];
             let sol_w = solar_ref[i] * area_ref[i];
             let opaque_sol_w = opaque_solar_ref[i] * area_ref[i];
 
-            let sol_to_air = sol_w * self.0.solar_distribution_to_air;
+            let sol_to_air = sol_w * self.0.solar.solar_distribution_to_air;
             let remaining_sol = sol_w - sol_to_air;
             scratch.phi_ia[i] = load_w * conv_frac + sol_to_air;
             scratch.phi_st[i] = load_w * st_int_frac + remaining_sol * st_sol_frac;
@@ -2845,7 +2978,7 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         // The CTF/FD flux calculations use t_sol_air_data as the exterior boundary
         // temperature. Using outdoor_temp would ignore solar gain on west walls,
         // causing massive heating energy overcounting (9.45 MWh vs reference 1.17-2.04 MWh).
-        let t_sol_air_wall = if let Some(weather) = &self.0.weather {
+        let t_sol_air_wall = if let Some(weather) = &self.0.solar.weather {
             let hour_of_year = timestep % 8760;
             let month_days: [usize; 12] = [0, 31, 59, 90, 120, 151, 181, 212, 243, 273, 304, 334];
             let day_of_year = hour_of_year / 24;
@@ -2885,12 +3018,12 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
             outdoor_temp
         };
 
-        for i in 0..self.0.num_zones {
+        for i in 0..self.0.hvac.num_zones {
             scratch.t_sol_air_mut()[i] = t_sol_air_wall;
         }
 
         // Use 5R1C network for free-floating temperature
-        let term_rest_1 = &self.0.derived_term_rest_1;
+        let term_rest_1 = &self.0.conduction.derived_term_rest_1;
 
         // Issue #1712 fix: Apply h_ve_night to h_ext and den when night ventilation
         // is active, matching the 5R1C path (lines 421-471). This ensures the
@@ -2901,7 +3034,7 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         // to not properly respond to night ventilation, making night vent less effective
         // than in the 5R1C path.
         let h_ext_for_free_float: T = if night_vent_active_now {
-            let base = self.0.derived_h_ext.as_ref();
+            let base = self.0.conduction.derived_h_ext.as_ref();
             let mut v = Vec::with_capacity(base.len());
             for (i, &b) in base.iter().enumerate() {
                 let night_add = if i == 0 { h_ve_night } else { 0.0 };
@@ -2909,18 +3042,18 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
             }
             T::from(VectorField::new(v))
         } else {
-            self.0.derived_h_ext.clone()
+            self.0.conduction.derived_h_ext.clone()
         };
         let den: T = if night_vent_active_now {
-            let h_ms_is_prod = self.0.derived_h_ms_is_prod.as_ref();
+            let h_ms_is_prod = self.0.conduction.derived_h_ms_is_prod.as_ref();
             let term_rest_1_slice = term_rest_1.as_ref();
-            let ground_coeff = self.0.derived_ground_coeff.as_ref();
-            let h_iz = self.0.h_tr_iz.as_ref();
-            let h_iz_rad = self.0.h_tr_iz_rad.as_ref();
+            let ground_coeff = self.0.conduction.derived_ground_coeff.as_ref();
+            let h_iz = self.0.conduction.h_tr_iz.as_ref();
+            let h_iz_rad = self.0.conduction.h_tr_iz_rad.as_ref();
             let h_ext_slice = h_ext_for_free_float.as_ref();
             let mut v = Vec::with_capacity(h_ext_slice.len());
             for i in 0..h_ext_slice.len() {
-                let h_total = if self.0.num_zones > 1 {
+                let h_total = if self.0.hvac.num_zones > 1 {
                     h_ext_slice[i] + h_iz[i] + h_iz_rad[i]
                 } else {
                     h_ext_slice[i]
@@ -2929,15 +3062,16 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
             }
             T::from(VectorField::new(v))
         } else {
-            self.0.derived_den.clone()
+            self.0.conduction.derived_den.clone()
         };
         // (#872: sensitivity variable removed — HVAC demand now uses h_loss × ΔT formula)
 
         let num_tm = self
             .0
+            .conduction
             .derived_h_ms_is_prod
-            .zip_with(&self.0.mass_temperatures, |a, b| a * b);
-        let num_phi_st = self.0.h_tr_is.zip_with(&phi_st, |a, b| a * b);
+            .zip_with(&self.0.mass.mass_temperatures, |a, b| a * b);
+        let num_phi_st = self.0.conduction.h_tr_is.zip_with(&phi_st, |a, b| a * b);
 
         let mut phi_ia_with_iz = phi_ia;
 
@@ -2956,11 +3090,11 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         // the 5R1C iterative path's `solve_coupled_zone_temperatures` formulation
         // and the `MultiZoneAirflowNetwork` convention (test:
         // `multi_zone_network.rs::two_zone_case960_backward_compatible`).
-        if self.0.num_zones > 1 {
+        if self.0.hvac.num_zones > 1 {
             let slice = phi_ia_with_iz.as_mut();
-            let n = self.0.num_zones;
-            let temps = self.0.temperatures.as_ref();
-            let h_iz_vec = self.0.h_tr_iz.as_ref();
+            let n = self.0.hvac.num_zones;
+            let temps = self.0.setpoints.temperatures.as_ref();
+            let h_iz_vec = self.0.conduction.h_tr_iz.as_ref();
             let sum_t: f64 = temps.iter().sum();
             for i in 0..n {
                 if h_iz_vec[i] > 0.0 {
@@ -2975,17 +3109,32 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
             let slice = phi_ia_with_iz.as_mut();
             for (i, &q_flux) in ctf_fluxes.iter().enumerate() {
                 if i < slice.len() {
-                    let area = self.0.zone_area.as_ref().get(i).copied().unwrap_or(1.0);
+                    let area = self
+                        .0
+                        .setpoints
+                        .zone_area
+                        .as_ref()
+                        .get(i)
+                        .copied()
+                        .unwrap_or(1.0);
                     let q_ctf = q_flux * area;
                     let t_sol_air_i = scratch.t_sol_air().get(i).copied().unwrap_or(outdoor_temp);
                     let t_mass = self
                         .0
+                        .mass
                         .mass_temperatures
                         .as_ref()
                         .get(i)
                         .copied()
                         .unwrap_or(20.0);
-                    let h_tr_em_i = self.0.h_tr_em.as_ref().get(i).copied().unwrap_or(0.0);
+                    let h_tr_em_i = self
+                        .0
+                        .conduction
+                        .h_tr_em
+                        .as_ref()
+                        .get(i)
+                        .copied()
+                        .unwrap_or(0.0);
                     let q_5r1c = h_tr_em_i * (t_sol_air_i - t_mass);
                     let net_ctf_flux = q_ctf - q_5r1c;
                     slice[i] += net_ctf_flux;
@@ -2998,17 +3147,32 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
             let slice = phi_ia_with_iz.as_mut();
             for (i, &q_flux) in fd_fluxes.iter().enumerate() {
                 if i < slice.len() {
-                    let area = self.0.zone_area.as_ref().get(i).copied().unwrap_or(1.0);
+                    let area = self
+                        .0
+                        .setpoints
+                        .zone_area
+                        .as_ref()
+                        .get(i)
+                        .copied()
+                        .unwrap_or(1.0);
                     let q_fd = q_flux * area;
                     let t_sol_air_i = scratch.t_sol_air().get(i).copied().unwrap_or(outdoor_temp);
                     let t_mass = self
                         .0
+                        .mass
                         .mass_temperatures
                         .as_ref()
                         .get(i)
                         .copied()
                         .unwrap_or(20.0);
-                    let h_tr_em_i = self.0.h_tr_em.as_ref().get(i).copied().unwrap_or(0.0);
+                    let h_tr_em_i = self
+                        .0
+                        .conduction
+                        .h_tr_em
+                        .as_ref()
+                        .get(i)
+                        .copied()
+                        .unwrap_or(0.0);
                     let q_5r1c = h_tr_em_i * (t_sol_air_i - t_mass);
                     let net_fd_flux = q_fd - q_5r1c;
                     slice[i] += net_fd_flux;
@@ -3036,7 +3200,7 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
             *n += h * t_sol_air_i;
         }
         num_rest_with_iz.mul_assign(term_rest_1);
-        let ground_coeff = self.0.derived_ground_coeff.as_ref();
+        let ground_coeff = self.0.conduction.derived_ground_coeff.as_ref();
         for (n, g) in num_rest_with_iz
             .as_mut()
             .iter_mut()
@@ -3054,7 +3218,7 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         // === Update Multi-Node Thermal Mass (9R4C) ===
         //
         // (#872) Run the multi-node solver but do NOT write its mass temperatures
-        // back to self.0.mass_temperatures. The 5R1C model owns mass_temperatures
+        // back to self.0.mass.mass_temperatures. The 5R1C model owns mass_temperatures
         // and uses it for the t_i_free formula. The multi-node solver maintains its
         // own internal mass node temperatures (solver.mass.wall.temperature, etc.)
         // which are independent.
@@ -3074,8 +3238,8 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         // `scratch.inter` backing buffer — 6 allocations collapsed to 0 here.)
 
         #[allow(clippy::needless_range_loop)]
-        for zone_idx in 0..self.0.num_zones {
-            if zone_idx >= self.0.conduction.multi_node_solvers.len() {
+        for zone_idx in 0..self.0.hvac.num_zones {
+            if zone_idx >= self.0.conduction.backend.multi_node_solvers.len() {
                 continue;
             }
 
@@ -3097,12 +3261,12 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
             // Called BEFORE solver borrow so there's no conflict
             let sun_pos = self.cached_solar_position(hour_of_year, 2024, month, day.min(28), hour);
 
-            let solver = &mut self.0.conduction.multi_node_solvers[zone_idx];
+            let solver = &mut self.0.conduction.backend.multi_node_solvers[zone_idx];
             // (#872) Use previous zone temperature as boundary, NOT 5R1C t_i_free.
             // This breaks the destructive feedback loop where 5R1C mass temps corrupt
             // the solver's boundary condition. The solver will compute its own
             // zone air temperature from the multi-node balance.
-            let t_zone_prev = self.0.temperatures.as_ref()[zone_idx];
+            let t_zone_prev = self.0.setpoints.temperatures.as_ref()[zone_idx];
             #[allow(unused_variables)]
             let t_ext = scratch
                 .t_sol_air()
@@ -3131,7 +3295,7 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
             // ventilation effect (h_ve_night), not the lagged t_zone_prev.
             // This fixes Case 950 night ventilation over-prediction where the mass was
             // not properly cooled by night vent until the next timestep.
-            let h_ve_val = self.0.h_ve.as_ref()[zone_idx];
+            let h_ve_val = self.0.conduction.h_ve.as_ref()[zone_idx];
             let h_ve_night_zone = if night_vent_active_now && zone_idx == 0 {
                 h_ve_night
             } else {
@@ -3169,7 +3333,7 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
             solver.set_surface_temperature(t_surface);
 
             let (surface_ext_temps, wall_irr_val, roof_irr_val) =
-                if let Some(ref weather) = self.0.weather {
+                if let Some(ref weather) = self.0.solar.weather {
                     // Issue #1212: Extract weather data for irradiance calculations
                     let (dni, dhi, ghi) = (weather.dni, weather.dhi, weather.ghi);
 
@@ -3233,9 +3397,9 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
             //   proportional to h_tr_ms (per Issue #873 requirement)
             // - phi_m (solar to mass): goes to internal mass node
             // - phi_ia (convective to air): handled via compute_zone_air_temperature
-            let wall_area_val = self.0.wall_area.as_ref()[zone_idx];
-            let roof_area_val = self.0.roof_area.as_ref()[zone_idx];
-            let floor_area_val = self.0.floor_area.as_ref()[zone_idx];
+            let wall_area_val = self.0.setpoints.wall_area.as_ref()[zone_idx];
+            let roof_area_val = self.0.setpoints.roof_area.as_ref()[zone_idx];
+            let floor_area_val = self.0.setpoints.floor_area.as_ref()[zone_idx];
             let phi_st_zone = phi_st.as_ref()[zone_idx];
             // phi_m contains all solar gains (window + opaque) to mass
             let phi_m_zone = phi_m.as_ref()[zone_idx];
@@ -3336,7 +3500,7 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         // Issue #2871: cap the multiplier at MAX_CONVECTIVE_TO_AIR_MULTIPLIER.
         if night_vent_active_now {
             let multiplier = capped_h_tr_is_ach_multiplier(ach_night_vent);
-            for solver in &mut self.0.conduction.multi_node_solvers {
+            for solver in &mut self.0.conduction.backend.multi_node_solvers {
                 solver.h_tr_is *= multiplier;
             }
         }
@@ -3354,10 +3518,10 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         // For HVAC mode, the temperature update is self-consistent: t_act = T_setpoint
         // regardless of which t_free estimate we use, because the HVAC coefficient
         // cancels the free-floating temperature error.
-        for zone_idx in 0..self.0.num_zones {
-            if zone_idx < self.0.conduction.multi_node_solvers.len() {
-                let solver = &self.0.conduction.multi_node_solvers[zone_idx];
-                let h_ve_val = self.0.h_ve.as_ref()[zone_idx];
+        for zone_idx in 0..self.0.hvac.num_zones {
+            if zone_idx < self.0.conduction.backend.multi_node_solvers.len() {
+                let solver = &self.0.conduction.backend.multi_node_solvers[zone_idx];
+                let h_ve_val = self.0.conduction.h_ve.as_ref()[zone_idx];
                 // #1391 Bug 2 fix: use `phi_ia_with_iz` (convective gains + net
                 // inter-zone air-flow energy) instead of the raw `phi_ia`. Without
                 // the inter-zone term, downstream HVAC demand and the free-float
@@ -3392,7 +3556,7 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         // Issue #2871: must divide by the SAME (capped) multiplier that was applied above.
         if night_vent_active_now {
             let multiplier = capped_h_tr_is_ach_multiplier(ach_night_vent);
-            for solver in &mut self.0.conduction.multi_node_solvers {
+            for solver in &mut self.0.conduction.backend.multi_node_solvers {
                 solver.h_tr_is /= multiplier;
             }
         }
@@ -3405,11 +3569,11 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         // envelope node temperatures (not the hardcoded t_zone - 0.5).
         // This ensures the solver's surface_temperature field is consistent with
         // the mass node temperatures it just computed.
-        for zone_idx in 0..self.0.num_zones {
-            if zone_idx >= self.0.conduction.multi_node_solvers.len() {
+        for zone_idx in 0..self.0.hvac.num_zones {
+            if zone_idx >= self.0.conduction.backend.multi_node_solvers.len() {
                 continue;
             }
-            let solver = &mut self.0.conduction.multi_node_solvers[zone_idx];
+            let solver = &mut self.0.conduction.backend.multi_node_solvers[zone_idx];
             let h_ms_w = solver.mass.wall.h_tr_ms;
             let h_ms_r = solver.mass.roof.h_tr_ms;
             let h_ms_f = solver.mass.floor.h_tr_ms;
@@ -3437,11 +3601,11 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         // Issue #864: Pass pre-gain mass temperatures to avoid double-counting
         // gains (gains are added in SurfaceNode::update()'s backward Euler).
         // Also pass per-surface opaque solar gains for direct absorption.
-        for zone_idx in 0..self.0.num_zones {
-            if zone_idx >= self.0.conduction.multi_node_solvers.len() {
+        for zone_idx in 0..self.0.hvac.num_zones {
+            if zone_idx >= self.0.conduction.backend.multi_node_solvers.len() {
                 continue;
             }
-            let solver = &mut self.0.conduction.multi_node_solvers[zone_idx];
+            let solver = &mut self.0.conduction.backend.multi_node_solvers[zone_idx];
             let mass_temp_wall_pre = scratch.pg_wall().get(zone_idx).copied().unwrap_or(20.0);
             let mass_temp_roof_pre = scratch.pg_roof().get(zone_idx).copied().unwrap_or(20.0);
             let mass_temp_floor_pre = scratch.pg_floor().get(zone_idx).copied().unwrap_or(20.0);
@@ -3465,14 +3629,16 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         // continuous modulation once the controller's curve is softened in Plan 15-04).
         let _hour_of_day_idx = timestep % 24;
         let temp_rate = if timestep > 0 {
-            (self.0.temperatures.as_ref()[0] - self.0.previous_temperatures.as_ref()[0]) / dt
+            (self.0.setpoints.temperatures.as_ref()[0]
+                - self.0.hvac.previous_temperatures.as_ref()[0])
+                / dt
         } else {
             0.0
         };
 
-        let (hvac_mode, modulation) = self.0.predictive_controller.calculate_modulation(
-            self.0.temperatures.as_ref()[0],
-            self.0.mass_temperatures.as_ref()[0],
+        let (hvac_mode, modulation) = self.0.hvac.predictive_controller.calculate_modulation(
+            self.0.setpoints.temperatures.as_ref()[0],
+            self.0.mass.mass_temperatures.as_ref()[0],
             temp_rate,
         );
         let hvac_mode: EquipmentHVACMode = hvac_mode;
@@ -3486,7 +3652,7 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         // The multi-node solver provides a physically accurate free-floating temperature
         // from the 9R4C thermal balance (wall/roof/floor nodes → surface → air).
         // This is more accurate than the 5R1C t_i_free which uses a lumped mass.
-        let (hvac_for_temp_calc, t_i_act) = if self.0.free_float {
+        let (hvac_for_temp_calc, t_i_act) = if self.0.hvac.free_float {
             // Free-float: no HVAC. `t_i_act` feeds ONLY the 5R1C lumped-mass update
             // below, so it keeps the 5R1C-consistent `t_i_free_5r1c` to preserve the
             // lumped-mass evolution (the lumped mass is the 5R1C mass node and must
@@ -3500,19 +3666,22 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
             // 5R1C dynamics (it no longer drives the high-mass air temperature).
             // Low-mass behaviour is unchanged (low-mass has no MultiNodeSolver, so
             // `t_i_free_mn` equals `t_i_free_5r1c` and the commit is a no-op change).
-            (T::from(self.0.zero_vector.clone()), t_i_free_5r1c.clone())
+            (
+                T::from(self.0.solar.zero_vector.clone()),
+                t_i_free_5r1c.clone(),
+            )
         } else {
             // HVAC mode: use multi-node t_air (from _t_i_free_mn) when available
-            let heat_cap = self.0.hvac_heating_capacity;
-            let cool_cap = self.0.hvac_cooling_capacity;
+            let heat_cap = self.0.hvac.hvac_heating_capacity;
+            let cool_cap = self.0.hvac.hvac_cooling_capacity;
             // Issue #1524: hvac/t_i_act live in the local `scratch` struct, so
             // `scratch.hvac[i]` / `scratch.t_i_act[i]` (mutable borrows of a
             // local) coexist freely with `self.compute_hvac_coefficient(i)`
             // (an `&self` borrow) — the exact conflict that sank #1436.
-            for i in 0..self.0.num_zones {
+            for i in 0..self.0.hvac.num_zones {
                 // Issue #860: Prefer multi-node t_air over 5R1C t_free for HVAC demand
                 let t_free_val =
-                    if i < self.0.conduction.multi_node_solvers.len() {
+                    if i < self.0.conduction.backend.multi_node_solvers.len() {
                         // Use multi-node computed free-float temperature (available at line 2534)
                         // The multi-node t_air uses conductance-weighted envelope node temperatures
                         // and the air energy balance: T_air = (h_tr_is*T_surface + h_ve*T_out + phi_ia)/(h_tr_is + h_ve)
@@ -3527,7 +3696,7 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                 // self-consistent t_act = t_free + Q/h_coeff check matches T_setpoint
                 // (h_tr_1 + h_ve alone is too small — it ignores mass/ground paths).
                 let h_coeff = self.compute_hvac_coefficient(i);
-                let _h_tr_ms = self.0.h_tr_ms.as_ref()[i];
+                let _h_tr_ms = self.0.conduction.h_tr_ms.as_ref()[i];
 
                 // Issue #900: dynamic mass heat release term (cooling only).
                 //
@@ -3542,8 +3711,8 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                 // back to the 5R1C lumped mass temperature. The hvac module
                 // applies the same sanity guard (-20..=80°C) on its own.
                 #[cfg(feature = "debug-physics")]
-                let t_mass_mn = if i < self.0.conduction.multi_node_solvers.len() {
-                    let solver = &self.0.conduction.multi_node_solvers[i];
+                let t_mass_mn = if i < self.0.conduction.backend.multi_node_solvers.len() {
+                    let solver = &self.0.conduction.backend.multi_node_solvers[i];
                     // Conductance-weighted envelope temperature (wall/roof/floor).
                     let h_ms_w = solver.mass.wall.h_tr_ms;
                     let h_ms_r = solver.mass.roof.h_tr_ms;
@@ -3558,18 +3727,25 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                         solver.envelope_temperature()
                     }
                 } else {
-                    self.0.mass_temperatures.as_ref()[i]
+                    self.0.mass.mass_temperatures.as_ref()[i]
                 };
 
                 // DEBUG: Print h_coeff breakdown on first HVAC step after warmup
                 #[cfg(feature = "debug-physics")]
-                if timestep == 337 && i == 0 && !self.0.free_float {
-                    let h_tr_is = self.0.h_tr_is.as_ref()[i];
-                    let h_tr_ms = self.0.h_tr_ms.as_ref()[i];
-                    let h_tr_em = self.0.h_tr_em.as_ref()[i];
-                    let h_tr_w = self.0.h_tr_w.as_ref()[i];
-                    let h_tr_floor = self.0.h_tr_floor.as_ref()[i];
-                    let h_ve_scalar = self.0.h_ve.as_ref().get(i).copied().unwrap_or(0.0);
+                if timestep == 337 && i == 0 && !self.0.hvac.free_float {
+                    let h_tr_is = self.0.conduction.h_tr_is.as_ref()[i];
+                    let h_tr_ms = self.0.conduction.h_tr_ms.as_ref()[i];
+                    let h_tr_em = self.0.conduction.h_tr_em.as_ref()[i];
+                    let h_tr_w = self.0.conduction.h_tr_w.as_ref()[i];
+                    let h_tr_floor = self.0.conduction.h_tr_floor.as_ref()[i];
+                    let h_ve_scalar = self
+                        .0
+                        .conduction
+                        .h_ve
+                        .as_ref()
+                        .get(i)
+                        .copied()
+                        .unwrap_or(0.0);
                     let h_ms_em = h_tr_ms * h_tr_em / (h_tr_ms + h_tr_em);
                     let stb = h_tr_w + h_ms_em + h_tr_floor;
                     let h_is_X = h_tr_is * stb / (h_tr_is + stb);
@@ -3586,7 +3762,9 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                         "  t_free={:.2}, t_mass_mn={:.2}, q_heating={:.2}",
                         t_free_val,
                         t_mass_mn,
-                        h_coeff * (self.0.heating_setpoints.as_ref()[i] - t_free_val).max(0.0)
+                        h_coeff
+                            * (self.0.setpoints.heating_setpoints.as_ref()[i] - t_free_val)
+                                .max(0.0)
                     );
                 }
 
@@ -3618,18 +3796,20 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                 // so the two paths produce identical demand figures).
                 let heating_setpoint_i = self
                     .0
+                    .setpoints
                     .heating_setpoints
                     .as_ref()
                     .get(i)
                     .copied()
-                    .unwrap_or(self.0.heating_setpoint);
+                    .unwrap_or(self.0.setpoints.heating_setpoint);
                 let cooling_setpoint_i = self
                     .0
+                    .setpoints
                     .cooling_setpoints
                     .as_ref()
                     .get(i)
                     .copied()
-                    .unwrap_or(self.0.cooling_setpoint);
+                    .unwrap_or(self.0.setpoints.cooling_setpoint);
                 let q = if t_free_val < heating_setpoint_i {
                     // Heating: Q = h_coeff × (T_heat_sp − T_free) > 0
                     h_coeff * (heating_setpoint_i - t_free_val)
@@ -3689,19 +3869,20 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         // the established mass dynamics. This matches the issue's scope
         // ("Bind the previously-discarded `_modulation` to
         // `VariableCapacityEquipment::update_state`").
-        if !self.0.free_float {
-            if let Some(ref mut equipment) = self.0.hvac_equipment {
+        if !self.0.hvac.free_float {
+            if let Some(ref mut equipment) = self.0.hvac.hvac_equipment {
                 // Economizer is only meaningful in cooling mode; the helper is
                 // mode-agnostic so we still call it (it returns false for
                 // `EconomizerMode::Disabled` and for non-cooling cases).
                 use crate::sim::hvac::{calculate_free_cooling_capacity, is_economizer_active};
                 let hour_of_day_idx = timestep % 24;
-                let cooling_setpoint_for_econ = self.0.cooling_schedule.value(hour_of_day_idx);
+                let cooling_setpoint_for_econ =
+                    self.0.setpoints.cooling_schedule.value(hour_of_day_idx);
                 let economizer_active = is_economizer_active(
-                    self.0.economizer_mode,
+                    self.0.hvac.economizer_mode,
                     outdoor_temp,
                     None, // outdoor_enthalpy — only available in Enthalpy mode (not wired here)
-                    self.0.temperatures.as_ref()[0],
+                    self.0.setpoints.temperatures.as_ref()[0],
                     None, // zone_enthalpy
                     cooling_setpoint_for_econ,
                 );
@@ -3715,8 +3896,8 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                         // energy accounting and PLR tracking.
                         calculate_free_cooling_capacity(
                             outdoor_temp,
-                            self.0.temperatures.as_ref()[0],
-                            self.0.ventilation_airflow_m3_per_s, // Issue #2345: was hardcoded 10000.0
+                            self.0.setpoints.temperatures.as_ref()[0],
+                            self.0.setpoints.ventilation_airflow_m3_per_s, // Issue #2345: was hardcoded 10000.0
                         ) * 1000.0
                     } else {
                         0.0
@@ -3768,19 +3949,19 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         // Without this blend, the mass converges in ~17 hours (wrong). With it, the
         // mass converges in ~500 hours (~21 days), matching the ISO 13790's dynamics.
         {
-            let mass_temps_ref = self.0.mass_temperatures.as_ref();
-            let thermal_cap_ref = self.0.thermal_capacitance.as_ref();
-            let h_tr_em_ref = self.0.h_tr_em.as_ref();
-            let h_tr_ms_ref = self.0.h_tr_ms.as_ref();
+            let mass_temps_ref = self.0.mass.mass_temperatures.as_ref();
+            let thermal_cap_ref = self.0.mass.thermal_capacitance.as_ref();
+            let h_tr_em_ref = self.0.conduction.h_tr_em.as_ref();
+            let h_tr_ms_ref = self.0.conduction.h_tr_ms.as_ref();
 
-            for i in 0..self.0.num_zones {
+            for i in 0..self.0.hvac.num_zones {
                 let tm_old = mass_temps_ref[i];
                 let cm = thermal_cap_ref[i];
                 let t_i = t_i_act.as_ref()[i];
                 let h_tr_em = h_tr_em_ref[i];
                 let h_tr_ms = h_tr_ms_ref[i];
-                let h_tr_is_zone = self.0.h_tr_is.as_ref()[i];
-                let h_tr_me_zone = self.0.h_tr_me.as_ref()[i];
+                let h_tr_is_zone = self.0.conduction.h_tr_is.as_ref()[i];
+                let h_tr_me_zone = self.0.mass.h_tr_me.as_ref()[i];
                 let t_ext = scratch.t_sol_air().get(i).copied().unwrap_or(outdoor_temp);
 
                 let t_i_blended = t_i; // Use full t_i for surface temperature
@@ -3806,7 +3987,13 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                 // The h_tr_3 conductance is computed once at initialization from:
                 //   H_tr_3 = 1 / (1/H_tr_2 + 1/h_tr_ms)
                 //   where H_tr_2 = H_tr_1 + h_tr_w, and H_tr_1 = h_ve * h_tr_is / (h_ve + h_tr_is)
-                let h_tr_3_zone = *self.0.derived_h_tr_3.as_ref().get(i).unwrap_or(&h_tr_ms);
+                let h_tr_3_zone = *self
+                    .0
+                    .conduction
+                    .derived_h_tr_3
+                    .as_ref()
+                    .get(i)
+                    .unwrap_or(&h_tr_ms);
 
                 // Backward Euler with h_tr_3 instead of h_tr_ms:
                 // (Cm/dt + h_tr_em + h_tr_3) * Tm_new = Cm/dt * Tm_old + h_tr_em * t_ext + h_tr_3 * t_s + phi_m
@@ -3826,8 +4013,8 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
             }
             let new_mass_temps_vf: T =
                 VectorField::from_smallvec(std::mem::take(&mut scratch.new_mass)).into();
-            self.0.previous_mass_temperatures =
-                std::mem::replace(&mut self.0.mass_temperatures, new_mass_temps_vf);
+            self.0.mass.previous_mass_temperatures =
+                std::mem::replace(&mut self.0.mass.mass_temperatures, new_mass_temps_vf);
         }
 
         // Issue #738 / ADR-002 (#1175): Free-float mode disables HVAC output.
@@ -3843,8 +4030,8 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         // mass (updated above from `t_i_act = t_i_free_5r1c`) continues to evolve on
         // its own dynamics but no longer drives the high-mass air temperature.
         // Low-mass free-float is unchanged.
-        if self.0.free_float {
-            let temps_slice = self.0.temperatures.as_mut();
+        if self.0.hvac.free_float {
+            let temps_slice = self.0.setpoints.temperatures.as_mut();
             for (i, t_val) in t_i_free_mn.as_ref().iter().enumerate() {
                 if i < temps_slice.len() {
                     temps_slice[i] = *t_val;
@@ -3852,12 +4039,12 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
             }
             // Issue #2756: restore the pooled scratch on this early-return path
             // too so the next timestep reuses the same SmallVec capacity.
-            self.0.scratch_pool.return_9r4c(scratch);
+            self.0.hvac.scratch_pool.return_9r4c(scratch);
             return 0.0;
         }
 
         // Update zone temperatures with the HVAC-influenced t_i_act
-        let temps_slice = self.0.temperatures.as_mut();
+        let temps_slice = self.0.setpoints.temperatures.as_mut();
         for (i, t_val) in t_i_act.as_ref().iter().enumerate() {
             if i < temps_slice.len() {
                 temps_slice[i] = *t_val;
@@ -3875,7 +4062,7 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
             for (i, (&output, &enabled)) in hvac_output
                 .as_ref()
                 .iter()
-                .zip(self.0.hvac_enabled.as_ref().iter())
+                .zip(self.0.hvac.hvac_enabled.as_ref().iter())
                 .enumerate()
             {
                 let val = if enabled > 0.5 { output } else { 0.0 };
@@ -3886,18 +4073,18 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                     // Issue #1289: Track per-zone peaks
                     // Issue #1628: Also track timestep when peak occurred
                     let val_kw = val / 1000.0;
-                    if val_kw > self.0.zone_peak_heating_kw.as_mut()[i] {
-                        self.0.zone_peak_heating_kw.as_mut()[i] = val_kw;
-                        self.0.zone_peak_heating_timestep[i] = timestep;
+                    if val_kw > self.0.hvac.zone_peak_heating_kw.as_mut()[i] {
+                        self.0.hvac.zone_peak_heating_kw.as_mut()[i] = val_kw;
+                        self.0.hvac.zone_peak_heating_timestep[i] = timestep;
                     }
                 } else if val < 0.0 {
                     cooling_sum += -val;
                     // Issue #1289: Track per-zone peaks
                     // Issue #1628: Also track timestep when peak occurred
                     let val_kw = -val / 1000.0;
-                    if val_kw > self.0.zone_peak_cooling_kw.as_mut()[i] {
-                        self.0.zone_peak_cooling_kw.as_mut()[i] = val_kw;
-                        self.0.zone_peak_cooling_timestep[i] = timestep;
+                    if val_kw > self.0.hvac.zone_peak_cooling_kw.as_mut()[i] {
+                        self.0.hvac.zone_peak_cooling_kw.as_mut()[i] = val_kw;
+                        self.0.hvac.zone_peak_cooling_timestep[i] = timestep;
                     }
                 }
             }
@@ -3905,15 +4092,15 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
             let heating_energy_joules = heating_sum * dt;
             let cooling_energy_joules = cooling_sum * dt;
 
-            self.0.annual_heating_energy += heating_energy_joules / 3.6e6;
-            self.0.annual_cooling_energy += cooling_energy_joules / 3.6e6;
+            self.0.hvac.annual_heating_energy += heating_energy_joules / 3.6e6;
+            self.0.hvac.annual_cooling_energy += cooling_energy_joules / 3.6e6;
 
             // Per-zone energy accumulation (Issue #1288)
             // Use enabled-masked values for per-zone accumulation
-            let enabled_vec = self.0.hvac_enabled.as_ref();
-            let zone_heating_slice = self.0.zone_heating_energy_kwh.as_mut();
-            let zone_cooling_slice = self.0.zone_cooling_energy_kwh.as_mut();
-            for i in 0..self.0.num_zones {
+            let enabled_vec = self.0.hvac.hvac_enabled.as_ref();
+            let zone_heating_slice = self.0.hvac.zone_heating_energy_kwh.as_mut();
+            let zone_cooling_slice = self.0.hvac.zone_cooling_energy_kwh.as_mut();
+            for i in 0..self.0.hvac.num_zones {
                 let val = if enabled_vec[i] > 0.5 {
                     hvac_output.as_ref()[i]
                 } else {
@@ -3929,24 +4116,26 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
             }
 
             if hvac_power_watts > 0.0 {
-                self.0.peak_power_heating = self.0.peak_power_heating.max(hvac_power_watts);
+                self.0.hvac.peak_power_heating =
+                    self.0.hvac.peak_power_heating.max(hvac_power_watts);
             } else if hvac_power_watts < 0.0 {
-                self.0.peak_power_cooling = self.0.peak_power_cooling.max(-hvac_power_watts);
+                self.0.hvac.peak_power_cooling =
+                    self.0.hvac.peak_power_cooling.max(-hvac_power_watts);
             }
         }
 
         // Diagnostics recording (if enabled)
         if self.0.diagnostics_state.diagnostics.is_some() {
-            self.0.current_hvac_output = Some(hvac_output);
+            self.0.hvac.current_hvac_output = Some(hvac_output);
             let mut diag = self.0.diagnostics_state.diagnostics.take().unwrap();
             diag.record_timestep(timestep, self, outdoor_temp, t_g);
             self.0.diagnostics_state.diagnostics = Some(diag);
-            self.0.current_hvac_output = None;
+            self.0.hvac.current_hvac_output = None;
         }
 
         // Issue #2756: restore the pooled scratch so the next timestep reuses
         // the same SmallVec capacity (zero steady-state allocation).
-        self.0.scratch_pool.return_9r4c(scratch);
+        self.0.hvac.scratch_pool.return_9r4c(scratch);
 
         // Return kWh
         hvac_power_watts * dt / 3.6e6
@@ -3960,7 +4149,7 @@ mod scratch_pool_tests {
     //! re-allocated per step.
     //!
     //! These tests live in-crate (not under `tests/`) because they must read
-    //! `model.0.scratch_pool` — a `pub(crate)` field — to assert reuse. The
+    //! `model.0.hvac.scratch_pool` — a `pub(crate)` field — to assert reuse. The
     //! dhat gate under `tests/dhat_step_physics_zero_alloc.rs` provides the
     //! independent heap-growth measurement.
 
@@ -3988,15 +4177,15 @@ mod scratch_pool_tests {
     /// production 5R1C analytical path without panic.
     fn multizone_model() -> ThermalModel<VectorField> {
         let mut model = ThermalModel::<VectorField>::new(NUM_ZONES);
-        model.window_u_value = 1.5;
-        model.heating_setpoint = 20.0;
-        model.cooling_setpoint = 26.0;
-        model.temperatures = VectorField::from_scalar(20.0, NUM_ZONES);
-        model.mass_temperatures = VectorField::from_scalar(20.0, NUM_ZONES);
-        model.zone_area = VectorField::from_scalar(50.0, NUM_ZONES);
+        model.solar.window_u_value = 1.5;
+        model.setpoints.heating_setpoint = 20.0;
+        model.setpoints.cooling_setpoint = 26.0;
+        model.setpoints.temperatures = VectorField::from_scalar(20.0, NUM_ZONES);
+        model.mass.mass_temperatures = VectorField::from_scalar(20.0, NUM_ZONES);
+        model.setpoints.zone_area = VectorField::from_scalar(50.0, NUM_ZONES);
 
         let wp = WindowProperties::double_clear(8.0);
-        model.window_properties = vec![wp; NUM_ZONES];
+        model.solar.window_properties = vec![wp; NUM_ZONES];
 
         let surfaces_per_zone: Vec<Vec<WallSurface>> = (0..NUM_ZONES)
             .map(|_| {
@@ -4009,7 +4198,7 @@ mod scratch_pool_tests {
                 ]
             })
             .collect();
-        model.surfaces = surfaces_per_zone;
+        model.solar.surfaces = surfaces_per_zone;
 
         model
     }
@@ -4034,15 +4223,16 @@ mod scratch_pool_tests {
 
         // Before any step the pool is empty (lazy).
         assert!(
-            model.0.scratch_pool.r5r1c.is_none(),
+            model.0.hvac.scratch_pool.r5r1c.is_none(),
             "pool must start empty"
         );
 
         // First step: checkout allocates, return restores into the pool.
-        model.weather = Some(weather(0));
+        model.solar.weather = Some(weather(0));
         model.step_physics(0, 20.0, 3600.0);
         let pool = model
             .0
+            .hvac
             .scratch_pool
             .r5r1c
             .as_ref()
@@ -4054,11 +4244,12 @@ mod scratch_pool_tests {
         // Drive 99 more steps — the pool must remain populated and the
         // wall_surface_new buffer must be the SAME allocation (pointer-stable).
         for step in 1..100 {
-            model.weather = Some(weather(step % 24));
+            model.solar.weather = Some(weather(step % 24));
             model.step_physics(step, 20.0, 3600.0);
         }
         let pool = model
             .0
+            .hvac
             .scratch_pool
             .r5r1c
             .as_ref()
@@ -4082,14 +4273,16 @@ mod scratch_pool_tests {
     #[test]
     fn scratch_pool_9r4c_is_reused_across_timesteps() {
         let mut model = multizone_model();
-        model.0.thermal_model_type = crate::sim::thermal_model_core::ThermalModelType::NineRFourC;
+        model.0.hvac.thermal_model_type =
+            crate::sim::thermal_model_core::ThermalModelType::NineRFourC;
 
-        assert!(model.0.scratch_pool.r9r4c.is_none());
+        assert!(model.0.hvac.scratch_pool.r9r4c.is_none());
 
-        model.weather = Some(weather(0));
+        model.solar.weather = Some(weather(0));
         model.step_physics(0, 20.0, 3600.0);
         let inter_ptr_warm = model
             .0
+            .hvac
             .scratch_pool
             .r9r4c
             .as_ref()
@@ -4098,11 +4291,12 @@ mod scratch_pool_tests {
             .as_ptr();
 
         for step in 1..50 {
-            model.weather = Some(weather(step % 24));
+            model.solar.weather = Some(weather(step % 24));
             model.step_physics(step, 20.0, 3600.0);
         }
         let inter_ptr_steady = model
             .0
+            .hvac
             .scratch_pool
             .r9r4c
             .as_ref()
@@ -4122,16 +4316,17 @@ mod scratch_pool_tests {
     #[test]
     fn scratch_pool_9r4c_restored_on_free_float_early_return() {
         let mut model = multizone_model();
-        model.0.thermal_model_type = crate::sim::thermal_model_core::ThermalModelType::NineRFourC;
-        model.0.free_float = true;
+        model.0.hvac.thermal_model_type =
+            crate::sim::thermal_model_core::ThermalModelType::NineRFourC;
+        model.0.hvac.free_float = true;
 
         for step in 0..20 {
-            model.weather = Some(weather(step % 24));
+            model.solar.weather = Some(weather(step % 24));
             model.step_physics(step, 20.0, 3600.0);
             // After EVERY step (each takes the early return), the pool must be
             // repopulated — otherwise the early return leaked the checkout.
             assert!(
-                model.0.scratch_pool.r9r4c.is_some(),
+                model.0.hvac.scratch_pool.r9r4c.is_some(),
                 "9R4C pool must be restored on the free_float early-return path \
                  (step {step}); the pool leaked and the next step re-allocates."
             );
@@ -4149,10 +4344,10 @@ mod scratch_pool_tests {
             let mut model = multizone_model();
             let mut total = 0.0_f64;
             for step in 0..48 {
-                model.weather = Some(weather(step % 24));
+                model.solar.weather = Some(weather(step % 24));
                 total += model.step_physics(step, 20.0, 3600.0);
             }
-            (model.temperatures.as_ref().to_vec(), total)
+            (model.setpoints.temperatures.as_ref().to_vec(), total)
         }
         let (temps_a, energy_a) = run();
         let (temps_b, energy_b) = run();

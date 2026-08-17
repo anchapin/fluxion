@@ -51,7 +51,7 @@ fn run_case_with_weather(case: ASHRAE140Case, steps: usize) -> ThermalModel<Vect
     let weather = DenverTmyWeather::new();
     for step in 0..steps {
         let weather_data = weather.get_hourly_data(step).unwrap();
-        model.weather = Some(weather_data.clone());
+        model.solar.weather = Some(weather_data.clone());
         model.step_physics(step, weather_data.dry_bulb_temp, 3600.0);
     }
     model
@@ -245,35 +245,39 @@ fn test_thermal_model_surface_ode_relaxes_to_t_si_eq() {
     let t_int = 20.0;
     let t_mass = 30.0;
     let t_si_initial = -10.0;
-    let n_zones = model.num_zones;
+    let n_zones = model.hvac.num_zones;
 
     let max_tau_si = (0..n_zones)
         .map(|i| {
-            let h_ms = model.h_tr_ms.as_ref()[i];
-            let h_is = model.h_tr_is.as_ref()[i];
-            model.thermal_capacitance.as_ref()[i] / (h_ms + h_is)
+            let h_ms = model.conduction.h_tr_ms.as_ref()[i];
+            let h_is = model.conduction.h_tr_is.as_ref()[i];
+            model.mass.thermal_capacitance.as_ref()[i] / (h_ms + h_is)
         })
         .fold(0.0_f64, f64::max);
     let n_steps = ((12.0 * max_tau_si / dt).ceil() as usize).max(1);
 
-    model.wall_surface_temperatures.as_mut().fill(t_si_initial);
+    model
+        .mass
+        .wall_surface_temperatures
+        .as_mut()
+        .fill(t_si_initial);
     for _ in 0..n_steps {
-        model.temperatures.as_mut().fill(t_int);
-        model.air_temperatures.as_mut().fill(t_int);
-        model.mass_temperatures.as_mut().fill(t_mass);
+        model.setpoints.temperatures.as_mut().fill(t_int);
+        model.mass.air_temperatures.as_mut().fill(t_int);
+        model.mass.mass_temperatures.as_mut().fill(t_mass);
         model.step_physics(0, t_int, dt);
     }
 
     for i in 0..n_zones {
-        let h_ms = model.h_tr_ms.as_ref()[i];
-        let h_is = model.h_tr_is.as_ref()[i];
+        let h_ms = model.conduction.h_tr_ms.as_ref()[i];
+        let h_is = model.conduction.h_tr_is.as_ref()[i];
         assert!(
             h_ms > 0.0 && h_is > 0.0,
             "Case 600 zone {i}: h_tr_ms/h_tr_is must be positive"
         );
 
         let t_si_eq = (t_int * h_is + t_mass * h_ms) / (h_is + h_ms);
-        let t_si_actual = model.wall_surface_temperatures.as_ref()[i];
+        let t_si_actual = model.mass.wall_surface_temperatures.as_ref()[i];
         let error = (t_si_actual - t_si_eq).abs();
         assert!(
             error < 0.01,
@@ -294,15 +298,15 @@ fn test_thermal_model_surface_ode_relaxes_to_t_si_eq() {
 fn test_case_600_wall_surface_state_finite_and_bounded() {
     let model = run_case_with_weather(ASHRAE140Case::Case600, 24);
 
-    let n_zones = model.num_zones;
+    let n_zones = model.hvac.num_zones;
     let surface_temps: Vec<f64> = (0..n_zones)
-        .map(|i| model.wall_surface_temperatures.as_ref()[i])
+        .map(|i| model.mass.wall_surface_temperatures.as_ref()[i])
         .collect();
     let zone_temps: Vec<f64> = (0..n_zones)
-        .map(|i| model.temperatures.as_ref()[i])
+        .map(|i| model.setpoints.temperatures.as_ref()[i])
         .collect();
     let mass_temps: Vec<f64> = (0..n_zones)
-        .map(|i| model.mass_temperatures.as_ref()[i])
+        .map(|i| model.mass.mass_temperatures.as_ref()[i])
         .collect();
 
     for (i, &t_si) in surface_temps.iter().enumerate() {
@@ -335,12 +339,12 @@ fn test_case_600_wall_surface_state_finite_and_bounded() {
 fn test_case_600_no_nan_after_surface_ode() {
     let model = run_case_with_weather(ASHRAE140Case::Case600, 24);
 
-    let n_zones = model.num_zones;
+    let n_zones = model.hvac.num_zones;
     for i in 0..n_zones {
-        let t_si = model.wall_surface_temperatures.as_ref()[i];
-        let t_air = model.air_temperatures.as_ref()[i];
-        let t_mass = model.mass_temperatures.as_ref()[i];
-        let t_zone = model.temperatures.as_ref()[i];
+        let t_si = model.mass.wall_surface_temperatures.as_ref()[i];
+        let t_air = model.mass.air_temperatures.as_ref()[i];
+        let t_mass = model.mass.mass_temperatures.as_ref()[i];
+        let t_zone = model.setpoints.temperatures.as_ref()[i];
         assert!(
             t_si.is_finite(),
             "T_si[{i}] must be finite after 24h simulation, got {t_si}"
@@ -365,9 +369,9 @@ fn test_case_600_no_nan_after_surface_ode() {
 fn test_case_600_surface_ode_relaxes_correctly() {
     let model = run_case_with_weather(ASHRAE140Case::Case600, 48);
 
-    for i in 0..model.num_zones {
-        let t_si = model.wall_surface_temperatures.as_ref()[i];
-        let t_mass = model.mass_temperatures.as_ref()[i];
+    for i in 0..model.hvac.num_zones {
+        let t_si = model.mass.wall_surface_temperatures.as_ref()[i];
+        let t_mass = model.mass.mass_temperatures.as_ref()[i];
         assert!(
             t_si > -50.0 && t_si < 80.0,
             "Case 600 zone {i}: T_si={t_si:.3} °C outside physical envelope"
@@ -462,8 +466,8 @@ fn test_case_950_annual_cooling_within_ashrae140_band() {
 #[test]
 fn test_solar_lag_initialised_to_zero() {
     let model = ThermalModel::<VectorField>::from_spec(&ASHRAE140Case::Case600.spec());
-    for i in 0..model.num_zones {
-        let lag = model.solar_lag.as_ref()[i];
+    for i in 0..model.hvac.num_zones {
+        let lag = model.mass.solar_lag.as_ref()[i];
         assert!(
             lag == 0.0,
             "solar_lag[{i}] must be initialised to zero, got {lag}"
@@ -475,8 +479,8 @@ fn test_solar_lag_initialised_to_zero() {
 #[test]
 fn test_solar_lag_finite_and_nonnegative_after_simulation() {
     let model = run_case_with_weather(ASHRAE140Case::Case600, 24);
-    for i in 0..model.num_zones {
-        let lag = model.solar_lag.as_ref()[i];
+    for i in 0..model.hvac.num_zones {
+        let lag = model.mass.solar_lag.as_ref()[i];
         assert!(lag.is_finite(), "solar_lag[{i}] must be finite, got {lag}");
         assert!(lag >= 0.0, "solar_lag[{i}] must be non-negative, got {lag}");
     }
@@ -500,8 +504,8 @@ fn test_case_650_solar_lag_improves_annual_cooling() {
 #[test]
 fn test_case_600_alpha_blend_finite_mass_temps() {
     let model = run_case_with_weather(ASHRAE140Case::Case600, 8760);
-    for i in 0..model.num_zones {
-        let t_mass = model.mass_temperatures.as_ref()[i];
+    for i in 0..model.hvac.num_zones {
+        let t_mass = model.mass.mass_temperatures.as_ref()[i];
         assert!(
             t_mass.is_finite(),
             "T_mass[{i}] must be finite, got {t_mass}"

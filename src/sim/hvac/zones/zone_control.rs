@@ -336,7 +336,10 @@ pub struct ZoneControl {
 impl std::fmt::Debug for ZoneControl {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("ZoneControl")
-            .field("thermal_model.num_zones", &self.thermal_model.num_zones)
+            .field(
+                "thermal_model.hvac.num_zones",
+                &self.thermal_model.hvac.num_zones,
+            )
             .field("setpoints", &self.setpoints)
             .field("zone_status", &self.zone_status)
             .field("layered_controllers", &self.layered_controllers)
@@ -357,7 +360,7 @@ impl ZoneControl {
         thermal_model: Arc<ThermalModel>,
         setpoints: crate::sim::hvac::zones::zone_setpoints::ZoneSetpoints,
     ) -> Self {
-        let num_zones = thermal_model.num_zones;
+        let num_zones = thermal_model.hvac.num_zones;
         let layered_controllers = (0..num_zones).map(|_| LayeredController::new()).collect();
         ZoneControl {
             thermal_model,
@@ -381,7 +384,7 @@ impl ZoneControl {
         setpoints: crate::sim::hvac::zones::zone_setpoints::ZoneSetpoints,
         controller_configs: Vec<LayeredControllerConfig>,
     ) -> Self {
-        let num_zones = thermal_model.num_zones;
+        let num_zones = thermal_model.hvac.num_zones;
         let layered_controllers: Vec<LayeredController> = controller_configs
             .into_iter()
             .map(LayeredController::with_config)
@@ -408,7 +411,7 @@ impl ZoneControl {
         setpoints: crate::sim::hvac::zones::zone_setpoints::ZoneSetpoints,
         default_strategy: ControlStrategy,
     ) -> Self {
-        let num_zones = thermal_model.num_zones;
+        let num_zones = thermal_model.hvac.num_zones;
         let layered_controllers: Vec<LayeredController> = (0..num_zones)
             .map(|_| {
                 let mut c = LayeredController::new();
@@ -456,9 +459,9 @@ impl ZoneControl {
     /// # Returns
     /// Energy input vector (Watts) for each zone
     pub fn update_zone_controls(&mut self, current_temperatures: &VectorField) -> VectorField {
-        let mut energy_input = VectorField::from_scalar(0.0, self.thermal_model.num_zones);
+        let mut energy_input = VectorField::from_scalar(0.0, self.thermal_model.hvac.num_zones);
 
-        for zone_id in 0..self.thermal_model.num_zones {
+        for zone_id in 0..self.thermal_model.hvac.num_zones {
             let current_temp = current_temperatures.as_slice()[zone_id];
             let heating_setpoint = self.setpoints.get_heating_setpoint(zone_id);
             let cooling_setpoint = self.setpoints.get_cooling_setpoint(zone_id);

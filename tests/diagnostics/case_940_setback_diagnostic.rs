@@ -108,7 +108,7 @@ fn test_case_940_setback_diagnostic() {
         let w = weather
             .get_hourly_data(step)
             .expect("TMY weather must cover all 8760 hours");
-        model.weather = Some(w.clone());
+        model.solar.weather = Some(w.clone());
 
         // Apply dynamic setpoints based on HVAC schedule (matches validator loop)
         if let Some(hvac) = spec.hvac.first() {
@@ -121,9 +121,9 @@ fn test_case_940_setback_diagnostic() {
             let heating_sp = hvac
                 .heating_setpoint_at_fractional_hour(hour_of_day as f64 + 0.5)
                 .unwrap_or(hvac.heating_setpoint);
-            let cooling_sp = model.cooling_schedule.value(hour as usize);
-            model.heating_setpoint = heating_sp;
-            model.cooling_setpoint = cooling_sp;
+            let cooling_sp = model.setpoints.cooling_schedule.value(hour as usize);
+            model.setpoints.heating_setpoint = heating_sp;
+            model.setpoints.cooling_setpoint = cooling_sp;
 
             // Count setback activations for verification. This branch uses
             // the integer-hour lookup so the 2920-hour wiring assertion
@@ -144,7 +144,7 @@ fn test_case_940_setback_diagnostic() {
 
         let hvac_kwh = model.step_physics(step, w.dry_bulb_temp, 3600.0);
 
-        // Note: model.annual_heating_energy is updated inside step_physics
+        // Note: model.hvac.annual_heating_energy is updated inside step_physics
         // for the production paths; the get_*_energy_kwh accessors return
         // the cumulative values, so the delta = new - before is correct.
         let m = month_index_for_hour(step);
@@ -166,8 +166,8 @@ fn test_case_940_setback_diagnostic() {
         let _ = hvac_kwh;
     }
 
-    let annual_h_mwh = model.annual_heating_energy / 1000.0;
-    let annual_c_mwh = model.annual_cooling_energy / 1000.0;
+    let annual_h_mwh = model.hvac.annual_heating_energy / 1000.0;
+    let annual_c_mwh = model.hvac.annual_cooling_energy / 1000.0;
     let peak_h_kw = model.get_peak_heating_power_kw();
     let peak_c_kw = model.get_peak_cooling_power_kw();
 
@@ -262,19 +262,19 @@ fn test_case_940_setback_controller_mode_trace() {
         let w = weather
             .get_hourly_data(step)
             .expect("TMY weather must cover all 8760 hours");
-        model.weather = Some(w.clone());
+        model.solar.weather = Some(w.clone());
         let hvac = spec.hvac.first().expect("spec has hvac");
         let hour = hour_of_day as u8;
         // Issue #2870: use the sub-hour ramp-aware setpoint lookup.
         let heating_sp = hvac
             .heating_setpoint_at_fractional_hour(hour_of_day as f64 + 0.5)
             .unwrap_or(hvac.heating_setpoint);
-        let cooling_sp = model.cooling_schedule.value(hour as usize);
-        model.heating_setpoint = heating_sp;
-        model.cooling_setpoint = cooling_sp;
+        let cooling_sp = model.setpoints.cooling_schedule.value(hour as usize);
+        model.setpoints.heating_setpoint = heating_sp;
+        model.setpoints.cooling_setpoint = cooling_sp;
 
         let _ = model.step_physics(step, w.dry_bulb_temp, 3600.0);
-        let t_zone = *model.temperatures.as_ref().first().unwrap_or(&20.0);
+        let t_zone = *model.setpoints.temperatures.as_ref().first().unwrap_or(&20.0);
 
         // Bucket the zone temperature by setback-vs-normal schedule.
         let is_setback = (23..24).contains(&hour_of_day) || hour_of_day < 7;

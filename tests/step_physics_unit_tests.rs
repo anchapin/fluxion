@@ -128,7 +128,7 @@ fn test_temperature_stability_case_600() {
         model.step_physics(step, outdoor_temp, 3600.0);
 
         // Check zone temperature is within reasonable bounds
-        let zone_temp = model.temperatures.as_ref()[0];
+        let zone_temp = model.setpoints.temperatures.as_ref()[0];
 
         // Wrap in N64 to catch NaN - will panic if zone_temp is NaN
         let zone_temp_checked = n64(zone_temp);
@@ -157,7 +157,7 @@ fn test_temperature_stability_case_900() {
         model.step_physics(step, outdoor_temp, 3600.0);
 
         // Check zone temperature is within reasonable bounds
-        let zone_temp = model.temperatures.as_ref()[0];
+        let zone_temp = model.setpoints.temperatures.as_ref()[0];
 
         // Wrap in N64 to catch NaN - will panic if zone_temp is NaN
         let zone_temp_checked = n64(zone_temp);
@@ -184,11 +184,11 @@ fn test_free_floating_stability_case_600ff() {
     // Verify this is a free-floating case (no HVAC)
     // Free-floating cases should have extreme setpoints
     assert!(
-        model.heating_setpoint < -100.0,
+        model.setpoints.heating_setpoint < -100.0,
         "Case 600FF should have very low heating setpoint"
     );
     assert!(
-        model.cooling_setpoint > 100.0,
+        model.setpoints.cooling_setpoint > 100.0,
         "Case 600FF should have very high cooling setpoint"
     );
 
@@ -202,7 +202,7 @@ fn test_free_floating_stability_case_600ff() {
 
         model.step_physics(step, outdoor_temp, 3600.0);
 
-        let zone_temp = model.temperatures.as_ref()[0];
+        let zone_temp = model.setpoints.temperatures.as_ref()[0];
 
         // Wrap in N64 to catch NaN - will panic if zone_temp is NaN
         let zone_temp_checked = n64(zone_temp);
@@ -238,7 +238,7 @@ fn test_free_floating_stability_case_900ff() {
 
         model.step_physics(step, outdoor_temp, 3600.0);
 
-        let zone_temp = model.temperatures.as_ref()[0];
+        let zone_temp = model.setpoints.temperatures.as_ref()[0];
 
         // Wrap in N64 to catch NaN - will panic if zone_temp is NaN
         let zone_temp_checked = n64(zone_temp);
@@ -281,8 +281,8 @@ fn test_energy_accumulation_consistency() {
     }
 
     // Check that accumulated energy matches sum of individual steps
-    let model_heating = model.annual_heating_energy;
-    let model_cooling = model.annual_cooling_energy;
+    let model_heating = model.hvac.annual_heating_energy;
+    let model_cooling = model.hvac.annual_cooling_energy;
     let model_net = model_heating - model_cooling;
 
     // Allow small numerical difference

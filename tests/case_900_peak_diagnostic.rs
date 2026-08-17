@@ -24,19 +24,19 @@ fn test_case_900_peak_diagnostic() {
     let mut model = ThermalModel::<VectorField>::from_spec(&spec);
 
     // 4. Attach diagnostics
-    let diag = SimulationDiagnostics::new(model.num_zones, 8760);
+    let diag = SimulationDiagnostics::new(model.hvac.num_zones, 8760);
     model.set_diagnostics(Some(diag));
 
     // 5. Run full year simulation
     println!("Running Case 900 simulation (8760 hours)...");
 
-    let num_zones = model.num_zones;
+    let num_zones = model.hvac.num_zones;
 
     for step in 0..8760 {
         let weather_data = weather.get_hourly_data(step).unwrap();
 
         // Update weather data on model for solar gain calculation
-        model.weather = Some(weather_data.clone());
+        model.solar.weather = Some(weather_data.clone());
 
         // Match ashrae_140_validator logic:
         // Set dynamic setpoints from spec (handles setback cases)
@@ -45,9 +45,9 @@ fn test_case_900_peak_diagnostic() {
             let heating_sp = hvac_schedule
                 .heating_setpoint_at_hour(hour)
                 .unwrap_or(hvac_schedule.heating_setpoint);
-            let cooling_sp = model.cooling_schedule.value(hour as usize);
-            model.heating_setpoint = heating_sp;
-            model.cooling_setpoint = cooling_sp;
+            let cooling_sp = model.setpoints.cooling_schedule.value(hour as usize);
+            model.setpoints.heating_setpoint = heating_sp;
+            model.setpoints.cooling_setpoint = cooling_sp;
 
             if spec.hvac.len() > 1 {
                 let mut heating_sps = vec![heating_sp; num_zones];
@@ -57,13 +57,13 @@ fn test_case_900_peak_diagnostic() {
                         let h_sp = hvac
                             .heating_setpoint_at_hour(hour)
                             .unwrap_or(hvac.heating_setpoint);
-                        let c_sp = model.cooling_schedule.value(hour as usize);
+                        let c_sp = model.setpoints.cooling_schedule.value(hour as usize);
                         heating_sps[zone_idx] = h_sp;
                         cooling_sps[zone_idx] = c_sp;
                     }
                 }
-                model.heating_setpoints = VectorField::new(heating_sps);
-                model.cooling_setpoints = VectorField::new(cooling_sps);
+                model.setpoints.heating_setpoints = VectorField::new(heating_sps);
+                model.setpoints.cooling_setpoints = VectorField::new(cooling_sps);
             }
         }
 

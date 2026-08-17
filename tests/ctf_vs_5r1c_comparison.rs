@@ -48,18 +48,18 @@ fn run_case_with_ctf_setting(case: ASHRAE140Case, enable_ctf: bool) -> (f64, f64
 
     // Configure HVAC setpoints (same as validator does)
     if let Some(hvac) = spec.hvac.first() {
-        model.heating_setpoint = hvac.heating_setpoint;
-        model.cooling_setpoint = hvac.cooling_setpoint;
+        model.setpoints.heating_setpoint = hvac.heating_setpoint;
+        model.setpoints.cooling_setpoint = hvac.cooling_setpoint;
     } else {
         // Default setpoints for ASHRAE 140
-        model.heating_setpoint = 20.0;
-        model.cooling_setpoint = 27.0;
+        model.setpoints.heating_setpoint = 20.0;
+        model.setpoints.cooling_setpoint = 27.0;
     }
 
     // Set HVAC enabled
-    let num_zones = model.num_zones;
+    let num_zones = model.hvac.num_zones;
     let hvac_enabled_vals = vec![1.0; num_zones];
-    model.hvac_enabled = VectorField::new(hvac_enabled_vals);
+    model.hvac.hvac_enabled = VectorField::new(hvac_enabled_vals);
 
     const STEPS: usize = 8760;
     let mut annual_heating_joules: f64 = 0.0;
@@ -71,16 +71,16 @@ fn run_case_with_ctf_setting(case: ASHRAE140Case, enable_ctf: bool) -> (f64, f64
         let weather_data = weather.get_hourly_data(step).unwrap();
 
         // Update weather on model for solar gain calculation
-        model.weather = Some(weather_data.clone());
+        model.solar.weather = Some(weather_data.clone());
 
         // Apply setpoints from HVAC schedule
         if let Some(hvac) = spec.hvac.first() {
             let hour = (step % 24) as u8;
             if let Some(heating_sp) = hvac.heating_setpoint_at_hour(hour) {
-                model.heating_setpoint = heating_sp;
+                model.setpoints.heating_setpoint = heating_sp;
             }
             if let Some(cooling_sp) = hvac.cooling_setpoint_at_hour(hour) {
-                model.cooling_setpoint = cooling_sp;
+                model.setpoints.cooling_setpoint = cooling_sp;
             }
         }
 

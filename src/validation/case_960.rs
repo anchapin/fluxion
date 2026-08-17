@@ -91,15 +91,15 @@ impl Case960ReferenceImplementation {
         // - Zone 2 (Sunspace): 32 m², 15°C heating setpoint, no cooling
 
         // Set zone-specific setpoints
-        model.heating_setpoints = VectorField::new(vec![20.0, 15.0]); // Zone 1: 20°C, Zone 2: 15°C
-        model.cooling_setpoints = VectorField::new(vec![24.0, 99.0]); // Zone 1: 24°C, Zone 2: no cooling
+        model.setpoints.heating_setpoints = VectorField::new(vec![20.0, 15.0]); // Zone 1: 20°C, Zone 2: 15°C
+        model.setpoints.cooling_setpoints = VectorField::new(vec![24.0, 99.0]); // Zone 1: 24°C, Zone 2: no cooling
 
         // Set inter-zone conductance (typical internal wall/window)
         // This represents the thermal coupling between living space and sunspace
-        model.h_tr_iz = VectorField::new(vec![50.0, 50.0]); // 50 W/K conductance between zones
+        model.conduction.h_tr_iz = VectorField::new(vec![50.0, 50.0]); // 50 W/K conductance between zones
 
         // Set HVAC enabled flags
-        model.hvac_enabled = VectorField::new(vec![1.0, 1.0]); // Both zones have HVAC (Zone 2 has heating only)
+        model.hvac.hvac_enabled = VectorField::new(vec![1.0, 1.0]); // Both zones have HVAC (Zone 2 has heating only)
 
         model
     }
@@ -123,7 +123,7 @@ impl Case960ReferenceImplementation {
         model.reset_peak_power();
 
         const STEPS: usize = 8760; // Annual simulation
-        let _num_zones = model.num_zones;
+        let _num_zones = model.hvac.num_zones;
 
         // Initialize tracking variables
         let mut annual_heating_joules = 0.0;
@@ -139,11 +139,11 @@ impl Case960ReferenceImplementation {
             let weather_data = weather.get_hourly_data(step).unwrap();
 
             // Extract the only field used downstream (f64 is Copy) so we can move
-            // weather_data into model.weather without an extra clone (Issue #2893).
+            // weather_data into model.solar.weather without an extra clone (Issue #2893).
             let dry_bulb_temp = weather_data.dry_bulb_temp;
 
             // Update model with current weather
-            model.weather = Some(weather_data);
+            model.solar.weather = Some(weather_data);
 
             // Step the physics simulation
             let hvac_kwh = model.step_physics(step, dry_bulb_temp, 3600.0);
@@ -157,14 +157,15 @@ impl Case960ReferenceImplementation {
 
             // Record temperatures at key timesteps
             if key_timesteps.contains(&step) {
-                let temps = model.temperatures.as_slice().to_vec();
+                let temps = model.setpoints.temperatures.as_slice().to_vec();
                 zone_temperatures.push((step, temps));
             }
 
             // Calculate inter-zone heat transfer (simplified)
             // In a real implementation, this would come from the thermal network solver
-            let temp_diff = model.temperatures.as_slice()[0] - model.temperatures.as_slice()[1];
-            let heat_flow = model.h_tr_iz.as_slice()[0] * temp_diff;
+            let temp_diff = model.setpoints.temperatures.as_slice()[0]
+                - model.setpoints.temperatures.as_slice()[1];
+            let heat_flow = model.conduction.h_tr_iz.as_slice()[0] * temp_diff;
             inter_zone_heat_flow.push(heat_flow);
 
             // Per-timestep energy-balance residual (Issue #2980 acceptance item #1).
@@ -403,16 +404,16 @@ mod tests {
         let model = Case960ReferenceImplementation::create_case_960_thermal_model();
 
         // Verify model has correct number of zones
-        assert_eq!(model.num_zones, 2);
+        assert_eq!(model.hvac.num_zones, 2);
 
         // Verify setpoints are configured correctly
-        assert_eq!(model.heating_setpoints.as_slice()[0], 20.0); // Zone 1 heating
-        assert_eq!(model.heating_setpoints.as_slice()[1], 15.0); // Zone 2 heating
-        assert_eq!(model.cooling_setpoints.as_slice()[0], 24.0); // Zone 1 cooling
-        assert_eq!(model.cooling_setpoints.as_slice()[1], 99.0); // Zone 2 no cooling
+        assert_eq!(model.setpoints.heating_setpoints.as_slice()[0], 20.0); // Zone 1 heating
+        assert_eq!(model.setpoints.heating_setpoints.as_slice()[1], 15.0); // Zone 2 heating
+        assert_eq!(model.setpoints.cooling_setpoints.as_slice()[0], 24.0); // Zone 1 cooling
+        assert_eq!(model.setpoints.cooling_setpoints.as_slice()[1], 99.0); // Zone 2 no cooling
 
         // Verify inter-zone conductance is set
-        assert!(model.h_tr_iz.as_slice()[0] > 0.0);
+        assert!(model.conduction.h_tr_iz.as_slice()[0] > 0.0);
     }
 
     #[test]

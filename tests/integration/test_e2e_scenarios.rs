@@ -198,7 +198,7 @@ fn test_multi_zone_physics() {
     assert!(energy.is_finite());
 
     // Verify all zones have temperatures
-    assert_eq!(model.temperatures.len(), num_zones);
+    assert_eq!(model.setpoints.temperatures.len(), num_zones);
     println!("Multi-zone energy: {:.2} kWh ({} zones)", energy, num_zones);
 }
 

@@ -370,7 +370,7 @@ impl BatchOracle {
                     final_data
                 });
                 for (idx, model, energy) in final_worker_data {
-                    let total_area = model.zone_area.integrate();
+                    let total_area = model.setpoints.zone_area.integrate();
                     let eui = if total_area > 0.0 {
                         energy / total_area
                     } else {

@@ -22,16 +22,16 @@ fn test_thermal_mass_coupling_ratio_low_mass() {
     let mut model = ThermalModel::<VectorField>::from_spec(&spec);
 
     // Calculate initial coupling ratio
-    let h_tr_ms_initial: f64 = model.h_tr_ms.as_ref()[0];
-    let h_tr_em_initial: f64 = model.h_tr_em.as_ref()[0];
+    let h_tr_ms_initial: f64 = model.conduction.h_tr_ms.as_ref()[0];
+    let h_tr_em_initial: f64 = model.conduction.h_tr_em.as_ref()[0];
     let _initial_ratio = h_tr_em_initial / h_tr_ms_initial;
 
     // Apply thermal mass correction
     model.apply_thermal_mass_correction();
 
     // Verify low-mass building was NOT corrected
-    let h_tr_ms_final: f64 = model.h_tr_ms.as_ref()[0];
-    let h_tr_em_final: f64 = model.h_tr_em.as_ref()[0];
+    let h_tr_ms_final: f64 = model.conduction.h_tr_ms.as_ref()[0];
+    let h_tr_em_final: f64 = model.conduction.h_tr_em.as_ref()[0];
     let final_ratio = h_tr_em_final / h_tr_ms_final;
 
     assert_eq!(
@@ -51,8 +51,8 @@ fn test_thermal_mass_coupling_ratio_high_mass() {
     let model = ThermalModel::<VectorField>::from_spec(&spec);
 
     // Verify high-mass building was corrected during model creation
-    let h_tr_ms: f64 = model.h_tr_ms.as_ref()[0];
-    let h_tr_em: f64 = model.h_tr_em.as_ref()[0];
+    let h_tr_ms: f64 = model.conduction.h_tr_ms.as_ref()[0];
+    let h_tr_em: f64 = model.conduction.h_tr_em.as_ref()[0];
     let final_ratio = h_tr_em / h_tr_ms;
 
     assert!(
@@ -70,8 +70,8 @@ fn test_thermal_mass_threshold_detection() {
     let model = ThermalModel::<VectorField>::from_spec(&spec);
 
     // Case 600 should be low-mass
-    let total_cap: f64 = model.thermal_capacitance.iter().sum();
-    let zone_area = model.zone_area[0];
+    let total_cap: f64 = model.mass.thermal_capacitance.iter().sum();
+    let zone_area = model.setpoints.zone_area[0];
     let air_cap = zone_area * 1.2 * 1005.0;
     let structure_cap = total_cap - air_cap;
 
@@ -85,8 +85,8 @@ fn test_thermal_mass_threshold_detection() {
     let spec_900 = ASHRAE140Case::Case900.spec();
     let model_900 = ThermalModel::<VectorField>::from_spec(&spec_900);
 
-    let total_cap_900: f64 = model_900.thermal_capacitance.iter().sum();
-    let zone_area_900 = model_900.zone_area[0];
+    let total_cap_900: f64 = model_900.mass.thermal_capacitance.iter().sum();
+    let zone_area_900 = model_900.setpoints.zone_area[0];
     let air_cap_900 = zone_area_900 * 1.2 * 1005.0;
     let structure_cap_900 = total_cap_900 - air_cap_900;
 
@@ -105,8 +105,8 @@ fn test_thermal_mass_coupling_mode_specific_disabled() {
     let model = ThermalModel::<VectorField>::from_spec(&spec);
 
     // Verify coupling ratio achieves target >= 0.1
-    let h_tr_ms_value: f64 = model.h_tr_ms.as_ref()[0];
-    let h_tr_em_value: f64 = model.h_tr_em.as_ref()[0];
+    let h_tr_ms_value: f64 = model.conduction.h_tr_ms.as_ref()[0];
+    let h_tr_em_value: f64 = model.conduction.h_tr_em.as_ref()[0];
 
     let coupling_ratio = h_tr_em_value / h_tr_ms_value;
 
@@ -128,13 +128,13 @@ fn test_thermal_mass_correction_low_mass_unchanged() {
     let mut model = ThermalModel::<VectorField>::from_spec(&spec);
 
     // Calculate initial h_tr_em value
-    let h_tr_em_initial: f64 = model.h_tr_em.as_ref()[0];
+    let h_tr_em_initial: f64 = model.conduction.h_tr_em.as_ref()[0];
 
     // Apply thermal mass correction (should exit early for low-mass)
     model.apply_thermal_mass_correction();
 
     // Verify value unchanged (low-mass should not be corrected)
-    let h_tr_em_final: f64 = model.h_tr_em.as_ref()[0];
+    let h_tr_em_final: f64 = model.conduction.h_tr_em.as_ref()[0];
 
     assert_eq!(
         h_tr_em_initial, h_tr_em_final,

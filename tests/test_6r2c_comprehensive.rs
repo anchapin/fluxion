@@ -17,7 +17,7 @@ use fluxion::validation::ashrae_140_cases::ASHRAE140Case;
 fn test_thermal_model_type_default() {
     // Default model should be 5R1C
     let model = ThermalModel::new(1);
-    assert_eq!(model.thermal_model_type, ThermalModelType::FiveROneC);
+    assert_eq!(model.hvac.thermal_model_type, ThermalModelType::FiveROneC);
     assert!(!model.is_6r2c_model());
 }
 
@@ -30,12 +30,12 @@ fn test_configure_6r2c_model() {
 
     // Check that model is now 6R2C
     assert!(model.is_6r2c_model());
-    assert_eq!(model.thermal_model_type, ThermalModelType::SixRTwoC);
+    assert_eq!(model.hvac.thermal_model_type, ThermalModelType::SixRTwoC);
 
     // Check that thermal capacitance is split correctly
-    let total_cap = model.thermal_capacitance.as_ref()[0];
-    let envelope_cap = model.envelope_thermal_capacitance.as_ref()[0];
-    let internal_cap = model.internal_thermal_capacitance.as_ref()[0];
+    let total_cap = model.mass.thermal_capacitance.as_ref()[0];
+    let envelope_cap = model.mass.envelope_thermal_capacitance.as_ref()[0];
+    let internal_cap = model.mass.internal_thermal_capacitance.as_ref()[0];
 
     assert!((envelope_cap - total_cap * envelope_fraction).abs() < 0.01);
     assert!((internal_cap - total_cap * (1.0 - envelope_fraction)).abs() < 0.01);
@@ -44,7 +44,7 @@ fn test_configure_6r2c_model() {
     // Issue 692 fix: h_tr_me is no longer overwritten by configure_6r2c_model
     // It comes from physics-based calculation in from_spec()
     // For ThermalModel::new(), h_tr_me starts at 0.0 (not the hardcoded 100.0)
-    let h_tr_me = model.h_tr_me.as_ref()[0];
+    let h_tr_me = model.mass.h_tr_me.as_ref()[0];
     // h_tr_me should NOT be 100.0 here - it's preserved from initialization
     // This verifies the fix: configure_6r2c_model no longer hardcodes h_tr_me
     assert!(
@@ -60,16 +60,16 @@ fn test_6r2c_thermal_mass_initialization() {
     // h_tr_me is now set by from_spec (physics-based), not overwritten by configure_6r2c_model
     model.configure_6r2c_model(0.75, 100.0, None);
 
-    assert!(!model.envelope_mass_temperatures.as_ref().is_empty());
-    assert!(!model.internal_mass_temperatures.as_ref().is_empty());
+    assert!(!model.mass.envelope_mass_temperatures.as_ref().is_empty());
+    assert!(!model.mass.internal_mass_temperatures.as_ref().is_empty());
 
-    let initial_mass_temp = model.mass_temperatures.as_ref()[0];
+    let initial_mass_temp = model.mass.mass_temperatures.as_ref()[0];
     assert_eq!(
-        model.envelope_mass_temperatures.as_ref()[0],
+        model.mass.envelope_mass_temperatures.as_ref()[0],
         initial_mass_temp
     );
     assert_eq!(
-        model.internal_mass_temperatures.as_ref()[0],
+        model.mass.internal_mass_temperatures.as_ref()[0],
         initial_mass_temp
     );
 
@@ -77,7 +77,7 @@ fn test_6r2c_thermal_mass_initialization() {
     // h_tr_me = h_ms * A_int = 4.5 W/(m²·K) * (0.5 * 48 m²) = 108 W/K
     // This is the physics-based value from from_spec, preserved by configure_6r2c_model
     // PHASE 36-04: Reduced from 432 W/K (2.0*floor_area) to 108 W/K (0.5*floor_area)
-    let h_tr_me = model.h_tr_me.as_ref()[0];
+    let h_tr_me = model.mass.h_tr_me.as_ref()[0];
     assert!(
         h_tr_me > 100.0 && h_tr_me < 120.0,
         "h_tr_me should be physics-based (~108 W/K), got {:.1} W/K",
@@ -94,10 +94,10 @@ fn test_all_conductances_non_negative() {
     let mut model = ThermalModel::new(1);
     model.configure_6r2c_model(0.75, 100.0, None);
 
-    assert!(model.h_tr_em.as_ref()[0] >= 0.0);
-    assert!(model.h_tr_ms.as_ref()[0] >= 0.0);
-    assert!(model.h_tr_me.as_ref()[0] >= 0.0);
-    assert!(model.h_tr_is.as_ref()[0] >= 0.0);
+    assert!(model.conduction.h_tr_em.as_ref()[0] >= 0.0);
+    assert!(model.conduction.h_tr_ms.as_ref()[0] >= 0.0);
+    assert!(model.mass.h_tr_me.as_ref()[0] >= 0.0);
+    assert!(model.conduction.h_tr_is.as_ref()[0] >= 0.0);
 }
 
 #[test]
@@ -106,8 +106,8 @@ fn test_coupling_ratio_bounds() {
         let mut model = ThermalModel::new(1);
         model.configure_6r2c_model(fraction, 100.0, None);
 
-        let h_tr_em = model.h_tr_em.as_ref()[0];
-        let h_tr_ms = model.h_tr_ms.as_ref()[0];
+        let h_tr_em = model.conduction.h_tr_em.as_ref()[0];
+        let h_tr_ms = model.conduction.h_tr_ms.as_ref()[0];
 
         if h_tr_ms > 0.0 {
             let ratio = h_tr_em / h_tr_ms;
@@ -131,8 +131,8 @@ fn test_thermal_lag_envelope_vs_internal() {
 
     for timestep in 0..72 {
         model.step_physics(timestep, outdoor_temp_step, 3600.0);
-        t_env_curve.push(model.envelope_mass_temperatures.as_ref()[0]);
-        t_int_curve.push(model.internal_mass_temperatures.as_ref()[0]);
+        t_env_curve.push(model.mass.envelope_mass_temperatures.as_ref()[0]);
+        t_int_curve.push(model.mass.internal_mass_temperatures.as_ref()[0]);
     }
 
     let t_env_initial = t_env_curve[0];
@@ -169,15 +169,15 @@ fn test_mass_nodes_diverge_during_simulation() {
     let mut model = ThermalModel::<VectorField>::from_spec(&spec);
     model.configure_6r2c_model(0.75, 100.0, None);
 
-    let initial_t_env = model.envelope_mass_temperatures.as_ref()[0];
-    let initial_t_int = model.internal_mass_temperatures.as_ref()[0];
+    let initial_t_env = model.mass.envelope_mass_temperatures.as_ref()[0];
+    let initial_t_int = model.mass.internal_mass_temperatures.as_ref()[0];
 
     for timestep in 0..24 {
         model.step_physics(timestep, 0.0, 3600.0);
     }
 
-    let final_t_env = model.envelope_mass_temperatures.as_ref()[0];
-    let final_t_int = model.internal_mass_temperatures.as_ref()[0];
+    let final_t_env = model.mass.envelope_mass_temperatures.as_ref()[0];
+    let final_t_int = model.mass.internal_mass_temperatures.as_ref()[0];
 
     let delta_t_env = initial_t_env - final_t_env;
     let delta_t_int = initial_t_int - final_t_int;
@@ -221,10 +221,10 @@ fn test_envelope_mass_time_constant_based_on_h_tr_ms() {
     let mut model = ThermalModel::<VectorField>::from_spec(&spec);
     model.configure_6r2c_model(0.75, 100.0, None);
 
-    let cm_env = model.envelope_thermal_capacitance.as_ref()[0];
-    let h_tr_ms = model.h_tr_ms.as_ref()[0];
-    let h_tr_me = model.h_tr_me.as_ref()[0];
-    let h_tr_em = model.h_tr_em.as_ref()[0];
+    let cm_env = model.mass.envelope_thermal_capacitance.as_ref()[0];
+    let h_tr_ms = model.conduction.h_tr_ms.as_ref()[0];
+    let h_tr_me = model.mass.h_tr_me.as_ref()[0];
+    let h_tr_em = model.conduction.h_tr_em.as_ref()[0];
 
     // Time constant for envelope mass should be τ = Cm / (h_tr_ms + h_tr_me)
     // NOT τ = Cm / (h_tr_em + h_tr_ms + h_tr_me)
@@ -315,9 +315,9 @@ fn test_6r2c_model_energy_conservation() {
     for t in 0..100 {
         let energy = model.step_physics(t, 20.0, 3600.0);
         assert!(energy.is_finite());
-        assert!(model.temperatures.as_ref()[0].is_finite());
-        assert!(model.envelope_mass_temperatures.as_ref()[0].is_finite());
-        assert!(model.internal_mass_temperatures.as_ref()[0].is_finite());
+        assert!(model.setpoints.temperatures.as_ref()[0].is_finite());
+        assert!(model.mass.envelope_mass_temperatures.as_ref()[0].is_finite());
+        assert!(model.mass.internal_mass_temperatures.as_ref()[0].is_finite());
     }
 }
 
@@ -330,9 +330,9 @@ fn test_warm_start_continuity() {
         model.step_physics(timestep, 15.0, 3600.0);
     }
 
-    let t_env_final = model.envelope_mass_temperatures.as_ref()[0];
+    let t_env_final = model.mass.envelope_mass_temperatures.as_ref()[0];
     model.step_physics(24, 15.0, 3600.0);
-    let t_env_next = model.envelope_mass_temperatures.as_ref()[0];
+    let t_env_next = model.mass.envelope_mass_temperatures.as_ref()[0];
 
     assert!(
         (t_env_next - t_env_final).abs() < 5.0,
@@ -355,8 +355,8 @@ fn test_6r2c_model_multi_zone() {
     }
 
     for i in 0..2 {
-        assert!(model.temperatures.as_ref()[i].is_finite());
-        assert!(model.envelope_mass_temperatures.as_ref()[i].is_finite());
-        assert!(model.internal_mass_temperatures.as_ref()[i].is_finite());
+        assert!(model.setpoints.temperatures.as_ref()[i].is_finite());
+        assert!(model.mass.envelope_mass_temperatures.as_ref()[i].is_finite());
+        assert!(model.mass.internal_mass_temperatures.as_ref()[i].is_finite());
     }
 }

@@ -21,9 +21,9 @@ fn test_extreme_parameter_values() {
     // Test MIN_U_VALUE boundary
     {
         let mut model = ThermalModel::new(1);
-        model.window_u_value = 0.1; // MIN_U_VALUE
-        model.heating_setpoint = 20.0;
-        model.cooling_setpoint = 24.0;
+        model.solar.window_u_value = 0.1; // MIN_U_VALUE
+        model.setpoints.heating_setpoint = 20.0;
+        model.setpoints.cooling_setpoint = 24.0;
 
         let surrogates = SurrogateManager::new().unwrap();
         let energy = model.solve_timesteps(8760, &surrogates, false, None, None, None);
@@ -38,9 +38,9 @@ fn test_extreme_parameter_values() {
     // Test MAX_U_VALUE boundary
     {
         let mut model = ThermalModel::new(1);
-        model.window_u_value = 5.0; // MAX_U_VALUE
-        model.heating_setpoint = 20.0;
-        model.cooling_setpoint = 24.0;
+        model.solar.window_u_value = 5.0; // MAX_U_VALUE
+        model.setpoints.heating_setpoint = 20.0;
+        model.setpoints.cooling_setpoint = 24.0;
 
         let surrogates = SurrogateManager::new().unwrap();
         let energy = model.solve_timesteps(8760, &surrogates, false, None, None, None);
@@ -55,9 +55,9 @@ fn test_extreme_parameter_values() {
     // Test MIN heating setpoint boundary
     {
         let mut model = ThermalModel::new(1);
-        model.window_u_value = 2.0;
-        model.heating_setpoint = 15.0; // MIN_HEATING_SETPOINT
-        model.cooling_setpoint = 22.0;
+        model.solar.window_u_value = 2.0;
+        model.setpoints.heating_setpoint = 15.0; // MIN_HEATING_SETPOINT
+        model.setpoints.cooling_setpoint = 22.0;
 
         let surrogates = SurrogateManager::new().unwrap();
         let energy = model.solve_timesteps(8760, &surrogates, false, None, None, None);
@@ -72,9 +72,9 @@ fn test_extreme_parameter_values() {
     // Test MAX cooling setpoint boundary
     {
         let mut model = ThermalModel::new(1);
-        model.window_u_value = 2.0;
-        model.heating_setpoint = 20.0;
-        model.cooling_setpoint = 32.0; // MAX_COOLING_SETPOINT
+        model.solar.window_u_value = 2.0;
+        model.setpoints.heating_setpoint = 20.0;
+        model.setpoints.cooling_setpoint = 32.0; // MAX_COOLING_SETPOINT
 
         let surrogates = SurrogateManager::new().unwrap();
         let energy = model.solve_timesteps(8760, &surrogates, false, None, None, None);
@@ -89,9 +89,9 @@ fn test_extreme_parameter_values() {
     // Test boundary combination: min U + min heating setpoint
     {
         let mut model = ThermalModel::new(1);
-        model.window_u_value = 0.1;
-        model.heating_setpoint = 15.0;
-        model.cooling_setpoint = 22.0;
+        model.solar.window_u_value = 0.1;
+        model.setpoints.heating_setpoint = 15.0;
+        model.setpoints.cooling_setpoint = 22.0;
 
         let surrogates = SurrogateManager::new().unwrap();
         let energy = model.solve_timesteps(8760, &surrogates, false, None, None, None);
@@ -106,9 +106,9 @@ fn test_extreme_parameter_values() {
     // Test boundary combination: max U + max cooling setpoint
     {
         let mut model = ThermalModel::new(1);
-        model.window_u_value = 5.0;
-        model.heating_setpoint = 25.0;
-        model.cooling_setpoint = 32.0;
+        model.solar.window_u_value = 5.0;
+        model.setpoints.heating_setpoint = 25.0;
+        model.setpoints.cooling_setpoint = 32.0;
 
         let surrogates = SurrogateManager::new().unwrap();
         let energy = model.solve_timesteps(8760, &surrogates, false, None, None, None);
@@ -133,17 +133,17 @@ fn test_zero_load_scenarios() {
     println!("\n=== Test 2: Zero Load Scenarios ===");
 
     let mut model = ThermalModel::new(1);
-    model.window_u_value = 2.0;
-    model.heating_setpoint = 20.0;
-    model.cooling_setpoint = 24.0;
+    model.solar.window_u_value = 2.0;
+    model.setpoints.heating_setpoint = 20.0;
+    model.setpoints.cooling_setpoint = 24.0;
 
     // Set all loads to zero
-    let num_zones = model.num_zones;
-    model.loads = VectorField::new(vec![0.0; num_zones]);
+    let num_zones = model.hvac.num_zones;
+    model.setpoints.loads = VectorField::new(vec![0.0; num_zones]);
 
     // Record initial temperatures
-    let initial_temp = model.temperatures[0];
-    let initial_mass_temp = model.mass_temperatures[0];
+    let initial_temp = model.setpoints.temperatures[0];
+    let initial_mass_temp = model.mass.mass_temperatures[0];
     println!(
         "Initial temp: {:.2}°C, Mass temp: {:.2}°C",
         initial_temp, initial_mass_temp
@@ -162,8 +162,8 @@ fn test_zero_load_scenarios() {
     assert!(energy >= 0.0, "Energy should be non-negative");
 
     // Final temperatures should be finite
-    let final_temp = model.temperatures[0];
-    let final_mass_temp = model.mass_temperatures[0];
+    let final_temp = model.setpoints.temperatures[0];
+    let final_mass_temp = model.mass.mass_temperatures[0];
     println!(
         "Final temp: {:.2}°C, Mass temp: {:.2}°C",
         final_temp, final_mass_temp
@@ -197,13 +197,13 @@ fn test_extreme_temperature_initial_conditions() {
     // Test very low initial temperature (-50°C])
     {
         let mut model = ThermalModel::new(1);
-        model.window_u_value = 2.0;
-        model.heating_setpoint = 20.0;
-        model.cooling_setpoint = 24.0;
+        model.solar.window_u_value = 2.0;
+        model.setpoints.heating_setpoint = 20.0;
+        model.setpoints.cooling_setpoint = 24.0;
 
         // Set extreme initial temperature
-        model.temperatures = VectorField::new(vec![-50.0]);
-        model.mass_temperatures = VectorField::new(vec![-50.0]);
+        model.setpoints.temperatures = VectorField::new(vec![-50.0]);
+        model.mass.mass_temperatures = VectorField::new(vec![-50.0]);
 
         println!("Initial extreme low temp: -50.0°C");
 
@@ -215,8 +215,8 @@ fn test_extreme_temperature_initial_conditions() {
         assert!(energy >= 0.0, "Energy should be non-negative");
 
         // Final temperatures should be finite and reasonable
-        let final_temp = model.temperatures[0];
-        let final_mass_temp = model.mass_temperatures[0];
+        let final_temp = model.setpoints.temperatures[0];
+        let final_mass_temp = model.mass.mass_temperatures[0];
         println!(
             "Final temp: {:.2}°C, Mass temp: {:.2}°C",
             final_temp, final_mass_temp
@@ -237,13 +237,13 @@ fn test_extreme_temperature_initial_conditions() {
     // Test very high initial temperature (100°C])
     {
         let mut model = ThermalModel::new(1);
-        model.window_u_value = 2.0;
-        model.heating_setpoint = 20.0;
-        model.cooling_setpoint = 24.0;
+        model.solar.window_u_value = 2.0;
+        model.setpoints.heating_setpoint = 20.0;
+        model.setpoints.cooling_setpoint = 24.0;
 
         // Set extreme initial temperature
-        model.temperatures = VectorField::new(vec![100.0]);
-        model.mass_temperatures = VectorField::new(vec![100.0]);
+        model.setpoints.temperatures = VectorField::new(vec![100.0]);
+        model.mass.mass_temperatures = VectorField::new(vec![100.0]);
 
         println!("Initial extreme high temp: 100.0°C");
 
@@ -255,8 +255,8 @@ fn test_extreme_temperature_initial_conditions() {
         assert!(energy >= 0.0, "Energy should be non-negative");
 
         // Final temperatures should be finite and reasonable
-        let final_temp = model.temperatures[0];
-        let final_mass_temp = model.mass_temperatures[0];
+        let final_temp = model.setpoints.temperatures[0];
+        let final_mass_temp = model.mass.mass_temperatures[0];
         println!(
             "Final temp: {:.2}°C, Mass temp: {:.2}°C",
             final_temp, final_mass_temp
@@ -289,12 +289,12 @@ fn test_boundary_conductance_values() {
     // Test zero conductance (h_tr_w = 0.0])
     {
         let mut model = ThermalModel::new(1);
-        model.window_u_value = 2.0;
-        model.heating_setpoint = 20.0;
-        model.cooling_setpoint = 24.0;
+        model.solar.window_u_value = 2.0;
+        model.setpoints.heating_setpoint = 20.0;
+        model.setpoints.cooling_setpoint = 24.0;
 
         // Set window conductance to zero (perfectly insulated windows])
-        model.h_tr_w = VectorField::new(vec![0.0]);
+        model.conduction.h_tr_w = VectorField::new(vec![0.0]);
 
         println!("Zero window conductance (h_tr_w = 0.0)");
 
@@ -309,8 +309,8 @@ fn test_boundary_conductance_values() {
         assert!(energy >= 0.0, "Energy should be non-negative");
 
         // Verify no NaN/Inf in temperatures
-        let final_temp = model.temperatures[0];
-        let final_mass_temp = model.mass_temperatures[0];
+        let final_temp = model.setpoints.temperatures[0];
+        let final_mass_temp = model.mass.mass_temperatures[0];
         assert!(final_temp.is_finite(), "Final temperature should be finite");
         assert!(
             final_mass_temp.is_finite(),
@@ -321,12 +321,12 @@ fn test_boundary_conductance_values() {
     // Test very high conductance (h_tr_w = 1000.0])
     {
         let mut model = ThermalModel::new(1);
-        model.window_u_value = 2.0;
-        model.heating_setpoint = 20.0;
-        model.cooling_setpoint = 24.0;
+        model.solar.window_u_value = 2.0;
+        model.setpoints.heating_setpoint = 20.0;
+        model.setpoints.cooling_setpoint = 24.0;
 
         // Set window conductance to very high value
-        model.h_tr_w = VectorField::new(vec![1000.0]);
+        model.conduction.h_tr_w = VectorField::new(vec![1000.0]);
 
         println!("High window conductance (h_tr_w = 1000.0)");
 
@@ -341,8 +341,8 @@ fn test_boundary_conductance_values() {
         assert!(energy >= 0.0, "Energy should be non-negative");
 
         // Verify no NaN/Inf in temperatures
-        let final_temp = model.temperatures[0];
-        let final_mass_temp = model.mass_temperatures[0];
+        let final_temp = model.setpoints.temperatures[0];
+        let final_mass_temp = model.mass.mass_temperatures[0];
         assert!(final_temp.is_finite(), "Final temperature should be finite");
         assert!(
             final_mass_temp.is_finite(),
@@ -366,17 +366,17 @@ fn test_single_zone_edge_case() {
     let mut model = ThermalModel::new(num_zones);
 
     // Verify model creation
-    assert_eq!(model.num_zones, num_zones);
-    assert_eq!(model.temperatures.len(), num_zones);
-    assert_eq!(model.mass_temperatures.len(), num_zones);
-    assert_eq!(model.loads.len(), num_zones);
+    assert_eq!(model.hvac.num_zones, num_zones);
+    assert_eq!(model.setpoints.temperatures.len(), num_zones);
+    assert_eq!(model.mass.mass_temperatures.len(), num_zones);
+    assert_eq!(model.setpoints.loads.len(), num_zones);
 
     println!("Single zone model created: {} zone", num_zones);
 
     // Apply parameters
-    model.window_u_value = 2.0;
-    model.heating_setpoint = 20.0;
-    model.cooling_setpoint = 24.0;
+    model.solar.window_u_value = 2.0;
+    model.setpoints.heating_setpoint = 20.0;
+    model.setpoints.cooling_setpoint = 24.0;
 
     // Solve physics
     let surrogates = SurrogateManager::new().unwrap();
@@ -390,8 +390,8 @@ fn test_single_zone_edge_case() {
     assert!(energy >= 0.0, "Energy should be non-negative");
 
     // Verify temperature states
-    let final_temp = model.temperatures[0];
-    let final_mass_temp = model.mass_temperatures[0];
+    let final_temp = model.setpoints.temperatures[0];
+    let final_mass_temp = model.mass.mass_temperatures[0];
     println!(
         "Final temp: {:.2}°C, Mass temp: {:.2}°C",
         final_temp, final_mass_temp
@@ -419,17 +419,17 @@ fn test_large_zone_count_edge_case() {
     let mut model = ThermalModel::new(num_zones);
 
     // Verify model creation
-    assert_eq!(model.num_zones, num_zones);
-    assert_eq!(model.temperatures.len(), num_zones);
-    assert_eq!(model.mass_temperatures.len(), num_zones);
-    assert_eq!(model.loads.len(), num_zones);
+    assert_eq!(model.hvac.num_zones, num_zones);
+    assert_eq!(model.setpoints.temperatures.len(), num_zones);
+    assert_eq!(model.mass.mass_temperatures.len(), num_zones);
+    assert_eq!(model.setpoints.loads.len(), num_zones);
 
     println!("Large zone model created: {} zones", num_zones);
 
     // Apply parameters
-    model.window_u_value = 2.0;
-    model.heating_setpoint = 20.0;
-    model.cooling_setpoint = 24.0;
+    model.solar.window_u_value = 2.0;
+    model.setpoints.heating_setpoint = 20.0;
+    model.setpoints.cooling_setpoint = 24.0;
 
     // Solve physics with timing
     let start = std::time::Instant::now();
@@ -448,8 +448,8 @@ fn test_large_zone_count_edge_case() {
 
     // Verify temperature states for all zones
     for i in 0..num_zones {
-        let temp = model.temperatures[i];
-        let mass_temp = model.mass_temperatures[i];
+        let temp = model.setpoints.temperatures[i];
+        let mass_temp = model.mass.mass_temperatures[i];
         assert!(temp.is_finite(), "Zone {} temperature should be finite", i);
         assert!(
             mass_temp.is_finite(),
@@ -482,9 +482,9 @@ fn test_invalid_parameter_handling() {
     // Test U-value < MIN_U_VALUE
     {
         let mut model = ThermalModel::new(1);
-        model.window_u_value = 0.05; // Below MIN_U_VALUE (0.1])
-        model.heating_setpoint = 20.0;
-        model.cooling_setpoint = 24.0;
+        model.solar.window_u_value = 0.05; // Below MIN_U_VALUE (0.1])
+        model.setpoints.heating_setpoint = 20.0;
+        model.setpoints.cooling_setpoint = 24.0;
 
         println!("Testing U-value below MIN_U_VALUE: 0.05");
 
@@ -502,9 +502,9 @@ fn test_invalid_parameter_handling() {
     // Test U-value > MAX_U_VALUE
     {
         let mut model = ThermalModel::new(1);
-        model.window_u_value = 10.0; // Above MAX_U_VALUE (5.0])
-        model.heating_setpoint = 20.0;
-        model.cooling_setpoint = 24.0;
+        model.solar.window_u_value = 10.0; // Above MAX_U_VALUE (5.0])
+        model.setpoints.heating_setpoint = 20.0;
+        model.setpoints.cooling_setpoint = 24.0;
 
         println!("Testing U-value above MAX_U_VALUE: 10.0");
 
@@ -519,9 +519,9 @@ fn test_invalid_parameter_handling() {
     // Test heating setpoint outside valid range (below MIN])
     {
         let mut model = ThermalModel::new(1);
-        model.window_u_value = 2.0;
-        model.heating_setpoint = 10.0; // Below MIN_HEATING_SETPOINT (15.0])
-        model.cooling_setpoint = 24.0;
+        model.solar.window_u_value = 2.0;
+        model.setpoints.heating_setpoint = 10.0; // Below MIN_HEATING_SETPOINT (15.0])
+        model.setpoints.cooling_setpoint = 24.0;
 
         println!("Testing heating setpoint below MIN: 10.0°C");
 
@@ -536,9 +536,9 @@ fn test_invalid_parameter_handling() {
     // Test cooling setpoint outside valid range (above MAX])
     {
         let mut model = ThermalModel::new(1);
-        model.window_u_value = 2.0;
-        model.heating_setpoint = 20.0;
-        model.cooling_setpoint = 40.0; // Above MAX_COOLING_SETPOINT (32.0])
+        model.solar.window_u_value = 2.0;
+        model.setpoints.heating_setpoint = 20.0;
+        model.setpoints.cooling_setpoint = 40.0; // Above MAX_COOLING_SETPOINT (32.0])
 
         println!("Testing cooling setpoint above MAX: 40.0°C");
 
@@ -553,9 +553,9 @@ fn test_invalid_parameter_handling() {
     // Test heating setpoint >= cooling setpoint (invalid])
     {
         let mut model = ThermalModel::new(1);
-        model.window_u_value = 2.0;
-        model.heating_setpoint = 25.0;
-        model.cooling_setpoint = 20.0; // Heating >= cooling (invalid])
+        model.solar.window_u_value = 2.0;
+        model.setpoints.heating_setpoint = 25.0;
+        model.setpoints.cooling_setpoint = 20.0; // Heating >= cooling (invalid])
 
         println!("Testing heating >= cooling: 25.0 >= 20.0");
 
@@ -580,14 +580,14 @@ fn test_very_small_load_values() {
     println!("\n=== Test 8: Very Small Load Values ===");
 
     let mut model = ThermalModel::new(1);
-    model.window_u_value = 2.0;
-    model.heating_setpoint = 20.0;
-    model.cooling_setpoint = 24.0;
+    model.solar.window_u_value = 2.0;
+    model.setpoints.heating_setpoint = 20.0;
+    model.setpoints.cooling_setpoint = 24.0;
 
     // Test with very small positive load
     {
         let tiny_load = 1e-10;
-        model.loads = VectorField::new(vec![tiny_load]);
+        model.setpoints.loads = VectorField::new(vec![tiny_load]);
         println!("Testing tiny positive load: {:.2e}", tiny_load);
 
         let surrogates = SurrogateManager::new().unwrap();
@@ -601,7 +601,7 @@ fn test_very_small_load_values() {
     // Test with very small negative load
     {
         let tiny_load = -1e-10;
-        model.loads = VectorField::new(vec![tiny_load]);
+        model.setpoints.loads = VectorField::new(vec![tiny_load]);
         println!("Testing tiny negative load: {:.2e}", tiny_load);
 
         let surrogates = SurrogateManager::new().unwrap();
@@ -624,14 +624,14 @@ fn test_extremely_large_load_values() {
     println!("\n=== Test 9: Extremely Large Load Values ===");
 
     let mut model = ThermalModel::new(1);
-    model.window_u_value = 2.0;
-    model.heating_setpoint = 20.0;
-    model.cooling_setpoint = 24.0;
+    model.solar.window_u_value = 2.0;
+    model.setpoints.heating_setpoint = 20.0;
+    model.setpoints.cooling_setpoint = 24.0;
 
     // Test with very large positive load
     {
         let huge_load = 1e6; // 1 MW
-        model.loads = VectorField::new(vec![huge_load]);
+        model.setpoints.loads = VectorField::new(vec![huge_load]);
         println!("Testing huge positive load: {:.2e} W", huge_load);
 
         let surrogates = SurrogateManager::new().unwrap();
@@ -645,7 +645,7 @@ fn test_extremely_large_load_values() {
     // Test with very large negative load
     {
         let huge_load = -1e6; // -1 MW
-        model.loads = VectorField::new(vec![huge_load]);
+        model.setpoints.loads = VectorField::new(vec![huge_load]);
         println!("Testing huge negative load: {:.2e} W", huge_load);
 
         let surrogates = SurrogateManager::new().unwrap();
@@ -668,9 +668,9 @@ fn test_zero_timesteps() {
     println!("\n=== Test 10: Zero Timesteps ===");
 
     let mut model = ThermalModel::new(1);
-    model.window_u_value = 2.0;
-    model.heating_setpoint = 20.0;
-    model.cooling_setpoint = 24.0;
+    model.solar.window_u_value = 2.0;
+    model.setpoints.heating_setpoint = 20.0;
+    model.setpoints.cooling_setpoint = 24.0;
 
     println!("Testing zero timesteps");
 
@@ -693,13 +693,13 @@ fn test_single_timestep() {
     println!("\n=== Test 11: Single Timestep ===");
 
     let mut model = ThermalModel::new(1);
-    model.window_u_value = 2.0;
-    model.heating_setpoint = 20.0;
-    model.cooling_setpoint = 24.0;
+    model.solar.window_u_value = 2.0;
+    model.setpoints.heating_setpoint = 20.0;
+    model.setpoints.cooling_setpoint = 24.0;
 
     // Record initial state
-    let initial_temp = model.temperatures[0];
-    let initial_mass_temp = model.mass_temperatures[0];
+    let initial_temp = model.setpoints.temperatures[0];
+    let initial_mass_temp = model.mass.mass_temperatures[0];
 
     println!(
         "Initial temp: {:.2}°C, Mass temp: {:.2}°C",
@@ -716,8 +716,8 @@ fn test_single_timestep() {
     assert!(!energy.is_nan(), "Energy should not be NaN");
 
     // Verify state changed
-    let final_temp = model.temperatures[0];
-    let final_mass_temp = model.mass_temperatures[0];
+    let final_temp = model.setpoints.temperatures[0];
+    let final_mass_temp = model.mass.mass_temperatures[0];
     println!(
         "Final temp: {:.2}°C, Mass temp: {:.2}°C",
         final_temp, final_mass_temp
@@ -742,15 +742,15 @@ fn test_mixed_positive_negative_loads() {
 
     let num_zones = 10;
     let mut model = ThermalModel::new(num_zones);
-    model.window_u_value = 2.0;
-    model.heating_setpoint = 20.0;
-    model.cooling_setpoint = 24.0;
+    model.solar.window_u_value = 2.0;
+    model.setpoints.heating_setpoint = 20.0;
+    model.setpoints.cooling_setpoint = 24.0;
 
     // Set alternating positive/negative loads
     let loads: Vec<f64> = (0..num_zones)
         .map(|i| if i % 2 == 0 { 1000.0 } else { -1000.0 })
         .collect();
-    model.loads = VectorField::new(loads.clone());
+    model.setpoints.loads = VectorField::new(loads.clone());
 
     println!("Testing {} zones with alternating ±1000W loads", num_zones);
 
@@ -763,8 +763,8 @@ fn test_mixed_positive_negative_loads() {
 
     // Verify all zones have finite temperatures
     for i in 0..num_zones {
-        let temp = model.temperatures[i];
-        let mass_temp = model.mass_temperatures[i];
+        let temp = model.setpoints.temperatures[i];
+        let mass_temp = model.mass.mass_temperatures[i];
         assert!(temp.is_finite(), "Zone {} temperature should be finite", i);
         assert!(
             mass_temp.is_finite(),
@@ -788,13 +788,13 @@ fn test_asymmetric_multi_zone_configuration() {
     let mut model = ThermalModel::new(num_zones);
 
     // Apply asymmetric parameters per zone
-    model.window_u_value = 2.0;
-    model.heating_setpoint = 20.0;
-    model.cooling_setpoint = 24.0;
+    model.solar.window_u_value = 2.0;
+    model.setpoints.heating_setpoint = 20.0;
+    model.setpoints.cooling_setpoint = 24.0;
 
     // Set different loads per zone to simulate asymmetric thermal conditions
     let loads: Vec<f64> = vec![0.0, 500.0, 1000.0, 1500.0, 2000.0];
-    model.loads = VectorField::new(loads.clone());
+    model.setpoints.loads = VectorField::new(loads.clone());
 
     println!(
         "Testing {} zones with asymmetric loads: {:?}",
@@ -810,8 +810,8 @@ fn test_asymmetric_multi_zone_configuration() {
 
     // Verify all zones have finite temperatures after solving
     for i in 0..num_zones {
-        let temp = model.temperatures[i];
-        let mass_temp = model.mass_temperatures[i];
+        let temp = model.setpoints.temperatures[i];
+        let mass_temp = model.mass.mass_temperatures[i];
         assert!(temp.is_finite(), "Zone {} temperature should be finite", i);
         assert!(
             mass_temp.is_finite(),
@@ -821,8 +821,8 @@ fn test_asymmetric_multi_zone_configuration() {
     }
 
     // Verify temperatures differ across zones (asymmetric behavior)
-    let temp_0 = model.temperatures[0];
-    let temp_4 = model.temperatures[4];
+    let temp_0 = model.setpoints.temperatures[0];
+    let temp_4 = model.setpoints.temperatures[4];
     let temp_diff = (temp_4 - temp_0).abs();
     assert!(
         temp_diff > EPSILON,
@@ -842,9 +842,9 @@ fn test_setpoint_transition_dynamics() {
     println!("\n=== Test 14: Setpoint Transition Dynamics ===");
 
     let mut model = ThermalModel::new(1);
-    model.window_u_value = 2.0;
-    model.heating_setpoint = 20.0;
-    model.cooling_setpoint = 24.0;
+    model.solar.window_u_value = 2.0;
+    model.setpoints.heating_setpoint = 20.0;
+    model.setpoints.cooling_setpoint = 24.0;
 
     // Record initial energy with first setpoint
     let surrogates = SurrogateManager::new().unwrap();
@@ -855,8 +855,8 @@ fn test_setpoint_transition_dynamics() {
     );
 
     // Change setpoints mid-simulation
-    model.heating_setpoint = 18.0;
-    model.cooling_setpoint = 26.0;
+    model.setpoints.heating_setpoint = 18.0;
+    model.setpoints.cooling_setpoint = 26.0;
 
     // Continue simulation with new setpoints
     let energy_2 = model.solve_timesteps(100, &surrogates, false, None, None, None);
@@ -871,8 +871,8 @@ fn test_setpoint_transition_dynamics() {
     assert!(!energy_2.is_nan(), "Second energy should not be NaN");
 
     // Verify final temperatures are finite
-    let final_temp = model.temperatures[0];
-    let final_mass_temp = model.mass_temperatures[0];
+    let final_temp = model.setpoints.temperatures[0];
+    let final_mass_temp = model.mass.mass_temperatures[0];
     assert!(final_temp.is_finite(), "Final temperature should be finite");
     assert!(
         final_mass_temp.is_finite(),
@@ -891,9 +891,9 @@ fn test_rapid_load_changes() {
     println!("\n=== Test 15: Rapid Load Changes ===");
 
     let mut model = ThermalModel::new(1);
-    model.window_u_value = 2.0;
-    model.heating_setpoint = 20.0;
-    model.cooling_setpoint = 24.0;
+    model.solar.window_u_value = 2.0;
+    model.setpoints.heating_setpoint = 20.0;
+    model.setpoints.cooling_setpoint = 24.0;
 
     // Test sequence of rapid load changes
     let load_sequence = vec![0.0, 1000.0, 0.0, -1000.0, 0.0];
@@ -904,7 +904,7 @@ fn test_rapid_load_changes() {
     let mut total_energy = 0.0;
 
     for (step, &load) in load_sequence.iter().enumerate() {
-        model.loads = VectorField::new(vec![load]);
+        model.setpoints.loads = VectorField::new(vec![load]);
         let step_energy = model.solve_timesteps(10, &surrogates, false, None, None, None);
         total_energy += step_energy;
         println!("Step {}: load={:.2}, energy={:.2}", step, load, step_energy);
@@ -927,8 +927,8 @@ fn test_rapid_load_changes() {
     assert!(!total_energy.is_nan(), "Total energy should not be NaN");
 
     // Verify final state is stable
-    let final_temp = model.temperatures[0];
-    let final_mass_temp = model.mass_temperatures[0];
+    let final_temp = model.setpoints.temperatures[0];
+    let final_mass_temp = model.mass.mass_temperatures[0];
     assert!(final_temp.is_finite(), "Final temperature should be finite");
     assert!(
         final_mass_temp.is_finite(),
@@ -947,16 +947,16 @@ fn test_zero_conductance_all_paths() {
     println!("\n=== Test 16: Zero Conductance All Paths ===");
 
     let mut model = ThermalModel::new(1);
-    model.window_u_value = 2.0;
-    model.heating_setpoint = 20.0;
-    model.cooling_setpoint = 24.0;
+    model.solar.window_u_value = 2.0;
+    model.setpoints.heating_setpoint = 20.0;
+    model.setpoints.cooling_setpoint = 24.0;
 
     // Set all 5R1C conductances to zero (perfect isolation)
-    model.h_tr_em = VectorField::new(vec![0.0]); // Exterior -> Mass
-    model.h_tr_ms = VectorField::new(vec![0.0]); // Mass -> Surface
-    model.h_tr_is = VectorField::new(vec![0.0]); // Surface -> Interior
-    model.h_tr_w = VectorField::new(vec![0.0]); // Exterior -> Interior
-    model.h_ve = VectorField::new(vec![0.0]); // Ventilation
+    model.conduction.h_tr_em = VectorField::new(vec![0.0]); // Exterior -> Mass
+    model.conduction.h_tr_ms = VectorField::new(vec![0.0]); // Mass -> Surface
+    model.conduction.h_tr_is = VectorField::new(vec![0.0]); // Surface -> Interior
+    model.conduction.h_tr_w = VectorField::new(vec![0.0]); // Exterior -> Interior
+    model.conduction.h_ve = VectorField::new(vec![0.0]); // Ventilation
 
     println!("Testing with all conductances = 0.0 (perfect isolation)");
 
@@ -970,7 +970,7 @@ fn test_zero_conductance_all_paths() {
 
     // Temperatures should remain stable (minimal change due to isolation)
     let initial_temp = 20.0; // Default initialization
-    let final_temp = model.temperatures[0];
+    let final_temp = model.setpoints.temperatures[0];
     let temp_change = (final_temp - initial_temp).abs();
 
     println!(
@@ -992,9 +992,9 @@ fn test_leap_year_simulation() {
     println!("\n=== Test 17: Leap Year Simulation ===");
 
     let mut model = ThermalModel::new(1);
-    model.window_u_value = 2.0;
-    model.heating_setpoint = 20.0;
-    model.cooling_setpoint = 24.0;
+    model.solar.window_u_value = 2.0;
+    model.setpoints.heating_setpoint = 20.0;
+    model.setpoints.cooling_setpoint = 24.0;
 
     // Leap year has 366 days = 8784 hours
     let leap_year_steps = 8784;
@@ -1009,8 +1009,8 @@ fn test_leap_year_simulation() {
     assert!(energy >= 0.0, "Energy should be non-negative");
 
     // Verify final state is valid
-    let final_temp = model.temperatures[0];
-    let final_mass_temp = model.mass_temperatures[0];
+    let final_temp = model.setpoints.temperatures[0];
+    let final_mass_temp = model.mass.mass_temperatures[0];
     assert!(final_temp.is_finite(), "Final temperature should be finite");
     assert!(
         final_mass_temp.is_finite(),

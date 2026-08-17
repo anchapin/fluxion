@@ -55,7 +55,7 @@ fn run_simulation() -> (Vec<HourlyData>, Vec<DailyData>, Vec<MonthlyData>, f64, 
 
     for step in 0..warmup_steps {
         let weather_data = weather.get_hourly_data(step).unwrap();
-        model.weather = Some(weather_data.clone());
+        model.solar.weather = Some(weather_data.clone());
         model.step_physics(step, weather_data.dry_bulb_temp, 3600.0);
     }
 
@@ -82,20 +82,39 @@ fn run_simulation() -> (Vec<HourlyData>, Vec<DailyData>, Vec<MonthlyData>, f64, 
         let day = step / 24;
         let month = (day / 30).min(11);
         let weather_data = weather.get_hourly_data(step).unwrap();
-        model.weather = Some(weather_data.clone());
+        model.solar.weather = Some(weather_data.clone());
 
         let zone_temp = model
+            .setpoints
             .temperatures
             .as_slice()
             .first()
             .copied()
             .unwrap_or(20.0);
 
-        let solar_gain_wm2 = model.solar_gains.as_slice().first().copied().unwrap_or(0.0);
-        let zone_area = model.zone_area.as_slice().first().copied().unwrap_or(48.0);
+        let solar_gain_wm2 = model
+            .solar
+            .solar_gains
+            .as_slice()
+            .first()
+            .copied()
+            .unwrap_or(0.0);
+        let zone_area = model
+            .setpoints
+            .zone_area
+            .as_slice()
+            .first()
+            .copied()
+            .unwrap_or(48.0);
         let solar_gain = solar_gain_wm2 * zone_area;
 
-        let internal_gain_wm2 = model.loads.as_slice().first().copied().unwrap_or(0.0);
+        let internal_gain_wm2 = model
+            .setpoints
+            .loads
+            .as_slice()
+            .first()
+            .copied()
+            .unwrap_or(0.0);
         let internal_gain = internal_gain_wm2 * zone_area;
 
         let energy_kwh =
