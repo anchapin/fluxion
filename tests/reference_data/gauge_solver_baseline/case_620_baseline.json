@@ -1,0 +1,23 @@
+{
+  "_doc": "TDD scaffolding for the ThermalModelData god-struct split (Issue #3070, originally PR #3034 / Issue #2878). This file holds the PLACEHOLDER shape of the Case 620 baseline snapshot. Case 620 is the ASHRAE 140 low-mass case with east-facing window shading (driven by window-orientation variant of Case 600). PR #3034's CI sub-agent report flagged it as 'cooling UNDER' (2.37 MWh vs ref band 3.2-5.0 MWh). The actual measurements must be populated by a future refactor attempt: run the Case 620 test (`tests/ashrae_140_case_600_660_plant.rs` and the Case 620 entries in `tests/ashrae_140_blind_validation.rs`) and serialise the heating/cooling/peak metrics into the `metrics` block below. Per RULES.md ('no parameter tuning') and AGENTS.md (the strict-energy-gate baseline must NEVER be raised), this snapshot is the bit-identical reference for any future god-struct re-split: any per-metric drift beyond the verifier's tolerance (default 0.0 MWh / 0.0 kW for bit-identical equality) is a physics regression that must be fixed in the refactor.",
+  "_source": "Case 620 lives in `tests/ashrae_140_case_600_660_plant.rs` and is enumerated in `tests/ashrae_140_blind_validation.rs::run_blind_validation` (line 258). Run `cargo test --release --test ashrae_140_case_600_660_plant -- --nocapture` and capture the heating/cooling/peak metrics printed by its reference check.",
+  "_ref_band": {
+    "_doc": "ASHRAE 140-2023 published ranges for Case 620 (low-mass, east-window variant of Case 600). Mirrors the entries in tests/ashrae_140_case_600_660_plant.rs and tests/ashrae_140_blind_validation.rs.",
+    "annual_heating_mwh": [3.20, 5.00],
+    "annual_cooling_mwh": [3.20, 5.00],
+    "peak_heating_kw": [2.50, 3.50],
+    "peak_cooling_kw": [2.80, 3.80]
+  },
+  "case_id": "620",
+  "captured_at": null,
+  "_captured_at_doc": "ISO 8601 UTC timestamp when the snapshot was measured. `null` indicates the placeholder has not been populated yet.",
+  "captured_commit": null,
+  "_captured_commit_doc": "git SHA the snapshot was measured at. The verifier checks captured_commit against the current `git rev-parse HEAD` so a stale snapshot cannot be silently re-used.",
+  "metrics": {
+    "annual_heating_mwh": null,
+    "annual_cooling_mwh": null,
+    "peak_heating_kw": null,
+    "peak_cooling_kw": null,
+    "_null_doc": "All metrics are `null` until a real measurement is captured. See scripts/ci/test_verify_gauge_solver_regression.py::test_main_returns_two_when_snapshot_unpopulated for the fail-closed contract."
+  }
+}

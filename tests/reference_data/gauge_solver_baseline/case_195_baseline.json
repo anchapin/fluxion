@@ -1,0 +1,23 @@
+{
+  "_doc": "TDD scaffolding for the ThermalModelData god-struct split (Issue #3070, originally PR #3034 / Issue #2878). This file holds the PLACEHOLDER shape of the Case 195 baseline snapshot the verifier (scripts/verify_gauge_solver_regression.py) consumes. The actual measurements must be populated by a future refactor attempt: run the existing Case 195 integration test (`tests/ashrae_140_case_195_solid_conduction.rs::simulate_case_195`) and serialise its `(annual_heating_mwh, annual_cooling_mwh, peak_heating_kw)` return value into the `metrics` block below. Per RULES.md ('no parameter tuning', 'must-never hardcode results') and AGENTS.md (the strict-energy-gate baseline must NEVER be raised), this snapshot is the bit-identical reference for any future god-struct re-split: any per-metric drift beyond the verifier's tolerance (default 0.0 MWh / 0.0 kW for bit-identical equality) is a physics regression that must be fixed in the refactor, not silently accepted.",
+  "_source": "Run `cargo test --release --test ashrae_140_case_195_solid_conduction -- --nocapture` and capture the println output from `test_case_195_solid_conduction_simulation` (lines 115-132) plus `test_case_195_passes_tolerance` (lines 279-288). Populated fields: annual_heating_mwh, annual_cooling_mwh, peak_heating_kw. The current placeholder zeros reflect 'snapshot not yet captured' — the verifier refuses to compare against an all-zero placeholder so a future refactor run is forced to populate the real numbers.",
+  "_ref_band": {
+    "_doc": "ASHRAE 140-2023 published ranges for Case 195 (conduction-only). Issue #2868 widened the cooling band after a fix landed; the ref_band here mirrors the post-#2868 reference table in tests/ashrae_140_case_195_solid_conduction.rs::reference.",
+    "annual_heating_mwh": [3.20, 4.40],
+    "annual_cooling_mwh_max": 0.50,
+    "peak_heating_kw_max": 1.20,
+    "peak_cooling_kw_max": 1.20
+  },
+  "case_id": "195",
+  "captured_at": null,
+  "_captured_at_doc": "ISO 8601 UTC timestamp when the snapshot was measured. `null` indicates the placeholder has not been populated yet; the verifier must refuse to diff against a placeholder (see scripts/verify_gauge_solver_regression.py::is_placeholder_snapshot).",
+  "captured_commit": null,
+  "_captured_commit_doc": "git SHA the snapshot was measured at (issue #3034's pre-split baseline is the only legal anchor; any post-split commit is by definition already drifted). The verifier checks captured_commit against the current `git rev-parse HEAD` so a stale snapshot cannot be silently re-used.",
+  "metrics": {
+    "annual_heating_mwh": null,
+    "annual_cooling_mwh": null,
+    "peak_heating_kw": null,
+    "peak_cooling_kw": null,
+    "_null_doc": "All metrics are `null` until a real measurement is captured. The verifier must fail with exit code 2 ('snapshot not yet captured') when any metric is `null`; this is the fail-closed default that prevents accidental comparisons against an empty placeholder. See scripts/ci/test_verify_gauge_solver_regression.py::test_main_returns_two_when_snapshot_unpopulated."
+  }
+}
