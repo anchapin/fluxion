@@ -163,7 +163,7 @@ mod hecs_bench {
         }
 
         let mut sum = 0.0;
-        for (_, (pos, vel)) in world.query::<(&Position, &Velocity)>().iter() {
+        for (pos, vel) in world.query::<(&Position, &Velocity)>().iter() {
             sum += pos.x * vel.dx + pos.y * vel.dy + pos.z * vel.dz;
             criterion::black_box(sum);
         }
