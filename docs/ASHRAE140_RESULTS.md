@@ -78,6 +78,52 @@ production-path work coordinated by **Issue #3059** (#1465 / #1462). These
 figures are the post-#3052 raw diagnostics used by #3061; they do not
 regenerate the 2026-08-16 snapshot tables below.
 
+### Case 950FF night-vent mass coupling gap (Issue #3058)
+
+The 2026-08-16 validator snapshot reports **Case 950FF min free-floating
+temperature −23.95 °C** against the **−20.20 to −17.80 °C** ASHRAE 140
+reference band (3.72 °C outside the band). PR #3040 (Issue #2872 partial fix)
+introduced per-surface F_sky view factors for the longwave sky-radiation
+correction and moved the value from −23.94 °C to −23.92 °C (a 0.02 °C
+improvement) — the F_sky correction is mathematically correct but is
+effectively invisible against the dominant night-vent mass coupling.
+
+**Root cause:** In `src/physics/multi_node_solver.rs::step_with_gains` the
+night-ventilation term applies `h_ve_night ≈ 570.8 W/K` (fan supply during
+18:00–07:00, ACH ≈ 13.14) to each envelope mass node using raw outdoor air
+as the driving temperature. The `h_ve_night` term overwhelms the wall
+exterior-film correction (`h_tr_em_wall ≈ 71.6 W/K`) by ~8×. The F_sky
+correction only enters via `h_em · t_ext_wall` (weight ≈ 71.6 W/K), so the
+night-sky radiative exchange pathway cannot dominate the mass coupling while
+the raw-outdoor forcing is 8× larger.
+
+**Three proposed directions, all requiring solver code changes:**
+
+- **(a) Split `h_ve_night` into air-node mass (HVAC) and surface-node mass
+  (FF) paths** — keep Case 950 (HVAC) mass pre-cooling working, drop the
+  mass-node coupling for the FF case. Solver-code change; risk:
+  regressing Case 950 (HVAC) annual cooling.
+- **(b) Reduce `h_ve_night` by F_sky on the mass coupling** — first-
+  principles motivated by the longwave radiative exchange, but borderline
+  parameter tuning per RULES.md unless derived from first principles.
+- **(c) Route `h_ve_night` only through the air node** — solver-code
+  change; risk: Case 950 (HVAC) annual cooling may regress because the
+  air-mass coupling is indirect.
+
+**Regression-avoidance clause:** Any future solver change must preserve
+Case 950 (HVAC mode) annual cooling in the **390–920 kWh** band (current
+val 33.08 kWh — far below band, so the HVAC mode is the *more* sensitive
+regression target than the FF mode). Per AGENTS.md / RULES.md / ADR-0001,
+no parameter tuning on `h_ve_night` is permitted; the structural fix is
+routed to the GaugeSolver production-path work coordinated by **Issue
+#3059** (#1465 / #1462).
+
+This is tracked in `docs/KNOWN_ISSUES.md` **§LIMIT-17** and the
+architecture decision in **`docs/adr/0011-case-950ff-night-vent-split.md`**
+(Status: Proposed; tracking stub only). The companion integration test
+`tests/ashrae_140_blind_validation.rs::test_case_950_5r1c_free_float_uses_night_vent_overrides_issue_1422`
+remains `#[ignore]`-quarantined (per §LIMIT-09 / #3071).
+
 ## Performance Summary
 
 | Metric | Value |
