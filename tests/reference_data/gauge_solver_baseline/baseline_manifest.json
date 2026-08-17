@@ -1,0 +1,45 @@
+{
+  "_doc": "Manifest for the gauge_solver_baseline snapshot set (Issue #3070, originally PR #3034 / Issue #2878). The manifest is consumed by scripts/verify_gauge_solver_regression.py to enumerate the snapshot files, verify each one is a parseable JSON, and surface a quick SHA-256 'fingerprint' so a future refactor attempt can detect silent edits to the placeholder values. The `schema_version` is bumped only on backward-incompatible format changes; `1` is the placeholder schema where every per-case JSON has `_doc` + `_ref_band` + `_captured_at_doc` + `_captured_commit_doc` + `metrics` with `null` placeholders. Per RULES.md ('no parameter tuning') this manifest is a documentation artefact only — the verifier never reads a pre-computed 'expected delta'; it diffs two snapshots and reports any non-zero per-metric drift.",
+  "_schema_version": 1,
+  "_schema_version_doc": "Bumped on backward-incompatible changes to the per-case JSON shape. The verifier asserts schema_version matches its in-code expectation; an older manifest triggers exit code 2 ('schema drift') so the operator is forced to re-capture rather than silently diff against a stale format.",
+  "captured_at": null,
+  "captured_commit": null,
+  "_captured_at_and_commit_doc": "ISO 8601 UTC + git SHA for the entire snapshot set. `null` until the first real capture populates every per-case JSON. The verifier refuses to diff a snapshot set where any individual case JSON is still a placeholder (exit code 2).",
+  "cases": {
+    "_doc": "Per-case snapshot file map. The verifier loads each file by its `path` (relative to this manifest's directory) and asserts the JSON parses + schema_version matches. When all snapshots are populated, the per-case SHA-256 fingerprints are stamped here for fast regression detection (a hand-edited baseline that changes a metric but preserves `null` placeholders trips the SHA-256 check).",
+    "case_195": {
+      "path": "case_195_baseline.json",
+      "case_id": "195",
+      "description": "Conduction-only (no windows, no infiltration, no internal loads). Tests the thermal network in isolation. Issue #2868 widened the cooling reference band after a fix landed.",
+      "metrics": ["annual_heating_mwh", "annual_cooling_mwh", "peak_heating_kw", "peak_cooling_kw"],
+      "sha256": null,
+      "_sha256_doc": "SHA-256 of the per-case JSON file at capture time. `null` while the placeholder has not been populated. The verifier recomputes the SHA-256 on every load and compares against this field; a mismatch trips exit code 2 ('baseline silently edited') so a hand-tweak to the metrics without re-running the simulation cannot slip past the gate."
+    },
+    "case_600": {
+      "path": "case_600_baseline.json",
+      "case_id": "600",
+      "description": "Low-mass baseline (12 m² south window, 0.5 ACH, 20°C heat / 27°C cool). The case PR #3034's CI sub-agent report flagged as 'cooling massively UNDER' post-split.",
+      "metrics": ["annual_heating_mwh", "annual_cooling_mwh", "peak_heating_kw", "peak_cooling_kw"],
+      "sha256": null
+    },
+    "case_620": {
+      "path": "case_620_baseline.json",
+      "case_id": "620",
+      "description": "Low-mass, east-window variant of Case 600. PR #3034's CI sub-agent report flagged as 'cooling UNDER' (2.37 MWh vs ref band 3.2-5.0 MWh).",
+      "metrics": ["annual_heating_mwh", "annual_cooling_mwh", "peak_heating_kw", "peak_cooling_kw"],
+      "sha256": null
+    }
+  },
+  "verifier": {
+    "path": "scripts/verify_gauge_solver_regression.py",
+    "default_tolerance": {
+      "annual_heating_mwh": 0.0,
+      "annual_cooling_mwh": 0.0,
+      "peak_heating_kw": 0.0,
+      "peak_cooling_kw": 0.0
+    },
+    "_default_tolerance_doc": "Per-metric bit-identical tolerance. The verifier fails with exit code 1 when |measured - baseline| > tolerance. 0.0 enforces bit-for-bit equality; future refactors that intentionally relax a metric (e.g. to absorb cross-runner numerical noise) must lower this baseline AND commit the engine improvement together (per RULES.md / AGENTS.md: never raise to hide a regression)."
+  },
+  "_status": "placeholder",
+  "_status_doc": "Set to 'placeholder' while any per-case JSON's `metrics.*` fields are `null`. The verifier must refuse to diff a placeholder snapshot (exit code 2) so a future refactor attempt is forced to capture real numbers before any comparison. Flip to 'captured' only when every metrics field is a non-null float AND `captured_commit` matches a real git SHA."
+}

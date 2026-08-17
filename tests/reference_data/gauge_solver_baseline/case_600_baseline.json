@@ -1,0 +1,23 @@
+{
+  "_doc": "TDD scaffolding for the ThermalModelData god-struct split (Issue #3070, originally PR #3034 / Issue #2878). This file holds the PLACEHOLDER shape of the Case 600 baseline snapshot. Case 600 is the canonical low-mass ASHRAE 140 reference case and is the case PR #3034's CI sub-agent report flagged as 'cooling massively UNDER' (3.30 MWh vs ref band 7.0-10.0 MWh). The actual measurements must be populated by a future refactor attempt: run the Case 600 integration test (`tests/ashrae_140_case_600.rs::test_case_600_baseline_ashrae_140_reference`) and serialise `result.annual_heating_mwh`, `result.annual_cooling_mwh`, `result.peak_heating_kw`, `result.peak_cooling_kw` into the `metrics` block below. Per RULES.md ('no parameter tuning') and AGENTS.md (the strict-energy-gate baseline must NEVER be raised), this snapshot is the bit-identical reference for any future god-struct re-split: any per-metric drift beyond the verifier's tolerance (default 0.0 MWh / 0.0 kW for bit-identical equality) is a physics regression that must be fixed in the refactor.",
+  "_source": "Run `cargo test --release --test ashrae_140_case_600 -- --nocapture` and capture the println output from `test_case_600_baseline_ashrae_140_reference` (lines 34-59). Populated fields: annual_heating_mwh, annual_cooling_mwh, peak_heating_kw, peak_cooling_kw.",
+  "_ref_band": {
+    "_doc": "ASHRAE 140-2023 published ranges for Case 600 (low-mass baseline, 12 m² south window). Mirrors tests/ashrae_140_case_600.rs::reference. Note these are WIDER than the strict ±15% band used by scripts/check_strict_energy_gate_regression.py — the ref_band here is the inter-program band (loose), so a within-band measurement still satisfies this snapshot's regression check. The strict ±15% check lives separately in tests/reference_data/zone_balance/strict_energy_gate_baseline.json and is NOT modified by this TDD scaffolding.",
+    "annual_heating_mwh": [4.30, 5.71],
+    "annual_cooling_mwh": [6.14, 8.45],
+    "peak_heating_kw": [5.20, 6.60],
+    "peak_cooling_kw": [6.80, 8.50]
+  },
+  "case_id": "600",
+  "captured_at": null,
+  "_captured_at_doc": "ISO 8601 UTC timestamp when the snapshot was measured. `null` indicates the placeholder has not been populated yet.",
+  "captured_commit": null,
+  "_captured_commit_doc": "git SHA the snapshot was measured at. The verifier checks captured_commit against the current `git rev-parse HEAD` so a stale snapshot cannot be silently re-used.",
+  "metrics": {
+    "annual_heating_mwh": null,
+    "annual_cooling_mwh": null,
+    "peak_heating_kw": null,
+    "peak_cooling_kw": null,
+    "_null_doc": "All metrics are `null` until a real measurement is captured. See scripts/ci/test_verify_gauge_solver_regression.py::test_main_returns_two_when_snapshot_unpopulated for the fail-closed contract."
+  }
+}
