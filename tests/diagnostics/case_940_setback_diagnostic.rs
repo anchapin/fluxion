@@ -12,7 +12,7 @@
 //! previous 900-series issues (#2453, #2448, #2427, #2454) which determined
 //! the strict ASHRAE 140 band requires GaugeSolver rework (#1465/#1462) —
 //! explicitly documented in KNOWN_ISSUES.md LIMIT-05. Sister issue #3063
-//! (LIMIT-11 — `h_tr_em` wind-dependent per-step recompute) is the same
+//! (LIMIT-13 — `h_tr_em` wind-dependent per-step recompute) is the same
 //! GaugeSolver-blocked cohort: the per-step `h_tr_em_zone: Vec<f64>`
 //! recompute (per `docs/adr/0009-h-tr-em-wind-dependent.md`) closes the
 //! Case 195 cooling-band half of the wind-dependent asymmetry that PR #3024

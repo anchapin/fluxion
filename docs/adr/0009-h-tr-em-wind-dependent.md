@@ -15,7 +15,7 @@ This ADR is the **7-line summary** of the tracking-stub scaffolding shipped with
 1. PR #3024 (issue #2891) introduced wind-velocity-dependent `h_se` (the exterior film coefficient used for the sol-air longwave correction) per ASHRAE 140 §5.2.6, but left `h_tr_em` (envelope-to-mass conductance) time-invariant at build-time `1/EXTERIOR_FILM_COEFF_DEFAULT`.
 2. The cooling-deadband shift exposed by PR #3024 (Case 195 annual cooling 220 → 758 kWh, target ≤ 50 kWh) is the diagnostic signature of the missing `h_tr_em` per-step recompute; at low wind speeds the wind-dependent `h_se` amplifies the sol-air longwave correction, shifting more hours into the cooling deadband.
 3. Per `RULES.md` ("no parameter tuning", "must-never hardcode results"), `AGENTS.md` ("do NOT modify physics code without checking `ARCHITECTURE.md` first"), and the issue's own scope, the actual recomputation is out of scope for a single sub-agent.
-4. This ADR ships the **tracking stub only** — the LIMIT-11 entry in `docs/KNOWN_ISSUES.md`, the snapshot diff verifier `scripts/verify_h_tr_em_regression.py`, and the pytest harness `scripts/ci/test_verify_h_tr_em_regression.py` — and refuses to record an actual implementation decision.
+4. This ADR ships the **tracking stub only** — the LIMIT-13 entry in `docs/KNOWN_ISSUES.md`, the snapshot diff verifier `scripts/verify_h_tr_em_regression.py`, and the pytest harness `scripts/ci/test_verify_h_tr_em_regression.py` — and refuses to record an actual implementation decision.
 5. The verifier fails closed (exit 2) when the placeholder snapshot set has not been populated, so a future implementer is forced to capture real per-step measurements via **ADR-0008**'s pattern before shipping any code change.
 6. `tests/reference_data/zone_balance/strict_energy_gate_baseline.json` is **not modified** by this scaffolding — per AGENTS.md, it must never be raised to hide a regression.
 7. `src/sim/`, `src/physics/`, and `fluxion-core/` are **not modified** by this scaffolding — only docs, scripts, and pytest tests.
@@ -58,9 +58,9 @@ Each of these is a structural solver-code change that, per `AGENTS.md` and `RULE
 
 This ADR ships the **tracking scaffolding** for issue #3063:
 
-### 1. `docs/KNOWN_ISSUES.md` §LIMIT-11 entry
+### 1. `docs/KNOWN_ISSUES.md` §LIMIT-13 entry
 
-A new LIMIT-11 entry that documents:
+A new LIMIT-13 entry that documents:
 
 - The structural gap (the build-time `1/EXTERIOR_FILM_COEFF_DEFAULT` is consumed at every timestep without being recomputed from the per-step wind speed).
 - The post-#3024 measurements (Annual heating 7.42 → 6.25 MWh acceptance-met; annual cooling 220 → 758 kWh open).
@@ -169,7 +169,7 @@ The recompute is fault-tolerant by construction:
 - `tests/reference_data/h_tr_em_baseline/` — the placeholder snapshot set (to be created by the future implementer; the verifier rejects placeholder snapshots until real measurements are captured)
 - `scripts/verify_h_tr_em_regression.py` — the verifier
 - `scripts/ci/test_verify_h_tr_em_regression.py` — pytest harness
-- `docs/KNOWN_ISSUES.md` §LIMIT-11 — the per-case-issue entry (companion to this ADR)
+- `docs/KNOWN_ISSUES.md` §LIMIT-13 — the per-case-issue entry (companion to this ADR)
 - `docs/adr/0008-thermal-model-data-tdd-refactor.md` — the snapshot-diff verifier pattern (#3070) that this ADR mirrors
 - `docs/adr/0007-gauge-solver-structural-work.md` — the architectural unblocker (production-path GaugeSolver switchover)
 - `src/physics/exterior_convection.rs` — `h_c_ext_wind_dependent` (the helper the future implementer must call from `step_physics_5r1c`)
