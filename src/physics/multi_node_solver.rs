@@ -99,6 +99,13 @@ pub fn h_series_strict(a: f64, b: f64) -> Result<f64, &'static str> {
 /// Compute the linearized sky-radiative conductance [W/K] for the 9R4C air node
 /// (Issue #1858 — closes the ~0.6 °C high-mass free-float night-min residual).
 ///
+/// Issue #2872 — applies a per-surface sky view factor `f_sky` to the mass
+/// node boundary so the longwave sky-radiation exchange is distributed
+/// across the envelope instead of being concentrated on the roof. The
+/// canonical values are `f_sky_wall = 0.5` (vertical wall, half sky dome),
+/// `f_sky_roof = 1.0` (horizontal roof, full sky dome), and `f_sky_floor
+/// = 0.0` (slab-on-grade, no sky view).
+///
 /// The 9R4C air-node energy balance previously had only four terms
 /// (`h_tr_is · T_s`, `(h_ve + h_ve_night) · T_out`, `φ_ia`), which algebraically
 /// bounds the free-floating air temperature below by `min(T_surface, T_out)`.

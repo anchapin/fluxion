@@ -270,6 +270,19 @@ fn run_blind_validation() -> Vec<BlindValidationResult> {
         ASHRAE140Case::Case900FF,
         ASHRAE140Case::Case950FF,
         ASHRAE140Case::Case960,
+        // ASHRAE 140 HVAC-equipment cases (issue #2869): Cases 800/810 are the
+        // §5.2 HVAC-equipment variants of the Case 600/900 envelope; both have
+        // raw ASHRAE 140-2023 Annex B benchmark bands in benchmark.rs. Adding
+        // them to the headline pass-rate matrix contributes 2 × 4 = 8 results
+        // (annual heating / cooling + peak heating / cooling).
+        ASHRAE140Case::Case800,
+        ASHRAE140Case::Case810,
+        // ASHRAE 140 multi-zone case 970 (issue #2869 / #1446 / #1467): the
+        // 5-zone cross-coupling geometry exercises the MultiZoneAirflowNetwork
+        // 5×5 conductance matrix; raw reference band lives in benchmark.rs
+        // and `tests/reference_data/zone_balance/case_970_energy_reference.csv`.
+        // Adds 4 results (annual heating / cooling + peak heating / cooling).
+        ASHRAE140Case::Case970,
         ASHRAE140Case::Case195,
     ];
 

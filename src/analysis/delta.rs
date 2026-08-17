@@ -316,8 +316,11 @@ pub fn run_simulation(
             let base_heating_sp = spec.hvac[0].heating_setpoint;
             let base_cooling_sp = spec.hvac[0].cooling_setpoint;
             let hour_u8 = hour_of_day as u8;
+            // Issue #2870: sub-hour ramp-aware setpoint lookup keeps the
+            // delta tool in sync with the validator's morning-ramp path.
+            let fractional_hour = f64::from(hour_u8) + 0.5;
             let heating_sp = spec.hvac[0]
-                .heating_setpoint_at_hour(hour_u8)
+                .heating_setpoint_at_fractional_hour(fractional_hour)
                 .unwrap_or(base_heating_sp);
             let cooling_sp = spec.hvac[0]
                 .cooling_setpoint_at_hour(hour_u8)
@@ -330,7 +333,7 @@ pub fn run_simulation(
                 for (zone_idx, hvac) in spec.hvac.iter().enumerate() {
                     if zone_idx < num_zones {
                         let h_sp = hvac
-                            .heating_setpoint_at_hour(hour_u8)
+                            .heating_setpoint_at_fractional_hour(fractional_hour)
                             .unwrap_or(hvac.heating_setpoint);
                         let c_sp = hvac
                             .cooling_setpoint_at_hour(hour_u8)

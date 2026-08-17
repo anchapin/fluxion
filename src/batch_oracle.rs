@@ -197,14 +197,71 @@ impl BatchOracle {
         population: Vec<Vec<f64>>,
         use_surrogates: bool,
     ) -> Result<Vec<f64>, crate::api::error::FluxionError> {
+        // Flatten the `Vec<Vec<f64>>` into a single contiguous `Vec<f64>` so
+        // the hot loop can index row slices directly. One allocation of
+        // size `N * n_params` replaces the previous `Vec<Vec<f64>>` shape
+        // that allocated one outer `Vec` + N inner `Vec<f64>`s. For empty
+        // populations we skip the allocation entirely.
+        if population.is_empty() {
+            return Ok(Vec::new());
+        }
+        let n_candidates = population.len();
+        let n_params = population.iter().map(|row| row.len()).max().unwrap_or(0);
+        let total = n_candidates * n_params;
+        let mut flat: Vec<f64> = Vec::with_capacity(total);
+        for row in &population {
+            flat.extend_from_slice(row);
+            if row.len() < n_params {
+                // Zero-pad ragged rows so every row slice has uniform length
+                // (only the *first* n_params elements are observed by
+                // `validate_parameters` / `apply_parameters`, both of which
+                // `params.get(i)` past the actual data).
+                flat.resize(flat.len() + (n_params - row.len()), 0.0);
+            }
+        }
+        debug_assert_eq!(flat.len(), total);
+        self.evaluate_population_from_slice(&flat, n_candidates, n_params, use_surrogates)
+    }
+
+    /// Crate-private zero-copy evaluation entry point (Issue #2874).
+    ///
+    /// Equivalent to [`Self::evaluate_population`] but accepts a flat
+    /// row-major population slice (the shape a numpy `PyArray2::as_slice()`
+    /// read-only view produces) instead of an owned `Vec<Vec<f64>>`. The
+    /// numpy binding calls this with the borrow from the validator (#2528)
+    /// directly — no `Vec<Vec<f64>>` materialisation, no `Vec<f64>` row
+    /// copies, no element re-shuffling.
+    ///
+    /// `flat.len()` must equal `n_candidates * n_params`; the function
+    /// indexes each row via `flat[i*n_params..(i+1)*n_params]` and hands the
+    /// `&[f64]` row slice to `validate_parameters` and `ThermalModel::
+    /// apply_parameters`, both of which take `&[f64]`.
+    ///
+    /// Error/result semantics, NaN-fill ordering, GPU vs CPU surrogate
+    /// dispatch and the analytical path are identical to
+    /// [`Self::evaluate_population`].
+    pub fn evaluate_population_from_slice(
+        &self,
+        flat: &[f64],
+        n_candidates: usize,
+        n_params: usize,
+        use_surrogates: bool,
+    ) -> Result<Vec<f64>, crate::api::error::FluxionError> {
+        debug_assert_eq!(flat.len(), n_candidates * n_params);
         use crate::physics::cta::ContinuousTensor;
         use rayon::prelude::*;
 
-        // 1. Validate and initialize all models upfront (parallel)
-        let mut valid_configs: Vec<(usize, ThermalModel<VectorField>)> = population
-            .par_iter()
-            .enumerate()
-            .filter_map(|(i, params)| {
+        // 1. Validate and initialize all models upfront (parallel). Issue
+        //    #2874: index the row slices directly from the contiguous
+        //    `flat` buffer in the closure — no per-row Vec<f64>
+        //    allocation, no element copies. The previous
+        //    `population_vec.par_iter()` was preceded by a
+        //    `(0..n_candidates).map(|i| vec![...]).collect()` that
+        //    allocated one outer Vec + N inner Vec<f64>s + 3N f64 copies.
+        let mut valid_configs: Vec<(usize, ThermalModel<VectorField>)> = (0..n_candidates)
+            .into_par_iter()
+            .filter_map(|i| {
+                let params = &flat[i * n_params..(i + 1) * n_params];
                 if Self::validate_parameters(params).is_err() {
                     return None;
                 }
@@ -214,7 +271,7 @@ impl BatchOracle {
             })
             .collect();
 
-        let mut results = vec![f64::NAN; population.len()];
+        let mut results = vec![f64::NAN; n_candidates];
 
         if use_surrogates && !valid_configs.is_empty() {
             let use_gpu = self.surrogates.gpu_supported();

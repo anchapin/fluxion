@@ -42,6 +42,17 @@ pub(crate) struct PhysicsScratch5r1c {
     pub new_mass: SmallVec<[f64; SCRATCH_INLINE_CAPACITY]>,
     pub wall_surface_new: SmallVec<[f64; SCRATCH_INLINE_CAPACITY]>,
     pub wall_surface_correction: SmallVec<[f64; SCRATCH_INLINE_CAPACITY]>,
+    /// Issue #2873: per-zone sol-air temperature buffer populated by
+    /// `prepare_solvers_and_sol_air` and reused by `step_physics_5r1c`
+    /// (replaces the per-step `t_sol_air_vec` Vec and the `_t_sol_air_data`
+    /// Vec that the caller used to throw away and recompute).
+    pub t_sol_air_zone: SmallVec<[f64; SCRATCH_INLINE_CAPACITY]>,
+    /// Issue #2873: per-zone external air-to-outdoor conductance buffer.
+    /// Equals `derived_h_ext` in the day mode and `derived_h_ext +
+    /// h_ve_night` in the night-ventilation mode (zone 0 only). Replaces the
+    /// per-step `h_ve_night_zone` Vec and the `h_ext_owned` Vec that
+    /// `step_physics_5r1c` built every call.
+    pub h_ext_owned_zone: SmallVec<[f64; SCRATCH_INLINE_CAPACITY]>,
 }
 
 impl PhysicsScratch5r1c {
@@ -56,6 +67,8 @@ impl PhysicsScratch5r1c {
             new_mass: SmallVec::from_elem(0.0, num_zones),
             wall_surface_new: SmallVec::from_elem(0.0, num_zones),
             wall_surface_correction: SmallVec::from_elem(0.0, num_zones),
+            t_sol_air_zone: SmallVec::from_elem(0.0, num_zones),
+            h_ext_owned_zone: SmallVec::from_elem(0.0, num_zones),
         }
     }
 
@@ -65,6 +78,12 @@ impl PhysicsScratch5r1c {
     /// to reproduce the exact post-`new(num_zones)` state. Reusing a pooled
     /// scratch without this would panic: several fields are emptied by
     /// `mem::take` during the previous step and then written by `[i] = …`.
+    ///
+    /// Issue #2873: `t_sol_air_zone` and `h_ext_owned_zone` are populated by
+    /// direct `[i] = …` writes each step (no `mem::take` consumed), so the
+    /// `resize` line alone is enough — the zero-fill is redundant but kept for
+    /// defensive parity with the other fields (mirrors the pre-#2873 contract
+    /// that the post-`new()` state is fully zeroed).
     pub fn fill_zero(&mut self) {
         let n = self.num_zones;
         self.phi_ia.resize(n, 0.0);
@@ -75,6 +94,8 @@ impl PhysicsScratch5r1c {
         self.new_mass.resize(n, 0.0);
         self.wall_surface_new.resize(n, 0.0);
         self.wall_surface_correction.resize(n, 0.0);
+        self.t_sol_air_zone.resize(n, 0.0);
+        self.h_ext_owned_zone.resize(n, 0.0);
         for v in &mut self.phi_ia {
             *v = 0.0;
         }
@@ -97,6 +118,12 @@ impl PhysicsScratch5r1c {
             *v = 0.0;
         }
         for v in &mut self.wall_surface_correction {
+            *v = 0.0;
+        }
+        for v in &mut self.t_sol_air_zone {
+            *v = 0.0;
+        }
+        for v in &mut self.h_ext_owned_zone {
             *v = 0.0;
         }
     }

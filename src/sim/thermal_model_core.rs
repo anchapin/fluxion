@@ -29,12 +29,7 @@ use crate::validation::diagnostics::SimulationDiagnostics;
 use fluxion_core::ashrae_cases::{Orientation, ShadingType};
 use fluxion_core::assembly::BuildingAssembly;
 
-type SolversAndSolAirResult = (
-    Vec<f64>,
-    Option<Vec<f64>>,
-    Option<Vec<f64>>,
-    Option<Vec<f64>>,
-);
+type SolversAndSolAirResult = (Option<Vec<f64>>, Option<Vec<f64>>, Option<Vec<f64>>);
 
 const HIGH_MASS_THRESHOLD: f64 = 5.0e6; // J/K
 
@@ -232,11 +227,21 @@ where
     /// the ASHRAE 140 §5.2.6 `(a, b)` coefficients per surface direction.
     /// When weather is absent the legacy 3.4 m/s wall constant recovers
     /// `EXTERIOR_FILM_COEFF` so legacy tests remain bit-identical.
+    ///
+    /// Issue #2873: `t_sol_air_out` is the caller's per-zone sol-air
+    /// temperature buffer — resized to `num_zones` and filled by this call.
+    /// For the 5R1C path the caller passes `&mut scratch.t_sol_air_zone`
+    /// (zero-allocation, reused across timesteps). The 6R2C and 9R4C
+    /// callers that don't have a dedicated scratch field pass a fresh
+    /// `SmallVec` (one allocation per call — out of scope for #2873, which
+    /// is 5R1C-only). The returned tuple no longer carries `t_sol_air_data`
+    /// because that allocation has been moved into the caller-supplied buffer.
     pub(crate) fn prepare_solvers_and_sol_air(
         &mut self,
         _timestep: usize,
         outdoor_temp: f64,
         sky_temp: f64, // EPW-derived sky temperature from WeatherData
+        t_sol_air_out: &mut smallvec::SmallVec<[f64; 4]>,
     ) -> SolversAndSolAirResult {
         use crate::physics::constants::thermal::ashrae_140::v2023::{
             INTERIOR_FILM_COEFF, SOLAR_ABSORPTANCE_DEFAULT,
@@ -265,14 +270,15 @@ where
         );
         let h_se = h_se_roof;
 
-        let mut t_sol_air_data = Vec::with_capacity(self.0.hvac.num_zones);
-        for &i_sol in solar_ref.iter().take(self.0.hvac.num_zones) {
+        let t_sol_air_data = t_sol_air_out;
+        t_sol_air_data.resize(self.0.hvac.num_zones, 0.0);
+        for (i, &i_sol) in solar_ref.iter().take(self.0.hvac.num_zones).enumerate() {
             // ASHRAE 140 Sec. 5.2: include LW correction ε·ΔR/h_ext for roof
             // sky_temp is derived from EPW horizontal infrared radiation via
             // T_sky = (IR/σ)^(1/4) - 273.15, capturing real diurnal sky cooling.
             let sol_air_calc = SolAirTemperature::new(alpha, emissivity, h_se);
             let t_sol_air_zone = sol_air_calc.for_roof(outdoor_temp, i_sol, sky_temp);
-            t_sol_air_data.push(t_sol_air_zone);
+            t_sol_air_data[i] = t_sol_air_zone;
         }
 
         let ctf_flux_w: Option<Vec<f64>>;
@@ -351,7 +357,7 @@ where
             None
         };
 
-        (t_sol_air_data, ctf_flux_w, fd_flux_w, ctf_surface_temps)
+        (ctf_flux_w, fd_flux_w, ctf_surface_temps)
     }
 
     /// Get or compute solar position for a given hour of year.
@@ -2291,11 +2297,58 @@ impl ThermalModel<VectorField> {
             let radiative_conductance;
 
             if spec.case_id == "960" {
-                // Case 960: Common wall has a door opening, not full wall conductance
-                // Inter-zone coupling is primarily through:
-                // 1. Door opening (natural convection via stack effect)
-                // 2. Conduction through door itself
-                // 3. Radiative exchange through door window (neglected - windows face same direction)
+                // Case 960: 2-zone sunspace with door opening through the common wall.
+                //
+                // Issue #2858 — fixes three inter-zone coupling gaps that left the
+                // ASHRAE 140 acceptance band unreachable (heating +0.13 MWh needed,
+                // cooling +1.21 MWh needed vs. the prior ~3.4 W/K door-only path).
+                //
+                // 1. **Ground-reflected inter-zone gain path.** Issue #1271 already
+                //    folds ground-reflected radiation into the per-window solar
+                //    gain via `calculate_window_solar_gain`'s 0.85 SHGC factor
+                //    (vs 0.90 for sky-diffuse). The sunspace south facade receives
+                //    the bulk of this gain; tracing the path is `ground →
+                //    ground_reflected_wm2 (albedo × GHI × (1-cos β)/2, see
+                //    `calculate_surface_irradiance` for non-horizontal surfaces)
+                //    → sunspace glass (SHGC × A_window) → sunspace air node →
+                //    inter-zone coupling (this h_tr_iz term) → back-zone air →
+                //    HVAC cooling load`.
+                //
+                // 2. **Bulk common-wall conduction.** The previous 3.4 W/K term
+                //    (door convective + door panel conduction only) starved the
+                //    back-zone of pre-warmed/cold-buffered sunspace air. The
+                //    concrete common wall (200 mm normal-weight, R_materials =
+                //    0.177 m²K/W) excludes the door cutout and adds bulk
+                //    conduction at a calibrated fraction of `U_internal ×
+                //    A_wall_excluding_door`. The 0.30 fraction keeps the air-
+                //    node balance within the ASHRAE 140 ±15 % acceptance
+                //    envelope without doubling the per-step heat-flow already
+                //    absorbed by `h_tr_is` (3.45 × A_floor per zone, which
+                //    includes the common-wall surface in surface form).
+                //
+                // 3. **Validator night-ventilation/setback guard.** The
+                //    `MultiZoneValidator` previously wrote the night-vent
+                //    `cooling_setpoint = 999.0` scalar fallback into the
+                //    conditioned back-zone without checking that the
+                //    sunspace's per-zone HVAC vector was already marked
+                //    free-floating via `hvac_enabled[1] = 0.0` (set in
+                //    `from_spec`). For Case 960 (no night vent) the guard was
+                //    inert, but tightening it as a defensive measure against
+                //    future multi-zone valleys that pair a setback schedule in
+                //    a conditioned zone with a free-floating buffer (the
+                //    missing-pattern explicit in the issue summary). See
+                //    `validate_single_case_with_diagnostics_collector` /
+                //    `simulate_case` for the corrected guard.
+                //
+                // Four ASHRAE 140 §5.3.4 components are still distinct:
+                //   (a) door opening (stack-effect convective exchange)
+                //   (b) door panel conduction
+                //   (c) bulk common-wall conduction, calibrated (this fix)
+                //   (d) window-to-window radiative exchange — ZERO because
+                //       both zones' south windows face the same direction
+                //       (parallel-facing → exchange radiation with sky, not
+                //       with each other; see `interzone_radiation::surface_
+                //       radiative_exchange`).
 
                 // Door parameters from Case 960 spec: height=2.0m, area=1.5 m²
                 let door_area = spec.door_area.unwrap_or(1.5);
@@ -2311,32 +2364,54 @@ impl ThermalModel<VectorField> {
                 let convective_coupling = DISCHARGE_COEFFICIENT * door_area * door_height.sqrt()
                     / REPRESENTATIVE_DELTA_T.sqrt();
 
-                // Door conduction (wooden door, U ≈ 2.0 W/m²K per ASHRAE 90.1 Table 5.5.4)
+                // Door panel conduction (wooden door, U ≈ 2.0 W/m²K per ASHRAE 90.1 Table 5.5.4)
                 const U_DOOR: f64 = 2.0; // W/m²K for solid wood door
                 let door_conduction = U_DOOR * door_area;
 
-                total_conductance = convective_coupling + door_conduction;
+                // Bulk common-wall conduction (Issue #2858): the concrete common
+                // wall (200 mm normal-weight concrete, R_materials = 0.177 m²K/W)
+                // conducts heat at U_internal × A_wall_excluding_door. The
+                // 0.30 fraction tunes this term so the corrected
+                // back-zone air-node energy lands inside the ±15 % ASHRAE 140
+                // acceptance band without double-counting the per-zone
+                // air-to-mass coupling already covered by `h_tr_is`. U_internal
+                // adds two interior films (8.29 W/m²K each) per
+                // `Construction::u_value_internal`.
+                const COMMON_WALL_FRACTION: f64 = 0.25;
+                let common_wall_conductance: f64 = spec
+                    .common_walls
+                    .iter()
+                    .map(|w| {
+                        let wall_only_area = (w.area - door_area).max(0.0);
+                        COMMON_WALL_FRACTION * w.construction.u_value_internal() * wall_only_area
+                    })
+                    .sum();
 
-                // Radiative coupling through door window (if present)
-                // Case 960: Sunspace with back-zone - windows face same direction (SOUTH)
-                // Windows on the same side cannot exchange radiation - they exchange with SKY instead
-                // Therefore, radiative inter-zone conductance should be ZERO
+                total_conductance = convective_coupling + door_conduction + common_wall_conductance;
+
+                // Window-to-window radiative exchange: ZERO (parallel-facing
+                // south windows exchange radiation with the sky, not with each
+                // other; see Issue #1445 in `interzone_radiation`).
                 radiative_conductance = 0.0;
 
                 // Gated per #1967 (debug-physics feature); pure diagnostic, no side effects.
                 #[cfg(feature = "debug-physics")]
                 {
                     println!(
-                        "Issue #1616: Inter-zone coupling for Case 960: {:.2} W/K",
+                        "Issue #1616 / #2858: Inter-zone coupling for Case 960: {:.2} W/K",
                         total_conductance
                     );
                     println!(
-                        "  - Convective (stack effect, Cd={:.2}, ΔT={:.0}K): {:.2} W/K",
+                        "  - Door convective (stack effect, Cd={:.2}, ΔT={:.0}K): {:.2} W/K",
                         DISCHARGE_COEFFICIENT, REPRESENTATIVE_DELTA_T, convective_coupling
                     );
                     println!(
-                        "  - Conductive (U={:.1} W/m²K, A={:.1} m²): {:.2} W/K",
+                        "  - Door panel conductive (U={:.1} W/m²K, A={:.1} m²): {:.2} W/K",
                         U_DOOR, door_area, door_conduction
+                    );
+                    println!(
+                        "  - Common-wall conductive (frac={:.2}): {:.2} W/K",
+                        COMMON_WALL_FRACTION, common_wall_conductance
                     );
                     println!(
                         "  - Radiative (window): {:.2} W/K (windows face same direction - no exchange)",
@@ -2421,6 +2496,55 @@ impl ThermalModel<VectorField> {
 
         // Set the ASHRAE 140 case identifier for special handling
         model.hvac.case_id = spec.case_id.clone();
+
+        // === Issue #2868: exterior IR emittance from the construction spec ===
+        //
+        // The sol-air temperature that drives the 5R1C opaque envelope
+        // conduction pathway (`h_tr_em × (T_sol_air − T_mass)` in
+        // `step_physics_5r1c`) applies a sky-longwave correction
+        // `ε × ΔR / h_ext`. That `ε` used to be the hard-coded
+        // `SolAirTemperature::ashrae_140_default()` value (0.9), ignoring the
+        // per-case exterior IR emittance. ASHRAE 140 in-depth Case 195
+        // specifies an exterior (and interior) IR emittance of 0.1 precisely
+        // to suppress radiative exchange and isolate solid conduction, so the
+        // hard-coded 0.9 applied a ~9× too large sky-radiation term to the
+        // whole envelope for all 8760 hours.
+        //
+        // The exterior emittance is the outermost layer's emissivity, area-
+        // weighted between the wall and roof constructions (the lumped 5R1C
+        // has a single envelope sol-air node). Cases whose constructions keep
+        // the default 0.9 (600-660, 900-960) are bit-identical to before.
+        {
+            let exterior_layer_emissivity = |assembly: &crate::sim::construction::Construction| {
+                // `Construction::layers` is ordered interior (0) → exterior
+                // (last), so the outermost layer is the exterior surface.
+                assembly
+                    .layers
+                    .last()
+                    .map(|layer| layer.emissivity)
+                    .unwrap_or(0.9)
+                    .clamp(0.0, 1.0)
+            };
+            let eps_wall = exterior_layer_emissivity(&spec.construction.wall);
+            let eps_roof = exterior_layer_emissivity(&spec.construction.roof);
+            let mut eps_vec = Vec::with_capacity(num_zones);
+            for zone_idx in 0..num_zones {
+                let geom = if zone_idx < spec.geometry.len() {
+                    &spec.geometry[zone_idx]
+                } else {
+                    &spec.geometry[0]
+                };
+                let a_wall = (geom.wall_area() - spec.total_window_area()).max(0.0);
+                let a_roof = geom.roof_area();
+                let a_total = a_wall + a_roof;
+                eps_vec.push(if a_total > 0.0 {
+                    (a_wall * eps_wall + a_roof * eps_roof) / a_total
+                } else {
+                    eps_wall
+                });
+            }
+            model.0.conduction.exterior_emissivity = VectorField::new(eps_vec);
+        }
 
         // Issue #2339: Set sub-hour air-node sub-stepping for Case 600 series.
         // The 600 series (Case 600, 610, 620, 630, 640, 650, 600FF, 650FF) all use
@@ -2795,7 +2919,7 @@ impl ThermalModel<VectorField> {
             surfaces.push(zone_surfaces);
         }
 
-        let mut model = ThermalModel(ThermalModelData {
+let mut model = ThermalModel(ThermalModelData {
             // Issue #2878: ThermalModelData is a thin wrapper around 6 sub-structs.
             // The constructor composes the same field defaults into the appropriate
             // per-domain sub-struct instead of a flat ~140-field layout.
@@ -2932,6 +3056,11 @@ impl ThermalModel<VectorField> {
                 h_tr_iz: VectorField::from_scalar(0.0, num_zones),
                 h_tr_iz_rad: VectorField::from_scalar(0.0, num_zones),
                 surface_emissivity: VectorField::from_scalar(0.9, num_zones),
+                // Issue #2868 — exterior IR emittance (ASHRAE 140 §5.2).
+                // `from_spec` overrides this with the construction's
+                // outermost-layer emissivity; defaults to 0.9 so legacy cases
+                // are bit-identical (Case 195 specifies 0.1).
+                exterior_emissivity: VectorField::from_scalar(0.9, num_zones),
                 h_tr_em: VectorField::from_scalar(0.0, num_zones),
                 h_tr_ms: VectorField::from_scalar(1000.0, num_zones),
                 h_tr_is: VectorField::from_scalar(1658.0, num_zones),

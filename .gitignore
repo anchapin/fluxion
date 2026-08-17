@@ -173,7 +173,11 @@ session_*_test_results.txt
 # Benchmark results
 benchmark_results.json
 gate_status.json
-validation_baseline.json
+# Issue #2856: validation_baseline.json is intentionally tracked (it
+# feeds `release_gates.yaml:drift.baseline_file`). The drift gate
+# silently degraded to a PASS when this file was missing, so it
+# must be checked in. Generated/scratch validation artifacts in the
+# `validation_*.txt` / `*.log` block above remain ignored.
 
 # Benchmark data
 benchmarks/outputs/

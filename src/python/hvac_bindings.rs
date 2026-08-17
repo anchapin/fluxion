@@ -130,7 +130,7 @@ impl PyZoneControl {
         setpoints: &PyZoneSetpoints,
     ) -> PyResult<Self> {
         let num_zones = thermal_model.get_inner_num_zones();
-        let thermal_model_arc = Arc::new(ThermalModel::new(num_zones, 20.0));
+        let thermal_model_arc = Arc::new(ThermalModel::new(num_zones));
         let mut setpoints_copy = ZoneSetpoints::new(setpoints.num_zones());
 
         // Copy setpoints from Python wrapper to Rust struct

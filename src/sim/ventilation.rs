@@ -191,6 +191,56 @@ pub fn h_tr_is_ach_multiplier(ach: f64) -> f64 {
     }
 }
 
+/// Upper bound on the ACH-driven forced-convection multiplier applied to the
+/// air-surface coupling during COOLING-mode operation (Issue #2871).
+///
+/// Without this cap, the Case 650/950 night-ventilation ACH (13.14) yields a
+/// natural multiplier of ≈ 2.91× and very high theoretical ACH (≥ 30) yields
+/// multipliers above 4×.  When the morning ramp begins and the night-charged
+/// mass node dumps to the still-cool morning air, the unbounded multiplier
+/// causes the air node to overshoot the cooling setpoint, inflating the
+/// peak-cooling load by 48–92 % across Cases 610/620/630/640/650.
+///
+/// The cap preserves the natural ASHRAE correlation at low ACH (the natural
+/// value is monotone in ACH and stays below `MAX_CONVECTIVE_TO_AIR_MULTIPLIER`
+/// for ACH ≲ 7.5 — i.e. all ASHRAE 140 default infiltration schedules and the
+/// Case 950 night vent), while preventing the runaway mass-to-air pulse during
+/// the morning ramp in the very-high-ACH night flush.
+///
+/// Value: 2.0×  (≈ 6.9 W/m²K effective h_c vs the 3.45 W/m²K still-air
+/// baseline).  This corresponds to ACH ≈ 4.3 and is large enough to deliver
+/// the morning cooling benefit, but small enough to bound the peak-cooling
+/// overshoot.
+///
+/// Issue #2871 — Case 600-series peak-cooling OVER prediction.
+pub const MAX_CONVECTIVE_TO_AIR_MULTIPLIER: f64 = 2.0;
+
+/// Forced-convection contribution to the air-surface coupling, capped to
+/// `MAX_CONVECTIVE_TO_AIR_MULTIPLIER` so high-ACH night flush cannot drive the
+/// mass-node pulsed-charging dump during the morning cooling ramp (Issue
+/// #2871).
+///
+/// The natural correlation `h_c = 3.45 + 0.84·ACH^0.8` is preserved at low
+/// ACH; only values exceeding `MAX_CONVECTIVE_TO_AIR_MULTIPLIER` are clamped.
+/// The cap corresponds to ≈ 6.9 W/m²K effective interior film coefficient
+/// (vs the 3.45 W/m²K still-air baseline).
+///
+/// # Arguments
+/// * `ach` — air changes per hour for the active ventilation schedule
+///   (typically the night-ventilation fan capacity ÷ zone volume).
+///
+/// # Returns
+/// The dimensionless multiplier to apply to `h_tr_is` during active cooling.
+/// Returns `1.0` (no boost) when `ach <= 0`.
+pub fn capped_h_tr_is_ach_multiplier(ach: f64) -> f64 {
+    let natural = h_tr_is_ach_multiplier(ach);
+    if natural <= MAX_CONVECTIVE_TO_AIR_MULTIPLIER {
+        natural
+    } else {
+        MAX_CONVECTIVE_TO_AIR_MULTIPLIER
+    }
+}
+
 /// A constant ventilation schedule.
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 pub struct ConstantVentilation {

@@ -23,9 +23,79 @@ import sys
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Optional
+from typing import Any, Optional
 
 import yaml  # type: ignore
+
+# Issue #2865: hard-coded `.get(..., LITERAL)` fallbacks previously scattered
+# throughout the script (e.g. ``validation_config.get("min_pass_rate", 4.0)``,
+# ``throughput_config.get("min_configs_per_sec", 800)``,
+# ``multi_zone_config.get("min_configs_per_sec", 500)``,
+# ``individual_config.get("max_deviation", 150.0)``,
+# ``individual_config.get("extreme_deviation_limit", 15)``) silently diverged
+# from ``release_gates.yaml`` — if a YAML key was renamed or removed the
+# script would switch to a footgun default (pass rate 4%, throughput 800,
+# etc.) with no warning. Hoisting every fallback into a single ``DEFAULTS``
+# dict gives one source of truth, and the comparison test in
+# ``scripts/ci/test_release_gate_checker.py::test_defaults_match_release_gates_yaml``
+# fails CI on any drift between this dict and the YAML.
+#
+# Values mirror the canonical release_gates.yaml. When the YAML key is
+# present the YAML value always wins (the dict is only the safety net).
+DEFAULTS: dict[str, Any] = {
+    "validation": {
+        "min_pass_rate": 60.0,
+        "max_mae": 50.0,
+        "individual": {
+            "max_deviation": 100.0,
+            "extreme_deviation_limit": 2,
+            "known_failures": ["900", "600"],
+        },
+    },
+    "benchmark": {
+        "throughput": {
+            "min_configs_per_sec": 150,
+        },
+        "latency": {
+            "max_ms_per_config": 10.0,
+        },
+        "multi_zone": {
+            "min_configs_per_sec": 10,
+        },
+        "hybrid": {
+            "min_configs_per_sec": 80,
+        },
+        "hybrid_multi_zone": {
+            "min_configs_per_sec": 8,
+        },
+        "cross_validation": {
+            "max_ms": 500,
+        },
+        "cold_start": {
+            "max_ms": 100.0,
+            "warm_max_ms": 25.0,
+            "max_cold_warm_ratio": 1.5,
+            "trivial_fixture_ms": 5.0,
+            "regression_tolerance": 0.25,
+        },
+        "regression_threshold": 5.0,
+        "absolute_min_throughput": 100,
+    },
+    "crate_size": {
+        "max_mb": 10.0,
+    },
+    "drift": {
+        "enabled": True,
+        "create_baseline_if_missing": True,
+        "max_pass_rate_change": 2.0,
+        "max_mae_change": 5.0,
+        "max_pass_to_fail": 1,
+        "max_fail_to_pass": 5,
+    },
+    "ci": {
+        "fail_fast": True,
+    },
+}
 
 
 @dataclass
@@ -68,7 +138,9 @@ class ReleaseGateChecker:
 
         # Overall pass rate
         pass_rate = summary.get("pass_rate", 0.0)
-        min_pass_rate = validation_config.get("min_pass_rate", 4.0)
+        min_pass_rate = validation_config.get(
+            "min_pass_rate", DEFAULTS["validation"]["min_pass_rate"]
+        )
         results.append(
             GateResult(
                 name="overall_pass_rate",
@@ -82,7 +154,9 @@ class ReleaseGateChecker:
 
         # MAE check
         mae = summary.get("mae", 0.0)
-        max_mae = validation_config.get("max_mae", 30.0)
+        max_mae = validation_config.get(
+            "max_mae", DEFAULTS["validation"]["max_mae"]
+        )
         results.append(
             GateResult(
                 name="max_mae",
@@ -96,9 +170,20 @@ class ReleaseGateChecker:
 
         # Individual case deviations
         individual_config = validation_config.get("individual", {})
-        max_deviation = individual_config.get("max_deviation", 150.0)
-        extreme_limit = individual_config.get("extreme_deviation_limit", 15)
-        known_failures = set(individual_config.get("known_failures", []))
+        max_deviation = individual_config.get(
+            "max_deviation",
+            DEFAULTS["validation"]["individual"]["max_deviation"],
+        )
+        extreme_limit = individual_config.get(
+            "extreme_deviation_limit",
+            DEFAULTS["validation"]["individual"]["extreme_deviation_limit"],
+        )
+        known_failures = set(
+            individual_config.get(
+                "known_failures",
+                DEFAULTS["validation"]["individual"]["known_failures"],
+            )
+        )
 
         extreme_count = 0
         for case_id, case_data in cases.items():
@@ -179,8 +264,14 @@ class ReleaseGateChecker:
 
         # Throughput check
         throughput = metrics.get("throughput_configs_per_sec", 0.0)
-        min_throughput = throughput_config.get("min_configs_per_sec", 800)
-        abs_min = benchmark_config.get("absolute_min_throughput", 100)
+        min_throughput = throughput_config.get(
+            "min_configs_per_sec",
+            DEFAULTS["benchmark"]["throughput"]["min_configs_per_sec"],
+        )
+        abs_min = benchmark_config.get(
+            "absolute_min_throughput",
+            DEFAULTS["benchmark"]["absolute_min_throughput"],
+        )
 
         # Must pass both minimum and absolute minimum
         throughput_passed = throughput >= min_throughput and throughput >= abs_min
@@ -199,7 +290,10 @@ class ReleaseGateChecker:
 
         # Latency check
         latency = metrics.get("latency_ms_per_config", 0.0)
-        max_latency = latency_config.get("max_ms_per_config", 10.0)
+        max_latency = latency_config.get(
+            "max_ms_per_config",
+            DEFAULTS["benchmark"]["latency"]["max_ms_per_config"],
+        )
 
         results.append(
             GateResult(
@@ -214,7 +308,10 @@ class ReleaseGateChecker:
 
         # Multi-zone check
         multi_zone = metrics.get("multi_zone_throughput", 0.0)
-        min_multi_zone = multi_zone_config.get("min_configs_per_sec", 500)
+        min_multi_zone = multi_zone_config.get(
+            "min_configs_per_sec",
+            DEFAULTS["benchmark"]["multi_zone"]["min_configs_per_sec"],
+        )
 
         results.append(
             GateResult(
@@ -234,7 +331,10 @@ class ReleaseGateChecker:
         # default routing (surrogate loads + physics everything else) adds
         # per-timestep dispatch overhead the physics-only path skips.
         hybrid = metrics.get("hybrid_throughput", 0.0)
-        min_hybrid = hybrid_config.get("min_configs_per_sec", 0)
+        min_hybrid = hybrid_config.get(
+            "min_configs_per_sec",
+            DEFAULTS["benchmark"]["hybrid"]["min_configs_per_sec"],
+        )
         results.append(
             GateResult(
                 name="hybrid_throughput",
@@ -253,7 +353,10 @@ class ReleaseGateChecker:
         # Hybrid multi-zone (Issue #2922) — 10-zone HybridThermalModel
         # absolute floor. Mirrors `benchmark.hybrid_multi_zone.min_configs_per_sec`.
         hybrid_multi_zone = metrics.get("hybrid_multi_zone_throughput", 0.0)
-        min_hybrid_multi_zone = hybrid_multi_zone_config.get("min_configs_per_sec", 0)
+        min_hybrid_multi_zone = hybrid_multi_zone_config.get(
+            "min_configs_per_sec",
+            DEFAULTS["benchmark"]["hybrid_multi_zone"]["min_configs_per_sec"],
+        )
         results.append(
             GateResult(
                 name="hybrid_multi_zone_throughput",
@@ -273,7 +376,9 @@ class ReleaseGateChecker:
 
         # Cross-validation latency
         cv_latency = metrics.get("cross_validation_latency_ms", 0.0)
-        max_cv_latency = cv_config.get("max_ms", 500)
+        max_cv_latency = cv_config.get(
+            "max_ms", DEFAULTS["benchmark"]["cross_validation"]["max_ms"]
+        )
 
         results.append(
             GateResult(
@@ -303,11 +408,18 @@ class ReleaseGateChecker:
         # `predict_loads_onnx` call against a freshly constructed
         # `SurrogateManager`.
         cold_ms = metrics.get("cold_start_ms", 0.0)
-        max_cold_ms = cold_start_config.get("max_ms", 100.0)
+        max_cold_ms = cold_start_config.get(
+            "max_ms", DEFAULTS["benchmark"]["cold_start"]["max_ms"]
+        )
         warm_ms = metrics.get("warm_steady_state_ms", 0.0)
-        max_warm_ms = cold_start_config.get("warm_max_ms", 25.0)
+        max_warm_ms = cold_start_config.get(
+            "warm_max_ms", DEFAULTS["benchmark"]["cold_start"]["warm_max_ms"]
+        )
         ratio = metrics.get("cold_warm_ratio", 0.0)
-        max_ratio = cold_start_config.get("max_cold_warm_ratio", 1.5)
+        max_ratio = cold_start_config.get(
+            "max_cold_warm_ratio",
+            DEFAULTS["benchmark"]["cold_start"]["max_cold_warm_ratio"],
+        )
 
         cold_abs_passed = cold_ms <= max_cold_ms
         warm_abs_passed = warm_ms <= max_warm_ms if max_warm_ms > 0 else True
@@ -323,7 +435,10 @@ class ReleaseGateChecker:
         # cold-path cost. On a 256 MiB shipped model (cold ≈ 400 ms) the
         # ratio check fires normally and catches regressions that the
         # absolute bound alone would miss.
-        trivial_fixture_ms = cold_start_config.get("trivial_fixture_ms", 5.0)
+        trivial_fixture_ms = cold_start_config.get(
+            "trivial_fixture_ms",
+            DEFAULTS["benchmark"]["cold_start"]["trivial_fixture_ms"],
+        )
         ratio_check_applicable = cold_ms >= trivial_fixture_ms
         ratio_passed = ratio <= max_ratio if max_ratio > 0 else True
         if not ratio_check_applicable:
@@ -382,7 +497,12 @@ class ReleaseGateChecker:
         # absolute bound yet but is meaningfully above the stored
         # baseline.
         baseline_file = cold_start_config.get("baseline_file")
-        regression_tolerance = float(cold_start_config.get("regression_tolerance", 0.25))
+        regression_tolerance = float(
+            cold_start_config.get(
+                "regression_tolerance",
+                DEFAULTS["benchmark"]["cold_start"]["regression_tolerance"],
+            )
+        )
         baseline_ratio = None
         baseline_regression_passed = True
         if baseline_file:
@@ -449,7 +569,10 @@ class ReleaseGateChecker:
         # Regression check (if baseline exists)
         baseline_throughput = benchmark_results.get("baseline_throughput")
         if baseline_throughput and baseline_throughput > 0:
-            regression_threshold = benchmark_config.get("regression_threshold", 5.0)
+            regression_threshold = benchmark_config.get(
+                "regression_threshold",
+                DEFAULTS["benchmark"]["regression_threshold"],
+            )
             change_pct = (
                 abs(throughput - baseline_throughput) / baseline_throughput * 100
             )
@@ -507,7 +630,9 @@ class ReleaseGateChecker:
         """
         results = []
         crate_config = self.config.get("crate_size", {})
-        max_mb = float(crate_config.get("max_mb", 10.0))
+        max_mb = float(
+            crate_config.get("max_mb", DEFAULTS["crate_size"]["max_mb"])
+        )
         max_bytes = int(max_mb * 1024 * 1024)
 
         if gate_filter and "crate_size" not in gate_filter:
@@ -575,7 +700,7 @@ class ReleaseGateChecker:
         results = []
         drift_config = self.config.get("drift", {})
 
-        if not drift_config.get("enabled", True):
+        if not drift_config.get("enabled", DEFAULTS["drift"]["enabled"]):
             results.append(
                 GateResult(
                     name="drift_detection",
@@ -587,7 +712,10 @@ class ReleaseGateChecker:
             return results
 
         if not baseline:
-            if drift_config.get("create_baseline_if_missing", False):
+            if drift_config.get(
+                "create_baseline_if_missing",
+                DEFAULTS["drift"]["create_baseline_if_missing"],
+            ):
                 results.append(
                     GateResult(
                         name="baseline",
@@ -613,7 +741,9 @@ class ReleaseGateChecker:
 
         current_pass_rate = current_summary.get("pass_rate", 0.0)
         baseline_pass_rate = baseline_summary.get("pass_rate", 0.0)
-        max_pass_rate_change = drift_config.get("max_pass_rate_change", 2.0)
+        max_pass_rate_change = drift_config.get(
+            "max_pass_rate_change", DEFAULTS["drift"]["max_pass_rate_change"]
+        )
 
         pass_rate_change = current_pass_rate - baseline_pass_rate
         pass_rate_drift_passed = abs(pass_rate_change) <= max_pass_rate_change
@@ -633,7 +763,9 @@ class ReleaseGateChecker:
         # MAE drift
         current_mae = current_summary.get("mae", 0.0)
         baseline_mae = baseline_summary.get("mae", 0.0)
-        max_mae_change = drift_config.get("max_mae_change", 5.0)
+        max_mae_change = drift_config.get(
+            "max_mae_change", DEFAULTS["drift"]["max_mae_change"]
+        )
 
         mae_change = current_mae - baseline_mae
         mae_drift_passed = abs(mae_change) <= max_mae_change
@@ -654,8 +786,12 @@ class ReleaseGateChecker:
         current_cases = current_results.get("cases", {})
         baseline_cases = baseline.get("cases", {})
 
-        max_p2f = drift_config.get("max_pass_to_fail", 1)
-        max_f2p = drift_config.get("max_fail_to_pass", 5)
+        max_p2f = drift_config.get(
+            "max_pass_to_fail", DEFAULTS["drift"]["max_pass_to_fail"]
+        )
+        max_f2p = drift_config.get(
+            "max_fail_to_pass", DEFAULTS["drift"]["max_fail_to_pass"]
+        )
 
         pass_to_fail = 0
         fail_to_pass = 0
@@ -742,8 +878,12 @@ class ReleaseGateChecker:
             validation_failed = any(not r.passed for r in validation_results_list)
 
             # Drift gates (need both current and baseline) — skip on fail_fast
-            if self.config.get("drift", {}).get("enabled", True):
-                if validation_failed and self.config.get("ci", {}).get("fail_fast", True):
+            if self.config.get("drift", {}).get(
+                "enabled", DEFAULTS["drift"]["enabled"]
+            ):
+                if validation_failed and self.config.get("ci", {}).get(
+                    "fail_fast", DEFAULTS["ci"]["fail_fast"]
+                ):
                     sys.stderr.write(
                         "::warning::fail_fast: skipping drift gates after validation failure\n"
                     )
@@ -755,7 +895,9 @@ class ReleaseGateChecker:
 
         # Benchmark gates — skip on fail_fast
         if benchmark_results:
-            if validation_failed and self.config.get("ci", {}).get("fail_fast", True):
+            if validation_failed and self.config.get("ci", {}).get(
+                "fail_fast", DEFAULTS["ci"]["fail_fast"]
+            ):
                 sys.stderr.write(
                     "::warning::fail_fast: skipping benchmark gates after validation failure\n"
                 )

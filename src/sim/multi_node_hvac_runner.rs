@@ -1,4 +1,32 @@
-//! Multi-Node HVAC Runner with Warm-Up Period (Issue #865)
+//! Multi-Node HVAC Runner with Warm-Up Period (Issue #865) — DEPRECATED
+//!
+//! This module is **deprecated** since `1.3`. The production 9R4C path
+//! lives in `src/sim/thermal_model_physics/physics_impl.rs::step_physics_9r4c`,
+//! reached through the public `ThermalModel::step_physics(...)` dispatcher
+//! (`src/sim/thermal_model_physics/step_dispatcher.rs`). See ADR-002
+//! (`docs/adr/0002-promote-9r4c-high-mass-default.md`) for the canonical
+//! 9R4C solver decision.
+//!
+//! This entire module is gated behind the `deprecated-multinode-runner`
+//! cargo feature (Issue #2877). The default build does not compile it; only
+//! downstream consumers that still depend on the legacy `MultiNodeHvacRunner`
+//! API need to opt in:
+//!
+//! ```text
+//! cargo build --features deprecated-multinode-runner
+//! ```
+//!
+//! ## Why this is deprecated
+//!
+//! `MultiNodeHvacRunner` (now `DeprecatedMultiNodeHvacRunner`) was a
+//! standalone test harness that duplicated the thermal-solver state and was
+//! never called by the production `step_physics` pipeline. Two parallel 9R4C
+//! paths left new contributors unable to tell which to extend (ARCHITECTURE.md
+//! drift, Goal #7). The production path is `ThermalModel::step_physics`,
+//! which dispatches to `step_physics_9r4c` for `HighMass` constructions
+//! (Case 900+, #865 warm-up is now handled by `crate::sim::warmup`).
+//!
+//! ## Historical context (kept for archaeology)
 //!
 //! This module provides a high-level runner that wraps the `MultiNodeSolver`
 //! (9R4C thermal network) with HVAC control logic and a configurable warm-up
@@ -8,11 +36,11 @@
 //!
 //! # Issue #859: Per-Surface Boundary Conditions and Gain Distribution
 //!
-//! This module supports per-surface boundary conditions via
-//! [`step_with_surface_bc()`](MultiNodeHvacRunner::step_with_surface_bc).
+//! This module supported per-surface boundary conditions via
+//! [`step_with_surface_bc()`](DeprecatedMultiNodeHvacRunner::step_with_surface_bc).
 //! Instead of using a uniform exterior temperature for all surfaces, each
-//! envelope surface (wall, roof, floor) can have its own sol-air temperature.
-//! Solar and internal gains are also distributed per-surface using proper
+//! envelope surface (wall, roof, floor) could have its own sol-air temperature.
+//! Solar and internal gains were also distributed per-surface using proper
 //! orientation-weighted calculations.
 //!
 //! # Warm-Up Rationale
@@ -21,7 +49,8 @@
 //! this produces ~10–15 kW transient heating in the first few hundred timesteps
 //! versus a reference peak of ~2 kW, adding ~1 MWh phantom heating energy.
 //! Running 14 days of warm-up (336 hourly timesteps) lets mass temperatures
-//! converge before energy accumulation begins.
+//! converge before energy accumulation begins. Use `crate::sim::warmup`
+//! for the production equivalent.
 
 #![allow(deprecated)]
 
@@ -38,12 +67,18 @@ const DEFAULT_WARMUP_DAYS: usize = 14;
 const CP_AIR: f64 = 1006.0;
 
 /// Multi-node HVAC runner with warm-up period support.
+///
+/// **Deprecated since 1.3** (Issue #2877). Use the production 9R4C physics
+/// path: `ThermalModel::step_physics` (which dispatches to
+/// `thermal_model_physics::physics_impl::step_physics_9r4c` for high-mass
+/// constructions). See ADR-002 for the canonical solver decision.
+///
+/// This struct is renamed from `MultiNodeHvacRunner` to
+/// `DeprecatedMultiNodeHvacRunner` and the entire module is gated behind the
+/// `deprecated-multinode-runner` cargo feature to make accidental use visible.
 #[deprecated(
-    since = "0.9.0",
-    note = "Use multi-node thermal model with inline HVAC control instead. \
-            The `MultiNodeSolver` now supports HVAC integration directly, \
-            providing better energy accounting and Crank-Nicolson time integration. \
-            See `crate::sim::multi_node_thermal` for the preferred approach."
+    since = "1.3",
+    note = "Use thermal_model_core::step_physics_9r4c; see ADR-002"
 )]
 ///
 /// Wraps a `MultiNodeSolver` and provides:
@@ -52,7 +87,7 @@ const CP_AIR: f64 = 1006.0;
 /// - Configurable warm-up period that skips energy accumulation
 ///   while still advancing mass temperatures
 #[derive(Debug, Clone)]
-pub struct MultiNodeHvacRunner {
+pub struct DeprecatedMultiNodeHvacRunner {
     /// The 9R4C thermal solver
     pub solver: MultiNodeSolver,
     /// Ventilation conductance h_ve [W/K]
@@ -89,8 +124,8 @@ pub struct MultiNodeHvacRunner {
     pub T_supply: f64,
 }
 
-impl MultiNodeHvacRunner {
-    /// Create a new `MultiNodeHvacRunner` with the given solver and HVAC parameters.
+impl DeprecatedMultiNodeHvacRunner {
+    /// Create a new `DeprecatedMultiNodeHvacRunner` with the given solver and HVAC parameters.
     ///
     /// # Arguments
     ///
@@ -604,14 +639,14 @@ mod tests {
     use fluxion_core::multi_node::ThermalMassNode;
 
     /// Create a test runner with warm-up disabled (0 days).
-    fn create_test_runner() -> MultiNodeHvacRunner {
+    fn create_test_runner() -> DeprecatedMultiNodeHvacRunner {
         let wall = ThermalMassNode::new(20.0, 5e6, 50.0, 20.0);
         let roof = ThermalMassNode::new(20.0, 3e6, 30.0, 15.0);
         let floor = ThermalMassNode::new(20.0, 2e6, 20.0, 10.0);
         let internal = ThermalMassNode::new(20.0, 1e6, 10.0, 5.0);
         let solver = MultiNodeSolver::new(10.0, wall, roof, floor, internal);
 
-        MultiNodeHvacRunner::new(solver, 15.0, 20.0, 20.0, 26.0).with_warmup_days(0)
+        DeprecatedMultiNodeHvacRunner::new(solver, 15.0, 20.0, 20.0, 26.0).with_warmup_days(0)
     }
 
     #[test]
@@ -669,7 +704,7 @@ mod tests {
 
     #[test]
     fn test_energy_skipped_during_warmup() {
-        let mut runner = MultiNodeHvacRunner::with_defaults();
+        let mut runner = DeprecatedMultiNodeHvacRunner::with_defaults();
         // Default warm-up is 336 timesteps
         assert!(!runner.is_warmed_up());
 
@@ -691,7 +726,7 @@ mod tests {
 
     #[test]
     fn test_energy_accumulates_after_warmup_completes() {
-        let mut runner = MultiNodeHvacRunner::with_defaults().with_warmup_days(1); // 24 timesteps
+        let mut runner = DeprecatedMultiNodeHvacRunner::with_defaults().with_warmup_days(1); // 24 timesteps
 
         // Run through warm-up (24 steps)
         for _ in 0..24 {
@@ -743,21 +778,21 @@ mod tests {
 
     #[test]
     fn test_with_warmup_days_zero() {
-        let runner = MultiNodeHvacRunner::with_defaults().with_warmup_days(0);
+        let runner = DeprecatedMultiNodeHvacRunner::with_defaults().with_warmup_days(0);
         assert!(runner.is_warmed_up());
         assert_eq!(runner.warmup_timesteps, 0);
     }
 
     #[test]
     fn test_default_warmup_is_14_days() {
-        let runner = MultiNodeHvacRunner::with_defaults();
+        let runner = DeprecatedMultiNodeHvacRunner::with_defaults();
         assert_eq!(runner.warmup_timesteps, 336); // 14 * 24
         assert!(!runner.is_warmed_up());
     }
 
     #[test]
     fn test_mass_temperatures_update_during_warmup() {
-        let mut runner = MultiNodeHvacRunner::with_defaults().with_warmup_days(7);
+        let mut runner = DeprecatedMultiNodeHvacRunner::with_defaults().with_warmup_days(7);
         let initial_wall_temp = runner.solver.wall_temperature();
 
         // Run warm-up with cold outdoor temperature
@@ -919,7 +954,7 @@ mod tests {
     #[test]
     fn test_default_hvac_air_properties() {
         // with_defaults() sets m_dot=0.5 and T_supply=40.0
-        let runner = MultiNodeHvacRunner::with_defaults();
+        let runner = DeprecatedMultiNodeHvacRunner::with_defaults();
         assert_eq!(runner.m_dot, 0.5);
         assert_eq!(runner.T_supply, 40.0);
     }
@@ -927,7 +962,7 @@ mod tests {
     #[test]
     fn test_q_hvac_with_defaults() {
         // Test Q_HVAC formula with default values from with_defaults()
-        let runner = MultiNodeHvacRunner::with_defaults();
+        let runner = DeprecatedMultiNodeHvacRunner::with_defaults();
         // Default: m_dot=0.5, T_supply=40, zone starts at heating_setpoint=20
         // Q_HVAC = 0.5 * 1006 * (40 - 20) = 10060 W
         let expected = 0.5 * CP_AIR * (40.0 - 20.0);
@@ -1105,7 +1140,7 @@ mod tests {
     /// the default 20–26 °C deadband. All h_tr_ms values default to 0 in
     /// `ThermalMassNode::new`, so we set them here to make the air node
     /// balance well-defined.
-    fn create_deadband_test_runner() -> MultiNodeHvacRunner {
+    fn create_deadband_test_runner() -> DeprecatedMultiNodeHvacRunner {
         let mut wall = ThermalMassNode::new(20.0, 5e6, 50.0, 20.0);
         wall.h_tr_ms = 50.0;
         let mut roof = ThermalMassNode::new(20.0, 3e6, 30.0, 15.0);
@@ -1115,7 +1150,7 @@ mod tests {
         let internal = ThermalMassNode::new(20.0, 1e6, 10.0, 5.0);
         let solver = MultiNodeSolver::new(10.0, wall, roof, floor, internal);
         // h_ve = 15 W/K, setpoints 20/26 °C, warm-up disabled for energy tracking
-        MultiNodeHvacRunner::new(solver, 15.0, 20.0, 20.0, 26.0).with_warmup_days(0)
+        DeprecatedMultiNodeHvacRunner::new(solver, 15.0, 20.0, 20.0, 26.0).with_warmup_days(0)
     }
 
     #[test]
