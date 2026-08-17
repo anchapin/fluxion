@@ -33,8 +33,10 @@
 
 use fluxion::physics::cta::VectorField;
 use fluxion::sim::engine::ThermalModel;
-use fluxion::validation::ashrae_140_cases::ASHRAE140Case;
+use fluxion::sim::warmup::{run_warmup, WarmupConfig};
+use fluxion::validation::ashrae_140_cases::{ASHRAE140Case, CaseSpec};
 use fluxion::weather::denver::DenverTmyWeather;
+use fluxion::weather::epw::EpwWeatherSource;
 use fluxion::weather::WeatherSource;
 
 const MONTH_LABELS: [&str; 12] = [
@@ -133,14 +135,13 @@ fn test_case_940_setback_diagnostic() {
             // Count setback activations for verification. This branch uses
             // the integer-hour lookup so the 2920-hour wiring assertion
             // continues to hold even with the morning ramp added.
-            if let Some(discrete_heating_sp) = hvac.heating_setpoint_at_hour(hour) {
-                if (setback_start..setback_end).contains(&hour)
-                    || (setback_start > setback_end && (hour >= setback_start || hour < setback_end))
-                {
-                    if (discrete_heating_sp - setback_sp).abs() < 0.5 {
-                        setback_heating_hours += 1;
-                    }
-                }
+            if hvac.heating_setpoint_at_hour(hour).is_some_and(|setpoint| {
+                ((setback_start..setback_end).contains(&hour)
+                    || (setback_start > setback_end
+                        && (hour >= setback_start || hour < setback_end)))
+                    && (setpoint - setback_sp).abs() < 0.5
+            }) {
+                setback_heating_hours += 1;
             }
         }
 
@@ -279,7 +280,12 @@ fn test_case_940_setback_controller_mode_trace() {
         model.setpoints.cooling_setpoint = cooling_sp;
 
         let _ = model.step_physics(step, w.dry_bulb_temp, 3600.0);
-        let t_zone = *model.setpoints.temperatures.as_ref().first().unwrap_or(&20.0);
+        let t_zone = *model
+            .setpoints
+            .temperatures
+            .as_ref()
+            .first()
+            .unwrap_or(&20.0);
 
         // Bucket the zone temperature by setback-vs-normal schedule.
         let is_setback = (23..24).contains(&hour_of_day) || hour_of_day < 7;
@@ -355,22 +361,22 @@ fn test_case_940_ctf_path_comparison() {
     for step in 0..8760 {
         let hour_of_day = step % 24;
         let w = weather.get_hourly_data(step).expect("weather data");
-        model_blind.weather = Some(w.clone());
+        model_blind.solar.weather = Some(w.clone());
         if let Some(hvac) = spec.hvac.first() {
             let hour = hour_of_day as u8;
             // Issue #2870: sub-hour ramp-aware setpoint lookup
             let heating_sp = hvac
                 .heating_setpoint_at_fractional_hour(hour_of_day as f64 + 0.5)
                 .unwrap_or(hvac.heating_setpoint);
-            let cooling_sp = model_blind.cooling_schedule.value(hour as usize);
-            model_blind.heating_setpoint = heating_sp;
-            model_blind.cooling_setpoint = cooling_sp;
+            let cooling_sp = model_blind.setpoints.cooling_schedule.value(hour as usize);
+            model_blind.setpoints.heating_setpoint = heating_sp;
+            model_blind.setpoints.cooling_setpoint = cooling_sp;
         }
         let _ = model_blind.step_physics(step, w.dry_bulb_temp, 3600.0);
     }
 
-    let blind_h = model_blind.annual_heating_energy / 1000.0;
-    let blind_c = model_blind.annual_cooling_energy / 1000.0;
+    let blind_h = model_blind.hvac.annual_heating_energy / 1000.0;
+    let blind_c = model_blind.hvac.annual_cooling_energy / 1000.0;
     let blind_peak_h = model_blind.get_peak_heating_power_kw();
     let blind_peak_c = model_blind.get_peak_cooling_power_kw();
 
@@ -399,22 +405,22 @@ fn test_case_940_ctf_path_comparison() {
     for step in 0..8760 {
         let hour_of_day = step % 24;
         let w = weather.get_hourly_data(step).expect("weather data");
-        model_ctf.weather = Some(w.clone());
+        model_ctf.solar.weather = Some(w.clone());
         if let Some(hvac) = spec.hvac.first() {
             let hour = hour_of_day as u8;
             // Issue #2870: sub-hour ramp-aware setpoint lookup
             let heating_sp = hvac
                 .heating_setpoint_at_fractional_hour(hour_of_day as f64 + 0.5)
                 .unwrap_or(hvac.heating_setpoint);
-            let cooling_sp = model_ctf.cooling_schedule.value(hour as usize);
-            model_ctf.heating_setpoint = heating_sp;
-            model_ctf.cooling_setpoint = cooling_sp;
+            let cooling_sp = model_ctf.setpoints.cooling_schedule.value(hour as usize);
+            model_ctf.setpoints.heating_setpoint = heating_sp;
+            model_ctf.setpoints.cooling_setpoint = cooling_sp;
         }
         let _ = model_ctf.step_physics(step, w.dry_bulb_temp, 3600.0);
     }
 
-    let ctf_h = model_ctf.annual_heating_energy / 1000.0;
-    let ctf_c = model_ctf.annual_cooling_energy / 1000.0;
+    let ctf_h = model_ctf.hvac.annual_heating_energy / 1000.0;
+    let ctf_c = model_ctf.hvac.annual_cooling_energy / 1000.0;
     let ctf_peak_h = model_ctf.get_peak_heating_power_kw();
     let ctf_peak_c = model_ctf.get_peak_cooling_power_kw();
 
@@ -429,16 +435,19 @@ fn test_case_940_ctf_path_comparison() {
     for step in 0..8760 {
         let hour_of_day = step % 24;
         let w = weather.get_hourly_data(step).expect("weather data");
-        model_ctf_monthly.weather = Some(w.clone());
+        model_ctf_monthly.solar.weather = Some(w.clone());
         if let Some(hvac) = spec.hvac.first() {
             let hour = hour_of_day as u8;
             // Issue #2870: sub-hour ramp-aware setpoint lookup
             let heating_sp = hvac
                 .heating_setpoint_at_fractional_hour(hour_of_day as f64 + 0.5)
                 .unwrap_or(hvac.heating_setpoint);
-            let cooling_sp = model_ctf_monthly.cooling_schedule.value(hour as usize);
-            model_ctf_monthly.heating_setpoint = heating_sp;
-            model_ctf_monthly.cooling_setpoint = cooling_sp;
+            let cooling_sp = model_ctf_monthly
+                .setpoints
+                .cooling_schedule
+                .value(hour as usize);
+            model_ctf_monthly.setpoints.heating_setpoint = heating_sp;
+            model_ctf_monthly.setpoints.cooling_setpoint = cooling_sp;
         }
         let h_before = model_ctf_monthly.get_heating_energy_kwh();
         let c_before = model_ctf_monthly.get_cooling_energy_kwh();
@@ -483,4 +492,231 @@ fn test_case_940_ctf_path_comparison() {
     println!("  magnitudes in the Issue snapshot are larger than the CTF path here. The Issue");
     println!("  numbers were collected on a snapshot from 2026-08-07; current main may have");
     println!("  shifted. Either way, the CTF path overshoots both H and C for Case 940.");
+}
+
+const CASE_940_CTF_BLIND_HEATING_RATIO_BASELINE: f64 = 5.993_508;
+const CASE_940_CTF_BLIND_HEATING_RATIO_TOLERANCE: f64 = 0.05;
+
+fn case_940_ctf_model(spec: &CaseSpec) -> ThermalModel<VectorField> {
+    let mut model = ThermalModel::<VectorField>::from_spec(spec);
+    let wall_layers: Vec<_> = spec
+        .construction
+        .wall
+        .layers
+        .iter()
+        .map(|layer| {
+            fluxion::physics::fd_discretization::MaterialLayer::new(
+                &layer.name,
+                layer.thickness,
+                layer.conductivity,
+                layer.density,
+                layer.specific_heat,
+            )
+        })
+        .collect();
+    assert!(
+        model.enable_ctf_with_fd_fallback(&wall_layers, 3600.0, 50, 5),
+        "Case 940 LIMIT-12 diagnostic must exercise the CTF path, not FD fallback"
+    );
+    model
+}
+
+fn apply_case_940_setpoints(
+    model: &mut ThermalModel<VectorField>,
+    spec: &CaseSpec,
+    hour_of_day: usize,
+    refresh_zone_vectors: bool,
+) {
+    let hvac = spec.hvac.first().expect("Case 940 spec must have HVAC");
+    let hour = hour_of_day as u8;
+    let heating_setpoint = hvac
+        .heating_setpoint_at_fractional_hour(hour_of_day as f64 + 0.5)
+        .unwrap_or(hvac.heating_setpoint);
+    let cooling_setpoint = model.setpoints.cooling_schedule.value(hour as usize);
+    model.setpoints.heating_setpoint = heating_setpoint;
+    model.setpoints.cooling_setpoint = cooling_setpoint;
+    if refresh_zone_vectors {
+        model.setpoints.heating_setpoints =
+            VectorField::new(vec![heating_setpoint; model.hvac.num_zones]);
+        model.setpoints.cooling_setpoints =
+            VectorField::new(vec![cooling_setpoint; model.hvac.num_zones]);
+    }
+}
+
+fn run_case_940_annual_heating_kwh(
+    model: &mut ThermalModel<VectorField>,
+    spec: &CaseSpec,
+    weather: &dyn WeatherSource,
+    refresh_zone_vectors: bool,
+    warmup: bool,
+) -> f64 {
+    if warmup {
+        let _ = run_warmup(model, weather, &WarmupConfig::default());
+    }
+    model.reset_peak_power();
+    model.reset_heating_cooling_energy();
+    for step in 0..8760 {
+        let hour_of_day = step % 24;
+        let w = weather
+            .get_hourly_data(step)
+            .expect("TMY weather must cover all 8760 hours");
+        model.solar.weather = Some(w.clone());
+        apply_case_940_setpoints(model, spec, hour_of_day, refresh_zone_vectors);
+        let _ = model.step_physics(step, w.dry_bulb_temp, 3600.0);
+    }
+    model.get_heating_energy_kwh()
+}
+
+fn measure_case_940_annual_heating_kwh(
+    spec: &CaseSpec,
+    weather: &dyn WeatherSource,
+    enable_ctf: bool,
+    refresh_zone_vectors: bool,
+    warmup: bool,
+) -> f64 {
+    let mut model = if enable_ctf {
+        case_940_ctf_model(spec)
+    } else {
+        ThermalModel::<VectorField>::from_spec(spec)
+    };
+    run_case_940_annual_heating_kwh(&mut model, spec, weather, refresh_zone_vectors, warmup)
+}
+
+#[test]
+#[ignore = "Diagnostic only — see Issue #3062 LIMIT-12"]
+fn test_case_940_blind_vs_ctf_ratio_pinned() {
+    let spec = ASHRAE140Case::Case940.spec();
+    let weather = EpwWeatherSource::from_file(
+        "assets/weather/USA_CO_Denver-Stapleton.Intl.AP.724690_TMY.epw",
+    )
+    .expect("Case 940 ratio diagnostic requires the canonical Denver EPW");
+    let blind_heating_kwh =
+        measure_case_940_annual_heating_kwh(&spec, &weather, false, false, false);
+    let ctf_heating_kwh = measure_case_940_annual_heating_kwh(&spec, &weather, true, true, true);
+    let ratio = ctf_heating_kwh / blind_heating_kwh;
+
+    println!("\n=== Case 940 LIMIT-12 CTF/Blind Ratio Pin ===");
+    println!("blind annual heating: {blind_heating_kwh:.2} kWh");
+    println!("CTF annual heating:   {ctf_heating_kwh:.2} kWh");
+    println!("CTF/blind ratio:      {ratio:.6}x");
+
+    assert!(
+        blind_heating_kwh.is_finite() && blind_heating_kwh > 0.0,
+        "Case 940 blind annual heating must be finite and positive, got {blind_heating_kwh}"
+    );
+    assert!(
+        ctf_heating_kwh.is_finite() && ctf_heating_kwh > 0.0,
+        "Case 940 CTF annual heating must be finite and positive, got {ctf_heating_kwh}"
+    );
+    assert!(
+        (ratio - CASE_940_CTF_BLIND_HEATING_RATIO_BASELINE).abs()
+            <= CASE_940_CTF_BLIND_HEATING_RATIO_TOLERANCE,
+        "Case 940 LIMIT-12 CTF/blind ratio drifted: expected {:.6}x ± {:.2}x, got {:.6}x (blind={:.2} kWh, CTF={:.2} kWh)",
+        CASE_940_CTF_BLIND_HEATING_RATIO_BASELINE,
+        CASE_940_CTF_BLIND_HEATING_RATIO_TOLERANCE,
+        ratio,
+        blind_heating_kwh,
+        ctf_heating_kwh
+    );
+}
+
+#[test]
+#[ignore = "Diagnostic only — see Issue #3062 LIMIT-12"]
+fn test_case_940_setback_recovery_window_diagnostic() {
+    let spec = ASHRAE140Case::Case940.spec();
+    let weather = DenverTmyWeather::new();
+    let mut blind = ThermalModel::<VectorField>::from_spec(&spec);
+    let mut ctf = case_940_ctf_model(&spec);
+    let trace_day = 7usize;
+    let trace_start = trace_day * 24 + 22;
+    let trace_end = (trace_day + 1) * 24 + 9;
+    let mut captured_rows = 0usize;
+    let mut setback_start_setpoint: Option<f64> = None;
+    let mut recovery_setpoint: Option<f64> = None;
+    let mut occupied_setpoint: Option<f64> = None;
+
+    blind.reset_peak_power();
+    blind.reset_heating_cooling_energy();
+    ctf.reset_peak_power();
+    ctf.reset_heating_cooling_energy();
+
+    println!("\n=== Case 940 LIMIT-12 Setback Recovery Window ===");
+    println!(
+        " step  hour  heat_sp  outdoor  blind_zone  ctf_zone  blind_mass  ctf_mass  blind_heat_kwh  ctf_heat_kwh"
+    );
+
+    for step in 0..=trace_end {
+        let hour_of_day = step % 24;
+        let w = weather
+            .get_hourly_data(step)
+            .expect("TMY weather must cover the recovery trace");
+        blind.solar.weather = Some(w.clone());
+        ctf.solar.weather = Some(w.clone());
+        apply_case_940_setpoints(&mut blind, &spec, hour_of_day, true);
+        apply_case_940_setpoints(&mut ctf, &spec, hour_of_day, true);
+
+        let blind_heating_before = blind.get_heating_energy_kwh();
+        let ctf_heating_before = ctf.get_heating_energy_kwh();
+        let _ = blind.step_physics(step, w.dry_bulb_temp, 3600.0);
+        let _ = ctf.step_physics(step, w.dry_bulb_temp, 3600.0);
+
+        if step >= trace_start {
+            let heating_setpoint = blind.setpoints.heating_setpoint;
+            let blind_zone = blind.setpoints.temperatures.as_ref()[0];
+            let ctf_zone = ctf.setpoints.temperatures.as_ref()[0];
+            let blind_mass = blind.mass.mass_temperatures.as_ref()[0];
+            let ctf_mass = ctf.mass.mass_temperatures.as_ref()[0];
+            let blind_heating_kwh = blind.get_heating_energy_kwh() - blind_heating_before;
+            let ctf_heating_kwh = ctf.get_heating_energy_kwh() - ctf_heating_before;
+
+            for (label, value) in [
+                ("heating_setpoint", heating_setpoint),
+                ("blind_zone", blind_zone),
+                ("ctf_zone", ctf_zone),
+                ("blind_mass", blind_mass),
+                ("ctf_mass", ctf_mass),
+                ("blind_heating_kwh", blind_heating_kwh),
+                ("ctf_heating_kwh", ctf_heating_kwh),
+            ] {
+                assert!(
+                    value.is_finite(),
+                    "Case 940 recovery trace {label} is non-finite at step {step}: {value}"
+                );
+            }
+
+            println!(
+                "{step:5} {hour_of_day:5} {heating_setpoint:8.2} {outdoor:8.2} {blind_zone:11.3} {ctf_zone:9.3} {blind_mass:11.3} {ctf_mass:9.3} {blind_heating_kwh:15.4} {ctf_heating_kwh:13.4}",
+                outdoor = w.dry_bulb_temp
+            );
+
+            match hour_of_day {
+                23 => setback_start_setpoint = Some(heating_setpoint),
+                7 => recovery_setpoint = Some(heating_setpoint),
+                9 => occupied_setpoint = Some(heating_setpoint),
+                _ => {}
+            }
+            captured_rows += 1;
+        }
+    }
+
+    let hvac = spec.hvac.first().expect("Case 940 spec must have HVAC");
+    let setback = hvac
+        .setback_setpoint
+        .expect("Case 940 must define a setback setpoint");
+    let expected_recovery = setback + 0.25 * (hvac.heating_setpoint - setback);
+
+    assert_eq!(captured_rows, trace_end - trace_start + 1);
+    assert!(
+        (setback_start_setpoint.expect("trace must include hour 23") - setback).abs() < 1e-9,
+        "Case 940 hour 23 must start at the setback setpoint"
+    );
+    assert!(
+        (recovery_setpoint.expect("trace must include hour 7") - expected_recovery).abs() < 1e-9,
+        "Case 940 hour 7 midpoint must expose the first sub-hour recovery setpoint"
+    );
+    assert!(
+        (occupied_setpoint.expect("trace must include hour 9") - hvac.heating_setpoint).abs()
+            < 1e-9,
+        "Case 940 hour 9 must complete the recovery ramp"
+    );
 }
