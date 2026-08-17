@@ -481,6 +481,7 @@ mod tsfm_engine {
 mod tsfm_engine {
     use super::*;
 
+    #[derive(Debug)]
     pub struct TsfmInferenceEngine {
         pub input_names: Vec<String>,
         pub output_names: Vec<String>,
