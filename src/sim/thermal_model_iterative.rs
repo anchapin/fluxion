@@ -1021,7 +1021,14 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                     .copied()
                     .unwrap_or(129.6);
                 ach_night_vent = night_vent.fan_capacity / zone_vol;
-                let rho = self.0.setpoints.air_density.as_ref().first().copied().unwrap_or(1.2);
+                let rho = self
+                    .0
+                    .setpoints
+                    .air_density
+                    .as_ref()
+                    .first()
+                    .copied()
+                    .unwrap_or(1.2);
                 let cp = self
                     .0
                     .setpoints

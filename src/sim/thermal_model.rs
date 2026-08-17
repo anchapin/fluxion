@@ -1229,7 +1229,8 @@ impl ThermalModelTrait for HybridThermalModel {
         //      call. `HybridThermalModel::get_hourly_temperatures()` now
         //      reads from `hourly_buf` directly (see the public accessor
         //      below).
-        self.hourly_buf.resize_with(self.inner.hvac.num_zones, Vec::new);
+        self.hourly_buf
+            .resize_with(self.inner.hvac.num_zones, Vec::new);
         for inner in self.hourly_buf.iter_mut() {
             inner.clear();
             if inner.capacity() < steps {

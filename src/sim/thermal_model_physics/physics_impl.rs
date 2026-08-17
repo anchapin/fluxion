@@ -186,7 +186,11 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         // that helper and was immediately discarded by this step). The scratch
         // is held as an *owned* local — does not borrow `&self`/`&mut self` —
         // so the subsequent `&mut self` method calls below coexist.
-        let mut scratch = self.0.hvac.scratch_pool.checkout_5r1c(self.0.hvac.num_zones);
+        let mut scratch = self
+            .0
+            .hvac
+            .scratch_pool
+            .checkout_5r1c(self.0.hvac.num_zones);
         scratch.fill_zero();
 
         let (ctf_flux_w, fd_flux_w, _ctf_surface_temps) = self.prepare_solvers_and_sol_air(
@@ -384,7 +388,11 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         // every checkout so the post-`prepare_solvers_and_sol_air` length is
         // preserved exactly.
         let exterior_emissivity_ref = self.0.conduction.exterior_emissivity.as_ref();
-        for (i, &opaque_solar) in opaque_solar_ref.iter().take(self.0.hvac.num_zones).enumerate() {
+        for (i, &opaque_solar) in opaque_solar_ref
+            .iter()
+            .take(self.0.hvac.num_zones)
+            .enumerate()
+        {
             // opaque_solar is the effective opaque irradiance on exterior surfaces (W/m²)
             // This is the combined wall + roof irradiance for the zone
             let eps_ext = exterior_emissivity_ref
@@ -781,9 +789,9 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
             let h_ci: f64 = 3.0;
             let h_is: f64 = 8.0; // h_ci + h_ri (ISO 13790 §12.2.2)
             let r_i: f64 = 1.0 / h_is; // 0.125 m²K/W
-// Snapshot all per-zone input fields into owned Vecs so the
-            // mutable write-back at the end of the loop does not conflict
-            // with the immutable reads here.
+                                       // Snapshot all per-zone input fields into owned Vecs so the
+                                       // mutable write-back at the end of the loop does not conflict
+                                       // with the immutable reads here.
             let surface_emissivity_vec: Vec<f64> =
                 self.0.conduction.surface_emissivity.as_ref().to_vec();
             let t_zone_vec: Vec<f64> = self.0.setpoints.temperatures.as_ref().to_vec();
@@ -3547,7 +3555,7 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         // Issue #1279: Restore h_tr_is to original value after computing zone air temperature.
         // Issue #2871: must divide by the SAME (capped) multiplier that was applied above.
         if night_vent_active_now {
-let multiplier = capped_h_tr_is_ach_multiplier(ach_night_vent);
+            let multiplier = capped_h_tr_is_ach_multiplier(ach_night_vent);
             for solver in &mut self.0.conduction.backend.multi_node_solvers {
                 solver.h_tr_is /= multiplier;
             }

@@ -2919,7 +2919,7 @@ impl ThermalModel<VectorField> {
             surfaces.push(zone_surfaces);
         }
 
-let mut model = ThermalModel(ThermalModelData {
+        let mut model = ThermalModel(ThermalModelData {
             // Issue #2878: ThermalModelData is a thin wrapper around 6 sub-structs.
             // The constructor composes the same field defaults into the appropriate
             // per-domain sub-struct instead of a flat ~140-field layout.

@@ -336,7 +336,10 @@ pub struct ZoneControl {
 impl std::fmt::Debug for ZoneControl {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("ZoneControl")
-            .field("thermal_model.hvac.num_zones", &self.thermal_model.hvac.num_zones)
+            .field(
+                "thermal_model.hvac.num_zones",
+                &self.thermal_model.hvac.num_zones,
+            )
             .field("setpoints", &self.setpoints)
             .field("zone_status", &self.zone_status)
             .field("layered_controllers", &self.layered_controllers)
