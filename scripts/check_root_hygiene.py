@@ -15,6 +15,9 @@ repeatedly slipped past the ``.md``-only gate:
     - binary ML model extensions: ``.onnx .bin .pt .pkl .h5`` (see #2949)
     - no-extension blobs / committed binaries (e.g. ELF files)
     - known scratch directory names (``fixes/ results/ reports/ ...``)
+    - tracked FILES inside gitignored runtime dirs (``#3076``: ``.agents/``,
+      ``.automaker/``, ``.claude/``, ``.gitnexus/``, ``.jules/``,
+      ``.opencode/``, ``.serena/``, ``.sisyphus/``, ``.superset/``)
 
 Legit root files fall into clear buckets and are allow-listed so the gate
 does not false-positive on real config:
@@ -184,6 +187,34 @@ ROOT_DOTFILE_ALLOWLIST: frozenset[str] = frozenset(
     }
 )
 
+# Issue #3076 — runtime dirs that are gitignored but whose legacy tracked
+# entries are NOT visible to the dotfile/dotdir cross-check above (the
+# cross-check only looks at the directory itself, not at the files inside).
+# A `.gitignore` rule only suppresses FUTURE commits; it does not untrack
+# files that were committed before the rule was added. The untrack step in
+# #2984 missed `.agents/` (104 legacy files), letting the regression recur
+# silently until issue #3076 caught it.
+#
+# The probe below (``find_tracked_in_gitignored_dirs``) calls
+# ``git ls-files <dir>/`` for every dir in this tuple and reports each
+# tracked entry as a FAIL. The fix is `git rm --cached <path>` per file —
+# the on-disk copies survive because of the matching `.gitignore` rule.
+#
+# Keep this tuple in sync with the `.gitignore` runtime-dirs block (see
+# `.gitignore` §"Local agent / orchestrator runtime dirs") and with
+# AGENTS.md §Repository Hygiene.
+TRACKED_BUT_IGNORED_RUNTIME_DIRS: tuple[str, ...] = (
+    ".agents",
+    ".automaker",
+    ".claude",
+    ".gitnexus",
+    ".jules",
+    ".opencode",
+    ".serena",
+    ".sisyphus",
+    ".superset",
+)
+
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -237,6 +268,54 @@ def is_tracked(path: Path) -> bool:
     return result.returncode == 0
 
 
+def find_tracked_in_gitignored_dirs(
+    repo_root: Path, dirs: tuple[str, ...] = TRACKED_BUT_IGNORED_RUNTIME_DIRS
+) -> dict[str, list[str]]:
+    """Return {dir_name: [tracked_path, ...]} for each runtime dir that has
+    tracked entries in ``git ls-files <dir>/``.
+
+    Issue #3076. The dotfile/dotdir cross-check added in #2954 only inspects
+    the directory itself (via ``is_tracked(path)`` for a single Path), so a
+    runtime dir with 100+ tracked FILES still passes that check as long as
+    the dir entry has been removed from the index — leaving the contents
+    silently tracked. This probe catches that blind spot at the file
+    granularity: any tracked entry under one of the
+    :data:`TRACKED_BUT_IGNORED_RUNTIME_DIRS` dirs is a FAIL.
+
+    The function is a no-op when Git is unavailable or ``repo_root`` is not
+    in a Git working tree — both ``FileNotFoundError`` and a non-zero
+    ``git ls-files`` returncode are swallowed, and the result is empty.
+
+    The fix is ``git rm --cached <path>`` per file (one-at-a-time or via
+    ``git rm -r --cached <dir>/`` for the whole dir). The on-disk copies
+    survive because the matching ``.gitignore`` rule keeps them out of
+    future commits.
+    """
+    import subprocess
+
+    out: dict[str, list[str]] = {}
+    try:
+        for dir_name in dirs:
+            proc = subprocess.run(
+                ["git", "ls-files", "--", f"{dir_name}/"],
+                cwd=repo_root,
+                capture_output=True,
+                text=True,
+                timeout=10,
+            )
+            # Non-zero rc usually means "not in a git repo" — treat as
+            # no tracked entries rather than a script error. The script
+            # exits 0 in that case so CI is green outside a Git checkout.
+            if proc.returncode != 0:
+                continue
+            tracked = [line for line in proc.stdout.splitlines() if line.strip()]
+            if tracked:
+                out[dir_name] = tracked
+    except (FileNotFoundError, subprocess.TimeoutExpired):
+        return {}
+    return out
+
+
 def is_dotfile_root_compliant(path: Path) -> bool:
     """Return True if `path` (a dotfile/dotdir at repo root) is allowed.
 
@@ -287,6 +366,11 @@ class RootScan:
         # Issue #2954: dotfile/dotdir at repo root that is neither
         # allow-listed, gitignored, nor tracked.
         self.dotfile_unmanaged: list[Path] = []
+        # Issue #3076: {dir_name: [tracked_path, ...]} for runtime dirs
+        # (declared in ``TRACKED_BUT_IGNORED_RUNTIME_DIRS``) whose
+        # gitignored files are still in the git index. Each tracked entry
+        # must be ``git rm --cached``d to clear.
+        self.tracked_in_gitignored_dirs: dict[str, list[str]] = {}
 
     @property
     def violations(self) -> list[Path]:
@@ -298,6 +382,15 @@ class RootScan:
             + self.blocked_dirs
             + self.dotfile_unmanaged
         )
+
+    @property
+    def tracked_violation_count(self) -> int:
+        """Total number of tracked files inside gitignored runtime dirs.
+
+        Mirrors ``len(violations)`` for the ``tracked_in_gitignored_dirs``
+        bucket (issue #3076): each tracked file is one violation.
+        """
+        return sum(len(v) for v in self.tracked_in_gitignored_dirs.values())
 
 
 def scan_root(repo_root: Path) -> RootScan:
@@ -359,6 +452,13 @@ def scan_root(repo_root: Path) -> RootScan:
         # .pyi/.skill, plus any unlisted extension): permitted.
         continue
 
+    # Issue #3076: probe tracked files inside gitignored runtime dirs. The
+    # working-tree scan above checks the directory ENTRY at the dotfile
+    # cross-check (issue #2954), but not the files inside. Legacy tracked
+    # files under ``.agents/`` (104 in #3076) were invisible to that scan,
+    # so this separate probe is required.
+    scan.tracked_in_gitignored_dirs = find_tracked_in_gitignored_dirs(repo_root)
+
     return scan
 
 
@@ -379,7 +479,14 @@ def _print_remediation() -> None:
     print("     (preferred) so the gate accepts it on every checkout, or add")
     print("     it to ROOT_DOTFILE_ALLOWLIST in scripts/check_root_hygiene.py")
     print("     if it is legit root config that must stay tracked.")
-    print("  6. Update any links in other docs to the new path.")
+    print("  6. If it is a tracked file inside a gitignored runtime dir")
+    print("     (issue #3076: `.agents/`, `.automaker/`, `.claude/`,")
+    print("     `.gitnexus/`, `.jules/`, `.opencode/`, `.serena/`,")
+    print("     `.sisyphus/`, `.superset/`): run `git rm --cached <path>`")
+    print("     (or `git rm -r --cached <dir>/`) to remove the index entry.")
+    print("     The on-disk copy survives because the matching `.gitignore`")
+    print("     rule keeps it out of future commits.")
+    print("  7. Update any links in other docs to the new path.")
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -415,16 +522,23 @@ def main(argv: list[str] | None = None) -> int:
         print(
             f"    FAIL (unmanaged dotfile/dotdir, not allow-listed/gitignored/tracked): {p.name} ({kind})"
         )
+    # Issue #3076: report tracked files inside gitignored runtime dirs.
+    for dir_name, tracked in sorted(scan.tracked_in_gitignored_dirs.items()):
+        for entry in tracked:
+            print(
+                f"    FAIL (tracked file in gitignored runtime dir {dir_name}/): {entry}"
+            )
 
     total_files = len(
         [p for p in REPO_ROOT.iterdir() if p.is_file() and not _is_dotfile(p.name)]
     )
     total_dotfiles = len([p for p in REPO_ROOT.iterdir() if _is_dotfile(p.name)])
+    total_violations = len(scan.violations) + scan.tracked_violation_count
     print()
     print(
         f"Scanned {total_files} non-dotfile(s) + {total_dotfiles} dotfile(s) at repo root: "
         f"{len(scan.md_allow)} allow-listed, {len(scan.md_warn)} warned, "
-        f"{len(scan.violations)} violation(s)."
+        f"{total_violations} violation(s)."
     )
 
     if scan.md_warn:
@@ -437,16 +551,21 @@ def main(argv: list[str] | None = None) -> int:
         for p in scan.md_warn:
             print(f"  - {p.name}")
 
-    if not scan.violations:
+    if total_violations == 0:
         print()
         print("PASS: No transient artifacts at repo root.")
         return 0
 
     print()
-    print(f"FAIL: {len(scan.violations)} transient artifact(s) at repo root:")
+    print(f"FAIL: {total_violations} transient artifact(s) at repo root:")
     for p in scan.violations:
         kind = "dir" if p.is_dir() else "file"
         print(f"  - {p.name} ({kind})")
+    # Issue #3076: print tracked-but-ignored entries as part of the FAIL
+    # summary so the operator can copy/paste the ``git rm --cached`` path.
+    for dir_name, tracked in sorted(scan.tracked_in_gitignored_dirs.items()):
+        for entry in tracked:
+            print(f"  - {entry} (tracked in gitignored runtime dir {dir_name}/)")
     _print_remediation()
     return 1
 
@@ -556,12 +675,20 @@ def _self_test() -> int:
         # Monkey-patch REPO_ROOT + is_gitignored + is_tracked so the tmpdir
         # scan is hermetic. The dotfile cross-check (#2954) consults all
         # three signals, so we have to neutralize every one of them.
+        # Issue #3076 also stubs ``find_tracked_in_gitignored_dirs`` so the
+        # self-test exercises the new ``tracked_in_gitignored_dirs`` bucket
+        # without depending on a real ``git init`` inside the tmpdir.
         import check_root_hygiene as mod
 
         orig_root = mod.REPO_ROOT
         mod.REPO_ROOT = root
         mod.is_gitignored = lambda p: False  # type: ignore[assignment]
         mod.is_tracked = lambda p: False  # type: ignore[assignment]
+        # #3076: plant a fake tracked-but-ignored entry under `.agents/`
+        # so the new bucket can be asserted on deterministically.
+        mod.find_tracked_in_gitignored_dirs = (
+            lambda r: {".agents": [".agents/stale-result.md"]}
+        )  # type: ignore[assignment]
         try:
             scan = mod.scan_root(root)
         finally:
@@ -581,6 +708,24 @@ def _self_test() -> int:
                     f"expected '{name}' in scan.{bucket}, got {sorted(bucket_names)}"
                 )
 
+        # Issue #3076: assert the new tracked-but-ignored bucket is
+        # populated and counted toward violations.
+        if ".agents" not in scan.tracked_in_gitignored_dirs:
+            failures.append(
+                "expected '.agents' in scan.tracked_in_gitignored_dirs, "
+                f"got {sorted(scan.tracked_in_gitignored_dirs)}"
+            )
+        elif ".agents/stale-result.md" not in scan.tracked_in_gitignored_dirs[
+            ".agents"
+        ]:
+            failures.append(
+                "expected '.agents/stale-result.md' in tracked_in_gitignored_dirs"
+            )
+        if scan.tracked_violation_count != 1:
+            failures.append(
+                f"expected tracked_violation_count=1, got {scan.tracked_violation_count}"
+            )
+
         # Assert CLAUDE.md went to warn (non-blocking), not violations.
         if "CLAUDE.md" not in {p.name for p in scan.md_warn}:
             failures.append("CLAUDE.md should be in md_warn (non-blocking)")
@@ -599,7 +744,8 @@ def _self_test() -> int:
 
     print(
         f"PASS: {len(legit)} legit items unflagged, "
-        f"{len(expected_violations)} violations caught, CLAUDE.md warned."
+        f"{len(expected_violations)} violations caught, CLAUDE.md warned, "
+        f"tracked-but-ignored bucket populated (#3076)."
     )
     return 0
 

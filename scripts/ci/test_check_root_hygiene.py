@@ -496,3 +496,222 @@ def test_main_passes_after_agents_gitignore_added(checker, tmp_path, monkeypatch
     # Phase 2: add `.agents/` to `.gitignore` → gate PASSES.
     (tmp_path / ".gitignore").write_text("*.tmp\n.agents/\n", encoding="utf-8")
     assert checker.main() == 0
+
+
+# ---------------------------------------------------------------------------
+# Tracked files inside gitignored runtime dirs (issue #3076)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "dir_name",
+    [
+        ".agents",
+        ".automaker",
+        ".claude",
+        ".gitnexus",
+        ".jules",
+        ".opencode",
+        ".serena",
+        ".sisyphus",
+        ".superset",
+    ],
+)
+def test_find_tracked_in_gitignored_dirs_flags_tracked_files(
+    checker, tmp_path, dir_name
+):
+    """Issue #3076: ``find_tracked_in_gitignored_dirs`` must return the
+    tracked entries for any runtime dir whose files were committed before
+    its `.gitignore` rule was added.
+
+    The dotfile/dotdir cross-check (#2954) only inspects the directory
+    itself, so a runtime dir with N tracked FILES still passes that
+    check as long as the dir entry was untracked — leaving the contents
+    silently tracked. This probe catches the blind spot at the file
+    granularity.
+    """
+    import subprocess
+
+    subprocess.run(["git", "init", "-q"], cwd=tmp_path, check=True)
+    subprocess.run(
+        ["git", "config", "user.email", "test@test"], cwd=tmp_path, check=True
+    )
+    subprocess.run(["git", "config", "user.name", "test"], cwd=tmp_path, check=True)
+
+    # Plant the runtime dir + tracked file BEFORE adding the gitignore rule
+    # (mirrors the historical sequence that produced the #3076 regression:
+    # file committed first, gitignore rule added later, untrack step
+    # forgotten).
+    target = tmp_path / dir_name
+    target.mkdir()
+    (target / "stale-result.md").write_text("x", encoding="utf-8")
+    # First commit WITHOUT the gitignore rule so the file is tracked.
+    subprocess.run(["git", "add", f"{dir_name}/stale-result.md"], cwd=tmp_path, check=True)
+    subprocess.run(["git", "commit", "-q", "-m", "init"], cwd=tmp_path, check=True)
+    # Now add the gitignore rule (the real-world sequence: rule added
+    # in #2981/#2984 but ``git rm --cached`` forgotten).
+    (tmp_path / ".gitignore").write_text(
+        f"*.tmp\n{dir_name}/\n", encoding="utf-8"
+    )
+    subprocess.run(["git", "add", ".gitignore"], cwd=tmp_path, check=True)
+    subprocess.run(["git", "commit", "-q", "-m", "ignore"], cwd=tmp_path, check=True)
+
+    tracked = checker.find_tracked_in_gitignored_dirs(tmp_path)
+    assert dir_name in tracked, (
+        f"expected tracked entries for {dir_name}/, got {sorted(tracked)}"
+    )
+    assert f"{dir_name}/stale-result.md" in tracked[dir_name]
+
+
+def test_find_tracked_in_gitignored_dirs_empty_when_clean(checker, tmp_path):
+    """Issue #3076: with no tracked entries, the probe returns ``{}`` and
+    the gate does NOT fail on this bucket. Pin against a freshly-initialised
+    empty repo so a regression that always-returns-non-empty would flip
+    the test red."""
+    import subprocess
+
+    subprocess.run(["git", "init", "-q"], cwd=tmp_path, check=True)
+    subprocess.run(
+        ["git", "config", "user.email", "test@test"], cwd=tmp_path, check=True
+    )
+    subprocess.run(["git", "config", "user.name", "test"], cwd=tmp_path, check=True)
+
+    (tmp_path / ".gitignore").write_text("*.tmp\n", encoding="utf-8")
+    subprocess.run(["git", "add", ".gitignore"], cwd=tmp_path, check=True)
+    subprocess.run(["git", "commit", "-q", "-m", "init"], cwd=tmp_path, check=True)
+
+    assert checker.find_tracked_in_gitignored_dirs(tmp_path) == {}
+
+
+def test_find_tracked_in_gitignored_dirs_outside_git_returns_empty(checker, tmp_path):
+    """Issue #3076: the probe is a no-op outside a Git working tree
+    (so the gate stays green in CI sandboxes that copy the repo without
+    ``.git/``)."""
+    # tmp_path has no .git/.gitignore at all — git ls-files will fail.
+    assert checker.find_tracked_in_gitignored_dirs(tmp_path) == {}
+
+
+def test_main_fails_on_tracked_but_ignored_file_then_passes_after_untrack(
+    checker, tmp_path, monkeypatch, capsys
+):
+    """Issue #3076 end-to-end regression test.
+
+    The exact failure mode that produced issue #3076: 104 files under
+    ``.agents/`` were committed before the ``.agents/`` gitignore rule
+    was added in #2981, then ``git rm --cached`` was forgotten in the
+    #2984 untrack step. The gate must FAIL on that state, then PASS once
+    every tracked entry is untracked.
+
+    Mirrors the existing ``test_main_fails_on_onnx_escapee_*`` /
+    ``test_main_fails_on_unmanaged_dotdir_*`` patterns: real ``git init``
+    so the probe (``find_tracked_in_gitignored_dirs`` → ``git ls-files``)
+    exercises the real code path.
+    """
+    import subprocess
+
+    subprocess.run(["git", "init", "-q"], cwd=tmp_path, check=True)
+    subprocess.run(
+        ["git", "config", "user.email", "test@test"], cwd=tmp_path, check=True
+    )
+    subprocess.run(["git", "config", "user.name", "test"], cwd=tmp_path, check=True)
+
+    # Plant the tracked file FIRST (without the gitignore rule), then
+    # add the gitignore rule on a second commit. This mirrors the
+    # historical sequence that produced the #3076 regression.
+    (tmp_path / ".agents").mkdir()
+    (tmp_path / ".agents" / "stale-result.md").write_text("x", encoding="utf-8")
+    subprocess.run(
+        ["git", "add", ".agents/stale-result.md"], cwd=tmp_path, check=True
+    )
+    subprocess.run(["git", "commit", "-q", "-m", "init"], cwd=tmp_path, check=True)
+    (tmp_path / ".gitignore").write_text("*.tmp\n.agents/\n", encoding="utf-8")
+    subprocess.run(["git", "add", ".gitignore"], cwd=tmp_path, check=True)
+    subprocess.run(["git", "commit", "-q", "-m", "ignore"], cwd=tmp_path, check=True)
+
+    monkeypatch.setattr(checker, "REPO_ROOT", tmp_path)
+
+    # Phase 1: gate FAILS — `.agents/stale-result.md` is tracked in a
+    # gitignored runtime dir.
+    rc = checker.main()
+    out = capsys.readouterr().out
+    assert rc == 1, f"expected FAIL (rc=1), got rc={rc}\noutput:\n{out}"
+    assert ".agents/stale-result.md" in out, (
+        f"expected '.agents/stale-result.md' in output, got:\n{out}"
+    )
+    assert "tracked file in gitignored runtime dir" in out, (
+        f"expected tracked-but-ignored message in output, got:\n{out}"
+    )
+
+    # Phase 2: ``git rm --cached`` the legacy tracked file → gate PASSES.
+    # On-disk copy survives because the `.agents/` gitignore rule is in
+    # place (added in #2981, still pinned by
+    # ``test_agents_dir_has_gitignore_entry``).
+    subprocess.run(
+        ["git", "rm", "--cached", "--quiet", ".agents/stale-result.md"],
+        cwd=tmp_path,
+        check=True,
+    )
+    assert checker.main() == 0, (
+        f"expected PASS after untrack, got FAIL.\noutput:\n{capsys.readouterr().out}"
+    )
+
+
+def test_scan_root_records_tracked_but_ignored_bucket(checker, tmp_path, monkeypatch):
+    """Issue #3076: ``scan_root`` populates ``tracked_in_gitignored_dirs``
+    so the structured-result API (used by the pytest harness) reflects the
+    new bucket independently of ``violations``.
+
+    The bucket uses ``{dir_name: [path, ...]}`` (not ``list[Path]``)
+    because a single tracked dir typically contains many files, and the
+    structured key preserves the per-dir grouping for the FAIL summary.
+    """
+    import subprocess
+
+    subprocess.run(["git", "init", "-q"], cwd=tmp_path, check=True)
+    subprocess.run(
+        ["git", "config", "user.email", "test@test"], cwd=tmp_path, check=True
+    )
+    subprocess.run(["git", "config", "user.name", "test"], cwd=tmp_path, check=True)
+
+    (tmp_path / ".agents").mkdir()
+    (tmp_path / ".agents" / "a.md").write_text("x", encoding="utf-8")
+    (tmp_path / ".agents" / "b.md").write_text("x", encoding="utf-8")
+    # Commit the files first, then add the gitignore rule.
+    subprocess.run(
+        ["git", "add", ".agents/a.md", ".agents/b.md"],
+        cwd=tmp_path,
+        check=True,
+    )
+    subprocess.run(["git", "commit", "-q", "-m", "init"], cwd=tmp_path, check=True)
+    (tmp_path / ".gitignore").write_text("*.tmp\n.agents/\n", encoding="utf-8")
+    subprocess.run(["git", "add", ".gitignore"], cwd=tmp_path, check=True)
+    subprocess.run(["git", "commit", "-q", "-m", "ignore"], cwd=tmp_path, check=True)
+
+    scan = checker.scan_root(tmp_path)
+    assert ".agents" in scan.tracked_in_gitignored_dirs
+    assert sorted(scan.tracked_in_gitignored_dirs[".agents"]) == [
+        ".agents/a.md",
+        ".agents/b.md",
+    ]
+    assert scan.tracked_violation_count == 2
+
+
+def test_tracked_but_ignored_runtime_dirs_tuple_matches_gitignore(checker, repo_root):
+    """Issue #3076: ``TRACKED_BUT_IGNORED_RUNTIME_DIRS`` is the source of
+    truth the probe iterates over. Every entry MUST also appear in
+    ``.gitignore`` — otherwise the probe would flag legitimate root
+    config (e.g. ``.cargo/``) that is intentionally tracked.
+
+    Mirrors the existing ``test_agents_md_runtime_dirs_have_gitignore_entries``
+    belt-and-braces check (#2984), extended to cover all nine dirs
+    declared in #3076.
+    """
+    gitignore_text = (repo_root / ".gitignore").read_text(encoding="utf-8")
+    for dir_name in checker.TRACKED_BUT_IGNORED_RUNTIME_DIRS:
+        assert f"{dir_name}/" in gitignore_text, (
+            f".gitignore is missing a line for {dir_name}/. The probe "
+            f"in `find_tracked_in_gitignored_dirs` only reports dirs "
+            f"declared in TRACKED_BUT_IGNORED_RUNTIME_DIRS; a missing "
+            f"gitignore line would let the dir sneak into the index on "
+            f"fresh checkouts without being detected (issue #3076)."
+        )
