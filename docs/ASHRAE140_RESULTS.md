@@ -60,6 +60,38 @@ structural root cause and cannot be closed by parameter tuning:
   ADR-0007 stub (`docs/adr/0007-gauge-solver-structural-work.md`,
   Status: Proposed) that links the cohort to the GaugeSolver unblocker.
 
+### Cases 610 / 630 / 650 peak cooling OVER (LIMIT-16 / Issue #3059)
+
+The post-PR #3041 partial-fix engine (cooling-mode governor symmetric +
+`MAX_CONVECTIVE_TO_AIR_MULTIPLIER = 2.0×` cap) closed Cases 620 and 640 into
+their ASHRAE 140-2023 reference bands, but left Cases 610 / 630 / 650 with
+the same structural 5/5 OVER signature (Case 610 4.30 kW vs ref 2.20–2.90 kW,
++48 %; Case 630 3.34 kW vs ref 1.80–2.40 kW, +39 %; Case 650 4.81 kW vs ref
+1.90–2.50 kW, +92 %). The residual OVER is the discrete-node solar-injection
+pathology (single lumped thermal-mass node at `dt/τ ≈ 3.6`) on the cooling-
+mode governor path that PR #3041 partially repaired — `step_physics_5r1c`
+deliberately does NOT apply the ACH multiplier to `h_tr_is`, so the
+forced-convection term from the Case 650 night-vent ACH (ACH = 13.14) dumps
+pulsed charging into the air node on the 1-hour timestep, upstream of any
+multiplier cap. Per the Issue #3059 acceptance criterion ("do NOT raise
+baseline — RULES.md 'no parameter tuning' rule") and **AGENTS.md**
+("fix the underlying math"), this gap is closed only by the structural
+GaugeSolver rework (#1465 / #1462).
+
+- **Documented in:** `docs/KNOWN_ISSUES.md` **§LIMIT-16** (Issue #3059).
+- **Companion limitations:** §LIMIT-10 (Issue #3065, Case 960 sunspace
+  mean), §LIMIT-11 (Issue #3064, Case 195 high-mass zero-energy),
+  §LIMIT-12 (Issue #3062, Case 940 setback CTF), §LIMIT-13 (Issue #3063,
+  `h_tr_em` time-invariance), §LIMIT-14 (Issue #3061, Case 960 sunspace
+  annual cooling), §LIMIT-15 (Issue #3060, Case 195 weather-file).
+- **Architectural unblocker:** GaugeSolver production-path switchover
+  (issues #1465 / #1462, ADR-0007 stub).
+- **No tuning escape hatch:** raising
+  `MAX_CONVECTIVE_TO_AIR_MULTIPLIER` above 2.0× re-introduces the pre-#3041
+  asymmetry that drove Case 620 OVER; widening the band is band-space
+  parameter tuning (forbidden by ADR-0001); raising the strict-energy-gate
+  baseline is explicitly forbidden by the Issue #3059 acceptance criterion.
+
 ### Case 960 cooling-band gap (Issue #3061)
 
 The post-PR #3052 raw multi-zone diagnostic reports **0.63 MWh annual
