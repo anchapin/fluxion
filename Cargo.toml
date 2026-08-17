@@ -748,6 +748,11 @@ name = "multi_climate_solar_invariant"
 path = "tests/reference_data/multi_climate_solar_invariant.rs"
 harness = true
 
+[[test]]
+name = "case_940_setback_diagnostic"
+path = "tests/diagnostics/case_940_setback_diagnostic.rs"
+harness = true
+
 # Issue #1603 — GPU smoke test for InferenceBackend::CUDA.
 # Compiles under --features cuda and skips gracefully on CPU-only runners.
 # GPU runner executes the test with CUDA EP and verifies output matches CPU within 0.1%.
