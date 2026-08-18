@@ -126,6 +126,73 @@ git push origin --delete <name>        # for remote branch cleanup
 Each step is `|| true`-guarded so that a failure on one step (e.g. the
 remote branch was already deleted) does not abort the rest.
 
+## Cleanup history
+
+Audit log of real `cleanup_stale_worktrees.sh --apply` runs against the
+`anchapin/fluxion` repo. Each entry is dated and records the pre/post
+branch count, the scope of the deletion wave, and any operational
+observations that future runs should know about.
+
+### 2026-08-18 — wave-orchestration hygiene cleanup (issue #3106)
+
+Triggered by issue #3106 (chore: execute
+`scripts/cleanup_stale_worktrees.sh --apply`). The #3069 PR had
+delivered the script but explicitly skipped the actual cleanup step,
+leaving 468+ stale `fix/issue-*` branches accumulated across
+wave-orchestration sessions 2026-08-16 / 17.
+
+| Metric | Value |
+|---|---|
+| Issue | [#3106](https://github.com/anchapin/fluxion/issues/3106) |
+| Operator | chore-3106 agent (orchestration-driven) |
+| Base branch | `develop` (`a3e21c4`) |
+| Pre-cleanup `fix/issue-*` count | **471** |
+| Dry-run prediction | 64 to delete · 411 to skip · 408 blocking skips |
+| Post-cleanup `fix/issue-*` count | **407** |
+| Branches deleted (script) | 63 |
+| Branches deleted (manual, post-script) | 1 (`fix/issue-672-epic-v13-coord` — see note below) |
+| Total stale branches removed | **64** (matches dry-run prediction) |
+| Worktrees before / after | 5 / 5 (no worktree deletions; the 5 entries were the main `~/Projects/fluxion`, the `~/.superset/` external worktree, and three wave-1 worktrees for issues #3104 / #3105 / #3106 — all preserved by the script's safety guards) |
+
+**Operational notes (worth recording for future runs):**
+
+1. **First `--apply` run timed out at the shell 120 s default.** The
+   script invokes `git push origin --delete <branch>` once per delete,
+   which is the slow step on this repo (HTTPS + GitHub auth + ~64
+   sequential round trips). Workaround: launch the script in the
+   background and wait for completion, or pipe through `tee` to a log
+   file. The script's `|| true` guards make it safe to interrupt and
+   re-run — it is idempotent and will pick up where it left off.
+
+2. **One dry-run "DEL" target was reclassified as "SKIP" between
+   the dry-run and `--apply`.** The branch `fix/issue-672-epic-v13-coord`
+   was listed as DEL in the dry-run but came back as
+   `merged into develop but has unpushed commits` in the second
+   `--apply` run. Root cause: the script's `has_unpushed_commits`
+   helper treats "no `origin/<branch>` tracking ref" as a conservative
+   *skip*, and the remote tracking for that branch had been removed
+   out-of-band between the dry-run and the apply. Confirmed
+   `git merge-base --is-ancestor fix/issue-672-epic-v13-coord origin/develop`
+   returned 0 (true), so the branch was genuinely merged — deleted it
+   manually with `git branch -D`. Future operators: if a DEL target
+   gets reclassified as SKIP, check `origin/<branch>` first; if the
+   branch is still merged into `develop` (use `git merge-base
+   --is-ancestor`), it is safe to delete manually.
+
+3. **Wave-1 worktrees were correctly preserved.** Branches
+   `fix/issue-3104-*`, `fix/issue-3105-*`, and `fix/issue-3106-*`
+   (the current wave's own work) had no `origin/<branch>` tracking
+   yet (not yet pushed), so the script conservatively skipped all of
+   them as "unpushed commits". This is exactly the intended
+   behaviour — never delete current work. Once those PRs land and
+   the wave-1 branches are merged into `develop`, the next cleanup
+   pass will reclaim them.
+
+4. **Idempotency confirmed.** Re-running the script after the
+   apply-during-the-apply produced the expected post-cleanup state:
+   `would delete: 0`, `would skip: 412` (all blocked on unmerged or
+   unpushed). No false re-deletions.
+
 ## Related files
 
 - `scripts/cleanup_stale_worktrees.sh` — the script itself.
