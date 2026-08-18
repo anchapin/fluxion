@@ -72,8 +72,8 @@ Required branch-protection checks (`release_gates.yaml` → `ci.required_checks`
 | Fluxion Performance Gate (Issue #1618) | #1618 |
 | Code Coverage Gate (Issue #1932) | #1932 |
 | Docs Hygiene Gate (Issue #2466) | #2466 |
-| Physics-Sim-Cycle-Check | — |
-| Workspace Check | — |
+| Physics-Sim-Cycle-Check (GH) | — |
+| Workspace Check (GH) | — |
 | Absolute Perf Gate (Issue #2693) | #2693 |
 | Multi-Zone Perf Gate (Issue #2772) | #2772 |
 | Multi-Zone Cold Start Gate (Issue #2919) | #2919 |

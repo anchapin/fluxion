@@ -31,7 +31,15 @@ permissions:
 jobs:
   check-drift:
     runs-on: ubuntu-latest
-    name: Check ARCHITECTURE.md drift
+    # Job name must match `release_gates.yaml::ci.required_checks` and
+    # `ci.workflow_index` exactly (GitHub branch protection matches the
+    # emitted `jobs.<id>.name` verbatim; the sync script
+    # `scripts/check_required_checks_sync.py` enforces this invariant).
+    # Issue #3116 closes the canonical-vs-suffix drift where this
+    # previously read "Check ARCHITECTURE.md drift" and was matched only
+    # via the sync script's `len(jobs) == 1 and workflow_name == job_name`
+    # fallback (which never satisfied GitHub's exact-string contexts).
+    name: Architecture Drift Detection
     permissions:
       contents: read
       issues: write

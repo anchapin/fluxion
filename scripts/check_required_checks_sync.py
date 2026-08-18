@@ -1,30 +1,48 @@
 #!/usr/bin/env python3
 """
-Required-check / workflow-index drift detection for Fluxion (Issue #2866).
+Required-check / workflow-index drift detection for Fluxion (Issue #2866,
+extended by #3116).
 
 GitHub branch protection reads ``jobs.<id>.name`` from
-``.github/workflows/*.yml`` directly when matching required status checks.
-``release_gates.yaml`` also declares a parallel ``ci.workflow_index`` map
-that names each required check's owning workflow + job, and a
-``ci.required_checks`` list whose entries must be the *exact* check name
-GitHub reports.
+``.github/workflows/*.yml`` directly when matching required status checks,
+and the contexts array matches those names **verbatim** — there is no
+canonical-vs-suffix tolerance, no regex/wildcard support, and no fallback
+to ``workflow.name`` for single-job workflows. ``release_gates.yaml``
+also declares a parallel ``ci.workflow_index`` map that names each
+required check's owning workflow + job, and a ``ci.required_checks``
+list whose entries must be the *exact* check name GitHub reports.
 
 Issue #2866 documents that this mapping has been silently drifting: every
 required check was added without a corresponding ``workflow_index`` entry,
 and a few entries (``Physics-Sim-Cycle-Check``, ``Workspace Check``,
 ``MSRV Check (Issue #2934)``) had no exact job-name match in the workflow
-file the index pointed at. This script is the regression guard — it parses
-both sides and exits non-zero when the two views diverge.
+file the index pointed at. This script was the regression guard, but its
+original ``job_in_workflow`` implementation included a ``CANONICAL_NAME_SUFFIXES``
+tolerance (lines that matched ``canonical`` + `` (GH)`` /
+`` (Hetzner Overflow)`` as if branch protection did the same).
 
-The script enforces three invariants:
+Issue #3116 documents that GitHub branch protection does no such
+tolerance — the canonical-vs-suffix drift meant three required_checks
+(``Workspace Check``, ``Physics-Sim-Cycle-Check``, ``Architecture Drift
+Detection``) were matched only by this script's regex tolerance but never
+by GitHub's actual contexts array, leaving develop with zero required
+checks while every entry passed locally. The fix tightens the validation
+below: **every required_check and every workflow_index entry must match an
+actual ``jobs.<id>.name`` in the referenced workflow *exactly***. If a
+workflow emits suffixed variants (e.g. ``Workspace Check (GH)`` and
+``Workspace Check (Hetzner Overflow)``), the YAML must name the suffixed
+job explicitly — never the bare canonical.
+
+The script enforces four invariants:
 
 1. Every ``workflow_index`` entry points at an existing
    ``.github/workflows/<name>.yml`` file.
 2. Every ``workflow_index.job`` matches an actual ``jobs.<id>.name`` in
-   that workflow *or* the workflow's own ``name:`` field (single-job
-   workflows in particular use the workflow name as the GitHub-reported
-   check name). This is the strict "job renames silently desync" check
-   from the issue body.
+   that workflow *exactly*. **No canonical+suffix tolerance** — the
+   tolerance that used to live here was the root cause of #3116 and has
+   been removed. Workflows that emit multiple ``(GH)`` / ``(Hetzner
+   Overflow)`` variants per listener must name the variant explicitly
+   in ``workflow_index`` (or list it in ``required_checks``).
 3. Every workflow referenced by ``workflow_index`` declares a
    ``pull_request`` or ``workflow_run`` trigger — scheduled-only workflows
    never produce a check run that can block a PR, so they cannot be a
@@ -42,20 +60,38 @@ assertion is PR-blocking but the cross-platform interface-stability check
 silence the gate was built to detect. Such entries are reported as
 "informational" findings instead.
 
+Live branch-protection verification (cron-mode)
+-----------------------------------------------
+
+Set ``FLUXION_CHECK_LIVE_PROTECTION=1`` (and have ``gh auth`` working)
+to additionally ``gh api``-query ``develop``'s branch protection and
+verify the live ``required_status_checks.contexts`` array matches the
+``ci.required_checks`` list exactly (and that
+``required_pull_request_reviews.required_approving_review_count`` ≥ 1
+and ``enforce_admins.enabled`` is true). Designed to run as a scheduled
+cron in ``.github/workflows/`` so #3116's "configuration has 0 required
+checks" gap cannot recur silently. Always exits 0 in the default
+(static-only) mode — the live check is opt-in to keep this script
+network-free for the PR-blocking CI invocation.
+
 Usage::
 
-    python3 scripts/check_required_checks_sync.py
+    python3 scripts/check_required_checks_sync.py             # static-only
+    FLUXION_CHECK_LIVE_PROTECTION=1 python3 scripts/check_required_checks_sync.py
+                                                            # also live API
 
 Exit codes:
 
-    0 — no drift detected (every check above holds).
+    0 — no drift detected (every check above holds; live protection
+        matches when ``FLUXION_CHECK_LIVE_PROTECTION=1``).
     1 — drift detected (one or more required_checks / workflow_index
-        entries are stale or missing).
+        entries are stale or missing; or live protection diverges).
     2 — script error (e.g. ``release_gates.yaml`` missing or unparseable).
 """
 
 from __future__ import annotations
 
+import os
 import re
 import sys
 from pathlib import Path
@@ -86,14 +122,18 @@ BLOCKING_TRIGGERS = frozenset({"pull_request", "workflow_run"})
 # "canonical" listener name across multiple runner variants (GH runner +
 # Hetzner overflow). The listener jobs in `.github/workflows/rust-tests.yml`
 # use ``name: "<canonical> (GH)"`` and ``name: "<canonical> (Hetzner
-# Overflow)"``; ``release_gates.yaml`` documents the canonical name (no
-# suffix) as the branch-protection entry and ``workflow_index.job``. The
-# pattern is repeated in the YAML comment block above each
-# ``workflow_index`` entry, e.g.
-# ``job: "Physics-Sim-Cycle-Check"`` + jobs named
-# ``Physics-Sim-Cycle-Check (GH)`` and
-# ``Physics-Sim-Cycle-Check (Hetzner Overflow)``. Branch protection matches
-# the canonical name without the suffix.
+# Overflow)"``; ``release_gates.yaml`` documents the suffixed names
+# (``"Workspace Check (GH)"``, ``"Physics-Sim-Cycle-Check (GH)"``) as the
+# branch-protection entries and the corresponding ``workflow_index.job``
+# values. The pre-#3116 contract held the bare canonical name in YAML and
+# relied on a ``CANONICAL_NAME_SUFFIXES`` regex tolerance in this script
+# to "match" — but GitHub branch protection's contexts array does not
+# strip suffixes, so the canonical entries never satisfied the gate while
+# still passing this script. The contract was tightened in #3116: YAML
+# must name the exact emitted ``jobs.<id>.name``. This constant is
+# retained as a list of suffixes that, *if seen in the workflow*, indicate
+# the YAML must include the suffixed name; the matching helper
+# ``job_in_workflow`` no longer applies the tolerance itself.
 CANONICAL_NAME_SUFFIXES = (
     " (GH)",
     " (Hetzner Overflow)",
@@ -259,35 +299,46 @@ def load_all_workflows() -> dict[str, dict]:
 
 def job_in_workflow(workflow: dict, job_name: str) -> bool:
     """Return True if ``job_name`` matches a job in ``workflow`` (after
-    YAML quote-stripping normalisation).
+    YAML quote-stripping normalisation) **exactly**.
 
-    A workflow's effective check name set is the union of:
+    GitHub branch protection's ``required_status_checks.contexts`` array
+    matches the emitted ``jobs.<id>.name`` *verbatim* — there is no
+    canonical-vs-suffix tolerance, no regex / wildcard support, and no
+    fallback to the workflow's top-level ``name:`` field for single-job
+    workflows. Issue #3116 closed the gap where this helper previously
+    applied a ``CANONICAL_NAME_SUFFIXES`` regex tolerance and matched the
+    bare canonical name (e.g. ``Workspace Check``) against a workflow job
+    named ``Workspace Check (GH)`` — that tolerance made the local sync
+    check pass while GitHub's actual gate stayed perpetually unsatisfied.
 
-    * every ``jobs.<id>.name`` value, and
-    * the workflow's own ``name:`` field, when there is exactly one job
-      defined (single-job workflows surface the workflow name as the
-      GitHub check name in some configurations — see the
-      ``architecture_drift.yml`` commentary).
-
-    The match is strict unless the ``job_name`` is a "canonical" name —
-    i.e. the workflow contains a job whose ``name:`` is
-    ``job_name + " (GH)"`` or ``job_name + " (Hetzner Overflow)"`` (the
-    documented suffix patterns from ``release_gates.yaml``'s
-    ``workflow_index`` comment block). A typo in either side still fails
-    loudly because no suffix toler is added unless an actual suffixed job
-    exists.
+    Match rule: the YAML entry is considered to match iff the workflow
+    declares a job whose ``name:`` equals ``job_name`` byte-for-byte.
+    When the workflow has a single job and that job's ``name:`` is the
+    same as the workflow's top-level ``name:``, this still holds because
+    the YAML entry names the job (which happens to equal the workflow
+    name). Workflows that emit multiple ``(GH)`` / ``(Hetzner Overflow)``
+    variants per listener must list each variant explicitly in YAML.
     """
     for actual_name in workflow["jobs"].values():
         if actual_name == job_name:
             return True
+    return False
+
+
+def workflow_has_suffixed_variant(workflow: dict, job_name: str) -> bool:
+    """Return True if ``workflow`` contains a job whose ``name:`` equals
+    ``job_name + suffix`` for any entry in ``CANONICAL_NAME_SUFFIXES``.
+
+    Used by ``collect_drift`` to surface the canonical-vs-suffix drift
+    explicitly: when a YAML entry uses a bare canonical name but the
+    workflow emits a suffixed variant, the entry passes ``job_in_workflow``
+    only via the legacy tolerance and will never satisfy branch
+    protection. Issue #3116's regression guard.
+    """
+    for actual_name in workflow["jobs"].values():
         for suffix in CANONICAL_NAME_SUFFIXES:
             if actual_name == job_name + suffix:
                 return True
-    if (
-        len(workflow["jobs"]) == 1
-        and workflow.get("workflow_name") == job_name
-    ):
-        return True
     return False
 
 
@@ -373,6 +424,27 @@ def collect_drift(
             failures.append(
                 f"required_check {rc!r} has no workflow_index entry{hint}"
             )
+        else:
+            # Canonical-vs-suffix drift guard (Issue #3116). When a
+            # required_check has a workflow_index entry and that workflow
+            # contains a job named "<rc> (GH)" or "<rc> (Hetzner
+            # Overflow)" but NO job with the bare <rc> name, the YAML
+            # is using the legacy canonical form and would never satisfy
+            # GitHub branch protection's exact-string contexts.
+            wf_path = workflow_index_jobs[rc]["workflow"]
+            wf = workflows.get(wf_path)
+            if wf is not None and workflow_has_suffixed_variant(wf, rc):
+                suffixed = sorted(
+                    n for n in wf["jobs"].values()
+                    if any(n == rc + s for s in CANONICAL_NAME_SUFFIXES)
+                )
+                failures.append(
+                    f"required_check {rc!r} is in canonical form but "
+                    f"{wf_path} only emits suffixed variants {suffixed!r}. "
+                    f"GitHub branch protection matches the emitted job "
+                    f"name verbatim (Issue #3116) — update this "
+                    f"required_check to the suffixed name."
+                )
 
     # Informational: workflow_index entries not referenced by any
     # required_check (the WASM Build entry is the canonical example —
@@ -386,6 +458,115 @@ def collect_drift(
             )
 
     return failures, informational
+
+
+# ---------------------------------------------------------------------------
+# Live branch-protection verification (cron-mode, opt-in)
+# ---------------------------------------------------------------------------
+
+
+def check_live_branch_protection(
+    required_checks: list[str],
+    repo: str = "anchapin/fluxion",
+    branch: str = "develop",
+) -> list[str]:
+    """Verify the live GitHub branch protection for ``repo:branch`` matches
+    ``required_checks`` (Issue #3116 closure).
+
+    Returns a list of human-readable failure messages; empty list means the
+    live protection matches. Reads the configured branch protection via
+    ``gh api`` and checks:
+
+    * ``required_status_checks.contexts`` matches ``required_checks`` by
+      symmetric set equality (the same set, in any order).
+    * ``required_status_checks.strict`` is True.
+    * ``required_pull_request_reviews.required_approving_review_count``
+      is at least 1.
+    * ``enforce_admins.enabled`` is True.
+
+    Requires ``gh auth`` to be configured for the target repo. The cron-
+    mode invocation (see module docstring) sets
+    ``FLUXION_CHECK_LIVE_PROTECTION=1`` to enable this check; the default
+    static-only mode never invokes ``gh api`` and is network-free for the
+    PR-blocking CI invocation.
+
+    The check is intentionally hard-coded to ``develop`` and the canonical
+    upstream ``anchapin/fluxion`` so a misconfigured cron invocation
+    cannot accidentally probe an unrelated repo's branch protection.
+    """
+    import json
+    import subprocess
+
+    failures: list[str] = []
+
+    try:
+        proc = subprocess.run(
+            [
+                "gh",
+                "api",
+                f"/repos/{repo}/branches/{branch}/protection",
+            ],
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=30,
+        )
+    except (FileNotFoundError, subprocess.TimeoutExpired) as exc:
+        return [f"gh api invocation failed: {exc}"]
+
+    if proc.returncode != 0:
+        return [
+            f"gh api returned {proc.returncode}: "
+            f"{proc.stderr.strip()[:200] or '(no stderr)'}"
+        ]
+
+    try:
+        protection = json.loads(proc.stdout)
+    except json.JSONDecodeError as exc:
+        return [f"gh api response is not JSON: {exc}"]
+
+    rsc = protection.get("required_status_checks") or {}
+    contexts = set(rsc.get("contexts") or [])
+    expected = set(required_checks)
+
+    if contexts != expected:
+        missing = sorted(expected - contexts)
+        extra = sorted(contexts - expected)
+        if missing:
+            failures.append(
+                f"develop branch protection is missing required check(s): "
+                f"{missing}. Add via `gh api --method PUT` (see Issue #3116)."
+            )
+        if extra:
+            failures.append(
+                f"develop branch protection has stale check(s) not in "
+                f"release_gates.yaml: {extra}. Either remove them or "
+                f"re-add the corresponding required_check entry."
+            )
+
+    if not rsc.get("strict", False):
+        failures.append(
+            "develop branch protection has strict=false. Issue #3116 "
+            "acceptance criterion requires strict=true so out-of-date "
+            "branches are blocked."
+        )
+
+    rpr = protection.get("required_pull_request_reviews") or {}
+    approving = rpr.get("required_approving_review_count") or 0
+    if approving < 1:
+        failures.append(
+            f"develop branch protection has required_approving_review_count="
+            f"{approving}. Issue #3116 acceptance criterion requires ≥1."
+        )
+
+    admins = protection.get("enforce_admins") or {}
+    if not admins.get("enabled", False):
+        failures.append(
+            "develop branch protection has enforce_admins.enabled=false. "
+            "Should be true so the gate applies to admins too."
+        )
+
+    return failures
 
 
 def main() -> int:
@@ -417,20 +598,24 @@ def main() -> int:
     )
 
     print(
-        "[1/4] every workflow_index entry references an existing "
+        "[1/5] every workflow_index entry references an existing "
         ".github/workflows/*.yml file ..."
     )
     print(
-        "[2/4] every workflow_index.job matches a jobs.<id>.name in that "
-        "workflow (or workflow.name for single-job workflows) ..."
+        "[2/5] every workflow_index.job matches a jobs.<id>.name in that "
+        "workflow EXACTLY (no canonical+suffix tolerance — Issue #3116) ..."
     )
     print(
-        "[3/4] every workflow_index workflow declares a pull_request or "
+        "[3/5] every workflow_index workflow declares a pull_request or "
         "workflow_run trigger ..."
     )
     print(
-        "[4/4] every required_check has a matching workflow_index entry "
-        "(exact job-string equality) ..."
+        "[4/5] every required_check has a matching workflow_index entry "
+        "(exact job-string equality) AND no canonical-vs-suffix drift ..."
+    )
+    print(
+        "[5/5] when FLUXION_CHECK_LIVE_PROTECTION=1, the live "
+        "develop branch protection matches release_gates.yaml ..."
     )
     print()
 
@@ -451,7 +636,9 @@ def main() -> int:
             "referenced workflow file. Job renames in "
             ".github/workflows/*.yml that don't update workflow_index "
             "silently desync branch protection — that's the gap this "
-            "gate exists to prevent."
+            "gate exists to prevent. Canonical-vs-suffix drift: when a "
+            "workflow emits suffixed variants, the YAML must name the "
+            "suffixed job explicitly (Issue #3116)."
         )
         return 1
 
@@ -460,6 +647,36 @@ def main() -> int:
         f"{len(workflow_index)} workflow_index entr(ies) are in sync "
         f"with {len(workflows)} workflow file(s)."
     )
+
+    # Optional: cron-mode live branch-protection verification. See module
+    # docstring for the rationale. Only enabled when explicitly opted in
+    # via FLUXION_CHECK_LIVE_PROTECTION=1 so the PR-blocking CI invocation
+    # stays network-free.
+    if os.environ.get("FLUXION_CHECK_LIVE_PROTECTION") == "1":
+        print()
+        print(
+            "FLUXION_CHECK_LIVE_PROTECTION=1 — verifying live develop "
+            "branch protection via `gh api` ..."
+        )
+        live_failures = check_live_branch_protection(required_checks)
+        if live_failures:
+            print(f"LIVE DRIFT DETECTED ({len(live_failures)} failure(s)):")
+            for msg in live_failures:
+                print(f"  - {msg}")
+            print()
+            print(
+                "Fix: update develop branch protection so the live "
+                "required_status_checks.contexts match release_gates.yaml "
+                "ci.required_checks (Issue #3116 closure). See "
+                "`scripts/check_required_checks_sync.py --help` for the "
+                "`gh api` payload shape."
+            )
+            return 1
+        print(
+            "Live develop branch protection matches release_gates.yaml "
+            "(contexts, strict, reviews, enforce_admins)."
+        )
+
     return 0
 
 
