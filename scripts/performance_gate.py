@@ -4,6 +4,12 @@ performance_gate.py — flags performance regressions >10% on PRs
 
 Runs benchmarks and compares against main branch baseline.
 Fails if any benchmark degrades by more than 10%.
+
+Exit codes:
+  0 — No regression detected, OR no baseline file is present
+      (graceful skip — see ``test_main_returns_zero_when_no_baseline_on_pr``
+      in ``scripts/ci/test_performance_gate.py`` for the policy rationale).
+  1 — Regression detected, OR no benchmarks were produced by ``cargo bench``.
 """
 
 import argparse
@@ -159,6 +165,15 @@ def main():
 
     baseline = get_main_branch_baseline()
     if not baseline:
+        # Graceful skip (Issue #3120 audit; mirrors Issue #1723's
+        # file-missing policy in scripts/check_known_issues_stale.py):
+        # without a baseline there is nothing to compare against, so the
+        # gate exits 0 instead of fail-loud. The performance gate is not
+        # a release_gates.yaml required check; it runs locally via
+        # scripts/end_of_shift_validation.sh, where exit 1 with no
+        # baseline would block every fresh-clone end-of-shift run.
+        # See ``test_main_returns_zero_when_no_baseline_on_pr`` for the
+        # test-side policy reference.
         print("No baseline found — run on main first to establish baseline")
         sys.exit(0)
 
