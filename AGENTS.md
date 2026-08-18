@@ -55,7 +55,7 @@ Bindings are feature-gated: `maturin develop` for Python; run `npm run build` in
 
 ## Documentation and Repository Hygiene
 
-- Do not hand-edit generated `SCORECARD.md`; regenerate with `python3 scripts/generate_scorecard.py`.
+- Do not hand-edit generated `SCORECARD.md`; regenerate with `python3 scripts/generate_scorecard.py`. The `scorecard-drift` workflow auto-regenerates on PRs (issue #3128), so manual regen is only needed for local citations or to fix drift that leaks through to `develop`/`main`. See `docs/agents/scorecard-regen.md`.
 - Every `docs/**/*.md` file needs the 7-line summary block at lines 2–8. After adding/removing docs, run `python3 scripts/generate_doc_inventory.py` and commit `docs/doc-inventory.md`.
 - Verify docs/root hygiene with `python3 scripts/check_docs_summaries.py`, `python3 scripts/check_doc_inventory_fresh.py`, and `python3 scripts/check_root_hygiene.py`. Root scratch reports/blobs are rejected; use `tmp/`. Agent runtime directories such as `.agents/`, `.opencode/`, and `.planning/worktrees/` are gitignored and must never be committed.
 - Keep `.cargo/audit.toml` and `deny.toml` advisory exceptions synchronized. Do not increase the duplicate-version budget without documenting the unavoidable dependency.
