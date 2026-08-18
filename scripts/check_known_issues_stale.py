@@ -5,8 +5,11 @@
 # Run as a CI gate on every PR and main push.
 #
 # Exit codes:
-#   0 — Last Updated is within 60 days (or file/date not found)
-#   1 — Last Updated is stale (>60 days old)
+#   0 — Last Updated is within 60 days, OR the file is missing (skip per #1723)
+#   1 — Last Updated is stale (>60 days old), OR the marker is missing /
+#       unrecognized format (gate must block per issue #3105 to prevent the
+#       pre-2026-08-17 silent-skip regression where ANY format drift would
+#       silently disable the gate)
 
 import re
 import sys
