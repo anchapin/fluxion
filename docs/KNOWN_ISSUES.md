@@ -7,7 +7,7 @@ Related to: validation_report.md (results), FIX.md (archived as `docs/investigat
 Status: Post-#1323 baseline refresh — pre-#1323 numbers are obsolete per ARCHITECTURE.md §Current Module Status.
 Action: Check this document before attributing validation failures to new issues; many may be known.
 
-*Last Updated: 2026-08-18 (LIMIT-19 #3103 added — InvariantChecker artificial_gain test; LIMIT-18 #3104 added — Case 960 Blind heating_max structural gap; LIMIT-16 #3059 added for Cases 610/630/650 peak cooling structural gap; LIMIT-17 #3058 added — Case 950FF night-vent mass coupling; LIMIT-14 #3061 merged with LIMIT-15 #3060 from #3096)*
+*Last Updated: 2026-08-18 (LIMIT-20 #3102 added — Solid conduction variants integration test, sibling of LIMIT-11 / #3064; LIMIT-19 #3103 added — InvariantChecker artificial_gain test; LIMIT-18 #3104 added — Case 960 Blind heating_max structural gap; LIMIT-16 #3059 added for Cases 610/630/650 peak cooling structural gap; LIMIT-17 #3058 added — Case 950FF night-vent mass coupling; LIMIT-14 #3061 merged with LIMIT-15 #3060 from #3096)*
 
 **LIMIT-14 added (Issue #3061):** After PR #3052's partial Case 960 inter-zone fix, raw annual cooling remains 0.63 MWh versus the 1.55–2.78 MWh reference band and peak heating remains 1.17 kW versus 2.0–8.0 kW. The 5R1C/9R4C air-mass distribution cannot accumulate enough back-zone cooling demand at the 27 °C setpoint through coupling to the free-floating sunspace; compliant closure is blocked on the GaugeSolver production-path work coordinated by #3059, not a sunspace HVAC control or gain-split tuning.
 
@@ -18,6 +18,8 @@ Action: Check this document before attributing validation failures to new issues
 **LIMIT-18 added (Issue #3104):** `tests/ashrae_140_blind_validation.rs::test_blind_mode_case_960_infrastructure` fails on unmodified `develop` HEAD with `Case 960 Blind heating_max 2.45 MWh > 1.0 MWh (AC4)` against the ASHRAE 140-2023 Annex B Table 8-15 reference band upper bound. Discovered by the #3071 sub-agent during the 2026-08-17 wave-orchestration run (test counts: 17 passed / 1 failed / 6 ignored, unchanged across the #3071 quarantine). The residual `heating_max = 2.45 MWh` over the 1.0 MWh AC4 upper bound is the Case 960 manifestation of the same structural 5R1C + 9R4C single-lumped-mass-node limitation already tracked by LIMIT-12 / #3062, LIMIT-13 / #3063, LIMIT-14 / #3061, LIMIT-16 / #3059, and LIMIT-17 / #3058 — every member of that cohort routes the structural fix to the GaugeSolver production-path work (#1465 / #1462). The test is `#[ignore]`-quarantined (assertion body retained below the marker for documentation); per AGENTS.md / RULES.md / ADR-0001 ("no parameter tuning", "fix the underlying math", strict-energy-gate baseline must NEVER be raised), no Case 960 cooling/heating balance is adjusted to absorb the OVER. Cohort-level tracking owned by Issue #3072 (aggressive-baseline Cases 195 / 600 / 620 / 940 / 960). Sibling entry: LIMIT-09 / #3071 (Case 950 5R1C night-vent — same wave cohort).
 
 **LIMIT-19 added (Issue #3103):** `tests/invariant_checker_test.rs::test_one_watt_artificial_gain_increases_imbalance` fails on unmodified `develop` HEAD — the test injects 1 W of artificial gain into the post-step `InvariantChecker` and asserts `|balance_with_gain| > |balance_without_gain|`, but the residual *shrinks* in magnitude (printed `Balance with 1W artificial gain: 225.9317696247872`). This is the same `InvariantChecker` post-step algebraic-invariant confusion characterised by **§MULTI-03 / #3066** (the 88.7 W hand-balanced stub residual on the 9R4C BE-implicit identity) and **Issue #1344** (the `EnergyBalanceValidator` integrated-flux product form that vanishes on hand-balanced states): when gain shifts the post-step surface temperatures into a regime where `T_s < T_air` (always true for high-mass construction with `h_tr_me > 0`), the algebraic identity can decrease in magnitude even though an integrator produced a `T_m_new` value. The test is `#[ignore]`-quarantined (assertion body retained below the marker for documentation); per AGENTS.md / RULES.md / ADR-0001 ("no parameter tuning", "fix the underlying math", "must-never hardcode results"), the assertion is NOT loosened to absorb the magnitude shrink — structural resolution is routed to the `EnergyBalanceValidator` (Issue #1344) follow-up investigation alongside #3066 / §MULTI-03. See §LIMIT-19 for the affected test, the #3066 sibling framing, and the cross-reference to the product-surface validator.
+
+**LIMIT-20 added (Issue #3102):** `tests/ashrae_140_solid_conduction_variants.rs::test_solid_conduction_variants_integration` fails on unmodified `develop` HEAD with `Solid conduction variants pass rate (75.0%) must be > 80%` panic at `tests/ashrae_140_solid_conduction_variants.rs:372`. The HighMass sub-variant returns 0.00 kWh (LIMIT-11 / #3064 root cause), the other three variants (NoLoads / NoSolar / ThermalBridge) all return −18.18 kWh, so the pass rate is 3/4 = 75.0% which fails the `> 80.0` assertion. This is the explicit follow-up quarantine that §LIMIT-11 / #3064 scoped itself OUT of: the #3064 sub-agent noted *"This is out of scope per the explicit instructions ('Mark the failing test as #[ignore]' — singular). Documented in LIMIT-11 as a known pre-existing wave-orchestration failure needing a follow-up quarantine PR."* The integration test aggregator is `#[ignore]`-quarantined (the HighMass sub-variant assertion body at line 305 — `high_mass_energy.abs() > 0.0` — and the three sibling variant bodies remain active below the marker, per AGENTS.md / RULES.md / ADR-0001 "no parameter tuning" / "must-never hardcode results" — the threshold is NOT lowered to 75% or 70% to absorb the failure); the per-test `test_case_195_high_mass_walls` quarantine from LIMIT-11 is unchanged. Per AGENTS.md "Catalog of known systematic issues" and RULES.md "no parameter tuning" — `#[ignore]` of the AGGREGATOR (not the per-test) for a known structural failure tracked in `KNOWN_ISSUES.md` IS the documented protocol. Long-term structural fix routed to GaugeSolver rework **#1465 / #1462**. See §LIMIT-20 for the affected test, the §LIMIT-11 cohort framing, and the cross-references to #3102 (this issue), #3064 (LIMIT-11 sibling), #3072 (cohort tracking), and #1465 / #1462 (architectural unblocker).
 
 **LIMIT-12 added (Issue #3062):** Case 940 annual heating is 7,487.81 kWh on the CTF validator path versus 1,289.9 kWh on the blind diagnostic path after PR #3042; the remaining setback-recovery overshoot is structural and tracked without a production-physics change.
 
@@ -1733,10 +1735,124 @@ solar + envelope heat transfer, not a 5R1C/CTF parameter adjustment.
     `fix(ashrae140): resolve #2868 — Case 195 t_i_act / H_tr,3 / ε_ext`).
   - Issue #3059 (5R1C/9R4C air-mass distribution limitation — the
     architectural unblocker routed to GaugeSolver #1465 / #1462).
-  - `tests/ashrae_140_solid_conduction_variants.rs` (line 35 — the
-    quarantined `test_case_195_high_mass_walls` test).
+- `tests/ashrae_140_solid_conduction_variants.rs` (line 35 — the
+     quarantined `test_case_195_high_mass_walls` test).
   - `tests/ashrae_140_case_195_solid_conduction.rs` (sibling tests
-    for the low-mass variant; all currently passing post-#3044).
+     for the low-mass variant; all currently passing post-#3044).
+
+### LIMIT-20: `test_solid_conduction_variants_integration` — 75% < 80% integration pass-rate, HighMass variant structural failure (Issue #3102)
+
+- **Description:** The integration test
+  `tests/ashrae_140_solid_conduction_variants.rs::test_solid_conduction_variants_integration`
+  fails on unmodified `develop` HEAD with the panic
+
+  ```
+  === Solid Conduction Variants Summary ===
+  Pass rate: 3/4 (75.0%)
+  Results: HighMass ✗, NoLoads ✓, NoSolar ✓, ThermalBridge ✓
+
+  thread 'test_solid_conduction_variants_integration' (2788151) panicked at tests/ashrae_140_solid_conduction_variants.rs:372:5:
+  Solid conduction variants pass rate (75.0%) must be > 80%
+  ```
+
+  Reproduce on `develop` with
+  `cargo test --test ashrae_140_solid_conduction_variants test_solid_conduction_variants_integration -- --nocapture`.
+  The HighMass sub-variant assertion body
+  (`high_mass_energy.abs() > 0.0` at line 305) returns `0.00 kWh` for the
+  HighMass construction (the §LIMIT-11 / #3064 zero-energy root cause),
+  while the NoLoads / NoSolar / ThermalBridge sibling assertions all pass
+  with `−18.18 kWh` (the same no-loads / no-solar envelope residual the
+  pre-#3044 baseline produced). The aggregator passes 3/4 = 75.0% and the
+  `pass_rate > 80.0` assertion fails.
+
+  This is the explicit follow-up quarantine that §LIMIT-11 / #3064 scoped
+  itself OUT of: the #3064 sub-agent noted *"This is out of scope per the
+  explicit instructions ('Mark the failing test as #[ignore]' — singular).
+  Documented in LIMIT-11 as a known pre-existing wave-orchestration
+  failure needing a follow-up quarantine PR."* The §LIMIT-11 entry
+  explicitly anticipates this entry: *"the failing assertion
+  (`high_mass_energy.abs() > 0.0`) was replaced with the integration
+  pass-rate assertion… the integration test … passes only when the
+  HighMass variant passes; with the HighMass variant still failing on
+  unmodified develop, the integration test continues to fail with
+  75.0% < 80%."* Issue #3102 (this entry) is the quarantine that closes
+  that pre-existing wave-orchestration known issue.
+
+  The integration test is `#[ignore]`-quarantined at the AGGREGATOR
+  level, NOT at the HighMass sub-variant level: the HighMass sub-variant
+  assertion body at line 305, the NoLoads sub-variant assertion body at
+  line 321, the NoSolar sub-variant assertion body at line 337, and the
+  ThermalBridge sub-variant assertion body at line 353 all remain
+  active below the marker for documentation. Per AGENTS.md / RULES.md /
+  ADR-0001 ("no parameter tuning" / "fix the underlying math" /
+  "must-never hardcode results"), the threshold is NOT lowered from 80%
+  to 75% or 70% to absorb the failure, and the HighMass sub-variant is
+  NOT marked `#[ignore]` (which would be a "loosening" pattern that
+  Issue #3102 explicitly rejects as Option C); only the integration
+  pass-rate aggregator is quarantined.
+
+- **Affected Tests:**
+  `tests/ashrae_140_solid_conduction_variants.rs::test_solid_conduction_variants_integration`
+  (the integration test; now `#[ignore]`-quarantined with the reason
+  `"Solid conduction variants integration pass-rate 75% < 80% threshold
+  (HighMass variant structural failure) — LIMIT-20 (Issue #3102,
+  follow-up to LIMIT-11 / Issue #3064) — same structural 5R1C
+  single-lumped-mass-node limitation, unblocked by GaugeSolver rework
+  #1465/#1462. The per-test HighMass assertion must remain active (no
+  loosening); only the integration aggregator is quarantined."`). The
+  assertion body (`pass_rate > 80.0` at line 372) and all four sub-variant
+  assertion bodies (lines 305, 321, 337, 353) are retained below the
+  `#[ignore]` marker for documentation; per AGENTS.md / RULES.md /
+  ADR-0001, no parameter tuning is permitted on the threshold or on any
+  sub-variant to absorb the 75% failure. The companion per-test
+  quarantine
+  `tests/ashrae_140_solid_conduction_variants.rs::test_case_195_high_mass_walls`
+  (LIMIT-11 / #3064) is unchanged by this entry.
+
+- **Affected Metrics:** Case 195 high-mass annual energy (kWh) — a
+  diagnostic / trend metric, NOT an ASHRAE 140 reference-band metric.
+  This integration test is the **aggregator** of the four Case 195
+  sub-variant diagnostic metrics; the underlying sub-variant that drives
+  the 75% failure is the same HighMass `high_mass_energy.abs() > 0.0`
+  metric tracked by §LIMIT-11 / #3064. The low-mass Case 195
+  reference-band metrics (annual heating, annual cooling, peak heating,
+  peak cooling) are validated by the eight tests in
+  `tests/ashrae_140_case_195_solid_conduction.rs` and remain subject to
+  their existing assertions.
+
+- **Severity:** Low for the strict-energy-gate (#1333) (Case 195 is
+  not in `tests/reference_data/zone_balance/strict_energy_gate_baseline.json`
+  per `release_gates.yaml` known structural failures). Medium for the
+  ASHRAE 140 integration suite `cargo test --test ashrae_140_solid_conduction_variants`
+  — this test is the singular `1 failed` row in the 3 passed / 1 failed /
+  1 ignored count reported by the orchestrator (LIMIT-11's per-test
+  quarantine is the `1 ignored` row). High for the ASHRAE 140 Case
+  195 cohort acceptance check, since the integration pass-rate is the
+  only assertion that gates the four-variant envelope together.
+
+- **GitHub Issue:** [#3102](https://github.com/anchapin/fluxion/issues/3102)
+  (this entry); sibling issue is **#3064 / LIMIT-11** (the per-test
+  Case 195 high-mass `#[ignore]` quarantine — same root cause, this
+  entry is the explicit follow-up that §LIMIT-11 scoped out as
+  out-of-scope). Long-term structural fix routed to GaugeSolver rework
+  **#1465 / #1462** (same architectural unblocker as LIMIT-11, LIMIT-12,
+  LIMIT-13, LIMIT-14, LIMIT-16, LIMIT-17, LIMIT-18). Cohort-level
+  tracking owned by Issue **#3072** (aggressive-baseline cohort —
+  Cases 195 / 600 / 620 / 940 / 960). Per AGENTS.md / RULES.md "fix the
+  underlying math"; per-case parameter tuning to close this gap (e.g.
+  lowering the `pass_rate > 80.0` threshold, or marking the HighMass
+  sub-variant `#[ignore]`) is explicitly out of scope — only the
+  integration aggregator is quarantined.
+
+- **Status:** 🔄 **Known pre-existing failure, quarantined pending
+  GaugeSolver.** Re-enable once #1465 (or equivalent structural fix)
+  lands and the HighMass sub-variant moves off the zero floor on the
+  standard `cargo test --test ashrae_140_solid_conduction_variants -- --ignored`
+  run. The re-enable acceptance is dual: (a) the integration pass-rate
+  `> 80.0` assertion holds without any threshold, sub-variant, or
+  aggregator change, and (b) all four sub-variant assertion bodies
+  (HighMass / NoLoads / NoSolar / ThermalBridge) remain active and
+  unrelaxed below the `#[ignore]` marker.
 
 ### LIMIT-13: `h_tr_em` (envelope-to-mass conductance) remains time-invariant in 5R1C path — tracking stub (Issue #3063)
 
