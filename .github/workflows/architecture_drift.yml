@@ -21,6 +21,8 @@ on:
       - 'fluxion-city/src/**/*.rs'
       - 'fluxion-fluid/src/**/*.rs'
       - 'fluxion-mcp/src/**/*.rs'
+      - 'crates/fluxion-twin/**/*.rs'
+      - 'crates/fluxion-toon/**/*.rs'
   workflow_dispatch:
 
 # Least-privilege GITHUB_TOKEN grants (Issue #2526). The check-drift job
