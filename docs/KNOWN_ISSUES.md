@@ -7,7 +7,7 @@ Related to: validation_report.md (results), FIX.md (archived as `docs/investigat
 Status: Post-#1323 baseline refresh — pre-#1323 numbers are obsolete per ARCHITECTURE.md §Current Module Status.
 Action: Check this document before attributing validation failures to new issues; many may be known.
 
-*Last Updated: 2026-08-18 (LIMIT-18 #3104 added — Case 960 Blind heating_max structural gap; LIMIT-16 #3059 added for Cases 610/630/650 peak cooling structural gap; LIMIT-17 #3058 added — Case 950FF night-vent mass coupling; LIMIT-14 #3061 merged with LIMIT-15 #3060 from #3096)*
+*Last Updated: 2026-08-18 (LIMIT-19 #3103 added — InvariantChecker artificial_gain test; LIMIT-18 #3104 added — Case 960 Blind heating_max structural gap; LIMIT-16 #3059 added for Cases 610/630/650 peak cooling structural gap; LIMIT-17 #3058 added — Case 950FF night-vent mass coupling; LIMIT-14 #3061 merged with LIMIT-15 #3060 from #3096)*
 
 **LIMIT-14 added (Issue #3061):** After PR #3052's partial Case 960 inter-zone fix, raw annual cooling remains 0.63 MWh versus the 1.55–2.78 MWh reference band and peak heating remains 1.17 kW versus 2.0–8.0 kW. The 5R1C/9R4C air-mass distribution cannot accumulate enough back-zone cooling demand at the 27 °C setpoint through coupling to the free-floating sunspace; compliant closure is blocked on the GaugeSolver production-path work coordinated by #3059, not a sunspace HVAC control or gain-split tuning.
 
@@ -16,6 +16,8 @@ Action: Check this document before attributing validation failures to new issues
 **LIMIT-17 added (Issue #3058):** Case 950FF min free-floating temperature is −23.92 °C against the ASHRAE 140 reference band −20.20 to −17.80 °C — 3.72 °C outside the band after PR #3040's per-surface F_sky view-factor correction moved the value from −23.94 °C to −23.92 °C (only 0.02 °C improvement). The remaining gap is structural: the night-vent coupling in `src/physics/multi_node_solver.rs::step_with_gains` applies `h_ve_night ≈ 570.8 W/K` (fan supply during 18:00–07:00) to each envelope mass node using raw outdoor air, which overwhelms the wall exterior-film correction (`h_tr_em_wall ≈ 71.6 W/K`) by ~8×. The F_sky-weighted longwave correction on `t_ext_wall` is mathematically correct but mathematically invisible against the dominant raw-outdoor forcing. Three proposed directions (split `h_ve_night` into HVAC-mode vs FF-mode paths; reduce `h_ve_night` by F_sky on the mass coupling; route `h_ve_night` only through the air node) all require solver-code changes that must preserve Case 950 (HVAC mode) annual cooling in the 390–920 kWh band — per AGENTS.md / RULES.md / ADR-0001, no parameter tuning is permitted on `h_ve_night` to close the gap. Tracked as a documentation-only entry; the structural fix is routed to the GaugeSolver production-path work coordinated by #3059 and #1465 / #1462.
 
 **LIMIT-18 added (Issue #3104):** `tests/ashrae_140_blind_validation.rs::test_blind_mode_case_960_infrastructure` fails on unmodified `develop` HEAD with `Case 960 Blind heating_max 2.45 MWh > 1.0 MWh (AC4)` against the ASHRAE 140-2023 Annex B Table 8-15 reference band upper bound. Discovered by the #3071 sub-agent during the 2026-08-17 wave-orchestration run (test counts: 17 passed / 1 failed / 6 ignored, unchanged across the #3071 quarantine). The residual `heating_max = 2.45 MWh` over the 1.0 MWh AC4 upper bound is the Case 960 manifestation of the same structural 5R1C + 9R4C single-lumped-mass-node limitation already tracked by LIMIT-12 / #3062, LIMIT-13 / #3063, LIMIT-14 / #3061, LIMIT-16 / #3059, and LIMIT-17 / #3058 — every member of that cohort routes the structural fix to the GaugeSolver production-path work (#1465 / #1462). The test is `#[ignore]`-quarantined (assertion body retained below the marker for documentation); per AGENTS.md / RULES.md / ADR-0001 ("no parameter tuning", "fix the underlying math", strict-energy-gate baseline must NEVER be raised), no Case 960 cooling/heating balance is adjusted to absorb the OVER. Cohort-level tracking owned by Issue #3072 (aggressive-baseline Cases 195 / 600 / 620 / 940 / 960). Sibling entry: LIMIT-09 / #3071 (Case 950 5R1C night-vent — same wave cohort).
+
+**LIMIT-19 added (Issue #3103):** `tests/invariant_checker_test.rs::test_one_watt_artificial_gain_increases_imbalance` fails on unmodified `develop` HEAD — the test injects 1 W of artificial gain into the post-step `InvariantChecker` and asserts `|balance_with_gain| > |balance_without_gain|`, but the residual *shrinks* in magnitude (printed `Balance with 1W artificial gain: 225.9317696247872`). This is the same `InvariantChecker` post-step algebraic-invariant confusion characterised by **§MULTI-03 / #3066** (the 88.7 W hand-balanced stub residual on the 9R4C BE-implicit identity) and **Issue #1344** (the `EnergyBalanceValidator` integrated-flux product form that vanishes on hand-balanced states): when gain shifts the post-step surface temperatures into a regime where `T_s < T_air` (always true for high-mass construction with `h_tr_me > 0`), the algebraic identity can decrease in magnitude even though an integrator produced a `T_m_new` value. The test is `#[ignore]`-quarantined (assertion body retained below the marker for documentation); per AGENTS.md / RULES.md / ADR-0001 ("no parameter tuning", "fix the underlying math", "must-never hardcode results"), the assertion is NOT loosened to absorb the magnitude shrink — structural resolution is routed to the `EnergyBalanceValidator` (Issue #1344) follow-up investigation alongside #3066 / §MULTI-03. See §LIMIT-19 for the affected test, the #3066 sibling framing, and the cross-reference to the product-surface validator.
 
 **LIMIT-12 added (Issue #3062):** Case 940 annual heating is 7,487.81 kWh on the CTF validator path versus 1,289.9 kWh on the blind diagnostic path after PR #3042; the remaining setback-recovery overshoot is structural and tracked without a production-physics change.
 
@@ -2975,6 +2977,104 @@ solar + envelope heat transfer, not a 5R1C/CTF parameter adjustment.
   (b) `cooling_min >= 8.0 MWh` — both clauses of
   `test_blind_mode_case_960_infrastructure` must hold without any
   solver constant, band, or assertion change.
+
+### LIMIT-19: `test_one_watt_artificial_gain_increases_imbalance` — InvariantChecker post-step algebraic-invariant confusion (Issue #3103)
+
+- **Description:** The unit test
+  `tests/invariant_checker_test.rs::test_one_watt_artificial_gain_increases_imbalance`
+  fails on unmodified `develop` HEAD. The test calls
+  `InvariantChecker::check_invariant_with_artificial_gain(&model, 3600.0, T_out, 1.0, 0)`
+  and asserts `|balance_with_gain| > |balance_without_gain|` (and that
+  the increase is ≈ 1.0 W within 0.1 W tolerance). Instead the residual
+  *shrinks* in magnitude — the captured `Balance with 1W artificial gain: 225.9317696247872`
+  is below the no-gain baseline (assertion at `tests/invariant_checker_test.rs:137`).
+  The failure is the **unit-level analogue** of the pre-existing
+  `InvariantChecker` post-step algebraic-invariant confusion
+  characterised by **§MULTI-03 / Issue #3066** (the ~88.7 W hand-balanced
+  stub residual on the 9R4C BE-implicit identity, resolved test-only by
+  removing the over-strict `InvariantChecker` assertion and retaining
+  only the `EnergyBalanceValidator` check):
+  - The `InvariantChecker` evaluates the **post-step algebraic identity**
+    of the 9R4C BE-implicit update (`denom · T_m_new − numer` where
+    `T_s = (h_tr_ms·T_m_prev + h_tr_is·T_air + φ_st) / (h_tr_ms + h_tr_is + h_tr_me)`).
+  - At hand-balanced states with `φ_st = 0`,
+    `T_s = T_air · (h_tr_ms + h_tr_is) / (h_tr_ms + h_tr_is + h_tr_me) < T_air`
+    whenever `h_tr_me > 0` (always true for high-mass construction).
+  - When 1 W of gain shifts the post-step surface temperatures into this
+    `T_s < T_air` regime, the algebraic identity can **decrease** in
+    magnitude even though the integrator produced a `T_m_new` value —
+    the test's `|balance_with_gain| > |balance_without_gain|` assertion
+    is therefore not a robust invariant under the current solver
+    topology (same mechanism as the §MULTI-03 88.7 W hand-balanced
+    residual; see `tests/cli_multi_zone_energy_conservation.rs` lines
+    119-152 for the #3066 fix that removed the over-strict
+    `InvariantChecker` assertion).
+  - The **integrated-flux `EnergyBalanceValidator`** (Issue #1344) is
+    unaffected because it uses the `q_*` formulation which vanishes at
+    `T_air = T_mass = T_outdoor` regardless of `h_tr_me` and `φ_st`. It
+    is the documented product-surface diagnostic. The §MULTI-03 / #3066
+    sub-agent explicitly noted: *"Pre-existing, unrelated failure
+    confirmed via `git stash` round-trip: `invariant_checker_test::
+    test_one_watt_artificial_gain_increases_imbalance` fails identically
+    on unmodified `develop` and is outside the scope of #3066."*
+
+- **Affected Tests:**
+  `tests/invariant_checker_test.rs::test_one_watt_artificial_gain_increases_imbalance`
+  (the unit test; now `#[ignore]`-quarantined with the reason
+  `"Artificial gain should increase energy imbalance magnitude — LIMIT-19
+  (Issue #3103, sibling-of-LIMIT-MULTI-03 #3066) — same InvariantChecker
+  post-step algebraic-invariant confusion; the test asserts
+  |balance_with_gain| > |balance_without_gain| but the algebraic
+  identity shrinks in magnitude when gain shifts post-step surface
+  temperatures. Tracked for follow-up alongside the #3066 /
+  EnergyBalanceValidator (Issue #1344) investigation."`). The
+  assertion body (both `gain_balance_abs > normal_balance_abs` and
+  `(increase - 1.0).abs() < 0.1`) is retained below the `#[ignore]`
+  marker for documentation; per AGENTS.md / RULES.md / ADR-0001, no
+  parameter tuning is permitted on the `InvariantChecker` balance
+  values to absorb the magnitude shrink.
+
+- **Affected Metrics:** Test-only. No production validation impact —
+  the `EnergyBalanceValidator` (Issue #1344) product surface is
+  unaffected, and the `InvariantChecker` remains a valid diagnostic
+  for *post-step* states where the integrator has produced
+  `T_m_new` (see its module-level docs at
+  `src/sim/invariant_checker.rs:1-132`).
+
+- **Severity:** Low (test artefacts only; no effect on ASHRAE 140 pass
+  rate, energy balance, or `EnergyBalanceValidator` output). For
+  comparison, §MULTI-03 / #3066 was also Low severity at the
+  integration-test layer — both are quarantined at the test layer with
+  no production solver-code change.
+
+- **GitHub Issue:** [#3103](https://github.com/anchapin/fluxion/issues/3103)
+  (this entry). Sibling issue is **#3066 / §MULTI-03** (the
+  `InvariantChecker` pre-step hand-balanced stub residual — same
+  post-step algebraic-invariant confusion; resolved by removing the
+  over-strict `InvariantChecker` assertion in
+  `tests/cli_multi_zone_energy_conservation.rs`). Long-term resolution
+  is the **`EnergyBalanceValidator` (Issue #1344)** follow-up
+  investigation, which exposes the integrated-flux `q_*` form as the
+  product-surface diagnostic. Per AGENTS.md / RULES.md "fix the
+  underlying math" / "no parameter tuning" / "must-never hardcode
+  results", per-case tuning of the `InvariantChecker` balance values
+  is explicitly out of scope. Recommended direction from Issue #3103
+  body: Option A (re-state the assertion in the integrated-flux
+  `EnergyBalanceValidator` form, Issue #1344) or Option B
+  (`#[ignore]` with linkage to #3066 — **this entry implements Option
+  B**).
+
+- **Status:** 🔄 **Known pre-existing failure, quarantined pending
+  `EnergyBalanceValidator` investigation.** Re-enable once #1344 (or
+  equivalent structural fix) lands and either (a) the test is
+  re-stated in the integrated-flux form (`EnergyBalanceValidator`) per
+  Option A of the #3103 issue body, or (b) the `InvariantChecker`
+  post-step semantics are aligned so that magnitude-comparison
+  assertions hold. Acceptance is dual: (a) the assertion body retained
+  below the `#[ignore]` marker holds without any solver constant,
+  balance, or assertion relaxation; (b) no `InvariantChecker` constant
+  is tuned to absorb the magnitude shrink. Cohort-level tracking owned
+  by Issue #3103; sibling tracking owned by Issue #3066.
 
 ## fluxion-fluid Autodiff Issues (FLUID)
 
