@@ -355,24 +355,34 @@ ci:
     # Issue #2462 (closes #2463 cycle guard): physics ↔ sim cycle check.
     # After #2462 the cycle is broken (zero edges), so the listener job
     # (defined in `.github/workflows/rust-tests.yml` under
-    # `physics-sim-cycle-gh` / `physics-sim-cycle-hz`) becomes a
-    # regression guard that exits non-zero on any *new* `use crate::sim::*`
-    # import under `src/physics/**` or `use crate::physics::*` import
-    # under `src/sim/construction.rs` / `src/sim/per_surface_conduction.rs`.
-    # Backed by `scripts/check_physics_sim_cycle.py`.
-    - "Physics-Sim-Cycle-Check"
+    # `physics-sim-cycle-gh` (job name: "Physics-Sim-Cycle-Check (GH)"))
+    # becomes a regression guard that exits non-zero on any *new*
+    # `use crate::sim::*` import under `src/physics/**` or
+    # `use crate::physics::*` import under `src/sim/construction.rs` /
+    # `src/sim/per_surface_conduction.rs`. The Hetzner-overflow variant
+    # `physics-sim-cycle-hz` (job name: "Physics-Sim-Cycle-Check
+    # (Hetzner Overflow)") fires only on GH-runner saturation. Backed by
+    # `scripts/check_physics_sim_cycle.py`. Branch protection requires
+    # the "(GH)" suffix per Issue #3116 drift fix.
+    - "Physics-Sim-Cycle-Check (GH)"
 
     # Issue #2983: workspace compile gate. Closes the systemic gap that let
     # PR #2960 (`chore(deps): cargo-major + sha256_hex fix`) merge broken
     # — the `rand 0.8 -> 0.9` bump broke `fluxion-behavior` but bare
     # `cargo check` / `cargo test` only compile the root crate (because
     # `default-members = ["."]` is set in the workspace root), so the
-    # breakage slipped through. Mirrors the `Physics-Sim-Cycle-Check`
-    # pattern: the GH-runner and Hetzner-overflow variants both share the
-    # canonical listener name `Workspace Check` (the parenthetical "(GH)" /
-    # "(Hetzner Overflow)" suffixes are workflow-internal). Branch
-    # protection matches the canonical name without the suffix.
-    - "Workspace Check"
+    # breakage slipped through. The listener job in
+    # `.github/workflows/rust-tests.yml` is `workspace-check-gh`
+    # (job name: "Workspace Check (GH)"); the Hetzner-overflow variant
+    # `workspace-check-hz` (job name: "Workspace Check (Hetzner
+    # Overflow)") fires only when the GH runner is saturated/cancelled,
+    # per AGENTS.md "Runner routing — GH probe + Hetzner overflow".
+    # Branch protection matches the EXACT emitted job name — the
+    # "(GH)" suffix is required (Issue #3116 canonical-vs-suffix drift
+    # fix; the pre-fix "Workspace Check" entry matched workflow_index
+    # via the sync script's canonical+suffix tolerance but never
+    # satisfied GitHub branch protection's exact-string contexts array).
+    - "Workspace Check (GH)"
 
     # Issue #2693: PR-level ABSOLUTE performance floor. The throughput ≥ 150
     # configs/sec and latency ≤ 10 ms/config thresholds below were already
@@ -576,29 +586,36 @@ ci:
       issue: 2466
       triggered_by: "PR + push to develop/main"
 
-    - job: "Physics-Sim-Cycle-Check"
+    - job: "Physics-Sim-Cycle-Check (GH)"
       # Mirrors the `Ashrae Cases Cycle Check (Issue #1441)` pattern.
-      # Both the GH runner variant and the Hetzner-overflow variant share
-      # the canonical listener name (the parenthetical "(GH)" / "(Hetzner
-      # Overflow)" suffixes are workflow-internal). Branch protection
-      # matches the canonical name without the suffix.
+      # The GH-runner listener job (`physics-sim-cycle-gh` job id) emits
+      # the check name "Physics-Sim-Cycle-Check (GH)". The Hetzner-
+      # overflow variant `physics-sim-cycle-hz` emits
+      # "Physics-Sim-Cycle-Check (Hetzner Overflow)" and fires only on
+      # GH-runner saturation (see AGENTS.md "Runner routing"). Branch
+      # protection requires the exact emitted name "(GH)" — Issue #3116
+      # closes the canonical-vs-suffix drift where this entry previously
+      # held the bare canonical "Physics-Sim-Cycle-Check" and was
+      # matched only by the sync script's tolerance rule, never by
+      # GitHub's exact-string contexts array.
       workflow: ".github/workflows/rust-tests.yml"
       issue: 2463
       closes_issue: 2462
       triggered_by: "PR + push to main"
 
-    - job: "Workspace Check"
-      # Mirrors the `Physics-Sim-Cycle-Check` pattern above: the GH runner
-      # variant (`workspace-check-gh` job id) and the Hetzner-overflow
-      # variant (`workspace-check-hz` job id) share the canonical listener
-      # name `Workspace Check` (the parenthetical "(GH)" / "(Hetzner
-      # Overflow)" suffixes are workflow-internal). Closes the systemic gap
+    - job: "Workspace Check (GH)"
+      # Mirrors the `Physics-Sim-Cycle-Check (GH)` pattern above: the
+      # GH-runner listener job (`workspace-check-gh` job id) emits
+      # "Workspace Check (GH)"; the Hetzner-overflow variant
+      # `workspace-check-hz` emits "Workspace Check (Hetzner Overflow)"
+      # and fires only on GH-runner saturation. Closes the systemic gap
       # that let PR #2960 merge broken — bare `cargo check` only compiles
       # the root crate because `default-members = ["."]` is set in the
       # workspace root, so sibling regressions like `fluxion-behavior`'s
       # `rand 0.8 -> 0.9` breakage slipped through. `build-release`
       # (also in this file) was updated to add `cargo build --release
-      # --workspace` for the main-only release smoke.
+      # --workspace` for the main-only release smoke. Issue #3116 closes
+      # the canonical-vs-suffix drift.
       workflow: ".github/workflows/rust-tests.yml"
       issue: 2983
       closes_issue: 2960
@@ -811,18 +828,16 @@ ci:
       triggered_by: "PR + push to main"
 
     - job: "Architecture Drift Detection"
-      # Architecture Drift Detection. The single job in
-      # `.github/workflows/architecture_drift.yml` is named
-      # `Check ARCHITECTURE.md drift` in the workflow, but the
-      # GitHub-reported check name for a single-job workflow is the
-      # workflow's own ``name:`` field ("Architecture Drift
-      # Detection") — so this entry matches the workflow.name, not
-      # the job.name. The CI gate
-      # ``scripts/check_required_checks_sync.py`` accepts the
-      # workflow-name match for single-job workflows; flipping the
-      # workflow to multi-job without updating this entry would
-      # fail the gate. Triggers on schedule (nightly 03:00 UTC) +
-      # PR paths filter.
+      # Architecture Drift Detection. Listener job in
+      # `.github/workflows/architecture_drift.yml` under `check-drift`
+      # id (job `name:` = "Architecture Drift Detection", which also
+      # matches the workflow's top-level `name:` field for the
+      # single-job case). GitHub reports the JOB name verbatim as the
+      # check name; the previous "Check ARCHITECTURE.md drift" job
+      # name never matched this YAML entry against GitHub's exact-
+      # string contexts. Issue #3116 closes the drift by renaming
+      # the job to match the YAML canonical. Triggers on schedule
+      # (nightly 03:00 UTC) + PR paths filter.
       workflow: ".github/workflows/architecture_drift.yml"
       triggered_by: "schedule + PR (path-filter)"
 

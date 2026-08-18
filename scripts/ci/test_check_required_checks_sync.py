@@ -260,22 +260,25 @@ def test_main_fails_when_workflow_index_references_missing_workflow_file(
 
 
 # ---------------------------------------------------------------------------
-# Suffix-tolerance: documented (GH) / (Hetzner Overflow) canonical pattern
+# Canonical-vs-suffix drift (Issue #3116): strict-match semantics
 # ---------------------------------------------------------------------------
 
 
-def test_main_passes_when_workflow_index_uses_canonical_name_without_suffix(
+def test_main_fails_on_canonical_vs_suffix_drift(
     checker, tmp_path, monkeypatch, capsys
 ):
-    """The documented canonical-name pattern: workflow_index.job is the
-    *stripped* canonical name, the workflow contains two jobs with the
-    `` (GH)`` / `` (Hetzner Overflow)`` suffix variants, and branch
-    protection matches the canonical name without the suffix.
+    """Planted violation: YAML holds the bare canonical name but the
+    workflow only emits suffixed variants.
 
-    This is the exact pattern used for ``Physics-Sim-Cycle-Check`` /
-    ``Workspace Check`` in ``release_gates.yaml`` (the
-    ``(GH) / (Hetzner Overflow)`` suffix pattern is documented in the
-    YAML comment block above each entry).
+    Issue #3116's regression guard: GitHub branch protection's contexts
+    array matches the emitted ``jobs.<id>.name`` *verbatim* — there is
+    no canonical-vs-suffix tolerance. Before the #3116 fix, the YAML
+    held the canonical name (e.g. ``My Multi Runner Check``) and the
+    workflow emitted ``My Multi Runner Check (GH)`` / ``(Hetzner
+    Overflow)``, which the script's regex tolerance silently accepted.
+    The post-fix contract requires the YAML to name the suffixed
+    variant explicitly. The script must FAIL this scenario with a
+    canonical-vs-suffix drift message that names the suffixed variants.
     """
     target = _redirect(checker, tmp_path, monkeypatch)
     target.write_text(
@@ -313,20 +316,131 @@ def test_main_passes_when_workflow_index_uses_canonical_name_without_suffix(
     )
     rc = checker.main()
     out = capsys.readouterr().out
+    assert rc == 1, out
+    assert "canonical-vs-suffix drift" in out or "in canonical form but" in out
+    assert "My Multi Runner Check (GH)" in out
+    assert "My Multi Runner Check (Hetzner Overflow)" in out
+
+
+def test_main_passes_when_workflow_index_uses_suffixed_name(
+    checker, tmp_path, monkeypatch, capsys
+):
+    """Correct post-fix shape: YAML holds the suffixed name explicitly.
+
+    This is the contract `release_gates.yaml` uses after the #3116 fix:
+    ``- "Workspace Check (GH)"`` is in ``ci.required_checks`` because
+    the workflow job emits exactly that name. The script must accept
+    the suffixed entry verbatim.
+    """
+    target = _redirect(checker, tmp_path, monkeypatch)
+    target.write_text(
+        _release_gates_yaml(
+            required_checks=["My Multi Runner Check (GH)"],
+            workflow_index=[
+                {
+                    "job": "My Multi Runner Check (GH)",
+                    "workflow": ".github/workflows/multi.yml",
+                },
+            ],
+        ),
+        encoding="utf-8",
+    )
+    _write(
+        tmp_path / ".github" / "workflows" / "multi.yml",
+        dedent(
+            """\
+            name: Multi Runner
+            on:
+              pull_request:
+            jobs:
+              gh:
+                runs-on: ubuntu-latest
+                name: My Multi Runner Check (GH)
+                steps:
+                  - run: echo gh
+              hz:
+                runs-on: [self-hosted, overflow]
+                name: My Multi Runner Check (Hetzner Overflow)
+                steps:
+                  - run: echo hz
+            """
+        ),
+    )
+    rc = checker.main()
+    out = capsys.readouterr().out
     assert rc == 0, out
     assert "No drift" in out
 
 
-def test_main_passes_when_workflow_index_matches_workflow_name_for_single_job(
+def test_main_passes_when_single_job_name_matches_workflow_name(
     checker, tmp_path, monkeypatch, capsys
 ):
-    """Single-job workflow: check name matches the workflow's own ``name:``
-    field (``Architecture Drift Detection`` in the real repo).
+    """Single-job workflow where the job's ``name:`` field equals the
+    workflow's own ``name:`` field — both match the YAML required_check.
 
-    GitHub reports the workflow name as the check name when a workflow
-    has exactly one job, so workflow_index.job can match the
-    workflow.name instead of a ``jobs.<id>.name``. The parser must
-    honour that and the gate must accept it.
+    Post-#3116: the YAML must match the emitted ``jobs.<id>.name`` exactly.
+    For a single-job workflow whose job name happens to equal the
+    workflow name (the post-fix ``Architecture Drift Detection`` case),
+    ``job_in_workflow`` returns True because the job name matches. No
+    workflow-name fallback is needed — the script doesn't apply one.
+
+    Contrast with the pre-#3116 case where the job was named
+    ``Check ARCHITECTURE.md drift`` (different from the workflow name)
+    and only the workflow-name fallback made the gate accept it; that
+    shape is now rejected (see ``test_main_fails_when_single_job_name
+    _diverges_from_workflow_name`` below).
+    """
+    target = _redirect(checker, tmp_path, monkeypatch)
+    target.write_text(
+        _release_gates_yaml(
+            required_checks=["Architecture Drift Detection"],
+            workflow_index=[
+                {
+                    "job": "Architecture Drift Detection",
+                    "workflow": ".github/workflows/arch.yml",
+                },
+            ],
+        ),
+        encoding="utf-8",
+    )
+    _write(
+        tmp_path / ".github" / "workflows" / "arch.yml",
+        dedent(
+            """\
+            name: Architecture Drift Detection
+            on:
+              schedule:
+                - cron: '0 3 * * *'
+              pull_request:
+            jobs:
+              check-drift:
+                runs-on: ubuntu-latest
+                name: Architecture Drift Detection
+                steps:
+                  - run: echo drift
+            """
+        ),
+    )
+    rc = checker.main()
+    out = capsys.readouterr().out
+    assert rc == 0, out
+    assert "No drift" in out
+
+
+def test_main_fails_when_single_job_name_diverges_from_workflow_name(
+    checker, tmp_path, monkeypatch, capsys
+):
+    """Single-job workflow where the job's ``name:`` field differs from
+    the workflow's own ``name:`` field.
+
+    Pre-#3116 shape: YAML held ``Architecture Drift Detection`` (matching
+    the workflow's top-level ``name:``), but the actual job was named
+    ``Check ARCHITECTURE.md drift``. The pre-fix script's
+    ``job_in_workflow`` had a single-job workflow-name fallback that
+    silently accepted this — and GitHub branch protection would never
+    satisfy because the emitted check name was the job name, not the
+    workflow name. Post-#3116 the script refuses to fall back to the
+    workflow name for single-job workflows.
     """
     target = _redirect(checker, tmp_path, monkeypatch)
     target.write_text(
@@ -361,7 +475,8 @@ def test_main_passes_when_workflow_index_matches_workflow_name_for_single_job(
     )
     rc = checker.main()
     out = capsys.readouterr().out
-    assert rc == 0, out
+    assert rc == 1, out
+    assert "not found in" in out
 
 
 # ---------------------------------------------------------------------------
@@ -448,40 +563,73 @@ def test_parse_workflow_extracts_triggers_and_job_names(checker, tmp_path):
     assert result["jobs"]["beta"] == "Beta Job (${{ matrix.os }})"
 
 
-def test_job_in_workflow_matches_exact_and_canonical(checker):
-    """Unit-level test of ``job_in_workflow`` for the four match paths:
+def test_job_in_workflow_strict_exact_match(checker):
+    """Unit-level test of ``job_in_workflow`` post-#3116: exact match only.
 
-    1. exact match against a job.name
-    2. canonical-name match (workflow_index.job + " (GH)")
-    3. canonical-name match (workflow_index.job + " (Hetzner Overflow)")
-    4. single-job workflow name fallback
+    The pre-#3116 implementation applied a ``CANONICAL_NAME_SUFFIXES``
+    regex tolerance (matched ``canonical`` against ``canonical + " (GH)"``
+    / ``canonical + " (Hetzner Overflow)"``) and a single-job workflow-
+    name fallback. Both were the root cause of #3116's drift and have
+    been removed. This test pins the new contract: ``job_in_workflow``
+    matches iff a job's emitted ``name:`` equals the entry byte-for-byte.
     """
     wf = {
         "jobs": {
             "exact": "Exact Job",
-            "gh": "Canonical (GH)",
-            "hz": "Canonical (Hetzner Overflow)",
+            "gh": "Suffixed (GH)",
+            "hz": "Suffixed (Hetzner Overflow)",
         },
-        "workflow_name": "Single Job Workflow",
+        "workflow_name": "Some Workflow",
         "triggers": ["pull_request"],
     }
-    # Single-job workflow (separate fixture)
-    single = {
-        "jobs": {"only": "Some Other Name"},
-        "workflow_name": "Single Job Workflow",
+    # Single-job workflow with divergent job name (pre-#3116 foot-gun)
+    single_divergent = {
+        "jobs": {"only": "Job Name"},
+        "workflow_name": "Different From Job",
         "triggers": ["pull_request"],
     }
 
     # Exact match
     assert checker.job_in_workflow(wf, "Exact Job")
-    # Canonical (GH)
-    assert checker.job_in_workflow(wf, "Canonical")
-    # Canonical (Hetzner Overflow)
-    assert checker.job_in_workflow(wf, "Canonical")  # already covered, but explicit
-    # Workflow-name match for single-job
-    assert checker.job_in_workflow(single, "Single Job Workflow")
+    # Suffixed variants are NOT matched by the bare canonical anymore
+    assert not checker.job_in_workflow(wf, "Suffixed")
+    # The suffixed variants themselves DO match themselves
+    assert checker.job_in_workflow(wf, "Suffixed (GH)")
+    assert checker.job_in_workflow(wf, "Suffixed (Hetzner Overflow)")
+    # Single-job workflow with divergent name: workflow_name fallback is
+    # gone, so the YAML name must match the job name (or fail).
+    assert not checker.job_in_workflow(single_divergent, "Different From Job")
+    assert checker.job_in_workflow(single_divergent, "Job Name")
     # Mismatch
     assert not checker.job_in_workflow(wf, "No Such Job")
+
+
+def test_workflow_has_suffixed_variant(checker):
+    """Unit-level test of ``workflow_has_suffixed_variant`` — the helper
+    that drives the canonical-vs-suffix drift detection added in #3116.
+    """
+    wf_with_suffixes = {
+        "jobs": {
+            "gh": "Workspace Check (GH)",
+            "hz": "Workspace Check (Hetzner Overflow)",
+        },
+        "workflow_name": "rust-tests",
+        "triggers": ["pull_request"],
+    }
+    wf_no_suffixes = {
+        "jobs": {"only": "Some Job"},
+        "workflow_name": "Single",
+        "triggers": ["pull_request"],
+    }
+    # Bare canonical → workflow has suffixed variants
+    assert checker.workflow_has_suffixed_variant(wf_with_suffixes, "Workspace Check")
+    # Already-suffixed query → no (it's asking about the bare canonical)
+    assert not checker.workflow_has_suffixed_variant(
+        wf_with_suffixes, "Workspace Check (GH)"
+    )
+    # Workflow without suffixed jobs → no
+    assert not checker.workflow_has_suffixed_variant(wf_no_suffixes, "Some Job")
+    assert not checker.workflow_has_suffixed_variant(wf_no_suffixes, "Single")
 
 
 def test_has_blocking_trigger_accepts_pull_request_and_workflow_run(checker):
