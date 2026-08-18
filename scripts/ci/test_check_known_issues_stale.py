@@ -139,21 +139,61 @@ def test_main_returns_zero_when_file_missing(checker, tmp_path, monkeypatch, cap
     assert "not found" in out.lower()
 
 
-def test_main_returns_zero_when_marker_absent(checker, tmp_path, monkeypatch, capsys):
-    """File exists but has no ``*Last Updated:*`` marker → exit 0 with WARN.
+def test_main_returns_one_when_marker_absent(checker, tmp_path, monkeypatch, capsys):
+    """File exists but has no ``*Last Updated:*`` marker → exit 1 with ERROR.
 
-    The script warns (rather than failing) when the marker is missing --
-    a contributor may have legitimately renamed the heading during a docs
-    refactor. A regression that turns this into a hard FAIL would lock
-    out any contributor who reformats the heading.
+    The gate must BLOCK when the marker is missing -- per issue #3105, the
+    pre-2026-08-17 silent-skip behavior was the bug that allowed format
+    drift to silently disable the gate (the ``WARN + exit 0`` branch made
+    this CI check inoperative even after a contributor renamed the
+    ``*Last Updated:*`` heading). The fix: a recognizable marker absent is
+    a structural failure of the gate, NOT a tolerable format drift. PR
+    #3112 lands the regex hardening that makes this test green.
+
+    If a contributor legitimately renames the heading they MUST also bump
+    the ``*Last Updated:*`` line OR update the regex -- the gate's job is
+    to force that attention, not to silently forgive it.
     """
     target = _redirect(checker, tmp_path, monkeypatch)
     target.write_text("# Known Issues\n\nNo timestamp here.\n", encoding="utf-8")
     rc = checker.main()
     out = capsys.readouterr().out
-    assert rc == 0
-    assert "WARN" in out
+    assert rc == 1
+    assert "ERROR" in out
     assert "Last Updated" in out
+    assert "regex" in out.lower()
+
+
+def test_main_returns_zero_when_marker_has_parenthetical_summary(
+    checker, tmp_path, monkeypatch, capsys
+):
+    """Marker with a parenthetical summary between date and closing ``*`` is recognised.
+
+    The established ``*Last Updated:*`` line format (used by every wave-
+    orchestration PR since #3071) places the closing ``*`` after an
+    optional parenthetical summary of LIMIT-N additions, e.g.::
+
+        *Last Updated: 2026-08-17 (LIMIT-08 + LIMIT-09 + ...)*
+
+    Pre-#3105 the script's regex required the closing ``*`` to IMMEDIATELY
+    follow the date, which caused every LIMIT-N addition to trigger a
+    silent WARN + exit 0. PR #3112 hardens the regex to accept the
+    parenthetical; this test pins the post-fix behavior so future
+    refactors don't silently regress it.
+    """
+    target = _redirect(checker, tmp_path, monkeypatch)
+    today = date.today()
+    target.write_text(
+        f"# Known Issues\n\n*Last Updated: {today.isoformat()} "
+        f"(LIMIT-08 + LIMIT-09 + LIMIT-10 retained)*\n",
+        encoding="utf-8",
+    )
+    rc = checker.main()
+    out = capsys.readouterr().out
+    assert rc == 0
+    assert "OK" in out
+    assert str(today) in out
+    assert "within" in out
 
 
 # ---------------------------------------------------------------------------

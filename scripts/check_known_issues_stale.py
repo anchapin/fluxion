@@ -5,8 +5,11 @@
 # Run as a CI gate on every PR and main push.
 #
 # Exit codes:
-#   0 — Last Updated is within 60 days (or file/date not found)
-#   1 — Last Updated is stale (>60 days old)
+#   0 — Last Updated is within 60 days, OR the file is missing (skip per #1723)
+#   1 — Last Updated is stale (>60 days old), OR the marker is missing /
+#       unrecognized format (gate must block per issue #3105 to prevent the
+#       pre-2026-08-17 silent-skip regression where ANY format drift would
+#       silently disable the gate)
 
 import re
 import sys
@@ -27,11 +30,14 @@ def main() -> int:
         print(f"{path} not found — skipping stale check")
         return 0
 
-    # Match "*Last Updated: YYYY-MM-DD*" (with optional italics markers)
-    m = re.search(r"\*Last Updated:\s*(\d{4}-\d{2}-\d{2})\*", content)
+    # Match "*Last Updated: YYYY-MM-DD*" (established format also allows an optional
+    # parenthetical summary of LIMIT-N additions between the date and the closing *,
+    # e.g. "*Last Updated: 2026-08-17 (LIMIT-08 + LIMIT-09 ...)*" — see issue #3105).
+    m = re.search(r"\*Last Updated:\s*(\d{4}-\d{2}-\d{2})(?:\s*\([^)]*\))?\s*\*", content)
     if not m:
-        print(f"WARN: Could not find '*Last Updated: YYYY-MM-DD*' in {path}")
-        return 0
+        print(f"ERROR: Could not parse '*Last Updated: YYYY-MM-DD*' in {path}")
+        print("  regex mismatch — script needs update (see issue #3105)")
+        return 1
 
     last_updated = date.fromisoformat(m.group(1))
 
