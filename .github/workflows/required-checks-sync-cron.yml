@@ -1,0 +1,113 @@
+name: Required Checks Sync (Live Mode)
+
+# Issue #3123: scheduled live-mode verification of `develop` branch protection
+# against `release_gates.yaml::ci.required_checks` (Issue #3116 closure).
+#
+# `scripts/check_required_checks_sync.py` ships with a static-only mode (run
+# by `.github/workflows/scripts-tests.yml` on every PR — never network-bound)
+# and a cron-mode that additionally `gh api`-queries the live branch
+# protection. #3116 added the live-mode hook; #3123 wires it into a
+# scheduled workflow so the gap ("YAML says 13 required checks, develop
+# actually has 0") cannot recur silently between PRs.
+#
+# The default `GITHUB_TOKEN` in scheduled workflows is read-only on most
+# scopes, so the script's `gh api /repos/{repo}/branches/develop/protection`
+# call needs a PAT with `repo` scope. The PAT lives at the org level as
+# `FLUXION_BRANCH_PROTECTION_PAT` (rotated quarterly per
+# `docs/agents/required-checks-sync-cron.md`); the workflow passes it to
+# `gh` via the `GH_TOKEN` env var.
+#
+# Failure mode: the script exits 1 when either static drift or live
+# branch-protection drift is detected. The scheduled workflow then fails
+# in the Actions UI; maintainers subscribed to workflow-failure alerts
+# are notified via the standard GitHub Actions channel. No silent
+# success path: if `gh api` fails (auth, network, rate limit), the
+# script returns a non-zero exit code and the cron run is marked failed.
+#
+# Job name is intentionally NOT added to `release_gates.yaml::ci.
+# required_checks` — scheduled-only workflows never produce a check run
+# that can block a PR, so they cannot be a required status check. The
+# `scripts/check_required_checks_sync.py` invariant #3 enforces this on
+# the static side; the cron job lives outside `required_checks` by design.
+
+on:
+  schedule:
+    # Daily at 06:00 UTC — early enough that a nightly maintainer
+    # sweep (post-Architecture Drift at 03:00 UTC, post-ashrae_140_
+    # validation at 02:00 UTC, post-pgo-nightly at 02:30 UTC) can
+    # react before the next PR lands on develop. Same quiet hours as
+    # `scripts/check_required_checks_sync.py` static-mode runs in
+    # `.github/workflows/scripts-tests.yml` to keep the failure /
+    # success windows aligned.
+    - cron: '0 6 * * *'
+  workflow_dispatch:
+    # Manual operator run — useful immediately after a branch-protection
+    # apply (`gh api PUT`) to confirm the live state matches the YAML.
+
+# Least-privilege GITHUB_TOKEN default (Issue #2526). The drift job
+# escalates to a job-level `GH_TOKEN` from the org secret only where
+# the live `gh api` call needs it. The default `GITHUB_TOKEN` is unused.
+permissions:
+  contents: read
+
+concurrency:
+  group: required-checks-sync-cron-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  required-checks-sync-live:
+    name: Required Checks Sync (Live Mode)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4
+
+      - name: Set up Python
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065  # v5
+        with:
+          python-version: '3.12'
+
+      - name: Install PyYAML (required by the sync script)
+        # scripts/requirements-test.txt already pins pyyaml, but the
+        # cron runner may not have it pre-installed. Pull just the
+        # one direct dep to keep the step fast.
+        run: pip install pyyaml
+
+      # Issue #3123: opt the script into live-mode (`gh api` against
+      # `anchapin/fluxion:develop` branch protection). `GH_TOKEN` is the
+      # org-level `FLUXION_BRANCH_PROTECTION_PAT` (a PAT with `repo`
+      # scope — see `docs/agents/required-checks-sync-cron.md` for the
+      # rotation policy). The script exits non-zero when either static
+      # YAML drift or live branch-protection drift is detected, which
+      # fails the cron run.
+      - name: Verify required-checks sync (static + live)
+        env:
+          GH_TOKEN: ${{ secrets.FLUXION_BRANCH_PROTECTION_PAT }}
+          FLUXION_CHECK_LIVE_PROTECTION: '1'
+        run: python3 scripts/check_required_checks_sync.py
+
+      # Failure-comment pattern: on a schedule-triggered run the PR
+      # comment from `architecture_drift.yml` doesn't apply, so the
+      # operator-facing signal is the failed run summary above +
+      # GitHub's standard workflow-failure notifications. We add an
+      # explicit `::error::` annotation so the run summary's failure
+      # tab links directly to the remediation steps.
+      - name: Annotate failure remediation
+        if: failure()
+        run: |
+          cat <<'EOF' >&2
+          ::error::Required-checks drift detected between release_gates.yaml and develop branch protection (Issue #3116/#3123).
+
+          Remediation:
+            1. Read the drift messages above. The script emits the
+               missing/extra `required_status_checks.contexts` names.
+            2. Update `release_gates.yaml::ci.required_checks` to match
+               develop's live branch protection, OR apply the missing
+               contexts via `gh api --method PUT` against
+               `/repos/anchapin/fluxion/branches/develop/protection`
+               (see `scripts/check_required_checks_sync.py` docstring).
+            3. Re-run this workflow from the Actions tab (workflow_dispatch)
+               to confirm the fix.
+          EOF
+          exit 1
