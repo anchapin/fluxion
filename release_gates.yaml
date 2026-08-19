@@ -312,6 +312,25 @@ ci:
     # `tests/reference_data/ashrae140/case_{600,900}_cooling_kwh.json`.
     - "Surrogate ASHRAE 140 MAE Gate (Issue #2924)"
 
+    # Issue #1784 (T6.4): per-timestep surrogate drift tolerance gate. The
+    # bridge between `tests/reference_data/surrogate/` and the runtime
+    # `SurrogateManager` — asserts the surrogate output does not drift
+    # >1% from the 9R4C physics baseline on ASHRAE 140 Case 900. Job is
+    # defined in `.github/workflows/surrogate_drift_gate.yml` under the
+    # `surrogate-drift-gate` id, gated by `--features ort`. Two-mode
+    # operation (mirrors the surrogate ASHRAE MAE gate #2924 above and
+    # the lenient-fallback contract #1865): ONNX mode enforces the strict
+    # ±1% per-timestep tolerance; fallback mode (no trained model shipped)
+    # requires the operator's `models/surrogate_zone_thermal.onnx.sha256`
+    # manifest as a fail-closed precondition (Issue #2923) and falls back
+    # to the ±10% annual HVAC analytical floor. Path-filter trigger on
+    # `**/surrogate*.rs`, `**/Surrogate*.rs`, `models/**`, and
+    # `tests/reference_data/surrogate/**`. Closes the #3129 gap where
+    # this check was emitted on PRs but absent from `ci.required_checks`
+    # and `ci.workflow_index`, allowing surrogate regressions to ship
+    # silently.
+    - "Surrogate Drift Tolerance Gate (Issue #1784)"
+
     # Cross-platform floating-point determinism (issues #1351 / #1297).
     # The listener job is defined in `.github/workflows/ashrae_validation.yml`
     # under the `fluxion-determinism-gate` id and is triggered by the
@@ -570,6 +589,27 @@ ci:
       workflow: ".github/workflows/ashrae_validation.yml"
       issue: 2924
       triggered_by: "PR + push to develop"
+
+    - job: "Surrogate Drift Tolerance Gate (Issue #1784)"
+      # Per-timestep surrogate drift tolerance gate (T6.4). The bridge
+      # between `tests/reference_data/surrogate/` and the runtime
+      # `SurrogateManager` — asserts the surrogate output does not drift
+      # >1% from the 9R4C physics baseline on ASHRAE 140 Case 900. The
+      # `surrogate-drift-gate` job in `.github/workflows/surrogate_drift_
+      # gate.yml` runs the four `surrogate_drift_gate` integration tests
+      # + the `surrogate_drift_fallback_regression` fallback-mode floor
+      # test (Issue #2923), gated by `--features ort`. Two-mode operation
+      # (mirrors #2924 above and the lenient-fallback contract #1865):
+      # ONNX mode enforces the strict ±1% per-timestep tolerance;
+      # fallback mode requires the operator's `models/surrogate_zone_
+      # thermal.onnx.sha256` manifest as a fail-closed precondition
+      # (Issue #2923) and falls back to the ±10% annual HVAC analytical
+      # floor. Closes the #3129 gap where this check was emitted on PRs
+      # but absent from `ci.required_checks` and `ci.workflow_index`,
+      # allowing surrogate regressions to ship silently.
+      workflow: ".github/workflows/surrogate_drift_gate.yml"
+      issue: 1784
+      triggered_by: "PR + push to develop/main (path-filter: surrogate*.rs, Surrogate*.rs, models/**, tests/reference_data/surrogate/**)"
 
     - job: "Fluxion Determinism Gate (Issue #1351)"
       # The listener job is defined in `ashrae_validation.yml`; it
