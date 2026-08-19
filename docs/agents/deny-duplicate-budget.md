@@ -2,13 +2,13 @@
 
 - **Owner**: Issue #2994 — long-term plan to reduce the duplicate-version count toward zero and ultimately flip `deny.toml [bans] multiple-versions = "deny"`.
 - **Live state**: 45 duplicate-version diagnostics (matches `# duplicates_baseline: 45` in deny.toml and `total_duplicates` in the JSON baseline; updated 2026-08-17).
-- **Gate**: `.github/workflows/security.yml` `deny` job fails when the live count exceeds the baseline. Python re-implementation: `python3 scripts/check_deny_duplicate_budget.py`.
+- **Gate**: `.github/workflows/security.yml` `deny` job fails when the live count exceeds the baseline. The Python re-implementation (`scripts/check_deny_duplicate_budget.py`) was removed 2026-08-19 as orphan — see `.agents/results/result-pm.md`; the inline bash counting step in `security.yml` is the only live gate.
 - **Cluster inventory (machine-readable)**: `tests/reference_data/deny_budget_baseline.json` (schema_version=1, 10 clusters spanning 45 crates).
 - **Reduction roadmap**: 45 → 30 → 15 → 0 (v1.4-M1, M2, M3). Each milestone lowers both the JSON baseline and the deny.toml comment in the same PR.
 
 ## How the gate works
 
-`deny.toml [bans]` is configured with `multiple-versions = "warn"` and a `# duplicates_baseline: 45` comment (cargo-deny 0.20.2 rejects unknown keys, so the budget lives as a comment that the CI step parses). `.github/workflows/security.yml`'s `deny` job runs `cargo deny -f json check bans`, counts `"code":"duplicate"` diagnostics, and fails when the count exceeds the baseline. This script (`scripts/check_deny_duplicate_budget.py`) is a Python re-implementation of that count with an additional cross-check against the JSON baseline so a future reduction PR can lower the budget atomically in both places.
+`deny.toml [bans]` is configured with `multiple-versions = "warn"` and a `# duplicates_baseline: 45` comment (cargo-deny 0.20.2 rejects unknown keys, so the budget lives as a comment that the CI step parses). `.github/workflows/security.yml`'s `deny` job runs `cargo deny -f json check bans`, counts `"code":"duplicate"` diagnostics, and fails when the count exceeds the baseline. The Python re-implementation (`scripts/check_deny_duplicate_budget.py`, removed 2026-08-19 as orphan — see `.agents/results/result-pm.md`) added a cross-check against the JSON baseline so a future reduction PR could lower the budget atomically in both places; that cross-check is no longer available, and a future reduction PR must lower both fields in the same PR by hand.
 
 ## Cluster inventory
 
@@ -42,13 +42,15 @@ Each milestone decrements both `deny.toml [bans] duplicates_baseline` (comment) 
 ## Operator workflow
 
 ```bash
-# 1. Reproduce the live count (script reads cargo deny JSON).
-python3 scripts/check_deny_duplicate_budget.py
-# → PASS: live count 45 matches baseline 45.
+# 1. Reproduce the live count (inline bash in security.yml does this in CI).
+#    Locally, run the same cargo-deny invocation the workflow runs:
+cargo deny -f json check bans 2>&1 \
+    | grep -c '"code":"duplicate"' || true
+# → 45 (matches the deny.toml comment + JSON baseline)
 
-# 2. To machine-readable JSON (CI dashboards / future tracking):
-python3 scripts/check_deny_duplicate_budget.py --json-out | tail -n +"--- JSON output ---"
-# → { "duplicates_baseline": 45, "live_count": 45, "over_budget": false, "crates": [...], ... }
+# 2. To machine-readable JSON: see the inline counting step in
+#    .github/workflows/security.yml `deny` job (the only live gate as of
+#    2026-08-19 — the Python re-implementation was removed as orphan).
 
 # 3. To reduce a cluster (example: bitflags):
 #    - identify the 1.3.2 transitive (rg "bitflags = \"1\"" --type toml),
@@ -60,7 +62,7 @@ python3 scripts/check_deny_duplicate_budget.py --json-out | tail -n +"--- JSON o
 #    - commit both files in one PR.
 
 # 4. The CI gate from #2933 catches regressions automatically (the security.yml job
-#    runs every PR). The script is the local equivalent.
+#    runs every PR).
 ```
 
 ## References
@@ -70,6 +72,5 @@ python3 scripts/check_deny_duplicate_budget.py --json-out | tail -n +"--- JSON o
 - **Issue #2699** — original cargo-deny introduction (closed).
 - **`deny.toml [bans]`** — `multiple-versions = "warn"`, `# duplicates_baseline: 45`.
 - **`.github/workflows/security.yml` `deny` job** — runs the inline counting step every PR.
-- **`scripts/check_deny_duplicate_budget.py`** — Python re-implementation with JSON baseline.
 - **`tests/reference_data/deny_budget_baseline.json`** — machine-readable cluster inventory (schema_version=1).
-- **`scripts/ci/test_check_deny_duplicate_budget.py`** — pytest regression harness (6 cases: real-baseline + in-budget + over-budget + missing-config + drift + JSON schema).
+- *Removed 2026-08-19 (see `.agents/results/result-pm.md`): `scripts/check_deny_duplicate_budget.py` (Python re-implementation with JSON baseline) and `scripts/ci/test_check_deny_duplicate_budget.py` (pytest regression harness, 6 cases).*

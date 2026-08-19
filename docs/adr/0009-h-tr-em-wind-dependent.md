@@ -15,7 +15,7 @@ This ADR is the **7-line summary** of the tracking-stub scaffolding shipped with
 1. PR #3024 (issue #2891) introduced wind-velocity-dependent `h_se` (the exterior film coefficient used for the sol-air longwave correction) per ASHRAE 140 §5.2.6, but left `h_tr_em` (envelope-to-mass conductance) time-invariant at build-time `1/EXTERIOR_FILM_COEFF_DEFAULT`.
 2. The cooling-deadband shift exposed by PR #3024 (Case 195 annual cooling 220 → 758 kWh, target ≤ 50 kWh) is the diagnostic signature of the missing `h_tr_em` per-step recompute; at low wind speeds the wind-dependent `h_se` amplifies the sol-air longwave correction, shifting more hours into the cooling deadband.
 3. Per `RULES.md` ("no parameter tuning", "must-never hardcode results"), `AGENTS.md` ("do NOT modify physics code without checking `ARCHITECTURE.md` first"), and the issue's own scope, the actual recomputation is out of scope for a single sub-agent.
-4. This ADR ships the **tracking stub only** — the LIMIT-13 entry in `docs/KNOWN_ISSUES.md`, the snapshot diff verifier `scripts/verify_h_tr_em_regression.py`, and the pytest harness `scripts/ci/test_verify_h_tr_em_regression.py` — and refuses to record an actual implementation decision.
+4. This ADR ships the **tracking stub only** — the LIMIT-13 entry in `docs/KNOWN_ISSUES.md` and refuses to record an actual implementation decision. *(The snapshot diff verifier `scripts/verify_h_tr_em_regression.py` and pytest harness `scripts/ci/test_verify_h_tr_em_regression.py` that §2 / §3 below originally described were removed 2026-08-19 as orphan — see `.agents/results/result-pm.md`; the §2 and §3 sections are retained as historical context for the verifier design that any future implementation should re-derive.)*
 5. The verifier fails closed (exit 2) when the placeholder snapshot set has not been populated, so a future implementer is forced to capture real per-step measurements via **ADR-0008**'s pattern before shipping any code change.
 6. `tests/reference_data/zone_balance/strict_energy_gate_baseline.json` is **not modified** by this scaffolding — per AGENTS.md, it must never be raised to hide a regression.
 7. `src/sim/`, `src/physics/`, and `fluxion-core/` are **not modified** by this scaffolding — only docs, scripts, and pytest tests.
@@ -71,7 +71,7 @@ A new LIMIT-13 entry that documents:
 - The *what this PR does NOT do* list (no physics code, no baseline modification, no `ARCHITECTURE.md` / `RULES.md` modification, no architectural decision recorded).
 - The references to #2891 (origin), #3024 (partial fix), #3059 (5R1C/9R4C architectural rework), #1465 / #1462 (GaugeSolver), #2868 (sister issue), #3072 (aggressive-baseline cohort meta-issue), and **ADR-0008** (snapshot-diff verifier pattern).
 
-### 2. Snapshot diff verifier (`scripts/verify_h_tr_em_regression.py`)
+### 2. Snapshot diff verifier (originally `scripts/verify_h_tr_em_regression.py`, removed 2026-08-19 as orphan — see `.agents/results/result-pm.md`)
 
 CLI + Python module. Mirrors the pattern of `scripts/verify_gauge_solver_regression.py` from #3070:
 
@@ -82,9 +82,11 @@ CLI + Python module. Mirrors the pattern of `scripts/verify_gauge_solver_regress
 - Fail-closed default: refuses to diff a placeholder snapshot set (exit 2) so a future implementer cannot silently compare against an empty baseline. `--allow-placeholder` is the explicit opt-out.
 - SHA-256 fingerprint check (`--strict`): a hand-edited case file whose content drifts from the manifest's stamped `sha256` trips exit 2 so a silent tweak to the placeholder cannot slip past the gate.
 
+*This section is retained as historical context. A future PR that submits the actual per-step recompute must re-derive this verifier — the `argparse` / exit-code / SHA-256 contract documented above is the design that should be restored.*
+
 The snapshot set is intentionally **not** shipped by this PR. The verifier refuses to diff a placeholder set (exit 2), forcing the future implementer to capture real per-step measurements via **ADR-0008**'s pattern before shipping any code change. The directory the future implementer will populate is `tests/reference_data/h_tr_em_baseline/` (mirroring the `tests/reference_data/gauge_solver_baseline/` directory from #3070).
 
-### 3. Pytest harness (`scripts/ci/test_verify_h_tr_em_regression.py`)
+### 3. Pytest harness (originally `scripts/ci/test_verify_h_tr_em_regression.py`, removed 2026-08-19 as orphan)
 
 A pytest harness covering the verifier's contract:
 
@@ -93,6 +95,8 @@ A pytest harness covering the verifier's contract:
 - `compute_diff` no-drift / regression / tolerance-override / schema-drift scenarios.
 - `verify_fingerprints` empty / silent-edit scenarios.
 - `main()` end-to-end: clean (exit 0), regression (exit 1), placeholder (exit 2), missing manifest (exit 3), JSON output shape, `--strict` SHA-256 mismatch (exit 2), CLI tolerance override.
+
+*Retained as historical context for the harness coverage that any future verifier re-implementation should restore.*
 
 ## What this ADR does NOT do
 
@@ -109,7 +113,7 @@ A pytest harness covering the verifier's contract:
 
 1. Runs the existing Case 195 / 600 / 620 integration tests against `develop` to populate `tests/reference_data/h_tr_em_baseline/` with real numbers, following the **ADR-0008** pattern (placeholder snapshot set, real-measurement capture, no manual tuning).
 2. Implements the per-step recomputation in `step_physics_5r1c` (`physics_impl.rs:155`), sourcing the per-step wind speed from `ThermalModelData::weather.wind_speed` via `wind_at_building_height_from_10m` (mirroring the existing `h_se` path at lines 339-362).
-3. Runs the verifier end-to-end:
+3. Runs the verifier end-to-end (the verifier must be re-derived per the contract in §2 — see the orphan-removal note above):
    ```
    python3 scripts/verify_h_tr_em_regression.py \
        --before tests/reference_data/h_tr_em_baseline \
@@ -167,8 +171,8 @@ The recompute is fault-tolerant by construction:
 - Issue #1462 — Phase 1b shadow-mode GaugeSolver in `physics_adapter.rs` (closed individually, NOT yet production-path)
 - Issue #3072 — aggressive-baseline cohort meta-issue (Cases 195 / 600 / 620 / 940 / 960)
 - `tests/reference_data/h_tr_em_baseline/` — the placeholder snapshot set (to be created by the future implementer; the verifier rejects placeholder snapshots until real measurements are captured)
-- `scripts/verify_h_tr_em_regression.py` — the verifier
-- `scripts/ci/test_verify_h_tr_em_regression.py` — pytest harness
+- `scripts/verify_h_tr_em_regression.py` — the verifier *(removed 2026-08-19 as orphan; re-derive from §2 above)*
+- `scripts/ci/test_verify_h_tr_em_regression.py` — pytest harness *(removed 2026-08-19 as orphan; re-derive from §3 above)*
 - `docs/KNOWN_ISSUES.md` §LIMIT-13 — the per-case-issue entry (companion to this ADR)
 - `docs/adr/0008-thermal-model-data-tdd-refactor.md` — the snapshot-diff verifier pattern (#3070) that this ADR mirrors
 - `docs/adr/0007-gauge-solver-structural-work.md` — the architectural unblocker (production-path GaugeSolver switchover)

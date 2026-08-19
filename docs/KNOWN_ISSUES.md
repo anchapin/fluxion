@@ -1940,19 +1940,8 @@ solar + envelope heat transfer, not a 5R1C/CTF parameter adjustment.
      decision recorded). The ADR documents the implementation plan
      and the dependencies on **ADR-0008** (snapshot diff verifier for
      bit-identical baselines) and **#3059** (GaugeSolver unblocker).
-  3. **`scripts/verify_h_tr_em_regression.py`** — a snapshot diff
-     verifier mirroring the `scripts/verify_gauge_solver_regression.py`
-     pattern from #3070. Exit codes follow the same
-     `EXIT_OK=0 / EXIT_REGRESSION=1 / EXIT_PLACEHOLDER=2 / EXIT_USAGE=3`
-     contract. Fail-closed by default: a placeholder snapshot set
-     (no `captured_at`) trips exit 2 so a future implementer cannot
-     silently compare against an empty baseline. The `--strict` flag
-     adds a SHA-256 fingerprint check.
-  4. **`scripts/ci/test_verify_h_tr_em_regression.py`** — pytest
-     harness covering placeholder detection, no-drift, regression,
-     tolerance-override, schema-drift, missing-manifest, JSON output,
-     `--strict` SHA-256 mismatch, and CLI tolerance-override
-     scenarios (mirror of `test_verify_gauge_solver_regression.py`).
+3. **`scripts/verify_h_tr_em_regression.py`** — *removed 2026-08-19 as orphan (see `.agents/results/result-pm.md`); was a snapshot diff verifier mirroring the `scripts/verify_gauge_solver_regression.py` pattern from #3070. Exit codes follow the same `EXIT_OK=0 / EXIT_REGRESSION=1 / EXIT_PLACEHOLDER=2 / EXIT_USAGE=3` contract. Fail-closed by default: a placeholder snapshot set (no `captured_at`) trips exit 2 so a future implementer cannot silently compare against an empty baseline. The `--strict` flag adds a SHA-256 fingerprint check. A future PR that submits the actual per-step recompute must re-derive this verifier from the contract documented here and in ADR-0009 §2.*
+   4. **`scripts/ci/test_verify_h_tr_em_regression.py`** — *removed 2026-08-19 as orphan; was a pytest harness covering placeholder detection, no-drift, regression, tolerance-override, schema-drift, missing-manifest, JSON output, `--strict` SHA-256 mismatch, and CLI tolerance-override scenarios (mirror of `test_verify_gauge_solver_regression.py`).*
   5. **§"Aggressive-baseline cohort tracking (Issue #3072)"** row
      already lists #3063 as a dependent issue (line 1127) — no
      change to that table required by this PR.
@@ -2054,8 +2043,8 @@ solar + envelope heat transfer, not a 5R1C/CTF parameter adjustment.
     `step_physics_5r1c` (the per-timestep loop where the future
     implementer must inject the per-step `h_tr_em_zone` recompute).
   - `docs/adr/0008-thermal-model-data-tdd-refactor.md` — the
-    snapshot-diff verifier pattern (#3070) that
-    `verify_h_tr_em_regression.py` mirrors.
+    snapshot-diff verifier pattern (#3070) that the now-removed
+    `verify_h_tr_em_regression.py` mirrored.
   - `docs/adr/0007-gauge-solver-structural-work.md` — the
     architectural unblocker (#1465/#1462 production-path switchover).
   - `RULES.md` — "no parameter tuning" + "must-never hardcode results".
