@@ -979,6 +979,32 @@ impl BenchmarkReport {
         total_error / self.results.len() as f64
     }
 
+    /// Calculates per-case MAE contribution (Issue #3171).
+    ///
+    /// Returns a HashMap mapping case_id to its MAE contribution, where contribution
+    /// is the sum of absolute percent errors for that case divided by the total
+    /// number of results. This enables contributors to identify which cases
+    /// drive the overall MAE in CI output.
+    pub fn case_mae_contributions(&self) -> HashMap<String, f64> {
+        if self.results.is_empty() {
+            return HashMap::new();
+        }
+
+        let total_count = self.results.len() as f64;
+        let mut case_errors: HashMap<String, f64> = HashMap::new();
+
+        for result in &self.results {
+            let entry = case_errors.entry(result.case_id.clone()).or_insert(0.0);
+            *entry += result.percent_error.abs();
+        }
+
+        for value in case_errors.values_mut() {
+            *value /= total_count;
+        }
+
+        case_errors
+    }
+
     /// Calculates the maximum deviation percentage.
     pub fn max_deviation(&self) -> f64 {
         self.results
@@ -1440,6 +1466,17 @@ impl BenchmarkReport {
             max_deviation_pct = self.max_deviation(),
             "validation report summary",
         );
+
+        let case_mae = self.case_mae_contributions();
+        let mut sorted_cases: Vec<_> = case_mae.iter().collect();
+        sorted_cases.sort_by(|a, b| b.1.partial_cmp(a.1).unwrap_or(std::cmp::Ordering::Equal));
+        for (case_id, contribution) in sorted_cases {
+            tracing::info!(
+                case_id = %case_id,
+                mae_contribution_pct = *contribution,
+                "per_case_mae_contribution",
+            );
+        }
     }
 
     /// Emits a machine-readable summary via `tracing` for CI ingestion. (Issue #2500)
@@ -1454,6 +1491,13 @@ impl BenchmarkReport {
         let warning_count = self.warning_count() as u32;
         let fail_count = self.fail_count() as u32;
 
+        let case_mae = self.case_mae_contributions();
+        let case_mae_sorted: Vec<_> = {
+            let mut v: Vec<_> = case_mae.iter().collect();
+            v.sort_by(|a, b| b.1.partial_cmp(a.1).unwrap_or(std::cmp::Ordering::Equal));
+            v.into_iter().map(|(k, v)| (k.clone(), *v)).collect()
+        };
+
         let summary = json!({
             "total_results": self.results.len() as u32,
             "pass_rate": self.pass_rate(),
@@ -1463,6 +1507,7 @@ impl BenchmarkReport {
             "mae": self.mae(),
             "max_deviation": self.max_deviation(),
             "duration_seconds": self.duration_seconds(),
+            "case_mae_contributions": case_mae_sorted,
         });
 
         tracing::info!(
