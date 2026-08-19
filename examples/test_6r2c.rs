@@ -7,19 +7,25 @@ fn main() {
 
     // Test 1: Default is 5R1C
     let model_5r1c = ThermalModel::new(1);
-    assert_eq!(model_5r1c.thermal_model_type, ThermalModelType::FiveROneC);
+    assert_eq!(
+        model_5r1c.hvac.thermal_model_type,
+        ThermalModelType::FiveROneC
+    );
     println!("Test 1 PASSED: Default model is 5R1C");
 
     // Test 2: Configure 6R2C
     let mut model_6r2c = ThermalModel::new(1);
     model_6r2c.configure_6r2c_model(0.75, 100.0, None);
-    assert_eq!(model_6r2c.thermal_model_type, ThermalModelType::SixRTwoC);
+    assert_eq!(
+        model_6r2c.hvac.thermal_model_type,
+        ThermalModelType::SixRTwoC
+    );
     println!("Test 2 PASSED: 6R2C model configured");
 
     // Test 3: Check capacitance split
-    let total_cap = model_6r2c.thermal_capacitance.as_ref()[0];
-    let env_cap = model_6r2c.envelope_thermal_capacitance.as_ref()[0];
-    let int_cap = model_6r2c.internal_thermal_capacitance.as_ref()[0];
+    let total_cap = model_6r2c.mass.thermal_capacitance.as_ref()[0];
+    let env_cap = model_6r2c.mass.envelope_thermal_capacitance.as_ref()[0];
+    let int_cap = model_6r2c.mass.internal_thermal_capacitance.as_ref()[0];
 
     assert!((env_cap - total_cap * 0.75).abs() < 0.01);
     assert!((int_cap - total_cap * 0.25).abs() < 0.01);
@@ -36,9 +42,9 @@ fn main() {
     println!("Test 4 PASSED: 100 timesteps simulated successfully");
 
     // Test 5: Check temperatures are reasonable
-    let temp = model_6r2c.temperatures.as_ref()[0];
-    let env_mass = model_6r2c.envelope_mass_temperatures.as_ref()[0];
-    let int_mass = model_6r2c.internal_mass_temperatures.as_ref()[0];
+    let temp = model_6r2c.setpoints.temperatures.as_ref()[0];
+    let env_mass = model_6r2c.mass.envelope_mass_temperatures.as_ref()[0];
+    let int_mass = model_6r2c.mass.internal_mass_temperatures.as_ref()[0];
 
     assert!(temp.is_finite() && temp > -50.0 && temp < 100.0);
     assert!(env_mass.is_finite() && env_mass > -50.0 && env_mass < 100.0);

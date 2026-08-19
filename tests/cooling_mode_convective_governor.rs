@@ -205,7 +205,7 @@ fn test_cooling_mode_governor_is_symmetric_under_sign_inversion() {
     // Force `solar_distribution_to_air` to a non-default value so the
     // governor has a measurable signal.
     let governor_factor = 0.30_f64; // matches the LowMass case in thermal_model_core.rs:2071
-    model.solar_distribution_to_air = governor_factor;
+    model.solar.solar_distribution_to_air = governor_factor;
 
     // Use Denver TMY (matches other tests in the suite).
     let _weather = EpwWeatherSource::from_file("assets/weather/WD600.epw")
@@ -219,11 +219,11 @@ fn test_cooling_mode_governor_is_symmetric_under_sign_inversion() {
     // does NOT affect any other test because the model is local and never
     // escapes this function.
     //
-    // (We reach into `model.0.surfaces` via a debug-only access: the public
+    // (We reach into `model.solar.surfaces` via a debug-only access: the public
     // API does not expose this, but the field is `pub` on the inner struct.)
-    model.0.surfaces.clear();
+    model.solar.surfaces.clear();
     assert!(
-        model.0.surfaces.is_empty(),
+        model.solar.surfaces.is_empty(),
         "Surfaces must be empty to exercise the symmetric fallback path",
     );
 
