@@ -103,9 +103,13 @@ jobs:
 
       - name: Skip due to insufficient RAM
         if: steps.ram-check.outputs.skip == 'true'
+        # Issue #3117: this previously contained a malformed triple-brace
+        # GitHub Actions expression (the wrong form is in the verbatim
+        # original commit; the fixed form uses `${{ ... }}`) that the runner
+        # rejected at parse time, scheduling 0 jobs in 0 seconds on push.
         run: |
-          echo "Skipping mutation testing: insufficient RAM (${{{ steps.ram-check.outputs.ram_available_gb }}} GB < 16 GB)"
-          echo "This is advisory — mutation testing requires 32 GB for the full workspace."
+          echo "Skipping mutation testing: insufficient RAM (${{ steps.ram-check.outputs.ram_available_gb }} GB < 16 GB)"
+          echo "This is advisory — mutation testing requires a 32 GB runner for the full workspace."
           echo "The nightly full-suite run (mutation-nightly.yml) handles comprehensive coverage."
 
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4

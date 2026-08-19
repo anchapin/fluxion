@@ -58,7 +58,20 @@ jobs:
 
       - name: Create issue if stale and no open issue exists
         if: steps.stale_check.outputs.status == 'stale' && steps.find_issue.outputs.issue_number == ''
+        # Issue #3117 — the previous inline body heredoc (`<<'ISSUE_BODY'`)
+        # terminated the YAML literal block scalar prematurely (the heredoc
+        # body was deindented below the YAML minimum). The literal block
+        # ended at line 69, after which the line beginning with a backtick
+        # (`docs/KNOWN_ISSUES.md`) was invalid YAML at column 1, causing the
+        # workflow to fail at parse time and produce 0 jobs in 0 seconds on
+        # every push event. The body now lives in a dedicated script under
+        # `.github/workflows/scripts/`, mirroring the
+        # `post_determinism_gate_comment.py` pattern fixed in #1397.
+        env:
+          ISSUE_BODY_FILE: ${{ runner.temp }}/known-issues-stale-body.md
         run: |
+          OUTPUT_FILE="${ISSUE_BODY_FILE}" \
+            python3 .github/workflows/scripts/post_staleness_issue_body.py
           gh issue create \
             --repo "${{ github.repository }}" \
             --title "KNOWN_ISSUES.md Refresh Required — stale >45 days" \
@@ -66,34 +79,8 @@ jobs:
             --label "known-issues-refresh" \
             --label "P2" \
             --assignee "@me" \
-            --body "$(cat <<'ISSUE_BODY'
-## KNOWN_ISSUES.md Staleness Alert
-
-`docs/KNOWN_ISSUES.md` is more than **45 days** old and approaching the 60-day CI gate.
-
-### Action Required
-
-1. Review each section of `docs/KNOWN_ISSUES.md` and update the Last Updated date and section notes as needed
-2. Run the refresh script: `bash scripts/refresh_known_issues.sh`
-3. Open a PR with the refreshed date and a brief summary of any section updates
-
-### Refresh Checklist
-
-- [ ] **Foundation Issues (BASE)** — verify all BASE-0x entries still reflect current state
-- [ ] **Solar Issues (SOLAR)** — verify SOLAR-0x entries and update if new issues discovered
-- [ ] **Free-Floating Temperature Issues (FREE)** — verify FREE-0x entries
-- [ ] **Temperature Issues (TEMP)** — verify TEMP-0x entries
-- [ ] **Multi-Zone Issues (MULTI)** — verify MULTI-0x entries
-- [ ] **5R1C Model Limitations (LIMIT)** — verify LIMIT-0x entries, especially LIMIT-05
-- [ ] Update `*Last Updated: YYYY-MM-DD*` at the top of the file
-
-### Reference
-
-- Staleness check: `scripts/check_known_issues_stale.py` (60-day CI gate)
-- Refresh script: `scripts/refresh_known_issues.sh`
-- CI gate fails at 60 days; this issue was created at 45 days to allow time for review
-ISSUE_BODY
-          )"
+            --body-file "${ISSUE_BODY_FILE}"
+          rm -f "${ISSUE_BODY_FILE}"
 
       - name: Comment on existing issue if stale and already open
         if: steps.stale_check.outputs.status == 'stale' && steps.find_issue.outputs.issue_number != ''

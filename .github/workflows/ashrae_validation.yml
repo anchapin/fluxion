@@ -1242,19 +1242,15 @@ jobs:
               echo "::error::See upstream run: ${UPSTREAM_RUN_URL}"
               if [ -n "${PR_NUMBER:-}" ]; then
                 COMMENT_FILE="$(mktemp -t performance-gate-comment.XXXXXX.md)"
-                cat > "${COMMENT_FILE}" << 'COMMENTEOF'
-## Performance Regression Detected ⚠️
-
-The **Fluxion Performance Gate** has failed. Upstream benchmarks show a performance regression exceeding the 10% threshold.
-
-### Action Required
-Please investigate the performance regression and either:
-- Fix the regression before merging, OR
-- Establish a new baseline on `main` if the regression is intentional
-
-### Details
-See the upstream Performance Dashboard run for detailed benchmark results.
-COMMENTEOF
+                # Issue #3117 — the previous inline PR-comment heredoc
+                # (`<<'COMMENTEOF'`) terminated the YAML literal block scalar
+                # prematurely (the heredoc body was deindented below the YAML
+                # minimum), producing invalid YAML on the next line and causing
+                # the workflow to fail at parse time. The body now lives in a
+                # dedicated script under `.github/workflows/scripts/`, mirroring
+                # the `post_determinism_gate_comment.py` pattern fixed in #1397.
+                OUTPUT_FILE="${COMMENT_FILE}" \
+                  python3 "${GITHUB_WORKSPACE}/.github/workflows/scripts/post_performance_gate_comment.py"
                 gh pr comment "${PR_NUMBER}" --body-file "${COMMENT_FILE}" \
                   || echo "::warning::Failed to post PR comment for PR #${PR_NUMBER}"
                 rm -f "${COMMENT_FILE}"
