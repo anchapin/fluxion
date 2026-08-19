@@ -35,11 +35,20 @@
 # zip-compression / unzip-extraction surface area, so a CI failure
 # here can only mean the JS interface actually diverged.
 #
-# The per-OS output name is wired up via the standard
+# The per-OS `output_name` is wired up via the standard
 # `strategy.matrix.include` pattern: each matrix row carries an
-# `output_name` that determines the key under which the interface
-# hash is exposed on the `wasm-build` job's `outputs:` map, so the
-# downstream job can read e.g. `needs.wasm-build.outputs.ubuntu_hash`.
+# `output_name`. Issue #3117: previously, the matrix job's
+# `outputs:` map used a dynamic expression as its KEY
+# (`${{ matrix.output_name }}: ${{ steps.iface.outputs.hash }}`),
+# so a downstream job could read each platform's hash via e.g.
+# `needs.wasm-build.outputs.ubuntu_hash`. That pattern was rejected
+# by the GitHub Actions runner at parse time on every push event,
+# so the workflow scheduled 0 jobs in 0 seconds. The `include`
+# entries remain in place (useful for future per-OS overrides
+# such as `flags:` or `env:`) but the hash is now exchanged via
+# per-OS artifacts (`wasm-iface-hash-<os>`) uploaded alongside the
+# wasm-pack `pkg/` artifact — see the
+# `interface-stability` job below.
 #
 # Triggered on PR + push to develop/main for paths that could affect the
 # WASM output: fluxion-wasm sources, its fluxion-fluid / fluxion-core
@@ -97,14 +106,16 @@ jobs:
           - ubuntu-latest
           - macos-latest
           - windows-latest
-        # Per-OS `output_name` keys into the matrix job's `outputs:`
-        # block below, so the downstream `interface-stability` job
-        # can read each platform's hash via e.g.
-        # `needs.wasm-build.outputs.ubuntu_hash`. The platform-name
-        # suffix matches `${{ matrix.os }}`; the matrix `include` is
-        # also a useful place to add per-OS overrides later (e.g.
-        # extra `flags:` or `env:` for windows) without touching the
-        # steps block.
+        # Per-OS `output_name` was previously used as a dynamic key into
+        # the matrix job's `outputs:` block so the downstream
+        # `interface-stability` job could read each platform's hash via
+        # e.g. `needs.wasm-build.outputs.ubuntu_hash`. Issue #3117: that
+        # dynamic-key pattern was rejected by the runner at parse time on
+        # every push event, scheduling 0 jobs in 0 seconds. The `include`
+        # entries are retained because they remain a useful place to add
+        # per-OS overrides later (e.g. extra `flags:` or `env:` for
+        # windows) without touching the steps block; the hash is now
+        # exchanged via per-OS artifacts.
         include:
           - os: ubuntu-latest
             output_name: ubuntu_hash
@@ -112,12 +123,12 @@ jobs:
             output_name: macos_hash
           - os: windows-latest
             output_name: windows_hash
-    # Dynamic per-matrix output — the key is the value of
-    # `matrix.output_name` (one of ubuntu_hash / macos_hash /
-    # windows_hash), so each platform's interface hash ends up under
-    # a stable name on the `wasm-build` job outputs map.
-    outputs:
-      ${{ matrix.output_name }}: ${{ steps.iface.outputs.hash }}
+    # Per-platform hash artifact uploaded alongside `pkg/`, see
+    # `Upload WASM pkg/ for downstream consumers` below. Issue #3117:
+    # the previous dynamic-key pattern
+    # (`${{ matrix.output_name }}: ${{ steps.iface.outputs.hash }}`)
+    # was rejected by the runner at parse time on every push event,
+    # scheduling 0 jobs in 0 seconds.
 
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4
@@ -260,21 +271,33 @@ jobs:
           PY
           )
           echo "hash=${HASH}" >> "$GITHUB_OUTPUT"
+          # Persist the per-OS hash as a sibling file inside the
+          # artifact tree so the downstream `interface-stability`
+          # job can read every platform's hash by downloading the
+          # per-OS artifacts (Issue #3117 — this replaces the
+          # unparseable dynamic-key pattern `${{ matrix.output_name }}`)
+          # with a path that survives GitHub's runner hardened
+          # defaults.
+          mkdir -p fluxion-wasm/iface-hash
+          printf '%s\n' "${HASH}" > "fluxion-wasm/iface-hash/${HASH}.hash"
+          echo "iface_hash_file=fluxion-wasm/iface-hash/${HASH}.hash" >> "$GITHUB_OUTPUT"
           {
             echo "| wasm-bindgen interface hash | \`${HASH}\` |"
           } >> "$GITHUB_STEP_SUMMARY"
           echo "WASM interface hash: ${HASH}"
 
-      # Per-OS artifact upload. Kept for downstream consumers
-      # (e.g. an npm publish step or a manual download for
-      # inspection) but NOT consumed by the cross-platform
-      # `interface-stability` job — that job reads the IFACE_HASH
-      # job outputs directly so it does not have to deal with
-      # upload/download roundtrip quirks. `fluxion-wasm/pkg` is the
-      # directory wasm-pack writes; `pkg/.gitignore` (created by
-      # wasm-pack itself) is left in place — it's already
-      # gitignored and contains a single `*` line that doesn't
-      # affect the artifact contents.
+      # Per-OS artifact upload. Carries both the `pkg/` directory
+      # wasm-pack produced (for downstream consumers such as an
+      # npm publish step) AND a small `iface-hash/` directory with a
+      # single file whose name is the hash and whose content is the
+      # hash repeated. The `interface-stability` job downloads all
+      # three artifacts, lists the `iface-hash/` dir on each, and
+      # reads the unique hash filename — avoiding the dynamic
+      # `${{ matrix.output_name }}` job-output-key pattern that
+      # caused every push event to schedule 0 jobs (Issue #3117).
+      # `fluxion-wasm/pkg/.gitignore` (created by wasm-pack itself)
+      # is left in place — it's already gitignored and contains a
+      # single `*` line that doesn't affect the artifact contents.
       - name: Upload WASM pkg/ for downstream consumers
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02  # v4
         with:
@@ -282,12 +305,28 @@ jobs:
           path: fluxion-wasm/pkg
           retention-days: 7
 
+      - name: Upload iface hash artifact for cross-platform comparison
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02  # v4
+        with:
+          name: wasm-iface-hash-${{ matrix.os }}
+          path: fluxion-wasm/iface-hash
+          retention-days: 7
+
   # Cross-platform interface-stability gate. Runs only after ALL three
-  # matrix rows succeed and asserts the per-OS IFACE_HASH job outputs
-  # are byte-identical. A mismatch means a platform-specific build
-  # flag, environment variable, or non-deterministic behavior leaked
-  # into the public JS surface — a silent consumer-facing regression
-  # that would otherwise only show up at npm-publish time.
+  # matrix rows succeed and asserts the per-OS iface hashes (carried in
+  # the `wasm-iface-hash-<os>` artifacts) are byte-identical. A
+  # mismatch means a platform-specific build flag, environment variable,
+  # or non-deterministic behavior leaked into the public JS surface —
+  # a silent consumer-facing regression that would otherwise only show
+  # up at npm-publish time.
+  #
+  # Issue #3117: previously this job consumed job outputs from the
+  # matrix (`needs.wasm-build.outputs.ubuntu_hash` etc.) via a dynamic
+  # matrix-output-key pattern that the runner rejected at parse time,
+  # so every push event scheduled 0 jobs in 0 seconds. The hash is now
+  # exchanged via per-OS artifacts (`wasm-iface-hash-<os>`) whose
+  # filenames are the actual hash strings — robust against runner
+  # hardening because no dynamic YAML-expression keys are involved.
   interface-stability:
     name: WASM Interface Stability (cross-platform)
     needs: wasm-build
@@ -295,13 +334,63 @@ jobs:
     if: always() && needs.wasm-build.result == 'success'
 
     steps:
+      - name: Download per-OS iface-hash artifacts
+        # Issue #3117: the previous matrix-output-key pattern was
+        # rejected by the runner at parse time, so each platform's
+        # hash is now exchanged via a dedicated artifact (`wasm-iface-
+        # hash-<os>`) rather than through job outputs. We download the
+        # three artifacts explicitly because `actions/download-artifact@v4`
+        # does not glob the artifact name — pattern filters files INSIDE
+        # an artifact, not the artifact name itself.
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093  # v4
+        with:
+          name: wasm-iface-hash-ubuntu-latest
+          path: artifacts/iface-hash/wasm-iface-hash-ubuntu-latest
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093  # v4
+        with:
+          name: wasm-iface-hash-macos-latest
+          path: artifacts/iface-hash/wasm-iface-hash-macos-latest
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093  # v4
+        with:
+          name: wasm-iface-hash-windows-latest
+          path: artifacts/iface-hash/wasm-iface-hash-windows-latest
+
       - name: Compare interface hashes across platforms
         shell: bash
         run: |
           set -euo pipefail
-          HASH_UBUNTU="${{ needs.wasm-build.outputs.ubuntu_hash }}"
-          HASH_MACOS="${{ needs.wasm-build.outputs.macos_hash }}"
-          HASH_WINDOWS="${{ needs.wasm-build.outputs.windows_hash }}"
+          # Each per-OS artifact contains exactly one file under
+          # `iface-hash/` whose name IS the hash and whose content is the
+          # same hash repeated. The downstream job finds the unique file
+          # name per OS bucket by listing the directory the artifact was
+          # extracted into. The matrix entries all converged on this path
+          # because the upload step name uses `matrix.os` (stable), so the
+          # artifact name is `wasm-iface-hash-ubuntu-latest` / `-macos-latest`
+          # / `-windows-latest` and `merge-multiple: true` flattens them.
+          #
+          # We use a small Python helper rather than the per-OS dynamic
+          # outputs that the original workflow attempted (Issue #3117).
+          read_iface_hash() {
+            local os_label="$1"
+            local bucket="artifacts/iface-hash/wasm-iface-hash-${os_label}"
+            if [[ ! -d "${bucket}" ]]; then
+              echo "::error::Missing artifact bucket for ${os_label}: '${bucket}'"
+              exit 1
+            fi
+            # The hash filename is a 64-char hex string per the SHA-256
+            # output above; both `name` and `content` should match.
+            local file
+            file="$(find "${bucket}" -maxdepth 1 -type f -name '*.hash' ! -name '.*' | head -n 1 || true)"
+            if [[ -z "${file}" ]]; then
+              echo "::error::No *.hash file under ${bucket}"
+              exit 1
+            fi
+            cat "${file}"
+          }
+
+          HASH_UBUNTU="$(read_iface_hash ubuntu-latest)"
+          HASH_MACOS="$(read_iface_hash macos-latest)"
+          HASH_WINDOWS="$(read_iface_hash windows-latest)"
 
           {
             echo "## WASM Interface Stability (Issue #2914)"
