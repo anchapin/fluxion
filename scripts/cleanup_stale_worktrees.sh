@@ -46,7 +46,12 @@
 # Safety:
 #   - main / develop are NEVER deleted
 #   - The current worktree is NEVER deleted
-#   - Any branch with unpushed commits (or no remote tracking) is skipped
+#   - Any branch with commits not reachable from $BASE_BRANCH is skipped
+#     (race-free merge-base check, see has_unpushed_commits; #3119).
+#     Missing origin/<branch> tracking does NOT by itself cause a skip —
+#     the script verifies the local tip == merge-base with $BASE_BRANCH
+#     so a tracking-ref deletion between dry-run and --apply does not
+#     reclassify a genuinely-merged branch.
 #   - The default mode is dry-run; --apply is required for any mutation
 #   - Every action is printed before being taken
 #
@@ -180,19 +185,63 @@ has_empty_commit_only() {
 }
 
 # has_unpushed_commits <branch>
-#   Returns 0 if <branch> has commits not on origin/<branch>. If there is
-#   no origin/<branch> tracking ref, the branch is treated as having
-#   unpushed commits (returns 0) — this is the conservative default; a
-#   user can always `git push` first to enable cleanup.
+#   Returns 0 if <branch> has commits not on $BASE_BRANCH. The check is
+#   race-free (issue #3119): it does NOT treat "no origin/<branch>
+#   tracking ref" as a blanket skip, because that state can flip between
+#   the dry-run and the --apply run (e.g. operator runs `git update-ref
+#   -d`, `git fetch --prune`, or a CI job prunes the ref out-of-band).
+#   Instead:
+#
+#     1. If origin/<branch> exists and is an ancestor of $BASE_BRANCH
+#        → the remote state is fully merged, no unpushed commits.
+#     2. If origin/<branch> is missing AND the local branch tip equals
+#        merge-base($BASE_BRANCH, <branch>) → the local branch is a
+#        stale mirror of develop (no unique commits), safe to delete.
+#     3. Otherwise (origin/<branch> ahead of $BASE_BRANCH with local
+#        commits past remote, or local branch has unique commits not on
+#        $BASE_BRANCH) → returns 0 (has unpushed), skipped.
+#
+#   This matches the issue's recommended `merge-base --is-ancestor`
+#   check: a branch is safe to delete iff every reachable commit is
+#   already in $BASE_BRANCH's history.
 has_unpushed_commits() {
     local branch="$1"
     local remote_branch="origin/${branch}"
-    if ! git -C "$MAIN_REPO_ROOT" rev-parse --verify "$remote_branch" > /dev/null 2>&1; then
-        return 0  # no remote tracking → treat as unpushed
+
+    # Case 1: remote tracking ref exists.
+    if git -C "$MAIN_REPO_ROOT" rev-parse --verify "$remote_branch" > /dev/null 2>&1; then
+        if git -C "$MAIN_REPO_ROOT" merge-base --is-ancestor \
+                "$remote_branch" "$BASE_BRANCH" > /dev/null 2>&1; then
+            # Remote tip is in $BASE_BRANCH's history. By the time we get
+            # here, the caller has already established (via
+            # is_merged_into_base / has_empty_commit_only) that the
+            # local branch tip is also reachable from $BASE_BRANCH, so
+            # the whole branch is in develop and safe to delete.
+            return 1
+        fi
+        # Remote exists but is ahead of $BASE_BRANCH — fall back to the
+        # original log-based check: are there commits on $branch not on
+        # origin/<branch>?
+        local diff
+        diff="$(git -C "$MAIN_REPO_ROOT" log "${remote_branch}..${branch}" --oneline 2>/dev/null || true)"
+        [[ -n "$diff" ]]
+        return
     fi
-    local diff
-    diff="$(git -C "$MAIN_REPO_ROOT" log "${remote_branch}..${branch}" --oneline 2>/dev/null || true)"
-    [[ -n "$diff" ]]
+
+    # Case 2: no remote tracking ref. Resolve the local branch tip and
+    # compare it to merge-base($BASE_BRANCH, <branch>). Equal tips mean
+    # the local branch has no unique commits beyond develop, so it is
+    # safe to delete even though the tracking ref is gone.
+    if ! git -C "$MAIN_REPO_ROOT" rev-parse --verify "$branch^{commit}" > /dev/null 2>&1; then
+        return 0  # branch doesn't exist locally — treat as unpushed
+    fi
+    local common branch_tip
+    common="$(git -C "$MAIN_REPO_ROOT" merge-base "$BASE_BRANCH" "$branch" 2>/dev/null || true)"
+    branch_tip="$(git -C "$MAIN_REPO_ROOT" rev-parse "$branch^{commit}" 2>/dev/null || true)"
+    if [[ -n "$common" ]] && [[ "$branch_tip" == "$common" ]]; then
+        return 1  # branch tip == merge-base → no unique commits
+    fi
+    return 0  # branch has unique commits not on $BASE_BRANCH → skip
 }
 
 # json_escape <string>

@@ -154,7 +154,14 @@ def _make_synthetic_repo(
     # matches the #3069 e265c62 pattern.
     if with_empty_commit:
         _git("checkout", "-b", "fix/issue-3333-empty", "develop", cwd=repo, env=env)
-        _git("commit", "--allow-empty", "-m", "empty commit (e265c62 pattern)", cwd=repo, env=env)
+        _git(
+            "commit",
+            "--allow-empty",
+            "-m",
+            "empty commit (e265c62 pattern)",
+            cwd=repo,
+            env=env,
+        )
 
     # fix/issue-4444-unpushed -- local-only; never pushed to origin.
     if with_unpushed:
@@ -343,7 +350,9 @@ def test_apply_actually_deletes_merged_and_empty_commit_branches(tmp_path):
     assert "develop" in after, "develop branch was deleted (protected!)"
     assert "main" in after, "local main was deleted (created by git init -b main)"
     # Verify main still exists on the remote.
-    remote_main = _git("ls-remote", "--heads", "origin", "main", cwd=repo, env=env).stdout
+    remote_main = _git(
+        "ls-remote", "--heads", "origin", "main", cwd=repo, env=env
+    ).stdout
     assert "refs/heads/main" in remote_main, "remote main was deleted"
     remote_develop = _git(
         "ls-remote", "--heads", "origin", "develop", cwd=repo, env=env
@@ -378,9 +387,7 @@ def test_unmerged_branches_are_skipped(tmp_path):
     _run_script(repo, env, "--json", "--output", str(report_path))
     report = json.loads(report_path.read_text())
 
-    unmerged = [
-        i for i in report["plan"] if i["branch"] == "fix/issue-2222-unmerged"
-    ]
+    unmerged = [i for i in report["plan"] if i["branch"] == "fix/issue-2222-unmerged"]
     assert unmerged, "unmerged branch missing from plan"
     assert unmerged[0]["action"] == "skip", (
         f"unmerged branch should be skipped, got {unmerged[0]}"
@@ -400,10 +407,16 @@ def test_unmerged_branches_are_skipped(tmp_path):
 def test_keep_unmerged_flag_is_accepted(tmp_path):
     """``--keep-unmerged`` is a no-op (default already skips unmerged)."""
     repo, env = _make_synthetic_repo(tmp_path)
-    result = _run_script(repo, env, "--keep-unmerged", "--json", "--output", str(tmp_path / "report.json"))
+    result = _run_script(
+        repo,
+        env,
+        "--keep-unmerged",
+        "--json",
+        "--output",
+        str(tmp_path / "report.json"),
+    )
     assert result.returncode in (0, 2), (
-        f"unexpected exit code {result.returncode}\n"
-        f"stderr: {result.stderr}"
+        f"unexpected exit code {result.returncode}\nstderr: {result.stderr}"
     )
 
 
@@ -425,8 +438,7 @@ def test_main_and_develop_are_never_deleted(tmp_path):
 
     result = _run_script(repo, env, "--apply")
     assert result.returncode in (0, 2), (
-        f"unexpected exit code {result.returncode}\n"
-        f"stderr: {result.stderr}"
+        f"unexpected exit code {result.returncode}\nstderr: {result.stderr}"
     )
 
     # Local develop must survive.
@@ -434,9 +446,7 @@ def test_main_and_develop_are_never_deleted(tmp_path):
     assert "develop" in after, "local develop was deleted (protected!)"
 
     # Remote main + develop must survive.
-    remote_branches = _git(
-        "ls-remote", "--heads", "origin", cwd=repo, env=env
-    ).stdout
+    remote_branches = _git("ls-remote", "--heads", "origin", cwd=repo, env=env).stdout
     assert "refs/heads/main" in remote_branches, "remote main was deleted"
     assert "refs/heads/develop" in remote_branches, "remote develop was deleted"
 
@@ -500,9 +510,7 @@ def test_unpushed_branches_are_skipped(tmp_path):
     _run_script(repo, env, "--json", "--output", str(report_path))
     report = json.loads(report_path.read_text())
 
-    unpushed = [
-        i for i in report["plan"] if i["branch"] == "fix/issue-4444-unpushed"
-    ]
+    unpushed = [i for i in report["plan"] if i["branch"] == "fix/issue-4444-unpushed"]
     assert unpushed, "unpushed branch missing from plan"
     assert unpushed[0]["action"] == "skip", (
         f"unpushed branch should be skipped, got {unpushed[0]}"
@@ -549,6 +557,103 @@ def test_unpushed_above_origin_is_skipped(tmp_path):
     )
 
 
+def test_missing_origin_tracking_does_not_flip_del_to_skip(tmp_path):
+    """Issue #3119 regression: a dry-run DEL branch must remain DEL even
+    after origin/<branch> tracking is removed between the dry-run and the
+    --apply run (the race condition from the #3106 / #3111 narrative).
+
+    The previous behaviour treated "no origin/<branch> ref" as a
+    blanket skip, so any operator-side `git update-ref -d`,
+    `git fetch --prune`, or out-of-band ref deletion between the two
+    invocations flipped a previously-classified DEL branch back to SKIP.
+    The race-free `merge-base --is-ancestor` check must instead detect
+    that the local branch tip is already in develop's history and keep
+    the DEL classification.
+    """
+    repo, env = _make_synthetic_repo(
+        tmp_path,
+        with_merged=True,
+        with_unmerged=False,
+        with_empty_commit=False,
+        with_unpushed=False,
+    )
+
+    # Step 1: dry-run. Branch must classify as DEL.
+    report_path = tmp_path / "report1.json"
+    result = _run_script(repo, env, "--json", "--output", str(report_path))
+    assert result.returncode in (0, 2)
+    report = json.loads(report_path.read_text())
+    merged = [i for i in report["plan"] if i["branch"] == "fix/issue-1111-merged"]
+    assert merged, "merged branch missing from dry-run plan"
+    assert merged[0]["action"] == "delete", (
+        f"merged branch must classify as DEL in dry-run, got {merged[0]}"
+    )
+
+    # Step 2: simulate the race condition. Delete the origin/<branch>
+    # tracking ref out-of-band between dry-run and --apply. This is the
+    # exact reproduction from the issue body (git update-ref -d).
+    _git(
+        "update-ref",
+        "-d",
+        "refs/remotes/origin/fix/issue-1111-merged",
+        cwd=repo,
+        env=env,
+    )
+
+    # Step 3: --apply. The fix must keep the DEL classification because
+    # the local branch tip is already reachable from develop
+    # (merge-base --is-ancestor returns 0).
+    report_path = tmp_path / "report2.json"
+    result = _run_script(repo, env, "--apply", "--json", "--output", str(report_path))
+    assert result.returncode in (0, 2)
+    report = json.loads(report_path.read_text())
+    merged = [i for i in report["plan"] if i["branch"] == "fix/issue-1111-merged"]
+    assert merged, "merged branch missing from --apply plan"
+    assert merged[0]["action"] == "delete", (
+        f"race condition not fixed: branch reclassified to "
+        f"{merged[0]['action']} after origin tracking ref deletion. "
+        f"reason: {merged[0]['reason']}"
+    )
+
+    # Step 4: the branch must actually be gone.
+    after = _git("branch", "--list", cwd=repo, env=env).stdout
+    assert "fix/issue-1111-merged" not in after, (
+        "merged branch survived --apply despite race-free DEL classification:\n" + after
+    )
+
+
+def test_locally_unique_branch_without_origin_is_still_skipped(tmp_path):
+    """The race-free fallback must NOT delete a local-only branch that
+    genuinely has unique commits beyond develop. Without this guard, the
+    merge-base --is-ancestor removal would over-delete active work.
+
+    Verifies the negative case of the #3119 fix: only branches whose
+    local tip equals merge-base(develop, branch) (i.e. no unique
+    commits) are eligible for deletion when origin tracking is missing.
+    """
+    repo, env = _make_synthetic_repo(
+        tmp_path,
+        with_merged=False,
+        with_unmerged=False,
+        with_empty_commit=False,
+        with_unpushed=True,
+    )
+
+    # Branch fix/issue-4444-unpushed has a real commit (4444.md) ahead of
+    # develop and was never pushed. Sanity: it must still be classified
+    # as skip with an "unpushed" reason.
+    report_path = tmp_path / "report.json"
+    result = _run_script(repo, env, "--json", "--output", str(report_path))
+    assert result.returncode in (0, 2)
+    report = json.loads(report_path.read_text())
+    item = [i for i in report["plan"] if i["branch"] == "fix/issue-4444-unpushed"]
+    assert item, "unpushed branch missing from plan"
+    assert item[0]["action"] == "skip", (
+        f"local-only branch with unique commits was incorrectly DEL'd: {item[0]}"
+    )
+    assert "unpushed" in item[0]["reason"].lower()
+
+
 # ---------------------------------------------------------------------------
 # --keep-empty-commits flips the default for empty-commit branches
 # ---------------------------------------------------------------------------
@@ -566,15 +671,18 @@ def test_keep_empty_commits_skips_empty_commit_branches(tmp_path):
     )
 
     result = _run_script(
-        repo, env, "--apply", "--keep-empty-commits",
-        "--output", str(tmp_path / "report.json"),
+        repo,
+        env,
+        "--apply",
+        "--keep-empty-commits",
+        "--output",
+        str(tmp_path / "report.json"),
     )
     assert result.returncode in (0, 2)
 
     after = _git("branch", "--list", cwd=repo, env=env).stdout
     assert "fix/issue-3333-empty" in after, (
-        "empty-commit branch was deleted despite --keep-empty-commits:\n"
-        + after
+        "empty-commit branch was deleted despite --keep-empty-commits:\n" + after
     )
 
 
@@ -748,9 +856,7 @@ def test_default_glob_excludes_develop(tmp_path):
     # The deletion targets must be exactly the four fix/issue-* branches
     # we set up (the merged + empty-commit ones; unmerged + unpushed
     # are blocking skips).
-    delete_branches = {
-        i["branch"] for i in report["plan"] if i["action"] == "delete"
-    }
+    delete_branches = {i["branch"] for i in report["plan"] if i["action"] == "delete"}
     assert "fix/issue-1111-merged" in delete_branches
     assert "fix/issue-3333-empty" in delete_branches
     assert "develop" not in delete_branches, "develop must never be a delete target"
