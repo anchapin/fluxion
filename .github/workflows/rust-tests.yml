@@ -428,6 +428,22 @@ jobs:
           python-version: '3.10'
       - name: Run workspace check
         run: cargo check --workspace --verbose
+      # Issue #3125: catch example drift. `--examples` is NOT included by
+      # default in `cargo check --workspace`, so a renamed field/method
+      # silently breaks `examples/*.rs` (which are user-facing docs) until
+      # a downstream user complains. The new step adds `--examples
+      # --all-targets` to catch this drift at PR time.
+      #
+      # `continue-on-error: true` because the 4 broken examples reported
+      # in #3126 (`multi_zone_demo.rs`, `debug_solar_case_600.rs`,
+      # `tutorial_custom_model.rs`, `test_6r2c.rs`) still fail to compile
+      # on current `develop`. The check observes the drift without
+      # blocking PRs; once #3126 lands and `cargo check --workspace
+      # --examples --all-targets` exits 0 against `develop`, drop the
+      # `continue-on-error` so this becomes a required gate.
+      - name: Run workspace check (examples, Issue #3125)
+        continue-on-error: true
+        run: cargo check --workspace --examples --all-targets --verbose
 
   workspace-check-hz:
     name: "Workspace Check (Hetzner Overflow)"
@@ -445,6 +461,11 @@ jobs:
           python-version: '3.10'
       - name: Run workspace check
         run: cargo check --workspace --verbose
+      # Issue #3125: see `workspace-check-gh` for the rationale behind
+      # `--examples --all-targets` + `continue-on-error: true`.
+      - name: Run workspace check (examples, Issue #3125)
+        continue-on-error: true
+        run: cargo check --workspace --examples --all-targets --verbose
 
   # -- ASHRAE Cases Cycle Check -----------------------------------------------
 
