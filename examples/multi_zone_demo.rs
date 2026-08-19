@@ -53,17 +53,17 @@ fn demonstrate_simple_two_zone_building() {
     let mut model = ThermalModel::<VectorField>::from_spec(&spec);
 
     // Configure zone-specific setpoints
-    model.heating_setpoints = VectorField::new(vec![20.0, 15.0]); // Zone 1: 20°C, Zone 2: 15°C
-    model.cooling_setpoints = VectorField::new(vec![24.0, 99.0]); // Zone 1: 24°C, Zone 2: no cooling
+    model.setpoints.heating_setpoints = VectorField::new(vec![20.0, 15.0]); // Zone 1: 20°C, Zone 2: 15°C
+    model.setpoints.cooling_setpoints = VectorField::new(vec![24.0, 99.0]); // Zone 1: 24°C, Zone 2: no cooling
 
     // Set inter-zone conductance (thermal coupling between zones)
-    model.h_tr_iz = VectorField::new(vec![50.0, 50.0]); // 50 W/K conductance
+    model.conduction.h_tr_iz = VectorField::new(vec![50.0, 50.0]); // 50 W/K conductance
 
     println!("  ✓ Created two-zone building model");
     println!("  ✓ Zone 1 (Living): 20°C heating, 24°C cooling");
     println!("  ✓ Zone 2 (Sunspace): 15°C heating only");
     println!("  ✓ Inter-zone conductance: 50 W/K");
-    println!("  ✓ Number of zones: {}\n", model.num_zones);
+    println!("  ✓ Number of zones: {}\n", model.hvac.num_zones);
 }
 
 /// Demonstrate inter-zone heat transfer visualization
@@ -115,7 +115,7 @@ fn demonstrate_energy_conservation() {
     );
     println!("    Cumulative error: {:.6e} J", report.cumulative_error);
     println!("    Error percentage: {:.6}%", report.error_pct);
-    println!("    Total zones: {}", model.num_zones);
+    println!("    Total zones: {}", model.hvac.num_zones);
 
     if report.is_valid {
         println!("  ✓ Energy conservation validated - physics engine working correctly");

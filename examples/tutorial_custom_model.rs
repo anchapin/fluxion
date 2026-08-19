@@ -18,13 +18,13 @@ fn main() {
     let model = ThermalModel::<VectorField>::from_spec(&spec);
 
     println!("Base model created:");
-    println!("  Zones: {}", model.num_zones);
-    println!("  h_tr_em: {:.2} W/K", model.h_tr_em.as_ref()[0]);
-    println!("  h_tr_ms: {:.2} W/K", model.h_tr_ms.as_ref()[0]);
-    println!("  h_tr_is: {:.2} W/K", model.h_tr_is.as_ref()[0]);
+    println!("  Zones: {}", model.hvac.num_zones);
+    println!("  h_tr_em: {:.2} W/K", model.conduction.h_tr_em.as_ref()[0]);
+    println!("  h_tr_ms: {:.2} W/K", model.conduction.h_tr_ms.as_ref()[0]);
+    println!("  h_tr_is: {:.2} W/K", model.conduction.h_tr_is.as_ref()[0]);
 
     // Step 2: Access thermal capacitance
-    let thermal_cap = model.thermal_capacitance.as_ref()[0];
+    let thermal_cap = model.mass.thermal_capacitance.as_ref()[0];
     println!("  Thermal capacitance: {:.0} J/K", thermal_cap);
 
     println!("\n=== Tutorial Complete ===");
