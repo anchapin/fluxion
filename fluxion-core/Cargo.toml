@@ -35,3 +35,5 @@ proptest = "1.5"
 mockito = "1.7"
 # For carbon intensity CSV tests
 tempfile = "3.27"
+# For boundary_enforcement test
+serde_json = "1.0"
