@@ -165,7 +165,9 @@ def test_run_command_returns_124_on_timeout(gate):
 # ---------------------------------------------------------------------------
 
 
-def test_get_main_branch_baseline_returns_empty_when_no_file(gate, tmp_path, monkeypatch):
+def test_get_main_branch_baseline_returns_empty_when_no_file(
+    gate, tmp_path, monkeypatch
+):
     """``BASELINE_FILE`` does not exist → empty dict (no error)."""
     fake_baseline = tmp_path / "no-such-baseline.json"
     monkeypatch.setattr(gate, "BASELINE_FILE", fake_baseline)
@@ -190,6 +192,7 @@ def test_get_main_branch_baseline_reads_existing_file(gate, tmp_path, monkeypatc
     fake_baseline = tmp_path / ".perf_baseline.json"
     fake_baseline.write_text(json.dumps({"bench_a": 1.0, "bench_b": 2.0}))
     monkeypatch.setattr(gate, "BASELINE_FILE", fake_baseline)
+
     # Stub the git stash / checkout flow so the test never sees the real
     # repo's working tree.
     def fake_run(cmd, *args, **kwargs):
@@ -288,7 +291,26 @@ def test_main_returns_one_when_regression_detected(gate, tmp_path, monkeypatch, 
 
 
 def test_main_returns_zero_when_no_baseline_on_pr(gate, tmp_path, monkeypatch, capsys):
-    """``--check`` on a PR with no baseline → exit 0 (graceful skip)."""
+    """``--check`` on a branch with no ``.perf_baseline.json`` → exit 0 (graceful skip).
+
+    Policy decision (per issue #3120 audit, mirrors the
+    ``test_main_returns_zero_when_file_missing`` pattern in
+    ``test_check_known_issues_stale.py`` for Issue #1723): when the
+    baseline file is absent, the regression check has nothing to
+    compare against, so the gate exits 0 rather than fail-loud. The
+    performance gate is wired into ``scripts/end_of_shift_validation.sh``
+    (a local end-of-shift script, not a release_gates.yaml required
+    check) and the baseline file is established on main via the
+    ``is_main and not args.check`` branch in ``scripts/performance_gate.py``.
+
+    If a future contributor wants to harden this to fail-loud (e.g.,
+    require a baseline on every PR that runs ``--check``), the test
+    MUST be renamed to ``test_main_returns_one_when_no_baseline_on_pr``
+    AND the script's ``sys.exit(0)`` branch must change to
+    ``sys.exit(1)`` AND a follow-up issue must replace this policy
+    reference. Otherwise the test will silently regress the new
+    behavior back to the silent-skip contract.
+    """
     fake_baseline = tmp_path / "missing-baseline.json"
     monkeypatch.setattr(gate, "BASELINE_FILE", fake_baseline)
 
