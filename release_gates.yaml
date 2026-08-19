@@ -537,6 +537,20 @@ ci:
     # measurement, so any regression slipped through silently.
     - "Crate Size Gate (Issue #2930)"
 
+    # Issue #3127: fluxion-grid integration tests gate. The
+    # `fluxion-grid-integration-gh` listener job in
+    # `.github/workflows/rust-tests.yml` emits `fluxion-grid Integration
+    # Tests (GH)` on every PR (and push to main), but the check was
+    # never wired into `ci.required_checks` — so a failure let a
+    # ThermalElectricalCoupler / Newton-Raphson / IEEE 33-bus co-
+    # simulation regression slip through branch protection silently.
+    # Companion to Vertical F #2275 (fluxion-grid optional Fluxion
+    # integration completion). The Hetzner-overflow variant
+    # `fluxion-grid-integration-hz` fires only on GH runner saturation
+    # per the AGENTS.md "Runner routing" pattern; branch protection
+    # references the exact emitted "(GH)" name per Issue #3116.
+    - "fluxion-grid Integration Tests (GH)"
+
   # Job-to-workflow map (informational; branch-protection reads job
   # names directly). Used by `scripts/release_gate_checker.py` to verify
   # the required_checks list is in sync with the workflows directory.
@@ -851,3 +865,22 @@ ci:
       workflow: ".github/workflows/security.yml"
       issue: 2699
       triggered_by: "PR + schedule"
+
+    - job: "fluxion-grid Integration Tests (GH)"
+      # PR-blocking gate for the `fluxion-grid` workspace-member
+      # integration tests (3-node Newton-Raphson power-flow round-trip,
+      # 10-heat-pump radial feeder, IEEE 33-bus Joint-Thermal-Electrical
+      # co-simulation; convergence asserted via `max |ΔP|, max |ΔQ| < 1e-6
+      # pu`). The job is in `.github/workflows/rust-tests.yml` under
+      # `fluxion-grid-integration-gh` and emits the exact job name
+      # `"fluxion-grid Integration Tests (GH)"` — the "(GH)" suffix is
+      # required by Issue #3116. The Hetzner-overflow variant
+      # `fluxion-grid-integration-hz` (emits `"fluxion-grid Integration
+      # Tests (Hetzner Overflow)"`) fires only on GH runner saturation
+      # and is intentionally not separately required. Closes the gap
+      # recorded by Issue #3127 where the listener existed but the
+      # check was never wired into `ci.required_checks`.
+      workflow: ".github/workflows/rust-tests.yml"
+      issue: 3127
+      closes_issue: 2275
+      triggered_by: "PR + push to main"
