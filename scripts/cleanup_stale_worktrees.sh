@@ -2,7 +2,7 @@
 # scripts/cleanup_stale_worktrees.sh
 #
 # Cleanup stale worktrees and fix/issue-* branches from prior orchestration
-# sessions (issue #3069).
+# sessions (issues #3069 and #3118).
 #
 # The wave-orchestrator spawns one worktree per `fix/issue-*` branch and
 # only cleans each one up if the wave explicitly finishes. Aborted waves
@@ -11,12 +11,14 @@
 # prior sessions, costing ~10 GB of disk pressure. This script classifies
 # every cleanup target with deterministic safety checks and prints a plan
 # that the operator can audit before any mutation. --apply performs the
-# deletions.
+# deletions, grouping remote refs into concurrent batch pushes so large
+# cleanup runs finish without one network round-trip per branch.
 #
 # Usage:
 #   ./scripts/cleanup_stale_worktrees.sh [--apply] [--keep-empty-commits]
 #                                        [--keep-unmerged] [--json]
 #                                        [--output <path>]
+#                                        [--batch-size <n>] [--jobs <n>]
 #
 # Modes:
 #   (default)     Dry-run. Prints a plan to stdout; exits 0 if all targets
@@ -30,6 +32,10 @@
 #   --keep-unmerged        Keep unmerged branches (no-op; default already
 #                          skips unmerged branches). Accepted for symmetry
 #                          with --keep-empty-commits and future-proofing.
+#
+# Remote deletion:
+#   --batch-size <n>  Maximum refs per remote deletion push (default: 100).
+#   --jobs <n>        Maximum concurrent remote deletion pushes (default: 8).
 #
 # Output:
 #   (default)     Human-readable summary to stdout.
@@ -61,9 +67,20 @@ KEEP_EMPTY_COMMITS=false
 KEEP_UNMERGED=false
 JSON_OUTPUT=false
 OUTPUT_PATH=""
+BATCH_SIZE=100
+JOBS=8
 
 print_usage() {
     sed -n '2,/^set -euo/p' "${BASH_SOURCE[0]}" | sed -e '/^set -euo/d' | head -n -1
+}
+
+require_positive_integer() {
+    local flag="$1"
+    local value="$2"
+    if [[ ! "$value" =~ ^[1-9][0-9]*$ ]]; then
+        echo "ERROR: ${flag} requires a positive integer" >&2
+        exit 1
+    fi
 }
 
 while [[ $# -gt 0 ]]; do
@@ -90,6 +107,16 @@ while [[ $# -gt 0 ]]; do
                 echo "ERROR: --output requires a path" >&2
                 exit 1
             fi
+            shift 2
+            ;;
+        --batch-size)
+            BATCH_SIZE="${2:-}"
+            require_positive_integer "--batch-size" "$BATCH_SIZE"
+            shift 2
+            ;;
+        --jobs)
+            JOBS="${2:-}"
+            require_positive_integer "--jobs" "$JOBS"
             shift 2
             ;;
         -h|--help)
@@ -209,6 +236,42 @@ json_escape() {
     printf '%s' "$s"
 }
 
+wait_for_remote_jobs() {
+    local pid
+    for pid in "$@"; do
+        wait "$pid" || true
+    done
+}
+
+delete_remote_batch() {
+    git -C "$MAIN_REPO_ROOT" push origin --delete -- "$@" 2>/dev/null || true
+}
+
+delete_remote_branches() {
+    local -a batch=()
+    local -a pids=()
+    local branch
+
+    for branch in "$@"; do
+        batch+=("refs/heads/${branch}")
+        if [[ ${#batch[@]} -ge $BATCH_SIZE ]]; then
+            delete_remote_batch "${batch[@]}" &
+            pids+=("$!")
+            batch=()
+            if [[ ${#pids[@]} -ge $JOBS ]]; then
+                wait_for_remote_jobs "${pids[@]}"
+                pids=()
+            fi
+        fi
+    done
+
+    if [[ ${#batch[@]} -gt 0 ]]; then
+        delete_remote_batch "${batch[@]}" &
+        pids+=("$!")
+    fi
+    wait_for_remote_jobs "${pids[@]}"
+}
+
 # ---- plan construction ------------------------------------------------------
 
 # Parallel arrays keep the dispatch in pure bash. Each plan item corresponds
@@ -314,8 +377,7 @@ classify_worktree() {
         # attempt `git branch -D` even if `git worktree remove` fails).
         local wt_remove="git -C \"$MAIN_REPO_ROOT\" worktree remove --force \"$path\""
         local branch_delete="git -C \"$MAIN_REPO_ROOT\" branch -D \"$branch\""
-        local remote_delete="git -C \"$MAIN_REPO_ROOT\" push origin --delete \"$branch\" 2>/dev/null || true"
-        PLAN_CMDS+=("${wt_remove} 2>/dev/null || true; ${branch_delete} 2>/dev/null || true; ${remote_delete}")
+        PLAN_CMDS+=("${wt_remove} 2>/dev/null || true; ${branch_delete} 2>/dev/null || true")
     else
         PLAN_CMDS+=("")
     fi
@@ -364,8 +426,7 @@ classify_branch() {
 
     if [[ "$action" == "delete" ]]; then
         local branch_delete="git -C \"$MAIN_REPO_ROOT\" branch -D \"$branch\""
-        local remote_delete="git -C \"$MAIN_REPO_ROOT\" push origin --delete \"$branch\" 2>/dev/null || true"
-        PLAN_CMDS+=("${branch_delete} 2>/dev/null || true; ${remote_delete}")
+        PLAN_CMDS+=("${branch_delete} 2>/dev/null || true")
     else
         PLAN_CMDS+=("")
     fi
@@ -438,6 +499,8 @@ json_report=$(cat <<EOF
   "apply": ${APPLY},
   "keep_empty_commits": ${KEEP_EMPTY_COMMITS},
   "keep_unmerged": ${KEEP_UNMERGED},
+  "batch_size": ${BATCH_SIZE},
+  "jobs": ${JOBS},
   "base_branch": "${BASE_BRANCH}",
   "main_repo_root": "${MAIN_REPO_ROOT}",
   "current_worktree": "${CURRENT_TOPLEVEL}",
@@ -467,6 +530,8 @@ base_branch: ${BASE_BRANCH}
 repo_root:  ${MAIN_REPO_ROOT}
 keep_empty_commits: ${KEEP_EMPTY_COMMITS}
 keep_unmerged:      ${KEEP_UNMERGED}
+batch_size:         ${BATCH_SIZE}
+jobs:               ${JOBS}
 
 Summary:
   total targets:  ${total}
@@ -525,6 +590,8 @@ if $APPLY; then
         echo ""
         echo "Executing deletions..."
     fi
+    REMOTE_BRANCHES=()
+    declare -A REMOTE_BRANCH_SEEN=()
     for i in "${!PLAN_KIND[@]}"; do
         if [[ "${PLAN_ACTION[$i]}" == "delete" ]]; then
             cmds="${PLAN_CMDS[$i]}"
@@ -532,13 +599,21 @@ if $APPLY; then
                 if [[ "$JSON_OUTPUT" != "true" ]]; then
                     echo "  [${PLAN_KIND[$i]}] ${PLAN_TARGET[$i]}: ${PLAN_REASON[$i]}"
                 fi
-                # Use bash -c so the multi-segment string is parsed as a
-                # single shell command. Set +e locally so a failure on one
-                # segment doesn't abort the whole cleanup run.
                 (set +e; bash -c "$cmds") || true
+            fi
+            branch="${PLAN_BRANCH[$i]}"
+            if [[ -z "${REMOTE_BRANCH_SEEN[$branch]:-}" ]]; then
+                REMOTE_BRANCHES+=("$branch")
+                REMOTE_BRANCH_SEEN["$branch"]=1
             fi
         fi
     done
+    if [[ ${#REMOTE_BRANCHES[@]} -gt 0 ]]; then
+        if [[ "$JSON_OUTPUT" != "true" ]]; then
+            echo "  Deleting ${#REMOTE_BRANCHES[@]} remote branches in batches of ${BATCH_SIZE} (${JOBS} jobs)"
+        fi
+        delete_remote_branches "${REMOTE_BRANCHES[@]}"
+    fi
     if [[ "$JSON_OUTPUT" != "true" ]]; then
         echo "Done."
     fi

@@ -1,5 +1,5 @@
 """
-Tests for ``scripts/cleanup_stale_worktrees.sh`` -- Issue #3069.
+Tests for ``scripts/cleanup_stale_worktrees.sh`` -- Issues #3069 and #3118.
 
 The script is loaded via ``subprocess.run`` rather than ``importlib`` because
 it is a bash script. We synthesise a git repo under ``tmp_path`` with a
@@ -25,6 +25,7 @@ from __future__ import annotations
 
 import json
 import os
+import shutil
 import subprocess
 from pathlib import Path
 from typing import Any
@@ -198,6 +199,7 @@ def _run_script(
         ["bash", str(SCRIPT_PATH), *args],
         cwd=repo,
         env=env,
+        check=False,
         capture_output=True,
         text=True,
         timeout=60,
@@ -668,6 +670,107 @@ def test_help_is_printed_for_dash_h(tmp_path):
     result = _run_script(repo, env, "-h")
     assert result.returncode == 0
     assert "Usage" in result.stdout or "cleanup" in result.stdout.lower()
+    assert "--batch-size <n>" in result.stdout
+    assert "--jobs <n>" in result.stdout
+    assert "default: 100" in result.stdout
+    assert "default: 8" in result.stdout
+
+
+def test_batch_flags_are_reported_in_json(tmp_path):
+    repo, env = _make_synthetic_repo(tmp_path)
+    report_path = tmp_path / "report.json"
+    result = _run_script(
+        repo,
+        env,
+        "--batch-size",
+        "2",
+        "--jobs",
+        "3",
+        "--json",
+        "--output",
+        str(report_path),
+    )
+
+    assert result.returncode in (0, 2)
+    report = json.loads(report_path.read_text())
+    assert report["batch_size"] == 2
+    assert report["jobs"] == 3
+
+
+def test_batch_flags_require_positive_integers(tmp_path):
+    repo, env = _make_synthetic_repo(tmp_path)
+
+    for args, flag in (
+        (("--batch-size",), "--batch-size"),
+        (("--batch-size", "0"), "--batch-size"),
+        (("--batch-size", "many"), "--batch-size"),
+        (("--jobs",), "--jobs"),
+        (("--jobs", "0"), "--jobs"),
+        (("--jobs", "many"), "--jobs"),
+    ):
+        result = _run_script(repo, env, *args)
+        assert result.returncode == 1
+        assert f"{flag} requires a positive integer" in result.stderr
+
+
+def test_apply_batches_remote_deletions_in_parallel(tmp_path):
+    extra_branches = [
+        "fix/issue-5001-batch",
+        "fix/issue-5002-batch",
+        "fix/issue-5003-batch",
+    ]
+    repo, env = _make_synthetic_repo(
+        tmp_path,
+        with_unmerged=False,
+        with_unpushed=False,
+        extra_branches=extra_branches,
+    )
+    real_git = shutil.which("git")
+    assert real_git is not None
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    push_log = tmp_path / "push.log"
+    git_wrapper = bin_dir / "git"
+    git_wrapper.write_text(
+        """#!/usr/bin/env bash
+set -u
+if [[ " $* " == *" push origin --delete -- "* ]]; then
+    printf 'start %s %s\n' "$$" "$*" >> "$GIT_PUSH_LOG"
+    sleep 0.2
+    "$REAL_GIT" "$@"
+    status=$?
+    printf 'end %s\n' "$$" >> "$GIT_PUSH_LOG"
+    exit "$status"
+fi
+exec "$REAL_GIT" "$@"
+"""
+    )
+    git_wrapper.chmod(0o755)
+    env["PATH"] = f"{bin_dir}{os.pathsep}{env['PATH']}"
+    env["REAL_GIT"] = real_git
+    env["GIT_PUSH_LOG"] = str(push_log)
+
+    result = _run_script(repo, env, "--apply", "--batch-size", "2", "--jobs", "2")
+
+    assert result.returncode == 0, f"stdout:\n{result.stdout}\nstderr:\n{result.stderr}"
+    events = push_log.read_text().splitlines()
+    starts = [event for event in events if event.startswith("start ")]
+    assert len(starts) == 3
+    assert events[0].startswith("start ")
+    assert events[1].startswith("start ")
+    assert sorted(
+        sum(token.startswith("refs/heads/") for token in event.split())
+        for event in starts
+    ) == [1, 2, 2]
+
+    remote_branches = _git("ls-remote", "--heads", "origin", cwd=repo, env=env).stdout
+    deleted_branches = {
+        "fix/issue-1111-merged",
+        "fix/issue-3333-empty",
+        *extra_branches,
+    }
+    for branch in deleted_branches:
+        assert f"refs/heads/{branch}" not in remote_branches
 
 
 # ---------------------------------------------------------------------------
