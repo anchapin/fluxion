@@ -76,9 +76,11 @@ output or skip-rule selection.
   call `git worktree remove` on the path returned by `git rev-parse
   --show-toplevel`.
 - **Does NOT delete branches with unpushed commits** — if `origin/<branch>`
-  exists and is behind the local branch, the branch is skipped. If
-  `origin/<branch>` does not exist at all, the branch is treated as
-  having unpushed commits and is skipped (the conservative default).
+  exists and is behind the local branch, the branch is skipped. Missing
+  `origin/<branch>` tracking does NOT by itself cause a skip (#3119):
+  the script falls back to `merge-base develop <branch>` and only
+  refuses to delete if the local branch tip has unique commits beyond
+  develop.
 - **Does NOT touch worktrees under `~/.superset/` or `~/.planning/worktrees/`**
   — these are external tool / agent runtime worktrees (see AGENTS.md
   §Repository Hygiene) and are always preserved.
@@ -108,9 +110,22 @@ only when ALL of the following hold:
 1. The branch is fully merged into `develop` (or `origin/develop`,
    falling back to `main` / `origin/main`) OR the branch's only
    divergence from develop is an empty commit (matches #3069).
-2. The branch has no unpushed commits (`git log origin/<branch>..<branch>`
-   is empty) AND `origin/<branch>` exists OR the branch has no remote
-   tracking (in which case it's skipped).
+2. The branch has no unpushed commits beyond `develop`. This is a
+   **race-free** check (issue #3119): the script does NOT refuse to
+   delete a branch whose `origin/<branch>` tracking ref is missing.
+   Instead, `has_unpushed_commits` accepts one of two cases:
+   - `origin/<branch>` exists AND `merge-base --is-ancestor
+     origin/<branch> develop` returns 0 (remote state is in develop).
+   - `origin/<branch>` is missing AND the local branch tip equals
+     `merge-base develop <branch>` (the local branch is a stale mirror
+     of develop with no unique commits).
+   Anything else (origin ahead of develop with local commits past
+   remote; local branch with commits not reachable from develop) is
+   treated as unpushed and skipped. The earlier "no remote tracking →
+   skip" rule was removed because operator-side `git update-ref -d`,
+   `git fetch --prune`, or concurrent CI runs can delete the tracking
+   ref between the dry-run classification and the `--apply` run,
+   flipping a previously-DEL branch to SKIP.
 3. The branch is not `main`, `develop`, or the current branch.
 4. The worktree (if any) is not the path returned by `git rev-parse
    --show-toplevel`.
