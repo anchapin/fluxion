@@ -3,7 +3,7 @@
 **Issue:** #3120
 **Audit target:** `scripts/ci/test_*.py` for tests matching the
 "silent-skip-on-failure" anti-pattern signature.
-**Checker:** `scripts/check_ci_tests_codify_behavior.py`
+**Checker:** *removed 2026-08-19 (orphan — see `.agents/results/result-pm.md`)*; the audit results below are the deliverable.
 **Audit run:** 2026-08-18 (post-#3105 / PR #3112 hardening baseline).
 
 This document audits every `scripts/ci/` test that asserts
@@ -40,9 +40,11 @@ in this PR to explicitly reference the policy decision.
 
 **Total matches across the audited corpus:** 3 (out of ~700
 `test_*.py` tests in `scripts/ci/`). **All three now carry explicit
-policy rationale in their docstrings.** The
-`scripts/check_ci_tests_codify_behavior.py` gate enforces that no
-future test joins this list without a policy reference.
+policy rationale in their docstrings.** The original checker script
+(`scripts/check_ci_tests_codify_behavior.py`, removed 2026-08-19 as
+orphan — see `.agents/results/result-pm.md`) was the tool that ran
+this audit; future re-audits should re-derive the three filters in
+§Audit Methodology below against any newly-added `scripts/ci/test_*.py`.
 
 ## Per-Test Detail
 
@@ -156,8 +158,9 @@ documents the graceful-skip exit code 0 path.
 
 ## Audit Methodology
 
-The audit walker (`scripts/check_ci_tests_codify_behavior.py`)
-applies three filters in order:
+The audit walker (originally `scripts/check_ci_tests_codify_behavior.py`,
+removed 2026-08-19 as orphan — see `.agents/results/result-pm.md`)
+applied three filters in order:
 
 1. **Function-name filter:** the test name starts with `test_`
    (any pytest-style test).
@@ -182,24 +185,21 @@ patterns:
 * `opt[- ]in` (opt-in case)
 
 Tests that pass all three filters but have no policy reference in
-their docstring are emitted as FAIL findings (exit code 1) so the
-gate fails-loud. The walker is wired into `scripts/ci/` test
-harness via `scripts/ci/test_check_ci_tests_codify_behavior.py`,
-which exercises both the positive case (current repo: PASS) and
+their docstring are anti-pattern violations (FAIL). The original
+checker exited 1 on FAIL findings so the gate would fail-loud;
+the pytest harness
+(`scripts/ci/test_check_ci_tests_codify_behavior.py`, removed
+2026-08-19 as orphan) covered both the positive case (PASS) and
 synthetic planted-violation cases (FAIL).
 
 ## CI Integration
 
-The checker is wired to be runnable as a script
-(`python3 scripts/check_ci_tests_codify_behavior.py`) but is not
-yet a `release_gates.yaml` required check. Adding it to the
+The checker was a one-time audit tool, not a
+`release_gates.yaml` required check. Adding it to the
 required-checks list is a follow-up scope, since:
 
 * the existing `scripts/ci/` gate contract uses pytest-based
   enforcement rather than required-check gates,
-* `scripts/ci/test_check_ci_tests_codify_behavior.py` already
-  enforces the audit on every pytest run that covers the
-  `scripts/ci/` directory,
 * a `pre-commit` hook invocation is more appropriate than a CI
   required check (the audit is fast — sub-second — and runs on
   every commit anyway).
