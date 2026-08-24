@@ -15,7 +15,9 @@ const FORBIDDEN: &[&str] = &["sim", "physics", "ai", "validation"];
 #[test]
 fn fluxion_core_has_no_upward_crate_dependencies() {
     let metadata = cargo_metadata();
-    let packages = metadata["packages"].as_array().expect("packages must be an array");
+    let packages = metadata["packages"]
+        .as_array()
+        .expect("packages must be an array");
 
     let fluxion_core_pkg = packages
         .iter()
@@ -63,16 +65,12 @@ fn fluxion_core_source_has_no_upward_crate_references() {
             .map(|(file, line, content)| format!("{file}:{line}: {content}"))
             .collect::<Vec<_>>()
             .join("\n");
-        panic!(
-            "fluxion-core source must not reference crate::sim|physics|ai|validation:\n{msg}"
-        );
+        panic!("fluxion-core source must not reference crate::sim|physics|ai|validation:\n{msg}");
     }
 }
 
 fn cargo_metadata() -> serde_json::Value {
-    let manifest_path = repo_root()
-        .join("fluxion-core")
-        .join("Cargo.toml");
+    let manifest_path = repo_root().join("fluxion-core").join("Cargo.toml");
 
     let output = Command::new("cargo")
         .arg("metadata")
@@ -94,7 +92,8 @@ fn cargo_metadata() -> serde_json::Value {
 }
 
 fn repo_root() -> std::path::PathBuf {
-    let cargo_manifest = std::env::var("CARGO_MANIFEST_DIR").expect("CARGO_MANIFEST_DIR must be set");
+    let cargo_manifest =
+        std::env::var("CARGO_MANIFEST_DIR").expect("CARGO_MANIFEST_DIR must be set");
     let manifest_path = std::path::PathBuf::from(cargo_manifest);
 
     manifest_path
@@ -135,7 +134,11 @@ fn walkdir_non_recursive(
     }
 }
 
-fn scan_file(path: &std::path::Path, offenders: &mut Vec<(String, usize, String)>, prefixes: &[&str]) {
+fn scan_file(
+    path: &std::path::Path,
+    offenders: &mut Vec<(String, usize, String)>,
+    prefixes: &[&str],
+) {
     let content = match std::fs::read_to_string(path) {
         Ok(c) => c,
         Err(_) => return,

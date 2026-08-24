@@ -16,8 +16,7 @@
 #![cfg(feature = "ort")]
 
 use fluxion::ai::surrogate::{
-    compute_bytes_sha256, verify_onnx_signature, ENV_ONNX_MODEL_SIGNATURE,
-    SurrogateManager,
+    compute_bytes_sha256, verify_onnx_signature, SurrogateManager, ENV_ONNX_MODEL_SIGNATURE,
 };
 use std::io::Write;
 use std::path::Path;
@@ -29,9 +28,7 @@ static ENV_LOCK: Mutex<()> = Mutex::new(());
 /// Used for tests that require actual ONNX protobuf parsing.
 const DUMMY_ONNX_MODEL: &str = "assets/dummy_surrogate.onnx";
 
-fn write_signed_fixture_model(
-    contents: &[u8],
-) -> (tempfile::TempDir, std::path::PathBuf, String) {
+fn write_signed_fixture_model(contents: &[u8]) -> (tempfile::TempDir, std::path::PathBuf, String) {
     let dir = tempfile::tempdir().unwrap();
     let model = dir.path().join("model.onnx");
     std::fs::write(&model, contents).unwrap();
@@ -49,14 +46,15 @@ fn write_signed_fixture_model(
     (dir, model, sha)
 }
 
-fn write_signed_real_model(
-    src: &Path,
-) -> (tempfile::TempDir, std::path::PathBuf, String) {
+fn write_signed_real_model(src: &Path) -> (tempfile::TempDir, std::path::PathBuf, String) {
     let dir = tempfile::tempdir().unwrap();
     let model = dir.path().join(src.file_name().unwrap());
     std::fs::copy(src, &model).unwrap();
     let sha = compute_bytes_sha256(&std::fs::read(&model).unwrap());
-    let manifest = dir.path().join(format!("{}.sha256", model.file_name().unwrap().to_string_lossy()));
+    let manifest = dir.path().join(format!(
+        "{}.sha256",
+        model.file_name().unwrap().to_string_lossy()
+    ));
     std::fs::write(
         &manifest,
         format!(
@@ -145,7 +143,10 @@ fn verify_onnx_accepts_env_override_with_rotated_bytes() {
 
     let dummy_path = Path::new(DUMMY_ONNX_MODEL);
     if !dummy_path.exists() {
-        eprintln!("skipping: {} not found (git-ignored asset)", DUMMY_ONNX_MODEL);
+        eprintln!(
+            "skipping: {} not found (git-ignored asset)",
+            DUMMY_ONNX_MODEL
+        );
         return;
     }
 
