@@ -40,9 +40,70 @@ pub const LIVE_TWIN_PATH: &str = "/live-twin";
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ZoneState {
     pub zone_id: usize,
-    pub temperature: f64,
+    pub t_air: f64,
+    pub t_mass: f64,
+    pub t_surface: f64,
+    pub rh: f64,
+    pub heating_setpoint: f64,
+    pub cooling_setpoint: f64,
     pub heating_demand: f64,
     pub cooling_demand: f64,
+    pub hvac_power_kw: f64,
+    pub energy_heating_kwh: f64,
+    pub energy_cooling_kwh: f64,
+    pub occupancy: f64,
+}
+
+impl ZoneState {
+    pub fn new(zone_id: usize) -> Self {
+        Self {
+            zone_id,
+            t_air: 20.0,
+            t_mass: 20.0,
+            t_surface: 20.0,
+            rh: 50.0,
+            heating_setpoint: 21.0,
+            cooling_setpoint: 26.0,
+            heating_demand: 0.0,
+            cooling_demand: 0.0,
+            hvac_power_kw: 0.0,
+            energy_heating_kwh: 0.0,
+            energy_cooling_kwh: 0.0,
+            occupancy: 0.0,
+        }
+    }
+
+    pub fn with_temperatures(mut self, t_air: f64, t_mass: f64, t_surface: f64) -> Self {
+        self.t_air = t_air;
+        self.t_mass = t_mass;
+        self.t_surface = t_surface;
+        self
+    }
+
+    pub fn with_setpoints(mut self, heating: f64, cooling: f64) -> Self {
+        self.heating_setpoint = heating;
+        self.cooling_setpoint = cooling;
+        self
+    }
+
+    pub fn with_hvac_demand(mut self, heating: f64, cooling: f64, power_kw: f64) -> Self {
+        self.heating_demand = heating;
+        self.cooling_demand = cooling;
+        self.hvac_power_kw = power_kw;
+        self
+    }
+
+    pub fn with_energy(mut self, heating_kwh: f64, cooling_kwh: f64) -> Self {
+        self.energy_heating_kwh = heating_kwh;
+        self.energy_cooling_kwh = cooling_kwh;
+        self
+    }
+
+    pub fn with_rh_occupancy(mut self, rh: f64, occupancy: f64) -> Self {
+        self.rh = rh;
+        self.occupancy = occupancy;
+        self
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -284,6 +345,83 @@ impl LiveTwinPayload {
         self.zone_states = zone_states;
         self
     }
+
+    pub fn from_json(json: &str) -> Result<Self, serde_json::Error> {
+        serde_json::from_str(json)
+    }
+
+    pub fn to_json(&self) -> Result<String, serde_json::Error> {
+        serde_json::to_string(self)
+    }
+
+    pub fn from_zone_telemetry(
+        simulation_id: Uuid,
+        zone_temps: &[f64],
+        zone_setpoints: &[(f64, f64)],
+        zone_hvac_power: &[f64],
+        zone_energy_heating: &[f64],
+        zone_energy_cooling: &[f64],
+    ) -> Self {
+        let zone_states: Vec<ZoneState> = zone_temps
+            .iter()
+            .enumerate()
+            .map(|(i, &t_air)| {
+                let (heating_sp, cooling_sp) = zone_setpoints
+                    .get(i)
+                    .copied()
+                    .unwrap_or((21.0, 26.0));
+                let hvac_power = zone_hvac_power.get(i).copied().unwrap_or(0.0);
+                let energy_heating = zone_energy_heating.get(i).copied().unwrap_or(0.0);
+                let energy_cooling = zone_energy_cooling.get(i).copied().unwrap_or(0.0);
+
+                ZoneState::new(i)
+                    .with_temperatures(t_air, t_air - 0.5, t_air - 1.5)
+                    .with_setpoints(heating_sp, cooling_sp)
+                    .with_hvac_demand(0.0, 0.0, hvac_power)
+                    .with_energy(energy_heating, energy_cooling)
+            })
+            .collect();
+
+        Self {
+            timestamp: Utc::now(),
+            simulation_id,
+            zone_states,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct BuildingConfig {
+    pub building_id: String,
+    pub num_zones: usize,
+    pub zone_names: Vec<String>,
+    pub zone_areas: Vec<f64>,
+    pub heating_setpoints: Vec<f64>,
+    pub cooling_setpoints: Vec<f64>,
+    pub thermal_masses: Vec<f64>,
+}
+
+impl BuildingConfig {
+    pub fn from_json(json: &str) -> Result<Self, serde_json::Error> {
+        serde_json::from_str(json)
+    }
+
+    pub fn to_json(&self) -> Result<String, serde_json::Error> {
+        serde_json::to_string(self)
+    }
+
+    pub fn create_zone_states(&self) -> Vec<ZoneState> {
+        self.zone_names
+            .iter()
+            .enumerate()
+            .map(|(i, _)| {
+                let heating_sp = self.heating_setpoints.get(i).copied().unwrap_or(21.0);
+                let cooling_sp = self.cooling_setpoints.get(i).copied().unwrap_or(26.0);
+                ZoneState::new(i)
+                    .with_setpoints(heating_sp, cooling_sp)
+            })
+            .collect()
+    }
 }
 
 #[cfg(test)]
@@ -294,9 +432,18 @@ mod tests {
     fn test_zone_state_serialization() {
         let zone = ZoneState {
             zone_id: 0,
-            temperature: 22.5,
+            t_air: 22.5,
+            t_mass: 21.8,
+            t_surface: 20.2,
+            rh: 45.0,
+            heating_setpoint: 21.0,
+            cooling_setpoint: 26.0,
             heating_demand: 150.0,
             cooling_demand: 0.0,
+            hvac_power_kw: 2.5,
+            energy_heating_kwh: 125.5,
+            energy_cooling_kwh: 0.0,
+            occupancy: 0.75,
         };
 
         let mut buf = Vec::new();
@@ -309,15 +456,33 @@ mod tests {
         let payload = LiveTwinPayload::new(Uuid::new_v4()).with_zones(vec![
             ZoneState {
                 zone_id: 0,
-                temperature: 22.5,
+                t_air: 22.5,
+                t_mass: 21.8,
+                t_surface: 20.2,
+                rh: 45.0,
+                heating_setpoint: 21.0,
+                cooling_setpoint: 26.0,
                 heating_demand: 150.0,
                 cooling_demand: 0.0,
+                hvac_power_kw: 2.5,
+                energy_heating_kwh: 125.5,
+                energy_cooling_kwh: 0.0,
+                occupancy: 0.75,
             },
             ZoneState {
                 zone_id: 1,
-                temperature: 23.0,
+                t_air: 23.0,
+                t_mass: 22.5,
+                t_surface: 21.0,
+                rh: 50.0,
+                heating_setpoint: 21.0,
+                cooling_setpoint: 26.0,
                 heating_demand: 0.0,
                 cooling_demand: 200.0,
+                hvac_power_kw: 3.2,
+                energy_heating_kwh: 0.0,
+                energy_cooling_kwh: 88.3,
+                occupancy: 0.50,
             },
         ]);
 
@@ -363,5 +528,106 @@ mod tests {
 
         let result = broadcaster.broadcast(&payload).await;
         assert!(matches!(result, Err(BroadcastError::NoConnections)));
+    }
+
+    #[test]
+    fn test_zone_state_builder() {
+        let zone = ZoneState::new(0)
+            .with_temperatures(22.5, 21.8, 20.2)
+            .with_setpoints(21.0, 26.0)
+            .with_hvac_demand(150.0, 0.0, 2.5)
+            .with_energy(125.5, 0.0)
+            .with_rh_occupancy(45.0, 0.75);
+
+        assert_eq!(zone.zone_id, 0);
+        assert!((zone.t_air - 22.5).abs() < 1e-10);
+        assert!((zone.t_mass - 21.8).abs() < 1e-10);
+        assert!((zone.t_surface - 20.2).abs() < 1e-10);
+        assert!((zone.heating_setpoint - 21.0).abs() < 1e-10);
+        assert!((zone.cooling_setpoint - 26.0).abs() < 1e-10);
+        assert!((zone.heating_demand - 150.0).abs() < 1e-10);
+        assert!((zone.hvac_power_kw - 2.5).abs() < 1e-10);
+        assert!((zone.energy_heating_kwh - 125.5).abs() < 1e-10);
+        assert!((zone.rh - 45.0).abs() < 1e-10);
+        assert!((zone.occupancy - 0.75).abs() < 1e-10);
+    }
+
+    #[test]
+    fn test_live_twin_payload_from_zone_telemetry() {
+        let sim_id = Uuid::new_v4();
+        let temps = vec![22.5, 23.0, 21.0];
+        let setpoints = vec![(21.0, 26.0), (21.0, 26.0), (20.0, 25.0)];
+        let hvac_power = vec![2.5, 3.2, 1.8];
+        let energy_heating = vec![125.5, 0.0, 200.0];
+        let energy_cooling = vec![0.0, 88.3, 50.0];
+
+        let payload = LiveTwinPayload::from_zone_telemetry(
+            sim_id,
+            &temps,
+            &setpoints,
+            &hvac_power,
+            &energy_heating,
+            &energy_cooling,
+        );
+
+        assert_eq!(payload.simulation_id, sim_id);
+        assert_eq!(payload.zone_states.len(), 3);
+        assert!((payload.zone_states[0].t_air - 22.5).abs() < 1e-10);
+        assert!((payload.zone_states[1].t_air - 23.0).abs() < 1e-10);
+        assert!((payload.zone_states[2].t_air - 21.0).abs() < 1e-10);
+    }
+
+    #[test]
+    fn test_building_config_json_roundtrip() {
+        let config = BuildingConfig {
+            building_id: "test_building".to_string(),
+            num_zones: 3,
+            zone_names: vec!["Zone A".to_string(), "Zone B".to_string(), "Zone C".to_string()],
+            zone_areas: vec![100.0, 150.0, 200.0],
+            heating_setpoints: vec![21.0, 21.0, 20.0],
+            cooling_setpoints: vec![26.0, 26.0, 25.0],
+            thermal_masses: vec![5e6, 7.5e6, 10e6],
+        };
+
+        let json = config.to_json().unwrap();
+        let decoded = BuildingConfig::from_json(&json).unwrap();
+
+        assert_eq!(decoded.building_id, "test_building");
+        assert_eq!(decoded.num_zones, 3);
+        assert_eq!(decoded.zone_names.len(), 3);
+        assert_eq!(decoded.heating_setpoints, vec![21.0, 21.0, 20.0]);
+    }
+
+    #[test]
+    fn test_building_config_create_zone_states() {
+        let config = BuildingConfig {
+            building_id: "test".to_string(),
+            num_zones: 2,
+            zone_names: vec!["Zone 1".to_string(), "Zone 2".to_string()],
+            zone_areas: vec![100.0, 150.0],
+            heating_setpoints: vec![21.0, 22.0],
+            cooling_setpoints: vec![26.0, 27.0],
+            thermal_masses: vec![5e6, 7.5e6],
+        };
+
+        let zone_states = config.create_zone_states();
+        assert_eq!(zone_states.len(), 2);
+        assert!((zone_states[0].heating_setpoint - 21.0).abs() < 1e-10);
+        assert!((zone_states[1].heating_setpoint - 22.0).abs() < 1e-10);
+    }
+
+    #[test]
+    fn test_live_twin_payload_json_serialization() {
+        let payload = LiveTwinPayload::new(Uuid::new_v4()).with_zones(vec![
+            ZoneState::new(0).with_temperatures(22.5, 21.8, 20.2),
+            ZoneState::new(1).with_temperatures(23.0, 22.5, 21.0),
+        ]);
+
+        let json = payload.to_json().unwrap();
+        let decoded = LiveTwinPayload::from_json(&json).unwrap();
+
+        assert_eq!(decoded.zone_states.len(), 2);
+        assert!((decoded.zone_states[0].t_air - 22.5).abs() < 1e-10);
+        assert!((decoded.zone_states[1].t_air - 23.0).abs() < 1e-10);
     }
 }
