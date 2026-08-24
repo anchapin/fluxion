@@ -1177,7 +1177,7 @@ The fix is **structural** — the `GaugeSolver` rework (#1465 / #1462) — and t
 ### External references
 
 - `docs/ASHRAE140_RESULTS.md` — current pass-rate snapshot (post-#3044 PR; 12.5 % headline, MAE 51.93 %)
-- `docs/adr/0007-gauge-solver-structural-work.md` — structural-work tracking stub (Status: Proposed)
+- `docs/adr/0007-gauge-solver-structural-work.md` — structural-work tracking stub (Status: Accepted — production-path switchover planned per Issue #3172)
 - `docs/gauge_solver_scalability.md` — `MultiZoneGaugeSolver` scalability characterisation (Issue #1771)
 - `RULES.md` — "no parameter tuning" + "must-never hardcode results"
 - `AGENTS.md` — "fix the underlying math"; strict-energy-gate baseline must NEVER be raised
