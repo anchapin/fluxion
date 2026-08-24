@@ -22,9 +22,7 @@ fn main() {
         .plugin(tauri_plugin_shell::init())
         .invoke_handler(tauri::generate_handler![
             commands::load_geometry_file,
-            commands::get_geometry_summary,
-            commands::get_zone_geometry,
-            commands::get_building_levels,
+            commands::get_sample_geometry,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

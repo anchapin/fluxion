@@ -4,7 +4,7 @@
   "version": "0.1.0",
   "identifier": "org.fluxion.app",
   "build": {
-    "frontendDist": "src",
+    "frontendDist": "src-tauri/src",
     "devUrl": "http://localhost:1420",
     "beforeDevCommand": "",
     "beforeBuildCommand": ""

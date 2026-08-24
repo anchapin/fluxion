@@ -1,0 +1,671 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Fluxion - Building Energy Model Viewer</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: #1a1a2e;
+            color: #eee;
+            overflow: hidden;
+        }
+
+        #app {
+            display: flex;
+            height: 100vh;
+        }
+
+        #sidebar {
+            width: 320px;
+            background: #16213e;
+            border-right: 1px solid #0f3460;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+
+        #sidebar-header {
+            padding: 20px;
+            background: #0f3460;
+            border-bottom: 1px solid #1a1a2e;
+        }
+
+        #sidebar-header h1 {
+            font-size: 1.4rem;
+            color: #e94560;
+            margin-bottom: 8px;
+        }
+
+        #sidebar-header p {
+            font-size: 0.85rem;
+            color: #888;
+        }
+
+        #load-button {
+            width: 100%;
+            padding: 12px;
+            margin: 16px 0;
+            background: #e94560;
+            color: white;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 1rem;
+            font-weight: 500;
+            transition: background 0.2s;
+        }
+
+        #load-button:hover {
+            background: #d63850;
+        }
+
+        #geometry-info {
+            padding: 16px;
+            background: #1a1a2e;
+            border-radius: 8px;
+            margin-bottom: 16px;
+        }
+
+        #geometry-info h3 {
+            font-size: 0.9rem;
+            color: #e94560;
+            margin-bottom: 12px;
+        }
+
+        .info-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 8px;
+        }
+
+        .info-item {
+            background: #16213e;
+            padding: 8px 12px;
+            border-radius: 4px;
+        }
+
+        .info-label {
+            font-size: 0.7rem;
+            color: #888;
+            text-transform: uppercase;
+        }
+
+        .info-value {
+            font-size: 1rem;
+            font-weight: 500;
+            color: #fff;
+        }
+
+        #tabs {
+            display: flex;
+            border-bottom: 1px solid #0f3460;
+        }
+
+        .tab {
+            flex: 1;
+            padding: 12px;
+            background: transparent;
+            border: none;
+            color: #888;
+            cursor: pointer;
+            font-size: 0.9rem;
+            transition: all 0.2s;
+        }
+
+        .tab.active {
+            color: #e94560;
+            border-bottom: 2px solid #e94560;
+        }
+
+        #tab-content {
+            flex: 1;
+            overflow-y: auto;
+            padding: 16px;
+        }
+
+        .zone-item, .level-item {
+            background: #1a1a2e;
+            padding: 12px;
+            border-radius: 6px;
+            margin-bottom: 8px;
+            cursor: pointer;
+            transition: background 0.2s;
+        }
+
+        .zone-item:hover, .level-item:hover {
+            background: #0f3460;
+        }
+
+        .zone-item.selected {
+            border: 1px solid #e94560;
+        }
+
+        .zone-name, .level-name {
+            font-weight: 500;
+            margin-bottom: 4px;
+        }
+
+        .zone-meta {
+            font-size: 0.75rem;
+            color: #888;
+        }
+
+        #viewer-container {
+            flex: 1;
+            position: relative;
+            background: #0a0a14;
+        }
+
+        #canvas-container {
+            width: 100%;
+            height: 100%;
+        }
+
+        #viewer-controls {
+            position: absolute;
+            bottom: 20px;
+            left: 20px;
+            display: flex;
+            gap: 8px;
+        }
+
+        .control-btn {
+            padding: 8px 16px;
+            background: rgba(22, 33, 62, 0.9);
+            border: 1px solid #0f3460;
+            color: #eee;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 0.85rem;
+        }
+
+        .control-btn:hover {
+            background: #0f3460;
+        }
+
+        .control-btn.active {
+            background: #e94560;
+            border-color: #e94560;
+        }
+
+        #zone-legend {
+            position: absolute;
+            top: 20px;
+            right: 20px;
+            background: rgba(22, 33, 62, 0.95);
+            padding: 16px;
+            border-radius: 8px;
+            min-width: 200px;
+        }
+
+        #zone-legend h3 {
+            font-size: 0.9rem;
+            color: #e94560;
+            margin-bottom: 12px;
+        }
+
+        .legend-item {
+            display: flex;
+            align-items: center;
+            margin-bottom: 8px;
+            font-size: 0.85rem;
+        }
+
+        .legend-color {
+            width: 16px;
+            height: 16px;
+            border-radius: 3px;
+            margin-right: 8px;
+        }
+
+        #loading {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            text-align: center;
+        }
+
+        .spinner {
+            width: 50px;
+            height: 50px;
+            border: 3px solid #0f3460;
+            border-top-color: #e94560;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+            margin: 0 auto 16px;
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+
+        #loading p {
+            color: #888;
+        }
+    </style>
+</head>
+<body>
+    <div id="app">
+        <div id="sidebar">
+            <div id="sidebar-header">
+                <h1>Fluxion</h1>
+                <p>Building Energy Model Viewer</p>
+                <button id="load-button">Load Geometry File</button>
+            </div>
+
+            <div id="geometry-info" style="display: none;">
+                <h3>Building Summary</h3>
+                <div class="info-grid">
+                    <div class="info-item">
+                        <div class="info-label">Floor Area</div>
+                        <div class="info-value" id="info-area">--</div>
+                    </div>
+                    <div class="info-item">
+                        <div class="info-label">Levels</div>
+                        <div class="info-value" id="info-levels">--</div>
+                    </div>
+                    <div class="info-item">
+                        <div class="info-label">Zones</div>
+                        <div class="info-value" id="info-zones">--</div>
+                    </div>
+                    <div class="info-item">
+                        <div class="info-label">Spaces</div>
+                        <div class="info-value" id="info-spaces">--</div>
+                    </div>
+                </div>
+            </div>
+
+            <div id="tabs">
+                <button class="tab active" data-tab="zones">Zones</button>
+                <button class="tab" data-tab="levels">Levels</button>
+            </div>
+
+            <div id="tab-content">
+                <div id="zones-list"></div>
+                <div id="levels-list" style="display: none;"></div>
+            </div>
+        </div>
+
+        <div id="viewer-container">
+            <div id="canvas-container"></div>
+
+            <div id="viewer-controls">
+                <button class="control-btn active" id="btn-rotate">Rotate</button>
+                <button class="control-btn" id="btn-pan">Pan</button>
+                <button class="control-btn" id="btn-zoom">Zoom</button>
+                <button class="control-btn" id="btn-reset">Reset View</button>
+                <button class="control-btn" id="btn-wireframe">Wireframe</button>
+            </div>
+
+            <div id="zone-legend"></div>
+
+            <div id="loading">
+                <div class="spinner"></div>
+                <p>Load a geometry file to begin</p>
+            </div>
+        </div>
+    </div>
+
+    <script type="importmap">
+    {
+        "imports": {
+            "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+            "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+        }
+    }
+    </script>
+
+    <script type="module">
+        import * as THREE from 'three';
+        import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+
+        const COLORS = [
+            0xe94560, 0x0f3460, 0x16213e, 0x533483,
+            0xe94560, 0x00b894, 0x0984e3, 0xfdcb6e,
+            0x6c5ce7, 0xa29bfe, 0x74b9ff, 0x81ecec
+        ];
+
+        let scene, camera, renderer, controls;
+        let geometryData = null;
+        let zoneMeshes = new Map();
+        let selectedZone = null;
+
+        function init() {
+            const container = document.getElementById('canvas-container');
+
+            scene = new THREE.Scene();
+            scene.background = new THREE.Color(0x0a0a14);
+
+            camera = new THREE.PerspectiveCamera(60, container.clientWidth / container.clientHeight, 0.1, 10000);
+            camera.position.set(30, 30, 30);
+
+            renderer = new THREE.WebGLRenderer({ antialias: true });
+            renderer.setSize(container.clientWidth, container.clientHeight);
+            renderer.setPixelRatio(window.devicePixelRatio);
+            container.appendChild(renderer.domElement);
+
+            controls = new OrbitControls(camera, renderer.domElement);
+            controls.enableDamping = true;
+            controls.dampingFactor = 0.05;
+
+            const ambientLight = new THREE.AmbientLight(0xffffff, 0.6);
+            scene.add(ambientLight);
+
+            const directionalLight = new THREE.DirectionalLight(0xffffff, 0.8);
+            directionalLight.position.set(50, 50, 50);
+            scene.add(directionalLight);
+
+            const gridHelper = new THREE.GridHelper(100, 50, 0x0f3460, 0x0f3460);
+            scene.add(gridHelper);
+
+            window.addEventListener('resize', onWindowResize);
+            animate();
+        }
+
+        function onWindowResize() {
+            const container = document.getElementById('canvas-container');
+            camera.aspect = container.clientWidth / container.clientHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(container.clientWidth, container.clientHeight);
+        }
+
+        function animate() {
+            requestAnimationFrame(animate);
+            controls.update();
+            renderer.render(scene, camera);
+        }
+
+        function clearScene() {
+            const toRemove = [];
+            scene.traverse((obj) => {
+                if (obj.userData.isZoneMesh || obj.userData.isBuildingElement) {
+                    toRemove.push(obj);
+                }
+            });
+            toRemove.forEach((obj) => {
+                if (obj.geometry) obj.geometry.dispose();
+                if (obj.material) obj.material.dispose();
+                scene.remove(obj);
+            });
+            zoneMeshes.clear();
+        }
+
+        function createZoneGeometry(zone, allSurfaces) {
+            const group = new THREE.Group();
+            group.userData.zoneId = zone.id;
+            group.userData.isZoneMesh = true;
+
+            const zoneColor = COLORS[Math.abs(hashCode(zone.id)) % COLORS.length];
+
+            const zoneSurfaces = allSurfaces.filter(s => s.thermal_zone_id === zone.id);
+
+            zoneSurfaces.forEach(surface => {
+                const vertices = surface.vertices.map(v => new THREE.Vector3(v.x, v.z, v.y));
+                const geometry = new THREE.BufferGeometry().setFromPoints(vertices);
+
+                const material = new THREE.MeshPhongMaterial({
+                    color: zoneColor,
+                    transparent: true,
+                    opacity: 0.7,
+                    side: THREE.DoubleSide,
+                    shininess: 30
+                });
+
+                const mesh = new THREE.Mesh(geometry, material);
+                mesh.userData.isBuildingElement = true;
+                mesh.userData.surfaceData = surface;
+                mesh.userData.zoneId = zone.id;
+                group.add(mesh);
+            });
+
+            return group;
+        }
+
+        function hashCode(str) {
+            let hash = 0;
+            for (let i = 0; i < str.length; i++) {
+                hash = ((hash << 5) - hash) + str.charCodeAt(i);
+                hash |= 0;
+            }
+            return hash;
+        }
+
+        function renderGeometry(data) {
+            clearScene();
+            geometryData = data;
+
+            let allSurfaces = [];
+            data.levels.forEach(level => {
+                level.spaces.forEach(space => {
+                    allSurfaces = allSurfaces.concat(space.surfaces);
+                });
+            });
+
+            data.zones.forEach(zone => {
+                const zoneGroup = createZoneGeometry(zone, allSurfaces);
+                zoneMeshes.set(zone.id, zoneGroup);
+                scene.add(zoneGroup);
+            });
+
+            fitCameraToScene(data.bounding_box);
+            updateZoneLegend(data.zones);
+            updateUI(data);
+        }
+
+        function fitCameraToScene(boundingBox) {
+            const center = new THREE.Vector3(
+                (boundingBox.min.x + boundingBox.max.x) / 2,
+                (boundingBox.min.z + boundingBox.max.z) / 2,
+                (boundingBox.min.y + boundingBox.max.y) / 2
+            );
+
+            const size = new THREE.Vector3(
+                boundingBox.max.x - boundingBox.min.x,
+                boundingBox.max.z - boundingBox.min.z,
+                boundingBox.max.y - boundingBox.min.y
+            );
+
+            const maxDim = Math.max(size.x, size.y, size.z);
+            const distance = maxDim * 2;
+
+            camera.position.set(center.x + distance, center.y + distance, center.z + distance);
+            controls.target.copy(center);
+            controls.update();
+        }
+
+        function updateZoneLegend(zones) {
+            const legend = document.getElementById('zone-legend');
+            legend.innerHTML = '<h3>Thermal Zones</h3>';
+
+            zones.forEach((zone, index) => {
+                const color = COLORS[Math.abs(hashCode(zone.id)) % COLORS.length];
+                const item = document.createElement('div');
+                item.className = 'legend-item';
+                item.innerHTML = `
+                    <div class="legend-color" style="background: #${color.toString(16).padStart(6, '0')}"></div>
+                    <span>${zone.name}</span>
+                `;
+                item.style.cursor = 'pointer';
+                item.onclick = () => selectZone(zone.id);
+                legend.appendChild(item);
+            });
+        }
+
+        function updateUI(data) {
+            document.getElementById('loading').style.display = 'none';
+            document.getElementById('geometry-info').style.display = 'block';
+
+            document.getElementById('info-area').textContent = `${data.total_floor_area.toFixed(1)} m²`;
+            document.getElementById('info-levels').textContent = data.levels.length;
+            document.getElementById('info-zones').textContent = data.zones.length;
+
+            let numSpaces = 0;
+            data.levels.forEach(level => numSpaces += level.spaces.length);
+            document.getElementById('info-spaces').textContent = numSpaces;
+
+            renderZonesList(data.zones);
+            renderLevelsList(data.levels);
+        }
+
+        function renderZonesList(zones) {
+            const list = document.getElementById('zones-list');
+            list.innerHTML = '';
+
+            zones.forEach(zone => {
+                const item = document.createElement('div');
+                item.className = 'zone-item';
+                item.dataset.zoneId = zone.id;
+                item.innerHTML = `
+                    <div class="zone-name">${zone.name}</div>
+                    <div class="zone-meta">
+                        Area: ${zone.floor_area.toFixed(1)} m² |
+                        Vol: ${zone.volume.toFixed(1)} m³ |
+                        Occ: ${zone.occupancy}
+                    </div>
+                `;
+                item.onclick = () => selectZone(zone.id);
+                list.appendChild(item);
+            });
+        }
+
+        function renderLevelsList(levels) {
+            const list = document.getElementById('levels-list');
+            list.innerHTML = '';
+
+            levels.forEach(level => {
+                const item = document.createElement('div');
+                item.className = 'level-item';
+                item.innerHTML = `
+                    <div class="level-name">${level.name}</div>
+                    <div class="zone-meta">
+                        Elevation: ${level.elevation.toFixed(1)} m |
+                        Height: ${level.height.toFixed(1)} m |
+                        Spaces: ${level.spaces.length}
+                    </div>
+                `;
+                item.onclick = () => highlightLevel(level.id);
+                list.appendChild(item);
+            });
+        }
+
+        function selectZone(zoneId) {
+            document.querySelectorAll('.zone-item').forEach(el => {
+                el.classList.toggle('selected', el.dataset.zoneId === zoneId);
+            });
+
+            if (selectedZone) {
+                const prevMesh = zoneMeshes.get(selectedZone);
+                if (prevMesh) {
+                    prevMesh.children.forEach(child => {
+                        if (child.material) {
+                            child.material.opacity = 0.7;
+                        }
+                    });
+                }
+            }
+
+            selectedZone = zoneId;
+
+            if (zoneId) {
+                const mesh = zoneMeshes.get(zoneId);
+                if (mesh) {
+                    mesh.children.forEach(child => {
+                        if (child.material) {
+                            child.material.opacity = 1.0;
+                        }
+                    });
+                }
+            }
+        }
+
+        function highlightLevel(levelId) {
+            zoneMeshes.forEach((group, zoneId) => {
+                group.children.forEach(child => {
+                    if (child.userData.surfaceData) {
+                        const surfaceLevelId = child.userData.surfaceData.level_id;
+                        if (child.material) {
+                            child.material.opacity = surfaceLevelId === levelId ? 1.0 : 0.3;
+                        }
+                    }
+                });
+            });
+        }
+
+        function resetView() {
+            if (geometryData) {
+                fitCameraToScene(geometryData.bounding_box);
+            } else {
+                camera.position.set(30, 30, 30);
+                controls.target.set(0, 0, 0);
+                controls.update();
+            }
+            selectedZone = null;
+            document.querySelectorAll('.zone-item').forEach(el => el.classList.remove('selected'));
+        }
+
+        function toggleWireframe() {
+            const btn = document.getElementById('btn-wireframe');
+            btn.classList.toggle('active');
+
+            zoneMeshes.forEach(group => {
+                group.children.forEach(child => {
+                    if (child.material) {
+                        child.material.wireframe = btn.classList.contains('active');
+                    }
+                });
+            });
+        }
+
+        document.querySelectorAll('.tab').forEach(tab => {
+            tab.addEventListener('click', () => {
+                document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+                tab.classList.add('active');
+
+                const tabName = tab.dataset.tab;
+                document.getElementById('zones-list').style.display = tabName === 'zones' ? 'block' : 'none';
+                document.getElementById('levels-list').style.display = tabName === 'levels' ? 'block' : 'none';
+            });
+        });
+
+        document.getElementById('btn-reset').addEventListener('click', resetView);
+        document.getElementById('btn-wireframe').addEventListener('click', toggleWireframe);
+
+        document.getElementById('load-button').addEventListener('click', async () => {
+            try {
+                const { open } = await import('@tauri-apps/plugin-dialog');
+                const { invoke } = await import('@tauri-apps/api/core');
+
+                const selected = await open({
+                    multiple: false,
+                    filters: [{
+                        name: 'Geometry Files',
+                        extensions: ['xml', 'gbxml', 'ifc', 'json']
+                    }]
+                });
+
+                if (selected) {
+                    document.getElementById('loading').style.display = 'block';
+                    document.getElementById('loading').querySelector('p').textContent = 'Loading geometry...';
+
+                    const data = await invoke('load_geometry_file', { filePath: selected });
+                    renderGeometry(data);
+                }
+            } catch (err) {
+                console.error('Failed to load geometry:', err);
+                document.getElementById('loading').querySelector('p').textContent = 'Error loading file';
+            }
+        });
+
+        init();
+    </script>
+</body>
+</html>
