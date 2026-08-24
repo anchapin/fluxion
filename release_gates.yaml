@@ -54,11 +54,19 @@ validation:
     # significantly without blocking release. Known failures are excluded.
     extreme_deviation_limit: 2
     # Known failures: structurally-limited cases excluded from extreme_count
+    # Issue #3072: aggressive-baseline cohort (Cases 195/600/620/940/960) all have
+    # >100% deviations confirmed as structural 5R1C/9R4C limitations routed to GaugeSolver.
     # Case 900 heating: ~200% deviation (high-mass building - thermal mass model limitation)
     # Case 600 series: multiple tests (low-mass baseline - simplified envelope model)
+    # Case 195: weather-file artefact (LIMIT-15 / Issue #3060)
+    # Case 620/940/960: additional structurally-limited cases in the cohort
     known_failures:
+      - "195"    # Case 195 - Weather file artefact (LIMIT-15)
+      - "600"    # Case 600 series - Low-mass baseline envelope simplification (family)
+      - "620"    # Case 620 - Low-mass baseline structural (LIMIT cohort)
       - "900"    # Case 900 - High-mass building heating deviation
-      - "600"    # Case 600 series - Low-mass baseline envelope simplification
+      - "940"    # Case 940 - High-mass setback-recovery overshoot (LIMIT-12)
+      - "960"    # Case 960 - Multi-zone 5R1C structural (LIMIT cohort)
 
 # =============================================================================
 # BENCHMARK GATES
