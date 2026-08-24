@@ -6,10 +6,11 @@ This tutorial provides a complete guide for developers who want to extend Fluxio
 
 1. [Project Overview](#project-overview)
 2. [Thermal Model Structure](#thermal-model-structure)
-3. [Implementing `heat_transfer()` Method](#implementing-heat_transfer-method)
-4. [Integration with SimulationDiagnostics](#integration-with-simulationdiagnostics)
-5. [Complete Working Example](#complete-working-example)
-6. [Testing and Validation](#testing-and-validation)
+3. [The Three Main Swap Points](#the-three-main-swap-points)
+4. [Implementing `heat_transfer()` Method](#implementing-heat_transfer-method)
+5. [Integration with SimulationDiagnostics](#integration-with-simulationdiagnostics)
+6. [Complete Working Example](#complete-working-example)
+7. [Testing and Validation](#testing-and-validation)
 
 ---
 
@@ -239,6 +240,199 @@ let results: Vec<f64> = population
 ```
 
 **Critical:** Clone at the population level, not inside timesteps. This avoids nested parallelism and maximizes performance.
+
+---
+
+## The Three Main Swap Points
+
+Fluxion exposes three modular swap points that let you replace default physics with custom implementations — each at a different stage of the simulation pipeline. Understanding these three points is essential for extending Fluxion for specialized building scenarios.
+
+### Overview of Swap Points
+
+| Swap Point | File | Trait | Purpose |
+|-----------|------|-------|---------|
+| `HeatConductionSolver` | `src/physics/solver_trait.rs` | `HeatConductionSolver` | 5R1C / 9R4C thermal network conduction solve |
+| `VentilationSchedule` | `src/sim/ventilation.rs` | `VentilationSchedule` | Air-change-rate and infiltration model |
+| **`ThermalModelTrait`** | **`src/sim/thermal_model.rs`** | **`ThermalModelTrait`** | **Top-level model — orchestrates all subsystems** |
+
+The diagnostic order is: Weather → Solar → Conduction → Ventilation → Zone Balance. `ThermalModelTrait` sits at the top of this chain and owns the zone energy balance that calls down into the `HeatConductionSolver` and `VentilationSchedule` slots.
+
+### HeatConductionSolver — Lower-Level Swap Point
+
+`HeatConductionSolver` (`src/physics/solver_trait.rs`) solves the 5R1C (low-mass) or 9R4C (high-mass) thermal network for conduction. It is called by `HybridThermalModel` when `HybridRouting::use_surrogate_conduction` is `true`.
+
+**Trait signature:**
+```rust
+pub trait HeatConductionSolver: Send + Sync {
+    fn step(
+        &self,
+        dt: Time,
+        t_zone: Temperature,
+        t_sol_air: Temperature,
+        h_ci: HeatTransferCoefficient,
+        h_ext: HeatTransferCoefficient,
+    ) -> Result<HeatFlux, SolverError>;
+
+    fn initialize(&mut self, wall: &WallSpec) -> Result<(), SolverError>;
+}
+```
+
+**When to use:** Replace the default `FiveR1CSolver` with an ONNX-trained conduction surrogate for faster inference (Issue #1896). Swap via `HybridThermalModel::set_conduction_solver()`.
+
+### VentilationSchedule — Lower-Level Swap Point
+
+`VentilationSchedule` (`src/sim/ventilation.rs`) provides the air-change rate (ACH) at each hour. It is consulted by `HybridThermalModel` when `HybridRouting::use_surrogate_ventilation` is `true`.
+
+**Trait signature:**
+```rust
+pub trait VentilationSchedule: Send + Sync {
+    fn get_ach(
+        &self,
+        hour_of_day: usize,
+        outdoor_temp: f64,
+        zone_temp: f64,
+        wind_speed: f64,
+        zone_volume: f64,
+    ) -> f64;
+}
+```
+
+**When to use:** Replace the default `ConstantVentilation` with a weather-dependent schedule (e.g., wind-speed-corrected infiltration). Swap via `HybridThermalModel::set_ventilation_schedule()`.
+
+### ThermalModelTrait — Top-Level Swap Point
+
+`ThermalModelTrait` (`src/sim/thermal_model.rs`) is the primary trait that all thermal model implementations satisfy. It is the entry point used by `BatchOracle` and the validation harness. Three concrete modes are available:
+
+#### ThermalModelMode::Physics (Default)
+
+Uses the analytical 5R1C / 9R4C thermal network. Default; used for ASHRAE 140 validation.
+
+```rust
+use fluxion::sim::thermal_model::{
+    ThermalModelBuilder, ThermalModelMode, PhysicsThermalModel,
+};
+
+let model: Box<dyn ThermalModelTrait> = ThermalModelBuilder::new()
+    .num_zones(1)
+    .mode(ThermalModelMode::Physics)
+    .build();
+
+// Or directly:
+let model = PhysicsThermalModel::from_spec(&case_spec);
+```
+
+#### ThermalModelMode::Surrogate
+
+Uses neural-network inference via `SurrogateManager`. Falls back to analytical physics on ONNX failure.
+
+```rust
+let model: Box<dyn ThermalModelTrait> = ThermalModelBuilder::new()
+    .num_zones(1)
+    .mode(ThermalModelMode::Surrogate)
+    .fallback_to_physics(true)
+    .build();
+```
+
+#### ThermalModelMode::Hybrid (Per-Component Routing)
+
+Routes each subsystem independently via `HybridRouting`. The default policy routes **loads → surrogate** and **conduction + ventilation + HVAC → physics** — the highest-value / lowest-risk split (Issue #1431).
+
+```rust
+use fluxion::sim::thermal_model::{HybridThermalModel, HybridRouting};
+
+let routing = HybridRouting {
+    use_surrogate_conduction: false,  // Physics 5R1C/9R4C
+    use_surrogate_ventilation: false,  // ConstantVentilation
+    use_surrogate_loads: true,        // ONNX surrogate (default)
+    use_surrogate_hvac: false,        // Physics HVAC
+    use_ood_fallback: false,
+};
+
+let model: Box<dyn ThermalModelTrait> = ThermalModelBuilder::new()
+    .num_zones(1)
+    .mode(ThermalModelMode::Hybrid)
+    .build();
+
+// Access concrete type to swap sub-components:
+let hybrid = model.downcast_ref::<HybridThermalModel>().unwrap();
+hybrid.set_conduction_solver(Box::new(my_custom_solver));
+hybrid.set_ventilation_schedule(Box::new(my_custom_schedule));
+```
+
+**Trait core interface:**
+```rust
+pub trait ThermalModelTrait: Send + Sync {
+    fn num_zones(&self) -> usize;
+    fn get_temperatures(&self) -> Vec<f64>;
+    fn set_temperatures(&mut self, temperatures: &[f64]);
+    fn mode(&self) -> ThermalModelMode;
+    fn set_mode(&mut self, mode: ThermalModelMode);
+    fn solve_timesteps(
+        &mut self,
+        steps: usize,
+        surrogates: &SurrogateManager,
+        use_surrogates: bool,
+    ) -> f64;
+    fn apply_parameters(&mut self, params: &[f64]);
+    fn zone_area(&self) -> f64;
+    fn heating_setpoint(&self) -> f64;
+    fn cooling_setpoint(&self) -> f64;
+    fn hvac_power_demand(&self, timestep: usize, outdoor_temp: f64) -> f64;
+    fn is_valid(&self) -> bool;
+    fn get_comfort_metrics(&self) -> Vec<ZoneComfortMetrics>;
+    fn set_twin_correction(&mut self, correction: &TwinCorrection);
+}
+```
+
+### Wiring a Custom Thermal Model
+
+To implement a custom thermal model, implement `ThermalModelTrait` and wire it into the simulation:
+
+```rust
+use fluxion::sim::thermal_model::{ThermalModelTrait, ThermalModelMode};
+use fluxion::ai::surrogate::SurrogateManager;
+
+struct MyCustomModel {
+    inner: PhysicsThermalModel,
+    my_extra_field: f64,
+}
+
+impl ThermalModelTrait for MyCustomModel {
+    fn num_zones(&self) -> usize { self.inner.num_zones() }
+    fn get_temperatures(&self) -> Vec<f64> { self.inner.get_temperatures() }
+    fn set_temperatures(&mut self, t: &[f64]) { self.inner.set_temperatures(t); }
+    fn mode(&self) -> ThermalModelMode { ThermalModelMode::Physics }
+    fn set_mode(&mut self, m: ThermalModelMode) { self.inner.set_mode(m); }
+
+    fn solve_timesteps(&mut self, steps: usize, surrogates: &SurrogateManager, use_surrogates: bool) -> f64 {
+        // Custom pre-solve logic
+        self.inner.solve_timesteps(steps, surrogates, use_surrogates)
+    }
+
+    fn apply_parameters(&mut self, params: &[f64]) { self.inner.apply_parameters(params); }
+    fn zone_area(&self) -> f64 { self.inner.zone_area() }
+    fn heating_setpoint(&self) -> f64 { self.inner.heating_setpoint() }
+    fn cooling_setpoint(&self) -> f64 { self.inner.cooling_setpoint() }
+    fn hvac_power_demand(&self, t: usize, o: f64) -> f64 { self.inner.hvac_power_demand(t, o) }
+    fn is_valid(&self) -> bool { self.inner.is_valid() }
+    fn get_comfort_metrics(&self) -> Vec<ZoneComfortMetrics> { self.inner.get_comfort_metrics() }
+    fn set_twin_correction(&mut self, c: &TwinCorrection) { self.inner.set_twin_correction(c); }
+}
+```
+
+### Trait Hierarchy Summary
+
+```
+ThermalModelTrait (trait object — Box<dyn ThermalModelTrait>)
+├── PhysicsThermalModel      — ThermalModelMode::Physics
+├── SurrogateThermalModel    — ThermalModelMode::Surrogate
+├── HybridThermalModel       — ThermalModelMode::Hybrid
+│   ├── conduction_solver: Box<dyn HeatConductionSolver>   ← swap slot
+│   └── ventilation_schedule: Box<dyn VentilationSchedule>  ← swap slot
+└── UnifiedThermalModel      — runtime-switchable
+```
+
+**Clone semantics:** `HybridThermalModel` is `Clone`. Clone **before** `solve_timesteps` for parallel population evaluation. Counters are preserved on clone; solver/schedule slots are reset to defaults. Re-install custom slots after cloning if needed.
 
 ---
 
