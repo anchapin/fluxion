@@ -115,7 +115,7 @@ pub use fluxion_core::weather;
 // are now thin re-export shims, so existing `crate::sim::assembly::*` and
 // `crate::sim::multi_node_thermal::*` paths still resolve. Top-level re-exports
 // here make `crate::assembly::*` and `crate::multi_node::*` work too.
-pub use fluxion_core::{assembly, fluid, multi_node};
+pub use fluxion_core::{assembly, fluid_graph, multi_node};
 
 // #1441 (Phase 2 cycle break, continued): ASHRAE-140 leaf data types
 // (Orientation, WindowArea, ConstructionType, ShadingType, ShadingDevice,
