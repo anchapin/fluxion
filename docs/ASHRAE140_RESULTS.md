@@ -57,8 +57,9 @@ structural root cause and cannot be closed by parameter tuning:
 - **Cohort tracking:** see `docs/KNOWN_ISSUES.md` §"Aggressive-baseline
   cohort tracking (Issue #3072)" for the full per-case status, dependent
   issues (#3058, #3059, #3061, #3062, #3063, #3060, #3070) table, and
-  ADR-0007 stub (`docs/adr/0007-gauge-solver-structural-work.md`,
-  Status: Proposed) that links the cohort to the GaugeSolver unblocker.
+  ADR-0007 (`docs/adr/0007-gauge-solver-structural-work.md`,
+   Status: Accepted — production-path switchover planned per Issue #3172) that
+   links the cohort to the GaugeSolver unblocker.
 
 ### Cases 610 / 630 / 650 peak cooling OVER (LIMIT-16 / Issue #3059)
 
@@ -85,7 +86,7 @@ GaugeSolver rework (#1465 / #1462).
   `h_tr_em` time-invariance), §LIMIT-14 (Issue #3061, Case 960 sunspace
   annual cooling), §LIMIT-15 (Issue #3060, Case 195 weather-file).
 - **Architectural unblocker:** GaugeSolver production-path switchover
-  (issues #1465 / #1462, ADR-0007 stub).
+  (issues #1465 / #1462, ADR-0007).
 - **No tuning escape hatch:** raising
   `MAX_CONVECTIVE_TO_AIR_MULTIPLIER` above 2.0× re-introduces the pre-#3041
   asymmetry that drove Case 620 OVER; widening the band is band-space
