@@ -66,15 +66,13 @@ const DEFAULT_MQTTS_PORT: u16 = 8883;
 /// explicitly permitted via [`ENV_ALLOW_PLAINTEXT`].
 const DEFAULT_MQTT_PORT: u16 = 1883;
 
-/// Env var: when truthy, permits plaintext (`mqtt://` / `tcp://`) broker URLs.
-///
-/// Plaintext means telemetry payloads travel unencrypted; intended only for
-/// local development.
-const ENV_ALLOW_PLAINTEXT: &str = "FLUXION_MQTT_ALLOW_INSECURE";
-
 /// Env var: when truthy, skips TLS server-certificate validation (e.g. for
 /// self-signed brokers). **Disables all certificate checking** — local dev only.
-const ENV_INSECURE_CERTS: &str = "FLUXION_MQTT_INSECURE";
+///
+/// This does NOT permit plaintext; unencrypted MQTT is always rejected.
+/// To skip cert verification for a self-signed broker, set this to a truthy
+/// value (`1`/`true`/`yes`/`on`).
+const ENV_INSECURE_CERTS: &str = "FLUXION_MQTT_ALLOW_INSECURE";
 
 /// Errors produced by the MQTT telemetry consumer.
 #[derive(Error, Debug)]
