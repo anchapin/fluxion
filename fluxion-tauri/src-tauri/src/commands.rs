@@ -1,4 +1,4 @@
-use crate::geometry::{self, BuildingGeometry, BuildingLevel, ThermalZone};
+use crate::geometry::{BuildingGeometry, BuildingLevel, ThermalZone};
 
 #[derive(Debug, serde::Serialize)]
 pub struct GeometrySummary {
@@ -36,18 +36,18 @@ pub async fn load_geometry_file(file_path: String) -> Result<BuildingGeometry, S
         .map_err(|e| format!("Failed to read file: {}", e))?;
 
     match extension.as_str() {
-        "xml" | "gbxml" => geometry::parse_gbxml_content(&content),
-        "ifc" => geometry::parse_ifc_content(&content),
+        "xml" | "gbxml" => crate::geometry::parse_gbxml_content(&content),
+        "ifc" => crate::geometry::parse_ifc_content(&content),
         "json" => serde_json::from_str(&content).map_err(|e| format!("JSON parse error: {}", e)),
         _ => {
             tracing::warn!("Unknown file extension '{}', returning sample geometry", extension);
-            Ok(geometry::create_sample_geometry())
+            Ok(crate::geometry::create_sample_geometry())
         }
     }
 }
 
 #[tauri::command]
-pub async fn get_geometry_summary(geometry: tauri::State<'_, BuildingGeometry>) -> Result<GeometrySummary, String> {
+pub async fn get_geometry_summary(geometry: BuildingGeometry) -> Result<GeometrySummary, String> {
     let mut num_spaces = 0;
     let mut num_surfaces = 0;
 
@@ -80,16 +80,11 @@ pub async fn get_geometry_summary(geometry: tauri::State<'_, BuildingGeometry>) 
 }
 
 #[tauri::command]
-pub async fn get_zone_geometry(
-    zone_id: String,
-    geometry: tauri::State<'_, BuildingGeometry>,
-) -> Result<Option<ThermalZone>, String> {
-    Ok(geometry.zones.iter().find(|z| z.id == zone_id).cloned())
+pub fn get_zone_ids(geometry: BuildingGeometry) -> Vec<String> {
+    geometry.zones.iter().map(|z| z.id.clone()).collect()
 }
 
 #[tauri::command]
-pub async fn get_building_levels(
-    geometry: tauri::State<'_, BuildingGeometry>,
-) -> Result<Vec<BuildingLevel>, String> {
-    Ok(geometry.levels.clone())
+pub fn get_level_ids(geometry: BuildingGeometry) -> Vec<String> {
+    geometry.levels.iter().map(|l| l.id.clone()).collect()
 }
