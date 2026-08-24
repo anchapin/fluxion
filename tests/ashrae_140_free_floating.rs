@@ -260,6 +260,28 @@ fn test_case_950ff_free_floating_night_vent_high_mass() {
     );
     println!("=== End ===\n");
 
+    let min_in_range = (reference::case_950ff::MIN_TEMP_MIN..=reference::case_950ff::MIN_TEMP_MAX)
+        .contains(&min_temp);
+    let max_in_range = (reference::case_950ff::MAX_TEMP_MIN..=reference::case_950ff::MAX_TEMP_MAX)
+        .contains(&max_temp);
+
+    if !min_in_range {
+        println!(
+            "⚠ 950FF Min {:.2}°C outside reference [{:.1}, {:.1}]",
+            min_temp,
+            reference::case_950ff::MIN_TEMP_MIN,
+            reference::case_950ff::MIN_TEMP_MAX
+        );
+    }
+    if !max_in_range {
+        println!(
+            "⚠ 950FF Max {:.2}°C outside reference [{:.1}, {:.1}]",
+            max_temp,
+            reference::case_950ff::MAX_TEMP_MIN,
+            reference::case_950ff::MAX_TEMP_MAX
+        );
+    }
+
     assert!(min_temp < max_temp, "Min temp should be less than max temp");
 }
 
