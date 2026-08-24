@@ -119,8 +119,8 @@ impl PmvComfort {
         }
 
         let t_sk = 35.7 - 0.028 * m;
-        let c = f_cl * h_c * (t_sk - ta);
-        let r = f_cl * h_r * (t_sk - tr);
+        let c = f_cl * h_c * (t_sk - t_cl);
+        let r = f_cl * h_r * (t_sk - t_cl);
         let c_res = 0.0014 * m * (34.0 - ta);
         let e_res = 0.0000173 * m * (p_sat - p_a);
 
