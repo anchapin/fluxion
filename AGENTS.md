@@ -65,3 +65,4 @@ Bindings are feature-gated: `maturin develop` for Python; run `npm run build` in
 Branch from and target `develop`; `main` accepts release PRs only from `develop`. Never push directly to either branch. Use Conventional Commits (`fix(scope):`, `feat(scope):`, `test(scope):`, `docs(scope):`, etc.), and include `Closes #N` or `Fixes #N` in PR bodies.
 
 `release_gates.yaml -> ci.required_checks` is canonical. Required names include `(GH)` suffixes; synchronize that file before renaming workflow jobs. In the GH-probe/Hetzner-overflow pattern, a cancelled probe is the fallback trigger, not the final failure; judge the `(GH)` or overflow job result.
+
