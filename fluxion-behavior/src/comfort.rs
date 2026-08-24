@@ -329,7 +329,11 @@ mod tests {
 
         // With corrected t_cl in heat transfer (issue #3165): PMV should be positive (warm)
         // Old buggy code using ta/tr instead of t_cl gave wrong PMV and PPD
-        assert!(result.pmv > 0.0, "PMV should be warm-positive for 25°C typical office, got {}", result.pmv);
+        assert!(
+            result.pmv > 0.0,
+            "PMV should be warm-positive for 25°C typical office, got {}",
+            result.pmv
+        );
     }
 
     #[test]
@@ -384,7 +388,11 @@ mod tests {
 
         // With corrected t_cl in heat transfer (issue #3165): PMV ≈ 2.3 (hot)
         // Old buggy code using ta/tr instead of t_cl was wrong
-        assert!(result.pmv > 1.0, "PMV should be hot for 28°C light clothing summer, got {}", result.pmv);
+        assert!(
+            result.pmv > 1.0,
+            "PMV should be hot for 28°C light clothing summer, got {}",
+            result.pmv
+        );
         assert!(result.ppd > 50.0);
     }
 
