@@ -1,0 +1,32 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "Fluxion Viewer",
+  "version": "0.1.0",
+  "identifier": "ai.fluxion.viewer",
+  "build": {
+    "devUrl": "http://localhost:1420",
+    "frontendDist": "../src-tauri"
+  },
+  "app": {
+    "withGlobalTauri": true,
+    "windows": [
+      {
+        "title": "Fluxion 3D Geometry Viewer",
+        "width": 1280,
+        "height": 720,
+        "resizable": true,
+        "fullscreen": false
+      }
+    ],
+    "security": {
+      "csp": null
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": "all",
+    "icon": [
+      "icons/icon.png"
+    ]
+  }
+}
