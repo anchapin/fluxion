@@ -509,6 +509,13 @@ ci:
     # Companion to Physics-Sim-Cycle-Check (#2463).
     - "Ashrae Cases Cycle Check (GH)"
 
+    # Issue #2768: downward-trend guard for the sim ↔ validation cycle.
+    # Per-PR: R1 (no growth) + R3 (no net-flat edge swap). Nightly:
+    # R1 + R2 (stale-window) + R3. R2 only enforced in nightly cron to
+    # avoid blocking PRs that don't touch the cycle. Job in
+    # `.github/workflows/rust-tests.yml` under `cycle-trend-gh` id.
+    - "Cycle Downward Trend Guard (Issue #2768)"
+
     # CUDA smoke test (#1603). The smoke-test job in `ashrae_validation.yml`
     # verifies `--features cuda` builds and runs the gate. Auto-skips on
     # CPU-only runners; non-zero exit on any CUDA regression.
@@ -875,6 +882,16 @@ ci:
       # which mirrors this gate for the physics↔sim direction.
       workflow: ".github/workflows/rust-tests.yml"
       issue: 1441
+      triggered_by: "PR + push to main"
+
+    - job: "Cycle Downward Trend Guard (Issue #2768)"
+      # Downward trend guard for the sim↔validation cycle (Issue #2768).
+      # Per-PR: R1 (no growth) + R3 (no net-flat edge swap). Nightly:
+      # R1 + R2 (stale-window) + R3. R2 only enforced in nightly cron
+      # to avoid blocking PRs that don't touch the cycle. Job in
+      # `.github/workflows/rust-tests.yml` under `cycle-trend-gh` id.
+      workflow: ".github/workflows/rust-tests.yml"
+      issue: 2768
       triggered_by: "PR + push to main"
 
     - job: "CUDA Smoke Test (Issue #1603)"
