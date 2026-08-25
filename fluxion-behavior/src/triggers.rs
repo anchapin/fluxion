@@ -1,3 +1,7 @@
+use chrono::{DateTime, Utc};
+use serde::{Deserialize, Serialize};
+use uuid::Uuid;
+
 use crate::comfort::{
     AdaptiveComfort, AdaptiveComfortStatus, ComfortMetrics, PmvComfort, PmvComfortStatus,
     TriggerType,
@@ -32,9 +36,6 @@ impl ThermalComfortInput {
         }
     }
 }
-use chrono::{DateTime, Utc};
-use serde::{Deserialize, Serialize};
-use uuid::Uuid;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ComfortTrigger {
@@ -113,36 +114,6 @@ impl ComfortViolation {
                 "CO2 threshold exceeded: {:.1} ppm > {:.1} ppm",
                 co2_level, threshold
             ),
-        }
-    }
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ThermalComfortInput {
-    pub air_temp: f64,
-    pub radiant_temp: f64,
-    pub rel_humidity: f64,
-    pub air_velocity: f64,
-    pub metabolic_rate: f64,
-    pub clothing_level: f64,
-}
-
-impl ThermalComfortInput {
-    pub fn new(
-        air_temp: f64,
-        radiant_temp: f64,
-        rel_humidity: f64,
-        air_velocity: f64,
-        metabolic_rate: f64,
-        clothing_level: f64,
-    ) -> Self {
-        Self {
-            air_temp,
-            radiant_temp,
-            rel_humidity,
-            air_velocity,
-            metabolic_rate,
-            clothing_level,
         }
     }
 }
