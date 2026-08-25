@@ -106,7 +106,9 @@ pub fn create_sample_geometry() -> BuildingGeometry {
                         thermal_zone_id: Some(zone1_id.clone()),
                         floor_area: 50.0,
                         volume: 150.0,
-                        surfaces: create_surfaces(&space1_id, &level1_id, &zone1_id, 0.0, 0.0, 10.0, 5.0, 0.0),
+                        surfaces: create_surfaces(
+                            &space1_id, &level1_id, &zone1_id, 0.0, 0.0, 10.0, 5.0, 0.0,
+                        ),
                     },
                     Space {
                         id: space2_id.clone(),
@@ -115,7 +117,9 @@ pub fn create_sample_geometry() -> BuildingGeometry {
                         thermal_zone_id: Some(zone1_id.clone()),
                         floor_area: 50.0,
                         volume: 150.0,
-                        surfaces: create_surfaces(&space2_id, &level1_id, &zone1_id, 10.0, 0.0, 10.0, 5.0, 0.0),
+                        surfaces: create_surfaces(
+                            &space2_id, &level1_id, &zone1_id, 10.0, 0.0, 10.0, 5.0, 0.0,
+                        ),
                     },
                 ],
             },
@@ -132,7 +136,9 @@ pub fn create_sample_geometry() -> BuildingGeometry {
                         thermal_zone_id: Some(zone2_id.clone()),
                         floor_area: 50.0,
                         volume: 150.0,
-                        surfaces: create_surfaces(&space3_id, &level2_id, &zone2_id, 0.0, 0.0, 10.0, 5.0, 3.0),
+                        surfaces: create_surfaces(
+                            &space3_id, &level2_id, &zone2_id, 0.0, 0.0, 10.0, 5.0, 3.0,
+                        ),
                     },
                     Space {
                         id: space4_id.clone(),
@@ -141,7 +147,9 @@ pub fn create_sample_geometry() -> BuildingGeometry {
                         thermal_zone_id: Some(zone2_id.clone()),
                         floor_area: 50.0,
                         volume: 150.0,
-                        surfaces: create_surfaces(&space4_id, &level2_id, &zone2_id, 10.0, 0.0, 10.0, 5.0, 3.0),
+                        surfaces: create_surfaces(
+                            &space4_id, &level2_id, &zone2_id, 10.0, 0.0, 10.0, 5.0, 3.0,
+                        ),
                     },
                 ],
             },
@@ -174,13 +182,30 @@ pub fn create_sample_geometry() -> BuildingGeometry {
         ],
         total_floor_area: 200.0,
         bounding_box: BoundingBox {
-            min: Vertex { x: 0.0, y: 0.0, z: 0.0 },
-            max: Vertex { x: 20.0, y: 5.0, z: 6.0 },
+            min: Vertex {
+                x: 0.0,
+                y: 0.0,
+                z: 0.0,
+            },
+            max: Vertex {
+                x: 20.0,
+                y: 5.0,
+                z: 6.0,
+            },
         },
     }
 }
 
-fn create_surfaces(space_id: &str, level_id: &str, zone_id: &str, offset_x: f64, offset_y: f64, width: f64, depth: f64, level_elevation: f64) -> Vec<Surface> {
+fn create_surfaces(
+    space_id: &str,
+    level_id: &str,
+    zone_id: &str,
+    offset_x: f64,
+    offset_y: f64,
+    width: f64,
+    depth: f64,
+    level_elevation: f64,
+) -> Vec<Surface> {
     let height = 3.0;
 
     vec![
@@ -193,10 +218,26 @@ fn create_surfaces(space_id: &str, level_id: &str, zone_id: &str, offset_x: f64,
             thermal_zone_id: Some(zone_id.to_string()),
             area: width * depth,
             vertices: vec![
-                Vertex { x: offset_x, y: offset_y, z: level_elevation },
-                Vertex { x: offset_x + width, y: offset_y, z: level_elevation },
-                Vertex { x: offset_x + width, y: offset_y + depth, z: level_elevation },
-                Vertex { x: offset_x, y: offset_y + depth, z: level_elevation },
+                Vertex {
+                    x: offset_x,
+                    y: offset_y,
+                    z: level_elevation,
+                },
+                Vertex {
+                    x: offset_x + width,
+                    y: offset_y,
+                    z: level_elevation,
+                },
+                Vertex {
+                    x: offset_x + width,
+                    y: offset_y + depth,
+                    z: level_elevation,
+                },
+                Vertex {
+                    x: offset_x,
+                    y: offset_y + depth,
+                    z: level_elevation,
+                },
             ],
         },
         Surface {
@@ -208,10 +249,26 @@ fn create_surfaces(space_id: &str, level_id: &str, zone_id: &str, offset_x: f64,
             thermal_zone_id: Some(zone_id.to_string()),
             area: width * depth,
             vertices: vec![
-                Vertex { x: offset_x, y: offset_y, z: level_elevation + height },
-                Vertex { x: offset_x, y: offset_y + depth, z: level_elevation + height },
-                Vertex { x: offset_x + width, y: offset_y + depth, z: level_elevation + height },
-                Vertex { x: offset_x + width, y: offset_y, z: level_elevation + height },
+                Vertex {
+                    x: offset_x,
+                    y: offset_y,
+                    z: level_elevation + height,
+                },
+                Vertex {
+                    x: offset_x,
+                    y: offset_y + depth,
+                    z: level_elevation + height,
+                },
+                Vertex {
+                    x: offset_x + width,
+                    y: offset_y + depth,
+                    z: level_elevation + height,
+                },
+                Vertex {
+                    x: offset_x + width,
+                    y: offset_y,
+                    z: level_elevation + height,
+                },
             ],
         },
         Surface {
@@ -223,10 +280,26 @@ fn create_surfaces(space_id: &str, level_id: &str, zone_id: &str, offset_x: f64,
             thermal_zone_id: Some(zone_id.to_string()),
             area: width * height,
             vertices: vec![
-                Vertex { x: offset_x, y: offset_y, z: level_elevation },
-                Vertex { x: offset_x + width, y: offset_y, z: level_elevation },
-                Vertex { x: offset_x + width, y: offset_y, z: level_elevation + height },
-                Vertex { x: offset_x, y: offset_y, z: level_elevation + height },
+                Vertex {
+                    x: offset_x,
+                    y: offset_y,
+                    z: level_elevation,
+                },
+                Vertex {
+                    x: offset_x + width,
+                    y: offset_y,
+                    z: level_elevation,
+                },
+                Vertex {
+                    x: offset_x + width,
+                    y: offset_y,
+                    z: level_elevation + height,
+                },
+                Vertex {
+                    x: offset_x,
+                    y: offset_y,
+                    z: level_elevation + height,
+                },
             ],
         },
         Surface {
@@ -238,10 +311,26 @@ fn create_surfaces(space_id: &str, level_id: &str, zone_id: &str, offset_x: f64,
             thermal_zone_id: Some(zone_id.to_string()),
             area: width * height,
             vertices: vec![
-                Vertex { x: offset_x, y: offset_y + depth, z: level_elevation },
-                Vertex { x: offset_x, y: offset_y + depth, z: level_elevation + height },
-                Vertex { x: offset_x + width, y: offset_y + depth, z: level_elevation + height },
-                Vertex { x: offset_x + width, y: offset_y + depth, z: level_elevation },
+                Vertex {
+                    x: offset_x,
+                    y: offset_y + depth,
+                    z: level_elevation,
+                },
+                Vertex {
+                    x: offset_x,
+                    y: offset_y + depth,
+                    z: level_elevation + height,
+                },
+                Vertex {
+                    x: offset_x + width,
+                    y: offset_y + depth,
+                    z: level_elevation + height,
+                },
+                Vertex {
+                    x: offset_x + width,
+                    y: offset_y + depth,
+                    z: level_elevation,
+                },
             ],
         },
         Surface {
@@ -253,10 +342,26 @@ fn create_surfaces(space_id: &str, level_id: &str, zone_id: &str, offset_x: f64,
             thermal_zone_id: Some(zone_id.to_string()),
             area: depth * height,
             vertices: vec![
-                Vertex { x: offset_x + width, y: offset_y, z: level_elevation },
-                Vertex { x: offset_x + width, y: offset_y + depth, z: level_elevation },
-                Vertex { x: offset_x + width, y: offset_y + depth, z: level_elevation + height },
-                Vertex { x: offset_x + width, y: offset_y, z: level_elevation + height },
+                Vertex {
+                    x: offset_x + width,
+                    y: offset_y,
+                    z: level_elevation,
+                },
+                Vertex {
+                    x: offset_x + width,
+                    y: offset_y + depth,
+                    z: level_elevation,
+                },
+                Vertex {
+                    x: offset_x + width,
+                    y: offset_y + depth,
+                    z: level_elevation + height,
+                },
+                Vertex {
+                    x: offset_x + width,
+                    y: offset_y,
+                    z: level_elevation + height,
+                },
             ],
         },
         Surface {
@@ -268,10 +373,26 @@ fn create_surfaces(space_id: &str, level_id: &str, zone_id: &str, offset_x: f64,
             thermal_zone_id: Some(zone_id.to_string()),
             area: depth * height,
             vertices: vec![
-                Vertex { x: offset_x, y: offset_y, z: level_elevation },
-                Vertex { x: offset_x, y: offset_y, z: level_elevation + height },
-                Vertex { x: offset_x, y: offset_y + depth, z: level_elevation + height },
-                Vertex { x: offset_x, y: offset_y + depth, z: level_elevation },
+                Vertex {
+                    x: offset_x,
+                    y: offset_y,
+                    z: level_elevation,
+                },
+                Vertex {
+                    x: offset_x,
+                    y: offset_y,
+                    z: level_elevation + height,
+                },
+                Vertex {
+                    x: offset_x,
+                    y: offset_y + depth,
+                    z: level_elevation + height,
+                },
+                Vertex {
+                    x: offset_x,
+                    y: offset_y + depth,
+                    z: level_elevation,
+                },
             ],
         },
     ]

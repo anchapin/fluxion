@@ -706,12 +706,7 @@ impl FluidSimulation {
         zone_id: usize,
         thermal_mass: f64,
     ) -> Result<(), JsValue> {
-        let mass = validate_finite(
-            thermal_mass,
-            "set_zone_thermal_mass",
-            1e3,
-            1e10,
-        )?;
+        let mass = validate_finite(thermal_mass, "set_zone_thermal_mass", 1e3, 1e10)?;
         if mass <= 0.0 {
             return Err(JsValue::from_str("thermal_mass must be positive"));
         }
@@ -762,12 +757,7 @@ impl FluidSimulation {
         zone_id: usize,
         conductance: f64,
     ) -> Result<(), JsValue> {
-        let cond = validate_finite(
-            conductance,
-            "set_zone_conductance",
-            0.1,
-            1e6,
-        )?;
+        let cond = validate_finite(conductance, "set_zone_conductance", 0.1, 1e6)?;
         if cond <= 0.0 {
             return Err(JsValue::from_str("conductance must be positive"));
         }
@@ -818,12 +808,7 @@ impl FluidSimulation {
         zone_id: usize,
         infiltration_ach: f64,
     ) -> Result<(), JsValue> {
-        let ach = validate_finite(
-            infiltration_ach,
-            "set_zone_infiltration",
-            0.0,
-            10.0,
-        )?;
+        let ach = validate_finite(infiltration_ach, "set_zone_infiltration", 0.0, 10.0)?;
         if zone_id >= self.infiltration_flow.len() {
             return Err(JsValue::from_str("zone_id out of range"));
         }
@@ -867,17 +852,8 @@ impl FluidSimulation {
     /// # Returns
     /// Unit on success, or `JsValue` error if zone_id is out of range or gains_w is invalid.
     #[wasm_bindgen]
-    pub fn set_zone_internal_gains(
-        &mut self,
-        zone_id: usize,
-        gains_w: f64,
-    ) -> Result<(), JsValue> {
-        let gains = validate_finite(
-            gains_w,
-            "set_zone_internal_gains",
-            0.0,
-            1e6,
-        )?;
+    pub fn set_zone_internal_gains(&mut self, zone_id: usize, gains_w: f64) -> Result<(), JsValue> {
+        let gains = validate_finite(gains_w, "set_zone_internal_gains", 0.0, 1e6)?;
         if zone_id >= self.internal_gains.len() {
             return Err(JsValue::from_str("zone_id out of range"));
         }
