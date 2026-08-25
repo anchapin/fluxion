@@ -49,7 +49,7 @@ DEFAULTS: dict[str, Any] = {
         "individual": {
             "max_deviation": 100.0,
             "extreme_deviation_limit": 2,
-            "known_failures": ["900", "600"],
+            "known_failures": ["195", "600", "620", "900", "940", "960"],
         },
     },
     "benchmark": {

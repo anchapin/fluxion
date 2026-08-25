@@ -1,0 +1,806 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Fluxion WASM Demo - Building Energy Simulation</title>
+    <style>
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        :root {
+            --bg-primary: #0f172a;
+            --bg-secondary: #1e293b;
+            --bg-tertiary: #334155;
+            --text-primary: #f1f5f9;
+            --text-secondary: #94a3b8;
+            --accent-blue: #3b82f6;
+            --accent-green: #22c55e;
+            --accent-red: #ef4444;
+            --accent-yellow: #eab308;
+            --border-color: #475569;
+        }
+
+        body {
+            font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+            background: var(--bg-primary);
+            color: var(--text-primary);
+            min-height: 100vh;
+            padding: 2rem;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+
+        header {
+            text-align: center;
+            margin-bottom: 2rem;
+            padding-bottom: 1rem;
+            border-bottom: 1px solid var(--border-color);
+        }
+
+        h1 {
+            font-size: 2rem;
+            font-weight: 700;
+            background: linear-gradient(135deg, var(--accent-blue), var(--accent-green));
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+            margin-bottom: 0.5rem;
+        }
+
+        .subtitle {
+            color: var(--text-secondary);
+            font-size: 0.9rem;
+        }
+
+        .grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 1.5rem;
+            margin-bottom: 1.5rem;
+        }
+
+        @media (max-width: 768px) {
+            .grid {
+                grid-template-columns: 1fr;
+            }
+        }
+
+        .card {
+            background: var(--bg-secondary);
+            border-radius: 12px;
+            padding: 1.5rem;
+            border: 1px solid var(--border-color);
+        }
+
+        .card-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 1rem;
+        }
+
+        .card-title {
+            font-size: 1rem;
+            font-weight: 600;
+            color: var(--text-primary);
+        }
+
+        .status-badge {
+            padding: 0.25rem 0.75rem;
+            border-radius: 9999px;
+            font-size: 0.75rem;
+            font-weight: 500;
+        }
+
+        .status-ready {
+            background: rgba(34, 197, 94, 0.2);
+            color: var(--accent-green);
+        }
+
+        .status-error {
+            background: rgba(239, 68, 68, 0.2);
+            color: var(--accent-red);
+        }
+
+        .form-group {
+            margin-bottom: 1rem;
+        }
+
+        label {
+            display: block;
+            font-size: 0.8rem;
+            color: var(--text-secondary);
+            margin-bottom: 0.25rem;
+        }
+
+        input, select {
+            width: 100%;
+            padding: 0.5rem 0.75rem;
+            border-radius: 6px;
+            border: 1px solid var(--border-color);
+            background: var(--bg-tertiary);
+            color: var(--text-primary);
+            font-size: 0.9rem;
+            transition: border-color 0.2s;
+        }
+
+        input:focus, select:focus {
+            outline: none;
+            border-color: var(--accent-blue);
+        }
+
+        .btn {
+            padding: 0.5rem 1rem;
+            border-radius: 6px;
+            border: none;
+            font-size: 0.9rem;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .btn-primary {
+            background: var(--accent-blue);
+            color: white;
+        }
+
+        .btn-primary:hover {
+            background: #2563eb;
+        }
+
+        .btn-secondary {
+            background: var(--bg-tertiary);
+            color: var(--text-primary);
+            border: 1px solid var(--border-color);
+        }
+
+        .btn-secondary:hover {
+            background: var(--border-color);
+        }
+
+        .btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
+        .btn-group {
+            display: flex;
+            gap: 0.5rem;
+            flex-wrap: wrap;
+        }
+
+        .zone-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+            gap: 0.75rem;
+        }
+
+        .zone-card {
+            background: var(--bg-tertiary);
+            border-radius: 8px;
+            padding: 0.75rem;
+            text-align: center;
+        }
+
+        .zone-label {
+            font-size: 0.7rem;
+            color: var(--text-secondary);
+            margin-bottom: 0.25rem;
+        }
+
+        .zone-temp {
+            font-size: 1.5rem;
+            font-weight: 700;
+            font-family: 'Consolas', monospace;
+        }
+
+        .zone-temp.cold {
+            color: var(--accent-blue);
+        }
+
+        .zone-temp.comfort {
+            color: var(--accent-green);
+        }
+
+        .zone-temp.hot {
+            color: var(--accent-red);
+        }
+
+        .zone-setpoints {
+            font-size: 0.7rem;
+            color: var(--text-secondary);
+            margin-top: 0.25rem;
+        }
+
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 1rem;
+        }
+
+        .stat-card {
+            background: var(--bg-tertiary);
+            border-radius: 8px;
+            padding: 1rem;
+            text-align: center;
+        }
+
+        .stat-label {
+            font-size: 0.7rem;
+            color: var(--text-secondary);
+            margin-bottom: 0.25rem;
+        }
+
+        .stat-value {
+            font-size: 1.25rem;
+            font-weight: 700;
+            font-family: 'Consolas', monospace;
+        }
+
+        .stat-value.heating {
+            color: var(--accent-red);
+        }
+
+        .stat-value.cooling {
+            color: var(--accent-blue);
+        }
+
+        .log-container {
+            background: var(--bg-primary);
+            border-radius: 8px;
+            padding: 1rem;
+            max-height: 200px;
+            overflow-y: auto;
+            font-family: 'Consolas', 'Monaco', monospace;
+            font-size: 0.75rem;
+            line-height: 1.5;
+        }
+
+        .log-entry {
+            color: var(--text-secondary);
+            margin-bottom: 0.25rem;
+        }
+
+        .log-entry.info {
+            color: var(--accent-blue);
+        }
+
+        .log-entry.success {
+            color: var(--accent-green);
+        }
+
+        .log-entry.warn {
+            color: var(--accent-yellow);
+        }
+
+        .log-entry.error {
+            color: var(--accent-red);
+        }
+
+        .loading {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 2rem;
+            color: var(--text-secondary);
+        }
+
+        .spinner {
+            width: 24px;
+            height: 24px;
+            border: 2px solid var(--border-color);
+            border-top-color: var(--accent-blue);
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+            margin-right: 0.5rem;
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+
+        .perf-indicator {
+            display: inline-block;
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            margin-right: 0.5rem;
+        }
+
+        .perf-good {
+            background: var(--accent-green);
+        }
+
+        .perf-ok {
+            background: var(--accent-yellow);
+        }
+
+        .perf-slow {
+            background: var(--accent-red);
+        }
+
+        .hidden {
+            display: none !important;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>Fluxion WASM Demo</h1>
+            <p class="subtitle">Zero-install browser-based building energy simulation</p>
+        </header>
+
+        <div id="loading" class="loading">
+            <div class="spinner"></div>
+            <span>Loading WASM module...</span>
+        </div>
+
+        <div id="main-content" class="hidden">
+            <div class="grid">
+                <div class="card">
+                    <div class="card-header">
+                        <span class="card-title">Configuration</span>
+                        <span id="status-badge" class="status-badge status-ready">Ready</span>
+                    </div>
+                    <div class="form-group">
+                        <label for="num-zones">Number of Zones</label>
+                        <select id="num-zones">
+                            <option value="1">1 Zone</option>
+                            <option value="2">2 Zones</option>
+                            <option value="3">3 Zones</option>
+                            <option value="5" selected>5 Zones</option>
+                            <option value="10">10 Zones</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label for="heating-sp">Heating Setpoint (°C)</label>
+                        <input type="number" id="heating-sp" value="20" min="10" max="40" step="0.5">
+                    </div>
+                    <div class="form-group">
+                        <label for="cooling-sp">Cooling Setpoint (°C)</label>
+                        <input type="number" id="cooling-sp" value="24" min="10" max="40" step="0.5">
+                    </div>
+                    <div class="btn-group">
+                        <button id="btn-create" class="btn btn-primary">Create Simulation</button>
+                        <button id="btn-reset" class="btn btn-secondary">Reset</button>
+                    </div>
+                </div>
+
+                <div class="card">
+                    <div class="card-header">
+                        <span class="card-title">Simulation Control</span>
+                        <span id="perf-indicator" class="perf-indicator perf-good"></span>
+                        <span id="perf-time" style="font-size: 0.75rem; color: var(--text-secondary);">-- ms</span>
+                    </div>
+                    <div class="form-group">
+                        <label for="timestep">Timestep (hours)</label>
+                        <input type="number" id="timestep" value="1" min="0.1" max="24" step="0.1">
+                    </div>
+                    <div class="form-group">
+                        <label for="outdoor-temp">Outdoor Temperature (°C)</label>
+                        <input type="number" id="outdoor-temp" value="20" min="-40" max="50" step="1">
+                    </div>
+                    <div class="btn-group">
+                        <button id="btn-step" class="btn btn-primary" disabled>Step</button>
+                        <button id="btn-run" class="btn btn-secondary" disabled>Run 24h</button>
+                        <button id="btn-run-168" class="btn btn-secondary" disabled>Run 168h (Week)</button>
+                    </div>
+                </div>
+            </div>
+
+            <div class="grid">
+                <div class="card">
+                    <div class="card-header">
+                        <span class="card-title">Zone Temperatures</span>
+                        <span id="hour-display" style="font-size: 0.8rem; color: var(--text-secondary);">Hour: 0</span>
+                    </div>
+                    <div id="zone-grid" class="zone-grid">
+                        <div class="zone-card">
+                            <div class="zone-label">Zone 0</div>
+                            <div class="zone-temp">--°C</div>
+                            <div class="zone-setpoints">H: -- / C: --</div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="card">
+                    <div class="card-header">
+                        <span class="card-title">HVAC Power Demand</span>
+                    </div>
+                    <div id="stats-grid" class="stats-grid">
+                        <div class="stat-card">
+                            <div class="stat-label">Heating</div>
+                            <div id="stat-heating" class="stat-value heating">0 kW</div>
+                        </div>
+                        <div class="stat-card">
+                            <div class="stat-label">Cooling</div>
+                            <div id="stat-cooling" class="stat-value cooling">0 kW</div>
+                        </div>
+                        <div class="stat-card">
+                            <div class="stat-label">Infiltration Loss</div>
+                            <div id="stat-infiltration" class="stat-value">0 kW</div>
+                        </div>
+                        <div class="stat-card">
+                            <div class="stat-label">Internal Gains</div>
+                            <div id="stat-gains" class="stat-value">0 kW</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="grid">
+                <div class="card">
+                    <div class="card-header">
+                        <span class="card-title">Zone Parameters</span>
+                    </div>
+                    <div class="form-group">
+                        <label for="zone-select">Select Zone</label>
+                        <select id="zone-select">
+                            <option value="0">Zone 0</option>
+                        </select>
+                    </div>
+                    <div class="stats-grid" style="margin-bottom: 1rem;">
+                        <div class="stat-card">
+                            <div class="stat-label">Thermal Mass (MJ/K)</div>
+                            <div id="param-thermal-mass" class="stat-value">5000</div>
+                        </div>
+                        <div class="stat-card">
+                            <div class="stat-label">Conductance (W/K)</div>
+                            <div id="param-conductance" class="stat-value">50</div>
+                        </div>
+                        <div class="stat-card">
+                            <div class="stat-label">Infiltration (ACH)</div>
+                            <div id="param-infiltration" class="stat-value">0.5</div>
+                        </div>
+                        <div class="stat-card">
+                            <div class="stat-label">Internal Gains (W)</div>
+                            <div id="param-gains" class="stat-value">200</div>
+                        </div>
+                    </div>
+                    <div class="btn-group">
+                        <button id="btn-apply-params" class="btn btn-primary" disabled>Apply Parameters</button>
+                        <button id="btn-export" class="btn btn-secondary" disabled>Export State</button>
+                        <button id="btn-import" class="btn btn-secondary">Import State</button>
+                    </div>
+                </div>
+
+                <div class="card">
+                    <div class="card-header">
+                        <span class="card-title">Console Log</span>
+                        <button id="btn-clear-log" class="btn btn-secondary" style="padding: 0.25rem 0.5rem; font-size: 0.75rem;">Clear</button>
+                    </div>
+                    <div id="log-container" class="log-container">
+                        <div class="log-entry info">WASM module loaded successfully</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <input type="file" id="file-import" accept=".json" style="display: none;">
+
+    <script type="module">
+        let sim = null;
+        let lastStepTime = 0;
+
+        const heatingSP = document.getElementById('heating-sp');
+        const coolingSP = document.getElementById('cooling-sp');
+        const numZones = document.getElementById('num-zones');
+        const timestep = document.getElementById('timestep');
+        const outdoorTemp = document.getElementById('outdoor-temp');
+        const hourDisplay = document.getElementById('hour-display');
+        const statusBadge = document.getElementById('status-badge');
+        const perfIndicator = document.getElementById('perf-indicator');
+        const perfTime = document.getElementById('perf-time');
+        const zoneGrid = document.getElementById('zone-grid');
+        const zoneSelect = document.getElementById('zone-select');
+        const logContainer = document.getElementById('log-container');
+
+        const btnCreate = document.getElementById('btn-create');
+        const btnReset = document.getElementById('btn-reset');
+        const btnStep = document.getElementById('btn-step');
+        const btnRun = document.getElementById('btn-run');
+        const btnRun168 = document.getElementById('btn-run-168');
+        const btnApplyParams = document.getElementById('btn-apply-params');
+        const btnExport = document.getElementById('btn-export');
+        const btnImport = document.getElementById('btn-import');
+        const btnClearLog = document.getElementById('btn-clear-log');
+        const fileImport = document.getElementById('file-import');
+
+        function log(message, type = 'info') {
+            const entry = document.createElement('div');
+            entry.className = `log-entry ${type}`;
+            entry.textContent = `[${new Date().toLocaleTimeString()}] ${message}`;
+            logContainer.appendChild(entry);
+            logContainer.scrollTop = logContainer.scrollHeight;
+        }
+
+        function updatePerfIndicator(durationMs) {
+            lastStepTime = durationMs;
+            perfTime.textContent = `${durationMs.toFixed(1)} ms`;
+
+            perfIndicator.className = 'perf-indicator';
+            if (durationMs < 50) {
+                perfIndicator.classList.add('perf-good');
+            } else if (durationMs < 100) {
+                perfIndicator.classList.add('perf-ok');
+            } else {
+                perfIndicator.classList.add('perf-slow');
+            }
+        }
+
+        function updateZoneDisplay() {
+            if (!sim) return;
+
+            const temps = sim.get_zone_temps();
+            const heating = sim.get_heating_setpoints();
+            const cooling = sim.get_cooling_setpoints();
+
+            zoneGrid.innerHTML = '';
+            for (let i = 0; i < temps.length; i++) {
+                const temp = temps[i];
+                const h = heating[i];
+                const c = cooling[i];
+
+                let tempClass = 'comfort';
+                if (temp < h) tempClass = 'cold';
+                else if (temp > c) tempClass = 'hot';
+
+                const card = document.createElement('div');
+                card.className = 'zone-card';
+                card.innerHTML = `
+                    <div class="zone-label">Zone ${i}</div>
+                    <div class="zone-temp ${tempClass}">${temp.toFixed(1)}°C</div>
+                    <div class="zone-setpoints">H: ${h.toFixed(1)} / C: ${c.toFixed(1)}</div>
+                `;
+                zoneGrid.appendChild(card);
+            }
+
+            zoneSelect.innerHTML = '';
+            for (let i = 0; i < temps.length; i++) {
+                const option = document.createElement('option');
+                option.value = i;
+                option.textContent = `Zone ${i}`;
+                zoneSelect.appendChild(option);
+            }
+
+            hourDisplay.textContent = `Hour: ${sim.current_hour().toFixed(1)}`;
+
+            updateStats();
+            updateZoneParams();
+        }
+
+        function updateStats() {
+            if (!sim) return;
+
+            const power = sim.hvac_power_demand(0, parseFloat(outdoorTemp.value));
+            const heatingKW = power > 0 ? power / 1000 : 0;
+            const coolingKW = power < 0 ? Math.abs(power) / 1000 : 0;
+
+            document.getElementById('stat-heating').textContent = `${heatingKW.toFixed(2)} kW`;
+            document.getElementById('stat-cooling').textContent = `${coolingKW.toFixed(2)} kW`;
+
+            let totalGains = 0;
+            const gains = sim.get_all_internal_gains();
+            for (const g of gains) totalGains += g;
+            document.getElementById('stat-gains').textContent = `${(totalGains / 1000).toFixed(2)} kW`;
+        }
+
+        function updateZoneParams() {
+            if (!sim) return;
+
+            const zoneId = parseInt(zoneSelect.value);
+            const thermalMass = sim.get_zone_thermal_mass(zoneId);
+            const conductance = sim.get_zone_conductance(zoneId);
+            const infiltration = sim.get_zone_infiltration(zoneId);
+            const gains = sim.get_zone_internal_gains(zoneId);
+
+            document.getElementById('param-thermal-mass').textContent = (thermalMass / 1e6).toFixed(1);
+            document.getElementById('param-conductance').textContent = conductance.toFixed(1);
+            document.getElementById('param-infiltration').textContent = ((infiltration / (0.0012 * 50 * 3600 / 50)) * 50 / 50).toFixed(2);
+            document.getElementById('param-gains').textContent = gains.toFixed(0);
+        }
+
+        function setButtonsEnabled(enabled) {
+            btnStep.disabled = !enabled;
+            btnRun.disabled = !enabled;
+            btnRun168.disabled = !enabled;
+            btnApplyParams.disabled = !enabled;
+            btnExport.disabled = !enabled;
+        }
+
+        async function init() {
+            try {
+                const wasm = await import('./pkg/fluxion_wasm.js');
+                await wasm.default();
+
+                document.getElementById('loading').classList.add('hidden');
+                document.getElementById('main-content').classList.remove('hidden');
+
+                log('WASM module initialized', 'success');
+                log('Configure zones and click "Create Simulation" to begin', 'info');
+            } catch (error) {
+                log(`Failed to load WASM: ${error.message}`, 'error');
+                statusBadge.textContent = 'Error';
+                statusBadge.className = 'status-badge status-error';
+            }
+        }
+
+        btnCreate.addEventListener('click', () => {
+            try {
+                const config = {
+                    building: 'demo_building',
+                    num_zones: parseInt(numZones.value),
+                    weather: 'TMY3_CHICAGO',
+                    heating_setpoint: parseFloat(heatingSP.value),
+                    cooling_setpoint: parseFloat(coolingSP.value),
+                };
+
+                const startTime = performance.now();
+                sim = new fluxion_wasm.FluidSimulation(JSON.stringify(config));
+                const endTime = performance.now();
+
+                updatePerfIndicator(endTime - startTime);
+                updateZoneDisplay();
+                setButtonsEnabled(true);
+
+                log(`Simulation created: ${config.num_zones} zones`, 'success');
+                log(`Initialization time: ${(endTime - startTime).toFixed(2)} ms`, 'info');
+            } catch (error) {
+                log(`Create failed: ${error.message}`, 'error');
+            }
+        });
+
+        btnReset.addEventListener('click', () => {
+            if (!sim) return;
+            sim.reset_temperatures(22.0);
+            updateZoneDisplay();
+            log('Temperatures reset to 22°C', 'info');
+        });
+
+        btnStep.addEventListener('click', () => {
+            if (!sim) return;
+
+            const dt = parseFloat(timestep.value);
+            const startTime = performance.now();
+            const result = sim.step(dt);
+            const endTime = performance.now();
+
+            if (result.ok) {
+                updatePerfIndicator(endTime - startTime);
+                updateZoneDisplay();
+                log(`Step completed: ${dt}h, time=${sim.current_hour().toFixed(1)}h`, 'success');
+            } else {
+                log(`Step failed: ${result.val}`, 'error');
+            }
+        });
+
+        btnRun.addEventListener('click', async () => {
+            if (!sim) return;
+
+            const steps = 24;
+            const dt = parseFloat(timestep.value);
+            log(`Running ${steps} timesteps...`, 'info');
+
+            const startTime = performance.now();
+            for (let i = 0; i < steps; i++) {
+                sim.step(dt);
+            }
+            const endTime = performance.now();
+
+            updatePerfIndicator((endTime - startTime) / steps);
+            updateZoneDisplay();
+            log(`24h simulation completed: ${(endTime - startTime).toFixed(2)} ms total`, 'success');
+        });
+
+        btnRun168.addEventListener('click', async () => {
+            if (!sim) return;
+
+            const steps = 168;
+            const dt = parseFloat(timestep.value);
+            log(`Running ${steps} timesteps (1 week)...`, 'info');
+
+            const startTime = performance.now();
+            for (let i = 0; i < steps; i++) {
+                sim.step(dt);
+            }
+            const endTime = performance.now();
+
+            updatePerfIndicator((endTime - startTime) / steps);
+            updateZoneDisplay();
+            log(`168h simulation completed: ${(endTime - startTime).toFixed(2)} ms total`, 'success');
+        });
+
+        zoneSelect.addEventListener('change', updateZoneParams);
+
+        btnApplyParams.addEventListener('click', () => {
+            if (!sim) return;
+
+            const zoneId = parseInt(zoneSelect.value);
+            const thermalMass = parseFloat(document.getElementById('param-thermal-mass').textContent) * 1e6;
+            const conductance = parseFloat(document.getElementById('param-conductance').textContent);
+            const infiltrationACH = parseFloat(document.getElementById('param-infiltration').textContent);
+            const gains = parseFloat(document.getElementById('param-gains').textContent);
+
+            try {
+                const params = {
+                    zone_id: zoneId,
+                    thermal_mass: thermalMass,
+                    conductance: conductance,
+                    infiltration_ach: infiltrationACH,
+                    internal_gains_w: gains,
+                };
+
+                sim.apply_zone_parameters(JSON.stringify(params));
+                updateZoneDisplay();
+                log(`Zone ${zoneId} parameters updated`, 'success');
+            } catch (error) {
+                log(`Parameter update failed: ${error.message}`, 'error');
+            }
+        });
+
+        btnExport.addEventListener('click', () => {
+            if (!sim) return;
+
+            try {
+                const state = sim.export_state();
+                const blob = new Blob([state], { type: 'application/json' });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = `fluxion-state-${Date.now()}.json`;
+                a.click();
+                URL.revokeObjectURL(url);
+                log('State exported successfully', 'success');
+            } catch (error) {
+                log(`Export failed: ${error.message}`, 'error');
+            }
+        });
+
+        btnImport.addEventListener('click', () => {
+            fileImport.click();
+        });
+
+        fileImport.addEventListener('change', (e) => {
+            const file = e.target.files[0];
+            if (!file) return;
+
+            const reader = new FileReader();
+            reader.onload = (event) => {
+                try {
+                    if (!sim) {
+                        sim = new fluxion_wasm.FluidSimulation(JSON.stringify({
+                            building: 'imported',
+                            num_zones: 5,
+                            heating_setpoint: 20,
+                            cooling_setpoint: 24,
+                        }));
+                    }
+                    sim.load_state(event.target.result);
+                    updateZoneDisplay();
+                    setButtonsEnabled(true);
+                    log('State imported successfully', 'success');
+                } catch (error) {
+                    log(`Import failed: ${error.message}`, 'error');
+                }
+            };
+            reader.readAsText(file);
+        });
+
+        btnClearLog.addEventListener('click', () => {
+            logContainer.innerHTML = '';
+            log('Log cleared', 'info');
+        });
+
+        init();
+    </script>
+</body>
+</html>

@@ -2942,16 +2942,13 @@ pub fn verify_onnx_signature(model_path: &Path) -> Result<(), String> {
             Some(Ok(hash)) => hash,
             Some(Err(e)) => return Err(e),
             None => {
-                eprintln!(
-                    "[fluxion::ai::surrogate] WARNING: no SHA-256 manifest at {} and \
-                     {ENV_ONNX_MODEL_SIGNATURE} unset; loading {} without integrity \
-                     verification (Issue #2906). Ship a <model>.sha256 alongside the \
-                     .onnx file or set {ENV_ONNX_MODEL_SIGNATURE}=<hex> for rotated \
-                     models.",
-                    manifest_path_for(model_path).display(),
-                    model_path.display()
-                );
-                return Ok(());
+                return Err(format!(
+                    "no SHA-256 manifest at {} and {ENV_ONNX_MODEL_SIGNATURE} unset; \
+                     integrity verification impossible (fail-closed, Issue #3161). \
+                     Ship a <model>.sha256 alongside the .onnx file or set \
+                     {ENV_ONNX_MODEL_SIGNATURE}=<hex-digest> for rotated models.",
+                    manifest_path_for(model_path).display()
+                ));
             }
         },
     };
@@ -3304,11 +3301,10 @@ mod tests {
         );
     }
 
-    /// No manifest next to the model AND no env override = backward-
-    /// compatible "skip with warning" behaviour so existing test fixtures
-    /// (e.g. `assets/dummy_surrogate.onnx`) keep working.
+    /// No manifest next to the model AND no env override = fail-closed
+    /// error so unsigned models can never be loaded without explicit override.
     #[test]
-    fn verify_onnx_signature_succeeds_without_manifest() {
+    fn verify_onnx_signature_fails_without_manifest() {
         let _guard = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         let dir = tempfile::tempdir().unwrap();
         let model = dir.path().join("nomanifest.onnx");
@@ -3320,9 +3316,11 @@ mod tests {
             Some(v) => std::env::set_var(ENV_ONNX_MODEL_SIGNATURE, v),
             None => std::env::remove_var(ENV_ONNX_MODEL_SIGNATURE),
         }
+        let err =
+            res.expect_err("missing manifest + no env var must fail (fail-closed, Issue #3161)");
         assert!(
-            res.is_ok(),
-            "missing manifest + no env var must NOT fail (backward compat): {res:?}"
+            err.contains("fail-closed") || err.contains("Issue #3161"),
+            "error must reference Issue #3161: {err}"
         );
     }
 

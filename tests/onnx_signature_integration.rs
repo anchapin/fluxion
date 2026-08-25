@@ -16,8 +16,7 @@
 #![cfg(feature = "ort")]
 
 use fluxion::ai::surrogate::{
-    compute_bytes_sha256, verify_onnx_signature, ENV_ONNX_MODEL_SIGNATURE,
-    SurrogateManager,
+    compute_bytes_sha256, verify_onnx_signature, SurrogateManager, ENV_ONNX_MODEL_SIGNATURE,
 };
 use std::io::Write;
 use std::path::Path;
@@ -29,9 +28,7 @@ static ENV_LOCK: Mutex<()> = Mutex::new(());
 /// Used for tests that require actual ONNX protobuf parsing.
 const DUMMY_ONNX_MODEL: &str = "assets/dummy_surrogate.onnx";
 
-fn write_signed_fixture_model(
-    contents: &[u8],
-) -> (tempfile::TempDir, std::path::PathBuf, String) {
+fn write_signed_fixture_model(contents: &[u8]) -> (tempfile::TempDir, std::path::PathBuf, String) {
     let dir = tempfile::tempdir().unwrap();
     let model = dir.path().join("model.onnx");
     std::fs::write(&model, contents).unwrap();
@@ -49,14 +46,15 @@ fn write_signed_fixture_model(
     (dir, model, sha)
 }
 
-fn write_signed_real_model(
-    src: &Path,
-) -> (tempfile::TempDir, std::path::PathBuf, String) {
+fn write_signed_real_model(src: &Path) -> (tempfile::TempDir, std::path::PathBuf, String) {
     let dir = tempfile::tempdir().unwrap();
     let model = dir.path().join(src.file_name().unwrap());
     std::fs::copy(src, &model).unwrap();
     let sha = compute_bytes_sha256(&std::fs::read(&model).unwrap());
-    let manifest = dir.path().join(format!("{}.sha256", model.file_name().unwrap().to_string_lossy()));
+    let manifest = dir.path().join(format!(
+        "{}.sha256",
+        model.file_name().unwrap().to_string_lossy()
+    ));
     std::fs::write(
         &manifest,
         format!(
@@ -99,14 +97,7 @@ fn load_onnx_rejects_tampered_model() {
 
 /// Test case 2: unsigned model with no manifest → `verify_onnx_signature`
 /// must fail (fail-closed). This exercises the `load_onnx` entry point's
-/// pre-parse integrity check.
-///
-/// NOTE: The current `verify_onnx_signature` implementation (lines 2944-2954 in
-/// `src/ai/surrogate.rs`) has a backward-compat warning branch that returns `Ok(())`
-/// when no manifest and no env var are present. This preserves loading of legacy
-/// `assets/` fixtures. This test documents the Issue #3169 requirement that
-/// unsigned models must be rejected fail-closed — the backward-compat branch
-/// represents a behavior gap that should be addressed separately.
+/// pre-parse integrity check (Issue #3161).
 #[test]
 fn verify_onnx_rejects_unsigned_model_with_no_manifest() {
     let _guard = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
@@ -127,10 +118,10 @@ fn verify_onnx_rejects_unsigned_model_with_no_manifest() {
         None => std::env::remove_var(ENV_ONNX_MODEL_SIGNATURE),
     }
 
-    // Assert current behavior matches desired: fail-closed
+    // Assert fail-closed behavior: no manifest = error
     let err = res.expect_err("unsigned model with no manifest must fail");
     assert!(
-        err.contains("integrity verification FAILED") || err.contains("not a valid"),
+        err.contains("fail-closed") || err.contains("Issue #3161"),
         "expected fail-closed message, got: {err}"
     );
 }
@@ -145,7 +136,10 @@ fn verify_onnx_accepts_env_override_with_rotated_bytes() {
 
     let dummy_path = Path::new(DUMMY_ONNX_MODEL);
     if !dummy_path.exists() {
-        eprintln!("skipping: {} not found (git-ignored asset)", DUMMY_ONNX_MODEL);
+        eprintln!(
+            "skipping: {} not found (git-ignored asset)",
+            DUMMY_ONNX_MODEL
+        );
         return;
     }
 
