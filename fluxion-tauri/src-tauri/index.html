@@ -40,6 +40,71 @@
             font-size: 13px;
         }
         #controls button:hover { background: #2563eb; }
+        #tab-bar {
+            position: absolute;
+            top: 16px;
+            right: 16px;
+            display: flex;
+            gap: 4px;
+            z-index: 100;
+        }
+        #tab-bar button {
+            background: rgba(0,0,0,0.7);
+            color: white;
+            border: 1px solid rgba(255,255,255,0.2);
+            padding: 8px 16px;
+            border-radius: 8px 8px 0 0;
+            cursor: pointer;
+            font-size: 13px;
+        }
+        #tab-bar button.active { background: rgba(59,130,246,0.9); border-color: #3b82f6; }
+        #params-panel {
+            display: none;
+            position: absolute;
+            top: 52px;
+            right: 16px;
+            width: 280px;
+            background: rgba(0,0,0,0.85);
+            color: white;
+            padding: 16px;
+            border-radius: 0 0 8px 8px;
+            z-index: 99;
+            max-height: calc(100vh - 80px);
+            overflow-y: auto;
+        }
+        #params-panel.visible { display: block; }
+        .param-group { margin-bottom: 14px; }
+        .param-group label {
+            display: flex;
+            justify-content: space-between;
+            font-size: 12px;
+            margin-bottom: 4px;
+            color: #ccc;
+        }
+        .param-group label span { color: #3b82f6; font-weight: bold; }
+        .param-group input[type=range] {
+            width: 100%;
+            accent-color: #3b82f6;
+            cursor: pointer;
+        }
+        #apply-params {
+            width: 100%;
+            background: #3b82f6;
+            color: white;
+            border: none;
+            padding: 10px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 13px;
+            margin-top: 8px;
+        }
+        #apply-params:hover { background: #2563eb; }
+        #param-status {
+            font-size: 11px;
+            margin-top: 6px;
+            color: #22c55e;
+            min-height: 14px;
+        }
         .loading {
             position: absolute;
             top: 50%;
@@ -60,6 +125,46 @@
         <button id="btn-reset">Reset View</button>
         <button id="btn-wireframe">Wireframe</button>
         <button id="btn-zones">Toggle Zones</button>
+    </div>
+    <div id="tab-bar">
+        <button id="tab-view" class="active">View</button>
+        <button id="tab-params">Controls</button>
+    </div>
+    <div id="params-panel">
+        <div class="param-group">
+            <label>Heating Setpoint <span id="val-heating">20.0°C</span></label>
+            <input type="range" id="param-heating" min="10" max="25" step="0.5" value="20" />
+        </div>
+        <div class="param-group">
+            <label>Cooling Setpoint <span id="val-cooling">26.0°C</span></label>
+            <input type="range" id="param-cooling" min="18" max="35" step="0.5" value="26" />
+        </div>
+        <div class="param-group">
+            <label>Lighting Load <span id="val-lighting">5.0 W/m²</span></label>
+            <input type="range" id="param-lighting" min="0" max="20" step="0.5" value="5" />
+        </div>
+        <div class="param-group">
+            <label>Equipment Load <span id="val-equipment">10.0 W/m²</span></label>
+            <input type="range" id="param-equipment" min="0" max="30" step="0.5" value="10" />
+        </div>
+        <div class="param-group">
+            <label>Occupancy <span id="val-occupancy">0.1 pers/m²</span></label>
+            <input type="range" id="param-occupancy" min="0" max="0.5" step="0.01" value="0.1" />
+        </div>
+        <div class="param-group">
+            <label>Ventilation Rate <span id="val-vent">0.5 ach</span></label>
+            <input type="range" id="param-vent" min="0" max="5" step="0.1" value="0.5" />
+        </div>
+        <div class="param-group">
+            <label>Wall U-Value <span id="val-wall">0.5 W/m²K</span></label>
+            <input type="range" id="param-wall" min="0.1" max="2.0" step="0.05" value="0.5" />
+        </div>
+        <div class="param-group">
+            <label>Roof U-Value <span id="val-roof">0.3 W/m²K</span></label>
+            <input type="range" id="param-roof" min="0.1" max="2.0" step="0.05" value="0.3" />
+        </div>
+        <button id="apply-params">Apply Parameters</button>
+        <div id="param-status"></div>
     </div>
     <div class="loading" id="loading">Initializing 3D Viewer...</div>
 
@@ -86,6 +191,85 @@
         let buildingMesh = null;
         let zoneMeshes = [];
         let showZones = true;
+
+        // Tab switching
+        const tabView = document.getElementById('tab-view');
+        const tabParams = document.getElementById('tab-params');
+        const paramsPanel = document.getElementById('params-panel');
+        tabView.addEventListener('click', () => {
+            tabView.classList.add('active'); tabParams.classList.remove('active');
+            paramsPanel.classList.remove('visible');
+        });
+        tabParams.addEventListener('click', async () => {
+            tabParams.classList.add('active'); tabView.classList.remove('active');
+            paramsPanel.classList.add('visible');
+            // Load current params from backend
+            if (typeof window.__TAURI__ !== 'undefined') {
+                try {
+                    const { invoke } = window.__TAURI__.core;
+                    const params = await invoke('get_simulation_parameters');
+                    document.getElementById('param-heating').value = params.heating_setpoint ?? 20;
+                    document.getElementById('val-heating').textContent = (params.heating_setpoint ?? 20).toFixed(1) + '°C';
+                    document.getElementById('param-cooling').value = params.cooling_setpoint ?? 26;
+                    document.getElementById('val-cooling').textContent = (params.cooling_setpoint ?? 26).toFixed(1) + '°C';
+                    document.getElementById('param-lighting').value = params.lighting_load ?? 5;
+                    document.getElementById('val-lighting').textContent = (params.lighting_load ?? 5).toFixed(1) + ' W/m²';
+                    document.getElementById('param-equipment').value = params.equipment_load ?? 10;
+                    document.getElementById('val-equipment').textContent = (params.equipment_load ?? 10).toFixed(1) + ' W/m²';
+                    document.getElementById('param-occupancy').value = params.occupancy ?? 0.1;
+                    document.getElementById('val-occupancy').textContent = (params.occupancy ?? 0.1).toFixed(2) + ' pers/m²';
+                    document.getElementById('param-vent').value = params.ventilation_rate ?? 0.5;
+                    document.getElementById('val-vent').textContent = (params.ventilation_rate ?? 0.5).toFixed(1) + ' ach';
+                    document.getElementById('param-wall').value = params.wall_u_value ?? 0.5;
+                    document.getElementById('val-wall').textContent = (params.wall_u_value ?? 0.5).toFixed(2) + ' W/m²K';
+                    document.getElementById('param-roof').value = params.roof_u_value ?? 0.3;
+                    document.getElementById('val-roof').textContent = (params.roof_u_value ?? 0.3).toFixed(2) + ' W/m²K';
+                } catch(e) { console.warn('Could not load params:', e); }
+            }
+        });
+
+        // Slider live display
+        const sliders = [
+            ['param-heating', 'val-heating', v => v.toFixed(1) + '°C'],
+            ['param-cooling', 'val-cooling', v => v.toFixed(1) + '°C'],
+            ['param-lighting', 'val-lighting', v => v.toFixed(1) + ' W/m²'],
+            ['param-equipment', 'val-equipment', v => v.toFixed(1) + ' W/m²'],
+            ['param-occupancy', 'val-occupancy', v => v.toFixed(2) + ' pers/m²'],
+            ['param-vent', 'val-vent', v => v.toFixed(1) + ' ach'],
+            ['param-wall', 'val-wall', v => v.toFixed(2) + ' W/m²K'],
+            ['param-roof', 'val-roof', v => v.toFixed(2) + ' W/m²K'],
+        ];
+        sliders.forEach(([id, valId, fmt]) => {
+            const el = document.getElementById(id);
+            const valEl = document.getElementById(valId);
+            el.addEventListener('input', () => { valEl.textContent = fmt(parseFloat(el.value)); });
+        });
+
+        // Apply button
+        document.getElementById('apply-params').addEventListener('click', async () => {
+            const status = document.getElementById('param-status');
+            status.textContent = 'Applying...';
+            const params = {
+                heating_setpoint: parseFloat(document.getElementById('param-heating').value),
+                cooling_setpoint: parseFloat(document.getElementById('param-cooling').value),
+                lighting_load: parseFloat(document.getElementById('param-lighting').value),
+                equipment_load: parseFloat(document.getElementById('param-equipment').value),
+                occupancy: parseFloat(document.getElementById('param-occupancy').value),
+                ventilation_rate: parseFloat(document.getElementById('param-vent').value),
+                wall_u_value: parseFloat(document.getElementById('param-wall').value),
+                roof_u_value: parseFloat(document.getElementById('param-roof').value),
+            };
+            try {
+                if (typeof window.__TAURI__ !== 'undefined') {
+                    const { invoke } = window.__TAURI__.core;
+                    await invoke('update_simulation_parameters', { params });
+                }
+                status.textContent = '✓ Applied';
+                setTimeout(() => { status.textContent = ''; }, 3000);
+            } catch(e) {
+                status.textContent = '✗ ' + e;
+            }
+        });
 
         function init() {
             scene = new THREE.Scene();
