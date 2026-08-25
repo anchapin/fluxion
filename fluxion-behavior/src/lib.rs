@@ -41,7 +41,9 @@ pub use toon_time_encoder::{
     CollapseStrategy, TelemetryRecord, TimeSeriesPoint, TokenBenchmark, ToonTimeEncoder,
     ToonTimeEncoderConfig,
 };
-pub use triggers::{ComfortTrigger, OccupantComfortTriggers, OccupantComfortTriggersConfig};
+pub use triggers::{
+    ComfortTrigger, OccupantComfortTriggers, OccupantComfortTriggersConfig, ThermalComfortInput,
+};
 
 // Re-export the moisture module types (Issue #2909: integration tests need
 // them at the crate root). The module itself stays unexposed; only the
