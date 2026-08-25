@@ -23,6 +23,8 @@ fn main() {
         .invoke_handler(tauri::generate_handler![
             commands::load_geometry_file,
             commands::get_sample_geometry,
+            commands::update_simulation_parameters,
+            commands::get_simulation_parameters,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

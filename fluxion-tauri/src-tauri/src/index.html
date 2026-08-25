@@ -158,6 +158,126 @@
             color: #888;
         }
 
+        .control-group {
+            margin-bottom: 20px;
+        }
+
+        .control-group h3 {
+            font-size: 0.85rem;
+            color: #e94560;
+            margin-bottom: 12px;
+            border-bottom: 1px solid #0f3460;
+            padding-bottom: 8px;
+        }
+
+        .slider-item {
+            margin-bottom: 16px;
+        }
+
+        .slider-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 6px;
+        }
+
+        .slider-label {
+            font-size: 0.8rem;
+            color: #aaa;
+        }
+
+        .slider-value {
+            font-size: 0.85rem;
+            font-weight: 500;
+            color: #e94560;
+            min-width: 60px;
+            text-align: right;
+        }
+
+        .slider-unit {
+            font-size: 0.7rem;
+            color: #888;
+            margin-left: 4px;
+        }
+
+        input[type="range"] {
+            width: 100%;
+            height: 6px;
+            background: #0f3460;
+            border-radius: 3px;
+            outline: none;
+            -webkit-appearance: none;
+        }
+
+        input[type="range"]::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            width: 16px;
+            height: 16px;
+            background: #e94560;
+            border-radius: 50%;
+            cursor: pointer;
+            transition: background 0.2s;
+        }
+
+        input[type="range"]::-webkit-slider-thumb:hover {
+            background: #d63850;
+        }
+
+        input[type="range"]::-moz-range-thumb {
+            width: 16px;
+            height: 16px;
+            background: #e94560;
+            border-radius: 50%;
+            cursor: pointer;
+            border: none;
+        }
+
+        .control-actions {
+            margin-top: 24px;
+            padding-top: 16px;
+            border-top: 1px solid #0f3460;
+        }
+
+        .apply-btn {
+            width: 100%;
+            padding: 12px;
+            background: #e94560;
+            color: white;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 0.95rem;
+            font-weight: 500;
+            transition: background 0.2s;
+        }
+
+        .apply-btn:hover {
+            background: #d63850;
+        }
+
+        .apply-btn:disabled {
+            background: #555;
+            cursor: not-allowed;
+        }
+
+        #param-status {
+            margin-top: 12px;
+            padding: 8px 12px;
+            border-radius: 4px;
+            font-size: 0.8rem;
+            text-align: center;
+        }
+
+        #param-status.success {
+            background: rgba(34, 197, 94, 0.2);
+            color: #22c55e;
+        }
+
+        #param-status.error {
+            background: rgba(239, 68, 68, 0.2);
+            color: #ef4444;
+        }
+
         #viewer-container {
             flex: 1;
             position: relative;
@@ -287,11 +407,13 @@
             <div id="tabs">
                 <button class="tab active" data-tab="zones">Zones</button>
                 <button class="tab" data-tab="levels">Levels</button>
+                <button class="tab" data-tab="controls">Controls</button>
             </div>
 
             <div id="tab-content">
                 <div id="zones-list"></div>
                 <div id="levels-list" style="display: none;"></div>
+                <div id="controls-panel" style="display: none;"></div>
             </div>
         </div>
 
@@ -557,6 +679,142 @@
             });
         }
 
+        const DEFAULT_PARAMS = {
+            heating_setpoint: 20.0,
+            cooling_setpoint: 26.0,
+            lighting_load: 12.0,
+            equipment_load: 15.0,
+            occupancy: 0.1,
+            ventilation_rate: 0.5,
+            wall_u_value: 0.5,
+            roof_u_value: 0.3,
+        };
+
+        let currentParams = { ...DEFAULT_PARAMS };
+
+        function renderControlsPanel() {
+            const panel = document.getElementById('controls-panel');
+            panel.innerHTML = `
+                <div class="control-group">
+                    <h3>Temperature Setpoints</h3>
+                    <div class="slider-item">
+                        <div class="slider-header">
+                            <span class="slider-label">Heating Setpoint</span>
+                            <span class="slider-value" id="val-heating">${currentParams.heating_setpoint.toFixed(1)}<span class="slider-unit">°C</span></span>
+                        </div>
+                        <input type="range" id="slider-heating" min="10" max="25" step="0.5" value="${currentParams.heating_setpoint}">
+                    </div>
+                    <div class="slider-item">
+                        <div class="slider-header">
+                            <span class="slider-label">Cooling Setpoint</span>
+                            <span class="slider-value" id="val-cooling">${currentParams.cooling_setpoint.toFixed(1)}<span class="slider-unit">°C</span></span>
+                        </div>
+                        <input type="range" id="slider-cooling" min="20" max="35" step="0.5" value="${currentParams.cooling_setpoint}">
+                    </div>
+                </div>
+                <div class="control-group">
+                    <h3>Internal Loads</h3>
+                    <div class="slider-item">
+                        <div class="slider-header">
+                            <span class="slider-label">Lighting Load</span>
+                            <span class="slider-value" id="val-lighting">${currentParams.lighting_load.toFixed(1)}<span class="slider-unit">W/m²</span></span>
+                        </div>
+                        <input type="range" id="slider-lighting" min="0" max="30" step="0.5" value="${currentParams.lighting_load}">
+                    </div>
+                    <div class="slider-item">
+                        <div class="slider-header">
+                            <span class="slider-label">Equipment Load</span>
+                            <span class="slider-value" id="val-equipment">${currentParams.equipment_load.toFixed(1)}<span class="slider-unit">W/m²</span></span>
+                        </div>
+                        <input type="range" id="slider-equipment" min="0" max="30" step="0.5" value="${currentParams.equipment_load}">
+                    </div>
+                    <div class="slider-item">
+                        <div class="slider-header">
+                            <span class="slider-label">Occupancy</span>
+                            <span class="slider-value" id="val-occupancy">${currentParams.occupancy.toFixed(2)}<span class="slider-unit">pers/m²</span></span>
+                        </div>
+                        <input type="range" id="slider-occupancy" min="0" max="1" step="0.01" value="${currentParams.occupancy}">
+                    </div>
+                </div>
+                <div class="control-group">
+                    <h3>Ventilation</h3>
+                    <div class="slider-item">
+                        <div class="slider-header">
+                            <span class="slider-label">Ventilation Rate</span>
+                            <span class="slider-value" id="val-ventilation">${currentParams.ventilation_rate.toFixed(2)}<span class="slider-unit">ach</span></span>
+                        </div>
+                        <input type="range" id="slider-ventilation" min="0" max="5" step="0.1" value="${currentParams.ventilation_rate}">
+                    </div>
+                </div>
+                <div class="control-group">
+                    <h3>Envelope</h3>
+                    <div class="slider-item">
+                        <div class="slider-header">
+                            <span class="slider-label">Wall U-Value</span>
+                            <span class="slider-value" id="val-wall-u">${currentParams.wall_u_value.toFixed(2)}<span class="slider-unit">W/m²K</span></span>
+                        </div>
+                        <input type="range" id="slider-wall-u" min="0.1" max="2.0" step="0.05" value="${currentParams.wall_u_value}">
+                    </div>
+                    <div class="slider-item">
+                        <div class="slider-header">
+                            <span class="slider-label">Roof U-Value</span>
+                            <span class="slider-value" id="val-roof-u">${currentParams.roof_u_value.toFixed(2)}<span class="slider-unit">W/m²K</span></span>
+                        </div>
+                        <input type="range" id="slider-roof-u" min="0.1" max="2.0" step="0.05" value="${currentParams.roof_u_value}">
+                    </div>
+                </div>
+                <div class="control-actions">
+                    <button class="apply-btn" id="btn-apply-params">Apply Parameters</button>
+                    <div id="param-status"></div>
+                </div>
+            `;
+
+            const sliders = [
+                { id: 'slider-heating', key: 'heating_setpoint', display: 'val-heating', suffix: '°C' },
+                { id: 'slider-cooling', key: 'cooling_setpoint', display: 'val-cooling', suffix: '°C' },
+                { id: 'slider-lighting', key: 'lighting_load', display: 'val-lighting', suffix: 'W/m²' },
+                { id: 'slider-equipment', key: 'equipment_load', display: 'val-equipment', suffix: 'W/m²' },
+                { id: 'slider-occupancy', key: 'occupancy', display: 'val-occupancy', suffix: 'pers/m²' },
+                { id: 'slider-ventilation', key: 'ventilation_rate', display: 'val-ventilation', suffix: 'ach' },
+                { id: 'slider-wall-u', key: 'wall_u_value', display: 'val-wall-u', suffix: 'W/m²K' },
+                { id: 'slider-roof-u', key: 'roof_u_value', display: 'val-roof-u', suffix: 'W/m²K' },
+            ];
+
+            sliders.forEach(({ id, key, display, suffix }) => {
+                const slider = document.getElementById(id);
+                const valueDisplay = document.getElementById(display);
+                if (slider && valueDisplay) {
+                    slider.addEventListener('input', () => {
+                        const val = parseFloat(slider.value);
+                        currentParams[key] = val;
+                        const decimals = key.includes('load') || key.includes('value') ? 1 : 2;
+                        valueDisplay.innerHTML = `${val.toFixed(decimals)}<span class="slider-unit">${suffix}</span>`;
+                    });
+                }
+            });
+
+            document.getElementById('btn-apply-params').addEventListener('click', async () => {
+                const btn = document.getElementById('btn-apply-params');
+                const status = document.getElementById('param-status');
+                btn.disabled = true;
+                status.textContent = 'Applying...';
+                status.className = '';
+
+                try {
+                    const { invoke } = await import('@tauri-apps/api/core');
+                    await invoke('update_simulation_parameters', { params: currentParams });
+                    status.textContent = 'Parameters applied successfully';
+                    status.className = 'success';
+                } catch (err) {
+                    console.error('Failed to apply parameters:', err);
+                    status.textContent = `Error: ${err}`;
+                    status.className = 'error';
+                } finally {
+                    btn.disabled = false;
+                }
+            });
+        }
+
         function selectZone(zoneId) {
             document.querySelectorAll('.zone-item').forEach(el => {
                 el.classList.toggle('selected', el.dataset.zoneId === zoneId);
@@ -633,6 +891,10 @@
                 const tabName = tab.dataset.tab;
                 document.getElementById('zones-list').style.display = tabName === 'zones' ? 'block' : 'none';
                 document.getElementById('levels-list').style.display = tabName === 'levels' ? 'block' : 'none';
+                document.getElementById('controls-panel').style.display = tabName === 'controls' ? 'block' : 'none';
+                if (tabName === 'controls') {
+                    renderControlsPanel();
+                }
             });
         });
 
