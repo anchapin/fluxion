@@ -1,4 +1,17 @@
 use crate::geometry::BuildingGeometry;
+use serde::{Deserialize, Serialize};
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SimulationParameters {
+    pub heating_setpoint: Option<f64>,
+    pub cooling_setpoint: Option<f64>,
+    pub lighting_load: Option<f64>,
+    pub equipment_load: Option<f64>,
+    pub occupancy: Option<f64>,
+    pub ventilation_rate: Option<f64>,
+    pub u_value: Option<f64>,
+    pub zone_id: Option<String>,
+}
 
 #[tauri::command]
 pub async fn load_geometry_file(file_path: String) -> Result<BuildingGeometry, String> {
@@ -28,4 +41,26 @@ pub async fn load_geometry_file(file_path: String) -> Result<BuildingGeometry, S
 #[tauri::command]
 pub async fn get_sample_geometry() -> Result<BuildingGeometry, String> {
     Ok(crate::geometry::create_sample_geometry())
+}
+
+#[tauri::command]
+pub async fn update_simulation_parameters(
+    parameters: SimulationParameters,
+) -> Result<String, String> {
+    tracing::info!(
+        "Updating simulation parameters: heating={:?}, cooling={:?}, zone={:?}",
+        parameters.heating_setpoint,
+        parameters.cooling_setpoint,
+        parameters.zone_id
+    );
+
+    let params_json = serde_json::to_string(&parameters)
+        .map_err(|e| format!("Failed to serialize parameters: {}", e))?;
+
+    tracing::debug!("Parameter update payload: {}", params_json);
+
+    Ok(format!(
+        "Parameters updated: heating={:?}, cooling={:?}",
+        parameters.heating_setpoint, parameters.cooling_setpoint
+    ))
 }

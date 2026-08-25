@@ -251,6 +251,294 @@
         #loading p {
             color: #888;
         }
+
+        #tab-content-controls {
+            display: none;
+        }
+
+        #tab-content-controls.active {
+            display: block;
+        }
+
+        .control-section {
+            background: #1a1a2e;
+            border-radius: 8px;
+            padding: 16px;
+            margin-bottom: 16px;
+        }
+
+        .control-section h3 {
+            font-size: 0.9rem;
+            color: #e94560;
+            margin-bottom: 16px;
+            border-bottom: 1px solid #0f3460;
+            padding-bottom: 8px;
+        }
+
+        .control-row {
+            margin-bottom: 16px;
+        }
+
+        .control-row:last-child {
+            margin-bottom: 0;
+        }
+
+        .control-label {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 8px;
+        }
+
+        .control-label span {
+            font-size: 0.85rem;
+            color: #aaa;
+        }
+
+        .control-label .value {
+            font-weight: 500;
+            color: #fff;
+            background: #16213e;
+            padding: 2px 8px;
+            border-radius: 4px;
+            font-size: 0.8rem;
+        }
+
+        .control-slider {
+            width: 100%;
+            height: 6px;
+            -webkit-appearance: none;
+            appearance: none;
+            background: #0f3460;
+            border-radius: 3px;
+            outline: none;
+        }
+
+        .control-slider::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            appearance: none;
+            width: 18px;
+            height: 18px;
+            border-radius: 50%;
+            background: #e94560;
+            cursor: pointer;
+            transition: background 0.2s;
+        }
+
+        .control-slider::-webkit-slider-thumb:hover {
+            background: #d63850;
+        }
+
+        .control-input {
+            width: 100%;
+            padding: 8px 12px;
+            background: #16213e;
+            border: 1px solid #0f3460;
+            border-radius: 4px;
+            color: #fff;
+            font-size: 0.9rem;
+        }
+
+        .control-input:focus {
+            outline: none;
+            border-color: #e94560;
+        }
+
+        .control-btn-apply {
+            width: 100%;
+            padding: 12px;
+            background: #e94560;
+            color: white;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 0.95rem;
+            font-weight: 500;
+            transition: background 0.2s;
+            margin-top: 8px;
+        }
+
+        .control-btn-apply:hover {
+            background: #d63850;
+        }
+
+        .control-btn-apply:disabled {
+            background: #555;
+            cursor: not-allowed;
+        }
+
+        .control-btn-secondary {
+            width: 100%;
+            padding: 10px;
+            background: transparent;
+            color: #aaa;
+            border: 1px solid #0f3460;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 0.85rem;
+            transition: all 0.2s;
+            margin-top: 8px;
+        }
+
+        .control-btn-secondary:hover {
+            background: #0f3460;
+            color: #fff;
+        }
+
+        #ws-status {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 8px 12px;
+            background: #1a1a2e;
+            border-radius: 6px;
+            margin-bottom: 12px;
+            font-size: 0.8rem;
+        }
+
+        #ws-status .indicator {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: #888;
+        }
+
+        #ws-status.connected .indicator {
+            background: #00b894;
+        }
+
+        #ws-status.connecting .indicator {
+            background: #fdcb6e;
+            animation: pulse 1s infinite;
+        }
+
+        #ws-status.error .indicator {
+            background: #e94560;
+        }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+
+        .param-group {
+            margin-bottom: 12px;
+        }
+
+        .param-group-title {
+            font-size: 0.75rem;
+            color: #888;
+            text-transform: uppercase;
+            margin-bottom: 8px;
+        }
+
+        #telemetry-panel {
+            background: #1a1a2e;
+            border-radius: 8px;
+            padding: 12px;
+            margin-bottom: 16px;
+        }
+
+        #telemetry-panel h4 {
+            font-size: 0.8rem;
+            color: #e94560;
+            margin-bottom: 8px;
+        }
+
+        .telemetry-row {
+            display: flex;
+            justify-content: space-between;
+            padding: 4px 0;
+            font-size: 0.8rem;
+            border-bottom: 1px solid #0f3460;
+        }
+
+        .telemetry-row:last-child {
+            border-bottom: none;
+        }
+
+        .telemetry-row .zone-name {
+            color: #aaa;
+        }
+
+        .telemetry-row .zone-temp {
+            color: #fff;
+            font-weight: 500;
+        }
+
+        .telemetry-row .zone-demand {
+            font-size: 0.75rem;
+            padding: 2px 6px;
+            border-radius: 3px;
+        }
+
+        .telemetry-row .zone-demand.heating {
+            background: rgba(233, 69, 96, 0.2);
+            color: #e94560;
+        }
+
+        .telemetry-row .zone-demand.cooling {
+            background: rgba(0, 184, 148, 0.2);
+            color: #00b894;
+        }
+
+        .telemetry-row .zone-demand.neutral {
+            background: rgba(255, 255, 255, 0.1);
+            color: #888;
+        }
+
+        .toast {
+            position: fixed;
+            bottom: 20px;
+            right: 20px;
+            padding: 12px 20px;
+            background: #16213e;
+            border: 1px solid #00b894;
+            border-radius: 8px;
+            color: #fff;
+            font-size: 0.9rem;
+            z-index: 1000;
+            animation: slideIn 0.3s ease;
+        }
+
+        .toast.error {
+            border-color: #e94560;
+        }
+
+        @keyframes slideIn {
+            from {
+                transform: translateX(100%);
+                opacity: 0;
+            }
+            to {
+                transform: translateX(0);
+                opacity: 1;
+            }
+        }
+
+        .apply-mode-toggle {
+            display: flex;
+            gap: 8px;
+            margin-bottom: 16px;
+        }
+
+        .apply-mode-btn {
+            flex: 1;
+            padding: 8px;
+            background: transparent;
+            border: 1px solid #0f3460;
+            color: #888;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 0.8rem;
+            transition: all 0.2s;
+        }
+
+        .apply-mode-btn.active {
+            background: #0f3460;
+            color: #fff;
+            border-color: #e94560;
+        }
     </style>
 </head>
 <body>
@@ -287,11 +575,112 @@
             <div id="tabs">
                 <button class="tab active" data-tab="zones">Zones</button>
                 <button class="tab" data-tab="levels">Levels</button>
+                <button class="tab" data-tab="controls">Controls</button>
             </div>
 
             <div id="tab-content">
                 <div id="zones-list"></div>
                 <div id="levels-list" style="display: none;"></div>
+                <div id="tab-content-controls">
+                    <div id="ws-status">
+                        <div class="indicator"></div>
+                        <span>WebSocket: Disconnected</span>
+                    </div>
+
+                    <div id="telemetry-panel">
+                        <h4>Zone Temperatures</h4>
+                        <div id="telemetry-data"></div>
+                    </div>
+
+                    <div class="control-section">
+                        <h3>Temperature Setpoints</h3>
+                        <div class="control-row">
+                            <div class="control-label">
+                                <span>Heating Setpoint</span>
+                                <span class="value" id="heating-value">20°C</span>
+                            </div>
+                            <input type="range" class="control-slider" id="heating-setpoint"
+                                   min="10" max="30" step="0.5" value="20">
+                        </div>
+                        <div class="control-row">
+                            <div class="control-label">
+                                <span>Cooling Setpoint</span>
+                                <span class="value" id="cooling-value">24°C</span>
+                            </div>
+                            <input type="range" class="control-slider" id="cooling-setpoint"
+                                   min="15" max="40" step="0.5" value="24">
+                        </div>
+                    </div>
+
+                    <div class="control-section">
+                        <h3>Internal Gains</h3>
+                        <div class="param-group">
+                            <div class="param-group-title">Lighting (W/m²)</div>
+                            <div class="control-row">
+                                <div class="control-label">
+                                    <span>Level</span>
+                                    <span class="value" id="lighting-value">10</span>
+                                </div>
+                                <input type="range" class="control-slider" id="lighting-load"
+                                       min="0" max="50" step="1" value="10">
+                            </div>
+                        </div>
+                        <div class="param-group">
+                            <div class="param-group-title">Equipment (W/m²)</div>
+                            <div class="control-row">
+                                <div class="control-label">
+                                    <span>Level</span>
+                                    <span class="value" id="equipment-value">15</span>
+                                </div>
+                                <input type="range" class="control-slider" id="equipment-load"
+                                       min="0" max="100" step="1" value="15">
+                            </div>
+                        </div>
+                        <div class="param-group">
+                            <div class="param-group-title">Occupancy (people/100m²)</div>
+                            <div class="control-row">
+                                <div class="control-label">
+                                    <span>Density</span>
+                                    <span class="value" id="occupancy-value">5</span>
+                                </div>
+                                <input type="range" class="control-slider" id="occupancy"
+                                       min="0" max="50" step="1" value="5">
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="control-section">
+                        <h3>Ventilation</h3>
+                        <div class="control-row">
+                            <div class="control-label">
+                                <span>Air Changes (ach)</span>
+                                <span class="value" id="ventilation-value">1.0</span>
+                            </div>
+                            <input type="range" class="control-slider" id="ventilation-rate"
+                                   min="0" max="10" step="0.1" value="1.0">
+                        </div>
+                    </div>
+
+                    <div class="control-section">
+                        <h3>Envelope</h3>
+                        <div class="control-row">
+                            <div class="control-label">
+                                <span>Wall U-Value (W/m²K)</span>
+                                <span class="value" id="uvalue-value">0.5</span>
+                            </div>
+                            <input type="range" class="control-slider" id="u-value"
+                                   min="0.1" max="2.0" step="0.05" value="0.5">
+                        </div>
+                    </div>
+
+                    <div class="apply-mode-toggle">
+                        <button class="apply-mode-btn active" data-mode="all">Apply to All Zones</button>
+                        <button class="apply-mode-btn" data-mode="selected">Selected Zone Only</button>
+                    </div>
+
+                    <button class="control-btn-apply" id="apply-params">Apply Parameters</button>
+                    <button class="control-btn-secondary" id="reset-params">Reset to Defaults</button>
+                </div>
             </div>
         </div>
 
@@ -633,6 +1022,7 @@
                 const tabName = tab.dataset.tab;
                 document.getElementById('zones-list').style.display = tabName === 'zones' ? 'block' : 'none';
                 document.getElementById('levels-list').style.display = tabName === 'levels' ? 'block' : 'none';
+                document.getElementById('tab-content-controls').classList.toggle('active', tabName === 'controls');
             });
         });
 
@@ -663,6 +1053,360 @@
                 console.error('Failed to load geometry:', err);
                 document.getElementById('loading').querySelector('p').textContent = 'Error loading file';
             }
+        });
+
+        // =====================================================
+        // Parameter Controls & LiveTwin WebSocket Integration
+        // =====================================================
+
+        const DEFAULT_PARAMS = {
+            heatingSetpoint: 20.0,
+            coolingSetpoint: 24.0,
+            lightingLoad: 10.0,
+            equipmentLoad: 15.0,
+            occupancy: 5.0,
+            ventilationRate: 1.0,
+            uValue: 0.5
+        };
+
+        let simulationParams = { ...DEFAULT_PARAMS };
+        let liveTwinSocket = null;
+        let zoneTemperatures = new Map();
+        let applyMode = 'all';
+
+        function initParameterControls() {
+            const sliders = [
+                { id: 'heating-setpoint', valueId: 'heating-value', key: 'heatingSetpoint', suffix: '°C' },
+                { id: 'cooling-setpoint', valueId: 'cooling-value', key: 'coolingSetpoint', suffix: '°C' },
+                { id: 'lighting-load', valueId: 'lighting-value', key: 'lightingLoad', suffix: '' },
+                { id: 'equipment-load', valueId: 'equipment-value', key: 'equipmentLoad', suffix: '' },
+                { id: 'occupancy', valueId: 'occupancy-value', key: 'occupancy', suffix: '' },
+                { id: 'ventilation-rate', valueId: 'ventilation-value', key: 'ventilationRate', suffix: '' },
+                { id: 'u-value', valueId: 'uvalue-value', key: 'uValue', suffix: '' }
+            ];
+
+            sliders.forEach(({ id, valueId, key, suffix }) => {
+                const slider = document.getElementById(id);
+                const valueDisplay = document.getElementById(valueId);
+
+                if (slider && valueDisplay) {
+                    slider.addEventListener('input', (e) => {
+                        const value = parseFloat(e.target.value);
+                        simulationParams[key] = value;
+                        valueDisplay.textContent = suffix ? `${value}${suffix}` : value;
+                    });
+                }
+            });
+
+            document.querySelectorAll('.apply-mode-btn').forEach(btn => {
+                btn.addEventListener('click', () => {
+                    document.querySelectorAll('.apply-mode-btn').forEach(b => b.classList.remove('active'));
+                    btn.classList.add('active');
+                    applyMode = btn.dataset.mode;
+                });
+            });
+
+            document.getElementById('apply-params').addEventListener('click', applyParameters);
+            document.getElementById('reset-params').addEventListener('click', resetParameters);
+
+            updateTelemetryPanel();
+        }
+
+        async function applyParameters() {
+            const btn = document.getElementById('apply-params');
+            btn.disabled = true;
+            btn.textContent = 'Applying...';
+
+            try {
+                const { invoke } = await import('@tauri-apps/api/core');
+
+                const params = {
+                    heating_setpoint: simulationParams.heatingSetpoint,
+                    cooling_setpoint: simulationParams.coolingSetpoint,
+                    lighting_load: simulationParams.lightingLoad,
+                    equipment_load: simulationParams.equipmentLoad,
+                    occupancy: simulationParams.occupancy,
+                    ventilation_rate: simulationParams.ventilationRate,
+                    u_value: simulationParams.uValue,
+                    zone_id: applyMode === 'selected' ? selectedZone : null
+                };
+
+                await invoke('update_simulation_parameters', { parameters: params });
+                showToast('Parameters applied successfully');
+            } catch (err) {
+                console.error('Failed to apply parameters:', err);
+                showToast('Failed to apply parameters', true);
+            } finally {
+                btn.disabled = false;
+                btn.textContent = 'Apply Parameters';
+            }
+        }
+
+        function resetParameters() {
+            simulationParams = { ...DEFAULT_PARAMS };
+
+            document.getElementById('heating-setpoint').value = DEFAULT_PARAMS.heatingSetpoint;
+            document.getElementById('heating-value').textContent = `${DEFAULT_PARAMS.heatingSetpoint}°C`;
+
+            document.getElementById('cooling-setpoint').value = DEFAULT_PARAMS.coolingSetpoint;
+            document.getElementById('cooling-value').textContent = `${DEFAULT_PARAMS.coolingSetpoint}°C`;
+
+            document.getElementById('lighting-load').value = DEFAULT_PARAMS.lightingLoad;
+            document.getElementById('lighting-value').textContent = DEFAULT_PARAMS.lightingLoad;
+
+            document.getElementById('equipment-load').value = DEFAULT_PARAMS.equipmentLoad;
+            document.getElementById('equipment-value').textContent = DEFAULT_PARAMS.equipmentLoad;
+
+            document.getElementById('occupancy').value = DEFAULT_PARAMS.occupancy;
+            document.getElementById('occupancy-value').textContent = DEFAULT_PARAMS.occupancy;
+
+            document.getElementById('ventilation-rate').value = DEFAULT_PARAMS.ventilationRate;
+            document.getElementById('ventilation-value').textContent = DEFAULT_PARAMS.ventilationRate;
+
+            document.getElementById('u-value').value = DEFAULT_PARAMS.uValue;
+            document.getElementById('uvalue-value').textContent = DEFAULT_PARAMS.uValue;
+
+            showToast('Parameters reset to defaults');
+        }
+
+        function showToast(message, isError = false) {
+            const existing = document.querySelector('.toast');
+            if (existing) existing.remove();
+
+            const toast = document.createElement('div');
+            toast.className = `toast${isError ? ' error' : ''}`;
+            toast.textContent = message;
+            document.body.appendChild(toast);
+
+            setTimeout(() => toast.remove(), 3000);
+        }
+
+        // LiveTwin WebSocket Connection
+        const LIVE_TWIN_URL = 'ws://localhost:8080/live-twin';
+        const RECONNECT_DELAY = 3000;
+        const MAX_RECONNECT_ATTEMPTS = 10;
+
+        let reconnectAttempts = 0;
+        let wsConnected = false;
+
+        function updateWsStatus(status, message) {
+            const wsStatus = document.getElementById('ws-status');
+            wsStatus.className = status;
+            wsStatus.querySelector('span').textContent = `WebSocket: ${message}`;
+        }
+
+        function connectLiveTwin() {
+            if (liveTwinSocket && liveTwinSocket.readyState === WebSocket.OPEN) {
+                return;
+            }
+
+            updateWsStatus('connecting', 'Connecting...');
+
+            try {
+                liveTwinSocket = new WebSocket(LIVE_TWIN_URL);
+
+                liveTwinSocket.binaryType = 'arraybuffer';
+
+                liveTwinSocket.onopen = () => {
+                    wsConnected = true;
+                    reconnectAttempts = 0;
+                    updateWsStatus('connected', 'Connected');
+                    console.log('LiveTwin WebSocket connected');
+                };
+
+                liveTwinSocket.onmessage = (event) => {
+                    try {
+                        if (event.data instanceof ArrayBuffer) {
+                            const payload = decodeLiveTwinPayload(event.data);
+                            if (payload) {
+                                handleLiveTwinPayload(payload);
+                            }
+                        } else {
+                            const payload = JSON.parse(event.data);
+                            handleLiveTwinPayload(payload);
+                        }
+                    } catch (err) {
+                        console.error('Failed to decode LiveTwin payload:', err);
+                    }
+                };
+
+                liveTwinSocket.onclose = () => {
+                    wsConnected = false;
+                    updateWsStatus('error', 'Disconnected');
+                    console.log('LiveTwin WebSocket disconnected');
+                    attemptReconnect();
+                };
+
+                liveTwinSocket.onerror = (err) => {
+                    console.error('LiveTwin WebSocket error:', err);
+                    updateWsStatus('error', 'Error');
+                };
+            } catch (err) {
+                console.error('Failed to create WebSocket:', err);
+                updateWsStatus('error', 'Failed to connect');
+                attemptReconnect();
+            }
+        }
+
+        function attemptReconnect() {
+            if (reconnectAttempts >= MAX_RECONNECT_ATTEMPTS) {
+                console.log('Max reconnection attempts reached');
+                updateWsStatus('error', 'Connection failed');
+                return;
+            }
+
+            reconnectAttempts++;
+            console.log(`Attempting to reconnect (${reconnectAttempts}/${MAX_RECONNECT_ATTEMPTS})...`);
+            updateWsStatus('connecting', `Reconnecting (${reconnectAttempts})...`);
+
+            setTimeout(connectLiveTwin, RECONNECT_DELAY);
+        }
+
+        function decodeLiveTwinPayload(buffer) {
+            try {
+                const view = new DataView(buffer);
+                const timestamp = new Date(view.getFloat64(0, true) * 1000);
+                const simIdBytes = new Uint8Array(buffer, 8, 16);
+                const zoneCount = view.getUint32(24, true);
+
+                const zoneStates = [];
+                let offset = 28;
+
+                for (let i = 0; i < zoneCount && offset < buffer.byteLength - 24; i++) {
+                    const zoneId = view.getUint32(offset, true);
+                    const temperature = view.getFloat64(offset + 4, true);
+                    const heatingDemand = view.getFloat64(offset + 12, true);
+                    const coolingDemand = view.getFloat64(offset + 20, true);
+
+                    zoneStates.push({
+                        zone_id: zoneId,
+                        temperature,
+                        heating_demand: heatingDemand,
+                        cooling_demand: coolingDemand
+                    });
+
+                    offset += 28;
+                }
+
+                return {
+                    timestamp,
+                    zone_states: zoneStates
+                };
+            } catch (err) {
+                console.error('Failed to decode MessagePack:', err);
+                return null;
+            }
+        }
+
+        function handleLiveTwinPayload(payload) {
+            if (!payload || !payload.zone_states) return;
+
+            zoneTemperatures.clear();
+            payload.zone_states.forEach(state => {
+                zoneTemperatures.set(state.zone_id, state);
+            });
+
+            updateZoneColors(payload.zone_states);
+            updateTelemetryPanel();
+        }
+
+        function updateZoneColors(zoneStates) {
+            if (!zoneStates || zoneStates.length === 0) return;
+
+            const minTemp = 15;
+            const maxTemp = 30;
+
+            zoneStates.forEach(state => {
+                const mesh = zoneMeshes.get(state.zone_id.toString());
+                if (mesh) {
+                    const normalizedTemp = Math.max(0, Math.min(1,
+                        (state.temperature - minTemp) / (maxTemp - minTemp)
+                    ));
+
+                    const r = Math.floor(normalizedTemp * 233);
+                    const g = Math.floor((1 - Math.abs(normalizedTemp - 0.5) * 2) * 100);
+                    const b = Math.floor((1 - normalizedTemp) * 100);
+
+                    const color = (r << 16) | (g << 8) | b;
+
+                    mesh.children.forEach(child => {
+                        if (child.material) {
+                            child.material.color.setHex(color);
+                        }
+                    });
+                }
+            });
+        }
+
+        function updateTelemetryPanel() {
+            const telemetryData = document.getElementById('telemetry-data');
+
+            if (zoneTemperatures.size === 0) {
+                if (geometryData && geometryData.zones) {
+                    telemetryData.innerHTML = geometryData.zones.map(zone => `
+                        <div class="telemetry-row">
+                            <span class="zone-name">${zone.name}</span>
+                            <span class="zone-temp">-- °C</span>
+                            <span class="zone-demand neutral">--</span>
+                        </div>
+                    `).join('');
+                } else {
+                    telemetryData.innerHTML = '<div class="telemetry-row"><span class="zone-name">No data</span></div>';
+                }
+                return;
+            }
+
+            if (geometryData && geometryData.zones) {
+                telemetryData.innerHTML = geometryData.zones.map(zone => {
+                    const state = zoneTemperatures.get(zone.id) || zoneTemperatures.get(zone.id.replace(/-/g, ''));
+
+                    if (!state) {
+                        return `
+                            <div class="telemetry-row">
+                                <span class="zone-name">${zone.name}</span>
+                                <span class="zone-temp">-- °C</span>
+                                <span class="zone-demand neutral">--</span>
+                            </div>
+                        `;
+                    }
+
+                    const tempStr = state.temperature.toFixed(1);
+                    let demandClass = 'neutral';
+                    let demandText = 'Neutral';
+
+                    if (state.heating_demand > 0) {
+                        demandClass = 'heating';
+                        demandText = `+${state.heating_demand.toFixed(0)}W`;
+                    } else if (state.cooling_demand > 0) {
+                        demandClass = 'cooling';
+                        demandText = `-${state.cooling_demand.toFixed(0)}W`;
+                    }
+
+                    return `
+                        <div class="telemetry-row">
+                            <span class="zone-name">${zone.name}</span>
+                            <span class="zone-temp">${tempStr} °C</span>
+                            <span class="zone-demand ${demandClass}">${demandText}</span>
+                        </div>
+                    `;
+                }).join('');
+            }
+        }
+
+        function disconnectLiveTwin() {
+            if (liveTwinSocket) {
+                liveTwinSocket.close();
+                liveTwinSocket = null;
+            }
+        }
+
+        document.addEventListener('DOMContentLoaded', () => {
+            initParameterControls();
+            connectLiveTwin();
+        });
+
+        window.addEventListener('beforeunload', () => {
+            disconnectLiveTwin();
         });
 
         init();
