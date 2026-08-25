@@ -17,10 +17,10 @@ Fluxion is **not yet ASHRAE 140-compliant**. The figures below come from the com
 
 | Metric | Current | Target (release gate) | Status |
 |--------|---------|-----------------------|--------|
-| Pass rate (metric-level) | **20.3%** (13/64) | ≥ 60% | ❌ Fail |
-| Mean Absolute Error (MAE) | **55.09%** | ≤ 50% | ❌ Fail |
-| Cases fully passing | 1/18 (5.6%) | — | ❌ |
-| Max single-case deviation | 499.89% | — | ℹ️ |
+| Pass rate (metric-level) | **14.3%** (12/84) | ≥ 60% | ❌ Fail |
+| Mean Absolute Error (MAE) | **51.03%** | ≤ 50% | ❌ Fail |
+| Cases fully passing | 0/18 (0.0%) | — | ❌ |
+| Max single-case deviation | 470.11% | — | ℹ️ |
 
 ### v1.3 Milestone — Blind ASHRAE 140 Validation (Physics Only)
 
