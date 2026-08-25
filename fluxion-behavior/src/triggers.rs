@@ -165,20 +165,15 @@ impl OccupantComfortTriggers {
         &self,
         zone_id: &str,
         timestep: usize,
-        air_temp: f64,
-        radiant_temp: f64,
-        rel_humidity: f64,
-        air_velocity: f64,
-        metabolic_rate: f64,
-        clothing_level: f64,
+        thermal: ThermalComfortInput,
     ) -> Option<ComfortViolation> {
         let pmv = self.pmv_evaluator.calculate_pmv(
-            air_temp,
-            radiant_temp,
-            rel_humidity,
-            air_velocity,
-            metabolic_rate,
-            clothing_level,
+            thermal.air_temp,
+            thermal.radiant_temp,
+            thermal.rel_humidity,
+            thermal.air_velocity,
+            thermal.metabolic_rate,
+            thermal.clothing_level,
         );
         let status = self.pmv_evaluator.evaluate_status(pmv);
         let ppd = self.pmv_evaluator.calculate_ppd(pmv);
@@ -255,16 +250,7 @@ impl OccupantComfortTriggers {
     ) -> Vec<ComfortViolation> {
         let mut violations = Vec::new();
 
-        if let Some(v) = self.evaluate_pmv(
-            zone_id,
-            timestep,
-            thermal.air_temp,
-            thermal.radiant_temp,
-            thermal.rel_humidity,
-            thermal.air_velocity,
-            thermal.metabolic_rate,
-            thermal.clothing_level,
-        ) {
+        if let Some(v) = self.evaluate_pmv(zone_id, timestep, thermal) {
             violations.push(v);
         }
 
