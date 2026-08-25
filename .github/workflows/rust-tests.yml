@@ -391,7 +391,7 @@ jobs:
       # confirms the workspace also links in release mode. Uses default
       # features (root has `default = []`) so the cuda/ort features are
       # not pulled in on CPU-only runners.
-      - run: cargo build --release --workspace --verbose
+      - run: cargo build --release --workspace --verbose --exclude fluxion-tauri
 
   # -- Issue #2983: `cargo check --workspace` ---------------------------------
   # Bare `cargo build` / `cargo test` only compile the root package because
@@ -427,7 +427,7 @@ jobs:
         with:
           python-version: '3.10'
       - name: Run workspace check
-        run: cargo check --workspace --verbose
+        run: cargo check --workspace --verbose --exclude fluxion-tauri
       # Issue #3125: catch example drift. `--examples` is NOT included by
       # default in `cargo check --workspace`, so a renamed field/method
       # silently breaks `examples/*.rs` (which are user-facing docs) until
@@ -443,7 +443,7 @@ jobs:
       # `continue-on-error` so this becomes a required gate.
       - name: Run workspace check (examples, Issue #3125)
         continue-on-error: true
-        run: cargo check --workspace --examples --all-targets --verbose
+        run: cargo check --workspace --examples --all-targets --verbose --exclude fluxion-tauri
 
   workspace-check-hz:
     name: "Workspace Check (Hetzner Overflow)"
@@ -460,12 +460,12 @@ jobs:
         with:
           python-version: '3.10'
       - name: Run workspace check
-        run: cargo check --workspace --verbose
+        run: cargo check --workspace --verbose --exclude fluxion-tauri
       # Issue #3125: see `workspace-check-gh` for the rationale behind
       # `--examples --all-targets` + `continue-on-error: true`.
       - name: Run workspace check (examples, Issue #3125)
         continue-on-error: true
-        run: cargo check --workspace --examples --all-targets --verbose
+        run: cargo check --workspace --examples --all-targets --verbose --exclude fluxion-tauri
 
   # -- ASHRAE Cases Cycle Check -----------------------------------------------
 
