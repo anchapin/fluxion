@@ -85,6 +85,73 @@ pub fn get_geometry_to_zone_mapping(
     Ok(mappings)
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SimulationParameters {
+    pub zone_id: Option<String>,
+    pub heating_setpoint: Option<f64>,
+    pub cooling_setpoint: Option<f64>,
+    pub lighting_load: Option<f64>,
+    pub equipment_load: Option<f64>,
+    pub occupancy: Option<f64>,
+    pub ventilation_rate: Option<f64>,
+    pub wall_u_value: Option<f64>,
+    pub roof_u_value: Option<f64>,
+}
+
+static SIM_PARAMS: std::sync::RwLock<SimulationParameters> =
+    std::sync::RwLock::new(SimulationParameters {
+        zone_id: None,
+        heating_setpoint: Some(20.0),
+        cooling_setpoint: Some(26.0),
+        lighting_load: Some(5.0),
+        equipment_load: Some(10.0),
+        occupancy: Some(0.1),
+        ventilation_rate: Some(0.5),
+        wall_u_value: Some(0.5),
+        roof_u_value: Some(0.3),
+    });
+
+#[tauri::command]
+pub fn get_simulation_parameters() -> Result<SimulationParameters, String> {
+    let params = SIM_PARAMS.read().map_err(|e| e.to_string())?;
+    Ok(params.clone())
+}
+
+#[tauri::command]
+pub fn update_simulation_parameters(
+    params: SimulationParameters,
+) -> Result<SimulationParameters, String> {
+    let mut current = SIM_PARAMS.write().map_err(|e| e.to_string())?;
+    if let Some(zone_id) = params.zone_id {
+        current.zone_id = Some(zone_id);
+    }
+    if let Some(v) = params.heating_setpoint {
+        current.heating_setpoint = Some(v);
+    }
+    if let Some(v) = params.cooling_setpoint {
+        current.cooling_setpoint = Some(v);
+    }
+    if let Some(v) = params.lighting_load {
+        current.lighting_load = Some(v);
+    }
+    if let Some(v) = params.equipment_load {
+        current.equipment_load = Some(v);
+    }
+    if let Some(v) = params.occupancy {
+        current.occupancy = Some(v);
+    }
+    if let Some(v) = params.ventilation_rate {
+        current.ventilation_rate = Some(v);
+    }
+    if let Some(v) = params.wall_u_value {
+        current.wall_u_value = Some(v);
+    }
+    if let Some(v) = params.roof_u_value {
+        current.roof_u_value = Some(v);
+    }
+    Ok(current.clone())
+}
+
 #[tauri::command]
 pub fn get_zone_geometry_info(
     geometry: BuildingGeometry,
