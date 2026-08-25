@@ -84,6 +84,7 @@ Required branch-protection checks (`release_gates.yaml` → `ci.required_checks`
 | Clippy (GH) | — |
 | Known Issues Stale Check (GH) | — |
 | Ashrae Cases Cycle Check (GH) | — |
+| Cycle Downward Trend Guard (Issue #2768) | #2768 |
 | CUDA Smoke Test (Issue #1603) | #1603 |
 | Architecture Drift Detection | — |
 | Cargo Deny | — |
