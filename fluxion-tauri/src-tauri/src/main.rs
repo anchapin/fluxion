@@ -3,7 +3,10 @@
 mod commands;
 mod geometry;
 
-use commands::{get_building_levels, get_geometry_summary, get_geometry_to_zone_mapping, get_zone_geometry_info, load_geometry};
+use commands::{
+    get_building_levels, get_geometry_summary, get_geometry_to_zone_mapping,
+    get_zone_geometry_info, load_geometry,
+};
 use log::info;
 
 fn main() {

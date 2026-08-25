@@ -1,5 +1,5 @@
-use serde::{Deserialize, Serialize};
 use crate::geometry::{BuildingGeometry, BuildingLevel, Space, Vertex};
+use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct GeometrySummary {
@@ -29,9 +29,17 @@ pub struct ZoneGeometryInfo {
 
 fn compute_geometry_summary(geometry: &BuildingGeometry) -> GeometrySummary {
     let space_count = geometry.levels.iter().map(|l| l.spaces.len()).sum();
-    let total_floor_area: f64 = geometry.levels.iter()
+    let total_floor_area: f64 = geometry
+        .levels
+        .iter()
         .flat_map(|l| &l.spaces)
-        .map(|s| s.surfaces.iter().find(|sf| sf.surface_type == "Floor").map(|sf| sf.area).unwrap_or(0.0))
+        .map(|s| {
+            s.surfaces
+                .iter()
+                .find(|sf| sf.surface_type == "Floor")
+                .map(|sf| sf.area)
+                .unwrap_or(0.0)
+        })
         .sum();
 
     GeometrySummary {
@@ -55,12 +63,17 @@ pub fn get_geometry_summary(geometry: BuildingGeometry) -> Result<GeometrySummar
 }
 
 #[tauri::command]
-pub fn get_geometry_to_zone_mapping(geometry: BuildingGeometry) -> Result<Vec<GeometryToZoneMapping>, String> {
+pub fn get_geometry_to_zone_mapping(
+    geometry: BuildingGeometry,
+) -> Result<Vec<GeometryToZoneMapping>, String> {
     let mut mappings = Vec::new();
 
     for level in &geometry.levels {
         for space in &level.spaces {
-            let zone_info = geometry.zones.iter().find(|z| z.space_ids.contains(&space.id));
+            let zone_info = geometry
+                .zones
+                .iter()
+                .find(|z| z.space_ids.contains(&space.id));
             mappings.push(GeometryToZoneMapping {
                 space_id: space.id.clone(),
                 zone_id: space.zone_id.clone(),
@@ -73,27 +86,46 @@ pub fn get_geometry_to_zone_mapping(geometry: BuildingGeometry) -> Result<Vec<Ge
 }
 
 #[tauri::command]
-pub fn get_zone_geometry_info(geometry: BuildingGeometry, zone_id: String) -> Result<Option<ZoneGeometryInfo>, String> {
+pub fn get_zone_geometry_info(
+    geometry: BuildingGeometry,
+    zone_id: String,
+) -> Result<Option<ZoneGeometryInfo>, String> {
     let zone = geometry.zones.iter().find(|z| z.id == zone_id);
 
     match zone {
         Some(z) => {
-            let spaces: Vec<Space> = geometry.levels.iter()
+            let spaces: Vec<Space> = geometry
+                .levels
+                .iter()
                 .flat_map(|l| &l.spaces)
                 .filter(|s| z.space_ids.contains(&s.id))
                 .cloned()
                 .collect();
 
-            let all_vertices: Vec<&Vertex> = spaces.iter()
+            let all_vertices: Vec<&Vertex> = spaces
+                .iter()
                 .flat_map(|s| &s.surfaces)
                 .flat_map(|sf| &sf.vertices)
                 .collect();
 
-            let (min_x, max_x) = all_vertices.iter().fold((f64::MAX, f64::MIN), |(mn, mx), v| (mn.min(v.x), mx.max(v.x)));
-            let (min_y, max_y) = all_vertices.iter().fold((f64::MAX, f64::MIN), |(mn, mx), v| (mn.min(v.y), mx.max(v.y)));
-            let (min_z, max_z) = all_vertices.iter().fold((f64::MAX, f64::MIN), |(mn, mx), v| (mn.min(v.z), mx.max(v.z)));
+            let (min_x, max_x) = all_vertices
+                .iter()
+                .fold((f64::MAX, f64::MIN), |(mn, mx), v| {
+                    (mn.min(v.x), mx.max(v.x))
+                });
+            let (min_y, max_y) = all_vertices
+                .iter()
+                .fold((f64::MAX, f64::MIN), |(mn, mx), v| {
+                    (mn.min(v.y), mx.max(v.y))
+                });
+            let (min_z, max_z) = all_vertices
+                .iter()
+                .fold((f64::MAX, f64::MIN), |(mn, mx), v| {
+                    (mn.min(v.z), mx.max(v.z))
+                });
 
-            let total_area: f64 = spaces.iter()
+            let total_area: f64 = spaces
+                .iter()
                 .flat_map(|s| &s.surfaces)
                 .filter(|sf| sf.surface_type == "Floor")
                 .map(|sf| sf.area)
@@ -104,8 +136,16 @@ pub fn get_zone_geometry_info(geometry: BuildingGeometry, zone_id: String) -> Re
                 zone_name: z.name.clone(),
                 space_ids: z.space_ids.clone(),
                 bounding_box: crate::geometry::BoundingBox {
-                    min: Vertex { x: min_x, y: min_y, z: min_z },
-                    max: Vertex { x: max_x, y: max_y, z: max_z },
+                    min: Vertex {
+                        x: min_x,
+                        y: min_y,
+                        z: min_z,
+                    },
+                    max: Vertex {
+                        x: max_x,
+                        y: max_y,
+                        z: max_z,
+                    },
                 },
                 total_area,
             }))

@@ -66,31 +66,55 @@ impl BuildingGeometry {
             name: "Ground Floor".to_string(),
             elevation: 0.0,
             height: 3.0,
-            spaces: vec![
-                Space {
-                    id: "space-1".to_string(),
-                    name: "Office A".to_string(),
-                    surfaces: vec![
-                        Surface {
-                            id: "surface-1".to_string(),
-                            vertices: vec![
-                                Vertex { x: 0.0, y: 0.0, z: 0.0 },
-                                Vertex { x: 4.0, y: 0.0, z: 0.0 },
-                                Vertex { x: 4.0, y: 0.0, z: 3.0 },
-                                Vertex { x: 0.0, y: 0.0, z: 3.0 },
-                            ],
-                            normal: Vertex { x: 0.0, y: -1.0, z: 0.0 },
-                            area: 12.0,
-                            surface_type: "Wall".to_string(),
+            spaces: vec![Space {
+                id: "space-1".to_string(),
+                name: "Office A".to_string(),
+                surfaces: vec![Surface {
+                    id: "surface-1".to_string(),
+                    vertices: vec![
+                        Vertex {
+                            x: 0.0,
+                            y: 0.0,
+                            z: 0.0,
+                        },
+                        Vertex {
+                            x: 4.0,
+                            y: 0.0,
+                            z: 0.0,
+                        },
+                        Vertex {
+                            x: 4.0,
+                            y: 0.0,
+                            z: 3.0,
+                        },
+                        Vertex {
+                            x: 0.0,
+                            y: 0.0,
+                            z: 3.0,
                         },
                     ],
-                    bounding_box: BoundingBox {
-                        min: Vertex { x: 0.0, y: 0.0, z: 0.0 },
-                        max: Vertex { x: 4.0, y: 4.0, z: 3.0 },
+                    normal: Vertex {
+                        x: 0.0,
+                        y: -1.0,
+                        z: 0.0,
                     },
-                    zone_id: Some("zone-1".to_string()),
+                    area: 12.0,
+                    surface_type: "Wall".to_string(),
+                }],
+                bounding_box: BoundingBox {
+                    min: Vertex {
+                        x: 0.0,
+                        y: 0.0,
+                        z: 0.0,
+                    },
+                    max: Vertex {
+                        x: 4.0,
+                        y: 4.0,
+                        z: 3.0,
+                    },
                 },
-            ],
+                zone_id: Some("zone-1".to_string()),
+            }],
         };
 
         BuildingGeometry {
@@ -106,8 +130,16 @@ impl BuildingGeometry {
                 setpoint_cooling: Some(24.0),
             }],
             bounding_box: BoundingBox {
-                min: Vertex { x: 0.0, y: 0.0, z: 0.0 },
-                max: Vertex { x: 10.0, y: 10.0, z: 3.0 },
+                min: Vertex {
+                    x: 0.0,
+                    y: 0.0,
+                    z: 0.0,
+                },
+                max: Vertex {
+                    x: 10.0,
+                    y: 10.0,
+                    z: 3.0,
+                },
             },
         }
     }
