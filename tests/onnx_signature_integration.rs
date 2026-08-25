@@ -97,14 +97,7 @@ fn load_onnx_rejects_tampered_model() {
 
 /// Test case 2: unsigned model with no manifest → `verify_onnx_signature`
 /// must fail (fail-closed). This exercises the `load_onnx` entry point's
-/// pre-parse integrity check.
-///
-/// NOTE: The current `verify_onnx_signature` implementation (lines 2944-2954 in
-/// `src/ai/surrogate.rs`) has a backward-compat warning branch that returns `Ok(())`
-/// when no manifest and no env var are present. This preserves loading of legacy
-/// `assets/` fixtures. This test documents the Issue #3169 requirement that
-/// unsigned models must be rejected fail-closed — the backward-compat branch
-/// represents a behavior gap that should be addressed separately.
+/// pre-parse integrity check (Issue #3161).
 #[test]
 fn verify_onnx_rejects_unsigned_model_with_no_manifest() {
     let _guard = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
@@ -125,10 +118,10 @@ fn verify_onnx_rejects_unsigned_model_with_no_manifest() {
         None => std::env::remove_var(ENV_ONNX_MODEL_SIGNATURE),
     }
 
-    // Assert current behavior matches desired: fail-closed
+    // Assert fail-closed behavior: no manifest = error
     let err = res.expect_err("unsigned model with no manifest must fail");
     assert!(
-        err.contains("integrity verification FAILED") || err.contains("not a valid"),
+        err.contains("fail-closed") || err.contains("Issue #3161"),
         "expected fail-closed message, got: {err}"
     );
 }
