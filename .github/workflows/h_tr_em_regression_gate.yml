@@ -1,0 +1,142 @@
+# h_tr_em Wind-Dependent Recompute Regression Gate (Issue #3063 / LIMIT-13)
+#
+# CI gate that asserts the h_tr_em (envelope-to-mass conductance) recompute
+# does not regress against the stored baseline snapshots.
+#
+# What it runs
+# ------------
+# This gate is the regression fence for the h_tr_em wind-dependent per-step
+# recompute (Issue #3063). The verifier compares pre-recompute baseline
+# snapshots against post-recompute current snapshots and fails if any
+# per-metric drift exceeds the manifest's per-metric tolerance (default 0.0
+# = bit-identical).
+#
+# The gate fails closed (exit 2) when the baseline snapshot set is a
+# placeholder (any metric is null or no captured_at timestamp), so a future
+# implementer cannot silently compare against an empty baseline. This forces
+# real per-step measurements to be captured via ADR-0008's pattern before
+# shipping any code change.
+#
+# Usage
+# -----
+# The verifier is invoked with:
+#   python3 scripts/verify_h_tr_em_regression.py \
+#       --before tests/reference_data/h_tr_em_baseline \
+#       --after  path/to/post-recompute-snapshots \
+#       [--json] [--strict]
+#
+# Exit codes:
+#   0 — All metrics within tolerance (no regression detected).
+#   1 — At least one per-metric drift exceeded tolerance (regression).
+#   2 — Snapshot set is unpopulated / placeholder / schema-drift (fail
+#       closed so an accidental comparison against an empty baseline
+#       cannot silently green-light the recompute).
+#   3 — Usage / IO error (bad path, malformed JSON, missing manifest).
+#
+# Baseline requirement
+# -------------------
+# The baseline at `tests/reference_data/h_tr_em_baseline/` must contain
+# a populated `baseline_manifest.json` (captured_at != null) and per-case
+# JSON files with non-null metrics. If the baseline is a placeholder, this
+# gate exits 2 (fail closed) per ADR-0009.
+#
+# Status check name
+# -----------------
+# Job id is `h-tr-em-regression-gate`; the human-readable name is
+# "h_tr_em Regression Gate (LIMIT-13)". Add this job name to the
+# branch protection "Required status checks" list.
+
+name: h_tr_em Regression Gate
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main, develop]
+  workflow_dispatch:
+
+concurrency:
+  group: h-tr-em-regression-gate-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  pull-requests: read
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: 1
+  PYO3_USE_ABI3_FORWARD_COMPATIBILITY: 1
+
+jobs:
+  h-tr-em-regression-gate:
+    name: h_tr_em Regression Gate (LIMIT-13)
+    runs-on: ${{ vars.FLUXION_LINUX_RUNNER || 'ubuntu-latest' }}
+    timeout-minutes: 60
+
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4
+
+      - name: Install system dependencies (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libssl-dev pkg-config libfontconfig1-dev
+
+      - uses: ./.github/actions/setup-rust-python-env
+        with:
+          python-version: '3.10'
+
+      - name: Cache cargo registry + build artifacts
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830  # v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: h-tr-em-regression-gate-${{ runner.os }}-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            h-tr-em-regression-gate-${{ runner.os }}-
+
+      - name: Check baseline snapshot directory exists
+        id: check-baseline
+        run: |
+          BASELINE_DIR="tests/reference_data/h_tr_em_baseline"
+          if [ ! -d "$BASELINE_DIR" ]; then
+            echo "::error::Baseline snapshot directory $BASELINE_DIR does not exist."
+            echo "::error::The h_tr_em recompute (Issue #3063) must capture baseline snapshots before this gate can run."
+            exit 2
+          fi
+          if [ ! -f "$BASELINE_DIR/baseline_manifest.json" ]; then
+            echo "::error::Baseline manifest $BASELINE_DIR/baseline_manifest.json does not exist."
+            exit 2
+          fi
+          echo "Baseline directory exists: $BASELINE_DIR"
+          echo "baseline_exists=true" >> $GITHUB_OUTPUT
+
+      - name: Run h_tr_em regression verifier
+        if: steps.check-baseline.outputs.baseline_exists == 'true'
+        run: |
+          set -e
+          echo "=== h_tr_em Regression Gate ==="
+          echo ""
+          echo "Baseline: tests/reference_data/h_tr_em_baseline"
+          echo "Current:  tests/reference_data/h_tr_em_current"
+          echo ""
+
+          # The baseline exists but may be a placeholder. The verifier will
+          # fail closed (exit 2) if the baseline is placeholder, forcing
+          # real metrics to be captured first.
+          python3 scripts/verify_h_tr_em_regression.py \
+            --before tests/reference_data/h_tr_em_baseline \
+            --after  tests/reference_data/h_tr_em_current \
+            --json
+
+      - name: Upload verifier output
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02  # v4
+        with:
+          name: h-tr-em-regression-gate-output
+          path: |
+            h_tr_em_verifier_output.json
+          retention-days: 14

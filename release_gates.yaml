@@ -578,6 +578,17 @@ ci:
     # references the exact emitted "(GH)" name per Issue #3116.
     - "fluxion-grid Integration Tests (GH)"
 
+    # Issue #3154 / LIMIT-13: h_tr_em regression fence gate. The verifier
+    # `scripts/verify_h_tr_em_regression.py` existed but was orphaned (no
+    # CI guard). This gate ensures the h_tr_em (envelope-to-mass
+    # conductance) wind-dependent per-step recompute (Issue #3063) does
+    # not regress against stored baseline snapshots. The gate fails
+    # closed (exit 2) when the baseline snapshot set is a placeholder,
+    # forcing real per-step measurements to be captured before any
+    # comparison. Job is defined in
+    # `.github/workflows/h_tr_em_regression_gate.yml`.
+    - "h_tr_em Regression Gate (LIMIT-13)"
+
   # Job-to-workflow map (informational; branch-protection reads job
   # names directly). Used by `scripts/release_gate_checker.py` to verify
   # the required_checks list is in sync with the workflows directory.
@@ -932,3 +943,21 @@ ci:
       issue: 3127
       closes_issue: 2275
       triggered_by: "PR + push to main"
+
+    - job: "h_tr_em Regression Gate (LIMIT-13)"
+      # h_tr_em wind-dependent recompute regression fence gate (Issue #3063 /
+      # LIMIT-13). The verifier `scripts/verify_h_tr_em_regression.py`
+      # existed but was orphaned with no CI guard (Issue #3154). This gate
+      # compares pre-recompute baseline snapshots against post-recompute
+      # current snapshots and fails if any per-metric drift exceeds the
+      # manifest's per-metric tolerance (default 0.0 = bit-identical).
+      # The gate fails closed (exit 2) when the baseline snapshot set is
+      # a placeholder, forcing real per-step measurements to be captured
+      # via ADR-0008's pattern before shipping any code change.
+      # Baseline must exist at `tests/reference_data/h_tr_em_baseline/` with
+      # a populated `baseline_manifest.json` (captured_at != null) and
+      # per-case JSON files with non-null metrics.
+      workflow: ".github/workflows/h_tr_em_regression_gate.yml"
+      issue: 3154
+      closes_issue: 3063
+      triggered_by: "PR + push to develop/main"
