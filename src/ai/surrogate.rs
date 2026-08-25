@@ -3316,7 +3316,8 @@ mod tests {
             Some(v) => std::env::set_var(ENV_ONNX_MODEL_SIGNATURE, v),
             None => std::env::remove_var(ENV_ONNX_MODEL_SIGNATURE),
         }
-        let err = res.expect_err("missing manifest + no env var must fail (fail-closed, Issue #3161)");
+        let err =
+            res.expect_err("missing manifest + no env var must fail (fail-closed, Issue #3161)");
         assert!(
             err.contains("fail-closed") || err.contains("Issue #3161"),
             "error must reference Issue #3161: {err}"
