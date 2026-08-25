@@ -1,0 +1,1244 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Fluxion - Building Energy Model Viewer</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: #1a1a2e;
+            color: #eee;
+            overflow: hidden;
+        }
+
+        #app {
+            display: flex;
+            height: 100vh;
+        }
+
+        #sidebar {
+            width: 320px;
+            background: #16213e;
+            border-right: 1px solid #0f3460;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+
+        #sidebar-header {
+            padding: 20px;
+            background: #0f3460;
+            border-bottom: 1px solid #1a1a2e;
+        }
+
+        #sidebar-header h1 {
+            font-size: 1.4rem;
+            color: #e94560;
+            margin-bottom: 8px;
+        }
+
+        #sidebar-header p {
+            font-size: 0.85rem;
+            color: #888;
+        }
+
+        #load-button {
+            width: 100%;
+            padding: 12px;
+            margin: 16px 0;
+            background: #e94560;
+            color: white;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 1rem;
+            font-weight: 500;
+            transition: background 0.2s;
+        }
+
+        #load-button:hover {
+            background: #d63850;
+        }
+
+        #geometry-info {
+            padding: 16px;
+            background: #1a1a2e;
+            border-radius: 8px;
+            margin-bottom: 16px;
+        }
+
+        #geometry-info h3 {
+            font-size: 0.9rem;
+            color: #e94560;
+            margin-bottom: 12px;
+        }
+
+        .info-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 8px;
+        }
+
+        .info-item {
+            background: #16213e;
+            padding: 8px 12px;
+            border-radius: 4px;
+        }
+
+        .info-label {
+            font-size: 0.7rem;
+            color: #888;
+            text-transform: uppercase;
+        }
+
+        .info-value {
+            font-size: 1rem;
+            font-weight: 500;
+            color: #fff;
+        }
+
+        #tabs {
+            display: flex;
+            border-bottom: 1px solid #0f3460;
+        }
+
+        .tab {
+            flex: 1;
+            padding: 12px;
+            background: transparent;
+            border: none;
+            color: #888;
+            cursor: pointer;
+            font-size: 0.9rem;
+            transition: all 0.2s;
+        }
+
+        .tab.active {
+            color: #e94560;
+            border-bottom: 2px solid #e94560;
+        }
+
+        #tab-content {
+            flex: 1;
+            overflow-y: auto;
+            padding: 16px;
+        }
+
+        .zone-item, .level-item {
+            background: #1a1a2e;
+            padding: 12px;
+            border-radius: 6px;
+            margin-bottom: 8px;
+            cursor: pointer;
+            transition: background 0.2s;
+        }
+
+        .zone-item:hover, .level-item:hover {
+            background: #0f3460;
+        }
+
+        .zone-item.selected {
+            border: 1px solid #e94560;
+        }
+
+        .zone-name, .level-name {
+            font-weight: 500;
+            margin-bottom: 4px;
+        }
+
+        .zone-meta {
+            font-size: 0.75rem;
+            color: #888;
+        }
+
+        .control-group {
+            margin-bottom: 20px;
+        }
+
+        .control-group h3 {
+            font-size: 0.85rem;
+            color: #e94560;
+            margin-bottom: 12px;
+            border-bottom: 1px solid #0f3460;
+            padding-bottom: 8px;
+        }
+
+        .slider-item {
+            margin-bottom: 16px;
+        }
+
+        .slider-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 6px;
+        }
+
+        .slider-label {
+            font-size: 0.8rem;
+            color: #aaa;
+        }
+
+        .slider-value {
+            font-size: 0.85rem;
+            font-weight: 500;
+            color: #e94560;
+            min-width: 60px;
+            text-align: right;
+        }
+
+        .slider-unit {
+            font-size: 0.7rem;
+            color: #888;
+            margin-left: 4px;
+        }
+
+        input[type="range"] {
+            width: 100%;
+            height: 6px;
+            background: #0f3460;
+            border-radius: 3px;
+            outline: none;
+            -webkit-appearance: none;
+        }
+
+        input[type="range"]::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            width: 16px;
+            height: 16px;
+            background: #e94560;
+            border-radius: 50%;
+            cursor: pointer;
+            transition: background 0.2s;
+        }
+
+        input[type="range"]::-webkit-slider-thumb:hover {
+            background: #d63850;
+        }
+
+        input[type="range"]::-moz-range-thumb {
+            width: 16px;
+            height: 16px;
+            background: #e94560;
+            border-radius: 50%;
+            cursor: pointer;
+            border: none;
+        }
+
+        .control-actions {
+            margin-top: 24px;
+            padding-top: 16px;
+            border-top: 1px solid #0f3460;
+        }
+
+        .apply-btn {
+            width: 100%;
+            padding: 12px;
+            background: #e94560;
+            color: white;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 0.95rem;
+            font-weight: 500;
+            transition: background 0.2s;
+        }
+
+        .apply-btn:hover {
+            background: #d63850;
+        }
+
+        .apply-btn:disabled {
+            background: #555;
+            cursor: not-allowed;
+        }
+
+        #param-status {
+            margin-top: 12px;
+            padding: 8px 12px;
+            border-radius: 4px;
+            font-size: 0.8rem;
+            text-align: center;
+        }
+
+        #param-status.success {
+            background: rgba(34, 197, 94, 0.2);
+            color: #22c55e;
+        }
+
+        #param-status.error {
+            background: rgba(239, 68, 68, 0.2);
+            color: #ef4444;
+        }
+
+        #viewer-container {
+            flex: 1;
+            position: relative;
+            background: #0a0a14;
+        }
+
+        #canvas-container {
+            width: 100%;
+            height: 100%;
+        }
+
+        #viewer-controls {
+            position: absolute;
+            bottom: 20px;
+            left: 20px;
+            display: flex;
+            gap: 8px;
+        }
+
+        .control-btn {
+            padding: 8px 16px;
+            background: rgba(22, 33, 62, 0.9);
+            border: 1px solid #0f3460;
+            color: #eee;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 0.85rem;
+        }
+
+        .control-btn:hover {
+            background: #0f3460;
+        }
+
+        .control-btn.active {
+            background: #e94560;
+            border-color: #e94560;
+        }
+
+        #zone-legend {
+            position: absolute;
+            top: 20px;
+            right: 20px;
+            background: rgba(22, 33, 62, 0.95);
+            padding: 16px;
+            border-radius: 8px;
+            min-width: 200px;
+        }
+
+        #zone-legend h3 {
+            font-size: 0.9rem;
+            color: #e94560;
+            margin-bottom: 12px;
+        }
+
+        .legend-item {
+            display: flex;
+            align-items: center;
+            margin-bottom: 8px;
+            font-size: 0.85rem;
+        }
+
+        .legend-color {
+            width: 16px;
+            height: 16px;
+            border-radius: 3px;
+            margin-right: 8px;
+        }
+
+        #loading {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            text-align: center;
+        }
+
+        .spinner {
+            width: 50px;
+            height: 50px;
+            border: 3px solid #0f3460;
+            border-top-color: #e94560;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+            margin: 0 auto 16px;
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+
+        #thermal-legend {
+            position: absolute;
+            top: 20px;
+            right: 20px;
+            background: rgba(22, 33, 62, 0.95);
+            padding: 16px;
+            border-radius: 8px;
+            min-width: 200px;
+            display: none;
+        }
+
+        #thermal-legend.visible {
+            display: block;
+        }
+
+        #thermal-legend h3 {
+            font-size: 0.9rem;
+            color: #e94560;
+            margin-bottom: 12px;
+        }
+
+        .thermal-gradient {
+            height: 20px;
+            border-radius: 4px;
+            background: linear-gradient(to right, #3b82f6, #22c55e, #eab308, #f97316, #ef4444);
+            margin-bottom: 8px;
+        }
+
+        .thermal-labels {
+            display: flex;
+            justify-content: space-between;
+            font-size: 0.75rem;
+            color: #888;
+        }
+
+        #live-indicator {
+            position: absolute;
+            top: 20px;
+            left: 20px;
+            background: rgba(22, 33, 62, 0.95);
+            padding: 8px 16px;
+            border-radius: 20px;
+            font-size: 0.8rem;
+            display: none;
+            align-items: center;
+            gap: 8px;
+        }
+
+        #live-indicator.visible {
+            display: flex;
+        }
+
+        #live-indicator .dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: #22c55e;
+            animation: pulse 2s infinite;
+        }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.4; }
+        }
+
+        #loading p {
+            color: #888;
+        }
+    </style>
+</head>
+<body>
+    <div id="app">
+        <div id="sidebar">
+            <div id="sidebar-header">
+                <h1>Fluxion</h1>
+                <p>Building Energy Model Viewer</p>
+                <button id="load-button">Load Geometry File</button>
+            </div>
+
+            <div id="geometry-info" style="display: none;">
+                <h3>Building Summary</h3>
+                <div class="info-grid">
+                    <div class="info-item">
+                        <div class="info-label">Floor Area</div>
+                        <div class="info-value" id="info-area">--</div>
+                    </div>
+                    <div class="info-item">
+                        <div class="info-label">Levels</div>
+                        <div class="info-value" id="info-levels">--</div>
+                    </div>
+                    <div class="info-item">
+                        <div class="info-label">Zones</div>
+                        <div class="info-value" id="info-zones">--</div>
+                    </div>
+                    <div class="info-item">
+                        <div class="info-label">Spaces</div>
+                        <div class="info-value" id="info-spaces">--</div>
+                    </div>
+                </div>
+            </div>
+
+            <div id="tabs">
+                <button class="tab active" data-tab="zones">Zones</button>
+                <button class="tab" data-tab="levels">Levels</button>
+                <button class="tab" data-tab="controls">Controls</button>
+            </div>
+
+            <div id="tab-content">
+                <div id="zones-list"></div>
+                <div id="levels-list" style="display: none;"></div>
+                <div id="controls-panel" style="display: none;"></div>
+            </div>
+        </div>
+
+        <div id="viewer-container">
+            <div id="canvas-container"></div>
+
+            <div id="viewer-controls">
+                <button class="control-btn active" id="btn-rotate">Rotate</button>
+                <button class="control-btn" id="btn-pan">Pan</button>
+                <button class="control-btn" id="btn-zoom">Zoom</button>
+                <button class="control-btn" id="btn-reset">Reset View</button>
+                <button class="control-btn" id="btn-wireframe">Wireframe</button>
+                <button class="control-btn" id="btn-thermal">Thermal</button>
+            </div>
+
+            <div id="zone-legend"></div>
+
+            <div id="thermal-legend">
+                <h3>Temperature (°C)</h3>
+                <div class="thermal-gradient"></div>
+                <div class="thermal-labels">
+                    <span id="temp-min">15</span>
+                    <span id="temp-max">30</span>
+                </div>
+            </div>
+
+            <div id="live-indicator">
+                <div class="dot"></div>
+                <span>Live</span>
+            </div>
+
+            <div id="loading">
+                <div class="spinner"></div>
+                <p>Load a geometry file to begin</p>
+            </div>
+        </div>
+    </div>
+
+    <script type="importmap">
+    {
+        "imports": {
+            "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+            "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+        }
+    }
+    </script>
+
+    <script type="module">
+        import * as THREE from 'three';
+        import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+
+        const COLORS = [
+            0xe94560, 0x0f3460, 0x16213e, 0x533483,
+            0xe94560, 0x00b894, 0x0984e3, 0xfdcb6e,
+            0x6c5ce7, 0xa29bfe, 0x74b9ff, 0x81ecec
+        ];
+
+        const THERMAL_VERTEX_SHADER = `
+            varying vec3 vNormal;
+            varying vec3 vPosition;
+
+            void main() {
+                vNormal = normalize(normalMatrix * normal);
+                vPosition = position;
+                gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+            }
+        `;
+
+        const THERMAL_FRAGMENT_SHADER = `
+            uniform float uTemperature;
+            uniform float uMinTemp;
+            uniform float uMaxTemp;
+            uniform bool uThermalEnabled;
+
+            varying vec3 vNormal;
+
+            vec3 thermalColormap(float t) {
+                t = clamp(t, 0.0, 1.0);
+
+                vec3 cold = vec3(0.23, 0.51, 0.96);
+                vec3 cool = vec3(0.13, 0.77, 0.37);
+                vec3 neutral = vec3(0.92, 0.75, 0.03);
+                vec3 warm = vec3(0.98, 0.45, 0.09);
+                vec3 hot = vec3(0.94, 0.24, 0.24);
+
+                if (t < 0.25) {
+                    return mix(cold, cool, t * 4.0);
+                } else if (t < 0.5) {
+                    return mix(cool, neutral, (t - 0.25) * 4.0);
+                } else if (t < 0.75) {
+                    return mix(neutral, warm, (t - 0.5) * 4.0);
+                } else {
+                    return mix(warm, hot, (t - 0.75) * 4.0);
+                }
+            }
+
+            void main() {
+                if (!uThermalEnabled) {
+                    discard;
+                }
+
+                float normalizedTemp = (uTemperature - uMinTemp) / (uMaxTemp - uMinTemp);
+                vec3 color = thermalColormap(normalizedTemp);
+
+                float lighting = 0.5 + 0.5 * dot(vNormal, normalize(vec3(1.0, 1.0, 1.0)));
+                color *= lighting;
+
+                gl_FragColor = vec4(color, 0.85);
+            }
+        `;
+
+        const THERMAL_WIREFRAME_FRAGMENT_SHADER = `
+            uniform float uTemperature;
+            uniform float uMinTemp;
+            uniform float uMaxTemp;
+            uniform bool uThermalEnabled;
+
+            varying vec3 vPosition;
+
+            vec3 thermalColormap(float t) {
+                t = clamp(t, 0.0, 1.0);
+
+                vec3 cold = vec3(0.23, 0.51, 0.96);
+                vec3 cool = vec3(0.13, 0.77, 0.37);
+                vec3 neutral = vec3(0.92, 0.75, 0.03);
+                vec3 warm = vec3(0.98, 0.45, 0.09);
+                vec3 hot = vec3(0.94, 0.24, 0.24);
+
+                if (t < 0.25) {
+                    return mix(cold, cool, t * 4.0);
+                } else if (t < 0.5) {
+                    return mix(cool, neutral, (t - 0.25) * 4.0);
+                } else if (t < 0.75) {
+                    return mix(neutral, warm, (t - 0.5) * 4.0);
+                } else {
+                    return mix(warm, hot, (t - 0.75) * 4.0);
+                }
+            }
+
+            void main() {
+                if (!uThermalEnabled) {
+                    discard;
+                }
+
+                float normalizedTemp = (uTemperature - uMinTemp) / (uMaxTemp - uMinTemp);
+                vec3 color = thermalColormap(normalizedTemp);
+
+                gl_FragColor = vec4(color, 1.0);
+            }
+        `;
+
+        let scene, camera, renderer, controls;
+        let geometryData = null;
+        let zoneMeshes = new Map();
+        let selectedZone = null;
+        let thermalEnabled = false;
+        let zoneTemperatures = new Map();
+        let thermalMinTemp = 15.0;
+        let thermalMaxTemp = 30.0;
+        let livetwinSocket = null;
+
+        function init() {
+            const container = document.getElementById('canvas-container');
+
+            scene = new THREE.Scene();
+            scene.background = new THREE.Color(0x0a0a14);
+
+            camera = new THREE.PerspectiveCamera(60, container.clientWidth / container.clientHeight, 0.1, 10000);
+            camera.position.set(30, 30, 30);
+
+            renderer = new THREE.WebGLRenderer({ antialias: true });
+            renderer.setSize(container.clientWidth, container.clientHeight);
+            renderer.setPixelRatio(window.devicePixelRatio);
+            container.appendChild(renderer.domElement);
+
+            controls = new OrbitControls(camera, renderer.domElement);
+            controls.enableDamping = true;
+            controls.dampingFactor = 0.05;
+
+            const ambientLight = new THREE.AmbientLight(0xffffff, 0.6);
+            scene.add(ambientLight);
+
+            const directionalLight = new THREE.DirectionalLight(0xffffff, 0.8);
+            directionalLight.position.set(50, 50, 50);
+            scene.add(directionalLight);
+
+            const gridHelper = new THREE.GridHelper(100, 50, 0x0f3460, 0x0f3460);
+            scene.add(gridHelper);
+
+            window.addEventListener('resize', onWindowResize);
+            animate();
+        }
+
+        function onWindowResize() {
+            const container = document.getElementById('canvas-container');
+            camera.aspect = container.clientWidth / container.clientHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(container.clientWidth, container.clientHeight);
+        }
+
+        function animate() {
+            requestAnimationFrame(animate);
+            controls.update();
+            renderer.render(scene, camera);
+        }
+
+        function clearScene() {
+            const toRemove = [];
+            scene.traverse((obj) => {
+                if (obj.userData.isZoneMesh || obj.userData.isBuildingElement) {
+                    toRemove.push(obj);
+                }
+            });
+            toRemove.forEach((obj) => {
+                if (obj.geometry) obj.geometry.dispose();
+                if (obj.material) obj.material.dispose();
+                scene.remove(obj);
+            });
+            zoneMeshes.clear();
+        }
+
+        function createZoneGeometry(zone, allSurfaces) {
+            const group = new THREE.Group();
+            group.userData.zoneId = zone.id;
+            group.userData.isZoneMesh = true;
+
+            const zoneColor = COLORS[Math.abs(hashCode(zone.id)) % COLORS.length];
+
+            const zoneSurfaces = allSurfaces.filter(s => s.thermal_zone_id === zone.id);
+
+            zoneSurfaces.forEach(surface => {
+                const vertices = surface.vertices.map(v => new THREE.Vector3(v.x, v.z, v.y));
+                const geometry = new THREE.BufferGeometry().setFromPoints(vertices);
+
+                const material = new THREE.MeshPhongMaterial({
+                    color: zoneColor,
+                    transparent: true,
+                    opacity: 0.7,
+                    side: THREE.DoubleSide,
+                    shininess: 30
+                });
+
+                const mesh = new THREE.Mesh(geometry, material);
+                mesh.userData.isBuildingElement = true;
+                mesh.userData.surfaceData = surface;
+                mesh.userData.zoneId = zone.id;
+                mesh.userData.zoneColor = zoneColor;
+                mesh.userData.defaultMaterial = material;
+                group.add(mesh);
+            });
+
+            return group;
+        }
+
+        function hashCode(str) {
+            let hash = 0;
+            for (let i = 0; i < str.length; i++) {
+                hash = ((hash << 5) - hash) + str.charCodeAt(i);
+                hash |= 0;
+            }
+            return hash;
+        }
+
+        function renderGeometry(data) {
+            clearScene();
+            geometryData = data;
+
+            let allSurfaces = [];
+            data.levels.forEach(level => {
+                level.spaces.forEach(space => {
+                    allSurfaces = allSurfaces.concat(space.surfaces);
+                });
+            });
+
+            data.zones.forEach(zone => {
+                const zoneGroup = createZoneGeometry(zone, allSurfaces);
+
+                zoneGroup.children.forEach(child => {
+                    const initialTemp = 22.0;
+                    child.userData.thermalMaterial = createThermalMaterial(zone.id, initialTemp);
+                });
+
+                zoneMeshes.set(zone.id, zoneGroup);
+                scene.add(zoneGroup);
+            });
+
+            fitCameraToScene(data.bounding_box);
+            updateZoneLegend(data.zones);
+            updateUI(data);
+        }
+
+        function fitCameraToScene(boundingBox) {
+            const center = new THREE.Vector3(
+                (boundingBox.min.x + boundingBox.max.x) / 2,
+                (boundingBox.min.z + boundingBox.max.z) / 2,
+                (boundingBox.min.y + boundingBox.max.y) / 2
+            );
+
+            const size = new THREE.Vector3(
+                boundingBox.max.x - boundingBox.min.x,
+                boundingBox.max.z - boundingBox.min.z,
+                boundingBox.max.y - boundingBox.min.y
+            );
+
+            const maxDim = Math.max(size.x, size.y, size.z);
+            const distance = maxDim * 2;
+
+            camera.position.set(center.x + distance, center.y + distance, center.z + distance);
+            controls.target.copy(center);
+            controls.update();
+        }
+
+        function updateZoneLegend(zones) {
+            const legend = document.getElementById('zone-legend');
+            legend.innerHTML = '<h3>Thermal Zones</h3>';
+
+            zones.forEach((zone, index) => {
+                const color = COLORS[Math.abs(hashCode(zone.id)) % COLORS.length];
+                const item = document.createElement('div');
+                item.className = 'legend-item';
+                item.innerHTML = `
+                    <div class="legend-color" style="background: #${color.toString(16).padStart(6, '0')}"></div>
+                    <span>${zone.name}</span>
+                `;
+                item.style.cursor = 'pointer';
+                item.onclick = () => selectZone(zone.id);
+                legend.appendChild(item);
+            });
+        }
+
+        function updateUI(data) {
+            document.getElementById('loading').style.display = 'none';
+            document.getElementById('geometry-info').style.display = 'block';
+
+            document.getElementById('info-area').textContent = `${data.total_floor_area.toFixed(1)} m²`;
+            document.getElementById('info-levels').textContent = data.levels.length;
+            document.getElementById('info-zones').textContent = data.zones.length;
+
+            let numSpaces = 0;
+            data.levels.forEach(level => numSpaces += level.spaces.length);
+            document.getElementById('info-spaces').textContent = numSpaces;
+
+            renderZonesList(data.zones);
+            renderLevelsList(data.levels);
+        }
+
+        function renderZonesList(zones) {
+            const list = document.getElementById('zones-list');
+            list.innerHTML = '';
+
+            zones.forEach(zone => {
+                const item = document.createElement('div');
+                item.className = 'zone-item';
+                item.dataset.zoneId = zone.id;
+                item.innerHTML = `
+                    <div class="zone-name">${zone.name}</div>
+                    <div class="zone-meta">
+                        Area: ${zone.floor_area.toFixed(1)} m² |
+                        Vol: ${zone.volume.toFixed(1)} m³ |
+                        Occ: ${zone.occupancy}
+                    </div>
+                `;
+                item.onclick = () => selectZone(zone.id);
+                list.appendChild(item);
+            });
+        }
+
+        function renderLevelsList(levels) {
+            const list = document.getElementById('levels-list');
+            list.innerHTML = '';
+
+            levels.forEach(level => {
+                const item = document.createElement('div');
+                item.className = 'level-item';
+                item.innerHTML = `
+                    <div class="level-name">${level.name}</div>
+                    <div class="zone-meta">
+                        Elevation: ${level.elevation.toFixed(1)} m |
+                        Height: ${level.height.toFixed(1)} m |
+                        Spaces: ${level.spaces.length}
+                    </div>
+                `;
+                item.onclick = () => highlightLevel(level.id);
+                list.appendChild(item);
+            });
+        }
+
+        const DEFAULT_PARAMS = {
+            heating_setpoint: 20.0,
+            cooling_setpoint: 26.0,
+            lighting_load: 12.0,
+            equipment_load: 15.0,
+            occupancy: 0.1,
+            ventilation_rate: 0.5,
+            wall_u_value: 0.5,
+            roof_u_value: 0.3,
+        };
+
+        let currentParams = { ...DEFAULT_PARAMS };
+
+        function renderControlsPanel() {
+            const panel = document.getElementById('controls-panel');
+            panel.innerHTML = `
+                <div class="control-group">
+                    <h3>Temperature Setpoints</h3>
+                    <div class="slider-item">
+                        <div class="slider-header">
+                            <span class="slider-label">Heating Setpoint</span>
+                            <span class="slider-value" id="val-heating">${currentParams.heating_setpoint.toFixed(1)}<span class="slider-unit">°C</span></span>
+                        </div>
+                        <input type="range" id="slider-heating" min="10" max="25" step="0.5" value="${currentParams.heating_setpoint}">
+                    </div>
+                    <div class="slider-item">
+                        <div class="slider-header">
+                            <span class="slider-label">Cooling Setpoint</span>
+                            <span class="slider-value" id="val-cooling">${currentParams.cooling_setpoint.toFixed(1)}<span class="slider-unit">°C</span></span>
+                        </div>
+                        <input type="range" id="slider-cooling" min="20" max="35" step="0.5" value="${currentParams.cooling_setpoint}">
+                    </div>
+                </div>
+                <div class="control-group">
+                    <h3>Internal Loads</h3>
+                    <div class="slider-item">
+                        <div class="slider-header">
+                            <span class="slider-label">Lighting Load</span>
+                            <span class="slider-value" id="val-lighting">${currentParams.lighting_load.toFixed(1)}<span class="slider-unit">W/m²</span></span>
+                        </div>
+                        <input type="range" id="slider-lighting" min="0" max="30" step="0.5" value="${currentParams.lighting_load}">
+                    </div>
+                    <div class="slider-item">
+                        <div class="slider-header">
+                            <span class="slider-label">Equipment Load</span>
+                            <span class="slider-value" id="val-equipment">${currentParams.equipment_load.toFixed(1)}<span class="slider-unit">W/m²</span></span>
+                        </div>
+                        <input type="range" id="slider-equipment" min="0" max="30" step="0.5" value="${currentParams.equipment_load}">
+                    </div>
+                    <div class="slider-item">
+                        <div class="slider-header">
+                            <span class="slider-label">Occupancy</span>
+                            <span class="slider-value" id="val-occupancy">${currentParams.occupancy.toFixed(2)}<span class="slider-unit">pers/m²</span></span>
+                        </div>
+                        <input type="range" id="slider-occupancy" min="0" max="1" step="0.01" value="${currentParams.occupancy}">
+                    </div>
+                </div>
+                <div class="control-group">
+                    <h3>Ventilation</h3>
+                    <div class="slider-item">
+                        <div class="slider-header">
+                            <span class="slider-label">Ventilation Rate</span>
+                            <span class="slider-value" id="val-ventilation">${currentParams.ventilation_rate.toFixed(2)}<span class="slider-unit">ach</span></span>
+                        </div>
+                        <input type="range" id="slider-ventilation" min="0" max="5" step="0.1" value="${currentParams.ventilation_rate}">
+                    </div>
+                </div>
+                <div class="control-group">
+                    <h3>Envelope</h3>
+                    <div class="slider-item">
+                        <div class="slider-header">
+                            <span class="slider-label">Wall U-Value</span>
+                            <span class="slider-value" id="val-wall-u">${currentParams.wall_u_value.toFixed(2)}<span class="slider-unit">W/m²K</span></span>
+                        </div>
+                        <input type="range" id="slider-wall-u" min="0.1" max="2.0" step="0.05" value="${currentParams.wall_u_value}">
+                    </div>
+                    <div class="slider-item">
+                        <div class="slider-header">
+                            <span class="slider-label">Roof U-Value</span>
+                            <span class="slider-value" id="val-roof-u">${currentParams.roof_u_value.toFixed(2)}<span class="slider-unit">W/m²K</span></span>
+                        </div>
+                        <input type="range" id="slider-roof-u" min="0.1" max="2.0" step="0.05" value="${currentParams.roof_u_value}">
+                    </div>
+                </div>
+                <div class="control-actions">
+                    <button class="apply-btn" id="btn-apply-params">Apply Parameters</button>
+                    <div id="param-status"></div>
+                </div>
+            `;
+
+            const sliders = [
+                { id: 'slider-heating', key: 'heating_setpoint', display: 'val-heating', suffix: '°C' },
+                { id: 'slider-cooling', key: 'cooling_setpoint', display: 'val-cooling', suffix: '°C' },
+                { id: 'slider-lighting', key: 'lighting_load', display: 'val-lighting', suffix: 'W/m²' },
+                { id: 'slider-equipment', key: 'equipment_load', display: 'val-equipment', suffix: 'W/m²' },
+                { id: 'slider-occupancy', key: 'occupancy', display: 'val-occupancy', suffix: 'pers/m²' },
+                { id: 'slider-ventilation', key: 'ventilation_rate', display: 'val-ventilation', suffix: 'ach' },
+                { id: 'slider-wall-u', key: 'wall_u_value', display: 'val-wall-u', suffix: 'W/m²K' },
+                { id: 'slider-roof-u', key: 'roof_u_value', display: 'val-roof-u', suffix: 'W/m²K' },
+            ];
+
+            sliders.forEach(({ id, key, display, suffix }) => {
+                const slider = document.getElementById(id);
+                const valueDisplay = document.getElementById(display);
+                if (slider && valueDisplay) {
+                    slider.addEventListener('input', () => {
+                        const val = parseFloat(slider.value);
+                        currentParams[key] = val;
+                        const decimals = key.includes('load') || key.includes('value') ? 1 : 2;
+                        valueDisplay.innerHTML = `${val.toFixed(decimals)}<span class="slider-unit">${suffix}</span>`;
+                    });
+                }
+            });
+
+            document.getElementById('btn-apply-params').addEventListener('click', async () => {
+                const btn = document.getElementById('btn-apply-params');
+                const status = document.getElementById('param-status');
+                btn.disabled = true;
+                status.textContent = 'Applying...';
+                status.className = '';
+
+                try {
+                    const { invoke } = await import('@tauri-apps/api/core');
+                    await invoke('update_simulation_parameters', { params: currentParams });
+                    status.textContent = 'Parameters applied successfully';
+                    status.className = 'success';
+                } catch (err) {
+                    console.error('Failed to apply parameters:', err);
+                    status.textContent = `Error: ${err}`;
+                    status.className = 'error';
+                } finally {
+                    btn.disabled = false;
+                }
+            });
+        }
+
+        function selectZone(zoneId) {
+            document.querySelectorAll('.zone-item').forEach(el => {
+                el.classList.toggle('selected', el.dataset.zoneId === zoneId);
+            });
+
+            if (selectedZone) {
+                const prevMesh = zoneMeshes.get(selectedZone);
+                if (prevMesh) {
+                    prevMesh.children.forEach(child => {
+                        if (child.material) {
+                            child.material.opacity = 0.7;
+                        }
+                    });
+                }
+            }
+
+            selectedZone = zoneId;
+
+            if (zoneId) {
+                const mesh = zoneMeshes.get(zoneId);
+                if (mesh) {
+                    mesh.children.forEach(child => {
+                        if (child.material) {
+                            child.material.opacity = 1.0;
+                        }
+                    });
+                }
+            }
+        }
+
+        function highlightLevel(levelId) {
+            zoneMeshes.forEach((group, zoneId) => {
+                group.children.forEach(child => {
+                    if (child.userData.surfaceData) {
+                        const surfaceLevelId = child.userData.surfaceData.level_id;
+                        if (child.material) {
+                            child.material.opacity = surfaceLevelId === levelId ? 1.0 : 0.3;
+                        }
+                    }
+                });
+            });
+        }
+
+        function resetView() {
+            if (geometryData) {
+                fitCameraToScene(geometryData.bounding_box);
+            } else {
+                camera.position.set(30, 30, 30);
+                controls.target.set(0, 0, 0);
+                controls.update();
+            }
+            selectedZone = null;
+            document.querySelectorAll('.zone-item').forEach(el => el.classList.remove('selected'));
+        }
+
+        function toggleWireframe() {
+            const btn = document.getElementById('btn-wireframe');
+            btn.classList.toggle('active');
+
+            zoneMeshes.forEach(group => {
+                group.children.forEach(child => {
+                    if (child.material && child.userData.defaultMaterial) {
+                        if (btn.classList.contains('active')) {
+                            child.material.wireframe = true;
+                        } else {
+                            child.material.wireframe = child.userData.defaultMaterial.wireframe || false;
+                        }
+                    }
+                });
+            });
+        }
+
+        function toggleThermal() {
+            const btn = document.getElementById('btn-thermal');
+            thermalEnabled = !thermalEnabled;
+            btn.classList.toggle('active', thermalEnabled);
+
+            document.getElementById('zone-legend').style.display = thermalEnabled ? 'none' : 'block';
+            document.getElementById('thermal-legend').classList.toggle('visible', thermalEnabled);
+
+            updateThermalView();
+        }
+
+        function updateThermalView() {
+            zoneMeshes.forEach((group, zoneId) => {
+                const temperature = zoneTemperatures.get(zoneId);
+                group.children.forEach(child => {
+                    if (child.material && child.userData.defaultMaterial) {
+                        if (thermalEnabled) {
+                            const temp = temperature !== undefined ? temperature : (thermalMinTemp + thermalMaxTemp) / 2;
+                            child.userData.thermalMaterial.uniforms.uTemperature.value = temp;
+                            child.userData.thermalMaterial.uniforms.uThermalEnabled.value = true;
+                            child.material = child.userData.thermalMaterial;
+                        } else {
+                            child.material = child.userData.defaultMaterial;
+                        }
+                    }
+                });
+            });
+        }
+
+        function createThermalMaterial(zoneId, initialTemp) {
+            const material = new THREE.ShaderMaterial({
+                uniforms: {
+                    uTemperature: { value: initialTemp },
+                    uMinTemp: { value: thermalMinTemp },
+                    uMaxTemp: { value: thermalMaxTemp },
+                    uThermalEnabled: { value: thermalEnabled }
+                },
+                vertexShader: THERMAL_VERTEX_SHADER,
+                fragmentShader: THERMAL_FRAGMENT_SHADER,
+                transparent: true,
+                side: THREE.DoubleSide
+            });
+            return material;
+        }
+
+        function updateZoneTemperatures(temperatures) {
+            temperatures.forEach((data, zoneId) => {
+                if (typeof data === 'number') {
+                    zoneTemperatures.set(zoneId, data);
+                } else if (data.temperature !== undefined) {
+                    zoneTemperatures.set(zoneId, data.temperature);
+                }
+
+                if (zoneMeshes.has(zoneId)) {
+                    const group = zoneMeshes.get(zoneId);
+                    const temp = zoneTemperatures.get(zoneId);
+                    group.children.forEach(child => {
+                        if (child.userData.thermalMaterial) {
+                            child.userData.thermalMaterial.uniforms.uTemperature.value = temp;
+                        }
+                    });
+                }
+            });
+
+            const temps = Array.from(zoneTemperatures.values());
+            if (temps.length > 0) {
+                thermalMinTemp = Math.min(...temps);
+                thermalMaxTemp = Math.max(...temps);
+                document.getElementById('temp-min').textContent = thermalMinTemp.toFixed(1);
+                document.getElementById('temp-max').textContent = thermalMaxTemp.toFixed(1);
+            }
+        }
+
+        function connectLiveTwin(url = 'ws://localhost:8765/livetwin') {
+            try {
+                livetwinSocket = new WebSocket(url);
+
+                livetwinSocket.onopen = () => {
+                    console.log('LiveTwin connected');
+                    document.getElementById('live-indicator').classList.add('visible');
+                };
+
+                livetwinSocket.onmessage = (event) => {
+                    try {
+                        const data = JSON.parse(event.data);
+                        if (data.zone_temperatures) {
+                            updateZoneTemperatures(data.zone_temperatures);
+                        } else if (data.type === 'thermal_update' && data.temperatures) {
+                            const tempMap = new Map();
+                            data.temperatures.forEach(t => tempMap.set(t.zone_id, t.temperature));
+                            updateZoneTemperatures(tempMap);
+                        }
+                    } catch (e) {
+                        console.warn('Failed to parse LiveTwin message:', e);
+                    }
+                };
+
+                livetwinSocket.onclose = () => {
+                    console.log('LiveTwin disconnected');
+                    document.getElementById('live-indicator').classList.remove('visible');
+                    livetwinSocket = null;
+                };
+
+                livetwinSocket.onerror = (err) => {
+                    console.warn('LiveTwin connection error:', err);
+                };
+            } catch (e) {
+                console.warn('Failed to connect to LiveTwin:', e);
+            }
+        }
+
+        function disconnectLiveTwin() {
+            if (livetwinSocket) {
+                livetwinSocket.close();
+                livetwinSocket = null;
+            }
+            document.getElementById('live-indicator').classList.remove('visible');
+        }
+
+        document.querySelectorAll('.tab').forEach(tab => {
+            tab.addEventListener('click', () => {
+                document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+                tab.classList.add('active');
+
+                const tabName = tab.dataset.tab;
+                document.getElementById('zones-list').style.display = tabName === 'zones' ? 'block' : 'none';
+                document.getElementById('levels-list').style.display = tabName === 'levels' ? 'block' : 'none';
+                document.getElementById('controls-panel').style.display = tabName === 'controls' ? 'block' : 'none';
+                if (tabName === 'controls') {
+                    renderControlsPanel();
+                }
+            });
+        });
+
+        document.getElementById('btn-reset').addEventListener('click', resetView);
+        document.getElementById('btn-wireframe').addEventListener('click', toggleWireframe);
+        document.getElementById('btn-thermal').addEventListener('click', toggleThermal);
+
+        document.getElementById('load-button').addEventListener('click', async () => {
+            try {
+                const { open } = await import('@tauri-apps/plugin-dialog');
+                const { invoke } = await import('@tauri-apps/api/core');
+
+                const selected = await open({
+                    multiple: false,
+                    filters: [{
+                        name: 'Geometry Files',
+                        extensions: ['xml', 'gbxml', 'ifc', 'json']
+                    }]
+                });
+
+                if (selected) {
+                    document.getElementById('loading').style.display = 'block';
+                    document.getElementById('loading').querySelector('p').textContent = 'Loading geometry...';
+
+                    const data = await invoke('load_geometry_file', { filePath: selected });
+                    renderGeometry(data);
+                }
+            } catch (err) {
+                console.error('Failed to load geometry:', err);
+                document.getElementById('loading').querySelector('p').textContent = 'Error loading file';
+            }
+        });
+
+        init();
+    </script>
+</body>
+</html>
