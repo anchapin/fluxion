@@ -1883,9 +1883,12 @@ impl ThermalModel<VectorField> {
         // gauge-solver code path in step_dispatcher.
         #[cfg(feature = "gauge-solver")]
         if is_9r4c_model {
-            use super::thermal_model_data::{GaugeZoneSolver, SurfaceType, LayerSpec, WallSpec};
+            use super::thermal_model_data::{GaugeZoneSolver, LayerSpec, SurfaceType, WallSpec};
 
-            let geom = spec.geometry.first().expect("High-mass case must have geometry");
+            let geom = spec
+                .geometry
+                .first()
+                .expect("High-mass case must have geometry");
             let floor_area = geom.floor_area();
             let ceiling_height = geom.height;
 
@@ -1897,7 +1900,15 @@ impl ThermalModel<VectorField> {
                 .layers
                 .iter()
                 .rev()
-                .map(|l| LayerSpec::new(&l.name, l.thickness, l.conductivity, l.density, l.specific_heat))
+                .map(|l| {
+                    LayerSpec::new(
+                        &l.name,
+                        l.thickness,
+                        l.conductivity,
+                        l.density,
+                        l.specific_heat,
+                    )
+                })
                 .collect();
             let wall_spec = WallSpec::multi_layer("wall", wall_layers);
 
@@ -1907,7 +1918,15 @@ impl ThermalModel<VectorField> {
                 .layers
                 .iter()
                 .rev()
-                .map(|l| LayerSpec::new(&l.name, l.thickness, l.conductivity, l.density, l.specific_heat))
+                .map(|l| {
+                    LayerSpec::new(
+                        &l.name,
+                        l.thickness,
+                        l.conductivity,
+                        l.density,
+                        l.specific_heat,
+                    )
+                })
                 .collect();
             let roof_spec = WallSpec::multi_layer("roof", roof_layers);
 
@@ -1917,7 +1936,15 @@ impl ThermalModel<VectorField> {
                 .layers
                 .iter()
                 .rev()
-                .map(|l| LayerSpec::new(&l.name, l.thickness, l.conductivity, l.density, l.specific_heat))
+                .map(|l| {
+                    LayerSpec::new(
+                        &l.name,
+                        l.thickness,
+                        l.conductivity,
+                        l.density,
+                        l.specific_heat,
+                    )
+                })
                 .collect();
             let floor_spec = WallSpec::multi_layer("floor", floor_layers);
 
