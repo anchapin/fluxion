@@ -1,10 +1,11 @@
 use napi::bindgen_prelude::Float64Array;
+use std::mem::ManuallyDrop;
 
 pub(crate) fn into_zero_copy_float64_array(mut data: Vec<f64>) -> Float64Array {
     let pointer = data.as_mut_ptr();
     let length = data.len();
     let capacity = data.capacity();
-    std::mem::forget(data);
+    let data = ManuallyDrop::new(data);
 
     unsafe {
         Float64Array::with_external_data(pointer, length, move |pointer, _| {
