@@ -1883,8 +1883,7 @@ impl ThermalModel<VectorField> {
         // gauge-solver code path in step_dispatcher.
         #[cfg(feature = "gauge-solver")]
         if is_9r4c_model {
-            use crate::physics::gauge_zone_solver::{GaugeZoneSolver, SurfaceType};
-            use crate::physics::wall_spec::{LayerSpec, WallSpec};
+            use super::thermal_model_data::{GaugeZoneSolver, SurfaceType, LayerSpec, WallSpec};
 
             let geom = spec.geometry.first().expect("High-mass case must have geometry");
             let floor_area = geom.floor_area();

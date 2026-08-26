@@ -33,7 +33,7 @@ pub use setpoint_state::SetpointState;
 pub use solar_state::SolarState;
 
 #[cfg(feature = "gauge-solver")]
-pub use crate::physics::gauge_zone_solver::GaugeZoneSolver;
+pub use crate::physics::gauge_zone_solver::{GaugeZoneSolver, SurfaceType};
 pub use crate::physics::{
     cta::{ContinuousTensor, VectorField},
     ctf_coefficients::CTFCoefficients,
@@ -42,6 +42,7 @@ pub use crate::physics::{
     fd_solver::ImplicitFDSolver,
     multi_node_solver::MultiNodeSolver,
     solver_manager::SolverManager,
+    wall_spec::{LayerSpec, WallSpec},
 };
 
 /// Thin wrapper composing the 6 per-domain sub-structs.
