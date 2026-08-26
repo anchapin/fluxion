@@ -2944,7 +2944,7 @@ pub fn verify_onnx_signature(model_path: &Path) -> Result<(), String> {
             None => {
                 return Err(format!(
                     "no SHA-256 manifest at {} and {ENV_ONNX_MODEL_SIGNATURE} unset; \
-                     integrity verification impossible (fail-closed, Issue #3161). \
+                     integrity verification impossible (fail-closed, Issue #3209). \
                      Ship a <model>.sha256 alongside the .onnx file or set \
                      {ENV_ONNX_MODEL_SIGNATURE}=<hex-digest> for rotated models.",
                     manifest_path_for(model_path).display()
@@ -3317,10 +3317,10 @@ mod tests {
             None => std::env::remove_var(ENV_ONNX_MODEL_SIGNATURE),
         }
         let err =
-            res.expect_err("missing manifest + no env var must fail (fail-closed, Issue #3161)");
+            res.expect_err("missing manifest + no env var must fail (fail-closed, Issue #3209)");
         assert!(
-            err.contains("fail-closed") || err.contains("Issue #3161"),
-            "error must reference Issue #3161: {err}"
+            err.contains("fail-closed") || err.contains("Issue #3209"),
+            "error must reference Issue #3209: {err}"
         );
     }
 
