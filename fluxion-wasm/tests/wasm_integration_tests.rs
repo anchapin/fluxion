@@ -22,6 +22,7 @@ fn fluid_simulation_constructor_default() {
         initial_temps: None,
         heating_setpoint: 20.0,
         cooling_setpoint: 24.0,
+        ..Default::default()
     };
     let config_json = serde_json::to_string(&config).unwrap();
     let sim = FluidSimulation::new(&config_json).unwrap();
@@ -40,6 +41,7 @@ fn fluid_simulation_constructor_with_initial_temps() {
         initial_temps: Some(vec![18.0, 25.0]),
         heating_setpoint: 20.0,
         cooling_setpoint: 24.0,
+        ..Default::default()
     };
     let config_json = serde_json::to_string(&config).unwrap();
     let sim = FluidSimulation::new(&config_json).unwrap();
@@ -382,6 +384,7 @@ fn wasm_builder_round_trip() {
         initial_temps: Some(vec![18.0, 21.0, 24.0, 27.0]),
         heating_setpoint: 19.5,
         cooling_setpoint: 25.5,
+        ..Default::default()
     };
     let config_json = serde_json::to_string(&config).unwrap();
     let sim = FluidSimulation::new(&config_json).unwrap();
