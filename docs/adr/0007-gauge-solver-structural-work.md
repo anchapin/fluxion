@@ -69,7 +69,7 @@ and the per-case diagnostics throughout §LIMIT-05, §LIMIT-08, and §SOLAR-02.
 | **LIMIT-16** | #3059 | 610/630/650 peak cooling | 5/5 OVER signature; `dt/τ ≈ 3.6`; same root cause as LIMIT-05 |
 | **LIMIT-17** | #3058 | 950FF min free-float | Night-vent `h_ve_night` overwhelms F_sky correction by ~8× |
 | **LIMIT-18** | #3104 | 960 Blind `heating_max` | Case 960 Blind `heating_max = 2.45 MWh > 1.0 MWh AC4` upper bound |
-| **LIMIT-20** | #3102 | Case 195 high-mass walls | `#[ignore]`-quarantined `high_mass_energy.abs() > 0.0` assertion |
+| **LIMIT-20** | #3218 | Case 195 high-mass walls | Threshold updated `pass_rate >= 75.0` per Issue #3218 |
 
 All seven LIMIT-* issues share the same root cause: a single lumped thermal-mass node at `dt/τ ≈ 3.6` cannot resolve multi-mode thermal coupling. GaugeSolver eliminates this by treating solar as geometric curvature rather than per-timestep energy injection.
 
