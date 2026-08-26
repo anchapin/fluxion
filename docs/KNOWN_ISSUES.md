@@ -7,7 +7,11 @@ Related to: validation_report.md (results), FIX.md (archived as `docs/investigat
 Status: Post-#1323 baseline refresh — pre-#1323 numbers are obsolete per ARCHITECTURE.md §Current Module Status.
 Action: Check this document before attributing validation failures to new issues; many may be known.
 
-*Last Updated: 2026-08-18 (LIMIT-20 #3102 added — Solid conduction variants integration test, sibling of LIMIT-11 / #3064; LIMIT-19 #3103 added — InvariantChecker artificial_gain test; LIMIT-18 #3104 added — Case 960 Blind heating_max structural gap; LIMIT-16 #3059 added for Cases 610/630/650 peak cooling structural gap; LIMIT-17 #3058 added — Case 950FF night-vent mass coupling; LIMIT-14 #3061 merged with LIMIT-15 #3060 from #3096)*
+**Quarantine Registry**: All `#[ignore]`-quarantined tests are catalogued in `tests/QUARANTINE.md`,
+including their blocking issues, un-ignore criteria, and status. The QUARANTINE.md registry is the
+canonical source for tracking when quarantined tests can be un-ignored (per Issue #3211).
+
+*Last Updated: 2026-08-26 (QUARANTINE.md cross-reference added — Issue #3211)*
 
 **LIMIT-14 added (Issue #3061):** After PR #3052's partial Case 960 inter-zone fix, raw annual cooling remains 0.63 MWh versus the 1.55–2.78 MWh reference band and peak heating remains 1.17 kW versus 2.0–8.0 kW. The 5R1C/9R4C air-mass distribution cannot accumulate enough back-zone cooling demand at the 27 °C setpoint through coupling to the free-floating sunspace; compliant closure is blocked on the GaugeSolver production-path work coordinated by #3059, not a sunspace HVAC control or gain-split tuning.
 
