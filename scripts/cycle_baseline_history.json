@@ -180,7 +180,7 @@
         "sim_to_physics": 79
       },
       "total": 299,
-      "edge_signature": "1bbc949de967c7cc",
+      "edge_signature": "1bbc949de967c7cc1d80594634dc995338128f3304f3dff9221e1d0c9f30ec3b",
       "reason": "PR #3207 (issue #3152) wires the gauge-solver to the production conduction backend for high-mass buildings (cfg gauge-solver feature gate). The edge_signature changed because thermal_model_data/mod.rs now re-exports SurfaceType (from crate::physics::gauge_zone_solver) and LayerSpec/WallSpec (from crate::physics::wall_spec) under the #[cfg(feature = gauge-solver)] gate, and thermal_model_core.rs imports them via use super::thermal_model_data inside a cfg-gated if block. The edge COUNT (total=299, sim_to_physics=79) is unchanged; only the edge identities in the module dependency graph changed due to re-export routing. This is a net-zero swap, not a new cycle edge."
     }
   ]
