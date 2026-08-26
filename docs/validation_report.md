@@ -1,5 +1,7 @@
 # ASHRAE Standard 140 Validation Results
 
+> **DEPRECATED** — SUPERSEDED by ASHRAE140_RESULTS.md — this file is obsolete. All citations should point to ASHRAE140_RESULTS.md.
+
 ASHRAE 140 validation results snapshot — 64 test cases comparing Fluxion to EnergyPlus reference.
 Engineering team and CI — check this for pass/fail status; updated per PR and on merge to main.
 Covers: 600/900 series baseline and high-mass cases, peak heating/cooling, annual energy metrics.
