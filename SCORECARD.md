@@ -92,6 +92,7 @@ Required branch-protection checks (`release_gates.yaml` → `ci.required_checks`
 | MSRV Check (Issue #2934) | #2934 |
 | Crate Size Gate (Issue #2930) | #2930 |
 | fluxion-grid Integration Tests (GH) | — |
+| h_tr_em Regression Gate (LIMIT-13) | — |
 
 - **Live status** is intentionally not baked in here (it is non-deterministic and would break scorecard diff stability). Run:
 
