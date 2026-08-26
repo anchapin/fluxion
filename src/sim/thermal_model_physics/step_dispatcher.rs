@@ -57,12 +57,11 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
             self.calc_analytical_loads(timestep, true, dt_seconds);
         }
 
-        // Issue #2304 / #2686: experimental GaugeZoneSolver routing. This branch
-        // is feature-gated AND always dead — `gauge_zone_solver` is initialized
-        // to `None` (thermal_model_core.rs) and no path sets it to `Some`, so
-        // even under `--features gauge-solver` control always falls through to
-        // the 5R1C/9R4C dispatch below. Preserved as WIP for whoever finishes
-        // the zone-level gauge integration (#2304).
+        // Issue #3152: GaugeZoneSolver routing for high-mass (9R4C) buildings.
+        // When the `gauge-solver` feature is enabled and the building uses the
+        // 9R4C model (high-mass construction), `gauge_zone_solver` is initialized
+        // in `thermal_model_core.rs::prepare_model`. This block then routes to it
+        // for the conduction solve, producing HVAC energy for Case 900 series.
         #[cfg(feature = "gauge-solver")]
         if let Some(ref mut gauge_solver) = self.0.conduction.backend.gauge_zone_solver {
             // Extract parameters for GaugeZoneSolver from ThermalModel state

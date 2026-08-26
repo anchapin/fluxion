@@ -1878,6 +1878,71 @@ impl ThermalModel<VectorField> {
             model.conduction.backend.multi_node_solvers = solvers;
         }
 
+        // Issue #3152: Initialize gauge_zone_solver for high-mass buildings when
+        // the gauge-solver feature is enabled. This enables the experimental
+        // gauge-solver code path in step_dispatcher.
+        #[cfg(feature = "gauge-solver")]
+        if is_9r4c_model {
+            use crate::physics::gauge_zone_solver::{GaugeZoneSolver, SurfaceType};
+            use crate::physics::wall_spec::{LayerSpec, WallSpec};
+
+            let geom = spec.geometry.first().expect("High-mass case must have geometry");
+            let floor_area = geom.floor_area();
+            let ceiling_height = geom.height;
+
+            let mut gauge_solver = GaugeZoneSolver::new(floor_area, ceiling_height);
+
+            let wall_layers: Vec<LayerSpec> = spec
+                .construction
+                .wall
+                .layers
+                .iter()
+                .rev()
+                .map(|l| LayerSpec::new(&l.name, l.thickness, l.conductivity, l.density, l.specific_heat))
+                .collect();
+            let wall_spec = WallSpec::multi_layer("wall", wall_layers);
+
+            let roof_layers: Vec<LayerSpec> = spec
+                .construction
+                .roof
+                .layers
+                .iter()
+                .rev()
+                .map(|l| LayerSpec::new(&l.name, l.thickness, l.conductivity, l.density, l.specific_heat))
+                .collect();
+            let roof_spec = WallSpec::multi_layer("roof", roof_layers);
+
+            let floor_layers: Vec<LayerSpec> = spec
+                .construction
+                .floor
+                .layers
+                .iter()
+                .rev()
+                .map(|l| LayerSpec::new(&l.name, l.thickness, l.conductivity, l.density, l.specific_heat))
+                .collect();
+            let floor_spec = WallSpec::multi_layer("floor", floor_layers);
+
+            let total_wall_area = geom.wall_area();
+            let window_area = spec.total_window_area();
+            let opaque_wall_area = (total_wall_area - window_area).max(0.0);
+
+            gauge_solver
+                .add_opaque_surface(&wall_spec, opaque_wall_area, SurfaceType::Wall, 180.0, 90.0)
+                .expect("Failed to add wall surface to gauge solver");
+            gauge_solver
+                .add_opaque_surface(&roof_spec, floor_area, SurfaceType::Roof, 180.0, 0.0)
+                .expect("Failed to add roof surface to gauge solver");
+            gauge_solver
+                .add_opaque_surface(&floor_spec, floor_area, SurfaceType::Floor, 0.0, 180.0)
+                .expect("Failed to add floor surface to gauge solver");
+
+            gauge_solver
+                .initialize()
+                .expect("Failed to initialize gauge solver");
+
+            model.conduction.backend.gauge_zone_solver = Some(gauge_solver);
+        }
+
         model.mass.h_tr_me = VectorField::new(h_tr_me_vec);
 
         model.mass.thermal_capacitance = VectorField::new(thermal_cap_vec);
