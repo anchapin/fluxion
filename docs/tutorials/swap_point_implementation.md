@@ -677,9 +677,9 @@ assert_eq!(vent.get_ach(12, 20.0, 22.0, 2.0, 100.0), 0.5);
 
 ## See Also
 
-- [`src/physics/solver_trait.rs`](../src/physics/solver_trait.rs) — `HeatConductionSolver` trait and `SolverError`
-- [`src/sim/ventilation.rs`](../src/sim/ventilation.rs) — `VentilationSchedule` trait and ACH utilities
-- [`src/sim/thermal_model.rs`](../src/sim/thermal_model.rs) — `ThermalModelTrait`, `HybridThermalModel`, and `HybridRouting`
-- [`src/physics/five_r1c_solver.rs`](../src/physics/five_r1c_solver.rs) — Reference `HeatConductionSolver` implementation
+- [`src/physics/solver_trait.rs`](../../src/physics/solver_trait.rs) — `HeatConductionSolver` trait and `SolverError`
+- [`src/sim/ventilation.rs`](../../src/sim/ventilation.rs) — `VentilationSchedule` trait and ACH utilities
+- [`src/sim/thermal_model.rs`](../../src/sim/thermal_model.rs) — `ThermalModelTrait`, `HybridThermalModel`, and `HybridRouting`
+- [`src/physics/five_r1c_solver.rs`](../../src/physics/five_r1c_solver.rs) — Reference `HeatConductionSolver` implementation
 - [`docs/ARCHITECTURE.md`](../ARCHITECTURE.md) — Architecture overview and swap-point contracts
 - [`docs/ASHRAE140_RESULTS.md`](../ASHRAE140_RESULTS.md) — Validation methodology and reference values
