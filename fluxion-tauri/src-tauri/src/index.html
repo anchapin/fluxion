@@ -368,71 +368,6 @@
             to { transform: rotate(360deg); }
         }
 
-        #thermal-legend {
-            position: absolute;
-            top: 20px;
-            right: 20px;
-            background: rgba(22, 33, 62, 0.95);
-            padding: 16px;
-            border-radius: 8px;
-            min-width: 200px;
-            display: none;
-        }
-
-        #thermal-legend.visible {
-            display: block;
-        }
-
-        #thermal-legend h3 {
-            font-size: 0.9rem;
-            color: #e94560;
-            margin-bottom: 12px;
-        }
-
-        .thermal-gradient {
-            height: 20px;
-            border-radius: 4px;
-            background: linear-gradient(to right, #3b82f6, #22c55e, #eab308, #f97316, #ef4444);
-            margin-bottom: 8px;
-        }
-
-        .thermal-labels {
-            display: flex;
-            justify-content: space-between;
-            font-size: 0.75rem;
-            color: #888;
-        }
-
-        #live-indicator {
-            position: absolute;
-            top: 20px;
-            left: 20px;
-            background: rgba(22, 33, 62, 0.95);
-            padding: 8px 16px;
-            border-radius: 20px;
-            font-size: 0.8rem;
-            display: none;
-            align-items: center;
-            gap: 8px;
-        }
-
-        #live-indicator.visible {
-            display: flex;
-        }
-
-        #live-indicator .dot {
-            width: 8px;
-            height: 8px;
-            border-radius: 50%;
-            background: #22c55e;
-            animation: pulse 2s infinite;
-        }
-
-        @keyframes pulse {
-            0%, 100% { opacity: 1; }
-            50% { opacity: 0.4; }
-        }
-
         #loading p {
             color: #888;
         }
@@ -491,24 +426,9 @@
                 <button class="control-btn" id="btn-zoom">Zoom</button>
                 <button class="control-btn" id="btn-reset">Reset View</button>
                 <button class="control-btn" id="btn-wireframe">Wireframe</button>
-                <button class="control-btn" id="btn-thermal">Thermal</button>
             </div>
 
             <div id="zone-legend"></div>
-
-            <div id="thermal-legend">
-                <h3>Temperature (°C)</h3>
-                <div class="thermal-gradient"></div>
-                <div class="thermal-labels">
-                    <span id="temp-min">15</span>
-                    <span id="temp-max">30</span>
-                </div>
-            </div>
-
-            <div id="live-indicator">
-                <div class="dot"></div>
-                <span>Live</span>
-            </div>
 
             <div id="loading">
                 <div class="spinner"></div>
@@ -536,109 +456,10 @@
             0x6c5ce7, 0xa29bfe, 0x74b9ff, 0x81ecec
         ];
 
-        const THERMAL_VERTEX_SHADER = `
-            varying vec3 vNormal;
-            varying vec3 vPosition;
-
-            void main() {
-                vNormal = normalize(normalMatrix * normal);
-                vPosition = position;
-                gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
-            }
-        `;
-
-        const THERMAL_FRAGMENT_SHADER = `
-            uniform float uTemperature;
-            uniform float uMinTemp;
-            uniform float uMaxTemp;
-            uniform bool uThermalEnabled;
-
-            varying vec3 vNormal;
-
-            vec3 thermalColormap(float t) {
-                t = clamp(t, 0.0, 1.0);
-
-                vec3 cold = vec3(0.23, 0.51, 0.96);
-                vec3 cool = vec3(0.13, 0.77, 0.37);
-                vec3 neutral = vec3(0.92, 0.75, 0.03);
-                vec3 warm = vec3(0.98, 0.45, 0.09);
-                vec3 hot = vec3(0.94, 0.24, 0.24);
-
-                if (t < 0.25) {
-                    return mix(cold, cool, t * 4.0);
-                } else if (t < 0.5) {
-                    return mix(cool, neutral, (t - 0.25) * 4.0);
-                } else if (t < 0.75) {
-                    return mix(neutral, warm, (t - 0.5) * 4.0);
-                } else {
-                    return mix(warm, hot, (t - 0.75) * 4.0);
-                }
-            }
-
-            void main() {
-                if (!uThermalEnabled) {
-                    discard;
-                }
-
-                float normalizedTemp = (uTemperature - uMinTemp) / (uMaxTemp - uMinTemp);
-                vec3 color = thermalColormap(normalizedTemp);
-
-                float lighting = 0.5 + 0.5 * dot(vNormal, normalize(vec3(1.0, 1.0, 1.0)));
-                color *= lighting;
-
-                gl_FragColor = vec4(color, 0.85);
-            }
-        `;
-
-        const THERMAL_WIREFRAME_FRAGMENT_SHADER = `
-            uniform float uTemperature;
-            uniform float uMinTemp;
-            uniform float uMaxTemp;
-            uniform bool uThermalEnabled;
-
-            varying vec3 vPosition;
-
-            vec3 thermalColormap(float t) {
-                t = clamp(t, 0.0, 1.0);
-
-                vec3 cold = vec3(0.23, 0.51, 0.96);
-                vec3 cool = vec3(0.13, 0.77, 0.37);
-                vec3 neutral = vec3(0.92, 0.75, 0.03);
-                vec3 warm = vec3(0.98, 0.45, 0.09);
-                vec3 hot = vec3(0.94, 0.24, 0.24);
-
-                if (t < 0.25) {
-                    return mix(cold, cool, t * 4.0);
-                } else if (t < 0.5) {
-                    return mix(cool, neutral, (t - 0.25) * 4.0);
-                } else if (t < 0.75) {
-                    return mix(neutral, warm, (t - 0.5) * 4.0);
-                } else {
-                    return mix(warm, hot, (t - 0.75) * 4.0);
-                }
-            }
-
-            void main() {
-                if (!uThermalEnabled) {
-                    discard;
-                }
-
-                float normalizedTemp = (uTemperature - uMinTemp) / (uMaxTemp - uMinTemp);
-                vec3 color = thermalColormap(normalizedTemp);
-
-                gl_FragColor = vec4(color, 1.0);
-            }
-        `;
-
         let scene, camera, renderer, controls;
         let geometryData = null;
         let zoneMeshes = new Map();
         let selectedZone = null;
-        let thermalEnabled = false;
-        let zoneTemperatures = new Map();
-        let thermalMinTemp = 15.0;
-        let thermalMaxTemp = 30.0;
-        let livetwinSocket = null;
 
         function init() {
             const container = document.getElementById('canvas-container');
@@ -725,8 +546,6 @@
                 mesh.userData.isBuildingElement = true;
                 mesh.userData.surfaceData = surface;
                 mesh.userData.zoneId = zone.id;
-                mesh.userData.zoneColor = zoneColor;
-                mesh.userData.defaultMaterial = material;
                 group.add(mesh);
             });
 
@@ -755,12 +574,6 @@
 
             data.zones.forEach(zone => {
                 const zoneGroup = createZoneGeometry(zone, allSurfaces);
-
-                zoneGroup.children.forEach(child => {
-                    const initialTemp = 22.0;
-                    child.userData.thermalMaterial = createThermalMaterial(zone.id, initialTemp);
-                });
-
                 zoneMeshes.set(zone.id, zoneGroup);
                 scene.add(zoneGroup);
             });
@@ -1063,134 +876,11 @@
 
             zoneMeshes.forEach(group => {
                 group.children.forEach(child => {
-                    if (child.material && child.userData.defaultMaterial) {
-                        if (btn.classList.contains('active')) {
-                            child.material.wireframe = true;
-                        } else {
-                            child.material.wireframe = child.userData.defaultMaterial.wireframe || false;
-                        }
+                    if (child.material) {
+                        child.material.wireframe = btn.classList.contains('active');
                     }
                 });
             });
-        }
-
-        function toggleThermal() {
-            const btn = document.getElementById('btn-thermal');
-            thermalEnabled = !thermalEnabled;
-            btn.classList.toggle('active', thermalEnabled);
-
-            document.getElementById('zone-legend').style.display = thermalEnabled ? 'none' : 'block';
-            document.getElementById('thermal-legend').classList.toggle('visible', thermalEnabled);
-
-            updateThermalView();
-        }
-
-        function updateThermalView() {
-            zoneMeshes.forEach((group, zoneId) => {
-                const temperature = zoneTemperatures.get(zoneId);
-                group.children.forEach(child => {
-                    if (child.material && child.userData.defaultMaterial) {
-                        if (thermalEnabled) {
-                            const temp = temperature !== undefined ? temperature : (thermalMinTemp + thermalMaxTemp) / 2;
-                            child.userData.thermalMaterial.uniforms.uTemperature.value = temp;
-                            child.userData.thermalMaterial.uniforms.uThermalEnabled.value = true;
-                            child.material = child.userData.thermalMaterial;
-                        } else {
-                            child.material = child.userData.defaultMaterial;
-                        }
-                    }
-                });
-            });
-        }
-
-        function createThermalMaterial(zoneId, initialTemp) {
-            const material = new THREE.ShaderMaterial({
-                uniforms: {
-                    uTemperature: { value: initialTemp },
-                    uMinTemp: { value: thermalMinTemp },
-                    uMaxTemp: { value: thermalMaxTemp },
-                    uThermalEnabled: { value: thermalEnabled }
-                },
-                vertexShader: THERMAL_VERTEX_SHADER,
-                fragmentShader: THERMAL_FRAGMENT_SHADER,
-                transparent: true,
-                side: THREE.DoubleSide
-            });
-            return material;
-        }
-
-        function updateZoneTemperatures(temperatures) {
-            temperatures.forEach((data, zoneId) => {
-                if (typeof data === 'number') {
-                    zoneTemperatures.set(zoneId, data);
-                } else if (data.temperature !== undefined) {
-                    zoneTemperatures.set(zoneId, data.temperature);
-                }
-
-                if (zoneMeshes.has(zoneId)) {
-                    const group = zoneMeshes.get(zoneId);
-                    const temp = zoneTemperatures.get(zoneId);
-                    group.children.forEach(child => {
-                        if (child.userData.thermalMaterial) {
-                            child.userData.thermalMaterial.uniforms.uTemperature.value = temp;
-                        }
-                    });
-                }
-            });
-
-            const temps = Array.from(zoneTemperatures.values());
-            if (temps.length > 0) {
-                thermalMinTemp = Math.min(...temps);
-                thermalMaxTemp = Math.max(...temps);
-                document.getElementById('temp-min').textContent = thermalMinTemp.toFixed(1);
-                document.getElementById('temp-max').textContent = thermalMaxTemp.toFixed(1);
-            }
-        }
-
-        function connectLiveTwin(url = 'ws://localhost:8765/livetwin') {
-            try {
-                livetwinSocket = new WebSocket(url);
-
-                livetwinSocket.onopen = () => {
-                    console.log('LiveTwin connected');
-                    document.getElementById('live-indicator').classList.add('visible');
-                };
-
-                livetwinSocket.onmessage = (event) => {
-                    try {
-                        const data = JSON.parse(event.data);
-                        if (data.zone_temperatures) {
-                            updateZoneTemperatures(data.zone_temperatures);
-                        } else if (data.type === 'thermal_update' && data.temperatures) {
-                            const tempMap = new Map();
-                            data.temperatures.forEach(t => tempMap.set(t.zone_id, t.temperature));
-                            updateZoneTemperatures(tempMap);
-                        }
-                    } catch (e) {
-                        console.warn('Failed to parse LiveTwin message:', e);
-                    }
-                };
-
-                livetwinSocket.onclose = () => {
-                    console.log('LiveTwin disconnected');
-                    document.getElementById('live-indicator').classList.remove('visible');
-                    livetwinSocket = null;
-                };
-
-                livetwinSocket.onerror = (err) => {
-                    console.warn('LiveTwin connection error:', err);
-                };
-            } catch (e) {
-                console.warn('Failed to connect to LiveTwin:', e);
-            }
-        }
-
-        function disconnectLiveTwin() {
-            if (livetwinSocket) {
-                livetwinSocket.close();
-                livetwinSocket = null;
-            }
-            document.getElementById('live-indicator').classList.remove('visible');
         }
 
         document.querySelectorAll('.tab').forEach(tab => {
@@ -1210,7 +900,6 @@
 
         document.getElementById('btn-reset').addEventListener('click', resetView);
         document.getElementById('btn-wireframe').addEventListener('click', toggleWireframe);
-        document.getElementById('btn-thermal').addEventListener('click', toggleThermal);
 
         document.getElementById('load-button').addEventListener('click', async () => {
             try {

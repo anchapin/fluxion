@@ -116,6 +116,26 @@ pub struct FluidSimulationConfig {
     /// Cooling setpoint (°C). Defaults to 24°C.
     #[serde(default = "default_cooling_setpoint")]
     pub cooling_setpoint: f64,
+
+    /// Per-zone floor areas in m². If not provided, defaults to 50 m² per zone.
+    #[serde(default)]
+    pub zone_areas: Option<Vec<f64>>,
+
+    /// Per-zone thermal masses in J/K (heat capacity). If not provided, defaults to 5e6 J/K.
+    #[serde(default)]
+    pub zone_thermal_mass: Option<Vec<f64>>,
+
+    /// Per-zone conductances to outdoors in W/K. If not provided, defaults to 50 W/K.
+    #[serde(default)]
+    pub zone_conductance: Option<Vec<f64>>,
+
+    /// Infiltration rate per zone in ACH (air changes per hour). Defaults to 0.5 ACH.
+    #[serde(default)]
+    pub infiltration_ach: Option<Vec<f64>>,
+
+    /// Internal gains per zone in W (equipment, lighting, occupants). Defaults to 200 W.
+    #[serde(default)]
+    pub internal_gains_w: Option<Vec<f64>>,
 }
 
 fn default_num_zones() -> usize {
@@ -137,6 +157,11 @@ impl Default for FluidSimulationConfig {
             initial_temps: None,
             heating_setpoint: 20.0,
             cooling_setpoint: 24.0,
+            zone_areas: None,
+            zone_thermal_mass: None,
+            zone_conductance: None,
+            infiltration_ach: None,
+            internal_gains_w: None,
         }
     }
 }
@@ -158,6 +183,10 @@ pub struct FluidSimulation {
     current_hour: f64,
     mode: String,
     zone_area: f64,
+    zone_thermal_mass: Vec<f64>,
+    zone_conductance: Vec<f64>,
+    infiltration_flow: Vec<f64>,
+    internal_gains: Vec<f64>,
 }
 
 #[wasm_bindgen]
@@ -192,6 +221,27 @@ impl FluidSimulation {
 
         let zone_area = 50.0 * num_zones as f64;
 
+        let zone_thermal_mass = config
+            .zone_thermal_mass
+            .clone()
+            .unwrap_or_else(|| vec![5e6; num_zones]);
+
+        let zone_conductance = config
+            .zone_conductance
+            .clone()
+            .unwrap_or_else(|| vec![50.0; num_zones]);
+
+        let infiltration_flow: Vec<f64> = if let Some(ach) = &config.infiltration_ach {
+            ach.iter().map(|&a| a * 0.0012 * 50.0 * 3600.0).collect()
+        } else {
+            vec![900.0; num_zones]
+        };
+
+        let internal_gains = config
+            .internal_gains_w
+            .clone()
+            .unwrap_or_else(|| vec![200.0; num_zones]);
+
         console_log!(
             "fluxion-wasm: FluidSimulation created with {} zones, heating={}°C, cooling={}°C",
             num_zones,
@@ -209,6 +259,10 @@ impl FluidSimulation {
             current_hour: 0.0,
             mode: "Physics".to_string(),
             zone_area,
+            zone_thermal_mass,
+            zone_conductance,
+            infiltration_flow,
+            internal_gains,
         })
     }
 
@@ -227,6 +281,11 @@ impl FluidSimulation {
         self.timestep_hours = dt_hours;
         self.current_hour += dt_hours;
 
+        let outdoor_temp = 20.0;
+        let air_density = 1.2;
+        let specific_heat = 1006.0;
+        let dt_s = dt_hours * 3600.0;
+
         let mut total_heating = 0.0;
         let mut total_cooling = 0.0;
 
@@ -234,21 +293,32 @@ impl FluidSimulation {
             let temp = self.zone_temps[i];
             let heating_sp = self.heating_setpoints[i];
             let cooling_sp = self.cooling_setpoints[i];
+            let conductance = self.zone_conductance[i];
+            let thermal_mass = self.zone_thermal_mass[i];
+            let infiltration = self.infiltration_flow[i];
+            let gains = self.internal_gains[i];
 
-            let ua = 50.0;
-            let capacity = 5000.0;
+            let loss_to_outdoor = conductance * (temp - outdoor_temp);
+            let infiltration_loss =
+                infiltration * air_density * specific_heat * (temp - outdoor_temp) / 3600.0;
+            let net_gains = gains - loss_to_outdoor - infiltration_loss;
 
+            let mut hvac_load = 0.0;
             if temp < heating_sp {
-                let load = ua * (heating_sp - temp);
-                let q = load.min(capacity).max(0.0);
-                self.zone_temps[i] += (q / capacity) * dt_hours;
-                total_heating += q;
+                let load = (heating_sp - temp) * conductance;
+                hvac_load = load.min(thermal_mass / dt_s).max(0.0);
+                self.zone_temps[i] += (hvac_load - net_gains) * dt_s / thermal_mass;
+                total_heating += hvac_load;
             } else if temp > cooling_sp {
-                let load = ua * (temp - cooling_sp);
-                let q = load.min(capacity).max(0.0);
-                self.zone_temps[i] -= (q / capacity) * dt_hours;
-                total_cooling += q;
+                let load = (temp - cooling_sp) * conductance;
+                hvac_load = load.min(thermal_mass / dt_s).max(0.0);
+                self.zone_temps[i] -= (hvac_load + net_gains) * dt_s / thermal_mass;
+                total_cooling += hvac_load;
+            } else {
+                self.zone_temps[i] += net_gains * dt_s / thermal_mass;
             }
+
+            self.zone_temps[i] = self.zone_temps[i].clamp(TEMPERATURE_MIN_C, TEMPERATURE_MAX_C);
         }
 
         let result = StepResult {
@@ -534,33 +604,39 @@ impl FluidSimulation {
 
     /// Calculate HVAC power demand based on current conditions.
     ///
-    /// Uses a simplified energy balance to estimate heating (positive) or cooling
-    /// (negative) power demand in Watts.
+    /// Uses an enhanced energy balance to estimate heating (positive) or cooling
+    /// (negative) power demand in Watts, accounting for zone-specific thermal parameters.
     ///
     /// # Arguments
-    /// * `timestep` - Current timestep index (unused in simplified model)
+    /// * `timestep` - Current timestep index (unused)
     /// * `outdoor_temp` - Outdoor drybulb temperature in °C
     ///
     /// # Returns
     /// Heating power (positive) or cooling power (negative) in Watts.
     #[wasm_bindgen]
     pub fn hvac_power_demand(&self, _timestep: usize, outdoor_temp: f64) -> f64 {
-        let ua = 50.0;
+        let air_density = 1.2;
+        let specific_heat = 1006.0;
         let mut total_power = 0.0;
 
         for i in 0..self.zone_temps.len() {
             let temp = self.zone_temps[i];
             let heating_sp = self.heating_setpoints[i];
             let cooling_sp = self.cooling_setpoints[i];
+            let conductance = self.zone_conductance[i];
+            let infiltration = self.infiltration_flow[i];
 
             if temp < heating_sp {
-                total_power += ua * (heating_sp - temp);
+                total_power += conductance * (heating_sp - temp);
             } else if temp > cooling_sp {
-                total_power -= ua * (temp - cooling_sp);
+                total_power -= conductance * (temp - cooling_sp);
             }
+
+            let infiltration_loss =
+                infiltration * air_density * specific_heat * (temp - outdoor_temp) / 3600.0;
+            total_power -= infiltration_loss;
         }
 
-        total_power -= ua * (outdoor_temp - 20.0) * self.zone_temps.len() as f64;
         total_power
     }
 
@@ -599,6 +675,344 @@ impl FluidSimulation {
             steps
         );
         0.0
+    }
+
+    /// Get zone thermal mass in J/K for a specific zone.
+    ///
+    /// # Arguments
+    /// * `zone_id` - Zero-based zone index
+    ///
+    /// # Returns
+    /// Thermal mass in J/K, or `JsValue` error if zone_id is out of range.
+    #[wasm_bindgen]
+    pub fn get_zone_thermal_mass(&self, zone_id: usize) -> Result<f64, JsValue> {
+        self.zone_thermal_mass
+            .get(zone_id)
+            .copied()
+            .ok_or_else(|| JsValue::from_str("zone_id out of range"))
+    }
+
+    /// Set zone thermal mass for a specific zone.
+    ///
+    /// # Arguments
+    /// * `zone_id` - Zero-based zone index
+    /// * `thermal_mass` - Thermal mass in J/K (must be positive and finite)
+    ///
+    /// # Returns
+    /// Unit on success, or `JsValue` error if zone_id is out of range or thermal_mass is invalid.
+    #[wasm_bindgen]
+    pub fn set_zone_thermal_mass(
+        &mut self,
+        zone_id: usize,
+        thermal_mass: f64,
+    ) -> Result<(), JsValue> {
+        let mass = validate_finite(thermal_mass, "set_zone_thermal_mass", 1e3, 1e10)?;
+        if mass <= 0.0 {
+            return Err(JsValue::from_str("thermal_mass must be positive"));
+        }
+        if zone_id >= self.zone_thermal_mass.len() {
+            return Err(JsValue::from_str("zone_id out of range"));
+        }
+        self.zone_thermal_mass[zone_id] = mass;
+        console_log!(
+            "fluxion-wasm: zone {} thermal_mass set to {} J/K",
+            zone_id,
+            mass
+        );
+        Ok(())
+    }
+
+    /// Get all zone thermal masses.
+    #[wasm_bindgen]
+    pub fn get_all_thermal_masses(&self) -> Vec<f64> {
+        self.zone_thermal_mass.clone()
+    }
+
+    /// Get zone conductance in W/K for a specific zone.
+    ///
+    /// # Arguments
+    /// * `zone_id` - Zero-based zone index
+    ///
+    /// # Returns
+    /// Conductance in W/K, or `JsValue` error if zone_id is out of range.
+    #[wasm_bindgen]
+    pub fn get_zone_conductance(&self, zone_id: usize) -> Result<f64, JsValue> {
+        self.zone_conductance
+            .get(zone_id)
+            .copied()
+            .ok_or_else(|| JsValue::from_str("zone_id out of range"))
+    }
+
+    /// Set zone conductance for a specific zone.
+    ///
+    /// # Arguments
+    /// * `zone_id` - Zero-based zone index
+    /// * `conductance` - Conductance in W/K (must be positive and finite)
+    ///
+    /// # Returns
+    /// Unit on success, or `JsValue` error if zone_id is out of range or conductance is invalid.
+    #[wasm_bindgen]
+    pub fn set_zone_conductance(
+        &mut self,
+        zone_id: usize,
+        conductance: f64,
+    ) -> Result<(), JsValue> {
+        let cond = validate_finite(conductance, "set_zone_conductance", 0.1, 1e6)?;
+        if cond <= 0.0 {
+            return Err(JsValue::from_str("conductance must be positive"));
+        }
+        if zone_id >= self.zone_conductance.len() {
+            return Err(JsValue::from_str("zone_id out of range"));
+        }
+        self.zone_conductance[zone_id] = cond;
+        console_log!(
+            "fluxion-wasm: zone {} conductance set to {} W/K",
+            zone_id,
+            cond
+        );
+        Ok(())
+    }
+
+    /// Get all zone conductances.
+    #[wasm_bindgen]
+    pub fn get_all_conductances(&self) -> Vec<f64> {
+        self.zone_conductance.clone()
+    }
+
+    /// Get infiltration flow rate in kg/s for a specific zone.
+    ///
+    /// # Arguments
+    /// * `zone_id` - Zero-based zone index
+    ///
+    /// # Returns
+    /// Infiltration flow in kg/s, or `JsValue` error if zone_id is out of range.
+    #[wasm_bindgen]
+    pub fn get_zone_infiltration(&self, zone_id: usize) -> Result<f64, JsValue> {
+        self.infiltration_flow
+            .get(zone_id)
+            .copied()
+            .ok_or_else(|| JsValue::from_str("zone_id out of range"))
+    }
+
+    /// Set infiltration rate for a specific zone.
+    ///
+    /// # Arguments
+    /// * `zone_id` - Zero-based zone index
+    /// * `infiltration_ach` - Infiltration rate in ACH (air changes per hour)
+    ///
+    /// # Returns
+    /// Unit on success, or `JsValue` error if zone_id is out of range or infiltration_ach is invalid.
+    #[wasm_bindgen]
+    pub fn set_zone_infiltration(
+        &mut self,
+        zone_id: usize,
+        infiltration_ach: f64,
+    ) -> Result<(), JsValue> {
+        let ach = validate_finite(infiltration_ach, "set_zone_infiltration", 0.0, 10.0)?;
+        if zone_id >= self.infiltration_flow.len() {
+            return Err(JsValue::from_str("zone_id out of range"));
+        }
+        let zone_area = self.zone_area / self.zone_temps.len() as f64;
+        self.infiltration_flow[zone_id] = ach * 0.0012 * zone_area * 3600.0;
+        console_log!(
+            "fluxion-wasm: zone {} infiltration set to {} ACH",
+            zone_id,
+            ach
+        );
+        Ok(())
+    }
+
+    /// Get all infiltration rates in kg/s.
+    #[wasm_bindgen]
+    pub fn get_all_infiltration(&self) -> Vec<f64> {
+        self.infiltration_flow.clone()
+    }
+
+    /// Get internal gains in W for a specific zone.
+    ///
+    /// # Arguments
+    /// * `zone_id` - Zero-based zone index
+    ///
+    /// # Returns
+    /// Internal gains in W, or `JsValue` error if zone_id is out of range.
+    #[wasm_bindgen]
+    pub fn get_zone_internal_gains(&self, zone_id: usize) -> Result<f64, JsValue> {
+        self.internal_gains
+            .get(zone_id)
+            .copied()
+            .ok_or_else(|| JsValue::from_str("zone_id out of range"))
+    }
+
+    /// Set internal gains for a specific zone.
+    ///
+    /// # Arguments
+    /// * `zone_id` - Zero-based zone index
+    /// * `gains_w` - Internal gains in W (equipment, lighting, occupants)
+    ///
+    /// # Returns
+    /// Unit on success, or `JsValue` error if zone_id is out of range or gains_w is invalid.
+    #[wasm_bindgen]
+    pub fn set_zone_internal_gains(&mut self, zone_id: usize, gains_w: f64) -> Result<(), JsValue> {
+        let gains = validate_finite(gains_w, "set_zone_internal_gains", 0.0, 1e6)?;
+        if zone_id >= self.internal_gains.len() {
+            return Err(JsValue::from_str("zone_id out of range"));
+        }
+        self.internal_gains[zone_id] = gains;
+        console_log!(
+            "fluxion-wasm: zone {} internal_gains set to {} W",
+            zone_id,
+            gains
+        );
+        Ok(())
+    }
+
+    /// Get all internal gains in W.
+    #[wasm_bindgen]
+    pub fn get_all_internal_gains(&self) -> Vec<f64> {
+        self.internal_gains.clone()
+    }
+
+    /// Get zone floor area for a specific zone.
+    ///
+    /// # Arguments
+    /// * `zone_id` - Zero-based zone index
+    ///
+    /// # Returns
+    /// Zone floor area in m², or `JsValue` error if zone_id is out of range.
+    #[wasm_bindgen]
+    pub fn get_zone_area(&self, zone_id: usize) -> Result<f64, JsValue> {
+        if zone_id >= self.zone_temps.len() {
+            return Err(JsValue::from_str("zone_id out of range"));
+        }
+        Ok(self.zone_area / self.zone_temps.len() as f64)
+    }
+
+    /// Apply zone parameters from a JSON string.
+    ///
+    /// Allows updating multiple zone parameters at once.
+    ///
+    /// # Arguments
+    /// * `params_json` - JSON string containing zone parameters:
+    ///   - `zone_id`: Required zone index
+    ///   - `thermal_mass`: Optional thermal mass in J/K
+    ///   - `conductance`: Optional conductance in W/K
+    ///   - `infiltration_ach`: Optional infiltration in ACH
+    ///   - `internal_gains_w`: Optional internal gains in W
+    ///
+    /// # Returns
+    /// Unit on success, or `JsValue` error if parameters are invalid.
+    #[wasm_bindgen]
+    pub fn apply_zone_parameters(&mut self, params_json: &str) -> Result<(), JsValue> {
+        #[derive(serde::Deserialize)]
+        struct ZoneParams {
+            zone_id: usize,
+            thermal_mass: Option<f64>,
+            conductance: Option<f64>,
+            infiltration_ach: Option<f64>,
+            internal_gains_w: Option<f64>,
+        }
+
+        let params: ZoneParams = serde_json::from_str(params_json)
+            .map_err(|e| JsValue::from_str(&format!("Invalid zone params JSON: {}", e)))?;
+
+        if params.zone_id >= self.zone_temps.len() {
+            return Err(JsValue::from_str("zone_id out of range"));
+        }
+
+        if let Some(tm) = params.thermal_mass {
+            self.set_zone_thermal_mass(params.zone_id, tm)?;
+        }
+        if let Some(c) = params.conductance {
+            self.set_zone_conductance(params.zone_id, c)?;
+        }
+        if let Some(ach) = params.infiltration_ach {
+            self.set_zone_infiltration(params.zone_id, ach)?;
+        }
+        if let Some(g) = params.internal_gains_w {
+            self.set_zone_internal_gains(params.zone_id, g)?;
+        }
+
+        Ok(())
+    }
+
+    /// Export current simulation state as JSON.
+    ///
+    /// Includes all zone temperatures, setpoints, and thermal parameters.
+    ///
+    /// # Returns
+    /// JSON string with full simulation state.
+    #[wasm_bindgen]
+    pub fn export_state(&self) -> Result<String, JsValue> {
+        #[derive(serde::Serialize)]
+        struct SimulationState {
+            current_hour: f64,
+            num_zones: usize,
+            zone_temps: Vec<f64>,
+            heating_setpoints: Vec<f64>,
+            cooling_setpoints: Vec<f64>,
+            zone_thermal_mass: Vec<f64>,
+            zone_conductance: Vec<f64>,
+            infiltration_flow: Vec<f64>,
+            internal_gains: Vec<f64>,
+        }
+
+        let state = SimulationState {
+            current_hour: self.current_hour,
+            num_zones: self.zone_temps.len(),
+            zone_temps: self.zone_temps.clone(),
+            heating_setpoints: self.heating_setpoints.clone(),
+            cooling_setpoints: self.cooling_setpoints.clone(),
+            zone_thermal_mass: self.zone_thermal_mass.clone(),
+            zone_conductance: self.zone_conductance.clone(),
+            infiltration_flow: self.infiltration_flow.clone(),
+            internal_gains: self.internal_gains.clone(),
+        };
+
+        serde_json::to_string(&state)
+            .map_err(|e| JsValue::from_str(&format!("state serialization error: {}", e)))
+    }
+
+    /// Load simulation state from JSON.
+    ///
+    /// Restores a previously exported simulation state.
+    ///
+    /// # Arguments
+    /// * `state_json` - JSON string from `export_state()`
+    ///
+    /// # Returns
+    /// Unit on success, or `JsValue` error if state is invalid.
+    #[wasm_bindgen]
+    pub fn load_state(&mut self, state_json: &str) -> Result<(), JsValue> {
+        #[derive(serde::Deserialize)]
+        struct SimulationState {
+            current_hour: f64,
+            zone_temps: Vec<f64>,
+            heating_setpoints: Vec<f64>,
+            cooling_setpoints: Vec<f64>,
+            zone_thermal_mass: Vec<f64>,
+            zone_conductance: Vec<f64>,
+            infiltration_flow: Vec<f64>,
+            internal_gains: Vec<f64>,
+        }
+
+        let state: SimulationState = serde_json::from_str(state_json)
+            .map_err(|e| JsValue::from_str(&format!("Invalid state JSON: {}", e)))?;
+
+        if state.zone_temps.len() != self.zone_temps.len() {
+            return Err(JsValue::from_str("zone count mismatch"));
+        }
+
+        self.current_hour = state.current_hour;
+        self.zone_temps = state.zone_temps;
+        self.heating_setpoints = state.heating_setpoints;
+        self.cooling_setpoints = state.cooling_setpoints;
+        self.zone_thermal_mass = state.zone_thermal_mass;
+        self.zone_conductance = state.zone_conductance;
+        self.infiltration_flow = state.infiltration_flow;
+        self.internal_gains = state.internal_gains;
+
+        console_log!("fluxion-wasm: state loaded successfully");
+        Ok(())
     }
 }
 

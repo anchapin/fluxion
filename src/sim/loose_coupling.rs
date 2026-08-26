@@ -294,21 +294,11 @@ impl FfdAccumulator {
 
     /// Reset the accumulator for a new macro timestep.
     pub fn reset(&mut self) {
-        for v in &mut self.chtc_weighted_sum {
-            *v = 0.0;
-        }
-        for v in &mut self.temperature_weighted_sum {
-            *v = 0.0;
-        }
-        for v in &mut self.flux_weighted_sum {
-            *v = 0.0;
-        }
-        for v in &mut self.infiltration_weighted_sum {
-            *v = 0.0;
-        }
-        for v in &mut self.mixing_weighted_sum {
-            *v = 0.0;
-        }
+        self.chtc_weighted_sum.fill(0.0);
+        self.temperature_weighted_sum.fill(0.0);
+        self.flux_weighted_sum.fill(0.0);
+        self.infiltration_weighted_sum.fill(0.0);
+        self.mixing_weighted_sum.fill(0.0);
         self.total_time = 0.0;
         self.step_count = 0;
     }
