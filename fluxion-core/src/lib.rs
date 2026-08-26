@@ -88,7 +88,7 @@ pub mod ashrae_cases;
 pub mod assembly;
 pub mod construction;
 pub mod earth_tube;
-pub mod fluid_graph;
+
 pub mod multi_node;
 /// Parser size/depth/repetition limits — DoS hardening (issue #2527).
 /// Dependency-light leaf; must not import sim/physics/ai/validation.
