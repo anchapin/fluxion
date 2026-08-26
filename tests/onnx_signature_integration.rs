@@ -121,7 +121,7 @@ fn verify_onnx_rejects_unsigned_model_with_no_manifest() {
     // Assert fail-closed behavior: no manifest = error
     let err = res.expect_err("unsigned model with no manifest must fail");
     assert!(
-        err.contains("fail-closed") || err.contains("Issue #3161"),
+        err.contains("fail-closed") || err.contains("Issue #3209"),
         "expected fail-closed message, got: {err}"
     );
 }
