@@ -52,12 +52,11 @@
 //! - Hybrid mode where some components use surrogates, others use physics
 
 use crate::ai::surrogate::SurrogateManager;
-use crate::physics::cta::{ContinuousTensor, VectorField};
-use crate::physics::five_r1c_solver::FiveR1CSolver;
-use crate::physics::solver_trait::HeatConductionSolver;
-use crate::physics::units::{FromF64, HeatTransferCoefficient, Temperature, Time, ToF64};
-use crate::physics::wall_spec::lightweight_wall_spec;
 use crate::sim::thermal_model_core::get_daily_cycle;
+use crate::sim::thermal_model_data::{
+    lightweight_wall_spec, ContinuousTensor, FiveR1CSolver, FromF64, HeatConductionSolver,
+    HeatTransferCoefficient, Temperature, Time, ToF64, VectorField,
+};
 use crate::sim::ventilation::{ConstantVentilation, VentilationSchedule};
 use fluxion_twin::TwinCorrection;
 use std::error::Error;
@@ -2567,11 +2566,10 @@ mod tests {
         // `Ok(HeatFlux::from_value(0.0))` so the success path fires,
         // and we assert `physics_conduction_calls == 0`.
         use crate::ai::surrogate::SurrogateManager;
-        use crate::physics::solver_trait::{HeatConductionSolver, SolverError};
-        use crate::physics::units::{
-            FromF64, HeatFlux, HeatTransferCoefficient, Temperature, Time,
+        use crate::sim::thermal_model_data::{
+            FromF64, HeatConductionSolver, HeatFlux, HeatTransferCoefficient, SolverError,
+            Temperature, Time, WallSpec,
         };
-        use crate::physics::wall_spec::WallSpec;
 
         /// Minimal stand-in for an ONNX-trained conduction surrogate:
         /// always returns a zero heat flux without touching boundary
@@ -2690,9 +2688,10 @@ mod tests {
         // Smoke test for the `set_conduction_solver` API: swapping the
         // slot changes the dispatcher behaviour (the new slot's
         // `name()` is observable via the accessor).
-        use crate::physics::solver_trait::{HeatConductionSolver, SolverError};
-        use crate::physics::units::{HeatFlux, HeatTransferCoefficient, Temperature, Time};
-        use crate::physics::wall_spec::WallSpec;
+        use crate::sim::thermal_model_data::{
+            HeatConductionSolver, HeatFlux, HeatTransferCoefficient, SolverError, Temperature,
+            Time, WallSpec,
+        };
 
         struct NamedSolver(&'static str);
         impl HeatConductionSolver for NamedSolver {
