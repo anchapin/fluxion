@@ -2171,7 +2171,12 @@ impl Model {
         // Helper to extract 1D numpy array as Vec<f64>
         fn extract_1d_f64(arr: &Bound<'_, pyo3::types::PyAny>) -> PyResult<Vec<f64>> {
             if let Ok(pyarr) = arr.cast::<numpy::PyArray1<f64>>() {
-                let slice = unsafe { pyarr.as_slice()? };
+                let readonly = pyarr.readonly();
+                let slice = readonly.as_slice().map_err(|e| {
+                    pyo3::exceptions::PyValueError::new_err(format!(
+                        "non-contiguous 1-D array: {e}"
+                    ))
+                })?;
                 return Ok(slice.to_vec());
             }
             Err(pyo3::exceptions::PyValueError::new_err(
