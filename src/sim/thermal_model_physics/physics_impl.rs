@@ -561,9 +561,42 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
             .derived_h_ms_is_prod
             .zip_with(&self.0.mass.mass_temperatures, |a, b| a * b);
 
-        // h_tr_is_for_ti_free: no boost applied (night ventilation affects zone air through
-        // h_ve_total, not through surface convection coefficients). The h_ve_night already
-        // modifies h_ext and den for the free-floating temperature calculation.
+        // h_tr_is_for_ti_free: no ACH multiplier applied.
+        //
+        // IMPORTANT — Asymmetry with 9R4C (Issue #3215):
+        // The 9R4C path applies `capped_h_tr_is_ach_multiplier(ach_night_vent)` to
+        // `solver.h_tr_is` during night ventilation (physics_impl.rs:3467-3506). The 5R1C
+        // path intentionally does NOT apply this multiplier to `h_tr_is_for_ti_free`.
+        //
+        // Physical justification: In the 5R1C single-node architecture, night ventilation
+        // is handled entirely through `h_ve_total` — the `den` is recalculated (lines 532-551)
+        // to include `h_ve_night` which modifies `h_ext` for the free-floating temperature
+        // calculation. The surface-to-air coupling `h_tr_is` is not boosted because:
+        //
+        // 1. Night ventilation in 5R1C is a ventilation phenomenon (fan-forced outdoor air
+        //    entering the zone), modeled as an additional conductance `h_ve_night` that
+        //    directly affects the zone air energy balance through `h_ext`.
+        //
+        // 2. The ASHRAE/EnergyPlus forced-convection correlation (`h_c = 3.45 + 0.84*ACH^0.8`)
+        //    applies to SURFACE convection, not to the ventilation air stream. The 9R4C
+        //    path applies it because its multi-node architecture routes night vent through
+        //    both `h_ve` AND `h_tr_is` (the latter via surface convection boost).
+        //
+        // 3. The `h_ve_night` already modifies `h_ext` and `den` for the free-floating
+        //    temperature calculation — applying an additional `h_tr_is` boost would be
+        //    double-counting the night vent effect on zone air.
+        //
+        // This asymmetry is NOT a bug — it reflects the different architectural approaches
+        // of the two thermal models. The 9R4C path is not more "correct"; both paths
+        // model the same physics but with different lumping structures.
+        //
+        // The structural gap in Cases 610/630/650 (LIMIT-16 / Issue #3059) is upstream of
+        // this multiplier — it is caused by the single lumped thermal-mass node's
+        // `dt/τ ≈ 3.6` characteristic, which requires the multi-node GaugeSolver
+        // (#1465 / #1462) to fix properly. Per AGENTS.md and RULES.md, no physics-code
+        // change is made here; the asymmetry is documented.
+        //
+        // See also: PR #2871 (9R4C ACH multiplier origin), Issue #3215 (consistency audit).
         let h_tr_is_for_ti_free: T = self.0.conduction.h_tr_is.clone();
 
         // Note: dynamic h_tr_3_night was tried and REJECTED. Night ventilation already affects
