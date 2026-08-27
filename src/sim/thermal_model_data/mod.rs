@@ -36,13 +36,21 @@ pub use solar_state::SolarState;
 pub use crate::physics::gauge_zone_solver::{GaugeZoneSolver, SurfaceType};
 pub use crate::physics::{
     cta::{ContinuousTensor, VectorField},
-    ctf_coefficients::CTFCoefficients,
+    ctf_coefficients::{CTFCoefficients, CTFMaterial},
     ctf_solver::CTFSolver,
     ctf_zone_coupling::CtfZoneCouplingSolver,
-    fd_solver::ImplicitFDSolver,
-    multi_node_solver::MultiNodeSolver,
+    exterior_convection::{ExteriorConvectionCoefficients, ExteriorSurfaceDirection},
+    fd_discretization::WallDiscretization,
+    fd_solver::{ImplicitFDSolver, SurfaceBC},
+    five_r1c_solver::{surface_time_constant_from_conductances, FiveR1CSolver},
+    method_selector::ThermalMethodSelector,
+    multi_node_solver::{h_series, MultiNodeSolver, SurfaceExteriorTemperatures},
     solver_manager::SolverManager,
-    wall_spec::{LayerSpec, WallSpec},
+    solver_trait::{HeatConductionSolver, PhysicsError, PhysicsResult, SolverError},
+    units::{
+        FromF64, HeatFlux, HeatTransferCoefficient, Temperature, ThermalConductance, Time, ToF64,
+    },
+    wall_spec::{lightweight_wall_spec, LayerSpec, WallSpec},
 };
 
 /// Thin wrapper composing the 6 per-domain sub-structs.
