@@ -15,16 +15,19 @@ Fluxion is a Rust-first building-energy-modeling engine with Python and Node bin
 
 ```bash
 ./scripts/disk-space-check.sh                         # before large builds/orchestration; 10 GB minimum
-cargo test                                           # root crate only
+cargo test --workspace                                # ALL workspace tests (~3879 tests across all crates)
+cargo test                                           # root crate only (NOT the full suite)
 cargo test -p fluxion <test_name>                    # one named test
 cargo test --test zone_balance_eplus_isolation       # energy-conservation gate
-cargo test --test ashrae_140_validation              # ASHRAE suite
+cargo test --test ashrae_140_validation              # ASHRAE suite (one of several ashrae_140 binaries)
 cargo test --test integration-cli                    # CLI behavior/stub guards
 cargo test --profile ci                              # faster local iteration profile
 cargo check --workspace                              # all workspace siblings
 cargo test -p fluxion-mcp                            # MCP package
 cargo test --features ort                            # ONNX runtime is opt-in
 ```
+
+**Test suite overview:** `cargo test --workspace` runs 3879 tests across all crates. The ASHRAE 140 suite is distributed across multiple `--test` binaries (run `ls tests/ashrae_140*.rs` to see them all). Running `cargo test` without `--workspace` only runs the root crate tests and misses the full suite.
 
 CI-quality order is significant:
 
