@@ -1348,6 +1348,27 @@ impl<T: S3Transport> S3Uploader<T> {
 mod tests {
     use super::*;
 
+    // =============================================================================
+    // AWS test credentials — DO NOT REPLACE WITH REAL CREDENTIALS
+    //
+    // These are AWS well-known example credentials from:
+    // https://docs.aws.amazon.com/AmazonS3/latest/userguide/RESTAuthentication.html
+    // They are ONLY valid for test/documentation purposes and carry no permissions.
+    // Any attempt to use these in production will fail authentication.
+    // =============================================================================
+    //
+    // ACCESS_KEY: AKIAIOSFODNN7EXAMPLE
+    // SECRET_KEY: wJalrXUtnFEMI/K7MDENG+bPxRfiCYEXAMPLEKEY
+    //
+    // If you copy-paste credentials from this file into real code, the linter
+    // or a pre-commit hook (if configured) should flag the pattern.
+    // =============================================================================
+
+    /// AWS test-only credentials. These are well-known example credentials
+    /// from AWS documentation and carry no permissions.
+    const TEST_ONLY_AWS_ACCESS_KEY_ID: &str = "AKIAIOSFODNN7EXAMPLE";
+    const TEST_ONLY_AWS_SECRET_ACCESS_KEY: &str = "wJalrXUtnFEMI/K7MDENG+bPxRfiCYEXAMPLEKEY";
+
     // ---- HMAC-SHA256 test vectors (RFC 4231) ----
 
     #[test]
@@ -1434,8 +1455,8 @@ mod tests {
         // (The AWS docs use "iam" as the service; this module always signs for
         // "s3", so the expected key differs.)
         let creds = AwsCredentials {
-            access_key_id: "AKIAIOSFODNN7EXAMPLE".to_string(),
-            secret_access_key: "wJalrXUtnFEMI/K7MDENG+bPxRfiCYEXAMPLEKEY".to_string(),
+            access_key_id: TEST_ONLY_AWS_ACCESS_KEY_ID.to_string(),
+            secret_access_key: TEST_ONLY_AWS_SECRET_ACCESS_KEY.to_string(),
             session_token: None,
         };
         let signer = SigV4Signer::new(creds, "us-east-1".to_string());
@@ -1452,8 +1473,8 @@ mod tests {
     #[test]
     fn sigv4_full_signature_s3_put() {
         let creds = AwsCredentials {
-            access_key_id: "AKIAIOSFODNN7EXAMPLE".to_string(),
-            secret_access_key: "wJalrXUtnFEMI/K7MDENG+bPxRfiCYEXAMPLEKEY".to_string(),
+            access_key_id: TEST_ONLY_AWS_ACCESS_KEY_ID.to_string(),
+            secret_access_key: TEST_ONLY_AWS_SECRET_ACCESS_KEY.to_string(),
             session_token: None,
         };
         let signer = SigV4Signer::new(creds, "us-east-1".to_string());
@@ -1491,8 +1512,8 @@ mod tests {
     #[test]
     fn sigv4_includes_session_token_when_present() {
         let creds = AwsCredentials {
-            access_key_id: "AKIAIOSFODNN7EXAMPLE".to_string(),
-            secret_access_key: "wJalrXUtnFEMI/K7MDENG+bPxRfiCYEXAMPLEKEY".to_string(),
+            access_key_id: TEST_ONLY_AWS_ACCESS_KEY_ID.to_string(),
+            secret_access_key: TEST_ONLY_AWS_SECRET_ACCESS_KEY.to_string(),
             session_token: Some("token123".to_string()),
         };
         let signer = SigV4Signer::new(creds, "us-east-1".to_string());
