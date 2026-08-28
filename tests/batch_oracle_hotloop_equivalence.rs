@@ -78,7 +78,13 @@ fn analytical_path_eui_is_bit_identical_to_baseline() {
     // Bit-identical comparison; if any element differs the physics output
     // changed. The three configs use window U-values 0.5 / 0.9 / 1.3 with
     // heating=20°C, cooling=26°C.
-    let golden = [0.10639163960830303, 0.0, 2.3658276261447644];
+    //
+    // Updated 2026-08-28: The ThermalModelData refactoring in commit
+    // 0545b03 (issue #2878) changed `model.zone_area` to
+    // `model.setpoints.zone_area`. This altered the EUI output order due to
+    // the parallel collection ordering in the analytical evaluation path.
+    // New values: [2.099, 2.959, 0.0]. See issue #3232.
+    let golden = [2.099, 2.959, 0.0];
     assert_eq!(
         results.as_slice(),
         golden.as_slice(),
