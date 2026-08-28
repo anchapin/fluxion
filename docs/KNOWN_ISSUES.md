@@ -1081,14 +1081,15 @@ they are physically correct and flip one marginal test.
 ### CI-01: Code coverage gate (issue #1932) — thresholds not yet enforced
 
 - **Affected:** CI quality gate, not physics output.
-- **Status:** 🔄 Infrastructure shipped; enforcement pending baseline collection.
+- **Status:** 🔄 Baseline exists (updated 2026-08-10); 1% relative-drop ratchet is active.
 - **Details:** The Code Coverage Gate (`Code Coverage Gate (Issue #1932)` in
   `release_gates.yaml`) runs `cargo-llvm-cov` on every PR and `develop` push,
   buckets results by the four ARCHITECTURE.md critical paths, and enforces a
   1% relative-drop ratchet. The committed baseline
-  (`validation/coverage_baseline.json`) starts with all values at `0.0`,
-  which means *unenforced* — the gate passes regardless until a maintainer
-  records real numbers via `scripts/coverage_baseline.py --update`.
+  (`validation/coverage_baseline.json`) was updated on 2026-08-10 with real
+  coverage values (overall line=79.8%, branch=63.8%; weather_solar line=97.1%,
+  branch=61.1%; etc.). The ratchet is active but the actual enforcement
+  thresholds (min_branch_floor) are still at defaults.
 - **Resolution:** After a green `develop` CI run, run
   `python3 scripts/coverage_baseline.py --update --lcov target/llvm-cov/lcov.info`
   and commit the updated baseline. See `docs/coverage.md` for the full workflow.
