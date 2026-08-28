@@ -1,5 +1,12 @@
 /// ASHRAE 140 Validation with Coverage Tracking
 ///
+/// **NOTE**: This module provides a *mock* `CoverageTracker` struct that tracks
+/// "code paths" via a mock simulation — it is NOT actual line/branch coverage
+/// and cannot detect untested code paths in the physics modules. Actual coverage
+/// tracking is performed by `.github/workflows/code-coverage.yml` using
+/// `cargo-llvm-cov`. This module exists solely as a conceptual scaffold for
+/// test design discussions.
+///
 /// This module provides coverage tracking infrastructure for ASHRAE 140 validation
 /// to ensure that tests exercise all critical physics code paths.
 use std::collections::HashSet;
