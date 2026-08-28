@@ -155,8 +155,7 @@ See `AGENTS.md` §Toolchain Quirks for the authoritative list and exact build co
 - `FLUXION_GPU=0` — force CPU inference
 
 **Environment Variables (Digital Twin — `fluxion-twin`):**
-- `FLUXION_MQTT_ALLOW_INSECURE` — permit plaintext `mqtt://` / `tcp://` brokers (default: TLS-only `mqtts://` port 8883)
-- `FLUXION_MQTT_INSECURE` — skip TLS server-certificate validation (dangerous; local dev only)
+- `FLUXION_MQTT_ALLOW_INSECURE` — permit plaintext `mqtt://` / `tcp://` brokers (default: TLS-only `mqtts://` port 8883), and skip TLS server-cert validation (dangerous; local dev only)
 - `DWAVE_API_TOKEN` — required at runtime for the `dwave` feature
 
 **Environment Variables (CI / bindings):**

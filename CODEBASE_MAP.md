@@ -468,8 +468,7 @@ the platform trust store; server certificates are validated by default.
 
 | Env var | Effect |
 |---------|--------|
-| `FLUXION_MQTT_ALLOW_INSECURE` | Truthy → permits plaintext `mqtt://`/`tcp://` URLs (port 1883). **Also the release boot-guard opt-in**: in release builds any insecure transport (plaintext **or** disabled cert validation) is refused at boot unless this is set. Debug builds skip the guard. |
-| `FLUXION_MQTT_INSECURE` | Truthy → skip TLS server-cert validation (e.g. self-signed brokers). In **release** builds this is refused unless `FLUXION_MQTT_ALLOW_INSECURE=1` is also set; debug builds permit it for local dev. |
+| `FLUXION_MQTT_ALLOW_INSECURE` | Truthy → permits plaintext `mqtt://`/`tcp://` URLs (port 1883). Also skips TLS server-cert validation (e.g. self-signed brokers). In release builds any insecure transport (plaintext or disabled cert validation) is refused at boot unless this is set. Debug builds skip the guard for local dev. |
 
 Parity with the `fluxion-rest` boot guard (`FLUXION_REST_ALLOW_INSECURE`).
 

@@ -58,6 +58,7 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 AUDIT_TOML = REPO_ROOT / ".cargo" / "audit.toml"
+DENY_TOML = REPO_ROOT / "deny.toml"
 CARGO_LOCK = REPO_ROOT / "Cargo.lock"
 
 
@@ -408,74 +409,29 @@ def evaluate_upstream(
     return None
 
 
-def main() -> int:
-    parser = argparse.ArgumentParser(
-        description=__doc__,
-        formatter_class=argparse.RawDescriptionHelpFormatter,
-    )
-    parser.add_argument(
-        "--check-upstream",
-        action="store_true",
-        help=(
-            "Enable condition (a): poll crates.io for upstream releases "
-            "of the crate named in the REMOVE block. Disabled by "
-            "default to keep CI offline."
-        ),
-    )
-    parser.add_argument(
-        "--quiet",
-        action="store_true",
-        help="Suppress per-entry details; print only the summary.",
-    )
-    args = parser.parse_args()
-
-    today = date.today()
-
-    print("=== Fluxion Audit-Ignore Freshness Check (Issue #2912) ===")
-    print(f"Repo:           {REPO_ROOT}")
-    print(f"Audit config:   {AUDIT_TOML.relative_to(REPO_ROOT)}")
-    print(f"Lock file:      {CARGO_LOCK.relative_to(REPO_ROOT)}")
-    print(f"Today:          {today.isoformat()}")
-    print(
-        "Upstream check: "
-        + ("ENABLED (will poll crates.io)" if args.check_upstream else "DISABLED (offline mode; conditions (b)+(c) only)")
-    )
-    print()
-
-    if not AUDIT_TOML.exists():
-        print(
-            f"FAIL: {AUDIT_TOML.relative_to(REPO_ROOT)} not found. "
-            f"The audit config is the source of truth for this gate."
-        )
-        return 2
+def _check_file(
+    path: Path,
+    lock_versions: dict[str, list[str]],
+    today: date,
+    args,
+) -> tuple[list[tuple[dict, list[str]]], list[str]]:
+    """Check a single audit config file and return (surfacable, no_remove_block)."""
+    surfacable: list[tuple[dict, list[str]]] = []
+    no_remove_block: list[str] = []
 
     try:
-        text = AUDIT_TOML.read_text(encoding="utf-8")
+        text = path.read_text(encoding="utf-8")
     except OSError as exc:
-        print(f"ERROR: cannot read {AUDIT_TOML}: {exc}", file=sys.stderr)
-        return 2
+        print(f"ERROR: cannot read {path}: {exc}", file=sys.stderr)
+        return ([], [])
 
     try:
         entries = parse_ignore_entries(text)
     except Exception as exc:
-        print(f"ERROR parsing {AUDIT_TOML}: {exc}", file=sys.stderr)
-        return 2
+        print(f"ERROR parsing {path}: {exc}", file=sys.stderr)
+        return ([], [])
 
-    print(f"Found {len(entries)} advisory ignore entries.")
-
-    try:
-        lock_versions = parse_cargo_lock_versions(CARGO_LOCK)
-    except FileNotFoundError as exc:
-        print(f"ERROR: {exc}", file=sys.stderr)
-        return 2
-    print(
-        f"Loaded {len(lock_versions)} packages from "
-        f"{CARGO_LOCK.relative_to(REPO_ROOT)}."
-    )
-    print()
-
-    surfacable: list[tuple[dict, list[str]]] = []
-    no_remove_block: list[str] = []
+    print(f"Found {len(entries)} advisory ignore entries in {path.name}.")
 
     for entry in entries:
         rid = entry["id"]
@@ -531,7 +487,7 @@ def main() -> int:
                     print(
                         "  (b) No automated Cargo.lock check available "
                         "for this entry (only upstream (a) or removal-"
-                        "date (c) can fire)."
+                        "date (c) can fire."
                     )
                 if rd is not None:
                     print(
@@ -551,15 +507,89 @@ def main() -> int:
         if any_met:
             surfacable.append((entry, reasons))
 
+    return surfacable, no_remove_block
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(
+        description=__doc__,
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
+    parser.add_argument(
+        "--check-upstream",
+        action="store_true",
+        help=(
+            "Enable condition (a): poll crates.io for upstream releases "
+            "of the crate named in the REMOVE block. Disabled by "
+            "default to keep CI offline."
+        ),
+    )
+    parser.add_argument(
+        "--quiet",
+        action="store_true",
+        help="Suppress per-entry details; print only the summary.",
+    )
+    args = parser.parse_args()
+
+    today = date.today()
+
+    print("=== Fluxion Audit-Ignore Freshness Check (Issue #2912, #3237) ===")
+    print(f"Repo:           {REPO_ROOT}")
+    print(f"Lock file:      {CARGO_LOCK.relative_to(REPO_ROOT)}")
+    print(f"Today:          {today.isoformat()}")
+    print(
+        "Upstream check: "
+        + ("ENABLED (will poll crates.io)" if args.check_upstream else "DISABLED (offline mode; conditions (b)+(c) only)")
+    )
+    print()
+
+    # Check both .cargo/audit.toml and deny.toml (Issue #3237)
+    files_to_check = [
+        (AUDIT_TOML, ".cargo/audit.toml"),
+        (DENY_TOML, "deny.toml"),
+    ]
+
+    for path, _label in files_to_check:
+        if path.exists():
+            print(f"Scanning {path.relative_to(REPO_ROOT)}...")
+        else:
+            print(f"Skipping {path.relative_to(REPO_ROOT)} (not found)")
+            continue
+
+    print()
+
+    try:
+        lock_versions = parse_cargo_lock_versions(CARGO_LOCK)
+    except FileNotFoundError as exc:
+        print(f"ERROR: {exc}", file=sys.stderr)
+        return 2
+    print(
+        f"Loaded {len(lock_versions)} packages from "
+        f"{CARGO_LOCK.relative_to(REPO_ROOT)}."
+    )
+    print()
+
+    all_surfacable: list[tuple[dict, list[str]]] = []
+    all_no_remove_block: list[str] = []
+
+    for path, _label in files_to_check:
+        if not path.exists():
+            continue
+
+        surfacable, no_remove_block = _check_file(path, lock_versions, today, args)
+        all_surfacable.extend(surfacable)
+        all_no_remove_block.extend(no_remove_block)
+        print()
+
     print("=" * 64)
     print()
 
-    if no_remove_block:
+    if all_no_remove_block:
         print(
-            f"NOTE: {len(no_remove_block)} advisory entries have no "
+            f"NOTE: {len(all_no_remove_block)} advisory entries have no "
             f"`>>> REMOVE` block (gate not enforced):"
         )
-        for rid in no_remove_block:
+        for rid in all_no_remove_block:
             print(f"  - {rid}")
         print(
             "  These advisories are tracked manually or with prose "
@@ -569,21 +599,20 @@ def main() -> int:
         )
         print()
 
-    if surfacable:
+    if all_surfacable:
         print(
-            f"FAIL: {len(surfacable)} advisory ignore entries have met "
+            f"FAIL: {len(all_surfacable)} advisory ignore entries have met "
             f"removal conditions:"
         )
-        for entry, reasons in surfacable:
+        for entry, reasons in all_surfacable:
             print(f"  - {entry['id']} (line {entry['line']})")
             for r in reasons:
                 print(f"      {r}")
         print()
         print(
-            "Action: remove these entries from `.cargo/audit.toml` (and "
-            "mirror the change in `deny.toml` if applicable). The "
-            "removal conditions documented in the `>>> REMOVE` block "
-            "are now satisfied — see issue #2912."
+            "Action: remove these entries from `.cargo/audit.toml` and/or "
+            "`deny.toml`. The removal conditions documented in the "
+            "`>>> REMOVE` block are now satisfied — see issue #2912, #3237."
         )
         return 1
 
