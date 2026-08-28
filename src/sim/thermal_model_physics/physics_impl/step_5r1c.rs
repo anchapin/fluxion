@@ -1,18 +1,19 @@
 //! 5R1C physics step implementation for `ThermalModel`.
 
 use crate::physics::cta::{ContinuousTensor, VectorField};
-use crate::physics::exterior_convection::{h_c_ext_wind_dependent, wind_at_building_height_from_10m, ExteriorSurfaceDirection};
-use smallvec::SmallVec;
+use crate::physics::exterior_convection::{
+    h_c_ext_wind_dependent, wind_at_building_height_from_10m, ExteriorSurfaceDirection,
+};
 use crate::physics::five_r1c_solver::surface_time_constant_from_conductances;
 use crate::sim::hvac::{HVACMode as EquipmentHVACMode, VariableCapacityEquipment};
 use crate::sim::longwave_exchange::InteriorSurfaceNetwork;
 use crate::sim::sky_radiation::SolAirTemperature;
 use crate::sim::thermal_integration::{
-    crank_nicolson_iso13790, select_integration_method,
-    ThermalIntegrationMethod,
+    crank_nicolson_iso13790, select_integration_method, ThermalIntegrationMethod,
 };
 use crate::sim::thermal_model_core::ThermalModel;
 use crate::sim::thermal_model_scratch::PhysicsScratch5r1c;
+use smallvec::SmallVec;
 
 use super::step_common::step_wall_surface_ode;
 

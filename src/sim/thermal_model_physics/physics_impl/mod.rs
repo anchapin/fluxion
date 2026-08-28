@@ -13,11 +13,11 @@
 
 use crate::physics::cta::VectorField;
 
-mod step_common;
 mod step_5r1c;
 mod step_6r2c;
 mod step_8r3c;
 mod step_9r4c;
+mod step_common;
 
 #[cfg(test)]
 mod scratch_pool_tests {
@@ -245,4 +245,3 @@ mod scratch_pool_tests {
         );
     }
 }
-
