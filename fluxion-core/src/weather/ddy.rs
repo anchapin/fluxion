@@ -32,6 +32,7 @@
 //! # Usage
 //!
 //! ```no_run
+//! fn main() -> Result<(), Box<dyn std::error::Error>> {
 //! use fluxion_core::weather::ddy::DesignDaySource;
 //!
 //! let ddy = DesignDaySource::from_file("path/to/file.ddy")?;
@@ -39,6 +40,8 @@
 //! let cooling_design = ddy.cooling_design().unwrap();
 //! println!("Heating design temp: {:.1}°C", heating_design.max_temp);
 //! println!("Cooling design temp: {:.1}°C", cooling_design.max_temp);
+//! Ok(())
+//! }
 //! ```
 
 use crate::weather::HourlyWeatherData;
@@ -170,11 +173,14 @@ impl DesignDaySource {
     /// # Example
     ///
     /// ```no_run
+    /// fn main() -> Result<(), Box<dyn std::error::Error>> {
     /// use fluxion_core::weather::ddy::DesignDaySource;
     ///
     /// let ddy = DesignDaySource::from_file("weather.ddy")?;
     /// if let Some(heating) = ddy.heating_design() {
     ///     println!("Heating design: {:.1}°C", heating.max_temp);
+    /// }
+    /// Ok(())
     /// }
     /// ```
     pub fn from_file<P: AsRef<Path>>(path: P) -> Result<Self, String> {
