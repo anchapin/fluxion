@@ -10,7 +10,7 @@ use crate::physics::cta::{ContinuousTensor, VectorField};
 #[cfg(feature = "gauge-solver")]
 use crate::physics::units::FromF64;
 #[cfg(feature = "gauge-solver")]
-use crate::physics::units::{HeatTransferCoefficient, Temperature};
+use crate::physics::units::{HeatTransferCoefficient, Temperature, ToF64};
 use crate::sim::thermal_model_core::ThermalModel;
 
 impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>> ThermalModel<T> {
@@ -111,8 +111,21 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                 0.0, // Q_infiltration_w - would need proper infiltration calculation
             );
 
-            // If gauge solver succeeds, return its result; otherwise fall through to legacy
+            // If gauge solver succeeds, update ThermalModel state with new T_air and return
             if let Ok(energy_kwh) = result {
+                // Issue #3251 Phase 3 (A7.2): Wire GaugeZoneSolver T_air back into ThermalModel
+                // After gauge_solver.step(), T_air has been updated. Propagate it to
+                // setpoints.temperatures so subsequent calls see the correct zone temperature.
+                let new_T_air = gauge_solver.T_air().to_value();
+                let temps_ref: &[f64] = self.0.setpoints.temperatures.as_ref();
+                if temps_ref.len() == 1 {
+                    self.0.setpoints.temperatures.as_mut()[0] = new_T_air;
+                } else {
+                    // For multi-zone, update all zones with the same T_air (single-zone gauge solver)
+                    for temp in self.0.setpoints.temperatures.as_mut() {
+                        *temp = new_T_air;
+                    }
+                }
                 return energy_kwh;
             }
             // Fall through to legacy solver if gauge fails
