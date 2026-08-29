@@ -11,6 +11,7 @@
 //! Originally part of the monolithic `physics_impl.rs` (4370 lines),
 //! further split in Issue #3220 to address single-responsibility principle violations.
 
+#[allow(unused_imports)]
 use crate::physics::cta::VectorField;
 
 mod step_5r1c;
