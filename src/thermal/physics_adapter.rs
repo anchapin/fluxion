@@ -257,4 +257,51 @@ mod tests {
         assert_eq!(record.delta_wm2, None);
         assert!(record.error.as_ref().unwrap().contains("h_exterior"));
     }
+
+    /// A5.3: Integration test verifying that when primary_solver == Gauge,
+    /// the step() method returns the gauge flux (not the baseline flux).
+    /// This confirms the routing branch fires correctly in production mode.
+    #[test]
+    fn test_gauge_primary_returns_gauge_flux() {
+        let wall = test_wall();
+
+        // First, get the baseline flux for comparison
+        let mut baseline = FiveR1CSolver::new();
+        baseline.initialize(&wall).unwrap();
+        let baseline_flux = baseline
+            .step(
+                Time::from_value(3600.0),
+                Temperature::from_value(20.0),
+                Temperature::from_value(20.0),
+                HeatTransferCoefficient::from_value(8.0),
+                HeatTransferCoefficient::from_value(25.0),
+            )
+            .unwrap();
+
+        // With gauge_primary(), the returned flux should be the gauge flux
+        let mut adapter = PhysicsAdapter::new(PhysicsAdapterConfig::gauge_primary());
+        adapter.initialize(&wall).unwrap();
+        let gauge_flux = adapter
+            .step(
+                Time::from_value(3600.0),
+                Temperature::from_value(20.0),
+                Temperature::from_value(20.0), // T_exterior
+                HeatTransferCoefficient::from_value(8.0),
+                HeatTransferCoefficient::from_value(25.0),
+                800.0,
+            )
+            .unwrap();
+
+        // Gauge flux with solar boundary should differ from baseline
+        // baseline = (20-20)/R = 0, gauge = (T_ext - T_int)/R where T_ext includes solar
+        assert_eq!(gauge_flux.to_value(), 160.0); // Sol-air effect: 20 + 800/25 = 52°C ext
+        assert_ne!(baseline_flux.to_value(), gauge_flux.to_value());
+
+        // Shadow records should still be populated for observability
+        assert_eq!(adapter.shadow_records().len(), 1);
+        let record = adapter.last_shadow_record().unwrap();
+        assert_eq!(record.baseline_flux_wm2, baseline_flux.to_value());
+        assert_eq!(record.gauge_flux_wm2, Some(160.0));
+        assert_eq!(record.delta_wm2, Some(160.0 - baseline_flux.to_value()));
+    }
 }
