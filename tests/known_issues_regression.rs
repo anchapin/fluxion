@@ -23,9 +23,14 @@ use fluxion::validation::ASHRAE140Validator;
 ///
 /// The test reproduces the exact metrics via the same `from_spec` + `step_physics`
 /// path as `tests/ashrae_140_case_600_series.rs`, and is `#[ignore]`-quarantined.
-/// It flips green when #1465 brings the 14 metrics into band, giving CI a concrete
-/// close-out signal for #1457. Per the maintainer, forcing these into band with an
-/// HVAC clamp / per-timestep bound is an anti-pattern and must NOT be used here.
+///
+/// **Status**: A5.3 (gauge_primary test) and A6 (thermal mass) are implemented,
+/// but the production path is NOT yet wired. GaugeZoneSolver only runs for 9R4C
+/// (high-mass) models, NOT for low-mass Case 600. This test will flip green
+/// when Phase 3 (A7) wires GaugeSolver into the production path for ALL cases.
+///
+/// Per the maintainer, forcing these into band with an HVAC clamp / per-timestep
+/// bound is an anti-pattern and must NOT be used here.
 mod issue_1457_case_600_series_tracking {
     use fluxion::physics::cta::VectorField;
     use fluxion::sim::engine::ThermalModel;
@@ -85,7 +90,17 @@ mod issue_1457_case_600_series_tracking {
     }
 
     /// One quarantined guard covering all 14 currently-failing #1457 metrics.
-    /// GaugeSolver Phase 3 (#1465) is complete — un-ignoring to verify closure.
+    ///
+    /// **UN-IGNORE BLOCKED**: This test is quarantined because:
+    /// 1. GaugeZoneSolver is only initialized for high-mass (9R4C) models
+    /// 2. Case 600 is a low-mass (5R1C) model, so GaugeZoneSolver is not used
+    /// 3. GaugeSolver (via PhysicsAdapter) is not wired into ThermalModel production path
+    ///
+    /// To un-ignore this test, Phase 3 (A7) must be completed:
+    /// - Wire GaugeZoneSolver into ThermalModel::step_physics for ALL cases (not just 9R4C)
+    /// - Or wire PhysicsAdapter as the primary solver
+    ///
+    /// See issue #3251 Phase 3 for the full production switchover plan.
     #[test]
     fn test_issue1457_remaining_600_series_metrics() {
         // (case, metric, band_lo, band_hi)
