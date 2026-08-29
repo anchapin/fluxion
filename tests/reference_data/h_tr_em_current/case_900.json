@@ -9,8 +9,8 @@
     }
   },
   "_source": "Captured by `cargo run --release --example capture_h_tr_em_baseline`.",
-  "captured_at": "2026-08-29T23:49:15Z",
-  "captured_commit": "0fe6bca109119c245834f582e6598537f53dfec2",
+  "captured_at": "2026-08-29T23:49:52Z",
+  "captured_commit": "5716f5f5668a297cb2f489be4caaf6f06cc46a7a",
   "case_id": "900",
   "metrics": {
     "cm_j_per_k": 18014427.84,

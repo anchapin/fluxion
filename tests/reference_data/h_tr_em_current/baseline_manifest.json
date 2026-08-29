@@ -5,8 +5,8 @@
   "_schema_version_doc": "Bumped on backward-incompatible changes to the per-case JSON shape. The verifier asserts schema_version matches its in-code expectation; an older manifest trips exit 2.",
   "_status": "captured",
   "_status_doc": "Set to 'captured' once every metrics field is a non-null float AND captured_commit matches a real git SHA. The verifier refuses to diff a 'placeholder' set (exit 2).",
-  "captured_at": "2026-08-29T23:49:15Z",
-  "captured_commit": "0fe6bca109119c245834f582e6598537f53dfec2",
+  "captured_at": "2026-08-29T23:49:52Z",
+  "captured_commit": "5716f5f5668a297cb2f489be4caaf6f06cc46a7a",
   "cases": {
     "case_195": {
       "_sha256_doc": "SHA-256 of the per-case JSON file at capture time. The verifier recomputes on load and compares against this field; a hand-tweak without re-running the simulation trips exit 2.",
