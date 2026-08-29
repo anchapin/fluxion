@@ -31,8 +31,17 @@ import pytest
 # ---------------------------------------------------------------------------
 
 _SCRIPTS_DIR = Path(__file__).resolve().parent
-if str(_SCRIPTS_DIR) not in sys.path:
-    sys.path.insert(0, str(_SCRIPTS_DIR))
+
+
+def pytest_configure(config: pytest.Config) -> None:
+    """Add scripts/ to sys.path during pytest's configure phase.
+
+    Using pytest_configure instead of module-level sys.path.insert ensures
+    proper path isolation - the path is added after pytest has initialized
+    but before any tests are collected or run.
+    """
+    if str(_SCRIPTS_DIR) not in sys.path:
+        sys.path.insert(0, str(_SCRIPTS_DIR))
 
 
 # ---------------------------------------------------------------------------
