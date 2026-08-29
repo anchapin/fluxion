@@ -1878,17 +1878,18 @@ impl ThermalModel<VectorField> {
             model.conduction.backend.multi_node_solvers = solvers;
         }
 
-        // Issue #3152: Initialize gauge_zone_solver for high-mass buildings when
-        // the gauge-solver feature is enabled. This enables the experimental
-        // gauge-solver code path in step_dispatcher.
+        // Issue #3251 Phase 3 (A7): Initialize gauge_zone_solver for ALL buildings when
+        // the gauge-solver feature is enabled. Previously this was gated on is_9r4c_model.
+        // The gauge solver now handles thermal mass tracking for both low-mass (5R1C)
+        // and high-mass (9R4C) configurations, enabling the unified production path.
         #[cfg(feature = "gauge-solver")]
-        if is_9r4c_model {
+        {
             use super::thermal_model_data::{GaugeZoneSolver, LayerSpec, SurfaceType, WallSpec};
 
             let geom = spec
                 .geometry
                 .first()
-                .expect("High-mass case must have geometry");
+                .expect("Gauge solver requires geometry");
             let floor_area = geom.floor_area();
             let ceiling_height = geom.height;
 
