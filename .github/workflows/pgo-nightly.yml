@@ -48,7 +48,7 @@ jobs:
                       /opt/ghc /opt/hostedtoolcache/CodeQL || true
           df -h
 
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
 
       - name: Install system dependencies
         run: |
@@ -64,7 +64,7 @@ jobs:
           command: rustup toolchain install stable --profile default --component rustfmt,clippy,llvm-tools-preview
 
       - name: Cache cargo + target
-        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830  # v4
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9  # v6.1.0
         with:
           path: |
             ~/.cargo/registry
@@ -103,7 +103,7 @@ jobs:
 
       - name: Upload pipeline log
         if: always()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02  # v4
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
         with:
           name: pgo-pipeline-log
           path: |
@@ -114,7 +114,7 @@ jobs:
 
       - name: Upload PGO profile data
         if: always()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02  # v4
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
         with:
           name: pgo-profile-data
           path: |
@@ -125,7 +125,7 @@ jobs:
 
       - name: Upload PGO-optimized binary
         if: success()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02  # v4
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
         with:
           name: pgo-optimized-fluxion
           path: |
