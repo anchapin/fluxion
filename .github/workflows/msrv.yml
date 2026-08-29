@@ -27,8 +27,12 @@ jobs:
   msrv-build:
     runs-on: ubuntu-latest
     name: MSRV Check (Issue #2934)
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+
+      - name: Preflight disk space
+        run: df -h /home
 
       # System build deps (libssl-dev, pkg-config, fontconfig, libglib2.0-dev,
       # libgtk-3-dev). Matches the apt-install list in
