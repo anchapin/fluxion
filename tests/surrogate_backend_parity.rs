@@ -49,6 +49,7 @@ mod surrogate_thermal_model_runs_onnx;
 const CPU_REF_REL_TOL: f64 = 1e-12;
 
 /// Per-element tolerance for cross-backend checks (issue #1336 acceptance).
+#[allow(dead_code)]
 const CROSS_BACKEND_REL_TOL: f64 = 1e-5;
 
 /// Matrix dimensions per the issue scope ("8760 timesteps × 5 zones × 4
@@ -569,6 +570,7 @@ fn test_surrogate_conduction_zero_flux_remains_finite() {
 /// Always `false` in this CI sandbox (no GPU hardware), so the live
 /// CPU-vs-CUDA parity check is `#[ignore]`d. Hardware-in-loop runners
 /// with NVIDIA GPUs will see `true` and the test runs to completion.
+#[allow(dead_code)]
 fn cuda_execution_provider_available() -> bool {
     #[cfg(feature = "cuda")]
     {

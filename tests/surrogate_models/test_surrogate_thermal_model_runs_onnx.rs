@@ -4,6 +4,7 @@ use fluxion::sim::thermal_model::{
     ThermalModelTrait,
 };
 
+#[allow(dead_code)]
 const DUMMY_ONNX_MODEL: &str = "assets/dummy_surrogate.onnx";
 
 #[test]

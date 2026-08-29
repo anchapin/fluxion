@@ -990,4 +990,111 @@ mod hvac_controller_tests {
         assert_eq!(model.setpoints.heating_setpoint, -999.0);
         assert_eq!(model.setpoints.cooling_setpoint, 999.0);
     }
+
+    // --- Re-exported constant values ---
+
+    #[test]
+    fn test_solar_constant_value() {
+        use std::f64::consts::PI;
+        assert_eq!(super::SOLAR_CONSTANT, 1361.0);
+    }
+
+    #[test]
+    fn test_exterior_film_coeff_value() {
+        assert_eq!(super::EXTERIOR_FILM_COEFF, 18.3);
+    }
+
+    #[test]
+    fn test_interior_film_coeff_value() {
+        assert_eq!(super::INTERIOR_FILM_COEFF, 8.29);
+    }
+
+    // --- get_daily_cycle full 24-hour verification ---
+
+    #[test]
+    fn test_get_daily_cycle_full_cycle() {
+        use super::get_daily_cycle;
+        use std::f64::consts::PI;
+
+        let cycle = get_daily_cycle();
+        assert_eq!(cycle.len(), 24);
+
+        // Peak at noon (h=12): sin(π - π/2) = sin(π/2) = 1
+        assert!((cycle[12] - 1.0).abs() < 1e-12);
+
+        // Nadir at midnight (h=0): sin(-π/2) = -1
+        assert!((cycle[0] - (-1.0)).abs() < 1e-12);
+
+        // Zero crossing at h=6: sin(0) = 0
+        assert!((cycle[6] - 0.0).abs() < 1e-12);
+
+        // Zero crossing at h=18: sin(π) = 0
+        assert!((cycle[18] - 0.0).abs() < 1e-12);
+
+        // Symmetry: cycle[12+h] == cycle[12-h] since sin(π + θ - π/2) = sin(π/2 - θ) = cos(θ)
+        for h in 1..=6 {
+            assert!(
+                (cycle[12 + h] - cycle[12 - h]).abs() < 1e-12,
+                "hour {} vs {}: {} vs {}",
+                12 + h,
+                12 - h,
+                cycle[12 + h],
+                cycle[12 - h]
+            );
+        }
+
+        // All values in [-1, 1]
+        for (i, &v) in cycle.iter().enumerate() {
+            assert!(
+                v >= -1.0 && v <= 1.0,
+                "hour {} value {} out of range",
+                i,
+                v
+            );
+        }
+    }
+
+    // --- DoorGeometry re-exported from thermal_model_core ---
+
+    #[test]
+    fn test_door_geometry_new() {
+        use super::DoorGeometry;
+        let d = DoorGeometry::new(2.1, 1.5);
+        assert_eq!(d.height, 2.1);
+        assert_eq!(d.area, 1.5);
+    }
+
+    #[test]
+    fn test_door_geometry_partial_eq() {
+        use super::DoorGeometry;
+        let a = DoorGeometry::new(2.1, 1.5);
+        let b = DoorGeometry::new(2.1, 1.5);
+        let c = DoorGeometry::new(2.0, 1.5);
+        assert_eq!(a, b);
+        assert_ne!(a, c);
+    }
+
+    #[test]
+    fn test_door_geometry_copy() {
+        use std::mem::size_of;
+        use super::DoorGeometry;
+        assert_eq!(size_of::<DoorGeometry>(), 16);
+    }
+
+    #[test]
+    fn test_door_geometry_debug() {
+        use super::DoorGeometry;
+        let d = DoorGeometry::new(2.1, 1.5);
+        let debug = format!("{:?}", d);
+        assert!(debug.contains("height"));
+        assert!(debug.contains("2.1"));
+    }
+
+    #[test]
+    fn test_door_geometry_default() {
+        use super::DoorGeometry;
+        let d = DoorGeometry::default();
+        assert_eq!(d.height, 0.0);
+        assert_eq!(d.area, 0.0);
+    }
 }

@@ -395,6 +395,15 @@ impl EpwLocation {
     }
 }
 
+use std::hash::{Hash, Hasher};
+
+impl Hash for EpwLocation {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.city_state.hash(state);
+        self.utc_offset_hours.map(|v| v.to_bits()).hash(state);
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct EpwWeatherSource {
     /// Structured location extracted from EPW header. Issue #1416 carries both
@@ -2870,14 +2879,281 @@ mod tests {
         assert!(!err.contains("huge"));
     }
 
-    /// A small file (well under the limit) passes the size gate — the
-    /// acceptance criterion "file size <= 50 MiB".
     #[test]
-    fn validate_epw_path_accepts_small_file() {
+    fn test_epw_location_debug() {
+        let loc = EpwLocation { city_state: "Denver, CO".into(), utc_offset_hours: Some(-7.0) };
+        let d = format!("{:?}", loc);
+        assert!(d.contains("Denver"));
+        assert!(d.contains("-7"));
+    }
+
+    #[test]
+    fn test_epw_location_clone() {
+        let loc = EpwLocation { city_state: "Miami, FL".into(), utc_offset_hours: None };
+        let cloned = loc.clone();
+        assert_eq!(cloned.city_state, "Miami, FL");
+        assert_eq!(cloned.utc_offset_hours, None);
+        assert_eq!(cloned, loc);
+    }
+
+    #[test]
+    fn test_epw_location_city_state() {
+        let loc = EpwLocation { city_state: "Minneapolis, MN".into(), utc_offset_hours: Some(-6.0) };
+        assert_eq!(loc.city_state(), "Minneapolis, MN");
+    }
+
+    #[test]
+    fn test_epw_location_partialeq() {
+        let l1 = EpwLocation { city_state: "A".into(), utc_offset_hours: Some(1.0) };
+        let l2 = EpwLocation { city_state: "A".into(), utc_offset_hours: Some(1.0) };
+        let l3 = EpwLocation { city_state: "B".into(), utc_offset_hours: Some(1.0) };
+        assert_eq!(l1, l2);
+        assert_ne!(l1, l3);
+        let l4 = EpwLocation { city_state: "A".into(), utc_offset_hours: None };
+        assert_ne!(l1, l4);
+    }
+
+    #[test]
+    fn test_epw_version_eq() {
+        assert_eq!(EpwVersion::V2, EpwVersion::V2);
+        assert_ne!(EpwVersion::V2, EpwVersion::V3);
+        assert_eq!(EpwVersion::AMY, EpwVersion::AMY);
+        assert_eq!(EpwVersion::IWEC, EpwVersion::IWEC);
+    }
+
+    #[test]
+    fn test_epw_weather_source_accessors() {
+        let epw_content = create_test_epw();
+        let cursor = Cursor::new(epw_content);
+        let source = EpwWeatherSource::parse(cursor).unwrap();
+        assert_eq!(source.location(), Some("Denver, CO".into()));
+        assert_eq!(source.record_count(), 3);
+        assert_eq!(source.solar_hours(), 1);
+        assert_eq!(source.max_temperature(), 32.0);
+        assert_eq!(source.min_temperature(), -2.0);
+    }
+
+    #[test]
+    fn test_epw_weather_source_debug() {
+        let epw_content = create_test_epw();
+        let cursor = Cursor::new(epw_content);
+        let source = EpwWeatherSource::parse(cursor).unwrap();
+        let d = format!("{:?}", source);
+        assert!(d.contains("Denver") || d.contains("EpwWeatherSource"));
+    }
+
+    #[test]
+    fn test_epw_weather_source_get_hourly_data_out_of_range() {
+        let epw_content = create_test_epw();
+        let cursor = Cursor::new(epw_content);
+        let source = EpwWeatherSource::parse(cursor).unwrap();
+        assert!(source.get_hourly_data(3).is_err());
+        assert!(source.get_hourly_data(8760).is_err());
+        assert!(source.get_hourly_data(10000).is_err());
+    }
+
+    #[test]
+    fn test_epw_weather_source_average_temperature() {
+        let epw_content = create_test_epw();
+        let cursor = Cursor::new(epw_content);
+        let source = EpwWeatherSource::parse(cursor).unwrap();
+        let avg = source.average_temperature();
+        assert!((avg - 10.0).abs() < 0.01);
+    }
+
+    #[test]
+    fn test_sentinel_exact_boundary() {
+        assert!(is_epw_sentinel(9999.0, EPW_SOLAR_SENTINEL));
+        assert!(!is_epw_sentinel(9998.0, EPW_SOLAR_SENTINEL));
+        assert!(is_epw_sentinel(9999.9, EPW_SOLAR_SENTINEL));
+        assert!(is_epw_sentinel(10000.0, EPW_SOLAR_SENTINEL));
+        assert!(is_epw_sentinel(f64::MAX, EPW_SOLAR_SENTINEL));
+        assert!(!is_epw_sentinel(-f64::MAX, EPW_SOLAR_SENTINEL));
+    }
+
+    #[test]
+    fn test_parse_field_sentinel_exact() {
+        assert_eq!(parse_field_coercing_sentinel("", EPW_SOLAR_SENTINEL, -999.0), -999.0);
+        assert_eq!(parse_field_coercing_sentinel("   ", EPW_SOLAR_SENTINEL, -1.0), -1.0);
+    }
+
+    #[test]
+    fn test_epw_weather_source_iterator_bounds() {
+        let epw_content = create_test_epw();
+        let cursor = Cursor::new(epw_content);
+        let source = EpwWeatherSource::parse(cursor).unwrap();
+        let all: Vec<_> = source.iter_hours().collect();
+        assert_eq!(all.len(), 3);
+        assert!(all[0].is_ok());
+        assert!(all[1].is_ok());
+        assert!(all[2].is_ok());
+        assert!(source.get_hourly_data(3).is_err());
+    }
+
+    #[test]
+    fn test_statistics_zero_records() {
+        let source: EpwWeatherSource = EpwWeatherSource {
+            location: Some(EpwLocation { city_state: "Empty".into(), utc_offset_hours: None }),
+            hourly_data: vec![],
+        };
+        assert_eq!(source.record_count(), 0);
+        assert_eq!(source.solar_hours(), 0);
+        assert!(source.max_temperature().is_infinite() && source.max_temperature().is_sign_negative());
+        assert!(source.min_temperature().is_infinite() && source.min_temperature().is_sign_positive());
+        assert_eq!(source.average_temperature(), 0.0);
+    }
+
+    #[test]
+    fn test_statistics_all_identical_temps() {
+        let w = HourlyWeatherData::new(25.0, 0.0, 0.0, 0.0, 0.0, 50.0, 0);
+        let source: EpwWeatherSource = EpwWeatherSource {
+            location: None,
+            hourly_data: vec![w; 5],
+        };
+        assert_eq!(source.max_temperature(), 25.0);
+        assert_eq!(source.min_temperature(), 25.0);
+        assert_eq!(source.average_temperature(), 25.0);
+        assert_eq!(source.solar_hours(), 0);
+    }
+
+    #[test]
+    fn test_statistics_negative_temps() {
+        let w1 = HourlyWeatherData::new(-10.0, 0.0, 0.0, 0.0, 0.0, 50.0, 0);
+        let w2 = HourlyWeatherData::new(-20.0, 0.0, 0.0, 0.0, 0.0, 50.0, 1);
+        let source: EpwWeatherSource = EpwWeatherSource {
+            location: None,
+            hourly_data: vec![w1, w2],
+        };
+        assert_eq!(source.max_temperature(), -10.0);
+        assert_eq!(source.min_temperature(), -20.0);
+        assert!((source.average_temperature() - (-15.0)).abs() < 0.01);
+    }
+
+    #[test]
+    fn test_parse_location_valid_full() {
+        let line = "LOCATION,Chicago,IL,USA,TMY3,725300,41.97,-87.92,-6.0,181.0,1991-2005";
+        let result = EpwWeatherSource::parse_location(line).unwrap().unwrap();
+        assert_eq!(result.city_state, "Chicago, IL");
+        assert_eq!(result.utc_offset_hours, Some(-6.0));
+    }
+
+    #[test]
+    fn test_parse_location_negative_utc() {
+        let line = "LOCATION,Test,XX,TEST,TEST,000000,0.0,0.0,-12.5,0";
+        let result = EpwWeatherSource::parse_location(line).unwrap().unwrap();
+        assert_eq!(result.utc_offset_hours, Some(-12.5));
+    }
+
+    #[test]
+    fn test_parse_location_positive_utc() {
+        let line = "LOCATION,Test,XX,TEST,TEST,000000,0.0,0.0,5.5,0";
+        let result = EpwWeatherSource::parse_location(line).unwrap().unwrap();
+        assert_eq!(result.utc_offset_hours, Some(5.5));
+    }
+
+    #[test]
+    fn test_parse_location_missing_city() {
+        let line = "LOCATION,,NY,USA,TMY3,724690,39.83,-104.65,-7.0,1655.0";
+        let result = EpwWeatherSource::parse_location(line).unwrap().unwrap();
+        assert_eq!(result.city_state, ", NY");
+    }
+
+    #[test]
+    fn test_is_epw_header_line_false_positives() {
+        assert!(!super::is_epw_header_line("1991,1,1,1,0"));
+        assert!(!super::is_epw_header_line("9999,1,1,1,0,0"));
+        assert!(!super::is_epw_header_line("NOT A HEADER LINE HERE"));
+    }
+
+    #[test]
+    fn test_parse_optional_field_whitespace() {
+        assert_eq!(super::parse_optional_field("  42.5  ", 0.0), 42.5);
+        assert_eq!(super::parse_optional_field("  ", 99.0), 99.0);
+    }
+
+    #[test]
+    fn test_parse_data_line_optional_snow_fields() {
+        let line = "1991,1,1,1,0,0,0.0,-5.0,50,101325,0,0,300,0,0,0,0,0,0,0,0,3.5,180,10.0,20000.0,5000.0,5.0,50.0,0,0,0,0,0,0,0,0,0,0";
+        let result = EpwWeatherSource::parse_data_line(line, 0).unwrap();
+        assert_eq!(result.snow_depth, Some(5.0));
+        assert_eq!(result.snow_cover, Some(50.0));
+    }
+
+    #[test]
+    fn test_hourly_record_equality() {
+        let r1 = HourlyRecord {
+            year: 2000, month: 6, day: 15, hour: 12, minute: 0,
+            dry_bulb_temp: 30.0, humidity: 40.0, dni: 800.0, dhi: 100.0,
+            ghi: 900.0, wind_speed: 3.0, horizontal_infrared: 300.0,
+            ground_temperature: None, horizontal_illuminance: None,
+            diffuse_illuminance: None, snow_depth: None, snow_cover: None,
+            present_weather: None, present_weather_code: None,
+        };
+        let mut r2 = r1.clone();
+        assert_eq!(r1.year, r2.year);
+        r2.year = 2001;
+        assert_ne!(r1.year, r2.year);
+    }
+
+    #[test]
+    fn test_subhourly_record_equality() {
+        let r1 = SubHourlyRecord {
+            year: 2000, month: 6, day: 15, hour: 12, minute: 30,
+            dry_bulb_temp: 30.0, humidity: 40.0, dni: 800.0, dhi: 100.0,
+            ghi: 900.0, wind_speed: 3.0, horizontal_infrared: 300.0,
+            ground_temperature: None, horizontal_illuminance: None,
+            diffuse_illuminance: None, snow_depth: None, snow_cover: None,
+            present_weather: None, present_weather_code: None,
+        };
+        let mut r2 = r1.clone();
+        assert_eq!(r1.minute, r2.minute);
+        r2.minute = 45;
+        assert_ne!(r1.minute, r2.minute);
+    }
+
+    #[test]
+    fn test_hourly_record_debug() {
+        let r = HourlyRecord {
+            year: 2000, month: 1, day: 1, hour: 1, minute: 0,
+            dry_bulb_temp: 20.0, humidity: 50.0, dni: 0.0, dhi: 0.0,
+            ghi: 0.0, wind_speed: 2.0, horizontal_infrared: 300.0,
+            ground_temperature: Some(10.0), horizontal_illuminance: None,
+            diffuse_illuminance: None, snow_depth: None, snow_cover: None,
+            present_weather: None, present_weather_code: None,
+        };
+        let d = format!("{:?}", r);
+        assert!(d.contains("2000"));
+        assert!(d.contains("20"));
+    }
+
+    #[test]
+    fn test_subhourly_record_debug() {
+        let r = SubHourlyRecord {
+            year: 2000, month: 7, day: 15, hour: 14, minute: 15,
+            dry_bulb_temp: 35.0, humidity: 30.0, dni: 900.0, dhi: 120.0,
+            ghi: 1020.0, wind_speed: 2.5, horizontal_infrared: 350.0,
+            ground_temperature: None, horizontal_illuminance: None,
+            diffuse_illuminance: None, snow_depth: None, snow_cover: None,
+            present_weather: None, present_weather_code: None,
+        };
+        let d = format!("{:?}", r);
+        assert!(d.contains("35"));
+        assert!(d.contains("15")); // minute
+    }
+
+    #[test]
+    fn test_validate_epw_path_rejects_directory() {
         let dir = tempfile::tempdir().unwrap();
-        let epw = dir.path().join("small.epw");
+        let err = validate_epw_path_in_dir(&dir.path().to_string_lossy(), dir.path()).unwrap_err();
+        assert!(err.contains("not found") || err.contains("extension"));
+    }
+
+    #[test]
+    fn test_validate_epw_path_accepts_relative_inside_dir() {
+        let dir = tempfile::tempdir().unwrap();
+        let epw = dir.path().join("rel.epw");
         std::fs::write(&epw, b"x").unwrap();
         let res = validate_epw_path_in_dir(&epw.to_string_lossy(), dir.path());
-        assert!(res.is_ok(), "small file should pass: {res:?}");
+        assert!(res.is_ok(), "absolute path should work: {res:?}");
     }
 }

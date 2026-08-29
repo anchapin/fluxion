@@ -39,6 +39,7 @@ const DENVER_LAT: f64 = 39.74;
 const DENVER_LON: f64 = -105.18;
 
 const TOLERANCE_PCT: f64 = 1.0;
+#[allow(dead_code)]
 const GROUND_MIN_FOR_COMPARE: f64 = 1.0;
 
 fn epw_hour_to_date(epw_hour: usize) -> (i32, u32, u32, f64) {
@@ -87,6 +88,7 @@ fn load_weather_reference() -> Vec<WeatherRow> {
         .collect()
 }
 
+#[allow(dead_code)]
 struct RoofIrradianceRow {
     hour: usize,
     beam: f64,

@@ -23,10 +23,11 @@
 
 use fluxion::weather::denver::DenverTmyWeather;
 use fluxion::weather::epw::EpwWeatherSource;
+use fluxion::weather::epw_path::{epw_required, epw_optional};
 use fluxion::weather::WeatherSource;
 
-/// EPW file path relative to project root
-const EPW_PATH: &str = "assets/weather/USA_CO_Denver-Stapleton.Intl.AP.724690_TMY.epw";
+/// EPW filename
+const EPW_FILENAME: &str = "USA_CO_Denver-Stapleton.Intl.AP.724690_TMY.epw";
 
 /// Month names for display
 const MONTH_NAMES: [&str; 12] = [
@@ -34,6 +35,7 @@ const MONTH_NAMES: [&str; 12] = [
 ];
 
 /// Days in each month (non-leap year)
+#[allow(dead_code)]
 const MONTH_DAYS: [u32; 12] = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
 
 /// Monthly statistics for comparison
@@ -142,7 +144,7 @@ fn compute_parametric_monthly_stats(parametric: &DenverTmyWeather) -> Vec<Monthl
 /// Test that both weather sources load successfully
 #[test]
 fn test_both_sources_load() {
-    let epw = EpwWeatherSource::from_file(EPW_PATH);
+    let epw = EpwWeatherSource::from_file(epw_required(EPW_FILENAME).to_str().unwrap());
     assert!(epw.is_ok(), "EPW file should load: {:?}", epw.err());
 
     let parametric = DenverTmyWeather::new();
@@ -157,7 +159,7 @@ fn test_both_sources_load() {
 /// but prints warnings when discrepancies exceed expected bounds.
 #[test]
 fn test_monthly_temperature_comparison() {
-    let epw = EpwWeatherSource::from_file(EPW_PATH).expect("EPW should load");
+    let epw = EpwWeatherSource::from_file(epw_required(EPW_FILENAME).to_str().unwrap()).expect("EPW should load");
     let parametric = DenverTmyWeather::new();
 
     let epw_stats = compute_epw_monthly_stats(&epw);
@@ -291,7 +293,7 @@ fn test_monthly_temperature_comparison() {
 /// be within 2°C of the EPW annual average.
 #[test]
 fn test_annual_average_temperature() {
-    let epw = EpwWeatherSource::from_file(EPW_PATH).expect("EPW should load");
+    let epw = EpwWeatherSource::from_file(epw_required(EPW_FILENAME).to_str().unwrap()).expect("EPW should load");
     let parametric = DenverTmyWeather::new();
 
     let epw_stats = compute_epw_monthly_stats(&epw);
@@ -321,7 +323,7 @@ fn test_annual_average_temperature() {
 /// (-24°C to +35°C).
 #[test]
 fn test_temperature_range_discrepancy() {
-    let epw = EpwWeatherSource::from_file(EPW_PATH).expect("EPW should load");
+    let epw = EpwWeatherSource::from_file(epw_required(EPW_FILENAME).to_str().unwrap()).expect("EPW should load");
     let parametric = DenverTmyWeather::new();
 
     let epw_stats = compute_epw_monthly_stats(&epw);
@@ -384,7 +386,7 @@ fn test_temperature_range_discrepancy() {
 /// similar clear-sky calculations for Denver's latitude and altitude.
 #[test]
 fn test_solar_radiation_comparison() {
-    let epw = EpwWeatherSource::from_file(EPW_PATH).expect("EPW should load");
+    let epw = EpwWeatherSource::from_file(epw_required(EPW_FILENAME).to_str().unwrap()).expect("EPW should load");
     let parametric = DenverTmyWeather::new();
 
     let epw_stats = compute_epw_monthly_stats(&epw);
@@ -431,7 +433,7 @@ fn test_solar_radiation_comparison() {
 /// affected because summer temperatures are closer between sources.
 #[test]
 fn test_ashrae140_impact_assessment() {
-    let epw = EpwWeatherSource::from_file(EPW_PATH).expect("EPW should load");
+    let epw = EpwWeatherSource::from_file(epw_required(EPW_FILENAME).to_str().unwrap()).expect("EPW should load");
     let parametric = DenverTmyWeather::new();
 
     let epw_stats = compute_epw_monthly_stats(&epw);
@@ -508,9 +510,9 @@ mod tests {
     #[test]
     fn test_epw_file_exists() {
         assert!(
-            std::path::Path::new(EPW_PATH).exists(),
-            "EPW file not found at: {}",
-            EPW_PATH
+            epw_optional(EPW_FILENAME).is_some(),
+            "EPW file not found: {} (run scripts/fetch_ashrae140_epw.py)",
+            EPW_FILENAME
         );
     }
 }

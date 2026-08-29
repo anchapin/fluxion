@@ -564,4 +564,94 @@ mod tests {
             delta
         );
     }
+
+    // --- Derived trait coverage ---
+
+    #[test]
+    fn test_earth_tube_clone() {
+        let et = EarthTube::new().soil_temperature_K(290.0);
+        let cloned = et.clone();
+        assert_eq!(et.soil_temperature_K, cloned.soil_temperature_K);
+    }
+
+    #[test]
+    fn test_earth_tube_debug() {
+        let et = EarthTube::new();
+        let debug = format!("{:?}", et);
+        assert!(debug.contains("EarthTube"));
+        assert!(debug.contains("burial_depth_m"));
+    }
+
+    #[test]
+    fn test_earth_tube_default() {
+        let default = EarthTube::default();
+        let new = EarthTube::new();
+        assert_eq!(default.burial_depth_m, new.burial_depth_m);
+        assert_eq!(default.pipe_diameter_m, new.pipe_diameter_m);
+        assert_eq!(default.flow_rate_m3_s, new.flow_rate_m3_s);
+    }
+
+    // --- Constant values ---
+
+    #[test]
+    fn test_constants_values() {
+        assert!((RHO_AIR - 1.2).abs() < 1e-9);
+        assert!((CP_AIR - 1005.0).abs() < 1e-9);
+        assert!((K_AIR - 0.025).abs() < 1e-9);
+        assert!((PR_AIR - 0.71).abs() < 1e-9);
+        assert!((MU_WINTER - 1.7e-5).abs() < 1e-9);
+        assert!((MU_SUMMER - 1.85e-5).abs() < 1e-9);
+    }
+
+    // --- Edge cases ---
+
+    #[test]
+    fn test_earth_tube_heat_transfer_zero_when_equal_temps() {
+        let et = EarthTube::new().soil_temperature_K(283.15);
+        let Q = et.heat_transfer_rate(283.15);
+        assert_eq!(Q, 0.0);
+    }
+
+    #[test]
+    fn test_earth_tube_supply_temperature_exactly_at_ground() {
+        // outdoor == soil → supply == outdoor (no change)
+        let et = EarthTube::new().soil_temperature_K(283.15);
+        let outdoor_K = 283.15;
+        assert_eq!(et.supply_temperature(outdoor_K), outdoor_K);
+    }
+
+    #[test]
+    fn test_earth_tube_supply_temperature_much_cold_outdoor() {
+        // Very cold outdoor: supply should still be bounded between outdoor and ground
+        let et = EarthTube::new().soil_temperature_K(285.15);
+        let very_cold = 200.0; // ~-73°C
+        let supply = et.supply_temperature(very_cold);
+        assert!(supply > very_cold);
+        assert!(supply < et.soil_temperature_K);
+    }
+
+    #[test]
+    fn test_earth_tube_supply_temperature_much_warm_outdoor() {
+        // Very warm outdoor: supply should still be bounded between outdoor and ground
+        let et = EarthTube::new().soil_temperature_K(285.15);
+        let very_warm = 320.0; // ~47°C
+        let supply = et.supply_temperature(very_warm);
+        assert!(supply < very_warm);
+        assert!(supply > et.soil_temperature_K);
+    }
+
+    // --- Serde round-trip ---
+
+    #[test]
+    fn test_earth_tube_serde_roundtrip() {
+        let et = EarthTube::new()
+            .burial_depth_m(3.0)
+            .pipe_diameter_m(0.20)
+            .soil_temperature_K(288.15);
+        let encoded = serde_json::to_string(&et).unwrap();
+        let decoded: EarthTube = serde_json::from_str(&encoded).unwrap();
+        assert_eq!(et.burial_depth_m, decoded.burial_depth_m);
+        assert_eq!(et.pipe_diameter_m, decoded.pipe_diameter_m);
+        assert_eq!(et.soil_temperature_K, decoded.soil_temperature_K);
+    }
 }

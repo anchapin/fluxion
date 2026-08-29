@@ -1137,6 +1137,7 @@ mod tests {
 mod ifc_parsing_stubs {
     /// IFC surface classification for boundary condition determination
     #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+    #[allow(dead_code)]
     pub enum IfcSurfaceType {
         IfcWall,
         IfcRoof,
@@ -1150,6 +1151,7 @@ mod ifc_parsing_stubs {
 
     /// Boundary condition for IFC surfaces
     #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+    #[allow(dead_code)]
     pub enum IfcBoundaryCondition {
         Exterior,
         Interior,
@@ -1160,6 +1162,7 @@ mod ifc_parsing_stubs {
 
     /// Parsed IFC building element
     #[derive(Debug, Clone)]
+    #[allow(dead_code)]
     pub struct ParsedIfcElement {
         pub id: String,
         pub name: String,

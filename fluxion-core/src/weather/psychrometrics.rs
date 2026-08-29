@@ -1376,4 +1376,182 @@ mod tests {
             prop_assert!(rel_err < 1e-10, "Round-trip failed: rel_err = {}", rel_err);
         }
     }
+
+    #[test]
+    fn test_saturation_vapor_pressure_freezing_point() {
+        let p_pos = saturation_vapor_pressure(0.0);
+        let p_neg = saturation_vapor_pressure(-0.001);
+        assert!(p_pos > 600.0 && p_pos < 620.0);
+        assert!(p_neg > 600.0 && p_neg < 620.0);
+    }
+
+    #[test]
+    fn test_saturation_vapor_pressure_extreme_cold() {
+        let p_neg40 = saturation_vapor_pressure(-40.0);
+        assert!(p_neg40 > 0.0 && p_neg40 < 500.0);
+        let p_neg50 = saturation_vapor_pressure(-50.0);
+        assert!(p_neg50 > 0.0 && p_neg50 < 200.0);
+    }
+
+    #[test]
+    fn test_saturation_vapor_pressure_extreme_hot() {
+        let p_60 = saturation_vapor_pressure(60.0);
+        assert!(p_60 > 10_000.0 && p_60 < 30_000.0);
+        let p_100 = saturation_vapor_pressure(100.0);
+        assert!(p_100 > 80_000.0 && p_100 < 200_000.0);
+    }
+
+    #[test]
+    fn test_dew_point_at_saturation() {
+        let dp = calculate_dew_point(25.0, 100.0, STANDARD_ATMOSPHERIC_PRESSURE_Pa);
+        assert!((dp - 25.0).abs() < 0.01, "At RH=100%, dew point must equal dry bulb");
+    }
+
+    #[test]
+    fn test_dew_point_at_zero_rh() {
+        let dp = calculate_dew_point(25.0, 0.0, STANDARD_ATMOSPHERIC_PRESSURE_Pa);
+        assert!(dp < -30.0, "At RH=0%, dew point must be very low");
+    }
+
+    #[test]
+    fn test_humidity_ratio_at_saturation() {
+        let w = calculate_humidity_ratio(25.0, 100.0, STANDARD_ATMOSPHERIC_PRESSURE_Pa);
+        assert!(w > 0.01 && w < 0.03);
+        assert!(w.is_finite());
+    }
+
+    #[test]
+    fn test_humidity_ratio_at_zero_rh() {
+        let w = calculate_humidity_ratio(25.0, 0.0, STANDARD_ATMOSPHERIC_PRESSURE_Pa);
+        assert_eq!(w, 0.0);
+    }
+
+    #[test]
+    fn test_humidity_ratio_at_extreme_temp() {
+        let w_hot = calculate_humidity_ratio(50.0, 80.0, STANDARD_ATMOSPHERIC_PRESSURE_Pa);
+        assert!(w_hot > 0.05 && w_hot < 0.15);
+        let w_cold = calculate_humidity_ratio(-20.0, 80.0, STANDARD_ATMOSPHERIC_PRESSURE_Pa);
+        assert!(w_cold > 0.0 && w_cold < 0.005);
+    }
+
+    #[test]
+    fn test_wet_bulb_at_saturation() {
+        let wb = calculate_wet_bulb(25.0, 100.0, STANDARD_ATMOSPHERIC_PRESSURE_Pa);
+        assert!((wb - 25.0).abs() < 0.5);
+    }
+
+    #[test]
+    fn test_wet_bulb_at_zero_rh() {
+        let wb = calculate_wet_bulb(30.0, 0.0, STANDARD_ATMOSPHERIC_PRESSURE_Pa);
+        assert!(wb.is_finite());
+        assert!(wb <= 30.0);
+    }
+
+    #[test]
+    fn test_psychrometric_inputs_struct() {
+        let inputs = PsychrometricInputs {
+            temperature: 25.0,
+            relative_humidity: 60.0,
+            pressure: STANDARD_ATMOSPHERIC_PRESSURE_Pa,
+        };
+        assert_eq!(inputs.temperature, 25.0);
+        assert_eq!(inputs.relative_humidity, 60.0);
+        assert_eq!(inputs.pressure, STANDARD_ATMOSPHERIC_PRESSURE_Pa);
+    }
+
+    #[test]
+    fn test_psychrometric_inputs_debug() {
+        let inputs = PsychrometricInputs {
+            temperature: 20.0,
+            relative_humidity: 50.0,
+            pressure: STANDARD_ATMOSPHERIC_PRESSURE_Pa,
+        };
+        let d = format!("{:?}", inputs);
+        assert!(d.contains("20"));
+        assert!(d.contains("50"));
+    }
+
+    #[test]
+    fn test_psychrometric_inputs_clone() {
+        let inputs = PsychrometricInputs {
+            temperature: 20.0,
+            relative_humidity: 50.0,
+            pressure: 101325.0,
+        };
+        let cloned = inputs.clone();
+        assert_eq!(cloned.temperature, inputs.temperature);
+        assert_eq!(cloned.relative_humidity, inputs.relative_humidity);
+    }
+
+    #[test]
+    fn test_psychrometric_inputs_partialeq() {
+        let i1 = PsychrometricInputs { temperature: 20.0, relative_humidity: 50.0, pressure: 101325.0 };
+        let i2 = PsychrometricInputs { temperature: 20.0, relative_humidity: 50.0, pressure: 101325.0 };
+        let i3 = PsychrometricInputs { temperature: 21.0, relative_humidity: 50.0, pressure: 101325.0 };
+        assert_eq!(i1, i2);
+        assert_ne!(i1, i3);
+    }
+
+    #[test]
+    fn test_psychrometric_calculations_trait_dry_bulb_zero() {
+        let weather = HourlyWeatherData::new(0.0, 0.0, 0.0, 0.0, 0.0, 50.0, 0);
+        assert!(weather.dew_point().is_finite());
+        assert!(weather.wet_bulb().is_finite());
+        assert!(weather.humidity_ratio().is_finite());
+        assert!(weather.enthalpy().is_finite());
+    }
+
+    #[test]
+    fn test_psychrometric_calculations_trait_high_humidity() {
+        let weather = HourlyWeatherData::new(30.0, 0.0, 0.0, 0.0, 0.0, 95.0, 0);
+        let dp = weather.dew_point();
+        let wb = weather.wet_bulb();
+        assert!(dp <= 30.0);
+        assert!(wb <= 30.0);
+        assert!(dp < wb);
+    }
+
+    #[test]
+    fn test_from_weather_data_pressure() {
+        let weather = HourlyWeatherData::new(20.0, 0.0, 0.0, 0.0, 0.0, 50.0, 0);
+        let inputs = from_weather_data(&weather);
+        assert_eq!(inputs.pressure, STANDARD_ATMOSPHERIC_PRESSURE_Pa);
+    }
+
+    #[test]
+    fn test_enthalpy_from_weather_different_temps() {
+        let cold = HourlyWeatherData::new(-10.0, 0.0, 0.0, 0.0, 0.0, 50.0, 0);
+        let hot = HourlyWeatherData::new(40.0, 0.0, 0.0, 0.0, 0.0, 50.0, 0);
+        let h_cold = enthalpy_from_weather(&cold);
+        let h_hot = enthalpy_from_weather(&hot);
+        assert!(h_hot > h_cold);
+        assert!(h_cold.is_finite());
+        assert!(h_hot < 200.0);
+    }
+
+    #[test]
+    fn test_standard_atmospheric_pressure_constant() {
+        assert_eq!(STANDARD_ATMOSPHERIC_PRESSURE_Pa, 101325.0);
+        assert!(STANDARD_ATMOSPHERIC_PRESSURE_Pa.is_finite());
+    }
+
+    #[test]
+    fn test_moist_air_density_zero_humidity_ratio() {
+        let rho = moist_air_density(20.0, 0.0, STANDARD_ATMOSPHERIC_PRESSURE_Pa);
+        assert!(rho > 1.0 && rho < 1.3);
+        assert!(rho.is_finite());
+    }
+
+    #[test]
+    fn test_partial_vapor_pressure_zero_humidity_ratio() {
+        let pw = partial_vapor_pressure(0.0, STANDARD_ATMOSPHERIC_PRESSURE_Pa);
+        assert_eq!(pw, 0.0);
+    }
+
+    #[test]
+    fn test_enthalpy_at_extreme_humidity() {
+        let h_dry = calculate_enthalpy(25.0, 5.0, STANDARD_ATMOSPHERIC_PRESSURE_Pa);
+        let h_humid = calculate_enthalpy(25.0, 95.0, STANDARD_ATMOSPHERIC_PRESSURE_Pa);
+        assert!(h_humid > h_dry);
+    }
 }

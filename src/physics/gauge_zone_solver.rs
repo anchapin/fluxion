@@ -217,6 +217,18 @@ pub(crate) struct SurfaceGaugeSolver {
     adjacent_zone_id: Option<usize>,
     #[allow(dead_code)]
     inter_zone_conductance: f64,
+    /// Thermal mass temperature (°C) - tracks wall/roof/floor temperature
+    T_mass: f64,
+    /// Thermal mass capacity (J/K) = rho * c_p * volume per unit area
+    C_mass: f64,
+    /// Mass-to-interior-surface conductance (W/m²K)
+    /// h_tr_ms = 1 / R_ms where R_ms = mass_to_interior_surface_r_value()
+    h_tr_ms: f64,
+    /// Exterior-to-mass conductance (W/m²K)
+    /// h_tr_em = h_tr - h_tr_ms where h_tr = 1 / R_total
+    h_tr_em: f64,
+    /// Interior surface film coefficient (W/m²K) - shared across all surfaces in a zone
+    h_tr_is: f64,
 }
 
 impl SurfaceGaugeSolver {
@@ -237,6 +249,11 @@ impl SurfaceGaugeSolver {
             wall_spec: None,
             adjacent_zone_id: None,
             inter_zone_conductance: 0.0,
+            T_mass: 20.0,
+            C_mass: 0.0,
+            h_tr_ms: 0.0,
+            h_tr_em: 0.0,
+            h_tr_is: 0.0,
         }
     }
 
@@ -257,6 +274,11 @@ impl SurfaceGaugeSolver {
             wall_spec: None,
             adjacent_zone_id: Some(adjacent_zone_id),
             inter_zone_conductance,
+            T_mass: 20.0,
+            C_mass: 0.0,
+            h_tr_ms: 0.0,
+            h_tr_em: 0.0,
+            h_tr_is: 0.0,
         }
     }
 
@@ -433,6 +455,12 @@ impl GaugeZoneSolver {
     }
 
     /// Add an opaque surface from a WallSpec.
+    ///
+    /// Computes thermal mass parameters from wall properties:
+    /// - C_mass = wall.thermal_capacity() * area_m2  [J/K]
+    /// - h_tr = 1 / wall.total_r_value()  [W/m²K]
+    /// - h_tr_ms = 1 / wall.mass_to_interior_surface_r_value()  [W/m²K]
+    /// - h_tr_em = h_tr - h_tr_ms  [W/m²K]
     pub fn add_opaque_surface(
         &mut self,
         wall: &WallSpec,
@@ -448,6 +476,20 @@ impl GaugeZoneSolver {
             SurfaceGaugeSolver::new(gauge, area_m2, surface_type, azimuth_deg, tilt_deg);
         surface.wall_spec = Some(wall.clone());
 
+        let r_total = wall.total_r_value();
+        let r_ms = wall.mass_to_interior_surface_r_value();
+        let c_mass_per_area = wall.thermal_capacity();
+
+        surface.C_mass = c_mass_per_area * area_m2;
+        surface.T_mass = self.T_air;
+
+        if r_total > 0.0 && r_ms > 0.0 {
+            let h_tr = 1.0 / r_total;
+            let h_tr_ms = 1.0 / r_ms;
+            surface.h_tr_ms = h_tr_ms;
+            surface.h_tr_em = h_tr - h_tr_ms;
+        }
+
         self.surfaces.push(surface);
         self.num_surfaces = self.surfaces.len();
         Ok(())
@@ -461,6 +503,16 @@ impl GaugeZoneSolver {
     /// Set zone air temperature (for test initialization).
     pub fn set_T_air(&mut self, temp: f64) {
         self.T_air = temp;
+    }
+
+    /// Set the interior surface heat transfer coefficient (h_tr_is) for all surfaces.
+    ///
+    /// This is a zone-level parameter representing the conductance from the interior
+    /// surface to the zone air. It is shared across all surfaces in the zone.
+    pub fn set_h_tr_is(&mut self, h_tr_is: f64) {
+        for surface in &mut self.surfaces {
+            surface.h_tr_is = h_tr_is;
+        }
     }
 
     /// Get zone air thermal capacitance.
@@ -548,20 +600,63 @@ impl GaugeZoneSolver {
         }
 
         let T_int = Temperature::from_value(self.T_air);
+        let T_ext_val = T_exterior.to_value();
+        let h_ext_val = h_exterior.to_value();
         let mut net_power_watts = 0.0;
 
-        // Sum heat flux from all surfaces
+        // Per-surface transient implicit Euler coupling for thermal mass nodes.
+        // When h_tr_is > 0 for a surface, use the full 5R1C-style transient update.
+        // When h_tr_is == 0 (not set), fall back to steady-state flux for backward compat.
         for surface in &mut self.surfaces {
-            let q_flux = surface.compute_flux(
-                Time::from_value(dt_seconds),
-                T_int,
-                T_exterior,
-                h_exterior,
-                solar_irradiance_wm2 * surface.surface_type.solar_fraction(),
-            )?;
+            // Compute effective exterior temperature (sol-air temperature)
+            let solar_gain = solar_irradiance_wm2 * surface.surface_type.solar_fraction();
+            let T_ext_eff = T_ext_val + solar_gain / h_ext_val;
 
-            let Q_surface = q_flux.to_value() * surface.area_m2;
-            net_power_watts += Q_surface;
+            let area = surface.area_m2;
+            let h_ms = surface.h_tr_ms * area;
+            let h_em = surface.h_tr_em * area;
+            let C_mass = surface.C_mass;
+            let h_is = surface.h_tr_is * area;
+
+            if C_mass > 0.0 && surface.h_tr_em > 0.0 && h_is > 0.0 {
+                // Transient 5R1C-style coupling: compute T_s first, then update T_mass.
+                // h_tr_em > 0 guards against invalid single-layer wall configurations where
+                // the computed mass-to-interior resistance exceeds R_total.
+                // Step 1: Per-surface interior surface temperature from OLD T_mass and OLD T_air
+                let T_mass_old = surface.T_mass;
+                let h_ms_is_sum = h_ms + h_is;
+                let T_s = if h_ms_is_sum > 1e-10 {
+                    (h_ms * T_mass_old + h_is * self.T_air) / h_ms_is_sum
+                } else {
+                    self.T_air
+                };
+
+                // Step 2: Update T_mass using backward Euler with T_s
+                // C_mass * (T_mass_new - T_mass_old) / dt
+                //     = h_em * (T_ext_eff - T_mass_new) + h_ms * (T_s - T_mass_new)
+                let denom = C_mass / dt_seconds + h_em + h_ms;
+                if denom > 1e-10 {
+                    let numer = C_mass / dt_seconds * T_mass_old
+                        + h_em * T_ext_eff
+                        + h_ms * T_s;
+                    surface.T_mass = numer / denom;
+                }
+
+                // Step 3: Heat flow from interior surface to zone air: Q_is = h_is * (T_s - T_air)
+                // This is the ONLY path by which thermal mass energy enters the zone air.
+                let Q_is = h_is * (T_s - self.T_air);
+                net_power_watts += Q_is;
+            } else {
+                // Fallback: steady-state flux when no thermal mass is configured
+                let q_flux = surface.compute_flux(
+                    Time::from_value(dt_seconds),
+                    T_int,
+                    T_exterior,
+                    h_exterior,
+                    solar_gain,
+                )?;
+                net_power_watts += q_flux.to_value() * area;
+            }
         }
 
         // Add internal gains (infiltration is handled via implicit coupling below)

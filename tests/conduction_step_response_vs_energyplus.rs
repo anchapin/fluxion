@@ -44,14 +44,20 @@ use fluxion::physics::wall_spec::{
 /// Reference data row from the EnergyPlus CSV output.
 ///
 /// CSV columns: hour,T_outdoor,T_zone,T_surface_inside,T_surface_outside,q_inside_Wm2,q_outside_Wm2
+/// Only t_surface_inside, t_surface_outside, and q_inside_wm2 are used in assertions;
+/// the remaining columns are loaded but not read.
 #[derive(Debug, Clone)]
 struct ReferenceRow {
+    #[allow(dead_code)]
     hour: f64,
+    #[allow(dead_code)]
     t_outdoor: f64,
+    #[allow(dead_code)]
     t_zone: f64,
     t_surface_inside: f64,
     t_surface_outside: f64,
     q_inside_wm2: f64,
+    #[allow(dead_code)]
     q_outside_wm2: f64,
 }
 

@@ -32,11 +32,13 @@ fn w_tol(_w: f64) -> f64 {
 }
 
 /// Tolerance for temperature comparisons: ±0.05°C
+#[allow(dead_code)]
 fn t_tol(_t: f64) -> f64 {
     0.05
 }
 
 /// Tolerance for energy comparisons: ±1%
+#[allow(dead_code)]
 fn energy_tol(energy: f64) -> f64 {
     energy.abs() * 0.01
 }

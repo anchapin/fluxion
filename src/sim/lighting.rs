@@ -1177,4 +1177,328 @@ mod tests {
         assert_eq!(ShadingType::InteriorBlinds, ShadingType::InteriorBlinds);
         assert_ne!(ShadingType::InteriorBlinds, ShadingType::ExteriorBlinds);
     }
+
+    // ─── WindowOpticalProperties ───────────────────────────────────────────────
+
+    #[test]
+    fn test_window_optical_properties_single_layer() {
+        // Single clear glass: solar_transmittance=0.837, layer_absorptance=0.095
+        // System absorptance = layer_absorptance * ts = 0.095 * 0.837 = 0.0795
+        let single = WindowOpticalProperties::from_layers(&[WindowLayer::clear_glass()]);
+        assert_eq!(single.solar_transmittance, 0.837);
+        assert!((single.solar_absorptance - 0.0795).abs() < 0.001);
+        // Reflectance = 1 - ts - absorptance = 1 - 0.837 - 0.0795 = 0.0835
+        assert!((single.solar_reflectance - 0.0835).abs() < 0.001);
+    }
+
+    #[test]
+    fn test_window_optical_properties_double_clear() {
+        let optics = WindowOpticalProperties::double_clear();
+        // Two clear glasses: ts=0.837^2≈0.7006
+        assert_eq!(optics.solar_transmittance, 0.837_f64 * 0.837);
+        assert!(optics.solar_absorptance > 0.0);
+        assert!(optics.solar_reflectance > 0.0);
+    }
+
+    #[test]
+    fn test_window_optical_properties_three_layers() {
+        let layers = [
+            WindowLayer::clear_glass(),
+            WindowLayer::clear_glass(),
+            WindowLayer::clear_glass(),
+        ];
+        let optics = WindowOpticalProperties::from_layers(&layers);
+        assert_eq!(optics.solar_transmittance, 0.837_f64.powi(3));
+        assert!(
+            optics.solar_transmittance
+                < WindowOpticalProperties::double_clear().solar_transmittance
+        );
+    }
+
+    // ─── ShadeOpticalProperties ────────────────────────────────────────────────
+
+    #[test]
+    fn test_shade_optical_properties_interior_fabric() {
+        let fabric = ShadeOpticalProperties::interior_fabric();
+        assert_eq!(fabric.solar_transmittance, 0.30);
+        assert_eq!(fabric.visible_transmittance, 0.35);
+        assert_eq!(fabric.solar_absorptance, 0.50);
+        assert_eq!(fabric.solar_reflectance, 0.20);
+        assert!(!fabric.is_exterior);
+    }
+
+    #[test]
+    fn test_shade_optical_properties_exterior_venetian() {
+        let blinds = ShadeOpticalProperties::exterior_venetian();
+        assert_eq!(blinds.solar_transmittance, 0.05);
+        assert_eq!(blinds.visible_transmittance, 0.10);
+        assert!(blinds.is_exterior);
+    }
+
+    // ─── ShadingControl with optics ──────────────────────────────────────────
+
+    #[test]
+    fn test_shading_control_with_optics() {
+        let optics = ShadeOpticalProperties::interior_roller_tint();
+        let shading = ShadingControl::with_optics(ShadingType::RollerShades, optics);
+        assert!(shading.shade_optics.is_some());
+        assert_eq!(shading.position, 0.0);
+        assert!(!shading.is_deployed);
+    }
+
+    #[test]
+    fn test_shading_control_shgc_reduction_exterior_shade_optics() {
+        let optics = ShadeOpticalProperties::exterior_venetian();
+        let mut s = ShadingControl::with_optics(ShadingType::ExteriorBlinds, optics);
+        s.is_deployed = true;
+        s.position = 1.0;
+        // Exterior: intercept = 1 - ts - absorptance = 1 - 0.05 - 0.45 = 0.50
+        assert!((s.shgc_reduction() - 0.50).abs() < 1e-9);
+    }
+
+    #[test]
+    fn test_shading_control_shgc_reduction_interior_shade_optics() {
+        let optics = ShadeOpticalProperties::interior_fabric();
+        let mut s = ShadingControl::with_optics(ShadingType::RollerShades, optics);
+        s.is_deployed = true;
+        s.position = 1.0;
+        // Interior: intercept = absorptance + reflectance = 0.50 + 0.20 = 0.70
+        assert_eq!(s.shgc_reduction(), 0.70);
+    }
+
+    #[test]
+    fn test_shading_control_visible_transmittance_factor_deployed() {
+        let optics = ShadeOpticalProperties::interior_roller_tint();
+        let mut s = ShadingControl::with_optics(ShadingType::RollerShades, optics);
+        s.is_deployed = true;
+        s.position = 1.0;
+        // factor = 1 - (0.25 * 1.0) = 0.75
+        assert_eq!(s.visible_transmittance_factor(), 0.75);
+    }
+
+    #[test]
+    fn test_shading_control_visible_transmittance_factor_partial_position() {
+        let optics = ShadeOpticalProperties::interior_roller_tint();
+        let mut s = ShadingControl::with_optics(ShadingType::RollerShades, optics);
+        s.is_deployed = true;
+        s.position = 0.5;
+        // factor = 1 - (0.25 * 0.5) = 0.875
+        assert_eq!(s.visible_transmittance_factor(), 0.875);
+    }
+
+    // ─── DaylightZone with split-flux model ───────────────────────────────────
+
+    #[test]
+    fn test_daylight_zone_with_visible_transmittance() {
+        let zone = DaylightZone::new("test".to_string(), 0, 10.0, 2.0)
+            .with_visible_transmittance(0.10)
+            .with_zone_area(15.0);
+        assert_eq!(zone.visible_transmittance, Some(0.10));
+        assert_eq!(zone.zone_area, 15.0);
+    }
+
+    #[test]
+    fn test_daylight_zone_split_flux_interior_illuminance() {
+        let zone = DaylightZone::new("test".to_string(), 0, 10.0, 2.0)
+            .with_visible_transmittance(0.10)
+            .with_zone_area(15.0);
+        let illum = zone.interior_illuminance(50000.0, 1.0);
+        assert!(illum > 0.0);
+        // Split-flux produces a positive value; verify it's in a reasonable range.
+        // With sky_condition=1.0 (clear), vt=0.10, the interior illuminance
+        // should be proportional to sky_illuminance * vt * FTF * geometry_factor.
+        assert!(illum < 50000.0); // Cannot exceed exterior illuminance
+    }
+
+    #[test]
+    fn test_daylight_zone_flux_transfer_factor() {
+        let zone = DaylightZone::new("test".to_string(), 0, 10.0, 2.0);
+        let ftf = zone.flux_transfer_factor();
+        assert!(ftf > 0.0 && ftf <= 1.0);
+        // RCR formula: (5 * zone_area * workplane_height) / (window_area * ceiling_height)
+        // ceiling_height = window_height + workplane_height = 2.0 + 0.8 = 2.8
+        // RCR = (5 * 15 * 0.8) / (10 * 2.8) = 60 / 28 ≈ 2.143
+        // ftf = 1 / (1 + 0.5 * 2.143_f64.powf(0.7)) ≈ 1 / (1 + 0.5 * 1.73) ≈ 0.536
+        assert!((ftf - 0.536).abs() < 0.01);
+    }
+
+    #[test]
+    fn test_daylight_zone_compute_rcr_with_explicit_value() {
+        let mut zone = DaylightZone::new("test".to_string(), 0, 10.0, 2.0);
+        zone.room_cavity_ratio = 5.0;
+        assert_eq!(zone.compute_rcr(), 5.0); // Explicit value returned as-is
+    }
+
+    #[test]
+    fn test_daylight_zone_compute_rcr_zero_area_fallback() {
+        let zone = DaylightZone::new("test".to_string(), 0, 0.0, 2.0); // zero window_area
+        assert_eq!(zone.compute_rcr(), 2.5); // default fallback
+    }
+
+    // ─── LightingSchedule ────────────────────────────────────────────────────
+
+    #[test]
+    fn test_lighting_schedule_convective_radiative_sum() {
+        let schedule = LightingSchedule::new(10.0, 100.0);
+        assert!((schedule.convective_fraction + schedule.radiative_fraction - 1.0).abs() < 1e-10);
+    }
+
+    #[test]
+    fn test_lighting_schedule_convective_radiative_gains() {
+        let schedule = LightingSchedule::office_schedule(10.0, 100.0);
+        let hour = 12;
+        let total = schedule.lighting_power(hour);
+        let convective = schedule.convective_heat_gains(hour);
+        let radiative = schedule.radiative_heat_gains(hour);
+        assert!((total - convective - radiative).abs() < 1e-9);
+    }
+
+    // ─── LightingSystem timestep_result ──────────────────────────────────────
+
+    #[test]
+    fn test_lighting_system_timestep_result_no_controls() {
+        let system = LightingSystem::new(10.0, 100.0);
+        let result = system.timestep_result(12, 10000.0, 0.8);
+        assert_eq!(result.effective_power_w, 1000.0);
+        assert_eq!(result.dimming_fraction, 1.0);
+    }
+
+    #[test]
+    fn test_lighting_system_timestep_result_with_daylight_zones() {
+        let mut system = LightingSystem::new(10.0, 100.0);
+        let mut dz = DaylightZone::new("DZ-1".to_string(), 0, 10.0, 2.0);
+        dz.dimming_threshold = 500.0;
+        system.add_daylight_zone(dz);
+        let result = system.timestep_result(12, 50000.0, 0.8);
+        assert!(result.effective_power_w < 1000.0);
+        assert!(result.average_illuminance_lux > 0.0);
+    }
+
+    // ─── ShadingSchedule ──────────────────────────────────────────────────────
+
+    #[test]
+    fn test_shading_schedule_always_open() {
+        let schedule = ShadingSchedule::always_open();
+        assert!(schedule.hourly_position.iter().all(|&p| p == 0.0));
+        assert_eq!(schedule.position_at_hour(12, 500.0), 0.0);
+    }
+
+    #[test]
+    fn test_shading_schedule_always_closed() {
+        let schedule = ShadingSchedule::always_closed();
+        assert!(schedule.hourly_position.iter().all(|&p| p == 1.0));
+        assert_eq!(schedule.position_at_hour(12, 500.0), 1.0);
+    }
+
+    #[test]
+    fn test_shading_schedule_business_hours() {
+        let schedule = ShadingSchedule::business_hours();
+        assert_eq!(schedule.position_at_hour(9, 0.0), 1.0);
+        assert_eq!(schedule.position_at_hour(12, 0.0), 1.0);
+        assert_eq!(schedule.position_at_hour(16, 0.0), 1.0);
+        assert_eq!(schedule.position_at_hour(8, 0.0), 0.0);
+        assert_eq!(schedule.position_at_hour(17, 0.0), 0.0);
+    }
+
+    #[test]
+    fn test_shading_schedule_solar_override() {
+        let mut schedule = ShadingSchedule::always_open();
+        schedule.use_solar_override = true;
+        // Threshold is 300.0 W/m² (default from always_open())
+        assert_eq!(schedule.position_at_hour(12, 200.0), 0.0); // below threshold
+        assert_eq!(schedule.position_at_hour(12, 400.0), 1.0); // above threshold
+    }
+
+    // ─── BlindControl ────────────────────────────────────────────────────────
+
+    #[test]
+    fn test_blind_control_update_below_min_altitude() {
+        let mut blind = BlindControl::new();
+        blind.update_for_altitude(10.0); // below min threshold of 15°
+        assert_eq!(blind.target_angle_deg, 0.0);
+    }
+
+    #[test]
+    fn test_blind_control_update_above_max_altitude() {
+        let mut blind = BlindControl::new();
+        blind.update_for_altitude(70.0); // above max threshold of 60°
+        assert_eq!(blind.target_angle_deg, 90.0);
+    }
+
+    #[test]
+    fn test_blind_control_update_between_thresholds() {
+        let mut blind = BlindControl::new();
+        blind.update_for_altitude(37.5); // midpoint of 15° and 60°
+                                         // t = (37.5 - 15) / (60 - 15) = 0.5, so target = 0.5 * 90 = 45°
+        assert_eq!(blind.target_angle_deg, 45.0);
+    }
+
+    #[test]
+    fn test_blind_control_advance_slew_rate_limiting() {
+        let mut blind = BlindControl::new();
+        blind.slew_rate_deg_per_min = 5.0;
+        blind.target_angle_deg = 60.0;
+        blind.advance(5.0); // 5 min * 5 deg/min = 25° max change
+        assert_eq!(blind.slat_angle_deg, 25.0);
+    }
+
+    #[test]
+    fn test_blind_control_advance_within_slew_rate() {
+        let mut blind = BlindControl::new();
+        blind.target_angle_deg = 10.0;
+        blind.advance(60.0); // 60 min * 2 deg/min = 120° max; diff = 10°
+        assert_eq!(blind.slat_angle_deg, 10.0); // Reaches target directly
+    }
+
+    #[test]
+    fn test_blind_control_effective_transmittance_open() {
+        let blind = BlindControl::new(); // slat_angle_deg = 0
+        assert!((blind.effective_transmittance_factor() - 1.0).abs() < 1e-10);
+    }
+
+    #[test]
+    fn test_blind_control_effective_transmittance_closed() {
+        let mut blind = BlindControl::new();
+        blind.slat_angle_deg = 90.0;
+        assert!((blind.effective_transmittance_factor() - 0.0).abs() < 1e-10);
+    }
+
+    // ─── DaylightingControls ─────────────────────────────────────────────────
+
+    #[test]
+    fn test_daylighting_controls_net_shading_position_empty() {
+        let controls = DaylightingControls::new(500.0, 10.0);
+        assert_eq!(controls.net_shading_position(12, 500.0), 0.0);
+    }
+
+    #[test]
+    fn test_daylighting_controls_net_shading_position_single_schedule() {
+        let mut controls = DaylightingControls::new(500.0, 10.0);
+        controls.add_shading_schedule(ShadingSchedule::always_closed());
+        assert_eq!(controls.net_shading_position(12, 500.0), 1.0);
+    }
+
+    #[test]
+    fn test_daylighting_controls_effective_exterior_illuminance() {
+        let mut controls = DaylightingControls::new(500.0, 10.0);
+        let mut blind = BlindControl::new();
+        blind.slat_angle_deg = 0.0; // fully open
+        controls.add_blind_controller(blind);
+        let illum = controls.effective_exterior_illuminance(10000.0, 12, 500.0);
+        // With open blinds (transmittance factor = 1.0) and no shading (position = 0),
+        // effective = 10000 * 1.0 * 1.0 = 10000
+        assert_eq!(illum, 10000.0);
+    }
+
+    #[test]
+    fn test_daylighting_controls_effective_exterior_illuminance_with_shading() {
+        let mut controls = DaylightingControls::new(500.0, 10.0);
+        let mut blind = BlindControl::new();
+        blind.slat_angle_deg = 45.0; // partially closed
+        controls.add_blind_controller(blind);
+        let illum = controls.effective_exterior_illuminance(10000.0, 12, 500.0);
+        // With cos(45°) transmittance ≈ 0.707 and position 0, attenuation = 1 - 0*0.5 = 1.0
+        // effective = 10000 * 1.0 * 0.707 ≈ 7071
+        assert!((illum - 7071.0).abs() < 1.0);
+    }
 }

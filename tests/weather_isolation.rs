@@ -42,6 +42,7 @@ use fluxion::weather::{HourlyWeatherData, WeatherSource};
 /// CSV columns: hour, dry_bulb_temp_c, humidity_rh_pct, dni_wm2, dhi_wm2, ghi_wm2, wind_speed_ms, humidity_ratio_kgkg
 #[derive(Debug, Clone)]
 struct ReferenceRow {
+    #[allow(dead_code)]
     hour: usize,
     dry_bulb_temp_c: f64,
     humidity_rh_pct: f64,

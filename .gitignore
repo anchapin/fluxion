@@ -311,6 +311,21 @@ models/*.h5
 # gitignored. If a future manifest is added, copy the negation pattern below.
 !models/surrogate_zone_thermal.onnx.sha256
 
+# EPW/DDY weather files — fetched on demand from EnergyPlus/ASHRAE data portals.
+# ASHRAE 140 validation requires real TMY3 weather files; run
+# `python3 scripts/fetch_ashrae140_epw.py` to download before running the
+# full ASHRAE 140 test suite.  See issue #N (tracking).
+*.epw
+*.ddy
+assets/weather/*.epw
+assets/weather/*.ddy
+tests/test_data/*.epw
+tests/test_data/*.ddy
+tests/data/v0.4/weather/*.epw
+tests/data/v0.4/weather/*.ddy
+tests/data/v0.5/weather/*.epw
+tests/data/v0.5/weather/*.ddy
+
 # FMI 2.0 XSD cache used by `.agents/results/issue-D1-multi-zone-fmi-verification.py`.
 # Fetched on demand from modelica/fmi-standard; never committed.
 # NOTE: superseded by the broader `.agents/` line above (issue #2981).

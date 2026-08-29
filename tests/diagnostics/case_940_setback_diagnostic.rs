@@ -37,6 +37,7 @@ use fluxion::sim::warmup::{run_warmup, WarmupConfig};
 use fluxion::validation::ashrae_140_cases::{ASHRAE140Case, CaseSpec};
 use fluxion::weather::denver::DenverTmyWeather;
 use fluxion::weather::epw::EpwWeatherSource;
+use fluxion::weather::epw_path::epw_required;
 use fluxion::weather::WeatherSource;
 
 const MONTH_LABELS: [&str; 12] = [
@@ -587,7 +588,9 @@ fn measure_case_940_annual_heating_kwh(
 fn test_case_940_blind_vs_ctf_ratio_pinned() {
     let spec = ASHRAE140Case::Case940.spec();
     let weather = EpwWeatherSource::from_file(
-        "assets/weather/USA_CO_Denver-Stapleton.Intl.AP.724690_TMY.epw",
+        epw_required("USA_CO_Denver-Stapleton.Intl.AP.724690_TMY.epw")
+            .to_str()
+            .unwrap(),
     )
     .expect("Case 940 ratio diagnostic requires the canonical Denver EPW");
     let blind_heating_kwh =

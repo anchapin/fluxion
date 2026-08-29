@@ -28,9 +28,12 @@ use fluxion::physics::cta::VectorField;
 use fluxion::sim::engine::ThermalModel;
 use fluxion::validation::ashrae_140_cases::ASHRAE140Case;
 
+#[allow(dead_code)]
 const EPSILON: f64 = 1e-9;
 const STEADY_STATE_TOL: f64 = 0.01;
+#[allow(dead_code)]
 const TRANSIENT_TOL: f64 = 0.005;
+#[allow(dead_code)]
 const ENERGY_CONSERVATION_TOL: f64 = 0.01;
 
 fn set_zone_temperature(model: &mut ThermalModel<VectorField>, zone: usize, temp: f64) {
@@ -45,6 +48,7 @@ fn set_zone_loads(model: &mut ThermalModel<VectorField>, zone: usize, load: f64)
     model.setpoints.loads.as_mut()[zone] = load;
 }
 
+#[allow(dead_code)]
 fn compute_transient_temperature(T_initial: f64, T_ss: f64, t: f64, tau: f64) -> f64 {
     T_ss + (T_initial - T_ss) * (-t / tau).exp()
 }

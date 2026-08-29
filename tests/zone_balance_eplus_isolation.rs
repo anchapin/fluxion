@@ -80,6 +80,7 @@ use fluxion::sim::surface_flux_provider::{
 use fluxion::sim::thermal_model::{PhysicsThermalModel, ThermalModelTrait};
 use fluxion::validation::ashrae_140_cases::ASHRAE140Case;
 use fluxion::weather::denver::DenverTmyWeather;
+use fluxion::weather::epw_path::epw_required;
 use fluxion::weather::WeatherSource;
 
 // ---------------------------------------------------------------------------
@@ -739,11 +740,13 @@ const CASE_900_REF: EnergyReference = EnergyReference {
 /// results from the physics spec alone, not from any case-aware code path.
 fn run_blind_annual_energy(
     spec: &fluxion::validation::ashrae_140_cases::CaseSpec,
-    epw_path: &str,
+    epw_filename: &str,
 ) -> (f64, f64, f64, f64) {
     let mut model = ThermalModel::<VectorField>::from_spec(spec);
-    let weather = fluxion::weather::epw::EpwWeatherSource::from_file(epw_path)
-        .expect("EPW weather file must be present in assets/weather/");
+    let weather = fluxion::weather::epw::EpwWeatherSource::from_file(
+        epw_required(epw_filename).to_str().unwrap(),
+    )
+    .expect("EPW weather file must be present in assets/weather/");
 
     let mut total_heating_j = 0.0_f64;
     let mut total_cooling_j = 0.0_f64;
@@ -804,7 +807,7 @@ fn read_reference_band(csv_name: &str, metric: &str) -> (f64, f64) {
 fn test_case_600_blind_energy_infrastructure() {
     let spec = ASHRAE140Case::Case600.spec();
     let (h, c, ph, pc) =
-        run_blind_annual_energy(&spec, "assets/weather/USA_CO_Golden-NREL.724666_TMY3.epw");
+        run_blind_annual_energy(&spec, "USA_CO_Golden-NREL.724666_TMY3.epw");
 
     println!(
         "[#1147 Case 600 blind] H={h:.3} MWh, C={c:.3} MWh, \
@@ -867,7 +870,7 @@ fn test_case_600_blind_energy_infrastructure() {
 fn test_case_600_annual_energy_ashrae140_tolerance() {
     let spec = ASHRAE140Case::Case600.spec();
     let (h, c, _ph, _pc) =
-        run_blind_annual_energy(&spec, "assets/weather/USA_CO_Golden-NREL.724666_TMY3.epw");
+        run_blind_annual_energy(&spec, "USA_CO_Golden-NREL.724666_TMY3.epw");
 
     let (h_lo, h_hi) = CASE_600_REF.annual_heating_band();
     let (c_lo, c_hi) = CASE_600_REF.annual_cooling_band();
@@ -893,7 +896,7 @@ fn test_case_600_annual_energy_ashrae140_tolerance() {
 fn test_case_900_blind_energy_infrastructure() {
     let spec = ASHRAE140Case::Case900.spec();
     let (h, c, ph, pc) =
-        run_blind_annual_energy(&spec, "assets/weather/USA_CO_Golden-NREL.724666_TMY3.epw");
+        run_blind_annual_energy(&spec, "USA_CO_Golden-NREL.724666_TMY3.epw");
 
     println!(
         "[#1147 Case 900 blind] H={h:.3} MWh, C={c:.3} MWh, \
@@ -910,7 +913,7 @@ fn test_case_900_blind_energy_infrastructure() {
     // (mass retains solar gains, reducing winter envelope loss).
     let (h600, _c600, _, _) = run_blind_annual_energy(
         &ASHRAE140Case::Case600.spec(),
-        "assets/weather/USA_CO_Golden-NREL.724666_TMY3.epw",
+        "USA_CO_Golden-NREL.724666_TMY3.epw",
     );
     assert!(
         h < h600,
@@ -968,7 +971,7 @@ fn test_case_900_blind_energy_infrastructure() {
 fn test_case_900_annual_energy_ashrae140_tolerance() {
     let spec = ASHRAE140Case::Case900.spec();
     let (h, c, _ph, _pc) =
-        run_blind_annual_energy(&spec, "assets/weather/USA_CO_Golden-NREL.724666_TMY3.epw");
+        run_blind_annual_energy(&spec, "USA_CO_Golden-NREL.724666_TMY3.epw");
 
     let (h_lo, h_hi) = CASE_900_REF.annual_heating_band();
     let (c_lo, c_hi) = CASE_900_REF.annual_cooling_band();

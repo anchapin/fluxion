@@ -15,21 +15,18 @@ use fluxion::physics::cta::VectorField;
 use fluxion::sim::engine::ThermalModel;
 use fluxion::validation::ashrae_140_cases::ASHRAE140Case;
 use fluxion::weather::epw::EpwWeatherSource;
+use fluxion::weather::epw_path::epw_optional;
 use fluxion::weather::WeatherSource;
 
-// Issue #2490: use the SAME weather source as the canonical ASHRAE 140 validator
-// (`src/validation/ashrae_140_validator.rs`) — the real Denver TMY3 EPW — instead of
-// the synthetic `DenverTmyWeather`. The synthetic source has milder winters (never
-// reaches the ~-24 °C Denver cold snaps) so the 900FF night minimum drifts ~13 °C
-// warm, and the test silently diverged from the validator. See
-// `docs/KNOWN_ISSUES.md` §LIMIT-05 for the residual high-mass over-damping that
-// remains a structural physics gap (tracked by GaugeSolver rework #1465/#1462).
-const EPW_PATH: &str = "assets/weather/USA_CO_Denver-Stapleton.Intl.AP.724690_TMY.epw";
+const EPW_FILENAME: &str = "USA_CO_Denver-Stapleton.Intl.AP.724690_TMY.epw";
 
-/// Load the canonical Denver TMY3 EPW used by `src/validation/ashrae_140_validator.rs`.
 fn load_denver_epw() -> EpwWeatherSource {
-    EpwWeatherSource::from_file(EPW_PATH)
-        .expect("failed to load canonical Denver TMY3 EPW required by this test")
+    let path = epw_optional(EPW_FILENAME).unwrap_or_else(|| {
+        panic!(
+            "EPW file not found. Run: python3 scripts/fetch_ashrae140_epw.py --check-only"
+        )
+    });
+    EpwWeatherSource::from_file(path).expect("failed to load canonical Denver TMY3 EPW")
 }
 
 /// ASHRAE 140 Case 900 specifications (high-mass concrete building)

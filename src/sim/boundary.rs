@@ -778,4 +778,155 @@ mod tests {
         assert!(r.abs() < 1e-10);
         assert!(f.abs() < 1e-10);
     }
+
+    // === SurfaceSolarGains (derived trait coverage) ===
+
+    #[test]
+    fn test_surface_solar_gains_partial_eq() {
+        let a = SurfaceSolarGains {
+            phi_m_wall: 10.0,
+            phi_m_roof: 20.0,
+            phi_m_floor: 30.0,
+        };
+        let b = SurfaceSolarGains {
+            phi_m_wall: 10.0,
+            phi_m_roof: 20.0,
+            phi_m_floor: 30.0,
+        };
+        let c = SurfaceSolarGains {
+            phi_m_wall: 10.0,
+            phi_m_roof: 20.0,
+            phi_m_floor: 99.0,
+        };
+        assert_eq!(a, b);
+        assert_ne!(a, c);
+    }
+
+    #[test]
+    fn test_surface_solar_gains_clone() {
+        let original = SurfaceSolarGains {
+            phi_m_wall: 5.0,
+            phi_m_roof: 10.0,
+            phi_m_floor: 15.0,
+        };
+        let cloned = original.clone();
+        assert_eq!(original, cloned);
+    }
+
+    #[test]
+    fn test_surface_solar_gains_default() {
+        let default = SurfaceSolarGains::default();
+        assert!((default.phi_m_wall - 0.0).abs() < 1e-10);
+        assert!((default.phi_m_roof - 0.0).abs() < 1e-10);
+        assert!((default.phi_m_floor - 0.0).abs() < 1e-10);
+    }
+
+    #[test]
+    fn test_surface_solar_gains_debug() {
+        let gains = SurfaceSolarGains {
+            phi_m_wall: 1.0,
+            phi_m_roof: 2.0,
+            phi_m_floor: 3.0,
+        };
+        let debug = format!("{:?}", gains);
+        assert!(debug.contains("phi_m_wall"));
+        assert!(debug.contains("phi_m_roof"));
+        assert!(debug.contains("phi_m_floor"));
+    }
+
+    // === MonthlyGroundTemperature edge cases ===
+
+    #[test]
+    fn test_monthly_ground_temperature_hour_clamped_to_year_end() {
+        let monthly = [10.0; 12];
+        let ground = MonthlyGroundTemperature::new(monthly);
+        // hour 8759 maps to December (month 11), which is 10.0
+        assert_eq!(ground.ground_temperature(8759), 10.0);
+    }
+
+    #[test]
+    fn test_monthly_ground_temperature_hour_beyond_year() {
+        // Hours beyond 8759 are clamped to 8016 (Dec start), returning Dec value
+        let monthly = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0, 11.0, 12.0];
+        let ground = MonthlyGroundTemperature::new(monthly);
+        // hour 10000 is clamped to 8016, which is December = 12.0
+        assert_eq!(ground.ground_temperature(10000), 12.0);
+    }
+
+    #[test]
+    fn test_monthly_ground_temperature_clone() {
+        let original = MonthlyGroundTemperature::new([1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0, 11.0, 12.0]);
+        let cloned = original.clone();
+        assert_eq!(original.monthly()[0], cloned.monthly()[0]);
+        assert_eq!(original.ground_temperature(0), cloned.ground_temperature(0));
+        assert_eq!(original.ground_temperature(744), cloned.ground_temperature(744));
+    }
+
+    // === DynamicGroundTemperature edge cases ===
+
+    #[test]
+    fn test_dynamic_ground_temperature_zero_amplitude() {
+        // When amplitude = 0, ground temperature = t_mean at all times
+        let ground = DynamicGroundTemperature::new(15.0, 0.0, 1.0, 0.07);
+        for hour in [0, 1000, 4380, 8000, 8759] {
+            assert!(
+                (ground.ground_temperature(hour) - 15.0).abs() < 1e-9,
+                "T should be 15°C at hour {} when amplitude=0",
+                hour
+            );
+        }
+    }
+
+    #[test]
+    fn test_dynamic_ground_temperature_extreme_depth() {
+        // Very deep: damping → 0, so T ≈ t_mean regardless of time
+        let ground = DynamicGroundTemperature::new(10.0, 20.0, 100.0, 0.07);
+        let damping = ground.damping_factor();
+        assert!(
+            damping < 1e-10,
+            "Damping at 100m should be essentially zero, got {}",
+            damping
+        );
+        // Temperature should be essentially constant ≈ t_mean
+        let t_winter = ground.ground_temperature(0);
+        let t_summer = ground.ground_temperature(4380);
+        assert!(
+            (t_winter - 10.0).abs() < 0.01,
+            "Deep ground temp should be ≈ t_mean={}, got {}",
+            10.0, t_winter
+        );
+        assert!(
+            (t_summer - 10.0).abs() < 0.01,
+            "Deep ground temp should be ≈ t_mean={}, got {}",
+            10.0, t_summer
+        );
+    }
+
+    // === GroundTemperature trait object ===
+
+    #[test]
+    fn test_ground_temperature_clone_box_constant() {
+        let ground: Box<dyn GroundTemperature> = Box::new(ConstantGroundTemperature::new(10.0));
+        let cloned = ground.clone_box();
+        assert_eq!(cloned.ground_temperature(0), 10.0);
+        assert_eq!(cloned.ground_temperature(5000), 10.0);
+    }
+
+    #[test]
+    fn test_ground_temperature_clone_box_dynamic() {
+        let ground: Box<dyn GroundTemperature> =
+            Box::new(DynamicGroundTemperature::new(11.0, 12.0, 1.0, 0.07));
+        let cloned = ground.clone_box();
+        assert_eq!(cloned.ground_temperature(0), ground.ground_temperature(0));
+        assert_eq!(cloned.ground_temperature(4380), ground.ground_temperature(4380));
+    }
+
+    #[test]
+    fn test_ground_temperature_clone_box_monthly() {
+        let ground: Box<dyn GroundTemperature> =
+            Box::new(MonthlyGroundTemperature::new([1.0; 12]));
+        let cloned = ground.clone_box();
+        assert_eq!(cloned.ground_temperature(0), 1.0);
+        assert_eq!(cloned.ground_temperature(744), 1.0);
+    }
 }

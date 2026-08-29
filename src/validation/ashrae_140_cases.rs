@@ -46,6 +46,7 @@ pub use fluxion_core::ashrae_cases::{
 };
 
 use crate::sim::construction::{Assemblies, Construction, Materials};
+use crate::weather::epw_path::epw_required;
 use crate::weather::{HourlyWeatherData, WeatherSource};
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
@@ -1715,7 +1716,9 @@ impl CaseBuilder {
     pub fn generate_denver_weather_data() -> Vec<HourlyWeatherData> {
         use crate::weather::epw::EpwWeatherSource;
         let weather = EpwWeatherSource::from_file(
-            "assets/weather/USA_CO_Denver-Stapleton.Intl.AP.724690_TMY.epw",
+            epw_required("USA_CO_Denver-Stapleton.Intl.AP.724690_TMY.epw")
+                .to_str()
+                .unwrap(),
         )
         .expect("Failed to load EPW weather data");
 

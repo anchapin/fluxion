@@ -64,9 +64,10 @@ use fluxion::sim::warmup::{run_warmup, WarmupConfig};
 use fluxion::validation::ashrae_140_cases::ASHRAE140Case;
 use fluxion::validation::diagnostics::SimulationDiagnostics;
 use fluxion::weather::epw::EpwWeatherSource;
+use fluxion::weather::epw_path::epw_required;
 use fluxion::weather::WeatherSource;
 
-const EPW_PATH: &str = "assets/weather/USA_CO_Denver-Stapleton.Intl.AP.724690_TMY.epw";
+const EPW_FILENAME: &str = "USA_CO_Denver-Stapleton.Intl.AP.724690_TMY.epw";
 
 const MONTH_LABELS: [&str; 12] = [
     "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
@@ -148,7 +149,7 @@ fn run_case_with_attribution(case_enum: ASHRAE140Case) -> CaseAttribution {
     let _used_ctf = model.enable_ctf_with_fd_fallback(&fd_layers, 3600.0, 50, 5);
 
     // Load the same EPW file the production validator uses
-    let weather = EpwWeatherSource::from_file(EPW_PATH)
+    let weather = EpwWeatherSource::from_file(epw_required(EPW_FILENAME).to_str().unwrap())
         .expect("Failed to load Denver-Stapleton TMY EPW file required by this test");
 
     // 14-day fixed warmup per ASHRAE 140 §B2 (matches the validator)

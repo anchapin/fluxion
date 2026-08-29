@@ -201,6 +201,7 @@ fn chiller_cooling_energy(chiller: &Chiller, ua: f64) -> (f64, f64) {
 /// COP model (e.g. from manufacturer AHRI catalog data or the Carnot limit),
 /// and `HeatPump::heating_cop_at_temperature` should implement real
 /// temperature degradation using its stored `EfficiencyCurve`.
+#[allow(dead_code)]
 fn heatpump_energy(hp: &HeatPump, fan_frac: f64, ua: f64) -> (f64, f64) {
     let mut energy_kwh = 0.0_f64;
     let mut peak_w = 0.0_f64;
@@ -220,6 +221,7 @@ fn heatpump_energy(hp: &HeatPump, fan_frac: f64, ua: f64) -> (f64, f64) {
     (energy_kwh, peak_w)
 }
 
+#[allow(dead_code)]
 fn boiler_heating_energy(boiler: &Boiler, ua: f64) -> (f64, f64) {
     let mut energy_kwh = 0.0_f64;
     let mut peak_w = 0.0_f64;

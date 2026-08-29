@@ -16,6 +16,7 @@
 use fluxion::physics::cta::VectorField;
 use fluxion::sim::engine::ThermalModel;
 use fluxion::validation::ashrae_140_cases::ASHRAE140Case;
+use fluxion::weather::epw_path::epw_required;
 use fluxion::weather::WeatherSource;
 
 const J_TO_MWH: f64 = 1.0 / 3.6e9;
@@ -152,7 +153,7 @@ const CASE_650FF: CaseReference = CaseReference {
 fn run_annual_simulation(case_enum: ASHRAE140Case) -> (f64, f64, f64, f64) {
     let spec = case_enum.spec();
     let mut model = ThermalModel::<VectorField>::from_spec(&spec);
-    let weather = fluxion::weather::epw::EpwWeatherSource::from_file("assets/weather/WD600.epw")
+    let weather = fluxion::weather::epw::EpwWeatherSource::from_file(epw_required("WD600.epw").to_str().unwrap())
         .expect("Failed to load EPW weather data");
 
     // ASHRAE 140 §B2 specifies a warm-up period before collecting annual metrics
@@ -211,7 +212,7 @@ fn run_annual_simulation(case_enum: ASHRAE140Case) -> (f64, f64, f64, f64) {
 fn run_free_floating_simulation(case_enum: ASHRAE140Case) -> (f64, f64) {
     let spec = case_enum.spec();
     let mut model = ThermalModel::<VectorField>::from_spec(&spec);
-    let weather = fluxion::weather::epw::EpwWeatherSource::from_file("assets/weather/WD600.epw")
+    let weather = fluxion::weather::epw::EpwWeatherSource::from_file(epw_required("WD600.epw").to_str().unwrap())
         .expect("Failed to load EPW weather data");
 
     // Issue #806 fix: For low-mass cases (600FF, 650FF), DO NOT enable ctf_primary.
@@ -642,7 +643,7 @@ mod free_float_hvac_guard {
 
         let mut model = ThermalModel::<VectorField>::from_spec(&spec);
         let weather =
-            fluxion::weather::epw::EpwWeatherSource::from_file("assets/weather/WD600.epw")
+            fluxion::weather::epw::EpwWeatherSource::from_file(epw_required("WD600.epw").to_str().unwrap())
                 .expect("Failed to load EPW weather data");
 
         for step in 0..8760 {
@@ -709,7 +710,7 @@ fn test_case_640_hourly_peak_week_diagnostic() {
 
     let spec = ASHRAE140Case::Case640.spec();
     let mut model = ThermalModel::<VectorField>::from_spec(&spec);
-    let weather = fluxion::weather::epw::EpwWeatherSource::from_file("assets/weather/WD600.epw")
+    let weather = fluxion::weather::epw::EpwWeatherSource::from_file(epw_required("WD600.epw").to_str().unwrap())
         .expect("Failed to load EPW weather data");
 
     // Peak summer week: July 21 (DOY=202) 00:00 to July 27 (DOY=208) 23:00

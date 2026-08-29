@@ -19,6 +19,7 @@ use crate::validation::ashrae_140_validator::{
 };
 use crate::validation::report::{BenchmarkReport, MetricType, ValidationStatus};
 use crate::weather::epw::EpwWeatherSource;
+use crate::weather::epw_path::epw_required;
 use crate::weather::WeatherSource;
 use csv::Writer;
 use serde::{Deserialize, Serialize};
@@ -1739,7 +1740,9 @@ impl ASHRAE140MultiZoneValidator {
         model.reset_peak_power();
 
         let weather = EpwWeatherSource::from_file(
-            "assets/weather/USA_CO_Denver-Stapleton.Intl.AP.724690_TMY.epw",
+            epw_required("USA_CO_Denver-Stapleton.Intl.AP.724690_TMY.epw")
+                .to_str()
+                .unwrap(),
         )
         .expect("Failed to load Case 970 EPW weather data");
 

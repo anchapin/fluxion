@@ -29,7 +29,9 @@ fn get_sim_params() -> &'static SimulationParameters {
 }
 
 #[tauri::command]
-pub async fn update_simulation_parameters(params: SimulationParameters) -> Result<SimulationParameters, String> {
+pub async fn update_simulation_parameters(
+    params: SimulationParameters,
+) -> Result<SimulationParameters, String> {
     tracing::info!(
         "Updating simulation parameters: heating={}, cooling={}, lighting={}, equipment={}, occupancy={}, ventilation={}, wall_u={}, roof_u={}",
         params.heating_setpoint,
@@ -41,7 +43,9 @@ pub async fn update_simulation_parameters(params: SimulationParameters) -> Resul
         params.wall_u_value,
         params.roof_u_value,
     );
-    SIM_PARAMS.set(params.clone()).map_err(|_| "Parameters already initialized".to_string())?;
+    SIM_PARAMS
+        .set(params.clone())
+        .map_err(|_| "Parameters already initialized".to_string())?;
     Ok(params)
 }
 
@@ -69,7 +73,10 @@ pub async fn load_geometry_file(file_path: String) -> Result<BuildingGeometry, S
         "ifc" => crate::geometry::parse_ifc_content(&content),
         "json" => serde_json::from_str(&content).map_err(|e| format!("JSON parse error: {}", e)),
         _ => {
-            tracing::warn!("Unknown file extension '{}', returning sample geometry", extension);
+            tracing::warn!(
+                "Unknown file extension '{}', returning sample geometry",
+                extension
+            );
             Ok(crate::geometry::create_sample_geometry())
         }
     }

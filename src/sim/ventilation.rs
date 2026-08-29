@@ -1000,4 +1000,176 @@ mod tests {
 
         println!("Q_winter = {:.1} W, Q_summer = {:.1} W", Q_winter, Q_summer);
     }
+
+    // ─── Constants ─────────────────────────────────────────────────────────────
+
+    #[test]
+    fn test_ventilation_constants() {
+        assert_eq!(super::STACK_COEFFICIENT, 0.025);
+        assert_eq!(super::AIR_DENSITY, 1.2);
+        assert_eq!(super::AIR_SPECIFIC_HEAT, 1000.0);
+    }
+
+    // ─── calculate_wind_infiltration_ach edge cases ─────────────────────────────
+
+    #[test]
+    fn test_wind_infiltration_zero_wind() {
+        // Zero wind speed → no wind-driven infiltration
+        let ach = calculate_wind_infiltration_ach(0.0, 3.0, 0.5);
+        assert_eq!(ach, 0.0);
+    }
+
+    #[test]
+    fn test_wind_infiltration_max_shielding() {
+        // shielding_factor=1.0 → maximum shelter
+        let ach_no_shield = calculate_wind_infiltration_ach(3.0, 3.0, 0.0);
+        let ach_shielded = calculate_wind_infiltration_ach(3.0, 3.0, 1.0);
+        assert!(ach_shielded < ach_no_shield);
+    }
+
+    #[test]
+    fn test_wind_infiltration_building_height_effect() {
+        // Taller building → greater height factor → higher infiltration
+        let ach_short = calculate_wind_infiltration_ach(3.0, 2.0, 0.5);
+        let ach_tall = calculate_wind_infiltration_ach(3.0, 10.0, 0.5);
+        assert!(ach_tall > ach_short);
+    }
+
+    // ─── calculate_stack_infiltration_ach edge cases ───────────────────────────
+
+    #[test]
+    fn test_stack_infiltration_zero_volume() {
+        // Zero volume → no infiltration
+        let ach = calculate_stack_infiltration_ach(25.0, 20.0, 2.0, 1.0, 0.0);
+        assert_eq!(ach, 0.0);
+    }
+
+    #[test]
+    fn test_stack_infiltration_zero_height() {
+        // Zero height diff → no stack effect
+        let ach = calculate_stack_infiltration_ach(25.0, 20.0, 0.0, 1.0, 100.0);
+        assert_eq!(ach, 0.0);
+    }
+
+    #[test]
+    fn test_stack_infiltration_below_delta_t_threshold() {
+        // delta_t < 0.5 → no stack effect
+        let ach = calculate_stack_infiltration_ach(25.0, 24.6, 2.0, 1.0, 100.0);
+        assert_eq!(ach, 0.0);
+    }
+
+    // ─── calculate_combined_infiltration_ach ─────────────────────────────────
+
+    #[test]
+    fn test_combined_infiltration_ach_non_negative() {
+        // Total ACH should never be negative
+        let ach = calculate_combined_infiltration_ach(
+            30.0, 20.0, 5.0, 2.7, 1.0, 129.6, 0.5,
+        );
+        assert!(ach >= 0.0);
+    }
+
+    // ─── capped_h_tr_is_ach_multiplier ────────────────────────────────────────
+
+    #[test]
+    fn test_capped_h_tr_is_ach_multiplier_below_cap() {
+        // Below cap: natural multiplier applies
+        let capped = super::capped_h_tr_is_ach_multiplier(3.0);
+        let natural = h_tr_is_ach_multiplier(3.0);
+        assert!((capped - natural).abs() < 1e-10);
+    }
+
+    #[test]
+    fn test_capped_h_tr_is_ach_multiplier_at_cap() {
+        // Near the cap value, should equal cap
+        // The natural multiplier hits 2.0 around ACH ≈ 4.3
+        let capped = super::capped_h_tr_is_ach_multiplier(10.0);
+        assert!((capped - super::MAX_CONVECTIVE_TO_AIR_MULTIPLIER).abs() < 0.01);
+    }
+
+    #[test]
+    fn test_capped_h_tr_is_ach_multiplier_above_cap() {
+        // Above cap: should be clamped to 2.0
+        let capped = super::capped_h_tr_is_ach_multiplier(40.0);
+        assert!((capped - 2.0).abs() < 0.01);
+    }
+
+    #[test]
+    fn test_capped_h_tr_is_ach_multiplier_zero_ach() {
+        assert_eq!(super::capped_h_tr_is_ach_multiplier(0.0), 1.0);
+    }
+
+    // ─── WeatherDependentVentilation get_ach_weather ─────────────────────────
+
+    #[test]
+    fn test_weather_dependent_get_ach_outdoor_below_start_temp_still_has_wind() {
+        let vent = WeatherDependentVentilation::new(0.3, 0.3, 2.0, 18.0, 26.0);
+        // Even when outdoor is cold (below start_temp), wind benefit can still contribute
+        let ach = vent.get_ach_weather(15.0, 28.0, 2.0, 129.6);
+        // Wind benefit adds to the ACH
+        assert!(ach >= 0.3);
+        assert!(ach <= 2.0);
+    }
+
+    #[test]
+    fn test_weather_dependent_get_ach_indoor_not_cooling_wind_benefit_still_applies() {
+        let vent = WeatherDependentVentilation::new(0.3, 0.3, 2.0, 18.0, 26.0);
+        // When indoor is not in cooling mode, wind benefit still applies
+        let ach = vent.get_ach_weather(25.0, 24.0, 2.0, 129.6);
+        assert!(ach >= 0.3);
+        assert!(ach <= 2.0);
+    }
+
+    #[test]
+    fn test_weather_dependent_mixed_mode_factory() {
+        let vent = WeatherDependentVentilation::mixed_mode(0.3, 2.0, 18.0, 26.0, 26.0);
+        assert_eq!(vent.base_ach, 0.3);
+        assert_eq!(vent.min_ach, 0.3); // min_ach = base_ach in mixed_mode
+        assert_eq!(vent.max_ach, 2.0);
+        assert_eq!(vent.start_temp, 18.0);
+    }
+
+    #[test]
+    fn test_weather_dependent_get_ach_ach_values_bounded() {
+        let vent = WeatherDependentVentilation::new(0.3, 0.3, 2.0, 18.0, 26.0);
+        // ACH should always be within [min_ach, max_ach]
+        for tout in 0..40 {
+            let ach = vent.get_ach_weather(tout as f64, 28.0, 2.0, 129.6);
+            assert!(ach >= 0.3 - 1e-9);
+            assert!(ach <= 2.0 + 1e-9);
+        }
+    }
+
+    // ─── ScheduledVentilation cross-midnight wrap ────────────────────────────
+
+    #[test]
+    fn test_night_ventilation_cross_midnight_wrap() {
+        // Verify hours 22..24 and 0..6 are ON, others are OFF
+        let vent = ScheduledVentilation::night_ventilation(0.3, 1.0, 22, 6);
+        for hour in 0..24 {
+            let ach = vent.get_ach(hour, 20.0, 22.0, 0.0, 100.0);
+            if hour >= 22 || hour < 6 {
+                assert_eq!(ach, 1.3, "hour {} should be fan ON", hour);
+            } else {
+                assert_eq!(ach, 0.3, "hour {} should be fan OFF", hour);
+            }
+        }
+    }
+
+    // ─── EarthTubeVentilation temperature_difference ───────────────────────────
+
+    #[test]
+    fn test_earth_tube_temperature_difference() {
+        let base = ConstantVentilation::new(0.5);
+        let earth_tube = EarthTube::new().soil_temperature_K(285.15);
+        let vent = EarthTubeVentilation::new(base, earth_tube);
+
+        // Outdoor warmer than ground → negative difference (pre-cooling)
+        let delta_hot = vent.temperature_difference(308.15); // 35°C
+        assert!(delta_hot < 0.0);
+
+        // Outdoor colder than ground → positive difference (pre-heating)
+        let delta_cold = vent.temperature_difference(268.15); // -5°C
+        assert!(delta_cold > 0.0);
+    }
 }

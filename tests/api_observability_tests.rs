@@ -150,6 +150,7 @@ fn sum_metric_series(body: &str, name: &str, suffix: &str) -> f64 {
 /// Sum the time series for `fluxion_rest_requests_total` regardless of label
 /// values. Counter sum across all label sets = total requests handled by
 /// the recorder since process start.
+#[allow(dead_code)]
 fn total_requests(body: &str) -> f64 {
     sum_metric_series(body, "fluxion_rest_requests_total", "")
 }

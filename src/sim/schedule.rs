@@ -821,4 +821,191 @@ mod tests {
         schedule.fill_range_for_day(0, 10, 10, 1.0);
         assert_eq!(schedule.value_for_day(DayType::Monday, 10), 0.0);
     }
+
+    // --- Additional derived-trait and getter coverage ---
+
+    #[test]
+    fn test_schedule_type_debug() {
+        let debug = format!("{:?}", ScheduleType::DailyCycle);
+        assert!(debug.contains("DailyCycle"));
+    }
+
+    #[test]
+    fn test_schedule_type_copy() {
+        use std::mem::size_of;
+        assert_eq!(size_of::<ScheduleType>(), 1);
+    }
+
+    #[test]
+    fn test_day_type_debug() {
+        let debug = format!("{:?}", DayType::Monday);
+        assert!(debug.contains("Monday"));
+    }
+
+    #[test]
+    fn test_day_type_copy() {
+        use std::mem::size_of;
+        assert_eq!(size_of::<DayType>(), 1);
+    }
+
+    #[test]
+    fn test_schedule_values_debug() {
+        let daily = ScheduleValues::Daily([1.0; 24]);
+        let debug = format!("{:?}", daily);
+        assert!(debug.contains("Daily"));
+    }
+
+    #[test]
+    fn test_daily_schedule_debug() {
+        let schedule = DailySchedule::constant(10.0);
+        let debug = format!("{:?}", schedule);
+        assert!(debug.contains("DailySchedule"));
+        assert!(debug.contains("Constant"));
+    }
+
+    #[test]
+    fn test_hvac_schedule_debug() {
+        let hvac = HVACSchedule::constant_schedule(20.0, 25.0);
+        let debug = format!("{:?}", hvac);
+        assert!(debug.contains("HVACSchedule"));
+    }
+
+    #[test]
+    fn test_hvac_schedule_partial_eq() {
+        let a = HVACSchedule::constant_schedule(20.0, 25.0);
+        let b = HVACSchedule::constant_schedule(20.0, 25.0);
+        let c = HVACSchedule::constant_schedule(20.0, 26.0);
+        assert_eq!(a, b);
+        assert_ne!(a, c);
+    }
+
+    #[test]
+    fn test_daily_schedule_getters() {
+        let mut schedule = DailySchedule::new();
+        schedule.name = "TestSchedule".to_string();
+        assert_eq!(schedule.name, "TestSchedule");
+        assert_eq!(schedule.schedule_type, ScheduleType::DailyCycle);
+        match &schedule.values {
+            ScheduleValues::Daily(arr) => assert_eq!(arr.len(), 24),
+            _ => panic!("Expected Daily"),
+        }
+    }
+
+    #[test]
+    fn test_daily_schedule_from_weekly() {
+        let mut schedule = DailySchedule::weekly("WeeklySchedule".to_string());
+        assert_eq!(schedule.name, "WeeklySchedule");
+        assert_eq!(schedule.schedule_type, ScheduleType::Weekly);
+        match &schedule.values {
+            ScheduleValues::Weekly(arr) => assert_eq!(arr.len(), 7),
+            _ => panic!("Expected Weekly"),
+        }
+    }
+
+    // --- ScheduleValues round-trips ---
+
+    #[test]
+    fn test_schedule_values_roundtrip() {
+        let original = ScheduleValues::Daily([1.5; 24]);
+        let json = serde_json::to_string(&original).unwrap();
+        let restored: ScheduleValues = serde_json::from_str(&json).unwrap();
+        assert_eq!(original, restored);
+    }
+
+    #[test]
+    fn test_hvac_schedule_roundtrip() {
+        let original = HVACSchedule::setback_schedule(20.0, 15.0, 25.0, 22, 6);
+        let json = serde_json::to_string(&original).unwrap();
+        let restored: HVACSchedule = serde_json::from_str(&json).unwrap();
+        assert_eq!(original, restored);
+    }
+
+    // --- Edge cases ---
+
+    #[test]
+    fn test_setback_schedule_wrapping_midnight() {
+        // night_start=22, night_end=6 means night hours are 22,23,0,1,2,3,4,5
+        let hvac = HVACSchedule::setback_schedule(20.0, 15.0, 25.0, 22, 6);
+        // Night hours should be 15
+        for hour in [22, 23, 0, 1, 2, 3, 4, 5] {
+            assert_eq!(
+                hvac.heating_setpoint(hour), 15.0,
+                "hour {} should be night setback",
+                hour
+            );
+        }
+        // Day hours should be 20
+        for hour in [6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21] {
+            assert_eq!(
+                hvac.heating_setpoint(hour), 20.0,
+                "hour {} should be day",
+                hour
+            );
+        }
+    }
+
+    #[test]
+    fn test_is_free_floating_true() {
+        // All heating <= -100 and all cooling >= 100
+        let hvac = HVACSchedule::free_floating();
+        assert!(hvac.is_free_floating());
+    }
+
+    #[test]
+    fn test_is_free_floating_partial_heating_off() {
+        // heating=-200 (off) but cooling=50 (not off) → not free-floating
+        let mut hvac = HVACSchedule::free_floating();
+        hvac.heating = DailySchedule::constant(-200.0);
+        hvac.cooling = DailySchedule::constant(50.0);
+        assert!(!hvac.is_free_floating());
+    }
+
+    #[test]
+    fn test_is_free_floating_partial_cooling_off() {
+        // cooling=200 (off) but heating=-50 (not off) → not free-floating
+        let mut hvac = HVACSchedule::free_floating();
+        hvac.heating = DailySchedule::constant(-50.0);
+        hvac.cooling = DailySchedule::constant(200.0);
+        assert!(!hvac.is_free_floating());
+    }
+
+    #[test]
+    fn test_daily_schedule_weekly_value_wraps() {
+        let schedule = DailySchedule::weekly("Test".to_string());
+        // value() uses day 0 (Monday) and wraps hour % 24
+        assert_eq!(schedule.value(24), schedule.value(0));
+        assert_eq!(schedule.value(48), schedule.value(0));
+    }
+
+    #[test]
+    fn test_value_for_day_wraps_hour() {
+        let mut schedule = DailySchedule::weekly("Test".to_string());
+        schedule.set_hour_for_day(0, 10, 5.0);
+        // value_for_day also wraps: hour 34 → 10
+        assert_eq!(schedule.value_for_day(DayType::Monday, 34), 5.0);
+    }
+
+    #[test]
+    fn test_weekly_schedule_out_of_bounds_day_is_ignored() {
+        let mut schedule = DailySchedule::weekly("Test".to_string());
+        schedule.set_hour_for_day(10, 8, 99.0); // day 10 >= 7, should be ignored
+        // All valid days should still have 0.0 at hour 8
+        for day in 0..7 {
+            let day_type = match day {
+                0 => DayType::Monday,
+                1 => DayType::Tuesday,
+                2 => DayType::Wednesday,
+                3 => DayType::Thursday,
+                4 => DayType::Friday,
+                5 => DayType::Saturday,
+                6 => DayType::Sunday,
+                _ => unreachable!(),
+            };
+            assert_eq!(
+                schedule.value_for_day(day_type, 8), 0.0,
+                "day {} hour 8 should be 0",
+                day
+            );
+        }
+    }
 }

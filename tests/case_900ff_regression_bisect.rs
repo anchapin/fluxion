@@ -49,9 +49,10 @@ use fluxion::sim::engine::ThermalModel;
 use fluxion::sim::warmup::{run_warmup, WarmupConfig};
 use fluxion::validation::ashrae_140_cases::ASHRAE140Case;
 use fluxion::weather::epw::EpwWeatherSource;
+use fluxion::weather::epw_path::epw_required;
 use fluxion::weather::WeatherSource;
 
-const EPW_PATH: &str = "assets/weather/USA_CO_Denver-Stapleton.Intl.AP.724690_TMY.epw";
+const EPW_FILENAME: &str = "USA_CO_Denver-Stapleton.Intl.AP.724690_TMY.epw";
 
 const REF_LOWER_EDGE: f64 = -6.40;
 const REF_UPPER_EDGE: f64 = -1.60;
@@ -68,7 +69,7 @@ fn test_case_900ff_night_minimum_within_reference_band() {
     model.hvac.hvac_heating_capacity = 0.0;
     model.hvac.hvac_cooling_capacity = 0.0;
 
-    let weather = EpwWeatherSource::from_file(EPW_PATH)
+    let weather = EpwWeatherSource::from_file(epw_required(EPW_FILENAME).to_str().unwrap())
         .expect("Failed to load Denver TMY EPW file required by this test");
 
     // Match the canonical ASHRAE 140 validator path: 14-day fixed warm-up

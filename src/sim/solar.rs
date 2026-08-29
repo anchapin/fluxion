@@ -1206,4 +1206,227 @@ mod tests {
         let cloned = diag.clone();
         assert_eq!(cloned.total_gain_w, 525.0);
     }
+
+    // --- SolarGain ---
+
+    #[test]
+    fn test_solar_gain_new_total_is_sum() {
+        let gain = SolarGain::new(100.0, 50.0, 25.0);
+        assert_eq!(gain.beam_gain_w, 100.0);
+        assert_eq!(gain.diffuse_gain_w, 50.0);
+        assert_eq!(gain.ground_reflected_gain_w, 25.0);
+        assert_eq!(gain.total_gain_w, 175.0);
+    }
+
+    #[test]
+    fn test_solar_gain_zero_is_all_zeros() {
+        let gain = SolarGain::zero();
+        assert_eq!(gain.beam_gain_w, 0.0);
+        assert_eq!(gain.diffuse_gain_w, 0.0);
+        assert_eq!(gain.ground_reflected_gain_w, 0.0);
+        assert_eq!(gain.total_gain_w, 0.0);
+    }
+
+    #[test]
+    fn test_solar_gain_partial_eq() {
+        let a = SolarGain::new(10.0, 20.0, 30.0);
+        let b = SolarGain::new(10.0, 20.0, 30.0);
+        let c = SolarGain::new(10.0, 20.0, 99.0);
+        assert_eq!(a, b);
+        assert_ne!(a, c);
+    }
+
+    #[test]
+    fn test_solar_gain_clone() {
+        let original = SolarGain::new(5.0, 10.0, 15.0);
+        let cloned = original.clone();
+        assert_eq!(original, cloned);
+    }
+
+    #[test]
+    fn test_solar_gain_debug() {
+        let gain = SolarGain::new(1.0, 2.0, 3.0);
+        let debug = format!("{:?}", gain);
+        assert!(debug.contains("beam_gain_w"));
+        assert!(debug.contains("total_gain_w"));
+    }
+
+    // --- WindowProperties ---
+
+    #[test]
+    fn test_window_properties_partial_eq() {
+        let a = WindowProperties::new(12.0, 0.787, 0.86156);
+        let b = WindowProperties::new(12.0, 0.787, 0.86156);
+        let c = WindowProperties::new(12.0, 0.786, 0.86156);
+        assert_eq!(a, b);
+        assert_ne!(a, c);
+    }
+
+    #[test]
+    fn test_window_properties_debug() {
+        let wp = WindowProperties::double_clear(12.0);
+        let debug = format!("{:?}", wp);
+        assert!(debug.contains("area"));
+        assert!(debug.contains("shgc"));
+        assert!(debug.contains("frame_u_value"));
+    }
+
+    // --- SolarPosition ---
+
+    #[test]
+    fn test_solar_position_debug() {
+        let pos = SolarPosition {
+            altitude_deg: 45.0,
+            azimuth_deg: 180.0,
+            zenith_deg: 45.0,
+        };
+        let debug = format!("{:?}", pos);
+        assert!(debug.contains("altitude_deg"));
+        assert!(debug.contains("azimuth_deg"));
+    }
+
+    #[test]
+    fn test_solar_position_copy() {
+        use std::mem::size_of;
+        assert_eq!(size_of::<SolarPosition>(), 24);
+    }
+
+    // --- SurfaceIrradiance ---
+
+    #[test]
+    fn test_surface_irradiance_debug() {
+        let si = SurfaceIrradiance::new(500.0, 100.0, 50.0);
+        let debug = format!("{:?}", si);
+        assert!(debug.contains("beam_wm2"));
+        assert!(debug.contains("diffuse_wm2"));
+    }
+
+    #[test]
+    fn test_surface_irradiance_copy() {
+        use std::mem::size_of;
+        assert_eq!(size_of::<SurfaceIrradiance>(), 32);
+    }
+
+    // --- ashrae_140_window_shgc_ratio interpolation ---
+
+    #[test]
+    fn test_ashrae_shgc_ratio_interpolation_at_table_points() {
+        // At exact table angles the ratio must equal the table value exactly.
+        let cases = [
+            (0.0, 1.000),
+            (10.0, 0.995),
+            (20.0, 0.985),
+            (30.0, 0.970),
+            (40.0, 0.940),
+            (50.0, 0.890),
+            (60.0, 0.810),
+            (70.0, 0.680),
+            (80.0, 0.450),
+            (90.0, 0.000),
+        ];
+        for (angle, expected) in cases {
+            let ratio = ashrae_140_window_shgc_ratio(angle);
+            assert!(
+                (ratio - expected).abs() < 1e-6,
+                "SHGC ratio at {}° should be {}, got {}",
+                angle,
+                expected,
+                ratio
+            );
+        }
+    }
+
+    #[test]
+    fn test_ashrae_shgc_ratio_midpoint_interpolation() {
+        // At midpoint between two table angles, ratio must be the linear average.
+        let mid_10 = ashrae_140_window_shgc_ratio(5.0);
+        assert!(
+            (mid_10 - 0.9975).abs() < 1e-6,
+            "SHGC at 5° should be midpoint of 0° and 10°: {}",
+            mid_10
+        );
+
+        let mid_45 = ashrae_140_window_shgc_ratio(45.0);
+        assert!(
+            (mid_45 - 0.915).abs() < 1e-6,
+            "SHGC at 45° should be midpoint of 40° and 50°: {}",
+            mid_45
+        );
+
+        let mid_85 = ashrae_140_window_shgc_ratio(85.0);
+        assert!(
+            (mid_85 - 0.225).abs() < 1e-6,
+            "SHGC at 85° should be midpoint of 80° and 90°: {}",
+            mid_85
+        );
+    }
+
+    #[test]
+    fn test_ashrae_shgc_ratio_negative_is_clamped_to_one() {
+        // Negative angle treated as normal incidence → 1.0
+        assert!((ashrae_140_window_shgc_ratio(-10.0) - 1.0).abs() < 1e-6);
+        assert!((ashrae_140_window_shgc_ratio(-1.0) - 1.0).abs() < 1e-6);
+    }
+
+    // --- Night / below-horizon conditions ---
+
+    #[test]
+    fn test_calculate_window_solar_gain_below_horizon_returns_zero() {
+        // Sun below horizon → no beam, but diffuse still contributes
+        let window = WindowProperties::double_clear(12.0);
+        let sun_pos_night = SolarPosition {
+            altitude_deg: -15.0,
+            azimuth_deg: 180.0,
+            zenith_deg: 105.0,
+        };
+        let irr = SurfaceIrradiance::new(0.0, 80.0, 10.0);
+        let gain = calculate_window_solar_gain(
+            &irr,
+            &window,
+            None,
+            None,
+            &[],
+            &sun_pos_night,
+            Orientation::South,
+        );
+        // Only diffuse + ground-reflected contribute (beam is 0 since sun is below horizon)
+        // diffuse_shgc = 0.787 * 0.9 = 0.7083, ground_shgc = 0.787 * 0.85 = 0.669
+        // diffuse_gain = 12 * 80 * 0.7083 = 679.97
+        // ground_gain = 12 * 10 * 0.669 = 80.28
+        assert!(gain.total_gain_w > 0.0);
+        assert_eq!(gain.beam_gain_w, 0.0);
+    }
+
+    #[test]
+    fn test_calculate_window_solar_gain_zero_irradiance_returns_zero() {
+        let window = WindowProperties::double_clear(12.0);
+        let sun_pos = SolarPosition {
+            altitude_deg: 45.0,
+            azimuth_deg: 180.0,
+            zenith_deg: 45.0,
+        };
+        let irr = SurfaceIrradiance::zero();
+        let gain = calculate_window_solar_gain(
+            &irr,
+            &window,
+            None,
+            None,
+            &[],
+            &sun_pos,
+            Orientation::South,
+        );
+        assert_eq!(gain.total_gain_w, 0.0);
+    }
+
+    // --- SolarGain total_gain_w precision ---
+
+    #[test]
+    fn test_solar_gain_total_is_exact_sum() {
+        let gain = SolarGain::new(123.456, 78.9, 12.34);
+        assert!(
+            (gain.total_gain_w - 214.696).abs() < 1e-9,
+            "total_gain_w should be exact sum of components"
+        );
+    }
 }
+

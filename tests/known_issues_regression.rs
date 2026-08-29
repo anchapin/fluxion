@@ -30,6 +30,7 @@ mod issue_1457_case_600_series_tracking {
     use fluxion::physics::cta::VectorField;
     use fluxion::sim::engine::ThermalModel;
     use fluxion::validation::ashrae_140_cases::ASHRAE140Case;
+    use fluxion::weather::epw_path::epw_required;
     use fluxion::weather::WeatherSource;
 
     const J_TO_MWH: f64 = 1.0 / 3.6e9;
@@ -38,7 +39,7 @@ mod issue_1457_case_600_series_tracking {
         let spec = case.spec();
         let mut model = ThermalModel::<VectorField>::from_spec(&spec);
         let weather =
-            fluxion::weather::epw::EpwWeatherSource::from_file("assets/weather/WD600.epw")
+            fluxion::weather::epw::EpwWeatherSource::from_file(epw_required("WD600.epw").to_str().unwrap())
                 .expect("Failed to load EPW weather data");
         // 14-day warm-up (matches the post-#1457 fix in tests/ashrae_140_case_600_series.rs):
         // lets the 5R1C mass node settle from the 20°C default into the seasonal cycle
@@ -70,7 +71,7 @@ mod issue_1457_case_600_series_tracking {
         let spec = case.spec();
         let mut model = ThermalModel::<VectorField>::from_spec(&spec);
         let weather =
-            fluxion::weather::epw::EpwWeatherSource::from_file("assets/weather/WD600.epw")
+            fluxion::weather::epw::EpwWeatherSource::from_file(epw_required("WD600.epw").to_str().unwrap())
                 .expect("Failed to load EPW weather data");
         let mut min_temp = f64::MAX;
         for step in 0..8760 {

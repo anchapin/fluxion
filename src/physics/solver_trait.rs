@@ -463,4 +463,59 @@ mod tests {
         assert!(step_result.is_err());
         assert!(step_result.unwrap_err().to_string().contains("instability"));
     }
+
+    #[test]
+    fn test_physics_error_invalid_conductance() {
+        let err = PhysicsError::invalid_conductance("negative h_ve");
+        let msg = err.to_string();
+        assert!(msg.contains("Invalid thermal conductance"));
+        assert!(msg.contains("negative h_ve"));
+    }
+
+    #[test]
+    fn test_physics_error_numerical() {
+        let err = PhysicsError::numerical("singular matrix");
+        let msg = err.to_string();
+        assert!(msg.contains("Numerical error"));
+        assert!(msg.contains("singular matrix"));
+    }
+
+    #[test]
+    fn test_physics_error_initialization() {
+        let err = PhysicsError::initialization("missing wall spec");
+        let msg = err.to_string();
+        assert!(msg.contains("Initialization failed"));
+        assert!(msg.contains("missing wall spec"));
+    }
+
+    #[test]
+    fn test_physics_error_invalid_state() {
+        let err = PhysicsError::invalid_state("zone not found");
+        let msg = err.to_string();
+        assert!(msg.contains("Invalid model state"));
+        assert!(msg.contains("zone not found"));
+    }
+
+    #[test]
+    fn test_physics_error_is_clone() {
+        let err = PhysicsError::invalid_conductance("test");
+        let cloned = err.clone();
+        assert_eq!(format!("{}", err), format!("{}", cloned));
+    }
+
+    #[test]
+    fn test_physics_error_debug() {
+        let err = PhysicsError::numerical("overflow");
+        let debug_str = format!("{:?}", err);
+        assert!(debug_str.contains("Numerical"));
+    }
+
+    #[test]
+    fn test_physics_error_from_solver_error() {
+        let solver_err = SolverError::CoefficientError("bad coeff".to_string());
+        let physics_err: PhysicsError = solver_err.into();
+        let msg = physics_err.to_string();
+        assert!(msg.contains("Solver error"));
+        assert!(msg.contains("Coefficient error"));
+    }
 }

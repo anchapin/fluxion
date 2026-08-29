@@ -57,12 +57,12 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
             self.calc_analytical_loads(timestep, true, dt_seconds);
         }
 
-        // Issue #2304 / #2686: experimental GaugeZoneSolver routing. This branch
-        // is feature-gated AND always dead — `gauge_zone_solver` is initialized
-        // to `None` (thermal_model_core.rs) and no path sets it to `Some`, so
-        // even under `--features gauge-solver` control always falls through to
-        // the 5R1C/9R4C dispatch below. Preserved as WIP for whoever finishes
-        // the zone-level gauge integration (#2304).
+        // Issue #2304 / #2686: GaugeZoneSolver routing. The gauge solver is
+        // initialized by `enable_advanced_solver()` in the validator (for high-mass
+        // cases) via `ThermalModelSolvers::enable_gauge()`. When available, it
+        // runs in shadow mode alongside the primary 5R1C/9R4C solver. GaugeZoneSolver
+        // is steady-state (C_air only) so its results will differ from the lumped
+        // parameter models — this is expected per issue #1669.
         #[cfg(feature = "gauge-solver")]
         if let Some(ref mut gauge_solver) = self.0.conduction.backend.gauge_zone_solver {
             // Extract parameters for GaugeZoneSolver from ThermalModel state

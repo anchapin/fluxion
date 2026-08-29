@@ -910,6 +910,7 @@ mod tests {
     // Mock equipment for testing
     #[derive(Debug, Clone)]
     struct MockEquipment {
+        #[allow(dead_code)]
         id: String,
         loop_id: LoopGroupId,
         capacity_w: f64,

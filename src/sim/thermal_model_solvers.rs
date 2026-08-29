@@ -431,6 +431,109 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         self.0.conduction.backend.fd_enabled
     }
 
+    /// Enable GaugeZoneSolver for zone-level gauge-based thermal simulation.
+    ///
+    /// This method creates a `GaugeZoneSolver` for each zone using the wall construction
+    /// layers. GaugeZoneSolver uses per-surface gauge-based heat conduction with steady-state
+    /// thermal mass (C_air only), providing a geometrically-accurate alternative to the
+    /// lumped-parameter 5R1C/9R4C models.
+    ///
+    /// # Arguments
+    ///
+    /// * `wall_layers` - Wall construction layers (from `spec.construction.wall.layers`)
+    ///
+    /// # Notes
+    ///
+    /// GaugeZoneSolver is steady-state (no transient thermal mass storage). It only models
+    /// C_air (zone air capacitance), unlike 5R1C which models both C_mass and C_air.
+    /// This produces different diurnal behavior — expected for the gauge vs lumped comparison.
+    #[cfg(feature = "gauge-solver")]
+    pub fn enable_gauge(
+        &mut self,
+        wall_layers: &[crate::physics::fd_discretization::MaterialLayer],
+    ) {
+        use crate::physics::gauge_zone_solver::{GaugeZoneSolver, SurfaceType};
+        use crate::physics::wall_spec::{LayerSpec, WallSpec};
+        use fluxion_core::ashrae_cases::Orientation;
+
+        // Convert MaterialLayer (thickness, k, rho, cp) to LayerSpec for WallSpec
+        let layers: Vec<LayerSpec> = wall_layers
+            .iter()
+            .map(|l| {
+                LayerSpec::new(
+                    &l.name,
+                    l.thickness,
+                    l.conductivity,
+                    l.density,
+                    l.specific_heat,
+                )
+            })
+            .collect();
+        let wall_spec = WallSpec::multi_layer("ASHRAE Wall", layers);
+
+        // Create GaugeZoneSolver for each zone
+        let num_zones = self.0.hvac.num_zones;
+        let mut solvers = Vec::with_capacity(num_zones);
+
+        for i in 0..num_zones {
+            let floor_area = self
+                .0
+                .setpoints
+                .zone_area
+                .as_ref()
+                .get(i)
+                .copied()
+                .unwrap_or(48.0);
+            let ceiling_height = self
+                .0
+                .setpoints
+                .ceiling_height
+                .as_ref()
+                .get(i)
+                .copied()
+                .unwrap_or(2.7);
+
+            let mut zone_solver = GaugeZoneSolver::new(floor_area, ceiling_height);
+
+            // Add surfaces from solar.surfaces for this zone
+            if let Some(zone_surfaces) = self.0.solar.surfaces.get(i) {
+                for surface in zone_surfaces {
+                    let opaque_area = (surface.area - surface.window_area).max(0.0);
+                    if opaque_area <= 0.0 {
+                        continue;
+                    }
+
+                    let (tilt_deg, surf_type) = match surface.orientation {
+                        Orientation::Up => (0.0, SurfaceType::Roof),
+                        Orientation::Down => (180.0, SurfaceType::Floor),
+                        _ => (90.0, SurfaceType::Wall),
+                    };
+                    let azimuth_deg = surface.orientation.azimuth();
+
+                    // GaugeZoneSolver::add_opaque_surface clones the WallSpec
+                    if let Err(e) = zone_solver.add_opaque_surface(
+                        &wall_spec,
+                        opaque_area,
+                        surf_type,
+                        azimuth_deg,
+                        tilt_deg,
+                    ) {
+                        warn!("GaugeZoneSolver surface add failed: {}", e);
+                    }
+                }
+            }
+
+            if let Err(e) = zone_solver.initialize() {
+                warn!("GaugeZoneSolver initialization failed: {}", e);
+            }
+
+            solvers.push(zone_solver);
+        }
+
+        // Only keep the first zone solver for now (multi-zone gauge is future work)
+        self.0.conduction.backend.gauge_zone_solver = solvers.into_iter().next();
+    }
+
     /// Enable the unified solver manager with explicit solver selection.
     ///
     /// The solver manager provides automatic method selection (5R1C/CTF/FD) based on

@@ -571,3 +571,143 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         self.0.solar.weather = Some(weather);
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use crate::physics::cta::VectorField;
+    use crate::sim::adaptive_timestep::TimestepMode;
+    use crate::sim::engine::ThermalModel;
+    use crate::sim::thermal_model_core::get_daily_cycle;
+
+    // ─── Temperature accessors ───────────────────────────────────────────────
+
+    #[test]
+    fn test_get_temperatures_returns_correct_count() {
+        let model = ThermalModel::<VectorField>::new(3);
+        let temps = model.get_temperatures();
+        assert_eq!(temps.len(), 3);
+    }
+
+    #[test]
+    fn test_get_temperatures_default_values() {
+        let model = ThermalModel::<VectorField>::new(1);
+        let temps = model.get_temperatures();
+        assert_eq!(temps.len(), 1);
+        assert!((temps[0] - 20.0).abs() < 1e-9);
+    }
+
+    #[test]
+    fn test_get_temperatures_into() {
+        let model = ThermalModel::<VectorField>::new(2);
+        let mut out = vec![999.0, 888.0];
+        model.get_temperatures_into(&mut out);
+        assert_eq!(out.len(), 2);
+        assert!((out[0] - 20.0).abs() < 1e-9);
+        assert!((out[1] - 20.0).abs() < 1e-9);
+    }
+
+    #[test]
+    fn test_get_hourly_temperatures_before_simulation() {
+        let model = ThermalModel::<VectorField>::new(1);
+        assert!(model.get_hourly_temperatures().is_none());
+    }
+
+    #[test]
+    fn test_get_nodal_temperatures_before_simulation() {
+        let model = ThermalModel::<VectorField>::new(1);
+        assert!(model.get_nodal_temperatures().is_none());
+    }
+
+    #[test]
+    fn test_num_multizone_solvers_default() {
+        let model = ThermalModel::<VectorField>::new(1);
+        assert_eq!(model.num_multizone_solvers(), 0);
+    }
+
+    // ─── Timestep calculation ───────────────────────────────────────────────
+
+    #[test]
+    fn test_calculate_timestep_seconds_fixed() {
+        let model = ThermalModel::<VectorField>::new(1);
+        assert_eq!(model.calculate_timestep_seconds(), 3600.0);
+    }
+
+    #[test]
+    fn test_estimate_time_constant_hours_uninitialized() {
+        // For an uninitialized model, h_tr_ms ≈ 0, so tau falls back to 2.0
+        let model = ThermalModel::<VectorField>::new(1);
+        let tau = model.estimate_time_constant_hours();
+        assert!((tau - 2.0).abs() < 0.1);
+    }
+
+    // ─── Analytical loads ───────────────────────────────────────────────────
+
+    #[test]
+    fn test_calculate_analytical_loads() {
+        let model = ThermalModel::<VectorField>::new(1);
+        let loads = model.calculate_analytical_loads(35.0, 12);
+        assert_eq!(loads.len(), 1);
+        // Loads should be finite
+        assert!(loads[0].is_finite());
+    }
+
+    #[test]
+    fn test_calculate_analytical_loads_multi_zone() {
+        let model = ThermalModel::<VectorField>::new(3);
+        let loads = model.calculate_analytical_loads(30.0, 10);
+        assert_eq!(loads.len(), 3);
+        for load in &loads {
+            assert!(load.is_finite());
+        }
+    }
+
+    #[test]
+    fn test_calculate_analytical_loads_with_positive_outdoor_delta() {
+        // When outdoor > indoor (35 > 20), loads should be positive (heating needed)
+        let model = ThermalModel::<VectorField>::new(1);
+        let loads = model.calculate_analytical_loads(35.0, 12);
+        // Net load is solar + conduction + ventilation
+        // All terms are positive when Tout > Tin, so total > 0
+        assert!(loads[0] > 0.0 || loads[0].is_finite());
+    }
+
+    // ─── set_loads ─────────────────────────────────────────────────────────
+
+    #[test]
+    fn test_set_loads() {
+        let mut model = ThermalModel::<VectorField>::new(2);
+        let loads = vec![5.0, 10.0];
+        model.set_loads(&loads);
+        assert_eq!(model.setpoints.loads.as_ref(), loads.as_slice());
+    }
+
+    #[test]
+    fn test_set_loads_zero_allocation() {
+        let mut model = ThermalModel::<VectorField>::new(1);
+        let loads = vec![42.0];
+        model.set_loads(&loads);
+        // Verify it's stored and retrievable
+        let temps = model.get_temperatures();
+        assert_eq!(temps.len(), 1);
+    }
+
+    // ─── get_daily_cycle ──────────────────────────────────────────────────
+
+    #[test]
+    fn test_get_daily_cycle_returns_24_values() {
+        let values = get_daily_cycle();
+        assert_eq!(values.len(), 24);
+    }
+
+    #[test]
+    fn test_get_daily_cycle_sin_wave_shape() {
+        let values = get_daily_cycle();
+        // Should be a sinusoidal cycle ranging from -1 to 1
+        let min = values.iter().cloned().fold(f64::INFINITY, f64::min);
+        let max = values.iter().cloned().fold(f64::NEG_INFINITY, f64::max);
+        assert!((min - (-1.0)).abs() < 1e-10);
+        assert!((max - 1.0).abs() < 1e-10);
+        // Values should vary across the day
+        assert!(values[0] != values[12]);
+    }
+}

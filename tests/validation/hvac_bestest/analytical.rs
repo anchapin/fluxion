@@ -111,6 +111,7 @@ fn reference_energy(
 // ---------------------------------------------------------------------------
 
 /// Compute annual energy for a `HeatPump` using temperature-dependent COP.
+#[allow(dead_code)]
 fn heatpump_energy(hp: &HeatPump, fan_frac: f64) -> (f64, f64) {
     let mut energy_kwh = 0.0_f64;
     let mut peak_w = 0.0_f64;
@@ -147,6 +148,7 @@ fn chiller_cooling_energy(chiller: &Chiller) -> (f64, f64) {
 }
 
 /// Compute annual heating energy for a `Boiler`.
+#[allow(dead_code)]
 fn boiler_heating_energy(boiler: &Boiler) -> (f64, f64) {
     let mut energy_kwh = 0.0_f64;
     let mut peak_w = 0.0_f64;

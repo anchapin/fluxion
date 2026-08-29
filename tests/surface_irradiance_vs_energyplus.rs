@@ -237,15 +237,6 @@ fn test_horizontal_surface_no_beam_below_horizon() {
 // Section 2: E+ Reference Data Validation (Issue #1012)
 // ===========================================================================
 
-/// TMY data uses month/day/hour fields rather than sequential indices.
-/// This function returns the actual date from the weather record.
-fn weather_record_to_date(month: u32, day: u32, hour: u8) -> (i32, u32, u32, f64) {
-    // EPW hour is 1-24 where hour N represents (N-1):00 to N:00
-    // Midpoint is (N-1) + 0.5 = N - 0.5
-    let hour_of_day = (hour as f64) - 0.5;
-    (2023, month, day, hour_of_day)
-}
-
 /// Test beam irradiance against E+ reference data within 1% tolerance.
 /// Uses Denver EPW weather data to compute surface irradiance.
 #[test]

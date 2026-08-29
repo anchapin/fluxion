@@ -1,6 +1,6 @@
 # ASHRAE Standard 140 Validation Results
 
-*Generated: 2026-08-16 18:24 UTC*
+*Generated: 2026-08-29 00:32 UTC*
 
 ## Summary
 
@@ -14,155 +14,12 @@
 | Mean Absolute Error | 51.03% |
 | Max Deviation | 470.11% |
 
-## Structural Blockers (Issue #3072)
-
-The current strict ±15% pass-rate (14.3%) is bounded above by an
-**aggressive-baseline cohort** of five ASHRAE 140 cases that share the same
-structural root cause and cannot be closed by parameter tuning:
-
-- **Cohort cases:** **195, 600, 620, 940, 960** (all five are FAIL in the
-  detailed tables below).
-- **Common root cause:** `step_physics_5r1c` / `step_physics_9r4c` use a single
-  lumped thermal-mass node that cannot capture multi-mode thermal coupling
-  accurately enough for ASHRAE 140's strict ±15% reference band. This is the
-  discrete-node solar-injection pathology documented in
-  `docs/KNOWN_ISSUES.md` §LIMIT-05 (CTF-vs-blind 6–8× ratio, bidirectional
-  peak-cooling OVER + peak-heating UNDER signature, bidirectional annual-energy
-  over-prediction).
-- **Unblocker:** **GaugeSolver structural rework (issues #1465 / #1462)** —
-  treats solar as geometric curvature rather than per-timestep energy injection.
-  Both issues are individually closed (Phase 1b shadow-mode `GaugeSolver` ships
-  in `physics_adapter.rs` per #1462; Phase 3 ASHRAE 140 Case 900 validation
-  harness ships per #1465), but the **production-path switchover is not yet
-  landed**. Without that switchover, the gate cannot lift above ~30% even with
-  all Wave 14–22 partial fixes landed.
-- **Per-case follow-up issues:** Case 195 → #3060 (LIMIT-08 weather mismatch);
-  Cases 600/620 → #3059 (LIMIT-05 GaugeSolver structural); Case 940 → #3062
-  (CTF coupling overshoot); Case 960 → #3061 (5R1C air-mass distribution).
-- **Wave partial-fix reports (PRs #3040, #3041, #3042, #3044, #3052):** Each
-  closed a subset of the cohort or its dependencies. None of them closes the
-  structural block; each is documented in `docs/KNOWN_ISSUES.md` §"Aggressive-
-  baseline cohort tracking (Issue #3072)" (the cross-issue meta-issue tracking
-  entry added 2026-08-16).
-- **No tuning escape hatch:** Per **RULES.md** ("no parameter tuning",
-  "must-never hardcode results"), **AGENTS.md** ("fix the underlying math";
-  `tests/reference_data/zone_balance/strict_energy_gate_baseline.json` must
-  NEVER be raised to hide a regression), and **ADR-0001** (No-Parameter-Tuning
-  Rule), closing these five cases by adjusting `h_ms_coeff`, `derived_h_tr_3`,
-  `solar_distribution_to_air`, or any 5R1C/CTF constant is explicitly
-  forbidden. The structural signature is **structurally infeasible at
-  `dt/τ ≈ 3.6`** per §LIMIT-05 UPDATE (#1522); no air-node damping can reduce
-  the cooling peak while simultaneously increasing the heating peak because
-  damping smooths the air-temperature swing symmetrically.
-- **Cohort tracking:** see `docs/KNOWN_ISSUES.md` §"Aggressive-baseline
-  cohort tracking (Issue #3072)" for the full per-case status, dependent
-  issues (#3058, #3059, #3061, #3062, #3063, #3060, #3070) table, and
-  ADR-0007 (`docs/adr/0007-gauge-solver-structural-work.md`,
-   Status: Accepted — production-path switchover planned per Issue #3172) that
-   links the cohort to the GaugeSolver unblocker.
-
-### Cases 610 / 630 / 650 peak cooling OVER (LIMIT-16 / Issue #3059)
-
-The post-PR #3041 partial-fix engine (cooling-mode governor symmetric +
-`MAX_CONVECTIVE_TO_AIR_MULTIPLIER = 2.0×` cap) closed Cases 620 and 640 into
-their ASHRAE 140-2023 reference bands, but left Cases 610 / 630 / 650 with
-the same structural 5/5 OVER signature (Case 610 4.30 kW vs ref 2.20–2.90 kW,
-+48 %; Case 630 3.34 kW vs ref 1.80–2.40 kW, +39 %; Case 650 4.81 kW vs ref
-1.90–2.50 kW, +92 %). The residual OVER is the discrete-node solar-injection
-pathology (single lumped thermal-mass node at `dt/τ ≈ 3.6`) on the cooling-
-mode governor path that PR #3041 partially repaired — `step_physics_5r1c`
-deliberately does NOT apply the ACH multiplier to `h_tr_is`, so the
-forced-convection term from the Case 650 night-vent ACH (ACH = 13.14) dumps
-pulsed charging into the air node on the 1-hour timestep, upstream of any
-multiplier cap. Per the Issue #3059 acceptance criterion ("do NOT raise
-baseline — RULES.md 'no parameter tuning' rule") and **AGENTS.md**
-("fix the underlying math"), this gap is closed only by the structural
-GaugeSolver rework (#1465 / #1462).
-
-- **Documented in:** `docs/KNOWN_ISSUES.md` **§LIMIT-16** (Issue #3059).
-- **Companion limitations:** §LIMIT-10 (Issue #3065, Case 960 sunspace
-  mean), §LIMIT-11 (Issue #3064, Case 195 high-mass zero-energy),
-  §LIMIT-12 (Issue #3062, Case 940 setback CTF), §LIMIT-13 (Issue #3063,
-  `h_tr_em` time-invariance), §LIMIT-14 (Issue #3061, Case 960 sunspace
-  annual cooling), §LIMIT-15 (Issue #3060, Case 195 weather-file).
-- **Architectural unblocker:** GaugeSolver production-path switchover
-  (issues #1465 / #1462, ADR-0007).
-- **No tuning escape hatch:** raising
-  `MAX_CONVECTIVE_TO_AIR_MULTIPLIER` above 2.0× re-introduces the pre-#3041
-  asymmetry that drove Case 620 OVER; widening the band is band-space
-  parameter tuning (forbidden by ADR-0001); raising the strict-energy-gate
-  baseline is explicitly forbidden by the Issue #3059 acceptance criterion.
-
-### Case 960 cooling-band gap (Issue #3061)
-
-The post-PR #3052 raw multi-zone diagnostic reports **0.63 MWh annual
-cooling** against the **1.55–2.78 MWh** Case 960 reference band and **1.17 kW
-peak heating** against the **2.0–8.0 kW** band. PR #3052 restored common-wall
-bulk conduction and the ground-reflected inter-zone gain path, but the
-5R1C/9R4C air-mass distribution still cannot accumulate enough cooling demand
-at the conditioned back-zone's 27 °C setpoint through coupling to the
-free-floating sunspace.
-
-This is tracked in `docs/KNOWN_ISSUES.md` **§LIMIT-14**. Adding mechanical
-cooling to the sunspace would contradict the Case 960 free-floating
-specification, while lowering `convective_to_air_factor` would be forbidden
-case-local parameter tuning. The compliant closure route is the GaugeSolver
-production-path work coordinated by **Issue #3059** (#1465 / #1462). These
-figures are the post-#3052 raw diagnostics used by #3061; they do not
-regenerate the 2026-08-16 snapshot tables below.
-
-### Case 950FF night-vent mass coupling gap (Issue #3058)
-
-The 2026-08-16 validator snapshot reports **Case 950FF min free-floating
-temperature −23.95 °C** against the **−20.20 to −17.80 °C** ASHRAE 140
-reference band (3.72 °C outside the band). PR #3040 (Issue #2872 partial fix)
-introduced per-surface F_sky view factors for the longwave sky-radiation
-correction and moved the value from −23.94 °C to −23.92 °C (a 0.02 °C
-improvement) — the F_sky correction is mathematically correct but is
-effectively invisible against the dominant night-vent mass coupling.
-
-**Root cause:** In `src/physics/multi_node_solver.rs::step_with_gains` the
-night-ventilation term applies `h_ve_night ≈ 570.8 W/K` (fan supply during
-18:00–07:00, ACH ≈ 13.14) to each envelope mass node using raw outdoor air
-as the driving temperature. The `h_ve_night` term overwhelms the wall
-exterior-film correction (`h_tr_em_wall ≈ 71.6 W/K`) by ~8×. The F_sky
-correction only enters via `h_em · t_ext_wall` (weight ≈ 71.6 W/K), so the
-night-sky radiative exchange pathway cannot dominate the mass coupling while
-the raw-outdoor forcing is 8× larger.
-
-**Three proposed directions, all requiring solver code changes:**
-
-- **(a) Split `h_ve_night` into air-node mass (HVAC) and surface-node mass
-  (FF) paths** — keep Case 950 (HVAC) mass pre-cooling working, drop the
-  mass-node coupling for the FF case. Solver-code change; risk:
-  regressing Case 950 (HVAC) annual cooling.
-- **(b) Reduce `h_ve_night` by F_sky on the mass coupling** — first-
-  principles motivated by the longwave radiative exchange, but borderline
-  parameter tuning per RULES.md unless derived from first principles.
-- **(c) Route `h_ve_night` only through the air node** — solver-code
-  change; risk: Case 950 (HVAC) annual cooling may regress because the
-  air-mass coupling is indirect.
-
-**Regression-avoidance clause:** Any future solver change must preserve
-Case 950 (HVAC mode) annual cooling in the **390–920 kWh** band (current
-val 33.08 kWh — far below band, so the HVAC mode is the *more* sensitive
-regression target than the FF mode). Per AGENTS.md / RULES.md / ADR-0001,
-no parameter tuning on `h_ve_night` is permitted; the structural fix is
-routed to the GaugeSolver production-path work coordinated by **Issue
-#3059** (#1465 / #1462).
-
-This is tracked in `docs/KNOWN_ISSUES.md` **§LIMIT-17** and the
-architecture decision in **`docs/adr/0011-case-950ff-night-vent-split.md`**
-(Status: Proposed; tracking stub only). The companion integration test
-`tests/ashrae_140_blind_validation.rs::test_case_950_5r1c_free_float_uses_night_vent_overrides_issue_1422`
-remains `#[ignore]`-quarantined (per §LIMIT-09 / #3071).
-
 ## Performance Summary
 
 | Metric | Value |
 |--------|-------|
-| Total Validation Duration | 0.59 seconds |
-| Throughput | 35.36 cases/sec |
+| Total Validation Duration | 1.90 seconds |
+| Throughput | 11.06 cases/sec |
 | Total Cases | 21 |
 
 ## Detailed Results
@@ -250,9 +107,14 @@ remains `#[ignore]`-quarantined (per §LIMIT-09 / #3071).
 
 The following recurring issues are affecting validation results:
 
-### HVAC Load Calculation
+### Solar Gain Calculations
 
-**Affected metrics:** 610 - Peak Cooling Load (kW), 195 - Peak Cooling Load (kW), 640 - Peak Heating Load (kW), 195 - Peak Heating Load (kW), 650 - Peak Cooling Load (kW), 800 - Annual Cooling Energy (kWh), 810 - Annual Cooling Energy (kWh), 810 - Annual Heating Energy (kWh), 600 - Peak Heating Load (kW), 630 - Peak Cooling Load (kW), 620 - Peak Heating Load (kW) |
+**Affected metrics:** 960 - Peak Cooling Load (kW), 810 - Peak Cooling Load (kW), 600 - Peak Cooling Load (kW), 640 - Annual Cooling Energy (kWh), 620 - Annual Cooling Energy (kWh), 970 - Peak Cooling Load (kW), 930 - Peak Cooling Load (kW), 195 - Annual Heating Energy (kWh), 610 - Annual Cooling Energy (kWh), 950 - Peak Cooling Load (kW), 650FF - Maximum Free-Floating Temperature (°C), 600FF - Maximum Free-Floating Temperature (°C), 650FF - Minimum Free-Floating Temperature (°C), 600 - Annual Cooling Energy (kWh), 650 - Annual Cooling Energy (kWh), 800 - Peak Cooling Load (kW) |
+**Count:** 16 metrics
+
+### Thermal Mass Dynamics
+
+**Affected metrics:** 940 - Peak Cooling Load (kW), 930 - Peak Heating Load (kW), 950FF - Minimum Free-Floating Temperature (°C), 910 - Peak Cooling Load (kW), 960 - Peak Heating Load (kW), 910 - Peak Heating Load (kW), 950 - Peak Heating Load (kW), 970 - Peak Heating Load (kW), 900 - Peak Heating Load (kW), 950FF - Maximum Free-Floating Temperature (°C), 900FF - Minimum Free-Floating Temperature (°C) |
 **Count:** 11 metrics
 
 ### Inter-Zone Heat Transfer
@@ -260,25 +122,20 @@ The following recurring issues are affecting validation results:
 **Affected metrics:** 960 - Annual Cooling Energy (kWh) |
 **Count:** 1 metrics
 
-### 5R1C Model Limitation (Accepted)
+### HVAC Load Calculation
 
-**Affected metrics:** 910 - Annual Cooling Energy (kWh), 970 - Annual Heating Energy (kWh), 900 - Annual Cooling Energy (kWh), 920 - Annual Heating Energy (kWh), 970 - Annual Cooling Energy (kWh), 930 - Annual Cooling Energy (kWh), 900 - Annual Heating Energy (kWh), 940 - Annual Cooling Energy (kWh), 920 - Annual Cooling Energy (kWh), 910 - Annual Heating Energy (kWh) |
-**Count:** 10 metrics
-
-### Thermal Mass Dynamics
-
-**Affected metrics:** 900FF - Minimum Free-Floating Temperature (°C), 950 - Peak Heating Load (kW), 970 - Peak Heating Load (kW), 900 - Peak Heating Load (kW), 940 - Peak Cooling Load (kW), 910 - Peak Cooling Load (kW), 950FF - Minimum Free-Floating Temperature (°C), 910 - Peak Heating Load (kW), 950FF - Maximum Free-Floating Temperature (°C), 930 - Peak Heating Load (kW), 960 - Peak Heating Load (kW) |
+**Affected metrics:** 600 - Peak Heating Load (kW), 610 - Peak Cooling Load (kW), 810 - Annual Heating Energy (kWh), 640 - Peak Heating Load (kW), 630 - Peak Cooling Load (kW), 195 - Peak Heating Load (kW), 195 - Peak Cooling Load (kW), 650 - Peak Cooling Load (kW), 810 - Annual Cooling Energy (kWh), 800 - Annual Cooling Energy (kWh), 620 - Peak Heating Load (kW) |
 **Count:** 11 metrics
-
-### Solar Gain Calculations
-
-**Affected metrics:** 800 - Peak Cooling Load (kW), 610 - Annual Cooling Energy (kWh), 810 - Peak Cooling Load (kW), 650FF - Minimum Free-Floating Temperature (°C), 960 - Peak Cooling Load (kW), 950 - Peak Cooling Load (kW), 600 - Annual Cooling Energy (kWh), 620 - Annual Cooling Energy (kWh), 930 - Peak Cooling Load (kW), 970 - Peak Cooling Load (kW), 640 - Annual Cooling Energy (kWh), 195 - Annual Heating Energy (kWh), 650FF - Maximum Free-Floating Temperature (°C), 600 - Peak Cooling Load (kW), 600FF - Maximum Free-Floating Temperature (°C), 650 - Annual Cooling Energy (kWh) |
-**Count:** 16 metrics
 
 ### Unknown/Unclassified
 
-**Affected metrics:** 800 - Peak Heating Load (kW), 930 - Annual Heating Energy (kWh), 920 - Peak Cooling Load (kW), 640 - Annual Heating Energy (kWh), 195 - Annual Cooling Energy (kWh), 900 - Peak Cooling Load (kW), 940 - Annual Heating Energy (kWh), 950 - Annual Heating Energy (kWh), 950 - Annual Cooling Energy (kWh) |
+**Affected metrics:** 930 - Annual Heating Energy (kWh), 940 - Annual Heating Energy (kWh), 950 - Annual Heating Energy (kWh), 920 - Peak Cooling Load (kW), 640 - Annual Heating Energy (kWh), 195 - Annual Cooling Energy (kWh), 950 - Annual Cooling Energy (kWh), 900 - Peak Cooling Load (kW), 800 - Peak Heating Load (kW) |
 **Count:** 9 metrics
+
+### 5R1C Model Limitation (Accepted)
+
+**Affected metrics:** 970 - Annual Heating Energy (kWh), 910 - Annual Heating Energy (kWh), 910 - Annual Cooling Energy (kWh), 940 - Annual Cooling Energy (kWh), 920 - Annual Cooling Energy (kWh), 970 - Annual Cooling Energy (kWh), 920 - Annual Heating Energy (kWh), 900 - Annual Cooling Energy (kWh), 930 - Annual Cooling Energy (kWh), 900 - Annual Heating Energy (kWh) |
+**Count:** 10 metrics
 
 ## References
 

@@ -1038,4 +1038,56 @@ mod tests {
             );
         }
     }
+
+    // --- Chunk size edge cases ---
+
+    #[test]
+    fn with_chunk_size_zero_clamped_to_one() {
+        // Even if called with chunk_size=0, it must produce a valid orchestrator
+        let orch = RayonChunksOrchestrator::with_chunk_size(0);
+        let surrogates = SurrogateManager::new().expect("SurrogateManager::new");
+        let result = orch.run_cpu_surrogate(vec![make_dummy_config(0)], &surrogates);
+        assert_eq!(result.len(), 1);
+    }
+
+    #[test]
+    fn default_orchestrator_runs_without_error() {
+        // Default constructed orchestrator must be usable with any population
+        let orch = RayonChunksOrchestrator::default();
+        let surrogates = SurrogateManager::new().expect("SurrogateManager::new");
+        let configs: Vec<_> = (0..3).map(make_dummy_config).collect();
+        let result = orch.run_cpu_surrogate(configs, &surrogates);
+        assert_eq!(result.len(), 3);
+    }
+
+    // --- CpuResult ordering invariant ---
+
+    #[test]
+    fn cpu_result_order_is_not_guaranteed_by_caller() {
+        // The docs say results are returned in arbitrary order; verify the
+        // orchestrator does NOT rely on insertion order (results may arrive
+        // in any order from rayon chunks). We check that index-placement
+        // via Vec::with_capacity + indexed assignment is what guarantees
+        // correct mapping, not ordering.
+        let surrogates = SurrogateManager::new().expect("SurrogateManager::new");
+        let orch = RayonChunksOrchestrator::with_chunk_size(2);
+        // N=5 with chunk_size=2 → chunks of 2,2,1 — forces mixed completion order
+        let configs: Vec<_> = (0..5).map(make_dummy_config).collect();
+        let mut result = orch.run_cpu_surrogate(configs, &surrogates);
+        // Sorting proves indices are recoverable regardless of return order
+        result.sort_by_key(|(i, _)| *i);
+        let indices: Vec<usize> = result.iter().map(|(i, _)| *i).collect();
+        assert_eq!(indices, vec![0, 1, 2, 3, 4]);
+        for (_, eui) in &result {
+            assert!(eui.is_finite() && *eui >= 0.0);
+        }
+    }
+
+    // --- DEFAULT_CHUNK_MULTIPLIER constant ---
+
+    #[test]
+    fn default_chunk_multiplier_value() {
+        // The constant must equal 4 as documented
+        assert_eq!(DEFAULT_CHUNK_MULTIPLIER, 4);
+    }
 }

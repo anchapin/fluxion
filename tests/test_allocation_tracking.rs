@@ -17,6 +17,7 @@ use rand::rngs::StdRng;
 use rand::{Rng, SeedableRng};
 
 /// Helper: create a simple 1-zone model with default parameters.
+#[allow(dead_code)]
 fn create_single_zone_model() -> ThermalModel<VectorField> {
     let mut model = ThermalModel::<VectorField>::new(1);
     // Set reasonable defaults

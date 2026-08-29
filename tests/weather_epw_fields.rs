@@ -36,6 +36,7 @@ fn assert_f64_near(actual: f64, expected: f64, field_name: &str) {
     );
 }
 
+#[allow(dead_code)]
 fn assert_int_near(actual: i32, expected: i32, field_name: &str) {
     assert_eq!(
         actual, expected,

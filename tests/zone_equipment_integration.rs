@@ -46,8 +46,11 @@ use fluxion::sim::multi_zone_network::{MultiZoneAirflowNetwork, ZoneState};
 // Tolerance
 // ===========================================================================
 
+#[allow(dead_code)]
 const ZONE_TEMP_TOLERANCE: f64 = 0.5; // °C — per zone_balance_eplus_isolation.rs
+#[allow(dead_code)]
 const ENERGY_TOLERANCE: f64 = 0.01; // 1% — per module-isolation rule
+#[allow(dead_code)]
 const CYCLE_FREQUENCY_TOLERANCE: f64 = 0.2; // 20% — reasonable for cycling tests
 
 // ===========================================================================

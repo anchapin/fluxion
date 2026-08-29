@@ -2882,6 +2882,264 @@ mod tests {
         unified.set_twin_correction(&correction);
         assert!((unified.get_temperatures()[0] - 21.0).abs() < 1e-9);
     }
+
+    // --- compute_pmv_ppd_and_adaptive (ASHRAE 55 Fanger + adaptive comfort) ---
+
+    const EPS: f64 = 1e-9;
+
+    #[test]
+    fn test_pmv_ppd_cold_conditions() {
+        // 10°C → strongly negative PMV, elevated PPD
+        let m = compute_pmv_ppd_and_adaptive(10.0, 0.5, 0.1, 1.0, 0.5);
+        assert!(
+            m.pmv < -2.0,
+            "PMV should be strongly negative at 10°C, got {}",
+            m.pmv
+        );
+        assert!(m.ppd > m.pmv.abs() * 10.0);
+    }
+
+    #[test]
+    fn test_pmv_ppd_hot_conditions() {
+        // 35°C → strongly positive PMV, elevated PPD
+        let m = compute_pmv_ppd_and_adaptive(35.0, 0.5, 0.1, 1.0, 0.5);
+        assert!(
+            m.pmv > 1.5,
+            "PMV should be strongly positive at 35°C, got {}",
+            m.pmv
+        );
+        assert!(m.ppd > 30.0, "PPD should exceed 30% at 35°C, got {}", m.ppd);
+    }
+
+    #[test]
+    fn test_pmv_ppd_ppd_range() {
+        // PPD must always be in [0, 100] regardless of conditions.
+        let temps = [-10.0, 0.0, 10.0, 20.0, 30.0, 40.0, 50.0];
+        for t in temps {
+            let m = compute_pmv_ppd_and_adaptive(t, 0.5, 0.1, 1.0, 0.5);
+            assert!(
+                (0.0..=100.0).contains(&m.ppd),
+                "PPD must be in [0, 100] at T={}°C, got {}",
+                t,
+                m.ppd
+            );
+            assert!(
+                m.ppd >= 0.0 && m.ppd <= 100.0,
+                "PPD bounds check failed at T={}°C: {}",
+                t,
+                m.ppd
+            );
+        }
+    }
+
+    #[test]
+    fn test_pmv_ppd_pmv_clamped_to_pm4() {
+        // Extreme conditions must clamp PMV to ±4 per ASHRAE 55.
+        let m_cold = compute_pmv_ppd_and_adaptive(-10.0, 0.5, 0.1, 2.0, 3.0);
+        assert!(
+            m_cold.pmv >= -4.0,
+            "PMV must clamp to ≥ -4 at extreme cold, got {}",
+            m_cold.pmv
+        );
+        assert!(
+            m_cold.pmv <= 4.0,
+            "PMV must clamp to ≤ 4, got {}",
+            m_cold.pmv
+        );
+
+        let m_hot = compute_pmv_ppd_and_adaptive(50.0, 0.5, 0.1, 2.0, 3.0);
+        assert!(
+            m_hot.pmv <= 4.0,
+            "PMV must clamp to ≤ 4 at extreme heat, got {}",
+            m_hot.pmv
+        );
+        assert!(
+            m_hot.pmv >= -4.0,
+            "PMV must clamp to ≥ -4, got {}",
+            m_hot.pmv
+        );
+    }
+
+    #[test]
+    fn test_pmv_ppd_operative_temp_equals_zone_temp() {
+        // Code sets tr = ta = zone_temp, operative = ta, so operative == zone_temp.
+        for t in [18.0, 22.0, 28.0, 35.0] {
+            let m = compute_pmv_ppd_and_adaptive(t, 0.5, 0.1, 1.0, 0.5);
+            assert!(
+                (m.operative_temp - t).abs() < EPS,
+                "operative_temp should equal zone_temp T={}°C, got {}",
+                t,
+                m.operative_temp
+            );
+        }
+    }
+
+    #[test]
+    fn test_pmv_ppd_running_mean_equals_operative() {
+        // The implementation uses operative temp as running mean (EMA approximation).
+        for t in [18.0, 22.0, 28.0] {
+            let m = compute_pmv_ppd_and_adaptive(t, 0.5, 0.1, 1.0, 0.5);
+            assert!(
+                (m.running_mean_temp - m.operative_temp).abs() < EPS,
+                "running_mean_temp should equal operative at T={}°C",
+                t
+            );
+        }
+    }
+
+    #[test]
+    fn test_pmv_ppd_adaptive_band_width_greater_than_zero() {
+        // The adaptive band must have positive width.
+        let m = compute_pmv_ppd_and_adaptive(22.0, 0.5, 0.1, 1.0, 0.5);
+        let band_width = m.adaptive_upper_limit - m.adaptive_lower_limit;
+        assert!(
+            band_width > 0.0,
+            "adaptive band must have positive width, got {}",
+            band_width
+        );
+        // ASHRAE 55 Category II: upper - lower = 3.5 + 2.0 = 5.5 K
+        assert!(
+            (band_width - 5.5).abs() < EPS,
+            "Category II band width should be 5.5 K, got {}",
+            band_width
+        );
+    }
+
+    #[test]
+    fn test_pmv_ppd_adaptive_comfort_band_behavior() {
+        // At 22°C zone temp: running_mean = operative = 22°C,
+        // centre = 0.33*22 + 18.83 = 26.09, band = [24.09, 29.59].
+        // 22°C is below band → is_adaptive_comfortable = false.
+        let m22 = compute_pmv_ppd_and_adaptive(22.0, 0.5, 0.1, 1.0, 0.5);
+        assert!(
+            !m22.is_adaptive_comfortable,
+            "22°C is below adaptive band [24.09, 29.59], should be false"
+        );
+
+        // At 27°C: centre = 0.33*27 + 18.83 = 27.74, band = [25.74, 31.24].
+        // 27°C is within → is_adaptive_comfortable = true.
+        let m27 = compute_pmv_ppd_and_adaptive(27.0, 0.5, 0.1, 1.0, 0.5);
+        assert!(
+            m27.is_adaptive_comfortable,
+            "27°C should be within adaptive comfort band, got {}",
+            m27.is_adaptive_comfortable
+        );
+
+        // At 32°C: band upper = 0.33*32 + 18.83 + 3.5 = 33.89. Within band.
+        let m32 = compute_pmv_ppd_and_adaptive(32.0, 0.5, 0.1, 1.0, 0.5);
+        assert!(
+            m32.is_adaptive_comfortable,
+            "32°C should be within band, got {}",
+            m32.is_adaptive_comfortable
+        );
+
+        // At 10°C: below lower bound → not comfortable.
+        let m10 = compute_pmv_ppd_and_adaptive(10.0, 0.5, 0.1, 1.0, 0.5);
+        assert!(
+            !m10.is_adaptive_comfortable,
+            "10°C should be outside adaptive band"
+        );
+
+        // At 40°C: above upper bound → not comfortable.
+        let m40 = compute_pmv_ppd_and_adaptive(40.0, 0.5, 0.1, 1.0, 0.5);
+        assert!(
+            !m40.is_adaptive_comfortable,
+            "40°C should be outside adaptive band"
+        );
+    }
+
+    #[test]
+    fn test_pmv_ppd_relative_humidity_preserved() {
+        for rh in [0.3, 0.5, 0.7, 0.9] {
+            let m = compute_pmv_ppd_and_adaptive(22.0, rh, 0.1, 1.0, 0.5);
+            assert!(
+                (m.relative_humidity - rh).abs() < EPS,
+                "relative_humidity should be preserved: expected {}, got {}",
+                rh,
+                m.relative_humidity
+            );
+        }
+    }
+
+    #[test]
+    fn test_zone_comfort_metrics_clone() {
+        let m1 = compute_pmv_ppd_and_adaptive(22.0, 0.5, 0.1, 1.0, 0.5);
+        let m2 = m1.clone();
+        assert!((m1.pmv - m2.pmv).abs() < EPS);
+        assert!((m1.ppd - m2.ppd).abs() < EPS);
+        assert!((m1.operative_temp - m2.operative_temp).abs() < EPS);
+        assert_eq!(m1.is_adaptive_comfortable, m2.is_adaptive_comfortable);
+    }
+
+    #[test]
+    fn test_zone_comfort_metrics_debug() {
+        let m = compute_pmv_ppd_and_adaptive(22.0, 0.5, 0.1, 1.0, 0.5);
+        let debug = format!("{:?}", m);
+        assert!(debug.contains("pmv"));
+        assert!(debug.contains("ppd"));
+        assert!(debug.contains("is_adaptive_comfortable"));
+    }
+
+    #[test]
+    fn test_zone_comfort_metrics_partial_eq() {
+        let m1 = compute_pmv_ppd_and_adaptive(22.0, 0.5, 0.1, 1.0, 0.5);
+        let m2 = compute_pmv_ppd_and_adaptive(22.0, 0.5, 0.1, 1.0, 0.5);
+        assert_eq!(m1, m2);
+
+        let m3 = compute_pmv_ppd_and_adaptive(25.0, 0.5, 0.1, 1.0, 0.5);
+        assert_ne!(m1, m3);
+    }
+
+    // --- ThermalModelType ---
+
+    #[test]
+    fn test_thermal_model_type_is_copy() {
+        use std::mem::size_of;
+        assert_eq!(size_of::<ThermalModelType>(), 1);
+    }
+
+    #[test]
+    fn test_thermal_model_mode_is_copy() {
+        use std::mem::size_of;
+        assert_eq!(size_of::<ThermalModelMode>(), 1);
+    }
+
+    // --- HybridRouting ---
+
+    #[test]
+    fn test_hybrid_routing_copy() {
+        let r = HybridRouting::default();
+        let r2 = r;
+        assert_eq!(r.use_surrogate_loads, r2.use_surrogate_loads);
+        assert_eq!(r.use_surrogate_conduction, r2.use_surrogate_conduction);
+    }
+
+    #[test]
+    fn test_hybrid_routing_partial_eq() {
+        let r1 = HybridRouting::default();
+        let r2 = HybridRouting::default();
+        let r3 = HybridRouting {
+            use_surrogate_conduction: true,
+            ..HybridRouting::default()
+        };
+        assert_eq!(r1, r2);
+        assert_ne!(r1, r3);
+    }
+
+    #[test]
+    fn test_hybrid_routing_debug() {
+        let r = HybridRouting::default();
+        let debug = format!("{:?}", r);
+        assert!(debug.contains("HybridRouting"));
+        assert!(debug.contains("use_surrogate_loads"));
+    }
+
+    #[test]
+    fn test_hybrid_routing_use_ood_fallback_default() {
+        // use_ood_fallback should default to false (OOD = Out-Of-Distribution)
+        let r = HybridRouting::default();
+        assert!(!r.use_ood_fallback);
+    }
 }
 
 /// Compute PMV, PPD, and adaptive comfort metrics from zone temperature (ASHRAE 55).

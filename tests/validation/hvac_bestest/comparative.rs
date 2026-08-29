@@ -187,6 +187,7 @@ fn chiller_cooling_energy(chiller: &Chiller) -> (f64, f64) {
 
 /// Heat-pump energy (heating + cooling): drives the `HeatPump` model's
 /// temperature-dependent COP curves over all bins. Returns (kWh, peak W).
+#[allow(dead_code)]
 fn heatpump_energy(hp: &HeatPump, fan_frac: f64) -> (f64, f64) {
     let mut energy_kwh = 0.0_f64;
     let mut peak_w = 0.0_f64;

@@ -29,6 +29,7 @@ use fluxion::validation::ashrae_140_cases::ASHRAE140Case;
 use fluxion::ThermalModelMode;
 use fluxion::ThermalModelTrait as _;
 
+#[allow(dead_code)]
 const STEPS: usize = 8760;
 
 /// Strict ±2 % envelope around a physics-only baseline (Issue #1431

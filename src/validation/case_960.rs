@@ -20,6 +20,7 @@ use crate::validation::ashrae_140_cases::ASHRAE140Case;
 use crate::validation::ashrae_140_multi_zone::Case960Reference;
 use crate::validation::report::ValidationStatus;
 use crate::weather::epw::EpwWeatherSource;
+use crate::weather::epw_path::epw_required;
 use crate::weather::WeatherSource;
 use serde::{Deserialize, Serialize};
 
@@ -66,7 +67,9 @@ impl Case960ReferenceImplementation {
         Self {
             reference: Case960Reference::load_case_960_reference_data(),
             weather: EpwWeatherSource::from_file(
-                "assets/weather/USA_CO_Denver-Stapleton.Intl.AP.724690_TMY.epw",
+                epw_required("USA_CO_Denver-Stapleton.Intl.AP.724690_TMY.epw")
+                    .to_str()
+                    .unwrap(),
             )
             .expect("Failed to load EPW weather data"),
         }
@@ -114,7 +117,9 @@ impl Case960ReferenceImplementation {
     pub fn run_case_960_simulation() -> Case960Result {
         let mut model = Self::create_case_960_thermal_model();
         let weather = EpwWeatherSource::from_file(
-            "assets/weather/USA_CO_Denver-Stapleton.Intl.AP.724690_TMY.epw",
+            epw_required("USA_CO_Denver-Stapleton.Intl.AP.724690_TMY.epw")
+                .to_str()
+                .unwrap(),
         )
         .expect("Failed to load EPW weather data");
 

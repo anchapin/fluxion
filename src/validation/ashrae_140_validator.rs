@@ -15,6 +15,7 @@ use crate::validation::report::{
     BenchmarkData, BenchmarkReport, MetricType, ReportHeader, ValidationStatus,
 };
 use crate::weather::epw::EpwWeatherSource;
+use crate::weather::epw_path::epw_required;
 use crate::weather::WeatherSource;
 use rayon::prelude::*;
 use std::collections::HashMap;
@@ -432,7 +433,7 @@ impl ASHRAE140Validator {
         let mut diagnostic_report = DiagnosticReport::new(self.diagnostic_config.clone());
         let benchmark_data = self.benchmark_data_for_mode();
         let weather = EpwWeatherSource::from_file(
-            "assets/weather/USA_CO_Denver-Stapleton.Intl.AP.724690_TMY.epw",
+            epw_required("USA_CO_Denver-Stapleton.Intl.AP.724690_TMY.epw").to_str().unwrap(),
         )
         .expect("Failed to load EPW weather data");
 
@@ -684,7 +685,7 @@ impl ASHRAE140Validator {
         let mut report = BenchmarkReport::new();
         let benchmark_data = self.benchmark_data_for_mode();
         let weather = EpwWeatherSource::from_file(
-            "assets/weather/USA_CO_Denver-Stapleton.Intl.AP.724690_TMY.epw",
+            epw_required("USA_CO_Denver-Stapleton.Intl.AP.724690_TMY.epw").to_str().unwrap(),
         )
         .expect("Failed to load EPW weather data");
 
@@ -1042,7 +1043,7 @@ impl ASHRAE140Validator {
         let mut report = BenchmarkReport::new();
         let benchmark_data = self.benchmark_data_for_mode();
         let weather = EpwWeatherSource::from_file(
-            "assets/weather/USA_CO_Denver-Stapleton.Intl.AP.724690_TMY.epw",
+            epw_required("USA_CO_Denver-Stapleton.Intl.AP.724690_TMY.epw").to_str().unwrap(),
         )
         .expect("Failed to load EPW weather data");
 
@@ -1200,7 +1201,7 @@ impl ASHRAE140Validator {
         }
         let benchmark_data = self.benchmark_data_for_mode();
         let weather = EpwWeatherSource::from_file(
-            "assets/weather/USA_CO_Denver-Stapleton.Intl.AP.724690_TMY.epw",
+            epw_required("USA_CO_Denver-Stapleton.Intl.AP.724690_TMY.epw").to_str().unwrap(),
         )
         .expect("Failed to load EPW weather data");
 
@@ -1570,6 +1571,12 @@ impl ASHRAE140Validator {
             // Enable CTF with automatic FD fallback
             // Returns true if CTF was enabled, false if fell back to FD
             let used_ctf = model.enable_ctf_with_fd_fallback(&fd_layers, 3600.0, 50, 5);
+
+            // Issue #2686: Also initialize GaugeZoneSolver for shadow-mode comparison.
+            // GaugeZoneSolver is steady-state (C_air only) and will show different
+            // diurnal behavior vs 5R1C's lumped thermal mass — expected divergence.
+            #[cfg(feature = "gauge-solver")]
+            model.enable_gauge(&fd_layers);
 
             let u_value = 1.0
                 / fd_layers
@@ -2604,7 +2611,7 @@ impl ASHRAE140Validator {
     pub fn validate_ashrae_140(spec: &CaseSpec) -> FreeFloatValidationResult {
         let mut model = ThermalModel::<VectorField>::from_spec(spec);
         let weather = EpwWeatherSource::from_file(
-            "assets/weather/USA_CO_Denver-Stapleton.Intl.AP.724690_TMY.epw",
+            epw_required("USA_CO_Denver-Stapleton.Intl.AP.724690_TMY.epw").to_str().unwrap(),
         )
         .expect("Failed to load EPW weather data");
 
@@ -2704,7 +2711,7 @@ impl ASHRAE140Validator {
         let spec = ASHRAE140Case::Case960.spec();
         let mut model = ThermalModel::<VectorField>::from_spec(&spec);
         let weather = EpwWeatherSource::from_file(
-            "assets/weather/USA_CO_Denver-Stapleton.Intl.AP.724690_TMY.epw",
+            epw_required("USA_CO_Denver-Stapleton.Intl.AP.724690_TMY.epw").to_str().unwrap(),
         )
         .expect("Failed to load EPW weather data");
 
@@ -2905,7 +2912,7 @@ pub fn validate_case_with_diagnostics(
     }
 
     let weather = EpwWeatherSource::from_file(
-        "assets/weather/USA_CO_Denver-Stapleton.Intl.AP.724690_TMY.epw",
+        epw_required("USA_CO_Denver-Stapleton.Intl.AP.724690_TMY.epw").to_str().unwrap(),
     )
     .expect("Failed to load EPW weather data");
 

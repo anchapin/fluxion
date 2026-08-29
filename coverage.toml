@@ -1,0 +1,8 @@
+[defaults]
+output = { "terminal" = ["text"], "html" = ["html"] }
+
+[[targets]]
+name = "in-scope"
+modules = ["weather", "solar", "physics", "sim", "thermal", "validation", "cli"]
+line-coverage-threshold = 80.0
+branch-coverage-threshold = 70.0

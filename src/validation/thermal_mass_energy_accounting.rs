@@ -364,10 +364,13 @@ pub fn validate_energy_balance_over_year(
     model: &mut ThermalModel<VectorField>,
 ) -> EnergyBalanceReport {
     use crate::weather::epw::EpwWeatherSource;
+    use crate::weather::epw_path::epw_required;
     use crate::weather::WeatherSource;
 
     let weather = EpwWeatherSource::from_file(
-        "assets/weather/USA_CO_Denver-Stapleton.Intl.AP.724690_TMY.epw",
+        epw_required("USA_CO_Denver-Stapleton.Intl.AP.724690_TMY.epw")
+            .to_str()
+            .unwrap(),
     )
     .expect("Failed to load EPW weather data");
     let steps = 8760;
@@ -1128,17 +1131,25 @@ mod tests {
     #[test]
     fn test_case_600_internal_gains_conservation() {
         use crate::weather::epw::EpwWeatherSource;
+        use crate::weather::epw_path::epw_optional;
         use crate::weather::WeatherSource;
+
+        let epw_path = match epw_optional("USA_CO_Denver-Stapleton.Intl.AP.724690_TMY.epw") {
+            Some(p) => p,
+            None => {
+                println!("SKIP: EPW file not found (run scripts/fetch_ashrae140_epw.py)");
+                return;
+            }
+        };
 
         println!("\n=== Testing Case 600 Internal Gains Conservation ===");
 
         let spec = ASHRAE140Case::Case600.spec();
         let mut model = ThermalModel::<VectorField>::from_spec(&spec);
 
-        let weather = EpwWeatherSource::from_file(
-            "assets/weather/USA_CO_Denver-Stapleton.Intl.AP.724690_TMY.epw",
-        )
-        .expect("Failed to load EPW weather data");
+        let weather =
+            EpwWeatherSource::from_file(epw_path.to_str().unwrap())
+                .expect("Failed to load EPW weather data");
 
         // Run simulation for a representative day (24 hours)
         let _max_conservation_error = 0.0_f64;
@@ -1230,7 +1241,16 @@ mod tests {
     #[test]
     fn test_free_floating_phi_ia_phi_st_zero() {
         use crate::weather::epw::EpwWeatherSource;
+        use crate::weather::epw_path::epw_optional;
         use crate::weather::WeatherSource;
+
+        let epw_path = match epw_optional("USA_CO_Denver-Stapleton.Intl.AP.724690_TMY.epw") {
+            Some(p) => p,
+            None => {
+                println!("SKIP: EPW file not found (run scripts/fetch_ashrae140_epw.py)");
+                return;
+            }
+        };
 
         println!("\n=== Testing Free-Floating Cases phi_ia=phi_st=0 Invariant ===");
 
@@ -1241,10 +1261,8 @@ mod tests {
             ("950FF", ASHRAE140Case::Case950FF),
         ];
 
-        let weather = EpwWeatherSource::from_file(
-            "assets/weather/USA_CO_Denver-Stapleton.Intl.AP.724690_TMY.epw",
-        )
-        .expect("Failed to load EPW weather data");
+        let weather = EpwWeatherSource::from_file(epw_path.to_str().unwrap())
+            .expect("Failed to load EPW weather data");
 
         for (case_id, case_enum) in ff_cases {
             println!("\n  Testing Case {}...", case_id);

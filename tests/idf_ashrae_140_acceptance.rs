@@ -40,10 +40,11 @@ use std::path::Path;
 
 use fluxion::io::idf::{case_spec_from_idf, IdfParser};
 use fluxion::validation::ashrae_140_cases::ASHRAE140Case;
+use fluxion::weather::epw_path::epw_required;
 use fluxion::weather::WeatherSource;
 
 const J_TO_MWH: f64 = 1.0 / 3.6e9;
-const EPW_PATH: &str = "assets/weather/WD600.epw";
+const EPW_FILENAME: &str = "WD600.epw";
 const CASE_600_IDF: &str = "tests/reference_data/energyplus_models/ashrae_140_case_600.idf";
 
 /// Annual heating reference range from the case_600_energy_reference.csv
@@ -119,7 +120,7 @@ fn idf_case_600_simulation_runs_and_reports_energy() {
 
     let mut model =
         fluxion::sim::engine::ThermalModel::<fluxion::physics::cta::VectorField>::from_spec(&spec);
-    let weather = fluxion::weather::epw::EpwWeatherSource::from_file(EPW_PATH)
+    let weather = fluxion::weather::epw::EpwWeatherSource::from_file(epw_required(EPW_FILENAME).to_str().unwrap())
         .expect("Failed to load EPW weather data");
 
     let mut total_heating_j = 0.0_f64;
@@ -160,7 +161,7 @@ fn idf_case_600_annual_heating_within_15_percent_strict() {
 
     let mut model =
         fluxion::sim::engine::ThermalModel::<fluxion::physics::cta::VectorField>::from_spec(&spec);
-    let weather = fluxion::weather::epw::EpwWeatherSource::from_file(EPW_PATH)
+    let weather = fluxion::weather::epw::EpwWeatherSource::from_file(epw_required(EPW_FILENAME).to_str().unwrap())
         .expect("Failed to load EPW weather data");
 
     let mut total_heating_j = 0.0_f64;

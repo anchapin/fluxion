@@ -51,6 +51,7 @@ use crate::validation::reporter::{BaselineMetrics, ValidationReportGenerator};
 use crate::validation::statistical::StatisticalValidator;
 use crate::validation::ASHRAE140Validator;
 use crate::weather::epw::EpwWeatherSource;
+use crate::weather::epw_path::epw_required;
 use crate::BatchOracle;
 
 /// Automation subcommands for test workflows and CI/CD integration.
@@ -809,7 +810,7 @@ pub fn validate_diagnostic_case(case_spec: &str) -> Result<()> {
             // Run validation
             let validator = ASHRAE140Validator::new();
             let weather = EpwWeatherSource::from_file(
-                "assets/weather/USA_CO_Denver-Stapleton.Intl.AP.724690_TMY.epw",
+                epw_required("USA_CO_Denver-Stapleton.Intl.AP.724690_TMY.epw").to_str().unwrap(),
             )
             .expect("Failed to load EPW weather data");
             let (results, _) = validator.simulate_case_with_diagnostics(&spec, &weather, case_spec);
@@ -1510,7 +1511,7 @@ pub fn run_cli() -> Result<()> {
                 case_id_to_spec(&case).ok_or_else(|| anyhow!("Unknown case ID: {}", case))?;
             let validator = ASHRAE140Validator::new();
             let weather = EpwWeatherSource::from_file(
-                "assets/weather/USA_CO_Denver-Stapleton.Intl.AP.724690_TMY.epw",
+                epw_required("USA_CO_Denver-Stapleton.Intl.AP.724690_TMY.epw").to_str().unwrap(),
             )
             .expect("Failed to load EPW weather data");
             let (_, diagnostic) = validator.simulate_case_with_diagnostics(&spec, &weather, &case);
@@ -1532,7 +1533,7 @@ pub fn run_cli() -> Result<()> {
                 case_id_to_spec(&case).ok_or_else(|| anyhow!("Unknown case ID: {}", case))?;
             let validator = ASHRAE140Validator::new();
             let weather = EpwWeatherSource::from_file(
-                "assets/weather/USA_CO_Denver-Stapleton.Intl.AP.724690_TMY.epw",
+                epw_required("USA_CO_Denver-Stapleton.Intl.AP.724690_TMY.epw").to_str().unwrap(),
             )
             .expect("Failed to load EPW weather data");
             let (_, diagnostic) = validator.simulate_case_with_diagnostics(&spec, &weather, &case);

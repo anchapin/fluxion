@@ -4,6 +4,7 @@ use crate::sim::warmup::{run_warmup, WarmupConfig};
 use crate::validation::ashrae_140_cases::CaseSpec;
 use crate::validation::diagnostic::HourlyData;
 use crate::weather::epw::EpwWeatherSource;
+use crate::weather::epw_path::epw_required;
 use crate::weather::WeatherSource;
 use anyhow::Result;
 use csv::WriterBuilder;
@@ -263,7 +264,9 @@ pub fn run_simulation(
 
     // Prepare weather (Denver EPW)
     let weather = EpwWeatherSource::from_file(
-        "assets/weather/USA_CO_Denver-Stapleton.Intl.AP.724690_TMY.epw",
+        epw_required("USA_CO_Denver-Stapleton.Intl.AP.724690_TMY.epw")
+            .to_str()
+            .unwrap(),
     )
     .expect("Failed to load EPW weather data");
 

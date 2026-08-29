@@ -34,15 +34,16 @@
 //! Units in EPW are Wh/m² (energy per hour). For hourly data, Wh/m² == W/m² numerically.
 
 use fluxion::weather::epw::EpwWeatherSource;
+use fluxion::weather::epw_path::epw_required;
 use fluxion::weather::WeatherSource;
 
 /// The EPW file used for ASHRAE 140 validation.
-const VALIDATION_EPW: &str = "assets/weather/USA_CO_Denver-Stapleton.Intl.AP.724690_TMY.epw";
+const VALIDATION_EPW: &str = "USA_CO_Denver-Stapleton.Intl.AP.724690_TMY.epw";
 
 /// Summer solstice (June 21) — print hourly DNI/DHI/GHI for hours 6–20.
 #[test]
 fn test_june_21_hourly_solar() {
-    let weather = EpwWeatherSource::from_file(VALIDATION_EPW)
+    let weather = EpwWeatherSource::from_file(epw_required(VALIDATION_EPW).to_str().unwrap())
         .expect("Failed to load Denver Stapleton EPW for June 21 verification");
 
     println!("\n=== June 21 Hourly Solar Data (Denver Stapleton TMY) ===");
@@ -74,7 +75,7 @@ fn test_june_21_hourly_solar() {
 /// Winter solstice (December 21) — print hourly DNI/DHI/GHI for hours 8–16.
 #[test]
 fn test_december_21_hourly_solar() {
-    let weather = EpwWeatherSource::from_file(VALIDATION_EPW)
+    let weather = EpwWeatherSource::from_file(epw_required(VALIDATION_EPW).to_str().unwrap())
         .expect("Failed to load Denver Stapleton EPW for Dec 21 verification");
 
     println!("\n=== December 21 Hourly Solar Data (Denver Stapleton TMY) ===");
@@ -107,7 +108,7 @@ fn test_december_21_hourly_solar() {
 #[test]
 fn test_summer_clear_sky_dni_reasonable() {
     let weather =
-        EpwWeatherSource::from_file(VALIDATION_EPW).expect("Failed to load Denver Stapleton EPW");
+        EpwWeatherSource::from_file(epw_required(VALIDATION_EPW).to_str().unwrap()).expect("Failed to load Denver Stapleton EPW");
 
     let mut max_dni = 0.0_f64;
     let mut max_dni_hour = 0_usize;
@@ -164,7 +165,7 @@ fn test_summer_clear_sky_dni_reasonable() {
 #[test]
 fn test_winter_clear_sky_dni_reasonable() {
     let weather =
-        EpwWeatherSource::from_file(VALIDATION_EPW).expect("Failed to load Denver Stapleton EPW");
+        EpwWeatherSource::from_file(epw_required(VALIDATION_EPW).to_str().unwrap()).expect("Failed to load Denver Stapleton EPW");
 
     let mut max_dec_dni = 0.0_f64;
     let mut max_dec_dni_hour = 0_usize;
@@ -206,7 +207,7 @@ fn test_winter_clear_sky_dni_reasonable() {
 #[test]
 fn test_dni_dhi_not_swapped() {
     let weather =
-        EpwWeatherSource::from_file(VALIDATION_EPW).expect("Failed to load Denver Stapleton EPW");
+        EpwWeatherSource::from_file(epw_required(VALIDATION_EPW).to_str().unwrap()).expect("Failed to load Denver Stapleton EPW");
 
     // Check December noon hours — these are typically very clear in Denver
     let mut clear_noon_count = 0;
@@ -251,7 +252,7 @@ fn test_dni_dhi_not_swapped() {
 #[test]
 fn test_no_negative_solar() {
     let weather =
-        EpwWeatherSource::from_file(VALIDATION_EPW).expect("Failed to load Denver Stapleton EPW");
+        EpwWeatherSource::from_file(epw_required(VALIDATION_EPW).to_str().unwrap()).expect("Failed to load Denver Stapleton EPW");
 
     let mut neg_count = 0;
     for hour in 0..8760 {
@@ -283,7 +284,7 @@ fn test_no_negative_solar() {
 #[test]
 fn test_annual_max_dni_not_extraterrestrial() {
     let weather =
-        EpwWeatherSource::from_file(VALIDATION_EPW).expect("Failed to load Denver Stapleton EPW");
+        EpwWeatherSource::from_file(epw_required(VALIDATION_EPW).to_str().unwrap()).expect("Failed to load Denver Stapleton EPW");
 
     let mut max_dni = 0.0_f64;
     let mut max_dni_hour = 0_usize;
@@ -315,7 +316,7 @@ fn test_annual_max_dni_not_extraterrestrial() {
 #[test]
 fn test_epw_loads_complete() {
     let weather =
-        EpwWeatherSource::from_file(VALIDATION_EPW).expect("Failed to load Denver Stapleton EPW");
+        EpwWeatherSource::from_file(epw_required(VALIDATION_EPW).to_str().unwrap()).expect("Failed to load Denver Stapleton EPW");
 
     assert_eq!(
         weather.record_count(),
@@ -354,7 +355,7 @@ fn test_epw_loads_complete() {
 #[test]
 fn test_dec_21_noon_spot_check() {
     let weather =
-        EpwWeatherSource::from_file(VALIDATION_EPW).expect("Failed to load Denver Stapleton EPW");
+        EpwWeatherSource::from_file(epw_required(VALIDATION_EPW).to_str().unwrap()).expect("Failed to load Denver Stapleton EPW");
 
     // Find Dec 21, hour 12 (EPW hour = 12, which is 11:00-12:00 local standard time)
     let mut found = false;

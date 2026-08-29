@@ -2,7 +2,7 @@
 
 **Fluxion** is a next-generation Building Energy Modeling (BEM) engine. It is designed to be differentiable, quantum-ready, and exponentially faster than legacy monolithic tools by utilizing a hybrid Neuro-Symbolic architecture.
 
-> **Status:** Fluxion is **in active development** — specifically mid-milestone on **v1.3 "Blind ASHRAE 140 Validation"** (physics-only, no calibration factors). It is **not** production-ready. Current ASHRAE 140-2023 validation pass rate is **~20%** (see [Current Validation Status](#current-validation-status) below). Use it as a high-throughput research/oracle tool, not as a drop-in EnergyPlus replacement.
+> **Status:** Fluxion is **in active development** — specifically mid-milestone on **v1.3 "Blind ASHRAE 140 Validation"** (physics-only, no calibration factors). It is **not** production-ready. Current ASHRAE 140-2023 validation pass rate is **~10.7%** (see [Current Validation Status](#current-validation-status) below). Use it as a high-throughput research/oracle tool, not as a drop-in EnergyPlus replacement.
 
 ## 🏗 Architecture
 
@@ -10,17 +10,17 @@ Fluxion separates the "heavy lifting" of physics (CFD/Radiation) into AI surroga
 
 ## Current Validation Status
 
-![ASHRAE 140](https://img.shields.io/badge/ASHRAE140-20.3%25%20pass-red)
+![ASHRAE 140](https://img.shields.io/badge/ASHRAE140-10.7%25%20pass-red)
 ![Version](https://img.shields.io/badge/status-in--development-orange)
 
-Fluxion is **not yet ASHRAE 140-compliant**. The figures below come from the committed validation suite (generated 2026-08-07); see [`docs/ASHRAE140_RESULTS.md`](docs/ASHRAE140_RESULTS.md) for the full case-by-case breakdown and [`SCORECARD.md`](SCORECARD.md) for the consolidated, reproducible release-readiness view.
+Fluxion is **not yet ASHRAE 140-compliant**. The figures below come from the committed validation suite (generated 2026-08-25); see [`docs/ASHRAE140_RESULTS.md`](docs/ASHRAE140_RESULTS.md) for the full case-by-case breakdown and [`SCORECARD.md`](SCORECARD.md) for the consolidated, reproducible release-readiness view.
 
 | Metric | Current | Target (release gate) | Status |
 |--------|---------|-----------------------|--------|
-| Pass rate (metric-level) | **20.3%** (13/64) | ≥ 60% | ❌ Fail |
-| Mean Absolute Error (MAE) | **55.09%** | ≤ 50% | ❌ Fail |
-| Cases fully passing | 1/18 (5.6%) | — | ❌ |
-| Max single-case deviation | 499.89% | — | ℹ️ |
+| Pass rate (metric-level) | **10.7%** (9/84) | ≥ 60% | ❌ Fail |
+| Mean Absolute Error (MAE) | **70.47%** | ≤ 50% | ❌ Fail |
+| Cases fully passing | 0/18 (0.0%) | — | ❌ |
+| Max single-case deviation | 600.00% | — | ℹ️ |
 
 ### v1.3 Milestone — Blind ASHRAE 140 Validation (Physics Only)
 

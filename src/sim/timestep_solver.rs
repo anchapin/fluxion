@@ -96,5 +96,112 @@ mod tests {
 
         assert!(!parameters.use_ai);
         assert!(parameters.surrogates.is_none());
+        assert!(parameters.use_analytical_gains);
+        assert!(parameters.lighting.is_none());
+        assert!(parameters.equipment.is_none());
+        assert!(parameters.occupancy.is_none());
+    }
+
+    #[test]
+    fn default_parameters_have_all_disabled() {
+        let params = StepParameters::default();
+        assert!(!params.use_ai);
+        assert!(params.surrogates.is_none());
+        assert!(!params.use_analytical_gains);
+        assert!(params.lighting.is_none());
+        assert!(params.equipment.is_none());
+        assert!(params.occupancy.is_none());
+    }
+
+    #[test]
+    fn new_parameters_match_default() {
+        let from_new = StepParameters::new();
+        let from_default = StepParameters::default();
+        assert_eq!(from_new.use_ai, from_default.use_ai);
+        assert!(from_new.surrogates.is_none() == from_default.surrogates.is_none());
+        assert_eq!(
+            from_new.use_analytical_gains,
+            from_default.use_analytical_gains
+        );
+        assert_eq!(from_new.lighting.is_none(), from_default.lighting.is_none());
+        assert_eq!(
+            from_new.equipment.is_none(),
+            from_default.equipment.is_none()
+        );
+        assert_eq!(
+            from_new.occupancy.is_none(),
+            from_default.occupancy.is_none()
+        );
+    }
+
+    #[test]
+    fn clone_for_test_preserves_fields_except_equipment() {
+        let params = StepParameters {
+            use_ai: true,
+            surrogates: None,
+            use_analytical_gains: true,
+            lighting: None,
+            equipment: None,
+            occupancy: None,
+        };
+        let cloned = params.clone_for_test();
+        assert_eq!(cloned.use_ai, params.use_ai);
+        assert_eq!(cloned.use_analytical_gains, params.use_analytical_gains);
+        assert_eq!(cloned.lighting.is_none(), params.lighting.is_none());
+        assert_eq!(cloned.occupancy.is_none(), params.occupancy.is_none());
+    }
+
+    #[test]
+    fn clone_for_test_strips_equipment() {
+        let params = StepParameters {
+            use_ai: false,
+            surrogates: None,
+            use_analytical_gains: true,
+            lighting: None,
+            equipment: Some(vec![]),
+            occupancy: None,
+        };
+        let cloned = params.clone_for_test();
+        assert!(
+            cloned.equipment.is_none(),
+            "clone_for_test should always strip equipment"
+        );
+    }
+
+    #[test]
+    fn build_analytical_all_fields_match_expected() {
+        let p = StepParameters::build_analytical();
+        assert!(!p.use_ai);
+        assert!(p.surrogates.is_none());
+        assert!(p.use_analytical_gains);
+        assert!(p.lighting.is_none());
+        assert!(p.equipment.is_none());
+        assert!(p.occupancy.is_none());
+    }
+
+    #[test]
+    fn new_and_default_produce_equivalent_structs() {
+        // Both new() and default() should produce the same zero-state
+        let from_new = StepParameters::new();
+        let from_default = StepParameters::default();
+        assert_eq!(from_new.use_ai, from_default.use_ai);
+        assert_eq!(from_new.use_analytical_gains, from_default.use_analytical_gains);
+        assert!(
+            from_new.equipment.is_none() && from_default.equipment.is_none()
+        );
+    }
+
+    #[test]
+    fn step_parameters_with_ai_flag_enabled() {
+        let params = StepParameters {
+            use_ai: true,
+            surrogates: None,
+            use_analytical_gains: false,
+            lighting: None,
+            equipment: None,
+            occupancy: None,
+        };
+        assert!(params.use_ai);
+        assert!(!params.use_analytical_gains);
     }
 }

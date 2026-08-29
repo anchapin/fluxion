@@ -58,14 +58,17 @@ impl MockS3Backend {
         MockS3Backend::default()
     }
 
+    #[allow(dead_code)]
     fn object_count(&self) -> usize {
         self.objects.lock().unwrap().len()
     }
 
+    #[allow(dead_code)]
     fn get_object(&self, key: &str) -> Option<MockObject> {
         self.objects.lock().unwrap().get(key).cloned()
     }
 
+    #[allow(dead_code)]
     fn has_object(&self, key: &str) -> bool {
         self.objects.lock().unwrap().contains_key(key)
     }
@@ -311,6 +314,7 @@ fn test_provenance_builder(s3_prefix: &str) -> ProvenanceManifestBuilder {
 // =============================================================================
 
 #[derive(Serialize, Deserialize)]
+#[allow(dead_code)]
 struct ProvenanceSerdeCheck {
     provenance_schema_version: String,
     solver_version: String,

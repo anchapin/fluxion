@@ -21,7 +21,7 @@ pub struct DesignDaySelector {
     cooling_design: Option<DailySummary>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct DailySummary {
     pub month: u32,
     pub day_of_month: u32,
@@ -170,5 +170,114 @@ mod tests {
         };
         let cloned = spec.clone();
         assert_eq!(cloned.avg_temp, spec.avg_temp);
+    }
+
+    #[test]
+    fn test_design_day_selector_debug() {
+        let selector = DesignDaySelector::new();
+        let debug_str = format!("{:?}", selector);
+        assert!(debug_str.contains("DesignDaySelector"));
+    }
+
+    #[test]
+    fn test_daily_summary_debug() {
+        let spec = DailySummary {
+            month: 7,
+            day_of_month: 21,
+            max_temp: 35.0,
+            min_temp: 25.0,
+            avg_temp: 30.0,
+            temp_range: 10.0,
+        };
+        let debug_str = format!("{:?}", spec);
+        assert!(debug_str.contains("30"));
+    }
+
+    #[test]
+    fn test_select_heating_design_day_multiple_candidates() {
+        let mut selector = DesignDaySelector::new();
+        let jan_cold = vec![-25.0; 24];
+        let jan_less_cold = vec![-15.0; 24];
+        let mut hourly = make_hourly_for_day(1, 15, &jan_cold);
+        hourly.extend(make_hourly_for_day(1, 20, &jan_less_cold));
+
+        selector.select_from_hourly(&hourly);
+
+        let heating = selector.heating_design().unwrap();
+        assert_eq!(heating.month, 1);
+    }
+
+    #[test]
+    fn test_select_cooling_design_day_multiple_candidates() {
+        let mut selector = DesignDaySelector::new();
+        let july_hot = vec![40.0; 24];
+        let july_warm = vec![30.0; 24];
+        let mut hourly = make_hourly_for_day(7, 15, &july_hot);
+        hourly.extend(make_hourly_for_day(7, 20, &july_warm));
+
+        selector.select_from_hourly(&hourly);
+
+        let cooling = selector.cooling_design().unwrap();
+        assert_eq!(cooling.month, 7);
+    }
+
+    #[test]
+    fn test_design_day_selector_default() {
+        let selector = DesignDaySelector::default();
+        assert!(selector.heating_design().is_none());
+        assert!(selector.cooling_design().is_none());
+    }
+
+    #[test]
+    fn test_daily_summary_partialeq() {
+        let s1 = DailySummary { month: 1, day_of_month: 15, max_temp: -10.0, min_temp: -20.0, avg_temp: -15.0, temp_range: 10.0 };
+        let s2 = DailySummary { month: 1, day_of_month: 15, max_temp: -10.0, min_temp: -20.0, avg_temp: -15.0, temp_range: 10.0 };
+        let s3 = DailySummary { month: 2, day_of_month: 15, max_temp: -10.0, min_temp: -20.0, avg_temp: -15.0, temp_range: 10.0 };
+        assert_eq!(s1, s2);
+        assert_ne!(s1, s3);
+    }
+
+    #[test]
+    fn test_select_from_single_day_insufficient_hours() {
+        let mut selector = DesignDaySelector::new();
+        let few_hours: Vec<HourlyWeatherData> = (0..12)
+            .map(|i| HourlyWeatherData::new(20.0, 0.0, 0.0, 0.0, 2.0, 50.0, i))
+            .collect();
+        selector.select_from_hourly(&few_hours);
+        assert!(selector.heating_design().is_none());
+        assert!(selector.cooling_design().is_none());
+    }
+
+    #[test]
+    fn test_select_with_exact_20_hours() {
+        let mut selector = DesignDaySelector::new();
+        let temps: Vec<f64> = (0..20).map(|i| 20.0 + i as f64).collect();
+        let hourly = make_hourly_for_day(1, 15, &temps);
+        selector.select_from_hourly(&hourly);
+        assert!(selector.heating_design().is_some());
+    }
+
+    #[test]
+    fn test_select_heating_vs_cooling_order_independent() {
+        let mut selector1 = DesignDaySelector::new();
+        let cold = vec![-10.0; 24];
+        let hot = vec![35.0; 24];
+        let mut hourly1 = make_hourly_for_day(1, 1, &cold);
+        hourly1.extend(make_hourly_for_day(7, 1, &hot));
+        selector1.select_from_hourly(&hourly1);
+
+        let mut selector2 = DesignDaySelector::new();
+        let mut hourly2 = make_hourly_for_day(7, 1, &hot);
+        hourly2.extend(make_hourly_for_day(1, 1, &cold));
+        selector2.select_from_hourly(&hourly2);
+
+        assert_eq!(
+            selector1.heating_design().unwrap().month,
+            selector2.heating_design().unwrap().month
+        );
+        assert_eq!(
+            selector1.cooling_design().unwrap().month,
+            selector2.cooling_design().unwrap().month
+        );
     }
 }

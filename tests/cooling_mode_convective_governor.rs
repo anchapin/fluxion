@@ -198,6 +198,7 @@ fn test_cooling_mode_governor_is_symmetric_under_sign_inversion() {
     use fluxion::sim::engine::ThermalModel;
     use fluxion::validation::ashrae_140_cases::ASHRAE140Case;
     use fluxion::weather::epw::EpwWeatherSource;
+    use fluxion::weather::epw_path::epw_required;
 
     let spec = ASHRAE140Case::Case600.spec();
     let mut model = ThermalModel::<VectorField>::from_spec(&spec);
@@ -208,7 +209,7 @@ fn test_cooling_mode_governor_is_symmetric_under_sign_inversion() {
     model.solar.solar_distribution_to_air = governor_factor;
 
     // Use Denver TMY (matches other tests in the suite).
-    let _weather = EpwWeatherSource::from_file("assets/weather/WD600.epw")
+    let _weather = EpwWeatherSource::from_file(epw_required("WD600.epw").to_str().unwrap())
         .expect("Failed to load EPW weather data");
 
     // Force the fallback path: zero out the per-zone surfaces so

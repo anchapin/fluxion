@@ -20,6 +20,7 @@ pub mod ddy;
 pub mod denver;
 pub mod design_day_selector;
 pub mod epw;
+pub mod epw_path;
 pub mod interpolation;
 pub mod miami;
 pub mod minneapolis;
@@ -28,6 +29,7 @@ pub mod tmy3;
 
 pub use carbon_intensity::{CarbonAccumulator, CarbonError, CarbonIntensityProfile};
 
+pub use self::epw_path::{epw_optional, epw_required, resolve_epw_path};
 pub use self::psychrometrics::*;
 pub use ddy::{generate_design_day_hours, DesignDaySource, DesignDaySpec};
 pub use design_day_selector::{DailySummary, DesignDaySelector};
@@ -1230,5 +1232,262 @@ mod tests {
 
         let w3 = HourlyWeatherData::new(21.0, 800.0, 100.0, 900.0, 3.5, 50.0, 100);
         assert_ne!(w1, w3);
+    }
+
+    #[test]
+    fn test_weather_error_variant_equality() {
+        let e1 = WeatherError::InvalidHour(100);
+        let e2 = WeatherError::InvalidHour(100);
+        let e3 = WeatherError::InvalidHour(200);
+        let e4 = WeatherError::IncompleteData("foo".to_string());
+        assert_eq!(e1, e2);
+        assert_ne!(e1, e3);
+        assert_ne!(e1, e4);
+        let e5 = WeatherError::ParseError("test".to_string());
+        let e6 = WeatherError::ParseError("test".to_string());
+        assert_eq!(e5, e6);
+        let e7 = WeatherError::IoError("oops".to_string());
+        assert_ne!(e5, e7);
+    }
+
+    #[test]
+    fn test_weather_error_source() {
+        use std::error::Error;
+        let err = WeatherError::InvalidHour(42);
+        let src = err.source();
+        assert!(src.is_none());
+        let err2 = WeatherError::ParseError("oops".to_string());
+        assert!(err2.source().is_none());
+    }
+
+    #[test]
+    fn test_weather_iterator_nth() {
+        struct OneSource;
+        impl WeatherSource for OneSource {
+            fn location(&self) -> Option<String> { None }
+            fn get_hourly_data(&self, hour: usize) -> Result<HourlyWeatherData, WeatherError> {
+                if hour >= 8760 {
+                    Err(WeatherError::InvalidHour(hour))
+                } else {
+                    Ok(HourlyWeatherData::new(20.0 + hour as f64, 0.0, 0.0, 0.0, 0.0, 0.0, hour))
+                }
+            }
+        }
+        let source = OneSource;
+        let mut iter = WeatherIterator { source: &source, current_hour: 0 };
+        let fifth = iter.nth(4).unwrap().unwrap();
+        assert_eq!(fifth.dry_bulb_temp, 24.0);
+        assert_eq!(fifth.hour_of_year, 4);
+        let after = iter.nth(0).unwrap().unwrap();
+        assert_eq!(after.hour_of_year, 5);
+    }
+
+    #[test]
+    fn test_weather_iterator_count() {
+        struct CountSource;
+        impl WeatherSource for CountSource {
+            fn location(&self) -> Option<String> { None }
+            fn get_hourly_data(&self, hour: usize) -> Result<HourlyWeatherData, WeatherError> {
+                if hour >= 3 { Err(WeatherError::InvalidHour(hour)) }
+                else { Ok(HourlyWeatherData::new(20.0, 0.0, 0.0, 0.0, 0.0, 0.0, hour)) }
+            }
+        }
+        let source = CountSource;
+        let iter = WeatherIterator { source: &source, current_hour: 0 };
+        assert_eq!(iter.count(), 3);
+    }
+
+    #[test]
+    fn test_weather_iterator_last() {
+        struct TenSource;
+        impl WeatherSource for TenSource {
+            fn location(&self) -> Option<String> { None }
+            fn get_hourly_data(&self, hour: usize) -> Result<HourlyWeatherData, WeatherError> {
+                if hour >= 10 { Err(WeatherError::InvalidHour(hour)) }
+                else { Ok(HourlyWeatherData::new(20.0, 0.0, 0.0, 0.0, 0.0, 0.0, hour)) }
+            }
+        }
+        let source = TenSource;
+        let iter = WeatherIterator { source: &source, current_hour: 0 };
+        let last = iter.last().unwrap().unwrap();
+        assert_eq!(last.hour_of_year, 9);
+    }
+
+    #[test]
+    fn test_weather_iterator_collect() {
+        struct FiveSource;
+        impl WeatherSource for FiveSource {
+            fn location(&self) -> Option<String> { None }
+            fn get_hourly_data(&self, hour: usize) -> Result<HourlyWeatherData, WeatherError> {
+                if hour >= 5 { Err(WeatherError::InvalidHour(hour)) }
+                else { Ok(HourlyWeatherData::new(20.0 + hour as f64, 0.0, 0.0, 0.0, 0.0, 0.0, hour)) }
+            }
+        }
+        let source = FiveSource;
+        let vec: Vec<_> = source.iter_hours().collect();
+        assert_eq!(vec.len(), 5);
+        assert_eq!(vec[4].as_ref().unwrap().dry_bulb_temp, 24.0);
+    }
+
+    #[test]
+    fn test_weather_iterator_size_hint() {
+        struct FiveSource;
+        impl WeatherSource for FiveSource {
+            fn location(&self) -> Option<String> { None }
+            fn get_hourly_data(&self, hour: usize) -> Result<HourlyWeatherData, WeatherError> {
+                if hour >= 5 { Err(WeatherError::InvalidHour(hour)) }
+                else { Ok(HourlyWeatherData::new(20.0, 0.0, 0.0, 0.0, 0.0, 0.0, hour)) }
+            }
+        }
+        let source = FiveSource;
+        let iter = WeatherIterator { source: &source, current_hour: 0 };
+        let (lo, hi) = iter.size_hint();
+        assert_eq!(lo, 0);
+        assert_eq!(hi, None);
+        assert_eq!(iter.count(), 5);
+    }
+
+    #[test]
+    fn test_weather_iterator_fuse_at_end() {
+        struct ThreeSource;
+        impl WeatherSource for ThreeSource {
+            fn location(&self) -> Option<String> { None }
+            fn get_hourly_data(&self, hour: usize) -> Result<HourlyWeatherData, WeatherError> {
+                if hour >= 3 { Err(WeatherError::InvalidHour(hour)) }
+                else { Ok(HourlyWeatherData::new(20.0, 0.0, 0.0, 0.0, 0.0, 0.0, hour)) }
+            }
+        }
+        let source = ThreeSource;
+        let mut iter = WeatherIterator { source: &source, current_hour: 0 };
+        for _ in 0..3 {
+            assert!(iter.next().is_some());
+        }
+        assert!(iter.next().is_none());
+        assert!(iter.next().is_none());
+    }
+
+    #[test]
+    fn test_weather_source_validate_all_fails() {
+        struct BadSource;
+        impl WeatherSource for BadSource {
+            fn location(&self) -> Option<String> { None }
+            fn get_hourly_data(&self, hour: usize) -> Result<HourlyWeatherData, WeatherError> {
+                if hour >= 8760 {
+                    Err(WeatherError::InvalidHour(hour))
+                } else {
+                    let mut w = HourlyWeatherData::new(20.0, 0.0, 0.0, 0.0, 0.0, 50.0, hour);
+                    if hour == 5 { w.dry_bulb_temp = f64::NAN; }
+                    Ok(w)
+                }
+            }
+        }
+        let result = BadSource.validate_all();
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("NaN"));
+    }
+
+    #[test]
+    fn test_hour_of_day_end_of_year() {
+        let w = HourlyWeatherData::new(0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 8759);
+        assert_eq!(w.hour_of_day(), 23);
+        assert_eq!(w.day_of_year(), 364);
+        assert_eq!(w.month(), 12);
+    }
+
+    #[test]
+    fn test_hour_of_day_midnight_wrap() {
+        let w0 = HourlyWeatherData::new(0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0);
+        let w24 = HourlyWeatherData::new(0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 24);
+        assert_eq!(w0.hour_of_day(), 0);
+        assert_eq!(w24.hour_of_day(), 0);
+        assert_ne!(w0.hour_of_year, w24.hour_of_year);
+    }
+
+    #[test]
+    fn test_day_of_year_leap_year_behavior() {
+        let w0 = HourlyWeatherData::new(0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0);
+        assert_eq!(w0.day_of_year(), 0);
+        let w1415 = HourlyWeatherData::new(0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1415);
+        assert_eq!(w1415.day_of_year(), 58);
+    }
+
+    #[test]
+    fn test_sky_temperature_extreme_conditions() {
+        let mut hot = HourlyWeatherData::new(45.0, 0.0, 0.0, 0.0, 0.0, 20.0, 4000);
+        hot.horizontal_infrared = 450.0;
+        assert!(hot.sky_temperature() < 45.0);
+
+        let mut cold = HourlyWeatherData::new(-40.0, 0.0, 0.0, 0.0, 0.0, 10.0, 100);
+        cold.horizontal_infrared = 150.0;
+        assert!(cold.sky_temperature() < -40.0);
+    }
+
+    #[test]
+    fn test_sky_emissivity_extreme_conditions() {
+        let very_high_ir = HourlyWeatherData::with_infrared(20.0, 0.0, 0.0, 0.0, 0.0, 50.0, 500.0, 100);
+        let em = very_high_ir.sky_emissivity();
+        assert!(em > 0.8);
+
+        let very_low_ir = HourlyWeatherData::with_infrared(20.0, 0.0, 0.0, 0.0, 0.0, 50.0, 200.0, 100);
+        let em2 = very_low_ir.sky_emissivity();
+        assert!(em2 > 0.0 && em2 < 0.8);
+    }
+
+    #[test]
+    fn test_weather_source_location() {
+        struct NamedSource;
+        impl WeatherSource for NamedSource {
+            fn location(&self) -> Option<String> { Some("Denver, CO USA".to_string()) }
+            fn get_hourly_data(&self, hour: usize) -> Result<HourlyWeatherData, WeatherError> {
+                if hour >= 8760 { Err(WeatherError::InvalidHour(hour)) }
+                else { Ok(HourlyWeatherData::new(20.0, 0.0, 0.0, 0.0, 0.0, 0.0, hour)) }
+            }
+        }
+        let s = NamedSource;
+        assert_eq!(s.location(), Some("Denver, CO USA".to_string()));
+        assert!(s.get_hourly_data(0).is_ok());
+    }
+
+    #[test]
+    fn test_validate_all_warnings_recoverable() {
+        let mut w = HourlyWeatherData::new(20.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0);
+        w.horizontal_infrared = -5.0;
+        let result = HourlyWeatherData::validate_all(&[w]);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("Infrared"));
+    }
+
+    #[test]
+    fn test_weather_iterator_take() {
+        struct UnlimitedSource;
+        impl WeatherSource for UnlimitedSource {
+            fn location(&self) -> Option<String> { None }
+            fn get_hourly_data(&self, hour: usize) -> Result<HourlyWeatherData, WeatherError> {
+                if hour >= 8760 { Err(WeatherError::InvalidHour(hour)) }
+                else { Ok(HourlyWeatherData::new(20.0, 0.0, 0.0, 0.0, 0.0, 0.0, hour)) }
+            }
+        }
+        let source = UnlimitedSource;
+        let taken: Vec<_> = source.iter_hours().take(7).collect();
+        assert_eq!(taken.len(), 7);
+        for (i, item) in taken.iter().enumerate() {
+            assert_eq!(item.as_ref().unwrap().hour_of_year, i);
+        }
+    }
+
+    #[test]
+    fn test_weather_iterator_skip() {
+        struct UnlimitedSource;
+        impl WeatherSource for UnlimitedSource {
+            fn location(&self) -> Option<String> { None }
+            fn get_hourly_data(&self, hour: usize) -> Result<HourlyWeatherData, WeatherError> {
+                if hour >= 8760 { Err(WeatherError::InvalidHour(hour)) }
+                else { Ok(HourlyWeatherData::new(20.0 + hour as f64, 0.0, 0.0, 0.0, 0.0, 0.0, hour)) }
+            }
+        }
+        let source = UnlimitedSource;
+        let skipped: Vec<_> = source.iter_hours().skip(3).take(5).collect();
+        assert_eq!(skipped.len(), 5);
+        assert_eq!(skipped[0].as_ref().unwrap().dry_bulb_temp, 23.0);
     }
 }

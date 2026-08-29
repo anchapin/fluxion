@@ -46,14 +46,17 @@ use fluxion::sim::thermal_model::HybridThermalModel;
 use fluxion::validation::ashrae_140_cases::ASHRAE140Case;
 use fluxion::ThermalModelTrait as _;
 
+#[allow(dead_code)]
 const STEPS: usize = 168;
 
+#[allow(dead_code)]
 const DUMMY_ONNX_MODEL: &str = "assets/dummy_surrogate.onnx";
 
 /// Returns `true` when the CUDA execution provider can be loaded at runtime.
 ///
 /// Checks both compile-time feature flag (`cfg(feature = "cuda")`) and
 /// runtime availability (NVIDIA GPU + CUDA drivers + ort CUDA EP binary).
+#[allow(dead_code)]
 fn cuda_ep_available() -> bool {
     #[cfg(feature = "cuda")]
     {

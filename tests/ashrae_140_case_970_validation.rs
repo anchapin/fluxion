@@ -46,6 +46,7 @@ use fluxion::validation::energy_balance::EnergyBalanceValidator;
 /// Kept as a Rust-side copy so the test doesn't need to parse the CSV at
 /// test time; the CSV remains the documented source of truth and the
 /// `test_reference_data_file_exists` test guards against drift.
+#[allow(dead_code)]
 mod reference {
     pub const ANNUAL_HEATING_MIN_MWH: f64 = 10.54;
     pub const ANNUAL_HEATING_MAX_MWH: f64 = 14.26;

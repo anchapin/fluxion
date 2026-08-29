@@ -30,16 +30,20 @@ struct HourlyData {
 }
 
 struct DailyData {
+    #[allow(dead_code)]
     day: usize,
     cooling_kwh: f64,
+    #[allow(dead_code)]
     avg_zone_temp: f64,
     max_zone_temp: f64,
+    #[allow(dead_code)]
     min_zone_temp: f64,
     avg_outdoor_temp: f64,
 }
 
 #[derive(Clone)]
 struct MonthlyData {
+    #[allow(dead_code)]
     month: usize,
     cooling_kwh: f64,
     days: usize,

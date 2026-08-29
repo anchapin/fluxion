@@ -184,6 +184,7 @@ mod plant_loop {
         // Zone thermal masses (J/K)
         pub zone_caps: [f64; 4],
         // Zone temperatures (K)
+        #[allow(dead_code)]
         pub zone_temps: [f64; 4],
         // Plant equipment time constants (s)
         pub chiller_tau: f64,
@@ -191,6 +192,7 @@ mod plant_loop {
         // Supply water temperature setpoint (K)
         pub t_supply_set: f64,
         // Ambient temperature (K)
+        #[allow(dead_code)]
         pub t_amb: f64,
     }
 
@@ -456,11 +458,13 @@ mod heap_verification {
     use super::*;
 
     /// Heat exchanger model for heap verification
+    #[allow(dead_code)]
     pub struct HeatExchangerSmall {
         pub n: usize,
     }
 
     impl HeatExchangerSmall {
+        #[allow(dead_code)]
         pub fn new() -> Self {
             Self { n: 3 }
         }

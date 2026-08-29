@@ -71,7 +71,7 @@ use crate::ashrae_cases::Orientation;
 /// - **Wall**: Vertical orientation, convective/radiative heat transfer
 /// - **Roof**: Upward heat flow (ceiling), higher film coefficients
 /// - **Floor**: Downward heat flow, different film coefficients per ASHRAE 140
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum SurfaceKind {
     Wall,
     Roof,
@@ -1215,5 +1215,193 @@ mod tests {
             "Energy imbalance {} should be negligible",
             imbalance
         );
+    }
+
+    // --- Derived trait coverage ---
+
+    #[test]
+    fn test_surface_kind_derived_traits() {
+        assert_eq!(SurfaceKind::Wall, SurfaceKind::Wall);
+        assert_ne!(SurfaceKind::Wall, SurfaceKind::Roof);
+        assert_eq!(SurfaceKind::Wall, SurfaceKind::Wall);
+        assert_eq!(SurfaceKind::Roof, SurfaceKind::Roof);
+        assert_eq!(SurfaceKind::Floor, SurfaceKind::Floor);
+    }
+
+    #[test]
+    fn test_surface_kind_debug() {
+        let s = SurfaceKind::Wall;
+        let debug = format!("{:?}", s);
+        assert!(debug.contains("Wall"));
+    }
+
+    #[test]
+    fn test_mass_node_clone() {
+        let mn = MassNode::new(0, 20.0, 100_000.0, 10.0, 5.0);
+        let cloned = mn.clone();
+        assert_eq!(mn.id, cloned.id);
+        assert_eq!(mn.temperature, cloned.temperature);
+        assert_eq!(mn.capacitance, cloned.capacitance);
+    }
+
+    #[test]
+    fn test_mass_node_debug() {
+        let mn = MassNode::new(0, 20.0, 100_000.0, 10.0, 5.0);
+        let debug = format!("{:?}", mn);
+        assert!(debug.contains("MassNode"));
+        assert!(debug.contains("temperature"));
+    }
+
+    #[test]
+    fn test_surface_node_clone() {
+        let sn = SurfaceNode::new(0, SurfaceKind::Wall, 10.0, 0.5, 20.0, 230_000.0, 5.0, 4.0, 2.0, 20.0);
+        let cloned = sn.clone();
+        assert_eq!(sn.id, cloned.id);
+        assert_eq!(sn.temperature, cloned.temperature);
+    }
+
+    #[test]
+    fn test_surface_node_debug() {
+        let sn = SurfaceNode::new(0, SurfaceKind::Wall, 10.0, 0.5, 20.0, 230_000.0, 5.0, 4.0, 2.0, 20.0);
+        let debug = format!("{:?}", sn);
+        assert!(debug.contains("SurfaceNode"));
+        assert!(debug.contains("Wall"));
+    }
+
+    #[test]
+    fn test_solver_default() {
+        let default = PerSurfaceConductionSolver::default();
+        assert!(default.is_empty());
+        assert_eq!(default.len(), 0);
+    }
+
+    #[test]
+    fn test_solver_with_surfaces() {
+        let surface = SurfaceNode::new(0, SurfaceKind::Wall, 10.0, 0.5, 20.0, 230_000.0, 5.0, 4.0, 2.0, 20.0);
+        let mass = MassNode::new(0, 20.0, 100_000.0, 10.0, 5.0);
+        let solver = PerSurfaceConductionSolver::with_surfaces(vec![surface.clone()], vec![mass.clone()]);
+        assert_eq!(solver.len(), 1);
+        let got = solver.get(0);
+        assert!(got.is_some());
+    }
+
+    #[test]
+    fn test_solver_len_and_is_empty() {
+        let mut solver = PerSurfaceConductionSolver::new();
+        assert!(solver.is_empty());
+        assert_eq!(solver.len(), 0);
+        solver.add_surface_from_params(0, SurfaceKind::Wall, 10.0, 0.5, 20.0, 5.0, 4.0, 2.0);
+        assert!(!solver.is_empty());
+        assert_eq!(solver.len(), 1);
+    }
+
+    #[test]
+    fn test_solver_get_by_index() {
+        let mut solver = PerSurfaceConductionSolver::new();
+        solver.add_surface_from_params(0, SurfaceKind::Wall, 10.0, 0.5, 20.0, 5.0, 4.0, 2.0);
+        solver.add_surface_from_params(1, SurfaceKind::Roof, 20.0, 0.3, 15.0, 8.0, 6.0, 3.0);
+        let s0 = solver.get(0);
+        assert!(s0.is_some());
+        assert_eq!(s0.unwrap().id, 0);
+        let s1 = solver.get(1);
+        assert!(s1.is_some());
+        assert_eq!(s1.unwrap().kind, SurfaceKind::Roof);
+        assert!(solver.get(99).is_none());
+    }
+
+    #[test]
+    fn test_solver_clone() {
+        let mut solver = PerSurfaceConductionSolver::new();
+        solver.add_surface_from_params(0, SurfaceKind::Wall, 10.0, 0.5, 20.0, 5.0, 4.0, 2.0);
+        let cloned = solver.clone();
+        assert_eq!(cloned.len(), solver.len());
+    }
+
+    #[test]
+    fn test_solver_debug() {
+        let solver = PerSurfaceConductionSolver::new();
+        let debug = format!("{:?}", solver);
+        assert!(debug.contains("PerSurfaceConductionSolver"));
+    }
+
+    #[test]
+    fn test_solver_mass_temperatures() {
+        let mut solver = PerSurfaceConductionSolver::new();
+        // add_surface_from_params does NOT add mass nodes, so mass_temperatures is empty
+        // unless mass nodes are added explicitly via add_mass_node or with_surfaces
+        solver.add_surface_from_params(0, SurfaceKind::Wall, 10.0, 0.5, 20.0, 5.0, 4.0, 2.0);
+        // Mass temperatures come from dedicated mass nodes, not surfaces
+        let temps = solver.mass_temperatures();
+        assert_eq!(temps.len(), 0);
+        // Now add a mass node directly
+        solver.add_mass_node(MassNode::new(0, 20.0, 100_000.0, 10.0, 5.0));
+        let temps2 = solver.mass_temperatures();
+        assert_eq!(temps2.len(), 1);
+        assert_eq!(temps2[0], 20.0);
+    }
+
+    #[test]
+    fn test_solver_heat_flows() {
+        let mut solver = PerSurfaceConductionSolver::new();
+        solver.add_surface_from_params(0, SurfaceKind::Wall, 10.0, 0.5, 20.0, 5.0, 4.0, 2.0);
+        let flows = solver.heat_flows();
+        assert_eq!(flows.len(), 1);
+    }
+
+    // --- SurfaceNode method coverage ---
+
+    #[test]
+    fn test_surface_node_steady_state_heat_flow() {
+        let sn = SurfaceNode::new(0, SurfaceKind::Wall, 10.0, 0.5, 20.0, 230_000.0, 5.0, 4.0, 2.0, 20.0);
+        // Q = U * A * (T_mass - T_exterior)
+        // When T_mass = 20 and T_ext = 10: Q = 0.5 * 10 * 10 = 50 W
+        let q = sn.steady_state_heat_flow(20.0, 10.0);
+        assert!((q - 50.0).abs() < 1e-9);
+    }
+
+    #[test]
+    fn test_surface_node_surface_temperature_from_mass() {
+        let sn = SurfaceNode::new(0, SurfaceKind::Wall, 10.0, 0.5, 20.0, 230_000.0, 5.0, 4.0, 2.0, 20.0);
+        // T_surface = (h_tr_is * T_air + h_tr_ms * T_mass) / (h_tr_is + h_tr_ms)
+        let t = sn.surface_temperature_from_mass(22.0, 18.0);
+        let expected = (4.0 * 22.0 + 5.0 * 18.0) / (4.0 + 5.0);
+        assert!((t - expected).abs() < 1e-10);
+    }
+
+    #[test]
+    fn test_surface_node_update_preserves_mass_temperature() {
+        let mut sn = SurfaceNode::new(0, SurfaceKind::Wall, 10.0, 0.5, 20.0, 230_000.0, 5.0, 4.0, 2.0, 20.0);
+        let initial_mass_temp = sn.mass_temperature;
+        sn.update(3600.0, 22.0, 0.0, 20.0);
+        assert_eq!(sn.mass_temperature, initial_mass_temp);
+    }
+
+    // --- Edge cases ---
+
+    #[test]
+    fn test_solver_update_surface_noop_when_zero_heat_flow() {
+        let mut solver = PerSurfaceConductionSolver::new();
+        // All conductances zero and phi_m_surface = 0.0 → no temperature change
+        solver.add_surface_from_params(0, SurfaceKind::Wall, 10.0, 0.0, 20.0, 0.0, 0.0, 0.0);
+        let initial_temp = solver.get(0).unwrap().temperature;
+        solver.update_surface(0, 3600.0, 22.0, 0.0, 0.0); // phi_m_surface = 0.0
+        let after_temp = solver.get(0).unwrap().temperature;
+        assert_eq!(initial_temp, after_temp);
+    }
+
+    #[test]
+    fn test_mass_node_zero_conductance_steady_state() {
+        let mn = MassNode::new(0, 20.0, 100_000.0, 0.0, 0.0);
+        let ss = mn.steady_state_temperature(22.0, 0.0);
+        assert_eq!(ss, 20.0); // Returns original temperature when sum is 0
+    }
+
+    #[test]
+    fn test_solver_compute_surface_temperatures_all_surfaces() {
+        let mut solver = PerSurfaceConductionSolver::new();
+        solver.add_surface_from_params(0, SurfaceKind::Wall, 10.0, 0.5, 20.0, 5.0, 4.0, 2.0);
+        solver.add_surface_from_params(1, SurfaceKind::Roof, 20.0, 0.3, 15.0, 8.0, 6.0, 3.0);
+        let temps = solver.compute_surface_temperatures(22.0, 18.0);
+        assert_eq!(temps.len(), 2);
     }
 }

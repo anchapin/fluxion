@@ -25,6 +25,7 @@ struct EnergyPlusReference {
     zone_air_temp_c: Vec<f64>,
     heating_energy_wh: Vec<f64>,
     cooling_energy_wh: Vec<f64>,
+    #[allow(dead_code)]
     solar_rate_total_w: Vec<f64>,
 }
 

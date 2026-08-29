@@ -895,3 +895,401 @@ pub struct ConductanceReferences {
     /// Ventilation conductance
     pub h_ve: f64,
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // --- Orientation ---
+
+    #[test]
+    fn test_orientation_azimuth_deg() {
+        assert_eq!(Orientation::North.azimuth_deg(), 0.0);
+        assert_eq!(Orientation::East.azimuth_deg(), 90.0);
+        assert_eq!(Orientation::South.azimuth_deg(), 180.0);
+        assert_eq!(Orientation::West.azimuth_deg(), 270.0);
+        assert_eq!(Orientation::Up.azimuth_deg(), -1.0);
+        assert_eq!(Orientation::Down.azimuth_deg(), -1.0);
+        assert_eq!(Orientation::Horizontal.azimuth_deg(), -1.0);
+    }
+
+    #[test]
+    fn test_orientation_azimuth_ashrae() {
+        // ASHRAE 140: 0° = South, clockwise
+        assert_eq!(Orientation::South.azimuth(), 0.0);
+        assert_eq!(Orientation::West.azimuth(), 90.0);
+        assert_eq!(Orientation::North.azimuth(), 180.0);
+        assert_eq!(Orientation::East.azimuth(), 270.0);
+        assert_eq!(Orientation::Up.azimuth(), -1.0);
+    }
+
+    #[test]
+    fn test_orientation_prefix() {
+        assert_eq!(Orientation::North.prefix(), "N");
+        assert_eq!(Orientation::East.prefix(), "E");
+        assert_eq!(Orientation::South.prefix(), "S");
+        assert_eq!(Orientation::West.prefix(), "W");
+        assert_eq!(Orientation::Up.prefix(), "Up");
+        assert_eq!(Orientation::Down.prefix(), "Down");
+        assert_eq!(Orientation::Horizontal.prefix(), "H");
+    }
+
+    #[test]
+    fn test_orientation_derived_traits() {
+        use std::cmp::Ordering;
+        assert_eq!(Orientation::North.cmp(&Orientation::North), Ordering::Equal);
+        assert!(Orientation::North < Orientation::South);
+        let mut vec = vec![Orientation::West, Orientation::North, Orientation::East];
+        vec.sort();
+        assert_eq!(vec, vec![Orientation::North, Orientation::East, Orientation::West]);
+    }
+
+    // --- WindowArea ---
+
+    #[test]
+    fn test_window_area_new() {
+        let w = WindowArea::new(12.0, Orientation::South);
+        assert_eq!(w.area, 12.0);
+        assert_eq!(w.orientation, Orientation::South);
+        assert_eq!(w.height, 2.0);
+        assert!((w.width - 6.0).abs() < 1e-9);
+        assert_eq!(w.sill_height, 0.2);
+        assert_eq!(w.left_offset, 0.5);
+    }
+
+    #[test]
+    fn test_window_area_with_dimensions() {
+        let w = WindowArea::with_dimensions(10.0, Orientation::East, 1.5, 4.0, 0.5, 1.0);
+        assert_eq!(w.area, 10.0);
+        assert_eq!(w.orientation, Orientation::East);
+        assert_eq!(w.height, 1.5);
+        assert_eq!(w.width, 4.0);
+        assert_eq!(w.sill_height, 0.5);
+        assert_eq!(w.left_offset, 1.0);
+    }
+
+    #[test]
+    fn test_window_area_partial_eq() {
+        let a = WindowArea::new(12.0, Orientation::South);
+        let b = WindowArea::new(12.0, Orientation::South);
+        let c = WindowArea::new(10.0, Orientation::South);
+        assert_eq!(a, b);
+        assert_ne!(a, c);
+    }
+
+    // --- GlassType ---
+
+    #[test]
+    fn test_glass_type_num_panes() {
+        assert_eq!(GlassType::SingleClear.num_panes(), 1);
+        assert_eq!(GlassType::DoubleClear.num_panes(), 2);
+        assert_eq!(GlassType::DoubleLowE.num_panes(), 2);
+        assert_eq!(GlassType::TripleClear.num_panes(), 3);
+        assert_eq!(GlassType::TripleLowE.num_panes(), 3);
+    }
+
+    #[test]
+    fn test_glass_type_emissivity() {
+        assert!((GlassType::SingleClear.emissivity() - 0.84).abs() < 1e-9);
+        assert!((GlassType::DoubleClear.emissivity() - 0.84).abs() < 1e-9);
+        assert!((GlassType::DoubleLowE.emissivity() - 0.10).abs() < 1e-9);
+        assert!((GlassType::TripleClear.emissivity() - 0.84).abs() < 1e-9);
+        assert!((GlassType::TripleLowE.emissivity() - 0.10).abs() < 1e-9);
+    }
+
+    // --- WindowSpec ---
+
+    #[test]
+    fn test_window_spec_new() {
+        let spec = WindowSpec::new(2.0, 0.7, 0.6, GlassType::DoubleClear);
+        assert_eq!(spec.u_value, 2.0);
+        assert_eq!(spec.shgc, 0.7);
+        assert_eq!(spec.normal_transmittance, 0.6);
+        assert_eq!(spec.glass_type, GlassType::DoubleClear);
+        assert!((spec.emissivity - 0.84).abs() < 1e-9);
+        assert!((spec.frame_u_value - 0.1).abs() < 1e-9);
+        assert!((spec.frame_area_fraction - 0.15).abs() < 1e-9);
+        assert_eq!(spec.frame_perimeter, 0.0);
+    }
+
+    #[test]
+    fn test_window_spec_double_clear_glass() {
+        let spec = WindowSpec::double_clear_glass();
+        assert!((spec.u_value - 2.10).abs() < 1e-9);
+        assert!((spec.shgc - 0.77).abs() < 1e-9);
+        assert!((spec.normal_transmittance - 0.703).abs() < 1e-9);
+    }
+
+    #[test]
+    fn test_window_spec_single_clear_glass() {
+        let spec = WindowSpec::single_clear_glass();
+        assert!((spec.u_value - 5.8).abs() < 1e-9);
+        assert!((spec.shgc - 0.86).abs() < 1e-9);
+        assert!((spec.normal_transmittance - 0.90).abs() < 1e-9);
+    }
+
+    #[test]
+    fn test_window_spec_double_low_e() {
+        let spec = WindowSpec::double_low_e();
+        assert!((spec.u_value - 2.0).abs() < 1e-9);
+        assert!((spec.shgc - 0.65).abs() < 1e-9);
+        assert!((spec.normal_transmittance - 0.70).abs() < 1e-9);
+    }
+
+    #[test]
+    fn test_window_spec_effective_u_value_no_frame() {
+        let mut spec = WindowSpec::double_clear_glass();
+        spec.frame_area_fraction = 0.0; // explicitly disable frame bridge
+        let u = spec.effective_u_value_with_frame(12.0, 0.2);
+        assert!((u - 2.10).abs() < 1e-9);
+    }
+
+    #[test]
+    fn test_window_spec_effective_u_value_with_frame() {
+        let mut spec = WindowSpec::double_clear_glass();
+        spec.frame_area_fraction = 0.15;
+        spec.frame_u_value = 0.1;
+        spec.frame_perimeter = 10.0; // 10m perimeter on 12m² window
+        let u = spec.effective_u_value_with_frame(12.0, 0.2);
+        // u = 2.10 + 0.1 + 0.2*10/12 = 2.10 + 0.1 + 0.167 = 2.367
+        assert!((u - 2.367).abs() < 0.001);
+    }
+
+    #[test]
+    fn test_window_spec_effective_u_value_zero_frame_fraction() {
+        let mut spec = WindowSpec::double_clear_glass();
+        spec.frame_area_fraction = 0.0;
+        spec.frame_perimeter = 100.0; // Should be ignored
+        let u = spec.effective_u_value_with_frame(12.0, 0.2);
+        assert!((u - 2.10).abs() < 1e-9);
+    }
+
+    // --- InternalLoads ---
+
+    #[test]
+    fn test_internal_loads_new() {
+        let loads = InternalLoads::new(1000.0, 0.6, 0.4);
+        assert_eq!(loads.total_load, 1000.0);
+        assert!((loads.radiative_fraction - 0.6).abs() < 0.01);
+        assert!((loads.convective_fraction - 0.4).abs() < 0.01);
+    }
+
+    #[test]
+    fn test_internal_loads_radiative_convective_load() {
+        let loads = InternalLoads::new(1000.0, 0.6, 0.4);
+        assert!((loads.radiative_load() - 600.0).abs() < 1e-9);
+        assert!((loads.convective_load() - 400.0).abs() < 1e-9);
+    }
+
+    #[test]
+    fn test_internal_loads_partial_eq() {
+        let a = InternalLoads::new(1000.0, 0.6, 0.4);
+        let b = InternalLoads::new(1000.0, 0.6, 0.4);
+        let c = InternalLoads::new(1000.0, 0.5, 0.5);
+        assert_eq!(a, b);
+        assert_ne!(a, c);
+    }
+
+    // --- HvacSchedule ---
+
+    #[test]
+    fn test_hvac_schedule_constant() {
+        let h = HvacSchedule::constant(20.0, 26.0);
+        assert_eq!(h.heating_setpoint, 20.0);
+        assert_eq!(h.cooling_setpoint, 26.0);
+        assert_eq!(h.operating_hours, (0, 24));
+        assert!(h.setback_setpoint.is_none());
+        assert!(h.is_enabled());
+        assert!(!h.is_free_floating());
+    }
+
+    #[test]
+    fn test_hvac_schedule_free_floating() {
+        let h = HvacSchedule::free_floating();
+        assert_eq!(h.heating_setpoint, 0.0);
+        assert_eq!(h.cooling_setpoint, 0.0);
+        assert_eq!(h.operating_hours, (0, 0));
+        assert_eq!(h.efficiency, 0.0);
+        assert!(!h.is_enabled());
+        assert!(h.is_free_floating());
+    }
+
+    #[test]
+    fn test_hvac_schedule_with_setback() {
+        let h = HvacSchedule::with_setback(20.0, 26.0, 15.0, 22, 6);
+        assert_eq!(h.heating_setpoint, 20.0);
+        assert_eq!(h.cooling_setpoint, 26.0);
+        assert_eq!(h.setback_setpoint, Some(15.0));
+        assert_eq!(h.setback_hours, Some((22, 6)));
+    }
+
+    #[test]
+    fn test_hvac_schedule_heating_setpoint_at_hour_outside_operating() {
+        let h = HvacSchedule::with_operating_hours(20.0, 26.0, 8, 18);
+        // Hour 7 is before operating hours
+        assert_eq!(h.heating_setpoint_at_hour(7), None);
+        // Hour 8 is during operating hours
+        assert_eq!(h.heating_setpoint_at_hour(8), Some(20.0));
+        // Hour 18 is at the end boundary
+        assert_eq!(h.heating_setpoint_at_hour(18), None);
+    }
+
+    #[test]
+    fn test_hvac_schedule_heating_setpoint_at_hour_wraparound() {
+        let h = HvacSchedule::with_operating_hours(20.0, 26.0, 18, 7);
+        // Wrapping: 18-7 means operating from 18 to 24 and 0 to 7
+        assert_eq!(h.heating_setpoint_at_hour(20), Some(20.0)); // within first part
+        assert_eq!(h.heating_setpoint_at_hour(3), Some(20.0));  // within wraparound part
+        assert_eq!(h.heating_setpoint_at_hour(10), None);        // outside operating hours
+    }
+
+    #[test]
+    fn test_hvac_schedule_heating_setpoint_at_hour_with_setback() {
+        let h = HvacSchedule::with_setback(20.0, 26.0, 15.0, 22, 6);
+        // During setback (22-6): should get setback value
+        assert_eq!(h.heating_setpoint_at_hour(23), Some(15.0));
+        assert_eq!(h.heating_setpoint_at_hour(3), Some(15.0));
+        // Outside setback: normal setpoint
+        assert_eq!(h.heating_setpoint_at_hour(10), Some(20.0));
+        assert_eq!(h.heating_setpoint_at_hour(15), Some(20.0));
+    }
+
+    #[test]
+    fn test_hvac_schedule_cooling_setpoint_at_hour() {
+        let h = HvacSchedule::with_operating_hours(20.0, 26.0, 8, 18);
+        assert_eq!(h.cooling_setpoint_at_hour(8), Some(26.0));
+        assert_eq!(h.cooling_setpoint_at_hour(12), Some(26.0));
+        assert_eq!(h.cooling_setpoint_at_hour(18), None);
+    }
+
+    #[test]
+    fn test_hvac_schedule_heating_setpoint_at_fractional_hour() {
+        let h = HvacSchedule::with_setback(20.0, 26.0, 15.0, 23, 7);
+        // Free-floating returns None
+        let ff = HvacSchedule::free_floating();
+        assert_eq!(ff.heating_setpoint_at_fractional_hour(12.0), None);
+        // No setback → occupied setpoint
+        let no_sb = HvacSchedule::constant(20.0, 26.0);
+        assert_eq!(no_sb.heating_setpoint_at_fractional_hour(12.5), Some(20.0));
+        // During wraparound setback (23-7), ramp from 7 to 9
+        let ramp = h.heating_setpoint_at_fractional_hour(8.0);
+        assert!(ramp.is_some());
+    }
+
+    // --- NightVentilation ---
+
+    #[test]
+    fn test_night_ventilation_new() {
+        let nv = NightVentilation::new(1000.0, 18, 7);
+        assert_eq!(nv.fan_capacity, 1000.0);
+        assert_eq!(nv.operating_hours, (18, 7));
+        assert!(!nv.adds_heat);
+    }
+
+    #[test]
+    fn test_night_ventilation_case_650() {
+        let nv = NightVentilation::case_650();
+        assert!((nv.fan_capacity - 1703.16).abs() < 0.01);
+        assert_eq!(nv.operating_hours, (18, 7));
+        assert!(!nv.adds_heat);
+    }
+
+    #[test]
+    fn test_night_ventilation_is_active_at_hour() {
+        let nv = NightVentilation::new(1000.0, 18, 7);
+        // Wrapping: 18-7 means active from 18 to 24 and 0 to 7
+        assert!(nv.is_active_at_hour(18));
+        assert!(nv.is_active_at_hour(22));
+        assert!(nv.is_active_at_hour(0));
+        assert!(nv.is_active_at_hour(6));
+        assert!(!nv.is_active_at_hour(10));
+        assert!(!nv.is_active_at_hour(15));
+    }
+
+    // --- BuildingType ---
+
+    #[test]
+    fn test_building_type_default() {
+        assert_eq!(BuildingType::default(), BuildingType::Residential);
+    }
+
+    #[test]
+    fn test_building_type_derived_traits() {
+        let a = BuildingType::Residential;
+        let b = BuildingType::Commercial;
+        assert_eq!(a, a);
+        assert_ne!(a, b);
+    }
+
+    // --- GeometrySpec ---
+
+    #[test]
+    fn test_geometry_spec_new() {
+        let g = GeometrySpec::new(8.0, 6.0, 2.7);
+        assert_eq!(g.width, 8.0);
+        assert_eq!(g.depth, 6.0);
+        assert_eq!(g.height, 2.7);
+        assert!(g.name.is_none());
+    }
+
+    #[test]
+    fn test_geometry_spec_area_methods() {
+        let g = GeometrySpec::new(8.0, 6.0, 2.7);
+        assert!((g.floor_area() - 48.0).abs() < 1e-9);
+        assert!((g.volume() - 129.6).abs() < 1e-9);
+        assert!((g.wall_area() - 75.6).abs() < 1e-9); // 2*(8+6)*2.7 = 75.6
+        assert!((g.roof_area() - 48.0).abs() < 1e-9);
+        assert!((g.total_opaque_area() - (75.6 + 48.0 + 48.0)).abs() < 1e-9);
+    }
+
+    #[test]
+    fn test_geometry_spec_debug() {
+        let g = GeometrySpec::new(8.0, 6.0, 2.7);
+        let debug = format!("{:?}", g);
+        assert!(debug.contains("width"));
+        assert!(debug.contains("8"));
+    }
+
+    // --- ConductanceReferences ---
+
+    #[test]
+    fn test_conductance_references_partial_eq() {
+        let a = ConductanceReferences {
+            h_tr_em: 1.0,
+            h_tr_w: 2.0,
+            h_tr_ms: 3.0,
+            h_tr_is: 4.0,
+            h_ve: 5.0,
+        };
+        let b = ConductanceReferences {
+            h_tr_em: 1.0,
+            h_tr_w: 2.0,
+            h_tr_ms: 3.0,
+            h_tr_is: 4.0,
+            h_ve: 5.0,
+        };
+        let c = ConductanceReferences {
+            h_tr_em: 1.0,
+            h_tr_w: 2.0,
+            h_tr_ms: 3.0,
+            h_tr_is: 4.0,
+            h_ve: 6.0, // different
+        };
+        assert_eq!(a, b);
+        assert_ne!(a, c);
+    }
+
+    #[test]
+    fn test_conductance_references_debug() {
+        let cr = ConductanceReferences {
+            h_tr_em: 1.0,
+            h_tr_w: 2.0,
+            h_tr_ms: 3.0,
+            h_tr_is: 4.0,
+            h_ve: 5.0,
+        };
+        let debug = format!("{:?}", cr);
+        assert!(debug.contains("h_tr_em"));
+        assert!(debug.contains("1"));
+    }
+}

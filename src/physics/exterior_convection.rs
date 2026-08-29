@@ -154,6 +154,7 @@ pub fn h_c_ext_wind_dependent(
 /// This is the all-in-one helper used by the 5R1C production path
 /// (`step_physics_5r1c`) where wind-speed data is read from
 /// `ThermalModelData::weather` at the standard 10 m height.
+#[allow(dead_code)]
 pub fn h_c_ext_from_10m(
     surface_direction: ExteriorSurfaceDirection,
     v_wind_at_10m: f64,
@@ -200,6 +201,7 @@ pub fn wind_at_building_height_from_10m(v_wind_at_10m: f64, building_height_m: f
 /// Returns `(h_c_windward, h_c_leeward)` in W/m²·K. Used by the
 /// issue #2891 regression test to compare the FD-solver pathway
 /// against the 5R1C sol-air pathway.
+#[allow(dead_code)]
 pub fn reference_exterior_coefficients(v_wind_at_building_height: f64) -> (f64, f64) {
     (
         h_c_ext_wind_dependent(
@@ -220,6 +222,7 @@ pub fn reference_exterior_coefficients(v_wind_at_building_height: f64) -> (f64, 
 /// Returns the absolute relative difference `|h_c − EXTERIOR_FILM_COEFF| /
 /// EXTERIOR_FILM_COEFF`, so callers can assert
 /// `within_exterior_film_tolerance(...) <= 0.05` in their own tests.
+#[allow(dead_code)]
 pub fn within_exterior_film_tolerance(v_wind_at_building_height: f64) -> f64 {
     let h_c = h_c_ext_wind_dependent(
         ExteriorSurfaceDirection::VerticalWallWindward,

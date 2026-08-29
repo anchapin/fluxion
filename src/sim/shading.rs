@@ -684,4 +684,349 @@ mod tests {
             shaded_no_veg
         );
     }
+
+    // --- Derived trait coverage ---
+
+    #[test]
+    fn test_overhang_partial_eq() {
+        let a = Overhang { depth: 1.0, distance_above: 0.0, extension: 10.0 };
+        let b = Overhang { depth: 1.0, distance_above: 0.0, extension: 10.0 };
+        let c = Overhang { depth: 2.0, distance_above: 0.0, extension: 10.0 };
+        assert_eq!(a, b);
+        assert_ne!(a, c);
+    }
+
+    #[test]
+    fn test_overhang_copy() {
+        use std::mem::size_of;
+        assert_eq!(size_of::<Overhang>(), 24);
+    }
+
+    #[test]
+    fn test_overhang_debug() {
+        let oh = Overhang { depth: 1.0, distance_above: 0.0, extension: 10.0 };
+        let debug = format!("{:?}", oh);
+        assert!(debug.contains("depth"));
+        assert!(debug.contains("1"));
+    }
+
+    #[test]
+    fn test_shade_fin_partial_eq() {
+        let fin = ShadeFin {
+            depth: 1.0,
+            distance_from_edge: 0.5,
+            side: Side::Left,
+            height: 2.0,
+        };
+        let same = ShadeFin {
+            depth: 1.0,
+            distance_from_edge: 0.5,
+            side: Side::Left,
+            height: 2.0,
+        };
+        let different = ShadeFin {
+            depth: 1.0,
+            distance_from_edge: 0.5,
+            side: Side::Right,
+            height: 2.0,
+        };
+        assert_eq!(fin, same);
+        assert_ne!(fin, different);
+    }
+
+    #[test]
+    fn test_shade_fin_copy() {
+        use std::mem::size_of;
+        assert_eq!(size_of::<ShadeFin>(), 32);
+    }
+
+    #[test]
+    fn test_shade_fin_debug() {
+        let fin = ShadeFin {
+            depth: 1.0,
+            distance_from_edge: 0.0,
+            side: Side::Right,
+            height: 2.0,
+        };
+        let debug = format!("{:?}", fin);
+        assert!(debug.contains("depth"));
+        assert!(debug.contains("Right"));
+    }
+
+    #[test]
+    fn test_side_equality() {
+        assert_eq!(Side::Left, Side::Left);
+        assert_ne!(Side::Left, Side::Right);
+    }
+
+    #[test]
+    fn test_side_debug() {
+        assert!(format!("{:?}", Side::Left).contains("Left"));
+        assert!(format!("{:?}", Side::Right).contains("Right"));
+    }
+
+    #[test]
+    fn test_local_solar_position_partial_eq() {
+        let a = LocalSolarPosition { altitude: 0.5, relative_azimuth: 0.3 };
+        let b = LocalSolarPosition { altitude: 0.5, relative_azimuth: 0.3 };
+        let c = LocalSolarPosition { altitude: 0.5, relative_azimuth: 0.4 };
+        assert_eq!(a, b);
+        assert_ne!(a, c);
+    }
+
+    #[test]
+    fn test_local_solar_position_copy() {
+        use std::mem::size_of;
+        assert_eq!(size_of::<LocalSolarPosition>(), 16);
+    }
+
+    #[test]
+    fn test_local_solar_position_debug() {
+        let pos = LocalSolarPosition { altitude: 0.5, relative_azimuth: 0.3 };
+        let debug = format!("{:?}", pos);
+        assert!(debug.contains("altitude"));
+    }
+
+    #[test]
+    fn test_transmittance_schedule_debug() {
+        let ts = TransmittanceSchedule::constant(0.5);
+        let debug = format!("{:?}", ts);
+        assert!(debug.contains("TransmittanceSchedule"));
+    }
+
+    // --- Edge cases ---
+
+    #[test]
+    fn test_sun_below_horizon_returns_one() {
+        // altitude <= 0.0 should return 1.0 (fully shaded / no contribution)
+        let window = WindowArea::with_dimensions(12.0, Orientation::South, 2.0, 6.0, 0.2, 0.5);
+        let overhang = Overhang { depth: 1.0, distance_above: 0.0, extension: 10.0 };
+
+        let solar_below = LocalSolarPosition {
+            altitude: 0.0,
+            relative_azimuth: 0.0,
+        };
+        let solar_negative = LocalSolarPosition {
+            altitude: -0.1,
+            relative_azimuth: 0.0,
+        };
+
+        assert_eq!(
+            calculate_shaded_fraction(&window, Some(&overhang), &[], &solar_below, None),
+            1.0
+        );
+        assert_eq!(
+            calculate_shaded_fraction(&window, Some(&overhang), &[], &solar_negative, None),
+            1.0
+        );
+    }
+
+    #[test]
+    fn test_sun_behind_surface_overhang_returns_zero() {
+        // Sun at 90° to side: overhang and fin both return 0
+        let window = WindowArea::with_dimensions(12.0, Orientation::South, 2.0, 6.0, 0.2, 0.5);
+        let overhang = Overhang { depth: 1.0, distance_above: 0.0, extension: 10.0 };
+        let solar = LocalSolarPosition {
+            altitude: PI / 4.0,
+            relative_azimuth: PI / 2.0, // exactly at side
+        };
+        let shaded = calculate_shaded_fraction(&window, Some(&overhang), &[], &solar, None);
+        assert_eq!(shaded, 0.0);
+
+        let solar_wide = LocalSolarPosition {
+            altitude: PI / 4.0,
+            relative_azimuth: PI * 0.6, // past side
+        };
+        let shaded_wide = calculate_shaded_fraction(&window, Some(&overhang), &[], &solar_wide, None);
+        assert_eq!(shaded_wide, 0.0);
+    }
+
+    #[test]
+    fn test_sun_behind_surface_fin_returns_zero() {
+        let window = WindowArea::with_dimensions(12.0, Orientation::South, 2.0, 6.0, 0.2, 0.5);
+        let fin = ShadeFin {
+            depth: 1.0,
+            distance_from_edge: 0.0,
+            side: Side::Right,
+            height: 2.0,
+        };
+        // Sun to the left: Right fin shouldn't shade
+        let solar_left = LocalSolarPosition {
+            altitude: PI / 4.0,
+            relative_azimuth: -PI / 4.0,
+        };
+        let shaded_left = calculate_shaded_fraction(&window, None, &[fin], &solar_left, None);
+        assert_eq!(shaded_left, 0.0);
+    }
+
+    #[test]
+    fn test_zero_depth_overhang_returns_zero() {
+        let window = WindowArea::with_dimensions(12.0, Orientation::South, 2.0, 6.0, 0.2, 0.5);
+        let overhang = Overhang { depth: 0.0, distance_above: 0.0, extension: 10.0 };
+        let solar = LocalSolarPosition { altitude: PI / 4.0, relative_azimuth: 0.0 };
+        let shaded = calculate_shaded_fraction(&window, Some(&overhang), &[], &solar, None);
+        assert_eq!(shaded, 0.0);
+    }
+
+    #[test]
+    fn test_zero_depth_fin_returns_zero() {
+        let window = WindowArea::with_dimensions(12.0, Orientation::South, 2.0, 6.0, 0.2, 0.5);
+        let fin = ShadeFin {
+            depth: 0.0,
+            distance_from_edge: 0.0,
+            side: Side::Right,
+            height: 2.0,
+        };
+        let solar = LocalSolarPosition { altitude: PI / 4.0, relative_azimuth: PI / 4.0 };
+        let shaded = calculate_shaded_fraction(&window, None, &[fin], &solar, None);
+        assert_eq!(shaded, 0.0);
+    }
+
+    #[test]
+    fn test_no_shading_devices_returns_zero() {
+        let window = WindowArea::with_dimensions(12.0, Orientation::South, 2.0, 6.0, 0.2, 0.5);
+        let solar = LocalSolarPosition { altitude: PI / 4.0, relative_azimuth: 0.0 };
+        let shaded = calculate_shaded_fraction(&window, None, &[], &solar, None);
+        assert_eq!(shaded, 0.0);
+    }
+
+    // --- TransmittanceSchedule edge cases ---
+
+    #[test]
+    fn test_transmittance_schedule_at_hour_clamp() {
+        let ts = TransmittanceSchedule::constant(0.5);
+        assert_eq!(ts.at_hour(0), 0.5);
+        assert_eq!(ts.at_hour(23), 0.5);
+        // Wraps
+        assert_eq!(ts.at_hour(24), 0.5);
+        assert_eq!(ts.at_hour(48), 0.5);
+    }
+
+    #[test]
+    fn test_transmittance_schedule_clamp_negative_to_zero() {
+        let ts = TransmittanceSchedule::constant(-0.5);
+        for hour in 0..24 {
+            assert!(
+                ts.at_hour(hour) >= 0.0,
+                "Negative input should clamp to 0, got {} at hour {}",
+                ts.at_hour(hour),
+                hour
+            );
+        }
+    }
+
+    #[test]
+    fn test_transmittance_schedule_clamp_oversize_to_one() {
+        let ts = TransmittanceSchedule::constant(1.5);
+        for hour in 0..24 {
+            assert!(
+                ts.at_hour(hour) <= 1.0,
+                "Oversize input should clamp to 1, got {} at hour {}",
+                ts.at_hour(hour),
+                hour
+            );
+        }
+    }
+
+    // --- TransmittanceSchedule seasonal behavior ---
+
+    #[test]
+    fn test_transmittance_schedule_at_timestep_winter() {
+        // doy < 90 (Jan-Mar): winter, bare branches → factor=1.0
+        let ts = TransmittanceSchedule::constant(0.5);
+        let winter = ts.at_timestep(12, 45);
+        assert!(
+            (winter - 0.5).abs() < 1e-9,
+            "Winter (doy=45) should return base 0.5, got {}",
+            winter
+        );
+    }
+
+    #[test]
+    fn test_transmittance_schedule_at_timestep_spring_leaf_out() {
+        // 90 <= doy < 150: spring transition
+        let ts = TransmittanceSchedule::constant(0.5);
+        let spring = ts.at_timestep(12, 120);
+        // doy 120: t = (120-90)/60 = 0.5, factor = 1.0 - 0.9*0.5 = 0.55
+        assert!(
+            (spring - 0.55).abs() < 1e-9,
+            "Spring (doy=120) factor should be 0.55, got {}",
+            spring
+        );
+    }
+
+    #[test]
+    fn test_transmittance_schedule_at_timestep_summer() {
+        // 150 <= doy < 240: full leaf, factor = 0.1
+        let ts = TransmittanceSchedule::constant(0.5);
+        let summer = ts.at_timestep(12, 180);
+        assert!(
+            (summer - 0.1).abs() < 1e-9,
+            "Summer (doy=180) factor should be 0.1, got {}",
+            summer
+        );
+    }
+
+    #[test]
+    fn test_transmittance_schedule_at_timestep_fall() {
+        // 240 <= doy < 300: fall transition
+        let ts = TransmittanceSchedule::constant(0.5);
+        let fall = ts.at_timestep(12, 270);
+        // doy 270: t = (270-240)/60 = 0.5, factor = 0.1 + 0.9*0.5 = 0.55
+        assert!(
+            (fall - 0.55).abs() < 1e-9,
+            "Fall (doy=270) factor should be 0.55, got {}",
+            fall
+        );
+    }
+
+    #[test]
+    fn test_transmittance_schedule_at_timestep_late_fall() {
+        // doy >= 300: back to bare
+        let ts = TransmittanceSchedule::constant(0.5);
+        let late_fall = ts.at_timestep(12, 350);
+        assert!(
+            (late_fall - 0.5).abs() < 1e-9,
+            "Late fall (doy=350) should return base 0.5, got {}",
+            late_fall
+        );
+    }
+
+    // --- Overhang geometry edge cases ---
+
+    #[test]
+    fn test_overhang_fin_side_correctness() {
+        // Sun at 45° to the RIGHT: only right fin shades, left fin does not
+        let window = WindowArea::with_dimensions(12.0, Orientation::South, 2.0, 6.0, 0.2, 0.5);
+        let fin_right = ShadeFin {
+            depth: 2.0,
+            distance_from_edge: 0.0,
+            side: Side::Right,
+            height: 2.0,
+        };
+        let fin_left = ShadeFin {
+            depth: 2.0,
+            distance_from_edge: 0.0,
+            side: Side::Left,
+            height: 2.0,
+        };
+
+        let solar_right = LocalSolarPosition {
+            altitude: PI / 4.0,
+            relative_azimuth: PI / 4.0, // sun to the right
+        };
+
+        let shaded_right = calculate_shaded_fraction(&window, None, &[fin_right], &solar_right, None);
+        let shaded_left = calculate_shaded_fraction(&window, None, &[fin_left], &solar_right, None);
+
+        assert!(
+            shaded_right > 0.0,
+            "Right fin should shade when sun is to the right"
+        );
+        assert_eq!(
+            shaded_left, 0.0,
+            "Left fin should not shade when sun is to the right"
+        );
+    }
 }
+
