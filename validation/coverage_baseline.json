@@ -26,7 +26,7 @@
       "lines_found": 613,
       "branches_hit": 33,
       "branches_found": 54,
-      "min_branch_floor": 60.0,
+      "min_branch_floor": 61.0,
       "v1_3_target_branch": 75.0
     },
     "weather_ventilation": {
@@ -36,7 +36,7 @@
       "lines_found": 449,
       "branches_hit": 23,
       "branches_found": 26,
-      "min_branch_floor": 85.0,
+      "min_branch_floor": 88.0,
       "v1_3_target_branch": 75.0
     },
     "conduction_zone": {
@@ -46,7 +46,7 @@
       "lines_found": 20656,
       "branches_hit": 1123,
       "branches_found": 1737,
-      "min_branch_floor": 63.0,
+      "min_branch_floor": 65.0,
       "v1_3_target_branch": 75.0
     },
     "hvac_zone": {
@@ -56,7 +56,7 @@
       "lines_found": 9186,
       "branches_hit": 456,
       "branches_found": 668,
-      "min_branch_floor": 66.0,
+      "min_branch_floor": 68.0,
       "v1_3_target_branch": 75.0
     }
   }
