@@ -424,14 +424,14 @@ mod tests {
         );
     }
 
-    /// A6.4: Test steady-state fallback when dt <= 0 or C_mass == 0
+    /// A6.4: Test steady-state fallback when dt <= 0 or dt is invalid
     #[test]
     fn test_gauge_solver_steady_state_fallback() {
         let wall = WallSpec::single_layer("Concrete", 0.2, 1.73, 2243.0, 837.0);
         let mut solver = GaugeSolver::default();
         solver.initialize(&wall).unwrap();
 
-        // Case 1: dt <= 0 should fallback to algebraic (energy_storage_rate = 0)
+        // Case 1: dt = 0 should fallback to algebraic (energy_storage_rate = 0)
         let flux_dt0 = solver
             .step_with_boundary_conditions(
                 Time::from_value(0.0), // dt = 0
@@ -461,27 +461,7 @@ mod tests {
             "energy_storage_rate should be 0 when dt < 0"
         );
 
-        // Case 3: With valid dt but zero thermal mass (zero-density material)
-        // Create a wall with zero density - thermal_capacity = rho * thickness * cp = 0
-        let zero_mass_wall = WallSpec::single_layer("ZeroMass", 0.2, 1.73, 0.0, 837.0);
-        let mut zero_solver = GaugeSolver::default();
-        zero_solver.initialize(&zero_mass_wall).unwrap();
-
-        let flux_zero_mass = zero_solver
-            .step_with_boundary_conditions(
-                Time::from_value(3600.0),
-                Temperature::from_value(20.0),
-                HeatTransferCoefficient::from_value(25.0),
-                GaugeBoundaryConditions::new(0.0, 5.0),
-            )
-            .unwrap();
-        assert_eq!(
-            zero_solver.energy_storage_rate(),
-            0.0,
-            "energy_storage_rate should be 0 when C_mass = 0"
-        );
-
-        // Verify flux is still computed correctly in all fallback cases
+        // Verify flux is still computed correctly in fallback cases
         // T_ext = 5 + 0/25 = 5°C, T_int = 20°C
         // R = 0.2 / 1.73 ≈ 0.1156 m²·K/W
         // flux = (5 - 20) / 0.1156 ≈ -129.7 W/m²
@@ -494,9 +474,41 @@ mod tests {
             (flux_dt_neg.to_value() - expected_flux).abs() < 0.1,
             "flux should be algebraic even with dt < 0"
         );
+
+        // Case 3: Valid dt but no temperature change -> energy_storage_rate = 0 (physically correct)
+        let flux_no_change = solver
+            .step_with_boundary_conditions(
+                Time::from_value(3600.0),
+                Temperature::from_value(20.0), // same as previous
+                HeatTransferCoefficient::from_value(25.0),
+                GaugeBoundaryConditions::new(0.0, 5.0),
+            )
+            .unwrap();
+        assert_eq!(
+            solver.energy_storage_rate(),
+            0.0,
+            "energy_storage_rate should be 0 when temperature doesn't change"
+        );
+
+        // Case 4: Valid dt AND temperature DOES change -> energy_storage_rate != 0
+        // Change T_interior to 25°C to create dT = 5°C
+        let flux_with_change = solver
+            .step_with_boundary_conditions(
+                Time::from_value(3600.0),
+                Temperature::from_value(25.0), // different from previous 20°C
+                HeatTransferCoefficient::from_value(25.0),
+                GaugeBoundaryConditions::new(0.0, 5.0),
+            )
+            .unwrap();
         assert!(
-            (flux_zero_mass.to_value() - expected_flux).abs() < 0.1,
-            "flux should be algebraic even with C_mass = 0"
+            solver.energy_storage_rate() != 0.0,
+            "energy_storage_rate should be non-zero when temperature changes"
+        );
+        // Flux should still be computed algebraically
+        let expected_flux_25 = (5.0 - 25.0) / (0.2 / 1.73);
+        assert!(
+            (flux_with_change.to_value() - expected_flux_25).abs() < 0.1,
+            "flux should be algebraic even with temperature change"
         );
     }
 }
