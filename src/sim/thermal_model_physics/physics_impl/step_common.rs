@@ -7,6 +7,7 @@
 use crate::physics::five_r1c_solver::surface_time_constant_from_conductances;
 use crate::sim::thermal_model_scratch::PhysicsScratch5r1c;
 
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn step_wall_surface_ode(
     dt: f64,
     h_tr_ms: &[f64],
