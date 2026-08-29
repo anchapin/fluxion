@@ -58,7 +58,7 @@ jobs:
     timeout-minutes: 15
 
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
 
       - name: Install system dependencies
         uses: ./.github/actions/install-system-deps
@@ -78,7 +78,7 @@ jobs:
       # `--all-features` cache from `bench-all-features` cannot poison
       # the default-features cache and vice versa.
       - name: Cache cargo (default features)
-        uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32  # v2
+        uses: Swatinem/rust-cache@f0d9c3887740aee45f6153b24b3a6b815192ec16  # v2
         with:
           shared-key: perf-dashboard-default
           cache-on-failure: true
@@ -155,7 +155,7 @@ jobs:
           EOF
 
       - name: Upload benchmark artifacts (default features)
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02  # v4
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
         with:
           name: bench-default-results-${{ github.run_id }}
           path: |
@@ -180,7 +180,7 @@ jobs:
     needs: bench-default
 
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
 
       - name: Install system dependencies
         uses: ./.github/actions/install-system-deps
@@ -196,7 +196,7 @@ jobs:
           command: rustup toolchain install stable --profile default
 
       - name: Cache cargo (default features)
-        uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32  # v2
+        uses: Swatinem/rust-cache@f0d9c3887740aee45f6153b24b3a6b815192ec16  # v2
         with:
           shared-key: perf-dashboard-default
           cache-on-failure: true
@@ -267,7 +267,7 @@ jobs:
           EOF
 
       - name: Upload published-crate artifacts
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02  # v4
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
         with:
           name: published-crate-bench-results-${{ github.run_id }}
           path: |
@@ -291,7 +291,7 @@ jobs:
     timeout-minutes: 60
 
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
 
       - name: Install system dependencies
         uses: ./.github/actions/install-system-deps
@@ -309,7 +309,7 @@ jobs:
       # Separate cache namespace so the heavy `--all-features` build does
       # not evict or get evicted by the default-features cache.
       - name: Cache cargo (all features)
-        uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32  # v2
+        uses: Swatinem/rust-cache@f0d9c3887740aee45f6153b24b3a6b815192ec16  # v2
         with:
           shared-key: perf-dashboard-all-features
           cache-on-failure: true
@@ -414,7 +414,7 @@ jobs:
           EOF
 
       - name: Upload benchmark artifacts (all features)
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02  # v4
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
         with:
           name: bench-all-features-results-${{ github.run_id }}
           path: |
@@ -441,17 +441,17 @@ jobs:
     if: github.event_name == 'pull_request' || (github.event_name == 'push' && github.ref == 'refs/heads/main')
 
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
 
       - name: Download current benchmark data (default features)
-        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093  # v4
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c  # v8.0.1
         with:
           name: bench-default-results-${{ github.run_id }}
           path: current_results
         continue-on-error: true
 
       - name: Download previous benchmark data (default features, from main)
-        uses: dawidd6/action-download-artifact@bf251b5aa9c2f7eeb574a96ee720e24f801b7c11  # v6
+        uses: dawidd6/action-download-artifact@d63b86af1b34672e53c440b1b83979861906bad7  # v24
         with:
           workflow: performance_dashboard.yml
           name: benchmark-results
@@ -637,7 +637,7 @@ jobs:
     if: github.event_name == 'pull_request' || (github.event_name == 'push' && github.ref == 'refs/heads/main') || github.event_name == 'workflow_dispatch'
 
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
 
       - name: Install system dependencies
         uses: ./.github/actions/install-system-deps
@@ -653,7 +653,7 @@ jobs:
           command: rustup toolchain install stable --profile default
 
       - name: Cache cargo (absolute-perf-gate)
-        uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32  # v2
+        uses: Swatinem/rust-cache@f0d9c3887740aee45f6153b24b3a6b815192ec16  # v2
         with:
           shared-key: perf-dashboard-default
           cache-on-failure: true
@@ -761,7 +761,7 @@ jobs:
 
       - name: Upload results
         if: always()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02  # v4
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
         with:
           name: absolute-perf-gate-${{ github.run_id }}
           path: |
@@ -808,7 +808,7 @@ jobs:
     if: github.event_name == 'pull_request' || (github.event_name == 'push' && github.ref == 'refs/heads/main') || github.event_name == 'workflow_dispatch'
 
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
 
       - name: Install system dependencies
         uses: ./.github/actions/install-system-deps
@@ -824,7 +824,7 @@ jobs:
           command: rustup toolchain install stable --profile default
 
       - name: Cache cargo (multi-zone-perf-gate)
-        uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32  # v2
+        uses: Swatinem/rust-cache@f0d9c3887740aee45f6153b24b3a6b815192ec16  # v2
         with:
           shared-key: perf-dashboard-default
           cache-on-failure: true
@@ -945,7 +945,7 @@ jobs:
 
       - name: Upload results
         if: always()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02  # v4
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
         with:
           name: multi-zone-perf-gate-${{ github.run_id }}
           path: |
@@ -994,7 +994,7 @@ jobs:
     if: github.event_name == 'pull_request' || (github.event_name == 'push' && github.ref == 'refs/heads/main') || github.event_name == 'workflow_dispatch'
 
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
 
       - name: Install system dependencies
         uses: ./.github/actions/install-system-deps
@@ -1010,7 +1010,7 @@ jobs:
           command: rustup toolchain install stable --profile default
 
       - name: Cache cargo (hybrid-perf-gate)
-        uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32  # v2
+        uses: Swatinem/rust-cache@f0d9c3887740aee45f6153b24b3a6b815192ec16  # v2
         with:
           shared-key: perf-dashboard-default
           cache-on-failure: true
@@ -1161,7 +1161,7 @@ jobs:
 
       - name: Upload results
         if: always()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02  # v4
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
         with:
           name: hybrid-perf-gate-${{ github.run_id }}
           path: |
@@ -1220,7 +1220,7 @@ jobs:
     if: github.event_name == 'pull_request' || (github.event_name == 'push' && github.ref == 'refs/heads/main') || github.event_name == 'workflow_dispatch'
 
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
 
       - name: Install system dependencies
         uses: ./.github/actions/install-system-deps
@@ -1242,7 +1242,7 @@ jobs:
       # dependency tree (libonnxruntime + protobuf + ureq) that is not
       # needed by those jobs.
       - name: Cache cargo (cold-start-gate, ort feature)
-        uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32  # v2
+        uses: Swatinem/rust-cache@f0d9c3887740aee45f6153b24b3a6b815192ec16  # v2
         with:
           shared-key: perf-dashboard-cold-start-ort
           cache-on-failure: true
@@ -1394,7 +1394,7 @@ jobs:
 
       - name: Upload results
         if: always()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02  # v4
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
         with:
           name: cold-start-gate-${{ github.run_id }}
           path: |
@@ -1424,7 +1424,7 @@ jobs:
     if: github.event_name == 'pull_request' || (github.event_name == 'push' && github.ref == 'refs/heads/main') || github.event_name == 'workflow_dispatch'
 
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
 
       - name: Install system dependencies
         uses: ./.github/actions/install-system-deps
@@ -1440,7 +1440,7 @@ jobs:
           command: rustup toolchain install stable --profile default
 
       - name: Cache cargo (dhat)
-        uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32  # v2
+        uses: Swatinem/rust-cache@f0d9c3887740aee45f6153b24b3a6b815192ec16  # v2
         with:
           shared-key: perf-dhat-alloc-budget
           cache-on-failure: true
@@ -1478,20 +1478,20 @@ jobs:
       contents: write
 
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
 
       - name: Setup Pages
-        uses: actions/configure-pages@1f0c5cde4bc74cd7e1254d0cb4de8d49e9068c7d  # v4
+        uses: actions/configure-pages@45bfe0192ca1faeb007ade9deae92b16b8254a0d  # v6.0.0
 
       - name: Download default-feature benchmark artifacts
-        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093  # v4
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c  # v8.0.1
         with:
           path: default_benchmark_data
           pattern: bench-default-results-*
           merge-multiple: true
 
       - name: Download published-crate benchmark artifacts
-        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093  # v4
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c  # v8.0.1
         with:
           path: published_crate_data
           pattern: published-crate-bench-results-*
@@ -1675,7 +1675,7 @@ jobs:
       # regression-check can download the previous baseline via
       # dawidd6/action-download-artifact with name: benchmark-results.
       - name: Upload latest benchmark
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02  # v4
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
         with:
           name: benchmark-results
           path: |

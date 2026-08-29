@@ -28,7 +28,7 @@ jobs:
     runs-on: ubuntu-latest
     name: MSRV Check (Issue #2934)
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
 
       # System build deps (libssl-dev, pkg-config, fontconfig, libglib2.0-dev,
       # libgtk-3-dev). Matches the apt-install list in
@@ -62,7 +62,7 @@ jobs:
           toolchain: 1.89
 
       - name: Cache cargo registry & target
-        uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32  # v2
+        uses: Swatinem/rust-cache@f0d9c3887740aee45f6153b24b3a6b815192ec16  # v2
         with:
           workspaces: |
             .
