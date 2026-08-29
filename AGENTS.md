@@ -69,3 +69,5 @@ Branch from and target `develop`; `main` accepts release PRs only from `develop`
 
 `release_gates.yaml -> ci.required_checks` is canonical. Required names include `(GH)` suffixes; synchronize that file before renaming workflow jobs. In the GH-probe/Hetzner-overflow pattern, a cancelled probe is the fallback trigger, not the final failure; judge the `(GH)` or overflow job result.
 
+For workflow-only PRs (touching only `scripts/`, `.github/workflows/`, or `docs/`), use `release_gates.yaml -> ci.required_checks_workflow_only` (19 checks). Path-filtered checks (`Docs Hygiene Gate`, `Architecture Drift Detection`, `Crate Size Gate`, `MSRV Check`) cannot run on such PRs by design. See `docs/ci/branch-protection-strict-mode.md` for the full rationale (Issue #3142).
+
