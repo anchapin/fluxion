@@ -185,14 +185,16 @@ impl GaugeSolver {
         // energy_storage_rate = C_mass * (T_new - T_old) / dt [W/K]
         // This represents the rate of heat storage in the wall material
         let dt_seconds = timestep.to_value();
-        if dt_seconds > 0.0 && self.C_mass > 0.0 {
+
+        // A6.4: Steady-state fallback guard
+        // If dt <= 0 or C_mass == 0, fall back to algebraic flux (no thermal storage)
+        if dt_seconds <= 0.0 || self.C_mass <= 0.0 {
+            self.energy_storage_rate = 0.0;
+        } else {
             let T_int_val = T_interior.to_value();
             let dT = T_int_val - self.prev_T_interior;
             self.energy_storage_rate = self.C_mass * dT / dt_seconds;
             self.prev_T_interior = T_int_val;
-        } else {
-            // Steady-state fallback: no thermal energy storage
-            self.energy_storage_rate = 0.0;
         }
 
         Ok(HeatFlux::from_value(self.q_flux))
@@ -419,6 +421,82 @@ mod tests {
         assert!(
             flux3.to_value().abs() > flux1.to_value().abs(),
             "flux magnitude should increase with larger temperature difference"
+        );
+    }
+
+    /// A6.4: Test steady-state fallback when dt <= 0 or C_mass == 0
+    #[test]
+    fn test_gauge_solver_steady_state_fallback() {
+        let wall = WallSpec::single_layer("Concrete", 0.2, 1.73, 2243.0, 837.0);
+        let mut solver = GaugeSolver::default();
+        solver.initialize(&wall).unwrap();
+
+        // Case 1: dt <= 0 should fallback to algebraic (energy_storage_rate = 0)
+        let flux_dt0 = solver
+            .step_with_boundary_conditions(
+                Time::from_value(0.0), // dt = 0
+                Temperature::from_value(20.0),
+                HeatTransferCoefficient::from_value(25.0),
+                GaugeBoundaryConditions::new(0.0, 5.0),
+            )
+            .unwrap();
+        assert_eq!(
+            solver.energy_storage_rate(),
+            0.0,
+            "energy_storage_rate should be 0 when dt = 0"
+        );
+
+        // Case 2: dt < 0 should also fallback
+        let flux_dt_neg = solver
+            .step_with_boundary_conditions(
+                Time::from_value(-3600.0), // dt = -1h (invalid)
+                Temperature::from_value(20.0),
+                HeatTransferCoefficient::from_value(25.0),
+                GaugeBoundaryConditions::new(0.0, 5.0),
+            )
+            .unwrap();
+        assert_eq!(
+            solver.energy_storage_rate(),
+            0.0,
+            "energy_storage_rate should be 0 when dt < 0"
+        );
+
+        // Case 3: With valid dt but zero thermal mass (zero-density material)
+        // Create a wall with zero density - thermal_capacity = rho * thickness * cp = 0
+        let zero_mass_wall = WallSpec::single_layer("ZeroMass", 0.2, 1.73, 0.0, 837.0);
+        let mut zero_solver = GaugeSolver::default();
+        zero_solver.initialize(&zero_mass_wall).unwrap();
+
+        let flux_zero_mass = zero_solver
+            .step_with_boundary_conditions(
+                Time::from_value(3600.0),
+                Temperature::from_value(20.0),
+                HeatTransferCoefficient::from_value(25.0),
+                GaugeBoundaryConditions::new(0.0, 5.0),
+            )
+            .unwrap();
+        assert_eq!(
+            zero_solver.energy_storage_rate(),
+            0.0,
+            "energy_storage_rate should be 0 when C_mass = 0"
+        );
+
+        // Verify flux is still computed correctly in all fallback cases
+        // T_ext = 5 + 0/25 = 5°C, T_int = 20°C
+        // R = 0.2 / 1.73 ≈ 0.1156 m²·K/W
+        // flux = (5 - 20) / 0.1156 ≈ -129.7 W/m²
+        let expected_flux = (5.0 - 20.0) / (0.2 / 1.73);
+        assert!(
+            (flux_dt0.to_value() - expected_flux).abs() < 0.1,
+            "flux should be algebraic even with dt = 0"
+        );
+        assert!(
+            (flux_dt_neg.to_value() - expected_flux).abs() < 0.1,
+            "flux should be algebraic even with dt < 0"
+        );
+        assert!(
+            (flux_zero_mass.to_value() - expected_flux).abs() < 0.1,
+            "flux should be algebraic even with C_mass = 0"
         );
     }
 }
