@@ -68,18 +68,20 @@ def checker(load_script):
 
 
 def _redirect(checker, tmp_path: Path, monkeypatch) -> tuple[Path, Path]:
-    """Point the script's ``AUDIT_TOML`` and ``CARGO_LOCK`` at synthetic
-    files in ``tmp_path`` and return both resolved paths.
+    """Point the script's ``AUDIT_TOML``, ``CARGO_LOCK``, and ``DENY_TOML``
+    at synthetic files in ``tmp_path`` and return both resolved paths.
 
-    Both constants are computed at import time from the script's location
+    All three constants are computed at import time from the script's location
     via ``Path(__file__).resolve().parent.parent``. Each test that wants
     a synthetic fixture must therefore redirect the constants before
     calling ``main()``.
     """
     audit = tmp_path / ".cargo" / "audit.toml"
     lock = tmp_path / "Cargo.lock"
+    deny = tmp_path / "deny.toml"
     monkeypatch.setattr(checker, "AUDIT_TOML", audit)
     monkeypatch.setattr(checker, "CARGO_LOCK", lock)
+    monkeypatch.setattr(checker, "DENY_TOML", deny)
     monkeypatch.setattr(checker, "REPO_ROOT", tmp_path)
     return audit, lock
 
