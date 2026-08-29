@@ -4,7 +4,6 @@
 //! the 5R1C, 6R2C, and 9R4C variants to evolve the interior wall-surface
 //! temperature `T_si` before the air-node heat balance.
 
-use crate::physics::cta::{ContinuousTensor, VectorField};
 use crate::physics::five_r1c_solver::surface_time_constant_from_conductances;
 use crate::sim::thermal_model_scratch::PhysicsScratch5r1c;
 
