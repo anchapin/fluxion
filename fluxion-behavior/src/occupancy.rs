@@ -454,14 +454,14 @@ impl MarkovOccupancyGenerator {
         let m = self.matrix(hour, day);
         match current_state {
             OccupancyState::Vacant => {
-                if rng.gen::<f64>() < m.vacant_to_occupied {
+                if rng.random::<f64>() < m.vacant_to_occupied {
                     OccupancyState::Occupied
                 } else {
                     OccupancyState::Vacant
                 }
             }
             OccupancyState::Occupied => {
-                if rng.gen::<f64>() < m.occupied_to_vacant {
+                if rng.random::<f64>() < m.occupied_to_vacant {
                     OccupancyState::Vacant
                 } else {
                     OccupancyState::Occupied
@@ -1155,14 +1155,14 @@ mod tests {
     ) -> OccupancyState {
         match state {
             OccupancyState::Vacant => {
-                if rng.gen::<f64>() < vacant_to_occupied {
+                if rng.random::<f64>() < vacant_to_occupied {
                     OccupancyState::Occupied
                 } else {
                     OccupancyState::Vacant
                 }
             }
             OccupancyState::Occupied => {
-                if rng.gen::<f64>() < occupied_to_vacant {
+                if rng.random::<f64>() < occupied_to_vacant {
                     OccupancyState::Vacant
                 } else {
                     OccupancyState::Occupied
