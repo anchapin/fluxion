@@ -100,7 +100,7 @@ fn ukf_converges_on_van_der_pol_oscillator() {
         let u = vec![DT, MU];
 
         // Synthetic noisy sensor reading of the first state component.
-        let noise: f64 = rng.gen();
+        let noise: f64 = rng.random();
         let noisy_measurement = true_state[0] + noise * MEASUREMENT_NOISE;
 
         ukf.predict(&u)
@@ -211,7 +211,7 @@ fn ukf_converges_on_van_der_pol_low_stiffness() {
 
     for _ in 0..n_steps {
         let u = vec![DT, mu];
-        let noisy = true_state[0] + rng.gen::<f64>() * MEASUREMENT_NOISE;
+        let noisy = true_state[0] + rng.random::<f64>() * MEASUREMENT_NOISE;
 
         ukf.predict(&u).unwrap();
         ukf.update(&vec![noisy]).unwrap();

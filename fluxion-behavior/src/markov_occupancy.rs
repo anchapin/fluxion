@@ -47,7 +47,7 @@ impl MarkovOccupancyGenerator {
         };
         let probabilities = &self.transition_matrix[row];
         let p_occupied = probabilities[1];
-        if rng.gen::<f64>() < p_occupied {
+        if rng.random::<f64>() < p_occupied {
             OccupancyState::Occupied
         } else {
             OccupancyState::Vacant

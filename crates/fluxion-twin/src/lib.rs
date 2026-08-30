@@ -606,7 +606,7 @@ mod tests {
         for _step in 0..n_steps {
             let u = vec![dt, mu];
 
-            let noisy_measurement = true_state[0] + rng.gen::<f64>() * 0.1;
+            let noisy_measurement = true_state[0] + rng.random::<f64>() * 0.1;
 
             ukf.predict(&u).unwrap();
             ukf.update(&vec![noisy_measurement]).unwrap();
