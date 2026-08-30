@@ -19,6 +19,7 @@
 //! `WallSurface` (below) depends on `crate::sim::shading::{Overhang, ShadeFin}`
 //! so it stays in the main crate rather than moving into `fluxion_core`.
 
+use crate::physics::wall_spec::WallSpec;
 use crate::sim::shading::{Overhang, ShadeFin};
 // Issue #2462 (Phase 2 of the crate split): `ConstructionLayer`, `Construction`,
 // `MassClass`, `Materials`, `Assemblies`, `SurfaceType`, the ASHRAE 140
@@ -60,6 +61,12 @@ pub struct WallSurface {
     pub overhang: Option<Overhang>,
     /// List of vertical shade fins.
     pub fins: Vec<ShadeFin>,
+    /// Optional multi-layer wall specification (Issue #3272 / umbrella #3291).
+    ///
+    /// `None` preserves the existing single-U-value behaviour used by the
+    /// legacy solvers. When set, multi-node / GaugeSolver code paths can read
+    /// the full layer stack instead of collapsing to the aggregate `u_value`.
+    pub wall_spec: Option<WallSpec>,
 }
 
 impl WallSurface {
@@ -72,6 +79,7 @@ impl WallSurface {
             orientation,
             overhang: None,
             fins: Vec::new(),
+            wall_spec: None,
         }
     }
 
@@ -90,6 +98,16 @@ impl WallSurface {
     /// Add a shade fin to this surface.
     pub fn with_fin(mut self, fin: ShadeFin) -> Self {
         self.fins.push(fin);
+        self
+    }
+
+    /// Attach a multi-layer wall specification to this surface.
+    ///
+    /// Issue #3272 / umbrella #3291. Optional so existing constructions remain
+    /// unchanged; solver paths that consume `WallSpec` must treat `None` as the
+    /// legacy single-U-value case.
+    pub fn with_wall_spec(mut self, wall_spec: WallSpec) -> Self {
+        self.wall_spec = Some(wall_spec);
         self
     }
 
@@ -210,5 +228,23 @@ mod wall_surface_tests {
         assert_eq!(cloned.orientation, surface.orientation);
         let debug_str = format!("{:?}", surface);
         assert!(debug_str.contains("WallSurface"));
+    }
+
+    #[test]
+    fn test_wall_surface_wall_spec_defaults_none() {
+        let surface = WallSurface::new(10.0, 0.5, Orientation::South);
+        assert!(surface.wall_spec.is_none());
+    }
+
+    #[test]
+    fn test_wall_surface_with_wall_spec() {
+        let spec = WallSpec::single_layer("gypsum", 0.012, 0.16, 950.0, 840.0);
+        let surface = WallSurface::new(10.0, 0.5, Orientation::South).with_wall_spec(spec.clone());
+        let attached = surface
+            .wall_spec
+            .as_ref()
+            .expect("with_wall_spec should attach a spec");
+        assert_eq!(attached.name, spec.name);
+        assert_eq!(attached.layers.len(), 1);
     }
 }
