@@ -1,0 +1,104 @@
+{
+  "_captured_at_and_commit_doc": "ISO 8601 UTC + git SHA for the entire snapshot set. Non-null exactly once fluxion has produced the per-case files.",
+  "_doc": "Manifest for the h_tr_em_baseline snapshot set (Issue #3265 / Issue #3063 / LIMIT-13 / ADR-0009). Consumed by `scripts/verify_h_tr_em_regression.py` to enumerate the snapshot files, verify each one parses as JSON, and emit a SHA-256 fingerprint so a future implementer of the wind-dependent per-step recompute can detect silent edits to the placeholder values. Schema version 1: every per-case JSON has `_doc` + `captured_at` + `captured_commit` + `metrics` with non-null floats. Per `RULES.md` ('no parameter tuning') this manifest is documentation only — the verifier never reads a pre-computed 'expected delta'; it diffs two snapshots and reports any non-zero per-metric drift.",
+  "_schema_version": 1,
+  "_schema_version_doc": "Bumped on backward-incompatible changes to the per-case JSON shape. The verifier asserts schema_version matches its in-code expectation; an older manifest trips exit 2.",
+  "_status": "captured",
+  "_status_doc": "Set to 'captured' once every metrics field is a non-null float AND captured_commit matches a real git SHA. The verifier refuses to diff a 'placeholder' set (exit 2).",
+  "captured_at": "2026-08-29T23:49:52Z",
+  "captured_commit": "5716f5f5668a297cb2f489be4caaf6f06cc46a7a",
+  "cases": {
+    "case_195": {
+      "_sha256_doc": "SHA-256 of the per-case JSON file at capture time. The verifier recomputes on load and compares against this field; a hand-tweak without re-running the simulation trips exit 2.",
+      "case_id": "195",
+      "description": "Conduction-only (no windows, no infiltration, no internal loads). ISO 13790 §7.2.2.2: h_tr_em = 1 / (1/h_op - 1/h_ms). Tests the thermal network in isolation from solar and HVAC.",
+      "metrics": [
+        "h_tr_em_w_k",
+        "h_tr_em_south_w_k",
+        "h_tr_ms_w_k",
+        "h_tr_ms_no_south_w_k",
+        "h_tr_is_w_k",
+        "h_tr_is_no_south_w_k",
+        "h_tr_w_w_k",
+        "h_ve_w_k",
+        "h_tr_floor_w_k",
+        "cm_j_per_k"
+      ],
+      "path": "case_195.json",
+      "sha256": null
+    },
+    "case_600": {
+      "_sha256_doc": "SHA-256 of the per-case JSON file at capture time. The verifier recomputes on load and compares against this field; a hand-tweak without re-running the simulation trips exit 2.",
+      "case_id": "600",
+      "description": "Low-mass baseline (12 m² south window, 0.5 ACH, 20 °C heat / 27 °C cool). PR #3034's CI sub-agent report flagged as 'cooling massively UNDER' pre-#3070 refactor; ISO 13790 §7.2.2.2 h_tr_em ≈ 1 / (1/47.96 - 1/1092.0) ≈ 50 W/K.",
+      "metrics": [
+        "h_tr_em_w_k",
+        "h_tr_em_south_w_k",
+        "h_tr_ms_w_k",
+        "h_tr_ms_no_south_w_k",
+        "h_tr_is_w_k",
+        "h_tr_is_no_south_w_k",
+        "h_tr_w_w_k",
+        "h_ve_w_k",
+        "h_tr_floor_w_k",
+        "cm_j_per_k"
+      ],
+      "path": "case_600.json",
+      "sha256": null
+    },
+    "case_620": {
+      "_sha256_doc": "SHA-256 of the per-case JSON file at capture time. The verifier recomputes on load and compares against this field; a hand-tweak without re-running the simulation trips exit 2.",
+      "case_id": "620",
+      "description": "Low-mass, east/west-window variant of Case 600. Cohort with Cases 600 and 195 in the Issue #3072 aggressive-baseline tracking.",
+      "metrics": [
+        "h_tr_em_w_k",
+        "h_tr_em_south_w_k",
+        "h_tr_ms_w_k",
+        "h_tr_ms_no_south_w_k",
+        "h_tr_is_w_k",
+        "h_tr_is_no_south_w_k",
+        "h_tr_w_w_k",
+        "h_ve_w_k",
+        "h_tr_floor_w_k",
+        "cm_j_per_k"
+      ],
+      "path": "case_620.json",
+      "sha256": null
+    },
+    "case_900": {
+      "_sha256_doc": "SHA-256 of the per-case JSON file at capture time. The verifier recomputes on load and compares against this field; a hand-tweak without re-running the simulation trips exit 2.",
+      "case_id": "900",
+      "description": "High-mass baseline (concrete construction, 12 m² south window, 0.5 ACH). Tested in the multi-node thermal mass coupling cohort. h_tr_em ≈ 1 / (1/h_op - 1/h_ms) where h_ms is much smaller than Case 600 due to higher κ_wall, so h_tr_em tracks h_ms more loosely.",
+      "metrics": [
+        "h_tr_em_w_k",
+        "h_tr_em_south_w_k",
+        "h_tr_ms_w_k",
+        "h_tr_ms_no_south_w_k",
+        "h_tr_is_w_k",
+        "h_tr_is_no_south_w_k",
+        "h_tr_w_w_k",
+        "h_ve_w_k",
+        "h_tr_floor_w_k",
+        "cm_j_per_k"
+      ],
+      "path": "case_900.json",
+      "sha256": null
+    }
+  },
+  "verifier": {
+    "_default_tolerance_doc": "Per-metric bit-identical tolerance. The verifier fails with exit code 1 when |measured - baseline| > tolerance. 0.0 enforces bit-for-bit equality; a future PR that intentionally relaxes a metric (e.g. to absorb cross-runner numerical noise) MUST lower this baseline AND commit the engineering improvement together (per `RULES.md` / `AGENTS.md`: never raise to hide a regression).",
+    "default_tolerance": {
+      "cm_j_per_k": 0.0,
+      "h_tr_em_south_w_k": 0.0,
+      "h_tr_em_w_k": 0.0,
+      "h_tr_floor_w_k": 0.0,
+      "h_tr_is_no_south_w_k": 0.0,
+      "h_tr_is_w_k": 0.0,
+      "h_tr_ms_no_south_w_k": 0.0,
+      "h_tr_ms_w_k": 0.0,
+      "h_tr_w_w_k": 0.0,
+      "h_ve_w_k": 0.0
+    },
+    "path": "scripts/verify_h_tr_em_regression.py"
+  }
+}

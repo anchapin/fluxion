@@ -1,0 +1,27 @@
+{
+  "_captured_at_doc": "ISO 8601 UTC timestamp when this snapshot was measured. The verifier refuses to diff a set whose `captured_at` is null (exit 2).",
+  "_captured_commit_doc": "git SHA the snapshot was measured at. The verifier can compare against `git rev-parse HEAD` so a stale snapshot cannot slip past.",
+  "_doc": "Per-case h_tr_em baseline snapshot for the h_tr_em Regression Gate (Issue #3265 / LIMIT-13 / ADR-0009). The values are produced by building the canonical 620 case spec via `fluxion::validation::ashrae_140_cases::ASHRAE140Case::Case620.spec()` and reading the 5R1C conductances from `model.conduction`. Per `RULES.md` ('must-never hardcode results') and AGENTS.md, the baseline MUST be regenerated from fluxion before the workflow can switch from the placeholder contract (exit 2) to a measured regression check (exit 0 / 1).",
+  "_ref_band": {
+    "_doc": "ASHRAE 140-2023 Annex B published per-case envelopes for h_tr_em are not standardised (h_tr_em is an internal 5R1C lumped parameter, not a published reference output). This block records the fluxion-side envelope that the wider ASHRAE 140 pass-rate cohort uses; future implementers of the wind-dependent per-step recompute (Issue #3063) MUST verify the per-step h_tr_em remains within 5 % of the captured `metrics.h_tr_em_w_k` per zone.",
+    "h_tr_em_w_k_bracketing": {
+      "_doc": "Computed from the per-step wind-dependent recursion `h_tr_em = 1 / h_c_ext_wind_dependent(V=3.4 m/s)` = 1 / 17.6 m²K/W ≈ 0.0568 m²K/W (per ADR-0009 'per-step h_tr_em semantics'). At a stable low-mass envelope (Case 600 ≈ 64 m² opaque) this band falls in 3.6–4.0 W/K for the south contribution alone; the per-zone total is roughly the surfaced-area-weighted exterior film reciprocal."
+    }
+  },
+  "_source": "Captured by `cargo run --release --example capture_h_tr_em_baseline`.",
+  "captured_at": "2026-08-29T23:49:52Z",
+  "captured_commit": "5716f5f5668a297cb2f489be4caaf6f06cc46a7a",
+  "case_id": "620",
+  "metrics": {
+    "cm_j_per_k": 2162443.392,
+    "h_tr_em_south_w_k": 22.626216,
+    "h_tr_em_w_k": 59.256359,
+    "h_tr_floor_w_k": 8.81763,
+    "h_tr_is_no_south_w_k": 154.657582,
+    "h_tr_is_w_k": 165.6,
+    "h_tr_ms_no_south_w_k": 217.373784,
+    "h_tr_ms_w_k": 240.0,
+    "h_tr_w_w_k": 27.4,
+    "h_ve_w_k": 21.708
+  }
+}
