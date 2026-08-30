@@ -308,8 +308,8 @@ fn cast_ray<R: Rng>(
     half_hj: f64,
 ) -> bool {
     // 1. Uniform random point on surf_i.
-    let ru: f64 = rng.gen();
-    let rv: f64 = rng.gen();
+    let ru: f64 = rng.random();
+    let rv: f64 = rng.random();
     let au = (ru - 0.5) * surf_i.width;
     let av = (rv - 0.5) * surf_i.height;
     let origin = [
@@ -319,8 +319,8 @@ fn cast_ray<R: Rng>(
     ];
 
     // 2. Cosine-weighted hemisphere direction (local frame: u, v, normal_i).
-    let r1: f64 = rng.gen();
-    let r2: f64 = rng.gen();
+    let r1: f64 = rng.random();
+    let r2: f64 = rng.random();
     let phi = 2.0 * std::f64::consts::PI * r1;
     let cos_theta = r2.sqrt();
     let sin_theta = (1.0 - r2).sqrt();
@@ -555,10 +555,10 @@ mod tests {
         let mut rng = StdRng::seed_from_u64(99);
         let mut total = 0.0_f64;
         for _ in 0..samples {
-            let xi = (rng.gen::<f64>() - 0.5) * w_i;
-            let yi = (rng.gen::<f64>() - 0.5) * h_i;
-            let xj = (rng.gen::<f64>() - 0.5) * w_j;
-            let yj = (rng.gen::<f64>() - 0.5) * h_j;
+            let xi = (rng.random::<f64>() - 0.5) * w_i;
+            let yi = (rng.random::<f64>() - 0.5) * h_i;
+            let xj = (rng.random::<f64>() - 0.5) * w_j;
+            let yj = (rng.random::<f64>() - 0.5) * h_j;
             let rx = xj - xi;
             let ry = yj - yi;
             let rz = d;
