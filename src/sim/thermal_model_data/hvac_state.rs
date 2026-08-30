@@ -13,6 +13,7 @@ use crate::sim::hvac::{
 use crate::sim::hvac_controller::{HvacSystemMode, IdealHVACController};
 use crate::sim::thermal_model_core::DoorGeometry;
 use crate::sim::thermal_model_scratch::PhysicsScratchPool;
+use crate::sim::thermal_selector::ThermalSelector;
 use crate::testing::integration::wiring::WiringTracer;
 use fluxion_core::ashrae_cases::NightVentilation;
 use std::sync::Arc;
@@ -25,6 +26,12 @@ pub struct HvacState<T: ContinuousTensor<f64>> {
     pub thermal_model_type: crate::sim::thermal_model_core::ThermalModelType,
     pub timestep_mode: crate::sim::adaptive_timestep::TimestepMode,
     pub door_geometry: DoorGeometry,
+    /// Selector driving the production-path dispatch (Issue #3277 / umbrella #3291).
+    /// The default `Gauge` selector routes the unified single-zone / multi-zone solver
+    /// when the `gauge-solver` feature is enabled. Non-default selectors (`FiveROneC`,
+    /// `NineRFourC`) opt out of the gauge path and pin `thermal_model_type` to the
+    /// matching legacy network.
+    pub thermal_selector: ThermalSelector,
 
     // HVAC equipment + control.
     pub hvac_heating_capacity: f64,
@@ -91,6 +98,7 @@ impl<T: ContinuousTensor<f64> + Clone> Clone for HvacState<T> {
             thermal_model_type: self.thermal_model_type,
             timestep_mode: self.timestep_mode.clone(),
             door_geometry: self.door_geometry,
+            thermal_selector: self.thermal_selector,
 
             hvac_heating_capacity: self.hvac_heating_capacity,
             hvac_cooling_capacity: self.hvac_cooling_capacity,

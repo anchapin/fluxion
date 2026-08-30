@@ -17,7 +17,6 @@ use crate::sim::schedule::DailySchedule;
 use crate::sim::shading::{Overhang, ShadeFin, Side};
 use crate::sim::sky_radiation::SolAirTemperature;
 use crate::sim::solar::{SolarPosition, WindowProperties};
-use crate::sim::thermal_model::ThermalModelType as RoutingThermalModelType;
 use crate::sim::thermal_model_data::{
     ConductionBackend, ConductionState, DiagnosticsState, HvacState, IncidentSolarAccumulator,
     MassState, SetpointState, SolarState, ThermalModelData,
@@ -605,8 +604,28 @@ where
 }
 
 impl ThermalModel<VectorField> {
-    /// Create a new ThermalModel from an ASHRAE 140 case specification.
-    pub fn from_spec(spec: &CaseSpec) -> Self {
+    /// Create a new ThermalModel from an ASHRAE 140 case specification using a
+    /// thermal-solver selector (Issue #3277 / umbrella #3291).
+    ///
+    /// The selector drives the production-path dispatch:
+    /// - `ZoneSolverKind::Gauge` (default) — populate `gauge_zone_solver` (single-zone)
+    ///   or `gauge_multi_zone_solver` (multi-zone) for the unified solver path. This
+    ///   branch is a no-op when the `gauge-solver` cargo feature is disabled.
+    /// - `ZoneSolverKind::FiveROneC` — pin `thermal_model_type` to the legacy
+    ///   5R1C network; do not touch the gauge backend.
+    /// - `ZoneSolverKind::NineRFourC` — populate `multi_node_solvers` and call
+    ///   `enable_9r4c_model()`.
+    ///
+    /// The `conduction_solver` selector is honoured for non-gauge paths; the
+    /// Gauge path uses the unified conduction backend that the gauge solver
+    /// already owns.
+    ///
+    /// Returns `Err(PhysicsError::Initialization)` if gauge initialization
+    /// fails (e.g. missing geometry).
+    pub fn from_spec_with_selector(
+        spec: &CaseSpec,
+        selector: &crate::sim::thermal_selector::ThermalSelector,
+    ) -> Result<Self, PhysicsError> {
         let num_zones = spec.num_zones;
         let mut model = ThermalModel::new(num_zones);
 
@@ -1879,96 +1898,11 @@ impl ThermalModel<VectorField> {
         }
 
         // Issue #3251 Phase 3 (A7): Initialize gauge_zone_solver for ALL buildings when
-        // the gauge-solver feature is enabled. Previously this was gated on is_9r4c_model.
-        // The gauge solver now handles thermal mass tracking for both low-mass (5R1C)
-        // and high-mass (9R4C) configurations, enabling the unified production path.
-        #[cfg(feature = "gauge-solver")]
-        {
-            use super::thermal_model_data::{GaugeZoneSolver, LayerSpec, SurfaceType, WallSpec};
-
-            let geom = spec
-                .geometry
-                .first()
-                .expect("Gauge solver requires geometry");
-            let floor_area = geom.floor_area();
-            let ceiling_height = geom.height;
-
-            let mut gauge_solver = GaugeZoneSolver::new(floor_area, ceiling_height);
-
-            let wall_layers: Vec<LayerSpec> = spec
-                .construction
-                .wall
-                .layers
-                .iter()
-                .rev()
-                .map(|l| {
-                    LayerSpec::new(
-                        &l.name,
-                        l.thickness,
-                        l.conductivity,
-                        l.density,
-                        l.specific_heat,
-                    )
-                })
-                .collect();
-            let wall_spec = WallSpec::multi_layer("wall", wall_layers);
-
-            let roof_layers: Vec<LayerSpec> = spec
-                .construction
-                .roof
-                .layers
-                .iter()
-                .rev()
-                .map(|l| {
-                    LayerSpec::new(
-                        &l.name,
-                        l.thickness,
-                        l.conductivity,
-                        l.density,
-                        l.specific_heat,
-                    )
-                })
-                .collect();
-            let roof_spec = WallSpec::multi_layer("roof", roof_layers);
-
-            let floor_layers: Vec<LayerSpec> = spec
-                .construction
-                .floor
-                .layers
-                .iter()
-                .rev()
-                .map(|l| {
-                    LayerSpec::new(
-                        &l.name,
-                        l.thickness,
-                        l.conductivity,
-                        l.density,
-                        l.specific_heat,
-                    )
-                })
-                .collect();
-            let floor_spec = WallSpec::multi_layer("floor", floor_layers);
-
-            let total_wall_area = geom.wall_area();
-            let window_area = spec.total_window_area();
-            let opaque_wall_area = (total_wall_area - window_area).max(0.0);
-
-            gauge_solver
-                .add_opaque_surface(&wall_spec, opaque_wall_area, SurfaceType::Wall, 180.0, 90.0)
-                .expect("Failed to add wall surface to gauge solver");
-            gauge_solver
-                .add_opaque_surface(&roof_spec, floor_area, SurfaceType::Roof, 180.0, 0.0)
-                .expect("Failed to add roof surface to gauge solver");
-            gauge_solver
-                .add_opaque_surface(&floor_spec, floor_area, SurfaceType::Floor, 0.0, 180.0)
-                .expect("Failed to add floor surface to gauge solver");
-
-            gauge_solver
-                .initialize()
-                .expect("Failed to initialize gauge solver");
-
-            model.conduction.backend.gauge_zone_solver = Some(gauge_solver);
-        }
+        // the gauge-solver feature is enabled and the selector requests it.
+        // Previously this was gated on is_9r4c_model; #3277 moves the call site
+        // to `from_spec_with_selector` so the selector exclusively drives the
+        // choice. The single-zone initialization is delegated to
+        // `enable_gauge_solver(spec)` (multi-zone wiring is in #3275).
 
         model.mass.h_tr_me = VectorField::new(h_tr_me_vec);
 
@@ -2359,9 +2293,26 @@ impl ThermalModel<VectorField> {
         // multi-node air temperature (see `physics_impl.rs::step_physics`), so
         // 9R4C is the sole driver of high-mass free-float and the guard is
         // removed. Case 960 (multi-zone sunspace) remains excluded as before.
-        if RoutingThermalModelType::from(spec) == RoutingThermalModelType::HighMass9R4C {
+        //
+        // Issue #3277 — auto-promote is RESTORED for the β-phase default build
+        // (i.e. when the `gauge-solver` cargo feature is OFF). In the gauge
+        // build, the selector branch at the bottom of this method
+        // (#3277's selector-driven logic) drives `thermal_model_type` based on
+        // `selector.zone_solver`. In the default build, the gauge block in
+        // `step_dispatcher.rs` is `#[cfg]`-gated out, so the dispatcher falls
+        // through to `is_nine_r4c_model()` which reads this flag — without the
+        // auto-promote, high-mass specs would route to the legacy 5R1C step
+        // and regress Case 900 from 1.633 MWh to 7.678 MWh annual heating
+        // (verified against the `zone_balance_eplus_isolation` energy
+        // conservation gate). The feature gate is removed in PR4 (#3290) when
+        // gauge becomes unconditional default.
+        #[cfg(not(feature = "gauge-solver"))]
+        if spec.construction_type == crate::validation::ashrae_140_cases::ConstructionType::HighMass
+        {
             model.enable_9r4c_model();
         }
+
+        // Issue #3277 — selector-driven branch (gauge-feature build only).
 
         // High-mass free-float driver (ADR-002, docs/adr/0002-promote-9r4c-high-mass-default.md):
         // 900FF/950FF are routed to the 9R4C multi-node network by the
@@ -2739,7 +2690,190 @@ impl ThermalModel<VectorField> {
         //     model.enable_ctf(&wall_layers, 3600.0, 50);
         // }
 
-        model
+        // Issue #3277 — store the selector on the model so dispatch (Issue #3280) can
+        // read it from `model.hvac.thermal_selector`. The selector is the
+        // single public surface for opting into a thermal-solver family; the
+        // gauge-vs-5r1c-vs-9r4c choice lives in `ZoneSolverKind`.
+        model.0.hvac.thermal_selector = *selector;
+
+        // Issue #3277 — selector-driven branch over `zone_solver`:
+        //   * `Gauge`        → call `enable_gauge_solver(spec)?` (single-zone). The
+        //                     multi-zone path (#3275) is wired in a later commit.
+        //   * `FiveROneC`    → pin `thermal_model_type` to the legacy 5R1C. Do NOT
+        //                     touch `gauge_zone_solver`; the dispatch falls through
+        //                     to the 5R1C step.
+        //   * `NineRFourC`   → ensure `thermal_model_type` is `NineRFourC`; the
+        //                     per-surface fields and `multi_node_solvers` are
+        //                     already populated earlier in this method when the
+        //                     construction is HighMass. Call `enable_9r4c_model()`
+        //                     so the dispatch flag is set.
+        match selector.zone_solver {
+            crate::sim::thermal_selector::ZoneSolverKind::Gauge => {
+                model.enable_gauge_solver(spec)?;
+            }
+            crate::sim::thermal_selector::ZoneSolverKind::FiveROneC => {
+                // Pin the dispatch flag so the selector is authoritative. The
+                // gauge backend stays `None`; #3280 will route the dispatcher
+                // away from gauge when `thermal_selector.zone_solver != Gauge`.
+                model.0.hvac.thermal_model_type = ThermalModelType::FiveROneC;
+            }
+            crate::sim::thermal_selector::ZoneSolverKind::NineRFourC => {
+                // Only enable 9R4C if the per-surface fields were actually
+                // populated — for LowMass constructions the `multi_node_solvers`
+                // vector is empty and the 9R4C step would index OOB. The
+                // `is_9r4c_model` block above (Issue #715) gates that population
+                // on `ConstructionType::HighMass`.
+                if spec.construction_type
+                    == crate::validation::ashrae_140_cases::ConstructionType::HighMass
+                {
+                    model.enable_9r4c_model();
+                }
+            }
+        }
+
+        // Issue #3277 — `conduction_solver` selector. Currently the
+        // `Default` and `Ctf`/`Fd` branches are equivalent for the
+        // 5R1C/6R2C step (CTF/FD are not wired into the production
+        // dispatcher; see Issue #913). The selector is preserved on the
+        // model so #3280 can route non-default conduction when the
+        // dispatcher learns to consult it. For now the call is a no-op
+        // except for logging the selector through the `Default` branch.
+        match selector.conduction_solver {
+            crate::sim::thermal_selector::ConductionSolverKind::Default => {}
+            crate::sim::thermal_selector::ConductionSolverKind::Ctf
+            | crate::sim::thermal_selector::ConductionSolverKind::Fd => {
+                // Reserved for #3280 wiring. Existing CTF/FD helpers
+                // (`enable_ctf`, `enable_fd`) require `wall_layers` slices
+                // built from `spec.construction`; the production
+                // dispatcher does not yet consult them, so wiring is
+                // deferred.
+            }
+        }
+
+        Ok(model)
+    }
+
+    /// Thin wrapper that calls [`Self::from_spec_with_selector`] with the
+    /// default [`ThermalSelector`](crate::sim::thermal_selector::ThermalSelector).
+    ///
+    /// The default selector is `ZoneSolverKind::Gauge + ConductionSolverKind::Default`,
+    /// which preserves the prior `from_spec` behaviour (gauge backend initialized
+    /// for all cases when the `gauge-solver` feature is enabled). This wrapper
+    /// exists so call sites that do not need selector-aware dispatch keep
+    /// working without modification.
+    pub fn from_spec(spec: &CaseSpec) -> Self {
+        Self::from_spec_with_selector(
+            spec,
+            &crate::sim::thermal_selector::ThermalSelector::default(),
+        )
+        .expect("default selector must not fail initialization")
+    }
+
+    /// Initialize the single-zone [`GaugeZoneSolver`](crate::sim::thermal_model_data::GaugeZoneSolver)
+    /// from the construction layers in `spec`.
+    ///
+    /// This method exists as the single public surface for enabling the
+    /// gauge backend; `from_spec_with_selector` is the only caller in the
+    /// production path. Issue #3279 will replace this implementation with a
+    /// `WallSurface.wall_spec`-driven reader and demote visibility from
+    /// `pub` to `pub(crate)`; the signature will lose the `spec` argument
+    /// because `WallSurface.wall_spec` is sufficient to source the layer
+    /// stack.
+    ///
+    /// For now this method is `pub` to keep #3277's `from_spec_with_selector`
+    /// signature stable while #3279 lands in a follow-up commit.
+    pub fn enable_gauge_solver(&mut self, spec: &CaseSpec) -> Result<(), PhysicsError> {
+        #[cfg_attr(not(feature = "gauge-solver"), allow(unused_variables))]
+        let _spec = spec;
+        #[cfg(feature = "gauge-solver")]
+        {
+            use super::thermal_model_data::{GaugeZoneSolver, LayerSpec, SurfaceType, WallSpec};
+
+            let geom = spec.geometry.first().ok_or_else(|| {
+                PhysicsError::initialization(
+                    "Gauge solver requires at least one zone geometry entry",
+                )
+            })?;
+            let floor_area = geom.floor_area();
+            let ceiling_height = geom.height;
+
+            let mut gauge_solver = GaugeZoneSolver::new(floor_area, ceiling_height);
+
+            let wall_layers: Vec<LayerSpec> = spec
+                .construction
+                .wall
+                .layers
+                .iter()
+                .rev()
+                .map(|l| {
+                    LayerSpec::new(
+                        &l.name,
+                        l.thickness,
+                        l.conductivity,
+                        l.density,
+                        l.specific_heat,
+                    )
+                })
+                .collect();
+            let wall_spec = WallSpec::multi_layer("wall", wall_layers);
+
+            let roof_layers: Vec<LayerSpec> = spec
+                .construction
+                .roof
+                .layers
+                .iter()
+                .rev()
+                .map(|l| {
+                    LayerSpec::new(
+                        &l.name,
+                        l.thickness,
+                        l.conductivity,
+                        l.density,
+                        l.specific_heat,
+                    )
+                })
+                .collect();
+            let roof_spec = WallSpec::multi_layer("roof", roof_layers);
+
+            let floor_layers: Vec<LayerSpec> = spec
+                .construction
+                .floor
+                .layers
+                .iter()
+                .rev()
+                .map(|l| {
+                    LayerSpec::new(
+                        &l.name,
+                        l.thickness,
+                        l.conductivity,
+                        l.density,
+                        l.specific_heat,
+                    )
+                })
+                .collect();
+            let floor_spec = WallSpec::multi_layer("floor", floor_layers);
+
+            let total_wall_area = geom.wall_area();
+            let window_area = spec.total_window_area();
+            let opaque_wall_area = (total_wall_area - window_area).max(0.0);
+
+            gauge_solver
+                .add_opaque_surface(&wall_spec, opaque_wall_area, SurfaceType::Wall, 180.0, 90.0)
+                .map_err(|e| PhysicsError::initialization(&e.to_string()))?;
+            gauge_solver
+                .add_opaque_surface(&roof_spec, floor_area, SurfaceType::Roof, 180.0, 0.0)
+                .map_err(|e| PhysicsError::initialization(&e.to_string()))?;
+            gauge_solver
+                .add_opaque_surface(&floor_spec, floor_area, SurfaceType::Floor, 0.0, 180.0)
+                .map_err(|e| PhysicsError::initialization(&e.to_string()))?;
+
+            gauge_solver
+                .initialize()
+                .map_err(|e| PhysicsError::initialization(&e.to_string()))?;
+
+            self.0.conduction.backend.gauge_zone_solver = Some(gauge_solver);
+        }
+        Ok(())
     }
 
     /// Apply thermal mass correction to achieve coupling ratio > 0.1 for high-mass buildings.
@@ -3022,6 +3156,7 @@ impl ThermalModel<VectorField> {
                 thermal_model_type: ThermalModelType::FiveROneC,
                 timestep_mode: TimestepMode::default(),
                 door_geometry: DoorGeometry::default(),
+                thermal_selector: crate::sim::thermal_selector::ThermalSelector::default(),
                 hvac_heating_capacity: 100_000.0, // Default: 100kW heating (high limit for validation)
                 hvac_cooling_capacity: 100_000.0, // Default: 100kW cooling (high limit for validation)
                 hvac_controller: IdealHVACController::new(20.0, 27.0),
