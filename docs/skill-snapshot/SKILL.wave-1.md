@@ -26,6 +26,8 @@ monitors CI, merges PRs, then proceeds to the next wave.
 
 **Flags:**
 - `--auto` — skip Phase 2 confirmation, proceed directly to wave execution. Wave plan is written to state file for auditability.
+- `--state-file <path>` — override the default state-file location (issue #3145). The default is `../worktrees/wave-state.<repo-slug>.json`; pass an explicit path when running concurrent orchestrators against the same repo or when migrating away from the legacy `wave-state.json`. Equivalent env var: `WAVE_STATE_FILE=<path>`.
+- `--force` — bypass the per-repo pre-flight collision check (issue #3145). By default the orchestrator refuses to overwrite a state file that belongs to a different repo. Use only when you intentionally want to clobber a prior run.
 
 ## Phase 0: Pre-flight
 
@@ -36,6 +38,27 @@ mkdir -p ../worktrees && touch ../worktrees/.test && rm ../worktrees/.test  # Wr
 ```
 
 If any check fails, stop and report to the user.
+
+**Per-repo state-file collision check (issue #3145).** The default state-file
+path is namespaced per repo (e.g. `../worktrees/wave-state.fluxion.json`) so
+concurrent orchestrator runs against different repos do not overwrite each
+other. Before writing the initial state file the orchestrator must verify
+the file does not already belong to a different repo:
+
+```bash
+source scripts/wave-state-helpers.sh
+STATE_FILE=$(get_state_file)
+if ! check_state_collision "$STATE_FILE"; then
+  echo "ERROR: state file $STATE_FILE belongs to a different repo." >&2
+  echo "  Use --state-file to choose a different path, or pass --force to overwrite." >&2
+  exit 1
+fi
+```
+
+`scripts/wave-state-helpers.sh` emits a deprecation warning and falls back to
+the legacy `../worktrees/wave-state.json` path for one release when the
+namespaced file does not exist. See [REFERENCE.md — Resume and Recovery](REFERENCE.md#resume-and-recovery)
+for the resolution policy.
 
 ## Phase 1: Discovery
 
@@ -54,6 +77,12 @@ Filter out issues that are:
 gh issue list --state open --json number,title,body,labels \
   | node ~/.agents/skills/github-wave-orchestrator/scripts/wave-planner.js
 ```
+
+Pass `--state-file <path>` (or set `WAVE_STATE_FILE`) to write the plan to
+a non-default location; otherwise the plan is written to the per-repo
+namespaced state file (`../worktrees/wave-state.<repo-slug>.json`, e.g.
+`wave-state.fluxion.json`). The wave-planner refuses to overwrite a state
+file that belongs to a different repo unless `--force` is passed.
 
 **Confirmation:**
 - If `--auto` flag is passed: proceed immediately (no confirmation required).
@@ -77,7 +106,7 @@ modifies files in the skill home
 is copied into the worktree under a **wave-numbered** snapshot name:
 
 ```bash
-WAVE=$(jq -r .current_wave ../wave-state.json)
+WAVE=$(jq -r .current_wave ../worktrees/wave-state.<repo-slug>.json)
 mkdir -p docs/skill-snapshot
 cp ~/.config/opencode/skill/github-wave-orchestrator/SKILL.md \
    "docs/skill-snapshot/SKILL.wave-${WAVE}.md"
@@ -151,36 +180,36 @@ instead of passively waiting for a done signal:
    ```bash
    gh pr list --search "fix/issue-{N}" --json number,title,state --jq '.[] | select(.state=="OPEN") | .number'
    ```
-   - **PR found** → record PR number in wave-state.json, move to next issue
-   - **PR NOT found after 60s** → if `wave-state.json` records a prior
-     PR number for this issue (status `pr_created`), run the `pr_recreate`
-     sub-step below; otherwise enter the recovery sequence.
-   - **`pr_recreate` sub-step** (when the previous PR is stuck CLOSED
-     because `gh pr reopen` failed after a force-push; issue #364):
-     ```bash
-     # 1. Look up the prior PR number from wave-state.json
-     PRIOR_PR=$(jq -r '.issues["{N}"].pr_number // empty' ../wave-state.json)
-     if [ -n "$PRIOR_PR" ]; then
-       STATE=$(gh pr view "$PRIOR_PR" --json state --jq '.state')
-       if [ "$STATE" = "CLOSED" ]; then
-         # 2. Attempt reopen; on failure, recreate the PR (issue #364)
-         if ! gh pr reopen "$PRIOR_PR" 2>/dev/null; then
-           OLD_TITLE=$(gh pr view "$PRIOR_PR" --json title --jq '.title' 2>/dev/null)
-           OLD_BODY=$(gh pr view "$PRIOR_PR" --json body --jq '.body' 2>/dev/null)
-           gh pr close "$PRIOR_PR"  # confirm closed
-           NEW_PR=$(gh pr create --base develop \
-             --title "$OLD_TITLE" \
-             --body "$OLD_BODY" \
-             --head fix/issue-{N}-{slug} | tail -1 | awk -F'/' '{print $NF}')
-           # 3. Update wave-state.json with the new PR number
-           jq --arg n "{N}" --arg p "$NEW_PR" \
-             '.issues[$n].pr_number = ($p | tonumber)' \
-             ../wave-state.json > ../wave-state.json.tmp \
-             && mv ../wave-state.json.tmp ../wave-state.json
-         fi
-       fi
-     fi
-     ```
+    - **PR found** → record PR number in wave-state.<repo-slug>.json, move to next issue
+    - **PR NOT found after 60s** → if `wave-state.<repo-slug>.json` records a prior
+      PR number for this issue (status `pr_created`), run the `pr_recreate`
+      sub-step below; otherwise enter the recovery sequence.
+    - **`pr_recreate` sub-step** (when the previous PR is stuck CLOSED
+      because `gh pr reopen` failed after a force-push; issue #364):
+      ```bash
+      # 1. Look up the prior PR number from wave-state.<repo-slug>.json
+      PRIOR_PR=$(jq -r '.issues["{N}"].pr_number // empty' ../worktrees/wave-state.<repo-slug>.json)
+      if [ -n "$PRIOR_PR" ]; then
+        STATE=$(gh pr view "$PRIOR_PR" --json state --jq '.state')
+        if [ "$STATE" = "CLOSED" ]; then
+          # 2. Attempt reopen; on failure, recreate the PR (issue #364)
+          if ! gh pr reopen "$PRIOR_PR" 2>/dev/null; then
+            OLD_TITLE=$(gh pr view "$PRIOR_PR" --json title --jq '.title' 2>/dev/null)
+            OLD_BODY=$(gh pr view "$PRIOR_PR" --json body --jq '.body' 2>/dev/null)
+            gh pr close "$PRIOR_PR"  # confirm closed
+            NEW_PR=$(gh pr create --base develop \
+              --title "$OLD_TITLE" \
+              --body "$OLD_BODY" \
+              --head fix/issue-{N}-{slug} | tail -1 | awk -F'/' '{print $NF}')
+            # 3. Update wave-state.<repo-slug>.json with the new PR number
+            jq --arg n "{N}" --arg p "$NEW_PR" \
+              '.issues[$n].pr_number = ($p | tonumber)' \
+              ../worktrees/wave-state.<repo-slug>.json > ../worktrees/wave-state.<repo-slug>.json.tmp \
+              && mv ../worktrees/wave-state.<repo-slug>.json.tmp ../worktrees/wave-state.<repo-slug>.json
+          fi
+        fi
+      fi
+      ```
      The verification loop re-runs Phase 3c § 4 (PR base) and § 5
      (PR body) on the new PR before recording it.
 
@@ -247,7 +276,7 @@ instead of passively waiting for a done signal:
         KEYWORD="Refs"
       fi
       if echo "$BODY" | grep -qE "(Closes|Fixes|Refs|for|touches)\s+#{N}"; then
-         # Keyword found — record PR number in wave-state.json, move to next issue
+         # Keyword found — record PR number in wave-state.<repo-slug>.json, move to next issue
          :
        else
          # Auto-fix: append the required keyword to the PR body
@@ -256,7 +285,7 @@ instead of passively waiting for a done signal:
 ${KEYWORD} #{N}"
        fi
       if echo "$BODY" | grep -qE "^Scope guard:"; then
-        # Scope guard already present — record PR number in wave-state.json
+        # Scope guard already present — record PR number in wave-state.<repo-slug>.json
         :
       else
         # Auto-fix: append the default scope-guard line (issue #365;
@@ -287,7 +316,7 @@ Scope guard: Do NOT touch any other area of the codebase; ${NEXT_ISSUE} owns the
      reaching that case.
 
   7. **Escalation**: If recovery sequence fails or PR still missing after push,
-    record issue as `escalated` in wave-state.json and report to user with
+    record issue as `escalated` in wave-state.<repo-slug>.json and report to user with
     worktree path so they can inspect and push manually.
 
  **Do not proceed to Phase 4 until every PR in the wave exists (on develop) or is escalated.**
@@ -323,7 +352,7 @@ if ! gh pr reopen <N> 2>/dev/null; then
     --body "$OLD_BODY" \
     --head fix/issue-{N}-{slug} | tail -1 | awk -F'/' '{print $NF}')
   # Phase 3c verification loop picks up the new PR on its next poll;
-  # update wave-state.json with the new number.
+  # update wave-state.<repo-slug>.json with the new number.
 fi
 ```
 
@@ -395,6 +424,15 @@ in-progress work and resumes from the last incomplete phase.
 **Backward compatibility (one release):** If the namespaced file does not exist,
 the orchestrator falls back to the legacy `../worktrees/wave-state.json` and
 emits a deprecation warning. The legacy path will be removed in a future release.
+
+**Mid-flight collision recovery (issue #3145):** If the orchestrator detects
+that its state file has been overwritten by a different repo's run mid-wave,
+follow the archive convention: move the stale state to
+`wave-state.<repo>-archived-<YYYY-MM-DD>.json` (the date is `UTC` of the
+overwrite detection) and re-run the wave from a fresh namespaced file. The
+archive convention is intentionally not automated — the operator confirms
+which state is stale before archiving, because both repos may have written
+to the same path legitimately during a forced merge.
 
 See [REFERENCE.md — Resume and Recovery](REFERENCE.md#resume-and-recovery).
 

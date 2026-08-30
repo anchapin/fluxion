@@ -59,7 +59,7 @@ Branch: fix/issue-{NUMBER}-{SLUG}
 Workdir: ../worktrees/issue-{NUMBER}-{SLUG}
 Issue: #{NUMBER}
 
-IMPORTANT: Record your worktree path in wave-state.json IMMEDIATELY after
+IMPORTANT: Record your worktree path in wave-state.<repo-slug>.json IMMEDIATELY after
 checking out (before any other steps). This ensures cleanup can happen
 even if the sub-agent is interrupted. Run:
   source scripts/wave-state-helpers.sh
@@ -67,7 +67,7 @@ even if the sub-agent is interrupted. Run:
   atomic_write_json ".issues[\"{NUMBER}\"].worktree = \"../worktrees/issue-{NUMBER}-{SLUG}\"" "$STATE_FILE"
 
 Steps:
-1. Record worktree path in wave-state.json (see IMPORTANT above)
+1. Record worktree path in wave-state.<repo-slug>.json (see IMPORTANT above)
 2. Check CI status: gh pr checks {NUMBER}
 3. IF CI is green:
    a. Check mergeable: gh pr view {NUMBER} --json mergeable
@@ -109,7 +109,7 @@ c. If MERGEABLE → merge: gh pr merge {NUMBER} --squash \
        git worktree prune
        ```
 
-    e. Update wave-state.json to mark worktree as cleaned:
+    e. Update wave-state.<repo-slug>.json to mark worktree as cleaned:
        ```bash
        source scripts/wave-state-helpers.sh
        STATE_FILE=$(get_state_file)
@@ -184,7 +184,7 @@ Within a wave, merge PRs in a specific order to minimize conflicts:
 git fetch origin develop
 
 # Cleanup (ORDER MATTERS: worktree remove BEFORE branch delete)
-# Use the worktree path from wave-state.json if available
+# Use the worktree path from wave-state.<repo-slug>.json if available
 source scripts/wave-state-helpers.sh
 STATE_FILE=$(get_state_file)
 WORKTREE_PATH=$(jq -r ".issues[\"{N}\"].worktree // \"../worktrees/issue-{N}-{slug}\"" \
@@ -204,16 +204,28 @@ gh pr view {M} --json mergeable --jq '.mergeable'
 
 ## Resume and Recovery
 
-### State File
+### State File (per-repo namespacing — issue #3145)
 
-The orchestrator writes a state file after each phase transition:
+The orchestrator writes a state file after each phase transition. The
+default path is namespaced per repo so concurrent orchestrator runs
+against different repos (e.g. fluxion + openstudio-server-operator +
+osimflow on the same workstation) cannot overwrite each other.
 
 **Location:** `../worktrees/wave-state.<repo-slug>.json` (where `<repo-slug>` is
-derived from `git remote get-url origin`, e.g. `openstudio-server-operator`)
+derived from `git remote get-url origin`, e.g. `openstudio-server-operator`).
+For fluxion the path resolves to `../worktrees/wave-state.fluxion.json`.
 
-**Backward compatibility (one release):** If the namespaced file does not exist,
-the legacy `../worktrees/wave-state.json` is read with a deprecation warning.
-The legacy path will be removed in a future release.
+**Override:** Pass `--state-file <path>` to the orchestrator (or set
+`WAVE_STATE_FILE=<path>` in the environment) when running concurrent
+orchestrators against the same repo or when migrating away from the
+legacy `wave-state.json`. Both flags are accepted by the
+`scripts/wave-planner.js` invocation in Phase 2 and by every helper
+that takes an explicit state-file path.
+
+**Backward compatibility (one release):** If the namespaced file does not
+exist, the legacy `../worktrees/wave-state.json` is read with a deprecation
+warning. The legacy path will be removed in a future release; both reads
+and writes fall through to the namespaced path on the next wave.
 
 **Atomic writes:** All state file updates use write-then-rename via a temporary
 file in the same directory (`mv /tmp/wave-state.XXXXXX.json <state-file>`) to
@@ -282,6 +294,67 @@ helper `scripts/wave-state-helpers.sh` provides `atomic_write_json` for this.
 | `conflicted` | Merge conflict, needs resolution | Spawn CI sub-agent with conflict focus |
 | `merged` | Complete | Skip |
 | `escalated` | Blocked, needs human | Skip, report to user |
+
+### Pre-flight Collision Check (issue #3145)
+
+Before writing the initial state file, the orchestrator must verify the
+target state file does not already belong to a different repo. The namespaced
+default (`../worktrees/wave-state.<repo-slug>.json`) prevents the most common
+case (fluxion + openstudio on the same workstation), but the check is also
+necessary for `--state-file` overrides that point at a shared location.
+
+```bash
+source scripts/wave-state-helpers.sh
+STATE_FILE=$(get_state_file)
+if ! check_state_collision "$STATE_FILE"; then
+  echo "ERROR: state file $STATE_FILE belongs to a different repo: $(jq -r .repo "$STATE_FILE")" >&2
+  echo "  Use --state-file to choose a different path, or pass --force to overwrite." >&2
+  exit 1
+fi
+```
+
+The `check_state_collision` helper from `scripts/wave-state-helpers.sh`:
+- returns 0 (clean) if the file does not exist,
+- returns 0 (clean) if the file exists and its `repo` field matches the
+  current `${OWNER}/${REPO}` from `git remote get-url origin`,
+- returns 1 (collision) otherwise — emitting a structured error message
+  that names the conflicting repo.
+
+To override explicitly, pass `--force` (the orchestrator reads it from
+`WAVE_STATE_FORCE=1` in the env or `--force` on the CLI; both work the
+same way). The planner and the orchestrator both honor the flag, so an
+operator can force a fresh run after manually archiving the colliding
+state file.
+
+### Mid-flight Archive Convention
+
+When the orchestrator detects mid-flight that its state file was
+overwritten by a different repo's run (the collision the namespacing fix is
+designed to prevent), the recovery is to archive the stale state and
+restart with a fresh namespaced file:
+
+```bash
+# Operator action — confirm which state is stale before archiving.
+mv ../worktrees/wave-state.json \
+   ../worktrees/wave-state.<repo>-archived-$(date -u +%Y-%m-%d).json
+```
+
+The `<repo>` segment in `wave-state.<repo>-archived-<date>.json` is the
+repo whose state is being archived (typically the orchestrator's own
+repo, since the orchestrator just discovered its state was clobbered).
+The `<date>` segment is `UTC` to avoid local-timezone ambiguity across
+workstations.
+
+Archive files are not auto-loaded by `get_state_file`; they are kept for
+post-incident forensics only. Cleaning them up after the wave completes
+is the operator's responsibility.
+
+### Override Flags Summary
+
+| Flag | Env var | Default | Effect |
+|---|---|---|---|
+| `--state-file <path>` | `WAVE_STATE_FILE=<path>` | `../worktrees/wave-state.<repo-slug>.json` | Override the state-file location. |
+| `--force` | `WAVE_STATE_FORCE=1` | off | Bypass `check_state_collision` and overwrite an existing state file. |
 
 ### Resume Procedure
 
@@ -522,7 +595,7 @@ Before creating a worktree:
 
 After PR merge (ORDER MATTERS: worktree remove BEFORE branch delete):
 ```bash
-# Use wave-state.json if available, otherwise construct from convention
+# Use wave-state.<repo-slug>.json if available, otherwise construct from convention
 source scripts/wave-state-helpers.sh
 STATE_FILE=$(get_state_file)
 WORKTREE_PATH=$(jq -r ".issues[\"{N}\"].worktree // \"../worktrees/issue-{N}-{slug}\"" \
