@@ -5,6 +5,7 @@
 
 use fluxion::ai::surrogate::SurrogateManager;
 use fluxion::sim::engine::ThermalModel;
+use fluxion::sim::thermal_selector::ThermalSelector;
 use fluxion::validation::ashrae_140_cases::ASHRAE140Case;
 use fluxion::weather::denver::DenverTmyWeather;
 
@@ -24,7 +25,8 @@ fn test_case_600_peak_cooling_red() {
 
     // Create Case 600 model
     let spec = ASHRAE140Case::Case600.spec();
-    let mut model = ThermalModel::from_spec(&spec);
+    let mut model = ThermalModel::from_spec_with_selector(&spec, &ThermalSelector::default())
+        .expect("default selector must initialize");
 
     // Load Denver TMY weather
     let _weather = DenverTmyWeather::new();
@@ -60,7 +62,8 @@ fn test_case_600_peak_cooling_red() {
 #[test]
 fn test_solar_gain_distribution_analysis() {
     let spec = ASHRAE140Case::Case600.spec();
-    let mut model = ThermalModel::from_spec(&spec);
+    let mut model = ThermalModel::from_spec_with_selector(&spec, &ThermalSelector::default())
+        .expect("default selector must initialize");
     let _weather = DenverTmyWeather::new();
 
     // Run simulation for a single day to analyze solar distribution
@@ -109,7 +112,8 @@ fn test_case_900_peak_cooling_red() {
     let tolerance_pct = 0.15;
 
     let spec = ASHRAE140Case::Case900.spec();
-    let mut model = ThermalModel::from_spec(&spec);
+    let mut model = ThermalModel::from_spec_with_selector(&spec, &ThermalSelector::default())
+        .expect("default selector must initialize");
 
     let _weather = DenverTmyWeather::new();
     let surrogates = SurrogateManager::new().expect("Failed to create surrogate manager");

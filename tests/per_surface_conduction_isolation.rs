@@ -33,6 +33,7 @@
 use fluxion::sim::per_surface_conduction::{
     MassNode, PerSurfaceConductionSolver, SurfaceKind, SurfaceNode,
 };
+use fluxion::sim::thermal_selector::ThermalSelector;
 use fluxion::validation::ashrae_140_cases::Orientation;
 
 // ============================================================================
@@ -1080,7 +1081,9 @@ fn test_step_physics_9r4c_integration_with_per_surface() {
     use fluxion::validation::ashrae_140_cases::ASHRAE140Case;
 
     let spec = ASHRAE140Case::Case900.spec();
-    let mut model = ThermalModel::<VectorField>::from_spec(&spec);
+    let mut model =
+        ThermalModel::<VectorField>::from_spec_with_selector(&spec, &ThermalSelector::default())
+            .expect("default selector must initialize");
 
     // Run a few timesteps
     for hour in 0..10 {

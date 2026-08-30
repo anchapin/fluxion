@@ -14,6 +14,7 @@
 
 use fluxion::physics::cta::VectorField;
 use fluxion::sim::engine::ThermalModel;
+use fluxion::sim::thermal_selector::ThermalSelector;
 use fluxion::validation::ashrae_140_cases::ASHRAE140Case;
 use fluxion::validation::ashrae_140_validator::ASHRAE140Validator;
 use fluxion::weather::denver::DenverTmyWeather;
@@ -61,7 +62,9 @@ fn validate_energy_against_reference(
 /// Simulates Case 960 and returns annual heating/cooling in MWh
 fn simulate_case_960() -> (f64, f64, f64, f64) {
     let spec = ASHRAE140Case::Case960.spec();
-    let mut model = ThermalModel::<VectorField>::from_spec(&spec);
+    let mut model =
+        ThermalModel::<VectorField>::from_spec_with_selector(&spec, &ThermalSelector::default())
+            .expect("default selector must initialize");
     let weather = DenverTmyWeather::new();
 
     // Verify multi-zone configuration
@@ -149,7 +152,9 @@ fn test_case_960_multi_zone_configuration() {
 #[test]
 fn test_case_960_inter_zone_conductance() {
     let spec = ASHRAE140Case::Case960.spec();
-    let model = ThermalModel::<VectorField>::from_spec(&spec);
+    let model =
+        ThermalModel::<VectorField>::from_spec_with_selector(&spec, &ThermalSelector::default())
+            .expect("default selector must initialize");
 
     // Verify inter-zone conductance is set
     let h_iz = model.conduction.h_tr_iz.as_ref();
@@ -197,7 +202,9 @@ fn test_case_960_sunspace_simulation() {
 #[test]
 fn test_case_960_zone_temperatures() {
     let spec = ASHRAE140Case::Case960.spec();
-    let mut model = ThermalModel::<VectorField>::from_spec(&spec);
+    let mut model =
+        ThermalModel::<VectorField>::from_spec_with_selector(&spec, &ThermalSelector::default())
+            .expect("default selector must initialize");
     let weather = DenverTmyWeather::new();
 
     let mut back_zone_temps: Vec<f64> = Vec::new();
@@ -277,7 +284,9 @@ fn test_case_960_hvac_only_in_back_zone() {
     // HVAC energy should only be counted for the conditioned back-zone
     // The sunspace is free-floating and should not contribute to HVAC energy
     let spec = ASHRAE140Case::Case960.spec();
-    let _model = ThermalModel::<VectorField>::from_spec(&spec);
+    let _model =
+        ThermalModel::<VectorField>::from_spec_with_selector(&spec, &ThermalSelector::default())
+            .expect("default selector must initialize");
 
     // Verify HVAC is only in zone 0
     assert!(!spec.hvac[0].is_free_floating(), "Zone 0 should have HVAC");
@@ -387,7 +396,9 @@ fn test_case_960_comprehensive_energy_validation() {
 fn test_case_960_inter_zone_heat_transfer_analysis() {
     // Analyze inter-zone heat transfer characteristics
     let spec = ASHRAE140Case::Case960.spec();
-    let mut model = ThermalModel::<VectorField>::from_spec(&spec);
+    let mut model =
+        ThermalModel::<VectorField>::from_spec_with_selector(&spec, &ThermalSelector::default())
+            .expect("default selector must initialize");
     let weather = DenverTmyWeather::new();
 
     let mut back_zone_temps: Vec<f64> = Vec::new();
@@ -486,7 +497,9 @@ fn test_case_960_inter_zone_heat_transfer_analysis() {
 fn test_case_960_seasonal_temperature_profiles() {
     // Validate seasonal temperature profiles for both zones
     let spec = ASHRAE140Case::Case960.spec();
-    let mut model = ThermalModel::<VectorField>::from_spec(&spec);
+    let mut model =
+        ThermalModel::<VectorField>::from_spec_with_selector(&spec, &ThermalSelector::default())
+            .expect("default selector must initialize");
     let weather = DenverTmyWeather::new();
 
     // Collect data by season
@@ -678,7 +691,9 @@ fn test_peak_load_validation() {
 #[test]
 fn test_energy_conservation_between_zones() {
     let spec = ASHRAE140Case::Case960.spec();
-    let mut model = ThermalModel::<VectorField>::from_spec(&spec);
+    let mut model =
+        ThermalModel::<VectorField>::from_spec_with_selector(&spec, &ThermalSelector::default())
+            .expect("default selector must initialize");
     let weather = DenverTmyWeather::new();
 
     let mut total_heating_zone0 = 0.0;
@@ -738,7 +753,9 @@ fn test_energy_conservation_between_zones() {
 #[test]
 fn test_hvac_runtime_patterns() {
     let spec = ASHRAE140Case::Case960.spec();
-    let mut model = ThermalModel::<VectorField>::from_spec(&spec);
+    let mut model =
+        ThermalModel::<VectorField>::from_spec_with_selector(&spec, &ThermalSelector::default())
+            .expect("default selector must initialize");
     let weather = DenverTmyWeather::new();
 
     let mut heating_hours = 0;
@@ -942,7 +959,9 @@ fn test_issue_1445_full_nonlinear_stefan_boltzmann_wired_in() {
     // for this geometric reason; the regression guards against any future
     // change that would silently break this invariant.
     let spec = ASHRAE140Case::Case960.spec();
-    let model = ThermalModel::<VectorField>::from_spec(&spec);
+    let model =
+        ThermalModel::<VectorField>::from_spec_with_selector(&spec, &ThermalSelector::default())
+            .expect("default selector must initialize");
     let h_iz_rad = model.conduction.h_tr_iz_rad.as_ref();
     assert!(
         h_iz_rad[0] == 0.0,

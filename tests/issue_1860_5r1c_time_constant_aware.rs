@@ -39,6 +39,7 @@ use fluxion::physics::solver_trait::HeatConductionSolver;
 use fluxion::physics::units::{FromF64, HeatTransferCoefficient, Temperature, Time};
 use fluxion::physics::wall_spec::{lightweight_wall_spec, WallSpec};
 use fluxion::sim::engine::ThermalModel;
+use fluxion::sim::thermal_selector::ThermalSelector;
 use fluxion::validation::ashrae_140_cases::ASHRAE140Case;
 use fluxion::weather::denver::DenverTmyWeather;
 use fluxion::weather::WeatherSource;
@@ -47,7 +48,11 @@ use fluxion_core::assembly::{AssemblyBuilder, ConcreteMaterial, InsulationMateri
 /// Run `steps` hourly `step_physics` calls with Denver TMY weather data so
 /// the surface ODE state is exercised against real boundary conditions.
 fn run_case_with_weather(case: ASHRAE140Case, steps: usize) -> ThermalModel<VectorField> {
-    let mut model = ThermalModel::<VectorField>::from_spec(&case.spec());
+    let mut model = ThermalModel::<VectorField>::from_spec_with_selector(
+        &case.spec(),
+        &ThermalSelector::default(),
+    )
+    .expect("default selector must initialize");
     let weather = DenverTmyWeather::new();
     for step in 0..steps {
         let weather_data = weather.get_hourly_data(step).unwrap();
@@ -240,7 +245,11 @@ fn test_wall_surface_ode_relaxes_to_equilibrium() {
 /// defined by the independent mass-to-surface and interior-film conductances.
 #[test]
 fn test_thermal_model_surface_ode_relaxes_to_t_si_eq() {
-    let mut model = ThermalModel::<VectorField>::from_spec(&ASHRAE140Case::Case600.spec());
+    let mut model = ThermalModel::<VectorField>::from_spec_with_selector(
+        &ASHRAE140Case::Case600.spec(),
+        &ThermalSelector::default(),
+    )
+    .expect("default selector must initialize");
     let dt = 3600.0;
     let t_int = 20.0;
     let t_mass = 30.0;
@@ -465,7 +474,11 @@ fn test_case_950_annual_cooling_within_ashrae140_band() {
 /// Solar-lag state must be initialised to zero (no solar history at t=0).
 #[test]
 fn test_solar_lag_initialised_to_zero() {
-    let model = ThermalModel::<VectorField>::from_spec(&ASHRAE140Case::Case600.spec());
+    let model = ThermalModel::<VectorField>::from_spec_with_selector(
+        &ASHRAE140Case::Case600.spec(),
+        &ThermalSelector::default(),
+    )
+    .expect("default selector must initialize");
     for i in 0..model.hvac.num_zones {
         let lag = model.mass.solar_lag.as_ref()[i];
         assert!(

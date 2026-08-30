@@ -9,6 +9,7 @@
 
 use fluxion::physics::cta::VectorField;
 use fluxion::sim::engine::{ThermalModel, ThermalModelType};
+use fluxion::sim::thermal_selector::ThermalSelector;
 use fluxion::validation::ashrae_140_cases::ASHRAE140Case;
 
 fn calculate_tau(model: &ThermalModel<VectorField>) -> f64 {
@@ -33,7 +34,11 @@ mod tests {
         // - A = surface area of layer i
 
         let high_spec = ASHRAE140Case::Case900.spec();
-        let high_model = ThermalModel::<VectorField>::from_spec(&high_spec);
+        let high_model = ThermalModel::<VectorField>::from_spec_with_selector(
+            &high_spec,
+            &ThermalSelector::default(),
+        )
+        .expect("default selector must initialize");
 
         #[allow(clippy::get_first)]
         let h_tr_ms = high_model
@@ -63,7 +68,11 @@ mod tests {
         // - R_i = thermal resistance of layer i
 
         let high_spec = ASHRAE140Case::Case900.spec();
-        let high_model = ThermalModel::<VectorField>::from_spec(&high_spec);
+        let high_model = ThermalModel::<VectorField>::from_spec_with_selector(
+            &high_spec,
+            &ThermalSelector::default(),
+        )
+        .expect("default selector must initialize");
 
         #[allow(clippy::get_first)]
         let h_tr_is = high_model
@@ -86,7 +95,11 @@ mod tests {
     fn test_tau_calculation() {
         // For Case 900 (High-mass), τ = R_total * C_total should be roughly 70-80 hours
         let high_spec = ASHRAE140Case::Case900.spec();
-        let _high_model = ThermalModel::<VectorField>::from_spec(&high_spec);
+        let _high_model = ThermalModel::<VectorField>::from_spec_with_selector(
+            &high_spec,
+            &ThermalSelector::default(),
+        )
+        .expect("default selector must initialize");
 
         let total_r: f64 = high_spec
             .construction
@@ -152,7 +165,11 @@ mod tests {
     #[test]
     fn test_total_thermal_capacitance_calculation() {
         let spec = ASHRAE140Case::Case900.spec();
-        let model = ThermalModel::<VectorField>::from_spec(&spec);
+        let model = ThermalModel::<VectorField>::from_spec_with_selector(
+            &spec,
+            &ThermalSelector::default(),
+        )
+        .expect("default selector must initialize");
 
         // Use the appropriate field for thermal capacitance
         let total_cap = model.mass.thermal_capacitance.as_ref()[0];
@@ -167,7 +184,11 @@ mod tests {
 
         // For low-mass (Case 600): should be < 20000 J/K
         let low_spec = ASHRAE140Case::Case600.spec();
-        let low_model = ThermalModel::<VectorField>::from_spec(&low_spec);
+        let low_model = ThermalModel::<VectorField>::from_spec_with_selector(
+            &low_spec,
+            &ThermalSelector::default(),
+        )
+        .expect("default selector must initialize");
 
         let total_cap_low = low_model.mass.thermal_capacitance.as_ref()[0];
 
@@ -188,7 +209,11 @@ mod tests {
     #[test]
     fn test_heat_flux_mass_to_surface() {
         let spec = ASHRAE140Case::Case900.spec();
-        let model = ThermalModel::<VectorField>::from_spec(&spec);
+        let model = ThermalModel::<VectorField>::from_spec_with_selector(
+            &spec,
+            &ThermalSelector::default(),
+        )
+        .expect("default selector must initialize");
 
         #[allow(clippy::get_first)]
         let h_tr_ms = model
@@ -210,7 +235,11 @@ mod tests {
     #[test]
     fn test_heat_flux_surface_to_zone() {
         let spec = ASHRAE140Case::Case900.spec();
-        let model = ThermalModel::<VectorField>::from_spec(&spec);
+        let model = ThermalModel::<VectorField>::from_spec_with_selector(
+            &spec,
+            &ThermalSelector::default(),
+        )
+        .expect("default selector must initialize");
 
         #[allow(clippy::get_first)]
         let h_tr_is = model
@@ -240,8 +269,16 @@ mod tests {
         let low_spec = ASHRAE140Case::Case600.spec();
         let high_spec = ASHRAE140Case::Case900.spec();
 
-        let low_model = ThermalModel::<VectorField>::from_spec(&low_spec);
-        let high_model = ThermalModel::<VectorField>::from_spec(&high_spec);
+        let low_model = ThermalModel::<VectorField>::from_spec_with_selector(
+            &low_spec,
+            &ThermalSelector::default(),
+        )
+        .expect("default selector must initialize");
+        let high_model = ThermalModel::<VectorField>::from_spec_with_selector(
+            &high_spec,
+            &ThermalSelector::default(),
+        )
+        .expect("default selector must initialize");
 
         let low_tau = calculate_tau(&low_model);
         let high_tau = calculate_tau(&high_model);
@@ -292,7 +329,11 @@ mod tests {
     #[test]
     fn test_thermal_mass_initialization() {
         let spec = ASHRAE140Case::Case900.spec();
-        let model = ThermalModel::<VectorField>::from_spec(&spec);
+        let model = ThermalModel::<VectorField>::from_spec_with_selector(
+            &spec,
+            &ThermalSelector::default(),
+        )
+        .expect("default selector must initialize");
 
         #[allow(clippy::get_first)]
         let initial_temp = model
@@ -314,7 +355,11 @@ mod tests {
     #[test]
     fn test_conductance_consistency() {
         let spec = ASHRAE140Case::Case900.spec();
-        let model = ThermalModel::<VectorField>::from_spec(&spec);
+        let model = ThermalModel::<VectorField>::from_spec_with_selector(
+            &spec,
+            &ThermalSelector::default(),
+        )
+        .expect("default selector must initialize");
 
         #[allow(clippy::get_first)]
         let h_tr_ms = model
@@ -372,8 +417,16 @@ mod tests {
         let low_spec = ASHRAE140Case::Case600.spec();
         let high_spec = ASHRAE140Case::Case900.spec();
 
-        let low_model = ThermalModel::<VectorField>::from_spec(&low_spec);
-        let high_model = ThermalModel::<VectorField>::from_spec(&high_spec);
+        let low_model = ThermalModel::<VectorField>::from_spec_with_selector(
+            &low_spec,
+            &ThermalSelector::default(),
+        )
+        .expect("default selector must initialize");
+        let high_model = ThermalModel::<VectorField>::from_spec_with_selector(
+            &high_spec,
+            &ThermalSelector::default(),
+        )
+        .expect("default selector must initialize");
 
         assert_eq!(
             low_model.hvac.thermal_model_type,

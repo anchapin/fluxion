@@ -29,6 +29,7 @@
 
 use fluxion::physics::cta::VectorField;
 use fluxion::sim::engine::ThermalModel;
+use fluxion::sim::thermal_selector::ThermalSelector;
 use fluxion::validation::ashrae_140_cases::ASHRAE140Case;
 
 /// Compute the building heat loss coefficient (zone → outdoor) for the 5R1C
@@ -68,7 +69,9 @@ fn issue_925_h_loss_matches_hand_calc_for_case_600() {
     // h_tr_ms = 1092, but the *envelope* h_loss is the same since
     // h_tr_em dominates the series.)
     let spec = ASHRAE140Case::Case600.spec();
-    let model: ThermalModel<VectorField> = ThermalModel::from_spec(&spec);
+    let model: ThermalModel<VectorField> =
+        ThermalModel::from_spec_with_selector(&spec, &ThermalSelector::default())
+            .expect("default selector must initialize");
 
     let h_ve = model.conduction.h_ve.as_ref()[0];
     let h_tr_w = model.conduction.h_tr_w.as_ref()[0];
@@ -113,11 +116,15 @@ fn issue_925_h_loss_is_independent_of_h_tr_ms() {
     // envelope (windows, walls, roof, floor, infiltration). The only
     // difference between 600 and 900 is the thermal mass.
     let spec_600 = ASHRAE140Case::Case600.spec();
-    let model_600: ThermalModel<VectorField> = ThermalModel::from_spec(&spec_600);
+    let model_600: ThermalModel<VectorField> =
+        ThermalModel::from_spec_with_selector(&spec_600, &ThermalSelector::default())
+            .expect("default selector must initialize");
     let h_loss_600 = h_loss_5r1c(&model_600);
 
     let spec_900 = ASHRAE140Case::Case900.spec();
-    let model_900: ThermalModel<VectorField> = ThermalModel::from_spec(&spec_900);
+    let model_900: ThermalModel<VectorField> =
+        ThermalModel::from_spec_with_selector(&spec_900, &ThermalSelector::default())
+            .expect("default selector must initialize");
     let h_loss_900 = h_loss_5r1c(&model_900);
 
     let ratio = h_loss_900 / h_loss_600;
@@ -136,7 +143,9 @@ fn issue_925_h_loss_is_less_than_old_h_coeff() {
     // 900's annual heating toward the reference (1.17–2.04 MWh) must
     // reduce the h_coeff used in the demand formula.
     let spec_600 = ASHRAE140Case::Case600.spec();
-    let model_600: ThermalModel<VectorField> = ThermalModel::from_spec(&spec_600);
+    let model_600: ThermalModel<VectorField> =
+        ThermalModel::from_spec_with_selector(&spec_600, &ThermalSelector::default())
+            .expect("default selector must initialize");
     let h_loss_600 = h_loss_5r1c(&model_600);
     let old_h_coeff_600 = model_600.conduction.derived_den.as_ref()[0]
         / (2.0 * model_600.conduction.derived_term_rest_1.as_ref()[0]);
@@ -146,7 +155,9 @@ fn issue_925_h_loss_is_less_than_old_h_coeff() {
     );
 
     let spec_900 = ASHRAE140Case::Case900.spec();
-    let model_900: ThermalModel<VectorField> = ThermalModel::from_spec(&spec_900);
+    let model_900: ThermalModel<VectorField> =
+        ThermalModel::from_spec_with_selector(&spec_900, &ThermalSelector::default())
+            .expect("default selector must initialize");
     let h_loss_900 = h_loss_5r1c(&model_900);
     let old_h_coeff_900 = model_900.conduction.derived_den.as_ref()[0]
         / (2.0 * model_900.conduction.derived_term_rest_1.as_ref()[0]);

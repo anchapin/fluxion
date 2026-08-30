@@ -19,6 +19,7 @@
 
 use fluxion::physics::cta::VectorField;
 use fluxion::sim::engine::ThermalModel;
+use fluxion::sim::thermal_selector::ThermalSelector;
 use fluxion::validation::ashrae_140_cases::ASHRAE140Case;
 use fluxion::validation::diagnostics::SimulationDiagnostics;
 use fluxion::weather::denver::DenverTmyWeather;
@@ -147,7 +148,9 @@ fn simulate_case(
     let spec = case_spec.spec();
     let weather = DenverTmyWeather::new();
 
-    let mut model = ThermalModel::<VectorField>::from_spec(&spec);
+    let mut model =
+        ThermalModel::<VectorField>::from_spec_with_selector(&spec, &ThermalSelector::default())
+            .expect("default selector must initialize");
     let diag = SimulationDiagnostics::new(model.hvac.num_zones, 8760);
     model.set_diagnostics(Some(diag));
 

@@ -11,6 +11,7 @@
 //! The module follows the Validator pattern used throughout the Fluxion validation framework.
 
 use crate::physics::cta::{ContinuousTensor, VectorField};
+use crate::sim::thermal_selector::ThermalSelector;
 use crate::sim::engine::ThermalModel;
 use crate::validation::thermal_mass_energy_accounting::EnergyBalanceReport;
 
@@ -651,7 +652,11 @@ mod tests {
     fn test_energy_conservation_validation() {
         // Create a simple thermal model
         let spec = ASHRAE140Case::Case600.spec();
-        let model = ThermalModel::<VectorField>::from_spec(&spec);
+        let model = ThermalModel::<VectorField>::from_spec_with_selector(
+            &spec,
+            &ThermalSelector::default(),
+        )
+        .expect("default selector must initialize");
 
         let validator = EnergyBalanceValidator::default();
 
@@ -667,7 +672,11 @@ mod tests {
     fn test_inter_zone_heat_transfer_validation() {
         // Create a multi-zone model (if available)
         let spec = ASHRAE140Case::Case960.spec();
-        let model = ThermalModel::<VectorField>::from_spec(&spec);
+        let model = ThermalModel::<VectorField>::from_spec_with_selector(
+            &spec,
+            &ThermalSelector::default(),
+        )
+        .expect("default selector must initialize");
 
         let validator = EnergyBalanceValidator::default();
 
@@ -682,7 +691,11 @@ mod tests {
     #[test]
     fn test_report_generation() {
         let spec = ASHRAE140Case::Case600.spec();
-        let model = ThermalModel::<VectorField>::from_spec(&spec);
+        let model = ThermalModel::<VectorField>::from_spec_with_selector(
+            &spec,
+            &ThermalSelector::default(),
+        )
+        .expect("default selector must initialize");
 
         let validator = EnergyBalanceValidator::default();
         let report = validator.generate_report(&model);
@@ -707,7 +720,11 @@ mod tests {
         use crate::physics::cta::VectorField;
 
         let spec = ASHRAE140Case::Case960.spec();
-        let mut model = ThermalModel::<VectorField>::from_spec(&spec);
+        let mut model = ThermalModel::<VectorField>::from_spec_with_selector(
+            &spec,
+            &ThermalSelector::default(),
+        )
+        .expect("default selector must initialize");
         let area0 = model.setpoints.zone_area.as_ref()[0];
 
         // Hand-balance the stub (T_air = T_mass = T_prev_mass = T_outdoor =
@@ -771,7 +788,11 @@ mod tests {
         use crate::physics::cta::VectorField;
 
         let spec = ASHRAE140Case::Case960.spec();
-        let mut model = ThermalModel::<VectorField>::from_spec(&spec);
+        let mut model = ThermalModel::<VectorField>::from_spec_with_selector(
+            &spec,
+            &ThermalSelector::default(),
+        )
+        .expect("default selector must initialize");
         let t_balanced = 20.0_f64;
         for i in 0..model.hvac.num_zones {
             model.setpoints.temperatures.as_mut()[i] = t_balanced;

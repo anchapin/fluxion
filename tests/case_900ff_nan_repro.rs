@@ -17,6 +17,7 @@
 
 use fluxion::physics::cta::VectorField;
 use fluxion::sim::engine::ThermalModel;
+use fluxion::sim::thermal_selector::ThermalSelector;
 use fluxion::validation::ashrae_140_cases::ASHRAE140Case;
 use fluxion::weather::denver::DenverTmyWeather;
 use fluxion::weather::WeatherSource;
@@ -25,7 +26,9 @@ use fluxion::weather::WeatherSource;
 /// multi-node state vector) becomes non-finite. Returns (step, value).
 fn find_first_non_finite(max_steps: usize) -> Option<(usize, f64)> {
     let spec = ASHRAE140Case::Case900FF.spec();
-    let mut model = ThermalModel::<VectorField>::from_spec(&spec);
+    let mut model =
+        ThermalModel::<VectorField>::from_spec_with_selector(&spec, &ThermalSelector::default())
+            .expect("default selector must initialize");
     let weather = DenverTmyWeather::new();
 
     for step in 0..max_steps {
@@ -79,7 +82,9 @@ fn test_case_900ff_short_window_no_nan() {
 /// divergence slope is visible in the test output.
 fn dump_trajectory_around_failure(fail_step: usize) {
     let spec = ASHRAE140Case::Case900FF.spec();
-    let mut model = ThermalModel::<VectorField>::from_spec(&spec);
+    let mut model =
+        ThermalModel::<VectorField>::from_spec_with_selector(&spec, &ThermalSelector::default())
+            .expect("default selector must initialize");
     let weather = DenverTmyWeather::new();
 
     let end = (fail_step + 5).min(8760);

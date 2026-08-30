@@ -14,6 +14,7 @@
 use fluxion::ai::surrogate::SurrogateManager;
 use fluxion::physics::cta::VectorField;
 use fluxion::sim::engine::ThermalModel;
+use fluxion::sim::thermal_selector::ThermalSelector;
 use fluxion::validation::ashrae_140_cases::{ASHRAE140Case, ConstructionType};
 
 /// Helper function to simulate 1 year without surrogates, equipment, or occupancy
@@ -68,8 +69,16 @@ fn test_case_195_high_mass_walls() {
     println!("Construction: {:?}", high_mass_spec.construction_type);
 
     // Create thermal models
-    let mut baseline_model = ThermalModel::<VectorField>::from_spec(&baseline_spec);
-    let mut high_mass_model = ThermalModel::<VectorField>::from_spec(&high_mass_spec);
+    let mut baseline_model = ThermalModel::<VectorField>::from_spec_with_selector(
+        &baseline_spec,
+        &ThermalSelector::default(),
+    )
+    .expect("default selector must initialize");
+    let mut high_mass_model = ThermalModel::<VectorField>::from_spec_with_selector(
+        &high_mass_spec,
+        &ThermalSelector::default(),
+    )
+    .expect("default selector must initialize");
 
     // Simulate 1 year for both models
     let baseline_energy = simulate_year(&mut baseline_model);
@@ -148,8 +157,16 @@ fn test_case_195_no_internal_loads() {
     }
 
     // Create thermal models
-    let mut baseline_model = ThermalModel::<VectorField>::from_spec(&baseline_spec);
-    let mut no_loads_model = ThermalModel::<VectorField>::from_spec(&no_loads_spec);
+    let mut baseline_model = ThermalModel::<VectorField>::from_spec_with_selector(
+        &baseline_spec,
+        &ThermalSelector::default(),
+    )
+    .expect("default selector must initialize");
+    let mut no_loads_model = ThermalModel::<VectorField>::from_spec_with_selector(
+        &no_loads_spec,
+        &ThermalSelector::default(),
+    )
+    .expect("default selector must initialize");
 
     // Simulate 1 year for both models
     let baseline_energy = simulate_year(&mut baseline_model);
@@ -203,8 +220,16 @@ fn test_case_195_no_solar_gains() {
     );
 
     // Create thermal models
-    let mut baseline_model = ThermalModel::<VectorField>::from_spec(&baseline_spec);
-    let mut no_solar_model = ThermalModel::<VectorField>::from_spec(&no_solar_spec);
+    let mut baseline_model = ThermalModel::<VectorField>::from_spec_with_selector(
+        &baseline_spec,
+        &ThermalSelector::default(),
+    )
+    .expect("default selector must initialize");
+    let mut no_solar_model = ThermalModel::<VectorField>::from_spec_with_selector(
+        &no_solar_spec,
+        &ThermalSelector::default(),
+    )
+    .expect("default selector must initialize");
 
     // Simulate 1 year for both models
     let baseline_energy = simulate_year(&mut baseline_model);
@@ -252,8 +277,16 @@ fn test_case_195_thermal_bridge() {
     println!("Construction: {:?}", thermal_bridge_spec.construction_type);
 
     // Create thermal models
-    let mut baseline_model = ThermalModel::<VectorField>::from_spec(&baseline_spec);
-    let mut thermal_bridge_model = ThermalModel::<VectorField>::from_spec(&thermal_bridge_spec);
+    let mut baseline_model = ThermalModel::<VectorField>::from_spec_with_selector(
+        &baseline_spec,
+        &ThermalSelector::default(),
+    )
+    .expect("default selector must initialize");
+    let mut thermal_bridge_model = ThermalModel::<VectorField>::from_spec_with_selector(
+        &thermal_bridge_spec,
+        &ThermalSelector::default(),
+    )
+    .expect("default selector must initialize");
 
     // Simulate 1 year for both models
     let baseline_energy = simulate_year(&mut baseline_model);
@@ -300,7 +333,11 @@ fn test_solid_conduction_variants_integration() {
     total += 1;
     println!("\n[1/4] Testing High Mass variant...");
     let high_mass_spec = ASHRAE140Case::Case195HighMass.spec();
-    let mut high_mass_model = ThermalModel::<VectorField>::from_spec(&high_mass_spec);
+    let mut high_mass_model = ThermalModel::<VectorField>::from_spec_with_selector(
+        &high_mass_spec,
+        &ThermalSelector::default(),
+    )
+    .expect("default selector must initialize");
     let high_mass_energy = simulate_year(&mut high_mass_model);
 
     if !high_mass_energy.is_nan() && high_mass_energy.abs() > 0.0 {
@@ -316,7 +353,11 @@ fn test_solid_conduction_variants_integration() {
     total += 1;
     println!("\n[2/4] Testing No Loads variant...");
     let no_loads_spec = ASHRAE140Case::Case195NoLoads.spec();
-    let mut no_loads_model = ThermalModel::<VectorField>::from_spec(&no_loads_spec);
+    let mut no_loads_model = ThermalModel::<VectorField>::from_spec_with_selector(
+        &no_loads_spec,
+        &ThermalSelector::default(),
+    )
+    .expect("default selector must initialize");
     let no_loads_energy = simulate_year(&mut no_loads_model);
 
     if !no_loads_energy.is_nan() && no_loads_energy.abs() > 0.0 {
@@ -332,7 +373,11 @@ fn test_solid_conduction_variants_integration() {
     total += 1;
     println!("\n[3/4] Testing No Solar variant...");
     let no_solar_spec = ASHRAE140Case::Case195NoSolar.spec();
-    let mut no_solar_model = ThermalModel::<VectorField>::from_spec(&no_solar_spec);
+    let mut no_solar_model = ThermalModel::<VectorField>::from_spec_with_selector(
+        &no_solar_spec,
+        &ThermalSelector::default(),
+    )
+    .expect("default selector must initialize");
     let no_solar_energy = simulate_year(&mut no_solar_model);
 
     if !no_solar_energy.is_nan() && no_solar_energy.abs() > 0.0 {
@@ -348,7 +393,11 @@ fn test_solid_conduction_variants_integration() {
     total += 1;
     println!("\n[4/4] Testing Thermal Bridge variant...");
     let thermal_bridge_spec = ASHRAE140Case::Case195ThermalBridge.spec();
-    let mut thermal_bridge_model = ThermalModel::<VectorField>::from_spec(&thermal_bridge_spec);
+    let mut thermal_bridge_model = ThermalModel::<VectorField>::from_spec_with_selector(
+        &thermal_bridge_spec,
+        &ThermalSelector::default(),
+    )
+    .expect("default selector must initialize");
     let thermal_bridge_energy = simulate_year(&mut thermal_bridge_model);
 
     if !thermal_bridge_energy.is_nan() && thermal_bridge_energy.abs() > 0.0 {

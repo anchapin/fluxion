@@ -7,6 +7,7 @@ use fluxion::ai::surrogate::SurrogateManager;
 use fluxion::physics::cta::VectorField;
 use fluxion::sim::engine::ThermalModel;
 use fluxion::sim::hvac::{HVACMode, HeatPump, VariableCapacityEquipment};
+use fluxion::sim::thermal_selector::ThermalSelector;
 use fluxion::validation::ashrae_140_cases::ASHRAE140Case;
 
 /// ASHRAE 140 Case 800: Simple heat pump system
@@ -20,7 +21,11 @@ fn test_ashrae_800() {
     let case_spec = ASHRAE140Case::Case800.spec();
 
     // Create thermal model from spec
-    let mut model = ThermalModel::<VectorField>::from_spec(&case_spec);
+    let mut model = ThermalModel::<VectorField>::from_spec_with_selector(
+        &case_spec,
+        &ThermalSelector::default(),
+    )
+    .expect("default selector must initialize");
 
     // Run 1-year simulation
     let surrogates = SurrogateManager::new().expect("Failed to create SurrogateManager");
@@ -94,7 +99,11 @@ fn test_ashrae_801() {
     let case_spec = ASHRAE140Case::Case801.spec();
 
     // Create thermal model from spec
-    let mut model = ThermalModel::<VectorField>::from_spec(&case_spec);
+    let mut model = ThermalModel::<VectorField>::from_spec_with_selector(
+        &case_spec,
+        &ThermalSelector::default(),
+    )
+    .expect("default selector must initialize");
 
     // Run 1-year simulation
     let surrogates = SurrogateManager::new().expect("Failed to create SurrogateManager");
@@ -158,7 +167,11 @@ fn test_ashrae_802() {
     let case_spec = ASHRAE140Case::Case802.spec();
 
     // Create thermal model from spec
-    let mut model = ThermalModel::<VectorField>::from_spec(&case_spec);
+    let mut model = ThermalModel::<VectorField>::from_spec_with_selector(
+        &case_spec,
+        &ThermalSelector::default(),
+    )
+    .expect("default selector must initialize");
 
     // Run 1-year simulation
     let surrogates = SurrogateManager::new().expect("Failed to create SurrogateManager");
@@ -223,7 +236,11 @@ fn test_ashrae_803() {
     let case_spec = ASHRAE140Case::Case803.spec();
 
     // Create thermal model from spec
-    let mut model = ThermalModel::<VectorField>::from_spec(&case_spec);
+    let mut model = ThermalModel::<VectorField>::from_spec_with_selector(
+        &case_spec,
+        &ThermalSelector::default(),
+    )
+    .expect("default selector must initialize");
 
     // Run 1-year simulation
     let surrogates = SurrogateManager::new().expect("Failed to create SurrogateManager");
@@ -278,7 +295,11 @@ fn test_ashrae_804() {
     let case_spec = ASHRAE140Case::Case804.spec();
 
     // Create thermal model from spec
-    let mut model = ThermalModel::<VectorField>::from_spec(&case_spec);
+    let mut model = ThermalModel::<VectorField>::from_spec_with_selector(
+        &case_spec,
+        &ThermalSelector::default(),
+    )
+    .expect("default selector must initialize");
 
     // Run 1-year simulation
     let surrogates = SurrogateManager::new().expect("Failed to create SurrogateManager");
@@ -333,7 +354,11 @@ fn test_ashrae_805() {
     let case_spec = ASHRAE140Case::Case805.spec();
 
     // Create thermal model from spec
-    let mut model = ThermalModel::<VectorField>::from_spec(&case_spec);
+    let mut model = ThermalModel::<VectorField>::from_spec_with_selector(
+        &case_spec,
+        &ThermalSelector::default(),
+    )
+    .expect("default selector must initialize");
 
     // Run 1-year simulation
     let surrogates = SurrogateManager::new().expect("Failed to create SurrogateManager");
@@ -398,7 +423,11 @@ fn test_ashrae_806() {
     let case_spec = ASHRAE140Case::Case806.spec();
 
     // Create thermal model from spec
-    let mut model = ThermalModel::<VectorField>::from_spec(&case_spec);
+    let mut model = ThermalModel::<VectorField>::from_spec_with_selector(
+        &case_spec,
+        &ThermalSelector::default(),
+    )
+    .expect("default selector must initialize");
 
     // Run 1-year simulation
     let surrogates = SurrogateManager::new().expect("Failed to create SurrogateManager");
@@ -463,7 +492,11 @@ fn test_ashrae_807() {
     let case_spec = ASHRAE140Case::Case807.spec();
 
     // Create thermal model from spec
-    let mut model = ThermalModel::<VectorField>::from_spec(&case_spec);
+    let mut model = ThermalModel::<VectorField>::from_spec_with_selector(
+        &case_spec,
+        &ThermalSelector::default(),
+    )
+    .expect("default selector must initialize");
 
     // Run 1-year simulation
     let surrogates = SurrogateManager::new().expect("Failed to create SurrogateManager");
@@ -527,7 +560,11 @@ fn test_ashrae_808() {
     let case_spec = ASHRAE140Case::Case808.spec();
 
     // Create thermal model from spec
-    let mut model = ThermalModel::<VectorField>::from_spec(&case_spec);
+    let mut model = ThermalModel::<VectorField>::from_spec_with_selector(
+        &case_spec,
+        &ThermalSelector::default(),
+    )
+    .expect("default selector must initialize");
 
     // Run 1-year simulation
     let surrogates = SurrogateManager::new().expect("Failed to create SurrogateManager");
@@ -589,7 +626,11 @@ fn test_ashrae_809() {
     let case_spec = ASHRAE140Case::Case809.spec();
 
     // Create thermal model from spec
-    let mut model = ThermalModel::<VectorField>::from_spec(&case_spec);
+    let mut model = ThermalModel::<VectorField>::from_spec_with_selector(
+        &case_spec,
+        &ThermalSelector::default(),
+    )
+    .expect("default selector must initialize");
 
     // Run 1-year simulation
     let surrogates = SurrogateManager::new().expect("Failed to create SurrogateManager");
@@ -655,7 +696,11 @@ fn test_ashrae_810() {
     let case_spec = ASHRAE140Case::Case810.spec();
 
     // Create thermal model from spec
-    let mut model = ThermalModel::<VectorField>::from_spec(&case_spec);
+    let mut model = ThermalModel::<VectorField>::from_spec_with_selector(
+        &case_spec,
+        &ThermalSelector::default(),
+    )
+    .expect("default selector must initialize");
 
     // Run 1-year simulation
     let surrogates = SurrogateManager::new().expect("Failed to create SurrogateManager");

@@ -11,6 +11,7 @@
 
 use fluxion::physics::cta::VectorField;
 use fluxion::sim::engine::ThermalModel;
+use fluxion::sim::thermal_selector::ThermalSelector;
 use fluxion::validation::ashrae_140_cases::{ASHRAE140Case, ConstructionType};
 
 #[cfg(test)]
@@ -26,7 +27,11 @@ mod tests {
         let low_mass_spec = ASHRAE140Case::Case600.spec();
 
         // Create low-mass model
-        let model = ThermalModel::<VectorField>::from_spec(&low_mass_spec);
+        let model = ThermalModel::<VectorField>::from_spec_with_selector(
+            &low_mass_spec,
+            &ThermalSelector::default(),
+        )
+        .expect("default selector must initialize");
 
         // Validate that low-mass construction is actually configured
         assert!(model.hvac.case_id.contains("600"));
@@ -54,7 +59,11 @@ mod tests {
 
         let high_mass_spec = ASHRAE140Case::Case900.spec();
 
-        let model = ThermalModel::<VectorField>::from_spec(&high_mass_spec);
+        let model = ThermalModel::<VectorField>::from_spec_with_selector(
+            &high_mass_spec,
+            &ThermalSelector::default(),
+        )
+        .expect("default selector must initialize");
 
         // Validate that high-mass construction is configured
         assert!(model.hvac.case_id.contains("900"));
@@ -116,8 +125,16 @@ mod tests {
         let low_spec = ASHRAE140Case::Case600.spec();
         let high_spec = ASHRAE140Case::Case900.spec();
 
-        let low_model = ThermalModel::<VectorField>::from_spec(&low_spec);
-        let high_model = ThermalModel::<VectorField>::from_spec(&high_spec);
+        let low_model = ThermalModel::<VectorField>::from_spec_with_selector(
+            &low_spec,
+            &ThermalSelector::default(),
+        )
+        .expect("default selector must initialize");
+        let high_model = ThermalModel::<VectorField>::from_spec_with_selector(
+            &high_spec,
+            &ThermalSelector::default(),
+        )
+        .expect("default selector must initialize");
 
         // h_tr_ms (mass to surface) should scale with thermal mass
         let low_h_tr_ms = low_model.conduction.h_tr_ms.as_ref()[0];
@@ -193,8 +210,16 @@ mod tests {
         let high_spec = ASHRAE140Case::Case900.spec();
 
         // Create models
-        let low_model = ThermalModel::<VectorField>::from_spec(&low_spec);
-        let high_model = ThermalModel::<VectorField>::from_spec(&high_spec);
+        let low_model = ThermalModel::<VectorField>::from_spec_with_selector(
+            &low_spec,
+            &ThermalSelector::default(),
+        )
+        .expect("default selector must initialize");
+        let high_model = ThermalModel::<VectorField>::from_spec_with_selector(
+            &high_spec,
+            &ThermalSelector::default(),
+        )
+        .expect("default selector must initialize");
 
         // Compare thermal mass
         let low_mass = low_model.mass.thermal_capacitance.as_ref()[0];
@@ -219,7 +244,11 @@ mod tests {
     #[test]
     fn test_ctf_solar_distribution_vs_5r1c() {
         let high_spec = ASHRAE140Case::Case900.spec();
-        let model = ThermalModel::<VectorField>::from_spec(&high_spec);
+        let model = ThermalModel::<VectorField>::from_spec_with_selector(
+            &high_spec,
+            &ThermalSelector::default(),
+        )
+        .expect("default selector must initialize");
 
         assert!(model.hvac.case_id.contains("900"));
     }

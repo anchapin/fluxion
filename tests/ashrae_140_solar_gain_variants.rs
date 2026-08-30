@@ -13,6 +13,7 @@
 use fluxion::ai::surrogate::SurrogateManager;
 use fluxion::physics::cta::VectorField;
 use fluxion::sim::engine::ThermalModel;
+use fluxion::sim::thermal_selector::ThermalSelector;
 use fluxion::validation::ashrae_140_cases::ASHRAE140Case;
 
 /// Helper function to simulate 1 year without surrogates, equipment, or occupancy
@@ -50,8 +51,16 @@ fn test_case_195_shgc_low() {
     );
 
     // Create thermal models
-    let mut baseline_model = ThermalModel::<VectorField>::from_spec(&baseline_spec);
-    let mut low_shgc_model = ThermalModel::<VectorField>::from_spec(&low_shgc_spec);
+    let mut baseline_model = ThermalModel::<VectorField>::from_spec_with_selector(
+        &baseline_spec,
+        &ThermalSelector::default(),
+    )
+    .expect("default selector must initialize");
+    let mut low_shgc_model = ThermalModel::<VectorField>::from_spec_with_selector(
+        &low_shgc_spec,
+        &ThermalSelector::default(),
+    )
+    .expect("default selector must initialize");
 
     // Simulate 1 year for both models
     let baseline_energy = simulate_year(&mut baseline_model);
@@ -105,8 +114,16 @@ fn test_case_195_shgc_medium() {
     );
 
     // Create thermal models
-    let mut baseline_model = ThermalModel::<VectorField>::from_spec(&baseline_spec);
-    let mut medium_shgc_model = ThermalModel::<VectorField>::from_spec(&medium_shgc_spec);
+    let mut baseline_model = ThermalModel::<VectorField>::from_spec_with_selector(
+        &baseline_spec,
+        &ThermalSelector::default(),
+    )
+    .expect("default selector must initialize");
+    let mut medium_shgc_model = ThermalModel::<VectorField>::from_spec_with_selector(
+        &medium_shgc_spec,
+        &ThermalSelector::default(),
+    )
+    .expect("default selector must initialize");
 
     // Simulate 1 year for both models
     let baseline_energy = simulate_year(&mut baseline_model);
@@ -163,8 +180,16 @@ fn test_case_195_shgc_high() {
     );
 
     // Create thermal models
-    let mut baseline_model = ThermalModel::<VectorField>::from_spec(&baseline_spec);
-    let mut high_shgc_model = ThermalModel::<VectorField>::from_spec(&high_shgc_spec);
+    let mut baseline_model = ThermalModel::<VectorField>::from_spec_with_selector(
+        &baseline_spec,
+        &ThermalSelector::default(),
+    )
+    .expect("default selector must initialize");
+    let mut high_shgc_model = ThermalModel::<VectorField>::from_spec_with_selector(
+        &high_shgc_spec,
+        &ThermalSelector::default(),
+    )
+    .expect("default selector must initialize");
 
     // Simulate 1 year for both models
     let baseline_energy = simulate_year(&mut baseline_model);
@@ -224,8 +249,16 @@ fn test_case_195_albedo_low() {
     );
 
     // Create thermal models
-    let mut baseline_model = ThermalModel::<VectorField>::from_spec(&baseline_spec);
-    let mut low_albedo_model = ThermalModel::<VectorField>::from_spec(&low_albedo_spec);
+    let mut baseline_model = ThermalModel::<VectorField>::from_spec_with_selector(
+        &baseline_spec,
+        &ThermalSelector::default(),
+    )
+    .expect("default selector must initialize");
+    let mut low_albedo_model = ThermalModel::<VectorField>::from_spec_with_selector(
+        &low_albedo_spec,
+        &ThermalSelector::default(),
+    )
+    .expect("default selector must initialize");
 
     // Simulate 1 year for both models
     let baseline_energy = simulate_year(&mut baseline_model);
@@ -285,8 +318,16 @@ fn test_case_195_albedo_medium() {
     );
 
     // Create thermal models
-    let mut baseline_model = ThermalModel::<VectorField>::from_spec(&baseline_spec);
-    let mut medium_albedo_model = ThermalModel::<VectorField>::from_spec(&medium_albedo_spec);
+    let mut baseline_model = ThermalModel::<VectorField>::from_spec_with_selector(
+        &baseline_spec,
+        &ThermalSelector::default(),
+    )
+    .expect("default selector must initialize");
+    let mut medium_albedo_model = ThermalModel::<VectorField>::from_spec_with_selector(
+        &medium_albedo_spec,
+        &ThermalSelector::default(),
+    )
+    .expect("default selector must initialize");
 
     // Simulate 1 year for both models
     let baseline_energy = simulate_year(&mut baseline_model);
@@ -349,8 +390,16 @@ fn test_case_195_albedo_high() {
     );
 
     // Create thermal models
-    let mut baseline_model = ThermalModel::<VectorField>::from_spec(&baseline_spec);
-    let mut high_albedo_model = ThermalModel::<VectorField>::from_spec(&high_albedo_spec);
+    let mut baseline_model = ThermalModel::<VectorField>::from_spec_with_selector(
+        &baseline_spec,
+        &ThermalSelector::default(),
+    )
+    .expect("default selector must initialize");
+    let mut high_albedo_model = ThermalModel::<VectorField>::from_spec_with_selector(
+        &high_albedo_spec,
+        &ThermalSelector::default(),
+    )
+    .expect("default selector must initialize");
 
     // Simulate 1 year for both models
     let baseline_energy = simulate_year(&mut baseline_model);
@@ -396,7 +445,11 @@ fn test_solar_gain_variants_integration() {
     total += 1;
     println!("\n[1/6] Testing Low SHGC variant...");
     let low_shgc_spec = ASHRAE140Case::Case195SHGC03.spec();
-    let mut low_shgc_model = ThermalModel::<VectorField>::from_spec(&low_shgc_spec);
+    let mut low_shgc_model = ThermalModel::<VectorField>::from_spec_with_selector(
+        &low_shgc_spec,
+        &ThermalSelector::default(),
+    )
+    .expect("default selector must initialize");
     let low_shgc_energy = simulate_year(&mut low_shgc_model);
 
     if !low_shgc_energy.is_nan() && low_shgc_energy.abs() > 0.0 {
@@ -412,7 +465,11 @@ fn test_solar_gain_variants_integration() {
     total += 1;
     println!("\n[2/6] Testing Medium SHGC variant...");
     let medium_shgc_spec = ASHRAE140Case::Case195SHGC06.spec();
-    let mut medium_shgc_model = ThermalModel::<VectorField>::from_spec(&medium_shgc_spec);
+    let mut medium_shgc_model = ThermalModel::<VectorField>::from_spec_with_selector(
+        &medium_shgc_spec,
+        &ThermalSelector::default(),
+    )
+    .expect("default selector must initialize");
     let medium_shgc_energy = simulate_year(&mut medium_shgc_model);
 
     if !medium_shgc_energy.is_nan() && medium_shgc_energy.abs() > 0.0 {
@@ -431,7 +488,11 @@ fn test_solar_gain_variants_integration() {
     total += 1;
     println!("\n[3/6] Testing High SHGC variant...");
     let high_shgc_spec = ASHRAE140Case::Case195SHGC09.spec();
-    let mut high_shgc_model = ThermalModel::<VectorField>::from_spec(&high_shgc_spec);
+    let mut high_shgc_model = ThermalModel::<VectorField>::from_spec_with_selector(
+        &high_shgc_spec,
+        &ThermalSelector::default(),
+    )
+    .expect("default selector must initialize");
     let high_shgc_energy = simulate_year(&mut high_shgc_model);
 
     if !high_shgc_energy.is_nan() && high_shgc_energy.abs() > 0.0 {
@@ -447,7 +508,11 @@ fn test_solar_gain_variants_integration() {
     total += 1;
     println!("\n[4/6] Testing Low Albedo variant...");
     let low_albedo_spec = ASHRAE140Case::Case195Albedo01.spec();
-    let mut low_albedo_model = ThermalModel::<VectorField>::from_spec(&low_albedo_spec);
+    let mut low_albedo_model = ThermalModel::<VectorField>::from_spec_with_selector(
+        &low_albedo_spec,
+        &ThermalSelector::default(),
+    )
+    .expect("default selector must initialize");
     let low_albedo_energy = simulate_year(&mut low_albedo_model);
 
     if !low_albedo_energy.is_nan() && low_albedo_energy.abs() > 0.0 {
@@ -466,7 +531,11 @@ fn test_solar_gain_variants_integration() {
     total += 1;
     println!("\n[5/6] Testing Medium Albedo variant...");
     let medium_albedo_spec = ASHRAE140Case::Case195Albedo05.spec();
-    let mut medium_albedo_model = ThermalModel::<VectorField>::from_spec(&medium_albedo_spec);
+    let mut medium_albedo_model = ThermalModel::<VectorField>::from_spec_with_selector(
+        &medium_albedo_spec,
+        &ThermalSelector::default(),
+    )
+    .expect("default selector must initialize");
     let medium_albedo_energy = simulate_year(&mut medium_albedo_model);
 
     if !medium_albedo_energy.is_nan() && medium_albedo_energy.abs() > 0.0 {
@@ -485,7 +554,11 @@ fn test_solar_gain_variants_integration() {
     total += 1;
     println!("\n[6/6] Testing High Albedo variant...");
     let high_albedo_spec = ASHRAE140Case::Case195Albedo09.spec();
-    let mut high_albedo_model = ThermalModel::<VectorField>::from_spec(&high_albedo_spec);
+    let mut high_albedo_model = ThermalModel::<VectorField>::from_spec_with_selector(
+        &high_albedo_spec,
+        &ThermalSelector::default(),
+    )
+    .expect("default selector must initialize");
     let high_albedo_energy = simulate_year(&mut high_albedo_model);
 
     if !high_albedo_energy.is_nan() && high_albedo_energy.abs() > 0.0 {

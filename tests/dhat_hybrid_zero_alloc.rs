@@ -58,6 +58,7 @@
 
 use fluxion::ai::surrogate::SurrogateManager;
 use fluxion::sim::thermal_model::{HybridThermalModel, ThermalModelTrait};
+use fluxion::sim::thermal_selector::ThermalSelector;
 use fluxion::validation::ashrae_140_cases::ASHRAE140Case;
 
 // `dhat::Alloc` MUST be the global allocator for `dhat::Profiler` to see any

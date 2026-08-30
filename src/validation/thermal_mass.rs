@@ -27,6 +27,7 @@
 
 use crate::physics::cta::VectorField;
 use crate::sim::engine::ThermalModel;
+use crate::sim::thermal_selector::ThermalSelector;
 use crate::validation::ashrae_140_cases::ASHRAE140Case;
 
 /// Result of thermal mass validation
@@ -66,8 +67,16 @@ pub fn validate_thermal_mass() -> ThermalMassValidationResult {
     let high_mass_spec = ASHRAE140Case::Case900.spec();
 
     // Create models
-    let low_mass_model = ThermalModel::<VectorField>::from_spec(&low_mass_spec);
-    let high_mass_model = ThermalModel::<VectorField>::from_spec(&high_mass_spec);
+    let low_mass_model = ThermalModel::<VectorField>::from_spec_with_selector(
+        &low_mass_spec,
+        &ThermalSelector::default(),
+    )
+    .expect("default selector must initialize");
+    let high_mass_model = ThermalModel::<VectorField>::from_spec_with_selector(
+        &high_mass_spec,
+        &ThermalSelector::default(),
+    )
+    .expect("default selector must initialize");
 
     // Calculate total thermal capacitance for each
     let low_cap: f64 = low_mass_model.mass.thermal_capacitance.iter().sum();
@@ -125,7 +134,9 @@ pub fn validate_6r2c_thermal_mass() -> ThermalMassValidationResult {
 
     // Get case specification
     let spec = ASHRAE140Case::Case900.spec();
-    let mut model = ThermalModel::<VectorField>::from_spec(&spec);
+    let mut model =
+        ThermalModel::<VectorField>::from_spec_with_selector(&spec, &ThermalSelector::default())
+            .expect("default selector must initialize");
 
     // Configure for 6R2C mode
     model.configure_6r2c_model(0.75, 100.0, None);
@@ -296,7 +307,11 @@ mod tests {
     #[test]
     fn test_6r2c_envelope_internal_fraction() {
         let spec = ASHRAE140Case::Case900.spec();
-        let mut model = ThermalModel::<VectorField>::from_spec(&spec);
+        let mut model = ThermalModel::<VectorField>::from_spec_with_selector(
+            &spec,
+            &ThermalSelector::default(),
+        )
+        .expect("default selector must initialize");
 
         // Configure 6R2C with 75% envelope, 25% internal
         model.configure_6r2c_model(0.75, 100.0, None);
@@ -330,7 +345,7 @@ mod tests {
         //
         // Original test:
         // let spec = ASHRAE140Case::Case900.spec();
-        // let mut model = ThermalModel::<VectorField>::from_spec(&spec);
+        // let mut model = ThermalModel::<VectorField>::from_spec_with_selector(&spec, &ThermalSelector::default()).expect("default selector must initialize");
         // let surrogates = SurrogateManager::new().expect("Failed to create surrogate manager");
         // let initial_mass_temp: f64 = model.mass.mass_temperatures.as_ref()[0];
         // model.solve_timesteps(24, &surrogates, false, None, None, None);

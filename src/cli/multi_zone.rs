@@ -6,6 +6,7 @@ use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
 use crate::cli::hvac_commands::{handle_command as handle_hvac_command, HvacCommand};
+use crate::sim::thermal_selector::ThermalSelector;
 
 /// Wrapper enum for HVAC subcommands
 #[derive(Debug, Subcommand)]
@@ -464,7 +465,9 @@ pub fn run_energy_conservation_validation(
     use crate::validation::ashrae_140_cases::ASHRAE140Case;
 
     let spec = ASHRAE140Case::Case960.spec();
-    let mut model = ThermalModel::<VectorField>::from_spec(&spec);
+    let mut model =
+        ThermalModel::<VectorField>::from_spec_with_selector(&spec, &ThermalSelector::default())
+            .expect("default selector must initialize");
 
     // Seed zone temperatures and step physics once with a neutral outdoor
     // temperature so the model's per-zone state is populated (temperatures,
@@ -635,7 +638,9 @@ fn run_case_960_validation(command: &ValidateCommand) -> Result<(), String> {
     //    Case-960 special case (thermal_model_core.rs:1970-1998) that wires
     //    h_tr_iz from the door opening (1.5 W/K) instead of the full concrete
     //    common wall (122 W/K). This is the MULTI-01 fix in KNOWN_ISSUES.md.
-    let model = ThermalModel::<VectorField>::from_spec(&spec);
+    let model =
+        ThermalModel::<VectorField>::from_spec_with_selector(&spec, &ThermalSelector::default())
+            .expect("default selector must initialize");
     let h_iz_vec = model.conduction.h_tr_iz.as_ref();
     let h_iz = h_iz_vec.first().copied().unwrap_or(0.0);
 

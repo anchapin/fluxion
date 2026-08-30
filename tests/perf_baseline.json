@@ -1,3 +1,4 @@
+use fluxion::sim::thermal_selector::ThermalSelector;
 {
   "timestamp": "2026-08-14T19:35:00+00:00",
   "throughput_analytical": 225.0,
@@ -64,7 +65,7 @@
         18.922
       ]
     },
-    "hybrid_methodology": "HybridThermalModel (Issue #2922) absolute floors are captured as the same numeric value the release-gate YAML uses (`benchmark.hybrid.min_configs_per_sec: 80`, `benchmark.hybrid_multi_zone.min_configs_per_sec: 8`). The field is additive — the test never regresses against the absolute floor in any runner class; the per-runner baseline will be measured once `hybrid-perf-gate` runs enough times on ubuntu-latest to seed `enforcement: hard-gate`. Until then the absolute-floor assertion (which IS runner-independent) is the only enforcement. HybridThermalModel::from_spec(ASHRAE140Case::Case600.spec()) for single-zone, HybridThermalModel::new(10, HybridRouting::default()) for multi-zone — both use the production-recommended default routing (surrogate loads, physics everything else).",
+    "hybrid_methodology": "HybridThermalModel (Issue #2922) absolute floors are captured as the same numeric value the release-gate YAML uses (`benchmark.hybrid.min_configs_per_sec: 80`, `benchmark.hybrid_multi_zone.min_configs_per_sec: 8`). The field is additive — the test never regresses against the absolute floor in any runner class; the per-runner baseline will be measured once `hybrid-perf-gate` runs enough times on ubuntu-latest to seed `enforcement: hard-gate`. Until then the absolute-floor assertion (which IS runner-independent) is the only enforcement. HybridThermalModel::from_spec(ASHRAE140Case::Case600.spec(), &ThermalSelector::default()) for single-zone, HybridThermalModel::new(10, HybridRouting::default()) for multi-zone — both use the production-recommended default routing (surrogate loads, physics everything else).",
     "hybrid_n_runs": 0,
     "machine": {
       "platform": "Linux-6.17.0-40-generic-x86_64-with-glibc2.39",

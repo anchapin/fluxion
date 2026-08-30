@@ -67,6 +67,7 @@
 
 use fluxion::physics::cta::VectorField;
 use fluxion::sim::engine::ThermalModel;
+use fluxion::sim::thermal_selector::ThermalSelector;
 use fluxion::validation::ashrae_140_cases::ASHRAE140Case;
 use fluxion_twin::TwinCorrection;
 
@@ -89,7 +90,9 @@ const TOL_ENERGY: f64 = 1e-6;
 /// `tests/zone_balance_eplus_isolation.rs::test_physics_thermal_model_setpoint_tracking_constant_outdoor`.
 fn case600_model(outdoor_temp: f64) -> ThermalModel<VectorField> {
     let spec = ASHRAE140Case::Case600.spec();
-    let mut model: ThermalModel<VectorField> = ThermalModel::from_spec(&spec);
+    let mut model: ThermalModel<VectorField> =
+        ThermalModel::from_spec_with_selector(&spec, &ThermalSelector::default())
+            .expect("default selector must initialize");
 
     // Pin zone AND mass temperatures to the initial setpoint so the first
     // step starts from a known, stable state.

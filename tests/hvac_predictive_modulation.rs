@@ -32,6 +32,7 @@ use fluxion::ai::surrogate::SurrogateManager;
 use fluxion::physics::cta::VectorField;
 use fluxion::sim::engine::ThermalModel;
 use fluxion::sim::hvac::{HVACMode, HeatPump, VariableCapacityEquipment};
+use fluxion::sim::thermal_selector::ThermalSelector;
 use fluxion::validation::ashrae_140_cases::ASHRAE140Case;
 
 /// ASHRAE 140 Case 800 simulation with the predictive controller's modulation
@@ -45,7 +46,11 @@ use fluxion::validation::ashrae_140_cases::ASHRAE140Case;
 fn test_predictive_modulation_propagation_case_800() {
     // --- 1. Build the Case 800 model with a heat pump attached. ---
     let case_spec = ASHRAE140Case::Case800.spec();
-    let mut model = ThermalModel::<VectorField>::from_spec(&case_spec);
+    let mut model = ThermalModel::<VectorField>::from_spec_with_selector(
+        &case_spec,
+        &ThermalSelector::default(),
+    )
+    .expect("default selector must initialize");
     // Ensure an equipment is wired so the propagation has somewhere to go.
     // (Case 800's spec may or may not include equipment; we set it explicitly.)
     if model.hvac.hvac_equipment.is_none() {
@@ -126,7 +131,11 @@ fn test_predictive_modulation_propagation_case_800() {
 fn test_predictive_modulation_propagation_in_9r4c_step() {
     // Build a high-mass 9R4C model.
     let case_spec = ASHRAE140Case::Case900.spec();
-    let mut model = ThermalModel::<VectorField>::from_spec(&case_spec);
+    let mut model = ThermalModel::<VectorField>::from_spec_with_selector(
+        &case_spec,
+        &ThermalSelector::default(),
+    )
+    .expect("default selector must initialize");
 
     // Wire a small heat pump; the propagation check only needs a real
     // `VariableCapacityEquipment` to receive `update_state(modulated_load, ...)`.

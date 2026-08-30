@@ -17,6 +17,7 @@
 
 use fluxion::physics::cta::VectorField;
 use fluxion::sim::engine::ThermalModel;
+use fluxion::sim::thermal_selector::ThermalSelector;
 use fluxion::validation::ashrae_140_cases::ASHRAE140Case;
 use fluxion::weather::WeatherSource;
 
@@ -37,7 +38,9 @@ fn test_case_900_separate_heating_cooling_energy() {
     println!("=== Case 900 Separate Heating/Cooling Energy Diagnostic ===\n");
 
     let spec = ASHRAE140Case::Case900.spec();
-    let mut model = ThermalModel::<VectorField>::from_spec(&spec);
+    let mut model =
+        ThermalModel::<VectorField>::from_spec_with_selector(&spec, &ThermalSelector::default())
+            .expect("default selector must initialize");
     let weather = fluxion::weather::denver::DenverTmyWeather::new();
 
     // Reset all energy tracking to ensure clean state

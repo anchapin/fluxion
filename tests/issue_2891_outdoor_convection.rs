@@ -25,6 +25,7 @@ use fluxion::physics::exterior_convection::{
     h_c_ext_from_10m, h_c_ext_wind_dependent, wind_at_building_height_from_10m,
     ExteriorConvectionCoefficients, ExteriorSurfaceDirection,
 };
+use fluxion::sim::thermal_selector::ThermalSelector;
 
 /// ASHRAE 140 §5.2.6 / ASHRAE Fundamentals ch. 26: vertical wall windward
 /// forced-convection formula is `h_c = 4.0 + 4.0 · V` (W/m²·K, V in m/s).
@@ -175,7 +176,9 @@ fn issue_2891_case_195_annual_energy_with_realistic_wind_data() {
     use fluxion::weather::WeatherSource;
 
     let spec = ASHRAE140Case::Case195.spec();
-    let mut model = ThermalModel::<VectorField>::from_spec(&spec);
+    let mut model =
+        ThermalModel::<VectorField>::from_spec_with_selector(&spec, &ThermalSelector::default())
+            .expect("default selector must initialize");
     let weather = DenverTmyWeather::new();
 
     let mut annual_heating_joules = 0.0_f64;

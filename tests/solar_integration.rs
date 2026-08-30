@@ -6,6 +6,7 @@
 
 use fluxion::physics::cta::VectorField;
 use fluxion::sim::engine::ThermalModel;
+use fluxion::sim::thermal_selector::ThermalSelector;
 use fluxion::validation::ashrae_140_cases::ASHRAE140Case;
 
 /// Test that solar gains are non-zero during daytime hours.
@@ -14,7 +15,11 @@ use fluxion::validation::ashrae_140_cases::ASHRAE140Case;
 /// during daylight hours (6 AM to 6 PM) for a summer day with clear sky.
 #[test]
 fn test_solar_gains_non_zero_daytime() {
-    let _model = ThermalModel::from_spec(&ASHRAE140Case::Case900.spec());
+    let _model = ThermalModel::from_spec_with_selector(
+        &ASHRAE140Case::Case900.spec(),
+        &ThermalSelector::default(),
+    )
+    .expect("default selector must initialize");
 
     // Simulate for a summer day (July 15) with clear sky
     // Note: This test will initially fail (red) because solar gains are not yet integrated
@@ -44,7 +49,11 @@ fn test_solar_gains_non_zero_daytime() {
 /// and added to the internal heat source term in the energy balance equation.
 #[test]
 fn test_solar_gains_added_to_phi_i() {
-    let model = ThermalModel::from_spec(&ASHRAE140Case::Case900.spec());
+    let model = ThermalModel::from_spec_with_selector(
+        &ASHRAE140Case::Case900.spec(),
+        &ThermalSelector::default(),
+    )
+    .expect("default selector must initialize");
 
     // Create test solar gains
     let solar_gains_watts = VectorField::new(vec![850.0]); // Peak solar gain at noon
@@ -165,7 +174,11 @@ fn test_energy_balance_includes_solar() {
 /// type system, which is critical for future GPU acceleration.
 #[test]
 fn test_solar_gains_are_vector_field() {
-    let _model = ThermalModel::from_spec(&ASHRAE140Case::Case900.spec());
+    let _model = ThermalModel::from_spec_with_selector(
+        &ASHRAE140Case::Case900.spec(),
+        &ThermalSelector::default(),
+    )
+    .expect("default selector must initialize");
 
     // Create test solar gains as VectorField
     let solar_gains = VectorField::new(vec![100.0, 200.0, 300.0]);
@@ -191,7 +204,11 @@ fn test_solar_gains_are_vector_field() {
 /// integrated into the thermal model's step_physics() method.
 #[test]
 fn test_solar_gains_integration_with_thermal_model() {
-    let mut model = ThermalModel::from_spec(&ASHRAE140Case::Case900.spec());
+    let mut model = ThermalModel::from_spec_with_selector(
+        &ASHRAE140Case::Case900.spec(),
+        &ThermalSelector::default(),
+    )
+    .expect("default selector must initialize");
 
     // This test will initially fail because solar gains are not yet integrated
     // After implementation, the model.solar.solar_gains field should be populated

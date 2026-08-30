@@ -32,6 +32,7 @@
 
 use fluxion::physics::cta::VectorField;
 use fluxion::sim::engine::ThermalModel;
+use fluxion::sim::thermal_selector::ThermalSelector;
 use fluxion::validation::ashrae_140_cases::ASHRAE140Case;
 
 // Issue #915 Fix: The actual calculated tau values using derived_h_tr_3 are:
@@ -62,7 +63,9 @@ fn calculate_fluxion_tau(model: &ThermalModel<VectorField>) -> f64 {
 #[test]
 fn test_low_mass_time_constant() {
     let spec = ASHRAE140Case::Case600.spec();
-    let model = ThermalModel::<VectorField>::from_spec(&spec);
+    let model =
+        ThermalModel::<VectorField>::from_spec_with_selector(&spec, &ThermalSelector::default())
+            .expect("default selector must initialize");
 
     let fluxion_tau = calculate_fluxion_tau(&model);
 
@@ -86,7 +89,9 @@ fn test_low_mass_time_constant() {
 #[test]
 fn test_high_mass_time_constant() {
     let spec = ASHRAE140Case::Case900.spec();
-    let model = ThermalModel::<VectorField>::from_spec(&spec);
+    let model =
+        ThermalModel::<VectorField>::from_spec_with_selector(&spec, &ThermalSelector::default())
+            .expect("default selector must initialize");
 
     let fluxion_tau = calculate_fluxion_tau(&model);
 
@@ -125,7 +130,11 @@ fn test_time_constant_reasonable_for_mass_class() {
     ];
 
     for (case_id, case, iso_baseline) in cases {
-        let model = ThermalModel::<VectorField>::from_spec(&case.spec());
+        let model = ThermalModel::<VectorField>::from_spec_with_selector(
+            &case.spec(),
+            &ThermalSelector::default(),
+        )
+        .expect("default selector must initialize");
         let fluxion_tau = calculate_fluxion_tau(&model);
 
         println!(

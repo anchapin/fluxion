@@ -16,6 +16,7 @@
 
 use fluxion::physics::cta::VectorField;
 use fluxion::sim::engine::ThermalModel;
+use fluxion::sim::thermal_selector::ThermalSelector;
 use fluxion::validation::ashrae_140_cases::ASHRAE140Case;
 use noisy_float::prelude::*;
 
@@ -27,7 +28,9 @@ use noisy_float::prelude::*;
 #[test]
 fn test_step_physics_finite_case_600() {
     let spec = ASHRAE140Case::Case600.spec();
-    let mut model = ThermalModel::<VectorField>::from_spec(&spec);
+    let mut model =
+        ThermalModel::<VectorField>::from_spec_with_selector(&spec, &ThermalSelector::default())
+            .expect("default selector must initialize");
 
     // Run a single timestep
     let hvac_kwh = model.step_physics(0, 10.0, 3600.0);
@@ -46,7 +49,9 @@ fn test_step_physics_finite_case_600() {
 #[test]
 fn test_step_physics_finite_case_900() {
     let spec = ASHRAE140Case::Case900.spec();
-    let mut model = ThermalModel::<VectorField>::from_spec(&spec);
+    let mut model =
+        ThermalModel::<VectorField>::from_spec_with_selector(&spec, &ThermalSelector::default())
+            .expect("default selector must initialize");
 
     // Run a single timestep
     let hvac_kwh = model.step_physics(0, 10.0, 3600.0);
@@ -65,7 +70,9 @@ fn test_step_physics_finite_case_900() {
 #[test]
 fn test_step_physics_reasonable_range_case_600() {
     let spec = ASHRAE140Case::Case600.spec();
-    let mut model = ThermalModel::<VectorField>::from_spec(&spec);
+    let mut model =
+        ThermalModel::<VectorField>::from_spec_with_selector(&spec, &ThermalSelector::default())
+            .expect("default selector must initialize");
 
     // Test at various outdoor temperatures
     for outdoor_temp in [-10.0, 0.0, 10.0, 20.0, 30.0, 40.0] {
@@ -90,7 +97,9 @@ fn test_step_physics_reasonable_range_case_600() {
 #[test]
 fn test_step_physics_reasonable_range_case_900() {
     let spec = ASHRAE140Case::Case900.spec();
-    let mut model = ThermalModel::<VectorField>::from_spec(&spec);
+    let mut model =
+        ThermalModel::<VectorField>::from_spec_with_selector(&spec, &ThermalSelector::default())
+            .expect("default selector must initialize");
 
     // Test at various outdoor temperatures
     for outdoor_temp in [-10.0, 0.0, 10.0, 20.0, 30.0, 40.0] {
@@ -118,7 +127,9 @@ fn test_step_physics_reasonable_range_case_900() {
 #[test]
 fn test_temperature_stability_case_600() {
     let spec = ASHRAE140Case::Case600.spec();
-    let mut model = ThermalModel::<VectorField>::from_spec(&spec);
+    let mut model =
+        ThermalModel::<VectorField>::from_spec_with_selector(&spec, &ThermalSelector::default())
+            .expect("default selector must initialize");
 
     // Run 168 hours (1 week) with sinusoidal outdoor temperature
     for step in 0..168 {
@@ -147,7 +158,9 @@ fn test_temperature_stability_case_600() {
 #[test]
 fn test_temperature_stability_case_900() {
     let spec = ASHRAE140Case::Case900.spec();
-    let mut model = ThermalModel::<VectorField>::from_spec(&spec);
+    let mut model =
+        ThermalModel::<VectorField>::from_spec_with_selector(&spec, &ThermalSelector::default())
+            .expect("default selector must initialize");
 
     // Run 168 hours (1 week) with sinusoidal outdoor temperature
     for step in 0..168 {
@@ -179,7 +192,9 @@ fn test_temperature_stability_case_900() {
 #[test]
 fn test_free_floating_stability_case_600ff() {
     let spec = ASHRAE140Case::Case600FF.spec();
-    let mut model = ThermalModel::<VectorField>::from_spec(&spec);
+    let mut model =
+        ThermalModel::<VectorField>::from_spec_with_selector(&spec, &ThermalSelector::default())
+            .expect("default selector must initialize");
 
     // Verify this is a free-floating case (no HVAC)
     // Free-floating cases should have extreme setpoints
@@ -226,7 +241,9 @@ fn test_free_floating_stability_case_600ff() {
 #[test]
 fn test_free_floating_stability_case_900ff() {
     let spec = ASHRAE140Case::Case900FF.spec();
-    let mut model = ThermalModel::<VectorField>::from_spec(&spec);
+    let mut model =
+        ThermalModel::<VectorField>::from_spec_with_selector(&spec, &ThermalSelector::default())
+            .expect("default selector must initialize");
 
     // Run 168 hours with sinusoidal outdoor temperature
     let mut min_temp = f64::INFINITY;
@@ -266,7 +283,9 @@ fn test_free_floating_stability_case_900ff() {
 #[test]
 fn test_energy_accumulation_consistency() {
     let spec = ASHRAE140Case::Case600.spec();
-    let mut model = ThermalModel::<VectorField>::from_spec(&spec);
+    let mut model =
+        ThermalModel::<VectorField>::from_spec_with_selector(&spec, &ThermalSelector::default())
+            .expect("default selector must initialize");
 
     // Reset energy tracking
     model.reset_heating_cooling_energy();
@@ -304,7 +323,9 @@ fn test_energy_accumulation_consistency() {
 #[test]
 fn test_hvac_heating_mode_detection() {
     let spec = ASHRAE140Case::Case600.spec();
-    let mut model = ThermalModel::<VectorField>::from_spec(&spec);
+    let mut model =
+        ThermalModel::<VectorField>::from_spec_with_selector(&spec, &ThermalSelector::default())
+            .expect("default selector must initialize");
 
     // Cold outdoor temperature should trigger heating
     let hvac_kwh = model.step_physics(0, -10.0, 3600.0);
@@ -323,7 +344,9 @@ fn test_hvac_heating_mode_detection() {
 #[test]
 fn test_hvac_cooling_mode_detection() {
     let spec = ASHRAE140Case::Case600.spec();
-    let mut model = ThermalModel::<VectorField>::from_spec(&spec);
+    let mut model =
+        ThermalModel::<VectorField>::from_spec_with_selector(&spec, &ThermalSelector::default())
+            .expect("default selector must initialize");
 
     // Warm up the zone for several hours before checking cooling activation.
     // With corrected h_ext=29.3 W/m²K (ASHRAE 140 Sec. 5.2), the model
@@ -350,7 +373,9 @@ fn test_hvac_cooling_mode_detection() {
 #[test]
 fn test_hvac_deadband() {
     let spec = ASHRAE140Case::Case600.spec();
-    let mut model = ThermalModel::<VectorField>::from_spec(&spec);
+    let mut model =
+        ThermalModel::<VectorField>::from_spec_with_selector(&spec, &ThermalSelector::default())
+            .expect("default selector must initialize");
 
     // Set initial zone temperature to setpoint
     // Then test at moderate outdoor temperature

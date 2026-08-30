@@ -1,4 +1,5 @@
 pub use crate::physics::constants::solar::ashrae_140::SOLAR_CONSTANT;
+use crate::sim::thermal_selector::ThermalSelector;
 pub use crate::physics::constants::thermal::ashrae_140::v2023::{
     EXTERIOR_FILM_COEFF, INTERIOR_FILM_COEFF,
 };
@@ -679,7 +680,11 @@ mod inter_zone_tests {
     #[test]
     fn test_inter_zone_heat_transfer_basic() {
         let spec = ASHRAE140Case::Case960.spec();
-        let model = ThermalModel::<VectorField>::from_spec(&spec);
+        let model = ThermalModel::<VectorField>::from_spec_with_selector(
+            &spec,
+            &ThermalSelector::default(),
+        )
+        .expect("default selector must initialize");
         let h_iz = model.conduction.h_tr_iz.as_ref();
         assert!(h_iz[0] > 0.0);
     }
@@ -765,7 +770,11 @@ mod inter_zone_tests {
     #[test]
     fn test_case_960_window_radiative_exchange() {
         let spec = ASHRAE140Case::Case960.spec();
-        let model = ThermalModel::<VectorField>::from_spec(&spec);
+        let model = ThermalModel::<VectorField>::from_spec_with_selector(
+            &spec,
+            &ThermalSelector::default(),
+        )
+        .expect("default selector must initialize");
         let h_iz_rad = model.conduction.h_tr_iz_rad.as_ref();
         assert!(h_iz_rad[0] == 0.0);
         let h_iz = model.conduction.h_tr_iz.as_ref();
@@ -910,7 +919,11 @@ mod hvac_controller_tests {
         use crate::validation::ashrae_140_cases::ASHRAE140Case;
 
         let spec = ASHRAE140Case::Case600.spec();
-        let model = ThermalModel::<VectorField>::from_spec(&spec);
+        let model = ThermalModel::<VectorField>::from_spec_with_selector(
+            &spec,
+            &ThermalSelector::default(),
+        )
+        .expect("default selector must initialize");
 
         // Default Case 600: cooling ON all day (operating hours 0-24)
         assert_eq!(model.setpoints.cooling_schedule.value(0), 27.0); // 12am - on
@@ -926,7 +939,11 @@ mod hvac_controller_tests {
         spec.hvac[0].cooling_setpoint = 25.0;
         spec.hvac[0].setback_setpoint = Some(100.0);
         spec.hvac[0].setback_hours = Some((22, 7));
-        let model = ThermalModel::<VectorField>::from_spec(&spec);
+        let model = ThermalModel::<VectorField>::from_spec_with_selector(
+            &spec,
+            &ThermalSelector::default(),
+        )
+        .expect("default selector must initialize");
 
         // 2am should be in setback for heating
         assert_eq!(model.setpoints.heating_schedule.value(2), 100.0);
@@ -941,7 +958,11 @@ mod hvac_controller_tests {
         use crate::validation::ashrae_140_cases::ASHRAE140Case;
 
         let spec = ASHRAE140Case::Case600.spec();
-        let model = ThermalModel::<VectorField>::from_spec(&spec);
+        let model = ThermalModel::<VectorField>::from_spec_with_selector(
+            &spec,
+            &ThermalSelector::default(),
+        )
+        .expect("default selector must initialize");
 
         // Case 600: constant heating at 20.0 all day (no setback)
         assert_eq!(model.setpoints.heating_schedule.value(6), 20.0);
@@ -956,7 +977,11 @@ mod hvac_controller_tests {
 
         let mut spec = ASHRAE140Case::Case600.spec();
         spec.hvac[0].operating_hours = (18, 7);
-        let model = ThermalModel::<VectorField>::from_spec(&spec);
+        let model = ThermalModel::<VectorField>::from_spec_with_selector(
+            &spec,
+            &ThermalSelector::default(),
+        )
+        .expect("default selector must initialize");
 
         // Hour 6: cooling should be enabled
         assert_eq!(model.setpoints.cooling_schedule.value(6), 27.0);
@@ -973,7 +998,11 @@ mod hvac_controller_tests {
         let mut spec = ASHRAE140Case::Case600.spec();
         spec.hvac[0].setback_setpoint = Some(15.0);
         spec.hvac[0].setback_hours = Some((23, 6));
-        let model = ThermalModel::<VectorField>::from_spec(&spec);
+        let model = ThermalModel::<VectorField>::from_spec_with_selector(
+            &spec,
+            &ThermalSelector::default(),
+        )
+        .expect("default selector must initialize");
 
         // Hour 0: heating should be at setback (15.0)
         assert_eq!(model.setpoints.heating_schedule.value(0), 15.0);
@@ -986,7 +1015,11 @@ mod hvac_controller_tests {
         use crate::validation::ashrae_140_cases::ASHRAE140Case;
 
         let spec = ASHRAE140Case::Case600FF.spec();
-        let model = ThermalModel::<VectorField>::from_spec(&spec);
+        let model = ThermalModel::<VectorField>::from_spec_with_selector(
+            &spec,
+            &ThermalSelector::default(),
+        )
+        .expect("default selector must initialize");
         assert_eq!(model.setpoints.heating_setpoint, -999.0);
         assert_eq!(model.setpoints.cooling_setpoint, 999.0);
     }

@@ -32,6 +32,7 @@
 //!    bridge (proving the bridge is gated, not silently active).
 
 use fluxion::sim::solar::WindowProperties;
+use fluxion::sim::thermal_selector::ThermalSelector;
 use fluxion::validation::ashrae_140_cases::WindowSpec;
 use fluxion_core::ashrae_cases::{GlassType, Orientation, WindowArea};
 
@@ -243,7 +244,9 @@ fn ashrae_140_case_600_h_tr_w_includes_frame_bridge() {
     use fluxion::sim::engine::ThermalModel;
 
     let spec = fluxion::validation::ashrae_140_cases::ASHRAE140Case::Case600.spec();
-    let model = ThermalModel::<VectorField>::from_spec(&spec);
+    let model =
+        ThermalModel::<VectorField>::from_spec_with_selector(&spec, &ThermalSelector::default())
+            .expect("default selector must initialize");
     let h_tr_w = *model.conduction.h_tr_w.as_ref().first().unwrap_or(&0.0);
     let total_window_area = spec.total_window_area();
 
@@ -296,7 +299,9 @@ fn ashrae_140_case_600_disabling_frame_returns_glass_only() {
     let mut spec = fluxion::validation::ashrae_140_cases::ASHRAE140Case::Case600.spec();
     spec.window_properties.frame_area_fraction = 0.0;
 
-    let model = ThermalModel::<VectorField>::from_spec(&spec);
+    let model =
+        ThermalModel::<VectorField>::from_spec_with_selector(&spec, &ThermalSelector::default())
+            .expect("default selector must initialize");
     let h_tr_w = *model.conduction.h_tr_w.as_ref().first().unwrap_or(&0.0);
     let total_window_area = spec.total_window_area();
     let glass_only = spec.window_properties.u_value * total_window_area;

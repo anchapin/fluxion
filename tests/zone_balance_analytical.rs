@@ -26,6 +26,7 @@
 
 use fluxion::physics::cta::VectorField;
 use fluxion::sim::engine::ThermalModel;
+use fluxion::sim::thermal_selector::ThermalSelector;
 use fluxion::validation::ashrae_140_cases::ASHRAE140Case;
 
 const EPSILON: f64 = 1e-9;
@@ -52,7 +53,9 @@ fn compute_transient_temperature(T_initial: f64, T_ss: f64, t: f64, tau: f64) ->
 #[test]
 fn test_steady_state_convergence_lightweight() {
     let spec = ASHRAE140Case::Case600.spec();
-    let mut model = ThermalModel::<VectorField>::from_spec(&spec);
+    let mut model =
+        ThermalModel::<VectorField>::from_spec_with_selector(&spec, &ThermalSelector::default())
+            .expect("default selector must initialize");
 
     let T_outdoor = 10.0;
     let T_initial = 20.0;
@@ -84,7 +87,9 @@ fn test_steady_state_convergence_lightweight() {
 #[test]
 fn test_steady_state_convergence_heavyweight() {
     let spec = ASHRAE140Case::Case900.spec();
-    let mut model = ThermalModel::<VectorField>::from_spec(&spec);
+    let mut model =
+        ThermalModel::<VectorField>::from_spec_with_selector(&spec, &ThermalSelector::default())
+            .expect("default selector must initialize");
 
     let T_outdoor = 10.0;
     let T_initial = 20.0;
@@ -116,7 +121,9 @@ fn test_steady_state_convergence_heavyweight() {
 #[test]
 fn test_steady_state_convergence_mixed() {
     let spec = ASHRAE140Case::Case650FF.spec();
-    let mut model = ThermalModel::<VectorField>::from_spec(&spec);
+    let mut model =
+        ThermalModel::<VectorField>::from_spec_with_selector(&spec, &ThermalSelector::default())
+            .expect("default selector must initialize");
 
     let T_outdoor = 10.0;
     let T_initial = 20.0;
@@ -148,7 +155,9 @@ fn test_steady_state_convergence_mixed() {
 #[test]
 fn test_single_timestep_convergence() {
     let spec = ASHRAE140Case::Case600.spec();
-    let mut model = ThermalModel::<VectorField>::from_spec(&spec);
+    let mut model =
+        ThermalModel::<VectorField>::from_spec_with_selector(&spec, &ThermalSelector::default())
+            .expect("default selector must initialize");
 
     let T_outdoor = 10.0;
     let T_initial = 20.0;
@@ -180,7 +189,9 @@ fn test_single_timestep_convergence() {
 #[test]
 fn test_performance_under_200ms() {
     let spec = ASHRAE140Case::Case600.spec();
-    let mut model = ThermalModel::<VectorField>::from_spec(&spec);
+    let mut model =
+        ThermalModel::<VectorField>::from_spec_with_selector(&spec, &ThermalSelector::default())
+            .expect("default selector must initialize");
 
     let start = std::time::Instant::now();
 

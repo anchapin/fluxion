@@ -10,6 +10,7 @@ use fluxion::sim::adaptive_timestep::{
     AdaptiveTimestepScheduler, TimeConstantAnalyzer, TimestepMode,
 };
 use fluxion::sim::engine::ThermalModel;
+use fluxion::sim::thermal_selector::ThermalSelector;
 use fluxion::validation::ashrae_140_cases::ASHRAE140Case;
 use std::time::Duration;
 
@@ -18,7 +19,9 @@ use std::time::Duration;
 #[test]
 fn test_case_900_1hr_timestep() {
     let spec = ASHRAE140Case::Case900.spec();
-    let _model = ThermalModel::<VectorField>::from_spec(&spec);
+    let _model =
+        ThermalModel::<VectorField>::from_spec_with_selector(&spec, &ThermalSelector::default())
+            .expect("default selector must initialize");
 
     let surrogates = SurrogateManager::new().unwrap_or_else(|_| {
         panic!("Failed to create SurrogateManager");
@@ -26,7 +29,11 @@ fn test_case_900_1hr_timestep() {
 
     // Run 24 hours with 1-hour timestep (sanity check)
     let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-        let mut m = ThermalModel::<VectorField>::from_spec(&ASHRAE140Case::Case900.spec());
+        let mut m = ThermalModel::<VectorField>::from_spec_with_selector(
+            &ASHRAE140Case::Case900.spec(),
+            &ThermalSelector::default(),
+        )
+        .expect("default selector must initialize");
         m.solve_timesteps_with_dt(24, &surrogates, false, None, None, None, 3600.0)
     }));
 
@@ -57,7 +64,11 @@ fn test_case_900_15min_timestep() {
 
     // Run 24 hours with 15-minute timestep (96 steps)
     let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-        let mut m = ThermalModel::<VectorField>::from_spec(&ASHRAE140Case::Case900.spec());
+        let mut m = ThermalModel::<VectorField>::from_spec_with_selector(
+            &ASHRAE140Case::Case900.spec(),
+            &ThermalSelector::default(),
+        )
+        .expect("default selector must initialize");
         m.solve_timesteps_with_dt(96, &surrogates, false, None, None, None, 900.0)
     }));
 
@@ -88,7 +99,11 @@ fn test_case_600_1hr_timestep() {
 
     // Run 24 hours with 1-hour timestep (sanity check)
     let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-        let mut m = ThermalModel::<VectorField>::from_spec(&ASHRAE140Case::Case600.spec());
+        let mut m = ThermalModel::<VectorField>::from_spec_with_selector(
+            &ASHRAE140Case::Case600.spec(),
+            &ThermalSelector::default(),
+        )
+        .expect("default selector must initialize");
         m.solve_timesteps_with_dt(24, &surrogates, false, None, None, None, 3600.0)
     }));
 
@@ -119,7 +134,11 @@ fn test_case_600_15min_timestep() {
 
     // Run 24 hours with 15-minute timestep (96 steps)
     let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-        let mut m = ThermalModel::<VectorField>::from_spec(&ASHRAE140Case::Case600.spec());
+        let mut m = ThermalModel::<VectorField>::from_spec_with_selector(
+            &ASHRAE140Case::Case600.spec(),
+            &ThermalSelector::default(),
+        )
+        .expect("default selector must initialize");
         m.solve_timesteps_with_dt(96, &surrogates, false, None, None, None, 900.0)
     }));
 
@@ -257,7 +276,11 @@ fn test_thermal_model_timestep_mode_configuration() {
     use std::time::Duration;
 
     // Use from_spec to properly initialize physics parameters for high-mass case
-    let mut model = ThermalModel::<VectorField>::from_spec(&ASHRAE140Case::Case900.spec());
+    let mut model = ThermalModel::<VectorField>::from_spec_with_selector(
+        &ASHRAE140Case::Case900.spec(),
+        &ThermalSelector::default(),
+    )
+    .expect("default selector must initialize");
 
     // Test 1: Default mode (fixed 1-hour)
     let dt_default = model.calculate_timestep_seconds();
@@ -282,7 +305,11 @@ fn test_thermal_model_timestep_mode_configuration() {
     // Note: Case 600's actual τ depends on construction properties. With properly
     // initialized physics, Case 600 τ may be ~3.7 hours (exceeds 2.0 threshold).
     // The test expectation (3600s for low-mass) was based on placeholder model values.
-    let mut model_low = ThermalModel::<VectorField>::from_spec(&ASHRAE140Case::Case600.spec());
+    let mut model_low = ThermalModel::<VectorField>::from_spec_with_selector(
+        &ASHRAE140Case::Case600.spec(),
+        &ThermalSelector::default(),
+    )
+    .expect("default selector must initialize");
     model_low.set_timestep_mode(TimestepMode::adaptive(
         Duration::from_secs(360),
         Duration::from_secs(60),
@@ -323,7 +350,11 @@ fn test_thermal_model_time_constant_estimation() {
     use fluxion::sim::engine::ThermalModel;
 
     // High-mass case - use from_spec to properly initialize physics parameters
-    let model_900 = ThermalModel::<VectorField>::from_spec(&ASHRAE140Case::Case900.spec());
+    let model_900 = ThermalModel::<VectorField>::from_spec_with_selector(
+        &ASHRAE140Case::Case900.spec(),
+        &ThermalSelector::default(),
+    )
+    .expect("default selector must initialize");
     let tau_900 = model_900.estimate_time_constant_hours();
 
     // Issue #894: derived_h_tr_3 must be computed (was 0.0 before fix)
@@ -352,7 +383,11 @@ fn test_thermal_model_time_constant_estimation() {
     // Note: The τ boundary between low/high mass in ASHRAE 140 is ~2 hours,
     // but Case 600's actual τ depends on its specific construction properties.
     // The key test is that high-mass (900) is significantly higher than low-mass (600).
-    let model_600 = ThermalModel::<VectorField>::from_spec(&ASHRAE140Case::Case600.spec());
+    let model_600 = ThermalModel::<VectorField>::from_spec_with_selector(
+        &ASHRAE140Case::Case600.spec(),
+        &ThermalSelector::default(),
+    )
+    .expect("default selector must initialize");
     let tau_600 = model_600.estimate_time_constant_hours();
     println!(
         "Case 600 τ = {:.2} hours, Case 900 τ = {:.2} hours",
@@ -385,7 +420,11 @@ fn test_solve_timesteps_uses_adaptive_for_high_mass() {
     });
 
     // Case 900 with adaptive mode should use 6-minute timestep
-    let mut model = ThermalModel::<VectorField>::from_spec(&ASHRAE140Case::Case900.spec());
+    let mut model = ThermalModel::<VectorField>::from_spec_with_selector(
+        &ASHRAE140Case::Case900.spec(),
+        &ThermalSelector::default(),
+    )
+    .expect("default selector must initialize");
     model.set_timestep_mode(TimestepMode::adaptive(
         Duration::from_secs(360),
         Duration::from_secs(60),

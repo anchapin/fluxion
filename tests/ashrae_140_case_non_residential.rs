@@ -14,6 +14,7 @@
 use fluxion::ai::surrogate::SurrogateManager;
 use fluxion::physics::cta::VectorField;
 use fluxion::sim::engine::ThermalModel;
+use fluxion::sim::thermal_selector::ThermalSelector;
 use fluxion::validation::ashrae_140_cases::ASHRAE140Case;
 
 /// Helper function to simulate a full year for a thermal model.
@@ -57,7 +58,11 @@ fn test_case_office_building() {
     );
 
     // Create thermal model from spec
-    let mut model = ThermalModel::<VectorField>::from_spec(&office_spec);
+    let mut model = ThermalModel::<VectorField>::from_spec_with_selector(
+        &office_spec,
+        &ThermalSelector::default(),
+    )
+    .expect("default selector must initialize");
 
     println!("Model created: {} zone(s)", model.hvac.num_zones);
     println!("Heating setpoint: {}°C", model.setpoints.heating_setpoint);
@@ -125,7 +130,11 @@ fn test_case_retail_building() {
     );
 
     // Create thermal model from spec
-    let mut model = ThermalModel::<VectorField>::from_spec(&retail_spec);
+    let mut model = ThermalModel::<VectorField>::from_spec_with_selector(
+        &retail_spec,
+        &ThermalSelector::default(),
+    )
+    .expect("default selector must initialize");
 
     println!("Model created: {} zone(s)", model.hvac.num_zones);
     println!("Heating setpoint: {}°C", model.setpoints.heating_setpoint);
@@ -192,7 +201,11 @@ fn test_case_school_building() {
     );
 
     // Create thermal model from spec
-    let mut model = ThermalModel::<VectorField>::from_spec(&school_spec);
+    let mut model = ThermalModel::<VectorField>::from_spec_with_selector(
+        &school_spec,
+        &ThermalSelector::default(),
+    )
+    .expect("default selector must initialize");
 
     println!("Model created: {} zone(s)", model.hvac.num_zones);
     println!("Heating setpoint: {}°C", model.setpoints.heating_setpoint);
@@ -240,21 +253,33 @@ fn test_non_residential_integration() {
 
     // Simulate office building
     println!("--- Office Building ---");
-    let mut office_model = ThermalModel::<VectorField>::from_spec(&office_spec);
+    let mut office_model = ThermalModel::<VectorField>::from_spec_with_selector(
+        &office_spec,
+        &ThermalSelector::default(),
+    )
+    .expect("default selector must initialize");
     let office_energy = simulate_year(&mut office_model);
     println!("Annual energy: {:.2} kWh", office_energy);
     let office_passed = office_energy.abs() > 1000.0;
 
     // Simulate retail building
     println!("\n--- Retail Building ---");
-    let mut retail_model = ThermalModel::<VectorField>::from_spec(&retail_spec);
+    let mut retail_model = ThermalModel::<VectorField>::from_spec_with_selector(
+        &retail_spec,
+        &ThermalSelector::default(),
+    )
+    .expect("default selector must initialize");
     let retail_energy = simulate_year(&mut retail_model);
     println!("Annual energy: {:.2} kWh", retail_energy);
     let retail_passed = retail_energy.abs() > 1000.0;
 
     // Simulate school building
     println!("\n--- School Building ---");
-    let mut school_model = ThermalModel::<VectorField>::from_spec(&school_spec);
+    let mut school_model = ThermalModel::<VectorField>::from_spec_with_selector(
+        &school_spec,
+        &ThermalSelector::default(),
+    )
+    .expect("default selector must initialize");
     let school_energy = simulate_year(&mut school_model);
     println!("Annual energy: {:.2} kWh", school_energy);
     let school_passed = school_energy.abs() > 1000.0;

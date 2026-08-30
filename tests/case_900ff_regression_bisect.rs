@@ -46,6 +46,7 @@
 
 use fluxion::physics::cta::VectorField;
 use fluxion::sim::engine::ThermalModel;
+use fluxion::sim::thermal_selector::ThermalSelector;
 use fluxion::sim::warmup::{run_warmup, WarmupConfig};
 use fluxion::validation::ashrae_140_cases::ASHRAE140Case;
 use fluxion::weather::epw::EpwWeatherSource;
@@ -60,7 +61,9 @@ const REGRESSION_TOLERANCE: f64 = 1.6;
 #[test]
 fn test_case_900ff_night_minimum_within_reference_band() {
     let spec = ASHRAE140Case::Case900FF.spec();
-    let mut model = ThermalModel::<VectorField>::from_spec(&spec);
+    let mut model =
+        ThermalModel::<VectorField>::from_spec_with_selector(&spec, &ThermalSelector::default())
+            .expect("default selector must initialize");
 
     // Free-floating mode — matches the ASHRAE 140 validator path
     model.setpoints.heating_setpoint = -999.0;

@@ -46,6 +46,7 @@
 
 use fluxion::physics::cta::VectorField;
 use fluxion::sim::engine::ThermalModel;
+use fluxion::sim::thermal_selector::ThermalSelector;
 use fluxion::validation::ashrae_140_cases::ASHRAE140Case;
 use fluxion::weather::WeatherSource;
 
@@ -171,7 +172,9 @@ fn issue_1163_annual_cooling_nonzero_for_case_900() {
     // correct symmetric formula — this test is a sanity check that the
     // 5R1C path changes did not break the multi-node path.
     let spec = ASHRAE140Case::Case900.spec();
-    let mut model: ThermalModel<VectorField> = ThermalModel::from_spec(&spec);
+    let mut model: ThermalModel<VectorField> =
+        ThermalModel::from_spec_with_selector(&spec, &ThermalSelector::default())
+            .expect("default selector must initialize");
 
     let weather = fluxion::weather::denver::DenverTmyWeather::new();
     for step in 0..8760 {
@@ -194,7 +197,9 @@ fn issue_1163_annual_cooling_nonzero_for_case_900() {
 fn issue_1163_annual_heating_nonzero_for_case_900() {
     // End-to-end: Case 900 heating must remain non-zero and bounded.
     let spec = ASHRAE140Case::Case900.spec();
-    let mut model: ThermalModel<VectorField> = ThermalModel::from_spec(&spec);
+    let mut model: ThermalModel<VectorField> =
+        ThermalModel::from_spec_with_selector(&spec, &ThermalSelector::default())
+            .expect("default selector must initialize");
 
     let weather = fluxion::weather::denver::DenverTmyWeather::new();
     for step in 0..8760 {

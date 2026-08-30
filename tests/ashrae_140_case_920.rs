@@ -89,6 +89,7 @@
 
 use fluxion::physics::cta::VectorField;
 use fluxion::sim::engine::ThermalModel;
+use fluxion::sim::thermal_selector::ThermalSelector;
 use fluxion::validation::ashrae_140_cases::{
     validate_case_920, ASHRAE140Case, Case920ValidationResult,
 };
@@ -212,7 +213,9 @@ fn test_case_920_spec_has_6m2_east_and_west_windows() {
 #[test]
 fn test_case_920_per_orientation_solar_distribution() {
     let spec = ASHRAE140Case::Case920.spec();
-    let mut model = ThermalModel::<VectorField>::from_spec(&spec);
+    let mut model =
+        ThermalModel::<VectorField>::from_spec_with_selector(&spec, &ThermalSelector::default())
+            .expect("default selector must initialize");
     let weather = DenverTmyWeather::new();
 
     for step in 0..8760 {
@@ -389,7 +392,9 @@ fn month_index_for_hour(hour: usize) -> usize {
 #[ignore = "Diagnostic: per-month Case 920 attribution. Run with --ignored --nocapture to inspect."]
 fn test_case_920_per_month_attribution() {
     let spec = ASHRAE140Case::Case920.spec();
-    let mut model = ThermalModel::<VectorField>::from_spec(&spec);
+    let mut model =
+        ThermalModel::<VectorField>::from_spec_with_selector(&spec, &ThermalSelector::default())
+            .expect("default selector must initialize");
     let weather = DenverTmyWeather::new();
 
     let mut monthly_heating_kwh: [f64; 12] = [0.0; 12];
@@ -557,7 +562,9 @@ fn test_case_920_engine_vs_reference_per_month() {
 
     // Re-run engine per-month (use the same path as the per-month test
     // above to keep this test self-contained).
-    let mut model = ThermalModel::<VectorField>::from_spec(&spec);
+    let mut model =
+        ThermalModel::<VectorField>::from_spec_with_selector(&spec, &ThermalSelector::default())
+            .expect("default selector must initialize");
     let weather = DenverTmyWeather::new();
     let mut engine_h_kwh = [0.0_f64; 12];
     let mut engine_c_kwh = [0.0_f64; 12];

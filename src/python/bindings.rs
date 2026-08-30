@@ -8,6 +8,7 @@ use crate::interop::osm::{export_osm as export_osm_file, OsmError};
 use crate::physics::cta::VectorField;
 use crate::sim::engine::ThermalModel;
 use crate::sim::invariant_checker::InvariantChecker;
+use crate::sim::thermal_selector::ThermalSelector;
 use crate::validation::ashrae_140_cases::ASHRAE140Case;
 use crate::weather::denver::DenverTmyWeather;
 use crate::weather::WeatherSource;
@@ -108,7 +109,11 @@ impl PyMultiZoneThermalModel {
         };
         let spec = case_enum.spec();
         Ok(PyMultiZoneThermalModel {
-            inner: ThermalModel::<VectorField>::from_spec(&spec),
+            inner: ThermalModel::<VectorField>::from_spec_with_selector(
+                &spec,
+                &ThermalSelector::default(),
+            )
+            .expect("default selector must initialize"),
         })
     }
 
@@ -615,7 +620,11 @@ impl PyMultiZoneThermalModel {
     pub fn validate_energy_balance(&self) -> PyResult<bool> {
         // Create a fresh model from Case 600 spec for validation
         let spec = ASHRAE140Case::Case600.spec();
-        let mut model = ThermalModel::<VectorField>::from_spec(&spec);
+        let mut model = ThermalModel::<VectorField>::from_spec_with_selector(
+            &spec,
+            &ThermalSelector::default(),
+        )
+        .expect("default selector must initialize");
 
         // Initialize weather data
         let weather = DenverTmyWeather::new();
@@ -659,7 +668,11 @@ impl PyMultiZoneThermalModel {
     pub fn validate_energy_balance_detailed(&self) -> PyResult<(bool, f64, usize)> {
         // Create a fresh model from Case 600 spec for validation
         let spec = ASHRAE140Case::Case600.spec();
-        let mut model = ThermalModel::<VectorField>::from_spec(&spec);
+        let mut model = ThermalModel::<VectorField>::from_spec_with_selector(
+            &spec,
+            &ThermalSelector::default(),
+        )
+        .expect("default selector must initialize");
 
         // Initialize weather data
         let weather = DenverTmyWeather::new();

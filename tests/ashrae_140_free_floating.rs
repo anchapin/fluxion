@@ -12,6 +12,7 @@
 
 use fluxion::physics::cta::VectorField;
 use fluxion::sim::engine::ThermalModel;
+use fluxion::sim::thermal_selector::ThermalSelector;
 use fluxion::validation::ashrae_140_cases::{ASHRAE140Case, HvacSchedule};
 use fluxion::weather::epw::EpwWeatherSource;
 use fluxion::weather::WeatherSource;
@@ -54,7 +55,9 @@ mod reference {
 /// Simulates a free-floating case and returns min/max temperatures
 fn simulate_free_float_case(case: ASHRAE140Case) -> (f64, f64) {
     let spec = case.spec();
-    let mut model = ThermalModel::<VectorField>::from_spec(&spec);
+    let mut model =
+        ThermalModel::<VectorField>::from_spec_with_selector(&spec, &ThermalSelector::default())
+            .expect("default selector must initialize");
     // Use real Denver TMY3 EPW data instead of parametric weather generator.
     // WD600.epw = Denver Intl AP TMY3 (WMO 725650), matching ASHRAE 140 DRYCOLD reference.
     let weather = EpwWeatherSource::from_file("assets/weather/WD600.epw")
@@ -722,7 +725,9 @@ fn test_issue_924_ti_free_mass_dominance_regression() {
 /// Simulate free-floating case and return full time series of temperatures
 fn simulate_free_float_with_time_series(case: ASHRAE140Case) -> Vec<f64> {
     let spec = case.spec();
-    let mut model = ThermalModel::<VectorField>::from_spec(&spec);
+    let mut model =
+        ThermalModel::<VectorField>::from_spec_with_selector(&spec, &ThermalSelector::default())
+            .expect("default selector must initialize");
     let weather =
         EpwWeatherSource::from_file("assets/weather/WD600.epw").expect("Failed to load WD600.epw");
 
@@ -804,7 +809,9 @@ where
     F: FnOnce(&mut ThermalModel<VectorField>),
 {
     let spec = case.spec();
-    let mut model = ThermalModel::<VectorField>::from_spec(&spec);
+    let mut model =
+        ThermalModel::<VectorField>::from_spec_with_selector(&spec, &ThermalSelector::default())
+            .expect("default selector must initialize");
     let weather =
         EpwWeatherSource::from_file("assets/weather/WD600.epw").expect("Failed to load WD600.epw");
 
@@ -935,7 +942,11 @@ fn test_900ff_with_5r1c_model() {
 
     // Case A: Standard 900FF (high-mass materials + 6R2C + CTF)
     let spec_900ff = ASHRAE140Case::Case900FF.spec();
-    let mut model_900ff_6r2c = ThermalModel::<VectorField>::from_spec(&spec_900ff);
+    let mut model_900ff_6r2c = ThermalModel::<VectorField>::from_spec_with_selector(
+        &spec_900ff,
+        &ThermalSelector::default(),
+    )
+    .expect("default selector must initialize");
     let weather =
         EpwWeatherSource::from_file("assets/weather/WD600.epw").expect("Failed to load WD600.epw");
 
@@ -958,7 +969,11 @@ fn test_900ff_with_5r1c_model() {
 
     // For 600FF - check its configuration
     let spec_600ff = ASHRAE140Case::Case600FF.spec();
-    let model_600ff = ThermalModel::<VectorField>::from_spec(&spec_600ff);
+    let model_600ff = ThermalModel::<VectorField>::from_spec_with_selector(
+        &spec_600ff,
+        &ThermalSelector::default(),
+    )
+    .expect("default selector must initialize");
     let is_6r2c_600ff = model_600ff.is_6r2c_model();
     let ctf_enabled_600ff = model_600ff.ctf_is_enabled();
 
@@ -970,7 +985,11 @@ fn test_900ff_with_5r1c_model() {
     // Simulate 900FF with current config
     let mut min_900ff_6r2c = f64::INFINITY;
     let mut max_900ff_6r2c = f64::NEG_INFINITY;
-    let mut model_900ff_current = ThermalModel::<VectorField>::from_spec(&spec_900ff);
+    let mut model_900ff_current = ThermalModel::<VectorField>::from_spec_with_selector(
+        &spec_900ff,
+        &ThermalSelector::default(),
+    )
+    .expect("default selector must initialize");
     model_900ff_current.setpoints.heating_setpoint = -999.0;
     model_900ff_current.setpoints.cooling_setpoint = 999.0;
     model_900ff_current.hvac.hvac_heating_capacity = 0.0;
@@ -994,7 +1013,11 @@ fn test_900ff_with_5r1c_model() {
     // For 600FF
     let mut min_600ff = f64::INFINITY;
     let mut max_600ff = f64::NEG_INFINITY;
-    let mut model_600ff_current = ThermalModel::<VectorField>::from_spec(&spec_600ff);
+    let mut model_600ff_current = ThermalModel::<VectorField>::from_spec_with_selector(
+        &spec_600ff,
+        &ThermalSelector::default(),
+    )
+    .expect("default selector must initialize");
     model_600ff_current.setpoints.heating_setpoint = -999.0;
     model_600ff_current.setpoints.cooling_setpoint = 999.0;
     model_600ff_current.hvac.hvac_heating_capacity = 0.0;
@@ -1056,7 +1079,11 @@ fn test_900ff_without_ctf() {
         EpwWeatherSource::from_file("assets/weather/WD600.epw").expect("Failed to load WD600.epw");
 
     // === Case A: 900FF with 6R2C + CTF (CTF enabled by default for 900FF - Issue #913) ===
-    let mut model_with_ctf = ThermalModel::<VectorField>::from_spec(&spec_900ff);
+    let mut model_with_ctf = ThermalModel::<VectorField>::from_spec_with_selector(
+        &spec_900ff,
+        &ThermalSelector::default(),
+    )
+    .expect("default selector must initialize");
     model_with_ctf.setpoints.heating_setpoint = -999.0;
     model_with_ctf.setpoints.cooling_setpoint = 999.0;
     model_with_ctf.hvac.hvac_heating_capacity = 0.0;
@@ -1080,7 +1107,11 @@ fn test_900ff_without_ctf() {
     let swing_a = max_a - min_a;
 
     // === Case B: 900FF with 6R2C but NO CTF ===
-    let mut model_no_ctf = ThermalModel::<VectorField>::from_spec(&spec_900ff);
+    let mut model_no_ctf = ThermalModel::<VectorField>::from_spec_with_selector(
+        &spec_900ff,
+        &ThermalSelector::default(),
+    )
+    .expect("default selector must initialize");
     model_no_ctf.setpoints.heating_setpoint = -999.0;
     model_no_ctf.setpoints.cooling_setpoint = 999.0;
     model_no_ctf.hvac.hvac_heating_capacity = 0.0;
@@ -1143,7 +1174,11 @@ fn test_900ff_without_ctf() {
     );
 
     // === Case C: 900FF with 5R1C (force disable 6R2C and CTF) ===
-    let mut model_5r1c = ThermalModel::<VectorField>::from_spec(&spec_900ff);
+    let mut model_5r1c = ThermalModel::<VectorField>::from_spec_with_selector(
+        &spec_900ff,
+        &ThermalSelector::default(),
+    )
+    .expect("default selector must initialize");
     model_5r1c.setpoints.heating_setpoint = -999.0;
     model_5r1c.setpoints.cooling_setpoint = 999.0;
     model_5r1c.hvac.hvac_heating_capacity = 0.0;
@@ -1218,7 +1253,11 @@ fn test_900ff_without_ctf() {
 
     // Compare with 600FF (natural 5R1C case)
     let spec_600ff = ASHRAE140Case::Case600FF.spec();
-    let mut model_600ff = ThermalModel::<VectorField>::from_spec(&spec_600ff);
+    let mut model_600ff = ThermalModel::<VectorField>::from_spec_with_selector(
+        &spec_600ff,
+        &ThermalSelector::default(),
+    )
+    .expect("default selector must initialize");
     model_600ff.setpoints.heating_setpoint = -999.0;
     model_600ff.setpoints.cooling_setpoint = 999.0;
     model_600ff.hvac.hvac_heating_capacity = 0.0;
@@ -1284,7 +1323,11 @@ fn test_mass_temperatures_differ_between_600ff_and_900ff() {
         EpwWeatherSource::from_file("assets/weather/WD600.epw").expect("Failed to load WD600.epw");
 
     // === Simulate 600FF ===
-    let mut model_600ff = ThermalModel::<VectorField>::from_spec(&spec_600ff);
+    let mut model_600ff = ThermalModel::<VectorField>::from_spec_with_selector(
+        &spec_600ff,
+        &ThermalSelector::default(),
+    )
+    .expect("default selector must initialize");
     model_600ff.setpoints.heating_setpoint = -999.0;
     model_600ff.setpoints.cooling_setpoint = 999.0;
     model_600ff.hvac.hvac_heating_capacity = 0.0;
@@ -1307,7 +1350,11 @@ fn test_mass_temperatures_differ_between_600ff_and_900ff() {
     }
 
     // === Simulate 900FF ===
-    let mut model_900ff = ThermalModel::<VectorField>::from_spec(&spec_900ff);
+    let mut model_900ff = ThermalModel::<VectorField>::from_spec_with_selector(
+        &spec_900ff,
+        &ThermalSelector::default(),
+    )
+    .expect("default selector must initialize");
     model_900ff.setpoints.heating_setpoint = -999.0;
     model_900ff.setpoints.cooling_setpoint = 999.0;
     model_900ff.hvac.hvac_heating_capacity = 0.0;

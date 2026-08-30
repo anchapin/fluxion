@@ -6,6 +6,7 @@
 use fluxion::physics::cta::VectorField;
 use fluxion::sim::engine::ThermalModel;
 use fluxion::sim::invariant_checker::InvariantChecker;
+use fluxion::sim::thermal_selector::ThermalSelector;
 use fluxion::validation::ashrae_140_cases::ASHRAE140Case;
 use fluxion::weather::denver::DenverTmyWeather;
 use fluxion::weather::WeatherSource;
@@ -26,7 +27,9 @@ const ENERGY_BALANCE_RESIDUAL_THRESHOLD: f64 = 200.0; // ~191 W residual (FREE-0
 #[test]
 fn test_energy_conservation() {
     let spec = ASHRAE140Case::Case600.spec();
-    let mut model = ThermalModel::<VectorField>::from_spec(&spec);
+    let mut model =
+        ThermalModel::<VectorField>::from_spec_with_selector(&spec, &ThermalSelector::default())
+            .expect("default selector must initialize");
 
     // Run a short simulation (24 hours) to verify energy conservation
     // Use analytical physics path (use_ai=false)
@@ -52,7 +55,9 @@ fn test_energy_conservation() {
 #[test]
 fn test_analytical_loads_nonzero() {
     let spec = ASHRAE140Case::Case600.spec();
-    let model = ThermalModel::<VectorField>::from_spec(&spec);
+    let model =
+        ThermalModel::<VectorField>::from_spec_with_selector(&spec, &ThermalSelector::default())
+            .expect("default selector must initialize");
 
     // Calculate loads for a sample timestep (noon, summer)
     let outdoor_temp = 35.0; // Hot day
@@ -78,7 +83,9 @@ fn test_analytical_loads_nonzero() {
 fn test_analytical_loads_consistency() {
     // Test that analytical loads are consistent with physics expectations
     let spec = ASHRAE140Case::Case600.spec();
-    let model = ThermalModel::<VectorField>::from_spec(&spec);
+    let model =
+        ThermalModel::<VectorField>::from_spec_with_selector(&spec, &ThermalSelector::default())
+            .expect("default selector must initialize");
 
     // Test 1: Hot outdoor temp should result in positive net load (cooling needed)
     let loads_hot = model.calculate_analytical_loads(35.0, 12);
@@ -117,7 +124,9 @@ fn test_analytical_loads_consistency() {
 fn test_analytical_loads_seasonal_variation() {
     // Test that loads vary appropriately with outdoor temperature
     let spec = ASHRAE140Case::Case600.spec();
-    let model = ThermalModel::<VectorField>::from_spec(&spec);
+    let model =
+        ThermalModel::<VectorField>::from_spec_with_selector(&spec, &ThermalSelector::default())
+            .expect("default selector must initialize");
 
     // Test 1: Hot outdoor temp should result in higher total load (cooling needed)
     let loads_hot = model.calculate_analytical_loads(35.0, 12);
@@ -157,7 +166,9 @@ fn test_analytical_loads_seasonal_variation() {
 #[test]
 fn test_case_600_energy_conservation_residual() {
     let spec = ASHRAE140Case::Case600.spec();
-    let mut model = ThermalModel::<VectorField>::from_spec(&spec);
+    let mut model =
+        ThermalModel::<VectorField>::from_spec_with_selector(&spec, &ThermalSelector::default())
+            .expect("default selector must initialize");
     let weather = DenverTmyWeather::new();
 
     let tolerance = ENERGY_BALANCE_RESIDUAL_THRESHOLD;
@@ -225,7 +236,9 @@ fn test_case_600_energy_conservation_residual() {
 #[test]
 fn test_case_900_energy_conservation_residual() {
     let spec = ASHRAE140Case::Case900.spec();
-    let mut model = ThermalModel::<VectorField>::from_spec(&spec);
+    let mut model =
+        ThermalModel::<VectorField>::from_spec_with_selector(&spec, &ThermalSelector::default())
+            .expect("default selector must initialize");
     let weather = DenverTmyWeather::new();
 
     let tolerance = ENERGY_BALANCE_RESIDUAL_THRESHOLD;
@@ -294,7 +307,9 @@ fn test_case_900_energy_conservation_residual() {
 #[test]
 fn test_case_960_energy_conservation_residual() {
     let spec = ASHRAE140Case::Case960.spec();
-    let mut model = ThermalModel::<VectorField>::from_spec(&spec);
+    let mut model =
+        ThermalModel::<VectorField>::from_spec_with_selector(&spec, &ThermalSelector::default())
+            .expect("default selector must initialize");
     let weather = DenverTmyWeather::new();
 
     let tolerance = ENERGY_BALANCE_RESIDUAL_THRESHOLD;
@@ -364,7 +379,9 @@ fn test_case_960_energy_conservation_residual() {
 #[test]
 fn test_free_floating_energy_conservation_residual() {
     let spec = ASHRAE140Case::Case600FF.spec();
-    let mut model = ThermalModel::<VectorField>::from_spec(&spec);
+    let mut model =
+        ThermalModel::<VectorField>::from_spec_with_selector(&spec, &ThermalSelector::default())
+            .expect("default selector must initialize");
     let weather = DenverTmyWeather::new();
 
     // Disable HVAC for free-floating mode

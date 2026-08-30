@@ -7,6 +7,7 @@
 
 use fluxion::physics::cta::VectorField;
 use fluxion::sim::engine::{ThermalModel, ThermalModelType};
+use fluxion::sim::thermal_selector::ThermalSelector;
 use fluxion::validation::ashrae_140_cases::ASHRAE140Case;
 
 // ============================================================================
@@ -56,7 +57,9 @@ fn test_configure_6r2c_model() {
 #[test]
 fn test_6r2c_thermal_mass_initialization() {
     let spec = ASHRAE140Case::Case900.spec();
-    let mut model = ThermalModel::<VectorField>::from_spec(&spec);
+    let mut model =
+        ThermalModel::<VectorField>::from_spec_with_selector(&spec, &ThermalSelector::default())
+            .expect("default selector must initialize");
     // h_tr_me is now set by from_spec (physics-based), not overwritten by configure_6r2c_model
     model.configure_6r2c_model(0.75, 100.0, None);
 
@@ -166,7 +169,9 @@ fn test_thermal_lag_envelope_vs_internal() {
 #[test]
 fn test_mass_nodes_diverge_during_simulation() {
     let spec = ASHRAE140Case::Case900.spec();
-    let mut model = ThermalModel::<VectorField>::from_spec(&spec);
+    let mut model =
+        ThermalModel::<VectorField>::from_spec_with_selector(&spec, &ThermalSelector::default())
+            .expect("default selector must initialize");
     model.configure_6r2c_model(0.75, 100.0, None);
 
     let initial_t_env = model.mass.envelope_mass_temperatures.as_ref()[0];
@@ -218,7 +223,9 @@ fn test_mass_nodes_diverge_during_simulation() {
 #[test]
 fn test_envelope_mass_time_constant_based_on_h_tr_ms() {
     let spec = ASHRAE140Case::Case900.spec();
-    let mut model = ThermalModel::<VectorField>::from_spec(&spec);
+    let mut model =
+        ThermalModel::<VectorField>::from_spec_with_selector(&spec, &ThermalSelector::default())
+            .expect("default selector must initialize");
     model.configure_6r2c_model(0.75, 100.0, None);
 
     let cm_env = model.mass.envelope_thermal_capacitance.as_ref()[0];

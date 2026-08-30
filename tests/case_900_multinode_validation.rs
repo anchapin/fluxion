@@ -39,6 +39,7 @@
 
 use fluxion::physics::cta::VectorField;
 use fluxion::sim::engine::ThermalModel;
+use fluxion::sim::thermal_selector::ThermalSelector;
 use fluxion::validation::ashrae_140_cases::ASHRAE140Case;
 use fluxion::weather::denver::DenverTmyWeather;
 use fluxion::weather::WeatherSource;
@@ -89,10 +90,12 @@ const WARMUP_HOURS: usize = WARMUP_DAYS * 24;
 /// peak_heating_kw, peak_cooling_kw, min_zone_temp, max_zone_temp).
 fn simulate_case_900_multinode() -> (f64, f64, f64, f64, f64, f64) {
     let spec = ASHRAE140Case::Case900.spec();
-    // ThermalModel::<VectorField>::from_spec() automatically creates a
+    // ThermalModel::<VectorField>::from_spec_with_selector(, &ThermalSelector::default()).expect("default selector must initialize") automatically creates a
     // MultiNodeSolver per zone when the construction is HighMass (which is the
     // case for Case 900 — see `case_900_baseline()` in ashrae_140_cases.rs).
-    let mut model = ThermalModel::<VectorField>::from_spec(&spec);
+    let mut model =
+        ThermalModel::<VectorField>::from_spec_with_selector(&spec, &ThermalSelector::default())
+            .expect("default selector must initialize");
     let weather = DenverTmyWeather::new();
 
     // === 14-day warm-up period per ASHRAE 140 §B2 ===
@@ -162,7 +165,9 @@ fn simulate_case_900_multinode() -> (f64, f64, f64, f64, f64, f64) {
 /// multi-node (9R4C) HVAC path. Returns (min_zone_temp, max_zone_temp).
 fn simulate_case_900ff_multinode() -> (f64, f64) {
     let spec = ASHRAE140Case::Case900FF.spec();
-    let mut model = ThermalModel::<VectorField>::from_spec(&spec);
+    let mut model =
+        ThermalModel::<VectorField>::from_spec_with_selector(&spec, &ThermalSelector::default())
+            .expect("default selector must initialize");
     let weather = DenverTmyWeather::new();
 
     // 14-day warm-up (still good practice even without energy accumulation)
@@ -807,7 +812,7 @@ fn test_case_900_peak_cooling_spec_band_closure() {
 // ## Approach
 //
 // 1. **Multi-Node Model (9R4C)**: The production path through
-//    `ThermalModel::<VectorField>::from_spec(&case_900_baseline_spec())`.
+//    `ThermalModel::<VectorField>::from_spec_with_selector(&case_900_baseline_spec(), &ThermalSelector::default()).expect("default selector must initialize")`.
 //    When the construction is HighMass (Case 900), the model automatically
 //    creates a `MultiNodeSolver` per zone (9R4C thermal network).
 //

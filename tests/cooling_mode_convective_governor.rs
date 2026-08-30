@@ -41,6 +41,7 @@
 //!   night flush (the natural ASHRAE/EnergyPlus correlation).
 //! - Issue #1279: dynamic h_tr_is ACH multiplier wiring (foundation).
 
+use fluxion::sim::thermal_selector::ThermalSelector;
 use fluxion::sim::ventilation::{
     capped_h_tr_is_ach_multiplier, h_tr_is_ach_multiplier, MAX_CONVECTIVE_TO_AIR_MULTIPLIER,
 };
@@ -200,7 +201,9 @@ fn test_cooling_mode_governor_is_symmetric_under_sign_inversion() {
     use fluxion::weather::epw::EpwWeatherSource;
 
     let spec = ASHRAE140Case::Case600.spec();
-    let mut model = ThermalModel::<VectorField>::from_spec(&spec);
+    let mut model =
+        ThermalModel::<VectorField>::from_spec_with_selector(&spec, &ThermalSelector::default())
+            .expect("default selector must initialize");
 
     // Force `solar_distribution_to_air` to a non-default value so the
     // governor has a measurable signal.

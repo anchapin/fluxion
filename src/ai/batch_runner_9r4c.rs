@@ -30,6 +30,7 @@ use crate::ai::batch_runner::{BatchResults, ParameterManifest, ParameterSample, 
 use crate::ai::surrogate::SurrogateManager;
 use crate::physics::cta::{ContinuousTensor, VectorField};
 use crate::sim::engine::ThermalModel;
+use crate::sim::thermal_selector::ThermalSelector;
 use crate::util::sha256_hex::sha256_hex;
 use crate::validation::ashrae_140_cases::{ASHRAE140Case, CaseSpec, ConstructionType};
 use rayon::prelude::*;
@@ -176,7 +177,9 @@ impl BatchRunner9R4C {
             "BatchRunner9R4C requires a HighMass CaseSpec to engage the 9R4C solver"
         );
 
-        let model = ThermalModel::<VectorField>::from_spec(spec);
+        let model =
+            ThermalModel::<VectorField>::from_spec_with_selector(spec, &ThermalSelector::default())
+                .expect("default selector must initialize");
 
         let runner = BatchRunner9R4C {
             model,

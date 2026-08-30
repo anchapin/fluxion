@@ -1,5 +1,6 @@
 use fluxion::physics::cta::VectorField;
 use fluxion::sim::engine::ThermalModel;
+use fluxion::sim::thermal_selector::ThermalSelector;
 use fluxion::validation::ashrae_140_cases::ASHRAE140Case;
 use fluxion::weather::WeatherSource;
 use std::fs::File;
@@ -8,7 +9,9 @@ use std::io::Write;
 #[test]
 fn test_case_900ff_profile_diagnostic() {
     let spec = ASHRAE140Case::Case900FF.spec();
-    let mut model = ThermalModel::<VectorField>::from_spec(&spec);
+    let mut model =
+        ThermalModel::<VectorField>::from_spec_with_selector(&spec, &ThermalSelector::default())
+            .expect("default selector must initialize");
     let weather = fluxion::weather::denver::DenverTmyWeather::new();
 
     let mut file =

@@ -34,6 +34,7 @@
 
 use fluxion::ai::surrogate::SurrogateManager;
 use fluxion::sim::thermal_model::{HybridRouting, HybridThermalModel};
+use fluxion::sim::thermal_selector::ThermalSelector;
 use fluxion::validation::empirical::{
     get_ashrae_rp_sources, BuildingType, MonitoredDataPoint, MonitoredDataSource,
 };

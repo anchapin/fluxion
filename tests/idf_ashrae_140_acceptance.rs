@@ -39,6 +39,7 @@
 use std::path::Path;
 
 use fluxion::io::idf::{case_spec_from_idf, IdfParser};
+use fluxion::sim::thermal_selector::ThermalSelector;
 use fluxion::validation::ashrae_140_cases::ASHRAE140Case;
 use fluxion::weather::WeatherSource;
 
@@ -118,7 +119,7 @@ fn idf_case_600_simulation_runs_and_reports_energy() {
     let spec = case_spec_from_idf(&idf, "IDF:case_600").expect("CaseSpec builds from IDF");
 
     let mut model =
-        fluxion::sim::engine::ThermalModel::<fluxion::physics::cta::VectorField>::from_spec(&spec);
+        fluxion::sim::engine::ThermalModel::<fluxion::physics::cta::VectorField>::from_spec_with_selector(&spec, &ThermalSelector::default()).expect("default selector must initialize");
     let weather = fluxion::weather::epw::EpwWeatherSource::from_file(EPW_PATH)
         .expect("Failed to load EPW weather data");
 
@@ -159,7 +160,7 @@ fn idf_case_600_annual_heating_within_15_percent_strict() {
     let spec = case_spec_from_idf(&idf, "IDF:case_600").expect("CaseSpec builds from IDF");
 
     let mut model =
-        fluxion::sim::engine::ThermalModel::<fluxion::physics::cta::VectorField>::from_spec(&spec);
+        fluxion::sim::engine::ThermalModel::<fluxion::physics::cta::VectorField>::from_spec_with_selector(&spec, &ThermalSelector::default()).expect("default selector must initialize");
     let weather = fluxion::weather::epw::EpwWeatherSource::from_file(EPW_PATH)
         .expect("Failed to load EPW weather data");
 

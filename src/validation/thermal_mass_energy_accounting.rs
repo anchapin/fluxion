@@ -31,7 +31,7 @@
 //! use fluxion::validation::ashrae_140_cases::ASHRAE140Case;
 //!
 //! let spec = ASHRAE140Case::Case900.spec();
-//! let model = ThermalModel::<VectorField>::from_spec(&spec);
+//! let model = ThermalModel::<VectorField>::from_spec_with_selector(&spec, &ThermalSelector::default()).expect("default selector must initialize");
 //!
 //! let mass_energy = calculate_mass_energy(&model);
 //!
@@ -39,6 +39,7 @@
 //! ```
 
 use crate::physics::cta::VectorField;
+use crate::sim::thermal_selector::ThermalSelector;
 use crate::sim::engine::ThermalModel;
 use serde::{Deserialize, Serialize};
 
@@ -631,7 +632,11 @@ mod tests {
     #[test]
     fn test_calculate_mass_energy_5r1c() {
         let spec = ASHRAE140Case::Case600.spec();
-        let model = ThermalModel::<VectorField>::from_spec(&spec);
+        let model = ThermalModel::<VectorField>::from_spec_with_selector(
+            &spec,
+            &ThermalSelector::default(),
+        )
+        .expect("default selector must initialize");
 
         let mass_energy = calculate_mass_energy(&model);
 
@@ -692,7 +697,11 @@ mod tests {
         println!("\n=== Testing Case 900 (high-mass) Energy Accounting ===");
 
         let spec = ASHRAE140Case::Case900.spec();
-        let mut model = ThermalModel::<VectorField>::from_spec(&spec);
+        let mut model = ThermalModel::<VectorField>::from_spec_with_selector(
+            &spec,
+            &ThermalSelector::default(),
+        )
+        .expect("default selector must initialize");
 
         // Run energy balance validation
         let report = validate_energy_balance_over_year(&mut model);
@@ -732,7 +741,11 @@ mod tests {
         println!("\n=== Testing Case 600 (low-mass) Energy Accounting ===");
 
         let spec = ASHRAE140Case::Case600.spec();
-        let mut model = ThermalModel::<VectorField>::from_spec(&spec);
+        let mut model = ThermalModel::<VectorField>::from_spec_with_selector(
+            &spec,
+            &ThermalSelector::default(),
+        )
+        .expect("default selector must initialize");
 
         // Run energy balance validation
         let report = validate_energy_balance_over_year(&mut model);
@@ -769,7 +782,11 @@ mod tests {
         println!("\n=== Testing Case 920 Energy Accounting ===");
 
         let spec = ASHRAE140Case::Case920.spec();
-        let mut model = ThermalModel::<VectorField>::from_spec(&spec);
+        let mut model = ThermalModel::<VectorField>::from_spec_with_selector(
+            &spec,
+            &ThermalSelector::default(),
+        )
+        .expect("default selector must initialize");
 
         let report = validate_energy_balance_over_year(&mut model);
 
@@ -795,7 +812,11 @@ mod tests {
         println!("\n=== Testing Case 930 Energy Accounting ===");
 
         let spec = ASHRAE140Case::Case930.spec();
-        let mut model = ThermalModel::<VectorField>::from_spec(&spec);
+        let mut model = ThermalModel::<VectorField>::from_spec_with_selector(
+            &spec,
+            &ThermalSelector::default(),
+        )
+        .expect("default selector must initialize");
 
         let report = validate_energy_balance_over_year(&mut model);
 
@@ -821,7 +842,11 @@ mod tests {
         println!("\n=== Testing Case 940 Energy Accounting ===");
 
         let spec = ASHRAE140Case::Case940.spec();
-        let mut model = ThermalModel::<VectorField>::from_spec(&spec);
+        let mut model = ThermalModel::<VectorField>::from_spec_with_selector(
+            &spec,
+            &ThermalSelector::default(),
+        )
+        .expect("default selector must initialize");
 
         let report = validate_energy_balance_over_year(&mut model);
 
@@ -847,7 +872,11 @@ mod tests {
         println!("\n=== Testing Case 950 Energy Accounting ===");
 
         let spec = ASHRAE140Case::Case950.spec();
-        let mut model = ThermalModel::<VectorField>::from_spec(&spec);
+        let mut model = ThermalModel::<VectorField>::from_spec_with_selector(
+            &spec,
+            &ThermalSelector::default(),
+        )
+        .expect("default selector must initialize");
 
         let report = validate_energy_balance_over_year(&mut model);
 
@@ -873,7 +902,11 @@ mod tests {
         println!("\n=== Testing Case 960 Energy Accounting ===");
 
         let spec = ASHRAE140Case::Case960.spec();
-        let mut model = ThermalModel::<VectorField>::from_spec(&spec);
+        let mut model = ThermalModel::<VectorField>::from_spec_with_selector(
+            &spec,
+            &ThermalSelector::default(),
+        )
+        .expect("default selector must initialize");
 
         // Configure 6R2C model for Case 960 (sunspace)
         model.configure_6r2c_model(0.75, 100.0, None);
@@ -903,7 +936,11 @@ mod tests {
         println!("\n=== Testing Case 610 Energy Accounting ===");
 
         let spec = ASHRAE140Case::Case610.spec();
-        let mut model = ThermalModel::<VectorField>::from_spec(&spec);
+        let mut model = ThermalModel::<VectorField>::from_spec_with_selector(
+            &spec,
+            &ThermalSelector::default(),
+        )
+        .expect("default selector must initialize");
 
         let report = validate_energy_balance_over_year(&mut model);
 
@@ -929,7 +966,11 @@ mod tests {
         println!("\n=== Testing Case 620 Energy Accounting ===");
 
         let spec = ASHRAE140Case::Case620.spec();
-        let mut model = ThermalModel::<VectorField>::from_spec(&spec);
+        let mut model = ThermalModel::<VectorField>::from_spec_with_selector(
+            &spec,
+            &ThermalSelector::default(),
+        )
+        .expect("default selector must initialize");
 
         let report = validate_energy_balance_over_year(&mut model);
 
@@ -955,7 +996,11 @@ mod tests {
         println!("\n=== Testing Case 630 Energy Accounting ===");
 
         let spec = ASHRAE140Case::Case630.spec();
-        let mut model = ThermalModel::<VectorField>::from_spec(&spec);
+        let mut model = ThermalModel::<VectorField>::from_spec_with_selector(
+            &spec,
+            &ThermalSelector::default(),
+        )
+        .expect("default selector must initialize");
 
         let report = validate_energy_balance_over_year(&mut model);
 
@@ -981,7 +1026,11 @@ mod tests {
         println!("\n=== Testing Case 640 Energy Accounting ===");
 
         let spec = ASHRAE140Case::Case640.spec();
-        let mut model = ThermalModel::<VectorField>::from_spec(&spec);
+        let mut model = ThermalModel::<VectorField>::from_spec_with_selector(
+            &spec,
+            &ThermalSelector::default(),
+        )
+        .expect("default selector must initialize");
 
         let report = validate_energy_balance_over_year(&mut model);
 
@@ -1007,7 +1056,11 @@ mod tests {
         println!("\n=== Testing Case 650 Energy Accounting ===");
 
         let spec = ASHRAE140Case::Case650.spec();
-        let mut model = ThermalModel::<VectorField>::from_spec(&spec);
+        let mut model = ThermalModel::<VectorField>::from_spec_with_selector(
+            &spec,
+            &ThermalSelector::default(),
+        )
+        .expect("default selector must initialize");
 
         let report = validate_energy_balance_over_year(&mut model);
 
@@ -1047,7 +1100,11 @@ mod tests {
             println!("\n  Testing Case {}...", case_id);
 
             let spec = case_enum.spec();
-            let mut model = ThermalModel::<VectorField>::from_spec(&spec);
+            let mut model = ThermalModel::<VectorField>::from_spec_with_selector(
+                &spec,
+                &ThermalSelector::default(),
+            )
+            .expect("default selector must initialize");
 
             // Configure 6R2C model for Case 960 (sunspace)
             if case_id == "960" {
@@ -1096,7 +1153,11 @@ mod tests {
             println!("\n  Testing Case {}...", case_id);
 
             let spec = case_enum.spec();
-            let mut model = ThermalModel::<VectorField>::from_spec(&spec);
+            let mut model = ThermalModel::<VectorField>::from_spec_with_selector(
+                &spec,
+                &ThermalSelector::default(),
+            )
+            .expect("default selector must initialize");
 
             let report = validate_energy_balance_over_year(&mut model);
 
@@ -1133,7 +1194,11 @@ mod tests {
         println!("\n=== Testing Case 600 Internal Gains Conservation ===");
 
         let spec = ASHRAE140Case::Case600.spec();
-        let mut model = ThermalModel::<VectorField>::from_spec(&spec);
+        let mut model = ThermalModel::<VectorField>::from_spec_with_selector(
+            &spec,
+            &ThermalSelector::default(),
+        )
+        .expect("default selector must initialize");
 
         let weather = EpwWeatherSource::from_file(
             "assets/weather/USA_CO_Denver-Stapleton.Intl.AP.724690_TMY.epw",
@@ -1250,7 +1315,11 @@ mod tests {
             println!("\n  Testing Case {}...", case_id);
 
             let spec = case_enum.spec();
-            let mut model = ThermalModel::<VectorField>::from_spec(&spec);
+            let mut model = ThermalModel::<VectorField>::from_spec_with_selector(
+                &spec,
+                &ThermalSelector::default(),
+            )
+            .expect("default selector must initialize");
 
             // Run simulation for a representative day (24 hours)
             let _max_phi_ia = 0.0_f64;

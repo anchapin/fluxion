@@ -8,6 +8,7 @@ use fluxion::sim::hvac::{
     AirsideCouplingError, AirsideEnvelopeCoupler, AirsideFlow, CoupledStepForcing, MoistAirState,
     DEFAULT_ENERGY_BALANCE_TOLERANCE_W,
 };
+use fluxion::sim::thermal_selector::ThermalSelector;
 use fluxion::validation::ashrae_140_cases::ASHRAE140Case;
 use fluxion::weather::denver::DenverTmyWeather;
 use fluxion::weather::WeatherSource;
@@ -183,7 +184,9 @@ fn test_ashrae_140_envelope_unchanged() {
     const BASELINE_TOLERANCE_C: f64 = 1.0e-6;
 
     let spec = ASHRAE140Case::Case900FF.spec();
-    let mut model = ThermalModel::<VectorField>::from_spec(&spec);
+    let mut model =
+        ThermalModel::<VectorField>::from_spec_with_selector(&spec, &ThermalSelector::default())
+            .expect("default selector must initialize");
     let weather = DenverTmyWeather::new();
     let mut minimum_c = f64::MAX;
     let mut maximum_c = f64::MIN;
