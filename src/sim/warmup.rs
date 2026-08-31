@@ -23,7 +23,6 @@
 //! use `(hour % 8760)` to index into the weather array.
 
 use crate::physics::cta::ContinuousTensor;
-use crate::sim::thermal_selector::ThermalSelector;
 use crate::sim::thermal_model_core::ThermalModel;
 use crate::weather::WeatherSource;
 
@@ -362,6 +361,7 @@ mod tests {
     use super::*;
     use crate::physics::cta::VectorField;
     use crate::sim::thermal_model_core::ThermalModel;
+    use crate::sim::thermal_selector::ThermalSelector;
     use crate::validation::ashrae_140_cases::ASHRAE140Case;
     use crate::weather::denver::DenverTmyWeather;
 

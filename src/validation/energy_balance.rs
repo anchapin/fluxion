@@ -11,7 +11,6 @@
 //! The module follows the Validator pattern used throughout the Fluxion validation framework.
 
 use crate::physics::cta::{ContinuousTensor, VectorField};
-use crate::sim::thermal_selector::ThermalSelector;
 use crate::sim::engine::ThermalModel;
 use crate::validation::thermal_mass_energy_accounting::EnergyBalanceReport;
 
@@ -635,6 +634,7 @@ impl EnergyBalanceValidator {
 mod tests {
     use super::*;
     use crate::physics::cta::VectorField;
+    use crate::sim::thermal_selector::ThermalSelector;
     use crate::validation::ashrae_140_cases::ASHRAE140Case;
 
     #[test]

@@ -39,7 +39,6 @@
 //! ```
 
 use crate::physics::cta::VectorField;
-use crate::sim::thermal_selector::ThermalSelector;
 use crate::sim::engine::ThermalModel;
 use serde::{Deserialize, Serialize};
 
@@ -627,6 +626,7 @@ pub fn validate_energy_balance_over_year(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::sim::thermal_selector::ThermalSelector;
     use crate::validation::ashrae_140_cases::ASHRAE140Case;
 
     #[test]

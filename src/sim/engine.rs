@@ -1,5 +1,4 @@
 pub use crate::physics::constants::solar::ashrae_140::SOLAR_CONSTANT;
-use crate::sim::thermal_selector::ThermalSelector;
 pub use crate::physics::constants::thermal::ashrae_140::v2023::{
     EXTERIOR_FILM_COEFF, INTERIOR_FILM_COEFF,
 };
@@ -15,6 +14,7 @@ mod tests {
     use crate::ai::surrogate::SurrogateManager;
     use crate::physics::cta::VectorField;
     use crate::sim::schedule::DailySchedule;
+    use crate::sim::thermal_selector::ThermalSelector;
 
     #[test]
     fn test_thermal_model_creation() {
@@ -675,6 +675,7 @@ mod tests {
 mod inter_zone_tests {
     use super::*;
     use crate::physics::cta::VectorField;
+    use crate::sim::thermal_selector::ThermalSelector;
     use crate::validation::ASHRAE140Case;
 
     #[test]
@@ -787,6 +788,7 @@ mod inter_zone_tests {
 mod hvac_controller_tests {
     use super::*;
     use crate::physics::cta::VectorField;
+    use crate::sim::thermal_selector::ThermalSelector;
 
     #[test]
     fn test_ideal_hvac_controller_creation() {
