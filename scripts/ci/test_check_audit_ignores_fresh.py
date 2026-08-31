@@ -265,7 +265,7 @@ def test_main_returns_two_when_cargo_lock_missing(
     ``.cargo/audit.toml`` and ``deny.toml`` and skips missing files, so
     the only remaining ``2`` path is a missing ``Cargo.lock``.
     """
-    audit, lock = _redirect(checker, tmp_path, monkeypatch)
+    audit, _lock = _redirect(checker, tmp_path, monkeypatch)
     # Only create audit.toml -- Cargo.lock is intentionally absent.
     _write(
         audit,
@@ -289,7 +289,7 @@ def test_main_returns_zero_when_audit_toml_missing(
     Issue #3237: the script scans both config files and skips missing
     ones, so a missing audit.toml alone is not an error.
     """
-    audit, lock = _redirect(checker, tmp_path, monkeypatch)
+    _audit, lock = _redirect(checker, tmp_path, monkeypatch)
     # Only create Cargo.lock -- audit.toml is intentionally absent.
     _write(lock, _cargo_lock_with({}))
     _scrub_argv(monkeypatch)
