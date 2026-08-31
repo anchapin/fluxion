@@ -92,8 +92,29 @@ MOVED_LEAF_TYPES = {
 # technique already used by `scan_fluxion_core_for_upward_deps` below and
 # by `check_physics_sim_cycle.py`'s physics->sim direction.
 # ---------------------------------------------------------------------------
-BASELINE_SIM_TO_VALIDATION = 72  # src/sim/**    -> crate::validation::*
-BASELINE_VALIDATION_TO_SIM = 58  # src/validation/** -> crate::sim::*
+BASELINE_SIM_TO_VALIDATION = 94  # src/sim/**    -> crate::validation::* (was 72; +22 for #3291)
+# Issue #3291 (umbrella: GaugeSolver production-path wiring + default
+# flip, PR2 commit `13648c3`): +22 sim->validation edges from
+# `src/sim/thermal_model_core.rs` and `src/sim/thermal_model_physics/
+# step_dispatcher.rs`. The new edges are intentional: the gauge-path
+# integration needs `crate::validation::ashrae_140_cases::{CaseSpec,
+# WindowSpec, ConstructionType, Orientation, CommonWall, GeometrySpec}`
+# to populate the gauge backend (windows for solar, construction type
+# for the auto-promote, common walls for the multi-zone coupling,
+# surface orientations for the t_sol_air/t_i Crank-Nicolson mass-state
+# proxy). Lowering this baseline is still reserved for the companion
+# cycle-removal work; raising (as here) accommodates a one-shot
+# feature-driven growth with rationale.
+BASELINE_VALIDATION_TO_SIM = 65  # src/validation/** -> crate::sim::* (was 58; +7 for #3291)
+# Issue #3291: +7 validation->sim edges. Validation now imports
+# `crate::sim::thermal_selector::{ThermalSelector, ZoneSolverKind,
+# ConductionSolverKind}` to drive the per-case selector in
+# `from_spec_with_selector` (which is the API that consumes the
+# selector). The cycle-removal work (issue #1441) already hoisted
+# the ASHRAE-140 leaf types to fluxion-core; further baseline
+# reduction requires moving composite validation types
+# (CaseSpec, etc.), which is out of scope for the gauge integration
+# tracked by #3291.
 # Issue #2980: +3 physics / +2 weather to run the real 8760-step Case 970
 # physics simulation in `src/validation/ashrae_140_multi_zone.rs`
 # (`run_real_case_970_energy`). The new edges are intentional: the function
