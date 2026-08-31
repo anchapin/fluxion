@@ -2764,7 +2764,18 @@ impl ThermalModel<VectorField> {
         //                     so the dispatch flag is set.
         match selector.zone_solver {
             crate::sim::thermal_selector::ZoneSolverKind::Gauge => {
-                model.enable_gauge_solver()?;
+                // Invariant from #3275: exactly one of `gauge_zone_solver`
+                // (single-zone) / `gauge_multi_zone_solver` (multi-zone) is
+                // populated based on `spec.num_zones`. The single-zone path
+                // reads `WallSurface.wall_spec` from `model.solar.surfaces[0]`;
+                // the multi-zone path additionally consumes `spec.common_walls`
+                // and `spec.geometry` for inter-zone coupling and per-zone
+                // floor area / height.
+                if spec.num_zones > 1 {
+                    model.enable_gauge_solver_multi_zone(spec)?;
+                } else {
+                    model.enable_gauge_solver()?;
+                }
             }
             crate::sim::thermal_selector::ZoneSolverKind::FiveROneC => {
                 // Pin the dispatch flag so the selector is authoritative. The
@@ -3010,6 +3021,243 @@ impl ThermalModel<VectorField> {
                 .map_err(|e| PhysicsError::initialization(&e.to_string()))?;
 
             self.0.conduction.backend.gauge_zone_solver = Some(gauge_solver);
+        }
+        Ok(())
+    }
+
+    /// Initialize the multi-zone [`MultiZoneGaugeSolver`](crate::sim::thermal_model_data::MultiZoneGaugeSolver)
+    /// from per-zone geometry, per-WallSurface data, and inter-zone common walls.
+    ///
+    /// This is the **multi-zone** counterpart to [`Self::enable_gauge_solver`].
+    /// Per the locked design decision (#3275 / #3291), exactly one of
+    /// `gauge_zone_solver` (single-zone path) or `gauge_multi_zone_solver`
+    /// (multi-zone path) is populated on `ConductionBackend`, keyed by
+    /// `spec.num_zones`. The constructor's selector-driven branch routes here
+    /// when `selector.zone_solver == Gauge && spec.num_zones > 1`.
+    ///
+    /// # Wiring
+    ///
+    /// 1. `MultiZoneGaugeSolver::new()` — empty solver.
+    /// 2. For each zone `i` in `spec.geometry`:
+    ///    - `add_zone(i, geom.floor_area(), geom.height)`
+    ///    - For each `WallSurface` in `model.solar.surfaces[i]`,
+    ///      `add_opaque_surface_to_zone(i, &surface.wall_spec, area, type, azimuth, tilt)`.
+    ///      `SurfaceType` is derived from `surface.orientation`
+    ///      (Wall → cardinal, Roof → Up, Floor → Down); azimuth/tilt come from
+    ///      the `Orientation` enum + ASHRAE conventions.
+    /// 3. For each `CommonWall` in `spec.common_walls`:
+    ///    - `add_zone_coupling(zone_a, zone_b, area, R_value)` where
+    ///      `R_value = 1.0 / common_wall.construction.u_value_internal()`.
+    /// 4. `multi_zone.initialize()`.
+    /// 5. Store in `model.conduction.backend.gauge_multi_zone_solver`.
+    ///
+    /// # Fail-fast contract
+    ///
+    /// Returns `Err(PhysicsError::Initialization(msg))` if any
+    /// `WallSurface.wall_spec` is `None`, identifying the zone_id and
+    /// surface orientation that needs population. For the β-phase default
+    /// build the constructor populates every `wall_spec` from
+    /// `spec.construction` per the #3279 contract.
+    #[allow(clippy::too_many_lines)]
+    pub(crate) fn enable_gauge_solver_multi_zone(
+        &mut self,
+        spec: &crate::validation::ashrae_140_cases::CaseSpec,
+    ) -> Result<(), PhysicsError> {
+        #[cfg(not(feature = "gauge-solver"))]
+        {
+            let _ = (self, spec);
+        }
+        #[cfg(feature = "gauge-solver")]
+        {
+            use super::thermal_model_data::{MultiZoneGaugeSolver, SurfaceType};
+            use crate::physics::gauge_zone_solver::SurfaceType as GaugeSurfaceType;
+
+            // Helper: convert an `Orientation` to the gauge solver's
+            // `SurfaceType`. This is a thin shim because the gauge solver
+            // uses its own enum (Roof) instead of `fluxion_core::construction`'s
+            // `Ceiling`.
+            let surface_type_for_orientation =
+                |orientation: crate::validation::ashrae_140_cases::Orientation| -> GaugeSurfaceType {
+                    match orientation {
+                        crate::validation::ashrae_140_cases::Orientation::Up => {
+                            GaugeSurfaceType::Roof
+                        }
+                        crate::validation::ashrae_140_cases::Orientation::Down => {
+                            GaugeSurfaceType::Floor
+                        }
+                        _ => GaugeSurfaceType::Wall,
+                    }
+                };
+
+            let surface_tilt_for =
+                |orientation: crate::validation::ashrae_140_cases::Orientation| -> f64 {
+                    match orientation {
+                        crate::validation::ashrae_140_cases::Orientation::Up => 0.0,
+                        crate::validation::ashrae_140_cases::Orientation::Down => 180.0,
+                        _ => 90.0,
+                    }
+                };
+
+            // Step 1: empty solver.
+            let mut multi_zone = MultiZoneGaugeSolver::new();
+
+            // Step 2: per-zone initialization.
+            //
+            // Collect everything we need to call before the mutable borrow
+            // of `self.0.conduction.backend` later.
+            let num_zones = spec.num_zones;
+            if num_zones < 2 {
+                return Err(PhysicsError::initialization(
+                    "Multi-zone gauge path requires `spec.num_zones >= 2`. \
+                     Use `enable_gauge_solver()` (single-zone) for `num_zones == 1`.",
+                ));
+            }
+            if self.0.solar.surfaces.len() != num_zones {
+                return Err(PhysicsError::initialization(&format!(
+                    "`model.solar.surfaces` has {} entries but `spec.num_zones` \
+                     is {}. The constructor must populate one surface set per zone.",
+                    self.0.solar.surfaces.len(),
+                    num_zones
+                )));
+            }
+
+            // Collect immutable borrows of self up front, then drop them
+            // before the mutable borrow at the end.
+            let (zone_init_data, surface_init_data) = {
+                let mut zone_init_data: Vec<(usize, f64, f64)> = Vec::with_capacity(num_zones);
+                for (zone_idx, geom) in spec.geometry.iter().enumerate() {
+                    zone_init_data.push((zone_idx, geom.floor_area(), geom.height));
+                }
+
+                // Per-surface data: (zone_id, wall_spec_ref, area, surface_type,
+                // azimuth_deg, tilt_deg). The `wall_spec_ref` is a clone of the
+                // `Option<WallSpec>`; we own the clone so we can drop the
+                // `self` borrow before calling `add_opaque_surface_to_zone`
+                // (which itself takes `&mut multi_zone`).
+                let mut surface_init_data: Vec<(
+                    usize,
+                    crate::physics::wall_spec::WallSpec,
+                    f64,
+                    GaugeSurfaceType,
+                    f64,
+                    f64,
+                )> = Vec::new();
+
+                for (zone_idx, zone_surfaces) in self.0.solar.surfaces.iter().enumerate() {
+                    for surface in zone_surfaces.iter() {
+                        let wall_spec = surface.wall_spec.as_ref().ok_or_else(|| {
+                            PhysicsError::initialization(&format!(
+                                "Multi-zone gauge init requires \
+                                 `WallSurface.wall_spec = Some` for \
+                                 zone_id={zone_idx} (orientation={:?}). \
+                                 The constructor should auto-populate it from \
+                                 `spec.construction`.",
+                                surface.orientation
+                            ))
+                        })?;
+                        let st = surface_type_for_orientation(surface.orientation);
+                        let tilt = surface_tilt_for(surface.orientation);
+                        let azimuth = surface.orientation.azimuth_deg();
+                        // Opaque area = total area minus window area (windows
+                        // are walls only, not roofs/floors).
+                        let opaque_area = if matches!(st, GaugeSurfaceType::Wall) {
+                            (surface.area - surface.window_area).max(0.0)
+                        } else {
+                            surface.area
+                        };
+                        surface_init_data.push((
+                            zone_idx,
+                            wall_spec.clone(),
+                            opaque_area,
+                            st,
+                            azimuth,
+                            tilt,
+                        ));
+                    }
+                }
+
+                (zone_init_data, surface_init_data)
+            };
+
+            // Now apply the per-zone init (mutable borrow of `multi_zone`).
+            for (zone_id, floor_area, ceiling_height) in zone_init_data {
+                multi_zone.add_zone(zone_id, floor_area, ceiling_height);
+            }
+            for (zone_id, wall_spec, area, st, azimuth, tilt) in surface_init_data {
+                // The gauge solver's `SurfaceType` is structurally identical
+                // to ours (Copy + Eq), so the conversion is a thin shim.
+                let st_internal = match st {
+                    GaugeSurfaceType::Wall => SurfaceType::Wall,
+                    GaugeSurfaceType::Roof => SurfaceType::Roof,
+                    GaugeSurfaceType::Floor => SurfaceType::Floor,
+                    // We never emit these variants from surface_type_for_orientation,
+                    // but be explicit to satisfy the match exhaustiveness.
+                    GaugeSurfaceType::Window
+                    | GaugeSurfaceType::Ground
+                    | GaugeSurfaceType::InternalMass
+                    | GaugeSurfaceType::InterZone => {
+                        return Err(PhysicsError::initialization(&format!(
+                            "Multi-zone gauge init: unexpected SurfaceType variant {:?} \
+                             produced from orientation-derived mapping",
+                            st
+                        )));
+                    }
+                };
+                multi_zone
+                    .add_opaque_surface_to_zone(
+                        zone_id,
+                        &wall_spec,
+                        area,
+                        st_internal,
+                        azimuth,
+                        tilt,
+                    )
+                    .map_err(|e| {
+                        PhysicsError::initialization(&format!(
+                            "Multi-zone gauge init: add_opaque_surface_to_zone \
+                             failed for zone_id={zone_id}: {e}"
+                        ))
+                    })?;
+            }
+
+            // Step 3: inter-zone couplings from `spec.common_walls`.
+            for common_wall in &spec.common_walls {
+                let u_value = common_wall.construction.u_value_internal();
+                if u_value <= 0.0 {
+                    return Err(PhysicsError::initialization(&format!(
+                        "Multi-zone gauge init: common_wall ({}, {}) has \
+                         non-positive U-value {}; cannot compute R-value.",
+                        common_wall.zone_a, common_wall.zone_b, u_value
+                    )));
+                }
+                let r_value = 1.0 / u_value;
+                multi_zone
+                    .add_zone_coupling(
+                        common_wall.zone_a,
+                        common_wall.zone_b,
+                        common_wall.area,
+                        r_value,
+                    )
+                    .map_err(|e| {
+                        PhysicsError::initialization(&format!(
+                            "Multi-zone gauge init: add_zone_coupling({}, {}) \
+                             failed: {e}",
+                            common_wall.zone_a, common_wall.zone_b
+                        ))
+                    })?;
+            }
+
+            // Step 4: initialize every zone's gauge solver.
+            multi_zone.initialize().map_err(|e| {
+                PhysicsError::initialization(&format!(
+                    "Multi-zone gauge init: initialize() failed: {e}"
+                ))
+            })?;
+
+            // Step 5: store. Invariant: `gauge_zone_solver` (single-zone) and
+            // `gauge_multi_zone_solver` (multi-zone) are mutually exclusive —
+            // only one is populated based on `spec.num_zones`.
+            self.0.conduction.backend.gauge_multi_zone_solver = Some(multi_zone);
         }
         Ok(())
     }
