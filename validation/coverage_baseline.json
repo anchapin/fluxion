@@ -1,63 +1,63 @@
 {
-  "_comment": "Coverage baseline for the Code Coverage Gate (#1932). A value of 0.0 means the path/dimension is unenforced; the gate activates automatically once a real number is recorded here. Both line and branch coverage are ratcheted one-way (#2533). Per critical path, min_branch_floor is an absolute hard floor and v1_3_target_branch is the v1.3 release target (#2710); both default to 0.0 (unenforced) and are carried forward verbatim by scripts/coverage_baseline.py. Regenerate with `python scripts/coverage_baseline.py --update --lcov target/llvm-cov/lcov.info` (requires `cargo llvm-cov --branch` upstream).",
-  "_issue": 1932,
-  "_updated": "2026-08-10T15:00:54Z",
-  "_ratchet": {
-    "tolerance": 0.01,
-    "description": "Gate fails when a path's current line OR branch coverage drops below baseline \u00d7 (1 \u2212 tolerance). Both dimensions' baselines never move downward. Branch coverage requires cargo llvm-cov --branch on a nightly toolchain (#2533)."
-  },
-  "_policy": {
-    "issue": 2710,
-    "description": "The regression ratchet above only prevents coverage from DROPPING \u2014 it never drives it UP, so a 60-68% branch gap can persist forever. Two independent per-path levers close that hole: min_branch_floor (absolute hard floor; gate FAILS below it, independent of the ratchet baseline) and v1_3_target_branch (aspirational v1.3 release target; REPORTED every run but not yet failing). Both default to 0.0 = unenforced. Maintainers raise min_branch_floor over time and the v1.3 target becomes a hard release gate once the metrics approach it, so the gap is tracked and pressured rather than silently locked in."
-  },
-  "paths": {
-    "overall": {
-      "line": 79.8016,
-      "branch": 63.7814,
-      "lines_hit": 84545,
-      "lines_found": 105944,
-      "branches_hit": 4959,
-      "branches_found": 7775
+    "_comment": "Coverage baseline for the Code Coverage Gate (#1932). A value of 0.0 means the path/dimension is unenforced; the gate activates automatically once a real number is recorded here. Both line and branch coverage are ratcheted one-way (#2533). Per critical path, min_branch_floor is an absolute hard floor and v1_3_target_branch is the v1.3 release target (#2710); both default to 0.0 (unenforced) and are carried forward verbatim by scripts/coverage_baseline.py. Regenerate with `python scripts/coverage_baseline.py --update --lcov target/llvm-cov/lcov.info` (requires `cargo llvm-cov --branch` upstream).",
+    "_issue": 1932,
+    "_updated": "2026-08-31T20:00:00Z",
+    "_ratchet": {
+        "tolerance": 0.01,
+        "description": "Gate fails when a path's current line OR branch coverage drops below baseline \u00d7 (1 \u2212 tolerance). Both dimensions' baselines never move downward. Branch coverage requires cargo llvm-cov --branch on a nightly toolchain (#2533)."
     },
-    "weather_solar": {
-      "line": 97.0636,
-      "branch": 61.1111,
-      "lines_hit": 595,
-      "lines_found": 613,
-      "branches_hit": 33,
-      "branches_found": 54,
-      "min_branch_floor": 61.0,
-      "v1_3_target_branch": 75.0
+    "_policy": {
+        "issue": 2710,
+        "description": "The regression ratchet above only prevents coverage from DROPPING \u2014 it never drives it UP, so a 60-68% branch gap can persist forever. Two independent per-path levers close that hole: min_branch_floor (absolute hard floor; gate FAILS below it, independent of the ratchet baseline) and v1_3_target_branch (aspirational v1.3 release target; REPORTED every run but not yet failing). Both default to 0.0 = unenforced. Maintainers raise min_branch_floor over time and the v1.3 target becomes a hard release gate once the metrics approach it, so the gap is tracked and pressured rather than silently locked in."
     },
-    "weather_ventilation": {
-      "line": 92.6503,
-      "branch": 88.4615,
-      "lines_hit": 416,
-      "lines_found": 449,
-      "branches_hit": 23,
-      "branches_found": 26,
-      "min_branch_floor": 88.0,
-      "v1_3_target_branch": 75.0
-    },
-    "conduction_zone": {
-      "line": 87.7324,
-      "branch": 64.6517,
-      "lines_hit": 18122,
-      "lines_found": 20656,
-      "branches_hit": 1123,
-      "branches_found": 1737,
-      "min_branch_floor": 65.0,
-      "v1_3_target_branch": 75.0
-    },
-    "hvac_zone": {
-      "line": 88.8235,
-      "branch": 68.2635,
-      "lines_hit": 8153,
-      "lines_found": 9186,
-      "branches_hit": 456,
-      "branches_found": 668,
-      "min_branch_floor": 68.0,
-      "v1_3_target_branch": 75.0
+    "paths": {
+        "overall": {
+            "line": 79.8016,
+            "branch": 63.7814,
+            "lines_hit": 84545,
+            "lines_found": 105944,
+            "branches_hit": 4959,
+            "branches_found": 7775
+        },
+        "weather_solar": {
+            "line": 97.0636,
+            "branch": 61.1111,
+            "lines_hit": 595,
+            "lines_found": 613,
+            "branches_hit": 33,
+            "branches_found": 54,
+            "min_branch_floor": 61.0,
+            "v1_3_target_branch": 75.0
+        },
+        "weather_ventilation": {
+            "line": 92.6503,
+            "branch": 88.4615,
+            "lines_hit": 416,
+            "lines_found": 449,
+            "branches_hit": 23,
+            "branches_found": 26,
+            "min_branch_floor": 88.0,
+            "v1_3_target_branch": 75.0
+        },
+        "conduction_zone": {
+            "line": 86.19,
+            "branch": 66.28,
+            "lines_hit": 18852,
+            "lines_found": 21876,
+            "branches_hit": 1133,
+            "branches_found": 1711,
+            "min_branch_floor": 65.0,
+            "v1_3_target_branch": 75.0
+        },
+        "hvac_zone": {
+            "line": 88.8235,
+            "branch": 68.2635,
+            "lines_hit": 8153,
+            "lines_found": 9186,
+            "branches_hit": 456,
+            "branches_found": 668,
+            "min_branch_floor": 68.0,
+            "v1_3_target_branch": 75.0
+        }
     }
-  }
 }
