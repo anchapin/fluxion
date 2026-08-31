@@ -9,6 +9,10 @@ use crate::sim::thermal_model_core::ThermalModel;
 use smallvec::SmallVec;
 
 impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>> ThermalModel<T> {
+    #[allow(
+        dead_code,
+        reason = "Issue #3280: 6R2C/8R3C fall-through removed; method retained for legacy callers"
+    )]
     pub(crate) fn step_physics_6r2c(
         &mut self,
         timestep: usize,
