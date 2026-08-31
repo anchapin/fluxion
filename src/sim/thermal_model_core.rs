@@ -4497,4 +4497,124 @@ mod tests {
         assert!(model.0.solar.sun_pos_cache.contains_key(&(5, 25)));
         assert!(model.0.solar.sun_pos_cache.contains_key(&(5, 23)));
     }
+
+    // ===== Issue #3291 (PR2.3–PR2.5): gauge-init helpers =====
+
+    fn two_layer_construction() -> Construction {
+        // ConstructionLayer::new(name, conductivity, density, specific_heat, thickness)
+        Construction::new(vec![
+            ConstructionLayer::new("Concrete", 1.73, 2243.0, 837.0, 0.10),
+            ConstructionLayer::new("Foam", 0.03, 10.0, 1400.0, 0.05),
+        ])
+    }
+
+    #[test]
+    fn wall_spec_from_construction_reverses_layers() {
+        let construction = two_layer_construction();
+        let spec = wall_spec_from_construction(&construction, "test_wall");
+        assert_eq!(spec.name, "test_wall");
+        // Gauge expects exterior-to-interior; the spec stores
+        // interior-to-exterior, so the first gauge layer is the LAST
+        // construction layer ("Foam").
+        assert_eq!(spec.layers.len(), 2);
+        assert_eq!(spec.layers[0].name, "Foam");
+        assert_eq!(spec.layers[1].name, "Concrete");
+        // Spot-check a physical property round-trip.
+        assert!((spec.layers[0].thickness - 0.05).abs() < 1e-12);
+        assert!((spec.layers[1].conductivity - 1.73).abs() < 1e-12);
+    }
+
+    #[cfg(feature = "gauge-solver")]
+    #[test]
+    fn window_glass_wall_spec_matches_u_value() {
+        use crate::validation::ashrae_140_cases::WindowSpec;
+        let window_props = WindowSpec::double_clear_glass(); // U = 2.1
+        let spec = window_glass_wall_spec(&window_props, 12.0);
+        assert_eq!(spec.layers.len(), 1);
+        // k = U × thickness; R = thickness / k = 1 / U.
+        let expected_r = 1.0 / window_props.u_value;
+        let actual_r = spec.layers[0].thickness / spec.layers[0].conductivity;
+        assert!((actual_r - expected_r).abs() < 1e-9);
+        // Degenerate U falls back to single-pane conductivity without
+        // panicking and still yields a positive R.
+        let zero_u = WindowSpec::new(
+            0.0,
+            0.0,
+            0.0,
+            crate::validation::ashrae_140_cases::GlassType::SingleClear,
+        );
+        let fallback = window_glass_wall_spec(&zero_u, 12.0);
+        assert!(fallback.layers[0].conductivity > 0.0);
+    }
+
+    #[cfg(feature = "gauge-solver")]
+    #[test]
+    fn add_gauge_windows_is_noop_without_gauge_backend() {
+        // Default (no gauge-solver feature) or FiveROneC selector leaves
+        // `gauge_zone_solver = None`; add_gauge_windows must be a no-op.
+        let spec = crate::validation::ashrae_140_cases::ASHRAE140Case::Case600.spec();
+        let mut model = ThermalModel::<VectorField>::from_spec_with_selector(
+            &spec,
+            &crate::sim::thermal_selector::ThermalSelector {
+                zone_solver: crate::sim::thermal_selector::ZoneSolverKind::FiveROneC,
+                conduction_solver: crate::sim::thermal_selector::ConductionSolverKind::Default,
+            },
+        )
+        .expect("FiveROneC selector must initialise");
+        assert!(model.0.conduction.backend.gauge_zone_solver.is_none());
+        // Must not panic and must leave the backend as None.
+        model
+            .add_gauge_windows(&spec)
+            .expect("add_gauge_windows on empty backend is a no-op");
+        assert!(model.0.conduction.backend.gauge_zone_solver.is_none());
+    }
+
+    #[cfg(feature = "gauge-solver")]
+    #[test]
+    fn enable_gauge_solver_multi_zone_rejects_single_zone() {
+        // The multi-zone init is a fail-fast path for `num_zones < 2`.
+        let mut spec = crate::validation::ashrae_140_cases::ASHRAE140Case::Case600.spec();
+        spec.num_zones = 1;
+        let mut model = ThermalModel::<VectorField>::from_spec_with_selector(
+            &spec,
+            &crate::sim::thermal_selector::ThermalSelector::default(),
+        )
+        .expect("default selector must initialise");
+        let result = model.enable_gauge_solver_multi_zone(&spec);
+        assert!(
+            result.is_err(),
+            "multi-zone init must reject num_zones == 1"
+        );
+        let msg = format!("{}", result.err().unwrap());
+        assert!(msg.contains("num_zones >= 2"), "msg: {msg}");
+    }
+
+    #[cfg(feature = "gauge-solver")]
+    #[test]
+    fn enable_gauge_solver_fail_fast_on_missing_wall_spec() {
+        // A CaseSpec whose WallSurfaces have wall_spec = None must fail
+        // gauge init with a diagnostic identifying the zone/orientation.
+        let spec = crate::validation::ashrae_140_cases::ASHRAE140Case::Case600.spec();
+        let mut model = ThermalModel::<VectorField>::from_spec_with_selector(
+            &spec,
+            &crate::sim::thermal_selector::ThermalSelector {
+                zone_solver: crate::sim::thermal_selector::ZoneSolverKind::FiveROneC,
+                conduction_solver: crate::sim::thermal_selector::ConductionSolverKind::Default,
+            },
+        )
+        .expect("FiveROneC selector must initialise");
+        // Clear every wall_spec to simulate a caller that opted out.
+        for zone_surfaces in model.0.solar.surfaces.iter_mut() {
+            for surface in zone_surfaces.iter_mut() {
+                surface.wall_spec = None;
+            }
+        }
+        let result = model.enable_gauge_solver();
+        assert!(result.is_err(), "missing wall_spec must fail gauge init");
+        let msg = format!("{}", result.err().unwrap());
+        assert!(
+            msg.contains("wall_spec"),
+            "diagnostic must identify the missing wall_spec; msg: {msg}"
+        );
+    }
 }
