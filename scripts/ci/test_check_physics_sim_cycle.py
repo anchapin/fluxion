@@ -311,10 +311,15 @@ def test_phase2_scans_all_sim_files_in_real_repo(checker):
     for shim in (
         "src/sim/assembly.rs",
         "src/sim/multi_node_thermal.rs",
-        "src/sim/construction.rs",
         "src/sim/per_surface_conduction.rs",
     ):
         assert shim not in files, f"{shim} re-introduced a physics import"
+    # Issue #3291 (PR2 #3272): construction.rs is no longer a pure shim.
+    # It now hosts `WallSurface.wall_spec: Option<WallSpec>` (a physics
+    # type) so the GaugeSolver integration can read the full layer stack
+    # from the WallSurface. This is the ONE sanctioned exception to the
+    # shim-clean invariant; further physics imports in construction.rs
+    # should trigger a WallSpec hoist to fluxion_core (see #3297).
     # Coverage extension: far more than the old 2 files are now scanned.
     assert (
         len(files) >= 20
