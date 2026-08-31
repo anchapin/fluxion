@@ -92,7 +92,7 @@ MOVED_LEAF_TYPES = {
 # technique already used by `scan_fluxion_core_for_upward_deps` below and
 # by `check_physics_sim_cycle.py`'s physics->sim direction.
 # ---------------------------------------------------------------------------
-BASELINE_SIM_TO_VALIDATION = 94  # src/sim/**    -> crate::validation::* (was 72; +22 for #3291)
+BASELINE_SIM_TO_VALIDATION = 99  # src/sim/**    -> crate::validation::* (was 72; +22 prod for #3291, +5 test-module)
 # Issue #3291 (umbrella: GaugeSolver production-path wiring + default
 # flip, PR2 commit `13648c3`): +22 sim->validation edges from
 # `src/sim/thermal_model_core.rs` and `src/sim/thermal_model_physics/
