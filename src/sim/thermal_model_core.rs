@@ -604,9 +604,6 @@ where
 }
 
 /// Build a `WallSpec` from a `Construction` (interior-to-exterior `Vec<ConstructionLayer>`).
-/// Used by `from_spec_with_selector` to populate `WallSurface.wall_spec`
-/// per the Issue #3279 data-layer contract: "populated from existing
-/// `Assemblies::*` data (no new JSON files)".
 fn wall_spec_from_construction(
     construction: &crate::sim::construction::Construction,
     name: &str,
@@ -627,6 +624,42 @@ fn wall_spec_from_construction(
         })
         .collect();
     WallSpec::multi_layer(name, layers)
+}
+
+/// Build a single-layer glass `WallSpec` matching a window's U-value
+/// (Issue #3278 window surface addition). Thickness is fixed at 0.005 m
+/// (typical single-pane); conductivity is set so that
+/// `k / thickness == U_value`. Density and Cp are typical soda-lime glass.
+///
+/// Note: this approximation does not match multi-pane constructions
+/// exactly (U-value of double-pane includes two air gaps), but for the
+/// β-soak the single-layer approximation captures the steady-state
+/// conductance and the (small) glass mass. A future PR can introduce
+/// multi-layer glass with frame U-value composition (#2889).
+#[cfg(feature = "gauge-solver")]
+fn window_glass_wall_spec(
+    window_properties: &crate::validation::ashrae_140_cases::WindowSpec,
+    _window_area_m2: f64,
+) -> crate::physics::wall_spec::WallSpec {
+    use crate::physics::wall_spec::WallSpec;
+    const GLASS_THICKNESS_M: f64 = 0.005; // 5 mm — typical soda-lime glass
+    const GLASS_DENSITY_KG_M3: f64 = 2500.0;
+    const GLASS_CP_J_KG_K: f64 = 750.0;
+    let u = window_properties.u_value;
+    // k = U * d. Guard against degenerate U values.
+    let conductivity = if u > 0.0 && u.is_finite() {
+        (u * GLASS_THICKNESS_M).max(0.001)
+    } else {
+        // Fallback to typical single-pane clear glass conductivity.
+        5.8 * GLASS_THICKNESS_M
+    };
+    WallSpec::single_layer(
+        "window_glazing",
+        GLASS_THICKNESS_M,
+        conductivity,
+        GLASS_DENSITY_KG_M3,
+        GLASS_CP_J_KG_K,
+    )
 }
 
 impl ThermalModel<VectorField> {
@@ -2773,8 +2806,19 @@ impl ThermalModel<VectorField> {
                 // floor area / height.
                 if spec.num_zones > 1 {
                     model.enable_gauge_solver_multi_zone(spec)?;
+                    // Issue #3278: add window surfaces so gauge sees solar
+                    // gains through the glazing (multi-zone path). Without
+                    // windows, the high-mass case (e.g. Case 960 sunspace)
+                    // loses mass retention benefit and the gauge path
+                    // produces unrealistic energy numbers.
+                    model.add_gauge_windows_multi_zone(spec)?;
                 } else {
                     model.enable_gauge_solver()?;
+                    // Issue #3278: add window surfaces so gauge sees solar
+                    // gains through the glazing. Without windows, gauge
+                    // has no surfaces with `solar_fraction > 0` and the
+                    // mass retention physics is invisible to it.
+                    model.add_gauge_windows(spec)?;
                 }
             }
             crate::sim::thermal_selector::ZoneSolverKind::FiveROneC => {
@@ -3016,6 +3060,10 @@ impl ThermalModel<VectorField> {
                 .add_opaque_surface(&floor_spec, floor_area, SurfaceType::Floor, 0.0, 180.0)
                 .map_err(|e| PhysicsError::initialization(&e.to_string()))?;
 
+            // Note: windows are added separately via `add_gauge_windows(spec)`
+            // so gauge sees solar gains (PR2.3's gauge init had wall / roof /
+            // floor only, all of which have `solar_fraction = 0`; without
+            // windows the mass-retention physics is invisible to gauge).
             gauge_solver
                 .initialize()
                 .map_err(|e| PhysicsError::initialization(&e.to_string()))?;
@@ -3258,6 +3306,121 @@ impl ThermalModel<VectorField> {
             // `gauge_multi_zone_solver` (multi-zone) are mutually exclusive —
             // only one is populated based on `spec.num_zones`.
             self.0.conduction.backend.gauge_multi_zone_solver = Some(multi_zone);
+        }
+        Ok(())
+    }
+
+    /// Issue #3278 — Add window surfaces to the single-zone `GaugeZoneSolver`
+    /// so gauge sees solar gains (PR2.3's gauge init only added opaque
+    /// wall / roof / floor, all of which have `solar_fraction = 0`).
+    ///
+    /// Each window in `spec.windows[0]` (zone 0) is added as a
+    /// `SurfaceType::Window` with a thin-glass `WallSpec` tuned to the
+    /// window's U-value. `solar_fraction() == 1.0` for `Window` so gauge
+    /// absorbs 100% of incident solar; the small over-estimate vs. SHGC
+    /// (≈0.7 for double-pane) is acceptable for the β-soak.
+    ///
+    /// Idempotent: returns Ok(()) if `gauge_zone_solver` is not configured
+    /// (caller routed to multi-zone path or no-gauge path) or if there are
+    /// no windows in the spec.
+    pub(crate) fn add_gauge_windows(
+        &mut self,
+        spec: &crate::validation::ashrae_140_cases::CaseSpec,
+    ) -> Result<(), PhysicsError> {
+        #[cfg(not(feature = "gauge-solver"))]
+        {
+            let _ = (self, spec);
+        }
+        #[cfg(feature = "gauge-solver")]
+        {
+            use super::thermal_model_data::SurfaceType;
+            let windows = match spec.windows.first() {
+                Some(w) => w,
+                None => return Ok(()),
+            };
+            let window_props = &spec.window_properties;
+            // We need to mutate the gauge_zone_solver while preserving
+            // the existing initialization (re-initialize() would reset
+            // gauge state). Instead, add window surfaces; gauge will treat
+            // them as additional conduction paths during the next step.
+            if let Some(ref mut gauge) = self.0.conduction.backend.gauge_zone_solver {
+                for window in windows {
+                    if window.area > 0.0 {
+                        let glass_spec = window_glass_wall_spec(window_props, window.area);
+                        let azimuth = window.orientation.azimuth_deg();
+                        gauge
+                            .add_opaque_surface(
+                                &glass_spec,
+                                window.area,
+                                SurfaceType::Window,
+                                azimuth,
+                                90.0,
+                            )
+                            .map_err(|e| {
+                                PhysicsError::initialization(&format!(
+                                    "Failed to add single-zone window \
+                                     (orientation={:?}, area={:.2} m²): {}",
+                                    window.orientation, window.area, e
+                                ))
+                            })?;
+                    }
+                }
+                // Re-initialize so the new surfaces are part of the
+                // solver's surface set on the next step().
+                gauge
+                    .initialize()
+                    .map_err(|e| PhysicsError::initialization(&e.to_string()))?;
+            }
+        }
+        Ok(())
+    }
+
+    /// Issue #3278 — Multi-zone equivalent of `add_gauge_windows`. Adds
+    /// window surfaces per zone from `spec.windows[zone_idx]` to the
+    /// multi-zone gauge solver and re-initializes.
+    pub(crate) fn add_gauge_windows_multi_zone(
+        &mut self,
+        spec: &crate::validation::ashrae_140_cases::CaseSpec,
+    ) -> Result<(), PhysicsError> {
+        #[cfg(not(feature = "gauge-solver"))]
+        {
+            let _ = (self, spec);
+        }
+        #[cfg(feature = "gauge-solver")]
+        {
+            use super::thermal_model_data::SurfaceType;
+            if let Some(ref mut multi_zone) = self.0.conduction.backend.gauge_multi_zone_solver {
+                for zone_idx in 0..self.0.hvac.num_zones {
+                    if let Some(windows) = spec.windows.get(zone_idx) {
+                        for window in windows {
+                            if window.area > 0.0 {
+                                let glass_spec =
+                                    window_glass_wall_spec(&spec.window_properties, window.area);
+                                let azimuth = window.orientation.azimuth_deg();
+                                multi_zone
+                                    .add_opaque_surface_to_zone(
+                                        zone_idx,
+                                        &glass_spec,
+                                        window.area,
+                                        SurfaceType::Window,
+                                        azimuth,
+                                        90.0,
+                                    )
+                                    .map_err(|e| {
+                                        PhysicsError::initialization(&format!(
+                                            "Failed to add multi-zone window \
+                                             (zone={}, orientation={:?}): {}",
+                                            zone_idx, window.orientation, e
+                                        ))
+                                    })?;
+                            }
+                        }
+                    }
+                }
+                multi_zone
+                    .initialize()
+                    .map_err(|e| PhysicsError::initialization(&e.to_string()))?;
+            }
         }
         Ok(())
     }
