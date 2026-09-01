@@ -1,4 +1,6 @@
-use criterion::{black_box, criterion_group, criterion_main, Criterion};
+use std::hint::black_box;
+
+use criterion::{criterion_group, criterion_main, Criterion};
 use fluxion::ai::surrogate::SurrogateManager;
 use fluxion::sim::engine::ThermalModel;
 use fluxion::validation::performance::metrics::collect_performance_metrics;

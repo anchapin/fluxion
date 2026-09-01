@@ -8,11 +8,10 @@
 use crate::physics::cta::VectorField;
 use crate::sim::engine::ThermalModel;
 use crate::weather::HourlyWeatherData;
-use rand::distributions::Distribution;
-use rand::distributions::Uniform;
 use rand::rngs::StdRng;
 use rand::Rng;
 use rand::SeedableRng;
+use rand_distr::{Distribution as _, Uniform};
 
 /// Simple Gaussian random number generator using Box-Muller transform
 struct GaussianRng<R: Rng> {
@@ -26,8 +25,8 @@ impl<R: Rng> GaussianRng<R> {
 
     fn sample(&mut self, mean: f64, std_dev: f64) -> f64 {
         // Box-Muller transform to generate Gaussian random numbers
-        let u1: f64 = self.rng.gen();
-        let u2: f64 = self.rng.gen();
+        let u1: f64 = self.rng.random();
+        let u2: f64 = self.rng.random();
 
         // Avoid log(0)
         let u1 = if u1 == 0.0 { f64::MIN_POSITIVE } else { u1 };
@@ -194,9 +193,11 @@ impl ContextAwareParameterInitializer {
         let bounds = &self.config.param_bounds;
         let mut rng = create_rng(seed);
 
-        let u_dist = Uniform::new(bounds.u_value_min, bounds.u_value_max);
-        let heating_dist = Uniform::new(bounds.heating_setpoint_min, bounds.heating_setpoint_max);
-        let cooling_dist = Uniform::new(bounds.cooling_setpoint_min, bounds.cooling_setpoint_max);
+        let u_dist = Uniform::new(bounds.u_value_min, bounds.u_value_max).unwrap();
+        let heating_dist =
+            Uniform::new(bounds.heating_setpoint_min, bounds.heating_setpoint_max).unwrap();
+        let cooling_dist =
+            Uniform::new(bounds.cooling_setpoint_min, bounds.cooling_setpoint_max).unwrap();
 
         (0..size)
             .map(|_| {
@@ -341,20 +342,21 @@ impl ContextAwareParameterInitializer {
         let mut lhs_samples: Vec<Vec<f64>> = Vec::with_capacity(samples);
 
         for i in 0..samples {
-            let u = bounds.u_value_min + u_range * ((i as f64 + rng.gen::<f64>()) / samples as f64);
+            let u =
+                bounds.u_value_min + u_range * ((i as f64 + rng.random::<f64>()) / samples as f64);
             let heating = bounds.heating_setpoint_min
-                + heating_range * ((i as f64 + rng.gen::<f64>()) / samples as f64);
+                + heating_range * ((i as f64 + rng.random::<f64>()) / samples as f64);
 
             // Ensure heating < cooling with a gap
             let min_cooling = heating + 1.0;
             let max_cooling = bounds.cooling_setpoint_max;
             let cooling = min_cooling
-                + (max_cooling - min_cooling) * ((i as f64 + rng.gen::<f64>()) / samples as f64);
+                + (max_cooling - min_cooling) * ((i as f64 + rng.random::<f64>()) / samples as f64);
 
             // Add some randomization within cells
-            let u = u + u_range * (rng.gen::<f64>() - 0.5) / samples as f64;
-            let heating = heating + heating_range * (rng.gen::<f64>() - 0.5) / samples as f64;
-            let cooling = cooling + cooling_range * (rng.gen::<f64>() - 0.5) / samples as f64;
+            let u = u + u_range * (rng.random::<f64>() - 0.5) / samples as f64;
+            let heating = heating + heating_range * (rng.random::<f64>() - 0.5) / samples as f64;
+            let cooling = cooling + cooling_range * (rng.random::<f64>() - 0.5) / samples as f64;
 
             lhs_samples.push(vec![
                 u.clamp(bounds.u_value_min, bounds.u_value_max),
@@ -474,7 +476,7 @@ pub struct PopulationStats {
 fn create_rng(seed: Option<u64>) -> StdRng {
     match seed {
         Some(s) => StdRng::seed_from_u64(s),
-        None => StdRng::from_entropy(),
+        None => StdRng::from_os_rng(),
     }
 }
 

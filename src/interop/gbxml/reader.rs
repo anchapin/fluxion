@@ -82,20 +82,17 @@ pub fn parse_gbxml_with_limits(
     loop {
         match reader.read_event_into(&mut buf) {
             Ok(Event::Start(e)) => {
-                _current_element = String::from_utf8_lossy(e.name().as_ref()).to_string();
+                _current_element = e.name().as_ref().to_string();
                 stack.push(_current_element.clone());
                 text_content.clear();
 
                 parse_start_element(&mut doc, &_current_element, &e)?;
             }
             Ok(Event::Text(e)) => {
-                text_content = e
-                    .xml10_content()
-                    .map(|c| c.into_owned())
-                    .unwrap_or_default();
+                text_content = e.xml10_content().into_owned();
             }
             Ok(Event::End(e)) => {
-                let end_element = String::from_utf8_lossy(e.name().as_ref()).to_string();
+                let end_element = e.name().as_ref().to_string();
                 if let Some(pop) = stack.pop() {
                     if pop != end_element {
                         return Err(GbXmlError::invalid_structure(format!(
@@ -108,7 +105,7 @@ pub fn parse_gbxml_with_limits(
                 text_content.clear();
             }
             Ok(Event::Empty(e)) => {
-                _current_element = String::from_utf8_lossy(e.name().as_ref()).to_string();
+                _current_element = e.name().as_ref().to_string();
                 parse_start_element(&mut doc, &_current_element, &e)?;
             }
             Ok(Event::Eof) => break,
@@ -128,7 +125,7 @@ fn parse_start_element(
     match element {
         "gbXML" => {
             for attr in e.attributes().flatten() {
-                let key = String::from_utf8_lossy(attr.key.as_ref()).to_string();
+                let key = attr.key.as_ref().to_string();
                 if key == "version" {
                     doc.version = attr
                         .normalized_value(XmlVersion::Implicit1_0)
@@ -387,7 +384,7 @@ fn parse_end_element(doc: &mut GbXmlDocument, element: &str, text: &str) -> Resu
 
 fn get_attribute(e: &quick_xml::events::BytesStart, key: &str) -> Option<String> {
     for attr in e.attributes().flatten() {
-        if attr.key.as_ref() == key.as_bytes() {
+        if attr.key.as_ref() == key {
             return Some(
                 attr.normalized_value(XmlVersion::Implicit1_0)
                     .unwrap_or_default()

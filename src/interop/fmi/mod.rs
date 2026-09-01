@@ -888,43 +888,43 @@ impl FmiImporter {
                 Event::Start(ref e) | Event::Empty(ref e) => {
                     let name = e.name();
                     match name.as_ref() {
-                        b"fmiModelDescription" => {
+                        "fmiModelDescription" => {
                             for attr in e.attributes() {
                                 let attr =
                                     attr.map_err(|e| FmiError::ImportFailed(format!("attr: {e}")))?;
                                 let v = attr_value(&attr)?;
                                 match attr.key.as_ref() {
-                                    b"fmiVersion" => desc.fmi_version = v,
-                                    b"modelName" => desc.model_name = v,
-                                    b"guid" => desc.guid = v,
-                                    b"description" => desc.description = v,
-                                    b"author" => desc.author = v,
-                                    b"version" => desc.version = v,
-                                    b"generationTool" => desc.generation_tool = v,
-                                    b"generationDateAndTime" => desc.generation_date_and_time = v,
-                                    b"variableNamingConvention" => {
+                                    "fmiVersion" => desc.fmi_version = v,
+                                    "modelName" => desc.model_name = v,
+                                    "guid" => desc.guid = v,
+                                    "description" => desc.description = v,
+                                    "author" => desc.author = v,
+                                    "version" => desc.version = v,
+                                    "generationTool" => desc.generation_tool = v,
+                                    "generationDateAndTime" => desc.generation_date_and_time = v,
+                                    "variableNamingConvention" => {
                                         desc.variable_naming_convention = v
                                     }
                                     _ => {}
                                 }
                             }
                         }
-                        b"DefaultExperiment" => {
+                        "DefaultExperiment" => {
                             for attr in e.attributes() {
                                 let attr =
                                     attr.map_err(|e| FmiError::ImportFailed(format!("attr: {e}")))?;
                                 let v = attr_value(&attr)?;
                                 let parsed = v.parse::<f64>().unwrap_or(0.0);
                                 match attr.key.as_ref() {
-                                    b"startTime" => desc.default_experiment.start_time = parsed,
-                                    b"stopTime" => desc.default_experiment.stop_time = parsed,
-                                    b"stepSize" => desc.default_experiment.step_size = parsed,
+                                    "startTime" => desc.default_experiment.start_time = parsed,
+                                    "stopTime" => desc.default_experiment.stop_time = parsed,
+                                    "stepSize" => desc.default_experiment.step_size = parsed,
                                     _ => {}
                                 }
                             }
                         }
-                        b"ModelVariables" => in_model_variables = true,
-                        b"ScalarVariable" if in_model_variables => {
+                        "ModelVariables" => in_model_variables = true,
+                        "ScalarVariable" if in_model_variables => {
                             // Start a new accumulator.  Attributes on the
                             // opening tag; the nested <Real> fills unit/start.
                             let mut sv = ImportedScalarVariable::default();
@@ -933,11 +933,11 @@ impl FmiImporter {
                                     attr.map_err(|e| FmiError::ImportFailed(format!("attr: {e}")))?;
                                 let v = attr_value(&attr)?;
                                 match attr.key.as_ref() {
-                                    b"name" => sv.name = v,
-                                    b"causality" => sv.causality = v,
-                                    b"variability" => sv.variability = v,
-                                    b"description" => sv.description = v,
-                                    b"valueReference" => {
+                                    "name" => sv.name = v,
+                                    "causality" => sv.causality = v,
+                                    "variability" => sv.variability = v,
+                                    "description" => sv.description = v,
+                                    "valueReference" => {
                                         sv.value_reference = v.parse::<u32>().unwrap_or(0)
                                     }
                                     _ => {}
@@ -952,7 +952,7 @@ impl FmiImporter {
                                 }
                             }
                         }
-                        b"Real" if current_var.is_some() => {
+                        "Real" if current_var.is_some() => {
                             if let Some(ref mut sv) = current_var {
                                 for attr in e.attributes() {
                                     let attr = attr.map_err(|e| {
@@ -960,8 +960,8 @@ impl FmiImporter {
                                     })?;
                                     let v = attr_value(&attr)?;
                                     match attr.key.as_ref() {
-                                        b"unit" => sv.unit = v,
-                                        b"start" => sv.start = v.parse::<f64>().ok(),
+                                        "unit" => sv.unit = v,
+                                        "start" => sv.start = v.parse::<f64>().ok(),
                                         _ => {}
                                     }
                                 }
@@ -971,12 +971,12 @@ impl FmiImporter {
                     }
                 }
                 Event::End(ref e) => match e.name().as_ref() {
-                    b"ScalarVariable" => {
+                    "ScalarVariable" => {
                         if let Some(v) = current_var.take() {
                             desc.variables.push(v);
                         }
                     }
-                    b"ModelVariables" => in_model_variables = false,
+                    "ModelVariables" => in_model_variables = false,
                     _ => {}
                 },
                 Event::Eof => break,

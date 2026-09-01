@@ -29,9 +29,9 @@ fn generate_population_deterministic(size: usize) -> Vec<Vec<f64>> {
     (0..size)
         .map(|_| {
             vec![
-                rng.gen_range(0.1..5.0),        // U-value
-                18.0 + rng.gen_range(0.0..7.0), // heating setpoint
-                22.0 + rng.gen_range(0.0..8.0), // cooling setpoint
+                rng.random_range(0.1..5.0),        // U-value
+                18.0 + rng.random_range(0.0..7.0), // heating setpoint
+                22.0 + rng.random_range(0.0..8.0), // cooling setpoint
             ]
         })
         .collect()
@@ -144,7 +144,7 @@ fn test_batch_oracle_deterministic_surrogates() {
 fn test_par_iter_deterministic() {
     // Generate deterministic input data
     let mut rng = StdRng::seed_from_u64(42);
-    let data: Vec<f64> = (0..1000).map(|_| rng.gen_range(0.0..100.0)).collect();
+    let data: Vec<f64> = (0..1000).map(|_| rng.random_range(0.0..100.0)).collect();
 
     // Run parallel computation 5 times
     let mut results: Vec<f64> = Vec::new();
@@ -188,7 +188,7 @@ fn test_deterministic_at_specified_thread_count() {
 
     // Generate deterministic input data
     let mut rng = StdRng::seed_from_u64(42);
-    let data: Vec<f64> = (0..1000).map(|_| rng.gen_range(0.0..100.0)).collect();
+    let data: Vec<f64> = (0..1000).map(|_| rng.random_range(0.0..100.0)).collect();
 
     // Run parallel computation 3 times
     let mut results: Vec<f64> = Vec::new();

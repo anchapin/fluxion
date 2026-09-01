@@ -3243,15 +3243,15 @@ impl SurrogateManager {
         let all_predictions: Vec<Vec<f64>> = (0..num_samples)
             .into_par_iter()
             .map(|_i| {
-                let mut rng = StdRng::from_entropy();
+                let mut rng = StdRng::from_os_rng();
                 let perturbed_temps: Vec<f64> = current_temps
                     .iter()
-                    .map(|&t| t + (rng.gen::<f64>() - 0.5) * 2.0 * noise_std)
+                    .map(|&t| t + (rng.random::<f64>() - 0.5) * 2.0 * noise_std)
                     .collect();
                 let _perturbed_temps = perturbed_temps;
                 base_prediction
                     .iter()
-                    .map(|&v| v + (rng.gen::<f64>() - 0.5) * 2.0 * variance.sqrt())
+                    .map(|&v| v + (rng.random::<f64>() - 0.5) * 2.0 * variance.sqrt())
                     .collect()
             })
             .collect();

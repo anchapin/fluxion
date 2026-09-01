@@ -39,9 +39,9 @@ fn generate_synthetic_population(size: usize) -> Vec<Vec<f64>> {
     let mut rng = StdRng::seed_from_u64(42); // Deterministic seed
     let mut population = Vec::with_capacity(size);
     for _ in 0..size {
-        let u_value = rng.gen_range(0.1..5.0);
-        let heating_setpoint = rng.gen_range(15.0..25.0);
-        let cooling_setpoint = rng.gen_range(22.0..32.0);
+        let u_value = rng.random_range(0.1..5.0);
+        let heating_setpoint = rng.random_range(15.0..25.0);
+        let cooling_setpoint = rng.random_range(22.0..32.0);
         population.push(vec![u_value, heating_setpoint, cooling_setpoint]);
     }
     population
@@ -125,9 +125,9 @@ fn build_orchestrator_configs(size: usize) -> Vec<(usize, ThermalModel<VectorFie
         .map(|i| {
             let mut m = ThermalModel::<VectorField>::new(10);
             let params = vec![
-                rng.gen_range(0.1..5.0),
-                rng.gen_range(15.0..25.0),
-                rng.gen_range(22.0..32.0),
+                rng.random_range(0.1..5.0),
+                rng.random_range(15.0..25.0),
+                rng.random_range(22.0..32.0),
             ];
             m.apply_parameters(&params);
             (i, m)

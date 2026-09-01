@@ -52,12 +52,12 @@ pub fn generate_random_design(ranges: &[ParameterRange], num_samples: usize) -> 
         return Vec::new();
     }
     use rand::Rng;
-    let mut rng = rand::thread_rng();
+    let mut rng = rand::rng();
     let mut samples = Vec::with_capacity(num_samples);
     for _ in 0..num_samples {
         let mut row = Vec::with_capacity(n_params);
         for range in ranges {
-            let u: f64 = rng.gen_range(0.0..1.0);
+            let u: f64 = rng.random_range(0.0..1.0);
             row.push(range.min + u * (range.max - range.min));
         }
         samples.push(row);

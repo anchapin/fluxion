@@ -162,7 +162,7 @@ mod loom_tests {
     fn test_loom_concurrent_matrix_updates() {
         let state = StdArc::new(StdMutex::new(MatrixState::new(4)));
 
-        loom::fuzz(move || {
+        loom::model(move || {
             let s2 = StdArc::clone(&state);
             let t1 = thread::spawn(move || {
                 let mut s = s2.lock().unwrap();
@@ -194,7 +194,7 @@ mod loom_tests {
     fn test_loom_sequence_integrity() {
         let counter = StdArc::new(StdMutex::new(0usize));
 
-        loom::fuzz(move || {
+        loom::model(move || {
             let mut handles = vec![];
             for _ in 0..3 {
                 let c = StdArc::clone(&counter);
@@ -219,7 +219,7 @@ mod loom_tests {
     fn test_loom_read_write_no_deadlock() {
         let state = StdArc::new(StdMutex::new(MatrixState::new(2)));
 
-        loom::fuzz(move || {
+        loom::model(move || {
             let r = StdArc::clone(&state);
             let reader = thread::spawn(move || {
                 for _ in 0..5 {
@@ -245,7 +245,7 @@ mod loom_tests {
     fn test_loom_shared_update() {
         let state = StdArc::new(StdMutex::new(MatrixState::new(1)));
 
-        loom::fuzz(move || {
+        loom::model(move || {
             let s2 = StdArc::clone(&state);
             let t1 = thread::spawn(move || {
                 let mut s = s2.lock().unwrap();
@@ -272,7 +272,7 @@ mod loom_tests {
         let wall0_flux = AtomicUsize::new(0);
         let wall1_flux = AtomicUsize::new(0);
 
-        loom::fuzz(move || {
+        loom::model(move || {
             // Clone before moving into threads
             let f0_for_thread = AtomicUsize::new(wall0_flux.load(Ordering::SeqCst));
             let f1_for_thread = AtomicUsize::new(wall1_flux.load(Ordering::SeqCst));
@@ -347,7 +347,7 @@ mod loom_tests {
         let model = StdArc::new(StdMutex::new(build_two_zone_model()));
         let step_counter = StdArc::new(StdMutex::new(0usize));
 
-        loom::fuzz(move || {
+        loom::model(move || {
             let m1 = StdArc::clone(&model);
             let c1 = StdArc::clone(&step_counter);
             let t1 = thread::spawn(move || {
@@ -396,7 +396,7 @@ mod loom_tests {
         let sink: StdArc<StdMutex<Vec<HvacDemandPayload>>> = StdArc::new(StdMutex::new(Vec::new()));
         let step_counter = StdArc::new(StdMutex::new(0usize));
 
-        loom::fuzz(move || {
+        loom::model(move || {
             let mut handles = Vec::new();
             for zone_index in 0..3 {
                 let s = StdArc::clone(&sink);
@@ -434,7 +434,7 @@ mod loom_tests {
     fn test_loom_shared_inter_zone_conductance_concurrent_steps() {
         let model = StdArc::new(StdMutex::new(build_two_zone_model()));
 
-        loom::fuzz(move || {
+        loom::model(move || {
             // Seeder: write initial conductance so readers see a non-zero baseline.
             {
                 let mut m = model.lock().unwrap();
@@ -496,7 +496,7 @@ mod loom_tests {
         let model = StdArc::new(StdMutex::new(build_two_zone_model()));
         let energy_counter = StdArc::new(StdMutex::new(0usize));
 
-        loom::fuzz(move || {
+        loom::model(move || {
             let m1 = StdArc::clone(&model);
             let c1 = StdArc::clone(&energy_counter);
             let t1 = thread::spawn(move || {
@@ -576,7 +576,7 @@ mod loom_tests {
         let network = StdArc::new(StdMutex::new(build_three_zone_network()));
         let step_counter = StdArc::new(StdMutex::new(0usize));
 
-        loom::fuzz(move || {
+        loom::model(move || {
             let n1 = StdArc::clone(&network);
             let c1 = StdArc::clone(&step_counter);
             let t1 = thread::spawn(move || {
@@ -643,7 +643,7 @@ mod loom_tests {
         ]));
         let step_counter = StdArc::new(StdMutex::new(0usize));
 
-        loom::fuzz(move || {
+        loom::model(move || {
             let n1 = StdArc::clone(&network);
             let z1 = StdArc::clone(&zones);
             let c1 = StdArc::clone(&step_counter);
@@ -726,7 +726,7 @@ mod loom_tests {
         ));
         let step_counter = StdArc::new(StdMutex::new(0usize));
 
-        loom::fuzz(move || {
+        loom::model(move || {
             // Driver A: steps zones 0 and 1.
             let n_a = StdArc::clone(&network);
             let c_a = StdArc::clone(&step_counter);
@@ -815,7 +815,7 @@ mod loom_tests {
         let initial_len = solver.lock().unwrap().len();
         assert_eq!(initial_len, 1);
 
-        loom::fuzz(move || {
+        loom::model(move || {
             let s_add_a = StdArc::clone(&solver);
             let adder_a = thread::spawn(move || {
                 let mut s = s_add_a.lock().unwrap();
@@ -884,7 +884,7 @@ mod loom_tests {
         // discipline, each stepper sees a fully-written triple.
         let boundary = StdArc::new(StdMutex::new((20.0_f64, 5.0_f64, 0.0_f64)));
 
-        loom::fuzz(move || {
+        loom::model(move || {
             // Seeder: reset the boundary to a known state.
             {
                 let mut b = boundary.lock().unwrap();
@@ -1002,7 +1002,7 @@ mod loom_tests {
         let target_a = (5.0 * 25.0 + 4.0 * 5.0) / (5.0 + 4.0); // ~16.111
         let target_b = (5.0 * 10.0 + 4.0 * 30.0) / (5.0 + 4.0); // ~18.889
 
-        loom::fuzz(move || {
+        loom::model(move || {
             // Reset the mass temperatures so each fuzz iteration starts fresh.
             {
                 let mut s = solver.lock().unwrap();
@@ -1074,7 +1074,7 @@ mod loom_tests {
             zones.push(StdArc::new(StdMutex::new(s)));
         }
 
-        loom::fuzz(move || {
+        loom::model(move || {
             // Driver A: steps zone 0 and zone 2.
             let z_a_0 = StdArc::clone(&zones[0]);
             let z_a_2 = StdArc::clone(&zones[2]);

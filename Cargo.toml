@@ -229,7 +229,7 @@ uuid = { workspace = true, features = ["serde", "v4"] }
 # the `directories` dependency; the root package carried an unused copy of
 # `directories = "5.0"` until #3310 removed it (was a duplicate-version
 # offender vs fluxion-core's `directories = "6.0"`).
-sha2 = "0.10"
+sha2 = "0.11"
 
 # Numerical & Math
 faer = { workspace = true, default-features = false, features = ["std"] }
@@ -260,15 +260,19 @@ num_cpus = "1.16"
 # Plotting for validation reports
 plotters = "0.3.5"
 
-# Random number generation for uncertainty quantification
-rand = "0.8"
-rand_distr = "0.4"
+# Random number generation for uncertainty quantification.
+# rand 0.9 + rand_distr 0.5 (#3308) — aligned with fluxion-twin's rand_distr 0.5.
+# The workspace still carries multiple rand majors transitively (0.10 via
+# statrs 0.19/nalgebra 0.35/tungstenite 0.30; 0.8.7 remains lock-resolved for
+# a non-host target), but the root package no longer pins the 0.8 family.
+rand = "0.9"
+rand_distr = "0.5"
 
 # Mathematical special functions (erf) for inverse CDF computation
 libm = "0.2"
 
 # Statistical computing for validation metrics
-statrs = "0.18.0"
+statrs = "0.19"
 
 # AI / Machine Learning Integration
 # `ort` (ONNX Runtime bindings, pykeio/ort) has NO stable 2.0 release on crates.io
@@ -301,7 +305,7 @@ reqwest.workspace = true
 
 # OpenStudio OSM file parsing/serialization
 # XML parsing for gbXML import/export
-quick-xml = "0.41"
+quick-xml = "0.42"
 
 # REST API server (Issue #1342). Async HTTP server with typed extractors
 # and ergonomic routing. Stays on tokio 1.x — already in our dep tree above.
@@ -336,7 +340,7 @@ async-trait = "0.1"
 #     dependency surface narrow — we only need the encoder and the in-process
 #     `PrometheusHandle` (no HTTP listener, no push-gateway, no protobuf), and
 #     we serve `/v1/metrics` from the axum router using `handle.render()`.
-tower-http = { version = "0.6", features = ["trace", "request-id", "util", "cors"] }
+tower-http = { version = "0.7", features = ["trace", "request-id", "util", "cors"] }
 metrics.workspace = true
 metrics-exporter-prometheus = { version = "0.18", default-features = false }
 
@@ -351,18 +355,18 @@ zip = { version = "8.6", default-features = false, features = ["deflate"] }
 json-patch = { version = "4.2", default-features = false }
 
 # WebSocket support for LiveTwin (Issue #2025)
-tokio-tungstenite = { version = "0.26", features = ["native-tls"] }
-tungstenite = "0.26"
+tokio-tungstenite = { version = "0.30", features = ["native-tls"] }
+tungstenite = "0.30"
 
 # MessagePack binary serialization for LiveTwin (Issue #2025)
 rmp-serde = "1.3"
 
 # Kafka telemetry consumer for enterprise-scale telemetry ingestion (issue #2056).
 # Uses rdkafka with dynamic library linking. Enable the `kafka` feature to compile.
-rdkafka = { version = "0.36", features = ["dynamic-linking"], optional = true }
+rdkafka = { version = "0.39", features = ["dynamic-linking"], optional = true }
 
 # SQLite for reporting output (issue #1904)
-rusqlite = { version = "0.36", features = ["bundled"] }
+rusqlite = { version = "0.40", features = ["bundled"] }
 
 # dhat heap profiler for memory profiling of large simulations (Issue #2384).
 # Enable with --features dhat and use #[global_allocator] = dhat::Allocator.
@@ -373,9 +377,9 @@ pyo3-build-config = { version = "0.29", optional = true }
 napi-build = { version = "2", optional = true }
 
 [dev-dependencies]
-criterion = "0.5"
+criterion = "0.8"
 approx = "0.5"
-rstest = "0.25"
+rstest = "0.26"
 proptest = "1.5"
 noisy_float = "0.2"
 
@@ -387,11 +391,11 @@ mockito = "1.7"
 
 # Loom for concurrency and race condition testing (Issue #1065)
 # Run with: LOOM=1 cargo test --features loom --test loom_concurrency_tests
-loom = "0.1"
+loom = "0.7"
 
 # SQLite for reproducer tests (Issue #1790)
 # Demonstrates the "database is locked" race condition in distributed array jobs
-rusqlite = { version = "0.36", features = ["bundled"] }
+rusqlite = { version = "0.40", features = ["bundled"] }
 
 # Memory stats for LiveTwin memory leak test (Issue #2064)
 memory-stats = "1.0"

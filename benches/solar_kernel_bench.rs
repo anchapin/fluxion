@@ -1,4 +1,6 @@
-use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion};
+use std::hint::black_box;
+
+use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion};
 use fluxion::solar::solar_position::{
     calculate_day_of_year, calculate_solar_position, SolarPosition,
 };
@@ -61,7 +63,7 @@ fn bench_perez_diffuse_vectorized(c: &mut Criterion) {
     c.bench_function("perez_diffuse_vectorized_10k", |b| {
         b.iter(|| {
             for i in 0..n_calls {
-                criterion::black_box(PerezSkyModel::calculate_diffuse_tilted(
+                black_box(PerezSkyModel::calculate_diffuse_tilted(
                     black_box(dhi_vals[i]),
                     black_box(dni_vals[i]),
                     black_box(dni_extra),

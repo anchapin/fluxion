@@ -134,7 +134,7 @@ impl UnscentedKalmanFilter {
 
 pub fn rand_normal() -> f64 {
     let normal = rand_distr::Normal::new(0.0, 1.0).unwrap();
-    let mut rng = rand::thread_rng();
+    let mut rng = rand::rng();
     normal.sample(&mut rng)
 }
 

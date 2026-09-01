@@ -88,7 +88,7 @@ impl Distribution {
                 if max < min {
                     anyhow::bail!("uniform: max ({max}) < min ({min})");
                 }
-                UniformDistr::new_inclusive(*min, *max).sample(rng)
+                UniformDistr::new_inclusive(*min, *max).unwrap().sample(rng)
             }
             Distribution::Normal { mean, std } => {
                 if *std <= 0.0 {

@@ -3,7 +3,9 @@
 //! This benchmark measures performance with realistic 8760-timestep (1 year) workloads.
 //! Run with: cargo bench --release --bench benchmark_8760_timesteps
 
-use criterion::{black_box, criterion_group, criterion_main, Criterion, Throughput};
+use std::hint::black_box;
+
+use criterion::{criterion_group, criterion_main, Criterion, Throughput};
 use fluxion::ai::surrogate::SurrogateManager;
 use fluxion::physics::cta::VectorField;
 use fluxion::sim::engine::ThermalModel;
@@ -20,10 +22,10 @@ fn generate_population(size: usize) -> Vec<Vec<f64>> {
     let mut population = Vec::with_capacity(size);
 
     for _ in 0..size {
-        let u_value: f64 = rng.gen_range(0.1..5.0);
-        let heating: f64 = rng.gen_range(15.0..25.0);
+        let u_value: f64 = rng.random_range(0.1..5.0);
+        let heating: f64 = rng.random_range(15.0..25.0);
         let cooling_max: f64 = heating + 1.0;
-        let cooling: f64 = rng.gen_range(22.0_f64..32.0_f64).max(cooling_max);
+        let cooling: f64 = rng.random_range(22.0_f64..32.0_f64).max(cooling_max);
         population.push(vec![u_value, heating, cooling]);
     }
 

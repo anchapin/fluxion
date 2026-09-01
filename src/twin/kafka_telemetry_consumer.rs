@@ -22,6 +22,7 @@
 
 use crossbeam::channel::Sender;
 use serde::Deserialize;
+use std::marker::PhantomData;
 use std::time::Duration;
 
 #[cfg(feature = "kafka")]
@@ -38,9 +39,6 @@ use rdkafka::message::Message;
 
 #[cfg(feature = "kafka")]
 use rdkafka::Offset;
-
-#[cfg(not(feature = "kafka"))]
-use std::marker::PhantomData;
 
 pub const DEFAULT_CHANNEL_CAPACITY: usize = 1024;
 
@@ -268,6 +266,10 @@ pub struct KafkaTelemetryConsumer {
     // `dead_code` allowance.
     #[allow(dead_code)]
     topic: String,
+    /// Retained consumer group id (rdkafka 0.39 removed
+    /// `ConsumerContext::group_id`, #3308).
+    #[allow(dead_code)]
+    group_id: String,
 }
 
 #[cfg(feature = "kafka")]
@@ -305,8 +307,7 @@ impl KafkaTelemetryConsumer {
             );
         }
 
-        let consumer: BaseConsumer<DefaultConsumerContext> =
-            config.create().map_err(KafkaError::ConsumerCreation)?;
+        let consumer: BaseConsumer<DefaultConsumerContext> = config.create()?;
 
         consumer.subscribe(&[topic])?;
 
@@ -315,6 +316,7 @@ impl KafkaTelemetryConsumer {
             tx,
             _context: PhantomData,
             topic: topic.to_string(),
+            group_id: group_id.to_string(),
         })
     }
 
@@ -407,7 +409,7 @@ impl KafkaTelemetryConsumer {
     }
 
     pub fn consumer_group_id(&self) -> String {
-        self.consumer.context().group_id().to_string()
+        self.group_id.clone()
     }
 }
 

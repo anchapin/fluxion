@@ -46,7 +46,7 @@ fn generate_workload() -> Vec<Vec<f64>> {
                 .map(|j| {
                     let lo = 10.0 + i as f64 * 0.001;
                     let hi = 30.0 + j as f64;
-                    rng.gen_range(lo..hi)
+                    rng.random_range(lo..hi)
                 })
                 .collect()
         })

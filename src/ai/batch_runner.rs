@@ -517,22 +517,25 @@ impl BatchRunner {
 }
 
 pub mod sampling {
-    use rand::distributions::{Distribution, Uniform};
     use rand::rngs::StdRng;
     use rand::SeedableRng;
-    use rand_distr::Normal;
+    use rand_distr::{Distribution as _, Normal, Uniform};
 
     use super::{ParameterManifest, ParameterSample, ParameterSpec, SamplingDistribution};
 
     pub fn sample_from_distribution(dist: &SamplingDistribution, rng: &mut StdRng) -> f64 {
         match dist {
             SamplingDistribution::Uniform { min, max } => {
-                Uniform::new_inclusive(*min, *max).sample(rng)
+                Uniform::new_inclusive(*min, *max).unwrap().sample(rng)
             }
             SamplingDistribution::LogUniform { min, max } => {
                 let log_min = min.ln() / 2_f64.ln();
                 let log_max = max.ln() / 2_f64.ln();
-                2_f64.powf(Uniform::new_inclusive(log_min, log_max).sample(rng))
+                2_f64.powf(
+                    Uniform::new_inclusive(log_min, log_max)
+                        .unwrap()
+                        .sample(rng),
+                )
             }
             SamplingDistribution::Normal { mean, std } => {
                 Normal::new(*mean, *std).unwrap().sample(rng)
