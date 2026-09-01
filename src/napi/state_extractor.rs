@@ -55,6 +55,24 @@ pub struct StateExtractor {
     steps: usize,
 }
 
+/// Optional constructor options for [`StateExtractor`] (Issue #3282).
+///
+/// Both fields default to the production defaults (`gauge` zone solver,
+/// `default` conduction algorithm) when omitted. The experimental
+/// `"6r2c"` / `"8r3c"` zone-solver identifiers are rejected unless the
+/// `FLUXION_EXPERIMENTAL_ZONE_SOLVERS=1` env var is set (and even then they
+/// stay unavailable until the `fluxion-experimental-zone-solvers` cargo
+/// feature ships; issue #3291).
+#[napi_derive::napi(object)]
+pub struct StateExtractorOptions {
+    /// Zone solver: `"gauge"` (default) | `"5r1c"` | `"9r4c"`.
+    #[napi(js_name = "zoneSolver")]
+    pub zone_solver: Option<String>,
+    /// Conduction algorithm: `"default"` (default) | `"ctf"` | `"fd"`.
+    #[napi(js_name = "conductionSolver")]
+    pub conduction_solver: Option<String>,
+}
+
 #[napi_derive::napi]
 impl StateExtractor {
     /// Create a new StateExtractor with default ASHRAE 600 configuration.
@@ -62,14 +80,35 @@ impl StateExtractor {
     /// # TypeScript Example
     /// ```typescript
     /// import { StateExtractor } from '@fluxion/native';
+    /// // Defaults: zoneSolver='gauge', conductionSolver='default'
     /// const extractor = new StateExtractor();
+    /// // Explicit solver selection (Issue #3282):
+    /// const legacy = new StateExtractor({ zoneSolver: '5r1c', conductionSolver: 'ctf' });
     /// ```
+    ///
+    /// # Errors
+    /// Throws for unknown or experimental solver selections (the
+    /// experimental gate: `FLUXION_EXPERIMENTAL_ZONE_SOLVERS=1`).
     #[napi(constructor)]
-    pub fn new() -> napi::bindgen_prelude::Result<Self> {
+    pub fn new(options: Option<StateExtractorOptions>) -> napi::bindgen_prelude::Result<Self> {
+        let selector = match &options {
+            None => ThermalSelector::default(),
+            Some(opts) => crate::sim::thermal_selector::ThermalSelector {
+                zone_solver: match &opts.zone_solver {
+                    Some(s) => crate::sim::thermal_selector::parse_zone_solver(s)
+                        .map_err(napi::bindgen_prelude::Error::from_reason)?,
+                    None => crate::sim::thermal_selector::ZoneSolverKind::Gauge,
+                },
+                conduction_solver: match &opts.conduction_solver {
+                    Some(s) => crate::sim::thermal_selector::parse_conduction_solver(s)
+                        .map_err(napi::bindgen_prelude::Error::from_reason)?,
+                    None => crate::sim::thermal_selector::ConductionSolverKind::Default,
+                },
+            },
+        };
         let spec = crate::validation::ashrae_140_cases::CaseBuilder::case_600_baseline();
-        let thermal_model =
-            ThermalModel::from_spec_with_selector(&spec, &ThermalSelector::default())
-                .expect("default selector must initialize");
+        let thermal_model = ThermalModel::from_spec_with_selector(&spec, &selector)
+            .map_err(napi::bindgen_prelude::Error::from_reason)?;
 
         Ok(StateExtractor {
             inner: thermal_model,

@@ -33,6 +33,19 @@
 // Native bindings
 const native = require('./fluxion.node');
 
+/**
+ * Hidden gate for experimental zone solvers (Issue #3282).
+ *
+ * `new StateExtractor({ zoneSolver: '6r2c' | '8r3c' })` is rejected unless
+ * the `FLUXION_EXPERIMENTAL_ZONE_SOLVERS=1` environment variable is set in
+ * the Node process. Even with the env var set, those identifiers stay
+ * rejected until the `fluxion-experimental-zone-solvers` cargo feature
+ * ships (issue #3291) — the env var widens no doors the build cannot back.
+ *
+ * @name FLUXION_EXPERIMENTAL_ZONE_SOLVERS
+ * @type {string}
+ */
+
 // Export error classes for proper error handling
 module.exports = {
   // Main classes

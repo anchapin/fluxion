@@ -13,6 +13,17 @@ Python-side additions (Issue #1814) live in submodules:
 Importing the Rust extension is wrapped in a try/except so that ``import
 fluxion`` works even on a slim install (e.g. documentation builds) where
 the ``.abi3.so`` is unavailable.
+
+Solver selection (Issue #3282)
+------------------------------
+
+``MultiZoneThermalModel.from_case_spec`` accepts optional ``zone_solver``
+(``"gauge"`` default | ``"5r1c"`` | ``"9r4c"``) and ``conduction_solver``
+(``"default"`` default | ``"ctf"`` | ``"fd"``) keyword arguments. The
+experimental ``"6r2c"`` / ``"8r3c"`` zone solvers raise ``ValueError``
+unless the ``FLUXION_EXPERIMENTAL_ZONE_SOLVERS=1`` environment variable
+is set — and stay unavailable even then until the experimental cargo
+feature ships (issue #3291).
 """
 
 from __future__ import annotations
