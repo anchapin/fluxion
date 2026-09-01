@@ -3706,6 +3706,10 @@ impl ThermalModel<VectorField> {
                 timestep_mode: TimestepMode::default(),
                 door_geometry: DoorGeometry::default(),
                 thermal_selector: crate::sim::thermal_selector::ThermalSelector::default(),
+                // Issue #3305 — matches the dispatch a fresh `new`-built model
+                // actually performs: no gauge is configured, so a `Gauge`
+                // selector falls straight through to 5R1C.
+                effective_zone_solver: crate::sim::thermal_selector::ZoneSolverKind::FiveROneC,
                 hvac_heating_capacity: 100_000.0, // Default: 100kW heating (high limit for validation)
                 hvac_cooling_capacity: 100_000.0, // Default: 100kW cooling (high limit for validation)
                 hvac_controller: IdealHVACController::new(20.0, 27.0),

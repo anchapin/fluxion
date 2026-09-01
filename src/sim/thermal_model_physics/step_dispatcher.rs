@@ -90,6 +90,9 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
             if let Some(ekwh) =
                 self.try_run_gauge_single_zone(timestep, outdoor_temp, dt_seconds, &gauge_inputs)
             {
+                // Issue #3305 — record that the gauge path genuinely ran so
+                // the REST `effective_solver` field reports the truth.
+                self.0.hvac.effective_zone_solver = ZoneSolverKind::Gauge;
                 return ekwh;
             }
             // Both single and multi gauge failed or were absent: fall
@@ -110,13 +113,20 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                 // the canonical source of `thermal_model_type` for the
                 // β-phase default build (see Issue #3277 PR2.1).
                 if self.is_nine_r4c_model() {
+                    // Issue #3305 — record the effective fall-through target.
+                    self.0.hvac.effective_zone_solver = ZoneSolverKind::NineRFourC;
                     self.step_physics_9r4c(timestep, outdoor_temp, dt_seconds)
                 } else {
+                    self.0.hvac.effective_zone_solver = ZoneSolverKind::FiveROneC;
                     self.step_physics_5r1c(timestep, outdoor_temp, dt_seconds)
                 }
             }
-            ZoneSolverKind::FiveROneC => self.step_physics_5r1c(timestep, outdoor_temp, dt_seconds),
+            ZoneSolverKind::FiveROneC => {
+                self.0.hvac.effective_zone_solver = ZoneSolverKind::FiveROneC;
+                self.step_physics_5r1c(timestep, outdoor_temp, dt_seconds)
+            }
             ZoneSolverKind::NineRFourC => {
+                self.0.hvac.effective_zone_solver = ZoneSolverKind::NineRFourC;
                 self.step_physics_9r4c(timestep, outdoor_temp, dt_seconds)
             }
         }

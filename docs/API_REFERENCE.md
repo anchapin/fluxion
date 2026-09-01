@@ -756,7 +756,7 @@ Solver selection (Issue #3281): `options` also accepts
 
 | Field               | Values                              | Default    |
 |---------------------|-------------------------------------|------------|
-| `zone_solver`       | `"gauge"` \| `"5r1c"` \| `"9r4c"`   | `"gauge"`  |
+| `zone_solver`       | `"gauge"` \| `"5r1c"` \| `"9r4c"`   | *(omitted)*|
 | `conduction_solver` | `"default"` \| `"ctf"` \| `"fd"`    | `"default"`|
 
 Unknown values are rejected with `400 invalid_request`. The experimental
@@ -764,10 +764,16 @@ Unknown values are rejected with `400 invalid_request`. The experimental
 the `FLUXION_EXPERIMENTAL_ZONE_SOLVERS=1` env var — unless that env var is
 set on the server; even then they stay unavailable until the
 `fluxion-experimental-zone-solvers` cargo feature ships (issue #3291).
-Omitting both fields is bit-identical to passing
-`{"zone_solver": "gauge", "conduction_solver": "default"}`. Each successful
-simulation increments the `fluxion_simulation_solver_kind` counter with a
-`solver="{zone}+{conduction}"` label (e.g. `solver="gauge+default"`).
+
+An *explicit* `zone_solver: "gauge"` is rejected with `400 invalid_request`
+(fail-closed, issue #3305): the REST schema does not carry per-surface
+construction detail (`wall_spec`), so the gauge solver can never initialise
+on this path and the request would silently fall through to 5R1C. Omitting
+the field keeps the legacy default-selector behaviour (the β-phase 5R1C
+fall-through) unchanged; `"5r1c"` / `"9r4c"` dispatch strictly. Each
+successful simulation increments the `fluxion_simulation_solver_kind`
+counter with a `solver="{zone}+{conduction}"` label (e.g.
+`solver="gauge+default"`) that reports the *requested* stack.
 
 Response `200 OK`:
 
@@ -782,17 +788,25 @@ Response `200 OK`:
     "heating_energy": 800.0,
     "cooling_energy": 1250.5,
     "zone_temperatures": [21.4, 21.6],
-    "hourly_zone_temperatures": [[21.4, 21.1, ... 8760 values ...], ...]
+    "hourly_zone_temperatures": [[21.4, 21.1, ... 8760 values ...], ...],
+    "effective_solver": "5r1c"
   }
 }
 ```
+
+`output.effective_solver` (issue #3305) reports the zone solver that
+ACTUALLY executed — derived from the dispatcher's per-step outcome, not
+from the request. On the REST path today this is `"5r1c"` for the omitted
+default and for explicit `"5r1c"`, and `"9r4c"` for explicit `"9r4c"`; it
+can read `"gauge"` only once the gauge path is wired behind REST (post-#3291
+PR4). The field is omitted on non-REST uses of the schema.
 
 Errors are returned via the `ApiError` envelope (`src/api/server.rs:189`):
 
 | Status | `error.kind`        | Trigger                                            |
 |--------|---------------------|----------------------------------------------------|
 | 400    | `invalid_schema`    | setpoints inverted or `geometry.zones` empty       |
-| 400    | `invalid_request`   | unknown / experimental `zone_solver` or `conduction_solver` |
+| 400    | `invalid_request`   | unknown / experimental `zone_solver` or `conduction_solver`; explicit `zone_solver: "gauge"` over REST (issue #3305) |
 | 422    | `import_failed`     | foreign file decode failed                         |
 | 500    | `simulation_failed` | physics or surrogate manager error                 |
 | 501    | `not_implemented`   | `POST /v1/import/idf` (no reader yet — see #1341)  |

@@ -13,7 +13,7 @@ use crate::sim::hvac::{
 use crate::sim::hvac_controller::{HvacSystemMode, IdealHVACController};
 use crate::sim::thermal_model_core::DoorGeometry;
 use crate::sim::thermal_model_scratch::PhysicsScratchPool;
-use crate::sim::thermal_selector::ThermalSelector;
+use crate::sim::thermal_selector::{ThermalSelector, ZoneSolverKind};
 use crate::testing::integration::wiring::WiringTracer;
 use fluxion_core::ashrae_cases::NightVentilation;
 use std::sync::Arc;
@@ -32,6 +32,14 @@ pub struct HvacState<T: ContinuousTensor<f64>> {
     /// `NineRFourC`) opt out of the gauge path and pin `thermal_model_type` to the
     /// matching legacy network.
     pub thermal_selector: ThermalSelector,
+    /// Zone solver that ACTUALLY executed on the most recent `step_physics`
+    /// dispatch (Issue #3305). The β-phase dispatcher writes it after
+    /// resolving gauge success vs. fall-through; callers read it through the
+    /// read-only [`ThermalModel::effective_zone_solver`] accessor so REST
+    /// responses can report the effective solver instead of the requested
+    /// one. Defaults to `FiveROneC`, which is what a `ThermalModel::new`
+    /// -built model (no gauge configured) executes on its first step.
+    pub effective_zone_solver: ZoneSolverKind,
 
     // HVAC equipment + control.
     pub hvac_heating_capacity: f64,
@@ -99,6 +107,7 @@ impl<T: ContinuousTensor<f64> + Clone> Clone for HvacState<T> {
             timestep_mode: self.timestep_mode.clone(),
             door_geometry: self.door_geometry,
             thermal_selector: self.thermal_selector,
+            effective_zone_solver: self.effective_zone_solver,
 
             hvac_heating_capacity: self.hvac_heating_capacity,
             hvac_cooling_capacity: self.hvac_cooling_capacity,
