@@ -619,4 +619,66 @@ describe('@fluxion/native', () => {
       assert.throws(() => new ZoneController(0));
     });
   });
+
+  describe('runSimulation (issue #3306)', () => {
+    const EXPERIMENTAL_GATE_MESSAGE =
+      "experimental zone solver '6r2c' requires " +
+      'FLUXION_EXPERIMENTAL_ZONE_SOLVERS=1 to be set (and even then ' +
+      'it stays unavailable until the `fluxion-experimental-zone-solvers` ' +
+      'cargo feature ships; issue #3291)';
+
+    it('should run the default path (gauge zone solver) and return plain data', () => {
+      const result = fluxion.runSimulation({ years: 1 });
+      assert.strictEqual(result.zoneSolver, 'gauge');
+      assert.strictEqual(result.conductionSolver, 'default');
+      assert.strictEqual(result.years, 1);
+      assert.strictEqual(result.timesteps, 8760);
+      assert.strictEqual(result.useSurrogates, false);
+      assert.ok(Array.isArray(result.zoneTemperatures));
+      assert.ok(Array.isArray(result.massTemperatures));
+      assert.ok(Array.isArray(result.heatingLoads));
+      assert.ok(Array.isArray(result.coolingLoads));
+      assert.ok(Array.isArray(result.solarGains));
+      assert.strictEqual(result.zoneTemperatures.length, 8760);
+      // Plain serializable data: no typed arrays or class instances.
+      assert.strictEqual(JSON.stringify(result).length > 0, true);
+    });
+
+    it('should run a 5R1C simulation when zoneSolver is 5r1c (selector observable)', () => {
+      const result = fluxion.runSimulation({ years: 1, zoneSolver: '5r1c' });
+      assert.strictEqual(result.zoneSolver, '5r1c');
+      assert.strictEqual(result.conductionSolver, 'default');
+      assert.strictEqual(result.zoneTemperatures.length, 8760);
+      // The selector was accepted by the Rust parser and wired through
+      // StateExtractor: construction would have thrown otherwise.
+    });
+
+    it('should accept case-insensitive solver identifiers like the Rust parser', () => {
+      const result = fluxion.runSimulation({ years: 1, zoneSolver: '5R1C' });
+      assert.strictEqual(result.zoneSolver, '5r1c');
+    });
+
+    it('should reject experimental 6r2c without the env gate (shared message)', () => {
+      assert.throws(
+        () => fluxion.runSimulation({ years: 1, zoneSolver: '6r2c' }),
+        (error) => error.message === EXPERIMENTAL_GATE_MESSAGE
+      );
+    });
+
+    it('should reject caseSpec/schema inputs the native surface cannot accept', () => {
+      assert.throws(() => fluxion.runSimulation({ caseSpec: { zones: [] } }), /caseSpec/);
+      assert.throws(() => fluxion.runSimulation({ schema: {} }), /caseSpec/);
+    });
+
+    it('should reject invalid years', () => {
+      assert.throws(() => fluxion.runSimulation({ years: 0 }), /years/);
+      assert.throws(() => fluxion.runSimulation({ years: 1.5 }), /years/);
+      assert.throws(() => fluxion.runSimulation({ years: '1' }), /years/);
+    });
+
+    it('should reject non-object options', () => {
+      assert.throws(() => fluxion.runSimulation(null), /options object/);
+      assert.throws(() => fluxion.runSimulation('years'), /options object/);
+    });
+  });
 });

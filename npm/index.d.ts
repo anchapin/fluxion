@@ -790,3 +790,74 @@ export declare class ZoneController {
   updateControls(temperatures: Array<number>): Array<number>
   getZoneStatus(zoneId: number): string
 }
+
+// -----------------------------------------------------------------------------
+// Hand-maintained declarations for the JS-only convenience wrappers defined in
+// `index.js`. `napi build` regenerates this file from the Rust `#[napi]`
+// surface only and does not know about these wrappers — re-append this
+// section after regenerating (issue #3306).
+// -----------------------------------------------------------------------------
+
+/** Options for {@link runSimulation} (issue #3306). */
+export interface RunSimulationOptions {
+  /** Years to simulate (8760 hourly timesteps per year). */
+  years?: number
+  /**
+   * Zone solver: `'gauge'` (default) | `'5r1c'` | `'9r4c'`; case-insensitive.
+   * The experimental `'6r2c'` / `'8r3c'` identifiers throw unless the
+   * `FLUXION_EXPERIMENTAL_ZONE_SOLVERS=1` env var is set (and stay
+   * unavailable until the `fluxion-experimental-zone-solvers` cargo feature
+   * ships; issue #3291).
+   */
+  zoneSolver?: string
+  /** Conduction algorithm: `'default'` (default) | `'ctf'` | `'fd'`; case-insensitive. */
+  conductionSolver?: string
+  /** Use AI surrogates for faster evaluation when available. */
+  useSurrogates?: boolean
+  /** Reserved; rejected — the native StateExtractor runs the ASHRAE 600 baseline only. */
+  caseSpec?: never
+  /** Reserved; rejected — same as `caseSpec`. */
+  schema?: never
+}
+
+/** Plain serializable result of {@link runSimulation} (issue #3306). */
+export interface RunSimulationResult {
+  /** Years simulated. */
+  years: number
+  /** Total hourly timesteps (`years * 8760`). */
+  timesteps: number
+  /** Effective lowercase zone-solver label wired through `StateExtractor`. */
+  zoneSolver: string
+  /** Effective lowercase conduction-algorithm label wired through `StateExtractor`. */
+  conductionSolver: string
+  /** Whether AI surrogates were requested. */
+  useSurrogates: boolean
+  /** Zone air temperatures in °C [timesteps] (single-zone baseline). */
+  zoneTemperatures: Array<number>
+  /** Thermal mass temperatures in °C [timesteps]. */
+  massTemperatures: Array<number>
+  /** Heating energy demand [timesteps]. */
+  heatingLoads: Array<number>
+  /** Cooling energy demand [timesteps]. */
+  coolingLoads: Array<number>
+  /** Solar heat gains [timesteps]. */
+  solarGains: Array<number>
+}
+
+/**
+ * Run a one-shot simulation with an explicit thermal solver selection
+ * (issue #3306): construct `StateExtractor` → `configure` → `runSimulation`
+ * → plain serializable data, with the `{ zoneSolver, conductionSolver }`
+ * selector wired end-to-end. Runs the built-in ASHRAE 600 baseline
+ * configuration (1 zone).
+ *
+ * @example
+ * ```typescript
+ * import { runSimulation } from '@fluxion/native';
+ * const baseline = runSimulation({ years: 1 });
+ * console.log(baseline.zoneSolver); // 'gauge'
+ * const legacy = runSimulation({ years: 1, zoneSolver: '5r1c' });
+ * console.log(legacy.zoneSolver); // '5r1c'
+ * ```
+ */
+export declare function runSimulation(options?: RunSimulationOptions): RunSimulationResult

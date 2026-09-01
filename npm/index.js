@@ -135,3 +135,181 @@ module.exports.createBuildingParameters = (windowUValue, heatingSetpoint, coolin
  * ```
  */
 module.exports.createNineR4CNodalTracer = () => new native.NineR4CNodalTracer();
+
+/**
+ * Experimental zone-solver identifiers, mirrored from
+ * `EXPERIMENTAL_ZONE_SOLVERS` in src/sim/thermal_selector.rs (issue #3282).
+ * They are rejected unless the `FLUXION_EXPERIMENTAL_ZONE_SOLVERS=1`
+ * environment variable is set — and even then they stay rejected by the
+ * Rust layer until the `fluxion-experimental-zone-solvers` cargo feature
+ * ships (issue #3291).
+ *
+ * @private
+ */
+const EXPERIMENTAL_ZONE_SOLVERS = new Set(['6r2c', '8r3c']);
+
+/**
+ * Exact copy of the `parse_zone_solver` rejection message for
+ * experimental identifiers without the env gate (src/sim/thermal_selector.rs),
+ * so JS fast-failures carry the same wording as the Rust layer.
+ *
+ * @private
+ * @param {string} identifier - Normalized experimental zone-solver identifier
+ * @returns {string} The shared experimental-gate rejection message
+ */
+function experimentalZoneSolverMessage(identifier) {
+  return (
+    `experimental zone solver '${identifier}' requires ` +
+    'FLUXION_EXPERIMENTAL_ZONE_SOLVERS=1 to be set (and even then ' +
+    'it stays unavailable until the `fluxion-experimental-zone-solvers` ' +
+    'cargo feature ships; issue #3291)'
+  );
+}
+
+/**
+ * Normalize a solver identifier the same way the Rust parsers do
+ * (trim + ASCII lowercase).
+ *
+ * @private
+ * @param {string} value - Raw identifier
+ * @param {string} optionName - Option name for error messages
+ * @returns {string} Normalized identifier
+ */
+function normalizeSolverIdentifier(value, optionName) {
+  if (typeof value !== 'string') {
+    throw new Error(`runSimulation: ${optionName} must be a string when provided`);
+  }
+  return value.trim().toLowerCase();
+}
+
+/**
+ * Run a one-shot simulation with an explicit thermal solver selection
+ * (issue #3306) — the ergonomic one-call wrapper that issue #3282's Node
+ * example assumed: construct `StateExtractor` → `configure` →
+ * `runSimulation` → plain serializable data, with the
+ * `{ zoneSolver, conductionSolver }` selector wired end-to-end.
+ *
+ * The simulation runs the native `StateExtractor` surface, which is built
+ * on the ASHRAE 600 baseline configuration (1 zone); `caseSpec` / `schema`
+ * inputs are therefore **not** accepted yet and fail closed when provided.
+ *
+ * Zone-solver values are pre-validated against the shared vocabulary:
+ * experimental identifiers (`'6r2c'`, `'8r3c'`) are rejected without the
+ * `FLUXION_EXPERIMENTAL_ZONE_SOLVERS=1` environment variable using the
+ * exact shared gate message from the Rust `parse_zone_solver` parser.
+ * Unknown values, gate-set values, and conduction-solver values are passed
+ * through to the authoritative Rust parser (surface their errors verbatim).
+ *
+ * @function runSimulation
+ * @param {object} [options] - Simulation options
+ * @param {number} [options.years=1] - Number of years to simulate (8760
+ *   timesteps per year)
+ * @param {string} [options.zoneSolver='gauge'] - Zone solver:
+ *   `'gauge'` (default) | `'5r1c'` | `'9r4c'`; `'6r2c'` / `'8r3c'` are
+ *   experimental and gated
+ * @param {string} [options.conductionSolver='default'] - Conduction
+ *   algorithm: `'default'` (default) | `'ctf'` | `'fd'`
+ * @param {boolean} [options.useSurrogates=false] - Use AI surrogates for
+ *   faster evaluation when available
+ * @param {*} [options.caseSpec] - Reserved; not accepted by the native
+ *   `StateExtractor` surface yet — providing it throws
+ * @param {*} [options.schema] - Reserved; not accepted by the native
+ *   `StateExtractor` surface yet — providing it throws
+ * @returns {{years: number, timesteps: number, zoneSolver: string,
+ *   conductionSolver: string, useSurrogates: boolean, zoneTemperatures:
+ *   number[], massTemperatures: number[], heatingLoads: number[],
+ *   coolingLoads: number[], solarGains: number[]}} Plain serializable
+ *   result; `zoneSolver` / `conductionSolver` echo the effective lowercase
+ *   labels of the selector that was wired through `StateExtractor`
+ * @throws {Error} If `caseSpec` / `schema` are provided, `years` is not a
+ *   positive integer, an experimental zone solver is selected without
+ *   `FLUXION_EXPERIMENTAL_ZONE_SOLVERS=1`, or the Rust layer rejects the
+ *   selector or simulation inputs
+ * @example
+ * ```javascript
+ * const { runSimulation } = require('@fluxion/native');
+ *
+ * // Default path: gauge zone solver, default conduction
+ * const baseline = runSimulation({ years: 1 });
+ * console.log(baseline.zoneSolver); // 'gauge'
+ *
+ * // Explicit 5R1C selection (issue #3282 ergonomics)
+ * const legacy = runSimulation({ years: 1, zoneSolver: '5r1c' });
+ * console.log(legacy.zoneSolver); // '5r1c'
+ * ```
+ */
+module.exports.runSimulation = function runSimulation(options = {}) {
+  if (options === null || typeof options !== 'object' || Array.isArray(options)) {
+    throw new Error('runSimulation: expected an options object');
+  }
+
+  const {
+    caseSpec,
+    schema,
+    years = 1,
+    zoneSolver,
+    conductionSolver,
+    useSurrogates = false,
+  } = options;
+
+  // The native StateExtractor surface simulates the built-in ASHRAE 600
+  // baseline only — fail closed instead of silently ignoring inputs.
+  if (caseSpec !== undefined || schema !== undefined) {
+    throw new Error(
+      "runSimulation: 'caseSpec' / 'schema' inputs are not yet accepted by the " +
+        'native StateExtractor surface, which currently simulates the built-in ' +
+        'ASHRAE 600 baseline configuration only; omit them to run the baseline ' +
+        'case (issue #3306)'
+    );
+  }
+
+  if (!Number.isInteger(years) || years < 1) {
+    throw new Error('runSimulation: years must be a positive integer');
+  }
+
+  const effectiveZoneSolver =
+    zoneSolver === undefined || zoneSolver === null
+      ? 'gauge'
+      : normalizeSolverIdentifier(zoneSolver, 'zoneSolver');
+  const effectiveConductionSolver =
+    conductionSolver === undefined || conductionSolver === null
+      ? 'default'
+      : normalizeSolverIdentifier(conductionSolver, 'conductionSolver');
+
+  // Fast-fail on experimental zone solvers without the shared env gate,
+  // reusing the exact Rust `parse_zone_solver` wording. Everything else
+  // (unknown values; gate-set experimental values, which stay unavailable
+  // until the cargo feature ships) is left to the authoritative Rust
+  // parser invoked by the StateExtractor constructor.
+  if (
+    EXPERIMENTAL_ZONE_SOLVERS.has(effectiveZoneSolver) &&
+    process.env.FLUXION_EXPERIMENTAL_ZONE_SOLVERS !== '1'
+  ) {
+    throw new Error(experimentalZoneSolverMessage(effectiveZoneSolver));
+  }
+
+  const extractorOptions = {};
+  if (zoneSolver !== undefined && zoneSolver !== null) {
+    extractorOptions.zoneSolver = zoneSolver;
+  }
+  if (conductionSolver !== undefined && conductionSolver !== null) {
+    extractorOptions.conductionSolver = conductionSolver;
+  }
+
+  const extractor = new native.StateExtractor(extractorOptions);
+  extractor.configure(1);
+  const matrices = extractor.runSimulation(years, useSurrogates === true);
+
+  return {
+    years,
+    timesteps: years * 8760,
+    zoneSolver: effectiveZoneSolver,
+    conductionSolver: effectiveConductionSolver,
+    useSurrogates: useSurrogates === true,
+    zoneTemperatures: Array.from(matrices.zoneTemperatures),
+    massTemperatures: Array.from(matrices.massTemperatures),
+    heatingLoads: Array.from(matrices.heatingLoads),
+    coolingLoads: Array.from(matrices.coolingLoads),
+    solarGains: Array.from(matrices.solarGains),
+  };
+};
