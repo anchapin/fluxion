@@ -50,7 +50,6 @@ pub use triggers::{
 // stable data types are public.
 pub use moisture::{ActivityLevel, MoistureGeneration};
 
-use ndarray::Dimension;
 use rand::prelude::*;
 use rand_distr::{Distribution, Normal};
 use std::path::PathBuf;
@@ -551,7 +550,7 @@ mod tsfm_engine {
         }
 
         pub fn quantize(
-            fp32_model: &TsfmInferenceEngine,
+            _fp32_model: &TsfmInferenceEngine,
             scale: f32,
             zero_point: i32,
         ) -> QuantizedTsfmModel {

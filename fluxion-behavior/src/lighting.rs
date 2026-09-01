@@ -1,17 +1,12 @@
 use chrono::{DateTime, Timelike};
 use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Serialize, Deserialize)]
 pub enum OccupantState {
+    #[default]
     Absent,
     PresentActive,
     Sleeping,
-}
-
-impl Default for OccupantState {
-    fn default() -> Self {
-        OccupantState::Absent
-    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -78,7 +73,7 @@ impl LightingModel {
     /// `daylight_fraction` (the daylight factor).
     fn estimate_daylight_fraction(&self, t: DateTime<chrono::Utc>) -> f64 {
         let hour = t.hour();
-        if hour >= 6 && hour <= 18 {
+        if (6..=18).contains(&hour) {
             1.0
         } else {
             0.0

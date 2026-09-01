@@ -303,7 +303,7 @@ impl FluidSimulation {
                 infiltration * air_density * specific_heat * (temp - outdoor_temp) / 3600.0;
             let net_gains = gains - loss_to_outdoor - infiltration_loss;
 
-            let mut hvac_load = 0.0;
+            let hvac_load;
             if temp < heating_sp {
                 let load = (heating_sp - temp) * conductance;
                 hvac_load = load.min(thermal_mass / dt_s).max(0.0);
