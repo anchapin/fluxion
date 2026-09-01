@@ -115,7 +115,16 @@ SIM_SHIM_EXCEPTIONS: frozenset[str] = frozenset()
 # See ARCHITECTURE.md §"Regression guard (Issue #2463, closed by #2462)"
 # for the source-of-truth numbers.
 BASELINE_PHYSICS_TO_SIM = 0
-BASELINE_SIM_TO_PHYSICS = 72
+# Issue #3291 (umbrella: GaugeSolver production-path wiring + default
+# flip, PR2 commit `13648c3`): +7 sim->physics edges from
+# `src/sim/thermal_model_physics/step_dispatcher.rs`. The new edges
+# are intentional: the dispatch's HVAC-aware gauge path uses
+# `crate::physics::units::{FromF64, HeatTransferCoefficient, Temperature,
+# ToF64}` to convert `f64` values to the gauge's typed inputs.
+# Lowering this baseline is still reserved for the companion
+# cycle-removal work; raising (as here) accommodates a one-shot
+# feature-driven growth with rationale.
+BASELINE_SIM_TO_PHYSICS = 79  # src/sim/** -> crate::physics::* (was 72; +7 for #3291)
 
 # Regex for Phase 2: match `use` or `pub use` against `crate::physics::`.
 # Mirrors `scan_sim_for_orientation_cycle` in check_ashrae_cases_cycle.py

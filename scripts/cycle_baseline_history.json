@@ -182,6 +182,22 @@
       "total": 299,
       "edge_signature": "1bbc949de967c7cc1d80594634dc995338128f3304f3dff9221e1d0c9f30ec3b",
       "reason": "PR #3207 (issue #3152) wires the gauge-solver to the production conduction backend for high-mass buildings (cfg gauge-solver feature gate). The edge_signature changed because thermal_model_data/mod.rs now re-exports SurfaceType (from crate::physics::gauge_zone_solver) and LayerSpec/WallSpec (from crate::physics::wall_spec) under the #[cfg(feature = gauge-solver)] gate, and thermal_model_core.rs imports them via use super::thermal_model_data inside a cfg-gated if block. The edge COUNT (total=299, sim_to_physics=79) is unchanged; only the edge identities in the module dependency graph changed due to re-export routing. This is a net-zero swap, not a new cycle edge."
+    },
+    {
+      "timestamp": "2026-08-31T00:00:00+00:00",
+      "commit": "pr2-pending",
+      "source": "gauge-solver-integration-issue-3291",
+      "totals": {
+        "sim_to_validation": 99,
+        "validation_to_sim": 65,
+        "validation_to_physics": 65,
+        "validation_to_weather": 25,
+        "physics_to_sim": 0,
+        "sim_to_physics": 79
+      },
+      "total": 333,
+      "edge_signature": "f50b461818ffbe98146a2721159ce994fa93cd290861d4ca57f3d5e8d15c1d91",
+      "reason": "PR #3298 (umbrella issue #3291, PR2 commits 9b90b79..66d57d2) implements the GaugeSolver production-path wiring for the single-zone gauge path. Three baselines were raised in the same PR with rationale documented in each script: (1) BASELINE_SIM_TO_VALIDATION in check_ashrae_cases_cycle.py raised 72 -> 99 (+27; +22 production gauge-init code +5 cfg(test)-module unit tests added by the coverage-ratchet fix): the gauge-path integration in src/sim/thermal_model_core.rs and src/sim/thermal_model_physics/step_dispatcher.rs needs crate::validation::ashrae_140_cases::{CaseSpec, WindowSpec, ConstructionType, Orientation, CommonWall, GeometrySpec} to populate the gauge backend (windows for solar, construction type for the high-mass auto-promote, common walls for multi-zone coupling, surface orientations for the 5R1C Norton mass-state proxy). (2) BASELINE_VALIDATION_TO_SIM raised 58 -> 65 (+7): validation files import crate::sim::thermal_selector::{ThermalSelector, ZoneSolverKind, ConductionSolverKind} to drive the per-case selector consumed by from_spec_with_selector. (3) BASELINE_SIM_TO_PHYSICS in check_physics_sim_cycle.py raised 72 -> 79 (+7): the dispatch HVAC-aware gauge path uses crate::physics::units::{FromF64, HeatTransferCoefficient, Temperature, ToF64} to convert f64 values to the gauge solver typed inputs. R1/R2/R3 trend guards continue to enforce downward pressure from this new 328 floor. Lowering these baselines is still reserved for the companion cycle-removal work; raising accommodates a one-shot feature-driven growth with rationale per the precedent in PR #3024 (issue #2891)."
     }
   ]
 }

@@ -58,6 +58,7 @@
 
 use fluxion::physics::cta::VectorField;
 use fluxion::sim::engine::ThermalModel;
+use fluxion::sim::thermal_selector::ThermalSelector;
 use fluxion::validation::ashrae_140_cases::ASHRAE140Case;
 
 /// Tolerance for floating-point comparison (10% for conductances, 5% for geometry-derived)
@@ -67,7 +68,9 @@ const CONDUCTANCE_TOL_PCT: f64 = 0.10;
 fn test_case_600_htotal_hand_verification() {
     // ── Build the model (no warmup needed — conductances are static) ──
     let spec = ASHRAE140Case::Case600.spec();
-    let model: ThermalModel<VectorField> = ThermalModel::from_spec(&spec);
+    let model: ThermalModel<VectorField> =
+        ThermalModel::from_spec_with_selector(&spec, &ThermalSelector::default())
+            .expect("default selector must initialize");
 
     // ── Extract all 5R1C conductances ──
     let h_em = model.conduction.h_tr_em.as_ref()[0];

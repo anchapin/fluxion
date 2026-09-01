@@ -33,6 +33,7 @@
 
 use fluxion::physics::cta::VectorField;
 use fluxion::sim::engine::ThermalModel;
+use fluxion::sim::thermal_selector::ThermalSelector;
 use fluxion::sim::warmup::{run_warmup, WarmupConfig};
 use fluxion::validation::ashrae_140_cases::{ASHRAE140Case, CaseSpec};
 use fluxion::weather::denver::DenverTmyWeather;
@@ -64,7 +65,9 @@ fn month_index_for_hour(hour: usize) -> usize {
 fn test_case_940_setback_diagnostic() {
     println!("\n=== Case 940 Setback Diagnostic (Issue #2452) ===\n");
     let spec = ASHRAE140Case::Case940.spec();
-    let mut model = ThermalModel::<VectorField>::from_spec(&spec);
+    let mut model =
+        ThermalModel::<VectorField>::from_spec_with_selector(&spec, &ThermalSelector::default())
+            .expect("default selector must initialize");
     let weather = DenverTmyWeather::new();
 
     // Verify the spec actually carries a setback schedule with 23-07 hours.
@@ -255,7 +258,9 @@ fn test_case_940_setback_controller_mode_trace() {
     // fix is GaugeSolver #1465/#1462, out of scope per AGENTS.md).
     println!("\n=== Case 940 Controller Mode Trace (Issue #2452) ===\n");
     let spec = ASHRAE140Case::Case940.spec();
-    let mut model = ThermalModel::<VectorField>::from_spec(&spec);
+    let mut model =
+        ThermalModel::<VectorField>::from_spec_with_selector(&spec, &ThermalSelector::default())
+            .expect("default selector must initialize");
     let weather = DenverTmyWeather::new();
 
     // Track (hour, t_zone, heating_sp_active, cooling_sp_active, predicted_mode) samples
@@ -352,7 +357,9 @@ fn test_case_940_ctf_path_comparison() {
     let spec = ASHRAE140Case::Case940.spec();
 
     // Path A: blind (no CTF) — same setup as the blind_validation test.
-    let mut model_blind = ThermalModel::<VectorField>::from_spec(&spec);
+    let mut model_blind =
+        ThermalModel::<VectorField>::from_spec_with_selector(&spec, &ThermalSelector::default())
+            .expect("default selector must initialize");
     let weather = DenverTmyWeather::new();
 
     model_blind.reset_peak_power();
@@ -381,7 +388,9 @@ fn test_case_940_ctf_path_comparison() {
     let blind_peak_c = model_blind.get_peak_cooling_power_kw();
 
     // Path B: validator path (CTF solver for high-mass cases).
-    let mut model_ctf = ThermalModel::<VectorField>::from_spec(&spec);
+    let mut model_ctf =
+        ThermalModel::<VectorField>::from_spec_with_selector(&spec, &ThermalSelector::default())
+            .expect("default selector must initialize");
     let wall_layers: Vec<_> = spec
         .construction
         .wall
@@ -426,7 +435,9 @@ fn test_case_940_ctf_path_comparison() {
 
     // Per-month CTF-path attribution: where does the over-prediction concentrate?
     // Re-run the CTF path accumulating per-month deltas.
-    let mut model_ctf_monthly = ThermalModel::<VectorField>::from_spec(&spec);
+    let mut model_ctf_monthly =
+        ThermalModel::<VectorField>::from_spec_with_selector(&spec, &ThermalSelector::default())
+            .expect("default selector must initialize");
     let _ = model_ctf_monthly.enable_ctf_with_fd_fallback(&wall_layers, 3600.0, 50, 5);
     model_ctf_monthly.reset_peak_power();
     model_ctf_monthly.reset_heating_cooling_energy();
@@ -498,7 +509,9 @@ const CASE_940_CTF_BLIND_HEATING_RATIO_BASELINE: f64 = 5.993_508;
 const CASE_940_CTF_BLIND_HEATING_RATIO_TOLERANCE: f64 = 0.05;
 
 fn case_940_ctf_model(spec: &CaseSpec) -> ThermalModel<VectorField> {
-    let mut model = ThermalModel::<VectorField>::from_spec(spec);
+    let mut model =
+        ThermalModel::<VectorField>::from_spec_with_selector(spec, &ThermalSelector::default())
+            .expect("default selector must initialize");
     let wall_layers: Vec<_> = spec
         .construction
         .wall
@@ -577,7 +590,8 @@ fn measure_case_940_annual_heating_kwh(
     let mut model = if enable_ctf {
         case_940_ctf_model(spec)
     } else {
-        ThermalModel::<VectorField>::from_spec(spec)
+        ThermalModel::<VectorField>::from_spec_with_selector(spec, &ThermalSelector::default())
+            .expect("default selector must initialize")
     };
     run_case_940_annual_heating_kwh(&mut model, spec, weather, refresh_zone_vectors, warmup)
 }
@@ -625,7 +639,9 @@ fn test_case_940_blind_vs_ctf_ratio_pinned() {
 fn test_case_940_setback_recovery_window_diagnostic() {
     let spec = ASHRAE140Case::Case940.spec();
     let weather = DenverTmyWeather::new();
-    let mut blind = ThermalModel::<VectorField>::from_spec(&spec);
+    let mut blind =
+        ThermalModel::<VectorField>::from_spec_with_selector(&spec, &ThermalSelector::default())
+            .expect("default selector must initialize");
     let mut ctf = case_940_ctf_model(&spec);
     let trace_day = 7usize;
     let trace_start = trace_day * 24 + 22;

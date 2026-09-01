@@ -22,6 +22,7 @@
 
 use fluxion::physics::cta::VectorField;
 use fluxion::sim::engine::ThermalModel;
+use fluxion::sim::thermal_selector::ThermalSelector;
 use fluxion::validation::ashrae_140_cases::{ASHRAE140Case, InternalLoads};
 use fluxion_core::ashrae_cases::InternalLoads as CoreInternalLoads;
 
@@ -168,7 +169,9 @@ fn test_all_600_900_residential_cases_use_s65_split() {
 #[test]
 fn test_from_spec_propagates_convective_fraction() {
     let spec = ASHRAE140Case::Case600.spec();
-    let model = ThermalModel::<VectorField>::from_spec(&spec);
+    let model =
+        ThermalModel::<VectorField>::from_spec_with_selector(&spec, &ThermalSelector::default())
+            .expect("default selector must initialize");
 
     // Issue #2892: model.solar.convective_fraction must equal the case-spec §6.5
     // default (0.6) so the load splitter routes the radiative portion to
@@ -186,7 +189,9 @@ fn test_from_spec_propagates_convective_fraction() {
 #[test]
 fn test_from_spec_propagates_convective_fraction_high_mass() {
     let spec = ASHRAE140Case::Case900.spec();
-    let model = ThermalModel::<VectorField>::from_spec(&spec);
+    let model =
+        ThermalModel::<VectorField>::from_spec_with_selector(&spec, &ThermalSelector::default())
+            .expect("default selector must initialize");
     assert!(
         (model.solar.convective_fraction - ASHRAE140_S65_RESIDENTIAL_CONVECTIVE).abs()
             < SPLIT_TOLERANCE,
@@ -203,7 +208,9 @@ fn test_from_spec_propagates_convective_fraction_high_mass() {
 #[test]
 fn test_set_loads_preserves_convective_fraction() {
     let spec = ASHRAE140Case::Case600.spec();
-    let mut model = ThermalModel::<VectorField>::from_spec(&spec);
+    let mut model =
+        ThermalModel::<VectorField>::from_spec_with_selector(&spec, &ThermalSelector::default())
+            .expect("default selector must initialize");
 
     // Capture the post-construction value.
     let conv_before = model.solar.convective_fraction;

@@ -16,6 +16,7 @@
 
 use crate::physics::cta::VectorField;
 use crate::sim::engine::ThermalModel;
+use crate::sim::thermal_selector::ThermalSelector;
 use crate::validation::ashrae_140_cases::ASHRAE140Case;
 use crate::validation::ashrae_140_multi_zone::Case960Reference;
 use crate::validation::report::ValidationStatus;
@@ -84,7 +85,11 @@ impl Case960ReferenceImplementation {
         let spec = ASHRAE140Case::Case960.spec();
 
         // Create thermal model from specification
-        let mut model = ThermalModel::<VectorField>::from_spec(&spec);
+        let mut model = ThermalModel::<VectorField>::from_spec_with_selector(
+            &spec,
+            &ThermalSelector::default(),
+        )
+        .expect("default selector must initialize");
 
         // Case 960 specific configuration:
         // - Zone 1 (Living): 64 m², 20°C heating / 24°C cooling setpoints

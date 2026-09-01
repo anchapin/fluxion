@@ -7,6 +7,7 @@
 //! with >10,000 configs/sec throughput. Critical for optimization workflows in BIM tools.
 
 use crate::sim::engine::ThermalModel;
+use crate::sim::thermal_selector::ThermalSelector;
 use crate::validation::ashrae_140_cases::CaseBuilder;
 use crate::BatchOracle as CoreBatchOracle;
 
@@ -77,7 +78,9 @@ impl BatchOracle {
     #[napi(constructor)]
     pub fn new() -> napi::bindgen_prelude::Result<Self> {
         let spec = CaseBuilder::case_600_baseline();
-        let thermal_model = ThermalModel::from_spec(&spec);
+        let thermal_model =
+            ThermalModel::from_spec_with_selector(&spec, &ThermalSelector::default())
+                .expect("default selector must initialize");
 
         let inner = CoreBatchOracle::from_model(thermal_model);
         Ok(BatchOracle { inner })

@@ -13,6 +13,7 @@
 //! multi-zone thermal network validation.
 
 use crate::sim::engine::ThermalModel;
+use crate::sim::thermal_selector::ThermalSelector;
 use crate::validation::ashrae_140_cases::ASHRAE140Case;
 use crate::validation::ashrae_140_validator::{
     ASHRAE140Validator, ValidationReport, ValidationResult,
@@ -377,7 +378,11 @@ impl ASHRAE140MultiZoneValidator {
         let started = Instant::now();
         let case_960_ref = Self::load_case_960_reference_data();
         let spec = ASHRAE140Case::Case960.spec();
-        let model = ThermalModel::<crate::physics::cta::VectorField>::from_spec(&spec);
+        let model = ThermalModel::<crate::physics::cta::VectorField>::from_spec_with_selector(
+            &spec,
+            &ThermalSelector::default(),
+        )
+        .expect("default selector must initialize");
         let case_960_result = self.validate_case_960(&model, &case_960_ref);
         let _elapsed = started.elapsed();
 
@@ -789,7 +794,11 @@ mod tests {
 
         // Create a thermal model for testing
         let spec = crate::validation::ashrae_140_cases::ASHRAE140Case::Case960.spec();
-        let model = ThermalModel::<VectorField>::from_spec(&spec);
+        let model = ThermalModel::<VectorField>::from_spec_with_selector(
+            &spec,
+            &ThermalSelector::default(),
+        )
+        .expect("default selector must initialize");
 
         // Run validation. With the real path the validator now actually
         // steps the physics — depending on the model's current accuracy
@@ -876,7 +885,11 @@ mod tests {
     fn test_case_960_validator_runs_real_model_not_stub() {
         let validator = ASHRAE140MultiZoneValidator::new();
         let spec = ASHRAE140Case::Case960.spec();
-        let model = ThermalModel::<VectorField>::from_spec(&spec);
+        let model = ThermalModel::<VectorField>::from_spec_with_selector(
+            &spec,
+            &ThermalSelector::default(),
+        )
+        .expect("default selector must initialize");
         let reference = Case960Reference::load_case_960_reference_data();
 
         // (1) DETERMINISTIC structural check that the real physics ran
@@ -1047,7 +1060,11 @@ mod tests {
         //     Case 960 deterministic guard in `test_case_960_validator_
         //     runs_real_model_not_stub`), so we don't gate on PASS.
         let spec = ASHRAE140Case::Case970.spec();
-        let model = ThermalModel::<crate::physics::cta::VectorField>::from_spec(&spec);
+        let model = ThermalModel::<crate::physics::cta::VectorField>::from_spec_with_selector(
+            &spec,
+            &ThermalSelector::default(),
+        )
+        .expect("default selector must initialize");
         let result = validator.validate_case_970_with_validator(&model);
         assert!(
             result.error_pct.is_finite() && result.error_pct >= 0.0,
@@ -1722,7 +1739,11 @@ impl ASHRAE140MultiZoneValidator {
         const HEATING_EFFICIENCY: f64 = 0.9;
 
         let spec = ASHRAE140Case::Case970.spec();
-        let mut model = ThermalModel::<crate::physics::cta::VectorField>::from_spec(&spec);
+        let mut model = ThermalModel::<crate::physics::cta::VectorField>::from_spec_with_selector(
+            &spec,
+            &ThermalSelector::default(),
+        )
+        .expect("default selector must initialize");
 
         // Per-zone HVAC enable flags from the spec — mirrors
         // `ASHRAE140Validator::validate_case_960`.
@@ -1887,7 +1908,11 @@ impl ASHRAE140MultiZoneValidator {
 
         // Build the real model from the canonical spec.
         let spec = ASHRAE140Case::Case960.spec();
-        let model = ThermalModel::<crate::physics::cta::VectorField>::from_spec(&spec);
+        let model = ThermalModel::<crate::physics::cta::VectorField>::from_spec_with_selector(
+            &spec,
+            &ThermalSelector::default(),
+        )
+        .expect("default selector must initialize");
 
         // Validate Case 960 with dedicated validator (now real).
         let started = Instant::now();

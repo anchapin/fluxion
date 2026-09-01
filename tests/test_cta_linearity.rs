@@ -14,6 +14,7 @@
 
 use fluxion::physics::cta::VectorField;
 use fluxion::sim::engine::{HVACMode, IdealHVACController, ThermalModel};
+use fluxion::sim::thermal_selector::ThermalSelector;
 use fluxion::validation::ashrae_140_cases::ASHRAE140Case;
 
 // =============================================================================
@@ -27,7 +28,9 @@ use fluxion::validation::ashrae_140_cases::ASHRAE140Case;
 fn test_internal_gain_causes_temperature_rise() {
     // Create a thermal model
     let spec = ASHRAE140Case::Case600.spec();
-    let mut model = ThermalModel::<VectorField>::from_spec(&spec);
+    let mut model =
+        ThermalModel::<VectorField>::from_spec_with_selector(&spec, &ThermalSelector::default())
+            .expect("default selector must initialize");
 
     // Disable HVAC
     model.setpoints.heating_setpoint = -999.0;
@@ -80,7 +83,9 @@ fn test_internal_gain_causes_temperature_rise() {
 #[test]
 fn test_hvac_heating_maintains_setpoint() {
     let spec = ASHRAE140Case::Case600.spec();
-    let mut model = ThermalModel::<VectorField>::from_spec(&spec);
+    let mut model =
+        ThermalModel::<VectorField>::from_spec_with_selector(&spec, &ThermalSelector::default())
+            .expect("default selector must initialize");
 
     // Set HVAC setpoints
     let heating_setpoint = 20.0;
@@ -127,7 +132,9 @@ fn test_hvac_heating_maintains_setpoint() {
 #[test]
 fn test_hvac_cooling_maintains_setpoint() {
     let spec = ASHRAE140Case::Case600.spec();
-    let mut model = ThermalModel::<VectorField>::from_spec(&spec);
+    let mut model =
+        ThermalModel::<VectorField>::from_spec_with_selector(&spec, &ThermalSelector::default())
+            .expect("default selector must initialize");
 
     // Set HVAC setpoints
     let cooling_setpoint = 24.0;
@@ -177,7 +184,9 @@ fn test_heat_flow_symmetry() {
     let spec = ASHRAE140Case::Case600.spec();
 
     // Test heating scenario
-    let mut model_heating = ThermalModel::<VectorField>::from_spec(&spec);
+    let mut model_heating =
+        ThermalModel::<VectorField>::from_spec_with_selector(&spec, &ThermalSelector::default())
+            .expect("default selector must initialize");
     model_heating.setpoints.heating_setpoint = 20.0;
     model_heating.setpoints.cooling_setpoint = 999.0;
     model_heating.setpoints.temperatures =
@@ -187,7 +196,9 @@ fn test_heat_flow_symmetry() {
     model_heating.set_ground_temp(15.0);
 
     // Test cooling scenario
-    let mut model_cooling = ThermalModel::<VectorField>::from_spec(&spec);
+    let mut model_cooling =
+        ThermalModel::<VectorField>::from_spec_with_selector(&spec, &ThermalSelector::default())
+            .expect("default selector must initialize");
     model_cooling.setpoints.heating_setpoint = -999.0;
     model_cooling.setpoints.cooling_setpoint = 10.0;
     model_cooling.setpoints.temperatures =
@@ -235,7 +246,9 @@ fn test_heat_flow_symmetry() {
 #[test]
 fn test_energy_conservation_steady_state() {
     let spec = ASHRAE140Case::Case600.spec();
-    let mut model = ThermalModel::<VectorField>::from_spec(&spec);
+    let mut model =
+        ThermalModel::<VectorField>::from_spec_with_selector(&spec, &ThermalSelector::default())
+            .expect("default selector must initialize");
 
     // Disable HVAC
     model.setpoints.heating_setpoint = -999.0;
@@ -387,8 +400,12 @@ fn test_thermal_model_consistency() {
     let spec = ASHRAE140Case::Case600.spec();
 
     // Create two identical models
-    let mut model1 = ThermalModel::<VectorField>::from_spec(&spec);
-    let mut model2 = ThermalModel::<VectorField>::from_spec(&spec);
+    let mut model1 =
+        ThermalModel::<VectorField>::from_spec_with_selector(&spec, &ThermalSelector::default())
+            .expect("default selector must initialize");
+    let mut model2 =
+        ThermalModel::<VectorField>::from_spec_with_selector(&spec, &ThermalSelector::default())
+            .expect("default selector must initialize");
 
     // Set identical initial conditions
     let initial_temp = 20.0;
@@ -484,7 +501,9 @@ fn test_deadband_no_simultaneous_heating_cooling() {
 fn test_multi_zone_energy_balance() {
     // Use Case 960 (sunspace) for multi-zone test
     let spec = fluxion::validation::ashrae_140_cases::ASHRAE140Case::Case960.spec();
-    let mut model = ThermalModel::<VectorField>::from_spec(&spec);
+    let mut model =
+        ThermalModel::<VectorField>::from_spec_with_selector(&spec, &ThermalSelector::default())
+            .expect("default selector must initialize");
 
     assert!(
         model.hvac.num_zones > 1,

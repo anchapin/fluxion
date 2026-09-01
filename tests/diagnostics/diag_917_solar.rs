@@ -4,12 +4,13 @@ use fluxion::sim::engine::ThermalModel;
 use fluxion::validation::ashrae_140_cases::{ASHRAE140Case, HvacSchedule};
 use fluxion::weather::denver::DenverTmyWeather;
 use fluxion::weather::WeatherSource;
+use fluxion::sim::thermal_selector::ThermalSelector;
 
 #[test]
 #[ignore = "diagnostic-only test with no assertion; quarantined per #2536. Run manually with --ignored if needed."]
 fn diag_solar_gains_600ff() {
     let spec = ASHRAE140Case::Case600FF.spec();
-    let mut model = ThermalModel::<VectorField>::from_spec(&spec);
+    let mut model = ThermalModel::<VectorField>::from_spec_with_selector(&spec, &ThermalSelector::default()).expect("default selector must initialize");
     let weather = DenverTmyWeather::new();
 
     model.setpoints.heating_setpoint = -999.0;
@@ -55,7 +56,7 @@ fn diag_solar_gains_600ff() {
 
     // Now re-run just the peak step to capture solar gains
     let spec2 = ASHRAE140Case::Case600FF.spec();
-    let mut model2 = ThermalModel::<VectorField>::from_spec(&spec2);
+    let mut model2 = ThermalModel::<VectorField>::from_spec_with_selector(&spec2, &ThermalSelector::default()).expect("default selector must initialize");
     model2.setpoints.heating_setpoint = -999.0;
     model2.setpoints.cooling_setpoint = 999.0;
     model2.hvac.hvac_heating_capacity = 0.0;

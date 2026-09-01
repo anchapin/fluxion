@@ -57,6 +57,7 @@ use crate::sim::thermal_model_data::{
     lightweight_wall_spec, ContinuousTensor, FiveR1CSolver, FromF64, HeatConductionSolver,
     HeatTransferCoefficient, Temperature, Time, ToF64, VectorField,
 };
+use crate::sim::thermal_selector::ThermalSelector;
 use crate::sim::ventilation::{ConstantVentilation, VentilationSchedule};
 use fluxion_twin::TwinCorrection;
 use std::error::Error;
@@ -238,7 +239,11 @@ impl PhysicsThermalModel {
     /// Create from an ASHRAE 140 case specification
     pub fn from_spec(spec: &crate::validation::ashrae_140_cases::CaseSpec) -> Self {
         PhysicsThermalModel {
-            inner: crate::sim::engine::ThermalModel::from_spec(spec),
+            inner: crate::sim::engine::ThermalModel::from_spec_with_selector(
+                spec,
+                &ThermalSelector::default(),
+            )
+            .expect("default selector must initialize"),
             mode: ThermalModelMode::Physics,
         }
     }
@@ -386,7 +391,11 @@ impl SurrogateThermalModel {
     /// Create from an ASHRAE 140 case specification
     pub fn from_spec(spec: &crate::validation::ashrae_140_cases::CaseSpec) -> Self {
         SurrogateThermalModel {
-            inner: crate::sim::engine::ThermalModel::from_spec(spec),
+            inner: crate::sim::engine::ThermalModel::from_spec_with_selector(
+                spec,
+                &ThermalSelector::default(),
+            )
+            .expect("default selector must initialize"),
             mode: ThermalModelMode::Surrogate,
             fallback_to_physics: true,
         }
@@ -995,7 +1004,11 @@ impl HybridThermalModel {
     /// Build from an ASHRAE 140 case specification with the default policy.
     pub fn from_spec(spec: &crate::validation::ashrae_140_cases::CaseSpec) -> Self {
         Self {
-            inner: crate::sim::engine::ThermalModel::from_spec(spec),
+            inner: crate::sim::engine::ThermalModel::from_spec_with_selector(
+                spec,
+                &ThermalSelector::default(),
+            )
+            .expect("default selector must initialize"),
             routing: HybridRouting::default(),
             conduction_solver: default_conduction_solver(),
             ventilation_schedule: default_ventilation_schedule(),
@@ -1017,7 +1030,11 @@ impl HybridThermalModel {
         routing: HybridRouting,
     ) -> Self {
         Self {
-            inner: crate::sim::engine::ThermalModel::from_spec(spec),
+            inner: crate::sim::engine::ThermalModel::from_spec_with_selector(
+                spec,
+                &ThermalSelector::default(),
+            )
+            .expect("default selector must initialize"),
             routing,
             conduction_solver: default_conduction_solver(),
             ventilation_schedule: default_ventilation_schedule(),
@@ -1574,7 +1591,11 @@ impl UnifiedThermalModel {
     /// Create from an ASHRAE 140 case specification
     pub fn from_spec(spec: &crate::validation::ashrae_140_cases::CaseSpec) -> Self {
         UnifiedThermalModel {
-            inner: crate::sim::engine::ThermalModel::from_spec(spec),
+            inner: crate::sim::engine::ThermalModel::from_spec_with_selector(
+                spec,
+                &ThermalSelector::default(),
+            )
+            .expect("default selector must initialize"),
             mode: ThermalModelMode::Physics,
             use_surrogates: false,
         }

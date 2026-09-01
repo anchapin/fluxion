@@ -33,7 +33,7 @@ pub use setpoint_state::SetpointState;
 pub use solar_state::SolarState;
 
 #[cfg(feature = "gauge-solver")]
-pub use crate::physics::gauge_zone_solver::{GaugeZoneSolver, SurfaceType};
+pub use crate::physics::gauge_zone_solver::{GaugeZoneSolver, MultiZoneGaugeSolver, SurfaceType};
 pub use crate::physics::{
     cta::{ContinuousTensor, VectorField},
     ctf_coefficients::{CTFCoefficients, CTFMaterial},

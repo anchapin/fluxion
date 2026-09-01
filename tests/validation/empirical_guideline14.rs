@@ -39,6 +39,7 @@
 use fluxion::ai::surrogate::SurrogateManager;
 use fluxion::physics::cta::VectorField;
 use fluxion::sim::engine::ThermalModel;
+use fluxion::sim::thermal_selector::ThermalSelector;
 use fluxion::validation::flexlab_test_cell::flexlab_test_cell_spec;
 use fluxion::validation::guideline14::{
     compute_guideline14, render_markdown, write_report, Guideline14Source, Guideline14Status,
@@ -59,7 +60,9 @@ const PHYSICAL_MAX_C: f64 = 60.0;
 /// zone-air temperatures (length 8760).
 fn simulate_flexlab_year() -> Vec<f64> {
     let spec = flexlab_test_cell_spec();
-    let mut model = ThermalModel::<VectorField>::from_spec(&spec);
+    let mut model =
+        ThermalModel::<VectorField>::from_spec_with_selector(&spec, &ThermalSelector::default())
+            .expect("default selector must initialize");
     let surrogate = SurrogateManager::new().expect("Failed to create surrogate manager");
     let _annual_energy = model.solve_timesteps(8760, &surrogate, false, None, None, None);
 

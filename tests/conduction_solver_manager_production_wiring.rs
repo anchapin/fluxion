@@ -55,6 +55,7 @@ use fluxion::physics::solver_trait::HeatConductionSolver;
 use fluxion::physics::wall_spec::WallSpec;
 use fluxion::sim::engine::ThermalModel;
 use fluxion::sim::surface_flux_provider::{PhysicsSurfaceFluxProvider, SurfaceHeatFluxProvider};
+use fluxion::sim::thermal_selector::ThermalSelector;
 use fluxion::validation::ashrae_140_cases::ASHRAE140Case;
 
 // =============================================================================
@@ -161,7 +162,7 @@ fn step_all_advances_state_for_each_surface() {
 
 // =============================================================================
 // Acceptance #2 — `SolverManager::step_all` works against a production
-// `ThermalModel::from_spec(ASHRAE140Case::Case900)` (high-mass 200 mm concrete).
+// `ThermalModel::from_spec_with_selector(ASHRAE140Case::Case900, &ThermalSelector::default()).expect("default selector must initialize")` (high-mass 200 mm concrete).
 // =============================================================================
 
 /// Reference result for Case 900 from the production SolverManager.
@@ -255,14 +256,16 @@ fn solver_manager_step_all_is_invoked_for_case900_high_mass() {
 // (defends against accidental physics regressions in the wider model).
 // =============================================================================
 
-/// Regression: building a `ThermalModel::from_spec(Case900.spec())` from the
+/// Regression: building a `ThermalModel::from_spec_with_selector(Case900.spec(), &ThermalSelector::default()).expect("default selector must initialize")` from the
 /// production ASHRAE 140 spec must continue to work — never panic, never
 /// silently mis-route. This is the same construction the ASHRAE 140
 /// validation suite uses for Case 600 / Case 900 family.
 #[test]
 fn thermal_model_from_spec_case900_construction_remains_well_formed() {
     let spec = ASHRAE140Case::Case900.spec();
-    let _model = ThermalModel::<VectorField>::from_spec(&spec);
+    let _model =
+        ThermalModel::<VectorField>::from_spec_with_selector(&spec, &ThermalSelector::default())
+            .expect("default selector must initialize");
 
     // If SolverManager wiring accidentally broke the constructor (e.g. by
     // requiring a now-broken field), this test surfaces the panic at PR

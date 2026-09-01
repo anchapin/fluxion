@@ -61,6 +61,7 @@
 use fluxion::physics::cta::VectorField;
 use fluxion::sim::engine::ThermalModel;
 use fluxion::sim::invariant_checker::InvariantChecker;
+use fluxion::sim::thermal_selector::ThermalSelector;
 use fluxion::solar::{calculate_day_of_year, calculate_solar_position};
 use fluxion::validation::ashrae_140_cases::ASHRAE140Case;
 use fluxion::weather::denver::DenverTmyWeather;
@@ -130,7 +131,9 @@ const ENERGY_BALANCE_RESIDUAL_THRESHOLD: f64 = 1.0e-3;
 #[test]
 fn test_case_600_energy_balance_conservation() {
     let spec = ASHRAE140Case::Case600.spec();
-    let mut model = ThermalModel::<VectorField>::from_spec(&spec);
+    let mut model =
+        ThermalModel::<VectorField>::from_spec_with_selector(&spec, &ThermalSelector::default())
+            .expect("default selector must initialize");
     let weather = DenverTmyWeather::new();
 
     let mut checker = InvariantChecker::new(ENERGY_BALANCE_RESIDUAL_THRESHOLD);
@@ -184,7 +187,9 @@ fn test_case_600_energy_balance_conservation() {
 #[test]
 fn test_case_920_energy_balance_conservation() {
     let spec = ASHRAE140Case::Case920.spec();
-    let mut model = ThermalModel::<VectorField>::from_spec(&spec);
+    let mut model =
+        ThermalModel::<VectorField>::from_spec_with_selector(&spec, &ThermalSelector::default())
+            .expect("default selector must initialize");
     let weather = DenverTmyWeather::new();
 
     let mut checker = InvariantChecker::new(ENERGY_BALANCE_RESIDUAL_THRESHOLD);
@@ -236,7 +241,9 @@ fn test_case_920_energy_balance_conservation() {
 #[test]
 fn test_case_960_energy_balance_conservation() {
     let spec = ASHRAE140Case::Case960.spec();
-    let mut model = ThermalModel::<VectorField>::from_spec(&spec);
+    let mut model =
+        ThermalModel::<VectorField>::from_spec_with_selector(&spec, &ThermalSelector::default())
+            .expect("default selector must initialize");
     let weather = DenverTmyWeather::new();
 
     let mut checker = InvariantChecker::new(ENERGY_BALANCE_RESIDUAL_THRESHOLD);
@@ -285,7 +292,9 @@ fn test_case_960_energy_balance_conservation() {
 #[test]
 fn test_case_600_annual_determinism_hash() {
     let spec = ASHRAE140Case::Case600.spec();
-    let mut model = ThermalModel::<VectorField>::from_spec(&spec);
+    let mut model =
+        ThermalModel::<VectorField>::from_spec_with_selector(&spec, &ThermalSelector::default())
+            .expect("default selector must initialize");
     let weather = DenverTmyWeather::new();
 
     let warmup_steps = 14 * 24;
@@ -342,7 +351,9 @@ fn test_case_600_annual_determinism_hash() {
 #[test]
 fn test_case_920_annual_determinism_hash() {
     let spec = ASHRAE140Case::Case920.spec();
-    let mut model = ThermalModel::<VectorField>::from_spec(&spec);
+    let mut model =
+        ThermalModel::<VectorField>::from_spec_with_selector(&spec, &ThermalSelector::default())
+            .expect("default selector must initialize");
     let weather = DenverTmyWeather::new();
 
     let warmup_steps = 14 * 24;

@@ -46,6 +46,7 @@ pub use fluxion_core::ashrae_cases::{
 };
 
 use crate::sim::construction::{Assemblies, Construction, Materials};
+use crate::sim::thermal_selector::ThermalSelector;
 use crate::weather::{HourlyWeatherData, WeatherSource};
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
@@ -3404,7 +3405,9 @@ fn simulate_case_920_blind(spec: &CaseSpec) -> Case920BlindSim {
     use crate::weather::denver::DenverTmyWeather;
     use crate::weather::WeatherSource;
 
-    let mut model = ThermalModel::<VectorField>::from_spec(spec);
+    let mut model =
+        ThermalModel::<VectorField>::from_spec_with_selector(spec, &ThermalSelector::default())
+            .expect("default selector must initialize");
     let weather = DenverTmyWeather::new();
     const STEPS: usize = 8760;
 
@@ -3676,7 +3679,9 @@ fn simulate_case_950_blind(spec: &CaseSpec) -> Case950BlindSim {
     use crate::weather::denver::DenverTmyWeather;
     use crate::weather::WeatherSource;
 
-    let mut model = ThermalModel::<VectorField>::from_spec(spec);
+    let mut model =
+        ThermalModel::<VectorField>::from_spec_with_selector(spec, &ThermalSelector::default())
+            .expect("default selector must initialize");
     let weather = DenverTmyWeather::new();
     const STEPS: usize = 8760;
 

@@ -17,6 +17,7 @@ use fluxion::cli::multi_zone::{
 };
 use fluxion::physics::cta::VectorField;
 use fluxion::sim::engine::ThermalModel;
+use fluxion::sim::thermal_selector::ThermalSelector;
 use fluxion::validation::ashrae_140_cases::ASHRAE140Case;
 use fluxion::validation::energy_balance::{EnergyBalanceValidator, ValidationError};
 
@@ -32,7 +33,9 @@ const ACCEPTANCE_RESIDUAL_TOLERANCE_W: f64 = 1e-3;
 /// `model.setpoints.temperatures`, etc.
 fn build_balanced_two_zone_stub() -> (ThermalModel<VectorField>, f64, f64) {
     let spec = ASHRAE140Case::Case960.spec();
-    let mut model = ThermalModel::<VectorField>::from_spec(&spec);
+    let mut model =
+        ThermalModel::<VectorField>::from_spec_with_selector(&spec, &ThermalSelector::default())
+            .expect("default selector must initialize");
     let t_balanced = 20.0_f64;
 
     // Manually set every state field the InvariantChecker touches so the

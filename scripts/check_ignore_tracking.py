@@ -21,8 +21,8 @@ from __future__ import annotations
 import argparse
 import re
 import sys
-from pathlib import Path
 from collections import defaultdict
+from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 
@@ -50,7 +50,7 @@ def find_ignored_tests() -> list[dict]:
                     j = i - 2
                     while j >= 0 and lines[j].strip().startswith("//!") or lines[j].strip().startswith("///"):
                         comment = lines[j].strip().removeprefix("//!").removeprefix("///").strip()
-                                if "#[ignore]" in comment or "ignore" in comment.lower():
+                        if "#[ignore]" in comment or "ignore" in comment.lower():
                             reason = comment
                             # Extract issue references like #1234
                             issue_refs.extend(re.findall(r'#(\d+)', comment))
@@ -138,6 +138,6 @@ def main() -> int:
 if __name__ == "__main__":
     try:
         sys.exit(main())
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001 — top-level CLI error boundary
         print(f"ERROR: {exc}", file=sys.stderr)
         sys.exit(1)

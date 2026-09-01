@@ -36,6 +36,7 @@
 use fluxion::physics::cta::VectorField;
 use fluxion::sim::engine::ThermalModel;
 
+use fluxion::sim::thermal_selector::ThermalSelector;
 use fluxion::validation::ashrae_140_cases::ASHRAE140Case;
 use fluxion::weather::denver::DenverTmyWeather;
 use fluxion::weather::WeatherSource;
@@ -52,7 +53,9 @@ use fluxion::weather::WeatherSource;
 #[test]
 fn test_wall_surface_temperatures_finite_and_reasonable() {
     let spec = ASHRAE140Case::Case600.spec();
-    let mut model = ThermalModel::<VectorField>::from_spec(&spec);
+    let mut model =
+        ThermalModel::<VectorField>::from_spec_with_selector(&spec, &ThermalSelector::default())
+            .expect("default selector must initialize");
     let weather = DenverTmyWeather::new();
 
     // Initialize temperatures to a reasonable starting point
@@ -109,7 +112,9 @@ fn test_wall_surface_temperatures_finite_and_reasonable() {
 #[test]
 fn test_surface_temperature_thermal_lag() {
     let spec = ASHRAE140Case::Case900.spec(); // High mass for noticeable lag
-    let mut model = ThermalModel::<VectorField>::from_spec(&spec);
+    let mut model =
+        ThermalModel::<VectorField>::from_spec_with_selector(&spec, &ThermalSelector::default())
+            .expect("default selector must initialize");
     let weather = DenverTmyWeather::new();
 
     // Initialize at 20°C
@@ -288,7 +293,9 @@ fn test_mrt_calculation_nonuniform_environment() {
 #[test]
 fn test_mrt_from_thermal_model_surfaces() {
     let spec = ASHRAE140Case::Case600.spec();
-    let mut model = ThermalModel::<VectorField>::from_spec(&spec);
+    let mut model =
+        ThermalModel::<VectorField>::from_spec_with_selector(&spec, &ThermalSelector::default())
+            .expect("default selector must initialize");
     let weather = DenverTmyWeather::new();
 
     // Initialize
@@ -848,7 +855,9 @@ fn test_adaptive_comfort_bounds() {
 #[test]
 fn test_thermal_comfort_integration() {
     let spec = ASHRAE140Case::Case600.spec();
-    let mut model = ThermalModel::<VectorField>::from_spec(&spec);
+    let mut model =
+        ThermalModel::<VectorField>::from_spec_with_selector(&spec, &ThermalSelector::default())
+            .expect("default selector must initialize");
     let weather = DenverTmyWeather::new();
 
     // Initialize

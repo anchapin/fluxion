@@ -1,5 +1,6 @@
 use fluxion::physics::cta::VectorField;
 use fluxion::sim::engine::ThermalModel;
+use fluxion::sim::thermal_selector::ThermalSelector;
 use fluxion::validation::ashrae_140_cases::{ASHRAE140Case, ConstructionType};
 
 #[cfg(test)]
@@ -19,8 +20,16 @@ mod tests {
         let low_spec = ASHRAE140Case::Case600.spec();
         let high_spec = ASHRAE140Case::Case900.spec();
 
-        let low_model = ThermalModel::<VectorField>::from_spec(&low_spec);
-        let high_model = ThermalModel::<VectorField>::from_spec(&high_spec);
+        let low_model = ThermalModel::<VectorField>::from_spec_with_selector(
+            &low_spec,
+            &ThermalSelector::default(),
+        )
+        .expect("default selector must initialize");
+        let high_model = ThermalModel::<VectorField>::from_spec_with_selector(
+            &high_spec,
+            &ThermalSelector::default(),
+        )
+        .expect("default selector must initialize");
 
         println!("ASHRAE 140 Section 5.2.2 Solar Distribution:");
         println!(
@@ -52,8 +61,16 @@ mod tests {
         let low_spec = ASHRAE140Case::Case600.spec();
         let high_spec = ASHRAE140Case::Case900.spec();
 
-        let low_model = ThermalModel::<VectorField>::from_spec(&low_spec);
-        let high_model = ThermalModel::<VectorField>::from_spec(&high_spec);
+        let low_model = ThermalModel::<VectorField>::from_spec_with_selector(
+            &low_spec,
+            &ThermalSelector::default(),
+        )
+        .expect("default selector must initialize");
+        let high_model = ThermalModel::<VectorField>::from_spec_with_selector(
+            &high_spec,
+            &ThermalSelector::default(),
+        )
+        .expect("default selector must initialize");
 
         println!("ASHRAE 140 Solar Beam Distribution:");
         println!(
@@ -95,8 +112,16 @@ mod tests {
         let low_spec = ASHRAE140Case::Case600.spec();
         let high_spec = ASHRAE140Case::Case900.spec();
 
-        let low_model = ThermalModel::<VectorField>::from_spec(&low_spec);
-        let high_model = ThermalModel::<VectorField>::from_spec(&high_spec);
+        let low_model = ThermalModel::<VectorField>::from_spec_with_selector(
+            &low_spec,
+            &ThermalSelector::default(),
+        )
+        .expect("default selector must initialize");
+        let high_model = ThermalModel::<VectorField>::from_spec_with_selector(
+            &high_spec,
+            &ThermalSelector::default(),
+        )
+        .expect("default selector must initialize");
 
         let low_sum =
             low_model.solar.solar_distribution_to_air + low_model.solar.solar_beam_to_mass_fraction;

@@ -77,6 +77,7 @@ use fluxion::sim::construction::Assemblies;
 use fluxion::sim::engine::ThermalModel;
 use fluxion::sim::invariant_checker::InvariantChecker;
 use fluxion::sim::multi_zone_network::{MultiZoneAirflowNetwork, ZoneState};
+use fluxion::sim::thermal_selector::ThermalSelector;
 use fluxion::validation::ashrae_140_cases::{ASHRAE140Case, CaseBuilder, InternalLoads};
 use proptest::prelude::*;
 use proptest::test_runner::RngSeed;
@@ -185,7 +186,7 @@ proptest! {
         let spec = ASHRAE140Case::Case900.spec();
         let num_zones = spec.num_zones;
 
-        let mut model = ThermalModel::<VectorField>::from_spec(&spec);
+        let mut model = ThermalModel::<VectorField>::from_spec_with_selector(&spec, &ThermalSelector::default()).expect("default selector must initialize");
 
         prop_assert!(num_zones >= 1, "Case 900 should have at least 1 zone");
 
@@ -273,7 +274,7 @@ proptest! {
         let spec = ASHRAE140Case::Case900.spec();
         let num_zones = spec.num_zones;
 
-        let mut model = ThermalModel::<VectorField>::from_spec(&spec);
+        let mut model = ThermalModel::<VectorField>::from_spec_with_selector(&spec, &ThermalSelector::default()).expect("default selector must initialize");
 
         // U-value randomization. The window/wall U-values feed into
         // h_tr_w and h_tr_em via from_spec() / update_derived_parameters();
@@ -598,7 +599,7 @@ proptest! {
 
         for (season, outdoor_temp) in seasonal_drivers.iter() {
             let spec = build_random_multizone_spec(n, hvac_heat, hvac_cool);
-            let mut model = ThermalModel::<VectorField>::from_spec(&spec);
+            let mut model = ThermalModel::<VectorField>::from_spec_with_selector(&spec, &ThermalSelector::default()).expect("default selector must initialize");
 
             // Randomize per-zone thermal capacitance. We use the public
             // thermal_capacitance field which feeds directly into the

@@ -13,6 +13,7 @@
 use fluxion::ai::surrogate::SurrogateManager;
 use fluxion::physics::cta::VectorField;
 use fluxion::sim::engine::ThermalModel;
+use fluxion::sim::thermal_selector::ThermalSelector;
 use fluxion::validation::flexlab_test_cell::{flexlab_test_cell_spec, model_diff_summary};
 use fluxion::validation::interior_sensors::{InteriorSensorMeta, SensorPlacement};
 use fluxion::validation::timestamp_alignment::{
@@ -52,7 +53,9 @@ fn test_flexlab_x3a_full_simulation() {
     println!("Infiltration: {} ACH", spec.infiltration_ach);
 
     // Create the thermal model
-    let mut model = ThermalModel::<VectorField>::from_spec(&spec);
+    let mut model =
+        ThermalModel::<VectorField>::from_spec_with_selector(&spec, &ThermalSelector::default())
+            .expect("default selector must initialize");
     println!("Thermal model created: {} zone(s)", model.hvac.num_zones);
 
     // Run 1 year
@@ -198,7 +201,9 @@ fn test_flexlab_x3a_sensor_margin() {
     // lands, plumb it through `model.set_weather()` per
     // `validate_ashrae_140`'s loop.
     let spec = flexlab_test_cell_spec();
-    let mut model = ThermalModel::<VectorField>::from_spec(&spec);
+    let mut model =
+        ThermalModel::<VectorField>::from_spec_with_selector(&spec, &ThermalSelector::default())
+            .expect("default selector must initialize");
     println!(
         "Model: {} zone(s), {:.1} m² floor area",
         model.hvac.num_zones,

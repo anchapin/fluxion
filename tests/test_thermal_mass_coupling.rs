@@ -14,12 +14,15 @@
 
 use fluxion::physics::cta::VectorField;
 use fluxion::sim::engine::ThermalModel;
+use fluxion::sim::thermal_selector::ThermalSelector;
 use fluxion::validation::ashrae_140_cases::ASHRAE140Case;
 
 #[test]
 fn test_thermal_mass_coupling_ratio_low_mass() {
     let spec = ASHRAE140Case::Case600.spec();
-    let mut model = ThermalModel::<VectorField>::from_spec(&spec);
+    let mut model =
+        ThermalModel::<VectorField>::from_spec_with_selector(&spec, &ThermalSelector::default())
+            .expect("default selector must initialize");
 
     // Calculate initial coupling ratio
     let h_tr_ms_initial: f64 = model.conduction.h_tr_ms.as_ref()[0];
@@ -48,7 +51,9 @@ fn test_thermal_mass_coupling_ratio_low_mass() {
 #[test]
 fn test_thermal_mass_coupling_ratio_high_mass() {
     let spec = ASHRAE140Case::Case900.spec();
-    let model = ThermalModel::<VectorField>::from_spec(&spec);
+    let model =
+        ThermalModel::<VectorField>::from_spec_with_selector(&spec, &ThermalSelector::default())
+            .expect("default selector must initialize");
 
     // Verify high-mass building was corrected during model creation
     let h_tr_ms: f64 = model.conduction.h_tr_ms.as_ref()[0];
@@ -67,7 +72,9 @@ fn test_thermal_mass_coupling_ratio_high_mass() {
 #[test]
 fn test_thermal_mass_threshold_detection() {
     let spec = ASHRAE140Case::Case600.spec();
-    let model = ThermalModel::<VectorField>::from_spec(&spec);
+    let model =
+        ThermalModel::<VectorField>::from_spec_with_selector(&spec, &ThermalSelector::default())
+            .expect("default selector must initialize");
 
     // Case 600 should be low-mass
     let total_cap: f64 = model.mass.thermal_capacitance.iter().sum();
@@ -83,7 +90,11 @@ fn test_thermal_mass_threshold_detection() {
 
     // Case 900 should be high-mass
     let spec_900 = ASHRAE140Case::Case900.spec();
-    let model_900 = ThermalModel::<VectorField>::from_spec(&spec_900);
+    let model_900 = ThermalModel::<VectorField>::from_spec_with_selector(
+        &spec_900,
+        &ThermalSelector::default(),
+    )
+    .expect("default selector must initialize");
 
     let total_cap_900: f64 = model_900.mass.thermal_capacitance.iter().sum();
     let zone_area_900 = model_900.setpoints.zone_area[0];
@@ -102,7 +113,9 @@ fn test_thermal_mass_coupling_mode_specific_disabled() {
     // Note: Mode-specific coupling has been removed from ThermalModel.
     // This test now verifies that the base h_tr_em coupling ratio is correct.
     let spec = ASHRAE140Case::Case900.spec();
-    let model = ThermalModel::<VectorField>::from_spec(&spec);
+    let model =
+        ThermalModel::<VectorField>::from_spec_with_selector(&spec, &ThermalSelector::default())
+            .expect("default selector must initialize");
 
     // Verify coupling ratio achieves target >= 0.1
     let h_tr_ms_value: f64 = model.conduction.h_tr_ms.as_ref()[0];
@@ -125,7 +138,9 @@ fn test_thermal_mass_coupling_mode_specific_disabled() {
 #[test]
 fn test_thermal_mass_correction_low_mass_unchanged() {
     let spec = ASHRAE140Case::Case600.spec();
-    let mut model = ThermalModel::<VectorField>::from_spec(&spec);
+    let mut model =
+        ThermalModel::<VectorField>::from_spec_with_selector(&spec, &ThermalSelector::default())
+            .expect("default selector must initialize");
 
     // Calculate initial h_tr_em value
     let h_tr_em_initial: f64 = model.conduction.h_tr_em.as_ref()[0];

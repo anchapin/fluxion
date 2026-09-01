@@ -13,6 +13,7 @@
 
 use fluxion::physics::cta::VectorField;
 use fluxion::sim::engine::ThermalModel;
+use fluxion::sim::thermal_selector::ThermalSelector;
 use fluxion::validation::ashrae_140_cases::ASHRAE140Case;
 use fluxion::weather::denver::DenverTmyWeather;
 use fluxion::weather::WeatherSource;
@@ -50,7 +51,9 @@ mod reference {
 /// Simulates Case 195 and returns annual heating/cooling in MWh
 fn simulate_case_195() -> (f64, f64, f64) {
     let spec = ASHRAE140Case::Case195.spec();
-    let mut model = ThermalModel::<VectorField>::from_spec(&spec);
+    let mut model =
+        ThermalModel::<VectorField>::from_spec_with_selector(&spec, &ThermalSelector::default())
+            .expect("default selector must initialize");
     let weather = DenverTmyWeather::new();
 
     let mut annual_heating_joules = 0.0;
@@ -175,7 +178,9 @@ fn test_case_195_conduction_only() {
     // Case 195 should only have conduction heat transfer
     // No solar, no infiltration, no internal loads
     let spec = ASHRAE140Case::Case195.spec();
-    let model = ThermalModel::<VectorField>::from_spec(&spec);
+    let model =
+        ThermalModel::<VectorField>::from_spec_with_selector(&spec, &ThermalSelector::default())
+            .expect("default selector must initialize");
 
     // Verify the model is configured correctly
     assert_eq!(model.hvac.num_zones, 1, "Should be single-zone");
@@ -197,7 +202,9 @@ fn test_case_195_conduction_only() {
 #[test]
 fn test_case_195_temperature_range() {
     let spec = ASHRAE140Case::Case195.spec();
-    let mut model = ThermalModel::<VectorField>::from_spec(&spec);
+    let mut model =
+        ThermalModel::<VectorField>::from_spec_with_selector(&spec, &ThermalSelector::default())
+            .expect("default selector must initialize");
     let weather = DenverTmyWeather::new();
 
     let mut temperatures: Vec<f64> = Vec::new();

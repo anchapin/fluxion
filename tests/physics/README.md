@@ -1,3 +1,4 @@
+use fluxion::sim::thermal_selector::ThermalSelector;
 # Physics Test Suite
 
 ## Organization
@@ -211,7 +212,7 @@ Phase 4 adds coverage tracking to ASHRAE 140 tests:
 #[test]
 fn test_case_600_full_coverage() {
     let spec = ASHRAE140Case::Case600.spec();
-    let mut model = ThermalModel::<VectorField>::from_spec(&spec);
+    let mut model = ThermalModel::<VectorField>::from_spec_with_selector(&spec, &ThermalSelector::default()).expect("default selector must initialize");
 
     // Track which code paths are exercised
     let mut coverage = CoverageTracker::new();

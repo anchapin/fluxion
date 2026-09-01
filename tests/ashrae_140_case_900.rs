@@ -13,6 +13,7 @@
 
 use fluxion::physics::cta::VectorField;
 use fluxion::sim::engine::ThermalModel;
+use fluxion::sim::thermal_selector::ThermalSelector;
 use fluxion::validation::ashrae_140_cases::ASHRAE140Case;
 use fluxion::weather::epw::EpwWeatherSource;
 use fluxion::weather::WeatherSource;
@@ -104,7 +105,9 @@ const J_TO_MWH: f64 = 1.0 / 3.6e9;
 /// Returns: (annual_heating_J, annual_cooling_J, peak_heating_W, peak_cooling_W)
 fn simulate_case_900() -> (f64, f64, f64, f64) {
     let spec = ASHRAE140Case::Case900.spec();
-    let mut model = ThermalModel::<VectorField>::from_spec(&spec);
+    let mut model =
+        ThermalModel::<VectorField>::from_spec_with_selector(&spec, &ThermalSelector::default())
+            .expect("default selector must initialize");
     let weather = load_denver_epw();
 
     let warmup_days = 14;
@@ -351,7 +354,9 @@ fn simulate_case_900() -> (f64, f64, f64, f64) {
 /// Returns: (min_temp, max_temp, avg_temp)
 fn simulate_case_900ff() -> (f64, f64, f64) {
     let spec = ASHRAE140Case::Case900FF.spec();
-    let mut model = ThermalModel::<VectorField>::from_spec(&spec);
+    let mut model =
+        ThermalModel::<VectorField>::from_spec_with_selector(&spec, &ThermalSelector::default())
+            .expect("default selector must initialize");
     let weather = load_denver_epw();
 
     // Simulate 1 year (8760 hours)
@@ -448,7 +453,9 @@ fn test_case_900_peak_heating_within_reference_range() {
     // Fixed by reducing heating capacity clamp to 2100 W
 
     let spec = ASHRAE140Case::Case900.spec();
-    let mut model = ThermalModel::<VectorField>::from_spec(&spec);
+    let mut model =
+        ThermalModel::<VectorField>::from_spec_with_selector(&spec, &ThermalSelector::default())
+            .expect("default selector must initialize");
     let weather = load_denver_epw();
 
     // Simulate to populate model peak tracking
@@ -497,7 +504,9 @@ fn test_case_900_peak_cooling_within_reference_range() {
     // Verified unaffected by Plan 03-05 heating capacity fix
 
     let spec = ASHRAE140Case::Case900.spec();
-    let mut model = ThermalModel::<VectorField>::from_spec(&spec);
+    let mut model =
+        ThermalModel::<VectorField>::from_spec_with_selector(&spec, &ThermalSelector::default())
+            .expect("default selector must initialize");
     let weather = load_denver_epw();
 
     // Simulate to populate model peak tracking
@@ -604,7 +613,11 @@ fn test_case_900ff_temperature_swing_reduction() {
 
     // Simulate Case 600FF (low-mass baseline) using the same method
     let spec_600 = ASHRAE140Case::Case600FF.spec();
-    let mut model_600 = ThermalModel::<VectorField>::from_spec(&spec_600);
+    let mut model_600 = ThermalModel::<VectorField>::from_spec_with_selector(
+        &spec_600,
+        &ThermalSelector::default(),
+    )
+    .expect("default selector must initialize");
     let weather = load_denver_epw();
 
     let mut min_temp_600 = f64::MAX;
@@ -674,7 +687,8 @@ fn test_case_900ff_temperature_swing_reduction() {
 fn test_case_900_annual_cooling_energy_with_correction() {
     // Plan 03-04: Test corrected annual cooling energy using model's internal correction
     let spec = ASHRAE140Case::Case900.spec();
-    let mut model = ThermalModel::from_spec(&spec);
+    let mut model = ThermalModel::from_spec_with_selector(&spec, &ThermalSelector::default())
+        .expect("default selector must initialize");
 
     // Simulate full year
     let steps = 8760;
@@ -710,7 +724,8 @@ fn test_case_900_annual_cooling_energy_with_correction() {
 fn test_case_900_thermal_mass_energy_balance() {
     // Plan 03-02 Task 3: Verify thermal mass energy balance
     let spec = ASHRAE140Case::Case900.spec();
-    let mut model = ThermalModel::from_spec(&spec);
+    let mut model = ThermalModel::from_spec_with_selector(&spec, &ThermalSelector::default())
+        .expect("default selector must initialize");
 
     // Simulate full year
     let steps = 8760;
@@ -808,7 +823,8 @@ fn test_case_900ff_thermal_mass_coupling_parameters() {
     // Diagnostic test to check thermal mass coupling parameters for Case 900FF
     // This helps identify if coupling conductances need tuning for better temperature swing reduction
     let spec = ASHRAE140Case::Case900FF.spec();
-    let model = ThermalModel::from_spec(&spec);
+    let model = ThermalModel::from_spec_with_selector(&spec, &ThermalSelector::default())
+        .expect("default selector must initialize");
 
     println!("=== Case 900FF Thermal Mass Coupling Parameters ===");
     println!("Number of zones: {}", model.hvac.num_zones);
@@ -961,7 +977,9 @@ fn test_case_900_solar_gain_distribution_validation() {
     // - Solar gains should NOT go directly to air (solar_distribution_to_air = 0.0)
 
     let spec = ASHRAE140Case::Case900.spec();
-    let model = ThermalModel::<VectorField>::from_spec(&spec);
+    let model =
+        ThermalModel::<VectorField>::from_spec_with_selector(&spec, &ThermalSelector::default())
+            .expect("default selector must initialize");
 
     println!("=== Solar Gain Distribution Validation (Plan 03-07 Task 2) ===");
     println!("Case 900 Solar Distribution Parameters:");
@@ -1034,7 +1052,9 @@ fn test_case_900_hvac_demand_calculation_analysis() {
     // Purpose: Identify if HVAC demand is being over-estimated, causing annual energy over-prediction
 
     let spec = ASHRAE140Case::Case900.spec();
-    let mut model = ThermalModel::<VectorField>::from_spec(&spec);
+    let mut model =
+        ThermalModel::<VectorField>::from_spec_with_selector(&spec, &ThermalSelector::default())
+            .expect("default selector must initialize");
     let weather = load_denver_epw();
 
     // Track HVAC demand statistics
@@ -1180,7 +1200,11 @@ fn test_case_900ff_solar_beam_to_mass_fraction_sweep() {
     let mut results = Vec::new();
 
     for &frac in &fractions_to_test {
-        let mut model = ThermalModel::<VectorField>::from_spec(&ASHRAE140Case::Case900FF.spec());
+        let mut model = ThermalModel::<VectorField>::from_spec_with_selector(
+            &ASHRAE140Case::Case900FF.spec(),
+            &ThermalSelector::default(),
+        )
+        .expect("default selector must initialize");
         model.solar.solar_beam_to_mass_fraction = frac;
 
         let mut min_temp = f64::MAX;
@@ -1275,7 +1299,11 @@ fn test_case_600ff_vs_900ff_paired_comparison() {
     let weather = load_denver_epw();
 
     // Case 600FF
-    let mut model_600 = ThermalModel::<VectorField>::from_spec(&ASHRAE140Case::Case600FF.spec());
+    let mut model_600 = ThermalModel::<VectorField>::from_spec_with_selector(
+        &ASHRAE140Case::Case600FF.spec(),
+        &ThermalSelector::default(),
+    )
+    .expect("default selector must initialize");
     let mut min_600 = f64::MAX;
     let mut max_600 = f64::MIN;
     for step in 0..8760 {
@@ -1289,7 +1317,11 @@ fn test_case_600ff_vs_900ff_paired_comparison() {
     }
 
     // Case 900FF
-    let mut model_900 = ThermalModel::<VectorField>::from_spec(&ASHRAE140Case::Case900FF.spec());
+    let mut model_900 = ThermalModel::<VectorField>::from_spec_with_selector(
+        &ASHRAE140Case::Case900FF.spec(),
+        &ThermalSelector::default(),
+    )
+    .expect("default selector must initialize");
     let mut min_900 = f64::MAX;
     let mut max_900 = f64::MIN;
     for step in 0..8760 {
@@ -1424,7 +1456,11 @@ fn test_900_series_regression() {
 
         if is_free_floating {
             // Run free-floating simulation for temp validation only
-            let mut model = ThermalModel::<VectorField>::from_spec(&spec);
+            let mut model = ThermalModel::<VectorField>::from_spec_with_selector(
+                &spec,
+                &ThermalSelector::default(),
+            )
+            .expect("default selector must initialize");
 
             let mut min_temp = f64::MAX;
             let mut max_temp = f64::MIN;
@@ -1463,7 +1499,11 @@ fn test_900_series_regression() {
             println!("✓ Case {} passed all free-floating metrics", case_id);
         } else {
             // Run full simulation with HVAC
-            let mut model = ThermalModel::<VectorField>::from_spec(&spec);
+            let mut model = ThermalModel::<VectorField>::from_spec_with_selector(
+                &spec,
+                &ThermalSelector::default(),
+            )
+            .expect("default selector must initialize");
             model.reset_peak_power();
             model.reset_heating_cooling_energy();
 

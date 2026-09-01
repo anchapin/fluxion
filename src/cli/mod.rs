@@ -43,6 +43,7 @@ use crate::analysis::visualization::{
     generate_animation, generate_html, Dataset, PlotPanel, TimeSeriesData,
 };
 use crate::sim::engine::ThermalModel;
+use crate::sim::thermal_selector::ThermalSelector;
 use crate::validation::ashrae_140_cases::{ASHRAE140Case, CaseSpec};
 use crate::validation::benchmark::{get_high_mass_cases, get_low_mass_cases, get_special_cases};
 use crate::validation::commands::update_references;
@@ -1451,7 +1452,9 @@ pub fn run_cli() -> Result<()> {
             let spec = case_id_to_spec(&sens_config.case_id)
                 .ok_or_else(|| anyhow!("Unknown case ID: {}", sens_config.case_id))?;
             // Build base model from the specification
-            let base_model = ThermalModel::from_spec(&spec);
+            let base_model =
+                ThermalModel::from_spec_with_selector(&spec, &ThermalSelector::default())
+                    .expect("default selector must initialize");
             // Create BatchOracle from the base model
             let oracle = BatchOracle::from_model(base_model);
             // Generate design matrix

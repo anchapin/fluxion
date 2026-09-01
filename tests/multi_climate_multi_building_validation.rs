@@ -25,6 +25,7 @@
 use fluxion::ai::surrogate::SurrogateManager;
 use fluxion::physics::cta::VectorField;
 use fluxion::sim::engine::ThermalModel;
+use fluxion::sim::thermal_selector::ThermalSelector;
 use fluxion::validation::ashrae_140_cases::{ASHRAE140Case, CaseBuilder, InternalLoads};
 use fluxion::weather::epw::EpwWeatherSource;
 use fluxion::weather::WeatherSource;
@@ -82,7 +83,11 @@ fn simulate_case_with_weather(
     case_spec: &fluxion::validation::ashrae_140_cases::CaseSpec,
     epw_path: &str,
 ) -> SimulationOutput {
-    let mut model = ThermalModel::<VectorField>::from_spec(case_spec);
+    let mut model = ThermalModel::<VectorField>::from_spec_with_selector(
+        case_spec,
+        &ThermalSelector::default(),
+    )
+    .expect("default selector must initialize");
     let weather =
         EpwWeatherSource::from_file(epw_path).expect(&format!("Failed to load EPW: {}", epw_path));
 
@@ -325,7 +330,11 @@ fn test_climate_energy_balance_case600() {
     let spec = ASHRAE140Case::Case600.spec();
 
     for &climate in &climate::ALL {
-        let mut model = ThermalModel::<VectorField>::from_spec(&spec);
+        let mut model = ThermalModel::<VectorField>::from_spec_with_selector(
+            &spec,
+            &ThermalSelector::default(),
+        )
+        .expect("default selector must initialize");
         let weather = EpwWeatherSource::from_file(climate.epw_path)
             .expect(&format!("Failed to load EPW: {}", climate.epw_path));
 

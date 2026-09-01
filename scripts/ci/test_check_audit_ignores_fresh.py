@@ -250,24 +250,53 @@ def test_main_returns_one_when_ignore_entry_removal_date_is_past(
     assert "removal-date" in out or "removal date" in out
 
 
-def test_main_returns_two_when_audit_toml_missing(
+def test_main_returns_two_when_cargo_lock_missing(
     checker, tmp_path, monkeypatch, capsys
 ):
-    """Missing config: ``.cargo/audit.toml`` not present -> ``main()``
+    """Missing lock file: ``Cargo.lock`` not present -> ``main()``
     returns ``2`` (script error).
 
     The script's exit-code contract uses ``2`` for unrecoverable
-    pre-conditions (missing / unparseable config); the gate must surface
-    this rather than silently falling back to PASS.
+    pre-conditions (missing / unparseable lock file); the gate must
+    surface this rather than silently falling back to PASS.
+
+    Issue #3237 note: the pre-#3237 script returned 2 when
+    ``.cargo/audit.toml`` was missing; the post-#3237 script scans both
+    ``.cargo/audit.toml`` and ``deny.toml`` and skips missing files, so
+    the only remaining ``2`` path is a missing ``Cargo.lock``.
     """
-    audit, lock = _redirect(checker, tmp_path, monkeypatch)
+    audit, _lock = _redirect(checker, tmp_path, monkeypatch)
+    # Only create audit.toml -- Cargo.lock is intentionally absent.
+    _write(
+        audit,
+        """[advisories]
+ignore = []
+""",
+    )
+    _scrub_argv(monkeypatch)
+    rc = checker.main()
+    out = capsys.readouterr().out
+    assert rc == 2
+    assert "Cargo.lock" in out or "cargo lock" in out.lower()
+
+
+def test_main_returns_zero_when_audit_toml_missing(
+    checker, tmp_path, monkeypatch, capsys
+):
+    """Missing ``.cargo/audit.toml`` (but present ``Cargo.lock``) ->
+    ``main()`` returns ``0``.
+
+    Issue #3237: the script scans both config files and skips missing
+    ones, so a missing audit.toml alone is not an error.
+    """
+    _audit, lock = _redirect(checker, tmp_path, monkeypatch)
     # Only create Cargo.lock -- audit.toml is intentionally absent.
     _write(lock, _cargo_lock_with({}))
     _scrub_argv(monkeypatch)
     rc = checker.main()
     out = capsys.readouterr().out
-    assert rc == 2
-    assert "audit.toml" in out or "audit config" in out
+    assert rc == 0
+    assert "audit.toml" in out
 
 
 # ---------------------------------------------------------------------------
@@ -307,9 +336,12 @@ def test_main_stdout_contains_expected_structural_sections(
     # Header banner
     assert "Fluxion Audit-Ignore Freshness Check" in out
     assert "Issue #2912" in out
-    # Repo + paths
+    # Repo + paths. Issue #3237 changed the per-path header from a single
+    # "Audit config:" line to per-file "Scanning <path>..." lines (the
+    # script now scans both .cargo/audit.toml and deny.toml).
     assert "Repo:" in out
-    assert "Audit config:" in out
+    assert "Scanning" in out
+    assert "audit.toml" in out
     assert "Lock file:" in out
     # Per-entry section
     assert "-- RUSTSEC-2026-9100 (line" in out

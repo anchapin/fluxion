@@ -85,6 +85,7 @@
 
 use fluxion::physics::cta::VectorField;
 use fluxion::sim::engine::ThermalModel;
+use fluxion::sim::thermal_selector::ThermalSelector;
 use fluxion::validation::ashrae_140_cases::ASHRAE140Case;
 use fluxion::validation::ashrae_140_validator::{ASHRAE140Validator, ValidationMode};
 use fluxion::validation::benchmark;
@@ -133,7 +134,9 @@ struct BlindValidationResult {
 fn simulate_case_blind(
     spec: &fluxion::validation::ashrae_140_cases::CaseSpec,
 ) -> CaseResultsBlinded {
-    let mut model = ThermalModel::<VectorField>::from_spec(spec);
+    let mut model =
+        ThermalModel::<VectorField>::from_spec_with_selector(spec, &ThermalSelector::default())
+            .expect("default selector must initialize");
 
     model.reset_peak_power();
     model.reset_heating_cooling_energy();
@@ -1455,7 +1458,9 @@ fn test_case_920_per_orientation_solar_distribution() {
     use fluxion::weather::WeatherSource;
 
     let spec = ASHRAE140Case::Case920.spec();
-    let mut model = ThermalModel::<VectorField>::from_spec(&spec);
+    let mut model =
+        ThermalModel::<VectorField>::from_spec_with_selector(&spec, &ThermalSelector::default())
+            .expect("default selector must initialize");
     let weather = DenverTmyWeather::new();
 
     // Drive a full year so the IncidentSolarAccumulator entries are
@@ -1936,7 +1941,9 @@ fn test_case_950_night_flush_zone_cooling_in_july() {
     use fluxion::weather::WeatherSource;
 
     let spec = ASHRAE140Case::Case950.spec();
-    let mut model = ThermalModel::<VectorField>::from_spec(&spec);
+    let mut model =
+        ThermalModel::<VectorField>::from_spec_with_selector(&spec, &ThermalSelector::default())
+            .expect("default selector must initialize");
     let weather = DenverTmyWeather::new();
 
     // Drive a full year, recording per-hour zone temperature.
@@ -2194,7 +2201,9 @@ fn test_case_950_mass_temperature_precooled_issue_1422() {
     use fluxion::weather::WeatherSource;
 
     let spec = ASHRAE140Case::Case950.spec();
-    let mut model = ThermalModel::<VectorField>::from_spec(&spec);
+    let mut model =
+        ThermalModel::<VectorField>::from_spec_with_selector(&spec, &ThermalSelector::default())
+            .expect("default selector must initialize");
     let weather = DenverTmyWeather::new();
 
     // Drive a full year, recording per-hour lumped-mass temperature.
@@ -2297,7 +2306,9 @@ fn test_case_950_5r1c_free_float_uses_night_vent_overrides_issue_1422() {
 
     // Case 950FF: same envelope + night-vent as Case 950, but no HVAC.
     let spec = ASHRAE140Case::Case950FF.spec();
-    let mut model = ThermalModel::<VectorField>::from_spec(&spec);
+    let mut model =
+        ThermalModel::<VectorField>::from_spec_with_selector(&spec, &ThermalSelector::default())
+            .expect("default selector must initialize");
     let weather = DenverTmyWeather::new();
 
     // Drive a full year, recording per-hour free-floating zone temperature.

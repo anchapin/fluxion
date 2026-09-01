@@ -361,13 +361,18 @@ mod tests {
     use super::*;
     use crate::physics::cta::VectorField;
     use crate::sim::thermal_model_core::ThermalModel;
+    use crate::sim::thermal_selector::ThermalSelector;
     use crate::validation::ashrae_140_cases::ASHRAE140Case;
     use crate::weather::denver::DenverTmyWeather;
 
     /// Helper to create a properly initialized free-floating thermal model.
     fn create_free_float_model() -> ThermalModel<VectorField> {
         let spec = ASHRAE140Case::Case600FF.spec();
-        let mut model = ThermalModel::<VectorField>::from_spec(&spec);
+        let mut model = ThermalModel::<VectorField>::from_spec_with_selector(
+            &spec,
+            &ThermalSelector::default(),
+        )
+        .expect("default selector must initialize");
         // Disable HVAC for free-floating mode
         model.setpoints.heating_setpoint = -999.0;
         model.setpoints.cooling_setpoint = 999.0;

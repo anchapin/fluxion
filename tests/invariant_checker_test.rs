@@ -10,6 +10,7 @@
 use fluxion::physics::cta::VectorField;
 use fluxion::sim::invariant_checker::{InvariantChecker, InvariantResult, DEFAULT_TOLERANCE};
 use fluxion::sim::thermal_model_core::ThermalModel;
+use fluxion::sim::thermal_selector::ThermalSelector;
 use fluxion::validation::ashrae_140_cases::ASHRAE140Case;
 
 #[test]
@@ -33,7 +34,8 @@ fn test_invariant_checker_tracks_violations() {
     assert_eq!(checker.total_checks(), 0);
 
     let spec = ASHRAE140Case::Case600.spec();
-    let mut model = ThermalModel::from_spec(&spec);
+    let mut model = ThermalModel::from_spec_with_selector(&spec, &ThermalSelector::default())
+        .expect("default selector must initialize");
     let outdoor_temp = 20.0;
 
     for _ in 0..5 {
@@ -69,7 +71,8 @@ fn test_invariant_result_properties() {
 #[test]
 fn test_multi_zone_invariant_tracking() {
     let spec = ASHRAE140Case::Case900.spec();
-    let mut model = ThermalModel::from_spec(&spec);
+    let mut model = ThermalModel::from_spec_with_selector(&spec, &ThermalSelector::default())
+        .expect("default selector must initialize");
     let outdoor_temp = 10.0;
 
     model.step_physics(0, outdoor_temp, 3600.0);
@@ -86,7 +89,8 @@ fn test_invariant_checker_reset() {
     let mut checker = InvariantChecker::new(1e-7);
 
     let spec = ASHRAE140Case::Case600.spec();
-    let mut model = ThermalModel::from_spec(&spec);
+    let mut model = ThermalModel::from_spec_with_selector(&spec, &ThermalSelector::default())
+        .expect("default selector must initialize");
     let outdoor_temp = 10.0;
     model.step_physics(0, outdoor_temp, 3600.0);
 
@@ -106,7 +110,8 @@ fn test_invariant_checker_reset() {
 #[ignore = "Artificial gain should increase energy imbalance magnitude — LIMIT-19 (Issue #3103, sibling-of-LIMIT-MULTI-03 #3066) — same InvariantChecker post-step algebraic-invariant confusion; the test asserts |balance_with_gain| > |balance_without_gain| but the algebraic identity shrinks in magnitude when gain shifts post-step surface temperatures. Tracked for follow-up alongside the #3066 / EnergyBalanceValidator (Issue #1344) investigation."]
 fn test_one_watt_artificial_gain_increases_imbalance() {
     let spec = ASHRAE140Case::Case600.spec();
-    let mut model = ThermalModel::from_spec(&spec);
+    let mut model = ThermalModel::from_spec_with_selector(&spec, &ThermalSelector::default())
+        .expect("default selector must initialize");
     let outdoor_temp = 20.0;
 
     model.step_physics(0, outdoor_temp, 3600.0);
@@ -151,7 +156,8 @@ fn test_one_watt_artificial_gain_increases_imbalance() {
 #[test]
 fn test_thermal_mass_energy_tracking() {
     let spec = ASHRAE140Case::Case600.spec();
-    let mut model = ThermalModel::from_spec(&spec);
+    let mut model = ThermalModel::from_spec_with_selector(&spec, &ThermalSelector::default())
+        .expect("default selector must initialize");
 
     let cm_before = model.mass.thermal_capacitance[0];
     model.step_physics(0, 10.0, 3600.0);
@@ -169,7 +175,8 @@ fn test_thermal_mass_energy_tracking() {
 #[test]
 fn test_invariant_tolerance_affects_violation_flag() {
     let spec = ASHRAE140Case::Case600.spec();
-    let mut model = ThermalModel::from_spec(&spec);
+    let mut model = ThermalModel::from_spec_with_selector(&spec, &ThermalSelector::default())
+        .expect("default selector must initialize");
     let outdoor_temp = 10.0;
     model.step_physics(0, outdoor_temp, 3600.0);
 
@@ -201,7 +208,8 @@ fn test_invariant_tolerance_affects_violation_flag() {
 #[test]
 fn test_different_zones_respond_differently_to_targeted_gain() {
     let spec = ASHRAE140Case::Case900.spec();
-    let mut model = ThermalModel::from_spec(&spec);
+    let mut model = ThermalModel::from_spec_with_selector(&spec, &ThermalSelector::default())
+        .expect("default selector must initialize");
     let outdoor_temp = 10.0;
 
     model.step_physics(0, outdoor_temp, 3600.0);

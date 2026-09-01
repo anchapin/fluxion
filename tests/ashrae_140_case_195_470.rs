@@ -17,6 +17,7 @@
 use fluxion::ai::surrogate::SurrogateManager;
 use fluxion::physics::cta::VectorField;
 use fluxion::sim::engine::ThermalModel;
+use fluxion::sim::thermal_selector::ThermalSelector;
 use fluxion::validation::ashrae_140_cases::ASHRAE140Case;
 
 /// ASHRAE 140 Case 196: Lighting diagnostics
@@ -30,7 +31,9 @@ fn test_case_196_lighting_diagnostics() {
     let spec = ASHRAE140Case::Case196.spec();
 
     // Create thermal model from specification
-    let mut model = ThermalModel::<VectorField>::from_spec(&spec);
+    let mut model =
+        ThermalModel::<VectorField>::from_spec_with_selector(&spec, &ThermalSelector::default())
+            .expect("default selector must initialize");
 
     // Simulate one year (8760 hours)
     let surrogates = SurrogateManager::new().unwrap(); // Mock surrogate manager
@@ -63,7 +66,9 @@ fn test_case_196_lighting_diagnostics() {
 #[test]
 fn test_case_197_equipment_diagnostics() {
     let spec = ASHRAE140Case::Case197.spec();
-    let mut model = ThermalModel::<VectorField>::from_spec(&spec);
+    let mut model =
+        ThermalModel::<VectorField>::from_spec_with_selector(&spec, &ThermalSelector::default())
+            .expect("default selector must initialize");
 
     // Simulate one year
     let surrogates = SurrogateManager::new().unwrap(); // Mock surrogate manager
@@ -93,7 +98,9 @@ fn test_case_197_equipment_diagnostics() {
 #[test]
 fn test_case_198_occupancy_diagnostics() {
     let spec = ASHRAE140Case::Case198.spec();
-    let mut model = ThermalModel::<VectorField>::from_spec(&spec);
+    let mut model =
+        ThermalModel::<VectorField>::from_spec_with_selector(&spec, &ThermalSelector::default())
+            .expect("default selector must initialize");
 
     // Simulate one year
     let surrogates = SurrogateManager::new().unwrap(); // Mock surrogate manager
@@ -125,7 +132,9 @@ fn test_case_198_occupancy_diagnostics() {
 #[test]
 fn test_case_200_combined_internal_loads() {
     let spec = ASHRAE140Case::Case200.spec();
-    let mut model = ThermalModel::<VectorField>::from_spec(&spec);
+    let mut model =
+        ThermalModel::<VectorField>::from_spec_with_selector(&spec, &ThermalSelector::default())
+            .expect("default selector must initialize");
 
     // Simulate one year
     let surrogates = SurrogateManager::new().unwrap(); // Mock surrogate manager
@@ -155,7 +164,9 @@ fn test_case_200_combined_internal_loads() {
 #[test]
 fn test_case_250_thermal_mass_diagnostics() {
     let spec = ASHRAE140Case::Case250.spec();
-    let mut model = ThermalModel::<VectorField>::from_spec(&spec);
+    let mut model =
+        ThermalModel::<VectorField>::from_spec_with_selector(&spec, &ThermalSelector::default())
+            .expect("default selector must initialize");
 
     // Simulate one year
     let surrogates = SurrogateManager::new().unwrap(); // Mock surrogate manager
@@ -190,7 +201,9 @@ fn test_case_250_thermal_mass_diagnostics() {
 #[test]
 fn test_case_300_night_ventilation_diagnostics() {
     let spec = ASHRAE140Case::Case300.spec();
-    let mut model = ThermalModel::<VectorField>::from_spec(&spec);
+    let mut model =
+        ThermalModel::<VectorField>::from_spec_with_selector(&spec, &ThermalSelector::default())
+            .expect("default selector must initialize");
 
     // Simulate one year
     let surrogates = SurrogateManager::new().unwrap(); // Mock surrogate manager
@@ -226,7 +239,9 @@ fn test_case_300_night_ventilation_diagnostics() {
 #[test]
 fn test_case_350_setback_diagnostics() {
     let spec = ASHRAE140Case::Case350.spec();
-    let mut model = ThermalModel::<VectorField>::from_spec(&spec);
+    let mut model =
+        ThermalModel::<VectorField>::from_spec_with_selector(&spec, &ThermalSelector::default())
+            .expect("default selector must initialize");
 
     // Simulate one year
     let surrogates = SurrogateManager::new().unwrap(); // Mock surrogate manager
@@ -256,7 +271,9 @@ fn test_case_350_setback_diagnostics() {
 #[test]
 fn test_case_400_free_floating_diagnostics() {
     let spec = ASHRAE140Case::Case400.spec();
-    let mut model = ThermalModel::<VectorField>::from_spec(&spec);
+    let mut model =
+        ThermalModel::<VectorField>::from_spec_with_selector(&spec, &ThermalSelector::default())
+            .expect("default selector must initialize");
 
     // Simulate one year
     let surrogates = SurrogateManager::new().unwrap(); // Mock surrogate manager
@@ -290,7 +307,9 @@ fn test_case_400_free_floating_diagnostics() {
 #[test]
 fn test_case_470_comprehensive_diagnostics() {
     let spec = ASHRAE140Case::Case470.spec();
-    let mut model = ThermalModel::<VectorField>::from_spec(&spec);
+    let mut model =
+        ThermalModel::<VectorField>::from_spec_with_selector(&spec, &ThermalSelector::default())
+            .expect("default selector must initialize");
 
     // Simulate one year
     let surrogates = SurrogateManager::new().unwrap(); // Mock surrogate manager
@@ -353,7 +372,11 @@ fn test_cases_195_470_integration() {
         let spec = case_enum.spec();
         assert_eq!(spec.case_id, expected_id, "Case ID mismatch");
 
-        let mut model = ThermalModel::<VectorField>::from_spec(&spec);
+        let mut model = ThermalModel::<VectorField>::from_spec_with_selector(
+            &spec,
+            &ThermalSelector::default(),
+        )
+        .expect("default selector must initialize");
         let surrogates = SurrogateManager::new().unwrap(); // Mock surrogate manager
         let total_energy = model.solve_timesteps(8760, &surrogates, false, None, None, None);
 

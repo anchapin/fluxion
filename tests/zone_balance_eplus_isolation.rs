@@ -78,6 +78,7 @@ use fluxion::sim::surface_flux_provider::{
     MockSurfaceHeatFluxProvider, PhysicsSurfaceFluxProvider, SurfaceHeatFluxProvider,
 };
 use fluxion::sim::thermal_model::{PhysicsThermalModel, ThermalModelTrait};
+use fluxion::sim::thermal_selector::ThermalSelector;
 use fluxion::validation::ashrae_140_cases::ASHRAE140Case;
 use fluxion::weather::denver::DenverTmyWeather;
 use fluxion::weather::WeatherSource;
@@ -124,7 +125,9 @@ fn lightweight_600_wall() -> WallSpec {
 #[test]
 fn test_physics_thermal_model_setpoint_tracking_constant_outdoor() {
     let spec = ASHRAE140Case::Case600.spec();
-    let mut model = ThermalModel::<VectorField>::from_spec(&spec);
+    let mut model =
+        ThermalModel::<VectorField>::from_spec_with_selector(&spec, &ThermalSelector::default())
+            .expect("default selector must initialize");
 
     // Initialize zone AND mass at the setpoint (matches test_cta_linearity
     // working pattern). Use set_ground_temp to avoid T_out coupling.
@@ -236,7 +239,9 @@ fn test_physics_thermal_model_eplus_case_600_reference_csv() {
 
     // Build a Case 600 model and drive it for 1 week.
     let spec = ASHRAE140Case::Case600.spec();
-    let mut model = ThermalModel::<VectorField>::from_spec(&spec);
+    let mut model =
+        ThermalModel::<VectorField>::from_spec_with_selector(&spec, &ThermalSelector::default())
+            .expect("default selector must initialize");
 
     // Initialize zone AND mass at E+ setpoint, with ground temp locked to
     // the mean outdoor temperature to isolate the envelope heat balance.
@@ -304,7 +309,9 @@ fn test_physics_thermal_model_eplus_case_600_reference_csv() {
 #[test]
 fn test_physics_thermal_model_trait_matches_engine() {
     let spec = ASHRAE140Case::Case600.spec();
-    let mut inner = ThermalModel::<VectorField>::from_spec(&spec);
+    let mut inner =
+        ThermalModel::<VectorField>::from_spec_with_selector(&spec, &ThermalSelector::default())
+            .expect("default selector must initialize");
     let mut trait_model = PhysicsThermalModel::from_spec(&spec);
 
     // Synchronize initial state (zone + mass + ground)
@@ -344,7 +351,9 @@ fn test_physics_thermal_model_trait_matches_engine() {
 /// Helper: simulate a free-floating case and return (min_T, max_T, n_steps).
 fn simulate_free_float(case: ASHRAE140Case) -> (f64, f64, usize) {
     let spec = case.spec();
-    let mut model = ThermalModel::<VectorField>::from_spec(&spec);
+    let mut model =
+        ThermalModel::<VectorField>::from_spec_with_selector(&spec, &ThermalSelector::default())
+            .expect("default selector must initialize");
     let weather = DenverTmyWeather::new();
 
     assert!(spec.is_free_floating(), "Case must be free-floating");
@@ -741,7 +750,9 @@ fn run_blind_annual_energy(
     spec: &fluxion::validation::ashrae_140_cases::CaseSpec,
     epw_path: &str,
 ) -> (f64, f64, f64, f64) {
-    let mut model = ThermalModel::<VectorField>::from_spec(spec);
+    let mut model =
+        ThermalModel::<VectorField>::from_spec_with_selector(spec, &ThermalSelector::default())
+            .expect("default selector must initialize");
     let weather = fluxion::weather::epw::EpwWeatherSource::from_file(epw_path)
         .expect("EPW weather file must be present in assets/weather/");
 
@@ -1113,7 +1124,9 @@ fn test_benchmark_csv_consistent_for_case_900() {
 fn test_eplus_reference_run_performance() {
     let start = std::time::Instant::now();
     let spec = ASHRAE140Case::Case600.spec();
-    let mut model = ThermalModel::<VectorField>::from_spec(&spec);
+    let mut model =
+        ThermalModel::<VectorField>::from_spec_with_selector(&spec, &ThermalSelector::default())
+            .expect("default selector must initialize");
     model.setpoints.temperatures.as_mut()[0] = 20.0;
 
     let weather = DenverTmyWeather::new();
@@ -1166,7 +1179,9 @@ fn test_free_floating_performance() {
 #[test]
 fn test_case_600_energy_balance_conservation() {
     let spec = ASHRAE140Case::Case600.spec();
-    let mut model = ThermalModel::<VectorField>::from_spec(&spec);
+    let mut model =
+        ThermalModel::<VectorField>::from_spec_with_selector(&spec, &ThermalSelector::default())
+            .expect("default selector must initialize");
     let weather = DenverTmyWeather::new();
 
     let tolerance = ENERGY_BALANCE_RESIDUAL_THRESHOLD;
@@ -1215,7 +1230,9 @@ fn test_case_600_energy_balance_conservation() {
 #[test]
 fn test_case_900_energy_balance_conservation() {
     let spec = ASHRAE140Case::Case900.spec();
-    let mut model = ThermalModel::<VectorField>::from_spec(&spec);
+    let mut model =
+        ThermalModel::<VectorField>::from_spec_with_selector(&spec, &ThermalSelector::default())
+            .expect("default selector must initialize");
     let weather = DenverTmyWeather::new();
 
     let tolerance = ENERGY_BALANCE_RESIDUAL_THRESHOLD;
@@ -1264,7 +1281,9 @@ fn test_case_900_energy_balance_conservation() {
 #[test]
 fn test_case_960_energy_balance_conservation() {
     let spec = ASHRAE140Case::Case960.spec();
-    let mut model = ThermalModel::<VectorField>::from_spec(&spec);
+    let mut model =
+        ThermalModel::<VectorField>::from_spec_with_selector(&spec, &ThermalSelector::default())
+            .expect("default selector must initialize");
     let weather = DenverTmyWeather::new();
 
     let tolerance = ENERGY_BALANCE_RESIDUAL_THRESHOLD;

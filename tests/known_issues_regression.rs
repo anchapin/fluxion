@@ -9,6 +9,7 @@
 //! Definition of done: No high-severity issue exists only as prose;
 //! every critical issue is machine-traceable.
 
+use fluxion::sim::thermal_selector::ThermalSelector;
 use fluxion::validation::report::{MetricType, ValidationStatus};
 use fluxion::validation::ASHRAE140Validator;
 
@@ -32,6 +33,8 @@ use fluxion::validation::ASHRAE140Validator;
 /// Per the maintainer, forcing these into band with an HVAC clamp / per-timestep
 /// bound is an anti-pattern and must NOT be used here.
 mod issue_1457_case_600_series_tracking {
+    use fluxion::sim::thermal_selector::ThermalSelector;
+
     use fluxion::physics::cta::VectorField;
     use fluxion::sim::engine::ThermalModel;
     use fluxion::validation::ashrae_140_cases::ASHRAE140Case;
@@ -41,7 +44,11 @@ mod issue_1457_case_600_series_tracking {
 
     fn run_annual(case: ASHRAE140Case) -> (f64, f64, f64, f64) {
         let spec = case.spec();
-        let mut model = ThermalModel::<VectorField>::from_spec(&spec);
+        let mut model = ThermalModel::<VectorField>::from_spec_with_selector(
+            &spec,
+            &ThermalSelector::default(),
+        )
+        .expect("default selector must initialize");
         let weather =
             fluxion::weather::epw::EpwWeatherSource::from_file("assets/weather/WD600.epw")
                 .expect("Failed to load EPW weather data");
@@ -73,7 +80,11 @@ mod issue_1457_case_600_series_tracking {
 
     fn run_min_temp(case: ASHRAE140Case) -> f64 {
         let spec = case.spec();
-        let mut model = ThermalModel::<VectorField>::from_spec(&spec);
+        let mut model = ThermalModel::<VectorField>::from_spec_with_selector(
+            &spec,
+            &ThermalSelector::default(),
+        )
+        .expect("default selector must initialize");
         let weather =
             fluxion::weather::epw::EpwWeatherSource::from_file("assets/weather/WD600.epw")
                 .expect("Failed to load EPW weather data");

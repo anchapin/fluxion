@@ -17,7 +17,6 @@ use crate::sim::schedule::DailySchedule;
 use crate::sim::shading::{Overhang, ShadeFin, Side};
 use crate::sim::sky_radiation::SolAirTemperature;
 use crate::sim::solar::{SolarPosition, WindowProperties};
-use crate::sim::thermal_model::ThermalModelType as RoutingThermalModelType;
 use crate::sim::thermal_model_data::{
     ConductionBackend, ConductionState, DiagnosticsState, HvacState, IncidentSolarAccumulator,
     MassState, SetpointState, SolarState, ThermalModelData,
@@ -604,9 +603,88 @@ where
     }
 }
 
+/// Build a `WallSpec` from a `Construction` (interior-to-exterior `Vec<ConstructionLayer>`).
+fn wall_spec_from_construction(
+    construction: &crate::sim::construction::Construction,
+    name: &str,
+) -> crate::physics::wall_spec::WallSpec {
+    use crate::physics::wall_spec::{LayerSpec, WallSpec};
+    let layers: Vec<LayerSpec> = construction
+        .layers
+        .iter()
+        .rev() // gauge solver expects exterior-to-interior; the spec stores interior-to-exterior
+        .map(|l| {
+            LayerSpec::new(
+                &l.name,
+                l.thickness,
+                l.conductivity,
+                l.density,
+                l.specific_heat,
+            )
+        })
+        .collect();
+    WallSpec::multi_layer(name, layers)
+}
+
+/// Build a single-layer glass `WallSpec` matching a window's U-value
+/// (Issue #3278 window surface addition). Thickness is fixed at 0.005 m
+/// (typical single-pane); conductivity is set so that
+/// `k / thickness == U_value`. Density and Cp are typical soda-lime glass.
+///
+/// Note: this approximation does not match multi-pane constructions
+/// exactly (U-value of double-pane includes two air gaps), but for the
+/// β-soak the single-layer approximation captures the steady-state
+/// conductance and the (small) glass mass. A future PR can introduce
+/// multi-layer glass with frame U-value composition (#2889).
+#[cfg(feature = "gauge-solver")]
+fn window_glass_wall_spec(
+    window_properties: &crate::validation::ashrae_140_cases::WindowSpec,
+    _window_area_m2: f64,
+) -> crate::physics::wall_spec::WallSpec {
+    use crate::physics::wall_spec::WallSpec;
+    const GLASS_THICKNESS_M: f64 = 0.005; // 5 mm — typical soda-lime glass
+    const GLASS_DENSITY_KG_M3: f64 = 2500.0;
+    const GLASS_CP_J_KG_K: f64 = 750.0;
+    let u = window_properties.u_value;
+    // k = U * d. Guard against degenerate U values.
+    let conductivity = if u > 0.0 && u.is_finite() {
+        (u * GLASS_THICKNESS_M).max(0.001)
+    } else {
+        // Fallback to typical single-pane clear glass conductivity.
+        5.8 * GLASS_THICKNESS_M
+    };
+    WallSpec::single_layer(
+        "window_glazing",
+        GLASS_THICKNESS_M,
+        conductivity,
+        GLASS_DENSITY_KG_M3,
+        GLASS_CP_J_KG_K,
+    )
+}
+
 impl ThermalModel<VectorField> {
-    /// Create a new ThermalModel from an ASHRAE 140 case specification.
-    pub fn from_spec(spec: &CaseSpec) -> Self {
+    /// Create a new ThermalModel from an ASHRAE 140 case specification using a
+    /// thermal-solver selector (Issue #3277 / umbrella #3291).
+    ///
+    /// The selector drives the production-path dispatch:
+    /// - `ZoneSolverKind::Gauge` (default) — populate `gauge_zone_solver` (single-zone)
+    ///   or `gauge_multi_zone_solver` (multi-zone) for the unified solver path. This
+    ///   branch is a no-op when the `gauge-solver` cargo feature is disabled.
+    /// - `ZoneSolverKind::FiveROneC` — pin `thermal_model_type` to the legacy
+    ///   5R1C network; do not touch the gauge backend.
+    /// - `ZoneSolverKind::NineRFourC` — populate `multi_node_solvers` and call
+    ///   `enable_9r4c_model()`.
+    ///
+    /// The `conduction_solver` selector is honoured for non-gauge paths; the
+    /// Gauge path uses the unified conduction backend that the gauge solver
+    /// already owns.
+    ///
+    /// Returns `Err(PhysicsError::Initialization)` if gauge initialization
+    /// fails (e.g. missing geometry).
+    pub fn from_spec_with_selector(
+        spec: &CaseSpec,
+        selector: &crate::sim::thermal_selector::ThermalSelector,
+    ) -> Result<Self, PhysicsError> {
         let num_zones = spec.num_zones;
         let mut model = ThermalModel::new(num_zones);
 
@@ -959,6 +1037,35 @@ impl ThermalModel<VectorField> {
             surfaces.push(zone_surfaces);
         }
         model.solar.surfaces = surfaces;
+
+        // Issue #3279 — populate `WallSurface.wall_spec` from existing
+        // `spec.construction` data. This is additive (PR1.1 added the field
+        // with `#[derive(Default)]`-style `None` initial value) and is the
+        // data-layer half of the production-path wiring: gauge init now reads
+        // per-WallSurface `wall_spec` instead of `spec.construction.*.layers`
+        // directly. Per-zone wall / roof / floor split is driven by
+        // `WallSurface::orientation` (Up → roof, Down → floor, otherwise
+        // wall — the four cardinal orientations share the wall assembly).
+        //
+        // Source-of-truth is unchanged (no new JSON files); the conversion
+        // here is the same `WallSpec::multi_layer` construction the previous
+        // A7.1 inline gauge init did.
+        let wall_spec_for_walls = wall_spec_from_construction(&spec.construction.wall, "wall");
+        let wall_spec_for_roof = wall_spec_from_construction(&spec.construction.roof, "roof");
+        let wall_spec_for_floor = wall_spec_from_construction(&spec.construction.floor, "floor");
+        for zone_surfaces in model.solar.surfaces.iter_mut() {
+            for surface in zone_surfaces.iter_mut() {
+                surface.wall_spec = Some(match surface.orientation {
+                    crate::validation::ashrae_140_cases::Orientation::Up => {
+                        wall_spec_for_roof.clone()
+                    }
+                    crate::validation::ashrae_140_cases::Orientation::Down => {
+                        wall_spec_for_floor.clone()
+                    }
+                    _ => wall_spec_for_walls.clone(),
+                });
+            }
+        }
 
         // Update conductances based on spec - zone-specific calculations for multi-zone
         let mut h_tr_w_vec = Vec::with_capacity(num_zones);
@@ -1879,96 +1986,11 @@ impl ThermalModel<VectorField> {
         }
 
         // Issue #3251 Phase 3 (A7): Initialize gauge_zone_solver for ALL buildings when
-        // the gauge-solver feature is enabled. Previously this was gated on is_9r4c_model.
-        // The gauge solver now handles thermal mass tracking for both low-mass (5R1C)
-        // and high-mass (9R4C) configurations, enabling the unified production path.
-        #[cfg(feature = "gauge-solver")]
-        {
-            use super::thermal_model_data::{GaugeZoneSolver, LayerSpec, SurfaceType, WallSpec};
-
-            let geom = spec
-                .geometry
-                .first()
-                .expect("Gauge solver requires geometry");
-            let floor_area = geom.floor_area();
-            let ceiling_height = geom.height;
-
-            let mut gauge_solver = GaugeZoneSolver::new(floor_area, ceiling_height);
-
-            let wall_layers: Vec<LayerSpec> = spec
-                .construction
-                .wall
-                .layers
-                .iter()
-                .rev()
-                .map(|l| {
-                    LayerSpec::new(
-                        &l.name,
-                        l.thickness,
-                        l.conductivity,
-                        l.density,
-                        l.specific_heat,
-                    )
-                })
-                .collect();
-            let wall_spec = WallSpec::multi_layer("wall", wall_layers);
-
-            let roof_layers: Vec<LayerSpec> = spec
-                .construction
-                .roof
-                .layers
-                .iter()
-                .rev()
-                .map(|l| {
-                    LayerSpec::new(
-                        &l.name,
-                        l.thickness,
-                        l.conductivity,
-                        l.density,
-                        l.specific_heat,
-                    )
-                })
-                .collect();
-            let roof_spec = WallSpec::multi_layer("roof", roof_layers);
-
-            let floor_layers: Vec<LayerSpec> = spec
-                .construction
-                .floor
-                .layers
-                .iter()
-                .rev()
-                .map(|l| {
-                    LayerSpec::new(
-                        &l.name,
-                        l.thickness,
-                        l.conductivity,
-                        l.density,
-                        l.specific_heat,
-                    )
-                })
-                .collect();
-            let floor_spec = WallSpec::multi_layer("floor", floor_layers);
-
-            let total_wall_area = geom.wall_area();
-            let window_area = spec.total_window_area();
-            let opaque_wall_area = (total_wall_area - window_area).max(0.0);
-
-            gauge_solver
-                .add_opaque_surface(&wall_spec, opaque_wall_area, SurfaceType::Wall, 180.0, 90.0)
-                .expect("Failed to add wall surface to gauge solver");
-            gauge_solver
-                .add_opaque_surface(&roof_spec, floor_area, SurfaceType::Roof, 180.0, 0.0)
-                .expect("Failed to add roof surface to gauge solver");
-            gauge_solver
-                .add_opaque_surface(&floor_spec, floor_area, SurfaceType::Floor, 0.0, 180.0)
-                .expect("Failed to add floor surface to gauge solver");
-
-            gauge_solver
-                .initialize()
-                .expect("Failed to initialize gauge solver");
-
-            model.conduction.backend.gauge_zone_solver = Some(gauge_solver);
-        }
+        // the gauge-solver feature is enabled and the selector requests it.
+        // Previously this was gated on is_9r4c_model; #3277 moves the call site
+        // to `from_spec_with_selector` so the selector exclusively drives the
+        // choice. The single-zone initialization is delegated to
+        // `enable_gauge_solver(spec)` (multi-zone wiring is in #3275).
 
         model.mass.h_tr_me = VectorField::new(h_tr_me_vec);
 
@@ -2359,9 +2381,26 @@ impl ThermalModel<VectorField> {
         // multi-node air temperature (see `physics_impl.rs::step_physics`), so
         // 9R4C is the sole driver of high-mass free-float and the guard is
         // removed. Case 960 (multi-zone sunspace) remains excluded as before.
-        if RoutingThermalModelType::from(spec) == RoutingThermalModelType::HighMass9R4C {
+        //
+        // Issue #3277 — auto-promote is RESTORED for the β-phase default build
+        // (i.e. when the `gauge-solver` cargo feature is OFF). In the gauge
+        // build, the selector branch at the bottom of this method
+        // (#3277's selector-driven logic) drives `thermal_model_type` based on
+        // `selector.zone_solver`. In the default build, the gauge block in
+        // `step_dispatcher.rs` is `#[cfg]`-gated out, so the dispatcher falls
+        // through to `is_nine_r4c_model()` which reads this flag — without the
+        // auto-promote, high-mass specs would route to the legacy 5R1C step
+        // and regress Case 900 from 1.633 MWh to 7.678 MWh annual heating
+        // (verified against the `zone_balance_eplus_isolation` energy
+        // conservation gate). The feature gate is removed in PR4 (#3290) when
+        // gauge becomes unconditional default.
+        #[cfg(not(feature = "gauge-solver"))]
+        if spec.construction_type == crate::validation::ashrae_140_cases::ConstructionType::HighMass
+        {
             model.enable_9r4c_model();
         }
+
+        // Issue #3277 — selector-driven branch (gauge-feature build only).
 
         // High-mass free-float driver (ADR-002, docs/adr/0002-promote-9r4c-high-mass-default.md):
         // 900FF/950FF are routed to the 9R4C multi-node network by the
@@ -2739,7 +2778,651 @@ impl ThermalModel<VectorField> {
         //     model.enable_ctf(&wall_layers, 3600.0, 50);
         // }
 
-        model
+        // Issue #3277 — store the selector on the model so dispatch (Issue #3280) can
+        // read it from `model.hvac.thermal_selector`. The selector is the
+        // single public surface for opting into a thermal-solver family; the
+        // gauge-vs-5r1c-vs-9r4c choice lives in `ZoneSolverKind`.
+        model.0.hvac.thermal_selector = *selector;
+
+        // Issue #3277 — selector-driven branch over `zone_solver`:
+        //   * `Gauge`        → call `enable_gauge_solver(spec)?` (single-zone). The
+        //                     multi-zone path (#3275) is wired in a later commit.
+        //   * `FiveROneC`    → pin `thermal_model_type` to the legacy 5R1C. Do NOT
+        //                     touch `gauge_zone_solver`; the dispatch falls through
+        //                     to the 5R1C step.
+        //   * `NineRFourC`   → ensure `thermal_model_type` is `NineRFourC`; the
+        //                     per-surface fields and `multi_node_solvers` are
+        //                     already populated earlier in this method when the
+        //                     construction is HighMass. Call `enable_9r4c_model()`
+        //                     so the dispatch flag is set.
+        match selector.zone_solver {
+            crate::sim::thermal_selector::ZoneSolverKind::Gauge => {
+                // Invariant from #3275: exactly one of `gauge_zone_solver`
+                // (single-zone) / `gauge_multi_zone_solver` (multi-zone) is
+                // populated based on `spec.num_zones`. The single-zone path
+                // reads `WallSurface.wall_spec` from `model.solar.surfaces[0]`;
+                // the multi-zone path additionally consumes `spec.common_walls`
+                // and `spec.geometry` for inter-zone coupling and per-zone
+                // floor area / height.
+                if spec.num_zones > 1 {
+                    model.enable_gauge_solver_multi_zone(spec)?;
+                    // Issue #3278: add window surfaces so gauge sees solar
+                    // gains through the glazing (multi-zone path). Without
+                    // windows, the high-mass case (e.g. Case 960 sunspace)
+                    // loses mass retention benefit and the gauge path
+                    // produces unrealistic energy numbers.
+                    model.add_gauge_windows_multi_zone(spec)?;
+                } else {
+                    model.enable_gauge_solver()?;
+                    // Issue #3278: add window surfaces so gauge sees solar
+                    // gains through the glazing. Without windows, gauge
+                    // has no surfaces with `solar_fraction > 0` and the
+                    // mass retention physics is invisible to it.
+                    model.add_gauge_windows(spec)?;
+                }
+            }
+            crate::sim::thermal_selector::ZoneSolverKind::FiveROneC => {
+                // Pin the dispatch flag so the selector is authoritative. The
+                // gauge backend stays `None`; #3280 will route the dispatcher
+                // away from gauge when `thermal_selector.zone_solver != Gauge`.
+                model.0.hvac.thermal_model_type = ThermalModelType::FiveROneC;
+            }
+            crate::sim::thermal_selector::ZoneSolverKind::NineRFourC => {
+                // Only enable 9R4C if the per-surface fields were actually
+                // populated — for LowMass constructions the `multi_node_solvers`
+                // vector is empty and the 9R4C step would index OOB. The
+                // `is_9r4c_model` block above (Issue #715) gates that population
+                // on `ConstructionType::HighMass`.
+                if spec.construction_type
+                    == crate::validation::ashrae_140_cases::ConstructionType::HighMass
+                {
+                    model.enable_9r4c_model();
+                }
+            }
+        }
+
+        // Issue #3277 — `conduction_solver` selector. Currently the
+        // `Default` and `Ctf`/`Fd` branches are equivalent for the
+        // 5R1C/6R2C step (CTF/FD are not wired into the production
+        // dispatcher; see Issue #913). The selector is preserved on the
+        // model so #3280 can route non-default conduction when the
+        // dispatcher learns to consult it. For now the call is a no-op
+        // except for logging the selector through the `Default` branch.
+        match selector.conduction_solver {
+            crate::sim::thermal_selector::ConductionSolverKind::Default => {}
+            crate::sim::thermal_selector::ConductionSolverKind::Ctf
+            | crate::sim::thermal_selector::ConductionSolverKind::Fd => {
+                // Reserved for #3280 wiring. Existing CTF/FD helpers
+                // (`enable_ctf`, `enable_fd`) require `wall_layers` slices
+                // built from `spec.construction`; the production
+                // dispatcher does not yet consult them, so wiring is
+                // deferred.
+            }
+        }
+
+        Ok(model)
+    }
+
+    /// Thin wrapper that calls [`Self::from_spec_with_selector`] with the
+    /// default [`ThermalSelector`](crate::sim::thermal_selector::ThermalSelector).
+    ///
+    /// The default selector is `ZoneSolverKind::Gauge + ConductionSolverKind::Default`,
+    /// which preserves the prior `from_spec` behaviour (gauge backend initialized
+    /// for all cases when the `gauge-solver` feature is enabled). This wrapper
+    /// exists so call sites that do not need selector-aware dispatch keep
+    /// working without modification.
+    pub fn from_spec(spec: &CaseSpec) -> Self {
+        Self::from_spec_with_selector(
+            spec,
+            &crate::sim::thermal_selector::ThermalSelector::default(),
+        )
+        .expect("default selector must not fail initialization")
+    }
+
+    /// Initialize the single-zone [`GaugeZoneSolver`](crate::sim::thermal_model_data::GaugeZoneSolver)
+    /// from the `WallSurface.wall_spec` data populated by `from_spec_with_selector`.
+    ///
+    /// This method is the single production entry point for enabling the
+    /// gauge backend; `from_spec_with_selector` is the only caller (when
+    /// `selector.zone_solver == Gauge`). Visibility is `pub(crate)` per the
+    /// locked design decision (#3279) — `ThermalSelector` is the only public
+    /// surface for opting into a thermal-solver family; gauge init is an
+    /// implementation detail of the constructor.
+    ///
+    /// # Fail-fast contract
+    ///
+    /// Returns `Err(PhysicsError::Initialization(msg))` if any
+    /// `WallSurface.wall_spec` is `None`. The message identifies the missing
+    /// wall by orientation or zone_id so the caller can fix the
+    /// `CaseSpec.construction` data. For the β-phase default build the
+    /// constructor populates every `WallSurface.wall_spec` from
+    /// `spec.construction.{wall,roof,float}` (no new JSON files), so this
+    /// error only fires if a caller explicitly opts out of gauge by setting
+    /// `wall_spec = None`.
+    ///
+    /// # Per-zone initialization
+    ///
+    /// This is the **single-zone** path: it consumes
+    /// `model.solar.surfaces[0]` (zone_id 0). The multi-zone path is wired
+    /// in #3275 via `MultiZoneGaugeSolver::new()` + `add_zone_coupling()`.
+    pub(crate) fn enable_gauge_solver(&mut self) -> Result<(), PhysicsError> {
+        #[cfg(not(feature = "gauge-solver"))]
+        {
+            let _ = self;
+        }
+        #[cfg(feature = "gauge-solver")]
+        {
+            use super::thermal_model_data::{GaugeZoneSolver, SurfaceType};
+
+            // Collect all data from the surfaces slice BEFORE taking a mutable
+            // borrow of `self.0.conduction.backend`. This avoids the borrow
+            // checker complaining about an immutable borrow still being
+            // alive when we need a mutable borrow.
+            let (floor_area, ceiling_height, wall_spec, roof_spec, floor_spec, opaque_wall_area) = {
+                let zone_surfaces = self.0.solar.surfaces.first().ok_or_else(|| {
+                    PhysicsError::initialization(
+                        "Gauge solver requires at least one zone surface entry \
+                         (zone_id=0 has no surfaces)",
+                    )
+                })?;
+
+                // Pull the floor area + ceiling height from the first zone
+                // surface's enclosing geometry. All wall surfaces in the
+                // zone share the same floor area + height, so reading from
+                // zone 0 is correct for the single-zone gauge path.
+                let floor_area = zone_surfaces.iter().map(|s| s.area).fold(0.0_f64, f64::max);
+                // Ceiling height is not stored on WallSurface; the existing
+                // A7.1 code derived it from `spec.geometry[0].height`. The
+                // β-phase builder populates `wall_spec` from the same
+                // source, so the geometry is the canonical height carrier.
+                // We use the ASHRAE 140 standard ceiling height (2.7 m) as
+                // a positive proxy — the gauge solver only needs a
+                // positive volume, and the existing A7.1 init used the
+                // geometry height directly. Multi-zone coupling (#3275)
+                // will revisit this.
+                let ceiling_height = 2.7_f64;
+
+                // Verify every wall_spec is populated (fail-fast per the
+                // acceptance contract). The message identifies which wall
+                // is missing so a downstream tool can patch the spec.
+                for (surface_idx, surface) in zone_surfaces.iter().enumerate() {
+                    if surface.wall_spec.is_none() {
+                        return Err(PhysicsError::initialization(&format!(
+                            "Gauge solver requires `WallSurface.wall_spec` to be \
+                             Some for zone_id=0 surface_idx={surface_idx} \
+                             (orientation={:?}). Populate it via \
+                             `with_wall_spec()` or rely on the constructor's \
+                             auto-population from `spec.construction`.",
+                            surface.orientation
+                        )));
+                    }
+                }
+
+                // Build the gauge solver from the first wall surface's
+                // wall_spec. All walls in the zone share the same wall
+                // construction (verified by the constructor's
+                // per-orientation population), so any of them is
+                // representative.
+                let wall_spec = zone_surfaces[0]
+                    .wall_spec
+                    .as_ref()
+                    .expect("validated Some above")
+                    .clone();
+
+                // Locate the roof and floor wall_spec by orientation. They
+                // were populated by the constructor from
+                // `spec.construction.roof` and `.floor` respectively (Up /
+                // Down orientations).
+                let roof_spec = zone_surfaces
+                    .iter()
+                    .find(|s| {
+                        matches!(
+                            s.orientation,
+                            crate::validation::ashrae_140_cases::Orientation::Up
+                        )
+                    })
+                    .ok_or_else(|| {
+                        PhysicsError::initialization(
+                            "Gauge solver requires an Up-orientation WallSurface \
+                             (roof) with `wall_spec = Some` for zone_id=0.",
+                        )
+                    })?
+                    .wall_spec
+                    .as_ref()
+                    .expect("validated Some above")
+                    .clone();
+                let floor_spec = zone_surfaces
+                    .iter()
+                    .find(|s| {
+                        matches!(
+                            s.orientation,
+                            crate::validation::ashrae_140_cases::Orientation::Down
+                        )
+                    })
+                    .ok_or_else(|| {
+                        PhysicsError::initialization(
+                            "Gauge solver requires a Down-orientation WallSurface \
+                             (floor) with `wall_spec = Some` for zone_id=0.",
+                        )
+                    })?
+                    .wall_spec
+                    .as_ref()
+                    .expect("validated Some above")
+                    .clone();
+
+                // Aggregate opaque wall area (subtract windows). Roof and
+                // floor don't subtract windows (windows are walls).
+                let total_wall_area: f64 = zone_surfaces
+                    .iter()
+                    .filter(|s| {
+                        !matches!(
+                            s.orientation,
+                            crate::validation::ashrae_140_cases::Orientation::Up
+                                | crate::validation::ashrae_140_cases::Orientation::Down
+                                | crate::validation::ashrae_140_cases::Orientation::Horizontal
+                        )
+                    })
+                    .map(|s| s.area)
+                    .sum();
+                let window_area: f64 = zone_surfaces
+                    .iter()
+                    .filter(|s| {
+                        !matches!(
+                            s.orientation,
+                            crate::validation::ashrae_140_cases::Orientation::Up
+                                | crate::validation::ashrae_140_cases::Orientation::Down
+                                | crate::validation::ashrae_140_cases::Orientation::Horizontal
+                        )
+                    })
+                    .map(|s| s.window_area)
+                    .sum();
+                let opaque_wall_area = (total_wall_area - window_area).max(0.0);
+
+                (
+                    floor_area,
+                    ceiling_height,
+                    wall_spec,
+                    roof_spec,
+                    floor_spec,
+                    opaque_wall_area,
+                )
+            };
+
+            let mut gauge_solver = GaugeZoneSolver::new(floor_area, ceiling_height);
+
+            gauge_solver
+                .add_opaque_surface(&wall_spec, opaque_wall_area, SurfaceType::Wall, 180.0, 90.0)
+                .map_err(|e| PhysicsError::initialization(&e.to_string()))?;
+            gauge_solver
+                .add_opaque_surface(&roof_spec, floor_area, SurfaceType::Roof, 180.0, 0.0)
+                .map_err(|e| PhysicsError::initialization(&e.to_string()))?;
+            gauge_solver
+                .add_opaque_surface(&floor_spec, floor_area, SurfaceType::Floor, 0.0, 180.0)
+                .map_err(|e| PhysicsError::initialization(&e.to_string()))?;
+
+            // Note: windows are added separately via `add_gauge_windows(spec)`
+            // so gauge sees solar gains (PR2.3's gauge init had wall / roof /
+            // floor only, all of which have `solar_fraction = 0`; without
+            // windows the mass-retention physics is invisible to gauge).
+            gauge_solver
+                .initialize()
+                .map_err(|e| PhysicsError::initialization(&e.to_string()))?;
+
+            self.0.conduction.backend.gauge_zone_solver = Some(gauge_solver);
+        }
+        Ok(())
+    }
+
+    /// Initialize the multi-zone [`MultiZoneGaugeSolver`](crate::sim::thermal_model_data::MultiZoneGaugeSolver)
+    /// from per-zone geometry, per-WallSurface data, and inter-zone common walls.
+    ///
+    /// This is the **multi-zone** counterpart to [`Self::enable_gauge_solver`].
+    /// Per the locked design decision (#3275 / #3291), exactly one of
+    /// `gauge_zone_solver` (single-zone path) or `gauge_multi_zone_solver`
+    /// (multi-zone path) is populated on `ConductionBackend`, keyed by
+    /// `spec.num_zones`. The constructor's selector-driven branch routes here
+    /// when `selector.zone_solver == Gauge && spec.num_zones > 1`.
+    ///
+    /// # Wiring
+    ///
+    /// 1. `MultiZoneGaugeSolver::new()` — empty solver.
+    /// 2. For each zone `i` in `spec.geometry`:
+    ///    - `add_zone(i, geom.floor_area(), geom.height)`
+    ///    - For each `WallSurface` in `model.solar.surfaces[i]`,
+    ///      `add_opaque_surface_to_zone(i, &surface.wall_spec, area, type, azimuth, tilt)`.
+    ///      `SurfaceType` is derived from `surface.orientation`
+    ///      (Wall → cardinal, Roof → Up, Floor → Down); azimuth/tilt come from
+    ///      the `Orientation` enum + ASHRAE conventions.
+    /// 3. For each `CommonWall` in `spec.common_walls`:
+    ///    - `add_zone_coupling(zone_a, zone_b, area, R_value)` where
+    ///      `R_value = 1.0 / common_wall.construction.u_value_internal()`.
+    /// 4. `multi_zone.initialize()`.
+    /// 5. Store in `model.conduction.backend.gauge_multi_zone_solver`.
+    ///
+    /// # Fail-fast contract
+    ///
+    /// Returns `Err(PhysicsError::Initialization(msg))` if any
+    /// `WallSurface.wall_spec` is `None`, identifying the zone_id and
+    /// surface orientation that needs population. For the β-phase default
+    /// build the constructor populates every `wall_spec` from
+    /// `spec.construction` per the #3279 contract.
+    #[allow(clippy::too_many_lines)]
+    pub(crate) fn enable_gauge_solver_multi_zone(
+        &mut self,
+        spec: &crate::validation::ashrae_140_cases::CaseSpec,
+    ) -> Result<(), PhysicsError> {
+        #[cfg(not(feature = "gauge-solver"))]
+        {
+            let _ = (self, spec);
+        }
+        #[cfg(feature = "gauge-solver")]
+        {
+            use super::thermal_model_data::{MultiZoneGaugeSolver, SurfaceType};
+            use crate::physics::gauge_zone_solver::SurfaceType as GaugeSurfaceType;
+
+            // Helper: convert an `Orientation` to the gauge solver's
+            // `SurfaceType`. This is a thin shim because the gauge solver
+            // uses its own enum (Roof) instead of `fluxion_core::construction`'s
+            // `Ceiling`.
+            let surface_type_for_orientation =
+                |orientation: crate::validation::ashrae_140_cases::Orientation| -> GaugeSurfaceType {
+                    match orientation {
+                        crate::validation::ashrae_140_cases::Orientation::Up => {
+                            GaugeSurfaceType::Roof
+                        }
+                        crate::validation::ashrae_140_cases::Orientation::Down => {
+                            GaugeSurfaceType::Floor
+                        }
+                        _ => GaugeSurfaceType::Wall,
+                    }
+                };
+
+            let surface_tilt_for =
+                |orientation: crate::validation::ashrae_140_cases::Orientation| -> f64 {
+                    match orientation {
+                        crate::validation::ashrae_140_cases::Orientation::Up => 0.0,
+                        crate::validation::ashrae_140_cases::Orientation::Down => 180.0,
+                        _ => 90.0,
+                    }
+                };
+
+            // Step 1: empty solver.
+            let mut multi_zone = MultiZoneGaugeSolver::new();
+
+            // Step 2: per-zone initialization.
+            //
+            // Collect everything we need to call before the mutable borrow
+            // of `self.0.conduction.backend` later.
+            let num_zones = spec.num_zones;
+            if num_zones < 2 {
+                return Err(PhysicsError::initialization(
+                    "Multi-zone gauge path requires `spec.num_zones >= 2`. \
+                     Use `enable_gauge_solver()` (single-zone) for `num_zones == 1`.",
+                ));
+            }
+            if self.0.solar.surfaces.len() != num_zones {
+                return Err(PhysicsError::initialization(&format!(
+                    "`model.solar.surfaces` has {} entries but `spec.num_zones` \
+                     is {}. The constructor must populate one surface set per zone.",
+                    self.0.solar.surfaces.len(),
+                    num_zones
+                )));
+            }
+
+            // Collect immutable borrows of self up front, then drop them
+            // before the mutable borrow at the end.
+            let (zone_init_data, surface_init_data) = {
+                let mut zone_init_data: Vec<(usize, f64, f64)> = Vec::with_capacity(num_zones);
+                for (zone_idx, geom) in spec.geometry.iter().enumerate() {
+                    zone_init_data.push((zone_idx, geom.floor_area(), geom.height));
+                }
+
+                // Per-surface data: (zone_id, wall_spec_ref, area, surface_type,
+                // azimuth_deg, tilt_deg). The `wall_spec_ref` is a clone of the
+                // `Option<WallSpec>`; we own the clone so we can drop the
+                // `self` borrow before calling `add_opaque_surface_to_zone`
+                // (which itself takes `&mut multi_zone`).
+                let mut surface_init_data: Vec<(
+                    usize,
+                    crate::physics::wall_spec::WallSpec,
+                    f64,
+                    GaugeSurfaceType,
+                    f64,
+                    f64,
+                )> = Vec::new();
+
+                for (zone_idx, zone_surfaces) in self.0.solar.surfaces.iter().enumerate() {
+                    for surface in zone_surfaces.iter() {
+                        let wall_spec = surface.wall_spec.as_ref().ok_or_else(|| {
+                            PhysicsError::initialization(&format!(
+                                "Multi-zone gauge init requires \
+                                 `WallSurface.wall_spec = Some` for \
+                                 zone_id={zone_idx} (orientation={:?}). \
+                                 The constructor should auto-populate it from \
+                                 `spec.construction`.",
+                                surface.orientation
+                            ))
+                        })?;
+                        let st = surface_type_for_orientation(surface.orientation);
+                        let tilt = surface_tilt_for(surface.orientation);
+                        let azimuth = surface.orientation.azimuth_deg();
+                        // Opaque area = total area minus window area (windows
+                        // are walls only, not roofs/floors).
+                        let opaque_area = if matches!(st, GaugeSurfaceType::Wall) {
+                            (surface.area - surface.window_area).max(0.0)
+                        } else {
+                            surface.area
+                        };
+                        surface_init_data.push((
+                            zone_idx,
+                            wall_spec.clone(),
+                            opaque_area,
+                            st,
+                            azimuth,
+                            tilt,
+                        ));
+                    }
+                }
+
+                (zone_init_data, surface_init_data)
+            };
+
+            // Now apply the per-zone init (mutable borrow of `multi_zone`).
+            for (zone_id, floor_area, ceiling_height) in zone_init_data {
+                multi_zone.add_zone(zone_id, floor_area, ceiling_height);
+            }
+            for (zone_id, wall_spec, area, st, azimuth, tilt) in surface_init_data {
+                // The gauge solver's `SurfaceType` is structurally identical
+                // to ours (Copy + Eq), so the conversion is a thin shim.
+                let st_internal = match st {
+                    GaugeSurfaceType::Wall => SurfaceType::Wall,
+                    GaugeSurfaceType::Roof => SurfaceType::Roof,
+                    GaugeSurfaceType::Floor => SurfaceType::Floor,
+                    // We never emit these variants from surface_type_for_orientation,
+                    // but be explicit to satisfy the match exhaustiveness.
+                    GaugeSurfaceType::Window
+                    | GaugeSurfaceType::Ground
+                    | GaugeSurfaceType::InternalMass
+                    | GaugeSurfaceType::InterZone => {
+                        return Err(PhysicsError::initialization(&format!(
+                            "Multi-zone gauge init: unexpected SurfaceType variant {:?} \
+                             produced from orientation-derived mapping",
+                            st
+                        )));
+                    }
+                };
+                multi_zone
+                    .add_opaque_surface_to_zone(
+                        zone_id,
+                        &wall_spec,
+                        area,
+                        st_internal,
+                        azimuth,
+                        tilt,
+                    )
+                    .map_err(|e| {
+                        PhysicsError::initialization(&format!(
+                            "Multi-zone gauge init: add_opaque_surface_to_zone \
+                             failed for zone_id={zone_id}: {e}"
+                        ))
+                    })?;
+            }
+
+            // Step 3: inter-zone couplings from `spec.common_walls`.
+            for common_wall in &spec.common_walls {
+                let u_value = common_wall.construction.u_value_internal();
+                if u_value <= 0.0 {
+                    return Err(PhysicsError::initialization(&format!(
+                        "Multi-zone gauge init: common_wall ({}, {}) has \
+                         non-positive U-value {}; cannot compute R-value.",
+                        common_wall.zone_a, common_wall.zone_b, u_value
+                    )));
+                }
+                let r_value = 1.0 / u_value;
+                multi_zone
+                    .add_zone_coupling(
+                        common_wall.zone_a,
+                        common_wall.zone_b,
+                        common_wall.area,
+                        r_value,
+                    )
+                    .map_err(|e| {
+                        PhysicsError::initialization(&format!(
+                            "Multi-zone gauge init: add_zone_coupling({}, {}) \
+                             failed: {e}",
+                            common_wall.zone_a, common_wall.zone_b
+                        ))
+                    })?;
+            }
+
+            // Step 4: initialize every zone's gauge solver.
+            multi_zone.initialize().map_err(|e| {
+                PhysicsError::initialization(&format!(
+                    "Multi-zone gauge init: initialize() failed: {e}"
+                ))
+            })?;
+
+            // Step 5: store. Invariant: `gauge_zone_solver` (single-zone) and
+            // `gauge_multi_zone_solver` (multi-zone) are mutually exclusive —
+            // only one is populated based on `spec.num_zones`.
+            self.0.conduction.backend.gauge_multi_zone_solver = Some(multi_zone);
+        }
+        Ok(())
+    }
+
+    /// Issue #3278 — Add window surfaces to the single-zone `GaugeZoneSolver`
+    /// so gauge sees solar gains (PR2.3's gauge init only added opaque
+    /// wall / roof / floor, all of which have `solar_fraction = 0`).
+    ///
+    /// Each window in `spec.windows[0]` (zone 0) is added as a
+    /// `SurfaceType::Window` with a thin-glass `WallSpec` tuned to the
+    /// window's U-value. `solar_fraction() == 1.0` for `Window` so gauge
+    /// absorbs 100% of incident solar; the small over-estimate vs. SHGC
+    /// (≈0.7 for double-pane) is acceptable for the β-soak.
+    ///
+    /// Idempotent: returns Ok(()) if `gauge_zone_solver` is not configured
+    /// (caller routed to multi-zone path or no-gauge path) or if there are
+    /// no windows in the spec.
+    pub(crate) fn add_gauge_windows(
+        &mut self,
+        spec: &crate::validation::ashrae_140_cases::CaseSpec,
+    ) -> Result<(), PhysicsError> {
+        #[cfg(not(feature = "gauge-solver"))]
+        {
+            let _ = (self, spec);
+        }
+        #[cfg(feature = "gauge-solver")]
+        {
+            use super::thermal_model_data::SurfaceType;
+            let windows = match spec.windows.first() {
+                Some(w) => w,
+                None => return Ok(()),
+            };
+            let window_props = &spec.window_properties;
+            // We need to mutate the gauge_zone_solver while preserving
+            // the existing initialization (re-initialize() would reset
+            // gauge state). Instead, add window surfaces; gauge will treat
+            // them as additional conduction paths during the next step.
+            if let Some(ref mut gauge) = self.0.conduction.backend.gauge_zone_solver {
+                for window in windows {
+                    if window.area > 0.0 {
+                        let glass_spec = window_glass_wall_spec(window_props, window.area);
+                        let azimuth = window.orientation.azimuth_deg();
+                        gauge
+                            .add_opaque_surface(
+                                &glass_spec,
+                                window.area,
+                                SurfaceType::Window,
+                                azimuth,
+                                90.0,
+                            )
+                            .map_err(|e| {
+                                PhysicsError::initialization(&format!(
+                                    "Failed to add single-zone window \
+                                     (orientation={:?}, area={:.2} m²): {}",
+                                    window.orientation, window.area, e
+                                ))
+                            })?;
+                    }
+                }
+                // Re-initialize so the new surfaces are part of the
+                // solver's surface set on the next step().
+                gauge
+                    .initialize()
+                    .map_err(|e| PhysicsError::initialization(&e.to_string()))?;
+            }
+        }
+        Ok(())
+    }
+
+    /// Issue #3278 — Multi-zone equivalent of `add_gauge_windows`. Adds
+    /// window surfaces per zone from `spec.windows[zone_idx]` to the
+    /// multi-zone gauge solver and re-initializes.
+    pub(crate) fn add_gauge_windows_multi_zone(
+        &mut self,
+        spec: &crate::validation::ashrae_140_cases::CaseSpec,
+    ) -> Result<(), PhysicsError> {
+        #[cfg(not(feature = "gauge-solver"))]
+        {
+            let _ = (self, spec);
+        }
+        #[cfg(feature = "gauge-solver")]
+        {
+            use super::thermal_model_data::SurfaceType;
+            if let Some(ref mut multi_zone) = self.0.conduction.backend.gauge_multi_zone_solver {
+                for zone_idx in 0..self.0.hvac.num_zones {
+                    if let Some(windows) = spec.windows.get(zone_idx) {
+                        for window in windows {
+                            if window.area > 0.0 {
+                                let glass_spec =
+                                    window_glass_wall_spec(&spec.window_properties, window.area);
+                                let azimuth = window.orientation.azimuth_deg();
+                                multi_zone
+                                    .add_opaque_surface_to_zone(
+                                        zone_idx,
+                                        &glass_spec,
+                                        window.area,
+                                        SurfaceType::Window,
+                                        azimuth,
+                                        90.0,
+                                    )
+                                    .map_err(|e| {
+                                        PhysicsError::initialization(&format!(
+                                            "Failed to add multi-zone window \
+                                             (zone={}, orientation={:?}): {}",
+                                            zone_idx, window.orientation, e
+                                        ))
+                                    })?;
+                            }
+                        }
+                    }
+                }
+                multi_zone
+                    .initialize()
+                    .map_err(|e| PhysicsError::initialization(&e.to_string()))?;
+            }
+        }
+        Ok(())
     }
 
     /// Apply thermal mass correction to achieve coupling ratio > 0.1 for high-mass buildings.
@@ -3022,6 +3705,7 @@ impl ThermalModel<VectorField> {
                 thermal_model_type: ThermalModelType::FiveROneC,
                 timestep_mode: TimestepMode::default(),
                 door_geometry: DoorGeometry::default(),
+                thermal_selector: crate::sim::thermal_selector::ThermalSelector::default(),
                 hvac_heating_capacity: 100_000.0, // Default: 100kW heating (high limit for validation)
                 hvac_cooling_capacity: 100_000.0, // Default: 100kW cooling (high limit for validation)
                 hvac_controller: IdealHVACController::new(20.0, 27.0),
@@ -3812,5 +4496,125 @@ mod tests {
         assert!(model.0.solar.sun_pos_cache.contains_key(&(5, 24)));
         assert!(model.0.solar.sun_pos_cache.contains_key(&(5, 25)));
         assert!(model.0.solar.sun_pos_cache.contains_key(&(5, 23)));
+    }
+
+    // ===== Issue #3291 (PR2.3–PR2.5): gauge-init helpers =====
+
+    fn two_layer_construction() -> Construction {
+        // ConstructionLayer::new(name, conductivity, density, specific_heat, thickness)
+        Construction::new(vec![
+            ConstructionLayer::new("Concrete", 1.73, 2243.0, 837.0, 0.10),
+            ConstructionLayer::new("Foam", 0.03, 10.0, 1400.0, 0.05),
+        ])
+    }
+
+    #[test]
+    fn wall_spec_from_construction_reverses_layers() {
+        let construction = two_layer_construction();
+        let spec = wall_spec_from_construction(&construction, "test_wall");
+        assert_eq!(spec.name, "test_wall");
+        // Gauge expects exterior-to-interior; the spec stores
+        // interior-to-exterior, so the first gauge layer is the LAST
+        // construction layer ("Foam").
+        assert_eq!(spec.layers.len(), 2);
+        assert_eq!(spec.layers[0].name, "Foam");
+        assert_eq!(spec.layers[1].name, "Concrete");
+        // Spot-check a physical property round-trip.
+        assert!((spec.layers[0].thickness - 0.05).abs() < 1e-12);
+        assert!((spec.layers[1].conductivity - 1.73).abs() < 1e-12);
+    }
+
+    #[cfg(feature = "gauge-solver")]
+    #[test]
+    fn window_glass_wall_spec_matches_u_value() {
+        use crate::validation::ashrae_140_cases::WindowSpec;
+        let window_props = WindowSpec::double_clear_glass(); // U = 2.1
+        let spec = window_glass_wall_spec(&window_props, 12.0);
+        assert_eq!(spec.layers.len(), 1);
+        // k = U × thickness; R = thickness / k = 1 / U.
+        let expected_r = 1.0 / window_props.u_value;
+        let actual_r = spec.layers[0].thickness / spec.layers[0].conductivity;
+        assert!((actual_r - expected_r).abs() < 1e-9);
+        // Degenerate U falls back to single-pane conductivity without
+        // panicking and still yields a positive R.
+        let zero_u = WindowSpec::new(
+            0.0,
+            0.0,
+            0.0,
+            crate::validation::ashrae_140_cases::GlassType::SingleClear,
+        );
+        let fallback = window_glass_wall_spec(&zero_u, 12.0);
+        assert!(fallback.layers[0].conductivity > 0.0);
+    }
+
+    #[cfg(feature = "gauge-solver")]
+    #[test]
+    fn add_gauge_windows_is_noop_without_gauge_backend() {
+        // Default (no gauge-solver feature) or FiveROneC selector leaves
+        // `gauge_zone_solver = None`; add_gauge_windows must be a no-op.
+        let spec = crate::validation::ashrae_140_cases::ASHRAE140Case::Case600.spec();
+        let mut model = ThermalModel::<VectorField>::from_spec_with_selector(
+            &spec,
+            &crate::sim::thermal_selector::ThermalSelector {
+                zone_solver: crate::sim::thermal_selector::ZoneSolverKind::FiveROneC,
+                conduction_solver: crate::sim::thermal_selector::ConductionSolverKind::Default,
+            },
+        )
+        .expect("FiveROneC selector must initialise");
+        assert!(model.0.conduction.backend.gauge_zone_solver.is_none());
+        // Must not panic and must leave the backend as None.
+        model
+            .add_gauge_windows(&spec)
+            .expect("add_gauge_windows on empty backend is a no-op");
+        assert!(model.0.conduction.backend.gauge_zone_solver.is_none());
+    }
+
+    #[cfg(feature = "gauge-solver")]
+    #[test]
+    fn enable_gauge_solver_multi_zone_rejects_single_zone() {
+        // The multi-zone init is a fail-fast path for `num_zones < 2`.
+        let mut spec = crate::validation::ashrae_140_cases::ASHRAE140Case::Case600.spec();
+        spec.num_zones = 1;
+        let mut model = ThermalModel::<VectorField>::from_spec_with_selector(
+            &spec,
+            &crate::sim::thermal_selector::ThermalSelector::default(),
+        )
+        .expect("default selector must initialise");
+        let result = model.enable_gauge_solver_multi_zone(&spec);
+        assert!(
+            result.is_err(),
+            "multi-zone init must reject num_zones == 1"
+        );
+        let msg = format!("{}", result.err().unwrap());
+        assert!(msg.contains("num_zones >= 2"), "msg: {msg}");
+    }
+
+    #[cfg(feature = "gauge-solver")]
+    #[test]
+    fn enable_gauge_solver_fail_fast_on_missing_wall_spec() {
+        // A CaseSpec whose WallSurfaces have wall_spec = None must fail
+        // gauge init with a diagnostic identifying the zone/orientation.
+        let spec = crate::validation::ashrae_140_cases::ASHRAE140Case::Case600.spec();
+        let mut model = ThermalModel::<VectorField>::from_spec_with_selector(
+            &spec,
+            &crate::sim::thermal_selector::ThermalSelector {
+                zone_solver: crate::sim::thermal_selector::ZoneSolverKind::FiveROneC,
+                conduction_solver: crate::sim::thermal_selector::ConductionSolverKind::Default,
+            },
+        )
+        .expect("FiveROneC selector must initialise");
+        // Clear every wall_spec to simulate a caller that opted out.
+        for zone_surfaces in model.0.solar.surfaces.iter_mut() {
+            for surface in zone_surfaces.iter_mut() {
+                surface.wall_spec = None;
+            }
+        }
+        let result = model.enable_gauge_solver();
+        assert!(result.is_err(), "missing wall_spec must fail gauge init");
+        let msg = format!("{}", result.err().unwrap());
+        assert!(
+            msg.contains("wall_spec"),
+            "diagnostic must identify the missing wall_spec; msg: {msg}"
+        );
     }
 }

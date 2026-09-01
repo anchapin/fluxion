@@ -30,6 +30,7 @@
 
 use fluxion::physics::cta::VectorField;
 use fluxion::sim::engine::ThermalModel;
+use fluxion::sim::thermal_selector::ThermalSelector;
 use fluxion::validation::ashrae_140_cases::ASHRAE140Case;
 use fluxion::weather::denver::DenverTmyWeather;
 use fluxion::weather::WeatherSource;
@@ -49,7 +50,9 @@ const WARMUP_HOURS: usize = 14 * 24;
 /// Returns `(annual_heating_kwh, annual_cooling_kwh, peak_heating_kw, peak_cooling_kw)`.
 fn simulate_case(case: ASHRAE140Case) -> (f64, f64, f64, f64) {
     let spec = case.spec();
-    let mut model = ThermalModel::<VectorField>::from_spec(&spec);
+    let mut model =
+        ThermalModel::<VectorField>::from_spec_with_selector(&spec, &ThermalSelector::default())
+            .expect("default selector must initialize");
     let weather = DenverTmyWeather::new();
 
     for step in 0..WARMUP_HOURS {

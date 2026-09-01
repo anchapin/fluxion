@@ -15,6 +15,7 @@
 
 use fluxion::physics::cta::VectorField;
 use fluxion::sim::engine::ThermalModel;
+use fluxion::sim::thermal_selector::ThermalSelector;
 use fluxion::validation::ashrae_140_cases::ASHRAE140Case;
 use fluxion::weather::WeatherSource;
 
@@ -151,7 +152,9 @@ const CASE_650FF: CaseReference = CaseReference {
 
 fn run_annual_simulation(case_enum: ASHRAE140Case) -> (f64, f64, f64, f64) {
     let spec = case_enum.spec();
-    let mut model = ThermalModel::<VectorField>::from_spec(&spec);
+    let mut model =
+        ThermalModel::<VectorField>::from_spec_with_selector(&spec, &ThermalSelector::default())
+            .expect("default selector must initialize");
     let weather = fluxion::weather::epw::EpwWeatherSource::from_file("assets/weather/WD600.epw")
         .expect("Failed to load EPW weather data");
 
@@ -210,7 +213,9 @@ fn run_annual_simulation(case_enum: ASHRAE140Case) -> (f64, f64, f64, f64) {
 
 fn run_free_floating_simulation(case_enum: ASHRAE140Case) -> (f64, f64) {
     let spec = case_enum.spec();
-    let mut model = ThermalModel::<VectorField>::from_spec(&spec);
+    let mut model =
+        ThermalModel::<VectorField>::from_spec_with_selector(&spec, &ThermalSelector::default())
+            .expect("default selector must initialize");
     let weather = fluxion::weather::epw::EpwWeatherSource::from_file("assets/weather/WD600.epw")
         .expect("Failed to load EPW weather data");
 
@@ -640,7 +645,11 @@ mod free_float_hvac_guard {
             spec.case_id
         );
 
-        let mut model = ThermalModel::<VectorField>::from_spec(&spec);
+        let mut model = ThermalModel::<VectorField>::from_spec_with_selector(
+            &spec,
+            &ThermalSelector::default(),
+        )
+        .expect("default selector must initialize");
         let weather =
             fluxion::weather::epw::EpwWeatherSource::from_file("assets/weather/WD600.epw")
                 .expect("Failed to load EPW weather data");
@@ -708,7 +717,9 @@ fn test_case_640_hourly_peak_week_diagnostic() {
     use std::path::PathBuf;
 
     let spec = ASHRAE140Case::Case640.spec();
-    let mut model = ThermalModel::<VectorField>::from_spec(&spec);
+    let mut model =
+        ThermalModel::<VectorField>::from_spec_with_selector(&spec, &ThermalSelector::default())
+            .expect("default selector must initialize");
     let weather = fluxion::weather::epw::EpwWeatherSource::from_file("assets/weather/WD600.epw")
         .expect("Failed to load EPW weather data");
 

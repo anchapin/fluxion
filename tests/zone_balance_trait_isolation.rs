@@ -25,6 +25,7 @@ use fluxion::sim::thermal_model::{
     UnifiedThermalModel,
 };
 use fluxion::sim::thermal_model_mock::MockThermalModel;
+use fluxion::sim::thermal_selector::ThermalSelector;
 use fluxion::validation::ashrae_140_cases::ASHRAE140Case;
 
 // ============================================================================
@@ -42,7 +43,9 @@ fn physics_thermal_model_creation() {
 #[test]
 fn physics_thermal_model_step_physics_returns_valid_output() {
     let spec = ASHRAE140Case::Case600.spec();
-    let mut model = ThermalModel::<VectorField>::from_spec(&spec);
+    let mut model =
+        ThermalModel::<VectorField>::from_spec_with_selector(&spec, &ThermalSelector::default())
+            .expect("default selector must initialize");
 
     let hvac_kwh = model.step_physics(0, 10.0, 3600.0);
 
@@ -56,7 +59,9 @@ fn physics_thermal_model_step_physics_returns_valid_output() {
 #[test]
 fn physics_thermal_model_step_physics_no_panic_edge_cases() {
     let spec = ASHRAE140Case::Case600.spec();
-    let mut model = ThermalModel::<VectorField>::from_spec(&spec);
+    let mut model =
+        ThermalModel::<VectorField>::from_spec_with_selector(&spec, &ThermalSelector::default())
+            .expect("default selector must initialize");
 
     // Extreme outdoor temperatures — should not panic
     let _ = model.step_physics(0, -40.0, 3600.0);
@@ -74,7 +79,9 @@ fn physics_thermal_model_step_physics_no_panic_edge_cases() {
 #[test]
 fn physics_thermal_model_10_step_progression() {
     let spec = ASHRAE140Case::Case600.spec();
-    let mut model = ThermalModel::<VectorField>::from_spec(&spec);
+    let mut model =
+        ThermalModel::<VectorField>::from_spec_with_selector(&spec, &ThermalSelector::default())
+            .expect("default selector must initialize");
 
     // Known weather: constant 10°C outdoor
     let outdoor_temp = 10.0;
@@ -112,8 +119,12 @@ fn physics_thermal_model_10_step_progression() {
 fn physics_thermal_model_matches_analytical_within_tolerance() {
     // Create two identical models
     let spec = ASHRAE140Case::Case600.spec();
-    let mut model1 = ThermalModel::<VectorField>::from_spec(&spec);
-    let mut model2 = ThermalModel::<VectorField>::from_spec(&spec);
+    let mut model1 =
+        ThermalModel::<VectorField>::from_spec_with_selector(&spec, &ThermalSelector::default())
+            .expect("default selector must initialize");
+    let mut model2 =
+        ThermalModel::<VectorField>::from_spec_with_selector(&spec, &ThermalSelector::default())
+            .expect("default selector must initialize");
 
     let outdoor_temp = 10.0;
     let dt_seconds = 3600.0;
@@ -542,7 +553,9 @@ fn all_tests_performance_bound() {
 
     // Create and use models
     let spec = ASHRAE140Case::Case600.spec();
-    let mut physics_inner = ThermalModel::<VectorField>::from_spec(&spec);
+    let mut physics_inner =
+        ThermalModel::<VectorField>::from_spec_with_selector(&spec, &ThermalSelector::default())
+            .expect("default selector must initialize");
     let mut surrogate = SurrogateThermalModel::new(1);
     let mut unified = UnifiedThermalModel::new(1);
     let mut mock = MockThermalModel::new(1);

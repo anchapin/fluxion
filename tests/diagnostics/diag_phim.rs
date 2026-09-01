@@ -4,12 +4,13 @@ use fluxion::sim::engine::ThermalModel;
 use fluxion::validation::ashrae_140_cases::ASHRAE140Case;
 use fluxion::weather::denver::DenverTmyWeather;
 use fluxion::weather::WeatherSource;
+use fluxion::sim::thermal_selector::ThermalSelector;
 
 #[test]
 #[ignore = "diagnostic-only test with no assertion; quarantined per #2536. Run manually with --ignored if needed."]
 fn phi_m_diagnostic() {
     let spec = ASHRAE140Case::Case600FF.spec();
-    let mut model = ThermalModel::<VectorField>::from_spec(&spec);
+    let mut model = ThermalModel::<VectorField>::from_spec_with_selector(&spec, &ThermalSelector::default()).expect("default selector must initialize");
     let weather = DenverTmyWeather::new();
 
     model.setpoints.heating_setpoint = -999.0;
@@ -44,7 +45,7 @@ fn phi_m_diagnostic() {
     let summer_end = summer_start + 24;
 
     // Reset model and run again to avoid state contamination
-    let mut model2 = ThermalModel::<VectorField>::from_spec(&spec);
+    let mut model2 = ThermalModel::<VectorField>::from_spec_with_selector(&spec, &ThermalSelector::default()).expect("default selector must initialize");
     model2.setpoints.heating_setpoint = -999.0;
     model2.setpoints.cooling_setpoint = 999.0;
 

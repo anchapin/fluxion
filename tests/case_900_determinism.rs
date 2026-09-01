@@ -10,6 +10,7 @@
 
 use fluxion::physics::cta::VectorField;
 use fluxion::sim::engine::ThermalModel;
+use fluxion::sim::thermal_selector::ThermalSelector;
 use fluxion::validation::ashrae_140_cases::ASHRAE140Case;
 use fluxion::weather::denver::DenverTmyWeather;
 use fluxion::weather::WeatherSource;
@@ -17,7 +18,9 @@ use fluxion::weather::WeatherSource;
 /// Run Case 900 annual simulation and return key outputs
 fn run_case_900_simulation() -> DeterminismOutput {
     let spec = ASHRAE140Case::Case900.spec();
-    let mut model = ThermalModel::<VectorField>::from_spec(&spec);
+    let mut model =
+        ThermalModel::<VectorField>::from_spec_with_selector(&spec, &ThermalSelector::default())
+            .expect("default selector must initialize");
     let weather = DenverTmyWeather::new();
 
     // Run 14-day warmup + 1 year simulation
@@ -146,7 +149,9 @@ fn test_case_900_determinism() {
 fn test_case_900_determinism_free_floating() {
     // Run free-floating simulation (no HVAC)
     let spec = ASHRAE140Case::Case900FF.spec();
-    let mut model = ThermalModel::<VectorField>::from_spec(&spec);
+    let mut model =
+        ThermalModel::<VectorField>::from_spec_with_selector(&spec, &ThermalSelector::default())
+            .expect("default selector must initialize");
     let weather = DenverTmyWeather::new();
 
     let steps = 8760;

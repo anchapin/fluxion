@@ -1,6 +1,7 @@
 use crate::physics::cta::VectorField;
 use crate::physics::ctf_coefficients::CTFMaterial;
 use crate::sim::engine::{IdealHVACController, ThermalModel};
+use crate::sim::thermal_selector::ThermalSelector;
 use crate::sim::warmup::{run_warmup, WarmupConfig};
 use crate::validation::ashrae_140_cases::{ASHRAE140Case, CaseSpec, ConstructionType};
 use crate::validation::benchmark;
@@ -781,7 +782,9 @@ impl ASHRAE140Validator {
         weather: &EpwWeatherSource,
         controller: &IdealHVACController,
     ) -> CaseResults {
-        let mut model = ThermalModel::<VectorField>::from_spec(spec);
+        let mut model =
+            ThermalModel::<VectorField>::from_spec_with_selector(spec, &ThermalSelector::default())
+                .expect("default selector must initialize");
         // Plan 03-04: Thermal mass energy accounting removed
         // Ti_free calculation already includes thermal mass effects via:
         // - h_tr_em and h_tr_ms conductances (thermal mass coupling)
@@ -1590,7 +1593,9 @@ impl ASHRAE140Validator {
     }
 
     fn simulate_case(&self, spec: &CaseSpec, weather: &EpwWeatherSource) -> CaseResults {
-        let mut model = ThermalModel::<VectorField>::from_spec(spec);
+        let mut model =
+            ThermalModel::<VectorField>::from_spec_with_selector(spec, &ThermalSelector::default())
+                .expect("default selector must initialize");
 
         // Phase 29: Enable advanced solver (CTF/FD) for high-mass cases
         // This implements automatic solver selection with CTF→FD fallback
@@ -1883,7 +1888,9 @@ impl ASHRAE140Validator {
         spec: &CaseSpec,
         weather: &EpwWeatherSource,
     ) -> CaseResults {
-        let mut model = ThermalModel::<VectorField>::from_spec(spec);
+        let mut model =
+            ThermalModel::<VectorField>::from_spec_with_selector(spec, &ThermalSelector::default())
+                .expect("default selector must initialize");
         // Attach simulation diagnostics if requested (Phase 5)
         if self.use_simulation_diagnostics {
             let diag = SimulationDiagnostics::new(model.hvac.num_zones, 8760);
@@ -2255,7 +2262,9 @@ impl ASHRAE140Validator {
         weather: &impl WeatherSource,
         case_id: &str,
     ) -> (CaseResults, CaseDiagnostic) {
-        let mut model = ThermalModel::<VectorField>::from_spec(spec);
+        let mut model =
+            ThermalModel::<VectorField>::from_spec_with_selector(spec, &ThermalSelector::default())
+                .expect("default selector must initialize");
         // Plan 03-04: Thermal mass energy accounting removed
         // Ti_free calculation already includes thermal mass effects via:
         // - h_tr_em and h_tr_ms conductances (thermal mass coupling)
@@ -2602,7 +2611,9 @@ impl ASHRAE140Validator {
     ///          result.free_float_min_temp, result.free_float_max_temp);
     /// ```
     pub fn validate_ashrae_140(spec: &CaseSpec) -> FreeFloatValidationResult {
-        let mut model = ThermalModel::<VectorField>::from_spec(spec);
+        let mut model =
+            ThermalModel::<VectorField>::from_spec_with_selector(spec, &ThermalSelector::default())
+                .expect("default selector must initialize");
         let weather = EpwWeatherSource::from_file(
             "assets/weather/USA_CO_Denver-Stapleton.Intl.AP.724690_TMY.epw",
         )
@@ -2702,7 +2713,11 @@ impl ASHRAE140Validator {
     /// Tests inter-zone heat transfer between conditioned back-zone and unconditioned sunspace.
     pub fn validate_case_960(&self) -> ValidationReport {
         let spec = ASHRAE140Case::Case960.spec();
-        let mut model = ThermalModel::<VectorField>::from_spec(&spec);
+        let mut model = ThermalModel::<VectorField>::from_spec_with_selector(
+            &spec,
+            &ThermalSelector::default(),
+        )
+        .expect("default selector must initialize");
         let weather = EpwWeatherSource::from_file(
             "assets/weather/USA_CO_Denver-Stapleton.Intl.AP.724690_TMY.epw",
         )
@@ -2887,7 +2902,9 @@ pub fn validate_case_with_diagnostics(
     let case_id = case.number().to_string();
 
     // Create model
-    let mut model = ThermalModel::<VectorField>::from_spec(&spec);
+    let mut model =
+        ThermalModel::<VectorField>::from_spec_with_selector(&spec, &ThermalSelector::default())
+            .expect("default selector must initialize");
     model.reset_peak_power();
 
     // Handle free-floating cases
@@ -3181,7 +3198,11 @@ mod tests {
         let spec = ASHRAE140Case::Case950.spec();
         let weather = crate::weather::denver::DenverTmyWeather::new();
 
-        let mut model = ThermalModel::<VectorField>::from_spec(&spec);
+        let mut model = ThermalModel::<VectorField>::from_spec_with_selector(
+            &spec,
+            &ThermalSelector::default(),
+        )
+        .expect("default selector must initialize");
 
         // Enable CTF (replicate enable_advanced_solver logic)
         let fd_layers: Vec<crate::physics::fd_discretization::MaterialLayer> = spec

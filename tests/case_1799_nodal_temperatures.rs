@@ -18,6 +18,7 @@
 
 use fluxion::physics::cta::VectorField;
 use fluxion::sim::engine::ThermalModel;
+use fluxion::sim::thermal_selector::ThermalSelector;
 use fluxion::validation::ashrae_140_cases::ASHRAE140Case;
 use fluxion::weather::WeatherSource;
 
@@ -32,7 +33,9 @@ fn test_nodal_temperatures_none_before_simulation() {
     // Issue #1799: before `solve_timesteps_with_dt` runs, the trace must be
     // `None` so callers can distinguish "not yet simulated" from "empty trace".
     let spec = ASHRAE140Case::Case900.spec();
-    let model = ThermalModel::<VectorField>::from_spec(&spec);
+    let model =
+        ThermalModel::<VectorField>::from_spec_with_selector(&spec, &ThermalSelector::default())
+            .expect("default selector must initialize");
     assert!(
         model.get_nodal_temperatures().is_none(),
         "nodal_temperatures must be None before any simulation has been run"
@@ -45,7 +48,9 @@ fn test_nodal_temperatures_none_for_low_mass() {
     // `MultiNodeSolver` — the getter must return `None` rather than empty
     // arrays so downstream code can detect this case.
     let spec = ASHRAE140Case::Case600.spec();
-    let mut model = ThermalModel::<VectorField>::from_spec(&spec);
+    let mut model =
+        ThermalModel::<VectorField>::from_spec_with_selector(&spec, &ThermalSelector::default())
+            .expect("default selector must initialize");
     let surrogates = fluxion::ai::surrogate::SurrogateManager::default();
     // Even after running the simulation, the trace must remain `None` because
     // the model has no 9R4C solver.
@@ -67,7 +72,9 @@ fn test_nodal_temperatures_exposed_for_high_mass() {
     // after running the simulation the getter must return the expected shape
     // [num_zones][4 nodes][num_steps].
     let spec = ASHRAE140Case::Case900.spec();
-    let mut model = ThermalModel::<VectorField>::from_spec(&spec);
+    let mut model =
+        ThermalModel::<VectorField>::from_spec_with_selector(&spec, &ThermalSelector::default())
+            .expect("default selector must initialize");
     assert!(
         model.num_multizone_solvers() >= 1,
         "Case 900 must construct at least one MultiNodeSolver (got {})",
@@ -123,7 +130,9 @@ fn test_nodal_temperatures_match_internal_solver_trace() {
     // equal the corresponding live MultiNodeSolver accessor (wall_temperature
     // / roof_temperature / floor_temperature / internal_temperature).
     let spec = ASHRAE140Case::Case900.spec();
-    let mut model = ThermalModel::<VectorField>::from_spec(&spec);
+    let mut model =
+        ThermalModel::<VectorField>::from_spec_with_selector(&spec, &ThermalSelector::default())
+            .expect("default selector must initialize");
     let surrogates = fluxion::ai::surrogate::SurrogateManager::default();
     let _ = model.solve_timesteps_with_dt(NUM_STEPS, &surrogates, false, None, None, None, 3600.0);
 
@@ -164,7 +173,9 @@ fn test_nodal_temperatures_match_per_step_snapshot() {
     // series is BIT-IDENTICAL to the manual per-step trace (same physics path,
     // same capture point — i.e. after the multi_node_solvers update).
     let spec = ASHRAE140Case::Case900.spec();
-    let mut model = ThermalModel::<VectorField>::from_spec(&spec);
+    let mut model =
+        ThermalModel::<VectorField>::from_spec_with_selector(&spec, &ThermalSelector::default())
+            .expect("default selector must initialize");
     let weather = fluxion::weather::denver::DenverTmyWeather::new();
 
     // --- Manual trace via step_physics -------------------------------------
@@ -187,7 +198,9 @@ fn test_nodal_temperatures_match_per_step_snapshot() {
 
     // --- Auto trace via solve_timesteps_with_dt (fresh model) --------------
     let spec2 = ASHRAE140Case::Case900.spec();
-    let mut model2 = ThermalModel::<VectorField>::from_spec(&spec2);
+    let mut model2 =
+        ThermalModel::<VectorField>::from_spec_with_selector(&spec2, &ThermalSelector::default())
+            .expect("default selector must initialize");
     // The high-level solver_core path uses an internal synthetic weather
     // cycle (10 + 10 * sin(hour)) rather than the Denver TMY, so the values
     // will NOT match the manual step_physics trace numerically — but the

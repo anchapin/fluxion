@@ -13,6 +13,7 @@
 
 use fluxion::physics::cta::VectorField;
 use fluxion::sim::engine::ThermalModel;
+use fluxion::sim::thermal_selector::ThermalSelector;
 use fluxion::validation::ashrae_140_cases::ASHRAE140Case;
 
 fn expected_iso_hvac_coefficient(spec: &fluxion::validation::ashrae_140_cases::CaseSpec) -> f64 {
@@ -75,7 +76,9 @@ fn test_iso_hvac_coefficient_case_600_is_in_band() {
     // band expected for the ASHRAE 140 Case 600 building (ISO 13790 simple
     // method gives ≈ 123 W/K; Norton gives ≈ 76 W/K).
     let spec = ASHRAE140Case::Case600.spec();
-    let model = ThermalModel::<VectorField>::from_spec(&spec);
+    let model =
+        ThermalModel::<VectorField>::from_spec_with_selector(&spec, &ThermalSelector::default())
+            .expect("default selector must initialize");
 
     let zone_idx = 0;
     let h_tr_is = model.0.conduction.h_tr_is.as_ref()[zone_idx];
@@ -121,7 +124,9 @@ fn test_iso_hvac_coefficient_case_600_is_in_band() {
 fn test_iso_hvac_coefficient_case_610_in_band() {
     // Same check for Case 610 (south shading only — 12 m² south window, no west window).
     let spec = ASHRAE140Case::Case610.spec();
-    let model = ThermalModel::<VectorField>::from_spec(&spec);
+    let model =
+        ThermalModel::<VectorField>::from_spec_with_selector(&spec, &ThermalSelector::default())
+            .expect("default selector must initialize");
 
     let zone_idx = 0;
     let h_tr_is = model.0.conduction.h_tr_is.as_ref()[zone_idx];
@@ -155,7 +160,9 @@ fn test_iso_hvac_formula_does_not_regress_to_norton() {
     ];
 
     for (name, spec) in cases.iter() {
-        let model = ThermalModel::<VectorField>::from_spec(spec);
+        let model =
+            ThermalModel::<VectorField>::from_spec_with_selector(spec, &ThermalSelector::default())
+                .expect("default selector must initialize");
         let zone_idx = 0;
         let h_tr_is = model.0.conduction.h_tr_is.as_ref()[zone_idx];
         let h_tr_ms = model.0.conduction.h_tr_ms.as_ref()[zone_idx];

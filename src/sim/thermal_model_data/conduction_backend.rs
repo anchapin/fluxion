@@ -8,12 +8,12 @@
 //! `SolverManager` are dropped and re-initialised by `prepare_solvers` on the
 //! first timestep after clone.
 
-#[cfg(feature = "gauge-solver")]
-use super::GaugeZoneSolver;
 use super::{
     CTFCoefficients, CTFSolver, CtfZoneCouplingSolver, ImplicitFDSolver, MultiNodeSolver,
     SolverManager,
 };
+#[cfg(feature = "gauge-solver")]
+use super::{GaugeZoneSolver, MultiZoneGaugeSolver};
 
 pub struct ConductionBackend {
     // --- CTF (Conduction Transfer Function) ---
@@ -34,6 +34,9 @@ pub struct ConductionBackend {
     // --- Gauge-zone solver (experimental, feature-gated, always None per #2686) ---
     #[cfg(feature = "gauge-solver")]
     pub gauge_zone_solver: Option<GaugeZoneSolver>,
+    // --- Gauge multi-zone solver (experimental, feature-gated, added #3273) ---
+    #[cfg(feature = "gauge-solver")]
+    pub gauge_multi_zone_solver: Option<MultiZoneGaugeSolver>,
 }
 
 impl Clone for ConductionBackend {
@@ -53,6 +56,8 @@ impl Clone for ConductionBackend {
             solver_manager: None,
             #[cfg(feature = "gauge-solver")]
             gauge_zone_solver: self.gauge_zone_solver.clone(),
+            #[cfg(feature = "gauge-solver")]
+            gauge_multi_zone_solver: self.gauge_multi_zone_solver.clone(),
         }
     }
 }
@@ -73,6 +78,8 @@ impl Default for ConductionBackend {
             solver_manager: None,
             #[cfg(feature = "gauge-solver")]
             gauge_zone_solver: None,
+            #[cfg(feature = "gauge-solver")]
+            gauge_multi_zone_solver: None,
         }
     }
 }

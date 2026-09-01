@@ -1,5 +1,6 @@
 use crate::physics::cta::VectorField;
 use crate::sim::engine::ThermalModel;
+use crate::sim::thermal_selector::ThermalSelector;
 use crate::sim::warmup::{run_warmup, WarmupConfig};
 use crate::validation::ashrae_140_cases::CaseSpec;
 use crate::validation::diagnostic::HourlyData;
@@ -238,7 +239,9 @@ pub fn run_simulation(
     warm_up_years: u32,
 ) -> Result<SimulationResult> {
     // Build model from spec
-    let mut model = ThermalModel::<VectorField>::from_spec(spec);
+    let mut model =
+        ThermalModel::<VectorField>::from_spec_with_selector(spec, &ThermalSelector::default())
+            .expect("default selector must initialize");
     model.reset_peak_power();
 
     let is_free_floating = spec.is_free_floating();

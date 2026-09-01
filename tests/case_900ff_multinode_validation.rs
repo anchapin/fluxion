@@ -22,6 +22,7 @@
 
 use fluxion::physics::cta::VectorField;
 use fluxion::sim::engine::ThermalModel;
+use fluxion::sim::thermal_selector::ThermalSelector;
 use fluxion::validation::ashrae_140_cases::ASHRAE140Case;
 use fluxion::weather::denver::DenverTmyWeather;
 use fluxion::weather::WeatherSource;
@@ -32,7 +33,9 @@ use fluxion::weather::WeatherSource;
 /// replacement".
 fn simulate_case_900ff_step_physics_9r4c() -> (f64, f64) {
     let spec = ASHRAE140Case::Case900FF.spec();
-    let mut model = ThermalModel::<VectorField>::from_spec(&spec);
+    let mut model =
+        ThermalModel::<VectorField>::from_spec_with_selector(&spec, &ThermalSelector::default())
+            .expect("default selector must initialize");
     let weather = DenverTmyWeather::new();
 
     // Verify this is a free-floating case
@@ -70,7 +73,9 @@ fn simulate_case_900ff_step_physics_9r4c() -> (f64, f64) {
 #[test]
 fn test_case_900ff_dispatches_to_step_physics_9r4c() {
     let spec = ASHRAE140Case::Case900FF.spec();
-    let model = ThermalModel::<VectorField>::from_spec(&spec);
+    let model =
+        ThermalModel::<VectorField>::from_spec_with_selector(&spec, &ThermalSelector::default())
+            .expect("default selector must initialize");
 
     assert!(
         model.is_nine_r4c_model(),

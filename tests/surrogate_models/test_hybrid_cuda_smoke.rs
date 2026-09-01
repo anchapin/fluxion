@@ -43,6 +43,7 @@
 
 use fluxion::ai::surrogate::{InferenceBackend, SurrogateManager};
 use fluxion::sim::thermal_model::HybridThermalModel;
+use fluxion::sim::thermal_selector::ThermalSelector;
 use fluxion::validation::ashrae_140_cases::ASHRAE140Case;
 use fluxion::ThermalModelTrait as _;
 

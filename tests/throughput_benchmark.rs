@@ -10,6 +10,7 @@
 
 use fluxion::physics::cta::VectorField;
 use fluxion::sim::engine::ThermalModel;
+use fluxion::sim::thermal_selector::ThermalSelector;
 use fluxion::validation::ashrae_140_cases::ASHRAE140Case;
 use fluxion::BatchOracle;
 use std::time::Instant;
@@ -28,7 +29,8 @@ fn create_single_zone_model() -> ThermalModel<VectorField> {
 
 fn create_case_960_model() -> ThermalModel<VectorField> {
     let spec = ASHRAE140Case::Case960.spec();
-    ThermalModel::<VectorField>::from_spec(&spec)
+    ThermalModel::<VectorField>::from_spec_with_selector(&spec, &ThermalSelector::default())
+        .expect("default selector must initialize")
 }
 
 fn generate_population(size: usize) -> Vec<Vec<f64>> {

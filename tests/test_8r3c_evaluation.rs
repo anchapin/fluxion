@@ -1,4 +1,5 @@
 use fluxion::sim::engine::{ThermalModel, ThermalModelType};
+use fluxion::sim::thermal_selector::ThermalSelector;
 use fluxion::validation::ashrae_140_cases::ASHRAE140Case;
 
 #[test]
@@ -57,11 +58,15 @@ fn test_8r3c_structure_exists() {
 
     // Test 5: CaseBuilder::case_920 and CaseBuilder::case_960 exist (from Phase 18)
     let case_920_spec = ASHRAE140Case::Case920.spec();
-    let _model_920 = ThermalModel::from_spec(&case_920_spec);
+    let _model_920 =
+        ThermalModel::from_spec_with_selector(&case_920_spec, &ThermalSelector::default())
+            .expect("default selector must initialize");
     println!("✓ CaseBuilder::case_920() exists from Phase 18");
 
     let case_960_spec = ASHRAE140Case::Case960.spec();
-    let _model_960 = ThermalModel::from_spec(&case_960_spec);
+    let _model_960 =
+        ThermalModel::from_spec_with_selector(&case_960_spec, &ThermalSelector::default())
+            .expect("default selector must initialize");
     println!("✓ CaseBuilder::case_960() exists from Phase 18");
 
     println!("\n=== 8R3C Evaluation Findings ===\n");

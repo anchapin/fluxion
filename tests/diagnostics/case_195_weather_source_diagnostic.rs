@@ -45,6 +45,7 @@ use fluxion::validation::ashrae_140_cases::ASHRAE140Case;
 use fluxion::weather::denver::DenverTmyWeather;
 use fluxion::weather::{HourlyWeatherData, WeatherError, WeatherSource};
 use std::f64::consts::PI;
+use fluxion::sim::thermal_selector::ThermalSelector;
 
 /// ASHRAE 140-2023 Case 195 reference bands (per
 /// `src/validation/benchmark.rs` Case 195 entry).
@@ -140,7 +141,7 @@ impl WeatherSource for DrycoldLikeWeather {
 /// peak_cooling_kw, outdoor_min_c, outdoor_max_c).
 fn simulate_case_195<W: WeatherSource>(weather: &W) -> (f64, f64, f64, f64, f64, f64) {
     let spec = ASHRAE140Case::Case195.spec();
-    let mut model = ThermalModel::<VectorField>::from_spec(&spec);
+    let mut model = ThermalModel::<VectorField>::from_spec_with_selector(&spec, &ThermalSelector::default()).expect("default selector must initialize");
 
     let mut annual_heating_joules = 0.0;
     let mut annual_cooling_joules = 0.0;
