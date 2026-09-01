@@ -5,13 +5,13 @@ use crate::ai::modular_surrogate::{ComponentSurrogate, CompositeSurrogate};
 use crate::util::sha256_hex::sha256_hex;
 #[allow(unused_imports)]
 use log::{info, warn};
+#[cfg(all(feature = "ort", target_os = "macos"))]
+use ort::ep::CoreML;
+#[cfg(all(feature = "ort", target_os = "windows"))]
+use ort::ep::DirectML;
 #[cfg(feature = "ort")]
 #[cfg(feature = "cuda")]
-use ort::execution_providers::CUDAExecutionProvider;
-#[cfg(all(feature = "ort", target_os = "macos"))]
-use ort::execution_providers::CoreMLExecutionProvider;
-#[cfg(all(feature = "ort", target_os = "windows"))]
-use ort::execution_providers::DirectMLExecutionProvider;
+use ort::ep::CUDA;
 #[allow(unused_imports)]
 use parking_lot::Mutex;
 use rand::rngs::StdRng;
@@ -1133,7 +1133,7 @@ impl MultiDeviceSessionPool {
                     Ok(b) => b,
                     Err(_) => continue,
                 };
-                let cuda_ep = CUDAExecutionProvider::default().with_device_id(device_id as i32);
+                let cuda_ep = CUDA::default().with_device_id(device_id as i32);
                 match builder.with_execution_providers([cuda_ep.build()]) {
                     Ok(_) => available_devices.push(device_id),
                     Err(_) => continue,
@@ -1280,7 +1280,7 @@ impl SessionPool {
             InferenceBackend::CUDA => {
                 #[cfg(feature = "cuda")]
                 {
-                    let ep = CUDAExecutionProvider::default().with_device_id(_device_id as i32);
+                    let ep = CUDA::default().with_device_id(_device_id as i32);
                     builder = builder
                         .with_execution_providers([ep.build()])
                         .map_err(|e| format!("Failed to add CUDA execution provider: {}", e))?;
@@ -1297,7 +1297,7 @@ impl SessionPool {
             InferenceBackend::CoreML => {
                 #[cfg(target_os = "macos")]
                 {
-                    let ep = CoreMLExecutionProvider::default();
+                    let ep = CoreML::default();
                     builder = builder
                         .with_execution_providers([ep.build()])
                         .map_err(|e| format!("Failed to add CoreML execution provider: {}", e))?;
@@ -1312,7 +1312,7 @@ impl SessionPool {
             InferenceBackend::DirectML => {
                 #[cfg(target_os = "windows")]
                 {
-                    let ep = DirectMLExecutionProvider::default().with_device_id(_device_id as i32);
+                    let ep = DirectML::default().with_device_id(_device_id as i32);
                     builder = builder
                         .with_execution_providers([ep.build()])
                         .map_err(|e| format!("Failed to add DirectML execution provider: {}", e))?;
@@ -4307,10 +4307,9 @@ mod tests {
 
         // Inspect the session I/O schema via the underlying session pool.
         //
-        // ort 2.0.0-rc.10 API: `Session::inputs` / `Session::outputs` are now
-        // *public fields* (`Vec<Input>` / `Vec<Output>`), not iterator-returning
-        // methods, and `Input`/`Output::name` is a `String` field, not a
-        // `.name()` method. This mirrors the production inference path
+        // ort 2.0.0-rc.13 API: `Session::inputs` / `Session::outputs` return
+        // iterator/collection views, and `Input`/`Output::name` is a `name()`
+        // method returning `&String`. This mirrors the production inference path
         // (`predict_loads_batched_onnx_impl_into`), which accesses the session
         // through the same `SessionGuard` deref target (`ort::session::Session`).
         // Issue #2809.
@@ -4318,8 +4317,16 @@ mod tests {
         let guard = pool
             .get_or_create_session()
             .expect("acquire session for inspection");
-        let input_names: Vec<String> = guard.inputs.iter().map(|i| i.name.clone()).collect();
-        let output_names: Vec<String> = guard.outputs.iter().map(|o| o.name.clone()).collect();
+        let input_names: Vec<String> = guard
+            .inputs()
+            .iter()
+            .map(|i| i.name().to_string())
+            .collect();
+        let output_names: Vec<String> = guard
+            .outputs()
+            .iter()
+            .map(|o| o.name().to_string())
+            .collect();
         assert!(
             input_names.contains(&"input".to_string()),
             "expected input named 'input', got {:?}",

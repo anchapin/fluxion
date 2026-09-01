@@ -118,8 +118,8 @@ impl RLPolicyManager {
                 .map_err(|e| format!("Failed to load ONNX model: {}", e))?,
             #[cfg(feature = "cuda")]
             crate::ai::surrogate::InferenceBackend::CUDA => {
-                use ort::execution_providers::CUDAExecutionProvider;
-                let cuda_ep = CUDAExecutionProvider::default().with_device_id(device_id as i32);
+                use ort::ep::CUDA;
+                let cuda_ep = CUDA::default().with_device_id(device_id as i32);
                 Session::builder()
                     .map_err(|e| format!("Failed to create ONNX session: {}", e))?
                     .with_execution_providers([cuda_ep.build()])
