@@ -1622,7 +1622,9 @@ pub fn run_simulation(
 
     // Issue #2518 — emit the per-simulation metric family once, on every exit
     // path. `energy_kwh` is only forwarded on success so the cumulative
-    // throughput counter never advances on a failed run.
+    // throughput counter never advances on a failed run. The Issue #3284
+    // `solver` label carries the `{zone}+{conduction}` selector pair so
+    // nightly telemetry can attribute outcomes to the solver stack.
     metrics::record_simulation(
         solve_elapsed,
         years,
@@ -1630,6 +1632,7 @@ pub fn run_simulation(
         solve_result.is_ok(),
         num_zones,
         solve_result.as_ref().ok().map(|o| o.total_energy),
+        &format!("{}+{}", selector.zone_solver.as_str(), selector.conduction_solver.as_str()),
     );
 
     solve_result
@@ -3173,6 +3176,20 @@ mod tests {
             "thermal_model=\"analytical\" label expected"
         );
 
+        // Issue #3284 — the default-selector REST path labels the solver-kind
+        // counter with the `{zone}+{conduction}` pair ("gauge+default").
+        let solver_label = map.keys().any(|ck| {
+            ck.key().name() == crate::api::metrics::SIMULATION_SOLVER_KIND
+                && ck
+                    .key()
+                    .labels()
+                    .any(|l| l.key() == "solver" && l.value() == "gauge+default")
+        });
+        assert!(
+            solver_label,
+            "solver=\"gauge+default\" label expected on the default REST path"
+        );
+
         // 3. zone-count gauge — default schema has exactly one zone.
         let zc = find_metric_value(&map, crate::api::metrics::SIMULATION_ZONE_COUNT, &|_| true);
         assert!(
@@ -3213,7 +3230,7 @@ mod tests {
         let recorder = DebuggingRecorder::new();
         let snapshotter = recorder.snapshotter();
         ::metrics::with_local_recorder(&recorder, || {
-            crate::api::metrics::record_simulation(0.042, 2, true, true, 3, Some(5_000.7));
+            crate::api::metrics::record_simulation(0.042, 2, true, true, 3, Some(5_000.7), "gauge+default");
         });
         let map = snapshotter.snapshot().into_hashmap();
 
@@ -3324,7 +3341,7 @@ mod tests {
         let recorder = DebuggingRecorder::new();
         let snapshotter = recorder.snapshotter();
         ::metrics::with_local_recorder(&recorder, || {
-            crate::api::metrics::record_simulation(0.0123, 1, false, false, 2, None);
+            crate::api::metrics::record_simulation(0.0123, 1, false, false, 2, None, "gauge+default");
         });
         let map = snapshotter.snapshot().into_hashmap();
 
