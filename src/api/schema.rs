@@ -308,6 +308,14 @@ pub struct SimulationOutput {
     /// Issue #763 — full hourly zone temperature profiles.
     /// Format: [num_zones][8760] hourly temperatures in °C.
     pub hourly_zone_temperatures: Option<Vec<Vec<f64>>>,
+    /// Issue #3305 — the zone solver that ACTUALLY executed, derived from
+    /// the step dispatcher's real per-step outcome (gauge success vs.
+    /// 5R1C/9R4C fall-through), not from the requested selector. Populated
+    /// by the REST `/v1/simulate` run on success; schema-embedded output
+    /// templates leave it `None`, and it is omitted from serialisation when
+    /// `None` so existing wire shapes are unchanged.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub effective_solver: Option<String>,
 }
 
 impl Default for SimulationOutput {
@@ -321,6 +329,7 @@ impl Default for SimulationOutput {
             cooling_energy: 0.0,
             zone_temperatures: None,
             hourly_zone_temperatures: None,
+            effective_solver: None,
         }
     }
 }

@@ -626,6 +626,13 @@ pub struct SimulateOptions {
     /// experimental gate (`FLUXION_EXPERIMENTAL_ZONE_SOLVERS=1`) for the
     /// reserved `"6r2c"` / `"8r3c"` identifiers. `None` ⇒
     /// [`ThermalSelector::default()`].
+    ///
+    /// Issue #3305 — an *explicit* `"gauge"` is rejected with a 400 over
+    /// REST: the REST schema carries no per-surface construction detail
+    /// (`wall_spec`), so the gauge solver can never initialise on this path
+    /// and the request would silently fall through to 5R1C. Omitting the
+    /// field keeps the legacy default-selector behaviour (β-phase 5R1C
+    /// fall-through) unchanged.
     #[serde(default)]
     pub zone_solver: Option<String>,
     /// Conduction algorithm selection (Issue #3281). One of `"default"`
@@ -651,10 +658,31 @@ pub struct SimulateOptions {
 /// [`crate::sim::thermal_selector::parse_zone_solver`] /
 /// [`crate::sim::thermal_selector::parse_conduction_solver`] so the REST,
 /// CLI, and binding layers can never drift apart.
+///
+/// Issue #3305 — an *explicit* `zone_solver: "gauge"` is rejected with a
+/// 400 (fail-closed). `build_model_from_schema` constructs the simplified
+/// 4-orientation surface layout without `WallSurface.wall_spec`, so the
+/// gauge solver's fail-fast initialisation can never succeed on this path
+/// and the β-phase dispatcher (Issue #3280) silently falls through to 5R1C
+/// — the selector was a no-op for the zone axis. Omitting the field keeps
+/// the legacy default-selector behaviour unchanged. The conduction axis is
+/// deliberately out of scope here (see the issue discussion).
 pub fn parse_selector_from_options(options: &SimulateOptions) -> Result<ThermalSelector, ApiError> {
     let zone_solver = match &options.zone_solver {
         Some(s) => {
-            crate::sim::thermal_selector::parse_zone_solver(s).map_err(ApiError::InvalidRequest)?
+            let parsed = crate::sim::thermal_selector::parse_zone_solver(s)
+                .map_err(ApiError::InvalidRequest)?;
+            if parsed == crate::sim::thermal_selector::ZoneSolverKind::Gauge {
+                return Err(ApiError::InvalidRequest(
+                    "explicit zone_solver \"gauge\" is not supported over REST: the REST schema \
+                     does not carry per-surface construction detail (wall_spec), so the gauge \
+                     solver cannot initialise on this path and the request would silently fall \
+                     through to 5R1C. Omit zone_solver or request \"5r1c\" / \"9r4c\" (fail-closed \
+                     per issue #3305)"
+                        .to_string(),
+                ));
+            }
+            parsed
         }
         None => ThermalSelector::default().zone_solver,
     };
@@ -1617,6 +1645,11 @@ pub fn run_simulation(
             cooling_energy,
             zone_temperatures: Some(zone_temperatures),
             hourly_zone_temperatures,
+            // Issue #3305 — report what the dispatcher ACTUALLY executed
+            // (gauge success or the 5R1C/9R4C fall-through), not the
+            // requested selector. The metric `solver` label above still
+            // carries the requested stack; this field is the honest one.
+            effective_solver: Some(model.effective_zone_solver().as_str().to_string()),
         })
     })();
     let solve_elapsed = solve_started.elapsed().as_secs_f64();
@@ -3829,15 +3862,51 @@ mod tests {
         }
     }
 
-    /// Issue #3281 acceptance — an explicit
-    /// `{"zone_solver": "gauge", "conduction_solver": "default"}` request
-    /// must produce a model identical to omitting both fields. The selector
-    /// is the only difference between the two runs, so identical selectors
-    /// ⇒ bit-identical EUI.
+    /// Issue #3305 — an explicit `{"zone_solver": "gauge", ...}` REST
+    /// request must be rejected with a 400 (fail-closed) instead of being
+    /// silently accepted and falling through to 5R1C. This supersedes the
+    /// Issue #3281 acceptance test (`explicit_gauge_default_matches_
+    /// omitted_fields`), which asserted the old silently-falling-through
+    /// behaviour — honest now that the REST schema demonstrably cannot
+    /// initialise the gauge (no per-surface `wall_spec`).
     #[test]
-    fn explicit_gauge_default_matches_omitted_fields() {
+    fn parse_selector_rejects_explicit_gauge_zone_solver_as_400() {
+        for body in [
+            r#"{"zone_solver": "gauge"}"#,
+            r#"{"zone_solver": "gauge", "conduction_solver": "default"}"#,
+            r#"{"zone_solver": "GAUGE"}"#,
+        ] {
+            let opts: SimulateOptions = serde_json::from_str(body).unwrap();
+            let err = parse_selector_from_options(&opts).unwrap_err();
+            assert!(
+                matches!(err, ApiError::InvalidRequest(_)),
+                "explicit gauge must be InvalidRequest (HTTP 400), got {err:?}"
+            );
+            let msg = err.to_string();
+            assert!(
+                msg.contains("wall_spec"),
+                "rejection must name the missing schema capability: {msg}"
+            );
+            assert!(
+                msg.contains("#3305"),
+                "rejection must reference issue #3305: {msg}"
+            );
+            assert!(
+                msg.contains("5R1C"),
+                "rejection must state what would actually have run: {msg}"
+            );
+        }
+    }
+
+    /// Issue #3305 — the response exposes which zone solver ACTUALLY ran.
+    /// On the REST path the gauge is never configured (no `wall_spec`), so
+    /// the default (Gauge) selector falls through to 5R1C and an explicit
+    /// `"5r1c"` dispatches strictly — both must report `"5r1c"`, not the
+    /// requested `"gauge"` stack.
+    #[test]
+    fn effective_solver_reports_actual_zone_solver_on_rest() {
         let schema = default_schema_v1();
-        let omitted = run_simulation(
+        let default_run = run_simulation(
             &schema,
             1,
             false,
@@ -3845,20 +3914,49 @@ mod tests {
             "test",
         )
         .unwrap();
-        let explicit_opts: SimulateOptions =
-            serde_json::from_str(r#"{"zone_solver": "gauge", "conduction_solver": "default"}"#)
-                .unwrap();
-        let explicit = run_simulation(
+        assert_eq!(
+            default_run.effective_solver.as_deref(),
+            Some("5r1c"),
+            "default (Gauge) selector must report the 5R1C fall-through, not the requested stack"
+        );
+
+        let explicit_5r1c: SimulateOptions =
+            serde_json::from_str(r#"{"zone_solver": "5r1c"}"#).unwrap();
+        let strict_run = run_simulation(
             &schema,
             1,
             false,
-            parse_selector_from_options(&explicit_opts).unwrap(),
+            parse_selector_from_options(&explicit_5r1c).unwrap(),
             "test",
         )
         .unwrap();
         assert_eq!(
-            omitted.eui, explicit.eui,
-            "explicit gauge+default must be bit-identical to omitted fields"
+            strict_run.effective_solver.as_deref(),
+            Some("5r1c"),
+            "explicit 5r1c must report a strict 5R1C dispatch"
+        );
+    }
+
+    /// Issue #3305 — omitting `zone_solver` still works unchanged (the
+    /// default selector's β-phase 5R1C fall-through is not a client-facing
+    /// promise), while explicit `"9r4c"` keeps its strict dispatch.
+    #[test]
+    fn default_and_9r4c_selectors_still_run_over_rest() {
+        let schema = default_schema_v1();
+        let opts_9r4c: SimulateOptions =
+            serde_json::from_str(r#"{"zone_solver": "9r4c"}"#).unwrap();
+        let run = run_simulation(
+            &schema,
+            1,
+            false,
+            parse_selector_from_options(&opts_9r4c).unwrap(),
+            "test",
+        )
+        .unwrap();
+        assert_eq!(
+            run.effective_solver.as_deref(),
+            Some("9r4c"),
+            "explicit 9r4c must report a strict 9R4C dispatch"
         );
     }
 

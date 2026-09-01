@@ -261,6 +261,15 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         self.0.hvac.thermal_model_type == ThermalModelType::NineRFourC
     }
 
+    /// Issue #3305 — read-only view of the zone solver the dispatcher
+    /// ACTUALLY executed on the most recent `step_physics` step: `Gauge` on
+    /// gauge success, otherwise the 5R1C/9R4C fall-through or strict target.
+    /// Deliberately read-only — the field is written only inside the
+    /// dispatcher, so dispatch behaviour is unchanged.
+    pub fn effective_zone_solver(&self) -> crate::sim::thermal_selector::ZoneSolverKind {
+        self.0.hvac.effective_zone_solver
+    }
+
     /// Reset to 5R1C thermal model (disable 6R2C and 8R3C).
     ///
     /// This reverts the thermal model to the default ISO 13790 5R1C configuration
