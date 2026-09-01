@@ -104,6 +104,14 @@ ort = ["dep:ort"]
 onnx = ["ort"]
 # CUDA / TensorRT execution providers for `ort` (issue #1294). Implies `ort`.
 cuda = ["ort", "ort/cuda", "ort/tensorrt"]
+# CoreML execution provider for `ort` (issue #3313). Implies `ort`. Only
+# meaningful on macOS targets, where the prebuilt ONNX Runtime binaries ship
+# CoreML support. Runtime validation runbook: docs/ORT_EP_VALIDATION.md.
+coreml = ["ort", "ort/coreml"]
+# DirectML execution provider for `ort` (issue #3313). Implies `ort`. Only
+# meaningful on Windows targets. Runtime validation runbook:
+# docs/ORT_EP_VALIDATION.md.
+directml = ["ort", "ort/directml"]
 # Feature flag for wiring tracing in integration tests (Plan 21-10)
 wiring-tracing = []
 # Feature flag for multi-zone support

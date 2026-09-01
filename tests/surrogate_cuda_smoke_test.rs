@@ -56,10 +56,12 @@ const CUDA_CPU_REL_TOL: f64 = 1e-3;
 fn cuda_ep_available() -> bool {
     #[cfg(feature = "cuda")]
     {
-        use ort::execution_providers::CUDAExecutionProvider;
+        // Issue #3313: `ort::execution_providers::CUDAExecutionProvider` is
+        // the deprecated rc.10 shim; import from `ort::ep` (rc.13 API).
+        use ort::ep::CUDA;
         use ort::session::Session;
         if let Ok(builder) = Session::builder() {
-            let ep = CUDAExecutionProvider::default().with_device_id(0);
+            let ep = CUDA::default().with_device_id(0);
             builder.with_execution_providers([ep.build()]).is_ok()
         } else {
             false
