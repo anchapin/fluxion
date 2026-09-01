@@ -596,6 +596,19 @@ ci:
     # `.github/workflows/h_tr_em_regression_gate.yml`.
     - "h_tr_em Regression Gate (LIMIT-13)"
 
+    # Issue #3302: fail-fast FFI signature gate. Root default features are
+    # empty, so the default `cargo check` / `cargo clippy` gates never
+    # compile the NAPI (`napi-bindings`) or PyO3 (`python-bindings`) FFI
+    # layer — PR #3299 landed a NAPI compile error that passed every local
+    # gate. The `ffi-feature-check` job in `.github/workflows/ci.yml`
+    # compiles the lib under `--features napi-bindings,python-bindings` and
+    # runs `cargo clippy --lib --features napi-bindings -- -D warnings` so
+    # binding-signature breakage fails a named PR check instead of only
+    # surfacing in the Node/NAPI and Python binding jobs. Unlike the other
+    # ci.yml jobs (which are guarded to push-to-main), this job has no
+    # main-only `if` and runs on every PR.
+    - "FFI Feature Check (GH)"
+
   # Issue #3142: Required checks for workflow-only PRs.
   #
   # PRs that touch only `scripts/`, `.github/workflows/`, or `docs/` cannot
@@ -639,6 +652,7 @@ ci:
     - "Audit Ignore Freshness (Issue #2912)"
     - "fluxion-grid Integration Tests (GH)"
     - "h_tr_em Regression Gate (LIMIT-13)"
+    - "FFI Feature Check (GH)"
 
   # Job-to-workflow map (informational; branch-protection reads job
   # names directly). Used by `scripts/release_gate_checker.py` to verify
@@ -1022,3 +1036,18 @@ ci:
       issue: 3154
       closes_issue: 3063
       triggered_by: "PR + push to develop/main"
+
+    - job: "FFI Feature Check (GH)"
+      # Fail-fast FFI signature gate (#3302). The `ffi-feature-check` job
+      # in `.github/workflows/ci.yml` runs `cargo check --lib --features
+      # napi-bindings,python-bindings` plus
+      # `cargo clippy --lib --features napi-bindings -- -D warnings`.
+      # Unlike the other jobs in ci.yml (guarded to push-to-main), it has
+      # no main-only `if`, so it runs on every PR — closing the gap where
+      # FFI-layer breakage (e.g. PR #3299's NAPI `PhysicsError`
+      # `Into<String>` miss) only surfaced in the Node/NAPI and Python
+      # binding jobs after merge. Minimal single GH-hosted job; no
+      # probe/Hetzner-overflow variants.
+      workflow: ".github/workflows/ci.yml"
+      issue: 3302
+      triggered_by: "PR + push to main"
