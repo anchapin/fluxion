@@ -52,6 +52,16 @@ jobs:
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
 
+      # System deps for the plotters/font-kit stack pulled in by the
+      # ASHRAE 140 test binaries (same prelude as ci.yml / the other
+      # ashrae workflows — without libfontconfig1-dev the
+      # yeslogic-fontconfig-sys build script fails with a pkg-config
+      # error before any test compiles).
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libssl-dev pkg-config libfontconfig1-dev fontconfig
+
       - name: Cache cargo registry and target
         uses: actions/cache@v4
         with:
