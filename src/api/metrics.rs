@@ -823,7 +823,10 @@ mod tests {
         let map = snapshotter.snapshot().into_hashmap();
         let has_solver_label = map.keys().any(|ck| {
             ck.key().name() == SIMULATION_SOLVER_KIND
-                && ck.key().labels().any(|l| l.key() == "solver" && l.value() == "5r1c+ctf")
+                && ck
+                    .key()
+                    .labels()
+                    .any(|l| l.key() == "solver" && l.value() == "5r1c+ctf")
         });
         assert!(
             has_solver_label,
@@ -832,7 +835,10 @@ mod tests {
         // Pre-#3284 labels stay for dashboard continuity.
         let legacy_labels = map.keys().any(|ck| {
             ck.key().name() == SIMULATION_SOLVER_KIND
-                && ck.key().labels().any(|l| l.key() == "conduction" && l.value() == "analytical")
+                && ck
+                    .key()
+                    .labels()
+                    .any(|l| l.key() == "conduction" && l.value() == "analytical")
                 && ck
                     .key()
                     .labels()

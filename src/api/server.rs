@@ -653,8 +653,9 @@ pub struct SimulateOptions {
 /// CLI, and binding layers can never drift apart.
 pub fn parse_selector_from_options(options: &SimulateOptions) -> Result<ThermalSelector, ApiError> {
     let zone_solver = match &options.zone_solver {
-        Some(s) => crate::sim::thermal_selector::parse_zone_solver(s)
-            .map_err(ApiError::InvalidRequest)?,
+        Some(s) => {
+            crate::sim::thermal_selector::parse_zone_solver(s).map_err(ApiError::InvalidRequest)?
+        }
         None => ThermalSelector::default().zone_solver,
     };
     let conduction_solver = match &options.conduction_solver {
@@ -1632,7 +1633,11 @@ pub fn run_simulation(
         solve_result.is_ok(),
         num_zones,
         solve_result.as_ref().ok().map(|o| o.total_energy),
-        &format!("{}+{}", selector.zone_solver.as_str(), selector.conduction_solver.as_str()),
+        &format!(
+            "{}+{}",
+            selector.zone_solver.as_str(),
+            selector.conduction_solver.as_str()
+        ),
     );
 
     solve_result
@@ -2074,8 +2079,14 @@ async fn submit_campaign(
                 }
             };
 
-            let result = run_simulation(&schema, years, use_surrogates, selector, &request_id_for_task)
-                .map_err(|e| e.to_string());
+            let result = run_simulation(
+                &schema,
+                years,
+                use_surrogates,
+                selector,
+                &request_id_for_task,
+            )
+            .map_err(|e| e.to_string());
 
             results.push(result);
 
@@ -3104,8 +3115,9 @@ mod tests {
         let snapshotter = recorder.snapshotter();
         let schema = default_schema_v1();
 
-        let result =
-            ::metrics::with_local_recorder(&recorder, || run_simulation(&schema, 1, false, ThermalSelector::default(), "test"));
+        let result = ::metrics::with_local_recorder(&recorder, || {
+            run_simulation(&schema, 1, false, ThermalSelector::default(), "test")
+        });
         // Post-#2747: the default schema now produces a physically-sane
         // result (EUI ≈ 112 kWh/m²/yr) — no divergence.
         assert!(
@@ -3230,7 +3242,15 @@ mod tests {
         let recorder = DebuggingRecorder::new();
         let snapshotter = recorder.snapshotter();
         ::metrics::with_local_recorder(&recorder, || {
-            crate::api::metrics::record_simulation(0.042, 2, true, true, 3, Some(5_000.7), "gauge+default");
+            crate::api::metrics::record_simulation(
+                0.042,
+                2,
+                true,
+                true,
+                3,
+                Some(5_000.7),
+                "gauge+default",
+            );
         });
         let map = snapshotter.snapshot().into_hashmap();
 
@@ -3314,8 +3334,9 @@ mod tests {
         let snapshotter = recorder.snapshotter();
         let mut schema = default_schema_v1();
         schema.controls.zone_control.cooling_setpoint = 27.0;
-        let _ =
-            ::metrics::with_local_recorder(&recorder, || run_simulation(&schema, 1, true, ThermalSelector::default(), "test"));
+        let _ = ::metrics::with_local_recorder(&recorder, || {
+            run_simulation(&schema, 1, true, ThermalSelector::default(), "test")
+        });
         let map = snapshotter.snapshot().into_hashmap();
         let surrogate_label = map.keys().any(|ck| {
             ck.key().name() == crate::api::metrics::SIMULATION_SOLVER_KIND
@@ -3341,7 +3362,15 @@ mod tests {
         let recorder = DebuggingRecorder::new();
         let snapshotter = recorder.snapshotter();
         ::metrics::with_local_recorder(&recorder, || {
-            crate::api::metrics::record_simulation(0.0123, 1, false, false, 2, None, "gauge+default");
+            crate::api::metrics::record_simulation(
+                0.0123,
+                1,
+                false,
+                false,
+                2,
+                None,
+                "gauge+default",
+            );
         });
         let map = snapshotter.snapshot().into_hashmap();
 
@@ -3742,8 +3771,7 @@ mod tests {
     #[test]
     fn parse_selector_accepts_explicit_values() {
         let opts: SimulateOptions =
-            serde_json::from_str(r#"{"zone_solver": "5r1c", "conduction_solver": "ctf"}"#)
-                .unwrap();
+            serde_json::from_str(r#"{"zone_solver": "5r1c", "conduction_solver": "ctf"}"#).unwrap();
         let selector = parse_selector_from_options(&opts).unwrap();
         assert_eq!(selector.zone_solver.as_str(), "5r1c");
         assert_eq!(selector.conduction_solver.as_str(), "ctf");
@@ -3817,10 +3845,9 @@ mod tests {
             "test",
         )
         .unwrap();
-        let explicit_opts: SimulateOptions = serde_json::from_str(
-            r#"{"zone_solver": "gauge", "conduction_solver": "default"}"#,
-        )
-        .unwrap();
+        let explicit_opts: SimulateOptions =
+            serde_json::from_str(r#"{"zone_solver": "gauge", "conduction_solver": "default"}"#)
+                .unwrap();
         let explicit = run_simulation(
             &schema,
             1,

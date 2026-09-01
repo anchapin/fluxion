@@ -486,6 +486,22 @@ pub struct Cli {
     #[arg(short = 'r', long = "readvars")]
     pub readvars: bool,
 
+    /// Zone solver for direct simulation (Issue #3283).
+    ///
+    /// One of `gauge` (default) | `5r1c` | `9r4c`. The experimental
+    /// `6r2c` / `8r3c` identifiers are rejected unless the
+    /// `FLUXION_EXPERIMENTAL_ZONE_SOLVERS=1` env var is set (and even then
+    /// they stay unavailable until the experimental cargo feature ships;
+    /// see issue #3291).
+    #[arg(long = "zone-solver", value_name = "SOLVER")]
+    pub zone_solver: Option<String>,
+
+    /// Conduction solver for direct simulation (Issue #3283).
+    ///
+    /// One of `default` (default) | `ctf` | `fd`.
+    #[arg(long = "conduction-solver", value_name = "SOLVER")]
+    pub conduction_solver: Option<String>,
+
     /// Input file path (.flux format)
     pub input: Option<String>,
 
@@ -868,6 +884,7 @@ pub fn run_direct_simulation(
     annual: bool,
     jobs: Option<usize>,
     readvars: bool,
+    selector: crate::sim::thermal_selector::ThermalSelector,
 ) -> Result<()> {
     // Validate required arguments
     let weather_path = weather.ok_or_else(|| {
@@ -917,6 +934,16 @@ pub fn run_direct_simulation(
     } else {
         println!("Simulation mode: Annual (default)");
     }
+
+    // Issue #3283 — surface the selected solver stack. When the direct
+    // simulation path is wired (#2947), this selector feeds
+    // `ThermalModel::from_spec_with_selector`; until then it is validated
+    // (see `run_cli`) and echoed here for diagnosability.
+    println!(
+        "Zone solver: {} (conduction: {})",
+        selector.zone_solver.as_str(),
+        selector.conduction_solver.as_str()
+    );
 
     if let Some(n_jobs) = jobs {
         println!("Parallel jobs: {}", n_jobs);
@@ -1054,6 +1081,25 @@ pub fn run_measure_command(command: &MeasureSubcommand) -> Result<()> {
 pub fn run_cli() -> Result<()> {
     let cli = Cli::parse();
 
+    // Issue #3283 — validate the solver-selection flags up front (before the
+    // direct-simulation dispatch below) so an invalid value fails fast with a
+    // non-zero exit and the same wording the REST / binding layers use. The
+    // experimental `6r2c` / `8r3c` identifiers are rejected here exactly as
+    // they are in the REST schema (fail-closed regardless of the env gate
+    // until the experimental cargo feature ships).
+    let selector = ThermalSelector {
+        zone_solver: match &cli.zone_solver {
+            Some(s) => crate::sim::thermal_selector::parse_zone_solver(s)
+                .map_err(|e| anyhow::anyhow!(e))?,
+            None => crate::sim::thermal_selector::ZoneSolverKind::Gauge,
+        },
+        conduction_solver: match &cli.conduction_solver {
+            Some(s) => crate::sim::thermal_selector::parse_conduction_solver(s)
+                .map_err(|e| anyhow::anyhow!(e))?,
+            None => crate::sim::thermal_selector::ConductionSolverKind::Default,
+        },
+    };
+
     // Handle direct simulation mode (EnergyPlus-compatible):
     // when an input file is provided without a subcommand, treat it as
     // `fluxion -w weather.epw input.flux`.
@@ -1068,6 +1114,7 @@ pub fn run_cli() -> Result<()> {
             cli.annual,
             cli.jobs,
             cli.readvars,
+            selector,
         );
     }
 
