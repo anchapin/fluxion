@@ -5,9 +5,14 @@ use crate::ai::modular_surrogate::{ComponentSurrogate, CompositeSurrogate};
 use crate::util::sha256_hex::sha256_hex;
 #[allow(unused_imports)]
 use log::{info, warn};
-#[cfg(all(feature = "ort", target_os = "macos"))]
+// Issue #3313: CoreML/DirectML EP types only exist when the matching `ort`
+// feature is enabled (`ort/coreml` / `ort/directml`), so the target-OS gate
+// alone is not sufficient to reference them. Each is wired through a
+// dedicated fluxion feature (see Cargo.toml); `create_session` degrades
+// gracefully with an explicit rebuild hint when the feature is missing.
+#[cfg(all(feature = "ort", feature = "coreml", target_os = "macos"))]
 use ort::ep::CoreML;
-#[cfg(all(feature = "ort", target_os = "windows"))]
+#[cfg(all(feature = "ort", feature = "directml", target_os = "windows"))]
 use ort::ep::DirectML;
 #[cfg(feature = "ort")]
 #[cfg(feature = "cuda")]
@@ -1127,16 +1132,35 @@ impl MultiDeviceSessionPool {
         #[cfg(feature = "cuda")]
         {
             use ort::session::Session;
+            // Issue #3313: attaching a CUDA EP to a session builder succeeds
+            // even on machines with no GPU (provider initialization is
+            // deferred to session creation, where failure silently falls
+            // back to CPU). Gate discovery on ORT's own EP-device
+            // enumeration first — `Environment::devices()` only reports a
+            // `CUDAExecutionProvider` device when ORT actually found CUDA
+            // hardware at environment creation. The registration probe
+            // below is retained as a fallback for backends whose EP-ABI
+            // device enumeration is unavailable (it returns an empty
+            // device list there).
+            let cuda_device_enumerated = ort::environment::Environment::current()
+                .ok()
+                .map(|env| {
+                    env.devices()
+                        .any(|d| d.ep().map(|name| name == ep_names::CUDA).unwrap_or(false))
+                })
+                .unwrap_or(false);
             let mut available_devices = Vec::new();
-            for device_id in 0..8 {
-                let builder = match Session::builder() {
-                    Ok(b) => b,
-                    Err(_) => continue,
-                };
-                let cuda_ep = CUDA::default().with_device_id(device_id as i32);
-                match builder.with_execution_providers([cuda_ep.build()]) {
-                    Ok(_) => available_devices.push(device_id),
-                    Err(_) => continue,
+            if cuda_device_enumerated {
+                for device_id in 0..8 {
+                    let builder = match Session::builder() {
+                        Ok(b) => b,
+                        Err(_) => continue,
+                    };
+                    let cuda_ep = CUDA::default().with_device_id(device_id as i32);
+                    match builder.with_execution_providers([cuda_ep.build()]) {
+                        Ok(_) => available_devices.push(device_id),
+                        Err(_) => continue,
+                    }
                 }
             }
             if available_devices.is_empty() {
@@ -1295,30 +1319,44 @@ impl SessionPool {
                 }
             }
             InferenceBackend::CoreML => {
-                #[cfg(target_os = "macos")]
+                #[cfg(all(feature = "coreml", target_os = "macos"))]
                 {
                     let ep = CoreML::default();
                     builder = builder
                         .with_execution_providers([ep.build()])
                         .map_err(|e| format!("Failed to add CoreML execution provider: {}", e))?;
                 }
-                #[cfg(not(target_os = "macos"))]
+                #[cfg(not(all(feature = "coreml", target_os = "macos")))]
                 {
+                    if cfg!(target_os = "macos") {
+                        return Err(
+                            "CoreML backend requested but fluxion was built without the `coreml` feature; \
+                             rebuild with `cargo build --features coreml` or set FLUXION_ONNX_BACKEND=cpu"
+                                .to_string(),
+                        );
+                    }
                     return Err("CoreML backend requested but is only available on macOS; \
                          set FLUXION_ONNX_BACKEND=cpu or FLUXION_ONNX_BACKEND=cuda"
                         .to_string());
                 }
             }
             InferenceBackend::DirectML => {
-                #[cfg(target_os = "windows")]
+                #[cfg(all(feature = "directml", target_os = "windows"))]
                 {
                     let ep = DirectML::default().with_device_id(_device_id as i32);
                     builder = builder
                         .with_execution_providers([ep.build()])
                         .map_err(|e| format!("Failed to add DirectML execution provider: {}", e))?;
                 }
-                #[cfg(not(target_os = "windows"))]
+                #[cfg(not(all(feature = "directml", target_os = "windows")))]
                 {
+                    if cfg!(target_os = "windows") {
+                        return Err(
+                            "DirectML backend requested but fluxion was built without the `directml` feature; \
+                             rebuild with `cargo build --features directml` or set FLUXION_ONNX_BACKEND=cpu"
+                                .to_string(),
+                        );
+                    }
                     return Err(
                         "DirectML backend requested but is only available on Windows; \
                          set FLUXION_ONNX_BACKEND=cpu or FLUXION_ONNX_BACKEND=cuda"
@@ -1400,6 +1438,390 @@ impl<'a> std::ops::Deref for SessionGuard<'a> {
 impl<'a> std::ops::DerefMut for SessionGuard<'a> {
     fn deref_mut(&mut self) -> &mut Self::Target {
         self.session.as_mut().unwrap()
+    }
+}
+
+// ===== Issue #3313 — runtime execution-provider probe =======================
+//
+// The ort rc.13 migration (#3296) was verified compile-only: `cargo check`
+// proves the EP API surface exists, but says nothing about whether a
+// GPU/NPU execution provider actually activates at runtime. ORT's classic
+// failure mode is the *silent fallback*: `with_execution_providers`
+// succeeds, session creation succeeds, and every node quietly runs on the
+// CPU EP.
+//
+// [`ExecutionProviderReport::capture`] makes EP status *observable* by
+// combining three independent signals per provider:
+//
+// 1. `compiled_in`      — can this binary construct the EP at all
+//                         (fluxion feature + target-OS gate)?
+// 2. `environment_device_present` — did ORT enumerate a real hardware
+//                         device for this EP at environment creation
+//                         (`Environment::devices()`)? Absent hardware ⇒
+//                         absent device, no guessing.
+// 3. `registration`     — does attaching the EP (with
+//                         `error_on_failure`) to a session builder succeed?
+//                         Catches missing provider shared libraries.
+//
+// On any machine — GPU or not — `capture()` never panics and degrades to an
+// explicit per-provider verdict, so the CPU-only contract (EP absent ⇒
+// reported unavailable ⇒ CPU path used) is directly assertable in tests.
+
+/// ONNX Runtime's canonical execution-provider names, as reported by
+/// [`ort::device::Device::ep`] and [`ort::ep::ExecutionProvider::name`].
+///
+/// Note the DirectML spelling: ORT names it `DmlExecutionProvider`.
+#[cfg(feature = "ort")]
+mod ep_names {
+    pub const CPU: &str = "CPUExecutionProvider";
+    pub const CUDA: &str = "CUDAExecutionProvider";
+    pub const COREML: &str = "CoreMLExecutionProvider";
+    pub const DIRECTML: &str = "DmlExecutionProvider";
+}
+
+/// One hardware device enumerated by ORT for an execution provider
+/// (`Environment::devices()` → `OrtEpDevice`).
+#[cfg(feature = "ort")]
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct EpDeviceSummary {
+    /// EP name, e.g. `"CUDAExecutionProvider"` / `"CPUExecutionProvider"`.
+    pub ep_name: String,
+    /// EP vendor, e.g. `"Microsoft"` for DirectML devices.
+    pub ep_vendor: Option<String>,
+    /// `"cpu"`, `"gpu"`, or `"npu"`.
+    pub hardware_type: &'static str,
+    /// Hardware manufacturer, when ORT reports one.
+    pub hardware_vendor: Option<String>,
+    /// Device id as reported by ORT (may differ from CUDA device ordinals).
+    pub device_id: Option<u32>,
+}
+
+/// Probe verdict for a single [`InferenceBackend`] execution provider.
+#[cfg(feature = "ort")]
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct EpProbeOutcome {
+    pub backend: InferenceBackend,
+    /// ORT's canonical name for this EP (see the `ep_names` constants).
+    pub ep_name: &'static str,
+    /// `true` when this binary can construct the EP (feature + target gate).
+    pub compiled_in: bool,
+    /// `Some(reason)` when the current target OS cannot ever use this EP
+    /// (e.g. CoreML outside macOS). Independent of feature gates.
+    pub unsupported_on_target: Option<&'static str>,
+    /// `true` when ORT enumerated a real hardware device for this EP in the
+    /// current environment.
+    pub environment_device_present: bool,
+    /// Result of attaching this EP (with `error_on_failure`) to a session
+    /// builder. `None` when the probe was skipped because the EP type is
+    /// not compiled into this binary.
+    pub registration: Option<Result<(), String>>,
+    /// Best-effort activation verdict: compiled in AND a device was
+    /// enumerated AND registration succeeded. For definitive per-node
+    /// assignment proof see `docs/ORT_EP_VALIDATION.md` (ORT EP-assignment
+    /// log lines, and the hardware-gated `#[ignore]` tests in this module).
+    pub activated: bool,
+}
+
+#[cfg(feature = "ort")]
+impl EpProbeOutcome {
+    /// Human-readable one-line status, e.g. for `--list-backends` style
+    /// diagnostics or the validation runbook.
+    pub fn status_line(&self) -> String {
+        if self.activated {
+            format!("{}: ACTIVE ({})", self.ep_name, self.backend.as_str())
+        } else if let Some(reason) = self.unsupported_on_target {
+            format!("{}: unavailable on this target — {}", self.ep_name, reason)
+        } else if !self.compiled_in {
+            format!(
+                "{}: not compiled into this binary (backend `{}` needs its fluxion feature)",
+                self.ep_name,
+                self.backend.as_str()
+            )
+        } else if !self.environment_device_present {
+            format!(
+                "{}: compiled in, but ORT enumerated no hardware device — silent CPU fallback would occur",
+                self.ep_name
+            )
+        } else {
+            format!(
+                "{}: device present but registration failed — {:?}",
+                self.ep_name, self.registration
+            )
+        }
+    }
+}
+
+/// Snapshot of execution-provider availability and activation status for
+/// the running process (issue #3313).
+///
+/// Obtain via [`ExecutionProviderReport::capture`]. Probes cover the CPU
+/// baseline plus every target-appropriate GPU/NPU EP (CUDA, CoreML,
+/// DirectML); EPs that are not applicable on the current target are still
+/// reported, with `unsupported_on_target` explaining why.
+#[cfg(feature = "ort")]
+#[derive(Clone, Debug)]
+pub struct ExecutionProviderReport {
+    /// ONNX Runtime API version of the linked backend (`ort::MINOR_VERSION`).
+    pub ort_api_version: u32,
+    /// All hardware devices ORT enumerated, across all EPs.
+    pub devices: Vec<EpDeviceSummary>,
+    /// One probe per backend, always including the CPU baseline.
+    pub probes: Vec<EpProbeOutcome>,
+}
+
+#[cfg(feature = "ort")]
+impl ExecutionProviderReport {
+    /// Probe every relevant execution provider in the current process.
+    ///
+    /// Never panics and never returns `Err`: EP absence is a *report*, not
+    /// a failure. Safe to call repeatedly; the ORT environment is a
+    /// process-global singleton.
+    pub fn capture() -> Self {
+        // Enumerate real EP devices. `Environment::devices()` returns an
+        // empty iterator when the linked backend lacks EP-ABI device
+        // enumeration support, in which case `device_enumeration` degrades
+        // to `false` and activation verdicts fall back to compile-time +
+        // registration signals only.
+        let env = ort::environment::Environment::current()
+            .map_err(|e| {
+                warn!("EP probe: could not obtain ORT environment: {}", e);
+                e
+            })
+            .ok();
+        let devices: Vec<EpDeviceSummary> = env
+            .as_ref()
+            .map(|env| {
+                env.devices()
+                    .map(|d| {
+                        let hw = d.hardware_device();
+                        EpDeviceSummary {
+                            ep_name: d.ep().unwrap_or("<unknown>").to_string(),
+                            ep_vendor: d.ep_vendor().ok().map(str::to_string),
+                            hardware_type: match hw.ty() {
+                                ort::memory::DeviceType::CPU => "cpu",
+                                ort::memory::DeviceType::GPU => "gpu",
+                                ort::memory::DeviceType::NPU => "npu",
+                            },
+                            hardware_vendor: hw.vendor().ok().map(str::to_string),
+                            device_id: Some(hw.id()),
+                        }
+                    })
+                    .collect()
+            })
+            .unwrap_or_default();
+        let device_enumeration = !devices.is_empty();
+
+        let mut probes = Vec::with_capacity(4);
+
+        // ---- CPU baseline: always compiled in, always target-appropriate.
+        let cpu_registration = {
+            use ort::ep::ExecutionProvider as _;
+            ort::ep::CPU::default()
+                .is_available()
+                .map(|_| ())
+                .map_err(|e| e.to_string())
+        };
+        probes.push(EpProbeOutcome {
+            backend: InferenceBackend::CPU,
+            ep_name: ep_names::CPU,
+            compiled_in: true,
+            unsupported_on_target: None,
+            environment_device_present: !device_enumeration
+                || devices.iter().any(|d| d.ep_name == ep_names::CPU),
+            registration: Some(cpu_registration),
+            // CPU is the fallback of last resort: report it active whenever
+            // the runtime is usable at all, even if device enumeration is
+            // unsupported (then the CPU EP is the only meaningful answer).
+            activated: true,
+        });
+
+        // ---- CUDA (Linux/Windows + NVIDIA GPU, `--features cuda`).
+        probes.push(Self::probe_ep(
+            InferenceBackend::CUDA,
+            ep_names::CUDA,
+            cfg!(feature = "cuda"),
+            if cfg!(target_os = "macos") {
+                Some("CUDA execution providers are not shipped for macOS ORT builds")
+            } else {
+                None
+            },
+            &devices,
+            device_enumeration,
+            || {
+                #[cfg(feature = "cuda")]
+                {
+                    (|| -> Result<(), String> {
+                        // `Session::builder` and `with_execution_providers`
+                        // carry different recoverable-error payloads, so
+                        // chain via `?` inside a `String`-error closure.
+                        let builder =
+                            ort::session::Session::builder().map_err(|e| e.to_string())?;
+                        builder
+                            .with_execution_providers([ort::ep::CUDA::default()
+                                .with_device_id(0)
+                                .build()
+                                .error_on_failure()])
+                            .map(|_| ())
+                            .map_err(|e| e.to_string())
+                    })()
+                }
+                #[cfg(not(feature = "cuda"))]
+                {
+                    Err("not compiled in".to_string())
+                }
+            },
+        ));
+
+        // ---- CoreML (Apple Silicon macOS, `--features coreml`).
+        probes.push(Self::probe_ep(
+            InferenceBackend::CoreML,
+            ep_names::COREML,
+            cfg!(all(feature = "coreml", target_os = "macos")),
+            if !cfg!(target_os = "macos") {
+                Some("CoreML is only available on macOS")
+            } else {
+                None
+            },
+            &devices,
+            device_enumeration,
+            || {
+                #[cfg(all(feature = "coreml", target_os = "macos"))]
+                {
+                    (|| -> Result<(), String> {
+                        let builder =
+                            ort::session::Session::builder().map_err(|e| e.to_string())?;
+                        builder
+                            .with_execution_providers([ort::ep::CoreML::default()
+                                .build()
+                                .error_on_failure()])
+                            .map(|_| ())
+                            .map_err(|e| e.to_string())
+                    })()
+                }
+                #[cfg(not(all(feature = "coreml", target_os = "macos")))]
+                {
+                    Err("not compiled in".to_string())
+                }
+            },
+        ));
+
+        // ---- DirectML (Windows + DirectX 12 GPU, `--features directml`).
+        probes.push(Self::probe_ep(
+            InferenceBackend::DirectML,
+            ep_names::DIRECTML,
+            cfg!(all(feature = "directml", target_os = "windows")),
+            if !cfg!(target_os = "windows") {
+                Some("DirectML is only available on Windows")
+            } else {
+                None
+            },
+            &devices,
+            device_enumeration,
+            || {
+                #[cfg(all(feature = "directml", target_os = "windows"))]
+                {
+                    (|| -> Result<(), String> {
+                        let builder =
+                            ort::session::Session::builder().map_err(|e| e.to_string())?;
+                        builder
+                            .with_execution_providers([ort::ep::DirectML::default()
+                                .with_device_id(0)
+                                .build()
+                                .error_on_failure()])
+                            .map(|_| ())
+                            .map_err(|e| e.to_string())
+                    })()
+                }
+                #[cfg(not(all(feature = "directml", target_os = "windows")))]
+                {
+                    Err("not compiled in".to_string())
+                }
+            },
+        ));
+
+        ExecutionProviderReport {
+            ort_api_version: ort::MINOR_VERSION,
+            devices,
+            probes,
+        }
+    }
+
+    /// Assemble one [`EpProbeOutcome`] from the shared device list plus a
+    /// lazily-run registration probe (skipped entirely when `compiled_in`
+    /// is `false`).
+    fn probe_ep(
+        backend: InferenceBackend,
+        ep_name: &'static str,
+        compiled_in: bool,
+        unsupported_on_target: Option<&'static str>,
+        devices: &[EpDeviceSummary],
+        device_enumeration: bool,
+        registration: impl FnOnce() -> Result<(), String>,
+    ) -> EpProbeOutcome {
+        let environment_device_present = devices.iter().any(|d| d.ep_name == ep_name);
+        let registration = if compiled_in {
+            Some(registration())
+        } else {
+            None
+        };
+        let activated = compiled_in
+            && unsupported_on_target.is_none()
+            && (!device_enumeration || environment_device_present)
+            && registration.as_ref().is_some_and(|r| r.is_ok());
+        EpProbeOutcome {
+            backend,
+            ep_name,
+            compiled_in,
+            unsupported_on_target,
+            environment_device_present,
+            registration,
+            activated,
+        }
+    }
+
+    /// Probe result for `backend`, if it was probed.
+    pub fn probe(&self, backend: InferenceBackend) -> Option<&EpProbeOutcome> {
+        self.probes.iter().find(|p| p.backend == backend)
+    }
+
+    /// `true` when no GPU/NPU EP activated, i.e. inference runs (or would
+    /// run) on the CPU execution provider.
+    pub fn cpu_only(&self) -> bool {
+        !self
+            .probes
+            .iter()
+            .any(|p| p.activated && p.backend != InferenceBackend::CPU)
+    }
+
+    /// Backends whose probe concluded `activated`.
+    pub fn activated_backends(&self) -> Vec<InferenceBackend> {
+        self.probes
+            .iter()
+            .filter(|p| p.activated)
+            .map(|p| p.backend)
+            .collect()
+    }
+
+    /// Human-readable status lines, one per probe, for logs and the
+    /// validation runbook (`ExecutionProviderReport::capture()` output).
+    pub fn status_lines(&self) -> Vec<String> {
+        let mut lines = vec![format!(
+            "ORT api version: {} (device enumeration: {})",
+            self.ort_api_version,
+            if self.devices.is_empty() {
+                "unavailable"
+            } else {
+                "available"
+            }
+        )];
+        for d in &self.devices {
+            lines.push(format!(
+                "device: {} [{}, vendor {:?}, id {:?}] (ep vendor {:?})",
+                d.ep_name, d.hardware_type, d.hardware_vendor, d.device_id, d.ep_vendor
+            ));
+        }
+        lines.extend(self.probes.iter().map(EpProbeOutcome::status_line));
+        lines
     }
 }
 
@@ -4941,6 +5363,342 @@ mod tests {
         assert!(
             !captured.contains("downgraded to CPU"),
             "cuda feature ON + no FLUXION_GPU must not emit the downgrade warn; got: {captured:?}"
+        );
+    }
+
+    // ===== Issue #3313 — runtime execution-provider probe tests =====
+    //
+    // Compile coverage (cargo check) proves the EP API surface; these tests
+    // make EP activation status *observable*. The always-green tests assert
+    // the graceful-fallback contract: an EP that is absent (feature off, or
+    // wrong target OS, or no hardware) must be *reported* as unavailable
+    // while the CPU path keeps working — no panics, no silent assumptions.
+    //
+    // The three `#[ignore]` tests below are the only ignore-census entries
+    // added by issue #3313 (count: 3, one per execution provider). They are
+    // hardware-gated by design — a CPU-only machine cannot prove CUDA
+    // activation — and exist so an operator with the matching hardware can
+    // tick the checkboxes in `docs/ORT_EP_VALIDATION.md` with a single
+    // command:
+    //
+    //   cargo test  -p fluxion --features ort,cuda     --lib surrogate::tests::hardware_ -- --ignored
+    //   cargo test  -p fluxion --features ort,coreml   --lib surrogate::tests::hardware_ -- --ignored   (macOS)
+    //   cargo test  -p fluxion --features ort,directml --lib surrogate::tests::hardware_ -- --ignored   (Windows)
+
+    /// `capture()` must always succeed and always cover the CPU baseline
+    /// plus the three target EPs, regardless of hardware.
+    #[cfg(feature = "ort")]
+    #[test]
+    fn ep_report_capture_is_graceful_and_shape_complete() {
+        let report = ExecutionProviderReport::capture();
+        assert_eq!(report.probes.len(), 4, "cpu + cuda + coreml + directml");
+        for backend in [
+            InferenceBackend::CPU,
+            InferenceBackend::CUDA,
+            InferenceBackend::CoreML,
+            InferenceBackend::DirectML,
+        ] {
+            let p = report
+                .probe(backend)
+                .unwrap_or_else(|| panic!("probe for {:?} missing from report", backend));
+            assert!(!p.ep_name.is_empty());
+        }
+        // Every probe renders a non-empty status line.
+        let lines = report.status_lines();
+        assert!(lines.len() >= 5, "header + 4 probe lines: {lines:?}");
+        assert!(lines.iter().all(|l| !l.is_empty()));
+        assert!(report.ort_api_version > 0);
+    }
+
+    /// The CPU baseline is always compiled in and always reported active —
+    /// it is the fallback of last resort (graceful-degradation anchor).
+    #[cfg(feature = "ort")]
+    #[test]
+    fn ep_report_cpu_probe_is_always_active() {
+        let report = ExecutionProviderReport::capture();
+        let cpu = report.probe(InferenceBackend::CPU).unwrap();
+        assert!(cpu.compiled_in);
+        assert!(cpu.activated, "cpu probe must always activate: {cpu:?}");
+        assert_eq!(cpu.ep_name, "CPUExecutionProvider");
+        assert!(
+            cpu.registration.as_ref().is_some_and(|r| r.is_ok()),
+            "cpu registration must succeed: {cpu:?}"
+        );
+    }
+
+    /// Graceful-fallback contract on a stock CPU-only Linux build
+    /// (`--features ort`, no `cuda`): CUDA must be reported not-compiled-in
+    /// (with registration skipped), CoreML/DirectML must be reported
+    /// target-inappropriate, and the report must conclude CPU-only — while
+    /// nothing panics and the CPU EP stays active.
+    #[cfg(all(feature = "ort", target_os = "linux", not(feature = "cuda")))]
+    #[test]
+    fn ep_report_graceful_fallback_contract_on_cpu_only_linux() {
+        let report = ExecutionProviderReport::capture();
+
+        let cuda = report.probe(InferenceBackend::CUDA).unwrap();
+        assert!(!cuda.compiled_in, "cuda feature is off: {cuda:?}");
+        assert!(
+            cuda.registration.is_none(),
+            "registration must be skipped when not compiled in: {cuda:?}"
+        );
+        assert!(!cuda.activated);
+
+        let coreml = report.probe(InferenceBackend::CoreML).unwrap();
+        assert_eq!(
+            coreml.unsupported_on_target,
+            Some("CoreML is only available on macOS")
+        );
+        assert!(!coreml.activated);
+
+        let dml = report.probe(InferenceBackend::DirectML).unwrap();
+        assert_eq!(
+            dml.unsupported_on_target,
+            Some("DirectML is only available on Windows")
+        );
+        assert!(!dml.activated);
+
+        assert!(
+            report.cpu_only(),
+            "no GPU EP can be activated on this build: {report:?}"
+        );
+        assert_eq!(report.activated_backends(), vec![InferenceBackend::CPU]);
+    }
+
+    /// Device enumeration (`Environment::devices()`, the EP-ABI surface the
+    /// issue asks about) must list at least the CPU device on standard
+    /// pyke-built binaries; when a backend does not support enumeration the
+    /// list is empty and the probe degrades to compile-time + registration
+    /// signals (asserted via `cpu_only()` consistency instead).
+    #[cfg(feature = "ort")]
+    #[test]
+    fn ep_report_device_enumeration_degrades_gracefully() {
+        let report = ExecutionProviderReport::capture();
+        if report.devices.is_empty() {
+            // Enumeration unsupported by this backend — the report must
+            // still be usable and internally consistent.
+            assert!(
+                report.cpu_only() || !report.activated_backends().is_empty(),
+                "report must remain internally consistent without device enumeration"
+            );
+        } else {
+            assert!(
+                report
+                    .devices
+                    .iter()
+                    .any(|d| d.ep_name == "CPUExecutionProvider"),
+                "expected a CPUExecutionProvider device, got: {:?}",
+                report.devices
+            );
+        }
+        // `cpu_only()` must agree with the per-probe verdicts either way.
+        let gpu_active = report
+            .probes
+            .iter()
+            .any(|p| p.activated && p.backend != InferenceBackend::CPU);
+        assert_eq!(report.cpu_only(), !gpu_active);
+    }
+
+    /// `MultiDeviceSessionPool::detect_cuda_devices` (the `available_devices`
+    /// enumeration) must return `None` — degrading gracefully — when the
+    /// `cuda` feature is not compiled in.
+    #[cfg(all(feature = "ort", not(feature = "cuda")))]
+    #[test]
+    fn detect_cuda_devices_returns_none_without_cuda_feature() {
+        assert!(MultiDeviceSessionPool::detect_cuda_devices().is_none());
+        assert!(MultiDeviceSessionPool::get_cuda_device_info().is_none());
+    }
+
+    /// Requesting the CoreML backend off-target (Linux) must degrade
+    /// gracefully: an explicit `Err` naming CoreML — never a panic, never a
+    /// silent CPU downgrade. Uses the signed temp fixture from the #2906
+    /// helpers so the SHA-256 gate passes and the request actually reaches
+    /// the backend-selection branch.
+    #[cfg(all(feature = "ort", target_os = "linux", not(feature = "coreml")))]
+    #[test]
+    fn coreml_session_request_degrades_gracefully_on_linux() {
+        let (_dir, model, _sha) = write_signed_model(b"ep probe coreml fixture");
+        let err = SurrogateManager::with_gpu_backend(
+            model.to_string_lossy().as_ref(),
+            InferenceBackend::CoreML,
+            0,
+        )
+        .expect_err("CoreML must be rejected off-target");
+        assert!(err.contains("CoreML"), "error must name the backend: {err}");
+    }
+
+    /// Requesting the DirectML backend off-target (Linux) must degrade
+    /// gracefully: an explicit `Err` naming DirectML — never a panic, never
+    /// a silent CPU downgrade.
+    #[cfg(all(feature = "ort", target_os = "linux", not(feature = "directml")))]
+    #[test]
+    fn directml_session_request_degrades_gracefully_on_linux() {
+        let (_dir, model, _sha) = write_signed_model(b"ep probe directml fixture");
+        let err = SurrogateManager::with_gpu_backend(
+            model.to_string_lossy().as_ref(),
+            InferenceBackend::DirectML,
+            0,
+        )
+        .expect_err("DirectML must be rejected off-target");
+        assert!(
+            err.contains("DirectML"),
+            "error must name the backend: {err}"
+        );
+    }
+
+    /// HARDWARE-GATED (ignore census: 3 entries from issue #3313, one per
+    /// EP). Requires an NVIDIA GPU + CUDA runtime.
+    ///
+    /// Run: `cargo test -p fluxion --features ort,cuda --lib \
+    ///        surrogate::tests::hardware_cuda -- --ignored`
+    ///
+    /// Asserts the probe concludes CUDA *activated* (not a silent CPU
+    /// fallback) and that the production load path runs real inference
+    /// through the CUDA EP. The signature env override is the documented
+    /// #2906 mechanism for manifest-less fixtures and does not pre-empt
+    /// #3311 (which is about committing `assets/dummy_surrogate.onnx.sha256`).
+    #[cfg(all(feature = "ort", feature = "cuda"))]
+    #[test]
+    #[ignore = "requires an NVIDIA GPU + CUDA runtime; see docs/ORT_EP_VALIDATION.md (issue #3313)"]
+    fn hardware_cuda_ep_probe_reports_activation_and_runs_inference() {
+        let _guard = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        assert!(
+            Path::new(DUMMY_ONNX_MODEL).exists(),
+            "{} missing",
+            DUMMY_ONNX_MODEL
+        );
+
+        let report = ExecutionProviderReport::capture();
+        let cuda = report.probe(InferenceBackend::CUDA).unwrap();
+        assert!(cuda.compiled_in, "build with --features cuda");
+        assert!(
+            cuda.environment_device_present,
+            "ORT enumerated no CUDA device — GPU/driver missing: {report:?}"
+        );
+        assert!(
+            cuda.activated,
+            "CUDA probe did not conclude activation: {cuda:?}"
+        );
+        assert!(!report.cpu_only());
+
+        // End-to-end: the production load path must load through CUDA and
+        // produce the expected pass-through output.
+        let sha = compute_file_sha256(Path::new(DUMMY_ONNX_MODEL)).expect("fixture hash");
+        let prev = std::env::var(ENV_ONNX_MODEL_SIGNATURE).ok();
+        std::env::set_var(ENV_ONNX_MODEL_SIGNATURE, &sha);
+        let loaded =
+            SurrogateManager::with_gpu_backend(DUMMY_ONNX_MODEL, InferenceBackend::CUDA, 0);
+        match prev {
+            Some(v) => std::env::set_var(ENV_ONNX_MODEL_SIGNATURE, v),
+            None => std::env::remove_var(ENV_ONNX_MODEL_SIGNATURE),
+        }
+        let mgr = loaded.expect("CUDA-backed load failed");
+        assert_eq!(mgr.backend, InferenceBackend::CUDA);
+        let loads = mgr
+            .predict_loads_onnx(&[42.0, 1.0, 2.0, 3.0, 4.0, 5.0])
+            .expect("CUDA inference failed");
+        assert!(
+            (loads[0] - 42.0).abs() < 1e-2,
+            "CUDA pass-through mismatch: {loads:?}"
+        );
+    }
+
+    /// HARDWARE-GATED (ignore census: 3 entries from issue #3313, one per
+    /// EP). Requires Apple Silicon macOS and `--features ort,coreml`.
+    ///
+    /// Run: `cargo test -p fluxion --features ort,coreml --lib \
+    ///        surrogate::tests::hardware_coreml -- --ignored`
+    #[cfg(all(feature = "ort", feature = "coreml", target_os = "macos"))]
+    #[test]
+    #[ignore = "requires Apple Silicon macOS hardware; see docs/ORT_EP_VALIDATION.md (issue #3313)"]
+    fn hardware_coreml_ep_probe_reports_activation_and_runs_inference() {
+        let _guard = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        assert!(
+            Path::new(DUMMY_ONNX_MODEL).exists(),
+            "{} missing",
+            DUMMY_ONNX_MODEL
+        );
+
+        let report = ExecutionProviderReport::capture();
+        let coreml = report.probe(InferenceBackend::CoreML).unwrap();
+        assert!(coreml.compiled_in, "build with --features coreml");
+        assert!(coreml.unsupported_on_target.is_none());
+        assert!(
+            coreml.environment_device_present,
+            "ORT enumerated no CoreML device — not Apple Silicon?: {report:?}"
+        );
+        assert!(
+            coreml.activated,
+            "CoreML probe did not conclude activation: {coreml:?}"
+        );
+
+        let sha = compute_file_sha256(Path::new(DUMMY_ONNX_MODEL)).expect("fixture hash");
+        let prev = std::env::var(ENV_ONNX_MODEL_SIGNATURE).ok();
+        std::env::set_var(ENV_ONNX_MODEL_SIGNATURE, &sha);
+        let loaded =
+            SurrogateManager::with_gpu_backend(DUMMY_ONNX_MODEL, InferenceBackend::CoreML, 0);
+        match prev {
+            Some(v) => std::env::set_var(ENV_ONNX_MODEL_SIGNATURE, v),
+            None => std::env::remove_var(ENV_ONNX_MODEL_SIGNATURE),
+        }
+        let mgr = loaded.expect("CoreML-backed load failed");
+        assert_eq!(mgr.backend, InferenceBackend::CoreML);
+        let loads = mgr
+            .predict_loads_onnx(&[42.0, 1.0, 2.0, 3.0, 4.0, 5.0])
+            .expect("CoreML inference failed");
+        assert!(
+            (loads[0] - 42.0).abs() < 1e-2,
+            "CoreML pass-through mismatch: {loads:?}"
+        );
+    }
+
+    /// HARDWARE-GATED (ignore census: 3 entries from issue #3313, one per
+    /// EP). Requires Windows with a DirectX 12 GPU and
+    /// `--features ort,directml`.
+    ///
+    /// Run: `cargo test -p fluxion --features ort,directml --lib \
+    ///        surrogate::tests::hardware_directml -- --ignored`
+    #[cfg(all(feature = "ort", feature = "directml", target_os = "windows"))]
+    #[test]
+    #[ignore = "requires Windows + DirectX 12 GPU; see docs/ORT_EP_VALIDATION.md (issue #3313)"]
+    fn hardware_directml_ep_probe_reports_activation_and_runs_inference() {
+        let _guard = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        assert!(
+            Path::new(DUMMY_ONNX_MODEL).exists(),
+            "{} missing",
+            DUMMY_ONNX_MODEL
+        );
+
+        let report = ExecutionProviderReport::capture();
+        let dml = report.probe(InferenceBackend::DirectML).unwrap();
+        assert!(dml.compiled_in, "build with --features directml");
+        assert!(dml.unsupported_on_target.is_none());
+        assert!(
+            dml.environment_device_present,
+            "ORT enumerated no Dml device — no DirectX 12 GPU?: {report:?}"
+        );
+        assert!(
+            dml.activated,
+            "DirectML probe did not conclude activation: {dml:?}"
+        );
+
+        let sha = compute_file_sha256(Path::new(DUMMY_ONNX_MODEL)).expect("fixture hash");
+        let prev = std::env::var(ENV_ONNX_MODEL_SIGNATURE).ok();
+        std::env::set_var(ENV_ONNX_MODEL_SIGNATURE, &sha);
+        let loaded =
+            SurrogateManager::with_gpu_backend(DUMMY_ONNX_MODEL, InferenceBackend::DirectML, 0);
+        match prev {
+            Some(v) => std::env::set_var(ENV_ONNX_MODEL_SIGNATURE, v),
+            None => std::env::remove_var(ENV_ONNX_MODEL_SIGNATURE),
+        }
+        let mgr = loaded.expect("DirectML-backed load failed");
+        assert_eq!(mgr.backend, InferenceBackend::DirectML);
+        let loads = mgr
+            .predict_loads_onnx(&[42.0, 1.0, 2.0, 3.0, 4.0, 5.0])
+            .expect("DirectML inference failed");
+        assert!(
+            (loads[0] - 42.0).abs() < 1e-2,
+            "DirectML pass-through mismatch: {loads:?}"
         );
     }
 }
