@@ -5129,14 +5129,34 @@ mod tests {
             eprintln!("Skipping: {} not found", dummy);
             return;
         }
-        let prev = std::env::var("FLUXION_ONNX_MODEL").ok();
+        // The fixture lives in `assets/`, outside the default `models/`
+        // allow-list, so widen `FLUXION_MODEL_DIR` to the crate root for
+        // the duration of this test (Issue #3311: the fixture is committed,
+        // so this must pass on fresh checkouts). Restore BOTH variables
+        // before any assertion so a failure cannot leak env state into
+        // sibling tests.
+        let prev_model = std::env::var("FLUXION_ONNX_MODEL").ok();
+        let prev_dir = std::env::var("FLUXION_MODEL_DIR").ok();
         std::env::set_var("FLUXION_ONNX_MODEL", dummy);
-        let m = SurrogateManager::new_with_auto_load().expect("env override should load");
-        assert_eq!(m.model_path.as_deref(), Some(dummy));
-        match prev {
+        std::env::set_var("FLUXION_MODEL_DIR", env!("CARGO_MANIFEST_DIR"));
+        let loaded = SurrogateManager::new_with_auto_load();
+        match prev_model {
             Some(v) => std::env::set_var("FLUXION_ONNX_MODEL", v),
             None => std::env::remove_var("FLUXION_ONNX_MODEL"),
         }
+        match prev_dir {
+            Some(v) => std::env::set_var("FLUXION_MODEL_DIR", v),
+            None => std::env::remove_var("FLUXION_MODEL_DIR"),
+        }
+        let m = loaded.expect("env override should load");
+        // `new_with_auto_load` stores the *canonicalised* path (Issue #2905
+        // validation), so compare against the canonicalised fixture path.
+        let canonical_dummy = std::fs::canonicalize(dummy)
+            .unwrap_or_else(|e| panic!("failed to canonicalize {dummy}: {e}"));
+        assert_eq!(
+            m.model_path.as_deref(),
+            Some(canonical_dummy.to_string_lossy().as_ref())
+        );
     }
 
     #[test]

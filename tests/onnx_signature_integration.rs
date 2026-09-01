@@ -228,3 +228,75 @@ fn load_onnx_env_override_rejects_malformed_value() {
         "error must explain the rejection: {err}"
     );
 }
+
+/// Guard for Issue #3311: the committed `assets/dummy_surrogate.onnx.sha256`
+/// sidecar must always match the committed `assets/dummy_surrogate.onnx`
+/// bytes. If either file drifts without the other being regenerated, this
+/// fails loudly instead of producing 8 confusing fail-closed test failures on
+/// fresh checkouts. Also proves `verify_onnx_signature` accepts the committed
+/// fixture pair as-is (gate unchanged, no env override involved).
+#[test]
+fn committed_dummy_surrogate_sidecar_matches_model_bytes() {
+    let model_path = Path::new(DUMMY_ONNX_MODEL);
+    assert!(
+        model_path.exists(),
+        "{} missing from the checkout — it is a committed fixture",
+        DUMMY_ONNX_MODEL
+    );
+    let manifest_path = Path::new(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/assets/dummy_surrogate.onnx.sha256"
+    ));
+    assert!(
+        manifest_path.exists(),
+        "{} missing — regenerate it with `sha256sum assets/dummy_surrogate.onnx > \
+         assets/dummy_surrogate.onnx.sha256` (Issue #3311)",
+        manifest_path.display()
+    );
+
+    let actual = compute_bytes_sha256(&std::fs::read(model_path).unwrap());
+    let manifest = std::fs::read_to_string(manifest_path).unwrap();
+    let expected = manifest
+        .lines()
+        .find_map(|line| {
+            let line = line.trim_end();
+            if line.is_empty() || line.starts_with('#') {
+                return None;
+            }
+            let (hash, name) = line.split_once(char::is_whitespace)?;
+            if name
+                .trim_start_matches('*')
+                .trim()
+                .ends_with("dummy_surrogate.onnx")
+            {
+                Some(hash.trim().to_ascii_lowercase())
+            } else {
+                None
+            }
+        })
+        .unwrap_or_else(|| {
+            panic!(
+                "{} has no entry for dummy_surrogate.onnx",
+                manifest_path.display()
+            )
+        });
+    assert_eq!(
+        expected, actual,
+        "sidecar digest does not match {} bytes — regenerate the sidecar (Issue #3311)",
+        DUMMY_ONNX_MODEL
+    );
+
+    // The fail-closed gate must accept the committed pair with no env override.
+    let _guard = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    let prev = std::env::var(ENV_ONNX_MODEL_SIGNATURE).ok();
+    std::env::remove_var(ENV_ONNX_MODEL_SIGNATURE);
+    let res = verify_onnx_signature(model_path);
+    match prev {
+        Some(v) => std::env::set_var(ENV_ONNX_MODEL_SIGNATURE, v),
+        None => std::env::remove_var(ENV_ONNX_MODEL_SIGNATURE),
+    }
+    assert!(
+        res.is_ok(),
+        "committed fixture pair must pass verify_onnx_signature: {res:?}"
+    );
+}
