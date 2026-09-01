@@ -70,6 +70,7 @@ use crate::interop::{gbxml, osm};
 use crate::io::idf::{IdfFile, IdfParser};
 use crate::physics::cta::VectorField;
 use crate::sim::engine::ThermalModel;
+use crate::sim::thermal_selector::ThermalSelector;
 
 /// Identifier prefix for schemas persisted by the in-memory store.
 const SCHEMA_ID_PREFIX: &str = "sch-";
@@ -619,11 +620,52 @@ pub struct SimulateOptions {
     /// Whether to use the ONNX surrogate path. Default: `false`.
     #[serde(default)]
     pub use_surrogates: bool,
+    /// Zone solver selection (Issue #3281). One of `"gauge"` (default),
+    /// `"5r1c"`, `"9r4c"`. Validated by [`parse_selector_from_options`]
+    /// *after* deserialisation so the rejection message can name the
+    /// experimental gate (`FLUXION_EXPERIMENTAL_ZONE_SOLVERS=1`) for the
+    /// reserved `"6r2c"` / `"8r3c"` identifiers. `None` ⇒
+    /// [`ThermalSelector::default()`].
+    #[serde(default)]
+    pub zone_solver: Option<String>,
+    /// Conduction algorithm selection (Issue #3281). One of `"default"`
+    /// (default), `"ctf"`, `"fd"`. Validated alongside `zone_solver`.
+    #[serde(default)]
+    pub conduction_solver: Option<String>,
     /// Optional opaque id; if present, the request's schema is stored under
     /// this id *and* the id is returned for retrieval via
     /// `GET /v1/schema/{id}`.
     #[serde(default)]
     pub store_as: Option<String>,
+}
+
+/// Translate the optional `zone_solver` / `conduction_solver` request fields
+/// into a [`ThermalSelector`] (Issue #3281).
+///
+/// Both fields are optional and default to `None`, which maps to
+/// [`ThermalSelector::default()`] (`gauge` + `default`). Unknown values —
+/// and the experimental `"6r2c"` / `"8r3c"` identifiers unless the
+/// `FLUXION_EXPERIMENTAL_ZONE_SOLVERS=1` env var is set on the server — are
+/// rejected as [`ApiError::InvalidRequest`] (HTTP 400). The accepted
+/// vocabulary and the gate wording live in
+/// [`crate::sim::thermal_selector::parse_zone_solver`] /
+/// [`crate::sim::thermal_selector::parse_conduction_solver`] so the REST,
+/// CLI, and binding layers can never drift apart.
+pub fn parse_selector_from_options(options: &SimulateOptions) -> Result<ThermalSelector, ApiError> {
+    let zone_solver = match &options.zone_solver {
+        Some(s) => crate::sim::thermal_selector::parse_zone_solver(s)
+            .map_err(ApiError::InvalidRequest)?,
+        None => ThermalSelector::default().zone_solver,
+    };
+    let conduction_solver = match &options.conduction_solver {
+        Some(s) => crate::sim::thermal_selector::parse_conduction_solver(s)
+            .map_err(ApiError::InvalidRequest)?,
+        None => ThermalSelector::default().conduction_solver,
+    };
+    Ok(ThermalSelector {
+        zone_solver,
+        conduction_solver,
+    })
 }
 
 fn default_years() -> u32 {
@@ -659,6 +701,8 @@ impl Default for SimulateOptions {
         SimulateOptions {
             years: default_years(),
             use_surrogates: false,
+            zone_solver: None,
+            conduction_solver: None,
             store_as: None,
         }
     }
@@ -1426,6 +1470,7 @@ pub fn run_simulation(
     schema: &SimulationSchemaV1,
     years: u32,
     use_surrogates: bool,
+    selector: ThermalSelector,
     request_id: &str,
 ) -> Result<SimulationOutput, ApiError> {
     let num_zones = schema.geometry.zones.len().max(1);
@@ -1476,6 +1521,13 @@ pub fn run_simulation(
         // at hourly index 91. See `build_model_from_schema` doc-comment
         // for the full schema→physics wiring.
         let mut model = build_model_from_schema(schema);
+        // Issue #3281 — the caller-selected solver stack lands on the model
+        // here. The β-phase dispatcher (Issue #3280) consumes
+        // `hvac.thermal_selector` per step: `Gauge` tries the gauge solver
+        // and falls through to 5R1C/9R4C on init or step failure;
+        // `FiveROneC` / `NineRFourC` route strictly. With the default
+        // selector the model behaves exactly as before this change.
+        model.hvac.thermal_selector = selector;
         for zone_idx in 0..model.hvac.num_zones {
             model.setpoints.heating_setpoints.as_mut_slice()[zone_idx] = heating;
             model.setpoints.cooling_setpoints.as_mut_slice()[zone_idx] = cooling;
@@ -1606,6 +1658,11 @@ async fn simulate(
     let schema = req.schema.into_v1();
     let options = req.options;
 
+    // Issue #3281 — validate the solver selection *before* the audit event so
+    // an invalid `zone_solver` / `conduction_solver` is a clean HTTP 400 with
+    // no audit-trail noise.
+    let selector = parse_selector_from_options(&options)?;
+
     // Snapshot the inputs for the audit event before `schema` is moved
     // into the in-memory store below.
     let num_zones = schema.geometry.zones.len();
@@ -1649,7 +1706,13 @@ async fn simulate(
     let schema_for_sim = schema.clone();
     let request_id_for_sim = request_id.clone();
     let result = tokio::task::spawn_blocking(move || {
-        run_simulation(&schema_for_sim, years, use_surrogates, &request_id_for_sim)
+        run_simulation(
+            &schema_for_sim,
+            years,
+            use_surrogates,
+            selector,
+            &request_id_for_sim,
+        )
     })
     .await
     .map_err(|join_err| {
@@ -1875,10 +1938,20 @@ async fn batch_simulate(
             .into_par_iter()
             .zip(opts.into_par_iter())
             .map(|(schema, options)| {
+                // Issue #3281 — per-entry solver selection; a bad selector is
+                // reported for that entry only (matching how per-entry schema
+                // validation failures surface below).
+                let selector = match parse_selector_from_options(&options) {
+                    Ok(s) => s,
+                    Err(e) => {
+                        return Err(e.to_string());
+                    }
+                };
                 run_simulation(
                     &schema,
                     options.years,
                     options.use_surrogates,
+                    selector,
                     &request_id_for_batch,
                 )
                 .map(|output| SimulateResponse {
@@ -1987,8 +2060,18 @@ async fn submit_campaign(
             let schema = sim_req.schema.clone().into_v1();
             let years = sim_req.options.years;
             let use_surrogates = sim_req.options.use_surrogates;
+            // Issue #3281 — per-entry solver selection. A bad selector is a
+            // failed entry (same envelope as a failed simulation), not an
+            // abort of the whole campaign.
+            let selector = match parse_selector_from_options(&sim_req.options) {
+                Ok(s) => s,
+                Err(e) => {
+                    results.push(Err(e.to_string()));
+                    continue;
+                }
+            };
 
-            let result = run_simulation(&schema, years, use_surrogates, &request_id_for_task)
+            let result = run_simulation(&schema, years, use_surrogates, selector, &request_id_for_task)
                 .map_err(|e| e.to_string());
 
             results.push(result);
@@ -2925,7 +3008,7 @@ mod tests {
         let mut bad = default_schema_v1();
         bad.controls.zone_control.heating_setpoint = 25.0;
         bad.controls.zone_control.cooling_setpoint = 24.0;
-        let err = run_simulation(&bad, 1, false, "test").unwrap_err();
+        let err = run_simulation(&bad, 1, false, ThermalSelector::default(), "test").unwrap_err();
         assert!(matches!(err, ApiError::InvalidSchema(_)));
     }
 
@@ -2935,7 +3018,7 @@ mod tests {
         bad.geometry.zones.clear();
         bad.geometry.total_floor_area = 0.0;
         bad.geometry.total_volume = 0.0;
-        let err = run_simulation(&bad, 1, false, "test").unwrap_err();
+        let err = run_simulation(&bad, 1, false, ThermalSelector::default(), "test").unwrap_err();
         assert!(matches!(err, ApiError::InvalidSchema(_)));
     }
 
@@ -3019,7 +3102,7 @@ mod tests {
         let schema = default_schema_v1();
 
         let result =
-            ::metrics::with_local_recorder(&recorder, || run_simulation(&schema, 1, false, "test"));
+            ::metrics::with_local_recorder(&recorder, || run_simulation(&schema, 1, false, ThermalSelector::default(), "test"));
         // Post-#2747: the default schema now produces a physically-sane
         // result (EUI ≈ 112 kWh/m²/yr) — no divergence.
         assert!(
@@ -3215,7 +3298,7 @@ mod tests {
         let mut schema = default_schema_v1();
         schema.controls.zone_control.cooling_setpoint = 27.0;
         let _ =
-            ::metrics::with_local_recorder(&recorder, || run_simulation(&schema, 1, true, "test"));
+            ::metrics::with_local_recorder(&recorder, || run_simulation(&schema, 1, true, ThermalSelector::default(), "test"));
         let map = snapshotter.snapshot().into_hashmap();
         let surrogate_label = map.keys().any(|ck| {
             ck.key().name() == crate::api::metrics::SIMULATION_SOLVER_KIND
@@ -3628,6 +3711,113 @@ mod tests {
         );
     }
 
+    // ---- Issue #3281 — zone_solver / conduction_solver request fields ------
+
+    #[test]
+    fn parse_selector_defaults_when_fields_omitted() {
+        let opts: SimulateOptions = serde_json::from_str("{}").unwrap();
+        let selector = parse_selector_from_options(&opts).unwrap();
+        assert_eq!(selector, ThermalSelector::default());
+        assert_eq!(selector.zone_solver.as_str(), "gauge");
+        assert_eq!(selector.conduction_solver.as_str(), "default");
+    }
+
+    #[test]
+    fn parse_selector_accepts_explicit_values() {
+        let opts: SimulateOptions =
+            serde_json::from_str(r#"{"zone_solver": "5r1c", "conduction_solver": "ctf"}"#)
+                .unwrap();
+        let selector = parse_selector_from_options(&opts).unwrap();
+        assert_eq!(selector.zone_solver.as_str(), "5r1c");
+        assert_eq!(selector.conduction_solver.as_str(), "ctf");
+    }
+
+    #[test]
+    fn parse_selector_partial_fields_use_default_for_the_other() {
+        let opts: SimulateOptions = serde_json::from_str(r#"{"zone_solver": "9r4c"}"#).unwrap();
+        let selector = parse_selector_from_options(&opts).unwrap();
+        assert_eq!(selector.zone_solver.as_str(), "9r4c");
+        assert_eq!(selector.conduction_solver.as_str(), "default");
+    }
+
+    #[test]
+    fn parse_selector_rejects_unknown_zone_solver_as_400() {
+        let opts: SimulateOptions =
+            serde_json::from_str(r#"{"zone_solver": "warp_drive"}"#).unwrap();
+        let err = parse_selector_from_options(&opts).unwrap_err();
+        assert!(
+            matches!(err, ApiError::InvalidRequest(_)),
+            "unknown zone_solver must be InvalidRequest (HTTP 400), got {err:?}"
+        );
+        assert!(err.to_string().contains("unknown zone_solver"));
+    }
+
+    #[test]
+    fn parse_selector_rejects_unknown_conduction_solver_as_400() {
+        let opts: SimulateOptions =
+            serde_json::from_str(r#"{"conduction_solver": "quantum"}"#).unwrap();
+        let err = parse_selector_from_options(&opts).unwrap_err();
+        assert!(
+            matches!(err, ApiError::InvalidRequest(_)),
+            "unknown conduction_solver must be InvalidRequest (HTTP 400), got {err:?}"
+        );
+    }
+
+    #[test]
+    fn parse_selector_always_rejects_experimental_zone_solvers() {
+        // "6r2c" / "8r3c" have no ZoneSolverKind variant yet (the
+        // fluxion-experimental-zone-solvers cargo feature ships in PR4 of
+        // #3291), so they must be rejected regardless of the env gate —
+        // fail-closed either way.
+        for value in ["6r2c", "8r3c"] {
+            let opts: SimulateOptions =
+                serde_json::from_str(&format!(r#"{{"zone_solver": "{value}"}}"#)).unwrap();
+            let err = parse_selector_from_options(&opts).unwrap_err();
+            assert!(
+                matches!(err, ApiError::InvalidRequest(_)),
+                "experimental '{value}' must be InvalidRequest, got {err:?}"
+            );
+            assert!(
+                err.to_string().contains("experimental"),
+                "rejection must be flagged experimental: {err}"
+            );
+        }
+    }
+
+    /// Issue #3281 acceptance — an explicit
+    /// `{"zone_solver": "gauge", "conduction_solver": "default"}` request
+    /// must produce a model identical to omitting both fields. The selector
+    /// is the only difference between the two runs, so identical selectors
+    /// ⇒ bit-identical EUI.
+    #[test]
+    fn explicit_gauge_default_matches_omitted_fields() {
+        let schema = default_schema_v1();
+        let omitted = run_simulation(
+            &schema,
+            1,
+            false,
+            parse_selector_from_options(&SimulateOptions::default()).unwrap(),
+            "test",
+        )
+        .unwrap();
+        let explicit_opts: SimulateOptions = serde_json::from_str(
+            r#"{"zone_solver": "gauge", "conduction_solver": "default"}"#,
+        )
+        .unwrap();
+        let explicit = run_simulation(
+            &schema,
+            1,
+            false,
+            parse_selector_from_options(&explicit_opts).unwrap(),
+            "test",
+        )
+        .unwrap();
+        assert_eq!(
+            omitted.eui, explicit.eui,
+            "explicit gauge+default must be bit-identical to omitted fields"
+        );
+    }
+
     #[test]
     fn run_simulation_clamps_huge_years_defensively() {
         // Even though the REST path rejects u32::MAX at deserialisation,
@@ -3641,7 +3831,7 @@ mod tests {
         // returning, which would trip the test process timeout.
         let schema = default_schema_v1();
         let start = std::time::Instant::now();
-        let result = run_simulation(&schema, u32::MAX, false, "test");
+        let result = run_simulation(&schema, u32::MAX, false, ThermalSelector::default(), "test");
         assert!(
             start.elapsed().as_secs() < 30,
             "run_simulation with u32::MAX took {:?} — clamp appears absent",
@@ -3801,7 +3991,7 @@ mod tests {
         let schema = default_schema_v1();
 
         tracing::subscriber::with_default(subscriber, || {
-            let _ = run_simulation(&schema, 1, true, "test-123");
+            let _ = run_simulation(&schema, 1, true, ThermalSelector::default(), "test-123");
         });
 
         let guard = captured.lock().unwrap();
