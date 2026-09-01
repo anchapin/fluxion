@@ -217,14 +217,18 @@ chrono = { version = "0.4", features = ["serde"] }
 # UUID generation for LiveTwin (Issue #2025)
 uuid = { workspace = true, features = ["serde", "v4"] }
 
-# HTTP client and caching for weather downloads
-directories = "5.0"
+# Weather-download HTTP caching lives in fluxion-core (tmy3.rs), which owns
+# the `directories` dependency; the root package carried an unused copy of
+# `directories = "5.0"` until #3310 removed it (was a duplicate-version
+# offender vs fluxion-core's `directories = "6.0"`).
 sha2 = "0.10"
 
 # Numerical & Math
 faer = { workspace = true, default-features = false, features = ["std"] }
 nalgebra.workspace = true  # Linear algebra - matrix operations
-uom = "0.35"  # Units of measurement - dimensional analysis
+# Aligned with fluxion-fluid's `uom = "0.38"` (#3310) so only one uom version
+# resolves across the workspace graph.
+uom = "0.38"  # Units of measurement - dimensional analysis
 # Inline storage for small collections — backs VectorField's SmallVec<[f64; 4]>
 # so the per-timestep hot loop (Issue #2687) stops heap-allocating for ≤4-zone
 # models (clone/map/zip_with/constant_like become stack ops). Already a
