@@ -72,6 +72,57 @@ const results = oracle.evaluatePopulation([
 ], false);
 ```
 
+### One-Call Simulation: `runSimulation` (issue #3306)
+
+`runSimulation(options)` is the convenience wrapper that issue #3282's Node
+example assumed: it constructs a `StateExtractor` with the thermal selector,
+calls `configure`, runs the simulation, and returns plain serializable data.
+
+```javascript
+const { runSimulation } = require('@fluxion/native');
+
+const baseline = runSimulation({ years: 1 });
+console.log(baseline.zoneSolver); // 'gauge'
+
+const legacy = runSimulation({ years: 1, zoneSolver: '5r1c' });
+console.log(legacy.zoneSolver); // '5r1c'
+console.log(legacy.zoneTemperatures.length); // 8760 (per simulated year)
+```
+
+**Options**
+
+| Option             | Type      | Default      | Description                                                              |
+|--------------------|-----------|--------------|--------------------------------------------------------------------------|
+| `years`            | `number`  | `1`          | Years to simulate (8760 hourly timesteps per year)                       |
+| `zoneSolver`       | `string`  | `'gauge'`    | `'gauge'` \| `'5r1c'` \| `'9r4c'`; case-insensitive                      |
+| `conductionSolver` | `string`  | `'default'`  | `'default'` \| `'ctf'` \| `'fd'`; case-insensitive                       |
+| `useSurrogates`    | `boolean` | `false`      | Use AI surrogates for faster evaluation when available                   |
+| `caseSpec`         | —         | —            | Reserved; rejected — the native `StateExtractor` runs the ASHRAE 600 baseline only |
+| `schema`           | —         | —            | Reserved; rejected — same as `caseSpec`                                  |
+
+**Selector wiring and observability.** The `zoneSolver` / `conductionSolver`
+options are forwarded to `new StateExtractor({ zoneSolver, conductionSolver })`,
+so the run uses the same shared Rust selector (`parse_zone_solver` /
+`parse_conduction_solver`, `ThermalModel::from_spec_with_selector`) as the
+Python binding and CLI. The returned object echoes the effective lowercase
+labels (`zoneSolver`, `conductionSolver`); a returned `zoneSolver` of
+`'5r1c'` guarantees the Rust parser accepted the identifier and built the
+model with it — construction would have thrown otherwise.
+
+**Experimental gate.** Experimental identifiers (`'6r2c'`, `'8r3c'`) are
+rejected without the `FLUXION_EXPERIMENTAL_ZONE_SOLVERS=1` environment
+variable, reusing the exact shared gate message from the Rust parser. Even
+with the env var set they stay unavailable until the
+`fluxion-experimental-zone-solvers` cargo feature ships (issue #3291);
+unknown values surface the Rust vocabulary error verbatim.
+
+**Return shape.** Plain serializable data (no class instances):
+`{ years, timesteps, zoneSolver, conductionSolver, useSurrogates,
+zoneTemperatures[], massTemperatures[], heatingLoads[], coolingLoads[],
+solarGains[] }`, where the temperature/load/gain arrays are per-timestep
+plain `number[]` arrays (`zoneTemperatures` has `years * 8760` entries for
+the single-zone baseline case).
+
 ### Error Handling
 
 Four distinct error types map to Rust error types:
