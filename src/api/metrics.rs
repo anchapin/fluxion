@@ -284,9 +284,11 @@ pub fn init_recorder() -> PrometheusHandle {
 /// - [`SIMULATION_DURATION_SECONDS`] histogram, labeled `years`,
 ///   `use_surrogates` (`true` | `false`) and `outcome` (`success` | `error`).
 /// - [`SIMULATION_SOLVER_KIND`] counter (+1), labeled `conduction` and
-///   `thermal_model`. The REST `run_simulation` path always uses the built-in
-///   analytical conduction solver; `thermal_model` reflects whether a neural
-///   surrogate was requested.
+///   `thermal_model` (the pre-#3284 axis: whether a neural surrogate was
+///   requested) plus the new Issue #3284 `solver` label carrying the
+///   `{zone}+{conduction}` selector pair, e.g. `"gauge+default"`,
+///   `"5r1c+ctf"`. The REST `run_simulation` path always uses the built-in
+///   analytical conduction slot, so `conduction` stays `"analytical"`.
 /// - [`SIMULATION_ZONE_COUNT`] gauge set to `num_zones`.
 /// - [`SIMULATION_ENERGY_KWH_TOTAL`] counter, incremented by `energy_kwh`
 ///   **only on success** (pass `None` on the error path).
@@ -301,6 +303,7 @@ pub fn record_simulation(
     success: bool,
     num_zones: usize,
     energy_kwh: Option<f64>,
+    solver_kind: &str,
 ) {
     let outcome = if success { "success" } else { "error" };
     histogram!(
@@ -315,6 +318,7 @@ pub fn record_simulation(
         SIMULATION_SOLVER_KIND,
         "conduction" => "analytical",
         "thermal_model" => if use_surrogates { "surrogate" } else { "analytical" },
+        "solver" => solver_kind.to_string(),
     )
     .increment(1);
 
@@ -765,7 +769,7 @@ mod tests {
 
         ::metrics::with_local_recorder(&recorder, || {
             // 5_000.7 kWh must truncate to 5_000 whole kWh on the counter.
-            record_simulation(0.042, 2, true, true, 3, Some(5_000.7));
+            record_simulation(0.042, 2, true, true, 3, Some(5_000.7), "gauge+default");
         });
 
         let map = snapshotter.snapshot().into_hashmap();
@@ -785,9 +789,9 @@ mod tests {
         let snapshotter = recorder.snapshotter();
 
         ::metrics::with_local_recorder(&recorder, || {
-            record_simulation(0.0123, 1, false, false, 2, None);
-            record_simulation(0.05, 1, false, false, 2, Some(0.0));
-            record_simulation(0.05, 1, false, false, 2, Some(-100.0));
+            record_simulation(0.0123, 1, false, false, 2, None, "gauge+default");
+            record_simulation(0.05, 1, false, false, 2, Some(0.0), "gauge+default");
+            record_simulation(0.05, 1, false, false, 2, Some(-100.0), "5r1c+ctf");
         });
 
         let map = snapshotter.snapshot().into_hashmap();
@@ -800,6 +804,49 @@ mod tests {
         assert!(
             !present,
             "energy counter must not advance on None / zero / negative kWh"
+        );
+    }
+
+    /// Issue #3284 — `record_simulation()` must carry the `{zone}+{conduction}`
+    /// selector pair on the new `solver` label of
+    /// [`SIMULATION_SOLVER_KIND`], while keeping the pre-existing
+    /// `conduction` / `thermal_model` labels intact for dashboard continuity.
+    #[test]
+    fn record_simulation_emits_zone_plus_conduction_solver_label() {
+        let recorder = DebuggingRecorder::new();
+        let snapshotter = recorder.snapshotter();
+
+        ::metrics::with_local_recorder(&recorder, || {
+            record_simulation(0.01, 1, false, true, 1, None, "5r1c+ctf");
+        });
+
+        let map = snapshotter.snapshot().into_hashmap();
+        let has_solver_label = map.keys().any(|ck| {
+            ck.key().name() == SIMULATION_SOLVER_KIND
+                && ck
+                    .key()
+                    .labels()
+                    .any(|l| l.key() == "solver" && l.value() == "5r1c+ctf")
+        });
+        assert!(
+            has_solver_label,
+            "solver label must carry the '{{zone}}+{{conduction}}' pair"
+        );
+        // Pre-#3284 labels stay for dashboard continuity.
+        let legacy_labels = map.keys().any(|ck| {
+            ck.key().name() == SIMULATION_SOLVER_KIND
+                && ck
+                    .key()
+                    .labels()
+                    .any(|l| l.key() == "conduction" && l.value() == "analytical")
+                && ck
+                    .key()
+                    .labels()
+                    .any(|l| l.key() == "thermal_model" && l.value() == "analytical")
+        });
+        assert!(
+            legacy_labels,
+            "conduction/thermal_model labels must remain unchanged"
         );
     }
 

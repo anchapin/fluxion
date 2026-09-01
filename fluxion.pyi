@@ -308,7 +308,20 @@ class MultiZoneThermalModel:
 
     def __init__(self, num_zones: int = 2) -> None: ...
     @staticmethod
-    def from_case_spec(case_id: str) -> MultiZoneThermalModel: ...
+    def from_case_spec(
+        case_id: str,
+        zone_solver: str | None = None,
+        conduction_solver: str | None = None,
+    ) -> MultiZoneThermalModel:
+        """Build a model from an ASHRAE 140 case id.
+
+        ``zone_solver``: ``"gauge"`` (default) | ``"5r1c"`` | ``"9r4c"``.
+        The experimental ``"6r2c"`` / ``"8r3c"`` values raise ``ValueError``
+        unless ``FLUXION_EXPERIMENTAL_ZONE_SOLVERS=1`` is set (and stay
+        unavailable until the experimental cargo feature ships; issue #3291).
+        ``conduction_solver``: ``"default"`` (default) | ``"ctf"`` | ``"fd"``.
+        """
+        ...
     def num_zones(self) -> int: ...
     def get_inner_num_zones(self) -> int: ...
     def get_zone_temperatures(self) -> list[float]: ...

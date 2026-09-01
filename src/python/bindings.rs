@@ -64,11 +64,40 @@ impl PyMultiZoneThermalModel {
     /// # Arguments
     /// * `case_id` - ASHRAE 140 case identifier (case-insensitive). Examples:
     ///   `"Case900"`, `"Case600"`, `"case_900"`.
+    /// * `zone_solver` - Optional solver selection (Issue #3282). One of
+    ///   `"gauge"` (default) | `"5r1c"` | `"9r4c"`. The experimental
+    ///   `"6r2c"` / `"8r3c"` identifiers raise `ValueError` unless the
+    ///   `FLUXION_EXPERIMENTAL_ZONE_SOLVERS=1` env var is set (and even then
+    ///   they stay unavailable until the experimental cargo feature ships;
+    ///   issue #3291).
+    /// * `conduction_solver` - Optional conduction algorithm. One of
+    ///   `"default"` (default) | `"ctf"` | `"fd"`.
     ///
     /// # Errors
-    /// Raises `ValueError` for unknown case IDs.
+    /// Raises `ValueError` for unknown case IDs and for unknown or
+    /// experimental solver selections.
     #[staticmethod]
-    pub fn from_case_spec(case_id: &str) -> PyResult<Self> {
+    #[pyo3(signature = (case_id, zone_solver=None, conduction_solver=None))]
+    pub fn from_case_spec(
+        case_id: &str,
+        zone_solver: Option<String>,
+        conduction_solver: Option<String>,
+    ) -> PyResult<Self> {
+        // Issue #3282 — shared parsing (same vocabulary + gate wording as
+        // the REST and CLI layers), surfacing rejections as Python
+        // `ValueError`s.
+        let selector = crate::sim::thermal_selector::ThermalSelector {
+            zone_solver: match &zone_solver {
+                Some(s) => crate::sim::thermal_selector::parse_zone_solver(s)
+                    .map_err(pyo3::exceptions::PyValueError::new_err)?,
+                None => crate::sim::thermal_selector::ZoneSolverKind::Gauge,
+            },
+            conduction_solver: match &conduction_solver {
+                Some(s) => crate::sim::thermal_selector::parse_conduction_solver(s)
+                    .map_err(pyo3::exceptions::PyValueError::new_err)?,
+                None => crate::sim::thermal_selector::ConductionSolverKind::Default,
+            },
+        };
         let normalized: String = case_id
             .chars()
             .filter(|c| !c.is_whitespace() && *c != '_')
@@ -109,11 +138,8 @@ impl PyMultiZoneThermalModel {
         };
         let spec = case_enum.spec();
         Ok(PyMultiZoneThermalModel {
-            inner: ThermalModel::<VectorField>::from_spec_with_selector(
-                &spec,
-                &ThermalSelector::default(),
-            )
-            .expect("default selector must initialize"),
+            inner: ThermalModel::<VectorField>::from_spec_with_selector(&spec, &selector)
+                .map_err(|e| pyo3::exceptions::PyValueError::new_err(e.to_string()))?,
         })
     }
 

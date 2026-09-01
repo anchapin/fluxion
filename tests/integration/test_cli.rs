@@ -430,3 +430,106 @@ fn test_parallel_issue_workflow_source_is_removed() {
         "src/bin/parallel_issue_workflow.rs must be removed (issue #2946); found at {path:?}"
     );
 }
+
+// ---- Issue #3283 — --zone-solver / --conduction-solver flags --------------
+
+/// `fluxion --help` must advertise the new solver-selection flags.
+#[test]
+fn test_cli_help_shows_solver_flags() {
+    let (status, stdout, stderr) = run_fluxion(&["--help"]);
+    assert!(status.success(), "--help must exit 0; stderr:\n{stderr}");
+    let combined = format!("{stdout}\n{stderr}");
+    assert!(
+        combined.contains("--zone-solver"),
+        "--help must list --zone-solver; got:\n{combined}"
+    );
+    assert!(
+        combined.contains("--conduction-solver"),
+        "--help must list --conduction-solver; got:\n{combined}"
+    );
+}
+
+/// Unknown zone-solver values must fail with a non-zero exit before any
+/// simulation work, using the shared rejection wording.
+#[test]
+fn test_cli_unknown_zone_solver_fails_loudly() {
+    let (status, stdout, stderr) = run_fluxion(&["--zone-solver", "warp_drive", "dummy.flux"]);
+    assert!(
+        !status.success(),
+        "unknown --zone-solver must exit non-zero; stdout:\n{stdout}\nstderr:\n{stderr}"
+    );
+    let combined = format!("{stdout}\n{stderr}");
+    assert!(
+        combined.contains("unknown zone_solver"),
+        "error must use the shared 'unknown zone_solver' wording; got:\n{combined}"
+    );
+}
+
+/// Unknown conduction-solver values must fail with a non-zero exit.
+#[test]
+fn test_cli_unknown_conduction_solver_fails_loudly() {
+    let (status, stdout, stderr) = run_fluxion(&["--conduction-solver", "quantum", "dummy.flux"]);
+    assert!(
+        !status.success(),
+        "unknown --conduction-solver must exit non-zero; stdout:\n{stdout}\nstderr:\n{stderr}"
+    );
+    let combined = format!("{stdout}\n{stderr}");
+    assert!(
+        combined.contains("unknown conduction_solver"),
+        "error must use the shared 'unknown conduction_solver' wording; got:\n{combined}"
+    );
+}
+
+/// The experimental `6r2c` identifier must be rejected (fail-closed) with a
+/// message naming the FLUXION_EXPERIMENTAL_ZONE_SOLVERS gate — regardless of
+/// whether the env var is set on the test process (without the
+/// `fluxion-experimental-zone-solvers` cargo feature there is no variant to
+/// construct).
+#[test]
+fn test_cli_experimental_zone_solver_rejected() {
+    let (status, stdout, stderr) = run_fluxion(&["--zone-solver", "6r2c", "dummy.flux"]);
+    assert!(
+        !status.success(),
+        "experimental --zone-solver 6r2c must exit non-zero; stdout:\n{stdout}\nstderr:\n{stderr}"
+    );
+    let combined = format!("{stdout}\n{stderr}");
+    assert!(
+        combined.contains("experimental"),
+        "rejection must be flagged experimental; got:\n{combined}"
+    );
+    assert!(
+        combined.contains("6r2c"),
+        "rejection must name the identifier; got:\n{combined}"
+    );
+}
+
+/// Valid flag values must pass selection validation (the run then fails for
+/// the unrelated, expected reason: the input file does not exist — NOT with
+/// a solver error). A weather file is supplied so the run reaches the
+/// input-file precondition (the weather check runs first).
+#[test]
+fn test_cli_valid_solver_flags_pass_selection() {
+    let (status, stdout, stderr) = run_fluxion(&[
+        "--zone-solver",
+        "5r1c",
+        "--conduction-solver",
+        "ctf",
+        "--weather",
+        "dummy.epw",
+        "definitely-missing-input.flux",
+    ]);
+    assert!(
+        !status.success(),
+        "missing input file must still fail; stdout:\n{stdout}\nstderr:\n{stderr}"
+    );
+    let combined = format!("{stdout}\n{stderr}");
+    assert!(
+        !combined.contains("unknown zone_solver")
+            && !combined.contains("unknown conduction_solver"),
+        "valid solver values must NOT trigger selection errors; got:\n{combined}"
+    );
+    assert!(
+        combined.contains("Input file not found"),
+        "failure must be the missing-input check, proving selection passed; got:\n{combined}"
+    );
+}

@@ -1,0 +1,218 @@
+name: Nightly ASHRAE 140 Gauge β-Soak
+
+# Issue #3284 — nightly telemetry for the GaugeSolver β-phase.
+#
+# Runs the seven ADR-0007 acceptance criteria
+# (docs/adr/0007-gauge-solver-structural-work.md) on `develop` every night
+# with the `gauge-solver` cargo feature enabled and the gauge zone solver
+# selected (the Issue #3274 `ThermalSelector::default()` is gauge+default,
+# so every case-spec path in this suite exercises the gauge-selected
+# dispatch; the CLI smoke additionally passes `--zone-solver gauge`
+# explicitly, per the issue text).
+#
+# Soak window (Issue #3286): the job computes the current consecutive-green
+# streak from this workflow's run history (stateless — no commit-back
+# needed), writes it to a `beta-soak-state.json` artifact, and posts a
+# status comment on the tracking issue. When the streak reaches 30, the
+# comment signals that the PR4 default-flip is unblocked.
+#
+# Standard `ubuntu-latest` runners are used deliberately (NOT the
+# 32 GB `ubuntu-latest-8-cores` label — unavailable on this plan; see the
+# permanently-queued mutation-testing job).
+
+on:
+  schedule:
+    # 06:00 UTC daily
+    - cron: '0 6 * * *'
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: nightly-ashrae-140-gauge-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  CARGO_TERM_COLOR: always
+  # Issue #3282 — the hidden experimental gate. The nightly does NOT set it:
+  # the soak must validate the default (production) gate posture.
+  SOAK_TRACKING_ISSUE: '3286'
+  SOAK_TARGET: '30'
+
+jobs:
+  ashrae-140-gauge-soak:
+    name: ADR-0007 criteria + soak streak
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo registry and target
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: nightly-gauge-${{ runner.os }}-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            nightly-gauge-${{ runner.os }}-
+
+      - name: Disk space guard
+        run: ./scripts/disk-space-check.sh
+
+      # ADR-0007 criterion 1 — strict ±15% annual-energy band gate.
+      - name: Criterion 1 — ashrae_140_validation (strict ±15% band)
+        run: cargo test --locked --features gauge-solver --test ashrae_140_validation
+
+      # ADR-0007 criterion 2 — energy conservation gate.
+      - name: Criterion 2 — zone_balance_eplus_isolation (energy conservation)
+        run: cargo test --locked --features gauge-solver --test zone_balance_eplus_isolation
+
+      # ADR-0007 criterion 3 — CLI behaviour / stub guards (includes the
+      # Issue #3283 --zone-solver / --conduction-solver flag tests).
+      - name: Criterion 3 — integration-cli (CLI behaviour / stub guards)
+        run: cargo test --locked --features gauge-solver --test integration-cli
+
+      # ADR-0007 criterion 4 — Case 600 series.
+      - name: Criterion 4 — ashrae_140_case_600_series
+        run: cargo test --locked -p fluxion --features gauge-solver --test ashrae_140_case_600_series
+
+      # ADR-0007 criterion 5 — quarantined Case 600 metrics tracking.
+      - name: Criterion 5 — issue_1457_case_600_series_tracking
+        run: cargo test --locked --features gauge-solver --test known_issues_regression issue_1457_case_600_series_tracking
+
+      # ADR-0007 criterion 6 — Case 900 high-mass validation harness.
+      - name: Criterion 6 — gauge_validation_case_900
+        run: cargo test --locked --features gauge-solver --test gauge_validation_case_900
+
+      # Issue #3283 smoke — explicit `--zone-solver gauge` selection exits
+      # through the (intentional, #2947) fail-closed stub, but the selection
+      # itself must validate. A silent clap rejection would exit before the
+      # banner, so we assert the banner carries the selector. Dummy input /
+      # weather files are created because the banner prints after the
+      # existence checks; the run still exits non-zero at the weather-decode
+      # or stub stage, which is the loud-failure contract.
+      - name: CLI smoke — explicit --zone-solver gauge selection
+        run: |
+          set -euo pipefail
+          touch tmp-smoke.epw tmp-smoke.flux
+          out=$(cargo run --locked --quiet --bin fluxion -- \
+            --zone-solver gauge --conduction-solver default \
+            --weather tmp-smoke.epw tmp-smoke.flux 2>&1 || true)
+          echo "$out"
+          grep -q "Zone solver: gauge (conduction: default)" <<<"$out"
+
+      # ADR-0007 criterion 7 — no #[ignore] removals that were not
+      # explicitly enabled. Advisory here (removals are authorised in PR
+      # review, not in nightlies): the count is recorded and a *drop*
+      # against the committed baseline is reported in the soak comment.
+      - name: Criterion 7 — #[ignore] census vs baseline
+        id: ignore_census
+        run: |
+          set -euo pipefail
+          grep -rn "#\[ignore" tests/ src/ --include="*.rs" 2>/dev/null | sort \
+            > /tmp/ignored_now.txt
+          base=tests/reference_data/ignored_tests_baseline.txt
+          now=$(wc -l < /tmp/ignored_now.txt)
+          echo "count=${now}" >> "$GITHUB_OUTPUT"
+          echo "IGNORED_TEST_COUNT=${now}" >> "$GITHUB_ENV"
+          if [ ! -f "$base" ]; then
+            echo "IGNORE_CENSUS_DELTA=baseline-missing" >> "$GITHUB_ENV"
+            exit 0
+          fi
+          removed=$(comm -23 "$base" /tmp/ignored_now.txt | wc -l)
+          echo "IGNORE_CENSUS_DELTA=${removed}" >> "$GITHUB_ENV"
+          echo "#[ignore] count: now=${now} baseline=$(wc -l < "$base") removed=${removed}"
+
+      # Soak streak — stateless: the source of truth is this workflow's own
+      # run history. Count consecutive successful runs going back from now.
+      - name: Compute β-soak streak
+        id: streak
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          repo="${GITHUB_REPOSITORY}"
+          wf="nightly-ashrae-140-gauge.yml"
+          # Only completed runs on the default branch, newest first.
+          gh run list --repo "$repo" --workflow "$wf" \
+            --branch develop --status completed --limit 60 \
+            --json conclusion,databaseId,createdAt,displayTitle > runs.json
+          python3 - <<'PY'
+          import json, os
+          from datetime import datetime, timezone
+          runs = json.load(open("runs.json"))
+          # gh run list is newest-first. Only completed runs are listed
+          # (--status completed), so the in-flight run is not counted — the
+          # streak is one run conservative (tonight's success counts from
+          # tomorrow). Stop counting at the first non-success.
+          streak = 0
+          for r in runs:
+              if r["conclusion"] == "success":
+                  streak += 1
+              else:
+                  break
+          target = int(os.environ["SOAK_TARGET"])
+          state = {
+              "streak": streak,
+              "target": target,
+              "unblocked": streak >= target,
+              "runs_considered": len(runs),
+              "last_run_id": runs[0]["databaseId"] if runs else None,
+              "generated_at": datetime.now(timezone.utc).isoformat(),
+          }
+          with open("beta-soak-state.json", "w") as f:
+              json.dump(state, f, indent=2)
+          with open(os.environ["GITHUB_OUTPUT"], "a") as f:
+              f.write(f"streak={streak}\n")
+              f.write(f"unblocked={'true' if streak >= target else 'false'}\n")
+          print(f"β-soak streak: {streak}/{target}")
+          PY
+
+      - name: Upload β-soak state artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: beta-soak-state
+          path: |
+            beta-soak-state.json
+            /tmp/ignored_now.txt
+          retention-days: 90
+
+      # Post the nightly result + streak on the tracking issue (#3286).
+      # One comment per night — the issue is the durable soak log.
+      - name: Report nightly result on soak tracking issue
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          run_url="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+          status="${{ job.status }}"
+          streak="${{ steps.streak.outputs.streak || '0' }}"
+          unblocked="${{ steps.streak.outputs.unblocked || 'false' }}"
+          if [ "$status" = "success" ]; then
+            header="✅ Nightly green — β-soak streak ${streak}/${SOAK_TARGET}"
+          else
+            header="❌ Nightly ${status} — β-soak streak resets to 0"
+          fi
+          if [ "$unblocked" = "true" ]; then
+            header="${header} — 🎉 SOAK COMPLETE: PR4 default-flip is unblocked (issue #3291)"
+          fi
+          {
+            echo "## ${header}"
+            echo ""
+            echo "- Run: ${run_url}"
+            echo "- Commit: \`${GITHUB_SHA::12}\`"
+            echo "- ADR-0007 criteria 1–6: executed (see run log for per-criterion results)"
+            echo "- Criterion 7 census: \`#[ignore]\` count = ${IGNORED_TEST_COUNT:-unknown}, removed vs baseline = ${IGNORE_CENSUS_DELTA:-unknown}"
+            echo "- Solver selection: gauge+default (ThermalSelector::default(), metric label \`solver=\"gauge+default\"\`)"
+          } > comment.md
+          gh issue comment "$SOAK_TRACKING_ISSUE" \
+            --repo "$GITHUB_REPOSITORY" \
+            --body-file comment.md

@@ -1,0 +1,160 @@
+src/physics/fd_surface_balance.rs:342:    #[ignore] // Needs implicit coupling for stability
+src/physics/fd_surface_balance.rs:373:    #[ignore] // Needs implicit coupling for stability
+src/sim/decoupled_loop_rayon.rs:1503:    /// `#[ignore]`: this is a local/manual parallelism regression guard, not a
+src/sim/decoupled_loop_rayon.rs:1512:    #[ignore = "local-only parallelism probe; see doc comment — run with --ignored"]
+src/solar/surface_irradiance.rs:651:    #[ignore = "Known issue: Perez Table 3 source data has F1[0] = 1.321 (bin 5) > 0.999 (bin 6), \
+src/solar/surface_irradiance.rs:755:    #[ignore = "Known issue: Perez Table 3 source data has F1[0] = 1.321 (bin 5) > 0.999 (bin 6), \
+src/testing/tdd_framework.rs:1132:            "No E+ reference CSV available (issue #1424 gates behind #[ignore])",
+src/testing/tdd_framework.rs:1194:            "No E+ reference CSV available (issue #1424 gates behind #[ignore])",
+src/testing/tdd_framework.rs:1266:            "No E+ reference CSV available (issue #1424 gates behind #[ignore])",
+src/validation/ashrae_140_cases.rs:3289:    /// `tests/ashrae_140_blind_validation.rs` is gated with `#[ignore]` until
+src/validation/ashrae_140_cases.rs:3568:    /// `tests/ashrae_140_blind_validation.rs` is gated with `#[ignore]` until
+tests/ashrae_140_blind_validation.rs:1033:/// in `tests/zone_balance_eplus_isolation.rs` (which is `#[ignore]`'d
+tests/ashrae_140_blind_validation.rs:1085:// `#[ignore]`'d pending the missing reference CSVs (see issue #1331 / #1168).
+tests/ashrae_140_blind_validation.rs:10://! **`#[ignore]`'d as of #2677** (v1.3 DoD blocker): its reference CSVs under
+tests/ashrae_140_blind_validation.rs:1190:#[ignore = "Case 960 Blind heating_max 2.45 MWh > 1.0 MWh (AC4) — LIMIT-18 (structural 5R1C single-lumped-mass-node limitation, unblocked by GaugeSolver rework #1465/#1462)"]
+tests/ashrae_140_blind_validation.rs:1219:// They are `#[ignore]`'d because the per-case hourly reference CSV
+tests/ashrae_140_blind_validation.rs:1227:#[ignore = "Pending case_800_energy_reference.csv (EnergyPlus regeneration tracked in #1331/#1168)"]
+tests/ashrae_140_blind_validation.rs:1264:#[ignore = "Pending case_810_energy_reference.csv (EnergyPlus regeneration tracked in #1331/#1168)"]
+tests/ashrae_140_blind_validation.rs:1301:#[ignore = "Case 920 reference CSV (PR #1331) is now in place; engine still under-predicts annual heating (1.708 MWh vs band [3.26, 4.30]). Same root cause as #1213 / #1323 (high-mass peak cooling + roof-solar under-counting). Re-evaluate when #1323 closes (issue #1346 AC)."]
+tests/ashrae_140_blind_validation.rs:1338:#[ignore = "Case 950 reference CSV (PR #1331) is now in place; strict band check stays #[ignore]'d pending #1323 close (same root cause as Case 600/900/920 — high-mass peak cooling + roof-solar under-counting). Issue #1347 AC2."]
+tests/ashrae_140_blind_validation.rs:1373:#[ignore = "Pending case_960_energy_reference.csv (EnergyPlus regeneration tracked in #1331/#1168)"]
+tests/ashrae_140_blind_validation.rs:2300:#[ignore = "Pre-existing failure tracked in #3071; blocked by #1422 + GaugeSolver #1465/#1462; once structural fix lands, re-test"]
+tests/ashrae_140_blind_validation.rs:465:// The dependent gate `test_monthly_energy_validation_baseline` was `#[ignore]`'d
+tests/ashrae_140_blind_validation.rs:471:// now runnable in CI (no longer `#[ignore]`'d) and reports the monthly pass/fail
+tests/ashrae_140_blind_validation.rs:72://! - `test_case_600_annual_energy_ashrae140_tolerance` (line 843, `#[ignore]`)
+tests/ashrae_140_blind_validation.rs:73://! - `test_case_900_annual_energy_ashrae140_tolerance` (line 907, `#[ignore]`)
+tests/ashrae_140_blind_validation.rs:75://! Both are `#[ignore]`'d pending the physics fix tracked in #1213 (the
+tests/ashrae_140_blind_validation.rs:781:/// **Issue #2748 — gate is no longer `#[ignore]`'d:** the monthly reference CSVs
+tests/ashrae_140_blind_validation.rs:794:/// Historical: the test was originally `#[ignore]`'d in #2677 because the
+tests/ashrae_140_blind_validation.rs:864:/// `#[ignore]`'d pending the physics fix in #1213. This test focuses
+tests/ashrae_140_blind_validation.rs:993:/// The strict ±15% tolerance check is `#[ignore]`'d in
+tests/ashrae_140_case_900.rs:1292:#[ignore = "LIMIT-05 (Issue #2490): 900FF max temp over-damped (~38.7 °C vs reference [41.8, 46.4] °C) so the paired-comparison in_range_900 assertion cannot pass. This test was upgraded to the canonical Denver TMY3 EPW (EpwWeatherSource::from_file) to match src/validation/ashrae_140_validator.rs — that fixed the 900FF night-minimum divergence (synthetic DenverTmyWeather never reached the ~-24 °C Denver cold snaps) but the max-temp gap is a structural high-mass 9R4C over-damping limitation (roof-solar under-counting ~3x), NOT a weather-fidelity bug. See docs/KNOWN_ISSUES.md §LIMIT-05; architectural fix routed to GaugeSolver rework #1465/#1462. Remove this #[ignore] once #1465 lands."]
+tests/ashrae_140_case_900.rs:1426:#[ignore] // Disabled due to test pollution - use individual case tests instead
+tests/ashrae_140_case_900.rs:423:#[ignore = "LIMIT-05: Case 900 annual cooling under-predicted (~0.96 MWh vs [2.13, 3.67] MWh) — high-mass 9R4C single-node over-damps the cooling load (roof-solar under-counting ~3x). Persists with the canonical Denver TMY3 EPW (Issue #2490), so this is a structural physics gap, not a weather-fidelity bug. Tracked by docs/KNOWN_ISSUES.md §LIMIT-05; architectural fix routed to GaugeSolver rework #1465/#1462."]
+tests/ashrae_140_case_900.rs:500:#[ignore = "LIMIT-05: Case 900 peak cooling under-predicted (~0.89 kW vs [1.20, 3.50] kW) — high-mass 9R4C single-node over-damps instantaneous peaks (τ≈1.23 h vs 1 h timestep). Persists with the canonical Denver TMY3 EPW (Issue #2490), so this is a structural physics gap, not a weather-fidelity bug. See docs/KNOWN_ISSUES.md §LIMIT-05 (snapshot: 0.86 kW, -69% UNDER); fix routed to GaugeSolver #1465/#1462."]
+tests/ashrae_140_case_900.rs:581:#[ignore = "LIMIT-05: Case 900FF max temp over-damped (~38.7 °C vs [41.80, 46.40] °C) — the high-mass 9R4C single-node cannot reproduce the ASHRAE 140 free-float peak because roof-solar gain is under-counted (~3x). Persists with the canonical Denver TMY3 EPW (Issue #2490), so this is a structural physics gap, not a weather-fidelity bug. See docs/KNOWN_ISSUES.md §LIMIT-05; fix routed to GaugeSolver #1465/#1462."]
+tests/ashrae_140_case_900.rs:686:#[ignore = "LIMIT-05: Case 900 annual cooling energy under-predicted (~0.96 MWh vs [2.13, 3.67] MWh) — same high-mass 9R4C over-damping root cause as test_case_900_annual_cooling_within_reference_range. Persists with the canonical Denver TMY3 EPW (Issue #2490). See docs/KNOWN_ISSUES.md §LIMIT-05; fix routed to GaugeSolver #1465/#1462."]
+tests/ashrae_140_case_920.rs:15://! # Why the strict band test is `#[ignore]`'d (Issue #2427 / #2454)
+tests/ashrae_140_case_920.rs:280:// The strict band test stays `#[ignore]`'d pending the LIMIT-05 / GaugeSolver
+tests/ashrae_140_case_920.rs:289:#[ignore = "Case 920 strict band check: gated by LIMIT-05 / GaugeSolver #1465/#1462 architectural rework (per KNOWN_ISSUES.md). To run: cargo test -p fluxion --test ashrae_140_case_920 -- --ignored"]
+tests/ashrae_140_case_920.rs:392:#[ignore = "Diagnostic: per-month Case 920 attribution. Run with --ignored --nocapture to inspect."]
+tests/ashrae_140_case_920.rs:513:#[ignore = "Diagnostic: per-month Case 920 reference vs engine comparison. Run with --ignored --nocapture."]
+tests/ashrae_140_integration.rs:184:/// reference range. It is `#[ignore]`'d because three of the four metrics
+tests/ashrae_140_integration.rs:214:/// bands, remove this `#[ignore]`.
+tests/ashrae_140_integration.rs:215:#[ignore = "Issue #2683 / SOLAR-02 / LIMIT-05: three of four Case 600 \
+tests/ashrae_140_integration.rs:223:            strict_energy_gate_baseline.json. Remove the #[ignore] when \
+tests/ashrae_140_integration.rs:260:    #[ignore = "Issue #62 pending merge"]
+tests/ashrae_140_integration.rs:61:/// below, kept `#[ignore]`'d so they do not block every PR on a documented
+tests/ashrae_140_solid_conduction_variants.rs:324:#[ignore = "Solid conduction variants integration pass-rate 75% >= 75% threshold (HighMass variant structural failure) — LIMIT-20 (Issue #3218, follow-up to LIMIT-11 / Issue #3064) — same structural 5R1C single-lumped-mass-node limitation, unblocked by GaugeSolver rework #1465/#1462. The per-test HighMass assertion must remain active (no loosening); only the integration aggregator threshold updated to 75%."]
+tests/ashrae_140_solid_conduction_variants.rs:36:/// **`#[ignore]`'d as of Issue #3064** (pre-existing zero-energy assertion
+tests/ashrae_140_solid_conduction_variants.rs:59:#[ignore = "Pre-existing zero-energy assertion failure; tracked in #3064, blocked by GaugeSolver structural rework #1465/#1462; once #3059 lands, re-test"]
+tests/bdf_solver_tests.rs:364:    #[ignore]
+tests/bdf_solver_tests.rs:415:    #[ignore]
+tests/case_900_annual_energy_attribution.rs:237:#[ignore = "Diagnostic: #2448 strict cooling bands require GaugeSolver #1465/#1462"]
+tests/case_900_multinode_validation.rs:568:// The strict assertions below are gated by `#[ignore]` because peak cooling
+tests/case_900_multinode_validation.rs:571:// follow-up lands, the `#[ignore]` attribute is removed by the un-ignore
+tests/case_900_multinode_validation.rs:572:// step owned by B#5 (per #1328 scope: "A#4 does NOT modify the #[ignore]
+tests/case_900_multinode_validation.rs:698:/// The test is `#[ignore]` because post-#1356 peak cooling measured
+tests/case_900_multinode_validation.rs:704:#[ignore = "blocked by CTF transient wall modeling — post-#1356 peak cooling \
+tests/case_900_multinode_validation.rs:787:    // declared closed. The `#[ignore]` attribute gates CI until the CTF
+tests/case_900_series_seasonal_attribution.rs:388:#[ignore = "Diagnostic: run with --ignored --nocapture for per-month #2453 attribution"]
+tests/dhat_alloc_budget.rs:105:#[ignore]
+tests/dhat_alloc_budget.rs:42://! `#[ignore]`'d because dhat backtrace capture makes even this reduced run
+tests/dhat_batched_surrogate_zero_growth.rs:157:#[ignore]
+tests/dhat_batched_surrogate_zero_growth.rs:40://! `#[ignore]`'d because dhat backtrace capture makes it slower than a unit
+tests/dhat_batched_surrogate_zero_growth.rs:68:#[ignore]
+tests/dhat_evaluate_population_numpy_zero_copy.rs:120:#[ignore]
+tests/dhat_evaluate_population_numpy_zero_copy.rs:47://! `#[ignore]`'d because dhat backtrace capture makes the run slower than
+tests/dhat_hybrid_zero_alloc.rs:131:#[ignore]
+tests/dhat_hybrid_zero_alloc.rs:52://! `#[ignore]`'d because dhat backtrace capture makes it slower than a unit
+tests/dhat_step_physics_zero_alloc.rs:163:#[ignore]
+tests/dhat_step_physics_zero_alloc.rs:53://! `#[ignore]`'d because dhat backtrace capture makes it slower than a unit
+tests/dhat_zone_solar_gain_zero_alloc.rs:19://! `#[ignore]`'d because dhat backtrace capture makes it slower than a unit
+tests/dhat_zone_solar_gain_zero_alloc.rs:98:#[ignore]
+tests/diagnostics/case_195_weather_source_diagnostic.rs:182:#[ignore = "Diagnostic only: see Issue #3060 / docs/KNOWN_ISSUES.md LIMIT-15. Run with --ignored --nocapture for weather-source comparison."]
+tests/diagnostics/case_195_weather_source_diagnostic.rs:67:/// `#[ignore]`-quarantined diagnostic and does NOT touch the
+tests/diagnostics/case_920_orientation_attribution.rs:12://! `tests/ashrae_140_blind_validation.rs`. That test is `#[ignore]`'d pending
+tests/diagnostics/case_920_orientation_attribution.rs:61:#[ignore = "Diagnostic: run with --ignored --nocapture for per-orientation #2454 decomposition"]
+tests/diagnostics/case_940_setback_diagnostic.rs:244:#[ignore = "Diagnostic: run with --ignored --nocapture for Case 940 #2452 free-cooling mode logging"]
+tests/diagnostics/case_940_setback_diagnostic.rs:348:#[ignore = "Diagnostic: run with --ignored --nocapture for Case 940 #2452 CTF-enabled path comparison"]
+tests/diagnostics/case_940_setback_diagnostic.rs:600:#[ignore = "Diagnostic only — see Issue #3062 LIMIT-12"]
+tests/diagnostics/case_940_setback_diagnostic.rs:638:#[ignore = "Diagnostic only — see Issue #3062 LIMIT-12"]
+tests/diagnostics/case_940_setback_diagnostic.rs:64:#[ignore = "Diagnostic: run with --ignored --nocapture for Case 940 #2452 setback attribution"]
+tests/diagnostics/diag_917_energy.rs:10:#[ignore = "diagnostic-only test with no assertion; quarantined per #2536. Run manually with --ignored if needed."]
+tests/diagnostics/diag_917_solar.rs:10:#[ignore = "diagnostic-only test with no assertion; quarantined per #2536. Run manually with --ignored if needed."]
+tests/diagnostics/diag_917_v2.rs:94:#[ignore = "diagnostic-only test with no assertion; quarantined per #2536. Run manually with --ignored if needed."]
+tests/diagnostics/diag_check.rs:10:#[ignore = "diagnostic-only test with no assertion; quarantined per #2536. Run manually with --ignored if needed."]
+tests/diagnostics/diag_mass_traj.rs:12:#[ignore = "diagnostic-only test with no assertion; quarantined per #2536. Run manually with --ignored if needed."]
+tests/diagnostics/diag_phim.rs:10:#[ignore = "diagnostic-only test with no assertion; quarantined per #2536. Run manually with --ignored if needed."]
+tests/diagnostics/diag_solar_hr.rs:10:#[ignore = "diagnostic-only test with no assertion; quarantined per #2536. Run manually with --ignored if needed."]
+tests/diagnostics/diag_solfields.rs:10:#[ignore = "diagnostic-only test with no assertion; quarantined per #2536. Run manually with --ignored if needed."]
+tests/energyplus_comparison_tests.rs:545:#[ignore] // Long-running test, run explicitly when needed
+tests/ffd_cosimulation_validation.rs:703:/// tuning to hit the reference, so the test stays `#[ignore]`-quarantined until
+tests/ffd_cosimulation_validation.rs:711:#[ignore = "structural FFD/BES coupling gap (issue #2612, KNOWN_ISSUES §FFD-02): stub BuoyancyDrivenFfdSolver has no zone air energy balance — returns constant 293.15 K, so peak_cooling is always 0 kW (100% error vs 4.5 kW ref). Needs a real coupled BES↔FFD solver; not parameter-tunable per RULES.md."]
+tests/gauge_validation_case_900.rs:735:#[ignore = "issue #1669 Option A: GaugeSolver is steady-state (no thermal mass); \
+tests/idf_ashrae_140_acceptance.rs:157:#[ignore = "blocked by #1577 (develop CI broken — cannot run tests to verify)"]
+tests/idf_ashrae_140_acceptance.rs:35://!    ±15 % band check is `#[ignore]`-gated so it can be re-enabled
+tests/invariant_checker_test.rs:110:#[ignore = "Artificial gain should increase energy imbalance magnitude — LIMIT-19 (Issue #3103, sibling-of-LIMIT-MULTI-03 #3066) — same InvariantChecker post-step algebraic-invariant confusion; the test asserts |balance_with_gain| > |balance_without_gain| but the algebraic identity shrinks in magnitude when gain shifts post-step surface temperatures. Tracked for follow-up alongside the #3066 / EnergyBalanceValidator (Issue #1344) investigation."]
+tests/issue_1860_5r1c_time_constant_aware.rs:402:// `#[ignore]`d in `tests/zone_balance_eplus_isolation.rs` pending the
+tests/issue_1860_5r1c_time_constant_aware.rs:408:/// Future fixes can flip `#[ignore]` → active assertion once the band-aid
+tests/issue_1860_5r1c_time_constant_aware.rs:411:#[ignore = "Issue #1860 cooling-load gate — un-ignore once the band-aid is removed \
+tests/issue_1860_5r1c_time_constant_aware.rs:430:#[ignore = "Issue #1860 cooling-load gate — see `test_case_600_annual_cooling_within_ashrae140_band`."]
+tests/issue_1860_5r1c_time_constant_aware.rs:446:#[ignore = "Issue #1860 cooling-load gate — see `test_case_600_annual_cooling_within_ashrae140_band`. \
+tests/issue_1860_5r1c_time_constant_aware.rs:459:#[ignore = "Issue #1860 cooling-load gate — see `test_case_600_annual_cooling_within_ashrae140_band`. \
+tests/issue_2674_repro.rs:24://! schedules. The 6 `#[ignore]`'d API tests in `tests/api_integration_tests.rs`
+tests/known_issues_regression.rs:199:    #[ignore = "LIMIT-05: Known 5R1C model limitation for high-mass peak cooling (h_tr_ms additive issue)"]
+tests/known_issues_regression.rs:241:    #[ignore = "Known issue - SOLAR-02: High-mass annual cooling under-prediction"]
+tests/known_issues_regression.rs:26:/// path as `tests/ashrae_140_case_600_series.rs`, and is `#[ignore]`-quarantined.
+tests/known_issues_regression.rs:282:    #[ignore = "Known issue - SOLAR-03: Shading sensitivity insufficient"]
+tests/known_issues_regression.rs:337:    #[ignore = "Known issue - SOLAR-04: Night ventilation not effective"]
+tests/known_issues_regression.rs:393:    #[ignore = "Known issue - FREE-01: Low-mass free-float max temp under-predicted"]
+tests/known_issues_regression.rs:439:    #[ignore = "Known limitation - ADR 0003: 5R1C cannot match EnergyPlus high-mass extremes"]
+tests/known_issues_regression.rs:480:    #[ignore = "Known issue - FREE-03: Temperature swings reduced vs reference"]
+tests/known_issues_regression.rs:544:    #[ignore = "LIMIT-05: Known 5R1C model limitation - h_tr_ms additive overcounts thermal coupling"]
+tests/known_issues_regression.rs:678:    #[ignore = "Issue #532: Case 195 zero annual energy investigation"]
+tests/known_issues_regression.rs:714:    #[ignore = "Issue #533: Case 600-series peak load underprediction investigation"]
+tests/known_issues_regression.rs:7://! - Uses #[test] with #[ignore] to quarantine known failures
+tests/lib_batch_oracle.rs:127:#[ignore = "slow: hangs when surrogates=true without model loaded"]
+tests/lib_batch_oracle.rs:140:#[ignore = "slow: full year simulation"]
+tests/lib_batch_oracle.rs:33:#[ignore = "slow: full year simulation"]
+tests/lib_batch_oracle.rs:54:#[ignore = "slow: full year simulation"]
+tests/lib_batch_oracle.rs:84:#[ignore = "slow: full year simulation"]
+tests/limit_05_inversion_regression.rs:109:#[ignore = "LIMIT-05 inversion diagnostic — locks in current (inverted) state for regression tracking"]
+tests/limit_05_inversion_regression.rs:143:#[ignore = "LIMIT-05 inversion diagnostic — locks in current (inverted) state for regression tracking"]
+tests/limit_05_inversion_regression.rs:173:#[ignore = "LIMIT-05 inversion diagnostic — locks in current (inverted) state for regression tracking"]
+tests/limit_05_inversion_regression.rs:197:#[ignore = "LIMIT-05 inversion diagnostic — combined snapshot"]
+tests/limit_05_inversion_regression.rs:22://! direction) are immediately visible. It is `#[ignore]` by default to keep the
+tests/solar_gain_tests.rs:16:// so solar-specific tests are marked as #[ignore].
+tests/solar_peak_cooling_tdd.rs:107:#[ignore = "TDD test pending calibration: hardcoded expected values need verification against ASHRAE 140"]
+tests/solar_peak_cooling_tdd.rs:18:#[ignore = "TDD test pending calibration: hardcoded expected values need verification against ASHRAE 140"]
+tests/surface_flux_parity.rs:17://!   ships (marked `#[ignore]` until the dependency closes).
+tests/surface_flux_parity.rs:183:// This test is `#[ignore]` because it depends on the post-#1323 roof
+tests/surface_flux_parity.rs:184:// physics fix landing first. Once #1323 ships, remove the `#[ignore]`
+tests/surface_flux_parity.rs:188:#[ignore = "depends on the post-#1323 roof-solar physics fix landing; \
+tests/surrogate_backend_parity.rs:16://!    — gated behind `#[cfg(feature = "cuda")]` and `#[ignore]` so the test
+tests/surrogate_backend_parity.rs:570:/// CPU-vs-CUDA parity check is `#[ignore]`d. Hardware-in-loop runners
+tests/surrogate_backend_parity.rs:591:/// and is `#[ignore]`d when the runtime has no CUDA device. The test
+tests/surrogate_backend_parity.rs:601:#[ignore = "requires GPU hardware at runtime; run on hardware-in-loop CI with `--include-ignored`"]
+tests/surrogate_cold_start_test.rs:403:#[ignore = "diagnostic; run manually to regenerate the cold-start baseline after a legitimate ort version bump"]
+tests/surrogate_drift_fallback_regression.rs:319:/// `#[ignore]` so it does not contribute to CI gate coverage — its only
+tests/surrogate_drift_fallback_regression.rs:323:#[ignore = "diagnostic; run manually to regenerate the fallback baseline after a legitimate surrogate change"]
+tests/test_statistical_validation.rs:83:/// Note: This test is marked as #[ignore] by default because it requires
+tests/test_statistical_validation.rs:88:#[ignore = "requires compiled fluxion binary at target/release/fluxion"]
+tests/thermal_comfort_prediction_validation.rs:952:#[ignore = "Awaiting EnergyPlus thermal comfort benchmark data"]
+tests/validation/hvac_bestest/runner.rs:31://! / §SOLAR-02) and are wired as `#[ignore]`-quarantined tests that run on
+tests/validation/hvac_bestest/runner.rs:405:    // --- Comparative ensemble-bound case (STRUCTURAL GAP — #[ignore]) --------
+tests/validation/hvac_bestest/runner.rs:433:    #[ignore = "blocked on Case-600-class cooling structural gap; see docs/KNOWN_ISSUES.md §LIMIT-05/§SOLAR-02"]
+tests/weather_vs_energyplus.rs:22://! - **Derived humidity ratio** — `#[ignore]`'d. Fluxion's saturation curve
+tests/weather_vs_energyplus.rs:251:#[ignore]
+tests/weather_vs_energyplus.rs:290:#[ignore]
+tests/weather_vs_energyplus.rs:29://!   `#[ignore]`'d. #2673 documents that the embedded formula generator is not
+tests/zone_balance_eplus_isolation.rs:29://!    `#[ignore]` until the cooling-load physics gap is closed (see
+tests/zone_balance_eplus_isolation.rs:38://!       marked `#[ignore]` in `conduction_5r1c_isolation.rs` because the
+tests/zone_balance_eplus_isolation.rs:812:/// test (Case 600 cooling within ±15% of E+) is `#[ignore]` below,
+tests/zone_balance_eplus_isolation.rs:852:/// stays `#[ignore]`'d (un-ignoring now would fail the gate on every PR
+tests/zone_balance_eplus_isolation.rs:869:/// `#[ignore]` (issues #1333 / #2506 acceptance).
+tests/zone_balance_eplus_isolation.rs:870:#[ignore = "Issue #2506: kept #[ignore]'d so the strict gate is not \
+tests/zone_balance_eplus_isolation.rs:948:/// stays `#[ignore]`'d (un-ignoring now would fail the gate on every PR
+tests/zone_balance_eplus_isolation.rs:969:/// gap and eventually remove this `#[ignore]` (issues #1333 / #2506
+tests/zone_balance_eplus_isolation.rs:971:#[ignore = "Issue #2506: kept #[ignore]'d so the strict gate is not \

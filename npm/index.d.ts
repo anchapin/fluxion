@@ -477,10 +477,19 @@ export declare class StateExtractor {
    * # TypeScript Example
    * ```typescript
    * import { StateExtractor } from '@fluxion/native';
+   * // Defaults: zoneSolver='gauge', conductionSolver='default'
    * const extractor = new StateExtractor();
+   * // Explicit solver selection (Issue #3282):
+   * const legacy = new StateExtractor({ zoneSolver: '5r1c', conductionSolver: 'ctf' });
    * ```
+   *
+   * Throws for unknown or experimental solver selections. The experimental
+   * `'6r2c'` / `'8r3c'` zone solvers require the
+   * `FLUXION_EXPERIMENTAL_ZONE_SOLVERS=1` env var *and* stay unavailable
+   * until the `fluxion-experimental-zone-solvers` cargo feature ships
+   * (issue #3291).
    */
-  constructor()
+  constructor(options?: StateExtractorOptions)
   /**
    * Configure the extractor for specific simulation parameters.
    *
@@ -567,6 +576,23 @@ export interface ExteriorTemperatureSet {
   tExtWall: number
   tExtRoof: number
   tExtFloor: number
+}
+
+/**
+ * Optional constructor options for {@link StateExtractor} (Issue #3282).
+ *
+ * Both fields default to the production defaults (`'gauge'` zone solver,
+ * `'default'` conduction algorithm) when omitted. The experimental
+ * `'6r2c'` / `'8r3c'` zone-solver identifiers throw unless the
+ * `FLUXION_EXPERIMENTAL_ZONE_SOLVERS=1` env var is set (and even then they
+ * stay unavailable until the `fluxion-experimental-zone-solvers` cargo
+ * feature ships; issue #3291).
+ */
+export interface StateExtractorOptions {
+  /** Zone solver: `'gauge'` (default) | `'5r1c'` | `'9r4c'`. */
+  zoneSolver?: string
+  /** Conduction algorithm: `'default'` (default) | `'ctf'` | `'fd'`. */
+  conductionSolver?: string
 }
 
 /**

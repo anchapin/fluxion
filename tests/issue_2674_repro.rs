@@ -33,6 +33,7 @@ use fluxion::api::schema::{
     SimulationOutput, SimulationSchemaV1, WeatherData,
 };
 use fluxion::api::server::{run_simulation, ApiError};
+use fluxion::sim::thermal_selector::ThermalSelector;
 
 fn default_schema_v1() -> SimulationSchemaV1 {
     SimulationSchemaV1 {
@@ -58,7 +59,14 @@ fn default_schema_v1() -> SimulationSchemaV1 {
 #[test]
 fn pins_default_schema_succeeds_through_step_91() {
     let schema = default_schema_v1();
-    let output = run_simulation(&schema, 1, false, "issue_2674_fix").expect(
+    let output = run_simulation(
+        &schema,
+        1,
+        false,
+        ThermalSelector::default(),
+        "issue_2674_fix",
+    )
+    .expect(
         "default-schema simulation must succeed after the #2747 fix; \
          if it now diverges again, the schema→physics wiring in \
          `build_model_from_schema` has regressed",
@@ -132,8 +140,14 @@ fn pins_default_schema_succeeds_through_step_91() {
 #[test]
 fn captures_stable_temperature_trace() {
     let schema = default_schema_v1();
-    let output =
-        run_simulation(&schema, 1, false, "issue_2674_trace").expect("in-process sim must succeed");
+    let output = run_simulation(
+        &schema,
+        1,
+        false,
+        ThermalSelector::default(),
+        "issue_2674_trace",
+    )
+    .expect("in-process sim must succeed");
 
     let zone0: Vec<f64> = output
         .hourly_zone_temperatures
