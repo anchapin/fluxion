@@ -12,7 +12,9 @@
 //!
 //! Run with: cargo bench --release --bench surrogate_vs_physics
 
-use criterion::{black_box, criterion_group, criterion_main, Criterion, Throughput};
+use std::hint::black_box;
+
+use criterion::{criterion_group, criterion_main, Criterion, Throughput};
 use fluxion::ai::surrogate::SurrogateManager;
 use fluxion::sim::thermal_model::{HybridRouting, HybridThermalModel, ThermalModelTrait};
 use fluxion::validation::ashrae_140_cases::ASHRAE140Case;

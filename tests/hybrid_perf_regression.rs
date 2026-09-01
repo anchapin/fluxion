@@ -103,9 +103,9 @@ fn generate_population(size: usize) -> Vec<Vec<f64>> {
     let mut rng = StdRng::seed_from_u64(42);
     let mut population = Vec::with_capacity(size);
     for _ in 0..size {
-        let u_value = rng.gen_range(0.1..5.0);
-        let heating_setpoint = rng.gen_range(15.0..23.0);
-        let cooling_setpoint = rng.gen_range(24.0..32.0);
+        let u_value = rng.random_range(0.1..5.0);
+        let heating_setpoint = rng.random_range(15.0..23.0);
+        let cooling_setpoint = rng.random_range(24.0..32.0);
         population.push(vec![u_value, heating_setpoint, cooling_setpoint]);
     }
     population

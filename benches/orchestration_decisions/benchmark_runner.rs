@@ -30,7 +30,9 @@
 //! hvac_horizon) are wired in the engine.  surrogate_routing is a documented stub
 //! pending the ONNX batch-oracle path (ML & Surrogate Modeling Engineer, v2.1+).
 
-use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion};
+use std::hint::black_box;
+
+use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion};
 use std::time::Duration;
 
 // Include sibling modules (both files live in benches/orchestration_decisions/)

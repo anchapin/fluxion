@@ -34,14 +34,14 @@ fn test_leaf_and_sim_perez_identical() {
 
     // 50 deterministic random (DNI, DHI, zenith, tilt, az) tuples.
     for i in 0..SAMPLES {
-        let dhi: f64 = rng.gen_range(0.0..500.0);
-        let dni: f64 = rng.gen_range(0.0..900.0);
-        let dni_extra: f64 = rng.gen_range(1300.0..1400.0);
-        let airmass: f64 = rng.gen_range(1.0..10.0);
-        let zenith_deg: f64 = rng.gen_range(0.0..85.0);
-        let surface_tilt_deg: f64 = rng.gen_range(0.0..90.0);
-        let surface_azimuth_deg: f64 = rng.gen_range(0.0..360.0);
-        let solar_azimuth_deg: f64 = rng.gen_range(0.0..360.0);
+        let dhi: f64 = rng.random_range(0.0..500.0);
+        let dni: f64 = rng.random_range(0.0..900.0);
+        let dni_extra: f64 = rng.random_range(1300.0..1400.0);
+        let airmass: f64 = rng.random_range(1.0..10.0);
+        let zenith_deg: f64 = rng.random_range(0.0..85.0);
+        let surface_tilt_deg: f64 = rng.random_range(0.0..90.0);
+        let surface_azimuth_deg: f64 = rng.random_range(0.0..360.0);
+        let solar_azimuth_deg: f64 = rng.random_range(0.0..360.0);
 
         let leaf_diffuse = leaf_path::PerezSkyModel::calculate_diffuse_tilted(
             dhi,
@@ -66,7 +66,7 @@ fn test_leaf_and_sim_perez_identical() {
         assert_bit_identical(&format!("diffuse_tilted[{i}]"), leaf_diffuse, sim_diffuse);
 
         // extraterrestrial_irradiance varies only by day_of_year.
-        let day_of_year: usize = rng.gen_range(1..=365);
+        let day_of_year: usize = rng.random_range(1..=365);
         assert_bit_identical(
             &format!("extraterrestrial_irradiance[{i}]"),
             leaf_path::extraterrestrial_irradiance(day_of_year),

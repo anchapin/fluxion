@@ -82,7 +82,7 @@ fn random_monte_carlo(n_samples: usize, n_dim: usize, seed: u64) -> Vec<f64> {
     let mut out = Vec::with_capacity(n_samples * n_dim);
     for _ in 0..n_samples {
         for _ in 0..n_dim {
-            out.push(rng.gen::<f64>());
+            out.push(rng.random::<f64>());
         }
     }
     out
@@ -104,7 +104,7 @@ fn latin_hypercube(n_samples: usize, n_dim: usize, seed: u64) -> Vec<f64> {
                 // Centre of each stratum + jitter within the stratum.
                 let stratum_low = i as f64 / n_samples as f64;
                 let stratum_high = (i + 1) as f64 / n_samples as f64;
-                let jitter: f64 = rng.gen();
+                let jitter: f64 = rng.random();
                 stratum_low + jitter * (stratum_high - stratum_low)
             })
             .collect();

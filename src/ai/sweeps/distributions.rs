@@ -17,11 +17,10 @@
 //! guarantees reproducibility when a seeded RNG (e.g. `StdRng::seed_from_u64`)
 //! is used.
 
-use rand::distributions::Distribution;
 use rand::Rng;
-use rand_distr::LogNormal as LogNormalDist;
 use rand_distr::Normal as NormalDist;
 use rand_distr::NormalError;
+use rand_distr::{Distribution as _, LogNormal as LogNormalDist};
 use serde::{Deserialize, Serialize};
 
 /// Statistical distribution for a continuous parameter.
@@ -113,7 +112,7 @@ impl ParameterDistribution {
                 if min >= max {
                     return Ok(*min);
                 }
-                Ok(rng.gen_range(*min..*max))
+                Ok(rng.random_range(*min..*max))
             }
             ParameterDistribution::Normal { mean, std_dev } => {
                 let dist = NormalDist::new(*mean, *std_dev)?;
@@ -175,7 +174,7 @@ impl Choice {
 
     /// Draw a single value uniformly at random.
     pub fn sample<R: Rng>(&self, rng: &mut R) -> &str {
-        let idx = rng.gen_range(0..self.values.len());
+        let idx = rng.random_range(0..self.values.len());
         &self.values[idx]
     }
 }

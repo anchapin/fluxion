@@ -1,3 +1,5 @@
+use std::hint::black_box;
+
 use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion};
 use fluxion::ai::surrogate::SurrogateManager;
 use fluxion::physics::cta::VectorField;
@@ -105,7 +107,7 @@ fn bench_5r1c_throughput(c: &mut Criterion) {
                     total_energy += energy;
                 }
                 // Prevent compiler from optimizing away the computation
-                criterion::black_box(total_energy);
+                black_box(total_energy);
             })
         },
     );
@@ -134,7 +136,7 @@ fn bench_6r2c_throughput(c: &mut Criterion) {
                     total_energy += energy;
                 }
                 // Prevent compiler from optimizing away the computation
-                criterion::black_box(total_energy);
+                black_box(total_energy);
             })
         },
     );

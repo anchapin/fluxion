@@ -22,7 +22,9 @@
 //! > Parallelism lives at exactly this single `par_iter` level. The closure
 //! > body is pure / sequential per subgraph — no nested `par_iter` (AGENTS.md).
 
-use criterion::{black_box, criterion_group, criterion_main, Criterion, Throughput};
+use std::hint::black_box;
+
+use criterion::{criterion_group, criterion_main, Criterion, Throughput};
 use fluxion::sim::decoupled_loop_rayon::{
     DispatchError, GraphNodeId, ParallelLoopDispatcher, Subgraph,
 };

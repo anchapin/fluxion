@@ -401,13 +401,13 @@ impl SqlReporter {
                         hvac_cooling, internal_loads, infiltration_loss, envelope_conduction
                     ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14)",
                     params![
-                        h.hour,
+                        h.hour as i64,
                         year,
                         h.month,
                         h.day,
                         h.hour_of_day,
                         h.outdoor_temp,
-                        zone_idx,
+                        zone_idx as i64,
                         zone_temp,
                         solar,
                         heating,
@@ -449,7 +449,7 @@ impl SqlReporter {
                     d.total_infiltration_kwh,
                     d.total_envelope_kwh,
                     d.avg_zone_temp,
-                    d.hour_count
+                    d.hour_count as i64
                 ],
             )?;
         }
@@ -486,7 +486,7 @@ impl SqlReporter {
                     m.total_envelope_kwh,
                     m.avg_zone_temp,
                     m.day_count,
-                    m.hour_count
+                    m.hour_count as i64
                 ],
             )?;
         }

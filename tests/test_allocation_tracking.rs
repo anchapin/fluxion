@@ -74,9 +74,9 @@ fn test_allocation_count_batch_100() {
     let population: Vec<Vec<f64>> = (0..100)
         .map(|_| {
             vec![
-                rng.gen_range(0.1..5.0),        // U-value
-                18.0 + rng.gen_range(0.0..7.0), // heating setpoint (18-25)
-                22.0 + rng.gen_range(0.0..8.0), // cooling setpoint (22-30)
+                rng.random_range(0.1..5.0),        // U-value
+                18.0 + rng.random_range(0.0..7.0), // heating setpoint (18-25)
+                22.0 + rng.random_range(0.0..8.0), // cooling setpoint (22-30)
             ]
         })
         .collect();

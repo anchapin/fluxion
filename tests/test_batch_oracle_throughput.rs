@@ -29,9 +29,9 @@ fn generate_population(size: usize) -> Vec<Vec<f64>> {
     (0..size)
         .map(|_| {
             vec![
-                rng.gen_range(0.1..5.0),        // U-value
-                18.0 + rng.gen_range(0.0..7.0), // heating setpoint
-                22.0 + rng.gen_range(0.0..8.0), // cooling setpoint
+                rng.random_range(0.1..5.0),        // U-value
+                18.0 + rng.random_range(0.0..7.0), // heating setpoint
+                22.0 + rng.random_range(0.0..8.0), // cooling setpoint
             ]
         })
         .collect()
