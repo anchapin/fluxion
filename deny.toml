@@ -150,16 +150,44 @@ confidence-threshold = 0.8
 # -----------------------------------------------------------------------------
 # Bans — duplicate-version detection and a crate denylist.
 # START PERMISSIVE: `multiple-versions = "warn"` and `wildcards = "warn"` so the
-# gate passes today. The current workspace has 45 duplicate-version instances
-# (mostly windows-sys/targets/clusters, the rand family, and the thiserror
-# 1.x→2.x migration chain — see issue #2994 for the cluster inventory).
+# gate passes today. Audited in #3310 (was 45, then 43 live): the workspace now
+# resolves 38 duplicate-version instances. Five diagnostics were eliminated at
+# the root cause: the root package's UNUSED `directories = "5.0"` (the real
+# user is fluxion-core 6.0) — whose removal also dropped dirs-sys 0.4.1,
+# windows-sys/windows-targets 0.48 and their 0.48 windows-* arch libs, and
+# redox_users 0.4.6 — and root `uom` aligned 0.35 → 0.38 with fluxion-fluid.
+#
+# Remaining 38 are classified UNAVOIDABLE (transitive-only, or alignment
+# requires a semver-breaking workspace source migration):
+#   - faer ecosystem chain (upstream-pinned): equator/equator-macro 0.2/0.4/0.6,
+#     wide 0.7/1.6, safe_arch 0.7/1.1 (via pulp/nano-gemm/spindle/private-gemm),
+#     sysctl -> thiserror 1.x (2.0 is the workspace standard), rustc-hash 1.x
+#     (via dhat dev-profile).
+#   - statrs 0.18 chain: nalgebra 0.33 + simba 0.9 (workspace standard is
+#     nalgebra 0.35; statrs pins 0.33 upstream).
+#   - rand 0.8 vs 0.9 family (rand, rand_chacha, rand_core, rand_distr,
+#     getrandom 0.2/0.3/0.4, r-efi 5/6): root uses rand 0.8; fluxion-twin +
+#     proptest need 0.9. Aligning requires a rand 0.9 API migration in root
+#     source — out of scope for a manifest-only fix.
+#   - digest 0.10 vs 0.11 chain (block-buffer, cpufeatures, crypto-common,
+#     digest, sha2): root sha2 0.10 vs fluxion-core sha2 0.11; digest 0.11
+#     moved to hybrid-array — source migration required.
+#   - windows-sys 0.42/0.52/0.61 + windows-* arch libs (via atomic-wait/spindle
+#     from faer, ring/rustls, and modern tokio/rustix/tempfile); each arch lib
+#     still has 0.42 (faer chain) + 0.52 (ring) copies.
+#   - long-tail transitive pairs: bitflags 1/2 (core-graphics+png via
+#     plotters/font-kit), core-foundation 0.9/0.10, foreign-types(-shared)
+#     0.3/0.5 (openssl vs core-graphics), foldhash 0.1/0.2 (hashbrown
+#     0.15/0.16), hashbrown 0.15/0.16, libloading 0.8/0.9 (dlib vs napi-sys),
+#     syn 1/2/3 (interpol / older proc-macros / serde+clap+tokio),
+#     winnow 0.7/1.0 (toml_edit 0.25 pins ^0.7 upstream; fluxion-toon was
+#     deliberately bumped to 1.0 in #3293), rustls-webpki 0.102.8/0.103.13
+#     (rumqttc 0.25.1 — documented under [advisories] above).
 #
 # `duplicates_baseline` is the budget the `.github/workflows/security.yml`
 # `deny` job enforces — the CI step greps the `cargo deny` JSON output for
 # `"code":"duplicate"` lines and fails when the count exceeds this baseline.
-# The accepted value is the LIVE count from `cargo deny -f json check bans`
-# measured when #2933 was filed (the issue body says "~42" — that was an
-# approximation; the precise count is 45).
+# The accepted value is the LIVE count from `cargo deny -f json check bans`.
 #
 # cargo-deny 0.20.2 rejects unknown keys in `[bans]` (the schema is fixed at
 # {multiple-versions, multiple-versions-include-dev, highlight, deny, allow,
@@ -176,16 +204,20 @@ confidence-threshold = 0.8
 # `multiple-versions` to "deny" and migrate any remaining unavoidable
 # duplicates to `skip` with a `reason` per entry.
 #
-# Tracking issue: #2994 (duplicate-version budget reduction plan).
+# Tracking issue: #2994 (duplicate-version budget reduction plan);
+# #3310 (audit, classification, headroom restoration).
 # Provenance: #2933 (acceptance criteria), follow-up to #2699.
 # -----------------------------------------------------------------------------
 [bans]
 multiple-versions = "warn"
 wildcards = "warn"
-# Issue #2933: budget enforced by `.github/workflows/security.yml` `deny` job.
-# Live count is 45 as of 2026-08-14; raise the baseline ONLY when a new
-# unavoidable transitive has been verified and added to issue #2994's scope.
-# duplicates_baseline: 45
+# Issue #3310: budget enforced by `.github/workflows/security.yml` `deny` job.
+# Live count is 38 as of 2026-09-01 (was 45 at the #2933 measurement, already
+# 43 by merge-base before this fix); the inventory above classifies every
+# remaining duplicate as unavoidable. Decrement when cluster bumps land;
+# raise ONLY after the new unavoidable transitive has been verified and added
+# to issue #2994's scope.
+# duplicates_baseline: 38
 highlight = "all"
 workspace-default-features = "allow"
 external-default-features = "allow"
@@ -202,7 +234,7 @@ deny = [
 # workspace pin, and ALWAYS include a `reason`. Not needed while
 # multiple-versions = "warn"; populated when tightening to "deny".
 skip = [
-    # { crate = "windows-sys@0.48.0", reason = "transitive via windows-targets 0.48; unifiable only by bumping the whole windows-* family" },
+    # { crate = "windows-sys@0.52.0", reason = "transitive via ring 0.17; unifiable only by bumping the whole windows-* family" },
 ]
 
 # -----------------------------------------------------------------------------
