@@ -108,7 +108,7 @@ impl StateExtractor {
         };
         let spec = crate::validation::ashrae_140_cases::CaseBuilder::case_600_baseline();
         let thermal_model = ThermalModel::from_spec_with_selector(&spec, &selector)
-            .map_err(napi::bindgen_prelude::Error::from_reason)?;
+            .map_err(|e| napi::bindgen_prelude::Error::from_reason(e.to_string()))?;
 
         Ok(StateExtractor {
             inner: thermal_model,
@@ -263,7 +263,7 @@ impl StateExtractor {
 
 impl Default for StateExtractor {
     fn default() -> Self {
-        Self::new().expect("Failed to create StateExtractor with default config")
+        Self::new(None).expect("Failed to create StateExtractor with default config")
     }
 }
 
