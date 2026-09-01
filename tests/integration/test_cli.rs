@@ -86,6 +86,9 @@ parameters:
             "sensitivity",
             "--config",
             config_path.to_str().unwrap(),
+            // Keep scratch reports out of the repo root (issue #3303)
+            "--output",
+            temp_dir.path().to_str().unwrap(),
         ])
         .output()
         .expect("Failed to execute fluxion sensitivity");
