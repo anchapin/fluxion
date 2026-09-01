@@ -317,3 +317,7 @@ models/*.h5
 # Keeping this rule would re-ignore the same files twice, which is harmless
 # but confusing; remove it to leave a single source of truth.
 # (Intentionally left blank — see `.agents/` in the runtime-dirs block.)
+
+# Root scratch artifacts from the CLI sensitivity command (issue #2466 root policy)
+/sensitivity_report.csv
+/sensitivity_report.md
