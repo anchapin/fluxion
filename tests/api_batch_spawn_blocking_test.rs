@@ -41,9 +41,16 @@
 //!
 //! We additionally report (and softly assert) the **amortised per-config
 //! throughput** = `total_batch_wall / total_configs`, which is the
-//! well-defined reading of the "per-config" budget: it is bounded by the
-//! serial physics floor regardless of core count, and is comfortably under
-//! 10 ms/config (observed ~1.2–1.5 ms/config).
+//! well-defined reading of the "per-config" budget. Issue #3307: this can
+//! no longer be pinned to the release-mode 10 ms/config constant — a debug
+//! build runs the physics ~15× slower (measured 21–22 ms/config on idle
+//! hardware) and any external load inflates both the wave and any absolute
+//! budget. Instead we measure a baseline batch request immediately before
+//! the wave and assert the wave's amortised throughput stays within a
+//! generous 4× tolerance of that *measured* per-config service time. A
+//! genuine throughput collapse (≥4× vs the same machine, same build, same
+//! moment) still trips the gate, while machine speed, build profile and
+//! transient load cancel out of the ratio.
 //!
 //! `cargo test --release --test api_batch_spawn_blocking_test` runs the test
 //! in release mode for representative numbers.
@@ -74,11 +81,13 @@ const CONFIGS_PER_REQUEST: usize = 6;
 /// Number of `/v1/healthz` probes fired *while* the batch wave is in flight.
 const HEALTHZ_PROBES: usize = 40;
 
-/// Issue #2501 acceptance budget: amortised per-config latency
-/// (`total_batch_wall / total_configs`) < 10 ms. This is the throughput
-/// reading of the "per-config" budget and is robust to core count (bounded
-/// by the serial physics floor, observed ~1.2–1.5 ms/config).
-const AMORTISED_PER_CONFIG_BUDGET: Duration = Duration::from_millis(10);
+/// Issue #3307: the amortised per-config throughput budget is *derived*,
+/// not absolute. We time one baseline batch request immediately before the
+/// wave and allow a 4× tolerance vs its measured per-config service time.
+/// 4× is far above scheduling noise between two back-to-back requests on
+/// the same machine, yet still trips on a gross throughput collapse (e.g.
+/// per-config serialisation inside the batch, or a rayon-pool regression).
+const THROUGHPUT_REGRESSION_TOLERANCE: u32 = 4;
 
 /// **Primary regression gate.** With `spawn_blocking`, `/v1/healthz`
 /// completes in a few ms even while `N_CONCURRENT` batch requests are
@@ -195,6 +204,25 @@ async fn tokio_workers_stay_responsive_under_batch_load() {
     assert!(warmup_healthz.status().is_success());
     let _ = warmup_healthz.bytes().await;
 
+    // Measure the per-config service-time baseline on this machine, in this
+    // build, right now (issue #3307). Taken immediately before the wave so
+    // any external load is reflected in the baseline as well as the wave
+    // and cancels out of the throughput ratio asserted below.
+    let baseline_t0 = Instant::now();
+    let baseline_resp = client
+        .post(format!("{base}/v1/batch"))
+        .json(&batch_body(CONFIGS_PER_REQUEST))
+        .send()
+        .await
+        .expect("baseline send");
+    assert!(
+        baseline_resp.status().is_success(),
+        "baseline /v1/batch failed: {}",
+        baseline_resp.status()
+    );
+    let _ = baseline_resp.bytes().await;
+    let baseline_per_config = baseline_t0.elapsed() / CONFIGS_PER_REQUEST as u32;
+
     // ---- Launch the batch wave without awaiting it ----
     //
     // All N_CONCURRENT requests are dispatched simultaneously; we hold
@@ -273,7 +301,7 @@ async fn tokio_workers_stay_responsive_under_batch_load() {
         "[api_batch_spawn_blocking_test] {N_CONCURRENT} concurrent x {CONFIGS_PER_REQUEST} configs: \
          batch_wall={batch_wall:?} | batch req p50={batch_p50:?} p99={batch_p99:?} | \
          per-request per-config p99={per_request_per_config_p99:?} | \
-         amortised per-config={amortised_per_config:?}\n\
+         amortised per-config={amortised_per_config:?} (baseline={baseline_per_config:?})\n\
          [api_batch_spawn_blocking_test] healthz-under-load ({HEALTHZ_PROBES} probes): \
          p50={healthz_p50:?} p99={healthz_p99:?}"
     );
@@ -297,16 +325,22 @@ async fn tokio_workers_stay_responsive_under_batch_load() {
          physics/rayon work on the request handler — spawn_blocking may have been removed."
     );
 
-    // ---- Secondary: amortised per-config throughput budget ----
+    // ---- Secondary: amortised per-config throughput gate ----
     //
-    // The well-defined reading of the "per-config" latency budget. Bounded
-    // by the serial physics floor regardless of core count; observed
-    // ~1.2–1.5 ms/config. Asserting it pins the documented Issue #2501
-    // budget number (the hard regression signal is the healthz gate above;
-    // this guards the throughput commitment).
+    // The well-defined reading of the "per-config" latency budget, now
+    // (issue #3307) expressed relative to the *measured* baseline service
+    // time instead of an absolute release-mode constant. The absolute 10
+    // ms/config number could not hold in debug builds (~22 ms/config idle)
+    // or under external load, so it pinned machine speed rather than any
+    // product property. A ≥4× throughput collapse vs the same-machine
+    // baseline still fails here; the hard regression signal remains the
+    // healthz gate above.
+    let throughput_budget = baseline_per_config * THROUGHPUT_REGRESSION_TOLERANCE;
     assert!(
-        amortised_per_config < AMORTISED_PER_CONFIG_BUDGET,
+        amortised_per_config < throughput_budget,
         "Issue #2501 throughput budget: amortised per-config latency {amortised_per_config:?} \
-         must be < {AMORTISED_PER_CONFIG_BUDGET:?} ({total_configs} configs in {batch_wall:?})"
+         must be < {throughput_budget:?} (4× the measured baseline {baseline_per_config:?}; \
+         {total_configs} configs in {batch_wall:?}) — batch throughput collapsed relative to \
+         the baseline service time measured on this machine immediately before the wave"
     );
 }
