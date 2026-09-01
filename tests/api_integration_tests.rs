@@ -17,6 +17,7 @@ use fluxion::api::schema::{
     SimulationOutput, SimulationSchemaV1, WeatherData,
 };
 use fluxion::api::server::{router, run_simulation, AppState};
+use fluxion::sim::thermal_selector::ThermalSelector;
 use fluxion::io::idf::{IdfFile, IdfParser, IdfValue};
 use serde_json::json;
 use tokio::net::TcpListener;
@@ -498,7 +499,7 @@ async fn simulate_matches_in_process_within_tolerance() {
     // Rust call against the same schema.
     let schema = default_schema_v1();
 
-    let direct = run_simulation(&schema, 1, false, "test").expect("in-process sim");
+    let direct = run_simulation(&schema, 1, false, ThermalSelector::default(), "test").expect("in-process sim");
     let (base, _state, _shutdown) = start_server().await;
 
     let body = json!({
@@ -531,7 +532,7 @@ async fn simulate_matches_in_process_within_tolerance() {
 async fn simulate_peak_loads_match_in_process() {
     let schema = default_schema_v1();
 
-    let direct = run_simulation(&schema, 1, false, "test").expect("in-process sim");
+    let direct = run_simulation(&schema, 1, false, ThermalSelector::default(), "test").expect("in-process sim");
     let (base, _state, _shutdown) = start_server().await;
 
     let body = json!({
