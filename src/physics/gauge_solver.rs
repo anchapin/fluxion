@@ -112,6 +112,19 @@ impl GaugeSolver {
         self
     }
 
+    /// Issue #3297 — read-only accessor for the interior-most thermal
+    /// state of this surface's 1D solve: the interior boundary
+    /// temperature the solver integrated against at the most recent
+    /// `step_with_boundary_conditions` call (°C).
+    ///
+    /// State exposure only. Callers must never feed this value back
+    /// into the solver; it exists so the step dispatcher can compute a
+    /// 5R1C-compatible mass-state proxy from gauge outputs without the
+    /// proxy influencing subsequent timesteps' physics.
+    pub(crate) fn interior_temperature(&self) -> f64 {
+        self.prev_T_interior
+    }
+
     #[cfg(test)]
     fn manifold(&self) -> &ThermalManifold {
         &self.manifold
