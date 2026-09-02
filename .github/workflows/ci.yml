@@ -15,9 +15,12 @@ permissions:
 
 # Job execution policy
 # ---------------------------------------------------------------------------
-# PR branch push  ->  NO jobs in this file run (fast gate is in rust-tests.yml).
-#                     Python and integration jobs are too slow for per-commit
-#                     feedback; failures will surface before the next release.
+# PR branch push  ->  Only `ffi-feature-check` runs (fail-fast FFI signature
+#                     gate, issue #3302: the default cargo check/clippy gates
+#                     run with empty features and never compile the NAPI /
+#                     PyO3 binding layer). Python and integration jobs are too
+#                     slow for per-commit feedback; failures will surface
+#                     before the next release.
 # Main merge      ->  All jobs here run to catch anything that slipped through.
 # ---------------------------------------------------------------------------
 #
@@ -233,3 +236,39 @@ jobs:
           name: integration-test-results
           path: target/debug/
           retention-days: 14
+
+  # ---------------------------------------------------------------------------
+  # Issue #3302: fail-fast FFI signature gate.
+  #
+  # Root default features are empty, so `cargo check` / `cargo clippy` gates
+  # never compile the `napi-bindings` / `python-bindings` FFI layer — PR
+  # #3299 landed a NAPI compile error that passed every local gate. This
+  # job compiles the lib under both binding features and runs clippy under
+  # `napi-bindings` with `-D warnings` so a binding-layer signature change
+  # fails a named PR check instead of surfacing only in the Node/NAPI and
+  # Python binding jobs (which run on main merges only).
+  #
+  # Unlike the other jobs in this file, there is NO main-only `if` guard:
+  # the whole point is per-PR fail-fast feedback. Deliberately minimal
+  # (single GH-hosted job, no probe/Hetzner-overflow variants) — this is a
+  # single-compilation gate, not a heavy test suite.
+  # ---------------------------------------------------------------------------
+
+  ffi-feature-check:
+    name: "FFI Feature Check (GH)"
+    runs-on: ubuntu-latest
+    if: |
+      github.event_name == 'pull_request' ||
+      (github.event_name == 'push' && github.ref == 'refs/heads/main')
+    env:
+      CARGO_BUILD_JOBS: 1
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+      - uses: ./.github/actions/setup-rust-python-env
+        with:
+          rust-components: clippy
+          python-version: '3.10'
+      - name: Check binding-feature compilation
+        run: |
+          cargo check --lib --features napi-bindings,python-bindings
+          cargo clippy --lib --features napi-bindings -- -D warnings

@@ -329,6 +329,9 @@ impl NineR4CConfig {
     /// * `surface_temperature` - Initial surface temperature [°C]
     /// * `exterior_temperature` - Initial exterior air temperature [°C]
     /// * `coupling_mode` - Air-mass coupling mode: "additive_sum" or "parallel_resistance"
+    // Arity mirrors the flat JavaScript factory surface; refactoring would be a
+    // breaking bindings change.
+    #[allow(clippy::too_many_arguments)]
     #[napi(factory)]
     pub fn from_surface_parameters(
         h_tr_is: f64,
@@ -636,6 +639,9 @@ impl NineR4CConfig {
     }
 
     #[napi]
+    // Arity mirrors the JavaScript `stepWithGains` signature; refactoring
+    // would be a breaking bindings change.
+    #[allow(clippy::too_many_arguments)]
     pub fn step_with_gains(
         &mut self,
         dt: f64,

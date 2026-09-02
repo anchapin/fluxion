@@ -5,6 +5,11 @@ pub(crate) fn into_zero_copy_float64_array(mut data: Vec<f64>) -> Float64Array {
     let pointer = data.as_mut_ptr();
     let length = data.len();
     let capacity = data.capacity();
+    // `ManuallyDrop` is load-bearing: it keeps the `Vec` allocation alive
+    // past this scope so ownership transfers to the `Float64Array` finalizer
+    // below instead of being freed on return. The binding is intentionally
+    // unused.
+    #[allow(unused_variables)]
     let data = ManuallyDrop::new(data);
 
     unsafe {
