@@ -5,9 +5,12 @@ name: Mutation Testing
 # This workflow runs cargo-mutants ONLY on the Rust source files (and
 # specifically the changed *lines*) modified in the current PR, using
 # `cargo mutants --in-diff`.  Because the mutation set is tiny compared to a
-# full-workspace run, it completes in minutes on a standard 32 GB runner and
-# restores a mutation signal on PRs — something that was previously zero
-# because the full suite OOMs even on 32 GB machines.
+# full-workspace run, it completes in minutes and restores a mutation signal
+# on PRs — something that was previously zero because the full suite OOMs
+# even on 32 GB machines.  Since #3301 it runs on the standard 4-core
+# `ubuntu-latest` runner; the RAM guard below skips with a notice when
+# < 16 GB is available (standard runners have 16 GB total, so the guard may
+# skip rather than execute — an accepted trade-off for an advisory check).
 #
 # This check is **advisory** (non-blocking): the final step never calls
 # `exit 1` on missed mutants.  Results are posted as a PR comment and uploaded
@@ -71,10 +74,23 @@ env:
 jobs:
   mutation-testing:
     name: Mutation Testing (diff-scoped)
-    # 32 GB runner — still needed because the per-mutant recompile of the main
-    # crate pulls in `ort` (ONNX) types until Phase 3 gates them.  The runner
-    # pool `ubuntu-latest-8-cores` provides 32 GB.
-    runs-on: ubuntu-latest-8-cores
+    # Issue #3301: previously `runs-on: ubuntu-latest-8-cores` (the 32 GB
+    # larger-runner tier, chosen because the per-mutant recompile of the
+    # main crate pulls in `ort`/ONNX types until Phase 3 gates them).  A
+    # free-plan personal account cannot provision that label, so every PR
+    # job queued forever.  Now on the standard `ubuntu-latest` (4-core,
+    # 16 GB) runner; the RAM guard below skips the run with a
+    # `::notice::` when < 16 GB is available, so the job always reaches a
+    # terminal state instead of hanging branch protection.  Comprehensive
+    # coverage stays on `mutation-nightly.yml`.
+    runs-on: ubuntu-latest
+    # Belt-and-braces (#3301): hard terminal bound so even a pathological
+    # run cannot hang this check.  Diff-scoped runs are documented to take
+    # minutes (see header and the diff-scope step below); 120 minutes gives
+    # roughly an order of magnitude of headroom for cold toolchain +
+    # cargo-mutants installs and unusually large diffs, while still
+    # bounding the job well under GitHub's 360-minute default.
+    timeout-minutes: 120
     outputs:
       skip_reason: ${{ steps.ram-check.outputs.skip_reason }}
       ram_available_gb: ${{ steps.ram-check.outputs.ram_available_gb }}
