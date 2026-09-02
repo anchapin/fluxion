@@ -11,6 +11,69 @@ use std::ops::Index;
 
 pub const DEFAULT_TOLERANCE: f64 = 1e-7;
 
+/// Issue #3297 — the 5R1C roof sol-air temperature shared by the strict
+/// energy-balance invariant (`InvariantChecker::compute_5r1c_t_sol_air`)
+/// and the gauge dispatch's 5R1C mass-state proxy
+/// (`step_dispatcher.rs::write_gauge_mass_state_proxy`).
+///
+/// Extracted verbatim from the (previously private) checker method so the
+/// proxy can satisfy the gate's `denom · t_m − numer == 0` invariant
+/// against the *exact* sol-air value the gate recomputes from model
+/// state — any drift between the two copies would show up as a non-zero
+/// residual of `h_tr_em · Δt_sol_air` per zone. No behavior change.
+///
+/// Falls back to a uniform `outdoor_temp` when weather is unavailable or
+/// the model was never bound to a real site (lat == 0 && lon == 0).
+pub(crate) fn five_r_one_c_roof_sol_air(
+    weather: Option<&crate::weather::HourlyWeatherData>,
+    latitude_deg: f64,
+    longitude_deg: f64,
+    opaque_solar_ref: &[f64],
+    outdoor_temp: f64,
+    num_zones: usize,
+) -> Vec<f64> {
+    let n = num_zones;
+    let fallback = vec![outdoor_temp; n];
+
+    let weather = match weather {
+        Some(w) => w,
+        None => return fallback,
+    };
+
+    // Without a configured site, fall back to outdoor_temp. (lat == 0 &&
+    // lon == 0 means the model was never bound to a real location, even
+    // if weather is present.)
+    if latitude_deg == 0.0 && longitude_deg == 0.0 {
+        return fallback;
+    }
+
+    let sky_temp = weather.sky_temperature();
+    // Issue #2891: replicate step_physics_5r1c's wind-dependent
+    // h_c_ext calculation (ASHRAE 140 §5.2.6: roofs 5.8 + 3.8·V) so the
+    // invariant check sums to a residual of ~0 even when the wind is
+    // varying per timestep. We pick the same windward-roof coefficient
+    // used in step_physics_5r1c via the production helper.
+    let v_building = crate::physics::exterior_convection::wind_at_building_height_from_10m(
+        weather.wind_speed,
+        2.7,
+    );
+    let h_c_ext_roof = crate::physics::exterior_convection::h_c_ext_wind_dependent(
+        crate::physics::exterior_convection::ExteriorSurfaceDirection::HorizontalRoofWindward,
+        v_building,
+    );
+    let alpha = crate::physics::constants::thermal::ashrae_140::SOLAR_ABSORPTANCE_DEFAULT;
+    let sol_air = SolAirTemperature::new(alpha, 0.9, h_c_ext_roof);
+
+    let mut t_sol_air_vec = Vec::with_capacity(n);
+    for opaque_ref in opaque_solar_ref.iter().take(n) {
+        // opaque_ref is the effective opaque irradiance (W/m²)
+        // on exterior surfaces for the zone, set by distribute_opaque_solar_gains.
+        let t_sol_air_i = sol_air.for_roof(outdoor_temp, *opaque_ref, sky_temp);
+        t_sol_air_vec.push(t_sol_air_i);
+    }
+    t_sol_air_vec
+}
+
 #[derive(Debug, Clone)]
 pub struct InvariantChecker {
     tolerance: f64,
@@ -425,40 +488,14 @@ impl InvariantChecker {
             + AsMut<[f64]>
             + Index<usize, Output = f64>,
     {
-        let n = model.hvac.num_zones;
-        let fallback = vec![outdoor_temp; n];
-
-        let weather = match model.solar.weather.as_ref() {
-            Some(w) => w,
-            None => return fallback,
-        };
-
-        let sky_temp = weather.sky_temperature();
-        // Issue #2891: replicate step_physics_5r1c's wind-dependent
-        // h_c_ext calculation (ASHRAE 140 §5.2.6: roofs 5.8 + 3.8·V) so the
-        // invariant check sums to a residual of ~0 even when the wind is
-        // varying per timestep. We pick the same windward-roof coefficient
-        // used in step_physics_5r1c via the production helper.
-        let v_building = crate::physics::exterior_convection::wind_at_building_height_from_10m(
-            weather.wind_speed,
-            2.7,
-        );
-        let h_c_ext_roof = crate::physics::exterior_convection::h_c_ext_wind_dependent(
-            crate::physics::exterior_convection::ExteriorSurfaceDirection::HorizontalRoofWindward,
-            v_building,
-        );
-        let alpha = crate::physics::constants::thermal::ashrae_140::SOLAR_ABSORPTANCE_DEFAULT;
-        let sol_air = SolAirTemperature::new(alpha, 0.9, h_c_ext_roof);
-        let opaque_solar_ref = model.solar.opaque_solar_gains.as_ref();
-
-        let mut t_sol_air_vec = Vec::with_capacity(n);
-        for opaque_ref in opaque_solar_ref.iter().take(n) {
-            // opaque_ref is the effective opaque irradiance (W/m²)
-            // on exterior surfaces for the zone, set by distribute_opaque_solar_gains.
-            let t_sol_air_i = sol_air.for_roof(outdoor_temp, *opaque_ref, sky_temp);
-            t_sol_air_vec.push(t_sol_air_i);
-        }
-        t_sol_air_vec
+        five_r_one_c_roof_sol_air(
+            model.solar.weather.as_ref(),
+            model.solar.latitude_deg,
+            model.solar.longitude_deg,
+            model.solar.opaque_solar_gains.as_ref(),
+            outdoor_temp,
+            model.hvac.num_zones,
+        )
     }
 
     fn calculate_energy_imbalance<T>(

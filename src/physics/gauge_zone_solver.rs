@@ -611,6 +611,35 @@ impl GaugeZoneSolver {
         &self.surfaces
     }
 
+    /// Issue #3297 — per-surface interior temperature (the interior-most
+    /// node state of each surface's 1D solve) at the most recent step.
+    /// Length matches `self.surfaces.len()`. Read-only telemetry: used by
+    /// the dispatch to compute a 5R1C-compatible mass-state proxy; the
+    /// gauge integration never consumes these values.
+    pub fn surface_interior_temperatures(&self) -> Vec<f64> {
+        self.surfaces
+            .iter()
+            .map(|surface| surface.gauge.interior_temperature())
+            .collect()
+    }
+
+    /// Issue #3297 — area-weighted mean of the per-surface interior
+    /// temperatures for this zone. Falls back to the current zone air
+    /// temperature when the zone has no surfaces (or zero total area).
+    pub fn mean_interior_surface_temperature(&self) -> f64 {
+        let mut weighted_sum = 0.0;
+        let mut total_area = 0.0;
+        for surface in &self.surfaces {
+            weighted_sum += surface.gauge.interior_temperature() * surface.area_m2;
+            total_area += surface.area_m2;
+        }
+        if total_area > 0.0 {
+            weighted_sum / total_area
+        } else {
+            self.T_air
+        }
+    }
+
     /// Step the zone model with inter-zone coupling.
     ///
     /// This extends the basic step with coupling to adjacent zones.
@@ -861,6 +890,18 @@ impl MultiZoneGaugeSolver {
     /// Get all zone IDs.
     pub fn zone_ids(&self) -> &[usize] {
         &self.zone_ids
+    }
+
+    /// Issue #3297 — per-zone interior surface temperature proxy: for
+    /// each zone, the area-weighted mean of that zone's surfaces'
+    /// interior temperatures (see [`GaugeZoneSolver::mean_interior_surface_temperature`]).
+    /// Length matches `self.num_zones()`. Read-only telemetry for the
+    /// dispatch's 5R1C-compatible mass-state proxy.
+    pub fn zone_interior_temperatures(&self) -> Vec<f64> {
+        self.zones
+            .iter()
+            .map(|zone| zone.mean_interior_surface_temperature())
+            .collect()
     }
 
     /// Step all zones with inter-zone coupling.
@@ -1220,5 +1261,82 @@ mod tests {
 
         let flux = zone.steady_state_flux(T_int, T_ext).unwrap();
         assert!(flux.to_value() < 0.0); // Heat flows out
+    }
+
+    /// Issue #3297 — `surface_interior_temperatures()` must return one
+    /// entry per surface, each equal to the interior boundary
+    /// temperature that surface's gauge integrated against at the most
+    /// recent step (20 °C initialization before any step).
+    #[test]
+    fn test_surface_interior_temperatures_per_surface() {
+        let mut zone = GaugeZoneSolver::new(48.0, 2.7);
+        let wall = case600_wall();
+
+        zone.add_opaque_surface(&wall, 21.6, SurfaceType::Wall, 0.0, 90.0)
+            .unwrap();
+        zone.add_opaque_surface(&wall, 16.2, SurfaceType::Roof, 90.0, 0.0)
+            .unwrap();
+        zone.initialize().unwrap();
+
+        let temps = zone.surface_interior_temperatures();
+        assert_eq!(temps.len(), 2, "one entry per surface");
+        // Before any step, the interior-most state is the 20 °C default.
+        assert!(
+            temps.iter().all(|&t| (t - 20.0).abs() < 1e-12),
+            "unstepped surfaces report the 20 °C initial interior state, got {temps:?}"
+        );
+
+        // After a step with T_air = 25 °C, every surface integrated
+        // against T_air = 25 °C as its interior boundary.
+        zone.set_T_air(25.0);
+        zone.step(
+            0,
+            3600.0,
+            Temperature::from_value(5.0),
+            HeatTransferCoefficient::from_value(25.0),
+            0.0,
+            0.0,
+            0.0,
+        )
+        .unwrap();
+        let temps = zone.surface_interior_temperatures();
+        assert!(
+            temps.iter().all(|&t| (t - 25.0).abs() < 1e-12),
+            "stepped surfaces report the step's interior boundary temperature, got {temps:?}"
+        );
+    }
+
+    /// Issue #3297 — `mean_interior_surface_temperature()` is the
+    /// area-weighted mean, and `MultiZoneGaugeSolver::zone_interior_temperatures()`
+    /// returns one area-weighted entry per zone.
+    #[test]
+    fn test_zone_interior_temperatures_area_weighted() {
+        let mut zone = GaugeZoneSolver::new(48.0, 2.7);
+        let wall = case600_wall();
+
+        // Two surfaces with areas 30 m² and 10 m²: the weighted mean of
+        // (20, 20) is 20 before any step.
+        zone.add_opaque_surface(&wall, 30.0, SurfaceType::Wall, 0.0, 90.0)
+            .unwrap();
+        zone.add_opaque_surface(&wall, 10.0, SurfaceType::Roof, 90.0, 0.0)
+            .unwrap();
+        zone.initialize().unwrap();
+        assert!((zone.mean_interior_surface_temperature() - 20.0).abs() < 1e-12);
+
+        let mut mz = MultiZoneGaugeSolver::new();
+        mz.add_zone(0, 48.0, 2.7);
+        mz.add_zone(1, 32.0, 2.7);
+        mz.add_opaque_surface_to_zone(0, &wall, 21.6, SurfaceType::Wall, 0.0, 90.0)
+            .unwrap();
+        mz.add_opaque_surface_to_zone(1, &wall, 12.0, SurfaceType::Wall, 180.0, 90.0)
+            .unwrap();
+        mz.initialize().unwrap();
+
+        let per_zone = mz.zone_interior_temperatures();
+        assert_eq!(per_zone.len(), mz.num_zones());
+        assert!(
+            per_zone.iter().all(|&t| (t - 20.0).abs() < 1e-12),
+            "unstepped zones report the 20 °C initial interior state, got {per_zone:?}"
+        );
     }
 }

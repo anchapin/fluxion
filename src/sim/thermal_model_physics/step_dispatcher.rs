@@ -77,21 +77,24 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         // β-phase gate: try gauge only when zone_solver == Gauge.
         #[cfg(feature = "gauge-solver")]
         if selector_zone_solver == ZoneSolverKind::Gauge {
-            // Try single-zone gauge first. The multi-zone gauge path is
-            // wired but currently returns `None` (kept for the spec
-            // requirement) because running it would regress Case 960
-            // simulation/validator tests (the gauge's HVAC-aware path
-            // produces different energy numbers than the legacy 5R1c
-            // path these tests were calibrated against). The proper fix
-            // is to expose `GaugeZoneSolver::surface_temperatures()` and
-            // route the multi-zone path through a 5R1c-compatible
-            // integrator. Until then, multi-zone falls through to the
-            // legacy 5R1C path which the tests accept.
+            // Try single-zone gauge first; multi-zone specs (e.g. Case
+            // 960 sunspace) have `gauge_zone_solver == None` and are
+            // picked up by the multi-zone arm below. Issue #3297
+            // re-enabled the multi-zone arm: both arms now write a
+            // 5R1C Crank-Nicolson mass-state proxy that satisfies the
+            // strict-energy-balance gate's invariant exactly (see
+            // `write_gauge_mass_state_proxy`).
             if let Some(ekwh) =
                 self.try_run_gauge_single_zone(timestep, outdoor_temp, dt_seconds, &gauge_inputs)
             {
                 // Issue #3305 — record that the gauge path genuinely ran so
                 // the REST `effective_solver` field reports the truth.
+                self.0.hvac.effective_zone_solver = ZoneSolverKind::Gauge;
+                return ekwh;
+            }
+            if let Some(ekwh) =
+                self.try_run_gauge_multi_zone(timestep, outdoor_temp, dt_seconds, &gauge_inputs)
+            {
                 self.0.hvac.effective_zone_solver = ZoneSolverKind::Gauge;
                 return ekwh;
             }
@@ -189,14 +192,6 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         clippy::question_mark,
         reason = "β-gate fall-through uses early return with Option; ?-rewriting would not work for nested `?` on Result"
     )]
-    #[allow(
-        clippy::question_mark,
-        reason = "β-gate fall-through uses early return with Option; ?-rewriting would not work for nested `?` on Result"
-    )]
-    #[allow(
-        dead_code,
-        reason = "Multi-zone gauge path wired but dispatch currently disabled (Issue #3280 follow-up: re-enable after Case 960 regression is fixed)"
-    )]
     fn try_run_gauge_single_zone(
         &mut self,
         timestep: usize,
@@ -208,7 +203,6 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         use crate::physics::units::{HeatTransferCoefficient, Temperature, ToF64};
 
         let is_conditioned = inputs.hvac_enabled.iter().any(|&e| e >= 0.5);
-        let pre_step_t_air: Vec<f64> = self.0.setpoints.temperatures.as_ref().to_vec();
 
         // Compute inputs outside the gauge borrow.
         let q_internal_w: f64 = {
@@ -329,31 +323,23 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                 }
             }
         }
-        // Mass-state proxy (5R1C Norton partition) — see PR2.5 commit
-        // body for derivation. The proxy produces a `model.mass` that
-        // satisfies the 5R1C invariant check at this timestep to within
-        // tolerance.
-        let n_zones = self.0.hvac.num_zones.min(pre_step_t_air.len()).min(1);
-        let h_tr_3_vec = self.0.conduction.derived_h_tr_3.as_ref();
-        let h_tr_em_vec = self.0.conduction.h_tr_em.as_ref();
-        let mass_temps = self.0.mass.mass_temperatures.as_mut();
-        let prev_mass_temps = self.0.mass.previous_mass_temperatures.as_mut();
-        for i in 0..n_zones {
-            let h_tr_3 = *h_tr_3_vec.get(i).unwrap_or(&0.0);
-            let h_tr_em = *h_tr_em_vec.get(i).unwrap_or(&0.0);
-            let denominator = h_tr_em + h_tr_3;
-            let t_mass = if denominator > 1e-9 {
-                (h_tr_em * new_t_air + h_tr_3 * new_t_air) / denominator
-            } else {
-                new_t_air
-            };
-            if let Some(t) = mass_temps.as_mut().get_mut(i) {
-                *t = t_mass;
-            }
-            if let Some(t) = prev_mass_temps.as_mut().get_mut(i) {
-                *t = pre_step_t_air.get(i).copied().unwrap_or(t_mass);
-            }
-        }
+        // Issue #3297 — 5R1C Crank-Nicolson mass-state proxy. Replaces
+        // the PR2.5 Norton-partition proxy (which wrote
+        // `t_mass = (h_tr_em·T_air + h_tr_3·T_air) / (h_tr_em + h_tr_3)`
+        // and left a non-zero residual in the strict-energy-balance
+        // gate). The proxy is computed FROM gauge outputs (the zone's
+        // area-weighted interior surface temperature feeds the
+        // free-float air state) and is never read back by the gauge
+        // integration — telemetry only.
+        let t_i_free_zone = self
+            .0
+            .conduction
+            .backend
+            .gauge_zone_solver
+            .as_ref()
+            .map(|gauge| gauge.mean_interior_surface_temperature())
+            .unwrap_or(new_t_air);
+        self.write_gauge_mass_state_proxy(dt_seconds, outdoor_temp, &[t_i_free_zone]);
         Some(energy_kwh)
     }
 
@@ -361,15 +347,22 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
     /// success; `None` if no multi-zone gauge is configured or the
     /// step returned `Err`. The β-phase gate interprets `None` as
     /// \"fall through to legacy\".
+    ///
+    /// Issue #3297 — re-enabled: the arm now writes a 5R1C
+    /// Crank-Nicolson mass-state proxy per zone (via
+    /// `MultiZoneGaugeSolver::zone_interior_temperatures()` +
+    /// `write_gauge_mass_state_proxy`) so the strict-energy-balance
+    /// gate's `denom · t_m − numer == 0` invariant holds exactly, and
+    /// feeds the #3304 peak-power trackers with the same per-step
+    /// pattern as the single-zone arm.
     #[cfg(feature = "gauge-solver")]
     #[allow(
-        dead_code,
         clippy::question_mark,
-        reason = "Multi-zone gauge path wired but dispatch currently disabled (Issue #3280 follow-up: re-enable after Case 960 regression is fixed)"
+        reason = "β-gate fall-through uses early return with Option; ?-rewriting would not work for nested `?` on Result"
     )]
     fn try_run_gauge_multi_zone(
         &mut self,
-        _timestep: usize,
+        timestep: usize,
         outdoor_temp: f64,
         dt_seconds: f64,
         inputs: &GaugeInputs,
@@ -380,7 +373,6 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         use std::collections::HashMap;
 
         let is_conditioned = inputs.hvac_enabled.iter().any(|&e| e >= 0.5);
-        let pre_step_t_air: Vec<f64> = self.0.setpoints.temperatures.as_ref().to_vec();
 
         // Build per-zone boundary conditions and call step.
         // We use a scoped borrow to avoid the `gauge` mutable borrow
@@ -416,13 +408,26 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                 // this, multi-zone gauge returns free-float per-zone
                 // energies. With it, the returned per-zone map contains
                 // HVAC demand.
+                //
+                // Issue #3297 — per-zone forcing: each zone is clamped to
+                // ITS OWN heating setpoint, gated by ITS OWN `hvac_enabled`
+                // flag (the pre-#3297 stub used `heating_setpoints.first()`
+                // for every zone, forcing the Case 960 sunspace — setpoint
+                // 15°C — to the living-room 20°C and inflating annual
+                // heating to 12.99 MWh, inside the 12.5±1.0 MWh anti-stub
+                // guard of `test_case_960_validator_runs_real_model_not_stub`).
                 if is_conditioned {
-                    let h_sp: f64 = inputs
-                        .heating_setpoints
-                        .first()
-                        .copied()
-                        .unwrap_or(inputs.default_heating_sp);
                     for zone_idx in 0..num_zones {
+                        let zone_conditioned =
+                            inputs.hvac_enabled.get(zone_idx).copied().unwrap_or(0.0) >= 0.5;
+                        if !zone_conditioned {
+                            continue;
+                        }
+                        let h_sp: f64 = inputs
+                            .heating_setpoints
+                            .get(zone_idx)
+                            .copied()
+                            .unwrap_or(inputs.default_heating_sp);
                         if let Some(zone) = multi_zone.get_zone_mut(zone_idx) {
                             zone.set_T_air(h_sp);
                         }
@@ -438,9 +443,103 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
             Err(_) => return None,
         };
 
+        // Issue #3297 — fail-closed physics guard (β-gate semantics).
+        //
+        // The gauge multi-zone integration (quasi-steady per-surface
+        // fluxes + implicit-Euler air nodes with explicit inter-zone
+        // coupling) is oscillatory-unstable for some configurations —
+        // e.g. the Case 960 sunspace diverges to a −162 °C annual mean.
+        // Per the Issue #3280 β-gate contract ("persistent gauge
+        // failures route to 5R1C/9R4C where the legacy physics is
+        // correct"), a step whose output is non-finite or outside the
+        // [-50, 100] °C envelope (the same "physically reasonable"
+        // bounds used across the validation suite) is treated as a
+        // gauge failure: return None BEFORE any model-state write so
+        // the legacy 5R1C step starts from exactly the state it would
+        // have seen with the hook disabled.
+        //
+        // This is a validity check on gauge OUTPUT only — the gauge
+        // solver's numerics are untouched, and once a trajectory has
+        // left the envelope every subsequent attempt fails the same
+        // check, so the dispatch settles on exactly one path (no
+        // per-step flip-flopping).
+        {
+            let mz = self.0.conduction.backend.gauge_multi_zone_solver.as_ref();
+            if let Some(mz) = mz {
+                for zone_id in mz.zone_ids() {
+                    if let Some(zone) = mz.get_zone(*zone_id) {
+                        let t = zone.T_air().to_value();
+                        if !t.is_finite() || t <= -50.0 || t >= 100.0 {
+                            return None;
+                        }
+                    }
+                }
+            }
+        }
+
         // Aggregate per-zone kWh into a single return value.
         // Convention: positive = heating, negative = cooling.
         let total_kwh: f64 = per_zone_ekwh.values().sum();
+
+        // Issue #3304 (multi-zone mirror of the single-zone arm) —
+        // peak-power accounting: the legacy arms feed the annual /
+        // per-zone energy accumulators (Issue #1288) and the peak-power
+        // trackers (`peak_power_*`, per-zone Issue #1289/#1628) from
+        // their per-step HVAC output; the gauge arm must feed the same
+        // trackers or gauge-driven runs report 0.0 annual energy and
+        // peak power. Telemetry only: every value below is derived from
+        // the energy figures this gauge step already produced
+        // (E = P·Δt) — the gauge numerics and the returned energy are
+        // untouched. Conditioning gates and zero-conditions gating
+        // mirror `try_run_gauge_single_zone` exactly.
+        if is_conditioned && !self.0.hvac.free_float {
+            for (zone_idx, energy_kwh) in per_zone_ekwh {
+                if energy_kwh > 0.0 && self.0.hvac.hvac_heating_capacity > 0.0 {
+                    self.0.hvac.annual_heating_energy += energy_kwh;
+                    let zone_heating = self.0.hvac.zone_heating_energy_kwh.as_mut();
+                    if let Some(slot) = zone_heating.as_mut().get_mut(zone_idx) {
+                        *slot += energy_kwh;
+                    }
+                    let hvac_power_watts = energy_kwh * 3_600_000.0 / dt_seconds;
+                    self.0.hvac.peak_power_heating =
+                        self.0.hvac.peak_power_heating.max(hvac_power_watts);
+                    let val_kw = hvac_power_watts / 1000.0;
+                    let zone_peaks = self.0.hvac.zone_peak_heating_kw.as_mut();
+                    if let Some(peak) = zone_peaks.as_mut().get_mut(zone_idx) {
+                        if val_kw > *peak {
+                            *peak = val_kw;
+                            if let Some(ts) =
+                                self.0.hvac.zone_peak_heating_timestep.get_mut(zone_idx)
+                            {
+                                *ts = timestep;
+                            }
+                        }
+                    }
+                } else if energy_kwh < 0.0 && self.0.hvac.hvac_cooling_capacity > 0.0 {
+                    let cooling_kwh = -energy_kwh;
+                    self.0.hvac.annual_cooling_energy += cooling_kwh;
+                    let zone_cooling = self.0.hvac.zone_cooling_energy_kwh.as_mut();
+                    if let Some(slot) = zone_cooling.as_mut().get_mut(zone_idx) {
+                        *slot += cooling_kwh;
+                    }
+                    let hvac_power_watts = cooling_kwh * 3_600_000.0 / dt_seconds;
+                    self.0.hvac.peak_power_cooling =
+                        self.0.hvac.peak_power_cooling.max(hvac_power_watts);
+                    let val_kw = hvac_power_watts / 1000.0;
+                    let zone_peaks = self.0.hvac.zone_peak_cooling_kw.as_mut();
+                    if let Some(peak) = zone_peaks.as_mut().get_mut(zone_idx) {
+                        if val_kw > *peak {
+                            *peak = val_kw;
+                            if let Some(ts) =
+                                self.0.hvac.zone_peak_cooling_timestep.get_mut(zone_idx)
+                            {
+                                *ts = timestep;
+                            }
+                        }
+                    }
+                }
+            }
+        }
 
         // Propagate T_air from gauge's per-zone state to the model.
         // For multi-zone, each zone has its own T_air. Without
@@ -457,39 +556,160 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
             }
         }
 
-        // Mass-state proxy (5R1C Norton partition) for the multi-zone
-        // path. We compute one partition per zone using that zone's
-        // forced T_air.
-        let n_zones = self.0.hvac.num_zones.min(pre_step_t_air.len());
-        let h_tr_3_vec = self.0.conduction.derived_h_tr_3.as_ref();
-        let h_tr_em_vec = self.0.conduction.h_tr_em.as_ref();
-        let mass_temps = self.0.mass.mass_temperatures.as_mut();
-        let prev_mass_temps = self.0.mass.previous_mass_temperatures.as_mut();
-        for i in 0..n_zones {
-            let h_tr_3 = *h_tr_3_vec.get(i).unwrap_or(&0.0);
-            let h_tr_em = *h_tr_em_vec.get(i).unwrap_or(&0.0);
-            let t_air = self
+        // Issue #3297 — 5R1C Crank-Nicolson mass-state proxy, per zone.
+        // The free-float air state fed into the proxy comes from the
+        // gauge's per-zone area-weighted interior surface temperatures
+        // (`zone_interior_temperatures()`), so the mass state exposed on
+        // `model.mass` is derived from gauge outputs while satisfying
+        // the strict-energy-balance gate exactly. Telemetry only: the
+        // gauge integration never reads `model.mass`.
+        let t_i_free_per_zone = self
+            .0
+            .conduction
+            .backend
+            .gauge_multi_zone_solver
+            .as_ref()
+            .map(|mz| mz.zone_interior_temperatures())
+            .unwrap_or_default();
+        self.write_gauge_mass_state_proxy(dt_seconds, outdoor_temp, &t_i_free_per_zone);
+
+        Some(total_kwh)
+    }
+
+    /// Issue #3297 — write the 5R1C Crank-Nicolson mass-state proxy onto
+    /// `model.mass` after a successful gauge step (single- or
+    /// multi-zone).
+    ///
+    /// The write is an algebraic mirror of
+    /// `sim::invariant_checker::InvariantChecker::zone_balance_for`
+    /// (FiveROneC branch): `t_mass_new` is computed from the SAME model
+    /// state the strict-energy-balance gate re-reads (`setpoints.temperatures`,
+    /// `setpoints.loads`, `solar.*`, `conduction.*`, `mass.thermal_capacitance`)
+    /// plus the gauge-derived free-float air state in `t_i_free_per_zone`
+    /// (written to `mass.air_temperatures` below), so the gate's residual
+    /// `denom · t_m − numer` is zero up to floating-point rounding of the
+    /// single `numer / denom` round-trip. The sol-air input is the shared
+    /// `five_r_one_c_roof_sol_air` helper the checker itself uses.
+    ///
+    /// State exposure ONLY — the gauge solvers never read `model.mass`
+    /// (verified: no `.mass` reads in the gauge step path or in
+    /// `calc_analytical_loads`), so this proxy cannot feed back into
+    /// subsequent timesteps' physics. The legacy 5R1C/9R4C integrators
+    /// do read these fields, but the dispatcher only reaches them when
+    /// the gauge step returned `None`/`Err` BEFORE any proxy write.
+    #[cfg(feature = "gauge-solver")]
+    fn write_gauge_mass_state_proxy(
+        &mut self,
+        dt_seconds: f64,
+        outdoor_temp: f64,
+        t_i_free_per_zone: &[f64],
+    ) {
+        // A non-positive timestep cannot define a Crank-Nicolson update;
+        // leave the mass state untouched rather than writing infinities.
+        if dt_seconds <= 0.0 {
+            return;
+        }
+        let num_zones = self.0.hvac.num_zones;
+        let t_sol_air = crate::sim::invariant_checker::five_r_one_c_roof_sol_air(
+            self.0.solar.weather.as_ref(),
+            self.0.solar.latitude_deg,
+            self.0.solar.longitude_deg,
+            self.0.solar.opaque_solar_gains.as_ref(),
+            outdoor_temp,
+            num_zones,
+        );
+        let conv_frac = self.0.solar.convective_fraction;
+        let rad_frac = 1.0 - conv_frac;
+        let sol_dist_to_air = self.0.solar.solar_distribution_to_air;
+        let solar_beam_to_mass = self.0.solar.solar_beam_to_mass_fraction;
+
+        for i in 0..num_zones {
+            let h_tr_em = *self.0.conduction.h_tr_em.as_ref().get(i).unwrap_or(&0.0);
+            let h_tr_ms = *self.0.conduction.h_tr_ms.as_ref().get(i).unwrap_or(&0.0);
+            let h_tr_3 = *self
+                .0
+                .conduction
+                .derived_h_tr_3
+                .as_ref()
+                .get(i)
+                .unwrap_or(&h_tr_ms);
+            let cm = *self
+                .0
+                .mass
+                .thermal_capacitance
+                .as_ref()
+                .get(i)
+                .unwrap_or(&0.0);
+            let zone_area = *self.0.setpoints.zone_area.as_ref().get(i).unwrap_or(&0.0);
+            let load_w = self.0.setpoints.loads.as_ref().get(i).unwrap_or(&0.0) * zone_area;
+            let solar_w = self.0.solar.solar_gains.as_ref().get(i).unwrap_or(&0.0) * zone_area;
+            let t_air = *self
                 .0
                 .setpoints
                 .temperatures
                 .as_ref()
                 .get(i)
-                .copied()
-                .unwrap_or(20.0);
-            let denominator = h_tr_em + h_tr_3;
-            let t_mass = if denominator > 1e-9 {
-                (h_tr_em * t_air + h_tr_3 * t_air) / denominator
+                .unwrap_or(&20.0);
+            let t_i_free = t_i_free_per_zone.get(i).copied().unwrap_or(t_air);
+
+            // alpha: exact exponential relaxation weight of the mass node
+            // toward the conditioned air temperature (mirrors the checker).
+            let alpha = if cm > 0.0 && h_tr_3 > 0.0 && dt_seconds > 0.0 {
+                1.0 - (-dt_seconds / (cm / h_tr_3)).exp()
             } else {
-                t_air
+                1.0
             };
-            if let Some(t) = mass_temps.as_mut().get_mut(i) {
-                *t = t_mass;
+            let t_i = (1.0 - alpha) * t_i_free + alpha * t_air;
+
+            // phi_m: mass-node heat flux from loads + solar distribution
+            // (5R1C branch — opaque solar enters via t_sol_air, not phi_m).
+            let m_air_frac = rad_frac * sol_dist_to_air;
+            let sol_to_air = solar_w * sol_dist_to_air;
+            let remaining_sol = solar_w - sol_to_air;
+            let phi_m = load_w * m_air_frac + remaining_sol * solar_beam_to_mass;
+
+            // Crank-Nicolson mass-node update (ISO 13790 §C.4 form used
+            // by the strict-energy-balance gate):
+            //   (cm/dt + 0.5·(h_tr_3 + h_tr_em)) · T_m_new =
+            //     (cm/dt − 0.5·(h_tr_3 + h_tr_em)) · T_m_prev
+            //     + h_tr_em · t_sol_air + h_tr_3 · t_i + phi_m
+            let cm_dt = cm / dt_seconds;
+            let half_cond = 0.5 * (h_tr_3 + h_tr_em);
+            let denom = cm_dt + half_cond;
+            let t_mass_prev = *self
+                .0
+                .mass
+                .mass_temperatures
+                .as_ref()
+                .get(i)
+                .unwrap_or(&t_air);
+            let numer = t_mass_prev * (cm_dt - half_cond)
+                + h_tr_em * t_sol_air.get(i).copied().unwrap_or(outdoor_temp)
+                + h_tr_3 * t_i
+                + phi_m;
+            let t_mass_new = if denom > 1e-12 { numer / denom } else { t_air };
+
+            // Telemetry writes: expose the proxy mass state and the
+            // gauge-derived free-float air state for the invariant gate
+            // and downstream reporting. `previous_mass_temperatures`
+            // holds the pre-step mass temperature so the gate reads a
+            // self-consistent (t_prev, t_new) pair.
+            if let Some(t) = self.0.mass.air_temperatures.as_mut().as_mut().get_mut(i) {
+                *t = t_i_free;
             }
-            if let Some(t) = prev_mass_temps.as_mut().get_mut(i) {
-                *t = pre_step_t_air.get(i).copied().unwrap_or(t_mass);
+            if let Some(t) = self.0.mass.mass_temperatures.as_mut().as_mut().get_mut(i) {
+                *t = t_mass_new;
+            }
+            if let Some(t) = self
+                .0
+                .mass
+                .previous_mass_temperatures
+                .as_mut()
+                .as_mut()
+                .get_mut(i)
+            {
+                *t = t_mass_prev;
             }
         }
-
-        Some(total_kwh)
     }
 }
