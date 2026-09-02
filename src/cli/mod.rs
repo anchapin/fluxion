@@ -277,8 +277,8 @@ pub enum Commands {
         /// Path to sensitivity configuration YAML
         #[arg(short, long)]
         config: PathBuf,
-        /// Output directory (default: current directory)
-        #[arg(short, long)]
+        /// Output directory (default: ./tmp)
+        #[arg(short, long, alias = "output-dir")]
         output: Option<PathBuf>,
         /// Use AI surrogates for faster evaluation
         #[arg(long)]
@@ -290,8 +290,8 @@ pub enum Commands {
         /// Path to delta configuration YAML
         #[arg(short, long)]
         config: PathBuf,
-        /// Output directory
-        #[arg(short, long)]
+        /// Output directory (default: ./tmp)
+        #[arg(short, long, alias = "output-dir")]
         output: Option<PathBuf>,
         /// Include hourly differences in output
         #[arg(long)]
@@ -303,7 +303,7 @@ pub enum Commands {
         /// ASHRAE case ID (e.g., "600", "900FF")
         #[arg(short, long)]
         case: String,
-        /// Output CSV file path
+        /// Output CSV file path (default: ./tmp/<case>_components.csv)
         #[arg(short, long)]
         output: Option<PathBuf>,
     },
@@ -1489,7 +1489,7 @@ pub fn run_cli() -> Result<()> {
         // New commands
         Commands::Sensitivity {
             config,
-            output: _,
+            output,
             use_surrogates,
         } => {
             // Read sensitivity config
@@ -1520,14 +1520,18 @@ pub fn run_cli() -> Result<()> {
             let outputs = sensitivity::run_sensitivity(&design, &oracle, use_surrogates);
             // Compute metrics
             let report = sensitivity::compute_metrics(&design, &outputs);
+            // Route scratch reports through the output directory (default: ./tmp)
+            let output_dir = output.unwrap_or_else(|| PathBuf::from("./tmp"));
+            std::fs::create_dir_all(&output_dir)?;
             // Write CSV report
-            let csv_path = "sensitivity_report.csv";
-            sensitivity::export_to_csv(&report, Path::new(csv_path))?;
-            println!("CSV report saved to {}", csv_path);
+            let csv_path = output_dir.join("sensitivity_report.csv");
+            sensitivity::export_to_csv(&report, &csv_path)?;
+            println!("CSV report saved to {}", csv_path.display());
             // Write Markdown report
             let md = generate_sensitivity_markdown(&report);
-            std::fs::write("sensitivity_report.md", md)?;
-            println!("Markdown report saved to sensitivity_report.md");
+            let md_path = output_dir.join("sensitivity_report.md");
+            std::fs::write(&md_path, md)?;
+            println!("Markdown report saved to {}", md_path.display());
         }
 
         Commands::Delta {
@@ -1537,7 +1541,7 @@ pub fn run_cli() -> Result<()> {
         } => {
             let config_content = std::fs::read_to_string(config)?;
             let delta_config: DeltaConfig = serde_yaml::from_str(&config_content)?;
-            let output_dir = output_opt.unwrap_or_else(|| PathBuf::from("."));
+            let output_dir = output_opt.unwrap_or_else(|| PathBuf::from("./tmp"));
             std::fs::create_dir_all(&output_dir)?;
             delta::run_and_report(delta_config, &output_dir, hourly)?;
             println!(
@@ -1567,8 +1571,14 @@ pub fn run_cli() -> Result<()> {
             let breakdown = diagnostic.energy_breakdown;
             let entries =
                 components::aggregate_from_validator(vec![(case.clone(), breakdown)].into_iter());
-            let output_path =
-                output_opt.unwrap_or_else(|| PathBuf::from(format!("{}_components.csv", case)));
+            let output_path = match output_opt {
+                Some(p) => p,
+                None => {
+                    let output_dir = PathBuf::from("./tmp");
+                    std::fs::create_dir_all(&output_dir)?;
+                    output_dir.join(format!("{}_components.csv", case))
+                }
+            };
             components::export_component_csv(&entries, &output_path)?;
             println!("Component breakdown saved to {}", output_path.display());
         }

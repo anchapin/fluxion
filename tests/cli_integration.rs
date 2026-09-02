@@ -46,10 +46,64 @@ parameters:
         String::from_utf8_lossy(&output.stderr)
     );
 
-    let csv_path = temp_dir.path().join("sensitivity_report.csv");
-    let md_path = temp_dir.path().join("sensitivity_report.md");
-    assert!(csv_path.exists(), "CSV report not found");
-    assert!(md_path.exists(), "Markdown report not found");
+    // Default output dir is ./tmp relative to the current directory
+    let csv_path = temp_dir.path().join("tmp").join("sensitivity_report.csv");
+    let md_path = temp_dir.path().join("tmp").join("sensitivity_report.md");
+    assert!(csv_path.exists(), "CSV report not found: {:?}", csv_path);
+    assert!(md_path.exists(), "Markdown report not found: {:?}", md_path);
+    // No scratch files may land directly in the working directory
+    assert!(
+        !temp_dir.path().join("sensitivity_report.csv").exists(),
+        "CSV report must not be written to cwd"
+    );
+    assert!(
+        !temp_dir.path().join("sensitivity_report.md").exists(),
+        "Markdown report must not be written to cwd"
+    );
+}
+
+#[test]
+fn test_sensitivity_command_explicit_output_dir() {
+    let temp_dir = tempdir().unwrap();
+    let out_dir = temp_dir.path().join("reports").join("sens");
+    let config_content = r#"
+case_id: "600"
+method: "oat"
+levels: 2
+parameters:
+  - name: "window_u"
+    min: 0.1
+    max: 5.0
+  - name: "heating_setpoint"
+    min: 15.0
+    max: 25.0
+"#;
+    let config_path = temp_dir.path().join("sensitivity.yaml");
+    std::fs::write(&config_path, config_content).unwrap();
+
+    let output = Command::new(fluxion_bin())
+        .arg("sensitivity")
+        .arg("--config")
+        .arg(&config_path)
+        .arg("--output-dir")
+        .arg(&out_dir)
+        .current_dir(temp_dir.path())
+        .output()
+        .expect("Failed to execute fluxion sensitivity");
+    assert!(
+        output.status.success(),
+        "Sensitivity command failed: stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let csv_path = out_dir.join("sensitivity_report.csv");
+    let md_path = out_dir.join("sensitivity_report.md");
+    assert!(csv_path.exists(), "CSV report not found: {:?}", csv_path);
+    assert!(md_path.exists(), "Markdown report not found: {:?}", md_path);
+    assert!(
+        !temp_dir.path().join("tmp").exists(),
+        "default ./tmp must not be created when --output-dir is explicit"
+    );
 }
 
 #[test]
@@ -94,8 +148,9 @@ fn test_delta_command() {
         String::from_utf8_lossy(&output.stderr)
     );
 
-    let md_path = temp_dir.path().join("delta_report.md");
-    let csv_path = temp_dir.path().join("hourly_differences.csv");
+    // Default output dir is ./tmp relative to the current directory
+    let md_path = temp_dir.path().join("tmp").join("delta_report.md");
+    let csv_path = temp_dir.path().join("tmp").join("hourly_differences.csv");
     assert!(md_path.exists(), "Delta markdown report not found");
     assert!(csv_path.exists(), "Hourly differences CSV not found");
 }
@@ -118,7 +173,10 @@ fn test_components_command() {
         String::from_utf8_lossy(&output.stderr)
     );
 
-    let expected_csv = temp_dir.path().join(format!("{}_components.csv", case_id));
+    let expected_csv = temp_dir
+        .path()
+        .join("tmp")
+        .join(format!("{}_components.csv", case_id));
     assert!(
         expected_csv.exists(),
         "Components CSV not found: {:?}",
