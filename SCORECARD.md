@@ -93,6 +93,31 @@ Required branch-protection checks (`release_gates.yaml` → `ci.required_checks`
 | Crate Size Gate (Issue #2930) | #2930 |
 | fluxion-grid Integration Tests (GH) | — |
 | h_tr_em Regression Gate (LIMIT-13) | — |
+| FFI Feature Check (GH) | — |
+| ASHRAE 140 Strict Energy Gate (Issue #1333) | #1333 |
+| Surrogate ASHRAE 140 MAE Gate (Issue #2924) | #2924 |
+| Surrogate Drift Tolerance Gate (Issue #1784) | #1784 |
+| Fluxion Determinism Gate (Issue #1351) | #1351 |
+| Fluxion Performance Gate (Issue #1618) | #1618 |
+| Code Coverage Gate (Issue #1932) | #1932 |
+| Physics-Sim-Cycle-Check (GH) | — |
+| Workspace Check (GH) | — |
+| Absolute Perf Gate (Issue #2693) | #2693 |
+| Multi-Zone Perf Gate (Issue #2772) | #2772 |
+| Multi-Zone Cold Start Gate (Issue #2919) | #2919 |
+| Hybrid Perf Gate (Issue #2922) | #2922 |
+| Energy Conservation (GH) | — |
+| Rustfmt (GH) | — |
+| Clippy (GH) | — |
+| Known Issues Stale Check (GH) | — |
+| Ashrae Cases Cycle Check (GH) | — |
+| Cycle Downward Trend Guard (Issue #2768) | #2768 |
+| CUDA Smoke Test (Issue #1603) | #1603 |
+| Cargo Deny | — |
+| Audit Ignore Freshness (Issue #2912) | #2912 |
+| fluxion-grid Integration Tests (GH) | — |
+| h_tr_em Regression Gate (LIMIT-13) | — |
+| FFI Feature Check (GH) | — |
 
 - **Live status** is intentionally not baked in here (it is non-deterministic and would break scorecard diff stability). Run:
 
