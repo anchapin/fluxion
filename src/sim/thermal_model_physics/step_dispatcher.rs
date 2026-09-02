@@ -260,6 +260,65 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
 
         let energy_kwh = energy_kwh?; // β-gate: fall through to legacy on None
 
+        // Issue #3304 — peak-power accounting: the 5R1C arm feeds the
+        // annual/per-zone energy accumulators (Issue #1288) and the
+        // peak-power trackers (`peak_power_*`, per-zone Issue
+        // #1289/#1628) from its own per-step HVAC output; the gauge arm
+        // must feed the same trackers or gauge-driven runs report 0.0
+        // annual energy and peak power. Telemetry only: every value
+        // below is derived from the energy figure this gauge step
+        // already produced (E = P·Δt) — the gauge numerics and the
+        // returned energy are untouched.
+        //
+        // Conditioning gates mirror `compute_zone_hvac_load` exactly —
+        // the 5R1C arm emits zero (and so feeds no tracker) when the
+        // zone is disabled, when `free_float` is set, or when the
+        // relevant capacity clamps the demand to zero
+        // (`demand.clamp(-cool_cap, heat_cap)`). The gauge step forces
+        // T_air whenever `hvac_enabled` says the zone is conditioned,
+        // which in free-float setups (±999 setpoints, zero capacity,
+        // e.g. the twin-correction energy gate) would otherwise record
+        // phantom energy the 5R1C arm never produces. Sign convention
+        // matches the gauge return: positive = heating.
+        if is_conditioned && !self.0.hvac.free_float {
+            if energy_kwh > 0.0 && self.0.hvac.hvac_heating_capacity > 0.0 {
+                self.0.hvac.annual_heating_energy += energy_kwh;
+                let zone_heating = self.0.hvac.zone_heating_energy_kwh.as_mut();
+                if !zone_heating.is_empty() {
+                    zone_heating[0] += energy_kwh;
+                }
+                let hvac_power_watts = energy_kwh * 3_600_000.0 / dt_seconds;
+                self.0.hvac.peak_power_heating =
+                    self.0.hvac.peak_power_heating.max(hvac_power_watts);
+                let val_kw = hvac_power_watts / 1000.0;
+                let zone_peaks = self.0.hvac.zone_peak_heating_kw.as_mut();
+                if !zone_peaks.is_empty() && val_kw > zone_peaks[0] {
+                    zone_peaks[0] = val_kw;
+                    if !self.0.hvac.zone_peak_heating_timestep.is_empty() {
+                        self.0.hvac.zone_peak_heating_timestep[0] = timestep;
+                    }
+                }
+            } else if energy_kwh < 0.0 && self.0.hvac.hvac_cooling_capacity > 0.0 {
+                let cooling_kwh = -energy_kwh;
+                self.0.hvac.annual_cooling_energy += cooling_kwh;
+                let zone_cooling = self.0.hvac.zone_cooling_energy_kwh.as_mut();
+                if !zone_cooling.is_empty() {
+                    zone_cooling[0] += cooling_kwh;
+                }
+                let hvac_power_watts = cooling_kwh * 3_600_000.0 / dt_seconds;
+                self.0.hvac.peak_power_cooling =
+                    self.0.hvac.peak_power_cooling.max(hvac_power_watts);
+                let val_kw = hvac_power_watts / 1000.0;
+                let zone_peaks = self.0.hvac.zone_peak_cooling_kw.as_mut();
+                if !zone_peaks.is_empty() && val_kw > zone_peaks[0] {
+                    zone_peaks[0] = val_kw;
+                    if !self.0.hvac.zone_peak_cooling_timestep.is_empty() {
+                        self.0.hvac.zone_peak_cooling_timestep[0] = timestep;
+                    }
+                }
+            }
+        }
+
         // Propagate T_air to the model so subsequent calls (and the
         // ASHRAE 140 finalization path) see the conditioned values.
         {

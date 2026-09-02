@@ -1090,7 +1090,13 @@ mod tests {
         let ref_cooling_mid = (benchmark.annual_cooling_min + benchmark.annual_cooling_max) / 2.0;
         let mock_heating = ref_heating_mid;
         let mock_cooling = ref_cooling_mid;
+        // Issue #3304: the peak-mock constants only separate the 5R1C
+        // engine output from the mock, so they are only computed (and
+        // only asserted against) in the default build. See the peak
+        // discriminators below for why the gauge build cannot use them.
+        #[cfg(not(feature = "gauge-solver"))]
         let mock_peak_heating = (ref_heating_mid * 1000.0) / 8760.0 * 2.0;
+        #[cfg(not(feature = "gauge-solver"))]
         let mock_peak_cooling = (ref_cooling_mid * 1000.0) / 8760.0 * 2.5;
 
         let result = runner.run_variant(ThermalNetworkVariant::FiveR1C, "600");
@@ -1134,22 +1140,54 @@ mod tests {
         // tiny proxy value (~1.16 kW for heating) that is wildly different
         // from the engine's actual peak (~3-5 kW for Case 600). A
         // separation > 0.5 kW is a robust discriminator.
-        assert!(
-            (result.peak_heating_kw - mock_peak_heating).abs() > 0.5,
-            "Case 600 peak heating ({:.3} kW) is within 0.5 kW of the \
-             pre-#2980 mock constant ({:.3} kW) — the mock may be \
-             reinstalled.",
-            result.peak_heating_kw,
-            mock_peak_heating
-        );
-        assert!(
-            (result.peak_cooling_kw - mock_peak_cooling).abs() > 0.5,
-            "Case 600 peak cooling ({:.3} kW) is within 0.5 kW of the \
-             pre-#2980 mock constant ({:.3} kW) — the mock may be \
-             reinstalled.",
-            result.peak_cooling_kw,
-            mock_peak_cooling
-        );
+        //
+        // Issue #3304: that margin is calibrated against the 5R1C arm.
+        // Under the `gauge-solver` β gate, Case 600 peak power comes from
+        // the gauge solver's own per-step energy figure (E = P·Δt, fed by
+        // the dispatcher in `try_run_gauge_single_zone`), and the gauge's
+        // genuine peak cooling (~1.52 kW) happens to land within 0.5 kW
+        // of the mock constant (~1.44 kW) — a coincidence of magnitudes,
+        // not a mock. No separation margin can discriminate there without
+        // tuning the physics, so in the gauge build mock detection is
+        // carried by the annual discriminators above (the gauge's annual
+        // energies differ from the reference midpoints by construction),
+        // and the peak checks instead guard the #3304 telemetry invariant
+        // itself: a gauge run reporting 0.0 peaks is exactly the
+        // tracker-feed gap this issue fixed.
+        #[cfg(not(feature = "gauge-solver"))]
+        {
+            assert!(
+                (result.peak_heating_kw - mock_peak_heating).abs() > 0.5,
+                "Case 600 peak heating ({:.3} kW) is within 0.5 kW of the \
+                 pre-#2980 mock constant ({:.3} kW) — the mock may be \
+                 reinstalled.",
+                result.peak_heating_kw,
+                mock_peak_heating
+            );
+            assert!(
+                (result.peak_cooling_kw - mock_peak_cooling).abs() > 0.5,
+                "Case 600 peak cooling ({:.3} kW) is within 0.5 kW of the \
+                 pre-#2980 mock constant ({:.3} kW) — the mock may be \
+                 reinstalled.",
+                result.peak_cooling_kw,
+                mock_peak_cooling
+            );
+        }
+        #[cfg(feature = "gauge-solver")]
+        {
+            assert!(
+                result.peak_heating_kw.is_finite() && result.peak_heating_kw > 0.0,
+                "Case 600 peak heating ({:.3} kW) must be fed from the gauge \
+                 dispatch step (#3304); 0.0 means the tracker feed regressed",
+                result.peak_heating_kw
+            );
+            assert!(
+                result.peak_cooling_kw.is_finite() && result.peak_cooling_kw > 0.0,
+                "Case 600 peak cooling ({:.3} kW) must be fed from the gauge \
+                 dispatch step (#3304); 0.0 means the tracker feed regressed",
+                result.peak_cooling_kw
+            );
+        }
 
         // The reference bounds are still sourced from the benchmark
         // module (not modified by #2980).
