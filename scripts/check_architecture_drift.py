@@ -426,6 +426,7 @@ def check_drift() -> tuple[list[str], bool]:
         "DecoupledLoopEquipment",  # ECS/rayon parallel loop evaluator (#1991)
         "PhysicsEquipment",  # pre-existing drift on develop
         "FfdSolver",  # FFD solver trait in src/sim/loose_coupling.rs (new in #2420)
+        "Sealed",  # private sealed-trait marker used by AlgebraicFloat in src/physics/fp_algebraic.rs (#3322); not a public extension point
     }
 
     # These are structs mentioned in ARCHITECTURE.md that get false-positived

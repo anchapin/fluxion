@@ -7,7 +7,7 @@ flag in `Cargo.toml`'s `[features]` table, cross-referenced with the toolchain n
 The canonical source of truth is always `Cargo.toml` — if this file disagrees with it,
 `Cargo.toml` wins and this doc is stale (please file a docs-hygiene issue).
 
-*Last Updated: 2026-08-10*
+*Last Updated: 2026-09-03*
 
 ## Summary Table
 
@@ -31,9 +31,10 @@ The canonical source of truth is always `Cargo.toml` — if this file disagrees 
 | [`fluxion-city`](#fluxion-city) | off | Urban radiation solver wiring (#2344) | manual only | none |
 | [`dhat`](#dhat) | off | `dhat` heap allocation profiling (#2384) | manual only | `DHAT_ANALYSIS=1` |
 | [`fluxion-cfd`](#fluxion-cfd) | off | FFD / CFD loose-coupling co-simulation (#2460) | manual only | none |
+| [`fast-math`](#fast-math) | off | algebraic-FP helper layer (`src/physics/fp_algebraic.rs`, #3322); **non-deterministic** | none — never in CI | none |
 | [`fluxion`](#fluxion-internal-stub) | off | Internal stub for workspace feature resolution | none (never user-facing) | none |
 
-**Total: 18 user-facing flags** (counting `ort` and its `onnx` alias once) plus 1 internal stub.
+**Total: 19 user-facing flags** (counting `ort` and its `onnx` alias once) plus 1 internal stub.
 Default build (`cargo build`) enables none of them and skips the ONNX runtime, producing the
 mock / analytical fallback in `src/ai/surrogate`.
 
@@ -54,6 +55,7 @@ mock / analytical fallback in `src/ai/surrogate`.
 | ASHRAE 140 with GaugeSolver | `cargo test --features gauge-solver --test ashrae_140_case_600_series` |
 | D-Wave client test | `cargo test --features dwave -p fluxion quantum::dwave_client` |
 | Kafka consumer test | `cargo test --features kafka -p fluxion twin::kafka_telemetry_consumer` |
+| Algebraic-FP helper smoke test | `cargo test --features fast-math -p fluxion physics::fp_algebraic` (**non-deterministic mode**) |
 
 Combine flags with commas: `cargo test --features ort,multi-zone,fluid`.
 
@@ -245,6 +247,32 @@ Combine flags with commas: `cargo test --features ort,multi-zone,fluid`.
   default workspace build.
 - **Default:** off.
 
+### `fast-math`
+
+- **Enables:** routing of the `src/physics/fp_algebraic.rs` helper layer
+  (`algebraic_add` / `algebraic_sub` / `algebraic_mul` / `algebraic_div` for
+  `f32`/`f64`) to the Rust 1.98 std algebraic float methods, which permit operand
+  reassociation and vectorization comparable to `-ffast-math` (Issue #3322). With the
+  flag **off** (the default) every helper compiles to the plain IEEE 754 operator, so
+  default builds are bit-identical to not using the module.
+- **⚠️ Non-determinism:** the algebraic methods are non-deterministic by specification —
+  results may differ from strict IEEE 754 at the last-ulp level across compiler versions,
+  optimization levels, and targets. `determinism_check.yml` (bit-identical cross-platform
+  output, #1297/#2549) and every ASHRAE 140 gate therefore **always run default features**.
+- **Do NOT use in:** energy-balance-critical paths — `src/physics/ctf_solver.rs`,
+  `src/physics/ctf_solver_wrapper.rs`, `src/physics/multi_node_solver.rs`,
+  `src/physics/five_r1c_solver.rs`, `src/physics/fd_solver.rs`, and the zone-balance /
+  thermal assembly (`src/sim/assembly.rs`, `src/sim/timestep_solver.rs`,
+  `src/sim/thermal_model*.rs`). Intended consumers are the kernel-conversion issues
+  #3324 (solar/irradiance reductions) and #3325 (AI batch metric reductions).
+- **Build:** `cargo build --features fast-math`. Declared only on the root crate with an
+  empty dependency list — no other feature or workspace member pulls it in (no feature
+  unification, cf. the #2904 passthrough pattern).
+- **CI implication:** none — intentionally absent from every workflow. Note that the
+  nightly/manual `bench-all-features` job (`performance_dashboard.yml`) enables it
+  implicitly via `--all-features`; benchmarks tolerate last-ulp noise by design.
+- **Default:** off.
+
 ### `fluxion` (internal stub)
 
 - **Enables:** Nothing user-facing. This is a stub feature that exists purely so
@@ -275,6 +303,7 @@ Manual / advisory (not branch-protection gates):
 - `loom` concurrency suite (needs ~32 GB RAM)
 - `dwave`, `kafka` client tests (need live services / credentials)
 - `fluxion-city`, `fluxion-cfd`, `dhat`, `pr821-diag` (specialised analysis paths)
+- `fast-math` (algebraic-FP helper layer — non-deterministic, never in validation CI)
 
 ## See Also
 

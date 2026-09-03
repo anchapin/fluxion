@@ -1313,6 +1313,7 @@ These traits support the main physics pipeline and should also be documented:
 | `S3Transport` | `src/ai/s3_upload.rs` | S3 HTTP operations abstraction (put, head, multipart upload); enables mock testing without real S3 |
 | `EmailTransport` | `src/api/email_notification.rs` | Abstraction for sending email notifications (campaign completion fallback); mockable for tests |
 | `SimulationStateStore` | `src/api/server.rs` | Simulation state persistence trait (in-memory or cloud-backed); enables stateless API servers |
+| `AlgebraicFloat` | `src/physics/fp_algebraic.rs` | Opt-in algebraic-FP helper layer for `f32`/`f64` (issue #3322): default-feature builds route to plain IEEE operators (bit-identical, zero-cost); `--features fast-math` routes to the Rust 1.98 std algebraic methods. Per-call opt-in only — must never flow through energy-balance or ASHRAE 140 gates because algebraic ops break the bit-identical determinism contract and the strict-eval ASHRAE baselines (see module docs and `RULES.md`). |
 
 **Psychrometrics library** (#1760): `fluxion-core/src/weather/psychrometrics.rs` is the dependency-light, cycle-safe psychrometrics library that all airside HVAC equipment depends on. It implements ASHRAE Handbook of Fundamentals, Chapter 1 formulas in SI units:
 

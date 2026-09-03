@@ -183,6 +183,22 @@ fluxion = []
 # See ADR-002 for the canonical 9R4C replacement (`ThermalModel::step_physics`
 # → `step_physics_9r4c`).
 deprecated-multinode-runner = []
+# Feature flag for algebraic floating-point math (issue #3322). OFF by default
+# and must stay that way: IEEE 754 semantics are load-bearing for the
+# determinism contract (determinism_check.yml bit-identical cross-platform
+# output, issues #1297/#2549) and the ASHRAE 140 validation gates (RULES.md).
+# Enabling routes `src/physics/fp_algebraic.rs` helpers to the Rust 1.98
+# std algebraic float methods (f32/f64::algebraic_{add,sub,mul,div}), which
+# permit reassociation/vectorization comparable to -ffast-math but are
+# NON-DETERMINISTIC by specification (last-ulp drift across compiler
+# versions/targets). Intended consumers are the opt-in kernel-conversion
+# issues (#3324 solar/irradiance reductions, #3325 AI batch metric
+# reductions) — never energy-balance-critical paths (see the do-not-use
+# list in src/physics/fp_algebraic.rs). Deliberately declared only here,
+# in the root crate (the hot kernels live in src/physics and src/sim, not
+# in the dependency-light fluxion-core leaf), with an empty dependency
+# list so no other feature or workspace member can unify it in (#2904).
+fast-math = []
 
 [lints.rust]
 unexpected_cfgs = { level = "allow", check-cfg = ["cfg(docsrs,test)", "cfg(gil_refs)"] }
