@@ -9,6 +9,7 @@
 //! - Non-uniform arrays: standard JSON-like format
 //! - Scalars: `name: value`
 
+use core::fmt::NumBuffer;
 use std::fmt::Write;
 
 pub trait ToonSerializable: serde::Serialize + Clone {
@@ -24,6 +25,27 @@ pub fn serialize_to_string<T: serde::Serialize>(value: &T) -> Result<String, std
     Ok(toon)
 }
 
+/// Format a `serde_json::Number` for a TOON cell, routing the integer sub-cases
+/// (`i64`/`u64`) through [`NumBuffer::format_into`] to skip the `core::fmt`
+/// argument-dispatch machinery (Rust 1.98).
+///
+/// Floats always fall back to serde_json's ryu-based `to_string` so float text
+/// stays byte-identical with previous output. Buffers are caller-owned so hot
+/// row loops can reuse a single stack allocation across cells.
+fn format_json_number(
+    n: &serde_json::Number,
+    int_buf: &mut NumBuffer<i64>,
+    uint_buf: &mut NumBuffer<u64>,
+) -> String {
+    if let Some(i) = n.as_i64() {
+        i.format_into(int_buf).to_string()
+    } else if let Some(u) = n.as_u64() {
+        u.format_into(uint_buf).to_string()
+    } else {
+        n.to_string()
+    }
+}
+
 fn collapse_uniform_arrays(json: &str) -> String {
     let value: serde_json::Value = match serde_json::from_str(json) {
         Ok(v) => v,
@@ -37,6 +59,11 @@ fn transform_value(value: &serde_json::Value, indent: usize, field_name: Option<
     match value {
         serde_json::Value::Object(obj) => {
             let mut output = String::new();
+            // Stack buffers reused across every uniform-array field and row in
+            // this object; `format_into` output borrows end with each write.
+            let mut count_buf = NumBuffer::<usize>::new();
+            let mut int_buf = NumBuffer::<i64>::new();
+            let mut uint_buf = NumBuffer::<u64>::new();
             let mut sorted_keys: Vec<_> = obj.keys().collect();
             sorted_keys.sort();
             for (i, key) in sorted_keys.iter().enumerate() {
@@ -58,8 +85,14 @@ fn transform_value(value: &serde_json::Value, indent: usize, field_name: Option<
                             }
                         });
                         if all_same && !fields.is_empty() {
-                            writeln!(output, "{}[{}]{{{}}}:", key, arr.len(), fields.join(","))
-                                .unwrap();
+                            writeln!(
+                                output,
+                                "{}[{}]{{{}}}:",
+                                key,
+                                arr.len().format_into(&mut count_buf),
+                                fields.join(",")
+                            )
+                            .unwrap();
                             for item in arr {
                                 if let Some(o) = item.as_object() {
                                     let row: Vec<String> = fields
@@ -68,7 +101,13 @@ fn transform_value(value: &serde_json::Value, indent: usize, field_name: Option<
                                             o.get(*f)
                                                 .map(|v| match v {
                                                     serde_json::Value::String(s) => s.clone(),
-                                                    serde_json::Value::Number(n) => n.to_string(),
+                                                    serde_json::Value::Number(n) => {
+                                                        format_json_number(
+                                                            n,
+                                                            &mut int_buf,
+                                                            &mut uint_buf,
+                                                        )
+                                                    }
                                                     serde_json::Value::Bool(b) => b.to_string(),
                                                     serde_json::Value::Null => String::new(),
                                                     _ => v.to_string(),
@@ -120,7 +159,17 @@ fn transform_value(value: &serde_json::Value, indent: usize, field_name: Option<
                 if all_same && !fields.is_empty() {
                     let mut output = String::new();
                     let name = field_name.unwrap_or("Array");
-                    writeln!(output, "{}[{}]{{{}}}:", name, arr.len(), fields.join(",")).unwrap();
+                    let mut count_buf = NumBuffer::<usize>::new();
+                    let mut int_buf = NumBuffer::<i64>::new();
+                    let mut uint_buf = NumBuffer::<u64>::new();
+                    writeln!(
+                        output,
+                        "{}[{}]{{{}}}:",
+                        name,
+                        arr.len().format_into(&mut count_buf),
+                        fields.join(",")
+                    )
+                    .unwrap();
                     for item in arr {
                         if let Some(o) = item.as_object() {
                             let row: Vec<String> = fields
@@ -129,7 +178,9 @@ fn transform_value(value: &serde_json::Value, indent: usize, field_name: Option<
                                     o.get(*f)
                                         .map(|v| match v {
                                             serde_json::Value::String(s) => s.clone(),
-                                            serde_json::Value::Number(n) => n.to_string(),
+                                            serde_json::Value::Number(n) => {
+                                                format_json_number(n, &mut int_buf, &mut uint_buf)
+                                            }
                                             serde_json::Value::Bool(b) => b.to_string(),
                                             serde_json::Value::Null => String::new(),
                                             _ => v.to_string(),
@@ -156,7 +207,9 @@ fn transform_value(value: &serde_json::Value, indent: usize, field_name: Option<
             format!("[{}]", output.trim_end_matches(','))
         }
         serde_json::Value::String(s) => format!("\"{}\"", s),
-        serde_json::Value::Number(n) => n.to_string(),
+        serde_json::Value::Number(n) => {
+            format_json_number(n, &mut NumBuffer::new(), &mut NumBuffer::new())
+        }
         serde_json::Value::Bool(b) => b.to_string(),
         serde_json::Value::Null => "null".to_string(),
     }
