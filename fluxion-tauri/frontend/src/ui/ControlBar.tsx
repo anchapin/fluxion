@@ -32,6 +32,10 @@ export function ControlBar({
 }: ControlBarProps) {
   const [urlDraft, setUrlDraft] = useState(livetwin.url);
   const connected = livetwin.status === "open";
+  const reconnecting = livetwin.status === "reconnecting";
+  const liveTwinTitle = reconnecting
+    ? `Reconnecting (attempt ${livetwin.reconnectAttempt}) with exponential backoff — click to stop`
+    : "Connect to the LiveTwin MessagePack stream";
 
   const wasmTitle =
     wasm.available === false
@@ -68,7 +72,7 @@ export function ControlBar({
         WASM Sim{wasm.running ? ` · ${wasm.hour.toFixed(0)}h` : ""}
       </button>
 
-      <span className="livetwin-controls">
+      <span className="livetwin-controls" title={liveTwinTitle}>
         <span className={`status-dot ${connected ? "live" : livetwin.status}`} />
         <input
           className="livetwin-url"
@@ -77,8 +81,15 @@ export function ControlBar({
           placeholder="ws://localhost:8080/live-twin"
           spellCheck={false}
         />
-        {connected ? (
-          <button onClick={() => livetwin.disconnect()}>Disconnect</button>
+        {connected || reconnecting ? (
+          <button
+            onClick={() => livetwin.disconnect()}
+            title={liveTwinTitle}
+          >
+            {reconnecting
+              ? `Stop Retry ${livetwin.reconnectAttempt || ""}`.trim()
+              : "Disconnect"}
+          </button>
         ) : (
           <button onClick={() => livetwin.connect(urlDraft)}>LiveTwin</button>
         )}

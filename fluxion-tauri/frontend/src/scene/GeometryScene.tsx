@@ -3,6 +3,7 @@ import { Canvas } from "@react-three/fiber";
 import { OrbitCam } from "./OrbitCam";
 import type { OrbitControlsImpl } from "./OrbitCam";
 import type { RenderModel, RenderSurface } from "../lib/geometryAdapter";
+import { temperatureRange } from "../lib/thermal";
 import { SurfaceMesh } from "./SurfaceMesh";
 import { zoneNumber } from "../livetwin/protocol";
 import type { ZoneState } from "../livetwin/protocol";
@@ -32,7 +33,7 @@ export function GeometryScene({
   onControlsReady,
 }: GeometrySceneProps) {
   const temps = [...liveZones.values()].map((z) => z.t_air);
-  const tempRange = thermalRange(temps);
+  const tempRange = temperatureRange(temps);
 
   return (
     <Canvas
@@ -69,18 +70,4 @@ function tempForSurface(
   if (!surface.zoneId) return null;
   const state = liveZones.get(zoneNumber(surface.zoneId));
   return state ? state.t_air : null;
-}
-
-function thermalRange(temps: number[]): { min: number; max: number } {
-  let min = Infinity;
-  let max = -Infinity;
-  for (const t of temps) {
-    if (Number.isFinite(t)) {
-      min = Math.min(min, t);
-      max = Math.max(max, t);
-    }
-  }
-  if (!Number.isFinite(min)) return { min: 15, max: 30 };
-  if (max - min < 0.5) return { min: min - 0.25, max: max + 0.25 };
-  return { min, max };
 }

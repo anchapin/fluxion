@@ -328,6 +328,21 @@ body {
   background: #f59e0b;
 }
 
+.status-dot.reconnecting {
+  background: #f59e0b;
+  animation: livetwin-pulse 1.2s ease-in-out infinite;
+}
+
+@keyframes livetwin-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.35;
+  }
+}
+
 .status-dot.error {
   background: #e94560;
 }
