@@ -52,6 +52,10 @@ pub mod fd_solver_wrapper;
 pub mod fd_surface_balance;
 pub mod ffd_solver;
 pub mod five_r1c_solver;
+// Algebraic-FP helper layer (issue #3322): cfg-routed float ops that are
+// plain IEEE 754 under default features and std `algebraic_*` methods under
+// `--features fast-math`. No kernel consumes it yet (#3324/#3325 do that).
+pub mod fp_algebraic;
 pub mod gauge_solver;
 pub mod gauge_zone_solver;
 pub mod geometry_tensor;
