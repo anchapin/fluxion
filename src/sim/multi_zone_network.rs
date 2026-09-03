@@ -762,7 +762,7 @@ mod tests {
     #[test]
     fn solve_step_cache_hit_is_bit_identical() {
         let h = fully_connected_conductance(4, 12.5);
-        let mut zones = vec![
+        let zones = vec![
             ZoneState::new(22.0, 1.5e6),
             ZoneState::new(20.0, 1.0e6),
             ZoneState::new(18.0, 8.0e5),

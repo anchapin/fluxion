@@ -150,7 +150,7 @@ fn test_case_195_solid_conduction_simulation() {
         "heating should be non-negative, got {heating:.3}"
     );
     assert!(
-        cooling >= 0.0 && cooling <= reference::ANNUAL_COOLING_UPPER,
+        (0.0..=reference::ANNUAL_COOLING_UPPER).contains(&cooling),
         "annual cooling {cooling:.3} MWh out of upper bound {:.2} MWh",
         reference::ANNUAL_COOLING_UPPER,
     );

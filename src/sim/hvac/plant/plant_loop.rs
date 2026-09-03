@@ -178,7 +178,6 @@ pub fn check_energy_balance(
 
 #[cfg(test)]
 mod tests {
-    use super::super::cooling_tower::CoolingTowerSingleSpeed;
     use super::super::plant_component::PlantComponentResult;
     use super::super::pump::PumpConstantSpeed;
     use super::*;

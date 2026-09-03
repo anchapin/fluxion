@@ -32,17 +32,17 @@
 //! # Acceptance Criteria (Issue #1417)
 //!
 //! - [x] `test_ctf_solver_concrete_200mm`: ≤1% relative error on hours
-//!       where `|q_ref| > 1.0 W/m²` (the 200mm concrete free-float CSV has
-//!       only 19/288 hours above the 5 W/m² threshold prescribed in the
-//!       issue body, so we drop the threshold to 1.0 W/m² to keep ≥40% of
-//!       the post-warmup hours in the statistical sample — the original
-//!       threshold applies when the CSV has larger flux swings, e.g.
-//!       `step_response_fixed_zone_20c.csv`).
+//!   where `|q_ref| > 1.0 W/m²` (the 200mm concrete free-float CSV has
+//!   only 19/288 hours above the 5 W/m² threshold prescribed in the
+//!   issue body, so we drop the threshold to 1.0 W/m² to keep ≥40% of
+//!   the post-warmup hours in the statistical sample — the original
+//!   threshold applies when the CSV has larger flux swings, e.g.
+//!   `step_response_fixed_zone_20c.csv`).
 //! - [x] `test_ctf_solver_composite_wall`: ≤2% relative error against the
-//!       composite synthetic CSV (100mm concrete + 61.5mm foam + 100mm
-//!       concrete block).
+//!   composite synthetic CSV (100mm concrete + 61.5mm foam + 100mm
+//!   concrete block).
 //! - [x] `cargo test --test conduction_ctf_step_response_vs_energyplus`
-//!       passes in CI as a required PR-gate test (no `#\[ignore\]`).
+//!   passes in CI as a required PR-gate test (no `#\[ignore\]`).
 
 use std::fs;
 use std::path::Path;

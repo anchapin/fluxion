@@ -712,7 +712,7 @@ mod tests {
     fn test_walk_in_cooler_at_setpoint() {
         let mut cooler = WalkInCooler::new("COOL-1".to_string(), 5000.0);
         // At setpoint temperature
-        let heat_removed = cooler.update(3.0, 25.0, 2000.0, 3600.0);
+        let _heat_removed = cooler.update(3.0, 25.0, 2000.0, 3600.0);
         // Should be in deadband or off
         assert!(cooler.mode == RefrigerationMode::Off || cooler.current_plr < 1.0);
     }

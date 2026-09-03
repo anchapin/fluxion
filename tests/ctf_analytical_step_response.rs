@@ -180,7 +180,7 @@ fn test_fd_analytical_step_response() {
     println!("Exterior step temperature: {} °C", T_EXTERIOR);
     println!("Temperature step: {} K", DT);
     println!("Interior surface: INSULATED (zero flux)");
-    println!("");
+    println!();
     println!("Physical interpretation:");
     println!("- Heat enters at x=L (exterior) but cannot exit at x=0 (interior)");
     println!("- Heat accumulates in wall, raising its temperature");

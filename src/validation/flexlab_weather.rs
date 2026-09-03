@@ -631,14 +631,14 @@ mod tests {
     fn test_column_aliases() {
         let header = "year,month,day,hour,outdoor_temp_c,rh_pct,global_horizontal_irradiance,direct_normal_irradiance,diffuse_horizontal_irradiance,wind_speed_ms";
         let cols = build_column_map(header);
-        assert!(cols.get("outdoor_temp_c").is_some());
-        assert!(cols.get("rh_pct").is_some());
-        assert!(cols.get("global_horizontal_irradiance").is_some());
+        assert!(cols.contains_key("outdoor_temp_c"));
+        assert!(cols.contains_key("rh_pct"));
+        assert!(cols.contains_key("global_horizontal_irradiance"));
     }
 
     #[test]
     fn test_interpolate_gaps_single_hour() {
-        let cfg = FlexlabWeatherConfig::default();
+        let _cfg = FlexlabWeatherConfig::default();
         let mut records: Vec<FlexlabWeatherRecord> = Vec::new();
 
         // Build 5 records, hour 2 is missing

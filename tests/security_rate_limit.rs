@@ -49,11 +49,13 @@ fn build_limited_router(
     max_entries: usize,
     trusted_proxies: Vec<TrustedProxyCidr>,
 ) -> axum::Router {
-    let mut cfg = fluxion::api::security::RestSecurityConfig::default();
-    cfg.rate_limit_rps = rps;
-    cfg.rate_limit_burst = burst;
-    cfg.rate_limit_max_entries = max_entries;
-    cfg.trusted_proxies = trusted_proxies;
+    let cfg = fluxion::api::security::RestSecurityConfig {
+        rate_limit_rps: rps,
+        rate_limit_burst: burst,
+        rate_limit_max_entries: max_entries,
+        trusted_proxies,
+        ..Default::default()
+    };
     router_with_security(AppState::default(), cfg)
 }
 

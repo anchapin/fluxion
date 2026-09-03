@@ -2666,7 +2666,7 @@ mod tests {
         // slot accessor still returns weather-aware values (proving the
         // slot is live in the model after the dispatch).
         use crate::ai::surrogate::SurrogateManager;
-        use crate::sim::ventilation::{VentilationSchedule, WeatherDependentVentilation};
+        use crate::sim::ventilation::WeatherDependentVentilation;
 
         let routing = HybridRouting {
             use_surrogate_conduction: false,
@@ -2750,7 +2750,7 @@ mod tests {
     #[test]
     fn hybrid_set_ventilation_schedule_swaps_slot() {
         // Smoke test for the `set_ventilation_schedule` API.
-        use crate::sim::ventilation::{VentilationSchedule, WeatherDependentVentilation};
+        use crate::sim::ventilation::WeatherDependentVentilation;
 
         let mut model = HybridThermalModel::new(1, HybridRouting::default());
         assert_eq!(
@@ -2780,7 +2780,7 @@ mod tests {
         // defaults because their per-step state is transient and
         // shouldn't round-trip across clones (the empirical_hybrid
         // harness clones before solving).
-        use crate::sim::ventilation::{VentilationSchedule, WeatherDependentVentilation};
+        use crate::sim::ventilation::WeatherDependentVentilation;
 
         let mut original = HybridThermalModel::new(1, HybridRouting::default());
         let previous_solver = original.set_conduction_solver(Box::new(

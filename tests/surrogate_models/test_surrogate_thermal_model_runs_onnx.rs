@@ -1,9 +1,11 @@
 use fluxion::ai::surrogate::SurrogateManager;
+#[cfg(feature = "ort")]
+use fluxion::sim::thermal_model::PhysicsThermalModel;
 use fluxion::sim::thermal_model::{
-    PhysicsThermalModel, SurrogateThermalModel, ThermalModelBuilder, ThermalModelMode,
-    ThermalModelTrait,
+    SurrogateThermalModel, ThermalModelBuilder, ThermalModelMode, ThermalModelTrait,
 };
 
+#[cfg(feature = "ort")]
 const DUMMY_ONNX_MODEL: &str = "assets/dummy_surrogate.onnx";
 
 #[test]

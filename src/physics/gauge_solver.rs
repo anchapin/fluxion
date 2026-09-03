@@ -392,7 +392,7 @@ mod tests {
 
         // Second step: T_interior stays at 15°C (no change)
         // energy_storage_rate should be zero (no temperature change)
-        let flux2 = solver
+        let _flux2 = solver
             .step_with_boundary_conditions(
                 Time::from_value(3600.0),
                 Temperature::from_value(15.0),
@@ -489,7 +489,7 @@ mod tests {
         );
 
         // Case 3: Valid dt but no temperature change -> energy_storage_rate = 0 (physically correct)
-        let flux_no_change = solver
+        let _flux_no_change = solver
             .step_with_boundary_conditions(
                 Time::from_value(3600.0),
                 Temperature::from_value(20.0), // same as previous

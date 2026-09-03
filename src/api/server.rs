@@ -3593,7 +3593,7 @@ mod tests {
 
     #[test]
     fn doc_invariant_campaign_survives_disconnect() {
-        use crate::api::server::{AppState, SimulationStateStore};
+        use crate::api::server::AppState;
         let state = AppState::with_cloud_store(InMemorySimulationStateStore::new());
         // Invariant: With a cloud store, workers push status and campaign
         // survives client disconnect. This is documented in the AppState docstring.
@@ -3996,7 +3996,9 @@ mod tests {
         assert_eq!(MAX_CAMPAIGN_STEPS, expected);
         // Sanity: the budget is well under usize::MAX and under 2^31 on any
         // platform the workspace targets (it is 89_702_400).
-        assert!(MAX_CAMPAIGN_STEPS < (1usize << 31));
+        const {
+            assert!(MAX_CAMPAIGN_STEPS < (1usize << 31));
+        }
     }
 
     // ---- Issue #2499: structured-log request-id propagation smoke test ----

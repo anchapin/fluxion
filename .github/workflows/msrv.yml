@@ -11,7 +11,7 @@ on:
   workflow_dispatch:
 
 # Least-privilege GITHUB_TOKEN grants (Issue #2526). The msrv-build job only
-# checks out code and runs `cargo +1.89 build --workspace`; no repo write-back.
+# checks out code and runs `cargo +1.98.0 build --workspace`; no repo write-back.
 permissions:
   contents: read
 
@@ -48,22 +48,28 @@ jobs:
         env:
           DEBIAN_FRONTEND: noninteractive
 
-      # Install the MSRV-pinned stable toolchain (issue #2934). The crate's
-      # `rust-version = "1.89"` field — set on the root Cargo.toml, the
-      # [workspace.package] block, and all 11 workspace-member Cargo.toml
-      # files — is what `cargo install` / crates.io / `cargo update --precise`
-      # users see; this job is the enforcement side, failing the build when
-      # a change drifts past 1.89. The action SHA pin matches the one used
-      # by .github/actions/setup-rust-env/action.yml so any drift is caught
-      # in one place. (Originally targeted 1.81, but clap_lex 1.1.0 uses
-      # edition2024 (needs Cargo 1.85+), and nalgebra 0.35 / safe_arch 1.1 /
-      # statrs 0.19.1 / wide 1.6.1 each declare rustc >= 1.89; 1.89 is the
-      # lowest stable that builds today per the issue's "or the lowest stable
-      # that builds today" clause.)
-      - name: Install Rust 1.89 (MSRV)
-        uses: dtolnay/rust-toolchain@8641a17e25bf5b40c118d48fe0f81e8655731839  # 1.85.0 (toolchain overridden to 1.89 via `with:`)
+      # Install the MSRV-pinned stable toolchain (issue #2934; floor raised
+      # to 1.98.0 by issue #3321). The crate's `rust-version = "1.98.0"`
+      # field — set on the root Cargo.toml, the [workspace.package] block,
+      # and all 11 workspace-member Cargo.toml files — is what
+      # `cargo install` / crates.io / `cargo update --precise` users see;
+      # this job is the enforcement side, failing the build when a change
+      # drifts past 1.98.0. The floor was raised deliberately — no longer
+      # "the lowest stable that builds today" — to unlock the Rust 1.98
+      # std APIs planned for adoption in follow-up issues: the algebraic
+      # floating-point methods (f32/f64::algebraic_{add,sub,mul,div,rem},
+      # prerequisite for an opt-in fast-math feature) and buffered integer
+      # formatting (format_into/NumBuffer, prerequisite for fluxion-toon
+      # serialization micro-optimization). Dependency floors remain
+      # satisfied: clap_lex 1.1.0 (edition2024, Cargo 1.85+) and nalgebra
+      # 0.35 / safe_arch 1.1 / statrs 0.19.1 / wide 1.6.1 (each declaring
+      # rustc >= 1.89) all sit below the new floor. The action SHA pin
+      # matches the one used by .github/actions/setup-rust-env/action.yml
+      # so any drift is caught in one place.
+      - name: Install Rust 1.98.0 (MSRV)
+        uses: dtolnay/rust-toolchain@f8be11a05b1d4f3fcebe6410cc16743212b999b0  # 1.98.0
         with:
-          toolchain: 1.89
+          toolchain: 1.98.0
 
       - name: Cache cargo registry & target
         uses: Swatinem/rust-cache@f0d9c3887740aee45f6153b24b3a6b815192ec16  # v2
@@ -82,5 +88,5 @@ jobs:
             fluxion-cfd -> target
             fluxion-tauri -> target
 
-      - name: cargo +1.89 build --workspace
-        run: cargo +1.89 build --workspace --locked
+      - name: cargo +1.98.0 build --workspace
+        run: cargo +1.98.0 build --workspace --locked

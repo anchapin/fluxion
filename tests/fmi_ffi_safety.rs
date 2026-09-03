@@ -105,7 +105,7 @@ fn set_real_rejects_huge_nvr() {
 fn set_real_rejects_misaligned_vr() {
     let c = instantiate();
     // 32 bytes of storage; offset by 1 byte to guarantee u32 misalignment.
-    let storage = vec![0u8; 32];
+    let storage = [0u8; 32];
     let misaligned_vr = unsafe { storage.as_ptr().add(1) }.cast::<u32>();
     let value_storage = [0.0f64; 1];
     let status = unsafe { ffd_fmu2SetReal(c, misaligned_vr, 1, value_storage.as_ptr()) };
@@ -117,7 +117,7 @@ fn set_real_rejects_misaligned_vr() {
 fn set_real_rejects_misaligned_value() {
     let c = instantiate();
     let vr_storage = [0u32; 1];
-    let storage = vec![0u8; 16];
+    let storage = [0u8; 16];
     let misaligned_value = unsafe { storage.as_ptr().add(1) }.cast::<f64>();
     let status = unsafe { ffd_fmu2SetReal(c, vr_storage.as_ptr(), 1, misaligned_value) };
     assert_eq!(status, fmi2Status::fmi2Error);
@@ -221,7 +221,7 @@ fn get_real_rejects_huge_nvr() {
 #[test]
 fn get_real_rejects_misaligned_vr() {
     let c = instantiate();
-    let storage = vec![0u8; 32];
+    let storage = [0u8; 32];
     let misaligned_vr = unsafe { storage.as_ptr().add(1) }.cast::<u32>();
     let mut value_storage = [0.0f64; 1];
     let status = unsafe { ffd_fmu2GetReal(c, misaligned_vr, 1, value_storage.as_mut_ptr()) };
@@ -233,7 +233,7 @@ fn get_real_rejects_misaligned_vr() {
 fn get_real_rejects_misaligned_value() {
     let c = instantiate();
     let vr_storage = [0u32; 1];
-    let storage = vec![0u8; 16];
+    let storage = [0u8; 16];
     let misaligned_value = unsafe { storage.as_ptr().add(1) }.cast::<f64>();
     let status = unsafe { ffd_fmu2GetReal(c, vr_storage.as_ptr(), 1, misaligned_value.cast_mut()) };
     assert_eq!(status, fmi2Status::fmi2Error);

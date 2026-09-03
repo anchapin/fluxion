@@ -7,7 +7,7 @@
 //!
 //! Run: `cargo bench -p fluxion-city --bench view_factor_perf`
 
-use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion};
+use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion};
 use fluxion_city::{MonteCarloViewFactor, Surface3D};
 use rand::rngs::StdRng;
 use rand::{Rng, SeedableRng};
@@ -24,14 +24,14 @@ fn generate_random_pairs(count: usize) -> Vec<(Surface3D, Surface3D)> {
 
     for _ in 0..count {
         // Source surface: random position in a 100 m urban block.
-        let cx = rng.gen_range(0.0..100.0);
-        let cy = rng.gen_range(0.0..100.0);
-        let cz = rng.gen_range(3.0..30.0);
-        let width = rng.gen_range(3.0..20.0);
-        let height = rng.gen_range(3.0..15.0);
+        let cx = rng.random_range(0.0..100.0);
+        let cy = rng.random_range(0.0..100.0);
+        let cz = rng.random_range(3.0..30.0);
+        let width = rng.random_range(3.0..20.0);
+        let height = rng.random_range(3.0..15.0);
 
         // Random orientation: pick a horizontal facing direction.
-        let azimuth = rng.gen_range(0.0..std::f64::consts::TAU);
+        let azimuth = rng.random_range(0.0..std::f64::consts::TAU);
         // tangent_u is horizontal (in xy-plane), tangent_v is vertical (+z).
         let tu = [azimuth.cos(), azimuth.sin(), 0.0];
         let tv = [0.0, 0.0, 1.0];
@@ -39,12 +39,12 @@ fn generate_random_pairs(count: usize) -> Vec<(Surface3D, Surface3D)> {
 
         // Target surface: offset along the facing normal by a random distance.
         let normal_i = surf_i.normal();
-        let distance = rng.gen_range(2.0..50.0);
+        let distance = rng.random_range(2.0..50.0);
         let tx = cx + normal_i[0] * distance;
         let ty = cy + normal_i[1] * distance;
-        let tz = cz + normal_i[2] * distance + rng.gen_range(-5.0..5.0);
-        let tw = rng.gen_range(3.0..20.0);
-        let th = rng.gen_range(3.0..15.0);
+        let tz = cz + normal_i[2] * distance + rng.random_range(-5.0..5.0);
+        let tw = rng.random_range(3.0..20.0);
+        let th = rng.random_range(3.0..15.0);
 
         // Target faces back toward source (normal = -normal_i, roughly).
         let t_normal = [-normal_i[0], -normal_i[1], -normal_i[2]];
@@ -93,7 +93,10 @@ fn bench_single_pair(c: &mut Criterion) {
 
     c.bench_function("view_factor/single_pair_10k_rays", |b| {
         b.iter(|| {
-            black_box(mc.compute(black_box(si), black_box(sj)).unwrap());
+            std::hint::black_box(
+                mc.compute(std::hint::black_box(si), std::hint::black_box(sj))
+                    .unwrap(),
+            );
         });
     });
 }
@@ -108,7 +111,10 @@ fn bench_ray_counts(c: &mut Criterion) {
         let mc = MonteCarloViewFactor::new(rays).with_adaptive(false);
         group.bench_with_input(BenchmarkId::from_parameter(rays), &rays, |b, &_| {
             b.iter(|| {
-                black_box(mc.compute(black_box(si), black_box(sj)).unwrap());
+                std::hint::black_box(
+                    mc.compute(std::hint::black_box(si), std::hint::black_box(sj))
+                        .unwrap(),
+                );
             });
         });
     }
@@ -122,8 +128,11 @@ fn bench_100_pairs_batch(c: &mut Criterion) {
 
     c.bench_function("view_factor/100_pairs_batch", |b| {
         b.iter(|| {
-            for (si, sj) in black_box(&pairs) {
-                black_box(mc.compute(black_box(si), black_box(sj)).unwrap());
+            for (si, sj) in std::hint::black_box(&pairs) {
+                std::hint::black_box(
+                    mc.compute(std::hint::black_box(si), std::hint::black_box(sj))
+                        .unwrap(),
+                );
             }
         });
     });
@@ -139,10 +148,22 @@ fn bench_adaptive_vs_fixed(c: &mut Criterion) {
 
     let mut group = c.benchmark_group("view_factor/adaptive_vs_fixed");
     group.bench_function("fixed_10k", |b| {
-        b.iter(|| black_box(mc_fixed.compute(black_box(si), black_box(sj)).unwrap()));
+        b.iter(|| {
+            std::hint::black_box(
+                mc_fixed
+                    .compute(std::hint::black_box(si), std::hint::black_box(sj))
+                    .unwrap(),
+            )
+        });
     });
     group.bench_function("adaptive_10k", |b| {
-        b.iter(|| black_box(mc_adaptive.compute(black_box(si), black_box(sj)).unwrap()));
+        b.iter(|| {
+            std::hint::black_box(
+                mc_adaptive
+                    .compute(std::hint::black_box(si), std::hint::black_box(sj))
+                    .unwrap(),
+            )
+        });
     });
     group.finish();
 }
@@ -229,7 +250,7 @@ fn bench_view_factor_matrix(c: &mut Criterion) {
 
         group.bench_with_input(BenchmarkId::from_parameter(n), &n, |b, &_| {
             b.iter(|| {
-                black_box(mc.compute_matrix(black_box(&surfaces)).unwrap());
+                std::hint::black_box(mc.compute_matrix(std::hint::black_box(&surfaces)).unwrap());
             });
         });
     }

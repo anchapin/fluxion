@@ -30,6 +30,8 @@ struct HourlyData {
     internal_gain_w: f64,
 }
 
+// Kept for schema completeness of the daily rollup; not every field is read.
+#[allow(dead_code)]
 struct DailyData {
     day: usize,
     cooling_kwh: f64,
@@ -40,6 +42,8 @@ struct DailyData {
 }
 
 #[derive(Clone)]
+// `month` is kept for schema completeness of the monthly rollup.
+#[allow(dead_code)]
 struct MonthlyData {
     month: usize,
     cooling_kwh: f64,
@@ -181,7 +185,7 @@ fn run_simulation() -> (Vec<HourlyData>, Vec<DailyData>, Vec<MonthlyData>, f64, 
 fn export_csv(hourly_data: &[HourlyData], filename: &str) -> std::io::Result<()> {
     let file = std::fs::File::create(filename)?;
     let mut wtr = csv::Writer::from_writer(file);
-    wtr.write_record(&[
+    wtr.write_record([
         "step",
         "outdoor_temp_c",
         "zone_temp_c",
@@ -279,8 +283,7 @@ fn test_case_900_cooling_diagnostic() {
     let error_pct = ((annual_cooling_mwh - REFERENCE_COOLING_MWH) / REFERENCE_COOLING_MWH) * 100.0;
     println!("Error vs reference: {:.2}%", error_pct);
 
-    let in_range = annual_cooling_mwh >= TARGET_COOLING_MIN_MWH
-        && annual_cooling_mwh <= TARGET_COOLING_MAX_MWH;
+    let in_range = (TARGET_COOLING_MIN_MWH..=TARGET_COOLING_MAX_MWH).contains(&annual_cooling_mwh);
     println!("In target range: {}", if in_range { "YES" } else { "NO" });
 
     if let Ok(()) = export_csv(&hourly_data, "output/case_900_cooling_diagnostic.csv") {

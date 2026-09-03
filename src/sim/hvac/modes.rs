@@ -346,7 +346,7 @@ mod tests {
         let cp = 1000.0; // J/kg·K (concrete specific heat)
         let l = 0.2; // m (characteristic length)
 
-        let (alpha, beta) = PredictiveController::compute_gains(cm, h_ms, dt, k, rho, cp, l);
+        let (alpha, _beta) = PredictiveController::compute_gains(cm, h_ms, dt, k, rho, cp, l);
 
         // α = 1 - exp(-dt/τ) = 1 - exp(-1) ≈ 0.632
         let expected_alpha = 1.0_f64 - (-1.0_f64).exp();

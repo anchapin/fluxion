@@ -61,7 +61,7 @@ fn test_june_21_hourly_solar() {
         let day = get_day_from_hour(hour, month);
         let epw_hour = (hour % 24) + 1; // EPW hours are 1-24
 
-        if month == 6 && day == 21 && epw_hour >= 6 && epw_hour <= 20 {
+        if month == 6 && day == 21 && (6..=20).contains(&epw_hour) {
             let dni_gt_dhi = if data.dni > data.dhi { "YES" } else { "no" };
             println!(
                 "{:<6} {:>8.1} {:>8.0} {:>8.0} {:>8.0} {:>10}",
@@ -90,7 +90,7 @@ fn test_december_21_hourly_solar() {
         let day = get_day_from_hour(hour, month);
         let epw_hour = (hour % 24) + 1;
 
-        if month == 12 && day == 21 && epw_hour >= 8 && epw_hour <= 16 {
+        if month == 12 && day == 21 && (8..=16).contains(&epw_hour) {
             let dni_gt_dhi = if data.dni > data.dhi { "YES" } else { "no" };
             println!(
                 "{:<6} {:>8.1} {:>8.0} {:>8.0} {:>8.0} {:>10}",
@@ -118,7 +118,7 @@ fn test_summer_clear_sky_dni_reasonable() {
         let month = get_month_from_hour(hour);
         let epw_hour = (hour % 24) + 1;
 
-        if month == 6 && (epw_hour >= 10 && epw_hour <= 14) {
+        if month == 6 && (10..=14).contains(&epw_hour) {
             june_noon_hours.push((hour, data.dni, data.dhi, data.ghi));
             if data.dni > max_dni {
                 max_dni = data.dni;
@@ -174,7 +174,7 @@ fn test_winter_clear_sky_dni_reasonable() {
         let month = get_month_from_hour(hour);
         let epw_hour = (hour % 24) + 1;
 
-        if month == 12 && (epw_hour >= 10 && epw_hour <= 14) && data.dni > max_dec_dni {
+        if month == 12 && (10..=14).contains(&epw_hour) && data.dni > max_dec_dni {
             max_dec_dni = data.dni;
             max_dec_dni_hour = hour;
         }
@@ -218,7 +218,7 @@ fn test_dni_dhi_not_swapped() {
         let epw_hour = (hour % 24) + 1;
 
         // December noon hours with significant solar (GHI > 200)
-        if month == 12 && (epw_hour >= 10 && epw_hour <= 14) && data.ghi > 200.0 {
+        if month == 12 && (10..=14).contains(&epw_hour) && data.ghi > 200.0 {
             clear_noon_count += 1;
             if data.dni > data.dhi {
                 dni_gt_dhi_count += 1;

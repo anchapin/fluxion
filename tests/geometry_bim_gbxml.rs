@@ -151,7 +151,7 @@ pub fn parse_gbxml(content: &str) -> Result<GbXmlGeometry, String> {
     let mut zones: Vec<ParsedZone> = Vec::new();
     let mut constructions: HashMap<String, ParsedConstruction> = HashMap::new();
     let mut building_name = String::new();
-    let mut stories: Vec<ParsedStory> = Vec::new();
+    let stories: Vec<ParsedStory> = Vec::new();
 
     // Extract building name
     if let Some(start) = content.find("<Name>") {
@@ -335,22 +335,18 @@ pub fn parse_gbxml(content: &str) -> Result<GbXmlGeometry, String> {
             let adjacent_space = if let Some(adj_start) = surf_content.find("<AdjacentSpaceIdRef>")
             {
                 let adj_start = adj_start + 20;
-                if let Some(adj_end) = surf_content[adj_start..].find("</AdjacentSpaceIdRef>") {
-                    Some(surf_content[adj_start..adj_start + adj_end].to_string())
-                } else {
-                    None
-                }
+                surf_content[adj_start..]
+                    .find("</AdjacentSpaceIdRef>")
+                    .map(|adj_end| surf_content[adj_start..adj_start + adj_end].to_string())
             } else {
                 None
             };
 
             let construction_id = if let Some(c_start) = surf_content.find("constructionIdRef=\"") {
                 let c_start = c_start + 18;
-                if let Some(c_end) = surf_content[c_start..].find("\"") {
-                    Some(surf_content[c_start..c_start + c_end].to_string())
-                } else {
-                    None
-                }
+                surf_content[c_start..]
+                    .find("\"")
+                    .map(|c_end| surf_content[c_start..c_start + c_end].to_string())
             } else {
                 None
             };
@@ -691,7 +687,7 @@ mod tests {
             .collect();
 
         assert!(
-            exterior_surfaces.len() > 0,
+            !exterior_surfaces.is_empty(),
             "L-shaped building should have exterior surfaces"
         );
         assert_eq!(
@@ -1006,7 +1002,8 @@ mod tests {
 
         for (filename, expected_volume, expected_area) in test_files {
             let path = test_file_path(filename);
-            let geometry = load_gbxml(&path).expect(&format!("Failed to load {}", filename));
+            let geometry =
+                load_gbxml(&path).unwrap_or_else(|_| panic!("Failed to load {}", filename));
 
             // Check volume matches zone volumes
             let zone_volume: f64 = geometry.building.zones.iter().map(|z| z.volume).sum();
@@ -1135,8 +1132,11 @@ mod tests {
 
 #[cfg(test)]
 mod ifc_parsing_stubs {
+    // Scaffold types for the planned IFC parser; the tests below are stubs
+    // until parsing is implemented.
     /// IFC surface classification for boundary condition determination
     #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+    #[allow(dead_code, clippy::enum_variant_names)]
     pub enum IfcSurfaceType {
         IfcWall,
         IfcRoof,
@@ -1150,6 +1150,7 @@ mod ifc_parsing_stubs {
 
     /// Boundary condition for IFC surfaces
     #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+    #[allow(dead_code)]
     pub enum IfcBoundaryCondition {
         Exterior,
         Interior,
@@ -1160,6 +1161,7 @@ mod ifc_parsing_stubs {
 
     /// Parsed IFC building element
     #[derive(Debug, Clone)]
+    #[allow(dead_code)]
     pub struct ParsedIfcElement {
         pub id: String,
         pub name: String,
@@ -1187,17 +1189,14 @@ mod ifc_parsing_stubs {
         // This test validates that the IFC parsing interface is defined
         // Once IFC parsing is implemented, this would parse an actual IFC file
 
-        let ifc_file_path = "tests/test_data/ifc/simple_office.ifc";
+        let _ifc_file_path = "tests/test_data/ifc/simple_office.ifc";
 
         // STUB: When IFC parsing is implemented:
         // let elements = parse_ifc_file(ifc_file_path).expect("Failed to parse IFC file");
         // assert!(!elements.is_empty(), "Should parse at least one element");
 
         // For now, we just document the expected interface
-        assert!(
-            true,
-            "IFC parsing stub - interface is documented for future implementation"
-        );
+        // IFC parsing stub - interface is documented for future implementation
     }
 
     /// Expected behavior: Classify IFC elements by surface type
@@ -1218,10 +1217,7 @@ mod ifc_parsing_stubs {
         //     assert_ne!(wall.boundary_condition, IfcBoundaryCondition::Unknown);
         // }
 
-        assert!(
-            true,
-            "IFC surface type classification stub - validates element type mapping"
-        );
+        // IFC surface type classification stub - validates element type mapping
     }
 
     /// Expected behavior: Determine boundary conditions from IFC space adjacency
@@ -1235,10 +1231,7 @@ mod ifc_parsing_stubs {
         // - IfcRelSpaceBoundary with RelatedSpace = another zone → InterZone
         // - IfcRelSpaceBoundary with RelatedSpace = same zone → Interior (ignored)
 
-        assert!(
-            true,
-            "IFC boundary condition stub - validates adjacency-based classification"
-        );
+        // IFC boundary condition stub - validates adjacency-based classification
     }
 
     /// Expected behavior: Calculate zone volumes from IFC spaces
@@ -1257,10 +1250,7 @@ mod ifc_parsing_stubs {
         //     assert!(space.volume.unwrap() > 0.0);
         // }
 
-        assert!(
-            true,
-            "IFC zone volume calculation stub - validates volume extraction"
-        );
+        // IFC zone volume calculation stub - validates volume extraction
     }
 
     /// Expected behavior: Handle IFC4x1 schema (latest version)
@@ -1276,9 +1266,6 @@ mod ifc_parsing_stubs {
         // let schema = detect_ifc_schema_version("tests/test_data/ifc/simple_office.ifc");
         // assert_eq!(schema, IfcSchemaVersion::Ifc4x1);
 
-        assert!(
-            true,
-            "IFC schema version handling stub - validates version detection"
-        );
+        // IFC schema version handling stub - validates version detection
     }
 }

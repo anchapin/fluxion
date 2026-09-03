@@ -32,11 +32,15 @@ fn w_tol(_w: f64) -> f64 {
 }
 
 /// Tolerance for temperature comparisons: ±0.05°C
+// Unused for now; kept for symmetry with the other tolerance helpers.
+#[allow(dead_code)]
 fn t_tol(_t: f64) -> f64 {
     0.05
 }
 
 /// Tolerance for energy comparisons: ±1%
+// Unused for now; kept for symmetry with the other tolerance helpers.
+#[allow(dead_code)]
 fn energy_tol(energy: f64) -> f64 {
     energy.abs() * 0.01
 }
@@ -268,7 +272,7 @@ fn test_ventilation_latent_load_vs_sensible_ratio() {
 fn test_humidification_energy_calculation() {
     // Energy to humidify a zone from 30% to 50% RH at 20°C
     let zone_volume = 129.6; // m³
-    let supply_air_temp = 20.0; // °C (no temperature change)
+    let _supply_air_temp = 20.0; // °C (no temperature change)
     let w_initial = calculate_humidity_ratio(20.0, 30.0, STD_PRESSURE);
     let w_target = calculate_humidity_ratio(20.0, 50.0, STD_PRESSURE);
 
@@ -473,19 +477,19 @@ fn test_mass_conservation_moisture_balance() {
     // Change in humidity ratio over the hour
     // dW/dt = moisture_added / (ρ * V)
     let rho = RHO_AIR;
-    let dW_dt = moisture_added_kg_s / (rho * volume);
-    let dW = dW_dt * dt;
+    let d_w_dt = moisture_added_kg_s / (rho * volume);
+    let d_w = d_w_dt * dt;
 
-    let w_final = w_initial + dW;
+    let w_final = w_initial + d_w;
 
     assert!(
         w_final > w_initial,
         "Internal gains should increase zone humidity"
     );
     assert!(
-        (dW - 0.00463).abs() < 0.001,
+        (d_w - 0.00463).abs() < 0.001,
         "ΔW ≈ {:.5}, expected ~0.00463",
-        dW
+        d_w
     );
 }
 

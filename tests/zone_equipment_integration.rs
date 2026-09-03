@@ -46,8 +46,13 @@ use fluxion::sim::multi_zone_network::{MultiZoneAirflowNetwork, ZoneState};
 // Tolerance
 // ===========================================================================
 
+// Tolerance reserved for the equipment-isolation follow-up checks.
+#[allow(dead_code)]
 const ZONE_TEMP_TOLERANCE: f64 = 0.5; // °C — per zone_balance_eplus_isolation.rs
+                                      // Tolerances reserved for the equipment-isolation follow-up checks.
+#[allow(dead_code)]
 const ENERGY_TOLERANCE: f64 = 0.01; // 1% — per module-isolation rule
+#[allow(dead_code)]
 const CYCLE_FREQUENCY_TOLERANCE: f64 = 0.2; // 20% — reasonable for cycling tests
 
 // ===========================================================================
@@ -140,7 +145,7 @@ fn test_electric_baseboard_zone_temperature_trajectory() {
     assert!(
         steps < max_steps,
         "Zone should reach setpoint within {} hours; took {} steps",
-        max_steps / 1,
+        max_steps,
         steps
     );
     assert!(

@@ -22,11 +22,10 @@
 //! 3. **Energy balance**: |Σ hourly heat flows − ΔU| < 1e-3 kWh
 //! 4. **Non-zero energy**: all conditioned buildings consume measurable HVAC energy
 
-use fluxion::ai::surrogate::SurrogateManager;
 use fluxion::physics::cta::VectorField;
 use fluxion::sim::engine::ThermalModel;
 use fluxion::sim::thermal_selector::ThermalSelector;
-use fluxion::validation::ashrae_140_cases::{ASHRAE140Case, CaseBuilder, InternalLoads};
+use fluxion::validation::ashrae_140_cases::ASHRAE140Case;
 use fluxion::weather::epw::EpwWeatherSource;
 use fluxion::weather::WeatherSource;
 
@@ -88,8 +87,8 @@ fn simulate_case_with_weather(
         &ThermalSelector::default(),
     )
     .expect("default selector must initialize");
-    let weather =
-        EpwWeatherSource::from_file(epw_path).expect(&format!("Failed to load EPW: {}", epw_path));
+    let weather = EpwWeatherSource::from_file(epw_path)
+        .unwrap_or_else(|_| panic!("Failed to load EPW: {}", epw_path));
 
     let mut free_float_min = f64::INFINITY;
     let mut free_float_max = f64::NEG_INFINITY;
@@ -336,7 +335,7 @@ fn test_climate_energy_balance_case600() {
         )
         .expect("default selector must initialize");
         let weather = EpwWeatherSource::from_file(climate.epw_path)
-            .expect(&format!("Failed to load EPW: {}", climate.epw_path));
+            .unwrap_or_else(|_| panic!("Failed to load EPW: {}", climate.epw_path));
 
         for step in 0..8760 {
             let weather_data = weather.get_hourly_data(step).unwrap();

@@ -41,20 +41,26 @@
 //!   | grep -E '(test result|FAIL|PASS|ok|skip)'
 //! ```
 
+#[cfg(feature = "cuda")]
 use fluxion::ai::surrogate::{InferenceBackend, SurrogateManager};
+#[cfg(feature = "cuda")]
 use fluxion::sim::thermal_model::HybridThermalModel;
-use fluxion::sim::thermal_selector::ThermalSelector;
+#[cfg(feature = "cuda")]
 use fluxion::validation::ashrae_140_cases::ASHRAE140Case;
+#[cfg(feature = "cuda")]
 use fluxion::ThermalModelTrait as _;
 
+#[cfg(feature = "cuda")]
 const STEPS: usize = 168;
 
+#[cfg(feature = "cuda")]
 const DUMMY_ONNX_MODEL: &str = "assets/dummy_surrogate.onnx";
 
 /// Returns `true` when the CUDA execution provider can be loaded at runtime.
 ///
 /// Checks both compile-time feature flag (`cfg(feature = "cuda")`) and
 /// runtime availability (NVIDIA GPU + CUDA drivers + ort CUDA EP binary).
+#[cfg(feature = "cuda")]
 fn cuda_ep_available() -> bool {
     #[cfg(feature = "cuda")]
     {

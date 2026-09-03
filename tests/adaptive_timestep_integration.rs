@@ -362,7 +362,7 @@ fn test_thermal_model_time_constant_estimation() {
         .conduction
         .derived_h_tr_3
         .as_ref()
-        .get(0)
+        .first()
         .unwrap_or(&0.0);
     assert!(
         h_tr_3_0 > 1.0,

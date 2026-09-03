@@ -442,7 +442,7 @@ mod tests {
         let model = IfcParser::from_str(&src).expect("parses");
         let geometry = IfcGeometryParser::parse_model(&model);
 
-        if let Some(space_id) = model.spaces.get(0).map(|s| s.id) {
+        if let Some(space_id) = model.spaces.first().map(|s| s.id) {
             let elements = geometry.zone_elements.get(&space_id);
             assert!(
                 elements.is_some() && !elements.unwrap().is_empty(),

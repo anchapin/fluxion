@@ -24,7 +24,7 @@ pub const HOURS: usize = 8760;
 /// Index 3 = south wall (tilt=90°, az=180°).
 /// Index 4 = west wall  (tilt=90°, az=270°).
 #[rustfmt::skip]
-pub const EPLUS_SURFACE_TOTALS_WM2: [[f64; HOURS]; 5] = [
+pub static EPLUS_SURFACE_TOTALS_WM2: [[f64; HOURS]; 5] = [
     // roof
     [
         0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 3.3478, 179.3933, 49.0000, 437.6956, 330.7493, 257.3056, 160.1611, 59.0000, 51.0000, 21.8235, 0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 0.0000,
@@ -1878,7 +1878,7 @@ pub const EPLUS_SURFACE_TOTALS_WM2: [[f64; HOURS]; 5] = [
 /// `tilt_idx` 0=tilt 0 (horizontal), 1=tilt 30, 2=tilt 60, 3=tilt 90.
 /// `az_idx` 0=N, 1=E, 2=S, 3=W.
 #[rustfmt::skip]
-pub const TILT_AZIMUTH_MATRIX_WM2: [[[f64; HOURS]; 4]; 4] = [
+pub static TILT_AZIMUTH_MATRIX_WM2: [[[f64; HOURS]; 4]; 4] = [
     // tilt_idx=0 (tilt_off=0°)
     [
         // az_idx=0 (NORTH)

@@ -24,14 +24,24 @@
 //! - 3+ cases: lightweight, heavyweight, mixed
 //! - Test runs in <200ms
 
+// Physics notation: `T_*` identifiers mirror the analytical heat-balance
+// equations documented above.
+#![allow(non_snake_case)]
+
 use fluxion::physics::cta::VectorField;
 use fluxion::sim::engine::ThermalModel;
 use fluxion::sim::thermal_selector::ThermalSelector;
 use fluxion::validation::ashrae_140_cases::ASHRAE140Case;
 
+// Reserved for the fine-grained float comparisons in the #968 follow-up.
+#[allow(dead_code)]
 const EPSILON: f64 = 1e-9;
 const STEADY_STATE_TOL: f64 = 0.01;
+// Kept for the transient analytical comparisons planned in Issue #968.
+#[allow(dead_code)]
 const TRANSIENT_TOL: f64 = 0.005;
+// Kept for the energy-conservation checks planned in Issue #968.
+#[allow(dead_code)]
 const ENERGY_CONSERVATION_TOL: f64 = 0.01;
 
 fn set_zone_temperature(model: &mut ThermalModel<VectorField>, zone: usize, temp: f64) {
@@ -46,6 +56,8 @@ fn set_zone_loads(model: &mut ThermalModel<VectorField>, zone: usize, load: f64)
     model.setpoints.loads.as_mut()[zone] = load;
 }
 
+// Analytical transient solution kept for the Issue #968 follow-up tests.
+#[allow(dead_code)]
 fn compute_transient_temperature(T_initial: f64, T_ss: f64, t: f64, tau: f64) -> f64 {
     T_ss + (T_initial - T_ss) * (-t / tau).exp()
 }

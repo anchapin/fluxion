@@ -35,21 +35,21 @@
 //! - [x] PhysicsThermalModel unit tests against E+ Case 600 reference data
 //! - [x] Zone temperature within 0.5°C of E+ when all sub-modules are verified
 //! - [x] All 5R1C network tests pass (steady-state; transient tests are
-//!       marked `#[ignore]` in `conduction_5r1c_isolation.rs` because the
-//!       current `FiveR1CSolver` is steady-state only — documented in
-//!       Phase 1 validation strategy: "no parameter tuning, fix the math")
+//!   marked `#[ignore]` in `conduction_5r1c_isolation.rs` because the
+//!   current `FiveR1CSolver` is steady-state only — documented in
+//!   Phase 1 validation strategy: "no parameter tuning, fix the math")
 //! - [x] Free-floating temperature tests pass (Case 600FF, 900FF)
 //! - [x] SurfaceHeatFluxProvider trait fully tested
 //!
 //! # Acceptance Criteria (Issue #1147)
 //!
 //! - [x] `tests/reference_data/zone_balance/` contains E+ reference CSV for
-//!       Case 600 (`case_600_energy_reference.csv`) and Case 900
-//!       (`case_900_energy_reference.csv`)
+//!   Case 600 (`case_600_energy_reference.csv`) and Case 900
+//!   (`case_900_energy_reference.csv`)
 //! - [x] Zone balance isolation tests cover both free-floating temperature
-//!       AND metered energy loads (Section 5)
+//!   AND metered energy loads (Section 5)
 //! - [x] Annual heating/cooling energy within ±15% tolerance — tests enabled
-//!       after #1213 fix (cooling-load physics corrected)
+//!   after #1213 fix (cooling-load physics corrected)
 //! - [x] Tests use true blind execution (spec-only, no case ID to engine)
 //! - [x] Hourly E+ regeneration script provided (generate_case_600_900_energy.py)
 //!
@@ -545,8 +545,7 @@ fn test_5r1c_network_matches_zone_solver_steady_state() {
             HeatTransferCoefficient::from_value(8.0),
             HeatTransferCoefficient::from_value(25.0),
         )
-        .unwrap()
-        .into();
+        .unwrap();
 
     let q_analytical = (t_ext - t_int) / r_total;
     let q_5r1c_value: f64 = q_5r1c.to_value();

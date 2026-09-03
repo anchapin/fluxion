@@ -30,10 +30,7 @@
 
 use fluxion::physics::method_selector::{ThermalMethod, ThermalMethodSelector};
 use fluxion::physics::solver_manager::SolverManager;
-use fluxion::physics::solver_trait::HeatConductionSolver;
-use fluxion::physics::units::{
-    FromF64, HeatFlux, HeatTransferCoefficient, Temperature, Time, ToF64,
-};
+use fluxion::physics::units::{FromF64, HeatTransferCoefficient, Temperature, Time};
 use fluxion::sim::assembly::{AssemblyBuilder, ConcreteMaterial, InsulationMaterial};
 use uom::si::heat_flux_density::watt_per_square_meter;
 

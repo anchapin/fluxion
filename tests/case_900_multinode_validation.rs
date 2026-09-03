@@ -479,8 +479,8 @@ fn test_case_900_multinode_validation_summary() {
     );
 
     // FF Min
-    let ff_min_ok = ff_min >= reference::case_900ff::MIN_TEMP_MIN
-        && ff_min <= reference::case_900ff::MIN_TEMP_MAX;
+    let ff_min_ok = (reference::case_900ff::MIN_TEMP_MIN..=reference::case_900ff::MIN_TEMP_MAX)
+        .contains(&ff_min);
     println!(
         "{:<24} | {:>9.2} C   | {:>5.2} - {:>5.2} C     | {}",
         "FF Min Temperature",
@@ -491,8 +491,8 @@ fn test_case_900_multinode_validation_summary() {
     );
 
     // FF Max
-    let ff_max_ok = ff_max >= reference::case_900ff::MAX_TEMP_MIN
-        && ff_max <= reference::case_900ff::MAX_TEMP_MAX;
+    let ff_max_ok = (reference::case_900ff::MAX_TEMP_MIN..=reference::case_900ff::MAX_TEMP_MAX)
+        .contains(&ff_max);
     println!(
         "{:<24} | {:>9.2} C   | {:>5.2} - {:>5.2} C     | {}",
         "FF Max Temperature",

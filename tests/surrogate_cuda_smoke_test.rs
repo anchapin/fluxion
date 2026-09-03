@@ -35,24 +35,28 @@
 //! vs CPU can produce slightly different rounding). This test is excluded
 //! from the determinism CI gate per issue #1603 scope.
 
+#[cfg(feature = "cuda")]
 use fluxion::ai::surrogate::{InferenceBackend, SurrogateManager};
 
 /// Path to the tiny test ONNX model shipped under `assets/`. The model
 /// takes `float32[1, 6]` and returns the first input value as
 /// `float32[1, 1]` (a deterministic pass-through used to verify
 /// tensor shape handling end-to-end).
+#[cfg(feature = "cuda")]
 const DUMMY_ONNX_MODEL: &str = "assets/dummy_surrogate.onnx";
 
 /// Relative tolerance for CUDA-vs-CPU numerical comparison (issue #1603).
 /// 0.1% = 1e-3. This is intentionally looser than the 1e-5 used in
 /// `surrogate_backend_parity.rs` because GPU and CPU FP32 kernels can
 /// introduce small rounding differences that are numerically insignificant.
+#[cfg(feature = "cuda")]
 const CUDA_CPU_REL_TOL: f64 = 1e-3;
 
 /// Returns `true` when the CUDA execution provider can be loaded at runtime.
 ///
 /// Checks both compile-time feature flag (`cfg(feature = "cuda")`) and
 /// runtime availability (NVIDIA GPU + CUDA drivers + ort CUDA EP binary).
+#[cfg(feature = "cuda")]
 fn cuda_ep_available() -> bool {
     #[cfg(feature = "cuda")]
     {
@@ -77,6 +81,7 @@ fn cuda_ep_available() -> bool {
 ///
 /// Uses `max(|expected|, 1e-9)` as the denominator so a near-zero expected
 /// value doesn't inflate the relative-error metric spuriously.
+#[cfg(feature = "cuda")]
 fn max_relative_error(actual: &[f64], expected: &[f64]) -> (f64, usize) {
     assert_eq!(
         actual.len(),

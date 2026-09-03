@@ -1397,7 +1397,7 @@ mod tests {
     fn test_fifty_heat_pumps_ieee33_voltage_profile_above_nine_tenths() {
         use crate::power_flow::PowerFlowSolver;
 
-        let (mut buses, lines) = ieee33_system();
+        let (buses, lines) = ieee33_system();
         let mut solver = PowerFlowSolver::new(buses, lines);
         solver
             .solve()

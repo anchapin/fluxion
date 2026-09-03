@@ -14,7 +14,6 @@ mod tests {
     use crate::ai::surrogate::SurrogateManager;
     use crate::physics::cta::VectorField;
     use crate::sim::schedule::DailySchedule;
-    use crate::sim::thermal_selector::ThermalSelector;
 
     #[test]
     fn test_thermal_model_creation() {

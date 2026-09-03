@@ -32,7 +32,7 @@ use fluxion::api::schema::{
     ConstructionSet, ControlSet, Geometry, ScheduleSet, SchemaMetadata, SchemaVersion,
     SimulationOutput, SimulationSchemaV1, WeatherData,
 };
-use fluxion::api::server::{run_simulation, ApiError};
+use fluxion::api::server::run_simulation;
 use fluxion::sim::thermal_selector::ThermalSelector;
 
 fn default_schema_v1() -> SimulationSchemaV1 {

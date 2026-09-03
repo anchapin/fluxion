@@ -28,7 +28,6 @@
 //!   - zero `gauge_connection[0]` → negative transport (nighttime heat loss)
 
 use fluxion::physics::geometry_tensor::{ManifoldIndex, ThermalManifold};
-use nalgebra::Vector4;
 
 /// ASHRAE 140 Case 900 envelope geometry — 200 mm heavy-weight concrete wall.
 const CASE_900_HW_CONCRETE_THICKNESS_M: f64 = 0.200;
@@ -68,8 +67,7 @@ fn transport_flux_wm2(manifold: &ThermalManifold, dt: f64) -> f64 {
     let d_t_air = transported[ManifoldIndex::Air as usize]
         - manifold.scalar_field[ManifoldIndex::Air as usize];
     // Q = C · dT/dt  →  W/m² = J/m²K · K/s
-    let q_wm2 = C_AIR_J_M2K * d_t_air / dt;
-    q_wm2
+    C_AIR_J_M2K * d_t_air / dt
 }
 
 /// Regression test: parallel transport must show bipolar sign behavior.

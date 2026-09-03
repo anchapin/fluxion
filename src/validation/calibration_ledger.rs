@@ -436,7 +436,7 @@ mod tests {
             for (lineno, line) in src.lines().enumerate() {
                 if let Some(idx) = line.find("// LEDGER:") {
                     let after = &line[idx + "// LEDGER:".len()..];
-                    let id = after.trim().split_whitespace().next().unwrap_or("");
+                    let id = after.split_whitespace().next().unwrap_or("");
                     assert!(
                         !id.is_empty(),
                         "{file_name}:{lineno}: empty `// LEDGER:` marker"
@@ -490,7 +490,7 @@ mod tests {
             for line in src.lines() {
                 if let Some(idx) = line.find("// LEDGER:") {
                     let after = &line[idx + "// LEDGER:".len()..];
-                    if let Some(id) = after.trim().split_whitespace().next() {
+                    if let Some(id) = after.split_whitespace().next() {
                         referenced_ids.insert(id);
                     }
                 }

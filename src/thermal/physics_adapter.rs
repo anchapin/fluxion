@@ -174,7 +174,9 @@ mod tests {
         WallSpec::single_layer("Test", 0.2, 1.0, 1000.0, 1000.0)
     }
 
+    // These tests deliberately exercise the deprecated `gauge_shadow` config.
     #[test]
+    #[allow(deprecated)]
     fn test_shadow_mode_does_not_change_primary_flux() {
         let wall = test_wall();
         let mut direct = FiveR1CSolver::new();
@@ -233,7 +235,9 @@ mod tests {
         assert!(adapter.shadow_records().is_empty());
     }
 
+    // Deliberately exercises the deprecated `gauge_shadow` config.
     #[test]
+    #[allow(deprecated)]
     fn test_shadow_mode_gauge_error_is_nonfatal() {
         let wall = test_wall();
         let mut adapter = PhysicsAdapter::new(PhysicsAdapterConfig::gauge_shadow());

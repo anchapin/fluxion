@@ -4481,7 +4481,7 @@ mod tests {
         let _ = model.cached_solar_position(0, 2023, 3, 21, 15.0);
         assert!(model.0.solar.sun_pos_cache.contains_key(&(0, 18)));
         assert!(model.0.solar.sun_pos_cache.contains_key(&(0, 30)));
-        for (_, sp) in model.0.solar.sun_pos_cache.iter() {
+        for sp in model.0.solar.sun_pos_cache.values() {
             assert!(sp.altitude_deg.is_finite());
             assert!(sp.azimuth_deg.is_finite());
             assert!(sp.zenith_deg.is_finite());

@@ -575,7 +575,7 @@ ENDSEC;
 END-ISO-10303-21;
 ";
         let (schema, entities) =
-            tokenize_with_schema_and_limits(&src, &Default::default()).expect("parses");
+            tokenize_with_schema_and_limits(src, &Default::default()).expect("parses");
         assert_eq!(entities.len(), 1);
         assert_eq!(schema.as_deref(), Some("IFC4"));
     }

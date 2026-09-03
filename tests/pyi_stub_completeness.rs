@@ -17,12 +17,12 @@
 
 use std::collections::HashSet;
 use std::fs;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 /// Locate the body (text between the outer `{` and its matching `}`) of the
 /// `#[pymodule] fn <name>` item in `src`, starting the search at `from`.
 fn pymodule_body<'a>(src: &'a str, fn_name: &str) -> Option<&'a str> {
-    let needle = format!("#[pymodule]");
+    let needle = "#[pymodule]".to_string();
     let mut search_from = 0usize;
     while let Some(rel) = src[search_from..].find(&needle) {
         let abs = search_from + rel;
@@ -64,7 +64,7 @@ fn balanced_block(src: &str, brace_idx: usize) -> Option<&str> {
 /// Build a map of `rust struct/enum name -> python class name` by scanning the
 /// binding sources for `#[pyclass(name = "...")]`. Falls back to stripping a
 /// leading `Py` prefix when no explicit `name` is present.
-fn pyclass_name_map(root: &PathBuf) -> std::collections::HashMap<String, String> {
+fn pyclass_name_map(root: &Path) -> std::collections::HashMap<String, String> {
     let mut map = std::collections::HashMap::new();
     let sources = [
         "src/lib.rs",
@@ -95,11 +95,9 @@ fn pyclass_name_map(root: &PathBuf) -> std::collections::HashMap<String, String>
                 let after_kw = &tail[rel..];
                 if let Some(name) = next_ident(after_kw) {
                     let py = explicit.unwrap_or_else(|| {
-                        if name.starts_with("Py") {
-                            name[2..].to_owned()
-                        } else {
-                            name.clone()
-                        }
+                        name.strip_prefix("Py")
+                            .map(|stripped| stripped.to_owned())
+                            .unwrap_or_else(|| name.clone())
                     });
                     map.entry(name).or_insert(py);
                 }
@@ -150,7 +148,7 @@ fn next_ident(s: &str) -> Option<String> {
 /// AND the `multi_zone` submodule body (which is called from the fluxion body
 /// via `python::multi_zone(_py, m)` and registers into the same module), each
 /// resolved to its Python class name.
-fn registered_classes(root: &PathBuf) -> Vec<String> {
+fn registered_classes(root: &Path) -> Vec<String> {
     let lib = fs::read_to_string(root.join("src/lib.rs")).expect("src/lib.rs readable");
     let name_map = pyclass_name_map(root);
     let mut out = Vec::new();
@@ -183,18 +181,16 @@ fn collect_add_classes(
         let rust_full = after[..end].trim();
         let rust = rust_full.rsplit("::").next().unwrap_or(rust_full);
         let py = name_map.get(rust).cloned().unwrap_or_else(|| {
-            if rust.starts_with("Py") {
-                rust[2..].to_owned()
-            } else {
-                rust.to_owned()
-            }
+            rust.strip_prefix("Py")
+                .map(|stripped| stripped.to_owned())
+                .unwrap_or_else(|| rust.to_owned())
         });
         out.push(py);
     }
 }
 
 /// Extract the four exception names added via `m.add("Name", ...)`.
-fn registered_exceptions(root: &PathBuf) -> Vec<String> {
+fn registered_exceptions(root: &Path) -> Vec<String> {
     let lib = fs::read_to_string(root.join("src/lib.rs")).expect("src/lib.rs readable");
     let body = pymodule_body(&lib, "fluxion").expect("#[pymodule] fn fluxion found");
     let mut out = Vec::new();
@@ -211,7 +207,7 @@ fn registered_exceptions(root: &PathBuf) -> Vec<String> {
 
 /// Extract registered free-function names: `wrap_pyfunction!(name, ...)` in the
 /// primary fluxion body plus the `multi_zone` submodule body.
-fn registered_functions(root: &PathBuf) -> Vec<String> {
+fn registered_functions(root: &Path) -> Vec<String> {
     let mut out = Vec::new();
     let lib = fs::read_to_string(root.join("src/lib.rs")).expect("src/lib.rs readable");
     if let Some(body) = pymodule_body(&lib, "fluxion") {
@@ -279,7 +275,7 @@ fn pyi_classes(pyi: &str) -> HashSet<String> {
             if !l.starts_with("class ") {
                 return None;
             }
-            t.strip_prefix("class ").and_then(|rest| next_ident(rest))
+            t.strip_prefix("class ").and_then(next_ident)
         })
         .collect()
 }
@@ -291,7 +287,7 @@ fn pyi_functions(pyi: &str) -> HashSet<String> {
             if !l.starts_with("def ") {
                 return None;
             }
-            l.strip_prefix("def ").and_then(|rest| next_ident(rest))
+            l.strip_prefix("def ").and_then(next_ident)
         })
         .collect()
 }

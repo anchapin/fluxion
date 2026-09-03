@@ -464,7 +464,7 @@ mod tests {
     fn test_chiller_cop_degradation_with_temperature() {
         let curve = ChillerPartLoadCurve::new();
 
-        let cop_design = curve.cop_at(1.0, 35.0);
+        let _cop_design = curve.cop_at(1.0, 35.0);
         let cop_hot = curve.cop_at(1.0, 45.0);
         let cop_cold = curve.cop_at(1.0, 25.0);
 
@@ -504,7 +504,7 @@ mod tests {
     fn test_boiler_efficiency_with_temperature() {
         let curve = BoilerPartLoadCurve::new();
 
-        let eff_design = curve.efficiency_at(1.0, 20.0);
+        let _eff_design = curve.efficiency_at(1.0, 20.0);
         let eff_cold = curve.efficiency_at(1.0, -10.0);
 
         assert!(eff_cold > 0.0);
@@ -521,11 +521,11 @@ mod tests {
 
         assert!((power_100 - 1.0).abs() < 0.01);
 
-        let expected_50 = 0.5_f64.powi(3);
+        let _expected_50 = 0.5_f64.powi(3);
         assert!(power_50 < 0.5);
         assert!(power_50 > 0.01);
 
-        let expected_25 = 0.25_f64.powi(3);
+        let _expected_25 = 0.25_f64.powi(3);
         assert!(power_25 < power_50);
         assert!(power_25 > 0.0);
     }

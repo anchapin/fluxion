@@ -55,7 +55,7 @@ mod tests {
     #[test]
     fn digest_is_sixty_four_lowercase_hex_chars() {
         let digest = Sha256::digest(b"abc");
-        let hex = sha256_hex(&digest);
+        let hex = sha256_hex(digest);
         assert_eq!(hex.len(), 64, "SHA-256 hex must be 64 chars long");
         assert!(
             hex.chars()
@@ -77,7 +77,7 @@ mod tests {
     fn works_with_a_raw_byte_slice() {
         // `&[u8]` also implements `AsRef<[u8]>`.
         let bytes: [u8; 4] = [0xde, 0xad, 0xbe, 0xef];
-        assert_eq!(sha256_hex(&bytes), "deadbeef");
+        assert_eq!(sha256_hex(bytes), "deadbeef");
     }
 
     #[test]

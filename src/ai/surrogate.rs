@@ -4678,6 +4678,8 @@ mod tests {
     /// takes `float32[1, 6]` and returns the first input value as
     /// `float32[1, 1]` (a deterministic pass-through used to verify
     /// tensor shape handling end-to-end).
+    // Used by the ort-feature-gated ONNX pipeline tests below.
+    #[allow(dead_code)]
     const DUMMY_ONNX_MODEL: &str = "assets/dummy_surrogate.onnx";
 
     #[test]

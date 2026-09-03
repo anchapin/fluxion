@@ -433,6 +433,7 @@ const CARDINAL_DAYS: &[(u32, u32, &str)] = &[
 /// See `tests/reference_data/solar/solar_position_denver.csv` for the
 /// matching 8760-hour EnergyPlus reference (issue #1012).
 #[rustfmt::skip]
+#[allow(clippy::type_complexity)]
 const SOLAR_REF_DENVER: &[(u32, u32, &[(f64, f64, f64); 24])] = &[
     // vernal equinox (3/20)
     (3, 20, &[
@@ -563,7 +564,7 @@ fn test_solar_position_cardinal_days_cross_platform() {
             .map(|&(_, _, hrs)| hrs)
             .expect("Reference data missing for cardinal day");
 
-        for hour in 0..24 {
+        for (hour, &(ref_alt, ref_az, ref_zen)) in ref_hours.iter().enumerate() {
             let pos = calculate_solar_position(
                 DENVER_LAT_DEG,
                 DENVER_LON_DEG,
@@ -573,7 +574,6 @@ fn test_solar_position_cardinal_days_cross_platform() {
                 hour as f64,
                 Some(DENVER_UTC_OFFSET_HOURS),
             );
-            let (ref_alt, ref_az, ref_zen) = ref_hours[hour];
 
             let alt_err = (pos.altitude_deg - ref_alt).abs();
             let zen_err = (pos.zenith_deg - ref_zen).abs();

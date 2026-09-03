@@ -2,7 +2,7 @@
 name = "fluxion-wasm"
 version = "1.0.0"
 edition = "2021"
-rust-version = "1.89"
+rust-version = "1.98.0"
 authors = ["Dr. Aris Thorne <aris.thorne@fluxion.org>"]
 description = "WebAssembly bindings for fluxion-core and fluxion-fluid"
 repository = "https://github.com/anchapin/fluxion"

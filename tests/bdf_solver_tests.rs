@@ -32,7 +32,6 @@ mod heat_exchanger {
     /// y[0]' = -100 * y[0]  (fast decaying - like hot fluid cooling)
     /// y[1]' = -50 * y[1]   (medium decay - like wall thermal mass)
     /// y[2]' = -100 * y[2]  (fast decaying - like cold fluid heating toward ambient)
-
     pub struct HeatExchanger {
         pub n: usize,
     }
@@ -66,7 +65,7 @@ mod heat_exchanger {
 
     #[test]
     fn test_bdf2_heat_exchanger_convergence() {
-        /// BDF-2 should converge in ≤ 10 Newton iterations per timestep
+        // BDF-2 should converge in ≤ 10 Newton iterations per timestep
         let mut stepper = BdfTimeStepper::with_default_config();
         let system = HeatExchanger::new();
 
@@ -109,7 +108,7 @@ mod heat_exchanger {
 
     #[test]
     fn test_bdf4_heat_exchanger_convergence() {
-        /// BDF-4 should converge in ≤ 10 Newton iterations per timestep
+        // BDF-4 should converge in ≤ 10 Newton iterations per timestep
         let mut config = TimeSteppingConfig::default();
         config.bdf_config.max_iterations = 20;
 
@@ -135,9 +134,11 @@ mod heat_exchanger {
 
     #[test]
     fn test_bdf2_bdf4_consistency() {
-        /// BDF-2 and BDF-4 should produce consistent results on the same problem
-        let mut config = TimeSteppingConfig::default();
-        config.tolerance = 1e-8;
+        // BDF-2 and BDF-4 should produce consistent results on the same problem
+        let config = TimeSteppingConfig {
+            tolerance: 1e-8,
+            ..Default::default()
+        };
 
         // BDF-2
         let mut stepper2 = BdfTimeStepper::new(config);
@@ -148,8 +149,10 @@ mod heat_exchanger {
         let (y2, _) = stepper2.step(0.01, &system).unwrap();
 
         // BDF-4
-        let mut config4 = TimeSteppingConfig::default();
-        config4.tolerance = 1e-8;
+        let config4 = TimeSteppingConfig {
+            tolerance: 1e-8,
+            ..Default::default()
+        };
         let mut stepper4 = BdfTimeStepper::new(config4);
         stepper4.initialize(0.0, &y0).unwrap();
         let (y4, _) = stepper4.step(0.01, &system).unwrap();
@@ -178,7 +181,9 @@ mod plant_loop {
     /// - 1 chiller
     /// - 1 cooling tower
     /// - Piping network with pumps
-
+    // `zone_temps` / `t_amb` document the loop state even though the residual
+    // below does not read them yet.
+    #[allow(dead_code)]
     pub struct PlantLoop {
         pub n: usize,
         // Zone thermal masses (J/K)
@@ -248,9 +253,7 @@ mod plant_loop {
             }
 
             // Auxiliary states (no dynamics - algebraic constraints)
-            for i in 0..4 {
-                r[16 + i] = y[16 + i]; // These stay at 0
-            }
+            r[16..20].copy_from_slice(&y[16..20]); // These stay at 0
         }
 
         fn dimension(&self) -> usize {
@@ -316,7 +319,6 @@ mod benchmarks {
     ///
     /// This benchmark measures the performance of the BDF solver on a large
     /// stiff system representative of a full building thermal network.
-
     pub struct StiffNetwork100 {
         pub n: usize,
         // Diagonal dominance factor (higher = more stiff)
@@ -418,8 +420,6 @@ mod benchmarks {
         //!
         //! Run with: cargo test -p fluxion -- benchmark_bdf_stiff_network_100_throughput --release -- --nocapture
 
-        use std::time::Duration;
-
         let mut stepper = BdfTimeStepper::with_default_config();
         let system = StiffNetwork100::new();
 
@@ -456,10 +456,13 @@ mod heap_verification {
     use super::*;
 
     /// Heat exchanger model for heap verification
+    // Scaffold kept for the heap-verification follow-up work.
+    #[allow(dead_code)]
     pub struct HeatExchangerSmall {
         pub n: usize,
     }
 
+    #[allow(dead_code)]
     impl HeatExchangerSmall {
         pub fn new() -> Self {
             Self { n: 3 }

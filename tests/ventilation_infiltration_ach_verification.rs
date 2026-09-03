@@ -67,14 +67,14 @@ mod ref_conditions {
 #[test]
 fn test_wind_infiltration_ach_spot_check() {
     let v = ref_conditions::WIND_SPEED_MPS;
-    let H = ref_conditions::HEIGHT_M;
+    let h = ref_conditions::HEIGHT_M;
     let shielding = ref_conditions::SHIELDING_FACTOR;
 
-    let ach = calculate_wind_infiltration_ach(v, H, shielding);
+    let ach = calculate_wind_infiltration_ach(v, h, shielding);
 
     // Hand-computed reference value
     let shelter_coefficient = (1.0 - shielding) * 0.4;
-    let height_factor = (H / ref_conditions::BASE_WIND_SPEED).sqrt();
+    let height_factor = (h / ref_conditions::BASE_WIND_SPEED).sqrt();
     let n_factor = shelter_coefficient * height_factor;
     let ach_ref = n_factor * (v / ref_conditions::BASE_WIND_SPEED);
 
@@ -119,22 +119,22 @@ fn test_wind_infiltration_ach_spot_check() {
 #[test]
 fn test_stack_infiltration_ach_spot_check() {
     let delta_t = ref_conditions::DELTA_T_K;
-    let H = ref_conditions::HEIGHT_M;
-    let A = ref_conditions::OPENING_AREA_M2;
-    let V = ref_conditions::ZONE_VOLUME_M3;
+    let h = ref_conditions::HEIGHT_M;
+    let a = ref_conditions::OPENING_AREA_M2;
+    let v = ref_conditions::ZONE_VOLUME_M3;
 
     let ach = calculate_stack_infiltration_ach(
         ref_conditions::INDOOR_TEMP_C,
         ref_conditions::OUTDOOR_TEMP_C,
-        H,
-        A,
-        V,
+        h,
+        a,
+        v,
     );
 
     // Hand-computed reference
-    let flow_sqrt = (delta_t / H).sqrt();
-    let q_vent = STACK_COEFFICIENT * A * flow_sqrt;
-    let ach_ref = q_vent / V;
+    let flow_sqrt = (delta_t / h).sqrt();
+    let q_vent = STACK_COEFFICIENT * a * flow_sqrt;
+    let ach_ref = q_vent / v;
 
     let rel_err = ((ach - ach_ref) / ach_ref.abs().max(1e-9)).abs();
     assert!(

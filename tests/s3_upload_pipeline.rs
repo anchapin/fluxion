@@ -66,6 +66,8 @@ impl MockS3Backend {
         self.objects.lock().unwrap().get(key).cloned()
     }
 
+    // Kept as a mock-backend helper for future tests.
+    #[allow(dead_code)]
     fn has_object(&self, key: &str) -> bool {
         self.objects.lock().unwrap().contains_key(key)
     }
@@ -310,7 +312,10 @@ fn test_provenance_builder(s3_prefix: &str) -> ProvenanceManifestBuilder {
 // Provenance manifest tests
 // =============================================================================
 
+// Schema snapshot documenting the on-disk provenance manifest shape; not
+// constructed directly in code.
 #[derive(Serialize, Deserialize)]
+#[allow(dead_code)]
 struct ProvenanceSerdeCheck {
     provenance_schema_version: String,
     solver_version: String,
@@ -488,7 +493,7 @@ fn upload_round_trips_shard_data() {
         .find(|o| o.key.contains("shard-"))
         .map(|o| o.key.clone())
         .unwrap();
-    let shard_name = shard_key.split('/').last().unwrap();
+    let shard_name = shard_key.split('/').next_back().unwrap();
     let local_bytes = fs::read(dir.path().join(shard_name)).unwrap();
     let remote_obj = backend.get_object(&shard_key).unwrap();
     assert_eq!(remote_obj.body, local_bytes);
@@ -553,7 +558,7 @@ fn upload_large_shard_uses_multipart() {
         .find(|o| o.key.contains("shard-"))
         .map(|o| o.key.clone())
         .unwrap();
-    let shard_name = shard_key.split('/').last().unwrap();
+    let shard_name = shard_key.split('/').next_back().unwrap();
     let local_bytes = fs::read(dir.path().join(shard_name)).unwrap();
     let remote_obj = backend.get_object(&shard_key).unwrap();
     assert_eq!(remote_obj.body.len(), local_bytes.len());
@@ -581,7 +586,7 @@ fn multipart_reassembles_correctly() {
     assert!(shard_obj.n_parts > 1, "multipart should have > 1 part");
 
     // Verify the reassembled object matches the original
-    let shard_name = shard_obj.key.split('/').last().unwrap();
+    let shard_name = shard_obj.key.split('/').next_back().unwrap();
     let local_bytes = fs::read(dir.path().join(shard_name)).unwrap();
     let remote_obj = backend.get_object(&shard_obj.key).unwrap();
     assert_eq!(remote_obj.body, local_bytes);
@@ -608,7 +613,7 @@ fn multipart_resume_skips_completed_parts() {
     let shard_key = format!("{s3_prefix}/{shard_name}");
     let shard_body = fs::read(dir.path().join(shard_name.as_str())).unwrap();
     let part_size = 512usize;
-    let total_parts = ((shard_body.len() + part_size - 1) / part_size) as u32;
+    let total_parts = shard_body.len().div_ceil(part_size) as u32;
 
     // Simulate: part 1 was already uploaded
     let state = MultipartUploadState {

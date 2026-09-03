@@ -845,7 +845,7 @@ fn test_case_640_hourly_peak_week_diagnostic() {
             .unwrap();
 
             // Print daytime hours (07:00 - 20:00) with setpoints
-            if hour >= 7 && hour <= 20 {
+            if (7..=20).contains(&hour) {
                 eprintln!(
                     "{:>6} {:>6} {:>6} {:>10.2} {:>10.2} {:>10.2} {:>10.2}",
                     step, hour, day_of_year, outdoor_temp, t_zone, hvac_out_w, t_sp_heat

@@ -240,7 +240,7 @@ mod tests {
         // Air power: Q̇·ΔP = 1000 W.
         assert!((fan.air_power(1.0, rho) - 1000.0).abs() < 1.0e-9);
         // Shaft power: 1000 / 0.70.
-        assert!((fan.shaft_power(1.0, rho) - 1428.571_428_571_4).abs() < 1.0e-6);
+        assert!((fan.shaft_power(1.0, rho) - 1_428.571_428_571_4).abs() < 1.0e-6);
         // Mass flow: ρ·Q̇ = 2.4 kg/s.
         assert!((fan.mass_flow_rate(1.0, rho) - 2.4).abs() < 1.0e-12);
     }
@@ -320,7 +320,7 @@ mod tests {
         let shaft = fan.shaft_power(1.0, rho);
         let motor = fan.motor_power(1.0, rho);
         assert!((motor - shaft / 0.90).abs() < 1.0e-6);
-        assert!((motor - 1428.571_428_571_4 / 0.90).abs() < 1.0e-5);
+        assert!((motor - 1_428.571_428_571_4 / 0.90).abs() < 1.0e-5);
     }
 
     /// The default constructor collapses motor power to shaft power.
@@ -352,7 +352,7 @@ mod tests {
         let fan: Box<dyn Fan> = Box::new(FanComponent::new("FAN-1".into(), 2.0, 500.0, 0.70));
         let rho = 1.2;
         assert!((fan.volumetric_flow(1.0, rho) - 2.0).abs() < 1.0e-12);
-        assert!((fan.shaft_power(1.0, rho) - 1428.571_428_571_4).abs() < 1.0e-6);
+        assert!((fan.shaft_power(1.0, rho) - 1_428.571_428_571_4).abs() < 1.0e-6);
         assert!((fan.mass_flow_rate(1.0, rho) - 2.4).abs() < 1.0e-12);
     }
 }

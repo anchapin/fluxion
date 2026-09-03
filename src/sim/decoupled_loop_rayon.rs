@@ -907,8 +907,9 @@ impl std::error::Error for DispatchError {}
 mod tests {
     use super::*;
 
-    // Mock equipment for testing
+    // Mock equipment for testing; `id` is kept for debug output.
     #[derive(Debug, Clone)]
+    #[allow(dead_code)]
     struct MockEquipment {
         id: String,
         loop_id: LoopGroupId,
@@ -1625,9 +1626,6 @@ mod tests {
 
     #[test]
     fn test_concurrent_evaluation_determinism() {
-        use std::sync::atomic::{AtomicUsize, Ordering};
-        use std::sync::Arc;
-
         let groups = vec![
             LoopGroup::new(
                 LoopGroupId::new(0),

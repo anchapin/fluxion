@@ -312,7 +312,7 @@ fn validator_rejects_zero_sample_shard() {
     assert!(report.errors.iter().any(|e| e.contains("empty shard")));
 }
 
-fn recompute_footer(bytes: &mut Vec<u8>) {
+fn recompute_footer(bytes: &mut [u8]) {
     use sha2::{Digest, Sha256};
     if bytes.len() < 32 {
         return;

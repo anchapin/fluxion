@@ -460,9 +460,7 @@ impl FluidSimulation {
             TEMPERATURE_MIN_C,
             TEMPERATURE_MAX_C,
         )?;
-        for t in &mut self.zone_temps {
-            *t = validated;
-        }
+        self.zone_temps.fill(validated);
         console_log!("fluxion-wasm: temperatures reset to {}°C", validated);
         Ok(())
     }
@@ -578,12 +576,8 @@ impl FluidSimulation {
             TEMPERATURE_MAX_C,
         )?;
 
-        for sp in &mut self.heating_setpoints {
-            *sp = heating_sp;
-        }
-        for sp in &mut self.cooling_setpoints {
-            *sp = cooling_sp;
-        }
+        self.heating_setpoints.fill(heating_sp);
+        self.cooling_setpoints.fill(cooling_sp);
 
         console_log!(
             "fluxion-wasm: apply_parameters — U={} W/m²K, heating={}°C, cooling={}°C",

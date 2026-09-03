@@ -780,7 +780,7 @@ mod tests {
             for hour in 0..24 {
                 let frac = g.occupancy_fraction(hour, DayOfWeek::Monday);
                 assert!(
-                    frac >= 0.0 && frac <= 1.0,
+                    (0.0..=1.0).contains(&frac),
                     "Invalid fraction for {:?} at hour {}",
                     bt,
                     hour
@@ -824,7 +824,7 @@ mod tests {
         let g = MarkovOccupancyGenerator::new(BuildingType::Office, 10, 100.0);
         let t = Utc.with_ymd_and_hms(2024, 1, 9, 9, 0, 0).unwrap();
         let density = g.occupant_density(t);
-        let expected = g.occupant_count(t) as f64 / 100.0;
+        let expected = g.occupant_count(t) / 100.0;
         assert!((density - expected).abs() < f64::EPSILON);
     }
 

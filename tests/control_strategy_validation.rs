@@ -24,14 +24,11 @@
 //! - `test_modulating_equipment_part_load_efficiency` - Validates part-load
 //!   efficiency for modulating equipment
 
-use fluxion::physics::cta::VectorField;
 use fluxion::sim::hvac::cycling::CyclingTracker;
 use fluxion::sim::hvac::economizer::{is_economizer_active, EconomizerMode};
 use fluxion::sim::hvac::modes::PredictiveController;
 use fluxion::sim::hvac::zones::schedule::{DailySchedule, HVACSchedule};
-use fluxion::sim::hvac::{
-    AnyEquipment, Boiler, Chiller, HVACMode, HeatPump, VariableCapacityEquipment,
-};
+use fluxion::sim::hvac::{Boiler, Chiller, HVACMode, HeatPump, VariableCapacityEquipment};
 
 // ============================================================================
 // Setpoint Control Tests
@@ -910,7 +907,7 @@ mod control_integration {
 
         // Full load capacity
         let full_heat_capacity = heat_pump.calculate_capacity(1.0, outdoor_temp);
-        let full_cool_capacity = heat_pump.calculate_capacity(1.0, outdoor_temp);
+        let _full_cool_capacity = heat_pump.calculate_capacity(1.0, outdoor_temp);
 
         // Part load capacity
         let part_load_capacity = heat_pump.calculate_capacity(0.5, outdoor_temp);

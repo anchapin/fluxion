@@ -178,7 +178,7 @@ fn idf_case_600_annual_heating_within_15_percent_strict() {
         "Strict check: IDF-imported Case 600 annual heating: {total_heating_mwh:.3} MWh (ref band: {ANNUAL_HEATING_MIN_MWH:.3}–{ANNUAL_HEATING_MAX_MWH:.3})"
     );
     assert!(
-        total_heating_mwh >= ANNUAL_HEATING_MIN_MWH && total_heating_mwh <= ANNUAL_HEATING_MAX_MWH,
+        (ANNUAL_HEATING_MIN_MWH..=ANNUAL_HEATING_MAX_MWH).contains(&total_heating_mwh),
         "annual heating {total_heating_mwh:.3} MWh is outside ±15 % of reference {ANNUAL_HEATING_MIN_MWH:.3}–{ANNUAL_HEATING_MAX_MWH:.3} MWh"
     );
 }

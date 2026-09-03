@@ -55,17 +55,24 @@ mod reference {
     pub const ANNUAL_COOLING_MAX_MWH: f64 = 10.00;
     pub const ANNUAL_COOLING_MIDPOINT_MWH: f64 = 8.695;
 
+    #[allow(dead_code)]
     pub const PEAK_HEATING_MIN_KW: f64 = 4.0;
+    // Full Case 970 reference band; only some bounds are asserted so far.
+    #[allow(dead_code)]
     pub const PEAK_HEATING_MAX_KW: f64 = 8.0;
     pub const PEAK_HEATING_MIDPOINT_KW: f64 = 6.0;
 
+    #[allow(dead_code)]
     pub const PEAK_COOLING_MIN_KW: f64 = 2.5;
+    #[allow(dead_code)]
     pub const PEAK_COOLING_MAX_KW: f64 = 5.5;
     pub const PEAK_COOLING_MIDPOINT_KW: f64 = 4.0;
 
     /// ±15% annual energy per ASHRAE 140 acceptance criteria (issue #1147/#1331).
+    #[allow(dead_code)]
     pub const ENERGY_TOLERANCE: f64 = 0.15;
     /// ±10% peak load per ASHRAE 140 acceptance criteria.
+    #[allow(dead_code)]
     pub const PEAK_TOLERANCE: f64 = 0.10;
 
     /// Path to the canonical ASHRAE 140-2017 §B6.7 Case 970 reference CSV

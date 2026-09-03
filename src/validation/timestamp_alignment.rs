@@ -441,8 +441,8 @@ mod tests {
         assert_eq!(diag.gaps_detected, 1);
         assert_eq!(diag.interpolated_count, 0);
 
-        for i in 4..=8 {
-            assert!(pairs[i].sensor_value.is_nan());
+        for pair in pairs.iter().take(9).skip(4) {
+            assert!(pair.sensor_value.is_nan());
         }
     }
 

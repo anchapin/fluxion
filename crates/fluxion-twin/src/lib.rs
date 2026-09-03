@@ -670,7 +670,7 @@ mod tests {
         );
 
         for _ in 0..50 {
-            ukf.predict(&vec![0.0]).unwrap();
+            ukf.predict(&[0.0]).unwrap();
             ukf.update(&vec![1.0]).unwrap();
 
             let p = &ukf.p_covariance;

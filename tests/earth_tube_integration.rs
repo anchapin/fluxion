@@ -61,7 +61,7 @@ fn test_earth_tube_ventilation_integration() {
         .pipe_diameter_m(0.15)
         .flow_rate_m3_s(0.05);
 
-    let vent_with_et = EarthTubeVentilation::new(base_vent.clone(), earth_tube.clone());
+    let vent_with_et = EarthTubeVentilation::new(base_vent, earth_tube.clone());
 
     // Test that ACH is unchanged (earth tube affects temperature, not flow)
     let ach = vent_with_et.get_ach(12, 20.0, 25.0, 2.0, 129.6);

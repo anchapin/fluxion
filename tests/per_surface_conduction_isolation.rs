@@ -333,7 +333,7 @@ fn test_indoor_boundary_air_coupling() {
         22.0,  // t_mass > t_air
     );
 
-    let t_air = 22.0;
+    let _t_air = 22.0;
     let t_mass = 20.0;
     let t_ext = -5.0;
 
@@ -629,10 +629,10 @@ fn test_ashrae_140_case_600_steady_state() {
     let area = 20.0; // m²
     let t_in = 20.0; // °C
     let t_out = -10.0; // °C
-    let dT = t_in - t_out; // 30 K
+    let d_t = t_in - t_out; // 30 K
 
     // Compute expected heat flow: Q = U * A * dT
-    let expected_q = u_value * area * dT; // 306 W
+    let expected_q = u_value * area * d_t; // 306 W
 
     // Use the steady-state heat flow calculation
     let surface = SurfaceNode::new(
@@ -922,7 +922,7 @@ fn test_step_per_surface_refines_surface_temperature() {
     use fluxion::physics::multi_node_solver::SurfaceExteriorTemperatures;
     solver.set_surface_exterior_temperatures(SurfaceExteriorTemperatures::uniform(0.0));
 
-    let t_surface_before = solver.surface_temperature;
+    let _t_surface_before = solver.surface_temperature;
 
     // Step the per-surface solver
     // Pass current mass temps (20°C) and zero per-surface solar gains for this test

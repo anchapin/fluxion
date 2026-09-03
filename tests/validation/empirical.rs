@@ -119,8 +119,10 @@ impl EmpiricalCaseRegistry {
     }
 
     pub fn summary(&self) -> EmpiricalHarnessSummary {
-        let mut s = EmpiricalHarnessSummary::default();
-        s.registered = self.cases.len();
+        let mut s = EmpiricalHarnessSummary {
+            registered: self.cases.len(),
+            ..Default::default()
+        };
         for reports in self.reports.values() {
             for r in reports {
                 match r.status {

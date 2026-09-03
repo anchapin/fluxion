@@ -718,8 +718,7 @@ mod tests {
         };
         SolverRegistry::register_solver(KEY, factory).expect("first register must succeed");
         let err = SolverRegistry::register_solver(KEY, factory)
-            .err()
-            .expect("second register must be rejected");
+            .expect_err("second register must be rejected");
         assert!(
             err.to_string().contains("already registered"),
             "expected already-registered error, got: {err}"

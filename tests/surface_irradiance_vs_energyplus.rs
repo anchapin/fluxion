@@ -239,6 +239,8 @@ fn test_horizontal_surface_no_beam_below_horizon() {
 
 /// TMY data uses month/day/hour fields rather than sequential indices.
 /// This function returns the actual date from the weather record.
+// Kept for the per-date irradiance comparisons planned in issue #1330.
+#[allow(dead_code)]
 fn weather_record_to_date(month: u32, day: u32, hour: u8) -> (i32, u32, u32, f64) {
     // EPW hour is 1-24 where hour N represents (N-1):00 to N:00
     // Midpoint is (N-1) + 0.5 = N - 0.5

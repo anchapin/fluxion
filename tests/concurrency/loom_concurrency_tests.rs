@@ -49,7 +49,7 @@ use fluxion::physics::method_selector::ThermalMethodSelector;
 use fluxion::physics::solver_manager::SolverManager;
 use fluxion::sim::assembly::{AssemblyBuilder, ConcreteMaterial};
 use fluxion::sim::engine::ThermalModel;
-use fluxion::sim::multi_zone_network::{MultiZoneAirflowNetwork, ZoneState};
+
 use fluxion::sim::per_surface_conduction::{
     MassNode, PerSurfaceConductionSolver, SurfaceKind, SurfaceNode,
 };

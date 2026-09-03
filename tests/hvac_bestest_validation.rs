@@ -3,7 +3,7 @@
 //! Tests for ASHRAE RP-865 HVAC BESTEST validation suite.
 
 use fluxion::validation::hvac_bestest::{
-    get_bestest_cases, run_hvac_bestest, validate_results, HVACBestestCase, HVACBestestResult,
+    get_bestest_cases, run_hvac_bestest, validate_results, HVACBestestCase,
 };
 
 #[test]
