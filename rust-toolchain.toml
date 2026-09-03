@@ -1,3 +1,10 @@
+# Pinned to the workspace MSRV (1.98.0, issue #3321) rather than floating
+# "stable": GitHub runner images preinstall a stable toolchain that rustup
+# will not refresh (macos-latest shipped 1.97.1 at the time of the bump),
+# and cargo refuses to build workspace crates whose `rust-version` floor
+# exceeds the active toolchain — the WASM Build (macos-latest) failure on
+# PR #3343. Every CI job that resolves its toolchain through this file
+# needs at least the MSRV, so the file must not float below it.
 [toolchain]
-channel = "stable"
+channel = "1.98.0"
 components = ["rustfmt", "clippy"]

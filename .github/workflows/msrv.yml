@@ -88,5 +88,11 @@ jobs:
             fluxion-cfd -> target
             fluxion-tauri -> target
 
+      # fluxion-tauri is excluded for the same reason every cargo invocation
+      # in rust-tests.yml excludes it: its `tauri::generate_context!()` panics
+      # unless `frontendDist` (`../frontend/dist`, a gitignored vite build
+      # artifact) exists, and this job never builds the frontend. Without the
+      # exclude the job only passes on a warm rust-cache (cold cache fails,
+      # e.g. develop run 33712530041).
       - name: cargo +1.98.0 build --workspace
-        run: cargo +1.98.0 build --workspace --locked
+        run: cargo +1.98.0 build --workspace --locked --exclude fluxion-tauri
