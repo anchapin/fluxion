@@ -93,7 +93,7 @@ fn azimuth_error(our_az: f64, ref_az: f64) -> f64 {
 fn test_reference_data_loads() {
     let reference = load_reference_data();
     assert_eq!(reference.len(), 8760, "Should have 8760 hours of data");
-    let (h, alt, az, zen) = &reference[0];
+    let (h, alt, _az, _zen) = &reference[0];
     assert_eq!(*h, 1);
     assert!(
         -75.0 < *alt && *alt < -70.0,

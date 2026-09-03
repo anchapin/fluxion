@@ -1,3 +1,16 @@
+# Pinned to the workspace MSRV (1.98.0, issue #3321) rather than floating
+# "stable": GitHub runner images preinstall a stable toolchain that rustup
+# will not refresh (macos-latest shipped 1.97.1 at the time of the bump),
+# and cargo refuses to build workspace crates whose `rust-version` floor
+# exceeds the active toolchain — the WASM Build (macos-latest) failure on
+# PR #3343. Every CI job that resolves its toolchain through this file
+# needs at least the MSRV, so the file must not float below it.
+#
+# No `components` list: rustup auto-syncs file-declared components on every
+# cargo invocation, and the ubuntu-latest image ships a preinstalled
+# 1.98.0 toolchain whose untracked `bin/cargo-fmt` makes that sync fail
+# with "detected conflict" (Build Python Wheels / PyO3 pytest on PR #3343).
+# CI jobs request clippy/rustfmt explicitly through setup-rust-env's
+# `components:` input instead, which does not take the channel-update path.
 [toolchain]
-channel = "stable"
-components = ["rustfmt", "clippy"]
+channel = "1.98.0"

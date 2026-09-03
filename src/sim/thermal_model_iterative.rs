@@ -1416,7 +1416,7 @@ mod tests {
     /// `calculate_free_float_temperature` matches the analytical 5R1C
     /// closed-form: T_free = (h_ms_is_prod·T_mass + term_rest_1·h_ext·T_ext
     /// + h_tr_floor·T_g) / den. We assert the function reproduces this
-    /// formula exactly (1e-9 tolerance) under zero-loads.
+    ///   formula exactly (1e-9 tolerance) under zero-loads.
     #[test]
     fn test_calculate_free_float_analytical_steady_state() {
         let mut model = ThermalModel::<VectorField>::new(1);

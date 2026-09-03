@@ -1477,8 +1477,7 @@ fn test_case_920_per_orientation_solar_distribution() {
             model.setpoints.heating_setpoint = hvac
                 .heating_setpoint_at_hour(hour)
                 .unwrap_or(hvac.heating_setpoint);
-            model.setpoints.cooling_setpoint =
-                model.setpoints.cooling_schedule.value((step % 24) as usize);
+            model.setpoints.cooling_setpoint = model.setpoints.cooling_schedule.value(step % 24);
         }
         model.step_physics(step, w.dry_bulb_temp, 3600.0);
     }
@@ -1655,7 +1654,7 @@ fn test_validate_case_920_integration() {
         result.pass_peak_cooling,
     ]
     .iter()
-    .all(|p| *p == true || *p == false);
+    .all(|p| *p || !*p);
     assert!(
         pass_flags_populated,
         "all four pass/fail flags must be populated (true or false)"
@@ -1752,7 +1751,7 @@ fn test_validate_case_950_integration() {
         result.pass_peak_cooling,
     ]
     .iter()
-    .all(|p| *p == true || *p == false);
+    .all(|p| *p || !*p);
     assert!(
         pass_flags_populated,
         "all four pass/fail flags must be populated (true or false)"

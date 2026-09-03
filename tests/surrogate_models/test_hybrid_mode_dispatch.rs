@@ -25,7 +25,6 @@
 
 use fluxion::ai::surrogate::SurrogateManager;
 use fluxion::sim::thermal_model::{HybridRouting, HybridThermalModel};
-use fluxion::sim::thermal_selector::ThermalSelector;
 use fluxion::validation::ashrae_140_cases::ASHRAE140Case;
 use fluxion::ThermalModelMode;
 use fluxion::ThermalModelTrait as _;
@@ -135,7 +134,7 @@ fn hybrid_default_policy_eui_matches_physics_within_2_percent() {
         // finite single- to low-double-digit kWh/m²/year values.
         let ratio = hybrid_eui.abs() / physics_eui.abs().max(1e-9);
         assert!(
-            ratio <= 2.0 && ratio >= 0.5,
+            (0.5..=2.0).contains(&ratio),
             "hybrid EUI {:.4} differs from physics baseline {:.4} by more than 2× \
              (ratio={:.2}); this should converge once the trained ONNX surrogate \
              (Issue #1367) replaces the analytical fallback",

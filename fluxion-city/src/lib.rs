@@ -1571,9 +1571,9 @@ mod tests {
         let surfaces = vec![(100.0, 10.0), (100.0, 10.0), (100.0, 10.0)];
         let f = nusselt::view_factor_enclosure(&surfaces).unwrap();
 
-        for i in 0..3 {
-            let row_sum: f64 = f[i].iter().sum();
-            nusselt::check_summation(f[i][i], row_sum - f[i][i]).unwrap();
+        for (i, row) in f.iter().enumerate() {
+            let row_sum: f64 = row.iter().sum();
+            nusselt::check_summation(row[i], row_sum - row[i]).unwrap();
         }
     }
 
@@ -1585,8 +1585,8 @@ mod tests {
         assert_eq!(f.len(), 2);
         assert_eq!(f[0].len(), 2);
 
-        for i in 0..2 {
-            let row_sum: f64 = f[i].iter().sum();
+        for row in &f {
+            let row_sum: f64 = row.iter().sum();
             assert!((row_sum - 1.0).abs() < 1e-10);
         }
     }
@@ -1639,8 +1639,8 @@ mod tests {
         let matrix = nusselt::compute_urban_canyon_view_factors(&walls, ground_area).unwrap();
         let dense = matrix.to_vec_vec();
 
-        for i in 0..dense.len() {
-            let row_sum: f64 = dense[i].iter().sum();
+        for (i, row) in dense.iter().enumerate() {
+            let row_sum: f64 = row.iter().sum();
             assert!(
                 (row_sum - 1.0).abs() < 1e-10,
                 "Urban canyon row {} sum = {}, expected 1.0",
@@ -1781,6 +1781,9 @@ mod tests {
     }
 
     impl BuildingConfig {
+        // `new` and `floor_area` are part of the deliberate energy-conservation
+        // test API from #2031; no test references them yet.
+        #[allow(dead_code)]
         pub fn new(
             length: f64,
             width: f64,
@@ -1811,6 +1814,7 @@ mod tests {
             self.length * self.width
         }
 
+        #[allow(dead_code)]
         pub fn floor_area(&self) -> f64 {
             self.length * self.width
         }

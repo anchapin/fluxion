@@ -1876,8 +1876,6 @@ mod tests {
 
     #[test]
     fn test_parse_data_line_with_various_missing_fields() {
-        use std::io::Cursor;
-
         // Missing optional fields (too few commas)
         let incomplete_lines = [
             "1991,1,1,1,0",    // missing most fields

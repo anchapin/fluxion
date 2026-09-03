@@ -4356,10 +4356,10 @@ mod tests {
 
     /// Issue #1346 AC: the validator must accept a `CaseSpec` with 6 m² east
     /// + 6 m² west glazing. This is the unit-level guard that the
-    /// `CaseSpec` produced by `ASHRAE140Case::Case920.spec()` carries the
-    /// geometry the validator is designed for. If the builder silently
-    /// changes the E/W window area in a future refactor, this test fails
-    /// before the validator runs against a wrong spec.
+    ///   `CaseSpec` produced by `ASHRAE140Case::Case920.spec()` carries the
+    ///   geometry the validator is designed for. If the builder silently
+    ///   changes the E/W window area in a future refactor, this test fails
+    ///   before the validator runs against a wrong spec.
     #[test]
     fn test_case_920_spec_has_6m2_east_and_west_windows() {
         let spec = ASHRAE140Case::Case920.spec();

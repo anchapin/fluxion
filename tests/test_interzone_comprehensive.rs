@@ -719,18 +719,18 @@ fn test_issue_1444_reciprocity_random_rectangles() {
         (8.0, 3.0, 4.0, 1.0, 0.0),
         (8.0, 3.0, 8.0, 1.0, 0.05),
     ];
-    for &(aL, aW, bL, bW, sep) in configs {
-        let (f_ab, f_ba) = hottels_rectangular_view_factor_pair(aL, aW, bL, bW, sep);
-        let a_a = aL * aW;
-        let a_b = bL * bW;
+    for &(a_l, a_w, b_l, b_w, sep) in configs {
+        let (f_ab, f_ba) = hottels_rectangular_view_factor_pair(a_l, a_w, b_l, b_w, sep);
+        let a_a = a_l * a_w;
+        let a_b = b_l * b_w;
         let residual = (f_ab * a_a - f_ba * a_b).abs();
         assert!(
             residual < RECIPROCITY_TOL_1444,
-            "reciprocity violated for ({aL}x{aW}, {bL}x{bW}, sep={sep}): \
+            "reciprocity violated for ({a_l}x{a_w}, {b_l}x{b_w}, sep={sep}): \
              F_AB={f_ab:.9e} F_BA={f_ba:.9e} residual={residual:.3e}"
         );
         // F_AB must be ≤ 1 (it's a directional view factor).
-        assert!(f_ab >= 0.0 && f_ab <= 1.0, "F_AB out of [0, 1]: {f_ab}");
+        assert!((0.0..=1.0).contains(&f_ab), "F_AB out of [0, 1]: {f_ab}");
         // F_BA is allowed to exceed 1 only when the receiving zone is smaller
         // (every ray from the small zone hits the larger zone).
         assert!(f_ba >= 0.0, "F_BA negative: {f_ba}");

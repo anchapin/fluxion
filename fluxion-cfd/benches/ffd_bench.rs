@@ -15,9 +15,10 @@
 //! cargo bench -p fluxion-cfd --bench ffd_bench
 //! ```
 
-use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion};
+use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion};
 use fluxion_cfd::cpu::{CpuAdvectSolver, CpuDiffuseSolver, CpuPoissonSolver};
 use fluxion_cfd::{FfdConfig, Field3d, Grid3d, VelocityField};
+use std::hint::black_box;
 
 /// Build the canonical 32³ FFD inputs once. Setup cost (allocation,
 /// initialization) is paid outside the `b.iter` loop so the criterion

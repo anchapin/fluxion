@@ -14,7 +14,6 @@ use fluxion::validation::empirical::{
     EmpiricalValidationResult, EmpiricalValidationStatus, MonitoredBuildingDatabase,
     MonitoredDataPoint, MonitoredDataSource,
 };
-use std::collections::HashMap;
 
 /// Create test monitored data points
 fn create_test_monitored_data(n: usize) -> Vec<MonitoredDataPoint> {
@@ -23,8 +22,12 @@ fn create_test_monitored_data(n: usize) -> Vec<MonitoredDataPoint> {
             hour,
             T_outdoor: 10.0 + (hour as f64 * 0.01).sin() * 15.0, // Varies through day
             T_zone: 22.0 + (hour as f64 * 0.01).sin() * 2.0,     // Zone stays roughly constant
-            Q_heat: if hour < 8 || hour > 18 { 5000.0 } else { 0.0 }, // Heating at night/morning
-            Q_cool: if hour >= 12 && hour <= 16 {
+            Q_heat: if !(8..=18).contains(&hour) {
+                5000.0
+            } else {
+                0.0
+            }, // Heating at night/morning
+            Q_cool: if (12..=16).contains(&hour) {
                 3000.0
             } else {
                 0.0

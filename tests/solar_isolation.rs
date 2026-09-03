@@ -714,9 +714,7 @@ fn test_per_tilt_sweep() {
     for &tilt in &tilt_set {
         let mut sum_calc = 0.0f64;
         let mut sum_ref = 0.0f64;
-        let mut sum_abs_dev = 0.0f64;
         let mut max_abs_dev = 0.0f64;
-        let mut n_compared = 0usize;
         let mut hours_over_1pct = 0usize;
 
         for (i, row) in weather.iter().enumerate() {
@@ -773,12 +771,8 @@ fn test_per_tilt_sweep() {
                 sum_calc += beam_calc;
                 sum_ref += beam_ref;
                 let dev = (beam_calc - beam_ref).abs();
-                if beam_ref > 1.0 {
-                    sum_abs_dev += dev;
-                    n_compared += 1;
-                    if dev / beam_ref * 100.0 > 1.0 {
-                        hours_over_1pct += 1;
-                    }
+                if beam_ref > 1.0 && dev / beam_ref * 100.0 > 1.0 {
+                    hours_over_1pct += 1;
                 }
                 if dev > max_abs_dev {
                     max_abs_dev = dev;
@@ -792,12 +786,8 @@ fn test_per_tilt_sweep() {
             sum_calc += beam_calc;
             sum_ref += beam_ref;
             let dev = (beam_calc - beam_ref).abs();
-            if beam_ref > 1.0 {
-                sum_abs_dev += dev;
-                n_compared += 1;
-                if dev / beam_ref * 100.0 > 1.0 {
-                    hours_over_1pct += 1;
-                }
+            if beam_ref > 1.0 && dev / beam_ref * 100.0 > 1.0 {
+                hours_over_1pct += 1;
             }
             if dev > max_abs_dev {
                 max_abs_dev = dev;

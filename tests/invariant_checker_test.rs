@@ -7,7 +7,6 @@
 //! The invariant checker detects violations by introducing artificial heat gains
 //! and verifying the energy balance responds accordingly.
 
-use fluxion::physics::cta::VectorField;
 use fluxion::sim::invariant_checker::{InvariantChecker, InvariantResult, DEFAULT_TOLERANCE};
 use fluxion::sim::thermal_model_core::ThermalModel;
 use fluxion::sim::thermal_selector::ThermalSelector;
@@ -34,7 +33,7 @@ fn test_invariant_checker_tracks_violations() {
     assert_eq!(checker.total_checks(), 0);
 
     let spec = ASHRAE140Case::Case600.spec();
-    let mut model = ThermalModel::from_spec_with_selector(&spec, &ThermalSelector::default())
+    let model = ThermalModel::from_spec_with_selector(&spec, &ThermalSelector::default())
         .expect("default selector must initialize");
     let outdoor_temp = 20.0;
 
@@ -261,14 +260,14 @@ fn test_different_zones_respond_differently_to_targeted_gain() {
     println!("Zone 1 imbalance: {}", zone_1_result.balance);
     println!("Zone 2 imbalance: {}", zone_2_result.balance);
 
-    let all_imbalances = vec![
+    let all_imbalances = [
         zone_0_result.balance.abs(),
         zone_1_result.balance.abs(),
         zone_2_result.balance.abs(),
     ];
 
     let max_imbalance = all_imbalances.iter().cloned().fold(0.0f64, f64::max);
-    let min_imbalance = all_imbalances.iter().cloned().fold(f64::MAX, f64::min);
+    let _min_imbalance = all_imbalances.iter().cloned().fold(f64::MAX, f64::min);
 
     assert!(
         max_imbalance > 0.0,

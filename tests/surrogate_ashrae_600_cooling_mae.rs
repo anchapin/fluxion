@@ -63,7 +63,6 @@
 
 use fluxion::ai::surrogate::SurrogateManager;
 use fluxion::sim::thermal_model::{SurrogateThermalModel, ThermalModelTrait};
-use fluxion::sim::thermal_selector::ThermalSelector;
 use fluxion::validation::ashrae_140_cases::ASHRAE140Case;
 use serde::Deserialize;
 use std::path::{Path, PathBuf};

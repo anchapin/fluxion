@@ -9,7 +9,6 @@
 //! Definition of done: No high-severity issue exists only as prose;
 //! every critical issue is machine-traceable.
 
-use fluxion::sim::thermal_selector::ThermalSelector;
 use fluxion::validation::report::{MetricType, ValidationStatus};
 use fluxion::validation::ASHRAE140Validator;
 

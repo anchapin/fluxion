@@ -1118,7 +1118,7 @@ fn test_performance_under_100ms() {
 /// Fin geometry:
 /// - fin_depth=1.0m, mounting_height=2.7m
 /// - fin_height = (sill + window_height) - mounting_height
-///              = (0.8 + 2.0) - 2.7 = 0.1m (bounded by mounting_height)
+///   = (0.8 + 2.0) - 2.7 = 0.1m (bounded by mounting_height)
 ///
 /// At 15° altitude, fin shadow width = 1.0 * tan(10°) ≈ 0.176m
 /// Fin shades: 0.176m * 0.1m ≈ 0.0176 m² → fraction ≈ 0.0029
@@ -1184,7 +1184,7 @@ fn test_ew_fins_low_angle_east() {
 /// Fin geometry:
 /// - fin_depth=1.0m, mounting_height=2.7m
 /// - fin_height = (sill + window_height) - mounting_height
-///              = (0.8 + 2.0) - 2.7 = 0.1m (bounded by mounting_height)
+///   = (0.8 + 2.0) - 2.7 = 0.1m (bounded by mounting_height)
 ///
 /// West fin shades when relative_azimuth < 0 (sun to the left of surface).
 ///

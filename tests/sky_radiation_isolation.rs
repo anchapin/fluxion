@@ -53,7 +53,7 @@ use fluxion::sim::sky_radiation::{
 #[test]
 fn test_sky_temperature_clear_sky() {
     let ambient: f64 = 20.0; // °C
-    let sky = SkyRadiationExchange::horizontal_roof();
+    let _sky = SkyRadiationExchange::horizontal_roof();
 
     // Estimate emissivity for clear sky (0% cloud cover, 50% RH)
     let emissivity = estimate_sky_emissivity(50.0, 0.0);
@@ -77,7 +77,7 @@ fn test_sky_temperature_clear_sky() {
 #[test]
 fn test_sky_temperature_overcast() {
     let ambient: f64 = 15.0; // °C
-    let sky = SkyRadiationExchange::horizontal_roof();
+    let _sky = SkyRadiationExchange::horizontal_roof();
 
     // Overcast: high emissivity (~0.9)
     let emissivity = estimate_sky_emissivity(80.0, 1.0);
@@ -804,7 +804,7 @@ fn test_clearness_index_bounds() {
 
     // Very high GHI clamped to 1.0
     let kt_high = calculate_clearness_index(9999.0, zenith_angle, SOLAR_CONSTANT);
-    assert!(kt_high <= 1.0 && kt_high >= 0.0);
+    assert!((0.0..=1.0).contains(&kt_high));
 
     // Zero GHI
     let kt_zero = calculate_clearness_index(0.0, zenith_angle, SOLAR_CONSTANT);

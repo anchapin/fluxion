@@ -504,7 +504,7 @@ mod tests {
         ems.add_sensor("zone_temp", EmsSensorType::ZoneTemperature(0));
         ems.add_actuator("heating", EmsActuatorType::HeatingSetpoint(0));
 
-        let mut heating_override = 20.0; // Default setpoint
+        let _heating_override = 20.0; // Default setpoint
 
         // Program that reduces heating setpoint by 2°C during demand response
         ems.add_program("demand_response", |runtime, _timestep| {
@@ -590,7 +590,7 @@ mod tests {
         // Create runtime
         let sensor_values = ems.sensor_values.clone();
         let mut actuator_values = HashMap::new();
-        let mut runtime = EmsRuntime::new(
+        let runtime = EmsRuntime::new(
             100, // timestep 100 = hour 4 of day 4
             &ems.global_variables,
             &sensor_values,

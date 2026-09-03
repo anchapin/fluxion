@@ -39,7 +39,7 @@ mod shipyard_bench {
                 },
                 Mass { value: 1.0 },
             ));
-            criterion::black_box(entity);
+            std::hint::black_box(entity);
         }
     }
 
@@ -71,7 +71,7 @@ mod shipyard_bench {
             let pos = positions.get(entity).unwrap();
             let vel = velocities.get(entity).unwrap();
             sum += pos.x * vel.dx + pos.y * vel.dy + pos.z * vel.dz;
-            criterion::black_box(sum);
+            std::hint::black_box(sum);
         }
     }
 
@@ -96,7 +96,7 @@ mod shipyard_bench {
             })
             .collect();
 
-        criterion::black_box(&ids);
+        std::hint::black_box(&ids);
 
         drop(ids);
     }
@@ -140,7 +140,7 @@ mod hecs_bench {
                 Mass { value: 1.0 },
             ));
         }
-        criterion::black_box(&world);
+        std::hint::black_box(&world);
     }
 
     pub fn archetype_iteration(count: usize) {
@@ -165,7 +165,7 @@ mod hecs_bench {
         let mut sum = 0.0;
         for (pos, vel) in world.query::<(&Position, &Velocity)>().iter() {
             sum += pos.x * vel.dx + pos.y * vel.dy + pos.z * vel.dz;
-            criterion::black_box(sum);
+            std::hint::black_box(sum);
         }
     }
 
@@ -190,7 +190,7 @@ mod hecs_bench {
             })
             .collect();
 
-        criterion::black_box(&ids);
+        std::hint::black_box(&ids);
 
         for id in ids {
             world.despawn(id).unwrap();
@@ -203,15 +203,15 @@ pub fn shipyard_benchmarks(c: &mut Criterion) {
     group.measurement_time(std::time::Duration::from_secs(3));
 
     group.bench_function("create_entities_10k", |b| {
-        b.iter(|| shipyard_bench::create_entities(criterion::black_box(10_000)));
+        b.iter(|| shipyard_bench::create_entities(std::hint::black_box(10_000)));
     });
 
     group.bench_function("archetype_iteration_10k", |b| {
-        b.iter(|| shipyard_bench::archetype_iteration(criterion::black_box(10_000)));
+        b.iter(|| shipyard_bench::archetype_iteration(std::hint::black_box(10_000)));
     });
 
     group.bench_function("insert_remove_10k", |b| {
-        b.iter(|| shipyard_bench::insert_and_remove(criterion::black_box(10_000)));
+        b.iter(|| shipyard_bench::insert_and_remove(std::hint::black_box(10_000)));
     });
 
     group.finish();
@@ -222,15 +222,15 @@ pub fn hecs_benchmarks(c: &mut Criterion) {
     group.measurement_time(std::time::Duration::from_secs(3));
 
     group.bench_function("create_entities_10k", |b| {
-        b.iter(|| hecs_bench::create_entities(criterion::black_box(10_000)));
+        b.iter(|| hecs_bench::create_entities(std::hint::black_box(10_000)));
     });
 
     group.bench_function("archetype_iteration_10k", |b| {
-        b.iter(|| hecs_bench::archetype_iteration(criterion::black_box(10_000)));
+        b.iter(|| hecs_bench::archetype_iteration(std::hint::black_box(10_000)));
     });
 
     group.bench_function("insert_remove_10k", |b| {
-        b.iter(|| hecs_bench::insert_and_remove(criterion::black_box(10_000)));
+        b.iter(|| hecs_bench::insert_and_remove(std::hint::black_box(10_000)));
     });
 
     group.finish();

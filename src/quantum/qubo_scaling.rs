@@ -461,7 +461,7 @@ mod tests {
     fn test_validate_ising_coupling_out_of_range() {
         let c = DwaveHardwareConstraints::advantage_system64();
         let mut ising = make_small_ising();
-        ising.j[1 * 4 + 2] = -5.0; // below j_min = -2.0
+        ising.j[4 + 2] = -5.0; // below j_min = -2.0
         let err = c.validate_ising(&ising);
         assert!(matches!(
             err,
@@ -504,7 +504,7 @@ mod tests {
     fn test_compute_scaling_factor_j_coupling_exceeds() {
         let c = DwaveHardwareConstraints::advantage_system64();
         let mut ising = make_small_ising();
-        ising.j[1 * 4 + 2] = 4.0; // 4/1 = 4.0
+        ising.j[4 + 2] = 4.0; // 4/1 = 4.0
         assert_eq!(c.compute_scaling_factor(&ising), Some(4.0));
     }
 
@@ -593,15 +593,15 @@ mod tests {
         let mut ising = make_small_ising();
         // Set a large off-diagonal coupling: J[0,1] = 5.0 (> j_max=1.0)
         // s = 5.0 / 1.0 = 5.0
-        ising.j[0 * 4 + 1] = 5.0;
-        ising.j[1 * 4 + 0] = 5.0;
+        ising.j[1] = 5.0;
+        ising.j[4] = 5.0;
         let result = ScalingResult::scale_ising_to_hardware(ising, &c).unwrap();
         assert!(matches!(
             result.strategy,
             ScalingStrategy::MinMaxScale { factor: f } if (f - 5.0).abs() < 1e-12
         ));
         // Coupling should now be 1.0
-        assert!((result.ising.j[0 * 4 + 1] - 1.0).abs() < 1e-12);
+        assert!((result.ising.j[1] - 1.0).abs() < 1e-12);
     }
 
     #[test]
@@ -632,8 +632,8 @@ mod tests {
             c: 0.0,
             num_variables: 4,
         };
-        ising.j[0 * 4 + 1] = 2.0;
-        ising.j[1 * 4 + 0] = 2.0;
+        ising.j[1] = 2.0;
+        ising.j[4] = 2.0;
 
         let result = ScalingResult::scale_ising_to_hardware(ising, &c).unwrap();
         // All spins are ±1

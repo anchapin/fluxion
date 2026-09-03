@@ -319,6 +319,6 @@ mod tests {
         // The R3F frontend renders levels[].spaces[].surfaces[].vertices[{x,y,z}]
         // and colors by zones[].space_ids — pin the nested paths it dereferences.
         assert!(json["levels"][0]["spaces"][0]["surfaces"][0]["vertices"][0]["x"].is_f64());
-        assert!(json["zones"].as_array().unwrap().len() >= 1);
+        assert!(!json["zones"].as_array().unwrap().is_empty());
     }
 }

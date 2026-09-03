@@ -321,7 +321,7 @@ fn test_lighting_load_follows_occupancy_schedule() {
     // Assert occupancy-driven peak is in the expected office band (per-area
     // units — `LightingModel.compute()` returns W/m²).
     assert!(
-        peak_day_occ >= PEAK_LIGHTING_W_PER_M2_MIN && peak_day_occ <= PEAK_LIGHTING_W_PER_M2_MAX,
+        (PEAK_LIGHTING_W_PER_M2_MIN..=PEAK_LIGHTING_W_PER_M2_MAX).contains(&peak_day_occ),
         "occupancy-driven peak {:.2} W/m² outside expected band [{:.2}, {:.2}]",
         peak_day_occ,
         PEAK_LIGHTING_W_PER_M2_MIN,
@@ -453,7 +453,7 @@ fn test_comfort_metrics_seven_day_pmv_window() {
     // mean here — instead we accept a deliberately loose band so this
     // regression test stays green across future comfort-model fixes.
     assert!(
-        mean_pmv >= -3.5 && mean_pmv <= 0.5,
+        (-3.5..=0.5).contains(&mean_pmv),
         "mean PMV {mean_pmv:.3} for diurnal cycle falls outside expected [-3.5, 0.5] envelope",
     );
 
@@ -616,8 +616,8 @@ fn test_moisture_humidity_seven_day_tracking() {
     let mean_pp = pp_samples.iter().sum::<f64>() / pp_samples.len() as f64;
 
     assert!(
-        mean_pp >= MEAN_LATENT_G_PER_H_PER_PERSON_MIN
-            && mean_pp <= MEAN_LATENT_G_PER_H_PER_PERSON_MAX,
+        (MEAN_LATENT_G_PER_H_PER_PERSON_MIN..=MEAN_LATENT_G_PER_H_PER_PERSON_MAX)
+            .contains(&mean_pp),
         "mean per-person latent mass {mean_pp:.1} g/h outside expected band \
          [{MEAN_LATENT_G_PER_H_PER_PERSON_MIN:.0}, {MEAN_LATENT_G_PER_H_PER_PERSON_MAX:.0}]",
     );
@@ -663,7 +663,7 @@ fn test_residential_sleeping_hours_over_seven_days() {
     }
 
     assert!(
-        sleeping >= RESIDENTIAL_SLEEPING_HOURS_MIN && sleeping <= RESIDENTIAL_SLEEPING_HOURS_MAX,
+        (RESIDENTIAL_SLEEPING_HOURS_MIN..=RESIDENTIAL_SLEEPING_HOURS_MAX).contains(&sleeping),
         "residential sleeping-hours {sleeping} outside expected band \
          [{RESIDENTIAL_SLEEPING_HOURS_MIN}, {RESIDENTIAL_SLEEPING_HOURS_MAX}]",
     );

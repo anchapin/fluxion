@@ -569,7 +569,7 @@ fn test_case_900ff_min_temperature_within_reference_range() {
     // cold-air pooling events that EnergyPlus resolves with finer node resolution.
     // Reference: [-6.40, -1.60]°C → Widened to [-12.0, -0.50]°C
     assert!(
-        min_temp >= -12.0 && min_temp <= -0.50,
+        (-12.0..=-0.50).contains(&min_temp),
         "Min temperature {:.2}°C outside widened range [-12.0, -0.50]°C (multi-node dampening vs EnergyPlus)",
         min_temp
     );

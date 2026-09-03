@@ -49,7 +49,6 @@ use fluxion::ai::surrogate::SurrogateManager;
 use fluxion::physics::five_r1c_solver::FiveR1CSolver;
 use fluxion::physics::solver_trait::HeatConductionSolver;
 use fluxion::sim::thermal_model::HybridThermalModel;
-use fluxion::sim::thermal_selector::ThermalSelector;
 use fluxion::sim::ventilation::{ConstantVentilation, VentilationSchedule};
 use fluxion::validation::ashrae_140_cases::ASHRAE140Case;
 use fluxion::ThermalModelTrait as _;

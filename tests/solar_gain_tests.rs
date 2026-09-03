@@ -25,6 +25,8 @@ struct EnergyPlusReference {
     zone_air_temp_c: Vec<f64>,
     heating_energy_wh: Vec<f64>,
     cooling_energy_wh: Vec<f64>,
+    // Parsed for JSON shape completeness; not yet consumed by an assertion.
+    #[allow(dead_code)]
     solar_rate_total_w: Vec<f64>,
 }
 

@@ -458,7 +458,7 @@ fn validate_results_csv(result_path: &std::path::Path) {
     let file = std::fs::File::open(result_path).expect("Failed to open results CSV");
     let reader = BufReader::new(file);
 
-    let lines: Vec<String> = reader.lines().filter_map(|l| l.ok()).collect();
+    let lines: Vec<String> = reader.lines().map_while(Result::ok).collect();
 
     assert!(lines.len() > 1, "Results CSV has no data rows");
 

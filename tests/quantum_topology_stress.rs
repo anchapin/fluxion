@@ -119,7 +119,8 @@ fn stress_20_zone_qubo_no_divergence_k8() {
     let cfg = QuboConfig::default(); // K=8, scale_max=50
 
     for (i, manifold) in zones.iter().enumerate() {
-        let qp = manifold_to_qubo(manifold, cfg).expect(&format!("zone {i} QUBO build failed"));
+        let qp = manifold_to_qubo(manifold, cfg)
+            .unwrap_or_else(|_| panic!("zone {i} QUBO build failed"));
 
         // Symmetry check.
         assert!(
@@ -160,7 +161,8 @@ fn stress_20_zone_qubo_no_divergence_k12() {
     };
 
     for (i, manifold) in zones.iter().enumerate() {
-        let qp = manifold_to_qubo(manifold, cfg).expect(&format!("zone {i} QUBO K=12 failed"));
+        let qp =
+            manifold_to_qubo(manifold, cfg).unwrap_or_else(|_| panic!("zone {i} QUBO K=12 failed"));
 
         for &v in qp.q_matrix() {
             assert!(v.is_finite(), "zone {i} K=12: non-finite entry {v}");
@@ -195,7 +197,7 @@ fn stress_20_zone_qubo_encoding_performance_k16() {
 
     for (i, manifold) in zones.iter().enumerate() {
         let start = Instant::now();
-        let qp = manifold_to_qubo(manifold, cfg).expect(&format!("zone {i} K=16 failed"));
+        let qp = manifold_to_qubo(manifold, cfg).unwrap_or_else(|_| panic!("zone {i} K=16 failed"));
         let elapsed = start.elapsed().as_micros() as f64;
         durations_us.push(elapsed);
 
@@ -234,8 +236,9 @@ fn stress_20_zone_qubo_full_energy_encoding() {
     let cfg = QuboConfig::default();
 
     for (i, manifold) in zones.iter().enumerate() {
-        let qp = manifold_to_qubo(manifold, cfg).expect(&format!("zone {i} QUBO build failed"));
-        let k = cfg.bits_per_node;
+        let qp = manifold_to_qubo(manifold, cfg)
+            .unwrap_or_else(|_| panic!("zone {i} QUBO build failed"));
+        let _k = cfg.bits_per_node;
 
         // Deterministic pseudo-random binary vector (LCG).
         let seed = (i as u64).wrapping_mul(6364136223846793005).wrapping_add(1);
@@ -270,7 +273,8 @@ fn stress_30_zone_qubo_no_divergence_k8() {
     let cfg = QuboConfig::default();
 
     for (i, manifold) in zones.iter().enumerate() {
-        let qp = manifold_to_qubo(manifold, cfg).expect(&format!("zone {i} QUBO build failed"));
+        let qp = manifold_to_qubo(manifold, cfg)
+            .unwrap_or_else(|_| panic!("zone {i} QUBO build failed"));
 
         for &v in qp.q_matrix() {
             assert!(v.is_finite(), "zone {i}: non-finite QUBO entry {v}");
@@ -303,7 +307,7 @@ fn stress_30_zone_qubo_encoding_performance_k8() {
 
     for (i, manifold) in zones.iter().enumerate() {
         let start = Instant::now();
-        let qp = manifold_to_qubo(manifold, cfg).expect(&format!("zone {i} failed"));
+        let qp = manifold_to_qubo(manifold, cfg).unwrap_or_else(|_| panic!("zone {i} failed"));
         let elapsed = start.elapsed().as_micros() as f64;
         durations_us.push(elapsed);
         assert!(qp.max_abs() > 0.0, "zone {i}: zero max_abs");
@@ -342,7 +346,7 @@ fn stress_20_zone_bit_width_sweep_k1_to_k16() {
 
         for (i, manifold) in zones.iter().enumerate() {
             let qp = manifold_to_qubo(manifold, cfg)
-                .expect(&format!("zone {i} K={k} QUBO build failed"));
+                .unwrap_or_else(|_| panic!("zone {i} K={k} QUBO build failed"));
 
             // N = MANIFOLD_DIM * K.
             assert_eq!(
@@ -380,7 +384,8 @@ fn stress_20_zone_qubo_to_ising_energy_consistency() {
     let cfg = QuboConfig::default();
 
     for (i, manifold) in zones.iter().enumerate() {
-        let qp = manifold_to_qubo(manifold, cfg).expect(&format!("zone {i} QUBO build failed"));
+        let qp = manifold_to_qubo(manifold, cfg)
+            .unwrap_or_else(|_| panic!("zone {i} QUBO build failed"));
         let ising = qp.to_ising();
 
         assert_eq!(ising.num_variables, qp.num_variables());
@@ -421,7 +426,8 @@ fn stress_20_zone_dwave_normalization_in_bounds() {
     let cfg = QuboConfig::default();
 
     for (i, manifold) in zones.iter().enumerate() {
-        let qp = manifold_to_qubo(manifold, cfg).expect(&format!("zone {i} QUBO build failed"));
+        let qp = manifold_to_qubo(manifold, cfg)
+            .unwrap_or_else(|_| panic!("zone {i} QUBO build failed"));
         let qn = qp.to_dwave_normalized();
 
         for (j, &v) in qn.iter().enumerate() {
@@ -430,7 +436,7 @@ fn stress_20_zone_dwave_normalization_in_bounds() {
                 "zone {i}: normalised Q[{j}] = {v} is not finite"
             );
             assert!(
-                v >= -1.0 && v <= 1.0,
+                (-1.0..=1.0).contains(&v),
                 "zone {i}: normalised Q[{j}] = {v} outside [-1, +1]"
             );
         }

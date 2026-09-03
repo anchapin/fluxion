@@ -676,7 +676,7 @@ mod tests {
     #[test]
     fn test_assert_within_bounds_panics_on_fail() {
         let result = std::panic::catch_unwind(|| {
-            assert_within_bounds(40000.0, 30000.0, 10.0, "energy test");
+            let _ = assert_within_bounds(40000.0, 30000.0, 10.0, "energy test");
         });
         assert!(result.is_err(), "should panic when outside band");
     }

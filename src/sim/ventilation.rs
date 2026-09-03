@@ -650,8 +650,7 @@ mod tests {
     use super::{
         ach_to_conductance, calculate_combined_infiltration_ach, calculate_stack_infiltration_ach,
         calculate_wind_infiltration_ach, h_tr_is_ach_multiplier, ConstantVentilation,
-        EarthTubeVentilation, ScheduledVentilation, VentilationSchedule,
-        WeatherDependentVentilation,
+        ScheduledVentilation, VentilationSchedule, WeatherDependentVentilation,
     };
     use fluxion_core::earth_tube::EarthTube;
 

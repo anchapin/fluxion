@@ -496,6 +496,20 @@ fn zero_coil_performance(leaving_air: MoistAirState) -> CoilPerformance {
     }
 }
 
+/// Helper trait for tests: override a deadband control into a cooling control
+/// at a given damper position. (Defined only in cfg(test).)
+#[cfg(test)]
+trait CoolingOverride {
+    fn cooling_override(self, damper_position: f64) -> Self;
+}
+
+#[cfg(test)]
+impl CoolingOverride for VavTerminalControl {
+    fn cooling_override(self, damper_position: f64) -> Self {
+        VavTerminalControl::cooling(damper_position)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1005,8 +1019,6 @@ mod tests {
     /// EnergyPlus reference documented in the issue.
     #[test]
     fn fan_power_matches_energyplus_reference_curve_issue_2465() {
-        use crate::sim::hvac::part_load_curves::PartLoadCurve;
-
         let terminal = test_terminal();
         let entering = entering_air(24.0, 50.0);
         let rho = entering.density_kg_per_m3;
@@ -1179,19 +1191,5 @@ mod tests {
             heating_perf.supply_air.dry_bulb_c
         );
         assert_eq!(heating_perf.cooling_total_capacity_w, 0.0);
-    }
-}
-
-/// Helper trait for tests: override a deadband control into a cooling control
-/// at a given damper position. (Defined only in cfg(test).)
-#[cfg(test)]
-trait CoolingOverride {
-    fn cooling_override(self, damper_position: f64) -> Self;
-}
-
-#[cfg(test)]
-impl CoolingOverride for VavTerminalControl {
-    fn cooling_override(self, damper_position: f64) -> Self {
-        VavTerminalControl::cooling(damper_position)
     }
 }

@@ -10,7 +10,7 @@ use crate::validation::ashrae140::WeatherData;
 use crate::validation::high_mass::test_cases::{
     create_high_mass_validation_cases, HighMassValidationCase,
 };
-use criterion::{black_box, criterion_group, criterion_main, Criterion};
+use criterion::{criterion_group, criterion_main, Criterion};
 use rayon::prelude::*;
 use std::time::Duration;
 
@@ -46,7 +46,7 @@ fn bench_single_validation(c: &mut Criterion) {
             let result = case
                 .execute()
                 .expect("Validation should execute successfully");
-            black_box(result);
+            std::hint::black_box(result);
         })
     });
 }
@@ -91,7 +91,7 @@ fn bench_thermal_mass_diagnostics(c: &mut Criterion) {
                 25.0, // Typical heat loss coefficient W/m²K
             );
             let report = diagnostics.analyze();
-            black_box(report);
+            std::hint::black_box(report);
         })
     });
 }
@@ -121,7 +121,7 @@ fn bench_construction_type_physics(c: &mut Criterion) {
 
             for ty in types.iter() {
                 let props = ty.thermal_mass_properties();
-                black_box(props);
+                std::hint::black_box(props);
             }
         })
     });
@@ -173,7 +173,7 @@ fn bench_parallel_validation(c: &mut Criterion) {
                         .expect("Validation should execute successfully")
                 })
                 .collect();
-            black_box(results);
+            std::hint::black_box(results);
         })
     });
 }
@@ -214,7 +214,7 @@ fn bench_performance_requirement(c: &mut Criterion) {
                     .expect("Validation should execute successfully");
                 // PERF-01: Verify execution completes within reasonable time
                 // The actual timestep performance would be measured internally
-                black_box(result);
+                std::hint::black_box(result);
             },
             criterion::BatchSize::SmallInput,
         )

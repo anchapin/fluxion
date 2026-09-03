@@ -587,6 +587,9 @@ mod tests {
     // Perez sky model F1/F2 coefficient boundary tests (Issue #1695)
     // =============================================================================
 
+    // Reference Perez clearness-bin edges; the tests below inline their own
+    // boundary values, so this table is kept as documentation.
+    #[allow(dead_code)]
     const SKY_CLEARNESS_BOUNDARIES: [f64; 8] = [0.0, 1.065, 1.23, 1.5, 1.95, 2.8, 4.5, 6.2];
 
     #[test]

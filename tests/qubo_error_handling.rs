@@ -231,8 +231,12 @@ fn test_overflow_detected_in_qubo_entries() {
 #[test]
 fn test_overflow_threshold_constant() {
     assert_eq!(OVERFLOW_THRESHOLD, 1e10);
-    assert!(ILL_CONDITIONED_THRESHOLD > 0.0);
-    assert!(DEFAULT_REGULARIZATION_ALPHA > 0.0);
+    const {
+        assert!(ILL_CONDITIONED_THRESHOLD > 0.0);
+    }
+    const {
+        assert!(DEFAULT_REGULARIZATION_ALPHA > 0.0);
+    }
 }
 
 #[test]

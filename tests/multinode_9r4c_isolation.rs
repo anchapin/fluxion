@@ -554,7 +554,7 @@ fn test_backward_euler_stability_168_steps_200mm_concrete() {
             h_int,
             h_ext,
         )
-        .expect(&format!("step {} must succeed", step_idx));
+        .unwrap_or_else(|_| panic!("step {} must succeed", step_idx));
 
         let flux_val = flux.to_value();
         assert!(
@@ -609,7 +609,7 @@ fn test_backward_euler_stability_168_steps_lightweight() {
             h_int,
             h_ext,
         )
-        .expect(&format!("step {} must succeed", step_idx));
+        .unwrap_or_else(|_| panic!("step {} must succeed", step_idx));
 
         let flux_val = flux.to_value();
         assert!(
@@ -641,7 +641,7 @@ fn test_backward_euler_stability_168_steps_insulated() {
             h_int,
             h_ext,
         )
-        .expect(&format!("step {} must succeed", step_idx));
+        .unwrap_or_else(|_| panic!("step {} must succeed", step_idx));
 
         let flux_val = flux.to_value();
         assert!(

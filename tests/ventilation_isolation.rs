@@ -12,7 +12,7 @@
 //! - Issue #1279 — dynamic h_tr_is forced-convection multiplier
 //! - EnergyPlus reference model: `tests/reference_data/ventilation/infiltration_denver.csv`
 //!   (constant 0.5 ACH schedule; volume = 129.6 m³; ρ = 1.2 kg/m³; cp = 1000 J/kg·K;
-//!    h_ve = 21.6 W/K)
+//!   h_ve = 21.6 W/K)
 //!
 //! # Companion Python verification
 //!

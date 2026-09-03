@@ -1133,7 +1133,7 @@ mod tests {
     fn test_zone_coupling_basic() {
         // Test that inter-zone coupling is properly stored
         let mut zone_a = GaugeZoneSolver::new(48.0, 2.7);
-        let mut zone_b = GaugeZoneSolver::new(36.0, 2.7);
+        let _zone_b = GaugeZoneSolver::new(36.0, 2.7);
 
         // Add coupling between zones (10m² shared wall, R=0.5 m²K/W)
         zone_a.add_zone_coupling(1, 10.0, 0.5).unwrap();

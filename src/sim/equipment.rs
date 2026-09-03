@@ -619,7 +619,7 @@ mod tests {
     fn test_it_equipment_load_standby_loss_when_server_off() {
         let it = ITEquipmentLoad::new("IT".to_string(), 10000.0, 0.90, 5.0, 1);
         let hour_off = 100;
-        let mut schedule_off = DailySchedule::constant(0.0);
+        let schedule_off = DailySchedule::constant(0.0);
         let it_with_off_schedule = it.with_schedule(schedule_off);
         let gain_when_off = it_with_off_schedule.total_sensible_gain(hour_off);
         assert!((gain_when_off - 5.0).abs() < 1e-10);
@@ -628,7 +628,7 @@ mod tests {
     #[test]
     fn test_it_equipment_load_standby_plus_ups_loss_when_server_off() {
         let it = ITEquipmentLoad::new("IT".to_string(), 10000.0, 0.90, 5.0, 1);
-        let mut schedule_off = DailySchedule::constant(0.0);
+        let schedule_off = DailySchedule::constant(0.0);
         let it_off = it.with_schedule(schedule_off);
         let gain = it_off.total_sensible_gain(0);
         let ups_loss_when_off = it_off.ups_loss_at_hour(0);

@@ -34,7 +34,6 @@
 
 use fluxion::ai::surrogate::SurrogateManager;
 use fluxion::sim::thermal_model::{HybridRouting, HybridThermalModel};
-use fluxion::sim::thermal_selector::ThermalSelector;
 use fluxion::validation::empirical::{
     get_ashrae_rp_sources, BuildingType, MonitoredDataPoint, MonitoredDataSource,
 };
@@ -84,7 +83,7 @@ fn synthesize_flexlab_measurements(timesteps: usize, seed: u64) -> Vec<Monitored
             + diurnal_amp_c * diurnal_phase.sin()
             + rng.sample(rand_distr::Normal::new(0.0, noise_sigma).unwrap());
 
-        let q_heat = if hour_of_day < 6 || hour_of_day > 20 {
+        let q_heat = if !(6..=20).contains(&hour_of_day) {
             1500.0 + rng.sample(rand_distr::Normal::new(0.0, noise_w).unwrap())
         } else {
             0.0

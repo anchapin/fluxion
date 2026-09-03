@@ -10,13 +10,19 @@
 // control profiler lifecycle explicitly in each test to avoid conflicts
 // when running multiple tests in the same process.
 
+#[cfg(feature = "dhat")]
 use fluxion::ai::surrogate::SurrogateManager;
+#[cfg(feature = "dhat")]
 use fluxion::physics::cta::VectorField;
+#[cfg(feature = "dhat")]
 use fluxion::sim::engine::ThermalModel;
+#[cfg(feature = "dhat")]
 use rand::rngs::StdRng;
+#[cfg(feature = "dhat")]
 use rand::{Rng, SeedableRng};
 
 /// Helper: create a simple 1-zone model with default parameters.
+#[cfg(feature = "dhat")]
 fn create_single_zone_model() -> ThermalModel<VectorField> {
     let mut model = ThermalModel::<VectorField>::new(1);
     // Set reasonable defaults

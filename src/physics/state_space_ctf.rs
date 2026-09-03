@@ -2390,7 +2390,7 @@ mod tests {
     #[test]
     fn test_nodes_per_layer() {
         let concrete = CTFMaterial::new("Concrete", 0.200, 1.73, 2243.0, 837.0);
-        let nodes = compute_nodes_per_layer(&[concrete.clone()], 3600.0);
+        let nodes = compute_nodes_per_layer(std::slice::from_ref(&concrete), 3600.0);
         assert!(nodes[0] >= MIN_NODES && nodes[0] <= MAX_NODES);
         eprintln!("Concrete 200mm: {} nodes", nodes[0]);
     }
@@ -2400,7 +2400,7 @@ mod tests {
         let concrete = CTFMaterial::new("Concrete", 0.200, 1.73, 2243.0, 837.0);
 
         // First verify steady-state DC gain of the state-space model
-        let layers = &[concrete.clone()];
+        let layers = std::slice::from_ref(&concrete);
         let nodes_per_layer = compute_nodes_per_layer(layers, 3600.0);
         let n: usize = nodes_per_layer.iter().sum();
         let (a_mat, b_mat, c_mat, d_mat) = build_state_space_matrices(layers, &nodes_per_layer, n);
@@ -2540,7 +2540,8 @@ mod tests {
     // ========================================================================
     #[test]
     fn test_capavg_matches_eplus_formula() {
-        let layer_pairs: Vec<((f64, f64, f64, f64), (f64, f64, f64, f64))> = vec![
+        type LayerPair = ((f64, f64, f64, f64), (f64, f64, f64, f64));
+        let layer_pairs: Vec<LayerPair> = vec![
             // (k, dx, rho, cp) for layer 1 and layer 2
             // Case 600: Concrete -> Insulation
             (
@@ -4019,7 +4020,8 @@ mod debug_new_expm_tests {
                 let layer = CTFMaterial::new("RandomLayer", thickness, k, rho, cp);
                 let timestep = 3600.0;
 
-                let nodes_per_layer = compute_nodes_per_layer(&[layer.clone()], timestep);
+                let nodes_per_layer =
+                    compute_nodes_per_layer(std::slice::from_ref(&layer), timestep);
                 let n: usize = nodes_per_layer.iter().sum();
                 // Skip pathological discretisations (n=0 or extremely large)
                 if !(n > 0 && n <= 128) {
@@ -4037,12 +4039,12 @@ mod debug_new_expm_tests {
                     layer.thickness
                 };
                 let cfl = alpha * timestep / (dx * dx);
-                if !(cfl < 10.0) {
+                if cfl.partial_cmp(&10.0) != Some(std::cmp::Ordering::Less) {
                     return Ok(());
                 }
 
                 let result = std::panic::catch_unwind(|| {
-                    compute_state_space_ctf(&[layer.clone()], timestep)
+                    compute_state_space_ctf(std::slice::from_ref(&layer), timestep)
                 });
 
                 prop_assert!(
@@ -4121,7 +4123,8 @@ mod debug_new_expm_tests {
                 let layer = CTFMaterial::new("WallLayer", thickness, k, rho, cp);
                 let timestep = 3600.0;
 
-                let nodes_per_layer = compute_nodes_per_layer(&[layer.clone()], timestep);
+                let nodes_per_layer =
+                    compute_nodes_per_layer(std::slice::from_ref(&layer), timestep);
                 let n: usize = nodes_per_layer.iter().sum();
                 if n == 0 {
                     return Ok(());
@@ -4129,7 +4132,7 @@ mod debug_new_expm_tests {
 
                 // Build state-space matrices (validates geometry computation)
                 let (_a, _b, _c, _d) =
-                    build_state_space_matrices(&[layer.clone()], &nodes_per_layer, n);
+                    build_state_space_matrices(std::slice::from_ref(&layer), &nodes_per_layer, n);
 
                 // Verify: sum of cell lengths = total wall thickness
                 let dx = if n > 1 {
@@ -4172,7 +4175,8 @@ mod debug_new_expm_tests {
                 let layer = CTFMaterial::new("ThermalMassLayer", thickness, k, rho, cp);
                 let timestep = 3600.0;
 
-                let nodes_per_layer = compute_nodes_per_layer(&[layer.clone()], timestep);
+                let nodes_per_layer =
+                    compute_nodes_per_layer(std::slice::from_ref(&layer), timestep);
                 let n: usize = nodes_per_layer.iter().sum();
                 if n == 0 {
                     return Ok(());

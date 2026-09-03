@@ -34,6 +34,8 @@ const MONTH_NAMES: [&str; 12] = [
 ];
 
 /// Days in each month (non-leap year)
+// Kept for the monthly rollup follow-up comparisons.
+#[allow(dead_code)]
 const MONTH_DAYS: [u32; 12] = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
 
 /// Monthly statistics for comparison

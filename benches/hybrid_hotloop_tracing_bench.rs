@@ -58,7 +58,7 @@ where
 /// Shared counter read by the bench closures to verify, per iteration, that:
 ///   * `info!` events really are recorded (count == pop × steps), and
 ///   * `trace!` events really are filtered (count == 0).
-/// The asserts turn this into a functional regression guard as well.
+///     The asserts turn this into a functional regression guard as well.
 static RECORDED_EVENTS: AtomicU64 = AtomicU64::new(0);
 
 /// Install a production-realistic subscriber once for the whole bench process:
@@ -131,18 +131,17 @@ fn bench_hybrid_hotloop_tracing(c: &mut Criterion) {
     group.sample_size(10);
     group.measurement_time(std::time::Duration::from_secs(6));
 
-    for &population in &[1000_usize] {
-        group.bench_with_input(
-            BenchmarkId::new("info_baseline", population),
-            &population,
-            |b, &pop| b.iter(|| hot_loop_info(pop)),
-        );
-        group.bench_with_input(
-            BenchmarkId::new("trace_migrated", population),
-            &population,
-            |b, &pop| b.iter(|| hot_loop_trace(pop)),
-        );
-    }
+    let population = 1000_usize;
+    group.bench_with_input(
+        BenchmarkId::new("info_baseline", population),
+        &population,
+        |b, &pop| b.iter(|| hot_loop_info(pop)),
+    );
+    group.bench_with_input(
+        BenchmarkId::new("trace_migrated", population),
+        &population,
+        |b, &pop| b.iter(|| hot_loop_trace(pop)),
+    );
 
     group.finish();
 }

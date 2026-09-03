@@ -64,9 +64,9 @@
 //! 24-hour analytical fixture (labeled SYNTHETIC in its header) — it is
 //! computed directly from the Case 900 envelope geometry (sol-air translation
 //! + linear Fourier conduction), NOT from an EnergyPlus run. This is
-//! acceptable for a **shadow-mode validation harness** because the `GaugeSolver`
-//! is a *geometric* solver whose job is to reproduce the sol-air → wall-flux
-//! mapping that any linear-elastic envelope model would compute identically.
+//!   acceptable for a **shadow-mode validation harness** because the `GaugeSolver`
+//!   is a *geometric* solver whose job is to reproduce the sol-air → wall-flux
+//!   mapping that any linear-elastic envelope model would compute identically.
 //!
 //! When a real EnergyPlus Case 900 hourly CSV becomes available (the existing
 //! `tests/reference_data/zone_balance/case_900_energy_reference.csv` carries
@@ -427,8 +427,8 @@ fn test_case_900_gauge_solver_shadow_diurnal_response() {
             sa.partial_cmp(&sb).unwrap_or(std::cmp::Ordering::Equal)
         })
         .expect("at least one sol-air sample");
-    let phase_lag_h = ((peak_flux_hour as i32 - peak_sol_air_hour as i32).abs() as usize)
-        .min(24 - (peak_flux_hour as i32 - peak_sol_air_hour as i32).abs() as usize);
+    let phase_lag_h = ((peak_flux_hour as i32 - peak_sol_air_hour as i32).unsigned_abs() as usize)
+        .min(24 - (peak_flux_hour as i32 - peak_sol_air_hour as i32).unsigned_abs() as usize);
     assert!(
         phase_lag_h <= 2,
         "Phase lag {phase_lag_h} h exceeds the 2 h bound \
@@ -508,7 +508,9 @@ fn test_case_900_gauge_solver_shadow_does_not_clamp_extreme_solar() {
 /// shadow path records side-by-side diagnostics but does NOT perturb the
 /// primary conduction flow. Any drift here would indicate a bug in the gauge
 /// boundary-condition translation (`effective_exterior_temperature`).
+// Deliberately exercises the deprecated `gauge_shadow` shadow-mode config.
 #[test]
+#[allow(deprecated)]
 fn test_case_900_gauge_shadow_matches_baseline_in_steady_state() {
     let wall = case_900_wall();
     let t_int_val = 20.0;
@@ -587,7 +589,9 @@ fn test_case_900_gauge_shadow_matches_baseline_in_steady_state() {
 /// exercises the **adapter-recorded** gauge_connection (which is the per-call
 /// translation) — not the manifold's `gauge_connection_sum()` directly, because
 /// `PhysicsAdapter` records the raw translated vector.
+// Deliberately exercises the deprecated `gauge_shadow` shadow-mode config.
 #[test]
+#[allow(deprecated)]
 fn test_case_900_gauge_shadow_records_translated_boundary_correctly() {
     let wall = case_900_wall();
     let mut adapter = PhysicsAdapter::new(PhysicsAdapterConfig::gauge_shadow());

@@ -3416,9 +3416,9 @@ mod tests {
 
         // Acceptance (a): the four ASHRAE 140 band flags are all `Some(true)`.
         for (i, (val, lo, hi)) in flags.iter().enumerate() {
-            let val_f = *val as f64;
-            let lo_f = *lo as f64;
-            let hi_f = *hi as f64;
+            let val_f = *val;
+            let lo_f = *lo;
+            let hi_f = *hi;
             let mid = (lo_f + hi_f) / 2.0_f64;
             assert!(
                 (val_f - mid).abs() < 1e-9_f64,

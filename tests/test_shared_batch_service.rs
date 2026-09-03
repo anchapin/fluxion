@@ -180,8 +180,8 @@ fn test_multi_worker_throughput_scales_with_num_workers() {
     let single_dur = drive_workload_measure(&single, THROUGHPUT_N);
     let multi_dur = drive_workload_measure(&multi, THROUGHPUT_N);
 
-    let single_ns = single_dur.as_nanos() as u128;
-    let multi_ns = multi_dur.as_nanos() as u128;
+    let single_ns = single_dur.as_nanos();
+    let multi_ns = multi_dur.as_nanos();
 
     // Lower bound on multi-worker throughput: at least 1.25× the single-worker
     // throughput. Allow generous slack (multi_ns must be <= 80% of single_ns).

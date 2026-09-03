@@ -803,6 +803,8 @@ mod tests {
     /// airflow and reheat but with a 0.050 kg_water/s adiabatic humidifier —
     /// well above the ≈ 4.16e-3 kg/s required for −10 °C / 20 % RH outdoor air
     /// targeting a 10 °C dew-point.
+    // Kept for the follow-up humidifier-path coverage (Issue #2464).
+    #[allow(dead_code)]
     fn test_doas_with_humidifier() -> DoasUnit {
         let cooling = CoolingCoil::new("CC-DOAS".to_string(), 150_000.0, 0.50, 0.10, 10.0, 1.8);
         let reheat = HeatingCoilComponent::new("HC-DOAS".to_string(), 35_000.0, 1.8);

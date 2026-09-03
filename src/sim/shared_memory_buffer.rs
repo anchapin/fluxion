@@ -1040,7 +1040,7 @@ mod tests {
 
     #[test]
     fn test_shared_mem_manager() {
-        let mut manager = SharedMemManager::new();
+        let manager = SharedMemManager::new();
         // Manager should start empty
         assert!(manager.buffers.is_empty());
     }

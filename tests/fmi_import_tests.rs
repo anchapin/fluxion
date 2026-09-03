@@ -54,9 +54,11 @@ fn import_fmu_preserves_metadata_and_timestep() {
     let tmp = tempfile::tempdir().expect("tempdir");
     let out = tmp.path().join("ts600.fmu");
 
-    let mut cfg = FmiConfig::default();
-    cfg.communication_timestep = 600.0;
-    cfg.model_name = "RoundTripModel".to_string();
+    let cfg = FmiConfig {
+        communication_timestep: 600.0,
+        model_name: "RoundTripModel".to_string(),
+        ..Default::default()
+    };
     FmiExporter::with_config(cfg)
         .unwrap()
         .export_fmu(&out)
@@ -90,8 +92,7 @@ fn reimport_round_trip_matches_direct_model_within_tolerance() {
     let mut master = FmuCoSimulationMaster::from_imported(fmu);
 
     let mut max_rel_err = 0.0_f64;
-    for t in 0..n_steps {
-        let outdoor_k = weather[t];
+    for (t, &outdoor_k) in weather.iter().enumerate().take(n_steps) {
         let outdoor_c = outdoor_k - 273.15;
 
         direct.step_physics(t, outdoor_c, dt);

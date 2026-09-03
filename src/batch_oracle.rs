@@ -450,10 +450,6 @@ impl BatchOracle {
 
 #[cfg(test)]
 mod tests {
-    use crate::ai::surrogate::SurrogateManager;
-    use crate::physics::cta::VectorField;
-    use crate::sim::engine::ThermalModel;
-
     #[cfg(feature = "python-bindings")]
     use crate::BatchOracle;
 

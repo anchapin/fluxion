@@ -115,7 +115,7 @@ impl ThermalStateObserver {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use fluxion_core::multi_node::{MultiNodeThermalMass, ThermalMassNode};
+    use fluxion_core::multi_node::ThermalMassNode;
 
     fn create_test_solver() -> MultiNodeSolver {
         let wall = ThermalMassNode::new(15.0, 50000.0, 5.0, 2.0);

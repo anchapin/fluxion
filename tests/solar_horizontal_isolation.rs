@@ -39,6 +39,8 @@ const DENVER_LAT: f64 = 39.74;
 const DENVER_LON: f64 = -105.18;
 
 const TOLERANCE_PCT: f64 = 1.0;
+// Kept for the ground-reflection comparison follow-up.
+#[allow(dead_code)]
 const GROUND_MIN_FOR_COMPARE: f64 = 1.0;
 
 fn epw_hour_to_date(epw_hour: usize) -> (i32, u32, u32, f64) {
@@ -94,6 +96,8 @@ struct RoofIrradianceRow {
     ground_diffuse: f64,
     total: f64,
     solar_zenith: f64,
+    // Parsed for CSV schema completeness; not yet asserted.
+    #[allow(dead_code)]
     solar_altitude: f64,
 }
 
@@ -256,7 +260,7 @@ fn test_roof_solar_gain_ratio_to_vertical() {
     const SUMMER_SOLSTICE_HOUR: usize = 12;
 
     let epw_hour = (SUMMER_SOLSTICE_DOY - 1) * 24 + SUMMER_SOLSTICE_HOUR + 1;
-    let row = &roof_ref[epw_hour - 1];
+    let _row = &roof_ref[epw_hour - 1];
     let w = &weather[epw_hour - 1];
 
     let (year, month, day, hour) = epw_hour_to_date(epw_hour);
@@ -314,7 +318,7 @@ fn test_roof_solar_gain_ratio_to_vertical() {
     println!(" vertical wall gets beam at oblique angle + partial sky diffuse + partial ground)");
 
     assert!(
-        ratio >= 0.8 && ratio <= 2.5,
+        (0.8..=2.5).contains(&ratio),
         "Roof/vertical ratio {:.2} outside expected range [0.8, 2.5]",
         ratio
     );

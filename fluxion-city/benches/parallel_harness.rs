@@ -3,7 +3,7 @@
 //! Measures throughput (buildings/sec), compares sequential vs parallel,
 //! and reports speedup ratio using the criterion crate.
 
-use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion};
+use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion};
 use std::time::{Duration, Instant};
 
 use fluxion_city::{BuildingGroup, UrbanRadiationSystem, UrbanStepDispatcher};
@@ -56,10 +56,10 @@ fn run_sequential_benchmark(c: &mut Criterion, group_name: &str, building_counts
             let mut buildings = make_buildings(n);
             b.iter(|| {
                 step_sequential(
-                    black_box(&mut buildings),
-                    black_box(&dt),
-                    black_box(&radiation),
-                    black_box(outdoor_temp),
+                    std::hint::black_box(&mut buildings),
+                    std::hint::black_box(&dt),
+                    std::hint::black_box(&radiation),
+                    std::hint::black_box(outdoor_temp),
                 );
             });
         });
@@ -83,10 +83,10 @@ fn run_parallel_benchmark(c: &mut Criterion, group_name: &str, building_counts: 
             let mut dispatcher = UrbanStepDispatcher::with_buildings(buildings);
             b.iter(|| {
                 step_parallel(
-                    black_box(&mut dispatcher),
-                    black_box(&dt),
-                    black_box(&radiation),
-                    black_box(outdoor_temp),
+                    std::hint::black_box(&mut dispatcher),
+                    std::hint::black_box(&dt),
+                    std::hint::black_box(&radiation),
+                    std::hint::black_box(outdoor_temp),
                 );
             });
         });
@@ -113,10 +113,10 @@ fn run_throughput_benchmark(c: &mut Criterion, building_counts: &[usize]) {
                 for _ in 0..iters {
                     let start = Instant::now();
                     step_parallel(
-                        black_box(&mut dispatcher),
-                        black_box(&dt),
-                        black_box(&radiation),
-                        black_box(outdoor_temp),
+                        std::hint::black_box(&mut dispatcher),
+                        std::hint::black_box(&dt),
+                        std::hint::black_box(&radiation),
+                        std::hint::black_box(outdoor_temp),
                     );
                     total_ms += start.elapsed().as_millis();
                 }
@@ -147,24 +147,24 @@ fn run_speedup_benchmark(c: &mut Criterion, building_counts: &[usize]) {
                 let mut buildings = make_buildings(n);
                 let start_seq = Instant::now();
                 step_sequential(
-                    black_box(&mut buildings),
-                    black_box(&dt),
-                    black_box(&radiation),
-                    black_box(outdoor_temp),
+                    std::hint::black_box(&mut buildings),
+                    std::hint::black_box(&dt),
+                    std::hint::black_box(&radiation),
+                    std::hint::black_box(outdoor_temp),
                 );
                 let time_seq = start_seq.elapsed().as_millis() as f64;
 
                 let start_par = Instant::now();
                 step_parallel(
-                    black_box(&mut dispatcher),
-                    black_box(&dt),
-                    black_box(&radiation),
-                    black_box(outdoor_temp),
+                    std::hint::black_box(&mut dispatcher),
+                    std::hint::black_box(&dt),
+                    std::hint::black_box(&radiation),
+                    std::hint::black_box(outdoor_temp),
                 );
                 let time_par = start_par.elapsed().as_millis() as f64;
 
                 let speedup = time_seq / time_par;
-                black_box(speedup)
+                std::hint::black_box(speedup)
             });
         });
     }

@@ -72,7 +72,7 @@ fn ukf_covariance_stable_over_1000_steps() {
     let mut min_trace: f64 = f64::INFINITY;
 
     for step in 0..N_STEPS {
-        ukf.predict(&vec![0.0])
+        ukf.predict(&[0.0])
             .unwrap_or_else(|e| panic!("predict failed at step {step}: {e}"));
         ukf.update(&vec![1.0])
             .unwrap_or_else(|e| panic!("update failed at step {step}: {e}"));
@@ -143,7 +143,7 @@ fn ukf_covariance_stable_with_tiny_process_noise() {
     ukf.process_noise = DMatrix::from_diagonal(&DVector::from_vec(vec![1.0e-6, 1.0e-6]));
 
     for _ in 0..N_STEPS {
-        ukf.predict(&vec![0.0]).unwrap();
+        ukf.predict(&[0.0]).unwrap();
         ukf.update(&vec![1.0]).unwrap();
     }
 
@@ -167,7 +167,7 @@ fn ukf_measured_state_covariance_converges() {
 
     // Warm-up: 200 steps so the filter reaches steady state.
     for _ in 0..200 {
-        ukf.predict(&vec![0.0]).unwrap();
+        ukf.predict(&[0.0]).unwrap();
         ukf.update(&vec![1.0]).unwrap();
     }
 
@@ -176,7 +176,7 @@ fn ukf_measured_state_covariance_converges() {
     // Continue for 800 more steps and verify the measured-state variance
     // does not grow and is well below the initial value of 1.0.
     for _ in 0..800 {
-        ukf.predict(&vec![0.0]).unwrap();
+        ukf.predict(&[0.0]).unwrap();
         ukf.update(&vec![1.0]).unwrap();
     }
 

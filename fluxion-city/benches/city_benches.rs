@@ -1,4 +1,4 @@
-use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion};
+use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion};
 use fluxion_city::{
     ashrae140,
     nusselt::{self, ViewFactorMatrix},
@@ -50,8 +50,8 @@ fn benchmark_view_factor_enclosure(c: &mut Criterion) {
     for n in [3, 5, 10, 20, 50].iter() {
         let surfaces = create_rectangular_enclosure(*n);
 
-        group.bench_with_input(BenchmarkId::from_parameter(n), n, |b, &n| {
-            b.iter(|| nusselt::view_factor_enclosure(black_box(&surfaces)).unwrap());
+        group.bench_with_input(BenchmarkId::from_parameter(n), n, |b, _n| {
+            b.iter(|| nusselt::view_factor_enclosure(std::hint::black_box(&surfaces)).unwrap());
         });
     }
 
@@ -64,11 +64,11 @@ fn benchmark_urban_canyon_view_factors(c: &mut Criterion) {
     for n in [5, 10, 20, 50, 100].iter() {
         let (walls, ground_area) = create_urban_canyon_surfaces(*n);
 
-        group.bench_with_input(BenchmarkId::from_parameter(n), n, |b, &n| {
+        group.bench_with_input(BenchmarkId::from_parameter(n), n, |b, _n| {
             b.iter(|| {
                 nusselt::compute_urban_canyon_view_factors(
-                    black_box(&walls),
-                    black_box(ground_area),
+                    std::hint::black_box(&walls),
+                    std::hint::black_box(ground_area),
                 )
                 .unwrap()
             });
@@ -84,9 +84,13 @@ fn benchmark_sparse_matrix_creation(c: &mut Criterion) {
     for n in [5, 10, 20, 50, 100].iter() {
         let (walls, ground_area) = create_urban_canyon_surfaces(*n);
 
-        group.bench_with_input(BenchmarkId::from_parameter(n), n, |b, &n| {
+        group.bench_with_input(BenchmarkId::from_parameter(n), n, |b, _n| {
             b.iter(|| {
-                create_sparse_from_urban_canyon(black_box(&walls), black_box(ground_area)).unwrap()
+                create_sparse_from_urban_canyon(
+                    std::hint::black_box(&walls),
+                    std::hint::black_box(ground_area),
+                )
+                .unwrap()
             });
         });
     }
@@ -102,8 +106,8 @@ fn benchmark_sparse_matrix_multiplication(c: &mut Criterion) {
         let sparse = create_sparse_from_urban_canyon(&walls, ground_area).unwrap();
         let vec: Vec<f64> = vec![1.0; n + 1];
 
-        group.bench_with_input(BenchmarkId::from_parameter(n), n, |b, &n| {
-            b.iter(|| sparse.multiply_dense(black_box(&vec)));
+        group.bench_with_input(BenchmarkId::from_parameter(n), n, |b, _n| {
+            b.iter(|| sparse.multiply_dense(std::hint::black_box(&vec)));
         });
     }
 
@@ -129,8 +133,8 @@ fn benchmark_radiation_solver(c: &mut Criterion) {
                 .unwrap();
         let temperatures: Vec<f64> = vec![293.15; walls.len() + 1];
 
-        group.bench_with_input(BenchmarkId::from_parameter(n), n, |b, &n| {
-            b.iter(|| solver.compute_radiation_exchange(black_box(&temperatures)));
+        group.bench_with_input(BenchmarkId::from_parameter(n), n, |b, _n| {
+            b.iter(|| solver.compute_radiation_exchange(std::hint::black_box(&temperatures)));
         });
     }
 
@@ -146,8 +150,8 @@ fn benchmark_reciprocity_verification(c: &mut Criterion) {
         let matrix = ViewFactorMatrix::from_dense(f);
         let areas: Vec<f64> = surfaces.iter().map(|(a, _)| *a).collect();
 
-        group.bench_with_input(BenchmarkId::from_parameter(n), n, |b, &n| {
-            b.iter(|| matrix.verify_reciprocity(black_box(&areas)));
+        group.bench_with_input(BenchmarkId::from_parameter(n), n, |b, _n| {
+            b.iter(|| matrix.verify_reciprocity(std::hint::black_box(&areas)));
         });
     }
 
@@ -162,7 +166,7 @@ fn benchmark_summation_verification(c: &mut Criterion) {
         let f = nusselt::view_factor_enclosure(&surfaces).unwrap();
         let matrix = ViewFactorMatrix::from_dense(f);
 
-        group.bench_with_input(BenchmarkId::from_parameter(n), n, |b, &n| {
+        group.bench_with_input(BenchmarkId::from_parameter(n), n, |b, _n| {
             b.iter(|| matrix.verify_summation());
         });
     }
@@ -177,7 +181,7 @@ fn benchmark_ashrae140_cases(c: &mut Criterion) {
 
     for case in cases {
         group.bench_function(case.name.clone(), |b| {
-            b.iter(|| fluxion_city::verify_ashrae_case(black_box(&case)).unwrap());
+            b.iter(|| fluxion_city::verify_ashrae_case(std::hint::black_box(&case)).unwrap());
         });
     }
 
@@ -192,17 +196,23 @@ fn benchmark_100_surface_urban_canopy(c: &mut Criterion) {
 
     group.bench_function("full_pipeline", |b| {
         b.iter(|| {
-            let sparse =
-                create_sparse_from_urban_canyon(black_box(&walls), black_box(ground_area)).unwrap();
+            let sparse = create_sparse_from_urban_canyon(
+                std::hint::black_box(&walls),
+                std::hint::black_box(ground_area),
+            )
+            .unwrap();
             let vec: Vec<f64> = vec![1.0; n + 1];
-            sparse.multiply_dense(black_box(&vec))
+            sparse.multiply_dense(std::hint::black_box(&vec))
         });
     });
 
     group.bench_function("view_factors_only", |b| {
         b.iter(|| {
-            nusselt::compute_urban_canyon_view_factors(black_box(&walls), black_box(ground_area))
-                .unwrap()
+            nusselt::compute_urban_canyon_view_factors(
+                std::hint::black_box(&walls),
+                std::hint::black_box(ground_area),
+            )
+            .unwrap()
         });
     });
 
@@ -221,12 +231,12 @@ fn benchmark_faer_sparse_vs_hashmap(c: &mut Criterion) {
 
         // HashMap-based per-pair aggregation (reference path).
         group.bench_with_input(BenchmarkId::new("hashmap_net_flux", n), n, |b, _| {
-            b.iter(|| solver.compute_net_flux_per_surface(black_box(&temps)));
+            b.iter(|| solver.compute_net_flux_per_surface(std::hint::black_box(&temps)));
         });
 
         // faer sparse CSC matvec path.
         group.bench_with_input(BenchmarkId::new("faer_net_flux", n), n, |b, _| {
-            b.iter(|| solver.compute_net_flux_per_surface_faer(black_box(&temps)));
+            b.iter(|| solver.compute_net_flux_per_surface_faer(std::hint::black_box(&temps)));
         });
     }
 
@@ -262,7 +272,11 @@ fn benchmark_faer_sparse_matvec(c: &mut Criterion) {
 
         // HashMap matvec.
         group.bench_with_input(BenchmarkId::new("hashmap_matvec", n), n, |b, _| {
-            b.iter(|| solver.view_factor_matrix().multiply_dense(black_box(&vec)));
+            b.iter(|| {
+                solver
+                    .view_factor_matrix()
+                    .multiply_dense(std::hint::black_box(&vec))
+            });
         });
 
         // faer sparse matvec via the radiation solver's internal F matrix.

@@ -165,16 +165,15 @@ fn transform_value(value: &serde_json::Value, indent: usize, field_name: Option<
 #[cfg(test)]
 mod tests {
     use super::*;
-    use serde::Serialize;
 
     #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq)]
-    struct temperatureZone {
+    struct TemperatureZone {
         id: String,
         temp_c: f64,
         humidity_rh: f64,
     }
 
-    impl ToonSerializable for temperatureZone {
+    impl ToonSerializable for TemperatureZone {
         fn toon_field_names() -> Vec<&'static str> {
             vec!["id", "temp_c", "humidity_rh"]
         }
@@ -183,17 +182,17 @@ mod tests {
     #[test]
     fn test_serialize_uniform_struct_array() {
         let zones = vec![
-            temperatureZone {
+            TemperatureZone {
                 id: "Z1".to_string(),
                 temp_c: 22.5,
                 humidity_rh: 45.0,
             },
-            temperatureZone {
+            TemperatureZone {
                 id: "Z2".to_string(),
                 temp_c: 23.1,
                 humidity_rh: 50.0,
             },
-            temperatureZone {
+            TemperatureZone {
                 id: "Z3".to_string(),
                 temp_c: 21.8,
                 humidity_rh: 48.0,
@@ -229,7 +228,7 @@ mod tests {
 
     #[test]
     fn test_serialize_single_struct() {
-        let zone = temperatureZone {
+        let zone = TemperatureZone {
             id: "Z1".to_string(),
             temp_c: 22.5,
             humidity_rh: 45.0,
@@ -248,7 +247,7 @@ mod tests {
 
     #[test]
     fn test_serialize_empty_array() {
-        let zones: Vec<temperatureZone> = vec![];
+        let zones: Vec<TemperatureZone> = vec![];
         let result = serialize_to_string(&zones).unwrap();
         assert!(
             result.contains("Array[0]") || result.contains("[]"),

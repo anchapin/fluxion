@@ -132,7 +132,7 @@ fn test_limit_05_inversion_case_900_peak_cooling() {
     // current deviation so reviewers can see the magnitude at a glance.
     // Update the 0.1/10.0 kW bounds if the model changes substantially.
     assert!(
-        peak_cooling_kw >= 0.1 && peak_cooling_kw <= 10.0,
+        (0.1..=10.0).contains(&peak_cooling_kw),
         "Peak cooling {:.2} kW is outside physically reasonable band [0.1, 10.0] kW",
         peak_cooling_kw
     );
@@ -162,7 +162,7 @@ fn test_limit_05_inversion_case_950_peak_cooling() {
     println!("Peak heating: {:.2} kW (ref: 0.00 kW)", peak_heating);
 
     assert!(
-        peak_cooling_kw >= 0.1 && peak_cooling_kw <= 15.0,
+        (0.1..=15.0).contains(&peak_cooling_kw),
         "Peak cooling {:.2} kW is outside physically reasonable band [0.1, 15.0] kW",
         peak_cooling_kw
     );
@@ -186,7 +186,7 @@ fn test_limit_05_inversion_case_960_peak_cooling() {
     );
 
     assert!(
-        peak_cooling_kw >= 0.1 && peak_cooling_kw <= 15.0,
+        (0.1..=15.0).contains(&peak_cooling_kw),
         "Peak cooling {:.2} kW is outside physically reasonable band [0.1, 15.0] kW",
         peak_cooling_kw
     );

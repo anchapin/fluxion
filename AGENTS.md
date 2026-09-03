@@ -51,7 +51,7 @@ Bindings are feature-gated: `maturin develop` for Python; run `npm run build` in
 
 ## Toolchain, Security, and Generated Artifacts
 
-- MSRV is Rust `1.89`. A bump must update all workspace manifests plus the toolchain SHA/field in `.github/workflows/msrv.yml`.
+- MSRV is Rust `1.98.0`. A bump must update all workspace manifests plus the toolchain SHA/field in `.github/workflows/msrv.yml`.
 - `.rustfmt.toml` pins edition 2021. Stable rustfmt cannot exclude files; preserve `#[rustfmt::skip]` on generated fixture items such as `tests/per_tilt_per_azimuth_fixture_data.rs`.
 - ONNX loads are fail-closed against `<model>.sha256`; `FLUXION_ONNX_MODEL_SIGNATURE` is only an explicit digest override. Do not bypass `verify_onnx_signature`.
 - Release REST builds reject insecure public bind/auth combinations unless `FLUXION_REST_ALLOW_INSECURE=1`; TLS proxy auth requires `FLUXION_REST_TRUSTED_PROXIES`. Untrusted forwarded IP headers are intentionally ignored. MQTT is TLS-only by default; insecure transport requires the explicit opt-out guard.

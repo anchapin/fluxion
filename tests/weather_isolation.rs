@@ -40,7 +40,9 @@ use fluxion::weather::{HourlyWeatherData, WeatherSource};
 /// Reference data row from the EnergyPlus CSV output.
 ///
 /// CSV columns: hour, dry_bulb_temp_c, humidity_rh_pct, dni_wm2, dhi_wm2, ghi_wm2, wind_speed_ms, humidity_ratio_kgkg
+// `hour` is parsed for schema completeness of the reference CSV.
 #[derive(Debug, Clone)]
+#[allow(dead_code)]
 struct ReferenceRow {
     hour: usize,
     dry_bulb_temp_c: f64,
@@ -461,7 +463,7 @@ fn test_epw_nighttime_hours_have_zero_solar() {
         .filter(|&h| {
             let hour_of_day = h % 24;
             let day_of_year = h / 24;
-            (hour_of_day < 6 || hour_of_day > 19) && day_of_year < 59 // Jan-Feb
+            !(6..=19).contains(&hour_of_day) && day_of_year < 59 // Jan-Feb
         })
         .collect();
 
@@ -488,7 +490,7 @@ fn test_epw_daytime_hours_have_solar() {
         .filter(|&h| {
             let hour_of_day = h % 24;
             let day_of_year = h / 24;
-            (hour_of_day >= 10 && hour_of_day <= 14) && day_of_year >= 151 && day_of_year <= 243
+            (10..=14).contains(&hour_of_day) && (151..=243).contains(&day_of_year)
             // Jun-Aug
         })
         .collect();

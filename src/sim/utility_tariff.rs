@@ -699,7 +699,7 @@ mod tests {
         // Simulate just under 1 month (720 hours)
         // Peak window is 9-21, so we'll use hours 10-20 for consistent peak tracking
         for hour in 0..719 {
-            let hour_of_day = 10 + (hour % 11); // Stay within peak window
+            let _hour_of_day = 10 + (hour % 11); // Stay within peak window
             cost_acc.update(50.0, hour); // 50 kW during peak
         }
 

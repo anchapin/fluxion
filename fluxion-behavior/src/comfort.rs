@@ -598,7 +598,7 @@ mod tests {
         let ac = AdaptiveComfort::new();
         let rtm = 20.0;
         let (upper, lower) = ac.calculate_comfort_band(rtm, 2);
-        let centre = 0.33 * rtm + 18.83;
+        let _centre = 0.33 * rtm + 18.83;
         assert!(
             (upper - 28.93).abs() < 0.1,
             "ASHRAE 55 Section 5.3: upper limit at rtm=20°C should be ~28.9°C, got {}",

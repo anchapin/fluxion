@@ -93,6 +93,7 @@ impl GoldenInput {
     /// climate_zone_encoded: Maps ASHRAE climate zone strings to indices 0-8.
     /// Format is "{number}{subdivision}" where number is 1-8 and subdivision is A or B.
     /// Index = (number - 1), so "4A" -> 3, "5A" -> 4, etc.
+    #[cfg(feature = "ort")]
     fn to_onnx_temps(&self) -> Vec<f64> {
         let hvac_mode = 2.0; // cooling
         let climate_zone_encoded = encode_climate_zone(&self.climate_zone);
@@ -112,6 +113,7 @@ impl GoldenInput {
 ///
 /// Maps "1A"->0, "2A"->1, ..., "8A"->7, "8B"->8 (0-indexed).
 /// The subdivision (A/B) is ignored since the model uses a single index.
+#[cfg(feature = "ort")]
 fn encode_climate_zone(zone: &str) -> usize {
     let zone_lower = zone.to_lowercase();
     let num: usize = zone_lower
@@ -336,10 +338,12 @@ fn hash_round_trip_on_a_real_file() {
     assert_eq!(file_hash.len(), 64);
 }
 
+#[cfg(feature = "ort")]
 fn onnx_golden_path() -> PathBuf {
     golden_dir().join("golden_onnx_inference_v3_2_0.json")
 }
 
+#[cfg(feature = "ort")]
 fn golden_dir() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("tests")
@@ -347,6 +351,7 @@ fn golden_dir() -> PathBuf {
         .join("golden")
 }
 
+#[cfg(feature = "ort")]
 fn load_onnx_golden() -> GoldenFile {
     let path = onnx_golden_path();
     assert!(
