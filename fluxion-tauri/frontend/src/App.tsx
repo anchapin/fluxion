@@ -117,7 +117,10 @@ export default function App() {
             Geometry: {source === "ipc" ? "load_geometry IPC" : "embedded sample"}
           </span>
           <span>
-            LiveTwin: {livetwin.status}
+            LiveTwin:{" "}
+            {livetwin.status === "reconnecting"
+              ? `reconnecting (attempt ${livetwin.reconnectAttempt})`
+              : livetwin.status}
             {livetwin.payloadCount > 0 && ` (${livetwin.payloadCount} frames)`}
             {livetwin.lastError && ` — ${livetwin.lastError}`}
           </span>
