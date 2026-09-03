@@ -5,7 +5,7 @@ mod geometry;
 
 use commands::{
     get_building_levels, get_geometry_summary, get_geometry_to_zone_mapping,
-    get_zone_geometry_info, load_geometry,
+    get_simulation_parameters, get_zone_geometry_info, load_geometry, update_simulation_parameters,
 };
 use log::info;
 
@@ -21,6 +21,8 @@ fn main() {
             get_geometry_to_zone_mapping,
             get_zone_geometry_info,
             get_building_levels,
+            get_simulation_parameters,
+            update_simulation_parameters,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

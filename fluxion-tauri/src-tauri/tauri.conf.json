@@ -5,7 +5,9 @@
   "identifier": "ai.fluxion.viewer",
   "build": {
     "devUrl": "http://localhost:1420",
-    "frontendDist": "../src-tauri"
+    "frontendDist": "../frontend/dist",
+    "beforeDevCommand": "npm run dev",
+    "beforeBuildCommand": "npm run build"
   },
   "app": {
     "withGlobalTauri": true,

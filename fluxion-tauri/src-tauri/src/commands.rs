@@ -225,3 +225,100 @@ pub fn get_zone_geometry_info(
 pub fn get_building_levels(geometry: BuildingGeometry) -> Result<Vec<BuildingLevel>, String> {
     Ok(geometry.levels.clone())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn summary_of_sample_counts_levels_spaces_and_zones() {
+        let geometry = BuildingGeometry::sample();
+        let summary = compute_geometry_summary(&geometry);
+        assert_eq!(summary.building_name, "Fluxion Sample Building");
+        assert_eq!(summary.level_count, 2);
+        assert_eq!(summary.space_count, 3);
+        assert_eq!(summary.zone_count, 3);
+        // Office A (8x6) + Office B (6x6) + Meeting Suite (8x6) floors.
+        assert!((summary.total_floor_area - 132.0).abs() < 1e-9);
+    }
+
+    #[test]
+    fn zone_geometry_info_reports_bounding_box_and_floor_area() {
+        let geometry = BuildingGeometry::sample();
+        let info = get_zone_geometry_info(geometry.clone(), "zone-1".to_string())
+            .expect("command must succeed")
+            .expect("zone-1 must resolve");
+        assert_eq!(info.zone_name, "Office Zone A");
+        assert_eq!(info.space_ids, vec!["space-1".to_string()]);
+        assert_eq!(info.bounding_box.min.x, 0.0);
+        assert_eq!(info.bounding_box.max.x, 8.0);
+        assert_eq!(info.bounding_box.max.z, 3.0);
+        assert!((info.total_area - 48.0).abs() < 1e-9);
+    }
+
+    #[test]
+    fn zone_geometry_info_returns_none_for_unknown_zone() {
+        let geometry = BuildingGeometry::sample();
+        let info = get_zone_geometry_info(geometry, "zone-nope".to_string())
+            .expect("command must succeed");
+        assert!(info.is_none());
+    }
+
+    #[test]
+    fn zone_mapping_covers_every_space() {
+        let geometry = BuildingGeometry::sample();
+        let mappings = get_geometry_to_zone_mapping(geometry).expect("command must succeed");
+        assert_eq!(mappings.len(), 3);
+        assert!(mappings.iter().all(|m| m.zone_id.is_some()));
+        assert!(mappings
+            .iter()
+            .any(|m| m.space_id == "space-2" && m.zone_id.as_deref() == Some("zone-2")));
+    }
+
+    #[test]
+    fn simulation_parameters_roundtrip_through_update() {
+        let updated = update_simulation_parameters(SimulationParameters {
+            zone_id: Some("zone-1".to_string()),
+            heating_setpoint: Some(21.5),
+            cooling_setpoint: None,
+            lighting_load: None,
+            equipment_load: None,
+            occupancy: None,
+            ventilation_rate: None,
+            wall_u_value: None,
+            roof_u_value: None,
+        })
+        .expect("update must succeed");
+        assert_eq!(updated.zone_id.as_deref(), Some("zone-1"));
+        assert!((updated.heating_setpoint.unwrap() - 21.5).abs() < 1e-9);
+        // Untouched fields keep their defaults.
+        assert!((updated.cooling_setpoint.unwrap() - 26.0).abs() < 1e-9);
+
+        let current = get_simulation_parameters().expect("read must succeed");
+        assert!((current.heating_setpoint.unwrap() - 21.5).abs() < 1e-9);
+
+        // Restore defaults so other tests are unaffected.
+        update_simulation_parameters(SimulationParameters {
+            zone_id: None,
+            heating_setpoint: Some(20.0),
+            cooling_setpoint: None,
+            lighting_load: None,
+            equipment_load: None,
+            occupancy: None,
+            ventilation_rate: None,
+            wall_u_value: None,
+            roof_u_value: None,
+        })
+        .expect("restore must succeed");
+    }
+
+    #[test]
+    fn load_geometry_returns_json_frontend_shape() {
+        let geometry = load_geometry().expect("command must succeed");
+        let json = serde_json::to_value(&geometry).unwrap();
+        // The R3F frontend renders levels[].spaces[].surfaces[].vertices[{x,y,z}]
+        // and colors by zones[].space_ids — pin the nested paths it dereferences.
+        assert!(json["levels"][0]["spaces"][0]["surfaces"][0]["vertices"][0]["x"].is_f64());
+        assert!(json["zones"].as_array().unwrap().len() >= 1);
+    }
+}
