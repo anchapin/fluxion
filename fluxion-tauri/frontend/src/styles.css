@@ -1,0 +1,349 @@
+/* Fluxion GUI — styling vocabulary inherited from the preserved thermal
+   viewer (issue #3249): dark navy palette #1a1a2e / #16213e / #0f3460 with
+   #e94560 accent. */
+
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  background: #1a1a2e;
+  color: #eee;
+  overflow: hidden;
+}
+
+.app {
+  display: flex;
+  height: 100vh;
+}
+
+/* ---------- Sidebar ---------- */
+
+.sidebar {
+  width: 320px;
+  min-width: 320px;
+  background: #16213e;
+  border-right: 1px solid #0f3460;
+  display: flex;
+  flex-direction: column;
+  overflow-y: auto;
+}
+
+.sidebar-header {
+  padding: 20px;
+  background: #0f3460;
+  border-bottom: 1px solid #1a1a2e;
+}
+
+.sidebar-header h1 {
+  font-size: 1.4rem;
+  color: #e94560;
+  margin-bottom: 8px;
+}
+
+.sidebar-header p {
+  font-size: 0.85rem;
+  color: #888;
+}
+
+.info-panel,
+.legend,
+.params-panel {
+  margin: 16px;
+  padding: 16px;
+  background: #1a1a2e;
+  border: 1px solid #0f3460;
+  border-radius: 8px;
+}
+
+.info-panel h3,
+.legend h3,
+.params-panel h3 {
+  font-size: 0.9rem;
+  color: #e94560;
+  margin-bottom: 12px;
+}
+
+.info-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+.info-item {
+  background: #16213e;
+  padding: 8px 12px;
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.info-label {
+  font-size: 0.7rem;
+  color: #888;
+  text-transform: uppercase;
+}
+
+.info-value {
+  font-size: 0.95rem;
+  font-weight: 500;
+  color: #fff;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.info-footnote {
+  margin-top: 10px;
+  font-size: 0.72rem;
+  color: #888;
+}
+
+.info-loading,
+.legend-hint,
+.params-unavailable {
+  font-size: 0.8rem;
+  color: #888;
+  line-height: 1.4;
+}
+
+/* ---------- Legend ---------- */
+
+.zone-list {
+  list-style: none;
+}
+
+.zone-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 4px;
+  font-size: 0.85rem;
+}
+
+.zone-swatch {
+  width: 12px;
+  height: 12px;
+  border-radius: 3px;
+  flex: none;
+}
+
+.zone-name {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.zone-temp {
+  color: #3b82f6;
+  font-variant-numeric: tabular-nums;
+}
+
+.thermal-gradient {
+  height: 10px;
+  border-radius: 4px;
+  margin: 8px 0 4px;
+}
+
+.thermal-labels {
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.75rem;
+  color: #aaa;
+}
+
+/* ---------- Params ---------- */
+
+.param-group {
+  margin-bottom: 12px;
+}
+
+.param-group label {
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.78rem;
+  margin-bottom: 4px;
+  color: #ccc;
+}
+
+.param-group label span {
+  color: #3b82f6;
+  font-weight: bold;
+}
+
+.param-group input[type="range"] {
+  width: 100%;
+  accent-color: #3b82f6;
+  cursor: pointer;
+}
+
+.params-panel .apply {
+  width: 100%;
+  padding: 10px;
+  background: #3b82f6;
+  color: white;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 0.85rem;
+}
+
+.params-panel .apply:hover:not(:disabled) {
+  background: #2563eb;
+}
+
+.params-panel .apply:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.param-status {
+  font-size: 0.75rem;
+  margin-top: 6px;
+  color: #22c55e;
+  min-height: 14px;
+}
+
+/* ---------- Viewer ---------- */
+
+.viewer {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+}
+
+.loading {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  color: #888;
+}
+
+.spinner {
+  width: 28px;
+  height: 28px;
+  border: 3px solid #0f3460;
+  border-top-color: #e94560;
+  border-radius: 50%;
+  animation: spin 0.9s linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* ---------- Control bar ---------- */
+
+.control-bar {
+  position: absolute;
+  top: 16px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: rgba(15, 52, 96, 0.85);
+  padding: 8px 12px;
+  border-radius: 8px;
+  backdrop-filter: blur(4px);
+  z-index: 10;
+  max-width: calc(100% - 32px);
+  flex-wrap: wrap;
+  justify-content: center;
+}
+
+.control-bar button {
+  background: #16213e;
+  color: #eee;
+  border: 1px solid #0f3460;
+  padding: 6px 12px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 0.8rem;
+  white-space: nowrap;
+}
+
+.control-bar button:hover:not(:disabled) {
+  border-color: #3b82f6;
+}
+
+.control-bar button.active {
+  background: #3b82f6;
+  border-color: #3b82f6;
+  color: white;
+}
+
+.control-bar button:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.livetwin-controls {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-left: 8px;
+}
+
+.livetwin-url {
+  width: 210px;
+  background: #1a1a2e;
+  border: 1px solid #0f3460;
+  color: #ccc;
+  font-size: 0.72rem;
+  padding: 6px 8px;
+  border-radius: 4px;
+}
+
+.status-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #555;
+  flex: none;
+}
+
+.status-dot.open,
+.status-dot.live {
+  background: #22c55e;
+  box-shadow: 0 0 6px #22c55e;
+}
+
+.status-dot.connecting {
+  background: #f59e0b;
+}
+
+.status-dot.error {
+  background: #e94560;
+}
+
+/* ---------- Status bar ---------- */
+
+.status-bar {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  display: flex;
+  gap: 20px;
+  padding: 6px 12px;
+  background: rgba(15, 52, 96, 0.85);
+  font-size: 0.72rem;
+  color: #97a5c8;
+  z-index: 10;
+}
