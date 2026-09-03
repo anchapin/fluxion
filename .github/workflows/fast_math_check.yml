@@ -1,0 +1,458 @@
+# Fast-Math vs IEEE-754 Regression Gate (Issue #3326)
+#
+# CI gate that catches algebraic-FP regressions in the physics hot paths
+# of the ASHRAE 140 Case 600 / Case 900 annual simulations.
+#
+# What it runs
+# ------------
+# Two runs of `tests/fast_math_probe.rs` on the same commit, both with
+# identical runner image and identical cargo profile:
+#
+#   * Mode 1 (default features) — IEEE-754 reference. `src/physics/
+#     fp_algebraic.rs` helpers compile to the plain operators
+#     (bit-identical contract; #3322 docs).
+#   * Mode 2 (`--features fast-math`) — algebraic-FP run. Helpers route
+#     to `f32/f64::algebraic_*` (last-ulp drift by specification; #3322
+#     docs).
+#
+# Assertions (in the `compare` job):
+#
+#   1. Annual heating/cooling MWh agree default ↔ fast-math within
+#      ±0.05% relative, per case (600 and 900). The threshold is loose
+#      enough to absorb last-ulp drift on the kernels that legitimately
+#      opt in (#3324 solar, #3325 AI batch metrics) but tight enough to
+#      catch any hot-path edit that perturbs the physics by more than
+#      ~1 part in 2000.
+#
+#   2. Max energy-balance residual (tracked by `InvariantChecker` across
+#      every warmup + annual timestep) under `--features fast-math` is
+#      ≤ 1e-5 W. The strict energy-conservation gate (#1295 / `tests/
+#      zone_balance_eplus_isolation.rs`) exercises the same machinery
+#      against IEEE output; the fast-math-mode ceiling is the same
+#      1e-5 W bound (Issue #3326 acceptance criterion) and is
+#      automatically satisfied because the energy-balance path is
+#      forbidden from importing `fp_algebraic` (see the do-not-use list
+#      in `src/physics/fp_algebraic.rs`).
+#
+# Why a separate workflow (not a step in `determinism_check.yml`)
+# ---------------------------------------------------------------
+# `determinism_check.yml` enforces **bit-identical cross-platform output
+# hashing** with pinned `RUSTFLAGS` (issues #1297 / #2549). The
+# algebraic float methods are *non-deterministic by specification*;
+# adding a `--features fast-math` step there would poison that signal.
+# This is the explicit constraint stated in Issue #3326 body.
+#
+# Why ASHRAE strict gates stay unaffected
+# ---------------------------------------
+# The `ashrae_140_strict_energy_gate.yml`, `ashrae_validation.yml`, and
+# every other ASHRAE 140 gate run with default features — this
+# workflow does not touch their invocations.
+#
+# Status: ADVISORY
+# ----------------
+# Initially advisory per Issue #3326 ("Keep the job advisory
+# initially: do not add it to `release_gates.yaml → ci.required_checks`;
+# if/when promoting it, follow the required-checks sync discipline").
+# Promotion criteria (out of scope for this initial PR):
+#
+#   * ≥ 14 days of green nightly runs (no flake on the seeded cases)
+#   * Documented in `docs/ci/fast-math-check.md` (see companion doc)
+#   * When promoted, follow the #3129 / #3142 sync discipline
+#     (workflow_index entry + workflow-only list exclusion reasoning).
+#
+# Usage
+# -----
+# Manual trigger:
+#   gh workflow run fast_math_check.yml
+#
+# Scheduled trigger:
+#   Daily at 04:00 UTC (off-peak slot, no collision with the other
+#   nightly jobs — see `docs/ci/runner-requirements.md` cron audit).
+#
+# Job IDs:
+#   probe-default   — runs `tests/fast_math_probe` with default features
+#   probe-fastmath  — runs `tests/fast_math_probe` --features fast-math
+#   compare         — diffs the two probe outputs against the ±0.05%
+#                     load tolerance and the 1e-5 W residual ceiling
+#
+# Outputs:
+#   probe-default/artifacts/probe_output.txt   — default-mode probe log
+#   probe-fastmath/artifacts/probe_output.txt  — fast-math-mode probe log
+#   compare/artifacts/comparison_result.json   — structured diff result
+#   compare/artifacts/comparison_diff.txt      — human-readable diff table
+
+name: Fast-Math vs IEEE-754 ASHRAE 600/900 Regression Gate
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main, develop]
+  workflow_dispatch:
+  schedule:
+    # Daily 04:00 UTC — off-peak slot (collision audit:
+    # nightly_validation=00, perf_dashboard=02, pgo=02:30,
+    # ashrae_140_validation=02, architecture_drift=03,
+    # rust-tests=03:17, loom=03 Sun, gauge=06,
+    # required-checks-sync-cron=06, mutation=07,
+    # known-issues-stale=09 Mon, rumqttc=10 Mon).
+    - cron: '0 4 * * *'
+
+concurrency:
+  group: fast-math-check-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  pull-requests: read
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: 1
+  # Mirrors `h_tr_em_regression_gate.yml` and the determinism workflow:
+    # GitHub-hosted fallback when `FLUXION_LINUX_RUNNER` is unset (verified
+    # 2026-09-01, see `docs/ci/runner-requirements.md`).
+  RUSTFLAGS: ""
+
+jobs:
+  probe-default:
+    name: Fast-Math Probe (default features)
+    runs-on: ${{ vars.FLUXION_LINUX_RUNNER || 'ubuntu-latest' }}
+    timeout-minutes: 30
+
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+
+      - name: Install system dependencies (Linux)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libssl-dev pkg-config libfontconfig1-dev fontconfig
+
+      - name: Install Rust
+        uses: nick-fields/retry@ad984534de44a9489a53aefd81eb77f87c70dc60  # v4.0.0
+        with:
+          max_attempts: 3
+          timeout_minutes: 10
+          retry_wait_seconds: 15
+          command: rustup toolchain install stable --profile default
+
+      - name: Cache cargo dependencies
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9  # v6.1.0
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-fast-math-probe-default-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-fast-math-probe-default-
+            ${{ runner.os }}-fast-math-probe-
+
+      - name: Build & run fast-math probe (default features)
+        run: |
+          set -uo pipefail
+          cargo test --test fast_math_probe --release -- --nocapture 2>&1 | tee probe_output.txt
+          TEST_EXIT=${PIPESTATUS[0]}
+          echo "================================="
+          echo "Probe exit status: ${TEST_EXIT}"
+          if [ "${TEST_EXIT}" -ne 0 ]; then
+            echo "=== Probe stdout (last 200 lines) ==="
+            tail -200 probe_output.txt
+            exit "${TEST_EXIT}"
+          fi
+          echo "Default-features probe complete"
+
+      - name: Extract FAST_MATH_PROBE_V1 line
+        id: extract
+        run: |
+          set -euo pipefail
+          PROBE_LINE="$(grep -E '^FAST_MATH_PROBE_V1\|' probe_output.txt | head -1 || true)"
+          if [ -z "${PROBE_LINE}" ]; then
+            echo "::error::FAST_MATH_PROBE_V1|... line not found in probe_output.txt"
+            echo "Probe output (last 100 lines):"
+            tail -100 probe_output.txt
+            exit 1
+          fi
+          echo "probe_line<<EOF" >> $GITHUB_OUTPUT
+          echo "${PROBE_LINE}" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+          echo "Captured: ${PROBE_LINE}"
+
+      - name: Upload probe output
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+        with:
+          name: probe-default
+          path: |
+            probe_output.txt
+          retention-days: 14
+
+  probe-fastmath:
+    name: Fast-Math Probe (--features fast-math)
+    runs-on: ${{ vars.FLUXION_LINUX_RUNNER || 'ubuntu-latest' }}
+    timeout-minutes: 30
+
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+
+      - name: Install system dependencies (Linux)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libssl-dev pkg-config libfontconfig1-dev fontconfig
+
+      - name: Install Rust
+        uses: nick-fields/retry@ad984534de44a9489a53aefd81eb77f87c70dc60  # v4.0.0
+        with:
+          max_attempts: 3
+          timeout_minutes: 10
+          retry_wait_seconds: 15
+          command: rustup toolchain install stable --profile default
+
+      - name: Cache cargo dependencies
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9  # v6.1.0
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          # Different cache key from probe-default — `--features
+          # fast-math` is a different build configuration and the
+            # cargo cache must not serve stale artifacts across modes.
+          key: ${{ runner.os }}-fast-math-probe-fastmath-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-fast-math-probe-fastmath-
+            ${{ runner.os }}-fast-math-probe-
+
+      - name: Build & run fast-math probe (--features fast-math)
+        run: |
+          set -uo pipefail
+          cargo test --test fast_math_probe --release --features fast-math -- --nocapture 2>&1 | tee probe_output.txt
+          TEST_EXIT=${PIPESTATUS[0]}
+          echo "================================="
+          echo "Probe exit status: ${TEST_EXIT}"
+          if [ "${TEST_EXIT}" -ne 0 ]; then
+            echo "=== Probe stdout (last 200 lines) ==="
+            tail -200 probe_output.txt
+            exit "${TEST_EXIT}"
+          fi
+          echo "fast-math-features probe complete"
+
+      - name: Extract FAST_MATH_PROBE_V1 line
+        id: extract
+        run: |
+          set -euo pipefail
+          PROBE_LINE="$(grep -E '^FAST_MATH_PROBE_V1\|' probe_output.txt | head -1 || true)"
+          if [ -z "${PROBE_LINE}" ]; then
+            echo "::error::FAST_MATH_PROBE_V1|... line not found in probe_output.txt"
+            echo "Probe output (last 100 lines):"
+            tail -100 probe_output.txt
+            exit 1
+          fi
+          echo "probe_line<<EOF" >> $GITHUB_OUTPUT
+          echo "${PROBE_LINE}" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+          echo "Captured: ${PROBE_LINE}"
+
+      - name: Upload probe output
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+        with:
+          name: probe-fastmath
+          path: |
+            probe_output.txt
+          retention-days: 14
+
+  compare:
+    name: Fast-Math Comparison (Δ loads + residual ceiling)
+    needs: [probe-default, probe-fastmath]
+    runs-on: ${{ vars.FLUXION_LINUX_RUNNER || 'ubuntu-latest' }}
+    timeout-minutes: 10
+
+    steps:
+      - name: Download probe artifacts
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c  # v8.0.1
+        with:
+          path: artifacts
+
+      - name: Run comparison verifier
+        run: |
+          set -euo pipefail
+          python3 - << 'PYEOF'
+          """
+          Compare default-mode vs --features fast-math probe outputs.
+
+          Inputs (artifacts dir):
+            artifacts/probe-default/probe_output.txt
+            artifacts/probe-fastmath/probe_output.txt
+
+          Format (one line, captured by the per-mode jobs):
+            FAST_MATH_PROBE_V1|<c600_h_mwh>|<c600_c_mwh>|<c900_h_mwh>|<c900_c_mwh>|<max_residual_w>|<violation_count>|<total_checks>
+
+          Assertions (Issue #3326):
+            1. Per-case heating/cooling MWh agree within +/-0.05% relative.
+            2. Max energy-balance residual under fast-math <= 1e-5 W.
+
+          Exit codes:
+            0 — PASS
+            1 — FAIL (loads exceed tolerance OR residual exceeds ceiling)
+          """
+          import os
+          import re
+          import sys
+          import json
+
+          ARTIFACTS = "artifacts"
+          LOAD_TOL = 5.0e-4  # +/-0.05% relative
+          RESIDUAL_CEILING_W = 1.0e-5  # Issue #3326 acceptance criterion
+
+          PROBE_RE = re.compile(
+              r"^FAST_MATH_PROBE_V1\|"
+              r"([-+0-9.eE]+)\|"  # c600_h_mwh
+              r"([-+0-9.eE]+)\|"  # c600_c_mwh
+              r"([-+0-9.eE]+)\|"  # c900_h_mwh
+              r"([-+0-9.eE]+)\|"  # c900_c_mwh
+              r"([-+0-9.eE]+)\|"  # max_residual_w
+              r"(\d+)\|"          # violation_count
+              r"(\d+)$"           # total_checks
+          )
+
+          def parse_probe(path):
+              with open(path, "r", encoding="utf-8", errors="replace") as f:
+                  for raw_line in f:
+                      m = PROBE_RE.match(raw_line.strip())
+                      if m:
+                          return {
+                              "c600_heating_mwh": float(m.group(1)),
+                              "c600_cooling_mwh": float(m.group(2)),
+                              "c900_heating_mwh": float(m.group(3)),
+                              "c900_cooling_mwh": float(m.group(4)),
+                              "max_residual_w":    float(m.group(5)),
+                              "violation_count":   int(m.group(6)),
+                              "total_checks":      int(m.group(7)),
+                          }
+              return None
+
+          default_path  = os.path.join(ARTIFACTS, "probe-default",  "probe_output.txt")
+          fastmath_path = os.path.join(ARTIFACTS, "probe-fastmath", "probe_output.txt")
+
+          missing = [p for p in (default_path, fastmath_path) if not os.path.exists(p)]
+          if missing:
+              for p in missing:
+                  print(f"::error::Missing artifact: {p}")
+              sys.exit(1)
+
+          default = parse_probe(default_path)
+          fastmath = parse_probe(fastmath_path)
+          if default is None:
+              print(f"::error::FAST_MATH_PROBE_V1|... line not found in {default_path}")
+              sys.exit(1)
+          if fastmath is None:
+              print(f"::error::FAST_MATH_PROBE_V1|... line not found in {fastmath_path}")
+              sys.exit(1)
+
+          fields = [
+              ("c600_heating_mwh", "Case 600 heating (MWh)"),
+              ("c600_cooling_mwh", "Case 600 cooling (MWh)"),
+              ("c900_heating_mwh", "Case 900 heating (MWh)"),
+              ("c900_cooling_mwh", "Case 900 cooling (MWh)"),
+          ]
+
+          print("=" * 72)
+          print("Fast-Math vs IEEE-754 ASHRAE 600/900 Regression Gate")
+          print("=" * 72)
+          print(f"Load tolerance:  +/-{LOAD_TOL*100:.3f}% relative")
+          print(f"Residual ceiling: {RESIDUAL_CEILING_W:.0e} W (under fast-math)")
+          print()
+          print(f"{'Field':<24} {'default':>14} {'fast-math':>14} {'rel delta':>14} {'status':>8}")
+          print("-" * 72)
+
+          rows_data = []
+          for key, label in fields:
+              d = default[key]
+              f = fastmath[key]
+              # Relative delta: |f-d|/|d|. Guard against d==0 (no heating /
+              # cooling on that case is itself a regression signal — flag
+              # it rather than dividing silently).
+              if d == 0.0:
+                  rel = float("inf") if f != 0.0 else 0.0
+              else:
+                  rel = abs(f - d) / abs(d)
+              ok = rel <= LOAD_TOL
+              rows_data.append({
+                  "field": key,
+                  "label": label,
+                  "default": d,
+                  "fastmath": f,
+                  "rel_delta": rel,
+                  "ok": ok,
+              })
+              status = "OK" if ok else "FAIL"
+              print(f"{label:<24} {d:>14.6f} {f:>14.6f} {rel*100:>13.5f}% {status:>8}")
+
+          print("-" * 72)
+          print()
+          print(f"{'Metric':<32} {'value':>14} {'ceiling':>14} {'status':>8}")
+          print("-" * 72)
+          res_w = fastmath["max_residual_w"]
+          res_ok = res_w <= RESIDUAL_CEILING_W
+          print(f"{'fast-math max residual (W)':<32} {res_w:>14.3e} {RESIDUAL_CEILING_W:>14.0e} {'OK' if res_ok else 'FAIL':>8}")
+          print(f"{'fast-math violation count':<32} {fastmath['violation_count']:>14d} {fastmath['total_checks']:>14d}")
+          print("-" * 72)
+          print()
+
+          result = {
+              "status": "PASS",
+              "load_tolerance_rel": LOAD_TOL,
+              "residual_ceiling_w": RESIDUAL_CEILING_W,
+              "default": default,
+              "fastmath": fastmath,
+              "load_diffs": rows_data,
+              "residual_ok": res_ok,
+          }
+
+          failures = []
+          if not all(r["ok"] for r in rows_data):
+              failures.append("load delta exceeds +/-0.05% relative")
+          if not res_ok:
+              failures.append(f"max residual {res_w:.3e} W exceeds ceiling {RESIDUAL_CEILING_W:.0e} W")
+
+          if failures:
+              result["status"] = "FAIL"
+              result["failures"] = failures
+              for fail in failures:
+                  print(f"::error::{fail}")
+          else:
+              print("PASS: default and fast-math probe outputs agree within tolerance and")
+              print("      the energy-conservation residual is within the 1e-5 W ceiling.")
+
+          with open("comparison_result.json", "w", encoding="utf-8") as f:
+              json.dump(result, f, indent=2)
+
+          if failures:
+              sys.exit(1)
+          PYEOF
+
+      - name: Upload comparison artifacts
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+        with:
+          name: fast-math-comparison
+          path: |
+            comparison_result.json
+          retention-days: 30
+
+      - name: Display comparison summary
+        if: always()
+        run: |
+          echo "## Fast-Math vs IEEE-754 ASHRAE 600/900 Regression Gate" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          if [ -f comparison_result.json ]; then
+            STATUS=$(python3 -c 'import json; print(json.load(open("comparison_result.json"))["status"])')
+            echo "**Status**: ${STATUS}" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo '```json' >> $GITHUB_STEP_SUMMARY
+            cat comparison_result.json >> $GITHUB_STEP_SUMMARY
+            echo '```' >> $GITHUB_STEP_SUMMARY
+          else
+            echo "No comparison_result.json found" >> $GITHUB_STEP_SUMMARY
+          fi
