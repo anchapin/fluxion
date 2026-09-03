@@ -5,11 +5,20 @@ import type { OrbitControlsImpl } from "./OrbitCam";
 import type { RenderModel, RenderSurface } from "../lib/geometryAdapter";
 import { temperatureRange } from "../lib/thermal";
 import { SurfaceMesh } from "./SurfaceMesh";
+import { GltfBuilding } from "./GltfBuilding";
+import {
+  gltfSceneBounds,
+  resolutionTempRange,
+  type ZoneMeshResolution,
+} from "../gltf/zoneMeshMapping";
 import { zoneNumber } from "../livetwin/protocol";
 import type { ZoneState } from "../livetwin/protocol";
 
 export interface GeometrySceneProps {
-  model: RenderModel;
+  /** BEM wire-contract model (`tauri/geometryService`). Nullable in glTF mode. */
+  model: RenderModel | null;
+  /** Parsed glTF building + zone join (issue #3175); takes precedence over `model`. */
+  gltfBuilding: { scene: THREE.Group; resolution: ZoneMeshResolution } | null;
   zoneColoring: boolean;
   thermal: boolean;
   wireframe: boolean;
@@ -23,9 +32,15 @@ export interface GeometrySceneProps {
  * surface meshes. Replaces the imperative three.js loops of the two legacy
  * viewers while reusing their visual vocabulary (zone palette, thermal
  * shader, wireframe toggle).
+ *
+ * Two interchangeable geometry paths share this one Canvas (issue #3175):
+ * the BEM `load_geometry` wire contract (`model`) and a glTF-loaded model
+ * whose `Zone_{id}` meshes are colored through the LiveTwin zone join
+ * (`gltfBuilding`).
  */
 export function GeometryScene({
   model,
+  gltfBuilding,
   zoneColoring,
   thermal,
   wireframe,
@@ -33,7 +48,16 @@ export function GeometryScene({
   onControlsReady,
 }: GeometrySceneProps) {
   const temps = [...liveZones.values()].map((z) => z.t_air);
-  const tempRange = temperatureRange(temps);
+  const tempRange = gltfBuilding
+    ? resolutionTempRange(gltfBuilding.resolution)
+    : temperatureRange(temps);
+
+  const bounds: { min: [number, number, number]; max: [number, number, number] } =
+    gltfBuilding
+      ? gltfSceneBounds(gltfBuilding.scene)
+      : model
+        ? model.bounds
+        : { min: [-5, -5, -5], max: [5, 5, 5] };
 
   return (
     <Canvas
@@ -46,19 +70,30 @@ export function GeometryScene({
       <directionalLight position={[50, 50, 50]} intensity={0.8} />
       <gridHelper args={[100, 50, 0x0f3460, 0x0f3460]} />
 
-      {model.surfaces.map((surface) => (
-        <SurfaceMesh
-          key={surface.id}
-          surface={surface}
-          zoneColoring={zoneColoring}
+      {gltfBuilding ? (
+        <GltfBuilding
+          scene={gltfBuilding.scene}
+          entries={gltfBuilding.resolution.entries}
           thermal={thermal}
+          zoneColoring={zoneColoring}
           wireframe={wireframe}
-          temperature={tempForSurface(surface, liveZones)}
           tempRange={tempRange}
         />
-      ))}
+      ) : (
+        model?.surfaces.map((surface) => (
+          <SurfaceMesh
+            key={surface.id}
+            surface={surface}
+            zoneColoring={zoneColoring}
+            thermal={thermal}
+            wireframe={wireframe}
+            temperature={tempForSurface(surface, liveZones)}
+            tempRange={tempRange}
+          />
+        ))
+      )}
 
-      <OrbitCam bounds={model.bounds} onControlsReady={onControlsReady} />
+      <OrbitCam bounds={bounds} onControlsReady={onControlsReady} />
     </Canvas>
   );
 }
