@@ -115,6 +115,15 @@ body {
   line-height: 1.4;
 }
 
+/* Zone→mesh mapping warnings (issue #3175, glTF mode). */
+.legend-warning {
+  font-size: 0.8rem;
+  color: #eab308;
+  line-height: 1.4;
+  margin-top: 6px;
+  overflow-wrap: anywhere;
+}
+
 /* ---------- Legend ---------- */
 
 .zone-list {
@@ -291,6 +300,26 @@ body {
 .control-bar button:disabled {
   opacity: 0.4;
   cursor: default;
+}
+
+/* BEM/glTF geometry-path segmented control (issue #3175). */
+.model-source-toggle {
+  display: flex;
+  align-items: center;
+}
+
+.model-source-toggle button {
+  padding: 6px 10px;
+}
+
+.model-source-toggle button:first-child {
+  border-top-right-radius: 0;
+  border-bottom-right-radius: 0;
+}
+
+.model-source-toggle button:last-child {
+  border-top-left-radius: 0;
+  border-bottom-left-radius: 0;
 }
 
 .livetwin-controls {

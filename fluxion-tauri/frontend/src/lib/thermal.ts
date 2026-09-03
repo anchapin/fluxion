@@ -51,6 +51,24 @@ export function thermalGradientCss(stops = 5): string {
 }
 
 /**
+ * Maps a live temperature through the same 5-stop colormap and returns it
+ * as a three.js `0xRRGGBB` color number (issue #3175: per-mesh standard
+ * materials of glTF-loaded zone meshes). Out-of-range temperatures clamp
+ * at the stops, mirroring the GLSL `clamp(t, 0.0, 1.0)`.
+ */
+export function thermalHexFromTemp(
+  temperature: number,
+  minTemp: number,
+  maxTemp: number,
+): number {
+  const span = Math.max(maxTemp - minTemp, 0.001);
+  const t = (temperature - minTemp) / span;
+  const { r, g, b } = thermalColor(t);
+  const to255 = (c: number) => Math.round(c * 255);
+  return (to255(r) << 16) | (to255(g) << 8) | to255(b);
+}
+
+/**
  * Live temperature display range: falls back to the 15-30 °C default with
  * no data and widens degenerate (near-constant) ranges so the colormap
  * never divides by zero.

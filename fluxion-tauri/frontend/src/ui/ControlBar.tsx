@@ -1,6 +1,7 @@
 import { useState } from "react";
 import type { LiveTwinState } from "../livetwin/useLiveTwin";
 import type { WasmSimulationState } from "../sim/useWasmSimulation";
+import type { ModelSource } from "../App";
 
 export interface ControlBarProps {
   onResetView: () => void;
@@ -10,6 +11,9 @@ export interface ControlBarProps {
   onToggleZoneColoring: () => void;
   thermal: boolean;
   onToggleThermal: () => void;
+  /** Geometry path feeding the canvas (issue #3175). */
+  modelSource: ModelSource;
+  onModelSourceChange: (source: ModelSource) => void;
   livetwin: LiveTwinState;
   wasm: WasmSimulationState;
 }
@@ -17,7 +21,9 @@ export interface ControlBarProps {
 /**
  * Floating viewer controls — the union of both preserved viewers' control
  * rows: Reset View / Wireframe / zone coloring / Thermal, plus the LiveTwin
- * connection affordance with a live status dot.
+ * connection affordance with a live status dot. The BEM/glTF segmented
+ * control switches the geometry path (issue #3175): BEM wire contract vs
+ * the glTF sample with `Zone_{id}` mesh auto-mapping.
  */
 export function ControlBar({
   onResetView,
@@ -27,6 +33,8 @@ export function ControlBar({
   onToggleZoneColoring,
   thermal,
   onToggleThermal,
+  modelSource,
+  onModelSourceChange,
   livetwin,
   wasm,
 }: ControlBarProps) {
@@ -62,6 +70,24 @@ export function ControlBar({
       <button className={thermal ? "active" : ""} onClick={onToggleThermal}>
         Thermal
       </button>
+
+      <span
+        className="model-source-toggle"
+        title="Geometry path: BEM wire contract vs glTF sample (issue #3175)"
+      >
+        <button
+          className={modelSource === "bem" ? "active" : ""}
+          onClick={() => onModelSourceChange("bem")}
+        >
+          BEM
+        </button>
+        <button
+          className={modelSource === "gltf" ? "active" : ""}
+          onClick={() => onModelSourceChange("gltf")}
+        >
+          glTF
+        </button>
+      </span>
 
       <button
         className={wasm.running ? "active" : ""}
