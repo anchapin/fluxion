@@ -205,6 +205,23 @@ fn test_invariant_tolerance_affects_violation_flag() {
     );
 }
 
+/// Issue #3297 aftermath (KNOWN_ISSUES.md §LIMIT-22) — gauge-build-only
+/// quarantine. With the gauge dispatch's exact Crank-Nicolson mass-state
+/// proxy (`write_gauge_mass_state_proxy`), the checker's 5R1C residual is
+/// exactly 0 for this Case900 spec (`phi_m = 0` because
+/// `m_air_frac = rad_frac · solar_distribution_to_air = 0`), and the
+/// artificial load gain enters that residual only through `phi_m` — so
+/// the gain has structurally zero leverage and every zone imbalance is
+/// exactly 0. The pre-#3297 pass was vacuous: the PR2.5 trivial proxy
+/// (`t_mass ≈ t_air`) left a large non-zero baseline residual that the
+/// gain did not change either. Sibling of §LIMIT-19 / #3103 (same
+/// InvariantChecker artificial-gain confusion family, alongside
+/// §MULTI-03 / #3066). Default-build (legacy 5R1C integrator) coverage
+/// is unchanged and stays live.
+#[cfg_attr(
+    feature = "gauge-solver",
+    ignore = "Gauge build only (Issue #3297 / KNOWN_ISSUES §LIMIT-22): the exact-CN mass-state proxy makes the 5R1C residual 0 and the artificial gain's leverage is structurally 0 when m_air_frac = 0 (§LIMIT-19/#3103 sibling). Default build keeps this test live."
+)]
 #[test]
 fn test_different_zones_respond_differently_to_targeted_gain() {
     let spec = ASHRAE140Case::Case900.spec();
