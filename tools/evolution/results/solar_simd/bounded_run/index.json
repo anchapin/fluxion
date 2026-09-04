@@ -1,0 +1,50 @@
+[
+  {
+    "candidate_id": "perez_diffuse_tilted-identity-gen001",
+    "mutator": "identity",
+    "fitness": 1.0,
+    "invariants_passed": true,
+    "max_error": 0.0,
+    "wall_time_s": null
+  },
+  {
+    "candidate_id": "perez_diffuse_tilted-soa_pack_4_lane-gen002",
+    "mutator": "soa_pack_4_lane",
+    "fitness": 1.0,
+    "invariants_passed": true,
+    "max_error": 0.0,
+    "wall_time_s": 93.657
+  },
+  {
+    "candidate_id": "perez_diffuse_tilted-unroll_4x-gen003",
+    "mutator": "unroll_4x",
+    "fitness": 1.0,
+    "invariants_passed": true,
+    "max_error": 0.0,
+    "wall_time_s": 89.652
+  },
+  {
+    "candidate_id": "stefan_boltzmann_pair-identity-gen004",
+    "mutator": "identity",
+    "fitness": 1.0,
+    "invariants_passed": true,
+    "max_error": 0.0,
+    "wall_time_s": null
+  },
+  {
+    "candidate_id": "stefan_boltzmann_pair-soa_pack_4_lane-gen005",
+    "mutator": "soa_pack_4_lane",
+    "fitness": 1.0,
+    "invariants_passed": true,
+    "max_error": 0.0,
+    "wall_time_s": 90.5
+  },
+  {
+    "candidate_id": "stefan_boltzmann_pair-unroll_4x-gen006",
+    "mutator": "unroll_4x",
+    "fitness": 1.0,
+    "invariants_passed": true,
+    "max_error": 0.0,
+    "wall_time_s": 88.47
+  }
+]

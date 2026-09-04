@@ -1,0 +1,54 @@
+{
+  "inputs_hash": "fe3ced3c0105d161",
+  "iterations": 200000,
+  "loops": [
+    {
+      "inputs_hash": 18319778226207314273,
+      "iqr_ns": 30.0,
+      "median_ns": 90.0,
+      "mops_per_sec": 11.11111111111111,
+      "name": "perez_diffuse_tilted",
+      "samples": 200000,
+      "src": "src/solar/surface_irradiance.rs::PerezSkyModel::calculate_diffuse_tilted"
+    },
+    {
+      "inputs_hash": 18319778226207314273,
+      "iqr_ns": 60.0,
+      "median_ns": 160.0,
+      "mops_per_sec": 6.25,
+      "name": "calculate_surface_irradiance",
+      "samples": 200000,
+      "src": "src/solar/surface_irradiance.rs::calculate_surface_irradiance"
+    },
+    {
+      "inputs_hash": 18319778226207314273,
+      "iqr_ns": 10.0,
+      "median_ns": 20.0,
+      "mops_per_sec": 50.0,
+      "name": "surface_radiative_exchange",
+      "samples": 200000,
+      "src": "src/sim/interzone_radiation.rs::surface_radiative_exchange"
+    },
+    {
+      "inputs_hash": 18319778226207314273,
+      "iqr_ns": 10.0,
+      "median_ns": 30.0,
+      "mops_per_sec": 33.333333333333336,
+      "name": "net_lw_floor_pair",
+      "samples": 200000,
+      "src": "src/sim/longwave_exchange.rs::InteriorSurfaceNetwork::net_lw_floor"
+    },
+    {
+      "inputs_hash": 18319778226207314273,
+      "iqr_ns": 10.0,
+      "median_ns": 20.0,
+      "mops_per_sec": 50.0,
+      "name": "sky_radiation_net_flux",
+      "samples": 200000,
+      "src": "src/sim/sky_radiation.rs::SkyRadiationExchange::net_radiative_flux"
+    }
+  ],
+  "schema": "solar_simd_profile/v1",
+  "toolchain": "rustc 1.98.0",
+  "warmup": 5000
+}

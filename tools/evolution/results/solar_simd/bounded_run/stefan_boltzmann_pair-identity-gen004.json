@@ -1,0 +1,13 @@
+{
+  "schema_version": 1,
+  "candidate_id": "stefan_boltzmann_pair-identity-gen004",
+  "generation": 4,
+  "mutator": "identity",
+  "fitness": 1.0,
+  "compiled": true,
+  "invariants_passed": true,
+  "max_error": 0.0,
+  "compile_seconds": 0.0,
+  "outcome": "evaluated",
+  "note": "identity; no recompile"
+}

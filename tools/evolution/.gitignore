@@ -7,3 +7,22 @@
 # per PR; these are transient local runs only).
 .claude/
 *.tmp
+
+# Per-issue committed artifacts (CTF + solar-SIMD campaigns, issues
+# #3337 and #3338) are allow-listed below via `git add -f <file>` or
+# by NOT matching the catch-all globs.
+# The default catch-all globs `*.json`, `*.yaml`, `*.toml`
+# are intentionally narrow:
+
+# Per-edge fixture JSONs (regenerable, source-of-truth).
+!edge_cases/
+
+# Per-issue OpenEvolve configs (issue #3337 et al.).
+!configs/
+
+# Per-issue bounded re-run results (issue #3337 et al.).
+!results/
+
+# Logs and OpenEvolve local state stay uncommitted.
+checkpoints/
+logs/
