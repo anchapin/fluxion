@@ -12,6 +12,7 @@
 //!   components from direct and global irradiance." Solar Energy 44(5), 271-289.
 //! - ASHRAE Handbook - Fundamentals, Chapter 14: Climatic Design Information
 
+use crate::physics::fp_algebraic::{algebraic_add, algebraic_mul};
 use crate::solar::solar_position::SolarPosition;
 
 /// Solar constant at the top of atmosphere (W/m²).
@@ -82,12 +83,21 @@ pub struct SurfaceIrradiance {
 
 impl SurfaceIrradiance {
     /// Create a new SurfaceIrradiance from components.
+    ///
+    /// The 3-term `total_wm2` reduction is the per-timestep accumulation
+    /// loop body for `calculate_surface_irradiance`. Routing it through
+    /// the algebraic helpers under `#[cfg(feature = "fast-math")]` (issue
+    /// #3324) lets the compiler fold `beam + diffuse + ground` together
+    /// with the surrounding multiplies that produced `beam`, `diffuse`,
+    /// and `ground`, removing the IEEE-strict serialization. Default
+    /// features stay bit-identical (each helper is `#[inline(always)]`
+    /// and resolves to the plain IEEE operator).
     pub fn new(beam_wm2: f64, diffuse_wm2: f64, ground_reflected_wm2: f64) -> Self {
         SurfaceIrradiance {
             beam_wm2,
             diffuse_wm2,
             ground_reflected_wm2,
-            total_wm2: beam_wm2 + diffuse_wm2 + ground_reflected_wm2,
+            total_wm2: algebraic_add(algebraic_add(beam_wm2, diffuse_wm2), ground_reflected_wm2),
         }
     }
 
@@ -152,7 +162,15 @@ pub fn calculate_surface_irradiance(
         return SurfaceIrradiance::zero();
     }
 
-    let ghi = ghi.unwrap_or_else(|| dni * sun_pos.altitude_deg.to_radians().sin() + dhi);
+    // 2-term GHI sum `dni·sin(altitude) + dhi` (Issue #3324). Default
+    // features stay bit-identical; fast-math allows the surrounding
+    // multiplication to be FMA-contracted.
+    let ghi = ghi.unwrap_or_else(|| {
+        algebraic_add(
+            algebraic_mul(dni, sun_pos.altitude_deg.to_radians().sin()),
+            dhi,
+        )
+    });
     let (tilt_deg, azimuth_deg) = orientation_to_angles(orientation);
 
     // Beam component: I_beam = DNI · cos(θ_i), clamped to ≥ 0.
@@ -213,7 +231,14 @@ pub fn calculate_surface_irradiance(
         let ebin = PerezSkyModel::classify_sky_clearness(epsilon);
         let (_, f2c) = PerezSkyModel::get_perez_coefficients(ebin);
         let delta = dhi * airmass / dni_extra;
-        let f2 = f2c[0] + f2c[1] * delta + f2c[2] * zenith_rad;
+        // 3-term `f2` coefficient sum routed through the algebraic helpers
+        // (Issue #3324). Default-feature builds stay bit-identical; under
+        // `--features fast-math` the surrounding `f2·sin(zenith)` product
+        // can be FMA-contracted.
+        let f2 = algebraic_add(
+            algebraic_add(f2c[0], algebraic_mul(f2c[1], delta)),
+            algebraic_mul(f2c[2], zenith_rad),
+        );
         (dhi * (1.0 + f2 * zenith_rad.sin())).max(0.0)
     } else {
         PerezSkyModel::calculate_diffuse_tilted(
@@ -323,7 +348,14 @@ impl PerezSkyModel {
         let term2 = f1 * a / b;
         let term3 = f2 * surface_tilt.sin();
 
-        (dhi * (term1 + term2 + term3)).max(0.0)
+        // 3-term Perez sky sum (Issue #3324): the per-timestep hot loop
+        // body for the 10k-vectorized bench. Routing through `algebraic_*`
+        // enables operand reassociation so the surrounding
+        // `dhi * (term1 + term2 + term3)` can be contracted to a single
+        // FMA chain instead of a strict left-to-right sum. Default features
+        // stay bit-identical.
+        let sum_terms = algebraic_add(algebraic_add(term1, term2), term3);
+        algebraic_mul(dhi, sum_terms).max(0.0)
     }
 
     pub(crate) fn classify_sky_clearness(epsilon: f64) -> usize {
@@ -384,9 +416,23 @@ impl PerezSkyModel {
         let zenith = zenith_deg.to_radians();
         let solar_az = solar_azimuth_deg.to_radians();
 
-        let cos_incidence = tilt.sin() * surface_az.sin() * zenith.cos() * solar_az.sin()
-            + tilt.sin() * surface_az.cos() * zenith.cos() * solar_az.cos()
-            + tilt.cos() * zenith.sin();
+        // 3-term incidence-cosine reduction (Issue #3324): the inner
+        // expression combines three trig products. Under `--features
+        // fast-math` `algebraic_add` lets the compiler rearrange the
+        // surrounding multiplies; default features stay bit-identical.
+        let cos_incidence = algebraic_add(
+            algebraic_add(
+                algebraic_mul(
+                    algebraic_mul(algebraic_mul(tilt.sin(), surface_az.sin()), zenith.cos()),
+                    solar_az.sin(),
+                ),
+                algebraic_mul(
+                    algebraic_mul(algebraic_mul(tilt.sin(), surface_az.cos()), zenith.cos()),
+                    solar_az.cos(),
+                ),
+            ),
+            algebraic_mul(tilt.cos(), zenith.sin()),
+        );
 
         cos_incidence.clamp(-1.0, 1.0)
     }
@@ -403,7 +449,10 @@ impl PerezSkyModel {
 /// Issue #1414: dedup target.
 pub fn extraterrestrial_irradiance(day_of_year: usize) -> f64 {
     let day_rad = 2.0 * std::f64::consts::PI * (day_of_year as f64 - 3.0) / 365.0;
-    SOLAR_CONSTANT * (1.0 + 0.033 * day_rad.cos())
+    // 2-term sum `1 + 0.033·cos(day_rad)` reduced via algebraic helper
+    // (Issue #3324) so the multiplication by `SOLAR_CONSTANT` can be
+    // FMA-contracted with the cosine factor under `--features fast-math`.
+    SOLAR_CONSTANT * algebraic_add(1.0, algebraic_mul(0.033, day_rad.cos()))
 }
 
 /// Relative optical air mass using Kasten & Young (1989) formula.
@@ -418,7 +467,11 @@ pub fn relative_airmass(zenith_deg: f64) -> f64 {
     let zenith_rad = zenith_deg.to_radians();
     let cos_zenith = zenith_rad.cos();
     let term = 96.07995 - zenith_deg;
-    1.0 / (cos_zenith + 0.50572 * term.powf(-1.6364))
+    // 2-term Kasten & Young denominator sum routed through the
+    // algebraic helper (Issue #3324) — default-feature builds stay
+    // bit-identical, fast-math builds can reassociate / FMA-contract
+    // the denominator with the surrounding reciprocal.
+    1.0 / algebraic_add(cos_zenith, algebraic_mul(0.50572, term.powf(-1.6364)))
 }
 
 #[cfg(test)]

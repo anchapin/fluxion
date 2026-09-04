@@ -198,6 +198,22 @@
       "total": 333,
       "edge_signature": "f50b461818ffbe98146a2721159ce994fa93cd290861d4ca57f3d5e8d15c1d91",
       "reason": "PR #3298 (umbrella issue #3291, PR2 commits 9b90b79..66d57d2) implements the GaugeSolver production-path wiring for the single-zone gauge path. Three baselines were raised in the same PR with rationale documented in each script: (1) BASELINE_SIM_TO_VALIDATION in check_ashrae_cases_cycle.py raised 72 -> 99 (+27; +22 production gauge-init code +5 cfg(test)-module unit tests added by the coverage-ratchet fix): the gauge-path integration in src/sim/thermal_model_core.rs and src/sim/thermal_model_physics/step_dispatcher.rs needs crate::validation::ashrae_140_cases::{CaseSpec, WindowSpec, ConstructionType, Orientation, CommonWall, GeometrySpec} to populate the gauge backend (windows for solar, construction type for the high-mass auto-promote, common walls for multi-zone coupling, surface orientations for the 5R1C Norton mass-state proxy). (2) BASELINE_VALIDATION_TO_SIM raised 58 -> 65 (+7): validation files import crate::sim::thermal_selector::{ThermalSelector, ZoneSolverKind, ConductionSolverKind} to drive the per-case selector consumed by from_spec_with_selector. (3) BASELINE_SIM_TO_PHYSICS in check_physics_sim_cycle.py raised 72 -> 79 (+7): the dispatch HVAC-aware gauge path uses crate::physics::units::{FromF64, HeatTransferCoefficient, Temperature, ToF64} to convert f64 values to the gauge solver typed inputs. R1/R2/R3 trend guards continue to enforce downward pressure from this new 328 floor. Lowering these baselines is still reserved for the companion cycle-removal work; raising accommodates a one-shot feature-driven growth with rationale per the precedent in PR #3024 (issue #2891)."
+    },
+    {
+      "timestamp": "2026-09-04T12:53:36+00:00",
+      "commit": "7e52717",
+      "source": "fast-math-adoption-issue-3324",
+      "totals": {
+        "sim_to_validation": 99,
+        "validation_to_sim": 65,
+        "validation_to_physics": 65,
+        "validation_to_weather": 25,
+        "physics_to_sim": 0,
+        "sim_to_physics": 83
+      },
+      "total": 337,
+      "edge_signature": "591115b68be868e58edd99d52f8b758dd01b7fe0948427e34bca14465e74ac94",
+      "reason": "PR #3347 (issue #3324) adopts the algebraic-FP reduction helpers (algebraic_add, algebraic_mul, algebraic_sub, algebraic_div) introduced by PR #3338 (issue #3322) inside the solar kernels, adding 4 new sim->physics edges: src/sim/interzone_radiation.rs (algebraic_mul, algebraic_sub), src/sim/longwave_exchange.rs (algebraic_add, algebraic_mul), src/sim/solar.rs (algebraic_add), and src/sim/solar_gain_distribution.rs (algebraic_add, algebraic_mul, algebraic_div). Default-feature builds stay bit-identical because the helpers reduce to native +/*/-/ under --features default; the imports exist only so the same kernel source compiles unchanged under --features fast-math. Sanctioned by ARCHITECTURE.md \u00a7Regression guard as companion cycle work for #3322 (these are the ONLY sim->physics consumers of the new fluxion-core::physics::fp_algebraic helpers, so any cycle-removal that hoisted them to fluxion-core would also have to move the helpers themselves). BASELINE_SIM_TO_PHYSICS in scripts/check_physics_sim_cycle.py raised 79 -> 83 in the same PR; ARCHITECTURE.md \u00a7Regression guard was updated to match. R1/R2/R3 trend guards continue to enforce downward pressure from this new 337 floor. Companion cycle-removal work stays open under the #2462 phase-3 sim->physics edge elision."
     }
   ]
 }

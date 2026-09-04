@@ -124,7 +124,23 @@ BASELINE_PHYSICS_TO_SIM = 0
 # Lowering this baseline is still reserved for the companion
 # cycle-removal work; raising (as here) accommodates a one-shot
 # feature-driven growth with rationale.
-BASELINE_SIM_TO_PHYSICS = 79  # src/sim/** -> crate::physics::* (was 72; +7 for #3291)
+# Issue #3324 (PR #3347): +4 sim->physics edges from the solar-kernel
+# fast-math adoption. Each affected sim file gains one
+# `use crate::physics::fp_algebraic::{...}` import so the solar /
+# longwave / interzone-radiation / solar-gain-distribution kernels can
+# route their 2- and 3-term f64 reductions through `algebraic_add`,
+# `algebraic_mul`, `algebraic_sub`, and `algebraic_div`. Default-feature
+# builds stay bit-identical (the helpers reduce to `+`, `*`, `-`, `/`
+# when the `fast-math` feature is off); the imports exist so the same
+# kernel source compiles unchanged under `--features fast-math` and
+# picks up the algebraic-FP reductions. Sanctioned by ARCHITECTURE.md
+# §"Regression guard" as companion cycle work for the #3322 fast-math
+# feature: these are the ONLY sim->physics consumers of the new
+# `fluxion-core::physics::fp_algebraic` helpers, so any cycle-removal
+# that hoisted them to `fluxion-core` would also have to move the
+# helpers themselves. Companion cycle-removal work stays open under
+# the #2462 phase-3 sim->physics edge elision.
+BASELINE_SIM_TO_PHYSICS = 83  # src/sim/** -> crate::physics::* (was 79; +4 for #3324)
 
 # Regex for Phase 2: match `use` or `pub use` against `crate::physics::`.
 # Mirrors `scan_sim_for_orientation_cycle` in check_ashrae_cases_cycle.py

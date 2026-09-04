@@ -232,14 +232,33 @@ pub fn build_zone_view_factors(
             wall.b_width,
             wall.separation,
         );
-        // Per-wall reciprocity sanity check.
+        // Per-wall reciprocity sanity check (Issue #3324).
+        //
+        // The previous version used an absolute tolerance of 1e-9. Algebraic
+        // reassociation under `--features fast-math` (issue #3322) can flip
+        // the *exact* IEEE products by a few ulp, and the absolute tolerance
+        // becomes too tight for the larger `f * A` products this assertion
+        // compares (which can be ~10² m²). Switching to a *relative*
+        // tolerance <= 1e-12 makes the check independent of magnitude:
+        // algebraic reassociation preserves last-ulp relative error, so a
+        // 1e-12 relative bound still fires on real reciprocity bugs while
+        // letting fast-math builds pass.
+        //
+        // Default-feature behaviour is unchanged: under strict IEEE the
+        // products match to machine precision, and the relative error is
+        // far below 1e-12.
+        let lhs = f_ab * wall.area_a();
+        let rhs = f_ba * wall.area_b();
+        let scale = lhs.abs().max(rhs.abs()).max(f64::MIN_POSITIVE);
+        let rel_err = (lhs - rhs).abs() / scale;
         debug_assert!(
-            (f_ab * wall.area_a() - f_ba * wall.area_b()).abs() < 1e-9,
+            rel_err <= 1e-12,
             "build_zone_view_factors: reciprocity violated for wall {:?}: \
-             F_AB*A_A={:.6e} F_BA*A_B={:.6e}",
+             F_AB*A_A={:.6e} F_BA*A_B={:.6e} rel_err={:.3e}",
             wall,
-            f_ab * wall.area_a(),
-            f_ba * wall.area_b(),
+            lhs,
+            rhs,
+            rel_err,
         );
         // Convention: F[i, j] = view factor FROM zone j TO zone i.
         // So F[zone_b, zone_a] = F_AB (from zone_a to zone_b).
