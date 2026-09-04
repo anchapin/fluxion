@@ -1,0 +1,68 @@
+[package]
+name = "fluxion-evaluator"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.98.0"
+authors = ["Dr. Aris Thorne <aris.thorne@fluxion.org>"]
+description = "Deterministic headless evaluator harness for evolutionary kernel search (issue #3336)."
+license = "Apache-2.0"
+repository = "https://github.com/anchapin/fluxion"
+# Issue #3336: this crate is the in-tree harness that any evolver (OpenEvolve,
+# AlphaEvolve, FunSearch, …) programs against. The evolver itself stays
+# out-of-tree; the crate only defines the contract.
+#
+# Dependency policy (binding — enforced via the security gate):
+#   - Default features: std + existing workspace deps ONLY.
+#   - No new third-party crates. The cargo-deny duplicate-version budget is
+#     exhausted (issue #3310); see root `Cargo.toml` [workspace] notes.
+#   - The `dynamic` feature is opt-in and gates a stub that documents the
+#     expected cdylib ABI; it does NOT pull in `libloading` because that
+#     would require a new third-party crate. Adding dynamic loading is
+#     tracked as a follow-up (README.md → "Dynamic loading").
+publish = false
+
+[lib]
+name = "fluxion_evaluator"
+path = "src/lib.rs"
+
+[[bin]]
+name = "fluxion-evaluator"
+path = "src/bin/fluxion_evaluator.rs"
+
+[features]
+# Default: zero new dependencies.
+default = []
+# Issue #3336: opt-in cdylib dynamic-loading mode. Off by default. Intentionally
+# empty in this PR — it does NOT introduce `libloading` (that would add a new
+# third-party crate and trip the duplicate-version gate). The stub module
+# behind this feature documents the expected ABI and surfaces a
+# `DynamicLoadError::NotImplementedInThisBuild` so callers can branch on the
+# feature without silently succeeding.
+#
+# To make this feature functional in a follow-up PR, enable it to pull in
+# `libloading = "0.8"` (or the platform equivalent) and implement the actual
+# `dlopen`/`dlsym` plumbing behind the documented ABI contract — but that
+# requires issue #3310's duplicate-version budget to grow first.
+dynamic = []
+
+[dependencies]
+# Workspace-shared deps (do not re-pin versions — see root Cargo.toml
+# [workspace.dependencies]; pinning a second copy here would re-trigger the
+# duplicate-version budget the project is at zero headroom on).
+serde.workspace = true
+serde_json = "1.0"
+thiserror.workspace = true
+# sha2 is already a root direct dep; reusing it for the determinism digest
+# field avoids the duplicate crate fallback to ring-based digest crates.
+sha2 = "0.11"
+
+[dev-dependencies]
+# No new third-party crates even in tests. The two existing workspace deps
+# below are already declared in the root [dev-dependencies] and
+# fluxion-core/Cargo.toml [dev-dependencies], so they reuse the same lock
+# entries — no lockfile additions.
+serde_json = "1.0"
+
+[[example]]
+name = "sample_kernel"
+path = "examples/sample_kernel.rs"
