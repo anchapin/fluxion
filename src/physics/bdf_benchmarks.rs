@@ -603,6 +603,9 @@ pub fn make_circuit(name: &str) -> Option<Box<dyn DynCircuit>> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::physics::bdf_engine::{
+        AdaptiveStepConfig, BdfDriver, NewtonRaphsonConfig, TimeSteppingConfig,
+    };
 
     #[test]
     fn fixtures_have_unique_dimension_and_finite_initial_state() {
@@ -626,6 +629,10 @@ mod tests {
         assert_eq!(alpha_at(0.0, 5.0, 1.0), 0.5);
         assert_eq!(alpha_at(4.9, 5.0, 1.0), 0.5);
         assert_eq!(alpha_at(6.0, 5.0, 1.0), 0.0);
+        // Branch through the linear ramp — alpha mid-closure must be
+        // strictly between the boundary values.
+        let mid = alpha_at(5.5, 5.0, 1.0);
+        assert!(mid > 0.0 && mid < 0.5);
     }
 
     #[test]
@@ -638,5 +645,95 @@ mod tests {
             );
         }
         assert!(make_circuit("nonsense").is_none());
+    }
+
+    #[test]
+    fn natural_scale_per_circuit_and_unknown() {
+        // Each named arm of `natural_scale` must be reached with at
+        // least one state that lifts `max_abs` above the baseline.
+        let finite = vec![1.0];
+        assert!(natural_scale("mixing_valve_closure", &finite) > 0.0);
+        assert!(natural_scale("pump_freq_ramp", &finite) > 0.0);
+        assert!(natural_scale("cooling_coil_wet", &finite) > 0.0);
+        assert!(natural_scale("decoupling_loop_demand", &finite) > 0.0);
+        assert!(natural_scale("heatpump_entering_fluid_step", &finite) > 0.0);
+        // The fallback arm returns max_abs only.
+        let large = vec![1e3];
+        let s = natural_scale("unknown_circuit", &large);
+        assert!((s - 1e3).abs() < 1e-9);
+        // Non-finite state values must be skipped (no NaN propagation).
+        let dirty = vec![f64::NAN, f64::INFINITY, 2.5];
+        let s = natural_scale("mixing_valve_closure", &dirty);
+        assert!(s.is_finite());
+    }
+
+    #[test]
+    fn each_circuit_drives_through_bdfdriver() {
+        // Drive every circuit a few steps through the production
+        // BdfDriver path so the residual() branches and Newton
+        // iteration counts are exercised in unit tests (the
+        // integration regression in tests/bdf_golden_traces_regression.rs
+        // spawns the bdf_evaluator subprocess, which doesn't
+        // contribute to lib-test coverage).
+        drive_circuit(&MixingValveClosure::default(), 4);
+        drive_circuit(&PumpFrequencyRamp::default(), 4);
+        drive_circuit(&CoolingCoilWetSurface::default(), 4);
+        drive_circuit(&DecouplingLoopDemandStep::default(), 4);
+        drive_circuit(&HeatPumpEnteringFluidStep::default(), 4);
+        // Touch DynCircuit dispatch through make_circuit too — the
+        // boxed path matches what bdf_evaluator and the campaign
+        // orchestrator use.
+        for name in [
+            "mixing_valve_closure",
+            "pump_freq_ramp",
+            "cooling_coil_wet",
+            "decoupling_loop_demand",
+            "heatpump_entering_fluid_step",
+        ] {
+            let boxed: Box<dyn DynCircuit> = make_circuit(name).expect(name);
+            // Drive residual directly so the boxed path is covered.
+            let dim = DaeSystem::<f64>::dimension(boxed.as_ref());
+            let mut y = boxed.initial_state();
+            let yp = vec![0.0; dim];
+            let mut r = vec![0.0; dim];
+            boxed.residual(0.0, &y, &yp, &mut r);
+            // One residual at a non-trivial time stamp so any
+            // time-gated branches are exercised.
+            y[0] += 1.0;
+            boxed.residual(boxed.t_end() * 0.5, &y, &yp, &mut r);
+            let _ = boxed.finalize(&y, 0.0);
+        }
+    }
+
+    fn drive_circuit<S>(circuit: &S, max_steps: usize)
+    where
+        S: DaeSystem<f64> + Circuit,
+    {
+        let dt_init = circuit.dt_init();
+        let t_end = (dt_init * 3.0).min(circuit.t_end());
+        let initial = circuit.initial_state();
+        let step_cfg = AdaptiveStepConfig {
+            initial_dt: dt_init,
+            ..AdaptiveStepConfig::default()
+        };
+        let ts_cfg = TimeSteppingConfig {
+            bdf_config: NewtonRaphsonConfig::default(),
+            step_config: step_cfg,
+            max_steps,
+            tolerance: 1e-6,
+        };
+        let mut driver = BdfDriver::new(ts_cfg);
+        driver
+            .initialize(0.0, &initial)
+            .expect("init failed");
+        let stats = driver
+            .run(circuit, t_end, dt_init)
+            .expect("run failed");
+        assert!(
+            stats.steps_accepted > 0,
+            "{} must accept at least one step",
+            circuit.name()
+        );
+        assert_eq!(stats.nan_or_inf_count, 0, "{} produced NaN/Inf", circuit.name());
     }
 }
