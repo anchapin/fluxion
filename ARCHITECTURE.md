@@ -142,8 +142,8 @@ and `fluxion_core::ashrae_cases::Orientation` for its data fields.
 **Regression guard**: `scripts/check_physics_sim_cycle.py` enforces a
 zero-edge physics→sim baseline (`BASELINE_PHYSICS_TO_SIM = 0`) and — since
 Issue #2766 extended Phase 2 coverage from the 2 originally-guarded files to
-ALL of `src/sim/**/*.rs` — a 79-edge sim→physics baseline
-(`BASELINE_SIM_TO_PHYSICS = 79`; 84 pre-existing `use crate::physics::`
+ALL of `src/sim/**/*.rs` — an 83-edge sim→physics baseline
+(`BASELINE_SIM_TO_PHYSICS = 83`; 84 pre-existing `use crate::physics::`
 imports across 26 sim files that the pre-#2766 guard never scanned, minus
 1 edge removed by PR #3020 / issue #2896 (doc-only stub deletion), plus
 2 new `use crate::physics::exterior_convection::{...}` edges added by
@@ -153,7 +153,16 @@ issue #2878 — the legacy ThermalModelData god-struct (8 physics imports)
 was deleted and replaced by a per-domain split in `src/sim/thermal_model_data/`
 that consolidates physics imports into a single `pub use crate::physics::{...}`
 block in the new `mod.rs` plus a cfg-gated re-export of
-`gauge_zone_solver::GaugeZoneSolver`). The CI
+`gauge_zone_solver::GaugeZoneSolver`), plus 4 new
+`use crate::physics::fp_algebraic::{...}` edges added by PR #3347 /
+issue #3324 for the solar-kernel fast-math adoption (one edge each in
+`src/sim/interzone_radiation.rs`, `src/sim/longwave_exchange.rs`,
+`src/sim/solar.rs`, `src/sim/solar_gain_distribution.rs` — these files
+route their 2- and 3-term f64 reductions through the algebraic helpers
+introduced by #3322; default-feature builds stay bit-identical because
+the helpers reduce to `+`, `*`, `-`, `/` when the `fast-math` feature
+is off, and the import exists only so the same kernel source compiles
+unchanged under `--features fast-math`). The CI
 listener `Physics-Sim-Cycle-Check` (in `.github/workflows/rust-tests.yml`)
 is wired into `release_gates.yaml::ci.required_checks` so a regression
 cannot ship past branch protection. The baseline raises only via

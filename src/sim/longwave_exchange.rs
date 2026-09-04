@@ -76,6 +76,7 @@
 //! - `src/sim/view_factors.rs::F_AB` — primitives for parallel rectangles
 //! - `src/physics/ctf_zone_coupling.rs:269` — network documentation
 
+use crate::physics::fp_algebraic::{algebraic_add, algebraic_mul};
 use fluxion_core::physics_constants::STEFAN_BOLTZMANN;
 
 /// Interior surface identifier.
@@ -192,8 +193,16 @@ impl InteriorSurfaceNetwork {
     }
 
     /// Total interior surface area (m²).
+    ///
+    /// 3-term floor/ceiling/wall reduction routed through `algebraic_add`
+    /// (Issue #3324) so the compiler can fold the sum with surrounding
+    /// area-weighted products under `--features fast-math`. Default
+    /// features stay bit-identical.
     pub fn total_area(&self) -> f64 {
-        self.floor_area + self.ceiling_area + self.wall_area
+        algebraic_add(
+            algebraic_add(self.floor_area, self.ceiling_area),
+            self.wall_area,
+        )
     }
 
     /// Net LW heat gain for the floor surface [W] (positive = heat into floor).
@@ -233,7 +242,11 @@ impl InteriorSurfaceNetwork {
             * self.f_floor_wall
             * self.floor_area
             * (t_w_k.powi(4) - t_f_k.powi(4));
-        q_fc + q_fw
+        // 2-term `(q_floor↔ceiling) + (q_floor↔wall)` reduction routed
+        // through `algebraic_add` (Issue #3324). Default-feature builds
+        // stay bit-identical; under `--features fast-math` the surrounding
+        // Stefan-Boltzmann products can be FMA-contracted.
+        algebraic_add(q_fc, q_fw)
     }
 
     /// Net LW heat gain for the ceiling surface [W] (positive = heat into ceiling).
@@ -257,7 +270,9 @@ impl InteriorSurfaceNetwork {
             * self.f_ceiling_wall
             * self.ceiling_area
             * (t_w_k.powi(4) - t_c_k.powi(4));
-        q_cf + q_cw
+        // 2-term ceiling-pair reduction (Issue #3324). Default-feature
+        // builds stay bit-identical.
+        algebraic_add(q_cf, q_cw)
     }
 
     /// Net LW heat gain for the wall surface [W] (positive = heat into wall).
@@ -296,7 +311,9 @@ impl InteriorSurfaceNetwork {
             * f_wall_ceiling
             * self.wall_area
             * (t_c_k.powi(4) - t_w_k.powi(4));
-        q_wf + q_wc
+        // 2-term wall-pair reduction (Issue #3324). Default-feature
+        // builds stay bit-identical.
+        algebraic_add(q_wf, q_wc)
     }
 
     /// Net LW heat exchanged among the three surfaces — sanity check.
@@ -304,10 +321,17 @@ impl InteriorSurfaceNetwork {
     /// By energy conservation, the sum of `net_lw_floor + net_lw_ceiling +
     /// net_lw_wall` is zero when the view factors satisfy reciprocity
     /// (which the rectangular construction enforces). Use this in tests.
+    ///
+    /// 3-term cross-surface reduction routed through `algebraic_add`
+    /// (Issue #3324). Default-feature builds stay bit-identical.
     pub fn total_net_lw(&self, t_floor_c: f64, t_ceiling_c: f64, t_wall_c: f64) -> f64 {
-        self.net_lw_floor(t_floor_c, t_ceiling_c, t_wall_c)
-            + self.net_lw_ceiling(t_floor_c, t_ceiling_c, t_wall_c)
-            + self.net_lw_wall(t_floor_c, t_ceiling_c, t_wall_c)
+        algebraic_add(
+            algebraic_add(
+                self.net_lw_floor(t_floor_c, t_ceiling_c, t_wall_c),
+                self.net_lw_ceiling(t_floor_c, t_ceiling_c, t_wall_c),
+            ),
+            self.net_lw_wall(t_floor_c, t_ceiling_c, t_wall_c),
+        )
     }
 }
 
@@ -500,9 +524,21 @@ pub fn step_interior_surface_with_lw(
     let delta_t_f = step.state.t_floor - t_f_old;
     let delta_t_c = step.state.t_ceiling - t_c_old;
     let delta_t_w = step.state.t_wall - t_w_old;
-    h_ci * (network.floor_area * delta_t_f
-        + network.ceiling_area * delta_t_c
-        + network.wall_area * delta_t_w)
+    // 3-term area-weighted ΔT reduction (Issue #3324): the per-timestep
+    // air-node damping loop body. Algebraic reassociation under
+    // `--features fast-math` lets the surrounding `h_ci * (...)` fold
+    // into a single FMA chain instead of three sequential FMAs gated by
+    // strict IEEE add ordering.
+    algebraic_mul(
+        h_ci,
+        algebraic_add(
+            algebraic_add(
+                algebraic_mul(network.floor_area, delta_t_f),
+                algebraic_mul(network.ceiling_area, delta_t_c),
+            ),
+            algebraic_mul(network.wall_area, delta_t_w),
+        ),
+    )
 }
 
 /// Apply the LW radiation exchange heat to a surface, capped to the

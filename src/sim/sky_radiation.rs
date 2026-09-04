@@ -668,14 +668,26 @@ pub fn total_irradiance_tilted(
 
     let ghi = ghi.unwrap_or_else(|| {
         let zenith_rad = zenith_deg.to_radians();
-        dni * zenith_rad.sin() + dhi
+        // 2-term GHI sum routed through `algebraic_add` (Issue #3324).
+        // Default-feature builds stay bit-identical; under
+        // `--features fast-math` the surrounding `dni * sin(zenith)` can
+        // be FMA-contracted with the `+ dhi` accumulator.
+        crate::physics::fp_algebraic::algebraic_add(dni * zenith_rad.sin(), dhi)
     });
 
     let surface_tilt = surface_tilt_deg.to_radians();
     let ground_factor = (1.0 - surface_tilt.cos()) / 2.0;
     let ground_reflected = ghi * ground_albedo * ground_factor;
 
-    beam.max(0.0) + diffuse.max(0.0) + ground_reflected
+    // 3-term `(beam + diffuse + ground)` reduction (Issue #3324):
+    // the final accumulator of `total_irradiance_tilted`. Default-feature
+    // builds stay bit-identical; fast-math allows FMA contraction.
+    let beam_clamped = beam.max(0.0);
+    let diffuse_clamped = diffuse.max(0.0);
+    crate::physics::fp_algebraic::algebraic_add(
+        crate::physics::fp_algebraic::algebraic_add(beam_clamped, diffuse_clamped),
+        ground_reflected,
+    )
 }
 
 #[cfg(test)]

@@ -36,6 +36,7 @@
 
 use std::f64::consts::PI;
 
+use crate::physics::fp_algebraic::{algebraic_add, algebraic_mul, algebraic_div};
 use crate::sim::sky_radiation::{
     extraterrestrial_irradiance, total_irradiance_tilted, STEFAN_BOLTZMANN,
 };
@@ -185,8 +186,13 @@ pub struct PerSurfaceIrradiance {
 
 impl PerSurfaceIrradiance {
     /// Total irradiance summed across all surfaces [W/m²].
+    ///
+    /// 3-term wall/roof/floor reduction (Issue #3324): routed through
+    /// `algebraic_add` so the per-timestep gain distribution loop body
+    /// can reassociate under `--features fast-math`. Default-feature
+    /// builds stay bit-identical.
     pub fn total(&self) -> f64 {
-        self.wall + self.roof + self.floor
+        algebraic_add(algebraic_add(self.wall, self.roof), self.floor)
     }
 }
 
@@ -221,8 +227,12 @@ pub struct SolarDistributionFactors {
 
 impl SolarDistributionFactors {
     /// Verify sum of factors equals 1.0 (± tolerance).
+    ///
+    /// 3-term reduction routed through `algebraic_add` (Issue #3324)
+    /// for parity with `PerSurfaceIrradiance::total`. Default-feature
+    /// builds stay bit-identical.
     pub fn sums_to_one(&self, tolerance: f64) -> bool {
-        let sum = self.wall + self.roof + self.floor;
+        let sum = algebraic_add(algebraic_add(self.wall, self.roof), self.floor);
         (sum - 1.0).abs() < tolerance
     }
 }
@@ -366,7 +376,8 @@ pub fn calculate_solar_distribution_factors(
     floor_area: f64,
     wall_azimuth_deg: f64,
 ) -> SolarDistributionFactors {
-    if wall_area + roof_area + floor_area < 1e-10 {
+    // 3-term area sum guard routed through `algebraic_add` (Issue #3324).
+    if algebraic_add(algebraic_add(wall_area, roof_area), floor_area) < 1e-10 {
         return SolarDistributionFactors::default();
     }
 
@@ -383,24 +394,30 @@ pub fn calculate_solar_distribution_factors(
     let wall_weight = wall_area * cos_wall;
     let roof_weight = roof_area * cos_roof;
     let floor_weight = floor_area * cos_floor;
-    let total_weight = wall_weight + roof_weight + floor_weight;
+    // 3-term weight reduction (Issue #3324). Default-feature builds stay
+    // bit-identical; under `--features fast-math` the surrounding
+    // `area * cos(theta)` products can be FMA-contracted.
+    let total_weight = algebraic_add(
+        algebraic_add(wall_weight, roof_weight),
+        floor_weight,
+    );
 
     if total_weight < 1e-10 {
         // Fallback: distribute by area alone
-        let total_area = wall_area + roof_area + floor_area;
+        let total_area = algebraic_add(algebraic_add(wall_area, roof_area), floor_area);
         if total_area < 1e-10 {
             return SolarDistributionFactors::default();
         }
         SolarDistributionFactors {
-            wall: wall_area / total_area,
-            roof: roof_area / total_area,
-            floor: floor_area / total_area,
+            wall: algebraic_div(wall_area, total_area),
+            roof: algebraic_div(roof_area, total_area),
+            floor: algebraic_div(floor_area, total_area),
         }
     } else {
         SolarDistributionFactors {
-            wall: wall_weight / total_weight,
-            roof: roof_weight / total_weight,
-            floor: floor_weight / total_weight,
+            wall: algebraic_div(wall_weight, total_weight),
+            roof: algebraic_div(roof_weight, total_weight),
+            floor: algebraic_div(floor_weight, total_weight),
         }
     }
 }
@@ -506,7 +523,14 @@ pub fn distribute_solar_by_orientation(
     let wall_weight = wall_area * per_surf.wall;
     let roof_weight = roof_area * per_surf.roof;
     let floor_weight = floor_area * per_surf.floor;
-    let total_weight = wall_weight + roof_weight + floor_weight;
+    // 3-term weight reduction (Issue #3324). Default-feature builds stay
+    // bit-identical; under `--features fast-math` the
+    // `total_solar_gain * (wall_weight / total_weight)` chain can be
+    // reassociated.
+    let total_weight = algebraic_add(
+        algebraic_add(wall_weight, roof_weight),
+        floor_weight,
+    );
 
     if total_weight < 1e-10 {
         return PerSurfaceIrradiance::default();
