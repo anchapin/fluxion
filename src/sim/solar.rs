@@ -9,6 +9,8 @@ pub use crate::solar::solar_position::{
 };
 pub use crate::solar::surface_irradiance::{orientation_to_angles, SurfaceIrradiance};
 
+use crate::physics::fp_algebraic::algebraic_add;
+
 // Issue #1441: Orientation lives in `fluxion_core::ashrae_cases` (was
 // `crate::validation::ashrae_140_cases`). The legacy re-export at this path is
 // removed; callers use the new path or the validation re-export shim.
@@ -75,12 +77,21 @@ pub struct SolarDiagnostic {
 }
 
 impl SolarGain {
+    /// Construct from beam / diffuse / ground components.
+    ///
+    /// 3-term `total_gain_w` reduction routed through `algebraic_add`
+    /// (Issue #3324). Default-feature builds stay bit-identical; under
+    /// `--features fast-math` the surrounding `area * irradiance * shgc`
+    /// products can be FMA-contracted into a single chain.
     pub fn new(beam_gain_w: f64, diffuse_gain_w: f64, ground_reflected_gain_w: f64) -> Self {
         SolarGain {
             beam_gain_w,
             diffuse_gain_w,
             ground_reflected_gain_w,
-            total_gain_w: beam_gain_w + diffuse_gain_w + ground_reflected_gain_w,
+            total_gain_w: algebraic_add(
+                algebraic_add(beam_gain_w, diffuse_gain_w),
+                ground_reflected_gain_w,
+            ),
         }
     }
 
@@ -200,7 +211,11 @@ impl WindowProperties {
         } else {
             0.0
         };
-        u_value_glass + area_delta + edge_delta
+        // 3-term U-value sum routed through `algebraic_add`
+        // (Issue #3324). Default-feature builds stay bit-identical;
+        // fast-math allows the per-window total-area U-value to fold
+        // into the frame bridge.
+        algebraic_add(algebraic_add(u_value_glass, area_delta), edge_delta)
     }
 }
 

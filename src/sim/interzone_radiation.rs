@@ -13,6 +13,16 @@
 //! multiplied back by `ΔT` in a linear air-node solve.  This eliminates the
 //! prior `T_ref = 293.15 K` linearization error of up to ~10 % at
 //! ΔT = 20 K (Issue #1445).
+//!
+//! # `fast-math` opt-in
+//!
+//! Issue #3324 routes the multi-product Stefan-Boltzmann chain and the
+//! chord-slope numerator through the algebraic-FP helpers (issue #3322)
+//! so the per-pair inter-zone radiative loop body can reassociate and
+//! FMA-contract under `--features fast-math`. Default-feature builds
+//! stay bit-identical to the strict-IEEE result.
+
+use crate::physics::fp_algebraic::{algebraic_mul, algebraic_sub};
 
 /// Stefan-Boltzmann constant (W/(m²·K⁴))
 pub const STEFAN_BOLTZMANN_CONSTANT: f64 = 5.670374419e-8;
@@ -85,12 +95,21 @@ pub fn surface_radiative_exchange(
 
     // Full nonlinear Stefan-Boltzmann equation
     // Q_AB = σ·ε_A·ε_B·F_AB·A_A·(T_A⁴ - T_B⁴)
-    STEFAN_BOLTZMANN_CONSTANT
-        * emissivity_a
-        * emissivity_b
-        * view_factor
-        * area
-        * (temp_a_k.powi(4) - temp_b_k.powi(4))
+    //
+    // The 6-product chain and the `(T_A⁴ - T_B⁴)` subtraction are routed
+    // through `algebraic_mul` / `algebraic_sub` (Issue #3324) so the
+    // per-pair inter-zone radiative loop body can FMA-contract under
+    // `--features fast-math`. Default-feature builds stay bit-identical.
+    algebraic_mul(
+        algebraic_mul(
+            STEFAN_BOLTZMANN_CONSTANT,
+            algebraic_mul(
+                algebraic_mul(emissivity_a, emissivity_b),
+                algebraic_mul(view_factor, area),
+            ),
+        ),
+        algebraic_sub(temp_a_k.powi(4), temp_b_k.powi(4)),
+    )
 }
 
 /// Backwards-compatible alias for the canonical
@@ -137,12 +156,16 @@ pub fn radiative_conductance_chord_slope(
     if dt.abs() < f64::EPSILON || area <= 0.0 || view_factor <= 0.0 {
         return 0.0;
     }
-    let q_rad = STEFAN_BOLTZMANN_CONSTANT
-        * emissivity_a
-        * emissivity_b
-        * view_factor
-        * area
-        * (temp_a_k.powi(4) - temp_b_k.powi(4));
+    let q_rad = algebraic_mul(
+        algebraic_mul(
+            STEFAN_BOLTZMANN_CONSTANT,
+            algebraic_mul(
+                algebraic_mul(emissivity_a, emissivity_b),
+                algebraic_mul(view_factor, area),
+            ),
+        ),
+        algebraic_sub(temp_a_k.powi(4), temp_b_k.powi(4)),
+    );
     q_rad / dt
 }
 
