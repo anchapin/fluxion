@@ -37,6 +37,7 @@ share/python-wheels/
 *.egg
 MANIFEST
 .venv/
+.venv-eval/
 venv/
 ENV/
 env/

@@ -1,0 +1,25 @@
+{
+  "n_candidates": 16,
+  "n_compiled": 16,
+  "n_invariants_passed": 15,
+  "fitness_stats": {
+    "mean": 0.9291191468067066,
+    "max": 0.9936406995230525,
+    "min": 0.0,
+    "stdev": 0.23992239454427094
+  },
+  "iteration_stats": {
+    "min": 0,
+    "max": 148,
+    "mean": 59.375
+  },
+  "baseline_iterations": 37,
+  "baseline_accepted_steps": 27,
+  "winner": {
+    "candidate_id": "gold-baseline-0000",
+    "fitness": 0.9936406995230525,
+    "iterations": 37,
+    "accepted_steps": 27,
+    "improvement_vs_baseline_iterations_pct": 0.0
+  }
+}

@@ -1,0 +1,91 @@
+{
+  "candidate_id": "gold-baseline-0000",
+  "generation": 0,
+  "strategy": {
+    "aggressiveness": 1.0,
+    "baseline_factor": 1.0,
+    "floor": 0.25,
+    "history_window": 4,
+    "loose_threshold": 0.5,
+    "max_steps": 50000,
+    "mode": 0,
+    "tight_threshold": 0.95
+  },
+  "exit_code": 0,
+  "wall_ms_eval_subprocess": 1,
+  "stdout_tail": "",
+  "stderr_tail": "",
+  "fitness": 0.9936406995230525,
+  "invariants_passed": true,
+  "outcome": "evaluated",
+  "compiled": true,
+  "error": null,
+  "min_invariant_margin": 1.0,
+  "bdf_per_circuit": {
+    "cooling_coil_wet": {
+      "converged": true,
+      "final_time": 20.0,
+      "max_enthalpy_rel_err": 1.0509482864081134e-22,
+      "max_mass_rel_err": 1.0509482864081134e-22,
+      "max_residual": 2.837560373301906e-20,
+      "nan_or_inf_count": 0,
+      "newton_iterations": 8,
+      "status": "ok",
+      "steps_accepted": 6,
+      "steps_rejected": 0,
+      "wall_ms": 0
+    },
+    "decoupling_loop_demand": {
+      "converged": true,
+      "final_time": 40.0,
+      "max_enthalpy_rel_err": 6.292259115296978e-23,
+      "max_mass_rel_err": 6.292259115296978e-23,
+      "max_residual": 3.964123242637096e-20,
+      "nan_or_inf_count": 0,
+      "newton_iterations": 8,
+      "status": "ok",
+      "steps_accepted": 6,
+      "steps_rejected": 0,
+      "wall_ms": 0
+    },
+    "heatpump_entering_fluid_step": {
+      "converged": true,
+      "final_time": 30.0,
+      "max_enthalpy_rel_err": 3.042503402493895e-26,
+      "max_mass_rel_err": 3.042503402493895e-26,
+      "max_residual": 2.6469779601696886e-23,
+      "nan_or_inf_count": 0,
+      "newton_iterations": 8,
+      "status": "ok",
+      "steps_accepted": 6,
+      "steps_rejected": 0,
+      "wall_ms": 0
+    },
+    "mixing_valve_closure": {
+      "converged": true,
+      "final_time": 30.0,
+      "max_enthalpy_rel_err": 2.9285464837420594e-23,
+      "max_mass_rel_err": 2.9285464837420594e-23,
+      "max_residual": 1.8742697495949182e-20,
+      "nan_or_inf_count": 0,
+      "newton_iterations": 6,
+      "status": "ok",
+      "steps_accepted": 4,
+      "steps_rejected": 0,
+      "wall_ms": 0
+    },
+    "pump_freq_ramp": {
+      "converged": true,
+      "final_time": 30.0,
+      "max_enthalpy_rel_err": 1.6587728550396716e-23,
+      "max_mass_rel_err": 1.6587728550396716e-23,
+      "max_residual": 1.9905274260476058e-20,
+      "nan_or_inf_count": 0,
+      "newton_iterations": 7,
+      "status": "ok",
+      "steps_accepted": 5,
+      "steps_rejected": 0,
+      "wall_ms": 0
+    }
+  }
+}
