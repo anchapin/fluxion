@@ -1,0 +1,469 @@
+{
+  "generator": "tools/evolution/seeds/ctf/generate_reference.py",
+  "toolchain": "python3 + numpy",
+  "n_constructions": 51,
+  "timestep_s": 3600.0,
+  "r_si": 0.125,
+  "r_se": 0.044,
+  "constructions": [
+    {
+      "name": "single_concrete_005mm",
+      "n_layers": 1,
+      "r_wall_m2k_w": 0.0028901734104046246,
+      "c_wall_j_m2k": 9386.955,
+      "u_filmed": 5.817668224770488,
+      "u_bare": 345.99999999999994,
+      "file": "reference_data/evolution/ctf/single_concrete_005mm.json"
+    },
+    {
+      "name": "single_concrete_009mm",
+      "n_layers": 1,
+      "r_wall_m2k_w": 0.005202312138728324,
+      "c_wall_j_m2k": 16896.519,
+      "u_filmed": 5.740451936158211,
+      "u_bare": 192.22222222222223,
+      "file": "reference_data/evolution/ctf/single_concrete_009mm.json"
+    },
+    {
+      "name": "single_concrete_012mm",
+      "n_layers": 1,
+      "r_wall_m2k_w": 0.006936416184971098,
+      "c_wall_j_m2k": 22528.692,
+      "u_filmed": 5.6838716036403065,
+      "u_bare": 144.16666666666666,
+      "file": "reference_data/evolution/ctf/single_concrete_012mm.json"
+    },
+    {
+      "name": "single_concrete_020mm",
+      "n_layers": 1,
+      "r_wall_m2k_w": 0.011560693641618498,
+      "c_wall_j_m2k": 37547.82,
+      "u_filmed": 5.538303934436726,
+      "u_bare": 86.49999999999999,
+      "file": "reference_data/evolution/ctf/single_concrete_020mm.json"
+    },
+    {
+      "name": "single_concrete_030mm",
+      "n_layers": 1,
+      "r_wall_m2k_w": 0.017341040462427744,
+      "c_wall_j_m2k": 56321.729999999996,
+      "u_filmed": 5.366504327325744,
+      "u_bare": 57.66666666666667,
+      "file": "reference_data/evolution/ctf/single_concrete_030mm.json"
+    },
+    {
+      "name": "single_concrete_050mm",
+      "n_layers": 1,
+      "r_wall_m2k_w": 0.028901734104046246,
+      "c_wall_j_m2k": 93869.55,
+      "u_filmed": 5.0530128223851385,
+      "u_bare": 34.599999999999994,
+      "file": "reference_data/evolution/ctf/single_concrete_050mm.json"
+    },
+    {
+      "name": "single_concrete_075mm",
+      "n_layers": 1,
+      "r_wall_m2k_w": 0.04335260115606936,
+      "c_wall_j_m2k": 140804.32499999998,
+      "u_filmed": 4.7091488145466425,
+      "u_bare": 23.066666666666666,
+      "file": "reference_data/evolution/ctf/single_concrete_075mm.json"
+    },
+    {
+      "name": "single_concrete_100mm",
+      "n_layers": 1,
+      "r_wall_m2k_w": 0.05780346820809249,
+      "c_wall_j_m2k": 187739.1,
+      "u_filmed": 4.409103652165048,
+      "u_bare": 17.299999999999997,
+      "file": "reference_data/evolution/ctf/single_concrete_100mm.json"
+    },
+    {
+      "name": "single_concrete_150mm",
+      "n_layers": 1,
+      "r_wall_m2k_w": 0.08670520231213873,
+      "c_wall_j_m2k": 281608.64999999997,
+      "u_filmed": 3.9107534416890837,
+      "u_bare": 11.533333333333333,
+      "file": "reference_data/evolution/ctf/single_concrete_150mm.json"
+    },
+    {
+      "name": "single_concrete_200mm",
+      "n_layers": 1,
+      "r_wall_m2k_w": 0.11560693641618498,
+      "c_wall_j_m2k": 375478.2,
+      "u_filmed": 3.5136178077462072,
+      "u_bare": 8.649999999999999,
+      "file": "reference_data/evolution/ctf/single_concrete_200mm.json"
+    },
+    {
+      "name": "single_concrete_250mm",
+      "n_layers": 1,
+      "r_wall_m2k_w": 0.14450867052023122,
+      "c_wall_j_m2k": 469347.75,
+      "u_filmed": 3.189704445304866,
+      "u_bare": 6.919999999999999,
+      "file": "reference_data/evolution/ctf/single_concrete_250mm.json"
+    },
+    {
+      "name": "single_concrete_300mm",
+      "n_layers": 1,
+      "r_wall_m2k_w": 0.17341040462427745,
+      "c_wall_j_m2k": 563217.2999999999,
+      "u_filmed": 2.9204720022958623,
+      "u_bare": 5.766666666666667,
+      "file": "reference_data/evolution/ctf/single_concrete_300mm.json"
+    },
+    {
+      "name": "single_concrete_400mm",
+      "n_layers": 1,
+      "r_wall_m2k_w": 0.23121387283236997,
+      "c_wall_j_m2k": 750956.4,
+      "u_filmed": 2.4986640091280674,
+      "u_bare": 4.324999999999999,
+      "file": "reference_data/evolution/ctf/single_concrete_400mm.json"
+    },
+    {
+      "name": "single_gypsum_005mm",
+      "n_layers": 1,
+      "r_wall_m2k_w": 0.03125,
+      "c_wall_j_m2k": 4360.0,
+      "u_filmed": 4.993757802746567,
+      "u_bare": 32.0,
+      "file": "reference_data/evolution/ctf/single_gypsum_005mm.json"
+    },
+    {
+      "name": "single_gypsum_010mm",
+      "n_layers": 1,
+      "r_wall_m2k_w": 0.0625,
+      "c_wall_j_m2k": 8720.0,
+      "u_filmed": 4.319654427645789,
+      "u_bare": 16.0,
+      "file": "reference_data/evolution/ctf/single_gypsum_010mm.json"
+    },
+    {
+      "name": "single_gypsum_013mm",
+      "n_layers": 1,
+      "r_wall_m2k_w": 0.08124999999999999,
+      "c_wall_j_m2k": 11336.0,
+      "u_filmed": 3.9960039960039966,
+      "u_bare": 12.30769230769231,
+      "file": "reference_data/evolution/ctf/single_gypsum_013mm.json"
+    },
+    {
+      "name": "single_gypsum_020mm",
+      "n_layers": 1,
+      "r_wall_m2k_w": 0.125,
+      "c_wall_j_m2k": 17440.0,
+      "u_filmed": 3.4013605442176873,
+      "u_bare": 8.0,
+      "file": "reference_data/evolution/ctf/single_gypsum_020mm.json"
+    },
+    {
+      "name": "single_gypsum_050mm",
+      "n_layers": 1,
+      "r_wall_m2k_w": 0.3125,
+      "c_wall_j_m2k": 43600.0,
+      "u_filmed": 2.0768431983385254,
+      "u_bare": 3.2,
+      "file": "reference_data/evolution/ctf/single_gypsum_050mm.json"
+    },
+    {
+      "name": "single_insulation_020mm",
+      "n_layers": 1,
+      "r_wall_m2k_w": 0.5,
+      "c_wall_j_m2k": 840.0,
+      "u_filmed": 1.4947683109118086,
+      "u_bare": 2.0,
+      "file": "reference_data/evolution/ctf/single_insulation_020mm.json"
+    },
+    {
+      "name": "single_insulation_050mm",
+      "n_layers": 1,
+      "r_wall_m2k_w": 1.25,
+      "c_wall_j_m2k": 2100.0,
+      "u_filmed": 0.704721634954193,
+      "u_bare": 0.8,
+      "file": "reference_data/evolution/ctf/single_insulation_050mm.json"
+    },
+    {
+      "name": "single_insulation_100mm",
+      "n_layers": 1,
+      "r_wall_m2k_w": 2.5,
+      "c_wall_j_m2k": 4200.0,
+      "u_filmed": 0.37467216185837393,
+      "u_bare": 0.4,
+      "file": "reference_data/evolution/ctf/single_insulation_100mm.json"
+    },
+    {
+      "name": "single_insulation_150mm",
+      "n_layers": 1,
+      "r_wall_m2k_w": 3.75,
+      "c_wall_j_m2k": 6300.0,
+      "u_filmed": 0.25516713447307987,
+      "u_bare": 0.26666666666666666,
+      "file": "reference_data/evolution/ctf/single_insulation_150mm.json"
+    },
+    {
+      "name": "single_insulation_200mm",
+      "n_layers": 1,
+      "r_wall_m2k_w": 5.0,
+      "c_wall_j_m2k": 8400.0,
+      "u_filmed": 0.19346101760495263,
+      "u_bare": 0.2,
+      "file": "reference_data/evolution/ctf/single_insulation_200mm.json"
+    },
+    {
+      "name": "single_brick_050mm",
+      "n_layers": 1,
+      "r_wall_m2k_w": 0.06172839506172839,
+      "c_wall_j_m2k": 75840.0,
+      "u_filmed": 4.334100272887795,
+      "u_bare": 16.2,
+      "file": "reference_data/evolution/ctf/single_brick_050mm.json"
+    },
+    {
+      "name": "single_brick_100mm",
+      "n_layers": 1,
+      "r_wall_m2k_w": 0.12345679012345678,
+      "c_wall_j_m2k": 151680.0,
+      "u_filmed": 3.4193085398286125,
+      "u_bare": 8.1,
+      "file": "reference_data/evolution/ctf/single_brick_100mm.json"
+    },
+    {
+      "name": "single_brick_150mm",
+      "n_layers": 1,
+      "r_wall_m2k_w": 0.18518518518518517,
+      "c_wall_j_m2k": 227520.0,
+      "u_filmed": 2.8233817839590087,
+      "u_bare": 5.4,
+      "file": "reference_data/evolution/ctf/single_brick_150mm.json"
+    },
+    {
+      "name": "ashrae_600_low_mass_wall",
+      "n_layers": 3,
+      "r_wall_m2k_w": 1.7892857142857144,
+      "c_wall_j_m2k": 12861.0,
+      "u_filmed": 0.5106507149110009,
+      "u_bare": 0.5588822355289421,
+      "file": "reference_data/evolution/ctf/ashrae_600_low_mass_wall.json"
+    },
+    {
+      "name": "ashrae_600_low_mass_roof",
+      "n_layers": 3,
+      "r_wall_m2k_w": 2.838857142857143,
+      "c_wall_j_m2k": 20054.48,
+      "u_filmed": 0.33246259795772976,
+      "u_bare": 0.3522544283413849,
+      "file": "reference_data/evolution/ctf/ashrae_600_low_mass_roof.json"
+    },
+    {
+      "name": "ashrae_600_low_mass_floor",
+      "n_layers": 2,
+      "r_wall_m2k_w": 5.103571428571429,
+      "c_wall_j_m2k": 25985.76,
+      "u_filmed": 0.18966077815107837,
+      "u_bare": 0.1959412176347096,
+      "file": "reference_data/evolution/ctf/ashrae_600_low_mass_floor.json"
+    },
+    {
+      "name": "ashrae_900_high_mass_wall",
+      "n_layers": 4,
+      "r_wall_m2k_w": 1.5414119924355956,
+      "c_wall_j_m2k": 446724.64999999997,
+      "u_filmed": 0.5846544601081861,
+      "u_bare": 0.6487558192796289,
+      "file": "reference_data/evolution/ctf/ashrae_900_high_mass_wall.json"
+    },
+    {
+      "name": "ashrae_900_high_mass_roof",
+      "n_layers": 3,
+      "r_wall_m2k_w": 2.822599917423617,
+      "c_wall_j_m2k": 164716.88,
+      "u_filmed": 0.3342692965646308,
+      "u_bare": 0.35428329527932867,
+      "file": "reference_data/evolution/ctf/ashrae_900_high_mass_roof.json"
+    },
+    {
+      "name": "ashrae_900_high_mass_floor",
+      "n_layers": 2,
+      "r_wall_m2k_w": 5.18186274509804,
+      "c_wall_j_m2k": 98019.6,
+      "u_filmed": 0.18688575051118747,
+      "u_bare": 0.19298079651877775,
+      "file": "reference_data/evolution/ctf/ashrae_900_high_mass_floor.json"
+    },
+    {
+      "name": "ashrae_900ff_high_mass_wall",
+      "n_layers": 4,
+      "r_wall_m2k_w": 1.5414119924355956,
+      "c_wall_j_m2k": 446724.64999999997,
+      "u_filmed": 0.5846544601081861,
+      "u_bare": 0.6487558192796289,
+      "file": "reference_data/evolution/ctf/ashrae_900ff_high_mass_wall.json"
+    },
+    {
+      "name": "multi_02layers_Rins005",
+      "n_layers": 2,
+      "r_wall_m2k_w": 1.2615606936416186,
+      "c_wall_j_m2k": 39647.82,
+      "u_filmed": 0.699026615539402,
+      "u_bare": 0.7926689576174112,
+      "file": "reference_data/evolution/ctf/multi_02layers_rins005.json"
+    },
+    {
+      "name": "multi_02layers_Rins010",
+      "n_layers": 2,
+      "r_wall_m2k_w": 2.5115606936416186,
+      "c_wall_j_m2k": 41747.82,
+      "u_filmed": 0.3730562797447691,
+      "u_bare": 0.39815880322209435,
+      "file": "reference_data/evolution/ctf/multi_02layers_rins010.json"
+    },
+    {
+      "name": "multi_02layers_Rins020",
+      "n_layers": 2,
+      "r_wall_m2k_w": 5.011560693641618,
+      "c_wall_j_m2k": 45947.82,
+      "u_filmed": 0.1930292991697509,
+      "u_bare": 0.1995386389850058,
+      "file": "reference_data/evolution/ctf/multi_02layers_rins020.json"
+    },
+    {
+      "name": "multi_03layers_Rins005",
+      "n_layers": 3,
+      "r_wall_m2k_w": 0.648121387283237,
+      "c_wall_j_m2k": 76145.64,
+      "u_filmed": 1.2238083784892686,
+      "u_bare": 1.5429208472686733,
+      "file": "reference_data/evolution/ctf/multi_03layers_rins005.json"
+    },
+    {
+      "name": "multi_03layers_Rins010",
+      "n_layers": 3,
+      "r_wall_m2k_w": 1.273121387283237,
+      "c_wall_j_m2k": 77195.64,
+      "u_filmed": 0.6934229037985947,
+      "u_bare": 0.7854710556186152,
+      "file": "reference_data/evolution/ctf/multi_03layers_rins010.json"
+    },
+    {
+      "name": "multi_03layers_Rins020",
+      "n_layers": 3,
+      "r_wall_m2k_w": 2.523121387283237,
+      "c_wall_j_m2k": 79295.64,
+      "u_filmed": 0.37145427569636935,
+      "u_bare": 0.3963344788087056,
+      "file": "reference_data/evolution/ctf/multi_03layers_rins020.json"
+    },
+    {
+      "name": "multi_04layers_Rins005",
+      "n_layers": 4,
+      "r_wall_m2k_w": 0.8564547206165702,
+      "c_wall_j_m2k": 76495.64,
+      "u_filmed": 0.9751771383906007,
+      "u_bare": 1.1676040494938134,
+      "file": "reference_data/evolution/ctf/multi_04layers_rins005.json"
+    },
+    {
+      "name": "multi_04layers_Rins010",
+      "n_layers": 4,
+      "r_wall_m2k_w": 1.6897880539499035,
+      "c_wall_j_m2k": 77895.64,
+      "u_filmed": 0.5379849509334921,
+      "u_bare": 0.5917901938426454,
+      "file": "reference_data/evolution/ctf/multi_04layers_rins010.json"
+    },
+    {
+      "name": "multi_04layers_Rins020",
+      "n_layers": 4,
+      "r_wall_m2k_w": 3.3564547206165702,
+      "c_wall_j_m2k": 80695.64,
+      "u_filmed": 0.28365135259065505,
+      "u_bare": 0.29793340987370837,
+      "file": "reference_data/evolution/ctf/multi_04layers_rins020.json"
+    },
+    {
+      "name": "multi_05layers_Rins005",
+      "n_layers": 5,
+      "r_wall_m2k_w": 0.6596820809248555,
+      "c_wall_j_m2k": 113693.45999999999,
+      "u_filmed": 1.2067353971066253,
+      "u_bare": 1.515881708652793,
+      "file": "reference_data/evolution/ctf/multi_05layers_rins005.json"
+    },
+    {
+      "name": "multi_05layers_Rins010",
+      "n_layers": 5,
+      "r_wall_m2k_w": 1.2846820809248556,
+      "c_wall_j_m2k": 114743.45999999999,
+      "u_filmed": 0.6879083213048786,
+      "u_bare": 0.7784026996625422,
+      "file": "reference_data/evolution/ctf/multi_05layers_rins010.json"
+    },
+    {
+      "name": "multi_05layers_Rins020",
+      "n_layers": 5,
+      "r_wall_m2k_w": 2.5346820809248554,
+      "c_wall_j_m2k": 116843.45999999999,
+      "u_filmed": 0.36986597168921853,
+      "u_bare": 0.3945267958950969,
+      "file": "reference_data/evolution/ctf/multi_05layers_rins020.json"
+    },
+    {
+      "name": "multi_06layers_Rins005",
+      "n_layers": 6,
+      "r_wall_m2k_w": 0.7846820809248555,
+      "c_wall_j_m2k": 113903.45999999999,
+      "u_filmed": 1.0485674628910155,
+      "u_bare": 1.274401473296501,
+      "file": "reference_data/evolution/ctf/multi_06layers_rins005.json"
+    },
+    {
+      "name": "multi_06layers_Rins010",
+      "n_layers": 6,
+      "r_wall_m2k_w": 1.5346820809248556,
+      "c_wall_j_m2k": 115163.45999999999,
+      "u_filmed": 0.5869639712693011,
+      "u_bare": 0.6516007532956685,
+      "file": "reference_data/evolution/ctf/multi_06layers_rins010.json"
+    },
+    {
+      "name": "multi_06layers_Rins020",
+      "n_layers": 6,
+      "r_wall_m2k_w": 3.0346820809248554,
+      "c_wall_j_m2k": 117683.45999999999,
+      "u_filmed": 0.3121408350579265,
+      "u_bare": 0.32952380952380955,
+      "file": "reference_data/evolution/ctf/multi_06layers_rins020.json"
+    },
+    {
+      "name": "asymmetric_ins_out",
+      "n_layers": 4,
+      "r_wall_m2k_w": 2.2625102583315493,
+      "c_wall_j_m2k": 354115.1,
+      "u_filmed": 0.41126702903000656,
+      "u_bare": 0.44198694627684626,
+      "file": "reference_data/evolution/ctf/asymmetric_ins_out.json"
+    },
+    {
+      "name": "asymmetric_thin_film_int",
+      "n_layers": 2,
+      "r_wall_m2k_w": 0.20466040462427745,
+      "c_wall_j_m2k": 566510.1,
+      "u_filmed": 2.6762268295607043,
+      "u_bare": 4.886142983230362,
+      "file": "reference_data/evolution/ctf/asymmetric_thin_film_int.json"
+    },
+    {
+      "name": "asymmetric_thin_film_ext",
+      "n_layers": 2,
+      "r_wall_m2k_w": 0.20912469033856318,
+      "c_wall_j_m2k": 565602.2999999999,
+      "u_filmed": 2.64463026496531,
+      "u_bare": 4.781836130306021,
+      "file": "reference_data/evolution/ctf/asymmetric_thin_film_ext.json"
+    }
+  ]
+}

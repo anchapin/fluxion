@@ -1,12 +1,9 @@
-# Tools/scripts outputs (campaign artifacts, NOT source)
-# — kept per-evolver, never committed.
-checkpoints/
-results/
-logs/
-*.json
-*.yaml
-*.toml
-
 # Local evolver state (OpenEvolve database, etc.)
+# NOT source — never committed.
 .openevolve/
 .funsearch/
+
+# Per-campaign scratch artifacts (results/checkpoints/logs are committed
+# per PR; these are transient local runs only).
+.claude/
+*.tmp

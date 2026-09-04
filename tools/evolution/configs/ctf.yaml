@@ -1,0 +1,120 @@
+# OpenEvolve config for the state-space CTF heuristic evolution (#3337).
+#
+# Strategy: 4-island MAP-Elites with a small (per-island) population and a
+# bounded number of generations. The seed's EVOLVE-BLOCK-START/END markers
+# isolate the tunable heuristic functions (node grading, FOH / matrix-exp
+# scale thresholds, Leverrier extraction-truncation policy). The LLM only
+# edits text between the markers; everything outside is frozen context.
+#
+# Hardware target: local Ollama at http://localhost:11434/v1 with the
+# `qwen3.5:9.7B` model (Qwen2.5-Coder-class per the issue). The actual
+# Ollama tag is `qwen3.5:latest` (=9.7B parameter_size, 4-bit quantised,
+# 262144-token context) — same model class the issue specifies.
+#
+# Wall-clock budget: a full ≥200-generation run may exceed session bounds;
+# this config is designed for a bounded run (10–30 generations × 4 islands
+# ≈ 40–120 candidate evaluations). The `max_iterations` knob controls how
+# many candidate re-evaluations the campaign performs; lower it for a
+# bounded demo, raise it for the full run.
+
+# Number of islands in the MAP-Elites archive (issue spec: ≥ 4).
+num_islands: 4
+
+# Population per island — small for the bounded campaign; the issue's
+# ≈ 200 figure applies to the full ≥ 200-generation run.
+population_size: 12
+
+# Bounded-campaign iteration cap. Each iteration evaluates one candidate.
+# The full per-issue target is ≥ 200 generations; this config caps at the
+# session-bound-friendly default of 25.
+max_iterations: 25
+
+# Database checkpointing.
+checkpoint_interval: 5
+
+# LLM backend: OpenAI-compatible client pointing at local Ollama.
+llm:
+  api_base: "http://localhost:11434/v1"
+  # The Ollama tag is `qwen3.5:latest`; the parameter_size field in
+  # `ollama ps` confirms 9.7B, matching the issue's "Qwen2.5-Coder-class".
+  models:
+    - name: "qwen3.5:latest"
+      weight: 1.0
+  temperature: 0.3
+  max_tokens: 4096
+  # Ollama returns a "thinking" reasoning block in the message content
+  # before the actual answer; OpenEvolve extracts the code from
+  # <answer>...</answer> markers or from the entire content. We let the
+  # model think freely.
+
+# System prompt: instructs the model to keep edits inside EVOLVE-BLOCK
+# markers, preserve all other text byte-for-byte, and produce a single
+# Rust file with a `pub struct Candidate` that compiles.
+system_message: |
+  You are a Rust + building-energy-modeling engineer tuning numerical
+  heuristics in a state-space CTF (Conduction Transfer Function) seed.
+
+  The seed exposes three heuristic functions inside EVOLVE-BLOCK markers:
+
+    1. `node_grading_heuristic(layers, timestep) -> Vec<usize>` —
+       per-layer FD node placement (uniform today).
+    2. `fom_matrix_exp_thresholds(norm_1) -> (f64, usize)` —
+       Higham Padé [13/13] scaling-and-squaring threshold (θ₁₃ ≈ 1.5e-2
+       today).
+    3. `extraction_truncation_policy(inum, x_partial, s_tail_max, u_bare,
+       min_terms, n, max_terms) -> (bool, usize)` — Leverrier s-series
+       convergence check.
+
+  Edit ONLY the bodies of those three functions. Do not modify anything
+  outside `// EVOLVE-BLOCK-START` / `// EVOLVE-BLOCK-END` markers. Do not
+  add new top-level items. Do not remove the `pub struct Candidate` or
+  `impl Kernel for Candidate`. Keep the function signatures unchanged.
+
+  Each candidate is scored by the fluxion-evaluator harness against
+  ≥ 50 wall-library constructions. Hard invariants (forced fitness 0.0):
+    - DC gain identity ΣX/(1+ΣΦ) within 1e-6 relative of U_filmed.
+    - All coefficients finite (no NaN/Inf).
+    - Φ terms non-increasing in magnitude from j=1 onward.
+  Soft signals:
+    - Frequency-response error vs analytical Fourier conduction reference.
+    - State count: target N ≤ 6 (state-penalty multiplier).
+    - Eval latency (lower is better).
+
+  Begin your response with the COMPLETE updated seed source file
+  (between triple-backtick fences tagged `rust`). Do not include any
+  prose outside the fences.
+
+# Evaluator: the OpenEvolve config points at our Python shim, which
+# materializes the candidate into a self-contained crate, recompiles
+# it via the fluxion-evaluator harness contract, runs the wall library,
+# and emits a schema-v1 JSON Summary.
+evaluator:
+  # OpenEvolve's contract: invoke the evaluator with the candidate
+  # source path as the only positional argument. We point at the
+  # shim that wraps `cargo run --release` on the per-candidate crate.
+  command: "python3 tools/evolution/evaluators/ctf_evaluator.py --candidate {candidate_path} --reference-dir tests/reference_data/evolution/ctf"
+  timeout: 300  # seconds per candidate evaluation
+
+# Diff-based prompt sampler: when a candidate fails to compile, the
+# next prompt includes the diff between the previous-best and the failed
+# candidate so the LLM can see what broke.
+diff_based_evolution: true
+
+# Logging: write per-generation program-database to
+# `tools/evolution/results/ctf/` (committed at the end of the campaign).
+log_level: "INFO"
+
+# File suffix for candidate programs (default in OpenEvolve is `.py`;
+# we use `.rs` for the state-space CTF seed).
+file_suffix: ".rs"
+
+# Cascade evaluation requires the evaluator module to define
+# `evaluate_stage1` / `evaluate_stage2`. Our evaluator uses the single-
+# stage `evaluate` (full battery every time); disable cascade.
+cascade_evaluation: false
+
+# The seed is ~30 KB of dense Rust. The default OpenEvolve limit (10000
+# chars) is too tight — raise it so the LLM can echo the skeleton plus
+# the EVOLVE-BLOCK markers (which together exceed 30 KB). The
+# diff-based prompt below constrains the *mutation* size.
+max_code_length: 50000

@@ -1,0 +1,50 @@
+{
+  "id": "d2a2077e-d2de-4251-99b3-7123308cd7bd",
+  "generation": 0,
+  "iteration": 0,
+  "timestamp": 1788556971.7062602,
+  "parent_id": null,
+  "metrics": {
+    "score": 0.9999999999999221,
+    "metrics": {
+      "wall_library_size": 51,
+      "max_error": 2.2216332819645075e-14,
+      "min_invariant_margin": 0.9999999999999778,
+      "state_count_max": null,
+      "monotonic_pass": true,
+      "all_finite": true,
+      "compile_ok": true,
+      "invariants_passed": true,
+      "outcome": "evaluated",
+      "determinism_digest": "2733dbfbf2782d20a0bb2d8a026ca32bd14444266c8cea0fdf20690e2cb6c015",
+      "_wallclock_s": {
+        "build": 5.35101580619812,
+        "run": 0.01737046241760254,
+        "total": 5.368386268615723
+      },
+      "combined_score": 0.9999999999999221
+    },
+    "valid": true,
+    "error": null,
+    "summary": {
+      "schema_version": 1,
+      "candidate_id": "ctf-candidate",
+      "fitness": 0.9999999999999221,
+      "compiled": true,
+      "invariants_passed": true,
+      "max_error": 2.2216332819645075e-14,
+      "eval_latency_ns": 7948516,
+      "eval_latency_spread_ns": 0,
+      "determinism_digest": "2733dbfbf2782d20a0bb2d8a026ca32bd14444266c8cea0fdf20690e2cb6c015",
+      "outcome": "evaluated",
+      "min_invariant_margin": 0.9999999999999778,
+      "_eval_wallclock_s": {
+        "build": 5.35101580619812,
+        "run": 0.01737046241760254,
+        "total": 5.368386268615723
+      }
+    }
+  },
+  "language": "javascript",
+  "saved_at": 1788557180.6986768
+}

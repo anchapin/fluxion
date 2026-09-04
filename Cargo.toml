@@ -402,6 +402,14 @@ noisy_float = "0.2"
 # TOON serialization for round-trip testing (Issue #2071)
 fluxion-toon = { path = "crates/fluxion-toon" }
 
+# State-space CTF evolution harness (Issue #3337): the golden-coefficient
+# test in `tests/evolution_ctf_golden.rs` re-uses the in-tree evaluator
+# kernel contract to verify the seed module's baseline settings reproduce
+# the production CTF coefficients bit-for-bit. Adding it as a
+# dev-dependency rather than as a runtime dep keeps the main crate's
+# compile graph unchanged (the test only runs under `cargo test`).
+fluxion-evaluator = { path = "crates/fluxion-evaluator" }
+
 # Mock HTTP server for tests
 mockito = "1.7"
 
