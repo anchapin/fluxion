@@ -1656,6 +1656,7 @@ dependencies = [
  "fluxion-cfd",
  "fluxion-city",
  "fluxion-core",
+ "fluxion-evaluator",
  "fluxion-fluid",
  "fluxion-toon",
  "fluxion-twin",
