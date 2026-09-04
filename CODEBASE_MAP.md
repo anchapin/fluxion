@@ -484,6 +484,78 @@ return path (success and error).
 
 ---
 
+### fluxion-evaluator (crates/fluxion-evaluator/)
+
+**Purpose**: Deterministic headless evaluator harness for evolutionary kernel
+search. Provides the in-tree contract that any evolver (OpenEvolve,
+AlphaEvolve, FunSearch, …) programs against; the evolver itself stays
+out-of-tree and pluggable. Issue #3336.
+
+**Feature-gate relationship**: standalone workspace member with **zero new
+third-party dependencies** (the cargo-deny duplicate-version budget is at
+zero headroom, issue #3310). Uses only existing workspace deps (`serde`,
+`serde_json`, `thiserror`, `sha2`). The opt-in `dynamic` feature is
+intentionally a stub — see "Dynamic loading" below.
+
+**Entry point**: `crates/fluxion-evaluator/src/lib.rs`
+
+#### Public Surface
+
+| Item | Kind | Purpose |
+|------|------|---------|
+| `Kernel` | trait | The fixed trait every candidate implements; takes `&KernelInput` and returns `Result<KernelOutput, KernelError>` |
+| `EdgeCase`, `KernelInput`, `KernelOutput`, `ReferenceOutput` | struct | One-edge-case data: input handed to the candidate, candidate's output, known-good reference |
+| `CandidateId` | newtype | Stable identifier carried through the Summary |
+| `DefaultInvariantCheck` | struct | Kernel-agnostic invariant battery (energy closure ≤ 1e-6, NaN/Inf rejection) |
+| `InvariantCheck`, `InvariantResult`, `InvariantViolation` | trait / struct | Pluggable invariant system; kernels can layer domain-specific checks via `DefaultInvariantCheck::and_then` |
+| `run_battery` | fn | Aggregate one candidate across an edge-case battery, collecting violations |
+| `TimingConfig`, `LatencyMeasurement`, `LatencyAggregate`, `time_kernel` | struct / fn | Noise-robust latency: median-of-N + IQR spread (NEVER a single wall-clock shot) |
+| `RecompileConfig`, `RecompileOutcome`, `Recompiler` | struct | Recompilation harness: copy candidate into a tempdir, run `cargo build --target-dir` in a sandboxed subprocess, return the artifact path |
+| `SandboxConfig`, `SandboxEnforcer`, `determinism_digest` | struct / fn | Subprocess isolation (wall-clock cap, network isolation via `CARGO_NET_OFFLINE=true`); SHA-256 digest over canonical input bytes for byte-identical replay |
+| `Summary`, `SchemaVersion`, `SummaryBuilder`, `EvaluationOutcome`, `CURRENT_SCHEMA_VERSION` | struct / enum / const | **Versioned schema v1 JSON** — the contract between the harness and any out-of-tree evolver |
+| `EvaluatorError` | enum | Top-level error type with `#[from]` impls for compile failure / resource cap / dynamic load / subprocess / I/O / invalid config |
+| `fluxion-evaluator` | bin | Thin CLI wrapper that reads candidate source from stdin (or `--candidate-file`) and prints a schema-v1 Summary on stdout; OpenEvolve adapter subprocess entry point |
+| `sample_kernel` | example | The seed file format the harness-generated wrapper expects |
+
+#### Sandbox / Threat Model
+
+Candidate code is **untrusted**. The harness's only line of defense is
+`SandboxEnforcer`:
+
+| Capability | Threat | Mitigation |
+|------------|--------|------------|
+| Arbitrary Rust source | Compile-time resource exhaustion | Fresh `target/`, no debug-info, wall-clock cap (default 60 s) |
+| Panic in candidate | Crash the harness | Subprocess isolation; exit code surfaced |
+| Infinite loop | Hang the harness | Wall-clock cap (configurable via `FLUXION_EVAL_WALL_CLOCK_SECS`) |
+| Memory exhaustion | OOM the runner | Best-effort platform-dependent cap (advisory; not a guarantee) |
+| Network access | Exfiltrate source | `CARGO_NET_OFFLINE=true` (opt-out: `FLUXION_EVAL_ALLOW_NET=1`) |
+
+The full threat model is documented in
+[`crates/fluxion-evaluator/src/sandbox.rs`](crates/fluxion-evaluator/src/sandbox.rs).
+
+#### Dynamic Loading (`dynamic` feature, opt-in, never used in CI)
+
+The feature is **intentionally a stub** in this PR: enabling it does NOT
+add `libloading` because that would require a new third-party crate and
+the project is at zero headroom on the duplicate-version budget
+(issue #3310). Every public function in `dynamic.rs` returns
+`DynamicLoadError::NotImplementedInThisBuild`. The expected cdylib ABI is
+documented in
+[`crates/fluxion-evaluator/src/dynamic.rs`](crates/fluxion-evaluator/src/dynamic.rs)
+so a follow-up PR can swap in `libloading` once the budget allows.
+
+#### Memory Ownership
+
+Pure value-passing — no `unsafe` (denied at the crate root via
+`#![deny(unsafe_code)]`), no shared mutable state across evaluations. The
+recompile path owns the candidate tempdir for the duration of one
+evaluation; `Recompiler::recompile` produces an owned `RecompileOutcome`
+that the caller drops. Sandbox subprocesses are killed on harness
+shutdown (best-effort via wall-clock timeout). No raw pointers, no FFI
+in the default build.
+
+---
+
 ### fluxion-mcp (fluxion-mcp/)
 
 **Purpose**: Model Context Protocol (MCP) server exposing the Fluxion BEM engine
