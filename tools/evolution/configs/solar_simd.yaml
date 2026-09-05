@@ -1,0 +1,171 @@
+# OpenEvolve campaign configuration for issue #3338 — solar / radiation
+# SIMD/cache-blocked accumulation kernels.
+#
+# This file is the contract any reference OpenEvolve adapter reads to
+# drive `fluxion-evaluator` against the seeds at
+# `tools/evolution/seeds/solar_simd/`. The adapter itself is a thin
+# Python shim and ships in a follow-up PR (see `tools/evolution/README.md`).
+#
+# The campaign target backend is **local Ollama** — `$0 / candidate`,
+# fully on-host — using `qwen3.5:9.7B` per the issue.  On this build
+# the locally cached variant is `qwen3.5:4b`; pin to whichever model
+# is available.  Smoke-test before scaling to a full ≥200-gen run.
+#
+# # Running
+#
+# ```text
+# $ ollama serve &
+# $ ollama pull qwen3.5:9.7B    # or: qwen3.5:4b / qwen3.5:latest
+# $ pip install openevolve
+# $ python3 tools/evolution/scripts/run_openevolve_campaign.py \
+#     --config tools/evolution/configs/solar_simd.yaml \
+#     --generations 5
+# ```
+#
+# # Why these knobs (and not others)
+#
+# * `islands: 4` — keep the population diverse; each island
+#   specializes in one mutation class (layout / tile / unroll / SIMD).
+# * `population_per_island: 8` — bounded campaign; issue §6 ("Full
+#   ≥200-gen may exceed session bounds; land harness + seeds + fixture
+#   + configs + a SHORT deterministic re-run and document the
+#   full-run command + wall-time projection").
+# * `evaluator.command` — points at the in-tree
+#   `fluxion-evaluator` binary. The adapter invokes this once per
+#   candidate; a Summary JSON arrives on stdout, exit code on the
+#   process. Schema v1 (issue #3336).
+# * `evaluator.timeout_s: 60` — recompile budget matches the harness's
+#   default `SandboxConfig::wall_clock_cap` (issue #3336).
+# * `checkpoint_interval: 5` — small campaign, frequent checkpoints.
+# * `model.name: qwen3.5:9.7B` — per the issue; pin to whatever your
+#   ollama cache actually has. The README links to ollama.com/library.
+# * `model.api_base: http://localhost:11434/v1` — local Ollama OpenAI-
+#   compatible endpoint. To swap to a remote model, change this URL
+#   and the `api_key` (or unset it for local).
+
+campaign:
+  name: solar_simd_v1
+  description: |
+    Evolve SIMD/cache-blocked variants of the six measured-hot
+    irradiance/flux accumulation loops called out in issue #3338
+    (Perez diffuse tilted, calculate_surface_irradiance, surface_radiative_exchange,
+    InteriorSurfaceNetwork::net_lw_*, SkyRadiationExchange::net_radiative_flux,
+    calculate_per_surface_irradiance).
+  issue: 3338
+  schema_version: 1
+  bounded:
+    short_re_run:
+      generations: 5
+      population_per_island: 4
+      islands: 2
+    full_run_command: |
+      python3 tools/evolution/scripts/run_openevolve_campaign.py \
+        --config tools/evolution/configs/solar_simd.yaml \
+        --generations 200 --population 32 --islands 8 \
+        --checkpoint-every 10
+    wall_time_projection: |
+      At 4 candidates/gen × 8 islands × 60 s evaluator timeout cap
+      the full ≥200-gen run projects to ≈ 200 × 4 × 8 × ~3 s median
+      evaluate ≈ 5.3 CPU-hours. Add ~30 % OpenEvolve LLM-query
+      overhead → ≈ 7 wall-clock hours on a 16-core host. Runs on
+      `dev-1.lab` in the existing CI pool.
+
+population:
+  islands: 4
+  population_per_island: 8
+  seed_dir: tools/evolution/seeds/solar_simd
+  edge_cases: tools/evolution/edge_cases/solar_simd.json
+
+evaluator:
+  # Recompile path (issue #3336): the harness copies each candidate
+  # into a hermetic tempdir, runs `cargo build`, dispatches the
+  # compiled `pub struct Candidate` against the edge-case JSON, and
+  # emits one Summary on stdout.
+  binary: target/release/fluxion-evaluator
+  args:
+    - --candidate-file
+    - "{candidate_src_path}"
+    - --edge-cases
+    - "tools/evolution/edge_cases/solar_simd.json"
+    - --candidate-id
+    - "{candidate_id}"
+  timeout_s: 60
+  # Eval failure modes (issue #3338 §"acceptance"):
+  #   exit 0, fitness > 0   → score per schema v1
+  #   exit 0, fitness == 0  → invariant hard-fail (kill candidate)
+  #   exit 2                → compile failure (record, kill candidate)
+  #   exit 3                → invariant hard-fail (kill candidate)
+  #   exit 4                → timeout / resource cap (record, kill)
+  parse_summary_from: stdout
+
+fitness:
+  # Weighted combination of accuracy margin + latency, per the schema
+  # v1 contract. Issue #3338 §"acceptance / decision on closure" pins
+  # the floor: ≥20 % throughput improvement on the hot
+  # `solar_kernel_bench` groups with `simd-kernels` enabled —
+  # otherwise the issue documents why the search converged lower.
+  weights:
+    accuracy_margin: 0.6
+    inverse_latency: 0.4
+  hard_floor:
+    invariants_passed: true
+    accuracy_rel_tol_default: 1.0e-9
+    accuracy_rel_tol_simd_kernels: 1.0e-6
+
+invariants:
+  # issue #3338 §"INVARIANT §6" — invariants are wired into the harness
+  # by the OpenEvolve adapter (this file is the contract). The harness
+  # runs them per candidate, returning `Summary.invariant_violations`
+  # empty on pass.
+  enabled:
+    - nan_or_inf          # binary; threshold None
+    - energy_closure      # relative |candidate - reference| / |reference|
+    - reciprocity_optional  # N/A for these kernels (analytic Hottel closed forms)
+  tolerances:
+    default: 1.0e-9
+    simd_kernels: 1.0e-6
+
+model:
+  # Per the issue: `qwen3.5:9.7B`. Local Ollama at the OpenAI-
+  # compatible `/v1` endpoint. Drop-down to `qwen3.5:4b` or
+  # `qwen3.5:latest` if 9.7B is not in the cache; the schema-v1
+  # contract carries the fitness signal regardless of LLM model size.
+  name: qwen3.5:9.7B
+  api_base: http://localhost:11434/v1
+  api_key_env: OPENAI_API_KEY
+  temperature: 0.2
+  max_tokens: 4096
+  retries: 2
+
+checkpoints:
+  # The harness's `Summary::determinism_digest` is sha256 of
+  # candidate_source + edge_cases + toolchain_version, byte-stable
+  # across runs. Saved to `tools/evolution/results/solar_simd/`.
+  dir: tools/evolution/results/solar_simd/checkpoints
+  interval_generations: 5
+  best_path: tools/evolution/results/solar_simd/best_candidate.json
+  program_db_path: tools/evolution/results/solar_simd/program_db
+
+mutation_space:
+  # Issue #3338 §"Define the evolutionary mutation space" — every
+  # mutation is wrapped in `// EVOLVE-BLOCK-START / END` markers
+  # inside each seed at `tools/evolution/seeds/solar_simd/*.rs`.
+  # The OpenEvolve adapter is configured to honor those markers and
+  # treat code *outside* the markers as immutable context (compile-
+  # fail candidates that break the contract are auto-rejected).
+  change_markers:
+    start: "EVOLVE-BLOCK-START"
+    end: "EVOLVE-BLOCK-END"
+  allowed_edits:
+    - data_layout_aos_to_soa: "Pack per-edge scalars into [f64; LANES] before any reduction"
+    - cache_tile_dimensions: "Pre-load LANES_PER_TILE = 4 / 8 / 16 chunks into local arrays"
+    - unroll_factors: "1x / 2x / 4x / 8x inner-product unrolling"
+    - simd_lane_mappings: "core::arch::x86_64::{_mm256_*, _mm512_*} behind is_x86_feature_detected!(avx2/avx512f)"
+    - alignment_padding: "#[repr(align(32/64))] lane storage; MaybeUninit zero-cost init"
+  forbidden_edits:
+    - any change to the `pub struct Candidate` declaration
+    - any change to the `pub fn evaluate(&self, input: &KernelInput)` signature
+    - any change to the JSON-encodable `KernelOutput::payload` field paths
+    - any change to the `evolve_*` function signature (the harness's recompile path calls these by name)
+    - any change to the `fast-math` invocation (issue #3322 do-not-use list)
+    - any constant tuned past the existing ASHRAE 140 baseline fixtures

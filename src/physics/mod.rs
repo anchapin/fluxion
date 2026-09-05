@@ -67,6 +67,12 @@ pub mod zero_copy_matrix;
 
 pub mod multi_node_solver;
 pub mod nine_r4c_nodal_trace;
+// Issue #3338 — opt-in SIMD/cache-blocked dispatch layer for the
+// solar/radiation accumulation loops (`perez_diffuse_tilted`,
+// `surface_radiative_exchange`, …). Off by default; reaches runtime
+// dispatch only under `--features simd-kernels`. Bit-identical under
+// the default feature (every helper here resolves to a passthrough).
+pub mod simd_kernels;
 pub mod solver_manager;
 pub mod solver_registry;
 pub mod solver_trait;

@@ -1,0 +1,145 @@
+{
+  "case_set": [
+    {
+      "case_name": "perez_denver_noon_t60_s180",
+      "input": {
+        "case_name": "perez_denver_noon_t60_s180",
+        "params": {
+          "airmass": 1.5,
+          "dhi": 100.0,
+          "dni": 800.0,
+          "dni_extra": 1361.0,
+          "solar_azimuth_deg": 180.0,
+          "surface_azimuth_deg": 180.0,
+          "tilt_deg": 60.0,
+          "zenith_deg": 45.0
+        }
+      },
+      "kernel_focus": "perez_diffuse_tilted",
+      "reference": {
+        "diffuse_tilted_wm2": 85.23380303132869
+      },
+      "tolerance": {
+        "default": 1e-9,
+        "simd_kernels": 1e-6
+      }
+    },
+    {
+      "case_name": "perez_low_dhi_t0_clearness",
+      "input": {
+        "case_name": "perez_low_dhi_t0_clearness",
+        "params": {
+          "airmass": 1.05,
+          "dhi": 25.0,
+          "dni": 1100.0,
+          "dni_extra": 1361.0,
+          "solar_azimuth_deg": 180.0,
+          "surface_azimuth_deg": 180.0,
+          "tilt_deg": 0.0,
+          "zenith_deg": 18.0
+        }
+      },
+      "kernel_focus": "perez_diffuse_tilted",
+      "reference": {
+        "diffuse_tilted_wm2": 25.0
+      },
+      "tolerance": {
+        "default": 1e-9,
+        "simd_kernels": 1e-6
+      }
+    },
+    {
+      "case_name": "perez_twilight_high_airmass",
+      "input": {
+        "case_name": "perez_twilight_high_airmass",
+        "params": {
+          "airmass": 11.0,
+          "dhi": 50.0,
+          "dni": 100.0,
+          "dni_extra": 1361.0,
+          "solar_azimuth_deg": 200.0,
+          "surface_azimuth_deg": 270.0,
+          "tilt_deg": 90.0,
+          "zenith_deg": 84.0
+        }
+      },
+      "kernel_focus": "perez_diffuse_tilted",
+      "reference": {
+        "diffuse_tilted_wm2": 23.79488238411466
+      },
+      "tolerance": {
+        "default": 1e-9,
+        "simd_kernels": 1e-6
+      }
+    },
+    {
+      "case_name": "stefan_boltzmann_sunspace_40_20",
+      "input": {
+        "case_name": "stefan_boltzmann_sunspace_40_20",
+        "params": {
+          "area": 21.6,
+          "emissivity_a": 0.9,
+          "emissivity_b": 0.9,
+          "t_a_c": 40.0,
+          "t_b_c": 20.0,
+          "view_factor": 1.0
+        }
+      },
+      "kernel_focus": "stefan_boltzmann_pair",
+      "reference": {
+        "q_w": 2213.530587986769
+      },
+      "tolerance": {
+        "default": 1e-9,
+        "simd_kernels": 1e-6
+      }
+    },
+    {
+      "case_name": "stefan_boltzmann_backzone_zero_dt",
+      "input": {
+        "case_name": "stefan_boltzmann_backzone_zero_dt",
+        "params": {
+          "area": 12.0,
+          "emissivity_a": 0.9,
+          "emissivity_b": 0.9,
+          "t_a_c": 20.0,
+          "t_b_c": 20.0,
+          "view_factor": 0.5
+        }
+      },
+      "kernel_focus": "stefan_boltzmann_pair",
+      "reference": {
+        "q_w": 0.0
+      },
+      "tolerance": {
+        "default": 1e-9,
+        "simd_kernels": 1e-6
+      }
+    },
+    {
+      "case_name": "stefan_boltzmann_case960_peak_hour",
+      "input": {
+        "case_name": "stefan_boltzmann_case960_peak_hour",
+        "params": {
+          "area": 21.6,
+          "emissivity_a": 0.9,
+          "emissivity_b": 0.9,
+          "t_a_c": 26.85,
+          "t_b_c": 9.85,
+          "view_factor": 0.5
+        }
+      },
+      "kernel_focus": "stefan_boltzmann_pair",
+      "reference": {
+        "q_w": 836.2078013252352
+      },
+      "tolerance": {
+        "default": 1e-9,
+        "simd_kernels": 1e-6
+      }
+    }
+  ],
+  "generated_by": "tools/evolution/scripts/regenerate_simd_edge_cases.sh (re-run only; never hand-edit)",
+  "kernel": "solar_simd_evolved",
+  "schema_version": 1
+}

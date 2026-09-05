@@ -200,6 +200,19 @@ deprecated-multinode-runner = []
 # list so no other feature or workspace member can unify it in (#2904).
 fast-math = []
 
+# Issue #3338 — opt-in SIMD/cache-blocked path for the solar / radiation
+# accumulation loops (`perez_diffuse_tilted`, `surface_radiative_exchange`,
+# `net_lw_*`, `SkyRadiationExchange::net_radiative_flux`). OFF by default
+# and must stay that way: only callers that opt in via
+# `--features simd-kernels` reach the runtime-dispatched SIMD path.
+# The harness acceptance criterion is "default-feature builds byte-
+# identical to today"; this feature widens to allow last-ulp drift in
+# the `simd_kernels` invariant-battery tolerance (1e-6 instead of
+# 1e-9) for reassociation/contraction allowances — NOT for energy-
+# balance or ASHRAE 140 baselines. Aligned with the issue's "Gating
+# revised" section.
+simd-kernels = []
+
 [lints.rust]
 unexpected_cfgs = { level = "allow", check-cfg = ["cfg(docsrs,test)", "cfg(gil_refs)"] }
 
@@ -402,12 +415,22 @@ noisy_float = "0.2"
 # TOON serialization for round-trip testing (Issue #2071)
 fluxion-toon = { path = "crates/fluxion-toon" }
 
-# State-space CTF evolution harness (Issue #3337): the golden-coefficient
-# test in `tests/evolution_ctf_golden.rs` re-uses the in-tree evaluator
-# kernel contract to verify the seed module's baseline settings reproduce
-# the production CTF coefficients bit-for-bit. Adding it as a
-# dev-dependency rather than as a runtime dep keeps the main crate's
-# compile graph unchanged (the test only runs under `cargo test`).
+# `fluxion-evaluator` is wired as a dev-dependency by two related kernel
+# evolution harnesses:
+#
+#   - Issue #3337 (PR #3351): the golden-coefficient test in
+#     `tests/evolution_ctf_golden.rs` re-uses the in-tree evaluator
+#     kernel contract to verify the seed module's baseline settings
+#     reproduce the production CTF coefficients bit-for-bit.
+#   - Issue #3338 (PR #3353): the in-tree smoke test at
+#     `tests/solar_simd_evolution.rs` drives the solar / radiation
+#     SIMD evolution seeds via the same `Kernel` trait the OpenEvolve
+#     adapter uses.
+#
+# Adding it as a dev-dependency rather than as a runtime dep keeps the
+# main crate's compile graph unchanged (the tests only run under
+# `cargo test`). No new third-party crates are introduced; the lockfile
+# entry was already created at issue #3336's PR #3350 merge.
 fluxion-evaluator = { path = "crates/fluxion-evaluator" }
 
 # Mock HTTP server for tests

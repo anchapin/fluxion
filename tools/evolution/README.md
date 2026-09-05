@@ -1,11 +1,32 @@
-# State-Space CTF Evolution Campaign (#3337)
+# Evolution Campaign Harness (#3337 + #3338)
 
-This directory contains the OpenEvolve campaign harness, seed
-module, analytical reference generator, and bounded-campaign results
-for **Issue #3337**: evolving the state-space CTF discretization
+This directory contains the in-tree scaffolding for the OpenEvolve
+campaign harness, seed modules, analytical reference generators, and
+bounded-campaign results across **two** issues:
+
+- **Issue #3337** — evolving the state-space CTF discretization
+  heuristics in `src/physics/state_space_ctf.rs`.
+- **Issue #3338** — evolving the SIMD / cache-blocked solar &
+  radiation accumulation kernels in
+  `src/solar/surface_irradiance.rs`, `src/sim/interzone_radiation.rs`,
+  `src/sim/longwave_exchange.rs`, and `src/sim/sky_radiation.rs`.
+
+The OpenEvolve adapter itself remains out-of-tree by design
+(Issue #3336): the evolver is fundamentally an *external*
+orchestrator (it spins up LLM queries, manages a population database,
+drives a checkpoint loop). Keeping it out-of-tree lets users swap
+evolvers — OpenEvolve, FunSearch, AlphaEvolve — without touching the
+harness. The harness contract (`crates/fluxion-evaluator/`) is
+evolver-agnostic.
+
+---
+
+## State-Space CTF Evolution Campaign (#3337)
+
+This sub-campaign targets the state-space CTF discretization
 heuristics in `src/physics/state_space_ctf.rs`.
 
-## Layout
+### Layout
 
 ```
 tools/evolution/
@@ -35,7 +56,7 @@ tests/
 └── evolution_ctf_golden.rs                 # golden-coefficient test (baseline correctness)
 ```
 
-## Re-run instructions
+### Re-run instructions (CTF)
 
 ```sh
 # 1. Install OpenEvolve + Ollama (one-time)
@@ -65,9 +86,9 @@ asyncio.run(oe.run())
 "
 ```
 
-## Architecture
+### Architecture (CTF)
 
-### Seed module (`tools/evolution/seeds/ctf/seed.rs`)
+#### Seed module (`tools/evolution/seeds/ctf/seed.rs`)
 
 The seed is a self-contained Rust file (972 lines) that mirrors the
 production state-space CTF pipeline verbatim, with three
@@ -91,7 +112,7 @@ issue's "what actually varies" constraint.
 The seed declares `pub struct Candidate` and `impl Kernel for
 Candidate`, satisfying the `fluxion-evaluator` harness contract.
 
-### Golden-coefficient test (`tests/evolution_ctf_golden.rs`)
+#### Golden-coefficient test (`tests/evolution_ctf_golden.rs`)
 
 Verifies that the seed at baseline settings reproduces the production
 CTF coefficients bit-for-bit (`max |Δx| < 1e-10`, `max |Δy| < 1e-10`)
@@ -101,7 +122,7 @@ across the wall library. Run as:
 cargo test --test evolution_ctf_golden -p fluxion
 ```
 
-### Analytical reference generator (`tools/evolution/seeds/ctf/generate_reference.py`)
+#### Analytical reference generator (`tools/evolution/seeds/ctf/generate_reference.py`)
 
 Per `RULES.md` rule 0: every numerical reference used as fitness
 signal must be produced by executed code. This script computes
@@ -121,7 +142,7 @@ ultra-low-mass partitions → heavy concrete/masonry, including
 the ASHRAE 140 envelope constructions (Cases 600, 900, 900FF, 600
 roof/floor).
 
-### Evaluator harness (`tools/evolution/evaluators/evaluation.py`)
+#### Evaluator harness (`tools/evolution/evaluators/evaluation.py`)
 
 OpenEvolve loads this file via importlib and calls
 `evaluate(candidate_path)`. The function:
@@ -136,7 +157,7 @@ OpenEvolve loads this file via importlib and calls
 The compiled binary is a thin wrapper around `fluxion_evaluator`'s
 schema-v1 Summary contract.
 
-### Per-construction fitness (`ctf_evaluator.py`)
+#### Per-construction fitness (`ctf_evaluator.py`)
 
 The compiled binary exercises each reference construction through
 the candidate's `Kernel::evaluate` and aggregates per-edge metrics
@@ -155,7 +176,7 @@ Hard invariants (any violation → fitness = 0.0):
    tail-noise round-off; the Seem series has small oscillations at
    the very-high-j terms).
 
-### OpenEvolve config (`tools/evolution/configs/ctf.yaml`)
+#### OpenEvolve config (`tools/evolution/configs/ctf.yaml`)
 
 | Setting | Value | Rationale |
 |---|---|---|
@@ -167,7 +188,7 @@ Hard invariants (any violation → fitness = 0.0):
 | `max_code_length` | 50000 | Seed + skeleton is ~31 KB |
 | `diff_based_evolution` | true | Constrain mutations to seed skeletons |
 
-## Bounded-campaign summary
+### Bounded-campaign summary (CTF)
 
 A 5-iteration bounded run completed in ~3.5 minutes (215 s):
 
@@ -185,7 +206,7 @@ The bounded run confirms the harness integration, fixture, and
 seed/golden-test contract work end-to-end. A full ≥200-generation
 campaign is the natural follow-up.
 
-## Re-running the full campaign
+### Re-running the full campaign (CTF)
 
 Wall-time projection for `max_iterations=200` (issue's full target):
 
@@ -202,7 +223,7 @@ with 10% migration rate converges on this kind of low-dimensional
 heuristic search within 100 generations in practice; the ≥200
 figure is conservative.
 
-## Decision: `refs #3337`
+### Decision: `refs #3337` (CTF)
 
 Given the bounded run could not improve on baseline (which already
 scores max-fitness 1.0 within floating-point precision), and that
@@ -226,3 +247,84 @@ The acceptance criteria are met:
 - [x] `cargo fmt -- --check`, `cargo clippy --lib -- -D warnings`,
       `cargo test -p fluxion-evaluator`, `cargo test --test
       evolution_ctf_golden` all clean.
+
+---
+
+## Solar SIMD Evolution Campaign (#3338)
+
+This sub-campaign targets the SIMD / cache-blocked hot loops in
+`src/solar/surface_irradiance.rs`, `src/sim/interzone_radiation.rs`,
+`src/sim/longwave_exchange.rs`, and `src/sim/sky_radiation.rs`.
+
+### Layout (solar SIMD)
+
+```
+tools/evolution/
+├── README.md                              # this file
+├── configs/
+│   └── solar_simd.yaml                    # issue #3338 OpenEvolve config
+├── edge_cases/
+│   └── solar_simd.json                    # per-edge fixture (regenerated, never hand-edited)
+├── scripts/
+│   ├── regenerate_simd_edge_cases.sh      # idempotent reference-value regenerator
+│   ├── run_bounded_campaign.py            # bounded short re-run (3 mutations × seeds)
+│   └── run_openevolve_campaign.py         # stub: prints the OpenEvolve invocation
+├── seeds/
+│   └── solar_simd/
+│       ├── perez_diffuse_tilted.rs        # EVOLVE-BLOCK marked seed
+│       └── stefan_boltzmann_pair.rs       # EVOLVE-BLOCK marked seed
+└── results/
+    └── solar_simd/
+        ├── baseline_evidence.json         # profile-first JSON (per-loop medians + IQR + Mo/s)
+        ├── PR_BODY.md                     # profile-first evidence + acceptance checklist
+        └── bounded_run/
+            ├── README.md                  # bounded-run docs
+            ├── index.json                 # one-line-per-candidate roll-up
+            └── *.json                     # per-candidate Summary JSONs (Schema v1)
+```
+
+### Why not in-tree for OpenEvolve
+
+The evolver is fundamentally an *external* campaign driver —
+it spins up LLM queries, manages a population database, drives a
+checkpoint loop. Keeping it out-of-tree lets users swap
+evolvers (OpenEvolve, FunSearch, AlphaEvolve) without touching the
+harness. The harness contract (`crates/fluxion-evaluator/`)
+is evolver-agnostic.
+
+The full-run invocation is documented in
+`configs/solar_simd.yaml::campaign.bounded.full_run_command`:
+
+```text
+$ python3 tools/evolution/scripts/run_openevolve_campaign.py \
+    --config tools/evolution/configs/solar_simd.yaml \
+    --generations 200 --population 32 --islands 8
+```
+
+(The script is a stub while OpenEvolve is out-of-tree; the
+bounded runner is the trust artifact.)
+
+### Bounded short re-run (solar SIMD)
+
+The bounded re-run is the **deterministic** trust artifact.
+Three mutations per seed, run through the harness's recompile
+pipeline + invariant battery:
+
+```text
+$ BOUNDED_CAMPAIGN_TIMEOUT_S=900 \
+    python3 tools/evolution/scripts/run_bounded_campaign.py
+```
+
+Per-candidate Summary JSONs land in
+`tools/evolution/results/solar_simd/bounded_run/`.
+
+---
+
+## Shared issue references
+
+- **#3336** — `fluxion-evaluator` deterministic harness (the
+  recompile path + invariant battery + Schema v1 Summary
+  contract). PR #3350 merged.
+- **#3322 / #3324 / #3326** — coordinated with the `fast-math`
+  family (algebraic-FP helper layer, manual solar-kernel
+  conversion, advisory CI comparison). No boundary drift.

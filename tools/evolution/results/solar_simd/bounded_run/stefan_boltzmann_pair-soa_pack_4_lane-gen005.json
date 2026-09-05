@@ -1,0 +1,40 @@
+{
+  "schema_version": 1,
+  "candidate_id": "stefan_boltzmann_pair-soa_pack_4_lane-gen005",
+  "generation": 5,
+  "compiled": true,
+  "invariants_passed": true,
+  "fitness": 1.0,
+  "max_error": 0.0,
+  "compile_seconds": 90.493,
+  "outcome": "evaluated",
+  "invariant_violations": [],
+  "per_case": [
+    {
+      "case_name": "stefan_boltzmann_sunspace_40_20",
+      "kernel_focus": "stefan_boltzmann_pair",
+      "abs_err": 0.0,
+      "ref_norm": 0.0,
+      "rel_err": 0.0,
+      "max_rel": 0.0
+    },
+    {
+      "case_name": "stefan_boltzmann_backzone_zero_dt",
+      "kernel_focus": "stefan_boltzmann_pair",
+      "abs_err": 0.0,
+      "ref_norm": 0.0,
+      "rel_err": 0.0,
+      "max_rel": 0.0
+    },
+    {
+      "case_name": "stefan_boltzmann_case960_peak_hour",
+      "kernel_focus": "stefan_boltzmann_pair",
+      "abs_err": 0.0,
+      "ref_norm": 0.0,
+      "rel_err": 0.0,
+      "max_rel": 0.0
+    }
+  ],
+  "mutator": "soa_pack_4_lane",
+  "wall_time_s": 90.5
+}
