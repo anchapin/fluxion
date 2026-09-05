@@ -37,6 +37,11 @@
 // that the existing solvers cannot meet accuracy requirements.
 
 pub mod bdf_engine;
+// Issue #3339 — five stiff deterministic DAE circuits used as the
+// evolution fitness battery. The fixtures live as a sibling module of
+// `bdf_engine` so `bdf_evaluator` can compile them in without forcing
+// the (smaller) `fluxion-core` leaf to grow new public surface.
+pub mod bdf_benchmarks;
 pub mod constants;
 pub mod continuous;
 pub mod exterior_convection;

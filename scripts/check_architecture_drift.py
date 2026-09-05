@@ -423,6 +423,8 @@ def check_drift() -> tuple[list[str], bool]:
         "ZoneEquipment",  # zone-level HVAC equipment trait (src/sim/hvac/zone_equipment.rs)
         "DaeSystem",  # BDF ODE system trait in bdf_engine.rs (#2074)
         "ResidualFunction",  # BDF residual trait in bdf_engine.rs (#2074)
+        "Circuit",  # BDF benchmark-circuit trait in bdf_benchmarks.rs (#3339); benchmark-fixture surface, not a physics swap-point
+        "DynCircuit",  # BDF dyn-dispatch wrapper for Circuit + DaeSystem in bdf_benchmarks.rs (#3339); internal boxed-driver surface
         "DecoupledLoopEquipment",  # ECS/rayon parallel loop evaluator (#1991)
         "PhysicsEquipment",  # pre-existing drift on develop
         "FfdSolver",  # FFD solver trait in src/sim/loose_coupling.rs (new in #2420)

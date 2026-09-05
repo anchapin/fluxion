@@ -1,3 +1,12 @@
+# Tools/scripts outputs (campaign artifacts, NOT source).
+# By default everything in `checkpoints/`, `results/`, `logs/`,
+# plus *.json / *.yaml / *.toml is local-only — kept per-evolver,
+# never committed.
+checkpoints/
+logs/
+*.yaml
+*.toml
+
 # Local evolver state (OpenEvolve database, etc.)
 # NOT source — never committed.
 .openevolve/
@@ -8,21 +17,35 @@
 .claude/
 *.tmp
 
-# Per-issue committed artifacts (CTF + solar-SIMD campaigns, issues
-# #3337 and #3338) are allow-listed below via `git add -f <file>` or
-# by NOT matching the catch-all globs.
+# Per-issue committed artifacts (CTF + solar-SIMD + BDF campaigns,
+# issues #3337, #3338, #3339) are allow-listed below via `git add -f <file>`
+# or by NOT matching the catch-all globs.
 # The default catch-all globs `*.json`, `*.yaml`, `*.toml`
 # are intentionally narrow:
 
 # Per-edge fixture JSONs (regenerable, source-of-truth).
 !edge_cases/
 
-# Per-issue OpenEvolve configs (issue #3337 et al.).
+# Per-issue OpenEvolve configs (issue #3337, #3339 et al.).
 !configs/
 
-# Per-issue bounded re-run results (issue #3337 et al.).
+# Per-issue bounded re-run results (issue #3337, #3339 et al.).
 !results/
 
-# Logs and OpenEvolve local state stay uncommitted.
-checkpoints/
-logs/
+# BDF campaign (#3339) — the seeded orchestration uses these to
+# reproduce the byte-equivalent baseline trace and to run the bounded
+# re-run documented in `tools/evolution/results/dae/bounded/REPORT.md`.
+# The unconditional *.json block above would suppress them, so
+# whitelist the schema-v1 Summary JSONs and the campaign log files
+# OpenEvolve / the bounded orchestrator emit.
+!*.json
+!results/dae/
+!results/dae/golden/baseline.json
+!results/dae/bounded/REPORT.md
+!results/dae/bounded/generation_log.jsonl
+!results/dae/bounded/summary.json
+!results/dae/bounded/winner.json
+
+# OpenEvolve config (issue #3339). The blanket `*.yaml` block
+# above suppresses it; whitelist the canonical DAE config.
+!configs/dae.yaml

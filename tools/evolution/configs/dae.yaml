@@ -1,0 +1,98 @@
+# Issue #3339 — OpenEvolve config for the BDF DAE evolver.
+#
+# Reference evolver (per `tools/evolution/README.md`, #3336, #3339):
+#   pip install openevolve               # already in `.venv-eval`
+#   git clone https://github.com/algorithmicsuperintelligence/openevolve
+#
+# The Ollama local LLM endpoint is `http://localhost:11434/v1`; the
+# `qwen2.5-coder:32b` recommended in the harness README is NOT pulled
+# here because the local Ollama instance exposes only the qwen3.5
+# family. We pin `qwen3.5:4b` (the loaded 3.5-series model) — the
+# 9.7B target mentioned in the issue text is not available in the
+# current Ollama daemon's model list.
+
+llm:
+  api_base:    http://localhost:11434/v1
+  api_key:     ollama
+  primary_model:    qwen3.5:4b
+  secondary_model:  qwen3.5:4b
+  temperature:      0.7
+  max_tokens:       1024
+  timeout:          60
+
+# Population + island configuration. MAP-Elites with 4 islands keeps
+# the campaign wall-time bounded while giving the LLM multiple niches
+# to fill.
+database:
+  population_size:        32
+  num_islands:            4
+  archive_size:           64
+  elite_selection_ratio:  0.25
+  feature_dimensions:
+    - name: mode
+      type: categorical
+      values: [0, 1]
+    - name: baseline_factor
+      type: continuous
+      min: 0.5
+      max: 1.5
+    - name: floor
+      type: continuous
+      min: 0.1
+      max: 0.6
+    - name: tight_threshold
+      type: continuous
+      min: 0.7
+      max: 1.1
+
+# Evaluation: the bounded-campaign fitness oracle. `command` is invoked
+# once per candidate; exit code 0 ⇒ consult the JSON `score` on stdout
+# (`fitness` field in our Summary). OpenEvolve's evaluator shim hands
+# `{ candidate_id, generation, candidate_path }` via env vars.
+evaluation:
+  timeout:        90        # wall-clock cap per candidate; matches fluxion-evaluator
+  sandbox:        subprocess
+  max_retries:    1
+
+# Sliced evolution surface: OpenEvolve mutates ONLY the region between
+# the `# EVOLVE-BLOCK-START` / `# EVOLVE-BLOCK-END` markers in the
+# seed file. Everything else (schema declaration, golden baseline,
+# CLI) is frozen context.
+prompt:
+  system_message: |
+    You are evolving the adaptive damping schedule for the BDF DAE
+    engine in `fluxion` (HVAC thermal simulation). The seed at
+    `seed_controller.py::sample_strategy(rng)` is a small Python
+    function that returns a Schema-v1 strategy dict consumed by the
+    Rust binary `bdf_evaluator`. Your job is to propose a more
+    robust residual-ratio schedule that minimises Newton iterations
+    AND accepted steps across 5 stiff benchmark circuits.
+
+    Constraints you MUST respect:
+      • Return value is a Schema-v1 strategy dict (see SCHEMA in
+        the seed file for field semantics and ranges).
+      • `mode` ∈ {0, 1}; `0` is the legacy fixed path, `1`
+        activates the residual-ratio schedule.
+      • `floor ≤ baseline_factor` (always).
+      • `loose_threshold < tight_threshold` (always).
+      • Function MUST be deterministic for a given `(rng)` seed —
+        no wall-clock, no global RNG, no network.
+      • Hard invariants (NaN/Inf, conservation ≤ 1e-7, convergence)
+        are non-negotiable; the fitness returns 0.0 on violation.
+
+    The 5 circuits are documented at the top of the seed file.
+    The 25%-reduction bar (vs the byte-equivalent baseline) is the
+    acceptance criterion for Issue #3339.
+
+# Iterations, parallelism, checkpointing. The bounded session runs a
+# smaller number of generations; the `iterations` below is the
+# issue's ≥200-gen target. The bounded-campaign orchestrator
+# (`orchestrate_bounded.py`) overrides this with a smaller budget.
+evolution:
+  generations:              200
+  early_stop_fitness:       null       # disable; we want to see the full curve
+  early_stop_generations:   25
+  parallel_evaluations:     1          # single-CPU; no nested parallelism allowed
+  checkpoint_dir:           tools/evolution/results/dae/full/checkpoints/
+  checkpoint_interval:      10
+  log_dir:                  tools/evolution/results/dae/full/logs/

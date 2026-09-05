@@ -571,6 +571,15 @@ path = "src/bin/run_ashrae_validation.rs"
 name = "run_cross_validation"
 path = "src/bin/run_cross_validation.rs"
 
+# Issue #3339 — bounded-campaign fitness oracle. Reads a JSON
+# `DampingPolicy` from `--strategy-file` (or stdin), runs all 5
+# BDF DAE benchmark circuits, and emits a Schema-v1 Summary JSON.
+# Driven by `tools/evolution/seeds/dae/seed_controller.py`; OpenEvolve
+# adapter speaks to it through the same Python shim.
+[[bin]]
+name = "bdf_evaluator"
+path = "src/bin/bdf_evaluator.rs"
+
 [profile.release]
 opt-level = 3
 lto = "thin"
