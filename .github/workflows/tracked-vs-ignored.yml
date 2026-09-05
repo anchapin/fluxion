@@ -1,0 +1,52 @@
+name: Tracked-vs-Ignored Gate
+
+# Issue #3356: audit unanchored ``.gitignore`` patterns and prevent the
+# silent-data-loss class of bug where a tracked file is matched by a
+# ``.gitignore`` rule (PR #3342 reconstructed 5 silently-dropped React
+# frontend modules because an unanchored ``lib/`` pattern in the root
+# ``.gitignore`` matched ``fluxion-tauri/frontend/src/lib/``).
+#
+# The check runs ``scripts/check_no_ignored_tracked_files.py``, which
+# uses ``git check-ignore --no-index`` on every tracked file and fails
+# the gate when any newly-tracked file is matched by a ``.gitignore``
+# pattern. Pre-existing tracked-but-ignored entries are tolerated via
+# ``KNOWN_TRACKED_BUT_IGNORED`` baseline inside the script.
+#
+# This workflow is intentionally minimal: pure-Python, single-job, no
+# runner probes, no caching — the gate must run on every PR that
+# touches the ``.gitignore`` files or the script itself, so it has to
+# be cheap enough to always fit in the per-PR feedback budget.
+
+on:
+  pull_request:
+    paths:
+      - ".gitignore"
+      - "**/.gitignore"
+      - "scripts/check_no_ignored_tracked_files.py"
+  push:
+    branches:
+      - develop
+      - main
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  tracked-vs-ignored:
+    name: "Tracked-vs-Ignored Gate (Issue #3356)"
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+
+      - name: Set up Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97  # v7.0.0
+        with:
+          python-version: '3.12'
+
+      - name: Run tracked-vs-ignored gate
+        run: python3 scripts/check_no_ignored_tracked_files.py

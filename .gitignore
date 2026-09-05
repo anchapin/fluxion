@@ -1,5 +1,5 @@
 # Rust
-target/
+/target/
 # Variant build dirs at repo root (e.g. target_rtk_test/, target_release_test/)
 /target_*/
 **/*.rs.bk
@@ -13,38 +13,38 @@ fluxion-mcp/Cargo.lock
 /crates/*/Cargo.lock
 
 # Python
-__pycache__/
+/__pycache__/
 *.py[cod]
 *$py.class
 *.so
 .Python
-build/
-develop-eggs/
-dist/
-downloads/
-eggs/
-.eggs/
+/build/
+/develop-eggs/
+/dist/
+/downloads/
+/eggs/
+/.eggs/
 /lib/
 /lib64/
-parts/
-sdist/
-var/
-wheels/
-pip-wheel-metadata/
-share/python-wheels/
+/parts/
+/sdist/
+/var/
+/wheels/
+/pip-wheel-metadata/
+/share/python-wheels/
 *.egg-info/
 .installed.cfg
 *.egg
 MANIFEST
-.venv/
-.venv-eval/
-venv/
-ENV/
-env/
+/.venv/
+/.venv-eval/
+/venv/
+/ENV/
+/env/
 
 # IDEs
-.vscode/
-.idea/
+/.vscode/
+/.idea/
 *.swp
 *.swo
 *~
@@ -52,14 +52,14 @@ env/
 /~
 .DS_Store
 *.iml
-.classpath
-.project
-.settings/
+/.classpath
+/.project
+/.settings/
 *.sublime-project
 *.sublime-workspace
 
 # Editor config
-.editorconfig
+/.editorconfig
 
 # Build artifacts
 *.o
@@ -69,7 +69,7 @@ env/
 *.res
 
 # Temporary files
-tmp/
+/tmp/
 *.tmp
 *.bak
 # Backup files with numeric suffixes (e.g., `.bak1`, `.bak2`, `.bak3`)
@@ -78,15 +78,15 @@ tmp/
 # `bak2`, etc.; this rule closes that gap (see issue #2950).
 *.bak[0-9]*
 *.orig
-.cache/
-.pytest_cache/
-.coverage
-htmlcov/
-coverage/
+/.cache/
+/.pytest_cache/
+/.coverage
+/htmlcov/
+/coverage/
 *.profraw
 
 # Logs
-logs/
+/logs/
 *.log
 
 # OS
@@ -94,16 +94,16 @@ logs/
 Thumbs.db
 
 # Project-specific
-.azure/
-.env
-.env.local
+/.azure/
+/.env
+/.env.local
 *.copilotmd
 cobertura.xml
-worktrees/
+/worktrees/
 
 # EnergyPlus simulation artifacts
-energyplus/
-runs/
+/energyplus/
+/runs/
 tests/energyplus_data/
 
 # Generated tool scripts (not source)

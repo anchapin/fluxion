@@ -559,6 +559,22 @@ ci:
     # machine-readable signal of which stable toolchain the build requires.
     - "MSRV Check (Issue #2934)"
 
+    # Issue #3356: tracked-vs-ignored gate. Anchors the
+    # ``.gitignore`` audit and prevents the silent-data-loss bug class
+    # where a tracked file matches a ``.gitignore`` pattern (PR #3342
+    # reconstructed 5 silently-dropped React frontend modules because
+    # an unanchored ``lib/`` pattern in the root ``.gitignore`` matched
+    # ``fluxion-tauri/frontend/src/lib/``). The ``tracked-vs-ignored``
+    # job in `.github/workflows/tracked-vs-ignored.yml` runs
+    # ``python3 scripts/check_no_ignored_tracked_files.py`` on every
+    # PR that touches any ``.gitignore`` file or the script itself;
+    # pre-existing tracked-but-ignored files are tolerated via
+    # ``KNOWN_TRACKED_BUT_IGNORED`` baseline inside the script. New
+    # tracked-but-ignored entries fail the gate so future regressions
+    # of the #3174 / #3356 class are caught at PR time, not after
+    # reconstruction.
+    - "Tracked-vs-Ignored Gate (Issue #3356)"
+
     # Issue #2930 / Goal #10: PR-blocking crate-size gate. Runs
     # `cargo package --allow-dirty --no-verify` against the root crate,
     # measures the resulting `target/package/fluxion-*.crate` file, and
@@ -653,6 +669,7 @@ ci:
     - "fluxion-grid Integration Tests (GH)"
     - "h_tr_em Regression Gate (LIMIT-13)"
     - "FFI Feature Check (GH)"
+    - "Tracked-vs-Ignored Gate (Issue #3356)"
 
   # Job-to-workflow map (informational; branch-protection reads job
   # names directly). Used by `scripts/release_gate_checker.py` to verify
@@ -1051,3 +1068,21 @@ ci:
       workflow: ".github/workflows/ci.yml"
       issue: 3302
       triggered_by: "PR + push to main"
+
+    - job: "Tracked-vs-Ignored Gate (Issue #3356)"
+      # Tracked-vs-ignored CI gate (issue #3356). The ``tracked-vs-ignored``
+      # job in `.github/workflows/tracked-vs-ignored.yml` runs
+      # ``python3 scripts/check_no_ignored_tracked_files.py`` on every PR
+      # that touches any ``.gitignore`` file or the script itself, and on
+      # every push to develop/main. Fails when a NEW tracked file matches
+      # a ``.gitignore`` pattern — the regression that PR #3342 had to
+      # reconstruct 5 React frontend modules for (the original
+      # ``fluxion-tauri/frontend/src/lib/`` drop). Pre-existing
+      # tracked-but-ignored entries are tolerated via
+      # ``KNOWN_TRACKED_BUT_IGNORED`` baseline inside the script.
+      # Closes the #3356 acceptance criterion: "Add a CI check that runs
+      # ``git check-ignore`` on every tracked file in the repo and fails
+      # the gate if any tracked file matches a ``.gitignore`` pattern".
+      workflow: ".github/workflows/tracked-vs-ignored.yml"
+      issue: 3356
+      triggered_by: "PR (path-filter: .gitignore, **/.gitignore, scripts/check_no_ignored_tracked_files.py) + push to develop/main"
