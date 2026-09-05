@@ -7,11 +7,18 @@ name: Performance Dashboard
 # `fluxion-cfd`, and `gauge-solver`, and only runs on the nightly schedule
 # plus manual workflow_dispatch — never as a PR blocker.
 
+# Issue #3355: expand upstream scope to `develop` so the Fluxion Performance
+# Gate listener job (`fluxion-performance-gate` in `ashrae_validation.yml`)
+# and the PR-blocking perf gates (Absolute / Multi-Zone / Hybrid / Cold Start,
+# jobs `absolute-perf-gate`, `multi-zone-perf-gate`, `hybrid-perf-gate`,
+# `multi-zone-cold-start-gate`) fire for PRs targeting `develop`. These
+# were previously main-only, leaving develop with zero perf coverage and
+# forcing every merge through `gh pr merge --admin`.
 on:
   push:
-    branches: [ main ]
+    branches: [ main, develop ]
   pull_request:
-    branches: [ main ]
+    branches: [ main, develop ]
   schedule:
     # Nightly at 02:00 UTC, well before the mutation-nightly job at 07:00 UTC
     # so the heavy `--all-features` build does not contend for self-hosted

@@ -95,11 +95,17 @@
 
 name: ASHRAE 140 Strict Energy Gate
 
+# Issue #3355: expand upstream scope to `develop` so the strict ±15%
+# annual-energy tolerance gate (Issue #1333) fires for PRs targeting
+# `develop`. The Case 600 / 900 strict-tolerance gate is a PR-blocking
+# required check; restricting it to `main` left develop with no annual-
+# energy regression guard and forced every merge through
+# `gh pr merge --admin`.
 on:
   push:
-    branches: [main]
+    branches: [main, develop]
   pull_request:
-    branches: [main]
+    branches: [main, develop]
   workflow_dispatch:
 
 # Serialize strict-gate runs per ref so two pushes don't double-allocate

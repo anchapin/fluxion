@@ -1,8 +1,14 @@
 name: Cross-Platform Determinism CI
 
+# Issue #3355: expand upstream scope to `develop` so the Fluxion Determinism
+# Gate listener job (`fluxion-determinism-gate` in `ashrae_validation.yml`)
+# fires for PRs targeting `develop`. The `workflow_run` listener in
+# `ashrae_validation.yml` is filtered by
+# `github.event.workflow_run.event == 'pull_request'`, so the listener
+# activates as soon as this workflow runs for a develop PR.
 on:
   push:
-    branches: [main]
+    branches: [main, develop]
   pull_request:
   workflow_dispatch:
 

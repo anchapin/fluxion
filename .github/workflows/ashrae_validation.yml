@@ -71,8 +71,15 @@
 name: ASHRAE 140 CI Gate
 
 on:
+  # Issue #3355: include `develop` so the inline `surrogate-ashrae-mae-gate`
+  # (Issue #2924) fires for PRs targeting `develop`. The workflow_run
+  # listener jobs (`fluxion-determinism-gate`, `fluxion-performance-gate`)
+  # activate independently for develop PRs as soon as their upstream
+  # workflows (`determinism_check.yml`, `performance_dashboard.yml`) run
+  # for develop — both upstreams were also expanded to `[main, develop]`
+  # in this commit.
   pull_request:
-    branches: [main]
+    branches: [main, develop]
     types: [opened, synchronize, reopened, ready_for_review]
   # Issue #1351: mirror the Cross-Platform Determinism CI conclusion
   # into this workflow as a single non-matrix "Fluxion Determinism Gate"
