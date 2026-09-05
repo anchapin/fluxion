@@ -60,23 +60,19 @@ const DUMMY_ONNX_MODEL: &str = "assets/dummy_surrogate.onnx";
 ///
 /// Checks both compile-time feature flag (`cfg(feature = "cuda")`) and
 /// runtime availability (NVIDIA GPU + CUDA drivers + ort CUDA EP binary).
+///
+/// Delegates to the production probe (`ExecutionProviderReport::capture`,
+/// issue #3313), which additionally requires that ORT enumerated a real
+/// CUDA device — registration alone succeeds even without a GPU and would
+/// hide a silent CPU fallback. See
+/// `docs/agents/runtime-ort-ep-probe-runbook.md`.
 #[cfg(feature = "cuda")]
 fn cuda_ep_available() -> bool {
-    #[cfg(feature = "cuda")]
-    {
-        use ort::execution_providers::CUDAExecutionProvider;
-        use ort::session::Session;
-        if let Ok(builder) = Session::builder() {
-            let ep = CUDAExecutionProvider::default().with_device_id(0);
-            builder.with_execution_providers([ep.build()]).is_ok()
-        } else {
-            false
-        }
-    }
-    #[cfg(not(feature = "cuda"))]
-    {
-        false
-    }
+    use fluxion::ai::surrogate::{ExecutionProviderReport, InferenceBackend};
+
+    ExecutionProviderReport::capture()
+        .probe(InferenceBackend::CUDA)
+        .is_some_and(|probe| probe.activated)
 }
 
 // ---------------------------------------------------------------------------
