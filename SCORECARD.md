@@ -90,6 +90,7 @@ Required branch-protection checks (`release_gates.yaml` → `ci.required_checks`
 | Cargo Deny | — |
 | Audit Ignore Freshness (Issue #2912) | #2912 |
 | MSRV Check (Issue #2934) | #2934 |
+| Tracked-vs-Ignored Gate (Issue #3356) | #3356 |
 | Crate Size Gate (Issue #2930) | #2930 |
 | fluxion-grid Integration Tests (GH) | — |
 | h_tr_em Regression Gate (LIMIT-13) | — |
@@ -118,6 +119,7 @@ Required branch-protection checks (`release_gates.yaml` → `ci.required_checks`
 | fluxion-grid Integration Tests (GH) | — |
 | h_tr_em Regression Gate (LIMIT-13) | — |
 | FFI Feature Check (GH) | — |
+| Tracked-vs-Ignored Gate (Issue #3356) | #3356 |
 
 - **Live status** is intentionally not baked in here (it is non-deterministic and would break scorecard diff stability). Run:
 
