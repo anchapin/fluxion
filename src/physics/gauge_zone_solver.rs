@@ -1339,4 +1339,56 @@ mod tests {
             "unstepped zones report the 20 °C initial interior state, got {per_zone:?}"
         );
     }
+
+    /// Issue #3297 — `zone_interior_temperatures()` must return per-zone
+    /// values that reflect each zone's individual post-step state. The
+    /// dispatch's `write_gauge_mass_state_proxy` consumes this accessor
+    /// once per zone, so per-zone differentiation is the read-back
+    /// invariant the strict-energy-balance gate depends on. With two
+    /// zones pinned to distinct interior boundary temperatures (15 °C and
+    /// 25 °C) and a uniform exterior BC, the post-step proxy must reflect
+    /// each zone's pinned T_air.
+    #[test]
+    fn test_zone_interior_temperatures_post_multi_zone_step() {
+        let mut mz = MultiZoneGaugeSolver::new();
+        mz.add_zone(0, 48.0, 2.7);
+        mz.add_zone(1, 32.0, 2.7);
+        let wall = case600_wall();
+        mz.add_opaque_surface_to_zone(0, &wall, 21.6, SurfaceType::Wall, 0.0, 90.0)
+            .unwrap();
+        mz.add_opaque_surface_to_zone(1, &wall, 12.0, SurfaceType::Wall, 180.0, 90.0)
+            .unwrap();
+        mz.initialize().unwrap();
+
+        // Pin each zone to a distinct T_air before the step so the
+        // per-surface gauge integrates against a per-zone boundary.
+        mz.get_zone_mut(0).unwrap().set_T_air(15.0);
+        mz.get_zone_mut(1).unwrap().set_T_air(25.0);
+
+        // Uniform exterior BC across both zones (cold + sunny), so the
+        // only thing differentiating the per-zone states is the pinned
+        // interior boundary.
+        let mut bc = HashMap::new();
+        let cold = Temperature::from_value(5.0);
+        let h_ext = HeatTransferCoefficient::from_value(25.0);
+        bc.insert(0, ZoneBoundaryConditions::new(cold, h_ext, 300.0));
+        bc.insert(1, ZoneBoundaryConditions::new(cold, h_ext, 300.0));
+
+        mz.step(3600.0, &bc).unwrap();
+
+        let per_zone = mz.zone_interior_temperatures();
+        assert_eq!(per_zone.len(), mz.num_zones());
+        // Each zone's accessor must reflect the T_air the gauge
+        // integrated against (GaugeSolver writes T_int into
+        // prev_T_interior at end-of-step, which `interior_temperature()`
+        // returns).
+        assert!(
+            (per_zone[0] - 15.0).abs() < 1e-9,
+            "zone 0 interior T must equal its pinned T_air=15 °C, got {per_zone:?}"
+        );
+        assert!(
+            (per_zone[1] - 25.0).abs() < 1e-9,
+            "zone 1 interior T must equal its pinned T_air=25 °C, got {per_zone:?}"
+        );
+    }
 }
