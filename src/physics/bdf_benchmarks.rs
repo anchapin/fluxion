@@ -723,17 +723,18 @@ mod tests {
             tolerance: 1e-6,
         };
         let mut driver = BdfDriver::new(ts_cfg);
-        driver
-            .initialize(0.0, &initial)
-            .expect("init failed");
-        let stats = driver
-            .run(circuit, t_end, dt_init)
-            .expect("run failed");
+        driver.initialize(0.0, &initial).expect("init failed");
+        let stats = driver.run(circuit, t_end, dt_init).expect("run failed");
         assert!(
             stats.steps_accepted > 0,
             "{} must accept at least one step",
             circuit.name()
         );
-        assert_eq!(stats.nan_or_inf_count, 0, "{} produced NaN/Inf", circuit.name());
+        assert_eq!(
+            stats.nan_or_inf_count,
+            0,
+            "{} produced NaN/Inf",
+            circuit.name()
+        );
     }
 }
