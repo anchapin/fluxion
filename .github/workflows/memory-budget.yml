@@ -1,0 +1,115 @@
+# Memory Budget (Issue #2384) — nightly slow-poll workflow.
+#
+# Companion to PR #3366 / ADR-0014 (`cargo nextest` rollout). Lifted
+# verbatim out of `.github/workflows/rust-tests.yml::memory-budget` so
+# the `Rust Tests & Linting` matrix no longer waits on this ~8-minute job
+# (issue #3368). The job runs the same 10-zone reference simulation,
+# the same 10 GB peak-RSS warn threshold (note: exit 0 on warn — soft
+# signal, not a hard fail, mirroring the original job's contract), and
+# the same RSS monitoring loop.
+#
+# Triggers:
+#   - `schedule` (nightly 03:00 UTC) — catches memory regressions before
+#     they accumulate. Issue #3368 chose this over per-PR because
+#     (a) the PR-feedback path was the matrix long pole (478 s = ~8 min)
+#     and (b) the existing job's fail-mode is exit 0 even on warn, so
+#     per-PR blocking buys little signal. Nightly is the recommended
+#     cadence.
+#   - `workflow_dispatch` — manual on-demand run for ad-hoc investigation.
+#   - Note: NO `pull_request` or `push: main`. Re-introducing either
+#     would put this 8-min job back on the matrix long pole — the exact
+#     regression this issue was filed to remove.
+#
+# Tradeoff (Issue #3368 §"Tradeoffs"): a memory regression now merges
+# to `develop` before being caught. Acceptable for an OSS BEM engine
+# because (a) the actual memory regression test still runs (here, on a
+# nightly cadence), and (b) the warn threshold `WARN_GB=10` is a soft
+# warning, not a hard fail — the job exits 0 on warn. Maximum detection
+# latency is 24 h.
+
+name: Memory Budget (Issue #2384)
+
+on:
+  schedule:
+    # 03:00 UTC nightly. Off-peak for US/EU contributors; distinct from
+    # the 02:30 UTC PGO nightly (`pgo-nightly.yml`) and the 03:17 UTC
+    # `cycle-trend-nightly` job so cache + runner pressure don't overlap.
+    #        minute hour dom month dow
+    - cron: "0 3 * * *"
+  workflow_dispatch:
+
+concurrency:
+  group: >-
+    ${{ github.workflow }}-
+    ${{
+      github.event_name == 'pull_request' &&
+      github.event.pull_request.head.sha
+      || github.ref
+    }}
+  cancel-in-progress: >-
+    ${{
+      github.event_name == 'push'
+      && contains('refs/heads/main,refs/heads/develop', github.ref)
+    }}
+
+# Least-privilege GITHUB_TOKEN grants (Issue #2526): the job only checks
+# out code, builds, and runs tests; no repo write-back.
+permissions:
+  contents: read
+
+jobs:
+  memory-budget:
+    name: "Memory Budget (Issue #2384)"
+    runs-on: ${{ vars.FLUXION_LINUX_RUNNER || 'ubuntu-latest' }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+      - name: Install system dependencies (Linux)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libssl-dev pkg-config libfontconfig1-dev
+      - uses: ./.github/actions/setup-rust-python-env
+        with:
+          python-version: '3.10'
+      - name: Build
+        run: cargo build --release --features multi-zone
+      - name: Run 10-zone test with memory monitoring
+        run: |
+          # Run the 10-zone test in background while monitoring RSS
+          (
+            cargo test --release --features multi-zone --test multi_zone_n_zone_network -- multi_zone_n_zone_network_10_zone_round_trip --nocapture
+          ) &
+          CARGO_PID=$!
+
+          MAX_RSS_KB=0
+          while kill -0 $CARGO_PID 2>/dev/null; do
+            RSS=$(ps -o rss= -p $CARGO_PID 2>/dev/null || echo 0)
+            if [[ "$RSS" -gt "$MAX_RSS_KB" ]]; then
+              MAX_RSS_KB=$RSS
+            fi
+            sleep 0.5
+          done
+          wait $CARGO_PID
+          TEST_EXIT=$?
+
+          MAX_RSS_GB=$(echo "scale=2; $MAX_RSS_KB / 1024 / 1024" | bc)
+          echo ""
+          echo "=== Memory Budget Check ==="
+          echo "Peak RSS: ${MAX_RSS_GB} GB"
+          echo "Test exit code: $TEST_EXIT"
+
+          WARN_GB=10
+          WARN_KB=$((WARN_GB * 1024 * 1024))
+
+          if [[ "$MAX_RSS_KB" -gt "$WARN_KB" ]]; then
+            echo ""
+            echo "WARNING: Peak RSS ${MAX_RSS_GB} GB exceeds 10 GB budget"
+            echo "This may indicate a memory regression in large simulations."
+            if [[ "$TEST_EXIT" -ne 0 ]]; then
+              echo "Note: Test also failed (exit code $TEST_EXIT)"
+              exit 1
+            fi
+            exit 0
+          else
+            echo "Memory budget check passed (${MAX_RSS_GB} GB < ${WARN_GB} GB)"
+            exit $TEST_EXIT
+          fi
