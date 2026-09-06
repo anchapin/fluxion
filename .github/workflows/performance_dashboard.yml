@@ -743,11 +743,17 @@ jobs:
       # Evaluate the ABSOLUTE floors from release_gates.yaml (throughput ≥ 150
       # cfg/s, latency ≤ 10 ms). --benchmark-gates restricts evaluation to
       # these two gates (issue #2693); the checker exits 1 on any failure.
+      # --crate-size-gates 'skip' suppresses the crate_size gate (issue #2930)
+      # — this job does not run `cargo package`, so the crate-size measurement
+      # is unavailable and the gate would otherwise spuriously fail. The
+      # `crate_size` workflow (`.github/workflows/crate-size.yml`) owns that
+      # check separately.
       - name: Evaluate absolute gates (150 cfg/s + 10 ms)
         run: |
           python3 scripts/release_gate_checker.py \
             --benchmark-results benchmark_results.json \
             --benchmark-gates throughput,latency \
+            --crate-size-gates skip \
             --json --output gate_status.json
 
       - name: Summary
@@ -926,12 +932,15 @@ jobs:
       # Evaluate the ABSOLUTE multi-zone floor from release_gates.yaml
       # (≥ 10 cfg/s on 10-zone pop_1000). --benchmark-gates restricts
       # evaluation to the `multi_zone_throughput` gate (issue #2772); the
-      # checker exits 1 on any failure.
+      # checker exits 1 on any failure. --crate-size-gates 'skip' suppresses
+      # the crate_size gate (issue #2930) — see the absolute-perf-gate job
+      # above for the rationale (this job does not run `cargo package`).
       - name: Evaluate multi-zone gate (≥ 10 cfg/s)
         run: |
           python3 scripts/release_gate_checker.py \
             --benchmark-results benchmark_results.json \
             --benchmark-gates multi_zone_throughput \
+            --crate-size-gates skip \
             --json --output gate_status.json
 
       - name: Summary
@@ -1141,12 +1150,15 @@ jobs:
       # Evaluate the ABSOLUTE hybrid floors from release_gates.yaml
       # (≥ 80 cfg/s single-zone, ≥ 8 cfg/s 10-zone). --benchmark-gates
       # restricts evaluation to the two new gates (issue #2922); the
-      # checker exits 1 on any failure.
+      # checker exits 1 on any failure. --crate-size-gates 'skip' suppresses
+      # the crate_size gate (issue #2930) — see the absolute-perf-gate job
+      # above for the rationale.
       - name: Evaluate hybrid gates (≥ 80 cfg/s + ≥ 8 cfg/s)
         run: |
           python3 scripts/release_gate_checker.py \
             --benchmark-results benchmark_results.json \
             --benchmark-gates hybrid_throughput,hybrid_multi_zone_throughput \
+            --crate-size-gates skip \
             --json --output gate_status.json
 
       - name: Summary
@@ -1374,11 +1386,14 @@ jobs:
       #   `tests/reference_data/surrogate/cold_start_baseline.json`
       # `--benchmark-gates cold_start` restricts evaluation to this single
       # gate (Issue #2919); the checker exits 1 on any failure.
+      # `--crate-size-gates 'skip'` suppresses the crate_size gate (issue #2930)
+      # — see the absolute-perf-gate job above for the rationale.
       - name: Evaluate cold-start gate (≤100 ms + ratio ≤1.5 + ≤25% baseline regression)
         run: |
           python3 scripts/release_gate_checker.py \
             --benchmark-results benchmark_results.json \
             --benchmark-gates cold_start \
+            --crate-size-gates skip \
             --json --output gate_status.json
 
       - name: Summary
