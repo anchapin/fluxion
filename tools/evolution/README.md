@@ -272,7 +272,8 @@ tools/evolution/
 ├── seeds/
 │   └── solar_simd/
 │       ├── perez_diffuse_tilted.rs        # EVOLVE-BLOCK marked seed
-│       └── stefan_boltzmann_pair.rs       # EVOLVE-BLOCK marked seed
+│       ├── stefan_boltzmann_pair.rs       # EVOLVE-BLOCK marked seed
+│       └── sky_radiation_net_flux.rs      # EVOLVE-BLOCK marked seed
 └── results/
     └── solar_simd/
         ├── baseline_evidence.json         # profile-first JSON (per-loop medians + IQR + Mo/s)
