@@ -13,6 +13,21 @@ on:
 # Least-privilege GITHUB_TOKEN default (Issue #2526). The check-stale job opens
 # / comments on a tracking issue and escalates via its own job-level permissions
 # block (issues: write).
+
+concurrency:
+  group: >-
+    ${{ github.workflow }}-
+    ${{
+      github.event_name == 'pull_request' &&
+      github.event.pull_request.head.sha
+      || github.ref
+    }}
+  cancel-in-progress: >-
+    ${{
+      github.event_name == 'push'
+      && contains('refs/heads/main,refs/heads/develop', github.ref)
+    }}
+
 permissions:
   contents: read
 

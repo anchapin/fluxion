@@ -43,8 +43,18 @@ on:
         type: string
 
 concurrency:
-  group: perf-dashboard-${{ github.ref }}
-  cancel-in-progress: true
+  group: >-
+    perf-dashboard-
+    ${{
+      github.event_name == 'pull_request' &&
+      github.event.pull_request.head.sha
+      || github.ref
+    }}
+  cancel-in-progress: >-
+    ${{
+      github.event_name == 'push'
+      && contains('refs/heads/main,refs/heads/develop', github.ref)
+    }}
 
 # Least-privilege GITHUB_TOKEN default (Issue #2526). The publish-dashboard job
 # pushes the regenerated dashboard to the gh-pages branch and therefore escalates

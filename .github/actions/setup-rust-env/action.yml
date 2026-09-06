@@ -21,6 +21,18 @@ inputs:
       (sccache provides finer-grained content-addressed caching).
     required: false
     default: 'true'
+  nextest:
+    description: |
+      Install `cargo-nextest` (Issue #3366 / ADR-0014). When 'true', installs
+      the pinned cargo-nextest release via `taiki-e/install-action`. The
+      `Rust Tests & Linting` workflow passes this through to enable
+      `cargo nextest run --workspace --all-targets --test-threads=2` (the
+      replacement for the 7-line `cargo test ...` block). The setup-rust-env
+      composite is also reused by other workflows (rustfmt, clippy, workspace
+      check); default 'true' so a single consumer opting out (e.g. an
+      ad-hoc local debug workflow) can pass `nextest: 'false'`.
+    required: false
+    default: 'true'
   extra-apt-packages:
     description: 'Additional Linux apt packages to install alongside base deps'
     required: false
@@ -95,6 +107,39 @@ runs:
       run: |
         echo "RUSTC_WRAPPER=sccache" >> "$GITHUB_ENV"
         echo "SCCACHE_GHA_ENABLED=true" >> "$GITHUB_ENV"
+
+    # cargo-nextest: the canonical Rust next-generation test runner
+    # (Issue #3366 / ADR-0014). Replaces the 7-line `cargo test` block in
+    # `.github/workflows/rust-tests.yml::test` with a single
+    # `cargo nextest run --workspace --all-targets --test-threads=2 --no-fail-fast`.
+    # Each test binary runs in its own process; `.config/nextest.toml`
+    # controls per-binary concurrency overrides.
+    #
+    # The download is subject to the same transient failures as sccache
+    # (#2813). Retry up to 3x using the same pattern as `dtolnay/rust-toolchain`
+    # and `mozilla-actions/sccache-action` above.
+    - name: Install cargo-nextest (attempt 1/3)
+      id: nextest_1
+      if: inputs.nextest == 'true'
+      uses: taiki-e/install-action@37f7c5781271959fb65b6b35224e28652ff2b63d  # v2
+      with:
+        tool: cargo-nextest
+      continue-on-error: true
+
+    - name: Install cargo-nextest (attempt 2/3)
+      id: nextest_2
+      if: inputs.nextest == 'true' && steps.nextest_1.outcome == 'failure'
+      uses: taiki-e/install-action@37f7c5781271959fb65b6b35224e28652ff2b63d  # v2
+      with:
+        tool: cargo-nextest
+      continue-on-error: true
+
+    - name: Install cargo-nextest (attempt 3/3)
+      id: nextest_3
+      if: inputs.nextest == 'true' && steps.nextest_2.outcome == 'failure'
+      uses: taiki-e/install-action@37f7c5781271959fb65b6b35224e28652ff2b63d  # v2
+      with:
+        tool: cargo-nextest
 
     # Cargo registry/git cache — covers downloaded crate source and metadata.
     # target/ caching is intentionally omitted when sccache is enabled because

@@ -15,6 +15,36 @@ on:
       - main
       - '*.x'  # Feature branches
 
+
+concurrency:
+  group: >-
+    ${{ github.workflow }}-
+    ${{
+      github.event_name == 'pull_request' &&
+      github.event.pull_request.head.sha
+      || github.ref
+    }}
+  cancel-in-progress: >-
+    ${{
+      github.event_name == 'push'
+      && contains('refs/heads/main,refs/heads/develop', github.ref)
+    }}
+
+
+concurrency:
+  group: >-
+    ${{ github.workflow }}-
+    ${{
+      github.event_name == 'pull_request' &&
+      github.event.pull_request.head.sha
+      || github.ref
+    }}
+  cancel-in-progress: >-
+    ${{
+      github.event_name == 'push'
+      && contains('refs/heads/main,refs/heads/develop', github.ref)
+    }}
+
   # Allow manual trigger for baseline updates
   workflow_dispatch:
     inputs:
