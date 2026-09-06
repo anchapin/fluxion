@@ -410,6 +410,7 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
             self.0.setpoints.cooling_setpoints.as_ref(),
             self.0.setpoints.heating_setpoint,
             self.0.setpoints.cooling_setpoint,
+            &mut scratch.hvac_combined_demand,
         );
         // Fix: Use actual HVAC demand instead of steady-state approximation (Plan 03-03 Task 2)
         // hvac_output_raw already includes thermal mass buffering (calculated from t_i_free)

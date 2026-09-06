@@ -11,6 +11,7 @@
 
 use crate::physics::cta::{ContinuousTensor, VectorField};
 use crate::sim::thermal_model_core::{ThermalModel, ThermalModelType};
+use smallvec::SmallVec;
 
 impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>> ThermalModel<T> {
     /// Compute the HVAC heat transfer coefficient for the 5R1C/6R2C thermal network.
@@ -167,17 +168,26 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         cooling_setpoints: &[f64],
         default_heating_setpoint: f64,
         default_cooling_setpoint: f64,
+        scratch: &mut SmallVec<[f64; 4]>,
     ) -> T {
         let enabled_vec = self.0.hvac.hvac_enabled.as_ref();
 
         let heat_cap = self.0.hvac.hvac_heating_capacity;
         let cool_cap = self.0.hvac.hvac_cooling_capacity;
 
-        let mut combined_demand = vec![0.0; self.0.hvac.num_zones];
+        // Issue #3370: reuse the caller-provided scratch buffer instead of
+        // heap-allocating `vec![0.0; n_zones]` on every call. The scratch is
+        // cleared and resized to `num_zones` in place — zero allocation
+        // after the pool is warm. This is the single biggest contributor to
+        // the BatchOracle hot-loop regression (the dhat gate flagged four
+        // `compute_zone_hvac_load` invocations per `step_physics_5r1c` call
+        // at 140K/config vs the 88K/config #2687 baseline).
+        scratch.clear();
+        scratch.resize(self.0.hvac.num_zones, 0.0);
         for zone_idx in 0..self.0.hvac.num_zones {
             // Check hvac_enabled flag before computing demand
             if enabled_vec[zone_idx] < 0.5 {
-                combined_demand[zone_idx] = 0.0;
+                scratch[zone_idx] = 0.0;
                 continue;
             }
 
@@ -230,9 +240,9 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
             };
 
             // Clamp to HVAC capacity limits to prevent numerical explosion
-            combined_demand[zone_idx] = demand.clamp(-cool_cap, heat_cap);
+            scratch[zone_idx] = demand.clamp(-cool_cap, heat_cap);
         }
 
-        T::from(VectorField::new(combined_demand))
+        T::from(VectorField::from_smallvec(std::mem::take(scratch)))
     }
 }
