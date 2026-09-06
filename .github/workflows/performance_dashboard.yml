@@ -1200,6 +1200,81 @@ jobs:
           retention-days: 30
 
   # =========================================================================
+  # warm-cold-start-build — nightly + manual cache-priming job for the
+  # PR-blocking `multi-zone-cold-start-gate` (Issue #3371, Refs #2919).
+  #
+  # The cold-start gate compiles `tests/surrogate_cold_start_test.rs` with
+  # `--features ort`, which pulls in a ~30 MB transitive tree
+  # (libonnxruntime + protobuf + ureq). Cold-cache compile cost ~5 min
+  # dominated that gate's 25-min `timeout-minutes` budget and pushed every
+  # PR past the wall. This job pre-compiles the test binary on the nightly
+  # `schedule` (02:00 UTC, well before the mutation-nightly 07:00 UTC slot)
+  # and on `workflow_dispatch` (operators use this to re-prime the cache
+  # after a source change invalidates the Swatinem/rust-cache content
+  # hash). The cache is shared with the gate job via the
+  # `ort-cold-start-build` shared-key on `Swatinem/rust-cache`.
+  #
+  # Does NOT run on `pull_request` or `push` — those trigger the gate job
+  # directly (which has its own fall-back build step in case the cache
+  # is cold), so a redundant warm-build would just waste CI minutes.
+  #
+  # `timeout-minutes: 45` covers a worst-case cold-cache first run after
+  # a fresh setup; warm-cache runs finish in ~3 min.
+  # =========================================================================
+  warm-cold-start-build:
+    name: Warm Cold Start Build (cache prime for #2919 gate)
+    runs-on: ubuntu-latest
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    timeout-minutes: 45
+
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+
+      - name: Install system dependencies
+        uses: ./.github/actions/install-system-deps
+        with:
+          packages: libssl-dev,pkg-config,libfontconfig1-dev,fontconfig
+
+      - name: Install Rust
+        uses: nick-fields/retry@ad984534de44a9489a53aefd81eb77f87c70dc60  # v4.0.0
+        with:
+          max_attempts: 3
+          timeout_minutes: 10
+          retry_wait_seconds: 15
+          command: rustup toolchain install stable --profile default
+
+      # Cache namespace shared with `multi-zone-cold-start-gate`. The ort
+      # runtime pulls in libonnxruntime + protobuf + ureq, which is not
+      # needed by `absolute-perf-gate` / `multi-zone-perf-gate` /
+      # `hybrid-perf-gate`, so it stays in its own namespace.
+      # `cache-on-failure: true` ensures a partial cold-cache build still
+      # populates the cache for the next run.
+      - name: Cache cargo (warm cold-start build, ort feature)
+        uses: Swatinem/rust-cache@f0d9c3887740aee45f6153b24b3a6b815192ec16  # v2
+        with:
+          shared-key: ort-cold-start-build
+          cache-on-failure: true
+
+      # Pre-compile the release test binary for the cold-start gate. We
+      # build ONLY the surrogate_cold_start_test test binary (via
+      # `--test surrogate_cold_start_test`) instead of all `--tests` to
+      # keep the warm-cache step under ~3 min. The full ort build still
+      # runs once on the first cold-cache run after a content-hash change.
+      - name: Build release test binary (--features ort)
+        run: cargo build --release -p fluxion --features ort --test surrogate_cold_start_test
+
+      - name: Summary
+        if: always()
+        run: |
+          echo "## Warm Cold Start Build (cache prime for #2919 gate)" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "Pre-compiled \`tests/surrogate_cold_start_test.rs\` with \`--features ort\` and populated the \`ort-cold-start-build\` cache namespace consumed by the PR-blocking \`Multi-Zone Cold Start Gate (Issue #2919)\` job." >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Trigger:** nightly schedule (02:00 UTC) + manual \`workflow_dispatch\` (re-prime after a source change)." >> $GITHUB_STEP_SUMMARY
+          echo "**Shared cache key:** \`ort-cold-start-build\` (Swatinem/rust-cache \`shared-key\`)." >> $GITHUB_STEP_SUMMARY
+          echo "**Refs:** Issue #2919 (cold-start latency gate), Closes #3371 (split-build fix)." >> $GITHUB_STEP_SUMMARY
+
+  # =========================================================================
   # multi-zone-cold-start-gate — PR-blocking cold-start latency gate for the
   # ONNX surrogate (Issue #2919).
   #
@@ -1264,23 +1339,38 @@ jobs:
           retry_wait_seconds: 15
           command: rustup toolchain install stable --profile default
 
-      # Separate cache namespace so the `--features ort` build of the cold-
-      # start test does not evict / get evicted by the default-features
-      # cache used by `absolute-perf-gate` / `multi-zone-perf-gate` /
-      # `hybrid-perf-gate`. The ort runtime pulls in a ~30 MB transitive
-      # dependency tree (libonnxruntime + protobuf + ureq) that is not
-      # needed by those jobs.
-      - name: Cache cargo (cold-start-gate, ort feature)
+      # Cache namespace shared with the nightly `warm-cold-start-build` job
+      # (Issue #3371) which pre-compiles the `--features ort` test binary
+      # and populates this cache. The gate job then restores the cache and
+      # the explicit `Build release (--features ort)` step below only needs
+      # to RELINK the test binary (~seconds) instead of recompiling the
+      # ~30 MB ort transitive tree (~5 min cold-cache, dominant cost that
+      # was timing the job out at 25 min — Closes #3371).
+      #
+      # The cache key is `ort-cold-start-build` rather than the previous
+      # `perf-dashboard-cold-start-ort` to align with the warm-build job's
+      # namespace and signal intent. The ort runtime pulls in libonnxruntime
+      # + protobuf + ureq, which is NOT needed by `absolute-perf-gate` /
+      # `multi-zone-perf-gate` / `hybrid-perf-gate`, so it stays in its
+      # own namespace.
+      - name: Cache cargo (cold-start-gate, ort feature, warm pre-built)
         uses: Swatinem/rust-cache@f0d9c3887740aee45f6153b24b3a6b815192ec16  # v2
         with:
-          shared-key: perf-dashboard-cold-start-ort
+          shared-key: ort-cold-start-build
           cache-on-failure: true
 
-      # Build the release test binary once (shared across all 3 measurement
+      # Build the release test binary (shared across all 3 measurement
       # runs). The `--features ort` flag activates the
       # `predict_loads_onnx` symbol that the new test exercises; on a
       # default-features build the test compiles to a no-op stub and the
       # gate would silently green.
+      #
+      # With the nightly `warm-cold-start-build` cache populated, this is
+      # a near-instant relink (Refs #2919). If the cache is cold (e.g. a
+      # source change invalidated the Swatinem/rust-cache content hash),
+      # this step falls back to a full compile — operators should re-run
+      # `warm-cold-start-build` via workflow_dispatch to re-prime the cache
+      # and the gate job will pass on the next run.
       - name: Build release (--features ort)
         run: cargo build --release --features ort --tests
 

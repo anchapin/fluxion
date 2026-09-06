@@ -309,6 +309,8 @@ pub mod newton_raphson {
             // residual ratio. Either way, the multiplier is computed
             // inside the loop on every iteration.
             let mut prev_residual_norm: f64 = 0.0;
+            let history_window = self.config.damping.history_window.max(1);
+            let mut residual_history = Vec::with_capacity(history_window);
 
             for iter in 0..self.config.max_iterations {
                 func.eval(&x, &mut residual);
@@ -345,9 +347,14 @@ pub mod newton_raphson {
                 let damping_factor = if self.config.damping.mode == 0 {
                     self.config.damping_factor
                 } else {
+                    let reference_residual_norm = if residual_history.is_empty() {
+                        prev_residual_norm
+                    } else {
+                        residual_history.iter().sum::<f64>() / residual_history.len() as f64
+                    };
                     self.config
                         .damping
-                        .residual_ratio_factor(prev_residual_norm, residual_norm)
+                        .residual_ratio_factor(reference_residual_norm, residual_norm)
                 };
 
                 for i in 0..n {
@@ -355,6 +362,12 @@ pub mod newton_raphson {
                 }
 
                 prev_residual_norm = residual_norm;
+                if self.config.damping.mode != 0 {
+                    residual_history.push(residual_norm);
+                    if residual_history.len() > history_window {
+                        residual_history.remove(0);
+                    }
+                }
             }
 
             func.eval(&x, &mut residual);
@@ -534,6 +547,26 @@ pub mod newton_raphson {
             // Linear transition band → somewhere between
             let mid = p.residual_ratio_factor(1.0, 0.725);
             assert!(mid > 0.25 && mid < 1.0, "mid-band factor must interpolate");
+        }
+
+        #[test]
+        fn issue_3339_damping_policy_uses_residual_history_window() {
+            let mut config = NewtonRaphsonConfig::default();
+            config.damping = DampingPolicy {
+                mode: 1,
+                baseline_factor: 1.0,
+                floor: 0.25,
+                loose_threshold: 0.5,
+                tight_threshold: 0.95,
+                aggressiveness: 1.0,
+                history_window: 3,
+            };
+            let solver = NewtonRaphsonSolver::new(config);
+            let result = solver.solve(&[2.0], &SimpleResidual { n: 1 });
+            assert!(result.is_ok());
+            let (_, stats) = result.unwrap();
+            assert!(stats.converged);
+            assert!(stats.iterations > 0);
         }
 
         #[test]

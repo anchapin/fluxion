@@ -53,6 +53,57 @@ pub(crate) struct PhysicsScratch5r1c {
     /// per-step `h_ve_night_zone` Vec and the `h_ext_owned` Vec that
     /// `step_physics_5r1c` built every call.
     pub h_ext_owned_zone: SmallVec<[f64; SCRATCH_INLINE_CAPACITY]>,
+    /// Issue #3370: scratch buffers for the LW radiation exchange network
+    /// snapshot in `step_physics_5r1c` (Issue #2890). Each field replaces a
+    /// per-step `Vec<f64>::to_vec()` allocation that was needed to bridge
+    /// the immutable-borrow/length-mismatch window of the per-zone loop.
+    /// All fields are read-only inside the LW block, so `to_vec()` is
+    /// replaced by `copy_from_slice` into the scratch buffer and the
+    /// per-step heap allocation disappears.
+    pub lw_surface_emissivity: SmallVec<[f64; SCRATCH_INLINE_CAPACITY]>,
+    pub lw_t_zone: SmallVec<[f64; SCRATCH_INLINE_CAPACITY]>,
+    pub lw_a_floor: SmallVec<[f64; SCRATCH_INLINE_CAPACITY]>,
+    pub lw_a_ceiling: SmallVec<[f64; SCRATCH_INLINE_CAPACITY]>,
+    pub lw_a_wall: SmallVec<[f64; SCRATCH_INLINE_CAPACITY]>,
+    pub lw_u_floor: SmallVec<[f64; SCRATCH_INLINE_CAPACITY]>,
+    pub lw_u_ceiling: SmallVec<[f64; SCRATCH_INLINE_CAPACITY]>,
+    pub lw_u_wall: SmallVec<[f64; SCRATCH_INLINE_CAPACITY]>,
+    /// Issue #3370: per-sub-step air-node ODE state. `t_air_state` is the
+    /// running zone-air temperature carried across sub-steps; `solar_lag_state`
+    /// is the per-zone solar-lag correction state. Both were previously
+    /// `Vec<f64>::to_vec()`-allocated every call (the eighth and ninth of
+    /// nine per-step allocations the dhat gate flagged as the #2687
+    /// regression that resurfaced with `3c0521b`).
+    pub air_node_t_air: SmallVec<[f64; SCRATCH_INLINE_CAPACITY]>,
+    pub air_node_solar_lag: SmallVec<[f64; SCRATCH_INLINE_CAPACITY]>,
+    /// Issue #3370: per-sub-step computed air-node temperature (write) and
+    /// the post-lag-correction view. `air_node_t_i_free` is built fresh each
+    /// sub-step; `air_node_corrected` is the lag-corrected one. Both were
+    /// previously `Vec::with_capacity(num_zones)` allocated each sub-step
+    /// (3 sub-steps × per-step heap allocation = the most expensive
+    /// contributor to the 140K/config regression).
+    pub air_node_t_i_free: SmallVec<[f64; SCRATCH_INLINE_CAPACITY]>,
+    pub air_node_corrected: SmallVec<[f64; SCRATCH_INLINE_CAPACITY]>,
+    /// Issue #3370: scratch copy of `t_i_free` used to populate
+    /// `self.0.mass.air_temperatures` (avoids a per-step `to_vec()` on
+    /// `t_i_free.as_ref()`).
+    pub air_node_t_i_free_slice: SmallVec<[f64; SCRATCH_INLINE_CAPACITY]>,
+    /// Issue #3370: scratch buffer for `compute_zone_hvac_load`'s per-zone
+    /// demand vector. Cleared and resized inside the helper to reproduce the
+    /// `vec![0.0; n]` semantics without a heap allocation once the pool is
+    /// warm.
+    pub hvac_combined_demand: SmallVec<[f64; SCRATCH_INLINE_CAPACITY]>,
+    /// Issue #3370: scratch buffer for `step_physics_5r1c`'s conditional
+    /// night-ventilation `den` vector (only allocated when `night_vent` is
+    /// configured; the test fixture has `night_vent == None` so this path
+    /// is currently dead, but the field is included for completeness so
+    /// the night-vent arm stays zero-alloc on future runs that exercise
+    /// it).
+    pub night_vent_den: SmallVec<[f64; SCRATCH_INLINE_CAPACITY]>,
+    /// Issue #3370: scratch buffer for the `previous_temperatures` write at
+    /// the end of `step_physics_5r1c` (replaces `VectorField::new(...to_vec())`
+    /// which heap-allocated per step).
+    pub previous_temperatures: SmallVec<[f64; SCRATCH_INLINE_CAPACITY]>,
 }
 
 impl PhysicsScratch5r1c {
@@ -69,6 +120,22 @@ impl PhysicsScratch5r1c {
             wall_surface_correction: SmallVec::from_elem(0.0, num_zones),
             t_sol_air_zone: SmallVec::from_elem(0.0, num_zones),
             h_ext_owned_zone: SmallVec::from_elem(0.0, num_zones),
+            lw_surface_emissivity: SmallVec::from_elem(0.0, num_zones),
+            lw_t_zone: SmallVec::from_elem(0.0, num_zones),
+            lw_a_floor: SmallVec::from_elem(0.0, num_zones),
+            lw_a_ceiling: SmallVec::from_elem(0.0, num_zones),
+            lw_a_wall: SmallVec::from_elem(0.0, num_zones),
+            lw_u_floor: SmallVec::from_elem(0.0, num_zones),
+            lw_u_ceiling: SmallVec::from_elem(0.0, num_zones),
+            lw_u_wall: SmallVec::from_elem(0.0, num_zones),
+            air_node_t_air: SmallVec::from_elem(0.0, num_zones),
+            air_node_solar_lag: SmallVec::from_elem(0.0, num_zones),
+            air_node_t_i_free: SmallVec::from_elem(0.0, num_zones),
+            air_node_corrected: SmallVec::from_elem(0.0, num_zones),
+            air_node_t_i_free_slice: SmallVec::from_elem(0.0, num_zones),
+            hvac_combined_demand: SmallVec::from_elem(0.0, num_zones),
+            night_vent_den: SmallVec::from_elem(0.0, num_zones),
+            previous_temperatures: SmallVec::from_elem(0.0, num_zones),
         }
     }
 
@@ -96,6 +163,22 @@ impl PhysicsScratch5r1c {
         self.wall_surface_correction.resize(n, 0.0);
         self.t_sol_air_zone.resize(n, 0.0);
         self.h_ext_owned_zone.resize(n, 0.0);
+        self.lw_surface_emissivity.resize(n, 0.0);
+        self.lw_t_zone.resize(n, 0.0);
+        self.lw_a_floor.resize(n, 0.0);
+        self.lw_a_ceiling.resize(n, 0.0);
+        self.lw_a_wall.resize(n, 0.0);
+        self.lw_u_floor.resize(n, 0.0);
+        self.lw_u_ceiling.resize(n, 0.0);
+        self.lw_u_wall.resize(n, 0.0);
+        self.air_node_t_air.resize(n, 0.0);
+        self.air_node_solar_lag.resize(n, 0.0);
+        self.air_node_t_i_free.resize(n, 0.0);
+        self.air_node_corrected.resize(n, 0.0);
+        self.air_node_t_i_free_slice.resize(n, 0.0);
+        self.hvac_combined_demand.resize(n, 0.0);
+        self.night_vent_den.resize(n, 0.0);
+        self.previous_temperatures.resize(n, 0.0);
         for v in &mut self.phi_ia {
             *v = 0.0;
         }
@@ -126,6 +209,54 @@ impl PhysicsScratch5r1c {
         for v in &mut self.h_ext_owned_zone {
             *v = 0.0;
         }
+        for v in &mut self.lw_surface_emissivity {
+            *v = 0.0;
+        }
+        for v in &mut self.lw_t_zone {
+            *v = 0.0;
+        }
+        for v in &mut self.lw_a_floor {
+            *v = 0.0;
+        }
+        for v in &mut self.lw_a_ceiling {
+            *v = 0.0;
+        }
+        for v in &mut self.lw_a_wall {
+            *v = 0.0;
+        }
+        for v in &mut self.lw_u_floor {
+            *v = 0.0;
+        }
+        for v in &mut self.lw_u_ceiling {
+            *v = 0.0;
+        }
+        for v in &mut self.lw_u_wall {
+            *v = 0.0;
+        }
+        for v in &mut self.air_node_t_air {
+            *v = 0.0;
+        }
+        for v in &mut self.air_node_solar_lag {
+            *v = 0.0;
+        }
+        for v in &mut self.air_node_t_i_free {
+            *v = 0.0;
+        }
+        for v in &mut self.air_node_corrected {
+            *v = 0.0;
+        }
+        for v in &mut self.air_node_t_i_free_slice {
+            *v = 0.0;
+        }
+        for v in &mut self.hvac_combined_demand {
+            *v = 0.0;
+        }
+        for v in &mut self.night_vent_den {
+            *v = 0.0;
+        }
+        for v in &mut self.previous_temperatures {
+            *v = 0.0;
+        }
     }
 }
 
@@ -142,6 +273,9 @@ pub(crate) struct PhysicsScratch6r2c {
     pub t_s: SmallVec<[f64; SCRATCH_INLINE_CAPACITY]>,
     pub new_env: SmallVec<[f64; SCRATCH_INLINE_CAPACITY]>,
     pub new_int: SmallVec<[f64; SCRATCH_INLINE_CAPACITY]>,
+    /// Issue #3370: scratch buffer for `compute_zone_hvac_load`'s per-zone
+    /// demand vector (replaces the per-call `vec![0.0; n]` allocation).
+    pub hvac_combined_demand: SmallVec<[f64; SCRATCH_INLINE_CAPACITY]>,
 }
 
 impl PhysicsScratch6r2c {
@@ -159,6 +293,7 @@ impl PhysicsScratch6r2c {
             t_s: SmallVec::from_elem(0.0, num_zones),
             new_env: SmallVec::from_elem(0.0, num_zones),
             new_int: SmallVec::from_elem(0.0, num_zones),
+            hvac_combined_demand: SmallVec::from_elem(0.0, num_zones),
         }
     }
 
@@ -177,6 +312,7 @@ impl PhysicsScratch6r2c {
         self.t_s.resize(n, 0.0);
         self.new_env.resize(n, 0.0);
         self.new_int.resize(n, 0.0);
+        self.hvac_combined_demand.resize(n, 0.0);
         for v in &mut self.phi_ia {
             *v = 0.0;
         }
@@ -208,6 +344,9 @@ impl PhysicsScratch6r2c {
             *v = 0.0;
         }
         for v in &mut self.new_int {
+            *v = 0.0;
+        }
+        for v in &mut self.hvac_combined_demand {
             *v = 0.0;
         }
     }

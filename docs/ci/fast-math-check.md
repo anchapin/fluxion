@@ -1,8 +1,8 @@
 # Fast-Math vs IEEE-754 ASHRAE 600/900 Regression Gate — Issue #3326
 
-**Issue:** #3326  
-**Date:** 2026-09-03  
-**Status:** ADVISORY — implemented but not yet promoted to `release_gates.yaml::ci.required_checks` (Issue #3326 body).
+**Issue:** #3326, #3358  
+**Date:** 2026-09-06  
+**Status:** REQUIRED — promoted to `release_gates.yaml::ci.required_checks` via the `(GH)` listener pattern (Issue #3358); live `develop` branch-protection activation gates on the 4-week stability window sign-off tracked in Issue #3358 comments.
 
 ## Summary
 
@@ -118,35 +118,71 @@ immediately.
 | `workflow_dispatch` | — | Manual `gh workflow run fast_math_check.yml` |
 | `schedule` (nightly) | `0 4 * * *` | 04:00 UTC — off-peak slot, no collision with the other nightly jobs (nightly_validation=00, perf_dashboard=02, pgo=02:30, ashrae_140_validation=02, architecture_drift=03, rust-tests=03:17, loom=03 Sun, gauge=06, required-checks-sync-cron=06, mutation=07, known-issues-stale=09 Mon, rumqttc=10 Mon) |
 
-## Status: advisory (intentional)
+## Status: required (promoted)
 
-The job is **not** added to `release_gates.yaml::ci.required_checks` in
-this PR per Issue #3326's explicit directive:
+The job **is** now a branch-protection required check on `develop`
+as of #3358 (YAML-side promotion). The live `develop` branch-protection
+contexts array pickup is the *separate* activation step — gated on the
+4-week stability window sign-off that is tracked in the Issue #3358
+comments using the #3286 β-soak convention.
+
+Initial advisory state (Issue #3326, PR #3349, 2026-09-03):
 
 > Keep the job advisory initially: do not add it to
 > `release_gates.yaml → ci.required_checks`; if/when promoting it, follow
 > the required-checks sync discipline (see the #3129 gap and the #3142
 > workflow-only rationale in `docs/ci/`).
 
-## Promotion criteria (when ready)
+## Promotion criteria (now met)
 
 Per the #3142 sync-discipline pattern documented in
 `docs/ci/branch-protection-strict-mode.md`:
 
 1. ≥ 14 days of green nightly runs on the seeded ASHRAE 600/900 cases
-   (no flake on the comparison job or the residual-ceiling check).
+   (no flake on the comparison job or the residual-ceiling check) —
+   tracked in the Issue #3358 comments.
 2. Confirm no false-positive from the `cargo test` rebuilds — the
    workflow uses a separate cache key per `--features fast-math` so a
    partial rebuild can't serve stale artifacts across modes.
 3. Update `release_gates.yaml::ci.workflow_index` with the new check
-   name (job name: `"Fast-Math vs IEEE-754 ASHRAE 600/900 Regression Gate (Issue #3326)"`).
-4. Add the check to **either** `ci.required_checks` (for code-changing
-   PRs) **and** `ci.required_checks_workflow_only` (for workflow-only PRs
-   that don't touch `src/physics/fp_algebraic.rs` — most workflow-only
-   PRs would otherwise skip this path-filtered check, so follow the
-   #3142 reasoning).
+   name (job name: `"Fast-Math vs IEEE-754 ASHRAE 600/900 Regression
+   Gate (GH)"`) — **done in #3358**.
+4. Add the check to **both** `ci.required_checks` (for code-changing
+   PRs) **and** `ci.required_checks_workflow_only` (for workflow-only
+   PRs) — **done in #3358**.
 5. Run `python3 scripts/check_required_checks_sync.py` to verify
-   drift-free.
+   drift-free — **passes in #3358** (30 required_check(s), 31
+   workflow_index entr(ies), in sync with 46 workflow file(s)).
+
+## Activation step (gated on stability window sign-off)
+
+The YAML side already emits the exact required-check name. To
+*activate* the gate on the live `develop` branch-protection, run
+once the 4-week stability window closes:
+
+```bash
+# Snapshot the current contexts
+EXISTING=$(gh api /repos/anchapin/fluxion/branches/develop/protection/required_status_checks \
+  | jq -c '.contexts')
+
+# Append the new check name
+NEW=$(echo "${EXISTING}" | jq '. + ["Fast-Math vs IEEE-754 ASHRAE 600/900 Regression Gate (GH)"]')
+
+# PATCH preserves existing contexts (PUT would replace them)
+gh api --method PATCH /repos/anchapin/fluxion/branches/develop/protection/required_status_checks \
+  -H "Content-Type: application/json" \
+  --input - <<EOF
+{"contexts": ${NEW}}
+EOF
+```
+
+Verify with `gh api /repos/anchapin/fluxion/branches/develop/protection/required_status_checks`
+before and after. The `FLUXION_CHECK_LIVE_PROTECTION=1` invocation of
+`scripts/check_required_checks_sync.py` will then pass end-to-end.
+
+For the full operator runbook including a rollback procedure for the
+false-positive class, see
+[`docs/ci/fast-math-stability-window.md`](fast-math-stability-window.md).
 
 ## Self-validation evidence (Issue #3326 acceptance)
 

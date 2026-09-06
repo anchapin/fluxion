@@ -137,6 +137,66 @@
         "default": 1e-9,
         "simd_kernels": 1e-6
       }
+    },
+    {
+      "case_name": "sky_radiation_clear_night_roof",
+      "input": {
+        "case_name": "sky_radiation_clear_night_roof",
+        "params": {
+          "sky_temp_c": -10.0,
+          "sky_view_factor": 1.0,
+          "surface_emissivity": 0.9,
+          "surface_temp_c": 30.0
+        }
+      },
+      "kernel_focus": "sky_radiation_net_flux",
+      "reference": {
+        "net_flux_wm2": -186.27587986148814
+      },
+      "tolerance": {
+        "default": 1e-9,
+        "simd_kernels": 1e-6
+      }
+    },
+    {
+      "case_name": "sky_radiation_tilted_low_view",
+      "input": {
+        "case_name": "sky_radiation_tilted_low_view",
+        "params": {
+          "sky_temp_c": 5.0,
+          "sky_view_factor": 0.5,
+          "surface_emissivity": 0.85,
+          "surface_temp_c": 22.0
+        }
+      },
+      "kernel_focus": "sky_radiation_net_flux",
+      "reference": {
+        "net_flux_wm2": -38.629442868009306
+      },
+      "tolerance": {
+        "default": 1e-9,
+        "simd_kernels": 1e-6
+      }
+    },
+    {
+      "case_name": "sky_radiation_equal_temps_zero_flux",
+      "input": {
+        "case_name": "sky_radiation_equal_temps_zero_flux",
+        "params": {
+          "sky_temp_c": 20.0,
+          "sky_view_factor": 1.0,
+          "surface_emissivity": 0.9,
+          "surface_temp_c": 20.0
+        }
+      },
+      "kernel_focus": "sky_radiation_net_flux",
+      "reference": {
+        "net_flux_wm2": 0.0
+      },
+      "tolerance": {
+        "default": 1e-9,
+        "simd_kernels": 1e-6
+      }
     }
   ],
   "generated_by": "tools/evolution/scripts/regenerate_simd_edge_cases.sh (re-run only; never hand-edit)",

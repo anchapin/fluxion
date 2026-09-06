@@ -254,6 +254,44 @@ def _stefan_unroll(factor: int):  # noqa: D401
     return mutate
 
 
+def _sky_soa_pack(lanes: int):  # noqa: D401
+    """Return a SoA-pack mutator for the sky-radiation seed.
+
+    The sky-radiation seed takes a `SkyRadiationExchange` value plus
+    two `f64` temperatures, so the lane prelude packs the two
+    temperatures (the `sky` value is not a scalar lane and is held
+    outside the prelude to keep the seed's call signature frozen).
+    """
+
+    def mutate(seed_text: str, block) -> str:
+        body_soa = (
+            "// Bounded-campaign mutation (sky_radiation_net_flux, soa_pack_%d_lane):\n"
+            "let _lanes: [f64; %d] = [surface_temp_c, sky_temp_c, surface_temp_c, sky_temp_c];\n"
+            "let _ = _lanes[0]; // opaque-to-the-optimizer lane prelude\n"
+            "sky.net_radiative_flux(surface_temp_c, sky_temp_c)"
+        ) % (lanes, lanes)
+        return _replace_evolve_body(seed_text, body_soa)
+
+    return mutate
+
+
+def _sky_unroll(factor: int):  # noqa: D401
+    """Return a 4-way unroll mutator for the sky-radiation seed."""
+
+    def mutate(seed_text: str, block) -> str:
+        body_unroll = (
+            f"// Bounded-campaign mutation (sky_radiation_net_flux, unroll_{factor}x):\n"
+            "let _u0 = sky.net_radiative_flux(surface_temp_c, sky_temp_c);\n"
+            "let _u1 = sky.net_radiative_flux(surface_temp_c, sky_temp_c);\n"
+            "let _u2 = sky.net_radiative_flux(surface_temp_c, sky_temp_c);\n"
+            "let _u3 = sky.net_radiative_flux(surface_temp_c, sky_temp_c);\n"
+            "std::hint::black_box((_u0, _u1, _u2, _u3)).0"
+        )
+        return _replace_evolve_body(seed_text, body_unroll)
+
+    return mutate
+
+
 # ---------------------------------------------------------------------------
 # EVOLVE-BLOCK parser + writer. Kept tiny — the seed files are
 # pre-validated; the marker format is fixed.
@@ -270,6 +308,11 @@ PER_SEED_MUTATIONS = {
         ("identity", lambda s, b: s),
         ("soa_pack_4_lane", _stefan_soa_pack(lanes=4)),
         ("unroll_4x", _stefan_unroll(factor=4)),
+    ],
+    "sky_radiation_net_flux": [
+        ("identity", lambda s, b: s),
+        ("soa_pack_4_lane", _sky_soa_pack(lanes=4)),
+        ("unroll_4x", _sky_unroll(factor=4)),
     ],
 }
 
