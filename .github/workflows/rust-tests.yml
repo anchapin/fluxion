@@ -4,6 +4,34 @@ on:
   push:
     branches: [main]
   pull_request:
+    # Issue #3367: skip the heavy `Rust Tests & Linting` matrix on
+    # docs-only PRs. PRs that touch only `docs/**`, `*.md`, `*.mdx`,
+    # or the canonical root markdown files do not need the 38-minute
+    # cargo test long pole — the branch-protection
+    # `release_gates.yaml::ci.required_checks_workflow_only` set
+    # (issue #3142) already enforces the documentation-only branch-
+    # protection invariant, and docs PRs cannot change Rust runtime
+    # behaviour.
+    #
+    # The explicit root-`.md` entries are defensive: `**.md` already
+    # matches them, but listing them inline documents which root files
+    # are considered "documentation" for this carve-out so a future
+    # contributor adding a new root `.md` file does not have to ask.
+    # Companion to PR #3369 (nextest rollout, ADR-0015 per-`head_sha`
+    # concurrency).
+    paths-ignore:
+      - "docs/**"
+      - "**.md"
+      - "**.mdx"
+      - "README.md"
+      - "ARCHITECTURE.md"
+      - "AGENTS.md"
+      - "RULES.md"
+      - "CODEBASE_MAP.md"
+      - "SCORECARD.md"
+      - "KNOWN_ISSUES.md"
+      - "ASHRAE140_RESULTS.md"
+      - "CONTRIBUTING.md"
   schedule:
     # Issue #2768: nightly cron for the cycle downward-trend guard's R2
     # enforcement (downward progress within the last 14 snapshots). Only
