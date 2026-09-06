@@ -86,8 +86,15 @@ on:
   # check that branch protection can reference. The listener only fires
   # for the same SHA on the same branch, so spurious upstream runs on
   # unrelated branches are ignored.
+  # Issue #3372: also mirror the Performance Dashboard conclusion into
+  # the "Fluxion Performance Gate (Issue #1618)" check. Without this,
+  # the `fluxion-performance-gate` listener is dead code — its `if:`
+  # filter is correct but the `workflow_run` event is never delivered.
+  # Each listener scopes itself by `name` so the two coexist cleanly.
   workflow_run:
-    workflows: ["Cross-Platform Determinism CI"]
+    workflows:
+    - "Cross-Platform Determinism CI"
+    - "Performance Dashboard"
     types: [completed]
 
 concurrency:
