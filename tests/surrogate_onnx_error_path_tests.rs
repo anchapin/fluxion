@@ -384,16 +384,19 @@ fn test_cpu_backend_is_deterministic() {
 /// Returns `true` when the CUDA execution provider can be loaded at
 /// runtime. Compiles to `false` unless `--features cuda` is enabled and
 /// the runtime has a working NVIDIA driver + CUDA EP binary.
+///
+/// Delegates to the production probe (`ExecutionProviderReport::capture`,
+/// issue #3313) so availability here means the same thing as in the
+/// `EP_RUNTIME_PROBE` harness: EP compiled in **and** a real device
+/// enumerated, not merely a successful registration. See
+/// `docs/agents/runtime-ort-ep-probe-runbook.md`.
 #[cfg(feature = "cuda")]
 fn cuda_execution_provider_available() -> bool {
-    use ort::execution_providers::CUDAExecutionProvider;
-    use ort::session::Session;
-    if let Ok(builder) = Session::builder() {
-        let ep = CUDAExecutionProvider::default().with_device_id(0);
-        builder.with_execution_providers([ep.build()]).is_ok()
-    } else {
-        false
-    }
+    use fluxion::ai::surrogate::{ExecutionProviderReport, InferenceBackend};
+
+    ExecutionProviderReport::capture()
+        .probe(InferenceBackend::CUDA)
+        .is_some_and(|probe| probe.activated)
 }
 
 /// Live CPU↔CUDA numerical parity check (issue #2557 acceptance).
