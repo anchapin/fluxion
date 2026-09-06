@@ -466,3 +466,40 @@ jobs:
           else
             echo "No comparison_result.json found" >> $GITHUB_STEP_SUMMARY
           fi
+
+  # Issue #3358: required-check listener job for the
+  # `release_gates.yaml -> ci.required_checks` promotion. The PR-blocking
+  # branch-protection contract requires a job whose emitted ``name:``
+  # equals the required-check string exactly (Issue #3116 verbatim-match
+  # rule, no canonical+suffix tolerance). The ``compare`` job's emitted
+  # name ("Fast-Math Comparison (Δ loads + residual ceiling)") does NOT
+  # match the AGENTS.md convention of workflow-name + "(GH)" suffix, so
+  # we add a thin listener here that depends on ``compare`` and emits
+  # the canonical required-check name. Mirrors the ``Workspace Check
+  # (GH)`` / ``Physics-Sim-Cycle-Check (GH)`` listener pattern in
+  # ``.github/workflows/rust-tests.yml``.
+  #
+  # IMPORTANT: this is an ADDITIVE listener — the workflow's top-level
+  # ``name:`` field is intentionally unchanged (Issue #3358 directive:
+  # "Do NOT modify fast_math_check.yml's ``name:`` field; the promotion
+  # is at the release_gates layer, not the workflow"). The 4-week
+  # stability window tracking lives in the Issue #3358 comments (per
+  # the #3286 β-soak tracking convention), not in this file.
+  fast-math-gh:
+    name: Fast-Math vs IEEE-754 ASHRAE 600/900 Regression Gate (GH)
+    needs: [compare]
+    runs-on: ${{ vars.FLUXION_LINUX_RUNNER || 'ubuntu-latest' }}
+    timeout-minutes: 5
+    if: always()
+
+    steps:
+      - name: Verify compare job succeeded
+        run: |
+          set -uo pipefail
+          RESULT="${{ needs.compare.result }}"
+          echo "compare job result: ${RESULT}"
+          if [ "${RESULT}" != "success" ]; then
+            echo "::error::Fast-Math compare job did not succeed: ${RESULT}"
+            exit 1
+          fi
+          echo "Fast-Math vs IEEE-754 ASHRAE 600/900 Regression Gate (GH) PASS"

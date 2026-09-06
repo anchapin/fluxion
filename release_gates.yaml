@@ -625,6 +625,30 @@ ci:
     # main-only `if` and runs on every PR.
     - "FFI Feature Check (GH)"
 
+    # Issue #3358: promote the fast-math advisory gate (#3326, PR #3349)
+    # to a branch-protection required check. The listener job in
+    # `.github/workflows/fast_math_check.yml` is `fast-math-gh` (job
+    # name: "Fast-Math vs IEEE-754 ASHRAE 600/900 Regression Gate (GH)").
+    # This is the workflow-only `(GH)` suffix convention (per
+    # `docs/ci/branch-protection-strict-mode.md` and AGENTS.md "Required
+    # checks sync discipline"). The listener is an ADDITIVE job in the
+    # workflow; the workflow's top-level `name:` field is intentionally
+    # unchanged per Issue #3358 directive ("Do NOT modify fast_math_check
+    # .yml's ``name:`` field; the promotion is at the release_gates
+    # layer, not the workflow"). The 4-week stability window (the
+    # remaining acceptance criterion from Issue #3358) is tracked in the
+    # issue comments using the #3286 β-soak convention, NOT in code.
+    # Operator runbook (weekly tracking template + activation procedure
+    # + rollback procedure) lives at
+    # `docs/ci/fast-math-stability-window.md`. When the window closes,
+    # this entry is the gate-activation mechanism: the `(GH)` listener
+    # already emits the exact required-check name so the live `develop`
+    # branch protection contexts array will pick it up the moment it is
+    # added via `gh api --method PATCH`. This PR only lands the YAML
+    # side; the live branch-protection activation is gated on the
+    # stability sign-off.
+    - "Fast-Math vs IEEE-754 ASHRAE 600/900 Regression Gate (GH)"
+
   # Issue #3142: Required checks for workflow-only PRs.
   #
   # PRs that touch only `scripts/`, `.github/workflows/`, or `docs/` cannot
@@ -670,6 +694,7 @@ ci:
     - "h_tr_em Regression Gate (LIMIT-13)"
     - "FFI Feature Check (GH)"
     - "Tracked-vs-Ignored Gate (Issue #3356)"
+    - "Fast-Math vs IEEE-754 ASHRAE 600/900 Regression Gate (GH)"
 
   # Job-to-workflow map (informational; branch-protection reads job
   # names directly). Used by `scripts/release_gate_checker.py` to verify
@@ -1112,3 +1137,23 @@ ci:
       workflow: ".github/workflows/tracked-vs-ignored.yml"
       issue: 3356
       triggered_by: "PR (path-filter: .gitignore, **/.gitignore, scripts/check_no_ignored_tracked_files.py) + push to develop/main"
+
+    - job: "Fast-Math vs IEEE-754 ASHRAE 600/900 Regression Gate (GH)"
+      # Issue #3358: fast-math advisory gate promotion. The listener job
+      # is `fast-math-gh` in `.github/workflows/fast_math_check.yml`;
+      # the actual physics assertions live in the upstream `compare` job
+      # (Issue #3326: ±0.05% load agreement between default-features
+      # and `--features fast-math`, ≤ 1e-5 W energy-balance residual
+      # ceiling). The listener emits the `(GH)` suffix required by the
+      # workflow-only convention (AGENTS.md "Required checks sync
+      # discipline", #3142). Mirrors the `Workspace Check (GH)` /
+      # `Physics-Sim-Cycle-Check (GH)` listener pattern in
+      # `.github/workflows/rust-tests.yml`. The workflow's top-level
+      # `name:` field is intentionally NOT modified per Issue #3358
+      # directive; the listener job is an additive change that provides
+      # the exact emitted check name the sync script requires (Issue
+      # #3116 verbatim-match rule).
+      workflow: ".github/workflows/fast_math_check.yml"
+      issue: 3358
+      closes_issue: 3326
+      triggered_by: "PR + push to main/develop + schedule (nightly 04:00 UTC)"

@@ -42,13 +42,39 @@ For a PR touching only `scripts/`, `.github/workflows/`, or `docs/`:
 - `docs-hygiene.yml` **does** run (its path filter includes these paths)
 - `architecture_drift.yml`, `crate-size.yml`, `msrv.yml` **do not** run
 
+## Workflow-Only Promotion: Fast-Math Gate (Issue #3358)
+
+The `Fast-Math vs IEEE-754 ASHRAE 600/900 Regression Gate (GH)` check
+(#3358, #3326, #3322) was promoted from advisory to required in 2026-09
+via the `(GH)` listener pattern. It has no `paths:` filter and runs on
+every PR + push to `main`/`develop` + nightly at 04:00 UTC, so it is
+included in **both** `required_checks` and `required_checks_workflow_only`.
+
+The listener job in `.github/workflows/fast_math_check.yml` is named
+`fast-math-gh` and emits the exact check name `"Fast-Math vs IEEE-754
+ASHRAE 600/900 Regression Gate (GH)"`; the actual physics assertions
+(`±0.05%` load agreement + `≤ 1e-5 W` residual ceiling, Issue #3326) live
+in the upstream `compare` job. The listener is an additive change; the
+workflow's top-level `name:` field is intentionally unchanged per
+Issue #3358 directive ("Do NOT modify fast_math_check.yml's ``name:``
+field; the promotion is at the release_gates layer, not the workflow").
+
+The 4-week stability window (remaining acceptance criterion from #3358)
+is tracked in the issue comments using the #3286 β-soak convention,
+not in code. When the window closes, the live `develop` branch
+protection is updated via `gh api --method PATCH` (preserves existing
+contexts) to add the `(GH)` listener name to
+`required_status_checks.contexts`; the YAML side already emits it.
+Full operator procedure in
+[`docs/ci/fast-math-stability-window.md`](fast-math-stability-window.md).
+
 ## Solution
 
 `release_gates.yaml` now contains two arrays:
 
-1. **`required_checks`** — All checks for code-changing PRs (23 checks). Use this for branch protection configuration on `main`.
+1. **`required_checks`** — All checks for code-changing PRs (30 checks). Use this for branch protection configuration on `main`.
 
-2. **`required_checks_workflow_only`** — Only the checks that run on every PR regardless of changed files (19 checks). This excludes the 4 path-filtered checks above.
+2. **`required_checks_workflow_only`** — Only the checks that run on every PR regardless of changed files (26 checks). This excludes the 4 path-filtered checks above. The fast-math listener (#3358) is INCLUDED in this list because it has no `paths:` filter and runs on every PR (including workflow-only PRs like the one that lands this very gate's promotion).
 
 ### Branch Protection Configuration
 
