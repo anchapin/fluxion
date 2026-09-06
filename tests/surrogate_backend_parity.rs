@@ -570,23 +570,20 @@ fn test_surrogate_conduction_zero_flux_remains_finite() {
 /// Always `false` in this CI sandbox (no GPU hardware), so the live
 /// CPU-vs-CUDA parity check is `#[ignore]`d. Hardware-in-loop runners
 /// with NVIDIA GPUs will see `true` and the test runs to completion.
+///
+/// Delegates to the production probe (`ExecutionProviderReport::capture`,
+/// issue #3313) rather than doing its own registration check: registration
+/// alone succeeds even without a GPU, which would mis-report availability
+/// and hide a silent CPU fallback. The probe additionally requires that ORT
+/// enumerated a real CUDA device. See
+/// `docs/agents/runtime-ort-ep-probe-runbook.md`.
 #[cfg(feature = "cuda")]
 fn cuda_execution_provider_available() -> bool {
-    #[cfg(feature = "cuda")]
-    {
-        use ort::execution_providers::CUDAExecutionProvider;
-        use ort::session::Session;
-        if let Ok(builder) = Session::builder() {
-            let ep = CUDAExecutionProvider::default().with_device_id(0);
-            builder.with_execution_providers([ep.build()]).is_ok()
-        } else {
-            false
-        }
-    }
-    #[cfg(not(feature = "cuda"))]
-    {
-        false
-    }
+    use fluxion::ai::surrogate::ExecutionProviderReport;
+
+    ExecutionProviderReport::capture()
+        .probe(InferenceBackend::CUDA)
+        .is_some_and(|probe| probe.activated)
 }
 
 /// Live CPU-vs-CUDA parity check. Compiles only under `--features cuda`
