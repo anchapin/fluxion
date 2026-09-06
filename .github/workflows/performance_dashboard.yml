@@ -682,7 +682,7 @@ jobs:
           rm -f run_*.txt
           for i in 1 2 3; do
             echo "=== measurement run ${i}/3 ==="
-            cargo test --test performance_regression_test --release test_performance_regression -- --nocapture --no-fail-fast > "run_${i}.txt" 2>&1 || true
+            cargo test --test performance_regression_test --release test_performance_regression -- --nocapture > "run_${i}.txt" 2>&1 || true
           done
 
           python3 << 'EOF'
@@ -857,7 +857,7 @@ jobs:
           rm -f run_*.txt
           for i in 1 2 3; do
             echo "=== measurement run ${i}/3 ==="
-            cargo test --test performance_regression_test --release test_multi_zone_performance_regression -- --nocapture --no-fail-fast > "run_${i}.txt" 2>&1 || true
+            cargo test --test performance_regression_test --release test_multi_zone_performance_regression -- --nocapture > "run_${i}.txt" 2>&1 || true
           done
 
           python3 << 'EOF'
