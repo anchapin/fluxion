@@ -504,6 +504,16 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
             } else {
                 1.0
             };
+            // The `!= 1.0` guard is a sentinel check on a value that is
+            // either the literal `1.0` (no night ventilation) or a value
+            // returned by `capped_h_tr_is_ach_multiplier` — under
+            // `fast-math` reassociation the latter could be a few ulp
+            // away from `1.0` even at low `ach`, which is the *intended*
+            // behaviour: when the multiplier is non-trivially different
+            // from `1.0`, apply it. The exact-equality comparison is
+            // therefore the correct semantic here, not a fast-math bug.
+            // See Issue #3357.
+            #[allow(clippy::float_cmp)]
             if h_tr_is_multiplier_pre != 1.0 {
                 solver.h_tr_is *= h_tr_is_multiplier_pre;
             }
@@ -513,7 +523,10 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                 h_ve_night_zone,
                 phi_ia_val,
             );
-            // Restore h_tr_is - the main boost/restore block at lines ~2720 will handle it for step_with_gains
+            // Restore h_tr_is - the main boost/restore block at lines ~2720 will handle it for step_with_gains.
+            // Sentinel `!= 1.0` guard mirroring the boost check above;
+            // see comment on the boost site (Issue #3357).
+            #[allow(clippy::float_cmp)]
             if h_tr_is_multiplier_pre != 1.0 {
                 solver.h_tr_is /= h_tr_is_multiplier_pre;
             }
@@ -659,6 +672,11 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
             } else {
                 1.0
             };
+            // Sentinel `!= 1.0` guard on a value that is either the literal `1.0`
+            // (no night ventilation) or a value returned by
+            // `capped_h_tr_is_ach_multiplier`. See comment on the boost
+            // site above for the full justification (Issue #3357).
+            #[allow(clippy::float_cmp)]
             let original_h_tr_is = if h_tr_is_multiplier != 1.0 {
                 let original = solver.h_tr_is;
                 solver.h_tr_is *= h_tr_is_multiplier;
