@@ -56,6 +56,21 @@ on:
         description: Python version for setup.
 
 # Least-privilege GITHUB_TOKEN grants (Issue #2526): reusable CI steps are read-only.
+
+concurrency:
+  group: >-
+    ${{ github.workflow }}-
+    ${{
+      github.event_name == 'pull_request' &&
+      github.event.pull_request.head.sha
+      || github.ref
+    }}
+  cancel-in-progress: >-
+    ${{
+      github.event_name == 'push'
+      && contains('refs/heads/main,refs/heads/develop', github.ref)
+    }}
+
 permissions:
   contents: read
 

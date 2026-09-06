@@ -15,6 +15,21 @@ on:
 # jobs escalate ONLY to `id-token: write` (OIDC trusted publishing) via their own
 # job-level permissions blocks — they never need contents: write because PyPI
 # trusted publishing does not push tags or commits.
+
+concurrency:
+  group: >-
+    ${{ github.workflow }}-
+    ${{
+      github.event_name == 'pull_request' &&
+      github.event.pull_request.head.sha
+      || github.ref
+    }}
+  cancel-in-progress: >-
+    ${{
+      github.event_name == 'push'
+      && contains('refs/heads/main,refs/heads/develop', github.ref)
+    }}
+
 permissions:
   contents: read
 

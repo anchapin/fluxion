@@ -16,8 +16,18 @@ on:
     # Manual trigger for the `cycle-trend-nightly` job (issue #2768).
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  group: >-
+    ${{ github.workflow }}-
+    ${{
+      github.event_name == 'pull_request' &&
+      github.event.pull_request.head.sha
+      || github.ref
+    }}
+  cancel-in-progress: >-
+    ${{
+      github.event_name == 'push'
+      && contains('refs/heads/main,refs/heads/develop', github.ref)
+    }}
 
 env:
   CARGO_TERM_COLOR: always
@@ -95,25 +105,37 @@ jobs:
           restore-keys: |
             ort-binaries-aarch64-apple-darwin-
 
+      # Issue #3366 / ADR-0014: consolidated the 7-line `cargo test` block
+      # into a single `cargo nextest run` invocation. Each test binary
+      # runs in its own process; per-binary concurrency overrides live
+      # in `.config/nextest.toml` (audit findings). `--no-fail-fast`
+      # keeps the matrix honest — a single failing binary does not
+      # abort the whole run.
+      #
+      # The test selector list matches the original 7-line block's
+      # scope (root lib + 4 root integration tests + the workspace
+      # package tests called out by Issues #2909 / #2904). The full
+      # `--workspace --all-targets` scope from ADR-0014 is deferred —
+      # it would expand to ~7,900 tests across the whole workspace and
+      # surface pre-existing failures in tests that the original 7-line
+      # block intentionally did NOT run (e.g. broader ASHRAE 140 case
+      # series, `test_edge_cases`, `test_delta_analysis`). Tracking
+      # issue: revisit after the deferred ASHRAE 140 cooling-gate fix
+      # lands (RULES.md §"Physics and Validation Guardrails").
       - name: Run tests
         run: |
-          cargo test --lib --verbose ${{ matrix.feature_set.flags }}
-          cargo test --test surface_flux_provider_isolation --verbose ${{ matrix.feature_set.flags }}
-          cargo test --test regression_exterior_film_unification --verbose ${{ matrix.feature_set.flags }}
-          # Issue #1803 / Plan T10.1 — empirical validation harness skeleton.
-          cargo test --test validation_empirical_harness --verbose ${{ matrix.feature_set.flags }}
-          # Issue #1756 — HVAC BESTEST CI runner stub (dummy, always-green).
-          cargo test --test hvac_bestest --verbose ${{ matrix.feature_set.flags }}
-          # Issue #2909 — fluxion-behavior workspace E2E integration tests
-          # (occupancy → thermal → lighting → comfort → moisture).
-          cargo test -p fluxion-behavior --test lighting_occupancy_integration --verbose ${{ matrix.feature_set.flags }}
-          # Issue #2904 — fluxion-twin workspace integration tests
-          # (UKF van der Pol, UKF covariance stability, MQTT → UKF pipeline,
-          # WebSocket broadcaster memory-leak). Closes #2058, #2060, #2061,
-          # #2064. fluxion-twin accepts the matrix flags as no-op
-          # `wiring-tracing` / `multi-zone` features (see its Cargo.toml) so
-          # the test invocation stays matrix-uniform.
-          cargo test -p fluxion-twin --tests --verbose ${{ matrix.feature_set.flags }}
+          cargo nextest run \
+            -p fluxion \
+            --lib \
+            --test surface_flux_provider_isolation \
+            --test regression_exterior_film_unification \
+            --test validation_empirical_harness \
+            --test hvac_bestest \
+            -p fluxion-behavior --test lighting_occupancy_integration \
+            -p fluxion-twin --test mqtt_ukf_integration --test ukf_covariance_stability --test ukf_van_der_pol --test websocket_memory_leak \
+            --test-threads=2 \
+            --no-fail-fast \
+            --features ${{ matrix.feature_set.nextest_flags }}
         env:
           PYO3_PYTHON: /usr/bin/python3
 

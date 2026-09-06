@@ -13,8 +13,18 @@ on:
   workflow_dispatch:
 
 concurrency:
-  group: determinism-${{ github.ref }}
-  cancel-in-progress: true
+  group: >-
+    determinism-
+    ${{
+      github.event_name == 'pull_request' &&
+      github.event.pull_request.head.sha
+      || github.ref
+    }}
+  cancel-in-progress: >-
+    ${{
+      github.event_name == 'push'
+      && contains('refs/heads/main,refs/heads/develop', github.ref)
+    }}
 
 permissions:
   contents: read

@@ -31,8 +31,18 @@ permissions:
   issues: write
 
 concurrency:
-  group: nightly-ashrae-140-gauge-${{ github.ref }}
-  cancel-in-progress: false
+  group: >-
+    nightly-ashrae-140-gauge-
+    ${{
+      github.event_name == 'pull_request' &&
+      github.event.pull_request.head.sha
+      || github.ref
+    }}
+  cancel-in-progress: >-
+    ${{
+      github.event_name == 'push'
+      && contains('refs/heads/main,refs/heads/develop', github.ref)
+    }}
 
 env:
   CARGO_TERM_COLOR: always

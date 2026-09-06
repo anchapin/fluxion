@@ -27,6 +27,21 @@ on:
 
 # Least-privilege GITHUB_TOKEN grants (Issue #2526). The check-drift job
 # escalates to issues/pull-requests write only where posting a comment needs it.
+
+concurrency:
+  group: >-
+    ${{ github.workflow }}-
+    ${{
+      github.event_name == 'pull_request' &&
+      github.event.pull_request.head.sha
+      || github.ref
+    }}
+  cancel-in-progress: >-
+    ${{
+      github.event_name == 'push'
+      && contains('refs/heads/main,refs/heads/develop', github.ref)
+    }}
+
 permissions:
   contents: read
 

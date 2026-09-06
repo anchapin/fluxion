@@ -1,5 +1,20 @@
 name: rumqttc Upstream Watch
 
+concurrency:
+  group: >-
+    ${{ github.workflow }}-
+    ${{
+      github.event_name == 'pull_request' &&
+      github.event.pull_request.head.sha
+      || github.ref
+    }}
+  cancel-in-progress: >-
+    ${{
+      github.event_name == 'push'
+      && contains('refs/heads/main,refs/heads/develop', github.ref)
+    }}
+
+
 # Issue #2853: schedule a weekly poll of bytebeamio/rumqtt#1037 + crates.io
 # so the rumqttc security cluster (RUSTSEC-2025-0134, 2026-0049/0098/0099/0104)
 # surfaces a fix within 7 days of upstream publishing one.

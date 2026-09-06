@@ -112,8 +112,18 @@ on:
 # runners while the previous run is still queued. Different refs run in
 # parallel (so feature branches don't queue behind main).
 concurrency:
-  group: ashrae-140-strict-energy-gate-${{ github.ref }}
-  cancel-in-progress: false
+  group: >-
+    ashrae-140-strict-energy-gate-
+    ${{
+      github.event_name == 'pull_request' &&
+      github.event.pull_request.head.sha
+      || github.ref
+    }}
+  cancel-in-progress: >-
+    ${{
+      github.event_name == 'push'
+      && contains('refs/heads/main,refs/heads/develop', github.ref)
+    }}
 
 permissions:
   contents: read

@@ -21,8 +21,18 @@ on:
         default: false
 
 concurrency:
-  group: tdqs-regression-${{ github.ref }}
-  cancel-in-progress: true
+  group: >-
+    tdqs-regression-
+    ${{
+      github.event_name == 'pull_request' &&
+      github.event.pull_request.head.sha
+      || github.ref
+    }}
+  cancel-in-progress: >-
+    ${{
+      github.event_name == 'push'
+      && contains('refs/heads/main,refs/heads/develop', github.ref)
+    }}
 
 permissions:
   issues: write  # Required for posting PR comments

@@ -1,0 +1,44 @@
+# `cargo nextest` configuration for Fluxion — ADR-0014 / Issue #3366.
+#
+# This file is consumed by `cargo nextest run` in the `Rust Tests & Linting`
+# workflow and any future local/CI invocations. It is intentionally separate
+# from `.cargo/config.toml` (cargo registry / build configuration) and
+# `.cargo/audit.toml` (cargo-audit policy).
+#
+# Per-binary overrides live under `[profile.default]` (or a custom profile).
+# Each binary runs in its own process; the `--test-threads=N` argument on the
+# CLI controls per-binary threading, NOT this file.
+#
+# Audit-first rollout (ADR-0014 §Plan / Step 1):
+#   1. Empirical: `cargo nextest run --lib --test-threads=2` ×5 on this
+#      branch — 3,922 lib tests, all PASSED (medians 55.38s–58.86s). No
+#      deadlock, panic, or non-deterministic ordering failure observed.
+#   2. Manual: source review of 6 small integration binaries
+#      (surface_flux_provider_isolation, regression_exterior_film_unification,
+#       validation_empirical_harness, hvac_bestest_validation,
+#       lighting_occupancy_integration, fluxion-twin/*.rs). No
+#      `std::env::set_var`, no shared `lazy_static` / `OnceLock` /
+#      `static mut`, no `RAYON_NUM_THREADS` / `rayon::ThreadPoolBuilder`
+#      global reconfiguration, no cross-test `TempDir` reuse detected in any
+#      of the 6 binaries.
+#
+# Conclusion: all 6 audit-flagged binaries are safe at the default
+# per-binary thread count (controlled via `--test-threads=2` on the CLI
+# to match the GH free-runner vCPU count; Hetzner runners are 4+ vCPU but
+# nextest only parallelises *inside* a single binary so 2 stays the safe
+# default across both pools). No per-binary overrides required at merge
+# time. If a future race surfaces post-merge (e.g. after a Rayon major
+# bump), add a `[[test]] name = "..." concurrency = 1` block below
+# rather than tightening the global default.
+
+[profile.default]
+# Per-binary thread count defaults to "2" (CLI flag override).
+# The CLI flag `--test-threads=N` controls the in-binary thread count;
+# this `concurrency` here is the per-binary "run this many binaries
+# in parallel" knob, which defaults to a vCPU count if unset. Leave
+# unset so nextest picks its own default based on detected cores.
+# concurrency = 2
+
+# [[test]]
+# name = "flagged_binary_name"
+# concurrency = 1
