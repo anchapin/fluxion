@@ -30,6 +30,7 @@ use std::fs;
 use std::path::PathBuf;
 
 use fluxion::sim::interzone_radiation::surface_radiative_exchange;
+use fluxion::sim::sky_radiation::SkyRadiationExchange;
 use fluxion::solar::surface_irradiance::PerezSkyModel;
 
 /// Path of the JSON fixture, relative to the repo root.
@@ -118,6 +119,19 @@ fn main() {
                     );
                     ("q_w".to_string(), r)
                 }
+                "sky_radiation_net_flux" => {
+                    // Default to canonical horizontal-roof settings
+                    // when the per-edge JSON omits them, matching the
+                    // seed's `Candidate::evaluate` defaults.
+                    let emissivity = opt_num(&params, "surface_emissivity", 0.90);
+                    let sky_view = opt_num(&params, "sky_view_factor", 1.0);
+                    let sky = SkyRadiationExchange::new(emissivity, sky_view);
+                    let r = sky.net_radiative_flux(
+                        num(&params, "surface_temp_c"),
+                        num(&params, "sky_temp_c"),
+                    );
+                    ("net_flux_wm2".to_string(), r)
+                }
                 other => {
                     eprintln!("regenerate_simd_edge_cases: unknown kernel_focus `{other}`");
                     std::process::exit(3);
@@ -152,4 +166,8 @@ fn num(params: &serde_json::Value, key: &str) -> f64 {
         .get(key)
         .and_then(|v| v.as_f64())
         .unwrap_or_else(|| panic!("missing `{}`", key))
+}
+
+fn opt_num(params: &serde_json::Value, key: &str, default: f64) -> f64 {
+    params.get(key).and_then(|v| v.as_f64()).unwrap_or(default)
 }

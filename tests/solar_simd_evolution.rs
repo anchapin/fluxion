@@ -53,6 +53,10 @@ mod perez_diffuse_tilted;
 #[allow(dead_code)]
 mod stefan_boltzmann_pair;
 
+#[path = "../tools/evolution/seeds/solar_simd/sky_radiation_net_flux.rs"]
+#[allow(dead_code)]
+mod sky_radiation_net_flux;
+
 /// Workspace root — the directory that contains
 /// `tools/evolution/edge_cases/solar_simd.json`. `CARGO_MANIFEST_DIR`
 /// for this test compilation is the project root.
@@ -159,4 +163,17 @@ fn stefan_boltzmann_pair_seed_passes_invariant_battery() {
         "stefan seed failed invariant battery: {violations:?}"
     );
     assert!(worst.is_some(), "stefan battery returned no result");
+}
+
+#[test]
+fn sky_radiation_net_flux_seed_passes_invariant_battery() {
+    let battery = load_battery("solar_simd.json", "sky_radiation_net_flux");
+    assert!(!battery.is_empty(), "sky_radiation battery is empty");
+    let check = DefaultInvariantCheck::new().with_energy_closure_rel_tol(1e-6);
+    let (violations, worst) = run_battery(&check, &sky_radiation_net_flux::Candidate, &battery);
+    assert!(
+        violations.is_empty(),
+        "sky_radiation seed failed invariant battery: {violations:?}"
+    );
+    assert!(worst.is_some(), "sky_radiation battery returned no result");
 }
