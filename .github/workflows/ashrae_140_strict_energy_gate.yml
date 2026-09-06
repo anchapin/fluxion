@@ -95,19 +95,35 @@
 
 name: ASHRAE 140 Strict Energy Gate
 
+# Issue #3355: expand upstream scope to `develop` so the strict ±15%
+# annual-energy tolerance gate (Issue #1333) fires for PRs targeting
+# `develop`. The Case 600 / 900 strict-tolerance gate is a PR-blocking
+# required check; restricting it to `main` left develop with no annual-
+# energy regression guard and forced every merge through
+# `gh pr merge --admin`.
 on:
   push:
-    branches: [main]
+    branches: [main, develop]
   pull_request:
-    branches: [main]
+    branches: [main, develop]
   workflow_dispatch:
 
 # Serialize strict-gate runs per ref so two pushes don't double-allocate
 # runners while the previous run is still queued. Different refs run in
 # parallel (so feature branches don't queue behind main).
 concurrency:
-  group: ashrae-140-strict-energy-gate-${{ github.ref }}
-  cancel-in-progress: false
+  group: >-
+    ashrae-140-strict-energy-gate-
+    ${{
+      github.event_name == 'pull_request' &&
+      github.event.pull_request.head.sha
+      || github.ref
+    }}
+  cancel-in-progress: >-
+    ${{
+      github.event_name == 'push'
+      && contains('refs/heads/main,refs/heads/develop', github.ref)
+    }}
 
 permissions:
   contents: read

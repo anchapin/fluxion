@@ -23,8 +23,18 @@ on:
   workflow_dispatch:
 
 concurrency:
-  group: pgo-nightly-${{ github.ref }}
-  cancel-in-progress: false
+  group: >-
+    pgo-nightly-
+    ${{
+      github.event_name == 'pull_request' &&
+      github.event.pull_request.head.sha
+      || github.ref
+    }}
+  cancel-in-progress: >-
+    ${{
+      github.event_name == 'push'
+      && contains('refs/heads/main,refs/heads/develop', github.ref)
+    }}
 
 permissions:
   contents: read

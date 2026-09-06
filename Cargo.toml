@@ -216,6 +216,45 @@ simd-kernels = []
 [lints.rust]
 unexpected_cfgs = { level = "allow", check-cfg = ["cfg(docsrs,test)", "cfg(gil_refs)"] }
 
+# Issue #3357 — float equality lint.
+#
+# `clippy::float_cmp` warns on any `==` / `!=` / `<` / `>` / `<=` / `>=` on
+# `f32` / `f64` values. Under `--features fast-math` the algebraic-FP
+# helpers (Issue #3322) let the compiler reassociate and contract FMAs,
+# which can flip the last ulp of products of non-trivial arithmetic and
+# would silently flip the result of an exact-equality assert into a panic
+# (cf. the `build_zone_view_factors` reciprocity bug fixed in #3324).
+#
+# Default features stay bit-identical to strict IEEE; the warning fires
+# on every existing exact-equality comparison in this crate, but each is
+# either:
+#   - a comparison against a stored/constant literal (e.g. `count == 0.0`),
+#     or
+#   - a guard check (`if x == 0.0`) where the else branch is the safe one,
+#     or
+#   - a test that compares a function return against the same expression
+#     the function computes (deterministic under fast-math).
+#
+# Each legitimate use site carries `#[allow(clippy::float_cmp)]` with a
+# comment justifying why the exact comparison is safe. Future commits
+# must not add new `==` / `assert_eq!` on `f32` / `f64` arithmetic results
+# without converting to a tolerance-based assert (`FLX-CODE-001` in
+# `docs/linter-rules.md`).
+#
+# Sibling crates can opt in to the same lint by adding
+# `[lints.clippy] workspace = true` to their `Cargo.toml` and pulling in
+# the matching allow-annotations. We do not opt them in automatically —
+# the workspace's `default-members = ["."]` keeps bare `cargo clippy`
+# from crossing crate boundaries, and adding the lint across all
+# members at once is a separate effort.
+[lints.clippy]
+float_cmp = "warn"
+
+# Same lint declared under `[workspace.lints.clippy]` for sibling crates
+# that explicitly opt in via `[lints.clippy] workspace = true`.
+[workspace.lints.clippy]
+float_cmp = "warn"
+
 [dependencies]
 # Workspace sibling crate (#1255): leaf modules built once & cached by cargo-mutants.
 fluxion-core = { path = "fluxion-core", version = "1.0.0" }

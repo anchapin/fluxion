@@ -686,7 +686,17 @@ fn render_template_with_context(
 fn format_float(value: f64) -> String {
     if value.is_nan() {
         "n/a".to_string()
-    } else if value == value.trunc() && value.abs() < 1e15 {
+    } else if {
+        // `value == value.trunc()` is a zero-difference test for "is integer"
+        // and is independent of fast-math reassociation — both `value` and
+        // `value.trunc()` are computed once each and the comparison checks
+        // whether any sub-integer residue exists. Safe under fast-math.
+        // See Issue #3357.
+        #[allow(clippy::float_cmp)]
+        let is_integer = value == value.trunc();
+        is_integer
+    } && value.abs() < 1e15
+    {
         format!("{value:.0}")
     } else {
         format!("{value}")

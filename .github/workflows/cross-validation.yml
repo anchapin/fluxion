@@ -7,6 +7,21 @@ on:
     branches: [main]
   workflow_dispatch:
 
+
+concurrency:
+  group: >-
+    ${{ github.workflow }}-
+    ${{
+      github.event_name == 'pull_request' &&
+      github.event.pull_request.head.sha
+      || github.ref
+    }}
+  cancel-in-progress: >-
+    ${{
+      github.event_name == 'push'
+      && contains('refs/heads/main,refs/heads/develop', github.ref)
+    }}
+
 env:
   CARGO_TERM_COLOR: always
   RUST_MIN_STACK: '16777216'

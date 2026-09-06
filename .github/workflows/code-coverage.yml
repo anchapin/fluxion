@@ -33,8 +33,18 @@ on:
     branches: [develop]
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  group: >-
+    ${{ github.workflow }}-
+    ${{
+      github.event_name == 'pull_request' &&
+      github.event.pull_request.head.sha
+      || github.ref
+    }}
+  cancel-in-progress: >-
+    ${{
+      github.event_name == 'push'
+      && contains('refs/heads/main,refs/heads/develop', github.ref)
+    }}
 
 # Least-privilege GITHUB_TOKEN grants (Issue #2526). Coverage upload to Codecov
 # uses CODECOV_TOKEN, not the GITHUB_TOKEN; no write-back to the repo occurs.

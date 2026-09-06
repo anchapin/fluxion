@@ -317,8 +317,23 @@ fn approx_eq(a: f64, b: f64) -> bool {
 mod tests {
     use super::*;
 
-    /// Tolerance for reciprocity in the unit tests.
-    const RECIPROCITY_TOL: f64 = 1e-9;
+    /// Relative tolerance for reciprocity in the unit tests (Issue #3357).
+    ///
+    /// Production code now uses a 1e-12 relative tolerance in
+    /// `build_zone_view_factors` (Issue #3324). The previous test code
+    /// used a 1e-9 *absolute* tolerance, which fails on the larger
+    /// `F * A` products in the random-configurations sweep once
+    /// `--features fast-math` reassociates the Hottel integrals.
+    const RECIPROCITY_REL_TOL: f64 = 1e-12;
+
+    /// Returns true iff `a` and `b` agree to within `rel` relative to the
+    /// larger magnitude. Mirrors the relative tolerance used in the
+    /// production `build_zone_view_factors` debug-assert (Issue #3324).
+    /// See Issue #3357.
+    fn reciprocity_relative_close(a: f64, b: f64, rel: f64) -> bool {
+        let scale = a.abs().max(b.abs()).max(f64::MIN_POSITIVE);
+        (a - b).abs() / scale <= rel
+    }
 
     // -----------------------------------------------------------------------
     // Reciprocity — issue #1444 acceptance criteria
@@ -332,13 +347,13 @@ mod tests {
         let (f_ab, f_ba) = hottels_rectangular_view_factor_pair(8.0, 3.0, 8.0, 2.0, 0.1);
         let a_a = 8.0 * 3.0;
         let a_b = 8.0 * 2.0;
-        let residual = (f_ab * a_a - f_ba * a_b).abs();
+        let lhs = f_ab * a_a;
+        let rhs = f_ba * a_b;
         assert!(
-            residual < RECIPROCITY_TOL,
-            "reciprocity violated: F_AB*A_A={:.6e} F_BA*A_B={:.6e} residual={:.3e}",
-            f_ab * a_a,
-            f_ba * a_b,
-            residual
+            reciprocity_relative_close(lhs, rhs, RECIPROCITY_REL_TOL),
+            "reciprocity violated: F_AB*A_A={:.6e} F_BA*A_B={:.6e}",
+            lhs,
+            rhs,
         );
         // For aligned 8x3 vs 8x2 with 8x2 fully contained, common-wall limit
         // says F_AB → 16/24 ≈ 0.667 and F_BA → 1.0.
@@ -387,11 +402,12 @@ mod tests {
             let (f_ab, f_ba) = hottels_rectangular_view_factor_pair(aL, aW, bL, bW, sep);
             let a_a = aL * aW;
             let a_b = bL * bW;
-            let residual = (f_ab * a_a - f_ba * a_b).abs();
+            let lhs = f_ab * a_a;
+            let rhs = f_ba * a_b;
             assert!(
-                residual < RECIPROCITY_TOL,
+                reciprocity_relative_close(lhs, rhs, RECIPROCITY_REL_TOL),
                 "reciprocity violated for ({aL}x{aW}, {bL}x{bW}, sep={sep}): \
-                 F_AB={f_ab:.9e} F_BA={f_ba:.9e} residual={residual:.3e}"
+                 F_AB={f_ab:.9e} F_BA={f_ba:.9e}",
             );
         }
     }
@@ -405,8 +421,9 @@ mod tests {
         let a_b = 4.0;
         assert!((f_ab - 4.0 / 24.0).abs() < 1e-9);
         assert!((f_ba - 1.0).abs() < 1e-6);
-        let residual = (f_ab * a_a - f_ba * a_b).abs();
-        assert!(residual < RECIPROCITY_TOL);
+        let lhs = f_ab * a_a;
+        let rhs = f_ba * a_b;
+        assert!(reciprocity_relative_close(lhs, rhs, RECIPROCITY_REL_TOL));
     }
 
     /// Reciprocity must hold when one surface area is zero (degenerate).
@@ -441,11 +458,16 @@ mod tests {
         let f_ab_old: f64 = 16.0 / 24.0; // old formula's value in both directions
         let f_ba_old: f64 = 16.0 / 24.0; // (bug: was symmetric)
         let old_residual = (f_ab_old * 24.0 - f_ba_old * 16.0).abs();
-        let new_residual = (f_ab * 24.0 - f_ba * 16.0).abs();
+        let new_lhs = f_ab * 24.0;
+        let new_rhs = f_ba * 16.0;
         // Old code violated reciprocity by ~5.33 m².
         assert!(old_residual > 5.0);
-        // New code satisfies reciprocity to machine precision.
-        assert!(new_residual < RECIPROCITY_TOL);
+        // New code satisfies reciprocity to relative 1e-12 (Issue #3357).
+        assert!(reciprocity_relative_close(
+            new_lhs,
+            new_rhs,
+            RECIPROCITY_REL_TOL
+        ));
     }
 
     // -----------------------------------------------------------------------
@@ -474,8 +496,9 @@ mod tests {
         assert_eq!(m[(1, 1)], 0.0);
 
         // Reciprocity using the wall's own areas (A_0 = 24, A_1 = 16).
-        let residual = (m[(1, 0)] * 24.0 - m[(0, 1)] * 16.0).abs();
-        assert!(residual < RECIPROCITY_TOL);
+        let lhs = m[(1, 0)] * 24.0;
+        let rhs = m[(0, 1)] * 16.0;
+        assert!(reciprocity_relative_close(lhs, rhs, RECIPROCITY_REL_TOL));
     }
 
     #[test]
@@ -511,7 +534,9 @@ mod tests {
         assert!((m[(2, 1)] - 0.5).abs() < 1e-9);
         assert!((m[(1, 2)] - 0.5).abs() < 1e-9);
         // Reciprocity for the 1-2 pair: F[2,1] * A_1 = F[1,2] * A_2.
-        assert!((m[(2, 1)] * 16.0 - m[(1, 2)] * 16.0).abs() < RECIPROCITY_TOL);
+        let lhs = m[(2, 1)] * 16.0;
+        let rhs = m[(1, 2)] * 16.0;
+        assert!(reciprocity_relative_close(lhs, rhs, RECIPROCITY_REL_TOL));
         // No direct connection between 0 and 2.
         assert_eq!(m[(2, 0)], 0.0);
         assert_eq!(m[(0, 2)], 0.0);
@@ -562,8 +587,13 @@ mod tests {
             (0.0, 0.0)
         };
         let worst = max_reciprocity_residual(&m, walls_by_pair);
+        // The helper returns an *absolute* residual on the largest `F*A` product
+        // across the matrix. The 1-2 pair product is ~8 m² and the
+        // 0-1 pair product is ~16 m² (issue #1444 geometry), so we divide by
+        // a representative scale of 16 m² to get the same relative bound used
+        // elsewhere in this module. Issue #3357.
         assert!(
-            worst < RECIPROCITY_TOL,
+            worst / 16.0 <= RECIPROCITY_REL_TOL,
             "matrix builder violates reciprocity, worst residual = {worst:.3e}"
         );
     }

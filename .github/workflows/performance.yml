@@ -15,6 +15,21 @@ on:
 
 # Least-privilege GITHUB_TOKEN grants (Issue #2526): benchmarks only run + upload
 # artifacts; no repo write-back.
+
+concurrency:
+  group: >-
+    ${{ github.workflow }}-
+    ${{
+      github.event_name == 'pull_request' &&
+      github.event.pull_request.head.sha
+      || github.ref
+    }}
+  cancel-in-progress: >-
+    ${{
+      github.event_name == 'push'
+      && contains('refs/heads/main,refs/heads/develop', github.ref)
+    }}
+
 permissions:
   contents: read
 

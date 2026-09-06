@@ -51,8 +51,18 @@ permissions:
   contents: read
 
 concurrency:
-  group: required-checks-sync-cron-${{ github.ref }}
-  cancel-in-progress: true
+  group: >-
+    required-checks-sync-cron-
+    ${{
+      github.event_name == 'pull_request' &&
+      github.event.pull_request.head.sha
+      || github.ref
+    }}
+  cancel-in-progress: >-
+    ${{
+      github.event_name == 'push'
+      && contains('refs/heads/main,refs/heads/develop', github.ref)
+    }}
 
 jobs:
   required-checks-sync-live:

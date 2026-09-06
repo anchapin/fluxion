@@ -678,7 +678,9 @@ ci:
     - job: "ASHRAE 140 Strict Energy Gate (Issue #1333)"
       workflow: ".github/workflows/ashrae_140_strict_energy_gate.yml"
       issue: 1333
-      triggered_by: "PR + push to main"
+      # Issue #3355: expanded upstream scope to `[main, develop]` so this
+      # PR-blocking strict-tolerance check actually fires for develop PRs.
+      triggered_by: "PR + push to main/develop"
 
     - job: "Surrogate ASHRAE 140 MAE Gate (Issue #2924)"
       # Surrogate-layer annual cooling kWh MAE gate. Closes the gap
@@ -687,9 +689,13 @@ ci:
       # divergence that compounds to ≈5% annual would slip through #1784
       # and only be caught by #1333 once it pushed the band, not at the
       # source. Job is a PR-blocking required check on PRs to develop.
+      # The owning workflow `ashrae_validation.yml` only declares
+      # `pull_request` (no `push`), so the inline `surrogate-ashrae-mae-gate`
+      # job fires only for PR events to main/develop. Issue #3355 expanded
+      # the upstream scope from `[main]` to `[main, develop]`.
       workflow: ".github/workflows/ashrae_validation.yml"
       issue: 2924
-      triggered_by: "PR + push to develop"
+      triggered_by: "PR (pull_request) to main/develop"
 
     - job: "Surrogate Drift Tolerance Gate (Issue #1784)"
       # Per-timestep surrogate drift tolerance gate (T6.4). The bridge
@@ -720,7 +726,11 @@ ci:
       observes_workflow_file: ".github/workflows/determinism_check.yml"
       issue: 1351
       depends_on: 1297
-      triggered_by: "workflow_run on Cross-Platform Determinism CI completion"
+      # Issue #3355: the upstream `determinism_check.yml` was expanded
+      # from `[main]` to `[main, develop]`, so this listener now fires for
+      # develop PRs (the listener job's `if:` filters to upstream
+      # `event == 'pull_request'`, which includes PRs to develop).
+      triggered_by: "workflow_run on Cross-Platform Determinism CI completion (develop + main)"
 
     - job: "Fluxion Performance Gate (Issue #1618)"
       # The listener job is defined in `ashrae_validation.yml`; it
@@ -729,7 +739,11 @@ ci:
       observes_workflow: "Performance Dashboard"
       observes_workflow_file: ".github/workflows/performance_dashboard.yml"
       issue: 1618
-      triggered_by: "workflow_run on Performance Dashboard completion + PR trigger"
+      # Issue #3355: the upstream `performance_dashboard.yml` was
+      # expanded from `[main]` to `[main, develop]`, so this listener
+      # now fires for develop PRs (the listener job's `if:` filters to
+      # upstream `event == 'pull_request'`, which includes PRs to develop).
+      triggered_by: "workflow_run on Performance Dashboard completion (develop + main) + PR trigger"
 
     - job: "Code Coverage Gate (Issue #1932)"
       workflow: ".github/workflows/code-coverage.yml"
@@ -782,7 +796,10 @@ ci:
       # Gate (#1618)` which only checks 5% regression with no floor.
       workflow: ".github/workflows/performance_dashboard.yml"
       issue: 2693
-      triggered_by: "PR + push to main + workflow_dispatch"
+      # Issue #3355: upstream `performance_dashboard.yml` was expanded
+      # from `[main]` to `[main, develop]` so this PR-blocking perf gate
+      # fires for develop PRs.
+      triggered_by: "PR + push to main/develop + workflow_dispatch"
 
     - job: "Multi-Zone Perf Gate (Issue #2772)"
       # PR-blocking ABSOLUTE multi-zone floor (≥ 10 cfg/s on a 10-zone
@@ -797,7 +814,10 @@ ci:
       # suppression discipline as #2693 (ubuntu-latest, median-of-3).
       workflow: ".github/workflows/performance_dashboard.yml"
       issue: 2772
-      triggered_by: "PR + push to main + workflow_dispatch"
+      # Issue #3355: upstream `performance_dashboard.yml` was expanded
+      # from `[main]` to `[main, develop]` so this PR-blocking perf gate
+      # fires for develop PRs.
+      triggered_by: "PR + push to main/develop + workflow_dispatch"
 
     - job: "Multi-Zone Cold Start Gate (Issue #2919)"
       # PR-blocking cold-start latency floor for the ONNX surrogate
@@ -816,7 +836,10 @@ ci:
       # #2922 (ubuntu-latest, median-of-3, default cache shared-key).
       workflow: ".github/workflows/performance_dashboard.yml"
       issue: 2919
-      triggered_by: "PR + push to main + workflow_dispatch"
+      # Issue #3355: upstream `performance_dashboard.yml` was expanded
+      # from `[main]` to `[main, develop]` so this PR-blocking perf gate
+      # fires for develop PRs.
+      triggered_by: "PR + push to main/develop + workflow_dispatch"
 
     - job: "Hybrid Perf Gate (Issue #2922)"
       # PR-blocking ABSOLUTE HybridThermalModel floor (≥ 80 cfg/s single-
@@ -829,7 +852,10 @@ ci:
       # discipline as #2693 (ubuntu-latest, median-of-3).
       workflow: ".github/workflows/performance_dashboard.yml"
       issue: 2922
-      triggered_by: "PR + push to main + workflow_dispatch"
+      # Issue #3355: upstream `performance_dashboard.yml` was expanded
+      # from `[main]` to `[main, develop]` so this PR-blocking perf gate
+      # fires for develop PRs.
+      triggered_by: "PR + push to main/develop + workflow_dispatch"
 
     - job: "MSRV Check (Issue #2934)"
       # Minimum Supported Rust Version gate. Runs `cargo +1.89 build

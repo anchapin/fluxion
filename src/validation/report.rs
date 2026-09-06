@@ -2875,6 +2875,10 @@ impl BenchmarkReport {
     ///
     /// # Returns
     /// DeltaTestResult with statistical analysis
+    #[allow(clippy::float_cmp)]
+    // `confidence_level == 0.95` / `== 0.99` are sentinel switches on
+    // a caller-supplied parameter — the comparison is against a literal
+    // constant, so it is exact under `fast-math`. See Issue #3357.
     pub fn perform_delta_test(
         baseline: &[f64],
         current: &[f64],

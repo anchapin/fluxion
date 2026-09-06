@@ -7,11 +7,18 @@ name: Performance Dashboard
 # `fluxion-cfd`, and `gauge-solver`, and only runs on the nightly schedule
 # plus manual workflow_dispatch — never as a PR blocker.
 
+# Issue #3355: expand upstream scope to `develop` so the Fluxion Performance
+# Gate listener job (`fluxion-performance-gate` in `ashrae_validation.yml`)
+# and the PR-blocking perf gates (Absolute / Multi-Zone / Hybrid / Cold Start,
+# jobs `absolute-perf-gate`, `multi-zone-perf-gate`, `hybrid-perf-gate`,
+# `multi-zone-cold-start-gate`) fire for PRs targeting `develop`. These
+# were previously main-only, leaving develop with zero perf coverage and
+# forcing every merge through `gh pr merge --admin`.
 on:
   push:
-    branches: [ main ]
+    branches: [ main, develop ]
   pull_request:
-    branches: [ main ]
+    branches: [ main, develop ]
   schedule:
     # Nightly at 02:00 UTC, well before the mutation-nightly job at 07:00 UTC
     # so the heavy `--all-features` build does not contend for self-hosted
@@ -36,8 +43,18 @@ on:
         type: string
 
 concurrency:
-  group: perf-dashboard-${{ github.ref }}
-  cancel-in-progress: true
+  group: >-
+    perf-dashboard-
+    ${{
+      github.event_name == 'pull_request' &&
+      github.event.pull_request.head.sha
+      || github.ref
+    }}
+  cancel-in-progress: >-
+    ${{
+      github.event_name == 'push'
+      && contains('refs/heads/main,refs/heads/develop', github.ref)
+    }}
 
 # Least-privilege GITHUB_TOKEN default (Issue #2526). The publish-dashboard job
 # pushes the regenerated dashboard to the gh-pages branch and therefore escalates
@@ -675,7 +692,7 @@ jobs:
           rm -f run_*.txt
           for i in 1 2 3; do
             echo "=== measurement run ${i}/3 ==="
-            cargo test --test performance_regression_test --release test_performance_regression -- --nocapture --no-fail-fast > "run_${i}.txt" 2>&1 || true
+            cargo test --test performance_regression_test --release test_performance_regression -- --nocapture > "run_${i}.txt" 2>&1 || true
           done
 
           python3 << 'EOF'
@@ -736,11 +753,17 @@ jobs:
       # Evaluate the ABSOLUTE floors from release_gates.yaml (throughput ≥ 150
       # cfg/s, latency ≤ 10 ms). --benchmark-gates restricts evaluation to
       # these two gates (issue #2693); the checker exits 1 on any failure.
+      # --crate-size-gates 'skip' suppresses the crate_size gate (issue #2930)
+      # — this job does not run `cargo package`, so the crate-size measurement
+      # is unavailable and the gate would otherwise spuriously fail. The
+      # `crate_size` workflow (`.github/workflows/crate-size.yml`) owns that
+      # check separately.
       - name: Evaluate absolute gates (150 cfg/s + 10 ms)
         run: |
           python3 scripts/release_gate_checker.py \
             --benchmark-results benchmark_results.json \
             --benchmark-gates throughput,latency \
+            --crate-size-gates skip \
             --json --output gate_status.json
 
       - name: Summary
@@ -850,7 +873,7 @@ jobs:
           rm -f run_*.txt
           for i in 1 2 3; do
             echo "=== measurement run ${i}/3 ==="
-            cargo test --test performance_regression_test --release test_multi_zone_performance_regression -- --nocapture --no-fail-fast > "run_${i}.txt" 2>&1 || true
+            cargo test --test performance_regression_test --release test_multi_zone_performance_regression -- --nocapture > "run_${i}.txt" 2>&1 || true
           done
 
           python3 << 'EOF'
@@ -919,12 +942,15 @@ jobs:
       # Evaluate the ABSOLUTE multi-zone floor from release_gates.yaml
       # (≥ 10 cfg/s on 10-zone pop_1000). --benchmark-gates restricts
       # evaluation to the `multi_zone_throughput` gate (issue #2772); the
-      # checker exits 1 on any failure.
+      # checker exits 1 on any failure. --crate-size-gates 'skip' suppresses
+      # the crate_size gate (issue #2930) — see the absolute-perf-gate job
+      # above for the rationale (this job does not run `cargo package`).
       - name: Evaluate multi-zone gate (≥ 10 cfg/s)
         run: |
           python3 scripts/release_gate_checker.py \
             --benchmark-results benchmark_results.json \
             --benchmark-gates multi_zone_throughput \
+            --crate-size-gates skip \
             --json --output gate_status.json
 
       - name: Summary
@@ -1134,12 +1160,15 @@ jobs:
       # Evaluate the ABSOLUTE hybrid floors from release_gates.yaml
       # (≥ 80 cfg/s single-zone, ≥ 8 cfg/s 10-zone). --benchmark-gates
       # restricts evaluation to the two new gates (issue #2922); the
-      # checker exits 1 on any failure.
+      # checker exits 1 on any failure. --crate-size-gates 'skip' suppresses
+      # the crate_size gate (issue #2930) — see the absolute-perf-gate job
+      # above for the rationale.
       - name: Evaluate hybrid gates (≥ 80 cfg/s + ≥ 8 cfg/s)
         run: |
           python3 scripts/release_gate_checker.py \
             --benchmark-results benchmark_results.json \
             --benchmark-gates hybrid_throughput,hybrid_multi_zone_throughput \
+            --crate-size-gates skip \
             --json --output gate_status.json
 
       - name: Summary
@@ -1367,11 +1396,14 @@ jobs:
       #   `tests/reference_data/surrogate/cold_start_baseline.json`
       # `--benchmark-gates cold_start` restricts evaluation to this single
       # gate (Issue #2919); the checker exits 1 on any failure.
+      # `--crate-size-gates 'skip'` suppresses the crate_size gate (issue #2930)
+      # — see the absolute-perf-gate job above for the rationale.
       - name: Evaluate cold-start gate (≤100 ms + ratio ≤1.5 + ≤25% baseline regression)
         run: |
           python3 scripts/release_gate_checker.py \
             --benchmark-results benchmark_results.json \
             --benchmark-gates cold_start \
+            --crate-size-gates skip \
             --json --output gate_status.json
 
       - name: Summary
