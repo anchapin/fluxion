@@ -247,7 +247,12 @@ impl WallDiscretization {
             let k1 = conductivity[i];
             let k2 = conductivity[i + 1];
 
-            // Harmonic mean for different materials, arithmetic for same
+            // Harmonic mean for different materials, arithmetic for same.
+            // `k1 != k2` is an exact-identity guard on stored conductivity
+            // table values (`conductivity[i]` is a stored `f64`, not the
+            // result of arithmetic), so it is safe under fast-math
+            // reassociation. See Issue #3357.
+            #[allow(clippy::float_cmp)]
             let k_eff = if k1 != k2 {
                 2.0 * k1 * k2 / (k1 + k2)
             } else {

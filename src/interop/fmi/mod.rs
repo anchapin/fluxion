@@ -1327,7 +1327,12 @@ fn write_real_variable<W: Write>(
 
 /// FMI 2.0 attribute defaults are strings; format f64 compactly.
 fn format_float(v: f64) -> String {
-    if v == v.trunc() && v.abs() < 1.0e15 {
+    // `v == v.trunc()` is a zero-difference integer test (Issue #3357):
+    // both operands are computed once each, and `fast-math` reassociation
+    // cannot affect a comparison against zero.
+    #[allow(clippy::float_cmp)]
+    let is_integer = v == v.trunc();
+    if is_integer && v.abs() < 1.0e15 {
         format!("{:.1}", v)
     } else {
         format!("{}", v)

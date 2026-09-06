@@ -445,7 +445,13 @@ impl MultiZoneAirflowNetwork {
         // Cache-hit predicate: factorization is valid iff `dt` matches
         // AND every per-zone `C_i` matches the values the LU was
         // computed for. The caller mutates `ZoneState::heat_capacity`
-        // freely, so we cannot skip the comparison.
+        // freely, so we cannot skip the comparison. Exact equality is
+        // intentional here — the cached `dt` and `heat_capacity` values
+        // were stored by *this* solver from the same `dt` / `heat_capacity`
+        // arguments we are now re-checking against, so any reassociation
+        // upstream would have applied to both sides identically. Safe
+        // under fast-math (Issue #3357).
+        #[allow(clippy::float_cmp)]
         let cache_hit = matches!(
             work.factor_cache.as_ref(),
             Some(cache) if cache.dt == dt && cache.capacities.len() == n && {
