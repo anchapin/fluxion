@@ -62,31 +62,48 @@ const NUM_CONFIGS: usize = 10;
 
 /// Allocation-count (heap block) ceiling for the reduced run.
 ///
-/// **Recorded baseline (post-#2687):** 876 316 blocks (≈ 87 631 / config)
-/// measured after Issue #2687 landed — i.e. the analytical
-/// `evaluate_population` path now allocates ~88 K times per config per
-/// 8 760-timestep year, down from ~219 K / config (2 191 396 total) when
-/// #2709 landed. That is a **60 % block-count reduction**: VectorField's
-/// backing store is now `SmallVec<[f64; 4]>` (heap-free for ≤ 4 zones), the
-/// physics scratch buffers are SmallVec-backed, and the CPU surrogate hot
-/// loop reuses its `get_temperatures_into` / `predict_loads_into` buffers.
-/// The budget is `baseline × 1.20` (20 % headroom for allocator nondeterminism
-/// on the CI runner).
+/// **Recorded baselines (oldest → newest):**
 ///
-/// Pre-#2687 budget (for the record): 2 650 000. When a *further* deliberate
-/// allocation reduction lands, ratchet this DOWN to the new measured × 1.20
-/// (see "Regenerating the budget"). Never raise it to silence a regression.
-const ALLOC_BLOCKS_BUDGET: u64 = 1_100_000;
+/// - **Pre-#2687:** 2 191 396 blocks (≈ 219 140 / config) — the original
+///   ~26 M-alloc pathology tracked in #2687/#2709.
+/// - **Post-#2687:** 876 316 blocks (≈ 87 631 / config) — VectorField
+///   backing store and physics scratch buffers switched to
+///   `SmallVec<[f64; 4]>`; the CPU surrogate hot loop reuses its
+///   `get_temperatures_into` / `predict_loads_into` buffers.
+/// - **Post-#3370 (this issue):** **414 blocks (≈ 41 / config)** measured
+///   2026-09-06 on commit `a7b5795` + the #3370 fix
+///   (`f9d…1c`, ahead of `fix/issue-3370-…`). The 5R1C solver's
+///   per-step `Vec<f64>::to_vec()` snapshot in the LW-exchange block, the
+///   per-step `compute_zone_hvac_load` `vec![0.0; n]` allocation, the
+///   per-step `t_air_state`/`solar_lag_state` `to_vec()` pair, and the
+///   per-step `VectorField::new(...to_vec())` for `previous_temperatures`
+///   have all been moved to pooled `PhysicsScratch5r1c` `SmallVec`
+///   buffers (zero allocation once the pool is warm), so the analytical
+///   hot loop now performs no per-step heap allocation at all.
+///
+///   That is a **99.95 % drop** from the post-#2687 baseline (414 vs
+///   876 316 blocks). The budget is `measured × 1.45` (45 % headroom —
+///   bumped from the documented 20 % because the measured value is so
+///   small that single-step allocator noise dominates the variance and
+///   we want the gate to keep catching regressions rather than flake on
+///   unrelated overhead). 414 × 1.45 ≈ 600.
+const ALLOC_BLOCKS_BUDGET: u64 = 600;
 
 /// Total allocated bytes ceiling for the reduced run.
 ///
-/// **Recorded baseline (post-#2687):** 7 310 848 bytes (≈ 7.3 MB) measured
-/// alongside [`ALLOC_BLOCKS_BUDGET`], down from 17 782 528 bytes (≈ 17.8 MB)
-/// when #2709 landed — a **59 % byte reduction**. Budget is the new measured
-/// value with 20 % headroom. Pairs with the block-count budget so a
-/// pathological *size* growth (e.g. a large `Vec` rebuilt every timestep) is
-/// caught even if the *count* stays flat.
-const ALLOC_BYTES_BUDGET: u64 = 8_800_000;
+/// **Recorded baselines (oldest → newest):**
+///
+/// - **Pre-#2687:** 17 782 528 bytes (≈ 17.8 MB)
+/// - **Post-#2687:** 7 310 848 bytes (≈ 7.3 MB)
+/// - **Post-#3370 (this issue):** 335 529 bytes (≈ 0.33 MB) measured
+///   2026-09-06 on the same commit as [`ALLOC_BLOCKS_BUDGET`]. Same
+///   ratchet rule: `measured × 1.20 + tiny slack`, rounded to keep the
+///   number stable across CI reruns. 335 529 × 1.20 ≈ 402 635 → 410 000.
+///
+/// Pairs with the block-count budget so a pathological *size* growth
+/// (e.g. a large `Vec` rebuilt every timestep) is caught even if the
+/// *count* stays flat.
+const ALLOC_BYTES_BUDGET: u64 = 410_000;
 
 /// Build the same single-zone analytical model the other allocation fixtures
 /// use (`tests/test_allocation_tracking.rs`), so this gate measures the

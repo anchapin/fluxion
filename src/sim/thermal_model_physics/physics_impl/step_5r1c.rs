@@ -398,16 +398,26 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
             let h_iz = self.0.conduction.h_tr_iz.as_ref();
             let h_iz_rad = self.0.conduction.h_tr_iz_rad.as_ref();
             let h_ext_slice = h_ext;
-            let mut v = Vec::with_capacity(h_ext_slice.len());
-            for i in 0..h_ext_slice.len() {
+            // Issue #3370: scratch pool buffer for the night-vent `den`
+            // rebuild. The vector is only populated when night-ventilation
+            // is configured on the model; the test fixture has
+            // `night_vent == None` so this branch is never taken on the
+            // dhat budget run, but routing through scratch keeps the path
+            // zero-alloc for the cases that do exercise it (#650 / #950).
+            let scratch_den = scratch.night_vent_den.as_mut();
+            let n = h_ext_slice.len();
+            debug_assert_eq!(scratch_den.len(), n);
+            for i in 0..n {
                 let h_total = if self.0.hvac.num_zones > 1 {
                     h_ext_slice[i] + h_iz[i] + h_iz_rad[i]
                 } else {
                     h_ext_slice[i]
                 };
-                v.push(h_ms_is_prod[i] + term_rest_1[i] * h_total + ground_coeff[i]);
+                scratch_den[i] = h_ms_is_prod[i] + term_rest_1[i] * h_total + ground_coeff[i];
             }
-            T::from(VectorField::new(v))
+            T::from(VectorField::from_smallvec(std::mem::take(
+                &mut scratch.night_vent_den,
+            )))
         } else {
             self.0.conduction.derived_den.clone()
         };
@@ -648,24 +658,49 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
             let h_ci: f64 = 3.0;
             let h_is: f64 = 8.0; // h_ci + h_ri (ISO 13790 §12.2.2)
             let r_i: f64 = 1.0 / h_is; // 0.125 m²K/W
-                                       // Snapshot all per-zone input fields into owned Vecs so the
-                                       // mutable write-back at the end of the loop does not conflict
-                                       // with the immutable reads here.
-            let surface_emissivity_vec: Vec<f64> =
-                self.0.conduction.surface_emissivity.as_ref().to_vec();
-            let t_zone_vec: Vec<f64> = self.0.setpoints.temperatures.as_ref().to_vec();
-            // Issue #2873: `t_sol_air` is no longer cloned here — the LW
-            // block reads it through `t_sol_air.as_ref().get(i)` inline. The
-            // borrow (immutable on `t_sol_air`, mutable on
-            // `self.0.surface_temp_*`) is disjoint, so no per-step Vec clone
-            // is needed.
-            let a_floor_vec: Vec<f64> = self.0.setpoints.floor_area.as_ref().to_vec();
-            let a_ceiling_vec: Vec<f64> = self.0.setpoints.roof_area.as_ref().to_vec();
-            let a_wall_vec: Vec<f64> = self.0.setpoints.wall_area.as_ref().to_vec();
-            let u_floor_vec: Vec<f64> = vec![self.0.setpoints.floor_u_value; self.0.hvac.num_zones];
-            let u_ceiling_vec: Vec<f64> =
-                vec![self.0.setpoints.roof_u_value; self.0.hvac.num_zones];
-            let u_wall_vec: Vec<f64> = vec![self.0.setpoints.wall_u_value; self.0.hvac.num_zones];
+                                       // Issue #3370: snapshot all per-zone input fields into the
+                                       // pooled `PhysicsScratch5r1c` `lw_*` scratch buffers instead of
+                                       // allocating `vec![…]`/`to_vec()` per step. The scratch buffers
+                                       // are `SmallVec<[f64; 4]>` sized back to `num_zones` by
+                                       // `fill_zero()` on each checkout, so they reuse capacity
+                                       // indefinitely after the first step. The per-zone loop then
+                                       // reads via `.get(i)` as before — only the buffer ownership
+                                       // changes (now `&mut SmallVec` via `.as_mut()` instead of an
+                                       // owned `Vec`). Saves ~8 heap allocations per step.
+            let n = self.0.hvac.num_zones;
+            scratch
+                .lw_surface_emissivity
+                .as_mut()
+                .copy_from_slice(self.0.conduction.surface_emissivity.as_ref());
+            scratch
+                .lw_t_zone
+                .as_mut()
+                .copy_from_slice(self.0.setpoints.temperatures.as_ref());
+            scratch
+                .lw_a_floor
+                .as_mut()
+                .copy_from_slice(self.0.setpoints.floor_area.as_ref());
+            scratch
+                .lw_a_ceiling
+                .as_mut()
+                .copy_from_slice(self.0.setpoints.roof_area.as_ref());
+            scratch
+                .lw_a_wall
+                .as_mut()
+                .copy_from_slice(self.0.setpoints.wall_area.as_ref());
+            {
+                let u_floor = self.0.setpoints.floor_u_value;
+                let u_ceiling = self.0.setpoints.roof_u_value;
+                let u_wall = self.0.setpoints.wall_u_value;
+                let buf_f = scratch.lw_u_floor.as_mut();
+                let buf_c = scratch.lw_u_ceiling.as_mut();
+                let buf_w = scratch.lw_u_wall.as_mut();
+                for i in 0..n {
+                    buf_f[i] = u_floor;
+                    buf_c[i] = u_ceiling;
+                    buf_w[i] = u_wall;
+                }
+            }
 
             // Issue #2890: persist the per-zone interior surface state
             // (floor, ceiling, wall) for the floor-ceiling-wall longwave
@@ -692,25 +727,27 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
             // surface ODE with the air node, which is a future change
             // scoped to Issue #2890-followup).
             for i in 0..self.0.hvac.num_zones {
-                let emissivity_i = surface_emissivity_vec
+                let emissivity_i = scratch
+                    .lw_surface_emissivity
+                    .as_ref()
                     .get(i)
                     .copied()
                     .unwrap_or(0.9)
                     .clamp(0.0, 1.0);
-                let a_floor = a_floor_vec.get(i).copied().unwrap_or(0.0);
-                let a_ceiling = a_ceiling_vec.get(i).copied().unwrap_or(0.0);
-                let a_wall = a_wall_vec.get(i).copied().unwrap_or(0.0);
+                let a_floor = scratch.lw_a_floor.as_ref().get(i).copied().unwrap_or(0.0);
+                let a_ceiling = scratch.lw_a_ceiling.as_ref().get(i).copied().unwrap_or(0.0);
+                let a_wall = scratch.lw_a_wall.as_ref().get(i).copied().unwrap_or(0.0);
 
                 let _network =
                     InteriorSurfaceNetwork::from_areas(a_floor, a_ceiling, a_wall, emissivity_i);
 
-                let t_zone_i = t_zone_vec.get(i).copied().unwrap_or(20.0);
+                let t_zone_i = scratch.lw_t_zone.as_ref().get(i).copied().unwrap_or(20.0);
                 let t_sol_air_i = t_sol_air.get(i).copied().unwrap_or(outdoor_temp);
 
                 // Per-surface envelope resistance.
-                let u_floor = u_floor_vec.get(i).copied().unwrap_or(0.5);
-                let u_ceiling = u_ceiling_vec.get(i).copied().unwrap_or(0.5);
-                let u_wall = u_wall_vec.get(i).copied().unwrap_or(0.5);
+                let u_floor = scratch.lw_u_floor.as_ref().get(i).copied().unwrap_or(0.5);
+                let u_ceiling = scratch.lw_u_ceiling.as_ref().get(i).copied().unwrap_or(0.5);
+                let u_wall = scratch.lw_u_wall.as_ref().get(i).copied().unwrap_or(0.5);
                 let r_floor = if u_floor > 0.0 { 1.0 / u_floor } else { 1.0e6 };
                 let r_ceiling = if u_ceiling > 0.0 {
                     1.0 / u_ceiling
@@ -853,36 +890,60 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         let dt_sub = dt / steps as f64;
 
         // Initialize air-node state from previous timestep
-        let mut t_air_state: Vec<f64> = t_air_old_ref.to_vec();
-        let mut solar_lag_state: Vec<f64> = self.0.mass.solar_lag.as_ref().to_vec();
+        // Issue #3370: `t_air_state` / `solar_lag_state` are scratch pool
+        // buffers (no per-step allocation); the pre-#3370 implementation
+        // did `Vec::from(...)` here every call. The `t_air_old_ref`
+        // initialization reads through `copy_from_slice` so the borrow
+        // lifetime of `self.0.mass.air_temperatures` ends before the
+        // mutable borrows of `scratch`.
+        scratch
+            .air_node_t_air
+            .as_mut()
+            .copy_from_slice(t_air_old_ref);
+        scratch
+            .air_node_solar_lag
+            .as_mut()
+            .copy_from_slice(self.0.mass.solar_lag.as_ref());
 
         for _step in 0..steps {
             // === Air-node ODE (exact exponential solution) ===
-            let mut t_i_free_data = Vec::with_capacity(self.0.hvac.num_zones);
-            for i in 0..self.0.hvac.num_zones {
-                let num_i = num_tm_ref[i] + num_rest_ref[i];
-                let den_i = den_ref[i];
-                let steady = num_i / den_i;
-                let c_air_i = c_air_ref[i];
-                let t_air_old_i = t_air_state[i];
-                let tau_air = if den_i > 0.0 && term_rest_1_ref[i] > 0.0 {
-                    c_air_i * term_rest_1_ref[i] / den_i
-                } else {
-                    f64::INFINITY
-                };
-                let t_i_free_i = if c_air_i > 0.0 && tau_air.is_finite() && dt_sub > 0.0 {
-                    let exponent = -dt_sub / tau_air;
-                    steady + (t_air_old_i - steady) * exponent.exp()
-                } else {
-                    steady
-                };
-                t_i_free_data.push(t_i_free_i);
+            // Issue #3370: scratch pool buffer instead of per-sub-step
+            // `Vec::with_capacity(num_zones)`.
+            {
+                let buf = scratch.air_node_t_i_free.as_mut();
+                for i in 0..self.0.hvac.num_zones {
+                    let num_i = num_tm_ref[i] + num_rest_ref[i];
+                    let den_i = den_ref[i];
+                    let steady = num_i / den_i;
+                    let c_air_i = c_air_ref[i];
+                    let t_air_old_i = scratch.air_node_t_air.as_ref()[i];
+                    let tau_air = if den_i > 0.0 && term_rest_1_ref[i] > 0.0 {
+                        c_air_i * term_rest_1_ref[i] / den_i
+                    } else {
+                        f64::INFINITY
+                    };
+                    let t_i_free_i = if c_air_i > 0.0 && tau_air.is_finite() && dt_sub > 0.0 {
+                        let exponent = -dt_sub / tau_air;
+                        steady + (t_air_old_i - steady) * exponent.exp()
+                    } else {
+                        steady
+                    };
+                    buf[i] = t_i_free_i;
+                }
             }
 
             // === Issue #1860: Solar-lag correction ===
             let phi_st_ref = phi_st.as_ref();
             let h_tr_is_for_lag_ref = h_tr_is_for_ti_free.as_ref();
-            let mut corrected_t_i_free = t_i_free_data;
+            // Issue #3370: `corrected_t_i_free` is also a scratch buffer.
+            // `copy_from_slice` from the pre-correction values rather than
+            // `mem::take` to keep the bytes identical to the prior loop
+            // semantics (every entry is overwritten below by `+= …`).
+            scratch
+                .air_node_corrected
+                .as_mut()
+                .copy_from_slice(scratch.air_node_t_i_free.as_ref());
+            let corrected_t_i_free = scratch.air_node_corrected.as_mut();
 
             for i in 0..self.0.hvac.num_zones {
                 let den_i = den_ref[i];
@@ -921,36 +982,50 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                     0.0
                 };
 
-                let new_solar_lag = solar_lag_state[i] * decay + lag_input * (1.0 - decay);
+                let new_solar_lag =
+                    scratch.air_node_solar_lag.as_ref()[i] * decay + lag_input * (1.0 - decay);
 
                 if den_true_i > 0.0 {
                     corrected_t_i_free[i] += new_solar_lag / den_true_i;
                 }
 
-                solar_lag_state[i] = new_solar_lag;
+                scratch.air_node_solar_lag.as_mut()[i] = new_solar_lag;
             }
 
             // Update t_air_state for next sub-step
-            t_air_state = corrected_t_i_free;
+            scratch
+                .air_node_t_air
+                .as_mut()
+                .copy_from_slice(scratch.air_node_corrected.as_ref());
         }
 
-        // After all sub-steps, t_air_state holds the final air-node temperature
-        // and solar_lag_state holds the final solar-lag state
-        let t_i_free = T::from(VectorField::new(t_air_state));
+        // After all sub-steps, air_node_t_air holds the final air-node
+        // temperature and air_node_solar_lag holds the final solar-lag state.
+        // Issue #3370: wrap the scratch SmallVec directly via `from_smallvec`
+        // instead of `VectorField::new(Vec)` (which had been the largest
+        // per-step allocation in the regressed hot loop).
+        let t_i_free = T::from(VectorField::from_smallvec(std::mem::take(
+            &mut scratch.air_node_t_air,
+        )));
 
         // Persist final solar-lag state
         self.0.mass.solar_lag.as_mut()[..self.0.hvac.num_zones]
-            .copy_from_slice(&solar_lag_state[..self.0.hvac.num_zones]);
+            .copy_from_slice(&scratch.air_node_solar_lag.as_ref()[..self.0.hvac.num_zones]);
 
         // Issue #1585: step the air-node ODE state forward for the next
         // timestep.  t_i_free (the new zone-air temperature) becomes
         // t_air_old on the next call to step_physics_5r1c.
-        let t_i_free_slice: Vec<f64> = t_i_free.as_ref().to_vec();
+        // Issue #3370: scratch pool buffer (`air_node_t_i_free_slice`)
+        // replaces the per-step `t_i_free.as_ref().to_vec()` allocation.
+        scratch
+            .air_node_t_i_free_slice
+            .as_mut()
+            .copy_from_slice(t_i_free.as_ref());
         self.0
             .mass
             .air_temperatures
             .as_mut()
-            .copy_from_slice(&t_i_free_slice);
+            .copy_from_slice(&scratch.air_node_t_i_free_slice.as_ref()[..self.0.hvac.num_zones]);
 
         // The wall-surface state contributes to the air-node numerator through
         // the transient surface flux correction applied above.
@@ -1007,6 +1082,7 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                 self.0.setpoints.cooling_setpoints.as_ref(),
                 self.0.setpoints.heating_setpoint,
                 self.0.setpoints.cooling_setpoint,
+                &mut scratch.hvac_combined_demand,
             )
         };
 
@@ -1105,6 +1181,7 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                 self.0.setpoints.cooling_setpoints.as_ref(),
                 heating_setpoint,
                 cooling_setpoint,
+                &mut scratch.hvac_combined_demand,
             );
 
             // Track peak heating/cooling based on per-zone HVAC demand (Plan 18-08)
@@ -1164,6 +1241,7 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                 self.0.setpoints.cooling_setpoints.as_ref(),
                 self.0.setpoints.heating_setpoint,
                 self.0.setpoints.cooling_setpoint,
+                &mut scratch.hvac_combined_demand,
             );
 
             // Root Cause Fix: Use hvac_output_raw for peak tracking (consistent with energy calc)
@@ -1244,6 +1322,7 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                 self.0.setpoints.cooling_setpoints.as_ref(),
                 self.0.setpoints.heating_setpoint,
                 self.0.setpoints.cooling_setpoint,
+                &mut scratch.hvac_combined_demand,
             )
         };
 
@@ -1684,8 +1763,17 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
             std::mem::replace(&mut self.0.mass.mass_temperatures, new_mass_temps_vf);
 
         // Store previous temperatures for dT/dt calculation (Plan 15-04, 15-06)
+        // Issue #3370: scratch pool buffer (`previous_temperatures`)
+        // replaces the per-step `VectorField::new(...to_vec())` allocation.
+        // `from_smallvec` consumes the scratch by ownership so the buffer
+        // capacity is retained for the next step (no heap allocation once
+        // the pool is warm).
+        scratch
+            .previous_temperatures
+            .as_mut()
+            .copy_from_slice(self.0.setpoints.temperatures.as_ref());
         self.0.hvac.previous_temperatures =
-            VectorField::new(self.0.setpoints.temperatures.as_ref().to_vec());
+            VectorField::from_smallvec(std::mem::take(&mut scratch.previous_temperatures));
         self.0.setpoints.temperatures = t_i_act;
 
         // Return HVAC energy (Plan 03-04: Use hvac_energy_for_step directly)
