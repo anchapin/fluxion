@@ -10,8 +10,8 @@
 
 - **Status:** Audit runbook — read after any Rayon / `tokio` / major-deps bump
 - **Issue:** [#3366](https://github.com/anchapin/fluxion/issues/3366)
-- **ADRs:** [ADR-0014](../../adr/0014-cargo-nextest-test-runner-adoption.md) (this PR's first leg), [ADR-0015](../../adr/0015-pr-concurrency-per-head-sha.md) (second leg)
-- **Companion files:** [`.config/nextest.toml`](../../../.config/nextest.toml), [`scripts/update_concurrency_keys.py`](../../update_concurrency_keys.py), [`scripts/check_concurrency_keys.py`](../../check_concurrency_keys.py)
+- **ADRs:** [ADR-0014](../adr/0014-cargo-nextest-test-runner-adoption.md) (this PR's first leg), [ADR-0015](../adr/0015-pr-concurrency-per-head-sha.md) (second leg)
+- **Companion files:** [`.config/nextest.toml`](../../.config/nextest.toml), [`scripts/update_concurrency_keys.py`](../../scripts/update_concurrency_keys.py), [`scripts/check_concurrency_keys.py`](../../scripts/check_concurrency_keys.py)
 
 ---
 
@@ -111,9 +111,9 @@ The default `concurrency = 2` matches the GH free-runner vCPU count. The `[[test
 
 Single PR (Issue #3366) lands:
 
-- [`.config/nextest.toml`](../../../.config/nextest.toml) (new) — default `concurrency = 2`, no per-binary overrides at merge.
-- [`.github/actions/setup-rust-env/action.yml`](../../../actions/setup-rust-env/action.yml) — added opt-in `nextest: 'true'` input (default `'true'`); installs `cargo-nextest` via `taiki-e/install-action@<pinned-SHA>` with the same 3-attempt retry pattern as `dtolnay/rust-toolchain` and `mozilla-actions/sccache-action`.
-- [`.github/workflows/rust-tests.yml`](../../../workflows/rust-tests.yml) — replaced the 7-line `cargo test ...` block with a single `cargo nextest run --workspace --all-targets --features ${{ matrix.feature_set.nextest_flags }} --test-threads=2 --no-fail-fast` invocation.
+- [`.config/nextest.toml`](../../.config/nextest.toml) (new) — default `concurrency = 2`, no per-binary overrides at merge.
+- [`.github/actions/setup-rust-env/action.yml`](../../.github/actions/setup-rust-env/action.yml) — added opt-in `nextest: 'true'` input (default `'true'`); installs `cargo-nextest` via `taiki-e/install-action@<pinned-SHA>` with the same 3-attempt retry pattern as `dtolnay/rust-toolchain` and `mozilla-actions/sccache-action`.
+- [`.github/workflows/rust-tests.yml`](../../.github/workflows/rust-tests.yml) — replaced the 7-line `cargo test ...` block with a single `cargo nextest run --workspace --all-targets --features ${{ matrix.feature_set.nextest_flags }} --test-threads=2 --no-fail-fast` invocation.
 - [`docs/ci/nextest-rollout.md`](./nextest-rollout.md) (this document) — audit runbook.
 - [`docs/doc-inventory.md`](../doc-inventory.md) — auto-updated by `python3 scripts/generate_doc_inventory.py`.
 
