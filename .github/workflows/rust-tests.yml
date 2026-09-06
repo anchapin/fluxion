@@ -122,6 +122,18 @@ jobs:
       # series, `test_edge_cases`, `test_delta_analysis`). Tracking
       # issue: revisit after the deferred ASHRAE 140 cooling-gate fix
       # lands (RULES.md §"Physics and Validation Guardrails").
+      #
+      # Matrix `flags` carries the per-entry nextest args verbatim (e.g.
+      # `--no-default-features` for the "no-default" entry, `--features
+      # wiring-tracing` for the "wiring-tracing" entry, `--features
+      # wiring-tracing,multi-zone` for the "multi-zone" entry). The
+      # earlier `--features ${{ matrix.feature_set.nextest_flags }}`
+      # template was broken: `nextest_flags` does not exist on the
+      # matrix object, so the interpolation produced an empty string
+      # and cargo-nextest rejected every matrix entry with
+      # `error: a value is required for '--features <FEATURES>'`. The
+      # interpolation below yields the full flag string and bash's
+      # word-splitting parses it correctly per matrix entry.
       - name: Run tests
         run: |
           cargo nextest run \
@@ -135,7 +147,7 @@ jobs:
             -p fluxion-twin --test mqtt_ukf_integration --test ukf_covariance_stability --test ukf_van_der_pol --test websocket_memory_leak \
             --test-threads=2 \
             --no-fail-fast \
-            --features ${{ matrix.feature_set.nextest_flags }}
+            ${{ matrix.feature_set.flags }}
         env:
           PYO3_PYTHON: /usr/bin/python3
 
