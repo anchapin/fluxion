@@ -16,20 +16,24 @@ the `physics <-> sim` cycle closed by Issue #2462 stays closed:
    import count above the documented baseline (Issue #2766). The original
    Phase 2 (Issue #2463) guarded only the two files that previously hosted
    shared domain types — `src/sim/construction.rs` and
-   `src/sim/per_surface_conduction.rs` — leaving ~83 ``use crate::physics::``
+   `src/sim/per_surface_conduction.rs` — leaving ~84 ``use crate::physics::``
    imports across 26 other sim files (``thermal_model.rs``, ``engine.rs``,
    ``ventilation.rs``, ...) completely unguarded. Issue #2766 extended
-   coverage to ALL of ``src/sim/**`` and snapshotted the 83 pre-existing
+   coverage to ALL of ``src/sim/**`` and snapshotted the 84 pre-existing
    edges as the initial baseline; PR #3020 (issue #2896) lowered the
-   baseline to 83 after deleting doc-only stubs, and PR #3024 (issue #2891)
+   baseline to 83 after deleting doc-only stubs, PR #3024 (issue #2891)
    raised it to 85 to admit two legitimate ``use crate::physics::exterior_convection::{...}``
    edges that implement wind-velocity-dependent exterior convection
    (ASHRAE 140 §5.2.6) in `src/sim/thermal_model_core.rs` (line 243)
-   and `src/sim/thermal_model_physics/physics_impl.rs` (line 322).
-   Any NEW edge beyond these 85 fails the guard.
-3. Summary: report the total cycle-edge count. As of #2462 + #2766 +
-   #2896 + #2891 + #2878 + #3214 the documented baseline is 0 physics->sim + 68 sim->physics
-   edges.
+   and `src/sim/thermal_model_physics/physics_impl.rs` (line 322), PR #3034
+   (issue #2878) lowered it to 79 by deleting the legacy
+   ``ThermalModelData`` god-struct, and PR #3347 (issue #3324) raised it
+   to 83 to admit four ``use crate::physics::fp_algebraic::{...}``
+   edges for the solar-kernel fast-math adoption.
+   Any NEW edge beyond these 83 fails the guard.
+ 3. Summary: report the total cycle-edge count. As of #2462 + #2766 +
+    #2896 + #2891 + #2878 + #3214 + #3324 the documented baseline is
+    0 physics->sim + 83 sim->physics edges.
 
 Usage:
   python3 scripts/check_physics_sim_cycle.py
@@ -42,7 +46,7 @@ Exit codes:
   2 — script error
 
 The script reports ``BASELINE_PHYSICS_TO_SIM = 0`` and
-``BASELINE_SIM_TO_PHYSICS = 72`` documented edges as the *current state*.
+``BASELINE_SIM_TO_PHYSICS = 83`` documented edges as the *current state*.
 A future PR that adds a *new* ``use crate::sim::`` import under
 ``src/physics/**`` (or a *new* ``use crate::physics::`` import under any
 ``src/sim/**/*.rs`` file) — pushing the count *above* the documented
@@ -90,7 +94,7 @@ SIM_SHIM_EXCEPTIONS: frozenset[str] = frozenset()
 # originally-guarded files (``construction.rs`` +
 # ``per_surface_conduction.rs``) to ALL ``src/sim/**/*.rs`` files. The
 # extension surfaced 84 pre-existing ``use crate::physics::`` imports
-# across 26 sim files that the original guard never saw. These 83 edges
+# across 26 sim files that the original guard never saw. These 84 edges
 # were snapshotted as the initial baseline; PR #3020 (issue #2896) lowered
 # the baseline to 83 after deleting doc-only stub
 # ``src/sim/thermal_model_network.rs`` and its single physics edge; PR #3024
@@ -107,8 +111,8 @@ SIM_SHIM_EXCEPTIONS: frozenset[str] = frozenset()
 # ``mod.rs`` (2 ``pub use`` lines: the consolidated block + a cfg-gated
 # re-export of ``gauge_zone_solver::GaugeZoneSolver``). Net effect:
 # -6 sim->physics edges (8 removed by god-struct deletion, 2 added by
-# consolidated re-exports). The guard PASSES at-or-below 68 and FAILS
-# when a NEW edge pushes the count to 69+. Lowering this baseline is
+# consolidated re-exports). The guard PASSES at-or-below 83 and FAILS
+# when a NEW edge pushes the count to 84+. Lowering this baseline is
 # authorised only by companion cycle-removal work; see ARCHITECTURE.md
 # §"Regression guard (Issue #2766, extends #2463)".
 #
