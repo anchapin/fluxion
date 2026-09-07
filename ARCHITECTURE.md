@@ -198,13 +198,13 @@ invariants and is wired into CI (run from repo root):
    `fluxion`.
 2. `fluxion_core::ashrae_cases` contains all 13 moved leaf types.
 3. `src/sim/**` → `crate::validation::*` edge count is at or below the
-   documented baseline (currently 72). This counts *every* reference — not
+   documented baseline (currently 99). This counts *every* reference — not
    just the leaf-type `Orientation` import the original #1441 guard forbid,
    but the composite types that actually drive the cycle (`CaseSpec`,
    `CaseBuilder`, `ASHRAE140Case`, `CommonWall`, `ConstructionSpec`) plus
    `validation::diagnostics` / `validation::config`, whether written as a
    `use` import or a fully-qualified path in a signature / match arm.
-4. `src/validation/**` → `crate::sim::*` (baseline 58).
+4. `src/validation/**` → `crate::sim::*` (baseline 65).
  5. `src/validation/**` → `crate::physics::*` (baseline 65).
  6. `src/validation/**` → `crate::weather::*` (baseline 25).
 
@@ -213,8 +213,8 @@ moved the 13 pure-data leaf types; the composite types (`ASHRAE140Case`,
 `CaseSpec`, `CaseBuilder`, `CommonWall`, `ConstructionSpec`) stayed in
 `validation::ashrae_140_cases` because they carry upward deps to
 `crate::sim::*` / `crate::physics::*`, and `src/validation/**` legitimately
-drives the engine, weather sources, and physics tensors. As a result ~220
-directional edges remain (72 sim→validation + 58 validation→sim + 65
+drives the engine, weather sources, and physics tensors. As a result ~254
+directional edges remain (99 sim→validation + 65 validation→sim + 65
 validation→physics + 25 validation→weather). The guard therefore mirrors
 `scripts/check_physics_sim_cycle.py`: it snapshots the current counts as
 baselines and **fails only on regression** (a count grows above baseline),
@@ -250,8 +250,10 @@ that those 2 files were just 2 of 26 sim files importing `crate::physics::`
 — 84 pre-existing `use crate::physics::` edges across `thermal_model.rs`,
 `engine.rs`, `ventilation.rs`, and 23 others were completely unguarded —
 and extended Phase 2 to ALL of `src/sim/**`, snapshotting the 84 edges as
-the new baseline. The documented baseline is now **0+84 edges** (0
-physics→sim + 84 sim→physics); the script exits non-zero only on regression
+the new baseline. The documented baseline is now **0+83 edges** (0
+physics→sim + 83 sim→physics) after the subsequent companion-cycle-work
+adjustments (#2896 −1, #2891 +2, #2878 −6, #3324 +4); the script exits
+non-zero only on regression
 (a count grows above its baseline). Wired into CI as the
 `Physics-Sim-Cycle-Check` job in `.github/workflows/rust-tests.yml`;
 promoted to `release_gates.yaml::ci.required_checks` by #2462 so a future
@@ -264,7 +266,7 @@ edge count must stay at or below the grandfathered baseline. They cannot
 detect two pathologies that block goal #3 (the cycle must *trend toward
 zero*):
 
-1. **Frozen, not broken** — the count sits at 299 run after run (was 215
+1. **Frozen, not broken** — the count sits at 337 run after run (was 215
    before Issue #2766 extended the physics-sim guard's coverage from 2 to
    26 sim files, surfacing 84 pre-existing edges). The magnitude gate
    passes green every time; nothing forces the count down.

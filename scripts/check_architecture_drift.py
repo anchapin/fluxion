@@ -8,6 +8,8 @@ Fails if:
   2. A documented module file no longer exists
   3. A documented trait no longer exists in code
   4. Trait contract invariants are violated (method signatures)
+  5. Documented cycle-edge counts diverge from the cycle-guard baseline
+     constants (issue #3460)
 
 Usage:
   python3 scripts/check_architecture_drift.py
@@ -27,6 +29,12 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parent.parent
 ARCH_FILE = REPO_ROOT / "ARCHITECTURE.md"
 BASELINE_FILE = REPO_ROOT / "scripts" / "trait_contract_baseline.json"
+# Cycle-guard scripts whose BASELINE_* constants are the source of truth
+# for the cycle-edge counts documented in ARCHITECTURE.md (issue #3460).
+ASHRAE_CYCLE_GUARD_FILE = REPO_ROOT / "scripts" / "check_ashrae_cases_cycle.py"
+PHYSICS_SIM_CYCLE_GUARD_FILE = (
+    REPO_ROOT / "scripts" / "check_physics_sim_cycle.py"
+)
 # Scan source directories from all workspace members
 SRC_DIRS = [
     REPO_ROOT / "src",
@@ -398,6 +406,188 @@ def extract_documented_files(arch_content: str) -> set[str]:
     return files
 
 
+def parse_guard_constant(script_path: Path, constant: str) -> int | None:
+    """Regex-parse ``<CONSTANT> = <int>`` from a cycle-guard script.
+
+    Deliberately regex-based rather than an import: the text parse reads
+    exactly the literal a human reviewer reads when re-syncing docs, with
+    no import-time side effects. Returns ``None`` when the script or the
+    constant is missing so callers can fail loudly instead of guessing.
+    """
+    if not script_path.exists():
+        return None
+    match = re.search(
+        rf"^{constant}\s*=\s*(\d+)",
+        script_path.read_text(encoding="utf-8", errors="replace"),
+        re.MULTILINE,
+    )
+    return int(match.group(1)) if match else None
+
+
+def check_cycle_edge_count_drift(arch_content: str) -> list[str]:
+    """Compare ARCHITECTURE.md's documented cycle-edge counts with the
+    cycle guards' BASELINE_* constants (issue #3460).
+
+    ARCHITECTURE.md narrates the sim<->validation and physics<->sim cycle
+    magnitudes in prose; those numbers drifted from the guard constants
+    once already (issue #3460: "~220 directional edges" documented vs a
+    measured 254). This check re-parses the specific claims and fails on
+    mismatch *or* removal, so docs and guards cannot diverge silently.
+
+    All prose regexes run against whitespace-normalised text so markdown
+    line-wrapping cannot hide a drifted literal.
+    """
+    findings: list[str] = []
+
+    ashrae = {
+        "sim→validation": parse_guard_constant(
+            ASHRAE_CYCLE_GUARD_FILE, "BASELINE_SIM_TO_VALIDATION"
+        ),
+        "validation→sim": parse_guard_constant(
+            ASHRAE_CYCLE_GUARD_FILE, "BASELINE_VALIDATION_TO_SIM"
+        ),
+        "validation→physics": parse_guard_constant(
+            ASHRAE_CYCLE_GUARD_FILE, "BASELINE_VALIDATION_TO_PHYSICS"
+        ),
+        "validation→weather": parse_guard_constant(
+            ASHRAE_CYCLE_GUARD_FILE, "BASELINE_VALIDATION_TO_WEATHER"
+        ),
+    }
+    physics_sim = {
+        "physics→sim": parse_guard_constant(
+            PHYSICS_SIM_CYCLE_GUARD_FILE, "BASELINE_PHYSICS_TO_SIM"
+        ),
+        "sim→physics": parse_guard_constant(
+            PHYSICS_SIM_CYCLE_GUARD_FILE, "BASELINE_SIM_TO_PHYSICS"
+        ),
+    }
+
+    prose = re.sub(r"\s+", " ", arch_content)
+
+    # (label, regex over normalised prose, guard value, constant name)
+    scalar_claims = [
+        (
+            "sim→validation baseline",
+            r"documented baseline \(currently (\d+)\)",
+            ashrae["sim→validation"],
+            "BASELINE_SIM_TO_VALIDATION",
+        ),
+        (
+            "validation→sim baseline",
+            r"`crate::sim::\*` \(baseline (\d+)\)",
+            ashrae["validation→sim"],
+            "BASELINE_VALIDATION_TO_SIM",
+        ),
+        (
+            "validation→physics baseline",
+            r"`crate::physics::\*` \(baseline (\d+)\)",
+            ashrae["validation→physics"],
+            "BASELINE_VALIDATION_TO_PHYSICS",
+        ),
+        (
+            "validation→weather baseline",
+            r"`crate::weather::\*` \(baseline (\d+)\)",
+            ashrae["validation→weather"],
+            "BASELINE_VALIDATION_TO_WEATHER",
+        ),
+        (
+            "sim→physics baseline",
+            r"`BASELINE_SIM_TO_PHYSICS = (\d+)`",
+            physics_sim["sim→physics"],
+            "BASELINE_SIM_TO_PHYSICS",
+        ),
+    ]
+    for label, pattern, guard_value, const_name in scalar_claims:
+        if guard_value is None:
+            findings.append(
+                f"DRIFT: {const_name} not parseable from its cycle-guard "
+                f"script — cannot verify the ARCHITECTURE.md {label} claim"
+            )
+            continue
+        match = re.search(pattern, prose)
+        if not match:
+            findings.append(
+                f"DRIFT: ARCHITECTURE.md no longer documents the {label} "
+                f"claim (issue #3460 sync guard cannot verify it)"
+            )
+        elif int(match.group(1)) != guard_value:
+            findings.append(
+                f"DRIFT: ARCHITECTURE.md documents the {label} as "
+                f"{match.group(1)} but the cycle guard defines "
+                f"{const_name} = {guard_value}"
+            )
+
+    # Composite claim: "~N directional edges remain (a sim→validation +
+    # b validation→sim + c validation→physics + d validation→weather)".
+    breakdown = re.search(
+        r"~(\d+) directional edges remain \((\d+) sim→validation \+ (\d+) "
+        r"validation→sim \+ (\d+) validation→physics \+ (\d+) "
+        r"validation→weather\)",
+        prose,
+    )
+    if not breakdown:
+        findings.append(
+            "DRIFT: ARCHITECTURE.md no longer documents the directional-edge "
+            "breakdown sentence (issue #3460 sync guard)"
+        )
+    else:
+        parts = {
+            "sim→validation": int(breakdown.group(2)),
+            "validation→sim": int(breakdown.group(3)),
+            "validation→physics": int(breakdown.group(4)),
+            "validation→weather": int(breakdown.group(5)),
+        }
+        for label, doc_value in parts.items():
+            guard_value = ashrae[label]
+            if guard_value is not None and doc_value != guard_value:
+                findings.append(
+                    f"DRIFT: ARCHITECTURE.md breakdown documents {label} as "
+                    f"{doc_value} but the cycle guard baseline is {guard_value}"
+                )
+        documented_total = int(breakdown.group(1))
+        if documented_total != sum(parts.values()):
+            findings.append(
+                f"DRIFT: ARCHITECTURE.md claims ~{documented_total} "
+                f"directional edges but its own breakdown sums to "
+                f"{sum(parts.values())}"
+            )
+
+    # Composite claim: "**0+N edges** (0 physics→sim + M sim→physics)".
+    # Both captures are the sim->physics count; the physics->sim direction
+    # is pinned by the literal 0s (if it ever grows, the sentence shape
+    # changes and the "no longer documents" finding below fires instead).
+    total_claim = re.search(
+        r"\*\*0\+(\d+) edges\*\* \(0 physics→sim \+ (\d+) sim→physics\)",
+        prose,
+    )
+    if not total_claim:
+        findings.append(
+            "DRIFT: ARCHITECTURE.md no longer documents the physics<->sim "
+            "0+N baseline sentence (issue #3460 sync guard)"
+        )
+    else:
+        if (
+            physics_sim["sim→physics"] is not None
+            and int(total_claim.group(1)) != physics_sim["sim→physics"]
+        ):
+            findings.append(
+                f"DRIFT: ARCHITECTURE.md 0+N baseline headline documents "
+                f"sim→physics as {total_claim.group(1)} but "
+                f"BASELINE_SIM_TO_PHYSICS = {physics_sim['sim→physics']}"
+            )
+        if (
+            physics_sim["sim→physics"] is not None
+            and int(total_claim.group(2)) != physics_sim["sim→physics"]
+        ):
+            findings.append(
+                f"DRIFT: ARCHITECTURE.md 0+N baseline parenthetical "
+                f"documents sim→physics as {total_claim.group(2)} but "
+                f"BASELINE_SIM_TO_PHYSICS = {physics_sim['sim→physics']}"
+            )
+
+    return findings
+
+
 def check_drift() -> tuple[list[str], bool]:
     """Run all drift checks. Returns (findings, baseline_was_created)."""
     findings = []
@@ -510,6 +700,9 @@ def check_drift() -> tuple[list[str], bool]:
         if not invariant_violations:
             contract_drift = check_contract_drift(current_contracts, baseline)
             findings.extend(contract_drift)
+
+    # --- Check 6: cycle-edge count claims vs guard baselines (#3460) ---
+    findings.extend(check_cycle_edge_count_drift(arch_content))
 
     return findings, baseline_created
 

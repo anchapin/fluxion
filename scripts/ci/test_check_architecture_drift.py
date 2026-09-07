@@ -262,3 +262,207 @@ def test_extract_documented_traits_catches_supporting_traits_table(drift):
 def test_extract_documented_files_catches_src_paths(drift, fragment):
     files = drift.extract_documented_files(fragment)
     assert any(f.endswith(".rs") and f.startswith("src/") for f in files)
+
+
+# ---------------------------------------------------------------------------
+# parse_guard_constant / check_cycle_edge_count_drift (Issue #3460)
+# ---------------------------------------------------------------------------
+
+# Minimal ARCHITECTURE.md fragment carrying every cycle-count claim the
+# #3460 sync guard parses, in the *real* document's shapes (including
+# hard line-wraps, to pin the whitespace-normalised matching).
+_CYCLE_CLEAN_ARCH = dedent(
+    """\
+    3. `src/sim/**` → `crate::validation::*` edge count is at or below the
+       documented baseline (currently 99). This counts *every* reference.
+    4. `src/validation/**` → `crate::sim::*` (baseline 65).
+    5. `src/validation/**` → `crate::physics::*` (baseline 65).
+    6. `src/validation/**` → `crate::weather::*` (baseline 25).
+
+    drives the engine, weather sources, and physics tensors. As a result ~254
+    directional edges remain (99 sim→validation + 65 validation→sim + 65
+    validation→physics + 25 validation→weather).
+
+    an 83-edge sim→physics baseline (`BASELINE_SIM_TO_PHYSICS = 83`; more
+    history follows here).
+
+    The documented baseline is now **0+83 edges** (0
+    physics→sim + 83 sim→physics); the script exits non-zero only on regression
+    """
+)
+
+_CYCLE_ASHRAE_GUARD = dedent(
+    """\
+    BASELINE_SIM_TO_VALIDATION = 99  # src/sim -> crate::validation
+    BASELINE_VALIDATION_TO_SIM = 65
+    BASELINE_VALIDATION_TO_PHYSICS = 65
+    BASELINE_VALIDATION_TO_WEATHER = 25
+    """
+)
+
+_CYCLE_PHYSICS_GUARD = dedent(
+    """\
+    BASELINE_PHYSICS_TO_SIM = 0
+    BASELINE_SIM_TO_PHYSICS = 83  # was 79; +4 for #3324
+    """
+)
+
+
+def _redirect_cycle_guards(
+    drift, tmp_path, monkeypatch, ashrae=None, physics=None
+) -> None:
+    """Point the freshly-loaded drift module's cycle-guard paths at
+    synthetic ``tmp_path`` guard scripts (mirrors the ``_redirect``
+    pattern from ``test_check_required_checks_sync.py``)."""
+    ashrae_path = tmp_path / "check_ashrae_cases_cycle.py"
+    physics_path = tmp_path / "check_physics_sim_cycle.py"
+    ashrae_path.write_text(
+        _CYCLE_ASHRAE_GUARD if ashrae is None else ashrae, encoding="utf-8"
+    )
+    physics_path.write_text(
+        _CYCLE_PHYSICS_GUARD if physics is None else physics, encoding="utf-8"
+    )
+    monkeypatch.setattr(drift, "ASHRAE_CYCLE_GUARD_FILE", ashrae_path)
+    monkeypatch.setattr(drift, "PHYSICS_SIM_CYCLE_GUARD_FILE", physics_path)
+
+
+def test_parse_guard_constant_reads_assignment_and_ignores_comments(
+    drift, tmp_path
+):
+    p = tmp_path / "guard.py"
+    p.write_text("BASELINE_X = 42  # trailing comment\n", encoding="utf-8")
+    assert drift.parse_guard_constant(p, "BASELINE_X") == 42
+
+
+def test_parse_guard_constant_returns_none_for_missing_constant_or_file(
+    drift, tmp_path
+):
+    p = tmp_path / "guard.py"
+    p.write_text("SOME_OTHER = 1\n", encoding="utf-8")
+    assert drift.parse_guard_constant(p, "BASELINE_X") is None
+    assert drift.parse_guard_constant(tmp_path / "absent.py", "BASELINE_X") is None
+
+
+def test_cycle_count_guard_clean_when_docs_match_guards(
+    drift, tmp_path, monkeypatch
+):
+    """Clean case: every documented claim agrees with the mock guard
+    constants (including across hard line-wraps)."""
+    _redirect_cycle_guards(drift, tmp_path, monkeypatch)
+    assert drift.check_cycle_edge_count_drift(_CYCLE_CLEAN_ARCH) == []
+
+
+def test_cycle_count_guard_passes_on_real_repo(drift, repo_root):
+    """Pin the Issue #3460 fix itself: the real ARCHITECTURE.md claims
+    must agree with the real cycle-guard constants. A future baseline
+    bump that forgets the docs flips this test (and the CI gate)."""
+    findings = drift.check_cycle_edge_count_drift(
+        (repo_root / "ARCHITECTURE.md").read_text(encoding="utf-8")
+    )
+    assert findings == []
+
+
+def test_cycle_count_guard_flags_scalar_baseline_drift(drift, tmp_path, monkeypatch):
+    """Planted violation: the guard's BASELINE_SIM_TO_VALIDATION moved to
+    100 but the docs still say 99 — the exact #3460 drift class. Both the
+    invariant-list claim and the breakdown component compare against the
+    same guard constant, so both fire."""
+    drifted = _CYCLE_ASHRAE_GUARD.replace(
+        "BASELINE_SIM_TO_VALIDATION = 99", "BASELINE_SIM_TO_VALIDATION = 100"
+    )
+    _redirect_cycle_guards(drift, tmp_path, monkeypatch, ashrae=drifted)
+    findings = drift.check_cycle_edge_count_drift(_CYCLE_CLEAN_ARCH)
+    assert len(findings) == 2
+    joined = "\n".join(findings)
+    assert "documents the sim→validation baseline as 99" in joined
+    assert "BASELINE_SIM_TO_VALIDATION = 100" in joined
+    assert "breakdown documents sim→validation as 99" in joined
+
+
+def test_cycle_count_guard_flags_backticked_constant_drift(
+    drift, tmp_path, monkeypatch
+):
+    """Planted violation: the backticked ``BASELINE_SIM_TO_PHYSICS = 83``
+    mention in the docs drifts from the guard constant."""
+    drifted_arch = _CYCLE_CLEAN_ARCH.replace(
+        "`BASELINE_SIM_TO_PHYSICS = 83`", "`BASELINE_SIM_TO_PHYSICS = 72`"
+    )
+    _redirect_cycle_guards(drift, tmp_path, monkeypatch)
+    findings = drift.check_cycle_edge_count_drift(drifted_arch)
+    assert len(findings) == 1
+    assert "documents the sim→physics baseline as 72" in findings[0]
+    assert "BASELINE_SIM_TO_PHYSICS = 83" in findings[0]
+
+
+def test_cycle_count_guard_flags_breakdown_component_drift(
+    drift, tmp_path, monkeypatch
+):
+    """Planted violation: one component of the directional-edge breakdown
+    sentence disagrees with its guard baseline (the total literal is
+    shifted along with it so only the component comparison fires)."""
+    drifted_arch = _CYCLE_CLEAN_ARCH.replace("~254", "~253").replace(
+        "+ 65 validation→sim + 65", "+ 64 validation→sim + 65"
+    )
+    _redirect_cycle_guards(drift, tmp_path, monkeypatch)
+    findings = drift.check_cycle_edge_count_drift(drifted_arch)
+    assert len(findings) == 1
+    assert "breakdown documents validation→sim as 64" in findings[0]
+    assert "baseline is 65" in findings[0]
+
+
+def test_cycle_count_guard_flags_breakdown_total_arithmetic_drift(
+    drift, tmp_path, monkeypatch
+):
+    """Planted violation: the '~N directional edges' total disagrees with
+    the sum of its own breakdown components."""
+    drifted_arch = _CYCLE_CLEAN_ARCH.replace("~254", "~250")
+    _redirect_cycle_guards(drift, tmp_path, monkeypatch)
+    findings = drift.check_cycle_edge_count_drift(drifted_arch)
+    assert len(findings) == 1
+    assert "claims ~250 directional edges" in findings[0]
+    assert "sums to 254" in findings[0]
+
+
+def test_cycle_count_guard_flags_zero_plus_n_drift(drift, tmp_path, monkeypatch):
+    """Planted violation: the physics<->sim '**0+N edges**' sentence
+    still narrates the pre-#3460 84-edge baseline."""
+    drifted_arch = _CYCLE_CLEAN_ARCH.replace("**0+83 edges**", "**0+84 edges**")
+    _redirect_cycle_guards(drift, tmp_path, monkeypatch)
+    findings = drift.check_cycle_edge_count_drift(drifted_arch)
+    assert len(findings) == 1
+    assert "0+N baseline headline documents sim→physics as 84" in findings[0]
+    assert "BASELINE_SIM_TO_PHYSICS = 83" in findings[0]
+
+
+def test_cycle_count_guard_flags_removed_claims(drift, tmp_path, monkeypatch):
+    """Deleting a documented claim must fail the guard just like drifting
+    it — otherwise the sync check can be silenced by removal."""
+    _redirect_cycle_guards(drift, tmp_path, monkeypatch)
+    findings = drift.check_cycle_edge_count_drift(
+        "No cycle narrative here at all.\n"
+    )
+    # 5 scalar claims + 2 composite sentences all go missing.
+    assert len(findings) == 7
+    joined = "\n".join(findings)
+    assert "no longer documents the sim→validation baseline" in joined
+    assert "directional-edge breakdown sentence" in joined
+    assert "0+N baseline sentence" in joined
+
+
+def test_cycle_count_guard_flags_missing_guard_constant(drift, tmp_path, monkeypatch):
+    """A guard script that no longer defines the constant must fail
+    loudly instead of silently skipping the comparison (the breakdown
+    component comparisons skip missing guards, but the scalar claims do
+    not — so the missing constants are still named)."""
+    _redirect_cycle_guards(
+        drift,
+        tmp_path,
+        monkeypatch,
+        ashrae="BASELINE_VALIDATION_TO_SIM = 65\n",
+    )
+    findings = drift.check_cycle_edge_count_drift(_CYCLE_CLEAN_ARCH)
+    assert len(findings) == 3
+    joined = "\n".join(findings)
+    assert "BASELINE_SIM_TO_VALIDATION not parseable" in joined
+    assert "BASELINE_VALIDATION_TO_PHYSICS not parseable" in joined
+    assert "BASELINE_VALIDATION_TO_WEATHER not parseable" in joined

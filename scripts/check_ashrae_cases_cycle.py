@@ -31,7 +31,7 @@ the documented baseline counts below snapshot the cycle as of the commit
 that introduced this guard (#2495). The script PASSES when every count is
 at or below its baseline and FAILS (exit 1) the moment a count INCREASES.
 This enforces "no new cycle edges" without requiring the (large, deferred)
-removal of the ~72 sim->validation + ~143 validation->{sim,physics,weather}
+removal of the ~99 sim->validation + ~155 validation->{sim,physics,weather}
 edges that exist today. The companion cycle-removal work is the only
 change authorised to *lower* a baseline; this guard rejects growth.
 
