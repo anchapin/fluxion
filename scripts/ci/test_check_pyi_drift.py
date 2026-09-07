@@ -377,3 +377,30 @@ def test_pyclass_sources_includes_expected_files(checker):
     assert "multi_node_bindings.rs" in sources
     assert "osm_bindings.rs" in sources
     assert "parameters.rs" in sources
+
+
+def test_pyclass_sources_covers_all_src_python_binding_modules(checker):
+    """Every ``src/python/*_bindings.rs`` file must be in PYCLASS_SOURCES.
+
+    Issue #3402 recurrence guard: PR #2493 extracted
+    ``batch_oracle_bindings.rs`` and ``construction_bindings.rs`` without
+    registering them, silently dropping their pyclasses from the drift
+    scan. The hardcoded subset assertion above cannot catch that class
+    of omission — only directory enumeration can. The #2493 extraction
+    work is ongoing, so a new ``*_bindings.rs`` module landing without
+    registration must fail here with the file named.
+    """
+    python_dir = checker.REPO_ROOT / "src" / "python"
+    on_disk = {p.name for p in python_dir.glob("*_bindings.rs")}
+    assert on_disk, "src/python/ contains no *_bindings.rs files?!"
+    registered = {
+        p.name for p in checker.PYCLASS_SOURCES if p.parent == python_dir
+    }
+    untracked = sorted(on_disk - registered)
+    assert not untracked, (
+        "src/python/*_bindings.rs files missing from PYCLASS_SOURCES in "
+        "scripts/check_pyi_drift.py — their #[pyclass] defs are silently "
+        "excluded from the drift scan (Issue #3402 failure mode). Add "
+        "each one to the PYCLASS_SOURCES list:\n"
+        + "\n".join(f"  - src/python/{name}" for name in untracked)
+    )
