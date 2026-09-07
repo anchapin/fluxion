@@ -15,7 +15,7 @@ Fluxion is a Rust-first building-energy-modeling engine with Python and Node bin
 
 ```bash
 ./scripts/disk-space-check.sh                         # before large builds/orchestration; 10 GB minimum
-cargo test --workspace                                # ALL workspace tests (~3879 tests across all crates)
+cargo test --workspace --exclude fluxion-tauri        # ALL workspace tests (~3879 tests across all crates); --exclude fluxion-tauri is required because fluxion-tauri's proc-macro build needs `npm run build` in fluxion-tauri/frontend/ to materialise ../frontend/dist (Issue #3126)
 cargo test                                           # root crate only (NOT the full suite)
 cargo test -p fluxion <test_name>                    # one named test
 cargo test --test zone_balance_eplus_isolation       # energy-conservation gate
