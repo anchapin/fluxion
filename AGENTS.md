@@ -15,7 +15,8 @@ Fluxion is a Rust-first building-energy-modeling engine with Python and Node bin
 
 ```bash
 ./scripts/disk-space-check.sh                         # before large builds/orchestration; 10 GB minimum
-cargo test --workspace --exclude fluxion-tauri        # ALL workspace tests (~6299 passed / 110 ignored across 331 test binaries as of HEAD 7d4a1f1); --exclude fluxion-tauri is required because fluxion-tauri's proc-macro build needs `npm run build` in fluxion-tauri/frontend/ to materialise ../frontend/dist (Issue #3126)
+cargo nextest run --workspace --all-targets --test-threads=2 --no-fail-fast   # canonical CI command (Issue #3366 / ADR-0014, PR #3369); see docs/ci/nextest-rollout.md for rationale and .github/workflows/rust-tests.yml::test for the actual matrix invocation
+cargo test --workspace --exclude fluxion-tauri        # ALL workspace tests (~6299 passed / 110 ignored across 331 test binaries as of HEAD 7d4a1f1); --exclude fluxion-tauri is required because fluxion-tauri's proc-macro build needs `npm run build` in fluxion-tauri/frontend/ to materialise ../frontend/dist (Issue #3126). LOCAL-DEBUG ONLY — CI uses `cargo nextest` (see above); both runners share `.config/nextest.toml::concurrency = 2` defaults.
 cargo test                                           # root crate only (NOT the full suite)
 cargo test -p fluxion <test_name>                    # one named test
 cargo test --test zone_balance_eplus_isolation       # energy-conservation gate
@@ -26,6 +27,8 @@ cargo check --workspace                              # all workspace siblings
 cargo test -p fluxion-mcp                            # MCP package
 cargo test --features ort                            # ONNX runtime is opt-in
 ```
+
+**Test runner policy (Issue #3366 / ADR-0014, merged via PR #3369 on 2026-09-06):** CI uses `cargo nextest run` with per-binary `--test-threads=2` (matching GH free-runner vCPU count); local developers may continue to use `cargo test --workspace` for the local-debug equivalent. The nextest rollout runbook (`docs/ci/nextest-rollout.md`) is the source of truth for the audit, re-audit triggers, and `.config/nextest.toml` overrides. Do **not** relax ASHRAE 140 / energy-conservation / `h_tr_em` / surrogate-drift tolerance bands to compensate for any nextest race — tighten `.config/nextest.toml` instead (Issue #3366 §"Step 1 — Audit").
 
 **Test suite overview:** `cargo test --workspace --exclude fluxion-tauri` runs ~6299 passed / 110 ignored tests across 331 test binaries (HEAD 7d4a1f1); `cargo test --lib` runs ~3923 passed / 0 ignored tests in the root crate. The ASHRAE 140 suite is distributed across multiple `--test` binaries (run `ls tests/ashrae_140*.rs` to see them all). Running `cargo test` without `--workspace` only runs the root crate tests and misses the full suite.
 
