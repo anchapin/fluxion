@@ -111,7 +111,12 @@ impl Case600Model {
         let roof_assembly = Assemblies::low_mass_roof();
         let floor_assembly = Assemblies::insulated_floor();
 
-        // Calculate U-values with default wind speed (25 m/s → ~21 W/m²K film coefficient)
+        // Independent analytical reference model (Issue #3447, path B):
+        // this `~21 W/m²K` is a per-case analytical choice for the ASHRAE
+        // 140 Case 600 reference construction at the 25 m/s default wind
+        // speed — NOT the engine's canonical EXTERIOR_FILM_COEFF_DEFAULT
+        // (18.3 W/m²K). The case_600 family does not route through the
+        // ThermalModelTrait / HeatConductionSolver swap points.
         let _u_wall = wall_assembly.u_value(None, None);
         let u_roof = roof_assembly.u_value(None, None);
         let _u_floor = floor_assembly.u_value(None, None);
