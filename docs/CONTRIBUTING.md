@@ -304,7 +304,7 @@ fluxion validate --all --verbose
 ```
 
 **Validation Status:**
-- Current pass rate: 20.3% (13 of 64 metric results pass, snapshot dated 2026-08-07); at the case level only Case 600FF fully passes — see `docs/ASHRAE140_RESULTS.md` for detailed results
+- Current pass rate: 14.3% (12 of 84 metric results pass, snapshot dated 2026-08-16); at the case level only Case 600FF fully passes — see `docs/ASHRAE140_RESULTS.md` for detailed results
 - Cases 600 and 900 annual cooling are known structural gaps (5R1C single-node limitation), not regressions — see `docs/KNOWN_ISSUES.md` §SOLAR-02 (incl. the Issue #2239 update confirming Case 900 cooling as a structural 5R1C limitation) and §LIMIT-05 (incl. the #1457-revisit update cataloguing the 14 remaining Case 600 metrics)
 - See `docs/KNOWN_ISSUES.md` for the full catalog of known 5R1C model limitations
 
