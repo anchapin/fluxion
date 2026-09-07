@@ -34,7 +34,7 @@
 | Free-Floating Cases | 4 | 0 | 0 | 4 | 0.0% |
 | Special Cases | 2 | 0 | 0 | 2 | 0.0% |
 
-*Case-level = a case is PASS only if its aggregate row is ✅. Metric-level headline (20.3%) counts each reported metric individually; see `docs/ASHRAE140_RESULTS.md` Summary.*
+*Case-level = a case is PASS only if its aggregate row is ✅. Metric-level headline (14.3%) counts each reported metric individually; see `docs/ASHRAE140_RESULTS.md` Summary.*
 
 ## Throughput vs Budget
 

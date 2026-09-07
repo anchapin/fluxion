@@ -398,6 +398,18 @@ def test_render_emits_ci_regenerate_block(gen):
     assert "scripts/generate_scorecard.py" in out
 
 
+def test_render_footnote_uses_derived_pass_rate(gen):
+    """Issue #3455: the metric-level footnote percentage must be derived from
+    the same ``Validation.pass_rate`` that feeds the headline. A hard-coded
+    literal (the stale ``20.3%`` fossil) fails this assertion because the
+    rendered footnote would not match the injected pass rate."""
+    v = gen.Validation(pass_rate=14.3, mae=30.0)
+    g = gen.Gates(min_pass_rate=60.0, max_mae=50.0)
+    out = gen.render(v, [], g, gen.Benchmark())
+    assert f"Metric-level headline ({v.pass_rate:.1f}%)" in out
+    assert "20.3%" not in out
+
+
 # ---------------------------------------------------------------------------
 # main() — CLI byte-comparison (the load-bearing acceptance criterion)
 # ---------------------------------------------------------------------------
