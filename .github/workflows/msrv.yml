@@ -61,7 +61,10 @@ jobs:
       # Install the MSRV-pinned stable toolchain (issue #2934; floor raised
       # to 1.98.0 by issue #3321). The crate's `rust-version = "1.98.0"`
       # field — set on the root Cargo.toml, the [workspace.package] block,
-      # and all 11 workspace-member Cargo.toml files — is what
+      # and the Cargo.toml of 11 of the 12 workspace members (count fixed
+      # by #3465: every member declares it except fluxion-tauri/src-tauri,
+      # which sets no rust-version floor; crates/fluxion-evaluator is
+      # among the declarers) — is what
       # `cargo install` / crates.io / `cargo update --precise` users see;
       # this job is the enforcement side, failing the build when a change
       # drifts past 1.98.0. The floor was raised deliberately — no longer
@@ -75,7 +78,10 @@ jobs:
       # 0.35 / safe_arch 1.1 / statrs 0.19.1 / wide 1.6.1 (each declaring
       # rustc >= 1.89) all sit below the new floor. The action SHA pin
       # matches the one used by .github/actions/setup-rust-env/action.yml
-      # so any drift is caught in one place.
+      # so any drift is caught in one place. MSRV-bump checklist: update
+      # every declaring manifest, then verify coverage with
+      # `grep -rl 'rust-version' --include=Cargo.toml .`
+      # (13 manifests at the time of #3465).
       - name: Install Rust 1.98.0 (MSRV)
         uses: dtolnay/rust-toolchain@f8be11a05b1d4f3fcebe6410cc16743212b999b0  # 1.98.0
         with:
