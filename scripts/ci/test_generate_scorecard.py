@@ -1,11 +1,12 @@
 """
-Tests for ``scripts/generate_scorecard.py`` -- Issue #2496.
+Tests for ``scripts/generate_scorecard.py`` -- Issues #2496 and #3436.
 
 The scorecard is the release-time dashboard read from committed sources
-(``docs/ASHRAE140_RESULTS.md``, ``release_gates.yaml``, ``README.md``)
-and emitted as ``SCORECARD.md``. CI runs ``--check`` to byte-compare the
-committed scorecard against the regenerated copy; any drift fails the
-build.
+(``docs/ASHRAE140_RESULTS.md``, ``release_gates.yaml``, ``README.md``, and
+-- since #3436 -- the tracked snapshot
+``validation/performance_history.latest.json``) and emitted as
+``SCORECARD.md``. CI runs ``--check`` to byte-compare the committed
+scorecard against the regenerated copy; any drift fails the build.
 
 The script's load-bearing pieces are pure:
 
@@ -14,26 +15,94 @@ The script's load-bearing pieces are pure:
 * ``parse_gates(text)`` -- gate budgets from the YAML.
 * ``parse_readme_throughput(text)`` -- README throughput claim.
 * ``render(v, series, g, b)`` -- compile the markdown body.
-* ``main()`` -- CLI with ``--check`` mode.
+* ``apply_performance_history(v)`` -- tracked-snapshot throughput override.
+* ``main()`` -- CLI with ``--check`` mode and ``--perf-history`` opt-in.
 
 The CI byte-comparison contract is the load-bearing acceptance criterion
 (issue #2496: "CI can fail when any metric regresses"), so we exercise
-both the parse functions and the ``--check`` CLI.
+both the parse functions and the ``--check`` CLI. Issue #3436 adds the
+determinism fence: generation must be invariant to the presence of the
+untracked ``target/performance_history.jsonl`` build artifact.
 """
 
 from __future__ import annotations
 
+import json
 import sys
 
 import pytest
 
 SCRIPT_NAME = "generate_scorecard"
 
+# The real latest perf-history entry (seeded into the tracked snapshot by
+# #3436): throughput 13.83..., run 2026-09-07.
+TRACKED_SNAPSHOT_TEXT = (
+    json.dumps(
+        {
+            "timestamp": "2026-09-07T00:01:56.881908452+00:00",
+            "mae": 49.8242105592446,
+            "max_deviation": 470.1099213055421,
+            "pass_rate": 14.130434782608695,
+            "validation_time_seconds": 1.518408016,
+            "throughput": 13.830274721099734,
+            "git_sha": None,
+        },
+        indent=2,
+    )
+    + "\n"
+)
+
 
 @pytest.fixture
 def gen(load_script):
     """Freshly-loaded copy of the scorecard generator."""
     return load_script(SCRIPT_NAME)
+
+
+def _run_main(gen, *argv):
+    """Invoke ``gen.main()`` with a synthetic argv; return the exit code."""
+    saved = sys.argv[:]
+    sys.argv[:] = [SCRIPT_NAME, *argv]
+    try:
+        rc = gen.main()
+    except SystemExit as e:
+        rc = int(e.code) if e.code is not None else 0
+    finally:
+        sys.argv[:] = saved
+    return rc
+
+
+def _plant_tmp_repo(gen, tmp_path, monkeypatch, snapshot_text=None):
+    """Plant a hermetic tmp repo (docs/yaml/readme [+ tracked snapshot]) and
+    redirect every module-level path constant at it."""
+    (tmp_path / "docs").mkdir()
+    (tmp_path / "docs" / "ASHRAE140_RESULTS.md").write_text(
+        "*Generated: 2026-01-15 12:34 UTC*\n\n"
+        "## Summary\n\n"
+        "| Metric | Value |\n|--------|-------|\n"
+        "| Pass Rate | 14.1% |\n"
+        "| Throughput | 35.36 cases/sec |\n",
+        encoding="utf-8",
+    )
+    (tmp_path / "release_gates.yaml").write_text(
+        "validation:\n  min_pass_rate: 60.0\n",
+        encoding="utf-8",
+    )
+    (tmp_path / "README.md").write_text(
+        "We support ~900 configs/sec throughput in release mode.\n",
+        encoding="utf-8",
+    )
+    snapshot = tmp_path / "validation" / "performance_history.latest.json"
+    if snapshot_text is not None:
+        snapshot.parent.mkdir(parents=True, exist_ok=True)
+        snapshot.write_text(snapshot_text, encoding="utf-8")
+    monkeypatch.setattr(gen, "REPO", tmp_path)
+    monkeypatch.setattr(gen, "ASHRAE_DOC", tmp_path / "docs" / "ASHRAE140_RESULTS.md")
+    monkeypatch.setattr(gen, "GATES_YAML", tmp_path / "release_gates.yaml")
+    monkeypatch.setattr(gen, "README_MD", tmp_path / "README.md")
+    monkeypatch.setattr(gen, "SCORECARD", tmp_path / "SCORECARD.md")
+    monkeypatch.setattr(gen, "PERF_SNAPSHOT", snapshot)
+    return snapshot
 
 
 # ---------------------------------------------------------------------------
@@ -362,6 +431,11 @@ def test_main_returns_zero_when_committed_matches_regenerated(
     monkeypatch.setattr(gen, "README_MD", tmp_path / "README.md")
     scorecard_path = tmp_path / "SCORECARD.md"
     monkeypatch.setattr(gen, "SCORECARD", scorecard_path)
+    monkeypatch.setattr(
+        gen,
+        "PERF_SNAPSHOT",
+        tmp_path / "validation" / "performance_history.latest.json",
+    )
 
     # First call writes the SCORECARD.md.
     saved = sys.argv[:]
@@ -419,6 +493,11 @@ def test_main_returns_one_when_scorecard_drifts(gen, tmp_path, monkeypatch, caps
     monkeypatch.setattr(gen, "README_MD", tmp_path / "README.md")
     scorecard_path = tmp_path / "SCORECARD.md"
     monkeypatch.setattr(gen, "SCORECARD", scorecard_path)
+    monkeypatch.setattr(
+        gen,
+        "PERF_SNAPSHOT",
+        tmp_path / "validation" / "performance_history.latest.json",
+    )
 
     # Step 1: write the committed scorecard.
     saved = sys.argv[:]
@@ -461,6 +540,11 @@ def test_main_returns_one_when_scorecard_missing(gen, tmp_path, monkeypatch, cap
     monkeypatch.setattr(gen, "GATES_YAML", tmp_path / "release_gates.yaml")
     monkeypatch.setattr(gen, "README_MD", tmp_path / "README.md")
     monkeypatch.setattr(gen, "SCORECARD", tmp_path / "SCORECARD.md")
+    monkeypatch.setattr(
+        gen,
+        "PERF_SNAPSHOT",
+        tmp_path / "validation" / "performance_history.latest.json",
+    )
 
     saved = sys.argv[:]
     sys.argv[:] = [SCRIPT_NAME, "--check"]
@@ -478,6 +562,174 @@ def test_main_returns_one_when_scorecard_missing(gen, tmp_path, monkeypatch, cap
 
 
 # ---------------------------------------------------------------------------
+# apply_performance_history — tracked-snapshot throughput source (#3436)
+# ---------------------------------------------------------------------------
+
+
+def test_tracked_snapshot_overrides_throughput_and_names_source(
+    gen, tmp_path, monkeypatch
+):
+    """A valid tracked snapshot overrides the docs figure and the attribution
+    names the tracked file (never ``target/performance_history.jsonl``)."""
+    _plant_tmp_repo(gen, tmp_path, monkeypatch, snapshot_text=TRACKED_SNAPSHOT_TEXT)
+    v = gen.Validation(throughput_cases_per_sec=35.36)
+    src = gen.apply_performance_history(v)
+    assert v.throughput_cases_per_sec == pytest.approx(13.830274721099734)
+    assert src == "`validation/performance_history.latest.json` (latest run 2026-09-07)"
+
+
+def test_missing_snapshot_falls_back_to_docs(gen, tmp_path, monkeypatch):
+    """No tracked snapshot → docs figure is kept, docs attribution returned."""
+    _plant_tmp_repo(gen, tmp_path, monkeypatch)  # snapshot deliberately absent
+    v = gen.Validation(throughput_cases_per_sec=35.36)
+    src = gen.apply_performance_history(v)
+    assert v.throughput_cases_per_sec == 35.36
+    assert src == "`docs/ASHRAE140_RESULTS.md`"
+
+
+def test_corrupt_snapshot_falls_back_to_docs(gen, tmp_path, monkeypatch):
+    """Corrupt (non-JSON) snapshot → deterministic docs fallback."""
+    _plant_tmp_repo(gen, tmp_path, monkeypatch, snapshot_text="not json {{{\n")
+    v = gen.Validation(throughput_cases_per_sec=35.36)
+    src = gen.apply_performance_history(v)
+    assert v.throughput_cases_per_sec == 35.36
+    assert src == "`docs/ASHRAE140_RESULTS.md`"
+
+
+def test_zero_throughput_snapshot_falls_back_to_docs(gen, tmp_path, monkeypatch):
+    """A snapshot entry with non-positive throughput is not applied."""
+    bad = json.dumps({"timestamp": "2026-09-07T00:00:00+00:00", "throughput": 0.0})
+    _plant_tmp_repo(gen, tmp_path, monkeypatch, snapshot_text=bad)
+    v = gen.Validation(throughput_cases_per_sec=35.36)
+    src = gen.apply_performance_history(v)
+    assert v.throughput_cases_per_sec == 35.36
+    assert src == "`docs/ASHRAE140_RESULTS.md`"
+
+
+def test_untracked_target_history_is_never_read(gen, tmp_path, monkeypatch):
+    """Unit-level determinism fence (#3436): a decoy untracked
+    ``target/performance_history.jsonl`` must be ignored -- with a valid
+    tracked snapshot AND with none (old buggy behavior picked it up)."""
+    decoy = tmp_path / "target" / "performance_history.jsonl"
+    decoy.parent.mkdir(parents=True, exist_ok=True)
+    decoy.write_text(
+        json.dumps({"timestamp": "2026-09-07T00:00:00+00:00", "throughput": 99.99})
+        + "\n",
+        encoding="utf-8",
+    )
+
+    # With a tracked snapshot: figure comes from the snapshot, not the decoy.
+    _plant_tmp_repo(gen, tmp_path, monkeypatch, snapshot_text=TRACKED_SNAPSHOT_TEXT)
+    v = gen.Validation(throughput_cases_per_sec=35.36)
+    src = gen.apply_performance_history(v)
+    assert v.throughput_cases_per_sec == pytest.approx(13.830274721099734)
+    assert "target/" not in src
+
+    # Without a tracked snapshot: docs fallback, decoy still ignored.
+    monkeypatch.setattr(gen, "PERF_SNAPSHOT", tmp_path / "validation" / "absent.json")
+    v2 = gen.Validation(throughput_cases_per_sec=35.36)
+    src2 = gen.apply_performance_history(v2)
+    assert v2.throughput_cases_per_sec == 35.36
+    assert src2 == "`docs/ASHRAE140_RESULTS.md`"
+
+
+# ---------------------------------------------------------------------------
+# main() determinism — the #3436 core acceptance criterion
+# ---------------------------------------------------------------------------
+
+
+def test_generation_invariant_to_untracked_perf_history(
+    gen, tmp_path, monkeypatch, capsys
+):
+    """End-to-end fence (#3436): a decoy untracked
+    ``target/performance_history.jsonl`` present vs absent must produce a
+    byte-identical SCORECARD.md."""
+    _plant_tmp_repo(gen, tmp_path, monkeypatch, snapshot_text=TRACKED_SNAPSHOT_TEXT)
+
+    out_fresh = tmp_path / "out_fresh.md"
+    assert _run_main(gen, "-o", str(out_fresh)) == 0
+    capsys.readouterr()
+
+    # Plant the decoy build artifact with a DIFFERENT throughput value.
+    decoy = tmp_path / "target" / "performance_history.jsonl"
+    decoy.parent.mkdir(parents=True, exist_ok=True)
+    decoy.write_text(
+        json.dumps({"timestamp": "2026-09-07T23:59:59+00:00", "throughput": 99.99})
+        + "\n",
+        encoding="utf-8",
+    )
+
+    out_decoy = tmp_path / "out_decoy.md"
+    assert _run_main(gen, "-o", str(out_decoy)) == 0
+
+    assert out_fresh.read_bytes() == out_decoy.read_bytes()
+    body = out_fresh.read_text(encoding="utf-8")
+    # The run used the tracked snapshot figure, not the docs 35.36 fallback.
+    assert "13.83 cases/sec" in body
+    assert (
+        "`validation/performance_history.latest.json` (latest run 2026-09-07)" in body
+    )
+    assert "99.99" not in body
+    assert "35.36" not in body
+
+
+def test_perf_history_flag_overrides_from_jsonl(gen, tmp_path, monkeypatch):
+    """``--perf-history <jsonl>`` applies the LAST non-empty entry and names
+    the operator-supplied path in the attribution."""
+    _plant_tmp_repo(gen, tmp_path, monkeypatch, snapshot_text=TRACKED_SNAPSHOT_TEXT)
+    hist = tmp_path / "adhoc_history.jsonl"
+    hist.write_text(
+        json.dumps({"timestamp": "2026-09-05T00:00:00+00:00", "throughput": 1.5})
+        + "\n"
+        + json.dumps({"timestamp": "2026-09-06T12:00:00+00:00", "throughput": 7.5})
+        + "\n",
+        encoding="utf-8",
+    )
+
+    out = tmp_path / "out_flag.md"
+    assert _run_main(gen, "-o", str(out), "--perf-history", str(hist)) == 0
+    body = out.read_text(encoding="utf-8")
+    assert "7.50 cases/sec" in body
+    assert f"`{hist}` (latest run 2026-09-06)" in body
+    assert "13.83 cases/sec" not in body  # snapshot figure not used
+
+
+def test_perf_history_env_var_overrides_from_jsonl(gen, tmp_path, monkeypatch):
+    """``$FLUXION_PERF_HISTORY`` is the env-var equivalent of the flag."""
+    _plant_tmp_repo(gen, tmp_path, monkeypatch, snapshot_text=TRACKED_SNAPSHOT_TEXT)
+    hist = tmp_path / "adhoc_history.jsonl"
+    hist.write_text(
+        json.dumps({"timestamp": "2026-09-06T12:00:00+00:00", "throughput": 7.5})
+        + "\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("FLUXION_PERF_HISTORY", str(hist))
+
+    out = tmp_path / "out_env.md"
+    assert _run_main(gen, "-o", str(out)) == 0
+    body = out.read_text(encoding="utf-8")
+    assert "7.50 cases/sec" in body
+    assert f"`{hist}` (latest run 2026-09-06)" in body
+
+
+def test_perf_history_bad_path_fails_loud(gen, tmp_path, monkeypatch, capsys):
+    """A bad explicit ``--perf-history`` path exits 2 (fail-loud) instead of
+    silently regressing to the docs fallback."""
+    _plant_tmp_repo(gen, tmp_path, monkeypatch, snapshot_text=TRACKED_SNAPSHOT_TEXT)
+    rc = _run_main(
+        gen,
+        "-o",
+        str(tmp_path / "out.md"),
+        "--perf-history",
+        str(tmp_path / "does_not_exist.jsonl"),
+    )
+    assert rc == 2
+    captured = capsys.readouterr()
+    assert "perf-history" in (captured.err + captured.out).lower()
+    assert not (tmp_path / "out.md").exists()
+
+
+# ---------------------------------------------------------------------------
 # Path constants
 # ---------------------------------------------------------------------------
 
@@ -489,3 +741,9 @@ def test_module_paths_point_at_repo(gen, repo_root):
     assert gen.GATES_YAML == repo_root / "release_gates.yaml"
     assert gen.README_MD == repo_root / "README.md"
     assert gen.SCORECARD == repo_root / "SCORECARD.md"
+    # #3436: the perf-history source is the TRACKED snapshot, never the
+    # untracked target/ build artifact.
+    assert (
+        gen.PERF_SNAPSHOT
+        == repo_root / "validation" / "performance_history.latest.json"
+    )
