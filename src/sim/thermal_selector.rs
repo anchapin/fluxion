@@ -1,6 +1,17 @@
 //! User-facing selector for the thermal solver stack.
 //! Mirrors the binding-layer `thermal_model.zone_solver` and
 //! `thermal_model.conduction_solver` fields.
+//!
+//! **Phase A8 (Issue #3291):** `ThermalSelector::default()` resolves to
+//! `ZoneSolverKind::Gauge`, the **unconditional default** zone solver
+//! when the `gauge-solver` cargo feature is enabled. With the feature
+//! enabled the dispatcher's `step_physics` runs the gauge path with no
+//! fall-through to legacy 5R1C/9R4C — a programming error (no gauge
+//! backend configured for a `Gauge` selector) surfaces as a panic
+//! rather than silently switching to a legacy solver. In the default
+//! build (no `gauge-solver` feature) the `Gauge` selector still routes
+//! to legacy 5R1C/9R4C, since the cargo feature remains the production
+//! gate pending §LIMIT-21 closure (Issue #3297).
 
 /// Composite selector pairing a zone solver with a conduction algorithm.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -12,6 +23,10 @@ pub struct ThermalSelector {
 /// Production zone solvers. Experimental solvers (6R2C, 8R3C) are gated
 /// behind the `fluxion-experimental-zone-solvers` cargo feature (out of
 /// scope for this issue; tracked separately).
+///
+/// **Phase A8 (Issue #3291):** `Gauge` is the unconditional default
+/// (see module docs). `FiveROneC` and `NineRFourC` remain available as
+/// explicit opt-in legacy paths.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum ZoneSolverKind {
     #[default]
