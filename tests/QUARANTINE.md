@@ -87,6 +87,7 @@ quarantined — it is the #3286 β-soak gate signal.)
 |-----------|-----------|------------------|-------------------|--------|
 | `tests/ashrae_140_blind_validation.rs` | `test_case_950_mass_temperature_precooled_issue_1422` | #3297, LIMIT-22 | Gauge air trajectory matches legacy night-flush pre-cool (τ_mass ≈ 61 h CN node swings +1.09 °C vs legacy +2.41 °C), or #1422 re-derives the band with maintainer sign-off | `pending` |
 | `tests/ashrae_140_case_960_sunspace.rs` | `test_case_960_inter_zone_heat_transfer_analysis` | #3297, LIMIT-22 | Gauge multi-zone integration stability lands for Case 960-class configs (±140 °C step ΔT spikes around the fail-closed guard) | `pending` |
+| `tests/ashrae_140_case_960_sunspace.rs` | `test_case_960_comprehensive_energy_validation` | #3392, LIMIT-22, #273 (inter-zone radiation / condensation 20× over reference) | Inter-zone radiation / condensation coupling that drives the 20× cooling gap is resolved (tracked under the GaugeSolver cohort #1465/#1462, #3297). When the underlying 5R1C/9R4C trajectory holds for the sunspace config, the comprehensive test can assert all 4 metrics without the documented cooling acceptance. | `pending` |
 | `tests/invariant_checker_test.rs` | `test_different_zones_respond_differently_to_targeted_gain` | #3297, LIMIT-22 (§LIMIT-19/#3103 sibling) | §LIMIT-19 / #1344 investigation resolves the checker's zero-leverage artificial-gain formula (gain enters the 5R1C residual only through φm·m_air_frac) | `pending` |
 
 ---
