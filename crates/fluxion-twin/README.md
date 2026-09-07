@@ -141,34 +141,25 @@ generic `UnscentedKalmanFilter::new`.
 ### MQTT broker setup
 
 [`MqttTelemetryConsumer::connect`] subscribes to a broker topic and forwards
-parsed [`MqttTelemetryMessage`] values. The transport is **MQTT-over-TLS by
-default** (`mqtts://`, port 8883) using rustls with the platform trust store;
-server certificates are **validated**.
+parsed [`MqttTelemetryMessage`] values. The transport is **always
+MQTT-over-TLS** (`mqtts://`, port 8883) using rustls with the platform trust
+store; server certificates are **always validated** — there is no runtime
+bypass for certificate verification and no insecure-transport escape hatch
+(Issue #3162).
 
 | Broker URL | Transport | Port |
 |------------|-----------|------|
 | `mqtts://broker.local` | TLS (certs validated) | 8883 |
 | `mqtts://broker.local:8883` | TLS (certs validated) | 8883 |
 | `broker.local` (bare host) | TLS (certs validated) | 8883 |
-| `mqtt://broker.local:1883` | **plaintext** — rejected unless opt-in | 1883 |
-| `tcp://10.0.0.5:1883` | **plaintext** — rejected unless opt-in | 1883 |
+| `mqtt://broker.local:1883` | **plaintext** — always rejected | — |
+| `tcp://10.0.0.5:1883` | **plaintext** — always rejected | — |
 
-Two environment variables control the escape hatches (both **local-dev only**):
-
-| Variable | Effect |
-|----------|--------|
-| `FLUXION_MQTT_ALLOW_INSECURE` | When truthy (`1`/`true`/`yes`/`on`), permits plaintext (`mqtt://` / `tcp://`) broker URLs. Also **skips TLS server-cert validation** (e.g. self-signed brokers) and is the **release-boot-guard opt-in** (Issue #2703). Dangerous — disables cert checking; logged as a warning. |
-
-Plaintext URLs are rejected with `MqttTelemetryError::InvalidConfig` unless
-`FLUXION_MQTT_ALLOW_INSECURE` is set. rumqttc handles automatic reconnection on
-transient disconnects.
-
-**Release boot guard (Issue #2703, parity with `fluxion-rest`):** in `--release`
-builds, `connect()` refuses to start when the resolved transport is insecure —
-plaintext broker URL **or** disabled certificate validation
-(`FLUXION_MQTT_ALLOW_INSECURE=1`) — unless the operator has set
-`FLUXION_MQTT_ALLOW_INSECURE=1` to explicitly opt in. Debug builds skip the
-guard so local dev against self-signed brokers keeps working.
+Plaintext (`mqtt://` / `tcp://`) broker URLs are rejected with
+`MqttTelemetryError::InvalidConfig` unconditionally — no environment variable
+permits them, in debug or release builds alike (the escape hatch and release
+boot guard from Issue #2703 were removed in #3162). rumqttc handles automatic
+reconnection on transient disconnects.
 
 ### Sample subscriber
 
@@ -182,8 +173,8 @@ use fluxion_twin::MqttTelemetryConsumer;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    // mqtts://, port 8883, certs validated. For a self-signed local broker
-    // set FLUXION_MQTT_ALLOW_INSECURE=1 in the environment first.
+    // mqtts://, port 8883, certs validated. Plaintext broker URLs are
+    // always rejected — there is no insecure-transport escape hatch (#3162).
     let (consumer, mut rx) =
         MqttTelemetryConsumer::connect("mqtts://broker.local", "fluxion/sensors/#").await?;
 

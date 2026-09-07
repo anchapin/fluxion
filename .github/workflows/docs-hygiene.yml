@@ -14,6 +14,8 @@ name: Docs Hygiene Gate
 #   4. scripts/check_doc_inventory_fresh.py — fails if the auto-generated
 #      inventory block in docs/doc-inventory.md has drifted from what
 #      scripts/generate_doc_inventory.py would produce (issue #2765).
+#   5. Stale MQTT escape-hatch doc check — fails if the insecure-transport
+#      opt-in flag removed in #3162 reappears in tracked docs (issue #3462).
 #
 # All four are wired into `.pre-commit-config.yaml` as `manual`-stage
 # hooks (so they run via `pre-commit run --all-files` but not on every
@@ -144,8 +146,28 @@ jobs:
             echo "::error::Doc link-integrity check found broken references (issue #2885)"
           fi
 
+      - name: Run stale MQTT escape-hatch doc check
+        id: mqtt_escape_hatch_docs
+        run: |
+          # Issue #3462: the MQTT insecure-transport opt-in flag was removed
+          # in #3162 (the telemetry consumer is always TLS with validated
+          # certificates — no runtime bypass). Fail if the dead flag name
+          # reappears in tracked markdown/config docs. The flag name is built
+          # from two concatenated strings so this guard does not match itself.
+          FLAG="FLUXION_MQTT_ALLOW""_INSECURE"
+          MATCHES=$(grep -rn "$FLAG" \
+            --include="*.md" --include="*.toml" --include="*.yml" \
+            .github crates docs .planning CODEBASE_MAP.md AGENTS.md README.md 2>/dev/null || true)
+          if [[ -n "$MATCHES" ]]; then
+            echo "$MATCHES"
+            echo "::error::Stale $FLAG documentation found — the flag was removed in #3162 (MQTT telemetry is always TLS with validated certificates, no runtime bypass); purge it (issues #3462 / #3162)"
+            echo "exit_code=1" >> "$GITHUB_OUTPUT"
+          else
+            echo "exit_code=0" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Aggregate results
-        if: steps.root_md.outputs.exit_code != '0' || steps.docs_summaries.outputs.exit_code != '0' || steps.doc_inventory.outputs.exit_code != '0' || steps.doc_inventory_fresh.outputs.exit_code != '0' || steps.npm_readme.outputs.exit_code != '0' || steps.doc_link_integrity.outputs.exit_code != '0'
+        if: steps.root_md.outputs.exit_code != '0' || steps.docs_summaries.outputs.exit_code != '0' || steps.doc_inventory.outputs.exit_code != '0' || steps.doc_inventory_fresh.outputs.exit_code != '0' || steps.npm_readme.outputs.exit_code != '0' || steps.doc_link_integrity.outputs.exit_code != '0' || steps.mqtt_escape_hatch_docs.outputs.exit_code != '0'
         run: |
           echo "One or more docs-hygiene checks failed. See logs above."
           exit 1
