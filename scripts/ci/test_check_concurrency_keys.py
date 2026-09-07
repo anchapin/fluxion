@@ -110,6 +110,24 @@ _NESTED_ONLY_WORKFLOW = (
     "      cancel-in-progress: true\n"
 )
 
+# Compact layout (issue #3471): no blank line between the
+# `concurrency:` block's last indented line and the next top-level key.
+# The pre-#3471 regex terminator required a blank line and would
+# misreport this workflow as missing the top-level block.
+_COMPACT_WORKFLOW = (
+    "name: CI\n"
+    "\n"
+    "on:\n"
+    "  push:\n"
+    "\n"
+    "concurrency:\n"
+    + _PER_SHA_GROUP
+    + _CONDITIONAL_CANCEL
+    + "jobs:\n"
+    "  build:\n"
+    "    runs-on: ubuntu-latest\n"
+)
+
 # Invariant 2 (group half) violation: block present, `group:` absent.
 _NO_GROUP_WORKFLOW = (
     "name: CI\n"
@@ -262,6 +280,19 @@ def test_extract_block_ignores_nested_concurrency_key(checker):
     """A `concurrency:` key nested inside a job is not top-level drift
     coverage — the extractor anchors on column 0."""
     assert checker.extract_block(_NESTED_ONLY_WORKFLOW) is None
+
+
+def test_extract_block_tolerates_compact_layout(checker):
+    """Issue #3471: a workflow whose top-level key follows the
+    ``concurrency:`` block immediately (no blank line) must still be
+    detected as compliant. The pre-#3471 terminator required a blank
+    line and false-positived such workflows as missing the block.
+    """
+    block = checker.extract_block(_COMPACT_WORKFLOW)
+    assert block is not None
+    assert block.startswith("concurrency:")
+    assert "group:" in block
+    assert "cancel-in-progress:" in block
 
 
 # ---------------------------------------------------------------------------

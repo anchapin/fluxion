@@ -52,10 +52,19 @@ WORKFLOWS_DIR = REPO_ROOT / ".github" / "workflows"
 
 # Match a top-level `concurrency:` block: the `concurrency:` line followed
 # by one or more indented lines until the next 0-indent key or EOF.
+#
+# Tolerates compact YAML: the next top-level key may follow immediately
+# without a blank line (issue #3471). The terminator lookahead accepts:
+#   - a blank line + next key (\n[^\t ])
+#   - the next key immediately at the current position ([^\t ])
+#   - end of string (\Z)
+# All 47 current workflows use blank-line separation, but a contributor
+# (or a YAML formatter) writing a compact workflow must not trip a
+# false-positive "missing concurrency block" finding.
 _CONCURRENCY_BLOCK_RE = re.compile(
     r"^concurrency:\s*\n"
     r"((?:[ \t]+[^\n]*\n)+)"
-    r"(?=\n[^\t ]|\Z)",
+    r"(?=\n?[^\t ]|\Z)",
     re.MULTILINE,
 )
 
