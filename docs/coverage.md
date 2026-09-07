@@ -3,7 +3,7 @@
 Tracks line and branch coverage across the four ARCHITECTURE.md critical physics paths.
 Runs `cargo-llvm-cov` in CI (`.github/workflows/code-coverage.yml`) on every PR and `develop` push.
 Coverage is bucketed per critical path by `scripts/coverage_critical_paths.py` and enforced via a one-way ratchet gate.
-Targets: 80% overall, 85% per critical path (see docs/CONTRIBUTING.md §Coverage Measurement).
+Policy: enforced ratchet + min_branch_floor today; v1.3 targets (80%/85%/75%) aspirational and reported per-run (see §Targets — enforced vs aspirational, Issue #3401).
 Related: release_gates.yaml (required check), validation/coverage_baseline.json (ratchet floor), docs/KNOWN_ISSUES.md.
 
 ## Overview
@@ -73,13 +73,17 @@ git commit -m "ci(coverage): record baseline for #1932 ratchet gate"
 Once committed, every subsequent PR is held to the recorded floor. Re-run
 the command after coverage improvements to bump the ratchet upward.
 
-## Targets
+## Targets — enforced vs aspirational (Issue #3401)
 
-| Metric | Target | Notes |
-|--------|--------|-------|
-| Overall line coverage | >80% | `docs/CONTRIBUTING.md` baseline is 69.36% (Phase 10) |
-| Per-critical-path line coverage | >85% | Ratchet enforces "no regression" first |
-| Per-critical-path branch coverage | >75% (v1.3) | Ratchet (#2533) + absolute `min_branch_floor` (#2710) |
+The table below distinguishes what the CI gate **enforces today** from what it **reports**. The v1.3 targets (80% / 85% / 75%) are aspirational and REPORTED per-run (`v1_3_target_branch` in `scripts/coverage_critical_paths.py`) — they do not fail CI while actual metrics sit materially below them (current baseline: 79.80% overall; critical-path branch coverage 61–68%). Each becomes a hard release gate only once the measured metrics approach it, per the promotion criterion documented in the script (`# becomes a hard release gate once the metrics approach it`).
+
+| Metric | v1.3 target (aspirational) | Enforced today |
+|--------|---------------------------|----------------|
+| Overall line coverage | >80% | Ratchet: no regression below `validation/coverage_baseline.json` |
+| Per-critical-path line coverage | >85% | Ratchet: no regression below baseline |
+| Per-critical-path branch coverage | >75% | Ratchet (#2533) + absolute `min_branch_floor` hard floor (#2710) |
+
+Promotion path (per Issue #3401): when a metric's measured value is within 2 percentage points of its target, flip the corresponding baseline entry from reported to enforced — one config change in `validation/coverage_baseline.json`, no script change needed. Until then, a materially under-target run that holds the ratchet is green **by design**, and the printed gap is the tracking signal.
 
 ## v1.3 branch-coverage floor and target (#2710)
 
