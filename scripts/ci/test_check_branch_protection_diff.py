@@ -281,3 +281,65 @@ def test_main_exit_2_on_gh_failure(checker, tmp_path, monkeypatch, capsys):
 
     assert code == 2
     assert "gh api failed" in capsys.readouterr().err
+
+
+# ---------------------------------------------------------------------------
+# resolve_default_repo (Issue #3429 resolution order)
+# ---------------------------------------------------------------------------
+
+
+class _FakeCompleted:
+    def __init__(self, stdout: str):
+        self.stdout = stdout
+
+
+def test_resolve_default_repo_prefers_github_repository(checker, monkeypatch):
+    """``$GITHUB_REPOSITORY`` wins — always correct on Actions runners."""
+    monkeypatch.setattr(
+        checker.subprocess,
+        "run",
+        lambda *a, **k: pytest.fail(
+            "git must not be consulted when GITHUB_REPOSITORY is set"
+        ),
+    )
+    assert (
+        checker.resolve_default_repo({"GITHUB_REPOSITORY": "fork/fluxion"})
+        == "fork/fluxion"
+    )
+
+
+def test_resolve_default_repo_parses_origin_remote(checker, monkeypatch):
+    """https and ssh origin URLs normalize to ``owner/repo``."""
+    urls = [
+        "https://github.com/mirror/fluxion.git",
+        "git@github.com:mirror/fluxion.git",
+        "https://github.com/anchapin/fluxion",
+    ]
+    calls = {"n": 0}
+
+    def fake_run(cmd, **kwargs):
+        out = _FakeCompleted(urls[calls["n"]])
+        calls["n"] += 1
+        return out
+
+    monkeypatch.setattr(checker.subprocess, "run", fake_run)
+    assert checker.resolve_default_repo({}) == "mirror/fluxion"
+    assert checker.resolve_default_repo({}) == "mirror/fluxion"
+    assert checker.resolve_default_repo({}) == "anchapin/fluxion"
+
+
+def test_resolve_default_repo_falls_back_to_constant(checker, monkeypatch):
+    """No env var + git failure (or unparseable URL) → DEFAULT_REPO."""
+    import subprocess
+
+    def failing_run(cmd, **kwargs):
+        raise subprocess.CalledProcessError(128, cmd)
+
+    monkeypatch.setattr(checker.subprocess, "run", failing_run)
+    assert checker.resolve_default_repo({}) == "anchapin/fluxion"
+    monkeypatch.setattr(
+        checker.subprocess,
+        "run",
+        lambda *a, **k: _FakeCompleted("/local/path/repo"),
+    )
+    assert checker.resolve_default_repo({}) == "anchapin/fluxion"
