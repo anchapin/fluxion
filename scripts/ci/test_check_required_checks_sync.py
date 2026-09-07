@@ -1,5 +1,6 @@
 """
-Tests for ``scripts/check_required_checks_sync.py`` -- Issue #2866.
+Tests for ``scripts/check_required_checks_sync.py`` -- Issues #2866, #3116,
+and #3441.
 
 Regression guard for the ``release_gates.yaml`` <-> ``.github/workflows/``
 drift gate. Mirrors the ``load_script`` + ``tmp_path`` mock-repo pattern
@@ -16,6 +17,10 @@ The script reads two paths at module-import time (``RELEASE_GATES_YAML``,
 ``WORKFLOWS_DIR``), so the freshly-loaded module carries the *real* repo
 paths. Each test that wants a synthetic fixture must therefore redirect
 those constants before calling ``main()``.
+
+The Issue #3441 doc-count guard tests additionally plant ``AGENTS.md``
+and ``docs/ci/branch-protection-strict-mode.md`` in the mock repo with
+"NN checks" literals that agree or disagree with the yaml lists.
 """
 
 from __future__ import annotations
@@ -88,15 +93,20 @@ def _workflow_yaml(job_name: str, triggers=("pull_request",)) -> str:
     )
 
 
-def _release_gates_yaml(required_checks, workflow_index) -> str:
+def _release_gates_yaml(required_checks, workflow_index, workflow_only=None) -> str:
     """Build a minimal ``release_gates.yaml`` with the given required_checks
-    and workflow_index lists.
+    and workflow_index lists (plus an optional workflow_only list for the
+    Issue #3441 doc-count guard).
 
     YAML quoting is left to PyYAML on the output side; we just emit the
     shape verbatim so a typo in the script's parser shows up as a clear
     failure rather than a YAML round-trip surprise.
     """
     rc_lines = "\n".join(f'    - "{c}"' for c in required_checks)
+    wo_block = ""
+    if workflow_only is not None:
+        wo_lines = "\n".join(f'    - "{c}"' for c in workflow_only)
+        wo_block = f"  required_checks_workflow_only:\n{wo_lines}\n"
     wi_lines = []
     for entry in workflow_index:
         wi_lines.append(f"    - job: \"{entry['job']}\"")
@@ -107,6 +117,7 @@ def _release_gates_yaml(required_checks, workflow_index) -> str:
         f"ci:\n"
         f"  required_checks:\n"
         f"{rc_lines}\n"
+        f"{wo_block}"
         f"  workflow_index:\n"
         f"{chr(10).join(wi_lines)}\n"
     )
@@ -670,3 +681,209 @@ def test_canonical_name_suffixes_constant(checker):
     """
     assert " (GH)" in checker.CANONICAL_NAME_SUFFIXES
     assert " (Hetzner Overflow)" in checker.CANONICAL_NAME_SUFFIXES
+
+
+# ---------------------------------------------------------------------------
+# Doc count-literal sync (Issue #3441)
+# ---------------------------------------------------------------------------
+
+# Fully-in-sync fixture lists: 4 required checks, 2 of which are also in
+# the workflow-only list (so the path-filtered delta is 2).
+DOC_FIXTURE_REQUIRED = ["Gate A", "Gate B", "Always Gate C", "Always Gate D"]
+DOC_FIXTURE_WORKFLOW_ONLY = ["Always Gate C", "Always Gate D"]
+
+# AGENTS.md shape: the count literal sits on the same line as the
+# `ci.required_checks_workflow_only` token (the script's same-line
+# binding requires this).
+_AGENTS_MD_TEMPLATE = (
+    "For workflow-only PRs, use `release_gates.yaml -> "
+    "ci.required_checks_workflow_only` ({workflow_only} checks). "
+    "Path-filtered checks (`Docs Hygiene Gate`, `Architecture Drift "
+    "Detection`, `Module Size (Issue #2878)`, `Crate Size Gate`, "
+    "`MSRV Check`) cannot run on such PRs by design.\n"
+)
+
+# Runbook shape: one count literal per list plus the path-filtered
+# delta and the "always-run" note, mirroring the real doc's phrasing.
+_RUNBOOK_MD_TEMPLATE = (
+    "# Branch Protection Strict Mode - fixture\n"
+    "\n"
+    "1. **`required_checks`** - All checks for code-changing PRs "
+    "({required} checks).\n"
+    "\n"
+    "2. **`required_checks_workflow_only`** - Only the checks that run "
+    "on every PR regardless of changed files ({workflow_only} checks). "
+    "This excludes the {delta} path-filtered checks above.\n"
+    "\n"
+    "**For `develop` branch:** Use `required_checks_workflow_only` "
+    "({workflow_only} checks).\n"
+    "\n"
+    "The {workflow_only} always-run checks provide adequate regression "
+    "protection for workflow-only changes.\n"
+)
+
+
+def _doc_count_repo(tmp_path, checker, monkeypatch, workflow_only):
+    """Build a fully-in-sync mock repo (yaml + workflows) and return the
+    ``tmp_path`` root; tests then plant AGENTS.md / the runbook with the
+    count literals under test."""
+    target = _redirect(checker, tmp_path, monkeypatch)
+    workflow_index = [
+        {"job": c, "workflow": f".github/workflows/g{i}.yml"}
+        for i, c in enumerate(DOC_FIXTURE_REQUIRED)
+    ]
+    target.write_text(
+        _release_gates_yaml(
+            required_checks=DOC_FIXTURE_REQUIRED,
+            workflow_index=workflow_index,
+            workflow_only=workflow_only,
+        ),
+        encoding="utf-8",
+    )
+    for i, c in enumerate(DOC_FIXTURE_REQUIRED):
+        _write(
+            tmp_path / ".github" / "workflows" / f"g{i}.yml",
+            _workflow_yaml(c),
+        )
+    return tmp_path
+
+
+def _write_clean_docs(root: Path) -> None:
+    """Plant AGENTS.md + the runbook with literals matching the fixture
+    lists (4 required / 2 workflow-only / 2 path-filtered)."""
+    _write(root / "AGENTS.md", _AGENTS_MD_TEMPLATE.format(workflow_only=2))
+    _write(
+        root / "docs" / "ci" / "branch-protection-strict-mode.md",
+        _RUNBOOK_MD_TEMPLATE.format(required=4, workflow_only=2, delta=2),
+    )
+
+
+def test_main_passes_when_doc_count_literals_match_yaml(
+    checker, tmp_path, monkeypatch, capsys
+):
+    """Issue #3441 clean case: every 'NN checks' literal in AGENTS.md and
+    the runbook agrees with the parsed release_gates.yaml list lengths
+    (and the path-filtered delta arithmetic), so the gate stays green.
+    """
+    root = _doc_count_repo(tmp_path, checker, monkeypatch, DOC_FIXTURE_WORKFLOW_ONLY)
+    _write_clean_docs(root)
+    rc = checker.main()
+    out = capsys.readouterr().out
+    assert rc == 0, out
+    assert "No drift" in out
+
+
+def test_main_fails_when_agents_md_workflow_only_count_drifts(
+    checker, tmp_path, monkeypatch, capsys
+):
+    """Planted violation: AGENTS.md says the workflow-only list has 5
+    checks while the yaml declares 2 — the exact 19-vs-26 drift class
+    from Issue #3441. The gate must fail and name the doc.
+    """
+    root = _doc_count_repo(tmp_path, checker, monkeypatch, DOC_FIXTURE_WORKFLOW_ONLY)
+    _write(root / "AGENTS.md", _AGENTS_MD_TEMPLATE.format(workflow_only=5))
+    _write(
+        root / "docs" / "ci" / "branch-protection-strict-mode.md",
+        _RUNBOOK_MD_TEMPLATE.format(required=4, workflow_only=2, delta=2),
+    )
+    rc = checker.main()
+    out = capsys.readouterr().out
+    assert rc == 1, out
+    assert "DRIFT DETECTED" in out
+    assert "AGENTS.md" in out
+    assert "count literal (5 checks)" in out
+    assert "ci.required_checks_workflow_only" in out
+
+
+def test_main_fails_when_runbook_required_count_drifts(
+    checker, tmp_path, monkeypatch, capsys
+):
+    """Planted violation: the runbook's `required_checks` literal says 9
+    while the yaml declares 4 (the 29-vs-31 drift class from #3441).
+    """
+    root = _doc_count_repo(tmp_path, checker, monkeypatch, DOC_FIXTURE_WORKFLOW_ONLY)
+    _write_clean_docs(root)
+    # Rewrite just the runbook with a drifted required-count literal.
+    _write(
+        root / "docs" / "ci" / "branch-protection-strict-mode.md",
+        _RUNBOOK_MD_TEMPLATE.format(required=9, workflow_only=2, delta=2),
+    )
+    rc = checker.main()
+    out = capsys.readouterr().out
+    assert rc == 1, out
+    assert "docs/ci/branch-protection-strict-mode.md" in out
+    assert "count literal (9 checks)" in out
+    assert "ci.required_checks" in out
+
+
+def test_main_fails_when_path_filtered_delta_count_drifts(
+    checker, tmp_path, monkeypatch, capsys
+):
+    """Planted violation: the runbook says '7 path-filtered checks' while
+    len(required) - len(workflow_only) = 2 (the '4 path-filtered' → 5
+    drift class from #3441, where Module Size was missing from the
+    enumeration).
+    """
+    root = _doc_count_repo(tmp_path, checker, monkeypatch, DOC_FIXTURE_WORKFLOW_ONLY)
+    _write_clean_docs(root)
+    _write(
+        root / "docs" / "ci" / "branch-protection-strict-mode.md",
+        _RUNBOOK_MD_TEMPLATE.format(required=4, workflow_only=2, delta=7),
+    )
+    rc = checker.main()
+    out = capsys.readouterr().out
+    assert rc == 1, out
+    assert "docs/ci/branch-protection-strict-mode.md" in out
+    assert "count literal (7 checks)" in out
+    assert "len(ci.required_checks) - len(ci.required_checks_workflow_only)" in out
+
+
+def test_main_fails_when_doc_omits_required_count_literal(
+    checker, tmp_path, monkeypatch, capsys
+):
+    """Planted violation: the runbook's `required_checks` count reference
+    was deleted entirely. Deleting the literal must fail the gate just
+    like drifting it, otherwise the guard can be silenced by removal.
+    """
+    root = _doc_count_repo(tmp_path, checker, monkeypatch, DOC_FIXTURE_WORKFLOW_ONLY)
+    _write_clean_docs(root)
+    # Runbook without the "1. **`required_checks`** ... (N checks)." item.
+    _write(
+        root / "docs" / "ci" / "branch-protection-strict-mode.md",
+        _RUNBOOK_MD_TEMPLATE.format(required=4, workflow_only=2, delta=2).replace(
+            "1. **`required_checks`** - All checks for code-changing PRs "
+            "(4 checks).\n\n",
+            "",
+        ),
+    )
+    rc = checker.main()
+    out = capsys.readouterr().out
+    assert rc == 1, out
+    assert "no 'NN checks' count literal found" in out
+    assert "ci.required_checks" in out
+
+
+def test_main_ignores_doc_counts_when_docs_absent(
+    checker, tmp_path, monkeypatch, capsys
+):
+    """Mock repos without AGENTS.md / the runbook (the shape every
+    pre-#3441 test in this file uses) must keep passing — the doc-count
+    guard skips missing docs instead of failing on them.
+    """
+    _doc_count_repo(tmp_path, checker, monkeypatch, DOC_FIXTURE_WORKFLOW_ONLY)
+    rc = checker.main()
+    out = capsys.readouterr().out
+    assert rc == 0, out
+    assert "No drift" in out
+
+
+def test_get_workflow_only_checks_parses_and_drops_comments(checker):
+    """Unit-level test of the #3441 yaml parser helper: string entries
+    are kept, comment-only ``None`` entries dropped, missing key → [].
+    """
+    gates = {
+        "ci": {"required_checks_workflow_only": ["A", None, "B"]}
+    }
+    assert checker.get_workflow_only_checks(gates) == ["A", "B"]
+    assert checker.get_workflow_only_checks({"ci": {}}) == []
+    assert checker.get_workflow_only_checks({}) == []

@@ -35,12 +35,15 @@ The following required checks have workflows with `paths:` filters that exclude 
 |-------|----------|-------------|
 | Docs Hygiene Gate (Issue #2466) | `docs-hygiene.yml` | `docs/**`, `**/*.md`, scripts/**, AGENTS.md, etc. |
 | Architecture Drift Detection | `architecture_drift.yml` | `src/**/*.rs`, `ARCHITECTURE.md`, scripts/** |
+| Module Size (Issue #2878) | `architecture_drift.yml` | `src/sim/thermal_model_data.rs`, `src/sim/thermal_model_data/**`, `scripts/check_module_size.py`, `tests/reference_data/module_size/**` |
 | Crate Size Gate (Issue #2930) | `crate-size.yml` | `Cargo.toml`, `.cargoignore` |
 | MSRV Check (Issue #2934) | `msrv.yml` | `**/Cargo.toml`, `**/Cargo.lock` |
 
 For a PR touching only `scripts/`, `.github/workflows/`, or `docs/`:
 - `docs-hygiene.yml` **does** run (its path filter includes these paths)
 - `architecture_drift.yml`, `crate-size.yml`, `msrv.yml` **do not** run
+
+`Module Size (Issue #2878)` is not a separate workflow — it is a step inside `architecture_drift.yml`'s `check-drift` job (Issue #2878, wired via #3394). The job name remains `Architecture Drift Detection`, but the step emits its own check name and inherits the parent workflow's `paths:` filter, so it is path-filtered for the same reason as the row above.
 
 ## Workflow-Only Promotion: Fast-Math Gate (Issue #3358)
 
@@ -72,27 +75,27 @@ Full operator procedure in
 
 `release_gates.yaml` now contains two arrays:
 
-1. **`required_checks`** — All checks for code-changing PRs (29 checks). Use this for branch protection configuration on `main`.
+1. **`required_checks`** — All checks for code-changing PRs (31 checks). Use this for branch protection configuration on `main`.
 
-2. **`required_checks_workflow_only`** — Only the checks that run on every PR regardless of changed files (25 checks). This excludes the 4 path-filtered checks above. The fast-math listener (#3358) is INCLUDED in this list because it has no `paths:` filter and runs on every PR (including workflow-only PRs like the one that lands this very gate's promotion).
+2. **`required_checks_workflow_only`** — Only the checks that run on every PR regardless of changed files (26 checks). This excludes the 5 path-filtered checks above. The fast-math listener (#3358) is INCLUDED in this list because it has no `paths:` filter and runs on every PR (including workflow-only PRs like the one that lands this very gate's promotion).
 
 ### Branch Protection Configuration
 
-**For `main` branch:** Use `required_checks` (all 29 checks). Code-changing PRs must pass all gates.
+**For `main` branch:** Use `required_checks` (all 31 checks). Code-changing PRs must pass all gates.
 
-**For `develop` branch:** Use `required_checks_workflow_only` (25 checks). Workflow-only PRs (docs, CI, scripts) can merge without triggering the path-filtered checks that structurally cannot run for them.
+**For `develop` branch:** Use `required_checks_workflow_only` (26 checks). Workflow-only PRs (docs, CI, scripts) can merge without triggering the path-filtered checks that structurally cannot run for them.
 
 ### Alternative: Single Rule with Documentation
 
 If GitHub branch protection only supports one required-checks list, use `required_checks_workflow_only` and document the behavior:
 
-> **Note:** Some required checks (`Docs Hygiene Gate`, `Architecture Drift Detection`, `Crate Size Gate`, `MSRV Check`) have workflows that only run when specific file patterns are changed. For PRs touching only `scripts/`, `.github/workflows/`, or `docs/`, these checks will not run and are excluded from the required list. The 25 always-run checks provide adequate regression protection for workflow-only changes.
+> **Note:** Some required checks (`Docs Hygiene Gate`, `Architecture Drift Detection`, `Module Size`, `Crate Size Gate`, `MSRV Check`) have workflows that only run when specific file patterns are changed. For PRs touching only `scripts/`, `.github/workflows/`, or `docs/`, these checks will not run and are excluded from the required list. The 26 always-run checks provide adequate regression protection for workflow-only changes.
 
 ## Implementation Notes
 
 - The path-filtered checks **still run** on PRs that touch the relevant files (e.g., `Cargo.toml` changes trigger `MSRV Check`)
 - The path-filtered checks **still block** code-changing PRs that would affect them
-- The `required_checks_workflow_only` list is a subset of `required_checks` — it removes only the 4 path-filtered checks
+- The `required_checks_workflow_only` list is a subset of `required_checks` — it removes only the 5 path-filtered checks
 
 ## See Also
 
