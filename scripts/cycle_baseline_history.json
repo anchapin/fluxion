@@ -214,6 +214,22 @@
       "total": 337,
       "edge_signature": "591115b68be868e58edd99d52f8b758dd01b7fe0948427e34bca14465e74ac94",
       "reason": "PR #3347 (issue #3324) adopts the algebraic-FP reduction helpers (algebraic_add, algebraic_mul, algebraic_sub, algebraic_div) introduced by PR #3338 (issue #3322) inside the solar kernels, adding 4 new sim->physics edges: src/sim/interzone_radiation.rs (algebraic_mul, algebraic_sub), src/sim/longwave_exchange.rs (algebraic_add, algebraic_mul), src/sim/solar.rs (algebraic_add), and src/sim/solar_gain_distribution.rs (algebraic_add, algebraic_mul, algebraic_div). Default-feature builds stay bit-identical because the helpers reduce to native +/*/-/ under --features default; the imports exist only so the same kernel source compiles unchanged under --features fast-math. Sanctioned by ARCHITECTURE.md \u00a7Regression guard as companion cycle work for #3322 (these are the ONLY sim->physics consumers of the new fluxion-core::physics::fp_algebraic helpers, so any cycle-removal that hoisted them to fluxion-core would also have to move the helpers themselves). BASELINE_SIM_TO_PHYSICS in scripts/check_physics_sim_cycle.py raised 79 -> 83 in the same PR; ARCHITECTURE.md \u00a7Regression guard was updated to match. R1/R2/R3 trend guards continue to enforce downward pressure from this new 337 floor. Companion cycle-removal work stays open under the #2462 phase-3 sim->physics edge elision."
+    },
+    {
+      "timestamp": "2026-09-07T00:47:17+00:00",
+      "commit": "7d4a1f1",
+      "source": "post-3385-r2-strict-policy-seed",
+      "totals": {
+        "sim_to_validation": 99,
+        "validation_to_sim": 65,
+        "validation_to_physics": 65,
+        "validation_to_weather": 25,
+        "physics_to_sim": 0,
+        "sim_to_physics": 83
+      },
+      "total": 337,
+      "edge_signature": "591115b68be868e58edd99d52f8b758dd01b7fe0948427e34bca14465e74ac94",
+      "reason": "Issue #3385: R2 rule promoted from 'frozen-at-same-total' to strict 'must decrease over trailing window'. This snapshot seeds the ledger so the new rule is enforceable: oldest-in-window=215, current=337, delta=+122, exceeds tolerance=0 -> R2 FAIL until a cycle-removal PR lands (per Issue #3385 acceptance criteria)."
     }
   ]
 }

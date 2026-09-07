@@ -77,6 +77,16 @@ HISTORY_FILE = REPO_ROOT / "scripts" / "cycle_baseline_history.json"
 SCHEMA_VERSION = 1
 STALE_THRESHOLD_NIGHTS = 14
 
+# Issue #3385: configurable upward-growth tolerance for the R2 nightly rule.
+# Default 0 (strict): any non-decrease over the trailing window fails. Set
+# higher via the ``--r2-tolerance`` CLI flag to absorb legitimate one-shot
+# feature work that adds a small number of cycle edges as a side effect.
+# The pre-#3385 rule fired only when the trailing window was *monotonic
+# flat at the current total*; per #3385 that admits unbounded growth
+# because each new high water mark resets the stale window. The strict
+# rule is the default; the tolerance is the per-repo escape hatch.
+R2_UPWARD_TOLERANCE = 0
+
 # Bucket labels (kept stable across history versions). Order matters: the
 # ledger's ``buckets`` array mirrors this tuple so a reader can correlate
 # the ``totals`` dict across snapshots.
@@ -317,14 +327,24 @@ def evaluate_per_pr(
 
 
 def evaluate_nightly(
-    history: dict[str, Any], current: dict[str, Any]
+    history: dict[str, Any],
+    current: dict[str, Any],
+    *,
+    r2_upward_tolerance: int = R2_UPWARD_TOLERANCE,
 ) -> tuple[int, list[str]]:
     """R1 + R2 + R3 -- the nightly cron's full enforcement.
 
-    R2 fails only when the ledger has at least ``STALE_THRESHOLD_NIGHTS``
-    snapshots AND the trailing window is monotonic-flat at the current
-    total. This drives the architecture toward zero without blocking PRs
-    that do not touch the cycle (the per-PR check stays R1+R3 only).
+    R2 (Issue #3385 strict form) FAILS when the cycle edge total has not
+    *decreased* relative to the oldest snapshot in the trailing
+    ``STALE_THRESHOLD_NIGHTS`` window, with a configurable upward-growth
+    tolerance to absorb legitimate one-shot feature work. The pre-#3385
+    rule fired only when the trailing window was monotonic-flat at the
+    current total, which silently admitted unbounded growth (each new
+    high water mark reset the stale window). The strict rule is the
+    default; ``r2_upward_tolerance`` is the per-repo escape hatch.
+
+    The per-PR check stays R1+R3 only so ordinary PRs that do not touch
+    the cycle are not blocked.
     """
     last = _latest_snapshot(history)
     code, msgs = evaluate_per_pr(current, last)
@@ -334,20 +354,57 @@ def evaluate_nightly(
     snaps = history.get("snapshots", [])
     if len(snaps) >= STALE_THRESHOLD_NIGHTS:
         tail = snaps[-STALE_THRESHOLD_NIGHTS:]
-        if all(s["total"] == current["total"] for s in tail):
+        oldest = tail[0]["total"]
+        current_total = current["total"]
+        delta = current_total - oldest
+        if delta < 0:
+            # Strict decrease: always passes.
             msgs.append(
-                f"R2 FAIL: total has been frozen at {current['total']} for "
-                f"{STALE_THRESHOLD_NIGHTS} consecutive snapshots. Goal #3 "
-                "requires the sim<->validation cycle to trend toward zero. "
-                "Either land a cycle-removal PR (which lowers the total and "
-                "resets the window) or document an explicit exception in "
-                "ARCHITECTURE.md Section 'Downward trend guard (Issue #2768)'."
+                f"R2 OK: total decreased from {oldest} to {current_total} "
+                f"(delta={delta:+d}) over the last "
+                f"{STALE_THRESHOLD_NIGHTS} snapshots. Downward progress "
+                "within window."
+            )
+        elif delta == 0:
+            # Frozen at the same elevated total across the trailing window
+            # is a FAIL regardless of tolerance: stagnation is not feature
+            # work. This is the legacy R2 case Issue #3385 retained.
+            msgs.append(
+                f"R2 FAIL: total has been frozen at {current_total} for "
+                f"{STALE_THRESHOLD_NIGHTS} consecutive snapshots "
+                "(tolerance does not absorb stagnation). Goal #3 requires "
+                "the sim<->validation cycle to trend toward zero, not "
+                "merely hold. Either land a cycle-removal PR (which lowers "
+                "the total and resets the window) or document an explicit "
+                "exception in ARCHITECTURE.md Section 'Downward trend guard "
+                "(Issue #2768)'."
             )
             return 1, msgs
-        msgs.append(
-            f"R2 OK: total has moved within the last {STALE_THRESHOLD_NIGHTS} "
-            "snapshots (downward progress within window)."
-        )
+        elif delta <= r2_upward_tolerance:
+            # Positive delta <= tolerance: legitimate one-shot feature work
+            # that added a small number of cycle edges as a side effect.
+            # Tolerated, not a regression signal.
+            msgs.append(
+                f"R2 OK: total grew by {delta} over the last "
+                f"{STALE_THRESHOLD_NIGHTS} snapshots (from {oldest} to "
+                f"{current_total}); within tolerance="
+                f"{r2_upward_tolerance}. One-shot feature growth absorbed."
+            )
+        else:
+            # Grew beyond tolerance: the new #3385 strict-rule case the
+            # legacy R2 missed because each new high water mark reset its
+            # monotonic-flat check.
+            msgs.append(
+                f"R2 FAIL: total grew by {delta} over the last "
+                f"{STALE_THRESHOLD_NIGHTS} snapshots (from {oldest} to "
+                f"{current_total}; tolerance={r2_upward_tolerance}). "
+                "Goal #3 requires the sim<->validation cycle to trend "
+                "toward zero, not merely hold. Either land a cycle-removal "
+                "PR (which lowers the total and resets the window) or "
+                "document an explicit exception in ARCHITECTURE.md Section "
+                "'Downward trend guard (Issue #2768)'."
+            )
+            return 1, msgs
     else:
         msgs.append(
             f"R2 deferred: ledger has {len(snaps)} snapshot(s), need "
@@ -445,6 +502,17 @@ def main(argv: list[str] | None = None) -> int:
         "`reason` field when using --update (e.g. a re-baseline rationale); "
         "omitted from the snapshot when not provided",
     )
+    parser.add_argument(
+        "--r2-tolerance",
+        type=int,
+        default=R2_UPWARD_TOLERANCE,
+        help="upward-growth tolerance for the R2 nightly rule (Issue #3385). "
+        "The trailing window FAILs only if current_total - oldest_in_window "
+        f"exceeds this value. Default {R2_UPWARD_TOLERANCE} (strict: any "
+        "non-decrease fails). Use a small positive value (e.g. 5) to absorb "
+        "legitimate one-shot feature work that adds a small number of cycle "
+        "edges as a side effect.",
+    )
     args = parser.parse_args(argv)
 
     print(
@@ -500,7 +568,9 @@ def main(argv: list[str] | None = None) -> int:
         return 0
 
     if args.nightly:
-        code, msgs = evaluate_nightly(history, current)
+        code, msgs = evaluate_nightly(
+            history, current, r2_upward_tolerance=args.r2_tolerance
+        )
     else:
         code, msgs = evaluate_per_pr(current, last)
     for m in msgs:
