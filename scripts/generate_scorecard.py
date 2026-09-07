@@ -198,6 +198,47 @@ def _yaml_num(text: str, key: str) -> Optional[float]:
     return float(m.group(1)) if m else None
 
 
+def _next_top_level_key(
+    yaml_text: str, block: str, current_key: str, next_key: Optional[str]
+) -> str:
+    """Truncate ``block`` at the next top-level YAML key.
+
+    The previous implementation stopped at a ``# ====`` comment marker,
+    which does not exist between ``ci.required_checks`` and the next
+    top-level YAML key (``ci.required_checks_workflow_only``) in
+    ``release_gates.yaml``. The marker-based stop therefore greedily
+    consumed BOTH lists into one block, producing a 29-row duplicated
+    CI Gate Status table in SCORECARD.md (Issue #3389).
+
+    ``current_key`` is the key the caller is splitting on (used to detect
+    the indentation of ``next_key`` from ``yaml_text`` so the stop is
+    anchored at the same column as ``current_key`` itself, not at column
+    0). ``next_key`` is the next-key label (e.g.
+    ``"required_checks_workflow_only"``) or ``None`` for end-of-block
+    (EOF).
+
+    The match allows at most ``len(current_key_indent)`` leading spaces
+    so an indented subkey at a deeper level does NOT count as a boundary.
+    If ``next_key`` is not found (or is ``None``), the entire ``block``
+    is returned unchanged.
+    """
+    if next_key is None:
+        return block
+    # Detect the indentation of ``current_key`` in the source YAML. The
+    # same indentation defines "top-level" for the next key.
+    cur_match = re.search(rf"^(\s*){re.escape(current_key)}:", yaml_text, re.M)
+    if cur_match is None:
+        return block
+    indent = cur_match.group(1)
+    pattern = re.compile(
+        rf"^{re.escape(indent)}{re.escape(next_key)}:", re.M
+    )
+    m = pattern.search(block)
+    if m is None:
+        return block
+    return block[: m.start()]
+
+
 def parse_gates(yaml_text: str) -> Gates:
     g = Gates()
     g.min_pass_rate = _yaml_num(yaml_text, "min_pass_rate") or g.min_pass_rate
@@ -211,13 +252,28 @@ def parse_gates(yaml_text: str) -> Gates:
     # required_checks list
     if "required_checks:" in yaml_text:
         block = yaml_text.split("required_checks:", 1)[1]
-        block = block.split("# ====", 1)[0]
+        # Issue #3389: the previous ``block.split("# ====", 1)[0]`` was a
+        # ``# ====``-marker stop that doesn't exist between ``ci.required_checks``
+        # and the next top-level YAML key (``required_checks_workflow_only:``)
+        # in ``release_gates.yaml``. The unreached stop meant the script
+        # captured BOTH ``required_checks`` AND ``required_checks_workflow_only``
+        # entries (54 matches / 29 unique), producing a 29-row duplicated
+        # CI Gate Status table in SCORECARD.md. Stop on the next top-level
+        # YAML key (same indentation as ``required_checks:`` itself) so the
+        # block ends at the list boundary.
+        block = _next_top_level_key(
+            yaml_text, block, "required_checks", "required_checks_workflow_only"
+        )
         g.required_checks = re.findall(r'^\s*-\s*"(.+?)"', block, re.M)
 
     # known_failures
     if "known_failures:" in yaml_text:
         block = yaml_text.split("known_failures:", 1)[1]
-        block = block.split("# ====", 1)[0]
+        # Mirror the same fix as ``required_checks`` above: stop at the
+        # next top-level key rather than a non-existent ``# ====`` marker
+        # so we capture only the ``known_failures`` entries and not whatever
+        # follows it.
+        block = _next_top_level_key(yaml_text, block, "known_failures", None)
         g.known_failures = re.findall(r'^\s*-\s*"(\d+)"', block, re.M)
 
     # CI runner throughput from the YAML comment (~157 configs/sec).
