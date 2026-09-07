@@ -86,6 +86,17 @@ jobs:
       - name: Run scripts/ pytest harness
         run: python3 -m pytest scripts/
 
+      # Issue #3211 / #3393: quarantine registry audit. Closes the
+      # 149-vs-78 gap that Issue #3393 documented by scanning every
+      # `#[ignore]` attribute under tests/ and cross-referencing it
+      # against tests/QUARANTINE.md. Default mode is informational
+      # (exit 0) so the gate can be adopted without immediately
+      # failing PRs on the existing orphans; once the curator triages
+      # the orphan list into the registry, flip to `--strict` to
+      # make any new orphan a PR-blocking failure.
+      - name: Quarantine registry audit (Issue #3211, #3393)
+        run: python3 scripts/generate_quarantine_registry.py
+
       - name: Enforce ruff clean (keep the #2811 baseline at 0)
         run: |
           # Match ``.pre-commit-config.yaml``'s ``astral-sh/ruff-pre-commit``
