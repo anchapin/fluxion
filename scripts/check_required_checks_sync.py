@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Required-check / workflow-index drift detection for Fluxion (Issue #2866,
-extended by #3116).
+extended by #3116 and #3441).
 
 GitHub branch protection reads ``jobs.<id>.name`` from
 ``.github/workflows/*.yml`` directly when matching required status checks,
@@ -33,7 +33,7 @@ workflow emits suffixed variants (e.g. ``Workspace Check (GH)`` and
 ``Workspace Check (Hetzner Overflow)``), the YAML must name the suffixed
 job explicitly — never the bare canonical.
 
-The script enforces four invariants:
+The script enforces five invariants:
 
 1. Every ``workflow_index`` entry points at an existing
    ``.github/workflows/<name>.yml`` file.
@@ -50,6 +50,14 @@ The script enforces four invariants:
 4. Every ``ci.required_checks`` entry has a matching ``workflow_index``
    entry by exact job-string equality, so branch protection and the
    informational workflow index cannot silently diverge.
+5. Every "NN checks" count literal in ``AGENTS.md`` and
+   ``docs/ci/branch-protection-strict-mode.md`` matches the parsed
+   ``ci.required_checks`` / ``ci.required_checks_workflow_only`` list
+   lengths (and the "N path-filtered checks" arithmetic
+   ``len(required) - len(workflow_only)``). Issue #3441 reconciled a
+   31/26 drift where the docs still said 19/29/25 and "4 path-filtered
+   checks" after Module Size (#2878) was wired in; this guard keeps the
+   prose counts from drifting again.
 
 The script deliberately does NOT enforce the inverse (every
 ``workflow_index`` entry must also be in ``required_checks``) — the
@@ -181,6 +189,21 @@ def get_required_checks(gates: dict) -> list[str]:
         if isinstance(entry, str):
             out.append(entry)
         # PyYAML may surface comment lines as None; drop them.
+    return out
+
+
+def get_workflow_only_checks(gates: dict) -> list[str]:
+    """Return the ``ci.required_checks_workflow_only`` list as raw strings.
+
+    Mirrors :func:`get_required_checks` (comment-only ``None`` entries
+    are dropped). Added for the Issue #3441 doc-count sync guard.
+    """
+    ci = gates.get("ci") or {}
+    raw = ci.get("required_checks_workflow_only") or []
+    out: list[str] = []
+    for entry in raw:
+        if isinstance(entry, str):
+            out.append(entry)
     return out
 
 
@@ -461,6 +484,129 @@ def collect_drift(
 
 
 # ---------------------------------------------------------------------------
+# Doc count-literal sync (Issue #3441)
+# ---------------------------------------------------------------------------
+
+# Count-literal shapes validated in AGENTS.md and the branch-protection
+# runbook. Each pattern captures the "NN" of an "NN checks" literal and
+# binds it to a release_gates.yaml list length — or, for
+# "path_filtered_delta", to len(required) - len(workflow_only), the
+# number of path-filtered checks excluded from the workflow-only list.
+#
+# The same-line binding (``[^\n]*?``) is deliberate: the count literal
+# must appear on the same line as the ``required_checks`` /
+# ``required_checks_workflow_only`` token it describes, so unrelated
+# numbers elsewhere in the prose (test counts, issue refs, the
+# historical "14 of 23" incident narrative) can never be bound by
+# accident.
+DOC_COUNT_PATTERNS = (
+    # "`release_gates.yaml -> ci.required_checks_workflow_only` (26 checks)"
+    (
+        re.compile(r"required_checks_workflow_only[^\n]*?(\d+)\s+checks"),
+        "required_checks_workflow_only",
+    ),
+    # "**`required_checks`** — All checks ... (31 checks)" and
+    # "Use `required_checks` (all 31 checks)". The negative lookahead
+    # keeps the workflow-only token from matching the bare pattern.
+    (
+        re.compile(r"required_checks(?!_workflow_only)[^\n]*?(\d+)\s+checks"),
+        "required_checks",
+    ),
+    # Runbook note: "The 26 always-run checks provide ..."
+    (
+        re.compile(r"(\d+)\s+always-run\s+checks"),
+        "required_checks_workflow_only",
+    ),
+    # "This excludes the 5 path-filtered checks above" /
+    # "it removes only the 5 path-filtered checks"
+    (
+        re.compile(r"(\d+)\s+path-filtered\s+checks"),
+        "path_filtered_delta",
+    ),
+)
+
+# Docs whose "NN checks" literals are validated against the parsed
+# release_gates.yaml lists. Files that do not exist (e.g. the tmp_path
+# mock repos used by scripts/ci tests) are skipped silently.
+DOC_COUNT_DOCS = (
+    "AGENTS.md",
+    "docs/ci/branch-protection-strict-mode.md",
+)
+
+# Which count literals each doc MUST carry at least once — deleting the
+# literal must fail the gate just like drifting it (Issue #3441).
+DOC_COUNT_REQUIRED_KEYS = {
+    "AGENTS.md": ("required_checks_workflow_only",),
+    "docs/ci/branch-protection-strict-mode.md": (
+        "required_checks",
+        "required_checks_workflow_only",
+        "path_filtered_delta",
+    ),
+}
+
+_KEY_DISPLAY = {
+    "required_checks": "ci.required_checks",
+    "required_checks_workflow_only": "ci.required_checks_workflow_only",
+    "path_filtered_delta": (
+        "len(ci.required_checks) - len(ci.required_checks_workflow_only)"
+    ),
+}
+
+
+def collect_doc_count_drift(
+    required_checks: list[str],
+    workflow_only_checks: list[str],
+) -> list[str]:
+    """Validate the "NN checks" count literals in AGENTS.md and the
+    branch-protection runbook against the parsed release_gates.yaml
+    lists (Issue #3441).
+
+    Reads the docs from the module-level ``REPO_ROOT`` *at call time*
+    (so tests can monkey-patch it at a synthetic ``tmp_path`` tree,
+    mirroring :func:`load_release_gates`). Docs that do not exist under
+    the current ``REPO_ROOT`` are skipped — the mock repos used by the
+    ``scripts/ci`` test harness carry only ``release_gates.yaml`` and
+    ``.github/workflows/``.
+
+    Returns a list of failure messages; empty means every count literal
+    agrees with the YAML (and each required literal is present).
+    """
+    expected = {
+        "required_checks": len(required_checks),
+        "required_checks_workflow_only": len(workflow_only_checks),
+        "path_filtered_delta": len(required_checks)
+        - len(workflow_only_checks),
+    }
+    failures: list[str] = []
+    for rel in DOC_COUNT_DOCS:
+        path = REPO_ROOT / rel
+        if not path.exists():
+            continue
+        text = path.read_text(encoding="utf-8")
+        seen: set[str] = set()
+        for pattern, key in DOC_COUNT_PATTERNS:
+            for m in pattern.finditer(text):
+                seen.add(key)
+                literal = int(m.group(1))
+                if literal != expected[key]:
+                    failures.append(
+                        f"{rel}: count literal ({literal} checks) is "
+                        f"bound to {_KEY_DISPLAY[key]} but "
+                        f"release_gates.yaml has {expected[key]}. "
+                        f"Update the doc count (Issue #3441)."
+                    )
+        for key in DOC_COUNT_REQUIRED_KEYS.get(rel, ()):
+            if key not in seen:
+                failures.append(
+                    f"{rel}: no 'NN checks' count literal found for "
+                    f"{_KEY_DISPLAY[key]} (should say {expected[key]}). "
+                    f"The count reference was deleted or moved off the "
+                    f"token's line (Issue #3441)."
+                )
+    return failures
+
+
+# ---------------------------------------------------------------------------
 # Live branch-protection verification (cron-mode, opt-in)
 # ---------------------------------------------------------------------------
 
@@ -583,12 +729,14 @@ def main() -> int:
         return 2
 
     required_checks = get_required_checks(gates)
+    workflow_only_checks = get_workflow_only_checks(gates)
     workflow_index = get_workflow_index(gates)
     workflows = load_all_workflows()
 
     print(
         f"Parsed {len(required_checks)} required_check(s), "
-        f"{len(workflow_index)} workflow_index entr(ies), "
+        f"{len(workflow_only_checks)} required_checks_workflow_only "
+        f"entr(ies), {len(workflow_index)} workflow_index entr(ies), "
         f"{len(workflows)} workflow file(s)."
     )
     print()
@@ -596,25 +744,33 @@ def main() -> int:
     failures, informational = collect_drift(
         required_checks, workflow_index, workflows
     )
+    failures.extend(
+        collect_doc_count_drift(required_checks, workflow_only_checks)
+    )
 
     print(
-        "[1/5] every workflow_index entry references an existing "
+        "[1/6] every workflow_index entry references an existing "
         ".github/workflows/*.yml file ..."
     )
     print(
-        "[2/5] every workflow_index.job matches a jobs.<id>.name in that "
+        "[2/6] every workflow_index.job matches a jobs.<id>.name in that "
         "workflow EXACTLY (no canonical+suffix tolerance — Issue #3116) ..."
     )
     print(
-        "[3/5] every workflow_index workflow declares a pull_request or "
+        "[3/6] every workflow_index workflow declares a pull_request or "
         "workflow_run trigger ..."
     )
     print(
-        "[4/5] every required_check has a matching workflow_index entry "
+        "[4/6] every required_check has a matching workflow_index entry "
         "(exact job-string equality) AND no canonical-vs-suffix drift ..."
     )
     print(
-        "[5/5] when FLUXION_CHECK_LIVE_PROTECTION=1, the live "
+        "[5/6] the 'NN checks' count literals in AGENTS.md and "
+        "docs/ci/branch-protection-strict-mode.md match the parsed "
+        "release_gates.yaml list lengths (Issue #3441) ..."
+    )
+    print(
+        "[6/6] when FLUXION_CHECK_LIVE_PROTECTION=1, the live "
         "develop branch protection matches release_gates.yaml ..."
     )
     print()
