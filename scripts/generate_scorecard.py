@@ -225,7 +225,7 @@ def parse_series(doc_text: str) -> list[SeriesRow]:
 
 
 def _yaml_num(text: str, key: str) -> Optional[float]:
-    m = re.search(rf"^\s*{re.escape(key)}:\s*(-?\d+(?:\.\d+)?)", text, re.M)
+    m = re.search(rf"^\s*{re.escape(key)}:\s*(-?\d+(?:\.\d+)?)", text, re.MULTILINE)
     return float(m.group(1)) if m else None
 
 
@@ -257,12 +257,12 @@ def _next_top_level_key(
         return block
     # Detect the indentation of ``current_key`` in the source YAML. The
     # same indentation defines "top-level" for the next key.
-    cur_match = re.search(rf"^(\s*){re.escape(current_key)}:", yaml_text, re.M)
+    cur_match = re.search(rf"^(\s*){re.escape(current_key)}:", yaml_text, re.MULTILINE)
     if cur_match is None:
         return block
     indent = cur_match.group(1)
     pattern = re.compile(
-        rf"^{re.escape(indent)}{re.escape(next_key)}:", re.M
+        rf"^{re.escape(indent)}{re.escape(next_key)}:", re.MULTILINE
     )
     m = pattern.search(block)
     if m is None:
@@ -295,7 +295,7 @@ def parse_gates(yaml_text: str) -> Gates:
         block = _next_top_level_key(
             yaml_text, block, "required_checks", "required_checks_workflow_only"
         )
-        g.required_checks = re.findall(r'^\s*-\s*"(.+?)"', block, re.M)
+        g.required_checks = re.findall(r'^\s*-\s*"(.+?)"', block, re.MULTILINE)
 
     # known_failures
     if "known_failures:" in yaml_text:
@@ -305,7 +305,7 @@ def parse_gates(yaml_text: str) -> Gates:
         # so we capture only the ``known_failures`` entries and not whatever
         # follows it.
         block = _next_top_level_key(yaml_text, block, "known_failures", None)
-        g.known_failures = re.findall(r'^\s*-\s*"(\d+)"', block, re.M)
+        g.known_failures = re.findall(r'^\s*-\s*"(\d+)"', block, re.MULTILINE)
 
     # CI runner throughput from the YAML comment (~157 configs/sec).
     mc = re.search(r"~(\d+)\s*configs/sec", yaml_text)
