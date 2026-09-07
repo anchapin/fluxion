@@ -17,7 +17,7 @@
 | ASHRAE 140 pass rate | **14.3%** (12/84 metrics) | ≥ 60% (`validation.min_pass_rate`) | ❌ Fail | `docs/ASHRAE140_RESULTS.md` |
 | Mean Absolute Error (MAE) | **51.03%** | ≤ 50% (`validation.max_mae`) | ❌ Fail | `docs/ASHRAE140_RESULTS.md` |
 | BatchOracle throughput | **157 (CI) / 900 (release)** configs/sec | ≥ 150 (`benchmark.throughput.min_configs_per_sec`) | ✅ Pass | `release_gates.yaml` comment + `README.md` |
-| Validation-suite throughput | 13.83 cases/sec | (informational) | ℹ️ | `target/performance_history.jsonl` (latest run 2026-09-07) |
+| Validation-suite throughput | 13.83 cases/sec | (informational) | ℹ️ | `validation/performance_history.latest.json` (latest run 2026-09-07) |
 | Max single-case deviation | 470.11% | (ref: `individual.max_deviation` = 100%) | ℹ️ | `docs/ASHRAE140_RESULTS.md` |
 
 ## ASHRAE 140 Pass Rate
@@ -41,7 +41,7 @@
 - **Gate:** ≥ **150** configs/sec (`benchmark.throughput.min_configs_per_sec`); absolute floor 100; latency ≤ 10 ms/config.
 - **CI runner (Wave 1+1.5):** ~157 configs/sec — ✅ Pass (narrow margin; source: `release_gates.yaml` comment).
 - **Release mode (BatchOracle, rayon):** ~900 configs/sec — ✅ Pass (source: `README.md`).
-- **Validation-suite throughput:** 13.83 cases/sec — informational only; this is the test-runner cadence, not the BatchOracle benchmark (source: `target/performance_history.jsonl` (latest run 2026-09-07)).
+- **Validation-suite throughput:** 13.83 cases/sec — informational only; this is the test-runner cadence, not the BatchOracle benchmark (source: `validation/performance_history.latest.json` (latest run 2026-09-07)).
 
 ## MAE vs Budget
 
@@ -118,9 +118,13 @@ python scripts/generate_scorecard.py --check
 
 # Verbose: print every parsed value
 python scripts/generate_scorecard.py --verbose
+
+# Ad-hoc: override the throughput from a local perf-history jsonl
+python scripts/generate_scorecard.py --perf-history \
+    target/performance_history.jsonl
 ```
 
-The scorecard is regenerated whenever `docs/ASHRAE140_RESULTS.md`, `release_gates.yaml`, or `README.md` changes. The `scorecard-drift` workflow enforces this on every PR.
+The scorecard is regenerated whenever `docs/ASHRAE140_RESULTS.md`, `release_gates.yaml`, `README.md`, or the tracked snapshot `validation/performance_history.latest.json` changes. The `scorecard-drift` workflow enforces this on every PR.
 
 ---
 

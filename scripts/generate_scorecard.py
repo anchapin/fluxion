@@ -8,6 +8,8 @@ output is fully deterministic and reproducible:
   * ``docs/ASHRAE140_RESULTS.md``   -- headline pass rate / MAE / per-series.
   * ``release_gates.yaml``          -- gate budgets (pass rate, MAE, throughput).
   * ``README.md``                   -- BatchOracle release-mode throughput claim.
+  * ``validation/performance_history.latest.json`` -- tracked snapshot of the
+    latest validation-run throughput (Issues #3403 / #3436).
 
 Because every figure is read from a committed file, the generated scorecard is
 byte-stable for a given set of inputs. CI runs ``--check`` to regenerate the
@@ -15,6 +17,12 @@ scorecard to a temporary path and ``diff`` it against the committed copy; any
 drift (a validation report or gate threshold changed but the scorecard was not
 regenerated) fails the build. This is the acceptance criterion of issue #2496:
 "CI can fail when any metric regresses."
+
+Determinism fence (issue #3436): the generator deliberately NEVER reads the
+untracked build artifact ``target/performance_history.jsonl`` (written by
+local validation runs), whose presence varies per machine and made the
+scorecard-drift gate flip-flop. Ad-hoc local overrides are opt-in only, via
+the explicit ``--perf-history <path>`` flag / ``$FLUXION_PERF_HISTORY``.
 
 The script deliberately does NOT consult ``docs/QUALITY_METRICS.md`` (a
 historical dashboard that can hold stale/corrupt values -- issue #1167) and
@@ -25,6 +33,8 @@ Usage:
     python scripts/generate_scorecard.py --verbose       # trace parsed values
     python scripts/generate_scorecard.py --check         # exit 1 on drift
     python scripts/generate_scorecard.py -o /tmp/out.md  # custom output
+    python scripts/generate_scorecard.py --perf-history \
+        target/performance_history.jsonl                 # ad-hoc override
 
 Exit codes:
     0  success (or --check passed)
@@ -36,6 +46,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import re
 import sys
 from dataclasses import dataclass, field
@@ -53,10 +64,16 @@ for _stream in (sys.stdout, sys.stderr):
 
 REPO = Path(__file__).resolve().parent.parent
 ASHRAE_DOC = REPO / "docs" / "ASHRAE140_RESULTS.md"
-# Issue #3403: most-recent validation-run history. When present, the
-# throughput figure is taken from the latest entry here instead of the
-# (batch-generated, potentially weeks-stale) ASHRAE140_RESULTS.md.
-PERF_HISTORY = REPO / "target" / "performance_history.jsonl"
+# Issues #3403 / #3436: most-recent validation-run throughput. The latest
+# perf-history entry is snapshotted to this TRACKED file so regeneration is
+# byte-identical on every machine. The untracked build artifact
+# ``target/performance_history.jsonl`` (written by local validation runs) is
+# deliberately NEVER read by default -- honoring it made the output depend on
+# which machine ran the generator and flip-flopped the drift gate (#3436).
+# Ad-hoc local overrides are opt-in via ``--perf-history`` /
+# ``$FLUXION_PERF_HISTORY`` only.
+PERF_SNAPSHOT = REPO / "validation" / "performance_history.latest.json"
+PERF_SNAPSHOT_ATTR = "validation/performance_history.latest.json"
 GATES_YAML = REPO / "release_gates.yaml"
 README_MD = REPO / "README.md"
 SCORECARD = REPO / "SCORECARD.md"
@@ -113,27 +130,54 @@ def _num(text: str) -> Optional[float]:
     return float(m.group(0)) if m else None
 
 
-def apply_performance_history(v: Validation) -> str:
-    """Override v.throughput_cases_per_sec from the latest perf-history
-    entry (Issue #3403). Returns the source string for attribution; the
-    committed results doc remains the fallback when no history exists
-    (e.g. fresh checkout -- target/ is a build artifact)."""
-    if not PERF_HISTORY.exists():
-        return "`docs/ASHRAE140_RESULTS.md`"
+def _apply_perf_entry(v: Validation, entry: dict, attr_path: str) -> str:
+    """Apply a perf-history ``entry`` (dict) to ``v``; return the attribution."""
+    thr = float(entry.get("throughput", 0.0))
+    if thr > 0.0:
+        v.throughput_cases_per_sec = thr
+        ts = str(entry.get("timestamp", ""))[:10]
+        return f"`{attr_path}` (latest run {ts})"
+    raise ValueError(f"perf-history entry has non-positive throughput: {entry!r}")
+
+
+def apply_performance_history(v: Validation, perf_history: Optional[str] = None) -> str:
+    """Override ``v.throughput_cases_per_sec`` (Issue #3403) and return the
+    source-attribution string.
+
+    Deterministic by default (Issue #3436): the figure comes ONLY from the
+    tracked snapshot ``validation/performance_history.latest.json`` -- never
+    from the untracked ``target/performance_history.jsonl`` build artifact,
+    whose presence varies per machine. The committed results doc remains the
+    fallback when the snapshot is missing or corrupt (e.g. a tmp repo in
+    tests).
+
+    ``perf_history`` is the explicit operator opt-in (``--perf-history <path>``
+    / ``$FLUXION_PERF_HISTORY``): a jsonl whose LAST non-empty line is the
+    entry to apply. A bad explicit path fails loud (exit 2) instead of
+    silently regressing to the docs fallback.
+    """
+    if perf_history:
+        try:
+            last = None
+            for line in Path(perf_history).read_text(encoding="utf-8").splitlines():
+                line = line.strip()
+                if line:
+                    last = line
+            if last is None:
+                raise ValueError("file has no non-empty lines")
+            entry = json.loads(last)
+            return _apply_perf_entry(v, entry, str(perf_history))
+        except (json.JSONDecodeError, ValueError, OSError) as exc:
+            print(
+                f"ERROR: perf-history override {perf_history!r} could not be "
+                f"read/parsed ({exc}); refusing to silently fall back to "
+                "`docs/ASHRAE140_RESULTS.md`.",
+                file=sys.stderr,
+            )
+            sys.exit(2)
     try:
-        last = None
-        for line in PERF_HISTORY.read_text(encoding="utf-8").splitlines():
-            line = line.strip()
-            if line:
-                last = line
-        if last is None:
-            return "`docs/ASHRAE140_RESULTS.md`"
-        entry = json.loads(last)
-        thr = float(entry.get("throughput", 0.0))
-        if thr > 0.0:
-            v.throughput_cases_per_sec = thr
-            ts = str(entry.get("timestamp", ""))[:10]
-            return f"`target/performance_history.jsonl` (latest run {ts})"
+        entry = json.loads(PERF_SNAPSHOT.read_text(encoding="utf-8"))
+        return _apply_perf_entry(v, entry, PERF_SNAPSHOT_ATTR)
     except (json.JSONDecodeError, ValueError, OSError):
         pass
     return "`docs/ASHRAE140_RESULTS.md`"
@@ -555,11 +599,16 @@ def render(
     p("")
     p("# Verbose: print every parsed value")
     p("python scripts/generate_scorecard.py --verbose")
+    p("")
+    p("# Ad-hoc: override the throughput from a local perf-history jsonl")
+    p("python scripts/generate_scorecard.py --perf-history \\")
+    p("    target/performance_history.jsonl")
     p("```")
     p("")
     p(
         "The scorecard is regenerated whenever `docs/ASHRAE140_RESULTS.md`, "
-        "`release_gates.yaml`, or `README.md` changes. The "
+        "`release_gates.yaml`, `README.md`, or the tracked snapshot "
+        "`validation/performance_history.latest.json` changes. The "
         "`scorecard-drift` workflow enforces this on every PR."
     )
     p("")
@@ -574,7 +623,7 @@ def render(
 
 
 def load_all(
-    verbose: bool = False,
+    verbose: bool = False, perf_history: Optional[str] = None
 ) -> tuple[Validation, list[SeriesRow], Gates, Benchmark, str]:
     if not ASHRAE_DOC.exists():
         print(
@@ -590,7 +639,7 @@ def load_all(
     readme_text = README_MD.read_text(encoding="utf-8") if README_MD.exists() else ""
 
     v = parse_ashrae(doc)
-    throughput_source = apply_performance_history(v)
+    throughput_source = apply_performance_history(v, perf_history)
     series = parse_series(doc)
     g = parse_gates(yaml_text)
     b = parse_readme_throughput(readme_text)
@@ -629,9 +678,21 @@ def main() -> int:
         "SCORECARD.md; exit 1 on drift",
     )
     ap.add_argument("-v", "--verbose", action="store_true", help="print parsed values")
+    ap.add_argument(
+        "--perf-history",
+        default=os.environ.get("FLUXION_PERF_HISTORY"),
+        metavar="PATH",
+        help="explicit opt-in (issue #3436): override the validation-suite "
+        "throughput from the LAST non-empty jsonl entry at PATH (ad-hoc "
+        "manual runs; default generation stays deterministic from the "
+        "tracked validation/performance_history.latest.json). Env-var "
+        "equivalent: FLUXION_PERF_HISTORY",
+    )
     args = ap.parse_args()
 
-    v, series, g, b, throughput_source = load_all(verbose=args.verbose)
+    v, series, g, b, throughput_source = load_all(
+        verbose=args.verbose, perf_history=args.perf_history
+    )
     content = render(v, series, g, b, throughput_source)
 
     if args.check:
