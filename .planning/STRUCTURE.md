@@ -148,7 +148,7 @@ fluxion/                          # Cargo workspace root (also the main `fluxion
 
 ### `crates/fluxion-twin/`
 
-- **Purpose:** Digital twin core — Unscented Kalman Filter for non-linear state estimation in thermal systems; MQTT telemetry consumer (TLS-only `mqtts://` port 8883 by default; plaintext gated on `FLUXION_MQTT_ALLOW_INSECURE`).
+- **Purpose:** Digital twin core — Unscented Kalman Filter for non-linear state estimation in thermal systems; MQTT telemetry consumer (always TLS `mqtts://` port 8883 with validated certificates — no runtime bypass, #3162).
 
 ## Module Boundaries (root `src/`)
 

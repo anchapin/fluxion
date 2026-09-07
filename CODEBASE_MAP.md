@@ -461,16 +461,14 @@ disconnects) and forwards owned `MqttTelemetryMessage` values through a bounded
 owned struct (no trait object, no `unsafe`); `ThermalModelTrait::set_twin_correction`
 takes it by reference.
 
-#### MQTT TLS Boot Guard (#2703)
+#### MQTT Transport Security (#3162)
 
-Default transport is **MQTT-over-TLS** (`mqtts://`, port 8883) using rustls with
-the platform trust store; server certificates are validated by default.
-
-| Env var | Effect |
-|---------|--------|
-| `FLUXION_MQTT_ALLOW_INSECURE` | Truthy → permits plaintext `mqtt://`/`tcp://` URLs (port 1883). Also skips TLS server-cert validation (e.g. self-signed brokers). In release builds any insecure transport (plaintext or disabled cert validation) is refused at boot unless this is set. Debug builds skip the guard for local dev. |
-
-Parity with the `fluxion-rest` boot guard (`FLUXION_REST_ALLOW_INSECURE`).
+The transport is **always MQTT-over-TLS** (`mqtts://`, port 8883) using rustls
+with the platform trust store; server certificates are **always validated** —
+there is no runtime bypass for certificate verification and no insecure
+transport escape hatch. Plaintext `mqtt://` / `tcp://` broker URLs are rejected
+unconditionally; the former plaintext opt-in flag and release boot guard from
+#2703 were removed in #3162.
 
 #### Memory Ownership
 

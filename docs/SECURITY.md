@@ -291,5 +291,6 @@ config) so it can be checked mechanically, not just by process.
   origin allow-list (never permissive).
 - **Rate limiting (Issue #2505).** Tune `FLUXION_REST_RATE_LIMIT_RPS` /
   `FLUXION_REST_RATE_LIMIT_BURST` to the deployment; defaults are `100`/`1000`.
-- **TLS for telemetry sinks.** `fluxion-twin` MQTT is TLS-only by default
-  (`mqtts://`, port 8883); plaintext requires `FLUXION_MQTT_ALLOW_INSECURE`.
+- **TLS for telemetry sinks.** `fluxion-twin` MQTT is TLS-only with validated
+  certificates — `mqtts://` (port 8883) is required and there is no runtime
+  bypass (#3162).
