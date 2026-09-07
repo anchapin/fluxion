@@ -283,7 +283,7 @@ append-only ledger at `scripts/cycle_baseline_history.json`:
 | Rule | Scope | Fires when |
 |------|-------|------------|
 | **R1** (no growth)         | per-PR + nightly | `current_total > last_total` |
-| **R2** (downward progress) | nightly only     | last `STALE_THRESHOLD_NIGHTS` (=14) snapshots all have the same total |
+| **R2** (downward progress) | nightly only     | `current_total` has not **decreased** relative to the oldest snapshot in the last `STALE_THRESHOLD_NIGHTS` (=14) snapshots. Strict form (Issue #3385): frozen-at-same-total (`delta == 0`) and monotonic-growth (`delta > r2_upward_tolerance`) both FAIL. `r2_upward_tolerance` defaults to 0 and is configurable via `--r2-tolerance` to absorb legitimate one-shot feature work that adds a small number of cycle edges as a side effect. |
 | **R3** (no net-flat swap)  | per-PR + nightly | `current_total == last_total` but the sorted multiset of `(file, scanned-line)` identity tuples changed (sha256 differs). The identity **excludes `lineno`** (Issue #2810) so a refactor that only inserts code above an unchanged edge does not trip R3; `lineno` stays in the raw offender string for the report |
 
 The per-PR job (`Cycle Downward Trend Guard (Issue #2768)` in

@@ -212,6 +212,68 @@ def test_nightly_r2_passes_when_progress_inside_window(guard):
     assert any("R2 OK" in m and "within window" in m for m in msgs)
 
 
+def test_nightly_r2_strict_fails_on_monotonic_growth(guard):
+    """Issue #3385: R2 strict form must FAIL when total GREW over the window.
+
+    The legacy R2 rule fired only when the trailing window was monotonic-flat
+    at the current total; it silently admitted unbounded growth because each
+    new high water mark reset the stale window. Issue #3385 tightens the
+    rule to FAIL when the total has not *decreased* relative to the oldest
+    snapshot in the trailing window (modulo the configured tolerance).
+    """
+    n = guard.STALE_THRESHOLD_NIGHTS
+    snaps = [_snapshot(215, signature="baseline") for _ in range(n - 1)]
+    snaps.append(_snapshot(230, signature="grew"))
+    history = {
+        "schema_version": 1,
+        "buckets": list(guard.BUCKETS),
+        "snapshots": snaps,
+    }
+    code, msgs = guard.evaluate_nightly(history, _current(230, signature="grew"))
+    assert code == 1
+    assert any("R2 FAIL" in m and "grew by 15" in m for m in msgs)
+
+
+def test_nightly_r2_strict_tolerance_absorbs_small_growth(guard):
+    """Issue #3385: ``r2_upward_tolerance`` lets a small growth pass without
+    tripping the strict rule, absorbing legitimate one-shot feature work."""
+    n = guard.STALE_THRESHOLD_NIGHTS
+    snaps = [_snapshot(215, signature="baseline") for _ in range(n - 1)]
+    snaps.append(_snapshot(220, signature="grew-a-bit"))
+    history = {
+        "schema_version": 1,
+        "buckets": list(guard.BUCKETS),
+        "snapshots": snaps,
+    }
+    # Tolerance=10 absorbs the +5 growth (215 -> 220).
+    code, msgs = guard.evaluate_nightly(
+        history,
+        _current(220, signature="grew-a-bit"),
+        r2_upward_tolerance=10,
+    )
+    assert code == 0
+    assert any("R2 OK" in m and "tolerance=10" in m for m in msgs)
+
+
+def test_nightly_r2_strict_tolerance_still_fails_beyond_threshold(guard):
+    """Tolerance absorbs small growth but a bigger growth still trips R2."""
+    n = guard.STALE_THRESHOLD_NIGHTS
+    snaps = [_snapshot(215, signature="baseline") for _ in range(n - 1)]
+    snaps.append(_snapshot(230, signature="grew-lots"))
+    history = {
+        "schema_version": 1,
+        "buckets": list(guard.BUCKETS),
+        "snapshots": snaps,
+    }
+    code, msgs = guard.evaluate_nightly(
+        history,
+        _current(230, signature="grew-lots"),
+        r2_upward_tolerance=10,
+    )
+    assert code == 1
+    assert any("R2 FAIL" in m and "grew by 15" in m for m in msgs)
+
+
 def test_nightly_fails_on_growth_even_with_clean_window(guard):
     """R1 takes precedence over R2: a growth regression still fails nightly."""
     n = guard.STALE_THRESHOLD_NIGHTS
