@@ -39,6 +39,10 @@ PYCLASS_SOURCES = [
     REPO_ROOT / "src" / "python" / "model_bindings.rs",
     REPO_ROOT / "src" / "python" / "multi_node_bindings.rs",
     REPO_ROOT / "src" / "python" / "osm_bindings.rs",
+    # Issue #3402: files extracted by #2493 (BatchOracle pymethods /
+    # construction pyclasses) were missing from the scan list.
+    REPO_ROOT / "src" / "python" / "batch_oracle_bindings.rs",
+    REPO_ROOT / "src" / "python" / "construction_bindings.rs",
 ]
 
 

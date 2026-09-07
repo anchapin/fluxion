@@ -74,6 +74,8 @@ fn pyclass_name_map(root: &Path) -> std::collections::HashMap<String, String> {
         "src/python/model_bindings.rs",
         "src/python/multi_node_bindings.rs",
         "src/python/osm_bindings.rs",
+        "src/python/batch_oracle_bindings.rs",
+        "src/python/construction_bindings.rs",
     ];
     for rel in sources {
         let path = root.join(rel);
