@@ -60,6 +60,41 @@ except ImportError:  # pragma: no cover - PyYAML is a dev-dep everywhere
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 RELEASE_GATES = REPO_ROOT / "release_gates.yaml"
+DEFAULT_REPO = "anchapin/fluxion"
+
+_REMOTE_URL_RE = re.compile(
+    r"(?:https?://[^/]+/|git@[^:]+:)(?P<repo>[^/]+/.+?)(?:\.git)?$"
+)
+
+
+def resolve_default_repo(env: dict[str, str] | None = None) -> str:
+    """Resolve the target ``owner/repo`` used when ``--repo`` is omitted.
+
+    Resolution order (Issue #3429): ``$GITHUB_REPOSITORY`` (always set on
+    GitHub Actions — correct on forks, mirrors, and overflow runners with
+    a different remote) → the ``origin`` git remote (normalized from
+    https or ssh form) → the ``DEFAULT_REPO`` constant fallback. A
+    hardcoded default silently targeted upstream from any checkout whose
+    remote differs.
+    """
+    if env is None:
+        env = dict(os.environ)
+    candidate = env.get("GITHUB_REPOSITORY", "").strip()
+    if candidate:
+        return candidate
+    try:
+        out = subprocess.run(
+            ["git", "remote", "get-url", "origin"],
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+    except (subprocess.CalledProcessError, FileNotFoundError, OSError):
+        return DEFAULT_REPO
+    m = _REMOTE_URL_RE.match(out.stdout.strip())
+    if not m:
+        return DEFAULT_REPO
+    return m.group("repo")
 
 
 def load_canonical_required_checks(path: Path) -> list[str]:
@@ -142,7 +177,7 @@ def build_desired_put_payload(canonical: list[str], enforce_admins: bool) -> dic
             "applier that would PUT this to GitHub (gated on operator review)."
         ),
         "protection_put_payload": {
-            "url": f"/repos/<owner>/<repo>/branches/develop/protection",
+            "url": "/repos/<owner>/<repo>/branches/develop/protection",
             "body": {
                 "enforce_admins": {"enabled": enforce_admins},
             },
@@ -161,8 +196,11 @@ def main(argv: list[str]) -> int:
     parser = argparse.ArgumentParser(description=__doc__.split("\n",1)[0])
     parser.add_argument(
         "--repo",
-        default="anchapin/fluxion",
-        help="GitHub owner/repo to query (default: anchapin/fluxion)",
+        default=None,
+        help=(
+            "GitHub owner/repo to query (default: $GITHUB_REPOSITORY, "
+            "else the origin remote, else anchapin/fluxion)"
+        ),
     )
     parser.add_argument(
         "--release-gates",
@@ -176,6 +214,7 @@ def main(argv: list[str]) -> int:
         help="Emit machine-readable JSON (the diff + desired PUT payload)",
     )
     args = parser.parse_args(argv)
+    args.repo = args.repo or resolve_default_repo()
 
     canonical = load_canonical_required_checks(args.release_gates)
     try:

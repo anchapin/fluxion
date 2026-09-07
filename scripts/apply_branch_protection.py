@@ -49,6 +49,8 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
+import re
 import subprocess
 import sys
 from pathlib import Path
@@ -56,6 +58,42 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parent.parent
 DEFAULT_REPO = "anchapin/fluxion"
 DEFAULT_BRANCH = "develop"
+
+_REMOTE_URL_RE = re.compile(
+    r"(?:https?://[^/]+/|git@[^:]+:)(?P<repo>[^/]+/.+?)(?:\.git)?$"
+)
+
+
+def resolve_default_repo(env: dict[str, str] | None = None) -> str:
+    """Resolve the target ``owner/repo`` used when ``--repo`` is omitted.
+
+    Resolution order (Issue #3429): ``$GITHUB_REPOSITORY`` (always set on
+    GitHub Actions — correct on forks, mirrors, and overflow runners with
+    a different remote) → the ``origin`` git remote (normalized from
+    https or ssh form) → the ``DEFAULT_REPO`` constant fallback. Mirrors
+    ``check_branch_protection_diff.resolve_default_repo``; the scripts are
+    intentionally standalone so the helper is duplicated rather than
+    shared. A hardcoded default made the *destructive* applier silently
+    target upstream from any checkout whose remote differs.
+    """
+    if env is None:
+        env = dict(os.environ)
+    candidate = env.get("GITHUB_REPOSITORY", "").strip()
+    if candidate:
+        return candidate
+    try:
+        out = subprocess.run(
+            ["git", "remote", "get-url", "origin"],
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+    except (subprocess.CalledProcessError, FileNotFoundError, OSError):
+        return DEFAULT_REPO
+    m = _REMOTE_URL_RE.match(out.stdout.strip())
+    if not m:
+        return DEFAULT_REPO
+    return m.group("repo")
 
 try:
     from scripts.check_required_checks_sync import (  # type: ignore[import-not-found]
@@ -300,8 +338,11 @@ def main() -> int:
     )
     parser.add_argument(
         "--repo",
-        default=DEFAULT_REPO,
-        help=f"target repo (default: {DEFAULT_REPO})",
+        default=None,
+        help=(
+            "target repo (default: $GITHUB_REPOSITORY, else the origin "
+            "remote, else anchapin/fluxion)"
+        ),
     )
     parser.add_argument(
         "--write",
@@ -317,6 +358,7 @@ def main() -> int:
         help="emit the payload + diff as JSON (machine-readable).",
     )
     args = parser.parse_args()
+    args.repo = args.repo or resolve_default_repo()
 
     try:
         gates = load_release_gates()
