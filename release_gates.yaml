@@ -529,6 +529,21 @@ ci:
     # `scripts/check_architecture_drift.py`.
     - "Architecture Drift Detection"
 
+    # Issue #2878 / #3394: god-struct module-size gate. The listener step
+    # inside `.github/workflows/architecture_drift.yml::check-drift` runs
+    # `python3 scripts/check_module_size.py` on PRs to develop that touch
+    # `src/sim/thermal_model_data.rs` (or its directory form), the script
+    # itself, or `tests/reference_data/module_size/**`. Enforces the
+    # ≤200-line ceiling (with ratchet tightening via
+    # `tests/reference_data/module_size/thermal_model_data_ratchet.json`)
+    # that closes the LIMIT-09 → LIMIT-22 cohort routing through the
+    # post-#2878 god-struct decomposition. Companion to `Architecture
+    # Drift Detection` above — both share the same listener job and
+    # single workflow, so the path-filter / `(GH)` suffix conventions
+    # are identical (no `(GH)` suffix because architecture_drift.yml has
+    # no GH/Hetzner variants; the listener IS the check name).
+    - "Module Size (Issue #2878)"
+
     # Cargo Deny supply-chain gate (#2699). Job in `.github/workflows/ci.yml`
     # enforces deny.toml rules: licenses, duplicates, bans, sources. The
     # `ignore` list is mirrored from `.cargo/audit.toml` (keep in sync).
@@ -1056,6 +1071,25 @@ ci:
       # (nightly 03:00 UTC) + PR paths filter.
       workflow: ".github/workflows/architecture_drift.yml"
       triggered_by: "schedule + PR (path-filter)"
+
+    - job: "Module Size (Issue #2878)"
+      # God-struct module-size gate (Issue #2878, wired up via #3394).
+      # Listener step inside `.github/workflows/architecture_drift.yml
+      # ::check-drift` (companion to `Architecture Drift Detection`
+      # above — both share the same listener job and workflow). Runs
+      # `python3 scripts/check_module_size.py` on PRs that touch
+      # `src/sim/thermal_model_data.rs` (or its directory form), the
+      # script itself, or `tests/reference_data/module_size/**`. The
+      # step is additive inside `check-drift`, so the JOB name remains
+      # "Architecture Drift Detection" and the new step's emitted
+      # check name is "Module Size (Issue #2878)" — which is what
+      # `required_checks` above references. Path-filter trigger
+      # inherited from the parent workflow. Triggers on the same
+      # schedule + PR paths filter as `Architecture Drift Detection`.
+      workflow: ".github/workflows/architecture_drift.yml"
+      issue: 2878
+      closes_issue: 3394
+      triggered_by: "schedule + PR (path-filter: src/sim/thermal_model_data.rs, src/sim/thermal_model_data/**, scripts/check_module_size.py, tests/reference_data/module_size/**)"
 
     - job: "Cargo Deny"
       # Cargo Deny supply-chain gate (#2699). Listener job in

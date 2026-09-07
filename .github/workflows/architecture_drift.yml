@@ -13,6 +13,10 @@ on:
       - 'scripts/check_doc_drift.py'
       - 'scripts/check_stub_modules.py'
       - 'scripts/check_orphan_modules.py'
+      - 'scripts/check_module_size.py'
+      - 'src/sim/thermal_model_data.rs'
+      - 'src/sim/thermal_model_data/**'
+      - 'tests/reference_data/module_size/**'
       - 'fluxion-core/src/**/*.rs'
       - 'fluxion-grid/src/**/*.rs'
       - 'fluxion-behavior/src/**/*.rs'
@@ -97,3 +101,31 @@ jobs:
               issue_number: context.issue.number,
               body: `## Architecture Drift Detected\n\nThe drift detection script found inconsistencies between ARCHITECTURE.md and the source code.\n\n**Either:**\n1. Update ARCHITECTURE.md to document the new trait/module\n2. Fix the code to match the documented architecture\n3. Add false-positive names to \`skip_traits\` in \`scripts/check_architecture_drift.py\`\n\nRun \`python3 scripts/check_architecture_drift.py\` locally to see details.`
             })
+
+  # Issue #2878 / #3394: god-struct module-size gate. Separate job
+  # (not a step inside `check-drift`) so the emitted check name —
+  # "Module Size (Issue #2878)" — is a stable required-check target
+  # for branch protection. Mirrors the 4 architecture-drift scripts
+  # inside `check-drift` but is structured as a standalone job so
+  # `scripts/check_required_checks_sync.py`'s exact-string-match rule
+  # (Issue #3116) can verify the YAML entry without the
+  # canonical+suffix tolerance that previously desynced branch protection.
+  # Issue #2878 closes LIMIT-09 → LIMIT-22 routing through the post-#2878
+  # decomposition; without this listener the script was orphaned and
+  # any regression slipped through silently.
+  module-size:
+    runs-on: ubuntu-latest
+    name: Module Size (Issue #2878)
+    permissions:
+      contents: read
+
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+
+      - name: Set up Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97  # v7.0.0
+        with:
+          python-version: '3.12'
+
+      - name: Run module-size gate (Issue #2878)
+        run: python3 scripts/check_module_size.py
