@@ -26,10 +26,9 @@ from __future__ import annotations
 
 import fnmatch
 import importlib.util
+import os
+from functools import cache
 from pathlib import Path
-
-import pytest
-
 
 SCRIPT_PATH = (
     Path(__file__).resolve().parents[2]
@@ -61,28 +60,73 @@ def _load_critical_paths() -> dict[str, list[str]]:
     return module.CRITICAL_PATHS
 
 
+# Directories that never contain sources matched by ``CRITICAL_PATHS``
+# globs but can hold 100k+ generated entries on a developer checkout
+# (measured: .git = 60k files, target/ = 137k files). Walking them once
+# per glob made this file take >300s; pruning them keeps the whole file
+# under a second while remaining filesystem-truthful for real sources.
+_PRUNED_DIR_NAMES = frozenset(
+    {
+        ".git",
+        ".mypy_cache",
+        ".pytest_cache",
+        ".ruff_cache",
+        ".venv",
+        "build",
+        "dist",
+        "node_modules",
+        "target",
+        "venv",
+        "__pycache__",
+    }
+)
+
+
+@cache
+def _enumerate_repo_files(repo_root: Path) -> tuple[str, ...]:
+    """Enumerate repo-relative file paths under ``repo_root`` exactly once.
+
+    ENUMERATE-ONCE RULE: this module must never walk the repository
+    per-glob. ``CRITICAL_PATHS`` contains 17 globs and pre-#3425 each
+    glob triggered a full ``rglob("*")`` walk (208k+ entries, 12s each
+    on this repo), which made the Scripts Tests CI job flaky-by-timeout.
+    All glob tests share this cached enumeration; if you need the file
+    list, call this function — do not reintroduce ``rglob``/``os.walk``
+    loops elsewhere in this module.
+
+    Prunes VCS/build/dependency directories (see ``_PRUNED_DIR_NAMES``).
+    Like the pre-#3425 ``rglob("*")`` walk this reports untracked files
+    (filesystem truth), so a freshly added-but-uncommitted source file
+    still resolves.
+    """
+    rel_files: list[str] = []
+    for dirpath, dirnames, filenames in os.walk(repo_root):
+        dirnames[:] = [d for d in dirnames if d not in _PRUNED_DIR_NAMES]
+        for name in filenames:
+            rel_files.append(
+                Path(dirpath, name).relative_to(repo_root).as_posix()
+            )
+    return tuple(rel_files)
+
+
 def _glob_resolves_to_files(repo_root: Path, glob: str) -> list[Path]:
     """Replicate the production glob-matcher and return the matched files.
 
     Mirrors ``scripts/coverage_critical_paths.py::_matches_any``: globs
     ending in ``/**`` match the prefix and any nested path; other globs
-    use ``fnmatch.fnmatch`` directly. We enumerate every file under the
-    repo root (via ``rglob``) and ask whether ``fnmatch`` would match
-    that file's repo-relative path. This stays consistent with the
-    production matcher even though the test enumerates a wider file set
-    than the production bucketing pass.
+    use ``fnmatch.fnmatch`` directly. The candidate file set comes from
+    the shared cached enumeration (see ``_enumerate_repo_files``), which
+    stays consistent with the production matcher even though the test
+    enumerates a wider file set than the production bucketing pass.
     """
     matches: list[Path] = []
-    for p in repo_root.rglob("*"):
-        if not p.is_file():
-            continue
-        rel = p.relative_to(repo_root).as_posix()
+    for rel in _enumerate_repo_files(repo_root):
         if glob.endswith("/**"):
             prefix = glob[:-3]
             if rel == prefix or rel.startswith(prefix + "/"):
-                matches.append(p)
+                matches.append(repo_root / rel)
         elif fnmatch.fnmatch(rel, glob):
-            matches.append(p)
+            matches.append(repo_root / rel)
     return matches
 
 
