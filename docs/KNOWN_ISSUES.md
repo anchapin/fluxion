@@ -11,7 +11,7 @@ Action: Check this document before attributing validation failures to new issues
 including their blocking issues, un-ignore criteria, and status. The QUARANTINE.md registry is the
 canonical source for tracking when quarantined tests can be un-ignored (per Issue #3211).
 
-*Last Updated: 2026-09-07 (LIMIT-12 section header added + cohort re-ordered — Issue #3397)*
+*Last Updated: 2026-09-07 (CI-01 resolved — min_branch_floor hard floors verified enforced, Issue #3456)*
 
 **LIMIT-14 added (Issue #3061):** After PR #3052's partial Case 960 inter-zone fix, raw annual cooling remains 0.63 MWh versus the 1.55–2.78 MWh reference band and peak heating remains 1.17 kW versus 2.0–8.0 kW. The 5R1C/9R4C air-mass distribution cannot accumulate enough back-zone cooling demand at the 27 °C setpoint through coupling to the free-floating sunspace; compliant closure is blocked on the GaugeSolver production-path work coordinated by #3059, not a sunspace HVAC control or gain-split tuning.
 
@@ -1082,21 +1082,34 @@ they are physically correct and flip one marginal test.
 - **Phase Addressed:** Phase 5
 - **Resolution Notes:** Will add phase comparison section to ASHRAE140_RESULTS.md.
 
-### CI-01: Code coverage gate (issue #1932) — thresholds not yet enforced
+### CI-01: Code coverage gate (issue #1932) — RESOLVED (min_branch_floor hard floors enforced)
 
 - **Affected:** CI quality gate, not physics output.
-- **Status:** 🔄 Baseline exists (updated 2026-08-10); 1% relative-drop ratchet is active.
-- **Details:** The Code Coverage Gate (`Code Coverage Gate (Issue #1932)` in
-  `release_gates.yaml`) runs `cargo-llvm-cov` on every PR and `develop` push,
-  buckets results by the four ARCHITECTURE.md critical paths, and enforces a
-  1% relative-drop ratchet. The committed baseline
-  (`validation/coverage_baseline.json`) was updated on 2026-08-10 with real
-  coverage values (overall line=79.8%, branch=63.8%; weather_solar line=97.1%,
-  branch=61.1%; etc.). The ratchet is active but the actual enforcement
-  thresholds (min_branch_floor) are still at defaults.
-- **Resolution:** After a green `develop` CI run, run
-  `python3 scripts/coverage_baseline.py --update --lcov target/llvm-cov/lcov.info`
-  and commit the updated baseline. See `docs/coverage.md` for the full workflow.
+- **Status:** ✅ **RESOLVED** (Issue #3456, 2026-09-07). The coverage gate now
+  enforces both levers of the #1932 policy: the 1% relative-drop one-way
+  ratchet (#2533) AND the per-critical-path `min_branch_floor` absolute hard
+  floor (#2710 / #2713). The earlier claim that the floors were "still at
+  defaults" predated the 2026-08-31 baseline refresh and has been reconciled
+  with the implementation.
+- **Details (verified against the implementation, not the docs):**
+  `scripts/coverage_critical_paths.py` reads per-path `min_branch_floor` from
+  `validation/coverage_baseline.json` and FAILS the gate when a path's current
+  branch coverage is below its floor, independently of the ratchet baseline.
+  The committed baseline (`_updated 2026-08-31`) carries real, non-zero floors
+  for all four critical paths: weather_solar 61.0%, weather_ventilation 88.0%,
+  conduction_zone 65.0%, hvac_zone 68.0% (each alongside a v1.3 target of
+  75.0%). The gate runs in CI via `.github/workflows/code-coverage.yml` on
+  every PR and `develop` push. Only the v1.3 targets remain aspirational —
+  they are REPORTED every run (gap printed) but do not yet fail, matching
+  `docs/coverage.md` §"Targets — enforced vs aspirational" (Issue #3401).
+- **Historical Description (kept for context):** The 2026-08-28 wording of
+  this entry titled the section as if enforcement thresholds were missing and
+  stated in the body that "the actual enforcement thresholds (min_branch_floor)
+  are still at defaults". Both claims were
+  written against the 2026-08-10 baseline snapshot and were superseded when
+  #2710 / #2713 added the floor lever and the 2026-08-31 baseline refresh
+  recorded non-zero floors. `docs/coverage.md` was updated to match while
+  this entry drifted; Issue #3456 reconciled the two.
 
 ### CI-02: Debug build linking crashes with rust-lld segfault (issue #2297)
 
