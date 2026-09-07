@@ -4,9 +4,13 @@ CI guard: verify that every `.github/workflows/*.yml` carries the
 ADR-0015 per-`head_sha` `concurrency:` block (Issue #3366).
 
 Companion to `scripts/update_concurrency_keys.py` — that script applies
-the block, this script enforces it. Wired into `scripts-tests.yml` so
-any workflow drift (e.g. an engineer adding a new workflow without the
-template) fails the CI gate before it can merge.
+the block, this script enforces it. Wired into the `Scripts Test Suite`
+job of `.github/workflows/scripts-tests.yml` ("Enforce ADR-0015
+concurrency keys" step, Issue #3444) so any workflow drift (e.g. an
+engineer adding a new workflow without the template) fails the CI gate
+before it can merge. The matcher's invariants are additionally covered
+by `scripts/ci/test_check_concurrency_keys.py` against hermetic
+tmp_path fixtures.
 
 For each `.github/workflows/*.yml`:
 

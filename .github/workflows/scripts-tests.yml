@@ -97,6 +97,19 @@ jobs:
       - name: Quarantine registry audit (Issue #3211, #3393)
         run: python3 scripts/generate_quarantine_registry.py
 
+      # Issue #3366 / #3444: ADR-0015 concurrency-template gate. The
+      # matcher in ``scripts/check_concurrency_keys.py`` was previously
+      # dead code — zero CI references — so a workflow drifting from the
+      # per-``head_sha`` ``concurrency:`` template (a new workflow added
+      # without the block, a stale ref-only ``group:`` key, an
+      # unconditional ``cancel-in-progress:``) could merge silently.
+      # The pytest companion ``scripts/ci/test_check_concurrency_keys.py``
+      # covers the matcher's invariants against hermetic ``tmp_path``
+      # fixtures; this direct invocation covers the end-to-end against
+      # the real repo (same direct-invocation split as #2866 above).
+      - name: Enforce ADR-0015 concurrency keys (Issue #3366, #3444)
+        run: python3 scripts/check_concurrency_keys.py
+
       - name: Enforce ruff clean (keep the #2811 baseline at 0)
         run: |
           # Match ``.pre-commit-config.yaml``'s ``astral-sh/ruff-pre-commit``
