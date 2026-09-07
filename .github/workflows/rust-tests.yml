@@ -133,6 +133,34 @@ jobs:
           restore-keys: |
             ort-binaries-aarch64-apple-darwin-
 
+      # Issue #3398: cargo cache for the PR-blocking test matrix. Every
+      # sibling workflow (performance_dashboard.yml, msrv.yml,
+      # crate-size.yml, security.yml) already wires Swatinem/rust-cache;
+      # this matrix was the only PR-blocking pipeline without it, paying
+      # 15-30 cold-cache CI minutes per code-changing PR. rust-cache
+      # keys entries on the rustc invocation (feature flags included),
+      # so the three feature_set matrix entries get distinct caches and
+      # cannot poison each other. Workspace list mirrors the actual
+      # `[workspace] members` in Cargo.toml (crates/fluxion-evaluator
+      # included; fluxion-tauri lives at fluxion-tauri/src-tauri).
+      - name: Cache cargo workspace
+        uses: Swatinem/rust-cache@f0d9c3887740aee45f6153b24b3a6b815192ec16  # v2
+        with:
+          workspaces: |
+            .
+            fluxion-core -> target
+            fluxion-city -> target
+            fluxion-fluid -> target
+            fluxion-grid -> target
+            fluxion-behavior -> target
+            fluxion-mcp -> target
+            fluxion-wasm -> target
+            crates/fluxion-toon -> target
+            crates/fluxion-twin -> target
+            crates/fluxion-evaluator -> target
+            fluxion-cfd -> target
+            fluxion-tauri/src-tauri -> target
+
       # Issue #3366 / ADR-0014: consolidated the 7-line `cargo test` block
       # into a single `cargo nextest run` invocation. Each test binary
       # runs in its own process; per-binary concurrency overrides live
