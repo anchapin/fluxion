@@ -2,7 +2,7 @@
 
 **Fluxion** is a next-generation Building Energy Modeling (BEM) engine. It is designed to be differentiable, quantum-ready, and exponentially faster than legacy monolithic tools by utilizing a hybrid Neuro-Symbolic architecture.
 
-> **Status:** Fluxion is **in active development** — specifically mid-milestone on **v1.3 "Blind ASHRAE 140 Validation"** (physics-only, no calibration factors). It is **not** production-ready. Current ASHRAE 140-2023 validation pass rate is **~20%** (see [Current Validation Status](#current-validation-status) below). Use it as a high-throughput research/oracle tool, not as a drop-in EnergyPlus replacement.
+> **Status:** Fluxion is **in active development** — specifically mid-milestone on **v1.3 "Blind ASHRAE 140 Validation"** (physics-only, no calibration factors). It is **not** production-ready. Current ASHRAE 140-2023 validation pass rate is **14.3%** (see [Current Validation Status](#current-validation-status) below). Use it as a high-throughput research/oracle tool, not as a drop-in EnergyPlus replacement.
 
 ## 🏗 Architecture
 
@@ -10,7 +10,7 @@ Fluxion separates the "heavy lifting" of physics (CFD/Radiation) into AI surroga
 
 ## Current Validation Status
 
-![ASHRAE 140](https://img.shields.io/badge/ASHRAE140-20.3%25%20pass-red)
+![ASHRAE 140](https://img.shields.io/badge/ASHRAE140-14.3%25%20pass-red)
 ![Version](https://img.shields.io/badge/status-in--development-orange)
 
 Fluxion is **not yet ASHRAE 140-compliant**. The figures below come from the committed validation suite (generated 2026-08-07); see [`docs/ASHRAE140_RESULTS.md`](docs/ASHRAE140_RESULTS.md) for the full case-by-case breakdown and [`SCORECARD.md`](SCORECARD.md) for the consolidated, reproducible release-readiness view.
@@ -40,7 +40,7 @@ These are documented **structural failures** (also listed in `release_gates.yaml
 
 - **Baseline 600-series (low-mass):** All 6 cases FAIL. Simplified envelope model over-predicts peak loads (e.g. peak heating ~4.36 kW vs 2.80–3.80 kW reference band).
 - **High-mass 900-series:** All 6 cases FAIL. Heating is over-predicted by ~**200%** due to a 5R1C/CTF thermal-mass limitation (e.g. Case 900 annual heating 5,449 kWh vs 1,170–2,040 kWh reference band).
-- **Overall accuracy:** 55.09% MAE, driven by the high-mass annual-energy deviation above.
+- **Overall accuracy:** 51.03% MAE, driven by the high-mass annual-energy deviation above.
 - **Peak load accuracy:** High-mass peak loads over-estimated; full peak accuracy awaits the planned gauge-solver / finite-volume work (Phase B / `gauge-solver` feature).
 
 For the historical v0.8.0 snapshot (Peak Load & Free-Float Validation narrative), see [`docs/archive/ASHRAE140_RESULTS_v0.8.0.md`](docs/archive/ASHRAE140_RESULTS_v0.8.0.md) (archived; superseded by the current blind-validation figures above).
