@@ -5,7 +5,7 @@ Read this before modifying any physics code or validation logic.
 Covers: numerical reasoning via code, energy balance, ASHRAE 140 compliance, code quality.
 Companion to CONTRIBUTING.md (workflow) and ARCHITECTURE.md (module contracts).
 Status: Active — all rules are enforced by CI and code review.
-Action: Run `cargo clippy --workspace --exclude fluxion-tauri --lib -- -D warnings` and ASHRAE validation before committing physics changes. (The `--exclude fluxion-tauri` is required because `fluxion-tauri`'s proc-macro build needs `npm run build` in `fluxion-tauri/frontend/` to materialise `../frontend/dist`; see Issue #3126 / `rust-tests.yml:428`.)
+Action: Run `cargo clippy --lib -- -D warnings` and ASHRAE validation before committing physics changes. The root-crate `clippy --lib` form matches `AGENTS.md` §"Commands That Are Easy to Guess Wrong" so contributors following RULES.md's pre-commit recipe get the same CI signal as the AGENTS.md convention; workspace-wide clippy is run by CI's `Clippy (GH)` gate.
 
 ## Hard Constraints
 
