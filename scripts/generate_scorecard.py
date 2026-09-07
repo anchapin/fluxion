@@ -35,6 +35,7 @@ Exit codes:
 from __future__ import annotations
 
 import argparse
+import json
 import re
 import sys
 from dataclasses import dataclass, field
@@ -52,6 +53,10 @@ for _stream in (sys.stdout, sys.stderr):
 
 REPO = Path(__file__).resolve().parent.parent
 ASHRAE_DOC = REPO / "docs" / "ASHRAE140_RESULTS.md"
+# Issue #3403: most-recent validation-run history. When present, the
+# throughput figure is taken from the latest entry here instead of the
+# (batch-generated, potentially weeks-stale) ASHRAE140_RESULTS.md.
+PERF_HISTORY = REPO / "target" / "performance_history.jsonl"
 GATES_YAML = REPO / "release_gates.yaml"
 README_MD = REPO / "README.md"
 SCORECARD = REPO / "SCORECARD.md"
@@ -106,6 +111,32 @@ def _num(text: str) -> Optional[float]:
         return None
     m = re.search(r"-?\d+(?:\.\d+)?", text.replace(",", ""))
     return float(m.group(0)) if m else None
+
+
+def apply_performance_history(v: Validation) -> str:
+    """Override v.throughput_cases_per_sec from the latest perf-history
+    entry (Issue #3403). Returns the source string for attribution; the
+    committed results doc remains the fallback when no history exists
+    (e.g. fresh checkout -- target/ is a build artifact)."""
+    if not PERF_HISTORY.exists():
+        return "`docs/ASHRAE140_RESULTS.md`"
+    try:
+        last = None
+        for line in PERF_HISTORY.read_text(encoding="utf-8").splitlines():
+            line = line.strip()
+            if line:
+                last = line
+        if last is None:
+            return "`docs/ASHRAE140_RESULTS.md`"
+        entry = json.loads(last)
+        thr = float(entry.get("throughput", 0.0))
+        if thr > 0.0:
+            v.throughput_cases_per_sec = thr
+            ts = str(entry.get("timestamp", ""))[:10]
+            return f"`target/performance_history.jsonl` (latest run {ts})"
+    except (json.JSONDecodeError, ValueError, OSError):
+        pass
+    return "`docs/ASHRAE140_RESULTS.md`"
 
 
 def parse_ashrae(doc_text: str) -> Validation:
@@ -300,6 +331,7 @@ def render(
     series: list[SeriesRow],
     g: Gates,
     b: Benchmark,
+    throughput_source: str = "`docs/ASHRAE140_RESULTS.md`",
 ) -> str:
     pass_ok = v.pass_rate >= g.min_pass_rate
     mae_ok = v.mae <= g.max_mae
@@ -361,7 +393,7 @@ def render(
     )
     p(
         f"| Validation-suite throughput | {v.throughput_cases_per_sec:.2f} "
-        f"cases/sec | (informational) | ℹ️ | `docs/ASHRAE140_RESULTS.md` |"
+        f"cases/sec | (informational) | ℹ️ | {throughput_source} |"
     )
     p(
         f"| Max single-case deviation | {v.max_deviation:.2f}% | "
@@ -432,7 +464,7 @@ def render(
         f"- **Validation-suite throughput:** "
         f"{v.throughput_cases_per_sec:.2f} cases/sec — informational only; "
         f"this is the test-runner cadence, not the BatchOracle benchmark "
-        f"(source: `docs/ASHRAE140_RESULTS.md`)."
+        f"(source: {throughput_source})."
     )
     p("")
 
@@ -543,7 +575,7 @@ def render(
 
 def load_all(
     verbose: bool = False,
-) -> tuple[Validation, list[SeriesRow], Gates, Benchmark]:
+) -> tuple[Validation, list[SeriesRow], Gates, Benchmark, str]:
     if not ASHRAE_DOC.exists():
         print(
             f"ERROR: {ASHRAE_DOC} not found (committed validation report).",
@@ -558,6 +590,7 @@ def load_all(
     readme_text = README_MD.read_text(encoding="utf-8") if README_MD.exists() else ""
 
     v = parse_ashrae(doc)
+    throughput_source = apply_performance_history(v)
     series = parse_series(doc)
     g = parse_gates(yaml_text)
     b = parse_readme_throughput(readme_text)
@@ -578,7 +611,7 @@ def load_all(
             f"  benchmark: readme_release={b.readme_release_throughput} "
             f"ci_comment={g.ci_throughput_comment}"
         )
-    return v, series, g, b
+    return v, series, g, b, throughput_source
 
 
 def main() -> int:
@@ -598,8 +631,8 @@ def main() -> int:
     ap.add_argument("-v", "--verbose", action="store_true", help="print parsed values")
     args = ap.parse_args()
 
-    v, series, g, b = load_all(verbose=args.verbose)
-    content = render(v, series, g, b)
+    v, series, g, b, throughput_source = load_all(verbose=args.verbose)
+    content = render(v, series, g, b, throughput_source)
 
     if args.check:
         if not SCORECARD.exists():
