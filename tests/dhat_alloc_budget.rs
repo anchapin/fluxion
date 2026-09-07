@@ -1,5 +1,31 @@
 //! Allocation-budget gate for the `BatchOracle` hot loop (Issue #2709).
 //!
+//! ## Issue chain (#2709 → #2687 → #3370 → #3378 → #3387)
+//!
+//! - **#2709**: original ~26 M-alloc pathology tracked.
+//! - **#2687**: first resolution — `SmallVec<[f64; 4]>` migration of the
+//!   `PhysicsScratch5r1c` / `6r2c` / `9r4c` scratch pool. Brought the
+//!   measurement from 2 191 396 → 876 316 blocks.
+//! - **#3370**: late-Aug 2026 refactor (`3c0521b` "add boundary,
+//!   lighting, shading, schedule, ventilation modules") re-introduced
+//!   four families of per-step heap allocations *outside* the scratch
+//!   pool — brought the measurement back to 1 401 924 blocks (60 %
+//!   regression vs post-#2687).
+//! - **#3378** (PR title: "fix(perf): resolve #3370 — restore
+//!   BatchOracle hot-loop allocation regression to dhat gate budget",
+//!   merged 2026-09-06T22:42:08Z, merge commit `920272f`): extended
+//!   the scratch pool to absorb the regression. Brought the
+//!   measurement to **414 blocks / 335 529 bytes** — a 99.95 % drop
+//!   from the post-#2687 baseline. The budget constants below were
+//!   ratcheted DOWN to 600 / 410 000 in the same PR.
+//! - **#3387** (THIS ISSUE, opened as a follow-up tracker after #3370
+//!   closed without the breach being resolved): closed by doc-comment
+//!   because PR #3378 already landed the actual fix. The breach
+//!   documented at #3387's open ("1,401,924 blocks > 1,100,000 budget")
+//!   is no longer accurate — the budget is 600 against 414 measured
+//!   blocks, well within tolerance. The dhat-alloc-budget workflow job
+//!   exits 0 on develop HEAD.
+//!
 //! ## Purpose
 //! This is a **PR-gated regression guard** on the number of heap allocations
 //! produced by one `BatchOracle::evaluate_population` run. The `dhat` feature
