@@ -477,8 +477,8 @@ def render(
     p("")
     p(
         "*Case-level = a case is PASS only if its aggregate row is ✅. "
-        "Metric-level headline (20.3%) counts each reported metric individually; "
-        "see `docs/ASHRAE140_RESULTS.md` Summary.*"
+        f"Metric-level headline ({v.pass_rate:.1f}%) counts each reported "
+        "metric individually; see `docs/ASHRAE140_RESULTS.md` Summary.*"
     )
     p("")
 
