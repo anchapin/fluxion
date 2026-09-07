@@ -221,8 +221,20 @@ def _repo_relative(path: str) -> str:
         return rel.as_posix()
     except ValueError:
         pass
-    # Fall back to stripping common prefixes that llvm-cov emits.
-    for marker in ("/src/", "/fluxion-core/src/"):
+    # Already repo-relative? Return as-is. Covers ``cargo llvm-cov``
+    # emitting workspace-relative ``SF:`` records (e.g.
+    # ``fluxion-core/src/weather/x.rs``); the marker-stripping below
+    # would otherwise drop the ``fluxion-core/`` crate prefix (latent
+    # bug found by the #3427 unit tests).
+    if path.startswith(("src/", "fluxion-core/src/")):
+        return path
+    # Fall back to stripping absolute prefixes that llvm-cov emits.
+    # Longest marker first: ``/fluxion-core/src/`` must be tried BEFORE
+    # ``/src/`` — with the old order, ``/src/`` matched first inside
+    # ``.../fluxion-core/src/...`` and silently dropped the crate
+    # prefix, un-matching every ``fluxion-core/...`` CRITICAL_PATHS glob
+    # (making the ``/fluxion-core/src/`` marker dead code).
+    for marker in ("/fluxion-core/src/", "/src/"):
         idx = path.find(marker)
         if idx != -1:
             return path[idx + 1 :]
