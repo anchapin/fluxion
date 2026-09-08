@@ -37,6 +37,7 @@ on:
       - "scripts/check_doc_link_integrity.py"
       - "scripts/check_known_issues_summary.py"
       - "scripts/check_npm_readme_codeblocks.mjs"
+      - "scripts/check_cli_doc_stubs.py"
       - "npm/README.md"
       - "docs/doc-inventory.md"
       - "docs/**"
@@ -183,8 +184,25 @@ jobs:
             echo "exit_code=0" >> "$GITHUB_OUTPUT"
           fi
 
+      - name: Run CLI doc-stub consistency gate (Issue #3550)
+        id: cli_doc_stubs
+        run: |
+          # Issue #3550 acceptance #3: close the gap left by #3534 so a future
+          # docs patch cannot quietly re-introduce a runnable-looking CLI
+          # example for a #2947-stubbed path (`fluxion run -w ...`,
+          # `fluxion measure ...`, `fluxion diagnose ...`,
+          # `fluxion validate-case ...`). Every such reference in
+          # `docs/**/*.md` must carry an explicit #2947 / stub-note /
+          # fail-loud / SUPERSEDED annotation within ±12 lines.
+          python3 scripts/check_cli_doc_stubs.py
+          EXIT_CODE=$?
+          echo "exit_code=$EXIT_CODE" >> "$GITHUB_OUTPUT"
+          if [[ $EXIT_CODE -ne 0 ]]; then
+            echo "::error::CLI doc-stub consistency gate failed (issue #3550 acceptance #3); every `fluxion run -w` / `fluxion measure` / `fluxion diagnose` / `fluxion validate-case` reference in docs/**/*.md needs an explicit #2947 annotation"
+          fi
+
       - name: Aggregate results
-        if: steps.root_md.outputs.exit_code != '0' || steps.docs_summaries.outputs.exit_code != '0' || steps.doc_inventory.outputs.exit_code != '0' || steps.doc_inventory_fresh.outputs.exit_code != '0' || steps.npm_readme.outputs.exit_code != '0' || steps.doc_link_integrity.outputs.exit_code != '0' || steps.known_issues_summary.outputs.exit_code != '0' || steps.mqtt_escape_hatch_docs.outputs.exit_code != '0'
+        if: steps.root_md.outputs.exit_code != '0' || steps.docs_summaries.outputs.exit_code != '0' || steps.doc_inventory.outputs.exit_code != '0' || steps.doc_inventory_fresh.outputs.exit_code != '0' || steps.npm_readme.outputs.exit_code != '0' || steps.doc_link_integrity.outputs.exit_code != '0' || steps.known_issues_summary.outputs.exit_code != '0' || steps.mqtt_escape_hatch_docs.outputs.exit_code != '0' || steps.cli_doc_stubs.outputs.exit_code != '0'
         run: |
           echo "One or more docs-hygiene checks failed. See logs above."
           exit 1
