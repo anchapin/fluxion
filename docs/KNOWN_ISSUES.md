@@ -25,9 +25,9 @@ canonical source for tracking when quarantined tests can be un-ignored (per Issu
 
 **LIMIT-20 updated (Issue #3218):** `tests/ashrae_140_solid_conduction_variants.rs::test_solid_conduction_variants_integration` assertion changed from `pass_rate > 80.0` to `pass_rate >= 75.0` per Issue #3218. The HighMass sub-variant returns 0.00 kWh (LIMIT-11 / #3064 root cause), the other three variants (NoLoads / NoSolar / ThermalBridge) all return −18.18 kWh, so the pass rate is 3/4 = 75.0%. This is the explicit follow-up quarantine that §LIMIT-11 / #3064 scoped itself OUT of: the #3064 sub-agent noted *"This is out of scope per the explicit instructions ('Mark the failing test as #[ignore]' — singular). Documented in LIMIT-11 as a known pre-existing wave-orchestration failure needing a follow-up quarantine PR."* The threshold was updated to 75% (not lowered further) to reflect the known structural limitation (HighMass is routed to GaugeSolver #1465/#1462); per AGENTS.md / RULES.md / ADR-0001 "no parameter tuning" / "must-never hardcode results", the threshold is NOT lowered below 75% to absorb the failure. The per-test `test_case_195_high_mass_walls` quarantine from LIMIT-11 is unchanged. See §LIMIT-20 for the affected test, the §LIMIT-11 cohort framing, and the cross-references to #3218 (this issue), #3064 (LIMIT-11 sibling), #3072 (cohort tracking), and #1465 / #1462 (architectural unblocker).
 
-**LIMIT-21 added (Issue #3297):** Gauge β-path pre-existing air-trajectory failure cohort — with `--features gauge-solver`, a verified-identical failure set (checked at `fd7ef13^` = `832b0fe` and at HEAD `0b54606`, 2026-09-03) fails across five test binaries, all on the gauge solver's AIR trajectory: `tests/zone_balance_eplus_isolation.rs` 2/21 (`test_physics_thermal_model_eplus_case_600_reference_csv`: T_zone mean −12.59 °C, |mean − 20| = 32.594 °C, max step jump 34.007 °C vs the E+ CSV; `test_free_floating_case_900ff_isolation`: free-float divergence to non-finite); `tests/ashrae_140_case_600_series.rs` 21/27 (nightly criterion 4); `tests/known_issues_regression.rs::issue_1457_case_600_series_tracking` (nightly criterion 5 — 13 Case 600-series metrics out-of-band pending GaugeSolver #1465, e.g. `Case650/annual_cooling=85.57MWh`, `Case600FF/min_free_float=-36.91C`); `tests/ashrae_140_case_960_sunspace.rs` 3 (`test_case_960_comprehensive_energy_validation`, `test_case_960_full_validation`, `test_case_960_validator_no_longer_6r2c_override_issue_1456`); `tests/ashrae_140_blind_validation.rs` 1 (`test_case_950_night_flush_zone_cooling_in_july`). These are the blocking residuals for the Issue #3286 β-soak streak (nightly criteria 2 / 4 / 5 stay red; criteria 1 / 3 / 6 are green) and gate the PR4 default-flip (#3291). The #3297 mass-state proxy is NOT the cause — the strict-gate residuals it targets are exactly 0 (Case 600: 168 violations / max 2.62e4 W → 0 / 0.0 W; Case 960 multi-zone: 0 / 0.0 W) and the failure set is byte-identical before/after `fd7ef13`. Deliberately NOT `#[ignore]`-quarantined — they are the β-soak gate signal. See §LIMIT-21.
+**LIMIT-21 added (Issue #3297) + production-path flip (Phase A8, Issue #3291, PR #3482):** Gauge β-path pre-existing air-trajectory failure cohort — with `--features gauge-solver`, a verified-identical failure set (checked at `fd7ef13^` = `832b0fe` and at HEAD `0b54606`, 2026-09-03) fails across five test binaries, all on the gauge solver's AIR trajectory: `tests/zone_balance_eplus_isolation.rs` 2/21 (`test_physics_thermal_model_eplus_case_600_reference_csv`: T_zone mean −12.59 °C, |mean − 20| = 32.594 °C, max step jump 34.007 °C vs the E+ CSV; `test_free_floating_case_900ff_isolation`: free-float divergence to non-finite); `tests/ashrae_140_case_600_series.rs` 21/27 (nightly criterion 4); `tests/known_issues_regression.rs::issue_1457_case_600_series_tracking` (nightly criterion 5 — 13 Case 600-series metrics out-of-band pending GaugeSolver #1465, e.g. `Case650/annual_cooling=85.57MWh`, `Case600FF/min_free_float=-36.91C`); `tests/ashrae_140_case_960_sunspace.rs` 3 (`test_case_960_comprehensive_energy_validation`, `test_case_960_full_validation`, `test_case_960_validator_no_longer_6r2c_override_issue_1456`); `tests/ashrae_140_blind_validation.rs` 1 (`test_case_950_night_flush_zone_cooling_in_july`). These are the blocking residuals for the Issue #3286 β-soak streak (nightly criteria 2 / 4 / 5 stay red; criteria 1 / 3 / 6 are green) and gate the **production-path switchover** that Issue #3291 / PR #3482 staged: §LIMIT-21 closure is the precondition for the `gauge-solver` cargo feature to leave "off by default" and become the unconditional production default (Phase A8 ships the code change unconditionally but intentionally retains the cargo feature as the production-path gate — the **default build (feature OFF) continues to route the `Gauge` selector to 5R1C/9R4C**, so the β-soak-blocking residuals above are not on the production path until the feature is enabled). The #3297 mass-state proxy is NOT the cause — the strict-gate residuals it targets are exactly 0 (Case 600: 168 violations / max 2.62e4 W → 0 / 0.0 W; Case 960 multi-zone: 0 / 0.0 W) and the failure set is byte-identical before/after `fd7ef13`. Deliberately NOT `#[ignore]`-quarantined — they are the β-soak gate signal. See §LIMIT-21.
 
-**LIMIT-22 added (Issue #3297):** Gauge-build-only test failures exposed by replacing the PR2.5 trivial mass-state proxy (`t_mass = (h_tr_em·T_air + h_tr_3·T_air)/(h_tr_em + h_tr_3)`, ~50–170 kWh non-zero strict-gate residual per the #3297 issue body) with the exact Crank-Nicolson mirror of the strict gate (`write_gauge_mass_state_proxy`, `fd7ef13`). Three tests that passed before `fd7ef13` fail on the gauge build — each was passing for a physically-wrong reason: (1) `test_case_950_mass_temperature_precooled_issue_1422` — the > 2 °C overnight mass pre-cool band was satisfied by the trivial proxy writing `t_mass = t_air` (air swing, no mass time constant); the exact CN node at Case 950's τ_mass ≈ 61 h attenuates a 12-h overnight air swing by 1/√(1+(2π·61/12)²) ≈ 0.031 and swings +1.09 °C on the gauge air trajectory (legacy 5R1C: +2.41 °C at T_mass ≈ +41 °C July vs gauge ≈ −27.6 °C); (2) `test_case_960_inter_zone_heat_transfer_analysis` — passed pre-#3297 on the pure-legacy fall-through; with the multi-zone arm re-enabled the gauge integration is oscillatory-unstable for the Case 960 sunspace (±140 °C step-level ΔT spikes around the #3297 fail-closed [−50, 100] °C guard; annual means in-band at ≈ 13.8 / 19.8 °C); (3) `test_different_zones_respond_differently_to_targeted_gain` — the checker's 5R1C residual routes an artificial load gain through φm·m_air_frac only, so with `m_air_frac = 0` the gain leverage is structurally zero and the exact-CN proxy makes every zone imbalance exactly 0 (the pre-#3297 pass was vacuous on the trivial proxy's non-zero baseline residual; sibling of §LIMIT-19 / #3103). All three are quarantined gauge-build-only via `#[cfg_attr(feature = "gauge-solver", ignore = "...")]` — the default-build assertions remain fully live and pass (zone_balance 19/0/2; all three green). No threshold, baseline, or checker formula was changed; no production code was changed. Unblockers: #3291 / #1465 / #1462 (air-trajectory fidelity + multi-zone stability) and the §LIMIT-19 #1344 artificial-gain investigation. See §LIMIT-22.
+**LIMIT-22 added (Issue #3297):** Gauge-build-only test failures exposed by replacing the PR2.5 trivial mass-state proxy (`t_mass = (h_tr_em·T_air + h_tr_3·T_air)/(h_tr_em + h_tr_3)`, ~50–170 kWh non-zero strict-gate residual per the #3297 issue body) with the exact Crank-Nicolson mirror of the strict gate (`write_gauge_mass_state_proxy`, `fd7ef13`). Three tests that passed before `fd7ef13` fail on the gauge build — each was passing for a physically-wrong reason: (1) `test_case_950_mass_temperature_precooled_issue_1422` — the > 2 °C overnight mass pre-cool band was satisfied by the trivial proxy writing `t_mass = t_air` (air swing, no mass time constant); the exact CN node at Case 950's τ_mass ≈ 61 h attenuates a 12-h overnight air swing by 1/√(1+(2π·61/12)²) ≈ 0.031 and swings +1.09 °C on the gauge air trajectory (legacy 5R1C: +2.41 °C at T_mass ≈ +41 °C July vs gauge ≈ −27.6 °C); (2) `test_case_960_inter_zone_heat_transfer_analysis` — passed pre-#3297 on the pure-legacy fall-through; with the multi-zone arm re-enabled the gauge integration is oscillatory-unstable for the Case 960 sunspace (±140 °C step-level ΔT spikes around the #3297 fail-closed [−50, 100] °C guard; annual means in-band at ≈ 13.8 / 19.8 °C); (3) `test_different_zones_respond_differently_to_targeted_gain` — the checker's 5R1C residual routes an artificial load gain through φm·m_air_frac only, so with `m_air_frac = 0` the gain leverage is structurally zero and the exact-CN proxy makes every zone imbalance exactly 0 (the pre-#3297 pass was vacuous on the trivial proxy's non-zero baseline residual; sibling of §LIMIT-19 / #3103). All three are quarantined gauge-build-only via `#[cfg_attr(feature = "gauge-solver", ignore = "...")]` — the default-build assertions remain fully live and pass (zone_balance 19/0/2; all three green). No threshold, baseline, or checker formula was changed; no production code was changed. Unblockers: Issue **#3291** (Phase A8 default flip — merged via PR #3482; `ThermalSelector::default() = ZoneSolverKind::Gauge`, gated on the `gauge-solver` cargo feature and §LIMIT-21 β-soak closure) plus #1465 / #1462 (air-trajectory fidelity + multi-zone stability) and the §LIMIT-19 #1344 artificial-gain investigation. See §LIMIT-22.
 
 **LIMIT-12 added (Issue #3062):** Case 940 annual heating is 7,487.81 kWh on the CTF validator path versus 1,289.9 kWh on the blind diagnostic path after PR #3042; the remaining setback-recovery overshoot is structural and tracked without a production-physics change.
 
@@ -1151,7 +1151,7 @@ they are physically correct and flip one marginal test.
 - **Date added:** 2026-08-16 (Issue #3072)
 - **Cohort:** ASHRAE 140 Cases **195 / 600 / 620 / 940 / 960**.
 - **Root cause (shared):** All five cases share the same `step_physics_5r1c` / `step_physics_9r4c` structural limitation — a single lumped thermal-mass node cannot capture multi-mode thermal coupling accurately enough for ASHRAE 140's strict ±15% reference band on the aggressive-cohort cases. This is the same discrete-node solar-injection pathology documented in §LIMIT-05 (CTF-vs-blind 6–8× ratio, bidirectional peak-cooling OVER + peak-heating UNDER, bidirectional annual-energy over-prediction).
-- **Unblocker:** **GaugeSolver structural rework (#1465 / #1462)** — treats solar as geometric curvature rather than per-timestep energy injection, eliminating the per-timestep over-injection that drives the bidirectional signatures. Both issues are individually **closed** (the Phase 1b shadow-mode `GaugeSolver` ships in `physics_adapter.rs` per #1462; the Phase 3 ASHRAE 140 Case 900 validation harness ships per #1465) — but the **production-path switchover is not yet landed**, so the strict ±15% pass-rate gate cannot lift above 30% even with all Wave 14–22 partial fixes.
+- **Unblocker:** **GaugeSolver structural rework (#1465 / #1462)** — treats solar as geometric curvature rather than per-timestep energy injection, eliminating the per-timestep over-injection that drives the bidirectional signatures. Both issues are individually **closed** (the Phase 1b `GaugeSolver` ships in `physics_adapter.rs` per #1462; the Phase 3 ASHRAE 140 Case 900 validation harness ships per #1465). **Phase A8 default flip (Issue #3291, merged via PR #3482)** wires the gauge path as the unconditional default of `ThermalSelector::default()` (`src/sim/thermal_selector.rs`); the `gauge-solver` cargo feature is intentionally retained as the production-path gate pending closure of §LIMIT-21 (the β-soak program, currently 0/30 nights green). The default build (feature OFF) continues to route the `Gauge` selector to legacy 5R1C/9R4C until the feature is enabled, so the strict ±15% pass-rate gate cannot lift above ~30% even with all Wave 14–22 partial fixes landed; flipping the feature on lifts the floor in proportion to the gauge path's coverage of the §LIMIT-21 / LIMIT-05 / LIMIT-12 / LIMIT-13 / LIMIT-14 / LIMIT-16 / LIMIT-17 / LIMIT-18 residuals.
 - **Why no fix in this meta-issue:** Per **RULES.md** ("no parameter tuning", "must-never hardcode results"), **AGENTS.md** ("fix the underlying math"; the `tests/reference_data/zone_balance/strict_energy_gate_baseline.json` baseline must NEVER be raised to hide a regression), and **ADR-0001** (No-Parameter-Tuning Rule), the cohort cannot be closed by adjusting `h_ms_coeff`, `derived_h_tr_3`, `solar_distribution_to_air`, or any 5R1C/CTF constant. Closing the bidirectional gap is structurally infeasible at `dt/τ ≈ 3.6` per the §LIMIT-05 UPDATE (#1522) investigation and per §SOLAR-02 UPDATE (#2239) routing. This entry is **documentation/tracking only** — it does not propose, suggest, or hint at a tuning fix.
 
 ### Per-case cohort status
@@ -1168,8 +1168,9 @@ they are physically correct and flip one marginal test.
 
 | Issue | Title | Status | Notes |
 |-------|-------|--------|-------|
-| **#1465** | [Validation] Phase 3: Validate `GaugeSolver` against ASHRAE 140 Case 900 | ✅ **Closed** | Validation harness shipped; production-path switchover NOT yet landed |
-| **#1462** | [Physics] Phase 1b: Implement `GaugeSolver` in Shadow Mode inside `physics_adapter.rs` | ✅ **Closed** | Shadow-mode `GaugeSolver` shipped; production-path switchover NOT yet landed |
+| **#1465** | [Validation] Phase 3: Validate `GaugeSolver` against ASHRAE 140 Case 900 | ✅ **Closed** | Validation harness shipped; production-path switchover landed as Phase A8 (Issue #3291, PR #3482) — gated on the `gauge-solver` cargo feature / §LIMIT-21 β-soak closure |
+| **#1462** | [Physics] Phase 1b: Implement `GaugeSolver` in Shadow Mode inside `physics_adapter.rs` | ✅ **Closed** | `GaugeSolver` shipped; Phase A8 (Issue #3291, PR #3482) promotes from shadow to production-path conditional default (gated on `--features gauge-solver` and §LIMIT-21 β-soak closure) |
+| **#3291** | Phase A8: wire GaugeSolver as production default | ✅ **Closed** (merged via PR #3482) | `ThermalSelector::default() = ZoneSolverKind::Gauge`; `gauge-solver` cargo feature retained as the production-path gate pending §LIMIT-21 closure. See Module 5 / Phase A8 note in `AGENTS.md` and `ARCHITECTURE.md`. |
 | **#3058** | Case 950FF night-ventilation mass coupling overwhelms F_sky correction (#2872 partial follow-up) | 🔄 Open | F_sky fix moved Case 950FF min by 0.02 °C; still 3.7 °C outside band |
 | **#3059** | Cases 610/630/650 peak cooling OVER (LIMIT-05) — requires GaugeSolver #1465/#1462 structural fix (#2871 follow-up) | 🔄 Open | `MAX_CONVECTIVE_TO_AIR_MULTIPLIER = 2.0×` cap landed (PR #3041); Cases 610/630/650 still over |
 | **#3061** | Case 960 sunspace annual cooling below band (5R1C air-mass distribution limitation, #2858 follow-up) | 🔄 Open | `COMMON_WALL_FRACTION = 0.25 × U_internal × A_wall_excluding_door` landed (PR #3052); annual cooling still below band |
@@ -1199,7 +1200,7 @@ The fix is **structural** — the `GaugeSolver` rework (#1465 / #1462) — and t
 ### External references
 
 - `docs/ASHRAE140_RESULTS.md` — current pass-rate snapshot (post-#3044 PR; 12.5 % headline, MAE 51.93 %)
-- `docs/adr/0007-gauge-solver-structural-work.md` — structural-work tracking stub (Status: Accepted — production-path switchover planned per Issue #3172)
+- `docs/adr/0007-gauge-solver-structural-work.md` — structural-work tracking stub (Status: Accepted — Phase A8 production-path switchover landed via Issue #3291 / PR #3482, gated on the `gauge-solver` cargo feature / §LIMIT-21 β-soak closure)
 - `docs/gauge_solver_scalability.md` — `MultiZoneGaugeSolver` scalability characterisation (Issue #1771)
 - `RULES.md` — "no parameter tuning" + "must-never hardcode results"
 - `AGENTS.md` — "fix the underlying math"; strict-energy-gate baseline must NEVER be raised
@@ -1912,12 +1913,19 @@ solar + envelope heat transfer, not a 5R1C/CTF parameter adjustment.
      coordination with the GaugeSolver rework.
   3. The genuinely architectural fix is the GaugeSolver rework
      (#1465 / #1462), which treats solar as geometric curvature rather
-     than per-timestep energy injection. #1462 (Phase 1b shadow-mode
+     than per-timestep energy injection. #1462 (Phase 1b `GaugeSolver`
      implementation) and #1465 (Phase 3 ASHRAE 140 Case 900 validation
-     harness) are both **closed** individually, but the
-     production-path switchover is NOT yet landed — see
+     harness) are both **closed** individually; the
+     production-path switchover is **staged** — Phase A8 (#3291, PR
+     #3482) wires `ThermalSelector::default() = ZoneSolverKind::Gauge`
+     and the dispatcher's unconditional gauge default, but the
+     `gauge-solver` cargo feature remains the production-path gate
+     pending §LIMIT-21 closure (the β-soak program, Issue #3286). The
+     default build (feature OFF) routes the `Gauge` selector to
+     5R1C/9R4C via the dispatcher's `match` arm — see `AGENTS.md` and
+     `ARCHITECTURE.md` Module 5 for the Phase A8 notes and
      `docs/adr/0007-gauge-solver-structural-work.md` §"Status of the
-     underlying work".
+     underlying work" for the historical tracking.
 
 - **Per-step `h_tr_em` semantics (documentation for the future
   implementer):**
@@ -1970,7 +1978,9 @@ solar + envelope heat transfer, not a 5R1C/CTF parameter adjustment.
     snapshot-diff verifier pattern (#3070) that the now-removed
     `verify_h_tr_em_regression.py` mirrored.
   - `docs/adr/0007-gauge-solver-structural-work.md` — the
-    architectural unblocker (#1465/#1462 production-path switchover).
+    architectural unblocker (Phase A8 production-path switchover landed
+    via Issue #3291 / PR #3482, gated on the `gauge-solver` cargo
+    feature / §LIMIT-21 β-soak closure).
   - `RULES.md` — "no parameter tuning" + "must-never hardcode results".
   - `AGENTS.md` — "do NOT modify physics code without checking
     ARCHITECTURE.md first"; strict-energy-gate baseline must NEVER be
@@ -2031,12 +2041,19 @@ solar + envelope heat transfer, not a 5R1C/CTF parameter adjustment.
      other multi-zone and solar-distribution cases.
   3. **Complete the GaugeSolver production-path switchover — required
      structural route.** Issue #3059 coordinates this unblocker through the
-     GaugeSolver work in #1465 / #1462. Those issues shipped shadow-mode and
-     validation infrastructure, but production `step_physics_5r1c` /
-     `step_physics_9r4c` replacement has not landed. This option has broad
-     solver, energy-balance, and cross-case regression risk, so it requires a
-     dedicated architecture-reviewed physics PR rather than a Case 960
-     constant change.
+     GaugeSolver work in #1465 / #1462 (and the Phase A8 default flip in
+     Issue #3291 / PR #3482, which wires `ThermalSelector::default() =
+     ZoneSolverKind::Gauge` but intentionally retains the `gauge-solver`
+     cargo feature as the production-path gate pending §LIMIT-21 closure).
+     Those issues have shipped `GaugeSolver` shadow→production wiring
+     and validation infrastructure, but the production `step_physics_5r1c` /
+     `step_physics_9r4c` dispatch is not yet backed by the gauge path for the
+     default build; the gauge code change landed unconditionally in
+     `src/sim/thermal_model_physics/step_dispatcher.rs` but the cargo feature
+     remains off-by-default until the β-soak gate (Issue #3286) trips. This
+     option has broad solver, energy-balance, and cross-case regression risk,
+     so it requires a dedicated architecture-reviewed physics PR rather than
+     a Case 960 constant change.
 
 - **Status:** 🔄 **Documentation/tracking only; blocked on Issue #3059 and the
   GaugeSolver production-path work (#1465 / #1462).** No physics, validation,
@@ -2061,8 +2078,11 @@ solar + envelope heat transfer, not a 5R1C/CTF parameter adjustment.
     air-mass-distribution replacement through GaugeSolver.
   - Issue #1456 — removed the broken Case 960 6R2C override and exposed the
     default 5R1C/9R4C path on which this limitation occurs.
-  - Issues #1465 / #1462 — GaugeSolver validation and shadow-mode foundations;
-    production-path switchover remains outstanding.
+  - Issues #1465 / #1462 — GaugeSolver validation and `GaugeSolver`
+    implementation; the Phase A8 production-path switchover is staged
+    (Issue #3291 / PR #3482) — `ThermalSelector::default() =
+    ZoneSolverKind::Gauge` is wired but the `gauge-solver` cargo feature
+    remains the production-path gate pending §LIMIT-21 closure.
   - §LIMIT-10 / Issue #3065 — sister Case 960 free-floating sunspace
     temperature limitation with the same architectural unblocker.
   - `docs/adr/0007-gauge-solver-structural-work.md` — existing cohort-level
@@ -2328,7 +2348,10 @@ solar + envelope heat transfer, not a 5R1C/CTF parameter adjustment.
   - `ADR-0001` — No-Parameter-Tuning Rule (forbids option b).
    - `docs/adr/0007-gauge-solver-structural-work.md` — architectural
     unblocker for the §LIMIT-05 / §LIMIT-11 / §LIMIT-15 sister
-    issues (#1465 / #1462 production-path switchover).
+    issues. The Phase A8 production-path switchover is staged
+    (Issue #3291 / PR #3482) — `ThermalSelector::default() =
+    ZoneSolverKind::Gauge` is wired but the `gauge-solver` cargo feature
+    remains the production-path gate pending §LIMIT-21 closure.
 
 ### LIMIT-16: Cases 610/630/650 peak cooling OVER — 5R1C + 9R4C air-mass distribution structural gap (Issue #3059)
 
@@ -2424,6 +2447,14 @@ solar + envelope heat transfer, not a 5R1C/CTF parameter adjustment.
      The Issues #3059 / #3058 cohort (the Case 950FF night-vent mass-
      coupling F_sky correction) and #2858 / #3061 (Case 960 sunspace)
      are sister limitations with the identical architectural unblocker.
+     The Phase A8 default flip (Issue #3291 / PR #3482) wires the gauge
+     dispatch unconditionally in `src/sim/thermal_model_physics/step_dispatcher.rs`
+     but intentionally retains the `gauge-solver` cargo feature as the
+     production-path gate pending §LIMIT-21 closure; the **default
+     build (feature OFF) continues to route the `Gauge` selector to
+     5R1C/9R4C** until the β-soak program trips (Issue #3286), at
+     which point this LIMIT's structural root cause lives inside the
+     gauge dispatch path.
 
 - **Status:** 🔄 **Documentation/tracking only; blocked on Issue #3059 and
   the GaugeSolver production-path work (#1465 / #1462).** No physics,
@@ -2464,10 +2495,13 @@ solar + envelope heat transfer, not a 5R1C/CTF parameter adjustment.
   - Issue **#3059** — this entry's origin; architectural unblocker
     coordinating the 5R1C / 9R4C air-mass-distribution replacement
     through GaugeSolver.
-  - Issues **#1465 / #1462** — GaugeSolver validation and shadow-mode
-    foundations; production-path switchover remains outstanding per
-    `docs/adr/0007-gauge-solver-structural-work.md` §"Status of the
-    underlying work".
+  - Issues **#1465 / #1462** — GaugeSolver validation and `GaugeSolver`
+    implementation; the Phase A8 production-path switchover is staged
+    via Issue #3291 / PR #3482 — `ThermalSelector::default() =
+    ZoneSolverKind::Gauge` is wired but the `gauge-solver` cargo
+    feature remains the production-path gate pending §LIMIT-21
+    closure per `docs/adr/0007-gauge-solver-structural-work.md`
+    §"Status of the underlying work".
   - §LIMIT-10 / Issue #3065 — sister Case 960 free-floating sunspace
     temperature limitation with the same architectural unblocker.
   - §LIMIT-11 / Issue #3064 — sister Case 195 high-mass walls zero-
@@ -2738,9 +2772,12 @@ solar + envelope heat transfer, not a 5R1C/CTF parameter adjustment.
   **#1898** (the PR that originally introduced `h_ve_night` for Case 950
   HVAC-mode mass pre-cooling), **#1422** (Case 950 5R1C night-vent
   override tracking — the structural-reduction sister issue),
-  **#3059** (5R1C/9R4C architectural rework — the GaugeSolver unblocker),
-  **#1465 / #1462** (GaugeSolver shadow-mode and validation harness —
-  both closed individually; production-path switchover remains outstanding).
+**#3059** (5R1C/9R4C architectural rework — the GaugeSolver unblocker),
+  **#1465 / #1462** (GaugeSolver implementation and validation harness —
+   both closed individually; production-path switchover staged via
+   **#3291 / PR #3482** (Phase A8 default flip) — `ThermalSelector::default() =
+   ZoneSolverKind::Gauge` is wired but the `gauge-solver` cargo feature
+   remains the production-path gate pending §LIMIT-21 closure).
   Long-term fix routed to GaugeSolver rework **#1465 / #1462**, which
   treats solar / envelope heat transfer as geometric curvature rather than
   per-timestep energy injection (per AGENTS.md / RULES.md "fix the
@@ -2895,8 +2932,11 @@ solar + envelope heat transfer, not a 5R1C/CTF parameter adjustment.
     cooling tracking (closed by PR #3041 partial fix).
   - Issue #3059 — 5R1C/9R4C architectural rework — the GaugeSolver
     unblocker.
-  - Issue #1465 / #1462 — GaugeSolver validation and shadow-mode
-    foundations; production-path switchover remains outstanding.
+  - Issue #1465 / #1462 — GaugeSolver validation and `GaugeSolver`
+    implementation; the Phase A8 production-path switchover is staged
+    via Issue #3291 / PR #3482 — `ThermalSelector::default() =
+    ZoneSolverKind::Gauge` is wired but the `gauge-solver` cargo
+    feature remains the production-path gate pending §LIMIT-21 closure.
   - `src/physics/multi_node_solver.rs::step_with_gains` (lines 1069–1156)
     and `step_backward_euler_with_gains` (lines 1164–1289) — the
     mass-update path that `h_ve_night` enters.
@@ -3220,7 +3260,7 @@ solar + envelope heat transfer, not a 5R1C/CTF parameter adjustment.
   (HighMass / NoLoads / NoSolar / ThermalBridge) remain active and
   unrelaxed below the `#[ignore]` marker.
 
-### LIMIT-21: Gauge β-path pre-existing air-trajectory failure cohort (Case 600 / 900FF / 600-series / 960 / 950FF) — β-soak blockers (Issue #3297)
+### LIMIT-21: Gauge β-path pre-existing air-trajectory failure cohort (Case 600 / 900FF / 600-series / 960 / 950FF) — β-soak blockers / production-path gate (Issue #3297 + Phase A8 default flip — Issue #3291, PR #3482)
 
 - **Description:** With `--features gauge-solver`, a fixed set of tests
   fails on the gauge solver's **air trajectory** across five test
@@ -3252,8 +3292,23 @@ solar + envelope heat transfer, not a 5R1C/CTF parameter adjustment.
   nightly criteria 2 (zone_balance), 4 (case_600_series), and 5
   (issue_1457 tracking) stay red; criteria 1 (`ashrae_140_validation`
   3/0), 3 (`integration-cli` 20/0), and 6 (`gauge_validation_case_900`
-  9/0 + 1 ignored) are green — and therefore gate the PR4 default-flip
-  (#3291).
+  9/0 + 1 ignored) are green — and therefore gate the Phase A8
+  default-flip (#3291, merged via PR #3482).
+- **Production-path gate (Phase A8 / Issue #3291).** The Phase A8 PR
+  (#3482) declared `ZoneSolverKind::Gauge` the unconditional default
+  of `ThermalSelector::default()` and made the dispatcher's
+  `step_physics` (`src/sim/thermal_model_physics/step_dispatcher.rs`)
+  panic on a missing gauge backend rather than fall through to legacy
+  5R1C/9R4C. The `gauge-solver` cargo feature is intentionally retained
+  as the production-path gate pending closure of this LIMIT — **the
+  default build (feature OFF) routes the `Gauge` selector to 5R1C/9R4C
+  via the `match` arm at the bottom of `step_physics`**, so the
+  β-soak-blocking residuals above are not on the production path until
+  the β-soak streak trips and the feature is enabled. β-soak gate is
+  currently at **0/30 nights green**; #3291's acceptance criterion
+  ("34/30") will trip on the 34th straight green nightly criterion set.
+  See `AGENTS.md` §Read Before Changing Boundaries — Phase A8 note,
+  and `ARCHITECTURE.md` Module 5.
 - **Affected Tests:** the set above. Deliberately **NOT**
   `#[ignore]`-quarantined: they are the β-soak gate signal, and
   quarantining them would let the nightly soak go green with the
@@ -3278,12 +3333,15 @@ solar + envelope heat transfer, not a 5R1C/CTF parameter adjustment.
   prior-agent report, and the failure set is unchanged by `fd7ef13`).
 - **GitHub Issue:** #3297 (the "zone_balance 21/21" acceptance
   criterion stays open until this entry closes), #3286 (β-soak),
-  #3291 (umbrella), #1457 (600-series tracking), #1465 / #1462
-  (architectural unblocker).
+  #3291 (Phase A8 default flip — merged via PR #3482), #1457
+  (600-series tracking), #1465 / #1462 (architectural unblocker).
 - **Status:** 🔄 **Known structural gaps; routed to the GaugeSolver
-  air-trajectory program (#3291 / #1465 / #1462).** No constant,
-  baseline, or threshold change is permitted to absorb these failures
-  (AGENTS.md / RULES.md / ADR-0001).
+  air-trajectory program (#3291 / #1465 / #1462).** Phase A8 (#3291
+  / PR #3482) wires gauge as the unconditional default, gated on the
+  `gauge-solver` feature and the β-soak program — *not* on a
+  per-case tolerance change. No constant, baseline, or threshold
+  change is permitted to absorb these failures (AGENTS.md / RULES.md
+  / ADR-0001).
 
 ### LIMIT-22: Gauge-build-only test failures exposed by the exact Crank-Nicolson mass-state proxy (Issue #3297 aftermath)
 
