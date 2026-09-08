@@ -151,6 +151,26 @@ jobs:
       - name: Enforce ENV_LOCK on env-mutating integration tests (Issue #3453)
         run: python3 scripts/check_env_setvar_serialized.py
 
+      # Issue #3442: test-inventory drift gate. The companion
+      # ``scripts/ci/test_check_test_inventory_drift.py`` covers the
+      # detector / ratchet / ``--update-baseline`` / ``--json``
+      # output-shape contracts against hermetic ``tmp_path``
+      # fixtures; this direct invocation covers the end-to-end
+      # against the real repo (same direct-invocation split as
+      # #2866 / #3444 / #3475 / #3453 above). The ``--no-verify``
+      # flag keeps the gate sub-second by using the AST-regex
+      # inventory; the verified (cargo ``--list`` cross-checked)
+      # counts are a separate ``python3 scripts/
+      # generate_test_inventory.py --verify`` invocation run by
+      # operators locally after a test-adding PR. Drift beyond the
+      # documented threshold (±5% or ±25 tests, whichever is
+      # larger), or growth above the ``BASELINE_LIB_TESTS`` /
+      # ``BASELINE_WORKSPACE_TESTS`` / ``BASELINE_TEST_BINARIES``
+      # ratchets in ``scripts/check_test_inventory_drift.py``,
+      # fails the PR.
+      - name: Enforce test-inventory drift gate (Issue #3442)
+        run: python3 scripts/check_test_inventory_drift.py --no-verify
+
       - name: Enforce ruff clean (keep the #2811 baseline at 0)
         run: |
           # Match ``.pre-commit-config.yaml``'s ``astral-sh/ruff-pre-commit``

@@ -186,3 +186,59 @@ concurrency = 1
 - **`scripts/check_concurrency_keys.py`** — companion CI guard that verifies the per-`head_sha` pattern in every workflow
 - **`scripts/check_required_checks_sync.py`** — existing CI guard for required-check / workflow-name drift (extended to verify the ADR-0015 shape via `check_concurrency_keys.py`)
 - **`copilot-instructions.md` lines 254, 423** — existing `--test-threads=N` usage (diagnostic isolation only); orthogonal to this rollout
+
+---
+
+## Test-count source-of-truth (Issue #3442)
+
+The numbers quoted in this document (3,922 lib tests, 5 skipped) and in
+`AGENTS.md` are durable snapshots taken at audit time and at every
+historical re-run. They drift on every test-adding PR; Issue #3442
+introduced a structural countermeasure:
+
+- `scripts/generate_test_inventory.py` derives the workspace test
+  inventory (binary count, lib-test count, ignored count, doc-test
+  count) from the on-disk source tree (and optionally cross-checks
+  against `cargo test --workspace --exclude fluxion-tauri -- --list`)
+  and writes it to `tests/test_inventory.json`. This is the source of
+  truth that `AGENTS.md` cites.
+- `scripts/check_test_inventory_drift.py` — wired into
+  `scripts-tests.yml` — fails any PR whose live counts grow above the
+  `BASELINE_LIB_TESTS` / `BASELINE_WORKSPACE_TESTS` /
+  `BASELINE_TEST_BINARIES` / `BASELINE_*_IGNORED` ratchets in the gate.
+  Shrinking the test suite is the only authorised direction; companion
+  cleanup PRs must LOWER the corresponding `BASELINE_*` constant AND
+  regenerate `tests/test_inventory.json` + `tests/reference_data/
+  test_inventory_baseline.json` in the same PR. This mirrors the
+  `BASELINE_KNOWN_ORPHANS` / `BASELINE_WIRED_BUT_DEAD` ratchets in
+  `scripts/check_orphan_modules.py` (Issues #3459 / #3458) and the
+  `BASELINE_ORPHANED_IGNORES` / `BASELINE_GHOST_ROWS` ratchets in
+  `scripts/generate_quarantine_registry.py` (Issue #3443).
+- The drift-threshold parameter is `±5%` (or `±25` tests, whichever
+  is larger). This catches the failure mode #3384 / #3442 documented:
+  AGENTS.md "1 day later, the count is stale again" cycles.
+
+Operationally:
+
+```bash
+# Refresh the inventory AFTER a test-adding PR (locally):
+python3 scripts/generate_test_inventory.py --verify
+# (rewrites tests/test_inventory.json; the ratchet constant stays)
+
+# Run the drift gate locally (should exit 0 against a clean repo):
+python3 scripts/check_test_inventory_drift.py --no-verify
+
+# When SHIPPING a future test-delete cleanup PR, regenerate both files
+# and LOWER the corresponding BASELINE_* constant in lock-step:
+python3 scripts/check_test_inventory_drift.py --update-baseline
+```
+
+The cold-verify run (~5 min for `cargo test --no-run -- --list`) is
+NOT run in CI per-PR; the in-CI gate compares the regenerated AST
+counts (fast, sub-second) against `tests/reference_data/
+test_inventory_baseline.json` whose seed values were captured with
+the verified cargo counts at HEAD `12856a9` and are documented as
+`VERIFIED_AT_HEAD_*` constants in `scripts/check_test_inventory_drift.py`.
+Operators reviewing the audit can diff AST vs verified values; the
+ratio is stable (~10% AST over-count because the regex does not
+honor `#[cfg(test)]` boundaries or feature gates).
