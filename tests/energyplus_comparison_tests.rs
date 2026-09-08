@@ -216,6 +216,12 @@ pub struct SimulationResults {
 }
 
 /// Simulate a case for one year and return results
+///
+/// Issue #3287: `enable_ctf_with_fd_fallback` is deprecated in favour of the
+/// selector-based constructor; the dispatch wiring for `conduction_solver = Ctf`
+/// is tracked in #3280 and is not yet complete, so this helper keeps calling
+/// the deprecated mutator to reproduce the validator's high-mass CTF path.
+#[allow(deprecated)]
 pub fn simulate_annual(case_id: &str) -> SimulationResults {
     let case_enum = match case_id {
         "600" => ASHRAE140Case::Case600,

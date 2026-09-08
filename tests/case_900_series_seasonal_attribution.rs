@@ -117,6 +117,11 @@ struct CaseAttribution {
     cooling_ref_max_mwh: f64,
 }
 
+/// Issue #3287: `enable_ctf_with_fd_fallback` is deprecated in favour of the
+/// selector-based constructor; the dispatch wiring for `conduction_solver = Ctf`
+/// is tracked in #3280 and is not yet complete, so this attribution helper
+/// keeps calling the deprecated mutator to reproduce the high-mass CTF path.
+#[allow(deprecated)]
 fn run_case_with_attribution(case_enum: ASHRAE140Case) -> CaseAttribution {
     let spec = case_enum.spec();
     let mut model =

@@ -2,6 +2,16 @@
 //!
 //! This test compares cooling energy results between CTF and 5R1C solvers
 //! to isolate the effect of CTF on E/W window cases (920, 930).
+//!
+//! Issue #3287: `enable_ctf_with_fd_fallback` is deprecated in favour of the
+//! selector-based constructor (`ThermalModel::from_spec_with_selector` with
+//! `conduction_solver = ConductionSolverKind::Ctf`). The dispatch wiring for
+//! non-default `conduction_solver` is tracked in #3280 and is not yet
+//! complete, so this comparison test keeps exercising the deprecated
+//! post-construction mutator — its whole point is to contrast the legacy
+//! CTF path against the 5R1C default.
+
+#![allow(deprecated)]
 
 use fluxion::physics::cta::VectorField;
 use fluxion::sim::engine::ThermalModel;

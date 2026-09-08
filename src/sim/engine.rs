@@ -8,7 +8,17 @@ pub use crate::sim::thermal_model_core::{
 };
 pub use crate::sim::timestep_solver::StepParameters;
 
+// Issue #3287 — `enable_ctf` is deprecated in favour of the selector-based
+// constructor `ThermalModel::from_spec_with_selector`. The four engine
+// tests below (`test_ctf_solver_enable`, `test_ctf_solver_disable`,
+// `test_ctf_solver_multi_zone`, `test_ctf_step_physics_integration`)
+// intentionally exercise the deprecated post-construction mutator to
+// verify the legacy path remains functional until the selector dispatch
+// (#3280) wires `conduction_solver = Ctf` end-to-end. The module-level
+// `#[allow(deprecated)]` keeps the deprecation warning scoped to the
+// whole test module rather than annotating each function.
 #[cfg(test)]
+#[allow(deprecated)]
 mod tests {
     use super::{StepParameters, ThermalModel};
     use crate::ai::surrogate::SurrogateManager;

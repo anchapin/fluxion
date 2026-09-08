@@ -845,6 +845,12 @@ where
 }
 
 /// Apply 900FF's thermal model configuration (6R2C + CTF) to any model
+///
+/// Issue #3287: `enable_ctf` is deprecated in favour of the selector-based
+/// constructor; the dispatch wiring for `conduction_solver = Ctf` is
+/// tracked in #3280 and is not yet complete, so this helper keeps calling
+/// the deprecated mutator to reproduce 900FF's high-mass CTF path.
+#[allow(deprecated)]
 fn apply_900ff_thermal_config(model: &mut ThermalModel<VectorField>) {
     use fluxion::physics::ctf_coefficients::CTFMaterial;
 

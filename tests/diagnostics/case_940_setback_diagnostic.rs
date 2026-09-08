@@ -346,6 +346,7 @@ fn test_case_940_setback_controller_mode_trace() {
 
 #[test]
 #[ignore = "Diagnostic: run with --ignored --nocapture for Case 940 #2452 CTF-enabled path comparison"]
+#[allow(deprecated)]
 fn test_case_940_ctf_path_comparison() {
     // The Issue #2452 numbers (8.249 / 12.136 MWh) come from the
     // production validator path which calls `enable_advanced_solver` for
@@ -508,6 +509,11 @@ fn test_case_940_ctf_path_comparison() {
 const CASE_940_CTF_BLIND_HEATING_RATIO_BASELINE: f64 = 5.993_508;
 const CASE_940_CTF_BLIND_HEATING_RATIO_TOLERANCE: f64 = 0.05;
 
+/// Issue #3287: `enable_ctf_with_fd_fallback` is deprecated in favour of the
+/// selector-based constructor; the dispatch wiring for `conduction_solver = Ctf`
+/// is tracked in #3280 and is not yet complete, so this helper keeps calling
+/// the deprecated mutator to reproduce the LIMIT-12 diagnostic CTF path.
+#[allow(deprecated)]
 fn case_940_ctf_model(spec: &CaseSpec) -> ThermalModel<VectorField> {
     let mut model =
         ThermalModel::<VectorField>::from_spec_with_selector(spec, &ThermalSelector::default())
