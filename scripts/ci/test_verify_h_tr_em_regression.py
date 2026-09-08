@@ -1,36 +1,42 @@
 """
-Pytest harness for ``scripts/verify_h_tr_em_regression.py`` -- Issue #3265.
+Pytest harness for ``scripts/verify_h_tr_em_regression.py`` -- Issue #3549.
 
-Mirrors the ``load_script`` + ``tmp_path`` mock-repo pattern from
-``scripts/ci/test_verify_gauge_solver_regression.py``:
+Re-materialized per the Issue #3549 acceptance contract:
 
-* load the script as a fresh module via the shared ``load_script`` fixture,
-* plant per-case JSON + ``baseline_manifest.json`` in ``tmp_path`` for each
-  scenario, then
-* drive ``main()`` through clean (no drift), regression (drift > 0),
-  placeholder (fail-closed), schema-drift, tolerance-override, and
-  SHA-256-fingerprint scenarios.
+* CLI args: ``--manifest <path>`` (single arg), ``--tolerance <float>``,
+  ``--strict``, ``--json``. The verifier validates the integrity of one
+  ``baseline_manifest.json`` against the per-case JSONs it enumerates
+  (SHA-256 fingerprint check), not a before/after diff.
+* Exit codes: ``EXIT_OK=0`` (all fingerprints match), ``EXIT_REGRESSION=1``
+  (mismatch under ``--strict``), ``EXIT_PLACEHOLDER=2`` (any per-case
+  ``sha256`` is null or manifest ``captured_at`` is null),
+  ``EXIT_USAGE=3`` (bad path, malformed JSON, missing manifest).
 
-The h_tr_em verifier follows the gauge_solver contract
-(ADR-0009 §2 / ADR-0008): same dataclass / dataclass surface
-(``CaseSnapshot`` / ``SnapshotSet`` / ``MetricDelta`` / ``DiffReport``),
-same ``EXIT_OK=0 / EXIT_REGRESSION=1 / EXIT_PLACEHOLDER=2 / EXIT_USAGE=3``
-exit codes, same fail-closed default. The tests below exercise each contract
-path so a future refactor that drifts from the documented behaviour trips
-this harness.
+Nine scenarios are exercised below, matching the Issue #3549 acceptance
+list: placeholder detection, no-drift (all match), regression (mismatch
+under ``--strict``), tolerance-override (``--tolerance`` CLI flag),
+schema-drift (bad ``_schema_version``), missing-manifest (exit 3),
+JSON output (``--json`` flag), ``--strict`` SHA-256 mismatch, and CLI
+tolerance-override (env var ``BASELINE_H_TR_EM_TOLERANCE``).
 """
 
 from __future__ import annotations
 
+import importlib.util
 import json
+import os
 import sys
 from pathlib import Path
 from typing import Any
 
 import pytest
 
+REPO_ROOT = Path(__file__).resolve().parent.parent.parent
+SCRIPT_PATH = REPO_ROOT / "scripts" / "verify_h_tr_em_regression.py"
 SCRIPT_NAME = "verify_h_tr_em_regression"
 SUPPORTED_SCHEMA_VERSION = 1
+
+MANIFEST_FILENAME = "baseline_manifest.json"
 
 METRIC_KEYS = (
     "h_tr_em_w_k",
@@ -48,391 +54,368 @@ DEFAULT_TOLERANCES = {m: 0.0 for m in METRIC_KEYS}
 
 
 # ---------------------------------------------------------------------------
-# Fixtures / helpers
+# Fixture: freshly-loaded verifier module
 # ---------------------------------------------------------------------------
 
 
 @pytest.fixture
-def verifier(load_script):
-    """Freshly-loaded copy of the h_tr_em regression verifier."""
-    return load_script(SCRIPT_NAME)
+def verifier():
+    """Load ``scripts/verify_h_tr_em_regression.py`` as a fresh module."""
+    if not SCRIPT_PATH.is_file():
+        pytest.skip(f"verifier script missing: {SCRIPT_PATH}")
+    spec = importlib.util.spec_from_file_location(SCRIPT_NAME, SCRIPT_PATH)
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    sys.modules.setdefault(SCRIPT_NAME, module)
+    spec.loader.exec_module(module)
+    return module
 
 
-def _make_case_payload(
+@pytest.fixture
+def default_baseline_dir():
+    """Path to the shipped h_tr_em baseline directory."""
+    return REPO_ROOT / "tests" / "reference_data" / "h_tr_em_baseline"
+
+
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
+
+def _fingerprint(path: Path) -> str:
+    """Mirror the verifier's SHA-256 fingerprint helper."""
+    import hashlib
+
+    return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+def _write_case_payload(
+    directory: Path,
+    case_key: str,
     *,
     case_id: str,
-    metric_value: float | None,
-    captured_at: str | None = "2026-08-17T00:00:00Z",
-    captured_commit: str | None = "deadbeefdeadbeef",
+    metric_value: float | None = 50.0,
+    captured_at: str | None = "2026-09-08T18:59:05Z",
+    captured_commit: str | None = "3bd1f15b10dc680dd35df3c63a1ed6e1ce4c0f76",
 ) -> dict[str, Any]:
-    """Build a per-case JSON payload with the documented schema."""
-    metrics = {m: metric_value for m in METRIC_KEYS}
-    return {
+    """Write a per-case JSON file at ``directory/case_<id>.json`` and return its payload."""
+    payload = {
         "_doc": "synthetic",
         "case_id": case_id,
         "captured_at": captured_at,
         "captured_commit": captured_commit,
-        "metrics": metrics,
+        "metrics": {m: metric_value for m in METRIC_KEYS},
     }
+    rel = f"{case_key}.json"
+    (directory / rel).write_text(
+        json.dumps(payload, indent=2, ensure_ascii=False) + "\n",
+        encoding="utf-8",
+    )
+    return payload
 
 
-def _make_manifest(
-    case_payloads: dict[str, dict[str, Any]],
+def _write_manifest(
+    directory: Path,
+    case_keys: list[str],
     *,
-    captured_at: str | None = "2026-08-17T00:00:00Z",
-    captured_commit: str | None = "deadbeefdeadbeef",
-    tolerances: dict[str, float] | None = None,
-) -> dict[str, Any]:
-    """Build a ``baseline_manifest.json`` payload referencing the supplied cases."""
-    tolerances = tolerances or DEFAULT_TOLERANCES
-    return {
+    captured_at: str | None = "2026-09-08T18:59:05Z",
+    captured_commit: str | None = "3bd1f15b10dc680dd35df3c63a1ed6e1ce4c0f76",
+    schema_version: int = SUPPORTED_SCHEMA_VERSION,
+    sha256_overrides: dict[str, str | None] | None = None,
+) -> None:
+    """Write a ``baseline_manifest.json`` enumerating the per-case files."""
+    sha256_overrides = sha256_overrides or {}
+    cases: dict[str, Any] = {}
+    for case_key in case_keys:
+        case_id = case_key.split("_", 1)[1]
+        cases[case_key] = {
+            "_doc": "synthetic",
+            "case_id": case_id,
+            "description": f"synthetic {case_key}",
+            "metrics": list(METRIC_KEYS),
+            "path": f"{case_key}.json",
+            "sha256": sha256_overrides.get(
+                case_key,
+                _fingerprint(directory / f"{case_key}.json"),
+            ),
+        }
+    manifest = {
         "_doc": "synthetic",
-        "_schema_version": SUPPORTED_SCHEMA_VERSION,
+        "_schema_version": schema_version,
         "captured_at": captured_at,
         "captured_commit": captured_commit,
-        "cases": {
-            case_key: {
-                "path": f"{case_key}.json",
-                "case_id": payload["case_id"],
-                "description": f"synthetic {case_key}",
-                "metrics": list(METRIC_KEYS),
-                "sha256": None,
-            }
-            for case_key, payload in case_payloads.items()
-        },
+        "cases": cases,
         "verifier": {
             "path": "scripts/verify_h_tr_em_regression.py",
-            "default_tolerance": tolerances,
+            "default_tolerance": DEFAULT_TOLERANCES,
         },
     }
-
-
-def _write_snapshot_set(
-    directory: Path,
-    case_payloads: dict[str, dict[str, Any]],
-    manifest_kwargs: dict[str, Any] | None = None,
-) -> Path:
-    """Plant a snapshot directory under ``tmp_path`` and return the dir."""
-    directory.mkdir(parents=True, exist_ok=True)
-    for case_key, payload in case_payloads.items():
-        (directory / f"{case_key}.json").write_text(
-            json.dumps(payload), encoding="utf-8"
-        )
-    manifest = _make_manifest(case_payloads, **(manifest_kwargs or {}))
-    (directory / "baseline_manifest.json").write_text(
-        json.dumps(manifest), encoding="utf-8"
+    (directory / MANIFEST_FILENAME).write_text(
+        json.dumps(manifest, indent=2, ensure_ascii=False) + "\n",
+        encoding="utf-8",
     )
-    return directory
 
 
-def _invoke(verifier, before: Path, after: Path, *extra: str) -> tuple[int, str]:
-    """Invoke ``verifier.main()`` with synthetic argv; return (rc, stdout)."""
-    saved = sys.argv[:]
-    sys.argv[:] = [
-        SCRIPT_NAME,
-        "--before", str(before),
-        "--after", str(after),
-        *extra,
-    ]
+def _populate_synthetic_baseline(
+    directory: Path,
+    *,
+    captured_at: str | None = "2026-09-08T18:59:05Z",
+    captured_commit: str | None = "3bd1f15b10dc680dd35df3c63a1ed6e1ce4c0f76",
+    placeholders: list[str] | None = None,
+) -> list[str]:
+    """Plant a 4-case synthetic baseline set under ``directory``.
+
+    Args:
+        placeholders: Subset of case keys whose ``sha256`` stamp should be
+            set to ``null`` (placeholder signal). Other cases get the
+            real SHA-256 fingerprint of their just-written JSON file.
+
+    Returns:
+        List of case keys written, in order.
+    """
+    placeholders = set(placeholders or [])
+    case_keys = ["case_195", "case_600", "case_620", "case_900"]
+    directory.mkdir(parents=True, exist_ok=True)
+    for case_key in case_keys:
+        _write_case_payload(
+            directory,
+            case_key,
+            case_id=case_key.split("_", 1)[1],
+        )
+    sha256_overrides = {ck: None for ck in placeholders}
+    _write_manifest(
+        directory,
+        case_keys,
+        captured_at=captured_at,
+        captured_commit=captured_commit,
+        sha256_overrides=sha256_overrides,
+    )
+    return case_keys
+
+
+def _invoke(verifier, manifest: Path, *extra: str) -> tuple[int, str, str]:
+    """Invoke ``verifier.main()`` with synthetic argv; return (rc, stdout, stderr)."""
+    saved_argv = sys.argv[:]
+    saved_env = os.environ.copy()
+    sys.argv[:] = [SCRIPT_NAME, "--manifest", str(manifest), *extra]
     try:
         rc = verifier.main()
     finally:
-        sys.argv[:] = saved
-    return rc, ""
+        sys.argv[:] = saved_argv
+        os.environ.clear()
+        os.environ.update(saved_env)
+    return rc, sys.stdout.getvalue() if False else "", ""  # capture via capsys in tests
+
+
+def _invoke_with_capsys(verifier, manifest: Path, capsys, *extra: str) -> int:
+    """Invoke ``verifier.main()`` and return the captured exit code."""
+    saved_argv = sys.argv[:]
+    sys.argv[:] = [SCRIPT_NAME, "--manifest", str(manifest), *extra]
+    try:
+        rc = verifier.main()
+    finally:
+        sys.argv[:] = saved_argv
+    return rc
 
 
 # ---------------------------------------------------------------------------
-# Pure-function tests
+# Scenarios
 # ---------------------------------------------------------------------------
 
 
-def test_load_snapshot_set_parses_manifest(verifier, tmp_path):
-    """A well-formed snapshot directory loads without error."""
-    payloads = {
-        "case_195": _make_case_payload(case_id="195", metric_value=69.0645),
-        "case_600": _make_case_payload(case_id="600", metric_value=59.2564),
-        "case_620": _make_case_payload(case_id="620", metric_value=59.2564),
-        "case_900": _make_case_payload(case_id="900", metric_value=48.8803),
-    }
-    snapshot_dir = _write_snapshot_set(tmp_path, payloads)
-    snapshot_set = verifier.load_snapshot_set(snapshot_dir)
-
-    assert set(snapshot_set.cases.keys()) == {"case_195", "case_600", "case_620", "case_900"}
-    assert snapshot_set.cases["case_600"].metrics["h_tr_em_w_k"] == 59.2564
-    assert snapshot_set.cases["case_195"].case_id == "195"
-    assert not snapshot_set.is_placeholder()
-
-
-def test_load_snapshot_set_rejects_missing_manifest(verifier, tmp_path):
-    """A directory without ``baseline_manifest.json`` raises ``FileNotFoundError``."""
-    with pytest.raises(FileNotFoundError, match="missing manifest"):
-        verifier.load_snapshot_set(tmp_path / "empty")
-
-
-def test_load_snapshot_set_rejects_wrong_schema_version(verifier, tmp_path):
-    """An older ``_schema_version`` raises ``ValueError`` (fail-closed on schema drift)."""
-    payloads = {
-        "case_600": _make_case_payload(case_id="600", metric_value=50.0),
-    }
-    snapshot_dir = _write_snapshot_set(tmp_path, payloads)
-    manifest_path = snapshot_dir / "baseline_manifest.json"
-    manifest = json.loads(manifest_path.read_text())
-    manifest["_schema_version"] = 999
-    manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
-
-    with pytest.raises(ValueError, match="unsupported manifest schema_version"):
-        verifier.load_snapshot_set(snapshot_dir)
-
-
-def test_load_snapshot_set_skips_doc_keys(verifier, tmp_path):
-    """Manifest entries whose key starts with ``_`` are documentation, not cases.
-
-    Mirrors the layout of the shipped h_tr_em baseline manifest which
-    plants doc-only keys alongside real cases. The loader must skip
-    these without crashing.
-    """
-    payloads = {
-        "case_600": _make_case_payload(case_id="600", metric_value=50.0),
-    }
-    snapshot_dir = _write_snapshot_set(tmp_path, payloads)
-    manifest_path = snapshot_dir / "baseline_manifest.json"
-    manifest = json.loads(manifest_path.read_text())
-    manifest["cases"]["_doc"] = "Per-case snapshot file map."
-    manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
-
-    snapshot_set = verifier.load_snapshot_set(snapshot_dir)
-    assert "_doc" not in snapshot_set.cases
-    assert set(snapshot_set.cases.keys()) == {"case_600"}
-
-
-def test_snapshot_set_placeholder_detection(verifier, tmp_path):
-    """A snapshot set with any null metric is a placeholder."""
-    payload = _make_case_payload(case_id="600", metric_value=None)
-    snapshot_dir = _write_snapshot_set(tmp_path, {"case_600": payload})
-
-    snapshot_set = verifier.load_snapshot_set(snapshot_dir)
-    assert snapshot_set.is_placeholder()
-    assert snapshot_set.cases["case_600"].is_placeholder()
-
-
-def test_snapshot_set_placeholder_when_manifest_captured_at_null(verifier, tmp_path):
-    """Manifest-level ``captured_at == null`` is itself a placeholder."""
-    payload = _make_case_payload(case_id="600", metric_value=50.0)
-    snapshot_dir = _write_snapshot_set(
-        tmp_path,
-        {"case_600": payload},
-        manifest_kwargs={"captured_at": None},
-    )
-
-    snapshot_set = verifier.load_snapshot_set(snapshot_dir)
-    assert snapshot_set.is_placeholder()
-
-
-def test_compute_diff_no_drift(verifier, tmp_path):
-    """Identical before/after - no deltas, no regressions."""
-    payload = _make_case_payload(case_id="600", metric_value=50.0)
-    before_dir = _write_snapshot_set(tmp_path / "before", {"case_600": payload})
-    after_dir = _write_snapshot_set(tmp_path / "after", {"case_600": payload})
-
-    before_set = verifier.load_snapshot_set(before_dir)
-    after_set = verifier.load_snapshot_set(after_dir)
-    report = verifier.compute_diff(before_set, after_set)
-
-    assert not report.has_regression
-    assert report.deltas
-    assert all(d.delta == 0.0 for d in report.deltas)
-    assert all(d.within_tolerance for d in report.deltas)
-
-
-def test_compute_diff_flags_regression_when_delta_exceeds_tolerance(verifier, tmp_path):
-    """A 0.001 drift against tolerance 0.0 - regression flagged."""
-    before_payload = _make_case_payload(case_id="600", metric_value=50.0)
-    after_payload = _make_case_payload(case_id="600", metric_value=50.001)
-    before_dir = _write_snapshot_set(tmp_path / "before", {"case_600": before_payload})
-    after_dir = _write_snapshot_set(tmp_path / "after", {"case_600": after_payload})
-
-    before_set = verifier.load_snapshot_set(before_dir)
-    after_set = verifier.load_snapshot_set(after_dir)
-    report = verifier.compute_diff(before_set, after_set)
-
-    assert report.has_regression
-    em_delta = next(d for d in report.deltas if d.metric == "h_tr_em_w_k")
-    assert em_delta.delta == pytest.approx(0.001)
-    assert not em_delta.within_tolerance
-
-
-def test_compute_diff_respects_override_tolerance(verifier, tmp_path):
-    """CLI-supplied tolerance override absorbs sub-tolerance drift - no regression."""
-    before_payload = _make_case_payload(case_id="600", metric_value=50.0)
-    # Drift ONLY the h_tr_em_w_k metric; leave the rest identical so the
-    # override just needs to cover that single metric.
-    after_payload = _make_case_payload(case_id="600", metric_value=50.0)
-    after_payload["metrics"]["h_tr_em_w_k"] = 50.0009
-    before_dir = _write_snapshot_set(tmp_path / "before", {"case_600": before_payload})
-    after_dir = _write_snapshot_set(tmp_path / "after", {"case_600": after_payload})
-
-    before_set = verifier.load_snapshot_set(before_dir)
-    after_set = verifier.load_snapshot_set(after_dir)
-    report = verifier.compute_diff(
-        before_set,
-        after_set,
-        override_tolerance={"h_tr_em_w_k": 0.001},
-    )
-
-    assert not report.has_regression
-    em_delta = next(d for d in report.deltas if d.metric == "h_tr_em_w_k")
-    assert em_delta.within_tolerance
-    assert em_delta.tolerance == 0.001
-
-
-def test_compute_diff_records_schema_drift_when_case_missing(verifier, tmp_path):
-    """A case present in --after but missing from --before - schema_drift flagged."""
-    before_dir = _write_snapshot_set(
-        tmp_path / "before",
-        {"case_600": _make_case_payload(case_id="600", metric_value=1.0)},
-    )
-    after_dir = _write_snapshot_set(
-        tmp_path / "after",
-        {
-            "case_600": _make_case_payload(case_id="600", metric_value=1.0),
-            "case_620": _make_case_payload(case_id="620", metric_value=1.0),
-        },
-    )
-
-    before_set = verifier.load_snapshot_set(before_dir)
-    after_set = verifier.load_snapshot_set(after_dir)
-    report = verifier.compute_diff(before_set, after_set)
-
-    assert any("case 'case_620'" in s for s in report.schema_drift)
-
-
-def test_verify_fingerprints_returns_empty_when_manifest_unstamped(verifier, tmp_path):
-    """Fresh placeholder manifest (sha256 == null) - no fingerprint mismatches."""
-    payload = _make_case_payload(case_id="600", metric_value=50.0)
-    snapshot_dir = _write_snapshot_set(tmp_path / "snap", {"case_600": payload})
-    snapshot_set = verifier.load_snapshot_set(snapshot_dir)
-    assert verifier.verify_fingerprints(snapshot_set) == []
-
-
-def test_verify_fingerprints_flags_silent_edit(verifier, tmp_path):
-    """A hand-edited case file (sha256 mismatch) - fingerprint mismatch."""
-    payload = _make_case_payload(case_id="600", metric_value=50.0)
-    snapshot_dir = _write_snapshot_set(tmp_path / "snap", {"case_600": payload})
-    manifest_path = snapshot_dir / "baseline_manifest.json"
-    manifest = json.loads(manifest_path.read_text())
-
-    manifest["cases"]["case_600"]["sha256"] = "0" * 64
-    manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
-
-    snapshot_set = verifier.load_snapshot_set(snapshot_dir)
-    mismatches = verifier.verify_fingerprints(snapshot_set)
-    assert len(mismatches) == 1
-    assert "case_600" in mismatches[0]
-
-
-# ---------------------------------------------------------------------------
-# main() end-to-end scenarios
-# ---------------------------------------------------------------------------
-
-
-def test_main_exits_zero_when_no_drift(verifier, tmp_path, capsys):
-    """Identical snapshots - exit 0; human-readable report printed."""
-    payload = _make_case_payload(case_id="600", metric_value=50.0)
-    before_dir = _write_snapshot_set(tmp_path / "before", {"case_600": payload})
-    after_dir = _write_snapshot_set(tmp_path / "after", {"case_600": payload})
-
-    rc, _ = _invoke(verifier, before_dir, after_dir, "--allow-placeholder")
-    out = capsys.readouterr().out
-    assert rc == verifier.EXIT_OK
-    assert "PASS" in out
-
-
-def test_main_exits_one_on_regression(verifier, tmp_path, capsys):
-    """Any per-metric drift > 0 against tolerance 0.0 - exit 1 (regression)."""
-    before_payload = _make_case_payload(case_id="600", metric_value=50.0)
-    after_payload = _make_case_payload(case_id="600", metric_value=50.001)
-    before_dir = _write_snapshot_set(tmp_path / "before", {"case_600": before_payload})
-    after_dir = _write_snapshot_set(tmp_path / "after", {"case_600": after_payload})
-
-    rc, _ = _invoke(verifier, before_dir, after_dir, "--allow-placeholder")
-    out = capsys.readouterr().out
-    assert rc == verifier.EXIT_REGRESSION
-    assert "FAIL" in out
-    assert "h_tr_em_w_k" in out
-
-
-def test_main_returns_two_when_snapshot_unpopulated(verifier, tmp_path, capsys):
-    """Default contract: a placeholder snapshot set - exit 2 (fail-closed)."""
-    placeholder = _make_case_payload(
-        case_id="600", metric_value=None,
-        captured_at=None, captured_commit=None,
-    )
-    populated = _make_case_payload(case_id="600", metric_value=50.0)
-    before_dir = _write_snapshot_set(tmp_path / "before", {"case_600": placeholder})
-    after_dir = _write_snapshot_set(tmp_path / "after", {"case_600": populated})
-
-    rc, _ = _invoke(verifier, before_dir, after_dir)
+def test_placeholder_detection(verifier, tmp_path, capsys):
+    """Scenario 1: any per-case ``sha256`` stamp is null → exit 2."""
+    _populate_synthetic_baseline(tmp_path, placeholders=["case_600"])
+    rc = _invoke_with_capsys(verifier, tmp_path / MANIFEST_FILENAME, capsys)
     err = capsys.readouterr().err
     assert rc == verifier.EXIT_PLACEHOLDER
     assert "placeholder" in err.lower()
+    assert "case_600" in err
 
 
-def test_main_returns_three_on_missing_manifest(verifier, tmp_path, capsys):
-    """A non-existent --before path - exit 3 (usage error)."""
-    rc, _ = _invoke(verifier, tmp_path / "no_such_dir", tmp_path / "after")
+def test_no_drift_exit_zero(verifier, tmp_path, capsys):
+    """Scenario 2: all per-case stamps match real fingerprints → exit 0."""
+    _populate_synthetic_baseline(tmp_path)
+    rc = _invoke_with_capsys(verifier, tmp_path / MANIFEST_FILENAME, capsys)
+    out = capsys.readouterr().out
+    assert rc == verifier.EXIT_OK
+    assert "MATCH" in out
+    assert "0 mismatch" in out
+    assert "0 placeholder" in out
+
+
+def test_regression_under_strict(verifier, tmp_path, capsys):
+    """Scenario 3: ``--strict`` + SHA-256 mismatch → exit 1."""
+    _populate_synthetic_baseline(tmp_path)
+    manifest_path = tmp_path / MANIFEST_FILENAME
+    manifest = json.loads(manifest_path.read_text())
+    manifest["cases"]["case_600"]["sha256"] = "0" * 64
+    manifest_path.write_text(
+        json.dumps(manifest, indent=2, ensure_ascii=False) + "\n",
+        encoding="utf-8",
+    )
+
+    rc = _invoke_with_capsys(
+        verifier,
+        manifest_path,
+        capsys,
+        "--strict",
+    )
+    err = capsys.readouterr().err
+    assert rc == verifier.EXIT_REGRESSION
+    assert "case_600" in err
+    assert "mismatch" in err.lower()
+
+
+def test_tolerance_override_absorbs_warn(verifier, tmp_path, capsys, monkeypatch):
+    """Scenario 4: ``--tolerance`` CLI flag is accepted (forward-compatible).
+
+    The current verifier contract compares SHA-256 hex digests (bit-
+    identical), so a non-zero tolerance does not change the comparison
+    outcome — but the flag must parse cleanly and not trip ``EXIT_USAGE``.
+    Mirrors the gauge_solver tolerance-override scenario.
+    """
+    _populate_synthetic_baseline(tmp_path)
+    manifest_path = tmp_path / MANIFEST_FILENAME
+
+    rc = _invoke_with_capsys(
+        verifier,
+        manifest_path,
+        capsys,
+        "--tolerance", "0.001",
+    )
+    assert rc == verifier.EXIT_OK
+
+
+def test_schema_drift(verifier, tmp_path, capsys):
+    """Scenario 5: wrong ``_schema_version`` → exit 3 (usage error)."""
+    _populate_synthetic_baseline(tmp_path)
+    manifest_path = tmp_path / MANIFEST_FILENAME
+    manifest = json.loads(manifest_path.read_text())
+    manifest["_schema_version"] = 999
+    manifest_path.write_text(
+        json.dumps(manifest, indent=2, ensure_ascii=False) + "\n",
+        encoding="utf-8",
+    )
+
+    rc = _invoke_with_capsys(verifier, manifest_path, capsys)
+    err = capsys.readouterr().err
+    assert rc == verifier.EXIT_USAGE
+    assert "schema_version" in err
+
+
+def test_missing_manifest(verifier, tmp_path, capsys):
+    """Scenario 6: non-existent ``--manifest`` path → exit 3."""
+    missing = tmp_path / "no_such_manifest.json"
+    rc = _invoke_with_capsys(verifier, missing, capsys)
     err = capsys.readouterr().err
     assert rc == verifier.EXIT_USAGE
     assert "missing manifest" in err
 
 
-def test_main_emits_json_shape(verifier, tmp_path, capsys):
-    """--json flag emits a parseable JSON document with the documented fields."""
-    payload = _make_case_payload(case_id="600", metric_value=50.0)
-    before_dir = _write_snapshot_set(tmp_path / "before", {"case_600": payload})
-    after_dir = _write_snapshot_set(tmp_path / "after", {"case_600": payload})
-
-    _invoke(verifier, before_dir, after_dir, "--allow-placeholder", "--json")
+def test_json_output_shape(verifier, tmp_path, capsys):
+    """Scenario 7: ``--json`` emits a parseable document with documented fields."""
+    _populate_synthetic_baseline(tmp_path)
+    rc = _invoke_with_capsys(
+        verifier,
+        tmp_path / MANIFEST_FILENAME,
+        capsys,
+        "--json",
+    )
     out = capsys.readouterr().out
     parsed = json.loads(out)
-    assert "before" in parsed
-    assert "after" in parsed
-    assert "deltas" in parsed
-    assert "schema_drift" in parsed
+    assert "manifest" in parsed
+    assert "cases" in parsed
+    assert "mismatches" in parsed
+    assert "placeholders" in parsed
     assert "summary" in parsed
+    assert "exit" in parsed
+    assert "manifest_captured_at" in parsed
+    assert "manifest_captured_commit" in parsed
     assert "has_regression" in parsed["summary"]
+    assert "matched" in parsed["summary"]
+    assert "total" in parsed["summary"]
+    assert rc == verifier.EXIT_OK
 
 
-def test_main_strict_exits_two_on_sha256_mismatch(verifier, tmp_path, capsys):
-    """--strict mode: a hand-edited case file (sha256 mismatch) - exit 2."""
-    payload = _make_case_payload(case_id="600", metric_value=50.0)
-    before_dir = _write_snapshot_set(tmp_path / "before", {"case_600": payload})
-    after_dir = _write_snapshot_set(tmp_path / "after", {"case_600": payload})
+def test_strict_sha256_mismatch_exit_one(verifier, tmp_path, capsys):
+    """Scenario 8: ``--strict`` + SHA-256 mismatch → exit 1 (regression).
 
-    manifest_path = before_dir / "baseline_manifest.json"
-    manifest = json.loads(manifest_path.read_text())
-    manifest["cases"]["case_600"]["sha256"] = "0" * 64
-    manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+    Distinct from scenario 3 because this one mutates a per-case JSON
+    AFTER stamping so the verifier computes a different digest than the
+    manifest declares. End-to-end silent-edit detector.
+    """
+    _populate_synthetic_baseline(tmp_path)
+    # Hand-edit a per-case JSON to invalidate its stamp
+    case_600 = tmp_path / "case_600.json"
+    payload = json.loads(case_600.read_text())
+    payload["metrics"]["h_tr_em_w_k"] = 50.5
+    case_600.write_text(
+        json.dumps(payload, indent=2, ensure_ascii=False) + "\n",
+        encoding="utf-8",
+    )
 
-    rc, _ = _invoke(
-        verifier, before_dir, after_dir,
-        "--allow-placeholder", "--strict",
+    rc = _invoke_with_capsys(
+        verifier,
+        tmp_path / MANIFEST_FILENAME,
+        capsys,
+        "--strict",
     )
     err = capsys.readouterr().err
-    assert rc == verifier.EXIT_PLACEHOLDER
-    assert "sha256 mismatch" in err
+    assert rc == verifier.EXIT_REGRESSION
+    assert "case_600" in err
+    assert "mismatch" in err.lower()
 
 
-def test_main_tolerance_override_cli(verifier, tmp_path, capsys):
-    """``--tolerance`` CLI flag overrides manifest defaults per-metric."""
-    before_payload = _make_case_payload(case_id="600", metric_value=50.0)
-    after_payload = _make_case_payload(case_id="600", metric_value=50.0)
-    after_payload["metrics"]["h_tr_em_w_k"] = 50.0009
-    before_dir = _write_snapshot_set(tmp_path / "before", {"case_600": before_payload})
-    after_dir = _write_snapshot_set(tmp_path / "after", {"case_600": after_payload})
+def test_cli_tolerance_override_env_var(verifier, tmp_path, capsys, monkeypatch):
+    """Scenario 9: ``BASELINE_H_TR_EM_TOLERANCE`` env var is read as the default.
 
-    rc, _ = _invoke(
-        verifier, before_dir, after_dir,
-        "--allow-placeholder",
-        "--tolerance", "h_tr_em_w_k=0.001",
+    Confirms the env-var contract documented in the issue acceptance —
+    gate scaffolding only; do NOT raise it. A custom value (e.g. ``0.05``)
+    must parse and be reflected in the JSON report without tripping
+    ``EXIT_USAGE``.
+    """
+    _populate_synthetic_baseline(tmp_path)
+    manifest_path = tmp_path / MANIFEST_FILENAME
+
+    monkeypatch.setenv("BASELINE_H_TR_EM_TOLERANCE", "0.05")
+    rc = _invoke_with_capsys(
+        verifier,
+        manifest_path,
+        capsys,
+        "--json",
     )
+    out = capsys.readouterr().out
+    parsed = json.loads(out)
     assert rc == verifier.EXIT_OK
+    assert parsed["tolerance"] == pytest.approx(0.05)
+
+
+# ---------------------------------------------------------------------------
+# End-to-end shipped baseline smoke test
+# ---------------------------------------------------------------------------
+
+
+def test_shipped_baseline_is_clean(
+    verifier,
+    default_baseline_dir,
+    capsys,
+):
+    """The shipped baseline (``tests/reference_data/h_tr_em_baseline/``)
+    is non-placeholder and passes ``--strict`` per Issue #3549 step 5
+    ("Run the gate once against develop HEAD — must produce EXIT_OK=0").
+    """
+    manifest_path = default_baseline_dir / MANIFEST_FILENAME
+    assert manifest_path.is_file(), (
+        f"shipped baseline manifest missing: {manifest_path}"
+    )
+    rc = _invoke_with_capsys(
+        verifier,
+        manifest_path,
+        capsys,
+        "--strict",
+    )
+    err = capsys.readouterr().err
+    assert rc == verifier.EXIT_OK, (
+        f"shipped baseline failed the gate (exit {rc}): {err}"
+    )

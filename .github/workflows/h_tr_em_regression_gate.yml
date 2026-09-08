@@ -1,50 +1,52 @@
-# h_tr_em Wind-Dependent Recompute Regression Gate (Issue #3063 / LIMIT-13)
+# h_tr_em Wind-Dependent Recompute Regression Gate (Issue #3549 / LIMIT-13)
 #
-# CI gate that asserts the h_tr_em (envelope-to-mass conductance) recompute
-# does not regress against the stored baseline snapshots.
+# CI gate that asserts the integrity of the h_tr_em (envelope-to-mass
+# conductance) regression baseline at
+# ``tests/reference_data/h_tr_em_baseline/``. The verifier loads the
+# shipped ``baseline_manifest.json``, recomputes the SHA-256 of each
+# per-case JSON, and compares against the manifest's stamp so a silent
+# hand-edit to a case file cannot pass the gate.
 #
 # What it runs
 # ------------
-# This gate is the regression fence for the h_tr_em wind-dependent per-step
-# recompute (Issue #3063). The verifier compares pre-recompute baseline
-# snapshots against post-recompute current snapshots and fails if any
-# per-metric drift exceeds the manifest's per-metric tolerance (default 0.0
-# = bit-identical).
-#
-# The gate fails closed (exit 2) when the baseline snapshot set is a
-# placeholder (any metric is null or no captured_at timestamp), so a future
-# implementer cannot silently compare against an empty baseline. This forces
-# real per-step measurements to be captured via ADR-0008's pattern before
-# shipping any code change.
+# This gate is the regression fence for the h_tr_em wind-dependent
+# per-step recompute (Issue #3063 / Issue #3265 / LIMIT-13 / ADR-0009).
+# Until the recompute lands, this gate is the bit-identical baseline
+# integrity check: it fails closed (exit 2) when the manifest is a
+# placeholder (any per-case ``sha256`` is null or manifest
+# ``captured_at`` is null) so a future implementer cannot silently
+# compare against an empty baseline.
 #
 # Usage
 # -----
 # The verifier is invoked with:
 #   python3 scripts/verify_h_tr_em_regression.py \
-#       --before tests/reference_data/h_tr_em_baseline \
-#       --after  path/to/post-recompute-snapshots \
-#       [--json] [--strict]
+#       --manifest tests/reference_data/h_tr_em_baseline/baseline_manifest.json \
+#       [--strict] [--json] [--tolerance <float>]
 #
 # Exit codes:
-#   0 — All metrics within tolerance (no regression detected).
-#   1 — At least one per-metric drift exceeded tolerance (regression).
-#   2 — Snapshot set is unpopulated / placeholder / schema-drift (fail
-#       closed so an accidental comparison against an empty baseline
-#       cannot silently green-light the recompute).
-#   3 — Usage / IO error (bad path, malformed JSON, missing manifest).
+#   0 — All per-case SHA-256 stamps match the recomputed digests (and
+#       the manifest is not flagged as placeholder).
+#   1 — ``--strict`` AND at least one per-case SHA-256 stamp mismatches
+#       the recomputed digest (regression).
+#   2 — Baseline is a placeholder (any per-case ``sha256`` is null OR
+#       manifest ``captured_at`` is null).
+#   3 — Usage / IO error (bad path, malformed JSON, missing manifest,
+#       schema drift).
 #
 # Baseline requirement
 # -------------------
 # The baseline at `tests/reference_data/h_tr_em_baseline/` must contain
-# a populated `baseline_manifest.json` (captured_at != null) and per-case
-# JSON files with non-null metrics. If the baseline is a placeholder, this
+# a populated `baseline_manifest.json` (captured_at != null AND every
+# per-case `sha256` != null). If the baseline is a placeholder, this
 # gate exits 2 (fail closed) per ADR-0009.
 #
 # Status check name
 # -----------------
 # Job id is `h-tr-em-regression-gate`; the human-readable name is
-# "h_tr_em Regression Gate (LIMIT-13)". Add this job name to the
-# branch protection "Required status checks" list.
+# "h_tr_em Regression Gate (LIMIT-13)". This string is already wired
+# into ``release_gates.yaml -> ci.required_checks`` (line ~628) so
+# branch protection references the exact emitted name.
 
 name: h_tr_em Regression Gate
 
@@ -136,16 +138,19 @@ jobs:
           set -e
           echo "=== h_tr_em Regression Gate ==="
           echo ""
-          echo "Baseline: tests/reference_data/h_tr_em_baseline"
-          echo "Current:  tests/reference_data/h_tr_em_current"
+          echo "Baseline: tests/reference_data/h_tr_em_baseline/baseline_manifest.json"
           echo ""
 
-          # The baseline exists but may be a placeholder. The verifier will
-          # fail closed (exit 2) if the baseline is placeholder, forcing
-          # real metrics to be captured first.
+          # The baseline exists but may be a placeholder (any per-case
+          # `sha256` is null OR manifest `captured_at` is null). The
+          # verifier fails closed (exit 2) until every per-case
+          # SHA-256 fingerprint is populated (per ADR-0009).
+          #
+          # --strict also trips exit 1 on any fingerprint drift so
+          # silent edits to the case files cannot pass the gate.
           python3 scripts/verify_h_tr_em_regression.py \
-            --before tests/reference_data/h_tr_em_baseline \
-            --after  tests/reference_data/h_tr_em_current \
+            --manifest tests/reference_data/h_tr_em_baseline/baseline_manifest.json \
+            --strict \
             --json
 
       - name: Upload verifier output
