@@ -1199,7 +1199,7 @@ The fix is **structural** — the `GaugeSolver` rework (#1465 / #1462) — and t
 
 ### External references
 
-- `docs/ASHRAE140_RESULTS.md` — current pass-rate snapshot (post-#3044 PR; 12.5 % headline, MAE 51.93 %)
+- `docs/ASHRAE140_RESULTS.md` — current pass-rate snapshot (`SCORECARD.md` Last Updated 2026-08-16: 14.3 % headline, MAE 51.03 %; refresh on every SCORECARD drift > `drift.max_pass_rate_change_pp = 2.0` per `release_gates.yaml`)
 - `docs/adr/0007-gauge-solver-structural-work.md` — structural-work tracking stub (Status: Accepted — Phase A8 production-path switchover landed via Issue #3291 / PR #3482, gated on the `gauge-solver` cargo feature / §LIMIT-21 β-soak closure)
 - `docs/gauge_solver_scalability.md` — `MultiZoneGaugeSolver` scalability characterisation (Issue #1771)
 - `RULES.md` — "no parameter tuning" + "must-never hardcode results"
