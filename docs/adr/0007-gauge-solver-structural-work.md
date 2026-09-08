@@ -1,13 +1,16 @@
 # ADR-0007: GaugeSolver Structural Work — Aggressive-Baseline Cohort Unblocker (Issue #3072)
 
-- **Status:** ✅ Accepted (production-path switchover scope recorded — implementation planned)
+- **Status:** ✅ Accepted (production-path switchover **shipped** via Phase A8, Issue #3291 / PR #3482, 2026-09-07; the `gauge-solver` cargo feature remains the production-path gate pending §LIMIT-21 / #3297 closure)
 - **Date:** 2026-08-16
 - **Accepted:** 2026-08-24 (per Issue #3172 — implementation plan now defined)
+- **Phase A8 shipped:** 2026-09-07 (Issue #3291 / PR #3482, commit `e811df6`)
 - **Deciders:** Fluxion maintainers
 - **Supersedes:** None
 - **Depends on:** None (this ADR records the gap; the actual structural fix is tracked by the underlying issues)
 - **Issue:** [#3072](https://github.com/anchapin/fluxion/issues/3072) (meta-issue)
 - **Related:** #1465 (Phase 3 GaugeSolver validation), #1462 (Phase 1b shadow-mode implementation), #3058 / #3059 / #3061 / #3062 / #3063 / #3060 / #3070 (cohort follow-ups)
+- **Phase A8 cross-references:** `AGENTS.md:12` (Phase A8 note), `ARCHITECTURE.md:716-735` (Thermal selector Phase A8 note), `ARCHITECTURE.md:1267-1269` (Phase A8 status note), `docs/KNOWN_ISSUES.md` §LIMIT-21 (Issue #3297) + §LIMIT-22, `docs/agents/beta-soak-criterion-2-tracker.md`, `src/sim/thermal_selector.rs` (module docs)
+- **Issue #3511:** refreshed the post-#3291 status. See the "Phase A8 implementation status" section below.
 
 ---
 
@@ -47,7 +50,19 @@ and the per-case diagnostics throughout §LIMIT-05, §LIMIT-08, and §SOLAR-02.
 
 - **#1462 ([Physics] Phase 1b: Implement `GaugeSolver` in Shadow Mode inside `physics_adapter.rs`)** — ✅ **Closed**. Shadow-mode `GaugeSolver` is implemented and runs in parallel with the baseline solvers when a shadow-mode config flag is passed. Boundary-condition translation from raw solar irradiance and outside air temperature to `gauge_connection` vectors is shipped; the 100 kW HVAC clamp and matrix output bounds-clamp are removed.
 - **#1465 ([Validation] Phase 3: Validate `GaugeSolver` against ASHRAE 140 Case 900)** — ✅ **Closed**. ASHRAE 140 Case 900 (High-Mass) validation harness ships via `tests/gauge_validation_case_900.rs`; diurnal temperature swings and phase lag are asserted against the ASHRAE analytical baseline.
-- **Production-path switchover** — 🔄 **PLANNED (this ADR)**. Both #1462 and #1465 ship the validation and shadow-mode paths. This ADR commits the production-path switchover from `step_physics_5r1c` / `step_physics_9r4c` to `GaugeSolver` as the default thermal solver.
+- **#3291 (Phase A8: production-path switchover)** — ✅ **Closed** (PR #3482, 2026-09-07). The `Gauge` selector is now the unconditional default of `ThermalSelector::default()` (`src/sim/thermal_selector.rs:30-36`); with `--features gauge-solver` the dispatcher's gauge arm runs without fall-through to legacy 5R1C/9R4C and panics on missing gauge backend (`src/sim/thermal_model_physics/step_dispatcher.rs:126-133`). The `gauge-solver` cargo feature remains the production-path gate pending §LIMIT-21 (Issue #3297) closure — the β-soak gate (#3286) is at 0/30 nights green. The `Gauge` selector itself is the production default reached via `from_spec_with_selector` regardless of the cargo feature. The bare low-level constructor `ThermalModel::new` (Issue #3508) installs `ThermalSelector::legacy()` (`FiveROneC`) explicitly so it dispatches to the legacy 5R1C path even under `--features gauge-solver`.
+
+## Phase A8 implementation status
+
+What #3291 / PR #3482 actually shipped (the on-the-ground reality this ADR now reflects):
+
+- **Selector-driven dispatch** — `ThermalSelector::default()` resolves to `ZoneSolverKind::Gauge` (`src/sim/thermal_selector.rs:30-36`, mirrored in `AGENTS.md:12`). The dispatcher at `src/sim/thermal_model_physics/step_dispatcher.rs:99-160` reads `self.0.hvac.thermal_selector.zone_solver` and routes accordingly.
+- **`from_spec_with_selector` initialisation** — the production caller-facing entry point that initialises exactly one gauge backend per spec (single-zone for `num_zones == 1`, multi-zone for `num_zones >= 2`). The bare low-level `ThermalModel::new` does NOT call this and is now reconciled to `ThermalSelector::legacy()` (Issue #3508).
+- **Unconditional-panic dispatcher** — under `--features gauge-solver` the cfg-gated gauge block is the only `Gauge` dispatch path. Missing or uninitialised gauge backend is a programming error that PANICS rather than silently switching to legacy 5R1C/9R4C. This is the §LIMIT-21 "fail-loud" design (Issue #3297).
+- **`gauge-solver` cargo feature** — retained as the production-path gate. The cfg gate at `step_dispatcher.rs:99` and `step_dispatcher.rs:160` (and the corresponding `ThermalModelData` field declarations) is intentionally NOT removed in Phase A8; removal is the work tracked by #3290 (PR4 of the design tree, gated on the β-soak #3286).
+- **Default build (no `gauge-solver` feature)** — the cfg-gated gauge block is absent and a `Gauge` selector falls through to legacy 5R1C/9R4C at the bottom of `step_physics`. Observable behaviour is the same as the pre-#3291 fall-through.
+
+The architectural rationale (solar as geometric curvature, not per-timestep energy injection) is unchanged; only the production-path mechanism shifted from "fall-through on missing backend" to "panic on missing backend, behind a `gauge-solver` cfg gate".
 
 ## Production-Path Switchover Scope
 
@@ -113,9 +128,9 @@ The production-path switchover is accepted when **all** of the following are tru
 
 ## Milestone
 
-- **Target:** v1.3 production release — GaugeSolver production-path switchover lands on `develop`
-- **Verification:** ASHRAE 140 validation pass rate ≥ 60 %, MAE ≤ 50 % on `develop` CI
-- **Issue for tracking:** #3172 (this ADR update)
+- **Target:** v1.3 production release — GaugeSolver production-path switchover lands on `develop` (✅ SHIPPED via Phase A8 #3291 / PR #3482 on 2026-09-07; remaining work is §LIMIT-21 / β-soak #3286 + #3290 cfg-gate removal)
+- **Verification:** ASHRAE 140 validation pass rate ≥ 60 %, MAE ≤ 50 % on `develop` CI (still pending; cohort entries in `docs/KNOWN_ISSUES.md` §LIMIT-21 / §LIMIT-22 track the residual work)
+- **Issue for tracking:** #3172 (this ADR update); #3291 (Phase A8, shipped); #3286 (β-soak); #3297 (§LIMIT-21); #3290 (PR4 cfg-gate removal, gated on #3286)
 
 ## What this ADR does NOT do
 
@@ -137,8 +152,12 @@ The production-path switchover is accepted when **all** of the following are tru
 **Accepted.** The production path for `step_physics_5r1c` / `step_physics_9r4c`
 switches to `GaugeSolver` as the default thermal solver. The shadow-mode
 implementation (#1462) and Case 900 validation harness (#1465) are both
-**Closed**; the production-path switchover is the remaining step. The switchover
-scope, acceptance criteria, and milestone are defined above.
+**Closed**; the production-path switchover **shipped** via Phase A8
+(#3291, PR #3482, 2026-09-07) — `ThermalSelector::default()` resolves to
+`Gauge` and `from_spec_with_selector` initialises the matching gauge
+backend. The switchover scope, acceptance criteria, and milestone are
+defined above. Remaining work is the §LIMIT-21 / #3286 β-soak gate and
+the #3290 cfg-gate removal (PR4).
 
 ## Consequences
 
