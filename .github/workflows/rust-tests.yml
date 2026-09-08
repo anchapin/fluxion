@@ -269,10 +269,15 @@ jobs:
     name: "Energy Conservation (Hetzner Overflow)"
     needs: energy-conservation-gh-probe
     runs-on: [self-hosted,fluxion-overflow]
-    # Only run if GH probe timed out (GH runners saturated) or was cancelled
+    # Issue #3445: persistent self-hosted runners MUST NOT execute
+    # PR-controlled code (CI is the enforcement layer for every validation
+    # gate; a runner compromise poisons the gates themselves). Restrict the
+    # overflow path to main-merge pushes where the code is trusted by the
+    # post-merge gate; PR workloads are kept on the GH-hosted fallback (the
+    # probe's happy path) which is a one-shot ephemeral VM.
+    # Only run if GH probe timed out (GH runners saturated) or was cancelled.
     if: |
-      (github.event_name == 'pull_request' ||
-       (github.event_name == 'push' && github.ref == 'refs/heads/main'))
+      (github.event_name == 'push' && github.ref == 'refs/heads/main')
       && (needs.energy-conservation-gh-probe.result == 'failure'
           || needs.energy-conservation-gh-probe.result == 'cancelled')
     steps:
@@ -321,9 +326,16 @@ jobs:
     name: Rustfmt (Hetzner Overflow)
     needs: fmt-gh-probe
     runs-on: [self-hosted,fluxion-overflow]
+    # Issue #3445: persistent self-hosted runners MUST NOT execute
+    # PR-controlled code. The probe above is trigger-less (so it runs on
+    # both PR and main events), but the overflow fallback is restricted to
+    # main-merge pushes — see SECURITY.md §"Self-hosted runner job
+    # execution policy". PR fmt checks always resolve on the GH-hosted
+    # probe-path's success branch.
     if: |
-      needs.fmt-gh-probe.result == 'failure'
-      || needs.fmt-gh-probe.result == 'cancelled'
+      (github.event_name == 'push' && github.ref == 'refs/heads/main')
+      && (needs.fmt-gh-probe.result == 'failure'
+          || needs.fmt-gh-probe.result == 'cancelled')
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
       - uses: ./.github/actions/setup-rust-env
@@ -362,9 +374,15 @@ jobs:
     runs-on: [self-hosted,fluxion-overflow]
     env:
       CARGO_BUILD_JOBS: 1
+    # Issue #3445: persistent self-hosted runners MUST NOT execute
+    # PR-controlled code. See SECURITY.md §"Self-hosted runner job
+    # execution policy" for the full threat model. Probe is trigger-less
+    # (runs on both PR and main) but the overflow fallback is restricted
+    # to main-merge pushes.
     if: |
-      needs.clippy-gh-probe.result == 'failure'
-      || needs.clippy-gh-probe.result == 'cancelled'
+      (github.event_name == 'push' && github.ref == 'refs/heads/main')
+      && (needs.clippy-gh-probe.result == 'failure'
+          || needs.clippy-gh-probe.result == 'cancelled')
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
       - uses: ./.github/actions/setup-rust-python-env
@@ -401,9 +419,11 @@ jobs:
     name: "Known Issues Stale Check (Hetzner Overflow)"
     needs: known-issues-stale-gh-probe
     runs-on: [self-hosted,fluxion-overflow]
+    # Issue #3445: persistent self-hosted runners MUST NOT execute
+    # PR-controlled code. PR KNOWN_ISSUES.md staleness checks resolve on
+    # the GH-hosted probe path; the overflow path is for main-merge only.
     if: |
-      (github.event_name == 'pull_request' ||
-       (github.event_name == 'push' && github.ref == 'refs/heads/main'))
+      (github.event_name == 'push' && github.ref == 'refs/heads/main')
       && (needs.known-issues-stale-gh-probe.result == 'failure'
           || needs.known-issues-stale-gh-probe.result == 'cancelled')
     steps:
@@ -539,9 +559,12 @@ jobs:
     name: "Workspace Check (Hetzner Overflow)"
     needs: workspace-check-gh-probe
     runs-on: [self-hosted,fluxion-overflow]
+    # Issue #3445: persistent self-hosted runners MUST NOT execute
+    # PR-controlled code. PR workspace checks run on the GH-hosted probe
+    # path (ephemeral VM); the overflow fallback is reserved for
+    # main-merge pushes where the code is trusted post-merge gate.
     if: |
-      (github.event_name == 'pull_request' ||
-       (github.event_name == 'push' && github.ref == 'refs/heads/main'))
+      (github.event_name == 'push' && github.ref == 'refs/heads/main')
       && (needs.workspace-check-gh-probe.result == 'failure'
           || needs.workspace-check-gh-probe.result == 'cancelled')
     steps:
@@ -588,9 +611,13 @@ jobs:
     name: "Ashrae Cases Cycle Check (Hetzner Overflow)"
     needs: ashrae-cases-cycle-gh-probe
     runs-on: [self-hosted,fluxion-overflow]
+    # Issue #3445: persistent self-hosted runners MUST NOT execute
+    # PR-controlled code. The Ashrae Cases Cycle check is one of the ASHRAE
+    # 140 gate enforcers — letting untrusted code touch a persistent
+    # runner would let it tamper with sccache / cargo caches and silently
+    # alter subsequent validation runs. Restrict to main-merge pushes.
     if: |
-      (github.event_name == 'pull_request' ||
-       (github.event_name == 'push' && github.ref == 'refs/heads/main'))
+      (github.event_name == 'push' && github.ref == 'refs/heads/main')
       && (needs.ashrae-cases-cycle-gh-probe.result == 'failure'
           || needs.ashrae-cases-cycle-gh-probe.result == 'cancelled')
     steps:
@@ -646,9 +673,13 @@ jobs:
     name: "Physics-Sim-Cycle-Check (Hetzner Overflow)"
     needs: physics-sim-cycle-gh-probe
     runs-on: [self-hosted,fluxion-overflow]
+    # Issue #3445: persistent self-hosted runners MUST NOT execute
+    # PR-controlled code. The physics-sim cycle gate is a structural
+    # invariant — letting PR code touch the persistent runner would let
+    # it modify the gate's own inputs (the architecture graph cache, the
+    # cycle_baseline_history.json ledger, etc.). Restrict to main-merge.
     if: |
-      (github.event_name == 'pull_request' ||
-       (github.event_name == 'push' && github.ref == 'refs/heads/main'))
+      (github.event_name == 'push' && github.ref == 'refs/heads/main')
       && (needs.physics-sim-cycle-gh-probe.result == 'failure'
           || needs.physics-sim-cycle-gh-probe.result == 'cancelled')
     steps:
@@ -866,9 +897,13 @@ jobs:
     name: "fluxion-grid Integration Tests (Hetzner Overflow)"
     needs: fluxion-grid-integration-gh-probe
     runs-on: [self-hosted,fluxion-overflow]
+    # Issue #3445: persistent self-hosted runners MUST NOT execute
+    # PR-controlled code. PR grid integration tests run on the GH-hosted
+    # probe path (ephemeral VM, network-egress-restricted, no persistent
+    # build cache from previous PRs); the overflow fallback is reserved
+    # for main-merge pushes.
     if: |
-      (github.event_name == 'pull_request' ||
-       (github.event_name == 'push' && github.ref == 'refs/heads/main'))
+      (github.event_name == 'push' && github.ref == 'refs/heads/main')
       && (needs.fluxion-grid-integration-gh-probe.result == 'failure'
           || needs.fluxion-grid-integration-gh-probe.result == 'cancelled')
     steps:

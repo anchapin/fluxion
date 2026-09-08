@@ -4,6 +4,30 @@
 # Provisions a Hetzner Cloud VM and registers it as a GitHub Actions
 # self-hosted runner for the fluxion repository.
 #
+# SECURITY POSTURE (Issue #3445)
+# ------------------------------
+# Persistent self-hosted runners MUST NOT execute untrusted (PR-controlled)
+# code. This script therefore:
+#   * does NOT install Docker and does NOT add the `runner` user to the
+#     `docker` group (acceptance criterion #2 of #3445) — docker-group
+#     membership is root-equivalent on the host;
+#   * declares the runner with a default `--work _work` layout so GitHub
+#     Actions isolates each job in its own `_work/<job>/...` subdirectory,
+#     so PR checkouts cannot poison subsequent main-merge jobs (or vice
+#     versa) via leftover build artefacts;
+#   * registers the runner under labels that workflow jobs gate on
+#     `push`/`main` only (see rust-tests.yml::*-hz and ci.yml::*-hz).
+#
+# Operators rotating a previously-provisioned runner into the hardened
+# posture must additionally run:
+#     gpasswd -d runner docker || true   # drop the legacy docker-group grant
+#     apt-get purge -y docker-ce docker-ce-cli containerd.io || true
+#     rm -rf /var/lib/docker
+# The workflow gating alone is sufficient for the immediate trust
+# boundary; the docker-group purge is defence-in-depth in case a future
+# workflow ever adds `runs-on: [self-hosted, fluxion-ci]` to a job that
+# takes pull_request events.
+#
 # PREREQUISITES
 #   - hcloud CLI installed and authenticated:
 #       brew install hcloud          # macOS
@@ -125,19 +149,6 @@ apt-get install -y -qq \
   build-essential pkg-config \
   libssl-dev libfontconfig1-dev libfreetype6-dev
 
-echo "--- Docker"
-install -m 0755 -d /etc/apt/keyrings
-curl -fsSL https://download.docker.com/linux/ubuntu/gpg \
-  -o /etc/apt/keyrings/docker.asc
-chmod a+r /etc/apt/keyrings/docker.asc
-echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.asc] \
-https://download.docker.com/linux/ubuntu \
-$(. /etc/os-release && echo "$VERSION_CODENAME") stable" \
-  > /etc/apt/sources.list.d/docker.list
-apt-get update -qq
-apt-get install -y -qq docker-ce docker-ce-cli containerd.io
-systemctl enable --now docker
-
 echo "--- Rust stable"
 curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs \
   | sh -s -- -y --default-toolchain stable --no-modify-path
@@ -145,8 +156,24 @@ source /root/.cargo/env
 rustup component add rustfmt clippy
 
 echo "--- Runner user"
+# Issue #3445: the runner service account MUST NOT be a member of the
+# `docker` group. Docker group membership grants root-equivalent access to
+# the host (mount → host filesystem → sudo), which is incompatible with
+# the persistent-self-hosted-runner threat model. Do NOT reintroduce
+# `usermod -aG docker runner` here or anywhere else in the provisioning
+# pipeline — see docs/SECURITY.md §"Self-hosted runner job execution
+# policy" for the full rationale.
+#
+# Docker itself is also intentionally NOT installed on this runner image.
+# No workflow that targets the `fluxion-ci` / `fluxion-overflow` labels
+# invokes `docker` (verified via `rg "docker" .github/workflows/` —
+# every match is in docker.yml which is pinned to `ubuntu-latest` /
+# `ubuntu-latest-8-cores`, never self-hosted). If a future workflow
+# genuinely needs Docker on a self-hosted runner, gate it behind a
+# dedicated runner label (e.g. `self-hosted,docker-required`) and add
+# the docker group to a *separate* service account, never the one that
+# runs PR-controlled build scripts.
 useradd -m -s /bin/bash runner 2>/dev/null || true
-usermod -aG docker runner
 cp -r /root/.cargo /home/runner/.cargo 2>/dev/null || true
 chown -R runner:runner /home/runner/.cargo 2>/dev/null || true
 echo 'source /home/runner/.cargo/env' >> /home/runner/.bashrc
@@ -162,6 +189,13 @@ curl -fsSL \
 tar xzf "$TARBALL"
 rm "$TARBALL"
 chown -R runner:runner "$RUNNER_DIR"
+# Issue #3445: every Actions job on a persistent runner writes into a
+# `_work/<job-name>/...` subtree, but the runner's own `_work` directory
+# persists across jobs. Pre-existing PR-controlled checkout artefacts
+# in `_work` could otherwise leak into a subsequent main-merge job
+# (or vice-versa). GitHub Actions handles per-job subdirectories
+# correctly out of the box — do NOT disable or hoist the default
+# `_work` layout here.
 
 echo "--- Registering with GitHub"
 sudo -u runner ./config.sh \
