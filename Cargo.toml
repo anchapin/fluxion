@@ -202,19 +202,32 @@ tmy3-download = ["fluxion-core/tmy3-download"]
 # Feature flag for acausal HVAC / fluid network modeling (Issue #1980 / ADR-005).
 # Gates the `fluxion-fluid` crate which provides port-based fluid circuit traits.
 fluid = ["dep:fluxion-fluid"]
-# Feature flag for the experimental GaugeZoneSolver zone-level scaffolding
-# (Issue #2304). OFF by default.
+# Feature flag for the **production** GaugeSolver zone solver
+# (`ZoneSolverKind::Gauge`, Issue #2304 / #2686 / #3291).
 #
-# STATUS (Issue #2686, 2026-08-11): this flag is OPT-IN / EXPERIMENTAL and does
-# NOT change the active solver. The `gauge_zone_solver` field on
-# `ThermalModelData` is feature-gated but always initialized to `None`, and no
-# construction path sets it to `Some`. Even with `--features gauge-solver` the
-# routing branch in `step_physics` is unreachable, so the 5R1C / 9R4C
-# lumped-capacitance networks remain the primary zone solver in ALL builds. The
-# live gauge-theory research path is the per-surface `GaugeSolver` run in shadow
-# mode via `PhysicsAdapter` (ARCHITECTURE.md Module 6, #1465 / #1462) — a
-# separate struct from this zone-level `GaugeZoneSolver` wrapper.
+# STATUS (Issue #3291, Phase A8, merged via PR #3482 on 2026-09-07): with
+# `--features gauge-solver` on, the dispatcher's gauge arm is UNCONDITIONAL
+# (`src/sim/thermal_model_physics/step_dispatcher.rs:99-134`); a `Gauge`
+# selector with no gauge backend configured PANICS rather than silently
+# falling through to legacy 5R1C/9R4C. The feature is intentionally
+# retained as the production-path gate pending §LIMIT-21 (Issue #3297)
+# closure — the β-soak gate (#3286) is at 0/30 nights green. Once the
+# β-soak trips the feature flips unconditionally (no longer a
+# `default = []` opt-in) and the `#[cfg(feature = "gauge-solver")]`
+# gate in the dispatcher becomes the always-on production path.
+#
+# In the default build (feature OFF), the cfg-gated gauge block is absent
+# and a `Gauge` selector falls through to legacy 5R1C/9R4C — the same
+# observable behaviour as the pre-#3291 fall-through. The `Gauge`
+# selector itself (the `Default` impl on `ZoneSolverKind` per Issue #3291)
+# IS the production default and is reached via `from_spec_with_selector`
+# regardless of the cargo feature.
+#
 # Run with: cargo test --features gauge-solver --test ashrae_140_case_600_series
+#
+# Issue #3509: rewrote the pre-#3291 "always None" wording. See also
+# AGENTS.md:12 (Phase A8 note), ARCHITECTURE.md:716-735 (Thermal
+# selector Phase A8 note), and docs/KNOWN_ISSUES.md §LIMIT-21.
 gauge-solver = []
 # Feature flag for fluxion-city urban radiation integration (Issue #2344).
 # Wires UrbanRadiationSolver into PhysicsSurfaceFluxProvider via
