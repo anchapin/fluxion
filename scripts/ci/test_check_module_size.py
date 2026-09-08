@@ -1,4 +1,4 @@
-"""Tests for ``scripts/check_module_size.py`` -- Issue #2878.
+"""Tests for ``scripts/check_module_size.py`` -- Issues #2878, #3457.
 
 Regression guard for the god-struct decomposition ceiling enforced by
 ``scripts/check_module_size.py``. Mirrors the ``load_script`` + ``tmp_path``
@@ -8,16 +8,20 @@ mock-repo pattern from ``test_check_architecture_drift.py``:
 * redirect the module-level ``REPO_ROOT`` constant at a synthetic
   ``tmp_path`` fixture that contains a minimal ``src/sim/`` tree,
 * drive ``Limit.effective_max`` and ``check()`` through
-  in-budget / over-budget / ratchet-tighten scenarios.
+  in-budget / over-budget / ratchet-tighten scenarios, and
+* drive ``check_baseline_drift()`` through the freeze-snapshot contract
+  introduced by Issue #3457 (mirrors ``BASELINE_KNOWN_ORPHANS`` /
+  ``_BASELINE_KNOWN_ORPHANS_SET`` from
+  ``scripts/check_orphan_modules.py``).
 
 The script's ``LIMITS`` table is computed at import time using
-``REPO_ROOT / "src" / "sim" / "thermal_model_data.rs"`` (and the
-``mod.rs`` directory form). The fixture must therefore redirect
+``REPO_ROOT / "src" / "..."``. The fixture must therefore redirect
 ``REPO_ROOT`` *before* invoking any function that walks ``LIMITS``.
 """
 
 from __future__ import annotations
 
+import subprocess
 from pathlib import Path
 
 import pytest
@@ -26,7 +30,7 @@ SCRIPT_NAME = "check_module_size"
 
 
 # ---------------------------------------------------------------------------
-# Fixtures
+# Fixtures / helpers
 # ---------------------------------------------------------------------------
 
 
@@ -40,11 +44,14 @@ def _redirect(checker, tmp_path: Path, monkeypatch) -> None:
     """Point the script's ``REPO_ROOT`` at a synthetic ``tmp_path`` tree.
 
     The LIMITS table is built at import time with
-    ``REPO_ROOT / "src" / "sim" / "thermal_model_data.rs"`` (and the
-    ``mod.rs`` directory form). Without this redirect the tests would
-    silently exercise the real ``src/sim/thermal_model_data.rs`` instead
-    of the synthetic fixture, and a regression in the parser would
+    ``REPO_ROOT / "src" / "..."``. Without this redirect the tests
+    would silently exercise the real ``src/`` tree instead of the
+    synthetic fixture, and a regression in the parser would
     cross-pollute the real repo's CI status.
+
+    The synthetic tree below is a representative subset of the real
+    LIMITS list: the two ``thermal_model_data`` forms (Issue #2878)
+    plus one new Issue #3457 entry (``src/ai/surrogate.rs``).
     """
     monkeypatch.setattr(checker, "REPO_ROOT", tmp_path)
     # Rebuild the LIMITS list pointing at tmp_path so the freshly-loaded
@@ -73,7 +80,32 @@ def _redirect(checker, tmp_path: Path, monkeypatch) -> None:
                 / "thermal_model_data_ratchet.json",
                 reason="Issue #2878 acceptance (directory form).",
             ),
+            checker.Limit(
+                path=tmp_path / "src" / "ai" / "surrogate.rs",
+                max_lines=5726,
+                ratchet_path=tmp_path
+                / "tests"
+                / "reference_data"
+                / "module_size"
+                / "surrogate_ratchet.json",
+                reason="Issue #3457: surrogate module ratcheted at current size.",
+            ),
         ],
+    )
+    # Shrink the baseline count + freeze snapshot to match the synthetic
+    # 3-entry LIMITS list so the drift check stays neutral in tests that
+    # only exercise the per-file ceiling semantics.
+    monkeypatch.setattr(checker, "BASELINE_MODULE_SIZE_LIMITS", 3)
+    monkeypatch.setattr(
+        checker,
+        "_BASELINE_MODULE_SIZE_LIMITS_SET",
+        frozenset(
+            {
+                "src/sim/thermal_model_data.rs",
+                "src/sim/thermal_model_data/mod.rs",
+                "src/ai/surrogate.rs",
+            }
+        ),
     )
 
 
@@ -222,3 +254,175 @@ def test_check_returns_none_when_neither_form_exists(checker, tmp_path, monkeypa
     _redirect(checker, tmp_path, monkeypatch)
     assert checker.check(checker.LIMITS[0]) is None
     assert checker.check(checker.LIMITS[1]) is None
+
+
+# ---------------------------------------------------------------------------
+# Issue #3457 — ratcheted ceiling at the file's CURRENT size
+# ---------------------------------------------------------------------------
+
+
+def test_check_passes_at_snapshotted_size(checker, tmp_path, monkeypatch):
+    """An Issue #3457 entry must pass when the file is exactly at the
+    snapshotted size (current line count), and fail the moment it
+    grows by one line.
+
+    This is the "the bound can only tighten" contract: the YAML
+    ceiling IS the snapshotted current size, so the gate is
+    tight-but-not-over-budget out of the box. Companion cleanup
+    PRs that decompose the file are expected to lower the YAML
+    ceiling alongside the decomposition.
+    """
+    _redirect(checker, tmp_path, monkeypatch)
+    src = tmp_path / "src" / "ai" / "surrogate.rs"
+    _write_source(src, 5726)  # current size on develop
+    surrogate_limit = checker.LIMITS[2]
+    assert surrogate_limit.max_lines == 5726
+    result = checker.check(surrogate_limit)
+    assert result is not None
+    assert result.passed is True
+    assert result.actual == 5726
+    assert result.max == 5726
+
+
+def test_check_fails_when_issue_3457_file_grows(checker, tmp_path, monkeypatch):
+    """An Issue #3457 entry must FAIL when the file grows by even one
+    line past the snapshotted ceiling — the gate is the regression
+    detector, not a soft target."""
+    _redirect(checker, tmp_path, monkeypatch)
+    src = tmp_path / "src" / "ai" / "surrogate.rs"
+    _write_source(src, 5727)  # +1 line
+    result = checker.check(checker.LIMITS[2])
+    assert result is not None
+    assert result.passed is False
+    assert result.actual == 5727
+
+
+def test_check_baseline_drift_is_clean_for_frozen_limits(
+    checker, tmp_path, monkeypatch
+):
+    """When ``LIMITS`` exactly matches the freeze snapshot, drift is empty."""
+    _redirect(checker, tmp_path, monkeypatch)
+    drift = checker.check_baseline_drift()
+    assert drift == [], f"expected no drift, got: {drift}"
+
+
+def test_check_baseline_drift_detects_new_entry(checker, tmp_path, monkeypatch):
+    """Adding a new entry to ``LIMITS`` that is NOT in the freeze
+    snapshot must surface as drift, naming the new path so the diff
+    is visible in CI output.
+
+    Mirrors ``_BASELINE_KNOWN_ORPHANS_SET`` from
+    ``check_orphan_modules.py``: editing ``LIMITS`` alone, without
+    mirroring the change into the freeze set, must be loud.
+    """
+    _redirect(checker, tmp_path, monkeypatch)
+    # Append a new entry without updating the freeze snapshot.
+    extra = checker.Limit(
+        path=tmp_path / "src" / "validation" / "ashrae_140_cases.rs",
+        max_lines=4764,
+        ratchet_path=tmp_path
+        / "tests"
+        / "reference_data"
+        / "module_size"
+        / "ashrae_140_cases_ratchet.json",
+        reason="Issue #3457 (synthetic): would-be new entry.",
+    )
+    monkeypatch.setattr(checker, "LIMITS", list(checker.LIMITS) + [extra])
+    drift = checker.check_baseline_drift()
+    assert any("src/validation/ashrae_140_cases.rs" in msg for msg in drift), (
+        f"new path not reported in drift: {drift}"
+    )
+    assert any("BASELINE_MODULE_SIZE_LIMITS" in msg for msg in drift), (
+        f"baseline count drift not reported: {drift}"
+    )
+
+
+def test_check_baseline_drift_passes_when_baseline_raised(
+    checker, tmp_path, monkeypatch
+):
+    """When the freeze snapshot AND the count baseline are both raised
+    to match the new LIMITS list, drift must be empty — that's the
+    "raise the baseline" lever and is the only sanctioned way to add
+    entries."""
+    _redirect(checker, tmp_path, monkeypatch)
+    extra = checker.Limit(
+        path=tmp_path / "src" / "validation" / "ashrae_140_cases.rs",
+        max_lines=4764,
+        ratchet_path=tmp_path
+        / "tests"
+        / "reference_data"
+        / "module_size"
+        / "ashrae_140_cases_ratchet.json",
+        reason="Issue #3457 (synthetic): raised baseline to match.",
+    )
+    monkeypatch.setattr(checker, "LIMITS", list(checker.LIMITS) + [extra])
+    monkeypatch.setattr(checker, "BASELINE_MODULE_SIZE_LIMITS", 4)
+    monkeypatch.setattr(
+        checker,
+        "_BASELINE_MODULE_SIZE_LIMITS_SET",
+        frozenset(
+            {
+                "src/sim/thermal_model_data.rs",
+                "src/sim/thermal_model_data/mod.rs",
+                "src/ai/surrogate.rs",
+                "src/validation/ashrae_140_cases.rs",
+            }
+        ),
+    )
+    drift = checker.check_baseline_drift()
+    assert drift == [], f"expected no drift after raising baseline, got: {drift}"
+
+
+def test_check_baseline_drift_detects_count_drift_without_new_paths(
+    checker, tmp_path, monkeypatch
+):
+    """If the count baseline is wrong (lower than ``len(LIMITS)``) but
+    the freeze snapshot still matches, the count drift must still
+    fire. The count check and the path check are independent."""
+    _redirect(checker, tmp_path, monkeypatch)
+    monkeypatch.setattr(checker, "BASELINE_MODULE_SIZE_LIMITS", 2)
+    drift = checker.check_baseline_drift()
+    assert any("BASELINE_MODULE_SIZE_LIMITS drift" in msg for msg in drift), (
+        f"count drift not reported: {drift}"
+    )
+
+
+# ---------------------------------------------------------------------------
+# Real-repo smoke test (regression-locking).
+# ---------------------------------------------------------------------------
+
+
+def test_script_exits_zero_on_real_repo(repo_root):
+    """Clean-tree smoke test against the real repo.
+
+    Runs ``scripts/check_module_size.py`` against the production
+    workspace (no monkey-patching) and asserts it exits 0. A
+    regression in the per-file ratchet, the freeze snapshot, or the
+    ``update_ratchet`` logic that mis-seeds a baseline flips this
+    red.
+
+    Per the issue brief, the test is driven via ``subprocess.run``
+    so it exercises the script exactly as
+    ``.github/workflows/architecture_drift.yml`` does — not the
+    in-process ``main()``.
+    """
+    result = subprocess.run(
+        ["python3", str(repo_root / "scripts" / "check_module_size.py")],
+        cwd=repo_root,
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode == 0, (
+        f"expected exit 0 (all limits satisfied), got rc={result.returncode}\n"
+        f"stdout:\n{result.stdout}\n"
+        f"stderr:\n{result.stderr}"
+    )
+    # Banner phrases pin the public output shape against accidental
+    # renames in the workflow wiring.
+    assert "module-size gate" in result.stdout
+    assert "All module-size limits satisfied." in result.stdout
+    # The drift check is quiet when the LIMITS list matches the freeze
+    # snapshot. If this assertion fails, somebody either added a new
+    # LIMITS entry without updating the freeze (regression) or
+    # changed the drift message wording (cosmetic).
+    assert "BASELINE DRIFT" not in result.stdout
