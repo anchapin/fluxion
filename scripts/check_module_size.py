@@ -76,7 +76,14 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 #     ratchet JSON's ``max_lines`` (historical max); going forward the
 #     bound can only tighten as the YAML ceiling is lowered alongside
 #     file decomposition.
-BASELINE_MODULE_SIZE_LIMITS = 12
+#   12 → 11 (Issue #3543, part 1): ``src/api/server.rs`` was decomposed into
+#     a per-route submodule tree under ``src/api/server/`` (mod.rs +
+#     api_error, batch, campaigns, constants, health, import_format,
+#     router, schema_store, simulate, state, tests). No new entry is
+#     added because the largest child submodule (~750 LoC) is well below
+#     the smallest ratcheted threshold (~2000 LoC); the decomposition
+#     itself is the ratchet-lowering event.
+BASELINE_MODULE_SIZE_LIMITS = 11
 
 # Freeze snapshot of the gated paths (Issue #3457 ratchet).
 #
@@ -95,9 +102,10 @@ _BASELINE_MODULE_SIZE_LIMITS_SET: frozenset[str] = frozenset(
         # Issue #2878 (retained).
         "src/sim/thermal_model_data.rs",
         "src/sim/thermal_model_data/mod.rs",
-        # Issue #3457 — 10 largest src/ files at freeze time.
+        # Issue #3457 — 9 largest src/ files at freeze time.
+        # ``src/api/server.rs`` was removed in Issue #3543 (decomposed into
+        # ``src/api/server/`` per-route submodules).
         "src/ai/surrogate.rs",
-        "src/api/server.rs",
         "src/validation/ashrae_140_cases.rs",
         "src/sim/thermal_model_core.rs",
         "src/physics/state_space_ctf.rs",
@@ -201,19 +209,6 @@ LIMITS: list[Limit] = [
             "``src/``; ratcheted at current size (5726 lines) so the gate "
             "fails the moment it grows further. Decomposition is tracked "
             "separately."
-        ),
-    ),
-    Limit(
-        path=REPO_ROOT / "src" / "api" / "server.rs",
-        max_lines=4934,
-        ratchet_path=REPO_ROOT
-        / "tests"
-        / "reference_data"
-        / "module_size"
-        / "server_ratchet.json",
-        reason=(
-            "Issue #3457: API server module ratcheted at current size "
-            "(4934 lines) so further accumulation is PR-blocking."
         ),
     ),
     Limit(
