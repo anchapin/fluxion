@@ -1534,6 +1534,15 @@ impl ASHRAE140Validator {
     /// selection from `from_spec`, pushing the back-zone to ~16°C (below setpoint) and
     /// producing 264.5% annual heating over-prediction. The default 5R1C/9R4C path now
     /// yields results within the ASHRAE 140 ±15% energy band for Case 960.
+    /// **Issue #3287:** The `enable_ctf_with_fd_fallback` post-construction
+    /// mutator is deprecated in favour of the selector-based constructor
+    /// (`ThermalModel::from_spec_with_selector` with `conduction_solver =
+    /// ConductionSolverKind::Ctf`/`Fd`). The dispatch wiring for non-default
+    /// `conduction_solver` is tracked in #3280 and is not yet complete, so this
+    /// validator's legacy path keeps calling the deprecated mutator. The
+    /// `#[allow(deprecated)]` is the documented exception per the
+    /// post-construction-orchestrator pattern.
+    #[allow(deprecated)]
     fn enable_advanced_solver(&self, model: &mut ThermalModel<VectorField>, spec: &CaseSpec) {
         // Only enable advanced solver for high-mass construction cases
         if spec.construction_type == ConstructionType::HighMass {
@@ -3193,6 +3202,7 @@ mod tests {
     }
 
     #[test]
+    #[allow(deprecated)]
     fn test_simulate_case_950_with_ctf_trace() {
         // Debug: Replicate simulate_case logic for Case 950 to trace the CTF path
         let spec = ASHRAE140Case::Case950.spec();

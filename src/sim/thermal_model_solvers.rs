@@ -301,6 +301,16 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
     /// CTF solvers for each thermal zone. The CTF solver will be used instead of 5R1C
     /// for calculating heat conduction through opaque surfaces.
     ///
+    /// **Deprecated (Issue #3287):** This post-construction mutator is being superseded
+    /// by the selector-based constructor [`ThermalModel::from_spec_with_selector`] paired
+    /// with [`ThermalSelector`](crate::sim::thermal_selector::ThermalSelector). The
+    /// new API is the single public surface for opting into a thermal-solver family;
+    /// pass `conduction_solver = ConductionSolverKind::Ctf` (or `Fd`) to the selector
+    /// when constructing the model. The legacy post-construction entry point remains
+    /// in place for backwards compatibility and will be removed in a future release.
+    /// The `gauge-solver` cargo feature remains the production-path gate for
+    /// `conduction_solver = Default` (Phase A8, Issue #3291).
+    ///
     /// # Arguments
     /// * `wall_layers` - Wall construction layers (interior to exterior) with thermal properties
     /// * `timestep` - Simulation timestep in seconds (typically 3600 for 1-hour)
@@ -317,6 +327,11 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
     /// ];
     /// model.enable_ctf(&layers, 3600.0, 50);
     /// ```
+    #[deprecated(
+        since = "1.4.0",
+        note = "Use ThermalSelector with conduction_solver = Ctf (or Fd) via \
+                `ThermalModel::from_spec_with_selector` instead. See issue #3287."
+    )]
     pub fn enable_ctf(&mut self, wall_layers: &[CTFMaterial], timestep: f64, history_size: usize) {
         // Precompute CTF coefficients for the wall construction
         let calculator = CTFCalculator::with_defaults(wall_layers, timestep);
@@ -390,6 +405,16 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
     /// This method creates FD solvers for each zone using the wall layer discretization.
     /// FD solver uses implicit BTCS scheme with Thomas algorithm for tridiagonal system solving.
     ///
+    /// **Deprecated (Issue #3287):** This post-construction mutator is being superseded
+    /// by the selector-based constructor [`ThermalModel::from_spec_with_selector`] paired
+    /// with [`ThermalSelector`](crate::sim::thermal_selector::ThermalSelector). The
+    /// new API is the single public surface for opting into a thermal-solver family;
+    /// pass `conduction_solver = ConductionSolverKind::Fd` to the selector when
+    /// constructing the model. The legacy post-construction entry point remains in
+    /// place for backwards compatibility and will be removed in a future release.
+    /// The `gauge-solver` cargo feature remains the production-path gate for
+    /// `conduction_solver = Default` (Phase A8, Issue #3291).
+    ///
     /// # Arguments
     ///
     /// * `wall_layers` - Wall construction layers (used for FD discretization)
@@ -405,6 +430,11 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
     /// ];
     /// model.enable_fd(&layers, 3600.0, 5, 20.0);
     /// ```
+    #[deprecated(
+        since = "1.4.0",
+        note = "Use ThermalSelector with conduction_solver = Fd (or Ctf) via \
+                `ThermalModel::from_spec_with_selector` instead. See issue #3287."
+    )]
     pub fn enable_fd(
         &mut self,
         wall_layers: &[crate::physics::fd_discretization::MaterialLayer],
@@ -508,6 +538,15 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
     /// This method attempts to enable CTF solver, but if coefficient calculation fails
     /// or produces invalid results, it automatically falls back to FD solver.
     ///
+    /// **Deprecated (Issue #3287):** This post-construction orchestrator delegates to
+    /// [`Self::enable_ctf`] / [`Self::enable_fd`], both of which are also deprecated.
+    /// The selector-based constructor
+    /// [`ThermalModel::from_spec_with_selector`] is the new public surface — pass
+    /// `conduction_solver = ConductionSolverKind::Ctf` (or `Fd`) via
+    /// [`ThermalSelector`](crate::sim::thermal_selector::ThermalSelector). The
+    /// `gauge-solver` cargo feature remains the production-path gate for
+    /// `conduction_solver = Default` (Phase A8, Issue #3291).
+    ///
     /// # Arguments
     ///
     /// * `wall_layers` - Wall construction layers for both CTF and FD
@@ -518,6 +557,12 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
     /// # Returns
     ///
     /// `true` if CTF was enabled, `false` if fell back to FD
+    #[deprecated(
+        since = "1.4.0",
+        note = "Use ThermalSelector with conduction_solver = Ctf/Fd via \
+                `ThermalModel::from_spec_with_selector` instead. See issue #3287."
+    )]
+    #[allow(deprecated)]
     pub fn enable_ctf_with_fd_fallback(
         &mut self,
         wall_layers: &[crate::physics::fd_discretization::MaterialLayer],
