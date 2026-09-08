@@ -1,0 +1,18 @@
+# β-soak escape-hatch admin allowlist (Issue #3285).
+#
+# One handle per line; # comments and blank lines allowed.
+# Match is case-insensitive on the GitHub login.
+#
+# A handle listed here is a GitHub username authorised to invoke the
+# `--escape` flag of scripts/check_beta_soak_gate.py — i.e. to bypass
+# the §LIMIT-21 / Issue #3286 β-soak gate under the escape-hatch
+# procedure documented in docs/agents/beta-soak-escape-hatch.md.
+#
+# Adding a handle is itself an audited change (git blame / PR review).
+# The escape hatch is dormant by design — listing a handle does NOT
+# trigger a bypass; the operator must additionally set
+# `BETA_SOAK_ESCAPE_AUTHORIZED_BY=<handle>` in the PR's CI environment.
+#
+# Initial entry: the repo owner (anchapin). Operators are listed in
+# alphabetical order to keep git-blame history readable.
+anchapin
