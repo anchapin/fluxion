@@ -1210,18 +1210,20 @@ The fix is **structural** — the `GaugeSolver` rework (#1465 / #1462) — and t
 ## Summary
 
 | Category | Total Issues | Fixed | Open | Partial | Won't Fix |
-|----------|-------------|-------|------|----------|-----------|
-| Foundation (BASE) | 7 | 7 | 0 | 0 | 0 |
-| Solar (SOLAR) | 2 | 0 | 0 | 2 | 0 |
-| Free-Float (FREE) | 3 | 1 | 2 | 0 | 0 |
-| Temperature (TEMP) | 1 | 1 | 0 | 0 | 0 |
-| Multi-Zone (MULTI) | 3 | 1 | 0 | 1 | 1 |
-| Model Limits (LIMIT) | 5 | 0 | 0 | 0 | 5 |
+|----------|-------------:|------:|-----:|--------:|----------:|
+| Foundation (BASE) | 5 | 5 | 0 | 0 | 0 |
+| Solar (SOLAR) | 4 | 0 | 3 | 1 | 0 |
+| Free-Float (FREE) | 3 | 0 | 1 | 0 | 0 |
+| Temperature (TEMP) | 1 | 0 | 0 | 0 | 0 |
+| Multi-Zone (MULTI) | 4 | 3 | 0 | 0 | 0 |
+| Model Limits (LIMIT) | 22 | 2 | 0 | 1 | 2 |
 | Reporting (REPORT) | 4 | 0 | 4 | 0 | 0 |
-| CI/Infrastructure (CI) | 1 | 0 | 1 | 0 | 0 |
-| fluxion-fluid (FLUID) | 2 | 0 | 2 | 0 | 0 |
-| FFD/CFD (FFD) | 2 | 1 | 0 | 1 | 0 |
-| **Total** | **29** | **11** | **9** | **2** | **5** |
+| CI/Infrastructure (CI) | 3 | 0 | 0 | 0 | 0 |
+| fluxion-fluid (FLUID) | 2 | 0 | 0 | 0 | 0 |
+| FFD/CFD (FFD) | 2 | 0 | 0 | 1 | 0 |
+| **Total** | **50** | **10** | **8** | **3** | **2** |
+
+*Counts derived from `grep -cE '^### CATEGORY-NN:' docs/KNOWN_ISSUES.md` via `scripts/check_known_issues_summary.py`; CI gate = `python3 scripts/check_known_issues_summary.py --check`. Status columns (`Fixed` / `Open` / `Partial` / `Won't Fix`) derive from each section's first `**Status:**` line. To regenerate: `python3 scripts/check_known_issues_summary.py --regen | sponge docs/KNOWN_ISSUES.md`.*
 
 ### Open Issues by Severity
 
