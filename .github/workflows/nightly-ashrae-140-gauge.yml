@@ -204,6 +204,17 @@ jobs:
             /tmp/ignored_now.txt
           retention-days: 90
 
+      # Issue #3286 — gate contract validation. The canonical schema +
+      # gate status live in `scripts/check_beta_soak_gate.py`; running it
+      # here re-validates the just-written state file against the v1
+      # schema and surfaces any drift as an explicit log line. Runs on
+      # `always()` so a state-schema regression shows up in the run log
+      # even when the criteria above failed.
+      - name: Validate β-soak state (Issue #3286 gate contract)
+        if: always()
+        run: |
+          python3 scripts/check_beta_soak_gate.py --state beta-soak-state.json --json
+
       # Post the nightly result + streak on the tracking issue (#3286).
       # One comment per night — the issue is the durable soak log.
       - name: Report nightly result on soak tracking issue
