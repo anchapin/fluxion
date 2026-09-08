@@ -5,11 +5,16 @@ Fluxion Release Scorecard Generator.
 Emits ``SCORECARD.md`` at the repo root from **committed** source files so the
 output is fully deterministic and reproducible:
 
-  * ``docs/ASHRAE140_RESULTS.md``   -- headline pass rate / MAE / per-series.
+  * ``validation/performance_history.latest.json`` -- PREFERRED source for
+    the headline pass rate / MAE / max-deviation / validation-throughput
+    (Issues #3403 / #3436 / #3535). This tracked snapshot is consistently
+    newer than ``docs/ASHRAE140_RESULTS.md`` and is the canonical
+    "latest-validation" record.
+  * ``docs/ASHRAE140_RESULTS.md``   -- per-series breakdown, plus the
+    fallback for the headline pass rate / MAE / max-deviation when the
+    perf-history snapshot is missing or corrupt.
   * ``release_gates.yaml``          -- gate budgets (pass rate, MAE, throughput).
   * ``README.md``                   -- BatchOracle release-mode throughput claim.
-  * ``validation/performance_history.latest.json`` -- tracked snapshot of the
-    latest validation-run throughput (Issues #3403 / #3436).
 
 Because every figure is read from a committed file, the generated scorecard is
 byte-stable for a given set of inputs. CI runs ``--check`` to regenerate the
@@ -131,25 +136,55 @@ def _num(text: str) -> Optional[float]:
 
 
 def _apply_perf_entry(v: Validation, entry: dict, attr_path: str) -> str:
-    """Apply a perf-history ``entry`` (dict) to ``v``; return the attribution."""
+    """Apply a perf-history ``entry`` (dict) to ``v``; return the attribution.
+
+    Issue #3535: the perf-history snapshot is preferred over
+    ``docs/ASHRAE140_RESULTS.md`` for the headline ``pass_rate`` / ``mae`` /
+    ``max_deviation`` (in addition to the throughput override it already
+    owned). The ASHRAE doc remains the fallback when the snapshot is
+    missing/corrupt or when the entry omits a field.
+    """
     thr = float(entry.get("throughput", 0.0))
-    if thr > 0.0:
-        v.throughput_cases_per_sec = thr
-        ts = str(entry.get("timestamp", ""))[:10]
-        return f"`{attr_path}` (latest run {ts})"
-    raise ValueError(f"perf-history entry has non-positive throughput: {entry!r}")
+    if thr <= 0.0:
+        raise ValueError(f"perf-history entry has non-positive throughput: {entry!r}")
+    v.throughput_cases_per_sec = thr
+
+    # Issue #3535: when a field is present and numeric in the perf entry,
+    # override the docs-parsed value. A missing or non-numeric field leaves
+    # the docs value untouched (this keeps backward compatibility with
+    # snapshots that pre-date the headline-field rollout and with the
+    # ``--perf-history`` jsonl override which historically only carried
+    # ``throughput``).
+    _HEADLINE_FIELDS = (
+        ("pass_rate", "pass_rate"),
+        ("mae", "mae"),
+        ("max_deviation", "max_deviation"),
+    )
+    for src_key, dst_attr in _HEADLINE_FIELDS:
+        val = entry.get(src_key)
+        if isinstance(val, (int, float)) and not isinstance(val, bool):
+            setattr(v, dst_attr, float(val))
+
+    ts = str(entry.get("timestamp", ""))[:10]
+    return f"`{attr_path}` (latest run {ts})"
 
 
 def apply_performance_history(v: Validation, perf_history: Optional[str] = None) -> str:
-    """Override ``v.throughput_cases_per_sec`` (Issue #3403) and return the
+    """Override ``v`` headline metrics (Issue #3403 / #3535) and return the
     source-attribution string.
 
-    Deterministic by default (Issue #3436): the figure comes ONLY from the
-    tracked snapshot ``validation/performance_history.latest.json`` -- never
-    from the untracked ``target/performance_history.jsonl`` build artifact,
-    whose presence varies per machine. The committed results doc remains the
-    fallback when the snapshot is missing or corrupt (e.g. a tmp repo in
-    tests).
+    Issue #3535 expands the override surface from ``throughput_cases_per_sec``
+    only to the headline ``pass_rate`` / ``mae`` / ``max_deviation`` as well.
+    The tracked snapshot ``validation/performance_history.latest.json`` is
+    preferred over the older ``docs/ASHRAE140_RESULTS.md`` (the snapshot's
+    ``timestamp`` is consistently newer; the older doc was producing a
+    ~1 pp MAE false-FAIL against the ``validation.max_mae`` budget).
+
+    Deterministic by default (Issue #3436): the figures come ONLY from the
+    tracked snapshot -- never from the untracked
+    ``target/performance_history.jsonl`` build artifact, whose presence
+    varies per machine. The committed results doc remains the fallback when
+    the snapshot is missing or corrupt (e.g. a tmp repo in tests).
 
     ``perf_history`` is the explicit operator opt-in (``--perf-history <path>``
     / ``$FLUXION_PERF_HISTORY``): a jsonl whose LAST non-empty line is the
@@ -403,12 +438,21 @@ def render(
     last_updated = (v.generated_utc or "unknown").split(" ")[0]
     p(f"**Last Updated:** {last_updated}  ")
     p(f"**Data source as of:** {v.generated_utc or 'unknown'}  ")
-    p("**Sources:** `docs/ASHRAE140_RESULTS.md`, `release_gates.yaml`, " "`README.md`")
+    p(
+        "**Sources:** `validation/performance_history.latest.json`, "
+        "`docs/ASHRAE140_RESULTS.md`, `release_gates.yaml`, `README.md`"
+    )
     p("")
     p("---")
     p("")
 
     # --- Headline -------------------------------------------------------
+    # Issue #3535: the perf-history snapshot is preferred for the headline
+    # pass rate / MAE / max-deviation / throughput when available. The
+    # attribution ``throughput_source`` (returned by
+    # ``apply_performance_history``) names whichever source actually fed
+    # the number -- the tracked snapshot when present, the ASHRAE doc
+    # otherwise.
     p("## Headline")
     p("")
     p("| Metric | Current | Budget (gate) | Status | Source |")
@@ -417,12 +461,12 @@ def render(
         f"| ASHRAE 140 pass rate | **{v.pass_rate:.1f}%** "
         f"({v.passed}/{v.total} metrics) | ≥ {g.min_pass_rate:.0f}% "
         f"(`validation.min_pass_rate`) | {_status(pass_ok)} | "
-        "`docs/ASHRAE140_RESULTS.md` |"
+        f"{throughput_source} |"
     )
     p(
         f"| Mean Absolute Error (MAE) | **{v.mae:.2f}%** | "
         f"≤ {g.max_mae:.0f}% (`validation.max_mae`) | {_status(mae_ok)} | "
-        "`docs/ASHRAE140_RESULTS.md` |"
+        f"{throughput_source} |"
     )
     thr_note = (
         f"{g.ci_throughput_comment:.0f} (CI) / {b.readme_release_throughput:.0f} (release)"
@@ -442,7 +486,7 @@ def render(
     p(
         f"| Max single-case deviation | {v.max_deviation:.2f}% | "
         f"(ref: `individual.max_deviation` = 100%) | ℹ️ | "
-        "`docs/ASHRAE140_RESULTS.md` |"
+        f"{throughput_source} |"
     )
     p("")
 

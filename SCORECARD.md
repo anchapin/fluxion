@@ -6,7 +6,7 @@
 
 **Last Updated:** 2026-08-16  
 **Data source as of:** 2026-08-16 18:24 UTC  
-**Sources:** `docs/ASHRAE140_RESULTS.md`, `release_gates.yaml`, `README.md`
+**Sources:** `validation/performance_history.latest.json`, `docs/ASHRAE140_RESULTS.md`, `release_gates.yaml`, `README.md`
 
 ---
 
@@ -14,15 +14,15 @@
 
 | Metric | Current | Budget (gate) | Status | Source |
 |--------|---------|---------------|--------|--------|
-| ASHRAE 140 pass rate | **14.3%** (12/84 metrics) | ≥ 60% (`validation.min_pass_rate`) | ❌ Fail | `docs/ASHRAE140_RESULTS.md` |
-| Mean Absolute Error (MAE) | **51.03%** | ≤ 50% (`validation.max_mae`) | ❌ Fail | `docs/ASHRAE140_RESULTS.md` |
+| ASHRAE 140 pass rate | **14.1%** (12/84 metrics) | ≥ 60% (`validation.min_pass_rate`) | ❌ Fail | `validation/performance_history.latest.json` (latest run 2026-09-07) |
+| Mean Absolute Error (MAE) | **49.82%** | ≤ 50% (`validation.max_mae`) | ✅ Pass | `validation/performance_history.latest.json` (latest run 2026-09-07) |
 | BatchOracle throughput | **157 (CI) / 900 (release)** configs/sec | ≥ 150 (`benchmark.throughput.min_configs_per_sec`) | ✅ Pass | `release_gates.yaml` comment + `README.md` |
 | Validation-suite throughput | 13.83 cases/sec | (informational) | ℹ️ | `validation/performance_history.latest.json` (latest run 2026-09-07) |
-| Max single-case deviation | 470.11% | (ref: `individual.max_deviation` = 100%) | ℹ️ | `docs/ASHRAE140_RESULTS.md` |
+| Max single-case deviation | 470.11% | (ref: `individual.max_deviation` = 100%) | ℹ️ | `validation/performance_history.latest.json` (latest run 2026-09-07) |
 
 ## ASHRAE 140 Pass Rate
 
-- **Overall (metric-level):** 14.3% — 12 PASS / 8 WARN / 64 FAIL of 84 results. Below the 60% gate.
+- **Overall (metric-level):** 14.1% — 12 PASS / 8 WARN / 64 FAIL of 84 results. Below the 60% gate.
 - **Case-level:** 0/18 cases fully PASS (0.0%).
 
 ### Per-Series Breakdown (case-level)
@@ -34,7 +34,7 @@
 | Free-Floating Cases | 4 | 0 | 0 | 4 | 0.0% |
 | Special Cases | 2 | 0 | 0 | 2 | 0.0% |
 
-*Case-level = a case is PASS only if its aggregate row is ✅. Metric-level headline (14.3%) counts each reported metric individually; see `docs/ASHRAE140_RESULTS.md` Summary.*
+*Case-level = a case is PASS only if its aggregate row is ✅. Metric-level headline (14.1%) counts each reported metric individually; see `docs/ASHRAE140_RESULTS.md` Summary.*
 
 ## Throughput vs Budget
 
@@ -46,7 +46,7 @@
 ## MAE vs Budget
 
 - **Gate:** ≤ **50%** (`validation.max_mae`).
-- **Current:** **51.03%** — Over budget by +1.03 pp. Max single-case deviation 470.11%.
+- **Current:** **49.82%** — Within budget by -0.18 pp. Max single-case deviation 470.11%.
 - *Driver:* high-mass annual-energy deviation (5R1C/CTF thermal-mass limitation; see Known Structural Failures).
 
 ## Known Structural Failures
