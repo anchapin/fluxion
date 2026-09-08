@@ -76,5 +76,6 @@ See `docs/KNOWN_ISSUES.md` for the current status of each investigation.
 | `diag_check.rs`      | Peak-temperature sanity dump |
 | `case_940_setback_diagnostic.rs` | Case 940 setback attribution (#2452) |
 | `case_920_orientation_attribution.rs` | Case 920 per-orientation solar decomposition (#2454) |
+| `case_950_hvac_mode_seasonal_attribution.rs` | Case 950 (HVAC mode) per-month cooling attribution placeholder (#3551, §LIMIT-24; `#[ignore]`-quarantined, full implementation deferred to follow-up PR routed to GaugeSolver #1465 / #1462) |
 
 Quarantined per #2536; relocated per #2708.
