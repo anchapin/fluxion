@@ -768,9 +768,15 @@ set on the server; even then they stay unavailable until the
 An *explicit* `zone_solver: "gauge"` is rejected with `400 invalid_request`
 (fail-closed, issue #3305): the REST schema does not carry per-surface
 construction detail (`wall_spec`), so the gauge solver can never initialise
-on this path and the request would silently fall through to 5R1C. Omitting
-the field keeps the legacy default-selector behaviour (the β-phase 5R1C
-fall-through) unchanged; `"5r1c"` / `"9r4c"` dispatch strictly. Each
+on this path. Post-#3291 (Phase A8, PR #3482, 2026-09-07) the dispatcher
+no longer silently falls through to 5R1C on missing backend — it
+**panics** at the dispatcher (a structural 500 with a `panic`-prefixed
+log line, `src/sim/thermal_model_physics/step_dispatcher.rs:126-133`).
+Omitting the field installs `ThermalSelector::legacy()` (`FiveROneC`,
+see issue #3508) explicitly, which routes the request to the legacy
+5R1C path under the default build and is a no-op-fall-through under
+`--features gauge-solver` (the dispatcher's `match` arm at the bottom
+of `step_physics`). `"5r1c"` / `"9r4c"` dispatch strictly. Each
 successful simulation increments the `fluxion_simulation_solver_kind`
 counter with a `solver="{zone}+{conduction}"` label (e.g.
 `solver="gauge+default"`) that reports the *requested* stack.
@@ -797,9 +803,12 @@ Response `200 OK`:
 `output.effective_solver` (issue #3305) reports the zone solver that
 ACTUALLY executed — derived from the dispatcher's per-step outcome, not
 from the request. On the REST path today this is `"5r1c"` for the omitted
-default and for explicit `"5r1c"`, and `"9r4c"` for explicit `"9r4c"`; it
-can read `"gauge"` only once the gauge path is wired behind REST (post-#3291
-PR4). The field is omitted on non-REST uses of the schema.
+default and for explicit `"5r1c"`, and `"9r4c"` for explicit `"9r4c"`.
+Reading `"gauge"` would require the REST path to initialise the gauge
+backend (which the current schema cannot express via `wall_spec`); the
+explicit `zone_solver: "gauge"` rejection (#3305) prevents the
+post-#3291 dispatcher panic. The field is omitted on non-REST uses of
+the schema.
 
 Errors are returned via the `ApiError` envelope (`src/api/server.rs:189`):
 
