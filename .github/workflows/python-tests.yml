@@ -38,7 +38,21 @@ permissions:
 jobs:
   pytest-osimflow:
     name: OSimFlow pytest (py ${{ matrix.python-version }})
-    runs-on: ${{ vars.FLUXION_LINUX_RUNNER || 'ubuntu-latest' }}
+    # Issue #3445: persistent self-hosted runners MUST NOT execute
+    # PR-controlled code. When this job runs on a `pull_request` event
+    # (which it does — see the `on: pull_request` trigger above) we
+    # force the runner to the ephemeral GH-hosted `ubuntu-latest` path
+    # regardless of the `FLUXION_LINUX_RUNNER` repo variable. Only
+    # main-merge pushes honour the routing variable. Do NOT simplify
+    # this back to `vars.FLUXION_LINUX_RUNNER || 'ubuntu-latest'` —
+    # see SECURITY.md §"Self-hosted runner job execution policy".
+    runs-on: >-
+      ${{
+        github.event_name == 'push'
+        && github.ref == 'refs/heads/main'
+        && vars.FLUXION_LINUX_RUNNER
+        || 'ubuntu-latest'
+      }}
     strategy:
       fail-fast: false
       matrix:

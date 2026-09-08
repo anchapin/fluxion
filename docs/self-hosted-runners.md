@@ -20,9 +20,17 @@ FLUXION_LINUX_RUNNER=fluxion-ci   # routes Linux jobs to self-hosted runners
 # (unset or empty)                 # falls back to ubuntu-latest GitHub-hosted
 ```
 
-**Security note:** Self-hosted runners are only used for `push` events on
-`main`, never for `pull_request`. This is safe for public repos — forked PRs
-cannot execute code on your self-hosted infrastructure.
+**Security note (Issue #3445):** Self-hosted runners are reserved for
+`push` events on `main` (and a small set of `develop`-only workflows).
+`pull_request` events are **always** routed to the ephemeral
+`ubuntu-latest` GH-hosted runner regardless of whether
+`FLUXION_LINUX_RUNNER` is set. The routing expression that enforces this
+is documented in `docs/SECURITY.md` §"Self-hosted runner job execution
+policy" — do **not** simplify the
+`vars.FLUXION_LINUX_RUNNER || 'ubuntu-latest` shorthand back into a
+workflow once it has been hardened. The provisioning script
+(`scripts/provision-hetzner-runner.sh`) additionally drops Docker and
+the docker group from the runner image.
 
 ---
 
@@ -224,12 +232,30 @@ gh variable set FLUXION_LINUX_RUNNER --body "ubuntu-latest" --repo anchapin/flux
 
 ## Security hardening
 
-- **Ephemeral jobs only on main:** `pull_request` jobs always use GitHub-hosted
-  runners. Forked PRs never touch your self-hosted machines.
-- **Dedicated runner user:** The script runs the agent as a non-root `runner`
-  user with Docker group membership.
+- **Ephemeral jobs only on PRs (Issue #3445):** `pull_request` jobs always
+  use GitHub-hosted runners, **regardless of `FLUXION_LINUX_RUNNER`**.
+  Self-hosted routing is gated to `push:refs/heads/main`. Forked PRs never
+  touch your self-hosted machines; even branch-PRs from same-repo
+  contributors cannot execute their build scripts on a persistent VM. See
+  `docs/SECURITY.md` §"Self-hosted runner job execution policy" for the
+  full threat model and the exact `runs-on:` expression to use.
+- **Dedicated runner user, no docker group (Issue #3445 acceptance
+  criterion #2):** The script runs the agent as a non-root `runner` user.
+  The runner is intentionally **not** a member of the `docker` group, and
+  Docker is not installed on the image — docker-group membership is
+  root-equivalent on the host (mount → host filesystem → sudo), which is
+  incompatible with the persistent-runner threat model. Existing runners
+  provisioned before this hardening must run `gpasswd -d runner docker`
+  and `apt-get purge docker-ce docker-ce-cli containerd.io` to come into
+  compliance.
 - **No persistent secrets on disk:** Use GitHub Actions secrets (`${{ secrets.X }}`),
-  not files baked into the image.
+  not files baked into the image. OIDC is preferred where the upstream
+  supports it (see `docs/SECURITY.md` §"AWS — OIDC federation, no static
+  secrets").
+- **Per-job workspace isolation:** The runner registers with `--work
+  _work` so each job writes into `_work/<job>/...`. A leftover `target/`
+  or `sccache` artefact from a previous PR cannot bleed into the next
+  main-merge job on the same VM.
 - **Firewall:** By default Hetzner VMs expose all ports. Add a firewall rule:
   ```bash
   hcloud firewall create --name fluxion-runner-fw
@@ -239,6 +265,10 @@ gh variable set FLUXION_LINUX_RUNNER --body "ubuntu-latest" --repo anchapin/flux
     --type server --server <RUNNER_NAME>
   ```
   The runner polls GitHub outbound — no inbound ports beyond SSH are needed.
+  Network egress restrictions (allow only the GitHub Actions control-plane
+  domains + `crates.io` + the model registry) are a recommended
+  defence-in-depth control but are not enforced by the provisioning
+  script; see `docs/SECURITY.md` for the recommended allow-list.
 - **Periodic OS updates:** SSH in weekly and run `apt-get upgrade -y`, or
   use unattended-upgrades.
 

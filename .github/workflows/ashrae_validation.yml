@@ -379,13 +379,21 @@ jobs:
     name: ASHRAE 140 Blind Validation
     # Issue #1505: benchmark jobs (the actual ASHRAE 140 simulation
     # suite) prefer self-hosted runners when `vars.FLUXION_LINUX_RUNNER`
-    # is set; the `|| 'ubuntu-latest'` clause makes the GitHub-hosted
-    # fallback automatic so the happy path is preserved when the
-    # variable is unset. Deterministic sub-jobs deliberately stay on
-    # GitHub-hosted because they are already fast and reproducible
-    # there — only the heavy benchmark benefits from dedicated
-    # hardware, which is exactly the split proposed in #1505.
-    runs-on: ${{ vars.FLUXION_LINUX_RUNNER || 'ubuntu-latest' }}
+    # is set. Issue #3445: persistent self-hosted runners MUST NOT
+    # execute PR-controlled code — CI is the enforcement layer for the
+    # ASHRAE 140 gate, so a runner compromise here poisons the gate's
+    # own evidence. Force ephemeral GH-hosted `ubuntu-latest` on any
+    # `pull_request` event; only main-merge pushes honour the routing
+    # variable. Do NOT simplify back to
+    # `vars.FLUXION_LINUX_RUNNER || 'ubuntu-latest'` — see SECURITY.md
+    # §"Self-hosted runner job execution policy".
+    runs-on: >-
+      ${{
+        github.event_name == 'push'
+        && github.ref == 'refs/heads/main'
+        && vars.FLUXION_LINUX_RUNNER
+        || 'ubuntu-latest'
+      }}
     timeout-minutes: 60
     # Issue #1351: the explicit `needs: compare-hashes` makes the
     # ASHRAE 140 validate job block on cross-platform determinism
@@ -896,7 +904,23 @@ jobs:
   # =====================================================================
   surrogate-ashrae-mae-gate:
     name: Surrogate ASHRAE 140 MAE Gate (Issue #2924)
-    runs-on: ${{ vars.FLUXION_LINUX_RUNNER || 'ubuntu-latest' }}
+    # Issue #3445: persistent self-hosted runners MUST NOT execute
+    # PR-controlled code. The surrogate MAE gate is the per-timestep
+    # ±1% ASHRAE 140 drift gate — letting PR code touch a persistent
+    # runner would let it poison the sccache / cargo / model caches
+    # and silently alter the very evidence the gate is meant to
+    # validate. Force ephemeral GH-hosted `ubuntu-latest` on any
+    # `pull_request` event; only main-merge pushes honour the routing
+    # variable. Do NOT simplify this back to
+    # `vars.FLUXION_LINUX_RUNNER || 'ubuntu-latest'` — see SECURITY.md
+    # §"Self-hosted runner job execution policy".
+    runs-on: >-
+      ${{
+        github.event_name == 'push'
+        && github.ref == 'refs/heads/main'
+        && vars.FLUXION_LINUX_RUNNER
+        || 'ubuntu-latest'
+      }}
     needs: compare-hashes
     timeout-minutes: 30
     steps:

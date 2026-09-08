@@ -82,7 +82,20 @@ env:
 jobs:
   onnx-integrity:
     name: ONNX Integrity Gate (Issue #2906)
-    runs-on: ${{ vars.FLUXION_LINUX_RUNNER || 'ubuntu-latest' }}
+    # Issue #3445: persistent self-hosted runners MUST NOT execute
+    # PR-controlled code. Force ephemeral GH-hosted `ubuntu-latest` on
+    # any `pull_request` event (this workflow runs on PRs that touch the
+    # surrogate model manifest, load path, or this file). Only main-merge
+    # pushes honour `vars.FLUXION_LINUX_RUNNER`. Do NOT simplify this
+    # back to `vars.FLUXION_LINUX_RUNNER || 'ubuntu-latest'` — see
+    # SECURITY.md §"Self-hosted runner job execution policy".
+    runs-on: >-
+      ${{
+        github.event_name == 'push'
+        && github.ref == 'refs/heads/main'
+        && vars.FLUXION_LINUX_RUNNER
+        || 'ubuntu-latest'
+      }}
     timeout-minutes: 15
 
     steps:

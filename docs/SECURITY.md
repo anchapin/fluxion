@@ -264,6 +264,103 @@ the campaign scripts touch (least privilege), e.g. `s3:PutObject` /
 5. Never reference static cloud keys; use OIDC (`id-token: write` +
    `role-to-assume`) and document the required repo variable here.
 
+### 7. Self-hosted runner job execution policy (Issue #3445)
+
+CI is the **enforcement layer** for every validation gate the project relies
+on — ASHRAE 140, energy conservation, nextest rollout, `h_tr_em`
+regression, surrogate drift. If the runner that runs a gate is compromised,
+the gate's own evidence becomes suspect: an attacker can tamper with
+`sccache`, the cargo registry cache, or subsequent job workspaces, and the
+"passed" badge on the PR is no longer trustworthy.
+
+This is exactly the threat model Issue #3445 closed. The mitigation is a
+**trust boundary between PR-controlled code and persistent self-hosted
+infrastructure**:
+
+| Trigger | Where it runs | Why |
+| --- | --- | --- |
+| `pull_request` (any source repo — fork or branch) | **GitHub-hosted, ephemeral VM.** `runs-on` resolves to `ubuntu-latest` even when `vars.FLUXION_LINUX_RUNNER` is set. | PR-controlled build scripts, `Cargo.lock`, `#[test]` code, and any in-tree `build.rs` must execute on a one-shot VM that is destroyed at the end of the run. |
+| `push` to `refs/heads/main` (and `push` to `refs/heads/develop` for some workflows, see the workflow header) | **Self-hosted (`vars.FLUXION_LINUX_RUNNER`) preferred; GH-hosted fallback.** The code path that arrives here has cleared the branch-protection gate; the runner is therefore trusted to execute it. | Heavy CPU/memory-bound workloads (full workspace `cargo check`, ASHRAE 140 `validate`, surrogate MAE gate, `cuda-smoke`, etc.) where the GH-hosted free tier is too slow. |
+
+**Concretely, every workflow that mentions `vars.FLUXION_LINUX_RUNNER` MUST
+gate the routing on the event type.** The canonical pattern is:
+
+```yaml
+runs-on: >-
+  ${{
+    github.event_name == 'push'
+    && github.ref == 'refs/heads/main'
+    && vars.FLUXION_LINUX_RUNNER
+    || 'ubuntu-latest'
+  }}
+```
+
+Do **not** reduce this to `vars.FLUXION_LINUX_RUNNER || 'ubuntu-latest'`;
+the shorter form silently routes PR-controlled code onto a persistent
+self-hosted runner when the variable is set. The longer form forces the
+GH-hosted ephemeral path on every `pull_request` event regardless of
+variable state.
+
+The `*-hz` (Hetzner overflow) jobs in `rust-tests.yml` and `ci.yml` use a
+probe + Hetzner-fallback pattern that mirrors the same rule: the
+overflow path is gated on
+`(github.event_name == 'push' && github.ref == 'refs/heads/main')` so PR
+workloads always resolve on the GH-hosted probe's happy path.
+
+#### Defence-in-depth on the runner itself
+
+The `scripts/provision-hetzner-runner.sh` policy matches the workflow
+gating above. Specifically, the script:
+
+- Does **not** install Docker on the runner image and does **not** add
+  the `runner` user to the `docker` group. Docker group membership is
+  root-equivalent on the host (mount host filesystem → read secrets →
+  `chmod +s` → sudo), which is incompatible with the persistent-runner
+  threat model. If a future workflow genuinely needs Docker on a
+  self-hosted runner, gate it behind a dedicated label and add the
+  `docker` group to a *separate* service account — never the one that
+  runs PR-controlled build scripts.
+- Registers each runner with `--work _work` (the GitHub Actions default).
+  Each job writes into `_work/<job-name>/...`, so a PR checkout's
+  leftover `target/` cannot bleed into a subsequent main-merge job's
+  cargo registry cache. Do not hoist the work directory out of `_work/`.
+- Drops no persistent secrets to disk. All credentials live as GitHub
+  Actions secrets/secrets-via-OIDC and are passed as `env:` at job
+  start; nothing is baked into the runner image.
+
+#### Operators rotating an already-provisioned runner
+
+Existing runners that were provisioned before this policy landed carry
+the legacy docker-group grant and Docker installation. To bring them
+into the hardened posture:
+
+```bash
+# On the runner VM, as root:
+gpasswd -d runner docker || true          # drop the legacy docker-group grant
+apt-get purge -y docker-ce docker-ce-cli containerd.io || true
+rm -rf /var/lib/docker
+```
+
+The workflow gating alone is sufficient for the immediate trust boundary;
+the docker-group purge is defence-in-depth in case a future contributor
+adds `runs-on: [self-hosted, fluxion-ci]` to a job that does take
+`pull_request` events.
+
+#### Why we accept this constraint
+
+GitHub-hosted `ubuntu-latest` is free for public repositories, so the
+practical cost of forcing PRs onto the ephemeral path is wall-time, not
+money. Wall-time is bounded by `actions/checkout`, `sccache` cache hits,
+and the regression test matrix (~5 min for the PR-blocking test); the
+self-hosted pool was always a fallback for main-merge workloads, not a
+PR-fast-lane. The trade-off is therefore: ~5 minutes of CI wall-time per
+PR in exchange for the runner compromise that would otherwise poison the
+ASHRAE 140 / energy-conservation / surrogate-drift gates themselves.
+
+See `docs/self-hosted-runners.md` for the operational guide, and the
+`scripts/provision-hetzner-runner.sh` header comment for the
+provisioning-time guards.
+
 ## Production deploy checklist
 
 Hardening controls that MUST be verified before a `fluxion-rest` instance is
