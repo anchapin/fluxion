@@ -35,6 +35,7 @@ on:
       - "scripts/generate_doc_inventory.py"
       - "scripts/check_doc_inventory_fresh.py"
       - "scripts/check_doc_link_integrity.py"
+      - "scripts/check_known_issues_summary.py"
       - "scripts/check_npm_readme_codeblocks.mjs"
       - "npm/README.md"
       - "docs/doc-inventory.md"
@@ -146,6 +147,22 @@ jobs:
             echo "::error::Doc link-integrity check found broken references (issue #2885)"
           fi
 
+      - name: Run known-issues summary table drift check
+        id: known_issues_summary
+        run: |
+          # Issue #3513: drift gate for the `## Summary` table in
+          # docs/KNOWN_ISSUES.md. The table MUST match the actual
+          # `### CATEGORY-NN:` section counts; status columns derive
+          # from each section's first `**Status:**` line. Regenerate
+          # via `python3 scripts/check_known_issues_summary.py --regen |
+          # sponge docs/KNOWN_ISSUES.md`.
+          python3 scripts/check_known_issues_summary.py --check
+          EXIT_CODE=$?
+          echo "exit_code=$EXIT_CODE" >> "$GITHUB_OUTPUT"
+          if [[ $EXIT_CODE -ne 0 ]]; then
+            echo "::error::Known-issues summary table drift (issue #3513 acceptance criterion #1); re-run \`python3 scripts/check_known_issues_summary.py --regen | sponge docs/KNOWN_ISSUES.md\`"
+          fi
+
       - name: Run stale MQTT escape-hatch doc check
         id: mqtt_escape_hatch_docs
         run: |
@@ -167,7 +184,7 @@ jobs:
           fi
 
       - name: Aggregate results
-        if: steps.root_md.outputs.exit_code != '0' || steps.docs_summaries.outputs.exit_code != '0' || steps.doc_inventory.outputs.exit_code != '0' || steps.doc_inventory_fresh.outputs.exit_code != '0' || steps.npm_readme.outputs.exit_code != '0' || steps.doc_link_integrity.outputs.exit_code != '0' || steps.mqtt_escape_hatch_docs.outputs.exit_code != '0'
+        if: steps.root_md.outputs.exit_code != '0' || steps.docs_summaries.outputs.exit_code != '0' || steps.doc_inventory.outputs.exit_code != '0' || steps.doc_inventory_fresh.outputs.exit_code != '0' || steps.npm_readme.outputs.exit_code != '0' || steps.doc_link_integrity.outputs.exit_code != '0' || steps.known_issues_summary.outputs.exit_code != '0' || steps.mqtt_escape_hatch_docs.outputs.exit_code != '0'
         run: |
           echo "One or more docs-hygiene checks failed. See logs above."
           exit 1
