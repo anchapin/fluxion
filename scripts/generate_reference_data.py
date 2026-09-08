@@ -3,6 +3,7 @@
 Generate synthetic reference data for ASHRAE 140 Cases 800-810 (HVAC Equipment)
 """
 
+import argparse
 import math
 import sys
 
@@ -198,20 +199,15 @@ def generate_case_data(case_number):
 
 
 def main():
-    if len(sys.argv) != 3:
-        print("Usage: python generate_reference_data.py <start_case> <end_case>")
-        sys.exit(1)
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("start_case", type=int)
+    parser.add_argument("end_case", type=int)
+    args = parser.parse_args()
+    start_case = args.start_case
+    end_case = args.end_case
 
-    try:
-        start_case = int(sys.argv[1])
-        end_case = int(sys.argv[2])
-    except ValueError:
-        print("Error: Case numbers must be integers")
-        sys.exit(1)
-
-    if start_case < 800 or end_case > 810:
-        print("Error: Case numbers must be between 800 and 810")
-        sys.exit(1)
+    if start_case < 800 or end_case > 810 or start_case > end_case:
+        parser.error("Case numbers must be between 800 and 810, in ascending order")
 
     # Write CSV header
     print(
