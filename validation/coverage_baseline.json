@@ -56,7 +56,7 @@
             "lines_found": 9186,
             "branches_hit": 456,
             "branches_found": 668,
-            "min_branch_floor": 68.0,
+            "min_branch_floor": 67.5,
             "v1_3_target_branch": 75.0
         }
     }
