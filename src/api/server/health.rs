@@ -6,12 +6,10 @@
 //! from the legacy `server.rs` so the health/readiness path is one focused
 //! submodule (Issue #3457 / #3543 — module-size ratchet).
 
-use axum::{extract::State, http::StatusCode, response::IntoResponse, Json};
+use axum::{http::StatusCode, response::IntoResponse, Json};
 use serde::{Deserialize, Serialize};
 
 use crate::api::server::state::AppState;
-
-use super::X_REQUEST_ID;
 
 /// Body returned by `GET /v1/healthz`. Fields are deliberately minimal so
 /// load balancers can parse the JSON without coupling to schema internals.

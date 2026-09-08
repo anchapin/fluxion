@@ -105,7 +105,7 @@ domain-type imports through `fluxion_core::assembly::*` instead of
 - `src/physics/solver_manager.rs` / `solver_registry.rs` — same
 - `src/physics/multi_node_solver.rs` — `use fluxion_core::multi_node::{MultiNodeThermalMass, ...}`
 - `src/sim/multi_node_hvac_runner.rs` — `use fluxion_core::multi_node::ThermalMassNode`
-- `src/sim/thermal_model_core.rs` / `thermal_model_data/` — `use fluxion_core::assembly::BuildingAssembly`
+- `src/sim/thermal_model_core/` (mod.rs + tests.rs) / `thermal_model_data/` — `use fluxion_core::assembly::BuildingAssembly`
 
 The ASHRAE 140 material constants that `assembly.rs` previously imported from
 `crate::physics::constants::thermal::ashrae_140::materials` (HW_CONCRETE_K,
@@ -134,7 +134,7 @@ no longer recompiles the 208 KB `validation::ashrae_140_cases` per mutant.
 | `src/sim/per_surface_conduction.rs:59` | `use fluxion_core::ashrae_cases::Orientation` |
 | `src/sim/invariant_checker.rs:9` | `use fluxion_core::ashrae_cases::Orientation` |
 | `src/sim/shading.rs:6,178` | `use fluxion_core::ashrae_cases::WindowArea, Orientation` |
-| `src/sim/thermal_model_core.rs:23` | split: `CaseSpec` stays in validation; `Orientation, ShadingType` move to `fluxion_core::ashrae_cases` |
+| `src/sim/thermal_model_core/mod.rs:23` | split: `CaseSpec` stays in validation; `Orientation, ShadingType` move to `fluxion_core::ashrae_cases` |
 | `src/sim/thermal_model_data/hvac_state.rs:19` | `use fluxion_core::ashrae_cases::NightVentilation` |
 | `src/sim/thermal_model_data/solar_state.rs:13` | `use fluxion_core::ashrae_cases::Orientation` |
 | `src/sim/thermal_model_iterative.rs:17` | `use fluxion_core::ashrae_cases::{GeometrySpec, Orientation, WindowArea}` |
@@ -411,7 +411,7 @@ graph TD
         SUR["SurrogateThermalModel"]
         UNI["UnifiedThermalModel"]
         MOCK["MockThermalModel<br/>(sim/thermal_model_mock.rs)"]
-        CORE["ThermalModel Core<br/>(sim/thermal_model_core.rs)"]
+        CORE["ThermalModel Core<br/>(sim/thermal_model_core/)"]
         MN["Multi-Node 9R4C Model<br/>(sim/multi_node_thermal.rs)"]
         TMS["Timestep Solver<br/>(sim/timestep_solver.rs)"]
     end
@@ -643,7 +643,7 @@ pub trait HeatConductionSolver: Send + Sync {
 > | Path | Location | Dynamic? | Drives free-float / HVAC? |
 > |------|----------|---------|---------------------------|
 > | **Per-wall transient solver** (`FiveR1CSolver`) | `physics/five_r1c_solver.rs` (Module 3) | **Yes** — explicit Euler `T_mass += (T_ext − T_mass) / (R_total · C_total) · dt`; returned flux `(T_mass − T_int) / R_total`; `energy_storage_rate()` returns `Q_ext = (T_ext − T_mass) / R_total`. The first `step()` after `initialize()` is a steady-state seed (`T_mass = (T_int + T_ext) / 2`, `q = ΔT / R_total`, `energy_storage_rate = 0`) so single-step callers continue to observe `q_ss`. Closed by #1277. | No (Module 3 isolation only) |
-> | **Zone-level ISO 13790 thermal network** (5R1C / 6R2C / 9R4C) | `sim/thermal_model_core.rs` + `sim/thermal_model_physics/` (Module 5) | **Yes** (coefficient-tuned 5R1C / backward-Euler 9R4C) | **Yes** — this is the network that produces zone air temperature, heating/cooling loads, and free-floating temperatures |
+> | **Zone-level ISO 13790 thermal network** (5R1C / 6R2C / 9R4C) | `sim/thermal_model_core/` + `sim/thermal_model_physics/` (Module 5) | **Yes** (coefficient-tuned 5R1C / backward-Euler 9R4C) | **Yes** — this is the network that produces zone air temperature, heating/cooling loads, and free-floating temperatures |
 >
 > ADR-002 (`docs/adr/0002-promote-9r4c-high-mass-default.md`) resolved the drift by documenting this split and selecting the **9R4C zone-level network** as the sole solver for high-mass constructions (see Module 5). The Module 3 `FiveR1CSolver` is the transient per-surface solver validated against the 1% conduction tolerance criterion in `tests/conduction_5r1c_isolation.rs`.
 
@@ -693,7 +693,7 @@ pub trait VentilationSchedule {
 
 ### Module 5: Zone Air Heat Balance
 
-**Source**: `src/sim/thermal_model_core.rs`, `src/sim/thermal_model.rs`, `src/sim/thermal_model_physics/`, `src/sim/timestep_solver.rs`, `src/sim/thermal_selector.rs`
+**Source**: `src/sim/thermal_model_core/`, `src/sim/thermal_model.rs`, `src/sim/thermal_model_physics/`, `src/sim/timestep_solver.rs`, `src/sim/thermal_selector.rs`
 **Purpose**: Solve the zone heat balance equation at each timestep.
 
 | Input | Type | Source |
@@ -1398,7 +1398,7 @@ These traits support the main physics pipeline and should also be documented:
 | `DwaveClient` | `src/quantum/dwave_client.rs` | Object-safe trait for submitting Ising problems to a D-Wave sampler (QPU or hybrid); mockable for tests |
 | `S3Transport` | `src/ai/s3_upload.rs` | S3 HTTP operations abstraction (put, head, multipart upload); enables mock testing without real S3 |
 | `EmailTransport` | `src/api/email_notification.rs` | Abstraction for sending email notifications (campaign completion fallback); mockable for tests |
-| `SimulationStateStore` | `src/api/server.rs` | Simulation state persistence trait (in-memory or cloud-backed); enables stateless API servers |
+| `SimulationStateStore` | `src/api/server/state.rs` | Simulation state persistence trait (in-memory or cloud-backed); enables stateless API servers |
 | `AlgebraicFloat` | `src/physics/fp_algebraic.rs` | Opt-in algebraic-FP helper layer for `f32`/`f64` (issue #3322): default-feature builds route to plain IEEE operators (bit-identical, zero-cost); `--features fast-math` routes to the Rust 1.98 std algebraic methods. Per-call opt-in only — must never flow through energy-balance or ASHRAE 140 gates because algebraic ops break the bit-identical determinism contract and the strict-eval ASHRAE baselines (see module docs and `RULES.md`). |
 
 **Psychrometrics library** (#1760): `fluxion-core/src/weather/psychrometrics.rs` is the dependency-light, cycle-safe psychrometrics library that all airside HVAC equipment depends on. It implements ASHRAE Handbook of Fundamentals, Chapter 1 formulas in SI units:
@@ -1615,11 +1615,11 @@ The CPU-vs-CUDA equivalence is therefore enforced on three levels: (a) determini
 
 ## Data Flow: Single Timestep
 
-> **Implementation note**: The `Engine` node below represents the orchestration role. In code, `sim/engine.rs` re-exports `ThermalModel` (from `thermal_model_core.rs`) and `StepParameters` (from `timestep_solver.rs`); the actual per-timestep orchestration lives in `thermal_model_core.rs` and `timestep_solver.rs`.
+> **Implementation note**: The `Engine` node below represents the orchestration role. In code, `sim/engine.rs` re-exports `ThermalModel` (from `thermal_model_core/`) and `StepParameters` (from `timestep_solver.rs`); the actual per-timestep orchestration lives in `thermal_model_core/` and `timestep_solver.rs`.
 
 ```mermaid
 sequenceDiagram
-    participant E as Engine (thermal_model_core)
+    participant E as Engine (thermal_model_core/)
     participant W as Weather
     participant S as Solar
     participant C as Conduction

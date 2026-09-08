@@ -15,9 +15,9 @@ use std::sync::Arc;
 
 use async_stream::stream;
 use axum::{
-    extract::{FromRequest, Path, Request, State},
+    extract::{FromRequest, Request, State},
     http::StatusCode,
-    response::{IntoResponse, Response},
+    response::Response,
     Json,
 };
 use serde::{Deserialize, Serialize};
@@ -619,7 +619,7 @@ pub async fn simulate(
 }
 
 /// SSE event payload for per-timestep zone temperatures (used by
-/// `simulate_stream` and re-exported via [`crate::api::server::batch`]).
+/// `simulate_stream`).
 #[derive(Debug, Clone, Serialize)]
 pub struct TimestepEvent {
     pub timestep: usize,

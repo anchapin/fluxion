@@ -26,13 +26,13 @@ use crate::api::schema::{
     ConstructionSet, ControlSet, Geometry, ScheduleSet, SchemaMetadata, SchemaVersion,
     SimulationSchemaV1, WeatherData,
 };
-use crate::api::server::{
-    AppState, InMemorySimulationStateStore, MAX_BATCH_SIMULATIONS, MAX_CAMPAIGN_STEPS,
-    MAX_YEARS, SimulationState, SimulationStateEnum, SimulationStateStore,
-};
 use crate::api::server::ApiError;
 use crate::api::server::{
     parse_selector_from_options, router, router_with_security, run_simulation, SimulateOptions,
+};
+use crate::api::server::{
+    AppState, InMemorySimulationStateStore, SimulationState, SimulationStateEnum,
+    SimulationStateStore, MAX_BATCH_SIMULATIONS, MAX_CAMPAIGN_STEPS, MAX_YEARS,
 };
 use crate::sim::thermal_selector::ThermalSelector;
 
@@ -173,7 +173,10 @@ fn validate_years_accepts_max_years_and_rejects_above() {
 #[test]
 fn validate_years_rejects_u32max() {
     let err = serde_json::from_value::<SimulateOptions>(json!({ "years": u32::MAX }));
-    assert!(err.is_err(), "years=u32::MAX must be rejected at deserialisation");
+    assert!(
+        err.is_err(),
+        "years=u32::MAX must be rejected at deserialisation"
+    );
 }
 
 #[test]
@@ -208,8 +211,7 @@ fn parse_selector_partial_fields_use_default_for_the_other() {
 
 #[test]
 fn parse_selector_rejects_unknown_zone_solver_as_400() {
-    let opts: SimulateOptions =
-        serde_json::from_str(r#"{"zone_solver": "warp_drive"}"#).unwrap();
+    let opts: SimulateOptions = serde_json::from_str(r#"{"zone_solver": "warp_drive"}"#).unwrap();
     let err = parse_selector_from_options(&opts).unwrap_err();
     assert!(matches!(err, ApiError::InvalidRequest(_)));
     assert!(err.to_string().contains("unknown zone_solver"));
@@ -372,10 +374,10 @@ fn tempfile_for_bytes_uses_owner_only_permissions() {
 #[cfg(unix)]
 #[test]
 fn tempfile_for_bytes_distinct_paths_per_call() {
-    let a = crate::api::server::import_format::tempfile_for_bytes(b"a", "osm")
-        .expect("create temp a");
-    let b = crate::api::server::import_format::tempfile_for_bytes(b"b", "osm")
-        .expect("create temp b");
+    let a =
+        crate::api::server::import_format::tempfile_for_bytes(b"a", "osm").expect("create temp a");
+    let b =
+        crate::api::server::import_format::tempfile_for_bytes(b"b", "osm").expect("create temp b");
     assert_ne!(a.path(), b.path());
     let parent = a.path().parent().expect("temp file has a parent dir");
     assert_eq!(parent, std::env::temp_dir());
@@ -389,9 +391,9 @@ fn tempfile_for_bytes_distinct_paths_per_call() {
 
 #[test]
 fn in_flight_gauge_tracks_request_lifecycle() {
-    use metrics_util::debugging::DebuggingRecorder;
-    use axum::routing::get;
     use axum::middleware;
+    use axum::routing::get;
+    use metrics_util::debugging::DebuggingRecorder;
 
     let recorder = DebuggingRecorder::new();
     let snapshotter = recorder.snapshotter();
@@ -437,10 +439,7 @@ fn shutdown_timeout_defaults_to_25() {
     let _guard = SHUTDOWN_ENV_LOCK.lock().unwrap();
     let saved = std::env::var_os(SHUTDOWN_TIMEOUT_ENV);
     std::env::remove_var(SHUTDOWN_TIMEOUT_ENV);
-    assert_eq!(
-        crate::api::server::resolve_shutdown_timeout_secs(),
-        25
-    );
+    assert_eq!(crate::api::server::resolve_shutdown_timeout_secs(), 25);
     assert_eq!(crate::api::server::DEFAULT_SHUTDOWN_TIMEOUT_SECS, 25);
     if let Some(v) = saved {
         std::env::set_var(SHUTDOWN_TIMEOUT_ENV, v);
@@ -481,8 +480,7 @@ fn shutdown_timeout_rejects_zero_and_invalid() {
 
 #[tokio::test]
 async fn zero_duration_timeout_fires_immediately() {
-    let result =
-        tokio::time::timeout(Duration::from_secs(0), std::future::pending::<()>()).await;
+    let result = tokio::time::timeout(Duration::from_secs(0), std::future::pending::<()>()).await;
     assert!(result.is_err());
 }
 

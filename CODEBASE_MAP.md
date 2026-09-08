@@ -146,7 +146,7 @@ src/
 ├── sim/                      # Simulation engine
 │   ├── engine.rs            # ThermalModel, solve_timesteps
 │   ├── thermal_model.rs     # ThermalModelTrait (trait hierarchy)
-│   ├── thermal_model_core.rs # Core thermal model implementation
+│   ├── thermal_model_core/   # Core thermal model implementation (mod.rs + tests)
 │   ├── thermal_model_5r1c.rs # 5R1C specific implementation
 │   ├── surface_flux_provider.rs # SurfaceHeatFluxProvider trait
 │   ├── solar.rs            # Solar position & irradiance
@@ -169,7 +169,7 @@ src/
 ├── thermal/                # Thermal calculations
 │
 ├── validation/            # Validation framework
-│   ├── ashrae_140_validator.rs # ASHRAE 140 compliance
+│   ├── ashrae_140_validator/  # ASHRAE 140 compliance (mod.rs + tests)
 │   ├── reference_data.rs   # E+ reference data loading
 │   ├── tolerance.rs        # Validation tolerances
 │   └── cross_validation/   # Multi-reference validation
@@ -897,7 +897,7 @@ tests/reference_data/
 | Add Python binding | `src/python/bindings.rs`, `src/lib.rs` |
 | Add NAPI binding | `src/napi/`, `src/lib.rs` |
 | Add FMI variable | `src/interop/fmi/mod.rs` |
-| ASHRAE 140 validation | `src/validation/ashrae_140_validator.rs` |
+| ASHRAE 140 validation | `src/validation/ashrae_140_validator/` |
 | Add AI surrogate | `src/ai/surrogate.rs` |
 
 ---

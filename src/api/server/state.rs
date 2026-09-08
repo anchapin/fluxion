@@ -14,9 +14,7 @@ use parking_lot::RwLock;
 use serde::{Deserialize, Serialize};
 
 use crate::api::schema::SimulationOutput;
-use crate::api::server::constants::{
-    CAMPAIGN_ID_PREFIX, SCHEMA_ID_PREFIX, SIM_ID_PREFIX,
-};
+use crate::api::server::constants::{CAMPAIGN_ID_PREFIX, SCHEMA_ID_PREFIX, SIM_ID_PREFIX};
 
 /// Trait for simulation state persistence.
 ///
@@ -101,7 +99,8 @@ impl SimulationStateStore for InMemorySimulationStateStore {
 #[derive(Clone)]
 pub struct AppState<S = InMemorySimulationStateStore> {
     /// In-memory schema store keyed by schema id.
-    pub schemas: Arc<RwLock<std::collections::HashMap<String, crate::api::schema::SimulationSchemaV1>>>,
+    pub schemas:
+        Arc<RwLock<std::collections::HashMap<String, crate::api::schema::SimulationSchemaV1>>>,
     /// Pluggable simulation state store.
     pub simulations: S,
     /// In-memory campaign store keyed by campaign id.
@@ -111,14 +110,15 @@ pub struct AppState<S = InMemorySimulationStateStore> {
 }
 
 impl AppState<InMemorySimulationStateStore> {
-    /// Default constructor — uses an in-memory simulation state store.
-    pub fn default() -> Self {
-        Self::new()
-    }
-
     /// Convenience constructor for tests and `Default` callers.
     pub fn new() -> Self {
         Self::with_cloud_store(InMemorySimulationStateStore::new())
+    }
+}
+
+impl Default for AppState<InMemorySimulationStateStore> {
+    fn default() -> Self {
+        Self::new()
     }
 }
 
@@ -353,7 +353,9 @@ impl SimulationState {
             SimulationState::Running { progress } => SimulationStatus {
                 id: id.to_string(),
                 case_id: None,
-                state: SimulationStateEnum::Running { progress: *progress },
+                state: SimulationStateEnum::Running {
+                    progress: *progress,
+                },
                 progress: Some(*progress),
                 error: None,
                 result: None,

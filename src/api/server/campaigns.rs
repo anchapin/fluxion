@@ -15,9 +15,7 @@ use axum::{
 
 use crate::api::server::api_error::ApiError;
 use crate::api::server::constants::{MAX_BATCH_SIMULATIONS, MAX_CAMPAIGN_STEPS};
-use crate::api::server::simulate::{
-    parse_selector_from_options, run_simulation, ValidatedJson,
-};
+use crate::api::server::simulate::{parse_selector_from_options, run_simulation, ValidatedJson};
 use crate::api::server::state::{
     AppState, CampaignSpec, CampaignState, CampaignStatus, CampaignSubmitResponse,
 };
@@ -79,9 +77,8 @@ pub async fn submit_campaign(
             }
         }
 
-        let mut results: Vec<
-            Result<crate::api::schema::SimulationOutput, String>,
-        > = Vec::with_capacity(total);
+        let mut results: Vec<Result<crate::api::schema::SimulationOutput, String>> =
+            Vec::with_capacity(total);
 
         for (i, sim_req) in spec.simulations.iter().enumerate() {
             let schema = sim_req.schema.clone().into_v1();

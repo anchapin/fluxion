@@ -10,7 +10,6 @@
 //! module-size ratchet).
 
 use axum::{
-    extract::Request,
     http::StatusCode,
     middleware,
     response::{IntoResponse, Response},
