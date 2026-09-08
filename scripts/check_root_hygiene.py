@@ -487,6 +487,17 @@ def _print_remediation() -> None:
     print("     The on-disk copy survives because the matching `.gitignore`")
     print("     rule keeps it out of future commits.")
     print("  7. Update any links in other docs to the new path.")
+    print()
+    print("  Operator-action shortcut (issue #3438):")
+    print("    For the two known stale root CSV operator artifacts")
+    print("    (`case_900ff_profile_hourly.csv`, `hourly_output.csv`")
+    print("    from a pre-#3303 CLI sensitivity run), the gate cannot")
+    print("    untrack them — they are untracked by definition. Run")
+    print("    `./scripts/cleanup_root_strays.sh` (dry-run by default;")
+    print("    add `--apply --yes` to actually delete) to script the")
+    print("    cleanup. The script enforces the same safety predicates")
+    print("    as this gate (gitignored + untracked) so it cannot")
+    print("    accidentally delete anything you would not lose to `rm`.")
 
 
 def main(argv: list[str] | None = None) -> int:
