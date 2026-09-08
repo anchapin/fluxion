@@ -66,6 +66,32 @@ impl ConductionSolverKind {
     }
 }
 
+impl ThermalSelector {
+    /// Legacy selector (`FiveROneC` + `Default` conduction). Used by
+    /// `ThermalModel::new` (the bare low-level constructor) so that a
+    /// freshly built model dispatches to the legacy 5R1C path even with
+    /// `--features gauge-solver` on — `ThermalModel::new` does NOT call
+    /// `enable_gauge_solver` / `enable_gauge_solver_multi_zone`, so the
+    /// gauge backend is never initialised and the dispatcher's fail-loud
+    /// panic (`src/sim/thermal_model_physics/step_dispatcher.rs:126-133`,
+    /// Issue #3291) would otherwise fire.
+    ///
+    /// Production callers that want the unconditional gauge path should
+    /// use `from_spec_with_selector` (which initialises the gauge
+    /// backend and returns the [`ThermalSelector::default`], a `Gauge`
+    /// selector).
+    ///
+    /// Issue #3508: this helper was added to make the post-#3291
+    /// constructor / dispatcher contract explicit. See also
+    /// `src/sim/thermal_model_core.rs::ThermalModel::new`.
+    pub fn legacy() -> Self {
+        Self {
+            zone_solver: ZoneSolverKind::FiveROneC,
+            conduction_solver: ConductionSolverKind::Default,
+        }
+    }
+}
+
 use std::sync::OnceLock;
 
 // =============================================================================
