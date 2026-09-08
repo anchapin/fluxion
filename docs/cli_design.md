@@ -105,15 +105,35 @@ Direct Simulation Mode (EnergyPlus-compatible):
   fluxion -w weather.epw -d output/ input.flux
   fluxion --annual -w weather.epw input.flux
 
-Workflow Mode (OpenStudio-compatible):
-  fluxion run -w workflow.fwf
-  fluxion measure --update /path/to/measures/
+# #2947 stub-note: the workflow / measure paths below are intentionally
+# stubbed in this release. They fail non-zero with a reference to issue
+# #2947, by policy (AGENTS.md "Physics and Validation Guardrails",
+# enforced by `test_workflow_execution_is_gated_non_silent` in
+# `src/bin/fluxion.rs`). They are documented here for design-record
+# purposes only — do not interpret them as runnable commands.
+
+Workflow Mode (OpenStudio-compatible) — intentionally stubbed per issue #2947:
+  fluxion run -w workflow.fwf                 # intentionally stubbed per issue #2947
+  fluxion measure --update /path/to/measures/ # intentionally stubbed per issue #2947
 
 Analysis Commands (existing, preserved):
   fluxion validate [--case 600]
   fluxion sensitivity --config sens.yaml
   fluxion delta --config delta.yaml
 ```
+
+> **Fail-loud contract for the workflow / measure paths** (issue #2947):
+>
+> ```bash
+> $ fluxion run -w some.workflow.fwf
+> error: workflow execution path is intentionally stubbed; see issue #2947
+> ```
+>
+> If you want a CLI surface that runs end-to-end, use `fluxion-rest`
+> against the canonical `SimulationSchemaV1` JSON
+> (`tests/fixtures/single_zone.json`) — see `QUICKSTART.md` §4.
+> `fluxion run -w ...` / `fluxion measure ...` are **not** runnable
+> surfaces in this release.
 
 ### Option Mapping (EnergyPlus-compatible)
 
@@ -191,14 +211,21 @@ Add support for:
 ### Phase 2: Workflow Support
 
 - Define FWF JSON schema
-- Implement `fluxion run -w workflow.fwf`
-- Support for measure steps
+- ~~Implement `fluxion run -w workflow.fwf`~~ — **SUPERSEDED per issue #2947** (intentionally stubbed; do not implement). The fail-loud contract is enforced by `test_workflow_execution_is_gated_non_silent` in `src/bin/fluxion.rs`.
+- ~~Support for measure steps~~ — **SUPERSEDED per issue #2947** (intentionally stubbed; do not implement)
 
 ### Phase 3: Measure Management
 
-- `fluxion measure --update <dir>`
-- `fluxion measure --compute_arguments <model> <measure>`
-- `fluxion measure --run_tests <dir>`
+- ~~`fluxion measure --update <dir>`~~ — **SUPERSEDED per issue #2947** (intentionally stubbed; do not implement)
+- ~~`fluxion measure --compute_arguments <model> <measure>`~~ — **SUPERSEDED per issue #2947** (intentionally stubbed; do not implement)
+- ~~`fluxion measure --run_tests <dir>`~~ — **SUPERSEDED per issue #2947** (intentionally stubbed; do not implement)
+
+> #2947 stub-note: Phases 2 and 3 were superseded when issue #2947
+> converted these CLI paths into fail-loud stubs. They remain in this
+> design doc for historical / planning record only. Re-implementing
+> any of these deliverables requires first reopening issue #2947 to
+> remove the stub policy — until then, the binary must keep emitting
+> the `intentionally stubbed; see issue #2947` error.
 
 ## Example Usage
 
@@ -217,18 +244,38 @@ fluxion -w Denver_TMY.epw -D building.flux
 
 ### Workflow-based (OpenStudio-style)
 
+> #2947 stub-note: every invocation in this section is **intentionally
+> stubbed per issue #2947**. The `fluxion run` / `fluxion measure`
+> paths are not runnable in this release — they fail non-zero with a
+> reference to issue #2947 (enforced by
+> `test_workflow_execution_is_gated_non_silent` in `src/bin/fluxion.rs`,
+> AGENTS.md "Physics and Validation Guardrails"). The examples below
+> demonstrate the fail-loud contract; the repo does **not** ship any
+> `.fwf` fixtures (e.g. `examples/baseline.fwf` does not exist — do not
+> create one).
+>
+> If you want a CLI surface that runs end-to-end, use `fluxion-rest`
+> against the canonical `SimulationSchemaV1` JSON
+> (`tests/fixtures/single_zone.json`) — see `QUICKSTART.md` §4.
+
 ```bash
+# Demonstrating the fail-loud contract for every workflow / measure path:
+
 # Run complete workflow
-fluxion run -w baseline.fwf
+$ fluxion run -w baseline.fwf
+error: workflow execution path is intentionally stubbed; see issue #2947
 
 # Debug workflow (keep temp files)
-fluxion run --debug -w baseline.fwf
+$ fluxion run --debug -w baseline.fwf
+error: workflow execution path is intentionally stubbed; see issue #2947
 
 # Measures only (don't run simulation)
-fluxion run --measures_only -w baseline.fwf
+$ fluxion run --measures_only -w baseline.fwf
+error: workflow execution path is intentionally stubbed; see issue #2947
 
 # Post-process only (use existing results)
-fluxion run --postprocess_only -w baseline.fwf
+$ fluxion run --postprocess_only -w baseline.fwf
+error: workflow execution path is intentionally stubbed; see issue #2947
 ```
 
 ### Traditional Analysis Commands

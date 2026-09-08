@@ -105,6 +105,7 @@ jobs:
             fluxion-wasm -> target
             crates/fluxion-toon -> target
             crates/fluxion-twin -> target
+            crates/fluxion-evaluator -> target
             fluxion-cfd -> target
             fluxion-tauri -> target
 

@@ -11,7 +11,7 @@ Action: Check this document before attributing validation failures to new issues
 including their blocking issues, un-ignore criteria, and status. The QUARANTINE.md registry is the
 canonical source for tracking when quarantined tests can be un-ignored (per Issue #3211).
 
-*Last Updated: 2026-09-07 (CI-01 resolved — min_branch_floor hard floors verified enforced, Issue #3456)*
+*Last Updated: 2026-09-08 (LIMIT-24 #3551 added — Case 950 HVAC-mode annual cooling 33.08 kWh vs [390, 920] kWh band, ~14× UNDER; docs-only structural entry companion to §LIMIT-17 #3058, routed to GaugeSolver #1465 / #1462)*
 
 **LIMIT-14 added (Issue #3061):** After PR #3052's partial Case 960 inter-zone fix, raw annual cooling remains 0.63 MWh versus the 1.55–2.78 MWh reference band and peak heating remains 1.17 kW versus 2.0–8.0 kW. The 5R1C/9R4C air-mass distribution cannot accumulate enough back-zone cooling demand at the 27 °C setpoint through coupling to the free-floating sunspace; compliant closure is blocked on the GaugeSolver production-path work coordinated by #3059, not a sunspace HVAC control or gain-split tuning.
 
@@ -28,6 +28,9 @@ canonical source for tracking when quarantined tests can be un-ignored (per Issu
 **LIMIT-21 added (Issue #3297) + production-path flip (Phase A8, Issue #3291, PR #3482):** Gauge β-path pre-existing air-trajectory failure cohort — with `--features gauge-solver`, a verified-identical failure set (checked at `fd7ef13^` = `832b0fe` and at HEAD `0b54606`, 2026-09-03) fails across five test binaries, all on the gauge solver's AIR trajectory: `tests/zone_balance_eplus_isolation.rs` 2/21 (`test_physics_thermal_model_eplus_case_600_reference_csv`: T_zone mean −12.59 °C, |mean − 20| = 32.594 °C, max step jump 34.007 °C vs the E+ CSV; `test_free_floating_case_900ff_isolation`: free-float divergence to non-finite); `tests/ashrae_140_case_600_series.rs` 21/27 (nightly criterion 4); `tests/known_issues_regression.rs::issue_1457_case_600_series_tracking` (nightly criterion 5 — 13 Case 600-series metrics out-of-band pending GaugeSolver #1465, e.g. `Case650/annual_cooling=85.57MWh`, `Case600FF/min_free_float=-36.91C`); `tests/ashrae_140_case_960_sunspace.rs` 3 (`test_case_960_comprehensive_energy_validation`, `test_case_960_full_validation`, `test_case_960_validator_no_longer_6r2c_override_issue_1456`); `tests/ashrae_140_blind_validation.rs` 1 (`test_case_950_night_flush_zone_cooling_in_july`). These are the blocking residuals for the Issue #3286 β-soak streak (nightly criteria 2 / 4 / 5 stay red; criteria 1 / 3 / 6 are green) and gate the **production-path switchover** that Issue #3291 / PR #3482 staged: §LIMIT-21 closure is the precondition for the `gauge-solver` cargo feature to leave "off by default" and become the unconditional production default (Phase A8 ships the code change unconditionally but intentionally retains the cargo feature as the production-path gate — the **default build (feature OFF) continues to route the `Gauge` selector to 5R1C/9R4C**, so the β-soak-blocking residuals above are not on the production path until the feature is enabled). The #3297 mass-state proxy is NOT the cause — the strict-gate residuals it targets are exactly 0 (Case 600: 168 violations / max 2.62e4 W → 0 / 0.0 W; Case 960 multi-zone: 0 / 0.0 W) and the failure set is byte-identical before/after `fd7ef13`. Deliberately NOT `#[ignore]`-quarantined — they are the β-soak gate signal. See §LIMIT-21.
 
 **LIMIT-22 added (Issue #3297):** Gauge-build-only test failures exposed by replacing the PR2.5 trivial mass-state proxy (`t_mass = (h_tr_em·T_air + h_tr_3·T_air)/(h_tr_em + h_tr_3)`, ~50–170 kWh non-zero strict-gate residual per the #3297 issue body) with the exact Crank-Nicolson mirror of the strict gate (`write_gauge_mass_state_proxy`, `fd7ef13`). Three tests that passed before `fd7ef13` fail on the gauge build — each was passing for a physically-wrong reason: (1) `test_case_950_mass_temperature_precooled_issue_1422` — the > 2 °C overnight mass pre-cool band was satisfied by the trivial proxy writing `t_mass = t_air` (air swing, no mass time constant); the exact CN node at Case 950's τ_mass ≈ 61 h attenuates a 12-h overnight air swing by 1/√(1+(2π·61/12)²) ≈ 0.031 and swings +1.09 °C on the gauge air trajectory (legacy 5R1C: +2.41 °C at T_mass ≈ +41 °C July vs gauge ≈ −27.6 °C); (2) `test_case_960_inter_zone_heat_transfer_analysis` — passed pre-#3297 on the pure-legacy fall-through; with the multi-zone arm re-enabled the gauge integration is oscillatory-unstable for the Case 960 sunspace (±140 °C step-level ΔT spikes around the #3297 fail-closed [−50, 100] °C guard; annual means in-band at ≈ 13.8 / 19.8 °C); (3) `test_different_zones_respond_differently_to_targeted_gain` — the checker's 5R1C residual routes an artificial load gain through φm·m_air_frac only, so with `m_air_frac = 0` the gain leverage is structurally zero and the exact-CN proxy makes every zone imbalance exactly 0 (the pre-#3297 pass was vacuous on the trivial proxy's non-zero baseline residual; sibling of §LIMIT-19 / #3103). All three are quarantined gauge-build-only via `#[cfg_attr(feature = "gauge-solver", ignore = "...")]` — the default-build assertions remain fully live and pass (zone_balance 19/0/2; all three green). No threshold, baseline, or checker formula was changed; no production code was changed. Unblockers: Issue **#3291** (Phase A8 default flip — merged via PR #3482; `ThermalSelector::default() = ZoneSolverKind::Gauge`, gated on the `gauge-solver` cargo feature and §LIMIT-21 β-soak closure) plus #1465 / #1462 (air-trajectory fidelity + multi-zone stability) and the §LIMIT-19 #1344 artificial-gain investigation. See §LIMIT-22.
+
+**LIMIT-24 added (Issue #3551):** Case 950 HVAC-mode annual cooling measures **33.08 kWh vs the ASHRAE 140 reference band 390–920 kWh** (~14× UNDER, ~91 % below the lower bound); peak cooling 0.39 kW vs [0.70, 0.90] kW band (~44 % UNDER). Both metrics are fail-rows on the 84-metric scorecard. This entry is the docs-only structural companion to §LIMIT-17 / #3058 (Case 950FF night-vent free-floating min −23.92 °C vs [−20.20, −17.80] °C band, 3.72 °C outside). §LIMIT-17 records a **regression-avoidance clause** requiring any future solver change to "preserve Case 950 (HVAC mode) annual cooling in the 390–920 kWh band" — but the current HVAC-mode value (33.08 kWh) is already ~14× outside that band, so the preserved-HVAC target is far from the actual HVAC state, and the failure has no separate structural LIMIT entry to track it. The `MAX_CONVECTIVE_TO_AIR_MULTIPLIER = 2.0×` cap from PR #3041 closed Case 650 cooling OVER but did not transfer to Case 950 (HVAC) because Case 950's `h_ve_night ≈ 570.8 W/K` (18:00–07:00) deposits the cooling load into the **mass node (multi-node path)** rather than the **air node (5R1C path)** where the HVAC controller reads the setpoint signal; the derived-`h_tr_3` path that limits Case 950FF winter-min over-prediction (§LIMIT-17 root-cause) also deflects the summer peak away from the air node. The two signatures (HVAC cooling UP + FF min DOWN) are **bidirectionally coupled** — no parameter adjustment to `h_ve_night`, `MAX_CONVECTIVE_TO_AIR_MULTIPLIER`, or `solar_distribution_to_air` can close both at once without violating AGENTS.md / RULES.md / ADR-0001 ("no parameter tuning", "fix the underlying math"); per-case parameter tuning is explicitly out of scope. The architectural fix is routed to the GaugeSolver rework **#1465 / #1462** (both closed individually; production-path switchover staged via #3291 / PR #3482 — Phase A8 default flip, gated on the `gauge-solver` cargo feature and §LIMIT-21 β-soak closure). Sibling entries: §LIMIT-17 / #3058 (Case 950FF companion + regression-avoidance clause), §LIMIT-16 / #3059 (Cases 610/630/650 peak cooling OVER cohort), §LIMIT-05 UPDATE (#2453) (900-series bidirectional annual-energy cohort). Per-month attribution diagnostic `tests/diagnostics/case_950_hvac_mode_seasonal_attribution.rs` is wired into CI (`#[ignore]`-quarantined, runs `--ignored --nocapture`) per the Issue #3551 acceptance criterion; full implementation is a follow-up PR. See §LIMIT-24 for the per-metric engine-vs-reference table, the bidirectional-signature analysis, the §LIMIT-17 regression-avoidance-clause cross-reference, the four-test affected-tests list, and the closure-criterion statement that the same single solver change must close **both** Case 950 (HVAC) annual cooling (390–920 kWh) **and** Case 950FF min free-floating temperature ([−20.20, −17.80] °C) — i.e. the bidirectional fix requires GaugeSolver-style path splitting, not a per-parameter tuning.
+**LIMIT-23 added (Issue #3552):** Case 970 (5-zone multi-zone cross-coupling per ASHRAE 140-2017 §B6.7 / 140-2023 Annex B8-3, `sim::multi_zone_network::MultiZoneAirflowNetwork` with 5×5 symmetric inter-zone conductance matrix) reports 4/4 ASHRAE 140 reference-band metrics failing on the 2026-08-16 snapshot — annual heating 18.58 MWh vs reference band [10.54, 14.26] MWh (+30 % to +76 % OVER the band), annual cooling 21.07 MWh vs [7.39, 10.00] MWh (+110 % to +185 % OVER), peak heating 3.80 kW vs [4.00, 8.00] kW (5 % UNDER the low edge), peak cooling 2.58 kW vs [2.50, 5.50] kW (at the low edge). The bidirectional annual OVER signature (heating AND cooling simultaneously >+30 % above the reference band on a 5-zone topology) is consistent with the §LIMIT-05 UPDATE (#2453) 900-series bidirectional over-prediction mechanism — the 5R1C/9R4C air-mass distribution in a 5-zone coupling matrix amplifies the same solar mass-node over-charge that drives the 900-series and §LIMIT-14 / LIMIT-16 / LIMIT-17 cohorts. Reference bands are maintained in `validation::benchmark` and summarised in `docs/ASHRAE140_MULTI_ZONE_RESULTS.md` §"Case 970 Reference Data"; the per-metric engine-output table below is the full strict-gate view. **Documentation/tracking only entry; no physics-code change, no `inter_zone_conductance` / `solar_distribution_to_air` / `h_ms_coeff` change, no `tests/reference_data/zone_balance/case_970_energy_reference.csv` raise.** Case 970 is intentionally NOT added to the §LIMIT-05 / #3072 aggressive-baseline cohort table (per Issue #3552 acceptance criteria: "tracked separately; the cohort list is #3072's purview"); cohort-level tracking remains owned by Issue #3072 (Cases 195 / 600 / 620 / 940 / 960). See §LIMIT-23 for the per-metric engine-output vs reference-band table, the per-zone attribution test stub, and the cross-references to Issue #1446 (Case 970 multi-zone implementation, closed via #1467), §LIMIT-05 / LIMIT-14 / LIMIT-16 cohort, and #1465 / #1462 (GaugeSolver architectural unblocker).
 
 **LIMIT-12 added (Issue #3062):** Case 940 annual heating is 5,158 kWh on the CTF validator path versus 1,289.9 kWh on the blind diagnostic path (per the §LIMIT-05 UPDATE #2452 measurement table, post-PR #3042); the remaining setback-recovery overshoot is structural and tracked without a production-physics change. (Historical: 7,487.81 kWh was the pre-§LIMIT-05-UPDATE snapshot; the latest measured value is 5.158 MWh. See §LIMIT-05 UPDATE (#2452) for the canonical per-path table.)
 
@@ -1178,6 +1181,7 @@ they are physically correct and flip one marginal test.
 | **#3063** | h_tr_em (envelope-to-mass conductance) remains time-invariant in 5R1C path (#2891 follow-up) | 🔄 Open | Wind-dependent `h_se` landed (PR #3024); `h_tr_em` per-step recompute still missing |
 | **#3060** | Case 195 LIMIT-08 — Denver TMY min −12.47 °C vs DRYCOLD.TM2 −24.4 °C weather data source mismatch (#2868 follow-up) | 🔄 Open | Weather-file swap (DRYCOLD.TM2) or band adjustment per ASHRAE 140 Annex B §B.3 required |
 | **#3070** | #2878 god-struct split reverted — Cases 195/600/620 physics regression needs proper fix | 🔄 Open | PR #3034 introduced Cases 195/600/620 regression (violated RULES.md "no parameter tuning"); reverted; coupling between refactor and physics-regression risk must be addressed before re-merge |
+| **#3552** | Case 970 5-zone multi-zone cross-coupling structural LIMIT entry — 4 / 4 reference-band metrics failing (annual heating/cooling OVER, peak heating/cooling UNDER) | 🔄 Open | Tracked separately under §LIMIT-23 (NOT added to this cohort's per-case table per Issue #3552 acceptance criteria); unblocker is #1465 / #1462 (same as the §LIMIT-05 / LIMIT-14 / LIMIT-16 cohort); `tests/diagnostics/case_970_multi_zone_seasonal_attribution.rs` placeholder lands in #3552 |
 
 ### Why the cohort cannot lift above 30% without GaugeSolver
 
@@ -1196,10 +1200,12 @@ The fix is **structural** — the `GaugeSolver` rework (#1465 / #1462) — and t
 - §LIMIT-15 — Case 195 weather data source methodology (Issue #3060; three implementation options)
 - §SOLAR-02 UPDATE (#2239) — Case 900 residual deviation routed to GaugeSolver #1465
 - §MULTI-01b / PeakHeatingLimit-01 — Case 960 peak-heating architectural under-prediction
+- §LIMIT-23 / Issue #3552 — Case 970 5-zone multi-zone cross-coupling bidirectional annual OVER + peak heating/cooling UNDER (tracked **separately** from this cohort per Issue #3552 acceptance criteria; the cohort list is #3072's purview)
 
 ### External references
 
 - `docs/ASHRAE140_RESULTS.md` — current pass-rate snapshot (`SCORECARD.md` Last Updated 2026-08-16: 14.3 % headline, MAE 51.03 %; refresh on every SCORECARD drift > `drift.max_pass_rate_change_pp = 2.0` per `release_gates.yaml`)
+- `docs/ASHRAE140_MULTI_ZONE_RESULTS.md` — Case 960 (sunspace 2-zone) and Case 970 (5-zone cross-coupling, post-#1446 / #1467) results. **Authoritative** for Cases 960 and 970. Case 970 currently fails 4 / 4 reference-band metrics on the 2026-08-16 snapshot — tracked under §LIMIT-23 / #3552.
 - `docs/adr/0007-gauge-solver-structural-work.md` — structural-work tracking stub (Status: Accepted — Phase A8 production-path switchover landed via Issue #3291 / PR #3482, gated on the `gauge-solver` cargo feature / §LIMIT-21 β-soak closure)
 - `docs/gauge_solver_scalability.md` — `MultiZoneGaugeSolver` scalability characterisation (Issue #1771)
 - `RULES.md` — "no parameter tuning" + "must-never hardcode results"
@@ -1216,12 +1222,14 @@ The fix is **structural** — the `GaugeSolver` rework (#1465 / #1462) — and t
 | Free-Float (FREE) | 3 | 0 | 1 | 0 | 0 |
 | Temperature (TEMP) | 1 | 0 | 0 | 0 | 0 |
 | Multi-Zone (MULTI) | 4 | 3 | 0 | 0 | 0 |
-| Model Limits (LIMIT) | 22 | 2 | 0 | 1 | 2 |
+| Model Limits (LIMIT) | 23 | 2 | 0 | 2 | 2 |
+| Model Limits (LIMIT) | 23 | 2 | 0 | 1 | 2 |
 | Reporting (REPORT) | 4 | 0 | 4 | 0 | 0 |
 | CI/Infrastructure (CI) | 3 | 0 | 0 | 0 | 0 |
 | fluxion-fluid (FLUID) | 2 | 0 | 0 | 0 | 0 |
 | FFD/CFD (FFD) | 2 | 0 | 0 | 1 | 0 |
-| **Total** | **50** | **10** | **8** | **3** | **2** |
+| **Total** | **51** | **10** | **8** | **4** | **2** |
+| **Total** | **51** | **10** | **8** | **3** | **2** |
 
 *Counts derived from `grep -cE '^### CATEGORY-NN:' docs/KNOWN_ISSUES.md` via `scripts/check_known_issues_summary.py`; CI gate = `python3 scripts/check_known_issues_summary.py --check`. Status columns (`Fixed` / `Open` / `Partial` / `Won't Fix`) derive from each section's first `**Status:**` line. To regenerate: `python3 scripts/check_known_issues_summary.py --regen | sponge docs/KNOWN_ISSUES.md`.*
 
@@ -3424,6 +3432,350 @@ solar + envelope heat transfer, not a 5R1C/CTF parameter adjustment.
   ADR-0001, no test threshold was relaxed and no constant tuned — the
   assertions are retained verbatim under the quarantine markers.
 
+### LIMIT-24: Case 950 HVAC-mode annual cooling ~14× UNDER band — docs-only structural LIMIT entry, companion to §LIMIT-17 (Issue #3551)
+
+- **Description:** Per the 2026-08-16 ASHRAE 140 snapshot, Case 950
+  (HVAC mode) annual cooling measures **33.08 kWh vs the ASHRAE 140
+  reference band 390–920 kWh** — **~14× UNDER** (the band is ~91 %
+  above the current value). All four reported Case 950 (HVAC mode)
+  metrics on the 84-metric scorecard are fail-rows:
+
+  | Metric | Engine | Reference band | Δ vs band |
+  |---|---:|---|---|
+  | annual_heating (kWh) | 0.00 | [0.00, 0.00] | in-band (edge) |
+  | annual_cooling (kWh) | **33.08** | [390, 920] | **−91.5 % UNDER** (~14× below lower bound) |
+  | peak_heating (kW) | 0.00 | [0.00, 0.00] | in-band (edge) |
+  | peak_cooling (kW) | 0.39 | [0.70, 0.90] | −44 % UNDER |
+
+  The two heating / peak metrics are formally in-band only because the
+  ASHRAE 140 reference band is degenerate (`[0.00, 0.00]`); the annual
+  cooling 33.08 kWh and peak cooling 0.39 kW are the load-bearing
+  failures.
+
+  This failure has **no dedicated structural LIMIT entry** prior to
+  #3551. §LIMIT-17 / #3058 documents the Case 950 **free-floating (FF)**
+  companion gap (min free-floating temperature −23.92 °C vs band
+  [−20.20, −17.80] °C) and records an explicit **regression-avoidance
+  clause** for the HVAC mode: any future solver change that closes
+  the Case 950FF gap **must preserve Case 950 (HVAC mode) annual
+  cooling in the 390–920 kWh band**. But the actual current HVAC-mode
+  state (33.08 kWh) is already ~14× outside that band — the
+  "preserved-HVAC" target is far from the present HVAC state, and the
+  failure has no separate structural LIMIT entry to track it.
+
+- **Why the structural fix cannot close both at once (per AGENTS.md /
+  RULES.md / ADR-0001):** Closing Case 950 (HVAC) annual cooling UP
+  toward the 390–920 kWh band and closing Case 950FF min free-floating
+  temperature DOWN toward the −20.20 to −17.80 °C band requires the
+  **same single solver change** to push the cooling load into the air
+  node (HVAC mode) while reducing the raw-outdoor forcing on the
+  mass node (FF mode). The two signatures are **bidirectionally
+  coupled**:
+
+  1. The `MAX_CONVECTIVE_TO_AIR_MULTIPLIER = 2.0×` cap introduced by
+     PR #3041 closed Case 650 (and other 600-series cooling OVERs)
+     because it forces more of the solar + envelope gain through the
+     air node at the cooling setpoint, but it did **not** close Case
+     950 (HVAC) annual cooling — Case 950's night-flush path
+     (`h_ve_night ≈ 570.8 W/K`, 18:00–07:00 per
+     `tests/ashrae_140_blind_validation.rs:2171`) deposits the cooling
+     load into the **mass node (multi-node path)** rather than the
+     **air node (5R1C path)**, where the HVAC controller reads the
+     setpoint signal.
+  2. The derived-`h_tr_3` path that limits Case 950FF winter-min
+     over-prediction (per §LIMIT-17 root-cause analysis, ~8×
+     `h_ve_night / h_tr_em_wall` ratio) also deflects the summer peak
+     away from the air node, suppressing the cooling load the HVAC
+     system measures.
+  3. No parameter adjustment to `h_ve_night`,
+     `MAX_CONVECTIVE_TO_AIR_MULTIPLIER`, or `solar_distribution_to_air`
+     can satisfy both regressions simultaneously: each moves one
+     signature in the right direction while moving the other in the
+     wrong direction. Per AGENTS.md / RULES.md / ADR-0001 ("no
+     parameter tuning", "fix the underlying math", "must-never
+     hardcode results") such an adjustment is explicitly forbidden.
+
+- **Cross-references:**
+  - **§LIMIT-17 / #3058** — Case 950 (free-floating) min
+    free-floating temperature is −23.92 °C vs band
+    [−20.20, −17.80] °C (3.72 °C outside). The
+    regression-avoidance clause in §LIMIT-17 ("any future solver
+    change must preserve Case 950 (HVAC mode) annual cooling in the
+    390–920 kWh band") is the formal acceptance constraint for the
+    future PR — but the clause refers to a band the current HVAC-mode
+    state (33.08 kWh) does not occupy.
+  - **§LIMIT-05 UPDATE (#2453)** — 900-series bidirectional
+    annual-energy over-prediction (Cases 900 / 910 / 920 / 930 / 940).
+    The Case 950 HVAC-mode annual cooling 14× UNDER is the same class
+    of structural 5R1C + 9R4C single-lumped-mass-node pathology,
+    routed to the GaugeSolver rework.
+  - **#1465 / #1462** — the GaugeSolver architectural rework
+    (treats solar + envelope heat transfer as geometric curvature
+    rather than per-timestep energy injection). Both issues are
+    individually closed; the **production-path switchover** is staged
+    via **#3291 / PR #3482** (Phase A8 default flip —
+    `ThermalSelector::default() = ZoneSolverKind::Gauge`, gated on the
+    `gauge-solver` cargo feature and §LIMIT-21 β-soak closure).
+  - **#3059 / §LIMIT-16** — Cases 610 / 630 / 650 peak cooling OVER
+    cohort that motivated the `MAX_CONVECTIVE_TO_AIR_MULTIPLIER`
+    cap. The cap closed the 600-series OVERs but did not transfer to
+    Case 950 (HVAC) because Case 950's cooling load is deposited on
+    the mass node (multi-node path), not the air node (5R1C path)
+    where the cap's structural effect lives.
+
+- **Affected Tests:**
+  - `tests/diagnostics/case_950_hvac_mode_seasonal_attribution.rs` —
+    per-month attribution diagnostic (`#[ignore]`-quarantined, runs
+    `--ignored --nocapture`), wired into CI per the Issue #3551
+    acceptance criterion. Prints the hourly contribution split (HVAC
+    condensation vs mass release vs infiltration) for the Case 950
+    HVAC-mode 90-day cooling season. Follow-up implementation is the
+    post-#3551 PR.
+  - `tests/ashrae_140_blind_validation.rs::test_case_950_5r1c_free_float_uses_night_vent_overrides_issue_1422`
+    — the §LIMIT-09 / #3071 quarantine (sibling Case 950 5R1C
+    night-vent test, currently `#[ignore]`'d).
+  - `tests/ashrae_140_blind_validation.rs::test_case_950_mass_temperature_precooled_issue_1422`
+    — the §LIMIT-22 / #3297 gauge-build-only quarantine
+    (`cfg_attr(feature = "gauge-solver", ignore = "...")`). The
+    default-build assertion (overnight ΔT > 2 °C) remains live and
+    passing — this is the regression target for any future
+    `h_ve_night` split.
+
+- **Affected Metrics:** Case 950 (HVAC mode) annual cooling (kWh)
+  and peak cooling (kW) — the load-bearing metrics. Case 950FF min
+  free-floating temperature (°C) is the **co-regression target** per
+  §LIMIT-17's regression-avoidance clause — both signatures must be
+  closed by the **same single solver change** (the Issue #3551
+  acceptance criterion).
+
+- **Severity:** High. Closes a long-standing Case 950 (HVAC) annual
+  cooling band failure (~91 % UNDER) and unblocks the §LIMIT-17
+  FF-mode companion fix (the regression-avoidance clause in
+  §LIMIT-17 has no current HVAC-mode value to preserve). The Cohort
+  (Cases 600 / 620 / 900 / 920 / 940 / 950 / 960) is tracked by
+  Issue #3072 (aggressive-baseline cohort).
+
+- **GitHub Issue:** [#3551](https://github.com/anchapin/fluxion/issues/3551)
+  (this entry), with related issues **#3058 / §LIMIT-17** (Case 950FF
+  companion + regression-avoidance clause), **#3059 / §LIMIT-16**
+  (Cases 610 / 630 / 650 peak cooling OVER — `MAX_CONVECTIVE_TO_AIR_MULTIPLIER`
+  PR #3041 cohort), **#3041** (the PR that introduced the
+  `MAX_CONVECTIVE_TO_AIR_MULTIPLIER = 2.0×` cap), **#2453**
+  (900-series bidirectional annual-energy cohort), **#1898** (the
+  PR that originally introduced `h_ve_night`), **#1422** (Case 950
+  5R1C night-vent override tracking), **#1465 / #1462** (GaugeSolver
+  implementation and validation harness — both closed individually;
+  production-path switchover staged via **#3291 / PR #3482**),
+  **#3072** (aggressive-baseline cohort tracking).
+  Long-term fix routed to GaugeSolver rework **#1465 / #1462**;
+  per-case parameter tuning to close this gap is explicitly out of
+  scope (per AGENTS.md / RULES.md / ADR-0001).
+
+- **Status:** 🟡 **Documentation/tracking only — no solver-code change
+  in this PR.** The bidirectional signature cannot be closed by
+  parameter tuning (closes one regression while opening the other)
+  per AGENTS.md / RULES.md / ADR-0001; the architectural fix is the
+  GaugeSolver rework #1465 / #1462. The structural decision is
+  tracked in **`docs/adr/0011-case-950ff-night-vent-split.md`** (per
+  §LIMIT-17's ADR pointer) and the broader Cohort tracking is owned
+  by Issue #3072 (aggressive-baseline cohort). No physics-code change;
+  no `h_ve_night`, `MAX_CONVECTIVE_TO_AIR_MULTIPLIER`, or
+  `solar_distribution_to_air` adjustment; no
+  `tests/reference_data/zone_balance/strict_energy_gate_baseline.json`
+  raise (per AGENTS.md "strict-energy-gate baseline must NEVER be
+  raised to hide a regression").
+
+- **Acceptance for the future structural PR (mirrors §LIMIT-17):**
+  1. Case 950 (HVAC mode) annual cooling is within 390–920 kWh on
+     the post-#3551 validator path.
+  2. Case 950FF min free-floating temperature remains within
+     [−20.20, −17.80] °C (the §LIMIT-17 regression-avoidance clause).
+  3. Both signatures are closed by the **same single solver change**,
+     i.e. the bidirectional fix requires GaugeSolver-style path
+     splitting (multi-node mass vs air-node separation), not a
+     per-parameter tuning.
+  4. Case 950 (HVAC) peak cooling remains within [0.70, 0.90] kW
+     (no regression on the secondary metric).
+### LIMIT-23: Case 970 5-zone multi-zone cross-coupling annual heating + cooling OVER and peak heating/cooling UNDER band — GaugeSolver-blocked air-mass distribution gap (Issue #3552)
+
+- **Description:** Case 970 is the only multi-zone high-mass
+  cross-coupling test in the ASHRAE 140 suite — an 8 m × 6 m × 2.7 m
+  high-mass concrete envelope divided into 5 zones by 7 interior
+  partitions (1 west core + 4 east-strip, 200 mm concrete interior
+  partitions, 5×5 symmetric inter-zone conductance matrix per
+  `sim::multi_zone_network::MultiZoneAirflowNetwork`). The Case 970
+  reference envelope is established in Issue #1446 (closed via #1467)
+  and emitted into `tests/reference_data/zone_balance/
+  case_970_energy_reference.csv` by
+  `tests/reference_data/zone_balance/generate_case_970_energy.py`.
+  `tests/ashrae_140_case_970_validation.rs::test_case_970_multi_zone_network_e2e_conservation`
+  verifies the 5×5 N-zone algebraic identity `Σ q_iz[i] ≈ 0 W`
+  end-to-end across 8 760 hourly `solve_step` calls (`Issue #1348`,
+  1e-6 W tolerance).
+
+  The 2026-08-16 ASHRAE 140 snapshot reports **4 / 4** Case 970 reference-band
+  metrics failing on the post-#1407 / post-#1446 engine:
+
+  | Metric             | Engine output (2026-08-16 snapshot) | ASHRAE 140-2017 §B6.7 / 140-2023 Annex B8-3 reference band | Verdict |
+  |--------------------|------------------------------------:|------------------------------------------------------------:|---------|
+  | Annual heating     | **18.58 MWh**                       | [10.54, 14.26] MWh                                          | **OVER** (+30 % to +76 % above band) |
+  | Annual cooling     | **21.07 MWh**                       | [7.39, 10.00] MWh                                           | **OVER** (+110 % to +185 % above band) |
+  | Peak heating       | **3.80 kW**                         | [4.00, 8.00] kW                                             | **UNDER** (5 % below band low edge) |
+  | Peak cooling       | **2.58 kW**                         | [2.50, 5.50] kW                                             | **UNDER** (at band low edge) |
+
+  The bidirectional annual OVER signature (heating AND cooling both
+  +30 % to +185 % above their respective bands simultaneously on the
+  same 5-zone topology) is consistent with the §LIMIT-05 UPDATE (#2453)
+  900-series bidirectional annual-energy over-prediction mechanism:
+  the 5R1C/9R4C single lumped mass node cannot capture the
+  per-zone, per-orientation air-mass distribution across a 5×5
+  inter-zone conductance matrix, and the same solar mass-node
+  over-charge that drives the 900-series OVER is amplified by the
+  inter-zone coupling topology. The peak heating/cooling UNDER
+  signature is the same loss-of-amplitude-side signal as §LIMIT-14
+  (Case 960 sunspace annual cooling and peak heating below band) and
+  §LIMIT-16 (Cases 610/630/650 peak cooling OVER). Per AGENTS.md /
+  RULES.md / ADR-0001 ("no parameter tuning", "must-never hardcode
+  results"), none of the four failure metrics can be closed by
+  adjusting `inter_zone_conductance`, `solar_distribution_to_air`,
+  or `h_ms_coeff`; the bidirectional trade-off is structurally
+  infeasible at `dt/τ ≈ 3.6` per the §LIMIT-05 UPDATE (#1522)
+  air-node capacitance conclusion. This entry is
+  **documentation/tracking only** — it does not propose, suggest, or
+  hint at a tuning fix.
+
+- **Affected case and metrics:** Case 970 annual heating, annual
+  cooling, peak heating, and peak cooling (4 / 4 reference-band
+  metrics failing). The Case 970 multi-zone network conservation
+  identity `Σ q_iz[i] ≈ 0 W` (`Issue #1348`) is satisfied end-to-end
+  in `tests/ashrae_140_case_970_validation.rs`; this entry does not
+  alter any validation assertion, reference range, or the
+  `case_970_energy_reference.csv` band.
+
+- **Severity:** High for ASHRAE 140 compliance (four Case 970
+  reference-band metrics outside the band — annual heating + cooling
+  both OVER, peak heating/cooling both UNDER), with no safe case-local
+  correction in the current 5R1C/9R4C + 5×5 inter-zone solver
+  topology. The bidirectional OVER + UNDER signature is a single
+  structural gap, not four independent failures.
+
+- **Implementation options and risk analysis:**
+  1. **Adjust the Case 970 5×5 inter-zone conductance matrix entries
+     — rejected.** The matrix entries are derived from the ASHRAE
+     140-2017 §B6.7 / 140-2023 Annex B8-3 common-wall U-values and
+     partition geometry (200 mm concrete, 4.05 m² zone-0↔east-strip
+     walls, 10.8 m² adjacent-east-strip walls); adjusting them to
+     absorb the OVER is parameter tuning to pass a system test and is
+     explicitly forbidden by RULES.md, AGENTS.md, and ADR-0001.
+  2. **Lower the per-zone `convective_to_air_factor` /
+     `solar_distribution_to_air` to reduce air-mass distribution
+     amplitude — rejected.** Same rationale as §LIMIT-14 option 2 —
+     this tunes the solar gain split without deriving a new
+     distribution from first principles and risks regressions in
+     Cases 600 / 900 / 940 / 950 / 960 (the §LIMIT-05 / LIMIT-14 /
+     LIMIT-16 / LIMIT-17 cohort).
+  3. **Raise `tests/reference_data/zone_balance/case_970_energy_reference.csv`
+     bands to absorb the OVER — rejected.** The reference CSV is the
+     ASHRAE 140 inter-program range across EnergyPlus 25.2.0, TRNSYS,
+     ESP-r, DOE-2, BSIMAC, CSE, and DeST (per `docs/ASHRAE140_MULTI_ZONE_RESULTS.md`
+     §"Case 970 Reference Data"). Raising it to absorb a known engine
+     OVER would constitute "parameter tuning in band space" and is
+     explicitly forbidden by AGENTS.md / RULES.md / ADR-0001.
+  4. **Complete the GaugeSolver production-path switchover — required
+     structural route.** Issue #3059 (Case 960 / 610 / 630 / 650 /
+     950FF cohort) and the #1465 / #1462 (Phase 1b `GaugeSolver`
+     implementation + Phase 3 ASHRAE 140 Case 900 validation harness)
+     program coordinate this unblocker. The Phase A8 default flip
+     (Issue #3291, PR #3482) wires `ThermalSelector::default() =
+     ZoneSolverKind::Gauge` but intentionally retains the
+     `gauge-solver` cargo feature as the production-path gate pending
+     §LIMIT-21 closure (the β-soak program, Issue #3286). The Case 970
+     N-zone air-trajectory fidelity depends on #1465 / #1462 — the
+     multi-zone air-mass distribution is structurally identical to
+     the Case 600 / 900 air-mass distribution that #1465 / #1462 is
+     scoped to repair. This option has broad solver, energy-balance,
+     and cross-case regression risk, so it requires a dedicated
+     architecture-reviewed physics PR rather than a Case 970 constant
+     change.
+
+- **Status:** 🔄 **Documentation/tracking only; blocked on Issue #3059
+  and the GaugeSolver production-path work (#1465 / #1462).** No
+  physics, validation, test, reference-data, ARCHITECTURE.md, or
+  RULES.md change is part of this entry. Per Issue #3552 acceptance
+  criteria and the explicit scope guard, this entry does NOT add
+  Case 970 to the §LIMIT-05 / #3072 aggressive-baseline cohort
+  table (Cases 195 / 600 / 620 / 940 / 960) — the cohort list is
+  #3072's purview; Case 970 is tracked separately under this
+  §LIMIT-23 entry until #3072 explicitly expands the cohort scope.
+  The per-zone attribution diagnostic test stub
+  `tests/diagnostics/case_970_multi_zone_seasonal_attribution.rs`
+  (Issue #3552 acceptance criterion (c)) is added in this PR as an
+  `#[ignore]`-quarantined placeholder with a `// TODO: implement`
+  marker; the full per-month, per-zone attribution implementation is
+  a follow-up PR.
+
+- **Acceptance for the future structural PR:**
+  1. Case 970 annual heating is within [10.54, 14.26] MWh.
+  2. Case 970 annual cooling is within [7.39, 10.00] MWh.
+  3. Case 970 peak heating is within [4.00, 8.00] kW.
+  4. Case 970 peak cooling is within [2.50, 5.50] kW.
+  5. The Case 970 multi-zone network conservation identity
+     `Σ q_iz[i] ≈ 0 W` (`Issue #1348`, 1e-6 W tolerance) remains
+     satisfied end-to-end across all 8 760 hourly `solve_step` calls.
+  6. Energy-balance, cross-case ASHRAE 140, architecture-drift, and
+     cycle guards remain green without changing
+     `tests/reference_data/zone_balance/case_970_energy_reference.csv`,
+     `tests/reference_data/zone_balance/strict_energy_gate_baseline.json`,
+     or any of `inter_zone_conductance`, `solar_distribution_to_air`,
+     `h_ms_coeff`.
+
+- **Linkage and provenance:**
+  - Issue #1446 — Case 970 reference + MultiZoneNetwork e2e
+    validation (closed via PR #1467). Establishes the 5×5 symmetric
+    conductance matrix and the `tests/reference_data/zone_balance/
+    case_970_energy_reference.csv` envelope used by
+    `validation::ashrae_140_multi_zone::Case970Reference`.
+  - Issue #1348 — N-zone network algebraic identity `Σ q_iz[i] ≈ 0 W`
+    for a symmetric conductance matrix; the conservation contract
+    that `tests/ashrae_140_case_970_validation.rs::
+    test_case_970_multi_zone_network_e2e_conservation` enforces
+    end-to-end.
+  - Issue #3059 — architectural unblocker coordinating the
+    5R1C/9R4C air-mass-distribution replacement through GaugeSolver.
+    §LIMIT-23 does not duplicate #3059; it documents the Case 970
+    specific bidirectional signature and routes the unblocker through
+    the same GaugeSolver program.
+  - Issues #1465 / #1462 — GaugeSolver validation and `GaugeSolver`
+    implementation; the Phase A8 production-path switchover is
+    staged (Issue #3291 / PR #3482) — `ThermalSelector::default() =
+    ZoneSolverKind::Gauge` is wired but the `gauge-solver` cargo
+    feature remains the production-path gate pending §LIMIT-21
+    closure.
+  - §LIMIT-05 UPDATE (#2453) — 900-series bidirectional
+    annual-energy over-prediction; the §LIMIT-23 bidirectional annual
+    OVER signature is the Case 970 multi-zone analog of this
+    mechanism.
+  - §LIMIT-14 / Issue #3061 — Case 960 sunspace annual cooling and
+    peak heating below band (2-zone cross-coupling); §LIMIT-23 is the
+    Case 970 5-zone cross-coupling extension (same architectural
+    unblocker, distinct test scaffolding).
+  - §LIMIT-16 / Issue #3059 — Cases 610 / 630 / 650 peak cooling
+    OVER (single-zone 5R1C air-mass distribution limitation); same
+    cohort root cause as §LIMIT-23.
+  - §LIMIT-05 / #3072 cohort — Cases 195 / 600 / 620 / 940 / 960;
+    §LIMIT-23 is intentionally NOT added to this cohort per Issue
+    #3552 acceptance criteria ("tracked separately; the cohort list
+    is #3072's purview"). The #3072 cohort external-references
+    section notes §LIMIT-23 as the Case 970 tracking entry.
+  - `docs/adr/0007-gauge-solver-structural-work.md` — existing
+    cohort-level tracking stub for the eventual architecture decision
+    (covers the gauge-solver scope; Case 970 falls under the same
+    GaugeSolver program).
+  - `tests/diagnostics/case_970_multi_zone_seasonal_attribution.rs`
+    (this PR) — `#[ignore]`-quarantined per-month, per-zone
+    attribution diagnostic stub (Issue #3552 acceptance criterion
+    (c)); full implementation deferred to a follow-up PR.
+
 ## fluxion-fluid Autodiff Issues (FLUID)
 
 ### FLUID-01: Analytical Jacobian Saturation/Clamping Errors
@@ -3573,6 +3925,7 @@ for the first time; the failures are latent (pre-existing), not regressions
 | #3060 | Case 195 weather data source mismatch — Denver TMY min −12.47 °C vs DRYCOLD.TM2 min −24.4 °C; ~0.6 MWh annual-heating residual is a weather-file artefact, not a solver bug | 🟡 **Investigation shipped** — three implementation options (switch / widen / re-derive) documented in §LIMIT-15 with risk / cost / benefit; per AGENTS.md / RULES.md / ADR-0001 the decision is routed back to Issue #3060 for maintainer action (option a = tautological pass criteria, option b = parameter tuning in band space, option c = multi-implementation inter-program research) | §LIMIT-15 |
 | #3058 | Case 950FF night-ventilation mass coupling overwhelms F_sky correction (#2872 partial follow-up) | 🟡 **Tracking stub shipped** — LIMIT-17 + ADR-0011 record the gap; PR #3040 moved Case 950FF min by 0.02 °C (−23.94 → −23.92 °C); still 3.72 °C outside the −20.20 to −17.80 °C band; root cause is `h_ve_night ≈ 570.8 W/K` overwhelming `h_tr_em_wall ≈ 71.6 W/K` by ~8×; three options (split air-node / surface-node mass coupling; reduce `h_ve_night` by F_sky; route `h_ve_night` only through air node) require solver code changes; per AGENTS.md / RULES.md / ADR-0001 no parameter tuning is permitted; fix routed to GaugeSolver #1465 / #1462 | §LIMIT-17, ADR-0011 |
 | #3297 | Multi-zone GaugeZoneSolver mass state exposure for 5R1C invariant compatibility | 🟡 **Proxy landed (`fd7ef13`) + aftermath documented** — exact-CN mass-state proxy drives strict-gate residuals to 0 (Case 600/900/960); remaining gauge-build state registered: §LIMIT-21 (pre-existing air-trajectory cohort across 5 binaries incl. the 2 zone_balance failures; β-soak #3286 blockers, deliberately NOT quarantined) and §LIMIT-22 (3 CN-proxy aftermath tests, feature-gated `cfg_attr` quarantines with live default-build assertions); unblocker #3291 / #1465 / #1462 | §LIMIT-21, §LIMIT-22 |
+| #3551 | Case 950 HVAC-mode annual cooling 33.08 kWh vs [390, 920] kWh band (~14× UNDER) — docs-only structural LIMIT entry companion to §LIMIT-17 / #3058 | 🟡 **Tracking stub shipped** — LIMIT-24 records the gap; no structural solver-code change (per AGENTS.md / RULES.md / ADR-0001 the bidirectional signature — HVAC cooling UP + FF min DOWN — cannot be closed by parameter tuning without violating the §LIMIT-17 regression-avoidance clause); per-month attribution diagnostic `tests/diagnostics/case_950_hvac_mode_seasonal_attribution.rs` is wired into CI (`#[ignore]`-quarantined, runs `--ignored --nocapture`); full implementation is a follow-up PR; fix routed to GaugeSolver #1465 / #1462 (production-path switchover staged via #3291 / PR #3482, gated on §LIMIT-21 β-soak closure); cross-references §LIMIT-17 / #3058 (Case 950FF companion + regression-avoidance clause), §LIMIT-16 / #3059 (Cases 610/630/650 peak cooling OVER cohort), §LIMIT-05 UPDATE (#2453) (900-series bidirectional annual-energy cohort), PR #3041 (the `MAX_CONVECTIVE_TO_AIR_MULTIPLIER = 2.0×` cap that closed Case 650 but not Case 950 HVAC because the cooling load deposits on the mass node rather than the air node), #1898 (the PR that introduced `h_ve_night`), #1422 (Case 950 5R1C night-vent override), #3072 (aggressive-baseline cohort tracking) | §LIMIT-24 |
 
 ## See also
 
