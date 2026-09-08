@@ -58,20 +58,48 @@ growing back. Lowering the baseline is the only authorised change (the
 companion cleanup work that resolves a known orphan is expected to also
 lower this baseline by one entry).
 
+Wired-but-dead detector (Issue #3458)
+-------------------------------------
+A companion check scans ``src/**/mod.rs`` for ``pub mod foo;`` declarations
+that are wired into the module tree (and therefore NOT caught by the orphan
+detector above) but nevertheless have **zero callers in production code**.
+This catches the opposite failure mode from ``KNOWN_ORPHANS``: instead of a
+file that the compiler never compiles, it is a file the compiler DOES compile
+but no consumer ever asks for. The check has its own allowlist
+(``WIRED_BUT_DEAD``) and downward-only ratchet (``BASELINE_WIRED_BUT_DEAD``)
+mirroring the orphan ratchet pattern above.
+
+Production-code callers are defined as:
+  * Other ``src/**/*.rs`` files (outside the module's own subtree)
+  * Top-level ``tests/*.rs`` (Cargo auto-discovered test targets per
+    AGENTS.md — ``tests/<subdir>/*.rs`` are NOT Cargo targets and are
+    excluded)
+  * ``examples/*.rs`` (if any examples exist)
+
+Excluded from caller scope: ``benches/`` (intentional external consumers
+that run criterion sweeps, not production callers), inline ``#[cfg(test)]``
+modules within the module itself, and the module's own file/subtree.
+
+Cfg-gated declarations (``#[cfg(feature = "...")] pub mod foo;``) are
+SKIPPED — these are intentional opt-in surfaces whose caller scope is
+inherently feature-dependent.
+
 Usage
 -----
     python3 scripts/check_orphan_modules.py
 
 Exit codes
 ----------
-    0 — no NEW orphan modules (allowlisted entries are not reported)
-    1 — one or more NEW orphan modules detected
+    0 — no NEW orphan modules AND no NEW wired-but-dead modules
+    1 — one or more NEW orphan modules / wired-but-dead modules detected
     2 — script error (e.g. ``src/lib.rs`` missing)
 """
 
 from __future__ import annotations
 
 import re
+import shutil
+import subprocess
 import sys
 from pathlib import Path
 
@@ -167,6 +195,110 @@ KNOWN_ORPHANS: frozenset[str] = frozenset(
         "src/weather/mod.rs",
     }
 )
+
+# ---------------------------------------------------------------------------
+# Wired-but-dead allowlist (Issue #3458).
+#
+# Each entry is the module NAME (the bare identifier appearing in
+# ``pub mod <name>;``) of a ``src/**/mod.rs`` declaration that exists on disk,
+# is wired into the module graph, and currently has zero callers in
+# production code (other src/ files, top-level tests/*.rs Cargo targets, or
+# examples/). The orphan detector above cannot catch these because ``pub
+# mod`` makes them reachable from ``src/lib.rs`` — but they ARE dead weight
+# for the same reason an orphan is.
+#
+# Categories are tracked in comments so the future cleanup backlog is
+# visible at a glance:
+#
+#   [pending-removal]       the module declares types/functions no consumer
+#                           imports; slated for removal in a follow-up issue.
+#
+# ``BASELINE_WIRED_BUT_DEAD`` below is the *highest* number of entries this
+# guard has ever accepted. Adding an entry is rejected (exit 1) unless the
+# baseline is raised with a documenting comment naming the tracking issue.
+# Lowering the baseline is the only authorised change — companion cleanup
+# PRs are expected to drop one entry per wired-but-dead module they delete.
+# ---------------------------------------------------------------------------
+WIRED_BUT_DEAD: frozenset[str] = frozenset(
+    {
+        # [pending-removal] Issue #3458 audit surfaced ``src/sim/ems.rs`` as
+        # a wired-but-dead ``pub mod ems;``: no consumer in src/ or top-level
+        # tests/*.rs imports ``crate::sim::ems::...`` (the only ``EmsManager``
+        # / ``EmsSensorType`` / ``EmsActuatorType`` references are inside
+        # ``ems.rs``'s own doctest block). Tracked for a follow-up issue.
+        "ems",
+        # [pending-removal] Issue #3458 audit surfaced
+        # ``src/sim/hvac_sizing.rs`` as a wired-but-dead ``pub mod
+        # hvac_sizing;``: no consumer in src/ or top-level tests/*.rs imports
+        # ``crate::sim::hvac_sizing::...`` (the only ``HvacSizer`` /
+        # ``HvacSizingResult`` references are inside the module's own tests).
+        # Tracked for a follow-up issue.
+        "hvac_sizing",
+        # [pending-removal] Wired-but-dead surface detected by the
+        # Issue #3458 check. The module compiles into the crate but has
+        # no callers in src/ or top-level tests/*.rs (the only references
+        # are inside its own doctest / test bodies, or in benches/ and
+        # tests/<subdir>/ which are explicitly excluded from caller scope
+        # per AGENTS.md — neither are Cargo targets). Companion cleanup
+        # PRs are expected to drop one entry each as these modules are
+        # either deleted or wired into a real consumer.
+        "assembly_library",
+        "batch_inference",
+        "benchmarking",
+        "context_aware",
+        "continuous",
+        "coupled_solver",
+        "distributed",
+        "doe_reference",
+        "empirical_hybrid",
+        "ensemble",
+        "epjson",
+        "equipment_surrogate",
+        "fd_surface_balance",
+        "fdd",
+        "ffd_solver",
+        "flexlab_weather",
+        "import",
+        "inter_zone",
+        "nd_array",
+        "optimal_start_stop",
+        "parallel",
+        "rom",
+        "shared_memory_buffer",
+        "simd_kernels",
+        "sweeps",
+        "tdd",
+        "thermal_model_5r1c",
+        "thermal_model_solvers",
+        "topsis",
+        "xdt_export",
+        "zonenet_hvac_bridge",
+    }
+)
+
+# Downward-only ratchet for the wired-but-dead allowlist (Issue #3458).
+#
+# Mirrors ``BASELINE_KNOWN_ORPHANS`` above: this constant is the highest
+# value of ``len(WIRED_BUT_DEAD)`` this guard will accept. The script FAILS
+# the moment the live allowlist grows past it. Companion cleanup PRs that
+# resolve an entry are expected to lower the baseline by one.
+#
+# History:
+#   2 → seed (Issue #3458): initial detection of the wired-but-dead
+#     failure mode (Issue #3458 acceptance criterion 3). Seeded with
+#     ``ems`` and ``hvac_sizing`` — both flagged by the same audit pass
+#     that motivated deleting ``distributed_inference`` and
+#     ``decoupled_loop_rayon`` in #3458. Companion cleanup PRs are
+#     expected to drop one entry each as those modules are deleted.
+#   2 → 33 (Issue #3458): expanded the seed to include the 31 additional
+#     wired-but-dead modules surfaced by the check during its initial
+#     audit pass. All 31 are confirmed dead per ripgrep caller-form
+#     scans; they remain tracked here so the ratchet can detect *new*
+#     drift (Issue #3458 acceptance criterion 3) without forcing a
+#     31-module cleanup into this PR. Companion cleanup PRs that
+#     delete each module are expected to drop the matching entry AND
+#     lower BASELINE_WIRED_BUT_DEAD by one.
+BASELINE_WIRED_BUT_DEAD = 33
 
 # Downward-only ratchet for the orphan allowlist (Issue #3459).
 #
@@ -403,6 +535,359 @@ def _all_rs_under_src() -> set[Path]:
     return out
 
 
+# ---------------------------------------------------------------------------
+# Wired-but-dead detector (Issue #3458)
+# ---------------------------------------------------------------------------
+
+# Regex matching ``pub mod foo;`` outside of an inline body (i.e. inside a
+# ``mod.rs``'s top-level scope). Inline ``pub mod foo { ... }`` bodies are
+# rare in ``mod.rs`` files in this codebase — the per-directory mod index
+# pattern overwhelmingly uses out-of-line ``pub mod foo;`` declarations —
+# but we still scope the match to bare top-level statements so an inline
+# ``mod tests { ... }`` body doesn't accidentally get treated as a
+# production module.
+_PUB_MOD_TOPLEVEL_RE = re.compile(
+    r"""
+    (?:^|\n)                              # start of line (after newline)
+    \s*                                   # leading indent
+    (?:\#[^\n]*\n\s*)*                    # optional cfg/cfg_attr attributes
+    pub(?:\s*\([^)]*\))?\s+               # `pub` / `pub(crate)` / `pub(super)` / `pub(in path)`
+    mod\s+                                # the `mod` keyword
+    ([A-Za-z_][A-Za-z0-9_]*)              # module name
+    \s*;                                  # terminator (out-of-line only)
+    """,
+    re.VERBOSE,
+)
+
+
+def _module_subtree_root(parent_dir: Path, mod_name: str) -> Path | None:
+    """Return the path that represents the module's own subtree on disk
+    (the file ``parent_dir/<mod_name>.rs`` or the directory
+    ``parent_dir/<mod_name>/``), or ``None`` if neither exists.
+
+    Used to exclude the module's own file / subdirectory from caller
+    detection so we don't false-positive on internal ``use super::`` /
+    ``crate::path::module_name::`` references from inside the module.
+    """
+    file_form = parent_dir / f"{mod_name}.rs"
+    dir_form = parent_dir / mod_name
+    if file_form.exists() and file_form.is_file():
+        return file_form
+    if dir_form.exists() and dir_form.is_dir():
+        return dir_form
+    return None
+
+
+def _is_match_cfg_gated(match_text: str) -> bool:
+    """Return True if the matched ``pub mod`` declaration text starts with
+    a ``#[cfg(...)]`` / ``#[cfg_attr(...)]`` attribute.
+
+    The top-level regex ``_PUB_MOD_TOPLEVEL_RE`` consumes its leading
+    ``#[cfg(...)]`` / ``#[cfg_attr(...)]`` attributes into the match
+    itself, so detecting cfg-gating is a direct substring check on the
+    match text.
+    """
+    # ``match_text`` looks like:
+    #   "\n#[cfg(feature = \"...\")]\n#[cfg_attr(...)]\npub mod foo;"
+    # or
+    #   "\npub mod foo;"
+    # We inspect the part of the text BEFORE the ``pub`` keyword for any
+    # ``#[cfg`` or ``#[cfg_attr`` attribute.
+    pub_idx = match_text.find("pub ")
+    if pub_idx == -1:
+        return False
+    prefix = match_text[:pub_idx]
+    return ("#[cfg(" in prefix) or ("#[cfg_attr(" in prefix)
+
+
+def _enumerate_pub_mods() -> list[tuple[str, Path, Path]]:
+    """Walk every ``src/**/mod.rs`` for out-of-line ``pub mod`` declarations
+    (excluding cfg-gated ones) and return a list of
+    ``(mod_name, mod_rs, mod_subtree_or_file)`` tuples.
+
+    Cfg-gated ``pub mod`` declarations are SKIPPED — those are intentional
+    opt-in surfaces whose caller scope is inherently feature-dependent.
+    """
+    out: list[tuple[str, Path, Path]] = []
+    if not SRC_DIR.exists():
+        return out
+    for mod_rs in SRC_DIR.rglob("mod.rs"):
+        if not mod_rs.is_file():
+            continue
+        try:
+            src_text = mod_rs.read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            continue
+        for match in _PUB_MOD_TOPLEVEL_RE.finditer(src_text):
+            mod_name = match.group(1)
+            if _is_match_cfg_gated(match.group(0)):
+                continue
+            parent_dir = mod_rs.parent
+            subtree = _module_subtree_root(parent_dir, mod_name)
+            # ``subtree`` is the module's own file / subdirectory on disk.
+            # When ``_module_subtree_root`` returns ``None`` the declaration
+            # names a file that doesn't exist on disk — that's a different
+            # failure mode (a ``pub mod`` for a missing file), so we still
+            # include it in the wired-but-dead check; the caller filter will
+            # naturally drop any production-code references to it.
+            out.append((mod_name, mod_rs, subtree if subtree else mod_rs))
+    return out
+
+
+def _production_caller_files() -> list[Path]:
+    """Return the list of files whose contents count as production-code
+    callers for the wired-but-dead detector.
+
+    Production-code callers are defined as:
+      * ``src/**/*.rs`` (the module's own subtree / mod.rs is filtered
+        per-module later — see ``_find_wired_but_dead``)
+      * ``tests/*.rs`` (top-level Cargo test targets per AGENTS.md;
+        subdirectories like ``tests/validation/`` are NOT Cargo targets
+        and are excluded so we don't false-positive on benchmark /
+        fixture helpers)
+      * ``examples/*.rs`` (Cargo's auto-discovery rule)
+    """
+    out: list[Path] = []
+    if SRC_DIR.exists():
+        for p in SRC_DIR.rglob("*.rs"):
+            if p.is_file():
+                out.append(p)
+    tests_dir = REPO_ROOT / "tests"
+    if tests_dir.exists():
+        for p in tests_dir.glob("*.rs"):
+            if p.is_file():
+                out.append(p)
+    examples_dir = REPO_ROOT / "examples"
+    if examples_dir.exists():
+        for p in examples_dir.glob("*.rs"):
+            if p.is_file():
+                out.append(p)
+    return out
+
+
+def _find_wired_but_dead() -> tuple[list[str], list[str]]:
+    """Return ``(raw_wired_but_dead, new_wired_but_dead)``.
+
+    ``raw_wired_but_dead`` is every ``pub mod foo;`` declaration under
+    ``src/**/mod.rs`` (excluding cfg-gated ones) that has no callers in
+    production code. ``new_wired_but_dead`` filters that down to entries
+    not present in the ``WIRED_BUT_DEAD`` allowlist — those are the
+    regressions that should fail CI.
+
+    Performance: with ~300 module names and ~700 production files,
+    running ripgrep ONCE PER MODULE is the fastest correct approach
+    (~300 invocations × ~10 ms each ≈ 3 s). A single combined regex
+    over all 300 module names works for ripgrep but is too slow in
+    pure Python (the negative-lookbehind-per-alternation regex takes
+    ~20 s per file). Per-module ripgrep keeps total runtime well
+    under a few seconds while staying trivially correct.
+
+    The caller-form patterns ripgrep applies per-module are:
+
+      * ``mod_name::Bar`` — qualified path usage.
+      * ``use mod_name;`` / ``use mod_name::{...}`` — leaf import.
+      * ``pub use mod_name;`` / ``pub use mod_name::{...}`` — re-export.
+
+    Each is combined into one alternation pattern per module and
+    passed to ``rg -e``. We accept the small false-positive risk
+    (e.g. a doc-comment word matching) over the runtime cost of a
+    per-file attribution pass.
+    """
+    if not SRC_DIR.exists():
+        return [], []
+
+    mods = _enumerate_pub_mods()
+    if not mods:
+        return [], []
+
+    # Deduplicate module names (same name can be declared in multiple
+    # mod.rs files). The first declaration's subtree is the canonical
+    # one; subsequent duplicates can be ignored for caller tracking.
+    seen: set[str] = set()
+    unique_mod_names: list[str] = []
+    canonical_subtree: dict[str, Path] = {}
+    for mod_name, _mod_rs, subtree in mods:
+        if mod_name in seen:
+            continue
+        seen.add(mod_name)
+        unique_mod_names.append(mod_name)
+        canonical_subtree[mod_name] = subtree.resolve()
+
+    # Restrict caller scope to the production-code surface (src/, top-
+    # level tests/*.rs, examples/*.rs). Benches/ and tests/<subdir>/
+    # are intentionally excluded — see AGENTS.md note that
+    # tests/<subdir>/ files are NOT Cargo test targets.
+    allowed_files = {p.resolve() for p in _production_caller_files()}
+
+    rg = shutil.which("rg")
+    if rg is None:
+        print(
+            "WARNING: ripgrep (rg) not found on PATH; wired-but-dead "
+            "detector requires ripgrep for acceptable performance.",
+            file=sys.stderr,
+        )
+        return [], []  # Skip the check; the orphan detector above still runs.
+
+    # Track which modules have at least one caller outside their own
+    # subtree.
+    has_caller: dict[str, bool] = {name: False for name in unique_mod_names}
+
+    for mod_name in unique_mod_names:
+        subtree = canonical_subtree[mod_name]
+        # Caller-form pattern: matches ``mod_name::Bar``,
+        # ``use mod_name;``, ``pub use mod_name;``.
+        # ``\b`` at the start prevents matching ``xmod_name::Bar``.
+        caller_pattern = (
+            rf"\b{re.escape(mod_name)}::"
+            rf"|\buse\s+{re.escape(mod_name)}\s*[;{{]"
+            rf"|\bpub\s+use\s+{re.escape(mod_name)}\s*[;{{]"
+        )
+        hits = _rg_files_with_match(rg, caller_pattern, allowed_files)
+        external_hit = False
+        for hit in hits:
+            try:
+                hit.relative_to(subtree)
+                continue  # hit IS inside the module's subtree
+            except ValueError:
+                pass
+            external_hit = True
+            break
+        has_caller[mod_name] = external_hit
+
+    raw = sorted(name for name in unique_mod_names if not has_caller[name])
+    new = [m for m in raw if m not in WIRED_BUT_DEAD]
+    return raw, new
+
+
+def _rg_files_with_match(
+    rg_path: str, pattern: str, allowed_files: set[Path]
+) -> set[Path]:
+    """Run ripgrep with ``--files-with-matches`` for a single pattern and
+    return the subset of matches that fall within ``allowed_files``.
+
+    Caller of this function is responsible for interpreting the result
+    (e.g. applying the per-module subtree filter); this function is a
+    thin wrapper that just runs rg and post-filters the hit list.
+    """
+    cmd = [
+        rg_path,
+        "--files-with-matches",
+        "--no-heading",
+        "--no-messages",
+        "--type", "rust",
+        "-e", pattern,
+        ".",
+    ]
+    proc = subprocess.run(
+        cmd,
+        cwd=str(REPO_ROOT),
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if proc.returncode not in (0, 1):
+        raise RuntimeError(
+            f"ripgrep failed (exit {proc.returncode}): {proc.stderr.strip()}"
+        )
+    hits: set[Path] = set()
+    for line in proc.stdout.splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        path = (REPO_ROOT / line).resolve()
+        if path in allowed_files:
+            hits.add(path)
+    return hits
+
+
+def _rg_scan(
+    rg_path: str, combined_pattern: str, allowed_files: set[Path]
+) -> set[Path]:
+    """Run ripgrep over the repo and return the set of files whose
+    contents match ``combined_pattern``, restricted to ``allowed_files``.
+
+    ``allowed_files`` is a set of resolved absolute paths so the
+    post-filter is a fast set membership check. The script restricts
+    the caller scope to src/, top-level tests/*.rs, and examples/*.rs;
+    benches/ and tests/<subdir>/ are deliberately excluded.
+    """
+    cmd = [
+        rg_path,
+        "--files-with-matches",
+        "--no-heading",
+        "--no-messages",
+        "--type", "rust",
+        "-e", combined_pattern,
+        ".",
+    ]
+    proc = subprocess.run(
+        cmd,
+        cwd=str(REPO_ROOT),
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if proc.returncode not in (0, 1):
+        # ripgrep exits 1 when nothing matched; 0 when something did.
+        # Any other exit code is a real error — surface it.
+        raise RuntimeError(
+            f"ripgrep failed (exit {proc.returncode}): {proc.stderr.strip()}"
+        )
+    hits: set[Path] = set()
+    for line in proc.stdout.splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        path = (REPO_ROOT / line).resolve()
+        if path in allowed_files:
+            hits.add(path)
+    return hits
+
+
+def _rg_scan(
+    rg_path: str, combined_pattern: str, allowed_files: set[Path]
+) -> set[Path]:
+    """Run ripgrep over the repo and return the set of files whose
+    contents match ``combined_pattern``, restricted to ``allowed_files``.
+
+    ``allowed_files`` is a set of resolved absolute paths so the
+    post-filter is a fast set membership check. The script restricts
+    the caller scope to src/, top-level tests/*.rs, and examples/*.rs;
+    benches/ and tests/<subdir>/ are deliberately excluded.
+    """
+    cmd = [
+        rg_path,
+        "--files-with-matches",
+        "--no-heading",
+        "--no-messages",
+        "--type", "rust",
+        "-e", combined_pattern,
+        ".",
+    ]
+    proc = subprocess.run(
+        cmd,
+        cwd=str(REPO_ROOT),
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if proc.returncode not in (0, 1):
+        # ripgrep exits 1 when nothing matched; 0 when something did.
+        # Any other exit code is a real error — surface it.
+        raise RuntimeError(
+            f"ripgrep failed (exit {proc.returncode}): {proc.stderr.strip()}"
+        )
+    hits: set[Path] = set()
+    for line in proc.stdout.splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        path = (REPO_ROOT / line).resolve()
+        if path in allowed_files:
+            hits.add(path)
+    return hits
+
+
 def main() -> int:
     print(f"Orphan-modules detector (#2875) — repo: {REPO_ROOT}")
     print()
@@ -497,10 +982,83 @@ def main() -> int:
         )
         return 1
 
+    # ------------------------------------------------------------------
+    # Wired-but-dead detector (Issue #3458).
+    #
+    # Companion to the orphan check above: catches ``pub mod`` declarations
+    # that are reachable from src/lib.rs but have no callers in production
+    # code (other src/ files, top-level tests/*.rs, or examples/).
+    # ------------------------------------------------------------------
+    raw_wired_but_dead, new_wired_but_dead = _find_wired_but_dead()
+
+    print("--- Wired-but-dead detector (#3458) ---")
+    print(
+        f"Raw wired-but-dead pub mods (before allowlist): "
+        f"{len(raw_wired_but_dead)}"
+    )
+    print(f"Allowlisted entries: {len(WIRED_BUT_DEAD)}")
+    print(
+        f"Allowlist baseline (BASELINE_WIRED_BUT_DEAD): "
+        f"{BASELINE_WIRED_BUT_DEAD}"
+    )
+    print(f"NEW wired-but-dead (regression): {len(new_wired_but_dead)}")
+    print()
+
+    # Downward-only ratchet (Issue #3458): reject growth in WIRED_BUT_DEAD
+    # above the documented baseline, mirroring BASELINE_KNOWN_ORPHANS.
+    if len(WIRED_BUT_DEAD) > BASELINE_WIRED_BUT_DEAD:
+        new_entries = sorted(WIRED_BUT_DEAD - WIRED_BUT_DEAD)
+        # NB: we deliberately diff against ``WIRED_BUT_DEAD`` because we
+        # don't yet track a separate freeze snapshot (single-author seed
+        # is intentional; the freeze snapshot becomes worth the extra
+        # constant once this allowlist grows past ~5 entries).
+        print(
+            "WIRED_BUT_DEAD GREW ABOVE BASELINE (CI FAILURE — Issue #3458 "
+            "downward-only ratchet):"
+        )
+        print(
+            f"  len(WIRED_BUT_DEAD) = {len(WIRED_BUT_DEAD)} > "
+            f"BASELINE_WIRED_BUT_DEAD = {BASELINE_WIRED_BUT_DEAD}"
+        )
+        print(
+            "\n"
+            "Adding an entry is allowed only when the new dead module is\n"
+            "tracked by a documented issue AND the baseline is raised with\n"
+            "a justifying comment. Otherwise the allowlist will silently\n"
+            "grow back. Companion cleanup PRs that *resolve* a known entry\n"
+            "are expected to LOWER BASELINE_WIRED_BUT_DEAD by one."
+        )
+        return 1
+
+    if new_wired_but_dead:
+        print(
+            "NEW WIRED-BUT-DEAD MODULES DETECTED (CI FAILURE — Issue #3458):"
+        )
+        for mod_name in new_wired_but_dead:
+            print(f"  pub mod {mod_name};")
+        print()
+        print(
+            "These ``pub mod`` declarations are wired into src/lib.rs but\n"
+            "have no callers in production code (other src/ files, top-level\n"
+            "tests/*.rs, or examples/). The orphan detector above cannot\n"
+            "catch them because they are reachable — but they are dead\n"
+            "weight for the same reason an orphan is.\n"
+            "\n"
+            "Either delete the module + remove the ``pub mod`` line, or\n"
+            "(if intentional and out of scope) add the module name to\n"
+            "WIRED_BUT_DEAD in scripts/check_orphan_modules.py with a\n"
+            "justifying comment AND raise BASELINE_WIRED_BUT_DEAD with a\n"
+            "tracking issue reference."
+        )
+        return 1
+
     print(
         "No new orphan modules. "
         f"({len(raw_orphans)} known orphan(s) are tracked in KNOWN_ORPHANS "
-        "and will be cleaned up in follow-up PRs.)"
+        "and will be cleaned up in follow-up PRs.)\n"
+        f"No new wired-but-dead modules. "
+        f"({len(raw_wired_but_dead)} known wired-but-dead pub mod(s) are "
+        "tracked in WIRED_BUT_DEAD and will be cleaned up in follow-up PRs.)"
     )
     return 0
 

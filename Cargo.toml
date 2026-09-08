@@ -587,10 +587,6 @@ harness = false
 name = "ctf_solver_bench"
 harness = false
 
-[[bench]]
-name = "decoupled_loop_dispatch_bench"
-harness = false
-
 # Issue #2522 — multi-zone throughput criterion benchmark.
 # Sweeps BatchOracle::evaluate_population across populations {10, 100, 1000, 10k}
 # on a 10-zone ThermalModel; reports configs/sec via criterion Throughput.
