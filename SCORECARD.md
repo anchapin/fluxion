@@ -4,8 +4,8 @@
 >
 > **Do not edit by hand** — regenerate with `python scripts/generate_scorecard.py`. CI fails on drift (`scorecard-drift` workflow).
 
-**Last Updated:** 2026-08-16  
-**Data source as of:** 2026-08-16 18:24 UTC  
+**Last Updated:** 2026-09-07  
+**Data source as of:** 2026-09-07 00:01:56 UTC  
 **Sources:** `validation/performance_history.latest.json`, `docs/ASHRAE140_RESULTS.md`, `release_gates.yaml`, `README.md`
 
 ---
