@@ -21,8 +21,19 @@
 #      `static mut`, no `RAYON_NUM_THREADS` / `rayon::ThreadPoolBuilder`
 #      global reconfiguration, no cross-test `TempDir` reuse detected in any
 #      of the 6 binaries.
+#   3. Refreshed at Issue #3453 to add
+#      `ashrae_140_diagnostic_integration_test` to the audit list. The
+#      binary carries 10 tests, two of which (`test_issue_282_environment_variable_support`,
+#      `test_issue_3453_env_lock_serializes_env_mutation`) mutate
+#      `ASHRAE_140_DEBUG` and are now serialised through a file-local
+#      `static ENV_LOCK: Mutex<()>` (Issue #3453); the other env-mutating
+#      binaries (`onnx_signature_integration`, `email_notifier_header_safety`)
+#      already carry the same convention. The drift guard that prevents
+#      a future regression is `scripts/check_env_setvar_serialized.py`,
+#      wired into `scripts-tests.yml` ("Enforce ENV_LOCK on
+#      env-mutating integration tests" step).
 #
-# Conclusion: all 6 audit-flagged binaries are safe at the default
+# Conclusion: all 7 audit-flagged binaries are safe at the default
 # per-binary thread count (controlled via `--test-threads=2` on the CLI
 # to match the GH free-runner vCPU count; Hetzner runners are 4+ vCPU but
 # nextest only parallelises *inside* a single binary so 2 stays the safe

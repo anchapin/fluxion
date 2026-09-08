@@ -10,6 +10,15 @@ use fluxion::validation::{
     },
     ASHRAE140Case, ASHRAE140Validator,
 };
+use std::sync::Mutex;
+
+/// Process-wide mutex serializing tests that mutate `ASHRAE_140_*` env vars
+/// so that parallel `cargo test` threads do not race on the same var.
+/// Mirrors the convention already established in
+/// `tests/onnx_signature_integration.rs:25`,
+/// `tests/email_notifier_header_safety.rs:46`, and
+/// `src/ai/surrogate.rs:3557` (Issue #3453).
+static ENV_LOCK: Mutex<()> = Mutex::new(());
 
 #[test]
 fn test_issue_282_hourly_output_logging() {
@@ -267,6 +276,12 @@ fn test_issue_282_diagnostic_report_generation() {
 
 #[test]
 fn test_issue_282_environment_variable_support() {
+    // Issue #3453: hold `ENV_LOCK` for the entire test body so the
+    // `set_var` / `remove_var` window is invisible to a sibling test
+    // running on another thread (e.g. another `#[test]` in this binary
+    // that calls `DiagnosticConfig::from_env()` and reads the same var).
+    let _env_guard = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+
     // Verify environment variable configuration
     // Test that config can be created from environment
     let config = DiagnosticConfig::from_env();
@@ -348,4 +363,64 @@ fn test_issue_282_single_case_validation() {
 
     // Verify collector exists (may or may not have collected data depending on config)
     assert!(!collector.hourly_data.is_empty() || !collector.config.enabled);
+}
+
+/// Issue #3453 regression test: prove that the `ENV_LOCK` mutex actually
+/// serialises the env-mutation window. Eight threads race to acquire the
+/// lock; each one must observe its own mutation atomically (the var is set
+/// to `"1"` while the lock is held and the freshly-constructed
+/// `DiagnosticConfig` reports `enabled == true`). Without the lock this test
+/// is a flake: a sibling thread's `remove_var` between our `set_var` and
+/// our `from_env()` would yield `enabled == false` and trip the assertion.
+#[test]
+fn test_issue_3453_env_lock_serializes_env_mutation() {
+    use std::sync::{Arc, Barrier};
+    use std::thread;
+
+    const N_THREADS: usize = 8;
+    let barrier = Arc::new(Barrier::new(N_THREADS));
+    let mut handles = Vec::with_capacity(N_THREADS);
+
+    for _ in 0..N_THREADS {
+        let barrier = Arc::clone(&barrier);
+        handles.push(thread::spawn(move || {
+            // Make every thread release the start gate at the same instant
+            // so the race window inside the critical section is as wide as
+            // possible (worst-case stress for the guard).
+            barrier.wait();
+
+            let _env_guard = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+
+            // Record the env state under the lock; the lock guarantees no
+            // other thread can interleave a `remove_var` here.
+            std::env::set_var("ASHRAE_140_DEBUG", "1");
+            let config = DiagnosticConfig::from_env();
+            let is_set = std::env::var("ASHRAE_140_DEBUG").is_ok();
+
+            // Restore the prior process state before releasing the lock
+            // so we don't bleed "1" out to sibling tests.
+            std::env::remove_var("ASHRAE_140_DEBUG");
+
+            assert_eq!(
+                config.enabled, is_set,
+                "from_env() and env::var() disagree while holding ENV_LOCK"
+            );
+            assert!(
+                config.enabled,
+                "set_var + from_env() under ENV_LOCK must report enabled"
+            );
+            assert!(is_set, "env::var() must report the var as set");
+        }));
+    }
+
+    for h in handles {
+        h.join().expect("worker thread panicked");
+    }
+
+    // After all threads release the lock, the var must be back to its
+    // pre-test state (the test itself is a no-op when the lock works).
+    assert!(
+        std::env::var("ASHRAE_140_DEBUG").is_err(),
+        "ENV_LOCK should have hidden the set_var/remove_var window from siblings"
+    );
 }
