@@ -18,7 +18,7 @@
 //! ## Platform support matrix
 //!
 //! | Capability | Linux | macOS | Windows |
-//! |-----------|-------|-------|---------|
+//! |-----------|-------|-------|--------|
 //! | Wall-clock timeout | yes (subprocess kill) | yes | yes |
 //! | Memory cap | best-effort (`RLIMIT_AS`) | best-effort (`RLIMIT_DATA` + ulimit) | best-effort (`JobObject`) |
 //! | Network isolation | env-based | env-based | env-based |
@@ -28,6 +28,43 @@
 //! `SandboxViolation::MemoryCapBestEffort` warning when the cap
 //! couldn't be applied; the contract still holds for the rest of the
 //! run.
+
+// SECURITY-ACCEPTANCE: TODO list for the dynamic-load follow-up (Issue #3554)
+// ============================================================================
+// The in-process FFI surface added by `crates/fluxion-evaluator/src/dynamic.rs`
+// inherits NONE of the subprocess guarantees above. The follow-up PR MUST close
+// every gap below or fail the `evaluator-dynamic-secure` drift gate. The
+// authoritative source of these criteria is
+// `crates/fluxion-evaluator/SECURITY_ACCEPTANCE.md`; the markers below are the
+// per-criterion TODO anchors the implementation PR must satisfy.
+//
+// SECURITY-ACCEPTANCE: TODO (a) — signature verification of the candidate cdylib
+//   Mirror `verify_onnx_signature` (`src/ai/surrogate.rs:3348`). The follow-up
+//   must read `<candidate>.sha256` and/or honor
+//   `FLUXION_EVAL_CANDIDATE_SIGNATURE` and reject mismatches with
+//   `DynamicLoadError::CandidateError` (or a dedicated variant).
+//
+// SECURITY-ACCEPTANCE: TODO (b) — sandbox coverage for the in-process loader
+//   `enforce_for_command` is useless against in-process FFI; the follow-up
+//   must add a new `SandboxEnforcer::enforce_for_dynamic_load` (or equivalent)
+//   that returns a `DynamicSandboxReceipt` consulted on EVERY dispatch, not
+//   only at load time. Document the unavoidable gaps honestly (no `RLIMIT_AS`
+//   without `libc`) as `SandboxViolation::InProcessCandidate`.
+//
+// SECURITY-ACCEPTANCE: TODO (c) — panic and signal capture around FFI
+//   The follow-up must wrap `evaluate_dynamic`'s FFI in both
+//   `std::panic::catch_unwind` AND a thread-local signal handler for
+//   `SIGILL` / `SIGSEGV` / `SIGABRT`. Map both outcomes to
+//   `DynamicLoadError::CandidateError`. `panic::catch_unwind` alone does not
+//   catch signals.
+//
+// SECURITY-ACCEPTANCE: TODO (d) — RTLD flag strictness
+//   The follow-up must only accept `RTLD_NOW | RTLD_LOCAL` semantics. Reject
+//   `RTLD_LAZY` (lazy symbol resolution defers faults into the hot path) and
+//   `RTLD_GLOBAL` (lets the candidate hijack host symbols). Surface the
+//   rejection as `DynamicLoadError::InsecureLoadFlags` (or a documented
+//   `CandidateError` sentinel).
+// ============================================================================
 
 use std::path::PathBuf;
 use std::time::Duration;
