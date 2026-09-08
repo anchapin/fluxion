@@ -130,6 +130,12 @@ jobs:
       - name: Enforce SHA-pinned workflow `uses:` (Issue #3475)
         run: python3 scripts/check_workflow_pin.py
 
+      # Issue #3530: reject the named mutable GitHub Actions refs without
+      # weakening the stricter SHA-only gate above. The checker reports every
+      # offending workflow and line so PR authors can pin the exact action SHA.
+      - name: Enforce named action pinning refs (Issue #3530)
+        run: python3 scripts/check_action_pinning.py
+
       # Issue #3453: ENV_LOCK serialisation guard for env-mutating
       # integration tests. ``tests/ashrae_140_diagnostic_integration_test``
       # shipped with bare ``env::set_var`` / ``env::remove_var`` calls and
