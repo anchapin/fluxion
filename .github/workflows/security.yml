@@ -39,6 +39,22 @@ jobs:
       - name: Check for stray audit.toml
         run: python3 scripts/check_audit_config_unique.py
 
+  evaluator-dynamic-secure:
+    # Issue #3554: drift gate for the `fluxion-evaluator` dynamic-loading
+    # security acceptance criteria. The follow-up `libloading` PR cannot
+    # land without (a) signature verification, (b) sandbox coverage,
+    # (c) panic/signal capture, and (d) `RTLD_NOW | RTLD_LOCAL` semantics
+    # in `crates/fluxion-evaluator/src/dynamic.rs`. Mirrors the
+    # `check_audit_config_unique.py` fail-closed pattern.
+    name: "Evaluator Dynamic Secure (Issue #3554)"
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+      - name: Check fluxion-evaluator dynamic-load security gate
+        run: python3 scripts/check_evaluator_dynamic_secure.py
+
   audit-ignore-freshness:
     # Issue #2912: surface when the documented `>>> REMOVE` conditions
     # for `.cargo/audit.toml` ignore entries are met. Historical pattern
