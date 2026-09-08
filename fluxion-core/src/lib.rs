@@ -20,6 +20,40 @@
 //! they are compiled **once** and cached, while cargo-mutants mutates only the main
 //! `fluxion` crate (`cargo mutants -p fluxion`).
 //!
+//! ## Dependency budget (Issue #3467)
+//!
+//! The default leaf crate is allowed to depend only on:
+//!
+//! | Crate        | Why                                                             |
+//! |--------------|-----------------------------------------------------------------|
+//! | `num-traits` | `Float` arithmetic traits for psychrometrics / interpolation    |
+//! | `serde`      | `Serialize`/`Deserialize` derives on the data structs           |
+//! | `serde_json` | Weather-record JSON, hash digests, etc.                         |
+//! | `serde_yaml` | ASHRAE 140 assembly / materials YAML inputs                     |
+//! | `thiserror`  | `WeatherError` / `CarbonError` / assembly error types           |
+//! | `log`        | Logging in `method_selector.rs` (#1349) and weather modules     |
+//!
+//! Anything heavier (HTTP client, FS project directories, async runtime,
+//! TLS stack, mock-HTTP servers, …) is **opt-in via the `tmy3-download`
+//! feature**. The regression gate
+//! [`scripts/check_fluxion_core_dep_budget.py`](../../scripts/check_fluxion_core_dep_budget.py)
+//! fails CI if a heavyweight dep is reintroduced to the default build.
+//!
+//! ## Cargo features
+//!
+//! | Feature          | Default | Pulls in                                                  |
+//! |------------------|---------|-----------------------------------------------------------|
+//! | *(none)*         | ✓       | The six crates above — `cargo build -p fluxion-core`      |
+//! | `tmy3-download`  | ✗       | `reqwest` + `directories` + `sha2` (+ `mockito` dev-dep)   |
+//!
+//! `tmy3-download` is opt-in because the TMY3 weather-download / on-disk-cache
+//! path (`weather::tmy3::{Tmy3Cache, WeatherLocation, load_weather_locations}`)
+//! is the only consumer of these deps in this crate, and only one integration
+//! test (`tests/test_tmy3_download.rs` in the root crate) plus the CLI tooling
+//! actually need it. Anyone building the leaf for `cargo-mutants` or a quick
+//! `cargo check -p fluxion-core` does NOT pay the reqwest / hyper / tokio /
+//! rustls cost.
+//!
 //! ## Re-export shim
 //!
 //! The main `fluxion` crate re-exports these modules, e.g.
@@ -31,7 +65,7 @@
 //!
 //! | Module        | Status | Notes |
 //! |---------------|--------|-------|
-//! | `weather`     | Moved (#1255, true leaf) | EPW/TMY3 parsing, psychrometrics, design-day, interpolation |
+//! | `weather`     | Moved (#1255, true leaf) | EPW parsing, psychrometrics, design-day, interpolation, embedded TMY (Denver / Miami / Minneapolis), carbon intensity, **and** the `tmy3` download/cache module (gated by `tmy3-download`, #3467) |
 //! | `assembly`    | Moved (#1349) | `BuildingAssembly`, `AssemblyBuilder`, `MaterialLayer` trait, ASHRAE 140 material constants (inlined) |
 //! | `construction`| Moved (#2462) | `ConstructionLayer`, `Construction`, `MassClass`, `Materials`, `Assemblies`, `SurfaceType`, ASHRAE 140 film/air constants (inlined). Breaks 3 of 5 `physics ↔ sim` cycle edges. |
 //! | `multi_node`  | Moved (#1349) | `ThermalMassNode`, `MultiNodeThermalMass`, `MultiNodeModelType`, `MassAirCouplingMode` (pure data, zero deps) |

@@ -8,9 +8,27 @@
 //! - SHA-256 checksum validation
 //! - Weather location metadata from JSON
 //!
+//! # Cargo feature gate (Issue #3467)
+//!
+//! The entire module is gated behind the `tmy3-download` cargo feature
+//! (default **off**). Enabling it pulls in the `reqwest` blocking client +
+//! `directories` + `sha2` deps:
+//!
+//! ```bash
+//! cargo build -p fluxion-core --features tmy3-download
+//! cargo test  -p fluxion-core --features tmy3-download
+//! ```
+//!
+//! The default `cargo build -p fluxion-core` does **not** compile this
+//! module, so the default dependency-light leaf stays free of
+//! reqwest / hyper / tokio / rustls. See ARCHITECTURE.md
+//! §"Workspace Layout (#3467)" and `scripts/check_fluxion_core_dep_budget.py`
+//! for the regression gate that enforces this.
+//!
 //! # Example
 //!
 //! ```no_run
+//! # #[cfg(feature = "tmy3-download")] {
 //! use fluxion_core::weather::tmy3::{Tmy3Cache, load_weather_locations};
 //!
 //! // Create cache
@@ -22,6 +40,7 @@
 //! // Download Denver TMY3 data
 //! let denver = &locations["Denver"];
 //! let filepath = cache.get_or_download(&denver.tmy3_url, "Denver").unwrap();
+//! # }
 //! ```
 //!
 //! # Cache Location

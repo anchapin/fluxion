@@ -1,3 +1,10 @@
+// Issue #3467 — the TMY3 weather-download / on-disk-cache path lives behind
+// the `tmy3-download` cargo feature. Without the feature, the
+// `fluxion::weather::tmy3` re-export does not exist (see
+// `fluxion-core/src/weather/mod.rs`), so this test binary is a no-op.
+// Run with `--features tmy3-download` to actually exercise the TMY3 cache.
+#![cfg(feature = "tmy3-download")]
+
 #[cfg(test)]
 mod tests {
     use fluxion::weather::tmy3::{load_weather_locations, Tmy3Cache, WeatherLocation};

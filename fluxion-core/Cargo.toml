@@ -12,6 +12,37 @@ license = "Apache-2.0"
 name = "fluxion_core"
 path = "src/lib.rs"
 
+# Issue #3467 — reconcile the documented "dependency-light leaf" contract
+# (AGENTS.md, ARCHITECTURE.md §"Workspace Layout", fluxion-core/README.md)
+# with the actual dependency manifest. Until #3467, `tmy3.rs` pulled in
+# reqwest + directories + sha2 + (via mockito) httpmock unconditionally,
+# which dragged hyper / tokio / rustls / tower into every `cargo build
+# -p fluxion-core` and every `cargo mutants -p fluxion` run, defeating
+# the crate-split rationale from #1255.
+#
+# The fix is to gate the network-download / on-disk-cache code path
+# behind an OPT-IN cargo feature (`tmy3-download`, default OFF). The
+# default leaf crate stays at:
+#
+#   - num-traits
+#   - serde / serde_json / serde_yaml   (data structs, assembly YAML)
+#   - thiserror                         (error types)
+#   - log                               (logging)
+#
+# and does NOT pull in reqwest / hyper / tokio / rustls / mockito /
+# directories / sha2. Only consumers that actually need to download
+# TMY3 weather files opt into `tmy3-download`, and that path is
+# verified by `scripts/check_fluxion_core_dep_budget.py` so any
+# regression that re-introduces a heavyweight dep at default features
+# fails CI (see ARCHITECTURE.md §"Workspace Layout (#3467)").
+#
+# This default-off pattern mirrors the workspace's existing opt-in
+# conventions for `ort` (#1294), `fluxion-fluid` (#1980), `fluxion-city`
+# (#2344), etc.
+[features]
+default = []
+tmy3-download = ["dep:reqwest", "dep:directories", "dep:sha2"]
+
 [dependencies]
 num-traits = "0.2"
 
@@ -24,14 +55,25 @@ thiserror.workspace = true
 # Logging (issue #1349 — `method_selector.rs` was moved here from `fluxion::physics`)
 log = "0.4"
 
-# Weather download + on-disk cache (tmy3.rs)
-reqwest.workspace = true
-sha2 = "0.11"
-directories = "6.0"
+# Weather download + on-disk cache (tmy3.rs) — Issue #3467, gated behind
+# the `tmy3-download` feature. The default dependency-light leaf must NOT
+# compile reqwest / hyper / tokio / rustls. Adding a new heavyweight dep
+# to this block requires a companion feature and an update to
+# `scripts/check_fluxion_core_dep_budget.py`.
+reqwest = { workspace = true, optional = true }
+sha2 = { version = "0.11", optional = true }
+directories = { version = "6.0", optional = true }
 
 [dev-dependencies]
 proptest = "1.5"
-# Mock HTTP server for tmy3 download tests
+# Mock HTTP server for the `tmy3` download tests in `src/weather/tmy3.rs`.
+# (Issue #3467) The `tmy3` source file is gated behind the `tmy3-download`
+# cargo feature so the default `cargo build -p fluxion-core` does not pull
+# in httpmock, but cargo's dev-dependency mechanism has no per-feature
+# gating — every `cargo test -p fluxion-core` compiles this. The
+# regression gate (`scripts/check_fluxion_core_dep_budget.py`) only
+# inspects `[dependencies]` so this stays allowed; see ARCHITECTURE.md
+# §"Workspace Layout (#3467)" for the rationale.
 mockito = "1.7"
 # For carbon intensity CSV tests
 tempfile = "3.27"

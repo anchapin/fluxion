@@ -554,6 +554,89 @@ in the default build.
 
 ---
 
+### fluxion-core (fluxion-core/)
+
+**Purpose**: Dependency-light *leaf* crate that holds the cycle-breaking
+modules shared across the Fluxion workspace: weather/EPW/TMY parsing,
+ASHRAE 140 leaf types, construction / assembly domain types, multi-node
+and per-surface conduction primitives, physics constants, and a few
+auxiliary utility modules. Lives at `fluxion-core/` (separate workspace
+member, NOT a directory under `src/`). The crate is built once and
+cached by `cargo-mutants` in CI so each mutation only recompiles the
+main `fluxion` crate, not the leaf. Issues #1255, #1349, #1441, #2462,
+#3467.
+
+**Feature-gate relationship** (`fluxion-core/Cargo.toml`, Issue #3467):
+
+- **Default features: empty.** `cargo build -p fluxion-core` pulls only
+  `num-traits`, `serde` + `serde_json` + `serde_yaml`, `thiserror`,
+  `log` — the production binary stays free of reqwest / hyper / tokio
+  / rustls / directories.
+- **`tmy3-download` (opt-in, default OFF):** pulls `reqwest` (blocking,
+  rustls-tls), `directories`, `sha2` and compiles
+  `fluxion-core/src/weather/tmy3.rs` (NREL TMY3 download + on-disk
+  SHA-256 cache). The root `fluxion` crate forwards the feature as
+  `tmy3-download = ["fluxion-core/tmy3-download"]` so consumers like
+  `tests/test_tmy3_download.rs` opt in explicitly.
+
+**Regression gate** (`scripts/check_fluxion_core_dep_budget.py`):
+
+1. **Static manifest scan** — fails if any non-optional
+   `[dependencies]` entry is on the heavyweight allow-list (reqwest,
+   hyper, hyper-util, tokio, tokio-rustls, rustls, rustls-pki-types,
+   rustls-webpki, webpki-roots, directories, mockito, httpmock,
+   wiremock).
+2. **Dynamic default-feature tree** — `cargo tree -p fluxion-core
+   --no-default-features --edges no-dev` must contain zero heavyweight
+   crates.
+3. **Dynamic opt-in tree** — `cargo tree -p fluxion-core --features
+   tmy3-download` MUST contain `reqwest`, `directories`, `sha2`
+   (positive check that the feature gating is wired correctly).
+
+Dev-deps have no per-feature gating in cargo, so `mockito` shows up in
+every `cargo test -p fluxion-core` build — the static check reports
+this as an advisory warning, never as a failure, since the production
+binary is unaffected.
+
+**Entry point**: `fluxion-core/src/lib.rs`
+
+#### Public Surface
+
+| Item | Kind | Purpose |
+|------|------|---------|
+| `weather` | module | EPW parsing (`epw`), embedded TMY (Denver/Miami/Minneapolis), psychrometrics, design-day generation, interpolation, carbon intensity, and the `tmy3` download/cache module (feature-gated, see above) |
+| `assembly` | module | `BuildingAssembly`, `AssemblyBuilder`, `MaterialLayer` trait, ASHRAE 140 material constants (#1349) |
+| `construction` | module | `ConstructionLayer`, `Construction`, `MassClass`, `Materials`, `Assemblies`, `SurfaceType`, ASHRAE 140 film/air constants (#2462) |
+| `multi_node` | module | `ThermalMassNode`, `MultiNodeThermalMass`, `MultiNodeModelType`, `MassAirCouplingMode` (#1349) |
+| `per_surface_conduction` | module | `SurfaceKind`, `MassNode`, `SurfaceNode`, `PerSurfaceConductionSolver` (#2462) |
+| `physics_constants` | module | `STEFAN_BOLTZMANN` (#2462) |
+| `ashrae_cases` | module | 13 ASHRAE-140 leaf data types (`Orientation`, `WindowArea`, `ConstructionType`, …) (#1441) |
+| `parser_limits` | module | Parser size/depth/repetition limits — DoS hardening (#2527) |
+| `earth_tube`, `tensor`, `urban_radiation` | module | Auxiliary domain primitives |
+
+#### Cycle-Rule Boundary
+
+`fluxion-core/src/**/*.rs` MUST NOT import `crate::sim::*` /
+`crate::physics::*` / `crate::ai::*` / `crate::validation::*` /
+`crate::interop::*` / etc. Enforced by:
+
+- `scripts/check_ashrae_cases_cycle.py` (Python, the canonical
+  workspace-level scan, #1441 + #2495).
+- `fluxion-core/tests/boundary_enforcement.rs` (Rust runtime check
+  using `cargo metadata` + source grep, #3168 — runs as part of
+  `cargo test -p fluxion-core`).
+
+#### Memory Ownership
+
+Pure value-passing. No FFI, no shared mutable state across modules,
+no async runtime. Every Tmy3 cache client owns its own on-disk
+directory; SHA-256 verification is in-process. The crate's only
+side-effecting operations are file reads/writes inside the
+`directories`-resolved cache path; everything else is pure data
+transformations.
+
+---
+
 ### fluxion-mcp (fluxion-mcp/)
 
 **Purpose**: Model Context Protocol (MCP) server exposing the Fluxion BEM engine
