@@ -1122,20 +1122,24 @@ ci:
       triggered_by: "PR + push to main"
 
     - job: "h_tr_em Regression Gate (LIMIT-13)"
-      # h_tr_em wind-dependent recompute regression fence gate (Issue #3063 /
-      # LIMIT-13). The verifier `scripts/verify_h_tr_em_regression.py`
-      # existed but was orphaned with no CI guard (Issue #3154). This gate
-      # compares pre-recompute baseline snapshots against post-recompute
-      # current snapshots and fails if any per-metric drift exceeds the
-      # manifest's per-metric tolerance (default 0.0 = bit-identical).
-      # The gate fails closed (exit 2) when the baseline snapshot set is
-      # a placeholder, forcing real per-step measurements to be captured
-      # via ADR-0008's pattern before shipping any code change.
-      # Baseline must exist at `tests/reference_data/h_tr_em_baseline/` with
-      # a populated `baseline_manifest.json` (captured_at != null) and
-      # per-case JSON files with non-null metrics.
+      # h_tr_em wind-dependent recompute regression fence gate (Issue #3549 /
+      # LIMIT-13 / Issue #3063 / Issue #3265 / ADR-0009). The verifier
+      # `scripts/verify_h_tr_em_regression.py` was re-materialized with the
+      # `--manifest <path>` single-arg contract per Issue #3549 acceptance;
+      # it loads `tests/reference_data/h_tr_em_baseline/baseline_manifest.json`,
+      # recomputes the SHA-256 of every per-case JSON it enumerates, and
+      # compares against the manifest's stamp so a silent hand-edit to a
+      # case file cannot pass the gate. The gate fails closed (exit 2) when
+      # the baseline is a placeholder (any per-case `sha256` is null or
+      # manifest `captured_at` is null), forcing real per-step measurements
+      # to be captured via ADR-0009 before shipping any code change. With
+      # `--strict` the gate trips exit 1 on any fingerprint mismatch
+      # (regression). Default tolerance is read from the
+      # `BASELINE_H_TR_EM_TOLERANCE` env var (fallback 0.0 = bit-identical
+      # per RULES.md 'no parameter tuning'); the gate is scaffolding-only
+      # and MUST NOT be raised.
       workflow: ".github/workflows/h_tr_em_regression_gate.yml"
-      issue: 3154
+      issue: 3549
       closes_issue: 3063
       triggered_by: "PR + push to develop/main"
 

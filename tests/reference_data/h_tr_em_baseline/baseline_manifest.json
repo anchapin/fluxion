@@ -5,8 +5,8 @@
   "_schema_version_doc": "Bumped on backward-incompatible changes to the per-case JSON shape. The verifier asserts schema_version matches its in-code expectation; an older manifest trips exit 2.",
   "_status": "captured",
   "_status_doc": "Set to 'captured' once every metrics field is a non-null float AND captured_commit matches a real git SHA. The verifier refuses to diff a 'placeholder' set (exit 2).",
-  "captured_at": "2026-08-29T23:49:52Z",
-  "captured_commit": "5716f5f5668a297cb2f489be4caaf6f06cc46a7a",
+  "captured_at": "2026-09-08T18:59:05Z",
+  "captured_commit": "3bd1f15b10dc680dd35df3c63a1ed6e1ce4c0f76",
   "cases": {
     "case_195": {
       "_sha256_doc": "SHA-256 of the per-case JSON file at capture time. The verifier recomputes on load and compares against this field; a hand-tweak without re-running the simulation trips exit 2.",
@@ -25,7 +25,7 @@
         "cm_j_per_k"
       ],
       "path": "case_195.json",
-      "sha256": null
+      "sha256": "251c03bd2e6ebb660ba585be75eb8df91d82346be6f721b7202ae95e14340dec"
     },
     "case_600": {
       "_sha256_doc": "SHA-256 of the per-case JSON file at capture time. The verifier recomputes on load and compares against this field; a hand-tweak without re-running the simulation trips exit 2.",
@@ -44,7 +44,7 @@
         "cm_j_per_k"
       ],
       "path": "case_600.json",
-      "sha256": null
+      "sha256": "69a5ec09db1a18491be800d389c0012f4b64e808d499f0580e7e28f1c2227ccd"
     },
     "case_620": {
       "_sha256_doc": "SHA-256 of the per-case JSON file at capture time. The verifier recomputes on load and compares against this field; a hand-tweak without re-running the simulation trips exit 2.",
@@ -63,7 +63,7 @@
         "cm_j_per_k"
       ],
       "path": "case_620.json",
-      "sha256": null
+      "sha256": "e1d68688224204002b14f50015bbbc00842a9f3ab4a5ad4df0bf92e4b0bea24c"
     },
     "case_900": {
       "_sha256_doc": "SHA-256 of the per-case JSON file at capture time. The verifier recomputes on load and compares against this field; a hand-tweak without re-running the simulation trips exit 2.",
@@ -82,7 +82,7 @@
         "cm_j_per_k"
       ],
       "path": "case_900.json",
-      "sha256": null
+      "sha256": "de26201a80bb5b8ca90ab36599109b732c7f9a3a49bf874094ef35711fd7a112"
     }
   },
   "verifier": {
