@@ -1,10 +1,10 @@
-//! ASHRAE Standard 140 Case 600-CZ3 Climate Zone 3 Model
+//! ASHRAE Standard 140 Case 600-CZ7 Climate Zone 7/8 Model
 //!
-//! Case 600-CZ3 is a variant of Case 600 using Miami (Climate Zone 3 - hot-humid)
+//! Case 600-CZ7 is a variant of Case 600 using Minneapolis (Climate Zone 7/8 - very cold)
 //! weather data instead of Denver (Climate Zone 5).
 //!
-//! This validates that fluxion correctly handles hot-humid climate conditions
-//! where cooling loads dominate and heating loads are minimal.
+//! This validates that fluxion correctly handles very cold climate conditions
+//! where heating loads dominate and cooling loads are minimal.
 
 use crate::ai::surrogate::SurrogateManager;
 use crate::physics::cta::VectorField;
@@ -12,7 +12,7 @@ use crate::sim::construction::Assemblies;
 use crate::sim::engine::ThermalModel;
 use crate::sim::solar::{calculate_hourly_solar, WindowProperties};
 use crate::validation::ashrae_140_cases::Orientation;
-use crate::weather::miami::MiamiTmyWeather;
+use crate::weather::minneapolis::MinneapolisTmyWeather;
 use crate::weather::WeatherSource;
 
 #[derive(Debug, Clone)]
@@ -25,7 +25,7 @@ pub struct SimulationResult {
     pub hourly_solar_gains: Vec<f64>,
 }
 
-/// Case 600-CZ3: Low-mass building in hot-humid climate (Miami).
+/// Case 600-CZ7: Low-mass building in very cold climate (Minneapolis).
 ///
 /// # Building Specifications
 ///
@@ -37,17 +37,17 @@ pub struct SimulationResult {
 ///
 /// # Climate
 ///
-/// Miami, FL (Climate Zone 3 - hot-humid):
-/// - Year-round warm temperatures
-/// - High humidity (70-90% RH)
-/// - High cooling loads
-/// - Minimal heating loads
-pub struct Case600CZ3Model {
+/// Minneapolis, MN (Climate Zone 7/8 - very cold):
+/// - Very cold winters
+/// - Warm summers
+/// - High heating loads
+/// - Moderate cooling loads
+pub struct Case600CZ7Model {
     pub model: ThermalModel<VectorField>,
-    weather: MiamiTmyWeather,
+    weather: MinneapolisTmyWeather,
 }
 
-impl Case600CZ3Model {
+impl Case600CZ7Model {
     pub fn new() -> Self {
         let mut model = ThermalModel::<VectorField>::new(1);
 
@@ -87,14 +87,14 @@ impl Case600CZ3Model {
         let thermal_capacitance = floor_area * 150000.0;
         model.mass.thermal_capacitance = VectorField::from_scalar(thermal_capacitance, 1);
 
-        model.setpoints.temperatures = VectorField::from_scalar(25.0, 1);
-        model.mass.mass_temperatures = VectorField::from_scalar(25.0, 1);
+        model.setpoints.temperatures = VectorField::from_scalar(10.0, 1);
+        model.mass.mass_temperatures = VectorField::from_scalar(10.0, 1);
 
         model.update_optimization_cache();
 
-        let weather = MiamiTmyWeather::new();
+        let weather = MinneapolisTmyWeather::new();
 
-        Case600CZ3Model { model, weather }
+        Case600CZ7Model { model, weather }
     }
 
     pub fn simulate_year(&mut self) -> SimulationResult {
@@ -125,8 +125,8 @@ impl Case600CZ3Model {
             let dhi = weather_data.dhi;
 
             let (_, _, solar_gain_watts) = calculate_hourly_solar(
-                25.82,
-                -80.30,
+                44.88,
+                -93.22,
                 2024,
                 (day_of_year as u32) / 30 + 1,
                 day_of_year as u32,
@@ -182,7 +182,7 @@ impl Case600CZ3Model {
     }
 }
 
-impl Default for Case600CZ3Model {
+impl Default for Case600CZ7Model {
     fn default() -> Self {
         Self::new()
     }
@@ -193,8 +193,8 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_case_600_cz3_creation() {
-        let model = Case600CZ3Model::new();
+    fn test_case_600_cz7_creation() {
+        let model = Case600CZ7Model::new();
         assert_eq!(model.model.hvac.num_zones, 1);
         assert_eq!(model.model.setpoints.heating_setpoint, 20.0);
         assert_eq!(model.model.setpoints.cooling_setpoint, 27.0);
@@ -202,8 +202,8 @@ mod tests {
     }
 
     #[test]
-    fn test_case_600_cz3_simulation() {
-        let mut model = Case600CZ3Model::new();
+    fn test_case_600_cz7_simulation() {
+        let mut model = Case600CZ7Model::new();
         let result = model.simulate_year();
 
         assert_eq!(result.hourly_temperatures.len(), 8760);
@@ -225,34 +225,34 @@ mod tests {
             .cloned()
             .fold(f64::NEG_INFINITY, f64::max);
         assert!(
-            min_temp < 35.0,
-            "Min temp should be reasonable for hot climate"
+            max_temp > 5.0,
+            "Max temp should be reasonable for cold climate"
         );
-        assert!(max_temp > 15.0, "Max temp should be reasonable");
+        assert!(min_temp < 35.0, "Min temp should be reasonable");
     }
 
     #[test]
-    fn test_case_600_cz3_higher_cooling_than_denver() {
-        let mut model_cz3 = Case600CZ3Model::new();
-        let result_cz3 = model_cz3.simulate_year();
+    fn test_case_600_cz7_higher_heating_than_denver() {
+        let mut model_cz7 = Case600CZ7Model::new();
+        let result_cz7 = model_cz7.simulate_year();
 
-        let mut model_denver = crate::validation::ashrae_140::Case600Model::new();
+        let mut model_denver = crate::validation::ashrae140::Case600Model::new();
         let result_denver = model_denver.simulate_year();
 
         println!(
-            "CZ3 Annual Cooling: {:.2} MWh, Denver Annual Cooling: {:.2} MWh",
-            result_cz3.annual_cooling_mwh, result_denver.annual_cooling_mwh
+            "CZ7 Annual Heating: {:.2} MWh, Denver Annual Heating: {:.2} MWh",
+            result_cz7.annual_heating_mwh, result_denver.annual_heating_mwh
         );
         println!(
-            "CZ3 Annual Heating: {:.2} MWh, Denver Annual Heating: {:.2} MWh",
-            result_cz3.annual_heating_mwh, result_denver.annual_heating_mwh
+            "CZ7 Annual Cooling: {:.2} MWh, Denver Annual Cooling: {:.2} MWh",
+            result_cz7.annual_cooling_mwh, result_denver.annual_cooling_mwh
         );
 
         assert!(
-            result_cz3.annual_cooling_mwh > result_denver.annual_cooling_mwh,
-            "CZ3 cooling {:.2} MWh should be > Denver cooling {:.2} MWh",
-            result_cz3.annual_cooling_mwh,
-            result_denver.annual_cooling_mwh
+            result_cz7.annual_heating_mwh > result_denver.annual_heating_mwh,
+            "CZ7 heating {:.2} MWh should be > Denver heating {:.2} MWh",
+            result_cz7.annual_heating_mwh,
+            result_denver.annual_heating_mwh
         );
     }
 }

@@ -6,7 +6,7 @@
 //! - Cooling loads are moderate
 //! - Very cold winters require significant HVAC capacity
 
-use fluxion::validation::ashrae_140::Case600CZ7Model;
+use fluxion::validation::ashrae140::Case600CZ7Model;
 
 #[test]
 fn test_case_600_cz7_baseline() {
@@ -107,7 +107,7 @@ fn test_case_600_cz7_higher_heating_than_denver() {
     let mut model_cz7 = Case600CZ7Model::new();
     let result_cz7 = model_cz7.simulate_year();
 
-    let mut model_denver = fluxion::validation::ashrae_140::Case600Model::new();
+    let mut model_denver = fluxion::validation::ashrae140::Case600Model::new();
     let result_denver = model_denver.simulate_year();
 
     // Minneapolis (colder winters) should have higher heating than Denver

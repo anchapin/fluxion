@@ -143,7 +143,7 @@ Uses SIMD (Single Instruction Multiple Data) for matrix operations.
 
 ### Adding New Validation Cases
 
-1. Create case in `src/validation/ashrae_140/`
+1. Create case in `src/validation/ashrae140/` (the canonical ASHRAE 140 tree, consolidated in #3446)
 2. Add to test suite
 3. Document in validation report
 
@@ -165,8 +165,9 @@ src/
 │   ├── solar.rs       # Solar radiation
 │   └── ventilation.rs # Air changes
 └── validation/
-    ├── ashrae_140/
+    ├── ashrae140/      # canonical ASHRAE 140 tree (#3446)
     │   ├── case_600.rs
+    │   ├── cases/
     │   └── ...
     └── validator.rs
 ```

@@ -6,7 +6,7 @@
 //! - Heating loads are minimal
 //! - High humidity affects sensible and latent cooling loads
 
-use fluxion::validation::ashrae_140::Case600CZ3Model;
+use fluxion::validation::ashrae140::Case600CZ3Model;
 
 #[test]
 fn test_case_600_cz3_baseline() {
@@ -101,7 +101,7 @@ fn test_case_600_cz3_higher_cooling_than_denver() {
     let mut model_cz3 = Case600CZ3Model::new();
     let result_cz3 = model_cz3.simulate_year();
 
-    let mut model_denver = fluxion::validation::ashrae_140::Case600Model::new();
+    let mut model_denver = fluxion::validation::ashrae140::Case600Model::new();
     let result_denver = model_denver.simulate_year();
 
     // Miami should have higher cooling than Denver (Zone 5)
