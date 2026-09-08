@@ -1,7 +1,5 @@
 src/physics/fd_surface_balance.rs:342:    #[ignore] // Needs implicit coupling for stability
 src/physics/fd_surface_balance.rs:373:    #[ignore] // Needs implicit coupling for stability
-src/sim/decoupled_loop_rayon.rs:1503:    /// `#[ignore]`: this is a local/manual parallelism regression guard, not a
-src/sim/decoupled_loop_rayon.rs:1512:    #[ignore = "local-only parallelism probe; see doc comment — run with --ignored"]
 src/solar/surface_irradiance.rs:651:    #[ignore = "Known issue: Perez Table 3 source data has F1[0] = 1.321 (bin 5) > 0.999 (bin 6), \
 src/solar/surface_irradiance.rs:755:    #[ignore = "Known issue: Perez Table 3 source data has F1[0] = 1.321 (bin 5) > 0.999 (bin 6), \
 src/testing/tdd_framework.rs:1132:            "No E+ reference CSV available (issue #1424 gates behind #[ignore])",
