@@ -3207,12 +3207,16 @@ solar + envelope heat transfer, not a 5R1C/CTF parameter adjustment.
   single-lumped-mass-node limitation, unblocked by GaugeSolver rework
   #1465/#1462. The per-test HighMass assertion must remain active (no
   loosening); only the integration aggregator threshold is updated."`). The
-  assertion body (`pass_rate >= 75.0` at line 372) and all four sub-variant
-  assertion bodies (lines 305, 321, 337, 353) are retained below the
-  `#[ignore]` marker for documentation; per AGENTS.md / RULES.md /
-  ADR-0001, no further parameter tuning is permitted on the threshold or
-  on any sub-variant to absorb the 75% failure. The companion per-test
-  quarantine
+  integration aggregator assertion (`pass_rate >= 75.0`) and the four
+  sub-variant assertion bodies sit at the post-#3446 / #3459
+  consolidated line numbers:
+  `tests/ashrae_140_solid_conduction_variants.rs::test_solid_conduction_variants_integration`
+  — HighMass at line 343, NoLoads at line 363, NoSolar at line 383,
+  ThermalBridge at line 403, aggregator `pass_rate >= 75.0` at line 428.
+  They are retained below the `#[ignore]` marker for documentation; per
+  AGENTS.md / RULES.md / ADR-0001, no further parameter tuning is
+  permitted on the threshold or on any sub-variant to absorb the 75%
+  failure. The companion per-test quarantine
   `tests/ashrae_140_solid_conduction_variants.rs::test_case_195_high_mass_walls`
   (LIMIT-11 / #3064) is unchanged by this entry.
 
