@@ -348,10 +348,15 @@ fn test_case_940_setback_controller_mode_trace() {
 #[ignore = "Diagnostic: run with --ignored --nocapture for Case 940 #2452 CTF-enabled path comparison"]
 #[allow(deprecated)]
 fn test_case_940_ctf_path_comparison() {
-    // The Issue #2452 numbers (8.249 / 12.136 MWh) come from the
-    // production validator path which calls `enable_advanced_solver` for
-    // high-mass cases (turning on the CTF solver with FD fallback). The
-    // blind path (no CTF, the default for low-mass) gives a different
+    // Historical numbers from Issue #2452 (8.249 / 12.136 MWh) are
+    // referenced here for context but the canonical post-#3042
+    // measurement is in the §LIMIT-05 UPDATE #2452 table at
+    // `docs/KNOWN_ISSUES.md` (CTF 5.158 MWh / blind 1.29 MWh as of
+    // the latest measured snapshot). This diagnostic prints the
+    // current CTF / blind numbers at runtime and is the
+    // source-of-truth refresh for the LIMIT-12 entry; the doc-table
+    // update must follow a re-measurement of this test. The blind
+    // path (no CTF, the default for low-mass) gives a different
     // answer. This test runs Case 940 in BOTH paths and prints the
     // side-by-side comparison so the structural-fix path can be scoped.
     println!("\n=== Case 940 CTF vs Blind Path Comparison (Issue #2452) ===\n");
@@ -498,12 +503,13 @@ fn test_case_940_ctf_path_comparison() {
         );
     }
     println!();
-    println!("[#2452 Issue framing check]");
-    println!("  Issue reports: H=8.249 MWh, C=12.136 MWh, peak_H=6.23 kW, peak_C=7.44 kW");
-    println!("  These match the CTF-path direction (massive over-prediction) but the absolute");
-    println!("  magnitudes in the Issue snapshot are larger than the CTF path here. The Issue");
-    println!("  numbers were collected on a snapshot from 2026-08-07; current main may have");
-    println!("  shifted. Either way, the CTF path overshoots both H and C for Case 940.");
+    println!("[#2452 Issue framing check (historical, do NOT cite as current)]");
+    println!("  Issue #2452 reported (2026-08-07 snapshot): H=8.249 MWh, C=12.136 MWh,");
+    println!("  peak_H=6.23 kW, peak_C=7.44 kW.");
+    println!("  Canonical post-#3042 source-of-truth: §LIMIT-05 UPDATE #2452 measurement");
+    println!("  table at `docs/KNOWN_ISSUES.md` (CTF 5.158 MWh / blind 1.29 MWh). This");
+    println!("  diagnostic prints the current numbers at runtime; update the doc-table on");
+    println!("  every measured drift > 2.0 pp pass-rate per `release_gates.yaml::drift`.");
 }
 
 const CASE_940_CTF_BLIND_HEATING_RATIO_BASELINE: f64 = 5.993_508;
