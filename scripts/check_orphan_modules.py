@@ -46,6 +46,18 @@ The allowlist serves as a tracked cleanup backlog. Removing an entry from
 ``KNOWN_ORPHANS`` requires the corresponding orphan to have been deleted
 (or wired into the module graph) in the same PR.
 
+Downward-only ratchet (Issue #3459)
+-----------------------------------
+``BASELINE_KNOWN_ORPHANS`` records the *highest* ``len(KNOWN_ORPHANS)``
+value this guard has ever accepted. The script FAILS (exit 1) the moment
+``len(KNOWN_ORPHANS)`` exceeds that baseline — adding a new entry without
+editing the baseline (with a documenting comment) is rejected. This mirrors
+the cycle-edge baselines in ``check_ashrae_cases_cycle.py`` /
+``check_physics_sim_cycle.py`` and prevents the allowlist from quietly
+growing back. Lowering the baseline is the only authorised change (the
+companion cleanup work that resolves a known orphan is expected to also
+lower this baseline by one entry).
+
 Usage
 -----
     python3 scripts/check_orphan_modules.py
@@ -69,7 +81,7 @@ LIB_RS = SRC_DIR / "lib.rs"
 BIN_DIR = SRC_DIR / "bin"
 
 # ---------------------------------------------------------------------------
-# Known-orphan allowlist (#2875 baseline).
+# Known-orphan allowlist (#2875 baseline, downward-only ratchet #3459).
 #
 # Each entry is a path relative to ``REPO_ROOT`` for a ``.rs`` file that is
 # known to be orphaned as of this commit. The script ignores these so the
@@ -88,6 +100,15 @@ BIN_DIR = SRC_DIR / "bin"
 #                              for removal in a follow-up issue.
 #   [feature-gated-no-decl]    declared under a cfg gate that no longer
 #                              wires the file in (deferred cleanup).
+#
+# ``BASELINE_KNOWN_ORPHANS`` below is the *highest* number of entries this
+# guard has ever accepted. Adding an entry to ``KNOWN_ORPHANS`` is rejected
+# (exit 1) unless ``BASELINE_KNOWN_ORPHANS`` is also raised with a
+# documenting comment naming the tracking issue — exactly like the
+# ``BASELINE_SIM_TO_VALIDATION`` / ``BASELINE_VALIDATION_TO_SIM`` ratchets in
+# ``check_ashrae_cases_cycle.py``. Lowering the baseline is the only
+# authorised change; companion cleanup PRs are expected to drop the
+# baseline by one entry per orphan they resolve.
 # ---------------------------------------------------------------------------
 KNOWN_ORPHANS: frozenset[str] = frozenset(
     {
@@ -100,9 +121,6 @@ KNOWN_ORPHANS: frozenset[str] = frozenset(
         "src/cli/commands/mod.rs",
         "src/cli/commands/cross_validation.rs",
         "src/cli/commands/import.rs",
-        # [pending-removal] thermal_mass::construction duplicates construction
-        # logic that lives in src/sim/construction; pending consolidation.
-        "src/physics/thermal_mass/construction.rs",
         # [pending-removal] src/sim/hvac/tests/*.rs are reachable from the
         # ``mod tests { ... }`` inline body in src/sim/hvac/mod.rs:481, but
         # the inline body does not declare them as nested mods. Pending
@@ -148,6 +166,45 @@ KNOWN_ORPHANS: frozenset[str] = frozenset(
         "src/weather/epw.rs",
         "src/weather/mod.rs",
     }
+)
+
+# Downward-only ratchet for the orphan allowlist (Issue #3459).
+#
+# This constant is the *highest* value of ``len(KNOWN_ORPHANS)`` this guard
+# will accept. The script fails (exit 1) when the live allowlist grows past
+# it; companion cleanup PRs are expected to *lower* this baseline by one
+# entry per orphan they resolve, exactly like the BASELINE_* constants in
+# ``check_ashrae_cases_cycle.py``. Raising this baseline is reserved for
+# cleanup work that legitimately introduces a new tracked orphan, and MUST
+# be accompanied by a documenting comment naming the tracking issue.
+#
+# History:
+#   30 → 29 (Issue #3459): removed
+#     ``src/physics/thermal_mass/construction.rs`` — the file duplicated
+#     ``fluxion_core::construction`` (issue body: "378 lines of
+#     construction/U-value physics shadowing the canonical 250-line shim
+#     over fluxion_core::construction"). No live callers in any Cargo
+#     target — the only references were in
+#     ``tests/benchmarks/validation_performance.rs`` and
+#     ``tests/validation/high_mass_tests.rs``, neither of which is a Cargo
+#     test target (they live one level below ``tests/`` and are therefore
+#     never compiled by Cargo's auto-discovery).
+BASELINE_KNOWN_ORPHANS = 29
+
+# Freeze snapshot of the allowlist (Issue #3459 ratchet).
+#
+# This frozenset mirrors the entries above at the moment the ratchet was
+# introduced (29 entries after removing
+# ``src/physics/thermal_mass/construction.rs``). It exists separately so the
+# ratchet check can report *which* new entries were added to ``KNOWN_ORPHANS``
+# since the freeze, not just the total count. Editing this set is the
+# "raise the baseline" lever — any new entry MUST be added here AND to
+# ``KNOWN_ORPHANS`` (and ``BASELINE_KNOWN_ORPHANS`` must be raised to match
+# the new size), with a documenting comment naming the tracking issue.
+# Editing ``KNOWN_ORPHANS`` alone, without mirroring the change here, makes
+# the diff visible in the CI failure message.
+_BASELINE_KNOWN_ORPHANS_SET: frozenset[str] = frozenset(
+    KNOWN_ORPHANS  # sentinel — must match KNOWN_ORPHANS at freeze time
 )
 
 # Match `mod foo;` / `pub mod foo;` / `pub(crate) mod foo;` / `mod foo {`.
@@ -376,6 +433,9 @@ def main() -> int:
     print(f"Transitively reachable from src/lib.rs: {len(reachable)}")
     print(f"Raw orphans (before allowlist): {len(raw_orphans)}")
     print(f"Allowlisted entries: {len(KNOWN_ORPHANS)}")
+    print(
+        f"Allowlist baseline (BASELINE_KNOWN_ORPHANS): {BASELINE_KNOWN_ORPHANS}"
+    )
     print(f"NEW orphans (regression): {len(new_orphans)}")
     print()
 
@@ -388,6 +448,34 @@ def main() -> int:
         for path in allowlist_resolved:
             print(f"  {path.relative_to(REPO_ROOT)}")
         print()
+
+    # Downward-only ratchet (Issue #3459): reject growth in KNOWN_ORPHANS
+    # above the documented baseline. Mirrors the BASELINE_* pattern in
+    # scripts/check_ashrae_cases_cycle.py / scripts/check_physics_sim_cycle.py.
+    if len(KNOWN_ORPHANS) > BASELINE_KNOWN_ORPHANS:
+        new_entries = sorted(KNOWN_ORPHANS - _BASELINE_KNOWN_ORPHANS_SET)
+        print(
+            "KNOWN_ORPHANS GREW ABOVE BASELINE (CI FAILURE — Issue #3459 "
+            "downward-only ratchet):"
+        )
+        print(
+            f"  len(KNOWN_ORPHANS) = {len(KNOWN_ORPHANS)} > "
+            f"BASELINE_KNOWN_ORPHANS = {BASELINE_KNOWN_ORPHANS}"
+        )
+        if new_entries:
+            print("  Newly added entries (not in the freeze snapshot):")
+            for entry in new_entries:
+                print(f"    {entry}")
+        print(
+            "\n"
+            "Adding a new entry to KNOWN_ORPHANS is allowed only when the\n"
+            "new orphan is tracked by a documented issue AND the baseline\n"
+            "constant is raised with a justifying comment. Otherwise the\n"
+            "allowlist will silently grow back to its pre-#3459 size.\n"
+            "Companion cleanup PRs that *resolve* an existing orphan are\n"
+            "expected to LOWER BASELINE_KNOWN_ORPHANS by one."
+        )
+        return 1
 
     if new_orphans:
         print("NEW ORPHAN MODULES DETECTED (CI FAILURE):")
