@@ -4,13 +4,37 @@
 //! Issue #3555: extracted from `src/validation/ashrae_140_cases.rs::CaseBuilder`
 //! to shrink the legacy monolith and align the in-tree case definitions with
 //! the `crate::validation::ashrae140::cases` tree.
+//!
+//! Issue #3546: added [`build_case`] thin shim so the `build_case` router in
+//! `crate::validation::ashrae140::cases::mod` can dispatch the variants this
+//! module owns to the `CaseSpec`-returning factories below. The shim does
+//! NOT alter any case-definition logic — it only selects which factory runs
+//! and bridges the `CaseSpec` to the legacy `ASHRAE140CaseDefinition` surface.
 
 use crate::sim::construction::Assemblies;
 use crate::sim::thermal_selector::ThermalSelector;
+use crate::validation::ashrae140::ASHRAE140CaseDefinition;
+use crate::validation::ashrae_140_cases::ASHRAE140Case;
 use crate::validation::ashrae_140_cases::{
     CaseBuilder, CaseSpec, HvacSchedule, InternalLoads, NightVentilation, ShadingDevice, WindowSpec,
 };
 use serde::{Deserialize, Serialize};
+
+/// Thin routing shim for the 900-series cases `build_case` knows how to
+/// dispatch (Issue #3546). Only the variants explicitly required by the
+/// issue are wired here — the 910/920/930/940/950 variants fall through to
+/// the catch-all panic in `crate::validation::ashrae140::cases::build_case`
+/// (and remain there on purpose; they have no `run_validation_*` callers
+/// today and wiring them is outside the scope of this issue).
+pub fn build_case(case: ASHRAE140Case) -> ASHRAE140CaseDefinition {
+    let spec = match case {
+        ASHRAE140Case::Case900 => case_900_baseline(),
+        ASHRAE140Case::Case900FF => case_900ff(),
+        ASHRAE140Case::Case950FF => case_950ff(),
+        _ => panic!("Invalid case for series 900: {:?}", case),
+    };
+    super::spec_to_definition(case, spec)
+}
 
 /// Case 900 — high-mass baseline (8 m × 6 m × 2.7 m, 12 m² south double-clear
 /// window, 0.5 ACH, 20°C / 27°C, Denver ground-coupled).

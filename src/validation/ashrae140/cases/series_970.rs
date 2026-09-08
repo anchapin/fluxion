@@ -2,9 +2,26 @@
 //!
 //! Issue #3555: extracted from `src/validation/ashrae_140_cases.rs::CaseBuilder`
 //! to shrink the legacy monolith.
+//!
+//! Issue #3546: added [`build_case`] thin shim so the `build_case` router in
+//! `crate::validation::ashrae140::cases::mod` can dispatch Case970 to the
+//! `CaseSpec`-returning factory below. The shim does NOT alter any
+//! case-definition logic — it only bridges the `CaseSpec` to the legacy
+//! `ASHRAE140CaseDefinition` surface.
 
 use crate::sim::construction::Assemblies;
+use crate::validation::ashrae140::ASHRAE140CaseDefinition;
+use crate::validation::ashrae_140_cases::ASHRAE140Case;
 use crate::validation::ashrae_140_cases::{CaseBuilder, CaseSpec, InternalLoads, Orientation};
+
+/// Thin routing shim for Case 970 (Issue #3546).
+pub fn build_case(case: ASHRAE140Case) -> ASHRAE140CaseDefinition {
+    let spec = match case {
+        ASHRAE140Case::Case970 => case_970_five_zone_cross_coupling(),
+        _ => panic!("Invalid case for series 970: {:?}", case),
+    };
+    super::spec_to_definition(case, spec)
+}
 
 /// Case 970 — 5-zone multi-zone cross-coupling (ASHRAE 140-2017 §B6.7).
 ///
