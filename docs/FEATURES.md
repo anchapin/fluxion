@@ -3,7 +3,7 @@
 Fluxion ships with **no default features** (`default = []`); every capability below is opt-in
 via `cargo build --features <flag>` (combine several with commas). This document enumerates each
 flag in `Cargo.toml`'s `[features]` table, cross-referenced with the toolchain notes in
-`AGENTS.md` §"Toolchain Quirks" and the CI matrix in `.github/workflows/rust-tests.yml`.
+`AGENTS.md` §Toolchain, Security, and Generated Artifacts and the CI matrix in `.github/workflows/rust-tests.yml`.
 The canonical source of truth is always `Cargo.toml` — if this file disagrees with it,
 `Cargo.toml` wins and this doc is stale (please file a docs-hygiene issue).
 
@@ -319,9 +319,9 @@ Manual / advisory (not branch-protection gates):
 
 ## See Also
 
-- `AGENTS.md` §"Toolchain Quirks" → "Feature flags" — the human-readable overview this
+- `AGENTS.md` §Toolchain, Security, and Generated Artifacts → "Feature flags" — the human-readable overview this
   document expands.
-- `AGENTS.md` §"Environment Variables" — runtime configuration (`FLUXION_ONNX_*`,
+- `AGENTS.md` §Environment Variables — runtime configuration (`FLUXION_ONNX_*`,
   `FLUXION_REST_*`, `DWAVE_API_TOKEN`, …).
 - `Cargo.toml` `[features]` — the authoritative machine-readable source.
 - `release_gates.yaml` → `ci.required_checks` — which of the above are branch-protection gates.
