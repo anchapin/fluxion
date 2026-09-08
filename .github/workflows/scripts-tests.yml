@@ -125,6 +125,27 @@ jobs:
       - name: Enforce SHA-pinned workflow `uses:` (Issue #3475)
         run: python3 scripts/check_workflow_pin.py
 
+      # Issue #3453: ENV_LOCK serialisation guard for env-mutating
+      # integration tests. ``tests/ashrae_140_diagnostic_integration_test``
+      # shipped with bare ``env::set_var`` / ``env::remove_var`` calls and
+      # fell through the ADR-0014 nextest-migration safety net, so the
+      # process-wide env state could leak between sibling tests under
+      # ``--test-threads=2``. The matcher in
+      # ``scripts/check_env_setvar_serialized.py`` fails any
+      # ``tests/**/*.rs`` that calls ``std::env::set_var`` /
+      # ``std::env::remove_var`` (or the unqualified ``env::`` form) without
+      # a file-local ``static <NAME>_LOCK: ... Mutex ...`` declaration --
+      # the convention already carried by
+      # ``tests/onnx_signature_integration.rs``, ``tests/email_notifier_header_safety.rs``,
+      # and ``src/ai/surrogate.rs::tests``. The pytest companion
+      # ``scripts/ci/test_check_env_setvar_serialized.py`` covers the
+      # detector / lock-declaration regex / ``main()`` exit-code contract
+      # against hermetic ``tmp_path`` fixtures; this direct invocation
+      # covers the end-to-end against the real repo (same
+      # direct-invocation split as #2866 / #3444 / #3475 above).
+      - name: Enforce ENV_LOCK on env-mutating integration tests (Issue #3453)
+        run: python3 scripts/check_env_setvar_serialized.py
+
       - name: Enforce ruff clean (keep the #2811 baseline at 0)
         run: |
           # Match ``.pre-commit-config.yaml``'s ``astral-sh/ruff-pre-commit``
