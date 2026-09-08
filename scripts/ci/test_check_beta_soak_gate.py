@@ -436,5 +436,138 @@ def test_cli_validate_state_reports_drift(checker, monkeypatch, tmp_path):
     path = _write_state(tmp_path, payload)
     rc, _out, err = _run_main(checker, monkeypatch, ["--state", path])
     assert rc == 2
+    assert "unbounded" not in err
     assert "unblocked" in err
     assert "unknown" in err
+
+
+# ---------------------------------------------------------------------------
+# criterion_2_failures — Issue #3359 (β-soak Criterion 2 tracker)
+# ---------------------------------------------------------------------------
+
+
+def test_criterion_2_failures_returns_v1_payload(checker):
+    """The canonical Criterion 2 failures summary mirrors
+    ``docs/agents/beta-soak-criterion-2-tracker.md``."""
+    summary = checker.criterion_2_failures()
+    assert summary["schema_version"] == "1"
+    assert summary["tracker_doc"] == "docs/agents/beta-soak-criterion-2-tracker.md"
+    assert summary["limit_ref"] == "§LIMIT-21"
+    assert summary["limit_owner_issue"] == "#3297"
+
+
+def test_criterion_2_failures_lists_both_nightly_failures(checker):
+    """Both nightly Criterion 2 failures are listed verbatim."""
+    summary = checker.criterion_2_failures()
+    names = [f["name"] for f in summary["failures"]]
+    assert (
+        "test_physics_thermal_model_eplus_case_600_reference_csv" in names
+    ), "Case 600 oscillation test must be in the canonical list"
+    assert "test_free_floating_case_900ff_isolation" in names, (
+        "Case 900FF divergence test must be in the canonical list"
+    )
+    assert len(summary["failures"]) == 2, (
+        "Only the 2 nightly Criterion 2 failures are tracked here "
+        "(the wider §LIMIT-21 cohort is enumerated in §LIMIT-21 itself)"
+    )
+
+
+def test_criterion_2_failures_includes_panic_sites(checker):
+    """The panic sites match the verbatim sources in Issue #3359."""
+    summary = checker.criterion_2_failures()
+    by_name = {f["name"]: f for f in summary["failures"]}
+    case_600 = by_name["test_physics_thermal_model_eplus_case_600_reference_csv"]
+    assert case_600["panic_site"] == "tests/zone_balance_eplus_isolation.rs:298:5"
+    assert case_600["file"] == "tests/zone_balance_eplus_isolation.rs"
+    assert "34.007" in case_600["symptom"]
+    case_900ff = by_name["test_free_floating_case_900ff_isolation"]
+    assert case_900ff["panic_site"] == "tests/zone_balance_eplus_isolation.rs:445:5"
+    assert "is_finite" in case_900ff["symptom"]
+
+
+def test_criterion_2_failures_cross_references_include_parent_issues(checker):
+    """Cross-references link the upstream tracking chain."""
+    summary = checker.criterion_2_failures()
+    issues = {ref["issue"] for ref in summary["cross_references"]}
+    for required in {
+        "3359",  # this tracker issue
+        "3354",  # parent diagnostic
+        "3286",  # gate contract
+        "3285",  # escape hatch
+        "3291",  # Phase A8 umbrella
+        "3297",  # §LIMIT-21 cohort owner
+        "1465",  # Phase 3 gauge validation
+        "1462",  # Phase 1b gauge shadow mode
+    }:
+        assert required in issues, f"cross-reference #{required} missing"
+
+
+def test_criterion_2_failures_escape_hatch_pointer(checker):
+    """The escape-hatch block points at the operational bypass mechanism."""
+    summary = checker.criterion_2_failures()
+    hatch = summary["escape_hatch"]
+    assert hatch["issue"] == "3285"
+    assert hatch["doc"] == "docs/agents/beta-soak-escape-hatch.md"
+    assert hatch["env_var"] == "BETA_SOAK_ESCAPE_AUTHORIZED_BY"
+    assert hatch["cli_flag"] == "--escape"
+
+
+def test_criterion_2_failures_recovery_steps_list_closure_path(checker):
+    """Recovery steps enumerate the §LIMIT-21 closure path explicitly."""
+    summary = checker.criterion_2_failures()
+    steps = summary["recovery_steps"]
+    assert any("1465" in s and "1462" in s for s in steps), (
+        "Recovery steps must reference #1465 / #1462"
+    )
+    assert any("§LIMIT-21" in s for s in steps), (
+        "Recovery steps must cite §LIMIT-21"
+    )
+    assert any("--gate enforce" in s for s in steps), (
+        "Recovery steps must name the PR-time gate flag"
+    )
+
+
+def test_criterion_2_failures_definition_of_done_enumerates_close_paths(checker):
+    """Definition-of-done lists every path that legitimately closes #3359."""
+    summary = checker.criterion_2_failures()
+    dod = summary["definition_of_done"]
+    assert any("§LIMIT-21" in s for s in dod)
+    assert any("ADR-0014" in s or "supersede" in s.lower() for s in dod)
+    assert any("human" in s.lower() for s in dod)
+
+
+def test_cli_criterion_2_failures_emits_json(checker, monkeypatch):
+    """``--criterion-2-failures`` exits 0 with the canonical JSON on stdout."""
+    rc, out, _err = _run_main(
+        checker, monkeypatch, ["--criterion-2-failures"]
+    )
+    assert rc == 0
+    payload = json.loads(out)
+    assert payload["schema_version"] == "1"
+    assert payload["tracker_doc"] == "docs/agents/beta-soak-criterion-2-tracker.md"
+
+
+def test_cli_criterion_2_failures_independent_of_state(checker, monkeypatch, tmp_path):
+    """``--criterion-2-failures`` works even when no state file exists."""
+    missing = tmp_path / "missing.json"
+    rc, out, _err = _run_main(
+        checker, monkeypatch, ["--state", str(missing), "--criterion-2-failures"]
+    )
+    assert rc == 0, "criterion-2 summary must work independent of state validity"
+    payload = json.loads(out)
+    assert len(payload["failures"]) == 2
+
+
+def test_cli_criterion_2_failures_short_circuits_other_flags(
+    checker, monkeypatch, tmp_path
+):
+    """``--criterion-2-failures`` short-circuits before state validation, so
+    a malformed state + ``--gate enforce`` does NOT exit 1."""
+    bad = tmp_path / "bad.json"
+    bad.write_text("{not json", encoding="utf-8")
+    rc, _out, _err = _run_main(
+        checker,
+        monkeypatch,
+        ["--state", str(bad), "--gate", "enforce", "--criterion-2-failures"],
+    )
+    assert rc == 0

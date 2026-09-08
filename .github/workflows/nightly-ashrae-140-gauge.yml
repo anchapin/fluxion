@@ -215,6 +215,30 @@ jobs:
         run: |
           python3 scripts/check_beta_soak_gate.py --state beta-soak-state.json --json
 
+      # Issue #3359 — emit the canonical ADR-0007 Criterion 2 failures
+      # summary as JSON (mirrors docs/agents/beta-soak-criterion-2-
+      # tracker.md). This is the durable nightly artefact that links the
+      # Criterion 2 failures to their §LIMIT-21 owner and the upstream
+      # tracking chain (#3354 / #3291 / #1465 / #1462 / #3297 / #3285 /
+      # #3286). Runs on `always()` so the artefact is present even when
+      # Criterion 2 itself failed.
+      - name: Emit Criterion 2 failures summary (Issue #3359)
+        if: always()
+        run: |
+          python3 scripts/check_beta_soak_gate.py \
+            --criterion-2-failures \
+            > beta-soak-criterion-2-failures.json
+          echo "Wrote Criterion 2 failures summary to beta-soak-criterion-2-failures.json"
+          echo "(see docs/agents/beta-soak-criterion-2-tracker.md for the canonical list)"
+
+      - name: Upload Criterion 2 failures summary (Issue #3359)
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+        with:
+          name: beta-soak-criterion-2-failures
+          path: beta-soak-criterion-2-failures.json
+          retention-days: 90
+
       # Post the nightly result + streak on the tracking issue (#3286).
       # One comment per night — the issue is the durable soak log.
       - name: Report nightly result on soak tracking issue
@@ -243,6 +267,7 @@ jobs:
             echo "- ADR-0007 criteria 1–6: executed (see run log for per-criterion results)"
             echo "- Criterion 7 census: \`#[ignore]\` count = ${IGNORED_TEST_COUNT:-unknown}, removed vs baseline = ${IGNORE_CENSUS_DELTA:-unknown}"
             echo "- Solver selection: gauge+default (ThermalSelector::default(), metric label \`solver=\"gauge+default\"\`)"
+            echo "- Criterion 2 failures summary: see \`beta-soak-criterion-2-failures\` artifact (Issue #3359 tracker)"
           } > comment.md
           gh issue comment "$SOAK_TRACKING_ISSUE" \
             --repo "$GITHUB_REPOSITORY" \
