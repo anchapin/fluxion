@@ -2,7 +2,7 @@
 
 **Fluxion** is a next-generation Building Energy Modeling (BEM) engine. It is designed to be differentiable, quantum-ready, and exponentially faster than legacy monolithic tools by utilizing a hybrid Neuro-Symbolic architecture.
 
-> **Status:** Fluxion is **in active development** — specifically mid-milestone on **v1.3 "Blind ASHRAE 140 Validation"** (physics-only, no calibration factors). It is **not** production-ready. Current ASHRAE 140-2023 validation pass rate is **14.3%** (see [Current Validation Status](#current-validation-status) below). Use it as a high-throughput research/oracle tool, not as a drop-in EnergyPlus replacement.
+> **Status:** Fluxion is **in active development** — specifically mid-milestone on **v1.3 "Blind ASHRAE 140 Validation"** (physics-only, no calibration factors). It is **not** production-ready. Current ASHRAE 140-2023 validation pass rate is **14.1%** (see [Current Validation Status](#current-validation-status) below). Use it as a high-throughput research/oracle tool, not as a drop-in EnergyPlus replacement.
 
 ## 🏗 Architecture
 
@@ -10,24 +10,24 @@ Fluxion separates the "heavy lifting" of physics (CFD/Radiation) into AI surroga
 
 ## Current Validation Status
 
-![ASHRAE 140](https://img.shields.io/badge/ASHRAE140-14.3%25%20pass-red)
+![ASHRAE 140](https://img.shields.io/badge/ASHRAE140-14.1%25%20pass-red)
 ![Version](https://img.shields.io/badge/status-in--development-orange)
 
-Fluxion is **not yet ASHRAE 140-compliant**. The figures below come from the committed validation suite (generated 2026-08-07); see [`docs/ASHRAE140_RESULTS.md`](docs/ASHRAE140_RESULTS.md) for the full case-by-case breakdown and [`SCORECARD.md`](SCORECARD.md) for the consolidated, reproducible release-readiness view.
+Fluxion is **not yet ASHRAE 140-compliant**. The figures below come from the committed validation suite (generated 2026-09-07); see [`docs/ASHRAE140_RESULTS.md`](docs/ASHRAE140_RESULTS.md) for the full case-by-case breakdown and [`SCORECARD.md`](SCORECARD.md) for the consolidated, reproducible release-readiness view.
 
 | Metric | Current | Target (release gate) | Status |
 |--------|---------|-----------------------|--------|
-| Pass rate (metric-level) | **14.3%** (12/84) | ≥ 60% | ❌ Fail |
-| Mean Absolute Error (MAE) | **51.03%** | ≤ 50% | ❌ Fail |
+| Pass rate (metric-level) | **14.1%** (12/84) | ≥ 60% | ❌ Fail |
+| Mean Absolute Error (MAE) | **49.82%** | ≤ 50% | ✅ Pass |
 | Cases fully passing | 0/18 (0.0%) | — | ❌ |
 | Max single-case deviation | 470.11% | — | ℹ️ |
 
 ### v1.3 Milestone — Blind ASHRAE 140 Validation (Physics Only)
 
-The current milestone removes all post-simulation correction factors and case-type hints, then fixes the underlying physics so the engine passes against **true** ASHRAE 140 reference values (not "calibrated for 5R1C" ranges). The milestone is structured in five phases (all currently in planning/baseline):
+The current milestone removes all post-simulation correction factors and case-type hints, then fixes the underlying physics so the engine passes against **true** ASHRAE 140 reference values (not "calibrated for 5R1C" ranges). The milestone is structured in five phases:
 
-- **Phase A — Baseline Stripping:** Catalog and remove all correction infrastructure; measure the true physics-only baseline.
-- **Phase B — Physics Fixes:** Solar distribution (ISO 13790), thermal-mass time constant, and free-floating temperature fixes across ~18 weeks.
+- **Phase A — Baseline Stripping:** Catalog and remove all correction infrastructure; measure the true physics-only baseline. **Phase A8 completed 2026-09-07** (Issue #3291 / PR #3482) — `GaugeSolver` is the unconditional default zone solver via `ThermalSelector::default()`; the `gauge-solver` cargo feature remains the production-path gate pending §LIMIT-21 closure (Issue #3297).
+- **Phase B — Physics Fixes:** Solar distribution (ISO 13790), thermal-mass time constant, and free-floating temperature fixes. The GaugeSolver structural rework is the unblocker for the aggressive-baseline cohort tracked by Issue #3072 / ADR-0007; full peak accuracy is gated on the β-soak gate (#3286, 0/30 nights green) and the `gauge-solver` cfg-gate removal (#3290).
 - **Phase C — Benchmark Correction:** Replace calibrated ranges with true EnergyPlus/ESP-r/TRNSYS reference values.
 - **Phase D — Blind Validation Pass:** Run the full blind suite targeting ≥80% pass.
 - **Phase E — Sustained Validation:** CI gate + regression tracking to hold the pass rate as the codebase evolves.
@@ -39,9 +39,9 @@ See [`.planning/ROADMAP.md`](.planning/ROADMAP.md) and [`.planning/ASHRAE_140_BL
 These are documented **structural failures** (also listed in `release_gates.yaml → validation.individual.known_failures` and `AGENTS.md`). Per `RULES.md`, the fix path is the underlying physics — **no parameter tuning** to make tests pass.
 
 - **Baseline 600-series (low-mass):** All 6 cases FAIL. Simplified envelope model over-predicts peak loads (e.g. peak heating ~4.36 kW vs 2.80–3.80 kW reference band).
-- **High-mass 900-series:** All 6 cases FAIL. Heating is over-predicted by ~**200%** due to a 5R1C/CTF thermal-mass limitation (e.g. Case 900 annual heating 5,449 kWh vs 1,170–2,040 kWh reference band).
-- **Overall accuracy:** 51.03% MAE, driven by the high-mass annual-energy deviation above.
-- **Peak load accuracy:** High-mass peak loads over-estimated; full peak accuracy awaits the planned gauge-solver / finite-volume work (Phase B / `gauge-solver` feature).
+- **High-mass 900-series:** All 6 cases FAIL. Heating is over-predicted by ~**200%** due to a 5R1C/CTF thermal-mass limitation (e.g. Case 900 annual heating 5,130 kWh vs 1,170–2,040 kWh reference band, per `docs/KNOWN_ISSUES.md` §LIMIT-05 UPDATE #2453).
+- **Overall accuracy:** 49.82% MAE, driven by the high-mass annual-energy deviation above.
+- **Peak load accuracy:** High-mass peak loads UNDER-estimated post-#1280 (Case 900 0.86 kW vs 2.10–3.50 kW reference band; full peak accuracy gated on `gauge-solver` cargo feature / §LIMIT-21 β-soak closure per Issue #3297).
 
 For the historical v0.8.0 snapshot (Peak Load & Free-Float Validation narrative), see [`docs/archive/ASHRAE140_RESULTS_v0.8.0.md`](docs/archive/ASHRAE140_RESULTS_v0.8.0.md) (archived; superseded by the current blind-validation figures above).
 
@@ -136,7 +136,7 @@ See [`CONTRIBUTING.md`](CONTRIBUTING.md) (short form) and [`docs/CONTRIBUTING.md
 
 Follow these steps to prepare and publish a new version of Fluxion.
 
-> **Note on validation gating:** ASHRAE 140 validation is **not** currently a release-passing check — the strict ±15% annual-energy gate applies only to cases that are not documented structural failures (see [Current Validation Status](#current-validation-status)). Baseline **Case 600** and high-mass **Case 900** are excluded as known structural failures; do **not** treat "Case 900 annual energy within reference ranges" as a pre-release verification step — it is a known FAIL (5,449 kWh vs the 1,170–2,040 kWh band) being addressed by the v1.3 milestone.
+> **Note on validation gating:** ASHRAE 140 validation is **not** currently a release-passing check — the strict ±15% annual-energy gate applies only to cases that are not documented structural failures (see [Current Validation Status](#current-validation-status)). Baseline **Case 600** and high-mass **Case 900** are excluded as known structural failures; do **not** treat "Case 900 annual energy within reference ranges" as a pre-release verification step — it is a known FAIL (5,130 kWh vs the 1,170–2,040 kWh band, per `docs/KNOWN_ISSUES.md` §LIMIT-05 UPDATE #2453) being addressed by the v1.3 milestone.
 
 ### 1. Version Bump
 Update the version number in both configuration files:

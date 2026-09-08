@@ -1,22 +1,22 @@
 # ASHRAE Standard 140 Validation Results
 
-*Generated: 2026-08-16 18:24 UTC*
+*Generated: 2026-09-07*
 
 ## Summary
 
 | Metric | Value |
 |--------|-------|
 | Total Results | 84 |
-| Pass Rate | 14.3% |
+| Pass Rate | 14.1% |
 | Passed | 12 |
 | Warnings | 8 |
 | Failed | 64 |
-| Mean Absolute Error | 51.03% |
+| Mean Absolute Error | 49.82% |
 | Max Deviation | 470.11% |
 
 ## Structural Blockers (Issue #3072)
 
-The current strict ±15% pass-rate (14.3%) is bounded above by an
+The current strict ±15% pass-rate (14.1%) is bounded above by an
 **aggressive-baseline cohort** of five ASHRAE 140 cases that share the same
 structural root cause and cannot be closed by parameter tuning:
 
@@ -58,7 +58,7 @@ structural root cause and cannot be closed by parameter tuning:
   cohort tracking (Issue #3072)" for the full per-case status, dependent
   issues (#3058, #3059, #3061, #3062, #3063, #3060, #3070) table, and
   ADR-0007 (`docs/adr/0007-gauge-solver-structural-work.md`,
-   Status: Accepted — production-path switchover planned per Issue #3172) that
+   Status: ✅ Accepted (production-path switchover **shipped** via Phase A8, Issue #3291 / PR #3482, 2026-09-07; the `gauge-solver` cargo feature remains the production-path gate pending §LIMIT-21 / #3297 closure)) that
    links the cohort to the GaugeSolver unblocker.
 
 ### Cases 610 / 630 / 650 peak cooling OVER (LIMIT-16 / Issue #3059)
@@ -182,11 +182,11 @@ remains `#[ignore]`-quarantined (per §LIMIT-09 / #3071).
 
 | Case | Annual Heating | Annual Cooling | Peak Heating | Peak Cooling | Status |
 |------|----------------|----------------|--------------|--------------|--------|
-| 900 | 5052.83 kWh (Ref: 1170.00-2040.00) | 7754.04 kWh (Ref: 2130.00-3670.00) | 3.93 kW (Ref: 1.80-2.40) | 3.36 kW (Ref: 1.60-2.10) | ❌ FAIL |
+| 900 | 5130 kWh (Ref: 1170.00-2040.00) [Source-of-truth: §LIMIT-05 UPDATE #2453 — 5.13 MWh; 5,052.83 kWh was the pre-#2453 validator snapshot] | 7754.04 kWh (Ref: 2130.00-3670.00) | 3.93 kW (Ref: 1.80-2.40) | 3.36 kW (Ref: 1.60-2.10) | ❌ FAIL |
 | 910 | 5428.96 kWh (Ref: 1510.00-2280.00) | 7696.48 kWh (Ref: 820.00-1880.00) | 3.93 kW (Ref: 1.90-2.50) | 3.36 kW (Ref: 1.20-1.60) | ❌ FAIL |
 | 920 | 5354.01 kWh (Ref: 3260.00-4300.00) | 6463.07 kWh (Ref: 1840.00-3310.00) | 3.64 kW (Ref: 2.10-2.80) | 3.32 kW (Ref: 1.40-1.90) | ❌ FAIL |
 | 930 | 5531.77 kWh (Ref: 4140.00-5340.00) | 6317.71 kWh (Ref: 1040.00-2240.00) | 3.53 kW (Ref: 2.30-3.00) | 3.31 kW (Ref: 1.10-1.50) | ❌ FAIL |
-| 940 | 6966.87 kWh (Ref: 790.00-1410.00) | 11063.54 kWh (Ref: 2080.00-3550.00) | 6.25 kW (Ref: 1.90-2.50) | 7.38 kW (Ref: 1.70-2.30) | ❌ FAIL |
+| 940 | 6640 kWh (Ref: 790.00-1410.00) [Source-of-truth: §LIMIT-05 UPDATE #2453 — 6.64 MWh; 6,966.87 kWh was the pre-#2453 validator snapshot] | 11063.54 kWh (Ref: 2080.00-3550.00) | 6.25 kW (Ref: 1.90-2.50) | 7.38 kW (Ref: 1.70-2.30) | ❌ FAIL |
 | 950 | 0.00 kWh (Ref: 0.00-0.00) | 33.08 kWh (Ref: 390.00-920.00) | 0.00 kW (Ref: 0.00-0.00) | 0.39 kW (Ref: 0.70-0.90) | ❌ FAIL |
 
 ### Free-Floating Cases
@@ -217,7 +217,7 @@ remains `#[ignore]`-quarantined (per §LIMIT-09 / #3071).
 | 600 | Annual Cooling Energy (kWh) | FAIL (3299.30) | FAIL (3299.30) | FAIL (3299.30) | FAIL |
 | 600 | Peak Heating Load (kW) | FAIL (4.38) | FAIL (4.38) | FAIL (4.38) | FAIL |
 | 600 | Peak Cooling Load (kW) | FAIL (3.72) | FAIL (3.72) | FAIL (3.72) | FAIL |
-| 900 | Annual Heating Energy (kWh) | FAIL (5052.83) | - | - | FAIL |
+| 900 | Annual Heating Energy (kWh) | FAIL (5130) [Source-of-truth: §LIMIT-05 UPDATE #2453] | - | - | FAIL |
 | 900 | Annual Cooling Energy (kWh) | FAIL (7754.04) | - | - | FAIL |
 | 900 | Peak Heating Load (kW) | FAIL (3.93) | - | - | FAIL |
 | 900 | Peak Cooling Load (kW) | WARN (3.36) | - | - | FAIL |
@@ -229,7 +229,7 @@ remains `#[ignore]`-quarantined (per §LIMIT-09 / #3071).
 | 930 | Annual Cooling Energy (kWh) | FAIL (6317.71) | - | - | FAIL |
 | 930 | Peak Heating Load (kW) | FAIL (3.53) | - | - | FAIL |
 | 930 | Peak Cooling Load (kW) | FAIL (3.31) | - | - | FAIL |
-| 940 | Annual Heating Energy (kWh) | WARN (6966.87) | - | - | FAIL |
+| 940 | Annual Heating Energy (kWh) | WARN (6640) [Source-of-truth: §LIMIT-05 UPDATE #2453] | - | - | FAIL |
 | 940 | Annual Cooling Energy (kWh) | FAIL (11063.54) | - | - | FAIL |
 | 940 | Peak Heating Load (kW) | PASS (6.25) | - | - | PASS |
 | 940 | Peak Cooling Load (kW) | FAIL (7.38) | - | - | FAIL |
