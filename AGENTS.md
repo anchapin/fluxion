@@ -37,10 +37,10 @@ python3 scripts/check_test_inventory_drift.py        # Issue #3442 drift gate; f
 
 | Source | Suite | Tests | Ignored | Notes |
 |---|---|---|---|---|
-| `cargo test --lib` | root crate unit tests | ~3,894 | 4 | matches `tests/test_inventory.json::lib_tests_root` |
-| `cargo test --workspace --exclude fluxion-tauri` | full workspace (lib + integration + bin) | ~7,923 | 125 | excludes doctests; ~173 doctests run separately via `cargo test --doc` |
-| AST-regex inventory | committed in `tests/test_inventory.json` | ~8,680 | 108 | non-runtime snapshot, used by the drift gate (`--no-verify`) |
-| Cargo auto-discovered test binaries | `<crate>/tests/*.rs` + `[[test]] path = "tests/<sub>/<foo>.rs"` | ~298 | n/a | matches `test_binaries` in the inventory |
+| `cargo test --lib` | root crate unit tests | 4,311 | 7 | matches `tests/test_inventory.json::totals.lib_tests_root` (the AST-regex committed inventory) |
+| `cargo test --workspace --exclude fluxion-tauri` | full workspace (lib + integration + bin) | 8,680 | 108 | `tests/test_inventory.json::totals.workspace_tests` (AST-regex; `cargo test --workspace -- --list` produces a slightly different count — see `tests/reference_data/test_inventory_baseline.json::verified_at_head_baseline` for the cargo-verified figures) |
+| AST-regex inventory | committed in `tests/test_inventory.json` | 8,680 | 108 | non-runtime snapshot, used by the drift gate (`--no-verify`) |
+| Cargo auto-discovered test binaries | `<crate>/tests/*.rs` + `[[test]] path = "tests/<sub>/<foo>.rs"` | 301 | n/a | matches `tests/test_inventory.json::totals.test_binaries` |
 
 Refreshing the canonical inventory (Issue #3442 acceptance): run `python3 scripts/generate_test_inventory.py --verify` locally and commit the regenerated `tests/test_inventory.json`. The drift gate (next section) will fail any test-adding PR that does not bump the baseline ratchet in the same PR.
 
