@@ -662,11 +662,21 @@ pub struct SimulateOptions {
 /// Issue #3305 — an *explicit* `zone_solver: "gauge"` is rejected with a
 /// 400 (fail-closed). `build_model_from_schema` constructs the simplified
 /// 4-orientation surface layout without `WallSurface.wall_spec`, so the
-/// gauge solver's fail-fast initialisation can never succeed on this path
-/// and the β-phase dispatcher (Issue #3280) silently falls through to 5R1C
-/// — the selector was a no-op for the zone axis. Omitting the field keeps
-/// the legacy default-selector behaviour unchanged. The conduction axis is
-/// deliberately out of scope here (see the issue discussion).
+/// gauge solver's fail-fast initialisation can never succeed on this path.
+///
+/// Post-#3291 / PR-#3482 (Phase A8): with `--features gauge-solver` the
+/// gauge arm is unconditional and a missing gauge backend PANICS rather
+/// than silently falling through. `build_model_from_schema` therefore
+/// installs an explicit `FiveROneC` selector (via
+/// `ThermalSelector::legacy()`) so the dispatcher routes the request to
+/// the legacy 5R1C path — same observable behaviour as the pre-#3291
+/// fall-through, but explicit and fail-loud-safe. See `ThermalModel::new`
+/// in `src/sim/thermal_model_core.rs:3659` for the matching constructor
+/// contract. Issue #3508.
+//
+// (Previous "β-phase dispatcher (Issue #3280) silently falls through to
+//  5R1C" wording was true at PR-#3305 land time but is no longer correct
+//  post-#3291; the dispatcher panics on missing gauge backend.)
 pub fn parse_selector_from_options(options: &SimulateOptions) -> Result<ThermalSelector, ApiError> {
     let zone_solver = match &options.zone_solver {
         Some(s) => {
@@ -684,12 +694,18 @@ pub fn parse_selector_from_options(options: &SimulateOptions) -> Result<ThermalS
             }
             parsed
         }
-        None => ThermalSelector::default().zone_solver,
+        // Issue #3508: the REST path builds via `ThermalModel::new` (line 1250)
+        // which does NOT initialise the gauge backend. Defaulting to
+        // `ThermalSelector::default()` (Gauge) would panic at step time under
+        // `--features gauge-solver`. Route the default REST request to the
+        // legacy 5R1C path explicitly. Production callers who want the gauge
+        // path use `from_spec_with_selector` (not exposed over REST; #3305).
+        None => crate::sim::thermal_selector::ThermalSelector::legacy().zone_solver,
     };
     let conduction_solver = match &options.conduction_solver {
         Some(s) => crate::sim::thermal_selector::parse_conduction_solver(s)
             .map_err(ApiError::InvalidRequest)?,
-        None => ThermalSelector::default().conduction_solver,
+        None => crate::sim::thermal_selector::ThermalSelector::legacy().conduction_solver,
     };
     Ok(ThermalSelector {
         zone_solver,
@@ -1550,12 +1566,15 @@ pub fn run_simulation(
         // at hourly index 91. See `build_model_from_schema` doc-comment
         // for the full schema→physics wiring.
         let mut model = build_model_from_schema(schema);
-        // Issue #3281 — the caller-selected solver stack lands on the model
-        // here. The β-phase dispatcher (Issue #3280) consumes
-        // `hvac.thermal_selector` per step: `Gauge` tries the gauge solver
-        // and falls through to 5R1C/9R4C on init or step failure;
-        // `FiveROneC` / `NineRFourC` route strictly. With the default
-        // selector the model behaves exactly as before this change.
+        // Issue #3281 / #3508 — the caller-selected solver stack lands on
+        // the model here. Post-#3291 the dispatcher is unconditional under
+        // `--features gauge-solver`: `Gauge` panics if no gauge backend is
+        // configured; `FiveROneC` / `NineRFourC` route strictly. The
+        // REST-path default (no explicit `zone_solver`) resolves to
+        // `FiveROneC` via `ThermalSelector::legacy()` (see
+        // `parse_selector_from_options`); production callers wanting the
+        // gauge path use `from_spec_with_selector` (not exposed over REST;
+        // fail-closed per #3305).
         model.hvac.thermal_selector = selector;
         for zone_idx in 0..model.hvac.num_zones {
             model.setpoints.heating_setpoints.as_mut_slice()[zone_idx] = heating;

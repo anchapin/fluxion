@@ -3705,10 +3705,17 @@ impl ThermalModel<VectorField> {
                 thermal_model_type: ThermalModelType::FiveROneC,
                 timestep_mode: TimestepMode::default(),
                 door_geometry: DoorGeometry::default(),
-                thermal_selector: crate::sim::thermal_selector::ThermalSelector::default(),
-                // Issue #3305 — matches the dispatch a fresh `new`-built model
-                // actually performs: no gauge is configured, so a `Gauge`
-                // selector falls straight through to 5R1C.
+                // Issue #3508 — `ThermalModel::new` is a bare low-level
+                // constructor; it does NOT call `enable_gauge_solver` /
+                // `enable_gauge_solver_multi_zone`, so the gauge backend
+                // is never initialised. With `--features gauge-solver` on
+                // a `Gauge` selector with no gauge backend would panic
+                // in the dispatcher (Issue #3291, Phase A8). Use the
+                // explicit `legacy()` selector so the constructor's
+                // dispatch contract matches the `effective_zone_solver`
+                // line below. Production callers that want the gauge
+                // path should use `from_spec_with_selector`.
+                thermal_selector: crate::sim::thermal_selector::ThermalSelector::legacy(),
                 effective_zone_solver: crate::sim::thermal_selector::ZoneSolverKind::FiveROneC,
                 hvac_heating_capacity: 100_000.0, // Default: 100kW heating (high limit for validation)
                 hvac_cooling_capacity: 100_000.0, // Default: 100kW cooling (high limit for validation)
