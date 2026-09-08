@@ -6,10 +6,16 @@
 //! `thermal_model_physics.rs` (Issue #898), extracted as part of the
 //! Issue #902 modular split.
 //!
-//! Issue #3280: strict selector-driven dispatch with a β-phase gate
-//! (`try-gauge-then-fall-through` for `zone_solver == Gauge` only).
-//! `FiveROneC` and `NineRFourC` selectors always route to the legacy
-//! physics. The legacy `is_9r4c_model()` / `is_8r3c_model()` /
+//! Issue #3280 / #3291: strict selector-driven dispatch. The
+//! [`ZoneSolverKind::Gauge`] selector is the **unconditional default**
+//! when the `gauge-solver` cargo feature is enabled — the gauge path
+//! runs every step with no fall-through to legacy 5R1C/9R4C. `FiveROneC`
+//! and `NineRFourC` selectors always route to the legacy physics.
+//! In the default build (no `gauge-solver` feature), the `Gauge`
+//! selector routes to 5R1C/9R4C via the `match` arm — the `gauge-solver`
+//! cargo feature remains the production gate pending §LIMIT-21 closure
+//! (Issue #3297); the unconditional default applies once the feature
+//! is on. The legacy `is_9r4c_model()` / `is_8r3c_model()` /
 //! `is_6r2c_model()` checks are gone — `thermal_model_type` is set
 //! exclusively by the selector (Issue #3277).
 
@@ -61,11 +67,16 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
             self.calc_analytical_loads(timestep, true, dt_seconds);
         }
 
-        // Issue #3280: strict selector-driven dispatch. The β-phase
-        // gate is scoped to `zone_solver == Gauge` only; `FiveROneC` and
-        // `NineRFourC` always go straight to their respective legacy
-        // physics. For `Gauge` we try gauge, apply per-zone HVAC
-        // (#3278), and fall through to 5R1C on any failure.
+        // Issue #3280 / #3291: strict selector-driven dispatch. The
+        // `Gauge` selector is the unconditional default when the
+        // `gauge-solver` cargo feature is on (no fall-through to legacy);
+        // `FiveROneC` and `NineRFourC` always go straight to their
+        // respective legacy physics. In the default build (no
+        // `gauge-solver` feature), the cfg-gated gauge block below is
+        // absent and the `Gauge` selector falls through to the `match`
+        // arm which routes to 5R1C/9R4C — the `gauge-solver` cargo
+        // feature remains the production gate pending §LIMIT-21 closure
+        // (Issue #3297).
         let selector_zone_solver = self.0.hvac.thermal_selector.zone_solver;
 
         // Collect gauge inputs once (immutable borrows that would
@@ -74,16 +85,19 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         #[cfg(feature = "gauge-solver")]
         let gauge_inputs = self.collect_gauge_inputs();
 
-        // β-phase gate: try gauge only when zone_solver == Gauge.
+        // Unconditional gauge dispatch when zone_solver == Gauge (gauge
+        // build). Try single-zone first; multi-zone specs (e.g. Case
+        // 960 sunspace) have `gauge_zone_solver == None` and are picked
+        // up by the multi-zone arm. Both arms write a 5R1C
+        // Crank-Nicolson mass-state proxy that satisfies the
+        // strict-energy-balance gate's invariant exactly (see
+        // `write_gauge_mass_state_proxy`, Issue #3297). Phase A8 (#3291):
+        // no fall-through — the selector exclusively drives the dispatch,
+        // and `from_spec_with_selector` initializes the matching gauge
+        // backend, so a selector=="Gauge" run without a configured
+        // backend is a programming error.
         #[cfg(feature = "gauge-solver")]
         if selector_zone_solver == ZoneSolverKind::Gauge {
-            // Try single-zone gauge first; multi-zone specs (e.g. Case
-            // 960 sunspace) have `gauge_zone_solver == None` and are
-            // picked up by the multi-zone arm below. Issue #3297
-            // re-enabled the multi-zone arm: both arms now write a
-            // 5R1C Crank-Nicolson mass-state proxy that satisfies the
-            // strict-energy-balance gate's invariant exactly (see
-            // `write_gauge_mass_state_proxy`).
             if let Some(ekwh) =
                 self.try_run_gauge_single_zone(timestep, outdoor_temp, dt_seconds, &gauge_inputs)
             {
@@ -98,25 +112,40 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                 self.0.hvac.effective_zone_solver = ZoneSolverKind::Gauge;
                 return ekwh;
             }
-            // Both single and multi gauge failed or were absent: fall
-            // through to legacy. Issue #3280 acceptance — the gauge
-            // path is best-effort under the β-phase gate; persistent
-            // gauge failures route to 5R1C / 9R4C where the legacy
-            // physics is correct.
+            // Phase A8 (#3291): selector-driven dispatch is
+            // unconditional — gauge MUST run when Gauge is selected.
+            // `from_spec_with_selector` initializes exactly one gauge
+            // backend per spec (single-zone for `num_zones == 1`,
+            // multi-zone for `num_zones >= 2`), so reaching this point
+            // means either the gauge backend is missing (init failed
+            // silently — a constructor bug) or both single- and
+            // multi-zone calls returned `None` despite a configuration
+            // matching one of those branches. Either is a programming
+            // error worth surfacing loudly rather than masking via
+            // fall-through to legacy solvers.
+            panic!(
+                "ThermalSelector::Gauge selected but no gauge backend is configured \
+                 (single-zone and multi-zone both returned None). This is a \
+                 programming error: from_spec_with_selector must initialise the \
+                 matching gauge backend. Issue #3291 (Phase A8) makes gauge \
+                 the unconditional default — there is no fall-through to legacy \
+                 5R1C/9R4C in the gauge build."
+            );
         }
 
-        // Strict dispatch when `zone_solver ∈ {FiveROneC, NineRFourC}`
-        // (or when gauge failed and falls through above).
+        // Legacy dispatch when `zone_solver ∈ {FiveROneC, NineRFourC}`,
+        // and the default-build routing for the `Gauge` selector (the
+        // cfg-gated block above is absent without `--features
+        // gauge-solver`, so `Gauge` falls through here to 5R1C/9R4C).
         match selector_zone_solver {
             ZoneSolverKind::Gauge => {
-                // For Gauge selector, route to 9R4C if the model was
-                // auto-promoted (e.g. for high-mass cases in the default
-                // build where the β-phase feature is off), otherwise
-                // 5R1C. The auto-promote in `from_spec_with_selector` is
-                // the canonical source of `thermal_model_type` for the
-                // β-phase default build (see Issue #3277 PR2.1).
+                // Default-build routing for the `Gauge` selector: the
+                // cfg-gated gauge block above is absent, so `Gauge`
+                // routes to the legacy 5R1C / 9R4C physics. 9R4C when
+                // the model was auto-promoted for high-mass construction
+                // (see `from_spec_with_selector` / Issue #3277 PR2.1).
                 if self.is_nine_r4c_model() {
-                    // Issue #3305 — record the effective fall-through target.
+                    // Issue #3305 — record the effective legacy target.
                     self.0.hvac.effective_zone_solver = ZoneSolverKind::NineRFourC;
                     self.step_physics_9r4c(timestep, outdoor_temp, dt_seconds)
                 } else {
@@ -182,15 +211,18 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
     }
 
     /// Try a single-zone gauge step. Returns `Some(energy_kwh)` on
-    /// success; `None` if no gauge is configured, the call was for
-    /// multi-zone, or the gauge step returned `Err`. The β-phase gate
-    /// interprets `None` as \"fall through to legacy\".
+    /// success; `None` if no single-zone gauge is configured (i.e. the
+    /// spec is multi-zone and the single-zone backend is intentionally
+    /// empty) or the gauge step returned `Err`. Phase A8 (#3291): the
+    /// dispatcher treats `None` as "not applicable to this spec" and
+    /// tries the multi-zone path next; if both paths return `None` the
+    /// dispatch panics — there is no fall-through to legacy solvers.
     #[cfg(feature = "gauge-solver")]
     #[allow(
         clippy::needless_late_init,
         clippy::single_match_else,
         clippy::question_mark,
-        reason = "β-gate fall-through uses early return with Option; ?-rewriting would not work for nested `?` on Result"
+        reason = "Phase A8 (#3291) keeps the Option return shape for the multi-zone / single-zone dispatch pair; the dispatcher no longer falls through to legacy on None"
     )]
     fn try_run_gauge_single_zone(
         &mut self,
@@ -344,9 +376,12 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
     }
 
     /// Try a multi-zone gauge step. Returns `Some(energy_kwh)` on
-    /// success; `None` if no multi-zone gauge is configured or the
-    /// step returned `Err`. The β-phase gate interprets `None` as
-    /// \"fall through to legacy\".
+    /// success; `None` if no multi-zone gauge is configured (i.e. the
+    /// spec is single-zone) or the step returned `Err`. Phase A8
+    /// (#3291): the dispatcher treats `None` as "not applicable to this
+    /// spec" and tries the single-zone path next; if both paths return
+    /// `None` the dispatch panics — there is no fall-through to legacy
+    /// solvers.
     ///
     /// Issue #3297 — re-enabled: the arm now writes a 5R1C
     /// Crank-Nicolson mass-state proxy per zone (via
@@ -358,7 +393,7 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
     #[cfg(feature = "gauge-solver")]
     #[allow(
         clippy::question_mark,
-        reason = "β-gate fall-through uses early return with Option; ?-rewriting would not work for nested `?` on Result"
+        reason = "Phase A8 (#3291) keeps the Option return shape for the multi-zone / single-zone dispatch pair; the dispatcher no longer falls through to legacy on None"
     )]
     fn try_run_gauge_multi_zone(
         &mut self,
