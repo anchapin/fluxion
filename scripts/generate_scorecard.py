@@ -143,6 +143,11 @@ def _apply_perf_entry(v: Validation, entry: dict, attr_path: str) -> str:
     ``max_deviation`` (in addition to the throughput override it already
     owned). The ASHRAE doc remains the fallback when the snapshot is
     missing/corrupt or when the entry omits a field.
+
+    Issue #3542: also override ``v.generated_utc`` from ``entry["timestamp"]``
+    so the renderer's "Last Updated" / "Data source as of" lines point at the
+    perf-snapshot date (which is consistently newer than the ``*Generated:``
+    line in ``docs/ASHRAE140_RESULTS.md``).
     """
     thr = float(entry.get("throughput", 0.0))
     if thr <= 0.0:
@@ -164,6 +169,17 @@ def _apply_perf_entry(v: Validation, entry: dict, attr_path: str) -> str:
         val = entry.get(src_key)
         if isinstance(val, (int, float)) and not isinstance(val, bool):
             setattr(v, dst_attr, float(val))
+
+    # Issue #3542: prefer the perf entry's ISO 8601 ``timestamp`` over the
+    # docs-parsed "Generated" header. Normalise "2026-09-07T00:01:56.881…+00:00"
+    # into the "YYYY-MM-DD HH:MM:SS UTC" shape that the renderer expects
+    # (line ~438 takes ``.split(" ")[0]`` for "Last Updated" and the whole
+    # string for "Data source as of"). The first 19 characters of any
+    # ISO 8601 timestamp carry the YYYY-MM-DDTHH:MM:SS prefix; replacing the
+    # ``T`` with a space and appending ``" UTC"`` yields the canonical form.
+    ts_raw = entry.get("timestamp")
+    if isinstance(ts_raw, str) and ts_raw:
+        v.generated_utc = ts_raw[:19].replace("T", " ") + " UTC"
 
     ts = str(entry.get("timestamp", ""))[:10]
     return f"`{attr_path}` (latest run {ts})"
