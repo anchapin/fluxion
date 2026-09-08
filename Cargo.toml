@@ -14,6 +14,13 @@ license = "Apache-2.0"
 # The workspace root is also the main `fluxion` package (src/ lives here).
 # `fluxion-core` holds the dependency-light *leaf* modules (currently `weather`)
 # that cargo-mutants can build once and cache while mutating only `fluxion`.
+#
+# Issue #3467: the leaf's "dependency-light" claim is now enforced at
+# the manifest level via the opt-in `tmy3-download` cargo feature
+# (default OFF) plus `scripts/check_fluxion_core_dep_budget.py`. The
+# default `cargo build -p fluxion-core` pulls only
+# `num-traits` / `serde*` / `thiserror` / `log`; the reqwest / hyper /
+# tokio / rustls stack only appears with `--features tmy3-download`.
 [workspace]
 resolver = "2"
 members = ["fluxion-core", "fluxion-city", "fluxion-fluid", "fluxion-grid", "fluxion-behavior", "fluxion-mcp", "fluxion-wasm", "crates/fluxion-toon", "crates/fluxion-twin", "crates/fluxion-evaluator", "fluxion-cfd", "fluxion-tauri/src-tauri"]
@@ -140,6 +147,14 @@ tracing-subscriber-json = ["tracing-subscriber/json"]
 # Enables rdkafka-based Kafka consumer for enterprise-scale telemetry ingestion.
 # Run with: cargo test --features kafka -p fluxion twin::kafka_telemetry_consumer
 kafka = ["dep:rdkafka"]
+# Issue #3467 — gate the TMY3 weather-download / on-disk-cache module behind
+# an opt-in cargo feature. Default OFF; the default dependency-light leaf
+# (`cargo build -p fluxion-core`) does NOT compile reqwest / hyper / tokio
+# / rustls. Only consumers that need to actually download TMY3 files (the
+# CLI's weather-download path, the integration tests that exercise it)
+# opt in. Mirrors the workspace's other opt-in network/TLS features
+# (`ort`, `fluxion-fluid`, `fluxion-city`, `fluxion-cfd`).
+tmy3-download = ["fluxion-core/tmy3-download"]
 # Feature flag for acausal HVAC / fluid network modeling (Issue #1980 / ADR-005).
 # Gates the `fluxion-fluid` crate which provides port-based fluid circuit traits.
 fluid = ["dep:fluxion-fluid"]
@@ -297,6 +312,14 @@ uuid = { workspace = true, features = ["serde", "v4"] }
 # the `directories` dependency; the root package carried an unused copy of
 # `directories = "5.0"` until #3310 removed it (was a duplicate-version
 # offender vs fluxion-core's `directories = "6.0"`).
+#
+# Issue #3467: both the fluxion-core `directories`/`sha2`/`reqwest` deps
+# and the root crate's `reqwest.workspace = true` direct dep are gated
+# behind the opt-in `tmy3-download` cargo feature on fluxion-core, so
+# the default `cargo build -p fluxion-core` no longer pulls in the
+# reqwest / hyper / tokio / rustls stack. See ARCHITECTURE.md
+# §"`fluxion-core` dependency budget (#3467)" and
+# `scripts/check_fluxion_core_dep_budget.py` for the regression gate.
 sha2 = "0.11"
 
 # Numerical & Math

@@ -36,6 +36,54 @@ fluxion-core/src/ashrae_cases/ # MOVED in #1441 (Orientation, WindowArea, Constr
                                #   BuildingType, GeometrySpec, ConductanceReferences)
 ```
 
+### `fluxion-core` dependency budget (#3467)
+
+The "dependency-light leaf" claim is enforced by
+`scripts/check_fluxion_core_dep_budget.py`. The default `cargo build
+-p fluxion-core` may only pull in:
+
+| Crate        | Why it's allowed                                    |
+|--------------|-----------------------------------------------------|
+| `num-traits` | `Float` arithmetic traits for psychrometrics        |
+| `serde`      | `Serialize`/`Deserialize` derives on data structs   |
+| `serde_json` | Weather-record JSON, hash digests, etc.             |
+| `serde_yaml` | ASHRAE 140 assembly / materials YAML inputs         |
+| `thiserror`  | `WeatherError` / `CarbonError` / assembly errors    |
+| `log`        | Logging in `method_selector.rs` (#1349) and weather |
+
+Anything heavier (HTTP client, project-directories helper, async runtime,
+TLS stack, mock-HTTP servers) is **opt-in via the `tmy3-download`
+feature** (default OFF). The feature gates the
+`fluxion-core/src/weather/tmy3.rs` module (NREL TMY3 download + on-disk
+SHA-256 cache) and its `reqwest` / `directories` / `sha2` deps. The
+root `fluxion` crate exposes `tmy3-download = ["fluxion-core/tmy3-download"]`
+so consumers like the CLI / `tests/test_tmy3_download.rs` opt in
+explicitly (`cargo test --features tmy3-download`).
+
+The regression gate (`scripts/check_fluxion_core_dep_budget.py`)
+runs three passes and fails CI if any of them trips:
+
+1. **Static manifest scan** — flags any non-optional `[dependencies]`
+   entry on the heavyweight allow-list (reqwest, hyper, hyper-util,
+   tokio, tokio-rustls, rustls, rustls-pki-types, rustls-webpki,
+   webpki-roots, directories, dirs, dirs-sys, mockito, httpmock,
+   wiremock). Catches the common "someone added a heavy dep without
+   gating it" regression.
+2. **Dynamic default-feature tree** — `cargo tree -p fluxion-core
+   --no-default-features --edges no-dev` must NOT contain any
+   heavyweight crate. Catches the subtler "manifest looks clean but
+   transitive deps leaked in via workspace.dependencies" regression.
+3. **Dynamic opt-in tree** — `cargo tree -p fluxion-core --features
+   tmy3-download --edges no-dev` MUST contain `reqwest`, `directories`,
+   `sha2`. Catches regressions that break the feature gating in the
+   other direction (e.g. someone removes `dep:reqwest` from the
+   feature list).
+
+The dev-dependency gate is intentionally advisory only — cargo has no
+per-feature dev-dep mechanism, so `mockito` (used by the tmy3 download
+tests) shows up in every `cargo test -p fluxion-core` build. The
+production binary is unaffected.
+
 `fluxion` re-exports the moved modules (`pub use fluxion_core::{weather, assembly,
 multi_node, ashrae_cases};` in `lib.rs`) and keeps thin re-export shims at the old
 paths (`src/sim/assembly.rs`, `src/sim/multi_node_thermal.rs`,

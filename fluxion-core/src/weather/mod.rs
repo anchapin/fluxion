@@ -24,6 +24,15 @@ pub mod interpolation;
 pub mod miami;
 pub mod minneapolis;
 pub mod psychrometrics;
+// Issue #3467 — the TMY3 network-download / on-disk-cache module is gated
+// behind the `tmy3-download` cargo feature (default OFF). The default
+// dependency-light leaf does not compile reqwest / hyper / tokio / rustls
+// / directories / sha2; only callers that opt into the feature reach
+// `fluxion_core::weather::tmy3::{Tmy3Cache, WeatherLocation,
+// load_weather_locations}`. The module's `pub` types stay reachable via
+// the same paths when the feature is enabled, so no call-site edits are
+// required for opt-in consumers.
+#[cfg(feature = "tmy3-download")]
 pub mod tmy3;
 
 pub use carbon_intensity::{CarbonAccumulator, CarbonError, CarbonIntensityProfile};
@@ -32,6 +41,7 @@ pub use self::psychrometrics::*;
 pub use ddy::{generate_design_day_hours, DesignDaySource, DesignDaySpec};
 pub use design_day_selector::{DailySummary, DesignDaySelector};
 pub use interpolation::{interpolate_weather, select_method_for_field, InterpolationMethod};
+#[cfg(feature = "tmy3-download")]
 pub use tmy3::{load_weather_locations, Tmy3Cache, WeatherLocation};
 
 use serde::{Deserialize, Serialize};
