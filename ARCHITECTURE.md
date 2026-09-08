@@ -1789,7 +1789,15 @@ If a system test fails, the individual module tests pinpoint which module is wro
 
 #### Case 600 family: independent analytical reference models (Issue #3447, path B)
 
-The `case_600.rs`, `case_600_cz3.rs`, and `case_600_cz7.rs` files under `src/validation/ashrae_140/` are **independent analytical reference models** — they construct a self-contained 5R1C zone model with hand-rolled U-value/conductance arithmetic (e.g. `model.solar.window_u_value = 3.0`; `h_roof = u_roof * floor_area`; `model.conduction.h_tr_em = VectorField::from_scalar(h_roof, 1)`) and **do not route through** the engine's `ThermalModelTrait` / `HeatConductionSolver` swap points. They are not gated by the canonical `EXTERIOR_FILM_COEFF_DEFAULT = 18.3 W/m²K`; their inline film-coefficient estimate (`~21 W/m²K` at the 25 m/s default wind speed) is a per-case analytical choice for the ASHRAE 140 reference construction, not an engine constant. Their test binaries (`tests/ashrae_140_case_600*.rs`) validate the case-specific reference, not the engine's free-floating / HVAC responses. **Do not refactor these to route through the engine without bottom-up investigation** — any numeric change must be reconciled against the ASHRAE 140 Case 600 reference data first, per `RULES.md`'s energy-balance / "never tune baselines" guardrail. The 9R4C zone-level network remains the sole driver of high-mass free-float and HVAC under ADR-002 (see the ADR-002 note in the solver section above).
+The `case_600.rs`, `case_600_cz3.rs`, and `case_600_cz7.rs` files under `src/validation/ashrae140/` are **independent analytical reference models** — they construct a self-contained 5R1C zone model with hand-rolled U-value/conductance arithmetic (e.g. `model.solar.window_u_value = 3.0`; `h_roof = u_roof * floor_area`; `model.conduction.h_tr_em = VectorField::from_scalar(h_roof, 1)`) and **do not route through** the engine's `ThermalModelTrait` / `HeatConductionSolver` swap points. They are not gated by the canonical `EXTERIOR_FILM_COEFF_DEFAULT = 18.3 W/m²K`; their inline film-coefficient estimate (`~21 W/m²K` at the 25 m/s default wind speed) is a per-case analytical choice for the ASHRAE 140 reference construction, not an engine constant. Their test binaries (`tests/ashrae_140_case_600*.rs`) validate the case-specific reference, not the engine's free-floating / HVAC responses. **Do not refactor these to route through the engine without bottom-up investigation** — any numeric change must be reconciled against the ASHRAE 140 Case 600 reference data first, per `RULES.md`'s energy-balance / "never tune baselines" guardrail. The 9R4C zone-level network remains the sole driver of high-mass free-float and HVAC under ADR-002 (see the ADR-002 note in the solver section above).
+
+> **Issue #3446 consolidation:** As of #3446 the case_600 analytical family
+> lives under the canonical `src/validation/ashrae140/` tree (the previous
+> duplicate at `src/validation/ashrae_140/` was deleted). The re-export shim
+> pattern from `src/sim/assembly.rs` was considered but a plain module move
+> was cleaner because all consumers are in-tree (the `tests/ashrae_140_case_600*.rs`
+> binaries) and there are no external `fluxion::validation::ashrae_140::*`
+> import paths to preserve.
 
 #### HVAC BESTEST validation scaffold (#1754)
 

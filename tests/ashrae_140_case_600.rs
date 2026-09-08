@@ -3,7 +3,7 @@
 //! This test validates that Fluxion's Case 600 implementation produces
 //! results within the ASHRAE 140 reference ranges.
 
-use fluxion::validation::ashrae_140::Case600Model;
+use fluxion::validation::ashrae140::Case600Model;
 
 /// ASHRAE 140 Case 600 reference ranges (from EnergyPlus, ESP-r, TRNSYS, DOE-2).
 ///

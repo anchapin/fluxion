@@ -2,11 +2,26 @@
 //!
 //! This module provides the core data structures and functionality
 //! for ASHRAE 140 building energy model validation.
+//!
+//! Issue #3446: the `case_600`, `case_600_cz3`, and `case_600_cz7` analytical
+//! reference models were consolidated here from the duplicate
+//! `src/validation/ashrae_140/` tree so there is one canonical ASHRAE 140
+//! surface. These analytical models are documented in `ARCHITECTURE.md`
+//! §"Case 600 family: independent analytical reference models (Issue #3447,
+//! path B)" and are intentionally hand-rolled — they construct a
+//! self-contained 5R1C zone model and do **not** route through the engine's
+//! `ThermalModelTrait` / `HeatConductionSolver` swap points.
 
+pub mod case_600;
+pub mod case_600_cz3;
+pub mod case_600_cz7;
 pub mod cases;
 pub mod high_mass;
 
 pub use crate::validation::ashrae_140_cases::ASHRAE140Case;
+pub use case_600::{Case600Model, SimulationResult as Case600SimulationResult};
+pub use case_600_cz3::{Case600CZ3Model, SimulationResult as Case600CZ3SimulationResult};
+pub use case_600_cz7::{Case600CZ7Model, SimulationResult as Case600CZ7SimulationResult};
 
 // Import necessary crates for validation execution
 use crate::sim::construction::ConstructionLayer;
