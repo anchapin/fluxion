@@ -57,7 +57,7 @@ For the historical v0.8.0 snapshot (Peak Load & Free-Float Validation narrative)
 
 Most functionality is behind cargo feature flags; default builds skip the ONNX runtime. Notable flags:
 
-- **Physics solvers:** `gauge-solver` (experimental/opt-in `GaugeZoneSolver` scaffolding, #2304 — does **not** replace 5R1C/9R4C; always `None`, see #2686), `debug-physics` (gates `eprintln!` in physics hot loops).
+- **Physics solvers:** `gauge-solver` (production GaugeSolver zone-solver gate, Phase A8, #3291 / #3482 — with `--features gauge-solver` on, the dispatcher's gauge arm is unconditional and panics on missing gauge backend; pending §LIMIT-21 / β-soak #3286; see [`docs/FEATURES.md §gauge-solver`](docs/FEATURES.md#gauge-solver)), `debug-physics` (gates `eprintln!` in physics hot loops).
 - **AI / surrog:** `ort` (alias `onnx`, ONNX inference), `cuda` (GPU inference; auto-downgrades to CPU if unavailable).
 - **Acausal HVAC / fluid:** `fluid` (enables `fluxion-fluid` acausal HVAC/fluid port traits).
 - **Advanced co-simulation:** `fluxion-cfd` (FFD/CFD airflow), `fluxion-city` (urban radiation), `dwave` (D-Wave quantum annealing SAPI).
