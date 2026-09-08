@@ -16,6 +16,14 @@ name: Cloud Campaign Runner
 # Until FLUXION_AWS_CAMPAIGN_ROLE_ARN is set, the configure-aws-credentials step
 # fails fast with a clear message instead of silently using static keys.
 
+# Issue #3449: every `workflow_dispatch` input reaches the shell only via
+# `env:`-mapped variables consumed by `scripts/cloud_campaign_manager.py`.
+# String interpolation of `${{ inputs.* }}` directly inside `run:` blocks is a
+# shell-injection vector (Issue #3449); an attacker who can dispatch this
+# workflow could otherwise chain a malicious value with the AWS credentials
+# configured below. Allowed values are also restricted at the
+# `cloud_campaign_manager.py` allowlist layer for defense in depth.
+
 on:
   workflow_dispatch:
     inputs:
@@ -29,13 +37,15 @@ on:
           - monte_carlo
           - sensitivity_analysis
       case_id:
-        description: 'ASHRAE case ID'
+        description: 'ASHRAE 140 case ID (3-4 digit number, e.g. 600, 800, 900, 1200)'
         required: true
         default: '600'
+        type: string
       params:
-        description: 'Comma-separated parameters to sweep'
+        description: 'Comma-separated parameter names to sweep (identifiers only: [A-Za-z_][A-Za-z0-9_]*)'
         required: false
         default: 'R_value,wall_thickness'
+        type: string
       sweep_type:
         description: 'Sweep type'
         required: true
@@ -46,19 +56,23 @@ on:
           - grid
           - latin_hypercube
       samples:
-        description: 'Number of samples'
+        description: 'Number of samples (positive integer)'
         required: false
         default: '50'
+        type: string
       s3_bucket:
-        description: 'S3 bucket for campaign data'
+        description: 'S3 bucket for campaign data (DNS-compliant name)'
         required: true
+        type: string
       s3_prefix:
-        description: 'S3 prefix'
+        description: 'S3 prefix (no leading slash, no shell metacharacters)'
         required: false
         default: 'fluxion-campaigns'
+        type: string
       sns_topic:
-        description: 'SNS topic ARN for notifications'
+        description: 'SNS topic ARN for notifications (arn:aws:sns:...)'
         required: false
+        type: string
 
 # Least-privilege GITHUB_TOKEN default (Issue #2526). Each job that talks to AWS
 # escalates to id-token: write (required to mint the OIDC token) via its own
@@ -106,20 +120,21 @@ jobs:
           role-to-assume: ${{ vars.FLUXION_AWS_CAMPAIGN_ROLE_ARN }}
           aws-region: ${{ vars.AWS_REGION || 'us-east-1' }}
 
+      # Issue #3449: dispatch inputs reach the Python script ONLY via env vars;
+      # no `${{ inputs.* }}` interpolation remains inside the `run:` block.
+      # `--action` is hardcoded by the workflow; only the user-controlled
+      # inputs are env-mapped.
       - name: Create campaign
         env:
+          FLUXION_CAMPAIGN_CASE: ${{ inputs.case_id }}
+          FLUXION_CAMPAIGN_PARAMS: ${{ inputs.params }}
+          FLUXION_CAMPAIGN_SWEEP_TYPE: ${{ inputs.sweep_type }}
+          FLUXION_CAMPAIGN_SAMPLES: ${{ inputs.samples }}
           FLUXION_S3_BUCKET: ${{ inputs.s3_bucket }}
           FLUXION_S3_PREFIX: ${{ inputs.s3_prefix }}
           FLUXION_SNS_TOPIC_ARN: ${{ inputs.sns_topic }}
         run: |
-          python scripts/cloud_campaign_manager.py \
-            --action create \
-            --case ${{ inputs.case_id }} \
-            --params ${{ inputs.params }} \
-            --sweep-type ${{ inputs.sweep_type }} \
-            --samples ${{ inputs.samples }} \
-            --s3-bucket ${{ env.FLUXION_S3_BUCKET }} \
-            --s3-prefix ${{ env.FLUXION_S3_PREFIX }}
+          python scripts/cloud_campaign_manager.py --action create
 
   wait-for-completion:
     needs: create-campaign
@@ -143,17 +158,15 @@ jobs:
           role-to-assume: ${{ vars.FLUXION_AWS_CAMPAIGN_ROLE_ARN }}
           aws-region: ${{ vars.AWS_REGION || 'us-east-1' }}
 
+      # Issue #3449: campaign_id comes from a job output (trusted) and S3
+      # coordinates reach the script ONLY through env vars.
       - name: Wait for campaign
         env:
+          FLUXION_CAMPAIGN_CAMPAIGN_ID: ${{ needs.create-campaign.outputs.campaign_id }}
           FLUXION_S3_BUCKET: ${{ inputs.s3_bucket }}
           FLUXION_S3_PREFIX: ${{ inputs.s3_prefix }}
-          FLUXION_SNS_TOPIC_ARN: ${{ inputs.sns_topic }}
         run: |
-          python scripts/cloud_campaign_manager.py \
-            --action wait \
-            --campaign-id ${{ needs.create-campaign.outputs.campaign_id }} \
-            --s3-bucket ${{ env.FLUXION_S3_BUCKET }} \
-            --s3-prefix ${{ env.FLUXION_S3_PREFIX }}
+          python scripts/cloud_campaign_manager.py --action wait
 
   aggregate-results:
     needs: wait-for-completion
@@ -180,13 +193,14 @@ jobs:
           role-to-assume: ${{ vars.FLUXION_AWS_CAMPAIGN_ROLE_ARN }}
           aws-region: ${{ vars.AWS_REGION || 'us-east-1' }}
 
+      # Issue #3449: the only `${{ ... }}` interpolation left is the trusted
+      # job-output `campaign_id`; S3 coordinates are env-mapped. No `inputs.*`
+      # reaches the shell. `--output-format` is a workflow-controlled literal,
+      # so passing it on the command line is safe (no `${{ }}` interpolation).
       - name: Aggregate results
         env:
+          FLUXION_CAMPAIGN_CAMPAIGN_ID: ${{ needs.create-campaign.outputs.campaign_id }}
           FLUXION_S3_BUCKET: ${{ inputs.s3_bucket }}
           FLUXION_S3_PREFIX: ${{ inputs.s3_prefix }}
         run: |
-          python scripts/s3_aggregator.py \
-            --campaign-id ${{ needs.create-campaign.outputs.campaign_id }} \
-            --s3-bucket ${{ env.FLUXION_S3_BUCKET }} \
-            --s3-prefix ${{ env.FLUXION_S3_PREFIX }} \
-            --output-format both
+          python scripts/s3_aggregator.py --output-format both

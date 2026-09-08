@@ -37,6 +37,7 @@ import argparse
 import json
 import os
 import random
+import re
 import sys
 import time
 import urllib.error
@@ -81,6 +82,216 @@ class SweepType(Enum):
     GRADIENT = "gradient"
     BINARY = "binary"
     LATIN_HYPERCUBE = "latin_hypercube"
+
+
+# Issue #3449 — strict input allowlists for `workflow_dispatch`-derived values.
+# Even though the workflow now passes inputs via `env:` rather than `${{ inputs.* }}`
+# shell interpolation (preventing the immediate shell-injection vector), the
+# Python layer still must defend against free-text values that survive the
+# `env:` indirection — a malicious dispatch could still feed arbitrary bytes
+# into the Python script via the env. These regex allowlists reject anything
+# outside the documented safe set before it touches AWS APIs.
+#
+# All patterns are matched with ``re.fullmatch`` so trailing newlines or
+# whitespace cannot sneak past the ``$`` anchor (Issue #3449 hardening).
+
+# ASHRAE 140 case IDs are 3- or 4-digit decimal numbers (e.g. 600, 800, 900, 1200).
+_CASE_ID_RE = re.compile(r"[0-9]{3,4}")
+
+# Parameter identifiers: must be a valid Python-style identifier. Comma is the
+# only allowed separator and the list must be non-empty when provided.
+_PARAM_NAME_RE = re.compile(r"[A-Za-z_][A-Za-z0-9_]*")
+
+# S3 bucket names follow the DNS-compliant naming rules (RFC 1035); lowercase,
+# 3-63 chars, alphanumerics and dashes, must start/end with alphanumeric.
+_S3_BUCKET_RE = re.compile(r"[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]")
+
+# S3 key prefixes: a conservative set that excludes shell metacharacters,
+# path traversal (`..` components), and leading/trailing slashes. Empty
+# string is allowed.
+_S3_PREFIX_RE = re.compile(
+    r"(?:[A-Za-z0-9](?:[A-Za-z0-9!_.*'()-]{0,61}[A-Za-z0-9])?)"
+    r"(?:/[A-Za-z0-9](?:[A-Za-z0-9!_.*'()-]{0,61}[A-Za-z0-9])?)*"
+)
+
+# SNS topic ARN: arn:aws:sns:<region>:<account-id>:<topic-name>
+_SNS_TOPIC_RE = re.compile(
+    r"arn:aws:sns:[a-z][a-z0-9-]*:[0-9]{1,20}:[A-Za-z0-9._-]{1,256}"
+)
+
+# Built-in parameter allowlist — anything outside this set must be a valid
+# identifier (PARAM_NAME_RE above), so unknown names still pass; the explicit
+# list here is the *known good* set from build_default_params().
+_KNOWN_PARAMETER_NAMES = frozenset(
+    {"R_value", "wall_thickness", "thermal_mass", "h_tr_is"}
+)
+
+
+def validate_case_id(value: str) -> str:
+    """Reject any ``--case`` value that is not an ASHRAE 140 case ID.
+
+    Returns the value unchanged when valid; raises :class:`ValueError`
+    otherwise. Issue #3449 mandates this guard for free-text workflow
+    dispatch input. Uses :func:`re.fullmatch` so trailing whitespace or
+    embedded newlines cannot sneak past the allowlist.
+    """
+    if not isinstance(value, str) or not _CASE_ID_RE.fullmatch(value):
+        raise ValueError(
+            f"Invalid case_id {value!r}: must be a 3-4 digit ASHRAE 140 case ID "
+            "(e.g. 600, 800, 900, 1200)."
+        )
+    return value
+
+
+def validate_params(raw: str) -> list[str]:
+    """Parse and validate a comma-separated ``--params`` value.
+
+    Each comma-separated token must match :data:`_PARAM_NAME_RE`. An empty
+    string is rejected (callers can omit the flag entirely to receive the
+    default parameter set).
+    """
+    if not isinstance(raw, str) or not raw:
+        raise ValueError(
+            "Invalid params: must be a non-empty comma-separated list of "
+            f"identifiers matching {_PARAM_NAME_RE.pattern}."
+        )
+    names = [p.strip() for p in raw.split(",")]
+    for name in names:
+        if not name or not _PARAM_NAME_RE.fullmatch(name):
+            raise ValueError(
+                f"Invalid parameter name {name!r}: each token must match "
+                f"{_PARAM_NAME_RE.pattern}."
+            )
+    return names
+
+
+def validate_s3_bucket(value: str) -> str:
+    """Reject S3 bucket names that violate DNS-compliant naming rules."""
+    if not isinstance(value, str) or not _S3_BUCKET_RE.fullmatch(value):
+        raise ValueError(
+            f"Invalid s3 bucket name {value!r}: must be a DNS-compliant "
+            "lowercase S3 bucket name (3-63 chars, alphanumerics and dashes)."
+        )
+    return value
+
+
+def validate_s3_prefix(value: str) -> str:
+    """Reject S3 key prefixes that contain shell metacharacters or traversal.
+
+    Empty string is allowed (means: top-level). Path-traversal segments
+    (``..``), leading slashes, and double slashes are rejected explicitly
+    in addition to the allowlist regex.
+    """
+    if not isinstance(value, str):
+        raise ValueError(
+            f"Invalid s3 prefix: must be a string, got {type(value).__name__}."
+        )
+    if value == "":
+        return value
+    if value.startswith("/") or "//" in value or "/./" in value or value.endswith("/"):
+        raise ValueError(
+            f"Invalid s3 prefix {value!r}: must not start or end with '/', "
+            "contain '//', or '/./'."
+        )
+    components = value.split("/")
+    for component in components:
+        if not component or component == "." or component == "..":
+            raise ValueError(
+                f"Invalid s3 prefix {value!r}: path components must not be "
+                "empty or traversal segments ('.', '..')."
+            )
+    if not _S3_PREFIX_RE.fullmatch(value):
+        raise ValueError(
+            f"Invalid s3 prefix {value!r}: contains characters outside the "
+            "safe set [A-Za-z0-9!_.*'()/-]."
+        )
+    return value
+
+
+def validate_sns_topic(value: str) -> str:
+    """Reject SNS topic ARNs that do not match the documented shape.
+
+    Empty string is allowed (means: no notifications). Issue #3449 callers
+    may legitimately omit ``--sns-topic``.
+    """
+    if not isinstance(value, str):
+        raise ValueError(
+            f"Invalid sns topic arn: must be a string, got {type(value).__name__}."
+        )
+    if not value:
+        return value
+    if not _SNS_TOPIC_RE.fullmatch(value):
+        raise ValueError(
+            f"Invalid sns topic arn {value!r}: must be an "
+            "'arn:aws:sns:<region>:<account>:<topic>' ARN."
+        )
+    return value
+
+
+def validate_samples(value: int) -> int:
+    """Reject non-positive sample counts. Issue #3449 defense in depth."""
+    try:
+        n = int(value)
+    except (TypeError, ValueError):
+        raise ValueError(f"Invalid samples {value!r}: must be an integer.") from None
+    if n < 1:
+        raise ValueError(f"Invalid samples {n}: must be >= 1.")
+    return n
+
+
+def _argparse_samples_type(value: str) -> int:
+    """argparse-compatible wrapper around :func:`validate_samples`.
+
+    argparse's ``type=`` callback expects ``argparse.ArgumentTypeError`` on
+    rejection (not :class:`ValueError`), so we translate before propagating.
+    """
+    try:
+        return validate_samples(value)
+    except ValueError as exc:
+        raise argparse.ArgumentTypeError(str(exc)) from None
+
+
+def _env_int(env_name: str, default: int) -> int:
+    """Read an integer from an env var, falling back to ``default``.
+
+    Defensive helper for Issue #3449 — keeps malformed env values from
+    crashing argparse at module-import time. The validator below still
+    catches negative / non-positive values when ``--samples`` is parsed
+    from the command line.
+    """
+    raw = os.environ.get(env_name)
+    if raw is None or raw == "":
+        return default
+    try:
+        return int(raw)
+    except ValueError:
+        # Issue #3449: dispatch-driven values must be rejected loudly rather
+        # than silently coerced. argparse will see ``None`` and skip type
+        # coercion; ``validate_dispatch_inputs`` enforces the bound check.
+        print(
+            f"[WARN] {env_name}={raw!r} is not an integer; ignoring.",
+            file=sys.stderr,
+        )
+        return default
+
+
+def validate_dispatch_inputs(args: argparse.Namespace) -> None:
+    """Apply Issue #3449 allowlist validators to all `workflow_dispatch`-derived args.
+
+    Validators run after argparse parsing but before any AWS call. Raises
+    :class:`ValueError` (caught by :func:`main`) when any input is unsafe.
+    Sweep type and action are restricted by ``argparse`` ``choices=``; the
+    validators below cover the free-text fields that ``choices=`` cannot.
+    """
+    validate_case_id(args.case)
+    if getattr(args, "params", None):
+        validate_params(args.params)
+    validate_samples(args.samples)
+    if getattr(args, "s3_bucket", None):
+        validate_s3_bucket(args.s3_bucket)
+    validate_s3_prefix(args.s3_prefix)
+    if getattr(args, "sns_topic", None):
+        validate_sns_topic(args.sns_topic)
 
 
 @dataclass
@@ -847,36 +1058,58 @@ def main() -> int:
         type=str,
         choices=["create", "status", "wait", "aggregate", "notify"],
         required=True,
-        help="Action to perform",
+        help=(
+            "Action to perform. Note: the workflow hardcodes --action; "
+            "user-controlled inputs (case_id, params, sweep_type, samples, "
+            "s3_bucket, s3_prefix, sns_topic) are passed via env vars only "
+            "(see Issue #3449)."
+        ),
     )
     parser.add_argument(
         "--campaign-id",
         type=str,
-        help="Campaign ID (required for status, wait, aggregate, notify actions)",
+        default=os.environ.get("FLUXION_CAMPAIGN_CAMPAIGN_ID"),
+        help=(
+            "Campaign ID (required for status, wait, aggregate, notify actions). "
+            "Defaults to FLUXION_CAMPAIGN_CAMPAIGN_ID env var."
+        ),
     )
     parser.add_argument(
         "--case",
         type=str,
-        default="600",
-        help="ASHRAE 140 case ID",
+        default=os.environ.get("FLUXION_CAMPAIGN_CASE", "600"),
+        help=(
+            "ASHRAE 140 case ID (3-4 digit decimal). Defaults to "
+            "FLUXION_CAMPAIGN_CASE env var (Issue #3449)."
+        ),
     )
     parser.add_argument(
         "--params",
         type=str,
-        help="Comma-separated parameter names to sweep",
+        default=os.environ.get("FLUXION_CAMPAIGN_PARAMS"),
+        help=(
+            "Comma-separated parameter names to sweep. Defaults to "
+            "FLUXION_CAMPAIGN_PARAMS env var (Issue #3449)."
+        ),
     )
     parser.add_argument(
         "--sweep-type",
         type=str,
         choices=["grid", "random", "gradient", "binary", "latin_hypercube"],
-        default="random",
-        help="Sweep strategy",
+        default=os.environ.get("FLUXION_CAMPAIGN_SWEEP_TYPE", "random"),
+        help=(
+            "Sweep strategy. Defaults to FLUXION_CAMPAIGN_SWEEP_TYPE env var "
+            "(Issue #3449)."
+        ),
     )
     parser.add_argument(
         "--samples",
-        type=int,
-        default=50,
-        help="Number of samples for random sweep",
+        type=_argparse_samples_type,
+        default=_env_int("FLUXION_CAMPAIGN_SAMPLES", 50),
+        help=(
+            "Number of samples for random sweep. Defaults to "
+            "FLUXION_CAMPAIGN_SAMPLES env var (Issue #3449)."
+        ),
     )
     parser.add_argument(
         "--max-iterations",
@@ -980,6 +1213,14 @@ def main() -> int:
         ),
     )
     args = parser.parse_args()
+
+    # Issue #3449 — apply the strict allowlist before any AWS call so a
+    # maliciously-crafted dispatch input cannot reach the AWS SDK.
+    try:
+        validate_dispatch_inputs(args)
+    except ValueError as exc:
+        print(f"[ERROR] Invalid dispatch input: {exc}", file=sys.stderr)
+        return 2
 
     state_store = _resolve_state_store(args.state_store)
 
