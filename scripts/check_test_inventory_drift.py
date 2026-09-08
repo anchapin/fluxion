@@ -108,12 +108,19 @@ DIFF_TOLERANCE_ABS = int(os.environ.get("TEST_INVENTORY_DRIFT_ABS", "25"))
 #     counts at HEAD are 3894 / 4 / 7923 / 125 / 298 (lower because
 #     cargo's ``--list`` honours ``#[cfg(test)]`` boundaries and
 #     feature gates the AST scan does not).
+#   - 2026-09-08 (Issue #3546): bumped ``BASELINE_TEST_BINARIES`` to 303
+#     and ``BASELINE_WORKSPACE_IGNORED`` to 123 to accommodate the new
+#     ``tests/cli_run_with_perf_600_900.rs`` integration binary and
+#     the 6 new lib tests in
+#     ``src/validation/ashrae140/cases/build_case_routing_tests.rs``
+#     wired into the ``build_case`` router (Case 600 / 900 / 960 / 970
+#     regression of #3555 partial split).
 # ---------------------------------------------------------------------------
 BASELINE_LIB_TESTS = 4311
 BASELINE_LIB_IGNORED = 7
 BASELINE_WORKSPACE_TESTS = 8680
-BASELINE_WORKSPACE_IGNORED = 108
-BASELINE_TEST_BINARIES = 301
+BASELINE_WORKSPACE_IGNORED = 123
+BASELINE_TEST_BINARIES = 303
 
 # Sanity-check constants — the verified cargo counts at HEAD
 # ``12856a9``. Operators checking the drift gate's accuracy can

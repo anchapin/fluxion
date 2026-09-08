@@ -17,7 +17,18 @@ pub mod series_900;
 pub mod series_960;
 pub mod series_970;
 
-/// Build an ASHRAE 140 case definition based on the case enum variant
+#[cfg(test)]
+mod build_case_routing_tests;
+
+/// Build an ASHRAE 140 case definition based on the case enum variant.
+///
+/// Issue #3546: the catch-all panic below is preserved on purpose — it is the
+/// contract that surfaces un-routed variants during refactors (e.g. Issue
+/// #3555 added `series_600/900/960/970.rs` and this router had to be updated
+/// to dispatch them; any future module that introduces new variants must add
+/// a match arm here or the panic fires). The new arms wire the cases the
+/// extracted modules own today (Case600/600FF/650FF → series_600, Case900/
+/// 900FF/950FF → series_900, Case960 → series_960, Case970 → series_970).
 pub fn build_case(case: ASHRAE140Case) -> ASHRAE140CaseDefinition {
     match case {
         ASHRAE140Case::Case800
@@ -54,8 +65,77 @@ pub fn build_case(case: ASHRAE140Case) -> ASHRAE140CaseDefinition {
         | ASHRAE140Case::Office
         | ASHRAE140Case::Retail
         | ASHRAE140Case::School => series_195::build_case(case),
+        // Issue #3546: dispatch the cases the extracted series_600 module
+        // owns. The remaining 600/610/620/630/640/650 variants intentionally
+        // fall through to the panic below — wiring them is outside the scope
+        // of this issue and they have no `run_validation_*` callers today.
+        ASHRAE140Case::Case600 | ASHRAE140Case::Case600FF | ASHRAE140Case::Case650FF => {
+            series_600::build_case(case)
+        }
+        // Issue #3546: same shape for the high-mass series. The 910/920/930/
+        // 940/950 variants fall through to the panic below (out of scope).
+        ASHRAE140Case::Case900 | ASHRAE140Case::Case900FF | ASHRAE140Case::Case950FF => {
+            series_900::build_case(case)
+        }
+        ASHRAE140Case::Case960 => series_960::build_case(case),
+        ASHRAE140Case::Case970 => series_970::build_case(case),
         // Add other case ranges as needed
         _ => panic!("Case {} not implemented in this module", case.number()),
+    }
+}
+
+/// Bridge a `CaseSpec` (returned by the extracted `series_*` factory
+/// functions) to the legacy `ASHRAE140CaseDefinition` surface used by
+/// `run_validation_*` and the CLI.
+///
+/// Issue #3546: `series_600/900/960/970.rs` factories return rich `CaseSpec`
+/// values (geometry, materials, schedule, weather, etc.). The legacy
+/// `ASHRAE140CaseDefinition` is a coarser summary type — `case_type`,
+/// `building`, `hvac`, `weather`, `simulation_parameters` — so the shim
+/// cannot preserve every spec field. We populate `construction_type`,
+/// `floor_area`, `infiltration_rate`, and `u_value` from the spec and let the
+/// remaining fields fall back to their `Default` values, matching the
+/// conservative hand-rolled shape that `series_195::build_case_*` and
+/// `series_800::build_case_*` produce today.
+///
+/// Visible only inside `cases/` so the legacy `mod.rs` dispatch (and the
+/// per-series `build_case` shims) can call it without leaking the bridge
+/// into the wider `crate::validation` surface.
+pub(super) fn spec_to_definition(
+    case: ASHRAE140Case,
+    spec: crate::validation::ashrae_140_cases::CaseSpec,
+) -> crate::validation::ashrae140::ASHRAE140CaseDefinition {
+    use crate::validation::ashrae140::{
+        AshraeZone, BuildingProperties, ConstructionType, WeatherData,
+    };
+    use crate::validation::ashrae_140_cases::ConstructionType as SpecCT;
+
+    let legacy_construction = match spec.construction_type {
+        SpecCT::LowMass => ConstructionType::Lightweight,
+        SpecCT::HighMass => ConstructionType::HighMass,
+        // `Special` covers 195-series, 960, 970 — pick a middle-ground mass
+        // class; the legacy `series_195::build_case` shapes use MediumWeight
+        // for 195 itself.
+        SpecCT::Special => ConstructionType::MediumWeight,
+    };
+    let floor_area: f64 = spec.geometry.iter().map(|g| g.floor_area()).sum();
+    let u_value = spec.construction.wall_u_value();
+    let infiltration_rate = spec.infiltration_ach;
+
+    crate::validation::ashrae140::ASHRAE140CaseDefinition {
+        case_type: case,
+        building: BuildingProperties {
+            construction_type: legacy_construction,
+            floor_area,
+            u_value,
+            // window_wall_ratio is not pre-computed on CaseSpec; fall back to
+            // the BuildingProperties default (0.2) which matches the ASHRAE 140
+            // Case 600 baseline south-window geometry.
+            infiltration_rate,
+            ..Default::default()
+        },
+        weather: WeatherData::from_ashrae_zone(AshraeZone::Zone5A),
+        ..Default::default()
     }
 }
 

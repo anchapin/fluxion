@@ -257,10 +257,22 @@ pub enum ValidationSubcommand {
 
 /// Parse case number into ASHRAE140Case enum
 fn parse_case_number(case_num: u32) -> Result<u32> {
-    // Simple validation for now - accept common case numbers
+    // Simple validation for now - accept common case numbers.
+    //
+    // Issue #3546: extended to also accept the cases that the
+    // `run_validation_with_performance` CLI handler dispatches through the
+    // `crate::validation::ashrae140::cases::build_case` router after the
+    // #3555 burn-down. The numeric ranges mirror the mapping in
+    // `ASHRAE140Case::from_number` (e.g. 601 → Case600FF, 651 → Case650FF).
     match case_num {
         800..=810 => Ok(case_num),
         195..=470 => Ok(case_num),
+        // Issue #3546: 600/601/651 (Case600, Case600FF, Case650FF).
+        600 | 601 | 651 => Ok(case_num),
+        // Issue #3546: 900/901/951 (Case900, Case900FF, Case950FF).
+        900 | 901 | 951 => Ok(case_num),
+        // Issue #3546: 960/970 (Case960 sunspace, Case970 5-zone).
+        960 | 970 => Ok(case_num),
         _ => Err(anyhow!(
             "Case {} not supported. Use --list-cases to see available cases.",
             case_num

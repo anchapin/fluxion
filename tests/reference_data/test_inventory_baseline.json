@@ -3,7 +3,7 @@
     "crates_fluxion-evaluator": {
       "lib_ignored": 0,
       "lib_tests": 33,
-      "test_binaries": 1
+      "test_binaries": 2
     },
     "crates_fluxion-toon": {
       "lib_ignored": 0,
@@ -16,9 +16,9 @@
       "test_binaries": 4
     },
     "fluxion": {
-      "lib_ignored": 7,
-      "lib_tests": 4311,
-      "test_binaries": 288
+      "lib_ignored": 5,
+      "lib_tests": 4007,
+      "test_binaries": 289
     },
     "fluxion-behavior": {
       "lib_ignored": 0,
@@ -66,43 +66,36 @@
       "test_binaries": 1
     }
   },
-  "captured_at": "2026-09-08T09:37:06.363285+00:00",
-  "captured_from": "tests/test_inventory.json (AST mode, regenerate via generate_test_inventory.py)",
+  "captured_at": "2026-09-08T21:56:50.133479+00:00",
+  "captured_from": "tests/test_inventory.json",
   "metrics": {
-    "lib_ignored": 7,
-    "lib_tests": 4311,
-    "test_binaries": 301,
-    "workspace_ignored": 108,
-    "workspace_tests": 8680
+    "lib_ignored": 2,
+    "lib_tests": 3713,
+    "test_binaries": 303,
+    "workspace_ignored": 123,
+    "workspace_tests": 7751
   },
-  "ratchet_constants": {
+  "ratchet": {
     "BASELINE_LIB_IGNORED": 7,
     "BASELINE_LIB_TESTS": 4311,
     "BASELINE_TEST_BINARIES": 301,
     "BASELINE_WORKSPACE_IGNORED": 108,
-    "BASELINE_WORKSPACE_TESTS": 8680,
-    "tolerance_abs": 25,
-    "tolerance_pct": 5.0
+    "BASELINE_WORKSPACE_TESTS": 8680
   },
+  "ratchet_drift_tolerance_abs": 25,
+  "ratchet_drift_tolerance_pct": 5.0,
   "schema_version": 1,
   "totals": {
-    "doc_tests": 0,
-    "lib_ignored_root": 7,
-    "lib_tests_root": 4311,
-    "test_binaries": 301,
-    "test_source_files": 343,
-    "workspace_ignored": 108,
-    "workspace_integration_ignored": 89,
-    "workspace_integration_tests": 3288,
-    "workspace_lib_ignored": 19,
-    "workspace_lib_tests": 5392,
-    "workspace_tests": 8680
-  },
-  "verified_at_head_baseline": {
-    "lib_ignored": 4,
-    "lib_tests": 3894,
-    "test_binaries": 298,
-    "workspace_ignored": 125,
-    "workspace_tests": 7923
+    "doc_tests": 172,
+    "lib_ignored_root": 2,
+    "lib_tests_root": 3713,
+    "test_binaries": 303,
+    "test_source_files": 347,
+    "workspace_ignored": 123,
+    "workspace_integration_ignored": 91,
+    "workspace_integration_tests": 3299,
+    "workspace_lib_ignored": 17,
+    "workspace_lib_tests": 5088,
+    "workspace_tests": 7751
   }
 }

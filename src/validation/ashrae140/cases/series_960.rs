@@ -2,11 +2,28 @@
 //!
 //! Issue #3555: extracted from `src/validation/ashrae_140_cases.rs::CaseBuilder`
 //! to shrink the legacy monolith.
+//!
+//! Issue #3546: added [`build_case`] thin shim so the `build_case` router in
+//! `crate::validation::ashrae140::cases::mod` can dispatch Case960 to the
+//! `CaseSpec`-returning factory below. The shim does NOT alter any
+//! case-definition logic — it only bridges the `CaseSpec` to the legacy
+//! `ASHRAE140CaseDefinition` surface.
 
 use crate::sim::construction::Assemblies;
+use crate::validation::ashrae140::ASHRAE140CaseDefinition;
+use crate::validation::ashrae_140_cases::ASHRAE140Case;
 use crate::validation::ashrae_140_cases::{
     CaseBuilder, CaseSpec, HvacSchedule, InternalLoads, Orientation,
 };
+
+/// Thin routing shim for Case 960 (Issue #3546).
+pub fn build_case(case: ASHRAE140Case) -> ASHRAE140CaseDefinition {
+    let spec = match case {
+        ASHRAE140Case::Case960 => case_960_sunspace(),
+        _ => panic!("Invalid case for series 960: {:?}", case),
+    };
+    super::spec_to_definition(case, spec)
+}
 
 /// Case 960 — Sunspace (2-zone building: back-zone + sunspace).
 ///
