@@ -71,6 +71,14 @@ Bindings are feature-gated: `maturin develop` for Python; run `npm run build` in
 - ONNX loads are fail-closed against `<model>.sha256`; `FLUXION_ONNX_MODEL_SIGNATURE` is only an explicit digest override. Do not bypass `verify_onnx_signature`.
 - Release REST builds reject insecure public bind/auth combinations unless `FLUXION_REST_ALLOW_INSECURE=1`; TLS proxy auth requires `FLUXION_REST_TRUSTED_PROXIES`. Untrusted forwarded IP headers are intentionally ignored. The MQTT telemetry consumer (`fluxion-twin`) is always TLS with validated certificates — there is no runtime bypass (#3162).
 
+### Environment Variables
+
+Runtime configuration knobs referenced above. All are fail-closed by design — there are no runtime bypasses:
+
+- `FLUXION_ONNX_MODEL_SIGNATURE` — explicit digest override for the `<model>.sha256` verifier. Leave unset in production; ONNX loads are rejected if the on-disk signature does not match (`verify_onnx_signature`).
+- `FLUXION_REST_ALLOW_INSECURE=1` — opt-in escape hatch for release REST builds that bind publicly without TLS or accepted-auth combinations. Leave unset for any release reachable from the public internet.
+- `FLUXION_REST_TRUSTED_PROXIES` — comma-separated CIDR list of proxies whose `Forwarded`/`X-Forwarded-*` headers may be honored for client-IP and TLS-terminated-auth context. Untrusted forwarded headers are always ignored outside this set.
+
 ## Documentation and Repository Hygiene
 
 - Do not hand-edit generated `SCORECARD.md`; regenerate with `python3 scripts/generate_scorecard.py`. The `scorecard-drift` workflow auto-regenerates on PRs (issue #3128), so manual regen is only needed for local citations or to fix drift that leaks through to `develop`/`main`. See `docs/agents/scorecard-regen.md`.
