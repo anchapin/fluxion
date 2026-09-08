@@ -59,6 +59,7 @@ gate-failure protocol as designed.
 - Issue #3286 — β-soak 30-day soak window tracking (gate contract).
 - Issue #3284 — original nightly CI workflow infra.
 - Issue #3291 — Phase A8 umbrella (gated on β-soak).
+- Issue #3289 — A7.1 fall-through removal (PR4 sub-issue; closed by PR #3482 via #3291).
 - Issue #3297 — §LIMIT-21 cohort owner (mass-state proxy aftermath).
 - `docs/KNOWN_ISSUES.md` §LIMIT-21 — pre-existing air-trajectory cohort.
 - `docs/KNOWN_ISSUES.md` §LIMIT-22 — exact-CN proxy aftermath.
