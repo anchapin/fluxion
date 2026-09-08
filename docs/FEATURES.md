@@ -27,7 +27,7 @@ The canonical source of truth is always `Cargo.toml` — if this file disagrees 
 | [`debug-physics`](#debug-physics) | off | Unconditional `eprintln!` in physics hot loops (#1967) | none | none |
 | [`kafka`](#kafka) | off | `rdkafka` telemetry consumer (#2056) | manual only | Kafka broker config |
 | [`fluid`](#fluid) | off | Acausal HVAC / fluid network modeling via `fluxion-fluid` (ADR-0005, #1980) | `fluxion-mcp` build (unconditional) | none |
-| [`gauge-solver`](#gauge-solver) | off | experimental `GaugeZoneSolver` scaffolding (#2304); not wired as primary — always `None` (#2686) | advisory ASHRAE variant | none |
+| [`gauge-solver`](#gauge-solver) | off | **Production** GaugeSolver zone-solver gate (Phase A8, Issue #3291 / PR #3482). With `--features gauge-solver` on, the dispatcher's gauge arm is unconditional and panics on missing gauge backend. Pending §LIMIT-21 (β-soak #3286). | advisory ASHRAE variant | none |
 | [`fluxion-city`](#fluxion-city) | off | Urban radiation solver wiring (#2344) | manual only | none |
 | [`dhat`](#dhat) | off | `dhat` heap allocation profiling (#2384) | manual only | `DHAT_ANALYSIS=1` |
 | [`fluxion-cfd`](#fluxion-cfd) | off | FFD / CFD loose-coupling co-simulation (#2460) | manual only | none |
@@ -200,20 +200,32 @@ Combine flags with commas: `cargo test --features ort,multi-zone,fluid`.
 
 ### `gauge-solver`
 
-- **Enables:** the experimental `GaugeZoneSolver` zone-level scaffolding (Issue #2304).
-  **Status (Issue #2686, 2026-08-11): opt-in and NOT wired as primary.** The
-  `gauge_zone_solver` field on `ThermalModelData` is feature-gated but always initialized
-  to `None`, and no construction path sets it to `Some`. Even with `--features gauge-solver`,
-  the routing branch in `step_physics` is unreachable, so the legacy 5R1C / 9R4C
-  lumped-capacitance networks remain the primary zone solver in ALL builds (default and
-  feature-enabled). This stub wiring is preserved as WIP for whoever finishes #2304. The
-  live gauge-theory research path is the separate per-surface `GaugeSolver` run in shadow
-  mode via `PhysicsAdapter` (ARCHITECTURE.md Module 6, #1465 / #1462).
+- **Enables:** the **production** `GaugeSolver` zone-solver gate
+  (`ZoneSolverKind::Gauge`, Issue #2304 / #2686 / #3291). The
+  `gauge_zone_solver` / `gauge_multi_zone_solver` fields on
+  `ThermalModelData` are initialised by `from_spec_with_selector` when
+  the feature is on.
+- **Status (Issue #3291, Phase A8, merged via PR #3482 on 2026-09-07):**
+  with `--features gauge-solver` on, the dispatcher's gauge arm is
+  **unconditional** (`src/sim/thermal_model_physics/step_dispatcher.rs:99-134`);
+  a `Gauge` selector with no gauge backend configured PANICS rather
+  than silently falling through to legacy 5R1C/9R4C. The feature is
+  intentionally retained as the production-path gate pending §LIMIT-21
+  (Issue #3297) closure — the β-soak gate (#3286) is at 0/30 nights
+  green. Once the β-soak trips, the feature flips unconditionally (no
+  longer a `default = []` opt-in) and the `#[cfg(feature = "gauge-solver")]`
+  gate in the dispatcher becomes the always-on production path.
+- **In the default build (feature OFF),** the cfg-gated gauge block is
+  absent and a `Gauge` selector falls through to legacy 5R1C/9R4C — the
+  same observable behaviour as the pre-#3291 fall-through. The
+  `Gauge` selector itself (the `Default` impl on `ZoneSolverKind` per
+  Issue #3291) IS the production default and is reached via
+  `from_spec_with_selector` regardless of the cargo feature.
 - **Build:** `cargo test --features gauge-solver --test ashrae_140_case_600_series`.
 - **CI implication:** Advisory ASHRAE variant; the production solver path in CI is still the
   5R1C / 9R4C default so the strict energy gate (#1333) remains directly comparable to
   EnergyPlus reference data.
-- **Default:** off.
+- **Default:** off (pending §LIMIT-21 closure).
 
 ### `fluxion-city`
 
