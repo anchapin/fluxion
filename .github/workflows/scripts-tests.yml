@@ -110,6 +110,21 @@ jobs:
       - name: Enforce ADR-0015 concurrency keys (Issue #3366, #3444)
         run: python3 scripts/check_concurrency_keys.py
 
+      # Issue #3475: SHA-pinning hygiene guard for ``.github/workflows/``.
+      # PR #3472 repinned the last tag-pinned third-party actions but, by
+      # scope, did not add a general enforcement gate. The matcher in
+      # ``scripts/check_workflow_pin.py`` fails any non-SHA-pinned
+      # ``uses:`` (or non-local-composite) so a future contributor adding
+      # ``uses: action@v4`` -- a mutable tag that re-resolves every run --
+      # is rejected at PR time. The pytest companion
+      # ``scripts/ci/test_check_workflow_pin.py`` covers the classifier /
+      # extractor / main() exit-code contract against hermetic ``tmp_path``
+      # fixtures (tag, branch, bare, empty, SHA, local); this direct
+      # invocation covers the end-to-end against the real repo (same
+      # direct-invocation split as #2866 / #3444 above).
+      - name: Enforce SHA-pinned workflow `uses:` (Issue #3475)
+        run: python3 scripts/check_workflow_pin.py
+
       - name: Enforce ruff clean (keep the #2811 baseline at 0)
         run: |
           # Match ``.pre-commit-config.yaml``'s ``astral-sh/ruff-pre-commit``
