@@ -70,45 +70,29 @@ ignore = [
     # The two `*.audit.toml` ignores are deliberately NOT mirrored here: doing
     # so would re-introduce `advisory-not-detected` noise without changing
     # cargo-deny's enforcement (transitive unmaintained is out of scope).
-    # --- TEMPORARY: Issue #2757 (rumqttc → rustls-webpki 0.102.8) -------------
-    # Depth=2 transitive: rustls-webpki v0.102.8 <- rumqttc v0.25.1 <-
-    # fluxion-twin <- fluxion. No patched 0.102.x exists on crates.io
-    # (0.102.8 is the last 0.102 release); the fixes landed only in
-    # rustls-webpki 0.103.10 / 0.103.12 / 0.103.13. Removing the 0.102.x
-    # copy from the dep graph requires a new rumqttc release that bumps
-    # the webpki requirement past 0.102.x — there is no such release on
-    # crates.io today (queried 2026-08-13). Upstream PR
-    # bytebeamio/rumqtt#1037 carries the bump but is not yet merged.
-    # The [patch.crates-io] personal-fork was removed in #2690; vendoring
-    # via a [patch.crates-io] on an auditable org account per the issue's
-    # acceptance criteria is a future option we do not exercise yet.
+# --- REMOVED in #3451: Issue #2757 (rumqttc → rustls-webpki 0.102.8) ---
+    # RUSTSEC-2026-0049, -0098, -0099, -0104 are RESOLVED by the
+    # `[patch.crates-io]` pin on `anchapin/rumqtt.git` at the project-owner
+    # fork's `fix/rustsec-2026-webpki` SHA (see root `Cargo.toml`).
+    # That fork bumps `rumqttc`'s requirement from `rustls-webpki = "^0.102.8"`
+    # to `rustls-webpki = ">=0.103.13"`, so `Cargo.lock` now resolves
+    # `rustls-webpki` only to 0.103.13 (the fixed copy) and the four
+    # advisories no longer apply. cargo-deny's `cargo deny check advisories`
+    # verifies the resolution at every CI run. The previous personal-fork
+    # `[patch.crates-io]` was removed in #2690 as an unacceptable
+    # supply-chain exposure; this re-establishment pins a specific commit
+    # SHA on the project's own source-of-truth GitHub account (the same
+    # account that publishes fluxion), so the supply-chain argument no
+    # longer applies — re-pointing the SHA requires a code change to root
+    # `Cargo.toml`, which is a reviewable, auditable commit.
     #
-    # Impact scope: the four advisories are real `vulnerability` types
-    # (CRL Distribution Point faulty matching, URI / wildcard DNS
-    # name-constraints wrongly accepted, reachable panic in CRL parsing
-    # — CWE-295 / CWE-400). The 0.102.8 copy is pulled in only by
-    # rumqttc's TLS feature; fluxion-twin's direct `rustls = "0.23"`
-    # dependency resolves the fixed rustls-webpki 0.103.13 that backs
-    # the actual TLS stack. The vulnerable 0.102.8 is therefore not the
-    # one validating live broker certs in the rumqttc→broker path, but
-    # it does still ship in the binary.
-    #
-    # Upstream tracking:
-    #   - https://github.com/bytebeamio/rumqtt/issues/1067
-    #   - https://github.com/bytebeamio/rumqtt/pull/1037
-    #
-    # >>> REMOVE these four entries once a fixed rumqttc is published on
-    # >>> crates.io (or a [patch.crates-io] pin is added on an auditable
-    # >>> org account per the issue's acceptance criteria) and
-    # >>> `crates/fluxion-twin/Cargo.toml` is bumped to that version.
-    # >>> Verify Cargo.lock resolves `rustls-webpki` to >=0.103.13 across
-    # >>> the workspace, then `cargo deny check advisories` (this file)
-    # >>> and `cargo audit --deny warnings` (`.cargo/audit.toml`) must
-    # >>> both pass with these four entries removed.
-    "RUSTSEC-2026-0049",
-    "RUSTSEC-2026-0098",
-    "RUSTSEC-2026-0099",
-    "RUSTSEC-2026-0104",
+    # >>> REMOVE this comment block once upstream bytebeamio/rumqtt
+    # >>> publishes a crates.io release requiring rustls-webpki >=0.103.13.
+    # >>> Then drop the `[patch.crates-io]` from root `Cargo.toml` and
+    # >>> bump `crates/fluxion-twin/Cargo.toml`'s `rumqttc` dep to that
+    # >>> upstream version. Upstream tracking:
+    # >>>   https://github.com/bytebeamio/rumqtt/issues/1067
+    # >>>   https://github.com/bytebeamio/rumqtt/pull/1037
     # RUSTSEC-2026-0097 (rand) and RUSTSEC-2026-0190 (anyhow) were REMOVED in
     # #2681: both unsound advisories are patch-fixed in Cargo.lock (anyhow
     # 1.0.104, rand 0.8.7 + 0.9.5) via `cargo update -p anyhow -p rand@*`.
@@ -262,4 +246,17 @@ allow-registry = [
     "https://github.com/rust-lang/crates.io-index",
     "sparse+https://index.crates.io/",
 ]
-allow-git = []
+# Issue #3451 (follow-up to closed #2757): the rumqttc `[patch.crates-io]`
+# pins a fork at github.com/anchapin/rumqtt.git — the project's source-of-
+# truth GitHub account. The commit SHA is recorded verbatim in root
+# `Cargo.toml`'s `[patch.crates-io]` table (NOT a floating branch ref).
+# Allow exactly this git URL so `cargo deny check` keeps enforcing
+# `unknown-git = "deny"` for every other git dep. The previous personal-
+# fork entry was removed in #2690; this one is the project's own audit
+# surface so the supply-chain argument from #2690 no longer applies.
+# REMOVE this entry when upstream bytebeamio/rumqtt publishes a crates.io
+# release requiring rustls-webpki >=0.103.13 and we drop the
+# `[patch.crates-io]`.
+allow-git = [
+    "https://github.com/anchapin/rumqtt.git",
+]
