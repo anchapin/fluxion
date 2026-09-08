@@ -172,10 +172,10 @@ block. Workflows never rely on the repository-wide default token permissions
 | Scope | Granted to | Example |
 | --- | --- | --- |
 | `contents: read` | every workflow (default) | `rust-tests.yml`, `security.yml` |
-| `contents: write` | jobs that `git commit`/`git push` | benchmark baseline updates in `ashrae_benchmark_harness.yml`, `tdqs_regression.yml`; gh-pages push in `performance_dashboard.yml` |
+| `contents: write` | jobs that `git commit`/`git push` | `update-baseline` job in `ashrae_benchmark_harness.yml` (escalation under main + workflow_dispatch + `update_baseline=true` gate, issue #3450); `tdqs_regression.yml`; gh-pages push in `performance_dashboard.yml` |
 | `packages: write` | jobs pushing to ghcr.io | `docker.yml` build/merge jobs |
 | `pull-requests: write` | jobs posting PR comments | `github-script` comment steps in `mutation-testing.yml`, `ripr-preflight.yml` |
-| `issues: write` | jobs opening/commenting issues | `nightly_validation.yml`, `known-issues-stale.yml` |
+| `issues: write` | jobs opening/commenting issues | workflow-level grant in `ashrae_benchmark_harness.yml` (PR delta comment via `github.rest.issues.createComment`); `nightly_validation.yml`, `known-issues-stale.yml` |
 | `security-events: write` | SARIF upload | Trivy job in `docker.yml` |
 | `id-token: write` | OIDC only (trusted publishing / AWS) | PyPI publish jobs in `pypi-release.yml`; all jobs in `cloud_campaign.yml` |
 
