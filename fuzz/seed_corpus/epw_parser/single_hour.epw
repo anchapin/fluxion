@@ -1,0 +1,9 @@
+LOCATION,Denver,CO,USA,TMY3,724690,39.83,-104.65,-7.0,1655.0,1991-2005
+DESIGN CONDITIONS,0
+EXTREME PERIODS,0
+TYPICAL/EXTREME PERIODS,0
+GROUND TEMPERATURES,0
+HOLIDAYS/DAYLIGHT SAVINGS,No,0,0,0
+COMMENTS 1,Seed corpus — fluxion fuzz/seed_corpus/epw_parser/single_hour.epw (Issue #3461)
+COMMENTS 2,Exercises the full header + single data-line parse path (dry bulb, humidity, wind).
+1991,1,1,1,0,?9?9?9?9E0?9?9?9?9?9?9?9?9?9?9?9?9?9?9?9*9*9?9?9?9,-5.0,-9.0,60,101325,0,0,9999,9999,9999,9999,0,0,0,0,0,2.5,180,0,0,0,0,0,0,0,0,0,0,0,0

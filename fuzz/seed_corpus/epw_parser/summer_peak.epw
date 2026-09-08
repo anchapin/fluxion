@@ -1,0 +1,9 @@
+LOCATION,Phoenix,AZ,USA,TMY3,722780,33.43,-112.01,-7.0,337.0,1991-2005
+DESIGN CONDITIONS,0
+EXTREME PERIODS,0
+TYPICAL/EXTREME PERIODS,0
+GROUND TEMPERATURES,0
+HOLIDAYS/DAYLIGHT SAVINGS,No,0,0,0
+COMMENTS 1,Seed corpus — fluxion fuzz/seed_corpus/epw_parser/summer_peak.epw (Issue #3461)
+COMMENTS 2,Hot-climate summer noon — exercises solar-irradiance parse path (DNI/DHI/GHI non-zero).
+1991,7,15,12,0,?9?9?9?9E0?9?9?9?9?9?9?9?9?9?9?9?9?9?9?9*9*9?9?9?9,38.0,18.0,25,101325,0,0,820,180,1000,120,0,0,0,0,0,3.0,200,0,0,0,0,0,0,0,0,0,0,0,0
