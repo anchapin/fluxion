@@ -417,9 +417,9 @@ graph TD
         TMS["Timestep Solver<br/>(sim/timestep_solver.rs)"]
     end
 
-    subgraph Gauge ["Gauge-Theory Foundation (#1461 + #1462 + #1465)"]
+    subgraph Gauge ["Gauge-Theory Foundation (#1461 + #1462 + #1465) + Phase A8 #3291"]
         TM["ThermalManifold<br/>(physics/geometry_tensor.rs)"]
-        GS["GaugeSolver — shadow mode<br/>(physics/gauge_solver.rs)"]
+        GS["GaugeSolver — unconditional default zone solver under --features gauge-solver<br/>(physics/gauge_solver.rs)"]
         GV["Case 900 Validation Harness<br/>(tests/gauge_validation_case_900.rs)"]
     end
 
@@ -694,7 +694,7 @@ pub trait VentilationSchedule {
 
 ### Module 5: Zone Air Heat Balance
 
-**Source**: `src/sim/thermal_model_core.rs`, `src/sim/thermal_model.rs`, `src/sim/thermal_model_physics/`, `src/sim/timestep_solver.rs`
+**Source**: `src/sim/thermal_model_core.rs`, `src/sim/thermal_model.rs`, `src/sim/thermal_model_physics/`, `src/sim/timestep_solver.rs`, `src/sim/thermal_selector.rs`
 **Purpose**: Solve the zone heat balance equation at each timestep.
 
 | Input | Type | Source |
@@ -704,6 +704,7 @@ pub trait VentilationSchedule {
 | Ventilation conductance | `f64` [W/K] | Ventilation module |
 | Internal gains | `f64` [W] | Schedule |
 | Weather data | `HourlyWeatherData` | Weather module |
+| `ThermalSelector` (zone solver + conduction solver) | `ThermalSelector` (`sim/thermal_selector.rs`) | Spec / caller (`from_spec_with_selector`) |
 
 | Output | Type | Consumer |
 |--------|------|----------|
@@ -711,6 +712,29 @@ pub trait VentilationSchedule {
 | Heating load | `f64` [W] | HVAC controller |
 | Cooling load | `f64` [W] | HVAC controller |
 | Annual EUI | `f64` [kWh/m2/year] | Optimization |
+
+**Thermal selector (Phase A8 / Issue #3291, merged via PR #3482)**: The
+zone solver is no longer auto-selected from construction mass — it is
+driven exclusively by `ThermalSelector` (`src/sim/thermal_selector.rs`,
+`#![derive(Default)]` selects `ZoneSolverKind::Gauge`). The dispatcher's
+`step_physics` (`src/sim/thermal_model_physics/step_dispatcher.rs`) is
+strictly selector-driven:
+
+| Selector | Path |
+|----------|------|
+| `ZoneSolverKind::Gauge` (default) | Unconditional gauge dispatch under `--features gauge-solver` — single-zone and multi-zone gauge paths are tried in turn, and a missing gauge backend is a programming error that **panics** rather than falling through to legacy 5R1C/9R4C. In the default build (no `gauge-solver` feature), the `Gauge` selector routes to 5R1C/9R4C via the `match` arm at the bottom of `step_physics`; the cargo feature remains the production gate pending §LIMIT-21 (Issue #3297) closure. |
+| `ZoneSolverKind::FiveROneC` | Always routes to the legacy 5R1C `step_physics_5r1c` path (low-mass ISO 13790 single-node network). |
+| `ZoneSolverKind::NineRFourC` | Always routes to the legacy 9R4C `step_physics_9r4c` path (high-mass multi-node network per ADR-002). |
+
+The `gauge-solver` cargo feature is the **production-path gate**
+(Issues #3291 / #3286): the β-soak gate is currently at 0/30 nights
+green (§LIMIT-21 below), and the unconditional gauge-default dispatch
+applies for callers who opt into the feature while the β-soak gate is
+climbing. Production builds that do not enable the feature continue to
+get the 5R1C / 9R4C network on the `Gauge` selector. The legacy
+`is_9r4c_model()` / `is_8r3c_model()` / `is_6r2c_model()` checks are
+gone — `thermal_model_type` is set exclusively by the selector
+(Issue #3277 PR2.1).
 
 **Key trait**: `ThermalModelTrait` in `sim/thermal_model.rs`
 
@@ -785,12 +809,14 @@ pub struct HybridRouting {
 
 Each flag independently routes one subsystem to the surrogate path (`true`) or the analytical/physics path (`false`). `HybridRouting::all_physics()` sets every flag to `false` (equivalent to `ThermalModelMode::Physics`); the `Default` routes **loads → surrogate, conduction + ventilation + hvac → physics**, with `use_ood_fallback = false` — the highest-value + lowest-risk split from Issue #1431's acceptance criteria (the `hvac` and `ood_fallback` flags were added by #1892/#2457). The `HybridThermalModel` struct holds the routing policy alongside the inner `ThermalModel` and applies per-timestep dispatch with instrumentation (`surrogate_load_calls` / `physics_step_calls` counters for test verification). The routing can be changed at runtime via `set_routing()`. Regression: `tests/surrogate_models/test_hybrid_mode_dispatch.rs`.
 
-**Multi-node HVAC & free-float (ADR-002 selection rule)**: The zone-level thermal network has two solver paths, selected by construction type in `thermal_model_core.rs::from_spec`:
+**Multi-node HVAC & free-float (ADR-002 legacy paths)**: Per Phase A8 (Issue #3291, merged via PR #3482) the zone-level thermal network dispatch is no longer auto-selected from construction type — the `ThermalSelector` (`src/sim/thermal_selector.rs`) is the canonical source and `ThermalSelector::default()` resolves to `ZoneSolverKind::Gauge`. The two legacy ISO 13790 paths remain reachable as opt-in via `ThermalSelector`:
 
-| Construction | Zone solver | Air-temperature source | Solar→air fraction |
+| Construction (legacy) | Zone solver (legacy) | Air-temperature source | Solar→air fraction |
 |--------------|-------------|------------------------|--------------------|
 | **Low-mass** (Case 600-series) | ISO 13790 5R1C single mass node (`FiveROneC`) | `t_i_free` closed-form (coefficient-tuned `h_ms_coeff = 2.0·A_m`) | 0.80 (5R1C compensation; unchanged) |
 | **High-mass** (Case 900+ series) | **9R4C multi-node** (`NineRFourC`) — ADR-002 | `compute_zone_air_temperature` from backward-Euler-stepped wall/roof/floor/internal mass nodes; physics-based per-surface `h_tr_ms = k·A/d` | free-float **0.0** (ASHRAE-140: solar → surfaces/mass); HVAC 0.40 (baseline-validated; HVAC clamps the air node) |
+
+In the default `gauge-solver` build the **Gauge** selector is now the unconditional default — neither row of this table is reached without an explicit `ThermalSelector { zone_solver: FiveROneC / NineRFourC, .. }` from the caller.
 
 The 9R4C model (`sim/multi_node_thermal.rs`, `physics/multi_node_solver.rs`) separates thermal mass into 4 nodes (wall, roof, floor, internal) for heavy-mass buildings (#715). Per ADR-002, the 9R4C path is the **sole** driver of high-mass free-float **and** HVAC — the legacy coefficient-tuned `h_ms_coeff` (13.4) no longer drives the high-mass air temperature. The free-float commit in `physics_impl.rs::step_physics` writes the 9R4C multi-node air temperature (`t_i_free_mn`) for high-mass zones (and the 5R1C `t_i_free` for low-mass zones). CTF remains available as a secondary dynamic path but is non-default (CTF↔5R1C coupling instability for 900FF, per #1152).
 
@@ -1139,7 +1165,7 @@ where
 
 ---
 
-### Module 6: Gauge-Theory Foundation (Phase 1a — #1461)
+### Module 6: Gauge-Theory Foundation (Phase 1a — #1461) + Production default (Phase A8 — Issue #3291, PR #3482)
 
 **Source**: `src/physics/geometry_tensor.rs` (lives alongside the existing CTA `GeometryTensor` types for the Python↔Rust boundary; the two domains are deliberately kept on different storage representations — `Vec<f64>` for the CTA tensors, `nalgebra::{Matrix4, Vector4}` for the gauge-theory manifold, because their consumers diverge).
 **Purpose**: Foundational data structure for the gauge-theory migration. Replaces the discrete `R`/`C` values and `T_air`/`T_mass_*` node temperatures of the 5R1C / 9R4C lumped-capacitance networks with a continuous Riemannian representation on a fixed 4-D ambient space. `GaugeSolver` (Phase 1b, #1462) consumes this structure to compute the Christoffel connection and step the manifold through parallel transport.
@@ -1238,13 +1264,15 @@ pub enum ManifoldIndex { Air = 0, Wall = 1, Roof = 2, Floor = 3 }
 **File**: `tests/gauge_validation_case_900.rs` + `tests/reference_data/gauge/case_900_diurnal_reference.csv`.
 **Companion issue**: #1465 (Phase 3 of the gauge-theory research program — `GaugeSolver` validation).
 
-The Phase 3 harness exercises the `GaugeSolver` shadow-mode path (via `PhysicsAdapter`, `src/thermal/physics_adapter.rs`) against the ASHRAE 140 Case 900 envelope geometry (200 mm HW concrete, `Cm ≈ 468.7 kJ/m²K` per ASHRAE 140 Table B1-3 stacked concrete construction). Eight tests cover:
+> **Status note (Phase A8 / Issue #3291, merged via PR #3482):** `GaugeSolver` is no longer "shadow-mode" — the dispatcher in `src/sim/thermal_model_physics/step_dispatcher.rs` runs the gauge path every step for `ZoneSolverKind::Gauge` (the `ThermalSelector::default()`) under `--features gauge-solver`, with no fall-through to legacy 5R1C/9R4C. The Phase 3 harness below remains the regression gate for the gauge integrator itself (`ThermalManifold` ↔ `GaugeSolver` ↔ dispatch); Phase A8 collapses the production dispatch onto this gate rather than running a parallel shadow path.
+
+The Phase 3 harness exercises the `GaugeSolver` on the production dispatch path (via `PhysicsAdapter`, `src/thermal/physics_adapter.rs`) against the ASHRAE 140 Case 900 envelope geometry (200 mm HW concrete, `Cm ≈ 468.7 kJ/m²K` per ASHRAE 140 Table B1-3 stacked concrete construction). Eight tests cover:
 
 1. `ThermalManifold::from_9r4c_parameters` produces a finite, symmetric, dissipative operator for Case 900 scene parameters (algebraic invariant).
 2. The Case 900 envelope `Cm` is reproduced from first principles within 1 % of the documented `468.7 kJ/m²K` reference.
-3. The `GaugeSolver` shadow-mode flux tracks a synthetic 24-hour diurnal cycle with **non-zero amplitude**, **finite values**, **bipolar sign** (day gain / night loss), and **phase lag ≤ 2 h** of the peak sol-air temperature (no over-damping).
+3. The `GaugeSolver` flux on the production dispatch path tracks a synthetic 24-hour diurnal cycle with **non-zero amplitude**, **finite values**, **bipolar sign** (day gain / night loss), and **phase lag ≤ 2 h** of the peak sol-air temperature (no over-damping).
 4. Extreme solar forcing (5 kW/m² ≈ 6× the typical peak) is **not silently clamped** — the flux exceeds 2× the typical peak, honouring the `#1461 epic constraint` (no HVAC clamps in the gauge transport).
-5. Shadow-mode parity with baseline `FiveR1CSolver` in steady state (no solar) — machine-precision agreement.
+5. Production-dispatch parity with baseline `FiveR1CSolver` in steady state (no solar) when the `FiveROneC` opt-in selector is used — machine-precision agreement.
 6. `gauge_connection` is correctly translated by `PhysicsAdapter` (solar > 0 during the day, ≈0 at night within f64 ULP).
 7. `geometry_tensor::MAX_ZONES = 100` cap invariant — the gauge solver's internal zone count envelope is locked to the Phase 1a data-structure envelope.
 8. **CSV reference-data parity** — the synthetic 24-hour diurnal reference CSV is read at test time and every hourly flux matches within 1 % (this is the test the issue body's "match the ASHRAE analytical baseline" criterion maps to).
@@ -1788,7 +1816,7 @@ Surrogates must match physics within 2% on held-out data. v3.0 surrogate trainin
 | Ventilation | Yes | Yes (`VentilationSchedule`) | Yes | Yes |
 | Zone Balance | Yes | Yes (`ThermalModelTrait`) | Yes | Yes |
 | Gauge-Theory Foundation (#1461 — Phase 1a) | **Yes** (data structures only — no production solver wiring) | N/A — gauge transport is a stub method on `ThermalManifold`; Phase 1b (#1462) wires the production `GaugeSolver` | N/A — Phase 3 (#1465) is the ASHRAE 140 Case 900 validation gate | **Yes** — 27 unit tests in `src/physics/geometry_tensor.rs` (`test_manifold_*`, `test_from_5r1c_*`, `test_from_9r4c_*`, `test_parallel_transport_*`, `test_validate_*`); matrix-form tracks the 5R1C discrete ODE to 7.1e-15 (Python verification at `.agents/results/issue-1461-python-verification.py`) |
-| GaugeSolver Production Wiring + ASHRAE 140 Case 900 Validation (#1462 — Phase 1b, #1465 — Phase 3) | **Yes** — Phase 1b `GaugeSolver` shadow-mode production wiring + Phase 3 ASHRAE 140 Case 900 validation harness | Yes (`HeatConductionSolver` impl on `GaugeSolver`) | **Partial** — Phase 3 diurnal reference CSV (`tests/reference_data/gauge/case_900_diurnal_reference.csv`) is synthetic/analytical (not from EnergyPlus); annual-aggregate reference is at `tests/reference_data/zone_balance/case_900_energy_reference.csv` (PROVENANCE.md) | **Yes** — 3 unit tests in `src/physics/gauge_solver.rs` (#1462); 4 unit tests in `src/thermal/physics_adapter.rs` (#1462 shadow wiring); **8 validation tests in `tests/gauge_validation_case_900.rs` (#1465 Phase 3)** covering ThermalManifold layout, Cm metric, diurnal response, no-clamp behaviour, shadow parity, gauge-connection translation, MAX_ZONES invariant, and CSV reference parity. Annual ±15% Case 900 energy tolerance tests are `#[ignore]` pending the Module 2 cooling-load fix (issue #1289 follow-up). |
+| GaugeSolver Production Wiring + ASHRAE 140 Case 900 Validation (#1462 — Phase 1b, #1465 — Phase 3; Phase A8 default flip — #3291, PR #3482) | **Yes** — Phase 1b `GaugeSolver` shadow-mode production wiring + Phase A8 unconditional-default zone dispatch (Issue #3291, merged via PR #3482) + Phase 3 ASHRAE 140 Case 900 validation harness | Yes (`HeatConductionSolver` impl on `GaugeSolver`); `ThermalSelector::default()` resolves to `ZoneSolverKind::Gauge` (`src/sim/thermal_selector.rs`) | **Partial** — Phase 3 diurnal reference CSV (`tests/reference_data/gauge/case_900_diurnal_reference.csv`) is synthetic/analytical (not from EnergyPlus); annual-aggregate reference is at `tests/reference_data/zone_balance/case_900_energy_reference.csv` (PROVENANCE.md) | **Yes** — 3 unit tests in `src/physics/gauge_solver.rs` (#1462); 4 unit tests in `src/thermal/physics_adapter.rs` (#1462 shadow wiring); **8 validation tests in `tests/gauge_validation_case_900.rs` (#1465 Phase 3)** covering ThermalManifold layout, Cm metric, diurnal response, no-clamp behaviour, shadow parity, gauge-connection translation, MAX_ZONES invariant, and CSV reference parity. Annual ±15% Case 900 energy tolerance tests are `#[ignore]` pending the Module 2 cooling-load fix (issue #1289 follow-up). |
 | Quantum Annealing Bridge (#1464 — Phase 2b) | **Yes** (mathematical mapping only — no annealer SDK wiring, deferred to Phase 2c) | N/A — QUBO / Ising are concrete structs in `src/quantum/qubo_mapping.rs`, not a runtime-polymorphic trait | N/A — energy equivalence is proven algebraically and verified by unit tests, not by annealer output | **Yes** — 18 unit tests in `src/quantum/qubo_mapping.rs` (`test_config_*`, `test_encode_decode_round_trip_default`, `test_qubo_size_scales_with_k`, `test_round_trip_5r1c_energy_matches`, `test_round_trip_9r4c_with_gauge`, `test_qubo_is_symmetric_for_random_manifold`, `test_qubo_rejects_nan_manifold`, `test_qubo_to_ising_matches_qubo_energy`, `test_qubo_max_abs_and_normalize`, `test_num_variables_is_manifold_dim_times_bits`); QUBO energy `x^T Q x` matches the continuous `T^T M T` to floating-point precision across 5R1C, 9R4C, and flat manifold scenes; QUBO ↔ Ising round-trip verified across 16 random binary solutions (Python verification at `.agents/results/issue-1464-qubo-verification.py`) |
 
 **Zone Balance detail**: Multi-node 9R4C model and Case 900 multi-node HVAC validation are complete. Free-floating calibration and annual re-validation CI gate landed (#1154, #1137, #669). Issue #1147 extended the zone balance isolation tests to cover metered energy load validation against ASHRAE 140 reference CSVs (`tests/reference_data/zone_balance/case_600_energy_reference.csv`, `case_900_energy_reference.csv`). Tests use true blind execution (spec-only, no case ID to the engine). The strict ±15% annual energy tolerance tests are `#[ignore]` until the cooling-load physics gap is closed (current cooling underestimates ASHRAE 140 by ~90%; per the Issue #1281 / #1280 investigation, the root cause is roof-solar under-counting — see `docs/investigations/issue-1280-ctf-peak-load.md` §4 — NOT the 5R1C solver nor the `h_ms_total` additive formulation; per AGENTS.md "no parameter tuning, fix the math", no corrections are applied). The Issue #1281 architectural fix adds the `MassAirCouplingMode::ParallelResistance` formulation to `MultiNodeSolver` as a more physically correct alternative to the additive coupling; it does NOT by itself close the ASHRAE 140 cooling gap (Python verification at `.agents/results/issue-1281-python-verification.py`). Hourly E+ regeneration is available via `generate_case_600_900_energy.py`. Marked "Isolated=Yes" because the bottom-up module isolation required by Phase 1 is complete for Weather, Solar, Conduction, and Ventilation, and the Zone Balance test infrastructure now covers both free-floating temperature and metered energy loads.
