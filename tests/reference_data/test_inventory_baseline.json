@@ -1,0 +1,108 @@
+{
+  "by_crate": {
+    "crates_fluxion-evaluator": {
+      "lib_ignored": 0,
+      "lib_tests": 33,
+      "test_binaries": 1
+    },
+    "crates_fluxion-toon": {
+      "lib_ignored": 0,
+      "lib_tests": 49,
+      "test_binaries": 1
+    },
+    "crates_fluxion-twin": {
+      "lib_ignored": 1,
+      "lib_tests": 45,
+      "test_binaries": 4
+    },
+    "fluxion": {
+      "lib_ignored": 7,
+      "lib_tests": 4311,
+      "test_binaries": 288
+    },
+    "fluxion-behavior": {
+      "lib_ignored": 0,
+      "lib_tests": 121,
+      "test_binaries": 1
+    },
+    "fluxion-cfd": {
+      "lib_ignored": 0,
+      "lib_tests": 47,
+      "test_binaries": 1
+    },
+    "fluxion-city": {
+      "lib_ignored": 0,
+      "lib_tests": 89,
+      "test_binaries": 0
+    },
+    "fluxion-core": {
+      "lib_ignored": 0,
+      "lib_tests": 426,
+      "test_binaries": 1
+    },
+    "fluxion-fluid": {
+      "lib_ignored": 11,
+      "lib_tests": 119,
+      "test_binaries": 1
+    },
+    "fluxion-grid": {
+      "lib_ignored": 0,
+      "lib_tests": 109,
+      "test_binaries": 1
+    },
+    "fluxion-mcp": {
+      "lib_ignored": 0,
+      "lib_tests": 26,
+      "test_binaries": 1
+    },
+    "fluxion-tauri_src-tauri": {
+      "lib_ignored": 0,
+      "lib_tests": 11,
+      "test_binaries": 0
+    },
+    "fluxion-wasm": {
+      "lib_ignored": 0,
+      "lib_tests": 6,
+      "test_binaries": 1
+    }
+  },
+  "captured_at": "2026-09-08T09:37:06.363285+00:00",
+  "captured_from": "tests/test_inventory.json (AST mode, regenerate via generate_test_inventory.py)",
+  "metrics": {
+    "lib_ignored": 7,
+    "lib_tests": 4311,
+    "test_binaries": 301,
+    "workspace_ignored": 108,
+    "workspace_tests": 8680
+  },
+  "ratchet_constants": {
+    "BASELINE_LIB_IGNORED": 7,
+    "BASELINE_LIB_TESTS": 4311,
+    "BASELINE_TEST_BINARIES": 301,
+    "BASELINE_WORKSPACE_IGNORED": 108,
+    "BASELINE_WORKSPACE_TESTS": 8680,
+    "tolerance_abs": 25,
+    "tolerance_pct": 5.0
+  },
+  "schema_version": 1,
+  "totals": {
+    "doc_tests": 0,
+    "lib_ignored_root": 7,
+    "lib_tests_root": 4311,
+    "test_binaries": 301,
+    "test_source_files": 343,
+    "workspace_ignored": 108,
+    "workspace_integration_ignored": 89,
+    "workspace_integration_tests": 3288,
+    "workspace_lib_ignored": 19,
+    "workspace_lib_tests": 5392,
+    "workspace_tests": 8680
+  },
+  "verified_at_head_baseline": {
+    "lib_ignored": 4,
+    "lib_tests": 3894,
+    "test_binaries": 298,
+    "workspace_ignored": 125,
+    "workspace_tests": 7923
+  }
+}

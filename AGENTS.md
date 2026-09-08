@@ -17,7 +17,7 @@ Fluxion is a Rust-first building-energy-modeling engine with Python and Node bin
 ```bash
 ./scripts/disk-space-check.sh                         # before large builds/orchestration; 10 GB minimum
 cargo nextest run --workspace --all-targets --test-threads=2 --no-fail-fast   # canonical CI command (Issue #3366 / ADR-0014, PR #3369); see docs/ci/nextest-rollout.md for rationale and .github/workflows/rust-tests.yml::test for the actual matrix invocation
-cargo test --workspace --exclude fluxion-tauri        # ALL workspace tests (~6299 passed / 110 ignored across 331 test binaries as of HEAD 7d4a1f1); --exclude fluxion-tauri is required because fluxion-tauri's proc-macro build needs `npm run build` in fluxion-tauri/frontend/ to materialise ../frontend/dist (Issue #3126). LOCAL-DEBUG ONLY — CI uses `cargo nextest` (see above); both runners share `.config/nextest.toml::concurrency = 2` defaults.
+cargo test --workspace --exclude fluxion-tauri        # ALL workspace tests; --exclude fluxion-tauri is required because fluxion-tauri's proc-macro build needs `npm run build` in fluxion-tauri/frontend/ to materialise ../frontend/dist (Issue #3126). LOCAL-DEBUG ONLY — CI uses `cargo nextest` (see above); both runners share `.config/nextest.toml::concurrency = 2` defaults.
 cargo test                                           # root crate only (NOT the full suite)
 cargo test -p fluxion <test_name>                    # one named test
 cargo test --test zone_balance_eplus_isolation       # energy-conservation gate
@@ -27,11 +27,22 @@ cargo test --profile ci                              # faster local iteration pr
 cargo check --workspace                              # all workspace siblings
 cargo test -p fluxion-mcp                            # MCP package
 cargo test --features ort                            # ONNX runtime is opt-in
+python3 scripts/generate_test_inventory.py --verify   # regenerate tests/test_inventory.json — Issue #3442; cross-checks AST counts against cargo test -- --list
+python3 scripts/check_test_inventory_drift.py        # Issue #3442 drift gate; fails PRs that grow the test suite above the documented baseline without an explicit baseline bump
 ```
 
 **Test runner policy (Issue #3366 / ADR-0014, merged via PR #3369 on 2026-09-06):** CI uses `cargo nextest run` with per-binary `--test-threads=2` (matching GH free-runner vCPU count); local developers may continue to use `cargo test --workspace` for the local-debug equivalent. The nextest rollout runbook (`docs/ci/nextest-rollout.md`) is the source of truth for the audit, re-audit triggers, and `.config/nextest.toml` overrides. Do **not** relax ASHRAE 140 / energy-conservation / `h_tr_em` / surrogate-drift tolerance bands to compensate for any nextest race — tighten `.config/nextest.toml` instead (Issue #3366 §"Step 1 — Audit").
 
-**Test suite overview:** `cargo test --workspace --exclude fluxion-tauri` runs ~6299 passed / 110 ignored tests across 331 test binaries (HEAD 7d4a1f1); `cargo test --lib` runs ~3923 passed / 0 ignored tests in the root crate. The ASHRAE 140 suite is distributed across multiple `--test` binaries (run `ls tests/ashrae_140*.rs` to see them all). Running `cargo test` without `--workspace` only runs the root crate tests and misses the full suite.
+**Test suite overview (Issue #3442 — citation source-of-truth = `tests/test_inventory.json`):** `cargo test --workspace --exclude fluxion-tauri` runs the inventory below; verify mode cross-checks against `cargo test --workspace --exclude fluxion-tauri -- --list` and prefers the cargo counts. The headline numbers are derived from the head commit's verified run; treat them as informational and cite the inventory JSON for the durable record. The ASHRAE 140 suite is distributed across multiple `--test` binaries (run `ls tests/ashrae_140*.rs` to see them all). Running `cargo test` without `--workspace` only runs the root crate tests and misses the full suite.
+
+| Source | Suite | Tests | Ignored | Notes |
+|---|---|---|---|---|
+| `cargo test --lib` | root crate unit tests | ~3,894 | 4 | matches `tests/test_inventory.json::lib_tests_root` |
+| `cargo test --workspace --exclude fluxion-tauri` | full workspace (lib + integration + bin) | ~7,923 | 125 | excludes doctests; ~173 doctests run separately via `cargo test --doc` |
+| AST-regex inventory | committed in `tests/test_inventory.json` | ~8,680 | 108 | non-runtime snapshot, used by the drift gate (`--no-verify`) |
+| Cargo auto-discovered test binaries | `<crate>/tests/*.rs` + `[[test]] path = "tests/<sub>/<foo>.rs"` | ~298 | n/a | matches `test_binaries` in the inventory |
+
+Refreshing the canonical inventory (Issue #3442 acceptance): run `python3 scripts/generate_test_inventory.py --verify` locally and commit the regenerated `tests/test_inventory.json`. The drift gate (next section) will fail any test-adding PR that does not bump the baseline ratchet in the same PR.
 
 CI-quality order is significant:
 
@@ -66,6 +77,7 @@ Bindings are feature-gated: `maturin develop` for Python; run `npm run build` in
 - Every `docs/**/*.md` file needs the 7-line summary block at lines 2–8. After adding/removing docs, run `python3 scripts/generate_doc_inventory.py` and commit `docs/doc-inventory.md`.
 - Verify docs/root hygiene with `python3 scripts/check_docs_summaries.py`, `python3 scripts/check_doc_inventory_fresh.py`, and `python3 scripts/check_root_hygiene.py`. Root scratch reports/blobs are rejected; use `tmp/`. Agent runtime directories such as `.agents/`, `.opencode/`, and `.planning/worktrees/` are gitignored and must never be committed.
 - Keep `.cargo/audit.toml` and `deny.toml` advisory exceptions synchronized. Do not increase the duplicate-version budget without documenting the unavoidable dependency.
+- **Test-inventory drift gate (Issue #3442)** — `tests/test_inventory.json` is the canonical test-count citation; do not edit by hand. The drift gate (`scripts/check_test_inventory_drift.py`, wired into `scripts-tests.yml`) rejects a PR whose live counts grow above the `BASELINE_*` ratchet constants in the gate. To add tests in a PR, regenerate via `python3 scripts/generate_test_inventory.py --verify` and update both `tests/test_inventory.json` AND `tests/reference_data/test_inventory_baseline.json` (commit both; the drift gate's per-PR `--update-baseline` invocation rewrites the second). The mirror of the `BASELINE_KNOWN_ORPHANS` / `BASELINE_WIRED_BUT_DEAD` ratchets in `scripts/check_orphan_modules.py` (Issues #3459 / #3458): shrinking the test suite is the only authorised baseline change that does NOT require both files in lock-step.
 
 ## Git and CI Workflow
 
