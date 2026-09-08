@@ -239,6 +239,33 @@ gh variable set FLUXION_LINUX_RUNNER --body "ubuntu-latest" --repo anchapin/flux
   contributors cannot execute their build scripts on a persistent VM. See
   `docs/SECURITY.md` §"Self-hosted runner job execution policy" for the
   full threat model and the exact `runs-on:` expression to use.
+- **SSH host-key pinning (Issue #3448 acceptance #1):** The provisioning
+  script refuses to open any SSH session until the new VM's host key
+  fingerprint is verified against a caller-supplied allowlist passed as
+  one or more `--known-host-fingerprint <SHA256:...>` flags. All
+  subsequent `ssh` calls in the script run with
+  `StrictHostKeyChecking=yes` against a temp `known_hosts` containing
+  only the verified key — `StrictHostKeyChecking=no` is never used.
+  Operators must obtain the expected fingerprint out-of-band (e.g.,
+  from the Hetzner Cloud console, a previous verified provisioning run,
+  or `ssh-keyscan` from a network whose authenticity is independently
+  verified) before invoking the script; first-connect trust is
+  intentionally **not** granted. This is the provisioning-time analogue
+  of the runtime fail-closed posture in `docs/SECURITY.md`.
+- **Tarball SHA-256 pinning (Issue #3448 acceptance #2):** The script
+  pins the SHA-256 of the GitHub Actions runner tarball in the
+  `EXPECTED_RUNNER_TARBALL_SHA256` constant and refuses to extract the
+  downloaded file if its hash does not match. This mirrors the
+  fail-closed `verify_onnx_signature` policy in `fluxion-core` (see
+  `AGENTS.md` §"Toolchain, Security, and Generated Artifacts"). When
+  bumping `RUNNER_VERSION`, the operator must obtain the new hash
+  out-of-band (e.g., `curl -fsSL <url> | sha256sum` from a trusted
+  network, then cross-check against the GitHub release page served
+  over HTTPS) and update both constants in the same commit.
+- **Registration token via stdin (Issue #3448 acceptance #3):** The
+  runner registration token is piped to the remote provisioning script
+  via stdin and read once at startup, so it never appears in the remote
+  shell's argv (`ps` / `/proc/<pid>/cmdline`).
 - **Dedicated runner user, no docker group (Issue #3445 acceptance
   criterion #2):** The script runs the agent as a non-root `runner` user.
   The runner is intentionally **not** a member of the `docker` group, and
@@ -271,6 +298,30 @@ gh variable set FLUXION_LINUX_RUNNER --body "ubuntu-latest" --repo anchapin/flux
   script; see `docs/SECURITY.md` for the recommended allow-list.
 - **Periodic OS updates:** SSH in weekly and run `apt-get upgrade -y`, or
   use unattended-upgrades.
+
+### Example: provisioning with the hardened flags
+
+```bash
+REG_TOKEN=$(gh api -X POST \
+  repos/anchapin/fluxion/actions/runners/registration-token --jq .token)
+
+# Pre-fetch the new VM's host-key fingerprint out-of-band. Typical
+# workflow: create a throwaway VM from the same Hetzner image, run
+#   ssh-keyscan -t ed25519,rsa,ecdsa <throwaway-ip>
+# from a trusted network, paste the SHA256:... line(s) here.
+KNOWN_FP="SHA256:..."   # obtain out-of-band, never via first-connect
+
+scripts/provision-hetzner-runner.sh \
+  --github-repo            anchapin/fluxion \
+  --github-token           "$REG_TOKEN" \
+  --hcloud-ssh-key         my-key \
+  --known-host-fingerprint "$KNOWN_FP"
+```
+
+The script aborts with a non-zero exit if the VM's presented fingerprint
+does not match any `--known-host-fingerprint` value, if the runner
+tarball hash mismatches `EXPECTED_RUNNER_TARBALL_SHA256`, or if any
+required tool is missing.
 
 ---
 
