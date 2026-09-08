@@ -25,10 +25,9 @@ fluxion-tauri/
         └── ui/             # sidebar, legends, control bar, params panel
 ```
 
-Note: `fluxion-tauri/Cargo.toml` (the manifest directly under `fluxion-tauri/`, with its
-own `[profile.release]`) is a leftover duplicate that is **not** a workspace member and
-does not build; the canonical crate is `fluxion-tauri/src-tauri` (see root
-`Cargo.toml` → `members`). Do not add code to the outer manifest.
+Note: the canonical Rust crate lives at `fluxion-tauri/src-tauri/` (workspace member per
+the root `Cargo.toml` → `members`). The leftover duplicate manifest that used to sit
+directly under `fluxion-tauri/` was removed in issue #3466.
 
 ## Legacy viewers (preserved)
 
