@@ -205,7 +205,7 @@ block in the new `mod.rs` plus a cfg-gated re-export of
 `use crate::physics::fp_algebraic::{...}` edges added by PR #3347 /
 issue #3324 for the solar-kernel fast-math adoption (one edge each in
 `src/sim/interzone_radiation.rs`, `src/sim/longwave_exchange.rs`,
-`src/sim/solar.rs`, `src/sim/solar_gain_distribution.rs` — these files
+`src/sim/solar.rs` — these files
 route their 2- and 3-term f64 reductions through the algebraic helpers
 introduced by #3322; default-feature builds stay bit-identical because
 the helpers reduce to `+`, `*`, `-`, `/` when the `fast-math` feature
@@ -386,7 +386,6 @@ graph TD
         SP["Solar Position<br/>(sim/solar.rs)"]
         SI["Surface Irradiance<br/>(sim/solar.rs)"]
         SKY["Sky Radiation & Sol-Air<br/>(sim/sky_radiation.rs)"]
-        SD["Solar Gain Distribution<br/>(sim/solar_gain_distribution.rs)"]
         SHADE["Shading<br/>(sim/shading.rs)"]
     end
 
@@ -523,7 +522,7 @@ graph TD
 
 ### Module 2: Solar Position & Irradiance
 
-**Source**: `src/sim/solar.rs`, `src/sim/sky_radiation.rs`, `src/sim/solar_gain_distribution.rs`, `src/sim/shading.rs`
+**Source**: `src/sim/solar.rs`, `src/sim/sky_radiation.rs`, `src/sim/shading.rs`
 **Purpose**: Calculate sun position, surface irradiance, and solar heat gains with per-surface distribution.
 
 | Input | Type | Source |
@@ -548,7 +547,7 @@ graph TD
 - `calculate_surface_irradiance(sun_pos, dni, dhi, ghi, orientation) -> SurfaceIrradiance`
 - `calculate_hourly_solar(...) -> (SolarGain, SolarPosition, SurfaceIrradiance)`
 
-**Per-surface distribution** (#1119): Solar gain distribution across multiple surfaces is handled by `sim/solar_gain_distribution.rs`. The `IncidentSolar` metric type (#1132, `validation/report.rs`) and `IncidentSolarAccumulator` (`sim/thermal_model_data/incident_solar_accumulator.rs`) track per-surface solar radiation for diagnostics and validation.
+**Per-surface distribution** (#1119): Solar gain distribution across multiple surfaces is tracked via the `IncidentSolarAccumulator` (`sim/thermal_model_data/incident_solar_accumulator.rs`). The `IncidentSolar` metric type (#1132, `validation/report.rs`) records per-surface solar radiation for diagnostics and validation. The legacy `sim/solar_gain_distribution.rs` module was deleted in Issue #3555 as a wired-but-dead sibling of `sim/solar.rs`.
 
 **Ground-reflected component** (#1326): The `ground_reflected` field of `SurfaceIrradiance` uses the standard isotropic view-factor form
 `E_g = ρ · GHI · (1 - cos β) / 2` for β ∈ (0°, 180°), with the two endpoint tilts pinned explicitly so the boundary physics is correct:

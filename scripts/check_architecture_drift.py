@@ -679,7 +679,10 @@ def check_drift() -> tuple[list[str], bool]:
         "src/sim/ventilation.rs",
         "fluxion-core/src/weather/epw.rs",
         "src/sim/sky_radiation.rs",
-        "src/sim/solar_gain_distribution.rs",
+        # Issue #3555 burn-down: `src/sim/solar_gain_distribution.rs` was
+        # a wired-but-dead sibling of `src/sim/solar.rs` and has been
+        # deleted (per-surface distribution now lives in
+        # `src/sim/thermal_model_data/incident_solar_accumulator.rs`).
     ]
     for mod_path in key_modules:
         if not (REPO_ROOT / mod_path).exists():

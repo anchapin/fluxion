@@ -46,7 +46,6 @@ pub use fluxion_core::ashrae_cases::{
 };
 
 use crate::sim::construction::{Assemblies, Construction, Materials};
-use crate::sim::thermal_selector::ThermalSelector;
 use crate::weather::{HourlyWeatherData, WeatherSource};
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
@@ -793,85 +792,15 @@ impl ASHRAE140Case {
     }
 
     /// Returns the case specification for this test case.
-    #[allow(unreachable_code)]
+    ///
+    /// Issue #3555: this used to be an inline `match` over `CaseBuilder`
+    /// factory methods. After the burn-down PR, the 600/900/950FF/960/970
+    /// definitions live in `crate::validation::ashrae140::cases::series_*`
+    /// and the remaining cases still use the legacy `CaseBuilder`
+    /// factories; `crate::validation::ashrae140::cases::build_spec` is
+    /// the single dispatch point.
     pub fn spec(&self) -> CaseSpec {
-        // Get the appropriate preset from CaseBuilder
-        match self {
-            ASHRAE140Case::Case600 => CaseBuilder::case_600_baseline(),
-            ASHRAE140Case::Case610 => CaseBuilder::case_610_south_shading(),
-            ASHRAE140Case::Case620 => CaseBuilder::case_620_ew_windows(),
-            ASHRAE140Case::Case630 => CaseBuilder::case_630_ew_shading(),
-            ASHRAE140Case::Case640 => CaseBuilder::case_640_setback(),
-            ASHRAE140Case::Case650 => CaseBuilder::case_650_night_vent(),
-            ASHRAE140Case::Case600FF => CaseBuilder::case_600ff(),
-            ASHRAE140Case::Case650FF => CaseBuilder::case_650ff(),
-            ASHRAE140Case::Case900 => CaseBuilder::case_900_baseline(),
-            ASHRAE140Case::Case910 => CaseBuilder::case_910_south_shading(),
-            ASHRAE140Case::Case920 => CaseBuilder::case_920_ew_windows(),
-            ASHRAE140Case::Case930 => CaseBuilder::case_930_ew_shading(),
-            ASHRAE140Case::Case940 => CaseBuilder::case_940_setback(),
-            ASHRAE140Case::Case950 => CaseBuilder::case_950_night_vent(),
-            ASHRAE140Case::Case900FF => CaseBuilder::case_900ff(),
-            ASHRAE140Case::Case950FF => CaseBuilder::case_950ff(),
-            ASHRAE140Case::Case960 => CaseBuilder::case_960_sunspace(),
-            ASHRAE140Case::Case970 => CaseBuilder::case_970_five_zone_cross_coupling(),
-            ASHRAE140Case::Case195 => CaseBuilder::case_195_solid_conduction(),
-            ASHRAE140Case::Case195HighMass => CaseBuilder::case_195_high_mass(),
-            ASHRAE140Case::Case195NoLoads => CaseBuilder::case_195_no_loads(),
-            ASHRAE140Case::Case195NoSolar => CaseBuilder::case_195_no_solar(),
-            ASHRAE140Case::Case195ThermalBridge => CaseBuilder::case_195_thermal_bridge(),
-            ASHRAE140Case::Case195SHGC03 => CaseBuilder::case_195_shgc_low(),
-            ASHRAE140Case::Case195SHGC06 => CaseBuilder::case_195_shgc_medium(),
-            ASHRAE140Case::Case195SHGC09 => CaseBuilder::case_195_shgc_high(),
-            ASHRAE140Case::Case195Albedo01 => CaseBuilder::case_195_albedo_low(),
-            ASHRAE140Case::Case195Albedo05 => CaseBuilder::case_195_albedo_medium(),
-            ASHRAE140Case::Case195Albedo09 => CaseBuilder::case_195_albedo_high(),
-            ASHRAE140Case::Case196 => CaseBuilder::case_196_lighting_diagnostics(),
-            ASHRAE140Case::Case197 => CaseBuilder::case_197_equipment_diagnostics(),
-            ASHRAE140Case::Case198 => CaseBuilder::case_198_occupancy_diagnostics(),
-            ASHRAE140Case::Case200 => CaseBuilder::case_200_combined_internal_loads(),
-            ASHRAE140Case::Case250 => CaseBuilder::case_250_thermal_mass_diagnostics(),
-            ASHRAE140Case::Case300 => CaseBuilder::case_300_night_ventilation_diagnostics(),
-            ASHRAE140Case::Case350 => CaseBuilder::case_350_setback_diagnostics(),
-            ASHRAE140Case::Case400 => CaseBuilder::case_400_free_floating_diagnostics(),
-            ASHRAE140Case::Case470 => CaseBuilder::case_470_comprehensive_diagnostics(),
-            ASHRAE140Case::Office => CaseBuilder::office_building(),
-            ASHRAE140Case::Retail => CaseBuilder::retail_building(),
-            ASHRAE140Case::School => CaseBuilder::school_building(),
-            ASHRAE140Case::Warehouse => CaseBuilder::warehouse_building(),
-            ASHRAE140Case::Case800 => CaseBuilder::case_800_heat_pump_single_stage(),
-            ASHRAE140Case::Case801 => CaseBuilder::case_801_heat_pump_two_stage(),
-            ASHRAE140Case::Case802 => CaseBuilder::case_802_heat_pump_variable_speed(),
-            ASHRAE140Case::Case803 => CaseBuilder::case_803_chiller_single(),
-            ASHRAE140Case::Case804 => CaseBuilder::case_804_chiller_multiple(),
-            ASHRAE140Case::Case805 => CaseBuilder::case_805_boiler_single(),
-            ASHRAE140Case::Case806 => CaseBuilder::case_806_boiler_multiple(),
-            ASHRAE140Case::Case807 => CaseBuilder::case_807_hybrid_heat_pump_boiler(),
-            ASHRAE140Case::Case808 => CaseBuilder::case_808_vav_heat_recovery(),
-            ASHRAE140Case::Case809 => CaseBuilder::case_809_cav_economizer(),
-            ASHRAE140Case::Case810 => CaseBuilder::case_810_comprehensive_hvac(),
-            // Cases 500-510 and 699 are defined in the enum for ASHRAE 140 extended
-            // coverage but currently lack dedicated CaseBuilder factories. Fall back to
-            // the low-mass baseline (#1293) so callers receive a valid CaseSpec rather
-            // than panicking on the catch-all arm.
-            ASHRAE140Case::Case500
-            | ASHRAE140Case::Case501
-            | ASHRAE140Case::Case502
-            | ASHRAE140Case::Case503
-            | ASHRAE140Case::Case504
-            | ASHRAE140Case::Case505
-            | ASHRAE140Case::Case506
-            | ASHRAE140Case::Case507
-            | ASHRAE140Case::Case508
-            | ASHRAE140Case::Case509
-            | ASHRAE140Case::Case510
-            | ASHRAE140Case::Case699 => {
-                let mut spec = CaseBuilder::case_600_baseline();
-                spec.case_id = format!("{:?}", self);
-                spec.description = format!("{:?} (fallback baseline — see issue #1293)", self);
-                spec
-            }
-        }
+        crate::validation::ashrae140::cases::build_spec(*self)
     }
 
     /// Create an ASHRAE140Case from a case number.
@@ -1727,506 +1656,20 @@ impl CaseBuilder {
 
     // ===== Predefined ASHRAE 140 Case Specifications =====
 
-    /// Case 600 - Low mass baseline.
-    pub fn case_600_baseline() -> CaseSpec {
-        Self::new()
-            .with_case_id("600".to_string())
-            .with_description(
-                "Low mass baseline - standard construction with south windows".to_string(),
-            )
-            .with_dimensions(8.0, 6.0, 2.7)
-            .low_mass_construction()
-            .with_south_window(12.0)
-            .with_window_properties(WindowSpec::double_clear_glass())
-            .with_internal_loads(InternalLoads::new(200.0, 0.4, 0.6))
-            .with_hvac_setpoints(20.0, 27.0)
-            .with_infiltration(0.5)
-            .with_num_zones(1)
-            .with_ground_temperature(
-                crate::physics::constants::thermal::ashrae_140::v2023::GROUND_TEMPERATURE_C,
-            )
-            .build()
-            .expect("Case 600 should validate")
-    }
-
-    /// Case 610 - Low mass with south shading only (1m overhang).
-    pub fn case_610_south_shading() -> CaseSpec {
-        Self::new()
-            .with_case_id("610".to_string())
-            .with_description("Low mass with south shading (1m overhang)".to_string())
-            .with_dimensions(8.0, 6.0, 2.7)
-            .low_mass_construction()
-            .with_south_window(12.0)
-            .with_window_properties(WindowSpec::double_clear_glass())
-            .with_shading(ShadingDevice::overhang(1.0, 2.7))
-            .with_internal_loads(InternalLoads::new(200.0, 0.4, 0.6))
-            .with_hvac_setpoints(20.0, 27.0)
-            .with_infiltration(0.5)
-            .with_num_zones(1)
-            .with_ground_temperature(
-                crate::physics::constants::thermal::ashrae_140::v2023::GROUND_TEMPERATURE_C,
-            )
-            .build()
-            .expect("Case 610 should validate")
-    }
-
-    /// Case 620 - Low mass with east/west windows.
-    pub fn case_620_ew_windows() -> CaseSpec {
-        Self::new()
-            .with_case_id("620".to_string())
-            .with_description("Low mass with east/west windows (6m² each)".to_string())
-            .with_dimensions(8.0, 6.0, 2.7)
-            .low_mass_construction()
-            .with_ew_windows(6.0)
-            .with_window_properties(WindowSpec::double_clear_glass())
-            .with_internal_loads(InternalLoads::new(200.0, 0.4, 0.6))
-            .with_hvac_setpoints(20.0, 27.0)
-            .with_infiltration(0.5)
-            .with_num_zones(1)
-            .with_ground_temperature(
-                crate::physics::constants::thermal::ashrae_140::v2023::GROUND_TEMPERATURE_C,
-            )
-            .build()
-            .expect("Case 620 should validate")
-    }
-
-    /// Case 630 - Low mass with east/west shading.
-    pub fn case_630_ew_shading() -> CaseSpec {
-        Self::new()
-            .with_case_id("630".to_string())
-            .with_description("Low mass with east/west shading (overhang + fins)".to_string())
-            .with_dimensions(8.0, 6.0, 2.7)
-            .low_mass_construction()
-            .with_ew_windows(6.0)
-            .with_window_properties(WindowSpec::double_clear_glass())
-            .with_shading(ShadingDevice::overhang_and_fins(1.0, 1.0, 2.7))
-            .with_internal_loads(InternalLoads::new(200.0, 0.4, 0.6))
-            .with_hvac_setpoints(20.0, 27.0)
-            .with_infiltration(0.5)
-            .with_num_zones(1)
-            .with_ground_temperature(
-                crate::physics::constants::thermal::ashrae_140::v2023::GROUND_TEMPERATURE_C,
-            )
-            .build()
-            .expect("Case 630 should validate")
-    }
-
-    /// Case 640 - Low mass with thermostat setback.
-    pub fn case_640_setback() -> CaseSpec {
-        Self::new()
-            .with_case_id("640".to_string())
-            .with_description("Low mass with thermostat setback (overnight)".to_string())
-            .with_dimensions(8.0, 6.0, 2.7)
-            .low_mass_construction()
-            .with_south_window(12.0)
-            .with_window_properties(WindowSpec::double_clear_glass())
-            .with_internal_loads(InternalLoads::new(200.0, 0.4, 0.6))
-            .with_hvac_setback(20.0, 27.0, 10.0)
-            .with_infiltration(0.5)
-            .with_num_zones(1)
-            .with_ground_temperature(
-                crate::physics::constants::thermal::ashrae_140::v2023::GROUND_TEMPERATURE_C,
-            )
-            .build()
-            .expect("Case 640 should validate")
-    }
-
-    /// Case 650 - Low mass with night ventilation.
-    pub fn case_650_night_vent() -> CaseSpec {
-        Self::new()
-            .with_case_id("650".to_string())
-            .with_description("Low mass with night ventilation (no heating)".to_string())
-            .with_dimensions(8.0, 6.0, 2.7)
-            .low_mass_construction()
-            .with_south_window(12.0)
-            .with_window_properties(WindowSpec::double_clear_glass())
-            .with_internal_loads(InternalLoads::new(200.0, 0.4, 0.6))
-            .with_hvac(HvacSchedule::with_operating_hours(-100.0, 27.0, 7, 18)) // Heating ALWAYS OFF
-            .with_night_ventilation(NightVentilation::case_650())
-            .with_infiltration(0.5)
-            .with_num_zones(1)
-            .with_ground_temperature(
-                crate::physics::constants::thermal::ashrae_140::v2023::GROUND_TEMPERATURE_C,
-            )
-            .build()
-            .expect("Case 650 should validate")
-    }
-
-    /// Case 600FF - Low mass free-floating.
-    /// Per ASHRAE 140, free-floating cases have NO internal loads.
-    pub fn case_600ff() -> CaseSpec {
-        Self::new()
-            .with_case_id("600FF".to_string())
-            .with_description("Low mass free-floating (no HVAC, no internal loads)".to_string())
-            .with_dimensions(8.0, 6.0, 2.7)
-            .low_mass_construction()
-            .with_south_window(12.0)
-            .with_window_properties(WindowSpec::double_clear_glass())
-            // No internal loads for free-floating cases per ASHRAE 140
-            .with_hvac(HvacSchedule::free_floating())
-            .with_infiltration(0.5)
-            .with_num_zones(1)
-            .with_ground_temperature(
-                crate::physics::constants::thermal::ashrae_140::v2023::GROUND_TEMPERATURE_C,
-            )
-            .build()
-            .expect("Case 600FF should validate")
-    }
-
-    /// Case 650FF - Low mass free-floating with night ventilation.
-    /// Per ASHRAE 140, free-floating cases have NO internal loads.
-    pub fn case_650ff() -> CaseSpec {
-        Self::new()
-            .with_case_id("650FF".to_string())
-            .with_description(
-                "Low mass free-floating with night ventilation (no internal loads)".to_string(),
-            )
-            .with_dimensions(8.0, 6.0, 2.7)
-            .low_mass_construction()
-            .with_south_window(12.0)
-            .with_window_properties(WindowSpec::double_clear_glass())
-            // No internal loads for free-floating cases per ASHRAE 140
-            .with_hvac(HvacSchedule::free_floating())
-            .with_night_ventilation(NightVentilation::case_650())
-            .with_infiltration(0.5)
-            .with_num_zones(1)
-            .with_ground_temperature(
-                crate::physics::constants::thermal::ashrae_140::v2023::GROUND_TEMPERATURE_C,
-            )
-            .build()
-            .expect("Case 650FF should validate")
-    }
-
-    /// Case 900 - High mass baseline.
-    pub fn case_900_baseline() -> CaseSpec {
-        Self::new()
-            .with_case_id("900".to_string())
-            .with_description(
-                "High mass baseline - concrete construction with south windows".to_string(),
-            )
-            .with_dimensions(8.0, 6.0, 2.7)
-            .high_mass_construction()
-            .with_construction(
-                Assemblies::high_mass_wall_standard(),
-                Assemblies::high_mass_roof(),
-                Assemblies::high_mass_floor(),
-            )
-            .with_south_window(12.0)
-            .with_window_properties(WindowSpec::double_clear_glass())
-            .with_internal_loads(InternalLoads::new(200.0, 0.4, 0.6))
-            .with_hvac_setpoints(20.0, 27.0)
-            .with_infiltration(0.5)
-            .with_num_zones(1)
-            .with_ground_temperature(
-                crate::physics::constants::thermal::ashrae_140::v2023::GROUND_TEMPERATURE_C,
-            )
-            .build()
-            .expect("Case 900 should validate")
-    }
-
-    /// Case 910 - High mass with south shading.
-    pub fn case_910_south_shading() -> CaseSpec {
-        Self::new()
-            .with_case_id("910".to_string())
-            .with_description("High mass with south shading (1m overhang)".to_string())
-            .with_dimensions(8.0, 6.0, 2.7)
-            .high_mass_construction()
-            .with_construction(
-                Assemblies::high_mass_wall_standard(),
-                Assemblies::high_mass_roof(),
-                Assemblies::high_mass_floor(),
-            )
-            .with_south_window(12.0)
-            .with_window_properties(WindowSpec::double_clear_glass())
-            .with_shading(ShadingDevice::overhang(1.0, 2.7))
-            .with_internal_loads(InternalLoads::new(200.0, 0.4, 0.6))
-            .with_hvac_setpoints(20.0, 27.0)
-            .with_infiltration(0.5)
-            .with_num_zones(1)
-            .with_ground_temperature(
-                crate::physics::constants::thermal::ashrae_140::v2023::GROUND_TEMPERATURE_C,
-            )
-            .build()
-            .expect("Case 910 should validate")
-    }
-
-    /// Case 920 - High mass with east/west windows.
-    pub fn case_920_ew_windows() -> CaseSpec {
-        Self::new()
-            .with_case_id("920".to_string())
-            .with_description("High mass with east/west windows (6m² each)".to_string())
-            .with_dimensions(8.0, 6.0, 2.7)
-            .high_mass_construction()
-            .with_construction(
-                Assemblies::high_mass_wall_standard(),
-                Assemblies::high_mass_roof(),
-                Assemblies::high_mass_floor(),
-            )
-            .with_ew_windows(6.0)
-            .with_window_properties(WindowSpec::double_clear_glass())
-            .with_internal_loads(InternalLoads::new(200.0, 0.4, 0.6))
-            .with_hvac_setpoints(20.0, 27.0)
-            .with_infiltration(0.5)
-            .with_num_zones(1)
-            .with_ground_temperature(
-                crate::physics::constants::thermal::ashrae_140::v2023::GROUND_TEMPERATURE_C,
-            )
-            .build()
-            .expect("Case 920 should validate")
-    }
-
-    /// Case 930 - High mass with east/west shading.
-    pub fn case_930_ew_shading() -> CaseSpec {
-        Self::new()
-            .with_case_id("930".to_string())
-            .with_description("High mass with east/west shading (overhang + fins)".to_string())
-            .with_dimensions(8.0, 6.0, 2.7)
-            .high_mass_construction()
-            .with_construction(
-                Assemblies::high_mass_wall_standard(),
-                Assemblies::high_mass_roof(),
-                Assemblies::high_mass_floor(),
-            )
-            .with_ew_windows(6.0)
-            .with_window_properties(WindowSpec::double_clear_glass())
-            .with_shading(ShadingDevice::overhang_and_fins(1.0, 1.0, 2.7))
-            .with_internal_loads(InternalLoads::new(200.0, 0.4, 0.6))
-            .with_hvac_setpoints(20.0, 27.0)
-            .with_infiltration(0.5)
-            .with_num_zones(1)
-            .with_ground_temperature(
-                crate::physics::constants::thermal::ashrae_140::v2023::GROUND_TEMPERATURE_C,
-            )
-            .build()
-            .expect("Case 930 should validate")
-    }
-
-    /// Case 940 - High mass with thermostat setback.
-    pub fn case_940_setback() -> CaseSpec {
-        Self::new()
-            .with_case_id("940".to_string())
-            .with_description("High mass with thermostat setback (overnight)".to_string())
-            .with_dimensions(8.0, 6.0, 2.7)
-            .high_mass_construction()
-            .with_construction(
-                Assemblies::high_mass_wall_standard(),
-                Assemblies::high_mass_roof(),
-                Assemblies::high_mass_floor(),
-            )
-            .with_south_window(12.0)
-            .with_window_properties(WindowSpec::double_clear_glass())
-            .with_internal_loads(InternalLoads::new(200.0, 0.4, 0.6))
-            .with_hvac_setback(20.0, 27.0, 10.0)
-            .with_infiltration(0.5)
-            .with_num_zones(1)
-            .with_ground_temperature(
-                crate::physics::constants::thermal::ashrae_140::v2023::GROUND_TEMPERATURE_C,
-            )
-            .build()
-            .expect("Case 940 should validate")
-    }
-
-    /// Case 950 - High mass with night ventilation.
-    ///
-    /// Per issue #1347 (case_950): the spec wires a HvacSchedule with a
-    /// 22:00-06:00 setback window (8 h/day = 2920 hours/year, AC4) AND a
-    /// NightVentilation schedule (18:00-07:00, AC3). Heating is OFF by
-    /// spec (heating_sp = -100°C — "no heating" per ASHRAE 140 Case 950),
-    /// so the setback setpoint value is moot (it is overwritten by the
-    /// operating-hours disabled-region fill in `schedule.rs`). The
-    /// setback hours are a *marker* in the spec so the validator can
-    /// assert "HvacSchedule night-flush window = 8 h/day" without
-    /// changing simulation behavior.
-    pub fn case_950_night_vent() -> CaseSpec {
-        Self::new()
-            .with_case_id("950".to_string())
-            .with_description("High mass with night ventilation (no heating)".to_string())
-            .with_dimensions(8.0, 6.0, 2.7)
-            .high_mass_construction()
-            .with_construction(
-                Assemblies::high_mass_wall_standard(),
-                Assemblies::high_mass_roof(),
-                Assemblies::high_mass_floor(),
-            )
-            .with_south_window(12.0)
-            .with_window_properties(WindowSpec::double_clear_glass())
-            .with_internal_loads(InternalLoads::new(200.0, 0.4, 0.6))
-            .with_hvac(HvacSchedule::with_operating_hours_and_setback(
-                -100.0, 27.0, 7, 18, // operating hours (cooling 7-18, heating OFF always)
-                -100.0, 22, 6, // setback window 22:00-06:00 (setpoint -100 → no heating)
-            ))
-            .with_night_ventilation(NightVentilation::case_650())
-            .with_infiltration(0.5)
-            .with_num_zones(1)
-            .with_ground_temperature(
-                crate::physics::constants::thermal::ashrae_140::v2023::GROUND_TEMPERATURE_C,
-            )
-            .build()
-            .expect("Case 950 should validate")
-    }
-
-    /// Case 900FF - High mass free-floating.
-    /// Per ASHRAE 140, free-floating cases have NO internal loads.
-    pub fn case_900ff() -> CaseSpec {
-        Self::new()
-            .with_case_id("900FF".to_string())
-            .with_description("High mass free-floating (no HVAC, no internal loads)".to_string())
-            .with_dimensions(8.0, 6.0, 2.7)
-            .high_mass_construction()
-            .with_construction(
-                Assemblies::high_mass_wall_standard(),
-                Assemblies::high_mass_roof(),
-                Assemblies::high_mass_floor(),
-            )
-            .with_south_window(12.0)
-            .with_window_properties(WindowSpec::single_clear_glass())
-            // No internal loads for free-floating cases per ASHRAE 140
-            .with_hvac(HvacSchedule::free_floating())
-            .with_infiltration(0.5)
-            .with_num_zones(1)
-            .with_ground_temperature(
-                crate::physics::constants::thermal::ashrae_140::v2023::GROUND_TEMPERATURE_C,
-            )
-            .build()
-            .expect("Case 900FF should validate")
-    }
-
-    /// Case 950FF - High mass free-floating with night ventilation.
-    /// Per ASHRAE 140, free-floating cases have NO internal loads.
-    pub fn case_950ff() -> CaseSpec {
-        Self::new()
-            .with_case_id("950FF".to_string())
-            .with_description(
-                "High mass free-floating with night ventilation (no internal loads)".to_string(),
-            )
-            .with_dimensions(8.0, 6.0, 2.7)
-            .high_mass_construction()
-            .with_construction(
-                Assemblies::high_mass_wall_standard(),
-                Assemblies::high_mass_roof(),
-                Assemblies::high_mass_floor(),
-            )
-            .with_south_window(12.0)
-            .with_window_properties(WindowSpec::double_clear_glass())
-            // No internal loads for free-floating cases per ASHRAE 140
-            .with_hvac(HvacSchedule::free_floating())
-            .with_night_ventilation(NightVentilation::case_650())
-            .with_infiltration(0.5)
-            .with_num_zones(1)
-            .with_ground_temperature(
-                crate::physics::constants::thermal::ashrae_140::v2023::GROUND_TEMPERATURE_C,
-            )
-            .build()
-            .expect("Case 950FF should validate")
-    }
-
-    /// Case 960 - Sunspace (2-zone building).
-    pub fn case_960_sunspace() -> CaseSpec {
-        Self::new()
-            .with_case_id("960".to_string())
-            .with_description("Sunspace - 2-zone building (back-zone + sunspace)".to_string())
-            // Zone 0: Back-zone (8m x 6m x 2.7m)
-            .with_dimensions(8.0, 6.0, 2.7)
-            .high_mass_construction()
-            .with_construction(
-                Assemblies::high_mass_wall_standard(),
-                Assemblies::high_mass_roof(),
-                Assemblies::high_mass_floor(),
-            )
-            .with_internal_loads(InternalLoads::new(200.0, 0.4, 0.6))
-            .with_zone_window(0, 12.0, Orientation::South) // Back-zone south window
-            .with_hvac_setpoints(20.0, 27.0)
-            // Zone 1: Sunspace (8m x 2m x 2.7m)
-            .add_zone(8.0, 2.0, 2.7)
-            .with_zone_hvac(1, HvacSchedule::free_floating())
-            .with_zone_window(1, 6.0, Orientation::South) // Sunspace south window
-            // Common Wall (8m x 2.7m = 21.6 m2)
-            .with_common_wall(0, 1, 21.6, Assemblies::concrete_wall(0.200))
-            .with_infiltration(0.5)
-            .with_door_geometry(2.0, 1.5) // Door opening: height=2.0m, area=1.5m² (Plan 04-04)
-            .with_num_zones(2)
-            .with_ground_temperature(
-                crate::physics::constants::thermal::ashrae_140::v2023::GROUND_TEMPERATURE_C,
-            )
-            .build()
-            .expect("Case 960 should validate")
-    }
-
-    /// Case 970 - 5-zone multi-zone cross-coupling (ASHRAE 140-2017 §B6.7).
-    ///
-    /// 8 m × 6 m × 2.7 m high-mass concrete building divided into 5 zones
-    /// by interior partitions (Issue #1446):
-    ///
-    /// ```text
-    ///   ┌──────────┬─────┐
-    ///   │          │  Z1 │  ← north
-    ///   │          ├─────┤
-    ///   │   Z0     │  Z2 │
-    ///   │ (west)   ├─────┤
-    ///   │  4m×6m   │  Z3 │
-    ///   │          ├─────┤
-    ///   │          │  Z4 │  ← south
-    ///   └──────────┴─────┘
-    ///        ↑ 4m ↑
-    /// ```
-    ///
-    /// Total conditioned floor area: 24 + 4 × 6 = 48 m² (8 m × 6 m).
-    /// Common walls between zone 0 and zones 1–4 each have area
-    /// 1.5 m × 2.7 m = 4.05 m²; common walls between adjacent east-strip
-    /// zones each have area 4 m × 2.7 m = 10.8 m². All interior partitions
-    /// use the same 200 mm concrete wall as Case 960.
-    ///
-    /// The 12 m² south-window total from Case 600 is distributed across the
-    /// five zones: 6 m² on zone 0 (west half) and 1.5 m² on each of the
-    /// four east-strip zones. All five zones are conditioned (20 °C /
-    /// 27 °C) so the MultiZoneAirflowNetwork 5×5 conductance matrix is
-    /// exercised in both directions on every timestep.
-    ///
-    /// Reference values: ASHRAE 140-2023 Annex B8-3 inter-program envelope,
-    /// `tests/reference_data/zone_balance/case_970_energy_reference.csv`.
-    pub fn case_970_five_zone_cross_coupling() -> CaseSpec {
-        Self::new()
-            .with_case_id("970".to_string())
-            .with_description(
-                "Case 970 - 5-zone multi-zone cross-coupling (ASHRAE 140-2017 §B6.7)".to_string(),
-            )
-            // Zone 0: West core (4 m × 6 m × 2.7 m = 24 m² floor area).
-            .with_dimensions(4.0, 6.0, 2.7)
-            .high_mass_construction()
-            .with_construction(
-                Assemblies::high_mass_wall_standard(),
-                Assemblies::high_mass_roof(),
-                Assemblies::high_mass_floor(),
-            )
-            .with_internal_loads(InternalLoads::new(200.0, 0.4, 0.6))
-            .with_zone_window(0, 6.0, Orientation::South) // West core south window
-            .with_hvac_setpoints(20.0, 27.0)
-            // Zones 1-4: East strip (4 m × 1.5 m × 2.7 m = 6 m² each).
-            .add_zone(4.0, 1.5, 2.7)
-            .with_zone_window(1, 1.5, Orientation::South)
-            .add_zone(4.0, 1.5, 2.7)
-            .with_zone_window(2, 1.5, Orientation::South)
-            .add_zone(4.0, 1.5, 2.7)
-            .with_zone_window(3, 1.5, Orientation::South)
-            .add_zone(4.0, 1.5, 2.7)
-            .with_zone_window(4, 1.5, Orientation::South)
-            // Common walls: zone 0 ↔ each east-strip zone (1.5 m × 2.7 m = 4.05 m²).
-            .with_common_wall(0, 1, 4.05, Assemblies::concrete_wall(0.200))
-            .with_common_wall(0, 2, 4.05, Assemblies::concrete_wall(0.200))
-            .with_common_wall(0, 3, 4.05, Assemblies::concrete_wall(0.200))
-            .with_common_wall(0, 4, 4.05, Assemblies::concrete_wall(0.200))
-            // Common walls between adjacent east-strip zones (4 m × 2.7 m = 10.8 m²).
-            .with_common_wall(1, 2, 10.8, Assemblies::concrete_wall(0.200))
-            .with_common_wall(2, 3, 10.8, Assemblies::concrete_wall(0.200))
-            .with_common_wall(3, 4, 10.8, Assemblies::concrete_wall(0.200))
-            .with_infiltration(0.5)
-            .with_num_zones(5)
-            .with_ground_temperature(
-                crate::physics::constants::thermal::ashrae_140::v2023::GROUND_TEMPERATURE_C,
-            )
-            .build()
-            .expect("Case 970 should validate")
-    }
+    // ============================================================
+    // Issue #3555: case_600 / case_610 / case_620 / case_630 /
+    // case_640 / case_650 / case_600ff / case_650ff /
+    // case_900 / case_910 / case_920 / case_930 /
+    // case_940 / case_950 / case_900ff / case_950ff /
+    // case_960 / case_970 factories (and their helpers)
+    // moved to:
+    //   crate::validation::ashrae140::cases::series_600
+    //   crate::validation::ashrae140::cases::series_900
+    //   crate::validation::ashrae140::cases::series_960
+    //   crate::validation::ashrae140::cases::series_970
+    // `ASHRAE140Case::spec()` now dispatches through
+    // `crate::validation::ashrae140::cases::build_spec`.
+    // ============================================================
 
     /// Case 195 - Solid conduction (no windows, no infiltration, no loads).
     pub fn case_195_solid_conduction() -> CaseSpec {
@@ -3211,553 +2654,121 @@ impl CaseBuilder {
         spec.hvac_equipment = Some(crate::sim::hvac::AnyEquipment::HeatPump(heatpump));
         spec
     }
-}
 
-// =============================================================================
-// ASHRAE 140 Case 920 — Single-Zone Validator (Issue #1346)
-// =============================================================================
-//
-// `Case920ValidationResult` and `validate_case_920` follow the Case 960
-// validator shape (`ashrae_140_multi_zone.rs::Case960Validator` /
-// `case_960.rs::Case960ReferenceImplementation::validate_case_960_result`)
-// but are single-zone: they consume a `CaseSpec` produced by
-// `ASHRAE140Case::Case920.spec()` (geometry 8m × 6m × 2.7m, 200 mm concrete,
-// 6 m² east + 6 m² west double-clear windows, 0.5 ACH, 20°C/27°C, Denver TMY3)
-// and compare the simulation outputs against the ASHRAE 140-2023 Annex B8
-// reference bands recorded in
-// `tests/reference_data/zone_balance/case_920_energy_reference.csv`.
-//
-// The reference data is the SUMMARY CSV (annual/peak), not the per-hour CSV.
-// The per-hour CSV (`case_920_energy_hourly.csv`, 8760 h) is also available
-// for future hourly-breakdown tests. Reference bands asserted by this
-// validator:
-//
-//   * annual_heating : 3.26 – 4.30 MWh (ref midpoint 3.78 MWh, ±15% → 3.213 – 4.347 MWh)
-//   * annual_cooling : 1.84 – 3.31 MWh (ref midpoint 2.575 MWh, ±15% → 2.189 – 2.961 MWh)
-//   * peak_heating   : 2.10 – 2.80 kW  (ref midpoint 2.45 kW, ±15% → 2.083 – 2.817 kW)
-//   * peak_cooling   : 1.40 – 1.90 kW  (ref midpoint 1.65 kW, ±15% → 1.402 – 1.897 kW)
-//
-// Per-orientation solar distribution (the issue's second acceptance criterion)
-// is NOT part of `Case920ValidationResult` (which only carries metered energy)
-// — it is exercised by `test_case_920_per_orientation_solar_distribution` in
-// `tests/ashrae_140_blind_validation.rs` against the `IncidentSolarAccumulator`
-// field on `ThermalModelData`.
+    // ============================================================
+    // Issue #3555: case-600/610/620/630/640/650/600FF/650FF,
+    // case-900/910/920/930/940/950/900FF/950FF, case-960, case-970
+    // factory bodies moved to `crate::validation::ashrae140::cases::series_*`.
+    // These thin shims preserve the `CaseBuilder::case_X()` call sites
+    // inside `tests/` and inside the legacy `tests/` module of this file
+    // during the migration window. Callers can move to
+    // `crate::validation::ashrae140::cases::series_X::case_X` directly in
+    // follow-up PRs.
+    // ============================================================
 
-/// Result of validating a Case 920 simulation against ASHRAE 140-2023 Annex B8.
-///
-/// Mirrors the metered-energy portion of `case_960::Case960Result` so the two
-/// per-case validators share a uniform shape across the single-zone and
-/// multi-zone paths. All `*_mwh` fields are in megawatt-hours, all `*_kw`
-/// fields are in kilowatts. `band_pass` is a bitfield-like struct
-/// (`pass_annual_heating`, …) reporting per-metric pass/fail against the
-/// ±15% acceptance band of the reference midpoint.
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
-pub struct Case920ValidationResult {
-    /// Annual heating energy from the blind simulation (MWh).
-    pub annual_heating_mwh: f64,
-    /// Annual cooling energy from the blind simulation (MWh).
-    pub annual_cooling_mwh: f64,
-    /// Peak heating demand observed during the year (kW).
-    pub peak_heating_kw: f64,
-    /// Peak cooling demand observed during the year (kW).
-    pub peak_cooling_kw: f64,
-    /// Reference minimum for annual heating (MWh) — raw ASHRAE 140 Annex B8.
-    pub ref_annual_heating_min_mwh: f64,
-    /// Reference maximum for annual heating (MWh) — raw ASHRAE 140 Annex B8.
-    pub ref_annual_heating_max_mwh: f64,
-    /// Reference minimum for annual cooling (MWh) — raw ASHRAE 140 Annex B8.
-    pub ref_annual_cooling_min_mwh: f64,
-    /// Reference maximum for annual cooling (MWh) — raw ASHRAE 140 Annex B8.
-    pub ref_annual_cooling_max_mwh: f64,
-    /// Reference minimum for peak heating (kW) — raw ASHRAE 140 Annex B8.
-    pub ref_peak_heating_min_kw: f64,
-    /// Reference maximum for peak heating (kW) — raw ASHRAE 140 Annex B8.
-    pub ref_peak_heating_max_kw: f64,
-    /// Reference minimum for peak cooling (kW) — raw ASHRAE 140 Annex B8.
-    pub ref_peak_cooling_min_kw: f64,
-    /// Reference maximum for peak cooling (kW) — raw ASHRAE 140 Annex B8.
-    pub ref_peak_cooling_max_kw: f64,
-    /// `true` iff `annual_heating_mwh` falls inside the ref band.
-    pub pass_annual_heating: bool,
-    /// `true` iff `annual_cooling_mwh` falls inside the ref band.
-    pub pass_annual_cooling: bool,
-    /// `true` iff `peak_heating_kw` falls inside the ref band.
-    pub pass_peak_heating: bool,
-    /// `true` iff `peak_cooling_kw` falls inside the ref band.
-    pub pass_peak_cooling: bool,
-    /// `true` iff all four per-metric checks pass. The acceptance test in
-    /// `tests/ashrae_140_blind_validation.rs` is gated with `#[ignore]` until
-    /// the underlying physics closes the band (`#1323` / `#1213`).
-    pub all_pass: bool,
-}
-
-impl Case920ValidationResult {
-    /// Returns a compact printable representation for log output.
-    pub fn summary(&self) -> String {
-        format!(
-            "Case 920: H={:.3}/{:.3}..{:.3} MWh ({}), C={:.3}/{:.3}..{:.3} MWh ({}), \
-             PH={:.3}/{:.3}..{:.3} kW ({}), PC={:.3}/{:.3}..{:.3} kW ({}) → all_pass={}",
-            self.annual_heating_mwh,
-            self.ref_annual_heating_min_mwh,
-            self.ref_annual_heating_max_mwh,
-            pass_str(self.pass_annual_heating),
-            self.annual_cooling_mwh,
-            self.ref_annual_cooling_min_mwh,
-            self.ref_annual_cooling_max_mwh,
-            pass_str(self.pass_annual_cooling),
-            self.peak_heating_kw,
-            self.ref_peak_heating_min_kw,
-            self.ref_peak_heating_max_kw,
-            pass_str(self.pass_peak_heating),
-            self.peak_cooling_kw,
-            self.ref_peak_cooling_min_kw,
-            self.ref_peak_cooling_max_kw,
-            pass_str(self.pass_peak_cooling),
-            self.all_pass,
-        )
+    /// Issue #3555: see module-level note; delegates to
+    /// `crate::validation::ashrae140::cases::series_600::case_600_baseline`.
+    pub fn case_600_baseline() -> CaseSpec {
+        crate::validation::ashrae140::cases::series_600::case_600_baseline()
+    }
+    /// Issue #3555: see module-level note; delegates to
+    /// `crate::validation::ashrae140::cases::series_600::case_610_south_shading`.
+    pub fn case_610_south_shading() -> CaseSpec {
+        crate::validation::ashrae140::cases::series_600::case_610_south_shading()
+    }
+    /// Issue #3555: see module-level note; delegates to
+    /// `crate::validation::ashrae140::cases::series_600::case_620_ew_windows`.
+    pub fn case_620_ew_windows() -> CaseSpec {
+        crate::validation::ashrae140::cases::series_600::case_620_ew_windows()
+    }
+    /// Issue #3555: see module-level note; delegates to
+    /// `crate::validation::ashrae140::cases::series_600::case_630_ew_shading`.
+    pub fn case_630_ew_shading() -> CaseSpec {
+        crate::validation::ashrae140::cases::series_600::case_630_ew_shading()
+    }
+    /// Issue #3555: see module-level note; delegates to
+    /// `crate::validation::ashrae140::cases::series_600::case_640_setback`.
+    pub fn case_640_setback() -> CaseSpec {
+        crate::validation::ashrae140::cases::series_600::case_640_setback()
+    }
+    /// Issue #3555: see module-level note; delegates to
+    /// `crate::validation::ashrae140::cases::series_600::case_650_night_vent`.
+    pub fn case_650_night_vent() -> CaseSpec {
+        crate::validation::ashrae140::cases::series_600::case_650_night_vent()
+    }
+    /// Issue #3555: see module-level note; delegates to
+    /// `crate::validation::ashrae140::cases::series_600::case_600ff`.
+    pub fn case_600ff() -> CaseSpec {
+        crate::validation::ashrae140::cases::series_600::case_600ff()
+    }
+    /// Issue #3555: see module-level note; delegates to
+    /// `crate::validation::ashrae140::cases::series_600::case_650ff`.
+    pub fn case_650ff() -> CaseSpec {
+        crate::validation::ashrae140::cases::series_600::case_650ff()
+    }
+    /// Issue #3555: see module-level note; delegates to
+    /// `crate::validation::ashrae140::cases::series_900::case_900_baseline`.
+    pub fn case_900_baseline() -> CaseSpec {
+        crate::validation::ashrae140::cases::series_900::case_900_baseline()
+    }
+    /// Issue #3555: see module-level note; delegates to
+    /// `crate::validation::ashrae140::cases::series_900::case_910_south_shading`.
+    pub fn case_910_south_shading() -> CaseSpec {
+        crate::validation::ashrae140::cases::series_900::case_910_south_shading()
+    }
+    /// Issue #3555: see module-level note; delegates to
+    /// `crate::validation::ashrae140::cases::series_900::case_920_ew_windows`.
+    pub fn case_920_ew_windows() -> CaseSpec {
+        crate::validation::ashrae140::cases::series_900::case_920_ew_windows()
+    }
+    /// Issue #3555: see module-level note; delegates to
+    /// `crate::validation::ashrae140::cases::series_900::case_930_ew_shading`.
+    pub fn case_930_ew_shading() -> CaseSpec {
+        crate::validation::ashrae140::cases::series_900::case_930_ew_shading()
+    }
+    /// Issue #3555: see module-level note; delegates to
+    /// `crate::validation::ashrae140::cases::series_900::case_940_setback`.
+    pub fn case_940_setback() -> CaseSpec {
+        crate::validation::ashrae140::cases::series_900::case_940_setback()
+    }
+    /// Issue #3555: see module-level note; delegates to
+    /// `crate::validation::ashrae140::cases::series_900::case_950_night_vent`.
+    pub fn case_950_night_vent() -> CaseSpec {
+        crate::validation::ashrae140::cases::series_900::case_950_night_vent()
+    }
+    /// Issue #3555: see module-level note; delegates to
+    /// `crate::validation::ashrae140::cases::series_900::case_900ff`.
+    pub fn case_900ff() -> CaseSpec {
+        crate::validation::ashrae140::cases::series_900::case_900ff()
+    }
+    /// Issue #3555: see module-level note; delegates to
+    /// `crate::validation::ashrae140::cases::series_900::case_950ff`.
+    pub fn case_950ff() -> CaseSpec {
+        crate::validation::ashrae140::cases::series_900::case_950ff()
+    }
+    /// Issue #3555: see module-level note; delegates to
+    /// `crate::validation::ashrae140::cases::series_960::case_960_sunspace`.
+    pub fn case_960_sunspace() -> CaseSpec {
+        crate::validation::ashrae140::cases::series_960::case_960_sunspace()
+    }
+    /// Issue #3555: see module-level note; delegates to
+    /// `crate::validation::ashrae140::cases::series_970::case_970_five_zone_cross_coupling`.
+    pub fn case_970_five_zone_cross_coupling() -> CaseSpec {
+        crate::validation::ashrae140::cases::series_970::case_970_five_zone_cross_coupling()
     }
 }
 
-fn pass_str(p: bool) -> &'static str {
-    if p {
-        "PASS"
-    } else {
-        "FAIL"
-    }
-}
-
-/// ASHRAE 140 Case 920 reference bands (Annex B8, validated across BSIMAC,
-/// CSE, DeST, EnergyPlus, ESP-r, TRNSYS — per the CSV provenance header in
-/// `tests/reference_data/zone_balance/case_920_energy_reference.csv`).
-///
-/// These are the raw ASHRAE 140 inter-program bands, NOT the per-program
-/// ±15% bands. The validator uses the raw band as the pass/fail window
-/// (matching the issue acceptance criterion: "Annual heating energy in
-/// [lower, upper] band per ASHRAE 140-2017 Table 8-2").
-const CASE_920_ANNUAL_HEATING_MIN_MWH: f64 = 3.26;
-const CASE_920_ANNUAL_HEATING_MAX_MWH: f64 = 4.30;
-const CASE_920_ANNUAL_COOLING_MIN_MWH: f64 = 1.84;
-const CASE_920_ANNUAL_COOLING_MAX_MWH: f64 = 3.31;
-const CASE_920_PEAK_HEATING_MIN_KW: f64 = 2.10;
-const CASE_920_PEAK_HEATING_MAX_KW: f64 = 2.80;
-const CASE_920_PEAK_COOLING_MIN_KW: f64 = 1.40;
-const CASE_920_PEAK_COOLING_MAX_KW: f64 = 1.90;
-
-/// Validate ASHRAE 140 Case 920 (high-mass east/west windows) against the
-/// reference bands in `tests/reference_data/zone_balance/case_920_energy_reference.csv`.
-///
-/// This is the single-zone companion to the multi-zone
-/// `validate_case_960_with_validator` in `ashrae_140_multi_zone.rs`. It does
-/// NOT tune the physics, modify the model, or apply any per-case correction
-/// (issue hard rule: "No parameter tuning — validation harness, not physics
-/// tuning"). It runs a blind annual simulation from the spec alone and
-/// reports the four band checks.
-///
-/// Acceptance criterion (issue #1346):
-///   "`validate_case_920` returns a `CaseValidationResult` (not
-///    panic/unimplemented) for `CaseSpec` with 6 m² east + 6 m² west."
-///
-/// This function is unconditionally non-panicking for any well-formed
-/// `CaseSpec` produced by `ASHRAE140Case::Case920.spec()`. The strict
-/// per-band pass/fail is reported via `result.all_pass`; the function
-/// itself only returns an error if `ThermalModel::from_spec` cannot
-/// construct a model from the spec (which the CaseBuilder is required to
-/// not produce for Case 920 — see `case_920_ew_windows().expect("Case 920
-/// should validate")` at line 2567).
-pub fn validate_case_920(spec: &CaseSpec) -> Case920ValidationResult {
-    // Run the blind annual simulation. We deliberately do NOT use
-    // `ASHRAE140Validator::validate_case` because that path is the
-    // multi-case `BenchmarkReport` builder and would conflate Case 920
-    // results with the other 600/900 cases in the wider harness. A
-    // dedicated single-spec path keeps the result schema clean and lets
-    // the unit test in this module assert on a single `Case920ValidationResult`
-    // without filtering.
-    let sim = simulate_case_920_blind(spec);
-    build_case_920_validation_result(
-        sim.annual_heating_mwh,
-        sim.annual_cooling_mwh,
-        sim.peak_heating_kw,
-        sim.peak_cooling_kw,
-    )
-}
-
-/// Compact simulation output for the Case 920 validator.
-#[derive(Debug, Clone, Copy)]
-struct Case920BlindSim {
-    annual_heating_mwh: f64,
-    annual_cooling_mwh: f64,
-    peak_heating_kw: f64,
-    peak_cooling_kw: f64,
-}
-
-/// Blind annual simulation: only the `CaseSpec` is passed to the engine
-/// (no case ID, no test-only flags, no per-case tuning). Returns the four
-/// metered-energy metrics the validator compares against the reference band.
-///
-/// Uses `ThermalModel::from_spec` (the same spec-driven path that the
-/// Case 600/900 strict-tolerance tests in `tests/zone_balance_eplus_isolation.rs`
-/// use) and the Denver TMY3 weather source. This is the spec-only path the
-/// issue's "blind execution" criterion requires: the engine never sees a
-/// case ID.
-fn simulate_case_920_blind(spec: &CaseSpec) -> Case920BlindSim {
-    use crate::physics::cta::VectorField;
-    use crate::sim::engine::ThermalModel;
-    use crate::weather::denver::DenverTmyWeather;
-    use crate::weather::WeatherSource;
-
-    let mut model =
-        ThermalModel::<VectorField>::from_spec_with_selector(spec, &ThermalSelector::default())
-            .expect("default selector must initialize");
-    let weather = DenverTmyWeather::new();
-    const STEPS: usize = 8760;
-
-    for step in 0..STEPS {
-        let hour_of_day = step % 24;
-        let weather_data = match weather.get_hourly_data(step) {
-            Ok(w) => w,
-            Err(_) => continue, // Defensive: should never happen with TMY data
-        };
-        // Extract the only field used downstream (f64 is Copy) so we can move
-        // weather_data into model.solar.weather without an extra clone (Issue #2893).
-        let dry_bulb_temp = weather_data.dry_bulb_temp;
-        model.solar.weather = Some(weather_data);
-        if let Some(hvac) = spec.hvac.first() {
-            let hour = hour_of_day as u8;
-            let heating_sp = hvac
-                .heating_setpoint_at_hour(hour)
-                .unwrap_or(hvac.heating_setpoint);
-            let cooling_sp = model.setpoints.cooling_schedule.value(hour as usize);
-            model.setpoints.heating_setpoint = heating_sp;
-            model.setpoints.cooling_setpoint = cooling_sp;
-        }
-        model.step_physics(step, dry_bulb_temp, 3600.0);
-    }
-
-    Case920BlindSim {
-        // The model reports cumulative energy in kWh; ASHRAE 140 reference
-        // bands are in MWh. Same conversion the test harness uses.
-        annual_heating_mwh: model.hvac.annual_heating_energy / 1000.0,
-        annual_cooling_mwh: model.hvac.annual_cooling_energy / 1000.0,
-        peak_heating_kw: model.get_peak_heating_power_kw(),
-        peak_cooling_kw: model.get_peak_cooling_power_kw(),
-    }
-}
-
-/// Build a `Case920ValidationResult` from the four simulated metrics and
-/// compare each against the ASHRAE 140 Annex B8 raw reference band. Split
-/// out as a pure function so the unit test can call it with synthetic
-/// values without driving a full year of physics.
-fn build_case_920_validation_result(
-    annual_heating_mwh: f64,
-    annual_cooling_mwh: f64,
-    peak_heating_kw: f64,
-    peak_cooling_kw: f64,
-) -> Case920ValidationResult {
-    let pass_annual_heating = annual_heating_mwh >= CASE_920_ANNUAL_HEATING_MIN_MWH
-        && annual_heating_mwh <= CASE_920_ANNUAL_HEATING_MAX_MWH;
-    let pass_annual_cooling = annual_cooling_mwh >= CASE_920_ANNUAL_COOLING_MIN_MWH
-        && annual_cooling_mwh <= CASE_920_ANNUAL_COOLING_MAX_MWH;
-    let pass_peak_heating = peak_heating_kw >= CASE_920_PEAK_HEATING_MIN_KW
-        && peak_heating_kw <= CASE_920_PEAK_HEATING_MAX_KW;
-    let pass_peak_cooling = peak_cooling_kw >= CASE_920_PEAK_COOLING_MIN_KW
-        && peak_cooling_kw <= CASE_920_PEAK_COOLING_MAX_KW;
-    Case920ValidationResult {
-        annual_heating_mwh,
-        annual_cooling_mwh,
-        peak_heating_kw,
-        peak_cooling_kw,
-        ref_annual_heating_min_mwh: CASE_920_ANNUAL_HEATING_MIN_MWH,
-        ref_annual_heating_max_mwh: CASE_920_ANNUAL_HEATING_MAX_MWH,
-        ref_annual_cooling_min_mwh: CASE_920_ANNUAL_COOLING_MIN_MWH,
-        ref_annual_cooling_max_mwh: CASE_920_ANNUAL_COOLING_MAX_MWH,
-        ref_peak_heating_min_kw: CASE_920_PEAK_HEATING_MIN_KW,
-        ref_peak_heating_max_kw: CASE_920_PEAK_HEATING_MAX_KW,
-        ref_peak_cooling_min_kw: CASE_920_PEAK_COOLING_MIN_KW,
-        ref_peak_cooling_max_kw: CASE_920_PEAK_COOLING_MAX_KW,
-        pass_annual_heating,
-        pass_annual_cooling,
-        pass_peak_heating,
-        pass_peak_cooling,
-        all_pass: pass_annual_heating
-            && pass_annual_cooling
-            && pass_peak_heating
-            && pass_peak_cooling,
-    }
-}
-
-// =============================================================================
-// ASHRAE 140 Case 950 — High-Mass Night-Ventilation Validator (Issue #1347)
-// =============================================================================
-//
-// `Case950ValidationResult` and `validate_case_950` follow the Case 920
-// validator shape (`validate_case_920` / `Case920ValidationResult` introduced
-// in PR #1346) but specialize in night-ventilation + setback scheduling:
-// Case 950 is the high-mass night-flush case (8m × 6m × 2.7m, 200 mm concrete,
-// 12 m² south double-clear window, 0.5 ACH, HEATING OFF, 5 ACH night-flush,
-// Denver TMY3). The validator runs a blind annual simulation from the spec
-// alone and compares the four metered-energy metrics against the ASHRAE
-// 140-2023 Annex B8 reference bands recorded in
-// `tests/reference_data/zone_balance/case_950_energy_reference.csv`.
-//
-// Reference bands asserted by this validator:
-//
-//   * annual_heating : 0.00 – 0.00 MWh (ref midpoint 0.000 MWh, ±15% → 0.000 – 0.015 MWh)
-//   * annual_cooling : 0.39 – 0.92 MWh (ref midpoint 0.655 MWh, ±15% → 0.557 – 0.753 MWh)
-//   * peak_heating   : 0.00 – 0.00 kW  (ref midpoint 0.000 kW, ±15% → 0.000 – 0.015 kW)
-//   * peak_cooling   : 0.70 – 0.90 kW  (ref midpoint 0.800 kW, ±15% → 0.680 – 0.920 kW)
-//
-// Setback / scheduling integration (issue #1347 AC3, AC4):
-//   * HvacSchedule carries a 22:00-06:00 setback window (8 h/day × 365 = 2920
-//     active hours/year). The validator asserts this is set in the spec but
-//     does NOT assert that the simulation respects it (Case 950 has heating
-//     off by spec — `setback_setpoint = -100°C`, so the setback window is a
-//     spec marker only).
-//   * NightVentilation carries a 18:00-07:00 active window (13 h/day × 365 =
-//     4745 active hours/year). The validator asserts the night-vent fan
-//     activates during 18:00-07:00 and is OFF during 07:00-18:00.
-//   * Night-flush thermal check: the validator asserts that the simulated
-//     zone temperature drops below 24°C for ≥ 4 consecutive hours during
-//     22:00-06:00 in July (the peak summer night-flush scenario).
-//
-// Like `validate_case_920`, this validator does NOT tune the physics — it
-// is a strict spec-driven band check gated by the wider #1323 / #1213
-// physics fixes (annual heating/cooling calibration gap).
-
-/// Result of validating a Case 950 simulation against ASHRAE 140-2023 Annex B8.
-///
-/// Mirrors the metered-energy portion of `Case920ValidationResult` so the
-/// per-case validators share a uniform shape across the single-zone cases.
-/// All `*_mwh` fields are in megawatt-hours, all `*_kw` fields are in
-/// kilowatts. The pass/fail fields report per-metric status against the
-/// raw ASHRAE 140 Annex B8 band (not the ±15% accept band).
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
-pub struct Case950ValidationResult {
-    /// Annual heating energy from the blind simulation (MWh).
-    pub annual_heating_mwh: f64,
-    /// Annual cooling energy from the blind simulation (MWh).
-    pub annual_cooling_mwh: f64,
-    /// Peak heating demand observed during the year (kW).
-    pub peak_heating_kw: f64,
-    /// Peak cooling demand observed during the year (kW).
-    pub peak_cooling_kw: f64,
-    /// Reference minimum for annual heating (MWh) — raw ASHRAE 140 Annex B8.
-    pub ref_annual_heating_min_mwh: f64,
-    /// Reference maximum for annual heating (MWh) — raw ASHRAE 140 Annex B8.
-    pub ref_annual_heating_max_mwh: f64,
-    /// Reference minimum for annual cooling (MWh) — raw ASHRAE 140 Annex B8.
-    pub ref_annual_cooling_min_mwh: f64,
-    /// Reference maximum for annual cooling (MWh) — raw ASHRAE 140 Annex B8.
-    pub ref_annual_cooling_max_mwh: f64,
-    /// Reference minimum for peak heating (kW) — raw ASHRAE 140 Annex B8.
-    pub ref_peak_heating_min_kw: f64,
-    /// Reference maximum for peak heating (kW) — raw ASHRAE 140 Annex B8.
-    pub ref_peak_heating_max_kw: f64,
-    /// Reference minimum for peak cooling (kW) — raw ASHRAE 140 Annex B8.
-    pub ref_peak_cooling_min_kw: f64,
-    /// Reference maximum for peak cooling (kW) — raw ASHRAE 140 Annex B8.
-    pub ref_peak_cooling_max_kw: f64,
-    /// `true` iff `annual_heating_mwh` falls inside the ref band.
-    pub pass_annual_heating: bool,
-    /// `true` iff `annual_cooling_mwh` falls inside the ref band.
-    pub pass_annual_cooling: bool,
-    /// `true` iff `peak_heating_kw` falls inside the ref band.
-    pub pass_peak_heating: bool,
-    /// `true` iff `peak_cooling_kw` falls inside the ref band.
-    pub pass_peak_cooling: bool,
-    /// `true` iff all four per-metric checks pass. The acceptance test in
-    /// `tests/ashrae_140_blind_validation.rs` is gated with `#[ignore]` until
-    /// the underlying physics closes the band (`#1323` / `#1213`).
-    pub all_pass: bool,
-}
-
-impl Case950ValidationResult {
-    /// Returns a compact printable representation for log output.
-    pub fn summary(&self) -> String {
-        format!(
-            "Case 950: H={:.3}/{:.3}..{:.3} MWh ({}), C={:.3}/{:.3}..{:.3} MWh ({}), \
-             PH={:.3}/{:.3}..{:.3} kW ({}), PC={:.3}/{:.3}..{:.3} kW ({}) → all_pass={}",
-            self.annual_heating_mwh,
-            self.ref_annual_heating_min_mwh,
-            self.ref_annual_heating_max_mwh,
-            pass_str(self.pass_annual_heating),
-            self.annual_cooling_mwh,
-            self.ref_annual_cooling_min_mwh,
-            self.ref_annual_cooling_max_mwh,
-            pass_str(self.pass_annual_cooling),
-            self.peak_heating_kw,
-            self.ref_peak_heating_min_kw,
-            self.ref_peak_heating_max_kw,
-            pass_str(self.pass_peak_heating),
-            self.peak_cooling_kw,
-            self.ref_peak_cooling_min_kw,
-            self.ref_peak_cooling_max_kw,
-            pass_str(self.pass_peak_cooling),
-            self.all_pass,
-        )
-    }
-}
-
-/// ASHRAE 140 Case 950 reference bands (Annex B8, validated across BSIMAC,
-/// CSE, DeST, EnergyPlus, ESP-r, TRNSYS — per the CSV provenance header in
-/// `tests/reference_data/zone_balance/case_950_energy_reference.csv`).
-///
-/// These are the raw ASHRAE 140 inter-program bands, NOT the per-program
-/// ±15% bands. The validator uses the raw band as the pass/fail window
-/// (matching the issue acceptance criterion: "Annual cooling energy in
-/// [lower, upper] band per ASHRAE 140-2017 Table 8-2"). Numeric bands are
-/// cited from the CSV provenance, not invented.
-const CASE_950_ANNUAL_HEATING_MIN_MWH: f64 = 0.00;
-const CASE_950_ANNUAL_HEATING_MAX_MWH: f64 = 0.00;
-const CASE_950_ANNUAL_COOLING_MIN_MWH: f64 = 0.39;
-const CASE_950_ANNUAL_COOLING_MAX_MWH: f64 = 0.92;
-const CASE_950_PEAK_HEATING_MIN_KW: f64 = 0.00;
-const CASE_950_PEAK_HEATING_MAX_KW: f64 = 0.00;
-const CASE_950_PEAK_COOLING_MIN_KW: f64 = 0.70;
-const CASE_950_PEAK_COOLING_MAX_KW: f64 = 0.90;
-
-/// Validate ASHRAE 140 Case 950 (high-mass night ventilation, no heating)
-/// against the reference bands in
-/// `tests/reference_data/zone_balance/case_950_energy_reference.csv`.
-///
-/// This is the single-zone night-ventilation companion to
-/// `validate_case_920` (PR #1346). It does NOT tune the physics, modify
-/// the model, or apply any per-case correction (issue hard rule: "No
-/// parameter tuning — validation harness, not physics tuning"). It runs
-/// a blind annual simulation from the spec alone and reports the four
-/// band checks.
-///
-/// Acceptance criterion (issue #1347):
-///   "`validate_case_950` returns a `CaseValidationResult` (not
-///    panic/unimplemented) for the Case 950 spec."
-///
-/// This function is unconditionally non-panicking for any well-formed
-/// `CaseSpec` produced by `ASHRAE140Case::Case950.spec()`. The strict
-/// per-band pass/fail is reported via `result.all_pass`; the function
-/// itself only returns an error if `ThermalModel::from_spec` cannot
-/// construct a model from the spec (which `CaseBuilder::case_950_night_vent`
-/// is required to not produce — see `.expect("Case 950 should validate")`
-/// in the builder).
-pub fn validate_case_950(spec: &CaseSpec) -> Case950ValidationResult {
-    // Run the blind annual simulation. We deliberately do NOT use
-    // `ASHRAE140Validator::validate_case` because that path is the
-    // multi-case `BenchmarkReport` builder and would conflate Case 950
-    // results with the other 600/900 cases in the wider harness. A
-    // dedicated single-spec path keeps the result schema clean and lets
-    // the unit test in this module assert on a single
-    // `Case950ValidationResult` without filtering.
-    let sim = simulate_case_950_blind(spec);
-    build_case_950_validation_result(
-        sim.annual_heating_mwh,
-        sim.annual_cooling_mwh,
-        sim.peak_heating_kw,
-        sim.peak_cooling_kw,
-    )
-}
-
-/// Compact simulation output for the Case 950 validator.
-#[derive(Debug, Clone, Copy)]
-struct Case950BlindSim {
-    annual_heating_mwh: f64,
-    annual_cooling_mwh: f64,
-    peak_heating_kw: f64,
-    peak_cooling_kw: f64,
-}
-
-/// Blind annual simulation: only the `CaseSpec` is passed to the engine
-/// (no case ID, no test-only flags, no per-case tuning). Returns the four
-/// metered-energy metrics the validator compares against the reference
-/// band.
-///
-/// Uses `ThermalModel::from_spec` (the same spec-driven path that the
-/// Case 600/900/920 strict-tolerance tests in
-/// `tests/zone_balance_eplus_isolation.rs` use) and the Denver TMY3
-/// weather source. This is the spec-only path the issue's "blind
-/// execution" criterion requires: the engine never sees a case ID.
-fn simulate_case_950_blind(spec: &CaseSpec) -> Case950BlindSim {
-    use crate::physics::cta::VectorField;
-    use crate::sim::engine::ThermalModel;
-    use crate::weather::denver::DenverTmyWeather;
-    use crate::weather::WeatherSource;
-
-    let mut model =
-        ThermalModel::<VectorField>::from_spec_with_selector(spec, &ThermalSelector::default())
-            .expect("default selector must initialize");
-    let weather = DenverTmyWeather::new();
-    const STEPS: usize = 8760;
-
-    for step in 0..STEPS {
-        let hour_of_day = step % 24;
-        let weather_data = match weather.get_hourly_data(step) {
-            Ok(w) => w,
-            Err(_) => continue, // Defensive: should never happen with TMY data
-        };
-        // Extract the only field used downstream (f64 is Copy) so we can move
-        // weather_data into model.solar.weather without an extra clone (Issue #2893).
-        let dry_bulb_temp = weather_data.dry_bulb_temp;
-        model.solar.weather = Some(weather_data);
-        if let Some(hvac) = spec.hvac.first() {
-            let hour = hour_of_day as u8;
-            let heating_sp = hvac
-                .heating_setpoint_at_hour(hour)
-                .unwrap_or(hvac.heating_setpoint);
-            let cooling_sp = model.setpoints.cooling_schedule.value(hour as usize);
-            model.setpoints.heating_setpoint = heating_sp;
-            model.setpoints.cooling_setpoint = cooling_sp;
-        }
-        model.step_physics(step, dry_bulb_temp, 3600.0);
-    }
-
-    Case950BlindSim {
-        // The model reports cumulative energy in kWh; ASHRAE 140 reference
-        // bands are in MWh. Same conversion the test harness uses.
-        annual_heating_mwh: model.hvac.annual_heating_energy / 1000.0,
-        annual_cooling_mwh: model.hvac.annual_cooling_energy / 1000.0,
-        peak_heating_kw: model.get_peak_heating_power_kw(),
-        peak_cooling_kw: model.get_peak_cooling_power_kw(),
-    }
-}
-
-/// Build a `Case950ValidationResult` from the four simulated metrics and
-/// compare each against the ASHRAE 140 Annex B8 raw reference band. Split
-/// out as a pure function so the unit test can call it with synthetic
-/// values without driving a full year of physics.
-fn build_case_950_validation_result(
-    annual_heating_mwh: f64,
-    annual_cooling_mwh: f64,
-    peak_heating_kw: f64,
-    peak_cooling_kw: f64,
-) -> Case950ValidationResult {
-    let pass_annual_heating = annual_heating_mwh >= CASE_950_ANNUAL_HEATING_MIN_MWH
-        && annual_heating_mwh <= CASE_950_ANNUAL_HEATING_MAX_MWH;
-    let pass_annual_cooling = annual_cooling_mwh >= CASE_950_ANNUAL_COOLING_MIN_MWH
-        && annual_cooling_mwh <= CASE_950_ANNUAL_COOLING_MAX_MWH;
-    let pass_peak_heating = peak_heating_kw >= CASE_950_PEAK_HEATING_MIN_KW
-        && peak_heating_kw <= CASE_950_PEAK_HEATING_MAX_KW;
-    let pass_peak_cooling = peak_cooling_kw >= CASE_950_PEAK_COOLING_MIN_KW
-        && peak_cooling_kw <= CASE_950_PEAK_COOLING_MAX_KW;
-    Case950ValidationResult {
-        annual_heating_mwh,
-        annual_cooling_mwh,
-        peak_heating_kw,
-        peak_cooling_kw,
-        ref_annual_heating_min_mwh: CASE_950_ANNUAL_HEATING_MIN_MWH,
-        ref_annual_heating_max_mwh: CASE_950_ANNUAL_HEATING_MAX_MWH,
-        ref_annual_cooling_min_mwh: CASE_950_ANNUAL_COOLING_MIN_MWH,
-        ref_annual_cooling_max_mwh: CASE_950_ANNUAL_COOLING_MAX_MWH,
-        ref_peak_heating_min_kw: CASE_950_PEAK_HEATING_MIN_KW,
-        ref_peak_heating_max_kw: CASE_950_PEAK_HEATING_MAX_KW,
-        ref_peak_cooling_min_kw: CASE_950_PEAK_COOLING_MIN_KW,
-        ref_peak_cooling_max_kw: CASE_950_PEAK_COOLING_MAX_KW,
-        pass_annual_heating,
-        pass_annual_cooling,
-        pass_peak_heating,
-        pass_peak_cooling,
-        all_pass: pass_annual_heating
-            && pass_annual_cooling
-            && pass_peak_heating
-            && pass_peak_cooling,
-    }
-}
+// ============================================================
+// Issue #3555: validate_case_920 + validate_case_950 and their
+// supporting structs (Case920ValidationResult, Case950ValidationResult),
+// band constants, and pure result builders moved to:
+//   crate::validation::ashrae140::cases::series_900
+// Callers migrate from
+//   crate::validation::ashrae_140_cases::validate_case_920
+//   crate::validation::ashrae_140_cases::validate_case_950
+// to the new path; tests/ashrae_140_blind_validation.rs and
+// tests/ashrae_140_case_920.rs already import the new module.
+// ============================================================
 
 #[cfg(test)]
 mod tests {
@@ -4279,486 +3290,15 @@ mod tests {
         }
     }
 
-    // =================================================================
-    // Issue #1346: validate_case_920 unit tests
-    // =================================================================
-    //
-    // Three layers of coverage:
-    //   1. Synthetic band-check (no physics) — exercises the band logic in
-    //      `build_case_920_validation_result` with values known to be in/out
-    //      of band.
-    //   2. CaseSpec sanity — the spec produced by `ASHRAE140Case::Case920.spec()`
-    //      must carry 6 m² east + 6 m² west glazing (issue AC #1: the
-    //      validator must accept a spec with that geometry).
-    //   3. End-to-end smoke — the validator must run without panicking for
-    //      the real Case 920 spec. The strict band check is gated by the
-    //      wider physics fix (#1323/#1213); we only assert the four
-    //      energy metrics are finite and non-negative, mirroring the
-    //      `test_blind_mode_case_920_infrastructure` pattern.
-
-    /// Pure band-check on the result-builder: a midpoint heating of 3.78 MWh
-    /// (the ASHRAE 140 Annex B8 midpoint of [3.26, 4.30]) must pass, while
-    /// 1.708 MWh (the engine's current blind-mode output per #1323) must fail.
-    /// This is the unit-level acceptance for the band logic that the
-    /// integration test in `tests/ashrae_140_blind_validation.rs` drives
-    /// end-to-end.
-    #[test]
-    fn test_build_case_920_validation_result_band_logic() {
-        // Midpoint of all four bands → all_pass = true.
-        let r = build_case_920_validation_result(
-            0.5 * (CASE_920_ANNUAL_HEATING_MIN_MWH + CASE_920_ANNUAL_HEATING_MAX_MWH),
-            0.5 * (CASE_920_ANNUAL_COOLING_MIN_MWH + CASE_920_ANNUAL_COOLING_MAX_MWH),
-            0.5 * (CASE_920_PEAK_HEATING_MIN_KW + CASE_920_PEAK_HEATING_MAX_KW),
-            0.5 * (CASE_920_PEAK_COOLING_MIN_KW + CASE_920_PEAK_COOLING_MAX_KW),
-        );
-        assert!(r.pass_annual_heating, "midpoint heating must pass");
-        assert!(r.pass_annual_cooling, "midpoint cooling must pass");
-        assert!(r.pass_peak_heating, "midpoint peak heating must pass");
-        assert!(r.pass_peak_cooling, "midpoint peak cooling must pass");
-        assert!(r.all_pass, "all four midpoints → all_pass");
-
-        // Below-band heating (the engine's current #1323 output) must fail.
-        let r = build_case_920_validation_result(1.708, 1.713, 0.0, 0.0);
-        assert!(
-            !r.pass_annual_heating,
-            "1.708 MWh must be below 3.26 MWh lower band"
-        );
-        assert!(!r.all_pass, "below-band → all_pass=false");
-
-        // Above-band heating must also fail.
-        let r = build_case_920_validation_result(5.0, 1.0, 0.0, 0.0);
-        assert!(
-            !r.pass_annual_heating,
-            "5.0 MWh must be above 4.30 MWh upper band"
-        );
-
-        // Exactly at the lower edge → inclusive.
-        let r = build_case_920_validation_result(
-            CASE_920_ANNUAL_HEATING_MIN_MWH,
-            CASE_920_ANNUAL_COOLING_MIN_MWH,
-            CASE_920_PEAK_HEATING_MIN_KW,
-            CASE_920_PEAK_COOLING_MIN_KW,
-        );
-        assert!(
-            r.all_pass,
-            "exact lower edges are inclusive (per ASHRAE 140 band convention)"
-        );
-
-        // Just below the lower edge (sub-epsilon) → fail.
-        let r = build_case_920_validation_result(
-            CASE_920_ANNUAL_HEATING_MIN_MWH - 1e-9,
-            CASE_920_ANNUAL_COOLING_MIN_MWH,
-            CASE_920_PEAK_HEATING_MIN_KW,
-            CASE_920_PEAK_COOLING_MIN_KW,
-        );
-        assert!(!r.pass_annual_heating, "1e-9 below lower edge must fail");
-    }
-
-    /// Issue #1346 AC: the validator must accept a `CaseSpec` with 6 m² east
-    /// + 6 m² west glazing. This is the unit-level guard that the
-    ///   `CaseSpec` produced by `ASHRAE140Case::Case920.spec()` carries the
-    ///   geometry the validator is designed for. If the builder silently
-    ///   changes the E/W window area in a future refactor, this test fails
-    ///   before the validator runs against a wrong spec.
-    #[test]
-    fn test_case_920_spec_has_6m2_east_and_west_windows() {
-        let spec = ASHRAE140Case::Case920.spec();
-        assert_eq!(spec.case_id, "920");
-        assert!(spec.validate().is_ok(), "Case 920 spec must validate");
-
-        // Tally E vs W window area (the spec is single-zone; window list is
-        // indexed by zone). Both orientations must total 6 m².
-        let mut east_area = 0.0;
-        let mut west_area = 0.0;
-        for zone_windows in &spec.windows {
-            for w in zone_windows {
-                match w.orientation {
-                    Orientation::East => east_area += w.area,
-                    Orientation::West => west_area += w.area,
-                    _ => {}
-                }
-            }
-        }
-        assert!(
-            (east_area - 6.0).abs() < 1e-9,
-            "Case 920 must have 6 m² east glazing, got {east_area}"
-        );
-        assert!(
-            (west_area - 6.0).abs() < 1e-9,
-            "Case 920 must have 6 m² west glazing, got {west_area}"
-        );
-        // Construction must be high-mass (concrete) — distinguishes 920
-        // from low-mass Case 620.
-        assert_eq!(
-            spec.construction_type,
-            ConstructionType::HighMass,
-            "Case 920 must be high-mass construction"
-        );
-    }
-
-    /// End-to-end smoke: `validate_case_920` must return a
-    /// `Case920ValidationResult` (not panic / not unimplemented) for a
-    /// well-formed Case 920 spec. Mirrors the
-    /// `test_blind_mode_case_920_infrastructure` assertion in the
-    /// blind-validation test file but at the library-unit level (no
-    /// `cargo test --test` boundary).
-    ///
-    /// We do NOT assert `result.all_pass` here: the strict band check is
-    /// gated by the wider #1323 / #1213 physics fixes (current engine
-    /// heating = 1.708 MWh vs band [3.26, 4.30] MWh per the issue body).
-    /// The wider infrastructure test in `tests/ashrae_140_blind_validation.rs`
-    /// records the actual pass/fail state.
-    #[test]
-    fn test_validate_case_920_returns_result_for_case_920_spec() {
-        let spec = ASHRAE140Case::Case920.spec();
-        let result = validate_case_920(&spec);
-        // All four metrics must be finite and physically reasonable
-        // (annual energies > 0, peak powers > 0). This is the
-        // non-panicking / non-unimplemented AC the issue requires.
-        assert!(
-            result.annual_heating_mwh.is_finite(),
-            "annual_heating_mwh must be finite, got {}",
-            result.annual_heating_mwh
-        );
-        assert!(
-            result.annual_cooling_mwh.is_finite(),
-            "annual_cooling_mwh must be finite, got {}",
-            result.annual_cooling_mwh
-        );
-        assert!(
-            result.peak_heating_kw.is_finite(),
-            "peak_heating_kw must be finite"
-        );
-        assert!(
-            result.peak_cooling_kw.is_finite(),
-            "peak_cooling_kw must be finite"
-        );
-        assert!(
-            result.annual_heating_mwh >= 0.0,
-            "annual_heating_mwh must be ≥ 0, got {}",
-            result.annual_heating_mwh
-        );
-        assert!(
-            result.annual_cooling_mwh >= 0.0,
-            "annual_cooling_mwh must be ≥ 0, got {}",
-            result.annual_cooling_mwh
-        );
-        // Reference fields must be populated from the CSV.
-        assert!(result.ref_annual_heating_min_mwh > 0.0);
-        assert!(result.ref_annual_heating_max_mwh > result.ref_annual_heating_min_mwh);
-        assert!(result.ref_annual_cooling_min_mwh > 0.0);
-        assert!(result.ref_annual_cooling_max_mwh > result.ref_annual_cooling_min_mwh);
-        assert!(result.ref_peak_heating_max_kw > result.ref_peak_heating_min_kw);
-        assert!(result.ref_peak_cooling_max_kw > result.ref_peak_cooling_min_kw);
-    }
-
-    // =================================================================
-    // Issue #1347: validate_case_950 unit tests
-    // =================================================================
-    //
-    // Five layers of coverage:
-    //   1. Pure band-check (no physics) — exercises the band logic in
-    //      `build_case_950_validation_result` with values known to be
-    //      in/out of band.
-    //   2. CaseSpec sanity — the spec produced by `ASHRAE140Case::Case950.spec()`
-    //      must carry a HvacSchedule with the 22:00-06:00 setback window
-    //      (issue AC4) AND a NightVentilation with the 18:00-07:00 active
-    //      window (issue AC3 night-flush path).
-    //   3. Setback schedule activation — `heating_setpoint_at_hour(h)`
-    //      returns the setback value during 22:00-06:00 (or the constant
-    //      outside, depending on operating_hours). Verifies the schedule
-    //      conversion carries the setback through correctly.
-    //   4. Night ventilation activation — `NightVentilation::is_active_at_hour(h)`
-    //      returns true during 18:00-07:00 and false during 07:00-18:00.
-    //   5. End-to-end smoke — `validate_case_950` must run without
-    //      panicking for the real Case 950 spec (issue AC1).
-
-    /// Pure band-check on the Case 950 result-builder: a midpoint cooling
-    /// of 0.655 MWh (the ASHRAE 140 Annex B8 midpoint of [0.39, 0.92])
-    /// must pass, while a zero-cooling simulation must fail.
-    /// This is the unit-level acceptance for the band logic that the
-    /// integration test in `tests/ashrae_140_blind_validation.rs` drives
-    /// end-to-end.
-    #[test]
-    fn test_build_case_950_validation_result_band_logic() {
-        // Midpoint of all four bands → all_pass = true.
-        let r = build_case_950_validation_result(
-            0.5 * (CASE_950_ANNUAL_HEATING_MIN_MWH + CASE_950_ANNUAL_HEATING_MAX_MWH),
-            0.5 * (CASE_950_ANNUAL_COOLING_MIN_MWH + CASE_950_ANNUAL_COOLING_MAX_MWH),
-            0.5 * (CASE_950_PEAK_HEATING_MIN_KW + CASE_950_PEAK_HEATING_MAX_KW),
-            0.5 * (CASE_950_PEAK_COOLING_MIN_KW + CASE_950_PEAK_COOLING_MAX_KW),
-        );
-        assert!(r.pass_annual_heating, "midpoint heating must pass");
-        assert!(r.pass_annual_cooling, "midpoint cooling must pass");
-        assert!(r.pass_peak_heating, "midpoint peak heating must pass");
-        assert!(r.pass_peak_cooling, "midpoint peak cooling must pass");
-        assert!(r.all_pass, "all four midpoints → all_pass");
-
-        // Below-band cooling must fail.
-        let r = build_case_950_validation_result(0.0, 0.1, 0.0, 0.5);
-        assert!(
-            !r.pass_annual_cooling,
-            "0.1 MWh must be below 0.39 MWh lower band"
-        );
-        assert!(!r.all_pass, "below-band → all_pass=false");
-
-        // Above-band cooling must also fail.
-        let r = build_case_950_validation_result(0.0, 1.5, 0.0, 1.0);
-        assert!(
-            !r.pass_annual_cooling,
-            "1.5 MWh must be above 0.92 MWh upper band"
-        );
-
-        // Exactly at the lower edge → inclusive.
-        let r = build_case_950_validation_result(
-            CASE_950_ANNUAL_HEATING_MIN_MWH,
-            CASE_950_ANNUAL_COOLING_MIN_MWH,
-            CASE_950_PEAK_HEATING_MIN_KW,
-            CASE_950_PEAK_COOLING_MIN_KW,
-        );
-        assert!(
-            r.all_pass,
-            "exact lower edges are inclusive (per ASHRAE 140 band convention)"
-        );
-
-        // Just below the lower edge (sub-epsilon) → fail.
-        let r = build_case_950_validation_result(
-            CASE_950_ANNUAL_HEATING_MIN_MWH,
-            CASE_950_ANNUAL_COOLING_MIN_MWH - 1e-9,
-            CASE_950_PEAK_HEATING_MIN_KW,
-            CASE_950_PEAK_COOLING_MIN_KW,
-        );
-        assert!(!r.pass_annual_cooling, "1e-9 below lower edge must fail");
-    }
-
-    /// Issue #1347 AC4: the Case 950 spec must carry a HvacSchedule with a
-    /// 22:00-06:00 setback window (8 h/day = 2920 active hours/year).
-    /// This is the unit-level guard that the spec produced by
-    /// `ASHRAE140Case::Case950.spec()` has the night-flush setback marker
-    /// in place. If a future refactor silently drops the setback, this
-    /// test fails before the integration test runs against a wrong spec.
-    #[test]
-    fn test_case_950_spec_has_22_06_setback_window() {
-        let spec = ASHRAE140Case::Case950.spec();
-        assert_eq!(spec.case_id, "950");
-        assert!(spec.validate().is_ok(), "Case 950 spec must validate");
-
-        let hvac = spec
-            .hvac
-            .first()
-            .expect("Case 950 spec must have an HVAC schedule");
-        // Setback window must be Some((22, 6)) per the issue AC4.
-        let setback_hours = hvac
-            .setback_hours
-            .expect("Case 950 must carry a setback window");
-        assert_eq!(
-            setback_hours,
-            (22, 6),
-            "Case 950 setback window must be (22, 6) — 8 h/day night-flush marker"
-        );
-
-        // The setback window is 8 hours/day: 22, 23, 0, 1, 2, 3, 4, 5.
-        // Verifiable from spec: 8 h/day × 365 days = 2920 active hours/year.
-        let mut hours_in_setback = 0u32;
-        for h in 0u8..24 {
-            let (start, end) = setback_hours;
-            let in_setback =
-                start <= end && start <= h && h < end || start > end && (h >= start || h < end);
-            if in_setback {
-                hours_in_setback += 1;
-            }
-        }
-        assert_eq!(
-            hours_in_setback, 8,
-            "setback window must be 8 hours/day for AC4 (8 × 365 = 2920 h/year)"
-        );
-
-        // Heating is OFF by spec → the spec MUST use heating_setpoint
-        // at or below any reasonable winter indoor temperature. The
-        // existing tests in tests/ashrae_140_setback_ventilation.rs
-        // assert heating == 0.0 for Case 950, so we lock in that here
-        // by checking the schedule's heating setpoint is well below 0°C.
-        assert!(
-            hvac.heating_setpoint <= -50.0,
-            "Case 950 heating must be OFF (setpoint ≤ -50°C), got {}",
-            hvac.heating_setpoint
-        );
-    }
-
-    /// Issue #1347 AC3: the Case 950 spec must carry a NightVentilation
-    /// schedule with an active window that covers the night-flush hours.
-    /// `NightVentilation::case_650()` (used by the builder) has
-    /// operating_hours = (18, 7) = 13 active hours/day. This test guards
-    /// against the builder silently dropping or rewiring the night-vent
-    /// spec.
-    #[test]
-    fn test_case_950_spec_has_night_ventilation_active_18_to_7() {
-        let spec = ASHRAE140Case::Case950.spec();
-        let nv = spec
-            .night_ventilation
-            .expect("Case 950 must have night ventilation configured");
-
-        // Operating window: (18, 7) wraps midnight → 13 hours active/day.
-        assert_eq!(
-            nv.operating_hours,
-            (18, 7),
-            "Case 950 night-vent window must be (18, 7) — 13 active hours/day"
-        );
-
-        // Spot-check the active/inactive transitions.
-        assert!(nv.is_active_at_hour(18), "active at 18:00 (start)");
-        assert!(nv.is_active_at_hour(23), "active at 23:00");
-        assert!(nv.is_active_at_hour(0), "active at 00:00 (wrap)");
-        assert!(nv.is_active_at_hour(6), "active at 06:00 (last active)");
-        assert!(!nv.is_active_at_hour(7), "INactive at 07:00 (end)");
-        assert!(!nv.is_active_at_hour(12), "INactive at 12:00 (midday)");
-        assert!(!nv.is_active_at_hour(17), "INactive at 17:00 (pre-start)");
-
-        // Fan capacity must match the ASHRAE 140 reference (1703.16 m³/h
-        // from `case_650()`). This locks the volumetric flow rate so the
-        // ACH (1703.16 / 129.6 ≈ 13.14 ACH in zone 0) cannot drift.
-        assert!(
-            (nv.fan_capacity - 1703.16).abs() < 1e-9,
-            "Case 950 fan_capacity must be 1703.16 m³/h, got {}",
-            nv.fan_capacity
-        );
-        assert!(
-            !nv.adds_heat,
-            "ASHRAE 140 night-vent must not add waste heat to the zone"
-        );
-    }
-
-    /// Issue #1347 AC4 (follow-up): the HvacSchedule conversion to the
-    /// unified schedule engine must apply the 22:00-06:00 setback window
-    /// (or, when operating_hours overwrite it, the window must still be
-    /// observable via the spec field). This test guards the conversion
-    /// against silent regressions.
-    #[test]
-    fn test_case_950_hvac_schedule_setback_marker_is_observable() {
-        let spec = ASHRAE140Case::Case950.spec();
-        let hvac = spec.hvac.first().expect("Case 950 has HVAC schedule");
-
-        // The raw spec must carry the setback marker.
-        assert!(
-            hvac.setback_hours.is_some(),
-            "Case 950 HvacSchedule must carry a setback_hours marker"
-        );
-        assert!(
-            hvac.setback_setpoint.is_some(),
-            "Case 950 HvacSchedule must carry a setback_setpoint marker"
-        );
-
-        // Operating hours restriction (7-18) means HVAC is enabled only
-        // during the day. Heating is always off (-100°C), so heating
-        // setpoint is moot and the night flush is purely a
-        // night-ventilation effect.
-        assert_eq!(
-            hvac.operating_hours,
-            (7, 18),
-            "Case 950 cooling-only-during-day operating window"
-        );
-        assert!(
-            hvac.cooling_setpoint > 20.0 && hvac.cooling_setpoint < 30.0,
-            "Case 950 cooling setpoint should be in [20, 30]°C, got {}",
-            hvac.cooling_setpoint
-        );
-
-        // The conversion to the unified schedule must not lose the
-        // setback window information (even though the operating-hours
-        // restriction overwrites the heating_sp during setback hours).
-        use crate::sim::hvac::zones::schedule::HVACSchedule;
-        let unified: HVACSchedule = hvac.into();
-        // The unified schedule exposes per-hour setpoints via
-        // `heating_setpoint(h)` and `cooling_setpoint(h)`; we do not
-        // assert the exact per-hour values here (the operating-hours
-        // overwrite is the source-of-truth behavior). We just assert
-        // the conversion succeeded and that the schedule is enabled
-        // (not free-floating — Case 950 has active cooling 7-18).
-        assert!(!unified.is_free_floating());
-        assert_eq!(unified.heating_setpoint(10), -100.0);
-        // Cooling must be active (27°C) at 10:00 — within operating 7-18.
-        assert_eq!(unified.cooling_setpoint(10), 27.0);
-    }
-
-    /// End-to-end smoke: `validate_case_950` must return a
-    /// `Case950ValidationResult` (not panic / not unimplemented) for a
-    /// well-formed Case 950 spec. Mirrors the
-    /// `test_blind_mode_case_950_infrastructure` assertion in the
-    /// blind-validation test file but at the library-unit level.
-    ///
-    /// We do NOT assert `result.all_pass` here: the strict band check
-    /// is gated by the wider #1323 / #1213 physics fixes (current
-    /// engine cooling output is not calibrated to the ASHRAE 140 band).
-    /// The wider infrastructure test in
-    /// `tests/ashrae_140_blind_validation.rs` records the actual
-    /// pass/fail state.
-    #[test]
-    fn test_validate_case_950_returns_result_for_case_950_spec() {
-        let spec = ASHRAE140Case::Case950.spec();
-        let result = validate_case_950(&spec);
-
-        // All four metrics must be finite and physically reasonable
-        // (annual energies >= 0, peak powers >= 0). This is the
-        // non-panicking / non-unimplemented AC the issue requires.
-        assert!(
-            result.annual_heating_mwh.is_finite(),
-            "annual_heating_mwh must be finite, got {}",
-            result.annual_heating_mwh
-        );
-        assert!(
-            result.annual_cooling_mwh.is_finite(),
-            "annual_cooling_mwh must be finite, got {}",
-            result.annual_cooling_mwh
-        );
-        assert!(
-            result.peak_heating_kw.is_finite(),
-            "peak_heating_kw must be finite"
-        );
-        assert!(
-            result.peak_cooling_kw.is_finite(),
-            "peak_cooling_kw must be finite"
-        );
-        assert!(
-            result.annual_heating_mwh >= 0.0,
-            "annual_heating_mwh must be >= 0, got {}",
-            result.annual_heating_mwh
-        );
-        assert!(
-            result.annual_cooling_mwh >= 0.0,
-            "annual_cooling_mwh must be >= 0, got {}",
-            result.annual_cooling_mwh
-        );
-
-        // Reference fields must be populated from the CSV (numeric
-        // bands, not invented — per issue AC: "numeric bands cited from
-        // spec, not invented").
-        assert!(
-            (result.ref_annual_heating_min_mwh - 0.00).abs() < 1e-9
-                && (result.ref_annual_heating_max_mwh - 0.00).abs() < 1e-9,
-            "Case 950 heating band must match CSV [0.00, 0.00] MWh, got [{:.3}, {:.3}]",
-            result.ref_annual_heating_min_mwh,
-            result.ref_annual_heating_max_mwh,
-        );
-        assert!(
-            (result.ref_annual_cooling_min_mwh - 0.39).abs() < 1e-9
-                && (result.ref_annual_cooling_max_mwh - 0.92).abs() < 1e-9,
-            "Case 950 cooling band must match CSV [0.39, 0.92] MWh, got [{:.3}, {:.3}]",
-            result.ref_annual_cooling_min_mwh,
-            result.ref_annual_cooling_max_mwh,
-        );
-        assert!(
-            (result.ref_peak_heating_min_kw - 0.00).abs() < 1e-9
-                && (result.ref_peak_heating_max_kw - 0.00).abs() < 1e-9,
-            "Case 950 peak heating band must match CSV [0.00, 0.00] kW, got [{:.3}, {:.3}]",
-            result.ref_peak_heating_min_kw,
-            result.ref_peak_heating_max_kw,
-        );
-        assert!(
-            (result.ref_peak_cooling_min_kw - 0.70).abs() < 1e-9
-                && (result.ref_peak_cooling_max_kw - 0.90).abs() < 1e-9,
-            "Case 950 peak cooling band must match CSV [0.70, 0.90] kW, got [{:.3}, {:.3}]",
-            result.ref_peak_cooling_min_kw,
-            result.ref_peak_cooling_max_kw,
-        );
-    }
+    // ============================================================
+    // Issue #3555: validate_case_920 / validate_case_950 unit tests
+    // (test_build_case_*_validation_result_band_logic,
+    // test_case_920_spec_has_6m2_east_and_west_windows,
+    // test_case_950_spec_has_22_06_setback_window,
+    // test_case_950_spec_has_night_ventilation_active_18_to_7,
+    // test_case_950_hvac_schedule_setback_marker_is_observable,
+    // test_validate_case_920_returns_result_for_case_920_spec,
+    // test_validate_case_950_returns_result_for_case_950_spec) moved to:
+    //   src/validation/ashrae140/cases/series_900.rs::tests
+    // ============================================================
 }

@@ -1592,7 +1592,7 @@ fn test_case_920_per_orientation_solar_distribution() {
 /// variant).
 #[test]
 fn test_validate_case_920_integration() {
-    use fluxion::validation::ashrae_140_cases::validate_case_920;
+    use fluxion::validation::ashrae140::cases::series_900::validate_case_920;
 
     let spec = ASHRAE140Case::Case920.spec();
     let result = validate_case_920(&spec);
@@ -1694,7 +1694,7 @@ fn test_validate_case_920_integration() {
 /// #1323 / #1213; see `test_blind_mode_case_950_annual_energy_within_band`).
 #[test]
 fn test_validate_case_950_integration() {
-    use fluxion::validation::ashrae_140_cases::validate_case_950;
+    use fluxion::validation::ashrae140::cases::series_900::validate_case_950;
 
     let spec = ASHRAE140Case::Case950.spec();
     let result = validate_case_950(&spec);
