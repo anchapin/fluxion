@@ -1,4 +1,4 @@
-"""Tests for ``scripts/generate_quarantine_registry.py`` -- Issue #3211, #3393.
+"""Tests for ``scripts/generate_quarantine_registry.py`` -- Issue #3211, #3393, #3443.
 
 Regression guard for the quarantine registry audit. The script reads
 every ``#[ignore]`` attribute under ``tests/**/*.rs`` and cross-
@@ -8,7 +8,7 @@ tests plant synthetic ``#[ignore]`` attributes and a synthetic
 ``QUARANTINE.md`` to exercise the orphan / ghost detection paths
 without depending on the real repo's tests/ tree.
 
-The tests pin three invariants:
+The tests pin four invariants:
 
 1. **Orphan detection**: an ``#[ignore]`` in a synthetic test file
    that has no matching registry row is reported as ``orphans``.
@@ -16,6 +16,25 @@ The tests pin three invariants:
    appears in NO scanned ``#[ignore]`` is reported as ``ghosts``.
 3. **Wildcard matching**: a registry row with ``test_dhat_*`` matches
    every actual ``test_dhat_xxx`` function under the same file.
+4. **cfg_attr(...ignore...) support**: a ``#[cfg_attr(feature =
+   "gauge-solver", ignore = "...")]`` attribute is detected as a
+   conditional ignore so the LIMIT-22 cohort doesn't show up as
+   ghost rows. (Issue #3443.)
+
+Issue #3443 also wired the ``BASELINE_ORPHANED_IGNORES`` /
+``BASELINE_GHOST_ROWS`` downward-only ratchet. The tests below pin
+the ratchet invariants:
+
+- a synthetic tree with NO orphans / NO ghosts exits 0 even under
+  ``--strict``;
+- a synthetic tree with one orphan (added AFTER the freeze snapshot)
+  exits 1 under ``--strict`` with the ``BASELINE_ORPHANED_IGNORES``
+  message;
+- a synthetic tree with one ghost (added AFTER the freeze snapshot)
+  exits 1 under ``--strict`` with the ``BASELINE_GHOST_ROWS`` message;
+- a synthetic tree whose orphan/ghost count is within the baseline
+  exits 0 under ``--strict`` (the "lower-the-baseline" companion
+  cleanup path).
 """
 
 from __future__ import annotations
@@ -302,3 +321,170 @@ def test_classify_ignore_buckets_by_reason(audit_script):
     for sample, expected_cat in samples:
         cat = audit_script.classify_ignore(sample)
         assert cat == expected_cat, f"expected {expected_cat}, got {cat} for {sample}"
+
+
+# ---------------------------------------------------------------------------
+# scan_ignores cfg_attr(...) (Issue #3443 LIMIT-22 cohort)
+# ---------------------------------------------------------------------------
+
+
+def test_scan_ignores_detects_cfg_attr_ignore(audit_at, tmp_path):
+    """``#[cfg_attr(feature = \"gauge-solver\", ignore = \"...\")]`` is detected
+    as a conditional ``#[ignore]`` and surfaced with ``conditional=True`` so
+    the LIMIT-22 gauge-build-only cohort doesn't appear as a ghost row.
+    """
+    tests_dir = tmp_path / "tests"
+    tests_dir.mkdir(parents=True, exist_ok=True)
+    (tests_dir / "gauge_only.rs").write_text(
+        "#[cfg_attr(feature = \"gauge-solver\", ignore = \"LIMIT-22: gauge-build-only\")]\n"
+        "#[test]\n"
+        "fn test_case_950_gauge_mass_node() {\n"
+        "    assert!(true);\n"
+        "}\n",
+        encoding="utf-8",
+    )
+    ignores = audit_at.scan_ignores(tests_dir)
+    assert len(ignores) == 1
+    entry = ignores[0]
+    assert entry["file"].endswith("gauge_only.rs")
+    assert entry["function"] == "test_case_950_gauge_mass_node"
+    assert entry["reason"] == "LIMIT-22: gauge-build-only"
+    assert entry["conditional"] is True
+
+
+def test_scan_ignores_does_not_double_count_cfg_attr_with_unconditional(
+    audit_at, tmp_path,
+):
+    """A test that has BOTH ``#[ignore]`` and ``#[cfg_attr(..., ignore)]``
+    is reported once (the unconditional wins; the conditional is a no-op
+    duplicate in source).
+    """
+    tests_dir = tmp_path / "tests"
+    tests_dir.mkdir(parents=True, exist_ok=True)
+    (tests_dir / "both.rs").write_text(
+        "#[ignore]\n"
+        "#[cfg_attr(feature = \"gauge-solver\", ignore = \"LIMIT-22 duplicate\")]\n"
+        "#[test]\n"
+        "fn test_both_attrs() {\n"
+        "    assert!(true);\n"
+        "}\n",
+        encoding="utf-8",
+    )
+    ignores = audit_at.scan_ignores(tests_dir)
+    assert len(ignores) == 1
+    assert ignores[0]["conditional"] is False
+    assert ignores[0]["reason"] == ""
+
+
+# ---------------------------------------------------------------------------
+# main() ratchet (Issue #3443, --strict mode + baselines)
+# ---------------------------------------------------------------------------
+
+
+def _write_clean_synthetic_repo(tmp_path: Path) -> None:
+    """Plant a synthetic repo with one in-sync test + registry row."""
+    tests_dir = tmp_path / "tests"
+    tests_dir.mkdir(parents=True, exist_ok=True)
+    (tests_dir / "sync.rs").write_text(
+        "#[test]\n#[ignore = \"synthetic\"]\nfn test_sync() {}\n",
+        encoding="utf-8",
+    )
+    _write_synthetic_registry(
+        tests_dir / "QUARANTINE.md",
+        [("tests/sync.rs", "test_sync")],
+    )
+
+
+def _run_main_with_args(audit_script, monkeypatch, args: list[str]) -> int:
+    """Drive ``audit_script.main(argv)`` with the given argv and a clean
+    synthetic repo pinned at ``tmp_path``. Returns the process exit code.
+    """
+    import sys as _sys
+
+    _sys.argv = ["generate_quarantine_registry.py"] + args
+    return audit_script.main()
+
+
+def test_main_strict_clean_tree_exits_zero(audit_at, tmp_path, monkeypatch):
+    """A clean synthetic tree (no orphans, no ghosts) exits 0 under
+    ``--strict``. Mirrors the post-#3443 expected state on the real
+    repo: BASELINE_ORPHANED_IGNORES = 0, BASELINE_GHOST_ROWS = 0.
+    """
+    _write_clean_synthetic_repo(tmp_path)
+    monkeypatch.setattr(audit_at, "BASELINE_ORPHANED_IGNORES", 0)
+    monkeypatch.setattr(audit_at, "BASELINE_GHOST_ROWS", 0)
+    assert _run_main_with_args(audit_at, monkeypatch, ["--strict"]) == 0
+
+
+def test_main_strict_new_orphan_exits_one(audit_at, tmp_path, monkeypatch, capsys):
+    """A synthetic tree with one new orphan exits 1 under ``--strict``
+    when the freeze snapshot does NOT contain the orphan. Mirrors the
+    Issue #3443 downward-only ratchet.
+    """
+    tests_dir = tmp_path / "tests"
+    tests_dir.mkdir(parents=True, exist_ok=True)
+    (tests_dir / "orphan.rs").write_text(
+        "#[test]\n#[ignore = \"new orphan\"]\nfn test_orphan() {}\n",
+        encoding="utf-8",
+    )
+    _write_synthetic_registry(tests_dir / "QUARANTINE.md", [])
+    monkeypatch.setattr(audit_at, "BASELINE_ORPHANED_IGNORES", 0)
+    monkeypatch.setattr(audit_at, "_BASELINE_ORPHANED_IGNORES_SET", frozenset())
+    monkeypatch.setattr(audit_at, "BASELINE_GHOST_ROWS", 0)
+    rc = _run_main_with_args(audit_at, monkeypatch, ["--strict"])
+    captured = capsys.readouterr().out
+    assert rc == 1
+    assert "ORPHAN COUNT GREW ABOVE BASELINE" in captured
+    assert "BASELINE_ORPHANED_IGNORES" in captured
+
+
+def test_main_strict_new_ghost_exits_one(audit_at, tmp_path, monkeypatch, capsys):
+    """A synthetic tree with one new ghost exits 1 under ``--strict``
+    when the freeze snapshot does NOT contain the ghost. Mirrors the
+    Issue #3443 ghost downward-only ratchet.
+    """
+    tests_dir = tmp_path / "tests"
+    tests_dir.mkdir(parents=True, exist_ok=True)
+    (tests_dir / "live.rs").write_text(
+        "#[test]\nfn test_live_unignored() {}\n",
+        encoding="utf-8",
+    )
+    _write_synthetic_registry(
+        tests_dir / "QUARANTINE.md",
+        [("tests/live.rs", "test_live_unignored")],
+    )
+    monkeypatch.setattr(audit_at, "BASELINE_ORPHANED_IGNORES", 0)
+    monkeypatch.setattr(audit_at, "_BASELINE_ORPHANED_IGNORES_SET", frozenset())
+    monkeypatch.setattr(audit_at, "BASELINE_GHOST_ROWS", 0)
+    monkeypatch.setattr(audit_at, "_BASELINE_GHOST_ROWS_SET", frozenset())
+    rc = _run_main_with_args(audit_at, monkeypatch, ["--strict"])
+    captured = capsys.readouterr().out
+    assert rc == 1
+    assert "GHOST COUNT GREW ABOVE BASELINE" in captured
+    assert "BASELINE_GHOST_ROWS" in captured
+
+
+def test_main_strict_orphan_within_baseline_exits_zero(
+    audit_at, tmp_path, monkeypatch,
+):
+    """A synthetic tree with one orphan but BASELINE_ORPHANED_IGNORES = 1
+    exits 0 under ``--strict``: the orphan is a tracked cleanup target
+    and the ratchet is happy. Mirrors the companion-cleanup-PR path
+    where lowering the baseline is the only authorised change.
+    """
+    tests_dir = tmp_path / "tests"
+    tests_dir.mkdir(parents=True, exist_ok=True)
+    (tests_dir / "orphan.rs").write_text(
+        "#[test]\n#[ignore = \"tracked orphan\"]\nfn test_tracked_orphan() {}\n",
+        encoding="utf-8",
+    )
+    _write_synthetic_registry(tests_dir / "QUARANTINE.md", [])
+    monkeypatch.setattr(audit_at, "BASELINE_ORPHANED_IGNORES", 1)
+    monkeypatch.setattr(
+        audit_at,
+        "_BASELINE_ORPHANED_IGNORES_SET",
+        frozenset({("tests/orphan.rs", "test_tracked_orphan")}),
+    )
+    monkeypatch.setattr(audit_at, "BASELINE_GHOST_ROWS", 0)
+    rc = _run_main_with_args(audit_at, monkeypatch, ["--strict"])
+    assert rc == 0

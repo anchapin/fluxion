@@ -86,16 +86,21 @@ jobs:
       - name: Run scripts/ pytest harness
         run: python3 -m pytest scripts/
 
-      # Issue #3211 / #3393: quarantine registry audit. Closes the
-      # 149-vs-78 gap that Issue #3393 documented by scanning every
+      # Issue #3211 / #3393 / #3443: quarantine registry audit. Closes
+      # the 149-vs-78 gap that Issue #3393 documented by scanning every
       # `#[ignore]` attribute under tests/ and cross-referencing it
-      # against tests/QUARANTINE.md. Default mode is informational
-      # (exit 0) so the gate can be adopted without immediately
-      # failing PRs on the existing orphans; once the curator triages
-      # the orphan list into the registry, flip to `--strict` to
-      # make any new orphan a PR-blocking failure.
-      - name: Quarantine registry audit (Issue #3211, #3393)
-        run: python3 scripts/generate_quarantine_registry.py
+      # against tests/QUARANTINE.md. Issue #3443 wired the strict
+      # downward-only ratchet (BASELINE_ORPHANED_IGNORES /
+      # BASELINE_GHOST_ROWS): the script now exits 1 if any new orphan
+      # `#[ignore]` is added without a corresponding registry row, if
+      # any ghost row exists, or if the orphan / ghost count grows
+      # above the documented baseline. The mirror of the
+      # `BASELINE_KNOWN_ORPHANS` / `BASELINE_WIRED_BUT_DEAD` ratchets
+      # in `scripts/check_orphan_modules.py` (Issues #3458 / #3459).
+      # Companion cleanup PRs that resolve an orphan / ghost are
+      # expected to lower the matching baseline by one.
+      - name: Quarantine registry audit (Issue #3211, #3393, #3443)
+        run: python3 scripts/generate_quarantine_registry.py --strict
 
       # Issue #3366 / #3444: ADR-0015 concurrency-template gate. The
       # matcher in ``scripts/check_concurrency_keys.py`` was previously
