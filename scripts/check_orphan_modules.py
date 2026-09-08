@@ -138,61 +138,18 @@ BIN_DIR = SRC_DIR / "bin"
 # authorised change; companion cleanup PRs are expected to drop the
 # baseline by one entry per orphan they resolve.
 # ---------------------------------------------------------------------------
+# Issue #3555 burn-down: lowered BASELINE_KNOWN_ORPHANS 29 → 0 in PR for fluxion-#3555.
+# All 29 prior entries deleted: src/ai/rl_policy.rs; src/cli/commands/{mod,cross_validation,import}.rs;
+# src/sim/hvac/tests/{cycling,efficiency_curve,equipment,fluid_adapter}_tests.rs;
+# src/sim/solar_gain_distribution.rs; src/thermal/{solver,zone_coupling}.rs;
+# src/twin/live_twin_broadcaster.rs; src/validation/esp_r/{cli_integration,comparison,examples,integration,mod,parser,test_automation,test_automation_test}.rs;
+# src/validation/{ml_data_collector,validation_suite}.rs;
+# src/validation/performance/{executor,parallel}.rs;
+# src/validation/reports/{cross_validation,mod}.rs;
+# src/weather/{denver,epw,mod}.rs.
 KNOWN_ORPHANS: frozenset[str] = frozenset(
     {
-        # [replaced-by-canonical] `crate::ai::rl_policy` is exposed elsewhere;
-        # this file is no longer wired into src/ai/mod.rs.
-        "src/ai/rl_policy.rs",
-        # [pending-removal] src/cli/commands was the entry-point of the old
-        # CLI surface (#2929 removed `mod commands;` from src/cli/mod.rs);
-        # the directory is kept around pending a follow-up delete.
-        "src/cli/commands/mod.rs",
-        "src/cli/commands/cross_validation.rs",
-        "src/cli/commands/import.rs",
-        # [pending-removal] src/sim/hvac/tests/*.rs are reachable from the
-        # ``mod tests { ... }`` inline body in src/sim/hvac/mod.rs:481, but
-        # the inline body does not declare them as nested mods. Pending
-        # either consolidation into the inline body or a dedicated module.
-        "src/sim/hvac/tests/cycling_tests.rs",
-        "src/sim/hvac/tests/efficiency_curve_tests.rs",
-        "src/sim/hvac/tests/equipment_tests.rs",
-        "src/sim/hvac/tests/fluid_adapter_tests.rs",
-        # [pending-removal] no `mod solar_gain_distribution;` in src/sim/mod.rs.
-        "src/sim/solar_gain_distribution.rs",
-        # [pending-removal] src/thermal/mod.rs does not declare solver /
-        # zone_coupling; the canonical home is src/thermal/* elsewhere.
-        "src/thermal/solver.rs",
-        "src/thermal/zone_coupling.rs",
-        # [pending-removal] live_twin_broadcaster has no callers in-crate.
-        "src/twin/live_twin_broadcaster.rs",
-        # [pending-removal] src/validation/esp_r/* is fully orphaned; callers
-        # route through src/validation/reports/* instead. Tracked separately.
-        "src/validation/esp_r/cli_integration.rs",
-        "src/validation/esp_r/comparison.rs",
-        "src/validation/esp_r/examples.rs",
-        "src/validation/esp_r/integration.rs",
-        "src/validation/esp_r/mod.rs",
-        "src/validation/esp_r/parser.rs",
-        "src/validation/esp_r/test_automation.rs",
-        "src/validation/esp_r/test_automation_test.rs",
-        # [pending-removal] ML data collector never wired into
-        # src/validation/mod.rs.
-        "src/validation/ml_data_collector.rs",
-        # [replaced-by-canonical] parallel_executor.rs owns the name;
-        # executor.rs / parallel.rs are leftover siblings.
-        "src/validation/performance/executor.rs",
-        "src/validation/performance/parallel.rs",
-        # [pending-removal] src/validation/reports/* has no callers in-crate.
-        "src/validation/reports/cross_validation.rs",
-        "src/validation/reports/mod.rs",
-        # [pending-removal] validation_suite.rs is never wired into
-        # src/validation/mod.rs.
-        "src/validation/validation_suite.rs",
-        # [deleted-in-crate-split] weather moved to fluxion-core (#1255);
-        # the in-crate clones are dead weight.
-        "src/weather/denver.rs",
-        "src/weather/epw.rs",
-        "src/weather/mod.rs",
+        # Allowlist emptied by Issue #3555 burn-down (2026-09-08).
     }
 )
 
@@ -242,37 +199,30 @@ WIRED_BUT_DEAD: frozenset[str] = frozenset(
         # per AGENTS.md — neither are Cargo targets). Companion cleanup
         # PRs are expected to drop one entry each as these modules are
         # either deleted or wired into a real consumer.
+        # Issue #3555 burn-down (PR for fluxion-#3555): removed 11 entries
+        # (`continuous`, `nd_array`, `fd_surface_balance`, `ffd_solver`,
+        # `simd_kernels`, `ensemble`, `xdt_export`, `shared_memory_buffer`,
+        # `optimal_start_stop`, `zonenet_hvac_bridge`, `import`).
         "assembly_library",
         "batch_inference",
         "benchmarking",
         "context_aware",
-        "continuous",
         "coupled_solver",
         "distributed",
         "doe_reference",
         "empirical_hybrid",
-        "ensemble",
-        "epjson",
         "equipment_surrogate",
-        "fd_surface_balance",
+        "epjson",
         "fdd",
-        "ffd_solver",
         "flexlab_weather",
-        "import",
         "inter_zone",
-        "nd_array",
-        "optimal_start_stop",
         "parallel",
         "rom",
-        "shared_memory_buffer",
-        "simd_kernels",
         "sweeps",
         "tdd",
         "thermal_model_5r1c",
         "thermal_model_solvers",
         "topsis",
-        "xdt_export",
-        "zonenet_hvac_bridge",
     }
 )
 
@@ -298,7 +248,7 @@ WIRED_BUT_DEAD: frozenset[str] = frozenset(
 #     31-module cleanup into this PR. Companion cleanup PRs that
 #     delete each module are expected to drop the matching entry AND
 #     lower BASELINE_WIRED_BUT_DEAD by one.
-BASELINE_WIRED_BUT_DEAD = 33
+BASELINE_WIRED_BUT_DEAD = 22  # lowered from 33 → 22 in PR for fluxion-#3555
 
 # Downward-only ratchet for the orphan allowlist (Issue #3459).
 #
@@ -321,7 +271,15 @@ BASELINE_WIRED_BUT_DEAD = 33
 #     ``tests/validation/high_mass_tests.rs``, neither of which is a Cargo
 #     test target (they live one level below ``tests/`` and are therefore
 #     never compiled by Cargo's auto-discovery).
-BASELINE_KNOWN_ORPHANS = 29
+#   29 → 0 (Issue #3555): burn-down PR cleared all 29 tracked orphans
+#     (esp_r/*, cli/commands/*, sim/hvac/tests/*, sim/solar_gain_distribution.rs,
+#     thermal/{solver,zone_coupling}.rs, twin/live_twin_broadcaster.rs,
+#     validation/{esp_r/*,ml_data_collector.rs,validation_suite.rs},
+#     validation/performance/{executor,parallel}.rs,
+#     validation/reports/{cross_validation,mod}.rs,
+#     ai/rl_policy.rs, weather/{denver,epw,mod}.rs). Lowered from 29 → 0 in
+#     PR for fluxion-#3555.
+BASELINE_KNOWN_ORPHANS = 0
 
 # Freeze snapshot of the allowlist (Issue #3459 ratchet).
 #

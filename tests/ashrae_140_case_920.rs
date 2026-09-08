@@ -90,9 +90,10 @@
 use fluxion::physics::cta::VectorField;
 use fluxion::sim::engine::ThermalModel;
 use fluxion::sim::thermal_selector::ThermalSelector;
-use fluxion::validation::ashrae_140_cases::{
-    validate_case_920, ASHRAE140Case, Case920ValidationResult,
+use fluxion::validation::ashrae140::cases::series_900::{
+    validate_case_920, Case920ValidationResult,
 };
+use fluxion::validation::ashrae_140_cases::ASHRAE140Case;
 use fluxion::weather::denver::DenverTmyWeather;
 use fluxion::weather::WeatherSource;
 

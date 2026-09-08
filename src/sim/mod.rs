@@ -26,13 +26,11 @@ pub mod multi_node_hvac_runner;
 pub mod multi_node_thermal;
 pub mod multi_zone_network;
 pub mod occupancy;
-pub mod optimal_start_stop;
 pub mod orchestrator;
 pub mod per_surface_conduction;
 pub mod profiles;
 pub mod schedule;
 pub mod shading;
-pub mod shared_memory_buffer;
 pub mod sky_radiation;
 pub mod solar;
 pub mod surface_flux_provider;
@@ -53,7 +51,6 @@ pub mod warmup;
 pub mod thermal_integration;
 pub mod ventilation;
 pub mod view_factors;
-pub mod zonenet_hvac_bridge;
 
 #[cfg(feature = "pr821-diag")]
 pub mod pr821_diag;
